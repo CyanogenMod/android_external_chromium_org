@@ -1658,7 +1658,7 @@ class AppCacheStorageImplTest : public testing::Test {
       ASSERT_TRUE(base::CreateDirectory(disk_cache_directory));
       base::FilePath index_file = disk_cache_directory.AppendASCII("index");
       EXPECT_EQ(static_cast<int>(kCorruptData.length()),
-                file_util::WriteFile(
+                base::WriteFile(
                     index_file, kCorruptData.data(), kCorruptData.length()));
     }
 
@@ -1746,7 +1746,7 @@ class AppCacheStorageImplTest : public testing::Test {
       AppCacheHost* host2 = backend_->GetHost(2);
       GURL manifest_url = MockHttpServer::GetMockUrl("manifest");
       request_ = service()->request_context()->CreateRequest(
-          manifest_url, net::DEFAULT_PRIORITY, NULL);
+          manifest_url, net::DEFAULT_PRIORITY, NULL, NULL);
       AppCacheInterceptor::SetExtraRequestInfo(
           request_.get(), service_.get(),
           backend_->process_id(), host2->host_id(),

@@ -20,7 +20,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkDevice.h"
 
 namespace cc {
 namespace {
@@ -79,9 +78,10 @@ TEST_F(SoftwareRendererTest, SolidColorQuad) {
       root_render_pass_id, outer_rect, outer_rect, gfx::Transform());
   scoped_ptr<SolidColorDrawQuad> outer_quad = SolidColorDrawQuad::Create();
   outer_quad->SetNew(
-      shared_quad_state.get(), outer_rect, SK_ColorYELLOW, false);
+      shared_quad_state.get(), outer_rect, outer_rect, SK_ColorYELLOW, false);
   scoped_ptr<SolidColorDrawQuad> inner_quad = SolidColorDrawQuad::Create();
-  inner_quad->SetNew(shared_quad_state.get(), inner_rect, SK_ColorCYAN, false);
+  inner_quad->SetNew(
+      shared_quad_state.get(), inner_rect, inner_rect, SK_ColorCYAN, false);
   inner_quad->visible_rect = visible_rect;
   root_render_pass->AppendQuad(inner_quad.PassAs<DrawQuad>());
   root_render_pass->AppendQuad(outer_quad.PassAs<DrawQuad>());
@@ -96,7 +96,6 @@ TEST_F(SoftwareRendererTest, SolidColorQuad) {
                         device_scale_factor,
                         device_viewport_rect,
                         device_viewport_rect,
-                        true,
                         false);
 
   SkBitmap output;
@@ -174,12 +173,14 @@ TEST_F(SoftwareRendererTest, TileQuad) {
   outer_quad->SetNew(shared_quad_state.get(),
                      outer_rect,
                      outer_rect,
+                     outer_rect,
                      resource_yellow,
                      gfx::RectF(outer_size),
                      outer_size,
                      false);
   scoped_ptr<TileDrawQuad> inner_quad = TileDrawQuad::Create();
   inner_quad->SetNew(shared_quad_state.get(),
+                     inner_rect,
                      inner_rect,
                      inner_rect,
                      resource_cyan,
@@ -199,7 +200,6 @@ TEST_F(SoftwareRendererTest, TileQuad) {
                         device_scale_factor,
                         device_viewport_rect,
                         device_viewport_rect,
-                        true,
                         false);
 
   SkBitmap output;
@@ -263,6 +263,7 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
   quad->SetNew(shared_quad_state.get(),
                tile_rect,
                tile_rect,
+               tile_rect,
                resource_cyan,
                gfx::RectF(tile_size),
                tile_size,
@@ -280,7 +281,6 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
                         device_scale_factor,
                         device_viewport_rect,
                         device_viewport_rect,
-                        true,
                         false);
 
   SkBitmap output;
@@ -336,7 +336,6 @@ TEST_F(SoftwareRendererTest, ShouldClearRootRenderPass) {
                         device_scale_factor,
                         viewport_rect,
                         viewport_rect,
-                        true,
                         false);
   renderer()->GetFramebufferPixels(output.getPixels(), viewport_rect);
 
@@ -361,7 +360,6 @@ TEST_F(SoftwareRendererTest, ShouldClearRootRenderPass) {
                         device_scale_factor,
                         viewport_rect,
                         viewport_rect,
-                        true,
                         false);
   renderer()->GetFramebufferPixels(output.getPixels(), viewport_rect);
 
@@ -413,7 +411,6 @@ TEST_F(SoftwareRendererTest, RenderPassVisibleRect) {
                         device_scale_factor,
                         viewport_rect,
                         viewport_rect,
-                        true,
                         false);
   renderer()->GetFramebufferPixels(output.getPixels(), viewport_rect);
 

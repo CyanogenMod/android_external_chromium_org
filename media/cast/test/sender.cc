@@ -6,6 +6,9 @@
 // or read from a file.
 
 #include "base/at_exit.h"
+#include "base/command_line.h"
+#include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread.h"
@@ -14,7 +17,10 @@
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
 #include "media/cast/cast_sender.h"
+#include "media/cast/logging/encoding_event_subscriber.h"
+#include "media/cast/logging/log_serializer.h"
 #include "media/cast/logging/logging_defines.h"
+#include "media/cast/logging/proto/raw_events.pb.h"
 #include "media/cast/test/utility/audio_utility.h"
 #include "media/cast/test/utility/input_builder.h"
 #include "media/cast/test/utility/video_utility.h"
@@ -41,6 +47,9 @@ namespace cast {
 #define DEFAULT_VIDEO_CODEC_MAX_BITRATE "4000"
 #define DEFAULT_VIDEO_CODEC_MIN_BITRATE "1000"
 
+#define DEFAULT_LOGGING_DURATION "10"
+#define DEFAULT_COMPRESS_LOGS "1"
+
 namespace {
 static const int kAudioChannels = 2;
 static const int kAudioSamplingFrequency = 48000;
@@ -50,10 +59,8 @@ static const int kSoundFrequency = 1234;  // Frequency of sinusoid wave.
 static const float kSoundVolume = 0.5f;
 static const int kFrameTimerMs = 33;
 
-// Dummy callback function that does nothing except to accept ownership of
-// |audio_bus| for destruction. This guarantees that the audio_bus is valid for
-// the entire duration of the encode/send process (not equivalent to DoNothing).
-void OwnThatAudioBus(scoped_ptr<AudioBus> audio_bus) {}
+// The max allowed size of serialized log.
+const int kMaxSerializedLogBytes = 10 * 1000 * 1000;
 }  // namespace
 
 void GetPort(int* port) {
@@ -70,6 +77,39 @@ std::string GetIpAddress(const std::string display_text) {
     ip_address = input.GetStringInput();
   }
   return ip_address;
+}
+
+int GetLoggingDuration() {
+  test::InputBuilder input(
+      "Choose logging duration (seconds), 0 for no logging.",
+      DEFAULT_LOGGING_DURATION,
+      0,
+      INT_MAX);
+  return input.GetIntInput();
+}
+
+std::string GetVideoLogFileDestination(bool compress) {
+  test::InputBuilder input(
+      "Enter video events log file destination.",
+      compress ? "./video_events.log.gz" : "./video_events.log",
+      INT_MIN,
+      INT_MAX);
+  return input.GetStringInput();
+}
+
+std::string GetAudioLogFileDestination(bool compress) {
+  test::InputBuilder input(
+      "Enter audio events log file destination.",
+      compress ? "./audio_events.log.gz" : "./audio_events.log",
+      INT_MIN,
+      INT_MAX);
+  return input.GetStringInput();
+}
+
+bool CompressLogs() {
+  test::InputBuilder input(
+      "Enter 1 to enable compression on logs.", DEFAULT_COMPRESS_LOGS, 0, 1);
+  return (1 == input.GetIntInput());
 }
 
 bool ReadFromFile() {
@@ -184,11 +224,13 @@ class SendProcess {
   SendProcess(scoped_refptr<base::SingleThreadTaskRunner> thread_proxy,
               base::TickClock* clock,
               const VideoSenderConfig& video_config,
-              FrameInput* frame_input)
+              scoped_refptr<AudioFrameInput> audio_frame_input,
+              scoped_refptr<VideoFrameInput> video_frame_input)
       : test_app_thread_proxy_(thread_proxy),
         video_config_(video_config),
         audio_diff_(kFrameTimerMs),
-        frame_input_(frame_input),
+        audio_frame_input_(audio_frame_input),
+        video_frame_input_(video_frame_input),
         synthetic_count_(0),
         clock_(clock),
         start_time_(),
@@ -221,13 +263,10 @@ class SendProcess {
     // Avoid drift.
     audio_diff_ += kFrameTimerMs - num_10ms_blocks * 10;
 
-    scoped_ptr<AudioBus> audio_bus(audio_bus_factory_->NextAudioBus(
-        base::TimeDelta::FromMilliseconds(10) * num_10ms_blocks));
-    AudioBus* const audio_bus_ptr = audio_bus.get();
-    frame_input_->InsertAudio(
-        audio_bus_ptr,
-        clock_->NowTicks(),
-        base::Bind(&OwnThatAudioBus, base::Passed(&audio_bus)));
+    audio_frame_input_->InsertAudio(
+        audio_bus_factory_->NextAudioBus(
+            base::TimeDelta::FromMilliseconds(10) * num_10ms_blocks),
+        clock_->NowTicks());
 
     gfx::Size size(video_config_.width, video_config_.height);
     // TODO(mikhal): Use the provided timestamp.
@@ -256,21 +295,21 @@ class SendProcess {
       test_app_thread_proxy_->PostDelayedTask(
           FROM_HERE,
           base::Bind(&SendProcess::SendVideoFrameOnTime,
-                     base::Unretained(this),
+                     weak_factory_.GetWeakPtr(),
                      video_frame),
           video_frame_time - elapsed_time);
     } else {
       test_app_thread_proxy_->PostTask(
           FROM_HERE,
           base::Bind(&SendProcess::SendVideoFrameOnTime,
-                     base::Unretained(this),
+                     weak_factory_.GetWeakPtr(),
                      video_frame));
     }
   }
 
   void SendVideoFrameOnTime(scoped_refptr<media::VideoFrame> video_frame) {
     send_time_ = clock_->NowTicks();
-    frame_input_->InsertRawVideoFrame(video_frame, send_time_);
+    video_frame_input_->InsertRawVideoFrame(video_frame, send_time_);
     test_app_thread_proxy_->PostTask(
         FROM_HERE, base::Bind(&SendProcess::SendFrame, base::Unretained(this)));
   }
@@ -279,7 +318,8 @@ class SendProcess {
   scoped_refptr<base::SingleThreadTaskRunner> test_app_thread_proxy_;
   const VideoSenderConfig video_config_;
   int audio_diff_;
-  const scoped_refptr<FrameInput> frame_input_;
+  const scoped_refptr<AudioFrameInput> audio_frame_input_;
+  const scoped_refptr<VideoFrameInput> video_frame_input_;
   FILE* video_file_;
   uint8 synthetic_count_;
   base::TickClock* const clock_;  // Not owned by this class.
@@ -296,9 +336,28 @@ namespace {
 void UpdateCastTransportStatus(
     media::cast::transport::CastTransportStatus status) {}
 
+void LogRawEvents(
+    const scoped_refptr<media::cast::CastEnvironment>& cast_environment,
+    const std::vector<media::cast::PacketEvent>& packet_events) {
+  VLOG(1) << "Got packet events from transport, size: " << packet_events.size();
+  for (std::vector<media::cast::PacketEvent>::const_iterator it =
+           packet_events.begin();
+       it != packet_events.end();
+       ++it) {
+    cast_environment->Logging()->InsertPacketEvent(it->timestamp,
+                                                   it->type,
+                                                   it->rtp_timestamp,
+                                                   it->frame_id,
+                                                   it->packet_id,
+                                                   it->max_packet_id,
+                                                   it->size);
+  }
+}
+
 void InitializationResult(media::cast::CastInitializationStatus result) {
-  CHECK_EQ(result, media::cast::STATUS_INITIALIZED);
-  VLOG(1) << "Cast Sender initialized";
+  bool end_result = result == media::cast::STATUS_AUDIO_INITIALIZED ||
+                    result == media::cast::STATUS_VIDEO_INITIALIZED;
+  CHECK(end_result) << "Cast sender uninitialized";
 }
 
 net::IPEndPoint CreateUDPAddress(std::string ip_str, int port) {
@@ -307,11 +366,68 @@ net::IPEndPoint CreateUDPAddress(std::string ip_str, int port) {
   return net::IPEndPoint(ip_number, port);
 }
 
+void DumpLoggingData(
+    scoped_ptr<media::cast::EncodingEventSubscriber> event_subscriber,
+    base::ScopedFILE log_file,
+    bool compress) {
+  media::cast::FrameEventMap frame_events;
+  media::cast::PacketEventMap packet_events;
+  media::cast::proto::LogMetadata log_metadata;
+
+  event_subscriber->GetEventsAndReset(
+      &log_metadata, &frame_events, &packet_events);
+
+  VLOG(0) << "Frame map size: " << frame_events.size();
+  VLOG(0) << "Packet map size: " << packet_events.size();
+
+  scoped_ptr<char[]> event_log(new char[media::cast::kMaxSerializedLogBytes]);
+  int event_log_bytes;
+  if (!media::cast::SerializeEvents(log_metadata,
+                                    frame_events,
+                                    packet_events,
+                                    compress,
+                                    media::cast::kMaxSerializedLogBytes,
+                                    event_log.get(),
+                                    &event_log_bytes)) {
+    VLOG(0) << "Failed to serialize events.";
+    return;
+  }
+
+  VLOG(0) << "Events serialized length: " << event_log_bytes;
+
+  int ret = fwrite(event_log.get(), 1, event_log_bytes, log_file.get());
+  if (ret != event_log_bytes)
+    VLOG(0) << "Failed to write logs to file.";
+}
+
+void WriteLogsToFileAndStopSubscribing(
+    const scoped_refptr<media::cast::CastEnvironment>& cast_environment,
+    scoped_ptr<media::cast::EncodingEventSubscriber> video_event_subscriber,
+    scoped_ptr<media::cast::EncodingEventSubscriber> audio_event_subscriber,
+    base::ScopedFILE video_log_file,
+    base::ScopedFILE audio_log_file,
+    bool compress) {
+  // Serialize video events.
+  cast_environment->Logging()->RemoveRawEventSubscriber(
+      video_event_subscriber.get());
+  cast_environment->Logging()->RemoveRawEventSubscriber(
+      audio_event_subscriber.get());
+
+  VLOG(0) << "Dumping logging data for video stream.";
+  DumpLoggingData(
+      video_event_subscriber.Pass(), video_log_file.Pass(), compress);
+
+  VLOG(0) << "Dumping logging data for audio stream.";
+  DumpLoggingData(
+      audio_event_subscriber.Pass(), audio_log_file.Pass(), compress);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
   base::AtExitManager at_exit;
-  VLOG(1) << "Cast Sender";
+  CommandLine::Init(argc, argv);
+  InitLogging(logging::LoggingSettings());
   base::Thread test_thread("Cast sender test app thread");
   base::Thread audio_thread("Cast audio encoder thread");
   base::Thread video_thread("Cast video encoder thread");
@@ -319,7 +435,6 @@ int main(int argc, char** argv) {
   audio_thread.Start();
   video_thread.Start();
 
-  scoped_ptr<base::TickClock> clock(new base::DefaultTickClock());
   base::MessageLoopForIO io_message_loop;
 
   int remote_port;
@@ -333,52 +448,112 @@ int main(int argc, char** argv) {
   media::cast::VideoSenderConfig video_config =
       media::cast::GetVideoSenderConfig();
 
+  // Enable main and send side threads only. Enable raw event logging.
+  // Running transport on the main thread.
+  media::cast::CastLoggingConfig logging_config;
+  logging_config.enable_raw_data_collection = true;
+
   // Setting up transport config.
-  media::cast::transport::CastTransportConfig config;
-  config.receiver_endpoint = CreateUDPAddress(remote_ip_address, remote_port);
-  config.local_endpoint = CreateUDPAddress("0.0.0.0", 0);
-  config.audio_ssrc = audio_config.sender_ssrc;
-  config.video_ssrc = video_config.sender_ssrc;
-  config.audio_rtp_config = audio_config.rtp_config;
-  config.video_rtp_config = video_config.rtp_config;
+  media::cast::transport::CastTransportAudioConfig transport_audio_config;
+  media::cast::transport::CastTransportVideoConfig transport_video_config;
+  net::IPEndPoint remote_endpoint =
+      CreateUDPAddress(remote_ip_address, remote_port);
+  net::IPEndPoint local_endpoint = CreateUDPAddress("0.0.0.0", 0);
+  transport_audio_config.base.ssrc = audio_config.sender_ssrc;
+  transport_audio_config.base.rtp_config = audio_config.rtp_config;
+  transport_video_config.base.ssrc = video_config.sender_ssrc;
+  transport_video_config.base.rtp_config = video_config.rtp_config;
 
-  scoped_ptr<media::cast::transport::CastTransportSender> transport_sender(
-      media::cast::transport::CastTransportSender::CreateCastTransportSender(
-          clock.get(),
-          config,
-          base::Bind(&UpdateCastTransportStatus),
-          io_message_loop.message_loop_proxy()));
-
-  // Enable main and send side threads only. Disable logging.
+  // Enable main and send side threads only. Enable raw event and stats logging.
   // Running transport on the main thread.
   scoped_refptr<media::cast::CastEnvironment> cast_environment(
       new media::cast::CastEnvironment(
-          clock.Pass(),
+          make_scoped_ptr<base::TickClock>(new base::DefaultTickClock()),
           io_message_loop.message_loop_proxy(),
           audio_thread.message_loop_proxy(),
           NULL,
           video_thread.message_loop_proxy(),
           NULL,
           io_message_loop.message_loop_proxy(),
-          media::cast::GetDefaultCastSenderLoggingConfig()));
+          media::cast::GetLoggingConfigWithRawEventsAndStatsEnabled()));
 
-  scoped_ptr<media::cast::CastSender> cast_sender(
-      media::cast::CastSender::CreateCastSender(
-          cast_environment,
-          &audio_config,
-          &video_config,
-          NULL,  // gpu_factories.
-          base::Bind(&InitializationResult),
-          transport_sender.get()));
+  scoped_ptr<media::cast::transport::CastTransportSender> transport_sender =
+      media::cast::transport::CastTransportSender::Create(
+          NULL,  // net log.
+          cast_environment->Clock(),
+          local_endpoint,
+          remote_endpoint,
+          logging_config,
+          base::Bind(&UpdateCastTransportStatus),
+          base::Bind(&LogRawEvents, cast_environment),
+          base::TimeDelta::FromSeconds(1),
+          io_message_loop.message_loop_proxy());
+
+  transport_sender->InitializeAudio(transport_audio_config);
+  transport_sender->InitializeVideo(transport_video_config);
+
+  scoped_ptr<media::cast::CastSender> cast_sender =
+      media::cast::CastSender::Create(cast_environment, transport_sender.get());
+
+  cast_sender->InitializeVideo(
+      video_config, base::Bind(&InitializationResult), NULL);
+  cast_sender->InitializeAudio(audio_config, base::Bind(&InitializationResult));
 
   transport_sender->SetPacketReceiver(cast_sender->packet_receiver());
 
-  media::cast::FrameInput* frame_input = cast_sender->frame_input();
+  scoped_refptr<media::cast::AudioFrameInput> audio_frame_input =
+      cast_sender->audio_frame_input();
+  scoped_refptr<media::cast::VideoFrameInput> video_frame_input =
+      cast_sender->video_frame_input();
   scoped_ptr<media::cast::SendProcess> send_process(
       new media::cast::SendProcess(test_thread.message_loop_proxy(),
                                    cast_environment->Clock(),
                                    video_config,
-                                   frame_input));
+                                   audio_frame_input,
+                                   video_frame_input));
+
+  // Set up event subscribers.
+  int logging_duration = media::cast::GetLoggingDuration();
+  scoped_ptr<media::cast::EncodingEventSubscriber> video_event_subscriber;
+  scoped_ptr<media::cast::EncodingEventSubscriber> audio_event_subscriber;
+  if (logging_duration > 0) {
+    bool compress = media::cast::CompressLogs();
+    std::string video_log_file_name(
+        media::cast::GetVideoLogFileDestination(compress));
+    std::string audio_log_file_name(
+        media::cast::GetAudioLogFileDestination(compress));
+    video_event_subscriber.reset(new media::cast::EncodingEventSubscriber(
+        media::cast::VIDEO_EVENT, 10000));
+    audio_event_subscriber.reset(new media::cast::EncodingEventSubscriber(
+        media::cast::AUDIO_EVENT, 10000));
+    cast_environment->Logging()->AddRawEventSubscriber(
+        video_event_subscriber.get());
+    cast_environment->Logging()->AddRawEventSubscriber(
+        audio_event_subscriber.get());
+
+    base::ScopedFILE video_log_file(fopen(video_log_file_name.c_str(), "w"));
+    if (!video_log_file) {
+      VLOG(1) << "Failed to open video log file for writing.";
+      exit(-1);
+    }
+
+    base::ScopedFILE audio_log_file(fopen(audio_log_file_name.c_str(), "w"));
+    if (!audio_log_file) {
+      VLOG(1) << "Failed to open audio log file for writing.";
+      exit(-1);
+    }
+
+    io_message_loop.message_loop_proxy()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&WriteLogsToFileAndStopSubscribing,
+                   cast_environment,
+                   base::Passed(&video_event_subscriber),
+                   base::Passed(&audio_event_subscriber),
+                   base::Passed(&video_log_file),
+                   base::Passed(&audio_log_file),
+                   compress),
+        base::TimeDelta::FromSeconds(logging_duration));
+  }
 
   test_thread.message_loop_proxy()->PostTask(
       FROM_HERE,
@@ -386,5 +561,6 @@ int main(int argc, char** argv) {
                  base::Unretained(send_process.get())));
 
   io_message_loop.Run();
+
   return 0;
 }

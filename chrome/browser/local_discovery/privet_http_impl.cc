@@ -12,10 +12,12 @@
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/local_discovery/privet_constants.h"
 #include "components/cloud_devices/printer_description.h"
 #include "net/base/url_util.h"
 #include "printing/units.h"
+#include "ui/gfx/text_elider.h"
 #include "url/gurl.h"
 
 namespace local_discovery {
@@ -48,6 +50,8 @@ const int kPrivetCancelationTimeoutSeconds = 3;
 const int kPrivetLocalPrintMaxRetries = 2;
 
 const int kPrivetLocalPrintDefaultTimeout = 5;
+
+const size_t kPrivetLocalPrintMaxJobNameLength = 64;
 
 GURL CreatePrivetURL(const std::string& path) {
   GURL url(kUrlPlaceHolder);
@@ -107,8 +111,6 @@ void PrivetInfoOperationImpl::OnError(PrivetURLFetcher* fetcher,
 void PrivetInfoOperationImpl::OnParsedJson(PrivetURLFetcher* fetcher,
                                            const base::DictionaryValue* value,
                                            bool has_error) {
-  if (!has_error)
-    privet_client_->CacheInfo(value);
   callback_.Run(value);
 }
 
@@ -565,10 +567,15 @@ void PrivetLocalPrintOperationImpl::DoSubmitdoc() {
                                     user_);
   }
 
+  base::string16 shortened_jobname;
+
+  gfx::ElideString(base::UTF8ToUTF16(jobname_),
+                   kPrivetLocalPrintMaxJobNameLength,
+                   &shortened_jobname);
+
   if (!jobname_.empty()) {
-    url = net::AppendQueryParameter(url,
-                                    kPrivetURLKeyJobname,
-                                    jobname_);
+    url = net::AppendQueryParameter(
+        url, kPrivetURLKeyJobname, base::UTF16ToUTF8(shortened_jobname));
   }
 
   if (!jobid_.empty()) {
@@ -787,16 +794,9 @@ PrivetHTTPClientImpl::PrivetHTTPClientImpl(
     const std::string& name,
     const net::HostPortPair& host_port,
     net::URLRequestContextGetter* request_context)
-    : name_(name),
-      fetcher_factory_(request_context),
-      host_port_(host_port) {
-}
+    : name_(name), request_context_(request_context), host_port_(host_port) {}
 
 PrivetHTTPClientImpl::~PrivetHTTPClientImpl() {
-}
-
-const base::DictionaryValue* PrivetHTTPClientImpl::GetCachedInfo() const {
-  return cached_info_.get();
 }
 
 scoped_ptr<PrivetRegisterOperation>
@@ -861,21 +861,12 @@ scoped_ptr<PrivetURLFetcher> PrivetHTTPClientImpl::CreateURLFetcher(
   replacements.SetHostStr(host_port_.host());
   std::string port(base::IntToString(host_port_.port()));  // Keep string alive.
   replacements.SetPortStr(port);
-  return fetcher_factory_.CreateURLFetcher(url.ReplaceComponents(replacements),
-                                           request_type, delegate);
+  return scoped_ptr<PrivetURLFetcher>(
+      new PrivetURLFetcher(url.ReplaceComponents(replacements),
+                           request_type,
+                           request_context_.get(),
+                           delegate));
 }
-
-void PrivetHTTPClientImpl::CacheInfo(const base::DictionaryValue* cached_info) {
-  cached_info_.reset(cached_info->DeepCopy());
-  std::string token;
-  if (cached_info_->GetString(kPrivetInfoKeyToken, &token)) {
-    fetcher_factory_.set_token(token);
-  }
-}
-
-bool PrivetHTTPClientImpl::HasToken() const {
-  return fetcher_factory_.get_token() != "";
-};
 
 void PrivetHTTPClientImpl::RefreshPrivetToken(
     const PrivetURLFetcher::TokenCallback& callback) {

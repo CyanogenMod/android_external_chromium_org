@@ -48,11 +48,11 @@
 #
 # START OVERRIDES HERE
 
-# Skia r13323 (Implement correct clipping for image filters) altered the 
-# images for the following layout tests:
-crbug.com/341448 svg/W3C-SVG-1.1/filters-gauss-01-b.svg [ ImageOnlyFailure ]
-crbug.com/341448 svg/W3C-SVG-1.1/filters-morph-01-f.svg [ ImageOnlyFailure ]
-crbug.com/341448 svg/batik/text/smallFonts.svg [ ImageOnlyFailure ]
-crbug.com/341448 svg/batik/text/textFeatures.svg [ ImageOnlyFailure ]
+# The Skia roll to r13482 altered the following layout tests:
+crbug.com/344497 [ Win ] virtual/deferred/fast/images/webp-color-profile-lossy.html [ ImageOnlyFailure ]
+
+# Skia 13798 change to spot lights
+crbug.com/352628 css3/filters/effect-combined-hw.html [ ImageOnlyFailure ]
+crbug.com/352628 css3/filters/effect-reference-ordering-hw.html [ ImageOnlyFailure ]
 
 # END OVERRIDES HERE (this line ensures that the file is newline-terminated)

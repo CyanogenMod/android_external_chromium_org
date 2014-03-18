@@ -15,10 +15,20 @@
 #endif
 
 namespace aura {
+class WindowTreeHost;
 namespace test {
 class AuraTestHelper;
 }
 }
+
+namespace ui {
+class EventProcessor;
+}
+
+namespace wm {
+class WMState;
+}
+
 
 namespace views {
 
@@ -48,6 +58,9 @@ class ViewsTestBase : public testing::Test {
 
   base::MessageLoopForUI* message_loop() { return &message_loop_; }
 
+  ui::EventProcessor* event_processor();
+  aura::WindowTreeHost* host();
+
   // Returns a context view. In aura builds, this will be the
   // RootWindow. Everywhere else, NULL.
   gfx::NativeView GetContext();
@@ -56,7 +69,7 @@ class ViewsTestBase : public testing::Test {
   base::MessageLoopForUI message_loop_;
   scoped_ptr<TestViewsDelegate> views_delegate_;
   scoped_ptr<aura::test::AuraTestHelper> aura_test_helper_;
-  scoped_ptr<views::corewm::WMState> wm_state_;
+  scoped_ptr<wm::WMState> wm_state_;
   bool setup_called_;
   bool teardown_called_;
 

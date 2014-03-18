@@ -18,13 +18,6 @@ namespace chrome_variations {
 
 namespace {
 
-// Computes a hash of the serialized variations seed data.
-// TODO(asvitkine): Remove this once the seed signature is ubiquitous.
-std::string HashSeed(const std::string& seed_data) {
-  const std::string sha1 = base::SHA1HashString(seed_data);
-  return base::HexEncode(sha1.data(), sha1.size());
-}
-
 // Signature verification is disabled on mobile platforms for now, since it
 // adds about ~15ms to the startup time on mobile (vs. a couple ms on desktop).
 bool SignatureVerificationEnabled() {
@@ -66,55 +59,55 @@ const uint8_t kPublicKey[] = {
 };
 
 // Note: UMA histogram enum - don't re-order or remove entries.
-enum VariationSeedSignatureState {
-  VARIATIONS_SEED_SIGNATURE_MISSING,
-  VARIATIONS_SEED_SIGNATURE_DECODE_FAILED,
-  VARIATIONS_SEED_SIGNATURE_INVALID_SIGNATURE,
-  VARIATIONS_SEED_SIGNATURE_INVALID_SEED,
-  VARIATIONS_SEED_SIGNATURE_VALID,
-  VARIATIONS_SEED_SIGNATURE_ENUM_SIZE,
-};
-
-// Verifies a variations seed (the serialized proto bytes) with the specified
-// base-64 encoded signate that was received from the server and returns the
-// result. The signature is assumed to be an "ECDSA with SHA-256" signature
-// (see kECDSAWithSHA256AlgorithmID above).
-VariationSeedSignatureState VerifySeedSignature(
-    const std::string& seed_bytes,
-    const std::string& base64_seed_signature) {
-  if (base64_seed_signature.empty())
-    return VARIATIONS_SEED_SIGNATURE_MISSING;
-
-  std::string signature;
-  if (!base::Base64Decode(base64_seed_signature, &signature))
-    return VARIATIONS_SEED_SIGNATURE_DECODE_FAILED;
-
-  crypto::SignatureVerifier verifier;
-  if (!verifier.VerifyInit(
-          kECDSAWithSHA256AlgorithmID, sizeof(kECDSAWithSHA256AlgorithmID),
-          reinterpret_cast<const uint8*>(signature.data()), signature.size(),
-          kPublicKey, arraysize(kPublicKey))) {
-    return VARIATIONS_SEED_SIGNATURE_INVALID_SIGNATURE;
-  }
-
-  verifier.VerifyUpdate(reinterpret_cast<const uint8*>(seed_bytes.data()),
-                        seed_bytes.size());
-  if (verifier.VerifyFinal())
-    return VARIATIONS_SEED_SIGNATURE_VALID;
-  return VARIATIONS_SEED_SIGNATURE_INVALID_SEED;
-}
-
-// Note: UMA histogram enum - don't re-order or remove entries.
 enum VariationSeedEmptyState {
   VARIATIONS_SEED_NOT_EMPTY,
   VARIATIONS_SEED_EMPTY,
   VARIATIONS_SEED_CORRUPT,
+  VARIATIONS_SEED_INVALID_SIGNATURE,
   VARIATIONS_SEED_EMPTY_ENUM_SIZE,
 };
 
 void RecordVariationSeedEmptyHistogram(VariationSeedEmptyState state) {
   UMA_HISTOGRAM_ENUMERATION("Variations.SeedEmpty", state,
                             VARIATIONS_SEED_EMPTY_ENUM_SIZE);
+}
+
+// Note: UMA histogram enum - don't re-order or remove entries.
+enum VariationsSeedDateChangeState {
+  SEED_DATE_NO_OLD_DATE,
+  SEED_DATE_NEW_DATE_OLDER,
+  SEED_DATE_SAME_DAY,
+  SEED_DATE_NEW_DAY,
+  SEED_DATE_ENUM_SIZE,
+};
+
+// Truncates a time to the start of the day in UTC. If given a time representing
+// 2014-03-11 10:18:03.1 UTC, it will return a time representing
+// 2014-03-11 00:00:00.0 UTC.
+base::Time TruncateToUTCDay(const base::Time& time) {
+  base::Time::Exploded exploded;
+  time.UTCExplode(&exploded);
+  exploded.hour = 0;
+  exploded.minute = 0;
+  exploded.second = 0;
+  exploded.millisecond = 0;
+
+  return base::Time::FromUTCExploded(exploded);
+}
+
+VariationsSeedDateChangeState GetSeedDateChangeState(
+    const base::Time& server_seed_date,
+    const base::Time& stored_seed_date) {
+  if (server_seed_date < stored_seed_date)
+    return SEED_DATE_NEW_DATE_OLDER;
+
+  if (TruncateToUTCDay(server_seed_date) !=
+      TruncateToUTCDay(stored_seed_date)) {
+    // The server date is earlier than the stored date, and they are from
+    // different UTC days, so |server_seed_date| is a valid new day.
+    return SEED_DATE_NEW_DAY;
+  }
+  return SEED_DATE_SAME_DAY;
 }
 
 }  // namespace
@@ -134,12 +127,9 @@ bool VariationsSeedStore::LoadSeed(VariationsSeed* seed) {
     return false;
   }
 
-  const std::string hash_from_pref =
-      local_state_->GetString(prefs::kVariationsSeedHash);
   // If the decode process fails, assume the pref value is corrupt and clear it.
   std::string seed_data;
   if (!base::Base64Decode(base64_seed_data, &seed_data) ||
-      (!hash_from_pref.empty() && HashSeed(seed_data) != hash_from_pref) ||
       !seed->ParseFromString(seed_data)) {
     VLOG(1) << "Variations seed data in local pref is corrupt, clearing the "
             << "pref.";
@@ -148,13 +138,20 @@ bool VariationsSeedStore::LoadSeed(VariationsSeed* seed) {
     return false;
   }
 
-  if (SignatureVerificationEnabled()) {
-    const std::string base64_seed_signature =
-        local_state_->GetString(prefs::kVariationsSeedSignature);
-    const VariationSeedSignatureState signature_state =
-        VerifySeedSignature(seed_data, base64_seed_signature);
-    UMA_HISTOGRAM_ENUMERATION("Variations.LoadSeedSignature", signature_state,
+  const std::string base64_seed_signature =
+      local_state_->GetString(prefs::kVariationsSeedSignature);
+  const VerifySignatureResult result =
+      VerifySeedSignature(seed_data, base64_seed_signature);
+  if (result != VARIATIONS_SEED_SIGNATURE_ENUM_SIZE) {
+    UMA_HISTOGRAM_ENUMERATION("Variations.LoadSeedSignature", result,
                               VARIATIONS_SEED_SIGNATURE_ENUM_SIZE);
+    if (result != VARIATIONS_SEED_SIGNATURE_VALID) {
+      VLOG(1) << "Variations seed signature in local pref missing or invalid "
+              << "with result: " << result << ". Clearing the pref.";
+      ClearPrefs();
+      RecordVariationSeedEmptyHistogram(VARIATIONS_SEED_INVALID_SIGNATURE);
+      return false;
+    }
   }
 
   variations_serial_number_ = seed->serial_number();
@@ -179,25 +176,52 @@ bool VariationsSeedStore::StoreSeedData(
     return false;
   }
 
-  if (SignatureVerificationEnabled()) {
-    const VariationSeedSignatureState signature_state =
-        VerifySeedSignature(seed_data, base64_seed_signature);
-    UMA_HISTOGRAM_ENUMERATION("Variations.StoreSeedSignature", signature_state,
+  const VerifySignatureResult result =
+      VerifySeedSignature(seed_data, base64_seed_signature);
+  if (result != VARIATIONS_SEED_SIGNATURE_ENUM_SIZE) {
+    UMA_HISTOGRAM_ENUMERATION("Variations.StoreSeedSignature", result,
                               VARIATIONS_SEED_SIGNATURE_ENUM_SIZE);
+    if (result != VARIATIONS_SEED_SIGNATURE_VALID) {
+      VLOG(1) << "Variations seed signature missing or invalid with result: "
+              << result << ". Rejecting the seed.";
+      return false;
+    }
   }
 
   std::string base64_seed_data;
   base::Base64Encode(seed_data, &base64_seed_data);
 
+  // TODO(asvitkine): This pref is no longer being used. Remove it completely
+  // in a couple of releases.
+  local_state_->ClearPref(prefs::kVariationsSeedHash);
+
   local_state_->SetString(prefs::kVariationsSeed, base64_seed_data);
-  local_state_->SetString(prefs::kVariationsSeedHash, HashSeed(seed_data));
-  local_state_->SetInt64(prefs::kVariationsSeedDate,
-                         date_fetched.ToInternalValue());
+  UpdateSeedDateAndLogDayChange(date_fetched);
   local_state_->SetString(prefs::kVariationsSeedSignature,
                           base64_seed_signature);
   variations_serial_number_ = seed.serial_number();
 
   return true;
+}
+
+void VariationsSeedStore::UpdateSeedDateAndLogDayChange(
+    const base::Time& server_date_fetched) {
+  VariationsSeedDateChangeState date_change = SEED_DATE_NO_OLD_DATE;
+
+  if (local_state_->HasPrefPath(prefs::kVariationsSeedDate)) {
+    const int64 stored_date_value =
+        local_state_->GetInt64(prefs::kVariationsSeedDate);
+    const base::Time stored_date =
+        base::Time::FromInternalValue(stored_date_value);
+
+    date_change = GetSeedDateChangeState(server_date_fetched, stored_date);
+  }
+
+  UMA_HISTOGRAM_ENUMERATION("Variations.SeedDateChange", date_change,
+                            SEED_DATE_ENUM_SIZE);
+
+  local_state_->SetInt64(prefs::kVariationsSeedDate,
+                         server_date_fetched.ToInternalValue());
 }
 
 // static
@@ -214,6 +238,35 @@ void VariationsSeedStore::ClearPrefs() {
   local_state_->ClearPref(prefs::kVariationsSeedDate);
   local_state_->ClearPref(prefs::kVariationsSeedHash);
   local_state_->ClearPref(prefs::kVariationsSeedSignature);
+}
+
+VariationsSeedStore::VerifySignatureResult
+VariationsSeedStore::VerifySeedSignature(
+    const std::string& seed_bytes,
+    const std::string& base64_seed_signature) {
+  if (!SignatureVerificationEnabled())
+    return VARIATIONS_SEED_SIGNATURE_ENUM_SIZE;
+
+  if (base64_seed_signature.empty())
+    return VARIATIONS_SEED_SIGNATURE_MISSING;
+
+  std::string signature;
+  if (!base::Base64Decode(base64_seed_signature, &signature))
+    return VARIATIONS_SEED_SIGNATURE_DECODE_FAILED;
+
+  crypto::SignatureVerifier verifier;
+  if (!verifier.VerifyInit(
+          kECDSAWithSHA256AlgorithmID, sizeof(kECDSAWithSHA256AlgorithmID),
+          reinterpret_cast<const uint8*>(signature.data()), signature.size(),
+          kPublicKey, arraysize(kPublicKey))) {
+    return VARIATIONS_SEED_SIGNATURE_INVALID_SIGNATURE;
+  }
+
+  verifier.VerifyUpdate(reinterpret_cast<const uint8*>(seed_bytes.data()),
+                        seed_bytes.size());
+  if (verifier.VerifyFinal())
+    return VARIATIONS_SEED_SIGNATURE_VALID;
+  return VARIATIONS_SEED_SIGNATURE_INVALID_SEED;
 }
 
 }  // namespace chrome_variations

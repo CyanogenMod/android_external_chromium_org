@@ -14,8 +14,8 @@
 
 #if defined(USE_AURA)
 #include "chrome/browser/ui/host_desktop.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 namespace {
@@ -63,7 +63,7 @@ void ShowCertificateViewer(content::WebContents* web_contents,
       chrome::HOST_DESKTOP_TYPE_ASH) {
     ShowCertificateViewerImpl(
         web_contents,
-        parent->GetDispatcher()->host()->GetAcceleratedWidget(), cert);
+        parent->GetHost()->GetAcceleratedWidget(), cert);
   } else {
     NOTIMPLEMENTED();
   }

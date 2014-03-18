@@ -26,10 +26,10 @@
 #include "third_party/icu/source/i18n/unicode/timezone.h"
 #include "ui/gfx/image/image_skia.h"
 
-class CommandLine;
 class PrefRegistrySimple;
 
 namespace base {
+class CommandLine;
 class SequencedTaskRunner;
 }
 
@@ -86,7 +86,7 @@ class WallpaperManager: public content::NotificationObserver {
     void SetWallpaperCache(const std::string& user_id,
                            const gfx::ImageSkia& image);
 
-    void ClearWallpaperCache();
+    void ClearDisposableWallpaperCache();
 
    private:
     WallpaperManager* wallpaper_manager_;  // not owned
@@ -107,7 +107,7 @@ class WallpaperManager: public content::NotificationObserver {
   // request. Therefore it's created empty, and updated being enqueued.
   //
   // PendingWallpaper is owned by WallpaperManager, but reference to this object
-  // is passed to other threads by PoskTask() calls, therefore it is
+  // is passed to other threads by PostTask() calls, therefore it is
   // RefCountedThreadSafe.
   class PendingWallpaper : public base::RefCountedThreadSafe<PendingWallpaper> {
    public:
@@ -171,7 +171,7 @@ class WallpaperManager: public content::NotificationObserver {
   WallpaperManager();
   virtual ~WallpaperManager();
 
-  void set_command_line_for_testing(CommandLine* command_line) {
+  void set_command_line_for_testing(base::CommandLine* command_line) {
     command_line_for_testing_ = command_line;
   }
 
@@ -189,8 +189,9 @@ class WallpaperManager: public content::NotificationObserver {
   // wallpaper of logged in user.
   void EnsureLoggedInUserWallpaperLoaded();
 
-  // Clears ONLINE and CUSTOM wallpaper cache.
-  void ClearWallpaperCache();
+  // Clears disposable ONLINE and CUSTOM wallpaper cache. At multi profile
+  // world, logged in users' wallpaper cache is not disposable.
+  void ClearDisposableWallpaperCache();
 
   // Returns custom wallpaper path. Append |sub_dir|, |user_id_hash| and |file|
   // to custom wallpaper directory.
@@ -280,7 +281,7 @@ class WallpaperManager: public content::NotificationObserver {
 
   // Updates current wallpaper. It may switch the size of wallpaper based on the
   // current display's resolution. (asynchronously with zero delay)
-  void UpdateWallpaper();
+  void UpdateWallpaper(bool clear_cache);
 
   // Adds given observer to the list.
   void AddObserver(Observer* observer);
@@ -288,10 +289,30 @@ class WallpaperManager: public content::NotificationObserver {
   // Removes given observer from the list.
   void RemoveObserver(Observer* observer);
 
+  // Returns whether a wallpaper policy is enforced for |user_id|.
+  bool IsPolicyControlled(const std::string& user_id) const;
+
+  // Called when a wallpaper policy has been set for |user_id|.  Blocks user
+  // from changing the wallpaper.
+  void OnPolicySet(const std::string& policy, const std::string& user_id);
+
+  // Called when the wallpaper policy has been cleared for |user_id|.
+  void OnPolicyCleared(const std::string& policy, const std::string& user_id);
+
+  // Called when the policy-set wallpaper has been fetched.  Initiates decoding
+  // of the JPEG |data| with a callback to SetPolicyControlledWallpaper().
+  void OnPolicyFetched(const std::string& policy,
+                       const std::string& user_id,
+                       scoped_ptr<std::string> data);
+
  private:
   friend class TestApi;
   friend class WallpaperManagerBrowserTest;
   typedef std::map<std::string, gfx::ImageSkia> CustomWallpaperMap;
+
+  // Set |wallpaper| controlled by policy.
+  void SetPolicyControlledWallpaper(const std::string& user_id,
+                                    const UserImage& wallpaper);
 
   // Gets encoded wallpaper from cache. Returns true if success.
   bool GetWallpaperFromCache(const std::string& user_id,
@@ -333,7 +354,7 @@ class WallpaperManager: public content::NotificationObserver {
   void EnsureCustomWallpaperDirectories(const std::string& user_id_hash);
 
   // Gets the CommandLine representing the current process's command line.
-  CommandLine* GetComandLine();
+  base::CommandLine* GetComandLine();
 
   // Initialize wallpaper of registered device after device policy is trusted.
   // Note that before device is enrolled, it proceeds with untrusted setting.
@@ -373,7 +394,8 @@ class WallpaperManager: public content::NotificationObserver {
 
   // Gets wallpaper information of |user_id| from Local State or memory. Returns
   // false if wallpaper information is not found.
-  bool GetUserWallpaperInfo(const std::string& user_id, WallpaperInfo* info);
+  bool GetUserWallpaperInfo(const std::string& user_id,
+                            WallpaperInfo* info) const;
 
   // Sets wallpaper to the decoded wallpaper if |update_wallpaper| is true.
   // Otherwise, cache wallpaper to memory if not logged in.
@@ -459,7 +481,7 @@ class WallpaperManager: public content::NotificationObserver {
   WallpaperInfo current_user_wallpaper_info_;
 
   // If non-NULL, used in place of the real command line.
-  CommandLine* command_line_for_testing_;
+  base::CommandLine* command_line_for_testing_;
 
   // Caches wallpapers of users. Accessed only on UI thread.
   CustomWallpaperMap wallpaper_cache_;

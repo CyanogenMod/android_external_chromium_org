@@ -170,6 +170,7 @@ void TiledLayerImpl::AppendQuads(QuadSink* quad_sink,
       for (int i = left; i <= right; ++i) {
         DrawableTile* tile = TileAt(i, j);
         gfx::Rect tile_rect = tiler_->tile_bounds(i, j);
+        gfx::Rect visible_tile_rect = tile_rect;
         SkColor border_color;
         float border_width;
 
@@ -182,10 +183,12 @@ void TiledLayerImpl::AppendQuads(QuadSink* quad_sink,
         }
         scoped_ptr<DebugBorderDrawQuad> debug_border_quad =
             DebugBorderDrawQuad::Create();
-        debug_border_quad->SetNew(
-            shared_quad_state, tile_rect, border_color, border_width);
-        quad_sink->Append(debug_border_quad.PassAs<DrawQuad>(),
-                          append_quads_data);
+        debug_border_quad->SetNew(shared_quad_state,
+                                  tile_rect,
+                                  visible_tile_rect,
+                                  border_color,
+                                  border_width);
+        quad_sink->MaybeAppend(debug_border_quad.PassAs<DrawQuad>());
       }
     }
   }
@@ -199,6 +202,7 @@ void TiledLayerImpl::AppendQuads(QuadSink* quad_sink,
       gfx::Rect tile_rect = tiler_->tile_bounds(i, j);
       gfx::Rect display_rect = tile_rect;
       tile_rect.Intersect(content_rect);
+      gfx::Rect visible_tile_rect = tile_rect;
 
       // Skip empty tiles.
       if (tile_rect.IsEmpty())
@@ -217,9 +221,8 @@ void TiledLayerImpl::AppendQuads(QuadSink* quad_sink,
         scoped_ptr<CheckerboardDrawQuad> checkerboard_quad =
             CheckerboardDrawQuad::Create();
         checkerboard_quad->SetNew(
-            shared_quad_state, tile_rect, checker_color);
-        if (quad_sink->Append(checkerboard_quad.PassAs<DrawQuad>(),
-                              append_quads_data))
+            shared_quad_state, tile_rect, visible_tile_rect, checker_color);
+        if (quad_sink->MaybeAppend(checkerboard_quad.PassAs<DrawQuad>()))
           append_quads_data->num_missing_tiles++;
 
         continue;
@@ -244,11 +247,12 @@ void TiledLayerImpl::AppendQuads(QuadSink* quad_sink,
       quad->SetNew(shared_quad_state,
                    tile_rect,
                    tile_opaque_rect,
+                   visible_tile_rect,
                    tile->resource_id(),
                    tex_coord_rect,
                    texture_size,
                    tile->contents_swizzled());
-      quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
+      quad_sink->MaybeAppend(quad.PassAs<DrawQuad>());
     }
   }
 }

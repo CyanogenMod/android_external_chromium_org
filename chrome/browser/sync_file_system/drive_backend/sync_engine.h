@@ -5,19 +5,22 @@
 #ifndef CHROME_BROWSER_SYNC_FILE_SYSTEM_DRIVE_BACKEND_SYNC_ENGINE_H_
 #define CHROME_BROWSER_SYNC_FILE_SYSTEM_DRIVE_BACKEND_SYNC_ENGINE_H_
 
+#include <set>
+#include <string>
+
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "chrome/browser/drive/drive_notification_observer.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task_manager.h"
 #include "chrome/browser/sync_file_system/local_change_processor.h"
 #include "chrome/browser/sync_file_system/remote_file_sync_service.h"
-#include "chrome/browser/sync_file_system/sync_task_manager.h"
 #include "net/base/network_change_notifier.h"
 
 class ExtensionServiceInterface;
-class ProfileOAuth2TokenService;
+class SigninManagerBase;
 
 namespace base {
 class SequencedTaskRunner;
@@ -85,9 +88,15 @@ class SyncEngine : public RemoteFileSyncService,
   virtual scoped_ptr<base::ListValue> DumpFiles(const GURL& origin) OVERRIDE;
   virtual scoped_ptr<base::ListValue> DumpDatabase() OVERRIDE;
   virtual void SetSyncEnabled(bool enabled) OVERRIDE;
-  virtual SyncStatusCode SetConflictResolutionPolicy(
+  virtual SyncStatusCode SetDefaultConflictResolutionPolicy(
       ConflictResolutionPolicy policy) OVERRIDE;
-  virtual ConflictResolutionPolicy GetConflictResolutionPolicy() const OVERRIDE;
+  virtual SyncStatusCode SetConflictResolutionPolicy(
+      const GURL& origin,
+      ConflictResolutionPolicy policy) OVERRIDE;
+  virtual ConflictResolutionPolicy GetDefaultConflictResolutionPolicy()
+      const OVERRIDE;
+  virtual ConflictResolutionPolicy GetConflictResolutionPolicy(
+      const GURL& origin) const OVERRIDE;
   virtual void GetRemoteVersions(
       const fileapi::FileSystemURL& url,
       const RemoteVersionsCallback& callback) OVERRIDE;
@@ -139,7 +148,7 @@ class SyncEngine : public RemoteFileSyncService,
              scoped_ptr<drive::DriveUploaderInterface> drive_uploader,
              drive::DriveNotificationManager* notification_manager,
              ExtensionServiceInterface* extension_service,
-             ProfileOAuth2TokenService* auth_token_service,
+             SigninManagerBase* signin_manager,
              leveldb::Env* env_override);
 
   void DoDisableApp(const std::string& app_id,
@@ -180,10 +189,10 @@ class SyncEngine : public RemoteFileSyncService,
   // These external services are not owned by SyncEngine.
   // The owner of the SyncEngine is responsible for their lifetime.
   // I.e. the owner should declare the dependency explicitly by calling
-  // BrowserContextKeyedService::DependsOn().
+  // KeyedService::DependsOn().
   drive::DriveNotificationManager* notification_manager_;
   ExtensionServiceInterface* extension_service_;
-  ProfileOAuth2TokenService* auth_token_service_;
+  SigninManagerBase* signin_manager_;
 
   ObserverList<SyncServiceObserver> service_observers_;
   ObserverList<FileStatusObserver> file_status_observers_;
@@ -197,7 +206,7 @@ class SyncEngine : public RemoteFileSyncService,
   base::TimeTicks time_to_check_changes_;
 
   bool sync_enabled_;
-  ConflictResolutionPolicy conflict_resolution_policy_;
+  ConflictResolutionPolicy default_conflict_resolution_policy_;
   bool network_available_;
 
   scoped_ptr<SyncTaskManager> task_manager_;

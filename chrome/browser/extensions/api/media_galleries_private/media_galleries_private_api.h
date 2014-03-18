@@ -11,13 +11,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/extensions/api/media_galleries_private/gallery_watch_state_tracker.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences.h"
 #include "chrome/common/extensions/api/media_galleries_private.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
 
 class Profile;
+
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
 
@@ -25,20 +29,21 @@ class MediaGalleriesPrivateEventRouter;
 
 // The profile-keyed service that manages the media galleries private extension
 // API. Created at the same time as the Profile.
-class MediaGalleriesPrivateAPI : public ProfileKeyedAPI,
+class MediaGalleriesPrivateAPI : public BrowserContextKeyedAPI,
                                  public EventRouter::Observer {
  public:
-  explicit MediaGalleriesPrivateAPI(Profile* profile);
+  explicit MediaGalleriesPrivateAPI(content::BrowserContext* context);
   virtual ~MediaGalleriesPrivateAPI();
 
-  // BrowserContextKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<MediaGalleriesPrivateAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<MediaGalleriesPrivateAPI>*
+      GetFactoryInstance();
 
   // Convenience method to get the MediaGalleriesPrivateAPI for a profile.
-  static MediaGalleriesPrivateAPI* Get(Profile* profile);
+  static MediaGalleriesPrivateAPI* Get(content::BrowserContext* context);
 
   // EventRouter::Observer implementation.
   virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;
@@ -47,11 +52,11 @@ class MediaGalleriesPrivateAPI : public ProfileKeyedAPI,
   GalleryWatchStateTracker* GetGalleryWatchStateTracker();
 
  private:
-  friend class ProfileKeyedAPIFactory<MediaGalleriesPrivateAPI>;
+  friend class BrowserContextKeyedAPIFactory<MediaGalleriesPrivateAPI>;
 
   void MaybeInitializeEventRouterAndTracker();
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "MediaGalleriesPrivateAPI";
   }

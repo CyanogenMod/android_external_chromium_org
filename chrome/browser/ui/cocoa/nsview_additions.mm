@@ -3,9 +3,11 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
+#include "base/mac/mac_util.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
 #include "chrome/common/chrome_switches.h"
-#include "content/public/common/content_switches.h"
+#include "ui/base/ui_base_switches.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 #include "base/logging.h"
 
@@ -88,22 +90,49 @@
     [child cr_recursivelySetNeedsDisplay:flag];
 }
 
-- (BOOL)cr_supportsLayerSquashing {
-  return [self respondsToSelector:@selector(setCanDrawSubviewsIntoLayer:)];
+- (void)cr_setWantsLayer:(BOOL)wantsLayer {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableCoreAnimation))
+    return;
+
+  // Dynamically removing layers on SnowLeopard will sometimes result in
+  // crashes. Once a view has a layer on SnowLeopard, it is stuck with it.
+  // http://crbug.com/348328
+  if (!wantsLayer && base::mac::IsOSSnowLeopard())
+    return;
+
+  [self setWantsLayer:wantsLayer];
 }
 
-- (void)cr_setWantsLayer:(BOOL)wantsLayer
-           withSquashing:(BOOL)squashing {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kUseCoreAnimation))
-    return;
-  [self setWantsLayer:wantsLayer];
+static NSView* g_ancestorBeingDrawnFrom = nil;
+static NSView* g_childBeingDrawnTo = nil;
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableCoreAnimationLayerSquashing))
-    return;
-  if ([self cr_supportsLayerSquashing])
-    [self setCanDrawSubviewsIntoLayer:squashing];
+- (void)cr_drawUsingAncestor:(NSView*)ancestorView inRect:(NSRect)rect {
+  gfx::ScopedNSGraphicsContextSaveGState scopedGSState;
+  NSRect frame = [self convertRect:[self bounds] toView:ancestorView];
+  NSAffineTransform* transform = [NSAffineTransform transform];
+  if ([self isFlipped] == [ancestorView isFlipped]) {
+    [transform translateXBy:-NSMinX(frame) yBy:-NSMinY(frame)];
+  } else {
+    [transform translateXBy:-NSMinX(frame) yBy:NSMaxY(frame)];
+    [transform scaleXBy:1.0 yBy:-1.0];
+  }
+  [transform concat];
+
+  // This can be made robust to recursive calls, but is as of yet unneeded.
+  DCHECK(!g_ancestorBeingDrawnFrom && !g_childBeingDrawnTo);
+  g_ancestorBeingDrawnFrom = ancestorView;
+  g_childBeingDrawnTo = self;
+  [ancestorView drawRect:[ancestorView bounds]];
+  g_childBeingDrawnTo = nil;
+  g_ancestorBeingDrawnFrom = nil;
+}
+
+- (NSView*)cr_viewBeingDrawnTo {
+  if (!g_ancestorBeingDrawnFrom)
+    return self;
+  DCHECK(g_ancestorBeingDrawnFrom == self);
+  return g_childBeingDrawnTo;
 }
 
 @end

@@ -74,8 +74,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::CustomContextMenuContext)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_BEGIN(FrameHostMsg_DidFailProvisionalLoadWithError_Params)
-  // The frame ID for the failure report.
-  IPC_STRUCT_MEMBER(int64, frame_id)
   // The WebFrame's uniqueName().
   IPC_STRUCT_MEMBER(base::string16, frame_unique_name)
   // True if this is the top-most frame.
@@ -111,10 +109,6 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_BEGIN_WITH_PARENT(FrameHostMsg_DidCommitProvisionalLoad_Params,
                              content::FrameNavigateParams)
   IPC_STRUCT_TRAITS_PARENT(content::FrameNavigateParams)
-  // The frame ID for this navigation. The frame ID uniquely identifies the
-  // frame the navigation happened in for a given renderer.
-  IPC_STRUCT_MEMBER(int64, frame_id)
-
   // The WebFrame's uniqueName().
   IPC_STRUCT_MEMBER(base::string16, frame_unique_name)
 
@@ -249,6 +243,14 @@ IPC_STRUCT_BEGIN(FrameMsg_Navigate_Params)
   IPC_STRUCT_MEMBER(base::TimeTicks, browser_navigation_start)
 IPC_STRUCT_END()
 
+IPC_STRUCT_BEGIN(FrameHostMsg_OpenURL_Params)
+  IPC_STRUCT_MEMBER(GURL, url)
+  IPC_STRUCT_MEMBER(content::Referrer, referrer)
+  IPC_STRUCT_MEMBER(WindowOpenDisposition, disposition)
+  IPC_STRUCT_MEMBER(bool, should_replace_current_entry)
+  IPC_STRUCT_MEMBER(bool, user_gesture)
+IPC_STRUCT_END()
+
 // -----------------------------------------------------------------------------
 // Messages sent from the browser to the renderer.
 
@@ -289,35 +291,55 @@ IPC_MESSAGE_ROUTED2(FrameMsg_CustomContextMenuAction,
 // existing navigation.
 IPC_MESSAGE_ROUTED1(FrameMsg_Navigate, FrameMsg_Navigate_Params)
 
+// Instructs the renderer to invoke the frame's beforeunload event handler.
+// Expects the result to be returned via FrameHostMsg_BeforeUnload_ACK.
+IPC_MESSAGE_ROUTED0(FrameMsg_BeforeUnload)
+
+// Instructs the frame to swap out for a cross-site transition, including
+// running the unload event handler. Expects a SwapOut_ACK message when
+// finished.
+IPC_MESSAGE_ROUTED0(FrameMsg_SwapOut)
+
+// Request for the renderer to insert CSS into the frame.
+IPC_MESSAGE_ROUTED1(FrameMsg_CSSInsertRequest,
+                    std::string  /* css */)
+
+// Request for the renderer to execute JavaScript in the frame's context.
+//
+// javascript is the string containing the JavaScript to be executed in the
+// target frame's context.
+//
+// If the third parameter is true the result is sent back to the browser using
+// the message FrameHostMsg_JavaScriptExecuteResponse.
+// FrameHostMsg_JavaScriptExecuteResponse is passed the ID parameter so that the
+// host can uniquely identify the request.
+IPC_MESSAGE_ROUTED3(FrameMsg_JavaScriptExecuteRequest,
+                    base::string16,  /* javascript */
+                    int,  /* ID */
+                    bool  /* if true, a reply is requested */)
+
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
 
-// Sent by the renderer when a child frame is created in the renderer. The
-// |parent_frame_id| and |frame_id| are NOT routing ids. They are
-// renderer-allocated identifiers used for tracking a frame's creation.
+// Sent by the renderer when a child frame is created in the renderer.
 //
 // Each of these messages will have a corresponding FrameHostMsg_Detach message
 // sent when the frame is detached from the DOM.
-//
-// TOOD(ajwong): replace parent_render_frame_id and frame_id with just the
-// routing ids.
-IPC_SYNC_MESSAGE_CONTROL4_1(FrameHostMsg_CreateChildFrame,
-                            int32 /* parent_render_frame_id */,
-                            int64 /* parent_frame_id */,
-                            int64 /* frame_id */,
+IPC_SYNC_MESSAGE_CONTROL2_1(FrameHostMsg_CreateChildFrame,
+                            int32 /* parent_routing_id */,
                             std::string /* frame_name */,
-                            int /* new_render_frame_id */)
+                            int32 /* new_routing_id */)
 
 // Sent by the renderer to the parent RenderFrameHost when a child frame is
 // detached from the DOM.
-IPC_MESSAGE_ROUTED2(FrameHostMsg_Detach,
-                    int64 /* parent_frame_id */,
-                    int64 /* frame_id */)
+IPC_MESSAGE_ROUTED0(FrameHostMsg_Detach)
+
+// Sent by the renderer when the frame becomes focused.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_FrameFocused)
 
 // Sent when the renderer starts a provisional load for a frame.
-IPC_MESSAGE_ROUTED4(FrameHostMsg_DidStartProvisionalLoadForFrame,
-                    int64 /* frame_id */,
-                    int64 /* parent_frame_id */,
+IPC_MESSAGE_ROUTED3(FrameHostMsg_DidStartProvisionalLoadForFrame,
+                    int32 /* parent_routing_id */,
                     bool /* true if it is the main frame */,
                     GURL /* url */)
 
@@ -338,11 +360,9 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_DidCommitProvisionalLoad,
                     FrameHostMsg_DidCommitProvisionalLoad_Params)
 
 // Notifies the browser that a document has been loaded.
-IPC_MESSAGE_ROUTED1(FrameHostMsg_DidFinishDocumentLoad,
-                    int64 /* frame_id */)
+IPC_MESSAGE_ROUTED0(FrameHostMsg_DidFinishDocumentLoad)
 
-IPC_MESSAGE_ROUTED5(FrameHostMsg_DidFailLoadWithError,
-                    int64 /* frame_id */,
+IPC_MESSAGE_ROUTED4(FrameHostMsg_DidFailLoadWithError,
                     GURL /* validated_url */,
                     bool /* is_main_frame */,
                     int /* error_code */,
@@ -356,6 +376,23 @@ IPC_MESSAGE_ROUTED0(FrameHostMsg_DidStartLoading)
 // Sent when the renderer is done loading a page. This corresponds to Blink's
 // notion of the throbber stopping.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_DidStopLoading)
+
+// Requests that the given URL be opened in the specified manner.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_OpenURL, FrameHostMsg_OpenURL_Params)
+
+// Notifies the browser that a frame finished loading.
+IPC_MESSAGE_ROUTED2(FrameHostMsg_DidFinishLoad,
+                    GURL /* validated_url */,
+                    bool /* is_main_frame */)
+
+// Following message is used to communicate the values received by the
+// callback binding the JS to Cpp.
+// An instance of browser that has an automation host listening to it can
+// have a javascript send a native value (string, number, boolean) to the
+// listener in Cpp. (DomAutomationController)
+IPC_MESSAGE_ROUTED2(FrameHostMsg_DomOperationResponse,
+                    std::string  /* json_string */,
+                    int  /* automation_id */)
 
 // Sent to the browser when the renderer detects it is blocked on a pepper
 // plugin message for too long. This is also sent when it becomes unhung
@@ -414,6 +451,14 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_BuffersSwappedACK,
 IPC_MESSAGE_ROUTED1(FrameHostMsg_CompositorFrameSwappedACK,
                     FrameHostMsg_CompositorFrameSwappedACK_Params /* params */)
 
+// Provides the result from handling BeforeUnload.  |proceed| matches the return
+// value of the frame's beforeunload handler: true if the user decided to
+// proceed with leaving the page.
+IPC_MESSAGE_ROUTED3(FrameHostMsg_BeforeUnload_ACK,
+                    bool /* proceed */,
+                    base::TimeTicks /* before_unload_start_time */,
+                    base::TimeTicks /* before_unload_end_time */)
+
 // Indicates that the current frame has swapped out, after a SwapOut message.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_SwapOut_ACK)
 
@@ -426,13 +471,23 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_ReclaimCompositorResources,
 IPC_MESSAGE_ROUTED1(FrameHostMsg_ForwardInputEvent,
                     IPC::WebInputEventPointer /* event */)
 
-// Instructs the frame to swap out for a cross-site transition, including
-// running the unload event handler. Expects a SwapOut_ACK message when
-// finished.
-IPC_MESSAGE_ROUTED0(FrameMsg_SwapOut)
-
 // Used to tell the parent that the user right clicked on an area of the
 // content area, and a context menu should be shown for it. The params
 // object contains information about the node(s) that were selected when the
 // user right clicked.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_ContextMenu, content::ContextMenuParams)
+
+// Initial drawing parameters for a child frame that has been swapped out to
+// another process.
+IPC_MESSAGE_ROUTED2(FrameHostMsg_InitializeChildFrame,
+                    gfx::Rect /* frame_rect */,
+                    float /* scale_factor */)
+
+// Response for FrameMsg_JavaScriptExecuteRequest, sent when a reply was
+// requested. The ID is the parameter supplied to
+// FrameMsg_JavaScriptExecuteRequest. The result has the value returned by the
+// script as its only element, one of Null, Boolean, Integer, Real, Date, or
+// String.
+IPC_MESSAGE_ROUTED2(FrameHostMsg_JavaScriptExecuteResponse,
+                    int  /* id */,
+                    base::ListValue  /* result */)

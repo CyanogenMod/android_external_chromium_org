@@ -11,12 +11,12 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/console.h"
 #include "chrome/renderer/extensions/safe_builtins.h"
 #include "content/public/renderer/render_view.h"
+#include "extensions/common/extension_messages.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebScopedMicrotaskSuppression.h"
 
@@ -245,12 +245,12 @@ v8::Local<v8::Value> ModuleSystem::RequireForJsInner(
       natives->Get(v8::String::NewFromUtf8(
           GetIsolate(), "require", v8::String::kInternalizedString)),
       natives->Get(v8::String::NewFromUtf8(
-            GetIsolate(), "requireNative", v8::String::kInternalizedString)),
+          GetIsolate(), "requireNative", v8::String::kInternalizedString)),
       exports,
       // Libraries that we magically expose to every module.
       console::AsV8Object(),
       natives->Get(v8::String::NewFromUtf8(
-            GetIsolate(), "privates", v8::String::kInternalizedString)),
+          GetIsolate(), "privates", v8::String::kInternalizedString)),
       // Each safe builtin. Keep in order with the arguments in WrapSource.
       context_->safe_builtins()->GetArray(),
       context_->safe_builtins()->GetFunction(),
@@ -475,10 +475,6 @@ void ModuleSystem::SetNativeLazyField(v8::Handle<v8::Object> object,
 }
 
 
-v8::Isolate* ModuleSystem::GetIsolate() const {
-  return context_->isolate();
-}
-
 v8::Handle<v8::Value> ModuleSystem::RunString(v8::Handle<v8::String> code,
                                               v8::Handle<v8::String> name) {
   v8::EscapableHandleScope handle_scope(GetIsolate());
@@ -493,11 +489,11 @@ v8::Handle<v8::Value> ModuleSystem::RunString(v8::Handle<v8::String> code,
   v8::TryCatch try_catch;
   try_catch.SetCaptureMessage(true);
   v8::Handle<v8::Script> script(
-      v8::Script::New(code,
-                      v8::String::NewFromUtf8(GetIsolate(),
-                                              internal_name.c_str(),
-                                              v8::String::kNormalString,
-                                              internal_name.size())));
+      v8::Script::Compile(code,
+                          v8::String::NewFromUtf8(GetIsolate(),
+                                                  internal_name.c_str(),
+                                                  v8::String::kNormalString,
+                                                  internal_name.size())));
   if (try_catch.HasCaught()) {
     HandleException(try_catch);
     return v8::Undefined(GetIsolate());
@@ -558,11 +554,12 @@ v8::Handle<v8::Value> ModuleSystem::RequireNativeFromString(
 v8::Handle<v8::String> ModuleSystem::WrapSource(v8::Handle<v8::String> source) {
   v8::EscapableHandleScope handle_scope(GetIsolate());
   // Keep in order with the arguments in RequireForJsInner.
-  v8::Handle<v8::String> left = v8::String::NewFromUtf8(GetIsolate(),
+  v8::Handle<v8::String> left = v8::String::NewFromUtf8(
+      GetIsolate(),
       "(function(require, requireNative, exports, "
-                "console, privates, "
-                "$Array, $Function, $JSON, $Object, $RegExp, $String) {"
-       "'use strict';");
+      "console, privates,"
+      "$Array, $Function, $JSON, $Object, $RegExp, $String) {"
+      "'use strict';");
   v8::Handle<v8::String> right = v8::String::NewFromUtf8(GetIsolate(), "\n})");
   return handle_scope.Escape(v8::Local<v8::String>(
       v8::String::Concat(left, v8::String::Concat(source, right))));

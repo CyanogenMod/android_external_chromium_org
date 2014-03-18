@@ -43,7 +43,6 @@
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_model_observer_bridge.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_view.h"
-#import "chrome/browser/ui/cocoa/tabs/throbber_view.h"
 #include "chrome/browser/ui/find_bar/find_bar.h"
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
@@ -71,6 +70,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/mac/scoped_ns_disable_screen_updates.h"
 
 using base::UserMetricsAction;
 using content::OpenURLParams;
@@ -92,9 +92,6 @@ const CGFloat kTabOverlap = 19.0;
 
 // The amount by which mini tabs are separated from normal tabs.
 const CGFloat kLastMiniTabSpacing = 2.0;
-
-// The width and height for a tab's icon.
-const CGFloat kIconWidthAndHeight = 16.0;
 
 // The amount by which the new tab button is offset (from the tabs).
 const CGFloat kNewTabButtonOffset = 8.0;
@@ -236,7 +233,7 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
 - (void)addSubviewToPermanentList:(NSView*)aView;
 - (void)regenerateSubviewList;
 - (NSInteger)indexForContentsView:(NSView*)view;
-- (NSImageView*)iconImageViewForContents:(content::WebContents*)contents;
+- (NSImage*)iconImageForContents:(content::WebContents*)contents;
 - (void)updateIconsForContents:(content::WebContents*)contents
                        atIndex:(NSInteger)modelIndex;
 - (void)layoutTabsWithAnimation:(BOOL)animate
@@ -477,6 +474,7 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
     [self addSubviewToPermanentList:dragBlockingView_];
 
     newTabButton_ = [view getNewTabButton];
+    [newTabButton_ setWantsLayer:YES];
     [self addSubviewToPermanentList:newTabButton_];
     [newTabButton_ setTarget:self];
     [newTabButton_ setAction:@selector(clickNewTabButton:)];
@@ -613,9 +611,11 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   NSInteger index = [self indexFromModelIndex:modelIndex];
   TabContentsController* controller = [tabContentsArray_ objectAtIndex:index];
 
+  // Make sure we do not draw any transient arrangements of views.
+  gfx::ScopedNSDisableScreenUpdates ns_disabler;
   // Make sure that any layers that move are not animated to their new
   // positions.
-  ScopedCAActionDisabler disabler;
+  ScopedCAActionDisabler ca_disabler;
 
   // Resize the new view to fit the window. Calling |view| may lazily
   // instantiate the TabContentsController from the nib. Until we call
@@ -784,6 +784,14 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   return -1;
 }
 
+- (NSArray*)selectedViews {
+  NSMutableArray* views = [NSMutableArray arrayWithCapacity:[tabArray_ count]];
+  for (TabController* tab in tabArray_.get()) {
+    if ([tab selected])
+      [views addObject:[tab tabView]];
+  }
+  return views;
+}
 
 // Returns the view at the given index, using the array of TabControllers to
 // get the associated view. Returns nil if out of range.
@@ -1507,7 +1515,7 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
 
 // A helper routine for creating an NSImageView to hold the favicon or app icon
 // for |contents|.
-- (NSImageView*)iconImageViewForContents:(content::WebContents*)contents {
+- (NSImage*)iconImageForContents:(content::WebContents*)contents {
   extensions::TabHelper* extensions_tab_helper =
       extensions::TabHelper::FromWebContents(contents);
   BOOL isApp = extensions_tab_helper->is_app();
@@ -1527,10 +1535,8 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   // from an SkBitmap. Either way, just show the default.
   if (!image)
     image = defaultFavicon_.get();
-  NSRect frame = NSMakeRect(0, 0, kIconWidthAndHeight, kIconWidthAndHeight);
-  NSImageView* view = [[[NSImageView alloc] initWithFrame:frame] autorelease];
-  [view setImage:image];
-  return view;
+
+  return image;
 }
 
 // Updates the current loading state, replacing the icon view with a favicon,
@@ -1583,10 +1589,9 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   // every call to this function is significant.
   if (newState == kTabDone || oldState != newState ||
       oldHasIcon != newHasIcon) {
-    NSView* iconView = nil;
     if (newHasIcon) {
       if (newState == kTabDone) {
-        iconView = [self iconImageViewForContents:contents];
+        [tabController setIconImage:[self iconImageForContents:contents]];
         const TabMediaState mediaState =
             chrome::GetTabMediaStateForContents(contents);
         // Create MediaIndicatorView upon first use.
@@ -1598,30 +1603,14 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
         }
         [[tabController mediaIndicatorView] updateIndicator:mediaState];
       } else if (newState == kTabCrashed) {
-        NSImage* oldImage = [[self iconImageViewForContents:contents] image];
-        NSRect frame =
-            NSMakeRect(0, 0, kIconWidthAndHeight, kIconWidthAndHeight);
-        iconView = [ThrobberView toastThrobberViewWithFrame:frame
-                                                beforeImage:oldImage
-                                                 afterImage:sadFaviconImage];
+        [tabController setIconImage:sadFaviconImage withToastAnimation:YES];
         [[tabController mediaIndicatorView]
           updateIndicator:TAB_MEDIA_STATE_NONE];
       } else {
-        NSRect frame =
-            NSMakeRect(0, 0, kIconWidthAndHeight, kIconWidthAndHeight);
-        iconView = [ThrobberView filmstripThrobberViewWithFrame:frame
-                                                          image:throbberImage];
+        [tabController setIconImage:throbberImage];
       }
-    }
-
-    [tabController setIconView:iconView];
-    if (iconView) {
-      // See the comment above kTabOverlap for why these DCHECKs exist.
-      DCHECK_GE(NSMinX([iconView frame]), kTabOverlap);
-      // TODO(thakis): Ideally, this would be true too, but it's not true in
-      // some tests.
-      //DCHECK_LE(NSMaxX([iconView frame]),
-      //          NSWidth([[tabController view] frame]) - kTabOverlap);
+    } else {
+      [tabController setIconImage:nil];
     }
   }
 }
@@ -1711,8 +1700,7 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   [self layoutTabs];
 }
 
-- (void)setFrameOfActiveTab:(NSRect)frame {
-  NSView* view = [self activeTabView];
+- (void)setFrame:(NSRect)frame ofTabView:(NSView*)view {
   NSValue* identifier = [NSValue valueWithPointer:view];
   [targetFrames_ setObject:[NSValue valueWithRect:frame]
                     forKey:identifier];
@@ -1723,6 +1711,14 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   return tabStripModel_;
 }
 
+- (NSArray*)tabViews {
+  NSMutableArray* views = [NSMutableArray arrayWithCapacity:[tabArray_ count]];
+  for (TabController* tab in tabArray_.get()) {
+    [views addObject:[tab tabView]];
+  }
+  return views;
+}
+
 - (NSView*)activeTabView {
   int activeIndex = tabStripModel_->active_index();
   // Take closing tabs into account. They can't ever be selected.
@@ -1730,16 +1726,18 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   return [self viewAtIndex:activeIndex];
 }
 
-// Find the model index based on the x coordinate of the placeholder. If there
-// is no placeholder, this returns the end of the tab strip. Closing tabs are
-// not considered in computing the index.
 - (int)indexOfPlaceholder {
-  double placeholderX = placeholderFrame_.origin.x;
-  int index = 0;
-  int location = 0;
   // Use |tabArray_| here instead of the tab strip count in order to get the
   // correct index when there are closing tabs to the left of the placeholder.
   const int count = [tabArray_ count];
+
+  // No placeholder, return the end of the strip.
+  if (placeholderTab_ == nil)
+    return count;
+
+  double placeholderX = placeholderFrame_.origin.x;
+  int index = 0;
+  int location = 0;
   while (index < count) {
     // Ignore closing tabs for simplicity. The only drawback of this is that
     // if the placeholder is placed right before one or several contiguous
@@ -1785,10 +1783,10 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
 // new window. Mini-tabs are either app or pinned tabs; the app state is stored
 // by the |contents|, but the |pinned| state is the caller's responsibility.
 - (void)dropWebContents:(WebContents*)contents
+                atIndex:(int)modelIndex
               withFrame:(NSRect)frame
-            asPinnedTab:(BOOL)pinned {
-  int modelIndex = [self indexOfPlaceholder];
-
+            asPinnedTab:(BOOL)pinned
+               activate:(BOOL)activate {
   // Mark that the new tab being created should start at |frame|. It will be
   // reset as soon as the tab has been positioned.
   droppedTabFrame_ = frame;
@@ -1796,8 +1794,10 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   // Insert it into this tab strip. We want it in the foreground and to not
   // inherit the current tab's group.
   tabStripModel_->InsertWebContentsAt(
-      modelIndex, contents,
-      TabStripModel::ADD_ACTIVE | (pinned ? TabStripModel::ADD_PINNED : 0));
+      modelIndex,
+      contents,
+      (activate ? TabStripModel::ADD_ACTIVE : TabStripModel::ADD_NONE) |
+          (pinned ? TabStripModel::ADD_PINNED : TabStripModel::ADD_NONE));
 }
 
 // Called when the tab strip view changes size. As we only registered for

@@ -100,8 +100,9 @@ typedef PlatformTest PathServiceTest;
 TEST_F(PathServiceTest, Get) {
   for (int key = base::PATH_START + 1; key < base::PATH_END; ++key) {
 #if defined(OS_ANDROID)
-    if (key == base::FILE_MODULE || key == base::DIR_USER_DESKTOP)
-      continue;  // Android doesn't implement FILE_MODULE and DIR_USER_DESKTOP;
+    if (key == base::FILE_MODULE || key == base::DIR_USER_DESKTOP ||
+        key == base::DIR_HOME)
+      continue;  // Android doesn't implement these.
 #elif defined(OS_IOS)
     if (key == base::DIR_USER_DESKTOP)
       continue;  // iOS doesn't implement DIR_USER_DESKTOP;
@@ -178,12 +179,12 @@ TEST_F(PathServiceTest, OverrideMultiple) {
   base::FilePath fake_cache_dir1(temp_dir.path().AppendASCII("1"));
   EXPECT_TRUE(PathService::Override(my_special_key, fake_cache_dir1));
   EXPECT_TRUE(base::PathExists(fake_cache_dir1));
-  ASSERT_EQ(1, file_util::WriteFile(fake_cache_dir1.AppendASCII("t1"), ".", 1));
+  ASSERT_EQ(1, base::WriteFile(fake_cache_dir1.AppendASCII("t1"), ".", 1));
 
   base::FilePath fake_cache_dir2(temp_dir.path().AppendASCII("2"));
   EXPECT_TRUE(PathService::Override(my_special_key + 1, fake_cache_dir2));
   EXPECT_TRUE(base::PathExists(fake_cache_dir2));
-  ASSERT_EQ(1, file_util::WriteFile(fake_cache_dir2.AppendASCII("t2"), ".", 1));
+  ASSERT_EQ(1, base::WriteFile(fake_cache_dir2.AppendASCII("t2"), ".", 1));
 
   base::FilePath result;
   EXPECT_TRUE(PathService::Get(my_special_key, &result));

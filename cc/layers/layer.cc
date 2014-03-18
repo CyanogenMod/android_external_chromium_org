@@ -68,9 +68,8 @@ Layer::Layer()
       replica_layer_(NULL),
       raster_scale_(0.f),
       client_(NULL) {
-  if (layer_id_ < 0) {
+  if (layer_id_ == INT_MAX) {
     s_next_layer_id = 1;
-    layer_id_ = s_next_layer_id++;
   }
 
   layer_animation_controller_ = LayerAnimationController::Create(layer_id_);
@@ -945,7 +944,6 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetPosition(position_);
   layer->SetIsContainerForFixedPositionLayers(
       IsContainerForFixedPositionLayers());
-  layer->SetFixedContainerSizeDelta(gfx::Vector2dF());
   layer->SetPositionConstraint(position_constraint_);
   layer->SetShouldFlattenTransform(should_flatten_transform_);
   layer->SetIs3dSorted(is_3d_sorted_);
@@ -959,22 +957,33 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->set_user_scrollable_vertical(user_scrollable_vertical_);
 
   LayerImpl* scroll_parent = NULL;
-  if (scroll_parent_)
+  if (scroll_parent_) {
     scroll_parent = layer->layer_tree_impl()->LayerById(scroll_parent_->id());
+    DCHECK(scroll_parent);
+  }
 
   layer->SetScrollParent(scroll_parent);
   if (scroll_children_) {
     std::set<LayerImpl*>* scroll_children = new std::set<LayerImpl*>;
     for (std::set<Layer*>::iterator it = scroll_children_->begin();
-        it != scroll_children_->end(); ++it)
-      scroll_children->insert(layer->layer_tree_impl()->LayerById((*it)->id()));
+         it != scroll_children_->end();
+         ++it) {
+      DCHECK_EQ((*it)->scroll_parent(), this);
+      LayerImpl* scroll_child =
+          layer->layer_tree_impl()->LayerById((*it)->id());
+      DCHECK(scroll_child);
+      scroll_children->insert(scroll_child);
+    }
     layer->SetScrollChildren(scroll_children);
+  } else {
+    layer->SetScrollChildren(NULL);
   }
 
   LayerImpl* clip_parent = NULL;
   if (clip_parent_) {
     clip_parent =
         layer->layer_tree_impl()->LayerById(clip_parent_->id());
+    DCHECK(clip_parent);
   }
 
   layer->SetClipParent(clip_parent);
@@ -982,11 +991,14 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
     std::set<LayerImpl*>* clip_children = new std::set<LayerImpl*>;
     for (std::set<Layer*>::iterator it = clip_children_->begin();
         it != clip_children_->end(); ++it) {
+      DCHECK_EQ((*it)->clip_parent(), this);
       LayerImpl* clip_child = layer->layer_tree_impl()->LayerById((*it)->id());
       DCHECK(clip_child);
       clip_children->insert(clip_child);
     }
     layer->SetClipChildren(clip_children);
+  } else {
+    layer->SetClipChildren(NULL);
   }
 
   // Adjust the scroll delta to be just the scrolls that have happened since
@@ -1059,7 +1071,7 @@ void Layer::SavePaintProperties() {
 }
 
 bool Layer::Update(ResourceUpdateQueue* queue,
-                   const OcclusionTracker* occlusion) {
+                   const OcclusionTracker<Layer>* occlusion) {
   DCHECK(layer_tree_host_);
   DCHECK_EQ(layer_tree_host_->source_frame_number(),
             paint_properties_.source_frame_number) <<

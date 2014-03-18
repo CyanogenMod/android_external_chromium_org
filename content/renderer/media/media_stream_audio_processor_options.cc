@@ -14,6 +14,7 @@
 #include "third_party/WebKit/public/platform/WebMediaConstraints.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediaconstraintsinterface.h"
 #include "third_party/webrtc/modules/audio_processing/include/audio_processing.h"
+#include "third_party/webrtc/modules/audio_processing/typing_detection.h"
 
 namespace content {
 
@@ -118,15 +119,23 @@ void EnableNoiseSuppression(AudioProcessing* audio_processing) {
   CHECK_EQ(err, 0);
 }
 
+void EnableExperimentalNoiseSuppression(AudioProcessing* audio_processing) {
+  CHECK_EQ(audio_processing->EnableExperimentalNs(true), 0);
+}
+
 void EnableHighPassFilter(AudioProcessing* audio_processing) {
   CHECK_EQ(audio_processing->high_pass_filter()->Enable(true), 0);
 }
 
-void EnableTypingDetection(AudioProcessing* audio_processing) {
+void EnableTypingDetection(AudioProcessing* audio_processing,
+                           webrtc::TypingDetection* typing_detector) {
   int err = audio_processing->voice_detection()->Enable(true);
   err |= audio_processing->voice_detection()->set_likelihood(
       webrtc::VoiceDetection::kVeryLowLikelihood);
   CHECK_EQ(err, 0);
+
+  // Configure the update period to 1s (100 * 10ms) in the typing detector.
+  typing_detector->SetParameters(0, 0, 0, 0, 0, 100);
 }
 
 void EnableExperimentalEchoCancellation(AudioProcessing* audio_processing) {
@@ -135,29 +144,21 @@ void EnableExperimentalEchoCancellation(AudioProcessing* audio_processing) {
   audio_processing->SetExtraOptions(config);
 }
 
-void StartAecDump(AudioProcessing* audio_processing) {
-  // TODO(grunell): Figure out a more suitable directory for the audio dump
-  // data.
-  base::FilePath path;
-#if defined(CHROMEOS)
-  PathService::Get(base::DIR_TEMP, &path);
-#elif defined(ANDROID)
-  path = base::FilePath(FILE_PATH_LITERAL("sdcard"));
-#else
-  PathService::Get(base::DIR_EXE, &path);
-#endif
-  base::FilePath file = path.Append(FILE_PATH_LITERAL("audio.aecdump"));
+void StartEchoCancellationDump(AudioProcessing* audio_processing,
+                               const base::PlatformFile& aec_dump_file) {
+  DCHECK_NE(aec_dump_file, base::kInvalidPlatformFileValue);
 
-#if defined(OS_WIN)
-  const std::string file_name = base::WideToUTF8(file.value());
-#else
-  const std::string file_name = file.value();
-#endif
-  if (audio_processing->StartDebugRecording(file_name.c_str()))
+  FILE* stream = base::FdopenPlatformFile(aec_dump_file, "w");
+  if (!stream) {
+    LOG(ERROR) << "Failed to open AEC dump file";
+    return;
+  }
+
+  if (audio_processing->StartDebugRecording(stream))
     DLOG(ERROR) << "Fail to start AEC debug recording";
 }
 
-void StopAecDump(AudioProcessing* audio_processing) {
+void StopEchoCancellationDump(AudioProcessing* audio_processing) {
   if (audio_processing->StopDebugRecording())
     DLOG(ERROR) << "Fail to stop AEC debug recording";
 }
@@ -171,6 +172,45 @@ void EnableAutomaticGainControl(AudioProcessing* audio_processing) {
   int err = audio_processing->gain_control()->set_mode(mode);
   err |= audio_processing->gain_control()->Enable(true);
   CHECK_EQ(err, 0);
+}
+
+void GetAecStats(AudioProcessing* audio_processing,
+                 webrtc::AudioProcessorInterface::AudioProcessorStats* stats) {
+  // These values can take on valid negative values, so use the lowest possible
+  // level as default rather than -1.
+  stats->echo_return_loss = -100;
+  stats->echo_return_loss_enhancement = -100;
+
+  // These values can also be negative, but in practice -1 is only used to
+  // signal insufficient data, since the resolution is limited to multiples
+  // of 4ms.
+  stats->echo_delay_median_ms = -1;
+  stats->echo_delay_std_ms = -1;
+
+  // TODO(ajm): Re-enable this metric once we have a reliable implementation.
+  stats->aec_quality_min = -1.0f;
+
+  if (!audio_processing->echo_cancellation()->are_metrics_enabled() ||
+      !audio_processing->echo_cancellation()->is_delay_logging_enabled() ||
+      !audio_processing->echo_cancellation()->is_enabled()) {
+    return;
+  }
+
+  // TODO(ajm): we may want to use VoECallReport::GetEchoMetricsSummary
+  // here, but it appears to be unsuitable currently. Revisit after this is
+  // investigated: http://b/issue?id=5666755
+  webrtc::EchoCancellation::Metrics echo_metrics;
+  if (!audio_processing->echo_cancellation()->GetMetrics(&echo_metrics)) {
+    stats->echo_return_loss = echo_metrics.echo_return_loss.instant;
+    stats->echo_return_loss_enhancement =
+        echo_metrics.echo_return_loss_enhancement.instant;
+  }
+
+  int median = 0, std = 0;
+  if (!audio_processing->echo_cancellation()->GetDelayMetrics(&median, &std)) {
+    stats->echo_delay_median_ms = median;
+    stats->echo_delay_std_ms = std;
+  }
 }
 
 }  // namespace content

@@ -698,6 +698,12 @@
     { "name": "www.calyxinstitute.org", "mode": "force-https" },
     { "name": "blacklane.com", "include_subdomains": true, "mode": "force-https" },
     { "name": "boxcryptor.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "aclu.org", "mode": "force-https" },
+    { "name": "www.aclu.org", "mode": "force-https" },
+    { "name": "prodpad.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "mailbox.org", "include_subdomains": true, "mode": "force-https" },
+    { "name": "roddis.net", "mode": "force-https" },
+    { "name": "www.roddis.net", "mode": "force-https" },
 
     // Entries that are only valid if the client supports SNI.
     { "name": "gmail.com", "mode": "force-https", "pins": "google", "snionly": true },

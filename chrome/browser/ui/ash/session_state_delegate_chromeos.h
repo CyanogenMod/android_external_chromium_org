@@ -23,6 +23,8 @@ class SessionStateDelegateChromeos
   virtual ~SessionStateDelegateChromeos();
 
   // ash::SessionStateDelegate:
+  virtual content::BrowserContext* GetBrowserContextByIndex(
+      ash::MultiProfileIndex index) OVERRIDE;
   virtual int GetMaximumNumberOfLoggedInUsers() const OVERRIDE;
   virtual int NumberOfLoggedInUsers() const OVERRIDE;
   virtual bool IsActiveUserSessionStarted() const OVERRIDE;
@@ -39,17 +41,14 @@ class SessionStateDelegateChromeos
   virtual const std::string GetUserID(
       ash::MultiProfileIndex index) const OVERRIDE;
   virtual const gfx::ImageSkia& GetUserImage(
-      ash::MultiProfileIndex index) const OVERRIDE;
-  virtual void GetLoggedInUsers(ash::UserIdList* users) OVERRIDE;
+      content::BrowserContext* context) const OVERRIDE;
+  virtual bool ShouldShowAvatar(aura::Window* window) OVERRIDE;
   virtual void SwitchActiveUser(const std::string& user_id) OVERRIDE;
   virtual void CycleActiveUser(CycleUser cycle_user) OVERRIDE;
   virtual void AddSessionStateObserver(
       ash::SessionStateObserver* observer) OVERRIDE;
   virtual void RemoveSessionStateObserver(
       ash::SessionStateObserver* observer) OVERRIDE;
-  virtual bool TransferWindowToDesktopOfUser(
-      aura::Window* window,
-      ash::MultiProfileIndex index) OVERRIDE;
   // UserManager::UserSessionStateObserver:
   virtual void ActiveUserChanged(const chromeos::User* active_user) OVERRIDE;
   virtual void UserAddedToSession(const chromeos::User* added_user) OVERRIDE;

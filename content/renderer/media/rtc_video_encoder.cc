@@ -148,6 +148,10 @@ class RTCVideoEncoder::Impl
   // we don't care about ordering.
   std::vector<int> input_buffers_free_;
 
+  // The number of output buffers ready to be filled with output from the
+  // encoder.
+  int output_buffers_free_count_;
+
   DISALLOW_COPY_AND_ASSIGN(Impl);
 };
 
@@ -160,7 +164,8 @@ RTCVideoEncoder::Impl::Impl(
       async_waiter_(NULL),
       async_retval_(NULL),
       input_next_frame_(NULL),
-      input_next_frame_keyframe_(false) {
+      input_next_frame_keyframe_(false),
+      output_buffers_free_count_(0) {
   thread_checker_.DetachFromThread();
 }
 
@@ -181,14 +186,17 @@ void RTCVideoEncoder::Impl::CreateAndInitializeVEA(
     return;
   }
 
-  video_encoder_ = gpu_factories_->CreateVideoEncodeAccelerator(this).Pass();
+  video_encoder_ = gpu_factories_->CreateVideoEncodeAccelerator().Pass();
   if (!video_encoder_) {
     NOTIFY_ERROR(media::VideoEncodeAccelerator::kPlatformFailureError);
     return;
   }
   input_visible_size_ = input_visible_size;
-  video_encoder_->Initialize(
-      media::VideoFrame::I420, input_visible_size_, profile, bitrate * 1000);
+  video_encoder_->Initialize(media::VideoFrame::I420,
+                             input_visible_size_,
+                             profile,
+                             bitrate * 1000,
+                             this);
 }
 
 void RTCVideoEncoder::Impl::Enqueue(const webrtc::I420VideoFrame* input_frame,
@@ -200,6 +208,29 @@ void RTCVideoEncoder::Impl::Enqueue(const webrtc::I420VideoFrame* input_frame,
   DCHECK(!input_next_frame_);
 
   RegisterAsyncWaiter(async_waiter, async_retval);
+  // If there are no free input and output buffers, drop the frame to avoid a
+  // deadlock. If there is a free input buffer, EncodeOneFrame will run and
+  // unblock Encode(). If there are no free input buffers but there is a free
+  // output buffer, EncodeFrameFinished will be called later to unblock
+  // Encode().
+  //
+  // The caller of Encode() holds a webrtc lock. The deadlock happens when:
+  // (1) Encode() is waiting for the frame to be encoded in EncodeOneFrame().
+  // (2) There are no free input buffers and they cannot be freed because
+  //     the encoder has no output buffers.
+  // (3) Output buffers cannot be freed because ReturnEncodedImage is queued
+  //     on libjingle worker thread to be run. But the worker thread is waiting
+  //     for the same webrtc lock held by the caller of Encode().
+  //
+  // Dropping a frame is fine. The encoder has been filled with all input
+  // buffers. Returning an error in Encode() is not fatal and WebRTC will just
+  // continue. If this is a key frame, WebRTC will request a key frame again.
+  // Besides, webrtc will drop a frame if Encode() blocks too long.
+  if (input_buffers_free_.empty() && output_buffers_free_count_ == 0) {
+    DVLOG(2) << "Run out of input and output buffers. Drop the frame.";
+    SignalAsyncWaiter(WEBRTC_VIDEO_CODEC_ERROR);
+    return;
+  }
   input_next_frame_ = input_frame;
   input_next_frame_keyframe_ = force_keyframe;
 
@@ -217,6 +248,7 @@ void RTCVideoEncoder::Impl::UseOutputBitstreamBufferId(
         bitstream_buffer_id,
         output_buffers_[bitstream_buffer_id]->handle(),
         output_buffers_[bitstream_buffer_id]->mapped_size()));
+    output_buffers_free_count_++;
   }
 }
 
@@ -292,6 +324,7 @@ void RTCVideoEncoder::Impl::RequireBitstreamBuffers(
   for (size_t i = 0; i < output_buffers_.size(); ++i) {
     video_encoder_->UseOutputBitstreamBuffer(media::BitstreamBuffer(
         i, output_buffers_[i]->handle(), output_buffers_[i]->mapped_size()));
+    output_buffers_free_count_++;
   }
   SignalAsyncWaiter(WEBRTC_VIDEO_CODEC_OK);
 }
@@ -319,10 +352,15 @@ void RTCVideoEncoder::Impl::BitstreamBufferReady(int32 bitstream_buffer_id,
     NOTIFY_ERROR(media::VideoEncodeAccelerator::kPlatformFailureError);
     return;
   }
+  output_buffers_free_count_--;
 
   // Use webrtc timestamps to ensure correct RTP sender behavior.
-  // TODO(hshi): obtain timestamp from the capturer, see crbug.com/284783.
-  const int64 capture_time_ms = webrtc::TickTime::MillisecondTimestamp();
+  // TODO(hshi): obtain timestamp from the capturer, see crbug.com/350106.
+  const int64 capture_time_us = webrtc::TickTime::MicrosecondTimestamp();
+
+  // Derive the capture time (in ms) and RTP timestamp (in 90KHz ticks).
+  int64 capture_time_ms = capture_time_us / 1000;
+  uint32_t rtp_timestamp = static_cast<uint32_t>(capture_time_us * 90 / 1000);
 
   scoped_ptr<webrtc::EncodedImage> image(new webrtc::EncodedImage(
       reinterpret_cast<uint8_t*>(output_buffer->memory()),
@@ -330,8 +368,7 @@ void RTCVideoEncoder::Impl::BitstreamBufferReady(int32 bitstream_buffer_id,
       output_buffer->mapped_size()));
   image->_encodedWidth = input_visible_size_.width();
   image->_encodedHeight = input_visible_size_.height();
-  // Convert capture time to 90 kHz RTP timestamp.
-  image->_timeStamp = static_cast<uint32_t>(90 * capture_time_ms);
+  image->_timeStamp = rtp_timestamp;
   image->capture_time_ms_ = capture_time_ms;
   image->_frameType = (key_frame ? webrtc::kKeyFrame : webrtc::kDeltaFrame);
   image->_completeFrame = true;
@@ -655,7 +692,7 @@ void RTCVideoEncoder::RecordInitEncodeUMA(int32_t init_retval) {
   if (init_retval == WEBRTC_VIDEO_CODEC_OK) {
     UMA_HISTOGRAM_ENUMERATION("Media.RTCVideoEncoderProfile",
                               video_codec_profile_,
-                              media::VIDEO_CODEC_PROFILE_MAX);
+                              media::VIDEO_CODEC_PROFILE_MAX + 1);
   }
 }
 

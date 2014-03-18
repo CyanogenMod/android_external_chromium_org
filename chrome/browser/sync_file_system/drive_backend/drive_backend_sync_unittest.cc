@@ -82,6 +82,7 @@ class DriveBackendSyncTest : public testing::Test,
         NULL, NULL, NULL, in_memory_env_.get()));
     remote_sync_service_->AddServiceObserver(this);
     remote_sync_service_->Initialize();
+    remote_sync_service_->SetSyncEnabled(true);
 
     fake_drive_service_helper_.reset(new FakeDriveServiceHelper(
         fake_drive_service(), drive_uploader(),
@@ -345,13 +346,11 @@ class DriveBackendSyncTest : public testing::Test,
                   folder_id, &remote_entries));
     std::map<std::string, const google_apis::ResourceEntry*>
         remote_entry_by_title;
-    for (ScopedVector<google_apis::ResourceEntry>::iterator itr =
-             remote_entries.begin();
-         itr != remote_entries.end();
-         ++itr) {
-      const google_apis::ResourceEntry& remote_entry = **itr;
-      EXPECT_FALSE(ContainsKey(remote_entry_by_title, remote_entry.title()));
-      remote_entry_by_title[remote_entry.title()] = *itr;
+    for (size_t i = 0; i < remote_entries.size(); ++i) {
+      google_apis::ResourceEntry* remote_entry = remote_entries[i];
+      EXPECT_FALSE(ContainsKey(remote_entry_by_title, remote_entry->title()))
+          << "title: " << remote_entry->title();
+      remote_entry_by_title[remote_entry->title()] = remote_entry;
     }
 
     fileapi::FileSystemURL url(CreateURL(app_id, path));
@@ -410,7 +409,7 @@ class DriveBackendSyncTest : public testing::Test,
 
     CannedSyncableFileSystem* file_system = file_systems_[app_id];
     std::stack<base::FilePath> folders;
-    folders.push(base::FilePath()); // root folder
+    folders.push(base::FilePath());  // root folder
 
     size_t result = 1;
     while (!folders.empty()) {
@@ -454,11 +453,11 @@ class DriveBackendSyncTest : public testing::Test,
   }
 
   size_t CountMetadata() {
-    return metadata_database()->file_by_id_.size();
+    return metadata_database()->CountFileMetadata();
   }
 
   size_t CountTracker() {
-    return metadata_database()->tracker_by_id_.size();
+    return metadata_database()->CountFileTracker();
   }
 
   drive::FakeDriveService* fake_drive_service() {

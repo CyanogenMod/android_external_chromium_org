@@ -7,10 +7,14 @@
 
 #include <string>
 
+#include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
+#include "chrome/common/localized_error.h"
 #include "chrome/common/net/net_error_info.h"
 #include "chrome/renderer/net/net_error_helper_core.h"
 #include "content/public/renderer/render_frame_observer.h"
 #include "content/public/renderer/render_frame_observer_tracker.h"
+#include "content/public/renderer/render_process_observer.h"
 
 class GURL;
 
@@ -30,6 +34,7 @@ struct WebURLError;
 class NetErrorHelper
     : public content::RenderFrameObserver,
       public content::RenderFrameObserverTracker<NetErrorHelper>,
+      public content::RenderProcessObserver,
       public NetErrorHelperCore::Delegate {
  public:
   explicit NetErrorHelper(content::RenderFrame* render_view);
@@ -44,6 +49,9 @@ class NetErrorHelper
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
+  // RenderProcessObserver implementation.
+  virtual void NetworkStateChanged(bool online) OVERRIDE;
+
   // Examines |frame| and |error| to see if this is an error worthy of a DNS
   // probe.  If it is, initializes |error_strings| based on |error|,
   // |is_failed_post|, and |locale| with suitable strings and returns true.
@@ -57,27 +65,42 @@ class NetErrorHelper
                     bool is_failed_post,
                     std::string* error_html);
 
+  // Returns whether a load for |url| in |frame| should have its error page
+  // suppressed.
+  bool ShouldSuppressErrorPage(blink::WebFrame* frame, const GURL& url);
+
  private:
   // NetErrorHelperCore::Delegate implementation:
-  virtual void GenerateLocalizedErrorPage(const blink::WebURLError& error,
-                                          bool is_failed_post,
-                                          std::string* html) const OVERRIDE;
+  virtual void GenerateLocalizedErrorPage(
+      const blink::WebURLError& error,
+      bool is_failed_post,
+      scoped_ptr<LocalizedError::ErrorPageParams> params,
+      std::string* html) const OVERRIDE;
   virtual void LoadErrorPageInMainFrame(const std::string& html,
                                         const GURL& failed_url) OVERRIDE;
   virtual void UpdateErrorPage(const blink::WebURLError& error,
                                bool is_failed_post) OVERRIDE;
-  virtual void FetchErrorPage(const GURL& url) OVERRIDE;
-  virtual void CancelFetchErrorPage() OVERRIDE;
+  virtual void FetchNavigationCorrections(
+      const GURL& navigation_correction_url,
+      const std::string& navigation_correction_request_body) OVERRIDE;
+  virtual void CancelFetchNavigationCorrections() OVERRIDE;
+  virtual void ReloadPage() OVERRIDE;
 
   void OnNetErrorInfo(int status);
-  void OnSetAltErrorPageURL(const GURL& alternate_error_page_url);
+  void OnSetNavigationCorrectionInfo(const GURL& navigation_correction_url,
+                                     const std::string& language,
+                                     const std::string& country_code,
+                                     const std::string& api_key,
+                                     const GURL& search_url);
 
-  void OnAlternateErrorPageRetrieved(const blink::WebURLResponse& response,
-                                     const std::string& data);
+  void OnNavigationCorrectionsFetched(const blink::WebURLResponse& response,
+                                      const std::string& data);
 
-  scoped_ptr<content::ResourceFetcher> alt_error_page_fetcher_;
+  scoped_ptr<content::ResourceFetcher> correction_fetcher_;
 
   NetErrorHelperCore core_;
+
+  DISALLOW_COPY_AND_ASSIGN(NetErrorHelper);
 };
 
 #endif  // CHROME_RENDERER_NET_NET_ERROR_HELPER_H_

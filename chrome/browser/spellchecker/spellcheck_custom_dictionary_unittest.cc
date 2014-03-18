@@ -18,6 +18,7 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "sync/api/sync_change.h"
+#include "sync/api/sync_change_processor_wrapper_for_test.h"
 #include "sync/api/sync_data.h"
 #include "sync/api/sync_error_factory.h"
 #include "sync/api/sync_error_factory_mock.h"
@@ -56,8 +57,7 @@ syncer::SyncDataList GetAllSyncDataNoLimit(
 
 }  // namespace
 
-static BrowserContextKeyedService* BuildSpellcheckService(
-    content::BrowserContext* profile) {
+static KeyedService* BuildSpellcheckService(content::BrowserContext* profile) {
   return new SpellcheckService(static_cast<Profile*>(profile));
 }
 
@@ -109,32 +109,6 @@ class SpellcheckCustomDictionaryTest : public testing::Test {
 
   TestingProfile profile_;
   net::TestURLFetcherFactory fetcher_factory_;
-};
-
-// A wrapper around SpellcheckCustomDictionary that does not own the wrapped
-// object. An instance of this class can be inside of a scoped pointer safely
-// while the dictionary is managed by another scoped pointer.
-class SyncChangeProcessorDelegate : public syncer::SyncChangeProcessor {
- public:
-  explicit SyncChangeProcessorDelegate(SpellcheckCustomDictionary* dictionary)
-      : dictionary_(dictionary) {}
-  virtual ~SyncChangeProcessorDelegate() {}
-
-  // Overridden from syncer::SyncChangeProcessor:
-  virtual syncer::SyncError ProcessSyncChanges(
-      const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE {
-    return dictionary_->ProcessSyncChanges(from_here, change_list);
-  }
-
-  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const
-      OVERRIDE {
-    return syncer::SyncDataList();
-  }
-
- private:
-  SpellcheckCustomDictionary* dictionary_;
-  DISALLOW_COPY_AND_ASSIGN(SyncChangeProcessorDelegate);
 };
 
 // An implementation of SyncErrorFactory that does not upload the error message
@@ -251,7 +225,7 @@ TEST_F(SpellcheckCustomDictionaryTest, LegacyEmptyDictionaryShouldBeConverted) {
       profile_.GetPath().Append(chrome::kCustomDictionaryFileName);
 
   std::string content;
-  file_util::WriteFile(path, content.c_str(), content.length());
+  base::WriteFile(path, content.c_str(), content.length());
   WordList loaded_custom_words = LoadDictionaryFile(path);
   EXPECT_TRUE(loaded_custom_words.empty());
 }
@@ -264,7 +238,7 @@ TEST_F(SpellcheckCustomDictionaryTest,
       profile_.GetPath().Append(chrome::kCustomDictionaryFileName);
 
   std::string content = "foo\nbar\nfoo\n";
-  file_util::WriteFile(path, content.c_str(), content.length());
+  base::WriteFile(path, content.c_str(), content.length());
   WordList loaded_custom_words = LoadDictionaryFile(path);
   WordList expected;
   expected.push_back("bar");
@@ -282,7 +256,7 @@ TEST_F(SpellcheckCustomDictionaryTest,
   std::string content = "foo\n foo bar \n\n \nbar\n"
       "01234567890123456789012345678901234567890123456789"
       "01234567890123456789012345678901234567890123456789";
-  file_util::WriteFile(path, content.c_str(), content.length());
+  base::WriteFile(path, content.c_str(), content.length());
   WordList loaded_custom_words = LoadDictionaryFile(path);
   WordList expected;
   expected.push_back("bar");
@@ -299,7 +273,7 @@ TEST_F(SpellcheckCustomDictionaryTest, CorruptedWriteShouldBeRecovered) {
       profile_.GetPath().Append(chrome::kCustomDictionaryFileName);
 
   std::string content = "foo\nbar";
-  file_util::WriteFile(path, content.c_str(), content.length());
+  base::WriteFile(path, content.c_str(), content.length());
   WordList loaded_custom_words = LoadDictionaryFile(path);
   WordList expected;
   expected.push_back("bar");
@@ -312,7 +286,7 @@ TEST_F(SpellcheckCustomDictionaryTest, CorruptedWriteShouldBeRecovered) {
   content.clear();
   base::ReadFileToString(path, &content);
   content.append("corruption");
-  file_util::WriteFile(path, content.c_str(), content.length());
+  base::WriteFile(path, content.c_str(), content.length());
   loaded_custom_words = LoadDictionaryFile(path);
   EXPECT_EQ(expected, loaded_custom_words);
 }
@@ -485,13 +459,18 @@ TEST_F(SpellcheckCustomDictionaryTest, MergeDataAndStartSyncing) {
   Apply(*custom_dictionary2, change2);
 
   int error_counter = 0;
-  EXPECT_FALSE(custom_dictionary->MergeDataAndStartSyncing(
-      syncer::DICTIONARY,
-      custom_dictionary2->GetAllSyncData(syncer::DICTIONARY),
-      scoped_ptr<syncer::SyncChangeProcessor>(
-          new SyncChangeProcessorDelegate(custom_dictionary2)),
-      scoped_ptr<syncer::SyncErrorFactory>(
-          new SyncErrorFactoryStub(&error_counter))).error().IsSet());
+  EXPECT_FALSE(
+      custom_dictionary->MergeDataAndStartSyncing(
+                             syncer::DICTIONARY,
+                             custom_dictionary2->GetAllSyncData(
+                                 syncer::DICTIONARY),
+                             scoped_ptr<syncer::SyncChangeProcessor>(
+                                 new syncer::SyncChangeProcessorWrapperForTest(
+                                     custom_dictionary2)),
+                             scoped_ptr<syncer::SyncErrorFactory>(
+                                 new SyncErrorFactoryStub(&error_counter)))
+          .error()
+          .IsSet());
   EXPECT_EQ(0, error_counter);
   EXPECT_TRUE(custom_dictionary->IsSyncing());
 
@@ -523,13 +502,18 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionaryTooBigBeforeSyncing) {
   Apply(*custom_dictionary, change);
 
   int error_counter = 0;
-  EXPECT_FALSE(custom_dictionary->MergeDataAndStartSyncing(
-      syncer::DICTIONARY,
-      custom_dictionary2->GetAllSyncData(syncer::DICTIONARY),
-      scoped_ptr<syncer::SyncChangeProcessor>(
-          new SyncChangeProcessorDelegate(custom_dictionary2)),
-      scoped_ptr<syncer::SyncErrorFactory>(
-          new SyncErrorFactoryStub(&error_counter))).error().IsSet());
+  EXPECT_FALSE(
+      custom_dictionary->MergeDataAndStartSyncing(
+                             syncer::DICTIONARY,
+                             custom_dictionary2->GetAllSyncData(
+                                 syncer::DICTIONARY),
+                             scoped_ptr<syncer::SyncChangeProcessor>(
+                                 new syncer::SyncChangeProcessorWrapperForTest(
+                                     custom_dictionary2)),
+                             scoped_ptr<syncer::SyncErrorFactory>(
+                                 new SyncErrorFactoryStub(&error_counter)))
+          .error()
+          .IsSet());
   EXPECT_EQ(0, error_counter);
   EXPECT_FALSE(custom_dictionary->IsSyncing());
 
@@ -575,13 +559,18 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionaryTooBigAndServerFull) {
             custom_dictionary2->GetWords().size());
 
   int error_counter = 0;
-  EXPECT_FALSE(custom_dictionary->MergeDataAndStartSyncing(
-      syncer::DICTIONARY,
-      custom_dictionary2->GetAllSyncData(syncer::DICTIONARY),
-      scoped_ptr<syncer::SyncChangeProcessor>(
-          new SyncChangeProcessorDelegate(custom_dictionary2)),
-      scoped_ptr<syncer::SyncErrorFactory>(
-          new SyncErrorFactoryStub(&error_counter))).error().IsSet());
+  EXPECT_FALSE(
+      custom_dictionary->MergeDataAndStartSyncing(
+                             syncer::DICTIONARY,
+                             custom_dictionary2->GetAllSyncData(
+                                 syncer::DICTIONARY),
+                             scoped_ptr<syncer::SyncChangeProcessor>(
+                                 new syncer::SyncChangeProcessorWrapperForTest(
+                                     custom_dictionary2)),
+                             scoped_ptr<syncer::SyncErrorFactory>(
+                                 new SyncErrorFactoryStub(&error_counter)))
+          .error()
+          .IsSet());
   EXPECT_EQ(0, error_counter);
   EXPECT_FALSE(custom_dictionary->IsSyncing());
 
@@ -626,13 +615,17 @@ TEST_F(SpellcheckCustomDictionaryTest, ServerTooBig) {
             custom_dictionary2->GetWords().size());
 
   int error_counter = 0;
-  EXPECT_FALSE(custom_dictionary->MergeDataAndStartSyncing(
-      syncer::DICTIONARY,
-      GetAllSyncDataNoLimit(custom_dictionary2),
-      scoped_ptr<syncer::SyncChangeProcessor>(
-          new SyncChangeProcessorDelegate(custom_dictionary2)),
-      scoped_ptr<syncer::SyncErrorFactory>(
-          new SyncErrorFactoryStub(&error_counter))).error().IsSet());
+  EXPECT_FALSE(
+      custom_dictionary->MergeDataAndStartSyncing(
+                             syncer::DICTIONARY,
+                             GetAllSyncDataNoLimit(custom_dictionary2),
+                             scoped_ptr<syncer::SyncChangeProcessor>(
+                                 new syncer::SyncChangeProcessorWrapperForTest(
+                                     custom_dictionary2)),
+                             scoped_ptr<syncer::SyncErrorFactory>(
+                                 new SyncErrorFactoryStub(&error_counter)))
+          .error()
+          .IsSet());
   EXPECT_EQ(0, error_counter);
   EXPECT_FALSE(custom_dictionary->IsSyncing());
 
@@ -672,13 +665,18 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionaryTooBigToStartSyncing) {
   custom_dictionary2->AddWord("baz");
 
   int error_counter = 0;
-  EXPECT_FALSE(custom_dictionary->MergeDataAndStartSyncing(
-      syncer::DICTIONARY,
-      custom_dictionary2->GetAllSyncData(syncer::DICTIONARY),
-      scoped_ptr<syncer::SyncChangeProcessor>(
-          new SyncChangeProcessorDelegate(custom_dictionary2)),
-      scoped_ptr<syncer::SyncErrorFactory>(
-          new SyncErrorFactoryStub(&error_counter))).error().IsSet());
+  EXPECT_FALSE(
+      custom_dictionary->MergeDataAndStartSyncing(
+                             syncer::DICTIONARY,
+                             custom_dictionary2->GetAllSyncData(
+                                 syncer::DICTIONARY),
+                             scoped_ptr<syncer::SyncChangeProcessor>(
+                                 new syncer::SyncChangeProcessorWrapperForTest(
+                                     custom_dictionary2)),
+                             scoped_ptr<syncer::SyncErrorFactory>(
+                                 new SyncErrorFactoryStub(&error_counter)))
+          .error()
+          .IsSet());
   EXPECT_EQ(0, error_counter);
   EXPECT_FALSE(custom_dictionary->IsSyncing());
 
@@ -715,13 +713,18 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionaryTooBigToContiueSyncing) {
   Apply(*custom_dictionary, change);
 
   int error_counter = 0;
-  EXPECT_FALSE(custom_dictionary->MergeDataAndStartSyncing(
-      syncer::DICTIONARY,
-      custom_dictionary2->GetAllSyncData(syncer::DICTIONARY),
-      scoped_ptr<syncer::SyncChangeProcessor>(
-          new SyncChangeProcessorDelegate(custom_dictionary2)),
-      scoped_ptr<syncer::SyncErrorFactory>(
-          new SyncErrorFactoryStub(&error_counter))).error().IsSet());
+  EXPECT_FALSE(
+      custom_dictionary->MergeDataAndStartSyncing(
+                             syncer::DICTIONARY,
+                             custom_dictionary2->GetAllSyncData(
+                                 syncer::DICTIONARY),
+                             scoped_ptr<syncer::SyncChangeProcessor>(
+                                 new syncer::SyncChangeProcessorWrapperForTest(
+                                     custom_dictionary2)),
+                             scoped_ptr<syncer::SyncErrorFactory>(
+                                 new SyncErrorFactoryStub(&error_counter)))
+          .error()
+          .IsSet());
   EXPECT_EQ(0, error_counter);
   EXPECT_TRUE(custom_dictionary->IsSyncing());
 
@@ -760,13 +763,18 @@ TEST_F(SpellcheckCustomDictionaryTest, LoadAfterSyncStart) {
   custom_dictionary->AddWord("foo");
 
   int error_counter = 0;
-  EXPECT_FALSE(custom_dictionary->MergeDataAndStartSyncing(
-      syncer::DICTIONARY,
-      custom_dictionary2->GetAllSyncData(syncer::DICTIONARY),
-      scoped_ptr<syncer::SyncChangeProcessor>(
-          new SyncChangeProcessorDelegate(custom_dictionary2)),
-      scoped_ptr<syncer::SyncErrorFactory>(
-          new SyncErrorFactoryStub(&error_counter))).error().IsSet());
+  EXPECT_FALSE(
+      custom_dictionary->MergeDataAndStartSyncing(
+                             syncer::DICTIONARY,
+                             custom_dictionary2->GetAllSyncData(
+                                 syncer::DICTIONARY),
+                             scoped_ptr<syncer::SyncChangeProcessor>(
+                                 new syncer::SyncChangeProcessorWrapperForTest(
+                                     custom_dictionary2)),
+                             scoped_ptr<syncer::SyncErrorFactory>(
+                                 new SyncErrorFactoryStub(&error_counter)))
+          .error()
+          .IsSet());
   EXPECT_EQ(0, error_counter);
   EXPECT_TRUE(custom_dictionary->IsSyncing());
 
@@ -798,13 +806,18 @@ TEST_F(SpellcheckCustomDictionaryTest, LoadAfterSyncStartTooBigToSync) {
   custom_dictionary->AddWord("foo");
 
   int error_counter = 0;
-  EXPECT_FALSE(custom_dictionary->MergeDataAndStartSyncing(
-      syncer::DICTIONARY,
-      custom_dictionary2->GetAllSyncData(syncer::DICTIONARY),
-      scoped_ptr<syncer::SyncChangeProcessor>(
-          new SyncChangeProcessorDelegate(custom_dictionary2)),
-      scoped_ptr<syncer::SyncErrorFactory>(
-          new SyncErrorFactoryStub(&error_counter))).error().IsSet());
+  EXPECT_FALSE(
+      custom_dictionary->MergeDataAndStartSyncing(
+                             syncer::DICTIONARY,
+                             custom_dictionary2->GetAllSyncData(
+                                 syncer::DICTIONARY),
+                             scoped_ptr<syncer::SyncChangeProcessor>(
+                                 new syncer::SyncChangeProcessorWrapperForTest(
+                                     custom_dictionary2)),
+                             scoped_ptr<syncer::SyncErrorFactory>(
+                                 new SyncErrorFactoryStub(&error_counter)))
+          .error()
+          .IsSet());
   EXPECT_EQ(0, error_counter);
   EXPECT_TRUE(custom_dictionary->IsSyncing());
 
@@ -851,13 +864,18 @@ TEST_F(SpellcheckCustomDictionaryTest, LoadDuplicatesAfterSync) {
   Apply(*custom_dictionary, SpellcheckCustomDictionary::Change(to_add));
 
   int error_counter = 0;
-  EXPECT_FALSE(custom_dictionary->MergeDataAndStartSyncing(
-      syncer::DICTIONARY,
-      custom_dictionary2->GetAllSyncData(syncer::DICTIONARY),
-      scoped_ptr<syncer::SyncChangeProcessor>(
-          new SyncChangeProcessorDelegate(custom_dictionary2)),
-      scoped_ptr<syncer::SyncErrorFactory>(
-          new SyncErrorFactoryStub(&error_counter))).error().IsSet());
+  EXPECT_FALSE(
+      custom_dictionary->MergeDataAndStartSyncing(
+                             syncer::DICTIONARY,
+                             custom_dictionary2->GetAllSyncData(
+                                 syncer::DICTIONARY),
+                             scoped_ptr<syncer::SyncChangeProcessor>(
+                                 new syncer::SyncChangeProcessorWrapperForTest(
+                                     custom_dictionary2)),
+                             scoped_ptr<syncer::SyncErrorFactory>(
+                                 new SyncErrorFactoryStub(&error_counter)))
+          .error()
+          .IsSet());
   EXPECT_EQ(0, error_counter);
   EXPECT_TRUE(custom_dictionary->IsSyncing());
 
@@ -968,13 +986,18 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionarySyncNotification) {
   custom_dictionary2->AddObserver(&observer2);
 
   int error_counter = 0;
-  EXPECT_FALSE(custom_dictionary->MergeDataAndStartSyncing(
-      syncer::DICTIONARY,
-      custom_dictionary2->GetAllSyncData(syncer::DICTIONARY),
-      scoped_ptr<syncer::SyncChangeProcessor>(
-          new SyncChangeProcessorDelegate(custom_dictionary2)),
-      scoped_ptr<syncer::SyncErrorFactory>(
-          new SyncErrorFactoryStub(&error_counter))).error().IsSet());
+  EXPECT_FALSE(
+      custom_dictionary->MergeDataAndStartSyncing(
+                             syncer::DICTIONARY,
+                             custom_dictionary2->GetAllSyncData(
+                                 syncer::DICTIONARY),
+                             scoped_ptr<syncer::SyncChangeProcessor>(
+                                 new syncer::SyncChangeProcessorWrapperForTest(
+                                     custom_dictionary2)),
+                             scoped_ptr<syncer::SyncErrorFactory>(
+                                 new SyncErrorFactoryStub(&error_counter)))
+          .error()
+          .IsSet());
   EXPECT_EQ(0, error_counter);
   EXPECT_TRUE(custom_dictionary->IsSyncing());
 
@@ -1016,13 +1039,18 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionarySyncLimit) {
     Apply(*custom_dictionary, change);
 
     int error_counter = 0;
-    EXPECT_FALSE(custom_dictionary->MergeDataAndStartSyncing(
-        syncer::DICTIONARY,
-        server_custom_dictionary->GetAllSyncData(syncer::DICTIONARY),
-        scoped_ptr<syncer::SyncChangeProcessor>(
-            new SyncChangeProcessorDelegate(server_custom_dictionary)),
-        scoped_ptr<syncer::SyncErrorFactory>(
-            new SyncErrorFactoryStub(&error_counter))).error().IsSet());
+    EXPECT_FALSE(
+        custom_dictionary
+            ->MergeDataAndStartSyncing(
+                  syncer::DICTIONARY,
+                  server_custom_dictionary->GetAllSyncData(syncer::DICTIONARY),
+                  scoped_ptr<syncer::SyncChangeProcessor>(
+                      new syncer::SyncChangeProcessorWrapperForTest(
+                          server_custom_dictionary)),
+                  scoped_ptr<syncer::SyncErrorFactory>(
+                      new SyncErrorFactoryStub(&error_counter)))
+            .error()
+            .IsSet());
     EXPECT_EQ(0, error_counter);
     EXPECT_TRUE(custom_dictionary->IsSyncing());
     EXPECT_EQ(chrome::spellcheck_common::MAX_SYNCABLE_DICTIONARY_WORDS,
@@ -1059,13 +1087,18 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionarySyncLimit) {
 
     // Associate the server and the client.
     int error_counter = 0;
-    EXPECT_FALSE(client_custom_dictionary->MergeDataAndStartSyncing(
-        syncer::DICTIONARY,
-        server_custom_dictionary->GetAllSyncData(syncer::DICTIONARY),
-        scoped_ptr<syncer::SyncChangeProcessor>(
-            new SyncChangeProcessorDelegate(server_custom_dictionary)),
-        scoped_ptr<syncer::SyncErrorFactory>(
-            new SyncErrorFactoryStub(&error_counter))).error().IsSet());
+    EXPECT_FALSE(
+        client_custom_dictionary
+            ->MergeDataAndStartSyncing(
+                  syncer::DICTIONARY,
+                  server_custom_dictionary->GetAllSyncData(syncer::DICTIONARY),
+                  scoped_ptr<syncer::SyncChangeProcessor>(
+                      new syncer::SyncChangeProcessorWrapperForTest(
+                          server_custom_dictionary)),
+                  scoped_ptr<syncer::SyncErrorFactory>(
+                      new SyncErrorFactoryStub(&error_counter)))
+            .error()
+            .IsSet());
     EXPECT_EQ(0, error_counter);
     EXPECT_FALSE(client_custom_dictionary->IsSyncing());
     EXPECT_EQ(chrome::spellcheck_common::MAX_SYNCABLE_DICTIONARY_WORDS * 2,

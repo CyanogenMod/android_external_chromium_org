@@ -23,8 +23,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
 #include "chrome/browser/extensions/api/tabs/windows_util.h"
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "chrome/browser/extensions/extension_function_util.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
@@ -35,7 +33,7 @@
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
-#include "chrome/browser/ui/apps/chrome_shell_window_delegate.h"
+#include "chrome/browser/ui/apps/chrome_app_window_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -55,7 +53,6 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/message_bundle.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -71,10 +68,13 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/url_constants.h"
+#include "extensions/browser/extension_function_dispatcher.h"
+#include "extensions/browser/extension_function_util.h"
 #include "extensions/browser/file_reader.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
 #include "extensions/common/permissions/permissions_data.h"
@@ -525,10 +525,10 @@ bool WindowsCreateFunction::RunImpl() {
     if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH) {
       AppWindow::CreateParams create_params;
       create_params.window_type = AppWindow::WINDOW_TYPE_V1_PANEL;
-      create_params.bounds = window_bounds;
+      create_params.window_spec.bounds = window_bounds;
       create_params.focused = saw_focus_key && focused;
       AppWindow* app_window = new AppWindow(
-          window_profile, new ChromeShellWindowDelegate(), GetExtension());
+          window_profile, new ChromeAppWindowDelegate(), GetExtension());
       AshPanelContents* ash_panel_contents = new AshPanelContents(app_window);
       app_window->Init(urls[0], ash_panel_contents, create_params);
       SetResult(ash_panel_contents->GetExtensionWindowController()->
@@ -1376,6 +1376,7 @@ bool TabsUpdateFunction::UpdateURL(const std::string &url_string,
             ScriptExecutor::MAIN_WORLD,
             ScriptExecutor::DEFAULT_PROCESS,
             GURL(),
+            user_gesture_,
             ScriptExecutor::NO_RESULT,
             base::Bind(&TabsUpdateFunction::OnExecuteCodeFinished, this));
 
@@ -1419,14 +1420,14 @@ bool TabsMoveFunction::RunImpl() {
 
   int new_index = params->move_properties.index;
   int* window_id = params->move_properties.window_id.get();
-  base::ListValue tab_values;
+  scoped_ptr<base::ListValue> tab_values(new base::ListValue());
 
   size_t num_tabs = 0;
   if (params->tab_ids.as_integers) {
     std::vector<int>& tab_ids = *params->tab_ids.as_integers;
     num_tabs = tab_ids.size();
     for (size_t i = 0; i < tab_ids.size(); ++i) {
-      if (!MoveTab(tab_ids[i], &new_index, i, &tab_values, window_id))
+      if (!MoveTab(tab_ids[i], &new_index, i, tab_values.get(), window_id))
         return false;
     }
   } else {
@@ -1435,7 +1436,7 @@ bool TabsMoveFunction::RunImpl() {
     if (!MoveTab(*params->tab_ids.as_integer,
                  &new_index,
                  0,
-                 &tab_values,
+                 tab_values.get(),
                  window_id)) {
       return false;
     }
@@ -1444,14 +1445,18 @@ bool TabsMoveFunction::RunImpl() {
   if (!has_callback())
     return true;
 
-  // Only return the results as an array if there are multiple tabs.
-  if (num_tabs > 1) {
-    SetResult(tab_values.DeepCopy());
+  if (num_tabs == 0) {
+    error_ = "No tabs given.";
+    return false;
+  } else if (num_tabs == 1) {
+    scoped_ptr<base::Value> value;
+    CHECK(tab_values.get()->Remove(0, &value));
+    SetResult(value.release());
   } else {
-    base::Value* value = NULL;
-    CHECK(tab_values.Get(0, &value));
-    SetResult(value->DeepCopy());
+    // Only return the results as an array if there are multiple tabs.
+    SetResult(tab_values.release());
   }
+
   return true;
 }
 

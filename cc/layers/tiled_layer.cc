@@ -10,13 +10,13 @@
 #include "base/auto_reset.h"
 #include "base/basictypes.h"
 #include "build/build_config.h"
-#include "cc/debug/overdraw_metrics.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/layers/tiled_layer_impl.h"
 #include "cc/resources/layer_updater.h"
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/priority_calculator.h"
 #include "cc/trees/layer_tree_host.h"
+#include "cc/trees/occlusion_tracker.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/gfx/rect_conversions.h"
 
@@ -326,7 +326,7 @@ bool TiledLayer::UpdateTiles(int left,
                              int right,
                              int bottom,
                              ResourceUpdateQueue* queue,
-                             const OcclusionTracker* occlusion,
+                             const OcclusionTracker<Layer>* occlusion,
                              bool* updated) {
   CreateUpdaterIfNeeded();
 
@@ -340,9 +340,6 @@ bool TiledLayer::UpdateTiles(int left,
   gfx::Rect paint_rect;
   MarkTilesForUpdate(
     &update_rect, &paint_rect, left, top, right, bottom, ignore_occlusions);
-
-  if (occlusion)
-    occlusion->overdraw_metrics()->DidPaint(paint_rect);
 
   if (paint_rect.IsEmpty())
     return true;
@@ -358,13 +355,7 @@ void TiledLayer::MarkOcclusionsAndRequestTextures(
     int top,
     int right,
     int bottom,
-    const OcclusionTracker* occlusion) {
-  // There is some difficult dependancies between occlusions, recording
-  // occlusion metrics and requesting memory so those are encapsulated in this
-  // function: - We only want to call RequestLate on unoccluded textures (to
-  // preserve memory for other layers when near OOM).  - We only want to record
-  // occlusion metrics if all memory requests succeed.
-
+    const OcclusionTracker<Layer>* occlusion) {
   int occluded_tile_count = 0;
   bool succeeded = true;
   for (int j = top; j <= bottom; ++j) {
@@ -379,10 +370,9 @@ void TiledLayer::MarkOcclusionsAndRequestTextures(
       DCHECK(!tile->occluded);
       gfx::Rect visible_tile_rect = gfx::IntersectRects(
           tiler_->tile_bounds(i, j), visible_content_rect());
-      if (occlusion && occlusion->Occluded(render_target(),
-                                           visible_tile_rect,
-                                           draw_transform(),
-                                           draw_transform_is_animating())) {
+      if (!draw_transform_is_animating() && occlusion &&
+          occlusion->Occluded(
+              render_target(), visible_tile_rect, draw_transform())) {
         tile->occluded = true;
         occluded_tile_count++;
       } else {
@@ -390,11 +380,6 @@ void TiledLayer::MarkOcclusionsAndRequestTextures(
       }
     }
   }
-
-  if (!succeeded)
-    return;
-  if (occlusion)
-    occlusion->overdraw_metrics()->DidCullTilesForUpload(occluded_tile_count);
 }
 
 bool TiledLayer::HaveTexturesForTiles(int left,
@@ -477,7 +462,7 @@ void TiledLayer::UpdateTileTextures(const gfx::Rect& update_rect,
                                     int right,
                                     int bottom,
                                     ResourceUpdateQueue* queue,
-                                    const OcclusionTracker* occlusion) {
+                                    const OcclusionTracker<Layer>* occlusion) {
   // The update_rect should be in layer space. So we have to convert the
   // paint_rect from content space to layer space.
   float width_scale =
@@ -566,10 +551,6 @@ void TiledLayer::UpdateTileTextures(const gfx::Rect& update_rect,
 
       tile->updater_resource()->Update(
           queue, source_rect, dest_offset, tile->partial_update);
-      if (occlusion) {
-        occlusion->overdraw_metrics()->
-            DidUpload(gfx::Transform(), source_rect, tile->opaque_rect());
-      }
     }
   }
 }
@@ -732,7 +713,7 @@ void TiledLayer::UpdateScrollPrediction() {
 }
 
 bool TiledLayer::Update(ResourceUpdateQueue* queue,
-                        const OcclusionTracker* occlusion) {
+                        const OcclusionTracker<Layer>* occlusion) {
   DCHECK(!skips_draw_ && !failed_update_);  // Did ResetUpdateState get skipped?
 
   // Tiled layer always causes commits to wait for activation, as it does

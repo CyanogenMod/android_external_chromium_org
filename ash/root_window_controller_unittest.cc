@@ -19,12 +19,12 @@
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_event_handler.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/keyboard/keyboard_controller_proxy.h"
 #include "ui/keyboard/keyboard_switches.h"
@@ -456,6 +456,44 @@ TEST_F(RootWindowControllerTest, GetWindowForFullscreenMode) {
   EXPECT_EQ(w2->GetNativeWindow(), controller->GetWindowForFullscreenMode());
   w2->Minimize();
   EXPECT_EQ(NULL, controller->GetWindowForFullscreenMode());
+}
+
+TEST_F(RootWindowControllerTest, MultipleDisplaysGetWindowForFullscreenMode) {
+  if (!SupportsMultipleDisplays())
+    return;
+
+  UpdateDisplay("600x600,600x600");
+  Shell::RootWindowControllerList controllers =
+      Shell::GetInstance()->GetAllRootWindowControllers();
+
+  Widget* w1 = CreateTestWidget(gfx::Rect(0, 0, 100, 100));
+  w1->Maximize();
+  Widget* w2 = CreateTestWidget(gfx::Rect(0, 0, 100, 100));
+  w2->SetFullscreen(true);
+  Widget* w3 = CreateTestWidget(gfx::Rect(600, 0, 100, 100));
+
+  EXPECT_EQ(w1->GetNativeWindow()->GetRootWindow(),
+      controllers[0]->root_window());
+  EXPECT_EQ(w2->GetNativeWindow()->GetRootWindow(),
+      controllers[0]->root_window());
+  EXPECT_EQ(w3->GetNativeWindow()->GetRootWindow(),
+      controllers[1]->root_window());
+
+  w1->Activate();
+  EXPECT_EQ(NULL, controllers[0]->GetWindowForFullscreenMode());
+  EXPECT_EQ(NULL, controllers[1]->GetWindowForFullscreenMode());
+
+  w2->Activate();
+  EXPECT_EQ(w2->GetNativeWindow(),
+            controllers[0]->GetWindowForFullscreenMode());
+  EXPECT_EQ(NULL, controllers[1]->GetWindowForFullscreenMode());
+
+  // Verify that the first root window controller remains in fullscreen mode
+  // when a window on the other display is activated.
+  w3->Activate();
+  EXPECT_EQ(w2->GetNativeWindow(),
+            controllers[0]->GetWindowForFullscreenMode());
+  EXPECT_EQ(NULL, controllers[1]->GetWindowForFullscreenMode());
 }
 
 // Test that user session window can't be focused if user session blocked by

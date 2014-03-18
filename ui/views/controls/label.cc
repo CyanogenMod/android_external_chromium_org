@@ -14,7 +14,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
@@ -130,7 +130,8 @@ void Label::SetLineHeight(int height) {
 }
 
 void Label::SetMultiLine(bool multi_line) {
-  DCHECK(!multi_line || elide_behavior_ != ELIDE_IN_MIDDLE);
+  DCHECK(!multi_line || (elide_behavior_ != ELIDE_IN_MIDDLE &&
+      elide_behavior_ != ELIDE_AT_BEGINNING));
   if (multi_line != is_multi_line_) {
     is_multi_line_ = multi_line;
     ResetCachedSize();
@@ -288,9 +289,9 @@ bool Label::GetTooltipText(const gfx::Point& p, base::string16* tooltip) const {
   return false;
 }
 
-void Label::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_STATICTEXT;
-  state->state = ui::AccessibilityTypes::STATE_READONLY;
+void Label::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_STATIC_TEXT;
+  state->state = ui::AX_STATE_READ_ONLY;
   state->name = text_;
 }
 
@@ -481,6 +482,9 @@ void Label::CalculateDrawStringParams(base::string16* paint_text,
   // this is done, we can set NO_ELLIPSIS unconditionally at the bottom.
   if (is_multi_line_ || (elide_behavior_ == NO_ELIDE)) {
     *paint_text = text_;
+  } else if (elide_behavior_ == ELIDE_AT_BEGINNING) {
+    *paint_text = gfx::ElideText(text_, font_list_, GetAvailableRect().width(),
+                                 gfx::ELIDE_AT_BEGINNING);
   } else if (elide_behavior_ == ELIDE_IN_MIDDLE) {
     *paint_text = gfx::ElideText(text_, font_list_, GetAvailableRect().width(),
                                  gfx::ELIDE_IN_MIDDLE);

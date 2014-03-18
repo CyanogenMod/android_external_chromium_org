@@ -7,6 +7,10 @@
 
 #include "build/build_config.h"
 
+namespace base {
+class FilePath;
+}
+
 // This file declares path keys for the chrome module.  These can be used with
 // the PathService to access various special directories and files.
 
@@ -41,6 +45,8 @@ enum {
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   DIR_MANAGED_PREFS,            // Directory that stores the managed prefs plist
                                 // files for the current user.
+  DIR_USER_APPLICATIONS,        // ~/Applications
+  DIR_USER_LIBRARY,             // ~/Library
 #endif
 #if defined(OS_CHROMEOS) || (defined(OS_MACOSX) && !defined(OS_IOS))
   DIR_USER_EXTERNAL_EXTENSIONS,  // Directory for per-user external extensions
@@ -122,6 +128,10 @@ enum {
 
 // Call once to register the provider for the path keys defined above.
 void RegisterPathProvider();
+
+// Get or set the invalid user data dir that was originally specified.
+void SetInvalidSpecifiedUserDataDir(const base::FilePath& user_data_dir);
+const base::FilePath& GetInvalidSpecifiedUserDataDir();
 
 }  // namespace chrome
 

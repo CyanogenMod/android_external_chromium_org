@@ -17,6 +17,7 @@
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/save_page_type.h"
 #include "content/public/browser/web_contents.h"
@@ -26,6 +27,7 @@
 using content::NavigationController;
 using content::NavigationEntry;
 using content::OpenURLParams;
+using content::RenderFrameHost;
 using content::RenderViewHost;
 using content::Referrer;
 using content::WebContents;
@@ -184,33 +186,33 @@ void ResumeAppleEventAndSendReply(NSAppleEventManagerSuspensionID suspension_id,
 }
 
 - (void)handlesCutScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = webContents_->GetRenderViewHost();
-  if (!view) {
+  RenderFrameHost* frame = webContents_->GetFocusedFrame();
+  if (!frame) {
     NOTREACHED();
     return;
   }
 
-  view->Cut();
+  frame->Cut();
 }
 
 - (void)handlesCopyScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = webContents_->GetRenderViewHost();
-  if (!view) {
+  RenderFrameHost* frame = webContents_->GetFocusedFrame();
+  if (!frame) {
     NOTREACHED();
     return;
   }
 
-  view->Copy();
+  frame->Copy();
 }
 
 - (void)handlesPasteScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = webContents_->GetRenderViewHost();
-  if (!view) {
+  RenderFrameHost* frame = webContents_->GetFocusedFrame();
+  if (!frame) {
     NOTREACHED();
     return;
   }
 
-  view->Paste();
+  frame->Paste();
 }
 
 - (void)handlesSelectAllScriptCommand:(NSScriptCommand*)command {
@@ -315,8 +317,8 @@ void ResumeAppleEventAndSendReply(NSAppleEventManagerSuspensionID suspension_id,
 }
 
 - (id)handlesExecuteJavascriptScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = webContents_->GetRenderViewHost();
-  if (!view) {
+  content::RenderFrameHost* frame = webContents_->GetMainFrame();
+  if (!frame) {
     NOTREACHED();
     return nil;
   }
@@ -324,15 +326,12 @@ void ResumeAppleEventAndSendReply(NSAppleEventManagerSuspensionID suspension_id,
   NSAppleEventManager* manager = [NSAppleEventManager sharedAppleEventManager];
   NSAppleEventManagerSuspensionID suspensionID =
       [manager suspendCurrentAppleEvent];
-  content::RenderViewHost::JavascriptResultCallback callback =
+  content::RenderFrameHost::JavaScriptResultCallback callback =
       base::Bind(&ResumeAppleEventAndSendReply, suspensionID);
 
   base::string16 script = base::SysNSStringToUTF16(
       [[command evaluatedArguments] objectForKey:@"javascript"]);
-  view->ExecuteJavascriptInWebFrameCallbackResult(
-      base::string16(),  // frame_xpath
-      script,
-      callback);
+  frame->ExecuteJavaScript(script, callback);
 
   return nil;
 }

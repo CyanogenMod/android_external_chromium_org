@@ -17,6 +17,10 @@ std::string FakeProfile::GetProfileName() {
   return name_;
 }
 
+Profile::ProfileType FakeProfile::GetProfileType() const {
+  return REGULAR_PROFILE;
+}
+
 base::FilePath FakeProfile::GetPath() const {
   return path_;
 }
@@ -165,7 +169,8 @@ base::Time FakeProfile::GetStartTime() const {
 }
 
 net::URLRequestContextGetter* FakeProfile::CreateRequestContext(
-    content::ProtocolHandlerMap* protocol_handlers) {
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::ProtocolHandlerScopedVector protocol_interceptors) {
   return NULL;
 }
 
@@ -173,7 +178,8 @@ net::URLRequestContextGetter*
 FakeProfile::CreateRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory,
-    content::ProtocolHandlerMap* protocol_handlers) {
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::ProtocolHandlerScopedVector protocol_interceptors) {
   return NULL;
 }
 

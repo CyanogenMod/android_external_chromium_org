@@ -51,8 +51,6 @@ def GetEnvironment(host_obj, testing, extra_env_vars=None):
   if extra_env_vars:
     init_env.update(extra_env_vars)
   envsetup_cmd = '. build/android/envsetup.sh'
-  if host_obj.target_arch:
-    envsetup_cmd += ' --target-arch=%s' % host_obj.target_arch
   if testing:
     # Skip envsetup to avoid presubmit dependence on android deps.
     print 'Testing mode - skipping "%s"' % envsetup_cmd
@@ -71,6 +69,8 @@ def GetEnvironment(host_obj, testing, extra_env_vars=None):
   env = json.loads(json_env)
   env['GYP_DEFINES'] = env.get('GYP_DEFINES', '') + \
       ' fastbuild=1 use_goma=1 gomadir=%s' % bb_utils.GOMA_DIR
+  if host_obj.target_arch:
+    env['GYP_DEFINES'] += ' target_arch=%s' % host_obj.target_arch
   extra_gyp = host_obj.extra_gyp_defines
   if extra_gyp:
     env['GYP_DEFINES'] += ' %s' % extra_gyp
@@ -146,7 +146,7 @@ def GetBotStepMap():
         T(std_tests, ['--asan', '--asan-symbolize'])),
       B('blink-try-builder', H(compile_step)),
       B('chromedriver-fyi-tests-dbg', H(std_test_steps),
-        T(['chromedriver'], ['--install=ChromiumTestShell'])),
+        T(['chromedriver'], ['--install=ChromeShell'])),
       B('fyi-x86-builder-dbg',
         H(compile_step + std_host_tests, experimental, target_arch='x86')),
       B('fyi-builder-dbg',
@@ -165,7 +165,7 @@ def GetBotStepMap():
       # Pass empty T([]) so that logcat monitor and device status check are run.
       B('perf-bisect-builder-tests-dbg', H(['bisect_perf_regression']), T([])),
       B('perf-tests-rel', H(std_test_steps),
-        T([], ['--install=ChromiumTestShell'])),
+        T([], ['--install=ChromeShell'])),
       B('webkit-latest-webkit-tests', H(std_test_steps),
         T(['webkit_layout', 'webkit'], ['--auto-reconnect'])),
       B('webkit-latest-contentshell', H(compile_step),

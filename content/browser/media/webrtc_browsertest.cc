@@ -22,10 +22,19 @@
 
 namespace content {
 
-class WebRtcBrowserTest : public WebRtcContentBrowserTest {
+class WebRtcBrowserTest : public WebRtcContentBrowserTest,
+                          public testing::WithParamInterface<bool> {
  public:
   WebRtcBrowserTest() {}
   virtual ~WebRtcBrowserTest() {}
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    WebRtcContentBrowserTest::SetUpCommandLine(command_line);
+
+    bool enable_audio_track_processing = GetParam();
+    if (enable_audio_track_processing)
+      command_line->AppendSwitch(switches::kEnableAudioTrackProcessing);
+  }
 
   // Convenience function since most peerconnection-call.html tests just load
   // the page, kick off some javascript and wait for the title to change to OK.
@@ -34,19 +43,24 @@ class WebRtcBrowserTest : public WebRtcContentBrowserTest {
 
     GURL url(embedded_test_server()->GetURL("/media/peerconnection-call.html"));
     NavigateToURL(shell(), url);
-    ExecuteTestAndWaitForOk(javascript);
+
+    DisableOpusIfOnAndroid();
+    ExecuteJavascriptAndWaitForOk(javascript);
   }
 
-  void ExecuteTestAndWaitForOk(const std::string& javascript) {
+  void DisableOpusIfOnAndroid() {
 #if defined (OS_ANDROID)
     // Always force iSAC 16K on Android for now (Opus is broken).
-    ASSERT_TRUE(ExecuteJavascript("forceIsac16KInSdp();"));
+    EXPECT_EQ("isac-forced",
+              ExecuteJavascriptAndReturnResult("forceIsac16KInSdp();"));
 #endif
-
-    ASSERT_TRUE(ExecuteJavascript(javascript));
-    ExpectTitle("OK");
   }
 };
+
+static const bool kRunTestsWithFlag[] = { false, true };
+INSTANTIATE_TEST_CASE_P(WebRtcBrowserTests,
+                        WebRtcBrowserTest,
+                        testing::ValuesIn(kRunTestsWithFlag));
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
 // Timing out on ARM linux bot: http://crbug.com/238490
@@ -57,7 +71,7 @@ class WebRtcBrowserTest : public WebRtcContentBrowserTest {
 
 // These tests will make a complete PeerConnection-based call and verify that
 // video is playing for the call.
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CanSetupVideoCall) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CanSetupVideoCall) {
   MakeTypicalPeerConnectionCall("call({video: true});");
 }
 
@@ -68,18 +82,18 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CanSetupVideoCall) {
 #define MAYBE_CanSetupAudioAndVideoCall CanSetupAudioAndVideoCall
 #endif
 
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CanSetupAudioAndVideoCall) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CanSetupAudioAndVideoCall) {
   MakeTypicalPeerConnectionCall("call({video: true, audio: true});");
 }
 
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MANUAL_CanSetupCallAndSendDtmf) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MANUAL_CanSetupCallAndSendDtmf) {
   MakeTypicalPeerConnectionCall("callAndSendDtmf(\'123,abc\');");
 }
 
 // TODO(phoglund): this test fails because the peer connection state will be
 // stable in the second negotiation round rather than have-local-offer.
 // http://crbug.com/293125.
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
                        DISABLED_CanMakeEmptyCallThenAddStreamsAndRenegotiate) {
   const char* kJavascript =
       "callEmptyThenAddOneStreamAndRenegotiate({video: true, audio: true});";
@@ -97,12 +111,12 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
 #define MAYBE_CanForwardRemoteStream CanForwardRemoteStream
 #define MAYBE_CanForwardRemoteStream720p CanForwardRemoteStream720p
 #endif
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CanForwardRemoteStream) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CanForwardRemoteStream) {
   MakeTypicalPeerConnectionCall(
       "callAndForwardRemoteStream({video: true, audio: false});");
 }
 
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CanForwardRemoteStream720p) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CanForwardRemoteStream720p) {
   const std::string javascript = GenerateGetUserMediaCall(
       "callAndForwardRemoteStream", 1280, 1280, 720, 720, 30, 30);
   MakeTypicalPeerConnectionCall(javascript);
@@ -112,11 +126,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CanForwardRemoteStream720p) {
 // MSID and bundle attribute from the initial offer to verify that
 // video is playing for the call even if the initiating client don't support
 // MSID. http://tools.ietf.org/html/draft-alvestrand-rtcweb-msid-02
-#if defined(OS_WIN)
-// Disabled for win, see http://crbug.com/235089.
-#define MAYBE_CanSetupAudioAndVideoCallWithoutMsidAndBundle\
-        DISABLED_CanSetupAudioAndVideoCallWithoutMsidAndBundle
-#elif defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
 // Timing out on ARM linux, see http://crbug.com/240373
 #define MAYBE_CanSetupAudioAndVideoCallWithoutMsidAndBundle\
         DISABLED_CanSetupAudioAndVideoCallWithoutMsidAndBundle
@@ -124,7 +134,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CanForwardRemoteStream720p) {
 #define MAYBE_CanSetupAudioAndVideoCallWithoutMsidAndBundle\
         CanSetupAudioAndVideoCallWithoutMsidAndBundle
 #endif
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
                        MAYBE_CanSetupAudioAndVideoCallWithoutMsidAndBundle) {
   MakeTypicalPeerConnectionCall("callWithoutMsidAndBundle();");
 }
@@ -139,7 +149,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
 #define MAYBE_NegotiateUnsupportedVideoCodec NegotiateUnsupportedVideoCodec
 #endif
 
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
                        MAYBE_NegotiateUnsupportedVideoCodec) {
   MakeTypicalPeerConnectionCall("negotiateUnsupportedVideoCodec();");
 }
@@ -153,40 +163,37 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
 #define MAYBE_NegotiateNonCryptoCall NegotiateNonCryptoCall
 #endif
 
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_NegotiateNonCryptoCall) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_NegotiateNonCryptoCall) {
   MakeTypicalPeerConnectionCall("negotiateNonCryptoCall();");
 }
 
 // This test can negotiate an SDP offer that includes a b=AS:xx to control
 // the bandwidth for audio and video
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, NegotiateOfferWithBLine) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, NegotiateOfferWithBLine) {
   MakeTypicalPeerConnectionCall("negotiateOfferWithBLine();");
 }
 
 // This test will make a complete PeerConnection-based call using legacy SDP
 // settings: GIce, external SDES, and no BUNDLE.
-#if defined(OS_WIN)
-// Disabled for win7, see http://crbug.com/235089.
-#define MAYBE_CanSetupLegacyCall DISABLED_CanSetupLegacyCall
-#elif defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
 // Timing out on ARM linux, see http://crbug.com/240373
 #define MAYBE_CanSetupLegacyCall DISABLED_CanSetupLegacyCall
 #else
 #define MAYBE_CanSetupLegacyCall CanSetupLegacyCall
 #endif
 
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CanSetupLegacyCall) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CanSetupLegacyCall) {
   MakeTypicalPeerConnectionCall("callWithLegacySdp();");
 }
 
 // This test will make a PeerConnection-based call and test an unreliable text
 // dataChannel.
 // TODO(mallinath) - Remove this test after rtp based data channel is disabled.
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, CallWithDataOnly) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, CallWithDataOnly) {
   MakeTypicalPeerConnectionCall("callWithDataOnly();");
 }
 
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, CallWithSctpDataOnly) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, CallWithSctpDataOnly) {
   MakeTypicalPeerConnectionCall("callWithSctpDataOnly();");
 }
 
@@ -200,7 +207,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, CallWithSctpDataOnly) {
 // This test will make a PeerConnection-based call and test an unreliable text
 // dataChannel and audio and video tracks.
 // TODO(mallinath) - Remove this test after rtp based data channel is disabled.
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CallWithDataAndMedia) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CallWithDataAndMedia) {
   MakeTypicalPeerConnectionCall("callWithDataAndMedia();");
 }
 
@@ -212,7 +219,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CallWithDataAndMedia) {
 #define MAYBE_CallWithSctpDataAndMedia CallWithSctpDataAndMedia
 #endif
 
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
                        MAYBE_CallWithSctpDataAndMedia) {
   MakeTypicalPeerConnectionCall("callWithSctpDataAndMedia();");
 }
@@ -227,7 +234,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
 
 // This test will make a PeerConnection-based call and test an unreliable text
 // dataChannel and later add an audio and video track.
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CallWithDataAndLaterAddMedia) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CallWithDataAndLaterAddMedia) {
   MakeTypicalPeerConnectionCall("callWithDataAndLaterAddMedia();");
 }
 
@@ -241,7 +248,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CallWithDataAndLaterAddMedia) {
 // This test will make a PeerConnection-based call and send a new Video
 // MediaStream that has been created based on a MediaStream created with
 // getUserMedia.
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CallWithNewVideoMediaStream) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CallWithNewVideoMediaStream) {
   MakeTypicalPeerConnectionCall("callWithNewVideoMediaStream();");
 }
 
@@ -251,16 +258,16 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CallWithNewVideoMediaStream) {
 // AudioTrack is added instead.
 // TODO(phoglund): This test is manual since not all buildbots has an audio
 // input.
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MANUAL_CallAndModifyStream) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MANUAL_CallAndModifyStream) {
   MakeTypicalPeerConnectionCall(
       "callWithNewVideoMediaStreamLaterSwitchToAudio();");
 }
 
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, AddTwoMediaStreamsToOnePC) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, AddTwoMediaStreamsToOnePC) {
   MakeTypicalPeerConnectionCall("addTwoMediaStreamsToOneConnection();");
 }
 
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
                        EstablishAudioVideoCallAndMeasureOutputLevel) {
   if (!media::AudioManager::Get()->HasAudioOutputDevices()) {
     // Bots with no output devices will force the audio code into a different
@@ -279,7 +286,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
   MakeTypicalPeerConnectionCall("callAndEnsureAudioIsPlaying();");
 }
 
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
                        EstablishAudioVideoCallAndVerifyMutingWorks) {
   if (!media::AudioManager::Get()->HasAudioOutputDevices()) {
     // Bots with no output devices will force the audio code into a different
@@ -298,7 +305,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
   MakeTypicalPeerConnectionCall("callAndEnsureAudioMutingWorks();");
 }
 
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, CallAndVerifyVideoMutingWorks) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, CallAndVerifyVideoMutingWorks) {
   MakeTypicalPeerConnectionCall("callAndEnsureVideoMutingWorks();");
 }
 
@@ -316,7 +323,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, CallAndVerifyVideoMutingWorks) {
 // and Javascript is bypassed since it would trigger a file picker dialog.
 // Instead, the dialog callback FileSelected() is invoked directly. In fact,
 // there's never a webrtc-internals page opened at all since that's not needed.
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CallWithAecDump) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CallWithAecDump) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   // We must navigate somewhere first so that the render process is created.
@@ -331,7 +338,8 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CallWithAecDump) {
 
   GURL url(embedded_test_server()->GetURL("/media/peerconnection-call.html"));
   NavigateToURL(shell(), url);
-  ExecuteTestAndWaitForOk("call({video: true, audio: true});");
+  DisableOpusIfOnAndroid();
+  ExecuteJavascriptAndWaitForOk("call({video: true, audio: true});");
 
   EXPECT_TRUE(base::PathExists(dump_file));
   int64 file_size = 0;
@@ -350,7 +358,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CallWithAecDump) {
 
 // As above, but enable and disable dump before starting a call. The file should
 // be created, but should be empty.
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
                        MAYBE_CallWithAecDumpEnabledThenDisabled) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -367,7 +375,8 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
 
   GURL url(embedded_test_server()->GetURL("/media/peerconnection-call.html"));
   NavigateToURL(shell(), url);
-  ExecuteTestAndWaitForOk("call({video: true, audio: true});");
+  DisableOpusIfOnAndroid();
+  ExecuteJavascriptAndWaitForOk("call({video: true, audio: true});");
 
   EXPECT_TRUE(base::PathExists(dump_file));
   int64 file_size = 0;

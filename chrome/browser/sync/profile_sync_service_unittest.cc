@@ -7,6 +7,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "base/values.h"
+#include "chrome/browser/invalidation/fake_invalidation_service.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
 #include "chrome/browser/managed_mode/managed_user_signin_manager_wrapper.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
@@ -38,8 +39,8 @@ ACTION(ReturnNewDataTypeManager) {
                                                arg5);
 }
 
-using testing::_;
 using testing::StrictMock;
+using testing::_;
 
 class TestProfileSyncServiceObserver : public ProfileSyncServiceObserver {
  public:
@@ -98,7 +99,7 @@ class ProfileSyncServiceTest : public ::testing::Test {
         ProfileOAuth2TokenServiceFactory::GetInstance(),
         FakeProfileOAuth2TokenServiceWrapper::BuildAutoIssuingTokenService);
     invalidation::InvalidationServiceFactory::GetInstance()->
-        SetBuildOnlyFakeInvalidatorsForTest(true);
+        RegisterTestingFactory(invalidation::FakeInvalidationService::Build);
 
     profile_ = builder.Build().Pass();
   }
@@ -117,7 +118,7 @@ class ProfileSyncServiceTest : public ::testing::Test {
         ->UpdateCredentials("test", "oauth2_login_token");
   }
 
-  void CreateService(ProfileSyncService::StartBehavior behavior) {
+  void CreateService(ProfileSyncServiceStartBehavior behavior) {
     SigninManagerBase* signin =
         SigninManagerFactory::GetForProfile(profile_.get());
     signin->SetAuthenticatedUsername("test");
@@ -181,7 +182,7 @@ class ProfileSyncServiceTest : public ::testing::Test {
 
 // Verify that the server URLs are sane.
 TEST_F(ProfileSyncServiceTest, InitialState) {
-  CreateService(ProfileSyncService::AUTO_START);
+  CreateService(browser_sync::AUTO_START);
   Initialize();
   const std::string& url = service()->sync_service_url().spec();
   EXPECT_TRUE(url == ProfileSyncService::kSyncServerUrl ||
@@ -194,7 +195,7 @@ TEST_F(ProfileSyncServiceTest, SuccessfulInitialization) {
       prefs::kSyncManaged,
       base::Value::CreateBooleanValue(false));
   IssueTestTokens();
-  CreateService(ProfileSyncService::AUTO_START);
+  CreateService(browser_sync::AUTO_START);
   ExpectDataTypeManagerCreation();
   ExpectSyncBackendHostCreation();
   Initialize();
@@ -206,7 +207,7 @@ TEST_F(ProfileSyncServiceTest, SuccessfulInitialization) {
 // Verify that the SetSetupInProgress function call updates state
 // and notifies observers.
 TEST_F(ProfileSyncServiceTest, SetupInProgress) {
-  CreateService(ProfileSyncService::MANUAL_START);
+  CreateService(browser_sync::AUTO_START);
   Initialize();
 
   TestProfileSyncServiceObserver observer(service());
@@ -226,7 +227,7 @@ TEST_F(ProfileSyncServiceTest, DisabledByPolicyBeforeInit) {
       prefs::kSyncManaged,
       base::Value::CreateBooleanValue(true));
   IssueTestTokens();
-  CreateService(ProfileSyncService::AUTO_START);
+  CreateService(browser_sync::AUTO_START);
   Initialize();
   EXPECT_TRUE(service()->IsManaged());
   EXPECT_FALSE(service()->sync_initialized());
@@ -236,7 +237,7 @@ TEST_F(ProfileSyncServiceTest, DisabledByPolicyBeforeInit) {
 // been initialized.
 TEST_F(ProfileSyncServiceTest, DisabledByPolicyAfterInit) {
   IssueTestTokens();
-  CreateService(ProfileSyncService::AUTO_START);
+  CreateService(browser_sync::AUTO_START);
   ExpectDataTypeManagerCreation();
   ExpectSyncBackendHostCreation();
   Initialize();
@@ -255,7 +256,7 @@ TEST_F(ProfileSyncServiceTest, DisabledByPolicyAfterInit) {
 // Exercies the ProfileSyncService's code paths related to getting shut down
 // before the backend initialize call returns.
 TEST_F(ProfileSyncServiceTest, AbortedByShutdown) {
-  CreateService(ProfileSyncService::AUTO_START);
+  CreateService(browser_sync::AUTO_START);
   PrepareDelayedInitSyncBackendHost();
 
   IssueTestTokens();
@@ -267,7 +268,7 @@ TEST_F(ProfileSyncServiceTest, AbortedByShutdown) {
 
 // Test StopAndSuppress() before we've initialized the backend.
 TEST_F(ProfileSyncServiceTest, EarlyStopAndSuppress) {
-  CreateService(ProfileSyncService::AUTO_START);
+  CreateService(browser_sync::AUTO_START);
   IssueTestTokens();
 
   service()->StopAndSuppress();
@@ -288,7 +289,7 @@ TEST_F(ProfileSyncServiceTest, EarlyStopAndSuppress) {
 
 // Test StopAndSuppress() after we've initialized the backend.
 TEST_F(ProfileSyncServiceTest, DisableAndEnableSyncTemporarily) {
-  CreateService(ProfileSyncService::AUTO_START);
+  CreateService(browser_sync::AUTO_START);
   IssueTestTokens();
   ExpectDataTypeManagerCreation();
   ExpectSyncBackendHostCreation();
@@ -317,7 +318,7 @@ TEST_F(ProfileSyncServiceTest, DisableAndEnableSyncTemporarily) {
 #if !defined (OS_CHROMEOS)
 
 TEST_F(ProfileSyncServiceTest, EnableSyncAndSignOut) {
-  CreateService(ProfileSyncService::AUTO_START);
+  CreateService(browser_sync::AUTO_START);
   ExpectDataTypeManagerCreation();
   ExpectSyncBackendHostCreation();
   IssueTestTokens();
@@ -333,7 +334,7 @@ TEST_F(ProfileSyncServiceTest, EnableSyncAndSignOut) {
 #endif  // !defined(OS_CHROMEOS)
 
 TEST_F(ProfileSyncServiceTest, GetSyncTokenStatus) {
-  CreateService(ProfileSyncService::AUTO_START);
+  CreateService(browser_sync::AUTO_START);
   IssueTestTokens();
   ExpectDataTypeManagerCreation();
   ExpectSyncBackendHostCreation();

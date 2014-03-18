@@ -33,8 +33,8 @@ namespace app_list {
 namespace {
 
 bool SyncAppListEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      ::switches::kEnableSyncAppList);
+  return !CommandLine::ForCurrentProcess()->HasSwitch(
+      ::switches::kDisableSyncAppList);
 }
 
 void UpdateSyncItemFromSync(const sync_pb::AppListSpecifics& specifics,
@@ -58,8 +58,8 @@ bool UpdateSyncItemFromAppItem(const AppListItem* app_item,
     sync_item->parent_id = app_item->folder_id();
     changed = true;
   }
-  if (sync_item->item_name != app_item->title()) {
-    sync_item->item_name = app_item->title();
+  if (sync_item->item_name != app_item->name()) {
+    sync_item->item_name = app_item->name();
     changed = true;
   }
   if (!sync_item->item_ordinal.IsValid() ||
@@ -94,7 +94,8 @@ syncer::SyncData GetSyncDataFromSyncItem(
 }
 
 bool AppIsDefault(ExtensionService* service, const std::string& id) {
-  return service && service->extension_prefs()->WasInstalledByDefault(id);
+  return service && extensions::ExtensionPrefs::Get(service->profile())
+                        ->WasInstalledByDefault(id);
 }
 
 void UninstallExtension(ExtensionService* service, const std::string& id) {
@@ -642,6 +643,12 @@ void AppListSyncableService::UpdateAppItemFromSyncItem(
     AppListItem* app_item) {
   if (!app_item->position().Equals(sync_item->item_ordinal))
     model_->SetItemPosition(app_item, sync_item->item_ordinal);
+  // Only update the item name if it is a Folder or the name is empty.
+  if (sync_item->item_name != app_item->name() &&
+      (app_item->GetItemType() == AppListFolderItem::kItemType ||
+       app_item->name().empty())) {
+    model_->SetItemName(app_item, sync_item->item_name);
+  }
 }
 
 bool AppListSyncableService::SyncStarted() {

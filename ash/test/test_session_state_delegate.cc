@@ -34,11 +34,16 @@ TestSessionStateDelegate::TestSessionStateDelegate()
       should_lock_screen_before_suspending_(false),
       screen_locked_(false),
       user_adding_screen_running_(false),
-      logged_in_users_(1),
-      num_transfer_to_desktop_of_user_calls_(0) {
+      logged_in_users_(1) {
 }
 
 TestSessionStateDelegate::~TestSessionStateDelegate() {
+}
+
+content::BrowserContext*
+TestSessionStateDelegate::GetBrowserContextByIndex(
+    MultiProfileIndex index) {
+  return NULL;
 }
 
 int TestSessionStateDelegate::GetMaximumNumberOfLoggedInUsers() const {
@@ -134,11 +139,12 @@ const std::string TestSessionStateDelegate::GetUserID(
 }
 
 const gfx::ImageSkia& TestSessionStateDelegate::GetUserImage(
-    MultiProfileIndex index) const {
+    content::BrowserContext* context) const {
   return null_image_;
 }
 
-void TestSessionStateDelegate::GetLoggedInUsers(UserIdList* users) {
+bool TestSessionStateDelegate::ShouldShowAvatar(aura::Window* window) {
+  return false;
 }
 
 void TestSessionStateDelegate::SwitchActiveUser(const std::string& user_id) {
@@ -157,13 +163,6 @@ void TestSessionStateDelegate::AddSessionStateObserver(
 
 void TestSessionStateDelegate::RemoveSessionStateObserver(
     SessionStateObserver* observer) {
-}
-
-bool TestSessionStateDelegate::TransferWindowToDesktopOfUser(
-    aura::Window* window,
-    ash::MultiProfileIndex index) {
-  num_transfer_to_desktop_of_user_calls_++;
-  return false;
 }
 
 }  // namespace test

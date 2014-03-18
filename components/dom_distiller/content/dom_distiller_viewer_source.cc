@@ -16,6 +16,8 @@
 #include "components/dom_distiller/core/proto/distilled_article.pb.h"
 #include "components/dom_distiller/core/proto/distilled_page.pb.h"
 #include "components/dom_distiller/core/task_tracker.h"
+#include "components/dom_distiller/core/url_constants.h"
+#include "components/dom_distiller/core/url_utils.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "grit/component_resources.h"
@@ -26,29 +28,33 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
 
+namespace dom_distiller {
+
 namespace {
 
-const char kCssPath[] = "readability.css";
-
-std::string ReplaceHtmlTemplateValues(std::string title, std::string content) {
+std::string ReplaceHtmlTemplateValues(const std::string& title,
+                                      const std::string& content,
+                                      const std::string& original_url) {
   base::StringPiece html_template =
       ResourceBundle::GetSharedInstance().GetRawDataResource(
           IDR_DOM_DISTILLER_VIEWER_HTML);
   std::vector<std::string> substitutions;
-  substitutions.push_back(title);     // $1
-  substitutions.push_back(kCssPath);  // $2
-  substitutions.push_back(title);     // $3
-  substitutions.push_back(content);   // $4
+  substitutions.push_back(title);                                          // $1
+  substitutions.push_back(kCssPath);                                       // $2
+  substitutions.push_back(title);                                          // $3
+  substitutions.push_back(content);                                        // $4
+  substitutions.push_back(original_url);                                   // $5
+  substitutions.push_back(
+        l10n_util::GetStringUTF8(IDS_DOM_DISTILLER_VIEWER_VIEW_ORIGINAL)); // $6
   return ReplaceStringPlaceholders(html_template, substitutions, NULL);
 }
 
 }  // namespace
 
-namespace dom_distiller {
-
 // Handles receiving data asynchronously for a specific entry, and passing
 // it along to the data callback for the data source.
-class RequestViewerHandle : public ViewRequestDelegate {
+class DomDistillerViewerSource::RequestViewerHandle
+    : public ViewRequestDelegate {
  public:
   explicit RequestViewerHandle(
       const content::URLDataSource::GotDataCallback& callback);
@@ -56,6 +62,9 @@ class RequestViewerHandle : public ViewRequestDelegate {
 
   // ViewRequestDelegate implementation.
   virtual void OnArticleReady(const DistilledArticleProto* article_proto)
+      OVERRIDE;
+
+  virtual void OnArticleUpdated(ArticleDistillationUpdate article_update)
       OVERRIDE;
 
   void TakeViewerHandle(scoped_ptr<ViewerHandle> viewer_handle);
@@ -69,13 +78,13 @@ class RequestViewerHandle : public ViewRequestDelegate {
   content::URLDataSource::GotDataCallback callback_;
 };
 
-RequestViewerHandle::RequestViewerHandle(
+DomDistillerViewerSource::RequestViewerHandle::RequestViewerHandle(
     const content::URLDataSource::GotDataCallback& callback)
     : callback_(callback) {}
 
-RequestViewerHandle::~RequestViewerHandle() {}
+DomDistillerViewerSource::RequestViewerHandle::~RequestViewerHandle() {}
 
-void RequestViewerHandle::OnArticleReady(
+void DomDistillerViewerSource::RequestViewerHandle::OnArticleReady(
     const DistilledArticleProto* article_proto) {
   DCHECK(article_proto);
   std::string title;
@@ -95,19 +104,30 @@ void RequestViewerHandle::OnArticleReady(
     unsafe_article_html =
         l10n_util::GetStringUTF8(IDS_DOM_DISTILLER_VIEWER_NO_DATA_CONTENT);
   }
+
+  std::string original_url;
+  if (article_proto->pages_size() > 0 && article_proto->pages(0).has_url()) {
+    original_url = article_proto->pages(0).url();
+  }
+
   std::string unsafe_page_html =
-      ReplaceHtmlTemplateValues(title, unsafe_article_html);
+      ReplaceHtmlTemplateValues(title, unsafe_article_html, original_url);
   callback_.Run(base::RefCountedString::TakeString(&unsafe_page_html));
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
-void RequestViewerHandle::TakeViewerHandle(
+void DomDistillerViewerSource::RequestViewerHandle::OnArticleUpdated(
+    ArticleDistillationUpdate article_update) {
+  // TODO(nyquist): Add support for displaying pages incrementally.
+}
+
+void DomDistillerViewerSource::RequestViewerHandle::TakeViewerHandle(
     scoped_ptr<ViewerHandle> viewer_handle) {
   viewer_handle_ = viewer_handle.Pass();
 }
 
 DomDistillerViewerSource::DomDistillerViewerSource(
-    DomDistillerService* dom_distiller_service,
+    DomDistillerServiceInterface* dom_distiller_service,
     const std::string& scheme)
     : scheme_(scheme), dom_distiller_service_(dom_distiller_service) {}
 
@@ -140,9 +160,9 @@ void DomDistillerViewerSource::StartDataRequest(
 
   RequestViewerHandle* request_viewer_handle =
       new RequestViewerHandle(callback);
-  std::string entry_id = StringToUpperASCII(path);
   scoped_ptr<ViewerHandle> viewer_handle =
-      dom_distiller_service_->ViewEntry(request_viewer_handle, entry_id);
+      CreateViewRequest(path, request_viewer_handle);
+
   if (viewer_handle) {
     // The service returned a |ViewerHandle| and guarantees it will call
     // the |RequestViewerHandle|, so passing ownership to it, to ensure the
@@ -158,13 +178,13 @@ void DomDistillerViewerSource::StartDataRequest(
         IDS_DOM_DISTILLER_VIEWER_FAILED_TO_FIND_ARTICLE_TITLE);
     std::string content = l10n_util::GetStringUTF8(
         IDS_DOM_DISTILLER_VIEWER_FAILED_TO_FIND_ARTICLE_CONTENT);
-    std::string html = ReplaceHtmlTemplateValues(title, content);
+    std::string html = ReplaceHtmlTemplateValues(title, content, "");
     callback.Run(base::RefCountedString::TakeString(&html));
   }
 };
 
-std::string DomDistillerViewerSource::GetMimeType(const std::string& path)
-    const {
+std::string DomDistillerViewerSource::GetMimeType(
+    const std::string& path) const {
   if (path == kCssPath)
     return "text/css";
   return "text/html";
@@ -175,19 +195,45 @@ bool DomDistillerViewerSource::ShouldServiceRequest(
   return request->url().SchemeIs(scheme_.c_str());
 }
 
+// TODO(nyquist): Start tracking requests using this method.
 void DomDistillerViewerSource::WillServiceRequest(
     const net::URLRequest* request,
-    std::string* path) const {
-  if (*path != kCssPath) {
-    // Since the full request is not available to StartDataRequest, replace the
-    // path to contain the data needed.
-    *path = request->url().host();
-  }
-};
+    std::string* path) const {}
 
 std::string DomDistillerViewerSource::GetContentSecurityPolicyObjectSrc()
     const {
-  return "object-src 'none'; style-src 'self'";
+  return "object-src 'none'; style-src 'self';";
+}
+
+scoped_ptr<ViewerHandle> DomDistillerViewerSource::CreateViewRequest(
+    const std::string& path,
+    ViewRequestDelegate* view_request_delegate) {
+  std::string entry_id =
+      url_utils::GetValueForKeyInUrlPathQuery(path, kEntryIdKey);
+  bool has_valid_entry_id = !entry_id.empty();
+  entry_id = StringToUpperASCII(entry_id);
+
+  std::string requested_url_str =
+      url_utils::GetValueForKeyInUrlPathQuery(path, kUrlKey);
+  GURL requested_url(requested_url_str);
+  bool has_valid_url = url_utils::IsUrlDistillable(requested_url);
+
+  if (has_valid_entry_id && has_valid_url) {
+    // It is invalid to specify a query param for both |kEntryIdKey| and
+    // |kUrlKey|.
+    return scoped_ptr<ViewerHandle>();
+  }
+
+  if (has_valid_entry_id) {
+    return dom_distiller_service_->ViewEntry(view_request_delegate, entry_id)
+        .Pass();
+  } else if (has_valid_url) {
+    return dom_distiller_service_->ViewUrl(view_request_delegate, requested_url)
+        .Pass();
+  }
+
+  // It is invalid to not specify a query param for |kEntryIdKey| or |kUrlKey|.
+  return scoped_ptr<ViewerHandle>();
 }
 
 }  // namespace dom_distiller

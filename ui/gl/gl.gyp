@@ -29,6 +29,7 @@
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/swiftshader/include',
+        '<(DEPTH)/third_party/khronos',
         '<(DEPTH)/third_party/mesa/src/include',
         '<(gl_binding_output_dir)',
       ],
@@ -84,8 +85,6 @@
         'gl_implementation.cc',
         'gl_implementation.h',
         'gl_implementation_android.cc',
-        'gl_implementation_linux.cc',
-        'gl_implementation_linux.h',
         'gl_implementation_ozone.cc',
         'gl_implementation_mac.cc',
         'gl_implementation_win.cc',
@@ -187,6 +186,12 @@
             '<(DEPTH)/third_party/khronos',
         ],
         }],
+        ['OS in ("android", "linux")', {
+          'sources': [
+            'gl_implementation_osmesa.cc',
+            'gl_implementation_osmesa.h',
+          ],
+        }],
         ['use_x11 == 1', {
           'sources': [
             'gl_context_glx.cc',
@@ -277,7 +282,6 @@
             ],
           },
           'sources!': [
-            'gl_context_osmesa.cc',
             'system_monitor_posix.cc',
           ],
           'defines': [
@@ -353,6 +357,11 @@
           },
           'includes': [ '../../build/jni_generator.gypi' ],
         },
+      ],
+    }],
+    ['OS=="android" and android_webview_build==0', {
+      'dependencies': [
+        '../android/ui_android.gyp:ui_java',
       ],
     }],
   ],

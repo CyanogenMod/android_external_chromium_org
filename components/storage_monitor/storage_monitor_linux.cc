@@ -28,6 +28,9 @@
 #include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
 
 using content::BrowserThread;
+
+namespace storage_monitor {
+
 typedef MtabWatcherLinux::MountPointDeviceMap MountPointDeviceMap;
 
 namespace {
@@ -180,7 +183,6 @@ scoped_ptr<StorageInfo> GetDeviceInfo(const base::FilePath& device_path,
 
   storage_info.reset(new StorageInfo(
       StorageInfo::MakeDeviceId(type, unique_id),
-      base::string16(),
       mount_point.value(),
       volume_label,
       vendor_name,
@@ -500,3 +502,5 @@ StorageMonitor* StorageMonitor::CreateInternal() {
   const base::FilePath kDefaultMtabPath("/etc/mtab");
   return new StorageMonitorLinux(kDefaultMtabPath);
 }
+
+}  // namespace storage_monitor

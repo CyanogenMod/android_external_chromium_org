@@ -20,7 +20,7 @@ from telemetry.core import exceptions
 from telemetry.core import util
 from telemetry.core import wpr_modes
 from telemetry.core.platform.profiler import profiler_finder
-from telemetry.page import page_filter as page_filter_module
+from telemetry.page import page_filter
 from telemetry.page import page_runner_repeat
 from telemetry.page import page_test
 from telemetry.page import results_options
@@ -62,6 +62,9 @@ class _RunState(object):
       if self._first_browser:
         self._first_browser = False
         self.browser.credentials.WarnIfMissingCredentials(page_set)
+        logging.info('OS: %s %s',
+                     self.browser.platform.GetOSName(),
+                     self.browser.platform.GetOSVersionName())
         if self.browser.supports_system_info:
           system_info = self.browser.GetSystemInfo()
           if system_info.model_name:
@@ -95,6 +98,9 @@ class _RunState(object):
     if self.browser.supports_tab_control and test.close_tabs_before_run:
       # Create a tab if there's none.
       if len(self.browser.tabs) == 0:
+        # TODO(nduca/tonyg): Remove this line. Added as part of crbug.com/348337
+        # chasing.
+        logging.warning('Making a new tab\n')
         self.browser.tabs.New()
 
       # Ensure only one tab is open, unless the test is a multi-tab test.
@@ -173,19 +179,25 @@ class PageState(object):
       i = navigate.NavigateAction()
       i.RunAction(self.page, self.tab, None)
 
-  def CleanUpPage(self):
+  def CleanUpPage(self, test):
+    try:
+      test.CleanUpAfterPage(self.page, self.tab)
+    except Exception:
+      logging.error('While cleaning up %s:\n%s', self.page.url,
+                    traceback.format_exc())
+
     if self.page.credentials and self._did_login:
       self.tab.browser.credentials.LoginNoLongerNeeded(
           self.tab, self.page.credentials)
 
-    if self.tab:
-      self.tab.Disconnect()
-      self.tab = None
 
-
-def AddCommandLineOptions(parser):
-  page_filter_module.PageFilter.AddCommandLineOptions(parser)
+def AddCommandLineArgs(parser):
+  page_filter.PageFilter.AddCommandLineArgs(parser)
   results_options.AddResultsOptions(parser)
+
+
+def ProcessCommandLineArgs(parser, args):
+  page_filter.PageFilter.ProcessCommandLineArgs(parser, args)
 
 
 def _LogStackTrace(title, browser):
@@ -215,7 +227,7 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
     try:
       results_for_current_run = copy.copy(results)
       results_for_current_run.StartTest(page)
-      if test.RestartBrowserBeforeEachPage():
+      if test.RestartBrowserBeforeEachPage() or page.startup_url:
         state.StopBrowser()
         # If we are restarting the browser for each page customize the per page
         # options for just the current page before starting the browser.
@@ -334,7 +346,7 @@ def Run(test, page_set, expectations, finder_options):
   # TODO(dtu): Move results creation and results_for_current_run into RunState.
 
   try:
-    test.WillRunTest()
+    test.WillRunTest(finder_options)
     state.repeat_state = page_runner_repeat.PageRunnerRepeatState(
                              finder_options.repeat_options)
 
@@ -349,6 +361,14 @@ def Run(test, page_set, expectations, finder_options):
               page, credentials_path, possible_browser, results, state)
           state.repeat_state.DidRunPage()
         test.DidRunPageRepeats(page)
+        if (not test.max_failures is None and
+            len(results.failures) > test.max_failures):
+          logging.error('Too many failures. Aborting.')
+          test.RequestExit()
+        if (not test.max_errors is None and
+            len(results.errors) > test.max_errors):
+          logging.error('Too many errors. Aborting.')
+          test.RequestExit()
         if test.IsExiting():
           break
       state.repeat_state.DidRunPageSet()
@@ -368,9 +388,8 @@ def _ShuffleAndFilterPageSet(page_set, finder_options):
   if finder_options.pageset_shuffle_order_file:
     return page_set.ReorderPageSet(finder_options.pageset_shuffle_order_file)
 
-  page_filter = page_filter_module.PageFilter(finder_options)
   pages = [page for page in page_set.pages[:]
-           if not page.disabled and page_filter.IsSelected(page)]
+           if not page.disabled and page_filter.PageFilter.IsSelected(page)]
 
   if finder_options.pageset_shuffle:
     random.Random().shuffle(pages)
@@ -459,7 +478,7 @@ def _RunPage(test, page, state, expectation, results, finder_options):
     if state.repeat_state.ShouldNavigate(
         finder_options.skip_navigate_on_repeat):
       page_state.ImplicitPageNavigation(test)
-    test.Run(finder_options, page, page_state.tab, results)
+    test.Run(page, page_state.tab, results)
     util.CloseConnections(page_state.tab)
   except page_test.Failure:
     if expectation == 'fail':
@@ -485,7 +504,7 @@ def _RunPage(test, page, state, expectation, results, finder_options):
       logging.warning('%s was expected to fail, but passed.\n', page.url)
     results.AddSuccess(page)
   finally:
-    page_state.CleanUpPage()
+    page_state.CleanUpPage(test)
 
 
 def _GetSequentialFileName(base_name):

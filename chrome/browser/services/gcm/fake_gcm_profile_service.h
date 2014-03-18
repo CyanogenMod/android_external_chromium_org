@@ -17,10 +17,8 @@ namespace gcm {
 class FakeGCMProfileService : public GCMProfileService {
  public:
   // Helper function to be used with
-  // BrowserContextKeyedService::SetTestingFactory().
-  static BrowserContextKeyedService* Build(content::BrowserContext* context);
-
-  static void EnableGCMForTesting();
+  // KeyedService::SetTestingFactory().
+  static KeyedService* Build(content::BrowserContext* context);
 
   explicit FakeGCMProfileService(Profile* profile);
   virtual ~FakeGCMProfileService();
@@ -28,7 +26,6 @@ class FakeGCMProfileService : public GCMProfileService {
   // GCMProfileService overrides.
   virtual void Register(const std::string& app_id,
                         const std::vector<std::string>& sender_ids,
-                        const std::string& cert,
                         RegisterCallback callback) OVERRIDE;
   virtual void Send(const std::string& app_id,
                     const std::string& receiver_id,
@@ -37,7 +34,6 @@ class FakeGCMProfileService : public GCMProfileService {
 
   void RegisterFinished(const std::string& app_id,
                         const std::vector<std::string>& sender_ids,
-                        const std::string& cert,
                         RegisterCallback callback);
 
   void SendFinished(const std::string& app_id,
@@ -61,10 +57,6 @@ class FakeGCMProfileService : public GCMProfileService {
     return last_registered_sender_ids_;
   }
 
-  const std::string& last_registered_cert() const {
-    return last_registered_cert_;
-  }
-
   void set_collect(bool collect) {
     collect_ = collect;
   }
@@ -75,7 +67,6 @@ class FakeGCMProfileService : public GCMProfileService {
   bool collect_;
   std::string last_registered_app_id_;
   std::vector<std::string> last_registered_sender_ids_;
-  std::string last_registered_cert_;
   GCMClient::OutgoingMessage last_sent_message_;
   std::string last_receiver_id_;
 

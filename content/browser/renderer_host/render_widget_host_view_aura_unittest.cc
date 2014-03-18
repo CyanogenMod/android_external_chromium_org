@@ -14,6 +14,7 @@
 #include "cc/output/copy_output_request.h"
 #include "cc/output/gl_frame_data.h"
 #include "content/browser/browser_thread_impl.h"
+#include "content/browser/compositor/owned_mailbox.h"
 #include "content/browser/compositor/resize_lock.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -32,18 +33,18 @@
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/aura_test_helper.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_cursor_client.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/test/draw_waiter_for_test.h"
-#include "ui/compositor/test/test_context_factory.h"
+#include "ui/compositor/test/in_process_context_factory.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 
@@ -168,10 +169,19 @@ class FakeRenderWidgetHostViewAura : public RenderWidgetHostViewAura {
   virtual void RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request)
       OVERRIDE {
     last_copy_request_ = request.Pass();
+    if (last_copy_request_->has_texture_mailbox()) {
+      // Give the resulting texture a size.
+      GLHelper* gl_helper = ImageTransportFactory::GetInstance()->GetGLHelper();
+      GLuint texture = gl_helper->ConsumeMailboxToTexture(
+          last_copy_request_->texture_mailbox().mailbox(),
+          last_copy_request_->texture_mailbox().sync_point());
+      gl_helper->ResizeTexture(texture, window()->bounds().size());
+      gl_helper->DeleteTexture(texture);
+    }
   }
 
   void RunOnCompositingDidCommit() {
-    OnCompositingDidCommit(window()->GetDispatcher()->host()->compositor());
+    OnCompositingDidCommit(window()->GetHost()->compositor());
   }
 
   // A lock that doesn't actually do anything to the compositor, and does not
@@ -194,10 +204,9 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
 
   void SetUpEnvironment() {
     ImageTransportFactory::InitializeForUnitTests(
-        scoped_ptr<ui::ContextFactory>(new ui::TestContextFactory));
+        scoped_ptr<ui::ContextFactory>(new ui::InProcessContextFactory));
     aura_test_helper_.reset(new aura::test::AuraTestHelper(&message_loop_));
-    bool allow_test_contexts = true;
-    aura_test_helper_->SetUp(allow_test_contexts);
+    aura_test_helper_->SetUp();
 
     browser_context_.reset(new TestBrowserContext);
     process_host_ = new MockRenderProcessHost(browser_context_.get());
@@ -836,13 +845,15 @@ TEST_F(RenderWidgetHostViewAuraTest, UpdateCursorIfOverSelf) {
 
 scoped_ptr<cc::CompositorFrame> MakeGLFrame(float scale_factor,
                                             gfx::Size size,
-                                            gfx::Rect damage) {
+                                            gfx::Rect damage,
+                                            OwnedMailbox* owned_mailbox) {
   scoped_ptr<cc::CompositorFrame> frame(new cc::CompositorFrame);
   frame->metadata.device_scale_factor = scale_factor;
   frame->gl_frame_data.reset(new cc::GLFrameData);
-  frame->gl_frame_data->sync_point = 1;
-  memset(frame->gl_frame_data->mailbox.name,
-         '1',
+  DCHECK(owned_mailbox->sync_point());
+  frame->gl_frame_data->sync_point = owned_mailbox->sync_point();
+  memcpy(frame->gl_frame_data->mailbox.name,
+         owned_mailbox->mailbox().name,
          sizeof(frame->gl_frame_data->mailbox.name));
   frame->gl_frame_data->size = size;
   frame->gl_frame_data->sub_buffer_rect = damage;
@@ -890,6 +901,11 @@ TEST_F(RenderWidgetHostViewAuraTest, FullscreenResize) {
   widget_host_->ResetSizeAndRepaintPendingFlags();
   sink_->ClearMessages();
 
+  GLHelper* gl_helper = ImageTransportFactory::GetInstance()->GetGLHelper();
+  scoped_refptr<OwnedMailbox> owned_mailbox = new OwnedMailbox(gl_helper);
+  gl_helper->ResizeTexture(owned_mailbox->texture_id(), gfx::Size(1, 1));
+  owned_mailbox->UpdateSyncPoint(gl_helper->InsertSyncPoint());
+
   // Call WasResized to flush the old screen info.
   view_->GetRenderWidgetHost()->WasResized();
   {
@@ -903,10 +919,13 @@ TEST_F(RenderWidgetHostViewAuraTest, FullscreenResize) {
     EXPECT_EQ("800x600", params.a.new_size.ToString());
     // Resizes are blocked until we swapped a frame of the correct size, and
     // we've committed it.
-    view_->OnSwapCompositorFrame(
-        0, MakeGLFrame(1.f, params.a.new_size, gfx::Rect(params.a.new_size)));
+    view_->OnSwapCompositorFrame(0,
+                                 MakeGLFrame(1.f,
+                                             params.a.new_size,
+                                             gfx::Rect(params.a.new_size),
+                                             owned_mailbox.get()));
     ui::DrawWaiterForTest::WaitForCommit(
-        root_window->GetDispatcher()->host()->compositor());
+        root_window->GetHost()->compositor());
   }
 
   widget_host_->ResetSizeAndRepaintPendingFlags();
@@ -924,10 +943,13 @@ TEST_F(RenderWidgetHostViewAuraTest, FullscreenResize) {
     EXPECT_EQ("0,0 1600x1200",
               gfx::Rect(params.a.screen_info.availableRect).ToString());
     EXPECT_EQ("1600x1200", params.a.new_size.ToString());
-    view_->OnSwapCompositorFrame(
-        0, MakeGLFrame(1.f, params.a.new_size, gfx::Rect(params.a.new_size)));
+    view_->OnSwapCompositorFrame(0,
+                                 MakeGLFrame(1.f,
+                                             params.a.new_size,
+                                             gfx::Rect(params.a.new_size),
+                                             owned_mailbox.get()));
     ui::DrawWaiterForTest::WaitForCommit(
-        root_window->GetDispatcher()->host()->compositor());
+        root_window->GetHost()->compositor());
   }
 }
 
@@ -935,6 +957,11 @@ TEST_F(RenderWidgetHostViewAuraTest, FullscreenResize) {
 TEST_F(RenderWidgetHostViewAuraTest, SwapNotifiesWindow) {
   gfx::Size view_size(100, 100);
   gfx::Rect view_rect(view_size);
+
+  GLHelper* gl_helper = ImageTransportFactory::GetInstance()->GetGLHelper();
+  scoped_refptr<OwnedMailbox> owned_mailbox = new OwnedMailbox(gl_helper);
+  gl_helper->ResizeTexture(owned_mailbox->texture_id(), gfx::Size(400, 400));
+  owned_mailbox->UpdateSyncPoint(gl_helper->InsertSyncPoint());
 
   view_->InitAsChild(NULL);
   aura::client::ParentWindowWithContext(
@@ -951,7 +978,9 @@ TEST_F(RenderWidgetHostViewAuraTest, SwapNotifiesWindow) {
   GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params;
   params.surface_id = widget_host_->surface_id();
   params.route_id = widget_host_->GetRoutingID();
-  memset(params.mailbox.name, '1', sizeof(params.mailbox.name));
+  memcpy(params.mailbox.name,
+         owned_mailbox->mailbox().name,
+         sizeof(params.mailbox.name));
   params.size = view_size;
   params.scale_factor = 1.f;
 
@@ -970,7 +999,9 @@ TEST_F(RenderWidgetHostViewAuraTest, SwapNotifiesWindow) {
   GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params post_params;
   post_params.surface_id = widget_host_->surface_id();
   post_params.route_id = widget_host_->GetRoutingID();
-  memset(post_params.mailbox.name, '1', sizeof(post_params.mailbox.name));
+  memcpy(post_params.mailbox.name,
+         owned_mailbox->mailbox().name,
+         sizeof(params.mailbox.name));
   post_params.surface_size = gfx::Size(200, 200);
   post_params.surface_scale_factor = 2.f;
   post_params.x = 40;
@@ -985,14 +1016,16 @@ TEST_F(RenderWidgetHostViewAuraTest, SwapNotifiesWindow) {
 
   // Composite-to-mailbox path
   EXPECT_CALL(observer, OnWindowPaintScheduled(view_->window_, view_rect));
-  view_->OnSwapCompositorFrame(0, MakeGLFrame(1.f, view_size, view_rect));
+  view_->OnSwapCompositorFrame(
+      0, MakeGLFrame(1.f, view_size, view_rect, owned_mailbox.get()));
   testing::Mock::VerifyAndClearExpectations(&observer);
 
   // rect from GL frame is upside down, and is inflated in RWHVA, just because.
   EXPECT_CALL(observer, OnWindowPaintScheduled(view_->window_,
                                                gfx::Rect(4, 89, 7, 7)));
   view_->OnSwapCompositorFrame(
-      0, MakeGLFrame(1.f, view_size, gfx::Rect(5, 5, 5, 5)));
+      0,
+      MakeGLFrame(1.f, view_size, gfx::Rect(5, 5, 5, 5), owned_mailbox.get()));
   testing::Mock::VerifyAndClearExpectations(&observer);
 
   // Software path
@@ -1336,9 +1369,10 @@ class RenderWidgetHostViewAuraCopyRequestTest
   RenderWidgetHostViewAuraCopyRequestTest()
       : callback_count_(0), result_(false) {}
 
-  void CallbackMethod(bool result) {
+  void CallbackMethod(const base::Closure& quit_closure, bool result) {
     result_ = result;
     callback_count_++;
+    quit_closure.Run();
   }
 
   int callback_count_;
@@ -1349,6 +1383,8 @@ class RenderWidgetHostViewAuraCopyRequestTest
 };
 
 TEST_F(RenderWidgetHostViewAuraCopyRequestTest, DestroyedAfterCopyRequest) {
+  base::RunLoop run_loop;
+
   gfx::Rect view_rect(100, 100);
   scoped_ptr<cc::CopyOutputRequest> request;
 
@@ -1363,7 +1399,8 @@ TEST_F(RenderWidgetHostViewAuraCopyRequestTest, DestroyedAfterCopyRequest) {
   scoped_ptr<FakeFrameSubscriber> frame_subscriber(new FakeFrameSubscriber(
       view_rect.size(),
       base::Bind(&RenderWidgetHostViewAuraCopyRequestTest::CallbackMethod,
-                 base::Unretained(this))));
+                 base::Unretained(this),
+                 run_loop.QuitClosure())));
 
   EXPECT_EQ(0, callback_count_);
   EXPECT_FALSE(view_->last_copy_request_);
@@ -1387,8 +1424,8 @@ TEST_F(RenderWidgetHostViewAuraCopyRequestTest, DestroyedAfterCopyRequest) {
                              request->texture_mailbox(),
                              scoped_ptr<cc::SingleReleaseCallback>());
 
-  base::RunLoop run_loop;
-  run_loop.RunUntilIdle();
+  // This runs until the callback happens.
+  run_loop.Run();
 
   // The callback should succeed.
   EXPECT_EQ(0u, view_->active_frame_subscriber_textures_.size());

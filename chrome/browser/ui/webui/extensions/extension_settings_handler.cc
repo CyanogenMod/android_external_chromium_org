@@ -198,7 +198,7 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
   bool enabled = extension_service_->IsExtensionEnabled(extension->id());
   GetExtensionBasicInfo(extension, enabled, extension_data);
 
-  ExtensionPrefs* prefs = extension_service_->extension_prefs();
+  ExtensionPrefs* prefs = ExtensionPrefs::Get(extension_service_->profile());
   int disable_reasons = prefs->GetDisableReasons(extension->id());
 
   bool suspicious_install =
@@ -231,9 +231,8 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
       registry->terminated_extensions().Contains(extension->id()));
   extension_data->SetBoolean("enabledIncognito",
       util::IsIncognitoEnabled(extension->id(), extension_service_->profile()));
-  extension_data->SetBoolean("incognitoCanBeToggled",
-                             extension->can_be_incognito_enabled() &&
-                             !extension->force_incognito_enabled());
+  extension_data->SetBoolean("incognitoCanBeEnabled",
+                             extension->can_be_incognito_enabled());
   extension_data->SetBoolean("wantsFileAccess", extension->wants_file_access());
   extension_data->SetBoolean("allowFileAccess",
       util::AllowFileAccess(extension->id(), extension_service_->profile()));
@@ -259,8 +258,7 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
   extension_data->SetString("locationText", location_text);
 
   base::string16 blacklist_text;
-  switch (extension_service_->extension_prefs()->GetExtensionBlacklistState(
-              extension->id())) {
+  switch (prefs->GetExtensionBlacklistState(extension->id())) {
     case BLACKLISTED_SECURITY_VULNERABILITY:
       blacklist_text = l10n_util::GetStringUTF16(
           IDS_OPTIONS_BLACKLISTED_SECURITY_VULNERABILITY);
@@ -287,8 +285,7 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
   else
     extension_data->SetInteger("order", 2);
 
-  if (!ExtensionActionAPI::GetBrowserActionVisibility(
-          extension_service_->extension_prefs(), extension->id())) {
+  if (!ExtensionActionAPI::GetBrowserActionVisibility(prefs, extension->id())) {
     extension_data->SetBoolean("enable_show_button", true);
   }
 
@@ -752,7 +749,7 @@ void ExtensionSettingsHandler::HandleRequestExtensionsData(
   results.SetBoolean("developerMode", developer_mode);
 
   bool load_unpacked_disabled =
-      extension_service_->extension_prefs()->ExtensionsBlacklistedByDefault();
+      ExtensionPrefs::Get(profile)->ExtensionsBlacklistedByDefault();
   results.SetBoolean("loadUnpackedDisabled", load_unpacked_disabled);
 
   web_ui()->CallJavascriptFunction(
@@ -845,15 +842,17 @@ void ExtensionSettingsHandler::HandleEnableMessage(
 
   const Extension* extension =
       extension_service_->GetInstalledExtension(extension_id);
-  if (!extension ||
-      !management_policy_->UserMayModifySettings(extension, NULL)) {
-    LOG(ERROR) << "Attempt to enable an extension that is non-usermanagable was"
-               << "made. Extension id: " << extension->id();
+  if (!extension)
+    return;
+
+  if (!management_policy_->UserMayModifySettings(extension, NULL)) {
+    LOG(ERROR) << "An attempt was made to enable an extension that is "
+               << "non-usermanagable. Extension id: " << extension->id();
     return;
   }
 
   if (enable_str == "true") {
-    ExtensionPrefs* prefs = extension_service_->extension_prefs();
+    ExtensionPrefs* prefs = ExtensionPrefs::Get(extension_service_->profile());
     if (prefs->DidExtensionEscalatePermissions(extension_id)) {
       ShowExtensionDisabledDialog(
           extension_service_, web_ui()->GetWebContents(), extension);
@@ -919,8 +918,8 @@ void ExtensionSettingsHandler::HandleAllowFileAccessMessage(
     return;
 
   if (!management_policy_->UserMayModifySettings(extension, NULL)) {
-    LOG(ERROR) << "Attempt to change allow file access of an extension that is "
-               << "non-usermanagable was made. Extension id : "
+    LOG(ERROR) << "An attempt was made to change allow file access of an"
+               << " extension that is non-usermanagable. Extension id : "
                << extension->id();
     return;
   }
@@ -940,8 +939,8 @@ void ExtensionSettingsHandler::HandleUninstallMessage(
     return;
 
   if (!management_policy_->UserMayModifySettings(extension, NULL)) {
-    LOG(ERROR) << "Attempt to uninstall an extension that is non-usermanagable "
-               << "was made. Extension id : " << extension->id();
+    LOG(ERROR) << "An attempt was made to uninstall an extension that is "
+               << "non-usermanagable. Extension id : " << extension->id();
     return;
   }
 
@@ -998,7 +997,9 @@ void ExtensionSettingsHandler::HandleShowButtonMessage(
   if (!extension)
     return;
   ExtensionActionAPI::SetBrowserActionVisibility(
-      extension_service_->extension_prefs(), extension->id(), true);
+      ExtensionPrefs::Get(extension_service_->profile()),
+      extension->id(),
+      true);
 }
 
 void ExtensionSettingsHandler::HandleAutoUpdateMessage(
@@ -1083,8 +1084,7 @@ void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
   registrar_.Add(
       this,
       chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
-      content::Source<ExtensionPrefs>(
-          profile->GetExtensionService()->extension_prefs()));
+      content::Source<ExtensionPrefs>(ExtensionPrefs::Get(profile)));
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED,
                  content::NotificationService::AllBrowserContextsAndSources());

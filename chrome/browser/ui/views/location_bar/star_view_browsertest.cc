@@ -21,8 +21,8 @@
 
 #if defined(OS_WIN)
 #include "content/public/browser/web_contents_view.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 namespace {
@@ -113,7 +113,7 @@ IN_PROC_BROWSER_TEST_F(StarViewTestNoDWM, WindowedNPAPIPluginHidden) {
   EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 
   // Now get the region of the plugin before the star view is shown.
-  HWND hwnd = tab->GetView()->GetNativeView()->GetDispatcher()->host()->
+  HWND hwnd = tab->GetView()->GetNativeView()->GetHost()->
       GetAcceleratedWidget();
   HWND child = NULL;
   EnumChildWindows(hwnd, EnumerateChildren,reinterpret_cast<LPARAM>(&child));

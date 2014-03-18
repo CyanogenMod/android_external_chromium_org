@@ -24,11 +24,7 @@ extern const char kOnInputMethodChanged[];
 
 // Context menus.
 extern const char kOnContextMenus[];
-
-// Bluetooth.
-extern const char kBluetoothOnDeviceDiscovered[];
-extern const char kBluetoothOnDeviceSearchFinished[];
-extern const char kBluetoothOnDeviceSearchResult[];
+extern const char kOnWebviewContextMenus[];
 
 // Notifications.
 extern const char kOnNotificationError[];

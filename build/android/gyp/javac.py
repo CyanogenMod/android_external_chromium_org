@@ -13,11 +13,11 @@ from util import build_utils
 from util import md5_check
 
 
-def DoJavac(options):
+def DoJavac(options, args):
   output_dir = options.output_dir
 
-  src_dirs = build_utils.ParseGypList(options.src_dirs)
-  java_files = build_utils.FindInDirectories(src_dirs, '*.java')
+  src_gendirs = build_utils.ParseGypList(options.src_gendirs)
+  java_files = args + build_utils.FindInDirectories(src_gendirs, '*.java')
   if options.javac_includes:
     javac_includes = build_utils.ParseGypList(options.javac_includes)
     filtered_java_files = []
@@ -41,16 +41,21 @@ def DoJavac(options):
     else:
       jar_inputs.append(path)
 
-  javac_cmd = [
-      'javac',
+  javac_args = [
       '-g',
       '-source', '1.5',
       '-target', '1.5',
       '-classpath', ':'.join(classpath),
-      '-d', output_dir,
-      '-Xlint:unchecked',
-      '-Xlint:deprecation',
-      ] + java_files
+      '-d', output_dir]
+  if options.chromium_code:
+    javac_args.extend(['-Xlint:unchecked', '-Xlint:deprecation'])
+  else:
+    # XDignore.symbol.file makes javac compile against rt.jar instead of
+    # ct.sym. This means that using a java internal package/class will not
+    # trigger a compile warning or error.
+    javac_args.extend(['-XDignore.symbol.file'])
+
+  javac_cmd = ['javac'] + javac_args + java_files
 
   def Compile():
     # Delete the classes directory. This ensures that all .class files in the
@@ -71,7 +76,8 @@ def DoJavac(options):
 
 def main(argv):
   parser = optparse.OptionParser()
-  parser.add_option('--src-dirs', help='Directories containing java files.')
+  parser.add_option('--src-gendirs',
+      help='Directories containing generated java files.')
   parser.add_option('--javac-includes',
       help='A list of file patterns. If provided, only java files that match' +
         'one of the patterns will be compiled.')
@@ -85,9 +91,9 @@ def main(argv):
   # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
   parser.add_option('--ignore', help='Ignored.')
 
-  options, _ = parser.parse_args()
+  options, args = parser.parse_args()
 
-  DoJavac(options)
+  DoJavac(options, args)
 
   if options.stamp:
     build_utils.Touch(options.stamp)

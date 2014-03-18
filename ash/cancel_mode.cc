@@ -6,7 +6,7 @@
 
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 
 namespace ash {
 
@@ -15,7 +15,7 @@ void DispatchCancelMode() {
       Shell::GetAllRootWindowControllers());
   for (Shell::RootWindowControllerList::const_iterator i = controllers.begin();
        i != controllers.end(); ++i) {
-    (*i)->dispatcher()->AsWindowTreeHostDelegate()->OnHostCancelMode();
+    (*i)->host()->dispatcher()->DispatchCancelModeEvent();
   }
 }
 

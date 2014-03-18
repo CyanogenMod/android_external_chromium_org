@@ -10,6 +10,7 @@
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/web_ui.h"
+#include "sync/notifier/invalidation_handler.h"
 
 namespace invalidation {
 class InvalidationLogger;
@@ -20,11 +21,11 @@ class ObjectIdInvalidationMap;
 }  // namespace syncer
 
 InvalidationsMessageHandler::InvalidationsMessageHandler()
-    : logger_(NULL), isRegistered(false) {}
+    : logger_(NULL), weak_ptr_factory_(this) {}
 
 InvalidationsMessageHandler::~InvalidationsMessageHandler() {
   if (logger_)
-    logger_->UnregisterForDebug(this);
+    logger_->UnregisterObserver(this);
 }
 
 void InvalidationsMessageHandler::RegisterMessages() {
@@ -32,21 +33,33 @@ void InvalidationsMessageHandler::RegisterMessages() {
       "doneLoading",
       base::Bind(&InvalidationsMessageHandler::UIReady,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "requestDetailedStatus",
+      base::Bind(&InvalidationsMessageHandler::HandleRequestDetailedStatus,
+                 base::Unretained(this)));
 }
 
 void InvalidationsMessageHandler::UIReady(const base::ListValue* args) {
-  Profile* profile = Profile::FromWebUI(web_ui());
-  if (!isRegistered && profile) {
-    invalidation::InvalidationService* invalidation_service =
-        invalidation::InvalidationServiceFactory::GetForProfile(profile);
-    if (invalidation_service)
-      logger_ = invalidation_service->GetInvalidationLogger();
-    if (logger_) {
-      logger_->RegisterForDebug(this);
-      isRegistered = true;
-    }
-  }
+  invalidation::InvalidationService* invalidation_service =
+      invalidation::InvalidationServiceFactory::GetForProfile(
+          Profile::FromWebUI(web_ui()));
+  if (invalidation_service)
+    logger_ = invalidation_service->GetInvalidationLogger();
+  if (logger_ && !logger_->IsObserverRegistered(this))
+    logger_->RegisterObserver(this);
   UpdateContent(args);
+}
+
+void InvalidationsMessageHandler::HandleRequestDetailedStatus(
+    const base::ListValue* args) {
+  invalidation::InvalidationService* invalidation_service =
+      invalidation::InvalidationServiceFactory::GetForProfile(
+          Profile::FromWebUI(web_ui()));
+  if (invalidation_service) {
+    invalidation_service->RequestDetailedStatus(base::Bind(
+        &InvalidationsMessageHandler::OnDetailedStatus,
+        weak_ptr_factory_.GetWeakPtr()));
+  }
 }
 
 void InvalidationsMessageHandler::UpdateContent(const base::ListValue* args) {
@@ -54,28 +67,52 @@ void InvalidationsMessageHandler::UpdateContent(const base::ListValue* args) {
     logger_->EmitContent();
 }
 
-void InvalidationsMessageHandler::OnUnregistration(
-    const base::DictionaryValue& newRegistrationState) {}
-
-void InvalidationsMessageHandler::OnRegistration(
-    const base::DictionaryValue& newRegistrationState) {}
+void InvalidationsMessageHandler::OnRegistrationChange(
+    const std::multiset<std::string>& registered_handlers) {
+  base::ListValue list_of_handlers;
+  for (std::multiset<std::string>::const_iterator it =
+       registered_handlers.begin();
+       it != registered_handlers.end(); ++it) {
+    list_of_handlers.Append(new base::StringValue(*it));
+  }
+  web_ui()->CallJavascriptFunction("chrome.invalidations.updateHandlers",
+                                   list_of_handlers);
+}
 
 void InvalidationsMessageHandler::OnStateChange(
-    const syncer::InvalidatorState& newState) {
-  std::string state(syncer::InvalidatorStateToString(newState));
-  web_ui()->CallJavascriptFunction("chrome.invalidations.updateState",
-                                   base::StringValue(state));
+    const syncer::InvalidatorState& new_state) {
+  std::string state(syncer::InvalidatorStateToString(new_state));
+  web_ui()->CallJavascriptFunction(
+      "chrome.invalidations.updateInvalidatorState", base::StringValue(state));
 }
 
 void InvalidationsMessageHandler::OnUpdateIds(
-    const base::DictionaryValue& newIds) {}
-
+    const std::string& handler_name,
+    const syncer::ObjectIdSet& ids_set) {
+  base::ListValue list_of_objects;
+  for (syncer::ObjectIdSet::const_iterator it = ids_set.begin();
+       it != ids_set.end(); ++it) {
+    scoped_ptr<base::DictionaryValue> dic(new base::DictionaryValue());
+    dic->SetString("name", it->name());
+    dic->SetInteger("source", it->source());
+    list_of_objects.Append(dic.release());
+  }
+  web_ui()->CallJavascriptFunction("chrome.invalidations.updateIds",
+                                   base::StringValue(handler_name),
+                                   list_of_objects);
+}
 void InvalidationsMessageHandler::OnDebugMessage(
     const base::DictionaryValue& details) {}
 
 void InvalidationsMessageHandler::OnInvalidation(
-    const syncer::ObjectIdInvalidationMap& newInvalidations) {
-  scoped_ptr<base::ListValue> invalidationsList = newInvalidations.ToValue();
+    const syncer::ObjectIdInvalidationMap& new_invalidations) {
+  scoped_ptr<base::ListValue> invalidations_list = new_invalidations.ToValue();
   web_ui()->CallJavascriptFunction("chrome.invalidations.logInvalidations",
-                                   *invalidationsList);
+                                   *invalidations_list);
+}
+
+void InvalidationsMessageHandler::OnDetailedStatus(
+    const base::DictionaryValue& network_details) {
+  web_ui()->CallJavascriptFunction("chrome.invalidations.updateDetailedStatus",
+                                   network_details);
 }

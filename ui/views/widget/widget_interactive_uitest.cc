@@ -5,20 +5,17 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/run_loop.h"
+#include "ui/aura/client/activation_client.h"
+#include "ui/aura/client/focus_client.h"
+#include "ui/aura/env.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
 
-#if defined(USE_AURA)
-#include "ui/aura/client/activation_client.h"
-#include "ui/aura/client/focus_client.h"
-#include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
-#include "ui/aura/window.h"
-#endif
-
-#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS)
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #endif
 
@@ -192,7 +189,7 @@ TEST_F(WidgetTest, DesktopNativeWidgetAuraActivationAndFocusTest) {
   aura::Window* root_window2 = widget2.GetNativeView()->GetRootWindow();
   contents_view2->RequestFocus();
   ::SetActiveWindow(
-      root_window2->GetDispatcher()->host()->GetAcceleratedWidget());
+      root_window2->GetHost()->GetAcceleratedWidget());
 
   aura::client::ActivationClient* activation_client2 =
       aura::client::GetActivationClient(root_window2);
@@ -205,7 +202,7 @@ TEST_F(WidgetTest, DesktopNativeWidgetAuraActivationAndFocusTest) {
   // window.
   contents_view1->RequestFocus();
   ::SetActiveWindow(
-      root_window1->GetDispatcher()->host()->GetAcceleratedWidget());
+      root_window1->GetHost()->GetAcceleratedWidget());
   EXPECT_EQ(activation_client2->GetActiveWindow(),
             reinterpret_cast<aura::Window*>(NULL));
   EXPECT_EQ(activation_client1->GetActiveWindow(), widget1.GetNativeView());
@@ -479,18 +476,14 @@ TEST_F(WidgetTest, WidgetNotActivatedOnFakeActivationMessages) {
   Widget::InitParams init_params =
       CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-#if defined(USE_AURA)
   init_params.native_widget = new DesktopNativeWidgetAura(&widget1);
-#endif
   init_params.bounds = gfx::Rect(0, 0, 200, 200);
   widget1.Init(init_params);
   widget1.Show();
   EXPECT_EQ(true, widget1.active());
 
   WidgetActivationTest widget2;
-#if defined(USE_AURA)
   init_params.native_widget = new DesktopNativeWidgetAura(&widget2);
-#endif
   widget2.Init(init_params);
   widget2.Show();
   EXPECT_EQ(true, widget2.active());
@@ -509,7 +502,7 @@ TEST_F(WidgetTest, WidgetNotActivatedOnFakeActivationMessages) {
 }
 #endif
 
-#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS)
 // Provides functionality to create a window modal dialog.
 class ModalDialogDelegate : public DialogDelegateView {
  public:
@@ -687,7 +680,7 @@ class WidgetCaptureTest : public ViewsTestBase {
  private:
   NativeWidget* CreateNativeWidget(bool create_desktop_native_widget,
                                    Widget* widget) {
-#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS)
     if (create_desktop_native_widget)
       return new DesktopNativeWidgetAura(widget);
 #endif
@@ -702,14 +695,14 @@ TEST_F(WidgetCaptureTest, Capture) {
   TestCapture(false);
 }
 
-#if defined(USE_AURA) && !defined(OS_LINUX)
+#if !defined(OS_LINUX)
 // See description in TestCapture(). Creates DesktopNativeWidget.
 TEST_F(WidgetCaptureTest, CaptureDesktopNativeWidget) {
   TestCapture(true);
 }
 #endif
 
-#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS)
 namespace {
 
 // Used to veirfy OnMouseEvent() has been invoked.
@@ -738,7 +731,7 @@ class MouseEventTrackingWidget : public Widget {
 
 }  // namespace
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 // TODO(erg): linux_aura bringup: http://crbug.com/163931
 #define MAYBE_MouseEventDispatchedToRightWindow \
   DISABLED_MouseEventDispatchedToRightWindow
@@ -778,7 +771,7 @@ TEST_F(WidgetCaptureTest, MAYBE_MouseEventDispatchedToRightWindow) {
   ui::MouseEvent mouse_event(ui::ET_MOUSE_EXITED, gfx::Point(), gfx::Point(),
                              ui::EF_NONE, ui::EF_NONE);
   ui::EventDispatchDetails details = widget1.GetNativeWindow()->
-      GetDispatcher()->OnEventFromSource(&mouse_event);
+      GetHost()->dispatcher()->OnEventFromSource(&mouse_event);
   ASSERT_FALSE(details.dispatcher_destroyed);
   EXPECT_TRUE(widget1.GetAndClearGotMouseEvent());
   EXPECT_FALSE(widget2.GetAndClearGotMouseEvent());

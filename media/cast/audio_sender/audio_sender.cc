@@ -25,7 +25,7 @@ class LocalRtcpAudioSenderFeedback : public RtcpSenderFeedback {
     if (!cast_feedback.missing_frames_and_packets_.empty()) {
       audio_sender_->ResendPackets(cast_feedback.missing_frames_and_packets_);
     }
-    VLOG(1) << "Received audio ACK "
+    VLOG(2) << "Received audio ACK "
             << static_cast<int>(cast_feedback.ack_frame_id_);
   }
 
@@ -43,9 +43,11 @@ class LocalRtpSenderStatistics : public RtpSenderStatistics {
       : transport_sender_(transport_sender),
         frequency_(0),
         sender_info_(),
-        rtp_timestamp_(0) {
-    transport_sender_->SubscribeAudioRtpStatsCallback(base::Bind(
-        &LocalRtpSenderStatistics::StoreStatistics, base::Unretained(this)));
+        rtp_timestamp_(0),
+        weak_factory_(this) {
+    transport_sender_->SubscribeAudioRtpStatsCallback(
+        base::Bind(&LocalRtpSenderStatistics::StoreStatistics,
+                   weak_factory_.GetWeakPtr()));
   }
 
   virtual void GetStatistics(const base::TimeTicks& now,
@@ -84,6 +86,8 @@ class LocalRtpSenderStatistics : public RtpSenderStatistics {
   base::TimeTicks time_sent_;
   uint32 rtp_timestamp_;
 
+  base::WeakPtrFactory<LocalRtpSenderStatistics> weak_factory_;
+
   DISALLOW_IMPLICIT_CONSTRUCTORS(LocalRtpSenderStatistics);
 };
 
@@ -109,15 +113,16 @@ AudioSender::AudioSender(scoped_refptr<CastEnvironment> cast_environment,
             audio_config.incoming_feedback_ssrc,
             audio_config.rtcp_c_name),
       timers_initialized_(false),
-      initialization_status_(STATUS_INITIALIZED),
+      cast_initialization_cb_(STATUS_AUDIO_UNINITIALIZED),
       weak_factory_(this) {
+  rtcp_.SetCastReceiverEventHistorySize(kReceiverRtcpEventHistorySize);
   if (!audio_config.use_external_encoder) {
-    audio_encoder_ =
+    audio_encoder_.reset(
         new AudioEncoder(cast_environment,
                          audio_config,
                          base::Bind(&AudioSender::SendEncodedAudioFrame,
-                                    weak_factory_.GetWeakPtr()));
-    initialization_status_ = audio_encoder_->InitializationResult();
+                                    weak_factory_.GetWeakPtr())));
+    cast_initialization_cb_ = audio_encoder_->InitializationResult();
   }
 }
 
@@ -131,13 +136,11 @@ void AudioSender::InitializeTimers() {
   }
 }
 
-void AudioSender::InsertAudio(const AudioBus* audio_bus,
-                              const base::TimeTicks& recorded_time,
-                              const base::Closure& done_callback) {
+void AudioSender::InsertAudio(scoped_ptr<AudioBus> audio_bus,
+                              const base::TimeTicks& recorded_time) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   DCHECK(audio_encoder_.get()) << "Invalid internal state";
-
-  audio_encoder_->InsertAudio(audio_bus, recorded_time, done_callback);
+  audio_encoder_->InsertAudio(audio_bus.Pass(), recorded_time);
 }
 
 void AudioSender::SendEncodedAudioFrame(

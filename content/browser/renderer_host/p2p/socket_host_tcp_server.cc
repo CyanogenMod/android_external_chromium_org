@@ -41,7 +41,7 @@ P2PSocketHostTcpServer::~P2PSocketHostTcpServer() {
 }
 
 bool P2PSocketHostTcpServer::Init(const net::IPEndPoint& local_address,
-                                  const net::IPEndPoint& remote_address) {
+                                  const P2PHostAndIPEndPoint& remote_address) {
   DCHECK_EQ(state_, STATE_UNINITIALIZED);
 
   int result = socket_->Listen(local_address, kListenBacklog);
@@ -116,7 +116,7 @@ void P2PSocketHostTcpServer::OnAccepted(int result) {
 
 void P2PSocketHostTcpServer::Send(const net::IPEndPoint& to,
                                   const std::vector<char>& data,
-                                  net::DiffServCodePoint dscp,
+                                  const talk_base::PacketOptions& options,
                                   uint64 packet_id) {
   NOTREACHED();
   OnError();

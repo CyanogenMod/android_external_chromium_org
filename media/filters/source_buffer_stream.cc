@@ -14,18 +14,17 @@
 namespace media {
 
 // Buffers with the same timestamp are only allowed under certain conditions.
-// Video: Allowed when the previous frame and current frame are NOT keyframes.
-//        This is the situation for VP8 Alt-Ref frames.
-// Otherwise: Allowed in all situations except where a non-keyframe is followed
-//            by a keyframe.
+// More precisely, it is allowed in all situations except when the previous
+// frame is not a key frame and the current is a key frame.
+// Examples of situations where DTS of two consecutive frames can be equal:
+// - Video: VP8 Alt-Ref frames.
+// - Video: IPBPBP...: DTS for I frame and for P frame can be equal.
+// - Text track cues that start at same time.
 // Returns true if |prev_is_keyframe| and |current_is_keyframe| indicate a
 // same timestamp situation that is allowed. False is returned otherwise.
 static bool AllowSameTimestamp(
     bool prev_is_keyframe, bool current_is_keyframe,
     SourceBufferStream::Type type) {
-  if (type == SourceBufferStream::kVideo)
-    return !prev_is_keyframe && !current_is_keyframe;
-
   return prev_is_keyframe || !current_is_keyframe;
 }
 
@@ -295,11 +294,16 @@ static bool IsRangeListSorted(
   return true;
 }
 
-// Comparison function for two Buffers based on timestamp.
-static bool BufferComparator(
-    const scoped_refptr<media::StreamParserBuffer>& first,
-    const scoped_refptr<media::StreamParserBuffer>& second) {
-  return first->GetDecodeTimestamp() < second->GetDecodeTimestamp();
+// Comparison operators for std::upper_bound() and std::lower_bound().
+static bool CompareTimeDeltaToStreamParserBuffer(
+    const base::TimeDelta& decode_timestamp,
+    const scoped_refptr<media::StreamParserBuffer>& buffer) {
+  return decode_timestamp < buffer->GetDecodeTimestamp();
+}
+static bool CompareStreamParserBufferToTimeDelta(
+    const scoped_refptr<media::StreamParserBuffer>& buffer,
+    const base::TimeDelta& decode_timestamp) {
+  return buffer->GetDecodeTimestamp() < decode_timestamp;
 }
 
 // Returns an estimate of how far from the beginning or end of a range a buffer
@@ -1691,19 +1695,17 @@ SourceBufferRange* SourceBufferRange::SplitRange(
 }
 
 SourceBufferRange::BufferQueue::iterator SourceBufferRange::GetBufferItrAt(
-    base::TimeDelta timestamp, bool skip_given_timestamp) {
-  // Need to make a dummy buffer with timestamp |timestamp| in order to search
-  // the |buffers_| container.
-  scoped_refptr<StreamParserBuffer> dummy_buffer =
-      StreamParserBuffer::CopyFrom(NULL, 0, false, DemuxerStream::UNKNOWN, 0);
-  dummy_buffer->SetDecodeTimestamp(timestamp);
-
-  if (skip_given_timestamp) {
-    return std::upper_bound(
-        buffers_.begin(), buffers_.end(), dummy_buffer, BufferComparator);
-  }
-  return std::lower_bound(
-      buffers_.begin(), buffers_.end(), dummy_buffer, BufferComparator);
+    base::TimeDelta timestamp,
+    bool skip_given_timestamp) {
+  return skip_given_timestamp
+             ? std::upper_bound(buffers_.begin(),
+                                buffers_.end(),
+                                timestamp,
+                                CompareTimeDeltaToStreamParserBuffer)
+             : std::lower_bound(buffers_.begin(),
+                                buffers_.end(),
+                                timestamp,
+                                CompareStreamParserBufferToTimeDelta);
 }
 
 SourceBufferRange::KeyframeMap::iterator

@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#if defined(USE_X11)
+#include <X11/Xlib.h>
+#endif
+
 #include "base/at_exit.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -16,16 +20,16 @@
 #include "third_party/skia/include/core/SkXfermode.h"
 #include "ui/aura/client/default_capture_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_focus_client.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_observer.h"
 #include "ui/compositor/debug_utils.h"
 #include "ui/compositor/layer.h"
-#include "ui/compositor/test/context_factories_for_test.h"
+#include "ui/compositor/test/in_process_context_factory.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
@@ -287,11 +291,18 @@ int main(int argc, char** argv) {
 
   base::AtExitManager exit_manager;
 
+#if defined(USE_X11)
+  // This demo uses InProcessContextFactory which uses X on a separate Gpu
+  // thread.
+  XInitThreads();
+#endif
+
   gfx::GLSurface::InitializeOneOff();
 
   // The ContextFactory must exist before any Compositors are created.
-  bool allow_test_contexts = false;
-  ui::InitializeContextFactoryForTests(allow_test_contexts);
+  scoped_ptr<ui::InProcessContextFactory> context_factory(
+      new ui::InProcessContextFactory());
+  ui::ContextFactory::SetInstance(context_factory.get());
 
   base::i18n::InitializeICU();
 
@@ -300,20 +311,20 @@ int main(int argc, char** argv) {
   scoped_ptr<aura::TestScreen> test_screen(
       aura::TestScreen::CreateFullscreen());
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen.get());
-  scoped_ptr<aura::RootWindow> root_window(
-      test_screen->CreateRootWindowForPrimaryDisplay());
+  scoped_ptr<aura::WindowTreeHost> host(
+      test_screen->CreateHostForPrimaryDisplay());
   aura::client::SetCaptureClient(
-      root_window->window(),
-      new aura::client::DefaultCaptureClient(root_window->window()));
+      host->window(),
+      new aura::client::DefaultCaptureClient(host->window()));
 
   scoped_ptr<aura::client::FocusClient> focus_client(
       new aura::test::TestFocusClient);
-  aura::client::SetFocusClient(root_window->window(), focus_client.get());
+  aura::client::SetFocusClient(host->window(), focus_client.get());
 
   // add layers
   ColoredLayer background(SK_ColorRED);
-  background.SetBounds(root_window->window()->bounds());
-  root_window->window()->layer()->Add(&background);
+  background.SetBounds(host->window()->bounds());
+  host->window()->layer()->Add(&background);
 
   ColoredLayer window(SK_ColorBLUE);
   window.SetBounds(gfx::Rect(background.bounds().size()));
@@ -338,22 +349,22 @@ int main(int argc, char** argv) {
 
   if (command_line->HasSwitch("bench-software-scroll")) {
     bench.reset(new SoftwareScrollBench(&page_background,
-                                        root_window->host()->compositor(),
+                                        host->compositor(),
                                         frames));
   } else {
     bench.reset(new WebGLBench(&page_background,
-                               root_window->host()->compositor(),
+                               host->compositor(),
                                frames));
   }
 
 #ifndef NDEBUG
-  ui::PrintLayerHierarchy(root_window->window()->layer(), gfx::Point(100, 100));
+  ui::PrintLayerHierarchy(host->window()->layer(), gfx::Point(100, 100));
 #endif
 
-  root_window->host()->Show();
+  host->Show();
   base::MessageLoopForUI::current()->Run();
   focus_client.reset();
-  root_window.reset();
+  host.reset();
 
   return 0;
 }

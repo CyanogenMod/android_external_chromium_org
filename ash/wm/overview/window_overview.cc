@@ -10,15 +10,16 @@
 #include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/mru_window_tracker.h"
+#include "ash/switchable_windows.h"
 #include "ash/wm/overview/scoped_transform_overview_window.h"
 #include "ash/wm/overview/window_selector.h"
 #include "ash/wm/overview/window_selector_item.h"
 #include "base/metrics/histogram.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/aura/client/cursor_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event.h"
 #include "ui/views/background.h"
@@ -125,6 +126,8 @@ WindowOverview::WindowOverview(WindowSelector* window_selector,
       single_root_window_(single_root_window),
       overview_start_time_(base::Time::Now()),
       cursor_client_(NULL) {
+  Shell* shell = Shell::GetInstance();
+  shell->OnOverviewModeStarting();
   for (WindowSelectorItemList::iterator iter = windows_->begin();
        iter != windows_->end(); ++iter) {
     (*iter)->PrepareForOverview();
@@ -142,8 +145,7 @@ WindowOverview::WindowOverview(WindowSelector* window_selector,
     // as suggested there.
     cursor_client_->LockCursor();
   }
-  ash::Shell::GetInstance()->PrependPreTargetHandler(this);
-  Shell* shell = Shell::GetInstance();
+  shell->PrependPreTargetHandler(this);
   shell->metrics()->RecordUserMetricsAction(UMA_WINDOW_OVERVIEW);
   HideAndTrackNonOverviewWindows();
 }
@@ -163,10 +165,12 @@ WindowOverview::~WindowOverview() {
   }
   if (cursor_client_)
     cursor_client_->UnlockCursor();
-  ash::Shell::GetInstance()->RemovePreTargetHandler(this);
+  ash::Shell* shell = ash::Shell::GetInstance();
+  shell->RemovePreTargetHandler(this);
   UMA_HISTOGRAM_MEDIUM_TIMES(
       "Ash.WindowSelector.TimeInOverview",
       base::Time::Now() - overview_start_time_);
+  shell->OnOverviewModeEnding();
 }
 
 void WindowOverview::SetSelection(size_t index) {
@@ -298,7 +302,7 @@ aura::Window* WindowOverview::GetEventTarget(ui::LocatedEvent* event) {
   // If the target window doesn't actually contain the event location (i.e.
   // mouse down over the window and mouse up elsewhere) then do not select the
   // window.
-  if (!target->HitTest(event->location()))
+  if (!target->ContainsPoint(event->location()))
     return NULL;
 
   return GetTargetedWindow(target);

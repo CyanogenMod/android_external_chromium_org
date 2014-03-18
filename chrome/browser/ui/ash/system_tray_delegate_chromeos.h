@@ -5,6 +5,8 @@
 #ifndef CHROME_BROWSER_UI_ASH_SYSTEM_TRAY_DELEGATE_CHROMEOS_H_
 #define CHROME_BROWSER_UI_ASH_SYSTEM_TRAY_DELEGATE_CHROMEOS_H_
 
+#include "apps/app_window_registry.h"
+#include "ash/ime/input_method_menu_manager.h"
 #include "ash/session_state_observer.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
@@ -14,11 +16,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/job_list.h"
-#include "chrome/browser/chromeos/events/system_key_event_listener.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/system_tray_delegate_chromeos.h"
+#include "chrome/browser/ui/browser_list_observer.h"
+#include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/login/login_state.h"
@@ -26,20 +30,24 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "device/bluetooth/bluetooth_adapter.h"
+#include "device/bluetooth/bluetooth_discovery_session.h"
 
 namespace chromeos {
 
 class SystemTrayDelegateChromeOS
-    : public ash::SystemTrayDelegate,
+    : public ash::ime::InputMethodMenuManager::Observer,
+      public ash::SystemTrayDelegate,
       public SessionManagerClient::Observer,
       public drive::JobListObserver,
       public content::NotificationObserver,
       public input_method::InputMethodManager::Observer,
       public chromeos::LoginState::Observer,
+      public chromeos::CrasAudioHandler::AudioObserver,
       public device::BluetoothAdapter::Observer,
-      public SystemKeyEventListener::CapsLockObserver,
       public policy::CloudPolicyStore::Observer,
-      public ash::SessionStateObserver {
+      public ash::SessionStateObserver,
+      public chrome::BrowserListObserver,
+      public apps::AppWindowRegistry::Observer {
  public:
   SystemTrayDelegateChromeOS();
 
@@ -122,6 +130,9 @@ class SystemTrayDelegateChromeOS
       OVERRIDE;
   virtual int GetSystemTrayMenuWidth() OVERRIDE;
   virtual void ActiveUserWasChanged() OVERRIDE;
+  virtual bool IsNetworkBehindCaptivePortal(
+      const std::string& service_path) const OVERRIDE;
+  virtual bool IsSearchKeyMappedToCapsLock() OVERRIDE;
 
   // browser tests need to call ShouldUse24HourClock().
   bool GetShouldUse24HourClockForTesting() const;
@@ -155,6 +166,12 @@ class SystemTrayDelegateChromeOS
 
   void UpdateSessionLengthLimit();
 
+  void StopObservingAppWindowRegistry();
+
+  // Notify observers if the current user has no more open browser or app
+  // windows.
+  void NotifyIfLastWindowClosed();
+
   // LoginState::Observer overrides.
   virtual void LoggedInStateChanged() OVERRIDE;
 
@@ -180,8 +197,18 @@ class SystemTrayDelegateChromeOS
   virtual void InputMethodChanged(input_method::InputMethodManager* manager,
                                   bool show_message) OVERRIDE;
 
-  virtual void InputMethodPropertyChanged(
-      input_method::InputMethodManager* manager) OVERRIDE;
+  // Overridden from InputMethodMenuManager::Observer.
+  virtual void InputMethodMenuItemChanged(
+      ash::ime::InputMethodMenuManager* manager) OVERRIDE;
+
+  // Overridden from CrasAudioHandler::AudioObserver.
+  virtual void OnOutputVolumeChanged() OVERRIDE;
+  virtual void OnOutputMuteChanged() OVERRIDE;
+  virtual void OnInputGainChanged() OVERRIDE;
+  virtual void OnInputMuteChanged() OVERRIDE;
+  virtual void OnAudioNodesChanged() OVERRIDE;
+  virtual void OnActiveOutputNodeChanged() OVERRIDE;
+  virtual void OnActiveInputNodeChanged() OVERRIDE;
 
   // drive::JobListObserver overrides.
   virtual void OnJobAdded(const drive::JobInfo& job_info) OVERRIDE;
@@ -207,16 +234,28 @@ class SystemTrayDelegateChromeOS
   virtual void DeviceRemoved(device::BluetoothAdapter* adapter,
                              device::BluetoothDevice* device) OVERRIDE;
 
-  // Overridden from SystemKeyEventListener::CapsLockObserver.
-  virtual void OnCapsLockChange(bool enabled) OVERRIDE;
+  void OnStartBluetoothDiscoverySession(
+      scoped_ptr<device::BluetoothDiscoverySession> discovery_session);
 
   void UpdateEnterpriseDomain();
 
   // Overridden from CloudPolicyStore::Observer
   virtual void OnStoreLoaded(policy::CloudPolicyStore* store) OVERRIDE;
   virtual void OnStoreError(policy::CloudPolicyStore* store) OVERRIDE;
+
   // Overridden from ash::SessionStateObserver
   virtual void UserAddedToSession(const std::string& user_id) OVERRIDE;
+
+  // Overridden from chrome::BrowserListObserver:
+  virtual void OnBrowserRemoved(Browser* browser) OVERRIDE;
+
+  // Overridden from apps::AppWindowRegistry::Observer:
+  virtual void OnAppWindowAdded(apps::AppWindow* app_window) OVERRIDE;
+  virtual void OnAppWindowIconChanged(apps::AppWindow* app_window) OVERRIDE;
+  virtual void OnAppWindowRemoved(apps::AppWindow* app_window) OVERRIDE;
+
+  void OnAccessibilityStatusChanged(
+      const AccessibilityStatusEventDetails& details);
 
   base::WeakPtrFactory<SystemTrayDelegateChromeOS> weak_ptr_factory_;
   scoped_ptr<content::NotificationRegistrar> registrar_;
@@ -231,10 +270,13 @@ class SystemTrayDelegateChromeOS
   bool have_session_length_limit_;
   base::TimeDelta session_length_limit_;
   std::string enterprise_domain_;
+  bool should_run_bluetooth_discovery_;
 
   scoped_refptr<device::BluetoothAdapter> bluetooth_adapter_;
+  scoped_ptr<device::BluetoothDiscoverySession> bluetooth_discovery_session_;
   scoped_ptr<ash::VolumeControlDelegate> volume_control_delegate_;
   scoped_ptr<CrosSettingsObserverSubscription> device_settings_observer_;
+  scoped_ptr<AccessibilityStatusSubscription> accessibility_subscription_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemTrayDelegateChromeOS);
 };

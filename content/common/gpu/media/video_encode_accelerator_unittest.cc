@@ -379,7 +379,7 @@ VEAClient::VEAClient(const TestStream& test_stream,
     base::FilePath out_filename(test_stream_.out_filename);
     // This creates or truncates out_filename.
     // Without it, AppendToFile() will not work.
-    EXPECT_EQ(0, file_util::WriteFile(out_filename, NULL, 0));
+    EXPECT_EQ(0, base::WriteFile(out_filename, NULL, 0));
   }
 
   thread_checker_.DetachFromThread();
@@ -391,7 +391,7 @@ void VEAClient::CreateEncoder() {
   DCHECK(thread_checker_.CalledOnValidThread());
   CHECK(!has_encoder());
 
-  encoder_.reset(new ExynosVideoEncodeAccelerator(this));
+  encoder_.reset(new ExynosVideoEncodeAccelerator());
 
   SetState(CS_ENCODER_SET);
   DVLOG(1) << "Profile: " << test_stream_.requested_profile
@@ -399,7 +399,8 @@ void VEAClient::CreateEncoder() {
   encoder_->Initialize(kInputFormat,
                        test_stream_.size,
                        test_stream_.requested_profile,
-                       test_stream_.requested_bitrate);
+                       test_stream_.requested_bitrate,
+                       this);
 }
 
 void VEAClient::DestroyEncoder() {
@@ -496,7 +497,7 @@ void VEAClient::BitstreamBufferReady(int32 bitstream_buffer_id,
 
   if (save_to_file_) {
     int size = base::checked_cast<int>(payload_size);
-    EXPECT_EQ(file_util::AppendToFile(
+    EXPECT_EQ(base::AppendToFile(
                   base::FilePath::FromUTF8Unsafe(test_stream_.out_filename),
                   static_cast<char*>(shm->memory()),
                   size),
@@ -745,8 +746,6 @@ int main(int argc, char** argv) {
   // Needed to enable DVLOG through --vmodule.
   logging::LoggingSettings settings;
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
-  settings.dcheck_state =
-      logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
   CHECK(logging::InitLogging(settings));
 
   CommandLine* cmd_line = CommandLine::ForCurrentProcess();

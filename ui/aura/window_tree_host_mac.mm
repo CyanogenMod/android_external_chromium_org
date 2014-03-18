@@ -6,7 +6,6 @@
 
 #include "ui/aura/window_tree_host_mac.h"
 #include "ui/aura/window_tree_host.h"
-#include "ui/aura/window_tree_host_delegate.h"
 
 namespace aura {
 
@@ -21,10 +20,7 @@ WindowTreeHostMac::WindowTreeHostMac(const gfx::Rect& bounds) {
 }
 
 WindowTreeHostMac::~WindowTreeHostMac() {
-}
-
-RootWindow* WindowTreeHostMac::GetRootWindow() {
-  return delegate_->AsRootWindow();
+  DestroyDispatcher();
 }
 
 gfx::AcceleratedWidget WindowTreeHostMac::GetAcceleratedWidget() {

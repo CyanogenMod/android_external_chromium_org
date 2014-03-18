@@ -20,10 +20,8 @@ namespace ui {
 class ScopedAnimationDurationScaleMode;
 }  // namespace ui
 
-namespace views {
-namespace corewm {
+namespace wm {
 class WMState;
-}
 }
 
 namespace ash {
@@ -56,6 +54,9 @@ class AshTestHelper {
 
   base::MessageLoopForUI* message_loop() { return message_loop_; }
   TestShellDelegate* test_shell_delegate() { return test_shell_delegate_; }
+  void set_test_shell_delegate(TestShellDelegate* test_shell_delegate) {
+    test_shell_delegate_ = test_shell_delegate;
+  }
   TestScreenshotDelegate* test_screenshot_delegate() {
     return test_screenshot_delegate_;
   }
@@ -68,7 +69,7 @@ class AshTestHelper {
   // Owned by ash::AcceleratorController
   TestScreenshotDelegate* test_screenshot_delegate_;
 
-  scoped_ptr<views::corewm::WMState> wm_state_;
+  scoped_ptr<wm::WMState> wm_state_;
 
   // Check if DBus Thread Manager was initialized here.
   bool dbus_thread_manager_initialized_;

@@ -36,7 +36,7 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "third_party/icu/source/common/unicode/uchar.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
@@ -474,6 +474,7 @@ bool DownloadItemView::OnKeyPressed(const ui::KeyEvent& event) {
 
   if (event.key_code() == ui::VKEY_SPACE ||
       event.key_code() == ui::VKEY_RETURN) {
+    // OpenDownload may delete this, so don't add any code after this line.
     OpenDownload();
     return true;
   }
@@ -492,13 +493,13 @@ bool DownloadItemView::GetTooltipText(const gfx::Point& p,
   return true;
 }
 
-void DownloadItemView::GetAccessibleState(ui::AccessibleViewState* state) {
+void DownloadItemView::GetAccessibleState(ui::AXViewState* state) {
   state->name = accessible_name_;
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+  state->role = ui::AX_ROLE_BUTTON;
   if (model_.IsDangerous()) {
-    state->state = ui::AccessibilityTypes::STATE_UNAVAILABLE;
+    state->state = ui::AX_STATE_DISABLED;
   } else {
-    state->state = ui::AccessibilityTypes::STATE_HASPOPUP;
+    state->state = ui::AX_STATE_HASPOPUP;
   }
 }
 
@@ -906,8 +907,12 @@ void DownloadItemView::OpenDownload() {
   // open downloads super quickly, we should be concerned about clickjacking.
   UMA_HISTOGRAM_LONG_TIMES("clickjacking.open_download",
                            base::Time::Now() - creation_time_);
-  download()->OpenDownload();
+
   UpdateAccessibleName();
+
+  // Calling download()->OpenDownload may delete this, so this must be
+  // the last thing we do.
+  download()->OpenDownload();
 }
 
 bool DownloadItemView::SubmitDownloadToFeedbackService() {
@@ -1044,13 +1049,16 @@ void DownloadItemView::HandleClickEvent(const ui::LocatedEvent& event,
   if (mode_ == DANGEROUS_MODE)
     return;
 
-  if (active_event &&
-      !InDropDownButtonXCoordinateRange(event.x()) &&
-      !IsShowingWarningDialog()) {
-    OpenDownload();
+  SetState(NORMAL, NORMAL);
+
+  if (!active_event ||
+      InDropDownButtonXCoordinateRange(event.x()) ||
+      IsShowingWarningDialog()) {
+    return;
   }
 
-  SetState(NORMAL, NORMAL);
+  // OpenDownload may delete this, so don't add any code after this line.
+  OpenDownload();
 }
 
 // Load an icon for the file type we're downloading, and animate any in progress
@@ -1231,7 +1239,7 @@ void DownloadItemView::SizeLabelToMinWidth() {
     return;
 
   base::string16 label_text = dangerous_download_label_->text();
-  TrimWhitespace(label_text, TRIM_ALL, &label_text);
+  base::TrimWhitespace(label_text, base::TRIM_ALL, &label_text);
   DCHECK_EQ(base::string16::npos, label_text.find('\n'));
 
   // Make the label big so that GetPreferredSize() is not constrained by the
@@ -1317,7 +1325,7 @@ void DownloadItemView::UpdateAccessibleName() {
   // has changed so they can announce it immediately.
   if (new_name != accessible_name_) {
     accessible_name_ = new_name;
-    NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_NAME_CHANGED, true);
+    NotifyAccessibilityEvent(ui::AX_EVENT_TEXT_CHANGED, true);
   }
 }
 

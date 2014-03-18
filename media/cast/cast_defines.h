@@ -29,6 +29,20 @@ const int kStartRttMs = 20;
 const int64 kCastMessageUpdateIntervalMs = 33;
 const int64 kNackRepeatIntervalMs = 30;
 
+enum CastInitializationStatus {
+  STATUS_AUDIO_UNINITIALIZED,
+  STATUS_VIDEO_UNINITIALIZED,
+  STATUS_AUDIO_INITIALIZED,
+  STATUS_VIDEO_INITIALIZED,
+  STATUS_INVALID_CAST_ENVIRONMENT,
+  STATUS_INVALID_CRYPTO_CONFIGURATION,
+  STATUS_UNSUPPORTED_AUDIO_CODEC,
+  STATUS_INVALID_AUDIO_CONFIGURATION,
+  STATUS_INVALID_VIDEO_CONFIGURATION,
+  STATUS_GPU_ACCELERATION_NOT_SUPPORTED,
+  STATUS_GPU_ACCELERATION_ERROR,
+};
+
 enum DefaultSettings {
   kDefaultAudioEncoderBitrate = 0,  // This means "auto," and may mean VBR.
   kDefaultAudioSamplingRate = 48000,
@@ -71,6 +85,12 @@ static const int64 kUnixEpochInNtpSeconds = GG_INT64_C(2208988800);
 // Magic fractional unit. Used to convert time (in microseconds) to/from
 // fractional NTP seconds.
 static const double kMagicFractionalUnit = 4.294967296E3;
+
+// The maximum number of Cast receiver events to keep in history for the
+// purpose of sending the events through RTCP.
+// The number chosen should be more than the number of events that can be
+// stored in a RTCP packet.
+static const size_t kReceiverRtcpEventHistorySize = 512;
 
 inline bool IsNewerFrameId(uint32 frame_id, uint32 prev_frame_id) {
   return (frame_id != prev_frame_id) &&

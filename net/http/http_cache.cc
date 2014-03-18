@@ -275,8 +275,9 @@ class HttpCache::QuicServerInfoFactoryAdaptor : public QuicServerInfoFactory {
       : http_cache_(http_cache) {
   }
 
-  virtual QuicServerInfo* GetForHost(const std::string& hostname) OVERRIDE {
-    return new DiskCacheBasedQuicServerInfo(hostname, http_cache_);
+  virtual QuicServerInfo* GetForServer(
+      const QuicSessionKey& server_key) OVERRIDE {
+    return new DiskCacheBasedQuicServerInfo(server_key, http_cache_);
   }
 
  private:
@@ -290,18 +291,23 @@ HttpCache::HttpCache(const net::HttpNetworkSession::Params& params,
       backend_factory_(backend_factory),
       building_backend_(false),
       mode_(NORMAL),
-      quic_server_info_factory_(new QuicServerInfoFactoryAdaptor(this)),
+      quic_server_info_factory_(params.enable_quic_persist_server_info ?
+          new QuicServerInfoFactoryAdaptor(this) : NULL),
       network_layer_(new HttpNetworkLayer(new HttpNetworkSession(params))) {
+  HttpNetworkSession* session = network_layer_->GetSession();
+  session->quic_stream_factory()->set_quic_server_info_factory(
+      quic_server_info_factory_.get());
 }
 
 
+// This call doesn't change the shared |session|'s QuicServerInfoFactory because
+// |session| is shared.
 HttpCache::HttpCache(HttpNetworkSession* session,
                      BackendFactory* backend_factory)
     : net_log_(session->net_log()),
       backend_factory_(backend_factory),
       building_backend_(false),
       mode_(NORMAL),
-      quic_server_info_factory_(new QuicServerInfoFactoryAdaptor(this)),
       network_layer_(new HttpNetworkLayer(session)) {
 }
 

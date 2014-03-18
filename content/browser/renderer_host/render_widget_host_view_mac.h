@@ -17,6 +17,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "content/browser/accessibility/browser_accessibility_delegate_mac.h"
+#include "content/browser/renderer_host/display_link_mac.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/software_frame_manager.h"
 #include "content/common/edit_command.h"
@@ -29,6 +30,7 @@
 namespace content {
 class CompositingIOSurfaceMac;
 class CompositingIOSurfaceContext;
+class RenderFrameHost;
 class RenderWidgetHostViewMac;
 class RenderWidgetHostViewMacEditCommandHelper;
 }
@@ -177,6 +179,19 @@ class RenderWidgetHostViewMacEditCommandHelper;
 - (void)updateCursor:(NSCursor*)cursor;
 - (NSRect)firstViewRectForCharacterRange:(NSRange)theRange
                              actualRange:(NSRangePointer)actualRange;
+@end
+
+@interface SoftwareLayer : CALayer {
+ @private
+  content::RenderWidgetHostViewMac* renderWidgetHostView_;
+}
+
+- (id)initWithRenderWidgetHostViewMac:(content::RenderWidgetHostViewMac*)r;
+
+// Invalidate the RenderWidgetHostViewMac because it may be going away. If
+// displayed again, it will draw white.
+- (void)disableRendering;
+
 @end
 
 namespace content {
@@ -330,15 +345,14 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
       uint32 output_surface_id, unsigned frame_id) OVERRIDE;
   virtual void ReleaseReferencesToSoftwareFrame() OVERRIDE;
 
+  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+
   // Forwards the mouse event to the renderer.
   void ForwardMouseEvent(const blink::WebMouseEvent& event);
 
   void KillSelf();
 
   void SetTextInputActive(bool active);
-
-  // Change this view to use CoreAnimation to draw.
-  void EnableCoreAnimation();
 
   // Sends completed plugin IME notification and text back to the renderer.
   void PluginImeCompositionCompleted(const base::string16& text, int plugin_id);
@@ -391,6 +405,9 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   gfx::Range ConvertCharacterRangeToCompositionRange(
       const gfx::Range& request_range);
 
+  // Returns the focused frame. May return NULL.
+  RenderFrameHost* GetFocusedFrame();
+
   // These member variables should be private, but the associated ObjC class
   // needs access to them and can't be made a friend.
 
@@ -398,8 +415,11 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // someone (other than superview) has retained |cocoa_view_|.
   RenderWidgetHostImpl* render_widget_host_;
 
-  // This is true when we are currently painting and thus should handle extra
-  // paint requests by expanding the invalid rect rather than actually painting.
+  // This is true when we are currently painting. In the legacy renderer, this
+  // means we should handle extra paint requests by expanding the invalid rect
+  // rather than actually painting. In hardware compositing it means that we
+  // are inside a draw callback and should not wait for frames to draw before
+  // acknowledging them.
   bool about_to_validate_and_paint_;
 
   // This is true when we have already scheduled a call to
@@ -427,7 +447,13 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   ui::TextInputType text_input_type_;
   bool can_compose_inline_;
 
-  base::scoped_nsobject<CALayer> software_layer_;
+  // The background CoreAnimation layer which is hosted by |cocoa_view_|.
+  // The compositing or software layers will be added as sublayers to this.
+  base::scoped_nsobject<CALayer> background_layer_;
+
+  // The CoreAnimation layer for software compositing. This should be NULL
+  // when software compositing is not in use.
+  base::scoped_nsobject<SoftwareLayer> software_layer_;
 
   // Accelerated compositing structures. These may be dynamically created and
   // destroyed together in Create/DestroyCompositedIOSurfaceAndLayer.
@@ -476,16 +502,41 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
 
   int window_number() const;
 
-  float scale_factor() const;
+  // The scale factor for the screen that the view is currently on.
+  float ViewScaleFactor() const;
+
+  // Update the scale factor for the backing store and for any CALayers.
+  void UpdateBackingStoreScaleFactor();
+
+  // Ensure that the display link is associated with the correct display.
+  void UpdateDisplayLink();
+
+  // The scale factor of the backing store and all CALayers. Note that this is
+  // updated based on ViewScaleFactor with some delay.
+  float backing_store_scale_factor_;
 
   void AddPendingLatencyInfo(
       const std::vector<ui::LatencyInfo>& latency_info);
   void SendPendingLatencyInfoToHost();
   void TickPendingLatencyInfoDelay();
 
+  void SendPendingSwapAck();
+
  private:
   friend class RenderWidgetHostView;
   friend class RenderWidgetHostViewMacTest;
+
+  struct PendingSwapAck {
+    PendingSwapAck(int32 route_id, int gpu_host_id, int32 renderer_id)
+        : route_id(route_id),
+          gpu_host_id(gpu_host_id),
+          renderer_id(renderer_id) {}
+    int32 route_id;
+    int gpu_host_id;
+    int32 renderer_id;
+  };
+  scoped_ptr<PendingSwapAck> pending_swap_ack_;
+  void AddPendingSwapAck(int32 route_id, int gpu_host_id, int32 renderer_id);
 
   // The view will associate itself with the given widget. The native view must
   // be hooked up immediately to the view hierarchy, or else when it is
@@ -499,12 +550,16 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // invoke it from the message loop.
   void ShutdownHost();
 
+  void CreateSoftwareLayer();
+  void DestroySoftwareLayer();
+
   bool CreateCompositedIOSurface();
   bool CreateCompositedIOSurfaceLayer();
   enum DestroyContextBehavior {
     kLeaveContextBoundToView,
     kDestroyContext,
   };
+  void DestroyCompositedIOSurfaceLayer();
   void DestroyCompositedIOSurfaceAndLayer(DestroyContextBehavior
       destroy_context_behavior);
 
@@ -527,6 +582,9 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // Convert |rect| from the views coordinate (upper-left origin) into
   // the OpenGL coordinate (lower-left origin) and scale for HiDPI displays.
   gfx::Rect GetScaledOpenGLPixelRect(const gfx::Rect& rect);
+
+  // Send updated vsync parameters to the renderer.
+  void SendVSyncParametersToRenderer();
 
   // The associated view. This is weak and is inserted into the view hierarchy
   // to own this RenderWidgetHostViewMac object. Set to nil at the start of the
@@ -574,6 +632,9 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // Factory used to safely reference overlay view set in SetOverlayView.
   base::WeakPtrFactory<RenderWidgetHostViewMac>
       overlay_view_weak_factory_;
+
+  // Display link for getting vsync info.
+  scoped_refptr<DisplayLinkMac> display_link_;
 
   // The current composition character range and its bounds.
   gfx::Range composition_range_;

@@ -112,8 +112,10 @@ BackgroundBridge.prototype = {
         'getScrapedPasswords',
         this.onGetScrapedPasswords_.bind(this));
 
+    currentChannel.send({
+      'name': 'channelConnected'
+    });
     this.channelMain_[this.getTabIdFromPort_(port)] = currentChannel;
-
   },
 
   /**

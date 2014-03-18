@@ -36,11 +36,9 @@ class TestFileSystemBackend : public fileapi::FileSystemBackend {
   // FileSystemBackend implementation.
   virtual bool CanHandleType(fileapi::FileSystemType type) const OVERRIDE;
   virtual void Initialize(fileapi::FileSystemContext* context) OVERRIDE;
-  virtual void OpenFileSystem(
-      const GURL& origin_url,
-      fileapi::FileSystemType type,
-      fileapi::OpenFileSystemMode mode,
-      const OpenFileSystemCallback& callback) OVERRIDE;
+  virtual void ResolveURL(const fileapi::FileSystemURL& url,
+                          fileapi::OpenFileSystemMode mode,
+                          const OpenFileSystemCallback& callback) OVERRIDE;
   virtual fileapi::AsyncFileUtil* GetAsyncFileUtil(
       fileapi::FileSystemType type) OVERRIDE;
   virtual fileapi::CopyOrMoveFileValidatorFactory*
@@ -51,6 +49,8 @@ class TestFileSystemBackend : public fileapi::FileSystemBackend {
       const fileapi::FileSystemURL& url,
       fileapi::FileSystemContext* context,
       base::File::Error* error_code) const OVERRIDE;
+  virtual bool SupportsStreaming(
+      const fileapi::FileSystemURL& url) const OVERRIDE;
   virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
       const fileapi::FileSystemURL& url,
       int64 offset,

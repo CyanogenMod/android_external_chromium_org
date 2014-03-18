@@ -8,6 +8,7 @@
 #include "base/command_line.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/context_menu_matcher.h"
+#include "chrome/browser/extensions/menu_manager.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_context_menu_delegate.h"
@@ -97,8 +98,8 @@ ui::MenuModel* AppContextMenu::GetMenuModel() {
       menu_model_->AddItem(LAUNCH_NEW, base::string16());
 
     int index = 0;
-    extension_menu_items_->AppendExtensionItems(app_id_, base::string16(),
-                                                &index);
+    extension_menu_items_->AppendExtensionItems(
+        extensions::MenuItem::ExtensionKey(app_id_), base::string16(), &index);
 
     // Show Pin/Unpin option if shelf is available.
     if (controller_->GetPinnable() != AppListControllerDelegate::NO_PIN) {
@@ -161,12 +162,6 @@ ui::MenuModel* AppContextMenu::GetMenuModel() {
         UNINSTALL,
         is_platform_app_ ? IDS_APP_LIST_UNINSTALL_ITEM
                          : IDS_EXTENSIONS_UNINSTALL);
-  }
-
-  if (is_in_folder_) {
-    menu_model_->AddSeparator(ui::NORMAL_SEPARATOR);
-    menu_model_->AddItemWithStringId(
-        REMOVE_FROM_FOLDER, IDS_APP_LIST_CONTEXT_MENU_REMOVE_FROM_FOLDER);
   }
 
   return menu_model_.get();
@@ -272,8 +267,6 @@ void AppContextMenu::ExecuteCommand(int command_id, int event_flags) {
     controller_->ShowOptionsPage(profile_, app_id_);
   } else if (command_id == UNINSTALL) {
     controller_->UninstallApp(profile_, app_id_);
-  } else if (command_id == REMOVE_FROM_FOLDER) {
-    controller_->RemoveAppFromFolder(profile_, app_id_);
   } else if (command_id == DETAILS) {
     controller_->ShowAppInWebStore(profile_, app_id_, is_search_result_);
   } else if (command_id >= IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST &&

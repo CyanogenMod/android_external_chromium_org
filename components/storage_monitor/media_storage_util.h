@@ -15,7 +15,9 @@
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
 
-struct StorageInfo;
+namespace storage_monitor {
+
+class StorageInfo;
 
 class MediaStorageUtil {
  public:
@@ -62,5 +64,7 @@ class MediaStorageUtil {
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(MediaStorageUtil);
 };
+
+}  // namespace storage_monitor
 
 #endif  // COMPONENTS_STORAGE_MONITOR_MEDIA_STORAGE_UTIL_H_

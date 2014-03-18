@@ -6,11 +6,15 @@
 #define CONTENT_RENDERER_MEDIA_MEDIA_STREAM_AUDIO_PROCESSOR_H_
 
 #include "base/atomicops.h"
+#include "base/platform_file.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
+#include "content/public/common/media_stream_request.h"
+#include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "media/base/audio_converter.h"
+#include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
 #include "third_party/webrtc/modules/audio_processing/include/audio_processing.h"
 #include "third_party/webrtc/modules/interface/module_common_types.h"
 
@@ -26,37 +30,41 @@ class AudioParameters;
 
 namespace webrtc {
 class AudioFrame;
+class TypingDetection;
 }
 
 namespace content {
 
 class RTCMediaConstraints;
 
+using webrtc::AudioProcessorInterface;
+
 // This class owns an object of webrtc::AudioProcessing which contains signal
 // processing components like AGC, AEC and NS. It enables the components based
 // on the getUserMedia constraints, processes the data and outputs it in a unit
 // of 10 ms data chunk.
 class CONTENT_EXPORT MediaStreamAudioProcessor :
-    public base::RefCountedThreadSafe<MediaStreamAudioProcessor> {
+    NON_EXPORTED_BASE(public WebRtcPlayoutDataSource::Sink),
+    NON_EXPORTED_BASE(public AudioProcessorInterface) {
  public:
-  MediaStreamAudioProcessor(const media::AudioParameters& source_params,
-                            const blink::WebMediaConstraints& constraints,
-                            int effects);
+  // |playout_data_source| is used to register this class as a sink to the
+  // WebRtc playout data for processing AEC. If clients do not enable AEC,
+  // |playout_data_source| won't be used.
+  MediaStreamAudioProcessor(const blink::WebMediaConstraints& constraints,
+                            int effects,
+                            MediaStreamType type,
+                            WebRtcPlayoutDataSource* playout_data_source);
+
+  // Called when format of the capture data has changed.
+  // Called on the main render thread.  The caller is responsible for stopping
+  // the capture thread before calling this method.
+  // After this method, the capture thread will be changed to a new capture
+  // thread.
+  void OnCaptureFormatChanged(const media::AudioParameters& source_params);
 
   // Pushes capture data in |audio_source| to the internal FIFO.
   // Called on the capture audio thread.
   void PushCaptureData(media::AudioBus* audio_source);
-
-  // Push the render audio to webrtc::AudioProcessing for analysis. This is
-  // needed iff echo processing is enabled.
-  // |render_audio| is the pointer to the render audio data, its format
-  // is specified by |sample_rate|, |number_of_channels| and |number_of_frames|.
-  // Called on the render audio thread.
-  void PushRenderData(const int16* render_audio,
-                      int sample_rate,
-                      int number_of_channels,
-                      int number_of_frames,
-                      base::TimeDelta render_delay);
 
   // Processes a block of 10 ms data from the internal FIFO and outputs it via
   // |out|. |out| is the address of the pointer that will be pointed to
@@ -77,6 +85,7 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
                              int* new_volume,
                              int16** out);
 
+  bool IsAudioTrackProcessingEnabled() const;
 
   // The audio format of the input to the processor.
   const media::AudioParameters& InputFormat() const;
@@ -87,6 +96,12 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
   // Accessor to check if the audio processing is enabled or not.
   bool has_audio_processing() const { return audio_processing_ != NULL; }
 
+  // Starts/Stops the Aec dump on the |audio_processing_|.
+  // Called on the main render thread.
+  // This method takes the ownership of |aec_dump_file|.
+  void StartAecDump(const base::PlatformFile& aec_dump_file);
+  void StopAecDump();
+
  protected:
   friend class base::RefCountedThreadSafe<MediaStreamAudioProcessor>;
   virtual ~MediaStreamAudioProcessor();
@@ -96,9 +111,20 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
 
   class MediaStreamAudioConverter;
 
+  // WebRtcPlayoutDataSource::Sink implementation.
+  virtual void OnPlayoutData(media::AudioBus* audio_bus,
+                             int sample_rate,
+                             int audio_delay_milliseconds) OVERRIDE;
+  virtual void OnPlayoutDataSourceChanged() OVERRIDE;
+
+  // webrtc::AudioProcessorInterface implementation.
+  // This method is called on the libjingle thread.
+  virtual void GetStats(AudioProcessorStats* stats) OVERRIDE;
+
   // Helper to initialize the WebRtc AudioProcessing.
   void InitializeAudioProcessingModule(
-      const blink::WebMediaConstraints& constraints, int effects);
+      const blink::WebMediaConstraints& constraints, int effects,
+      MediaStreamType type);
 
   // Helper to initialize the capture converter.
   void InitializeCaptureConverter(const media::AudioParameters& source_params);
@@ -143,7 +169,11 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
   // Data bus to help converting interleaved data to an AudioBus.
   scoped_ptr<media::AudioBus> render_data_bus_;
 
-  // Used to DCHECK that some methods are called on the main render thread.
+  // Raw pointer to the WebRtcPlayoutDataSource, which is valid for the
+  // lifetime of RenderThread.
+  WebRtcPlayoutDataSource* const playout_data_source_;
+
+  // Used to DCHECK that the destructor is called on the main render thread.
   base::ThreadChecker main_thread_checker_;
 
   // Used to DCHECK that some methods are called on the capture audio thread.
@@ -154,6 +184,14 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
 
   // Flag to enable the stereo channels mirroring.
   bool audio_mirroring_;
+
+  // Used by the typing detection.
+  scoped_ptr<webrtc::TypingDetection> typing_detector_;
+
+  // This flag is used to show the result of typing detection.
+  // It can be accessed by the capture audio thread and by the libjingle thread
+  // which calls GetStats().
+  base::subtle::Atomic32 typing_detected_;
 };
 
 }  // namespace content

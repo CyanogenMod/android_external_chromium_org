@@ -72,22 +72,23 @@ class PreferenceWhitelist {
 base::LazyInstance<PreferenceWhitelist> preference_whitelist =
     LAZY_INSTANCE_INITIALIZER;
 
-static base::LazyInstance<ProfileKeyedAPIFactory<ChromeDirectSettingAPI> >
-    g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<ChromeDirectSettingAPI> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
-ChromeDirectSettingAPI::ChromeDirectSettingAPI(Profile* profile)
-    : profile_(profile) {
-  preference_whitelist.Get().RegisterEventListeners(profile, this);
+ChromeDirectSettingAPI::ChromeDirectSettingAPI(content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)) {
+  preference_whitelist.Get().RegisterEventListeners(profile_, this);
 }
 
 ChromeDirectSettingAPI::~ChromeDirectSettingAPI() {}
 
-// BrowserContextKeyedService implementation.
+// KeyedService implementation.
 void ChromeDirectSettingAPI::Shutdown() {}
 
-// ProfileKeyedAPI implementation.
-ProfileKeyedAPIFactory<ChromeDirectSettingAPI>*
-    ChromeDirectSettingAPI::GetFactoryInstance() {
+// BrowserContextKeyedAPI implementation.
+BrowserContextKeyedAPIFactory<ChromeDirectSettingAPI>*
+ChromeDirectSettingAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
@@ -108,12 +109,12 @@ bool ChromeDirectSettingAPI::IsPreferenceOnWhitelist(
   return preference_whitelist.Get().IsPreferenceOnWhitelist(pref_key);
 }
 
-ChromeDirectSettingAPI* ChromeDirectSettingAPI::Get(Profile* profile) {
-  return
-      ProfileKeyedAPIFactory<ChromeDirectSettingAPI>::GetForProfile(profile);
+ChromeDirectSettingAPI* ChromeDirectSettingAPI::Get(
+    content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<ChromeDirectSettingAPI>::Get(context);
 }
 
-// ProfileKeyedAPI implementation.
+// BrowserContextKeyedAPI implementation.
 const char* ChromeDirectSettingAPI::service_name() {
   return "ChromeDirectSettingAPI";
 }

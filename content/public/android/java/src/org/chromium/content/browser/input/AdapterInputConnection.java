@@ -4,6 +4,7 @@
 
 package org.chromium.content.browser.input;
 
+import android.os.SystemClock;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.Selection;
@@ -218,20 +219,13 @@ public class AdapterInputConnection extends BaseInputConnection {
         if (actionCode == EditorInfo.IME_ACTION_NEXT) {
             restartInput();
             // Send TAB key event
-            long timeStampMs = System.currentTimeMillis();
+            long timeStampMs = SystemClock.uptimeMillis();
             mImeAdapter.sendSyntheticKeyEvent(
                     ImeAdapter.sEventTypeRawKeyDown, timeStampMs, KeyEvent.KEYCODE_TAB, 0);
         } else {
             mImeAdapter.sendKeyEventWithKeyCode(KeyEvent.KEYCODE_ENTER,
                     KeyEvent.FLAG_SOFT_KEYBOARD | KeyEvent.FLAG_KEEP_TOUCH_MODE
                     | KeyEvent.FLAG_EDITOR_ACTION);
-
-            if ((actionCode == EditorInfo.IME_ACTION_GO || actionCode == EditorInfo.IME_ACTION_DONE
-                    || actionCode == EditorInfo.IME_ACTION_SEARCH) && isActive()) {
-                // User is done typing, hide the keyboard.
-                InputMethodManagerWrapper wrapper = getInputMethodManagerWrapper();
-                wrapper.hideSoftInputFromWindow(mInternalView.getWindowToken(), 0, null);
-            }
         }
         return true;
     }

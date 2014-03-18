@@ -8,43 +8,46 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_checker.h"
-#include "chrome/browser/extensions/api/api_function.h"
-#include "chrome/browser/extensions/api/api_resource_manager.h"
 #include "chrome/browser/extensions/api/cast_channel/cast_socket.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/common/extensions/api/cast_channel.h"
-#include "extensions/browser/extension_function.h"
+#include "extensions/browser/api/api_resource_manager.h"
+#include "extensions/browser/api/async_api_function.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 
 class GURL;
-class Profile;
 class CastChannelAPITest;
+
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
 
 namespace cast_channel = api::cast_channel;
 
-class CastChannelAPI : public ProfileKeyedAPI,
+class CastChannelAPI : public BrowserContextKeyedAPI,
                        public cast_channel::CastSocket::Delegate {
 
  public:
-  explicit CastChannelAPI(Profile* profile);
+  explicit CastChannelAPI(content::BrowserContext* context);
 
-  static CastChannelAPI* Get(Profile* profile);
+  static CastChannelAPI* Get(content::BrowserContext* context);
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<CastChannelAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<CastChannelAPI>* GetFactoryInstance();
 
   // Returns a new CastSocket that connects to |url| and is to be owned by
   // |extension_id|.
   scoped_ptr<cast_channel::CastSocket> CreateCastSocket(
-      const std::string& extension_id, const GURL& gurl);
+      const std::string& extension_id,
+      const GURL& gurl);
 
   // Sets the CastSocket instance to be returned by CreateCastSocket for
   // testing.
   void SetSocketForTest(scoped_ptr<cast_channel::CastSocket> socket_for_test);
 
  private:
-  friend class ProfileKeyedAPIFactory<CastChannelAPI>;
+  friend class BrowserContextKeyedAPIFactory<CastChannelAPI>;
   friend class ::CastChannelAPITest;
 
   virtual ~CastChannelAPI();
@@ -55,12 +58,10 @@ class CastChannelAPI : public ProfileKeyedAPI,
   virtual void OnMessage(const cast_channel::CastSocket* socket,
                          const cast_channel::MessageInfo& message) OVERRIDE;
 
-  // ProfileKeyedAPI implementation.
-  static const char* service_name() {
-    return "CastChannelAPI";
-  }
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() { return "CastChannelAPI"; }
 
-  Profile* const profile_;
+  content::BrowserContext* const browser_context_;
   scoped_ptr<cast_channel::CastSocket> socket_for_test_;
 
   DISALLOW_COPY_AND_ASSIGN(CastChannelAPI);
@@ -103,8 +104,7 @@ class CastChannelAsyncApiFunction : public AsyncApiFunction {
 
  private:
   // Sets the function result from |channel_info|.
-  void SetResultFromChannelInfo(
-      const cast_channel::ChannelInfo& channel_info);
+  void SetResultFromChannelInfo(const cast_channel::ChannelInfo& channel_info);
 
   // The API resource manager for CastSockets.
   ApiResourceManager<cast_channel::CastSocket>* manager_;

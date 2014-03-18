@@ -4,7 +4,6 @@
 
 #include "base/command_line.h"
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
-#include "chrome/browser/password_manager/password_generation_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/autofill/password_generation_popup_observer.h"
 #include "chrome/browser/ui/browser.h"
@@ -13,6 +12,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/common/autofill_switches.h"
+#include "components/password_manager/core/browser/password_generation_manager.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
@@ -62,13 +62,12 @@ class PasswordGenerationInteractiveTest : public InProcessBrowserTest {
   virtual void SetUpOnMainThread() OVERRIDE {
     // Disable Autofill requesting access to AddressBook data. This will cause
     // the tests to hang on Mac.
-    autofill::test::DisableSystemServices(browser()->profile());
+    autofill::test::DisableSystemServices(browser()->profile()->GetPrefs());
 
     // Set observer for popup.
-    PasswordGenerationManager* generation_manager =
-        ChromePasswordManagerClient::GetGenerationManagerFromWebContents(
-            GetWebContents());
-    generation_manager->SetTestObserver(&observer_);
+    ChromePasswordManagerClient* client =
+        ChromePasswordManagerClient::FromWebContents(GetWebContents());
+    client->SetTestObserver(&observer_);
 
     ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
     GURL url = embedded_test_server()->GetURL("/password/signup_form.html");
@@ -77,10 +76,9 @@ class PasswordGenerationInteractiveTest : public InProcessBrowserTest {
 
   virtual void CleanUpOnMainThread() OVERRIDE {
     // Clean up UI.
-    PasswordGenerationManager* generation_manager =
-        ChromePasswordManagerClient::GetGenerationManagerFromWebContents(
-            GetWebContents());
-    generation_manager->HidePopup();
+    ChromePasswordManagerClient* client =
+        ChromePasswordManagerClient::FromWebContents(GetWebContents());
+    client->HidePasswordGenerationPopup();
   }
 
   content::WebContents* GetWebContents() {

@@ -13,24 +13,24 @@
 #include "base/path_service.h"
 #include "mojo/examples/aura_demo/demo_screen.h"
 #include "mojo/examples/aura_demo/window_tree_host_mojo.h"
+#include "mojo/examples/launcher/launcher.mojom.h"
 #include "mojo/public/bindings/allocation_scope.h"
 #include "mojo/public/bindings/remote_ptr.h"
 #include "mojo/public/gles2/gles2_cpp.h"
 #include "mojo/public/shell/application.h"
+#include "mojo/public/shell/shell.mojom.h"
 #include "mojo/public/system/core.h"
 #include "mojo/public/system/macros.h"
-#include "mojom/launcher.h"
-#include "mojom/native_viewport.h"
-#include "mojom/shell.h"
+#include "mojo/services/native_viewport/native_viewport.mojom.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/default_activation_client.h"
 #include "ui/aura/client/default_capture_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_focus_client.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ime/input_method.h"
@@ -98,7 +98,7 @@ class MinimalInputEventFilter : public ui::internal::InputMethodDelegate,
   virtual bool DispatchKeyEventPostIME(const ui::KeyEvent& event) OVERRIDE {
     ui::TranslatedKeyEvent aura_event(event);
     ui::EventDispatchDetails details =
-        root_->GetDispatcher()->OnEventFromSource(&aura_event);
+        root_->GetHost()->dispatcher()->OnEventFromSource(&aura_event);
     return aura_event.handled() || details.dispatcher_destroyed;
   }
 
@@ -221,14 +221,14 @@ class LauncherImpl : public Application,
 
   // Overridden from Launcher:
   virtual void Show() OVERRIDE {
-    if (!root_window_.get()) {
+    if (!window_tree_host_.get()) {
       pending_show_ = true;
       return;
     }
-    root_window_->host()->Show();
+    window_tree_host_->Show();
   }
   virtual void Hide() OVERRIDE {
-    root_window_->host()->Hide();
+    window_tree_host_->Hide();
   }
 
   // Overridden from URLReceiver:
@@ -238,25 +238,22 @@ class LauncherImpl : public Application,
   }
 
   void HostContextCreated() {
-    aura::RootWindow::CreateParams params(gfx::Rect(450, 60));
-    params.host = window_tree_host_.get();
-    root_window_.reset(new aura::RootWindow(params));
-    window_tree_host_->set_delegate(root_window_.get());
-    root_window_->host()->InitHost();
-    root_window_->window()->SetBounds(gfx::Rect(450, 60));
+    window_tree_host_->InitHost();
+    window_tree_host_->window()->SetBounds(gfx::Rect(450, 60));
 
     focus_client_.reset(new aura::test::TestFocusClient());
-    aura::client::SetFocusClient(root_window_->window(), focus_client_.get());
+    aura::client::SetFocusClient(window_tree_host_->window(),
+                                 focus_client_.get());
     activation_client_.reset(
-        new aura::client::DefaultActivationClient(root_window_->window()));
+        new aura::client::DefaultActivationClient(window_tree_host_->window()));
     capture_client_.reset(
-        new aura::client::DefaultCaptureClient(root_window_->window()));
-    ime_filter_.reset(new MinimalInputEventFilter(root_window_->window()));
+        new aura::client::DefaultCaptureClient(window_tree_host_->window()));
+    ime_filter_.reset(new MinimalInputEventFilter(window_tree_host_->window()));
 
     window_tree_client_.reset(
-        new LauncherWindowTreeClient(root_window_->window()));
+        new LauncherWindowTreeClient(window_tree_host_->window()));
 
-    launcher_controller_.InitInWindow(root_window_->window());
+    launcher_controller_.InitInWindow(window_tree_host_->window());
 
     if (pending_show_) {
       pending_show_ = false;
@@ -274,8 +271,7 @@ class LauncherImpl : public Application,
   LauncherController launcher_controller_;
 
   RemotePtr<LauncherClient> launcher_client_;
-  scoped_ptr<WindowTreeHostMojo> window_tree_host_;
-  scoped_ptr<aura::RootWindow> root_window_;
+  scoped_ptr<aura::WindowTreeHost> window_tree_host_;
 
   bool pending_show_;
 };

@@ -91,11 +91,14 @@ class CHROMEOS_EXPORT FakeCryptohomeClient : public CryptohomeClient {
   virtual void TpmAttestationIsEnrolled(
       const BoolDBusMethodCallback& callback) OVERRIDE;
   virtual void AsyncTpmAttestationCreateEnrollRequest(
+      chromeos::attestation::PrivacyCAType pca_type,
       const AsyncMethodCallback& callback) OVERRIDE;
   virtual void AsyncTpmAttestationEnroll(
+      chromeos::attestation::PrivacyCAType pca_type,
       const std::string& pca_response,
       const AsyncMethodCallback& callback) OVERRIDE;
   virtual void AsyncTpmAttestationCreateCertRequest(
+      chromeos::attestation::PrivacyCAType pca_type,
       attestation::AttestationCertificateProfile certificate_profile,
       const std::string& user_id,
       const std::string& request_origin,
@@ -157,6 +160,26 @@ class CHROMEOS_EXPORT FakeCryptohomeClient : public CryptohomeClient {
       const std::string& user_id,
       const std::string& key_prefix,
       const BoolDBusMethodCallback& callback) OVERRIDE;
+  virtual void CheckKeyEx(
+      const cryptohome::AccountIdentifier& id,
+      const cryptohome::AuthorizationRequest& auth,
+      const cryptohome::CheckKeyRequest& request,
+      const ProtobufMethodCallback& callback) OVERRIDE;
+  virtual void MountEx(
+      const cryptohome::AccountIdentifier& id,
+      const cryptohome::AuthorizationRequest& auth,
+      const cryptohome::MountRequest& request,
+      const ProtobufMethodCallback& callback) OVERRIDE;
+  virtual void AddKeyEx(
+      const cryptohome::AccountIdentifier& id,
+      const cryptohome::AuthorizationRequest& auth,
+      const cryptohome::AddKeyRequest& request,
+      const ProtobufMethodCallback& callback) OVERRIDE;
+  virtual void UpdateKeyEx(
+      const cryptohome::AccountIdentifier& id,
+      const cryptohome::AuthorizationRequest& auth,
+      const cryptohome::UpdateKeyRequest& request,
+      const ProtobufMethodCallback& callback) OVERRIDE;
 
   // Changes the behavior of WaitForServiceToBeAvailable(). This method runs
   // pending callbacks if is_available is true.
@@ -186,6 +209,9 @@ class CHROMEOS_EXPORT FakeCryptohomeClient : public CryptohomeClient {
   // This method is used to implement ReturnAsyncMethodResult.
   void ReturnAsyncMethodResultInternal(const AsyncMethodCallback& callback,
                                        bool returns_data);
+
+  void ReturnProtobufMethodCallback(const std::string& user_id,
+                                    const ProtobufMethodCallback& callback);
 
   bool service_is_available_;
   int async_call_id_;

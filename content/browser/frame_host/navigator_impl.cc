@@ -14,13 +14,16 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
+#include "content/browser/webui/web_ui_impl.h"
 #include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/global_request_id.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
+#include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_client.h"
@@ -111,6 +114,13 @@ void MakeNavigateParams(const NavigationEntryImpl& entry,
   params->frame_to_navigate = entry.GetFrameToNavigate();
 }
 
+RenderFrameHostManager* GetRenderManager(RenderFrameHostImpl* rfh) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess))
+    return rfh->frame_tree_node()->render_manager();
+
+  return rfh->frame_tree_node()->frame_tree()->root()->render_manager();
+}
+
 }  // namespace
 
 
@@ -123,8 +133,7 @@ NavigatorImpl::NavigatorImpl(
 
 void NavigatorImpl::DidStartProvisionalLoad(
     RenderFrameHostImpl* render_frame_host,
-    int64 frame_id,
-    int64 parent_frame_id,
+    int parent_routing_id,
     bool is_main_frame,
     const GURL& url) {
   bool is_error_page = (url.spec() == kUnreachableWebDataURL);
@@ -179,7 +188,7 @@ void NavigatorImpl::DidStartProvisionalLoad(
   if (delegate_) {
     // Notify the observer about the start of the provisional load.
     delegate_->DidStartProvisionalLoad(
-        render_frame_host, frame_id, parent_frame_id, is_main_frame,
+        render_frame_host, parent_routing_id, is_main_frame,
         validated_url, is_error_page, is_iframe_srcdoc);
   }
 }
@@ -194,7 +203,7 @@ void NavigatorImpl::DidFailProvisionalLoadWithError(
           << ", is_main_frame: " << params.is_main_frame
           << ", showing_repost_interstitial: " <<
             params.showing_repost_interstitial
-          << ", frame_id: " << params.frame_id;
+          << ", frame_id: " << render_frame_host->GetRoutingID();
   GURL validated_url(params.url);
   RenderProcessHost* render_process_host = render_frame_host->GetProcess();
   render_process_host->FilterURL(false, &validated_url);
@@ -247,13 +256,12 @@ void NavigatorImpl::DidFailProvisionalLoadWithError(
 
 void NavigatorImpl::DidFailLoadWithError(
     RenderFrameHostImpl* render_frame_host,
-    int64 frame_id,
     const GURL& url,
     bool is_main_frame,
     int error_code,
     const base::string16& error_description) {
   delegate_->DidFailLoadWithError(
-      render_frame_host, frame_id, url, is_main_frame, error_code,
+      render_frame_host, url, is_main_frame, error_code,
       error_description);
 }
 
@@ -313,6 +321,9 @@ bool NavigatorImpl::NavigateToEntry(
   if (!dest_render_frame_host)
     return false;  // Unable to create the desired RenderFrameHost.
 
+  // Make sure no code called via RFHM::Navigate clears the pending entry.
+  CHECK_EQ(controller_->GetPendingEntry(), &entry);
+
   // For security, we should never send non-Web-UI URLs to a Web UI renderer.
   // Double check that here.
   int enabled_bindings =
@@ -341,6 +352,9 @@ bool NavigatorImpl::NavigateToEntry(
   FrameMsg_Navigate_Params navigate_params;
   MakeNavigateParams(entry, *controller_, reload_type, &navigate_params);
   dest_render_frame_host->Navigate(navigate_params);
+
+  // Make sure no code called via RFH::Navigate clears the pending entry.
+  CHECK_EQ(controller_->GetPendingEntry(), &entry);
 
   if (entry.GetPageID() == -1) {
     // HACK!!  This code suppresses javascript: URLs from being added to
@@ -383,15 +397,6 @@ void NavigatorImpl::DidNavigate(
   RenderViewHostImpl* rvh = render_frame_host->render_view_host();
   bool use_site_per_process =
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess);
-  if (frame_tree->IsFirstNavigationAfterSwap()) {
-    // First navigation should be a main frame navigation.
-    // TODO(creis): This DCHECK is currently disabled for --site-per-process
-    // because cross-process subframe navigations still have a main frame
-    // PageTransition.
-    if (!use_site_per_process)
-      DCHECK(PageTransitionIsMainFrame(params.transition));
-    frame_tree->OnFirstNavigationAfterSwap(params.frame_id);
-  }
 
   // When using --site-per-process, look up the FrameTreeNode ID that the
   // renderer-specific frame ID corresponds to.
@@ -469,12 +474,13 @@ void NavigatorImpl::DidNavigate(
     delegate_->SetMainFrameMimeType(params.contents_mime_type);
 
   LoadCommittedDetails details;
-  bool did_navigate = controller_->RendererDidNavigate(rvh, params, &details);
+  bool did_navigate = controller_->RendererDidNavigate(render_frame_host,
+                                                       params, &details);
 
   // For now, keep track of each frame's URL in its FrameTreeNode.  This lets
   // us estimate our process count for implementing OOP iframes.
   // TODO(creis): Remove this when we track which pages commit in each frame.
-  frame_tree->SetFrameUrl(params.frame_id, params.url);
+  render_frame_host->frame_tree_node()->set_current_url(params.url);
 
   // Send notification about committed provisional loads. This notification is
   // different from the NAV_ENTRY_COMMITTED notification which doesn't include
@@ -496,12 +502,11 @@ void NavigatorImpl::DidNavigate(
           params.transition | PAGE_TRANSITION_FORWARD_BACK);
     }
 
-    delegate_->DidCommitProvisionalLoad(params.frame_id,
+    delegate_->DidCommitProvisionalLoad(render_frame_host,
                                         params.frame_unique_name,
                                         is_main_frame,
                                         params.url,
-                                        transition_type,
-                                        render_frame_host);
+                                        transition_type);
   }
 
   if (!did_navigate)
@@ -531,6 +536,92 @@ bool NavigatorImpl::ShouldAssignSiteForURL(const GURL& url) {
   // The embedder will then have the opportunity to determine if the URL
   // should "use up" the SiteInstance.
   return GetContentClient()->browser()->ShouldAssignSiteForURL(url);
+}
+
+void NavigatorImpl::RequestOpenURL(
+    RenderFrameHostImpl* render_frame_host,
+    const GURL& url,
+    const Referrer& referrer,
+    WindowOpenDisposition disposition,
+    bool should_replace_current_entry,
+    bool user_gesture) {
+  SiteInstance* current_site_instance =
+      GetRenderManager(render_frame_host)->current_frame_host()->
+          GetSiteInstance();
+  // If this came from a swapped out RenderViewHost, we only allow the request
+  // if we are still in the same BrowsingInstance.
+  if (render_frame_host->render_view_host()->IsSwappedOut() &&
+      !render_frame_host->GetSiteInstance()->IsRelatedSiteInstance(
+          current_site_instance)) {
+    return;
+  }
+
+  // Delegate to RequestTransferURL because this is just the generic
+  // case where |old_request_id| is empty.
+  // TODO(creis): Pass the redirect_chain into this method to support client
+  // redirects.  http://crbug.com/311721.
+  std::vector<GURL> redirect_chain;
+  RequestTransferURL(
+      render_frame_host, url, redirect_chain, referrer, PAGE_TRANSITION_LINK,
+      disposition, GlobalRequestID(),
+      should_replace_current_entry, user_gesture);
+}
+
+void NavigatorImpl::RequestTransferURL(
+    RenderFrameHostImpl* render_frame_host,
+    const GURL& url,
+    const std::vector<GURL>& redirect_chain,
+    const Referrer& referrer,
+    PageTransition page_transition,
+    WindowOpenDisposition disposition,
+    const GlobalRequestID& transferred_global_request_id,
+    bool should_replace_current_entry,
+    bool user_gesture) {
+  GURL dest_url(url);
+  SiteInstance* current_site_instance =
+      GetRenderManager(render_frame_host)->current_frame_host()->
+          GetSiteInstance();
+  if (!GetContentClient()->browser()->ShouldAllowOpenURL(
+          current_site_instance, url)) {
+    dest_url = GURL(kAboutBlankURL);
+  }
+
+  int64 frame_tree_node_id = -1;
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess)) {
+    frame_tree_node_id =
+        render_frame_host->frame_tree_node()->frame_tree_node_id();
+  }
+  OpenURLParams params(
+      dest_url, referrer, frame_tree_node_id, disposition, page_transition,
+      true /* is_renderer_initiated */);
+  if (redirect_chain.size() > 0)
+    params.redirect_chain = redirect_chain;
+  params.transferred_global_request_id = transferred_global_request_id;
+  params.should_replace_current_entry = should_replace_current_entry;
+  params.user_gesture = user_gesture;
+
+  if (GetRenderManager(render_frame_host)->web_ui()) {
+    // Web UI pages sometimes want to override the page transition type for
+    // link clicks (e.g., so the new tab page can specify AUTO_BOOKMARK for
+    // automatically generated suggestions).  We don't override other types
+    // like TYPED because they have different implications (e.g., autocomplete).
+    if (PageTransitionCoreTypeIs(params.transition, PAGE_TRANSITION_LINK))
+      params.transition =
+          GetRenderManager(render_frame_host)->web_ui()->
+              GetLinkTransitionType();
+
+    // Note also that we hide the referrer for Web UI pages. We don't really
+    // want web sites to see a referrer of "chrome://blah" (and some
+    // chrome: URLs might have search terms or other stuff we don't want to
+    // send to the site), so we send no referrer.
+    params.referrer = Referrer();
+
+    // Navigations in Web UI pages count as browser-initiated navigations.
+    params.is_renderer_initiated = false;
+  }
+
+  if (delegate_)
+    delegate_->RequestOpenURL(render_frame_host, params);
 }
 
 }  // namespace content

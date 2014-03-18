@@ -10,8 +10,10 @@
 #include "content/browser/media/android/media_resource_getter_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_view_android.h"
+#include "content/common/media/cdm_messages.h"
 #include "content/common/media/media_player_messages_android.h"
 #include "content/public/browser/android/content_view_core.h"
+#include "content/public/browser/android/external_video_surface_container.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -31,18 +33,18 @@ using media::MediaPlayerBridge;
 using media::MediaPlayerManager;
 using media::MediaSourcePlayer;
 
+namespace content {
+
 // Threshold on the number of media players per renderer before we start
 // attempting to release inactive media players.
-static const int kMediaPlayerThreshold = 1;
+const int kMediaPlayerThreshold = 1;
 
-// Maximum sizes for various EME message parameters. These are checks to
-// prevent unnecessarily large messages from being passed around, and the sizes
-// are somewhat arbitrary as the EME specification doesn't specify any limits.
-static const size_t kEmeUuidSize = 16;
-static const size_t kEmeInitDataMaximum = 64 * 1024;  // 64 KB
-static const size_t kEmeResponseMaximum = 64 * 1024;  // 64 KB
-
-namespace content {
+// Maximum lengths for various EME API parameters. These are checks to
+// prevent unnecessarily large parameters from being passed around, and the
+// lengths are somewhat arbitrary as the EME spec doesn't specify any limits.
+const size_t kMaxInitDataLength = 64 * 1024;  // 64 KB
+const size_t kMaxSessionResponseLength = 64 * 1024;  // 64 KB
+const size_t kMaxKeySystemLength = 256;
 
 static BrowserMediaPlayerManager::Factory g_factory = NULL;
 
@@ -63,7 +65,6 @@ ContentViewCoreImpl* BrowserMediaPlayerManager::GetContentViewCore() const {
   return ContentViewCoreImpl::FromWebContents(web_contents());
 }
 
-// static
 MediaPlayerAndroid* BrowserMediaPlayerManager::CreateMediaPlayer(
     MediaPlayerHostMsg_Initialize_Type type,
     int player_id,
@@ -75,14 +76,18 @@ MediaPlayerAndroid* BrowserMediaPlayerManager::CreateMediaPlayer(
     BrowserDemuxerAndroid* demuxer) {
   switch (type) {
     case MEDIA_PLAYER_TYPE_URL: {
-      const std::string user_agent = GetUserAgent(url);
+      const std::string user_agent = GetContentClient()->GetUserAgent();
       MediaPlayerBridge* media_player_bridge = new MediaPlayerBridge(
           player_id,
           url,
           first_party_for_cookies,
           user_agent,
           hide_url_log,
-          manager);
+          manager,
+          base::Bind(&BrowserMediaPlayerManager::OnMediaResourcesRequested,
+                     weak_ptr_factory_.GetWeakPtr()),
+          base::Bind(&BrowserMediaPlayerManager::OnMediaResourcesReleased,
+                     weak_ptr_factory_.GetWeakPtr()));
       BrowserMediaPlayerManager* browser_media_player_manager =
           static_cast<BrowserMediaPlayerManager*>(manager);
       ContentViewCoreImpl* content_view_core_impl =
@@ -103,7 +108,13 @@ MediaPlayerAndroid* BrowserMediaPlayerManager::CreateMediaPlayer(
 
     case MEDIA_PLAYER_TYPE_MEDIA_SOURCE: {
       return new MediaSourcePlayer(
-          player_id, manager, demuxer->CreateDemuxer(demuxer_client_id));
+          player_id,
+          manager,
+          base::Bind(&BrowserMediaPlayerManager::OnMediaResourcesRequested,
+                     weak_ptr_factory_.GetWeakPtr()),
+          base::Bind(&BrowserMediaPlayerManager::OnMediaResourcesReleased,
+                     weak_ptr_factory_.GetWeakPtr()),
+          demuxer->CreateDemuxer(demuxer_client_id));
     }
   }
 
@@ -138,13 +149,11 @@ bool BrowserMediaPlayerManager::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_DestroyMediaPlayer, OnDestroyPlayer)
     IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_DestroyAllMediaPlayers,
                         DestroyAllMediaPlayers)
-    IPC_MESSAGE_HANDLER(MediaKeysHostMsg_InitializeCDM,
-                        OnInitializeCDM)
-    IPC_MESSAGE_HANDLER(MediaKeysHostMsg_CreateSession, OnCreateSession)
-    IPC_MESSAGE_HANDLER(MediaKeysHostMsg_UpdateSession, OnUpdateSession)
-    IPC_MESSAGE_HANDLER(MediaKeysHostMsg_ReleaseSession, OnReleaseSession)
-    IPC_MESSAGE_HANDLER(MediaKeysHostMsg_CancelAllPendingSessionCreations,
-                        OnCancelAllPendingSessionCreations)
+    IPC_MESSAGE_HANDLER(CdmHostMsg_InitializeCdm, OnInitializeCdm)
+    IPC_MESSAGE_HANDLER(CdmHostMsg_CreateSession, OnCreateSession)
+    IPC_MESSAGE_HANDLER(CdmHostMsg_UpdateSession, OnUpdateSession)
+    IPC_MESSAGE_HANDLER(CdmHostMsg_ReleaseSession, OnReleaseSession)
+    IPC_MESSAGE_HANDLER(CdmHostMsg_DestroyCdm, OnDestroyCdm)
 #if defined(VIDEO_HOLE)
     IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_NotifyExternalSurface,
                         OnNotifyExternalSurface)
@@ -188,8 +197,8 @@ void BrowserMediaPlayerManager::FullscreenPlayerSeek(int msec) {
 }
 
 void BrowserMediaPlayerManager::ExitFullscreen(bool release_media_player) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableOverlayFullscreenVideoSubtitle)) {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableOverlayFullscreenVideoSubtitle)) {
     if (WebContentsDelegate* delegate = web_contents_->GetDelegate())
       delegate->ToggleFullscreenModeForTab(web_contents_, false);
     if (RenderWidgetHostViewAndroid* view_android =
@@ -229,8 +238,8 @@ void BrowserMediaPlayerManager::SetVideoSurface(
   }
   player->SetVideoSurface(surface.Pass());
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableOverlayFullscreenVideoSubtitle)) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableOverlayFullscreenVideoSubtitle)) {
     return;
   }
   if (RenderWidgetHostViewAndroid* view_android =
@@ -297,38 +306,6 @@ void BrowserMediaPlayerManager::OnVideoSizeChanged(
     video_view_->OnVideoSizeChanged(width, height);
 }
 
-void BrowserMediaPlayerManager::RequestMediaResources(int player_id) {
-  int num_active_player = 0;
-  ScopedVector<MediaPlayerAndroid>::iterator it;
-  for (it = players_.begin(); it != players_.end(); ++it) {
-    if (!(*it)->IsPlayerReady())
-      continue;
-
-    // The player is already active, ignore it.
-    if ((*it)->player_id() == player_id)
-      return;
-    else
-      num_active_player++;
-  }
-
-  // Number of active players are less than the threshold, do nothing.
-  if (num_active_player < kMediaPlayerThreshold)
-    return;
-
-  for (it = players_.begin(); it != players_.end(); ++it) {
-    if ((*it)->IsPlayerReady() && !(*it)->IsPlaying() &&
-        fullscreen_player_id_ != (*it)->player_id()) {
-      (*it)->Release();
-      Send(new MediaPlayerMsg_MediaPlayerReleased(
-          routing_id(), (*it)->player_id()));
-    }
-  }
-}
-
-void BrowserMediaPlayerManager::ReleaseMediaResources(int player_id) {
-  // Nothing needs to be done.
-}
-
 media::MediaResourceGetter*
 BrowserMediaPlayerManager::GetMediaResourceGetter() {
   if (!media_resource_getter_.get()) {
@@ -356,10 +333,10 @@ MediaPlayerAndroid* BrowserMediaPlayerManager::GetPlayer(int player_id) {
   return NULL;
 }
 
-MediaDrmBridge* BrowserMediaPlayerManager::GetDrmBridge(int media_keys_id) {
+MediaDrmBridge* BrowserMediaPlayerManager::GetDrmBridge(int cdm_id) {
   for (ScopedVector<MediaDrmBridge>::iterator it = drm_bridges_.begin();
       it != drm_bridges_.end(); ++it) {
-    if ((*it)->media_keys_id() == media_keys_id)
+    if ((*it)->cdm_id() == cdm_id)
       return *it;
   }
   return NULL;
@@ -385,8 +362,8 @@ void BrowserMediaPlayerManager::OnProtectedSurfaceRequested(int player_id) {
   }
 
   // If the player is pending approval, wait for the approval to happen.
-  if (media_keys_ids_pending_approval_.end() !=
-      media_keys_ids_pending_approval_.find(player_id)) {
+  if (cdm_ids_pending_approval_.end() !=
+      cdm_ids_pending_approval_.find(player_id)) {
     pending_fullscreen_player_id_ = player_id;
     return;
   }
@@ -408,39 +385,37 @@ void BrowserMediaPlayerManager::OnProtectedSurfaceRequested(int player_id) {
 // The following 5 functions are EME MediaKeySession events.
 
 void BrowserMediaPlayerManager::OnSessionCreated(
-    int media_keys_id,
+    int cdm_id,
     uint32 session_id,
     const std::string& web_session_id) {
-  Send(new MediaKeysMsg_SessionCreated(
-      routing_id(), media_keys_id, session_id, web_session_id));
+  Send(new CdmMsg_SessionCreated(
+      routing_id(), cdm_id, session_id, web_session_id));
 }
 
 void BrowserMediaPlayerManager::OnSessionMessage(
-    int media_keys_id,
+    int cdm_id,
     uint32 session_id,
     const std::vector<uint8>& message,
     const GURL& destination_url) {
-  Send(new MediaKeysMsg_SessionMessage(
-      routing_id(), media_keys_id, session_id, message, destination_url));
+  Send(new CdmMsg_SessionMessage(
+      routing_id(), cdm_id, session_id, message, destination_url));
 }
 
-void BrowserMediaPlayerManager::OnSessionReady(int media_keys_id,
-                                               uint32 session_id) {
-  Send(new MediaKeysMsg_SessionReady(routing_id(), media_keys_id, session_id));
+void BrowserMediaPlayerManager::OnSessionReady(int cdm_id, uint32 session_id) {
+  Send(new CdmMsg_SessionReady(routing_id(), cdm_id, session_id));
 }
 
-void BrowserMediaPlayerManager::OnSessionClosed(int media_keys_id,
-                                                uint32 session_id) {
-  Send(new MediaKeysMsg_SessionClosed(routing_id(), media_keys_id, session_id));
+void BrowserMediaPlayerManager::OnSessionClosed(int cdm_id, uint32 session_id) {
+  Send(new CdmMsg_SessionClosed(routing_id(), cdm_id, session_id));
 }
 
 void BrowserMediaPlayerManager::OnSessionError(
-    int media_keys_id,
+    int cdm_id,
     uint32 session_id,
     media::MediaKeys::KeyError error_code,
-    int system_code) {
-  Send(new MediaKeysMsg_SessionError(
-      routing_id(), media_keys_id, session_id, error_code, system_code));
+    uint32 system_code) {
+  Send(new CdmMsg_SessionError(
+      routing_id(), cdm_id, session_id, error_code, system_code));
 }
 
 #if defined(VIDEO_HOLE)
@@ -464,10 +439,23 @@ void BrowserMediaPlayerManager::OnNotifyExternalSurface(
   if (!web_contents_)
     return;
 
-  WebContentsViewAndroid* view =
-      static_cast<WebContentsViewAndroid*>(web_contents_->GetView());
-  if (view)
-    view->NotifyExternalSurface(player_id, is_request, rect);
+  ExternalVideoSurfaceContainer::CreateForWebContents(web_contents_);
+  ExternalVideoSurfaceContainer* surface_container =
+      ExternalVideoSurfaceContainer::FromWebContents(web_contents_);
+  if (!surface_container)
+    return;
+
+  if (is_request) {
+    // It's safe to use base::Unretained(this), because the callbacks will not
+    // be called after running ReleaseExternalVideoSurface().
+    surface_container->RequestExternalVideoSurface(
+        player_id,
+        base::Bind(&BrowserMediaPlayerManager::AttachExternalVideoSurface,
+                   base::Unretained(this)),
+        base::Bind(&BrowserMediaPlayerManager::DetachExternalVideoSurface,
+                   base::Unretained(this)));
+  }
+  surface_container->OnExternalVideoSurfacePositionChanged(player_id, rect);
 }
 #endif  // defined(VIDEO_HOLE)
 
@@ -487,11 +475,17 @@ void BrowserMediaPlayerManager::DisableFullscreenEncryptedMediaPlayback() {
 
 void BrowserMediaPlayerManager::OnEnterFullscreen(int player_id) {
   DCHECK_EQ(fullscreen_player_id_, -1);
-  if (media_keys_ids_pending_approval_.find(player_id) !=
-      media_keys_ids_pending_approval_.end()) {
+  if (cdm_ids_pending_approval_.find(player_id) !=
+      cdm_ids_pending_approval_.end()) {
     return;
   }
 
+#if defined(VIDEO_HOLE)
+  ExternalVideoSurfaceContainer* surface_container =
+      ExternalVideoSurfaceContainer::FromWebContents(web_contents_);
+  if (surface_container)
+    surface_container->ReleaseExternalVideoSurface(player_id);
+#endif  // defined(VIDEO_HOLE)
   if (video_view_.get()) {
     fullscreen_player_id_ = player_id;
     video_view_->OpenVideo();
@@ -570,13 +564,6 @@ void BrowserMediaPlayerManager::OnReleaseResources(int player_id) {
     player->Release();
   if (player_id == fullscreen_player_id_)
     fullscreen_player_is_released_ = true;
-
-#if defined(VIDEO_HOLE)
-  WebContentsViewAndroid* view =
-      static_cast<WebContentsViewAndroid*>(web_contents_->GetView());
-  if (view)
-    view->NotifyExternalSurface(player_id, false, gfx::RectF());
-#endif  // defined(VIDEO_HOLE)
 }
 
 void BrowserMediaPlayerManager::OnDestroyPlayer(int player_id) {
@@ -585,33 +572,36 @@ void BrowserMediaPlayerManager::OnDestroyPlayer(int player_id) {
     fullscreen_player_id_ = -1;
 }
 
-void BrowserMediaPlayerManager::OnInitializeCDM(
-    int media_keys_id,
-    const std::vector<uint8>& uuid,
-    const GURL& frame_url) {
-  if (uuid.size() != kEmeUuidSize) {
+void BrowserMediaPlayerManager::OnInitializeCdm(int cdm_id,
+                                                const std::string& key_system,
+                                                const GURL& frame_url) {
+  if (key_system.size() > kMaxKeySystemLength) {
     // This failure will be discovered and reported by OnCreateSession()
     // as GetDrmBridge() will return null.
-    NOTREACHED() << "Invalid UUID for ID: " << media_keys_id;
+    NOTREACHED() << "Invalid key system: " << key_system;
     return;
   }
 
-  AddDrmBridge(media_keys_id, uuid, frame_url);
-  // In EME v0.1b MediaKeys lives in the media element. So the |media_keys_id|
+  if (!MediaDrmBridge::IsKeySystemSupportedWithType(key_system, "")) {
+    NOTREACHED() << "Unsupported key system: " << key_system;
+    return;
+  }
+
+  AddDrmBridge(cdm_id, key_system, frame_url);
+  // In EME v0.1b MediaKeys lives in the media element. So the |cdm_id|
   // is the same as the |player_id|.
-  OnSetMediaKeys(media_keys_id, media_keys_id);
+  OnSetMediaKeys(cdm_id, cdm_id);
 }
 
 void BrowserMediaPlayerManager::OnCreateSession(
-    int media_keys_id,
+    int cdm_id,
     uint32 session_id,
-    MediaKeysHostMsg_CreateSession_Type content_type,
+    CdmHostMsg_CreateSession_ContentType content_type,
     const std::vector<uint8>& init_data) {
-  if (init_data.size() > kEmeInitDataMaximum) {
-    LOG(WARNING) << "InitData for ID: " << media_keys_id
+  if (init_data.size() > kMaxInitDataLength) {
+    LOG(WARNING) << "InitData for ID: " << cdm_id
                  << " too long: " << init_data.size();
-    OnSessionError(
-        media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
+    OnSessionError(cdm_id, session_id, media::MediaKeys::kUnknownError, 0);
     return;
   }
 
@@ -634,22 +624,19 @@ void BrowserMediaPlayerManager::OnCreateSession(
 
   if (CommandLine::ForCurrentProcess()
       ->HasSwitch(switches::kDisableInfobarForProtectedMediaIdentifier)) {
-    CreateSessionIfPermitted(
-        media_keys_id, session_id, mime_type, init_data, true);
+    CreateSessionIfPermitted(cdm_id, session_id, mime_type, init_data, true);
     return;
   }
 
-  MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
+  MediaDrmBridge* drm_bridge = GetDrmBridge(cdm_id);
   if (!drm_bridge) {
-    DLOG(WARNING) << "No MediaDrmBridge for ID: " << media_keys_id << " found";
-    OnSessionError(
-        media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
+    DLOG(WARNING) << "No MediaDrmBridge for ID: " << cdm_id << " found";
+    OnSessionError(cdm_id, session_id, media::MediaKeys::kUnknownError, 0);
     return;
   }
 
-  if (media_keys_ids_approved_.find(media_keys_id) ==
-      media_keys_ids_approved_.end()) {
-    media_keys_ids_pending_approval_.insert(media_keys_id);
+  if (cdm_ids_approved_.find(cdm_id) == cdm_ids_approved_.end()) {
+    cdm_ids_pending_approval_.insert(cdm_id);
   }
 
   BrowserContext* context =
@@ -659,66 +646,67 @@ void BrowserMediaPlayerManager::OnCreateSession(
       web_contents()->GetRenderProcessHost()->GetID(),
       web_contents()->GetRenderViewHost()->GetRoutingID(),
       static_cast<int>(session_id),
-      media_keys_id,
+      cdm_id,
       drm_bridge->frame_url(),
       base::Bind(&BrowserMediaPlayerManager::CreateSessionIfPermitted,
                  weak_ptr_factory_.GetWeakPtr(),
-                 media_keys_id,
+                 cdm_id,
                  session_id,
                  mime_type,
                  init_data));
 }
 
 void BrowserMediaPlayerManager::OnUpdateSession(
-    int media_keys_id,
+    int cdm_id,
     uint32 session_id,
     const std::vector<uint8>& response) {
-  MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
+  MediaDrmBridge* drm_bridge = GetDrmBridge(cdm_id);
   if (!drm_bridge) {
-    DLOG(WARNING) << "No MediaDrmBridge for ID: " << media_keys_id << " found";
-    OnSessionError(
-        media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
+    DLOG(WARNING) << "No MediaDrmBridge for ID: " << cdm_id << " found";
+    OnSessionError(cdm_id, session_id, media::MediaKeys::kUnknownError, 0);
     return;
   }
 
-  if (response.size() > kEmeResponseMaximum) {
-    LOG(WARNING) << "Response for ID: " << media_keys_id
+  if (response.size() > kMaxSessionResponseLength) {
+    LOG(WARNING) << "Response for ID: " << cdm_id
                  << " too long: " << response.size();
-    OnSessionError(
-        media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
+    OnSessionError(cdm_id, session_id, media::MediaKeys::kUnknownError, 0);
     return;
   }
 
   drm_bridge->UpdateSession(session_id, &response[0], response.size());
-  // In EME v0.1b MediaKeys lives in the media element. So the |media_keys_id|
+  // In EME v0.1b MediaKeys lives in the media element. So the |cdm_id|
   // is the same as the |player_id|.
-  // TODO(xhwang): Separate |media_keys_id| and |player_id|.
-  MediaPlayerAndroid* player = GetPlayer(media_keys_id);
+  // TODO(xhwang): Separate |cdm_id| and |player_id|.
+  MediaPlayerAndroid* player = GetPlayer(cdm_id);
   if (player)
     player->OnKeyAdded();
 }
 
-void BrowserMediaPlayerManager::OnReleaseSession(int media_keys_id,
+void BrowserMediaPlayerManager::OnReleaseSession(int cdm_id,
                                                  uint32 session_id) {
-  MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
+  MediaDrmBridge* drm_bridge = GetDrmBridge(cdm_id);
   if (!drm_bridge) {
-    DLOG(WARNING) << "No MediaDrmBridge for ID: " << media_keys_id << " found";
-    OnSessionError(
-        media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
+    DLOG(WARNING) << "No MediaDrmBridge for ID: " << cdm_id << " found";
+    OnSessionError(cdm_id, session_id, media::MediaKeys::kUnknownError, 0);
     return;
   }
 
   drm_bridge->ReleaseSession(session_id);
 }
 
-void BrowserMediaPlayerManager::OnCancelAllPendingSessionCreations(
-    int media_keys_id) {
-  MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
+void BrowserMediaPlayerManager::OnDestroyCdm(int cdm_id) {
+  MediaDrmBridge* drm_bridge = GetDrmBridge(cdm_id);
   if (!drm_bridge) return;
 
+  CancelAllPendingSessionCreations(cdm_id);
+  RemoveDrmBridge(cdm_id);
+}
+
+void BrowserMediaPlayerManager::CancelAllPendingSessionCreations(int cdm_id) {
   BrowserContext* context =
       web_contents()->GetRenderProcessHost()->GetBrowserContext();
-  context->CancelProtectedMediaIdentifierPermissionRequests(media_keys_id);
+  context->CancelProtectedMediaIdentifierPermissionRequests(cdm_id);
 }
 
 void BrowserMediaPlayerManager::AddPlayer(MediaPlayerAndroid* player) {
@@ -767,13 +755,13 @@ scoped_ptr<media::MediaPlayerAndroid> BrowserMediaPlayerManager::SwapPlayer(
   return scoped_ptr<media::MediaPlayerAndroid>(previous_player);
 }
 
-void BrowserMediaPlayerManager::AddDrmBridge(int media_keys_id,
-                                             const std::vector<uint8>& uuid,
+void BrowserMediaPlayerManager::AddDrmBridge(int cdm_id,
+                                             const std::string& key_system,
                                              const GURL& frame_url) {
-  DCHECK(!GetDrmBridge(media_keys_id));
+  DCHECK(!GetDrmBridge(cdm_id));
 
-  scoped_ptr<MediaDrmBridge> drm_bridge(MediaDrmBridge::Create(
-      media_keys_id, uuid, frame_url, this));
+  scoped_ptr<MediaDrmBridge> drm_bridge(
+      MediaDrmBridge::Create(cdm_id, key_system, frame_url, this));
   if (!drm_bridge) {
     // This failure will be discovered and reported by OnCreateSession()
     // as GetDrmBridge() will return null.
@@ -796,20 +784,19 @@ void BrowserMediaPlayerManager::AddDrmBridge(int media_keys_id,
   drm_bridges_.push_back(drm_bridge.release());
 }
 
-void BrowserMediaPlayerManager::RemoveDrmBridge(int media_keys_id) {
+void BrowserMediaPlayerManager::RemoveDrmBridge(int cdm_id) {
   for (ScopedVector<MediaDrmBridge>::iterator it = drm_bridges_.begin();
       it != drm_bridges_.end(); ++it) {
-    if ((*it)->media_keys_id() == media_keys_id) {
+    if ((*it)->cdm_id() == cdm_id) {
       drm_bridges_.erase(it);
       break;
     }
   }
 }
 
-void BrowserMediaPlayerManager::OnSetMediaKeys(int player_id,
-                                               int media_keys_id) {
+void BrowserMediaPlayerManager::OnSetMediaKeys(int player_id, int cdm_id) {
   MediaPlayerAndroid* player = GetPlayer(player_id);
-  MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
+  MediaDrmBridge* drm_bridge = GetDrmBridge(cdm_id);
   if (!player || !drm_bridge) {
     DVLOG(1) << "OnSetMediaKeys(): Player and MediaKeys must be present.";
     return;
@@ -820,26 +807,24 @@ void BrowserMediaPlayerManager::OnSetMediaKeys(int player_id,
 }
 
 void BrowserMediaPlayerManager::CreateSessionIfPermitted(
-    int media_keys_id,
+    int cdm_id,
     uint32 session_id,
     const std::string& content_type,
     const std::vector<uint8>& init_data,
     bool permitted) {
   if (!permitted) {
-    OnSessionError(
-        media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
+    OnSessionError(cdm_id, session_id, media::MediaKeys::kUnknownError, 0);
     return;
   }
 
-  MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
+  MediaDrmBridge* drm_bridge = GetDrmBridge(cdm_id);
   if (!drm_bridge) {
-    DLOG(WARNING) << "No MediaDrmBridge for ID: " << media_keys_id << " found";
-    OnSessionError(
-        media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
+    DLOG(WARNING) << "No MediaDrmBridge for ID: " << cdm_id << " found";
+    OnSessionError(cdm_id, session_id, media::MediaKeys::kUnknownError, 0);
     return;
   }
-  media_keys_ids_pending_approval_.erase(media_keys_id);
-  media_keys_ids_approved_.insert(media_keys_id);
+  cdm_ids_pending_approval_.erase(cdm_id);
+  cdm_ids_approved_.insert(cdm_id);
 
   if (!drm_bridge->CreateSession(
            session_id, content_type, &init_data[0], init_data.size())) {
@@ -848,20 +833,61 @@ void BrowserMediaPlayerManager::CreateSessionIfPermitted(
 
   // TODO(xhwang): Move the following code to OnSessionReady.
 
-  // TODO(qinmin): currently |media_keys_id| and player ID are identical.
-  // This might not be true in the future.
-  if (pending_fullscreen_player_id_ != media_keys_id)
+  // TODO(qinmin): For prefixed EME implementation, |cdm_id| and player_id are
+  // identical. This will not be the case for unpredixed EME. See:
+  // http://crbug.com/338910
+  if (pending_fullscreen_player_id_ != cdm_id)
     return;
 
   pending_fullscreen_player_id_ = -1;
-  MediaPlayerAndroid* player = GetPlayer(media_keys_id);
+  MediaPlayerAndroid* player = GetPlayer(cdm_id);
   if (player->IsPlaying())
-    OnProtectedSurfaceRequested(media_keys_id);
+    OnProtectedSurfaceRequested(cdm_id);
 }
 
 void BrowserMediaPlayerManager::ReleaseFullscreenPlayer(
     MediaPlayerAndroid* player) {
     player->Release();
+}
+
+void BrowserMediaPlayerManager::OnMediaResourcesRequested(int player_id) {
+  int num_active_player = 0;
+  ScopedVector<MediaPlayerAndroid>::iterator it;
+  for (it = players_.begin(); it != players_.end(); ++it) {
+    if (!(*it)->IsPlayerReady())
+      continue;
+
+    // The player is already active, ignore it.
+    if ((*it)->player_id() == player_id)
+      return;
+    else
+      num_active_player++;
+  }
+
+  // Number of active players are less than the threshold, do nothing.
+  if (num_active_player < kMediaPlayerThreshold)
+    return;
+
+  for (it = players_.begin(); it != players_.end(); ++it) {
+    if ((*it)->IsPlayerReady() && !(*it)->IsPlaying() &&
+        fullscreen_player_id_ != (*it)->player_id()) {
+      (*it)->Release();
+      Send(new MediaPlayerMsg_MediaPlayerReleased(
+          routing_id(), (*it)->player_id()));
+    }
+  }
+}
+
+void BrowserMediaPlayerManager::OnMediaResourcesReleased(int player_id) {
+#if defined(VIDEO_HOLE)
+  MediaPlayerAndroid* player = GetPlayer(player_id);
+  if (player && player->IsSurfaceInUse())
+    return;
+  ExternalVideoSurfaceContainer* surface_container =
+      ExternalVideoSurfaceContainer::FromWebContents(web_contents_);
+  if (surface_container)
+    surface_container->ReleaseExternalVideoSurface(player_id);
+#endif  // defined(VIDEO_HOLE)
 }
 
 }  // namespace content

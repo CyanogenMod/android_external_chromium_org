@@ -486,13 +486,18 @@ TEST_PPAPI_NACL(HostResolverPrivate_ResolveIPv4)
 
 // URLLoader tests. These are split into multiple test fixtures because if we
 // run them all together, they tend to time out.
-IN_PROC_BROWSER_TEST_F(PPAPITest, URLLoader1) {
+IN_PROC_BROWSER_TEST_F(PPAPITest, URLLoader0) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
       LIST_TEST(URLLoader_BasicFilePOST)
       LIST_TEST(URLLoader_BasicFileRangePOST)
       LIST_TEST(URLLoader_CompoundBodyPOST)
+  );
+}
+
+IN_PROC_BROWSER_TEST_F(PPAPITest, URLLoader1) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_EmptyDataPOST)
       LIST_TEST(URLLoader_BinaryDataPOST)
       LIST_TEST(URLLoader_CustomRequestHeader)
@@ -523,13 +528,17 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, URLLoader3) {
       LIST_TEST(URLLoader_PrefetchBufferThreshold)
   );
 }
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, URLLoader1) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, URLLoader0) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
       LIST_TEST(URLLoader_BasicFilePOST)
       LIST_TEST(URLLoader_BasicFileRangePOST)
       LIST_TEST(URLLoader_CompoundBodyPOST)
+  );
+}
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, URLLoader1) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_EmptyDataPOST)
       LIST_TEST(URLLoader_BinaryDataPOST)
       LIST_TEST(URLLoader_CustomRequestHeader)
@@ -560,13 +569,17 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, URLLoader3) {
       LIST_TEST(URLLoader_PrefetchBufferThreshold)
   );
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader1) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader0) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
       LIST_TEST(URLLoader_BasicFilePOST)
       LIST_TEST(URLLoader_BasicFileRangePOST)
       LIST_TEST(URLLoader_CompoundBodyPOST)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader1) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_EmptyDataPOST)
       LIST_TEST(URLLoader_BinaryDataPOST)
       LIST_TEST(URLLoader_CustomRequestHeader)
@@ -605,13 +618,17 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader3) {
 #else
 #define MAYBE_URLLoader_BasicFilePOST URLLoader_BasicFilePOST
 #endif
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, URLLoader1) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, URLLoader0) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
       LIST_TEST(MAYBE_URLLoader_BasicFilePOST)
       LIST_TEST(URLLoader_BasicFileRangePOST)
       LIST_TEST(URLLoader_CompoundBodyPOST)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, URLLoader1) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_EmptyDataPOST)
       LIST_TEST(URLLoader_BinaryDataPOST)
       LIST_TEST(URLLoader_CustomRequestHeader)
@@ -643,13 +660,17 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, URLLoader3) {
       LIST_TEST(URLLoader_PrefetchBufferThreshold)
   );
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, URLLoader1) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, URLLoader0) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
       LIST_TEST(URLLoader_BasicFilePOST)
       LIST_TEST(URLLoader_BasicFileRangePOST)
       LIST_TEST(URLLoader_CompoundBodyPOST)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, URLLoader1) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_EmptyDataPOST)
       LIST_TEST(URLLoader_BinaryDataPOST)
       LIST_TEST(URLLoader_CustomRequestHeader)
@@ -1495,21 +1516,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, AudioConfig) {
       LIST_TEST(AudioConfig_InvalidConfigs));
 }
 
-// Flaky on ChromeOS dbg, http://crbug.com/277564.
-#if defined(OS_CHROMEOS) && !defined(NDEBUG)
-#define MAYBE_Audio DISABLED_Audio
-#else
-#define MAYBE_Audio Audio
-#endif
-IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_Audio) {
-  RunTest(LIST_TEST(Audio_Creation)
-          LIST_TEST(Audio_DestroyNoStop)
-          LIST_TEST(Audio_Failures)
-          LIST_TEST(Audio_AudioCallback1)
-          LIST_TEST(Audio_AudioCallback2)
-          LIST_TEST(Audio_AudioCallback3)
-          LIST_TEST(Audio_AudioCallback4));
-}
+// PPB_Audio is not supported in-process.
 IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, Audio) {
   RunTest(LIST_TEST(Audio_Creation)
           LIST_TEST(Audio_DestroyNoStop)
@@ -1567,7 +1574,7 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, View_PageHideShow) {
   // The plugin will be loaded in the foreground tab and will send us a message.
   PPAPITestMessageHandler handler;
   JavascriptTestObserver observer(
-      browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost(),
+      browser()->tab_strip_model()->GetActiveWebContents(),
       &handler);
 
   GURL url = GetTestFileUrl("View_PageHideShow");
@@ -1647,6 +1654,12 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_FlashMessageLoop) {
   RunTest(LIST_TEST(FlashMessageLoop_Basics)
           LIST_TEST(FlashMessageLoop_RunWithoutQuit));
 }
+
+TEST_PPAPI_OUT_OF_PROCESS(MediaStreamAudioTrack)
+TEST_PPAPI_NACL(MediaStreamAudioTrack)
+
+TEST_PPAPI_OUT_OF_PROCESS(MediaStreamVideoTrack)
+TEST_PPAPI_NACL(MediaStreamVideoTrack)
 
 TEST_PPAPI_IN_PROCESS(MouseCursor)
 TEST_PPAPI_OUT_OF_PROCESS(MouseCursor)

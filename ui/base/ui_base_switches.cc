@@ -6,6 +6,11 @@
 
 namespace switches {
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+// Disable use of CoreAnimation to draw on the Mac.
+const char kDisableCoreAnimation[] = "disable-core-animation";
+#endif
+
 // Disables use of DWM composition for top level windows.
 const char kDisableDwmComposition[] = "disable-dwm-composition";
 
@@ -57,9 +62,6 @@ const char kTouchOptimizedUIAuto[] = "auto";
 const char kTouchOptimizedUIEnabled[] = "enabled";
 //   disabled: never optimized for touch.
 const char kTouchOptimizedUIDisabled[] = "disabled";
-
-// Enables touch events on the side bezels.
-const char kTouchSideBezels[] = "touch-side-bezels";
 
 #if defined(OS_ANDROID)
 // Uses the tablet specific UI components when available.

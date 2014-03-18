@@ -8,33 +8,38 @@
 #include "base/values.h"
 #include "cc/debug/traced_value.h"
 #include "cc/resources/resource.h"
-#include "third_party/skia/include/core/SkBitmapDevice.h"
 
 namespace cc {
 
 // static
 scoped_ptr<RasterWorkerPool> ImageRasterWorkerPool::Create(
+    base::SequencedTaskRunner* task_runner,
     ResourceProvider* resource_provider,
     unsigned texture_target) {
-  return make_scoped_ptr<RasterWorkerPool>(
-      new ImageRasterWorkerPool(GetTaskGraphRunner(),
-                                resource_provider,
-                                texture_target));
+  return make_scoped_ptr<RasterWorkerPool>(new ImageRasterWorkerPool(
+      task_runner, GetTaskGraphRunner(), resource_provider, texture_target));
 }
 
 ImageRasterWorkerPool::ImageRasterWorkerPool(
+    base::SequencedTaskRunner* task_runner,
     internal::TaskGraphRunner* task_graph_runner,
     ResourceProvider* resource_provider,
     unsigned texture_target)
-    : RasterWorkerPool(task_graph_runner, resource_provider),
+    : RasterWorkerPool(task_runner, task_graph_runner, resource_provider),
       texture_target_(texture_target),
       raster_tasks_pending_(false),
       raster_tasks_required_for_activation_pending_(false) {}
 
 ImageRasterWorkerPool::~ImageRasterWorkerPool() {}
 
-void ImageRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
+void ImageRasterWorkerPool::ScheduleTasks(RasterTaskQueue* queue) {
   TRACE_EVENT0("cc", "ImageRasterWorkerPool::ScheduleTasks");
+
+  DCHECK_EQ(queue->required_for_activation_count,
+            static_cast<size_t>(
+                std::count_if(queue->items.begin(),
+                              queue->items.end(),
+                              RasterTaskQueue::Item::IsRequiredForActivation)));
 
   if (!raster_tasks_pending_)
     TRACE_EVENT_ASYNC_BEGIN0("cc", "ScheduledTasks", this);
@@ -49,15 +54,18 @@ void ImageRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
   scoped_refptr<internal::WorkerPoolTask>
       new_raster_required_for_activation_finished_task(
           CreateRasterRequiredForActivationFinishedTask(
-              queue->required_for_activation_count()));
+              queue->required_for_activation_count));
   scoped_refptr<internal::WorkerPoolTask> new_raster_finished_task(
       CreateRasterFinishedTask());
 
-  for (RasterTaskQueueIterator it(queue); it; ++it) {
-    internal::RasterWorkerPoolTask* task = *it;
+  for (RasterTaskQueue::Item::Vector::const_iterator it = queue->items.begin();
+       it != queue->items.end();
+       ++it) {
+    const RasterTaskQueue::Item& item = *it;
+    internal::RasterWorkerPoolTask* task = item.task;
     DCHECK(!task->HasCompleted());
 
-    if (it.required_for_activation()) {
+    if (item.required_for_activation) {
       graph_.edges.push_back(internal::TaskGraph::Edge(
           task, new_raster_required_for_activation_finished_task.get()));
     }
@@ -71,13 +79,11 @@ void ImageRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
   InsertNodeForTask(&graph_,
                     new_raster_required_for_activation_finished_task.get(),
                     kRasterRequiredForActivationFinishedTaskPriority,
-                    queue->required_for_activation_count());
+                    queue->required_for_activation_count);
   InsertNodeForTask(&graph_,
                     new_raster_finished_task.get(),
                     kRasterFinishedTaskPriority,
-                    queue->count());
-
-  raster_tasks_.Swap(queue);
+                    queue->items.size());
 
   SetTaskGraph(&graph_);
 
@@ -122,14 +128,15 @@ void ImageRasterWorkerPool::CheckForCompletedTasks() {
 }
 
 SkCanvas* ImageRasterWorkerPool::AcquireCanvasForRaster(
-    internal::RasterWorkerPoolTask* task) {
-  return resource_provider()->MapImageRasterBuffer(task->resource()->id());
+    internal::WorkerPoolTask* task,
+    const Resource* resource) {
+  return resource_provider()->MapImageRasterBuffer(resource->id());
 }
 
-void ImageRasterWorkerPool::OnRasterCompleted(
-    internal::RasterWorkerPoolTask* task,
-    const PicturePileImpl::Analysis& analysis) {
-  resource_provider()->UnmapImageRasterBuffer(task->resource()->id());
+void ImageRasterWorkerPool::ReleaseCanvasForRaster(
+    internal::WorkerPoolTask* task,
+    const Resource* resource) {
+  resource_provider()->UnmapImageRasterBuffer(resource->id());
 }
 
 void ImageRasterWorkerPool::OnRasterTasksFinished() {

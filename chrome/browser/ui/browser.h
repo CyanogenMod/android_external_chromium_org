@@ -451,6 +451,9 @@ class Browser : public TabStripModelObserver,
   virtual void MoveValidationMessage(
       content::WebContents* web_contents,
       const gfx::Rect& anchor_in_root_view) OVERRIDE;
+  virtual bool PreHandleGestureEvent(
+      content::WebContents* source,
+      const blink::WebGestureEvent& event) OVERRIDE;
 
   bool is_type_tabbed() const { return type_ == TYPE_TABBED; }
   bool is_type_popup() const { return type_ == TYPE_POPUP; }
@@ -613,7 +616,6 @@ class Browser : public TabStripModelObserver,
       bool enter_fullscreen) OVERRIDE;
   virtual bool IsFullscreenForTabOrPending(
       const content::WebContents* web_contents) const OVERRIDE;
-  virtual void JSOutOfMemory(content::WebContents* web_contents) OVERRIDE;
   virtual void RegisterProtocolHandler(content::WebContents* web_contents,
                                        const std::string& protocol,
                                        const GURL& url,

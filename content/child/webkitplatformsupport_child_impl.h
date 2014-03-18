@@ -6,10 +6,9 @@
 #define CONTENT_CHILD_WEBKITPLATFORMSUPPORT_CHILD_IMPL_H_
 
 #include "base/threading/thread_local_storage.h"
+#include "content/child/blink_platform_impl.h"
 #include "content/child/webfallbackthemeengine_impl.h"
 #include "content/common/content_export.h"
-#include "webkit/child/webkit_child_export.h"
-#include "webkit/child/webkitplatformsupport_impl.h"
 
 #if defined(USE_DEFAULT_RENDER_THEME)
 #include "content/child/webthemeengine_impl_default.h"
@@ -21,14 +20,11 @@
 #include "content/child/webthemeengine_impl_android.h"
 #endif
 
-namespace webkit_glue {
-class FlingCurveConfiguration;
-}
-
 namespace content {
 
-class CONTENT_EXPORT WebKitPlatformSupportChildImpl :
-    public webkit_glue::WebKitPlatformSupportImpl {
+class FlingCurveConfiguration;
+
+class CONTENT_EXPORT WebKitPlatformSupportChildImpl : public BlinkPlatformImpl {
  public:
   WebKitPlatformSupportChildImpl();
   virtual ~WebKitPlatformSupportChildImpl();
@@ -67,7 +63,7 @@ class CONTENT_EXPORT WebKitPlatformSupportChildImpl :
   WebThemeEngineImpl native_theme_engine_;
   WebFallbackThemeEngineImpl fallback_theme_engine_;
   base::ThreadLocalStorage::Slot current_thread_slot_;
-  scoped_ptr<webkit_glue::FlingCurveConfiguration> fling_curve_configuration_;
+  scoped_ptr<FlingCurveConfiguration> fling_curve_configuration_;
 };
 
 }  // namespace content

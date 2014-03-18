@@ -82,13 +82,13 @@ class LocalFrameReceiver : public FrameReceiver {
   VideoReceiver* video_receiver_;
 };
 
-CastReceiver* CastReceiver::CreateCastReceiver(
+scoped_ptr<CastReceiver> CastReceiver::Create(
     scoped_refptr<CastEnvironment> cast_environment,
     const AudioReceiverConfig& audio_config,
     const VideoReceiverConfig& video_config,
     transport::PacketSender* const packet_sender) {
-  return new CastReceiverImpl(
-      cast_environment, audio_config, video_config, packet_sender);
+  return scoped_ptr<CastReceiver>(new CastReceiverImpl(
+      cast_environment, audio_config, video_config, packet_sender));
 }
 
 CastReceiverImpl::CastReceiverImpl(
@@ -97,11 +97,15 @@ CastReceiverImpl::CastReceiverImpl(
     const VideoReceiverConfig& video_config,
     transport::PacketSender* const packet_sender)
     : pacer_(cast_environment->Clock(),
+             cast_environment->Logging(),
              packet_sender,
-             cast_environment->GetMessageSingleThreadTaskRunnerForThread(
-                 CastEnvironment::TRANSPORT)),
+             cast_environment->GetTaskRunner(CastEnvironment::TRANSPORT)),
       audio_receiver_(cast_environment, audio_config, &pacer_),
-      video_receiver_(cast_environment, video_config, &pacer_),
+      video_receiver_(cast_environment,
+                      video_config,
+                      &pacer_,
+                      base::Bind(&CastReceiverImpl::UpdateTargetDelay,
+                                 base::Unretained(this))),
       frame_receiver_(new LocalFrameReceiver(cast_environment,
                                              &audio_receiver_,
                                              &video_receiver_)),
@@ -145,6 +149,10 @@ void CastReceiverImpl::ReceivedPacket(scoped_ptr<Packet> packet) {
     VLOG(1) << "Received a packet with a non matching sender SSRC "
             << ssrc_of_sender;
   }
+}
+
+void CastReceiverImpl::UpdateTargetDelay(base::TimeDelta target_delay_ms) {
+  audio_receiver_.SetTargetDelay(target_delay_ms);
 }
 
 transport::PacketReceiverCallback CastReceiverImpl::packet_receiver() {

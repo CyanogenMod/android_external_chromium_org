@@ -113,7 +113,7 @@ SyncEngineInitializer::~SyncEngineInitializer() {
     cancel_callback_.Run();
 }
 
-void SyncEngineInitializer::Run(const SyncStatusCallback& callback) {
+void SyncEngineInitializer::RunSequential(const SyncStatusCallback& callback) {
   util::Log(logging::LOG_VERBOSE, FROM_HERE, "[Initialize] Start.");
 
   // The metadata seems to have been already initialized. Just return with OK.
@@ -198,7 +198,7 @@ void SyncEngineInitializer::FindSyncRoot(const SyncStatusCallback& callback) {
   set_used_network(true);
   cancel_callback_ = drive_service_->SearchByTitle(
       kSyncRootFolderTitle,
-      std::string(), // parent_folder_id
+      std::string(),  // parent_folder_id
       base::Bind(&SyncEngineInitializer::DidFindSyncRoot,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback));

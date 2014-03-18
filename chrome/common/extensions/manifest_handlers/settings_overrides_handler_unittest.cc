@@ -8,6 +8,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
+#include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -74,6 +75,7 @@ TEST_F(OverrideSettingsTest, ParseManifest) {
       Extension::NO_FLAGS,
       &error);
   ASSERT_TRUE(extension);
+#if defined(OS_WIN)
   ASSERT_TRUE(extension->manifest()->HasPath(manifest_keys::kSettingsOverride));
 
   SettingsOverrides* settings_override = static_cast<SettingsOverrides*>(
@@ -96,6 +98,10 @@ TEST_F(OverrideSettingsTest, ParseManifest) {
 
   ASSERT_TRUE(settings_override->homepage);
   EXPECT_EQ(GURL("http://www.homepage.com"), *settings_override->homepage);
+#else
+  EXPECT_FALSE(
+      extension->manifest()->HasPath(manifest_keys::kSettingsOverride));
+#endif
 }
 
 TEST_F(OverrideSettingsTest, ParseBrokenManifest) {
@@ -112,10 +118,18 @@ TEST_F(OverrideSettingsTest, ParseBrokenManifest) {
       *static_cast<base::DictionaryValue*>(root.get()),
       Extension::NO_FLAGS,
       &error);
+#if defined(OS_WIN)
   EXPECT_FALSE(extension);
   EXPECT_EQ(
-      std::string(extensions::manifest_errors::kInvalidEmptySettingsOverrides),
+      extensions::ErrorUtils::FormatErrorMessage(
+          extensions::manifest_errors::kInvalidEmptyDictionary,
+          extensions::manifest_keys::kSettingsOverride),
       error);
+#else
+  EXPECT_TRUE(extension);
+  EXPECT_FALSE(
+      extension->manifest()->HasPath(manifest_keys::kSettingsOverride));
+#endif
 }
 
 }  // namespace

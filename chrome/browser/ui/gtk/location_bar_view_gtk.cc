@@ -34,6 +34,7 @@
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search_engines/template_url.h"
@@ -81,8 +82,8 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
+#include "ui/accessibility/ax_enums.h"
 #include "ui/base/accelerators/platform_accelerator_gtk.h"
-#include "ui/base/accessibility/accessibility_types.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/gtk/gtk_signal_registrar.h"
@@ -628,7 +629,7 @@ void LocationBarViewGtk::OnSetFocus() {
                                 l10n_util::GetStringUTF8(IDS_ACCNAME_LOCATION),
                                 std::string(), false);
   ExtensionAccessibilityEventRouter::GetInstance()->HandleControlEvent(
-      ui::AccessibilityTypes::EVENT_FOCUS, &info);
+      ui::AX_EVENT_FOCUS, &info);
 
   // Update the keyword and search hint states.
   OnChanged();
@@ -1024,15 +1025,15 @@ gboolean LocationBarViewGtk::HandleExpose(GtkWidget* widget,
               IDR_OMNIBOX_POPUP_BORDER_AND_SHADOW_BOTTOM_RIGHT).
           RenderToWidget(widget);
     } else {
-      NineBox(IDR_OMNIBOX_BORDER_AND_SHADOW_TOP_LEFT,
-              IDR_OMNIBOX_BORDER_AND_SHADOW_TOP,
-              IDR_OMNIBOX_BORDER_AND_SHADOW_TOP_RIGHT,
-              IDR_OMNIBOX_BORDER_AND_SHADOW_LEFT,
-              IDR_OMNIBOX_BORDER_AND_SHADOW_CENTER,
-              IDR_OMNIBOX_BORDER_AND_SHADOW_RIGHT,
-              IDR_OMNIBOX_BORDER_AND_SHADOW_BOTTOM_LEFT,
-              IDR_OMNIBOX_BORDER_AND_SHADOW_BOTTOM,
-              IDR_OMNIBOX_BORDER_AND_SHADOW_BOTTOM_RIGHT).
+      NineBox(IDR_TEXTFIELD_TOP_LEFT,
+              IDR_TEXTFIELD_TOP,
+              IDR_TEXTFIELD_TOP_RIGHT,
+              IDR_TEXTFIELD_LEFT,
+              IDR_TEXTFIELD_CENTER,
+              IDR_TEXTFIELD_RIGHT,
+              IDR_TEXTFIELD_BOTTOM_LEFT,
+              IDR_TEXTFIELD_BOTTOM,
+              IDR_TEXTFIELD_BOTTOM_RIGHT).
           RenderToWidget(widget);
     }
   }

@@ -57,11 +57,13 @@ class GCMStoreImplTest : public testing::Test {
   base::MessageLoop message_loop_;
   base::ScopedTempDir temp_directory_;
   bool expected_success_;
+  uint64 next_persistent_id_;
   scoped_ptr<base::RunLoop> run_loop_;
 };
 
 GCMStoreImplTest::GCMStoreImplTest()
-    : expected_success_(true) {
+    : expected_success_(true),
+      next_persistent_id_(base::Time::Now().ToInternalValue()) {
   EXPECT_TRUE(temp_directory_.CreateUniqueTempDir());
   run_loop_.reset(new base::RunLoop());
 }
@@ -76,7 +78,7 @@ scoped_ptr<GCMStore> GCMStoreImplTest::BuildGCMStore() {
 }
 
 std::string GCMStoreImplTest::GetNextPersistentId() {
-  return base::Uint64ToString(base::Time::Now().ToInternalValue());
+  return base::Uint64ToString(next_persistent_id_++);
 }
 
 void GCMStoreImplTest::PumpLoop() { message_loop_.RunUntilIdle(); }
@@ -461,6 +463,23 @@ TEST_F(GCMStoreImplTest, AddMessageAfterDestroy) {
                                base::Unretained(this))));
     PumpLoop();
   }
+}
+
+TEST_F(GCMStoreImplTest, ReloadAfterClose) {
+  scoped_ptr<GCMStore> gcm_store(BuildGCMStore());
+  scoped_ptr<GCMStore::LoadResult> load_result;
+  gcm_store->Load(base::Bind(&GCMStoreImplTest::LoadCallback,
+                             base::Unretained(this),
+                             &load_result));
+  PumpLoop();
+
+  gcm_store->Close();
+  PumpLoop();
+
+  gcm_store->Load(base::Bind(&GCMStoreImplTest::LoadCallback,
+                             base::Unretained(this),
+                             &load_result));
+  PumpLoop();
 }
 
 }  // namespace

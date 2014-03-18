@@ -41,7 +41,7 @@ class PPAPITestBase : public InProcessBrowserTest {
 
   // InProcessBrowserTest:
   virtual void SetUp() OVERRIDE;
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
   virtual void SetUpOnMainThread() OVERRIDE;
 
   virtual std::string BuildQuery(const std::string& base,
@@ -49,15 +49,16 @@ class PPAPITestBase : public InProcessBrowserTest {
 
   // Returns the URL to load for file: tests.
   GURL GetTestFileUrl(const std::string& test_case);
-  void RunTest(const std::string& test_case);
+  virtual void RunTest(const std::string& test_case);
   // Run the test and reload. This can test for clean shutdown, including leaked
   // instance object vars.
-  void RunTestAndReload(const std::string& test_case);
-  void RunTestViaHTTP(const std::string& test_case);
-  void RunTestWithSSLServer(const std::string& test_case);
-  void RunTestWithWebSocketServer(const std::string& test_case);
-  void RunTestIfAudioOutputAvailable(const std::string& test_case);
-  void RunTestViaHTTPIfAudioOutputAvailable(const std::string& test_case);
+  virtual void RunTestAndReload(const std::string& test_case);
+  virtual void RunTestViaHTTP(const std::string& test_case);
+  virtual void RunTestWithSSLServer(const std::string& test_case);
+  virtual void RunTestWithWebSocketServer(const std::string& test_case);
+  virtual void RunTestIfAudioOutputAvailable(const std::string& test_case);
+  virtual void RunTestViaHTTPIfAudioOutputAvailable(
+      const std::string& test_case);
   std::string StripPrefixes(const std::string& test_name);
 
  protected:
@@ -98,7 +99,7 @@ class PPAPITest : public PPAPITestBase {
  public:
   PPAPITest();
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
 
   virtual std::string BuildQuery(const std::string& base,
                                  const std::string& test_case) OVERRIDE;
@@ -108,7 +109,7 @@ class PPAPITest : public PPAPITestBase {
 
 class PPAPIPrivateTest : public PPAPITest {
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
 };
 
 // Variant of PPAPITest that runs plugins out-of-process to test proxy
@@ -117,18 +118,29 @@ class OutOfProcessPPAPITest : public PPAPITest {
  public:
   OutOfProcessPPAPITest();
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
 };
 
 class OutOfProcessPPAPIPrivateTest : public OutOfProcessPPAPITest {
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
 };
 
 // NaCl plugin test runner for Newlib runtime.
 class PPAPINaClTest : public PPAPITestBase {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
+  // PPAPITestBase overrides.
+  virtual void RunTest(const std::string& test_case) OVERRIDE;
+  virtual void RunTestAndReload(const std::string& test_case) OVERRIDE;
+  virtual void RunTestViaHTTP(const std::string& test_case) OVERRIDE;
+  virtual void RunTestWithSSLServer(const std::string& test_case) OVERRIDE;
+  virtual void RunTestWithWebSocketServer(
+      const std::string& test_case) OVERRIDE;
+  virtual void RunTestIfAudioOutputAvailable(
+      const std::string& test_case) OVERRIDE;
+  virtual void RunTestViaHTTPIfAudioOutputAvailable(
+      const std::string& test_case) OVERRIDE;
 };
 
 // NaCl plugin test runner for Newlib runtime.
@@ -140,7 +152,7 @@ class PPAPINaClNewlibTest : public PPAPINaClTest {
 
 class PPAPIPrivateNaClNewlibTest : public PPAPINaClNewlibTest {
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
 };
 
 // NaCl plugin test runner for GNU-libc runtime.
@@ -152,7 +164,7 @@ class PPAPINaClGLibcTest : public PPAPINaClTest {
 
 class PPAPIPrivateNaClGLibcTest : public PPAPINaClGLibcTest {
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
 };
 
 // NaCl plugin test runner for the PNaCl + Newlib runtime.
@@ -164,12 +176,12 @@ class PPAPINaClPNaClTest : public PPAPINaClTest {
 
 class PPAPIPrivateNaClPNaClTest : public PPAPINaClPNaClTest {
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
 };
 
 class PPAPINaClTestDisallowedSockets : public PPAPITestBase {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
 
   virtual std::string BuildQuery(const std::string& base,
                                  const std::string& test_case) OVERRIDE;

@@ -9,12 +9,12 @@
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/test.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/quota_service.h"
 
@@ -37,6 +37,7 @@ namespace CreateIncognitoTab = api::test::CreateIncognitoTab;
 namespace Log = api::test::Log;
 namespace NotifyFail = api::test::NotifyFail;
 namespace PassMessage = api::test::PassMessage;
+namespace WaitForRoundTrip = api::test::WaitForRoundTrip;
 
 TestExtensionFunction::~TestExtensionFunction() {}
 
@@ -146,6 +147,15 @@ bool TestGetConfigFunction::RunImpl() {
   }
 
   SetResult(test_config_state->config_state()->DeepCopy());
+  return true;
+}
+
+TestWaitForRoundTripFunction::~TestWaitForRoundTripFunction() {}
+
+bool TestWaitForRoundTripFunction::RunImpl() {
+  scoped_ptr<WaitForRoundTrip::Params> params(
+      WaitForRoundTrip::Params::Create(*args_));
+  SetResult(new base::StringValue(params->message));
   return true;
 }
 

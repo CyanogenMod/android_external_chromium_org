@@ -11,11 +11,7 @@ namespace event_names {
 const char kOnInputMethodChanged[] = "inputMethodPrivate.onChanged";
 
 const char kOnContextMenus[] = "contextMenus";
-
-const char kBluetoothOnDeviceDiscovered[] = "bluetooth.onDeviceDiscovered";
-const char kBluetoothOnDeviceSearchFinished[] =
-    "bluetooth.onDeviceSearchFinished";
-const char kBluetoothOnDeviceSearchResult[] = "bluetooth.onDeviceSearchResult";
+const char kOnWebviewContextMenus[] = "webview.contextMenus";
 
 const char kOnNotificationError[] = "notifications.onError";
 

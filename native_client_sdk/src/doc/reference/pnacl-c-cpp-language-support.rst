@@ -11,7 +11,7 @@ Source language support
 =======================
 
 The currently supported languages are C and C++. The PNaCl toolchain is
-based on Clang 3.3, which fully supports C++11 and most of C11. A
+based on recent Clang, which fully supports C++11 and most of C11. A
 detailed status of the language support is available `here
 <http://clang.llvm.org/cxx_status.html>`_.
 
@@ -19,10 +19,19 @@ For information on using languages other than C/C++, see the :ref:`FAQ
 section on other languages <other_languages>`.
 
 As for the standard libraries, the PNaCl toolchain is currently based on
-``libc++``, and the ``newlib`` standard C library (version is available
-through the macro ``NEWLIB_VERSION``). ``libstdc++`` is also supported
-but its use is discouraged; see :ref:`building_cpp_libraries` for more
-details.
+``libc++``, and the ``newlib`` standard C library. ``libstdc++`` is also
+supported but its use is discouraged; see :ref:`building_cpp_libraries`
+for more details.
+
+Versions
+--------
+
+Version information can be obtained:
+
+* Clang/LLVM: run ``pnacl-clang -v``.
+* ``newlib``: use the ``_NEWLIB_VERSION`` macro.
+* ``libc++``: use the ``_LIBCPP_VERSION`` macro.
+* ``libstdc++``: use the ``_GLIBCXX_VERSION`` macro.
 
 Preprocessor definitions
 ------------------------
@@ -49,7 +58,8 @@ locations to each other as the C11/C++11 standards do.
 
 Non-atomic memory accesses may be reordered, separated, elided or fused
 according to C and C++'s memory model before the pexe is created as well
-as after its creation.
+as after its creation. Accessing atomic memory location through
+non-atomic primitives is `Undefined Behavior <undefined_behavior>`.
 
 As in C11/C++11 some atomic accesses may be implemented with locks on
 certain platforms. The ``ATOMIC_*_LOCK_FREE`` macros will always be
@@ -188,6 +198,55 @@ NaCl supports a fairly wide subset of inline assembly through GCC's
 inline assembly syntax, with the restriction that the sandboxing model
 for the target architecture has to be respected.
 
+Undefined Behavior
+==================
+
+The C and C++ languages expose some undefined behavior which is
+discussed in `PNaCl Undefined Behavior <undefined_behavior>`.
+
+Floating-Point
+==============
+
+PNaCl exposes 32-bit and 64-bit floating point operations which are
+mostly IEEE-754 compliant. There are a few caveats:
+
+* Some :ref:`floating-point behavior is currently left as undefined
+  <undefined_behavior_fp>`.
+* The default rounding mode is round-to-nearest and other rounding modes
+  are currently not usable, which isn't IEEE-754 compliant. PNaCl could
+  support switching modes (the 4 modes exposed by C99 ``FLT_ROUNDS``
+  macros).
+* Signaling ``NaN`` never fault.
+* Fast-math optimizations are currently supported before *pexe* creation
+  time. A *pexe* loses all fast-math information when it is
+  created. Fast-math translation could be enabled at a later date,
+  potentially at a perf-function granularity. This wouldn't affect
+  already-existing *pexe*; it would be an opt-in feature.
+
+  * Fused-multiply-add have higher precision and often execute faster;
+    PNaCl currently disallows them in the *pexe* because they aren't
+    supported on all platforms and can't realistically be
+    emulated. PNaCl could (but currently doesn't) only generate them in
+    the backend if fast-math were specified and the hardware supports
+    the operation.
+  * Transcendentals aren't exposed by PNaCl's ABI; they are part of the
+    math library that is included in the *pexe*. PNaCl could, but
+    currently doesn't, use hardware support if fast-math were provided
+    in the *pexe*.
+
+Computed ``goto``
+=================
+
+PNaCl supports computed ``goto``, a non-standard GCC extension to C used
+by some interpreters, by lowering them to ``switch`` statements. The
+resulting use of ``switch`` might not be as fast as the original
+indirect branches. If you are compiling a program that has a
+compile-time option for using computed ``goto``, it's possible that the
+program will run faster with the option turned off (e.g., if the program
+does extra work to take advantage of computed ``goto``).
+
+NaCl supports computed ``goto`` without any transformation.
+
 Future Directions
 =================
 
@@ -236,11 +295,3 @@ POSIX-style signal handling really consists of two different features:
 If PNaCl were to support either of these, the interaction of
 ``volatile`` and atomics with same-thread signal handling would need
 to be carefully detailed.
-
-Computed ``goto``
------------------
-
-PNaCl currently doesn't support computed ``goto``, a non-standard
-extension to C used by some interpreters.
-
-NaCl supports computed ``goto``.

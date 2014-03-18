@@ -16,6 +16,7 @@
 #include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
+#include "content/common/service_worker/service_worker_types.h"
 
 class GURL;
 
@@ -23,40 +24,17 @@ namespace content {
 
 class EmbeddedWorkerRegistry;
 class ServiceWorkerRegistration;
-struct ServiceWorkerFetchRequest;
+class ServiceWorkerVersionInfo;
 
 // This class corresponds to a specific version of a ServiceWorker
 // script for a given pattern. When a script is upgraded, there may be
 // more than one ServiceWorkerVersion "running" at a time, but only
 // one of them is active. This class connects the actual script with a
 // running worker.
-// Instances of this class are in one of two install states:
-// - Pending: The script is in the process of being installed. There
-//            may be another active script running.
-// - Active: The script is the only worker handling requests for the
-//           registration's pattern.
 //
-// In addition, a version has a running state (this is a rough
-// sketch). Since a service worker can be stopped and started at any
-// time, it will transition among these states multiple times during
-// its lifetime.
-// - Stopped: The script is not running
-// - Starting: A request to fire an event against the version has been
-//             queued, but the worker is not yet
-//             loaded/initialized/etc.
-// - Started: The worker is ready to receive events
-// - Stopping: The worker is returning to the stopped state.
-//
-// The worker can "run" in both the Pending and the Active
-// install states above. During the Pending state, the worker is only
-// started in order to fire the 'install' and 'activate'
-// events. During the Active state, it can receive other events such
-// as 'fetch'.
-//
-// And finally, is_shutdown_ is detects the live-ness of the object
-// itself. If the object is shut down, then it is in the process of
-// being deleted from memory. This happens when a version is replaced
-// as well as at browser shutdown.
+// is_shutdown_ detects the live-ness of the object itself. If the object is
+// shut down, then it is in the process of being deleted from memory.
+// This happens when a version is replaced as well as at browser shutdown.
 class CONTENT_EXPORT ServiceWorkerVersion
     : NON_EXPORTED_BASE(public base::RefCounted<ServiceWorkerVersion>),
       public EmbeddedWorkerInstance::Observer {
@@ -64,12 +42,28 @@ class CONTENT_EXPORT ServiceWorkerVersion
   typedef base::Callback<void(ServiceWorkerStatusCode)> StatusCallback;
   typedef base::Callback<void(ServiceWorkerStatusCode,
                               const IPC::Message& message)> MessageCallback;
+  typedef base::Callback<void(ServiceWorkerStatusCode,
+                              ServiceWorkerFetchEventResult,
+                              const ServiceWorkerResponse&)> FetchCallback;
 
-  enum Status {
+  enum RunningStatus {
     STOPPED = EmbeddedWorkerInstance::STOPPED,
     STARTING = EmbeddedWorkerInstance::STARTING,
     RUNNING = EmbeddedWorkerInstance::RUNNING,
     STOPPING = EmbeddedWorkerInstance::STOPPING,
+  };
+
+  // Current version status; some of the status (e.g. INSTALLED and ACTIVE)
+  // should be persisted unlike running status.
+  enum Status {
+    NEW,         // The version is just created.
+    INSTALLING,  // Install event is dispatched and being handled.
+    INSTALLED,   // Install event is finished and is ready to be activated.
+    ACTIVATING,  // Activate event is dispatched and being handled.
+    ACTIVE,      // Activation is finished and can run as active.
+    DEACTIVATED, // The version is no longer running as active, due to
+                 // unregistration or replace. (TODO(kinuko): we may need
+                 // different states for different termination sequences)
   };
 
   ServiceWorkerVersion(
@@ -82,9 +76,22 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void Shutdown();
   bool is_shutdown() const { return is_shutdown_; }
 
-  Status status() const {
-    return static_cast<Status>(embedded_worker_->status());
+  RunningStatus running_status() const {
+    return static_cast<RunningStatus>(embedded_worker_->status());
   }
+
+  ServiceWorkerVersionInfo GetInfo();
+
+  Status status() const { return status_; }
+
+  // This sets the new status and also run status change callbacks
+  // if there're any (see RegisterStatusChangeCallback).
+  void SetStatus(Status status);
+
+  // Registers status change callback. (This is for one-off observation,
+  // the consumer needs to re-register if it wants to continue observing
+  // status changes)
+  void RegisterStatusChangeCallback(const base::Closure& callback);
 
   // Starts an embedded worker for this version.
   // This returns OK (success) if the worker is already running.
@@ -117,14 +124,31 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // to notify install completion.
   // |active_version_embedded_worker_id| must be a valid positive ID
   // if there's an active (previous) version running.
+  //
+  // This must be called when the status() is NEW. Calling this changes
+  // the version's status to INSTALLING.
+  // Upon completion, the version's status will be changed to INSTALLED
+  // on success, or back to NEW on failure.
   void DispatchInstallEvent(int active_version_embedded_worker_id,
                             const StatusCallback& callback);
 
-  // Sends fetch event to the associated embedded worker.
-  // This immediately returns false if the worker is not running
-  // or sending a message to the child process fails.
-  // TODO(kinuko): Make this take callback as well.
-  bool DispatchFetchEvent(const ServiceWorkerFetchRequest& request);
+  // Sends activate event to the associated embedded worker and asynchronously
+  // calls |callback| when it errors out or it gets response from the worker
+  // to notify activation completion.
+  //
+  // This must be called when the status() is INSTALLED. Calling this changes
+  // the version's status to ACTIVATING.
+  // Upon completion, the version's status will be changed to ACTIVE
+  // on success, or back to INSTALLED on failure.
+  void DispatchActivateEvent(const StatusCallback& callback);
+
+  // Sends fetch event to the associated embedded worker and calls
+  // |callback| with the response from the worker.
+  //
+  // This must be called when the status() is ACTIVE. Calling this in other
+  // statuses will result in an error SERVICE_WORKER_ERROR_FAILED.
+  void DispatchFetchEvent(const ServiceWorkerFetchRequest& request,
+                          const FetchCallback& callback);
 
   // These are expected to be called when a renderer process host for the
   // same-origin as for this ServiceWorkerVersion is created.  The added
@@ -148,6 +172,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   const int64 version_id_;
 
+  Status status_;
+
   bool is_shutdown_;
   scoped_refptr<ServiceWorkerRegistration> registration_;
   scoped_ptr<EmbeddedWorkerInstance> embedded_worker_;
@@ -155,6 +181,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // Pending callbacks.
   std::vector<StatusCallback> start_callbacks_;
   std::vector<StatusCallback> stop_callbacks_;
+
+  std::vector<base::Closure> status_change_callbacks_;
 
   IDMap<MessageCallback, IDMapOwnPointer> message_callbacks_;
 

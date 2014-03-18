@@ -153,7 +153,7 @@ bool ImmersiveModeControllerAsh::UpdateTabIndicators() {
     use_tab_indicators_ = false;
   } else {
     bool in_tab_fullscreen = browser_view_->browser()->fullscreen_controller()->
-        IsFullscreenForTabOrPending();
+        IsWindowFullscreenForTabOrPending();
     use_tab_indicators_ = !in_tab_fullscreen;
   }
 
@@ -168,6 +168,7 @@ bool ImmersiveModeControllerAsh::UpdateTabIndicators() {
 void ImmersiveModeControllerAsh::OnImmersiveRevealStarted() {
   visible_fraction_ = 0;
   browser_view_->top_container()->SetPaintToLayer(true);
+  browser_view_->top_container()->SetFillsBoundsOpaquely(false);
   UpdateTabIndicators();
   LayoutBrowserRootView();
   FOR_EACH_OBSERVER(Observer, observers_, OnImmersiveRevealStarted());
@@ -212,12 +213,12 @@ ImmersiveModeControllerAsh::GetVisibleBoundsInScreen() const {
   return bounds_in_screen;
 }
 
-void ImmersiveModeControllerAsh::OnPostWindowShowTypeChange(
+void ImmersiveModeControllerAsh::OnPostWindowStateTypeChange(
     ash::wm::WindowState* window_state,
-    ash::wm::WindowShowType old_type) {
+    ash::wm::WindowStateType old_type) {
   // Disable immersive fullscreen when the user exits fullscreen without going
-  // through FullscreenController::ToggleFullscreenMode(). This is the case if
-  // the user exits fullscreen via the restore button.
+  // through FullscreenController::ToggleBrowserFullscreenMode(). This is the
+  // case if the user exits fullscreen via the restore button.
   if (controller_->IsEnabled() &&
       !window_state->IsFullscreen() &&
       !window_state->IsMinimized()) {
@@ -240,7 +241,7 @@ void ImmersiveModeControllerAsh::Observe(
   // browser fullscreen and tab fullscreen, hide the shelf completely and
   // prevent it from being revealed.
   bool in_tab_fullscreen = content::Source<FullscreenController>(source)->
-      IsFullscreenForTabOrPending();
+      IsWindowFullscreenForTabOrPending();
   ash::wm::GetWindowState(native_window_)->set_hide_shelf_when_fullscreen(
       in_tab_fullscreen);
   ash::Shell::GetInstance()->UpdateShelfVisibility();

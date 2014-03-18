@@ -23,13 +23,14 @@ class Transform;
 
 namespace ui {
 class Compositor;
+class EventProcessor;
+class ViewProp;
 }
 
 namespace aura {
-
-class RootWindow;
-class WindowTreeHostDelegate;
 class RootWindowTransformer;
+class WindowEventDispatcher;
+class WindowTreeHostObserver;
 
 // WindowTreeHost bridges between a native window and the embedded RootWindow.
 // It provides the accelerated widget and maps events from the native os to
@@ -41,13 +42,27 @@ class AURA_EXPORT WindowTreeHost {
   // Creates a new WindowTreeHost. The caller owns the returned value.
   static WindowTreeHost* Create(const gfx::Rect& bounds);
 
+  // Returns the WindowTreeHost for the specified accelerated widget, or NULL
+  // if there is none associated.
+  static WindowTreeHost* GetForAcceleratedWidget(gfx::AcceleratedWidget widget);
+
   void InitHost();
 
   void InitCompositor();
 
-  // TODO(beng): these will become trivial accessors in a future CL.
-  aura::Window* window();
-  const aura::Window* window() const;
+  void AddObserver(WindowTreeHostObserver* observer);
+  void RemoveObserver(WindowTreeHostObserver* observer);
+
+  Window* window() { return window_; }
+  const Window* window() const { return window_; }
+
+  ui::EventProcessor* event_processor();
+
+  WindowEventDispatcher* dispatcher() {
+    return const_cast<WindowEventDispatcher*>(
+        const_cast<const WindowTreeHost*>(this)->dispatcher());
+  }
+  const WindowEventDispatcher* dispatcher() const { return dispatcher_.get(); }
 
   ui::Compositor* compositor() { return compositor_.get(); }
 
@@ -65,10 +80,6 @@ class AURA_EXPORT WindowTreeHost {
   // Returns the actual size of the screen.
   // (gfx::Screen only reports on the virtual desktop exposed by Aura.)
   static gfx::Size GetNativeScreenSize();
-
-  void set_delegate(WindowTreeHostDelegate* delegate) {
-    delegate_ = delegate;
-  }
 
   // Converts |point| from the root window's coordinate system to native
   // screen's.
@@ -102,8 +113,6 @@ class AURA_EXPORT WindowTreeHost {
   void MoveCursorToHostLocation(const gfx::Point& host_location);
 
   gfx::NativeCursor last_cursor() const { return last_cursor_; }
-
-  virtual RootWindow* GetRootWindow() = 0;
 
   // Returns the accelerated widget.
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() = 0;
@@ -162,13 +171,18 @@ class AURA_EXPORT WindowTreeHost {
 
   WindowTreeHost();
   void DestroyCompositor();
+  void DestroyDispatcher();
 
   void CreateCompositor(gfx::AcceleratedWidget accelerated_widget);
 
   // Returns the location of the RootWindow on native screen.
   virtual gfx::Point GetLocationOnNativeScreen() const = 0;
 
-  void NotifyHostResized(const gfx::Size& new_size);
+  void OnHostMoved(const gfx::Point& new_location);
+  void OnHostResized(const gfx::Size& new_size);
+  void OnHostCloseRequested();
+  void OnHostActivated();
+  void OnHostLostWindowCapture();
 
   // Sets the currently displayed cursor.
   virtual void SetCursorNative(gfx::NativeCursor cursor) = 0;
@@ -179,13 +193,21 @@ class AURA_EXPORT WindowTreeHost {
   // kCalled when the cursor visibility has changed.
   virtual void OnCursorVisibilityChangedNative(bool show) = 0;
 
-  WindowTreeHostDelegate* delegate_;
-
  private:
   // Moves the cursor to the specified location. This method is internally used
   // by MoveCursorTo() and MoveCursorToHostLocation().
   void MoveCursorToInternal(const gfx::Point& root_location,
                             const gfx::Point& host_location);
+
+  // We don't use a scoped_ptr for |window_| since we need this ptr to be valid
+  // during its deletion. (Window's dtor notifies observers that may attempt to
+  // reach back up to access this object which will be valid until the end of
+  // the dtor).
+  Window* window_;  // Owning.
+
+  ObserverList<WindowTreeHostObserver> observers_;
+
+  scoped_ptr<WindowEventDispatcher> dispatcher_;
 
   scoped_ptr<ui::Compositor> compositor_;
 
@@ -193,6 +215,8 @@ class AURA_EXPORT WindowTreeHost {
 
   // Last cursor set.  Used for testing.
   gfx::NativeCursor last_cursor_;
+
+  scoped_ptr<ui::ViewProp> prop_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowTreeHost);
 };

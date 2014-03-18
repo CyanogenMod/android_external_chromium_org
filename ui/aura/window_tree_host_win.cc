@@ -10,9 +10,10 @@
 
 #include "base/message_loop/message_loop.h"
 #include "ui/aura/client/cursor_client.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/cursor/cursor_loader_win.h"
 #include "ui/base/view_prop.h"
+#include "ui/compositor/compositor.h"
 #include "ui/events/event.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/insets.h"
@@ -53,11 +54,8 @@ WindowTreeHostWin::WindowTreeHostWin(const gfx::Rect& bounds)
 
 WindowTreeHostWin::~WindowTreeHostWin() {
   DestroyCompositor();
+  DestroyDispatcher();
   DestroyWindow(hwnd());
-}
-
-RootWindow* WindowTreeHostWin::GetRootWindow() {
-  return delegate_->AsRootWindow();
 }
 
 gfx::AcceleratedWidget WindowTreeHostWin::GetAcceleratedWidget() {
@@ -134,14 +132,13 @@ void WindowTreeHostWin::SetBounds(const gfx::Rect& bounds) {
       window_rect.bottom - window_rect.top,
       SWP_NOMOVE | SWP_NOOWNERZORDER | SWP_NOREDRAW | SWP_NOREPOSITION);
 
-  // Explicity call NotifyHostResized when the scale has changed because
+  // Explicity call OnHostResized when the scale has changed because
   // the window size may not have changed.
   float current_scale = compositor()->device_scale_factor();
-  float new_scale = gfx::Screen::GetScreenFor(
-      delegate_->AsRootWindow()->window())->GetDisplayNearestWindow(
-          delegate_->AsRootWindow()->window()).device_scale_factor();
+  float new_scale = gfx::Screen::GetScreenFor(window())->
+      GetDisplayNearestWindow(window()).device_scale_factor();
   if (current_scale != new_scale)
-    NotifyHostResized(bounds.size());
+    OnHostResized(bounds.size());
 }
 
 gfx::Insets WindowTreeHostWin::GetInsets() const {
@@ -173,8 +170,7 @@ void WindowTreeHostWin::ReleaseCapture() {
 }
 
 bool WindowTreeHostWin::QueryMouseLocation(gfx::Point* location_return) {
-  client::CursorClient* cursor_client =
-      client::GetCursorClient(GetRootWindow()->window());
+  client::CursorClient* cursor_client = client::GetCursorClient(window());
   if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
     *location_return = gfx::Point(0, 0);
     return false;
@@ -234,7 +230,7 @@ void WindowTreeHostWin::PrepareForShutdown() {
 }
 
 ui::EventProcessor* WindowTreeHostWin::GetEventProcessor() {
-  return delegate_->GetEventProcessor();
+  return dispatcher();
 }
 
 void WindowTreeHostWin::OnClose() {
@@ -272,7 +268,7 @@ LRESULT WindowTreeHostWin::OnCaptureChanged(UINT message,
                                             LPARAM l_param) {
   if (has_capture_) {
     has_capture_ = false;
-    delegate_->OnHostLostWindowCapture();
+    OnHostLostWindowCapture();
   }
   return 0;
 }
@@ -281,13 +277,12 @@ LRESULT WindowTreeHostWin::OnNCActivate(UINT message,
                                         WPARAM w_param,
                                         LPARAM l_param) {
   if (!!w_param)
-    delegate_->OnHostActivated();
+    OnHostActivated();
   return DefWindowProc(hwnd(), message, w_param, l_param);
 }
 
 void WindowTreeHostWin::OnMove(const gfx::Point& point) {
-  if (delegate_)
-    delegate_->OnHostMoved(point);
+  OnHostMoved(point);
 }
 
 void WindowTreeHostWin::OnPaint(HDC dc) {
@@ -302,8 +297,8 @@ void WindowTreeHostWin::OnPaint(HDC dc) {
 void WindowTreeHostWin::OnSize(UINT param, const gfx::Size& size) {
   // Minimizing resizes the window to 0x0 which causes our layout to go all
   // screwy, so we just ignore it.
-  if (delegate_ && param != SIZE_MINIMIZED)
-    NotifyHostResized(size);
+  if (dispatcher() && param != SIZE_MINIMIZED)
+    OnHostResized(size);
 }
 
 namespace test {

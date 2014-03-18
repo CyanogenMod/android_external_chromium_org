@@ -44,6 +44,9 @@ using content::NavigationController;
 using content::RenderProcessHost;
 using content::WebContents;
 using fileapi::IsolatedContext;
+using storage_monitor::MediaStorageUtil;
+using storage_monitor::StorageInfo;
+using storage_monitor::StorageMonitor;
 
 namespace {
 
@@ -464,9 +467,10 @@ void MediaFileSystemRegistry::GetMediaFileSystemsForExtension(
 MediaGalleriesPreferences* MediaFileSystemRegistry::GetPreferences(
     Profile* profile) {
   // Create an empty ExtensionHostMap for this profile on first initialization.
-  if (!ContainsKey(extension_hosts_map_, profile))
+  if (!ContainsKey(extension_hosts_map_, profile)) {
     extension_hosts_map_[profile] = ExtensionHostMap();
-  media_galleries::UsageCount(media_galleries::PROFILES_WITH_USAGE);
+    media_galleries::UsageCount(media_galleries::PROFILES_WITH_USAGE);
+  }
 
   return MediaGalleriesPreferencesFactory::GetForProfile(profile);
 }

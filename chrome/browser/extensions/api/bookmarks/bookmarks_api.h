@@ -12,16 +12,18 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
-
-class Profile;
 
 namespace base {
 class FilePath;
 class ListValue;
+}
+
+namespace content {
+class BrowserContext;
 }
 
 namespace extensions {
@@ -30,7 +32,7 @@ namespace extensions {
 // the extension system.
 class BookmarkEventRouter : public BookmarkModelObserver {
  public:
-  BookmarkEventRouter(Profile* profile, BookmarkModel* model);
+  BookmarkEventRouter(content::BrowserContext* context, BookmarkModel* model);
   virtual ~BookmarkEventRouter();
 
   // BookmarkModelObserver:
@@ -64,34 +66,34 @@ class BookmarkEventRouter : public BookmarkModelObserver {
   void DispatchEvent(const std::string& event_name,
                      scoped_ptr<base::ListValue> event_args);
 
-  Profile* profile_;
+  content::BrowserContext* browser_context_;
   BookmarkModel* model_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkEventRouter);
 };
 
-class BookmarksAPI : public ProfileKeyedAPI,
+class BookmarksAPI : public BrowserContextKeyedAPI,
                      public EventRouter::Observer {
  public:
-  explicit BookmarksAPI(Profile* profile);
+  explicit BookmarksAPI(content::BrowserContext* context);
   virtual ~BookmarksAPI();
 
-  // BrowserContextKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<BookmarksAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<BookmarksAPI>* GetFactoryInstance();
 
   // EventRouter::Observer implementation.
   virtual void OnListenerAdded(
       const EventListenerInfo& details) OVERRIDE;
 
  private:
-  friend class ProfileKeyedAPIFactory<BookmarksAPI>;
+  friend class BrowserContextKeyedAPIFactory<BookmarksAPI>;
 
-  Profile* profile_;
+  content::BrowserContext* browser_context_;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "BookmarksAPI";
   }

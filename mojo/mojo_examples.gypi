@@ -113,9 +113,9 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../ui/aura/aura.gyp:aura',
+            '../ui/base/ui_base.gyp:ui_base',
             '../ui/gfx/gfx.gyp:gfx',
             '../ui/gfx/gfx.gyp:gfx_geometry',
-            '../ui/ui.gyp:ui',
             'mojo_aura_demo_support',
             'mojo_common_lib',
             'mojo_environment_chromium',
@@ -145,6 +145,10 @@
             'mojo_bindings',
             'mojo_system',
           ],
+          'dependencies': [
+            'mojo_bindings',
+            'mojo_system',
+          ],
         },
         {
           'target_name': 'mojo_launcher',
@@ -154,9 +158,9 @@
             '../base/base.gyp:base_i18n',
             '../ui/aura/aura.gyp:aura',
             '../ui/aura/aura.gyp:aura_test_support',
+            '../ui/base/ui_base.gyp:ui_base',
             '../ui/gfx/gfx.gyp:gfx',
             '../ui/gfx/gfx.gyp:gfx_geometry',
-            '../ui/ui.gyp:ui',
             '../ui/views/views.gyp:views',
             '../url/url.gyp:url_lib',
             'mojo_aura_demo_support',
@@ -186,6 +190,10 @@
           ],
           'includes': [ 'public/bindings/mojom_bindings_generator.gypi' ],
           'export_dependent_settings': [
+            'mojo_bindings',
+            'mojo_system',
+          ],
+          'dependencies': [
             'mojo_bindings',
             'mojo_system',
           ],

@@ -101,6 +101,8 @@ std::string VolumeTypeToString(VolumeType type) {
       return "archive";
     case VOLUME_TYPE_CLOUD_DEVICE:
       return "cloud_device";
+    case VOLUME_TYPE_TESTING:
+      return "testing";
   }
   NOTREACHED();
   return "";
@@ -131,13 +133,27 @@ VolumeInfo CreateDriveVolumeInfo(Profile* profile) {
   return volume_info;
 }
 
-VolumeInfo CreateDownloadsVolumeInfo(
-    const base::FilePath& downloads_path) {
+VolumeInfo CreateDownloadsVolumeInfo(const base::FilePath& downloads_path) {
   VolumeInfo volume_info;
   volume_info.type = VOLUME_TYPE_DOWNLOADS_DIRECTORY;
   volume_info.device_type = chromeos::DEVICE_TYPE_UNKNOWN;
   // Keep source_path empty.
   volume_info.mount_path = downloads_path;
+  volume_info.mount_condition = chromeos::disks::MOUNT_CONDITION_NONE;
+  volume_info.is_parent = false;
+  volume_info.is_read_only = false;
+  volume_info.volume_id = GenerateVolumeId(volume_info);
+  return volume_info;
+}
+
+VolumeInfo CreateTestingVolumeInfo(const base::FilePath& path,
+                                   VolumeType volume_type,
+                                   chromeos::DeviceType device_type) {
+  VolumeInfo volume_info;
+  volume_info.type = volume_type;
+  volume_info.device_type = device_type;
+  // Keep source_path empty.
+  volume_info.mount_path = path;
   volume_info.mount_condition = chromeos::disks::MOUNT_CONDITION_NONE;
   volume_info.is_parent = false;
   volume_info.is_read_only = false;
@@ -229,17 +245,19 @@ void VolumeManager::Initialize() {
                                       new_path);
   }
 
-  // Register 'Downloads' folder for the profile to the file system.
-  if (!chromeos::ProfileHelper::IsSigninProfile(profile_)) {
-    const base::FilePath downloads =
-        file_manager::util::GetDownloadsFolderForProfile(profile_);
-    const bool success = RegisterDownloadsMountPoint(profile_, downloads);
-    DCHECK(success);
+  // If in Sign in profile, then skip mounting and listening for mount events.
+  if (chromeos::ProfileHelper::IsSigninProfile(profile_))
+    return;
 
-    DoMountEvent(chromeos::MOUNT_ERROR_NONE,
-                 CreateDownloadsVolumeInfo(downloads),
-                 kNotRemounting);
-  }
+  // Register 'Downloads' folder for the profile to the file system.
+  const base::FilePath downloads =
+      file_manager::util::GetDownloadsFolderForProfile(profile_);
+  const bool success = RegisterDownloadsMountPoint(profile_, downloads);
+  DCHECK(success);
+
+  DoMountEvent(chromeos::MOUNT_ERROR_NONE,
+               CreateDownloadsVolumeInfo(downloads),
+               kNotRemounting);
 
   // Subscribe to DriveIntegrationService.
   if (drive_integration_service_) {
@@ -382,6 +400,15 @@ bool VolumeManager::RegisterDownloadsDirectoryForTesting(
   return success;
 }
 
+void VolumeManager::AddVolumeInfoForTesting(const base::FilePath& path,
+                                            VolumeType volume_type,
+                                            chromeos::DeviceType device_type) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DoMountEvent(chromeos::MOUNT_ERROR_NONE,
+               CreateTestingVolumeInfo(path, volume_type, device_type),
+               false /* is_remounting */);
+}
+
 void VolumeManager::OnFileSystemMounted() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
@@ -410,7 +437,8 @@ void VolumeManager::OnDiskEvent(
     return;
 
   switch (event) {
-    case chromeos::disks::DiskMountManager::DISK_ADDED: {
+    case chromeos::disks::DiskMountManager::DISK_ADDED:
+    case chromeos::disks::DiskMountManager::DISK_CHANGED: {
       if (disk->device_path().empty()) {
         DVLOG(1) << "Empty system path for " << disk->device_path();
         return;
@@ -448,10 +476,6 @@ void VolumeManager::OnDiskEvent(
       // Notify to observers.
       FOR_EACH_OBSERVER(VolumeManagerObserver, observers_,
                         OnDiskRemoved(*disk));
-      return;
-
-    case chromeos::disks::DiskMountManager::DISK_CHANGED:
-      DVLOG(1) << "Ignore CHANGED event.";
       return;
   }
   NOTREACHED();
@@ -608,6 +632,12 @@ void VolumeManager::DoMountEvent(chromeos::MountError error_code,
     }
     if (!from_current_profile)
       return;
+  }
+
+  // Filter out removable disks if forbidden by policy for this profile.
+  if (volume_info.type == VOLUME_TYPE_REMOVABLE_DISK_PARTITION &&
+      profile_->GetPrefs()->GetBoolean(prefs::kExternalStorageDisabled)) {
+    return;
   }
 
   if (error_code == chromeos::MOUNT_ERROR_NONE || volume_info.mount_condition)

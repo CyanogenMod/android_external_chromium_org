@@ -7,6 +7,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <OpenGL/gl.h>
 
+#include "base/mac/mac_util.h"
 #include "base/mac/sdk_forward_declarations.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
@@ -16,9 +17,15 @@
 #include "ui/gfx/size_conversions.h"
 #include "ui/gl/gpu_switching_manager.h"
 
-@implementation CompositingIOSurfaceLayer
+@interface CompositingIOSurfaceLayer()
 
-@synthesize context = context_;
+// Private method to wait for a frame of the right size if we're in an active
+// resize. This may potentially dispatch select messages from the run loop.
+- (void)waitForResizedFrameInContext:(CGLContextObj)glContext;
+
+@end
+
+@implementation CompositingIOSurfaceLayer
 
 - (id)initWithRenderWidgetHostViewMac:(content::RenderWidgetHostViewMac*)r {
   if (self = [super init]) {
@@ -33,30 +40,13 @@
     [self setContentsGravity:kCAGravityTopLeft];
     [self setFrame:NSRectToCGRect(
         [renderWidgetHostView_->cocoa_view() bounds])];
+    if ([self respondsToSelector:(@selector(setContentsScale:))]) {
+      [self setContentsScale:
+          renderWidgetHostView_->backing_store_scale_factor_];
+    }
     [self setNeedsDisplay];
-    [self updateScaleFactor];
   }
   return self;
-}
-
-- (void)updateScaleFactor {
-  if (!renderWidgetHostView_ ||
-      ![self respondsToSelector:(@selector(contentsScale))] ||
-      ![self respondsToSelector:(@selector(setContentsScale:))])
-    return;
-
-  float current_scale_factor = [self contentsScale];
-  float new_scale_factor = current_scale_factor;
-  if (renderWidgetHostView_->compositing_iosurface_) {
-    new_scale_factor =
-        renderWidgetHostView_->compositing_iosurface_->scale_factor();
-  }
-
-  if (new_scale_factor == current_scale_factor)
-    return;
-
-  ScopedCAActionDisabler disabler;
-  [self setContentsScale:new_scale_factor];
 }
 
 - (void)disableCompositing{
@@ -66,11 +56,22 @@
 }
 
 - (void)gotNewFrame {
-  if (![self isAsynchronous]) {
+  if (context_ && context_->is_vsync_disabled()) {
+    // If vsync is disabled, draw immediately and don't bother trying to use
+    // the isAsynchronous property to ensure smooth animation.
     [self setNeedsDisplay];
-    [self setAsynchronous:YES];
+    [self displayIfNeeded];
+
+    // Calls to setNeedsDisplay can sometimes be ignored, especially if issued
+    // rapidly (e.g, with vsync off). This is unacceptable because the failure
+    // to ack a single frame will hang the renderer. Ensure that the renderer
+    // not be blocked.
+    if (needsDisplay_)
+      renderWidgetHostView_->SendPendingSwapAck();
   } else {
     needsDisplay_ = YES;
+    if (![self isAsynchronous])
+      [self setAsynchronous:YES];
   }
 }
 
@@ -79,8 +80,57 @@
     return;
 
   [self setAsynchronous:NO];
-  if (needsDisplay_)
+
+  // If there was a pending frame, ensure that it goes through.
+  if (needsDisplay_) {
     [self setNeedsDisplay];
+    [self displayIfNeeded];
+  }
+  // If that fails then ensure that, at a minimum, the renderer is not blocked.
+  if (needsDisplay_)
+    renderWidgetHostView_->SendPendingSwapAck();
+}
+
+- (void)waitForResizedFrameInContext:(CGLContextObj)glContext {
+  // This appears to be causing crashes on 10.6. Temporarily disable the
+  // synchronized resize on 10.6 to verify that the crashes go away.
+  // TODO(ccameron): Remove this.
+  // http://crbug.com/348328
+  if (base::mac::IsOSSnowLeopard())
+    return;
+
+  // Cache a copy of renderWidgetHostView_ because it may be reset if
+  // a software frame is received in GetBackingStore.
+  content::RenderWidgetHostViewMac* cached_view = renderWidgetHostView_;
+  if (!cached_view->render_widget_host_ ||
+      cached_view->render_widget_host_->is_hidden()) {
+    return;
+  }
+
+  // Note that GetBackingStore can potentially spawn a nested run loop, which
+  // may change the current GL context, or, because the GL contexts are
+  // shared, may change the currently-bound FBO. Ensure that, when the run
+  // loop returns, the original GL context remain current, and the original
+  // FBO remain bound.
+  // TODO(ccameron): This is far too fragile a mechanism to rely on. Find
+  // a way to avoid doing this.
+  GLuint previous_framebuffer = 0;
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING,
+                reinterpret_cast<GLint*>(&previous_framebuffer));
+  {
+    // If a resize is in progress then GetBackingStore request a frame of the
+    // current window size and block until a frame of the right size comes in.
+    // This makes the window content not lag behind the resize (at the cost of
+    // blocking on the browser's main thread).
+    gfx::ScopedCGLSetCurrentContext scoped_set_current_context(NULL);
+    cached_view->about_to_validate_and_paint_ = true;
+    (void)cached_view->render_widget_host_->GetBackingStore(true);
+    cached_view->about_to_validate_and_paint_ = false;
+  }
+  CHECK_EQ(CGLGetCurrentContext(), glContext)
+      << "original GL context failed to re-bind after nested run loop, "
+      << "browser crash is imminent.";
+  glBindFramebuffer(GL_FRAMEBUFFER, previous_framebuffer);
 }
 
 // The remaining methods implement the CAOpenGLLayer interface.
@@ -124,46 +174,29 @@
     return;
   }
 
-  // Cache a copy of renderWidgetHostView_ because it may be reset if
-  // a software frame is received in GetBackingStore.
-  content::RenderWidgetHostViewMac* cached_view = renderWidgetHostView_;
+  // Acknowledge the frame before we potentially wait for a frame of the right
+  // size.
+  renderWidgetHostView_->SendPendingSwapAck();
 
-  // If a resize is in progress then GetBackingStore request a frame of the
-  // current window size and block until a frame of the right size comes in.
-  // This makes the window content not lag behind the resize (at the cost of
-  // blocking on the browser's main thread).
-  if (cached_view->render_widget_host_) {
-    // Note that GetBackingStore can potentially spawn a nested run loop, which
-    // may change the current GL context, or, because the GL contexts are
-    // shared, may change the currently-bound FBO. Ensure that, when the run
-    // loop returns, the original GL context remain current, and the original
-    // FBO remain bound.
-    // TODO(ccameron): This is far too fragile a mechanism to rely on. Find
-    // a way to avoid doing this.
-    GLuint previous_framebuffer = 0;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING,
-                  reinterpret_cast<GLint*>(&previous_framebuffer));
-    {
-      gfx::ScopedCGLSetCurrentContext scoped_set_current_context(NULL);
-      cached_view->about_to_validate_and_paint_ = true;
-      (void)cached_view->render_widget_host_->GetBackingStore(true);
-      cached_view->about_to_validate_and_paint_ = false;
-    }
-    CHECK_EQ(CGLGetCurrentContext(), glContext)
-        << "original GL context failed to re-bind after nested run loop, "
-        << "browser crash is imminent.";
-    glBindFramebuffer(GL_FRAMEBUFFER, previous_framebuffer);
-  }
+  // Wait for a frame of the right size to come in, if needed.
+  [self waitForResizedFrameInContext:glContext];
 
   // If a transition to software mode has occurred, this layer should be
   // removed from the heirarchy now, so don't draw anything.
   if (!renderWidgetHostView_)
     return;
 
-  gfx::Rect window_rect([self frame]);
+  // The correct viewport to cover the layer will be set up by the caller.
+  // Transform this into a window size for DrawIOSurface, where it will be
+  // transformed back into this viewport.
+  GLint viewport[4];
+  glGetIntegerv(GL_VIEWPORT, viewport);
+  gfx::Rect window_rect(viewport[0], viewport[1], viewport[2], viewport[3]);
   float window_scale_factor = 1.f;
   if ([self respondsToSelector:(@selector(contentsScale))])
     window_scale_factor = [self contentsScale];
+  window_rect = ToNearestRect(
+      gfx::ScaleRect(window_rect, 1.f/window_scale_factor));
 
   if (!renderWidgetHostView_->compositing_iosurface_->DrawIOSurface(
         context_,
@@ -176,6 +209,11 @@
 
   needsDisplay_ = NO;
   renderWidgetHostView_->SendPendingLatencyInfoToHost();
+
+  [super drawInCGLContext:glContext
+              pixelFormat:pixelFormat
+             forLayerTime:timeInterval
+              displayTime:timeStamp];
 }
 
 @end

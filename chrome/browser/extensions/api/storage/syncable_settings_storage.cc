@@ -5,10 +5,10 @@
 #include "chrome/browser/extensions/api/storage/syncable_settings_storage.h"
 
 #include "base/strings/stringprintf.h"
-#include "chrome/browser/extensions/api/storage/settings_namespace.h"
 #include "chrome/browser/extensions/api/storage/settings_sync_processor.h"
 #include "chrome/browser/extensions/api/storage/settings_sync_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/api/storage/settings_namespace.h"
 #include "sync/api/sync_data.h"
 #include "sync/protocol/extension_setting_specifics.pb.h"
 
@@ -120,6 +120,28 @@ ValueStore::WriteResult SyncableSettingsStorage::Clear() {
   }
   SyncResultIfEnabled(result);
   return result.Pass();
+}
+
+bool SyncableSettingsStorage::Restore() {
+  // If we're syncing, stop - we don't want to push the deletion of any data.
+  // At next startup, when we start up the sync service, we'll get back any
+  // data which was stored intact on Sync.
+  // TODO (rdevlin.cronin): Investigate if there's a way we can trigger
+  // MergeDataAndStartSyncing() to immediately get back any data we can,
+  // and continue syncing.
+  StopSyncing();
+  return delegate_->Restore();
+}
+
+bool SyncableSettingsStorage::RestoreKey(const std::string& key) {
+  // If we're syncing, stop - we don't want to push the deletion of any data.
+  // At next startup, when we start up the sync service, we'll get back any
+  // data which was stored intact on Sync.
+  // TODO (rdevlin.cronin): Investigate if there's a way we can trigger
+  // MergeDataAndStartSyncing() to immediately get back any data we can,
+  // and continue syncing.
+  StopSyncing();
+  return delegate_->RestoreKey(key);
 }
 
 void SyncableSettingsStorage::SyncResultIfEnabled(

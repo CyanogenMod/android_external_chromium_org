@@ -22,15 +22,15 @@
 #include "content/shell/browser/shell_net_log.h"
 #include "net/base/net_module.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/compositor/compositor.h"
 #include "ui/gfx/screen.h"
 #include "ui/message_center/message_center.h"
-#include "ui/views/corewm/wm_state.h"
 #include "ui/views/test/test_views_delegate.h"
+#include "ui/wm/core/wm_state.h"
 
 #if defined(USE_X11)
 #include "ui/events/x/touch_factory_x11.h"
@@ -98,7 +98,7 @@ void ShellBrowserMainParts::PostMainMessageLoopStart() {
 }
 
 void ShellBrowserMainParts::ToolkitInitialized() {
-  wm_state_.reset(new views::corewm::WMState);
+  wm_state_.reset(new wm::WMState);
 }
 
 void ShellBrowserMainParts::PreMainMessageLoopRun() {
@@ -137,7 +137,7 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   Shell::GetInstance()->desktop_background_controller()->SetDefaultWallpaper(
       false /* is_guest */);
 
-  ash::Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->Show();
+  ash::Shell::GetPrimaryRootWindow()->GetHost()->Show();
 }
 
 void ShellBrowserMainParts::PostMainMessageLoopRun() {

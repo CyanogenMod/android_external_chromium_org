@@ -8,17 +8,14 @@
 
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
+#include "ui/base/cursor/cursor.h"
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/font_list.h"
 #include "ui/views/controls/link_listener.h"
-
-#if defined(USE_AURA)
-#include "ui/base/cursor/cursor.h"
-#endif
 
 namespace views {
 
@@ -50,12 +47,7 @@ const char* Link::GetClassName() const {
 gfx::NativeCursor Link::GetCursor(const ui::MouseEvent& event) {
   if (!enabled())
     return gfx::kNullCursor;
-#if defined(USE_AURA)
   return ui::kCursorHand;
-#elif defined(OS_WIN)
-  static HCURSOR g_hand_cursor = LoadCursor(NULL, IDC_HAND);
-  return g_hand_cursor;
-#endif
 }
 
 bool Link::HitTestRect(const gfx::Rect& rect) const {
@@ -138,9 +130,9 @@ bool Link::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
       (event.key_code() == ui::VKEY_RETURN);
 }
 
-void Link::GetAccessibleState(ui::AccessibleViewState* state) {
+void Link::GetAccessibleState(ui::AXViewState* state) {
   Label::GetAccessibleState(state);
-  state->role = ui::AccessibilityTypes::ROLE_LINK;
+  state->role = ui::AX_ROLE_LINK;
 }
 
 void Link::OnEnabledChanged() {

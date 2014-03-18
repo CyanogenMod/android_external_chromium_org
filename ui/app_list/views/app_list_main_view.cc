@@ -15,10 +15,12 @@
 #include "ui/app_list/app_list_folder_item.h"
 #include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_model.h"
+#include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/app_list_view_delegate.h"
 #include "ui/app_list/pagination_model.h"
 #include "ui/app_list/search_box_model.h"
 #include "ui/app_list/views/app_list_item_view.h"
+#include "ui/app_list/views/contents_switcher_view.h"
 #include "ui/app_list/views/contents_view.h"
 #include "ui/app_list/views/search_box_view.h"
 #include "ui/views/controls/textfield/textfield.h"
@@ -63,7 +65,7 @@ class AppListMainView::IconLoader : public AppListItemObserver {
     owner_->OnItemIconLoaded(this);
     // Note that IconLoader is released here.
   }
-  virtual void ItemTitleChanged() OVERRIDE {}
+  virtual void ItemNameChanged() OVERRIDE {}
   virtual void ItemHighlightedChanged() OVERRIDE {}
   virtual void ItemIsInstallingChanged() OVERRIDE {}
   virtual void ItemPercentDownloadedChanged() OVERRIDE {}
@@ -97,6 +99,8 @@ AppListMainView::AppListMainView(AppListViewDelegate* delegate,
   search_box_view_ = new SearchBoxView(this, delegate);
   AddChildView(search_box_view_);
   AddContentsView();
+  if (app_list::switches::IsExperimentalAppListEnabled())
+    AddChildView(new ContentsSwitcherView(contents_view_));
 }
 
 void AppListMainView::AddContentsView() {
@@ -170,13 +174,13 @@ void AppListMainView::PreloadIcons(gfx::NativeView parent) {
 
   const int tiles_per_page = kPreferredCols * kPreferredRows;
   const int start_model_index = selected_page * tiles_per_page;
-  const int end_model_index = std::min(
-      static_cast<int>(model_->item_list()->item_count()),
-      start_model_index + tiles_per_page);
+  const int end_model_index =
+      std::min(static_cast<int>(model_->top_level_item_list()->item_count()),
+               start_model_index + tiles_per_page);
 
   pending_icon_loaders_.clear();
   for (int i = start_model_index; i < end_model_index; ++i) {
-    AppListItem* item = model_->item_list()->item_at(i);
+    AppListItem* item = model_->top_level_item_list()->item_at(i);
     if (item->icon().HasRepresentation(scale))
       continue;
 
@@ -200,6 +204,13 @@ void AppListMainView::OnItemIconLoaded(IconLoader* loader) {
   }
 }
 
+void AppListMainView::ChildVisibilityChanged(views::View* child) {
+  // Repaint the AppListView's background which will repaint the background for
+  // the search box.
+  if (child == search_box_view_ && parent())
+    parent()->SchedulePaint();
+}
+
 void AppListMainView::ActivateApp(AppListItem* item, int event_flags) {
   // TODO(jennyz): Activate the folder via AppListModel notification.
   if (item->GetItemType() == AppListFolderItem::kItemType)
@@ -216,7 +227,7 @@ void AppListMainView::GetShortcutPathForApp(
 
 void AppListMainView::QueryChanged(SearchBoxView* sender) {
   base::string16 query;
-  TrimWhitespace(model_->search_box()->text(), TRIM_ALL, &query);
+  base::TrimWhitespace(model_->search_box()->text(), base::TRIM_ALL, &query);
   bool should_show_search = !query.empty();
   contents_view_->ShowSearchResults(should_show_search);
 
@@ -224,18 +235,6 @@ void AppListMainView::QueryChanged(SearchBoxView* sender) {
     delegate_->StartSearch();
   else
     delegate_->StopSearch();
-}
-
-void AppListMainView::OpenResult(SearchResult* result,
-                                 bool auto_launch,
-                                 int event_flags) {
-  delegate_->OpenSearchResult(result, auto_launch, event_flags);
-}
-
-void AppListMainView::InvokeResultAction(SearchResult* result,
-                                         int action_index,
-                                         int event_flags) {
-  delegate_->InvokeSearchResultAction(result, action_index, event_flags);
 }
 
 void AppListMainView::OnResultInstalled(SearchResult* result) {

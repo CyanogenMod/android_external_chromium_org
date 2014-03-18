@@ -35,8 +35,12 @@ class SYNC_EXPORT_PRIVATE GCMNetworkChannel
 
   virtual ~GCMNetworkChannel();
 
+  // invalidation::NetworkChannel implementation.
+  virtual void SendMessage(const std::string& message) OVERRIDE;
+  virtual void SetMessageReceiver(
+      invalidation::MessageCallback* incoming_receiver) OVERRIDE;
+
   // SyncNetworkChannel implementation.
-  virtual void SendEncodedMessage(const std::string& encoded_message) OVERRIDE;
   virtual void UpdateCredentials(const std::string& email,
                                  const std::string& token) OVERRIDE;
 
@@ -47,21 +51,32 @@ class SYNC_EXPORT_PRIVATE GCMNetworkChannel
   void ResetRegisterBackoffEntryForTest(
       const net::BackoffEntry::Policy* policy);
 
+  virtual GURL BuildUrl(const std::string& registration_id);
+
  private:
+  friend class GCMNetworkChannelTest;
   void Register();
   void OnRegisterComplete(const std::string& registration_id,
                           gcm::GCMClient::Result result);
   void RequestAccessToken();
   void OnGetTokenComplete(const GoogleServiceAuthError& error,
                           const std::string& token);
-  GURL BuildUrl();
+  void OnIncomingMessage(const std::string& message,
+                         const std::string& echo_token);
+
+  // Base64 encoding/decoding with URL safe alphabet.
+  // http://tools.ietf.org/html/rfc4648#page-7
+  static void Base64EncodeURLSafe(const std::string& input,
+                                  std::string* output);
+  static bool Base64DecodeURLSafe(const std::string& input,
+                                  std::string* output);
 
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
   scoped_ptr<GCMNetworkChannelDelegate> delegate_;
 
   // Message is saved until all conditions are met: there is valid
   // registration_id and access_token.
-  std::string encoded_message_;
+  std::string cached_message_;
 
   // Access token is saved because in case of auth failure from server we need
   // to invalidate it.
@@ -73,6 +88,10 @@ class SYNC_EXPORT_PRIVATE GCMNetworkChannel
   scoped_ptr<net::BackoffEntry> register_backoff_entry_;
 
   scoped_ptr<net::URLFetcher> fetcher_;
+
+  // cacheinvalidation client receives echo_token with incoming message from
+  // GCM and shuld include it in headers with outgoing message over http.
+  std::string echo_token_;
 
   base::WeakPtrFactory<GCMNetworkChannel> weak_factory_;
 

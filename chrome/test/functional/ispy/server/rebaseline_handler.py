@@ -6,8 +6,8 @@
 
 import webapp2
 
+import ispy_api
 from common import constants
-from common import chrome_utils
 
 import gs_bucket
 
@@ -25,20 +25,14 @@ class RebaselineHandler(webapp2.RequestHandler):
 
     # Fail if test_run parameter is missing.
     if not test_run:
-      self.response.header['Content-Type'] = 'json/application'
+      self.response.headers['Content-Type'] = 'json/application'
       self.response.write(json.dumps(
           {'error': '\'test_run\' must be supplied to rebaseline.'}))
       return
     # Otherwise, set up the utilities.
     bucket = gs_bucket.GoogleCloudStorageBucket(constants.BUCKET)
-    chrome_util = chrome_utils.ChromeUtils(bucket)
+    ispy = ispy_api.ISpyApi(bucket)
     # Update versions file.
-    try:
-      chrome_util.RebaselineToTestRun(test_run)
-    except:
-      self.response.header['Content-Type'] = 'json/application'
-      self.response.write(json.dumps(
-        {'error': 'Can not rebaseline to the given test run.'}))
-      return
+    ispy.RebaselineToTestRun(test_run)
     # Redirect back to the sites list for the test run.
     self.redirect('/?test_run=%s' % test_run)

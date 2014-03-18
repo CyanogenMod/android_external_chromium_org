@@ -22,23 +22,18 @@
 #include "mojo/system/raw_channel.h"
 #include "mojo/system/system_impl_export.h"
 
-namespace base {
-class MessageLoop;
-}
-
 namespace mojo {
 namespace system {
 
-// This class is mostly thread-safe. It must be created on an "I/O thread" (see
-// raw_channel.h). |Init()| must be called on that same thread before it becomes
-// thread-safe (in particular, before references are given to any other thread)
-// and |Shutdown()| must be called on that same thread before destruction. Its
-// public methods are otherwise thread-safe. It may be destroyed on any thread,
-// in the sense that the last reference to it may be released on any thread,
-// with the proviso that |Shutdown()| must have been called first (so the
-// pattern is that a "main" reference is kept on its creation thread and is
-// released after |Shutdown()| is called, but other threads may have temporarily
-// "dangling" references).
+// This class is mostly thread-safe. It must be created on an I/O thread.
+// |Init()| must be called on that same thread before it becomes thread-safe (in
+// particular, before references are given to any other thread) and |Shutdown()|
+// must be called on that same thread before destruction. Its public methods are
+// otherwise thread-safe. It may be destroyed on any thread, in the sense that
+// the last reference to it may be released on any thread, with the proviso that
+// |Shutdown()| must have been called first (so the pattern is that a "main"
+// reference is kept on its creation thread and is released after |Shutdown()|
+// is called, but other threads may have temporarily "dangling" references).
 //
 // Note that |MessagePipe| calls into |Channel| and the former's |lock_| must be
 // acquired before the latter's. When |Channel| wants to call into a
@@ -85,8 +80,17 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
   void RunMessagePipeEndpoint(MessageInTransit::EndpointId local_id,
                               MessageInTransit::EndpointId remote_id);
 
+  // Tells the other side of the channel to run a message pipe endpoint (which
+  // must already be attached); |local_id| and |remote_id| are relative to this
+  // channel (i.e., |local_id| is the other side's remote ID and |remote_id| is
+  // its local ID).
+  // TODO(vtl): Maybe we should just have a flag argument to
+  // |RunMessagePipeEndpoint()| that tells it to do this.
+  void RunRemoteMessagePipeEndpoint(MessageInTransit::EndpointId local_id,
+                                    MessageInTransit::EndpointId remote_id);
+
   // This forwards |message| verbatim to |raw_channel_|.
-  bool WriteMessage(MessageInTransit* message);
+  bool WriteMessage(scoped_ptr<MessageInTransit> message);
 
   // This removes the message pipe/port's endpoint (with the given local ID,
   // returned by |AttachMessagePipeEndpoint()| from this channel. After this is
@@ -98,12 +102,13 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
   virtual ~Channel();
 
   // |RawChannel::Delegate| implementation:
-  virtual void OnReadMessage(const MessageInTransit& message) OVERRIDE;
+  virtual void OnReadMessage(
+      const MessageInTransit::View& message_view) OVERRIDE;
   virtual void OnFatalError(FatalError fatal_error) OVERRIDE;
 
   // Helpers for |OnReadMessage|:
-  void OnReadMessageForDownstream(const MessageInTransit& message);
-  void OnReadMessageForChannel(const MessageInTransit& message);
+  void OnReadMessageForDownstream(const MessageInTransit::View& message_view);
+  void OnReadMessageForChannel(const MessageInTransit::View& message_view);
 
   // Handles errors (e.g., invalid messages) from the remote side.
   void HandleRemoteError(const base::StringPiece& error_message);

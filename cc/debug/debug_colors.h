@@ -53,9 +53,6 @@ class DebugColors {
   static SkColor MissingTileBorderColor();
   static int MissingTileBorderWidth(const LayerTreeImpl* tree_impl);
 
-  static SkColor CulledTileBorderColor();
-  static int CulledTileBorderWidth(const LayerTreeImpl* tree_impl);
-
   static SkColor SolidColorTileBorderColor();
   static int SolidColorTileBorderWidth(const LayerTreeImpl* tree_impl);
 
@@ -69,9 +66,10 @@ class DebugColors {
   static SkColor EvictedTileCheckerboardColor();
   static SkColor InvalidatedTileCheckerboardColor();
 
-  static SkColor PaintRectBorderColor(int color_index);
+  static const int kFadeSteps = 50;
+  static SkColor PaintRectBorderColor(int step);
   static int PaintRectBorderWidth();
-  static SkColor PaintRectFillColor(int color_index);
+  static SkColor PaintRectFillColor(int step);
 
   static SkColor PropertyChangedRectBorderColor();
   static int PropertyChangedRectBorderWidth();

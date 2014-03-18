@@ -11,6 +11,7 @@
 #import "chrome/browser/ui/cocoa/tabs/tab_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_controller_target.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_drag_controller.h"
+#import "chrome/browser/ui/cocoa/tabs/tab_view.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -95,19 +96,6 @@ CGFloat RightMargin(NSRect superFrame, NSRect subFrame) {
   return NSMaxX(superFrame) - NSMaxX(subFrame);
 }
 
-// Helper to create an NSImageView that contains an image fetched from
-// ui::ResourceBundle.
-NSImageView* CreateImageViewFromResourceBundle(int resource_id) {
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  NSImage* const image = rb.GetNativeImageNamed(resource_id).ToNSImage();
-  CHECK(!!image);
-  NSRect frame;
-  frame.size = [image size];
-  NSImageView* const view = [[NSImageView alloc] initWithFrame:frame];
-  [view setImage:image];
-  return view;
-}
-
 // The dragging code in TabView makes heavy use of autorelease pools so
 // inherit from CocoaTest to have one created for us.
 class TabControllerTest : public CocoaTest {
@@ -187,7 +175,7 @@ class TabControllerTest : public CocoaTest {
     // Make sure the NSView's "isHidden" state jives with the "shouldShowXXX."
     EXPECT_TRUE([controller shouldShowIcon] ==
                 (!![controller iconView] && ![[controller iconView] isHidden]));
-    EXPECT_TRUE([controller mini] == [[controller titleView] isHidden]);
+    EXPECT_TRUE([controller mini] == [[controller tabView] titleHidden]);
     EXPECT_TRUE([controller shouldShowMediaIndicator] ==
                     ![[controller mediaIndicatorView] isHidden]);
     EXPECT_TRUE([controller shouldShowCloseButton] !=
@@ -196,7 +184,7 @@ class TabControllerTest : public CocoaTest {
     // Check positioning of elements with respect to each other, and that they
     // are fully within the tab frame.
     const NSRect tabFrame = [[controller view] frame];
-    const NSRect titleFrame = [[controller titleView] frame];
+    const NSRect titleFrame = [[controller tabView] titleFrame];
     if ([controller shouldShowIcon]) {
       const NSRect iconFrame = [[controller iconView] frame];
       EXPECT_LE(NSMinX(tabFrame), NSMinX(iconFrame));
@@ -374,9 +362,11 @@ TEST_F(TabControllerTest, ShouldShowIcon) {
   EXPECT_FALSE([controller shouldShowCloseButton]);
 
   // Setting the icon when tab is at min width should not show icon (bug 18359).
-  base::scoped_nsobject<NSView> newIcon(
-      [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 16, 16)]);
-  [controller setIconView:newIcon.get()];
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  base::scoped_nsobject<NSImage> image(
+      rb.GetNativeImageNamed(IDR_DEFAULT_FAVICON).CopyNSImage());
+  [controller setIconImage:image];
+  NSView* newIcon = [controller iconView];
   EXPECT_TRUE([newIcon isHidden]);
 
   // Tab is at selected minimum width. Since it's selected, the close box
@@ -435,13 +425,13 @@ TEST_F(TabControllerTest, TitleViewLayout) {
   const NSRect originalTabFrame = [[controller view] frame];
   const NSRect originalIconFrame = [[controller iconView] frame];
   const NSRect originalCloseFrame = [[controller closeButton] frame];
-  const NSRect originalTitleFrame = [[controller titleView] frame];
+  const NSRect originalTitleFrame = [[controller tabView] titleFrame];
 
   // Sanity check the start state.
   EXPECT_FALSE([[controller iconView] isHidden]);
   EXPECT_FALSE([[controller closeButton] isHidden]);
   EXPECT_GT(NSWidth([[controller view] frame]),
-            NSWidth([[controller titleView] frame]));
+            NSWidth([[controller tabView] titleFrame]));
 
   // Resize the tab so that that the it shrinks.
   tabFrame.size.width = [TabController minTabWidth];
@@ -452,13 +442,13 @@ TEST_F(TabControllerTest, TitleViewLayout) {
   EXPECT_TRUE([[controller iconView] isHidden]);
   EXPECT_TRUE([[controller closeButton] isHidden]);
   EXPECT_GT(NSWidth([[controller view] frame]),
-            NSWidth([[controller titleView] frame]));
+            NSWidth([[controller tabView] titleFrame]));
   EXPECT_EQ(LeftMargin(originalTabFrame, originalIconFrame),
             LeftMargin([[controller view] frame],
-                       [[controller titleView] frame]));
+                       [[controller tabView] titleFrame]));
   EXPECT_EQ(RightMargin(originalTabFrame, originalCloseFrame),
             RightMargin([[controller view] frame],
-                        [[controller titleView] frame]));
+                        [[controller tabView] titleFrame]));
 
   // Resize the tab so that that the it grows.
   tabFrame.size.width = static_cast<int>([TabController maxTabWidth] * 0.75);
@@ -469,13 +459,13 @@ TEST_F(TabControllerTest, TitleViewLayout) {
   EXPECT_FALSE([[controller iconView] isHidden]);
   EXPECT_FALSE([[controller closeButton] isHidden]);
   EXPECT_GT(NSWidth([[controller view] frame]),
-            NSWidth([[controller titleView] frame]));
+            NSWidth([[controller tabView] titleFrame]));
   EXPECT_EQ(LeftMargin(originalTabFrame, originalTitleFrame),
             LeftMargin([[controller view] frame],
-                       [[controller titleView] frame]));
+                       [[controller tabView] titleFrame]));
   EXPECT_EQ(RightMargin(originalTabFrame, originalTitleFrame),
             RightMargin([[controller view] frame],
-                        [[controller titleView] frame]));
+                        [[controller tabView] titleFrame]));
 }
 
 // A comprehensive test of the layout and visibility of all elements (favicon,
@@ -500,8 +490,9 @@ TEST_F(TabControllerTest, DISABLED_LayoutAndVisibilityOfSubviews) {
   // tested effectively.  If animations were left enabled, the
   // shouldShowMediaIndicator method would return true during fade-out
   // transitions.
-  base::scoped_nsobject<NSImageView> faviconView(
-      CreateImageViewFromResourceBundle(IDR_DEFAULT_FAVICON));
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  base::scoped_nsobject<NSImage> favicon(
+      rb.GetNativeImageNamed(IDR_DEFAULT_FAVICON).CopyNSImage());
   base::scoped_nsobject<MediaIndicatorView> mediaIndicatorView(
       [[MediaIndicatorView alloc] init]);
   [mediaIndicatorView disableAnimations];
@@ -525,7 +516,7 @@ TEST_F(TabControllerTest, DISABLED_LayoutAndVisibilityOfSubviews) {
         [controller setMini:(isMiniTab ? YES : NO)];
         [controller setActive:(isActiveTab ? YES : NO)];
         [[controller mediaIndicatorView] updateIndicator:mediaState];
-        [controller setIconView:faviconView];
+        [controller setIconImage:favicon];
 
         // Test layout for every width from maximum to minimum.
         NSRect tabFrame = [[controller view] frame];

@@ -75,7 +75,7 @@ FolderShortcutsDataModel.prototype = {
     var volumeInfo = this.volumeManager_.getCurrentProfileVolumeInfo(
         util.VolumeType.DRIVE);
     if (volumeInfo)
-      this.lastDriveRootURL_ = volumeInfo.root.toURL();
+      this.lastDriveRootURL_ = volumeInfo.fileSystem.root.toURL();
   },
 
   /**
@@ -529,12 +529,13 @@ FolderShortcutsDataModel.prototype = {
    * @private
    */
   convertUrlToStoredPath_: function(url) {
-    if (url.indexOf(this.lastDriveRootURL_ + '/') !== 0) {
+    // Root URLs contain a trailing slash.
+    if (url.indexOf(this.lastDriveRootURL_) !== 0) {
       console.warn(url + ' is not a drive URL.');
       return null;
     }
 
-    return STORED_DRIVE_MOUNT_PATH + decodeURIComponent(
+    return STORED_DRIVE_MOUNT_PATH + '/' + decodeURIComponent(
         url.substr(this.lastDriveRootURL_.length));
   },
 };

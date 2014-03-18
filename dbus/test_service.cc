@@ -142,6 +142,24 @@ void TestService::OnOwnership(base::Callback<void(bool)> callback,
   on_name_obtained_.Signal();
 }
 
+void TestService::ReleaseOwnership(base::Closure callback) {
+  bus_->GetDBusTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&TestService::ReleaseOwnershipInternal,
+                 base::Unretained(this),
+                 callback));
+}
+
+void TestService::ReleaseOwnershipInternal(
+    base::Closure callback) {
+  bus_->ReleaseOwnership("org.chromium.TestService");
+  has_ownership_ = false;
+
+  bus_->GetOriginTaskRunner()->PostTask(
+      FROM_HERE,
+      callback);
+}
+
 void TestService::OnExported(const std::string& interface_name,
                              const std::string& method_name,
                              bool success) {
@@ -390,6 +408,20 @@ void TestService::GetProperty(MethodCall* method_call,
     writer.CloseContainer(&variant_writer);
 
     response_sender.Run(response.Pass());
+  } else if (name == "Bytes") {
+    // Return the previous value for the "Bytes" property:
+    // Variant<[0x54, 0x65, 0x73, 0x74]>
+    scoped_ptr<Response> response = Response::FromMethodCall(method_call);
+    MessageWriter writer(response.get());
+    MessageWriter variant_writer(NULL);
+    MessageWriter variant_array_writer(NULL);
+
+    writer.OpenVariant("ay", &variant_writer);
+    const uint8 bytes[] = { 0x54, 0x65, 0x73, 0x74 };
+    variant_writer.AppendArrayOfBytes(bytes, sizeof(bytes));
+    writer.CloseContainer(&variant_writer);
+
+    response_sender.Run(response.Pass());
   } else {
     // Return error.
     response_sender.Run(scoped_ptr<Response>());
@@ -443,10 +475,45 @@ void TestService::PerformAction(
     AddObject(object_path);
   else if (action == "RemoveObject")
     RemoveObject(object_path);
+  else if (action == "ReleaseOwnership") {
+    ReleaseOwnership(base::Bind(&TestService::PerformActionResponse,
+                                base::Unretained(this),
+                                method_call, response_sender));
+    return;
+  } else if (action == "Ownership") {
+    ReleaseOwnership(base::Bind(&TestService::OwnershipReleased,
+                                base::Unretained(this),
+                                method_call, response_sender));
+    return;
+  }
 
   scoped_ptr<Response> response = Response::FromMethodCall(method_call);
   response_sender.Run(response.Pass());
 }
+
+void TestService::PerformActionResponse(
+    MethodCall* method_call,
+    ExportedObject::ResponseSender response_sender) {
+  scoped_ptr<Response> response = Response::FromMethodCall(method_call);
+  response_sender.Run(response.Pass());
+}
+
+void TestService::OwnershipReleased(
+    MethodCall* method_call,
+    ExportedObject::ResponseSender response_sender) {
+  RequestOwnership(base::Bind(&TestService::OwnershipRegained,
+                              base::Unretained(this),
+                              method_call, response_sender));
+}
+
+
+void TestService::OwnershipRegained(
+    MethodCall* method_call,
+    ExportedObject::ResponseSender response_sender,
+    bool success) {
+  PerformActionResponse(method_call, response_sender);
+}
+
 
 void TestService::GetManagedObjects(
     MethodCall* method_call,
@@ -501,6 +568,7 @@ void TestService::AddPropertiesToWriter(MessageWriter* writer) {
   //   "Version": Variant<10>,
   //   "Methods": Variant<["Echo", "SlowEcho", "AsyncEcho", "BrokenMethod"]>,
   //   "Objects": Variant<[objectpath:"/TestObjectPath"]>
+  //   "Bytes": Variant<[0x54, 0x65, 0x73, 0x74]>
   // }
 
   MessageWriter array_writer(NULL);
@@ -538,6 +606,14 @@ void TestService::AddPropertiesToWriter(MessageWriter* writer) {
   variant_writer.OpenArray("o", &variant_array_writer);
   variant_array_writer.AppendObjectPath(ObjectPath("/TestObjectPath"));
   variant_writer.CloseContainer(&variant_array_writer);
+  dict_entry_writer.CloseContainer(&variant_writer);
+  array_writer.CloseContainer(&dict_entry_writer);
+
+  array_writer.OpenDictEntry(&dict_entry_writer);
+  dict_entry_writer.AppendString("Bytes");
+  dict_entry_writer.OpenVariant("ay", &variant_writer);
+  const uint8 bytes[] = { 0x54, 0x65, 0x73, 0x74 };
+  variant_writer.AppendArrayOfBytes(bytes, sizeof(bytes));
   dict_entry_writer.CloseContainer(&variant_writer);
   array_writer.CloseContainer(&dict_entry_writer);
 

@@ -5,10 +5,23 @@
 #include "chrome/browser/local_discovery/storage/privet_filesystem_async_util.h"
 
 #include "base/platform_file.h"
+#include "chrome/browser/local_discovery/storage/path_util.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 
 namespace local_discovery {
+
+PrivetFileSystemAsyncUtil::PrivetFileSystemAsyncUtil(
+    content::BrowserContext* browser_context) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  operation_factory_ = new PrivetFileSystemOperationFactory(browser_context);
+}
+
+PrivetFileSystemAsyncUtil::~PrivetFileSystemAsyncUtil() {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  content::BrowserThread::DeleteSoon(
+      content::BrowserThread::UI, FROM_HERE, operation_factory_);
+}
 
 void PrivetFileSystemAsyncUtil::CreateOrOpen(
     scoped_ptr<fileapi::FileSystemOperationContext> context,
@@ -43,29 +56,38 @@ void PrivetFileSystemAsyncUtil::GetFileInfo(
     scoped_ptr<fileapi::FileSystemOperationContext> context,
     const fileapi::FileSystemURL& url,
     const GetFileInfoCallback& callback) {
-  base::File::Info file_info;
+  ParsedPrivetPath parsed_path(url.path());
 
-  file_info.size = 20;
-  file_info.is_directory = true;
-  file_info.is_symbolic_link = false;
+  if (parsed_path.path == "/") {
+    base::File::Info file_info;
+    file_info.is_directory = true;
+    file_info.is_symbolic_link = false;
+    callback.Run(base::File::FILE_OK, file_info);
+    return;
+  }
 
-  callback.Run(base::File::FILE_OK, file_info);
+  content::BrowserThread::PostTask(
+      content::BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&PrivetFileSystemOperationFactory::GetFileInfo,
+                 operation_factory_->GetWeakPtr(),
+                 url,
+                 callback));
 }
 
 void PrivetFileSystemAsyncUtil::ReadDirectory(
     scoped_ptr<fileapi::FileSystemOperationContext> context,
     const fileapi::FileSystemURL& url,
     const ReadDirectoryCallback& callback) {
-  EntryList entry_list;
-
-  fileapi::DirectoryEntry entry("Random file",
-                                fileapi::DirectoryEntry::FILE,
-                                3000,
-                                base::Time());
-  entry_list.push_back(entry);
-
-  callback.Run(base::File::FILE_OK, entry_list, false);
+  content::BrowserThread::PostTask(
+      content::BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&PrivetFileSystemOperationFactory::ReadDirectory,
+                 operation_factory_->GetWeakPtr(),
+                 url,
+                 callback));
 }
+
 
 void PrivetFileSystemAsyncUtil::Touch(
     scoped_ptr<fileapi::FileSystemOperationContext> context,

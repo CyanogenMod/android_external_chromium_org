@@ -103,10 +103,6 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool gl_multisampling_enabled;
   bool privileged_webgl_extensions_enabled;
   bool webgl_errors_to_console_enabled;
-  bool accelerated_compositing_for_overflow_scroll_enabled;
-  bool universal_accelerated_compositing_for_overflow_scroll_enabled;
-  bool accelerated_compositing_for_scrollable_frames_enabled;
-  bool composited_scrolling_for_frames_enabled;
   bool mock_scrollbars_enabled;
   bool layer_squashing_enabled;
   bool threaded_html_parser;
@@ -126,8 +122,6 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool deferred_filters_enabled;
   bool gesture_tap_highlight_enabled;
   bool accelerated_compositing_for_plugins_enabled;
-  bool memory_info_enabled;
-  bool fullscreen_enabled;
   bool allow_displaying_insecure_content;
   bool allow_running_insecure_content;
   bool password_echo_enabled;
@@ -161,6 +155,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   int pinch_overlay_scrollbar_thickness;
   bool use_solid_color_scrollbars;
   bool compositor_touch_hit_testing;
+  bool navigate_on_drag_drop;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly
@@ -168,6 +163,10 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   // define custom getters and setters from within a unique security content
   // without raising a DOM security exception.
   bool cookie_enabled;
+
+  // This flag indicates whether H/W accelerated video decode is enabled for
+  // pepper plugins. Defaults to false.
+  bool pepper_accelerated_video_decode_enabled;
 
 #if defined(OS_ANDROID)
   bool text_autosizing_enabled;

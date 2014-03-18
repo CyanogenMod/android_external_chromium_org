@@ -13,13 +13,13 @@
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/corewm/window_animations.h"
+#include "ui/wm/core/window_animations.h"
 
 namespace ash {
 
@@ -40,7 +40,6 @@ namespace {
 // equal to this width, the window will get opened in maximized mode. This value
 // can be reduced to a "tame" number if the feature is disabled.
 const int kForceMaximizeWidthLimit = 1366;
-const int kForceMaximizeWidthLimitDisabled = 640;
 
 // The time in milliseconds which should be used to visually move a window
 // through an automatic "intelligent" window management option.
@@ -115,7 +114,7 @@ void SetBoundsAnimated(aura::Window* window, const gfx::Rect& bounds) {
   if (bounds == window->GetTargetBounds())
     return;
 
-  if (views::corewm::WindowAnimationsDisabled(window)) {
+  if (::wm::WindowAnimationsDisabled(window)) {
     window->SetBounds(bounds);
     return;
   }
@@ -201,13 +200,7 @@ aura::Window* GetReferenceWindow(const aura::Window* root_window,
 
 // static
 int WindowPositioner::GetForceMaximizedWidthLimit() {
-  static int maximum_limit = 0;
-  if (!maximum_limit) {
-    maximum_limit = CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kAshDisableAutoMaximizing) ?
-        kForceMaximizeWidthLimitDisabled : kForceMaximizeWidthLimit;
-  }
-  return maximum_limit;
+  return kForceMaximizeWidthLimit;
 }
 
 // static
@@ -471,7 +464,7 @@ gfx::Rect WindowPositioner::SmartPopupPosition(
       // When any window is maximized we cannot find any free space.
       if (window_state->IsMaximizedOrFullscreen())
         return gfx::Rect(0, 0, 0, 0);
-      if (window_state->IsNormalShowState())
+      if (window_state->IsNormalOrSnapped())
         regions.push_back(&windows[i]->bounds());
     }
   }

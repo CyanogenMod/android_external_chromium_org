@@ -32,6 +32,14 @@ unsigned MessagePipe::GetPeerPort(unsigned port) {
   return port ^ 1;
 }
 
+MessagePipeEndpoint::Type MessagePipe::GetType(unsigned port) {
+  DCHECK(port == 0 || port == 1);
+  base::AutoLock locker(lock_);
+  DCHECK(endpoints_[port].get());
+
+  return endpoints_[port]->GetType();
+}
+
 void MessagePipe::CancelAllWaiters(unsigned port) {
   DCHECK(port == 0 || port == 1);
 
@@ -54,7 +62,6 @@ void MessagePipe::Close(unsigned port) {
   endpoints_[port].reset();
 }
 
-// TODO(vtl): Support sending handles.
 // TODO(vtl): Handle flags.
 MojoResult MessagePipe::WriteMessage(
     unsigned port,
@@ -67,10 +74,10 @@ MojoResult MessagePipe::WriteMessage(
       transports ? static_cast<uint32_t>(transports->size()) : 0;
   return EnqueueMessage(
       GetPeerPort(port),
-      MessageInTransit::Create(
+      make_scoped_ptr(new MessageInTransit(
           MessageInTransit::kTypeMessagePipeEndpoint,
           MessageInTransit::kSubtypeMessagePipeEndpointData,
-          bytes, num_bytes, num_handles),
+          num_bytes, num_handles, bytes)),
       transports);
 }
 
@@ -111,19 +118,53 @@ void MessagePipe::RemoveWaiter(unsigned port, Waiter* waiter) {
   endpoints_[port]->RemoveWaiter(waiter);
 }
 
+void MessagePipe::ConvertLocalToProxy(unsigned port) {
+  DCHECK(port == 0 || port == 1);
+
+  base::AutoLock locker(lock_);
+  DCHECK(endpoints_[port].get());
+  DCHECK_EQ(endpoints_[port]->GetType(), MessagePipeEndpoint::kTypeLocal);
+
+  bool is_peer_open = !!endpoints_[GetPeerPort(port)].get();
+
+  // TODO(vtl): Hopefully this will work if the peer has been closed and when
+  // the peer is local. If the peer is remote, we should do something more
+  // sophisticated.
+  DCHECK(!is_peer_open ||
+         endpoints_[GetPeerPort(port)]->GetType() ==
+             MessagePipeEndpoint::kTypeLocal);
+
+  scoped_ptr<MessagePipeEndpoint> replacement_endpoint(
+      new ProxyMessagePipeEndpoint(
+          static_cast<LocalMessagePipeEndpoint*>(endpoints_[port].get()),
+          is_peer_open));
+  endpoints_[port].swap(replacement_endpoint);
+}
+
 MojoResult MessagePipe::EnqueueMessage(
     unsigned port,
-    MessageInTransit* message,
+    scoped_ptr<MessageInTransit> message,
     std::vector<DispatcherTransport>* transports) {
   DCHECK(port == 0 || port == 1);
-  DCHECK(message);
-  DCHECK((!transports && message->num_handles() == 0) ||
-         (transports && transports->size() > 0 &&
-              message->num_handles() == transports->size()));
+  DCHECK(message.get());
+  if (message->num_handles() == 0) {
+    // If |message->num_handles()| is 0, then |transports| should be null and
+    // |message| should not have dispatchers.
+    DCHECK(!transports);
+    DCHECK(!message->has_dispatchers());
+  } else {
+    // Otherwise either |transports| must be (non-null and) of the right size
+    // and the message shouldn't have dispatchers, or |transports| must be null
+    // and the message should have the right number of dispatchers.
+    DCHECK((transports && transports->size() == message->num_handles() &&
+                !message->has_dispatchers()) ||
+           (!transports && message->has_dispatchers() &&
+                message->dispatchers()->size() == message->num_handles()));
+  }
 
   if (message->type() == MessageInTransit::kTypeMessagePipe) {
     DCHECK(!transports);
-    return HandleControlMessage(port, message);
+    return HandleControlMessage(port, message.Pass());
   }
 
   DCHECK_EQ(message->type(), MessageInTransit::kTypeMessagePipeEndpoint);
@@ -132,12 +173,12 @@ MojoResult MessagePipe::EnqueueMessage(
   DCHECK(endpoints_[GetPeerPort(port)].get());
 
   // The destination port need not be open, unlike the source port.
-  if (!endpoints_[port].get()) {
-    message->Destroy();
+  if (!endpoints_[port].get())
     return MOJO_RESULT_FAILED_PRECONDITION;
-  }
 
   if (transports) {
+    DCHECK(!message->dispatchers());
+
     // You're not allowed to send either handle to a message pipe over the
     // message pipe, so check for this. (The case of trying to write a handle to
     // itself is taken care of by |CoreImpl|. That case kind of makes sense, but
@@ -158,9 +199,28 @@ MojoResult MessagePipe::EnqueueMessage(
         }
       }
     }
+
+    // Clone the dispatchers and attach them to the message. (This must be done
+    // as a separate loop, since we want to leave the dispatchers alone on
+    // failure.)
+    scoped_ptr<std::vector<scoped_refptr<Dispatcher> > >
+        dispatchers(new std::vector<scoped_refptr<Dispatcher> >());
+    dispatchers->reserve(transports->size());
+    for (size_t i = 0; i < transports->size(); i++) {
+      if ((*transports)[i].is_valid()) {
+        dispatchers->push_back(
+            (*transports)[i].CreateEquivalentDispatcherAndClose());
+      } else {
+        LOG(WARNING) << "Enqueueing null dispatcher";
+        dispatchers->push_back(scoped_refptr<Dispatcher>());
+      }
+    }
+    message->SetDispatchers(dispatchers.Pass());
   }
 
-  return endpoints_[port]->EnqueueMessage(message, transports);
+  // The endpoint's |EnqueueMessage()| may not report failure.
+  endpoints_[port]->EnqueueMessage(message.Pass());
+  return MOJO_RESULT_OK;
 }
 
 void MessagePipe::Attach(unsigned port,
@@ -193,13 +253,13 @@ MessagePipe::~MessagePipe() {
   DCHECK(!endpoints_[1].get());
 }
 
-MojoResult MessagePipe::HandleControlMessage(unsigned port,
-                                             MessageInTransit* message) {
+MojoResult MessagePipe::HandleControlMessage(
+    unsigned port,
+    scoped_ptr<MessageInTransit> message) {
   DCHECK(port == 0 || port == 1);
-  DCHECK(message);
+  DCHECK(message.get());
   DCHECK_EQ(message->type(), MessageInTransit::kTypeMessagePipe);
 
-  MojoResult rv = MOJO_RESULT_OK;
   switch (message->subtype()) {
     case MessageInTransit::kSubtypeMessagePipePeerClosed: {
       unsigned source_port = GetPeerPort(port);
@@ -212,17 +272,13 @@ MojoResult MessagePipe::HandleControlMessage(unsigned port,
         endpoints_[port]->OnPeerClose();
 
       endpoints_[source_port].reset();
-      break;
+      return MOJO_RESULT_OK;
     }
-    default:
-      LOG(WARNING) << "Unrecognized MessagePipe control message subtype "
-                   << message->subtype();
-      rv = MOJO_RESULT_UNKNOWN;
-      break;
   }
 
-  message->Destroy();
-  return rv;
+  LOG(WARNING) << "Unrecognized MessagePipe control message subtype "
+               << message->subtype();
+  return MOJO_RESULT_UNKNOWN;
 }
 
 }  // namespace system

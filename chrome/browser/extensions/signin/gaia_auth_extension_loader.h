@@ -6,16 +6,18 @@
 #define CHROME_BROWSER_EXTENSIONS_SIGNIN_GAIA_AUTH_EXTENSION_LOADER_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 
-class Profile;
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
 
 // Manages and registers the gaia auth extension with the extension system.
-class GaiaAuthExtensionLoader : public ProfileKeyedAPI {
+class GaiaAuthExtensionLoader : public BrowserContextKeyedAPI {
  public:
-  explicit GaiaAuthExtensionLoader(Profile* profile);
+  explicit GaiaAuthExtensionLoader(content::BrowserContext* context);
   virtual ~GaiaAuthExtensionLoader();
 
   // Load the gaia auth extension if the extension is not loaded yet.
@@ -23,24 +25,25 @@ class GaiaAuthExtensionLoader : public ProfileKeyedAPI {
   // Unload the gaia auth extension if no pending reference.
   void UnloadIfNeeded();
 
-  static GaiaAuthExtensionLoader* Get(Profile* profile);
+  static GaiaAuthExtensionLoader* Get(content::BrowserContext* context);
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<GaiaAuthExtensionLoader>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<GaiaAuthExtensionLoader>*
+      GetFactoryInstance();
 
  private:
-  friend class ProfileKeyedAPIFactory<GaiaAuthExtensionLoader>;
+  friend class BrowserContextKeyedAPIFactory<GaiaAuthExtensionLoader>;
 
-  // BrowserContextKeyedService overrides:
+  // KeyedService overrides:
   virtual void Shutdown() OVERRIDE;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "GaiaAuthExtensionLoader";
   }
   static const bool kServiceRedirectedInIncognito = true;
 
-  Profile* profile_;
+  content::BrowserContext* browser_context_;
   int load_count_;
 
   DISALLOW_COPY_AND_ASSIGN(GaiaAuthExtensionLoader);

@@ -65,33 +65,6 @@
         'geometry/vector3d_f.h',
       ],
     },
-    # TODO(beng): This should either generate its own executable or be part of
-    #             a gfx_unittests executable. Currently it's built as part of
-    #             ui_unittests.
-    {
-      'target_name': 'gfx_geometry_unittests',
-      'type': 'static_library',
-      'dependencies': [
-        '<(DEPTH)/base/base.gyp:base',
-        '<(DEPTH)/base/base.gyp:test_support_base',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
-        'gfx_geometry',
-      ],
-      'sources': [
-        'geometry/box_unittest.cc',
-        'geometry/cubic_bezier_unittest.cc',
-        'geometry/insets_unittest.cc',
-        'geometry/matrix3_unittest.cc',
-        'geometry/point_unittest.cc',
-        'geometry/point3_unittest.cc',
-        'geometry/quad_unittest.cc',
-        'geometry/rect_unittest.cc',
-        'geometry/safe_integer_conversions_unittest.cc',
-        'geometry/size_unittest.cc',
-        'geometry/vector2d_unittest.cc',
-        'geometry/vector3d_unittest.cc',
-      ],
-    },
     {
       'target_name': 'gfx',
       'type': '<(component)',
@@ -123,6 +96,8 @@
         'android/gfx_jni_registrar.h',
         'android/java_bitmap.cc',
         'android/java_bitmap.h',
+        'android/scroller.cc',
+        'android/scroller.h',
         'android/shared_device_display_info.cc',
         'android/shared_device_display_info.h',
         'android/view_configuration.cc',
@@ -243,6 +218,8 @@
         'ozone/impl/file_surface_factory.h',
         'ozone/surface_factory_ozone.cc',
         'ozone/surface_factory_ozone.h',
+        'ozone/overlay_candidates_ozone.cc',
+        'ozone/overlay_candidates_ozone.h',
         'pango_util.cc',
         'pango_util.h',
         'path.cc',
@@ -513,12 +490,27 @@
       'target_name': 'gfx_unittests',
       'type': 'executable',
       'sources': [
+        'geometry/box_unittest.cc',
+        'geometry/cubic_bezier_unittest.cc',
+        'geometry/insets_unittest.cc',
+        'geometry/matrix3_unittest.cc',
+        'geometry/point_unittest.cc',
+        'geometry/point3_unittest.cc',
+        'geometry/quad_unittest.cc',
+        'geometry/rect_unittest.cc',
+        'geometry/safe_integer_conversions_unittest.cc',
+        'geometry/size_unittest.cc',
+        'geometry/vector2d_unittest.cc',
+        'geometry/vector3d_unittest.cc',
         'range/range_unittest.cc',
       ],
       'dependencies': [
-        '../../base/base.gyp:run_all_unittests',
-        '../../testing/gtest.gyp:gtest',
+        '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/base/base.gyp:run_all_unittests',
+        '<(DEPTH)/base/base.gyp:test_support_base',
+        '<(DEPTH)/testing/gtest.gyp:gtest',
         'gfx',
+        'gfx_geometry',
       ],
     }
   ],
@@ -526,23 +518,12 @@
     ['OS=="android"' , {
      'targets': [
        {
-         'target_name': 'gfx_view_jni_headers',
-         'type': 'none',
-         'variables': {
-           'jni_gen_package': 'ui/gfx',
-           'input_java_class': 'android/view/ViewConfiguration.class',
-         },
-         'includes': [ '../../build/jar_file_jni_generator.gypi' ],
-       },
-       {
          'target_name': 'gfx_jni_headers',
          'type': 'none',
-         'dependencies': [
-           'gfx_view_jni_headers'
-         ],
          'sources': [
            '../android/java/src/org/chromium/ui/gfx/BitmapHelper.java',
            '../android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java',
+           '../android/java/src/org/chromium/ui/gfx/ViewConfigurationHelper.java',
          ],
          'variables': {
            'jni_gen_package': 'ui/gfx',

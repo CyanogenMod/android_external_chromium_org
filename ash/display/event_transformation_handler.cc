@@ -9,15 +9,15 @@
 #include "ash/shell.h"
 #include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/window_util.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/events/event.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 
 #if defined(OS_CHROMEOS)
-#include "chromeos/display/output_configurator.h"
+#include "ui/display/chromeos/output_configurator.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace ash {
@@ -60,7 +60,7 @@ void EventTransformationHandler::OnScrollEvent(ui::ScrollEvent* event) {
 // the sqrt of
 // (mirror_width * mirror_height) / (native_width * native_height)
 void EventTransformationHandler::OnTouchEvent(ui::TouchEvent* event) {
-  using chromeos::OutputConfigurator;
+  using ui::OutputConfigurator;
   OutputConfigurator* output_configurator =
       ash::Shell::GetInstance()->output_configurator();
 

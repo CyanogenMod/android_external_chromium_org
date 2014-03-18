@@ -6,8 +6,10 @@
 
 #include <vector>
 
+#include "base/big_endian.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/metrics/histogram.h"
@@ -18,7 +20,6 @@
 #include "base/synchronization/lock.h"
 #include "build/build_config.h"
 #include "grit/app_locale_settings.h"
-#include "net/base/big_endian.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -351,7 +352,7 @@ gfx::Image& ResourceBundle::GetImageNamed(int resource_id) {
     DCHECK(!data_packs_.empty()) <<
         "Missing call to SetResourcesDataDLL?";
 
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
     ui::ScaleFactor scale_factor_to_load = GetMaxScaleFactor();
 #else
     ui::ScaleFactor scale_factor_to_load = ui::SCALE_FACTOR_100P;
@@ -434,6 +435,7 @@ base::StringPiece ResourceBundle::GetRawDataResourceForScale(
   }
   for (size_t i = 0; i < data_packs_.size(); i++) {
     if ((data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_100P ||
+         data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_200P ||
          data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_NONE) &&
         data_packs_[i]->GetStringPiece(resource_id, &data))
       return data;
@@ -522,7 +524,7 @@ void ResourceBundle::ReloadFonts() {
 }
 
 ScaleFactor ResourceBundle::GetMaxScaleFactor() const {
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
   return max_scale_factor_;
 #else
   return GetSupportedScaleFactors().back();
@@ -546,8 +548,9 @@ void ResourceBundle::InitSharedInstance(Delegate* delegate) {
   DCHECK(g_shared_instance_ == NULL) << "ResourceBundle initialized twice";
   g_shared_instance_ = new ResourceBundle(delegate);
   static std::vector<ScaleFactor> supported_scale_factors;
-#if !defined(OS_IOS)
+#if !defined(OS_IOS) && !defined(OS_WIN)
   // On platforms other than iOS, 100P is always a supported scale factor.
+  // For Windows we have a separate case in this function.
   supported_scale_factors.push_back(SCALE_FACTOR_100P);
 #endif
 #if defined(OS_ANDROID)
@@ -573,6 +576,19 @@ void ResourceBundle::InitSharedInstance(Delegate* delegate) {
   supported_scale_factors.push_back(SCALE_FACTOR_200P);
 #elif defined(OS_LINUX) && defined(ENABLE_HIDPI)
   supported_scale_factors.push_back(SCALE_FACTOR_200P);
+#elif defined(OS_WIN)
+  bool default_to_100P = true;
+  if (gfx::IsHighDPIEnabled()) {
+    // On Windows if the dpi scale is greater than 1.25 on high dpi machines
+    // downscaling from 200 percent looks better than scaling up from 100
+    // percent.
+    if (gfx::GetDPIScale() > 1.25) {
+      supported_scale_factors.push_back(SCALE_FACTOR_200P);
+      default_to_100P = false;
+    }
+  }
+  if (default_to_100P)
+    supported_scale_factors.push_back(SCALE_FACTOR_100P);
 #endif
   ui::SetSupportedScaleFactors(supported_scale_factors);
 #if defined(OS_WIN)
@@ -763,7 +779,7 @@ bool ResourceBundle::ShouldHighlightMissingScaledResources() {
 
 // static
 bool ResourceBundle::PNGContainsFallbackMarker(const unsigned char* buf,
-                               size_t size) {
+                                               size_t size) {
   if (size < arraysize(kPngMagic) ||
       memcmp(buf, kPngMagic, arraysize(kPngMagic)) != 0) {
     // Data invalid or a JPEG.
@@ -777,7 +793,7 @@ bool ResourceBundle::PNGContainsFallbackMarker(const unsigned char* buf,
     if (size - pos < kPngChunkMetadataSize)
       break;
     uint32 length = 0;
-    net::ReadBigEndian(reinterpret_cast<const char*>(buf + pos), &length);
+    base::ReadBigEndian(reinterpret_cast<const char*>(buf + pos), &length);
     if (size - pos - kPngChunkMetadataSize < length)
       break;
     if (length == 0 && memcmp(buf + pos + sizeof(uint32), kPngScaleChunkType,

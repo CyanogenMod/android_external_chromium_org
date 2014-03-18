@@ -31,12 +31,12 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/metrics/metrics_log_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/content_client.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
@@ -132,8 +132,7 @@ void ShowFeedbackPage(Browser* browser,
   }
 
   extensions::FeedbackPrivateAPI* api =
-      extensions::FeedbackPrivateAPI::GetFactoryInstance()->GetForProfile(
-          profile);
+      extensions::FeedbackPrivateAPI::GetFactoryInstance()->Get(profile);
 
   api->RequestFeedback(description_template,
                        category_tag,
@@ -166,7 +165,7 @@ void SendReport(scoped_refptr<FeedbackData> data) {
 
   userfeedback::WebData* web_data = feedback_data.mutable_web_data();
   web_data->set_url(data->page_url());
-  web_data->mutable_navigator()->set_user_agent(content::GetUserAgent(GURL()));
+  web_data->mutable_navigator()->set_user_agent(GetUserAgent());
 
   gfx::Rect screen_size;
   if (data->sys_info()) {
@@ -255,8 +254,8 @@ bool ZipString(const base::FilePath& filename,
   // another temporary file to receive the zip file in.
   if (!base::CreateNewTempDirectory(base::FilePath::StringType(), &temp_path))
     return false;
-  if (file_util::WriteFile(temp_path.Append(filename),
-                           data.c_str(), data.size()) == -1)
+  if (base::WriteFile(temp_path.Append(filename), data.c_str(), data.size()) ==
+      -1)
     return false;
 
   bool succeed = base::CreateTemporaryFile(&zip_file) &&

@@ -8,7 +8,6 @@
 #include "base/rand_util.h"
 #include "media/cast/transport/cast_transport_defines.h"
 #include "media/cast/transport/pacing/paced_sender.h"
-#include "net/base/big_endian.h"
 
 namespace media {
 namespace cast {
@@ -21,53 +20,59 @@ static const int kStatsCallbackIntervalMs = 33;
 
 RtpSender::RtpSender(
     base::TickClock* clock,
-    const CastTransportConfig& config,
-    bool is_audio,
-    const scoped_refptr<base::TaskRunner>& transport_task_runner,
+    LoggingImpl* logging,
+    const scoped_refptr<base::SingleThreadTaskRunner>& transport_task_runner,
     PacedSender* const transport)
-    : config_(),
+    : clock_(clock),
+      logging_(logging),
       transport_(transport),
       stats_callback_(),
-      transport_task_runner_(transport_task_runner) {
-  // Store generic cast config and create packetizer config.
-  if (is_audio) {
-    storage_.reset(
-        new PacketStorage(clock, config.audio_rtp_config.history_ms));
-    config_.audio = true;
-    config_.ssrc = config.audio_ssrc;
-    config_.payload_type = config.audio_rtp_config.payload_type;
-    config_.frequency = config.audio_frequency;
-    config_.audio_codec = config.audio_codec;
-  } else {
-    storage_.reset(
-        new PacketStorage(clock, config.audio_rtp_config.history_ms));
-    config_.audio = false;
-    config_.ssrc = config.video_ssrc;
-    config_.payload_type = config.video_rtp_config.payload_type;
-    config_.frequency = kVideoFrequency;
-    config_.video_codec = config.video_codec;
-  }
-  // Randomly set start values.
+      transport_task_runner_(transport_task_runner),
+      weak_factory_(this) {
+  // Randomly set sequence number start value.
   config_.sequence_number = base::RandInt(0, 65535);
-  packetizer_.reset(
-      new RtpPacketizer(transport, storage_.get(), config_));
 }
 
 RtpSender::~RtpSender() {}
 
+void RtpSender::InitializeAudio(const CastTransportAudioConfig& config) {
+  storage_.reset(new PacketStorage(clock_, config.base.rtp_config.history_ms));
+  config_.audio = true;
+  config_.ssrc = config.base.ssrc;
+  config_.payload_type = config.base.rtp_config.payload_type;
+  config_.frequency = config.frequency;
+  config_.audio_codec = config.codec;
+  packetizer_.reset(
+      new RtpPacketizer(transport_, storage_.get(), config_, clock_, logging_));
+}
+
+void RtpSender::InitializeVideo(const CastTransportVideoConfig& config) {
+  storage_.reset(new PacketStorage(clock_, config.base.rtp_config.history_ms));
+  config_.audio = false;
+  config_.ssrc = config.base.ssrc;
+  config_.payload_type = config.base.rtp_config.payload_type;
+  config_.frequency = kVideoFrequency;
+  config_.video_codec = config.codec;
+  packetizer_.reset(
+      new RtpPacketizer(transport_, storage_.get(), config_, clock_, logging_));
+}
+
 void RtpSender::IncomingEncodedVideoFrame(const EncodedVideoFrame* video_frame,
                                           const base::TimeTicks& capture_time) {
+  DCHECK(packetizer_);
   packetizer_->IncomingEncodedVideoFrame(video_frame, capture_time);
 }
 
 void RtpSender::IncomingEncodedAudioFrame(
     const EncodedAudioFrame* audio_frame,
     const base::TimeTicks& recorded_time) {
+  DCHECK(packetizer_);
   packetizer_->IncomingEncodedAudioFrame(audio_frame, recorded_time);
 }
 
 void RtpSender::ResendPackets(
     const MissingFramesAndPacketsMap& missing_frames_and_packets) {
+  DCHECK(storage_);
   // Iterate over all frames in the list.
   for (MissingFramesAndPacketsMap::const_iterator it =
            missing_frames_and_packets.begin();
@@ -79,7 +84,7 @@ void RtpSender::ResendPackets(
     bool success = false;
 
     if (packets_set.empty()) {
-      VLOG(1) << "Missing all packets in frame " << static_cast<int>(frame_id);
+      VLOG(3) << "Missing all packets in frame " << static_cast<int>(frame_id);
 
       uint16 packet_id = 0;
       do {
@@ -88,7 +93,7 @@ void RtpSender::ResendPackets(
 
         // Resend packet to the network.
         if (success) {
-          VLOG(1) << "Resend " << static_cast<int>(frame_id) << ":"
+          VLOG(3) << "Resend " << static_cast<int>(frame_id) << ":"
                   << packet_id;
           // Set a unique incremental sequence number for every packet.
           Packet& packet = packets_to_resend.back();
@@ -107,7 +112,7 @@ void RtpSender::ResendPackets(
 
         // Resend packet to the network.
         if (success) {
-          VLOG(1) << "Resend " << static_cast<int>(frame_id) << ":"
+          VLOG(3) << "Resend " << static_cast<int>(frame_id) << ":"
                   << packet_id;
           Packet& packet = packets_to_resend.back();
           UpdateSequenceNumber(&packet);
@@ -134,7 +139,7 @@ void RtpSender::SubscribeRtpStatsCallback(
 void RtpSender::ScheduleNextStatsReport() {
   transport_task_runner_->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&RtpSender::RtpStatistics, base::AsWeakPtr(this)),
+      base::Bind(&RtpSender::RtpStatistics, weak_factory_.GetWeakPtr()),
       base::TimeDelta::FromMilliseconds(kStatsCallbackIntervalMs));
 }
 

@@ -23,6 +23,20 @@
         'public/system/macros.h',
         'public/system/system_export.h',
       ],
+      'conditions': [
+        ['OS=="mac"', {
+          'xcode_settings': {
+            # Make it a run-path dependent library.
+            'DYLIB_INSTALL_NAME_BASE': '@rpath',
+          },
+          'direct_dependent_settings': {
+            'xcode_settings': {
+              # Look for run-path dependent libraries in the loader's directory.
+              'LD_RUNPATH_SEARCH_PATHS': [ '@loader_path/.', ],
+            },
+          }, 
+        }],
+      ],
     },
     {
       'target_name': 'mojo_gles2',
@@ -51,6 +65,20 @@
         'public/gles2/gles2_private.cc',
         'public/gles2/gles2_private.h',
       ],
+      'conditions': [
+        ['OS=="mac"', {
+          'xcode_settings': {
+            # Make it a run-path dependent library.
+            'DYLIB_INSTALL_NAME_BASE': '@rpath',
+          },
+          'direct_dependent_settings': {
+            'xcode_settings': {
+              # Look for run-path dependent libraries in the loader's directory.
+              'LD_RUNPATH_SEARCH_PATHS': [ '@loader_path/.', ],
+            },
+          }, 
+        }],
+      ],
     },
     {
       'target_name': 'mojo_test_support',
@@ -71,6 +99,20 @@
         'public/tests/test_support_private.cc',
         'public/tests/test_support_private.h',
         'public/tests/test_support_export.h',
+      ],
+      'conditions': [
+        ['OS=="mac"', {
+          'xcode_settings': {
+            # Make it a run-path dependent library.
+            'DYLIB_INSTALL_NAME_BASE': '@rpath',
+          },
+          'direct_dependent_settings': {
+            'xcode_settings': {
+              # Look for run-path dependent libraries in the loader's directory.
+              'LD_RUNPATH_SEARCH_PATHS': [ '@loader_path/.', ],
+            },
+          }, 
+        }],
       ],
     },
     {
@@ -102,15 +144,18 @@
       ],
       'sources': [
         'public/bindings/tests/array_unittest.cc',
+        'public/bindings/tests/buffer_unittest.cc',
         'public/bindings/tests/connector_unittest.cc',
         'public/bindings/tests/handle_passing_unittest.cc',
-        'public/bindings/tests/remote_ptr_unittest.cc',
-        'public/bindings/tests/type_conversion_unittest.cc',
-        'public/bindings/tests/buffer_unittest.cc',
         'public/bindings/tests/math_calculator.mojom',
+        'public/bindings/tests/remote_ptr_unittest.cc',
+        'public/bindings/tests/request_response_unittest.cc',
+        'public/bindings/tests/router_unittest.cc',
         'public/bindings/tests/sample_factory.mojom',
+        'public/bindings/tests/sample_interfaces.mojom',
         'public/bindings/tests/sample_service_unittest.cc',
         'public/bindings/tests/test_structs.mojom',
+        'public/bindings/tests/type_conversion_unittest.cc',
       ],
       'includes': [ 'public/bindings/mojom_bindings_generator.gypi' ],
     },
@@ -145,6 +190,7 @@
         'public/tests/system/core_cpp_unittest.cc',
         'public/tests/system/core_unittest.cc',
         'public/tests/system/core_unittest_pure_c.c',
+        'public/tests/system/macros_unittest.cc',
       ],
     },
     {
@@ -199,6 +245,7 @@
         'public/bindings/allocation_scope.h',
         'public/bindings/array.h',
         'public/bindings/buffer.h',
+        'public/bindings/callback.h',
         'public/bindings/error_handler.h',
         'public/bindings/interface.h',
         'public/bindings/message.h',
@@ -213,6 +260,7 @@
         'public/bindings/lib/bindings_serialization.cc',
         'public/bindings/lib/bindings_serialization.h',
         'public/bindings/lib/buffer.cc',
+        'public/bindings/lib/callback_internal.h',
         'public/bindings/lib/connector.cc',
         'public/bindings/lib/connector.h',
         'public/bindings/lib/fixed_buffer.cc',
@@ -221,10 +269,15 @@
         'public/bindings/lib/message.cc',
         'public/bindings/lib/message_builder.cc',
         'public/bindings/lib/message_builder.h',
+        'public/bindings/lib/message_internal.h',
         'public/bindings/lib/message_queue.cc',
         'public/bindings/lib/message_queue.h',
+        'public/bindings/lib/router.cc',
+        'public/bindings/lib/router.h',
         'public/bindings/lib/scratch_buffer.cc',
         'public/bindings/lib/scratch_buffer.h',
+        'public/bindings/lib/shared_data.h',
+        'public/bindings/lib/shared_ptr.h',
         'public/bindings/lib/sync_dispatcher.cc',
       ],
     },
@@ -238,6 +291,10 @@
       ],
       'includes': [ 'public/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
+        'mojo_bindings',
+        'mojo_system',
+      ],
+      'dependencies': [
         'mojo_bindings',
         'mojo_system',
       ],
@@ -293,12 +350,16 @@
       'type': 'static_library',
       'sources': [
         'public/shell/lib/application.cc',
-        'public/shell/lib/shell.mojom',
         'public/shell/lib/service.cc',
         'public/shell/application.h',
         'public/shell/service.h',
+        'public/shell/shell.mojom',
       ],
       'includes': [ 'public/bindings/mojom_bindings_generator.gypi' ],
+      'dependencies': [
+        'mojo_bindings',
+        'mojo_system',
+      ],
       'export_dependent_settings': [
         'mojo_bindings',
         'mojo_system',

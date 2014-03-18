@@ -125,7 +125,7 @@ TEST_F(ChildProcessSecurityPolicyTest, IsWebSafeSchemeTest) {
   EXPECT_TRUE(p->IsWebSafeScheme(kFtpScheme));
   EXPECT_TRUE(p->IsWebSafeScheme(kDataScheme));
   EXPECT_TRUE(p->IsWebSafeScheme("feed"));
-  EXPECT_TRUE(p->IsWebSafeScheme(chrome::kBlobScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(kBlobScheme));
   EXPECT_TRUE(p->IsWebSafeScheme(kFileSystemScheme));
 
   EXPECT_FALSE(p->IsWebSafeScheme("registered-web-safe-scheme"));
@@ -139,7 +139,7 @@ TEST_F(ChildProcessSecurityPolicyTest, IsPseudoSchemeTest) {
   ChildProcessSecurityPolicyImpl* p =
       ChildProcessSecurityPolicyImpl::GetInstance();
 
-  EXPECT_TRUE(p->IsPseudoScheme(chrome::kAboutScheme));
+  EXPECT_TRUE(p->IsPseudoScheme(kAboutScheme));
   EXPECT_TRUE(p->IsPseudoScheme(kJavaScriptScheme));
   EXPECT_TRUE(p->IsPseudoScheme(kViewSourceScheme));
 

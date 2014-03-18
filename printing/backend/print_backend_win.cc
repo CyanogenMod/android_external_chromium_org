@@ -8,6 +8,7 @@
 #include <winspool.h>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_bstr.h"
@@ -42,10 +43,15 @@ void GetDeviceCapabilityArray(const wchar_t* printer,
   int count = DeviceCapabilities(printer, port, id, NULL, NULL);
   if (count <= 0)
     return;
-  result->resize(count);
-  CHECK_EQ(count,
-           DeviceCapabilities(printer, port, id,
-                              reinterpret_cast<LPTSTR>(result->data()), NULL));
+  std::vector<T> tmp;
+  tmp.resize(count * 2);
+  count = DeviceCapabilities(printer, port, id,
+                             reinterpret_cast<LPTSTR>(tmp.data()), NULL);
+  if (count <= 0)
+    return;
+  CHECK_LE(count, base::checked_cast<int>(tmp.size()));
+  tmp.resize(count);
+  result->swap(tmp);
 }
 
 void LoadPaper(const wchar_t* printer,
@@ -226,13 +232,15 @@ bool PrintBackendWin::GetPrinterSemanticCapsAndDefaults(
   DCHECK_EQ(name, base::UTF8ToUTF16(printer_name));
 
   PrinterSemanticCapsAndDefaults caps;
-  UserDefaultDevMode user_settings;
-  if (user_settings.Init(printer_handle)) {
-    if (user_settings.get()->dmFields & DM_COLOR)
-      caps.color_default = (user_settings.get()->dmColor == DMCOLOR_COLOR);
 
-    if (user_settings.get()->dmFields & DM_DUPLEX) {
-      switch (user_settings.get()->dmDuplex) {
+  scoped_ptr<DEVMODE, base::FreeDeleter> user_settings =
+      CreateDevMode(printer_handle, NULL);
+  if (user_settings) {
+    if (user_settings->dmFields & DM_COLOR)
+      caps.color_default = (user_settings->dmColor == DMCOLOR_COLOR);
+
+    if (user_settings->dmFields & DM_DUPLEX) {
+      switch (user_settings->dmDuplex) {
       case DMDUP_SIMPLEX:
         caps.duplex_default = SIMPLEX;
         break;
@@ -247,8 +255,8 @@ bool PrintBackendWin::GetPrinterSemanticCapsAndDefaults(
       }
     }
 
-    if (user_settings.get()->dmFields & DM_COLLATE)
-      caps.collate_default = (user_settings.get()->dmCollate == DMCOLLATE_TRUE);
+    if (user_settings->dmFields & DM_COLLATE)
+      caps.collate_default = (user_settings->dmCollate == DMCOLLATE_TRUE);
   } else {
     LOG(WARNING) << "Fallback to color/simplex mode.";
     caps.color_default = caps.color_changeable;
@@ -313,7 +321,8 @@ bool PrintBackendWin::GetPrinterCapsAndDefaults(
     }
     ScopedPrinterHandle printer_handle;
     if (printer_handle.OpenPrinter(printer_name_wide.c_str())) {
-      scoped_ptr<DEVMODE[]> devmode_out(CreateDevMode(printer_handle, NULL));
+      scoped_ptr<DEVMODE, base::FreeDeleter> devmode_out(
+          CreateDevMode(printer_handle, NULL));
       if (!devmode_out)
         return false;
       base::win::ScopedComPtr<IStream> printer_defaults_stream;
@@ -321,8 +330,7 @@ bool PrintBackendWin::GetPrinterCapsAndDefaults(
                                  printer_defaults_stream.Receive());
       DCHECK(SUCCEEDED(hr));
       if (printer_defaults_stream) {
-        DWORD dm_size = devmode_out.get()->dmSize +
-                        devmode_out.get()->dmDriverExtra;
+        DWORD dm_size = devmode_out->dmSize + devmode_out->dmDriverExtra;
         hr = XPSModule::ConvertDevModeToPrintTicket(provider, dm_size,
             devmode_out.get(), kPTJobScope, printer_defaults_stream);
         DCHECK(SUCCEEDED(hr));

@@ -36,6 +36,8 @@
           'nacl/loader/nacl_main_platform_delegate_win.cc',
           'nacl/loader/nacl_listener.cc',
           'nacl/loader/nacl_listener.h',
+          'nacl/loader/nacl_trusted_listener.cc',
+          'nacl/loader/nacl_trusted_listener.h',
           'nacl/loader/nacl_validation_db.h',
           'nacl/loader/nacl_validation_query.cc',
           'nacl/loader/nacl_validation_query.h',
@@ -86,7 +88,6 @@
             ['disable_nacl_untrusted==0', {
               'dependencies': [
                 '../ppapi/native_client/native_client.gyp:nacl_irt',
-                '../ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:pnacl_irt_shim',
                 '../ppapi/native_client/src/untrusted/pnacl_support_extension/pnacl_support_extension.gyp:pnacl_support_extension',
               ],
             }],
@@ -145,6 +146,10 @@
             'nacl/renderer/pnacl_translation_resource_host.h',
             'nacl/renderer/ppb_nacl_private_impl.cc',
             'nacl/renderer/ppb_nacl_private_impl.h',
+            'nacl/renderer/sandbox_arch.cc',
+            'nacl/renderer/sandbox_arch.h',
+            'nacl/renderer/trusted_plugin_channel.cc',
+            'nacl/renderer/trusted_plugin_channel.h',
           ],
           'include_dirs': [
             '..',
@@ -176,9 +181,11 @@
               'dependencies': [
                 'nacl',
                 'nacl_common',
+                '../components/tracing.gyp:tracing',
                 '../crypto/crypto.gyp:crypto',
                 '../sandbox/sandbox.gyp:libc_urandom_override',
                 '../sandbox/sandbox.gyp:sandbox',
+                '../ppapi/ppapi_internal.gyp:ppapi_proxy',
               ],
               'defines': [
                 '<@(nacl_defines)',
@@ -201,16 +208,13 @@
                 'nacl/loader/nonsfi/irt_interfaces.cc',
                 'nacl/loader/nonsfi/irt_interfaces.h',
                 'nacl/loader/nonsfi/irt_memory.cc',
+                'nacl/loader/nonsfi/irt_ppapi.cc',
                 'nacl/loader/nonsfi/irt_thread.cc',
                 'nacl/loader/nonsfi/irt_util.h',
                 'nacl/loader/nonsfi/nonsfi_main.cc',
                 'nacl/loader/nonsfi/nonsfi_main.h',
-                '../base/posix/unix_domain_socket_linux.cc',
-                '../content/common/child_process_sandbox_support_impl_shm_linux.cc',
-                '../content/common/sandbox_linux/sandbox_bpf_base_policy_linux.cc',
-                '../content/common/sandbox_linux/sandbox_init_linux.cc',
-                '../content/common/sandbox_linux/sandbox_seccomp_bpf_linux.cc',
-                '../content/public/common/content_switches.cc',
+                '../ppapi/proxy/plugin_main_irt.cc',
+                '../ppapi/proxy/plugin_main_irt.h',
               ],
               'conditions': [
                 ['toolkit_uses_gtk == 1', {
@@ -225,7 +229,8 @@
                 }],
                 ['os_posix == 1 and OS != "mac"', {
                   'conditions': [
-                    ['linux_use_tcmalloc==1', {
+                    # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+                    ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
                       'dependencies': [
                         '../base/allocator/allocator.gyp:allocator',
                       ],
@@ -389,6 +394,9 @@
       ],
       'include_dirs': [
         '..',
+      ],
+      'dependencies': [
+        '../content/content.gyp:content_common',
       ],
     },
   ]

@@ -19,7 +19,6 @@
 #include "media/audio/mac/audio_auhal_mac.h"
 #include "media/audio/mac/audio_input_mac.h"
 #include "media/audio/mac/audio_low_latency_input_mac.h"
-#include "media/audio/mac/audio_low_latency_output_mac.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/channel_layout.h"
 #include "media/base/limits.h"
@@ -77,8 +76,8 @@ static void GetAudioDeviceInfo(bool is_input,
 
   // Get the array of device ids for all the devices, which includes both
   // input devices and output devices.
-  scoped_ptr_malloc<AudioDeviceID>
-      devices(reinterpret_cast<AudioDeviceID*>(malloc(size)));
+  scoped_ptr<AudioDeviceID, base::FreeDeleter>
+      devices(static_cast<AudioDeviceID*>(malloc(size)));
   AudioDeviceID* device_ids = devices.get();
   result = AudioObjectGetPropertyData(kAudioObjectSystemObject,
                                       &property_address,
@@ -489,8 +488,8 @@ std::string AudioManagerMac::GetAssociatedOutputDeviceID(
     return std::string();
 
   int device_count = size / sizeof(AudioDeviceID);
-  scoped_ptr_malloc<AudioDeviceID>
-      devices(reinterpret_cast<AudioDeviceID*>(malloc(size)));
+  scoped_ptr<AudioDeviceID, base::FreeDeleter>
+      devices(static_cast<AudioDeviceID*>(malloc(size)));
   result = AudioObjectGetPropertyData(
       device, &pa, 0, NULL, &size, devices.get());
   if (result)
@@ -567,8 +566,13 @@ AudioOutputStream* AudioManagerMac::MakeLowLatencyOutputStream(
 
   // Lazily create the audio device listener on the first stream creation.
   if (!output_device_listener_) {
-    output_device_listener_.reset(new AudioDeviceListenerMac(base::Bind(
-        &AudioManagerMac::HandleDeviceChanges, base::Unretained(this))));
+    // NOTE: Use BindToCurrentLoop() to ensure the callback is always PostTask'd
+    // even if OSX calls us on the right thread.  Some CoreAudio drivers will
+    // fire the callbacks during stream creation, leading to re-entrancy issues
+    // otherwise.  See http://crbug.com/349604
+    output_device_listener_.reset(
+        new AudioDeviceListenerMac(BindToCurrentLoop(base::Bind(
+            &AudioManagerMac::HandleDeviceChanges, base::Unretained(this)))));
     // Only set the current output device for the default device.
     if (device_id == AudioManagerBase::kDefaultDeviceId || device_id.empty())
       current_output_device_ = device;
@@ -699,13 +703,8 @@ void AudioManagerMac::ShutdownOnAudioThread() {
 }
 
 void AudioManagerMac::HandleDeviceChanges() {
-  if (!GetTaskRunner()->BelongsToCurrentThread()) {
-    GetTaskRunner()->PostTask(FROM_HERE, base::Bind(
-        &AudioManagerMac::HandleDeviceChanges, base::Unretained(this)));
-    return;
-  }
-
-  int new_sample_rate = HardwareSampleRate();
+  DCHECK(GetTaskRunner()->BelongsToCurrentThread());
+  const int new_sample_rate = HardwareSampleRate();
   AudioDeviceID new_output_device;
   GetDefaultOutputDevice(&new_output_device);
 

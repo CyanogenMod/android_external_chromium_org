@@ -15,15 +15,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_pump_observer.h"
 #include "chrome/browser/chromeos/device_hierarchy_observer.h"
-#include "ui/aura/root_window_observer.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 class PrefService;
 typedef union _XEvent XEvent;
-
-namespace aura {
-class RootWindow;
-}
 
 namespace chromeos {
 class KeyboardDrivenEventRewriter;
@@ -31,8 +26,7 @@ namespace input_method {
 class XKeyboard;
 }
 
-class EventRewriter : public aura::RootWindowObserver,
-                      public DeviceHierarchyObserver,
+class EventRewriter : public DeviceHierarchyObserver,
                       public base::MessagePumpObserver {
  public:
   enum DeviceType {
@@ -69,8 +63,7 @@ class EventRewriter : public aura::RootWindowObserver,
   friend class EventRewriterAshTest;
   friend class EventRewriterTest;
 
-  // aura::RootWindowObserver overrides:
-  virtual void OnKeyboardMappingChanged(const aura::RootWindow* root) OVERRIDE;
+  void DeviceKeyPressedOrReleased(int device_id);
 
   // base::MessagePumpObserver overrides:
   virtual base::EventStatus WillProcessEvent(
@@ -78,10 +71,9 @@ class EventRewriter : public aura::RootWindowObserver,
   virtual void DidProcessEvent(const base::NativeEvent& event) OVERRIDE;
 
   // DeviceHierarchyObserver overrides:
-  virtual void DeviceHierarchyChanged() OVERRIDE {}
+  virtual void DeviceHierarchyChanged() OVERRIDE;
   virtual void DeviceAdded(int device_id) OVERRIDE;
   virtual void DeviceRemoved(int device_id) OVERRIDE;
-  virtual void DeviceKeyPressedOrReleased(int device_id) OVERRIDE;
 
   // We don't want to include Xlib.h here since it has polluting macros, so
   // define these locally.

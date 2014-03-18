@@ -664,11 +664,6 @@ installer::InstallStatus UninstallProducts(
     const CommandLine& cmd_line) {
   const Products& products = installer_state.products();
 
-  // Decide whether Active Setup should be triggered and/or system-level Chrome
-  // should be launched post-uninstall. This needs to be done outside the
-  // UninstallProduct calls as some of them might terminate the processes
-  // launched by a previous one otherwise...
-  bool trigger_active_setup = false;
   // System-level Chrome will be launched via this command if its program gets
   // set below.
   CommandLine system_level_cmd(CommandLine::NO_PROGRAM);
@@ -689,17 +684,6 @@ installer::InstallStatus UninstallProducts(
           installer::GetChromeInstallPath(true, dist)
               .Append(installer::kChromeExe));
       system_level_cmd.SetProgram(system_exe_path);
-
-      base::FilePath first_run_sentinel;
-      InstallUtil::GetSentinelFilePath(
-          chrome::kFirstRunSentinel, dist, &first_run_sentinel);
-      if (base::PathExists(first_run_sentinel)) {
-        // If the Chrome being self-destructed has already undergone First Run,
-        // trigger Active Setup and make sure the system-level Chrome doesn't go
-        // through first run.
-        trigger_active_setup = true;
-        system_level_cmd.AppendSwitch(::switches::kCancelFirstRun);
-      }
     }
   }
   if (installer_state.FindProduct(BrowserDistribution::CHROME_BINARIES)) {
@@ -730,7 +714,10 @@ installer::InstallStatus UninstallProducts(
   // delete them.
   installer::DeleteChromeDirectoriesIfEmpty(installer_state.target_path());
 
-  if (trigger_active_setup)
+  // Trigger Active Setup if it was requested for the chrome product. This needs
+  // to be done after the UninstallProduct calls as some of them might
+  // otherwise terminate the process launched by TriggerActiveSetupCommand().
+  if (chrome && cmd_line.HasSwitch(installer::switches::kTriggerActiveSetup))
     InstallUtil::TriggerActiveSetupCommand();
 
   if (!system_level_cmd.GetProgram().empty())
@@ -867,13 +854,13 @@ installer::InstallStatus ShowEULADialog(const base::string16& inner_frame) {
 // accepted.
 bool CreateEULASentinel(BrowserDistribution* dist) {
   base::FilePath eula_sentinel;
-  if (!InstallUtil::GetSentinelFilePath(installer::kEULASentinelFile,
-                                        dist, &eula_sentinel)) {
+  if (!InstallUtil::GetSentinelFilePath(installer::kEULASentinelFile, dist,
+                                        &eula_sentinel)) {
     return false;
   }
 
   return (base::CreateDirectory(eula_sentinel.DirName()) &&
-          file_util::WriteFile(eula_sentinel, "", 0) != -1);
+          base::WriteFile(eula_sentinel, "", 0) != -1);
 }
 
 void ActivateMetroChrome() {
@@ -1686,6 +1673,12 @@ InstallStatus InstallProductsHelper(
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                     wchar_t* command_line, int show_command) {
+  // Check to see if the CPU is supported before doing anything else. There's
+  // very little than can safely be accomplished if the CPU isn't supported
+  // since dependent libraries (e.g., base) may use invalid instructions.
+  if (!installer::IsProcessorSupported())
+    return installer::CPU_NOT_SUPPORTED;
+
   // The exit manager is in charge of calling the dtors of singletons.
   base::AtExitManager exit_manager;
   CommandLine::Init(0, NULL);

@@ -20,6 +20,8 @@ class MenuRunner;
 class Widget;
 }
 
+class MediaGalleryCheckboxView;
+
 // The media galleries configuration view for Views. It will immediately show
 // upon construction.
 class MediaGalleriesDialogViews : public MediaGalleriesDialog,
@@ -63,10 +65,9 @@ class MediaGalleriesDialogViews : public MediaGalleriesDialog,
   FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, UpdateAdds);
   FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, ForgetDeletes);
 
-  typedef std::map<MediaGalleryPrefId, views::Checkbox*> CheckboxMap;
-  typedef std::map<views::Checkbox*, MediaGalleryPrefInfo> NewCheckboxMap;
-
-  void ButtonPressedAction(views::Button* sender);
+  typedef std::map<MediaGalleryPrefId, MediaGalleryCheckboxView*> CheckboxMap;
+  typedef std::map<MediaGalleryCheckboxView*, MediaGalleryPrefInfo>
+      NewCheckboxMap;
 
   void InitChildViews();
 
@@ -80,6 +81,10 @@ class MediaGalleriesDialogViews : public MediaGalleriesDialog,
   void ShowContextMenu(const gfx::Point& point,
                        ui::MenuSourceType source_type,
                        MediaGalleryPrefId id);
+
+  // Whether |controller_| has a valid WebContents or not.
+  // In unit tests, it may not.
+  bool ControllerHasWebContents() const;
 
   MediaGalleriesDialogController* controller_;
 

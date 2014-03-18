@@ -25,6 +25,7 @@ const char kChromeUIAppsURL[] = "chrome://apps/";
 const char kChromeUIAppListStartPageURL[] = "chrome://app-list/";
 const char kChromeUIBookmarksURL[] = "chrome://bookmarks/";
 const char kChromeUICertificateViewerURL[] = "chrome://view-cert/";
+const char kChromeUICertificateViewerDialogURL[] = "chrome://view-cert-dialog/";
 const char kChromeUIChromeSigninURL[] = "chrome://chrome-signin/";
 const char kChromeUIChromeURLsURL[] = "chrome://chrome-urls/";
 const char kChromeUICloudPrintResourcesURL[] = "chrome://cloudprintresources/";
@@ -76,6 +77,7 @@ const char kChromeUIQuitURL[] = "chrome://quit/";
 const char kChromeUIRestartURL[] = "chrome://restart/";
 const char kChromeUISettingsURL[] = "chrome://settings/";
 const char kChromeUISettingsFrameURL[] = "chrome://settings-frame/";
+const char kChromeUISuggestions[] = "chrome://suggestions/";
 const char kChromeUISuggestionsInternalsURL[] =
     "chrome://suggestions-internals/";
 const char kChromeUISSLClientCertificateSelectorURL[] = "chrome://select-cert/";
@@ -97,6 +99,8 @@ const char kChromeUIWelcomeURL[] = "chrome://welcome/";
 #if defined(OS_CHROMEOS)
 const char kChromeUIActivationMessage[] = "chrome://activationmessage/";
 const char kChromeUIBluetoothPairingURL[] = "chrome://bluetooth-pairing/";
+const char kChromeUICertificateManagerDialogURL[] =
+    "chrome://certificate-manager/";
 const char kChromeUIChargerReplacementURL[] = "chrome://charger-replacement/";
 const char kChromeUIChooseMobileNetworkURL[] =
     "chrome://choose-mobile-network/";
@@ -147,6 +151,7 @@ const char kChromeUIAppListStartPageHost[] = "app-list";
 const char kChromeUIBookmarksHost[] = "bookmarks";
 const char kChromeUICacheHost[] = "cache";
 const char kChromeUICertificateViewerHost[] = "view-cert";
+const char kChromeUICertificateViewerDialogHost[] = "view-cert-dialog";
 const char kChromeUIChromeSigninHost[] = "chrome-signin";
 const char kChromeUIChromeURLsHost[] = "chrome-urls";
 const char kChromeUICloudPrintResourcesHost[] = "cloudprintresources";
@@ -196,6 +201,8 @@ const char kChromeUINetExportHost[] = "net-export";
 const char kChromeUINetInternalsHost[] = "net-internals";
 const char kChromeUINewTabHost[] = "newtab";
 const char kChromeUIOmniboxHost[] = "omnibox";
+const char kChromeUIPasswordManagerInternalsHost[] =
+    "password-manager-internals";
 const char kChromeUIPerformanceMonitorHost[] = "performance";
 const char kChromeUIPluginsHost[] = "plugins";
 const char kChromeUIComponentsHost[] = "components";
@@ -213,6 +220,7 @@ const char kChromeUISettingsHost[] = "settings";
 const char kChromeUISettingsFrameHost[] = "settings-frame";
 const char kChromeUIShorthangHost[] = "shorthang";
 const char kChromeUISignInInternalsHost[] = "signin-internals";
+const char kChromeUISuggestionsHost[] = "suggestions";
 const char kChromeUISuggestionsInternalsHost[] = "suggestions-internals";
 const char kChromeUISSLClientCertificateSelectorHost[] = "select-cert";
 const char kChromeUIStatsHost[] = "stats";
@@ -251,6 +259,7 @@ const char kChromeUISandboxHost[] = "sandbox";
 const char kChromeUIActivationMessageHost[] = "activationmessage";
 const char kChromeUIAppLaunchHost[] = "app-launch";
 const char kChromeUIBluetoothPairingHost[] = "bluetooth-pairing";
+const char kChromeUICertificateManagerHost[] = "certificate-manager";
 const char kChromeUIChargerReplacementHost[] = "charger-replacement";
 const char kChromeUIChooseMobileNetworkHost[] = "choose-mobile-network";
 const char kChromeUICryptohomeHost[] = "cryptohome";
@@ -523,6 +532,9 @@ const char kSyncEncryptionHelpURL[] =
 const char kSyncErrorsHelpURL[] =
     "https://support.google.com/chrome/?p=settings_sync_error";
 
+const char kEnterpriseManagedAccountHelpURL[] =
+    "https://support.google.com/chromebook/answer/1331549";
+
 #if defined(OS_CHROMEOS)
 const char kNaturalScrollHelpURL[] =
     "https://support.google.com/chromeos/?p=simple_scrolling";
@@ -600,6 +612,7 @@ const char* const kChromeHostURLs[] = {
   kChromeUISandboxHost,
 #endif
 #if defined(OS_CHROMEOS)
+  kChromeUICertificateManagerHost,
   kChromeUIChooseMobileNetworkHost,
   kChromeUICryptohomeHost,
   kChromeUIDiscardsHost,
@@ -635,6 +648,7 @@ const char* const kChromeHostURLs[] = {
   content::kChromeUIIndexedDBInternalsHost,
   content::kChromeUIMediaInternalsHost,
   content::kChromeUINetworkViewCacheHost,
+  content::kChromeUIServiceWorkerInternalsHost,
   content::kChromeUITracingHost,
   content::kChromeUIWebRTCInternalsHost,
 #if defined(ENABLE_WEBRTC)

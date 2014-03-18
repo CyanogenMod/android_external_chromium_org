@@ -1399,9 +1399,7 @@ const FakeDriveService::EntryInfo* FakeDriveService::AddNewEntry(
 
   std::string escaped_resource_id = net::EscapePath(resource_id);
 
-  // Set download URL and mime type.
-  new_file->set_download_url(
-      GURL("https://xxx/content/" + escaped_resource_id));
+  // Set mime type.
   new_file->set_mime_type(content_type);
 
   // Set parents.
@@ -1415,8 +1413,6 @@ const FakeDriveService::EntryInfo* FakeDriveService::AddNewEntry(
   ScopedVector<ParentReference> parents;
   parents.push_back(parent.release());
   new_file->set_parents(parents.Pass());
-
-  new_file->set_self_link(GURL("https://xxx/edit/" + escaped_resource_id));
 
   new_entry->share_url = net::AppendOrReplaceQueryParameter(
       share_url_base_, "name", title);
@@ -1558,6 +1554,18 @@ void FakeDriveService::GetResourceListInternal(
 GURL FakeDriveService::GetNewUploadSessionUrl() {
   return GURL("https://upload_session_url/" +
               base::Int64ToString(next_upload_sequence_number_++));
+}
+
+google_apis::CancelCallback FakeDriveService::AddPermission(
+    const std::string& resource_id,
+    const std::string& email,
+    google_apis::drive::PermissionRole role,
+    const google_apis::EntryActionCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  NOTREACHED();
+  return CancelCallback();
 }
 
 }  // namespace drive

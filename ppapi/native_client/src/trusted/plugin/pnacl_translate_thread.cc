@@ -59,7 +59,7 @@ void PnaclTranslateThread::RunTranslate(
   report_translate_finished_ = finish_callback;
   translate_thread_.reset(new NaClThread);
   if (translate_thread_ == NULL) {
-    TranslateFailed(ERROR_PNACL_THREAD_CREATE,
+    TranslateFailed(PP_NACL_ERROR_PNACL_THREAD_CREATE,
                     "could not allocate thread struct.");
     return;
   }
@@ -68,7 +68,7 @@ void PnaclTranslateThread::RunTranslate(
                                 DoTranslateThread,
                                 this,
                                 kArbitraryStackSize)) {
-    TranslateFailed(ERROR_PNACL_THREAD_CREATE,
+    TranslateFailed(PP_NACL_ERROR_PNACL_THREAD_CREATE,
                     "could not create thread.");
     translate_thread_.reset(NULL);
   }
@@ -115,8 +115,14 @@ NaClSubprocess* PnaclTranslateThread::StartSubprocess(
   PLUGIN_PRINTF(("PnaclTranslateThread::StartSubprocess (url_for_nexe=%s)\n",
                  url_for_nexe.c_str()));
   nacl::DescWrapper* wrapper = resources_->WrapperForUrl(url_for_nexe);
+  // Supply a URL for the translator components, different from the app URL,
+  // so that NaCl GDB can filter-out the translator processes (and not debug
+  // the translator itself). Must have a full URL with schema, otherwise the
+  // string gets silently dropped by GURL.
+  nacl::string full_url = resources_->GetFullUrl(
+      url_for_nexe, plugin_->nacl_interface()->GetSandboxArch());
   nacl::scoped_ptr<NaClSubprocess> subprocess(
-      plugin_->LoadHelperNaClModule(wrapper, manifest, error_info));
+      plugin_->LoadHelperNaClModule(full_url, wrapper, manifest, error_info));
   if (subprocess.get() == NULL) {
     PLUGIN_PRINTF((
         "PnaclTranslateThread::StartSubprocess: subprocess creation failed\n"));
@@ -149,7 +155,7 @@ void PnaclTranslateThread::DoTranslate() {
     llc_subprocess_.reset(
       StartSubprocess(resources_->GetLlcUrl(), manifest_, &error_info));
     if (llc_subprocess_ == NULL) {
-      TranslateFailed(ERROR_PNACL_LLC_SETUP,
+      TranslateFailed(PP_NACL_ERROR_PNACL_LLC_SETUP,
                       "Compile process could not be created: " +
                       error_info.message());
       return;
@@ -167,25 +173,23 @@ void PnaclTranslateThread::DoTranslate() {
 
   int64_t compile_start_time = NaClGetTimeOfDayMicroseconds();
   bool init_success;
-  std::vector<char> options = pnacl_options_->GetOptCommandline();
 
-  // Try to init with splitting
+  std::vector<char> split_args;
+  nacl::stringstream ss;
   // TODO(dschuff): This CL override is ugly. Change llc to default to using
   // the number of modules specified in the first param, and ignore multiple
   // uses of -split-module
-  std::vector<char> split_args;
-  nacl::stringstream ss;
   ss << "-split-module=" << obj_files_->size();
   nacl::string split_arg = ss.str();
   std::copy(split_arg.begin(), split_arg.end(), std::back_inserter(split_args));
   split_args.push_back('\x00');
+  std::vector<char> options = pnacl_options_->GetOptCommandline();
   std::copy(options.begin(), options.end(), std::back_inserter(split_args));
-  int modules_used = static_cast<int>(obj_files_->size());
   init_success = llc_subprocess_->InvokeSrpcMethod(
       "StreamInitWithSplit",
       "ihhhhhhhhhhhhhhhhC",
       &params,
-      modules_used,
+      static_cast<int>(obj_files_->size()),
       llc_out_files[0]->desc(),
       llc_out_files[1]->desc(),
       llc_out_files[2]->desc(),
@@ -205,25 +209,14 @@ void PnaclTranslateThread::DoTranslate() {
       &split_args[0],
       split_args.size());
   if (!init_success) {
-    init_success = llc_subprocess_->InvokeSrpcMethod(
-        "StreamInitWithOverrides",
-        "hC",
-        &params,
-        llc_out_files[0]->desc(),
-        &options[0],
-        options.size());
-    modules_used = 1;
-  }
-
-  if (!init_success) {
     if (llc_subprocess_->srpc_client()->GetLastError() ==
         NACL_SRPC_RESULT_APP_ERROR) {
       // The error message is only present if the error was returned from llc
-      TranslateFailed(ERROR_PNACL_LLC_INTERNAL,
+      TranslateFailed(PP_NACL_ERROR_PNACL_LLC_INTERNAL,
                       nacl::string("Stream init failed: ") +
                       nacl::string(params.outs()[0]->arrays.str));
     } else {
-      TranslateFailed(ERROR_PNACL_LLC_INTERNAL,
+      TranslateFailed(PP_NACL_ERROR_PNACL_LLC_INTERNAL,
                       "Stream init internal error");
     }
     return;
@@ -258,7 +251,7 @@ void PnaclTranslateThread::DoTranslate() {
           // and call StreamEnd, which returns a string describing the error,
           // which we can then send to the Javascript console. Otherwise just
           // fail here, since the translator has probably crashed or asserted.
-          TranslateFailed(ERROR_PNACL_LLC_INTERNAL,
+          TranslateFailed(PP_NACL_ERROR_PNACL_LLC_INTERNAL,
                           "Compile stream chunk failed. "
                           "The PNaCl translator has probably crashed.");
           return;
@@ -282,10 +275,10 @@ void PnaclTranslateThread::DoTranslate() {
     if (llc_subprocess_->srpc_client()->GetLastError() ==
         NACL_SRPC_RESULT_APP_ERROR) {
       // The error string is only present if the error was sent back from llc.
-      TranslateFailed(ERROR_PNACL_LLC_INTERNAL,
+      TranslateFailed(PP_NACL_ERROR_PNACL_LLC_INTERNAL,
                       params.outs()[3]->arrays.str);
     } else {
-      TranslateFailed(ERROR_PNACL_LLC_INTERNAL,
+      TranslateFailed(PP_NACL_ERROR_PNACL_LLC_INTERNAL,
                       "Compile StreamEnd internal error");
     }
     return;
@@ -293,33 +286,19 @@ void PnaclTranslateThread::DoTranslate() {
   time_stats_.pnacl_compile_time =
       (NaClGetTimeOfDayMicroseconds() - compile_start_time);
 
-  // LLC returns values that are used to determine how linking is done.
-  int is_shared_library = (params.outs()[0]->u.ival != 0);
-  nacl::string soname = params.outs()[1]->arrays.str;
-  nacl::string lib_dependencies = params.outs()[2]->arrays.str;
-  PLUGIN_PRINTF(("PnaclCoordinator: compile (translator=%p) succeeded"
-                 " is_shared_library=%d, soname='%s', lib_dependencies='%s')\n",
-                 this, is_shared_library, soname.c_str(),
-                 lib_dependencies.c_str()));
-
   // Shut down the llc subprocess.
   NaClXMutexLock(&subprocess_mu_);
   llc_subprocess_active_ = false;
   llc_subprocess_.reset(NULL);
   NaClXMutexUnlock(&subprocess_mu_);
 
-  if(!RunLdSubprocess(
-         modules_used, is_shared_library, soname, lib_dependencies)) {
+  if(!RunLdSubprocess()) {
     return;
   }
   core->CallOnMainThread(0, report_translate_finished_, PP_OK);
 }
 
-bool PnaclTranslateThread::RunLdSubprocess(int modules_used,
-                                           int is_shared_library,
-                                           const nacl::string& soname,
-                                           const nacl::string& lib_dependencies
-                                           ) {
+bool PnaclTranslateThread::RunLdSubprocess() {
   ErrorInfo error_info;
   SrpcParams params;
 
@@ -328,7 +307,7 @@ bool PnaclTranslateThread::RunLdSubprocess(int modules_used,
   for (i = 0; i < obj_files_->size(); i++) {
     // Reset object file for reading first.
     if (!(*obj_files_)[i]->Reset()) {
-      TranslateFailed(ERROR_PNACL_LD_SETUP,
+      TranslateFailed(PP_NACL_ERROR_PNACL_LD_SETUP,
                       "Link process could not reset object file");
       return false;
     }
@@ -347,7 +326,7 @@ bool PnaclTranslateThread::RunLdSubprocess(int modules_used,
     ld_subprocess_.reset(
       StartSubprocess(resources_->GetLdUrl(), manifest_, &error_info));
     if (ld_subprocess_ == NULL) {
-      TranslateFailed(ERROR_PNACL_LD_SETUP,
+      TranslateFailed(PP_NACL_ERROR_PNACL_LD_SETUP,
                       "Link process could not be created: " +
                       error_info.message());
       return false;
@@ -362,42 +341,30 @@ bool PnaclTranslateThread::RunLdSubprocess(int modules_used,
 
   int64_t link_start_time = NaClGetTimeOfDayMicroseconds();
   // Run LD.
-  bool success;
-  // If we ran LLC with module splitting, we can't fall back here.
-  if (modules_used > 1) {
-    success = ld_subprocess_->InvokeSrpcMethod("RunWithSplit",
-                                               "ihhhhhhhhhhhhhhhhh",
-                                               &params,
-                                               modules_used,
-                                               ld_in_files[0]->desc(),
-                                               ld_in_files[1]->desc(),
-                                               ld_in_files[2]->desc(),
-                                               ld_in_files[3]->desc(),
-                                               ld_in_files[4]->desc(),
-                                               ld_in_files[5]->desc(),
-                                               ld_in_files[6]->desc(),
-                                               ld_in_files[7]->desc(),
-                                               ld_in_files[8]->desc(),
-                                               ld_in_files[9]->desc(),
-                                               ld_in_files[10]->desc(),
-                                               ld_in_files[11]->desc(),
-                                               ld_in_files[12]->desc(),
-                                               ld_in_files[13]->desc(),
-                                               ld_in_files[14]->desc(),
-                                               ld_in_files[15]->desc(),
-                                               ld_out_file->desc());
-  } else {
-    success = ld_subprocess_->InvokeSrpcMethod("RunWithDefaultCommandLine",
-                                               "hhiss",
-                                               &params,
-                                               ld_in_files[0]->desc(),
-                                               ld_out_file->desc(),
-                                               is_shared_library,
-                                               soname.c_str(),
-                                               lib_dependencies.c_str());
-  }
+  bool success = ld_subprocess_->InvokeSrpcMethod(
+      "RunWithSplit",
+      "ihhhhhhhhhhhhhhhhh",
+      &params,
+      static_cast<int>(obj_files_->size()),
+      ld_in_files[0]->desc(),
+      ld_in_files[1]->desc(),
+      ld_in_files[2]->desc(),
+      ld_in_files[3]->desc(),
+      ld_in_files[4]->desc(),
+      ld_in_files[5]->desc(),
+      ld_in_files[6]->desc(),
+      ld_in_files[7]->desc(),
+      ld_in_files[8]->desc(),
+      ld_in_files[9]->desc(),
+      ld_in_files[10]->desc(),
+      ld_in_files[11]->desc(),
+      ld_in_files[12]->desc(),
+      ld_in_files[13]->desc(),
+      ld_in_files[14]->desc(),
+      ld_in_files[15]->desc(),
+      ld_out_file->desc());
   if (!success) {
-    TranslateFailed(ERROR_PNACL_LD_INTERNAL,
+    TranslateFailed(PP_NACL_ERROR_PNACL_LD_INTERNAL,
                     "link failed.");
     return false;
   }
@@ -414,7 +381,7 @@ bool PnaclTranslateThread::RunLdSubprocess(int modules_used,
 }
 
 void PnaclTranslateThread::TranslateFailed(
-    enum PluginErrorCode err_code,
+    PP_NaClError err_code,
     const nacl::string& error_string) {
   PLUGIN_PRINTF(("PnaclTranslateThread::TranslateFailed (error_string='%s')\n",
                  error_string.c_str()));

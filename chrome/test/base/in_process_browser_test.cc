@@ -41,7 +41,7 @@
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/webdata/encryptor/encryptor.h"
+#include "components/os_crypt/os_crypt.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/test/browser_test_utils.h"
@@ -188,7 +188,7 @@ void InProcessBrowserTest::SetUp() {
   // Always use the MockKeychain if OS encription is used (which is when
   // anything sensitive gets stored, including Cookies).  Without this,
   // many tests will hang waiting for a user to approve KeyChain access.
-  Encryptor::UseMockKeychain(true);
+  OSCrypt::UseMockKeychain(true);
 #endif
 
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
@@ -202,11 +202,15 @@ void InProcessBrowserTest::SetUp() {
   google_util::SetMockLinkDoctorBaseURLForTesting();
 
 #if defined(OS_WIN)
-  if (base::win::GetVersion() >= base::win::VERSION_WIN8 &&
+  base::win::Version version = base::win::GetVersion();
+  // Although Ash officially is only supported for users on Win7+, we still run
+  // ash_unittests on Vista builders, so we still need to initialize COM.
+  if (version >= base::win::VERSION_VISTA &&
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests)) {
     com_initializer_.reset(new base::win::ScopedCOMInitializer());
     ui::win::CreateATLModuleIfNeeded();
-    ASSERT_TRUE(win8::MakeTestDefaultBrowserSynchronously());
+    if (version >= base::win::VERSION_WIN8)
+      ASSERT_TRUE(win8::MakeTestDefaultBrowserSynchronously());
   }
 #endif
 
@@ -406,7 +410,7 @@ void InProcessBrowserTest::RunTestOnMainThreadLoop() {
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   // Do not use the real StorageMonitor for tests, which introduces another
   // source of variability and potential slowness.
-  ASSERT_TRUE(TestStorageMonitor::CreateForBrowserTests());
+  ASSERT_TRUE(storage_monitor::TestStorageMonitor::CreateForBrowserTests());
 #endif
 
   // Pump any pending events that were created as a result of creating a

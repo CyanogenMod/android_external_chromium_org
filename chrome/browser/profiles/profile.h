@@ -69,7 +69,7 @@ class PrefRegistrySyncable;
 }
 
 // Instead of adding more members to Profile, consider creating a
-// BrowserContextKeyedService. See
+// KeyedService. See
 // http://dev.chromium.org/developers/design-documents/profile-architecture
 class Profile : public content::BrowserContext {
  public:
@@ -130,6 +130,12 @@ class Profile : public content::BrowserContext {
     EXIT_CRASHED,
   };
 
+  enum ProfileType {
+    REGULAR_PROFILE,  // Login user's normal profile
+    INCOGNITO_PROFILE,  // Login user's off-the-record profile
+    GUEST_PROFILE,  // Guest session's profile
+  };
+
   class Delegate {
    public:
     virtual ~Delegate();
@@ -174,6 +180,9 @@ class Profile : public content::BrowserContext {
   // Returns the name associated with this profile. This name is displayed in
   // the browser frame.
   virtual std::string GetProfileName() = 0;
+
+  // Returns the profile type.
+  virtual ProfileType GetProfileType() const = 0;
 
   // Return the incognito version of this profile. The returned pointer
   // is owned by the receiving profile. If the receiving profile is off the
@@ -256,7 +265,8 @@ class Profile : public content::BrowserContext {
   // ContextBrowserClient to call this function.
   // TODO(ajwong): Remove once http://crbug.com/159193 is resolved.
   virtual net::URLRequestContextGetter* CreateRequestContext(
-      content::ProtocolHandlerMap* protocol_handlers) = 0;
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors) = 0;
 
   // Creates the net::URLRequestContextGetter for a StoragePartition. Should
   // only be called once per partition_path per ContentBrowserClient object.
@@ -267,7 +277,8 @@ class Profile : public content::BrowserContext {
   virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
       const base::FilePath& partition_path,
       bool in_memory,
-      content::ProtocolHandlerMap* protocol_handlers) = 0;
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors) = 0;
 
   // Returns the last directory that was chosen for uploading or opening a file.
   virtual base::FilePath last_selected_directory() = 0;

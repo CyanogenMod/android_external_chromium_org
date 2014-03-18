@@ -43,12 +43,12 @@
         '../../skia/skia.gyp:skia',
         '../../url/url.gyp:url_lib',
         '../aura/aura.gyp:aura',
+        '../base/ui_base.gyp:ui_base',
         '../compositor/compositor.gyp:compositor',
         '../events/events.gyp:events',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
-        '../ui.gyp:ui',
-        '../wm/wm.gyp:wm_public',
+        '../wm/wm.gyp:wm_core',
         'keyboard_resources',
       ],
       'defines': [
@@ -87,12 +87,12 @@
         '../../url/url.gyp:url_lib',
         '../aura/aura.gyp:aura',
         '../aura/aura.gyp:aura_test_support',
+        '../base/ui_base.gyp:ui_base',
         '../compositor/compositor.gyp:compositor',
         '../compositor/compositor.gyp:compositor_test_support',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_test_pak',
-        '../ui.gyp:ui',
         'keyboard',
       ],
       'sources': [
@@ -100,7 +100,8 @@
         'keyboard_controller_unittest.cc',
       ],
       'conditions': [
-        ['OS=="linux" and linux_use_tcmalloc==1', {
+        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
           'dependencies': [
             '<(DEPTH)/base/allocator/allocator.gyp:allocator',
           ],

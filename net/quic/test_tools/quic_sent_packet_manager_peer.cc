@@ -5,6 +5,7 @@
 #include "net/quic/test_tools/quic_sent_packet_manager_peer.h"
 
 #include "base/stl_util.h"
+#include "net/quic/congestion_control/loss_detection_interface.h"
 #include "net/quic/congestion_control/send_algorithm_interface.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_sent_packet_manager.h"
@@ -26,11 +27,24 @@ void QuicSentPacketManagerPeer::SetSendAlgorithm(
 }
 
 // static
+void QuicSentPacketManagerPeer::SetLossAlgorithm(
+    QuicSentPacketManager* sent_packet_manager,
+    LossDetectionInterface* loss_detector) {
+  sent_packet_manager->loss_algorithm_.reset(loss_detector);
+}
+
+// static
+RttStats* QuicSentPacketManagerPeer::GetRttStats(
+    QuicSentPacketManager* sent_packet_manager) {
+  return &sent_packet_manager->rtt_stats_;
+}
+
+// static
 size_t QuicSentPacketManagerPeer::GetNackCount(
     const QuicSentPacketManager* sent_packet_manager,
     QuicPacketSequenceNumber sequence_number) {
-  return sent_packet_manager->packet_history_map_.find(
-      sequence_number)->second->nack_count();
+  return sent_packet_manager->unacked_packets_.
+      GetTransmissionInfo(sequence_number).nack_count;
 }
 
 // static
@@ -42,23 +56,17 @@ size_t QuicSentPacketManagerPeer::GetPendingRetransmissionCount(
 // static
 bool QuicSentPacketManagerPeer::HasPendingPackets(
     const QuicSentPacketManager* sent_packet_manager) {
-  return sent_packet_manager->HasPendingPackets();
+  return sent_packet_manager->unacked_packets_.HasPendingPackets();
 }
 
 // static
 QuicTime QuicSentPacketManagerPeer::GetSentTime(
     const QuicSentPacketManager* sent_packet_manager,
     QuicPacketSequenceNumber sequence_number) {
-  DCHECK(ContainsKey(sent_packet_manager->unacked_packets_, sequence_number));
+  DCHECK(sent_packet_manager->unacked_packets_.IsUnacked(sequence_number));
 
-  return sent_packet_manager->unacked_packets_
-      .find(sequence_number)->second.sent_time;
-}
-
-// static
-QuicTime::Delta QuicSentPacketManagerPeer::rtt(
-    QuicSentPacketManager* sent_packet_manager) {
-  return sent_packet_manager->rtt_sample_;
+  return sent_packet_manager->unacked_packets_.GetTransmissionInfo(
+      sequence_number).sent_time;
 }
 
 // static
@@ -67,8 +75,8 @@ bool QuicSentPacketManagerPeer::IsRetransmission(
     QuicPacketSequenceNumber sequence_number) {
   DCHECK(sent_packet_manager->HasRetransmittableFrames(sequence_number));
   return sent_packet_manager->HasRetransmittableFrames(sequence_number) &&
-      sent_packet_manager->
-          unacked_packets_[sequence_number].all_transmissions->size() > 1;
+      sent_packet_manager->unacked_packets_.GetTransmissionInfo(
+          sequence_number).all_transmissions->size() > 1;
 }
 
 // static
@@ -89,7 +97,19 @@ QuicTime::Delta QuicSentPacketManagerPeer::GetRetransmissionDelay(
 // static
 bool QuicSentPacketManagerPeer::HasUnackedCryptoPackets(
     const QuicSentPacketManager* sent_packet_manager) {
-  return sent_packet_manager->pending_crypto_packet_count_ > 0;
+  return sent_packet_manager->unacked_packets_.HasPendingCryptoPackets();
+}
+
+// static
+size_t QuicSentPacketManagerPeer::GetNumRetransmittablePackets(
+    const QuicSentPacketManager* sent_packet_manager) {
+  return sent_packet_manager->unacked_packets_.GetNumRetransmittablePackets();
+}
+
+// static
+SequenceNumberSet QuicSentPacketManagerPeer::GetUnackedPackets(
+    const QuicSentPacketManager* sent_packet_manager) {
+  return sent_packet_manager->unacked_packets_.GetUnackedPackets();
 }
 
 }  // namespace test

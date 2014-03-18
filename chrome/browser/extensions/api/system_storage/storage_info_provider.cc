@@ -8,8 +8,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "components/storage_monitor/storage_info.h"
 #include "components/storage_monitor/storage_monitor.h"
 #include "content/public/browser/browser_thread.h"
+
+using storage_monitor::StorageInfo;
+using storage_monitor::StorageMonitor;
 
 namespace extensions {
 
@@ -24,7 +28,7 @@ void BuildStorageUnitInfo(const StorageInfo& info,
                           StorageUnitInfo* unit) {
   unit->id = StorageMonitor::GetInstance()->GetTransientIdForDeviceId(
                  info.device_id());
-  unit->name = base::UTF16ToUTF8(info.name());
+  unit->name = base::UTF16ToUTF8(info.GetDisplayName(false));
   // TODO(hmin): Might need to take MTP device into consideration.
   unit->type = StorageInfo::IsRemovableDevice(info.device_id()) ?
       STORAGE_UNIT_TYPE_REMOVABLE : STORAGE_UNIT_TYPE_FIXED;

@@ -7,19 +7,21 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/signin/signin_manager.h"
 #include "components/policy/core/common/cloud/cloud_policy_core.h"
 #include "content/public/browser/notification_source.h"
 #include "google_apis/gaia/gaia_constants.h"
-#include "google_apis/gaia/gaia_urls.h"
 
 namespace policy {
 
 UserCloudPolicyTokenForwarder::UserCloudPolicyTokenForwarder(
     UserCloudPolicyManagerChromeOS* manager,
-    ProfileOAuth2TokenService* token_service)
+    ProfileOAuth2TokenService* token_service,
+    SigninManagerBase* signin_manager)
     : OAuth2TokenService::Consumer("policy_token_forwarder"),
       manager_(manager),
-      token_service_(token_service) {
+      token_service_(token_service),
+      signin_manager_(signin_manager) {
   // Start by waiting for the CloudPolicyService to be initialized, so that
   // we can check if it already has a DMToken or not.
   if (manager_->core()->service()->IsInitializationComplete()) {
@@ -79,7 +81,7 @@ void UserCloudPolicyTokenForwarder::Initialize() {
   // here if the client is already registered, so check and bail out here.
 
   if (token_service_->RefreshTokenIsAvailable(
-          token_service_->GetPrimaryAccountId()))
+          signin_manager_->GetAuthenticatedAccountId()))
     RequestAccessToken();
   else
     token_service_->AddObserver(this);
@@ -88,9 +90,9 @@ void UserCloudPolicyTokenForwarder::Initialize() {
 void UserCloudPolicyTokenForwarder::RequestAccessToken() {
   OAuth2TokenService::ScopeSet scopes;
   scopes.insert(GaiaConstants::kDeviceManagementServiceOAuth);
-  scopes.insert(GaiaUrls::GetInstance()->oauth_wrap_bridge_user_info_scope());
+  scopes.insert(GaiaConstants::kOAuthWrapBridgeUserInfoScope);
   request_ = token_service_->StartRequest(
-      token_service_->GetPrimaryAccountId(), scopes, this);
+      signin_manager_->GetAuthenticatedAccountId(), scopes, this);
 }
 
 }  // namespace policy

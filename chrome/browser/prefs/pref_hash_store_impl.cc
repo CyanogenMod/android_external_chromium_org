@@ -80,6 +80,11 @@ void PrefHashStoreImpl::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterDictionaryPref(prefs::kProfilePreferenceHashes);
 }
 
+// static
+void PrefHashStoreImpl::ResetAllPrefHashStores(PrefService* local_state) {
+  local_state->ClearPref(prefs::kProfilePreferenceHashes);
+}
+
 void PrefHashStoreImpl::Reset() {
   DictionaryPrefUpdate update(local_state_, prefs::kProfilePreferenceHashes);
 
@@ -90,13 +95,13 @@ void PrefHashStoreImpl::Reset() {
   // Remove this store's entry in the kStoreVersionsDict.
   base::DictionaryValue* version_dict;
   if (update->GetDictionary(internals::kStoreVersionsDict, &version_dict))
-    version_dict->Remove(hash_store_id_, NULL);
+    version_dict->RemoveWithoutPathExpansion(hash_store_id_, NULL);
 
   // Remove this store's entry in the kHashOfHashesDict.
   base::DictionaryValue* hash_of_hashes_dict;
   if (update->GetDictionaryWithoutPathExpansion(internals::kHashOfHashesDict,
                                                 &hash_of_hashes_dict)) {
-    hash_of_hashes_dict->Remove(hash_store_id_, NULL);
+    hash_of_hashes_dict->RemoveWithoutPathExpansion(hash_store_id_, NULL);
   }
 }
 
@@ -116,7 +121,8 @@ PrefHashStoreImpl::StoreVersion PrefHashStoreImpl::GetCurrentVersion() const {
   int current_version;
   if (!pref_hash_data->GetDictionary(internals::kStoreVersionsDict,
                                      &version_dict) ||
-      !version_dict->GetInteger(hash_store_id_, &current_version)) {
+      !version_dict->GetIntegerWithoutPathExpansion(hash_store_id_,
+                                                    &current_version)) {
     return VERSION_PRE_MIGRATION;
   }
 
@@ -189,7 +195,8 @@ PrefHashStoreImpl::PrefHashStoreTransactionImpl::
     store_versions_dict = new base::DictionaryValue;
     update->Set(internals::kStoreVersionsDict, store_versions_dict);
   }
-  store_versions_dict->SetInteger(outer_->hash_store_id_, VERSION_LATEST);
+  store_versions_dict->SetIntegerWithoutPathExpansion(outer_->hash_store_id_,
+                                                      VERSION_LATEST);
 }
 
 PrefHashStoreTransaction::ValueState
@@ -214,8 +221,10 @@ PrefHashStoreImpl::PrefHashStoreTransactionImpl::CheckValue(
   switch (validation_result) {
     case PrefHashCalculator::VALID:
       return UNCHANGED;
-    case PrefHashCalculator::VALID_LEGACY:
-      return MIGRATED;
+    case PrefHashCalculator::VALID_WEAK_LEGACY:
+      return WEAK_LEGACY;
+    case PrefHashCalculator::VALID_SECURE_LEGACY:
+      return SECURE_LEGACY;
     case PrefHashCalculator::INVALID:
       return initial_value ? CHANGED : CLEARED;
   }
@@ -252,6 +261,7 @@ PrefHashStoreImpl::PrefHashStoreTransactionImpl::CheckSplitValue(
         TRUSTED_UNKNOWN_VALUE : UNTRUSTED_UNKNOWN_VALUE;
   }
 
+  bool has_secure_legacy_id_hashes = false;
   std::string keyed_path(path);
   keyed_path.push_back('.');
   const size_t common_part_length = keyed_path.length();
@@ -269,12 +279,18 @@ PrefHashStoreImpl::PrefHashStoreTransactionImpl::CheckSplitValue(
         // cleared entirely from the dictionary pref.
         NOTREACHED();
         break;
-      case MIGRATED:
-        // Split tracked preferences were introduced after the migration started
-        // so no migration is expected, but declare it invalid in Release builds
-        // anyways.
+      case WEAK_LEGACY:
+        // Split tracked preferences were introduced after the migration from
+        // the weaker legacy algorithm started so no migration is expected, but
+        // declare it invalid in Release builds anyways.
         NOTREACHED();
         invalid_keys->push_back(it.key());
+        break;
+      case SECURE_LEGACY:
+        // Secure legacy device IDs based hashes are still accepted, but we
+        // should make sure to notify the caller for him to update the legacy
+        // hashes.
+        has_secure_legacy_id_hashes = true;
         break;
       case UNCHANGED:
         break;
@@ -288,7 +304,9 @@ PrefHashStoreImpl::PrefHashStoreTransactionImpl::CheckSplitValue(
         break;
     }
   }
-  return invalid_keys->empty() ? UNCHANGED : CHANGED;
+  return invalid_keys->empty()
+      ? (has_secure_legacy_id_hashes ? SECURE_LEGACY : UNCHANGED)
+      : CHANGED;
 }
 
 void PrefHashStoreImpl::PrefHashStoreTransactionImpl::StoreSplitHash(

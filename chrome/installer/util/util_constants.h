@@ -89,12 +89,13 @@ enum InstallStatus {
                                // in use.
   UNUSED_BINARIES_UNINSTALLED,  // 52. The binaries were uninstalled.
   UNSUPPORTED_OPTION,          // 53. An unsupported legacy option was given.
+  CPU_NOT_SUPPORTED,           // 54. Current OS not supported
   // Friendly reminder: note the COMPILE_ASSERT below.
 };
 
 
 // Existing InstallStatus values must not change.  Always add to the end.
-COMPILE_ASSERT(installer::UNSUPPORTED_OPTION == 53,
+COMPILE_ASSERT(installer::CPU_NOT_SUPPORTED == 54,
                dont_change_enum);
 
 // The type of an update archive.
@@ -175,6 +176,7 @@ extern const char kRemoveChromeRegistration[];
 extern const char kRunAsAdmin[];
 extern const char kSelfDestruct[];
 extern const char kSystemLevel[];
+extern const char kTriggerActiveSetup[];
 extern const char kUninstall[];
 extern const char kUpdateSetupExe[];
 extern const char kUncompressedArchive[];
@@ -202,8 +204,9 @@ extern const wchar_t kChromeFrameHelperDll[];
 extern const wchar_t kChromeFrameHelperExe[];
 extern const wchar_t kChromeFrameHelperWndClass[];
 extern const wchar_t kChromeLauncherExe[];
-extern const wchar_t kChromeOldExe[];
+extern const wchar_t kChromeMetroDll[];
 extern const wchar_t kChromeNewExe[];
+extern const wchar_t kChromeOldExe[];
 extern const wchar_t kCmdInstallApp[];
 extern const wchar_t kCmdInstallExtension[];
 extern const wchar_t kCmdOnOsUpgrade[];

@@ -7,12 +7,15 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/ui_strings.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/gfx/range/range.h"
@@ -255,7 +258,7 @@ gfx::Rect TouchEditableImplAura::GetBounds() {
 }
 
 gfx::NativeView TouchEditableImplAura::GetNativeView() const {
-  return rwhva_ ? rwhva_->GetNativeView()->GetRootWindow() : NULL;
+  return rwhva_ ? rwhva_->GetNativeView()->GetToplevelWindow() : NULL;
 }
 
 void TouchEditableImplAura::ConvertPointToScreen(gfx::Point* point) {
@@ -334,15 +337,18 @@ void TouchEditableImplAura::ExecuteCommand(int command_id, int event_flags) {
   if (!rwhva_)
     return;
   RenderWidgetHost* host = rwhva_->GetRenderWidgetHost();
+  RenderViewHost* rvh = RenderViewHost::From(host);
+  WebContents* wc = WebContents::FromRenderViewHost(rvh);
+  RenderFrameHost* focused_frame = wc->GetFocusedFrame();
   switch (command_id) {
     case IDS_APP_CUT:
-      host->Cut();
+      focused_frame->Cut();
       break;
     case IDS_APP_COPY:
-      host->Copy();
+      focused_frame->Copy();
       break;
     case IDS_APP_PASTE:
-      host->Paste();
+      focused_frame->Paste();
       break;
     case IDS_APP_DELETE:
       host->Delete();

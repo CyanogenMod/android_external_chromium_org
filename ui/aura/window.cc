@@ -22,8 +22,8 @@
 #include "ui/aura/client/window_stacking_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/aura/window_tree_host.h"
@@ -162,7 +162,7 @@ class ScopedCursorHider {
   explicit ScopedCursorHider(Window* window)
       : window_(window),
         hid_cursor_(false) {
-    if (!window_->HasDispatcher())
+    if (!window_->IsRootWindow())
       return;
     const bool cursor_is_in_bounds = window_->GetBoundsInScreen().Contains(
         Env::GetInstance()->last_mouse_location());
@@ -174,7 +174,7 @@ class ScopedCursorHider {
     }
   }
   ~ScopedCursorHider() {
-    if (!window_->HasDispatcher())
+    if (!window_->IsRootWindow())
       return;
 
     // Update the device scale factor of the cursor client only when the last
@@ -199,7 +199,7 @@ class ScopedCursorHider {
 };
 
 Window::Window(WindowDelegate* delegate)
-    : dispatcher_(NULL),
+    : host_(NULL),
       type_(ui::wm::WINDOW_TYPE_UNKNOWN),
       owned_by_parent_(true),
       delegate_(delegate),
@@ -217,19 +217,19 @@ Window::Window(WindowDelegate* delegate)
 }
 
 Window::~Window() {
-  // |layer_| can be NULL during tests, or if this Window is layerless.
-  if (layer_)
-    layer_->SuppressPaint();
+  // |layer()| can be NULL during tests, or if this Window is layerless.
+  if (layer())
+    layer()->SuppressPaint();
 
   // Let the delegate know we're in the processing of destroying.
   if (delegate_)
-    delegate_->OnWindowDestroying();
+    delegate_->OnWindowDestroying(this);
   FOR_EACH_OBSERVER(WindowObserver, observers_, OnWindowDestroying(this));
 
   // Let the root know so that it can remove any references to us.
-  WindowEventDispatcher* dispatcher = GetDispatcher();
-  if (dispatcher)
-    dispatcher->OnWindowDestroying(this);
+  WindowTreeHost* host = GetHost();
+  if (host)
+    host->dispatcher()->OnWindowDestroying(this);
 
   // Then destroy the children.
   RemoveOrDestroyChildren();
@@ -240,7 +240,7 @@ Window::~Window() {
     parent_->RemoveChild(this);
 
   if (delegate_)
-    delegate_->OnWindowDestroyed();
+    delegate_->OnWindowDestroyed(this);
   ObserverListBase<WindowObserver>::Iterator iter(observers_);
   WindowObserver* observer;
   while ((observer = iter.GetNext())) {
@@ -260,51 +260,49 @@ Window::~Window() {
   // If we have layer it will either be destroyed by |layer_owner_|'s dtor, or
   // by whoever acquired it. We don't have a layer if Init() wasn't invoked or
   // we are layerless.
-  if (layer_) {
-    layer_->set_delegate(NULL);
-    layer_ = NULL;
-  }
+  if (layer())
+    layer()->set_delegate(NULL);
+  DestroyLayer();
 }
 
 void Window::Init(WindowLayerType window_layer_type) {
   if (window_layer_type != WINDOW_LAYER_NONE) {
-    layer_ = new ui::Layer(WindowLayerTypeToUILayerType(window_layer_type));
-    layer_owner_.reset(layer_);
-    layer_->SetVisible(false);
-    layer_->set_delegate(this);
+    SetLayer(new ui::Layer(WindowLayerTypeToUILayerType(window_layer_type)));
+    layer()->SetVisible(false);
+    layer()->set_delegate(this);
     UpdateLayerName(name_);
-    layer_->SetFillsBoundsOpaquely(!transparent_);
+    layer()->SetFillsBoundsOpaquely(!transparent_);
   }
 
   Env::GetInstance()->NotifyWindowInitialized(this);
 }
 
-ui::Layer* Window::RecreateLayer() {
+// TODO(sky): move to match new position.
+scoped_ptr<ui::Layer> Window::RecreateLayer() {
   // Disconnect the old layer, but don't delete it.
-  ui::Layer* old_layer = AcquireLayer();
+  scoped_ptr<ui::Layer> old_layer(AcquireLayer());
   if (!old_layer)
-    return NULL;
-
-  bounds_.SetRect(0, 0, 0, 0);
+    return old_layer.Pass();
 
   old_layer->set_delegate(NULL);
 
-  layer_ = new ui::Layer(old_layer->type());
-  layer_owner_.reset(layer_);
-  layer_->SetVisible(old_layer->visible());
-  layer_->set_scale_content(old_layer->scale_content());
-  layer_->set_delegate(this);
-  layer_->SetMasksToBounds(old_layer->GetMasksToBounds());
+  const gfx::Rect layer_bounds(old_layer->bounds());
+  SetLayer(new ui::Layer(old_layer->type()));
+  layer()->SetVisible(old_layer->visible());
+  layer()->set_scale_content(old_layer->scale_content());
+  layer()->SetBounds(layer_bounds);
+  layer()->set_delegate(this);
+  layer()->SetMasksToBounds(old_layer->GetMasksToBounds());
 
   if (delegate_)
-    delegate_->DidRecreateLayer(old_layer, layer_);
+    delegate_->DidRecreateLayer(old_layer.get(), layer());
 
   UpdateLayerName(name_);
-  layer_->SetFillsBoundsOpaquely(!transparent_);
+  layer()->SetFillsBoundsOpaquely(!transparent_);
   // Install new layer as a sibling of the old layer, stacked below it.
   if (old_layer->parent()) {
-    old_layer->parent()->Add(layer_);
-    old_layer->parent()->StackBelow(layer_, old_layer);
+    old_layer->parent()->Add(layer());
+    old_layer->parent()->StackBelow(layer(), old_layer.get());
   }
   // Migrate all the child layers over to the new layer. Copy the list because
   // the items are removed during iteration.
@@ -313,28 +311,28 @@ ui::Layer* Window::RecreateLayer() {
        it != children_copy.end();
        ++it) {
     ui::Layer* child = *it;
-    layer_->Add(child);
+    layer()->Add(child);
   }
-  return old_layer;
+  return old_layer.Pass();
 }
 
 void Window::SetType(ui::wm::WindowType type) {
   // Cannot change type after the window is initialized.
-  DCHECK(!layer_);
+  DCHECK(!layer());
   type_ = type;
 }
 
 void Window::SetName(const std::string& name) {
   name_ = name;
 
-  if (layer_)
+  if (layer())
     UpdateLayerName(name_);
 }
 
 void Window::SetTransparent(bool transparent) {
   transparent_ = transparent;
-  if (layer_)
-    layer_->SetFillsBoundsOpaquely(!transparent_);
+  if (layer())
+    layer()->SetFillsBoundsOpaquely(!transparent_);
 }
 
 Window* Window::GetRootWindow() {
@@ -343,20 +341,28 @@ Window* Window::GetRootWindow() {
 }
 
 const Window* Window::GetRootWindow() const {
-  return dispatcher_ ? this : parent_ ? parent_->GetRootWindow() : NULL;
+  return IsRootWindow() ? this : parent_ ? parent_->GetRootWindow() : NULL;
 }
 
-WindowEventDispatcher* Window::GetDispatcher() {
-  return const_cast<WindowEventDispatcher*>(const_cast<const Window*>(this)->
-      GetDispatcher());
+WindowTreeHost* Window::GetHost() {
+  return const_cast<WindowTreeHost*>(const_cast<const Window*>(this)->
+      GetHost());
 }
 
-const WindowEventDispatcher* Window::GetDispatcher() const {
+const WindowTreeHost* Window::GetHost() const {
   const Window* root_window = GetRootWindow();
-  return root_window ? root_window->dispatcher_ : NULL;
+  return root_window ? root_window->host_ : NULL;
 }
 
 void Window::Show() {
+  if (layer()) {
+    DCHECK_EQ(visible_, layer()->GetTargetVisibility());
+    // It is not allowed that a window is visible but the layers alpha is fully
+    // transparent since the window would still be considered to be active but
+    // could not be seen.
+    // TODO(skuhne): uncomment and fix issue 351553.
+    // DCHECK(!(visible_ && layer()->GetTargetOpacity() == 0.0f));
+  }
   SetVisible(true);
 }
 
@@ -373,8 +379,8 @@ bool Window::IsVisible() const {
   for (const Window* window = this; window; window = window->parent()) {
     if (!window->visible_)
       return false;
-    if (window->layer_)
-      return window->layer_->IsDrawn();
+    if (window->layer())
+      return window->layer()->IsDrawn();
   }
   return false;
 }
@@ -406,15 +412,15 @@ gfx::Rect Window::GetBoundsInScreen() const {
 }
 
 void Window::SetTransform(const gfx::Transform& transform) {
-  if (!layer_) {
+  if (!layer()) {
     // Transforms aren't supported on layerless windows.
     NOTREACHED();
     return;
   }
-  WindowEventDispatcher* dispatcher = GetDispatcher();
+  WindowEventDispatcher* dispatcher = GetHost()->dispatcher();
   bool contained_mouse = IsVisible() && dispatcher &&
       ContainsPointInRoot(dispatcher->GetLastMouseLocationInRoot());
-  layer_->SetTransform(transform);
+  layer()->SetTransform(transform);
   if (dispatcher)
     dispatcher->OnWindowTransformed(this, contained_mouse);
 }
@@ -461,11 +467,11 @@ void Window::SetBoundsInScreen(const gfx::Rect& new_bounds_in_screen,
 }
 
 gfx::Rect Window::GetTargetBounds() const {
-  if (!layer_)
+  if (!layer())
     return bounds();
 
-  if (!parent_ || parent_->layer_)
-    return layer_->GetTargetBounds();
+  if (!parent_ || parent_->layer())
+    return layer()->GetTargetBounds();
 
   // We have a layer but our parent (who is valid) doesn't. This means the
   // coordinates of the layer are relative to the first ancestor with a layer;
@@ -474,15 +480,15 @@ gfx::Rect Window::GetTargetBounds() const {
   const aura::Window* ancestor_with_layer =
       parent_->GetAncestorWithLayer(&offset);
   if (!ancestor_with_layer)
-    return layer_->GetTargetBounds();
+    return layer()->GetTargetBounds();
 
-  gfx::Rect layer_target_bounds = layer_->GetTargetBounds();
+  gfx::Rect layer_target_bounds = layer()->GetTargetBounds();
   layer_target_bounds -= offset;
   return layer_target_bounds;
 }
 
 void Window::SchedulePaintInRect(const gfx::Rect& rect) {
-  if (!layer_ && parent_) {
+  if (!layer() && parent_) {
     // Notification of paint scheduled happens for the window with a layer.
     gfx::Rect parent_rect(bounds().size());
     parent_rect.Intersect(rect);
@@ -490,7 +496,7 @@ void Window::SchedulePaintInRect(const gfx::Rect& rect) {
       parent_rect.Offset(bounds().origin().OffsetFromOrigin());
       parent_->SchedulePaintInRect(parent_rect);
     }
-  } else if (layer_ && layer_->SchedulePaint(rect)) {
+  } else if (layer() && layer()->SchedulePaint(rect)) {
     FOR_EACH_OBSERVER(
         WindowObserver, observers_, OnWindowPaintScheduled(this, rect));
   }
@@ -548,7 +554,7 @@ void Window::AddChild(Window* child) {
 
   Window* root_window = GetRootWindow();
   if (root_window && old_root != root_window) {
-    root_window->GetDispatcher()->OnWindowAddedToRootWindow(child);
+    root_window->GetHost()->dispatcher()->OnWindowAddedToRootWindow(child);
     child->NotifyAddedToRootWindow();
   }
 
@@ -608,20 +614,20 @@ void Window::ConvertPointToTarget(const Window* source,
     client::ScreenPositionClient* target_client =
         client::GetScreenPositionClient(target->GetRootWindow());
     target_client->ConvertPointFromScreen(target, point);
-  } else if ((source != target) && (!source->layer_ || !target->layer_)) {
-    if (!source->layer_) {
+  } else if ((source != target) && (!source->layer() || !target->layer())) {
+    if (!source->layer()) {
       gfx::Vector2d offset_to_layer;
       source = source->GetAncestorWithLayer(&offset_to_layer);
       *point += offset_to_layer;
     }
-    if (!target->layer_) {
+    if (!target->layer()) {
       gfx::Vector2d offset_to_layer;
       target = target->GetAncestorWithLayer(&offset_to_layer);
       *point -= offset_to_layer;
     }
-    ui::Layer::ConvertPointToLayer(source->layer_, target->layer_, point);
+    ui::Layer::ConvertPointToLayer(source->layer(), target->layer(), point);
   } else {
-    ui::Layer::ConvertPointToLayer(source->layer_, target->layer_, point);
+    ui::Layer::ConvertPointToLayer(source->layer(), target->layer(), point);
   }
 }
 
@@ -630,7 +636,7 @@ void Window::MoveCursorTo(const gfx::Point& point_in_window) {
   DCHECK(root_window);
   gfx::Point point_in_root(point_in_window);
   ConvertPointToTarget(this, root_window, &point_in_root);
-  root_window->GetDispatcher()->host()->MoveCursorTo(point_in_root);
+  root_window->GetHost()->MoveCursorTo(point_in_root);
 }
 
 gfx::NativeCursor Window::GetCursor(const gfx::Point& point) const {
@@ -670,22 +676,6 @@ bool Window::ContainsPoint(const gfx::Point& local_point) const {
   return gfx::Rect(bounds().size()).Contains(local_point);
 }
 
-bool Window::HitTest(const gfx::Point& local_point) {
-  gfx::Rect local_bounds(bounds().size());
-  if (!delegate_ || !delegate_->HasHitTestMask())
-    return local_bounds.Contains(local_point);
-
-  gfx::Path mask;
-  delegate_->GetHitTestMask(&mask);
-
-  SkRegion clip_region;
-  clip_region.setRect(local_bounds.x(), local_bounds.y(),
-                      local_bounds.width(), local_bounds.height());
-  SkRegion mask_region;
-  return mask_region.setPath(mask, clip_region) &&
-      mask_region.contains(local_point.x(), local_point.y());
-}
-
 Window* Window::GetEventHandlerForPoint(const gfx::Point& local_point) {
   return GetWindowForPoint(local_point, true, true);
 }
@@ -721,7 +711,7 @@ bool Window::HasFocus() const {
 }
 
 bool Window::CanFocus() const {
-  if (dispatcher_)
+  if (IsRootWindow())
     return IsVisible();
 
   // NOTE: as part of focusing the window the ActivationClient may make the
@@ -740,7 +730,7 @@ bool Window::CanFocus() const {
 }
 
 bool Window::CanReceiveEvents() const {
-  if (dispatcher_)
+  if (IsRootWindow())
     return IsVisible();
 
   // The client may forbid certain windows from receiving events at a given
@@ -778,8 +768,8 @@ bool Window::HasCapture() {
 }
 
 void Window::SuppressPaint() {
-  if (layer_)
-    layer_->SuppressPaint();
+  if (layer())
+    layer()->SuppressPaint();
 }
 
 // {Set,Get,Clear}Property are implemented in window_property.h.
@@ -795,8 +785,8 @@ void* Window::GetNativeWindowProperty(const char* key) const {
 
 void Window::OnDeviceScaleFactorChanged(float device_scale_factor) {
   ScopedCursorHider hider(this);
-  if (dispatcher_)
-    dispatcher_->host()->OnDeviceScaleFactorChanged(device_scale_factor);
+  if (IsRootWindow())
+    host_->OnDeviceScaleFactorChanged(device_scale_factor);
   if (delegate_)
     delegate_->OnDeviceScaleFactorChanged(device_scale_factor);
 }
@@ -808,10 +798,10 @@ std::string Window::GetDebugInfo() const {
       name().empty() ? "Unknown" : name().c_str(), id(),
       bounds().x(), bounds().y(), bounds().width(), bounds().height(),
       visible_ ? "WindowVisible" : "WindowHidden",
-      layer_ ?
-          (layer_->GetTargetVisibility() ? "LayerVisible" : "LayerHidden") :
+      layer() ?
+          (layer()->GetTargetVisibility() ? "LayerVisible" : "LayerHidden") :
           "NoLayer",
-      layer_ ? layer_->opacity() : 1.0f);
+      layer() ? layer()->opacity() : 1.0f);
 }
 
 void Window::PrintWindowHierarchy(int depth) const {
@@ -873,6 +863,22 @@ int64 Window::GetPropertyInternal(const void* key,
   return iter->second.value;
 }
 
+bool Window::HitTest(const gfx::Point& local_point) {
+  gfx::Rect local_bounds(bounds().size());
+  if (!delegate_ || !delegate_->HasHitTestMask())
+    return local_bounds.Contains(local_point);
+
+  gfx::Path mask;
+  delegate_->GetHitTestMask(&mask);
+
+  SkRegion clip_region;
+  clip_region.setRect(local_bounds.x(), local_bounds.y(),
+                      local_bounds.width(), local_bounds.height());
+  SkRegion mask_region;
+  return mask_region.setPath(mask, clip_region) &&
+      mask_region.contains(local_point.x(), local_point.y());
+}
+
 void Window::SetBoundsInternal(const gfx::Rect& new_bounds) {
   gfx::Rect actual_new_bounds(new_bounds);
 
@@ -889,47 +895,47 @@ void Window::SetBoundsInternal(const gfx::Rect& new_bounds) {
 
   // Always need to set the layer's bounds -- even if it is to the same thing.
   // This may cause important side effects such as stopping animation.
-  if (!layer_) {
+  if (!layer()) {
     const gfx::Vector2d origin_delta = new_bounds.OffsetFromOrigin() -
         bounds_.OffsetFromOrigin();
     bounds_ = new_bounds;
     OffsetLayerBounds(origin_delta);
   } else {
-    if (parent_ && !parent_->layer_) {
+    if (parent_ && !parent_->layer()) {
       gfx::Vector2d offset;
       const aura::Window* ancestor_with_layer =
           parent_->GetAncestorWithLayer(&offset);
       if (ancestor_with_layer)
         actual_new_bounds.Offset(offset);
     }
-    layer_->SetBounds(actual_new_bounds);
+    layer()->SetBounds(actual_new_bounds);
   }
 
   // If we are currently not the layer's delegate, we will not get bounds
   // changed notification from the layer (this typically happens after animating
   // hidden). We must notify ourselves.
-  if (!layer_ || layer_->delegate() != this)
+  if (!layer() || layer()->delegate() != this)
     OnWindowBoundsChanged(old_bounds, ContainsMouse());
 }
 
 void Window::SetVisible(bool visible) {
-  if ((layer_ && visible == layer_->GetTargetVisibility()) ||
-      (!layer_ && visible == visible_))
+  if ((layer() && visible == layer()->GetTargetVisibility()) ||
+      (!layer() && visible == visible_))
     return;  // No change.
 
   FOR_EACH_OBSERVER(WindowObserver, observers_,
                     OnWindowVisibilityChanging(this, visible));
 
-  WindowEventDispatcher* dispatcher = GetDispatcher();
-  if (dispatcher)
-    dispatcher->DispatchMouseExitToHidingWindow(this);
+  WindowTreeHost* host = GetHost();
+  if (host)
+    host->dispatcher()->DispatchMouseExitToHidingWindow(this);
 
   client::VisibilityClient* visibility_client =
       client::GetVisibilityClient(this);
   if (visibility_client)
     visibility_client->UpdateLayerVisibility(this, visible);
-  else if (layer_)
-    layer_->SetVisible(visible);
+  else if (layer())
+    layer()->SetVisible(visible);
   visible_ = visible;
   SchedulePaint();
   if (parent_ && parent_->layout_manager_)
@@ -940,8 +946,8 @@ void Window::SetVisible(bool visible) {
 
   NotifyWindowVisibilityChanged(this, visible);
 
-  if (dispatcher)
-    dispatcher->OnWindowVisibilityChanged(this, visible);
+  if (host)
+    host->dispatcher()->OnWindowVisibilityChanged(this, visible);
 }
 
 void Window::SchedulePaint() {
@@ -957,9 +963,10 @@ void Window::Paint(gfx::Canvas* canvas) {
 void Window::PaintLayerlessChildren(gfx::Canvas* canvas) {
   for (size_t i = 0, count = children_.size(); i < count; ++i) {
     Window* child = children_[i];
-    if (!child->layer_ && child->visible_) {
+    if (!child->layer() && child->visible_) {
       gfx::ScopedCanvas scoped_canvas(canvas);
-      if (canvas->ClipRect(child->bounds())) {
+      canvas->ClipRect(child->bounds());
+      if (!canvas->IsClipEmpty()) {
         canvas->Translate(child->bounds().OffsetFromOrigin());
         child->Paint(canvas);
       }
@@ -1029,14 +1036,14 @@ void Window::RemoveChildImpl(Window* child, Window* new_parent) {
   Window* root_window = child->GetRootWindow();
   Window* new_root_window = new_parent ? new_parent->GetRootWindow() : NULL;
   if (root_window && root_window != new_root_window) {
-    root_window->GetDispatcher()->OnWindowRemovedFromRootWindow(
+    root_window->GetHost()->dispatcher()->OnWindowRemovedFromRootWindow(
         child, new_root_window);
     child->NotifyRemovingFromRootWindow();
   }
 
   gfx::Vector2d offset;
   GetAncestorWithLayer(&offset);
-  child->UnparentLayers(!layer_, offset);
+  child->UnparentLayers(!layer(), offset);
   child->parent_ = NULL;
   Windows::iterator i = std::find(children_.begin(), children_.end(), child);
   DCHECK(i != children_.end());
@@ -1048,7 +1055,7 @@ void Window::RemoveChildImpl(Window* child, Window* new_parent) {
 
 void Window::UnparentLayers(bool has_layerless_ancestor,
                             const gfx::Vector2d& offset) {
-  if (!layer_) {
+  if (!layer()) {
     const gfx::Vector2d new_offset = offset + bounds().OffsetFromOrigin();
     for (size_t i = 0; i < children_.size(); ++i) {
       children_[i]->UnparentLayers(true, new_offset);
@@ -1057,14 +1064,14 @@ void Window::UnparentLayers(bool has_layerless_ancestor,
     // Only remove the layer if we still own it.  Someone else may have acquired
     // ownership of it via AcquireLayer() and may expect the hierarchy to go
     // unchanged as the Window is destroyed.
-    if (layer_owner_) {
-      if (layer_->parent())
-        layer_->parent()->Remove(layer_);
+    if (OwnsLayer()) {
+      if (layer()->parent())
+        layer()->parent()->Remove(layer());
       if (has_layerless_ancestor) {
         const gfx::Rect real_bounds(bounds_);
-        gfx::Rect layer_bounds(layer_->bounds());
+        gfx::Rect layer_bounds(layer()->bounds());
         layer_bounds.Offset(-offset);
-        layer_->SetBounds(layer_bounds);
+        layer()->SetBounds(layer_bounds);
         bounds_ = real_bounds;
       }
     }
@@ -1073,7 +1080,7 @@ void Window::UnparentLayers(bool has_layerless_ancestor,
 
 void Window::ReparentLayers(ui::Layer* parent_layer,
                             const gfx::Vector2d& offset) {
-  if (!layer_) {
+  if (!layer()) {
     for (size_t i = 0; i < children_.size(); ++i) {
       children_[i]->ReparentLayers(
           parent_layer,
@@ -1081,22 +1088,22 @@ void Window::ReparentLayers(ui::Layer* parent_layer,
     }
   } else {
     const gfx::Rect real_bounds(bounds());
-    parent_layer->Add(layer_);
-    gfx::Rect layer_bounds(layer_->bounds().size());
+    parent_layer->Add(layer());
+    gfx::Rect layer_bounds(layer()->bounds().size());
     layer_bounds += offset;
-    layer_->SetBounds(layer_bounds);
+    layer()->SetBounds(layer_bounds);
     bounds_ = real_bounds;
   }
 }
 
 void Window::OffsetLayerBounds(const gfx::Vector2d& offset) {
-  if (!layer_) {
+  if (!layer()) {
     for (size_t i = 0; i < children_.size(); ++i)
       children_[i]->OffsetLayerBounds(offset);
   } else {
-    gfx::Rect layer_bounds(layer_->bounds());
+    gfx::Rect layer_bounds(layer()->bounds());
     layer_bounds += offset;
-    layer_->SetBounds(layer_bounds);
+    layer()->SetBounds(layer_bounds);
   }
 }
 
@@ -1151,11 +1158,11 @@ void Window::StackChildLayerRelativeTo(Window* child,
   if (!ancestor_layer)
     return;
 
-  if (child->layer_ && target->layer_) {
+  if (child->layer() && target->layer()) {
     if (direction == STACK_ABOVE)
-      ancestor_layer->StackAbove(child->layer_, target->layer_);
+      ancestor_layer->StackAbove(child->layer(), target->layer());
     else
-      ancestor_layer->StackBelow(child->layer_, target->layer_);
+      ancestor_layer->StackBelow(child->layer(), target->layer());
     return;
   }
   typedef std::vector<ui::Layer*> Layers;
@@ -1325,9 +1332,9 @@ void Window::NotifyWindowVisibilityChangedUp(aura::Window* target,
 
 void Window::OnWindowBoundsChanged(const gfx::Rect& old_bounds,
                                    bool contained_mouse) {
-  if (layer_) {
-    bounds_ = layer_->bounds();
-    if (parent_ && !parent_->layer_) {
+  if (layer()) {
+    bounds_ = layer()->bounds();
+    if (parent_ && !parent_->layer()) {
       gfx::Vector2d offset;
       aura::Window* ancestor_with_layer =
           parent_->GetAncestorWithLayer(&offset);
@@ -1343,9 +1350,9 @@ void Window::OnWindowBoundsChanged(const gfx::Rect& old_bounds,
   FOR_EACH_OBSERVER(WindowObserver,
                     observers_,
                     OnWindowBoundsChanged(this, old_bounds, bounds()));
-  WindowEventDispatcher* dispatcher = GetDispatcher();
-  if (dispatcher)
-    dispatcher->OnWindowBoundsChanged(this, contained_mouse);
+  WindowTreeHost* host = GetHost();
+  if (host)
+    host->dispatcher()->OnWindowBoundsChanged(this, contained_mouse);
 }
 
 void Window::OnPaintLayer(gfx::Canvas* canvas) {
@@ -1384,7 +1391,7 @@ bool Window::CanAcceptEvent(const ui::Event& event) {
 }
 
 ui::EventTarget* Window::GetParentTarget() {
-  if (dispatcher_) {
+  if (IsRootWindow()) {
     return client::GetEventClient(this) ?
         client::GetEventClient(this)->GetToplevelEventTarget() :
             Env::GetInstance();
@@ -1409,7 +1416,7 @@ void Window::ConvertEventToTarget(ui::EventTarget* target,
 
 void Window::UpdateLayerName(const std::string& name) {
 #if !defined(NDEBUG)
-  DCHECK(layer_);
+  DCHECK(layer());
 
   std::string layer_name(name_);
   if (layer_name.empty())
@@ -1418,23 +1425,23 @@ void Window::UpdateLayerName(const std::string& name) {
   if (id_ != -1)
     layer_name += " " + base::IntToString(id_);
 
-  layer_->set_name(layer_name);
+  layer()->set_name(layer_name);
 #endif
 }
 
 bool Window::ContainsMouse() {
   bool contains_mouse = false;
   if (IsVisible()) {
-    WindowEventDispatcher* dispatcher = GetDispatcher();
-    contains_mouse = dispatcher &&
-        ContainsPointInRoot(dispatcher->GetLastMouseLocationInRoot());
+    WindowTreeHost* host = GetHost();
+    contains_mouse = host &&
+        ContainsPointInRoot(host->dispatcher()->GetLastMouseLocationInRoot());
   }
   return contains_mouse;
 }
 
 const Window* Window::GetAncestorWithLayer(gfx::Vector2d* offset) const {
   for (const aura::Window* window = this; window; window = window->parent()) {
-    if (window->layer_)
+    if (window->layer())
       return window;
     if (offset)
       *offset += window->bounds().OffsetFromOrigin();

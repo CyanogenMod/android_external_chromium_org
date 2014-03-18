@@ -136,23 +136,22 @@ BASE_EXPORT bool ContentsEqual(const FilePath& filename1,
 BASE_EXPORT bool TextContentsEqual(const FilePath& filename1,
                                    const FilePath& filename2);
 
-// Read the file at |path| into |contents|, returning true on success.
-// This function fails if the |path| contains path traversal components ('..').
+// Reads the file at |path| into |contents| and returns true on success.
 // |contents| may be NULL, in which case this function is useful for its
-// side effect of priming the disk cache, which is useful for unit tests.
-// The function replaces rather than append to |contents|, further |contents|
-// could be cleared on error.
+// side effect of priming the disk cache (could be used for unit tests).
+// The function returns false and the string pointed to by |contents| is
+// cleared when |path| does not exist or if it contains path traversal
+// components ('..').
 BASE_EXPORT bool ReadFileToString(const FilePath& path, std::string* contents);
 
-// Read the file at |path| into |contents|, returning true on success.
-// This function has an additional check on the maximum size of the file.
-// When the file size is greater than |max_size|, the function reads |max_size|
-// bytes into |contents| and returns false.
-// This function fails if the |path| contains path traversal components ('..').
+// Reads the file at |path| into |contents| and returns true on success.
 // |contents| may be NULL, in which case this function is useful for its
-// side effect of priming the disk cache, which is useful for unit tests.
-// The function replaces rather than append to |contents|, further |contents|
-// could be cleared on error.
+// side effect of priming the disk cache (could be used for unit tests).
+// The function returns false and the string pointed to by |contents| is
+// cleared when |path| does not exist or if it contains path traversal
+// components ('..').
+// When the file size exceeds |max_size|, the function returns false
+// with |contents| holding the file truncated to |max_size|.
 BASE_EXPORT bool ReadFileToString(const FilePath& path,
                                   std::string* contents,
                                   size_t max_size);
@@ -221,16 +220,12 @@ BASE_EXPORT bool GetTempDir(FilePath* path);
 // Only useful on POSIX; redirects to GetTempDir() on Windows.
 BASE_EXPORT bool GetShmemTempDir(bool executable, FilePath* path);
 
-#if defined(OS_POSIX)
-// Get the home directory.  This is more complicated than just getenv("HOME")
+// Get the home directory. This is more complicated than just getenv("HOME")
 // as it knows to fall back on getpwent() etc.
 //
-// This function is not currently implemented on Windows or Mac because we
-// don't use it. Generally you would use one of PathService's APP_DATA
-// directories on those platforms. If we need it, this could be implemented
-// there to return the appropriate directory.
+// You should not generally call this directly. Instead use DIR_HOME with the
+// path service which will use this function but cache the value.
 BASE_EXPORT FilePath GetHomeDir();
-#endif  // OS_POSIX
 
 // Creates a temporary file. The full path is placed in |path|, and the
 // function returns true if was successful in creating the file. The file will
@@ -333,44 +328,33 @@ BASE_EXPORT bool TruncateFile(FILE* file);
 // the number of read bytes, or -1 on error.
 BASE_EXPORT int ReadFile(const FilePath& filename, char* data, int size);
 
-}  // namespace base
-
-// -----------------------------------------------------------------------------
-
-namespace file_util {
-
 // Writes the given buffer into the file, overwriting any data that was
 // previously there.  Returns the number of bytes written, or -1 on error.
-BASE_EXPORT int WriteFile(const base::FilePath& filename, const char* data,
+BASE_EXPORT int WriteFile(const FilePath& filename, const char* data,
                           int size);
+
 #if defined(OS_POSIX)
 // Append the data to |fd|. Does not close |fd| when done.
 BASE_EXPORT int WriteFileDescriptor(const int fd, const char* data, int size);
 #endif
+
 // Append the given buffer into the file. Returns the number of bytes written,
 // or -1 on error.
-BASE_EXPORT int AppendToFile(const base::FilePath& filename,
+BASE_EXPORT int AppendToFile(const FilePath& filename,
                              const char* data, int size);
 
 // Gets the current working directory for the process.
-BASE_EXPORT bool GetCurrentDirectory(base::FilePath* path);
+BASE_EXPORT bool GetCurrentDirectory(FilePath* path);
 
 // Sets the current working directory for the process.
-BASE_EXPORT bool SetCurrentDirectory(const base::FilePath& path);
+BASE_EXPORT bool SetCurrentDirectory(const FilePath& path);
 
 // Attempts to find a number that can be appended to the |path| to make it
 // unique. If |path| does not exist, 0 is returned.  If it fails to find such
 // a number, -1 is returned. If |suffix| is not empty, also checks the
 // existence of it with the given suffix.
-BASE_EXPORT int GetUniquePathNumber(const base::FilePath& path,
-                                    const base::FilePath::StringType& suffix);
-
-#if defined(OS_POSIX)
-// Creates a directory with a guaranteed unique name based on |path|, returning
-// the pathname if successful, or an empty path if there was an error creating
-// the directory. Does not create parent directories.
-BASE_EXPORT base::FilePath MakeUniqueDirectory(const base::FilePath& path);
-#endif
+BASE_EXPORT int GetUniquePathNumber(const FilePath& path,
+                                    const FilePath::StringType& suffix);
 
 #if defined(OS_POSIX)
 // Test that |path| can only be changed by a given user and members of
@@ -405,35 +389,6 @@ BASE_EXPORT bool VerifyPathControlledByAdmin(const base::FilePath& path);
 // the directory |path|, in the number of FilePath::CharType, or -1 on failure.
 BASE_EXPORT int GetMaximumPathComponentLength(const base::FilePath& path);
 
-// Functor for |ScopedFILE| (below).
-struct ScopedFILEClose {
-  inline void operator()(FILE* x) const {
-    if (x)
-      fclose(x);
-  }
-};
-
-// Automatically closes |FILE*|s.
-typedef scoped_ptr<FILE, ScopedFILEClose> ScopedFILE;
-
-#if defined(OS_POSIX)
-// Functor for |ScopedFD| (below).
-struct ScopedFDClose {
-  inline void operator()(int* x) const {
-    if (x && *x >= 0) {
-      if (IGNORE_EINTR(close(*x)) < 0)
-        DPLOG(ERROR) << "close";
-    }
-  }
-};
-
-// Automatically closes FDs (note: doesn't store the FD).
-// TODO(viettrungluu): This is a very odd API, since (unlike |FILE*|s, you'll
-// need to store the FD separately and keep its memory alive). This should
-// probably be called |ScopedFDCloser| or something like that.
-typedef scoped_ptr<int, ScopedFDClose> ScopedFD;
-#endif  // OS_POSIX
-
 #if defined(OS_LINUX)
 // Broad categories of file systems as returned by statfs() on Linux.
 enum FileSystemType {
@@ -451,9 +406,25 @@ enum FileSystemType {
 
 // Attempts determine the FileSystemType for |path|.
 // Returns false if |path| doesn't exist.
-BASE_EXPORT bool GetFileSystemType(const base::FilePath& path,
-                                   FileSystemType* type);
+BASE_EXPORT bool GetFileSystemType(const FilePath& path, FileSystemType* type);
 #endif
+
+}  // namespace base
+
+// -----------------------------------------------------------------------------
+
+namespace file_util {
+
+// Functor for |ScopedFILE| (below).
+struct ScopedFILEClose {
+  inline void operator()(FILE* x) const {
+    if (x)
+      fclose(x);
+  }
+};
+
+// Automatically closes |FILE*|s.
+typedef scoped_ptr<FILE, ScopedFILEClose> ScopedFILE;
 
 }  // namespace file_util
 

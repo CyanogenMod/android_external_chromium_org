@@ -7,6 +7,7 @@
 #include "base/time/default_tick_clock.h"
 #include "chrome/browser/media/cast_transport_host_filter.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "media/cast/logging/logging_defines.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -15,24 +16,11 @@ class CastTransportHostFilterTest : public testing::Test {
  public:
   CastTransportHostFilterTest()
       : browser_thread_bundle_(
-            content::TestBrowserThreadBundle::IO_MAINLOOP) {
-  }
- protected:
-  virtual void SetUp() OVERRIDE {
+            content::TestBrowserThreadBundle::IO_MAINLOOP),
+        logging_config_(
+            media::cast::GetLoggingConfigWithRawEventsAndStatsEnabled()) {
     filter_ = new cast::CastTransportHostFilter();
-  }
-
-  void FakeSend(const IPC::Message& message) {
-    bool message_was_ok;
-    EXPECT_TRUE(filter_->OnMessageReceived(message, &message_was_ok));
-    EXPECT_TRUE(message_was_ok);
-  }
-
-  net::IPEndPoint GetLocalEndPoint() {
-    return net::IPEndPoint(net::IPAddressNumber(4, 0), 0);
-  }
-
-  net::IPEndPoint GetRemoteEndPoint() {
+    local_endpoint_ = net::IPEndPoint(net::IPAddressNumber(4, 0), 0);
     // 127.0.0.1:7 is the local echo service port, which
     // is probably not going to respond, but that's ok.
     // TODO(hubbe): Open up an UDP port and make sure
@@ -40,20 +28,28 @@ class CastTransportHostFilterTest : public testing::Test {
     net::IPAddressNumber receiver_address(4, 0);
     receiver_address[0] = 127;
     receiver_address[3] = 1;
-    return net::IPEndPoint(receiver_address, 7);
+    receive_endpoint_ = net::IPEndPoint(receiver_address, 7);
+  }
+
+ protected:
+  void FakeSend(const IPC::Message& message) {
+    bool message_was_ok;
+    EXPECT_TRUE(filter_->OnMessageReceived(message, &message_was_ok));
+    EXPECT_TRUE(message_was_ok);
   }
 
   content::TestBrowserThreadBundle browser_thread_bundle_;
   scoped_refptr<content::BrowserMessageFilter> filter_;
   net::IPAddressNumber receiver_address_;
+  net::IPEndPoint local_endpoint_;
+  net::IPEndPoint receive_endpoint_;
+  media::cast::CastLoggingConfig logging_config_;
 };
 
 TEST_F(CastTransportHostFilterTest, NewDelete) {
-  media::cast::transport::CastTransportConfig config;
-  config.local_endpoint = GetLocalEndPoint();
-  config.receiver_endpoint = GetRemoteEndPoint();
   const int kChannelId = 17;
-  CastHostMsg_New new_msg(kChannelId, config);
+  CastHostMsg_New new_msg(kChannelId, local_endpoint_, receive_endpoint_,
+                          logging_config_);
   CastHostMsg_Delete delete_msg(kChannelId);
 
   // New, then delete, as expected.
@@ -75,12 +71,9 @@ TEST_F(CastTransportHostFilterTest, NewDelete) {
 }
 
 TEST_F(CastTransportHostFilterTest, NewMany) {
-  media::cast::transport::CastTransportConfig config;
-  config.local_endpoint = GetLocalEndPoint();
-  config.receiver_endpoint = GetRemoteEndPoint();
-
   for (int i = 0; i < 100; i++) {
-    CastHostMsg_New new_msg(i, config);
+    CastHostMsg_New new_msg(i, local_endpoint_, receive_endpoint_,
+                            logging_config_);
     FakeSend(new_msg);
   }
 
@@ -94,13 +87,18 @@ TEST_F(CastTransportHostFilterTest, NewMany) {
 
 TEST_F(CastTransportHostFilterTest, SimpleMessages) {
   // Create a cast transport sender.
-  media::cast::transport::CastTransportConfig config;
-  config.local_endpoint = GetLocalEndPoint();
-  config.receiver_endpoint = GetRemoteEndPoint();
   const int32 kChannelId = 42;
-  CastHostMsg_New new_msg(kChannelId, config);
+  CastHostMsg_New new_msg(kChannelId, local_endpoint_, receive_endpoint_,
+                          logging_config_);
   FakeSend(new_msg);
 
+  media::cast::transport::CastTransportAudioConfig audio_config;
+  CastHostMsg_InitializeAudio init_audio_msg(kChannelId, audio_config);
+  FakeSend(init_audio_msg);
+
+  media::cast::transport::CastTransportVideoConfig video_config;
+  CastHostMsg_InitializeVideo init_video_msg(kChannelId, video_config);
+  FakeSend(init_video_msg);
   media::cast::transport::EncodedAudioFrame audio_frame;
   audio_frame.codec = media::cast::transport::kPcm16;
   audio_frame.frame_id = 1;
@@ -111,7 +109,7 @@ TEST_F(CastTransportHostFilterTest, SimpleMessages) {
   audio_frame.data = std::string(kSamples * kBytesPerSample * kChannels, 'q');
   CastHostMsg_InsertCodedAudioFrame insert_coded_audio_frame(
       kChannelId, audio_frame, base::TimeTicks::Now());
-  FakeSend(new_msg);
+  FakeSend(insert_coded_audio_frame);
 
   media::cast::transport::EncodedVideoFrame video_frame;
   video_frame.codec = media::cast::transport::kVp8;
@@ -124,7 +122,7 @@ TEST_F(CastTransportHostFilterTest, SimpleMessages) {
   video_frame.data = std::string(kVideoDataSize, 'p');
   CastHostMsg_InsertCodedVideoFrame insert_coded_video_frame(
       kChannelId, video_frame, base::TimeTicks::Now());
-  FakeSend(new_msg);
+  FakeSend(insert_coded_video_frame);
 
   media::cast::transport::SendRtcpFromRtpSenderData rtcp_data;
   rtcp_data.packet_type_flags = 0;

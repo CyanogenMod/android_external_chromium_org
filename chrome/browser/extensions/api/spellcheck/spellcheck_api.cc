@@ -6,6 +6,7 @@
 
 #include "base/lazy_instance.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/common/extensions/api/spellcheck/spellcheck_handler.h"
@@ -39,8 +40,8 @@ SpellcheckService::DictionaryFormat GetDictionaryFormat(std::string format) {
 
 }  // namespace
 
-
-SpellcheckAPI::SpellcheckAPI(Profile* profile) {
+SpellcheckAPI::SpellcheckAPI(content::BrowserContext* context) {
+  Profile* profile = Profile::FromBrowserContext(context);
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::Source<Profile>(profile));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
@@ -50,11 +51,12 @@ SpellcheckAPI::SpellcheckAPI(Profile* profile) {
 SpellcheckAPI::~SpellcheckAPI() {
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<SpellcheckAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<SpellcheckAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<SpellcheckAPI>* SpellcheckAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<SpellcheckAPI>*
+SpellcheckAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
@@ -97,7 +99,8 @@ void SpellcheckAPI::Observe(int type,
 }
 
 template <>
-void ProfileKeyedAPIFactory<SpellcheckAPI>::DeclareFactoryDependencies() {
+void
+BrowserContextKeyedAPIFactory<SpellcheckAPI>::DeclareFactoryDependencies() {
   DependsOn(SpellcheckServiceFactory::GetInstance());
 }
 

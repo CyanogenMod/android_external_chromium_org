@@ -9,6 +9,7 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
+#include "content/browser/service_worker/service_worker_utils.h"
 #include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/common/service_worker/service_worker_messages.h"
 #include "ipc/ipc_message_macros.h"
@@ -80,6 +81,10 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
                         OnProviderCreated)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_ProviderDestroyed,
                         OnProviderDestroyed)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_AddScriptClient,
+                        OnAddScriptClient)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_RemoveScriptClient,
+                        OnRemoveScriptClient)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerStarted,
                         OnWorkerStarted)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerStopped,
@@ -97,7 +102,7 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
     int32 request_id,
     const GURL& pattern,
     const GURL& script_url) {
-  if (!context_ || !context_->IsEnabled()) {
+  if (!context_ || !ServiceWorkerUtils::IsFeatureEnabled()) {
     Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
         thread_id,
         request_id,
@@ -135,7 +140,7 @@ void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(
   // TODO(alecflett): This check is insufficient for release. Add a
   // ServiceWorker-specific policy query in
   // ChildProcessSecurityImpl. See http://crbug.com/311631.
-  if (!context_ || !context_->IsEnabled()) {
+  if (!context_ || !ServiceWorkerUtils::IsFeatureEnabled()) {
     Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
         thread_id,
         request_id,
@@ -173,6 +178,28 @@ void ServiceWorkerDispatcherHost::OnProviderDestroyed(int provider_id) {
     return;
   }
   context_->RemoveProviderHost(render_process_id_, provider_id);
+}
+
+void ServiceWorkerDispatcherHost::OnAddScriptClient(
+    int thread_id, int provider_id) {
+  if (!context_)
+    return;
+  ServiceWorkerProviderHost* provider_host =
+      context_->GetProviderHost(render_process_id_, provider_id);
+  if (!provider_host)
+    return;
+  provider_host->AddScriptClient(thread_id);
+}
+
+void ServiceWorkerDispatcherHost::OnRemoveScriptClient(
+    int thread_id, int provider_id) {
+  if (!context_)
+    return;
+  ServiceWorkerProviderHost* provider_host =
+      context_->GetProviderHost(render_process_id_, provider_id);
+  if (!provider_host)
+    return;
+  provider_host->RemoveScriptClient(thread_id);
 }
 
 void ServiceWorkerDispatcherHost::RegistrationComplete(

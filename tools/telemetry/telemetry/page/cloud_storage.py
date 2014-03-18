@@ -17,6 +17,7 @@ from telemetry.core import util
 
 
 PUBLIC_BUCKET = 'chromium-telemetry'
+PARTNER_BUCKET = 'chrome-partner-telemetry'
 INTERNAL_BUCKET = 'chrome-telemetry'
 
 
@@ -100,6 +101,7 @@ def SupportsProdaccess(gsutil_path):
 
 def _RunCommand(args):
   gsutil_path = FindGsutil()
+
   gsutil = subprocess.Popen([sys.executable, gsutil_path] + args,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   stdout, stderr = gsutil.communicate()
@@ -184,7 +186,7 @@ def GetIfChanged(file_path, bucket=None):
   if bucket:
     buckets = [bucket]
   else:
-    buckets = [PUBLIC_BUCKET, INTERNAL_BUCKET]
+    buckets = [PUBLIC_BUCKET, PARTNER_BUCKET, INTERNAL_BUCKET]
 
   found = False
   for bucket in buckets:

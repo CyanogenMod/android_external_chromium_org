@@ -31,6 +31,7 @@
 #include "cc/quads/stream_video_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/resources/layer_quad.h"
+#include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/scoped_resource.h"
 #include "cc/resources/texture_mailbox_deleter.h"
 #include "cc/trees/damage_tracker.h"
@@ -93,12 +94,15 @@ class OnDemandRasterTaskImpl : public internal::Task {
   }
 
   // Overridden from internal::Task:
-  virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
+  virtual void RunOnWorkerThread() OVERRIDE {
     TRACE_EVENT0("cc", "OnDemandRasterTaskImpl::RunOnWorkerThread");
-    SkBitmapDevice device(*bitmap_);
-    SkCanvas canvas(&device);
-    picture_pile_->RasterToBitmap(
-        &canvas, content_rect_, contents_scale_, NULL);
+    SkCanvas canvas(*bitmap_);
+
+    PicturePileImpl* picture_pile = picture_pile_->GetCloneForDrawingOnThread(
+        RasterWorkerPool::GetPictureCloneIndexForCurrentThread());
+    DCHECK(picture_pile);
+
+    picture_pile->RasterToBitmap(&canvas, content_rect_, contents_scale_, NULL);
   }
 
  protected:
@@ -484,7 +488,7 @@ void GLRenderer::DrawDebugBorderQuad(const DrawingFrame* frame,
 
 static SkBitmap ApplyImageFilter(GLRenderer* renderer,
                                  ContextProvider* offscreen_contexts,
-                                 gfx::Point origin,
+                                 const gfx::Point& origin,
                                  SkImageFilter* filter,
                                  ScopedResource* source_texture_resource) {
   if (!filter)
@@ -1762,10 +1766,10 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
 
   uint8_t* bitmap_pixels = NULL;
   SkBitmap on_demand_tile_raster_bitmap_dest;
-  SkBitmap::Config config = SkBitmapConfig(quad->texture_format);
-  if (on_demand_tile_raster_bitmap_.getConfig() != config) {
+  SkColorType colorType = ResourceFormatToSkColorType(quad->texture_format);
+  if (on_demand_tile_raster_bitmap_.colorType() != colorType) {
     on_demand_tile_raster_bitmap_.copyTo(&on_demand_tile_raster_bitmap_dest,
-                                         config);
+                                         colorType);
     // TODO(kaanb): The GL pipeline assumes a 4-byte alignment for the
     // bitmap data. This check will be removed once crbug.com/293728 is fixed.
     CHECK_EQ(0u, on_demand_tile_raster_bitmap_dest.rowBytes() % 4);

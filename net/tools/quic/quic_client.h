@@ -25,6 +25,7 @@
 namespace net {
 
 class ProofVerifier;
+class QuicSessionKey;
 
 namespace tools {
 
@@ -47,11 +48,11 @@ class QuicClient : public EpollCallbackInterface,
   };
 
   QuicClient(IPEndPoint server_address,
-             const string& server_hostname,
+             const QuicSessionKey& server_key,
              const QuicVersionVector& supported_versions,
              bool print_response);
   QuicClient(IPEndPoint server_address,
-             const std::string& server_hostname,
+             const QuicSessionKey& server_key,
              const QuicConfig& config,
              const QuicVersionVector& supported_versions);
 
@@ -81,7 +82,8 @@ class QuicClient : public EpollCallbackInterface,
 
   // Sends a request simple GET for each URL in |args|, and then waits for
   // each to complete.
-  void SendRequestsAndWaitForResponse(const CommandLine::StringVector& args);
+  void SendRequestsAndWaitForResponse(const
+      base::CommandLine::StringVector& args);
 
   // Returns a newly created QuicSpdyClientStream, owned by the
   // QuicClient.
@@ -134,13 +136,11 @@ class QuicClient : public EpollCallbackInterface,
 
   int fd() { return fd_; }
 
-  string server_hostname() {
-    return server_hostname_;
-  }
+  const QuicSessionKey& server_key() const { return server_key_; }
 
   // This should only be set before the initial Connect()
-  void set_server_hostname(const string& hostname) {
-    server_hostname_ = hostname;
+  void set_server_key(const QuicSessionKey& server_key) {
+    server_key_ = server_key;
   }
 
   // SetProofVerifier sets the ProofVerifier that will be used to verify the
@@ -168,7 +168,7 @@ class QuicClient : public EpollCallbackInterface,
   }
 
  protected:
-  virtual QuicGuid GenerateGuid();
+  virtual QuicConnectionId GenerateConnectionId();
   virtual QuicEpollConnectionHelper* CreateQuicConnectionHelper();
   virtual QuicPacketWriter* CreateQuicPacketWriter();
 
@@ -181,8 +181,8 @@ class QuicClient : public EpollCallbackInterface,
   // Address of the server.
   const IPEndPoint server_address_;
 
-  // Hostname of the server. This may be a DNS name or an IP address literal.
-  std::string server_hostname_;
+  // |server_key_| is a tuple (hostname, port, is_https) of the server.
+  QuicSessionKey server_key_;
 
   // config_ and crypto_config_ contain configuration and cached state about
   // servers.
@@ -219,7 +219,7 @@ class QuicClient : public EpollCallbackInterface,
   // If overflow_supported_ is true, this will be the number of packets dropped
   // during the lifetime of the server.  This may overflow if enough packets
   // are dropped.
-  int packets_dropped_;
+  uint32 packets_dropped_;
 
   // True if the kernel supports SO_RXQ_OVFL, the number of packets dropped
   // because the socket would otherwise overflow.

@@ -10,18 +10,22 @@
     'chromium_code': 1,
   },
   'includes': [
-    'autofill.gypi',
     'auto_login_parser.gypi',
+    'autofill.gypi',
     'breakpad.gypi',
     'cloud_devices.gypi',
     'dom_distiller.gypi',
     'json_schema.gypi',
+    'keyed_service.gypi',
     'language_usage_metrics.gypi',
+    'metrics.gypi',
     'navigation_metrics.gypi',
     'onc.gypi',
+    'os_crypt.gypi',
     'password_manager.gypi',
     'policy.gypi',
     'precache.gypi',
+    'rappor.gypi',
     'signin.gypi',
     'startup_metric_utils.gypi',
     'translate.gypi',
@@ -33,7 +37,6 @@
   'conditions': [
     ['OS != "ios"', {
       'includes': [
-        'browser_context_keyed_service.gypi',
         'navigation_interception.gypi',
         'plugins.gypi',
         'sessions.gypi',

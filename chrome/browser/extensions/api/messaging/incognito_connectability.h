@@ -7,11 +7,11 @@
 
 #include <set>
 
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "url/gurl.h"
 
-class Profile;
 namespace content {
+class BrowserContext;
 class WebContents;
 }
 
@@ -26,7 +26,7 @@ class Extension;
 // able to send messages to them, with user constent. For apps, it's essential
 // we have this functionality because there is no way for them to be enabled in
 // incognito.
-class IncognitoConnectability : public ProfileKeyedAPI {
+class IncognitoConnectability : public BrowserContextKeyedAPI {
  public:
   // While in scope, immediately either accepts or denies the alerts that show
   // up, and counts the number of times it was invoked.
@@ -50,9 +50,9 @@ class IncognitoConnectability : public ProfileKeyedAPI {
     int last_checked_invocation_count_;
   };
 
-  // Returns the IncognitoConnectability object for |profile|. |profile| must
+  // Returns the IncognitoConnectability object for |context|. |context| must
   // be off-the-record.
-  static IncognitoConnectability* Get(Profile* profile);
+  static IncognitoConnectability* Get(content::BrowserContext* context);
 
   // Returns true if |url| is allowed to connect from this profile, false
   // otherwise. If unknown, this call will block and prompt the user.
@@ -61,9 +61,9 @@ class IncognitoConnectability : public ProfileKeyedAPI {
              const GURL& url);
 
  private:
-  friend class ProfileKeyedAPIFactory<IncognitoConnectability>;
+  friend class BrowserContextKeyedAPIFactory<IncognitoConnectability>;
 
-  explicit IncognitoConnectability(Profile* profile);
+  explicit IncognitoConnectability(content::BrowserContext* context);
   virtual ~IncognitoConnectability();
 
   typedef std::map<std::string, std::set<GURL> > ExtensionToOriginsMap;
@@ -73,8 +73,9 @@ class IncognitoConnectability : public ProfileKeyedAPI {
                const GURL& origin,
                const ExtensionToOriginsMap& map);
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<IncognitoConnectability>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<IncognitoConnectability>*
+      GetFactoryInstance();
   static const char* service_name() {
     return "Messaging.IncognitoConnectability";
   }

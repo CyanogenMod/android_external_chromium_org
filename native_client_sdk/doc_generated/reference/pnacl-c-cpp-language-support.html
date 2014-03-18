@@ -6,26 +6,29 @@
 <ul class="small-gap">
 <li><p class="first"><a class="reference internal" href="#source-language-support" id="id2">Source language support</a></p>
 <ul class="small-gap">
-<li><a class="reference internal" href="#preprocessor-definitions" id="id3">Preprocessor definitions</a></li>
+<li><a class="reference internal" href="#versions" id="id3">Versions</a></li>
+<li><a class="reference internal" href="#preprocessor-definitions" id="id4">Preprocessor definitions</a></li>
 </ul>
 </li>
-<li><p class="first"><a class="reference internal" href="#memory-model-and-atomics" id="id4">Memory Model and Atomics</a></p>
+<li><p class="first"><a class="reference internal" href="#memory-model-and-atomics" id="id5">Memory Model and Atomics</a></p>
 <ul class="small-gap">
-<li><a class="reference internal" href="#memory-model-for-concurrent-operations" id="id5">Memory Model for Concurrent Operations</a></li>
-<li><a class="reference internal" href="#atomic-memory-ordering-constraints" id="id6">Atomic Memory Ordering Constraints</a></li>
-<li><a class="reference internal" href="#volatile-memory-accesses" id="id7">Volatile Memory Accesses</a></li>
+<li><a class="reference internal" href="#memory-model-for-concurrent-operations" id="id6">Memory Model for Concurrent Operations</a></li>
+<li><a class="reference internal" href="#atomic-memory-ordering-constraints" id="id7">Atomic Memory Ordering Constraints</a></li>
+<li><a class="reference internal" href="#volatile-memory-accesses" id="id8">Volatile Memory Accesses</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#threading" id="id8">Threading</a></li>
-<li><a class="reference internal" href="#setjmp-and-longjmp" id="id9"><code>setjmp</code> and <code>longjmp</code></a></li>
-<li><a class="reference internal" href="#c-exception-handling" id="id10">C++ Exception Handling</a></li>
-<li><a class="reference internal" href="#inline-assembly" id="id11">Inline Assembly</a></li>
-<li><p class="first"><a class="reference internal" href="#future-directions" id="id12">Future Directions</a></p>
+<li><a class="reference internal" href="#threading" id="id9">Threading</a></li>
+<li><a class="reference internal" href="#setjmp-and-longjmp" id="id10"><code>setjmp</code> and <code>longjmp</code></a></li>
+<li><a class="reference internal" href="#c-exception-handling" id="id11">C++ Exception Handling</a></li>
+<li><a class="reference internal" href="#inline-assembly" id="id12">Inline Assembly</a></li>
+<li><a class="reference internal" href="#undefined-behavior" id="id13">Undefined Behavior</a></li>
+<li><a class="reference internal" href="#floating-point" id="id14">Floating-Point</a></li>
+<li><a class="reference internal" href="#computed-goto" id="id15">Computed <code>goto</code></a></li>
+<li><p class="first"><a class="reference internal" href="#future-directions" id="id16">Future Directions</a></p>
 <ul class="small-gap">
-<li><a class="reference internal" href="#simd" id="id13">SIMD</a></li>
-<li><a class="reference internal" href="#inter-process-communication" id="id14">Inter-Process Communication</a></li>
-<li><a class="reference internal" href="#posix-style-signal-handling" id="id15">POSIX-style Signal Handling</a></li>
-<li><a class="reference internal" href="#computed-goto" id="id16">Computed <code>goto</code></a></li>
+<li><a class="reference internal" href="#simd" id="id17">SIMD</a></li>
+<li><a class="reference internal" href="#inter-process-communication" id="id18">Inter-Process Communication</a></li>
+<li><a class="reference internal" href="#posix-style-signal-handling" id="id19">POSIX-style Signal Handling</a></li>
 </ul>
 </li>
 </ul>
@@ -33,16 +36,24 @@
 </div><section id="source-language-support">
 <h2 id="source-language-support">Source language support</h2>
 <p>The currently supported languages are C and C++. The PNaCl toolchain is
-based on Clang 3.3, which fully supports C++11 and most of C11. A
+based on recent Clang, which fully supports C++11 and most of C11. A
 detailed status of the language support is available <a class="reference external" href="http://clang.llvm.org/cxx_status.html">here</a>.</p>
 <p>For information on using languages other than C/C++, see the <a class="reference internal" href="/native-client/faq.html#other-languages"><em>FAQ
 section on other languages</em></a>.</p>
 <p>As for the standard libraries, the PNaCl toolchain is currently based on
-<code>libc++</code>, and the <code>newlib</code> standard C library (version is available
-through the macro <code>NEWLIB_VERSION</code>). <code>libstdc++</code> is also supported
-but its use is discouraged; see <a class="reference internal" href="/native-client/devguide/devcycle/building.html#building-cpp-libraries"><em>C++ standard libraries</em></a> for more
-details.</p>
-<section id="preprocessor-definitions">
+<code>libc++</code>, and the <code>newlib</code> standard C library. <code>libstdc++</code> is also
+supported but its use is discouraged; see <a class="reference internal" href="/native-client/devguide/devcycle/building.html#building-cpp-libraries"><em>C++ standard libraries</em></a>
+for more details.</p>
+<section id="versions">
+<h3 id="versions">Versions</h3>
+<p>Version information can be obtained:</p>
+<ul class="small-gap">
+<li>Clang/LLVM: run <code>pnacl-clang -v</code>.</li>
+<li><code>newlib</code>: use the <code>_NEWLIB_VERSION</code> macro.</li>
+<li><code>libc++</code>: use the <code>_LIBCPP_VERSION</code> macro.</li>
+<li><code>libstdc++</code>: use the <code>_GLIBCXX_VERSION</code> macro.</li>
+</ul>
+</section><section id="preprocessor-definitions">
 <h3 id="preprocessor-definitions">Preprocessor definitions</h3>
 <p>When compiling C/C++ code, the PNaCl toolchain defines the <code>__pnacl__</code>
 macro. In addition, <code>__native_client__</code> is defined for compatibility
@@ -59,7 +70,8 @@ stores is provided on a happens-before basis that relates memory
 locations to each other as the C11/C++11 standards do.</p>
 <p>Non-atomic memory accesses may be reordered, separated, elided or fused
 according to C and C++&#8217;s memory model before the pexe is created as well
-as after its creation.</p>
+as after its creation. Accessing atomic memory location through
+non-atomic primitives is <cite>Undefined Behavior &lt;undefined_behavior&gt;</cite>.</p>
 <p>As in C11/C++11 some atomic accesses may be implemented with locks on
 certain platforms. The <code>ATOMIC_*_LOCK_FREE</code> macros will always be
 <code>1</code>, signifying that all types are sometimes lock-free. The
@@ -168,6 +180,50 @@ prevent reordering of memory accesses to objects which may escape.</p>
 <p>NaCl supports a fairly wide subset of inline assembly through GCC&#8217;s
 inline assembly syntax, with the restriction that the sandboxing model
 for the target architecture has to be respected.</p>
+</section><section id="undefined-behavior">
+<h2 id="undefined-behavior">Undefined Behavior</h2>
+<p>The C and C++ languages expose some undefined behavior which is
+discussed in <cite>PNaCl Undefined Behavior &lt;undefined_behavior&gt;</cite>.</p>
+</section><section id="floating-point">
+<h2 id="floating-point">Floating-Point</h2>
+<p>PNaCl exposes 32-bit and 64-bit floating point operations which are
+mostly IEEE-754 compliant. There are a few caveats:</p>
+<ul class="small-gap">
+<li>Some <a class="reference internal" href="/native-client/reference/pnacl-undefined-behavior.html#undefined-behavior-fp"><em>floating-point behavior is currently left as undefined</em></a>.</li>
+<li>The default rounding mode is round-to-nearest and other rounding modes
+are currently not usable, which isn&#8217;t IEEE-754 compliant. PNaCl could
+support switching modes (the 4 modes exposed by C99 <code>FLT_ROUNDS</code>
+macros).</li>
+<li>Signaling <code>NaN</code> never fault.</li>
+<li><p class="first">Fast-math optimizations are currently supported before <em>pexe</em> creation
+time. A <em>pexe</em> loses all fast-math information when it is
+created. Fast-math translation could be enabled at a later date,
+potentially at a perf-function granularity. This wouldn&#8217;t affect
+already-existing <em>pexe</em>; it would be an opt-in feature.</p>
+<ul class="small-gap">
+<li>Fused-multiply-add have higher precision and often execute faster;
+PNaCl currently disallows them in the <em>pexe</em> because they aren&#8217;t
+supported on all platforms and can&#8217;t realistically be
+emulated. PNaCl could (but currently doesn&#8217;t) only generate them in
+the backend if fast-math were specified and the hardware supports
+the operation.</li>
+<li>Transcendentals aren&#8217;t exposed by PNaCl&#8217;s ABI; they are part of the
+math library that is included in the <em>pexe</em>. PNaCl could, but
+currently doesn&#8217;t, use hardware support if fast-math were provided
+in the <em>pexe</em>.</li>
+</ul>
+</li>
+</ul>
+</section><section id="computed-goto">
+<h2 id="computed-goto">Computed <code>goto</code></h2>
+<p>PNaCl supports computed <code>goto</code>, a non-standard GCC extension to C used
+by some interpreters, by lowering them to <code>switch</code> statements. The
+resulting use of <code>switch</code> might not be as fast as the original
+indirect branches. If you are compiling a program that has a
+compile-time option for using computed <code>goto</code>, it&#8217;s possible that the
+program will run faster with the option turned off (e.g., if the program
+does extra work to take advantage of computed <code>goto</code>).</p>
+<p>NaCl supports computed <code>goto</code> without any transformation.</p>
 </section><section id="future-directions">
 <h2 id="future-directions">Future Directions</h2>
 <section id="simd">
@@ -206,11 +262,6 @@ or suspension of threads.</p>
 <p>If PNaCl were to support either of these, the interaction of
 <code>volatile</code> and atomics with same-thread signal handling would need
 to be carefully detailed.</p>
-</section><section id="computed-goto">
-<h3 id="computed-goto">Computed <code>goto</code></h3>
-<p>PNaCl currently doesn&#8217;t support computed <code>goto</code>, a non-standard
-extension to C used by some interpreters.</p>
-<p>NaCl supports computed <code>goto</code>.</p>
 </section></section></section>
 
 {{/partials.standard_nacl_article}}

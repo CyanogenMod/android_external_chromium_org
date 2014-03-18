@@ -5,6 +5,7 @@
 #include "ui/app_list/views/apps_container_view.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "base/command_line.h"
 #include "ui/app_list/app_list_constants.h"
@@ -31,8 +32,7 @@ AppsContainerView::AppsContainerView(AppListMainView* app_list_main_view,
       app_list_main_view, pagination_model, start_page_contents);
   int cols = kPreferredCols;
   int rows = kPreferredRows;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      app_list::switches::kEnableExperimentalAppList)) {
+  if (app_list::switches::IsExperimentalAppListPositionEnabled()) {
     cols = kExperimentalPreferredCols;
     rows = kExperimentalPreferredRows;
   }
@@ -50,7 +50,7 @@ AppsContainerView::AppsContainerView(AppListMainView* app_list_main_view,
   AddChildView(app_list_folder_view_);
 
   apps_grid_view_->SetModel(model_);
-  apps_grid_view_->SetItemList(model_->item_list());
+  apps_grid_view_->SetItemList(model_->top_level_item_list());
   SetShowState(SHOW_APPS,
                false);  /* show apps without animation */
 }

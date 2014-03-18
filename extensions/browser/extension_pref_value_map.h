@@ -13,7 +13,7 @@
 #include "base/prefs/pref_value_map.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "extensions/browser/extension_prefs_scope.h"
 
 // Non-persistent data container that is shared by ExtensionPrefStores. All
@@ -53,7 +53,7 @@
 // .reg_only = regular-only value
 // .inc = incognito value
 // Extension B has higher precedence than A.
-class ExtensionPrefValueMap : public BrowserContextKeyedService {
+class ExtensionPrefValueMap : public KeyedService {
  public:
   // Observer interface for monitoring ExtensionPrefValueMap.
   class Observer {
@@ -75,7 +75,7 @@ class ExtensionPrefValueMap : public BrowserContextKeyedService {
   ExtensionPrefValueMap();
   virtual ~ExtensionPrefValueMap();
 
-  // BrowserContextKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
   // Set an extension preference |value| for |key| of extension |ext_id|.
@@ -95,8 +95,9 @@ class ExtensionPrefValueMap : public BrowserContextKeyedService {
                            extensions::ExtensionPrefsScope scope);
 
   // Returns true if currently no extension with higher precedence controls the
-  // preference.
-  // Note that the this function does does not consider the existence of
+  // preference. If |incognito| is true and the extension does not have
+  // incognito permission, CanExtensionControlPref returns false.
+  // Note that this function does does not consider the existence of
   // policies. An extension is only really able to control a preference if
   // PrefService::Preference::IsExtensionModifiable() returns true as well.
   bool CanExtensionControlPref(const std::string& extension_id,
@@ -119,7 +120,8 @@ class ExtensionPrefValueMap : public BrowserContextKeyedService {
                                 const std::string& pref_key,
                                 bool* from_incognito) const;
 
-  // Returns the ID of the extension that currently controls this preference.
+  // Returns the ID of the extension that currently controls this preference
+  // for a regular profile. Incognito settings are ignored.
   // Returns an empty string if this preference is not controlled by an
   // extension.
   std::string GetExtensionControllingPref(const std::string& pref_key) const;
@@ -130,7 +132,8 @@ class ExtensionPrefValueMap : public BrowserContextKeyedService {
   // Registers the time when an extension |ext_id| is installed.
   void RegisterExtension(const std::string& ext_id,
                          const base::Time& install_time,
-                         bool is_enabled);
+                         bool is_enabled,
+                         bool is_incognito_enabled);
 
   // Deletes all entries related to extension |ext_id|.
   void UnregisterExtension(const std::string& ext_id);
@@ -138,6 +141,10 @@ class ExtensionPrefValueMap : public BrowserContextKeyedService {
   // Hides or makes the extension preference values of the specified extension
   // visible.
   void SetExtensionState(const std::string& ext_id, bool is_enabled);
+
+  // Sets whether the extension has permission to access incognito state.
+  void SetExtensionIncognitoState(const std::string& ext_id,
+                                  bool is_incognito_enabled);
 
   // Adds an observer and notifies it about the currently stored keys.
   void AddObserver(Observer* observer);

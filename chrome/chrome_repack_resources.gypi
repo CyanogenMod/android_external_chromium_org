@@ -14,6 +14,7 @@
       '<(grit_out_dir)/invalidations_resources.pak',
       '<(grit_out_dir)/memory_internals_resources.pak',
       '<(grit_out_dir)/net_internals_resources.pak',
+      '<(grit_out_dir)/password_manager_internals_resources.pak',
       '<(grit_out_dir)/signin_internals_resources.pak',
       '<(grit_out_dir)/sync_internals_resources.pak',
       '<(grit_out_dir)/translate_internals_resources.pak',
@@ -24,7 +25,6 @@
           '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.pak',
           '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
           '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.pak',
-          '<(grit_out_dir)/devtools_discovery_page_resources.pak',
         ],
       }],
       ['OS != "ios" and OS != "android"', {

@@ -6,6 +6,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/media_galleries/media_galleries_dialog_controller_mock.h"
 #include "chrome/browser/ui/views/extensions/media_galleries_dialog_views.h"
+#include "chrome/browser/ui/views/extensions/media_gallery_checkbox_view.h"
 #include "components/storage_monitor/storage_info.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/test_util.h"
@@ -22,8 +23,9 @@ namespace {
 MediaGalleryPrefInfo MakePrefInfoForTesting(MediaGalleryPrefId id) {
   MediaGalleryPrefInfo gallery;
   gallery.pref_id = id;
-  gallery.device_id = StorageInfo::MakeDeviceId(StorageInfo::FIXED_MASS_STORAGE,
-                                                base::Int64ToString(id));
+  gallery.device_id = storage_monitor::StorageInfo::MakeDeviceId(
+      storage_monitor::StorageInfo::FIXED_MASS_STORAGE,
+      base::Int64ToString(id));
   gallery.display_name = base::ASCIIToUTF16("Display Name");
   return gallery;
 }
@@ -75,11 +77,11 @@ TEST_F(MediaGalleriesDialogTest, InitializeCheckboxes) {
   MediaGalleriesDialogViews dialog(&controller);
   EXPECT_EQ(2U, dialog.checkbox_map_.size());
 
-  views::Checkbox* checkbox1 = dialog.checkbox_map_[1];
-  EXPECT_TRUE(checkbox1->checked());
+  MediaGalleryCheckboxView* checkbox_view1 = dialog.checkbox_map_[1];
+  EXPECT_TRUE(checkbox_view1->checkbox()->checked());
 
-  views::Checkbox* checkbox2 = dialog.checkbox_map_[2];
-  EXPECT_FALSE(checkbox2->checked());
+  MediaGalleryCheckboxView* checkbox_view2 = dialog.checkbox_map_[2];
+  EXPECT_FALSE(checkbox_view2->checkbox()->checked());
 }
 
 // Tests that toggling checkboxes updates the controller.
@@ -100,16 +102,17 @@ TEST_F(MediaGalleriesDialogTest, ToggleCheckboxes) {
 
   MediaGalleriesDialogViews dialog(&controller);
   EXPECT_EQ(1U, dialog.checkbox_map_.size());
-  views::Checkbox* checkbox = dialog.checkbox_map_[1];
+  views::Checkbox* checkbox = dialog.checkbox_map_[1]->checkbox();
   EXPECT_TRUE(checkbox->checked());
 
+  ui::KeyEvent dummy_event(ui::ET_KEY_PRESSED, ui::VKEY_A, ui::EF_NONE, false);
   EXPECT_CALL(controller, DidToggleGalleryId(1, false));
   checkbox->SetChecked(false);
-  dialog.ButtonPressedAction(checkbox);
+  dialog.ButtonPressed(checkbox, dummy_event);
 
   EXPECT_CALL(controller, DidToggleGalleryId(1, true));
   checkbox->SetChecked(true);
-  dialog.ButtonPressedAction(checkbox);
+  dialog.ButtonPressed(checkbox, dummy_event);
 }
 
 // Tests that UpdateGallery will add a new checkbox, but only if it refers to

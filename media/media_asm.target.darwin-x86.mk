@@ -15,13 +15,13 @@ GYP_TARGET_DEPENDENCIES := \
 
 
 ### Generated for rule "media_media_gyp_media_asm_target_assemble":
-# "{'inputs': ['$(gyp_shared_intermediate_dir)/yasm', '../third_party/x86inc/x86inc.asm', 'base/simd/convert_rgb_to_yuv_ssse3.inc', 'base/simd/convert_yuv_to_rgb_mmx.inc', 'base/simd/convert_yuva_to_argb_mmx.inc', 'base/simd/linear_scale_yuv_to_rgb_mmx.inc', 'base/simd/media_export.asm', 'base/simd/scale_yuv_to_rgb_mmx.inc'], 'extension': 'asm', 'process_outputs_as_sources': '1', 'outputs': ['$(gyp_shared_intermediate_dir)/media/%(INPUT_ROOT)s.o'], 'rule_name': 'assemble', 'rule_sources': ['base/simd/convert_rgb_to_yuv_ssse3.asm', 'base/simd/convert_yuv_to_rgb_mmx.asm', 'base/simd/convert_yuv_to_rgb_sse.asm', 'base/simd/convert_yuva_to_argb_mmx.asm', 'base/simd/empty_register_state_mmx.asm', 'base/simd/linear_scale_yuv_to_rgb_mmx.asm', 'base/simd/linear_scale_yuv_to_rgb_sse.asm', 'base/simd/scale_yuv_to_rgb_mmx.asm', 'base/simd/scale_yuv_to_rgb_sse.asm'], 'action': ['$(gyp_shared_intermediate_dir)/yasm', '-DCHROMIUM', '-I..', '-felf32', '-m', 'x86', '-DX86_32', '-DELF', '-o', '$(gyp_shared_intermediate_dir)/media/%(INPUT_ROOT)s.o', '$(RULE_SOURCES)'], 'message': 'Compile assembly $(RULE_SOURCES)'}":
+# "{'inputs': ['$(gyp_shared_intermediate_dir)/yasm', '../third_party/x86inc/x86inc.asm', 'base/simd/convert_rgb_to_yuv_ssse3.inc', 'base/simd/convert_yuv_to_rgb_mmx.inc', 'base/simd/convert_yuva_to_argb_mmx.inc', 'base/simd/linear_scale_yuv_to_rgb_mmx.inc', 'base/simd/media_export.asm', 'base/simd/scale_yuv_to_rgb_mmx.inc'], 'extension': 'asm', 'process_outputs_as_sources': '1', 'outputs': ['$(gyp_shared_intermediate_dir)/media/%(INPUT_ROOT)s.o'], 'rule_name': 'assemble', 'rule_sources': ['base/simd/convert_rgb_to_yuv_ssse3.asm', 'base/simd/convert_yuv_to_rgb_mmx.asm', 'base/simd/convert_yuv_to_rgb_sse.asm', 'base/simd/convert_yuva_to_argb_mmx.asm', 'base/simd/empty_register_state_mmx.asm', 'base/simd/linear_scale_yuv_to_rgb_mmx.asm', 'base/simd/linear_scale_yuv_to_rgb_sse.asm', 'base/simd/scale_yuv_to_rgb_mmx.asm', 'base/simd/scale_yuv_to_rgb_sse.asm'], 'action': ['$(gyp_shared_intermediate_dir)/yasm', '-DCHROMIUM', '-I..', '-felf32', '-m', 'x86', '-DARCH_X86_32', '-DELF', '-o', '$(gyp_shared_intermediate_dir)/media/%(INPUT_ROOT)s.o', '$(RULE_SOURCES)'], 'message': 'Compile assembly $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DX86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o" base/simd/convert_rgb_to_yuv_ssse3.asm
+	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DARCH_X86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o" base/simd/convert_rgb_to_yuv_ssse3.asm
 
 .PHONY: media_media_asm_gyp_rule_trigger
 media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o
@@ -31,7 +31,7 @@ $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: gyp_intermediate_
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DX86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o" base/simd/convert_yuv_to_rgb_mmx.asm
+	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DARCH_X86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o" base/simd/convert_yuv_to_rgb_mmx.asm
 
 .PHONY: media_media_asm_gyp_rule_trigger
 media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o
@@ -41,7 +41,7 @@ $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: gyp_intermediate_
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_sse.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DX86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o" base/simd/convert_yuv_to_rgb_sse.asm
+	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DARCH_X86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o" base/simd/convert_yuv_to_rgb_sse.asm
 
 .PHONY: media_media_asm_gyp_rule_trigger
 media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o
@@ -51,7 +51,7 @@ $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: gyp_intermediat
 $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DX86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o" base/simd/convert_yuva_to_argb_mmx.asm
+	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DARCH_X86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o" base/simd/convert_yuva_to_argb_mmx.asm
 
 .PHONY: media_media_asm_gyp_rule_trigger
 media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o
@@ -61,7 +61,7 @@ $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: gyp_intermediat
 $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: $(LOCAL_PATH)/media/base/simd/empty_register_state_mmx.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DX86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o" base/simd/empty_register_state_mmx.asm
+	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DARCH_X86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o" base/simd/empty_register_state_mmx.asm
 
 .PHONY: media_media_asm_gyp_rule_trigger
 media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o
@@ -71,7 +71,7 @@ $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: gyp_intermed
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DX86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o" base/simd/linear_scale_yuv_to_rgb_mmx.asm
+	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DARCH_X86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o" base/simd/linear_scale_yuv_to_rgb_mmx.asm
 
 .PHONY: media_media_asm_gyp_rule_trigger
 media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o
@@ -81,7 +81,7 @@ $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: gyp_intermed
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_sse.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DX86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o" base/simd/linear_scale_yuv_to_rgb_sse.asm
+	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DARCH_X86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o" base/simd/linear_scale_yuv_to_rgb_sse.asm
 
 .PHONY: media_media_asm_gyp_rule_trigger
 media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o
@@ -91,7 +91,7 @@ $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: gyp_intermediate_di
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DX86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o" base/simd/scale_yuv_to_rgb_mmx.asm
+	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DARCH_X86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o" base/simd/scale_yuv_to_rgb_mmx.asm
 
 .PHONY: media_media_asm_gyp_rule_trigger
 media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o
@@ -101,7 +101,7 @@ $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: gyp_intermediate_di
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_sse.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DX86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o" base/simd/scale_yuv_to_rgb_sse.asm
+	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -felf32 -m x86 -DARCH_X86_32 -DELF -o "$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o" base/simd/scale_yuv_to_rgb_sse.asm
 
 .PHONY: media_media_asm_gyp_rule_trigger
 media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o
@@ -151,11 +151,10 @@ MY_CFLAGS_Debug := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-m32 \
-	-mmmx \
-	-march=pentium4 \
 	-msse2 \
 	-mfpmath=sse \
+	-mmmx \
+	-m32 \
 	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
@@ -178,6 +177,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -185,13 +185,14 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DUSE_OPENSSL=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -233,11 +234,10 @@ MY_CFLAGS_Release := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-m32 \
-	-mmmx \
-	-march=pentium4 \
 	-msse2 \
 	-mfpmath=sse \
+	-mmmx \
+	-m32 \
 	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
@@ -260,6 +260,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -267,13 +268,14 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DUSE_OPENSSL=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -307,9 +309,11 @@ LOCAL_CPPFLAGS_Release := \
 LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
 LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
+LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -319,7 +323,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
@@ -327,6 +330,7 @@ LOCAL_LDFLAGS_Debug := \
 
 
 LOCAL_LDFLAGS_Release := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -339,7 +343,6 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,-O1 \
 	-Wl,--as-needed \
 	-Wl,--gc-sections \
-	-Wl,--fatal-warnings \
 	-Wl,--warn-shared-textrel
 
 

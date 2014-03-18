@@ -35,7 +35,6 @@
 #if defined(OS_CHROMEOS)
 #include "ash/display/output_configurator_animation.h"
 #include "base/sys_info.h"
-#include "chromeos/display/output_configurator.h"
 #endif
 
 #if defined(OS_WIN)
@@ -456,7 +455,7 @@ void DisplayManager::SetDisplayResolution(int64 display_id,
   display_modes_[display_id] = *iter;
 #if defined(OS_CHROMEOS) && defined(USE_X11)
   if (base::SysInfo::IsRunningOnChromeOS())
-    Shell::GetInstance()->output_configurator()->ScheduleConfigureOutputs();
+    Shell::GetInstance()->output_configurator()->OnConfigurationChanged();
 #endif
 }
 

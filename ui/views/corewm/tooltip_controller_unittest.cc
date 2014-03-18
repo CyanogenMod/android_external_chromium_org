@@ -9,12 +9,12 @@
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/tooltip_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/aura_test_base.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/point.h"
@@ -23,10 +23,10 @@
 #include "ui/gfx/text_elider.h"
 #include "ui/views/corewm/tooltip_aura.h"
 #include "ui/views/corewm/tooltip_controller_test_helper.h"
-#include "ui/views/corewm/wm_state.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/wm_state.h"
 #include "ui/wm/public/window_types.h"
 
 #if defined(OS_WIN)
@@ -76,7 +76,7 @@ class TooltipControllerTest : public aura::test::AuraTestBase {
   virtual ~TooltipControllerTest() {}
 
   virtual void SetUp() OVERRIDE {
-    wm_state_.reset(new views::corewm::WMState);
+    wm_state_.reset(new wm::WMState);
     aura::test::AuraTestBase::SetUp();
 #if defined(OS_CHROMEOS)
     controller_.reset(new TooltipController(
@@ -137,7 +137,7 @@ class TooltipControllerTest : public aura::test::AuraTestBase {
   ui::ScopedOleInitializer ole_initializer_;
 #endif
 
-  scoped_ptr<views::corewm::WMState> wm_state_;
+  scoped_ptr<wm::WMState> wm_state_;
 
   DISALLOW_COPY_AND_ASSIGN(TooltipControllerTest);
 };
@@ -695,10 +695,10 @@ class TooltipControllerTest2 : public aura::test::AuraTestBase {
   virtual ~TooltipControllerTest2() {}
 
   virtual void SetUp() OVERRIDE {
-    wm_state_.reset(new views::corewm::WMState);
+    wm_state_.reset(new wm::WMState);
     aura::test::AuraTestBase::SetUp();
     controller_.reset(new TooltipController(
-                          scoped_ptr<views::corewm::Tooltip>(test_tooltip_)));
+                          scoped_ptr<corewm::Tooltip>(test_tooltip_)));
     root_window()->AddPreTargetHandler(controller_.get());
     SetTooltipClient(root_window(), controller_.get());
     helper_.reset(new TooltipControllerTestHelper(controller_.get()));
@@ -723,7 +723,7 @@ class TooltipControllerTest2 : public aura::test::AuraTestBase {
 
  private:
   scoped_ptr<TooltipController> controller_;
-  scoped_ptr<views::corewm::WMState> wm_state_;
+  scoped_ptr<wm::WMState> wm_state_;
 
   DISALLOW_COPY_AND_ASSIGN(TooltipControllerTest2);
 };

@@ -8,29 +8,53 @@
 #include <stdint.h>
 
 #include "mojo/public/bindings/lib/fixed_buffer.h"
+#include "mojo/public/bindings/lib/message_internal.h"
 
 namespace mojo {
-struct MessageData;
+class Message;
 
 namespace internal {
 
-// Used to construct a MessageData object.
 class MessageBuilder {
  public:
-  MessageBuilder(uint32_t message_name, size_t payload_size);
+  MessageBuilder(uint32_t name, size_t payload_size);
   ~MessageBuilder();
 
   Buffer* buffer() { return &buf_; }
 
-  // Call Finish when done making allocations in |buffer()|. A heap-allocated
-  // MessageData object will be returned. When no longer needed, use |free()|
-  // to release the MessageData object's memory.
-  MessageData* Finish();
+  // Call Finish when done making allocations in |buffer()|. Upon return,
+  // |message| will contain the message data, and |buffer()| will no longer be
+  // valid to reference.
+  void Finish(Message* message);
 
- private:
+ protected:
+  explicit MessageBuilder(size_t size);
   FixedBuffer buf_;
 
   MOJO_DISALLOW_COPY_AND_ASSIGN(MessageBuilder);
+};
+
+class MessageWithRequestIDBuilder : public MessageBuilder {
+ public:
+  MessageWithRequestIDBuilder(uint32_t name, size_t payload_size,
+                              uint32_t flags, uint64_t request_id);
+};
+
+class RequestMessageBuilder : public MessageWithRequestIDBuilder {
+ public:
+  RequestMessageBuilder(uint32_t name, size_t payload_size)
+      : MessageWithRequestIDBuilder(name, payload_size, kMessageExpectsResponse,
+                                    0) {
+  }
+};
+
+class ResponseMessageBuilder : public MessageWithRequestIDBuilder {
+ public:
+  ResponseMessageBuilder(uint32_t name, size_t payload_size,
+                         uint64_t request_id)
+      : MessageWithRequestIDBuilder(name, payload_size, kMessageIsResponse,
+                                    request_id) {
+  }
 };
 
 }  // namespace internal

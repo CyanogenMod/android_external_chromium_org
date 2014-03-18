@@ -44,10 +44,6 @@ class URLLoader;
 class URLUtil_Dev;
 }
 
-namespace ppapi_proxy {
-class BrowserPpp;
-}
-
 namespace plugin {
 
 class ErrorInfo;
@@ -89,6 +85,7 @@ class Plugin : public pp::Instance {
   //
   // Updates nacl_module_origin() and nacl_module_url().
   void LoadNaClModule(nacl::DescWrapper* wrapper,
+                      bool uses_nonsfi_mode,
                       bool enable_dyncode_syscalls,
                       bool enable_exception_handling,
                       bool enable_crash_throttling,
@@ -112,7 +109,8 @@ class Plugin : public pp::Instance {
   // Blocks until the helper module signals initialization is done.
   // Does not update nacl_module_origin().
   // Returns NULL or the NaClSubprocess of the new helper NaCl module.
-  NaClSubprocess* LoadHelperNaClModule(nacl::DescWrapper* wrapper,
+  NaClSubprocess* LoadHelperNaClModule(const nacl::string& helper_url,
+                                       nacl::DescWrapper* wrapper,
                                        const Manifest* manifest,
                                        ErrorInfo* error_info);
 
@@ -179,6 +177,7 @@ class Plugin : public pp::Instance {
     // interaction with the page.
     DONE = 4
   };
+
   bool nexe_error_reported() const { return nexe_error_reported_; }
   void set_nexe_error_reported(bool val) {
     nexe_error_reported_ = val;
@@ -272,7 +271,7 @@ class Plugin : public pp::Instance {
                           int maximum,
                           int out_of_range_replacement);
   void HistogramEnumerateOsArch(const std::string& sandbox_isa);
-  void HistogramEnumerateLoadStatus(PluginErrorCode error_code,
+  void HistogramEnumerateLoadStatus(PP_NaClError error_code,
                                     bool is_installed);
   void HistogramEnumerateSelLdrLoadStatus(NaClErrorCode error_code,
                                           bool is_installed);
@@ -388,6 +387,7 @@ class Plugin : public pp::Instance {
   nacl::string plugin_base_url_;
   nacl::string manifest_base_url_;
   nacl::string manifest_url_;
+  bool uses_nonsfi_mode_;
   ReadyState nacl_ready_state_;
   bool nexe_error_reported_;  // error or crash reported
 

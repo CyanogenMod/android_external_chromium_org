@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from benchmarks import silk_flags
 from measurements import smoothness
 from telemetry import test
 
@@ -28,6 +29,7 @@ class SmoothnessKeyMobileSites(test.Test):
   page_set = 'page_sets/key_mobile_sites.json'
 
 
+@test.Disabled('android')  # crbug.com/350692
 class SmoothnessToughAnimationCases(test.Test):
   test = smoothness.Smoothness
   page_set = 'page_sets/tough_animation_cases.json'
@@ -40,24 +42,49 @@ class SmoothnessKeySilkCases(test.Test):
   test = smoothness.Smoothness
   page_set = 'page_sets/key_silk_cases.json'
 
-class SmoothnessThreadedRasterizationKeySilkCases(test.Test):
+
+class SmoothnessFastPathKeySilkCases(test.Test):
   """Measures rendering statistics for the key silk cases without GPU
-  rasterization
+  rasterization using bleeding edge rendering fast paths.
   """
-  tag = 'disable_gpu_rasterization'
+  tag = 'fast_path'
   test = smoothness.Smoothness
   page_set = 'page_sets/key_silk_cases.json'
+  def CustomizeBrowserOptions(self, options):
+    silk_flags.CustomizeBrowserOptionsForFastPath(options)
+
+
+class SmoothnessGpuRasterizationTop25(test.Test):
+  """Measures rendering statistics for the top 25 with GPU rasterization
+  """
+  tag = 'gpu_rasterization'
+  test = smoothness.Smoothness
+  page_set = 'page_sets/top_25.json'
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs('--enable-threaded-compositing')
     options.AppendExtraBrowserArgs('--force-compositing-mode')
     options.AppendExtraBrowserArgs('--enable-impl-side-painting')
-    options.AppendExtraBrowserArgs('--disable-gpu-rasterization')
+    options.AppendExtraBrowserArgs('--force-gpu-rasterization')
+
+
+class SmoothnessGpuRasterizationKeyMobileSites(test.Test):
+  """Measures rendering statistics for the key mobile sites with GPU
+  rasterization
+  """
+  tag = 'gpu_rasterization'
+  test = smoothness.Smoothness
+  page_set = 'page_sets/key_mobile_sites.json'
+  def CustomizeBrowserOptions(self, options):
+    options.AppendExtraBrowserArgs('--enable-threaded-compositing')
+    options.AppendExtraBrowserArgs('--force-compositing-mode')
+    options.AppendExtraBrowserArgs('--enable-impl-side-painting')
+    options.AppendExtraBrowserArgs('--enable-gpu-rasterization')
 
 
 class SmoothnessGpuRasterizationKeySilkCases(test.Test):
   """Measures rendering statistics for the key silk cases with GPU rasterization
   """
-  tag = 'enable_gpu_rasterization'
+  tag = 'gpu_rasterization'
   test = smoothness.Smoothness
   page_set = 'page_sets/key_silk_cases.json'
   def CustomizeBrowserOptions(self, options):
@@ -65,3 +92,26 @@ class SmoothnessGpuRasterizationKeySilkCases(test.Test):
     options.AppendExtraBrowserArgs('--force-compositing-mode')
     options.AppendExtraBrowserArgs('--enable-impl-side-painting')
     options.AppendExtraBrowserArgs('--enable-gpu-rasterization')
+
+
+class SmoothnessFastPathGpuRasterizationKeySilkCases(
+    SmoothnessGpuRasterizationKeySilkCases):
+  """Measures rendering statistics for the key silk cases with GPU rasterization
+  using bleeding edge rendering fast paths.
+  """
+  tag = 'fast_path_gpu_rasterization'
+  test = smoothness.Smoothness
+  page_set = 'page_sets/key_silk_cases.json'
+  def CustomizeBrowserOptions(self, options):
+    super(SmoothnessFastPathGpuRasterizationKeySilkCases, self). \
+        CustomizeBrowserOptions(options)
+    silk_flags.CustomizeBrowserOptionsForFastPath(options)
+
+
+@test.Enabled('android')
+class SmoothnessToughPinchZoomCases(test.Test):
+  """Measures rendering statistics for pinch-zooming into the tough pinch zoom
+  cases
+  """
+  test = smoothness.Smoothness
+  page_set = 'page_sets/tough_pinch_zoom_cases.json'

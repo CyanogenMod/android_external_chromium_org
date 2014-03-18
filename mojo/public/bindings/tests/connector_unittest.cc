@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "mojo/public/bindings/lib/connector.h"
+#include "mojo/public/bindings/lib/message_builder.h"
 #include "mojo/public/bindings/lib/message_queue.h"
 #include "mojo/public/environment/environment.h"
 #include "mojo/public/system/macros.h"
@@ -14,6 +15,7 @@
 
 namespace mojo {
 namespace test {
+namespace {
 
 class MessageAccumulator : public MessageReceiver {
  public:
@@ -23,6 +25,11 @@ class MessageAccumulator : public MessageReceiver {
   virtual bool Accept(Message* message) MOJO_OVERRIDE {
     queue_.Push(message);
     return true;
+  }
+
+  virtual bool AcceptWithResponder(Message* message, MessageReceiver* responder)
+      MOJO_OVERRIDE {
+    return false;
   }
 
   bool IsEmpty() const {
@@ -51,11 +58,9 @@ class ConnectorTest : public testing::Test {
 
   void AllocMessage(const char* text, Message* message) {
     size_t payload_size = strlen(text) + 1;  // Plus null terminator.
-    size_t num_bytes = sizeof(MessageHeader) + payload_size;
-    message->data = static_cast<MessageData*>(malloc(num_bytes));
-    message->data->header.num_bytes = static_cast<uint32_t>(num_bytes);
-    message->data->header.name = 1;
-    memcpy(message->data->payload, text, payload_size);
+    internal::MessageBuilder builder(1, payload_size);
+    memcpy(builder.buffer()->Allocate(payload_size), text, payload_size);
+    builder.Finish(message);
   }
 
   void PumpMessages() {
@@ -92,9 +97,9 @@ TEST_F(ConnectorTest, Basic) {
   Message message_received;
   accumulator.Pop(&message_received);
 
-  EXPECT_EQ(std::string(kText),
-            std::string(
-                reinterpret_cast<char*>(message_received.data->payload)));
+  EXPECT_EQ(
+      std::string(kText),
+      std::string(reinterpret_cast<const char*>(message_received.payload())));
 }
 
 TEST_F(ConnectorTest, Basic_EarlyIncomingReceiver) {
@@ -118,9 +123,9 @@ TEST_F(ConnectorTest, Basic_EarlyIncomingReceiver) {
   Message message_received;
   accumulator.Pop(&message_received);
 
-  EXPECT_EQ(std::string(kText),
-            std::string(
-                reinterpret_cast<char*>(message_received.data->payload)));
+  EXPECT_EQ(
+      std::string(kText),
+      std::string(reinterpret_cast<const char*>(message_received.payload())));
 }
 
 TEST_F(ConnectorTest, Basic_TwoMessages) {
@@ -147,9 +152,9 @@ TEST_F(ConnectorTest, Basic_TwoMessages) {
     Message message_received;
     accumulator.Pop(&message_received);
 
-    EXPECT_EQ(std::string(kText[i]),
-              std::string(
-                  reinterpret_cast<char*>(message_received.data->payload)));
+    EXPECT_EQ(
+        std::string(kText[i]),
+        std::string(reinterpret_cast<const char*>(message_received.payload())));
   }
 }
 
@@ -187,17 +192,17 @@ TEST_F(ConnectorTest, MessageWithHandles) {
 
   const char kText[] = "hello world";
 
-  Message message;
-  AllocMessage(kText, &message);
+  Message message1;
+  AllocMessage(kText, &message1);
 
   ScopedMessagePipeHandle handles[2];
   CreateMessagePipe(&handles[0], &handles[1]);
-  message.handles.push_back(handles[0].release());
+  message1.mutable_handles()->push_back(handles[0].release());
 
-  connector0.Accept(&message);
+  connector0.Accept(&message1);
 
   // The message should have been transferred, releasing the handles.
-  EXPECT_TRUE(message.handles.empty());
+  EXPECT_TRUE(message1.handles()->empty());
 
   MessageAccumulator accumulator;
   connector1.set_incoming_receiver(&accumulator);
@@ -209,24 +214,26 @@ TEST_F(ConnectorTest, MessageWithHandles) {
   Message message_received;
   accumulator.Pop(&message_received);
 
-  EXPECT_EQ(std::string(kText),
-            std::string(
-                reinterpret_cast<char*>(message_received.data->payload)));
-  ASSERT_EQ(1U, message_received.handles.size());
+  EXPECT_EQ(
+      std::string(kText),
+      std::string(reinterpret_cast<const char*>(message_received.payload())));
+  ASSERT_EQ(1U, message_received.handles()->size());
 
   // Now send a message to the transferred handle and confirm it's sent through
   // to the orginal pipe.
   // TODO(vtl): Do we need a better way of "downcasting" the handle types?
   ScopedMessagePipeHandle smph;
-  smph.reset(MessagePipeHandle(message_received.handles[0].value()));
-  message_received.handles[0] = Handle();  // |smph| now owns this handle.
+  smph.reset(MessagePipeHandle(message_received.handles()->front().value()));
+  message_received.mutable_handles()->front() = Handle();
+  // |smph| now owns this handle.
 
   internal::Connector connector_received(smph.Pass());
   internal::Connector connector_original(handles[1].Pass());
 
-  AllocMessage(kText, &message);
+  Message message2;
+  AllocMessage(kText, &message2);
 
-  connector_received.Accept(&message);
+  connector_received.Accept(&message2);
   connector_original.set_incoming_receiver(&accumulator);
   PumpMessages();
 
@@ -234,10 +241,11 @@ TEST_F(ConnectorTest, MessageWithHandles) {
 
   accumulator.Pop(&message_received);
 
-  EXPECT_EQ(std::string(kText),
-            std::string(
-                reinterpret_cast<char*>(message_received.data->payload)));
+  EXPECT_EQ(
+      std::string(kText),
+      std::string(reinterpret_cast<const char*>(message_received.payload())));
 }
 
+}  // namespace
 }  // namespace test
 }  // namespace mojo

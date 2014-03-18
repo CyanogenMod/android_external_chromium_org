@@ -28,7 +28,7 @@
 #include "chrome/browser/history/typed_url_syncable_service.h"
 #include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/common/ref_counted_util.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "components/visitedlink/browser/visitedlink_delegate.h"
 #include "content/public/browser/download_manager_delegate.h"
 #include "content/public/browser/notification_observer.h"
@@ -85,7 +85,7 @@ struct HistoryDetails;
 class HistoryService : public CancelableRequestProvider,
                        public content::NotificationObserver,
                        public syncer::SyncableService,
-                       public BrowserContextKeyedService,
+                       public KeyedService,
                        public visitedlink::VisitedLinkDelegate {
  public:
   // Miscellaneous commonly-used types.
@@ -113,11 +113,6 @@ class HistoryService : public CancelableRequestProvider,
 
   // Returns true if the backend has finished loading.
   bool backend_loaded() const { return backend_loaded_; }
-
-  // Unloads the backend without actually shutting down the history service.
-  // This can be used to temporarily reduce the browser process' memory
-  // footprint.
-  void UnloadBackend();
 
   // Called on shutdown, this will tell the history backend to complete and
   // will release pointers to it. No other functions should be called once
@@ -169,7 +164,7 @@ class HistoryService : public CancelableRequestProvider,
     return in_memory_url_index_.get();
   }
 
-  // BrowserContextKeyedService:
+  // KeyedService:
   virtual void Shutdown() OVERRIDE;
 
   // Navigation ----------------------------------------------------------------
@@ -274,15 +269,18 @@ class HistoryService : public CancelableRequestProvider,
 
   // Called when the results of QueryRedirectsFrom are available.
   // The given vector will contain a list of all redirects, not counting
-  // the original page. If A redirects to B, the vector will contain only B,
-  // and A will be in 'source_url'.
+  // the original page. If A redirects to B which redirects to C, the vector
+  // will contain [B, C], and A will be in 'from_url'.
+  //
+  // For QueryRedirectsTo, the order is reversed. For A->B->C, the vector will
+  // contain [B, A] and C will be in 'to_url'.
   //
   // If there is no such URL in the database or the most recent visit has no
   // redirect, the vector will be empty. If the history system failed for
   // some reason, success will additionally be false. If the given page
   // has redirected to multiple destinations, this will pick a random one.
   typedef base::Callback<void(Handle,
-                              GURL,  // from_url
+                              GURL,  // from_url / to_url
                               bool,  // success
                               history::RedirectList*)> QueryRedirectsCallback;
 
@@ -631,18 +629,13 @@ class HistoryService : public CancelableRequestProvider,
 
   // Broadcasts the given notification. This is called by the backend so that
   // the notification will be broadcast on the main thread.
-  //
-  // Compared to BroadcastNotifications(), this function does not take
-  // ownership of |details|.
-  void BroadcastNotificationsHelper(int type,
-                                    history::HistoryDetails* details);
-
-  // Initializes the backend.
-  void LoadBackendIfNecessary();
+  void BroadcastNotificationsHelper(
+      int type,
+      scoped_ptr<history::HistoryDetails> details);
 
   // Notification from the backend that it has finished loading. Sends
   // notification (NOTIFY_HISTORY_LOADED) and sets backend_loaded_ to true.
-  void OnDBLoaded(int backend_id);
+  void OnDBLoaded();
 
   // Helper function for getting URL information.
   // Reads a URLRow from in-memory database. Returns false if database is not
@@ -806,11 +799,10 @@ class HistoryService : public CancelableRequestProvider,
   // Sets the in-memory URL database. This is called by the backend once the
   // database is loaded to make it available.
   void SetInMemoryBackend(
-      int backend_id,
       scoped_ptr<history::InMemoryHistoryBackend> mem_backend);
 
   // Called by our BackendDelegate when there is a problem reading the database.
-  void NotifyProfileError(int backend_id, sql::InitStatus init_status);
+  void NotifyProfileError(sql::InitStatus init_status);
 
   // Call to schedule a given task for running on the history thread with the
   // specified priority. The task will have ownership taken.
@@ -829,7 +821,6 @@ class HistoryService : public CancelableRequestProvider,
                   RequestType* request) {
     DCHECK(thread_) << "History service being called after cleanup";
     DCHECK(thread_checker_.CalledOnValidThread());
-    LoadBackendIfNecessary();
     if (consumer)
       AddRequest(request, consumer);
     ScheduleTask(priority,
@@ -846,7 +837,6 @@ class HistoryService : public CancelableRequestProvider,
                   const ArgA& a) {
     DCHECK(thread_) << "History service being called after cleanup";
     DCHECK(thread_checker_.CalledOnValidThread());
-    LoadBackendIfNecessary();
     if (consumer)
       AddRequest(request, consumer);
     ScheduleTask(priority,
@@ -867,7 +857,6 @@ class HistoryService : public CancelableRequestProvider,
                   const ArgB& b) {
     DCHECK(thread_) << "History service being called after cleanup";
     DCHECK(thread_checker_.CalledOnValidThread());
-    LoadBackendIfNecessary();
     if (consumer)
       AddRequest(request, consumer);
     ScheduleTask(priority,
@@ -890,7 +879,6 @@ class HistoryService : public CancelableRequestProvider,
                   const ArgC& c) {
     DCHECK(thread_) << "History service being called after cleanup";
     DCHECK(thread_checker_.CalledOnValidThread());
-    LoadBackendIfNecessary();
     if (consumer)
       AddRequest(request, consumer);
     ScheduleTask(priority,
@@ -915,7 +903,6 @@ class HistoryService : public CancelableRequestProvider,
                   const ArgD& d) {
     DCHECK(thread_) << "History service being called after cleanup";
     DCHECK(thread_checker_.CalledOnValidThread());
-    LoadBackendIfNecessary();
     if (consumer)
       AddRequest(request, consumer);
     ScheduleTask(priority,
@@ -934,7 +921,6 @@ class HistoryService : public CancelableRequestProvider,
                          BackendFunc func) {  // Function to call on backend.
     DCHECK(thread_) << "History service being called after cleanup";
     DCHECK(thread_checker_.CalledOnValidThread());
-    LoadBackendIfNecessary();
     ScheduleTask(priority, base::Bind(func, history_backend_.get()));
   }
 
@@ -944,7 +930,6 @@ class HistoryService : public CancelableRequestProvider,
                          const ArgA& a) {
     DCHECK(thread_) << "History service being called after cleanup";
     DCHECK(thread_checker_.CalledOnValidThread());
-    LoadBackendIfNecessary();
     ScheduleTask(priority, base::Bind(func, history_backend_.get(), a));
   }
 
@@ -955,7 +940,6 @@ class HistoryService : public CancelableRequestProvider,
                          const ArgB& b) {
     DCHECK(thread_) << "History service being called after cleanup";
     DCHECK(thread_checker_.CalledOnValidThread());
-    LoadBackendIfNecessary();
     ScheduleTask(priority, base::Bind(func, history_backend_.get(), a, b));
   }
 
@@ -967,7 +951,6 @@ class HistoryService : public CancelableRequestProvider,
                          const ArgC& c) {
     DCHECK(thread_) << "History service being called after cleanup";
     DCHECK(thread_checker_.CalledOnValidThread());
-    LoadBackendIfNecessary();
     ScheduleTask(priority, base::Bind(func, history_backend_.get(), a, b, c));
   }
 
@@ -984,7 +967,6 @@ class HistoryService : public CancelableRequestProvider,
                          const ArgD& d) {
     DCHECK(thread_) << "History service being called after cleanup";
     DCHECK(thread_checker_.CalledOnValidThread());
-    LoadBackendIfNecessary();
     ScheduleTask(priority, base::Bind(func, history_backend_.get(),
                                       a, b, c, d));
   }
@@ -1004,7 +986,6 @@ class HistoryService : public CancelableRequestProvider,
                          const ArgE& e) {
     DCHECK(thread_) << "History service being called after cleanup";
     DCHECK(thread_checker_.CalledOnValidThread());
-    LoadBackendIfNecessary();
     ScheduleTask(priority, base::Bind(func, history_backend_.get(),
                                       a, b, c, d, e));
   }
@@ -1048,10 +1029,6 @@ class HistoryService : public CancelableRequestProvider,
   // Has the backend finished loading? The backend is loaded once Init has
   // completed.
   bool backend_loaded_;
-
-  // The id of the current backend. This is only valid when history_backend_
-  // is not NULL.
-  int current_backend_id_;
 
   // Cached values from Init(), used whenever we need to reload the backend.
   base::FilePath history_dir_;

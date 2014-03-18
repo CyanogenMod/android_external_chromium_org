@@ -18,9 +18,6 @@ using std::vector;
 
 namespace net {
 
-const size_t kMaxPrematurelyClosedStreamsTracked = 20;
-const size_t kMaxZombieStreams = 20;
-
 #define ENDPOINT (is_server() ? "Server: " : " Client: ")
 
 // We want to make sure we delete any closed streams in a safe manner.
@@ -49,10 +46,21 @@ class VisitorShim : public QuicConnectionVisitorInterface {
     session_->PostProcessAfterData();
   }
 
-  virtual bool OnCanWrite() OVERRIDE {
-    bool rc = session_->OnCanWrite();
+  virtual void OnWindowUpdateFrames(const vector<QuicWindowUpdateFrame>& frames)
+      OVERRIDE {
+    session_->OnWindowUpdateFrames(frames);
     session_->PostProcessAfterData();
-    return rc;
+  }
+
+  virtual void OnBlockedFrames(const vector<QuicBlockedFrame>& frames)
+      OVERRIDE {
+    session_->OnBlockedFrames(frames);
+    session_->PostProcessAfterData();
+  }
+
+  virtual void OnCanWrite() OVERRIDE {
+    session_->OnCanWrite();
+    session_->PostProcessAfterData();
   }
 
   virtual void OnSuccessfulVersionNegotiation(
@@ -68,6 +76,10 @@ class VisitorShim : public QuicConnectionVisitorInterface {
 
   virtual void OnWriteBlocked() OVERRIDE {
     session_->OnWriteBlocked();
+  }
+
+  virtual bool HasPendingWrites() const OVERRIDE {
+    return session_->HasPendingWrites();
   }
 
   virtual bool HasPendingHandshake() const OVERRIDE {
@@ -97,14 +109,12 @@ QuicSession::QuicSession(QuicConnection* connection,
     connection_->SetOverallConnectionTimeout(
         config_.max_time_before_crypto_handshake());
   }
-  if (connection_->version() > QUIC_VERSION_12) {
-    headers_stream_.reset(new QuicHeadersStream(this));
-    if (!is_server()) {
-      // For version above QUIC v12, the headers stream is stream 3, so the
-      // next available local stream ID should be 5.
-      DCHECK_EQ(kHeadersStreamId, next_stream_id_);
-      next_stream_id_ += 2;
-    }
+  headers_stream_.reset(new QuicHeadersStream(this));
+  if (!is_server()) {
+    // For version above QUIC v12, the headers stream is stream 3, so the
+    // next available local stream ID should be 5.
+    DCHECK_EQ(kHeadersStreamId, next_stream_id_);
+    next_stream_id_ += 2;
   }
 }
 
@@ -117,15 +127,6 @@ bool QuicSession::OnStreamFrames(const vector<QuicStreamFrame>& frames) {
   for (size_t i = 0; i < frames.size(); ++i) {
     // TODO(rch) deal with the error case of stream id 0
     if (IsClosedStream(frames[i].stream_id)) {
-      // If we get additional frames for a stream where we didn't process
-      // headers, it's highly likely our compression context will end up
-      // permanently out of sync with the peer's, so we give up and close the
-      // connection.
-      if (ContainsKey(prematurely_closed_streams_, frames[i].stream_id)) {
-        connection()->SendConnectionClose(
-            QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED);
-        return false;
-      }
       continue;
     }
 
@@ -144,31 +145,8 @@ bool QuicSession::OnStreamFrames(const vector<QuicStreamFrame>& frames) {
       continue;
     }
     stream->OnStreamFrame(frames[i]);
-
-    // If the stream is a data stream had been prematurely closed, and the
-    // headers are now decompressed, then we are finally finished
-    // with this stream.
-    if (ContainsKey(zombie_streams_, stream_id) &&
-        static_cast<QuicDataStream*>(stream)->headers_decompressed()) {
-      CloseZombieStream(stream_id);
-    }
   }
 
-  while (!decompression_blocked_streams_.empty()) {
-    QuicHeaderId header_id = decompression_blocked_streams_.begin()->first;
-    if (header_id != decompressor_.current_header_id()) {
-      break;
-    }
-    QuicStreamId stream_id = decompression_blocked_streams_.begin()->second;
-    decompression_blocked_streams_.erase(header_id);
-    QuicDataStream* stream = GetDataStream(stream_id);
-    if (!stream) {
-      connection()->SendConnectionClose(
-          QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED);
-      return false;
-    }
-    stream->OnDecompressorAvailable();
-  }
   return true;
 }
 
@@ -210,8 +188,7 @@ void QuicSession::OnRstStream(const QuicRstStreamFrame& frame) {
         "Attempt to reset the crypto stream");
     return;
   }
-  if (frame.stream_id == kHeadersStreamId &&
-      connection()->version() > QUIC_VERSION_12) {
+  if (frame.stream_id == kHeadersStreamId) {
     connection()->SendConnectionCloseWithDetails(
         QUIC_INVALID_STREAM_ID,
         "Attempt to reset the headers stream");
@@ -221,22 +198,7 @@ void QuicSession::OnRstStream(const QuicRstStreamFrame& frame) {
   if (!stream) {
     return;  // Errors are handled by GetStream.
   }
-  if (ContainsKey(zombie_streams_, stream->id())) {
-    // If this was a zombie stream then we close it out now.
-    CloseZombieStream(stream->id());
-    // However, since the headers still have not been decompressed, we want to
-    // mark it a prematurely closed so that if we ever receive frames
-    // for this stream we can close the connection.
-    DCHECK(!stream->headers_decompressed());
-    AddPrematurelyClosedStream(frame.stream_id);
-    return;
-  }
-  if (connection()->version() <= QUIC_VERSION_12) {
-    if (stream->stream_bytes_read() > 0 && !stream->headers_decompressed()) {
-      connection()->SendConnectionClose(
-          QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED);
-    }
-  }
+
   stream->OnStreamReset(frame);
 }
 
@@ -264,17 +226,54 @@ void QuicSession::OnConnectionClosed(QuicErrorCode error, bool from_peer) {
   }
 }
 
-bool QuicSession::OnCanWrite() {
-  // We latch this here rather than doing a traditional loop, because streams
-  // may be modifying the list as we loop.
-  int remaining_writes = write_blocked_streams_.NumBlockedStreams();
+void QuicSession::OnWindowUpdateFrames(
+    const vector<QuicWindowUpdateFrame>& frames) {
+  for (size_t i = 0; i < frames.size(); ++i) {
+    // Stream may be closed by the time we receive a WINDOW_UPDATE, so we can't
+    // assume that it still exists.
+    QuicStreamId stream_id = frames[i].stream_id;
+    if (stream_id == 0) {
+      // This is a window update that applies to the connection, rather than an
+      // individual stream.
+      // TODO(rjshade): Adjust connection level flow control window.
+      DVLOG(1) << ENDPOINT
+               << "Received connection level flow control window update with "
+                  "byte offset: " << frames[i].byte_offset;
+      continue;
+    }
 
-  while (remaining_writes > 0 && connection_->CanWriteStreamData()) {
-    DCHECK(write_blocked_streams_.HasWriteBlockedStreams());
+    QuicDataStream* stream = GetDataStream(stream_id);
+    if (stream) {
+      stream->OnWindowUpdateFrame(frames[i]);
+    }
+  }
+}
+
+void QuicSession::OnBlockedFrames(const vector<QuicBlockedFrame>& frames) {
+  for (size_t i = 0; i < frames.size(); ++i) {
+    // TODO(rjshade): Compare our flow control receive windows for specified
+    //                streams: if we have a large window then maybe something
+    //                had gone wrong with the flow control accounting.
+    DVLOG(1) << ENDPOINT << "Received BLOCKED frame with stream id: "
+             << frames[i].stream_id;
+  }
+}
+
+void QuicSession::OnCanWrite() {
+  // We limit the number of writes to the number of pending streams. If more
+  // streams become pending, HasPendingWrites will be true, which will cause
+  // the connection to request resumption before yielding to other connections.
+  size_t num_writes = write_blocked_streams_.NumBlockedStreams();
+
+  for (size_t i = 0; i < num_writes; ++i) {
     if (!write_blocked_streams_.HasWriteBlockedStreams()) {
+      // Writing one stream removed another?! Something's broken.
       LOG(DFATAL) << "WriteBlockedStream is missing";
       connection_->CloseConnection(QUIC_INTERNAL_ERROR, false);
-      return true;  // We have no write blocked streams.
+      return;
+    }
+    if (!connection_->CanWriteStreamData()) {
+      return;
     }
     QuicStreamId stream_id = write_blocked_streams_.PopFront();
     if (stream_id == kCryptoStreamId) {
@@ -286,10 +285,11 @@ bool QuicSession::OnCanWrite() {
       // list.
       stream->OnCanWrite();
     }
-    --remaining_writes;
   }
+}
 
-  return !write_blocked_streams_.HasWriteBlockedStreams();
+bool QuicSession::HasPendingWrites() const {
+  return write_blocked_streams_.HasWriteBlockedStreams();
 }
 
 bool QuicSession::HasPendingHandshake() const {
@@ -298,13 +298,10 @@ bool QuicSession::HasPendingHandshake() const {
 
 QuicConsumedData QuicSession::WritevData(
     QuicStreamId id,
-    const struct iovec* iov,
-    int iov_count,
+    const IOVector& data,
     QuicStreamOffset offset,
     bool fin,
     QuicAckNotifier::DelegateInterface* ack_notifier_delegate) {
-  IOVector data;
-  data.AppendIovec(iov, iov_count);
   return connection_->SendStreamData(id, data, offset, fin,
                                      ack_notifier_delegate);
 }
@@ -312,10 +309,6 @@ QuicConsumedData QuicSession::WritevData(
 size_t QuicSession::WriteHeaders(QuicStreamId id,
                                const SpdyHeaderBlock& headers,
                                bool fin) {
-  DCHECK_LT(QUIC_VERSION_12, connection()->version());
-  if (connection()->version() <= QUIC_VERSION_12) {
-    return 0;
-  }
   return headers_stream_->WriteHeaders(id, headers, fin);
 }
 
@@ -327,6 +320,9 @@ void QuicSession::SendRstStream(QuicStreamId id,
 }
 
 void QuicSession::SendGoAway(QuicErrorCode error_code, const string& reason) {
+  if (goaway_sent_) {
+    return;
+  }
   goaway_sent_ = true;
   connection_->SendGoAway(error_code, largest_peer_created_stream_id_, reason);
 }
@@ -351,67 +347,9 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id,
     stream->set_rst_sent(true);
   }
 
-  if (connection_->version() <= QUIC_VERSION_12 &&
-      connection_->connected() && !stream->headers_decompressed()) {
-    // If the stream is being closed locally (for example a client cancelling
-    // a request before receiving the response) then we need to make sure that
-    // we keep the stream alive long enough to process any response or
-    // RST_STREAM frames.
-    if (locally_reset && !is_server()) {
-      AddZombieStream(stream_id);
-      return;
-    }
-
-    // This stream has been closed before the headers were decompressed.
-    // This might cause problems with head of line blocking of headers.
-    // If the peer sent headers which were lost but we now close the stream
-    // we will never be able to decompress headers for other streams.
-    // To deal with this, we keep track of streams which have been closed
-    // prematurely.  If we ever receive data frames for this steam, then we
-    // know there actually has been a problem and we close the connection.
-    AddPrematurelyClosedStream(stream->id());
-  }
   closed_streams_.push_back(it->second);
-  if (ContainsKey(zombie_streams_, stream->id())) {
-    zombie_streams_.erase(stream->id());
-  }
   stream_map_.erase(it);
   stream->OnClose();
-}
-
-void QuicSession::AddZombieStream(QuicStreamId stream_id) {
-  if (zombie_streams_.size() == kMaxZombieStreams) {
-    QuicStreamId oldest_zombie_stream_id = zombie_streams_.begin()->first;
-    CloseZombieStream(oldest_zombie_stream_id);
-    // However, since the headers still have not been decompressed, we want to
-    // mark it a prematurely closed so that if we ever receive frames
-    // for this stream we can close the connection.
-    AddPrematurelyClosedStream(oldest_zombie_stream_id);
-  }
-  zombie_streams_.insert(make_pair(stream_id, true));
-}
-
-void QuicSession::CloseZombieStream(QuicStreamId stream_id) {
-  DCHECK(ContainsKey(zombie_streams_, stream_id));
-  zombie_streams_.erase(stream_id);
-  QuicDataStream* stream = GetDataStream(stream_id);
-  if (!stream) {
-    return;
-  }
-  stream_map_.erase(stream_id);
-  stream->OnClose();
-  closed_streams_.push_back(stream);
-}
-
-void QuicSession::AddPrematurelyClosedStream(QuicStreamId stream_id) {
-  if (connection()->version() > QUIC_VERSION_12) {
-    return;
-  }
-  if (prematurely_closed_streams_.size() ==
-      kMaxPrematurelyClosedStreamsTracked) {
-    prematurely_closed_streams_.erase(prematurely_closed_streams_.begin());
-  }
-  prematurely_closed_streams_.insert(make_pair(stream_id, true));
 }
 
 bool QuicSession::IsEncryptionEstablished() {
@@ -465,7 +403,7 @@ QuicConfig* QuicSession::config() {
 
 void QuicSession::ActivateStream(QuicDataStream* stream) {
   DVLOG(1) << ENDPOINT << "num_streams: " << stream_map_.size()
-             << ". activating " << stream->id();
+           << ". activating " << stream->id();
   DCHECK_EQ(stream_map_.count(stream->id()), 0u);
   stream_map_[stream->id()] = stream;
 }
@@ -480,8 +418,7 @@ ReliableQuicStream* QuicSession::GetStream(const QuicStreamId stream_id) {
   if (stream_id == kCryptoStreamId) {
     return GetCryptoStream();
   }
-  if (stream_id == kHeadersStreamId &&
-      connection_->version() > QUIC_VERSION_12) {
+  if (stream_id == kHeadersStreamId) {
     return headers_stream_.get();
   }
   return GetDataStream(stream_id);
@@ -492,8 +429,7 @@ QuicDataStream* QuicSession::GetDataStream(const QuicStreamId stream_id) {
     DLOG(FATAL) << "Attempt to call GetDataStream with the crypto stream id";
     return NULL;
   }
-  if (stream_id == kHeadersStreamId &&
-      connection_->version() > QUIC_VERSION_12) {
+  if (stream_id == kHeadersStreamId) {
     DLOG(FATAL) << "Attempt to call GetDataStream with the headers stream id";
     return NULL;
   }
@@ -524,12 +460,6 @@ QuicDataStream* QuicSession::GetIncomingDataStream(QuicStreamId stream_id) {
     return NULL;
   }
 
-  if (goaway_sent_) {
-    // We've already sent a GoAway
-    SendRstStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY, 0);
-    return NULL;
-  }
-
   implicitly_created_streams_.erase(stream_id);
   if (stream_id > largest_peer_created_stream_id_) {
     // TODO(rch) add unit test for this
@@ -538,7 +468,7 @@ QuicDataStream* QuicSession::GetIncomingDataStream(QuicStreamId stream_id) {
       return NULL;
     }
     if (largest_peer_created_stream_id_ == 0) {
-      if (is_server() && connection()->version() > QUIC_VERSION_12) {
+      if (is_server()) {
         largest_peer_created_stream_id_= 3;
       } else {
         largest_peer_created_stream_id_= 1;
@@ -564,13 +494,8 @@ bool QuicSession::IsClosedStream(QuicStreamId id) {
   if (id == kCryptoStreamId) {
     return false;
   }
-  if (connection()->version() > QUIC_VERSION_12) {
-    if (id == kHeadersStreamId) {
-      return false;
-    }
-  }
-  if (ContainsKey(zombie_streams_, id)) {
-    return true;
+  if (id == kHeadersStreamId) {
+    return false;
   }
   if (ContainsKey(stream_map_, id)) {
     // Stream is active
@@ -588,8 +513,7 @@ bool QuicSession::IsClosedStream(QuicStreamId id) {
 }
 
 size_t QuicSession::GetNumOpenStreams() const {
-  return stream_map_.size() + implicitly_created_streams_.size() -
-      zombie_streams_.size();
+  return stream_map_.size() + implicitly_created_streams_.size();
 }
 
 void QuicSession::MarkWriteBlocked(QuicStreamId id, QuicPriority priority) {
@@ -612,18 +536,12 @@ void QuicSession::MarkWriteBlocked(QuicStreamId id, QuicPriority priority) {
     // kHighestPriority.
     priority = kHighestPriority;
   }
-  write_blocked_streams_.PushBack(id, priority, connection()->version());
+  write_blocked_streams_.PushBack(id, priority);
 }
 
 bool QuicSession::HasDataToWrite() const {
   return write_blocked_streams_.HasWriteBlockedStreams() ||
       connection_->HasQueuedData();
-}
-
-void QuicSession::MarkDecompressionBlocked(QuicHeaderId header_id,
-                                           QuicStreamId stream_id) {
-  DCHECK_GE(QUIC_VERSION_12, connection()->version());
-  decompression_blocked_streams_[header_id] = stream_id;
 }
 
 bool QuicSession::GetSSLInfo(SSLInfo* ssl_info) {

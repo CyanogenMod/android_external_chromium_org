@@ -29,7 +29,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/net/async_dns_field_trial.h"
-#include "chrome/browser/net/basic_http_user_agent_settings.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
@@ -40,6 +39,7 @@
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/net/sdch_dictionary_fetcher.h"
 #include "chrome/browser/net/spdyproxy/http_auth_handler_spdyproxy.h"
+#include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
@@ -48,6 +48,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cookie_store_factory.h"
 #include "net/base/host_mapping_rules.h"
+#include "net/base/ip_mapping_rules.h"
 #include "net/base/net_util.h"
 #include "net/base/network_time_notifier.h"
 #include "net/base/sdch_manager.h"
@@ -60,6 +61,7 @@
 #include "net/dns/host_cache.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/mapped_host_resolver.h"
+#include "net/dns/mapped_ip_resolver.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_filter.h"
 #include "net/http/http_auth_handler_factory.h"
@@ -76,6 +78,7 @@
 #include "net/url_request/data_protocol_handler.h"
 #include "net/url_request/file_protocol_handler.h"
 #include "net/url_request/ftp_protocol_handler.h"
+#include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_throttler_manager.h"
@@ -124,6 +127,7 @@ const char kQuicFieldTrialName[] = "QUIC";
 const char kQuicFieldTrialEnabledGroupName[] = "Enabled";
 const char kQuicFieldTrialHttpsEnabledGroupName[] = "HttpsEnabled";
 const char kQuicFieldTrialPacketLengthSuffix[] = "BytePackets";
+const char kQuicFieldTrialPacingSuffix[] = "WithPacing";
 
 const char kSpdyFieldTrialName[] = "SPDY";
 const char kSpdyFieldTrialDisabledGroupName[] = "SpdyDisabled";
@@ -197,17 +201,28 @@ scoped_ptr<net::HostResolver> CreateGlobalHostResolver(net::NetLog* net_log) {
     global_host_resolver->SetDefaultAddressFamily(net::ADDRESS_FAMILY_IPV4);
   }
 
-  // If hostname remappings were specified on the command-line, layer these
-  // rules on top of the real host resolver. This allows forwarding all requests
-  // through a designated test server.
-  if (!command_line.HasSwitch(switches::kHostResolverRules))
-    return global_host_resolver.PassAs<net::HostResolver>();
+  // If hostname or IP remappings were specified on the command-line, layer
+  // these rules on top of the real host resolver. Hostname remapping allows
+  // forwarding of all requests to hosts (matching a pattern) through a
+  // designated test server.   IP remapping allows for all IP resolutions that
+  // match a given pattern, such as those destined for a specific CDN, to be
+  // instead directed to a specific/alternate IP address.
+  if (command_line.HasSwitch(switches::kHostResolverRules)) {
+    scoped_ptr<net::MappedHostResolver> remapped_resolver(
+        new net::MappedHostResolver(global_host_resolver.Pass()));
+    remapped_resolver->SetRulesFromString(
+        command_line.GetSwitchValueASCII(switches::kHostResolverRules));
+    global_host_resolver = remapped_resolver.Pass();
+  }
 
-  scoped_ptr<net::MappedHostResolver> remapped_resolver(
-      new net::MappedHostResolver(global_host_resolver.Pass()));
-  remapped_resolver->SetRulesFromString(
-      command_line.GetSwitchValueASCII(switches::kHostResolverRules));
-  return remapped_resolver.PassAs<net::HostResolver>();
+  if (command_line.HasSwitch(switches::kIpResolverRules)) {
+    scoped_ptr<net::MappedIPResolver> remapped_resolver(
+        new net::MappedIPResolver(global_host_resolver.Pass()));
+    remapped_resolver->SetRulesFromString(
+        command_line.GetSwitchValueASCII(switches::kIpResolverRules));
+    global_host_resolver = remapped_resolver.Pass();
+  }
+  return global_host_resolver.Pass();
 }
 
 // TODO(willchan): Remove proxy script fetcher context since it's not necessary
@@ -630,7 +645,7 @@ void IOThread::InitAsync() {
   globals_->dns_probe_service.reset(new chrome_browser_net::DnsProbeService());
   globals_->host_mapping_rules.reset(new net::HostMappingRules());
   globals_->http_user_agent_settings.reset(
-      new BasicHttpUserAgentSettings(std::string()));
+      new net::StaticHttpUserAgentSettings(std::string(), GetUserAgent()));
   if (command_line.HasSwitch(switches::kHostRules)) {
     TRACE_EVENT_BEGIN0("startup", "IOThread::InitAsync:SetRulesFromString");
     globals_->host_mapping_rules->SetRulesFromString(
@@ -762,22 +777,11 @@ void IOThread::InitializeNetworkOptions(const CommandLine& command_line) {
     std::string spdy_trial_group =
         base::FieldTrialList::FindFullName(kSpdyFieldTrialName);
 
-    if (command_line.HasSwitch(switches::kEnableIPPooling))
-      globals_->enable_spdy_ip_pooling.set(true);
-
-    if (command_line.HasSwitch(switches::kDisableIPPooling))
-      globals_->enable_spdy_ip_pooling.set(false);
-
     if (command_line.HasSwitch(switches::kEnableWebSocketOverSpdy)) {
       // Enable WebSocket over SPDY.
       net::WebSocketJob::set_websocket_over_spdy_enabled(true);
     }
 
-    if (command_line.HasSwitch(switches::kMaxSpdyConcurrentStreams)) {
-      globals_->max_spdy_concurrent_streams_limit.set(
-          GetSwitchValueAsInt(command_line,
-                              switches::kMaxSpdyConcurrentStreams));
-    }
     if (command_line.HasSwitch(switches::kTrustedSpdyProxy)) {
       globals_->trusted_spdy_proxy.set(
           command_line.GetSwitchValueASCII(switches::kTrustedSpdyProxy));
@@ -795,8 +799,6 @@ void IOThread::InitializeNetworkOptions(const CommandLine& command_line) {
       net::HttpStreamFactory::EnableNpnSpdy4a2();
     } else if (command_line.HasSwitch(switches::kDisableSpdy31)) {
       net::HttpStreamFactory::EnableNpnSpdy3();
-    } else if (command_line.HasSwitch(switches::kEnableSpdy2)) {
-      net::HttpStreamFactory::EnableNpnSpdy31WithSpdy2();
     } else if (command_line.HasSwitch(switches::kEnableNpnHttpOnly)) {
       net::HttpStreamFactory::EnableNpnHttpOnly();
     } else {
@@ -984,12 +986,8 @@ void IOThread::InitializeNetworkSessionParams(
 
   globals_->initial_max_spdy_concurrent_streams.CopyToIfSet(
       &params->spdy_initial_max_concurrent_streams);
-  globals_->max_spdy_concurrent_streams_limit.CopyToIfSet(
-      &params->spdy_max_concurrent_streams_limit);
   globals_->force_spdy_single_domain.CopyToIfSet(
       &params->force_spdy_single_domain);
-  globals_->enable_spdy_ip_pooling.CopyToIfSet(
-      &params->enable_spdy_ip_pooling);
   globals_->enable_spdy_compression.CopyToIfSet(
       &params->enable_spdy_compression);
   globals_->enable_spdy_ping_based_connection_checking.CopyToIfSet(
@@ -1000,6 +998,10 @@ void IOThread::InitializeNetworkSessionParams(
       &params->trusted_spdy_proxy);
   globals_->enable_quic.CopyToIfSet(&params->enable_quic);
   globals_->enable_quic_https.CopyToIfSet(&params->enable_quic_https);
+  globals_->enable_quic_pacing.CopyToIfSet(
+      &params->enable_quic_pacing);
+  globals_->enable_quic_persist_server_info.CopyToIfSet(
+      &params->enable_quic_persist_server_info);
   globals_->enable_quic_port_selection.CopyToIfSet(
       &params->enable_quic_port_selection);
   globals_->quic_max_packet_length.CopyToIfSet(&params->quic_max_packet_length);
@@ -1089,6 +1091,10 @@ void IOThread::ConfigureQuic(const CommandLine& command_line) {
   if (enable_quic) {
     globals_->enable_quic_https.set(
         ShouldEnableQuicHttps(command_line, quic_trial_group));
+    globals_->enable_quic_pacing.set(
+        ShouldEnableQuicPacing(command_line, quic_trial_group));
+    globals_->enable_quic_persist_server_info.set(
+        ShouldEnableQuicPersistServerInfo(command_line));
     globals_->enable_quic_port_selection.set(
         ShouldEnableQuicPortSelection(command_line));
   }
@@ -1165,6 +1171,30 @@ bool IOThread::ShouldEnableQuicPortSelection(
 #else
   return true;
 #endif
+}
+
+bool IOThread::ShouldEnableQuicPacing(const CommandLine& command_line,
+                                      base::StringPiece quic_trial_group) {
+  if (command_line.HasSwitch(switches::kEnableQuicPacing))
+    return true;
+
+  if (command_line.HasSwitch(switches::kDisableQuicPacing))
+    return false;
+
+  return quic_trial_group.ends_with(kQuicFieldTrialPacingSuffix);
+}
+
+bool IOThread::ShouldEnableQuicPersistServerInfo(
+    const CommandLine& command_line) {
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  // Avoid persisting of Quic server config information to disk cache when we
+  // have a beta or stable release.  Allow in all other cases, including when we
+  // do a developer build (CHANNEL_UNKNOWN).
+  if (channel == chrome::VersionInfo::CHANNEL_STABLE ||
+      channel == chrome::VersionInfo::CHANNEL_BETA) {
+    return false;
+  }
+  return true;
 }
 
 size_t IOThread::GetQuicMaxPacketLength(const CommandLine& command_line,

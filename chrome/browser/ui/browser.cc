@@ -90,6 +90,7 @@
 #include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
+#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_content_setting_bubble_model_delegate.h"
@@ -128,7 +129,6 @@
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/tab_helpers.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
-#include "chrome/browser/ui/tabs/dock_info.h"
 #include "chrome/browser/ui/tabs/tab_menu_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/toolbar_model_impl.h"
@@ -695,6 +695,13 @@ void Browser::InProgressDownloadResponse(bool cancel_downloads) {
   // Show the download page so the user can figure-out what downloads are still
   // in-progress.
   chrome::ShowDownloads(this);
+
+  // Reset UnloadController::is_attempting_to_close_browser_ so that we don't
+  // prompt every time any tab is closed. http://crbug.com/305516
+  if (IsFastTabUnloadEnabled())
+    fast_unload_controller_->CancelWindowClose();
+  else
+    unload_controller_->CancelWindowClose();
 }
 
 Browser::DownloadClosePreventionType Browser::OkToCloseWithInProgressDownloads(
@@ -780,7 +787,8 @@ void Browser::OnWebContentsInstantSupportDisabled(
 // Browser, Assorted browser commands:
 
 void Browser::ToggleFullscreenModeWithExtension(const GURL& extension_url) {
-  fullscreen_controller_->ToggleFullscreenModeWithExtension(extension_url);
+  fullscreen_controller_->
+      ToggleBrowserFullscreenModeWithExtension(extension_url);
 }
 
 bool Browser::SupportsWindowFeature(WindowFeature feature) const {
@@ -1110,8 +1118,9 @@ void Browser::TabStripEmpty() {
 
 bool Browser::CanOverscrollContent() const {
 #if defined(USE_AURA)
-  bool overscroll_enabled = CommandLine::ForCurrentProcess()->
-      GetSwitchValueASCII(switches::kOverscrollHistoryNavigation) != "0";
+  const std::string value = CommandLine::ForCurrentProcess()->
+      GetSwitchValueASCII(switches::kOverscrollHistoryNavigation);
+  bool overscroll_enabled = value != "0";
   if (!overscroll_enabled)
     return false;
   if (is_app() || is_devtools() || !is_type_tabbed())
@@ -1120,8 +1129,8 @@ bool Browser::CanOverscrollContent() const {
   // The detached bookmark bar has appearance of floating above the
   // web-contents. This does not play nicely with overscroll navigation
   // gestures. So disable overscroll navigation when the bookmark bar is in the
-  // detached state.
-  if (bookmark_bar_state_ == BookmarkBar::DETACHED)
+  // detached state and the overscroll effect moves the layers.
+  if (value == "1" && bookmark_bar_state_ == BookmarkBar::DETACHED)
     return false;
   return true;
 #else
@@ -1184,6 +1193,17 @@ void Browser::MoveValidationMessage(content::WebContents* web_contents,
     validation_message_bubble_->SetPositionRelativeToAnchor(
         rwhv->GetRenderWidgetHost(), anchor_in_root_view);
   }
+}
+
+bool Browser::PreHandleGestureEvent(content::WebContents* source,
+                                    const blink::WebGestureEvent& event) {
+  // Disable pinch zooming in undocked dev tools window due to poor UX.
+  if (app_name() == DevToolsWindow::kDevToolsApp)
+    return event.type == blink::WebGestureEvent::GesturePinchBegin ||
+           event.type == blink::WebGestureEvent::GesturePinchUpdate ||
+           event.type == blink::WebGestureEvent::GesturePinchEnd;
+
+  return false;
 }
 
 bool Browser::IsMouseLocked() const {
@@ -1566,8 +1586,12 @@ void Browser::EnumerateDirectory(WebContents* web_contents,
 }
 
 bool Browser::EmbedsFullscreenWidget() const {
-  return CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kEmbedFlashFullscreen);
+#if defined(TOOLKIT_GTK)
+  return false;
+#else
+  return !CommandLine::ForCurrentProcess()->
+      HasSwitch(switches::kDisableFullscreenWithinTab);
+#endif
 }
 
 void Browser::ToggleFullscreenModeForTab(WebContents* web_contents,
@@ -1579,16 +1603,6 @@ void Browser::ToggleFullscreenModeForTab(WebContents* web_contents,
 bool Browser::IsFullscreenForTabOrPending(
     const WebContents* web_contents) const {
   return fullscreen_controller_->IsFullscreenForTabOrPending(web_contents);
-}
-
-void Browser::JSOutOfMemory(WebContents* web_contents) {
-  InfoBarService* infobar_service =
-      InfoBarService::FromWebContents(web_contents);
-  if (!infobar_service)
-    return;
-  SimpleAlertInfoBarDelegate::Create(
-      infobar_service, InfoBarDelegate::kNoIconID,
-      l10n_util::GetStringUTF16(IDS_JS_OUT_OF_MEMORY_PROMPT), true);
 }
 
 void Browser::RegisterProtocolHandler(WebContents* web_contents,
@@ -1630,7 +1644,8 @@ void Browser::RegisterProtocolHandler(WebContents* web_contents,
       PermissionBubbleManager::FromWebContents(web_contents);
   if (PermissionBubbleManager::Enabled() && bubble_manager) {
     bubble_manager->AddRequest(
-        new RegisterProtocolHandlerPermissionRequest(registry, handler));
+        new RegisterProtocolHandlerPermissionRequest(registry, handler,
+                                                     url, user_gesture));
   } else {
     RegisterProtocolHandlerInfoBarDelegate::Create(
         InfoBarService::FromWebContents(web_contents), registry, handler);
@@ -1815,6 +1830,11 @@ void Browser::Observe(int type,
                       const content::NotificationDetails& details) {
   switch (type) {
     case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+      chrome::UpdateCommandEnabled(
+          this,
+          IDC_BOOKMARK_PAGE,
+          !chrome::ShouldRemoveBookmarkThisPageUI(profile_));
+
       if (window()->GetLocationBar())
         window()->GetLocationBar()->UpdatePageActions();
 
@@ -1853,8 +1873,13 @@ void Browser::Observe(int type,
       break;
     }
 
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
     case chrome::NOTIFICATION_EXTENSION_LOADED:
+      chrome::UpdateCommandEnabled(
+          this,
+          IDC_BOOKMARK_PAGE,
+          !chrome::ShouldRemoveBookmarkThisPageUI(profile_));
+    // fallthrough
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
       // During window creation on Windows we may end up calling into
       // SHAppBarMessage, which internally spawns a nested message loop. This
       // makes it possible for us to end up here before window creation has

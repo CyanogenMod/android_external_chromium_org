@@ -10,7 +10,7 @@
 #include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "extensions/common/extension_resource.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/layout.h"
@@ -22,30 +22,30 @@ class BrowserContext;
 
 namespace gfx {
 class Image;
+class ImageFamily;
 }
 
 namespace extensions {
 
 class Extension;
 
-typedef base::Callback<void(const gfx::Image&)> ImageLoaderCallback;
+typedef base::Callback<void(const gfx::Image&)> ImageLoaderImageCallback;
+typedef base::Callback<void(const gfx::ImageFamily&)>
+    ImageLoaderImageFamilyCallback;
 
 // This class is responsible for asynchronously loading extension images and
 // calling a callback when an image is loaded.
 // The views need to load their icons asynchronously might be deleted before
 // the images have loaded. If you pass your callback using a weak_ptr, this
 // will make sure the callback won't be called after the view is deleted.
-class ImageLoader : public BrowserContextKeyedService {
+class ImageLoader : public KeyedService {
  public:
   // Information about a singe image representation to load from an extension
   // resource.
   struct ImageRepresentation {
     // Enum values to indicate whether to resize loaded bitmap when it is larger
     // than |desired_size| or always resize it.
-    enum ResizeCondition {
-      RESIZE_WHEN_LARGER,
-      ALWAYS_RESIZE,
-    };
+    enum ResizeCondition { RESIZE_WHEN_LARGER, ALWAYS_RESIZE, NEVER_RESIZE };
 
     ImageRepresentation(const ExtensionResource& resource,
                         ResizeCondition resize_condition,
@@ -93,18 +93,32 @@ class ImageLoader : public BrowserContextKeyedService {
   void LoadImageAsync(const extensions::Extension* extension,
                       const ExtensionResource& resource,
                       const gfx::Size& max_size,
-                      const ImageLoaderCallback& callback);
+                      const ImageLoaderImageCallback& callback);
 
-  // Same as LoadImage() above except it loads multiple images from the same
-  // extension. This is used to load multiple resolutions of the same image
+  // Same as LoadImageAsync() above except it loads multiple images from the
+  // same extension. This is used to load multiple resolutions of the same image
   // type.
   void LoadImagesAsync(const extensions::Extension* extension,
                        const std::vector<ImageRepresentation>& info_list,
-                       const ImageLoaderCallback& callback);
+                       const ImageLoaderImageCallback& callback);
+
+  // Same as LoadImagesAsync() above except it loads into an image family. This
+  // is used to load multiple images of different logical sizes as opposed to
+  // LoadImagesAsync() which loads different scale factors of the same logical
+  // image size.
+  //
+  // If multiple images of the same logical size are loaded, they will be
+  // combined into a single ImageSkia in the ImageFamily.
+  void LoadImageFamilyAsync(const extensions::Extension* extension,
+                            const std::vector<ImageRepresentation>& info_list,
+                            const ImageLoaderImageFamilyCallback& callback);
 
  private:
-  void ReplyBack(const ImageLoaderCallback& callback,
+  void ReplyBack(const ImageLoaderImageCallback& callback,
                  const std::vector<LoadResult>& load_result);
+
+  void ReplyBackWithImageFamily(const ImageLoaderImageFamilyCallback& callback,
+                                const std::vector<LoadResult>& load_result);
 
   base::WeakPtrFactory<ImageLoader> weak_ptr_factory_;
 

@@ -7,6 +7,7 @@
 #include "chrome_elf/chrome_elf_main.h"
 
 #include "chrome_elf/blacklist/blacklist.h"
+#include "chrome_elf/breakpad.h"
 #include "chrome_elf/ntdll_cache.h"
 
 void SignalChromeElf() {
@@ -15,11 +16,13 @@ void SignalChromeElf() {
 
 BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
   if (reason == DLL_PROCESS_ATTACH) {
-    InitCache();
-    blacklist::Initialize(false);  // Don't force, abort if beacon is present.
+    InitializeCrashReporting();
 
-    // TODO(csharp): Move additions to the DLL blacklist to a sane place.
-    // blacklist::AddDllToBlacklist(L"foo.dll");
+    __try {
+      InitCache();
+      blacklist::Initialize(false);  // Don't force, abort if beacon is present.
+    } __except(GenerateCrashDump(GetExceptionInformation())) {
+    }
   }
 
   return TRUE;

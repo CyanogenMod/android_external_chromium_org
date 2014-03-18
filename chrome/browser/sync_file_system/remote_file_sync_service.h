@@ -41,7 +41,7 @@ enum RemoteServiceState {
   // Remote service is up and running, or has not seen any errors yet.
   // The consumer of this service can make new requests while the
   // service is in this state.
-  REMOTE_SERVICE_OK,
+  REMOTE_SERVICE_OK = 0,
 
   // Remote service is temporarily unavailable due to network,
   // authentication or some other temporary failure.
@@ -63,6 +63,8 @@ enum RemoteServiceState {
   // Any new requests will immediately fail when the service is in
   // this state.
   REMOTE_SERVICE_DISABLED,
+
+  REMOTE_SERVICE_STATE_MAX,
 };
 
 // This class represents a backing service of the sync filesystem.
@@ -206,11 +208,17 @@ class RemoteFileSyncService {
   // Sets the conflict resolution policy. Returns SYNC_STATUS_OK on success,
   // or returns an error code if the given policy is not supported or had
   // an error.
+  virtual SyncStatusCode SetDefaultConflictResolutionPolicy(
+      ConflictResolutionPolicy policy) = 0;
   virtual SyncStatusCode SetConflictResolutionPolicy(
+      const GURL& origin,
       ConflictResolutionPolicy policy) = 0;
 
   // Gets the conflict resolution policy.
-  virtual ConflictResolutionPolicy GetConflictResolutionPolicy() const = 0;
+  virtual ConflictResolutionPolicy GetDefaultConflictResolutionPolicy()
+      const = 0;
+  virtual ConflictResolutionPolicy GetConflictResolutionPolicy(
+      const GURL& origin) const = 0;
 
   // Returns a list of remote versions with their metadata.
   // This method is typically called for a file which is in conflicting state.

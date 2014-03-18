@@ -16,14 +16,19 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
+
+#if defined(OS_CHROMEOS) && defined(USE_X11)
+#include "ui/display/chromeos/output_configurator.h"
+#include "ui/display/display_constants.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -979,7 +984,6 @@ TEST_F(LockStateControllerTest, IgnorePowerButtonIfScreenIsOff) {
   // When the screen brightness is at 0%, we shouldn't do anything in response
   // to power button presses.
   controller_->OnScreenBrightnessChanged(0.0);
-
   PressPowerButton();
   EXPECT_FALSE(test_api_->is_animating_lock());
   ReleasePowerButton();
@@ -987,10 +991,42 @@ TEST_F(LockStateControllerTest, IgnorePowerButtonIfScreenIsOff) {
   // After increasing the brightness to 10%, we should start the timer like
   // usual.
   controller_->OnScreenBrightnessChanged(10.0);
-
   PressPowerButton();
   EXPECT_TRUE(test_api_->is_animating_lock());
+  ReleasePowerButton();
 }
+
+#if defined(OS_CHROMEOS) && defined(USE_X11)
+TEST_F(LockStateControllerTest, HonorPowerButtonInDockedMode) {
+  // Create two outputs, the first internal and the second external.
+  std::vector<ui::OutputConfigurator::OutputSnapshot> outputs;
+  ui::OutputConfigurator::OutputSnapshot internal_output;
+  internal_output.type = ui::OUTPUT_TYPE_INTERNAL;
+  outputs.push_back(internal_output);
+  ui::OutputConfigurator::OutputSnapshot external_output;
+  external_output.type = ui::OUTPUT_TYPE_HDMI;
+  outputs.push_back(external_output);
+
+  // When all of the displays are turned off (e.g. due to user inactivity), the
+  // power button should be ignored.
+  controller_->OnScreenBrightnessChanged(0.0);
+  outputs[0].current_mode = 0;
+  outputs[1].current_mode = 0;
+  controller_->OnDisplayModeChanged(outputs);
+  PressPowerButton();
+  EXPECT_FALSE(test_api_->is_animating_lock());
+  ReleasePowerButton();
+
+  // When the screen brightness is 0% but the external display is still turned
+  // on (indicating either docked mode or the user having manually decreased the
+  // brightness to 0%), the power button should still be handled.
+  outputs[1].current_mode = 1;
+  controller_->OnDisplayModeChanged(outputs);
+  PressPowerButton();
+  EXPECT_TRUE(test_api_->is_animating_lock());
+  ReleasePowerButton();
+}
+#endif
 
 // Test that hidden background appears and revers correctly on lock/cancel.
 // TODO(antrim): Reenable this: http://crbug.com/167048

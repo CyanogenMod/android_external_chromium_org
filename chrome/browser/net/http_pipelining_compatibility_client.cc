@@ -15,7 +15,7 @@
 #include "net/base/load_flags.h"
 #include "net/base/network_change_notifier.h"
 #include "net/base/request_priority.h"
-#include "net/disk_cache/histogram_macros.h"
+#include "net/disk_cache/blockfile/histogram_macros.h"
 #include "net/http/http_network_layer.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_response_headers.h"
@@ -93,7 +93,8 @@ Request::Request(int request_id,
       url_request_(url_request_context->CreateRequest(GURL(base_url +
                                                            info.filename),
                                                       net::DEFAULT_PRIORITY,
-                                                      this)),
+                                                      this,
+                                                      NULL)),
       info_(info),
       response_code_(0) {
   url_request_->SetLoadFlags(net::LOAD_BYPASS_CACHE |

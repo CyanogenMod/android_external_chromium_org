@@ -385,7 +385,7 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
 
   // These members are used only for one click sign in, which is not enabled
   // in incognito mode.  So no need to initialize them.
-  if (!is_incognito()) {
+  if (!IsOffTheRecord()) {
     signin_names_.reset(new SigninNamesOnIOThread());
 
     google_services_user_account_id_.Init(
@@ -419,7 +419,7 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
                             local_state_pref_service);
   quick_check_enabled_.MoveToThread(io_message_loop_proxy);
 
-  media_device_id_salt_ = new MediaDeviceIDSalt(pref_service, is_incognito());
+  media_device_id_salt_ = new MediaDeviceIDSalt(pref_service, IsOffTheRecord());
 
   network_prediction_enabled_.Init(prefs::kNetworkPredictionEnabled,
                                    pref_service);
@@ -445,9 +445,9 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
                                       background_task_runner,
                                       io_message_loop_proxy,
                                       callback,
-                                      policy::SkipBlacklistForURL));
+                                      policy::OverrideBlacklistForURL));
 
-  if (!is_incognito()) {
+  if (!IsOffTheRecord()) {
     // Add policy headers for non-incognito requests.
     policy::PolicyHeaderService* policy_header_service =
         policy::PolicyHeaderServiceFactory::GetForBrowserContext(profile);
@@ -507,11 +507,11 @@ ProfileIOData::ProfileParams::ProfileParams()
 
 ProfileIOData::ProfileParams::~ProfileParams() {}
 
-ProfileIOData::ProfileIOData(bool is_incognito)
+ProfileIOData::ProfileIOData(Profile::ProfileType profile_type)
     : initialized_(false),
       resource_context_(new ResourceContext(this)),
       initialized_on_UI_thread_(false),
-      is_incognito_(is_incognito) {
+      profile_type_(profile_type) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
@@ -616,11 +616,11 @@ bool ProfileIOData::IsHandledProtocol(const std::string& scheme) {
 #if defined(OS_CHROMEOS)
     chrome::kDriveScheme,
 #endif  // defined(OS_CHROMEOS)
-    chrome::kAboutScheme,
+    content::kAboutScheme,
 #if !defined(DISABLE_FTP_SUPPORT)
     content::kFtpScheme,
 #endif  // !defined(DISABLE_FTP_SUPPORT)
-    chrome::kBlobScheme,
+    content::kBlobScheme,
     content::kFileSystemScheme,
     chrome::kChromeSearchScheme,
   };
@@ -682,15 +682,19 @@ ChromeURLRequestContext* ProfileIOData::GetIsolatedAppRequestContext(
     const StoragePartitionDescriptor& partition_descriptor,
     scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
         protocol_handler_interceptor,
-    content::ProtocolHandlerMap* protocol_handlers) const {
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::ProtocolHandlerScopedVector protocol_interceptors) const {
   DCHECK(initialized_);
   ChromeURLRequestContext* context = NULL;
   if (ContainsKey(app_request_context_map_, partition_descriptor)) {
     context = app_request_context_map_[partition_descriptor];
   } else {
-    context = AcquireIsolatedAppRequestContext(
-        main_context, partition_descriptor, protocol_handler_interceptor.Pass(),
-        protocol_handlers);
+    context =
+        AcquireIsolatedAppRequestContext(main_context,
+                                         partition_descriptor,
+                                         protocol_handler_interceptor.Pass(),
+                                         protocol_handlers,
+                                         protocol_interceptors.Pass());
     app_request_context_map_[partition_descriptor] = context;
   }
   DCHECK(context);
@@ -731,6 +735,11 @@ HostContentSettingsMap* ProfileIOData::GetHostContentSettingsMap() const {
 
 ResourceContext::SaltCallback ProfileIOData::GetMediaDeviceIDSalt() const {
   return base::Bind(&MediaDeviceIDSalt::GetSalt, media_device_id_salt_);
+}
+
+bool ProfileIOData::IsOffTheRecord() const {
+  return profile_type() == Profile::INCOGNITO_PROFILE
+      || profile_type() == Profile::GUEST_PROFILE;
 }
 
 void ProfileIOData::InitializeMetricsEnabledStateOnUIThread() {
@@ -891,7 +900,9 @@ std::string ProfileIOData::GetSSLSessionCacheShard() {
   return base::StringPrintf("profile/%u", ssl_session_cache_instance++);
 }
 
-void ProfileIOData::Init(content::ProtocolHandlerMap* protocol_handlers) const {
+void ProfileIOData::Init(
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::ProtocolHandlerScopedVector protocol_interceptors) const {
   // The basic logic is implemented here. The specific initialization
   // is done in InitializeInternal(), implemented by subtypes. Static helper
   // functions have been provided to assist in common operations.
@@ -954,7 +965,7 @@ void ProfileIOData::Init(content::ProtocolHandlerMap* protocol_handlers) const {
           transport_security_state_.get(),
           profile_params_->path,
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE),
-          is_incognito()));
+          IsOffTheRecord()));
 
   // Take ownership over these parameters.
   cookie_settings_ = profile_params_->cookie_settings;
@@ -992,7 +1003,8 @@ void ProfileIOData::Init(content::ProtocolHandlerMap* protocol_handlers) const {
       io_thread_globals->cert_verifier.get());
 #endif
 
-  InitializeInternal(profile_params_.get(), protocol_handlers);
+  InitializeInternal(
+      profile_params_.get(), protocol_handlers, protocol_interceptors.Pass());
 
   profile_params_.reset();
   initialized_ = true;
@@ -1007,6 +1019,7 @@ void ProfileIOData::ApplyProfileParamsToContext(
 
 scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
     scoped_ptr<net::URLRequestJobFactoryImpl> job_factory,
+    content::ProtocolHandlerScopedVector protocol_interceptors,
     scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
         protocol_handler_interceptor,
     net::NetworkDelegate* network_delegate,
@@ -1024,7 +1037,7 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
   DCHECK(extension_info_map_.get());
   set_protocol = job_factory->SetProtocolHandler(
       extensions::kExtensionScheme,
-      CreateExtensionProtocolHandler(is_incognito(),
+      CreateExtensionProtocolHandler(profile_type(),
                                      extension_info_map_.get()));
   DCHECK(set_protocol);
   set_protocol = job_factory->SetProtocolHandler(
@@ -1035,7 +1048,7 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
       content::kDataScheme, new net::DataProtocolHandler());
   DCHECK(set_protocol);
 #if defined(OS_CHROMEOS)
-  if (!is_incognito() && profile_params_) {
+  if (!IsOffTheRecord() && profile_params_) {
     set_protocol = job_factory->SetProtocolHandler(
         chrome::kDriveScheme,
         new drive::DriveProtocolHandler(profile_params_->profile));
@@ -1044,8 +1057,7 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
 #endif  // defined(OS_CHROMEOS)
 
   job_factory->SetProtocolHandler(
-      chrome::kAboutScheme,
-      new chrome_browser_net::AboutProtocolHandler());
+      content::kAboutScheme, new chrome_browser_net::AboutProtocolHandler());
 #if !defined(DISABLE_FTP_SUPPORT)
   DCHECK(ftp_transaction_factory);
   job_factory->SetProtocolHandler(
@@ -1053,14 +1065,21 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
       new net::FtpProtocolHandler(ftp_transaction_factory));
 #endif  // !defined(DISABLE_FTP_SUPPORT)
 
+#if defined(DEBUG_DEVTOOLS)
+  protocol_interceptors.push_back(new DebugDevToolsInterceptor);
+#endif
+
+  // Set up interceptors in the reverse order.
   scoped_ptr<net::URLRequestJobFactory> top_job_factory =
       job_factory.PassAs<net::URLRequestJobFactory>();
-#if defined(DEBUG_DEVTOOLS)
-  top_job_factory.reset(new net::ProtocolInterceptJobFactory(
-      top_job_factory.Pass(),
-      scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>(
-          new DebugDevToolsInterceptor)));
-#endif
+  for (content::ProtocolHandlerScopedVector::reverse_iterator i =
+           protocol_interceptors.rbegin();
+       i != protocol_interceptors.rend();
+       ++i) {
+    top_job_factory.reset(new net::ProtocolInterceptJobFactory(
+        top_job_factory.Pass(), make_scoped_ptr(*i)));
+  }
+  protocol_interceptors.weak_clear();
 
   if (protocol_handler_interceptor) {
     protocol_handler_interceptor->Chain(top_job_factory.Pass());

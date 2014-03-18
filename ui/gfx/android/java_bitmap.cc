@@ -10,7 +10,6 @@
 #include "base/logging.h"
 #include "jni/BitmapHelper_jni.h"
 #include "skia/ext/image_operations.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/size.h"
 
 using base::android::AttachCurrentThread;
@@ -42,21 +41,38 @@ bool JavaBitmap::RegisterJavaBitmap(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }
 
-static ScopedJavaLocalRef<jobject> CreateJavaBitmap(int width, int height,
-                                                    bool is565_config) {
-  return Java_BitmapHelper_createBitmap(AttachCurrentThread(),
-      width, height, is565_config);
+static int SkBitmapConfigToBitmapFormat(SkBitmap::Config bitmap_config) {
+  switch (bitmap_config) {
+    case SkBitmap::kA8_Config:
+      return BITMAP_FORMAT_ALPHA_8;
+    case SkBitmap::kARGB_4444_Config:
+      return BITMAP_FORMAT_ARGB_4444;
+    case SkBitmap::kARGB_8888_Config:
+      return BITMAP_FORMAT_ARGB_8888;
+    case SkBitmap::kRGB_565_Config:
+      return BITMAP_FORMAT_RGB_565;
+    case SkBitmap::kNo_Config:
+    default:
+      NOTREACHED();
+      return BITMAP_FORMAT_NO_CONFIG;
+  }
+}
+
+ScopedJavaLocalRef<jobject> CreateJavaBitmap(int width,
+                                             int height,
+                                             SkBitmap::Config bitmap_config) {
+  int java_bitmap_config = SkBitmapConfigToBitmapFormat(bitmap_config);
+  return Java_BitmapHelper_createBitmap(
+      AttachCurrentThread(), width, height, java_bitmap_config);
 }
 
 ScopedJavaLocalRef<jobject> ConvertToJavaBitmap(const SkBitmap* skbitmap) {
   DCHECK(skbitmap);
-  SkBitmap::Config config = skbitmap->getConfig();
-  DCHECK((config == SkBitmap::kRGB_565_Config) ||
-         (config == SkBitmap::kARGB_8888_Config));
-  // If the Config is not RGB565 it is default i.e ARGB8888
-  ScopedJavaLocalRef<jobject> jbitmap =
-      CreateJavaBitmap(skbitmap->width(), skbitmap->height(),
-                       (config == SkBitmap::kRGB_565_Config));
+  SkBitmap::Config bitmap_config = skbitmap->getConfig();
+  DCHECK((bitmap_config == SkBitmap::kRGB_565_Config) ||
+         (bitmap_config == SkBitmap::kARGB_8888_Config));
+  ScopedJavaLocalRef<jobject> jbitmap = CreateJavaBitmap(
+      skbitmap->width(), skbitmap->height(), bitmap_config);
   SkAutoLockPixels src_lock(*skbitmap);
   JavaBitmap dst_lock(jbitmap.obj());
   void* src_pixels = skbitmap->getPixels();
@@ -100,6 +116,24 @@ SkBitmap CreateSkBitmapFromResource(const char* name, gfx::Size size) {
   SkBitmap bitmap = CreateSkBitmapFromJavaBitmap(jbitmap);
   return skia::ImageOperations::Resize(
       bitmap, skia::ImageOperations::RESIZE_BOX, size.width(), size.height());
+}
+
+SkBitmap::Config ConvertToSkiaConfig(jobject bitmap_config) {
+  int jbitmap_config = Java_BitmapHelper_getBitmapFormatForConfig(
+      AttachCurrentThread(), bitmap_config);
+  switch (jbitmap_config) {
+    case BITMAP_FORMAT_ALPHA_8:
+      return SkBitmap::kA8_Config;
+    case BITMAP_FORMAT_ARGB_4444:
+      return SkBitmap::kARGB_4444_Config;
+    case BITMAP_FORMAT_ARGB_8888:
+      return SkBitmap::kARGB_8888_Config;
+    case BITMAP_FORMAT_RGB_565:
+      return SkBitmap::kRGB_565_Config;
+    case BITMAP_FORMAT_NO_CONFIG:
+    default:
+      return SkBitmap::kNo_Config;
+  }
 }
 
 }  //  namespace gfx

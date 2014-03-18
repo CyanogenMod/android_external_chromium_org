@@ -24,7 +24,6 @@
 #include "cc/layers/paint_properties.h"
 #include "cc/layers/render_surface.h"
 #include "cc/output/filter_operations.h"
-#include "cc/trees/occlusion_tracker.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
@@ -61,6 +60,8 @@ class RenderingStatsInstrumentation;
 class ResourceUpdateQueue;
 class ScrollbarLayerInterface;
 struct AnimationEvent;
+template <typename LayerType>
+class OcclusionTracker;
 
 // Base class for composited layers. Special layer types are derived from
 // this class.
@@ -297,7 +298,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   }
 
   void SetDrawCheckerboardForMissingTiles(bool checkerboard);
-  bool DrawCheckerboardForMissingTiles() const {
+  bool draw_checkerboard_for_missing_tiles() const {
     return draw_checkerboard_for_missing_tiles_;
   }
 
@@ -352,7 +353,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual void SavePaintProperties();
   // Returns true iff any resources were updated that need to be committed.
   virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker* occlusion);
+                      const OcclusionTracker<Layer>* occlusion);
   virtual bool NeedMoreUpdates();
   virtual void SetIsMask(bool is_mask) {}
   virtual void ReduceMemoryUsage() {}
@@ -440,9 +441,13 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   virtual bool SupportsLCDText() const;
 
+  void SetNeedsPushProperties();
   bool needs_push_properties() const { return needs_push_properties_; }
   bool descendant_needs_push_properties() const {
     return num_dependents_need_push_properties_ > 0;
+  }
+  void reset_needs_push_properties_for_testing() {
+    needs_push_properties_ = false;
   }
 
   virtual void RunMicroBenchmark(MicroBenchmark* benchmark);
@@ -476,7 +481,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // Called when the blend mode or filters have been changed.
   void SetNeedsFilterContextIfNeeded();
 
-  void SetNeedsPushProperties();
   void AddDependentNeedsPushProperties();
   void RemoveDependentNeedsPushProperties();
   bool parent_should_know_need_push_properties() const {

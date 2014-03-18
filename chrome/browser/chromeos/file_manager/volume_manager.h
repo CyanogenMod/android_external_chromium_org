@@ -17,7 +17,7 @@
 #include "chrome/browser/local_discovery/storage/privet_volume_lister.h"
 #include "chromeos/dbus/cros_disks_client.h"
 #include "chromeos/disks/disk_mount_manager.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 
 class Profile;
 
@@ -45,7 +45,8 @@ enum VolumeType {
   VOLUME_TYPE_DOWNLOADS_DIRECTORY,
   VOLUME_TYPE_REMOVABLE_DISK_PARTITION,
   VOLUME_TYPE_MOUNTED_ARCHIVE_FILE,
-  VOLUME_TYPE_CLOUD_DEVICE
+  VOLUME_TYPE_CLOUD_DEVICE,
+  VOLUME_TYPE_TESTING
 };
 
 struct VolumeInfo {
@@ -97,7 +98,7 @@ struct VolumeInfo {
 // - Removable disks (volume will be created for each partition, not only one
 //   for a device).
 // - Mounted zip archives.
-class VolumeManager : public BrowserContextKeyedService,
+class VolumeManager : public KeyedService,
                       public drive::DriveIntegrationServiceObserver,
                       public chromeos::disks::DiskMountManager::Observer {
  public:
@@ -130,8 +131,15 @@ class VolumeManager : public BrowserContextKeyedService,
   bool FindVolumeInfoById(const std::string& volume_id,
                           VolumeInfo* result) const;
 
-  // For testing purpose, adds the custom |path| as the "Downloads" folder.
+  // For testing purpose, registers a native local file system poniting to
+  // |path| with DOWNLOADS type, and adds its volume info.
   bool RegisterDownloadsDirectoryForTesting(const base::FilePath& path);
+
+  // For testing purpose, adds a volume info pointing to |path|, with TESTING
+  // type. Assumes that the mount point is already registered.
+  void AddVolumeInfoForTesting(const base::FilePath& path,
+                               VolumeType volume_type,
+                               chromeos::DeviceType device_type);
 
   // drive::DriveIntegrationServiceObserver overrides.
   virtual void OnFileSystemMounted() OVERRIDE;

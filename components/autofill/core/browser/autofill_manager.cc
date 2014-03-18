@@ -22,7 +22,6 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
 #include "components/autofill/core/browser/autofill_data_model.h"
-#include "components/autofill/core/browser/autofill_driver.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_manager_delegate.h"
@@ -35,6 +34,7 @@
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/phone_number.h"
 #include "components/autofill/core/browser/phone_number_i18n.h"
+#include "components/autofill/core/browser/popup_item_ids.h"
 #include "components/autofill/core/common/autofill_data_validation.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/autofill/core/common/autofill_switches.h"
@@ -44,7 +44,6 @@
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "grit/component_strings.h"
-#include "third_party/WebKit/public/web/WebAutofillClient.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/rect.h"
 #include "url/gurl.h"
@@ -144,7 +143,7 @@ void DeterminePossibleFieldTypesForUpload(
       matching_types.insert(autofill::PASSWORD);
     } else {
       base::string16 value;
-      TrimWhitespace(field->value, TRIM_ALL, &value);
+      base::TrimWhitespace(field->value, base::TRIM_ALL, &value);
       for (std::vector<AutofillProfile>::const_iterator it = profiles.begin();
            it != profiles.end(); ++it) {
         it->GetMatchingTypes(value, app_locale, &matching_types);
@@ -416,8 +415,7 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
         values.assign(1, l10n_util::GetStringUTF16(warning));
         labels.assign(1, base::string16());
         icons.assign(1, base::string16());
-        unique_ids.assign(1,
-                          blink::WebAutofillClient::MenuItemIDWarningMessage);
+        unique_ids.assign(1, POPUP_ITEM_ID_WARNING_MESSAGE);
       } else {
         bool section_is_autofilled =
             SectionIsAutofilled(*form_structure, form,
@@ -455,10 +453,12 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
       query_id, field.name, field.value, values, labels, icons, unique_ids);
 }
 
-void AutofillManager::OnFillAutofillFormData(int query_id,
-                                             const FormData& form,
-                                             const FormFieldData& field,
-                                             int unique_id) {
+void AutofillManager::FillOrPreviewForm(
+    AutofillDriver::RendererFormDataAction action,
+    int query_id,
+    const FormData& form,
+    const FormFieldData& field,
+    int unique_id) {
   if (!IsValidFormData(form) || !IsValidFormFieldData(field))
     return;
 
@@ -466,12 +466,14 @@ void AutofillManager::OnFillAutofillFormData(int query_id,
   size_t variant = 0;
   FormStructure* form_structure = NULL;
   AutofillField* autofill_field = NULL;
+  bool is_credit_card = false;
   // NOTE: RefreshDataModels may invalidate |data_model| because it causes the
   // PersonalDataManager to reload Mac address book entries. Thus it must come
   // before GetProfileOrCreditCard.
   if (!RefreshDataModels() ||
       !driver_->RendererIsAvailable() ||
-      !GetProfileOrCreditCard(unique_id, &data_model, &variant) ||
+      !GetProfileOrCreditCard(
+          unique_id, &data_model, &variant, &is_credit_card) ||
       !GetCachedFormAndField(form, field, &form_structure, &autofill_field))
     return;
 
@@ -479,6 +481,12 @@ void AutofillManager::OnFillAutofillFormData(int query_id,
   DCHECK(autofill_field);
 
   FormData result = form;
+
+  base::string16 profile_full_name;
+  if (!is_credit_card) {
+    profile_full_name = data_model->GetInfo(
+        AutofillType(NAME_FULL), app_locale_);
+  }
 
   // If the relevant section is auto-filled, we should fill |field| but not the
   // rest of the form.
@@ -493,11 +501,14 @@ void AutofillManager::OnFillAutofillFormData(int query_id,
         // Mark the cached field as autofilled, so that we can detect when a
         // user edits an autofilled field (for metrics).
         autofill_field->is_autofilled = true;
+
+        if (!is_credit_card && !value.empty())
+          manager_delegate_->DidFillOrPreviewField(value, profile_full_name);
         break;
       }
     }
 
-    driver_->SendFormDataToRenderer(query_id, result);
+    driver_->SendFormDataToRenderer(query_id, action, result);
     return;
   }
 
@@ -525,11 +536,25 @@ void AutofillManager::OnFillAutofillFormData(int query_id,
       }
       base::string16 value = data_model->GetInfoForVariant(
           cached_field->Type(), use_variant, app_locale_);
+
+      // Must match ForEachMatchingFormField() in form_autofill_util.cc.
+      // Only notify autofilling of empty fields and the field that initiated
+      // the filling (note that "select-one" controls may not be empty but will
+      // still be autofilled).
+      bool should_notify =
+          !is_credit_card &&
+          !value.empty() &&
+          (result.fields[i] == field ||
+           result.fields[i].form_control_type == "select-one" ||
+           result.fields[i].value.empty());
       AutofillField::FillFormField(*cached_field, value, app_locale_,
                                    &result.fields[i]);
       // Mark the cached field as autofilled, so that we can detect when a user
       // edits an autofilled field (for metrics).
       form_structure->field(i)->is_autofilled = true;
+
+      if (should_notify)
+        manager_delegate_->DidFillOrPreviewField(value, profile_full_name);
     }
   }
 
@@ -539,7 +564,7 @@ void AutofillManager::OnFillAutofillFormData(int query_id,
   if (autofilled_form_signatures_.size() > kMaxRecentFormSignaturesToRemember)
     autofilled_form_signatures_.pop_back();
 
-  driver_->SendFormDataToRenderer(query_id, result);
+  driver_->SendFormDataToRenderer(query_id, action, result);
 }
 
 void AutofillManager::OnDidPreviewAutofillFormData() {
@@ -561,7 +586,7 @@ void AutofillManager::OnDidFillAutofillFormData(const TimeTicks& timestamp) {
   UpdateInitialInteractionTimestamp(timestamp);
 }
 
-void AutofillManager::OnDidShowAutofillSuggestions(bool is_new_popup) {
+void AutofillManager::DidShowSuggestions(bool is_new_popup) {
   if (test_delegate_)
     test_delegate_->DidShowSuggestions();
 
@@ -576,7 +601,7 @@ void AutofillManager::OnDidShowAutofillSuggestions(bool is_new_popup) {
   }
 }
 
-void AutofillManager::OnHideAutofillUI() {
+void AutofillManager::OnHidePopup() {
   if (!IsAutofillEnabled())
     return;
 
@@ -586,7 +611,9 @@ void AutofillManager::OnHideAutofillUI() {
 void AutofillManager::RemoveAutofillProfileOrCreditCard(int unique_id) {
   const AutofillDataModel* data_model = NULL;
   size_t variant = 0;
-  if (!GetProfileOrCreditCard(unique_id, &data_model, &variant)) {
+  bool unused_is_credit_card = false;
+  if (!GetProfileOrCreditCard(
+          unique_id, &data_model, &variant, &unused_is_credit_card)) {
     NOTREACHED();
     return;
   }
@@ -835,13 +862,15 @@ bool AutofillManager::RefreshDataModels() const {
 bool AutofillManager::GetProfileOrCreditCard(
     int unique_id,
     const AutofillDataModel** data_model,
-    size_t* variant) const {
+    size_t* variant,
+    bool* is_credit_card) const {
   // Unpack the |unique_id| into component parts.
   GUIDPair credit_card_guid;
   GUIDPair profile_guid;
   UnpackGUIDs(unique_id, &credit_card_guid, &profile_guid);
   DCHECK(!base::IsValidGUID(credit_card_guid.first) ||
          !base::IsValidGUID(profile_guid.first));
+  *is_credit_card = false;
 
   // Find the profile that matches the |profile_guid|, if one is specified.
   // Otherwise find the credit card that matches the |credit_card_guid|,
@@ -852,6 +881,7 @@ bool AutofillManager::GetProfileOrCreditCard(
   } else if (base::IsValidGUID(credit_card_guid.first)) {
     *data_model = personal_data_->GetCreditCardByGUID(credit_card_guid.first);
     *variant = credit_card_guid.second;
+    *is_credit_card = true;
   }
 
   return !!*data_model;
@@ -992,6 +1022,7 @@ void AutofillManager::GetProfileSuggestions(
 
   personal_data_->GetProfileSuggestions(
       type, field.value, field.is_autofilled, field_types,
+      base::Callback<bool(const AutofillProfile&)>(),
       values, labels, icons, &guid_pairs);
 
   for (size_t i = 0; i < guid_pairs.size(); ++i) {

@@ -15,14 +15,14 @@ namespace content {
 
 ProxyMediaKeys::ProxyMediaKeys(
     RendererMediaPlayerManager* manager,
-    int media_keys_id,
+    int cdm_id,
     const media::SessionCreatedCB& session_created_cb,
     const media::SessionMessageCB& session_message_cb,
     const media::SessionReadyCB& session_ready_cb,
     const media::SessionClosedCB& session_closed_cb,
     const media::SessionErrorCB& session_error_cb)
     : manager_(manager),
-      media_keys_id_(media_keys_id),
+      cdm_id_(cdm_id),
       session_created_cb_(session_created_cb),
       session_message_cb_(session_message_cb),
       session_ready_cb_(session_ready_cb),
@@ -32,18 +32,12 @@ ProxyMediaKeys::ProxyMediaKeys(
 }
 
 ProxyMediaKeys::~ProxyMediaKeys() {
-  manager_->CancelAllPendingSessionCreations(media_keys_id_);
+  manager_->DestroyCdm(cdm_id_);
 }
 
-void ProxyMediaKeys::InitializeCDM(const std::string& key_system,
+void ProxyMediaKeys::InitializeCdm(const std::string& key_system,
                                    const GURL& frame_url) {
-#if defined(ENABLE_PEPPER_CDMS)
-  NOTIMPLEMENTED();
-#elif defined(OS_ANDROID)
-  std::vector<uint8> uuid = GetUUID(key_system);
-  DCHECK(!uuid.empty());
-  manager_->InitializeCDM(media_keys_id_, this, uuid, frame_url);
-#endif
+  manager_->InitializeCdm(cdm_id_, this, key_system, frame_url);
 }
 
 bool ProxyMediaKeys::CreateSession(uint32 session_id,
@@ -52,7 +46,7 @@ bool ProxyMediaKeys::CreateSession(uint32 session_id,
                                    int init_data_length) {
   // TODO(xhwang): Move these checks up to blink and DCHECK here.
   // See http://crbug.com/342510
-  MediaKeysHostMsg_CreateSession_Type session_type;
+  CdmHostMsg_CreateSession_ContentType session_type;
   if (content_type == "audio/mp4" || content_type == "video/mp4") {
     session_type = CREATE_SESSION_TYPE_MP4;
   } else if (content_type == "audio/webm" || content_type == "video/webm") {
@@ -64,7 +58,7 @@ bool ProxyMediaKeys::CreateSession(uint32 session_id,
   }
 
   manager_->CreateSession(
-      media_keys_id_,
+      cdm_id_,
       session_id,
       session_type,
       std::vector<uint8>(init_data, init_data + init_data_length));
@@ -83,13 +77,13 @@ void ProxyMediaKeys::UpdateSession(uint32 session_id,
                                    const uint8* response,
                                    int response_length) {
   manager_->UpdateSession(
-      media_keys_id_,
+      cdm_id_,
       session_id,
       std::vector<uint8>(response, response + response_length));
 }
 
 void ProxyMediaKeys::ReleaseSession(uint32 session_id) {
-  manager_->ReleaseSession(media_keys_id_, session_id);
+  manager_->ReleaseSession(cdm_id_, session_id);
 }
 
 void ProxyMediaKeys::OnSessionCreated(uint32 session_id,
@@ -113,7 +107,7 @@ void ProxyMediaKeys::OnSessionClosed(uint32 session_id) {
 
 void ProxyMediaKeys::OnSessionError(uint32 session_id,
                                     media::MediaKeys::KeyError error_code,
-                                    int system_code) {
+                                    uint32 system_code) {
   session_error_cb_.Run(session_id, error_code, system_code);
 }
 

@@ -14,6 +14,8 @@
       this.tracksObserver_ = new ArrayObserver(
           this.tracks,
           this.tracksValueChanged_.bind(this));
+
+      window.addEventListener('resize', this.onWindowResize_.bind(this));
     },
 
     /**
@@ -68,7 +70,7 @@
       if (oldValue === newValue)
         return;
 
-      if (!isNaN(oldValue) && oldValue !== -1)
+      if (!isNaN(oldValue) && 0 <= oldValue && oldValue < this.tracks.length)
         this.tracks[oldValue].active = false;
 
       if (0 <= newValue && newValue < this.tracks.length) {
@@ -77,14 +79,7 @@
           // Success
           this.tracks[newValue].active = true;
 
-          var trackSelector = '.track[index="' + newValue + '"]';
-          var trackElement = this.impl.querySelector(trackSelector);
-          if (trackElement) {
-            this.scrollTop = Math.max(
-                0,
-                (trackElement.offsetTop + trackElement.offsetHeight -
-                 this.clientHeight));
-          }
+          this.ensureTrackInViewport_(newValue /* trackIndex */);
           return;
         }
       }
@@ -97,23 +92,29 @@
     },
 
     /**
-     * Invoked when 'tracks' property is clicked.
-     * @param {Event} event Click event.
+     * Invoked when 'tracks' property is changed.
+     * @param {Array.<TrackInfo>} oldValue Old value.
+     * @param {Array.<TrackInfo>} newValue New value.
      */
     tracksChanged: function(oldValue, newValue) {
-      if (oldValue !== newValue) {
-        // Re-register the observer of 'this.tracks'.
-        this.tracksObserver_.close();
-        this.tracksObserver_ = new ArrayObserver(
-            this.tracks,
-            this.tracksValueChanged_.bind(this));
+      // Note: Sometimes both oldValue and newValue are null though the actual
+      // values are not null. Maybe it's a bug of Polymer.
+
+      // Re-register the observer of 'this.tracks'.
+      this.tracksObserver_.close();
+      this.tracksObserver_ = new ArrayObserver(this.tracks);
+      this.tracksObserver_.open(this.tracksValueChanged_.bind(this));
+
+      if (this.tracks.length !== 0) {
+        // Restore the active track.
+        if (this.currentTrackIndex !== -1 &&
+            this.currentTrackIndex < this.tracks.length) {
+          this.tracks[this.currentTrackIndex].active = true;
+        }
 
         // Reset play order and current index.
-        if (this.tracks.length !== 0)
-          this.generatePlayOrder(false /* no need to keep the current track */);
-      }
-
-      if (this.tracks.length === 0) {
+        this.generatePlayOrder(false /* no need to keep the current track */);
+      } else {
         this.playOrder = [];
         this.currentTrackIndex = -1;
       }
@@ -135,8 +136,45 @@
      * @param {Event} event Click event.
      */
     trackClicked: function(event) {
-      var track = event.target.templateInstance.model;
-      this.selectTrack(track);
+      var index = ~~event.currentTarget.getAttribute('index');
+      var track = this.tracks[index];
+      if (track)
+        this.selectTrack(track);
+    },
+
+    /**
+     * Invoked when the window is resized.
+     * @private
+     */
+    onWindowResize_: function() {
+      this.ensureTrackInViewport_(this.currentTrackIndex);
+    },
+
+    /**
+     * Scrolls the track list to ensure the given track in the viewport.
+     * @param {number} trackIndex The index of the track to be in the viewport.
+     * @private
+     */
+    ensureTrackInViewport_: function(trackIndex) {
+      var trackSelector = '.track[index="' + trackIndex + '"]';
+      var trackElement = this.querySelector(trackSelector);
+      if (trackElement) {
+        var viewTop = this.scrollTop;
+        var viewHeight = this.clientHeight;
+        var elementTop = trackElement.offsetTop;
+        var elementHeight = trackElement.offsetHeight;
+
+        if (elementTop < viewTop) {
+          // Adjust the tops.
+          this.scrollTop = elementTop;
+        } else if (elementTop + elementHeight <= viewTop + viewHeight) {
+          // The entire element is in the viewport. Do nothing.
+        } else {
+          // Adjust the bottoms.
+          this.scrollTop = Math.max(0,
+                                    (elementTop + elementHeight - viewHeight));
+        }
+      }
     },
 
     /**

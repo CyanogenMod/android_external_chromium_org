@@ -306,15 +306,6 @@ const char kShowAppsShortcutInBookmarkBar[] = "bookmark_bar.show_apps_shortcut";
 // the bookmark editor.
 const char kBookmarkEditorExpandedNodes[] = "bookmark_editor.expanded_nodes";
 
-// Boolean that is true if the password manager is on (will record new
-// passwords and fill in known passwords).
-const char kPasswordManagerEnabled[] = "profile.password_manager_enabled";
-
-// Boolean controlling whether the password manager allows to retrieve passwords
-// in clear text.
-const char kPasswordManagerAllowShowPasswords[] =
-    "profile.password_manager_allow_show_passwords";
-
 // Booleans identifying whether normal and reverse auto-logins are enabled.
 const char kAutologinEnabled[] = "autologin.enabled";
 const char kReverseAutologinEnabled[] = "reverse_autologin.enabled";
@@ -511,7 +502,9 @@ const char kDisabledSchemes[] = "protocol.disabled_schemes";
 // recorded on Android so that retries aren't attempted on every startup.
 // Instead the cloud policy registration is retried at least 1 or 3 days later.
 const char kLastPolicyCheckTime[] = "policy.last_policy_check_time";
+#endif
 
+#if defined(OS_ANDROID) || defined(OS_IOS)
 // A list of bookmarks to include in a Managed Bookmarks root node. Each
 // list item is a dictionary containing a "name" and an "url" entry, detailing
 // the bookmark name and target URL respectively.
@@ -904,9 +897,9 @@ const char kSAMLOfflineSigninTimeLimit[] = "saml.offline_signin_time_limit";
 // base::Time::ToInternalValue().
 const char kSAMLLastGAIASignInTime[] = "saml.last_gaia_sign_in_time";
 
-// Setting used to determine if the machine is in a 'derelict' state. This is
-// determined by the time a machine spends on OOBE without any activity.
-const char kDerelictMachine[] = "settings.is_machine_derelict";
+// The total number of seconds that the machine has spent sitting on the
+// OOBE screen.
+const char kTimeOnOobe[] = "settings.time_on_oobe";
 #endif  // defined(OS_CHROMEOS)
 
 // The disabled messages in IPC logging.
@@ -1177,9 +1170,6 @@ const char kEnableReferrers[] = "enable_referrers";
 // Whether to send the DNT header.
 const char kEnableDoNotTrack[] = "enable_do_not_track";
 
-// Boolean to enable reporting memory info to page.
-const char kEnableMemoryInfo[] = "enable_memory_info";
-
 // GL_VENDOR string.
 const char kGLVendorString[] = "gl_vendor_string";
 
@@ -1208,16 +1198,6 @@ const char kImportSearchEngine[] = "import_search_engine";
 // Boolean that specifies whether to import the saved passwords from the default
 // browser on first run.
 const char kImportSavedPasswords[] = "import_saved_passwords";
-
-#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
-// The local profile id for this profile.
-const char kLocalProfileId[] = "profile.local_profile_id";
-
-// Whether passwords in external services (e.g. GNOME Keyring) have been tagged
-// with the local profile id yet. (Used for migrating to tagged passwords.)
-const char kPasswordsUseLocalProfileId[] =
-    "profile.passwords_use_local_profile_id";
-#endif
 
 // Profile avatar and name
 const char kProfileAvatarIndex[] = "profile.avatar_index";
@@ -1305,6 +1285,10 @@ extern const char kFullscreenAllowed[] = "fullscreen.allowed";
 // registered to the user's account, e.g. Google Cloud Print printers.
 const char kLocalDiscoveryNotificationsEnabled[] =
     "local_discovery.notifications_enabled";
+
+// A timestamp (stored in base::Time::ToInternalValue format) of the last time
+// a preference was reset.
+const char kPreferenceResetTime[] = "prefs.preference_reset_time";
 
 // String that indicates if the Profile Reset prompt has already been shown to
 // the user. Used both in user preferences and local state, in the latter, it is
@@ -1949,6 +1933,11 @@ const char kSignInPromoShowOnFirstRunAllowed[] =
 const char kSignInPromoShowNTPBubble[] = "sync_promo.show_ntp_bubble";
 #endif
 
+// Integer that specifies the number of times that we have shown the tutorial
+// card in the profile avatar bubble.
+const char kProfileAvatarTutorialShown[] =
+    "profile.avatar_bubble_tutorial_shown";
+
 // Time when the user's GAIA info was last updated (represented as an int64).
 const char kProfileGAIAInfoUpdateTime[] = "profile.gaia_info_update_time";
 
@@ -1992,6 +1981,10 @@ const char kRemoteAccessHostRequireCurtain[] =
 // Boolean controlling whether curtaining is required when connecting to a host.
 const char kRemoteAccessHostAllowClientPairing[] =
     "remote_access.host_allow_client_pairing";
+
+// Whether Chrome Remote Desktop can proxy gnubby authentication traffic.
+const char kRemoteAccessHostAllowGnubbyAuth[] =
+    "remote_access.host_allow_gnubby_auth";
 
 // The last used printer and its settings.
 const char kPrintPreviewStickySettings[] =
@@ -2145,13 +2138,6 @@ const char kHotwordSearchEnabled[] = "hotword.search_enabled";
 // longer shown.
 const char kHotwordOptInPopupTimesShown[] = "hotword.opt_in_popup_times_shown";
 
-#if defined(OS_CHROMEOS)
-// A boolean pref that controls the enabled-state of hotword search in the
-// app-list. This pref cooperates with kHotwordSearchEnabled. If the user
-// explicitly turns off kHotwordSearchEnabled, this pref should go off too.
-const char kHotwordAppListEnabled[] = "hotword.app_list_enabled";
-#endif
-
 #if defined(OS_ANDROID)
 // Boolean that controls the global enabled-state of protected media identifier.
 const char kProtectedMediaIdentifierEnabled[] =
@@ -2261,6 +2247,10 @@ const char kDeviceRegistered[] = "DeviceRegistered";
 // List of usernames that used certificates pushed by policy before.
 // This is used to prevent these users from joining multiprofile sessions.
 const char kUsedPolicyCertificates[] = "policy.used_policy_certificates";
+
+// A dictionary containing server-provided device state pulled form the cloud
+// after recovery.
+const char kServerBackedDeviceState[] = "server_backed_device_state";
 
 #endif
 
@@ -2667,10 +2657,6 @@ const char kWatchdogExtensionActiveOld[] =
 // of Chrome.
 const char kProfilePreferenceHashes[] = "profile.preference_hashes";
 
-// A timestamp (stored in base::Time::ToInternalValue format) of the last time
-// a preference was reset.
-const char kProfilePreferenceResetTime[] = "profile.preference_reset_time";
-
 // Stores a pair of local time and corresponding network time to bootstrap
 // network time tracker when browser starts.
 const char kNetworkTimeMapping[] = "profile.network_time_mapping";
@@ -2684,17 +2670,6 @@ const char kNetworkTimeMapping[] = "profile.network_time_mapping";
 const char kPartnerBookmarkMappings[] = "partnerbookmarks.mappings";
 #endif
 
-#if defined(OS_WIN)
-// Whether the password was blank, only valid if OS password was last changed
-// on or before the value contained in kOsPasswordLastChanged.
-const char kOsPasswordBlank[] = "password_manager.os_password_blank";
-
-// The number of seconds since epoch that the OS password was last changed.
-const char kOsPasswordLastChanged[] =
-    "password_manager.os_password_last_changed";
-#endif
-
 // Whether DNS Quick Check is disabled in proxy resolution.
 const char kQuickCheckEnabled[] = "proxy.quick_check_enabled";
-
 }  // namespace prefs

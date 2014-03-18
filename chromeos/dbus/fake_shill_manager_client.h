@@ -17,8 +17,8 @@ namespace chromeos {
 // A fake implementation of ShillManagerClient. This works in close coordination
 // with FakeShillServiceClient. FakeShillDeviceClient, and
 // FakeShillProfileClient, and is not intended to be used independently.
-class CHROMEOS_EXPORT FakeShillManagerClient :
-      public ShillManagerClient,
+class CHROMEOS_EXPORT FakeShillManagerClient
+    : public ShillManagerClient,
       public ShillManagerClient::TestInterface {
  public:
   FakeShillManagerClient();
@@ -91,20 +91,25 @@ class CHROMEOS_EXPORT FakeShillManagerClient :
                              const base::DictionaryValue& network) OVERRIDE;
   virtual void AddProfile(const std::string& profile_path) OVERRIDE;
   virtual void ClearProperties() OVERRIDE;
+  virtual void SetManagerProperty(const std::string& key,
+                                  const base::Value& value) OVERRIDE;
   virtual void AddManagerService(const std::string& service_path,
                                  bool add_to_visible_list,
                                  bool add_to_watch_list) OVERRIDE;
   virtual void RemoveManagerService(const std::string& service_path) OVERRIDE;
   virtual void ClearManagerServices() OVERRIDE;
+  virtual void ServiceStateChanged(const std::string& service_path,
+                                   const std::string& state) OVERRIDE;
   virtual void SortManagerServices() OVERRIDE;
+  virtual void SetupDefaultEnvironment() OVERRIDE;
+  virtual int GetInteractiveDelay() const OVERRIDE;
 
  private:
   void AddServiceToWatchList(const std::string& service_path);
   void SetDefaultProperties();
   void PassStubProperties(const DictionaryValueCallback& callback) const;
   void PassStubGeoNetworks(const DictionaryValueCallback& callback) const;
-  void CallNotifyObserversPropertyChanged(const std::string& property,
-                                          int delay_ms);
+  void CallNotifyObserversPropertyChanged(const std::string& property);
   void NotifyObserversPropertyChanged(const std::string& property);
   base::ListValue* GetListProperty(const std::string& property);
   bool TechnologyEnabled(const std::string& type) const;
@@ -115,16 +120,36 @@ class CHROMEOS_EXPORT FakeShillManagerClient :
   void ScanCompleted(const std::string& device_path,
                      const base::Closure& callback);
 
+  // Parses the command line for Shill stub switches and sets initial states.
+  // Uses comma-separated name-value pairs (see SplitStringIntoKeyValuePairs):
+  // interactive={delay} - sets delay in seconds for interactive UI
+  // {wifi,cellular,etc}={on,off,disabled,none} - sets initial state for type
+  void ParseCommandLineSwitch();
+  bool ParseOption(const std::string& arg0, const std::string& arg1);
+  bool SetInitialNetworkState(std::string type_arg, std::string state_arg);
+  std::string GetInitialStateForType(const std::string& type,
+                                     bool* enabled);
+
   // Dictionary of property name -> property value
   base::DictionaryValue stub_properties_;
+
   // Dictionary of technology -> list of property dictionaries
   base::DictionaryValue stub_geo_networks_;
+
+  // Seconds to delay interactive actions
+  int interactive_delay_;
+
+  // Initial state for fake services.
+  std::map<std::string, std::string> shill_initial_state_map_;
 
   ObserverList<ShillPropertyChangedObserver> observer_list_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.
   base::WeakPtrFactory<FakeShillManagerClient> weak_ptr_factory_;
+
+  // Track the default service for signaling Manager.DefaultService.
+  std::string default_service_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeShillManagerClient);
 };

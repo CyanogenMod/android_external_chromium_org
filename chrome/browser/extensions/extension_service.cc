@@ -29,7 +29,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
-#include "chrome/browser/extensions/api/storage/settings_frontend.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/data_deleter.h"
@@ -45,6 +44,7 @@
 #include "chrome/browser/extensions/external_provider_impl.h"
 #include "chrome/browser/extensions/install_verifier.h"
 #include "chrome/browser/extensions/installed_loader.h"
+#include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/updater/extension_cache.h"
@@ -58,7 +58,6 @@
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
@@ -70,7 +69,6 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/url_data_source.h"
 #include "extensions/browser/app_sorting.h"
@@ -80,7 +78,6 @@
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/external_provider_interface.h"
 #include "extensions/browser/management_policy.h"
-#include "extensions/browser/pending_extension_manager.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/process_map.h"
@@ -89,6 +86,7 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/extensions_client.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest.h"
@@ -357,7 +355,6 @@ ExtensionService::ExtensionService(Profile* profile,
       system_(extensions::ExtensionSystem::Get(profile)),
       extension_prefs_(extension_prefs),
       blacklist_(blacklist),
-      settings_frontend_(extensions::SettingsFrontend::Create(profile)),
       extension_sync_service_(NULL),
       registry_(extensions::ExtensionRegistry::Get(profile)),
       pending_extension_manager_(*this),
@@ -495,12 +492,6 @@ const Extension* ExtensionService::GetExtensionById(
   return registry_->GetExtensionById(id, include_mask);
 }
 
-GURL ExtensionService::GetSiteForExtensionId(const std::string& extension_id) {
-  return content::SiteInstance::GetSiteForURL(
-      profile_,
-      Extension::GetBaseURLFromExtensionId(extension_id));
-}
-
 void ExtensionService::Init() {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -609,25 +600,21 @@ void ExtensionService::LoadGreylistFromPrefs() {
 }
 
 void ExtensionService::MaybeBootstrapVerifier() {
-  InstallVerifier* verifier =
-      extensions::ExtensionSystem::Get(profile_)->install_verifier();
+  InstallVerifier* verifier = system_->install_verifier();
   bool do_bootstrap = false;
 
   if (verifier->NeedsBootstrap()) {
     do_bootstrap = true;
   } else {
-    // If any of the installed extensions have an install time newer than the
-    // signature's timestamp, we need to bootstrap because our signature may
-    // be missing valid extensions.
-    base::Time timestamp = verifier->SignatureTimestamp();
-    for (extensions::ExtensionSet::const_iterator i = extensions()->begin();
-         i != extensions()->end();
+    scoped_ptr<extensions::ExtensionSet> extensions =
+        GenerateInstalledExtensionsSet();
+    for (extensions::ExtensionSet::const_iterator i = extensions->begin();
+         i != extensions->end();
          ++i) {
       const Extension& extension = **i;
-      base::Time install_time =
-          extension_prefs_->GetInstallTime(extension.id());
+
       if (verifier->NeedsVerification(extension) &&
-          install_time < base::Time::Now() && install_time >= timestamp) {
+          !verifier->IsKnownId(extension.id())) {
         do_bootstrap = true;
         break;
       }
@@ -648,17 +635,18 @@ void ExtensionService::VerifyAllExtensions(bool bootstrap) {
     if (InstallVerifier::NeedsVerification(extension))
       to_add.insert(extension.id());
   }
-  extensions::ExtensionSystem::Get(profile_)->install_verifier()->AddMany(
-      to_add, base::Bind(&ExtensionService::FinishVerifyAllExtensions,
-                         AsWeakPtr(), bootstrap));
+  system_->install_verifier()->AddMany(
+      to_add,
+      base::Bind(&ExtensionService::FinishVerifyAllExtensions,
+                 AsWeakPtr(),
+                 bootstrap));
 }
 
 void ExtensionService::FinishVerifyAllExtensions(bool bootstrap, bool success) {
   LogVerifyAllSuccessHistogram(bootstrap, success);
   if (success) {
     // Check to see if any currently unverified extensions became verified.
-    InstallVerifier* verifier =
-        extensions::ExtensionSystem::Get(profile_)->install_verifier();
+    InstallVerifier* verifier = system_->install_verifier();
     const ExtensionSet& disabled_extensions = registry_->disabled_extensions();
     for (ExtensionSet::const_iterator i = disabled_extensions.begin();
          i != disabled_extensions.end(); ++i) {
@@ -878,8 +866,7 @@ bool ExtensionService::UninstallExtension(
         extension.get(), is_ready());
   }
 
-  extensions::ExtensionSystem::Get(profile_)->install_verifier()->Remove(
-      extension->id());
+  system_->install_verifier()->Remove(extension->id());
 
   if (IsUnacknowledgedExternalExtension(extension.get())) {
     UMA_HISTOGRAM_ENUMERATION("Extensions.ExternalExtensionEvent",
@@ -1238,8 +1225,8 @@ void ExtensionService::NotifyExtensionUnloaded(
   // Revoke external file access for the extension from its file system context.
   // It is safe to access the extension's storage partition at this point. The
   // storage partition may get destroyed only after the extension gets unloaded.
-  GURL site = extensions::ExtensionSystem::Get(profile_)->extension_service()->
-      GetSiteForExtensionId(extension->id());
+  GURL site =
+      extensions::util::GetSiteForExtensionId(extension->id(), profile_);
   fileapi::FileSystemContext* filesystem_context =
       BrowserContext::GetStoragePartitionForSite(profile_, site)->
           GetFileSystemContext();
@@ -1260,22 +1247,6 @@ content::BrowserContext* ExtensionService::GetBrowserContext() const {
   // Implemented in the .cc file to avoid adding a profile.h dependency to
   // extension_service.h.
   return profile_;
-}
-
-extensions::ExtensionPrefs* ExtensionService::extension_prefs() {
-  return extension_prefs_;
-}
-
-const extensions::ExtensionPrefs* ExtensionService::extension_prefs() const {
-  return extension_prefs_;
-}
-
-extensions::SettingsFrontend* ExtensionService::settings_frontend() {
-  return settings_frontend_.get();
-}
-
-extensions::ContentSettingsStore* ExtensionService::GetContentSettingsStore() {
-  return extension_prefs()->content_settings_store();
 }
 
 bool ExtensionService::is_ready() {
@@ -1882,7 +1853,7 @@ void ExtensionService::UpdateActivePermissions(const Extension* extension) {
   // custom set of active permissions defined in the extension prefs. Here,
   // we update the extension's active permissions based on the prefs.
   scoped_refptr<PermissionSet> active_permissions =
-      extension_prefs()->GetActivePermissions(extension->id());
+      extension_prefs_->GetActivePermissions(extension->id());
 
   if (active_permissions.get()) {
     // We restrict the active permissions to be within the bounds defined in the
@@ -2182,7 +2153,7 @@ void ExtensionService::OnExtensionInstalled(
     // load it (see AddExtension). Usually it should be the job of callers to
     // incercept blacklisted extension earlier (e.g. CrxInstaller, before even
     // showing the install dialogue).
-    extension_prefs()->AcknowledgeBlacklistedExtension(id);
+    extension_prefs_->AcknowledgeBlacklistedExtension(id);
     UMA_HISTOGRAM_ENUMERATION("ExtensionBlacklist.SilentInstall",
                               extension->location(),
                               Manifest::NUM_LOCATIONS);
@@ -2269,8 +2240,8 @@ void ExtensionService::AddNewOrUpdatedExtension(
                                          page_ordinal);
   delayed_installs_.Remove(extension->id());
   if (InstallVerifier::NeedsVerification(*extension)) {
-    extensions::ExtensionSystem::Get(profile_)->install_verifier()->Add(
-        extension->id(), base::Bind(LogAddVerifiedSuccess));
+    system_->install_verifier()->Add(extension->id(),
+                                     base::Bind(LogAddVerifiedSuccess));
   }
   FinishInstallation(extension);
 }
@@ -2720,7 +2691,9 @@ void ExtensionService::GarbageCollectIsolatedStorage() {
        it != extensions.end(); ++it) {
     if (extensions::AppIsolationInfo::HasIsolatedStorage(it->get())) {
       active_paths->insert(BrowserContext::GetStoragePartitionForSite(
-          profile_, GetSiteForExtensionId((*it)->id()))->GetPath());
+                               profile_,
+                               extensions::util::GetSiteForExtensionId(
+                                   (*it)->id(), profile()))->GetPath());
     }
   }
 

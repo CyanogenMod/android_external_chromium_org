@@ -8,6 +8,24 @@
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/web_contents.h"
 
+namespace {
+
+bool IsProviderValid(const base::string16& provider) {
+  // Only allow string of 8 alphanumeric characters or less as providers.
+  // The empty string is considered valid and should be treated as if no
+  // provider were specified.
+  if (provider.length() > 8)
+    return false;
+  for (base::string16::const_iterator it = provider.begin();
+       it != provider.end(); ++it) {
+    if (!IsAsciiAlpha(*it) && !IsAsciiDigit(*it))
+      return false;
+  }
+  return true;
+}
+
+}  // namespace
+
 SearchIPCRouter::SearchIPCRouter(content::WebContents* web_contents,
                                  Delegate* delegate, scoped_ptr<Policy> policy)
     : WebContentsObserver(web_contents),
@@ -70,6 +88,22 @@ void SearchIPCRouter::SetOmniboxStartMargin(int start_margin) {
   Send(new ChromeViewMsg_SearchBoxMarginChange(routing_id(), start_margin));
 }
 
+void SearchIPCRouter::SetInputInProgress(bool input_in_progress) {
+  if (!policy_->ShouldSendSetInputInProgress(is_active_tab_))
+    return;
+
+  Send(new ChromeViewMsg_SearchBoxSetInputInProgress(routing_id(),
+                                                     input_in_progress));
+}
+
+void SearchIPCRouter::OmniboxFocusChanged(OmniboxFocusState state,
+                                          OmniboxFocusChangeReason reason) {
+  if (!policy_->ShouldSendOmniboxFocusChanged())
+    return;
+
+  Send(new ChromeViewMsg_SearchBoxFocusChanged(routing_id(), state, reason));
+}
+
 void SearchIPCRouter::SendMostVisitedItems(
     const std::vector<InstantMostVisitedItem>& items) {
   if (!policy_->ShouldSendMostVisitedItems())
@@ -125,7 +159,10 @@ bool SearchIPCRouter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_SearchBoxUndoAllMostVisitedDeletions,
                         OnUndoAllMostVisitedDeletions);
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_LogEvent, OnLogEvent);
-    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_LogImpression, OnLogImpression);
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_LogMostVisitedImpression,
+                        OnLogMostVisitedImpression);
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_LogMostVisitedNavigation,
+                        OnLogMostVisitedNavigation);
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_PasteAndOpenDropdown,
                         OnPasteAndOpenDropDown);
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_ChromeIdentityCheck,
@@ -229,27 +266,30 @@ void SearchIPCRouter::OnLogEvent(int page_id, NTPLoggingEventType event) const {
   delegate_->OnLogEvent(event);
 }
 
-void SearchIPCRouter::OnLogImpression(int page_id,
-                                      int position,
-                                      const base::string16& provider) const {
-  if (!web_contents()->IsActiveEntry(page_id))
+void SearchIPCRouter::OnLogMostVisitedImpression(
+    int page_id, int position, const base::string16& provider) const {
+  if (!web_contents()->IsActiveEntry(page_id) || !IsProviderValid(provider))
     return;
-
-  // Only allow string of 8 alphanumeric characters or less as providers.
-  if (provider.length() > 8)
-    return;
-  for (base::string16::const_iterator it = provider.begin();
-       it != provider.end(); ++it) {
-    if (!IsAsciiAlpha(*it) && !IsAsciiDigit(*it))
-      return;
-  }
 
   delegate_->OnInstantSupportDetermined(true);
   // Logging impressions is controlled by the same policy as logging events.
   if (!policy_->ShouldProcessLogEvent())
     return;
 
-  delegate_->OnLogImpression(position, provider);
+  delegate_->OnLogMostVisitedImpression(position, provider);
+}
+
+void SearchIPCRouter::OnLogMostVisitedNavigation(
+    int page_id, int position, const base::string16& provider) const {
+  if (!web_contents()->IsActiveEntry(page_id) || !IsProviderValid(provider))
+    return;
+
+  delegate_->OnInstantSupportDetermined(true);
+  // Logging navigations is controlled by the same policy as logging events.
+  if (!policy_->ShouldProcessLogEvent())
+    return;
+
+  delegate_->OnLogMostVisitedNavigation(position, provider);
 }
 
 void SearchIPCRouter::OnPasteAndOpenDropDown(int page_id,

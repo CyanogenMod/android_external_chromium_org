@@ -14,6 +14,7 @@
 #include "ppapi/c/dev/ppb_crypto_dev.h"
 #include "ppapi/c/dev/ppb_cursor_control_dev.h"
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
+#include "ppapi/c/dev/ppb_find_dev.h"
 #include "ppapi/c/dev/ppb_font_dev.h"
 #include "ppapi/c/dev/ppb_gles_chromium_texture_mapping_dev.h"
 #include "ppapi/c/dev/ppb_graphics_2d_dev.h"
@@ -21,6 +22,7 @@
 #include "ppapi/c/dev/ppb_memory_dev.h"
 #include "ppapi/c/dev/ppb_opengles2ext_dev.h"
 #include "ppapi/c/dev/ppb_printing_dev.h"
+#include "ppapi/c/dev/ppb_scrollbar_dev.h"
 #include "ppapi/c/dev/ppb_text_input_dev.h"
 #include "ppapi/c/dev/ppb_trace_event_dev.h"
 #include "ppapi/c/dev/ppb_truetype_font_dev.h"
@@ -28,6 +30,8 @@
 #include "ppapi/c/dev/ppb_var_deprecated.h"
 #include "ppapi/c/dev/ppb_video_capture_dev.h"
 #include "ppapi/c/dev/ppb_view_dev.h"
+#include "ppapi/c/dev/ppb_widget_dev.h"
+#include "ppapi/c/dev/ppb_zoom_dev.h"
 #include "ppapi/c/extensions/dev/ppb_ext_socket_dev.h"
 #include "ppapi/c/ppb_audio.h"
 #include "ppapi/c/ppb_audio_buffer.h"
@@ -235,8 +239,12 @@ InterfaceList::InterfaceList() {
          PPB_OpenGLES2_Shared::GetChromiumMapSubInterface(), PERMISSION_NONE);
   AddPPB(PPB_OPENGLES2_QUERY_INTERFACE_1_0,
          PPB_OpenGLES2_Shared::GetQueryInterface(), PERMISSION_NONE);
+  AddPPB(PPB_OPENGLES2_DRAWBUFFERS_DEV_INTERFACE_1_0,
+         PPB_OpenGLES2_Shared::GetDrawBuffersInterface(),
+         PERMISSION_DEV);
   AddPPB(PPB_VAR_ARRAY_BUFFER_INTERFACE_1_0,
-         PPB_Var_Shared::GetVarArrayBufferInterface1_0(), PERMISSION_NONE);
+         PPB_Var_Shared::GetVarArrayBufferInterface1_0(),
+         PERMISSION_NONE);
   AddPPB(PPB_VAR_INTERFACE_1_2,
          PPB_Var_Shared::GetVarInterface1_2(), PERMISSION_NONE);
   AddPPB(PPB_VAR_INTERFACE_1_1,

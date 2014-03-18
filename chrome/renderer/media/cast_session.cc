@@ -11,6 +11,7 @@
 #include "media/base/video_frame.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_sender.h"
+#include "media/cast/logging/logging_defines.h"
 
 CastSession::CastSession()
     : delegate_(new CastSessionDelegate()),
@@ -23,7 +24,7 @@ CastSession::~CastSession() {
 }
 
 void CastSession::StartAudio(const media::cast::AudioSenderConfig& config,
-                             const FrameInputAvailableCallback& callback) {
+                             const AudioFrameInputAvailableCallback& callback) {
   DCHECK(content::RenderThread::Get()
              ->GetMessageLoop()
              ->message_loop_proxy()
@@ -38,7 +39,7 @@ void CastSession::StartAudio(const media::cast::AudioSenderConfig& config,
 }
 
 void CastSession::StartVideo(const media::cast::VideoSenderConfig& config,
-                             const FrameInputAvailableCallback& callback) {
+                             const VideoFrameInputAvailableCallback& callback) {
   DCHECK(content::RenderThread::Get()
              ->GetMessageLoop()
              ->message_loop_proxy()
@@ -61,4 +62,33 @@ void CastSession::StartUDP(const net::IPEndPoint& local_endpoint,
           base::Unretained(delegate_.get()),
           local_endpoint,
           remote_endpoint));
+}
+
+void CastSession::ToggleLogging(bool is_audio, bool enable) {
+  io_message_loop_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&CastSessionDelegate::ToggleLogging,
+                 base::Unretained(delegate_.get()),
+                 is_audio,
+                 enable));
+}
+
+void CastSession::GetEventLogsAndReset(
+    bool is_audio, const EventLogsCallback& callback) {
+  io_message_loop_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&CastSessionDelegate::GetEventLogsAndReset,
+                 base::Unretained(delegate_.get()),
+                 is_audio,
+                 media::BindToCurrentLoop(callback)));
+}
+
+void CastSession::GetStatsAndReset(bool is_audio,
+                                   const StatsCallback& callback) {
+  io_message_loop_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&CastSessionDelegate::GetStatsAndReset,
+                 base::Unretained(delegate_.get()),
+                 is_audio,
+                 media::BindToCurrentLoop(callback)));
 }

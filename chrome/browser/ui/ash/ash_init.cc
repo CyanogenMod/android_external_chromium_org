@@ -19,7 +19,7 @@
 #include "chrome/browser/ui/ash/screenshot_taker.h"
 #include "chrome/common/chrome_switches.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 
 #if defined(OS_CHROMEOS)
 #include "base/sys_info.h"
@@ -76,10 +76,10 @@ void OpenAsh() {
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableZeroBrowsersOpenForTests)) {
-    chrome::StartKeepAlive();
+    chrome::IncrementKeepAliveCount();
   }
 #endif
-  ash::Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->Show();
+  ash::Shell::GetPrimaryRootWindow()->GetHost()->Show();
 }
 
 void CloseAsh() {

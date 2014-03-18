@@ -8,11 +8,11 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/one_shot_event.h"
 
-class CommandLine;
 class Profile;
 class TestingValueStore;
 
 namespace base {
+class CommandLine;
 class FilePath;
 class Time;
 }
@@ -32,19 +32,19 @@ class TestExtensionSystem : public ExtensionSystem {
   explicit TestExtensionSystem(Profile* profile);
   virtual ~TestExtensionSystem();
 
-  // BrowserContextKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
   // Creates an ExtensionPrefs with the testing profile and returns it.
   // Useful for tests that need to modify prefs before creating the
   // ExtensionService.
-  ExtensionPrefs* CreateExtensionPrefs(const CommandLine* command_line,
+  ExtensionPrefs* CreateExtensionPrefs(const base::CommandLine* command_line,
                                        const base::FilePath& install_directory);
 
   // Creates an ExtensionService initialized with the testing profile and
   // returns it, and creates ExtensionPrefs if it hasn't been created yet.
   ExtensionService* CreateExtensionService(
-      const CommandLine* command_line,
+      const base::CommandLine* command_line,
       const base::FilePath& install_directory,
       bool autoupdate_enabled);
 
@@ -69,6 +69,7 @@ class TestExtensionSystem : public ExtensionSystem {
   TestingValueStore* value_store() { return value_store_; }
   virtual InfoMap* info_map() OVERRIDE;
   virtual LazyBackgroundTaskQueue* lazy_background_task_queue() OVERRIDE;
+  void SetEventRouter(scoped_ptr<EventRouter> event_router);
   virtual EventRouter* event_router() OVERRIDE;
   virtual ExtensionWarningService* warning_service() OVERRIDE;
   virtual Blacklist* blacklist() OVERRIDE;
@@ -83,7 +84,7 @@ class TestExtensionSystem : public ExtensionSystem {
   }
 
   // Factory method for tests to use with SetTestingProfile.
-  static BrowserContextKeyedService* Build(content::BrowserContext* profile);
+  static KeyedService* Build(content::BrowserContext* profile);
 
  protected:
   Profile* profile_;
@@ -100,6 +101,7 @@ class TestExtensionSystem : public ExtensionSystem {
   scoped_ptr<ExtensionService> extension_service_;
   scoped_ptr<ProcessManager> process_manager_;
   scoped_refptr<InfoMap> info_map_;
+  scoped_ptr<EventRouter> event_router_;
   scoped_ptr<ErrorConsole> error_console_;
   scoped_ptr<InstallVerifier> install_verifier_;
   scoped_ptr<QuotaService> quota_service_;

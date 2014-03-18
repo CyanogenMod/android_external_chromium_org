@@ -193,7 +193,7 @@ bool ExecProcess(const CommandLine& cmdline,
         if (!ShuffleFileDescriptors(&fd_shuffle1))
           _exit(127);
 
-        file_util::SetCurrentDirectory(startup_dir);
+        base::SetCurrentDirectory(startup_dir);
 
         // TODO(brettw) the base version GetAppOutput does a
         // CloseSuperfluousFds call here. Do we need this?
@@ -278,9 +278,9 @@ const char kExecScript_Help[] =
     "\n"
     "Example:\n"
     "\n"
-    "  all_lines = exec_script(\"myscript.py\", [some_input], \"list lines\",\n"
-    "                          [ rebase_path(\"data_file.txt\", \".\","
-    "                                        root_build_dir) ])\n"
+    "  all_lines = exec_script(\n"
+    "      \"myscript.py\", [some_input], \"list lines\",\n"
+    "      [ rebase_path(\"data_file.txt\", root_build_dir) ])\n"
     "\n"
     "  # This example just calls the script with no arguments and discards\n"
     "  # the result.\n"

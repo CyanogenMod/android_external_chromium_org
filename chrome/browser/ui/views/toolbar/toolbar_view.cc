@@ -12,6 +12,8 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
+#include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/themes/theme_service.h"
@@ -29,17 +31,19 @@
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/extensions/extension_message_bubble_view.h"
+#include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/location_bar/page_action_image_view.h"
+#include "chrome/browser/ui/views/location_bar/page_action_with_badge_view.h"
 #include "chrome/browser/ui/views/location_bar/star_view.h"
 #include "chrome/browser/ui/views/location_bar/translate_icon_view.h"
 #include "chrome/browser/ui/views/outdated_upgrade_bubble_view.h"
 #include "chrome/browser/ui/views/toolbar/back_button.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/home_button.h"
-#include "chrome/browser/ui/views/toolbar/origin_chip_view.h"
 #include "chrome/browser/ui/views/toolbar/reload_button.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_button.h"
+#include "chrome/browser/ui/views/toolbar/toolbar_origin_chip_view.h"
 #include "chrome/browser/ui/views/toolbar/wrench_menu.h"
 #include "chrome/browser/ui/views/toolbar/wrench_toolbar_button.h"
 #include "chrome/browser/upgrade_detector.h"
@@ -54,7 +58,7 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/theme_provider.h"
@@ -78,6 +82,14 @@
 #include "ui/aura/window.h"
 #include "ui/compositor/layer.h"
 #include "ui/native_theme/native_theme_aura.h"
+#endif
+
+#if !defined(OS_CHROMEOS)
+#include "chrome/browser/signin/signin_global_error_factory.h"
+#endif
+
+#if defined(USE_ASH)
+#include "ash/shell.h"
 #endif
 
 using base::UserMetricsAction;
@@ -105,6 +117,16 @@ bool IsStreamlinedHostedAppsEnabled() {
   return CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableStreamlinedHostedApps);
 }
+
+#if !defined(OS_CHROMEOS)
+bool HasAshShell() {
+#if defined(USE_ASH)
+  return ash::Shell::HasInstance();
+#else
+  return false;
+#endif  // USE_ASH
+}
+#endif  // OS_CHROMEOS
 
 }  // namespace
 
@@ -221,7 +243,7 @@ void ToolbarView::Init() {
   app_menu_->set_id(VIEW_ID_APP_MENU);
 
   // Always add children in order from left to right, for accessibility.
-  origin_chip_view_ = new OriginChipView(this);
+  origin_chip_view_ = new ToolbarOriginChipView(this);
   chrome::OriginChipPosition origin_chip_position =
       chrome::GetOriginChipPosition();
   AddChildView(back_);
@@ -241,6 +263,13 @@ void ToolbarView::Init() {
 
   LoadImages();
 
+  // Start signin global error service now so we badge the menu correctly
+  // in non-Ash.
+#if !defined(OS_CHROMEOS)
+  if (!HasAshShell())
+    SigninGlobalErrorFactory::GetForProfile(browser_->profile());
+#endif  // OS_CHROMEOS
+
   // Add any necessary badges to the menu item based on the system state.
   // Do this after |app_menu_| has been added as a bubble may be shown that
   // needs the widget (widget found by way of app_menu_->GetWidget()).
@@ -249,8 +278,8 @@ void ToolbarView::Init() {
   location_bar_->Init();
 
   origin_chip_view_->Init();
-  if (chrome::ShouldDisplayOriginChip() || chrome::ShouldDisplayOriginChipV2())
-    location_bar_->set_origin_chip_view(origin_chip_view_);
+  if (origin_chip_view_->ShouldShow())
+    location_bar_->set_toolbar_origin_chip_view(origin_chip_view_);
 
   show_home_button_.Init(prefs::kShowHomeButton,
                          browser_->profile()->GetPrefs(),
@@ -318,6 +347,28 @@ views::View* ToolbarView::GetTranslateBubbleAnchor() {
       translate_icon_view : app_menu_;
 }
 
+void ToolbarView::ExecuteExtensionCommand(
+    const extensions::Extension* extension,
+    const extensions::Command& command) {
+  browser_actions_->ExecuteExtensionCommand(extension, command);
+}
+
+void ToolbarView::ShowPageActionPopup(const extensions::Extension* extension) {
+  extensions::ExtensionActionManager* extension_manager =
+      extensions::ExtensionActionManager::Get(browser_->profile());
+  ExtensionAction* extension_action =
+      extension_manager->GetPageAction(*extension);
+  if (extension_action) {
+    location_bar_->GetPageActionView(extension_action)->image_view()->
+        ExecuteAction(ExtensionPopup::SHOW);
+  }
+}
+
+void ToolbarView::ShowBrowserActionPopup(
+    const extensions::Extension* extension) {
+  browser_actions_->ShowPopup(extension, true);
+}
+
 views::MenuButton* ToolbarView::app_menu() const {
   return app_menu_;
 }
@@ -333,8 +384,8 @@ bool ToolbarView::SetPaneFocus(views::View* initial_focus) {
   return true;
 }
 
-void ToolbarView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_TOOLBAR;
+void ToolbarView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_TOOLBAR;
   state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_TOOLBAR);
 }
 
@@ -596,8 +647,7 @@ void ToolbarView::Layout() {
   chrome::OriginChipPosition origin_chip_position =
       chrome::GetOriginChipPosition();
   if (origin_chip_view_->visible() &&
-      (chrome::ShouldDisplayOriginChipV2() ||
-       origin_chip_position == chrome::ORIGIN_CHIP_LEADING_LOCATION_BAR)) {
+      origin_chip_position == chrome::ORIGIN_CHIP_LEADING_LOCATION_BAR) {
     origin_chip_view_->SetBounds(next_element_x, child_y,
                                  origin_chip_width, child_height);
     next_element_x = origin_chip_view_->bounds().right() + kStandardSpacing;
@@ -767,8 +817,7 @@ void ToolbarView::ShowCriticalNotification() {
 #if defined(OS_WIN)
   CriticalNotificationBubbleView* bubble_delegate =
       new CriticalNotificationBubbleView(app_menu_);
-  views::BubbleDelegateView::CreateBubble(bubble_delegate);
-  bubble_delegate->StartFade(true);
+  views::BubbleDelegateView::CreateBubble(bubble_delegate)->Show();
 #endif
 }
 

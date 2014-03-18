@@ -38,6 +38,13 @@
           'includes': ['../build/grit_action.gypi' ],
         },
         {
+          'action_name': 'password_manager_internals_resources',
+          'variables': {
+            'grit_grd_file': 'browser/resources/password_manager_internals_resources.grd',
+          },
+          'includes': [ '../build/grit_action.gypi' ],
+        },
+        {
           'action_name': 'signin_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/signin_internals_resources.grd',
@@ -88,14 +95,6 @@
                 'grit_grd_file': 'browser/resources/quota_internals_resources.grd',
               },
               'includes': [ '../build/grit_action.gypi' ],
-            },
-            {
-              'action_name': 'devtools_discovery_page_resources',
-              'variables': {
-                'grit_grd_file':
-                   'browser/devtools/frontend/devtools_discovery_page_resources.grd',
-              },
-              'includes': [ '../build/grit_action.gypi' ]
             },
             {
               'action_name': 'sync_file_system_internals_resources',
@@ -368,9 +367,6 @@
       ],
       'actions': [
         {
-          'includes': ['chrome_repack_chrome.gypi']
-        },
-        {
           'includes': ['chrome_repack_locales.gypi']
         },
         {
@@ -447,7 +443,7 @@
                 },
               ],
             }],
-            ['enable_hidpi == 1 and OS!="win"', {
+            ['enable_hidpi == 1', {
               'copies': [
                 {
                   'destination': '<(PRODUCT_DIR)',

@@ -21,8 +21,9 @@
         '../components/components.gyp:translate_language_detection',
         '../components/components.gyp:visitedlink_renderer',
         '../content/content.gyp:content_renderer',
-        '../media/cast/cast.gyp:cast_config',
+        '../media/cast/cast_config.gyp:cast_config',
         '../media/cast/cast_sender.gyp:cast_sender',
+        '../media/cast/logging/logging.gyp:sender_logging',
         '../media/cast/transport/cast_transport.gyp:cast_transport',
         '../net/net.gyp:net',
         '../skia/skia.gyp:skia',
@@ -152,6 +153,8 @@
         'renderer/extensions/user_script_scheduler.h',
         'renderer/extensions/user_script_slave.cc',
         'renderer/extensions/user_script_slave.h',
+        'renderer/extensions/utils_native_handler.cc',
+        'renderer/extensions/utils_native_handler.h',
         'renderer/extensions/v8_schema_registry.cc',
         'renderer/extensions/v8_schema_registry.h',
         'renderer/extensions/webstore_bindings.cc',
@@ -167,6 +170,8 @@
         'renderer/media/cast_session.h',
         'renderer/media/cast_session_delegate.cc',
         'renderer/media/cast_session_delegate.h',
+        'renderer/media/cast_threads.cc',
+        'renderer/media/cast_threads.h',
         'renderer/media/cast_transport_sender_ipc.cc',
         'renderer/media/cast_transport_sender_ipc.h',
         'renderer/media/cast_udp_transport.cc',
@@ -197,6 +202,7 @@
         'renderer/resource_bundle_source_map.h',
         'renderer/resources/extensions/app_custom_bindings.js',
         'renderer/resources/extensions/app_window_custom_bindings.js',
+        'renderer/resources/extensions/automation_custom_bindings.js',
         'renderer/resources/extensions/binding.js',
         'renderer/resources/extensions/browser_action_custom_bindings.js',
         'renderer/resources/extensions/chrome_direct_setting.js',
@@ -206,7 +212,6 @@
         'renderer/resources/extensions/declarative_content_custom_bindings.js',
         'renderer/resources/extensions/declarative_webrequest_custom_bindings.js',
         'renderer/resources/extensions/event.js',
-        'renderer/resources/extensions/experimental.offscreenTabs_custom_bindings.js',
         'renderer/resources/extensions/extension_custom_bindings.js',
         'renderer/resources/extensions/feedback_private_custom_bindings.js',
         'renderer/resources/extensions/file_browser_handler_custom_bindings.js',
@@ -242,6 +247,7 @@
         'renderer/resources/extensions/web_request_custom_bindings.js',
         'renderer/resources/extensions/web_view.js',
         'renderer/resources/extensions/web_view_experimental.js',
+        'renderer/resources/extensions/webview_custom_bindings.js',
         'renderer/chrome_content_renderer_client.cc',
         'renderer/chrome_content_renderer_client.h',
         'renderer/chrome_render_frame_observer.cc',
@@ -445,6 +451,14 @@
             'renderer/extensions/tts_custom_bindings.cc',
           ],
         }],
+        ['OS=="win" and target_arch=="ia32"', {
+          'sources': [
+            # TODO(scottmg): This is a workaround for
+            # http://crbug.com/348525 that affects VS2013 before Update 2.
+            # This should be removed once Update 2 is released.
+            '../build/win/ftol3.obj',
+          ],
+        }],
         ['OS=="win"', {
           'dependencies': [
             '../chrome_elf/chrome_elf.gyp:chrome_elf',
@@ -467,7 +481,7 @@
           'dependencies': [
             # TODO(hclam): See crbug.com/298380 for details.
             # We should isolate the APIs needed by the renderer.
-            '<(DEPTH)/chrome/common/extensions/api/api.gyp:api',
+            '<(DEPTH)/chrome/common/extensions/api/api.gyp:chrome_api',
           ],
         }],
         ['enable_printing!=0', {

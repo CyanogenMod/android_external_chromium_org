@@ -19,8 +19,8 @@
 #include "components/autofill/core/browser/webdata/autofill_entry.h"
 #include "components/autofill/core/browser/webdata/autofill_table.h"
 #include "components/autofill/core/common/form_field_data.h"
+#include "components/os_crypt/os_crypt.h"
 #include "components/webdata/common/web_database.h"
-#include "components/webdata/encryptor/encryptor.h"
 #include "sql/statement.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -32,7 +32,8 @@ namespace autofill {
 
 // So we can compare AutofillKeys with EXPECT_EQ().
 std::ostream& operator<<(std::ostream& os, const AutofillKey& key) {
-  return os << UTF16ToASCII(key.name()) << ", " << UTF16ToASCII(key.value());
+  return os << base::UTF16ToASCII(key.name()) << ", "
+            << base::UTF16ToASCII(key.value());
 }
 
 // So we can compare AutofillChanges with EXPECT_EQ().
@@ -61,9 +62,6 @@ typedef std::set<AutofillEntry,
 typedef AutofillEntrySet::iterator AutofillEntrySetIterator;
 
 bool CompareAutofillEntries(const AutofillEntry& a, const AutofillEntry& b) {
-  std::set<Time> timestamps1(a.timestamps().begin(), a.timestamps().end());
-  std::set<Time> timestamps2(b.timestamps().begin(), b.timestamps().end());
-
   int compVal = a.key().name().compare(b.key().name());
   if (compVal != 0)
     return compVal < 0;
@@ -72,28 +70,21 @@ bool CompareAutofillEntries(const AutofillEntry& a, const AutofillEntry& b) {
   if (compVal != 0)
     return compVal < 0;
 
-  if (timestamps1.size() != timestamps2.size())
-    return timestamps1.size() < timestamps2.size();
+  if (a.date_created() != b.date_created())
+    return a.date_created() < b.date_created();
 
-  std::set<Time>::iterator it;
-  for (it = timestamps1.begin(); it != timestamps1.end(); ++it) {
-    timestamps2.erase(*it);
-  }
-
-  return !timestamps2.empty();
+  return a.date_last_used() < b.date_last_used();
 }
 
 AutofillEntry MakeAutofillEntry(const char* name,
                                 const char* value,
-                                time_t timestamp0,
-                                time_t timestamp1) {
-  std::vector<Time> timestamps;
-  if (timestamp0 >= 0)
-    timestamps.push_back(Time::FromTimeT(timestamp0));
-  if (timestamp1 >= 0)
-    timestamps.push_back(Time::FromTimeT(timestamp1));
-  return AutofillEntry(
-      AutofillKey(ASCIIToUTF16(name), ASCIIToUTF16(value)), timestamps);
+                                time_t date_created,
+                                time_t date_last_used) {
+  if (date_last_used < 0)
+    date_last_used = date_created;
+  return AutofillEntry(AutofillKey(ASCIIToUTF16(name), ASCIIToUTF16(value)),
+                       Time::FromTimeT(date_created),
+                       Time::FromTimeT(date_last_used));
 }
 
 // Checks |actual| and |expected| contain the same elements.
@@ -108,6 +99,17 @@ void CompareAutofillEntrySets(const AutofillEntrySet& actual,
   EXPECT_EQ(actual.size(), count);
 }
 
+int GetAutofillEntryCount(const base::string16& name,
+                          const base::string16& value,
+                          WebDatabase* db) {
+  sql::Statement s(db->GetSQLConnection()->GetUniqueStatement(
+      "SELECT count FROM autofill WHERE name = ? AND value = ?"));
+  s.BindString16(0, name);
+  s.BindString16(1, value);
+  s.Step();
+  return s.ColumnInt(0);
+}
+
 }  // namespace
 
 class AutofillTableTest : public testing::Test {
@@ -118,7 +120,7 @@ class AutofillTableTest : public testing::Test {
  protected:
   virtual void SetUp() {
 #if defined(OS_MACOSX)
-    Encryptor::UseMockKeychain(true);
+    OSCrypt::UseMockKeychain(true);
 #endif
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     file_ = temp_dir_.path().AppendASCII("TestWebDatabase");
@@ -170,27 +172,17 @@ TEST_F(AutofillTableTest, Autofill) {
                                               now + i * two_seconds));
   }
 
-  int count = 0;
-  int64 pair_id = 0;
-
-  // We have added the name Clark Kent 5 times, so count should be 5 and pair_id
-  // should be somthing non-zero.
-  field.name = ASCIIToUTF16("Name");
-  field.value = ASCIIToUTF16("Clark Kent");
-  EXPECT_TRUE(table_->GetIDAndCountOfFormElement(field, &pair_id, &count));
-  EXPECT_EQ(5, count);
-  EXPECT_NE(0, pair_id);
+  // We have added the name Clark Kent 5 times, so count should be 5.
+  EXPECT_EQ(5, GetAutofillEntryCount(ASCIIToUTF16("Name"),
+                                     ASCIIToUTF16("Clark Kent"), db_.get()));
 
   // Storing in the data base should be case sensitive, so there should be no
   // database entry for clark kent lowercase.
-  field.value = ASCIIToUTF16("clark kent");
-  EXPECT_TRUE(table_->GetIDAndCountOfFormElement(field, &pair_id, &count));
-  EXPECT_EQ(0, count);
+  EXPECT_EQ(0, GetAutofillEntryCount(ASCIIToUTF16("Name"),
+                                     ASCIIToUTF16("clark kent"), db_.get()));
 
-  field.name = ASCIIToUTF16("Favorite Color");
-  field.value = ASCIIToUTF16("Green");
-  EXPECT_TRUE(table_->GetIDAndCountOfFormElement(field, &pair_id, &count));
-  EXPECT_EQ(2, count);
+  EXPECT_EQ(2, GetAutofillEntryCount(ASCIIToUTF16("Favorite Color"),
+                                     ASCIIToUTF16("Green"), db_.get()));
 
   // This is meant to get a list of suggestions for Name.  The empty prefix
   // in the second argument means it should return all suggestions for a name
@@ -248,10 +240,8 @@ TEST_F(AutofillTableTest, Autofill) {
     EXPECT_EQ(kExpectedChanges[i], changes[i]);
   }
 
-  field.name = ASCIIToUTF16("Name");
-  field.value = ASCIIToUTF16("Clark Kent");
-  EXPECT_TRUE(table_->GetIDAndCountOfFormElement(field, &pair_id, &count));
-  EXPECT_EQ(0, count);
+  EXPECT_EQ(0, GetAutofillEntryCount(ASCIIToUTF16("Name"),
+                                     ASCIIToUTF16("Clark Kent"), db_.get()));
 
   EXPECT_TRUE(table_->GetFormValuesForElementName(
       ASCIIToUTF16("Name"), base::string16(), &v, 6));
@@ -278,16 +268,6 @@ TEST_F(AutofillTableTest, Autofill) {
   EXPECT_TRUE(table_->GetFormValuesForElementName(
       ASCIIToUTF16("blank"), base::string16(), &v, 10));
   EXPECT_EQ(4U, v.size());
-
-  // Now we'll check that ClearAutofillEmptyValueElements() works as expected.
-  table_->ClearAutofillEmptyValueElements();
-
-  v.clear();
-  EXPECT_TRUE(table_->GetFormValuesForElementName(
-      ASCIIToUTF16("blank"), base::string16(), &v, 10));
-  ASSERT_EQ(1U, v.size());
-
-  EXPECT_EQ(kValue, v[0]);
 }
 
 TEST_F(AutofillTableTest, Autofill_RemoveBetweenChanges) {
@@ -352,14 +332,8 @@ TEST_F(AutofillTableTest, Autofill_UpdateOneWithOneTimestamp) {
   entries.push_back(entry);
   ASSERT_TRUE(table_->UpdateAutofillEntries(entries));
 
-  FormFieldData field;
-  field.name = ASCIIToUTF16("foo");
-  field.value = ASCIIToUTF16("bar");
-  int64 pair_id;
-  int count;
-  ASSERT_TRUE(table_->GetIDAndCountOfFormElement(field, &pair_id, &count));
-  EXPECT_LE(0, pair_id);
-  EXPECT_EQ(1, count);
+  EXPECT_EQ(1, GetAutofillEntryCount(ASCIIToUTF16("foo"), ASCIIToUTF16("bar"),
+                                     db_.get()));
 
   std::vector<AutofillEntry> all_entries;
   ASSERT_TRUE(table_->GetAllAutofillEntries(&all_entries));
@@ -373,14 +347,8 @@ TEST_F(AutofillTableTest, Autofill_UpdateOneWithTwoTimestamps) {
   entries.push_back(entry);
   ASSERT_TRUE(table_->UpdateAutofillEntries(entries));
 
-  FormFieldData field;
-  field.name = ASCIIToUTF16("foo");
-  field.value = ASCIIToUTF16("bar");
-  int64 pair_id;
-  int count;
-  ASSERT_TRUE(table_->GetIDAndCountOfFormElement(field, &pair_id, &count));
-  EXPECT_LE(0, pair_id);
-  EXPECT_EQ(2, count);
+  EXPECT_EQ(2, GetAutofillEntryCount(ASCIIToUTF16("foo"), ASCIIToUTF16("bar"),
+                                     db_.get()));
 
   std::vector<AutofillEntry> all_entries;
   ASSERT_TRUE(table_->GetAllAutofillEntries(&all_entries));
@@ -394,13 +362,13 @@ TEST_F(AutofillTableTest, Autofill_GetAutofillTimestamps) {
   entries.push_back(entry);
   ASSERT_TRUE(table_->UpdateAutofillEntries(entries));
 
-  std::vector<Time> timestamps;
+  Time date_created, date_last_used;
   ASSERT_TRUE(table_->GetAutofillTimestamps(ASCIIToUTF16("foo"),
                                             ASCIIToUTF16("bar"),
-                                            &timestamps));
-  ASSERT_EQ(2U, timestamps.size());
-  EXPECT_EQ(Time::FromTimeT(1), timestamps[0]);
-  EXPECT_EQ(Time::FromTimeT(2), timestamps[1]);
+                                            &date_created,
+                                            &date_last_used));
+  EXPECT_EQ(Time::FromTimeT(1), date_created);
+  EXPECT_EQ(Time::FromTimeT(2), date_last_used);
 }
 
 TEST_F(AutofillTableTest, Autofill_UpdateTwo) {
@@ -411,21 +379,10 @@ TEST_F(AutofillTableTest, Autofill_UpdateTwo) {
   entries.push_back(entry1);
   ASSERT_TRUE(table_->UpdateAutofillEntries(entries));
 
-  FormFieldData field0;
-  field0.name = ASCIIToUTF16("foo");
-  field0.value = ASCIIToUTF16("bar0");
-  int64 pair_id;
-  int count;
-  ASSERT_TRUE(table_->GetIDAndCountOfFormElement(field0, &pair_id, &count));
-  EXPECT_LE(0, pair_id);
-  EXPECT_EQ(1, count);
-
-  FormFieldData field1;
-  field1.name = ASCIIToUTF16("foo");
-  field1.value = ASCIIToUTF16("bar1");
-  ASSERT_TRUE(table_->GetIDAndCountOfFormElement(field1, &pair_id, &count));
-  EXPECT_LE(0, pair_id);
-  EXPECT_EQ(2, count);
+  EXPECT_EQ(1, GetAutofillEntryCount(ASCIIToUTF16("foo"), ASCIIToUTF16("bar0"),
+                                     db_.get()));
+  EXPECT_EQ(2, GetAutofillEntryCount(ASCIIToUTF16("foo"), ASCIIToUTF16("bar1"),
+                                     db_.get()));
 }
 
 TEST_F(AutofillTableTest, Autofill_UpdateReplace) {
@@ -511,6 +468,167 @@ TEST_F(AutofillTableTest, Autofill_AddFormFieldValues) {
   std::vector<AutofillEntry> all_entries;
   ASSERT_TRUE(table_->GetAllAutofillEntries(&all_entries));
   ASSERT_EQ(2U, all_entries.size());
+}
+
+TEST_F(AutofillTableTest,
+       Autofill_RemoveFormElementsAddedBetween_UsedOnlyBefore) {
+  // Add an entry used only before the targetted range.
+  AutofillChangeList changes;
+  FormFieldData field;
+  field.name = ASCIIToUTF16("Name");
+  field.value = ASCIIToUTF16("Superman");
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(10)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(20)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(30)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(40)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(50)));
+
+  EXPECT_EQ(5, GetAutofillEntryCount(field.name, field.value, db_.get()));
+
+  changes.clear();
+  EXPECT_TRUE(table_->RemoveFormElementsAddedBetween(base::Time::FromTimeT(51),
+                                                     base::Time::FromTimeT(60),
+                                                     &changes));
+  EXPECT_TRUE(changes.empty());
+  EXPECT_EQ(5, GetAutofillEntryCount(field.name, field.value, db_.get()));
+}
+
+TEST_F(AutofillTableTest,
+       Autofill_RemoveFormElementsAddedBetween_UsedOnlyAfter) {
+  // Add an entry used only after the targetted range.
+  AutofillChangeList changes;
+  FormFieldData field;
+  field.name = ASCIIToUTF16("Name");
+  field.value = ASCIIToUTF16("Superman");
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(50)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(60)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(70)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(80)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(90)));
+
+  EXPECT_EQ(5, GetAutofillEntryCount(field.name, field.value, db_.get()));
+
+  changes.clear();
+  EXPECT_TRUE(table_->RemoveFormElementsAddedBetween(base::Time::FromTimeT(40),
+                                                     base::Time::FromTimeT(50),
+                                                     &changes));
+  EXPECT_TRUE(changes.empty());
+  EXPECT_EQ(5, GetAutofillEntryCount(field.name, field.value, db_.get()));
+}
+
+TEST_F(AutofillTableTest,
+       Autofill_RemoveFormElementsAddedBetween_UsedOnlyDuring) {
+  // Add an entry used entirely during the targetted range.
+  AutofillChangeList changes;
+  FormFieldData field;
+  field.name = ASCIIToUTF16("Name");
+  field.value = ASCIIToUTF16("Superman");
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(10)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(20)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(30)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(40)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(50)));
+
+  EXPECT_EQ(5, GetAutofillEntryCount(field.name, field.value, db_.get()));
+
+  changes.clear();
+  EXPECT_TRUE(table_->RemoveFormElementsAddedBetween(base::Time::FromTimeT(10),
+                                                     base::Time::FromTimeT(51),
+                                                     &changes));
+  ASSERT_EQ(1U, changes.size());
+  EXPECT_EQ(AutofillChange(AutofillChange::REMOVE,
+                           AutofillKey(field.name, field.value)),
+            changes[0]);
+  EXPECT_EQ(0, GetAutofillEntryCount(field.name, field.value, db_.get()));
+}
+
+TEST_F(AutofillTableTest,
+       Autofill_RemoveFormElementsAddedBetween_UsedBeforeAndDuring) {
+  // Add an entry used both before and during the targetted range.
+  AutofillChangeList changes;
+  FormFieldData field;
+  field.name = ASCIIToUTF16("Name");
+  field.value = ASCIIToUTF16("Superman");
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(10)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(20)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(30)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(40)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(50)));
+
+  EXPECT_EQ(5, GetAutofillEntryCount(field.name, field.value, db_.get()));
+
+  changes.clear();
+  EXPECT_TRUE(table_->RemoveFormElementsAddedBetween(base::Time::FromTimeT(40),
+                                                     base::Time::FromTimeT(60),
+                                                     &changes));
+  ASSERT_EQ(1U, changes.size());
+  EXPECT_EQ(AutofillChange(AutofillChange::UPDATE,
+                           AutofillKey(field.name, field.value)),
+            changes[0]);
+  EXPECT_EQ(4, GetAutofillEntryCount(field.name, field.value, db_.get()));
+  base::Time date_created, date_last_used;
+  EXPECT_TRUE(
+      table_->GetAutofillTimestamps(field.name, field.value,
+                                    &date_created, &date_last_used));
+  EXPECT_EQ(base::Time::FromTimeT(10), date_created);
+  EXPECT_EQ(base::Time::FromTimeT(39), date_last_used);
+}
+
+TEST_F(AutofillTableTest,
+       Autofill_RemoveFormElementsAddedBetween_UsedDuringAndAfter) {
+  // Add an entry used both during and after the targetted range.
+  AutofillChangeList changes;
+  FormFieldData field;
+  field.name = ASCIIToUTF16("Name");
+  field.value = ASCIIToUTF16("Superman");
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(50)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(60)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(70)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(80)));
+  EXPECT_TRUE(table_->AddFormFieldValueTime(field, &changes,
+                                            base::Time::FromTimeT(90)));
+
+  EXPECT_EQ(5, GetAutofillEntryCount(field.name, field.value, db_.get()));
+
+  changes.clear();
+  EXPECT_TRUE(table_->RemoveFormElementsAddedBetween(base::Time::FromTimeT(40),
+                                                     base::Time::FromTimeT(80),
+                                                     &changes));
+  ASSERT_EQ(1U, changes.size());
+  EXPECT_EQ(AutofillChange(AutofillChange::UPDATE,
+                           AutofillKey(field.name, field.value)),
+            changes[0]);
+  EXPECT_EQ(2, GetAutofillEntryCount(field.name, field.value, db_.get()));
+  base::Time date_created, date_last_used;
+  EXPECT_TRUE(
+      table_->GetAutofillTimestamps(field.name, field.value,
+                                    &date_created, &date_last_used));
+  EXPECT_EQ(base::Time::FromTimeT(80), date_created);
+  EXPECT_EQ(base::Time::FromTimeT(90), date_last_used);
 }
 
 TEST_F(AutofillTableTest, AutofillProfile) {
@@ -1396,7 +1514,7 @@ TEST_F(AutofillTableTest, Autofill_GetAllAutofillEntries_OneResult) {
 
   AutofillEntrySet expected_entries(CompareAutofillEntries);
   AutofillKey ak1(ASCIIToUTF16("Name"), ASCIIToUTF16("Superman"));
-  AutofillEntry ae1(ak1, timestamps1);
+  AutofillEntry ae1(ak1, timestamps1.front(), timestamps1.back());
 
   expected_entries.insert(ae1);
 
@@ -1438,8 +1556,8 @@ TEST_F(AutofillTableTest, Autofill_GetAllAutofillEntries_TwoDistinct) {
   AutofillEntrySet expected_entries(CompareAutofillEntries);
   AutofillKey ak1(ASCIIToUTF16("Name"), ASCIIToUTF16("Superman"));
   AutofillKey ak2(ASCIIToUTF16("Name"), ASCIIToUTF16("Clark Kent"));
-  AutofillEntry ae1(ak1, timestamps1);
-  AutofillEntry ae2(ak2, timestamps2);
+  AutofillEntry ae1(ak1, timestamps1.front(), timestamps1.back());
+  AutofillEntry ae2(ak2, timestamps2.front(), timestamps2.back());
 
   expected_entries.insert(ae1);
   expected_entries.insert(ae2);
@@ -1473,7 +1591,7 @@ TEST_F(AutofillTableTest, Autofill_GetAllAutofillEntries_TwoSame) {
 
   AutofillEntrySet expected_entries(CompareAutofillEntries);
   AutofillKey ak1(ASCIIToUTF16("Name"), ASCIIToUTF16("Superman"));
-  AutofillEntry ae1(ak1, timestamps);
+  AutofillEntry ae1(ak1, timestamps.front(), timestamps.back());
 
   expected_entries.insert(ae1);
 

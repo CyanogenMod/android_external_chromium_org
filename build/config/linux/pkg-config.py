@@ -30,7 +30,7 @@ from optparse import OptionParser
 # success. This allows us to "kind of emulate" a Linux build from other
 # platforms.
 if sys.platform.find("linux") == -1:
-  print "[[],[],[],[]]"
+  print "[[],[],[],[],[]]"
   sys.exit(0)
 
 
@@ -119,7 +119,8 @@ else:
   prefix = ''
 
 try:
-  flag_string = subprocess.check_output(["pkg-config", "--cflags", "--libs"] +
+  flag_string = subprocess.check_output(
+      [ "pkg-config", "--cflags", "--libs-only-l", "--libs-only-L" ] +
       args, env=os.environ)
   # For now just split on spaces to get the args out. This will break if
   # pkgconfig returns quoted things with spaces in them, but that doesn't seem

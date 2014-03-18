@@ -8,11 +8,18 @@
 #include "base/observer_list.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/guestview/guestview.h"
+#include "chrome/browser/guestview/webview/webview_find_helper.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "third_party/WebKit/public/web/WebFindOptions.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
+#endif
 
 namespace extensions {
 class ScriptExecutor;
+class WebviewFindFunction;
 }  // namespace extensions
 
 // A WebViewGuest is a WebContentsObserver on the guest WebContents of a
@@ -27,10 +34,13 @@ class WebViewGuest : public GuestView,
                      public content::WebContentsObserver {
  public:
   WebViewGuest(content::WebContents* guest_web_contents,
-               const std::string& extension_id);
+               const std::string& embedder_extension_id);
 
   static WebViewGuest* From(int embedder_process_id, int instance_id);
   static WebViewGuest* FromWebContents(content::WebContents* contents);
+  // Returns guestview::kInstanceIDNone if |contents| does not correspond to a
+  // WebViewGuest.
+  static int GetViewInstanceId(content::WebContents* contents);
 
   // GuestView implementation.
   virtual void Attach(content::WebContents* embedder_web_contents,
@@ -48,6 +58,11 @@ class WebViewGuest : public GuestView,
   virtual void Close() OVERRIDE;
   virtual void DidAttach() OVERRIDE;
   virtual void EmbedderDestroyed() OVERRIDE;
+  virtual void FindReply(int request_id,
+                         int number_of_matches,
+                         const gfx::Rect& selection_rect,
+                         int active_match_ordinal,
+                         bool final_update) OVERRIDE;
   virtual void GuestProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual bool HandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
@@ -77,6 +92,14 @@ class WebViewGuest : public GuestView,
 
   // Returns the current zoom factor.
   double GetZoom();
+
+  // Begin or continue a find request.
+  void Find(const base::string16& search_text,
+            const blink::WebFindOptions& options,
+            scoped_refptr<extensions::WebviewFindFunction> find_function);
+
+  // Conclude a find request to clear highlighting.
+  void StopFinding(content::StopFindAction);
 
   // If possible, navigate the guest to |relative_index| entries away from the
   // current navigation entry.
@@ -188,6 +211,12 @@ class WebViewGuest : public GuestView,
   static void RemoveWebViewFromExtensionRendererState(
       content::WebContents* web_contents);
 
+#if defined(OS_CHROMEOS)
+  // Notification of a change in the state of an accessibility setting.
+  void OnAccessibilityStatusChanged(
+    const chromeos::AccessibilityStatusEventDetails& details);
+#endif
+
   void InjectChromeVoxIfNeeded(content::RenderViewHost* render_view_host);
 
   ObserverList<extensions::TabHelper::ScriptExecutionObserver>
@@ -218,6 +247,18 @@ class WebViewGuest : public GuestView,
 
   // Stores the current zoom factor.
   double current_zoom_factor_;
+
+  // Handles find requests and replies for the webview find API.
+  WebviewFindHelper find_helper_;
+
+  friend void WebviewFindHelper::DispatchFindUpdateEvent(bool canceled,
+                                                         bool final_update);
+
+#if defined(OS_CHROMEOS)
+  // Subscription to receive notifications on changes to a11y settings.
+  scoped_ptr<chromeos::AccessibilityStatusSubscription>
+      accessibility_subscription_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(WebViewGuest);
 };

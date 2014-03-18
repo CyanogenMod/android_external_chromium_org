@@ -10,34 +10,30 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/extensions/api/streams_private.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/stream_handle.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_function_registry.h"
 #include "extensions/browser/extension_system.h"
-
-namespace events {
-
-const char kOnExecuteMimeTypeHandler[] =
-    "streamsPrivate.onExecuteMimeTypeHandler";
-
-}  // namespace events
 
 namespace extensions {
 
+namespace streams_private = api::streams_private;
+
 // static
-StreamsPrivateAPI* StreamsPrivateAPI::Get(Profile* profile) {
-  return GetFactoryInstance()->GetForProfile(profile);
+StreamsPrivateAPI* StreamsPrivateAPI::Get(content::BrowserContext* context) {
+  return GetFactoryInstance()->Get(context);
 }
 
-StreamsPrivateAPI::StreamsPrivateAPI(Profile* profile)
-    : profile_(profile),
-      weak_ptr_factory_(this) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                 content::Source<Profile>(profile));
+StreamsPrivateAPI::StreamsPrivateAPI(content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)), weak_ptr_factory_(this) {
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                 content::Source<Profile>(profile_));
 }
 
 StreamsPrivateAPI::~StreamsPrivateAPI() {
@@ -49,20 +45,21 @@ void StreamsPrivateAPI::ExecuteMimeTypeHandler(
     scoped_ptr<content::StreamHandle> stream,
     int64 expected_content_size) {
   // Create the event's arguments value.
-  scoped_ptr<base::ListValue> event_args(new base::ListValue());
-  event_args->Append(new base::StringValue(stream->GetMimeType()));
-  event_args->Append(new base::StringValue(stream->GetOriginalURL().spec()));
-  event_args->Append(new base::StringValue(stream->GetURL().spec()));
-  event_args->Append(
-      new base::FundamentalValue(ExtensionTabUtil::GetTabId(web_contents)));
+  streams_private::StreamInfo info;
+  info.mime_type = stream->GetMimeType();
+  info.original_url = stream->GetOriginalURL().spec();
+  info.stream_url = stream->GetURL().spec();
+  info.tab_id = ExtensionTabUtil::GetTabId(web_contents);
 
   int size = -1;
   if (expected_content_size <= INT_MAX)
     size = expected_content_size;
-  event_args->Append(new base::FundamentalValue(size));
+  info.expected_content_size = size;
+  info.response_headers = stream->GetResponseHeaders();
 
-  scoped_ptr<Event> event(new Event(events::kOnExecuteMimeTypeHandler,
-                                    event_args.Pass()));
+  scoped_ptr<Event> event(
+      new Event(streams_private::OnExecuteMimeTypeHandler::kEventName,
+                streams_private::OnExecuteMimeTypeHandler::Create(info)));
 
   ExtensionSystem::Get(profile_)->event_router()->DispatchEventToExtension(
       extension_id, event.Pass());
@@ -71,12 +68,12 @@ void StreamsPrivateAPI::ExecuteMimeTypeHandler(
   streams_[extension_id][url] = make_linked_ptr(stream.release());
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<StreamsPrivateAPI> >
+static base::LazyInstance<BrowserContextKeyedAPIFactory<StreamsPrivateAPI> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<StreamsPrivateAPI>*
-    StreamsPrivateAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<StreamsPrivateAPI>*
+StreamsPrivateAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 

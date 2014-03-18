@@ -8,7 +8,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/test/simple_test_clock.h"
-#include "components/webdata/encryptor/encryptor.h"
+#include "components/os_crypt/os_crypt.h"
 #include "google_apis/gcm/base/mcs_message.h"
 #include "google_apis/gcm/base/mcs_util.h"
 #include "google_apis/gcm/engine/fake_connection_factory.h"
@@ -83,7 +83,7 @@ class FakeMCSClient : public MCSClient {
 
 FakeMCSClient::FakeMCSClient(base::Clock* clock,
                              ConnectionFactory* connection_factory)
-    : MCSClient(clock, connection_factory, NULL),
+    : MCSClient("", clock, connection_factory, NULL),
       last_android_id_(0u),
       last_security_token_(0u),
       last_message_tag_(kNumProtoTypes) {
@@ -140,9 +140,9 @@ class GCMClientImplTest : public testing::Test,
                                  const GCMClient::IncomingMessage& message)
       OVERRIDE;
   virtual void OnMessagesDeleted(const std::string& app_id) OVERRIDE;
-  virtual void OnMessageSendError(const std::string& app_id,
-                                  const std::string& message_id,
-                                  GCMClient::Result result) OVERRIDE;
+  virtual void OnMessageSendError(
+      const std::string& app_id,
+      const gcm::GCMClient::SendErrorDetails& send_error_details) OVERRIDE;
   virtual void OnGCMReady() OVERRIDE;
 
   GCMClientImpl* gcm_client() const { return gcm_client_.get(); }
@@ -159,6 +159,9 @@ class GCMClientImplTest : public testing::Test,
   GCMClient::Result last_result() const { return last_result_; }
   const GCMClient::IncomingMessage& last_message() const {
     return last_message_;
+  }
+  const GCMClient::SendErrorDetails& last_error_details() const {
+    return last_error_details_;
   }
 
   int64 CurrentTime();
@@ -180,6 +183,7 @@ class GCMClientImplTest : public testing::Test,
   std::string last_message_id_;
   GCMClient::Result last_result_;
   GCMClient::IncomingMessage last_message_;
+  GCMClient::SendErrorDetails last_error_details_;
 
   scoped_ptr<GCMClientImpl> gcm_client_;
   scoped_ptr<FakeConnectionFactory> connection_factory_;
@@ -280,13 +284,19 @@ void GCMClientImplTest::InitializeGCMClient() {
   checkin_proto::ChromeBuildProto chrome_build_proto;
   gcm_client_->Initialize(chrome_build_proto,
                           temp_directory_.path(),
+                          std::vector<std::string>(),
                           message_loop_.message_loop_proxy(),
                           url_request_context_getter_,
                           this);
+
 #if defined(OS_MACOSX)
   // On OSX, prevent the Keychain permissions popup during unit tests.
-  Encryptor::UseMockKeychain(true);  // Must be after Initialize.
+  OSCrypt::UseMockKeychain(true);  // Must be after Initialize.
 #endif
+
+  // Starting loading and check-in.
+  gcm_client_->Load();
+
   // Ensuring that mcs_client is using the same gcm_store as gcm_client.
   mcs_client()->set_gcm_store(gcm_client_->gcm_store_.get());
   PumpLoopUntilIdle();
@@ -332,13 +342,12 @@ void GCMClientImplTest::OnMessagesDeleted(const std::string& app_id) {
   last_app_id_ = app_id;
 }
 
-void GCMClientImplTest::OnMessageSendError(const std::string& app_id,
-                                           const std::string& message_id,
-                                           GCMClient::Result result) {
+void GCMClientImplTest::OnMessageSendError(
+    const std::string& app_id,
+    const gcm::GCMClient::SendErrorDetails& send_error_details) {
   last_event_ = MESSAGE_SEND_ERROR;
   last_app_id_ = app_id;
-  last_message_id_ = message_id;
-  last_result_ = result;
+  last_error_details_ = send_error_details;
 }
 
 int64 GCMClientImplTest::CurrentTime() {
@@ -360,7 +369,7 @@ TEST_F(GCMClientImplTest, CheckOut) {
 TEST_F(GCMClientImplTest, RegisterApp) {
   std::vector<std::string> senders;
   senders.push_back("sender");
-  gcm_client()->Register("app_id", "cert", senders);
+  gcm_client()->Register("app_id", senders);
   CompleteRegistration("reg_id");
 
   EXPECT_EQ(REGISTRATION_COMPLETED, last_event());
@@ -393,12 +402,14 @@ TEST_F(GCMClientImplTest, DispatchDownstreamMessage) {
   EXPECT_EQ("app_id", last_app_id());
   EXPECT_EQ(expected_data.size(), last_message().data.size());
   EXPECT_EQ(expected_data, last_message().data);
+  EXPECT_EQ("project_id", last_message().sender_id);
 }
 
 TEST_F(GCMClientImplTest, DispatchDownstreamMessageSendError) {
   std::map<std::string, std::string> expected_data;
   expected_data["message_type"] = "send_error";
   expected_data["google.message_id"] = "007";
+  expected_data["error_details"] = "some details";
   MCSMessage message(BuildDownstreamMessage(
       "project_id", "app_id", expected_data));
   EXPECT_TRUE(message.IsValid());
@@ -406,7 +417,12 @@ TEST_F(GCMClientImplTest, DispatchDownstreamMessageSendError) {
 
   EXPECT_EQ(MESSAGE_SEND_ERROR, last_event());
   EXPECT_EQ("app_id", last_app_id());
-  EXPECT_EQ("007", last_message_id());
+  EXPECT_EQ("007", last_error_details().message_id);
+  EXPECT_EQ(1UL, last_error_details().additional_data.size());
+  GCMClient::MessageData::const_iterator iter =
+      last_error_details().additional_data.find("error_details");
+  EXPECT_TRUE(iter != last_error_details().additional_data.end());
+  EXPECT_EQ("some details", iter->second);
 }
 
 TEST_F(GCMClientImplTest, DispatchDownstreamMessgaesDeleted) {

@@ -5,7 +5,6 @@
 #include "content/browser/renderer_host/media/media_stream_dispatcher_host.h"
 
 #include "content/browser/browser_main_loop.h"
-#include "content/browser/renderer_host/media/web_contents_capture_util.h"
 #include "content/common/media/media_stream_messages.h"
 #include "content/common/media/media_stream_options.h"
 #include "url/gurl.h"
@@ -14,11 +13,11 @@ namespace content {
 
 MediaStreamDispatcherHost::MediaStreamDispatcherHost(
     int render_process_id,
-    ResourceContext* resource_context,
+    const ResourceContext::SaltCallback& salt_callback,
     MediaStreamManager* media_stream_manager)
     : BrowserMessageFilter(MediaStreamMsgStart),
       render_process_id_(render_process_id),
-      resource_context_(resource_context),
+      salt_callback_(salt_callback),
       media_stream_manager_(media_stream_manager) {
 }
 
@@ -37,15 +36,19 @@ void MediaStreamDispatcherHost::StreamGenerated(
       video_devices));
 }
 
-void MediaStreamDispatcherHost::StreamGenerationFailed(int render_view_id,
-                                                       int page_request_id) {
+void MediaStreamDispatcherHost::StreamGenerationFailed(
+    int render_view_id,
+    int page_request_id,
+    content::MediaStreamRequestResult result) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DVLOG(1) << "MediaStreamDispatcherHost::StreamGenerationFailed("
-           << ", {page_request_id = " << page_request_id <<  "})";
+           << ", {page_request_id = " << page_request_id <<  "}"
+           << ", { result= " << result << "})";
 
 
   Send(new MediaStreamMsg_StreamGenerationFailed(render_view_id,
-                                                 page_request_id));
+                                                 page_request_id,
+                                                 result));
 }
 
 void MediaStreamDispatcherHost::DeviceStopped(int render_view_id,
@@ -132,10 +135,8 @@ void MediaStreamDispatcherHost::OnGenerateStream(
            << security_origin.spec() << ")";
 
   media_stream_manager_->GenerateStream(
-      this, render_process_id_, render_view_id,
-      resource_context_->GetMediaDeviceIDSalt(),
-      page_request_id,
-      components, security_origin);
+      this, render_process_id_, render_view_id, salt_callback_,
+      page_request_id, components, security_origin);
 }
 
 void MediaStreamDispatcherHost::OnCancelGenerateStream(int render_view_id,
@@ -169,8 +170,7 @@ void MediaStreamDispatcherHost::OnEnumerateDevices(
            << security_origin.spec() << ")";
 
   media_stream_manager_->EnumerateDevices(
-      this, render_process_id_, render_view_id,
-      resource_context_->GetMediaDeviceIDSalt(),
+      this, render_process_id_, render_view_id, salt_callback_,
       page_request_id, type, security_origin);
 }
 
@@ -198,8 +198,7 @@ void MediaStreamDispatcherHost::OnOpenDevice(
            << security_origin.spec() << ")";
 
   media_stream_manager_->OpenDevice(
-      this, render_process_id_, render_view_id,
-      resource_context_->GetMediaDeviceIDSalt(),
+      this, render_process_id_, render_view_id, salt_callback_,
       page_request_id, device_id, type, security_origin);
 
 }

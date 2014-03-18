@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -15,6 +16,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_model.h"
+#include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/pagination_model.h"
 #include "ui/app_list/test/app_list_test_model.h"
 #include "ui/app_list/views/app_list_item_view.h"
@@ -108,7 +110,7 @@ class AppsGridViewTest : public views::ViewsTestBase {
     apps_grid_view_->SetLayout(kIconDimension, kCols, kRows);
     apps_grid_view_->SetBoundsRect(gfx::Rect(gfx::Size(kWidth, kHeight)));
     apps_grid_view_->SetModel(model_.get());
-    apps_grid_view_->SetItemList(model_->item_list());
+    apps_grid_view_->SetItemList(model_->top_level_item_list());
 
     test_api_.reset(new AppsGridViewTestApi(apps_grid_view_.get()));
   }
@@ -124,7 +126,7 @@ class AppsGridViewTest : public views::ViewsTestBase {
   }
 
   AppListItemView* GetItemViewForPoint(const gfx::Point& point) {
-    for (size_t i = 0; i < model_->item_list()->item_count(); ++i) {
+    for (size_t i = 0; i < model_->top_level_item_list()->item_count(); ++i) {
       AppListItemView* view = GetItemViewAt(i);
       if (view->bounds().Contains(point))
         return view;
@@ -133,7 +135,7 @@ class AppsGridViewTest : public views::ViewsTestBase {
   }
 
   gfx::Rect GetItemTileRectAt(int row, int col) {
-    DCHECK_GT(model_->item_list()->item_count(), 0u);
+    DCHECK_GT(model_->top_level_item_list()->item_count(), 0u);
 
     gfx::Insets insets(apps_grid_view_->GetInsets());
     gfx::Rect rect(gfx::Point(insets.left(), insets.top()),
@@ -206,7 +208,7 @@ TEST_F(AppsGridViewTest, EnsureHighlightedVisible) {
   EXPECT_EQ(1, pagination_model_->selected_page());
 
   // Highlight last one in the model and last page should be selected.
-  model_->HighlightItemAt(model_->item_list()->item_count() - 1);
+  model_->HighlightItemAt(model_->top_level_item_list()->item_count() - 1);
   EXPECT_EQ(kPages - 1, pagination_model_->selected_page());
 }
 
@@ -228,7 +230,8 @@ TEST_F(AppsGridViewTest, RemoveSelectedLastApp) {
   EXPECT_TRUE(apps_grid_view_->IsSelectedView(view));
 }
 
-TEST_F(AppsGridViewTest, MouseDrag) {
+TEST_F(AppsGridViewTest, MouseDragWithFolderDisabled) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kDisableFolderUI);
   const int kTotalItems = 4;
   model_->PopulateApps(kTotalItems);
   EXPECT_EQ(std::string("Item 0,Item 1,Item 2,Item 3"),
@@ -317,7 +320,8 @@ TEST_F(AppsGridViewTest, MouseDragFlipPage) {
   apps_grid_view_->EndDrag(true);
 }
 
-TEST_F(AppsGridViewTest, SimultaneousDrag) {
+TEST_F(AppsGridViewTest, SimultaneousDragWithFolderDisabled) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kDisableFolderUI);
   const int kTotalItems = 4;
   model_->PopulateApps(kTotalItems);
   EXPECT_EQ(std::string("Item 0,Item 1,Item 2,Item 3"),
@@ -433,7 +437,8 @@ TEST_F(AppsGridViewTest, ItemLabelShortNameOverride) {
   // should always be the full name of the app.
   std::string expected_text("xyz");
   std::string expected_tooltip("tooltip");
-  model_->CreateAndAddItem(expected_text, expected_tooltip);
+  AppListItem* item = model_->CreateAndAddItem("Item with short name");
+  model_->SetItemNameAndShortName(item, expected_tooltip, expected_text);
 
   base::string16 actual_tooltip;
   AppListItemView* item_view = GetItemViewAt(0);
@@ -449,7 +454,8 @@ TEST_F(AppsGridViewTest, ItemLabelNoShortName) {
   // If the app's full name and short name are the same, use the default tooltip
   // behavior of the label (only show a tooltip if the title is truncated).
   std::string title("a");
-  model_->CreateAndAddItem(title, title);
+  AppListItem* item = model_->CreateAndAddItem(title);
+  model_->SetItemNameAndShortName(item, title, "");
 
   base::string16 actual_tooltip;
   AppListItemView* item_view = GetItemViewAt(0);

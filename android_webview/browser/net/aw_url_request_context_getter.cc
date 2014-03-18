@@ -11,6 +11,7 @@
 #include "android_webview/browser/net/aw_network_delegate.h"
 #include "android_webview/browser/net/aw_url_request_job_factory.h"
 #include "android_webview/browser/net/init_native_callback.h"
+#include "android_webview/common/aw_content_client.h"
 #include "android_webview/common/aw_switches.h"
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
@@ -102,7 +103,8 @@ scoped_ptr<net::URLRequestJobFactory> CreateJobFactory(
       content::kDataScheme, new net::DataProtocolHandler());
   DCHECK(set_protocol);
   set_protocol = aw_job_factory->SetProtocolHandler(
-      chrome::kBlobScheme, (*protocol_handlers)[chrome::kBlobScheme].release());
+      content::kBlobScheme,
+      (*protocol_handlers)[content::kBlobScheme].release());
   DCHECK(set_protocol);
   set_protocol = aw_job_factory->SetProtocolHandler(
       content::kFileSystemScheme,
@@ -176,7 +178,7 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
   DCHECK(!url_request_context_);
 
   net::URLRequestContextBuilder builder;
-  builder.set_user_agent(content::GetUserAgent(GURL()));
+  builder.set_user_agent(GetUserAgent());
   builder.set_network_delegate(new AwNetworkDelegate());
 #if !defined(DISABLE_FTP_SUPPORT)
   builder.set_ftp_enabled(false);  // Android WebView does not support ftp yet.
@@ -190,11 +192,6 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
   // TODO(mnaganov): Fix URLRequestContextBuilder to use proper threads.
   net::HttpNetworkSession::Params network_session_params;
 
-  net::BackendType cache_type = net::CACHE_BACKEND_SIMPLE;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kDisableSimpleCache)) {
-    cache_type = net::CACHE_BACKEND_BLOCKFILE;
-  }
   PopulateNetworkSessionParams(url_request_context_.get(),
                                &network_session_params);
 
@@ -202,7 +199,7 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
       network_session_params,
       new net::HttpCache::DefaultBackend(
           net::DISK_CACHE,
-          cache_type,
+          net::CACHE_BACKEND_SIMPLE,
           partition_path_.Append(FILE_PATH_LITERAL("Cache")),
           20 * 1024 * 1024,  // 20M
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE)));

@@ -16,7 +16,7 @@
 #if defined(USE_AURA)
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/test/base/interactive_test_utils_aura.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 namespace ui_test_utils {
@@ -28,7 +28,7 @@ void HideNativeWindow(gfx::NativeWindow window) {
     HideNativeWindowAura(window);
     return;
   }
-  HWND hwnd = window->GetDispatcher()->host()->GetAcceleratedWidget();
+  HWND hwnd = window->GetHost()->GetAcceleratedWidget();
 #else
   HWND hwnd = window;
 #endif
@@ -42,7 +42,7 @@ bool ShowAndFocusNativeWindow(gfx::NativeWindow window) {
     ShowAndFocusNativeWindowAura(window);
   window->Show();
   // Always make sure the window hosting ash is visible and focused.
-  HWND hwnd = window->GetDispatcher()->host()->GetAcceleratedWidget();
+  HWND hwnd = window->GetHost()->GetAcceleratedWidget();
 #else
   HWND hwnd = window;
 #endif

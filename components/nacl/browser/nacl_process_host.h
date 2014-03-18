@@ -21,8 +21,6 @@
 #include "ppapi/shared_impl/ppapi_permissions.h"
 #include "url/gurl.h"
 
-class CommandLine;
-
 namespace content {
 class BrowserChildProcessHost;
 class BrowserPpapiHost;
@@ -50,6 +48,7 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   // render_view_id: RenderView routing id, to control access to private APIs.
   // permission_bits: controls which interfaces the NaCl plugin can use.
   // uses_irt: whether the launched process should use the IRT.
+  // uses_nonsfi_mode: whether the program should be loaded under non-SFI mode.
   // enable_dyncode_syscalls: whether the launched process should allow dyncode
   //                          and mmap with PROT_EXEC.
   // enable_exception_handling: whether the launched process should allow
@@ -64,6 +63,7 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
                   int render_view_id,
                   uint32 permission_bits,
                   bool uses_irt,
+                  bool uses_nonsfi_mode,
                   bool enable_dyncode_syscalls,
                   bool enable_exception_handling,
                   bool enable_crash_throttling,
@@ -122,7 +122,8 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
 
   // Sends the reply message to the renderer who is waiting for the plugin
   // to load. Returns true on success.
-  bool ReplyToRenderer(const IPC::ChannelHandle& channel_handle);
+  bool ReplyToRenderer(const IPC::ChannelHandle& ppapi_channel_handle,
+                       const IPC::ChannelHandle& trusted_channel_handle);
 
   // Sends the reply with error message to the renderer.
   void SendErrorToRenderer(const std::string& error_message);
@@ -135,10 +136,6 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   // Sends the message to the NaCl process to load the plugin. Returns true
   // on success.
   bool StartNaClExecution();
-
-  // Called once all initialization is complete and the NaCl process is
-  // ready to go. Returns true on success.
-  bool SendStart();
 
   // Does post-process-launching tasks for starting the NaCl process once
   // we have a connection.
@@ -153,7 +150,7 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
                           IPC::Message* reply_msg);
   void FileResolved(const base::FilePath& file_path,
                     IPC::Message* reply_msg,
-                    const base::PlatformFile& file);
+                    base::File file);
 
 #if defined(OS_WIN)
   // Message handler for Windows hardware exception handling.
@@ -167,7 +164,8 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   // created.
   void OnPpapiChannelsCreated(
       const IPC::ChannelHandle& browser_channel_handle,
-      const IPC::ChannelHandle& renderer_channel_handle);
+      const IPC::ChannelHandle& ppapi_renderer_channel_handle,
+      const IPC::ChannelHandle& trusted_renderer_channel_handle);
 
   GURL manifest_url_;
   ppapi::PpapiPermissions permissions_;
@@ -202,6 +200,7 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   scoped_ptr<content::BrowserChildProcessHost> process_;
 
   bool uses_irt_;
+  bool uses_nonsfi_mode_;
 
   bool enable_debug_stub_;
   bool enable_dyncode_syscalls_;

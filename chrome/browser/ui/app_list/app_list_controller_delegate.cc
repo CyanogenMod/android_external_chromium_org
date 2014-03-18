@@ -16,6 +16,7 @@
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
@@ -95,8 +96,10 @@ void AppListControllerDelegate::DoShowAppInfoFlow(
     return;
 
   OnShowExtensionPrompt();
-  ShowChromeAppInfoDialog(
-      parent_window, profile, extension,
+  ShowAppInfoDialog(
+      parent_window,
+      profile,
+      extension,
       base::Bind(&AppListControllerDelegate::OnCloseExtensionPrompt,
                  base::Unretained(this)));
 }
@@ -107,22 +110,6 @@ void AppListControllerDelegate::UninstallApp(Profile* profile,
   ExtensionUninstaller* uninstaller =
       new ExtensionUninstaller(profile, app_id, this);
   uninstaller->Run();
-}
-
-void AppListControllerDelegate::RemoveAppFromFolder(Profile* profile,
-                                                    const std::string& app_id) {
-  app_list::AppListModel* model =
-      app_list::AppListSyncableServiceFactory::GetForProfile(
-          profile)->model();
-  app_list::AppListItem* item = model->FindItem(app_id);
-  DCHECK(item) << "App not found in model: " << app_id;
-  syncer::StringOrdinal position;
-  app_list::AppListFolderItem* folder_item =
-      model->FindFolderItem(item->folder_id());
-  DCHECK(folder_item) << "No folder for item: " << item->ToDebugString();
-  // Position the item just after the folder.
-  position = folder_item->position().CreateAfter();
-  model->MoveItemToFolderAt(item, "", position);
 }
 
 bool AppListControllerDelegate::IsAppFromWebStore(
@@ -182,9 +169,7 @@ void AppListControllerDelegate::ShowOptionsPage(
 extensions::LaunchType AppListControllerDelegate::GetExtensionLaunchType(
     Profile* profile,
     const std::string& app_id) {
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
-  return extensions::GetLaunchType(service->extension_prefs(),
+  return extensions::GetLaunchType(extensions::ExtensionPrefs::Get(profile),
                                    GetExtension(profile, app_id));
 }
 

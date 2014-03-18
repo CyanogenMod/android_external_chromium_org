@@ -7,42 +7,39 @@
 #include "base/lazy_instance.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/global_shortcut_listener.h"
-#include "chrome/browser/profiles/profile.h"
 #include "extensions/common/extension.h"
 
 namespace extensions {
 
 ExtensionCommandsGlobalRegistry::ExtensionCommandsGlobalRegistry(
-    Profile* profile)
-    : ExtensionKeybindingRegistry(
-          profile, ExtensionKeybindingRegistry::ALL_EXTENSIONS, NULL),
-      profile_(profile) {
+    content::BrowserContext* context)
+    : ExtensionKeybindingRegistry(context,
+                                  ExtensionKeybindingRegistry::ALL_EXTENSIONS,
+                                  NULL),
+      browser_context_(context) {
   Init();
 }
 
 ExtensionCommandsGlobalRegistry::~ExtensionCommandsGlobalRegistry() {
-  for (EventTargets::const_iterator iter = event_targets_.begin();
-       iter != event_targets_.end(); ++iter) {
-    GlobalShortcutListener::GetInstance()->UnregisterAccelerator(
-        iter->first, this);
-  }
+  if (!IsEventTargetsEmpty())
+    GlobalShortcutListener::GetInstance()->UnregisterAccelerators(this);
 }
 
 static base::LazyInstance<
-    ProfileKeyedAPIFactory<ExtensionCommandsGlobalRegistry> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+    BrowserContextKeyedAPIFactory<ExtensionCommandsGlobalRegistry> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<ExtensionCommandsGlobalRegistry>*
+BrowserContextKeyedAPIFactory<ExtensionCommandsGlobalRegistry>*
 ExtensionCommandsGlobalRegistry::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 // static
-ExtensionCommandsGlobalRegistry*
-ExtensionCommandsGlobalRegistry::Get(Profile* profile) {
-  return ProfileKeyedAPIFactory<
-      ExtensionCommandsGlobalRegistry>::GetForProfile(profile);
+ExtensionCommandsGlobalRegistry* ExtensionCommandsGlobalRegistry::Get(
+    content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<ExtensionCommandsGlobalRegistry>::Get(
+      context);
 }
 
 void ExtensionCommandsGlobalRegistry::AddExtensionKeybinding(
@@ -53,7 +50,7 @@ void ExtensionCommandsGlobalRegistry::AddExtensionKeybinding(
     return;
 
   extensions::CommandService* command_service =
-      extensions::CommandService::Get(profile_);
+      extensions::CommandService::Get(browser_context_);
   // Add all the active global keybindings, if any.
   extensions::CommandMap commands;
   if (!command_service->GetNamedCommands(
@@ -73,18 +70,13 @@ void ExtensionCommandsGlobalRegistry::AddExtensionKeybinding(
             << " " << command_name.c_str()
             << " key: " << accelerator.GetShortcutText();
 
-    if (event_targets_.find(accelerator) == event_targets_.end()) {
+    if (!IsAcceleratorRegistered(accelerator)) {
       if (!GlobalShortcutListener::GetInstance()->RegisterAccelerator(
               accelerator, this))
         continue;
     }
 
-    event_targets_[accelerator].push_back(
-        std::make_pair(extension->id(), iter->second.command_name()));
-    // Shortcuts except media keys have only one target in the list. See comment
-    // about |event_targets_|.
-    if (!extensions::CommandService::IsMediaKey(accelerator))
-      DCHECK_EQ(1u, event_targets_[accelerator].size());
+    AddEventTarget(accelerator, extension->id(), iter->second.command_name());
   }
 }
 

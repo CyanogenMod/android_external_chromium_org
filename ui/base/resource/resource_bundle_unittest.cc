@@ -5,6 +5,7 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #include "base/base_paths.h"
+#include "base/big_endian.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
@@ -12,7 +13,7 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "net/base/big_endian.h"
+#include "grit/ui_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -20,8 +21,6 @@
 #include "ui/base/resource/data_pack.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image_skia.h"
-
-#include "grit/ui_resources.h"
 
 using ::testing::_;
 using ::testing::Between;
@@ -106,8 +105,8 @@ void AddCustomChunk(const base::StringPiece& custom_chunk,
   for (size_t i = 0; i < sizeof(uint32); ++i)
     ihdr_length_data[i] = *(ihdr_start + i);
   uint32 ihdr_chunk_length = 0;
-  net::ReadBigEndian(reinterpret_cast<char*>(ihdr_length_data),
-                     &ihdr_chunk_length);
+  base::ReadBigEndian(reinterpret_cast<char*>(ihdr_length_data),
+                      &ihdr_chunk_length);
   EXPECT_TRUE(std::equal(
       ihdr_start + sizeof(uint32),
       ihdr_start + sizeof(uint32) + sizeof(kPngIHDRChunkType),
@@ -360,7 +359,7 @@ class ResourceBundleImageTest : public ResourceBundleTest {
     // Write an empty data pak for locale data.
     const base::FilePath& locale_path = dir_path().Append(
         FILE_PATH_LITERAL("locale.pak"));
-    EXPECT_EQ(file_util::WriteFile(locale_path, kEmptyPakContents,
+    EXPECT_EQ(base::WriteFile(locale_path, kEmptyPakContents,
                                    kEmptyPakSize),
               static_cast<int>(kEmptyPakSize));
 
@@ -387,7 +386,7 @@ TEST_F(ResourceBundleImageTest, LoadDataResourceBytes) {
   base::FilePath data_path = dir_path().Append(FILE_PATH_LITERAL("sample.pak"));
 
   // Dump contents into the pak files.
-  ASSERT_EQ(file_util::WriteFile(data_path, kEmptyPakContents,
+  ASSERT_EQ(base::WriteFile(data_path, kEmptyPakContents,
       kEmptyPakSize), static_cast<int>(kEmptyPakSize));
 
   // Create a resource bundle from the file.
@@ -412,9 +411,9 @@ TEST_F(ResourceBundleImageTest, GetRawDataResource) {
       dir_path().Append(FILE_PATH_LITERAL("sample_2x.pak"));
 
   // Dump contents into the pak files.
-  ASSERT_EQ(file_util::WriteFile(data_path, kSamplePakContents,
+  ASSERT_EQ(base::WriteFile(data_path, kSamplePakContents,
       kSamplePakSize), static_cast<int>(kSamplePakSize));
-  ASSERT_EQ(file_util::WriteFile(data_2x_path, kSamplePakContents2x,
+  ASSERT_EQ(base::WriteFile(data_2x_path, kSamplePakContents2x,
       kSamplePakSize2x), static_cast<int>(kSamplePakSize2x));
 
   // Load the regular and 2x pak files.
@@ -460,8 +459,8 @@ TEST_F(ResourceBundleImageTest, GetImageNamed) {
 
   gfx::ImageSkia* image_skia = resource_bundle->GetImageSkiaNamed(3);
 
-#if defined(OS_CHROMEOS)
-  // ChromeOS loads highest scale factor first.
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
+  // ChromeOS/Windows load highest scale factor first.
   EXPECT_EQ(ui::SCALE_FACTOR_200P,
             GetSupportedScaleFactor(image_skia->image_reps()[0].scale()));
 #else

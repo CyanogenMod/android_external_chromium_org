@@ -7,6 +7,8 @@
 
 #include "base/basictypes.h"
 
+#include "content/common/service_worker/service_worker_types.h"
+
 namespace blink {
 class WebServiceWorkerContextProxy;
 }
@@ -18,7 +20,6 @@ class Message;
 namespace content {
 
 class EmbeddedWorkerContextClient;
-struct ServiceWorkerFetchRequest;
 
 // TODO(kinuko): This should implement WebServiceWorkerContextClient
 // rather than having EmbeddedWorkerContextClient implement it.
@@ -34,6 +35,9 @@ class ServiceWorkerScriptContext {
   void OnMessageReceived(int request_id, const IPC::Message& message);
 
   void DidHandleInstallEvent(int request_id);
+  void DidHandleFetchEvent(int request_id,
+                           ServiceWorkerFetchEventResult result,
+                           const ServiceWorkerResponse& response);
 
  private:
   // Send message back to the browser.

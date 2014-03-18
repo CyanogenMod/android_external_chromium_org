@@ -8,7 +8,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/extensions/extension_icon_image.h"
-#include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/notification_observer.h"
@@ -82,7 +81,6 @@ class AppWindow : public content::NotificationObserver,
                   public content::WebContentsDelegate,
                   public content::WebContentsObserver,
                   public web_modal::WebContentsModalDialogManagerDelegate,
-                  public extensions::ExtensionKeybindingRegistry::Delegate,
                   public extensions::IconImage::Observer {
  public:
   enum WindowType {
@@ -116,39 +114,24 @@ class AppWindow : public content::NotificationObserver,
     FULLSCREEN_TYPE_FORCED = 1 << 3,
   };
 
-  class SizeConstraints {
-   public:
-    // The value SizeConstraints uses to represent an unbounded width or height.
-    // This is an enum so that it can be declared inline here.
-    enum { kUnboundedSize = 0 };
+  struct BoundsSpecification {
+    // INT_MIN represents an unspecified position component.
+    static const int kUnspecifiedPosition;
 
-    SizeConstraints();
-    SizeConstraints(const gfx::Size& min_size, const gfx::Size& max_size);
-    ~SizeConstraints();
+    BoundsSpecification();
+    ~BoundsSpecification();
 
-    // Returns the bounds with its size clamped to the min/max size.
-    gfx::Size ClampSize(gfx::Size size) const;
+    // INT_MIN designates 'unspecified' for the position components, and 0
+    // designates 'unspecified' for the size components. When unspecified,
+    // they should be replaced with a default value.
+    gfx::Rect bounds;
 
-    // When gfx::Size is used as a min/max size, a zero represents an unbounded
-    // component. This method checks whether either component is specified.
-    // Note we can't use gfx::Size::IsEmpty as it returns true if either width
-    // or height is zero.
-    bool HasMinimumSize() const;
-    bool HasMaximumSize() const;
+    gfx::Size minimum_size;
+    gfx::Size maximum_size;
 
-    // This returns true if all components are specified, and min and max are
-    // equal.
-    bool HasFixedSize() const;
-
-    gfx::Size GetMaximumSize() const;
-    gfx::Size GetMinimumSize() const;
-
-    void set_minimum_size(const gfx::Size& min_size);
-    void set_maximum_size(const gfx::Size& max_size);
-
-   private:
-    gfx::Size minimum_size_;
-    gfx::Size maximum_size_;
+    // Reset the bounds fields to their 'unspecified' values. The minimum and
+    // maximum size constraints remain unchanged.
+    void ResetBounds();
   };
 
   struct CreateParams {
@@ -157,16 +140,18 @@ class AppWindow : public content::NotificationObserver,
 
     WindowType window_type;
     Frame frame;
+
+    bool has_frame_color;
+    SkColor frame_color;
     bool transparent_background;  // Only supported on ash.
 
-    // Specify the initial content bounds of the window (excluding any window
-    // decorations). INT_MIN designates 'unspecified' for the position
-    // components, and 0 for the size components. When unspecified, they should
-    // be replaced with a default value.
-    gfx::Rect bounds;
+    // The initial content/inner bounds specification (excluding any window
+    // decorations).
+    BoundsSpecification content_spec;
 
-    gfx::Size minimum_size;
-    gfx::Size maximum_size;
+    // The initial window/outer bounds specification (including window
+    // decorations).
+    BoundsSpecification window_spec;
 
     std::string window_key;
 
@@ -188,6 +173,18 @@ class AppWindow : public content::NotificationObserver,
     // If true, the window will stay on top of other windows that are not
     // configured to be always on top. Defaults to false.
     bool always_on_top;
+
+    // The API enables developers to specify content or window bounds. This
+    // function combines them into a single, constrained window size.
+    gfx::Rect GetInitialWindowBounds(const gfx::Insets& frame_insets) const;
+
+    // The API enables developers to specify content or window size constraints.
+    // These functions combine them so that we can work with one set of
+    // constraints.
+    gfx::Size GetContentMinimumSize(const gfx::Insets& frame_insets) const;
+    gfx::Size GetContentMaximumSize(const gfx::Insets& frame_insets) const;
+    gfx::Size GetWindowMinimumSize(const gfx::Insets& frame_insets) const;
+    gfx::Size GetWindowMaximumSize(const gfx::Insets& frame_insets) const;
   };
 
   class Delegate {
@@ -321,9 +318,9 @@ class AppWindow : public content::NotificationObserver,
   // details.
   void ForcedFullscreen();
 
-  // Set the minimum and maximum size that this window is allowed to be.
-  void SetMinimumSize(const gfx::Size& min_size);
-  void SetMaximumSize(const gfx::Size& max_size);
+  // Set the minimum and maximum size of the content bounds.
+  void SetContentSizeConstraints(const gfx::Size& min_size,
+                                 const gfx::Size& max_size);
 
   enum ShowType { SHOW_ACTIVE, SHOW_INACTIVE };
 
@@ -338,9 +335,6 @@ class AppWindow : public content::NotificationObserver,
   AppWindowContents* app_window_contents_for_test() {
     return app_window_contents_.get();
   }
-
-  // Get the size constraints.
-  const SizeConstraints& size_constraints() const { return size_constraints_; }
 
   // Set whether the window should stay above other windows which are not
   // configured to be always-on-top.
@@ -431,23 +425,19 @@ class AppWindow : public content::NotificationObserver,
   void SaveWindowPosition();
 
   // Helper method to adjust the cached bounds so that we can make sure it can
-  // be visible on the screen. See http://crbug.com/145752 .
+  // be visible on the screen. See http://crbug.com/145752.
   void AdjustBoundsToBeVisibleOnScreen(const gfx::Rect& cached_bounds,
                                        const gfx::Rect& cached_screen_bounds,
                                        const gfx::Rect& current_screen_bounds,
                                        const gfx::Size& minimum_size,
                                        gfx::Rect* bounds) const;
 
-  // Loads the appropriate default or cached window bounds and constrains them
-  // based on screen size and minimum/maximum size. Returns a new CreateParams
-  // that should be used to create the window.
-  CreateParams LoadDefaultsAndConstrain(CreateParams params) const;
+  // Loads the appropriate default or cached window bounds. Returns a new
+  // CreateParams that should be used to create the window.
+  CreateParams LoadDefaults(CreateParams params) const;
 
   // Load the app's image, firing a load state change when loaded.
   void UpdateExtensionAppIcon();
-
-  // Called when size_constraints is changed.
-  void OnSizeConstraintsChanged();
 
   // Set the fullscreen state in the native app window.
   void SetNativeWindowFullscreen();
@@ -458,10 +448,6 @@ class AppWindow : public content::NotificationObserver,
 
   // Update the always-on-top bit in the native app window.
   void UpdateNativeAlwaysOnTop();
-
-  // extensions::ExtensionKeybindingRegistry::Delegate implementation.
-  virtual extensions::ActiveTabPermissionGranter*
-      GetActiveTabPermissionGranter() OVERRIDE;
 
   // web_modal::WebContentsModalDialogManagerDelegate implementation.
   virtual web_modal::WebContentsModalDialogHost* GetWebContentsModalDialogHost()
@@ -525,9 +511,6 @@ class AppWindow : public content::NotificationObserver,
 
   // Bit field of FullscreenType.
   int fullscreen_types_;
-
-  // Size constraints on the window.
-  SizeConstraints size_constraints_;
 
   // Show has been called, so the window should be shown once the first visually
   // non-empty paint occurs.

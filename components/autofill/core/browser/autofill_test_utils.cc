@@ -16,10 +16,8 @@
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
+#include "components/os_crypt/os_crypt.h"
 #include "components/user_prefs/pref_registry_syncable.h"
-#include "components/user_prefs/user_prefs.h"
-#include "components/webdata/encryptor/encryptor.h"
-#include "content/public/browser/browser_context.h"
 
 using base::ASCIIToUTF16;
 
@@ -204,18 +202,16 @@ void SetCreditCardInfo(CreditCard* credit_card,
   check_and_set(credit_card, CREDIT_CARD_EXP_4_DIGIT_YEAR, expiration_year);
 }
 
-void DisableSystemServices(content::BrowserContext* browser_context) {
+void DisableSystemServices(PrefService* prefs) {
   // Use a mock Keychain rather than the OS one to store credit card data.
 #if defined(OS_MACOSX)
-  Encryptor::UseMockKeychain(true);
+  OSCrypt::UseMockKeychain(true);
 #endif
 
   // Disable auxiliary profiles for unit testing.  These reach out to system
   // services on the Mac.
-  if (browser_context) {
-    user_prefs::UserPrefs::Get(browser_context)->SetBoolean(
-        prefs::kAutofillAuxiliaryProfilesEnabled, false);
-  }
+  if (prefs)
+    prefs->SetBoolean(prefs::kAutofillAuxiliaryProfilesEnabled, false);
 }
 
 }  // namespace test

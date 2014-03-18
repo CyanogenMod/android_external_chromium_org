@@ -11,13 +11,15 @@
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
-#include "content/renderer/media/media_stream_track_extra_data.h"
+#include "content/renderer/media/media_stream_track.h"
 #include "content/renderer/media/tagged_list.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "content/renderer/media/webrtc_local_audio_source_provider.h"
 
 namespace content {
 
+class MediaStreamAudioLevelCalculator;
+class MediaStreamAudioProcessor;
 class MediaStreamAudioSink;
 class MediaStreamAudioSinkOwner;
 class MediaStreamAudioTrackSink;
@@ -32,7 +34,7 @@ class WebRtcLocalAudioTrackAdapter;
 // WebRtcAudioCapturer to get the captured data, and forward the data to
 // its |sinks_|. The data flow can be stopped by disabling the audio track.
 class CONTENT_EXPORT WebRtcLocalAudioTrack
-    : NON_EXPORTED_BASE(public MediaStreamTrackExtraData) {
+    : NON_EXPORTED_BASE(public MediaStreamTrack) {
  public:
   WebRtcLocalAudioTrack(WebRtcLocalAudioTrackAdapter* adapter,
                         const scoped_refptr<WebRtcAudioCapturer>& capturer,
@@ -64,7 +66,7 @@ class CONTENT_EXPORT WebRtcLocalAudioTrack
   void Stop();
 
   // Method called by the capturer to deliver the capture data.
-  // Call on the capture audio thread.
+  // Called on the capture audio thread.
   void Capture(const int16* audio_data,
                base::TimeDelta delay,
                int volume,
@@ -73,8 +75,14 @@ class CONTENT_EXPORT WebRtcLocalAudioTrack
 
   // Method called by the capturer to set the audio parameters used by source
   // of the capture data..
-  // Call on the capture audio thread.
+  // Called on the capture audio thread.
   void OnSetFormat(const media::AudioParameters& params);
+
+  // Method called by the capturer to set the processor that applies signal
+  // processing on the data of the track.
+  // Called on the capture audio thread.
+  void SetAudioProcessor(
+      const scoped_refptr<MediaStreamAudioProcessor>& processor);
 
   blink::WebAudioSourceProvider* audio_source_provider() const {
     return source_provider_.get();
@@ -115,6 +123,10 @@ class CONTENT_EXPORT WebRtcLocalAudioTrack
   // The source provider to feed the track data to other clients like
   // WebAudio.
   scoped_ptr<WebRtcLocalAudioSourceProvider> source_provider_;
+
+  // Used to calculate the signal level that shows in the UI.
+  // Accessed on only the audio thread.
+  scoped_ptr<MediaStreamAudioLevelCalculator> level_calculator_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcLocalAudioTrack);
 };

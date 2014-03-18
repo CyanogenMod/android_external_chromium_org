@@ -90,7 +90,7 @@ WebRequestEventImpl.prototype.addListener =
             eventName, subEventName, requestId, result);
       } catch (e) {
         webRequestInternal.eventHandled(
-            eventName, subEventName, requestId);
+            eventName, subEventName, requestId, {cancel: true});
         throw e;
       }
     };
@@ -175,7 +175,7 @@ binding.registerCustomHook(function(api) {
   });
 });
 
-var WebRequestEvent = utils.expose(WebRequestEventImpl, [
+var WebRequestEvent = utils.expose('WebRequestEvent', WebRequestEventImpl, [
   'hasListener',
   'hasListeners',
   'addListener',

@@ -119,7 +119,13 @@ class GLES2DecoderRGBBackbufferTest : public GLES2DecoderWithShaderTest {
   GLES2DecoderRGBBackbufferTest() { }
 
   virtual void SetUp() {
-    InitDecoder(
+    // Test codepath with workaround clear_alpha_in_readpixels because
+    // ReadPixelsEmulator emulates the incorrect driver behavior.
+    CommandLine command_line(0, NULL);
+    command_line.AppendSwitchASCII(
+        switches::kGpuDriverBugWorkarounds,
+        base::IntToString(gpu::CLEAR_ALPHA_IN_READPIXELS));
+    InitDecoderWithCommandLine(
         "",     // extensions
         "3.0",  // gl version
         false,  // has alpha
@@ -128,7 +134,8 @@ class GLES2DecoderRGBBackbufferTest : public GLES2DecoderWithShaderTest {
         false,  // request alpha
         false,  // request depth
         false,  // request stencil
-        true);   // bind generates resource
+        true,   // bind generates resource
+        &command_line);
     SetupDefaultProgram();
   }
 };
@@ -298,6 +305,41 @@ TEST_F(GLES2DecoderWithShaderTest,
 }
 
 TEST_F(GLES2DecoderWithShaderTest, DrawArraysValidAttributesSucceeds) {
+  SetupTexture();
+  SetupVertexBuffer();
+  DoEnableVertexAttribArray(1);
+  DoVertexAttribPointer(1, 2, GL_FLOAT, 0, 0);
+  AddExpectationsForSimulatedAttrib0(kNumVertices, kServiceBufferId);
+  SetupExpectationsForApplyingDefaultDirtyState();
+
+  EXPECT_CALL(*gl_, DrawArrays(GL_TRIANGLES, 0, kNumVertices))
+      .Times(1)
+      .RetiresOnSaturation();
+  DrawArrays cmd;
+  cmd.Init(GL_TRIANGLES, 0, kNumVertices);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+// Same as DrawArraysValidAttributesSucceeds, but with workaround
+// |init_vertex_attributes|.
+TEST_F(GLES2DecoderManualInitTest, InitVertexAttributes) {
+  CommandLine command_line(0, NULL);
+  command_line.AppendSwitchASCII(
+      switches::kGpuDriverBugWorkarounds,
+      base::IntToString(gpu::INIT_VERTEX_ATTRIBUTES));
+  InitDecoderWithCommandLine(
+      "",     // extensions
+      "3.0",  // gl version
+      true,   // has alpha
+      true,   // has depth
+      false,  // has stencil
+      true,   // request alpha
+      true,   // request depth
+      false,  // request stencil
+      true,   // bind generates resource
+      &command_line);
+  SetupDefaultProgram();
   SetupTexture();
   SetupVertexBuffer();
   DoEnableVertexAttribArray(1);
@@ -1846,16 +1888,8 @@ TEST_F(GLES2DecoderTest, GenerateMipmapHandlesOutOfMemory) {
   DoTexImage2D(
       GL_TEXTURE_2D, 0, GL_RGBA, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE,
       kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_CALL(*gl_, TexParameteri(
-      GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST))
-      .Times(1)
-      .RetiresOnSaturation();
   EXPECT_CALL(*gl_, GenerateMipmapEXT(GL_TEXTURE_2D))
       .Times(1);
-  EXPECT_CALL(*gl_, TexParameteri(
-      GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR))
-      .Times(1)
-      .RetiresOnSaturation();
   EXPECT_CALL(*gl_, GetError())
       .WillOnce(Return(GL_NO_ERROR))
       .WillOnce(Return(GL_OUT_OF_MEMORY))
@@ -1873,9 +1907,47 @@ TEST_F(GLES2DecoderTest, GenerateMipmapClearsUnclearedTexture) {
   DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
   DoTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                0, 0);
-  SetupClearTextureExpections(
+  SetupClearTextureExpectations(
       kServiceTextureId, kServiceTextureId, GL_TEXTURE_2D, GL_TEXTURE_2D,
-      0, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
+      0, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
+  EXPECT_CALL(*gl_, GenerateMipmapEXT(GL_TEXTURE_2D));
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .WillOnce(Return(GL_NO_ERROR))
+      .RetiresOnSaturation();
+  GenerateMipmap cmd;
+  cmd.Init(GL_TEXTURE_2D);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+// Same as GenerateMipmapClearsUnclearedTexture, but with workaround
+// |set_texture_filters_before_generating_mipmap|.
+TEST_F(GLES2DecoderManualInitTest, SetTextureFiltersBeforeGenerateMipmap) {
+  CommandLine command_line(0, NULL);
+  command_line.AppendSwitchASCII(
+      switches::kGpuDriverBugWorkarounds,
+      base::IntToString(gpu::SET_TEXTURE_FILTER_BEFORE_GENERATING_MIPMAP));
+  InitDecoderWithCommandLine(
+      "",     // extensions
+      "3.0",  // gl version
+      false,  // has alpha
+      false,  // has depth
+      false,  // has stencil
+      false,  // request alpha
+      false,  // request depth
+      false,  // request stencil
+      true,   // bind generates resource
+      &command_line);
+
+  EXPECT_CALL(*gl_, GenerateMipmapEXT(_))
+       .Times(0);
+  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
+  DoTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+               0, 0);
+  SetupClearTextureExpectations(
+      kServiceTextureId, kServiceTextureId, GL_TEXTURE_2D, GL_TEXTURE_2D,
+      0, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
   EXPECT_CALL(*gl_, TexParameteri(
       GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST))
       .Times(1)
@@ -2529,6 +2601,52 @@ TEST_F(GLES2DecoderTest, ReadPixelsInvalidArgs) {
            result_shm_id, kInvalidSharedMemoryOffset,
            false);
   EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
+}
+
+TEST_F(GLES2DecoderManualInitTest, ReadPixelsAsyncError) {
+  InitDecoder(
+      "GL_ARB_sync", // extensions
+      "opengl es 3.0",   // gl version
+      true,    // has alpha
+      false,   // has depth
+      false,   // has stencil
+      true,    // request alpha
+      false,   // request depth
+      false,   // request stencil
+      true);   // bind generates resource
+
+  typedef ReadPixels::Result Result;
+  Result* result = GetSharedMemoryAs<Result*>();
+
+  const GLsizei kWidth = 4;
+  const GLsizei kHeight = 4;
+  uint32 result_shm_id = kSharedMemoryId;
+  uint32 result_shm_offset = kSharedMemoryOffset;
+  uint32 pixels_shm_id = kSharedMemoryId;
+  uint32 pixels_shm_offset = kSharedMemoryOffset + sizeof(*result);
+
+  EXPECT_CALL(*gl_, GetError())
+     // first error check must pass to get to the test
+     .WillOnce(Return(GL_NO_ERROR))
+     // second check is after BufferData, simulate fail here
+     .WillOnce(Return(GL_INVALID_OPERATION))
+     // third error check is fall-through call to sync ReadPixels
+     .WillOnce(Return(GL_NO_ERROR))
+     .RetiresOnSaturation();
+
+  EXPECT_CALL(*gl_, ReadPixels(0, 0, kWidth, kHeight, GL_RGB,
+    GL_UNSIGNED_BYTE, _)).Times(1);
+  EXPECT_CALL(*gl_, GenBuffersARB(1, _)).Times(1);
+  EXPECT_CALL(*gl_, BindBuffer(GL_PIXEL_PACK_BUFFER_ARB, _)).Times(2);
+  EXPECT_CALL(*gl_, BufferData(GL_PIXEL_PACK_BUFFER_ARB, _, NULL,
+    GL_STREAM_READ)).Times(1);
+
+  ReadPixels cmd;
+  cmd.Init(0, 0, kWidth, kHeight, GL_RGB, GL_UNSIGNED_BYTE,
+           pixels_shm_id, pixels_shm_offset,
+           result_shm_id, result_shm_offset,
+           true);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
 }
 
 TEST_F(GLES2DecoderTest, BindAttribLocation) {
@@ -4596,9 +4714,9 @@ TEST_F(GLES2DecoderTest, TexImage2DRedefinitionSucceeds) {
           GL_TEXTURE_2D, 0, GL_RGBA, kWidth, kHeight, 0, GL_RGBA,
           GL_UNSIGNED_BYTE, kSharedMemoryId, kSharedMemoryOffset);
     } else {
-      SetupClearTextureExpections(
+      SetupClearTextureExpectations(
           kServiceTextureId, kServiceTextureId, GL_TEXTURE_2D, GL_TEXTURE_2D,
-          0, GL_RGBA, GL_UNSIGNED_BYTE, kWidth, kHeight);
+          0, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, kWidth, kHeight);
       cmd.Init(
           GL_TEXTURE_2D, 0, GL_RGBA, kWidth, kHeight, 0, GL_RGBA,
           GL_UNSIGNED_BYTE, 0, 0);
@@ -5914,9 +6032,9 @@ TEST_F(GLES2DecoderTest, TexSubImage2DClearsAfterTexImage2DNULL) {
   DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
   DoTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                0, 0);
-  SetupClearTextureExpections(
+  SetupClearTextureExpectations(
       kServiceTextureId, kServiceTextureId, GL_TEXTURE_2D, GL_TEXTURE_2D,
-      0, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
+      0, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
   EXPECT_CALL(*gl_, TexSubImage2D(
       GL_TEXTURE_2D, 0, 1, 1, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE,
       shared_memory_address_))
@@ -6037,9 +6155,9 @@ TEST_F(GLES2DecoderTest, TexSubImage2DClearsAfterTexImage2DWithDataThenNULL) {
   // It won't actually call TexImage2D, just mark it as uncleared.
   EXPECT_EQ(error::kNoError, ExecuteCmd(tex_cmd));
   // Next call to TexSubImage2d should clear.
-  SetupClearTextureExpections(
+  SetupClearTextureExpectations(
       kServiceTextureId, kServiceTextureId, GL_TEXTURE_2D, GL_TEXTURE_2D,
-      0, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
+      0, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
   EXPECT_CALL(*gl_, TexSubImage2D(
       GL_TEXTURE_2D, 0, 1, 1, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE,
       shared_memory_address_))
@@ -6061,12 +6179,12 @@ TEST_F(GLES2DecoderWithShaderTest, DrawArraysClearsAfterTexImage2DNULL) {
   DoTexImage2D(GL_TEXTURE_2D, 1, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                0, 0);
   // Expect 2 levels will be cleared.
-  SetupClearTextureExpections(
+  SetupClearTextureExpectations(
       kServiceTextureId, kServiceTextureId, GL_TEXTURE_2D, GL_TEXTURE_2D,
-      0, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
-  SetupClearTextureExpections(
+      0, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
+  SetupClearTextureExpectations(
       kServiceTextureId, kServiceTextureId, GL_TEXTURE_2D, GL_TEXTURE_2D,
-      1, GL_RGBA, GL_UNSIGNED_BYTE, 1, 1);
+      1, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 1, 1);
   SetupExpectationsForApplyingDefaultDirtyState();
   EXPECT_CALL(*gl_, DrawArrays(GL_TRIANGLES, 0, kNumVertices))
       .Times(1)
@@ -6094,12 +6212,12 @@ TEST_F(GLES2DecoderWithShaderTest, DrawElementsClearsAfterTexImage2DNULL) {
   DoTexImage2D(GL_TEXTURE_2D, 1, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                0, 0);
   // Expect 2 levels will be cleared.
-  SetupClearTextureExpections(
+  SetupClearTextureExpectations(
       kServiceTextureId, kServiceTextureId, GL_TEXTURE_2D, GL_TEXTURE_2D,
-      0, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
-  SetupClearTextureExpections(
+      0, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
+  SetupClearTextureExpectations(
       kServiceTextureId, kServiceTextureId, GL_TEXTURE_2D, GL_TEXTURE_2D,
-      1, GL_RGBA, GL_UNSIGNED_BYTE, 1, 1);
+      1, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 1, 1);
   SetupExpectationsForApplyingDefaultDirtyState();
 
   EXPECT_CALL(*gl_, DrawElements(GL_TRIANGLES, kValidIndexRangeCount,
@@ -6249,9 +6367,9 @@ TEST_F(GLES2DecoderTest, CopyTexSubImage2DClearsUnclearedTexture) {
   DoTexImage2D(
       GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0, 0);
 
-  SetupClearTextureExpections(
+  SetupClearTextureExpectations(
       kServiceTextureId, kServiceTextureId, GL_TEXTURE_2D, GL_TEXTURE_2D,
-      0, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
+      0, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
   EXPECT_CALL(*gl_, CopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, 1, 1))
       .Times(1)
       .RetiresOnSaturation();
@@ -6529,12 +6647,14 @@ TEST_F(GLES2DecoderTest, DrawArraysClearsAfterTexImage2DNULLCubemap) {
                  GL_UNSIGNED_BYTE, shm_id, shm_offset);
   }
   // Expect 2 levels will be cleared.
-  SetupClearTextureExpections(
+  SetupClearTextureExpectations(
       kServiceTextureId, kServiceTextureId, GL_TEXTURE_CUBE_MAP,
-      GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, GL_RGBA, GL_UNSIGNED_BYTE, 2, 2);
-  SetupClearTextureExpections(
+      GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE,
+      2, 2);
+  SetupClearTextureExpectations(
       kServiceTextureId, kServiceTextureId, GL_TEXTURE_CUBE_MAP,
-      GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 1, GL_RGBA, GL_UNSIGNED_BYTE, 1, 1);
+      GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 1, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE,
+      1, 1);
   AddExpectationsForSimulatedAttrib0(kNumVertices, 0);
   SetupExpectationsForApplyingDefaultDirtyState();
   EXPECT_CALL(*gl_, DrawArrays(GL_TRIANGLES, 0, kNumVertices))
@@ -6923,45 +7043,83 @@ TEST_F(GLES2DecoderManualInitTest, BeginEndQueryEXT) {
       .RetiresOnSaturation();
 }
 
+struct QueryType {
+  GLenum type;
+  bool is_gl;
+};
+
+const QueryType kQueryTypes[] = {
+  { GL_COMMANDS_ISSUED_CHROMIUM, false },
+  { GL_LATENCY_QUERY_CHROMIUM, false },
+  { GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM, false },
+  { GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM, false },
+  { GL_GET_ERROR_QUERY_CHROMIUM, false },
+  { GL_ANY_SAMPLES_PASSED_EXT, true },
+};
+
 static void CheckBeginEndQueryBadMemoryFails(
     GLES2DecoderTestBase* test,
     GLuint client_id,
     GLuint service_id,
+    const QueryType& query_type,
     int32 shm_id,
     uint32 shm_offset) {
+  // We need to reset the decoder on each iteration, because we lose the
+  // context every time.
+  test->InitDecoder(
+        "GL_EXT_occlusion_query_boolean",      // extensions
+        "opengl es 2.0",   // gl version
+        true,    // has alpha
+        false,   // has depth
+        false,   // has stencil
+        true,    // request alpha
+        false,   // request depth
+        false,   // request stencil
+        true);   // bind generates resource
   ::testing::StrictMock< ::gfx::MockGLInterface>* gl = test->GetGLMock();
 
   BeginQueryEXT begin_cmd;
 
   test->GenHelper<GenQueriesEXTImmediate>(client_id);
 
-  EXPECT_CALL(*gl, GenQueriesARB(1, _))
-     .WillOnce(SetArgumentPointee<1>(service_id))
-     .RetiresOnSaturation();
-  EXPECT_CALL(*gl, BeginQueryARB(GL_ANY_SAMPLES_PASSED_EXT, service_id))
-      .Times(1)
-      .RetiresOnSaturation();
+  if (query_type.is_gl) {
+    EXPECT_CALL(*gl, GenQueriesARB(1, _))
+       .WillOnce(SetArgumentPointee<1>(service_id))
+       .RetiresOnSaturation();
+    EXPECT_CALL(*gl, BeginQueryARB(query_type.type, service_id))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
 
   // Test bad shared memory fails
-  begin_cmd.Init(GL_ANY_SAMPLES_PASSED_EXT, client_id, shm_id, shm_offset);
+  begin_cmd.Init(query_type.type, client_id, shm_id, shm_offset);
   error::Error error1 = test->ExecuteCmd(begin_cmd);
 
-  EXPECT_CALL(*gl, EndQueryARB(GL_ANY_SAMPLES_PASSED_EXT))
-      .Times(1)
-      .RetiresOnSaturation();
+  if (query_type.is_gl) {
+    EXPECT_CALL(*gl, EndQueryARB(query_type.type))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
+  if (query_type.type == GL_GET_ERROR_QUERY_CHROMIUM) {
+    EXPECT_CALL(*gl, GetError())
+        .WillOnce(Return(GL_NO_ERROR))
+        .RetiresOnSaturation();
+  }
 
   EndQueryEXT end_cmd;
-  end_cmd.Init(GL_ANY_SAMPLES_PASSED_EXT, 1);
+  end_cmd.Init(query_type.type, 1);
   error::Error error2 = test->ExecuteCmd(end_cmd);
 
-  EXPECT_CALL(*gl,
-      GetQueryObjectuivARB(service_id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
-      .WillOnce(SetArgumentPointee<2>(1))
-      .RetiresOnSaturation();
-  EXPECT_CALL(*gl,
-      GetQueryObjectuivARB(service_id, GL_QUERY_RESULT_EXT, _))
-      .WillOnce(SetArgumentPointee<2>(1))
-      .RetiresOnSaturation();
+  if (query_type.is_gl) {
+    EXPECT_CALL(*gl,
+        GetQueryObjectuivARB(service_id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
+        .WillOnce(SetArgumentPointee<2>(1))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl,
+        GetQueryObjectuivARB(service_id, GL_QUERY_RESULT_EXT, _))
+        .WillOnce(SetArgumentPointee<2>(1))
+        .RetiresOnSaturation();
+  }
 
   QueryManager* query_manager = test->GetDecoder()->GetQueryManager();
   ASSERT_TRUE(query_manager != NULL);
@@ -6971,43 +7129,36 @@ static void CheckBeginEndQueryBadMemoryFails(
               error2 != error::kNoError ||
               !process_success);
 
-  EXPECT_CALL(*gl, DeleteQueriesARB(1, _))
-      .Times(1)
-      .RetiresOnSaturation();
+  if (query_type.is_gl) {
+    EXPECT_CALL(*gl, DeleteQueriesARB(1, _))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
+  test->ResetDecoder();
 }
 
 TEST_F(GLES2DecoderManualInitTest, BeginEndQueryEXTBadMemoryIdFails) {
-  InitDecoder(
-      "GL_EXT_occlusion_query_boolean",      // extensions
-      "opengl es 2.0",   // gl version
-      true,    // has alpha
-      false,   // has depth
-      false,   // has stencil
-      true,    // request alpha
-      false,   // request depth
-      false,   // request stencil
-      true);   // bind generates resource
-
-  CheckBeginEndQueryBadMemoryFails(
-      this, kNewClientId, kNewServiceId,
-      kInvalidSharedMemoryId, kSharedMemoryOffset);
+  for (size_t i = 0; i < arraysize(kQueryTypes); ++i) {
+    CheckBeginEndQueryBadMemoryFails(
+        this, kNewClientId, kNewServiceId,
+        kQueryTypes[i],
+        kInvalidSharedMemoryId, kSharedMemoryOffset);
+  }
 }
 
 TEST_F(GLES2DecoderManualInitTest, BeginEndQueryEXTBadMemoryOffsetFails) {
-  InitDecoder(
-      "GL_EXT_occlusion_query_boolean",      // extensions
-      "opengl es 2.0",   // gl version
-      true,    // has alpha
-      false,   // has depth
-      false,   // has stencil
-      true,    // request alpha
-      false,   // request depth
-      false,   // request stencil
-      true);   // bind generates resource
-
-  CheckBeginEndQueryBadMemoryFails(
-      this, kNewClientId, kNewServiceId,
-      kSharedMemoryId, kInvalidSharedMemoryOffset);
+  for (size_t i = 0; i < arraysize(kQueryTypes); ++i) {
+    // Out-of-bounds.
+    CheckBeginEndQueryBadMemoryFails(
+        this, kNewClientId, kNewServiceId,
+        kQueryTypes[i],
+        kSharedMemoryId, kInvalidSharedMemoryOffset);
+    // Overflow.
+    CheckBeginEndQueryBadMemoryFails(
+        this, kNewClientId, kNewServiceId,
+        kQueryTypes[i],
+        kSharedMemoryId, 0xfffffffcu);
+  }
 }
 
 TEST_F(GLES2DecoderTest, BeginEndQueryEXTCommandsIssuedCHROMIUM) {
@@ -7720,6 +7871,24 @@ TEST_F(GLES2DecoderTest, BindTexImage2DCHROMIUMCubeMapNotAllowed) {
   EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
 }
 
+TEST_F(GLES2DecoderTest, OrphanGLImageWithTexImage2D) {
+  group().image_manager()->AddImage(gfx::GLImage::CreateGLImage(0).get(), 1);
+  DoBindTexture(GL_TEXTURE_CUBE_MAP, client_texture_id_, kServiceTextureId);
+
+  BindTexImage2DCHROMIUM bind_tex_image_2d_cmd;
+  bind_tex_image_2d_cmd.Init(GL_TEXTURE_CUBE_MAP, 1);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(bind_tex_image_2d_cmd));
+  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
+
+  DoTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 3, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+               0, 0);
+  TextureRef* texture_ref = group().texture_manager()->GetTexture(
+      client_texture_id_);
+  ASSERT_TRUE(texture_ref != NULL);
+  Texture* texture = texture_ref->texture();
+  EXPECT_TRUE(texture->GetLevelImage(GL_TEXTURE_2D, 0) == NULL);
+}
+
 TEST_F(GLES2DecoderTest, ReleaseTexImage2DCHROMIUM) {
   DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
   DoTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 3, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE,
@@ -7784,6 +7953,8 @@ class MockGLImage : public gfx::GLImage {
   MOCK_METHOD1(ReleaseTexImage, void(unsigned));
   MOCK_METHOD0(WillUseTexImage, void());
   MOCK_METHOD0(DidUseTexImage, void());
+  MOCK_METHOD0(WillModifyTexImage, void());
+  MOCK_METHOD0(DidModifyTexImage, void());
 
  protected:
   virtual ~MockGLImage() {}
@@ -8944,6 +9115,65 @@ TEST_F(GLES2DecoderManualInitTest, TexImage2DFloatOnGLES3) {
                0, 0);
   DoTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE_ALPHA, 16, 17, 0,
                GL_LUMINANCE_ALPHA, GL_FLOAT, 0, 0);
+}
+
+TEST_F(GLES2DecoderManualInitTest, TexSubImage2DFloatOnGLES3) {
+  InitDecoder("GL_OES_texture_float GL_EXT_color_buffer_float", // extensions
+              "opengl es 3.0",               // gl version
+              false,                         // has alpha
+              false,                         // has depth
+              false,                         // has stencil
+              false,                         // request alpha
+              false,                         // request depth
+              false,                         // request stencil
+              false);                        // bind generates resource
+  const int kWidth = 8;
+  const int kHeight = 4;
+  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
+  DoTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, kWidth, kHeight, 0, GL_RGBA,
+               GL_FLOAT, 0, 0);
+  EXPECT_CALL(*gl_, TexImage2D(
+      GL_TEXTURE_2D, 0, GL_RGBA32F, kWidth, kHeight, 0, GL_RGBA, GL_FLOAT,
+      shared_memory_address_))
+      .Times(1)
+      .RetiresOnSaturation();
+  TexSubImage2D cmd;
+  cmd.Init(
+      GL_TEXTURE_2D, 0, 0, 0, kWidth, kHeight, GL_RGBA, GL_FLOAT,
+      kSharedMemoryId, kSharedMemoryOffset, GL_FALSE);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+TEST_F(GLES2DecoderManualInitTest, TexSubImage2DFloatDoesClearOnGLES3) {
+  InitDecoder("GL_OES_texture_float GL_EXT_color_buffer_float", // extensions
+              "opengl es 3.0",               // gl version
+              false,                         // has alpha
+              false,                         // has depth
+              false,                         // has stencil
+              false,                         // request alpha
+              false,                         // request depth
+              false,                         // request stencil
+              false);                        // bind generates resource
+  const int kWidth = 8;
+  const int kHeight = 4;
+  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
+  DoTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, kWidth, kHeight, 0, GL_RGBA,
+               GL_FLOAT, 0, 0);
+  SetupClearTextureExpectations(
+      kServiceTextureId, kServiceTextureId, GL_TEXTURE_2D, GL_TEXTURE_2D,
+      0, GL_RGBA32F, GL_RGBA, GL_FLOAT, kWidth, kHeight);
+  EXPECT_CALL(*gl_, TexSubImage2D(
+      GL_TEXTURE_2D, 0, 1, 0, kWidth - 1, kHeight, GL_RGBA, GL_FLOAT,
+      shared_memory_address_))
+      .Times(1)
+      .RetiresOnSaturation();
+  TexSubImage2D cmd;
+  cmd.Init(
+      GL_TEXTURE_2D, 0, 1, 0, kWidth - 1, kHeight, GL_RGBA, GL_FLOAT,
+      kSharedMemoryId, kSharedMemoryOffset, GL_FALSE);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
 
 TEST_F(GLES2DecoderManualInitTest, TexImage2DFloatConvertsFormatDesktop) {

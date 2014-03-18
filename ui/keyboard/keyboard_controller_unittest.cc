@@ -9,16 +9,17 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/layout_manager.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/aura_test_helper.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/input_method_factory.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/compositor/layer_type.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
+#include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/compositor/test/layer_animator_test_controller.h"
 #include "ui/gfx/rect.h"
 #include "ui/keyboard/keyboard_controller.h"
@@ -218,9 +219,12 @@ class KeyboardControllerTest : public testing::Test {
   virtual ~KeyboardControllerTest() {}
 
   virtual void SetUp() OVERRIDE {
+    // The ContextFactory must exist before any Compositors are created.
+    bool enable_pixel_output = false;
+    ui::InitializeContextFactoryForTests(enable_pixel_output);
+
     aura_test_helper_.reset(new aura::test::AuraTestHelper(&message_loop_));
-    bool allow_test_contexts = true;
-    aura_test_helper_->SetUp(allow_test_contexts);
+    aura_test_helper_->SetUp();
     ui::SetUpInputMethodFactoryForTesting();
     focus_controller_.reset(new TestFocusController(root_window()));
     proxy_ = new TestKeyboardControllerProxy();
@@ -231,6 +235,7 @@ class KeyboardControllerTest : public testing::Test {
     controller_.reset();
     focus_controller_.reset();
     aura_test_helper_->TearDown();
+    ui::TerminateContextFactoryForTests();
   }
 
   aura::Window* root_window() { return aura_test_helper_->root_window(); }

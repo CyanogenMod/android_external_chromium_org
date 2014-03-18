@@ -31,40 +31,14 @@ const int kBytesPerAudioOutputSample = 2;
 
 namespace media {
 
-// static
-bool MediaSourcePlayer::IsTypeSupported(
-    const std::vector<uint8>& scheme_uuid,
-    MediaDrmBridge::SecurityLevel security_level,
-    const std::string& container,
-    const std::vector<std::string>& codecs) {
-  if (!MediaDrmBridge::IsCryptoSchemeSupported(scheme_uuid, container)) {
-    DVLOG(1) << "UUID and container '" << container << "' not supported.";
-    return false;
-  }
-
-  if (!MediaDrmBridge::IsSecurityLevelSupported(scheme_uuid, security_level)) {
-    DVLOG(1) << "UUID and security level '" << security_level
-             << "' not supported.";
-    return false;
-  }
-
-  bool is_secure = MediaDrmBridge::IsSecureDecoderRequired(security_level);
-  for (size_t i = 0; i < codecs.size(); ++i) {
-    if (!MediaCodecBridge::CanDecode(codecs[i], is_secure)) {
-      DVLOG(1) << "Codec '" << codecs[i] << "' "
-               << (is_secure ? "in secure mode " : "") << "not supported.";
-      return false;
-    }
-  }
-
-  return true;
-}
-
 MediaSourcePlayer::MediaSourcePlayer(
     int player_id,
     MediaPlayerManager* manager,
+    const RequestMediaResourcesCB& request_media_resources_cb,
+    const ReleaseMediaResourcesCB& release_media_resources_cb,
     scoped_ptr<DemuxerAndroid> demuxer)
-    : MediaPlayerAndroid(player_id, manager),
+    : MediaPlayerAndroid(player_id, manager, request_media_resources_cb,
+                         release_media_resources_cb),
       demuxer_(demuxer.Pass()),
       pending_event_(NO_EVENT_PENDING),
       width_(0),
@@ -106,6 +80,7 @@ void MediaSourcePlayer::SetVideoSurface(gfx::ScopedJavaSurface surface) {
   }
 
   surface_ =  surface.Pass();
+  is_surface_in_use_ = true;
 
   // If there is a pending surface change event, just wait for it to be
   // processed.
@@ -246,7 +221,7 @@ void MediaSourcePlayer::Release() {
 
   // Clear all the pending events except seeks and config changes.
   pending_event_ &= (SEEK_EVENT_PENDING | CONFIG_CHANGE_EVENT_PENDING);
-
+  is_surface_in_use_ = false;
   audio_decoder_job_.reset();
   ResetVideoDecoderJob();
 
@@ -259,7 +234,6 @@ void MediaSourcePlayer::Release() {
 
   decoder_starvation_callback_.Cancel();
   surface_ = gfx::ScopedJavaSurface();
-  manager()->ReleaseMediaResources(player_id());
   if (process_pending_events) {
     DVLOG(1) << __FUNCTION__ << " : Resuming seek or config change processing";
     ProcessPendingEvents();
@@ -279,6 +253,10 @@ void MediaSourcePlayer::OnKeyAdded() {
   is_waiting_for_key_ = false;
   if (playing_)
     StartInternal();
+}
+
+bool MediaSourcePlayer::IsSurfaceInUse() const {
+  return is_surface_in_use_;
 }
 
 bool MediaSourcePlayer::CanPause() {
@@ -525,9 +503,8 @@ void MediaSourcePlayer::ProcessPendingEvents() {
     ConfigureVideoDecoderJob();
 
     // Return early if we can't successfully configure a new video decoder job
-    // yet, except continue processing other pending events if |surface_| is
-    // empty.
-    if (HasVideo() && !video_decoder_job_ && !surface_.IsEmpty())
+    // yet.
+    if (HasVideo() && !video_decoder_job_)
       return;
   }
 
@@ -852,14 +829,17 @@ void MediaSourcePlayer::ConfigureVideoDecoderJob() {
   // Create the new VideoDecoderJob.
   bool is_secure = IsProtectedSurfaceRequired();
   video_decoder_job_.reset(
-      VideoDecoderJob::Create(video_codec_,
-                              is_secure,
-                              gfx::Size(width_, height_),
-                              surface_.j_surface().obj(),
-                              media_crypto.obj(),
-                              base::Bind(&DemuxerAndroid::RequestDemuxerData,
-                                         base::Unretained(demuxer_.get()),
-                                         DemuxerStream::VIDEO)));
+      VideoDecoderJob::Create(
+          video_codec_,
+          is_secure,
+          gfx::Size(width_, height_),
+          surface_.j_surface().obj(),
+          media_crypto.obj(),
+          base::Bind(&DemuxerAndroid::RequestDemuxerData,
+                     base::Unretained(demuxer_.get()),
+                     DemuxerStream::VIDEO),
+          base::Bind(request_media_resources_cb_, player_id()),
+          base::Bind(release_media_resources_cb_, player_id())));
   if (!video_decoder_job_)
     return;
 

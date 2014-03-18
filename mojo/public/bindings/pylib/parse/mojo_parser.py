@@ -130,9 +130,15 @@ class Parser(object):
     if len(p) > 1:
       p[0] = ListFromConcat(p[1], p[2])
 
+  def p_response(self, p):
+    """response : RESPONSE LPAREN parameters RPAREN
+                | """
+    if len(p) > 3:
+      p[0] = p[3]
+
   def p_method(self, p):
-    """method : VOID NAME LPAREN parameters RPAREN ordinal SEMI"""
-    p[0] = ('METHOD', p[2], p[4], p[6])
+    """method : NAME ordinal LPAREN parameters RPAREN response SEMI"""
+    p[0] = ('METHOD', p[1], p[4], p[2], p[6])
 
   def p_parameters(self, p):
     """parameters : parameter
@@ -155,14 +161,10 @@ class Parser(object):
     p[0] = p[1]
 
   def p_basictypename(self, p):
-    """basictypename : NAME
+    """basictypename : identifier
                      | HANDLE
-                     | NAME DOT NAME
                      | specializedhandle"""
-    if len(p) == 2:
-      p[0] = p[1]
-    else:
-      p[0] = p[1] + '.' + p[3]
+    p[0] = p[1]
 
   def p_specializedhandle(self, p):
     """specializedhandle : HANDLE LT specializedhandlename GT"""
@@ -302,7 +304,7 @@ class Parser(object):
 
   def p_identifier(self, p):
     """identifier : NAME
-                  | NAME DOT NAME"""
+                  | NAME DOT identifier"""
     p[0] = ''.join(p[1:])
 
   def p_constant(self, p):

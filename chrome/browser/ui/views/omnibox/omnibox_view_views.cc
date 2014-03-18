@@ -29,7 +29,7 @@
 #include "grit/ui_strings.h"
 #include "net/base/escape.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
@@ -57,7 +57,7 @@
 
 #if defined(USE_AURA)
 #include "ui/aura/client/focus_client.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 #endif
 
@@ -183,46 +183,8 @@ void OmniboxViewViews::Init() {
 ////////////////////////////////////////////////////////////////////////////////
 // OmniboxViewViews, views::Textfield implementation:
 
-void OmniboxViewViews::AboutToRequestFocusFromTabTraversal(bool reverse) {
-  if (chrome::GetOriginChipV2HideTrigger() ==
-      chrome::ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE) {
-    controller()->GetToolbarModel()->set_origin_chip_enabled(false);
-    controller()->OnChanged();
-  }
-}
-
 const char* OmniboxViewViews::GetClassName() const {
   return kViewClassName;
-}
-
-void OmniboxViewViews::OnGestureEvent(ui::GestureEvent* event) {
-  if (!HasFocus() && event->type() == ui::ET_GESTURE_TAP_DOWN) {
-    select_all_on_gesture_tap_ = true;
-
-    // If we're trying to select all on tap, invalidate any saved selection lest
-    // restoring it fights with the "select all" action.
-    saved_selection_for_focus_change_ = gfx::Range::InvalidRange();
-  }
-
-  if (select_all_on_gesture_tap_ && event->type() == ui::ET_GESTURE_TAP)
-    SelectAll(false);
-
-  if (event->type() == ui::ET_GESTURE_TAP ||
-      event->type() == ui::ET_GESTURE_TAP_CANCEL ||
-      event->type() == ui::ET_GESTURE_TWO_FINGER_TAP ||
-      event->type() == ui::ET_GESTURE_SCROLL_BEGIN ||
-      event->type() == ui::ET_GESTURE_PINCH_BEGIN ||
-      event->type() == ui::ET_GESTURE_LONG_PRESS ||
-      event->type() == ui::ET_GESTURE_LONG_TAP) {
-    select_all_on_gesture_tap_ = false;
-  }
-
-  views::Textfield::OnGestureEvent(event);
-}
-
-void OmniboxViewViews::GetAccessibleState(ui::AccessibleViewState* state) {
-  location_bar_view_->GetAccessibleState(state);
-  state->role = ui::AccessibilityTypes::ROLE_TEXT;
 }
 
 bool OmniboxViewViews::OnMousePressed(const ui::MouseEvent& event) {
@@ -265,16 +227,7 @@ void OmniboxViewViews::OnMouseReleased(const ui::MouseEvent& event) {
       SelectAll(true);
     }
 
-    // If we should hide the origin chip in response to mouse release, check
-    // first that only the left or only the right button was pressed prior to
-    // the release.  If multiple buttons were pressed, we don't want to hide the
-    // chip yet.  If only the middle mouse button was pressed, the Omnibox won't
-    // receive focus so we don't want to hide the chip in this case.
-    if (chrome::GetOriginChipV2HideTrigger() ==
-        chrome::ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE) {
-      controller()->GetToolbarModel()->set_origin_chip_enabled(false);
-      controller()->OnChanged();
-    }
+    HandleOriginChipMouseRelease();
   }
   select_all_on_mouse_release_ = false;
 }
@@ -349,6 +302,37 @@ bool OmniboxViewViews::OnKeyReleased(const ui::KeyEvent& event) {
   return views::Textfield::OnKeyReleased(event);
 }
 
+void OmniboxViewViews::OnGestureEvent(ui::GestureEvent* event) {
+  if (!HasFocus() && event->type() == ui::ET_GESTURE_TAP_DOWN) {
+    select_all_on_gesture_tap_ = true;
+
+    // If we're trying to select all on tap, invalidate any saved selection lest
+    // restoring it fights with the "select all" action.
+    saved_selection_for_focus_change_ = gfx::Range::InvalidRange();
+  }
+
+  if (select_all_on_gesture_tap_ && event->type() == ui::ET_GESTURE_TAP)
+    SelectAll(false);
+
+  if (event->type() == ui::ET_GESTURE_TAP ||
+      event->type() == ui::ET_GESTURE_TAP_CANCEL ||
+      event->type() == ui::ET_GESTURE_TWO_FINGER_TAP ||
+      event->type() == ui::ET_GESTURE_SCROLL_BEGIN ||
+      event->type() == ui::ET_GESTURE_PINCH_BEGIN ||
+      event->type() == ui::ET_GESTURE_LONG_PRESS ||
+      event->type() == ui::ET_GESTURE_LONG_TAP) {
+    select_all_on_gesture_tap_ = false;
+  }
+
+  views::Textfield::OnGestureEvent(event);
+}
+
+void OmniboxViewViews::AboutToRequestFocusFromTabTraversal(bool reverse) {
+  // Tabbing into the omnibox should affect the origin chip in the same way
+  // clicking it should.
+  HandleOriginChipMouseRelease();
+}
+
 bool OmniboxViewViews::SkipDefaultKeyEventProcessing(
     const ui::KeyEvent& event) {
   if (views::FocusManager::IsTabTraversalKeyEvent(event) &&
@@ -357,6 +341,11 @@ bool OmniboxViewViews::SkipDefaultKeyEventProcessing(
     return true;
   }
   return Textfield::SkipDefaultKeyEventProcessing(event);
+}
+
+void OmniboxViewViews::GetAccessibleState(ui::AXViewState* state) {
+  location_bar_view_->GetAccessibleState(state);
+  state->role = ui::AX_ROLE_TEXT_FIELD;
 }
 
 bool OmniboxViewViews::HandleEarlyTabActions(const ui::KeyEvent& event) {
@@ -417,18 +406,7 @@ void OmniboxViewViews::OnBlur() {
   // Tell the model to reset itself.
   model()->OnKillFocus();
 
-  // If user input is not in progress, re-enable the origin chip and URL
-  // replacement.  This addresses the case where the URL was shown by a call
-  // to ShowURL().  If the Omnibox acheived focus by other means, the calls to
-  // set_url_replacement_enabled, UpdatePermanentText and RevertAll are not
-  // required (a call to OnChanged would be sufficient) but do no harm.
-  if (chrome::ShouldDisplayOriginChipV2() &&
-      !model()->user_input_in_progress()) {
-    controller()->GetToolbarModel()->set_origin_chip_enabled(true);
-    controller()->GetToolbarModel()->set_url_replacement_enabled(true);
-    model()->UpdatePermanentText();
-    RevertAll();
-  }
+  OnDidKillFocus();
 
   // Make sure the beginning of the text is visible.
   SelectRange(gfx::Range(0));
@@ -868,10 +846,10 @@ void OmniboxViewViews::OnGetDragOperationsForTextfield(int* drag_operations) {
 }
 
 void OmniboxViewViews::OnWriteDragData(ui::OSExchangeData* data) {
-  base::string16 selected_text = GetSelectedText();
   GURL url;
   bool write_url;
   bool is_all_selected = IsSelectAll();
+  base::string16 selected_text = GetSelectedText();
   model()->AdjustTextForCopy(GetSelectedRange().GetMin(), is_all_selected,
                              &selected_text, &url, &write_url);
   data->SetString(selected_text);
@@ -896,7 +874,7 @@ int OmniboxViewViews::OnDrop(const ui::OSExchangeData& data) {
   if (HasTextBeingDragged())
     return ui::DragDropTypes::DRAG_NONE;
 
-  if (data.HasURL()) {
+  if (data.HasURL(ui::OSExchangeData::CONVERT_FILENAMES)) {
     GURL url;
     base::string16 title;
     if (data.GetURLAndTitle(
@@ -911,7 +889,7 @@ int OmniboxViewViews::OnDrop(const ui::OSExchangeData& data) {
   } else if (data.HasString()) {
     base::string16 text;
     if (data.GetString(&text)) {
-      base::string16 collapsed_text(CollapseWhitespace(text, true));
+      base::string16 collapsed_text(base::CollapseWhitespace(text, true));
       if (model()->CanPasteAndGo(collapsed_text))
         model()->PasteAndGo(collapsed_text);
       return ui::DragDropTypes::DRAG_COPY;

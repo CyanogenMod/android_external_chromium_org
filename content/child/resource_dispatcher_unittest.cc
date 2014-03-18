@@ -12,6 +12,7 @@
 #include "content/child/request_extra_data.h"
 #include "content/child/resource_dispatcher.h"
 #include "content/common/resource_messages.h"
+#include "content/common/service_worker/service_worker_types.h"
 #include "content/public/common/resource_response.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
@@ -31,8 +32,6 @@ static const char test_page_charset[] = "";
 static const char test_page_contents[] =
   "<html><head><title>Google</title></head><body><h1>Google</h1></body></html>";
 static const uint32 test_page_contents_len = arraysize(test_page_contents) - 1;
-
-static const char kShmemSegmentName[] = "DeferredResourceLoaderTest";
 
 // Listens for request response data and stores it so that it can be compared
 // to the reference data.
@@ -176,9 +175,10 @@ class ResourceDispatcherTest : public testing::Test, public IPC::Sender {
     request_info.routing_id = 0;
     RequestExtraData extra_data(blink::WebPageVisibilityStateVisible,
                                 blink::WebString(),
-                                false, MSG_ROUTING_NONE, true, 0, GURL(),
+                                false, MSG_ROUTING_NONE, true, GURL(),
                                 false, -1, true,
-                                PAGE_TRANSITION_LINK, false, -1, -1);
+                                PAGE_TRANSITION_LINK, false, -1, -1,
+                                kInvalidServiceWorkerProviderId);
     request_info.extra_data = &extra_data;
 
     return dispatcher_->CreateBridge(request_info);
@@ -306,13 +306,11 @@ class DeferredResourceLoadingTest : public ResourceDispatcherTest,
  protected:
   virtual void SetUp() OVERRIDE {
     ResourceDispatcherTest::SetUp();
-    shared_handle_.Delete(kShmemSegmentName);
-    EXPECT_TRUE(shared_handle_.CreateNamed(kShmemSegmentName, false, 100));
+    EXPECT_TRUE(shared_handle_.CreateAnonymous(100));
   }
 
   virtual void TearDown() OVERRIDE {
     shared_handle_.Close();
-    EXPECT_TRUE(shared_handle_.Delete(kShmemSegmentName));
     ResourceDispatcherTest::TearDown();
   }
 

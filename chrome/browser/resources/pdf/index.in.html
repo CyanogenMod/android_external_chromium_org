@@ -9,33 +9,74 @@
   <meta charset="utf-8">
   <script src="polymer_loader.js"></script>
   <link rel="import" href="../../../../third_party/polymer/polymer-selector/polymer-selector.html">
-  <link rel="import" href="html_office/elements/viewer-toolbar/viewer-toolbar.html">
   <link rel="import" href="html_office/elements/viewer-button/viewer-button.html">
+  <link rel="import" href="html_office/elements/viewer-error-screen/viewer-error-screen.html">
+  <link rel="import" href="html_office/elements/viewer-page-indicator/viewer-page-indicator.html">
+  <link rel="import" href="html_office/elements/viewer-password-screen/viewer-password-screen.html">
+  <link rel="import" href="html_office/elements/viewer-progress-bar/viewer-progress-bar.html">
+  <link rel="import" href="html_office/elements/viewer-toolbar/viewer-toolbar.html">
   <style>
     body {
       background-color: #ccc;
       margin: 0;
     }
     viewer-toolbar {
+      visibility: hidden;
+      z-index: 3;
+    }
+    viewer-page-indicator {
+      visibility: hidden;
+      z-index: 3;
+    }
+    viewer-progress-bar {
+      z-index: 3;
+    }
+    viewer-error-screen {
+      visibility: hidden;
       z-index: 2;
     }
-    object {
+    viewer-password-screen {
+      visibility: hidden;
+      z-index: 2;
+    }
+    #plugin {
+      height: 100%;
+      position: fixed;
+      width: 100%;
       z-index: 1;
+    }
+    #sizer {
+      position: absolute;
+      z-index: 0;
     }
   </style>
 </head>
 <body>
 
-<viewer-toolbar>
+<div id="sizer"></div>
+<viewer-password-screen id="password-screen"></viewer-password-screen>
+<viewer-page-indicator id="page-indicator"></viewer-page-indicator>
+<viewer-progress-bar id="progress-bar"></viewer-progress-bar>
+
+<viewer-toolbar id="toolbar">
   <polymer-selector>
-    <viewer-button src="button_fit_page.png" latchable=true></viewer-button>
-    <viewer-button src="button_fit_width.png" latchable=true></viewer-button>
-    <viewer-button src="button_zoom_in.png"></viewer-button>
-    <viewer-button src="button_zoom_out.png"></viewer-button>
+    <viewer-button id="fit-to-page-button" src="button_fit_page.png" latchable>
+    </viewer-button>
+    <viewer-button id="fit-to-width-button" src="button_fit_width.png"
+        latchable>
+    </viewer-button>
+    <viewer-button id="zoom-in-button" src="button_zoom_in.png">
+    </viewer-button>
+    <viewer-button id="zoom-out-button" src="button_zoom_out.png">
+    </viewer-button>
   </polymer-selector>
-  <viewer-button src="button_save.png"></viewer-button>
-  <viewer-button src="button_print.png"></viewer-button>
+  <a id="save-button-link" download>
+    <viewer-button id="save-button" src="button_save.png"></viewer-button>
+  </a>
+  <viewer-button id="print-button" src="button_print.png"></viewer-button>
 </viewer-toolbar>
+
+<viewer-error-screen id="error-screen"></viewer-error-screen>
 
 </body>
 <script src="pdf.js"></script>

@@ -16,9 +16,12 @@
 #include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/linked_hash_map.h"
+#include "net/quic/congestion_control/loss_detection_interface.h"
+#include "net/quic/congestion_control/rtt_stats.h"
 #include "net/quic/congestion_control/send_algorithm_interface.h"
 #include "net/quic/quic_ack_notifier_manager.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/quic_unacked_packet_map.h"
 
 NET_EXPORT_PRIVATE extern bool FLAGS_track_retransmission_history;
 NET_EXPORT_PRIVATE extern bool FLAGS_enable_quic_pacing;
@@ -67,8 +70,6 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   virtual void SetFromConfig(const QuicConfig& config);
 
-  virtual void SetMaxPacketSize(QuicByteCount max_packet_size);
-
   // Called when a new packet is serialized.  If the packet contains
   // retransmittable data, it will be added to the unacked packet map.
   void OnSerializedPacket(const SerializedPacket& serialized_packet);
@@ -110,16 +111,9 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   bool HasUnackedPackets() const;
 
-  // Returns the number of unacked packets which have retransmittable frames.
-  size_t GetNumRetransmittablePackets() const;
-
   // Returns the smallest sequence number of a serialized packet which has not
   // been acked by the peer.  If there are no unacked packets, returns 0.
   QuicPacketSequenceNumber GetLeastUnackedSentPacket() const;
-
-  // Returns the set of sequence numbers of all unacked packets.
-  // Test only.
-  SequenceNumberSet GetUnackedPackets() const;
 
   // Called when a congestion feedback frame is received from peer.
   virtual void OnIncomingQuicCongestionFeedbackFrame(
@@ -173,7 +167,6 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   bool using_pacing() const { return using_pacing_; }
 
-
  private:
   friend class test::QuicConnectionPeer;
   friend class test::QuicSentPacketManagerPeer;
@@ -183,55 +176,29 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
     NOT_RECEIVED_BY_PEER,
   };
 
+  // The retransmission timer is a single timer which switches modes depending
+  // upon connection state.
   enum RetransmissionTimeoutMode {
+    // A conventional TCP style RTO.
     RTO_MODE,
+    // A tail loss probe.  By default, QUIC sends up to two before RTOing.
     TLP_MODE,
+    // Retransmission of handshake packets prior to handshake completion.
     HANDSHAKE_MODE,
+    // Re-invoke the loss detection when a packet is not acked before the
+    // loss detection algorithm expects.
+    LOSS_MODE,
   };
 
-  struct NET_EXPORT_PRIVATE TransmissionInfo {
-    TransmissionInfo();
-
-    // Constructs a Transmission with a new all_tranmissions set
-    // containing |sequence_number|.
-    TransmissionInfo(RetransmittableFrames* retransmittable_frames,
-                     QuicPacketSequenceNumber sequence_number,
-                     QuicSequenceNumberLength sequence_number_length);
-
-    // Constructs a Transmission with the specified |all_tranmissions| set
-    // and inserts |sequence_number| into it.
-    TransmissionInfo(RetransmittableFrames* retransmittable_frames,
-                     QuicPacketSequenceNumber sequence_number,
-                     QuicSequenceNumberLength sequence_number_length,
-                     SequenceNumberSet* all_transmissions);
-
-    RetransmittableFrames* retransmittable_frames;
-    QuicSequenceNumberLength sequence_number_length;
-    // Zero when the packet is serialized, non-zero once it's sent.
-    QuicTime sent_time;
-    // Stores the sequence numbers of all transmissions of this packet.
-    // Can never be null.
-    SequenceNumberSet* all_transmissions;
-    // Pending packets have not been abandoned or lost.
-    bool pending;
-  };
-
-  typedef linked_hash_map<QuicPacketSequenceNumber,
-                          TransmissionInfo> UnackedPacketMap;
   typedef linked_hash_map<QuicPacketSequenceNumber,
                           TransmissionType> PendingRetransmissionMap;
-
-  static bool HasCryptoHandshake(const TransmissionInfo& transmission_info);
-
-  // Returns true if there are unacked packets that are pending.
-  bool HasPendingPackets() const;
 
   // Process the incoming ack looking for newly ack'd data packets.
   void HandleAckForSentPackets(const ReceivedPacketInfo& received_info);
 
   // Called when a packet is timed out, such as an RTO.  Removes the bytes from
   // the congestion manager, but does not change the congestion window size.
-  virtual void OnPacketAbandoned(UnackedPacketMap::iterator it);
+  void OnPacketAbandoned(QuicPacketSequenceNumber sequence_number);
 
   // Returns the current retransmission mode.
   RetransmissionTimeoutMode GetRetransmissionMode() const;
@@ -263,27 +230,22 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   void MaybeRetransmitOnAckFrame(const ReceivedPacketInfo& received_info,
                                  const QuicTime& ack_receive_time);
 
+  // Invokes the loss detection algorithm and loses and retransmits packets if
+  // necessary.
+  void InvokeLossDetection(QuicTime time);
+
   // Marks |sequence_number| as being fully handled, either due to receipt
   // by the peer, or having been discarded as indecipherable.  Returns an
   // iterator to the next remaining unacked packet.
-  UnackedPacketMap::iterator MarkPacketHandled(
+  QuicUnackedPacketMap::const_iterator MarkPacketHandled(
       QuicPacketSequenceNumber sequence_number,
       ReceivedByPeer received_by_peer);
-
-  // Removes entries from the unacked packet map.
-  void RemovePacket(QuicPacketSequenceNumber sequence_number);
 
   // Request that |sequence_number| be retransmitted after the other pending
   // retransmissions.  Does not add it to the retransmissions if it's already
   // a pending retransmission.
   void MarkForRetransmission(QuicPacketSequenceNumber sequence_number,
                              TransmissionType transmission_type);
-
-  // Clears up to |num_to_clear| previous transmissions in order to make room
-  // in the ack frame for new acks.
-  void ClearPreviousRetransmissions(size_t num_to_clear);
-
-  void CleanupPacketHistory();
 
   // Newly serialized retransmittable and fec packets are added to this map,
   // which contains owning pointers to any contained frames.  If a packet is
@@ -293,7 +255,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // If the old packet is acked before the new packet, then the old entry will
   // be removed from the map and the new entry's retransmittable frames will be
   // set to NULL.
-  UnackedPacketMap unacked_packets_;
+  QuicUnackedPacketMap unacked_packets_;
 
   // Pending retransmissions which have not been packetized and sent yet.
   PendingRetransmissionMap pending_retransmissions_;
@@ -308,13 +270,11 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   const QuicClock* clock_;
   QuicConnectionStats* stats_;
+  RttStats rtt_stats_;
   scoped_ptr<SendAlgorithmInterface> send_algorithm_;
-  // Tracks the send time, size, and nack count of sent packets.  Packets are
-  // removed after 5 seconds and they've been removed from pending_packets_.
-  SendAlgorithmInterface::SentPacketsMap packet_history_map_;
-  QuicTime::Delta rtt_sample_;  // RTT estimate from the most recent ACK.
-  // Number of outstanding crypto handshake packets.
-  size_t pending_crypto_packet_count_;
+  scoped_ptr<LossDetectionInterface> loss_algorithm_;
+
+  QuicPacketSequenceNumber largest_observed_;  // From the most recent ACK.
   // Number of times the RTO timer has fired in a row without receiving an ack.
   size_t consecutive_rto_count_;
   // Number of times the tail loss probe has been sent.

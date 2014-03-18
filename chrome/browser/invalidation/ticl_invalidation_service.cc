@@ -6,8 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/invalidation/gcm_network_channel_delegate_impl.h"
+#include "chrome/browser/invalidation/gcm_invalidation_bridge.h"
 #include "chrome/browser/invalidation/invalidation_logger.h"
 #include "chrome/browser/invalidation/invalidation_service_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -15,8 +14,7 @@
 #include "chrome/browser/signin/about_signin_internals_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
-#include "content/public/browser/notification_service.h"
+#include "chrome/common/chrome_content_client.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "sync/notifier/gcm_network_channel_delegate.h"
 #include "sync/notifier/invalidation_util.h"
@@ -89,9 +87,10 @@ void TiclInvalidationService::Init() {
     StartInvalidator(PUSH_CLIENT_CHANNEL);
   }
 
-  notification_registrar_.Add(this,
-                              chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
-                              content::Source<Profile>(profile_));
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfile(profile_);
+  signin_manager->AddObserver(this);
+
   oauth2_token_service_->AddObserver(this);
 }
 
@@ -112,6 +111,7 @@ void TiclInvalidationService::RegisterInvalidationHandler(
   DCHECK(CalledOnValidThread());
   DVLOG(2) << "Registering an invalidation handler";
   invalidator_registrar_->RegisterHandler(handler);
+  logger_.OnRegistration(handler->GetOwnerName());
 }
 
 void TiclInvalidationService::UpdateRegisteredInvalidationIds(
@@ -125,6 +125,7 @@ void TiclInvalidationService::UpdateRegisteredInvalidationIds(
         this,
         invalidator_registrar_->GetAllRegisteredIds());
   }
+  logger_.OnUpdateIds(invalidator_registrar_->GetSanitizedHandlersIdsMap());
 }
 
 void TiclInvalidationService::UnregisterInvalidationHandler(
@@ -137,6 +138,7 @@ void TiclInvalidationService::UnregisterInvalidationHandler(
         this,
         invalidator_registrar_->GetAllRegisteredIds());
   }
+  logger_.OnUnregistration(handler->GetOwnerName());
 }
 
 syncer::InvalidatorState TiclInvalidationService::GetInvalidatorState() const {
@@ -160,13 +162,14 @@ InvalidationLogger* TiclInvalidationService::GetInvalidationLogger() {
   return &logger_;
 }
 
-void TiclInvalidationService::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
+void TiclInvalidationService::GoogleSignedOut(const std::string& username) {
   DCHECK(CalledOnValidThread());
-  DCHECK_EQ(type, chrome::NOTIFICATION_GOOGLE_SIGNED_OUT);
   Logout();
+}
+
+void TiclInvalidationService::RequestDetailedStatus(
+    base::Callback<void(const base::DictionaryValue&)> return_callback) {
+  invalidator_->RequestDetailedStatus(return_callback);
 }
 
 void TiclInvalidationService::RequestAccessToken() {
@@ -283,8 +286,13 @@ void TiclInvalidationService::OnIncomingInvalidation(
   logger_.OnInvalidation(invalidation_map);
 }
 
+std::string TiclInvalidationService::GetOwnerName() const { return "TICL"; }
+
 void TiclInvalidationService::Shutdown() {
   DCHECK(CalledOnValidThread());
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfile(profile_);
+  signin_manager->RemoveObserver(this);
   oauth2_token_service_->RemoveObserver(this);
   if (IsStarted()) {
     StopInvalidator();
@@ -354,12 +362,11 @@ void TiclInvalidationService::StartInvalidator(
       break;
     }
     case GCM_NETWORK_CHANNEL: {
-      scoped_ptr<syncer::GCMNetworkChannelDelegate> delegate;
-      delegate.reset(new GCMNetworkChannelDelegateImpl(profile_));
+      gcm_invalidation_bridge_.reset(new GCMInvalidationBridge(profile_));
       network_channel_creator =
           syncer::NonBlockingInvalidator::MakeGCMNetworkChannelCreator(
               profile_->GetRequestContext(),
-              delegate.Pass());
+              gcm_invalidation_bridge_->CreateDelegate().Pass());
       break;
     }
     default: {
@@ -374,7 +381,7 @@ void TiclInvalidationService::StartInvalidator(
           invalidator_storage_->GetBootstrapData(),
           syncer::WeakHandle<syncer::InvalidationStateTracker>(
               invalidator_storage_->AsWeakPtr()),
-          content::GetUserAgent(GURL()),
+          GetUserAgent(),
           profile_->GetRequestContext()));
 
   UpdateInvalidatorCredentials();
@@ -396,6 +403,7 @@ void TiclInvalidationService::UpdateInvalidatorCredentials() {
 
 void TiclInvalidationService::StopInvalidator() {
   DCHECK(invalidator_);
+  gcm_invalidation_bridge_.reset();
   invalidator_->UnregisterHandler(this);
   invalidator_.reset();
 }

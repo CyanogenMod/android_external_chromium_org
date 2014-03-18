@@ -3,19 +3,19 @@
 # found in the LICENSE file.
 
 """Defines a set of constants shared by test runners and other scripts."""
+# pylint: disable=W0212
 
 import collections
 import logging
 import os
 import subprocess
-import sys
 
 
 DIR_SOURCE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__),
                                                os.pardir, os.pardir, os.pardir))
 ISOLATE_DEPS_DIR = os.path.join(DIR_SOURCE_ROOT, 'isolate_deps_dir')
 
-CHROMIUM_TEST_SHELL_HOST_DRIVEN_DIR = os.path.join(
+CHROME_SHELL_HOST_DRIVEN_DIR = os.path.join(
     DIR_SOURCE_ROOT, 'chrome', 'android')
 
 
@@ -60,12 +60,12 @@ PACKAGE_INFO = {
         '/data/local/tmp/content-shell-command-line',
         None,
         'org.chromium.content_shell_apk.tests'),
-    'chromium_test_shell': PackageInfo(
-        'org.chromium.chrome.testshell',
-        'org.chromium.chrome.testshell.ChromiumTestShellActivity',
-        '/data/local/tmp/chromium-testshell-command-line',
-        'chromium_testshell_devtools_remote',
-        'org.chromium.chrome.testshell.tests'),
+    'chrome_shell': PackageInfo(
+        'org.chromium.chrome.shell',
+        'org.chromium.chrome.shell.ChromeShellActivity',
+        '/data/local/tmp/chrome-shell-command-line',
+        'chrome_shell_devtools_remote',
+        'org.chromium.chrome.shell.tests'),
     'android_webview_shell': PackageInfo(
         'org.chromium.android_webview.shell',
         'org.chromium.android_webview.shell.AwShellActivity',
@@ -137,6 +137,10 @@ ANDROID_NDK_ROOT = os.path.join(DIR_SOURCE_ROOT,
 EMULATOR_SDK_ROOT = os.environ.get('ANDROID_EMULATOR_SDK_ROOT',
                                    os.path.join(DIR_SOURCE_ROOT,
                                                 'android_emulator_sdk'))
+
+BAD_DEVICES_JSON = os.path.join(DIR_SOURCE_ROOT,
+                                os.environ.get('CHROMIUM_OUT_DIR', 'out'),
+                                'bad_devices.json')
 
 UPSTREAM_FLAKINESS_SERVER = 'test-results.appspot.com'
 

@@ -9,7 +9,9 @@
 #include "base/path_service.h"
 #include "base/time/time.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/media_stream_request.h"
 #include "content/renderer/media/media_stream_audio_processor.h"
+#include "content/renderer/media/mock_media_constraint_factory.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/audio_bus.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -80,10 +82,18 @@ class MediaStreamAudioProcessorTest : public ::testing::Test {
 
       // |audio_processor| does nothing when the audio processing is off in
       // the processor.
-      audio_processor->PushRenderData(
-          data_ptr,
-          params_.sample_rate(), params_.channels(),
-          params_.frames_per_buffer(), base::TimeDelta::FromMilliseconds(10));
+      webrtc::AudioProcessing* ap = audio_processor->audio_processing_.get();
+#if defined(OS_ANDROID) || defined(OS_IOS)
+      const bool is_aec_enabled = ap && ap->echo_control_mobile()->is_enabled();
+      // AEC should be turned off for mobiles.
+      DCHECK(!ap || !ap->echo_cancellation()->is_enabled());
+#else
+      const bool is_aec_enabled = ap && ap->echo_cancellation()->is_enabled();
+#endif
+      if (is_aec_enabled) {
+        audio_processor->OnPlayoutData(data_bus.get(), params_.sample_rate(),
+                                       10);
+      }
 
       int16* output = NULL;
       int new_volume = 0;
@@ -144,30 +154,104 @@ class MediaStreamAudioProcessorTest : public ::testing::Test {
 TEST_F(MediaStreamAudioProcessorTest, WithoutAudioProcessing) {
   // Setup the audio processor without enabling the flag.
   blink::WebMediaConstraints constraints;
+  scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
+      new WebRtcAudioDeviceImpl());
   scoped_refptr<MediaStreamAudioProcessor> audio_processor(
-      new MediaStreamAudioProcessor(params_, constraints, 0));
+      new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
+          constraints, 0, MEDIA_DEVICE_AUDIO_CAPTURE,
+          webrtc_audio_device.get()));
   EXPECT_FALSE(audio_processor->has_audio_processing());
+  audio_processor->OnCaptureFormatChanged(params_);
 
   ProcessDataAndVerifyFormat(audio_processor,
                              params_.sample_rate(),
                              params_.channels(),
                              params_.sample_rate() / 100);
+  // Set |audio_processor| to NULL to make sure |webrtc_audio_device| outlives
+  // |audio_processor|.
+  audio_processor = NULL;
 }
 
 TEST_F(MediaStreamAudioProcessorTest, WithAudioProcessing) {
-  // Setup the audio processor with enabling the flag.
+  // Setup the audio processor with the flag enabled.
   CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableAudioTrackProcessing);
   blink::WebMediaConstraints constraints;
+  scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
+      new WebRtcAudioDeviceImpl());
   scoped_refptr<MediaStreamAudioProcessor> audio_processor(
-      new MediaStreamAudioProcessor(params_, constraints, 0));
+      new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
+          constraints, 0, MEDIA_DEVICE_AUDIO_CAPTURE,
+          webrtc_audio_device.get()));
   EXPECT_TRUE(audio_processor->has_audio_processing());
+  audio_processor->OnCaptureFormatChanged(params_);
   VerifyDefaultComponents(audio_processor);
 
   ProcessDataAndVerifyFormat(audio_processor,
                              kAudioProcessingSampleRate,
                              kAudioProcessingNumberOfChannel,
                              kAudioProcessingSampleRate / 100);
+  // Set |audio_processor| to NULL to make sure |webrtc_audio_device| outlives
+  // |audio_processor|.
+  audio_processor = NULL;
+}
+
+TEST_F(MediaStreamAudioProcessorTest, VerifyTabCaptureWithoutAudioProcessing) {
+  // Setup the audio processor with enabling the flag.
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableAudioTrackProcessing);
+  blink::WebMediaConstraints constraints;
+  scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
+      new WebRtcAudioDeviceImpl());
+  // Create MediaStreamAudioProcessor instance for MEDIA_TAB_AUDIO_CAPTURE type.
+  scoped_refptr<MediaStreamAudioProcessor> audio_processor(
+      new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
+          constraints, 0, MEDIA_TAB_AUDIO_CAPTURE,
+          webrtc_audio_device.get()));
+  EXPECT_FALSE(audio_processor->has_audio_processing());
+  audio_processor->OnCaptureFormatChanged(params_);
+
+  ProcessDataAndVerifyFormat(audio_processor,
+                             params_.sample_rate(),
+                             params_.channels(),
+                             params_.sample_rate() / 100);
+
+  // Create MediaStreamAudioProcessor instance for MEDIA_LOOPBACK_AUDIO_CAPTURE.
+  audio_processor =
+      new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
+          constraints, 0, MEDIA_LOOPBACK_AUDIO_CAPTURE,
+          webrtc_audio_device.get());
+  EXPECT_FALSE(audio_processor->has_audio_processing());
+
+  // Set |audio_processor| to NULL to make sure |webrtc_audio_device| outlives
+  // |audio_processor|.
+  audio_processor = NULL;
+}
+
+TEST_F(MediaStreamAudioProcessorTest, TurnOffDefaultConstraints) {
+  // Setup the audio processor with enabling the flag.
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableAudioTrackProcessing);
+
+  // Turn off the default constraints and pass it to MediaStreamAudioProcessor.
+  MockMediaConstraintFactory constraint_factory;
+  constraint_factory.DisableDefaultAudioConstraints();
+  scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
+      new WebRtcAudioDeviceImpl());
+  scoped_refptr<MediaStreamAudioProcessor> audio_processor(
+      new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
+          constraint_factory.CreateWebMediaConstraints(), 0,
+          MEDIA_DEVICE_AUDIO_CAPTURE, webrtc_audio_device.get()));
+  EXPECT_FALSE(audio_processor->has_audio_processing());
+  audio_processor->OnCaptureFormatChanged(params_);
+
+  ProcessDataAndVerifyFormat(audio_processor,
+                             params_.sample_rate(),
+                             params_.channels(),
+                             params_.sample_rate() / 100);
+  // Set |audio_processor| to NULL to make sure |webrtc_audio_device| outlives
+  // |audio_processor|.
+  audio_processor = NULL;
 }
 
 }  // namespace content

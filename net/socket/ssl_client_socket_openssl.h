@@ -27,6 +27,8 @@ typedef struct evp_pkey_st EVP_PKEY;
 typedef struct ssl_st SSL;
 // <openssl/x509.h>
 typedef struct x509_st X509;
+// <openssl/ossl_type.h>
+typedef struct x509_store_ctx_st X509_STORE_CTX;
 
 namespace net {
 
@@ -90,7 +92,13 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
   virtual bool SetSendBufferSize(int32 size) OVERRIDE;
 
+ protected:
+  // SSLClientSocket implementation.
+  virtual scoped_refptr<X509Certificate> GetUnverifiedServerCertificateChain()
+      const OVERRIDE;
+
  private:
+  class PeerCertificateChain;
   class SSLContext;
   friend class SSLClientSocket;
   friend class SSLContext;
@@ -131,6 +139,11 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // Channel IDs.
   void ChannelIDRequestCallback(SSL* ssl, EVP_PKEY** pkey);
 
+  // CertVerifyCallback is called to verify the server's certificates. We do
+  // verification after the handshake so this function only enforces that the
+  // certificates don't change during renegotiation.
+  int CertVerifyCallback(X509_STORE_CTX *store_ctx);
+
   // Callback from the SSL layer to check which NPN protocol we are supporting
   int SelectNextProtoCallback(unsigned char** out, unsigned char* outlen,
                               const unsigned char* in, unsigned int inlen);
@@ -169,6 +182,7 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   int transport_write_error_;
 
   // Set when handshake finishes.
+  scoped_ptr<PeerCertificateChain> server_cert_chain_;
   scoped_refptr<X509Certificate> server_cert_;
   CertVerifyResult server_cert_verify_result_;
   bool completed_handshake_;

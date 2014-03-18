@@ -35,16 +35,26 @@ class PermissionBubbleManager
 
   virtual ~PermissionBubbleManager();
 
-  // Add a new request to the permission bubble. Ownership of the request
+  // Adds a new request to the permission bubble. Ownership of the request
   // remains with the caller. The caller must arrange for the request to
   // outlive the PermissionBubbleManager. If a bubble is visible when this
   // call is made, the request will be queued up and shown after the current
-  // bubble closes.
+  // bubble closes. A request with message text identical to an outstanding
+  // request will receive a RequestFinished call immediately and not be added.
   virtual void AddRequest(PermissionBubbleRequest* request);
 
-  // Set the active view for the permission bubble. If this is NULL, it
-  // means the permission bubble is no longer showing.
-  virtual void SetView(PermissionBubbleView* view);
+  // Cancels an outstanding request. This may have different effects depending
+  // on what is going on with the bubble. If the request is pending, it will be
+  // removed and never shown. If the request is showing, it will continue to be
+  // shown, but the user's action won't be reported back to the request object.
+  // In some circumstances, we can remove the request from the bubble, and may
+  // do so. The caller may delete the request after calling this method.
+  virtual void CancelRequest(PermissionBubbleRequest* request);
+
+  // Sets the active view for the permission bubble. If this is NULL, it
+  // means any existing permission bubble can no longer be shown. Does not
+  // take ownership of the view.
+  virtual void SetView(PermissionBubbleView* view) OVERRIDE;
 
  protected:
   // Sets the coalesce time interval to |interval_ms|. For testing only.
@@ -52,6 +62,7 @@ class PermissionBubbleManager
 
  private:
   friend class PermissionBubbleManagerTest;
+  friend class DownloadRequestLimiterTest;
   friend class content::WebContentsUserData<PermissionBubbleManager>;
 
   explicit PermissionBubbleManager(content::WebContents* web_contents);

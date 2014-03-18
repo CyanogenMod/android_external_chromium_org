@@ -92,9 +92,13 @@
         'core/common/external_data_manager.h',
         'core/common/forwarding_policy_provider.cc',
         'core/common/forwarding_policy_provider.h',
+        'core/common/mac_util.cc',
+        'core/common/mac_util.h',
         'core/common/policy_bundle.cc',
         'core/common/policy_bundle.h',
         'core/common/policy_details.h',
+        'core/common/policy_loader_ios.h',
+        'core/common/policy_loader_ios.mm',
         'core/common/policy_loader_mac.cc',
         'core/common/policy_loader_mac.h',
         'core/common/policy_loader_win.cc',
@@ -135,15 +139,19 @@
         'policy_export.h',
       ],
       'conditions': [
-        ['OS=="android" or OS=="ios"', {
-          'sources': [
-            'core/common/cloud/component_cloud_policy_service_stub.cc',
-          ],
+        ['OS=="android"', {
           'sources!': [
             'core/common/async_policy_loader.cc',
             'core/common/async_policy_loader.h',
             'core/common/async_policy_provider.cc',
             'core/common/async_policy_provider.h',
+          ],
+        }],
+        ['OS=="android" or OS=="ios"', {
+          'sources': [
+            'core/common/cloud/component_cloud_policy_service_stub.cc',
+          ],
+          'sources!': [
             'core/common/cloud/component_cloud_policy_service.cc',
             'core/common/cloud/component_cloud_policy_store.cc',
             'core/common/cloud/component_cloud_policy_store.h',
@@ -173,6 +181,12 @@
             'core/common/cloud/user_cloud_policy_manager.h',
             'core/common/cloud/user_cloud_policy_store.cc',
             'core/common/cloud/user_cloud_policy_store.h',
+          ],
+        }],
+        ['OS!="ios" and OS!="mac"', {
+          'sources!': [
+            'core/common/mac_util.cc',
+            'core/common/mac_util.h',
           ],
         }],
       ],

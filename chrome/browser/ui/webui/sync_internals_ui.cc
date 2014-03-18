@@ -6,10 +6,10 @@
 
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/sync_internals_message_handler.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "extensions/common/extension_messages.h"
 #include "grit/sync_internals_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -31,8 +31,6 @@ content::WebUIDataSource* CreateSyncInternalsHTMLSource() {
   source->AddResourcePath("about.js", IDR_SYNC_INTERNALS_ABOUT_JS);
   source->AddResourcePath("data.js", IDR_SYNC_INTERNALS_DATA_JS);
   source->AddResourcePath("events.js", IDR_SYNC_INTERNALS_EVENTS_JS);
-  source->AddResourcePath("notifications.js",
-                          IDR_SYNC_INTERNALS_NOTIFICATIONS_JS);
   source->AddResourcePath("search.js", IDR_SYNC_INTERNALS_SEARCH_JS);
   source->AddResourcePath("traffic.js", IDR_SYNC_INTERNALS_TRAFFIC_JS);
   source->SetDefaultResource(IDR_SYNC_INTERNALS_INDEX_HTML);

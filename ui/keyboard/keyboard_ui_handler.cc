@@ -13,8 +13,8 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/keyboard/keyboard_controller.h"
@@ -115,8 +115,8 @@ void KeyboardUIHandler::HandleSendKeyEventMessage(
     return;
   }
 
-  aura::WindowEventDispatcher* dispatcher =
-      web_ui()->GetWebContents()->GetView()->GetNativeView()->GetDispatcher();
+  aura::WindowEventDispatcher* dispatcher = web_ui()->GetWebContents()->
+      GetView()->GetNativeView()->GetHost()->dispatcher();
   if (!dispatcher) {
     LOG(ERROR) << "sendKeyEvent failed: no dispatcher";
     return;

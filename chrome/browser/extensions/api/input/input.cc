@@ -8,9 +8,9 @@
 #include "base/lazy_instance.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string16.h"
-#include "chrome/browser/extensions/extension_function_registry.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/extension_function_registry.h"
 #include "ui/events/event.h"
 #include "ui/keyboard/keyboard_controller.h"
 #include "ui/keyboard/keyboard_switches.h"
@@ -58,7 +58,7 @@ bool VirtualKeyboardPrivateMoveCursorFunction::RunImpl() {
   return keyboard::MoveCursor(
       swipe_direction,
       modifier_flags,
-      ash::Shell::GetPrimaryRootWindow()->GetDispatcher());
+      ash::Shell::GetPrimaryRootWindow()->GetHost()->dispatcher());
 #endif
   error_ = kNotYetImplementedError;
   return false;
@@ -89,7 +89,7 @@ bool VirtualKeyboardPrivateSendKeyEventFunction::RunImpl() {
       key_code,
       key_name,
       modifiers,
-      ash::Shell::GetPrimaryRootWindow()->GetDispatcher());
+      ash::Shell::GetPrimaryRootWindow()->GetHost()->dispatcher());
 #endif
   error_ = kNotYetImplementedError;
   return false;
@@ -154,17 +154,16 @@ bool VirtualKeyboardPrivateGetKeyboardConfigFunction::RunImpl() {
   return false;
 }
 
-InputAPI::InputAPI(Profile* profile) {
-}
+InputAPI::InputAPI(content::BrowserContext* context) {}
 
 InputAPI::~InputAPI() {
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<InputAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<InputAPI> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<InputAPI>* InputAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<InputAPI>* InputAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 

@@ -17,7 +17,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/tracked_objects.h"
-#include "components/webdata/encryptor/encryptor.h"
+#include "components/os_crypt/os_crypt.h"
 #include "google_apis/gcm/base/mcs_message.h"
 #include "google_apis/gcm/base/mcs_util.h"
 #include "google_apis/gcm/protocol/mcs.pb.h"
@@ -96,6 +96,7 @@ class GCMStoreImpl::Backend
 
   // Blocking implementations of GCMStoreImpl methods.
   void Load(const LoadCallback& callback);
+  void Close();
   void Destroy(const UpdateCallback& callback);
   void SetDeviceCredentials(uint64 device_android_id,
                             uint64 device_security_token,
@@ -213,6 +214,11 @@ void GCMStoreImpl::Backend::Load(const LoadCallback& callback) {
   return;
 }
 
+void GCMStoreImpl::Backend::Close() {
+  DVLOG(1) << "Closing GCM store.";
+  db_.reset();
+}
+
 void GCMStoreImpl::Backend::Destroy(const UpdateCallback& callback) {
   DVLOG(1) << "Destroying GCM store.";
   db_.reset();
@@ -241,8 +247,8 @@ void GCMStoreImpl::Backend::SetDeviceCredentials(
   write_options.sync = true;
 
   std::string encrypted_token;
-  Encryptor::EncryptString(base::Uint64ToString(device_security_token),
-                           &encrypted_token);
+  OSCrypt::EncryptString(base::Uint64ToString(device_security_token),
+                         &encrypted_token);
   std::string android_id_str = base::Uint64ToString(device_android_id);
   leveldb::Status s =
       db_->Put(write_options,
@@ -487,7 +493,7 @@ bool GCMStoreImpl::Backend::LoadDeviceCredentials(uint64* android_id,
   }
   if (s.ok()) {
     std::string decrypted_token;
-    Encryptor::DecryptString(result, &decrypted_token);
+    OSCrypt::DecryptString(result, &decrypted_token);
     if (!base::StringToUint64(decrypted_token, security_token)) {
       LOG(ERROR) << "Failed to restore security token.";
       return false;
@@ -618,7 +624,7 @@ GCMStoreImpl::GCMStoreImpl(
       weak_ptr_factory_(this) {
 // On OSX, prevent the Keychain permissions popup during unit tests.
 #if defined(OS_MACOSX)
-  Encryptor::UseMockKeychain(use_mock_keychain);
+  OSCrypt::UseMockKeychain(use_mock_keychain);
 #endif
 }
 
@@ -632,6 +638,12 @@ void GCMStoreImpl::Load(const LoadCallback& callback) {
                  base::Bind(&GCMStoreImpl::LoadContinuation,
                             weak_ptr_factory_.GetWeakPtr(),
                             callback)));
+}
+
+void GCMStoreImpl::Close() {
+  blocking_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&GCMStoreImpl::Backend::Close, backend_));
 }
 
 void GCMStoreImpl::Destroy(const UpdateCallback& callback) {

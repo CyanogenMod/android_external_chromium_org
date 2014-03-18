@@ -182,7 +182,7 @@ enum ReservedVariationID {
   // For more details, see
   // chrome/browser/omnibox/omnibox_field_trial.{h,cc}.
   AUTOCOMPLETE_DYNAMIC_FIELD_TRIAL_ID_MIN = 3310086,
-  AUTOCOMPLETE_DYANMIC_FIELD_TRIAL_ID_MAX = 3310185,
+  AUTOCOMPLETE_DYNAMIC_FIELD_TRIAL_ID_MAX = 3310185,
 
   // BookmarkPrompt field trial.
   BOOKMARK_PROMPT_TRIAL_DEFAULT = 3310186,
@@ -265,7 +265,17 @@ enum ReservedVariationID {
   // For more details, see
   // chrome/browser/omnibox/omnibox_field_trial.{h,cc}.
   AUTOCOMPLETE_DYNAMIC_FIELD_TRIAL_RANGE2_ID_MIN = 3311947,
-  AUTOCOMPLETE_DYANMIC_FIELD_TRIAL_RANGE2_ID_MAX = 3312046,
+  AUTOCOMPLETE_DYNAMIC_FIELD_TRIAL_RANGE2_ID_MAX = 3312046,
+
+  // DEPRECATED - DO NOT USE
+  // Name: IOSPhoneNewNTP
+  // Range: 3312100 - 3312103, 3312112 - 3312113
+  // Now retired.  But please don't reuse these IDs; they may taint
+  // your experiment results.
+  IOS_PHONE_NEW_NTP_2014_Q1_ID_MIN = 3312100,
+  IOS_PHONE_NEW_NTP_2014_Q1_ID_MAX = 3312103,
+  IOS_PHONE_NEW_NTP_2014_Q1_ID2_MIN = 3312112,
+  IOS_PHONE_NEW_NTP_2014_Q1_ID2_MAX = 3312113,
 
   // iOS Phone New NTP trial.
   // Range: 3312047 - 3312050 (Beta); 3312100 - 3312103 (Stable)
@@ -274,12 +284,10 @@ enum ReservedVariationID {
   IOS_PHONE_NEW_NTP_CONTROL_1_BETA = 3312048,
   IOS_PHONE_NEW_NTP_FAKEBOX_HINT_BETA = 3312049,
   IOS_PHONE_NEW_NTP_CONTROL_2_BETA = 3312050,
-  IOS_PHONE_NEW_NTP_OMNIBOX_HINT_STABLE = 3312100,
-  IOS_PHONE_NEW_NTP_CONTROL_1_STABLE = 3312101,
-  IOS_PHONE_NEW_NTP_FAKEBOX_HINT_STABLE = 3312102,
-  IOS_PHONE_NEW_NTP_CONTROL_2_STABLE = 3312103,
-  IOS_PHONE_NEW_NTP_OMNIBOX_HINT_V3_STABLE = 3312112,
-  IOS_PHONE_NEW_NTP_CONTROL_3_STABLE = 3312113,
+  IOS_PHONE_NEW_NTP_OMNIBOX_HINT_STABLE = 3312114,
+  IOS_PHONE_NEW_NTP_CONTROL_1_STABLE = 3312115,
+  IOS_PHONE_NEW_NTP_FAKEBOX_HINT_STABLE = 3312116,
+  IOS_PHONE_NEW_NTP_CONTROL_2_STABLE = 3312117,
 
   // iOS Tablet New NTP trial.
   // Range: 3312104 - 3312107 (Beta); 3312108 - 3312111 (Stable)
@@ -296,10 +304,24 @@ enum ReservedVariationID {
   EXTENSION_INSTALL_PROMPT_EXPERIMENT_ID_MIN = 3312051,
   EXTENSION_INSTALL_PROMPT_EXPERIMENT_ID_MAX = 3312099,
 
+  // <link rel=prefetch> field trial.
+  LINK_REL_PREFETCH_ENABLED_1 = 3312118,
+  LINK_REL_PREFETCH_ENABLED_2 = 3312119,
+  LINK_REL_PREFETCH_DISABLED_1 = 3312120,
+  LINK_REL_PREFETCH_DISABLED_2 = 3312121,
+
+  // Reserve 200 more IDs to be used by autocomplete dynamic field trials.
+  // The dynamic field trials are activated by a call to
+  // OmniboxFieldTrial::ActivateDynamicFieldTrials.
+  // For more details, see
+  // chrome/browser/omnibox/omnibox_field_trial.{h,cc}.
+  AUTOCOMPLETE_DYNAMIC_FIELD_TRIAL_RANGE3_ID_MIN = 3312122,
+  AUTOCOMPLETE_DYNAMIC_FIELD_TRIAL_RANGE3_ID_MAX = 3312321,
+
   // NEXT ID: When adding new IDs, please add them above this section, starting
   // with the value of NEXT_ID, and updating NEXT_ID to (end of your reserved
   // range) + 1.
-  NEXT_ID = 3312114,
+  NEXT_ID = 3312322,
 
   // USABLE IDs END HERE.
   //

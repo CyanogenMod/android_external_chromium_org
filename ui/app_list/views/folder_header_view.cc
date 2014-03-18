@@ -113,7 +113,7 @@ void FolderHeaderView::Update() {
 
   folder_name_view_->SetVisible(folder_name_visible_);
   if (folder_name_visible_)
-    folder_name_view_->SetText(base::UTF8ToUTF16(folder_item_->title()));
+    folder_name_view_->SetText(base::UTF8ToUTF16(folder_item_->name()));
 }
 
 gfx::Size FolderHeaderView::GetPreferredSize() {
@@ -136,6 +136,13 @@ void FolderHeaderView::Layout() {
   text_bounds.ClampToCenteredSize(gfx::Size(text_bounds.width(),
       folder_name_view_->GetPreferredSize().height()));
   folder_name_view_->SetBoundsRect(text_bounds);
+}
+
+bool FolderHeaderView::OnKeyPressed(const ui::KeyEvent& event) {
+  if (event.key_code() == ui::VKEY_RETURN)
+    delegate_->GiveBackFocusToSearchBox();
+
+  return false;
 }
 
 void FolderHeaderView::OnPaint(gfx::Canvas* canvas) {
@@ -161,19 +168,20 @@ void FolderHeaderView::ContentsChanged(views::Textfield* sender,
 
   folder_item_->RemoveObserver(this);
   std::string name = base::UTF16ToUTF8(folder_name_view_->text());
-  folder_item_->SetTitleAndFullName(name, name);
+  delegate_->SetItemName(folder_item_, name);
   folder_item_->AddObserver(this);
 }
 
 void FolderHeaderView::ButtonPressed(views::Button* sender,
                                      const ui::Event& event) {
+  delegate_->GiveBackFocusToSearchBox();
   delegate_->NavigateBack(folder_item_, event);
 }
 
 void FolderHeaderView::ItemIconChanged() {
 }
 
-void FolderHeaderView::ItemTitleChanged() {
+void FolderHeaderView::ItemNameChanged() {
   Update();
 }
 
@@ -187,4 +195,3 @@ void FolderHeaderView::ItemPercentDownloadedChanged() {
 }
 
 }  // namespace app_list
-

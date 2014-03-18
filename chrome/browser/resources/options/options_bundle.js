@@ -9,12 +9,13 @@
 <include src="controlled_setting.js"></include>
 <include src="deletable_item_list.js"></include>
 <include src="editable_text_field.js"></include>
+<include src="hotword_search_setting_indicator.js"></include>
 <include src="inline_editable_list.js"></include>
 <include src="options_page.js"></include>
 <include src="pref_ui.js"></include>
 <include src="settings_dialog.js"></include>
 <include src="settings_banner.js"></include>
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
 <include src="../chromeos/user_images_grid.js"></include>
 // DO NOT BREAK THE FOLLOWING INCLUDE LINE INTO SEPARATE LINES!
 // Even though the include line spans more than 80 characters,
@@ -48,7 +49,7 @@ var KeyboardOverlay = options.KeyboardOverlay;
 var PointerOverlay = options.PointerOverlay;
 var UIAccountTweaks = uiAccountTweaks.UIAccountTweaks;
 </if>
-<if expr="pp_ifdef('use_nss')">
+<if expr="use_nss">
 <include src="certificate_tree.js"></include>
 <include src="certificate_manager.js"></include>
 <include src="certificate_restore_overlay.js"></include>
@@ -73,14 +74,13 @@ var CertificateImportErrorOverlay = options.CertificateImportErrorOverlay;
 <include src="clear_browser_data_overlay.js"></include>
 <include src="confirm_dialog.js"></include>
 <include src="content_settings.js"></include>
-<include src="content_settings2.js"></include>
 <include src="content_settings_exceptions_area.js"></include>
 <include src="content_settings_ui.js"></include>
 <include src="cookies_list.js"></include>
 <include src="cookies_view.js"></include>
 <include src="factory_reset_overlay.js"></include>
 <include src="font_settings.js"></include>
-<if expr="pp_ifdef('enable_google_now')">
+<if expr="enable_google_now">
 <include src="geolocation_options.js"></include>
 </if>
 <include src="handler_options.js"></include>
@@ -115,6 +115,6 @@ var CertificateImportErrorOverlay = options.CertificateImportErrorOverlay;
 <include src="../sync_setup_overlay.js"></include>
 <include src="../uber/uber_utils.js"></include>
 <include src="options.js"></include>
-<if expr="pp_ifdef('enable_settings_app')">
+<if expr="enable_settings_app">
 <include src="options_settings_app.js"></include>
 </if>

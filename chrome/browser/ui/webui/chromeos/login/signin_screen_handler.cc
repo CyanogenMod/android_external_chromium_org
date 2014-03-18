@@ -87,7 +87,7 @@ const char kKeyLocallyManagedUser[] = "locallyManagedUser";
 const char kKeySignedIn[] = "signedIn";
 const char kKeyCanRemove[] = "canRemove";
 const char kKeyIsOwner[] = "isOwner";
-const char kKeyForceOnlineSignin[] = "forceOnlineSignin";
+const char kKeyInitialAuthType[] = "initialAuthType";
 const char kKeyMultiProfilesAllowed[] = "isMultiProfilesAllowed";
 const char kKeyMultiProfilesPolicy[] = "multiProfilesPolicy";
 
@@ -229,6 +229,37 @@ void RecordSAMLScrapingVerificationResultInHistogram(bool success) {
   UMA_HISTOGRAM_BOOLEAN("ChromeOS.SAML.Scraping.VerificationResult", success);
 }
 
+bool ShouldForceOnlineSignIn(const User* user) {
+  // Public sessions are always allowed to log in offline.
+  // Supervised user are allowed to log in offline if their OAuth token status
+  // is unknown or valid.
+  // For all other users, force online sign in if:
+  // * The flag to force online sign-in is set for the user.
+  // * The user's OAuth token is invalid.
+  // * The user's OAuth token status is unknown (except supervised users,
+  //   see above).
+  if (user->is_logged_in())
+    return false;
+
+  const User::OAuthTokenStatus token_status = user->oauth_token_status();
+  const bool is_locally_managed_user =
+      user->GetType() == User::USER_TYPE_LOCALLY_MANAGED;
+  const bool is_public_session =
+      user->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT;
+
+  if (is_locally_managed_user &&
+      token_status == User::OAUTH_TOKEN_STATUS_UNKNOWN) {
+    return false;
+  }
+
+  if (is_public_session)
+    return false;
+
+  return user->force_online_signin() ||
+         (token_status == User::OAUTH2_TOKEN_STATUS_INVALID) ||
+         (token_status == User::OAUTH_TOKEN_STATUS_UNKNOWN);
+}
+
 }  // namespace
 
 // LoginScreenContext implementation ------------------------------------------
@@ -282,6 +313,7 @@ SigninScreenHandler::SigninScreenHandler(
       last_network_state_(NetworkStateInformer::UNKNOWN),
       has_pending_auth_ui_(false),
       wait_for_auto_enrollment_check_(false),
+      caps_lock_enabled_(false),
       gaia_screen_handler_(gaia_screen_handler) {
   DCHECK(network_state_informer_.get());
   DCHECK(error_screen_actor_);
@@ -310,11 +342,8 @@ SigninScreenHandler::SigninScreenHandler(
 }
 
 SigninScreenHandler::~SigninScreenHandler() {
+  ash::Shell::GetInstance()->RemovePreTargetHandler(this);
   weak_factory_.InvalidateWeakPtrs();
-  SystemKeyEventListener* key_event_listener =
-      SystemKeyEventListener::GetInstance();
-  if (key_event_listener)
-    key_event_listener->RemoveCapsLockObserver(this);
   if (delegate_)
     delegate_->SetWebUIHandler(NULL);
   network_state_informer_->RemoveObserver(this);
@@ -433,6 +462,8 @@ void SigninScreenHandler::SetDelegate(SigninScreenHandlerDelegate* delegate) {
   delegate_ = delegate;
   if (delegate_)
     delegate_->SetWebUIHandler(this);
+  else
+    auto_enrollment_progress_subscription_.reset();
 }
 
 void SigninScreenHandler::SetNativeWindowDelegate(
@@ -688,11 +719,8 @@ void SigninScreenHandler::Initialize() {
   if (!delegate_)
     return;
 
-  // Register for Caps Lock state change notifications;
-  SystemKeyEventListener* key_event_listener =
-      SystemKeyEventListener::GetInstance();
-  if (key_event_listener)
-    key_event_listener->AddCapsLockObserver(this);
+  // Make sure the event is processed by this before the IME.
+  ash::Shell::GetInstance()->PrependPreTargetHandler(this);
 
   if (show_on_init_) {
     show_on_init_ = false;
@@ -735,7 +763,6 @@ void SigninScreenHandler::RegisterMessages() {
               &SigninScreenHandler::HandleToggleKioskEnableScreen);
   AddCallback("toggleResetScreen",
               &SigninScreenHandler::HandleToggleResetScreen);
-  AddCallback("launchHelpApp", &SigninScreenHandler::HandleLaunchHelpApp);
   AddCallback("createAccount", &SigninScreenHandler::HandleCreateAccount);
   AddCallback("accountPickerReady",
               &SigninScreenHandler::HandleAccountPickerReady);
@@ -839,6 +866,27 @@ void SigninScreenHandler::ShowUserPodButton(
   CallJS("login.AccountPickerScreen.showUserPodButton", username, iconURL);
 }
 
+void SigninScreenHandler::HideUserPodButton(const std::string& username) {
+  CallJS("login.AccountPickerScreen.hideUserPodButton", username);
+}
+
+void SigninScreenHandler::SetAuthType(const std::string& username,
+                                      LoginDisplay::AuthType auth_type,
+                                      const std::string& initial_value) {
+  user_auth_type_map_[username] = auth_type;
+  CallJS("login.AccountPickerScreen.setAuthType",
+         username,
+         static_cast<int>(auth_type),
+         base::StringValue(initial_value));
+}
+
+LoginDisplay::AuthType SigninScreenHandler::GetAuthType(
+    const std::string& username) const {
+  if (user_auth_type_map_.find(username) == user_auth_type_map_.end())
+    return LoginDisplay::OFFLINE_PASSWORD;
+  return user_auth_type_map_.find(username)->second;
+}
+
 void SigninScreenHandler::ShowError(int login_attempts,
                                     const std::string& error_text,
                                     const std::string& help_link_text,
@@ -866,7 +914,10 @@ void SigninScreenHandler::ShowGaiaPasswordChanged(const std::string& username) {
   email_ = username;
   password_changed_for_.insert(email_);
   core_oobe_actor_->ShowSignInUI(email_);
-  CallJS("login.AccountPickerScreen.forceOnlineSignin", email_);
+  CallJS("login.setAuthType",
+         username,
+         static_cast<int>(LoginDisplay::ONLINE_SIGN_IN),
+         base::StringValue(""));
 }
 
 void SigninScreenHandler::ShowPasswordChangedDialog(bool show_password_error) {
@@ -898,9 +949,13 @@ void SigninScreenHandler::OnCookiesCleared(base::Closure on_clear_callback) {
   on_clear_callback.Run();
 }
 
-void SigninScreenHandler::OnCapsLockChange(bool enabled) {
-  if (page_is_ready())
-    CallJS("login.AccountPickerScreen.setCapsLockState", enabled);
+void SigninScreenHandler::OnKeyEvent(ui::KeyEvent* key) {
+  if (key->type() == ui::ET_KEY_PRESSED &&
+      key->key_code() == ui::VKEY_CAPITAL) {
+    caps_lock_enabled_ = !caps_lock_enabled_;
+    if (page_is_ready())
+      CallJS("login.AccountPickerScreen.setCapsLockState", caps_lock_enabled_);
+  }
 }
 
 void SigninScreenHandler::Observe(int type,
@@ -1189,13 +1244,13 @@ void SigninScreenHandler::HandleToggleKioskEnableScreen() {
   policy::BrowserPolicyConnectorChromeOS* connector =
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
   if (delegate_ &&
-      !wait_for_auto_enrollment_check_ &&
+      !auto_enrollment_progress_subscription_ &&
       !connector->IsEnterpriseManaged()) {
-    wait_for_auto_enrollment_check_ = true;
-
-    LoginDisplayHostImpl::default_host()->GetAutoEnrollmentCheckResult(
-        base::Bind(&SigninScreenHandler::ContinueKioskEnableFlow,
-                   weak_factory_.GetWeakPtr()));
+    auto_enrollment_progress_subscription_ =
+        LoginDisplayHostImpl::default_host()
+            ->RegisterAutoEnrollmentProgressHandler(
+                base::Bind(&SigninScreenHandler::ContinueKioskEnableFlow,
+                           weak_factory_.GetWeakPtr()));
   }
 }
 
@@ -1213,45 +1268,23 @@ void SigninScreenHandler::HandleToggleKioskAutolaunchScreen() {
     delegate_->ShowKioskAutolaunchScreen();
 }
 
-void SigninScreenHandler::HandleLaunchHelpApp(double help_topic_id) {
-  if (!delegate_)
-    return;
-  if (!help_app_.get())
-    help_app_ = new HelpAppLauncher(GetNativeWindow());
-  help_app_->ShowHelpTopic(
-      static_cast<HelpAppLauncher::HelpTopic>(help_topic_id));
-}
-
 void SigninScreenHandler::FillUserDictionary(User* user,
                                              bool is_owner,
                                              bool is_signin_to_add,
+                                             LoginDisplay::AuthType auth_type,
                                              base::DictionaryValue* user_dict) {
   const std::string& email = user->email();
   const bool is_public_account =
       user->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT;
   const bool is_locally_managed_user =
       user->GetType() == User::USER_TYPE_LOCALLY_MANAGED;
-  const User::OAuthTokenStatus token_status = user->oauth_token_status();
-
-  // Force online sign-in if at least one of the following is true:
-  // * The flag to force online sign-in is set for the user.
-  // * The user's oauth token is invalid.
-  // * The user's oauth token status is unknown. This condition does not apply
-  //   to supervised users: A supervised user whose oauth token status is
-  //   unknown may still log in offline. The token will be invalidated inside
-  //   the session in case it has been revoked.
-  const bool force_online_signin =
-      user->force_online_signin() ||
-      (token_status == User::OAUTH2_TOKEN_STATUS_INVALID) ||
-      (!is_locally_managed_user &&
-           token_status == User::OAUTH_TOKEN_STATUS_UNKNOWN);
 
   user_dict->SetString(kKeyUsername, email);
   user_dict->SetString(kKeyEmailAddress, user->display_email());
   user_dict->SetString(kKeyDisplayName, user->GetDisplayName());
   user_dict->SetBoolean(kKeyPublicAccount, is_public_account);
   user_dict->SetBoolean(kKeyLocallyManagedUser, is_locally_managed_user);
-  user_dict->SetInteger(kKeyForceOnlineSignin, force_online_signin);
+  user_dict->SetInteger(kKeyInitialAuthType, auth_type);
   user_dict->SetBoolean(kKeySignedIn, user->is_logged_in());
   user_dict->SetBoolean(kKeyIsOwner, is_owner);
 
@@ -1290,7 +1323,6 @@ void SigninScreenHandler::SendUserList(bool animated) {
   BootTimesLoader::Get()->RecordCurrentStats("login-send-user-list");
 
   base::ListValue users_list;
-  size_t first_non_public_account_index  = 0;
   const UserList& users = delegate_->GetUsers();
 
   // TODO(nkostylev): Move to a separate method in UserManager.
@@ -1298,11 +1330,13 @@ void SigninScreenHandler::SendUserList(bool animated) {
   bool is_signin_to_add = LoginDisplayHostImpl::default_host() &&
       UserManager::Get()->IsUserLoggedIn();
 
+  user_pod_button_callback_map_.clear();
+  user_auth_type_map_.clear();
+
   bool single_user = users.size() == 1;
   std::string owner;
   chromeos::CrosSettings::Get()->GetString(chromeos::kDeviceOwner, &owner);
   bool has_owner = owner.size() > 0;
-  // if public accounts available, that means there's no device owner
   size_t max_non_owner_users = has_owner ? kMaxUsers - 1 : kMaxUsers;
   size_t non_owner_count = 0;
 
@@ -1314,8 +1348,14 @@ void SigninScreenHandler::SendUserList(bool animated) {
 
     if (is_public_account || non_owner_count < max_non_owner_users ||
         is_owner) {
+      LoginDisplay::AuthType initial_auth_type =
+          ShouldForceOnlineSignIn(*it) ? LoginDisplay::ONLINE_SIGN_IN
+                                       : LoginDisplay::OFFLINE_PASSWORD;
+      user_auth_type_map_[email] = initial_auth_type;
+
       base::DictionaryValue* user_dict = new base::DictionaryValue();
-      FillUserDictionary(*it, is_owner, is_signin_to_add, user_dict);
+      FillUserDictionary(
+          *it, is_owner, is_signin_to_add, initial_auth_type, user_dict);
       bool signed_in = (*it)->is_logged_in();
       // Single user check here is necessary because owner info might not be
       // available when running into login screen on first boot.
@@ -1326,12 +1366,8 @@ void SigninScreenHandler::SendUserList(bool animated) {
 
       if (!is_owner)
         ++non_owner_count;
-      // public accounts come first in the list
-      if (is_public_account) {
-        users_list.Insert(first_non_public_account_index++, user_dict);
-      } else {
-        users_list.Append(user_dict);
-      }
+
+      users_list.Append(user_dict);
     }
   }
   while (users_list.GetSize() > kMaxUsers)
@@ -1685,22 +1721,30 @@ void SigninScreenHandler::SubmitLoginFormForTest() {
   // if they are cleared here.
 }
 
-void SigninScreenHandler::ContinueKioskEnableFlow(bool should_auto_enroll) {
-  wait_for_auto_enrollment_check_ = false;
-
+void SigninScreenHandler::ContinueKioskEnableFlow(
+    policy::AutoEnrollmentClient::State state) {
   // Do not proceed with kiosk enable when auto enroll will be enforced.
   // TODO(xiyuan): Add an error UI feedkback so user knows what happens.
-  if (should_auto_enroll) {
-    LOG(WARNING) << "Kiosk enable flow aborted because auto enrollment is "
-                    "going to be enforced.";
-
-    if (!kiosk_enable_flow_aborted_callback_for_test_.is_null())
-      kiosk_enable_flow_aborted_callback_for_test_.Run();
-    return;
+  switch (state) {
+    case policy::AutoEnrollmentClient::STATE_PENDING:
+    case policy::AutoEnrollmentClient::STATE_CONNECTION_ERROR:
+      // Wait for the next callback.
+      return;
+    case policy::AutoEnrollmentClient::STATE_TRIGGER_ENROLLMENT:
+      // Auto-enrollment is on.
+      LOG(WARNING) << "Kiosk enable flow aborted because auto enrollment is "
+                      "going to be enforced.";
+      if (!kiosk_enable_flow_aborted_callback_for_test_.is_null())
+        kiosk_enable_flow_aborted_callback_for_test_.Run();
+      break;
+    case policy::AutoEnrollmentClient::STATE_SERVER_ERROR:
+    case policy::AutoEnrollmentClient::STATE_NO_ENROLLMENT:
+      // Auto-enrollment not applicable.
+      if (delegate_)
+        delegate_->ShowKioskEnableScreen();
+      break;
   }
-
-  if (delegate_)
-    delegate_->ShowKioskEnableScreen();
+  auto_enrollment_progress_subscription_.reset();
 }
 
 void SigninScreenHandler::OnShowAddUser(const std::string& email) {

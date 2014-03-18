@@ -16,8 +16,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/runtime/runtime_api.h"
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_agent_host.h"
@@ -37,8 +35,10 @@
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
+#include "extensions/common/one_shot_event.h"
 #include "extensions/common/switches.h"
 
 using content::BrowserContext;
@@ -95,10 +95,11 @@ void OnRenderViewHostUnregistered(BrowserContext* context,
 class IncognitoProcessManager : public ProcessManager {
  public:
   IncognitoProcessManager(BrowserContext* incognito_context,
-                          BrowserContext* original_context);
+                          BrowserContext* original_context,
+                          ProcessManager* original_manager);
   virtual ~IncognitoProcessManager() {}
-  virtual ExtensionHost* CreateBackgroundHost(const Extension* extension,
-                                              const GURL& url) OVERRIDE;
+  virtual bool CreateBackgroundHost(const Extension* extension,
+                                    const GURL& url) OVERRIDE;
   virtual SiteInstance* GetSiteInstanceForURL(const GURL& url) OVERRIDE;
 
  private:
@@ -177,12 +178,36 @@ struct ProcessManager::BackgroundPageData {
 
 // static
 ProcessManager* ProcessManager::Create(BrowserContext* context) {
-  if (context->IsOffTheRecord()) {
-    BrowserContext* original_context =
-        ExtensionsBrowserClient::Get()->GetOriginalContext(context);
-    return new IncognitoProcessManager(context, original_context);
+  ExtensionsBrowserClient* client = ExtensionsBrowserClient::Get();
+  if (client->IsGuestSession(context)) {
+    // In the guest session, there is a single off-the-record context.  Unlike
+    // a regular incognito mode, background pages of extensions must be
+    // created regardless of whether extensions use "spanning" or "split"
+    // incognito behavior.
+    BrowserContext* original_context = client->GetOriginalContext(context);
+    return new ProcessManager(context, original_context);
   }
+
+  if (context->IsOffTheRecord()) {
+    BrowserContext* original_context = client->GetOriginalContext(context);
+    ProcessManager* original_manager =
+        ExtensionSystem::Get(original_context)->process_manager();
+    return new IncognitoProcessManager(
+        context, original_context, original_manager);
+  }
+
   return new ProcessManager(context, context);
+}
+
+// static
+ProcessManager* ProcessManager::CreateIncognitoForTesting(
+    BrowserContext* incognito_context,
+    BrowserContext* original_context,
+    ProcessManager* original_manager) {
+  DCHECK(incognito_context->IsOffTheRecord());
+  DCHECK(!original_context->IsOffTheRecord());
+  return new IncognitoProcessManager(
+      incognito_context, original_context, original_manager);
 }
 
 ProcessManager::ProcessManager(BrowserContext* context,
@@ -257,26 +282,26 @@ const ProcessManager::ViewSet ProcessManager::GetAllViews() const {
   return result;
 }
 
-ExtensionHost* ProcessManager::CreateBackgroundHost(const Extension* extension,
-                                                    const GURL& url) {
+bool ProcessManager::CreateBackgroundHost(const Extension* extension,
+                                          const GURL& url) {
   // Hosted apps are taken care of from BackgroundContentsService. Ignore them
   // here.
   if (extension->is_hosted_app() ||
       !ExtensionsBrowserClient::Get()->
           IsBackgroundPageAllowed(GetBrowserContext())) {
-    return NULL;
+    return false;
   }
 
   // Don't create multiple background hosts for an extension.
-  if (ExtensionHost* host = GetBackgroundHostForExtension(extension->id()))
-    return host;  // TODO(kalman): return NULL here? It might break things...
+  if (GetBackgroundHostForExtension(extension->id()))
+    return true;  // TODO(kalman): return false here? It might break things...
 
   ExtensionHost* host =
       new ExtensionHost(extension, GetSiteInstanceForURL(url), url,
                         VIEW_TYPE_EXTENSION_BACKGROUND_PAGE);
   host->CreateRenderViewSoon();
   OnBackgroundHostCreated(host);
-  return host;
+  return true;
 }
 
 ExtensionHost* ProcessManager::GetBackgroundHostForExtension(
@@ -569,12 +594,10 @@ void ProcessManager::CancelSuspend(const Extension* extension) {
 }
 
 void ProcessManager::OnBrowserWindowReady() {
-  ExtensionService* service = ExtensionSystem::Get(
-      GetBrowserContext())->extension_service();
-  // On Chrome OS, a login screen is implemented as a browser.
-  // This browser has no extension service.  In this case,
-  // service will be NULL.
-  if (!service || !service->is_ready())
+  // If the extension system isn't ready yet the background hosts will be
+  // created via NOTIFICATION_EXTENSIONS_READY below.
+  ExtensionSystem* system = ExtensionSystem::Get(GetBrowserContext());
+  if (!system->ready().is_signaled())
     return;
 
   CreateBackgroundHostsForProfileStartup();
@@ -851,10 +874,10 @@ bool ProcessManager::DeferLoadingBackgroundHosts() const {
 
 IncognitoProcessManager::IncognitoProcessManager(
     BrowserContext* incognito_context,
-    BrowserContext* original_context)
+    BrowserContext* original_context,
+    ProcessManager* original_manager)
     : ProcessManager(incognito_context, original_context),
-      original_manager_(
-          ExtensionSystem::Get(original_context)->process_manager()) {
+      original_manager_(original_manager) {
   DCHECK(incognito_context->IsOffTheRecord());
 
   // The original profile will have its own ProcessManager to
@@ -867,8 +890,8 @@ IncognitoProcessManager::IncognitoProcessManager(
                     content::Source<BrowserContext>(original_context));
 }
 
-ExtensionHost* IncognitoProcessManager::CreateBackgroundHost(
-    const Extension* extension, const GURL& url) {
+bool IncognitoProcessManager::CreateBackgroundHost(const Extension* extension,
+                                                   const GURL& url) {
   if (IncognitoInfo::IsSplitMode(extension)) {
     if (ExtensionsBrowserClient::Get()->IsExtensionIncognitoEnabled(
             extension->id(), GetBrowserContext()))
@@ -877,7 +900,7 @@ ExtensionHost* IncognitoProcessManager::CreateBackgroundHost(
     // Do nothing. If an extension is spanning, then its original-profile
     // background page is shared with incognito, so we don't create another.
   }
-  return NULL;
+  return false;
 }
 
 SiteInstance* IncognitoProcessManager::GetSiteInstanceForURL(const GURL& url) {

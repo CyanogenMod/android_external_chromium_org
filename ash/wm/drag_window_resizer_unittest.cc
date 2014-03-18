@@ -16,21 +16,15 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/compositor/layer_tree_owner.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/corewm/window_util.h"
 #include "ui/views/widget/widget.h"
-
-#if defined(OS_CHROMEOS)
-#include "ash/system/tray/system_tray.h"
-#include "ash/system/user/tray_user.h"
-#include "ash/test/test_session_state_delegate.h"
-#include "ash/test/test_shell_delegate.h"
-#endif
+#include "ui/wm/core/window_util.h"
 
 namespace ash {
 namespace internal {
@@ -85,7 +79,7 @@ class DragWindowResizerTest : public test::AshTestBase {
     transient_parent_->SetType(ui::wm::WINDOW_TYPE_NORMAL);
     transient_parent_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
     ParentWindowInPrimaryRootWindow(transient_parent_.get());
-    views::corewm::AddTransientChild(transient_parent_.get(), transient_child_);
+    ::wm::AddTransientChild(transient_parent_.get(), transient_child_);
     transient_parent_->set_id(5);
 
     panel_window_.reset(new aura::Window(&delegate6_));
@@ -384,7 +378,7 @@ TEST_F(DragWindowResizerTest, DragWindowController) {
     // Check if |resizer->layer_| is properly set to the drag widget.
     const std::vector<ui::Layer*>& layers = drag_layer->children();
     EXPECT_FALSE(layers.empty());
-    EXPECT_EQ(controller->layer_, layers.back());
+    EXPECT_EQ(controller->layer_owner_->root(), layers.back());
 
     // |window_| should be opaque since the pointer is still on the primary
     // root window. The drag window should be semi-transparent.
@@ -638,93 +632,6 @@ TEST_F(DragWindowResizerTest, MoveWindowAcrossDisplays) {
     resizer->CompleteDrag();
   }
 }
-
-#if defined(OS_CHROMEOS)
-// Checks that moving a window to another desktop will properly set and reset
-// the transparency.
-TEST_F(DragWindowResizerTest, DragToOtherDesktopOpacity) {
-  // Set up a few things we need for multi profile.
-  ash::test::TestSessionStateDelegate* session_delegate =
-      static_cast<ash::test::TestSessionStateDelegate*>(
-          ash::Shell::GetInstance()->session_state_delegate());
-  session_delegate->set_logged_in_users(2);
-  ash::test::TestShellDelegate* shell_delegate =
-      static_cast<ash::test::TestShellDelegate*>(
-          ash::Shell::GetInstance()->delegate());
-  shell_delegate->set_multi_profiles_enabled(true);
-
-  // Create one other user where we can drag our stuff onto.
-  SystemTray* tray = Shell::GetPrimaryRootWindowController()->GetSystemTray();
-  TrayUser* tray_user = new TrayUser(tray, 1);
-  tray->AddTrayUserItemForTest(tray_user);
-
-  // Move the view somewhere where we can hit it.
-  views::View* view = tray->GetTrayItemViewForTest(tray_user);
-  view->SetBounds(80, 0, 20, 20);
-  gfx::Point center = view->GetBoundsInScreen().CenterPoint();
-
-  gfx::Rect initial_bounds = gfx::Rect(0, 0, 50, 60);
-  // Drag the window over the icon and let it drop. Test that the window's
-  // layer gets transparent and reverts back.
-  {
-    aura::Window* window = window_.get();
-    window->SetBoundsInScreen(initial_bounds,
-                              Shell::GetScreen()->GetPrimaryDisplay());
-    // Grab (0, 0) of the window.
-    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
-        window, gfx::Point(), HTCAPTION));
-    ASSERT_TRUE(resizer.get());
-    EXPECT_EQ(1.0, window->layer()->opacity());
-    resizer->Drag(center, 0);
-    EXPECT_NE(1.0, window->layer()->opacity());
-    EXPECT_EQ(0, session_delegate->num_transfer_to_desktop_of_user_calls());
-    resizer->CompleteDrag();
-    EXPECT_EQ(1.0, window->layer()->opacity());
-    EXPECT_EQ(1, session_delegate->num_transfer_to_desktop_of_user_calls());
-    EXPECT_EQ(initial_bounds.ToString(), window->bounds().ToString());
-  }
-
-  // Drag the window over the icon and cancel the operation. Test that the
-  // window's layer gets transparent and reverts back.
-  {
-    aura::Window* window = window_.get();
-    window->SetBoundsInScreen(initial_bounds,
-                              Shell::GetScreen()->GetPrimaryDisplay());
-    // Grab (0, 0) of the window.
-    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
-        window, gfx::Point(), HTCAPTION));
-    ASSERT_TRUE(resizer.get());
-    EXPECT_EQ(1.0, window->layer()->opacity());
-    resizer->Drag(center, 0);
-    EXPECT_NE(1.0, window->layer()->opacity());
-    resizer->RevertDrag();
-    EXPECT_EQ(1.0, window->layer()->opacity());
-    EXPECT_EQ(1, session_delegate->num_transfer_to_desktop_of_user_calls());
-    EXPECT_EQ(initial_bounds.ToString(), window->bounds().ToString());
-  }
-
-  // Drag the window over the icon and somewhere else and see that it properly
-  // reverts its transparency.
-  {
-    aura::Window* window = window_.get();
-    window->SetBoundsInScreen(initial_bounds,
-                              Shell::GetScreen()->GetPrimaryDisplay());
-    // Grab (0, 0) of the window.
-    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
-        window, gfx::Point(), HTCAPTION));
-    ASSERT_TRUE(resizer.get());
-    EXPECT_EQ(1.0, window->layer()->opacity());
-    resizer->Drag(center, 0);
-    EXPECT_NE(1.0, window->layer()->opacity());
-    resizer->Drag(gfx::Point(), 0);
-    EXPECT_EQ(1.0, window->layer()->opacity());
-    resizer->CompleteDrag();
-    EXPECT_EQ(1, session_delegate->num_transfer_to_desktop_of_user_calls());
-    EXPECT_NE(initial_bounds.ToString(), window->bounds().ToString());
-  }
-}
-#endif
-
 
 }  // namespace internal
 }  // namespace ash

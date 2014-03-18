@@ -42,9 +42,6 @@
 #include "chrome/installer/util/util_constants.h"
 #include "chrome/installer/util/work_item_list.h"
 
-// Build-time generated include file.
-#include "registered_dlls.h"  // NOLINT
-
 using base::ASCIIToUTF16;
 using base::UTF16ToUTF8;
 using installer::InstallerState;
@@ -352,7 +349,7 @@ bool CreateVisualElementsManifest(const base::FilePath& src_path,
     // Write the manifest to |src_path|.
     const std::string manifest(UTF16ToUTF8(manifest16));
     int size = base::checked_cast<int>(manifest.size());
-    if (file_util::WriteFile(
+    if (base::WriteFile(
         src_path.Append(installer::kVisualElementsManifest),
             manifest.c_str(), size) == size) {
       VLOG(1) << "Successfully wrote " << installer::kVisualElementsManifest

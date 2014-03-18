@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("flags.gni")
+import("//build/config/crypto.gni")
 import("//build/config/linux/pkg_config.gni")
 
 config("ssl_preprocessor_flags") {
@@ -19,8 +19,7 @@ group("metassl") {
 
   if (use_openssl) {
     assert(is_linux)
-    deps = "//third_party/openssl"
-    use_openssl = false
+    deps = [ "//third_party/openssl" ]
   } else {
     deps = [ "//net/third_party/nss:ssl" ]
   }

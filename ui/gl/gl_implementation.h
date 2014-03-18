@@ -52,8 +52,23 @@ GL_EXPORT bool InitializeDynamicGLBindings(GLImplementation implementation,
 // Initialize Debug logging wrappers for GL bindings.
 void InitializeDebugGLBindings();
 
-// Initialize stub methods for drawing operations in the GL bindings.
+// Initialize stub methods for drawing operations in the GL bindings. The
+// null draw bindings default to enabled, so that draw operations do nothing.
 void InitializeNullDrawGLBindings();
+
+// TODO(danakj): Remove this when all test suites are using null-draw.
+GL_EXPORT bool HasInitializedNullDrawGLBindings();
+
+// Once initialized, instantiating this turns the stub methods for drawing
+// operations off allowing drawing will occur while the object is alive.
+class GL_EXPORT DisableNullDrawGLBindings {
+ public:
+  DisableNullDrawGLBindings();
+  ~DisableNullDrawGLBindings();
+
+ private:
+  bool initial_enabled_;
+};
 
 GL_EXPORT void ClearGLBindings();
 

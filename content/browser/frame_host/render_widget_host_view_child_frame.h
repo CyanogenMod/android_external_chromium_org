@@ -89,6 +89,9 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
                                 const gfx::Range& range) OVERRIDE;
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
+#if defined(OS_ANDROID)
+  virtual void SelectionRootBoundsChanged(const gfx::Rect& bounds) OVERRIDE;
+#endif
   virtual void ScrollOffsetChanged() OVERRIDE;
   virtual BackingStore* AllocBackingStore(const gfx::Size& size) OVERRIDE;
   virtual void CopyFromCompositingSurface(
@@ -166,6 +169,8 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   virtual gfx::NativeViewId GetParentForWindowlessPlugin() const OVERRIDE;
 #endif
 
+  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+
  protected:
   friend class RenderWidgetHostView;
 
@@ -176,8 +181,6 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   // frame_connector_ provides a platform abstraction. Messages
   // sent through it are routed to the embedding renderer process.
   CrossProcessFrameConnector* frame_connector_;
-
-  gfx::Size size_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewChildFrame);

@@ -32,6 +32,7 @@
       ],
       'sources': [
         'events_base_export.h',
+        'event_constants.h',
         'event_switches.cc',
         'event_switches.h',
         'keycodes/keyboard_code_conversion.cc',
@@ -79,9 +80,10 @@
         'EVENTS_IMPLEMENTATION',
       ],
       'sources': [
+        'cocoa/cocoa_event_utils.h',
+        'cocoa/cocoa_event_utils.mm',
         'event.cc',
         'event.h',
-        'event_constants.h',
         'event_dispatcher.cc',
         'event_dispatcher.h',
         'event_handler.cc',
@@ -164,6 +166,60 @@
       ],
     },
     {
+      'target_name': 'gesture_detection',
+      'type': '<(component)',
+      'dependencies': [
+        '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../gfx/gfx.gyp:gfx',
+        '../gfx/gfx.gyp:gfx_geometry',
+        'events_base',
+      ],
+      'defines': [
+        'GESTURE_DETECTION_IMPLEMENTATION',
+      ],
+      'sources': [
+        'gesture_detection/bitset_32.h',
+        'gesture_detection/filtered_gesture_provider.cc',
+        'gesture_detection/filtered_gesture_provider.h',
+        'gesture_detection/gesture_detection_export.h',
+        'gesture_detection/gesture_detector.cc',
+        'gesture_detection/gesture_detector.h',
+        'gesture_detection/gesture_event_data.cc',
+        'gesture_detection/gesture_event_data.h',
+        'gesture_detection/gesture_event_data_packet.cc',
+        'gesture_detection/gesture_event_data_packet.h',
+        'gesture_detection/gesture_config_helper.h',
+        'gesture_detection/gesture_config_helper_aura.cc',
+        'gesture_detection/gesture_config_helper_android.cc',
+        'gesture_detection/gesture_provider.cc',
+        'gesture_detection/gesture_provider.h',
+        'gesture_detection/motion_event.h',
+        'gesture_detection/scale_gesture_detector.cc',
+        'gesture_detection/scale_gesture_detector.h',
+        'gesture_detection/snap_scroll_controller.cc',
+        'gesture_detection/snap_scroll_controller.h',
+        'gesture_detection/touch_disposition_gesture_filter.cc',
+        'gesture_detection/touch_disposition_gesture_filter.h',
+        'gesture_detection/velocity_tracker_state.cc',
+        'gesture_detection/velocity_tracker_state.h',
+        'gesture_detection/velocity_tracker.cc',
+        'gesture_detection/velocity_tracker.h',
+      ],
+      'conditions': [
+        ['use_aura==1', {
+          'dependencies': [
+            'events'
+          ],
+        }],
+        ['use_aura!=1 and OS!="android"', {
+          'sources': [
+            'gesture_detection/gesture_config_helper.cc',
+          ],
+        }],
+      ],
+    },
+    {
       'target_name': 'events_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -208,12 +264,20 @@
         'events',
         'events_base',
         'events_test_support',
+        'gesture_detection'
       ],
       'sources': [
+        'cocoa/cocoa_event_utils_unittest.mm',
         'event_dispatcher_unittest.cc',
         'event_processor_unittest.cc',
         'event_unittest.cc',
         'gestures/velocity_calculator_unittest.cc',
+        'gesture_detection/bitset_32_unittest.cc',
+        'gesture_detection/gesture_provider_unittest.cc',
+        'gesture_detection/mock_motion_event.h',
+        'gesture_detection/mock_motion_event.cc',
+        'gesture_detection/velocity_tracker_unittest.cc',
+        'gesture_detection/touch_disposition_gesture_filter_unittest.cc',
         'keycodes/dom4/keycode_converter_unittest.cc',
         'latency_info_unittest.cc',
         'ozone/evdev/key_event_converter_evdev_unittest.cc',
@@ -221,12 +285,46 @@
         'x/events_x_unittest.cc',
       ],
       'conditions': [
-        ['OS=="linux" and linux_use_tcmalloc==1', {
+        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
           'dependencies': [
             '<(DEPTH)/base/allocator/allocator.gyp:allocator',
           ],
         }],
+        # Exclude tests that rely on event_utils.h for platforms that do not
+        # provide native cracking, i.e., platforms that use events_stub.cc.
+        ['OS!="win" and use_x11!=1 and use_ozone!=1', {
+          'sources!': [
+            'event_unittest.cc',
+          ],
+        }],
+        ['OS == "android" and gtest_target_type == "shared_library"', {
+          'dependencies': [
+            '../../testing/android/native_test.gyp:native_test_native_code',
+          ],
+        }],
       ],
     },
+  ],
+  'conditions': [
+    # Special target to wrap a gtest_target_type==shared_library
+    # ui_unittests into an android apk for execution.
+    # See base.gyp for TODO(jrg)s about this strategy.
+    ['OS == "android" and gtest_target_type == "shared_library"', {
+      'targets': [
+        {
+          'target_name': 'events_unittests_apk',
+          'type': 'none',
+          'dependencies': [
+            'events_unittests',
+          ],
+          'variables': {
+            'test_suite_name': 'events_unittests',
+            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)events_unittests<(SHARED_LIB_SUFFIX)',
+          },
+          'includes': [ '../../build/apk_test.gypi' ],
+        },
+      ],
+    }],
   ],
 }

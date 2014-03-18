@@ -53,7 +53,7 @@ class WindowTypeShelfItem : public app_list::AppListItem {
         type_(type) {
     std::string title(GetTitle(type));
     SetIcon(GetIcon(type), false);
-    SetTitleAndFullName(title, title);
+    SetName(title);
   }
 
   static gfx::ImageSkia GetIcon(Type type) {
@@ -287,7 +287,7 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
 
   virtual void StartSearch() OVERRIDE {
     base::string16 query;
-    TrimWhitespace(model_->search_box()->text(), TRIM_ALL, &query);
+    base::TrimWhitespace(model_->search_box()->text(), base::TRIM_ALL, &query);
     query = base::i18n::ToLower(query);
 
     model_->results()->DeleteAll();

@@ -36,6 +36,7 @@
 #include "media/base/pipeline.h"
 #include "media/base/text_track_config.h"
 #include "media/base/video_decoder_config.h"
+#include "media/ffmpeg/ffmpeg_deleters.h"
 #include "media/filters/blocking_url_protocol.h"
 
 // FFmpeg forward declarations.
@@ -49,9 +50,8 @@ class MediaLog;
 class FFmpegDemuxer;
 class FFmpegGlue;
 class FFmpegH264ToAnnexBBitstreamConverter;
-class ScopedPtrAVFreePacket;
 
-typedef scoped_ptr_malloc<AVPacket, ScopedPtrAVFreePacket> ScopedAVPacket;
+typedef scoped_ptr<AVPacket, ScopedPtrAVFreePacket> ScopedAVPacket;
 
 class FFmpegDemuxerStream : public DemuxerStream {
  public:
@@ -93,6 +93,9 @@ class FFmpegDemuxerStream : public DemuxerStream {
 
   // Returns true if this stream has capacity for additional data.
   bool HasAvailableCapacity();
+
+  // Returns the total buffer size FFMpegDemuxerStream is holding onto.
+  size_t MemoryUsage() const;
 
   TextKind GetTextKind() const;
 
@@ -181,6 +184,9 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // Returns true iff any stream has additional capacity. Note that streams can
   // go over capacity depending on how the file is muxed.
   bool StreamsHaveAvailableCapacity();
+
+  // Returns true if the maximum allowed memory usage has been reached.
+  bool IsMaxMemoryUsageReached() const;
 
   // Signal all FFmpegDemuxerStreams that the stream has ended.
   void StreamHasEnded();

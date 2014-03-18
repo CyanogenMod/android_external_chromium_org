@@ -62,9 +62,9 @@ void LevelDBTransaction::Remove(const StringPiece& key) {
   Set(key, &empty, true);
 }
 
-bool LevelDBTransaction::Get(const StringPiece& key,
-                             std::string* value,
-                             bool* found) {
+leveldb::Status LevelDBTransaction::Get(const StringPiece& key,
+                                        std::string* value,
+                                        bool* found) {
   *found = false;
   DCHECK(!finished_);
   std::string string_key(key.begin(), key.end() - key.begin());
@@ -72,27 +72,25 @@ bool LevelDBTransaction::Get(const StringPiece& key,
 
   if (it != data_.end()) {
     if (it->second->deleted)
-      return true;
+      return leveldb::Status::OK();
 
     *value = it->second->value;
     *found = true;
-    return true;
+    return leveldb::Status::OK();
   }
 
-  bool ok = db_->Get(key, value, found, &snapshot_);
-  if (!ok) {
+  leveldb::Status s = db_->Get(key, value, found, &snapshot_);
+  if (!s.ok())
     DCHECK(!*found);
-    return false;
-  }
-  return true;
+  return s;
 }
 
-bool LevelDBTransaction::Commit() {
+leveldb::Status LevelDBTransaction::Commit() {
   DCHECK(!finished_);
 
   if (data_.empty()) {
     finished_ = true;
-    return true;
+    return leveldb::Status::OK();
   }
 
   scoped_ptr<LevelDBWriteBatch> write_batch = LevelDBWriteBatch::Create();
@@ -105,12 +103,12 @@ bool LevelDBTransaction::Commit() {
       write_batch->Remove(iterator->first);
   }
 
-  if (!db_->Write(*write_batch))
-    return false;
-
-  Clear();
-  finished_ = true;
-  return true;
+  leveldb::Status s = db_->Write(*write_batch);
+  if (s.ok()) {
+    Clear();
+    finished_ = true;
+  }
+  return s;
 }
 
 void LevelDBTransaction::Rollback() {
@@ -423,32 +421,49 @@ void LevelDBTransaction::NotifyIterators() {
   }
 }
 
-scoped_ptr<LevelDBWriteOnlyTransaction> LevelDBWriteOnlyTransaction::Create(
+scoped_ptr<LevelDBDirectTransaction> LevelDBDirectTransaction::Create(
     LevelDBDatabase* db) {
-  return make_scoped_ptr(new LevelDBWriteOnlyTransaction(db));
+  return make_scoped_ptr(new LevelDBDirectTransaction(db));
 }
 
-LevelDBWriteOnlyTransaction::LevelDBWriteOnlyTransaction(LevelDBDatabase* db)
+LevelDBDirectTransaction::LevelDBDirectTransaction(LevelDBDatabase* db)
     : db_(db), write_batch_(LevelDBWriteBatch::Create()), finished_(false) {}
 
-LevelDBWriteOnlyTransaction::~LevelDBWriteOnlyTransaction() {
+LevelDBDirectTransaction::~LevelDBDirectTransaction() {
   write_batch_->Clear();
 }
 
-void LevelDBWriteOnlyTransaction::Remove(const StringPiece& key) {
+void LevelDBDirectTransaction::Put(const StringPiece& key,
+                                   const std::string* value) {
+  DCHECK(!finished_);
+  write_batch_->Put(key, *value);
+}
+
+leveldb::Status LevelDBDirectTransaction::Get(const StringPiece& key,
+                                              std::string* value,
+                                              bool* found) {
+  *found = false;
+  DCHECK(!finished_);
+
+  leveldb::Status s = db_->Get(key, value, found);
+  DCHECK(s.ok() || !*found);
+  return s;
+}
+
+void LevelDBDirectTransaction::Remove(const StringPiece& key) {
   DCHECK(!finished_);
   write_batch_->Remove(key);
 }
 
-bool LevelDBWriteOnlyTransaction::Commit() {
+leveldb::Status LevelDBDirectTransaction::Commit() {
   DCHECK(!finished_);
 
-  if (!db_->Write(*write_batch_))
-    return false;
-
-  finished_ = true;
-  write_batch_->Clear();
-  return true;
+  leveldb::Status s = db_->Write(*write_batch_);
+  if (s.ok()) {
+    finished_ = true;
+    write_batch_->Clear();
+  }
+  return s;
 }
 
 }  // namespace content

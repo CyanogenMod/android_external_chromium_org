@@ -23,6 +23,7 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
@@ -115,6 +116,10 @@ gfx::Image ThemeService::GetImageNamed(int id) const {
     image = rb_.GetNativeImageNamed(id);
 
   return image;
+}
+
+bool ThemeService::UsingNativeTheme() const {
+  return UsingDefaultTheme();
 }
 
 gfx::ImageSkia* ThemeService::GetImageSkiaNamed(int id) const {
@@ -338,7 +343,7 @@ void ThemeService::RemoveUnusedThemes(bool ignore_infobars) {
   std::vector<std::string> remove_list;
   scoped_ptr<const extensions::ExtensionSet> extensions(
       service->GenerateInstalledExtensionsSet());
-  extensions::ExtensionPrefs* prefs = service->extension_prefs();
+  extensions::ExtensionPrefs* prefs = extensions::ExtensionPrefs::Get(profile_);
   for (extensions::ExtensionSet::const_iterator it = extensions->begin();
        it != extensions->end(); ++it) {
     const extensions::Extension* extension = *it;
@@ -381,10 +386,6 @@ bool ThemeService::UsingDefaultTheme() const {
   std::string id = GetThemeID();
   return id == ThemeService::kDefaultThemeID ||
       id == kDefaultThemeGalleryID;
-}
-
-bool ThemeService::UsingNativeTheme() const {
-  return UsingDefaultTheme();
 }
 
 std::string ThemeService::GetThemeID() const {

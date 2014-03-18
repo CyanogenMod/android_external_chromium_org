@@ -41,16 +41,10 @@ NativeThemeX11::NativeThemeX11(PrefService* pref_service)
       pref_service_(pref_service) {}
 
 void NativeThemeX11::StartUsingTheme() {
-  if (linux_ui_)
-    linux_ui_->SetUseSystemTheme(true);
-
   pref_service_->SetBoolean(prefs::kUsesSystemTheme, true);
 }
 
 void NativeThemeX11::StopUsingTheme() {
-  if (linux_ui_)
-    linux_ui_->SetUseSystemTheme(false);
-
   pref_service_->SetBoolean(prefs::kUsesSystemTheme, false);
 }
 
@@ -70,9 +64,17 @@ NativeThemeX11::~NativeThemeX11() {}
 
 }  // namespace
 
-ThemeServiceAuraX11::ThemeServiceAuraX11() {}
+ThemeServiceAuraX11::ThemeServiceAuraX11() {
+  views::LinuxUI* linux_ui = views::LinuxUI::instance();
+  if (linux_ui)
+    linux_ui->AddNativeThemeChangeObserver(this);
+}
 
-ThemeServiceAuraX11::~ThemeServiceAuraX11() {}
+ThemeServiceAuraX11::~ThemeServiceAuraX11() {
+  views::LinuxUI* linux_ui = views::LinuxUI::instance();
+  if (linux_ui)
+    linux_ui->RemoveNativeThemeChangeObserver(this);
+}
 
 bool ThemeServiceAuraX11::ShouldInitWithNativeTheme() const {
   return profile()->GetPrefs()->GetBoolean(prefs::kUsesSystemTheme);
@@ -90,4 +92,9 @@ bool ThemeServiceAuraX11::UsingNativeTheme() const {
   const CustomThemeSupplier* theme_supplier = get_theme_supplier();
   return theme_supplier &&
          theme_supplier->get_theme_type() == CustomThemeSupplier::NATIVE_X11;
+}
+
+void ThemeServiceAuraX11::OnNativeThemeChanged() {
+  if (UsingNativeTheme())
+    NotifyThemeChanged();
 }

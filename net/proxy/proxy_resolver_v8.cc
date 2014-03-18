@@ -217,7 +217,7 @@ bool GetHostnameArgument(const v8::FunctionCallbackInfo<v8::Value>& args,
 
   // If the hostname is already in ASCII, simply return it as is.
   if (IsStringASCII(hostname_utf16)) {
-    *hostname = UTF16ToASCII(hostname_utf16);
+    *hostname = base::UTF16ToASCII(hostname_utf16);
     return true;
   }
 
@@ -410,7 +410,7 @@ class ProxyResolverV8::Context {
       return ERR_PAC_SCRIPT_FAILED;
     }
 
-    results->UsePacString(UTF16ToASCII(ret_str));
+    results->UsePacString(base::UTF16ToASCII(ret_str));
     return OK;
   }
 
@@ -502,12 +502,6 @@ class ProxyResolverV8::Context {
     }
 
     return OK;
-  }
-
-  void PurgeMemory() {
-    v8::Locker locked(isolate_);
-    v8::Isolate::Scope isolate_scope(isolate_);
-    v8::V8::LowMemoryNotification();
   }
 
  private:
@@ -749,11 +743,6 @@ LoadState ProxyResolverV8::GetLoadState(RequestHandle request) const {
 
 void ProxyResolverV8::CancelSetPacScript() {
   NOTREACHED();
-}
-
-void ProxyResolverV8::PurgeMemory() {
-  if (context_)
-    context_->PurgeMemory();
 }
 
 int ProxyResolverV8::SetPacScript(

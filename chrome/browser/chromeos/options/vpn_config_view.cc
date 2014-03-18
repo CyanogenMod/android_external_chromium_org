@@ -989,7 +989,8 @@ void VPNConfigView::UpdateErrorLabel() {
     const NetworkState* vpn = NetworkHandler::Get()->network_state_handler()->
         GetNetworkState(service_path_);
     if (vpn && vpn->connection_state() == shill::kStateFailure)
-      error_msg = ash::network_connect::ErrorString(vpn->error(), vpn->path());
+      error_msg = ash::network_connect::ErrorString(
+          vpn->last_error(), vpn->path());
   }
   if (!error_msg.empty()) {
     error_label_->SetText(error_msg);
@@ -1029,7 +1030,7 @@ const std::string VPNConfigView::GetTextFromField(views::Textfield* textfield,
   if (!trim_whitespace)
     return untrimmed;
   std::string result;
-  TrimWhitespaceASCII(untrimmed, TRIM_ALL, &result);
+  base::TrimWhitespaceASCII(untrimmed, base::TRIM_ALL, &result);
   return result;
 }
 

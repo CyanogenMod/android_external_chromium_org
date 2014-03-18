@@ -33,6 +33,7 @@
 #include "base/basictypes.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
@@ -172,15 +173,15 @@ int CreateAndOpenFdForTemporaryFile(FilePath directory, FilePath* path) {
 bool DetermineDevShmExecutable() {
   bool result = false;
   FilePath path;
-  int fd = CreateAndOpenFdForTemporaryFile(FilePath("/dev/shm"), &path);
-  if (fd >= 0) {
-    file_util::ScopedFD shm_fd_closer(&fd);
+
+  ScopedFD fd(CreateAndOpenFdForTemporaryFile(FilePath("/dev/shm"), &path));
+  if (fd.is_valid()) {
     DeleteFile(path, false);
     long sysconf_result = sysconf(_SC_PAGESIZE);
     CHECK_GE(sysconf_result, 0);
     size_t pagesize = static_cast<size_t>(sysconf_result);
     CHECK_GE(sizeof(pagesize), sizeof(sysconf_result));
-    void *mapping = mmap(NULL, pagesize, PROT_READ, MAP_SHARED, fd, 0);
+    void *mapping = mmap(NULL, pagesize, PROT_READ, MAP_SHARED, fd.get(), 0);
     if (mapping != MAP_FAILED) {
       if (mprotect(mapping, pagesize, PROT_READ | PROT_EXEC) == 0)
         result = true;
@@ -481,7 +482,7 @@ bool GetShmemTempDir(bool executable, FilePath* path) {
 }
 #endif  // !defined(OS_MACOSX) && !defined(OS_ANDROID)
 
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX)  // Mac implementation is in file_util_mac.mm.
 FilePath GetHomeDir() {
 #if defined(OS_CHROMEOS)
   if (SysInfo::IsRunningOnChromeOS())
@@ -495,9 +496,12 @@ FilePath GetHomeDir() {
 #if defined(OS_ANDROID)
   DLOG(WARNING) << "OS_ANDROID: Home directory lookup not yet implemented.";
 #elif defined(USE_GLIB) && !defined(OS_CHROMEOS)
-  // g_get_home_dir calls getpwent, which can fall through to LDAP calls.
-  ThreadRestrictions::AssertIOAllowed();
-
+  // g_get_home_dir calls getpwent, which can fall through to LDAP calls so
+  // this may do I/O. However, it should be rare that $HOME is not defined and
+  // this is typically called from the path service which has no threading
+  // restrictions. The path service will cache the result which limits the
+  // badness of blocking on I/O. As a result, we don't have a thread
+  // restriction here.
   home_dir = g_get_home_dir();
   if (home_dir && home_dir[0])
     return FilePath(home_dir);
@@ -657,11 +661,10 @@ bool GetFileInfo(const FilePath& file_path, File::Info* results) {
   stat_wrapper_t file_info;
 #if defined(OS_ANDROID)
   if (file_path.IsContentUri()) {
-    int fd = OpenContentUriForRead(file_path);
-    if (fd < 0)
+    ScopedFD fd(OpenContentUriForRead(file_path));
+    if (!fd.is_valid())
       return false;
-    file_util::ScopedFD scoped_fd(&fd);
-    if (CallFstat(fd, &file_info) != 0)
+    if (CallFstat(fd.get(), &file_info) != 0)
       return false;
   } else {
 #endif  // defined(OS_ANDROID)
@@ -672,7 +675,7 @@ bool GetFileInfo(const FilePath& file_path, File::Info* results) {
 #endif  // defined(OS_ANDROID)
   results->is_directory = S_ISDIR(file_info.st_mode);
   results->size = file_info.st_size;
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) || (defined(OS_FREEBSD) && __FreeBSD_version < 900000)
   results->last_modified = Time::FromTimeSpec(file_info.st_mtimespec);
   results->last_accessed = Time::FromTimeSpec(file_info.st_atimespec);
   results->creation_time = Time::FromTimeSpec(file_info.st_ctimespec);
@@ -709,46 +712,8 @@ int ReadFile(const FilePath& filename, char* data, int size) {
   return bytes_read;
 }
 
-}  // namespace base
-
-// -----------------------------------------------------------------------------
-
-namespace file_util {
-
-using base::stat_wrapper_t;
-using base::CallStat;
-using base::CallLstat;
-using base::CreateAndOpenFdForTemporaryFile;
-using base::DirectoryExists;
-using base::FileEnumerator;
-using base::FilePath;
-using base::MakeAbsoluteFilePath;
-using base::VerifySpecificPathControlledByUser;
-
-base::FilePath MakeUniqueDirectory(const base::FilePath& path) {
-  const int kMaxAttempts = 20;
-  for (int attempts = 0; attempts < kMaxAttempts; attempts++) {
-    int uniquifier =
-        GetUniquePathNumber(path, base::FilePath::StringType());
-    if (uniquifier < 0)
-      break;
-    base::FilePath test_path = (uniquifier == 0) ? path :
-        path.InsertBeforeExtensionASCII(
-            base::StringPrintf(" (%d)", uniquifier));
-    if (mkdir(test_path.value().c_str(), 0777) == 0)
-      return test_path;
-    else if (errno != EEXIST)
-      break;
-  }
-  return base::FilePath();
-}
-
-FILE* OpenFile(const std::string& filename, const char* mode) {
-  return OpenFile(FilePath(filename), mode);
-}
-
 int WriteFile(const FilePath& filename, const char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   int fd = HANDLE_EINTR(creat(filename.value().c_str(), 0666));
   if (fd < 0)
     return -1;
@@ -775,7 +740,7 @@ int WriteFileDescriptor(const int fd, const char* data, int size) {
 }
 
 int AppendToFile(const FilePath& filename, const char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   int fd = HANDLE_EINTR(open(filename.value().c_str(), O_WRONLY | O_APPEND));
   if (fd < 0)
     return -1;
@@ -789,7 +754,7 @@ int AppendToFile(const FilePath& filename, const char* data, int size) {
 // Gets the current working directory for the process.
 bool GetCurrentDirectory(FilePath* dir) {
   // getcwd can return ENOENT, which implies it checks against the disk.
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
 
   char system_buffer[PATH_MAX] = "";
   if (!getcwd(system_buffer, sizeof(system_buffer))) {
@@ -802,7 +767,7 @@ bool GetCurrentDirectory(FilePath* dir) {
 
 // Sets the current working directory for the process.
 bool SetCurrentDirectory(const FilePath& path) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   int ret = chdir(path.value().c_str());
   return !ret;
 }
@@ -858,7 +823,7 @@ bool VerifyPathControlledByAdmin(const FilePath& path) {
   };
 
   // Reading the groups database may touch the file system.
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
 
   std::set<gid_t> allowed_group_ids;
   for (int i = 0, ie = arraysize(kAdminGroupNames); i < ie; ++i) {
@@ -878,13 +843,12 @@ bool VerifyPathControlledByAdmin(const FilePath& path) {
 #endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
 int GetMaximumPathComponentLength(const FilePath& path) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   return pathconf(path.value().c_str(), _PC_NAME_MAX);
 }
 
-}  // namespace file_util
+// -----------------------------------------------------------------------------
 
-namespace base {
 namespace internal {
 
 bool MoveUnsafe(const FilePath& from_path, const FilePath& to_path) {

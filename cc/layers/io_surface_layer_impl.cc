@@ -113,14 +113,20 @@ void IOSurfaceLayerImpl::AppendQuads(QuadSink* quad_sink,
 
   gfx::Rect quad_rect(content_bounds());
   gfx::Rect opaque_rect(contents_opaque() ? quad_rect : gfx::Rect());
+  gfx::Rect visible_quad_rect = quad_sink->UnoccludedContentRect(
+      quad_rect, draw_properties().target_space_transform);
+  if (visible_quad_rect.IsEmpty())
+    return;
+
   scoped_ptr<IOSurfaceDrawQuad> quad = IOSurfaceDrawQuad::Create();
   quad->SetNew(shared_quad_state,
                quad_rect,
                opaque_rect,
+               visible_quad_rect,
                io_surface_size_,
                io_surface_resource_id_,
                IOSurfaceDrawQuad::FLIPPED);
-  quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
+  quad_sink->Append(quad.PassAs<DrawQuad>());
 }
 
 void IOSurfaceLayerImpl::ReleaseResources() {

@@ -19,7 +19,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/keycodes/keyboard_codes.h"
@@ -126,6 +126,14 @@ bool BookmarkBubbleView::AcceleratorPressed(
   }
 
   return BubbleDelegateView::AcceleratorPressed(accelerator);
+}
+
+void BookmarkBubbleView::OnNativeThemeChanged(const ui::NativeTheme* theme) {
+  views::BubbleDelegateView::OnNativeThemeChanged(theme);
+  const SkColor background_color = theme->GetSystemColor(
+      ui::NativeTheme::kColorId_DialogBackground);
+  set_color(background_color);
+  set_background(views::Background::CreateSolidBackground(background_color));
 }
 
 void BookmarkBubbleView::Init() {
@@ -267,11 +275,7 @@ BookmarkBubbleView::BookmarkBubbleView(
       sync_promo_view_(NULL),
       remove_bookmark_(false),
       apply_edits_(true) {
-  const SkColor background_color = GetNativeTheme()->GetSystemColor(
-      ui::NativeTheme::kColorId_DialogBackground);
-  set_color(background_color);
   set_move_with_anchor(true);
-  set_background(views::Background::CreateSolidBackground(background_color));
   set_margins(gfx::Insets(views::kPanelVertMargin, 0, 0, 0));
   // Compensate for built-in vertical padding in the anchor view's image.
   set_anchor_view_insets(gfx::Insets(2, 0, 2, 0));
@@ -295,7 +299,7 @@ gfx::Size BookmarkBubbleView::GetMinimumSize() {
   return size;
 }
 
-void BookmarkBubbleView::GetAccessibleState(ui::AccessibleViewState* state) {
+void BookmarkBubbleView::GetAccessibleState(ui::AXViewState* state) {
   BubbleDelegateView::GetAccessibleState(state);
   state->name =
       l10n_util::GetStringUTF16(
@@ -321,13 +325,13 @@ void BookmarkBubbleView::HandleButtonPressed(views::Button* sender) {
     // Set this so we remove the bookmark after the window closes.
     remove_bookmark_ = true;
     apply_edits_ = false;
-    StartFade(false);
+    GetWidget()->Close();
   } else if (sender == edit_button_) {
     content::RecordAction(UserMetricsAction("BookmarkBubble_Edit"));
     ShowEditor();
   } else {
     DCHECK_EQ(close_button_, sender);
-    StartFade(false);
+    GetWidget()->Close();
   }
 }
 

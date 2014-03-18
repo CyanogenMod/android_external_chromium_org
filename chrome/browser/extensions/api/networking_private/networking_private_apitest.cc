@@ -20,7 +20,6 @@
 #include "chromeos/dbus/shill_manager_client.h"
 #include "chromeos/dbus/shill_profile_client.h"
 #include "chromeos/dbus/shill_service_client.h"
-#include "chromeos/dbus/shill_stub_helper.h"
 #include "chromeos/network/onc/onc_utils.h"
 #include "components/onc/onc_constants.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
@@ -31,6 +30,7 @@
 #include "policy/policy_constants.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #else  // !defined(OS_CHROMEOS)
+#include "chrome/browser/extensions/api/networking_private/networking_private_credentials_getter.h"
 #include "chrome/browser/extensions/api/networking_private/networking_private_service_client.h"
 #include "chrome/browser/extensions/api/networking_private/networking_private_service_client_factory.h"
 #include "components/wifi/wifi_service.h"
@@ -69,6 +69,13 @@ class CryptoVerifyStub
                                  bool* verified,
                                  std::string* error) OVERRIDE {
     *verified = true;
+  }
+
+  virtual void VerifyAndEncryptCredentials(
+      scoped_ptr<base::ListValue> args,
+      const extensions::NetworkingPrivateServiceClient::CryptoVerify::
+          VerifyAndEncryptCredentialsCallback& callback) OVERRIDE {
+    callback.Run("encrypted_credentials", "");
   }
 
   virtual void VerifyAndEncryptData(scoped_ptr<base::ListValue> args,
@@ -171,8 +178,8 @@ class ExtensionNetworkingPrivateApiTest :
     service_test->SetServiceProperty(
         "stub_ethernet",
         shill::kProfileProperty,
-        base::StringValue(chromeos::shill_stub_helper::kSharedProfilePath));
-    profile_test->AddService(chromeos::shill_stub_helper::kSharedProfilePath,
+        base::StringValue(ShillProfileClient::GetSharedProfilePath()));
+    profile_test->AddService(ShillProfileClient::GetSharedProfilePath(),
                              "stub_ethernet");
 
     service_test->AddService("stub_wifi1", "wifi1",
@@ -257,8 +264,8 @@ class ExtensionNetworkingPrivateApiTest :
                                     "epcifkihnkjgphfkloaaleeakhpmgdmn");
   }
 
-  static BrowserContextKeyedService*
-      CreateNetworkingPrivateServiceClient(content::BrowserContext* profile) {
+  static KeyedService* CreateNetworkingPrivateServiceClient(
+      content::BrowserContext* profile) {
     return new extensions::NetworkingPrivateServiceClient(
         wifi::WiFiService::CreateForTest(),
         new CryptoVerifyStub());

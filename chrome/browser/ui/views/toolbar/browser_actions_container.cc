@@ -22,6 +22,7 @@
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/toolbar/browser_action_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+#include "chrome/common/extensions/command.h"
 #include "chrome/common/pref_names.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/pref_names.h"
@@ -29,7 +30,7 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -176,6 +177,16 @@ size_t BrowserActionsContainer::VisibleBrowserActions() const {
       ++visible_actions;
   }
   return visible_actions;
+}
+
+void BrowserActionsContainer::ExecuteExtensionCommand(
+    const extensions::Extension* extension,
+    const extensions::Command& command) {
+  // Global commands are handled by the ExtensionCommandsGlobalRegistry
+  // instance.
+  DCHECK(!command.global());
+  extension_keybinding_registry_->ExecuteCommand(extension->id(),
+                                                 command.accelerator());
 }
 
 gfx::Size BrowserActionsContainer::GetPreferredSize() {
@@ -360,8 +371,8 @@ int BrowserActionsContainer::OnPerformDrop(
 }
 
 void BrowserActionsContainer::GetAccessibleState(
-    ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_GROUPING;
+    ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_GROUP;
   state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_EXTENSIONS);
 }
 
@@ -439,8 +450,8 @@ void BrowserActionsContainer::AnimationEnded(const gfx::Animation* animation) {
   container_width_ = animation_target_size_;
   animation_target_size_ = 0;
   resize_amount_ = 0;
-  OnBrowserActionVisibilityChanged();
   suppress_chevron_ = false;
+  OnBrowserActionVisibilityChanged();
 }
 
 void BrowserActionsContainer::NotifyMenuDeleted(
@@ -508,6 +519,27 @@ void BrowserActionsContainer::MoveBrowserAction(const std::string& extension_id,
     model_->MoveBrowserAction(extension, new_index);
     SchedulePaint();
   }
+}
+
+bool BrowserActionsContainer::ShowPopup(const extensions::Extension* extension,
+                                        bool should_grant) {
+  // Do not override other popups and only show in active window. The window
+  // must also have a toolbar, otherwise it should not be showing popups.
+  // TODO(justinlin): Remove toolbar check when http://crbug.com/308645 is
+  // fixed.
+  if (popup_ ||
+      !browser_->window()->IsActive() ||
+      !browser_->window()->IsToolbarVisible()) {
+    return false;
+  }
+
+  for (BrowserActionViews::iterator it = browser_action_views_.begin();
+       it != browser_action_views_.end(); ++it) {
+    BrowserActionButton* button = (*it)->button();
+    if (button && button->extension() == extension)
+      return ShowPopup(button, ExtensionPopup::SHOW, should_grant);
+  }
+  return false;
 }
 
 void BrowserActionsContainer::HidePopup() {
@@ -691,23 +723,7 @@ void BrowserActionsContainer::BrowserActionMoved(const Extension* extension,
 
 bool BrowserActionsContainer::BrowserActionShowPopup(
     const extensions::Extension* extension) {
-  // Do not override other popups and only show in active window. The window
-  // must also have a toolbar, otherwise it should not be showing popups.
-  // TODO(justinlin): Remove toolbar check when http://crbug.com/308645 is
-  // fixed.
-  if (popup_ ||
-      !browser_->window()->IsActive() ||
-      !browser_->window()->IsToolbarVisible()) {
-    return false;
-  }
-
-  for (BrowserActionViews::iterator it = browser_action_views_.begin();
-       it != browser_action_views_.end(); ++it) {
-    BrowserActionButton* button = (*it)->button();
-    if (button && button->extension() == extension)
-      return ShowPopup(button, ExtensionPopup::SHOW, false);
-  }
-  return false;
+  return ShowPopup(extension, false);
 }
 
 void BrowserActionsContainer::VisibleCountChanged() {
@@ -860,12 +876,8 @@ bool BrowserActionsContainer::ShowPopup(
   // since buttons can be activated from the overflow menu (chevron). In that
   // case we show the popup as originating from the chevron.
   View* reference_view = button->parent()->visible() ? button : chevron_;
-  views::BubbleBorder::Arrow arrow = base::i18n::IsRTL() ?
-      views::BubbleBorder::TOP_LEFT : views::BubbleBorder::TOP_RIGHT;
-  popup_ = ExtensionPopup::ShowPopup(popup_url,
-                                     browser_,
-                                     reference_view,
-                                     arrow,
+  popup_ = ExtensionPopup::ShowPopup(popup_url, browser_, reference_view,
+                                     views::BubbleBorder::TOP_RIGHT,
                                      show_action);
   popup_->GetWidget()->AddObserver(this);
   popup_button_ = button;

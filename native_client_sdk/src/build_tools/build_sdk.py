@@ -53,7 +53,7 @@ import oshelpers
 CYGTAR = os.path.join(NACL_DIR, 'build', 'cygtar.py')
 
 NACLPORTS_URL = 'https://naclports.googlecode.com/svn/trunk/src'
-NACLPORTS_REV = 954
+NACLPORTS_REV = 1152
 
 GYPBUILD_DIR = 'gypbuild'
 
@@ -197,18 +197,6 @@ def BuildStepCopyTextFiles(pepperdir, pepper_ver, chrome_revision,
   open(os.path.join(pepperdir, 'README'), 'w').write(readme_text)
 
 
-def PrunePNaClToolchain(root):
-  dirs_to_prune = [
-    'lib-bc-x86-64',
-    'usr-bc-x86-64'
-    # TODO(sbc): remove this once its really not needed.
-    # Currently we seem to rely on it at least for <bits/stat.h>
-    #'sysroot',
-  ]
-  for dirname in dirs_to_prune:
-    buildbot_common.RemoveDir(os.path.join(root, dirname))
-
-
 def BuildStepUntarToolchains(pepperdir, toolchains):
   buildbot_common.BuildStep('Untar Toolchains')
   platform = getos.GetPlatform()
@@ -271,7 +259,6 @@ def BuildStepUntarToolchains(pepperdir, toolchains):
     # Then rename/move it to the pepper toolchain directory
     pnacldir = os.path.join(pepperdir, 'toolchain', tcname)
     buildbot_common.Move(tmpdir, pnacldir)
-    PrunePNaClToolchain(pnacldir)
 
   buildbot_common.RemoveDir(tmpdir)
 
@@ -540,7 +527,7 @@ def GypNinjaBuild_Pnacl(rel_out_dir, target_arch):
   out_dir = MakeNinjaRelPath(rel_out_dir)
   gyp_file = os.path.join(SRC_DIR, 'ppapi', 'native_client', 'src',
                           'untrusted', 'pnacl_irt_shim', 'pnacl_irt_shim.gyp')
-  targets = ['pnacl_irt_shim']
+  targets = ['pnacl_irt_shim_aot']
   GypNinjaBuild(target_arch, gyp_py, gyp_file, targets, out_dir, False)
 
 
@@ -555,15 +542,12 @@ def GypNinjaBuild(arch, gyp_py_script, gyp_file, targets,
     gyp_defines.append('target_arch=%s' % arch)
     if arch == 'arm':
       if getos.GetPlatform() == 'linux':
-        if os.path.exists("/usr/bin/arm-linux-gnueabihf-gcc"):
-          # TODO(sbc): make this conditional once all our linux
-          # have the ARM cross compiler installed.
-          gyp_env['CC'] = 'arm-linux-gnueabihf-gcc'
-          gyp_env['CXX'] = 'arm-linux-gnueabihf-g++'
-          gyp_env['AR'] = 'arm-linux-gnueabihf-ar'
-          gyp_env['AS'] = 'arm-linux-gnueabihf-as'
-          gyp_env['CC_host'] = 'cc'
-          gyp_env['CXX_host'] = 'c++'
+        gyp_env['CC'] = 'arm-linux-gnueabihf-gcc'
+        gyp_env['CXX'] = 'arm-linux-gnueabihf-g++'
+        gyp_env['AR'] = 'arm-linux-gnueabihf-ar'
+        gyp_env['AS'] = 'arm-linux-gnueabihf-as'
+        gyp_env['CC_host'] = 'cc'
+        gyp_env['CXX_host'] = 'c++'
       gyp_defines += ['armv7=1', 'arm_thumb=0', 'arm_neon=1',
           'arm_float_abi=hard']
       if force_arm_gcc:
@@ -858,12 +842,16 @@ def BuildStepBuildNaClPorts(pepper_ver, pepperdir):
   env['NACLPORTS_NO_ANNOTATE'] = "1"
   env['NACLPORTS_NO_UPLOAD'] = "1"
 
-  build_script = 'build_tools/bots/linux/naclports-linux-sdk-bundle.sh'
+  build_script = 'build_tools/naclports-linux-sdk-bundle.sh'
   buildbot_common.BuildStep('Build naclports')
-  buildbot_common.Run([build_script], env=env, cwd=NACLPORTS_DIR)
 
   bundle_dir = os.path.join(NACLPORTS_DIR, 'out', 'sdk_bundle')
   out_dir = os.path.join(bundle_dir, 'pepper_%s' % pepper_ver)
+
+  # Remove the sdk_bundle directory to remove stale files from previous builds.
+  buildbot_common.RemoveDir(bundle_dir)
+
+  buildbot_common.Run([build_script], env=env, cwd=NACLPORTS_DIR)
 
   # Some naclports do not include a standalone LICENSE/COPYING file
   # so we explicitly list those here for inclusion.
@@ -979,8 +967,7 @@ def main(args):
     BuildStepMakePepperDirs(pepperdir, ['include', 'toolchain', 'tools'])
     BuildStepDownloadToolchains(toolchains)
     BuildStepUntarToolchains(pepperdir, toolchains)
-
-  BuildStepBuildToolchains(pepperdir, toolchains)
+    BuildStepBuildToolchains(pepperdir, toolchains)
 
   BuildStepUpdateHelpers(pepperdir, True)
   BuildStepUpdateUserProjects(pepperdir, toolchains,

@@ -10,7 +10,6 @@
 #include <X11/Xlib.h>
 
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/base/hit_test.h"
@@ -61,10 +60,9 @@ const char* kAtomsToCache[] = {
 namespace views {
 
 X11WindowEventFilter::X11WindowEventFilter(
-    aura::RootWindow* root_window,
     DesktopWindowTreeHost* window_tree_host)
     : xdisplay_(gfx::GetXDisplay()),
-      xwindow_(root_window->host()->GetAcceleratedWidget()),
+      xwindow_(window_tree_host->AsWindowTreeHost()->GetAcceleratedWidget()),
       x_root_window_(DefaultRootWindow(xdisplay_)),
       atom_cache_(xdisplay_, kAtomsToCache),
       window_tree_host_(window_tree_host),
@@ -95,7 +93,7 @@ void X11WindowEventFilter::OnMouseEvent(ui::MouseEvent* event) {
   if (event->type() != ui::ET_MOUSE_PRESSED)
     return;
 
-  if (!event->IsLeftMouseButton())
+  if (!(event->IsLeftMouseButton() || event->IsMiddleMouseButton()))
     return;
 
   aura::Window* target = static_cast<aura::Window*>(event->target());
@@ -107,6 +105,13 @@ void X11WindowEventFilter::OnMouseEvent(ui::MouseEvent* event) {
   if (component == HTCLIENT)
     return;
 
+  if (event->IsMiddleMouseButton() && (component == HTCAPTION)) {
+    XLowerWindow(xdisplay_, xwindow_);
+    event->SetHandled();
+    return;
+  }
+
+  // Left button case.
   if (event->flags() & ui::EF_IS_DOUBLE_CLICK &&
       component == HTCAPTION &&
       target->GetProperty(aura::client::kCanMaximizeKey)) {

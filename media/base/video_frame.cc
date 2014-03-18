@@ -63,8 +63,6 @@ std::string VideoFrame::FormatToString(VideoFrame::Format format) {
       return "YV12A";
     case VideoFrame::YV12J:
       return "YV12J";
-    case VideoFrame::HISTOGRAM_MAX:
-      return "HISTOGRAM_MAX";
   }
   NOTREACHED() << "Invalid videoframe format provided: " << format;
   return "";
@@ -182,10 +180,13 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalYuvData(
 // static
 scoped_refptr<VideoFrame> VideoFrame::WrapVideoFrame(
       const scoped_refptr<VideoFrame>& frame,
+      const gfx::Rect& visible_rect,
+      const gfx::Size& natural_size,
       const base::Closure& no_longer_needed_cb) {
+  DCHECK(frame->visible_rect().Contains(visible_rect));
   scoped_refptr<VideoFrame> wrapped_frame(new VideoFrame(
-      frame->format(), frame->coded_size(), frame->visible_rect(),
-      frame->natural_size(), frame->GetTimestamp(), frame->end_of_stream()));
+      frame->format(), frame->coded_size(), visible_rect, natural_size,
+      frame->GetTimestamp(), frame->end_of_stream()));
 
   for (size_t i = 0; i < NumPlanes(frame->format()); ++i) {
     wrapped_frame->strides_[i] = frame->stride(i);
@@ -260,7 +261,6 @@ size_t VideoFrame::NumPlanes(Format format) {
     case VideoFrame::YV12A:
       return 4;
     case VideoFrame::UNKNOWN:
-    case VideoFrame::HISTOGRAM_MAX:
       break;
   }
   NOTREACHED() << "Unsupported video frame format: " << format;
@@ -326,7 +326,6 @@ size_t VideoFrame::PlaneAllocationSize(Format format,
     }
     case VideoFrame::UNKNOWN:
     case VideoFrame::NATIVE_TEXTURE:
-    case VideoFrame::HISTOGRAM_MAX:
 #if defined(VIDEO_HOLE)
     case VideoFrame::HOLE:
 #endif  // defined(VIDEO_HOLE)

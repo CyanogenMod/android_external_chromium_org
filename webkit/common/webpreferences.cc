@@ -55,10 +55,6 @@ WebPreferences::WebPreferences()
       gl_multisampling_enabled(true),
       privileged_webgl_extensions_enabled(false),
       webgl_errors_to_console_enabled(true),
-      accelerated_compositing_for_overflow_scroll_enabled(false),
-      universal_accelerated_compositing_for_overflow_scroll_enabled(false),
-      accelerated_compositing_for_scrollable_frames_enabled(false),
-      composited_scrolling_for_frames_enabled(false),
       mock_scrollbars_enabled(false),
       layer_squashing_enabled(false),
       threaded_html_parser(true),
@@ -78,8 +74,6 @@ WebPreferences::WebPreferences()
       deferred_filters_enabled(false),
       gesture_tap_highlight_enabled(false),
       accelerated_compositing_for_plugins_enabled(false),
-      memory_info_enabled(false),
-      fullscreen_enabled(false),
       allow_displaying_insecure_content(true),
       allow_running_insecure_content(false),
       password_echo_enabled(false),
@@ -126,7 +120,9 @@ WebPreferences::WebPreferences()
       pinch_overlay_scrollbar_thickness(0),
       use_solid_color_scrollbars(false),
       compositor_touch_hit_testing(true),
-      cookie_enabled(true)
+      navigate_on_drag_drop(true),
+      cookie_enabled(true),
+      pepper_accelerated_video_decode_enabled(false)
 #if defined(OS_ANDROID)
       ,
       text_autosizing_enabled(true),

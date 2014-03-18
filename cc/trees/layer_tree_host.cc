@@ -20,7 +20,6 @@
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/devtools_instrumentation.h"
-#include "cc/debug/overdraw_metrics.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/input/top_controls_manager.h"
 #include "cc/layers/heads_up_display_layer.h"
@@ -562,8 +561,8 @@ void LayerTreeHost::SetNextCommitForcesRedraw() {
   next_commit_forces_redraw_ = true;
 }
 
-void LayerTreeHost::SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
-                                       base::Time wall_clock_time) {
+void LayerTreeHost::SetAnimationEvents(
+    scoped_ptr<AnimationEventsVector> events) {
   DCHECK(proxy_->IsMainThread());
   for (size_t event_index = 0; event_index < events->size(); ++event_index) {
     int event_layer_id = (*events)[event_index].layer_id;
@@ -577,13 +576,11 @@ void LayerTreeHost::SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
     if (iter != animation_controllers.end()) {
       switch ((*events)[event_index].type) {
         case AnimationEvent::Started:
-          (*iter).second->NotifyAnimationStarted((*events)[event_index],
-                                                 wall_clock_time.ToDoubleT());
+          (*iter).second->NotifyAnimationStarted((*events)[event_index]);
           break;
 
         case AnimationEvent::Finished:
-          (*iter).second->NotifyAnimationFinished((*events)[event_index],
-                                                  wall_clock_time.ToDoubleT());
+          (*iter).second->NotifyAnimationFinished((*events)[event_index]);
           break;
 
         case AnimationEvent::Aborted:
@@ -675,7 +672,7 @@ void LayerTreeHost::SetOverhangBitmap(const SkBitmap& bitmap) {
   if (bitmap.isImmutable()) {
     bitmap_copy = bitmap;
   } else {
-    bitmap.copyTo(&bitmap_copy, bitmap.config());
+    bitmap.copyTo(&bitmap_copy);
     bitmap_copy.setImmutable();
   }
 
@@ -739,7 +736,7 @@ bool LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue) {
 
   micro_benchmark_controller_.DidUpdateLayers();
 
-  return result;
+  return result || next_commit_forces_redraw_;
 }
 
 static Layer* FindFirstScrollableLayer(Layer* layer) {
@@ -905,8 +902,7 @@ void LayerTreeHost::SetPrioritiesForLayers(
 }
 
 void LayerTreeHost::PrioritizeTextures(
-    const RenderSurfaceLayerList& render_surface_layer_list,
-    OverdrawMetrics* metrics) {
+    const RenderSurfaceLayerList& render_surface_layer_list) {
   if (!contents_texture_manager_)
     return;
 
@@ -917,11 +913,6 @@ void LayerTreeHost::PrioritizeTextures(
 
   SetPrioritiesForLayers(render_surface_layer_list);
   SetPrioritiesForSurfaces(memory_for_render_surfaces_metric);
-
-  metrics->DidUseContentsTextureMemoryBytes(
-      contents_texture_manager_->MemoryAboveCutoffBytes());
-  metrics->DidUseRenderSurfaceTextureMemoryBytes(
-      memory_for_render_surfaces_metric);
 
   contents_texture_manager_->PrioritizeTextures();
 }
@@ -985,17 +976,12 @@ void LayerTreeHost::PaintLayerContents(
     ResourceUpdateQueue* queue,
     bool* did_paint_content,
     bool* need_more_updates) {
-  bool record_metrics_for_frame =
-      settings_.show_overdraw_in_tracing &&
-      base::debug::TraceLog::GetInstance() &&
-      base::debug::TraceLog::GetInstance()->IsEnabled();
-  OcclusionTracker occlusion_tracker(
-      root_layer_->render_surface()->content_rect(), record_metrics_for_frame);
+  OcclusionTracker<Layer> occlusion_tracker(
+      root_layer_->render_surface()->content_rect());
   occlusion_tracker.set_minimum_tracking_size(
       settings_.minimum_occlusion_tracking_size);
 
-  PrioritizeTextures(render_surface_layer_list,
-                     occlusion_tracker.overdraw_metrics());
+  PrioritizeTextures(render_surface_layer_list);
 
   in_paint_layer_contents_ = true;
 
@@ -1022,8 +1008,6 @@ void LayerTreeHost::PaintLayerContents(
   }
 
   in_paint_layer_contents_ = false;
-
-  occlusion_tracker.overdraw_metrics()->RecordMetrics(this);
 }
 
 void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {

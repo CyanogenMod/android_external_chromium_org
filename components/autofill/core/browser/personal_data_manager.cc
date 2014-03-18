@@ -89,7 +89,7 @@ bool IsMinimumAddress(const AutofillProfile& profile,
     return false;
 
   std::string country_code =
-      UTF16ToASCII(profile.GetRawInfo(ADDRESS_HOME_COUNTRY));
+      base::UTF16ToASCII(profile.GetRawInfo(ADDRESS_HOME_COUNTRY));
   if (country_code.empty())
     country_code = AutofillCountry::CountryCodeForLocale(app_locale);
 
@@ -146,6 +146,7 @@ PersonalDataManager::PersonalDataManager(const std::string& app_locale)
       pending_creditcards_query_(0),
       app_locale_(app_locale),
       metric_logger_(new AutofillMetrics),
+      pref_service_(NULL),
       is_off_the_record_(false),
       has_logged_profile_count_(false) {}
 
@@ -153,7 +154,7 @@ void PersonalDataManager::Init(scoped_refptr<AutofillWebDataService> database,
                                PrefService* pref_service,
                                bool is_off_the_record) {
   database_ = database;
-  pref_service_ = pref_service;
+  SetPrefService(pref_service);
   is_off_the_record_ = is_off_the_record;
 
   if (!is_off_the_record_)
@@ -205,8 +206,7 @@ void PersonalDataManager::OnWebDataServiceRequestDone(
   // If both requests have responded, then all personal data is loaded.
   if (pending_profiles_query_ == 0 && pending_creditcards_query_ == 0) {
     is_data_loaded_ = true;
-    FOR_EACH_OBSERVER(PersonalDataManagerObserver, observers_,
-                      OnPersonalDataChanged());
+    NotifyPersonalDataChanged();
   }
 }
 
@@ -249,7 +249,7 @@ bool PersonalDataManager::ImportFormData(
   for (size_t i = 0; i < form.field_count(); ++i) {
     const AutofillField* field = form.field(i);
     base::string16 value;
-    TrimWhitespace(field->value, TRIM_ALL, &value);
+    base::TrimWhitespace(field->value, base::TRIM_ALL, &value);
 
     // If we don't know the type of the field, or the user hasn't entered any
     // information into the field, then skip it.
@@ -558,6 +558,7 @@ void PersonalDataManager::GetProfileSuggestions(
     const base::string16& field_contents,
     bool field_is_autofilled,
     const std::vector<ServerFieldType>& other_field_types,
+    const base::Callback<bool(const AutofillProfile&)>& filter,
     std::vector<base::string16>* values,
     std::vector<base::string16>* labels,
     std::vector<base::string16>* icons,
@@ -581,7 +582,8 @@ void PersonalDataManager::GetProfileSuggestions(
       if (!field_is_autofilled) {
         // Suggest data that starts with what the user has typed.
         if (!multi_values[i].empty() &&
-            StartsWith(multi_values[i], field_contents, false)) {
+            StartsWith(multi_values[i], field_contents, false) &&
+            (filter.is_null() || filter.Run(*profile))) {
           matched_profiles.push_back(profile);
           values->push_back(multi_values[i]);
           guid_pairs->push_back(GUIDPair(profile->guid(), i));
@@ -679,11 +681,23 @@ void PersonalDataManager::GetCreditCardSuggestions(
 }
 
 bool PersonalDataManager::IsAutofillEnabled() const {
+  DCHECK(pref_service_);
   return pref_service_->GetBoolean(prefs::kAutofillEnabled);
 }
 
 std::string PersonalDataManager::CountryCodeForCurrentTimezone() const {
   return base::CountryCodeForCurrentTimezone();
+}
+
+void PersonalDataManager::SetPrefService(PrefService* pref_service) {
+  enabled_pref_.reset(new BooleanPrefMember);
+  pref_service_ = pref_service;
+  // |pref_service_| can be NULL in tests.
+  if (pref_service_) {
+    enabled_pref_->Init(prefs::kAutofillEnabled, pref_service_,
+        base::Bind(&PersonalDataManager::EnabledPrefChanged,
+                   base::Unretained(this)));
+  }
 }
 
 // static
@@ -756,7 +770,7 @@ bool PersonalDataManager::IsCountryOfInterest(const std::string& country_code)
   const std::vector<AutofillProfile*>& profiles = web_profiles();
   std::list<std::string> country_codes;
   for (size_t i = 0; i < profiles.size(); ++i) {
-    country_codes.push_back(StringToLowerASCII(UTF16ToASCII(
+    country_codes.push_back(StringToLowerASCII(base::UTF16ToASCII(
         profiles[i]->GetRawInfo(ADDRESS_HOME_COUNTRY))));
   }
 
@@ -983,6 +997,10 @@ std::string PersonalDataManager::SaveImportedProfile(
   return guid;
 }
 
+void PersonalDataManager::NotifyPersonalDataChanged() {
+  FOR_EACH_OBSERVER(PersonalDataManagerObserver, observers_,
+                    OnPersonalDataChanged());
+}
 
 std::string PersonalDataManager::SaveImportedCreditCard(
     const CreditCard& imported_card) {
@@ -1024,6 +1042,9 @@ void PersonalDataManager::LogProfileCount() const {
 }
 
 std::string PersonalDataManager::MostCommonCountryCodeFromProfiles() const {
+  if (!IsAutofillEnabled())
+    return std::string();
+
   // Count up country codes from existing profiles.
   std::map<std::string, int> votes;
   // TODO(estade): can we make this GetProfiles() instead? It seems to cause
@@ -1032,7 +1053,7 @@ std::string PersonalDataManager::MostCommonCountryCodeFromProfiles() const {
   std::vector<std::string> country_codes;
   AutofillCountry::GetAvailableCountries(&country_codes);
   for (size_t i = 0; i < profiles.size(); ++i) {
-    std::string country_code = StringToUpperASCII(UTF16ToASCII(
+    std::string country_code = StringToUpperASCII(base::UTF16ToASCII(
         profiles[i]->GetRawInfo(ADDRESS_HOME_COUNTRY)));
 
     if (std::find(country_codes.begin(), country_codes.end(), country_code) !=
@@ -1050,6 +1071,11 @@ std::string PersonalDataManager::MostCommonCountryCodeFromProfiles() const {
   }
 
   return std::string();
+}
+
+void PersonalDataManager::EnabledPrefChanged() {
+  default_country_code_.clear();
+  NotifyPersonalDataChanged();
 }
 
 }  // namespace autofill

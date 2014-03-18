@@ -15,12 +15,12 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/chromeos/events/system_key_event_listener.h"
-#include "chrome/browser/chromeos/login/help_app_launcher.h"
 #include "chrome/browser/chromeos/login/login_display.h"
+#include "chrome/browser/chromeos/login/login_display_host.h"
 #include "chrome/browser/chromeos/login/screens/error_screen_actor.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
+#include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/gaia_screen_handler.h"
@@ -30,6 +30,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_ui.h"
 #include "net/base/net_errors.h"
+#include "ui/events/event_handler.h"
 
 namespace base {
 class DictionaryValue;
@@ -79,6 +80,12 @@ class LoginDisplayWebUIHandler {
   virtual void ShowUserPodButton(const std::string& username,
                                  const std::string& iconURL,
                                  const base::Closure& click_callback) = 0;
+  virtual void HideUserPodButton(const std::string& username) = 0;
+  virtual void SetAuthType(const std::string& username,
+                           LoginDisplay::AuthType auth_type,
+                           const std::string& initial_value) = 0;
+  virtual LoginDisplay::AuthType GetAuthType(const std::string& username)
+      const = 0;
   virtual void ShowError(int login_attempts,
                          const std::string& error_text,
                          const std::string& help_link_text,
@@ -199,8 +206,8 @@ class SigninScreenHandlerDelegate {
 class SigninScreenHandler
     : public BaseScreenHandler,
       public LoginDisplayWebUIHandler,
-      public SystemKeyEventListener::CapsLockObserver,
       public content::NotificationObserver,
+      public ui::EventHandler,
       public NetworkStateInformer::NetworkStateInformerObserver {
  public:
   SigninScreenHandler(
@@ -279,6 +286,12 @@ class SigninScreenHandler
   virtual void ShowUserPodButton(const std::string& username,
                                  const std::string& iconURL,
                                  const base::Closure& click_callback) OVERRIDE;
+  virtual void HideUserPodButton(const std::string& username) OVERRIDE;
+  virtual void SetAuthType(const std::string& username,
+                           LoginDisplay::AuthType auth_type,
+                           const std::string& initial_value) OVERRIDE;
+  virtual LoginDisplay::AuthType GetAuthType(const std::string& username)
+      const OVERRIDE;
   virtual void ShowError(int login_attempts,
                          const std::string& error_text,
                          const std::string& help_link_text,
@@ -290,8 +303,8 @@ class SigninScreenHandler
   virtual void ShowSigninScreenForCreds(const std::string& username,
                                         const std::string& password) OVERRIDE;
 
-  // SystemKeyEventListener::CapsLockObserver overrides.
-  virtual void OnCapsLockChange(bool enabled) OVERRIDE;
+  // ui::EventHandler implementation:
+  virtual void OnKeyEvent(ui::KeyEvent* key) OVERRIDE;
 
   // content::NotificationObserver implementation:
   virtual void Observe(int type,
@@ -342,7 +355,6 @@ class SigninScreenHandler
   void HandleToggleKioskEnableScreen();
   void HandleToggleResetScreen();
   void HandleToggleKioskAutolaunchScreen();
-  void HandleLaunchHelpApp(double help_topic_id);
   void HandleCreateAccount();
   void HandleAccountPickerReady();
   void HandleWallpaperReady();
@@ -370,6 +382,7 @@ class SigninScreenHandler
   static void FillUserDictionary(User* user,
                                  bool is_owner,
                                  bool is_signin_to_add,
+                                 LoginDisplay::AuthType auth_type,
                                  base::DictionaryValue* user_dict);
 
   // Sends user list to account picker.
@@ -422,10 +435,10 @@ class SigninScreenHandler
   // Update current input method (namely keyboard layout) to LRU by this user.
   void SetUserInputMethod(const std::string& username);
 
-  // Invoked when auto enrollment check is finished to decide whether to
+  // Invoked when auto enrollment check progresses to decide whether to
   // continue kiosk enable flow. Kiosk enable flow is resumed when
-  // |should_auto_enroll| is false.
-  void ContinueKioskEnableFlow(bool should_auto_enroll);
+  // |state| indicates that enrollment is not applicable.
+  void ContinueKioskEnableFlow(policy::AutoEnrollmentClient::State state);
 
   // Shows signin screen for |email|.
   void OnShowAddUser(const std::string& email);
@@ -473,9 +486,6 @@ class SigninScreenHandler
   // True if cookie jar cleanup is done.
   bool cookies_cleared_;
 
-  // Help application used for help dialogs.
-  scoped_refptr<HelpAppLauncher> help_app_;
-
   // Network state informer used to keep signin screen up.
   scoped_refptr<NetworkStateInformer> network_state_informer_;
 
@@ -518,13 +528,21 @@ class SigninScreenHandler
 
   scoped_ptr<CrosSettings::ObserverSubscription> allow_new_user_subscription_;
   scoped_ptr<CrosSettings::ObserverSubscription> allow_guest_subscription_;
+  scoped_ptr<LoginDisplayHost::AutoEnrollmentProgressCallbackSubscription>
+      auto_enrollment_progress_subscription_;
 
   bool wait_for_auto_enrollment_check_;
+
+  bool caps_lock_enabled_;
 
   base::Closure kiosk_enable_flow_aborted_callback_for_test_;
 
   // Map of callbacks run when the custom button on a user pod is clicked.
   std::map<std::string, base::Closure> user_pod_button_callback_map_;
+
+  // Map of usernames to their current authentication type. If a user is not
+  // contained in the map, it is using the default authentication type.
+  std::map<std::string, LoginDisplay::AuthType> user_auth_type_map_;
 
   // Non-owning ptr.
   // TODO (ygorshenin@): remove this dependency.

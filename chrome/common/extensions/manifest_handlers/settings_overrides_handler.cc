@@ -9,9 +9,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/permissions/settings_override_permission.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/api_permission_set.h"
@@ -261,8 +261,9 @@ bool SettingsOverridesHandler::Parse(Extension* extension,
   info->startup_pages = ParseStartupPage(*settings, error);
   if (!info->bookmarks_ui && !info->homepage &&
       !info->search_engine && info->startup_pages.empty()) {
-    *error =
-        base::ASCIIToUTF16(manifest_errors::kInvalidEmptySettingsOverrides);
+    *error = ErrorUtils::FormatErrorMessageUTF16(
+        manifest_errors::kInvalidEmptyDictionary,
+        manifest_keys::kSettingsOverride);
     return false;
   }
   info->manifest_permission.reset(new ManifestPermissionImpl(

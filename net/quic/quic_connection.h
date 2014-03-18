@@ -67,6 +67,16 @@ class NET_EXPORT_PRIVATE QuicConnectionVisitorInterface {
   // be used, and the callee should return false.
   virtual bool OnStreamFrames(const std::vector<QuicStreamFrame>& frames) = 0;
 
+  // The session should process all WINDOW_UPDATE frames, adjusting both stream
+  // and connection level flow control windows.
+  virtual void OnWindowUpdateFrames(
+      const std::vector<QuicWindowUpdateFrame>& frames) = 0;
+
+  // BLOCKED frames tell us that the peer believes it is flow control blocked on
+  // a specified stream. If the session at this end disagrees, something has
+  // gone wrong with our flow control accounting.
+  virtual void OnBlockedFrames(const std::vector<QuicBlockedFrame>& frames) = 0;
+
   // Called when the stream is reset by the peer.
   virtual void OnRstStream(const QuicRstStreamFrame& frame) = 0;
 
@@ -83,10 +93,13 @@ class NET_EXPORT_PRIVATE QuicConnectionVisitorInterface {
   // Called once a specific QUIC version is agreed by both endpoints.
   virtual void OnSuccessfulVersionNegotiation(const QuicVersion& version) = 0;
 
-  // Called when a blocked socket becomes writable.  If all pending bytes for
-  // this visitor are consumed by the connection successfully this should
-  // return true, otherwise it should return false.
-  virtual bool OnCanWrite() = 0;
+  // Called when a blocked socket becomes writable.
+  virtual void OnCanWrite() = 0;
+
+  // Called to ask if any writes are pending in this visitor. Writes may be
+  // pending because they were write-blocked, congestion-throttled or
+  // yielded to other connections.
+  virtual bool HasPendingWrites() const = 0;
 
   // Called to ask if any handshake messages are pending in this visitor.
   virtual bool HasPendingHandshake() const = 0;
@@ -103,56 +116,60 @@ class NET_EXPORT_PRIVATE QuicConnectionDebugVisitorInterface
   // Called when a packet has been sent.
   virtual void OnPacketSent(QuicPacketSequenceNumber sequence_number,
                             EncryptionLevel level,
+                            TransmissionType transmission_type,
                             const QuicEncryptedPacket& packet,
-                            WriteResult result) = 0;
+                            WriteResult result) {}
 
   // Called when the contents of a packet have been retransmitted as
   // a new packet.
   virtual void OnPacketRetransmitted(
       QuicPacketSequenceNumber old_sequence_number,
-      QuicPacketSequenceNumber new_sequence_number) = 0;
+      QuicPacketSequenceNumber new_sequence_number) {}
 
   // Called when a packet has been received, but before it is
   // validated or parsed.
   virtual void OnPacketReceived(const IPEndPoint& self_address,
                                 const IPEndPoint& peer_address,
-                                const QuicEncryptedPacket& packet) = 0;
+                                const QuicEncryptedPacket& packet) {}
 
   // Called when the protocol version on the received packet doensn't match
   // current protocol version of the connection.
-  virtual void OnProtocolVersionMismatch(QuicVersion version) = 0;
+  virtual void OnProtocolVersionMismatch(QuicVersion version) {}
 
   // Called when the complete header of a packet has been parsed.
-  virtual void OnPacketHeader(const QuicPacketHeader& header) = 0;
+  virtual void OnPacketHeader(const QuicPacketHeader& header) {}
 
   // Called when a StreamFrame has been parsed.
-  virtual void OnStreamFrame(const QuicStreamFrame& frame) = 0;
+  virtual void OnStreamFrame(const QuicStreamFrame& frame) {}
 
   // Called when a AckFrame has been parsed.
-  virtual void OnAckFrame(const QuicAckFrame& frame) = 0;
+  virtual void OnAckFrame(const QuicAckFrame& frame) {}
 
   // Called when a CongestionFeedbackFrame has been parsed.
   virtual void OnCongestionFeedbackFrame(
-      const QuicCongestionFeedbackFrame& frame) = 0;
+      const QuicCongestionFeedbackFrame& frame) {}
+
+  // Called when a StopWaitingFrame has been parsed.
+  virtual void OnStopWaitingFrame(const QuicStopWaitingFrame& frame) {}
 
   // Called when a RstStreamFrame has been parsed.
-  virtual void OnRstStreamFrame(const QuicRstStreamFrame& frame) = 0;
+  virtual void OnRstStreamFrame(const QuicRstStreamFrame& frame) {}
 
   // Called when a ConnectionCloseFrame has been parsed.
   virtual void OnConnectionCloseFrame(
-      const QuicConnectionCloseFrame& frame) = 0;
+      const QuicConnectionCloseFrame& frame) {}
 
   // Called when a public reset packet has been received.
-  virtual void OnPublicResetPacket(const QuicPublicResetPacket& packet) = 0;
+  virtual void OnPublicResetPacket(const QuicPublicResetPacket& packet) {}
 
   // Called when a version negotiation packet has been received.
   virtual void OnVersionNegotiationPacket(
-      const QuicVersionNegotiationPacket& packet) = 0;
+      const QuicVersionNegotiationPacket& packet) {}
 
   // Called after a packet has been successfully parsed which results
   // in the revival of a packet via FEC.
   virtual void OnRevivedPacket(const QuicPacketHeader& revived_header,
-                               base::StringPiece payload) = 0;
+                               base::StringPiece payload) {}
 };
 
 class NET_EXPORT_PRIVATE QuicConnectionHelperInterface {
@@ -176,14 +193,21 @@ class NET_EXPORT_PRIVATE QuicConnection
       public QuicBlockedWriterInterface,
       public QuicPacketGenerator::DelegateInterface {
  public:
-  enum Force {
-    NO_FORCE,
-    FORCE
+  enum PacketType {
+    NORMAL,
+    QUEUED,
+    CONNECTION_CLOSE
   };
 
-  // Constructs a new QuicConnection for the specified |guid| and |address|.
+  enum AckBundling {
+    NO_ACK = 0,
+    SEND_ACK = 1,
+    BUNDLE_PENDING_ACK = 2,
+  };
+
+  // Constructs a new QuicConnection for |connection_id| and |address|.
   // |helper| and |writer| must outlive this connection.
-  QuicConnection(QuicGuid guid,
+  QuicConnection(QuicConnectionId connection_id,
                  IPEndPoint address,
                  QuicConnectionHelperInterface* helper,
                  QuicPacketWriter* writer,
@@ -208,10 +232,17 @@ class NET_EXPORT_PRIVATE QuicConnection
                                   bool fin,
                                   QuicAckNotifier::DelegateInterface* delegate);
 
-  // Send a stream reset frame to the peer.
+  // Send a RST_STREAM frame to the peer.
   virtual void SendRstStream(QuicStreamId id,
                              QuicRstStreamErrorCode error,
                              QuicStreamOffset bytes_written);
+
+  // Send a BLOCKED frame to the peer.
+  virtual void SendBlocked(QuicStreamId id);
+
+  // Send a WINDOW_UPDATE frame to the peer.
+  virtual void SendWindowUpdate(QuicStreamId id,
+                                QuicStreamOffset byte_offset);
 
   // Sends the connection close packet without affecting the state of the
   // connection.  This should only be called if the session is actively being
@@ -242,8 +273,8 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   // QuicBlockedWriterInterface
   // Called when the underlying connection becomes writable to allow queued
-  // writes to happen.  Returns false if the socket has become blocked.
-  virtual bool OnCanWrite() OVERRIDE;
+  // writes to happen.
+  virtual void OnCanWrite() OVERRIDE;
 
   // Called when a packet has been finally sent to the network.
   bool OnPacketSent(WriteResult result);
@@ -282,10 +313,13 @@ class NET_EXPORT_PRIVATE QuicConnection
   virtual bool OnAckFrame(const QuicAckFrame& frame) OVERRIDE;
   virtual bool OnCongestionFeedbackFrame(
       const QuicCongestionFeedbackFrame& frame) OVERRIDE;
+  virtual bool OnStopWaitingFrame(const QuicStopWaitingFrame& frame) OVERRIDE;
   virtual bool OnRstStreamFrame(const QuicRstStreamFrame& frame) OVERRIDE;
   virtual bool OnConnectionCloseFrame(
       const QuicConnectionCloseFrame& frame) OVERRIDE;
   virtual bool OnGoAwayFrame(const QuicGoAwayFrame& frame) OVERRIDE;
+  virtual bool OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) OVERRIDE;
+  virtual bool OnBlockedFrame(const QuicBlockedFrame& frame) OVERRIDE;
   virtual void OnFecData(const QuicFecData& fec) OVERRIDE;
   virtual void OnPacketComplete() OVERRIDE;
 
@@ -295,6 +329,7 @@ class NET_EXPORT_PRIVATE QuicConnection
                                     IsHandshake handshake) OVERRIDE;
   virtual QuicAckFrame* CreateAckFrame() OVERRIDE;
   virtual QuicCongestionFeedbackFrame* CreateFeedbackFrame() OVERRIDE;
+  virtual QuicStopWaitingFrame* CreateStopWaitingFrame() OVERRIDE;
   virtual bool OnSerializedPacket(const SerializedPacket& packet) OVERRIDE;
 
   // Accessors
@@ -307,7 +342,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   }
   const IPEndPoint& self_address() const { return self_address_; }
   const IPEndPoint& peer_address() const { return peer_address_; }
-  QuicGuid guid() const { return guid_; }
+  QuicConnectionId connection_id() const { return connection_id_; }
   const QuicClock* clock() const { return clock_; }
   QuicRandom* random_generator() const { return random_generator_; }
 
@@ -403,6 +438,9 @@ class NET_EXPORT_PRIVATE QuicConnection
     return sent_packet_manager_;
   }
 
+  // Make sure a stop waiting we got from our peer is sane.
+  bool ValidateStopWaitingFrame(const QuicStopWaitingFrame& stop_waiting);
+
   bool CanWrite(TransmissionType transmission_type,
                 HasRetransmittableData retransmittable,
                 IsHandshake handshake);
@@ -441,7 +479,7 @@ class NET_EXPORT_PRIVATE QuicConnection
     // bundler is in scope, setting |include_ack| to true ensures that
     // an ACK frame is opportunistically bundled with the first
     // outgoing packet.
-    ScopedPacketBundler(QuicConnection* connection, bool include_ack);
+    ScopedPacketBundler(QuicConnection* connection, AckBundling send_ack);
     ~ScopedPacketBundler();
 
    private:
@@ -455,21 +493,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Packets which have not been written to the wire.
   // Owns the QuicPacket* packet.
   struct QueuedPacket {
-    QueuedPacket(QuicPacketSequenceNumber sequence_number,
-                 QuicPacket* packet,
+    QueuedPacket(SerializedPacket packet,
                  EncryptionLevel level,
-                 TransmissionType transmission_type,
-                 HasRetransmittableData retransmittable,
-                 IsHandshake handshake,
-                 Force forced)
-        : sequence_number(sequence_number),
-          packet(packet),
-          encryption_level(level),
-          transmission_type(transmission_type),
-          retransmittable(retransmittable),
-          handshake(handshake),
-          forced(forced) {
-    }
+                 TransmissionType transmission_type);
 
     QuicPacketSequenceNumber sequence_number;
     QuicPacket* packet;
@@ -477,48 +503,21 @@ class NET_EXPORT_PRIVATE QuicConnection
     TransmissionType transmission_type;
     HasRetransmittableData retransmittable;
     IsHandshake handshake;
-    Force forced;
-  };
-
-  struct PendingWrite {
-    PendingWrite(QuicPacketSequenceNumber sequence_number,
-                 TransmissionType transmission_type,
-                 HasRetransmittableData retransmittable,
-                 EncryptionLevel level,
-                 bool is_fec_packet,
-                 size_t length)
-        : sequence_number(sequence_number),
-          transmission_type(transmission_type),
-          retransmittable(retransmittable),
-          level(level),
-          is_fec_packet(is_fec_packet),
-          length(length) { }
-
-    QuicPacketSequenceNumber sequence_number;
-    TransmissionType transmission_type;
-    HasRetransmittableData retransmittable;
-    EncryptionLevel level;
-    bool is_fec_packet;
-    size_t length;
+    PacketType type;
+    QuicByteCount length;
   };
 
   typedef std::list<QueuedPacket> QueuedPacketList;
   typedef std::map<QuicFecGroupNumber, QuicFecGroup*> FecGroupMap;
 
-  // Writes the given packet to socket, encrypted with |level|. Returns true on
-  // successful write. Behavior is undefined if connection is not established or
-  // broken. In any circumstance, a return value of true implies that |packet|
-  // has been transmitted and may be destroyed. If |sequence_number| is present
-  // in |retransmission_map_| it also sets up retransmission of the given packet
-  // in case of successful write. If |force| is FORCE, then the packet will be
-  // sent immediately and the send scheduler will not be consulted.
-  bool WritePacket(EncryptionLevel level,
-                   QuicPacketSequenceNumber sequence_number,
-                   const QuicPacket& packet,
-                   TransmissionType transmission_type,
-                   HasRetransmittableData retransmittable,
-                   IsHandshake handshake,
-                   Force force);
+  // Writes the given packet to socket, encrypted with packet's
+  // encryption_level. Returns true on successful write. Behavior is undefined
+  // if connection is not established or broken. A return value of true means
+  // the packet was transmitted and may be destroyed. If the packet is
+  // retransmittable, WritePacket sets up retransmission for a successful write.
+  // If packet is FORCE, then it will be sent immediately and the send scheduler
+  // will not be consulted.
+  bool WritePacket(QueuedPacket packet);
 
   // Make sure an ack we got from our peer is sane.
   bool ValidateAckFrame(const QuicAckFrame& incoming_ack);
@@ -528,18 +527,6 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   // Clears any accumulated frames from the last received packet.
   void ClearLastFrames();
-
-  // Calculates the smallest sequence number length that can also represent four
-  // times the maximum of the congestion window and the difference between the
-  // least_packet_awaited_by_peer_ and |sequence_number|.
-  QuicSequenceNumberLength CalculateSequenceNumberLength(
-      QuicPacketSequenceNumber sequence_number);
-
-  // Drop packet corresponding to |sequence_number| by deleting entries from
-  // |unacked_packets_| and |retransmission_map_|, if present. We need to drop
-  // all packets with encryption level NONE after the default level has been set
-  // to FORWARD_SECURE.
-  void DropPacket(QuicPacketSequenceNumber sequence_number);
 
   // Writes as many queued packets as possible.  The connection must not be
   // blocked when this is called.
@@ -566,15 +553,21 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   void ProcessAckFrame(const QuicAckFrame& incoming_ack);
 
-  // Update the |sent_info| for an outgoing ack.
-  void UpdateSentPacketInfo(SentPacketInfo* sent_info);
+  void ProcessStopWaitingFrame(const QuicStopWaitingFrame& stop_waiting);
+
+  // Update |stop_waiting| for an outgoing ack.
+  void UpdateStopWaiting(QuicStopWaitingFrame* stop_waiting);
 
   // Queues an ack or sets the ack alarm when an incoming packet arrives that
   // should be acked.
   void MaybeQueueAck();
 
   // Checks if the last packet should instigate an ack.
-  bool ShouldLastPacketInstigateAck();
+  bool ShouldLastPacketInstigateAck() const;
+
+  // Checks if the peer is waiting for packets that have been given up on, and
+  // therefore an ack frame should be sent with a larger least_unacked.
+  void UpdateStopWaitingCount();
 
   // Sends any packets which are a response to the last packet, including both
   // acks and pending writes if an ack opened the congestion window.
@@ -598,7 +591,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   const QuicClock* clock_;
   QuicRandom* random_generator_;
 
-  const QuicGuid guid_;
+  const QuicConnectionId connection_id_;
   // Address on the last successfully processed packet received from the
   // client.
   IPEndPoint self_address_;
@@ -610,8 +603,11 @@ class NET_EXPORT_PRIVATE QuicConnection
   std::vector<QuicStreamFrame> last_stream_frames_;
   std::vector<QuicAckFrame> last_ack_frames_;
   std::vector<QuicCongestionFeedbackFrame> last_congestion_frames_;
+  std::vector<QuicStopWaitingFrame> last_stop_waiting_frames_;
   std::vector<QuicRstStreamFrame> last_rst_frames_;
   std::vector<QuicGoAwayFrame> last_goaway_frames_;
+  std::vector<QuicWindowUpdateFrame> last_window_update_frames_;
+  std::vector<QuicBlockedFrame> last_blocked_frames_;
   std::vector<QuicConnectionCloseFrame> last_close_frames_;
 
   QuicCongestionFeedbackFrame outgoing_congestion_feedback_;
@@ -619,6 +615,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Track some peer state so we can do less bookkeeping
   // Largest sequence sent by the peer which had an ack frame (latest ack info).
   QuicPacketSequenceNumber largest_seen_packet_with_ack_;
+
+  // Largest sequence number sent by the peer which had a stop waiting frame.
+  QuicPacketSequenceNumber largest_seen_packet_with_stop_waiting_;
 
   // Collection of packets which were received before encryption was
   // established, but which could not be decrypted.  We buffer these on
@@ -636,7 +635,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   QueuedPacketList queued_packets_;
 
   // Contains information about the current write in progress, if any.
-  scoped_ptr<PendingWrite> pending_write_;
+  scoped_ptr<QueuedPacket> pending_write_;
 
   // Contains the connection close packet if the connection has been closed.
   scoped_ptr<QuicEncryptedPacket> connection_close_packet_;
@@ -648,6 +647,9 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   // Indicates whether an ack should be sent the next time we try to write.
   bool ack_queued_;
+  // Indicates how many consecutive times an ack has arrived which indicates
+  // the peer needs to stop waiting for some packets.
+  int stop_waiting_count_;
 
   // An alarm that fires when an ACK should be sent to the peer.
   scoped_ptr<QuicAlarm> ack_alarm_;
@@ -685,10 +687,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // connection.
   QuicTime time_of_last_sent_new_packet_;
 
-  // Sequence number of the last packet guaranteed to be sent in packet sequence
-  // number order.  Not set when packets are queued, since that may cause
-  // re-ordering.
-  QuicPacketSequenceNumber sequence_number_of_last_inorder_packet_;
+  // Sequence number of the last sent packet.  Packets are guaranteed to be sent
+  // in sequence number order.
+  QuicPacketSequenceNumber sequence_number_of_last_sent_packet_;
 
   // Sent packet manager which tracks the status of packets sent by this
   // connection and contains the send and receive algorithms to determine when

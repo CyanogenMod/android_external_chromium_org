@@ -6,12 +6,14 @@
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_CONTEXT_CORE_H_
 
 #include <map>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/id_map.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "content/browser/service_worker/service_worker_info.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/browser/service_worker/service_worker_registration_status.h"
 #include "content/browser/service_worker/service_worker_storage.h"
@@ -63,9 +65,6 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   void AddProviderHost(scoped_ptr<ServiceWorkerProviderHost> provider_host);
   void RemoveProviderHost(int process_id, int provider_id);
   void RemoveAllProviderHostsForProcess(int process_id);
-
-  // Checks the cmdline flag.
-  bool IsEnabled();
 
   // The callback will be called on the IO thread.
   void RegisterServiceWorker(const GURL& pattern,

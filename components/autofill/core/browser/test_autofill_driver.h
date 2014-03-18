@@ -29,9 +29,8 @@ class TestAutofillDriver : public AutofillDriver {
   virtual net::URLRequestContextGetter* GetURLRequestContext() OVERRIDE;
   virtual base::SequencedWorkerPool* GetBlockingPool() OVERRIDE;
   virtual bool RendererIsAvailable() OVERRIDE;
-  virtual void SetRendererActionOnFormDataReception(
-      RendererFormDataAction action) OVERRIDE;
   virtual void SendFormDataToRenderer(int query_id,
+                                      RendererFormDataAction action,
                                       const FormData& data) OVERRIDE;
   virtual void SendAutofillTypePredictionsToRenderer(
       const std::vector<FormStructure*>& forms) OVERRIDE;
@@ -41,7 +40,10 @@ class TestAutofillDriver : public AutofillDriver {
       const base::string16& username) OVERRIDE;
   virtual void RendererShouldClearFilledForm() OVERRIDE;
   virtual void RendererShouldClearPreviewedForm() OVERRIDE;
-  virtual void RendererShouldSetNodeText(const base::string16& value) OVERRIDE;
+  virtual void RendererShouldFillFieldWithValue(
+      const base::string16& value) OVERRIDE;
+  virtual void RendererShouldPreviewFieldWithValue(
+      const base::string16& value) OVERRIDE;
 
   // Methods that tests can use to specialize functionality.
 

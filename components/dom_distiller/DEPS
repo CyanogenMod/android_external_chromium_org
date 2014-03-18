@@ -1,8 +1,10 @@
 include_rules = [
   "+grit",  # For generated headers.
+  "+jni",
   "+sync/api",
   "+sync/protocol",
   "+third_party/leveldatabase/src/include",
+  "+net/base",
   "+net/http",
   "+net/url_request",
   "+ui/base/resource",

@@ -14,6 +14,7 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/strings/string16.h"
 #include "base/win/scoped_handle.h"
@@ -40,12 +41,12 @@ class InstallUtil {
   static void TriggerActiveSetupCommand();
 
   // Launches given exe as admin on Vista.
-  static bool ExecuteExeAsAdmin(const CommandLine& cmd, DWORD* exit_code);
+  static bool ExecuteExeAsAdmin(const base::CommandLine& cmd, DWORD* exit_code);
 
   // Reads the uninstall command for Chromium from registry and returns it.
   // If system_install is true the command is read from HKLM, otherwise
   // from HKCU.
-  static CommandLine GetChromeUninstallCmd(
+  static base::CommandLine GetChromeUninstallCmd(
       bool system_install,
       BrowserDistribution::Type distribution_type);
 
@@ -105,9 +106,8 @@ class InstallUtil {
   // by either --chrome-sxs or the executable path).
   static bool IsChromeSxSProcess();
 
-  // Populates |path| with the path to |file| in the sentinel directory. This is
-  // the application directory for user-level installs, and the default user
-  // data dir for system-level installs. Returns false on error.
+  // Populates |path| with the path to |file| in the sentinel directory for
+  // |dist|. Returns false on error.
   static bool GetSentinelFilePath(const base::FilePath::CharType* file,
                                   BrowserDistribution* dist,
                                   base::FilePath* path);
@@ -173,7 +173,7 @@ class InstallUtil {
   // Composes |program| and |arguments| into |command_line|.
   static void MakeUninstallCommand(const base::string16& program,
                                    const base::string16& arguments,
-                                   CommandLine* command_line);
+                                   base::CommandLine* command_line);
 
   // Returns a string in the form YYYYMMDD of the current date.
   static base::string16 GetCurrentDate();
@@ -190,13 +190,12 @@ class InstallUtil {
     bool EvaluatePath(const base::FilePath& path) const;
 
    protected:
-    static bool OpenForInfo(const base::FilePath& path,
-                            base::win::ScopedHandle* handle);
-    static bool GetInfo(const base::win::ScopedHandle& handle,
+    static bool OpenForInfo(const base::FilePath& path, base::File* file);
+    static bool GetInfo(const base::File& file,
                         BY_HANDLE_FILE_INFORMATION* info);
 
     base::FilePath path_to_match_;
-    base::win::ScopedHandle file_handle_;
+    base::File file_;
     BY_HANDLE_FILE_INFORMATION file_info_;
 
    private:

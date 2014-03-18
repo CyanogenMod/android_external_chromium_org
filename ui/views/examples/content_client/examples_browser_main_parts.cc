@@ -13,23 +13,20 @@
 #include "base/threading/thread_restrictions.h"
 #include "content/public/common/content_switches.h"
 #include "content/shell/browser/shell_browser_context.h"
+#include "ui/aura/env.h"
 #include "ui/base/ime/input_method_initializer.h"
+#include "ui/gfx/screen.h"
 #include "ui/views/examples/examples_window_with_content.h"
 #include "ui/views/test/desktop_test_views_delegate.h"
-#include "url/gurl.h"
-
-#if defined(USE_AURA)
-#include "ui/aura/env.h"
-#include "ui/gfx/screen.h"
-#include "ui/views/corewm/wm_state.h"
 #include "ui/views/widget/desktop_aura/desktop_screen.h"
 #include "ui/views/widget/native_widget_aura.h"
-#endif
+#include "ui/wm/core/wm_state.h"
+#include "url/gurl.h"
 
 #if defined(OS_CHROMEOS)
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/wm/test/wm_test_helper.h"
 #endif
 
@@ -44,9 +41,7 @@ ExamplesBrowserMainParts::~ExamplesBrowserMainParts() {
 }
 
 void ExamplesBrowserMainParts::ToolkitInitialized() {
-#if defined(USE_AURA)
-  wm_state_.reset(new views::corewm::WMState);
-#endif
+  wm_state_.reset(new wm::WMState);
 }
 
 void ExamplesBrowserMainParts::PreMainMessageLoopRun() {
@@ -60,10 +55,10 @@ void ExamplesBrowserMainParts::PreMainMessageLoopRun() {
   // Set up basic pieces of views::corewm.
   wm_test_helper_.reset(new wm::WMTestHelper(gfx::Size(800, 600)));
   // Ensure the X window gets mapped.
-  wm_test_helper_->root_window()->host()->Show();
+  wm_test_helper_->host()->Show();
   // Ensure Aura knows where to open new windows.
-  window_context = wm_test_helper_->root_window()->window();
-#elif defined(USE_AURA)
+  window_context = wm_test_helper_->host()->window();
+#else
   aura::Env::CreateInstance();
   gfx::Screen::SetScreenInstance(
       gfx::SCREEN_TYPE_NATIVE, CreateDesktopScreen());
@@ -80,9 +75,7 @@ void ExamplesBrowserMainParts::PostMainMessageLoopRun() {
   wm_test_helper_.reset();
 #endif
   views_delegate_.reset();
-#if defined(USE_AURA)
   aura::Env::DeleteInstance();
-#endif
 }
 
 bool ExamplesBrowserMainParts::MainMessageLoopRun(int* result_code) {

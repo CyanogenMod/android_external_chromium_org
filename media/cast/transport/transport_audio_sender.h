@@ -14,6 +14,9 @@
 
 namespace media {
 namespace cast {
+
+class LoggingImpl;
+
 namespace transport {
 
 class PacedSender;
@@ -22,9 +25,10 @@ class PacedSender;
 class TransportAudioSender : public base::NonThreadSafe {
  public:
   TransportAudioSender(
-      const CastTransportConfig& config,
+      const CastTransportAudioConfig& config,
       base::TickClock* clock,
-      const scoped_refptr<base::TaskRunner>& transport_task_runner,
+      LoggingImpl* logging,
+      const scoped_refptr<base::SingleThreadTaskRunner>& transport_task_runner,
       PacedSender* const paced_packet_sender);
 
   virtual ~TransportAudioSender();

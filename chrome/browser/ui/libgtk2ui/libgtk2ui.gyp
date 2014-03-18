@@ -17,10 +17,11 @@
         '../../../../build/linux/system.gyp:gconf',
         '../../../../build/linux/system.gyp:gtk',
         '../../../../build/linux/system.gyp:gtkprint',
+        '../../../../printing/printing.gyp:cups',
         '../../../../skia/skia.gyp:skia',
         '../../../../ui/base/strings/ui_strings.gyp:ui_strings',
+        '../../../../ui/base/ui_base.gyp:ui_base',
         '../../../../ui/resources/ui_resources.gyp:ui_resources',
-        '../../../../ui/ui.gyp:ui',
         '../../../../ui/views/views.gyp:views',
         '../../../chrome_resources.gyp:chrome_extra_resources',
         '../../../chrome_resources.gyp:chrome_resources',
@@ -29,7 +30,6 @@
       ],
       'defines': [
         'LIBGTK2UI_IMPLEMENTATION',
-        'USE_CUPS',
       ],
       # Several of our source files are named _gtk2.cc. This isn't to
       # differentiate them from their source files (ninja and make are sane
@@ -45,8 +45,12 @@
         'chrome_gtk_menu_subclasses.h',
         'gconf_titlebar_listener.cc',
         'gconf_titlebar_listener.h',
+        'g_object_destructor_filo.cc',
+        'g_object_destructor_filo.h',
         'gtk2_border.cc',
         'gtk2_border.h',
+        'gtk2_signal_registrar.cc',
+        'gtk2_signal_registrar.h',
         'gtk2_ui.cc',
         'gtk2_ui.h',
         'gtk2_util.cc',

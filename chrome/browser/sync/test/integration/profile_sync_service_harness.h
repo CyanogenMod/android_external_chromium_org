@@ -16,6 +16,7 @@
 
 class Profile;
 class StatusChangeChecker;
+class P2PInvalidationForwarder;
 
 namespace invalidation {
 class P2PInvalidationService;
@@ -86,10 +87,6 @@ class ProfileSyncServiceHarness
   // Blocks the caller until sync setup is complete for this client. Returns
   // true if sync setup is complete.
   bool AwaitSyncSetupCompletion();
-
-  // Blocks the caller until this harness has observed that the sync engine
-  // has downloaded all the changes seen by the |partner| harness's client.
-  bool WaitUntilProgressMarkersMatch(ProfileSyncServiceHarness* partner);
 
   // Calling this acts as a barrier and blocks the caller until |this| and
   // |partner| have both completed a sync cycle.  When calling this method,
@@ -167,14 +164,6 @@ class ProfileSyncServiceHarness
   // Check if |type| is being synced.
   bool IsTypePreferred(syncer::ModelType type);
 
-  // Get the number of sync entries this client has. This includes all top
-  // level or permanent items, and can include recently deleted entries.
-  size_t GetNumEntries() const;
-
-  // Get the number of sync datatypes registered (ignoring whatever state
-  // they're in).
-  size_t GetNumDatatypes() const;
-
   // Gets the |auto_start_enabled_| variable from the |service_|.
   bool AutoStartEnabled();
 
@@ -182,9 +171,8 @@ class ProfileSyncServiceHarness
   // returns true, indicating that the status change we are waiting for has
   // taken place. Caller retains ownership of |checker|, which must outlive this
   // method. Returns true if the status change was observed. In case of a
-  // timeout, we log the |source| of the call to this method, and return false.
-  bool AwaitStatusChange(StatusChangeChecker* checker,
-                         const std::string& source);
+  // timeout, we CHECK(false).
+  bool AwaitStatusChange(StatusChangeChecker* checker);
 
   // Returns a string that can be used as the value of an oauth2 refresh token.
   // This function guarantees that a different string is returned each time
@@ -194,10 +182,6 @@ class ProfileSyncServiceHarness
   // Returns a string with relevant info about client's sync state (if
   // available), annotated with |message|. Useful for logging.
   std::string GetClientInfoString(const std::string& message) const;
-
-  // Returns true if this client has downloaded all the items that the
-  // other client has.
-  bool MatchesPartnerClient() const;
 
  private:
   ProfileSyncServiceHarness(
@@ -218,10 +202,6 @@ class ProfileSyncServiceHarness
   // found.
   std::string GetSerializedProgressMarker(syncer::ModelType model_type) const;
 
-  // Returns true if a client has nothing left to commit and its progress
-  // markers are up to date.
-  bool HasLatestProgressMarkers() const;
-
   // Gets detailed status from |service_| in pretty-printable form.
   std::string GetServiceStatus();
 
@@ -231,12 +211,8 @@ class ProfileSyncServiceHarness
   // ProfileSyncService object associated with |profile_|.
   ProfileSyncService* service_;
 
-  // P2PInvalidationService associated with |profile_|.
-  invalidation::P2PInvalidationService* p2p_invalidation_service_;
-
-  // The harness of the client whose update progress marker we're expecting
-  // eventually match.
-  ProfileSyncServiceHarness* progress_marker_partner_;
+  // An bridge between the ProfileSyncService and P2PInvalidationService.
+  scoped_ptr<P2PInvalidationForwarder> p2p_invalidation_forwarder_;
 
   // Credentials used for GAIA authentication.
   std::string username_;

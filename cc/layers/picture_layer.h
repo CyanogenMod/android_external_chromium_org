@@ -30,9 +30,8 @@ class CC_EXPORT PictureLayer : public Layer {
   virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual void SetNeedsDisplayRect(const gfx::RectF& layer_rect) OVERRIDE;
-  virtual bool Update(
-      ResourceUpdateQueue* queue,
-      const OcclusionTracker* occlusion) OVERRIDE;
+  virtual bool Update(ResourceUpdateQueue* queue,
+                      const OcclusionTracker<Layer>* occlusion) OVERRIDE;
   virtual void SetIsMask(bool is_mask) OVERRIDE;
   virtual bool SupportsLCDText() const OVERRIDE;
   virtual skia::RefPtr<SkPicture> GetPicture() const OVERRIDE;
@@ -40,6 +39,8 @@ class CC_EXPORT PictureLayer : public Layer {
   virtual void RunMicroBenchmark(MicroBenchmark* benchmark) OVERRIDE;
 
   ContentLayerClient* client() { return client_; }
+
+  void SetHasGpuRasterizationHint(bool has_hint);
 
  protected:
   explicit PictureLayer(ContentLayerClient* client);
@@ -56,6 +57,7 @@ class CC_EXPORT PictureLayer : public Layer {
   Region pile_invalidation_;
   gfx::Rect last_updated_visible_content_rect_;
   bool is_mask_;
+  bool has_gpu_rasterization_hint_;
 
   int update_source_frame_number_;
 

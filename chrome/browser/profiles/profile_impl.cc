@@ -32,6 +32,8 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/dom_distiller/dom_distiller_service_factory.h"
+#include "chrome/browser/dom_distiller/lazy_dom_distiller_service.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
@@ -77,7 +79,8 @@
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/dom_distiller/content/dom_distiller_viewer_source.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "components/user_prefs/user_prefs.h"
@@ -87,6 +90,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_constants.h"
 #include "extensions/browser/extension_pref_store.h"
@@ -217,8 +221,8 @@ void EnsureReadmeFile(const base::FilePath& base) {
   std::string product_name = l10n_util::GetStringUTF8(IDS_PRODUCT_NAME);
   std::string readme_text = base::StringPrintf(
       kReadmeText, product_name.c_str(), product_name.c_str());
-  if (file_util::WriteFile(
-          readme_path, readme_text.data(), readme_text.size()) == -1) {
+  if (base::WriteFile(readme_path, readme_text.data(), readme_text.size()) ==
+      -1) {
     LOG(ERROR) << "Could not create README file.";
   }
 }
@@ -244,6 +248,23 @@ std::string ExitTypeToSessionTypePrefValue(Profile::ExitType type) {
   }
   NOTREACHED();
   return std::string();
+}
+
+// Setup URLDataSource for the chrome-distiller:// scheme for the given
+// |profile|.
+void RegisterDomDistillerViewerSource(Profile* profile) {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kEnableDomDistiller)) {
+    dom_distiller::DomDistillerServiceFactory* dom_distiller_service_factory =
+        dom_distiller::DomDistillerServiceFactory::GetInstance();
+    // The LazyDomDistillerService deletes itself when the profile is destroyed.
+    dom_distiller::LazyDomDistillerService* lazy_service =
+        new dom_distiller::LazyDomDistillerService(
+            profile, dom_distiller_service_factory);
+    content::URLDataSource::Add(profile,
+                                new dom_distiller::DomDistillerViewerSource(
+                                    lazy_service, chrome::kDomDistillerScheme));
+  }
 }
 
 }  // namespace
@@ -595,12 +616,13 @@ void ProfileImpl::DoFinalInit() {
         base::Bind(&EnsureReadmeFile, GetPath()),
         base::TimeDelta::FromMilliseconds(create_readme_delay_ms));
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableRestoreSessionState)) {
-    TRACE_EVENT0("browser", "ProfileImpl::SetSaveSessionStorageOnDisk")
-    content::BrowserContext::GetDefaultStoragePartition(this)->
-        GetDOMStorageContext()->SetSaveSessionStorageOnDisk();
-  }
+  TRACE_EVENT0("browser", "ProfileImpl::SetSaveSessionStorageOnDisk");
+  content::BrowserContext::GetDefaultStoragePartition(this)->
+      GetDOMStorageContext()->SetSaveSessionStorageOnDisk();
+
+  // The DomDistillerViewerSource is not a normal WebUI so it must be registered
+  // as a URLDataSource early.
+  RegisterDomDistillerViewerSource(this);
 
   // Creation has been finished.
   if (delegate_) {
@@ -699,6 +721,10 @@ ProfileImpl::~ProfileImpl() {
 
 std::string ProfileImpl::GetProfileName() {
   return GetPrefs()->GetString(prefs::kGoogleServicesUsername);
+}
+
+Profile::ProfileType ProfileImpl::GetProfileType() const {
+  return REGULAR_PROFILE;
 }
 
 base::FilePath ProfileImpl::GetPath() const {
@@ -864,11 +890,13 @@ PrefService* ProfileImpl::GetOffTheRecordPrefs() {
 }
 
 net::URLRequestContextGetter* ProfileImpl::CreateRequestContext(
-    content::ProtocolHandlerMap* protocol_handlers) {
-  return io_data_
-      .CreateMainRequestContextGetter(protocol_handlers,
-                                      g_browser_process->local_state(),
-                                      g_browser_process->io_thread()).get();
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::ProtocolHandlerScopedVector protocol_interceptors) {
+  return io_data_.CreateMainRequestContextGetter(
+      protocol_handlers,
+      protocol_interceptors.Pass(),
+      g_browser_process->local_state(),
+      g_browser_process->io_thread()).get();
 }
 
 net::URLRequestContextGetter* ProfileImpl::GetRequestContext() {
@@ -977,16 +1005,20 @@ net::URLRequestContextGetter*
 ProfileImpl::CreateRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory,
-    content::ProtocolHandlerMap* protocol_handlers) {
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::ProtocolHandlerScopedVector protocol_interceptors) {
   return io_data_.CreateIsolatedAppRequestContextGetter(
-                      partition_path, in_memory, protocol_handlers).get();
+      partition_path,
+      in_memory,
+      protocol_handlers,
+      protocol_interceptors.Pass()).get();
 }
 
 net::SSLConfigService* ProfileImpl::GetSSLConfigService() {
   // If ssl_config_service_manager_ is null, this typically means that some
-  // BrowserContextKeyedService is trying to create a RequestContext at startup,
+  // KeyedService is trying to create a RequestContext at startup,
   // but SSLConfigServiceManager is not initialized until DoFinalInit() which is
-  // invoked after all BrowserContextKeyedServices have been initialized (see
+  // invoked after all KeyedServices have been initialized (see
   // http://crbug.com/171406).
   DCHECK(ssl_config_service_manager_) <<
       "SSLConfigServiceManager is not initialized yet";

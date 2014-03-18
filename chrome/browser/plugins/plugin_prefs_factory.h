@@ -7,11 +7,10 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "components/browser_context_keyed_service/refcounted_browser_context_keyed_service_factory.h"
+#include "components/keyed_service/content/refcounted_browser_context_keyed_service_factory.h"
 
 class PluginPrefs;
 class Profile;
-class BrowserContextKeyedService;
 
 class PluginPrefsFactory : public RefcountedBrowserContextKeyedServiceFactory {
  public:

@@ -3,11 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Sets up environment for building Chromium on Android.  It can either be
-# compiled with the Android tree or using the Android SDK/NDK. To build with
-# NDK/SDK: ". build/android/envsetup.sh".  Environment variable
-# ANDROID_SDK_BUILD=1 will then be defined and used in the rest of the setup to
-# specifiy build type.
+# Sets up environment for building Chromium on Android.
 
 # Make sure we're being sourced (possibly by another script). Check for bash
 # since zsh sets $0 when sourcing.
@@ -18,21 +14,6 @@ fi
 
 # Source functions script.  The file is in the same directory as this script.
 SCRIPT_DIR="$(dirname "${BASH_SOURCE:-$0}")"
-. "${SCRIPT_DIR}"/envsetup_functions.sh
-
-export ANDROID_SDK_BUILD=1  # Default to SDK build.
-
-process_options "$@"
-
-# When building WebView as part of Android we can't use the SDK. Other builds
-# default to using the SDK.
-if [[ "${CHROME_ANDROID_BUILD_WEBVIEW}" -eq 1 ]]; then
-  export ANDROID_SDK_BUILD=0
-fi
-
-if [[ "${ANDROID_SDK_BUILD}" -ne 1 ]]; then
-  echo "Initializing for non-SDK build."
-fi
 
 # Get host architecture, and abort if it is 32-bit.
 host_arch=$(uname -m)
@@ -65,38 +46,50 @@ the one you want."
   echo "${CHROME_SRC}"
 fi
 
-if [[ "${ANDROID_SDK_BUILD}" -eq 1 ]]; then
-  if [[ -z "${TARGET_ARCH}" ]]; then
-    return 1
-  fi
-  sdk_build_init
-# Sets up environment for building Chromium for Android with source. Expects
-# android environment setup and lunch.
-elif [[ -z "$ANDROID_BUILD_TOP" || \
-        -z "$ANDROID_TOOLCHAIN" || \
-        -z "$ANDROID_PRODUCT_OUT" ]]; then
-  echo "Android build environment variables must be set."
-  echo "Please cd to the root of your Android tree and do: "
-  echo "  . build/envsetup.sh"
-  echo "  lunch"
-  echo "Then try this again."
-  echo "Or did you mean NDK/SDK build. Run envsetup.sh without any arguments."
-  return 1
-elif [[ -n "$CHROME_ANDROID_BUILD_WEBVIEW" ]]; then
-  webview_build_init
+# Allow the caller to override a few environment variables. If any of them is
+# unset, we default to a sane value that's known to work. This allows for
+# experimentation with a custom SDK.
+if [[ -z "${ANDROID_NDK_ROOT}" || ! -d "${ANDROID_NDK_ROOT}" ]]; then
+  export ANDROID_NDK_ROOT="${CHROME_SRC}/third_party/android_tools/ndk/"
 fi
+if [[ -z "${ANDROID_SDK_ROOT}" || ! -d "${ANDROID_SDK_ROOT}" ]]; then
+  export ANDROID_SDK_ROOT="${CHROME_SRC}/third_party/android_tools/sdk/"
+fi
+
+# Add Android SDK tools to system path.
+export PATH=$PATH:${ANDROID_SDK_ROOT}/tools
+export PATH=$PATH:${ANDROID_SDK_ROOT}/platform-tools
+
+# Add Chromium Android development scripts to system path.
+# Must be after CHROME_SRC is set.
+export PATH=$PATH:${CHROME_SRC}/build/android
+
+# The set of GYP_DEFINES to pass to gyp.
+DEFINES="OS=android"
+
+if [[ -n "$CHROME_ANDROID_OFFICIAL_BUILD" ]]; then
+  # These defines are used by various chrome build scripts to tag the binary's
+  # version string as 'official' in linux builds (e.g. in
+  # chrome/trunk/src/chrome/tools/build/version.py).
+  export OFFICIAL_BUILD=1
+  export CHROMIUM_BUILD="_google_chrome"
+  export CHROME_BUILD_TYPE="_official"
+fi
+
+# TODO(thakis), Jan 18 2014: Remove this after two weeks or so, after telling
+# everyone to set use_goma in GYP_DEFINES instead of a GOMA_DIR env var.
+if [[ -d $GOMA_DIR ]]; then
+  DEFINES+=" use_goma=1 gomadir=$GOMA_DIR"
+fi
+
+export GYP_DEFINES="${DEFINES}"
 
 # Source a bunch of helper functions
 . ${CHROME_SRC}/build/android/adb_device_functions.sh
-
-# Declare Android are cross compile.
-export GYP_CROSSCOMPILE=1
 
 # Performs a gyp_chromium run to convert gyp->Makefile for android code.
 android_gyp() {
   # This is just a simple wrapper of gyp_chromium, please don't add anything
   # in this function.
-  (
-    "${CHROME_SRC}/build/gyp_chromium" --depth="${CHROME_SRC}" --check "$@"
-  )
+  "${CHROME_SRC}/build/gyp_chromium" --depth="${CHROME_SRC}" --check "$@"
 }

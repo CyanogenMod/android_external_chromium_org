@@ -19,11 +19,6 @@ const AcceleratorData kAcceleratorData[] = {
   { false, ui::VKEY_LSHIFT, ui::EF_ALT_DOWN, NEXT_IME },
   { false, ui::VKEY_SHIFT, ui::EF_ALT_DOWN, NEXT_IME },
   { false, ui::VKEY_RSHIFT, ui::EF_ALT_DOWN, NEXT_IME },
-  // Single shift release turns off caps lock.
-  { false, ui::VKEY_LSHIFT, ui::EF_NONE, DISABLE_CAPS_LOCK },
-  { false, ui::VKEY_SHIFT, ui::EF_NONE, DISABLE_CAPS_LOCK },
-  { false, ui::VKEY_RSHIFT, ui::EF_NONE, DISABLE_CAPS_LOCK },
-
   { true, ui::VKEY_SPACE, ui::EF_CONTROL_DOWN, PREVIOUS_IME },
   { false, ui::VKEY_SPACE, ui::EF_CONTROL_DOWN, PREVIOUS_IME },
   // Shortcuts for Japanese IME.
@@ -37,7 +32,7 @@ const AcceleratorData kAcceleratorData[] = {
   { true, ui::VKEY_TAB, ui::EF_ALT_DOWN, CYCLE_FORWARD_MRU },
   { true, ui::VKEY_TAB, ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN,
     CYCLE_BACKWARD_MRU },
-  { true, ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_NONE, CYCLE_LINEAR },
+  { true, ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_NONE, TOGGLE_OVERVIEW },
 #if defined(OS_CHROMEOS)
   { true, ui::VKEY_BROWSER_SEARCH, ui::EF_NONE, TOGGLE_APP_LIST },
   { true, ui::VKEY_WLAN, ui::EF_NONE, TOGGLE_WIFI },
@@ -85,6 +80,15 @@ const AcceleratorData kAcceleratorData[] = {
     SWITCH_TO_PREVIOUS_USER },
   { true, ui::VKEY_OEM_PERIOD, ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN,
     SWITCH_TO_NEXT_USER },
+  // Turning the TouchView maximizing mode on via hotkey for the time being.
+  // TODO(skuhne): Remove once the test isn't needed anymore.
+  { true, ui::VKEY_D, ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN | ui::EF_SHIFT_DOWN,
+    TOGGLE_TOUCH_VIEW_TESTING },
+  // Single shift release turns off caps lock.
+  { false, ui::VKEY_LSHIFT, ui::EF_NONE, DISABLE_CAPS_LOCK },
+  { false, ui::VKEY_SHIFT, ui::EF_NONE, DISABLE_CAPS_LOCK },
+  { false, ui::VKEY_RSHIFT, ui::EF_NONE, DISABLE_CAPS_LOCK },
+  { false, ui::VKEY_LWIN, ui::EF_ALT_DOWN, TOGGLE_CAPS_LOCK },
 #endif  // defined(OS_CHROMEOS)
   { true, ui::VKEY_I, ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN, OPEN_FEEDBACK_PAGE },
 #if !defined(OS_WIN)
@@ -111,7 +115,6 @@ const AcceleratorData kAcceleratorData[] = {
   // act on release instead of press when using Search as a modifier key for
   // extended keyboard shortcuts.
   { false, ui::VKEY_LWIN, ui::EF_NONE, TOGGLE_APP_LIST },
-  { false, ui::VKEY_LWIN, ui::EF_ALT_DOWN, TOGGLE_CAPS_LOCK },
   { true, ui::VKEY_MEDIA_LAUNCH_APP2, ui::EF_NONE, TOGGLE_FULLSCREEN },
   { true, ui::VKEY_MEDIA_LAUNCH_APP2, ui::EF_SHIFT_DOWN, TOGGLE_FULLSCREEN },
   { true, ui::VKEY_VOLUME_MUTE, ui::EF_NONE, VOLUME_MUTE },
@@ -127,9 +130,6 @@ const AcceleratorData kAcceleratorData[] = {
   { true, ui::VKEY_F14, ui::EF_NONE, SHOW_KEYBOARD_OVERLAY },
   { true, ui::VKEY_N, ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN,
     SHOW_MESSAGE_CENTER_BUBBLE },
-  { true, ui::VKEY_BROWSER_BACK,
-    ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN,
-    SHOW_OAK },
   { true, ui::VKEY_S, ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN,
     SHOW_SYSTEM_TRAY_BUBBLE },
   { true, ui::VKEY_ESCAPE, ui::EF_SHIFT_DOWN, SHOW_TASK_MANAGER },
@@ -355,7 +355,7 @@ const AcceleratorAction kNonrepeatableActions[] = {
   // TODO(mazda): Add other actions which should not be repeated.
   CYCLE_BACKWARD_MRU,
   CYCLE_FORWARD_MRU,
-  CYCLE_LINEAR,
+  TOGGLE_OVERVIEW,
   EXIT,
   PRINT_UI_HIERARCHIES,  // Don't fill the logs if the key is held down.
   ROTATE_SCREEN,
@@ -376,7 +376,7 @@ const AcceleratorAction kActionsAllowedInAppMode[] = {
   BRIGHTNESS_UP,
   CYCLE_BACKWARD_MRU,
   CYCLE_FORWARD_MRU,
-  CYCLE_LINEAR,
+  TOGGLE_OVERVIEW,
   DISABLE_CAPS_LOCK,
   KEYBOARD_BRIGHTNESS_DOWN,
   KEYBOARD_BRIGHTNESS_UP,
@@ -421,7 +421,7 @@ const AcceleratorAction kActionsNeedingWindow[] = {
     ACCESSIBLE_FOCUS_PREVIOUS,
     CYCLE_BACKWARD_MRU,
     CYCLE_FORWARD_MRU,
-    CYCLE_LINEAR,
+    TOGGLE_OVERVIEW,
     WINDOW_SNAP_LEFT,
     WINDOW_SNAP_RIGHT,
     WINDOW_MINIMIZE,

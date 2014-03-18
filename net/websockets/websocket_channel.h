@@ -22,6 +22,10 @@
 #include "net/websockets/websocket_stream.h"
 #include "url/gurl.h"
 
+namespace url {
+class Origin;
+}  // namespace url
+
 namespace net {
 
 class BoundNetLog;
@@ -42,7 +46,7 @@ class NET_EXPORT WebSocketChannel {
   typedef base::Callback<scoped_ptr<WebSocketStreamRequest>(
       const GURL&,
       const std::vector<std::string>&,
-      const GURL&,
+      const url::Origin&,
       URLRequestContext*,
       const BoundNetLog&,
       scoped_ptr<WebSocketStream::ConnectDelegate>)> WebSocketStreamCreator;
@@ -58,7 +62,7 @@ class NET_EXPORT WebSocketChannel {
   void SendAddChannelRequest(
       const GURL& socket_url,
       const std::vector<std::string>& requested_protocols,
-      const GURL& origin);
+      const url::Origin& origin);
 
   // Sends a data frame to the remote side. The frame should usually be no
   // larger than 32KB to prevent the time required to copy the buffers from from
@@ -96,7 +100,7 @@ class NET_EXPORT WebSocketChannel {
   void SendAddChannelRequestForTesting(
       const GURL& socket_url,
       const std::vector<std::string>& requested_protocols,
-      const GURL& origin,
+      const url::Origin& origin,
       const WebSocketStreamCreator& creator);
 
   // The default timout for the closing handshake is a sensible value (see
@@ -151,7 +155,7 @@ class NET_EXPORT WebSocketChannel {
   void SendAddChannelRequestWithSuppliedCreator(
       const GURL& socket_url,
       const std::vector<std::string>& requested_protocols,
-      const GURL& origin,
+      const url::Origin& origin,
       const WebSocketStreamCreator& creator);
 
   // Success callback from WebSocketStream::CreateAndConnectStream(). Reports
@@ -205,6 +209,14 @@ class NET_EXPORT WebSocketChannel {
       bool final,
       const scoped_refptr<IOBuffer>& data_buffer,
       size_t size) WARN_UNUSED_RESULT;
+
+  // Forward a received data frame to the renderer, if connected. If
+  // |expecting_continuation| is not equal to |expecting_to_read_continuation_|,
+  // will fail the channel. Also checks the UTF-8 validity of text frames.
+  ChannelState HandleDataFrame(WebSocketFrameHeader::OpCode opcode,
+                               bool final,
+                               const scoped_refptr<IOBuffer>& data_buffer,
+                               size_t size) WARN_UNUSED_RESULT;
 
   // Low-level method to send a single frame. Used for both data and control
   // frames. Either sends the frame immediately or buffers it to be scheduled
@@ -324,6 +336,13 @@ class NET_EXPORT WebSocketChannel {
   // UTF-8 validator for incoming Text messages.
   base::StreamingUtf8Validator incoming_utf8_validator_;
   bool receiving_text_message_;
+
+  // True if we are in the middle of receiving a message.
+  bool expecting_to_handle_continuation_;
+
+  // True if we have already sent the type (Text or Binary) of the current
+  // message to the renderer. This can be false if the message is empty so far.
+  bool initial_frame_forwarded_;
 
   DISALLOW_COPY_AND_ASSIGN(WebSocketChannel);
 };

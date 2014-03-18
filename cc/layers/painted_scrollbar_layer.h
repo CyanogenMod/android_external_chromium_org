@@ -38,7 +38,7 @@ class CC_EXPORT PaintedScrollbarLayer : public ScrollbarLayerInterface,
 
   // Layer interface
   virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker* occlusion) OVERRIDE;
+                      const OcclusionTracker<Layer>* occlusion) OVERRIDE;
   virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual void PushScrollClipPropertiesTo(LayerImpl* layer) OVERRIDE;
@@ -77,7 +77,8 @@ class CC_EXPORT PaintedScrollbarLayer : public ScrollbarLayerInterface,
   int MaxTextureSize();
   float ClampScaleToMaxTextureSize(float scale);
 
-  UIResourceBitmap RasterizeScrollbarPart(const gfx::Rect& rect,
+  UIResourceBitmap RasterizeScrollbarPart(const gfx::Rect& layer_rect,
+                                          const gfx::Rect& content_rect,
                                           ScrollbarPart part);
 
   scoped_ptr<Scrollbar> scrollbar_;

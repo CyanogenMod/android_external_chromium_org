@@ -4,12 +4,13 @@
 
 #include "chrome/browser/guestview/webview/webview_guest.h"
 
-#include "base/command_line.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
+#include "chrome/browser/extensions/api/webview/webview_api.h"
 #include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/extensions/extension_web_contents_observer.h"
+#include "chrome/browser/extensions/menu_manager.h"
 #include "chrome/browser/extensions/script_executor.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/guestview/guestview_constants.h"
@@ -29,11 +30,12 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/stop_find_action.h"
 #include "extensions/common/constants.h"
 #include "net/base/net_errors.h"
+#include "third_party/WebKit/public/web/WebFindOptions.h"
 
 #if defined(ENABLE_PLUGINS)
 #include "chrome/browser/guestview/webview/plugin_permission_helper.h"
@@ -131,7 +133,8 @@ WebViewGuest::WebViewGuest(WebContents* guest_web_contents,
       is_overriding_user_agent_(false),
       pending_reload_on_attachment_(false),
       main_frame_id_(0),
-      chromevox_injected_(false) {
+      chromevox_injected_(false),
+      find_helper_(this) {
   notification_registrar_.Add(
       this, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
       content::Source<WebContents>(guest_web_contents));
@@ -141,9 +144,12 @@ WebViewGuest::WebViewGuest(WebContents* guest_web_contents,
       content::Source<WebContents>(guest_web_contents));
 
 #if defined(OS_CHROMEOS)
-  notification_registrar_.Add(this,
-      chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK,
-      content::NotificationService::AllSources());
+  chromeos::AccessibilityManager* accessibility_manager =
+      chromeos::AccessibilityManager::Get();
+  CHECK(accessibility_manager);
+  accessibility_subscription_ = accessibility_manager->RegisterCallback(
+      base::Bind(&WebViewGuest::OnAccessibilityStatusChanged,
+                 base::Unretained(this)));
 #endif
 
   AttachWebViewHelpers(guest_web_contents);
@@ -162,6 +168,15 @@ WebViewGuest* WebViewGuest::From(int embedder_process_id,
 WebViewGuest* WebViewGuest::FromWebContents(WebContents* contents) {
   GuestView* guest = GuestView::FromWebContents(contents);
   return guest ? guest->AsWebView() : NULL;
+}
+
+// static.
+int WebViewGuest::GetViewInstanceId(WebContents* contents) {
+  WebViewGuest* guest = FromWebContents(contents);
+  if (!guest)
+    return guestview::kInstanceIDNone;
+
+  return guest->view_instance_id();
 }
 
 // static
@@ -322,12 +337,24 @@ void WebViewGuest::EmbedderDestroyed() {
       FROM_HERE,
       base::Bind(
           &RemoveWebViewEventListenersOnIOThread,
-          browser_context(), extension_id(),
+          browser_context(), embedder_extension_id(),
           embedder_render_process_id(),
           view_instance_id()));
 }
 
+void WebViewGuest::FindReply(int request_id,
+                             int number_of_matches,
+                             const gfx::Rect& selection_rect,
+                             int active_match_ordinal,
+                             bool final_update) {
+  find_helper_.FindReply(request_id, number_of_matches, selection_rect,
+                         active_match_ordinal, final_update);
+}
+
 void WebViewGuest::GuestProcessGone(base::TerminationStatus status) {
+  // Cancel all find sessions in progress.
+  find_helper_.CancelAllFindSessions();
+
   scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetInteger(webview::kProcessId,
                    guest_web_contents()->GetRenderProcessHost()->GetID());
@@ -369,19 +396,7 @@ bool WebViewGuest::HandleKeyboardEvent(
 }
 
 bool WebViewGuest::IsDragAndDropEnabled() {
-#if defined(OS_CHROMEOS)
   return true;
-#else
-  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-  if (channel != chrome::VersionInfo::CHANNEL_STABLE &&
-      channel != chrome::VersionInfo::CHANNEL_BETA) {
-    // Drag and drop is enabled in canary and dev channel.
-    return true;
-  }
-
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableBrowserPluginDragDrop);
-#endif
 }
 
 bool WebViewGuest::IsOverridingUserAgent() const {
@@ -445,12 +460,6 @@ bool WebViewGuest::RequestPermission(
       break;
     }
     case BROWSER_PLUGIN_PERMISSION_TYPE_JAVASCRIPT_DIALOG: {
-      chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-      if (channel > chrome::VersionInfo::CHANNEL_DEV) {
-        // 'dialog' API is not available in stable/beta.
-        callback.Run(false, std::string());
-        return true;
-      }
       DispatchEvent(new GuestView::Event(webview::kEventDialog,
                                          args.Pass()));
       break;
@@ -489,11 +498,6 @@ void WebViewGuest::Observe(int type,
                    is_top_level);
       break;
     }
-#if defined(OS_CHROMEOS)
-    case chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK:
-      InjectChromeVoxIfNeeded(guest_web_contents()->GetRenderViewHost());
-      break;
-#endif
     default:
       NOTREACHED() << "Unexpected notification sent.";
       break;
@@ -514,6 +518,18 @@ void WebViewGuest::SetZoom(double zoom_factor) {
 
 double WebViewGuest::GetZoom() {
   return current_zoom_factor_;
+}
+
+void WebViewGuest::Find(
+    const base::string16& search_text,
+    const blink::WebFindOptions& options,
+    scoped_refptr<extensions::WebviewFindFunction> find_function) {
+  find_helper_.Find(guest_web_contents(), search_text, options, find_function);
+}
+
+void WebViewGuest::StopFinding(content::StopFindAction action) {
+  find_helper_.CancelAllFindSessions();
+  guest_web_contents()->StopFinding(action);
 }
 
 void WebViewGuest::Go(int relative_index) {
@@ -606,6 +622,8 @@ void WebViewGuest::DidCommitProvisionalLoadForFrame(
     const GURL& url,
     content::PageTransition transition_type,
     content::RenderViewHost* render_view_host) {
+  find_helper_.CancelAllFindSessions();
+
   scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetString(guestview::kUrl, url.spec());
   args->SetBoolean(guestview::kIsTopLevel, is_main_frame);
@@ -668,6 +686,12 @@ void WebViewGuest::DidStopLoading(content::RenderViewHost* render_view_host) {
 }
 
 void WebViewGuest::WebContentsDestroyed(WebContents* web_contents) {
+  // Clean up custom context menu items for this guest.
+  extensions::MenuManager* menu_manager = extensions::MenuManager::Get(
+      Profile::FromBrowserContext(browser_context()));
+  menu_manager->RemoveAllContextItems(extensions::MenuItem::ExtensionKey(
+      embedder_extension_id(), view_instance_id()));
+
   RemoveWebViewFromExtensionRendererState(web_contents);
 }
 
@@ -712,13 +736,13 @@ void WebViewGuest::AddWebViewToExtensionRendererState() {
     NOTREACHED();
     return;
   }
-  DCHECK(extension_id() == partition_domain);
+  DCHECK(embedder_extension_id() == partition_domain);
 
   ExtensionRendererState::WebViewInfo webview_info;
   webview_info.embedder_process_id = embedder_render_process_id();
   webview_info.instance_id = view_instance_id();
   webview_info.partition_id =  partition_id;
-  webview_info.extension_id = extension_id();
+  webview_info.embedder_extension_id = embedder_extension_id();
 
   content::BrowserThread::PostTask(
       content::BrowserThread::IO, FROM_HERE,
@@ -743,14 +767,14 @@ void WebViewGuest::RemoveWebViewFromExtensionRendererState(
 }
 
 GURL WebViewGuest::ResolveURL(const std::string& src) {
-  if (extension_id().empty()) {
+  if (!in_extension()) {
     NOTREACHED();
     return GURL(src);
   }
 
   GURL default_url(base::StringPrintf("%s://%s/",
                                       extensions::kExtensionScheme,
-                                      extension_id().c_str()));
+                                      embedder_extension_id().c_str()));
   return default_url.Resolve(src);
 }
 
@@ -763,6 +787,21 @@ void WebViewGuest::SizeChanged(const gfx::Size& old_size,
   args->SetInteger(webview::kNewWidth, new_size.width());
   DispatchEvent(new GuestView::Event(webview::kEventSizeChanged, args.Pass()));
 }
+
+#if defined(OS_CHROMEOS)
+void WebViewGuest::OnAccessibilityStatusChanged(
+    const chromeos::AccessibilityStatusEventDetails& details) {
+  if (details.notification_type == chromeos::ACCESSIBILITY_MANAGER_SHUTDOWN) {
+    accessibility_subscription_.reset();
+  } else if (details.notification_type ==
+      chromeos::ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK) {
+    if (details.enabled)
+      InjectChromeVoxIfNeeded(guest_web_contents()->GetRenderViewHost());
+    else
+      chromevox_injected_ = false;
+  }
+}
+#endif
 
 void WebViewGuest::InjectChromeVoxIfNeeded(
     content::RenderViewHost* render_view_host) {

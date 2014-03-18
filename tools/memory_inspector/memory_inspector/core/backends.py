@@ -11,6 +11,11 @@ def Register(backend):
   _backends[backend.name] = backend
 
 
+def ListBackends():
+  """Enumerates all the backends."""
+  return _backends.itervalues()
+
+
 def ListDevices():
   """Enumerates all the devices from all the registered backends."""
   for backend in _backends.itervalues():
@@ -19,14 +24,18 @@ def ListDevices():
       yield device
 
 
+def GetBackend(backend_name):
+  """Retrieves a specific backend given its name."""
+  return _backends.get(backend_name, None)
+
+
 def GetDevice(backend_name, device_id):
   """Retrieves a specific device given its backend name and device id."""
-  for backend in _backends.itervalues():
-    if backend.name != backend_name:
-      continue
-    for device in backend.EnumerateDevices():
-      if device.id != device_id:
-        continue
+  backend = GetBackend(backend_name)
+  if not backend:
+    return None
+  for device in backend.EnumerateDevices():
+    if device.id == device_id:
       return device
   return None
 
@@ -72,20 +81,12 @@ class Device(object):
     """Called before anything else, for initial provisioning."""
     raise NotImplementedError()
 
-  def IsNativeAllocTracingEnabled(self):
+  def IsNativeTracingEnabled(self):
     """Check if the device is ready to capture native allocation traces."""
     raise NotImplementedError()
 
-  def EnableNativeAllocTracing(self, enabled):
+  def EnableNativeTracing(self, enabled):
     """Provision the device and make it ready to trace native allocations."""
-    raise NotImplementedError()
-
-  def IsMmapTracingEnabled(self):
-    """Check if the device is ready to capture memory map traces."""
-    raise NotImplementedError()
-
-  def EnableMmapTracing(self, enabled):
-    """Provision the device and make it ready to trace memory maps."""
     raise NotImplementedError()
 
   def ListProcesses(self):
@@ -180,12 +181,12 @@ class Settings(object):
       expected_keys: A dict. (key-name -> description) of expected settings
     """
     self.expected_keys = expected_keys or {}
-    self._settings = dict((k, '') for k in self.expected_keys.iterkeys())
+    self.values = dict((k, '') for k in self.expected_keys.iterkeys())
 
   def __getitem__(self, key):
-    assert(key in self.expected_keys)
-    return self._settings.get(key)
+    assert(key in self.expected_keys), 'Unexpected setting: ' + key
+    return self.values.get(key)
 
   def __setitem__(self, key, value):
-    assert(key in self.expected_keys)
-    self._settings[key] = value
+    assert(key in self.expected_keys), 'Unexpected setting: ' + key
+    self.values[key] = value

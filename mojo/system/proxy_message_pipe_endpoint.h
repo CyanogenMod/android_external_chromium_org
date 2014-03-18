@@ -7,13 +7,12 @@
 
 #include <stdint.h>
 
-#include <deque>
-
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "mojo/public/system/core.h"
 #include "mojo/system/message_in_transit.h"
+#include "mojo/system/message_in_transit_queue.h"
 #include "mojo/system/message_pipe_endpoint.h"
 #include "mojo/system/system_impl_export.h"
 
@@ -21,6 +20,7 @@ namespace mojo {
 namespace system {
 
 class Channel;
+class LocalMessagePipeEndpoint;
 class MessagePipe;
 
 // A |ProxyMessagePipeEndpoint| connects an end of a |MessagePipe| to a
@@ -42,14 +42,20 @@ class MOJO_SYSTEM_IMPL_EXPORT ProxyMessagePipeEndpoint
     : public MessagePipeEndpoint {
  public:
   ProxyMessagePipeEndpoint();
+  // Constructs a |ProxyMessagePipeEndpoint| that replaces the given
+  // |LocalMessagePipeEndpoint| (which this constructor will close), taking its
+  // message queue's contents. This is done when transferring a message pipe
+  // handle over a remote message pipe.
+  ProxyMessagePipeEndpoint(
+      LocalMessagePipeEndpoint* local_message_pipe_endpoint,
+      bool is_peer_open);
   virtual ~ProxyMessagePipeEndpoint();
 
   // |MessagePipeEndpoint| implementation:
+  virtual Type GetType() const OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual void OnPeerClose() OVERRIDE;
-  virtual MojoResult EnqueueMessage(
-      MessageInTransit* message,
-      std::vector<DispatcherTransport>* transports) OVERRIDE;
+  virtual void EnqueueMessage(scoped_ptr<MessageInTransit> message) OVERRIDE;
   virtual void Attach(scoped_refptr<Channel> channel,
                       MessageInTransit::EndpointId local_id) OVERRIDE;
   virtual void Run(MessageInTransit::EndpointId remote_id) OVERRIDE;
@@ -62,12 +68,6 @@ class MOJO_SYSTEM_IMPL_EXPORT ProxyMessagePipeEndpoint
   bool is_running() const {
     return remote_id_ != MessageInTransit::kInvalidEndpointId;
   }
-
-  // "Attaches" |transports| (which must be non-null and nonempty) to |message|
-  // by "serializing" them in an appropriate way, and closes each dispatcher.
-  void AttachAndCloseDispatchers(MessageInTransit* message,
-                                 std::vector<DispatcherTransport>* transports);
-  void EnqueueMessageInternal(MessageInTransit* message);
 
 #ifdef NDEBUG
   void AssertConsistentState() const {}
@@ -93,7 +93,7 @@ class MOJO_SYSTEM_IMPL_EXPORT ProxyMessagePipeEndpoint
 
   // This queue is only used while we're detached, to store messages while we're
   // not ready to send them yet.
-  std::deque<MessageInTransit*> paused_message_queue_;
+  MessageInTransitQueue paused_message_queue_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyMessagePipeEndpoint);
 };

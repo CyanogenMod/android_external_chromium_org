@@ -14,22 +14,22 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "base/run_loop.h"
+#include "content/browser/fileapi/mock_file_change_observer.h"
 #include "content/public/test/async_file_test_helper.h"
 #include "content/public/test/sandbox_file_system_test_helper.h"
 #include "content/public/test/test_file_system_context.h"
+#include "content/test/fileapi_test_file_set.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_usage_cache.h"
-#include "webkit/browser/fileapi/mock_file_change_observer.h"
 #include "webkit/browser/fileapi/obfuscated_file_util.h"
 #include "webkit/browser/fileapi/sandbox_directory_database.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
 #include "webkit/browser/fileapi/sandbox_isolated_origin_database.h"
 #include "webkit/browser/fileapi/sandbox_origin_database.h"
-#include "webkit/browser/fileapi/test_file_set.h"
 #include "webkit/browser/quota/mock_special_storage_policy.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/database/database_identifier.h"
@@ -764,9 +764,9 @@ class ObfuscatedFileUtilTest : public testing::Test {
       old_directory_db_path = data_dir_path().Append(path);
       ASSERT_TRUE(base::CreateDirectory(old_directory_db_path));
       EXPECT_EQ(static_cast<int>(kFakeDirectoryData.size()),
-                file_util::WriteFile(old_directory_db_path.AppendASCII("dummy"),
-                                     kFakeDirectoryData.data(),
-                                     kFakeDirectoryData.size()));
+                base::WriteFile(old_directory_db_path.AppendASCII("dummy"),
+                                kFakeDirectoryData.data(),
+                                kFakeDirectoryData.size()));
     }
 
     storage_policy_->AddIsolated(origin_);
@@ -1674,10 +1674,10 @@ TEST_F(ObfuscatedFileUtilTest, TestRevokeUsageCache) {
 
   int64 expected_quota = 0;
 
-  for (size_t i = 0; i < fileapi::test::kRegularTestCaseSize; ++i) {
+  for (size_t i = 0; i < kRegularFileSystemTestCaseSize; ++i) {
     SCOPED_TRACE(testing::Message() << "Creating kRegularTestCase " << i);
-    const fileapi::test::TestCaseRecord& test_case =
-        fileapi::test::kRegularTestCases[i];
+    const FileSystemTestCaseRecord& test_case =
+        kRegularFileSystemTestCases[i];
     base::FilePath file_path(test_case.path);
     expected_quota += ObfuscatedFileUtil::ComputeFilePathCost(file_path);
     if (test_case.is_directory) {

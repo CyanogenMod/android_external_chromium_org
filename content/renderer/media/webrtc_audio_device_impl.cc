@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/metrics/histogram.h"
+#include "base/platform_file.h"
 #include "base/strings/string_util.h"
 #include "base/win/windows_version.h"
 #include "content/renderer/media/webrtc_audio_capturer.h"
@@ -27,7 +28,8 @@ WebRtcAudioDeviceImpl::WebRtcAudioDeviceImpl()
       initialized_(false),
       playing_(false),
       recording_(false),
-      microphone_volume_(0) {
+      microphone_volume_(0),
+      aec_dump_file_(base::kInvalidPlatformFileValue) {
   DVLOG(1) << "WebRtcAudioDeviceImpl::WebRtcAudioDeviceImpl()";
 }
 
@@ -121,11 +123,11 @@ void WebRtcAudioDeviceImpl::OnSetFormat(
   DVLOG(1) << "WebRtcAudioDeviceImpl::OnSetFormat()";
 }
 
-void WebRtcAudioDeviceImpl::RenderData(uint8* audio_data,
-                                       int number_of_channels,
-                                       int number_of_frames,
+void WebRtcAudioDeviceImpl::RenderData(media::AudioBus* audio_bus,
+                                       int sample_rate,
                                        int audio_delay_milliseconds) {
-  DCHECK_LE(number_of_frames, output_buffer_size());
+  render_buffer_.resize(audio_bus->frames() * audio_bus->channels());
+
   {
     base::AutoLock auto_lock(lock_);
     DCHECK(audio_transport_callback_);
@@ -133,43 +135,54 @@ void WebRtcAudioDeviceImpl::RenderData(uint8* audio_data,
     output_delay_ms_ = audio_delay_milliseconds;
   }
 
-  const int channels = number_of_channels;
-  DCHECK_LE(channels, output_channels());
-
-  int samples_per_sec = output_sample_rate();
-  int samples_per_10_msec = (samples_per_sec / 100);
-  int bytes_per_sample = output_audio_parameters_.bits_per_sample() / 8;
+  int samples_per_10_msec = (sample_rate / 100);
+  int bytes_per_sample = sizeof(render_buffer_[0]);
   const int bytes_per_10_msec =
-      channels * samples_per_10_msec * bytes_per_sample;
-
-  uint32_t num_audio_samples = 0;
-  int accumulated_audio_samples = 0;
+      audio_bus->channels() * samples_per_10_msec * bytes_per_sample;
+  DCHECK_EQ(audio_bus->frames() % samples_per_10_msec, 0);
 
   // Get audio samples in blocks of 10 milliseconds from the registered
   // webrtc::AudioTransport source. Keep reading until our internal buffer
   // is full.
-  while (accumulated_audio_samples < number_of_frames) {
+  uint32_t num_audio_samples = 0;
+  int accumulated_audio_samples = 0;
+  int16* audio_data = &render_buffer_[0];
+  while (accumulated_audio_samples < audio_bus->frames()) {
     // Get 10ms and append output to temporary byte buffer.
     audio_transport_callback_->NeedMorePlayData(samples_per_10_msec,
                                                 bytes_per_sample,
-                                                channels,
-                                                samples_per_sec,
+                                                audio_bus->channels(),
+                                                sample_rate,
                                                 audio_data,
                                                 num_audio_samples);
     accumulated_audio_samples += num_audio_samples;
     audio_data += bytes_per_10_msec;
   }
-}
 
-void WebRtcAudioDeviceImpl::SetRenderFormat(const AudioParameters& params) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  output_audio_parameters_ = params;
+  // De-interleave each channel and convert to 32-bit floating-point
+  // with nominal range -1.0 -> +1.0 to match the callback format.
+  audio_bus->FromInterleaved(&render_buffer_[0],
+                             audio_bus->frames(),
+                             bytes_per_sample);
+
+  // Pass the render data to the playout sinks.
+  base::AutoLock auto_lock(lock_);
+  for (PlayoutDataSinkList::const_iterator it = playout_sinks_.begin();
+       it != playout_sinks_.end(); ++it) {
+    (*it)->OnPlayoutData(audio_bus, sample_rate, audio_delay_milliseconds);
+  }
 }
 
 void WebRtcAudioDeviceImpl::RemoveAudioRenderer(WebRtcAudioRenderer* renderer) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK_EQ(renderer, renderer_);
   base::AutoLock auto_lock(lock_);
+  // Notify the playout sink of the change.
+  for (PlayoutDataSinkList::const_iterator it = playout_sinks_.begin();
+       it != playout_sinks_.end(); ++it) {
+    (*it)->OnPlayoutDataSourceChanged();
+  }
+
   renderer_ = NULL;
   playing_ = false;
 }
@@ -208,6 +221,8 @@ int32_t WebRtcAudioDeviceImpl::Terminate() {
 
   DCHECK(!renderer_.get() || !renderer_->IsStarted())
       << "The shared audio renderer shouldn't be running";
+
+  DisableAecDump();
 
   capturers_.clear();
 
@@ -255,7 +270,6 @@ int32_t WebRtcAudioDeviceImpl::StartPlayout() {
   }
 
   playing_ = true;
-  start_render_time_ = base::Time::Now();
   return 0;
 }
 
@@ -264,13 +278,6 @@ int32_t WebRtcAudioDeviceImpl::StopPlayout() {
   if (!playing_) {
     // webrtc::VoiceEngine assumes that it is OK to call Stop() just in case.
     return 0;
-  }
-
-  // Add histogram data to be uploaded as part of an UMA logging event.
-  // This histogram keeps track of total playout times.
-  if (!start_render_time_.is_null()) {
-    base::TimeDelta render_time = base::Time::Now() - start_render_time_;
-    UMA_HISTOGRAM_LONG_TIMES("WebRTC.AudioRenderTime", render_time);
   }
 
   playing_ = false;
@@ -297,8 +304,6 @@ int32_t WebRtcAudioDeviceImpl::StartRecording() {
     recording_ = true;
   }
 
-  start_capture_time_ = base::Time::Now();
-
   return 0;
 }
 
@@ -310,13 +315,6 @@ int32_t WebRtcAudioDeviceImpl::StopRecording() {
       return 0;
 
     recording_ = false;
-  }
-
-  // Add histogram data to be uploaded as part of an UMA logging event.
-  // This histogram keeps track of total recording times.
-  if (!start_capture_time_.is_null()) {
-    base::TimeDelta capture_time = base::Time::Now() - start_capture_time_;
-    UMA_HISTOGRAM_LONG_TIMES("WebRTC.AudioCaptureTime", capture_time);
   }
 
   return 0;
@@ -369,7 +367,7 @@ int32_t WebRtcAudioDeviceImpl::MinMicrophoneVolume(uint32_t* min_volume) const {
 
 int32_t WebRtcAudioDeviceImpl::StereoPlayoutIsAvailable(bool* available) const {
   DCHECK(initialized_);
-  *available = (output_channels() == 2);
+  *available = renderer_ && renderer_->channels() == 2;
   return 0;
 }
 
@@ -412,7 +410,7 @@ int32_t WebRtcAudioDeviceImpl::RecordingSampleRate(
 
 int32_t WebRtcAudioDeviceImpl::PlayoutSampleRate(
     uint32_t* samples_per_sec) const {
-  *samples_per_sec = static_cast<uint32_t>(output_sample_rate());
+  *samples_per_sec = renderer_ ? renderer_->sample_rate() : 0;
   return 0;
 }
 
@@ -437,10 +435,17 @@ void WebRtcAudioDeviceImpl::AddAudioCapturer(
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(capturer.get());
   DCHECK(!capturer->device_id().empty());
-  base::AutoLock auto_lock(lock_);
-  DCHECK(std::find(capturers_.begin(), capturers_.end(), capturer) ==
-      capturers_.end());
-  capturers_.push_back(capturer);
+  {
+    base::AutoLock auto_lock(lock_);
+    DCHECK(std::find(capturers_.begin(), capturers_.end(), capturer) ==
+        capturers_.end());
+    capturers_.push_back(capturer);
+  }
+
+  // Start the Aec dump if the Aec dump has been enabled and has not been
+  // started.
+  if (aec_dump_file_ != base::kInvalidPlatformFileValue)
+    MaybeStartAecDump();
 }
 
 void WebRtcAudioDeviceImpl::RemoveAudioCapturer(
@@ -465,6 +470,24 @@ WebRtcAudioDeviceImpl::GetDefaultCapturer() const {
   return NULL;
 }
 
+void WebRtcAudioDeviceImpl::AddPlayoutSink(
+    WebRtcPlayoutDataSource::Sink* sink) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(sink);
+  base::AutoLock auto_lock(lock_);
+  DCHECK(std::find(playout_sinks_.begin(), playout_sinks_.end(), sink) ==
+      playout_sinks_.end());
+  playout_sinks_.push_back(sink);
+}
+
+void WebRtcAudioDeviceImpl::RemovePlayoutSink(
+    WebRtcPlayoutDataSource::Sink* sink) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(sink);
+  base::AutoLock auto_lock(lock_);
+  playout_sinks_.remove(sink);
+}
+
 bool WebRtcAudioDeviceImpl::GetAuthorizedDeviceInfoForAudioRenderer(
     int* session_id,
     int* output_sample_rate,
@@ -477,6 +500,49 @@ bool WebRtcAudioDeviceImpl::GetAuthorizedDeviceInfoForAudioRenderer(
 
   return GetDefaultCapturer()->GetPairedOutputParameters(
       session_id, output_sample_rate, output_frames_per_buffer);
+}
+
+void WebRtcAudioDeviceImpl::EnableAecDump(
+    const base::PlatformFile& aec_dump_file) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_NE(aec_dump_file, base::kInvalidPlatformFileValue);
+  DCHECK_EQ(aec_dump_file_, base::kInvalidPlatformFileValue);
+  aec_dump_file_ = aec_dump_file;
+  MaybeStartAecDump();
+}
+
+void WebRtcAudioDeviceImpl::DisableAecDump() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  // Simply invalidate the |aec_dump_file_| if we have not pass the ownership
+  // to WebRtc.
+  if (aec_dump_file_ != base::kInvalidPlatformFileValue) {
+    base::ClosePlatformFile(aec_dump_file_);
+    aec_dump_file_ = base::kInvalidPlatformFileValue;
+    return;
+  }
+
+  // We might have call StartAecDump() on one of the capturer. Loop
+  // through all the capturers and call StopAecDump() on each of them.
+  for (CapturerList::const_iterator iter = capturers_.begin();
+       iter != capturers_.end(); ++iter) {
+    (*iter)->StopAecDump();
+  }
+}
+
+void WebRtcAudioDeviceImpl::MaybeStartAecDump() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_NE(aec_dump_file_, base::kInvalidPlatformFileValue);
+
+  // Start the Aec dump on the current default capturer.
+  scoped_refptr<WebRtcAudioCapturer> default_capturer(GetDefaultCapturer());
+  if (!default_capturer)
+    return;
+
+  default_capturer->StartAecDump(aec_dump_file_);
+
+  // Invalidate the |aec_dump_file_| since the ownership of the file has been
+  // passed to WebRtc.
+  aec_dump_file_ = base::kInvalidPlatformFileValue;
 }
 
 }  // namespace content

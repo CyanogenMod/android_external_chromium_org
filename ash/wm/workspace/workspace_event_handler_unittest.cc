@@ -9,18 +9,19 @@
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
-#include "ash/wm/workspace/snap_sizer.h"
+#include "ash/wm/wm_event.h"
 #include "ash/wm/workspace_controller.h"
 #include "ash/wm/workspace_controller_test_helper.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/window_move_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
+#include "ui/events/event_processor.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/corewm/window_util.h"
+#include "ui/wm/core/window_util.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -200,7 +201,8 @@ TEST_F(WorkspaceEventHandlerTest, DoubleClickSingleAxisWhenSideSnapped) {
       window.get()).work_area();
 
   wm::WindowState* window_state = wm::GetWindowState(window.get());
-  internal::SnapSizer::SnapWindow(window_state, internal::SnapSizer::LEFT_EDGE);
+  const wm::WMEvent snap_event(wm::WM_EVENT_SNAP_LEFT);
+  window_state->OnWMEvent(&snap_event);
 
   gfx::Rect snapped_bounds_in_screen = window->GetBoundsInScreen();
   EXPECT_EQ(work_area_in_screen.x(), snapped_bounds_in_screen.x());
@@ -215,7 +217,7 @@ TEST_F(WorkspaceEventHandlerTest, DoubleClickSingleAxisWhenSideSnapped) {
                                        window.get());
   wd.set_window_component(HTTOP);
   generator.DoubleClickLeftButton();
-  EXPECT_EQ(wm::SHOW_TYPE_LEFT_SNAPPED, window_state->window_show_type());
+  EXPECT_EQ(wm::WINDOW_STATE_TYPE_LEFT_SNAPPED, window_state->GetStateType());
   EXPECT_EQ(snapped_bounds_in_screen.ToString(),
             window->GetBoundsInScreen().ToString());
 
@@ -223,7 +225,7 @@ TEST_F(WorkspaceEventHandlerTest, DoubleClickSingleAxisWhenSideSnapped) {
   // make the window take up the entire work area.
   wd.set_window_component(HTRIGHT);
   generator.DoubleClickLeftButton();
-  EXPECT_TRUE(window_state->IsNormalShowType());
+  EXPECT_TRUE(window_state->IsNormalStateType());
   EXPECT_EQ(work_area_in_screen.ToString(),
             window->GetBoundsInScreen().ToString());
 }
@@ -288,7 +290,7 @@ TEST_F(WorkspaceEventHandlerTest,
   wd1.set_window_component(HTCAPTION);
 
   child->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
-  views::corewm::AddTransientChild(window.get(), child.get());
+  ::wm::AddTransientChild(window.get(), child.get());
 
   wm::WindowState* window_state = wm::GetWindowState(window.get());
   EXPECT_FALSE(window_state->IsMaximized());
@@ -328,13 +330,13 @@ TEST_F(WorkspaceEventHandlerTest, DoubleClickCaptionTogglesMaximize) {
   EXPECT_TRUE(window_state->IsMaximized());
 
   generator.DoubleClickLeftButton();
-  EXPECT_TRUE(window_state->IsNormalShowType());
+  EXPECT_TRUE(window_state->IsNormalStateType());
   EXPECT_EQ(restore_bounds.ToString(), window->bounds().ToString());
 
   // 2) Double clicking a horizontally maximized window should maximize.
   wd.set_window_component(HTLEFT);
   generator.DoubleClickLeftButton();
-  EXPECT_TRUE(window_state->IsNormalShowType());
+  EXPECT_TRUE(window_state->IsNormalStateType());
   EXPECT_EQ(work_area_in_parent.x(), window->bounds().x());
   EXPECT_EQ(restore_bounds.y(), window->bounds().y());
   EXPECT_EQ(work_area_in_parent.width(), window->bounds().width());
@@ -345,18 +347,19 @@ TEST_F(WorkspaceEventHandlerTest, DoubleClickCaptionTogglesMaximize) {
   EXPECT_TRUE(window_state->IsMaximized());
 
   generator.DoubleClickLeftButton();
-  EXPECT_TRUE(window_state->IsNormalShowType());
+  EXPECT_TRUE(window_state->IsNormalStateType());
   EXPECT_EQ(restore_bounds.ToString(), window->bounds().ToString());
 
   // 3) Double clicking a snapped window should maximize.
-  internal::SnapSizer::SnapWindow(window_state, internal::SnapSizer::LEFT_EDGE);
+  const wm::WMEvent snap_event(wm::WM_EVENT_SNAP_LEFT);
+  window_state->OnWMEvent(&snap_event);
   EXPECT_TRUE(window_state->IsSnapped());
   generator.MoveMouseTo(window->GetBoundsInRootWindow().CenterPoint());
   generator.DoubleClickLeftButton();
   EXPECT_TRUE(window_state->IsMaximized());
 
   generator.DoubleClickLeftButton();
-  EXPECT_TRUE(window_state->IsNormalShowType());
+  EXPECT_TRUE(window_state->IsNormalStateType());
   EXPECT_EQ(restore_bounds.ToString(), window->bounds().ToString());
 }
 
@@ -377,7 +380,7 @@ TEST_F(WorkspaceEventHandlerTest,
                        generator.current_location(),
                        ui::EF_MIDDLE_MOUSE_BUTTON | ui::EF_IS_DOUBLE_CLICK,
                        ui::EF_MIDDLE_MOUSE_BUTTON);
-  aura::WindowEventDispatcher* dispatcher = root->GetDispatcher();
+  ui::EventProcessor* dispatcher = root->GetHost()->event_processor();
   ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&press);
   ASSERT_FALSE(details.dispatcher_destroyed);
   ui::MouseEvent release(ui::ET_MOUSE_RELEASED, generator.current_location(),

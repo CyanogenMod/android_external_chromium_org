@@ -100,6 +100,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkDeviceProfile.cpp \
 	third_party/skia/src/lazy/SkDiscardableMemoryPool.cpp \
 	third_party/skia/src/lazy/SkDiscardablePixelRef.cpp \
+	third_party/skia/src/core/SkDistanceFieldGen.cpp \
 	third_party/skia/src/core/SkDither.cpp \
 	third_party/skia/src/core/SkDraw.cpp \
 	third_party/skia/src/core/SkDrawLooper.cpp \
@@ -121,7 +122,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkGraphics.cpp \
 	third_party/skia/src/core/SkInstCnt.cpp \
 	third_party/skia/src/core/SkImageFilter.cpp \
-	third_party/skia/src/core/SkImageFilterUtils.cpp \
 	third_party/skia/src/core/SkImageInfo.cpp \
 	third_party/skia/src/core/SkLineClipper.cpp \
 	third_party/skia/src/core/SkMallocPixelRef.cpp \
@@ -133,8 +133,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkMatrixClipStateMgr.cpp \
 	third_party/skia/src/core/SkMetaData.cpp \
 	third_party/skia/src/core/SkMipMap.cpp \
-	third_party/skia/src/core/SkReadBuffer.cpp \
-	third_party/skia/src/core/SkWriteBuffer.cpp \
 	third_party/skia/src/core/SkPackBits.cpp \
 	third_party/skia/src/core/SkPaint.cpp \
 	third_party/skia/src/core/SkPaintPriv.cpp \
@@ -157,6 +155,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkQuadTreePicture.cpp \
 	third_party/skia/src/core/SkRasterClip.cpp \
 	third_party/skia/src/core/SkRasterizer.cpp \
+	third_party/skia/src/core/SkReadBuffer.cpp \
 	third_party/skia/src/core/SkRect.cpp \
 	third_party/skia/src/core/SkRefDict.cpp \
 	third_party/skia/src/core/SkRegion.cpp \
@@ -189,6 +188,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkUnPreMultiply.cpp \
 	third_party/skia/src/core/SkUtils.cpp \
 	third_party/skia/src/core/SkValidatingReadBuffer.cpp \
+	third_party/skia/src/core/SkWriteBuffer.cpp \
 	third_party/skia/src/core/SkWriter32.cpp \
 	third_party/skia/src/core/SkXfermode.cpp \
 	third_party/skia/src/doc/SkDocument.cpp \
@@ -317,6 +317,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrClipData.cpp \
 	third_party/skia/src/gpu/GrContext.cpp \
 	third_party/skia/src/gpu/GrDefaultPathRenderer.cpp \
+	third_party/skia/src/gpu/GrDistanceFieldTextContext.cpp \
 	third_party/skia/src/gpu/GrDrawState.cpp \
 	third_party/skia/src/gpu/GrDrawTarget.cpp \
 	third_party/skia/src/gpu/GrEffect.cpp \
@@ -354,6 +355,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/effects/GrConvexPolyEffect.cpp \
 	third_party/skia/src/gpu/effects/GrBicubicEffect.cpp \
 	third_party/skia/src/gpu/effects/GrCustomCoordsTextureEffect.cpp \
+	third_party/skia/src/gpu/effects/GrDistanceFieldTextureEffect.cpp \
+	third_party/skia/src/gpu/effects/GrRRectEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSimpleTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSingleTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrTextureDomain.cpp \
@@ -403,11 +406,10 @@ MY_CFLAGS_Debug := \
 	-pipe \
 	-fPIC \
 	-Wno-format \
-	-m32 \
-	-mmmx \
-	-march=pentium4 \
 	-msse2 \
 	-mfpmath=sse \
+	-mmmx \
+	-m32 \
 	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
@@ -434,6 +436,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -441,9 +444,9 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
@@ -454,8 +457,13 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
+	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
+	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
+	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
+	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION' \
@@ -472,6 +480,7 @@ MY_DEFS_Debug := \
 	'-DSK_GAMMA_CONTRAST=0.0' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
+	'-DUSE_OPENSSL=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -536,11 +545,10 @@ MY_CFLAGS_Release := \
 	-pipe \
 	-fPIC \
 	-Wno-format \
-	-m32 \
-	-mmmx \
-	-march=pentium4 \
 	-msse2 \
 	-mfpmath=sse \
+	-mmmx \
+	-m32 \
 	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
@@ -567,6 +575,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -574,9 +583,9 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
@@ -587,8 +596,13 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
+	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
+	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
+	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
+	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION' \
@@ -605,6 +619,7 @@ MY_DEFS_Release := \
 	'-DSK_GAMMA_CONTRAST=0.0' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
+	'-DUSE_OPENSSL=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -661,9 +676,11 @@ LOCAL_CPPFLAGS_Release := \
 LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
 LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
+LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -673,7 +690,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
@@ -681,6 +697,7 @@ LOCAL_LDFLAGS_Debug := \
 
 
 LOCAL_LDFLAGS_Release := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -693,7 +710,6 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,-O1 \
 	-Wl,--as-needed \
 	-Wl,--gc-sections \
-	-Wl,--fatal-warnings \
 	-Wl,--warn-shared-textrel
 
 

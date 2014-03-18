@@ -15,6 +15,7 @@
 #include "net/quic/congestion_control/hybrid_slow_start.h"
 #include "net/quic/congestion_control/send_algorithm_interface.h"
 #include "net/quic/quic_bandwidth.h"
+#include "net/quic/quic_connection_stats.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_time.h"
 
@@ -22,6 +23,8 @@ namespace net {
 
 // Default maximum packet size used in Linux TCP implementations.
 const QuicByteCount kDefaultTCPMSS = 1460;
+
+class RttStats;
 
 namespace test {
 class TcpCubicSenderPeer;
@@ -31,17 +34,17 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
  public:
   // Reno option and max_tcp_congestion_window are provided for testing.
   TcpCubicSender(const QuicClock* clock,
+                 const RttStats* rtt_stats,
                  bool reno,
-                 QuicTcpCongestionWindow max_tcp_congestion_window);
+                 QuicTcpCongestionWindow max_tcp_congestion_window,
+                 QuicConnectionStats* stats);
   virtual ~TcpCubicSender();
 
   // Start implementation of SendAlgorithmInterface.
   virtual void SetFromConfig(const QuicConfig& config, bool is_server) OVERRIDE;
-  virtual void SetMaxPacketSize(QuicByteCount max_packet_size) OVERRIDE;
   virtual void OnIncomingQuicCongestionFeedbackFrame(
       const QuicCongestionFeedbackFrame& feedback,
-      QuicTime feedback_receive_time,
-      const SentPacketsMap& sent_packets) OVERRIDE;
+      QuicTime feedback_receive_time) OVERRIDE;
   virtual void OnPacketAcked(QuicPacketSequenceNumber acked_sequence_number,
                              QuicByteCount acked_bytes) OVERRIDE;
   virtual void OnPacketLost(QuicPacketSequenceNumber largest_loss,
@@ -61,7 +64,6 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
       IsHandshake handshake) OVERRIDE;
   virtual QuicBandwidth BandwidthEstimate() const OVERRIDE;
   virtual void UpdateRtt(QuicTime::Delta rtt_sample) OVERRIDE;
-  virtual QuicTime::Delta SmoothedRtt() const OVERRIDE;
   virtual QuicTime::Delta RetransmissionDelay() const OVERRIDE;
   virtual QuicByteCount GetCongestionWindow() const OVERRIDE;
   // End implementation of SendAlgorithmInterface.
@@ -71,14 +73,13 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
 
   QuicByteCount AvailableSendWindow();
   QuicByteCount SendWindow();
-  void Reset();
   void MaybeIncreaseCwnd(QuicPacketSequenceNumber acked_sequence_number);
   bool IsCwndLimited() const;
   bool InRecovery() const;
-  void OnTimeOut();
 
   HybridSlowStart hybrid_slow_start_;
   Cubic cubic_;
+  const RttStats* rtt_stats_;
 
   // Reno provided for testing.
   const bool reno_;
@@ -121,17 +122,6 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
 
   // Maximum number of outstanding packets for tcp.
   QuicTcpCongestionWindow max_tcp_congestion_window_;
-
-  // Min RTT during this session.
-  QuicTime::Delta delay_min_;
-
-  // Smoothed RTT during this session.
-  QuicTime::Delta smoothed_rtt_;
-
-  // Mean RTT deviation during this session.
-  // Approximation of standard deviation, the error is roughly 1.25 times
-  // larger than the standard deviation, for a normally distributed signal.
-  QuicTime::Delta mean_deviation_;
 
   DISALLOW_COPY_AND_ASSIGN(TcpCubicSender);
 };

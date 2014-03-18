@@ -33,7 +33,7 @@ WebSharedWorkerStub::WebSharedWorkerStub(
   DCHECK(worker_thread);
   worker_thread->AddWorkerStub(this);
   // Start processing incoming IPCs for this worker.
-  worker_thread->AddRoute(route_id_, this);
+  worker_thread->GetRouter()->AddRoute(route_id_, this);
 
   // TODO(atwilson): Add support for NaCl when they support MessagePorts.
   impl_ = blink::WebSharedWorker::create(client());
@@ -48,7 +48,7 @@ WebSharedWorkerStub::~WebSharedWorkerStub() {
   WorkerThread* worker_thread = WorkerThread::current();
   DCHECK(worker_thread);
   worker_thread->RemoveWorkerStub(this);
-  worker_thread->RemoveRoute(route_id_);
+  worker_thread->GetRouter()->RemoveRoute(route_id_);
 }
 
 void WebSharedWorkerStub::Shutdown() {
@@ -102,11 +102,11 @@ void WebSharedWorkerStub::OnConnect(int sent_message_port_id, int routing_id) {
 }
 
 void WebSharedWorkerStub::OnTerminateWorkerContext() {
-  impl_->terminateWorkerContext();
-
+  running_ = false;
   // Call the client to make sure context exits.
   EnsureWorkerContextTerminates();
-  running_ = false;
+  // This may call "delete this" via WorkerScriptLoadFailed and Shutdown.
+  impl_->terminateWorkerContext();
 }
 
 void WebSharedWorkerStub::WorkerScriptLoaded() {

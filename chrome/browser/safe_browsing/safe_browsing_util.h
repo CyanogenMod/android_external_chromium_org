@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/strings/string_piece.h"
 #include "chrome/browser/safe_browsing/chunk_range.h"
 
 class GURL;
@@ -21,7 +22,7 @@ class GURL;
 class SBEntry;
 
 // A truncated hash's type.
-typedef int32 SBPrefix;
+typedef uint32 SBPrefix;
 
 // Container for holding a chunk URL and the list it belongs to.
 struct ChunkUrl {
@@ -35,13 +36,12 @@ union SBFullHash {
   SBPrefix prefix;
 };
 
-inline bool operator==(const SBFullHash& lhash, const SBFullHash& rhash) {
-  return memcmp(lhash.full_hash, rhash.full_hash, sizeof(SBFullHash)) == 0;
+inline bool SBFullHashEqual(const SBFullHash& a, const SBFullHash& b) {
+  return !memcmp(a.full_hash, b.full_hash, sizeof(a.full_hash));
 }
 
-inline bool operator<(const SBFullHash& lhash, const SBFullHash& rhash) {
-  return memcmp(lhash.full_hash, rhash.full_hash, sizeof(SBFullHash)) < 0;
-}
+// Generate full hash for the given string.
+SBFullHash SBFullHashForString(const base::StringPiece& str);
 
 // Container for information about a specific host in an add/sub chunk.
 struct SBChunkHost {
@@ -141,9 +141,6 @@ enum SBThreatType {
 
   // The download URL is malware.
   SB_THREAT_TYPE_BINARY_MALWARE_URL,
-
-  // The hash of the download contents is malware.
-  SB_THREAT_TYPE_BINARY_MALWARE_HASH,
 
   // Url detected by the client-side phishing model.  Note that unlike the
   // above values, this does not correspond to a downloaded list.
@@ -288,9 +285,8 @@ namespace safe_browsing_util {
 // SafeBrowsing list names.
 extern const char kMalwareList[];
 extern const char kPhishingList[];
-// Binary Download list names.
+// Binary Download list name.
 extern const char kBinUrlList[];
-extern const char kBinHashList[];
 // SafeBrowsing client-side detection whitelist list name.
 extern const char kCsdWhiteList[];
 // SafeBrowsing download whitelist list name.
@@ -303,14 +299,14 @@ extern const char kSideEffectFreeWhitelist[];
 extern const char kIPBlacklist[];
 
 // This array must contain all Safe Browsing lists.
-extern const char* kAllLists[10];
+extern const char* kAllLists[8];
 
 enum ListType {
   INVALID = -1,
   MALWARE = 0,
   PHISH = 1,
   BINURL = 2,
-  BINHASH = 3,
+  // Obsolete BINHASH = 3,
   CSDWHITELIST = 4,
   // SafeBrowsing lists are stored in pairs.  Keep ListType 5
   // available for a potential second list that we would store in the
@@ -360,7 +356,6 @@ int GetUrlHashIndex(const GURL& url,
 bool IsPhishingList(const std::string& list_name);
 bool IsMalwareList(const std::string& list_name);
 bool IsBadbinurlList(const std::string& list_name);
-bool IsBadbinhashList(const std::string& list_name);
 bool IsExtensionList(const std::string& list_name);
 
 GURL GeneratePhishingReportUrl(const std::string& report_page,

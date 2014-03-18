@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/simple_message_box.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -41,17 +42,18 @@ int IncognitoConnectability::ScopedAlertTracker::GetAndResetAlertCount() {
   return result;
 }
 
-IncognitoConnectability::IncognitoConnectability(Profile* profile) {
-  CHECK(profile->IsOffTheRecord());
+IncognitoConnectability::IncognitoConnectability(
+    content::BrowserContext* context) {
+  CHECK(context->IsOffTheRecord());
 }
 
 IncognitoConnectability::~IncognitoConnectability() {
 }
 
 // static
-IncognitoConnectability* IncognitoConnectability::Get(Profile* profile) {
-  return ProfileKeyedAPIFactory<IncognitoConnectability>::GetForProfile(
-      profile);
+IncognitoConnectability* IncognitoConnectability::Get(
+    content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<IncognitoConnectability>::Get(context);
 }
 
 bool IncognitoConnectability::Query(const Extension* extension,
@@ -112,11 +114,12 @@ bool IncognitoConnectability::IsInMap(const Extension* extension,
   return it != map.end() && it->second.count(origin) > 0;
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<IncognitoConnectability> >
-    g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<IncognitoConnectability> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<IncognitoConnectability>*
+BrowserContextKeyedAPIFactory<IncognitoConnectability>*
 IncognitoConnectability::GetFactoryInstance() {
   return g_factory.Pointer();
 }

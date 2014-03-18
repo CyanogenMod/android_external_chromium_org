@@ -13,8 +13,8 @@
 #include "base/bind.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/capture_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
@@ -22,9 +22,9 @@
 #include "ui/events/event.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/background.h"
-#include "ui/views/corewm/compound_event_filter.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/compound_event_filter.h"
 
 namespace ash {
 namespace internal {
@@ -177,7 +177,7 @@ void SystemModalContainerLayoutManager::DestroyModalBackground() {
     ui::ScopedLayerAnimationSettings settings(
         modal_background_->GetNativeView()->layer()->GetAnimator());
     modal_background_->Close();
-    settings.AddObserver(views::corewm::CreateHidingWindowAnimationObserver(
+    settings.AddObserver(::wm::CreateHidingWindowAnimationObserver(
         modal_background_->GetNativeView()));
     modal_background_->GetNativeView()->layer()->SetOpacity(0.0f);
     modal_background_ = NULL;

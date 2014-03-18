@@ -31,11 +31,9 @@
 #include "content/common/input_messages.h"
 #include "content/common/java_bridge_messages.h"
 #include "content/common/media/audio_messages.h"
-#include "content/common/media/midi_messages.h"
-#if defined(OS_ANDROID)
-#include "content/common/media/media_player_messages_android.h"
-#endif
 #include "content/common/media/media_stream_messages.h"
+#include "content/common/media/media_stream_track_metrics_host_messages.h"
+#include "content/common/media/midi_messages.h"
 #include "content/common/media/peer_connection_tracker_messages.h"
 #include "content/common/media/video_capture_messages.h"
 #include "content/common/media/webrtc_identity_messages.h"
@@ -48,6 +46,7 @@
 #include "content/common/power_monitor_messages.h"
 #include "content/common/quota_messages.h"
 #include "content/common/resource_messages.h"
+#include "content/common/screen_orientation_messages.h"
 #include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/common/socket_stream_messages.h"
@@ -57,3 +56,8 @@
 #include "content/common/view_messages.h"
 #include "content/common/websocket_messages.h"
 #include "content/common/worker_messages.h"
+
+#if defined(OS_ANDROID)
+#include "content/common/media/cdm_messages.h"
+#include "content/common/media/media_player_messages_android.h"
+#endif  // defined(OS_ANDROID)

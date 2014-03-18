@@ -52,7 +52,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
 #endif  // defined(VIDEO_HOLE)
     NATIVE_TEXTURE = 6,  // Native texture.  Pixel-format agnostic.
     YV12J = 7,  // JPEG color range version of YV12
-    HISTOGRAM_MAX,  // Must always be greatest.
+    FORMAT_MAX = YV12J,  // Must always be equal to largest entry logged.
   };
 
   // Returns the name of a Format as a string.
@@ -150,9 +150,12 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
       const base::Closure& no_longer_needed_cb);
 
   // Wraps |frame| and calls |no_longer_needed_cb| when the wrapper VideoFrame
-  // gets destroyed.
+  // gets destroyed. |visible_rect| must be a sub rect within
+  // frame->visible_rect().
   static scoped_refptr<VideoFrame> WrapVideoFrame(
       const scoped_refptr<VideoFrame>& frame,
+      const gfx::Rect& visible_rect,
+      const gfx::Size& natural_size,
       const base::Closure& no_longer_needed_cb);
 
   // Creates a frame which indicates end-of-stream.

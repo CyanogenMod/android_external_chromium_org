@@ -4,7 +4,7 @@
 
 #include "chrome/test/base/chrome_render_view_test.h"
 
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
+#include "base/debug/leak_annotations.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/renderer/extensions/chrome_v8_context_set.h"
 #include "chrome/renderer/extensions/chrome_v8_extension.h"
@@ -18,6 +18,7 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/renderer/render_view.h"
+#include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/common/extension.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
@@ -75,5 +76,10 @@ void ChromeRenderViewTest::TearDown() {
   extension_dispatcher_->OnRenderProcessShutdown();
   extension_dispatcher_ = NULL;
 
+#if defined(LEAK_SANITIZER)
+  // Do this before shutting down V8 in RenderViewTest::TearDown().
+  // http://crbug.com/328552
+  __lsan_do_leak_check();
+#endif
   content::RenderViewTest::TearDown();
 }

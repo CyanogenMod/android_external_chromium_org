@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "apps/app_window.h"
+#include "apps/size_constraints.h"
 #include "apps/ui/native_app_window.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
@@ -125,6 +126,8 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   virtual void HandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
   virtual bool IsFrameless() const OVERRIDE;
+  virtual bool HasFrameColor() const OVERRIDE;
+  virtual SkColor FrameColor() const OVERRIDE;
   virtual gfx::Insets GetFrameInsets() const OVERRIDE;
 
   // These are used to simulate Mac-style hide/show. Since windows can be hidden
@@ -132,8 +135,11 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   // differentiate the reason a window was hidden.
   virtual void ShowWithApp() OVERRIDE;
   virtual void HideWithApp() OVERRIDE;
-  // Calls setContent[Min|Max]Size with the current size constraints.
-  virtual void UpdateWindowMinMaxSize() OVERRIDE;
+  virtual void UpdateShelfMenu() OVERRIDE;
+  virtual gfx::Size GetContentMinimumSize() const OVERRIDE;
+  virtual gfx::Size GetContentMaximumSize() const OVERRIDE;
+  virtual void SetContentSizeConstraints(const gfx::Size& min_size,
+                                         const gfx::Size& max_size) OVERRIDE;
 
   // WebContentsObserver implementation.
   virtual void RenderViewCreated(content::RenderViewHost* rvh) OVERRIDE;
@@ -197,8 +203,11 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   bool is_fullscreen_;
   NSRect restored_bounds_;
 
+  bool is_resizable_;
   bool shows_resize_controls_;
   bool shows_fullscreen_controls_;
+
+  apps::SizeConstraints size_constraints_;
 
   base::scoped_nsobject<NativeAppWindowController> window_controller_;
   NSInteger attention_request_id_;  // identifier from requestUserAttention

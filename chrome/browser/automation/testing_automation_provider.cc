@@ -2310,8 +2310,8 @@ void TestingAutomationProvider::GetBrowserInfo(
         case extensions::VIEW_TYPE_EXTENSION_DIALOG:
           type = "EXTENSION_DIALOG";
           break;
-        case extensions::VIEW_TYPE_APP_SHELL:
-          type = "APP_SHELL";
+        case extensions::VIEW_TYPE_APP_WINDOW:
+          type = "APP_WINDOW";
           break;
         case extensions::VIEW_TYPE_PANEL:
           type = "PANEL";
@@ -4208,7 +4208,7 @@ void TestingAutomationProvider::IsFullscreenForTab(Browser* browser,
     IPC::Message* reply_message) {
   base::DictionaryValue dict;
   dict.SetBoolean("result",
-      browser->fullscreen_controller()->IsFullscreenForTabOrPending());
+      browser->fullscreen_controller()->IsWindowFullscreenForTabOrPending());
   AutomationJSONReply(this, reply_message).SendSuccess(&dict);
 }
 

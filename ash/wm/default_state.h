@@ -9,24 +9,48 @@
 
 namespace ash {
 namespace wm {
+class SetBoundsEvent;
 
 // DefaultState implements Ash behavior without state machine.
 class DefaultState : public WindowState::State {
  public:
-  DefaultState();
+  explicit DefaultState(WindowStateType initial_state_type);
   virtual ~DefaultState();
 
   // WindowState::State overrides:
-  virtual void OnWMEvent(WindowState* window_state, WMEvent event) OVERRIDE;
+  virtual void OnWMEvent(WindowState* window_state,
+                         const WMEvent* event) OVERRIDE;
+
+  virtual WindowStateType GetType() const OVERRIDE;
 
  private:
-  // Process stete dependent events, such as TOGGLE_MAXIMIZED,
+  // Process state dependent events, such as TOGGLE_MAXIMIZED,
   // TOGGLE_FULLSCREEN.
-  static bool ProcessCompoundEvents(WindowState* window_state, WMEvent event);
+  static bool ProcessCompoundEvents(WindowState* window_state,
+                                    const WMEvent* event);
 
-  // Animates to new window bounds based on the current and previous show type.
-  static void UpdateBoundsFromShowType(wm::WindowState* window_state,
-                                       wm::WindowShowType old_show_type);
+  // Process workspace related events, such as DISPLAY_BOUNDS_CHANGED.
+  static bool ProcessWorkspaceEvents(WindowState* window_state,
+                                     const WMEvent* event);
+
+  // Animates to new window bounds based on the current, previous state type
+  // and WM event.
+  static void UpdateBounds(wm::WindowState* window_state,
+                           wm::WindowStateType old_state_type,
+                           const WMEvent* event);
+
+  // Set the fullscreen/maximized bounds without animation.
+  static bool SetMaximizedOrFullscreenBounds(wm::WindowState* window_state);
+
+  // Snaps a window according to the event.
+  static void SnapWindow(WindowState* window_state,
+                         const WMEvent* snap_event,
+                         WindowStateType old_type);
+
+  static void SetBounds(WindowState* window_state,
+                        const SetBoundsEvent* bounds_event);
+
+  WindowStateType state_type_;
 
   DISALLOW_COPY_AND_ASSIGN(DefaultState);
 };

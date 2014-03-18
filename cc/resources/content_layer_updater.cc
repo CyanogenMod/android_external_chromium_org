@@ -9,7 +9,6 @@
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/resources/layer_painter.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "third_party/skia/include/core/SkScalar.h"
@@ -24,8 +23,8 @@ ContentLayerUpdater::ContentLayerUpdater(
     int layer_id)
     : rendering_stats_instrumentation_(stats_instrumentation),
       layer_id_(layer_id),
-      painter_(painter.Pass()),
-      layer_is_opaque_(false) {}
+      layer_is_opaque_(false),
+      painter_(painter.Pass()) {}
 
 ContentLayerUpdater::~ContentLayerUpdater() {}
 
@@ -35,7 +34,7 @@ void ContentLayerUpdater::set_rendering_stats_instrumentation(
 }
 
 void ContentLayerUpdater::PaintContents(SkCanvas* canvas,
-                                        gfx::Point origin,
+                                        const gfx::Point& origin,
                                         float contents_width_scale,
                                         float contents_height_scale,
                                         gfx::Rect* resulting_opaque_rect) {
@@ -44,8 +43,8 @@ void ContentLayerUpdater::PaintContents(SkCanvas* canvas,
   canvas->translate(SkFloatToScalar(-origin.x()),
                     SkFloatToScalar(-origin.y()));
 
-  SkBaseDevice* device = canvas->getDevice();
-  gfx::Rect content_rect(origin, gfx::Size(device->width(), device->height()));
+  SkISize size = canvas->getDeviceSize();
+  gfx::Rect content_rect(origin, gfx::Size(size.width(), size.height()));
 
   gfx::Rect layer_rect = content_rect;
 

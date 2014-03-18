@@ -8,7 +8,7 @@
 #include "ash/root_window_settings.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
@@ -104,12 +104,16 @@ void TouchObserverHUD::OnDisplayRemoved(const gfx::Display& old_display) {
 
 #if defined(OS_CHROMEOS)
 void TouchObserverHUD::OnDisplayModeChanged(
-    const std::vector<chromeos::OutputConfigurator::OutputSnapshot>& outputs) {
+    const std::vector<ui::OutputConfigurator::OutputSnapshot>& outputs) {
   // Clear touch HUD for any change in display mode (single, dual extended, dual
   // mirrored, ...).
   Clear();
 }
 #endif  // defined(OS_CHROMEOS)
+
+void TouchObserverHUD::OnDisplaysInitialized() {
+  OnDisplayConfigurationChanged();
+}
 
 void TouchObserverHUD::OnDisplayConfigurationChanging() {
   if (!root_window_)

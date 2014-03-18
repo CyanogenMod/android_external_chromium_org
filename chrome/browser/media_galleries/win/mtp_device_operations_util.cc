@@ -102,16 +102,16 @@ bool IsDirectory(IPortableDeviceValues* properties_values) {
           content_type == WPD_CONTENT_TYPE_FUNCTIONAL_OBJECT);
 }
 
-// Returns the friendly name of the object from the property key values
-// specified by the |properties_values|.
-base::string16 GetObjectName(IPortableDeviceValues* properties_values,
-                       bool is_directory) {
+// Returns the name of the object from |properties_values|. If the object has
+// no filename, try to use a friendly name instead. e.g. with MTP storage roots.
+base::string16 GetObjectName(IPortableDeviceValues* properties_values) {
   DCHECK(properties_values);
-  base::win::ScopedCoMem<base::char16> buffer;
-  REFPROPERTYKEY key =
-      is_directory ? WPD_OBJECT_NAME : WPD_OBJECT_ORIGINAL_FILE_NAME;
-  HRESULT hr = properties_values->GetStringValue(key, &buffer);
   base::string16 result;
+  base::win::ScopedCoMem<base::char16> buffer;
+  HRESULT hr = properties_values->GetStringValue(WPD_OBJECT_ORIGINAL_FILE_NAME,
+                                                 &buffer);
+  if (FAILED(hr))
+    hr = properties_values->GetStringValue(WPD_OBJECT_NAME, &buffer);
   if (SUCCEEDED(hr))
     result.assign(buffer);
   return result;
@@ -208,7 +208,7 @@ bool GetObjectDetails(IPortableDevice* device,
     return false;
 
   *is_directory = IsDirectory(properties_values.get());
-  *name = GetObjectName(properties_values.get(), *is_directory);
+  *name = GetObjectName(properties_values.get());
   if (name->empty())
     return false;
 
@@ -220,7 +220,7 @@ bool GetObjectDetails(IPortableDevice* device,
     return true;
   }
   return (GetObjectSize(properties_values.get(), size) &&
-      GetLastModifiedTime(properties_values.get(), last_modified_time));
+          GetLastModifiedTime(properties_values.get(), last_modified_time));
 }
 
 // Creates an MTP device object entry for the given |device| and |object_id|.
@@ -245,9 +245,8 @@ bool GetMTPDeviceObjectEntry(IPortableDevice* device,
 }
 
 // Gets the entries of the directory specified by |directory_object_id| from
-// the given MTP |device|. Set |get_all_entries| to true to get all the entries
-// of the directory. To request a specific object entry, put the object name in
-// |object_name|. Leave |object_name| blank to request all entries. On
+// the given MTP |device|. To request a specific object entry, put the object
+// name in |object_name|. Leave |object_name| blank to request all entries. On
 // success returns true and set |object_entries|.
 bool GetMTPDeviceObjectEntries(IPortableDevice* device,
                                const base::string16& directory_object_id,
@@ -386,7 +385,7 @@ DWORD CopyDataChunkToLocalFile(IStream* stream,
       base::checked_cast<int>(
           std::min(bytes_read,
                    base::checked_cast<DWORD>(buffer.length())));
-  if (file_util::AppendToFile(local_path, buffer.c_str(), data_len) != data_len)
+  if (base::AppendToFile(local_path, buffer.c_str(), data_len) != data_len)
     return 0U;
   return data_len;
 }

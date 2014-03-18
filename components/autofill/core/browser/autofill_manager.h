@@ -21,6 +21,7 @@
 #include "base/time/time.h"
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
 #include "components/autofill/core/browser/autofill_download.h"
+#include "components/autofill/core/browser/autofill_driver.h"
 #include "components/autofill/core/browser/autofill_manager_delegate.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
@@ -45,7 +46,6 @@ class PrefRegistrySyncable;
 
 namespace autofill {
 
-class AutofillDriver;
 class AutofillDataModel;
 class AutofillDownloadManager;
 class AutofillExternalDelegate;
@@ -86,11 +86,12 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   void ShowAutofillSettings();
 
   // Called from our external delegate so they cannot be private.
-  virtual void OnFillAutofillFormData(int query_id,
-                                      const FormData& form,
-                                      const FormFieldData& field,
-                                      int unique_id);
-  void OnDidShowAutofillSuggestions(bool is_new_popup);
+  virtual void FillOrPreviewForm(AutofillDriver::RendererFormDataAction action,
+                                 int query_id,
+                                 const FormData& form,
+                                 const FormFieldData& field,
+                                 int unique_id);
+  void DidShowSuggestions(bool is_new_popup);
   void OnDidFillAutofillFormData(const base::TimeTicks& timestamp);
   void OnDidPreviewAutofillFormData();
 
@@ -138,7 +139,7 @@ class AutofillManager : public AutofillDownloadManager::Observer {
                                 const gfx::RectF& bounding_box,
                                 bool display_warning);
   void OnDidEndTextFieldEditing();
-  void OnHideAutofillUI();
+  void OnHidePopup();
   void OnAddPasswordFormMapping(
       const FormFieldData& username_field,
       const PasswordFormFillData& fill_data);
@@ -215,11 +216,14 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   bool RefreshDataModels() const;
 
   // Unpacks |unique_id| and fills |form_group| and |variant| with the
-  // appropriate data source and variant index.  Returns false if the unpacked
-  // id cannot be found.
+  // appropriate data source and variant index. Sets |is_credit_card| to true
+  // if |data_model| points to a CreditCard data model, false if it's a
+  // profile data model.
+  // Returns false if the unpacked id cannot be found.
   bool GetProfileOrCreditCard(int unique_id,
                               const AutofillDataModel** data_model,
-                              size_t* variant) const WARN_UNUSED_RESULT;
+                              size_t* variant,
+                              bool* is_credit_card) const WARN_UNUSED_RESULT;
 
   // Fills |form_structure| cached element corresponding to |form|.
   // Returns false if the cached element was not found.

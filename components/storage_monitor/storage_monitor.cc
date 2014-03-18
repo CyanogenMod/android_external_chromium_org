@@ -9,6 +9,8 @@
 #include "components/storage_monitor/removable_storage_observer.h"
 #include "components/storage_monitor/transient_device_ids.h"
 
+namespace storage_monitor {
+
 namespace {
 
 StorageMonitor* g_storage_monitor = NULL;
@@ -167,8 +169,7 @@ void StorageMonitor::ProcessAttach(const StorageInfo& info) {
     storage_map_.insert(std::make_pair(info.device_id(), info));
   }
 
-  DVLOG(1) << "StorageAttached with name " << base::UTF16ToUTF8(info.name())
-           << " and id " << info.device_id();
+  DVLOG(1) << "StorageAttached id " << info.device_id();
   if (StorageInfo::IsRemovableDevice(info.device_id())) {
     observer_list_->Notify(
         &RemovableStorageObserver::OnRemovableStorageAttached, info);
@@ -192,3 +193,5 @@ void StorageMonitor::ProcessDetach(const std::string& id) {
         &RemovableStorageObserver::OnRemovableStorageDetached, info);
   }
 }
+
+}  // namespace storage_monitor

@@ -11,28 +11,28 @@ be available for now. -->
     </output>
     <output filename="chromium_strings_am.pak" type="data_package" lang="am" />
     <output filename="chromium_strings_ar.pak" type="data_package" lang="ar" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="chromium_strings_ast.pak" type="data_package" lang="ast" />
     </if>
     <output filename="chromium_strings_bg.pak" type="data_package" lang="bg" />
     <output filename="chromium_strings_bn.pak" type="data_package" lang="bn" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="chromium_strings_bs.pak" type="data_package" lang="bs" />
     </if>
     <output filename="chromium_strings_ca.pak" type="data_package" lang="ca" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="chromium_strings_ca@valencia.pak" type="data_package" lang="ca@valencia" />
     </if>
     <output filename="chromium_strings_cs.pak" type="data_package" lang="cs" />
     <output filename="chromium_strings_da.pak" type="data_package" lang="da" />
     <output filename="chromium_strings_de.pak" type="data_package" lang="de" />
     <output filename="chromium_strings_el.pak" type="data_package" lang="el" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="chromium_strings_en-AU.pak" type="data_package" lang="en-AU" />
     </if>
     <output filename="chromium_strings_en-GB.pak" type="data_package" lang="en-GB" />
     <output filename="chromium_strings_en-US.pak" type="data_package" lang="en" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="chromium_strings_eo.pak" type="data_package" lang="eo" />
     </if>
     <output filename="chromium_strings_es.pak" type="data_package" lang="es" />
@@ -44,7 +44,7 @@ be available for now. -->
       <output filename="chromium_strings_es-419.pak" type="data_package" lang="es-419" />
     </if>
     <output filename="chromium_strings_et.pak" type="data_package" lang="et" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="chromium_strings_eu.pak" type="data_package" lang="eu" />
     </if>
     <output filename="chromium_strings_fa.pak" type="data_package" lang="fa" />
@@ -52,7 +52,7 @@ be available for now. -->
     <output filename="chromium_strings_fi.pak" type="data_package" lang="fi" />
     <output filename="chromium_strings_fil.pak" type="data_package" lang="fil" />
     <output filename="chromium_strings_fr.pak" type="data_package" lang="fr" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="chromium_strings_gl.pak" type="data_package" lang="gl" />
     </if>
     <output filename="chromium_strings_gu.pak" type="data_package" lang="gu" />
@@ -60,19 +60,19 @@ be available for now. -->
     <output filename="chromium_strings_hi.pak" type="data_package" lang="hi" />
     <output filename="chromium_strings_hr.pak" type="data_package" lang="hr" />
     <output filename="chromium_strings_hu.pak" type="data_package" lang="hu" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="chromium_strings_hy.pak" type="data_package" lang="hy" />
       <output filename="chromium_strings_ia.pak" type="data_package" lang="ia" />
     </if>
     <output filename="chromium_strings_id.pak" type="data_package" lang="id" />
     <output filename="chromium_strings_it.pak" type="data_package" lang="it" />
     <output filename="chromium_strings_ja.pak" type="data_package" lang="ja" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="chromium_strings_ka.pak" type="data_package" lang="ka" />
     </if>
     <output filename="chromium_strings_kn.pak" type="data_package" lang="kn" />
     <output filename="chromium_strings_ko.pak" type="data_package" lang="ko" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="chromium_strings_ku.pak" type="data_package" lang="ku" />
       <output filename="chromium_strings_kw.pak" type="data_package" lang="kw" />
     </if>
@@ -104,7 +104,7 @@ be available for now. -->
     <output filename="chromium_strings_te.pak" type="data_package" lang="te" />
     <output filename="chromium_strings_th.pak" type="data_package" lang="th" />
     <output filename="chromium_strings_tr.pak" type="data_package" lang="tr" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="chromium_strings_ug.pak" type="data_package" lang="ug" />
     </if>
     <output filename="chromium_strings_uk.pak" type="data_package" lang="uk" />
@@ -113,7 +113,7 @@ be available for now. -->
     <output filename="chromium_strings_zh-TW.pak" type="data_package" lang="zh-TW" />
   </outputs>
   <translations>
-    <if expr="not pp_ifdef('use_third_party_translations')">
+    <if expr="not use_third_party_translations">
       <file path="resources/chromium_strings_am.xtb" lang="am" />
       <file path="resources/chromium_strings_ar.xtb" lang="ar" />
       <file path="resources/chromium_strings_bg.xtb" lang="bg" />
@@ -168,7 +168,7 @@ be available for now. -->
       <file path="resources/chromium_strings_zh-CN.xtb" lang="zh-CN" />
       <file path="resources/chromium_strings_zh-TW.xtb" lang="zh-TW" />
     </if>
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../third_party/launchpad_translations/chromium_strings_ast.xtb" lang="ast" />
       <file path="../../third_party/launchpad_translations/chromium_strings_bg.xtb" lang="bg" />
       <file path="../../third_party/launchpad_translations/chromium_strings_bs.xtb" lang="bs" />
@@ -211,6 +211,15 @@ be available for now. -->
   </translations>
   <release seq="1" allow_pseudo="false">
     <messages fallback_to_english="true">
+      <message name="IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_TITLE" desc="Title of the disconnect managed profile dialog.">
+        Delete managed Chromium user
+      </message>
+      <message name="IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_TEXT" desc="Message explaining to the user what will happen if they disconnect the managed profile.">
+        You are signed in with a managed account which is controlled by an administrator. If you disconnect from this account, this Chromium user and all associated Chromium data, such as apps, bookmarks, history, passwords, and other settings will be removed from this computer.
+      </message>
+      <message name="IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_OK_BUTTON_LABEL" desc="The text to display on the button to confirm deleting the Chromium user profile.">
+        Delete Chromium user
+      </message>
       <message name="IDS_PRODUCT_NAME" desc="The Chrome application name">
         Chromium
       </message>
@@ -229,7 +238,7 @@ be available for now. -->
       <message name="IDS_APP_LAUNCHER_PRODUCT_DESCRIPTION" desc="App Launcher description">
         Chromium App Launcher is a standalone platform for Chromium apps.
       </message>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_PRODUCT_OS_NAME" desc="The Chrome OS application name">
           Chromium OS
         </message>
@@ -302,12 +311,12 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
       <message name="IDS_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in tabs and popup windows">
         <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Chromium
       </message>
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <message name="IDS_GET_HELP_USING_CHROME" desc="Text of the button which takes the user to the Chrome help page.">
           Get help with using Chromium
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_GET_HELP_USING_CHROME" desc="Text of the button which takes the user to the Chrome help page.">
           Get help with using Chromium OS
         </message>
@@ -321,7 +330,7 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
       <message name="IDS_ABOUT_VERSION_LICENSE" desc="The label below the copyright message, containing the URLs.">
         Chromium is made possible by the <ph name="BEGIN_LINK_CHROMIUM">&lt;a target="_blank" href="$1"&gt;</ph>Chromium<ph name="END_LINK_CHROMIUM">&lt;/a&gt;</ph> open source project and other <ph name="BEGIN_LINK_OSS">&lt;a target="_blank" href="$2"&gt;</ph>open source software<ph name="END_LINK_OSS">&lt;/a&gt;</ph>.
       </message>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_ABOUT_CROS_VERSION_LICENSE" desc="Additional text displayed beneath the Chromium open source URLs for Chrome OS.">
           Chromium OS is made possible by additional <ph name="BEGIN_LINK_CROS_OSS">&lt;a target="_blank" href="$1"&gt;</ph>open source software<ph name="END_LINK_CROS_OSS">&lt;/a&gt;</ph>.
         </message>
@@ -335,6 +344,12 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
           This computer will soon stop receiving Chromium updates because its hardware is no longer supported.
         </message>
         <message name="IDS_MAC_32_BIT_OBSOLETE_NOW" desc="A message displayed on an at-launch infobar and About (Help) page warning the user that the computer they are using is no longer supported.">
+          This computer will no longer receive Chromium updates because its hardware is no longer supported.
+        </message>
+      </if>
+      <if expr="is_win">
+        <!-- Windows non-SSE2 deprecation -->
+        <message name="IDS_WIN_SSE_OBSOLETE_NOW" desc="A message displayed on an at-launch infobar and About (Help) page warning the user that the computer they are using is no longer supported.">
           This computer will no longer receive Chromium updates because its hardware is no longer supported.
         </message>
       </if>
@@ -384,7 +399,7 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
       <message name="IDS_FR_CUSTOMIZE_DEFAULT_BROWSER" desc="Default browser checkbox label">
         Make Chromium the default browser
       </message>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE"
                  desc="Title for the hard-coded thumbnail that represents the Chromium OS Welcome page. This is used on the NTP when there aren't enough thumbnails to show.">
           Get Started with Chromium OS
@@ -396,18 +411,18 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
           Welcome
         </message>
       </if>
-      <if expr="not pp_ifdef('chromeos') and not is_ios">
+      <if expr="not chromeos and not is_ios">
         <message name="IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE"
                  desc="Title for the hard-coded thumbnail that represents the Google Chrome Welcome page.  This is used on the NTP when there aren't enough thumbnails to show.">
           Welcome to Chromium
         </message>
       </if>
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <message name="IDS_EXTERNAL_PROTOCOL_INFORMATION" desc="General information about what Chrome is trying to do when opening this external protocol">
           Chromium needs to launch an external application to handle <ph name="SCHEME">$1<ex>acrobat:</ex></ph> links. The link requested is <ph name="PROTOLINK">$2<ex>acrobat:yourpdf</ex></ph>.
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_EXTERNAL_PROTOCOL_INFORMATION" desc="General information about what Chrome is trying to do when opening this external protocol">
           Chromium OS does not support launching an external application to handle <ph name="SCHEME">$1<ex>acrobat:</ex></ph> links. The link requested is <ph name="PROTOLINK">$2<ex>acrobat:yourpdf</ex></ph>.
         </message>
@@ -419,22 +434,22 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
       <message name="IDS_UNSUPPORTED_OS" desc="The text used to warn the user that current OS is not supported">
         Chromium does not support <ph name="OS_NAME">$1<ex>Windows 2000</ex></ph>.
       </message>
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <message name="IDS_OPTIONS_RELAUNCH_REQUIRED" desc="The message displayed for an option that requires a relaunch to take effect. This appears in a message box if an option is changed that requires a relaunch.">
           Please close all Chromium windows and relaunch Chromium for this change to take effect.
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_OPTIONS_RELAUNCH_REQUIRED" desc="The message displayed for an option that requires a relaunch to take effect. This appears in a message box if an option is changed that requires a relaunch.">
           Please sign out and sign in again for this change to take effect.
         </message>
       </if>
-      <if expr="pp_ifdef('use_titlecase')">
+      <if expr="use_titlecase">
         <message name="IDS_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND" desc="In Title Case: The checkbox in the status tray context menu that controls whether chrome keeps running in the background after the last window is closed">
           Let Chromium Run In The Background
         </message>
       </if>
-      <if expr="not pp_ifdef('use_titlecase')">
+      <if expr="not use_titlecase">
         <message name="IDS_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND" desc="The checkbox in the status tray context menu that controls whether chrome keeps running in the background after the last window is closed">
           Let Chromium run in the background
         </message>
@@ -576,7 +591,7 @@ Chromium is unable to recover your settings.
       <message name="IDS_DEFAULT_BROWSER_INFOBAR_SHORT_TEXT" desc="More compact text to show in the default browser query infobar.">
         Chromium isn't your default browser.
       </message>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_SYNC_OVERVIEW" desc="Chrome OS: The message that appears in the options dialog when sync has not been set up by the user.">
           Set up Sync to save your personalized browser features to the web and access them from Chromium on any computer.
         </message>
@@ -673,12 +688,12 @@ Chromium is unable to recover your settings.
       </message>
 
       <!-- about:flags -->
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <message name="IDS_FLAGS_RELAUNCH_NOTICE" desc="Notifies the user that he needs to relaunch Chromium. Shown next to a button that says 'Relaunch Now'.">
           Your changes will take effect the next time you relaunch Chromium.
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_FLAGS_RELAUNCH_NOTICE" desc="Notifies the user that he needs to restart Chromium OS. Shown next to a button that says 'Restart Now'.">
           Your changes will take effect the next time you restart your device.
         </message>
@@ -711,42 +726,42 @@ For Chromium, processes used to display diagnostics information (such as this "a
       </if>
 
       <!-- About Chrome page -->
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <message name="IDS_UPGRADE_SUCCESSFUL_RELAUNCH" desc="Status label: Successfully updated Chromium">
           Nearly up-to-date! Relaunch Chromium to finish updating.
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_UPGRADE_SUCCESSFUL_RELAUNCH" desc="Status label: Successfully updated Chromium OS">
           Nearly up-to-date! Restart your device to finish updating.
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_UPGRADE_SUCCESSFUL_CHANNEL_SWITCH" desc="Status label: Channel was successfully switched on Chromium OS">
           Channel changed. Restart your device to apply changes.
         </message>
       </if>
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <message name="IDS_UPGRADE_UP_TO_DATE" desc="Status label: Already up to date (Chromium)">
           Chromium is up to date.
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_UPGRADE_UP_TO_DATE" desc="Status label: Already up to date (Chromium OS)">
           Your device is up to date.
         </message>
       </if>
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <message name="IDS_UPGRADE_UPDATING" desc="Status label: Updating Chromium">
           Updating Chromium...
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_UPGRADE_UPDATING" desc="Status label: Updating Chromium OS">
           Updating your device...
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_UPGRADE_UPDATING_CHANNEL_SWITCH" desc="Status label: Updating Chromium OS to a specified channel">
           Updating your device to <ph name="CHANNEL_NAME">$1<ex>stable</ex></ph> channel...
         </message>
@@ -785,16 +800,18 @@ For Chromium, processes used to display diagnostics information (such as this "a
         Remove from Chromium
       </message>
 
-      <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_BODY" desc="Body of the dialog shown when suspicious extensions have been disabled">
-        To make Chromium safer, we disabled some extensions that aren't listed in the <ph name="IDS_EXTENSION_WEB_STORE_TITLE">$1<ex>Chrome Web Store</ex></ph> and may have been added without your knowledge.
-      </message>
+      <if expr="enable_extensions">
+        <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_BODY" desc="Body of the dialog shown when suspicious extensions have been disabled">
+          To make Chromium safer, we disabled some extensions that aren't listed in the <ph name="IDS_EXTENSION_WEB_STORE_TITLE">$1<ex>Chrome Web Store</ex></ph> and may have been added without your knowledge.
+        </message>
+      </if>
 
       <!-- Main Chrome menu -->
       <message name="IDS_APPMENU_TOOLTIP" desc="The tooltip to show for the browser menu">
         Customize and control Chromium
       </message>
 
-      <if expr="pp_ifdef('use_titlecase') and not pp_ifdef('chromeos')">
+      <if expr="use_titlecase and not chromeos">
         <message name="IDS_ABOUT" desc="In Title Case: The text label of the About Chrome menu item">
           About &amp;Chromium
         </message>
@@ -802,7 +819,7 @@ For Chromium, processes used to display diagnostics information (such as this "a
           Update &amp;Chromium
         </message>
       </if>
-      <if expr="not pp_ifdef('use_titlecase') and not pp_ifdef('chromeos')">
+      <if expr="not use_titlecase and not chromeos">
         <message name="IDS_ABOUT" desc="The text label of the About Chrome menu item">
           About &amp;Chromium
         </message>
@@ -810,7 +827,7 @@ For Chromium, processes used to display diagnostics information (such as this "a
           Update &amp;Chromium
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_ABOUT" desc="The text label of the About Chrome OS menu item">
           About &amp;Chromium OS
         </message>
@@ -836,13 +853,23 @@ For Chromium, processes used to display diagnostics information (such as this "a
         Chromium
       </message>
 
+      <!-- Tutorial card in the avatar menu bubble -->
+      <message name="IDS_PROFILES_SIGNIN_TUTORIAL_CONTENT_HEADER" desc="Header line of the tutorial card in the avatar menu bubble view for a signed-in user.">
+        Welcome to your Chromium. Check back here to:
+      </message>
+      <message name="IDS_PROFILES_SIGNIN_TUTORIAL_CONTENT_TEXT" desc="The bulleted content of the tutorial card in the avatar menu bubble view for a signed-in user.">
+        • Switch between people
+• Lock your Chromium stuff
+• Manage your Google Accounts
+      </message>
+
       <!-- Sync Promo New Tab Page bubble strings -->
       <message name="IDS_SYNC_PROMO_NTP_BUBBLE_MESSAGE_NEW" desc="The body of the sync promo NTP bubble.">
         Now that you're signed in, you can get your tabs, bookmarks and other Chromium stuff across your laptop, phone and tablet. You will also receive more relevant suggestions and features on Google services.
       </message>
 
       <!-- One click sign-in infobar -->
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <!-- New one-click sign-in dialog contents for SAML support -->
         <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE_NEW" desc="The title of the modal dialog window that opens when the user chooses to use one click sign-in.">
           You're signed in to Chromium!
@@ -870,44 +897,64 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
       </if>
 
       <!-- Enterprise sign-in profile linking -->
-      <message name="IDS_ENTERPRISE_SIGNIN_TITLE" desc="The title of the dialog to confirm linking the browser profile with the signed-in enterprise account">
-        Important information regarding your Chromium data
-      </message>
-      <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. This message is followed by a 'Learn more' link.">
-        You are signing in with a managed account and giving its administrator control over your Chromium profile. Your Chromium data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account.
-      </message>
-      <message name="IDS_ENTERPRISE_SIGNIN_CREATE_NEW_PROFILE_MESSAGE" desc="The text of the prompt to create a new profile after signing in to an enterprise account">
-        If you prefer to keep your existing Chromium data separate, you can create a new Chromium user for <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>.
-      </message>
-      <message name="IDS_ENTERPRISE_SIGNIN_CONTINUE" desc="Text of the button to link the current profile with the signed-in enterprise account">
-        Link my Chromium data to this account
-      </message>
+      <if expr="not is_android">
+        <message name="IDS_ENTERPRISE_SIGNIN_TITLE" desc="The title of the dialog to confirm linking the browser profile with the signed-in enterprise account">
+          Important information regarding your Chromium data
+        </message>
+        <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. This message is followed by a 'Learn more' link.">
+          You are signing in with a managed account and giving its administrator control over your Chromium profile. Your Chromium data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account.
+        </message>
+        <message name="IDS_ENTERPRISE_SIGNIN_CREATE_NEW_PROFILE_MESSAGE" desc="The text of the prompt to create a new profile after signing in to an enterprise account">
+          If you prefer to keep your existing Chromium data separate, you can create a new Chromium user for <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>.
+        </message>
+        <message name="IDS_ENTERPRISE_SIGNIN_CONTINUE" desc="Text of the button to link the current profile with the signed-in enterprise account">
+          Link my Chromium data to this account
+        </message>
+      </if>
 
       <!-- Enterprise sign-in dialog (new-style) -->
       <!-- TODO(dconnelly): remove "new-style" once the old dialog is gone. -->
-      <message name="IDS_ENTERPRISE_SIGNIN_TITLE_NEW_STYLE" desc="The title of the dialog to confirm linking the browser profile with the signed-in enterprise account">
-        Link your Chromium data to this account?
-      </message>
-      <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITHOUT_PROFILE_CREATION_NEW_STYLE" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. This message is followed by a 'Learn more' link.">
-        You are signing in with a managed account and giving its administrator control over your Chromium profile. Your Chromium data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. <ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
-      </message>
-      <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITH_PROFILE_CREATION_NEW_STYLE" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. Additionally notifies the user that they can create a new profile instead. This message is followed by a 'Learn more' link.">
-        You are signing in with a managed account and giving its administrator control over your Chromium profile. Your Chromium data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. You can optionally create a new profile to keep your existing Chromium data separate. <ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
-      </message>
+      <if expr="toolkit_views or is_macosx">
+        <message name="IDS_ENTERPRISE_SIGNIN_TITLE_NEW_STYLE" desc="The title of the dialog to confirm linking the browser profile with the signed-in enterprise account">
+          Link your Chromium data to this account?
+        </message>
+        <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITHOUT_PROFILE_CREATION_NEW_STYLE" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. This message is followed by a 'Learn more' link.">
+          You are signing in with a managed account and giving its administrator control over your Chromium profile. Your Chromium data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. <ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
+        </message>
+        <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITH_PROFILE_CREATION_NEW_STYLE" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. Additionally notifies the user that they can create a new profile instead. This message is followed by a 'Learn more' link.">
+          You are signing in with a managed account and giving its administrator control over your Chromium profile. Your Chromium data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. You can optionally create a new profile to keep your existing Chromium data separate. <ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
+        </message>
+      </if>
 
-      <!-- Sync sign-in global error message-->
-      <message name="IDS_SYNC_PASSPHRASE_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sync error bubble view when the user needs to update their sync passphrase.">
-        Chromium could not sync your data. Please update your Sync passphrase.
-      </message>
-      <message name="IDS_SYNC_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sync error bubble view when the user's sign-in credentials are out of date.">
-        Chromium could not sync your data because your account sign-in details are out of date.
-      </message>
-      <message name="IDS_SYNC_UNAVAILABLE_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sync error bubble view when sync is not available for their domain.">
-        Chromium could not sync your data because Sync is not available for your domain.
-      </message>
-      <message name="IDS_SYNC_OTHER_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sync error bubble view when there's an error signing in.">
-        Chromium could not sync your data due to an error signing in.
-      </message>
+      <!-- Sync/sign-in error messages -->
+      <if expr="not chromeos">
+        <message name="IDS_SYNC_PASSPHRASE_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sync error bubble view when the user needs to update their sync passphrase.">
+          Chromium could not sync your data. Please update your Sync passphrase.
+        </message>
+        <message name="IDS_SYNC_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error bubble view when the user's sign-in credentials are out of date.">
+          Chromium could not sync your data because your account sign-in details are out of date.
+        </message>
+        <message name="IDS_SYNC_UNAVAILABLE_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error bubble view when sync is not available for their domain.">
+          Chromium could not sync your data because Sync is not available for your domain.
+        </message>
+        <message name="IDS_SYNC_OTHER_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error bubble view when there's an error signing in.">
+          Chromium could not sync your data due to an error signing in.
+        </message>
+      </if>
+      <if expr="chromeos">
+        <message name="IDS_SYNC_PASSPHRASE_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sync error bubble view when the user needs to update their sync passphrase.">
+          Chromium OS could not sync your data. Please update your Sync passphrase.
+        </message>
+        <message name="IDS_SYNC_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error notification when the user's sign-in credentials are out of date.">
+          Chromium OS could not sync your data because your account sign-in details are out of date.
+        </message>
+        <message name="IDS_SYNC_UNAVAILABLE_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error notification when sync is not available for their domain.">
+          Chromium OS could not sync your data because Sync is not available for your domain.
+        </message>
+        <message name="IDS_SYNC_OTHER_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error notification when there's an error signing in.">
+          Chromium OS could not sync your data due to an error signing in.
+        </message>
+      </if>
 
       <message name="IDS_OPTIONS_PASSWORDS_MAC_WARNING" desc="The warning for OS X that passwords are shared across profiles in the keychain.">
         On Mac, passwords are saved to your Keychain and may be accessed or synced by other Chromium users sharing this OS X account.
@@ -955,7 +1002,7 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
         <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Instructions for disabling use of a proxy server (leave empty for Android and iOS).">
         </message>
       </if>
-      <if expr="not pp_ifdef('chromeos') and is_posix and not is_macosx and not is_android and not is_ios">
+      <if expr="not chromeos and is_posix and not is_macosx and not is_android and not is_ios">
         <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Linux instructions for disabling use of a proxy server.">
           Go to
           the Chromium menu &gt;
@@ -983,25 +1030,27 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
       </if>
 
       <!-- Chrome OS keyboard overlay-->
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_KEYBOARD_OVERLAY_SHOW_WRENCH_MENU" desc="The text in the keyboard overlay to explain the shortcut that opens the main Chrome menu.">
           Show the Chromium menu
         </message>
       </if>
 
       <!-- App list -->
-      <message name="IDS_APP_LIST_SHORTCUT_NAME" desc="Name for the Chromium App List to appear in the taskbar and in any shortcuts to it.">
-        Chromium App Launcher
-      </message>
-      <message name="IDS_APP_LIST_SHORTCUT_NAME_CANARY" desc="Name for the Chromium App List to appear in the taskbar and in any shortcuts to it.">
-        Chromium App Launcher
-      </message>
-      <message name="IDS_APP_LIST_SIGNIN_HEADING" desc="Heading for when the launcher needs to sign in.">
-        Sign in to Chromium
-      </message>
-      <message name="IDS_APP_LIST_SIGNIN_TEXT" desc="Text for when the launcher needs to sign in.">
-        You need to be signed in to Chromium to use apps. This allows Chromium to sync your apps, bookmarks, history, passwords and other settings across devices.
-      </message>
+      <if expr="enable_app_list">
+        <message name="IDS_APP_LIST_SHORTCUT_NAME" desc="Name for the Chromium App List to appear in the taskbar and in any shortcuts to it.">
+          Chromium App Launcher
+        </message>
+        <message name="IDS_APP_LIST_SHORTCUT_NAME_CANARY" desc="Name for the Chromium App List to appear in the taskbar and in any shortcuts to it.">
+          Chromium App Launcher
+        </message>
+        <message name="IDS_APP_LIST_SIGNIN_HEADING" desc="Heading for when the launcher needs to sign in.">
+          Sign in to Chromium
+        </message>
+        <message name="IDS_APP_LIST_SIGNIN_TEXT" desc="Text for when the launcher needs to sign in.">
+          You need to be signed in to Chromium to use apps. This allows Chromium to sync your apps, bookmarks, history, passwords and other settings across devices.
+        </message>
+      </if>
 
       <!-- App shortcuts -->
       <message name="IDS_APP_SHORTCUTS_SUBDIR_NAME" desc="Name for the Chromium Apps Start Menu folder name.">
@@ -1019,27 +1068,29 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
       </if>
 
       <!-- Chrome OS OOBE Terms of Service screen-->
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_TERMS_OF_SERVICE_SCREEN_SUBHEADING" desc="Subheading at the top of the Terms of Service screen.">
           <ph name="DOMAIN">$1<ex>example.com</ex></ph> requires that you read and accept the following Terms of Service before using this device. These terms do not expand, modify or limit the Chromium OS Terms.
         </message>
       </if>
 
       <!-- Chrome Notifications center -->
-      <if expr="is_win">
-        <message name="IDS_MESSAGE_CENTER_BALLOON_TITLE" desc="Title of the first run notification ballon describing the notification center.">
-          Chromium Notification Center
+      <if expr="enable_notifications">
+        <if expr="is_win">
+          <message name="IDS_MESSAGE_CENTER_BALLOON_TITLE" desc="Title of the first run notification ballon describing the notification center.">
+            Chromium Notification Center
+          </message>
+          <message name="IDS_MESSAGE_CENTER_BALLOON_TEXT" desc="Body text for the the first run notification ballon describing the notification center.">
+            You can see all your notifications from Chromium apps, extensions, and websites here.
+          </message>
+        </if>
+        <message name="IDS_MESSAGE_CENTER_TOOLTIP" desc="Tooltip for notification tray icon without unread notifications">
+          Chromium - Notifications
         </message>
-        <message name="IDS_MESSAGE_CENTER_BALLOON_TEXT" desc="Body text for the the first run notification ballon describing the notification center.">
-          You can see all your notifications from Chromium apps, extensions, and websites here.
+        <message name="IDS_MESSAGE_CENTER_TOOLTIP_UNREAD" desc="Tooltip for notification tray icon with unread notifications">
+          Chromium - Notifications (<ph name="QUANTITY">$1<ex>3</ex></ph> unread)
         </message>
       </if>
-      <message name="IDS_MESSAGE_CENTER_TOOLTIP" desc="Tooltip for notification tray icon without unread notifications">
-        Chromium - Notifications
-      </message>
-      <message name="IDS_MESSAGE_CENTER_TOOLTIP_UNREAD" desc="Tooltip for notification tray icon with unread notifications">
-        Chromium - Notifications (<ph name="QUANTITY">$1<ex>3</ex></ph> unread)
-      </message>
 
       <!-- MediaStream capture status tray icon -->
       <message name="IDS_MEDIA_STREAM_STATUS_TRAY_TEXT_AUDIO_AND_VIDEO" desc="Tool tip for the capture status tray icon when microphone and camera are being used">
@@ -1053,9 +1104,11 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
       </message>
 
       <!-- ProcessSingleton -->
-      <message name="IDS_PROFILE_IN_USE_LINUX" desc="Message shown when the browser cannot start because the profile is in use on a different host.">
-        The profile appears to be in use by another Chromium process (<ph name="PROCESS_ID">$1<ex>12345</ex></ph>) on another computer (<ph name="HOST_NAME">$2<ex>example.com</ex></ph>). Chromium has locked the profile so that it doesn't get corrupted. If you are sure no other processes are using this profile, you can unlock the profile and relaunch Chromium.
-      </message>
+      <if expr="is_linux">
+        <message name="IDS_PROFILE_IN_USE_LINUX" desc="Message shown when the browser cannot start because the profile is in use on a different host.">
+          The profile appears to be in use by another Chromium process (<ph name="PROCESS_ID">$1<ex>12345</ex></ph>) on another computer (<ph name="HOST_NAME">$2<ex>example.com</ex></ph>). Chromium has locked the profile so that it doesn't get corrupted. If you are sure no other processes are using this profile, you can unlock the profile and relaunch Chromium.
+        </message>
+      </if>
 
       <!-- Mac First-run dialog messages -->
       <if expr="is_macosx">
@@ -1078,6 +1131,43 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
       <message name="IDS_TRY_TOAST_SET_DEFAULT" desc="Text of the checkbox to make Chromium the default browser">
         Make Chromium the default browser
       </message>
+
+      <!-- User manager tutorial -->
+      <if expr="not is_android and not is_ios and not chromeos">
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_INTRO_TITLE" desc="Title of the tutorial introduction slide">
+          Chromium just got better
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_INTRO_TEXT" desc="Main text of the tutorial introduction slide">
+          Now it's easier to use Chromium with your Google Account and on shared computers.
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_YOUR_CHROME_TITLE" desc="Title of the slide about personalizing the browser">
+          This is your Chromium
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_YOUR_CHROME_TEXT" desc="Main text of the slide about personalizing the browser">
+          Your web, bookmarks, and other Chromium stuff live here.
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_GUEST_TEXT" desc="Main text of the guest user slide">
+          Guests can use Chromium without leaving anything behind.
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_FRIENDS_TEXT" desc="Main text of the friends and family slide">
+          If you share a computer, friends and family can browse separately and set up Chromium just the way the want.
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_OUTRO_TEXT" desc="Main text of the tutorial completion slide">
+          Click your name to open Chromium and start browsing.
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_OUTRO_ADD_USER" desc="Text of the add a new user button">
+          Add yourself to Chromium
+        </message>
+      </if>
+
+      <!-- chrome://ntp -->
+      <if expr="not is_android">
+        <message name="IDS_NEW_TAB_OTR_EXTENSIONS_MESSAGE"
+                 desc="Explanation in a new OTR window that extensions have been disabled while in OTR.">
+          Because Chromium does not control how extensions handle your personal data, all extensions have been disabled for incognito windows. You can reenable them individually in the
+          <ph name="BEGIN_LINK">&lt;a href="$1"&gt;</ph>extensions manager<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
+        </message>
+      </if>
 
     </messages>
   </release>

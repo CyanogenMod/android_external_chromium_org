@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "media/cast/test/fake_video_encode_accelerator.h"
+#include "media/video/video_decode_accelerator.h"
 
 namespace media {
 namespace cast {
@@ -18,10 +19,8 @@ FakeGpuVideoAcceleratorFactories::FakeGpuVideoAcceleratorFactories(
 FakeGpuVideoAcceleratorFactories::~FakeGpuVideoAcceleratorFactories() {}
 
 scoped_ptr<VideoEncodeAccelerator>
-FakeGpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator(
-    VideoEncodeAccelerator::Client* client) {
-  return scoped_ptr<VideoEncodeAccelerator>(
-      new FakeVideoEncodeAccelerator(client));
+FakeGpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator() {
+  return scoped_ptr<VideoEncodeAccelerator>(new FakeVideoEncodeAccelerator());
 }
 
 base::SharedMemory* FakeGpuVideoAcceleratorFactories::CreateSharedMemory(
@@ -38,19 +37,18 @@ FakeGpuVideoAcceleratorFactories::GetTaskRunner() {
   return fake_task_runner_;
 }
 
-uint32 FakeGpuVideoAcceleratorFactories::CreateTextures(
+bool FakeGpuVideoAcceleratorFactories::CreateTextures(
     int32 count,
     const gfx::Size& size,
     std::vector<uint32>* texture_ids,
     std::vector<gpu::Mailbox>* texture_mailboxes,
     uint32 texture_target) {
-  return 0;
+  return false;
 }
 
 scoped_ptr<VideoDecodeAccelerator>
 FakeGpuVideoAcceleratorFactories::CreateVideoDecodeAccelerator(
-    VideoCodecProfile profile,
-    VideoDecodeAccelerator::Client* client) {
+    VideoCodecProfile profile) {
   return scoped_ptr<VideoDecodeAccelerator>(
       static_cast<media::VideoDecodeAccelerator*>(NULL));
 }

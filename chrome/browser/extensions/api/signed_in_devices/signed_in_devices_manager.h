@@ -9,19 +9,21 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_vector.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
 
 class Profile;
+
 namespace content {
-  class NotificationDetails;
-  class NotificationObserver;
-  class NotificationRegistrar;
+class BrowserContext;
+class NotificationDetails;
+class NotificationObserver;
+class NotificationRegistrar;
 }  // namespace content
 
 namespace extensions {
-class ProfileKeyedAPI;
+class BrowserContextKeyedAPI;
 
 struct EventListenerInfo;
 
@@ -51,18 +53,18 @@ class SignedInDevicesChangeObserver
   content::NotificationRegistrar registrar_;
 };
 
-class SignedInDevicesManager
-    : public ProfileKeyedAPI,
-      public content::NotificationObserver,
-      public EventRouter::Observer {
+class SignedInDevicesManager : public BrowserContextKeyedAPI,
+                               public content::NotificationObserver,
+                               public EventRouter::Observer {
  public:
   // Default constructor used for testing.
   SignedInDevicesManager();
-  explicit SignedInDevicesManager(Profile* profile);
+  explicit SignedInDevicesManager(content::BrowserContext* context);
   virtual ~SignedInDevicesManager();
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<SignedInDevicesManager>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<SignedInDevicesManager>*
+      GetFactoryInstance();
 
   // NotificationObserver:
   virtual void Observe(int type,
@@ -74,9 +76,9 @@ class SignedInDevicesManager
   virtual void OnListenerRemoved(const EventListenerInfo& details) OVERRIDE;
 
  private:
-  friend class ProfileKeyedAPIFactory<SignedInDevicesManager>;
+  friend class BrowserContextKeyedAPIFactory<SignedInDevicesManager>;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "SignedInDevicesManager";
   }
@@ -96,4 +98,3 @@ class SignedInDevicesManager
 }  // namespace extensions
 
 #endif  // CHROME_BROWSER_EXTENSIONS_API_SIGNED_IN_DEVICES_SIGNED_IN_DEVICES_MANAGER_H__
-

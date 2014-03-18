@@ -5,13 +5,15 @@
 #ifndef CHROME_BROWSER_SYNC_FILE_SYSTEM_DRIVE_BACKEND_SYNC_ENGINE_INITIALIZER_H_
 #define CHROME_BROWSER_SYNC_FILE_SYSTEM_DRIVE_BACKEND_SYNC_ENGINE_INITIALIZER_H_
 
+#include <string>
+
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
-#include "chrome/browser/sync_file_system/sync_task.h"
 #include "google_apis/drive/drive_common_callbacks.h"
 #include "google_apis/drive/gdata_errorcode.h"
 
@@ -62,7 +64,7 @@ class SyncEngineContext;
 //  - Populate database with the largest change ID, the sync-root folder and
 //    its contents.
 //
-class SyncEngineInitializer : public SyncTask {
+class SyncEngineInitializer : public SequentialSyncTask {
  public:
   SyncEngineInitializer(SyncEngineContext* sync_context,
                         base::SequencedTaskRunner* task_runner,
@@ -70,7 +72,7 @@ class SyncEngineInitializer : public SyncTask {
                         const base::FilePath& database_path,
                         leveldb::Env* env_override);
   virtual ~SyncEngineInitializer();
-  virtual void Run(const SyncStatusCallback& callback) OVERRIDE;
+  virtual void RunSequential(const SyncStatusCallback& callback) OVERRIDE;
 
   scoped_ptr<MetadataDatabase> PassMetadataDatabase();
 

@@ -9,6 +9,7 @@
 #include <map>
 
 #include "base/basictypes.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/port/browser/event_with_latency_info.h"
 #include "content/port/common/input_event_ack_state.h"
@@ -37,8 +38,8 @@ class CONTENT_EXPORT TouchEventQueueClient {
 class CONTENT_EXPORT TouchEventQueue {
  public:
   // Different ways of dealing with touch events during scrolling.
-  // TODO(rbyers): Remove (or otherwise update) this once results of
-  // experiments are complete.  http://crbug.com/328503
+  // TODO(rbyers): Remove this once we're confident that touch move absorption
+  // is OK. http://crbug.com/350430
   enum TouchScrollingMode {
     // Send a touchcancel on scroll start and no further touch events for the
     // duration of the scroll.  Chrome Android's traditional behavior.
@@ -50,9 +51,9 @@ class CONTENT_EXPORT TouchEventQueue {
     // Like sync, except that consumed scroll events cause subsequent touchmove
     // events to be suppressed.  Unconsumed scroll events return touchmove
     // events to being dispatched synchronously (so scrolling may be hijacked
-    // when a scroll limit is reached, and later resumed).
+    // when a scroll limit is reached, and later resumed). http://goo.gl/RShsdN
     TOUCH_SCROLLING_MODE_ABSORB_TOUCHMOVE,
-    TOUCH_SCROLLING_MODE_DEFAULT = TOUCH_SCROLLING_MODE_TOUCHCANCEL
+    TOUCH_SCROLLING_MODE_DEFAULT = TOUCH_SCROLLING_MODE_ABSORB_TOUCHMOVE
   };
 
   // The |client| must outlive the TouchEventQueue. If
@@ -93,8 +94,9 @@ class CONTENT_EXPORT TouchEventQueue {
   bool IsPendingAckTouchStart() const;
 
   // Sets whether a delayed touch ack will cancel and flush the current
-  // touch sequence.
-  void SetAckTimeoutEnabled(bool enabled, size_t ack_timeout_delay_ms);
+  // touch sequence. Note that, if the timeout was previously disabled, enabling
+  // it will take effect only for the following touch sequence.
+  void SetAckTimeoutEnabled(bool enabled, base::TimeDelta ack_timeout_delay);
 
   bool empty() const WARN_UNUSED_RESULT {
     return touch_queue_.empty();

@@ -27,9 +27,9 @@
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/widget.h"
@@ -710,8 +710,8 @@ TEST_P(DockedWindowLayoutManagerTest, ThreeWindowsMinimize) {
 
   // The first window should get minimized but parented by the dock container.
   EXPECT_TRUE(wm::GetWindowState(w1.get())->IsMinimized());
-  EXPECT_TRUE(wm::GetWindowState(w2.get())->IsNormalShowState());
-  EXPECT_TRUE(wm::GetWindowState(w3.get())->IsNormalShowState());
+  EXPECT_TRUE(wm::GetWindowState(w2.get())->IsNormalStateType());
+  EXPECT_TRUE(wm::GetWindowState(w3.get())->IsNormalStateType());
   EXPECT_EQ(internal::kShellWindowId_DockedContainer, w1->parent()->id());
 }
 

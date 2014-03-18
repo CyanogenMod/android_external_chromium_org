@@ -381,7 +381,7 @@ void PepperGraphics2DHost::Paint(blink::WebCanvas* canvas,
   // Copy to device independent bitmap when target canvas doesn't support
   // platform paint.
   if (!skia::SupportsPlatformPaint(canvas))
-    backing_bitmap.copyTo(&image, SkBitmap::kARGB_8888_Config);
+    backing_bitmap.copyTo(&image, kPMColor_SkColorType);
   else
     image = backing_bitmap;
 
@@ -424,8 +424,6 @@ void PepperGraphics2DHost::ViewFlushedPaint() {
 void PepperGraphics2DHost::DidChangeView(const ppapi::ViewData& view_data) {
   gfx::Size old_plugin_size = current_plugin_size_;
   current_plugin_size_ = PP_ToGfxSize(view_data.rect.size);
-  if (bound_instance_)
-    bound_instance_->UpdateLayerTransform();
 }
 
 void PepperGraphics2DHost::SetScale(float scale) {
@@ -740,9 +738,6 @@ int32_t PepperGraphics2DHost::Flush(PP_Resource* old_image_data,
   queued_operations_.clear();
 
   flushed_plugin_size_ = flushed_plugin_size;
-  if (bound_instance_)
-    bound_instance_->UpdateLayerTransform();
-
   if (!bound_instance_) {
     // As promised in the API, we always schedule callback when unbound.
     ScheduleOffscreenFlushAck();

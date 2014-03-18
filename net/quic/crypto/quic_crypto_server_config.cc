@@ -90,10 +90,8 @@ class ValidateClientHelloHelper {
   }
 
   ~ValidateClientHelloHelper() {
-    if (done_cb_ != NULL) {
-      LOG(DFATAL) <<
-          "Deleting ValidateClientHelloHelper with a pending callback.";
-    }
+    LOG_IF(DFATAL, done_cb_ != NULL)
+        << "Deleting ValidateClientHelloHelper with a pending callback.";
   }
 
   void ValidationComplete(QuicErrorCode error_code, const char* error_details) {
@@ -109,9 +107,7 @@ class ValidateClientHelloHelper {
 
  private:
   void DetachCallback() {
-    if (done_cb_ == NULL) {
-      LOG(DFATAL) << "Callback already detached.";
-    }
+    LOG_IF(DFATAL, done_cb_ == NULL) << "Callback already detached.";
     done_cb_ = NULL;
   }
 
@@ -246,8 +242,6 @@ QuicServerConfigProtobuf* QuicCryptoServerConfig::GenerateConfig(
     msg.SetTaglist(kKEXS, kC255, 0);
   }
   msg.SetTaglist(kAEAD, kAESG, 0);
-  // TODO(rch): Remove once we remove QUIC_VERSION_12.
-  msg.SetValue(kVERS, static_cast<uint16>(0));
   msg.SetStringPiece(kPUBS, encoded_public_values);
 
   if (options.expiry_time.IsZero()) {
@@ -468,7 +462,7 @@ void QuicCryptoServerConfig::ValidateClientHello(
 
 QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
     const ValidateClientHelloResultCallback::Result& validate_chlo_result,
-    QuicGuid guid,
+    QuicConnectionId connection_id,
     IPEndPoint client_address,
     QuicVersion version,
     const QuicVersionVector& supported_versions,
@@ -488,18 +482,19 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
   // case, we need to make sure that we actually do not support this version
   // and that it wasn't a downgrade attack.
   QuicTag client_version_tag;
-  // TODO(rch): Make this check mandatory when we remove QUIC_VERSION_12.
-  if (client_hello.GetUint32(kVER, &client_version_tag) == QUIC_NO_ERROR) {
-    QuicVersion client_version = QuicTagToQuicVersion(client_version_tag);
-    if (client_version != version) {
-      // Just because client_version is a valid version enum doesn't mean that
-      // this server actually supports that version, so we check to see if
-      // it's actually in the supported versions list.
-      for (size_t i = 0; i < supported_versions.size(); ++i) {
-        if (client_version == supported_versions[i]) {
-          *error_details = "Downgrade attack detected";
-          return QUIC_VERSION_NEGOTIATION_MISMATCH;
-        }
+  if (client_hello.GetUint32(kVER, &client_version_tag) != QUIC_NO_ERROR) {
+    *error_details = "client hello missing version list";
+    return QUIC_INVALID_CRYPTO_MESSAGE_PARAMETER;
+  }
+  QuicVersion client_version = QuicTagToQuicVersion(client_version_tag);
+  if (client_version != version) {
+    // Just because client_version is a valid version enum doesn't mean that
+    // this server actually supports that version, so we check to see if
+    // it's actually in the supported versions list.
+    for (size_t i = 0; i < supported_versions.size(); ++i) {
+      if (client_version == supported_versions[i]) {
+        *error_details = "Downgrade attack detected";
+        return QUIC_VERSION_NEGOTIATION_MISMATCH;
       }
     }
   }
@@ -601,9 +596,10 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
 
   string hkdf_suffix;
   const QuicData& client_hello_serialized = client_hello.GetSerialized();
-  hkdf_suffix.reserve(sizeof(guid) + client_hello_serialized.length() +
+  hkdf_suffix.reserve(sizeof(connection_id) + client_hello_serialized.length() +
                       requested_config->serialized.size());
-  hkdf_suffix.append(reinterpret_cast<char*>(&guid), sizeof(guid));
+  hkdf_suffix.append(reinterpret_cast<char*>(&connection_id),
+                     sizeof(connection_id));
   hkdf_suffix.append(client_hello_serialized.data(),
                      client_hello_serialized.length());
   hkdf_suffix.append(requested_config->serialized);
@@ -619,7 +615,8 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
     string hkdf_input;
     hkdf_input.append(QuicCryptoConfig::kCETVLabel,
                       strlen(QuicCryptoConfig::kCETVLabel) + 1);
-    hkdf_input.append(reinterpret_cast<char*>(&guid), sizeof(guid));
+    hkdf_input.append(reinterpret_cast<char*>(&connection_id),
+                      sizeof(connection_id));
     hkdf_input.append(client_hello_serialized.data(),
                       client_hello_serialized.length());
     hkdf_input.append(requested_config->serialized);
@@ -805,7 +802,7 @@ void QuicCryptoServerConfig::SelectNewPrimaryConfig(
   }
 
   // All config's primary times are in the past. We should make the most recent
-  // most recent and highest priority candidate primary.
+  // and highest priority candidate primary.
   scoped_refptr<Config> new_primary(best_candidate);
   if (primary_config_.get()) {
     primary_config_->is_primary = false;
@@ -832,7 +829,7 @@ void QuicCryptoServerConfig::EvaluateClientHello(
       client_hello_state->client_hello;
   ClientHelloInfo* info = &(client_hello_state->info);
 
-  if (client_hello.size() < kClientHelloMinimumSizeOld) {
+  if (client_hello.size() < kClientHelloMinimumSize) {
     helper.ValidationComplete(QUIC_CRYPTO_INVALID_VALUE_LENGTH,
                               "Client hello too small");
     return;
@@ -981,7 +978,7 @@ void QuicCryptoServerConfig::BuildRejection(
   // token.
   const size_t max_unverified_size =
       client_hello.size() * kMultiplier - kREJOverheadBytes;
-  COMPILE_ASSERT(kClientHelloMinimumSizeOld * kMultiplier >= kREJOverheadBytes,
+  COMPILE_ASSERT(kClientHelloMinimumSize * kMultiplier >= kREJOverheadBytes,
                  overhead_calculation_may_underflow);
   if (info.valid_source_address_token ||
       signature.size() + compressed.size() < max_unverified_size) {

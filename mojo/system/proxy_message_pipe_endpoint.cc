@@ -6,10 +6,9 @@
 
 #include <string.h>
 
-#include "base/containers/hash_tables.h"
 #include "base/logging.h"
-#include "base/stl_util.h"
 #include "mojo/system/channel.h"
+#include "mojo/system/local_message_pipe_endpoint.h"
 #include "mojo/system/message_pipe_dispatcher.h"
 
 namespace mojo {
@@ -22,11 +21,27 @@ ProxyMessagePipeEndpoint::ProxyMessagePipeEndpoint()
       is_peer_open_(true) {
 }
 
+ProxyMessagePipeEndpoint::ProxyMessagePipeEndpoint(
+    LocalMessagePipeEndpoint* local_message_pipe_endpoint,
+    bool is_peer_open)
+    : local_id_(MessageInTransit::kInvalidEndpointId),
+      remote_id_(MessageInTransit::kInvalidEndpointId),
+      is_open_(true),
+      is_peer_open_(is_peer_open),
+      paused_message_queue_(MessageInTransitQueue::PassContents(),
+                            local_message_pipe_endpoint->message_queue()) {
+  local_message_pipe_endpoint->Close();
+}
+
 ProxyMessagePipeEndpoint::~ProxyMessagePipeEndpoint() {
   DCHECK(!is_running());
   DCHECK(!is_attached());
   AssertConsistentState();
-  DCHECK(paused_message_queue_.empty());
+  DCHECK(paused_message_queue_.IsEmpty());
+}
+
+MessagePipeEndpoint::Type ProxyMessagePipeEndpoint::GetType() const {
+  return kTypeProxy;
 }
 
 void ProxyMessagePipeEndpoint::Close() {
@@ -38,14 +53,7 @@ void ProxyMessagePipeEndpoint::Close() {
   channel_ = NULL;
   local_id_ = MessageInTransit::kInvalidEndpointId;
   remote_id_ = MessageInTransit::kInvalidEndpointId;
-
-  for (std::deque<MessageInTransit*>::iterator it =
-           paused_message_queue_.begin();
-       it != paused_message_queue_.end();
-       ++it) {
-    (*it)->Destroy();
-  }
-  paused_message_queue_.clear();
+  paused_message_queue_.Clear();
 }
 
 void ProxyMessagePipeEndpoint::OnPeerClose() {
@@ -53,23 +61,29 @@ void ProxyMessagePipeEndpoint::OnPeerClose() {
   DCHECK(is_peer_open_);
 
   is_peer_open_ = false;
-  MessageInTransit* message =
-      MessageInTransit::Create(MessageInTransit::kTypeMessagePipe,
-                               MessageInTransit::kSubtypeMessagePipePeerClosed,
-                               NULL, 0, 0);
-  EnqueueMessageInternal(message);
+  EnqueueMessage(make_scoped_ptr(
+      new MessageInTransit(MessageInTransit::kTypeMessagePipe,
+                           MessageInTransit::kSubtypeMessagePipePeerClosed,
+                           0, 0, NULL)));
 }
 
-MojoResult ProxyMessagePipeEndpoint::EnqueueMessage(
-    MessageInTransit* message,
-    std::vector<DispatcherTransport>* transports) {
-  DCHECK(!transports || !transports->empty());
+// Note: We may have to enqueue messages even when our (local) peer isn't open
+// -- it may have been written to and closed immediately, before we were ready.
+// This case is handled in |Run()| (which will call us).
+void ProxyMessagePipeEndpoint::EnqueueMessage(
+    scoped_ptr<MessageInTransit> message) {
+  DCHECK(is_open_);
 
-  if (transports)
-    AttachAndCloseDispatchers(message, transports);
+  if (is_running()) {
+    message->SerializeAndCloseDispatchers(channel_.get());
 
-  EnqueueMessageInternal(message);
-  return MOJO_RESULT_OK;
+    message->set_source_id(local_id_);
+    message->set_destination_id(remote_id_);
+    if (!channel_->WriteMessage(message.Pass()))
+      LOG(WARNING) << "Failed to write message to channel";
+  } else {
+    paused_message_queue_.AddMessage(message.Pass());
+  }
 }
 
 void ProxyMessagePipeEndpoint::Attach(scoped_refptr<Channel> channel,
@@ -97,44 +111,8 @@ void ProxyMessagePipeEndpoint::Run(MessageInTransit::EndpointId remote_id) {
   remote_id_ = remote_id;
   AssertConsistentState();
 
-  for (std::deque<MessageInTransit*>::iterator it =
-           paused_message_queue_.begin(); it != paused_message_queue_.end();
-       ++it)
-    EnqueueMessageInternal(*it);
-  paused_message_queue_.clear();
-}
-
-void ProxyMessagePipeEndpoint::AttachAndCloseDispatchers(
-    MessageInTransit* message,
-    std::vector<DispatcherTransport>* transports) {
-  DCHECK(transports);
-  DCHECK(!transports->empty());
-
-  // TODO(vtl)
-  LOG(ERROR) << "Sending handles over remote message pipes not yet supported "
-                "(closing sent handles)";
-  for (size_t i = 0; i < transports->size(); i++)
-    (*transports)[i].Close();
-}
-
-// Note: We may have to enqueue messages even when our (local) peer isn't open
-// -- it may have been written to and closed immediately, before we were ready.
-// This case is handled in |Run()| (which will call us).
-void ProxyMessagePipeEndpoint::EnqueueMessageInternal(
-    MessageInTransit* message) {
-  DCHECK(is_open_);
-
-  if (is_running()) {
-    message->set_source_id(local_id_);
-    message->set_destination_id(remote_id_);
-    // If it fails at this point, the message gets dropped. (This is no
-    // different from any other in-transit errors.)
-    // Note: |WriteMessage()| will destroy the message even on failure.
-    if (!channel_->WriteMessage(message))
-      LOG(WARNING) << "Failed to write message to channel";
-  } else {
-    paused_message_queue_.push_back(message);
-  }
+  while (!paused_message_queue_.IsEmpty())
+    EnqueueMessage(paused_message_queue_.GetMessage());
 }
 
 #ifndef NDEBUG

@@ -32,6 +32,7 @@ Anastasios Cassiotis <tom.cassiotis@gmail.com>
 Andrei Parvu <andrei.prv@gmail.com>
 Andrei Parvu <parvu@adobe.com>
 Andrew Brampton <me@bramp.net>
+Andrew Tulloch <andrew@tullo.ch>
 Antonio Gomes <a1.gomes@sisa.samsung.com>
 Arthur Lussos <developer0420@gmail.com>
 Arun Mankuzhi <arun.m@samsung.com>
@@ -76,7 +77,6 @@ David Erceg <erceg.david@gmail.com>
 David Futcher <david.mike.futcher@gmail.com>
 Derek Halman <d.halman@gmail.com>
 Devlin Cronin <rdevlin.cronin@gmail.com>
-Diego Pino Garcia <dpino@igalia.com>
 Dillon Sellars <dill.sellars@gmail.com>
 Dominic Jodoin <dominic.jodoin@gmail.com>
 Dominik Röttsches <dominik.rottsches@intel.com>
@@ -108,6 +108,7 @@ George Liaskos <geo.liaskos@gmail.com>
 Giuseppe Iuculano <giuseppe@iuculano.it>
 Glenn Adams <glenn@chromium.org>
 Gnanasekar Somanathan <gnanasekar.s@samsung.com>
+Gordana Cmiljanovic <gordana.cmiljanovic@imgtec.com>
 Goutham Jagannatha <wrm364@motorola.com>
 Grzegorz Czajkowski <g.czajkowski@samsung.com>
 Guangzhen Li <guangzhen.li@intel.com>
@@ -120,7 +121,9 @@ Hautio Kari <khautio@gmail.com>
 Hongbo Min <hongbo.min@intel.com>
 Horia Olaru <horia.olaru@gmail.com>
 Horia Olaru <olaru@adobe.com>
+Hosung You <hosung.you@samsung.com>
 Hyunki Baik <hyunki.baik@samsung.com>
+Hyungwook Lee <withlhw@gmail.com>
 Ibrar Ahmed <ibrar.ahmad@gmail.com>
 Ion Rosca <rosca@adobe.com>
 J. Ryan Stinnett <jryans@chromium.org>
@@ -140,6 +143,7 @@ Jesse Miller <jesse@jmiller.biz>
 Jesus Sanchez-Palencia <jesus.sanchez-palencia.fernandez.fil@intel.com>
 Jin Yang <jin.a.yang@intel.com>
 Jingwei Liu <kingweiliu@gmail.com>
+Jingyi Wei <wjywbs@gmail.com>
 Jinho Bang <jinho.bang@samsung.com>
 Jinwoo Song <jinwoo7.song@samsung.com>
 Joe Knoll <joe.knoll@workday.com>
@@ -166,6 +170,7 @@ Kaustubh Atrawalkar <kaustubh.ra@gmail.com>
 Kaustubh Atrawalkar <kaustubh.a@samsung.com>
 Keene Pan <keenepan@linpus.com>
 Kenneth Rohde Christiansen <kenneth.r.christiansen@intel.com>
+Keonho Kim <keonho07.kim@samsung.com>
 Kevin Lee Helpingstine <sig11@reprehensible.net>
 Kevin M. McCormick <mckev@amazon.com>
 Kihong Kwon <kihong.kwon@samsung.com>
@@ -223,6 +228,7 @@ Naveen Bobbili <qghc36@motorola.com>
 Nayan Kumar K <qtc746@motorola.com>
 Nikita Ofitserov <himikof@gmail.com>
 Ningxin Hu <ningxin.hu@intel.com>
+Nitish Mehrotra <nitish.m@samsung.com>
 Pan Deng <pan.deng@intel.com>
 Parag Radke <nrqv63@motorola.com>
 Patrasciuc Sorin Cristian <cristian.patrasciuc@gmail.com>
@@ -236,6 +242,7 @@ Paul Wicks <pwicks86@gmail.com>
 Pavan Kumar Emani <pavan.e@samsung.com>
 Pavel Ivanov <paivanof@gmail.com>
 Paweł Hajdan jr <phajdan.jr@gmail.com>
+Peng Jiang <leiyi.jp@gmail.com>
 Petar Jovanovic <petarj@mips.com>
 Peter Beverloo <peter@chromium.org>
 Peter Bright <drpizza@quiscalusmexicanus.org>
@@ -263,6 +270,7 @@ Rob Buis <rob.buis@samsung.com>
 Rob Wu <rob@robwu.nl>
 Robert Bear Travis <bear.travis@gmail.com>
 Robert Bear Travis <betravis@adobe.com>
+Robert Bradford <robert.bradford@intel.com>
 Robert Goldberg <goldberg@adobe.com>
 Robert Hogan <robhogan@gmail.com>
 Robert Nagy <robert.nagy@gmail.com>
@@ -275,6 +283,8 @@ Ruiyi Luo <luoruiyi2008@gmail.com>
 Ryan Norton <rnorton10@gmail.com>
 Ryan Sleevi <ryan-chromium-dev@sleevi.com>
 Ryuan Choi <ryuan.choi@samsung.com>
+Saikrishna Arcot <saiarcot895@gmail.com>
+Salvatore Iovene <salvatore.iovene@intel.com>
 Sam Larison <qufighter@gmail.com>
 Sam McDonald <sam@sammcd.com>
 Sanjoy Pal <ncj674@motorola.com>
@@ -307,6 +317,9 @@ Sudarsana Babu Nagineni <sudarsana.nagineni@intel.com>
 Sudarshan Parthasarathy <sudarshan.p@samsung.com>
 Sungguk Lim <limasdf@gmail.com>
 Sungmann Cho <sungmann.cho@gmail.com>
+Sungmann Cho <sungmann.cho@navercorp.com>
+Suyash Sengar <suyash.s@samsung.com>
+Sunil Ratnu <sunil.ratnu@samsung.com>
 Sylvain Zimmer <sylvinus@gmail.com>
 Szymon Piechowicz <szymonpiechowicz@o2.pl>
 Takeshi Kurosawa <taken.spc@gmail.com>
@@ -356,6 +369,7 @@ BlackBerry Limited <*@blackberry.com>
 Code Aurora Forum <*@codeaurora.org>
 Comodo CA Limited
 Google Inc. <*@google.com>
+Igalia S.L. <*@igalia.com>
 NVIDIA Corporation <*@nvidia.com>
 Opera Software ASA <*@opera.com>
 The Chromium Authors <*@chromium.org>

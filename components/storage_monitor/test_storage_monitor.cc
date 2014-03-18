@@ -13,6 +13,8 @@
 #include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
 #endif
 
+namespace storage_monitor {
+
 TestStorageMonitor::TestStorageMonitor()
     : StorageMonitor(),
       init_called_(false) {
@@ -85,8 +87,8 @@ bool TestStorageMonitor::GetStorageInfoForPath(
   std::string device_id = StorageInfo::MakeDeviceId(
       StorageInfo::FIXED_MASS_STORAGE, path.AsUTF8Unsafe());
   *device_info =
-      StorageInfo(device_id, path.BaseName().LossyDisplayName(), path.value(),
-                  base::string16(), base::string16(), base::string16(), 0);
+      StorageInfo(device_id, path.value(), base::string16(), base::string16(),
+                  base::string16(), 0);
   return true;
 }
 
@@ -116,3 +118,5 @@ void TestStorageMonitor::EjectDevice(
   ejected_device_ = device_id;
   callback.Run(EJECT_OK);
 }
+
+}  // namespace storage_monitor

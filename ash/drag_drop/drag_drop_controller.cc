@@ -14,9 +14,9 @@
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/drag_drop_delegate.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/hit_test.h"
@@ -114,8 +114,8 @@ class DragDropTrackerDelegate : public aura::WindowDelegate {
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
   }
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE {}
-  virtual void OnWindowDestroying() OVERRIDE {}
-  virtual void OnWindowDestroyed() OVERRIDE {}
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {}
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE {}
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE {}
   virtual bool HasHitTestMask() const OVERRIDE {
     return true;

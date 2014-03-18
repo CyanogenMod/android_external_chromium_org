@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/time/time.h"
 
 class PrefService;
@@ -37,6 +38,10 @@ class VariationsSeedStore {
                      const std::string& base64_seed_signature,
                      const base::Time& date_fetched);
 
+  // Updates |kVariationsSeedDate| and logs when previous date was from a
+  // different day.
+  void UpdateSeedDateAndLogDayChange(const base::Time& server_date_fetched);
+
   // Returns the serial number of the last loaded or stored seed.
   const std::string& variations_serial_number() const {
     return variations_serial_number_;
@@ -45,7 +50,30 @@ class VariationsSeedStore {
   // Registers Local State prefs used by this class.
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
+ protected:
+  // Note: UMA histogram enum - don't re-order or remove entries.
+  enum VerifySignatureResult {
+    VARIATIONS_SEED_SIGNATURE_MISSING,
+    VARIATIONS_SEED_SIGNATURE_DECODE_FAILED,
+    VARIATIONS_SEED_SIGNATURE_INVALID_SIGNATURE,
+    VARIATIONS_SEED_SIGNATURE_INVALID_SEED,
+    VARIATIONS_SEED_SIGNATURE_VALID,
+    VARIATIONS_SEED_SIGNATURE_ENUM_SIZE,
+  };
+
+  // Verifies a variations seed (the serialized proto bytes) with the specified
+  // base-64 encoded signature that was received from the server and returns the
+  // result. The signature is assumed to be an "ECDSA with SHA-256" signature
+  // (see kECDSAWithSHA256AlgorithmID in the .cc file). Returns the result of
+  // signature verification or VARIATIONS_SEED_SIGNATURE_ENUM_SIZE if signature
+  // verification is not enabled.
+  virtual VariationsSeedStore::VerifySignatureResult VerifySeedSignature(
+      const std::string& seed_bytes,
+      const std::string& base64_seed_signature);
+
  private:
+  FRIEND_TEST_ALL_PREFIXES(VariationsSeedStoreTest, VerifySeedSignature);
+
   // Clears all prefs related to variations seed storage.
   void ClearPrefs();
 

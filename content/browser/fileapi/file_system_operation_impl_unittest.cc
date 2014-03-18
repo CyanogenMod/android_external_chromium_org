@@ -12,6 +12,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
+#include "content/browser/fileapi/mock_file_change_observer.h"
 #include "content/public/test/async_file_test_helper.h"
 #include "content/public/test/sandbox_file_system_test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -20,7 +21,6 @@
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/fileapi/mock_file_change_observer.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/browser/quota/mock_quota_manager.h"
 #include "webkit/browser/quota/mock_quota_manager_proxy.h"
@@ -717,7 +717,7 @@ TEST_F(FileSystemOperationImplTest, TestCopyInForeignFileSuccess) {
   base::CreateTemporaryFile(&src_local_disk_file_path);
   const char test_data[] = "foo";
   int data_size = ARRAYSIZE_UNSAFE(test_data);
-  file_util::WriteFile(src_local_disk_file_path, test_data, data_size);
+  base::WriteFile(src_local_disk_file_path, test_data, data_size);
 
   FileSystemURL dest_dir(CreateDirectory("dest"));
 
@@ -749,7 +749,7 @@ TEST_F(FileSystemOperationImplTest, TestCopyInForeignFileFailureByQuota) {
   base::FilePath src_local_disk_file_path;
   base::CreateTemporaryFile(&src_local_disk_file_path);
   const char test_data[] = "foo";
-  file_util::WriteFile(src_local_disk_file_path, test_data,
+  base::WriteFile(src_local_disk_file_path, test_data,
                        ARRAYSIZE_UNSAFE(test_data));
 
   FileSystemURL dest_dir(CreateDirectory("dest"));
@@ -1037,7 +1037,7 @@ TEST_F(FileSystemOperationImplTest, TestTruncate) {
   char test_data[] = "test data";
   int data_size = static_cast<int>(sizeof(test_data));
   EXPECT_EQ(data_size,
-            file_util::WriteFile(platform_path, test_data, data_size));
+            base::WriteFile(platform_path, test_data, data_size));
 
   // Check that its length is the size of the data written.
   operation_runner()->GetMetadata(file, RecordMetadataCallback());

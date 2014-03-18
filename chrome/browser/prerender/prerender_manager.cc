@@ -119,6 +119,7 @@ bool NeedMatchCompleteDummyForFinalStatus(FinalStatus final_status) {
   return final_status != FINAL_STATUS_USED &&
       final_status != FINAL_STATUS_TIMED_OUT &&
       final_status != FINAL_STATUS_MANAGER_SHUTDOWN &&
+      final_status != FINAL_STATUS_PROFILE_DESTROYED &&
       final_status != FINAL_STATUS_APP_TERMINATING &&
       final_status != FINAL_STATUS_WINDOW_OPENER &&
       final_status != FINAL_STATUS_CACHE_OR_HISTORY_CLEARED &&
@@ -288,13 +289,17 @@ PrerenderManager::PrerenderManager(Profile* profile,
       this, chrome::NOTIFICATION_COOKIE_CHANGED,
       content::NotificationService::AllBrowserContextsAndSources());
 
+  notification_registrar_.Add(
+      this, chrome::NOTIFICATION_PROFILE_DESTROYED,
+      content::Source<Profile>(profile_));
+
   MediaCaptureDevicesDispatcher::GetInstance()->AddObserver(this);
 }
 
 PrerenderManager::~PrerenderManager() {
   MediaCaptureDevicesDispatcher::GetInstance()->RemoveObserver(this);
 
-  // The earlier call to BrowserContextKeyedService::Shutdown() should have
+  // The earlier call to KeyedService::Shutdown() should have
   // emptied these vectors already.
   DCHECK(active_prerenders_.empty());
   DCHECK(to_delete_prerenders_.empty());
@@ -625,8 +630,7 @@ WebContents* PrerenderManager::SwapInternal(
     // TODO(davidben): Honor the beforeunload event. http://crbug.com/304932
     on_close_web_contents_deleters_.push_back(
         new OnCloseWebContentsDeleter(this, old_web_contents));
-    old_web_contents->GetRenderViewHost()->
-        FirePageBeforeUnload(false);
+    old_web_contents->GetMainFrame()->DispatchBeforeUnload(false);
   } else {
     // No unload handler to run, so delete asap.
     ScheduleDeleteOldWebContents(old_web_contents, NULL);
@@ -1581,13 +1585,24 @@ bool PrerenderManager::IsEnabled() const {
 void PrerenderManager::Observe(int type,
                                const content::NotificationSource& source,
                                const content::NotificationDetails& details) {
-  Profile* profile = content::Source<Profile>(source).ptr();
-  if (!profile || !profile_->IsSameProfile(profile) ||
-      profile->IsOffTheRecord()) {
-    return;
+  switch (type) {
+    case chrome::NOTIFICATION_COOKIE_CHANGED: {
+      Profile* profile = content::Source<Profile>(source).ptr();
+      if (!profile || !profile_->IsSameProfile(profile) ||
+          profile->IsOffTheRecord()) {
+        return;
+      }
+      CookieChanged(content::Details<ChromeCookieDetails>(details).ptr());
+      break;
+    }
+    case chrome::NOTIFICATION_PROFILE_DESTROYED:
+      DestroyAllContents(FINAL_STATUS_PROFILE_DESTROYED);
+      on_close_web_contents_deleters_.clear();
+      break;
+    default:
+      NOTREACHED() << "Unexpected notification sent.";
+      break;
   }
-  DCHECK(type == chrome::NOTIFICATION_COOKIE_CHANGED);
-  CookieChanged(content::Details<ChromeCookieDetails>(details).ptr());
 }
 
 void PrerenderManager::OnCreatingAudioStream(int render_process_id,

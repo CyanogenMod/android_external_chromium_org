@@ -323,8 +323,14 @@ class ASH_EXPORT SystemTrayDelegate {
   // to be switched to the new user.
   // Note: This will happen after SessionStateObserver::ActiveUserChanged fires.
   virtual void ActiveUserWasChanged() = 0;
-};
 
+  // Returns true when |network| is behind captive portal.
+  virtual bool IsNetworkBehindCaptivePortal(
+      const std::string& service_path) const = 0;
+
+  // Returns true when the Search key is configured to be treated as Caps Lock.
+  virtual bool IsSearchKeyMappedToCapsLock() = 0;
+};
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_TRAY_SYSTEM_TRAY_DELEGATE_H_

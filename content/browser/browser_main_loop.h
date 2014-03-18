@@ -11,9 +11,8 @@
 #include "content/browser/browser_process_sub_thread.h"
 #include "content/public/browser/browser_main_runner.h"
 
-class CommandLine;
-
 namespace base {
+class CommandLine;
 class FilePath;
 class HighResolutionTimerManager;
 class MessageLoop;
@@ -101,6 +100,12 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   bool is_tracing_startup() const { return is_tracing_startup_; }
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  DeviceMonitorMac* device_monitor_mac() const {
+    return device_monitor_mac_.get();
+  }
+#endif
+
  private:
   class MemoryObserver;
   // For ShutdownThreadsAndCleanUp.
@@ -121,12 +126,12 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   void MainMessageLoopRun();
 
-  void InitStartupTracing(const CommandLine& command_line);
+  void InitStartupTracing(const base::CommandLine& command_line);
   void EndStartupTracing(const base::FilePath& trace_file);
 
   // Members initialized on construction ---------------------------------------
   const MainFunctionParams& parameters_;
-  const CommandLine& parsed_command_line_;
+  const base::CommandLine& parsed_command_line_;
   int result_code_;
   // True if the non-UI threads were created.
   bool created_threads_;

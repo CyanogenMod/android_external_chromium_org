@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/callback_forward.h"
 #include "base/threading/non_thread_safe.h"
-#include "chrome/browser/invalidation/invalidation_logger.h"
 #include "chrome/browser/invalidation/invalidation_service.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 
 #ifndef CHROME_BROWSER_INVALIDATION_P2P_INVALIDATION_SERVICE_H_
 #define CHROME_BROWSER_INVALIDATION_P2P_INVALIDATION_SERVICE_H_
@@ -18,6 +18,8 @@ class Profile;
 
 namespace invalidation {
 
+class InvalidationLogger;
+
 // This service is a wrapper around P2PInvalidator.  Unlike other
 // InvalidationServices, it can both send and receive invalidations.  It is used
 // only in tests, where we're unable to connect to a real invalidations server.
@@ -28,7 +30,7 @@ class P2PInvalidationService
   explicit P2PInvalidationService(Profile* profile);
   virtual ~P2PInvalidationService();
 
-  // Overrides BrowserContextKeyedService method.
+  // Overrides KeyedService method.
   virtual void Shutdown() OVERRIDE;
 
   // InvalidationService implementation.
@@ -43,6 +45,8 @@ class P2PInvalidationService
   virtual syncer::InvalidatorState GetInvalidatorState() const OVERRIDE;
   virtual std::string GetInvalidatorClientId() const OVERRIDE;
   virtual InvalidationLogger* GetInvalidationLogger() OVERRIDE;
+  virtual void RequestDetailedStatus(
+      base::Callback<void(const base::DictionaryValue&)> caller) OVERRIDE;
 
   void UpdateCredentials(const std::string& username,
                          const std::string& password);

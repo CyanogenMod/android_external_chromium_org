@@ -18,6 +18,7 @@
 #import "ui/base/cocoa/appkit_utils.h"
 #import "ui/base/cocoa/tracking_area.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 using extensions::FeatureSwitch;
 
@@ -40,8 +41,7 @@ NSString* const kButtonDecorationKey = @"ButtonDecoration";
 const ui::NinePartImageIds kPopupBorderImageIds =
     IMAGE_GRID(IDR_OMNIBOX_POPUP_BORDER_AND_SHADOW);
 
-const ui::NinePartImageIds kNormalBorderImageIds =
-    IMAGE_GRID(IDR_OMNIBOX_BORDER_AND_SHADOW);
+const ui::NinePartImageIds kNormalBorderImageIds = IMAGE_GRID(IDR_TEXTFIELD);
 
 // How long to wait for mouse-up on the location icon before assuming
 // that the user wants to drag.
@@ -140,7 +140,7 @@ size_t CalculatePositionsInFrame(
 
   // Layout |left_decorations| against the LHS.
   CalculatePositionsHelper(frame, left_decorations, NSMinXEdge,
-                           kLeftDecorationXOffset, kLeftDecorationXOffset,
+                           kLeftDecorationXOffset, edge_width,
                            decorations, decoration_frames, &frame);
   DCHECK_EQ(decorations->size(), decoration_frames->size());
 
@@ -164,6 +164,12 @@ size_t CalculatePositionsInFrame(
 }
 
 }  // namespace
+
+@interface AutocompleteTextFieldCell ()
+// Post an OnSetFocus notification to the observer of |controlView|.
+- (void)focusNotificationFor:(NSEvent*)event
+                      ofView:(AutocompleteTextField*)controlView;
+@end
 
 @implementation AutocompleteTextFieldCell
 
@@ -324,9 +330,6 @@ size_t CalculatePositionsInFrame(
                                      yRadius:kCornerRadius] fill];
   }
 
-  // Interior contents.
-  [self drawInteriorWithFrame:frame inView:controlView];
-
   // Border.
   ui::DrawNinePartImage(frame,
                         isPopupMode_ ? kPopupBorderImageIds
@@ -334,6 +337,10 @@ size_t CalculatePositionsInFrame(
                         NSCompositeSourceOver,
                         1.0,
                         true);
+
+  // Interior contents. Drawn after the border as some of the interior controls
+  // draw over the border.
+  [self drawInteriorWithFrame:frame inView:controlView];
 
   // Focus ring.
   if ([self showsFirstResponder]) {
@@ -371,7 +378,16 @@ size_t CalculatePositionsInFrame(
   // |-textFrameForFrame:|.
 
   // Superclass draws text portion WRT original |cellFrame|.
-  [super drawInteriorWithFrame:cellFrame inView:controlView];
+  // Even though -isOpaque is NO due to rounded corners, we know that the text
+  // will be drawn on top of an opaque area, therefore it is safe to enable
+  // font smoothing.
+  {
+    gfx::ScopedNSGraphicsContextSaveGState scopedGState;
+    NSGraphicsContext* context = [NSGraphicsContext currentContext];
+    CGContextRef cgContext = static_cast<CGContextRef>([context graphicsPort]);
+    CGContextSetShouldSmoothFonts(cgContext, true);
+    [super drawInteriorWithFrame:cellFrame inView:controlView];
+  }
 }
 
 - (LocationBarDecoration*)decorationForEvent:(NSEvent*)theEvent
@@ -410,6 +426,15 @@ size_t CalculatePositionsInFrame(
 - (BOOL)mouseDown:(NSEvent*)theEvent
            inRect:(NSRect)cellFrame
            ofView:(AutocompleteTextField*)controlView {
+  // TODO(groby): Factor this into three pieces - find target for event, handle
+  // delayed focus (for any and all events), execute mouseDown for target.
+
+  // Check if this mouseDown was the reason the control became firstResponder.
+  // If not, discard focus event.
+  base::scoped_nsobject<NSEvent> focusEvent(focusEvent_.release());
+  if (![theEvent isEqual:focusEvent])
+    focusEvent.reset();
+
   LocationBarDecoration* decoration =
       [self decorationForEvent:theEvent inRect:cellFrame ofView:controlView];
   if (!decoration || !decoration->AcceptsMousePress())
@@ -480,13 +505,16 @@ size_t CalculatePositionsInFrame(
               ofView:controlView
         untilMouseUp:YES];
 
+    // Post delayed focus notification, if necessary.
+    if (focusEvent.get())
+      [self focusNotificationFor:focusEvent ofView:controlView];
+
     // Set the proper state (hover or normal) once the mouse has been released,
     // and call |OnMousePressed| if the button was released while the mouse was
     // within the bounds of the button.
-    const NSPoint mouseLocation =
-        [[controlView window] mouseLocationOutsideOfEventStream];
+    const NSPoint mouseLocation = [[NSApp currentEvent] locationInWindow];
     const NSPoint point = [controlView convertPoint:mouseLocation fromView:nil];
-    if (NSMouseInRect(point, cellFrame, [controlView isFlipped])) {
+    if (NSMouseInRect(point, decorationRect, [controlView isFlipped])) {
       button->SetButtonState(ButtonDecoration::kButtonStateHover);
       [controlView setNeedsDisplay:YES];
       handled = decoration->AsButtonDecoration()->OnMousePressed(
@@ -804,6 +832,33 @@ static NSString* UnusedLegalNameForNewDropFile(NSURL* saveLocation,
 
 - (BOOL)showsFirstResponder {
   return [super showsFirstResponder] && !hideFocusState_;
+}
+
+- (void)focusNotificationFor:(NSEvent*)event
+                      ofView:(AutocompleteTextField*)controlView {
+  if ([controlView observer]) {
+    const bool controlDown = ([event modifierFlags] & NSControlKeyMask) != 0;
+    [controlView observer]->OnSetFocus(controlDown);
+  }
+}
+
+- (void)handleFocusEvent:(NSEvent*)event
+                  ofView:(AutocompleteTextField*)controlView {
+  // Only intercept left button click. All other events cause immediate focus.
+  if ([event type] == NSLeftMouseDown) {
+    LocationBarDecoration* decoration =
+        [self decorationForEvent:event
+                          inRect:[controlView bounds]
+                          ofView:controlView];
+    // Only ButtonDecorations need a delayed focus handling.
+    if (decoration && decoration->AsButtonDecoration()) {
+      focusEvent_.reset([event retain]);
+      return;
+    }
+  }
+
+  // Handle event immediately.
+  [self focusNotificationFor:event ofView:controlView];
 }
 
 @end

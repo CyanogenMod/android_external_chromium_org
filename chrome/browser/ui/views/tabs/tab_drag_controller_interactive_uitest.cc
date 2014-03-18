@@ -52,8 +52,8 @@
 #include "ash/wm/window_util.h"
 #include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 using content::WebContents;
@@ -220,9 +220,9 @@ class ScreenEventGeneratorDelegate : public aura::test::EventGeneratorDelegate {
   virtual ~ScreenEventGeneratorDelegate() {}
 
   // EventGeneratorDelegate overrides:
-  virtual aura::RootWindow* GetRootWindowAt(
+  virtual aura::WindowTreeHost* GetHostAt(
       const gfx::Point& point) const OVERRIDE {
-    return root_window_->GetDispatcher();
+    return root_window_->GetHost();
   }
 
   virtual aura::client::ScreenPositionClient* GetScreenPositionClient(
@@ -325,7 +325,6 @@ IN_PROC_BROWSER_TEST_F(TabDragControllerTest, GestureEndShouldEndDragTest) {
   AddTabAndResetBrowser(browser());
 
   TabStrip* tab_strip = GetTabStripForBrowser(browser());
-  TabStripModel* model = browser()->tab_strip_model();
 
   Tab* tab1 = tab_strip->tab_at(1);
   gfx::Point tab_1_center(tab1->width() / 2, tab1->height() / 2);

@@ -26,14 +26,14 @@ name=GoogleDesktop LEAK
 ...
 GoogleDesktopNetwork3.DLL!DllUnregisterServer
 
-# They deliberately use uninit local var in sqlite random generator
-# random byte may mess up the call stack between randomByte and
-# sqlite3_randomness
+# They deliberately use uninit local var in sqlite random generator.
+# Random bytes may mess up the call stack between randomByte and
+# sqlite3_* frames (http://code.google.com/p/drmemory/issues/detail?id=851).
 UNINITIALIZED READ
 name=sqlite3_randomness UNINIT
 *!randomByte
 ...
-*!sqlite3_randomness
+*!sqlite3*
 
 # Intentional leak in WebKit Template Framework for ThreadData.
 LEAK
@@ -1080,7 +1080,7 @@ nspr4.dll!*
 UNINITIALIZED READ
 name=http://crbug.com/64887 (GMock printing uninit data)
 ...
-*!testing::internal2::PrintBytesInObjectTo
+*!testing::*::PrintBytesInObjectTo*
 
 ###############################################################
 # Proactively borrowed from memcheck/suppressions.txt.
@@ -1854,12 +1854,6 @@ freebl3.dll!FREEBL_GetVector
 ...
 softokn3.dll!NSC_ModuleDBFunc
 
-LEAK
-name=http://crbug.com/92166
-...
-*!replace_operator_new
-*!views::NativeWidgetWin::OnCreate
-
 # Possible real Chromium issue in DoCrossfade.
 UNINITIALIZED READ
 name=http://crbug.com/110049
@@ -1946,3 +1940,87 @@ name=http://crbug.com/125807
 *!operator new
 *!TransportSecurityPersister::TransportSecurityPersister
 *!TransportSecurityPersisterTest::TransportSecurityPersisterTest
+
+UNINITIALIZED READ
+name=bug_113076
+*!media::ConvertYUVToRGB32_C
+*!media::LinearScaleYUVToRGB32RowWithRange_C
+*!media::ScaleYUVToRGB32WithRect
+
+UNINITIALIZED READ
+name=bug_343248
+osmesa.dll!LINTERP
+osmesa.dll!INTERP_4F
+osmesa.dll!_tnl_generic_interp
+
+UNADDRESSABLE ACCESS
+name=bug_340752
+blink_heap.dll!WebCore::ThreadState::visitStack
+blink_heap.dll!WebCore::ThreadState::trace
+blink_heap.dll!WebCore::ThreadState::visitRoots
+
+UNINITIALIZED READ
+name=bug_343663
+blink_web.dll!WebCore::RenderBlock::computeInlinePreferredLogicalWidths
+
+UNINITIALIZED READ
+name=bug_343797
+...
+blink_web.dll!WebCore::MediaQueryExp::create
+blink_web.dll!WebCore::BisonCSSParser::createFloatingMediaQueryExp
+blink_web.dll!cssyyparse
+
+UNINITIALIZED READ
+name=bug_343915
+blink_web.dll!WebCore::BisonCSSParser::parseFlex
+blink_web.dll!WebCore::BisonCSSParser::parseValue
+blink_web.dll!cssyyparse
+
+UNADDRESSABLE ACCESS
+name=BUG_343958
+blink_web.dll!WebCore::Node::getFlag
+blink_web.dll!WebCore::Node::inDocument
+blink_web.dll!WebCore::Node::isDescendantOf
+blink_web.dll!WebCore::CompositeEditCommand::cloneParagraphUnderNewElement
+blink_web.dll!WebCore::CompositeEditCommand::moveParagraphWithClones
+
+UNINITIALIZED READ
+name=BUG_344076
+blink_web.dll!WebCore::Editor::canSmartReplaceWithPasteboard
+blink_web.dll!WebCore::Editor::pasteAsPlainTextWithPasteboard
+blink_web.dll!WebCore::Editor::pasteAsPlainText
+blink_web.dll!WebCore::executePasteAndMatchStyle
+blink_web.dll!WebCore::Editor::Command::execute
+blink_web.dll!WebCore::Document::execCommand
+
+UNINITIALIZED READ
+name=BUG_349128
+content.dll!std::*
+...
+content.dll!content::BrowserAccessibilityManagerWin::*
+...
+content.dll!content::BrowserAccessibilityManager::UpdateNode
+content.dll!content::BrowserAccessibilityManager::UpdateNodes
+
+UNINITIALIZED READ
+name=bug_347976
+osmesa.dll!unpack_RGB*888
+osmesa.dll!_mesa_unpack_rgba_row
+osmesa.dll!slow_read_rgba_pixels
+osmesa.dll!read_rgba_pixels
+osmesa.dll!_mesa_readpixels
+...
+gpu.dll!gpu::gles2::GLES2DecoderImpl::DoCommand
+gpu.dll!gpu::CommandParser::ProcessCommand
+gpu.dll!gpu::GpuScheduler::PutChanged
+
+UNINITIALIZED READ
+name=bug_347976,bug_348357
+osmesa.dll!clip_span
+osmesa.dll!_swrast_write_rgba_span
+osmesa.dll!general_triangle
+...
+gpu.dll!gpu::gles2::GLES2DecoderImpl::DoDrawElements
+gpu.dll!gpu::gles2::GLES2DecoderImpl::HandleDrawElements
+gpu.dll!gpu::gles2::GLES2DecoderImpl::DoCommand
+gpu.dll!gpu::CommandParser::ProcessCommand

@@ -13,24 +13,23 @@
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/net/net_error_tab_helper.h"
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
-#include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/prerender/prerender_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ssl/ssl_tab_helper.h"
 #include "chrome/browser/tab_contents/navigation_metrics_recorder.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
-#include "chrome/browser/ui/alternate_error_tab_observer.h"
 #include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
+#include "chrome/browser/ui/navigation_correction_tab_observer.h"
 #include "chrome/browser/ui/prefs/prefs_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/profile_management_switches.h"
-#include "components/autofill/content/browser/autofill_driver_impl.h"
+#include "components/autofill/content/browser/content_autofill_driver.h"
 #include "components/autofill/core/browser/autofill_manager.h"
+#include "components/password_manager/core/browser/password_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/view_type_utils.h"
 
@@ -44,7 +43,6 @@
 #include "chrome/browser/external_protocol/external_protocol_observer.h"
 #include "chrome/browser/net/predictor_tab_helper.h"
 #include "chrome/browser/network_time/navigation_time_helper.h"
-#include "chrome/browser/password_manager/password_generation_manager.h"
 #include "chrome/browser/plugins/plugin_observer.h"
 #include "chrome/browser/safe_browsing/safe_browsing_tab_observer.h"
 #include "chrome/browser/thumbnails/thumbnail_tab_helper.h"
@@ -120,9 +118,8 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
 
   // --- Common tab helpers ---
 
-  AlternateErrorPageTabObserver::CreateForWebContents(web_contents);
   autofill::TabAutofillManagerDelegate::CreateForWebContents(web_contents);
-  autofill::AutofillDriverImpl::CreateForWebContentsAndDelegate(
+  autofill::ContentAutofillDriver::CreateForWebContentsAndDelegate(
       web_contents,
       autofill::TabAutofillManagerDelegate::FromWebContents(web_contents),
       g_browser_process->GetApplicationLocale(),
@@ -135,6 +132,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   FindTabHelper::CreateForWebContents(web_contents);
   HistoryTabHelper::CreateForWebContents(web_contents);
   InfoBarService::CreateForWebContents(web_contents);
+  NavigationCorrectionTabObserver::CreateForWebContents(web_contents);
   NavigationMetricsRecorder::CreateForWebContents(web_contents);
   ChromePasswordManagerClient::CreateForWebContents(web_contents);
   PopupBlockerTabHelper::CreateForWebContents(web_contents);
@@ -204,10 +202,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   // because the connected state may change while this tab is open.  Having a
   // one-click signin helper attached does not cause problems if the profile
   // happens to be already connected.
-  // TODO(vabr): The check IsEnableWebBasedSignin is a hack for the time when
-  // OneClickSignin is disabled. http://crbug.com/339804
-  if (switches::IsEnableWebBasedSignin() &&
-      OneClickSigninHelper::CanOffer(web_contents,
+  if (OneClickSigninHelper::CanOffer(web_contents,
                                      OneClickSigninHelper::CAN_OFFER_FOR_ALL,
                                      std::string(),
                                      NULL)) {

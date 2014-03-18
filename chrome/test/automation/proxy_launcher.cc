@@ -9,6 +9,7 @@
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
+#include "base/files/scoped_file.h"
 #include "base/process/kill.h"
 #include "base/process/launch.h"
 #include "base/strings/string_number_conversions.h"
@@ -98,7 +99,7 @@ void UpdateHistoryDates(const base::FilePath& user_data_dir) {
       yesterday_str.c_str());
   ASSERT_TRUE(db.Execute(query.c_str()));
   db.Close();
-  file_util::EvictFileFromSystemCache(history);
+  base::EvictFileFromSystemCache(history);
 }
 
 }  // namespace
@@ -122,8 +123,6 @@ ProxyLauncher::ProxyLauncher()
                             switches::kFullMemoryCrashReport)),
       show_error_dialogs_(CommandLine::ForCurrentProcess()->HasSwitch(
                               switches::kEnableErrorDialogs)),
-      enable_dcheck_(CommandLine::ForCurrentProcess()->HasSwitch(
-                         switches::kEnableDCHECK)),
       silent_dump_on_dcheck_(CommandLine::ForCurrentProcess()->HasSwitch(
                                  switches::kSilentDumpOnDCHECK)),
       disable_breakpad_(CommandLine::ForCurrentProcess()->HasSwitch(
@@ -428,8 +427,6 @@ void ProxyLauncher::PrepareTestCommandline(CommandLine* command_line,
     command_line->AppendSwitch(switches::kNoSandbox);
   if (full_memory_dump_)
     command_line->AppendSwitch(switches::kFullMemoryCrashReport);
-  if (enable_dcheck_)
-    command_line->AppendSwitch(switches::kEnableDCHECK);
   if (silent_dump_on_dcheck_)
     command_line->AppendSwitch(switches::kSilentDumpOnDCHECK);
   if (disable_breakpad_)
@@ -493,12 +490,11 @@ bool ProxyLauncher::LaunchBrowserHelper(const LaunchState& state,
 #if defined(OS_WIN)
   options.start_hidden = !state.show_window;
 #elif defined(OS_POSIX)
-  int ipcfd = -1;
-  file_util::ScopedFD ipcfd_closer(&ipcfd);
+  base::ScopedFD ipcfd;
   base::FileHandleMappingVector fds;
   if (main_launch && automation_proxy_.get()) {
-    ipcfd = automation_proxy_->channel()->TakeClientFileDescriptor();
-    fds.push_back(std::make_pair(ipcfd,
+    ipcfd.reset(automation_proxy_->channel()->TakeClientFileDescriptor());
+    fds.push_back(std::make_pair(ipcfd.get(),
         kPrimaryIPCChannel + base::GlobalDescriptors::kBaseDescriptor));
     options.fds_to_remap = &fds;
   }

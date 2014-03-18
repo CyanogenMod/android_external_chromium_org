@@ -40,6 +40,7 @@
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/process_type.h"
+#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_switches.h"
 #include "native_client/src/shared/imc/nacl_imc_c.h"
@@ -63,7 +64,6 @@
 #include "components/nacl/browser/nacl_broker_service_win.h"
 #include "components/nacl/common/nacl_debug_exception_handler_win.h"
 #include "content/public/common/sandbox_init.h"
-#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #endif
 
 using content::BrowserThread;
@@ -95,6 +95,22 @@ void FindAddressSpace(base::ProcessHandle process,
     addr += info.RegionSize;
   }
 }
+
+#ifdef _DLL
+
+bool IsInPath(const std::string& path_env_var, const std::string& dir) {
+  std::vector<std::string> split;
+  base::SplitString(path_env_var, ';', &split);
+  for (std::vector<std::string>::const_iterator i(split.begin());
+       i != split.end();
+       ++i) {
+    if (*i == dir)
+      return true;
+  }
+  return false;
+}
+
+#endif  // _DLL
 
 }  // namespace
 
@@ -128,14 +144,21 @@ bool RunningOnWOW64() {
   return (base::win::OSInfo::GetInstance()->wow64_status() ==
           base::win::OSInfo::WOW64_ENABLED);
 }
+#endif
 
 // NOTE: changes to this class need to be reviewed by the security team.
 class NaClSandboxedProcessLauncherDelegate
     : public content::SandboxedProcessLauncherDelegate {
  public:
-  NaClSandboxedProcessLauncherDelegate() {}
+  NaClSandboxedProcessLauncherDelegate(ChildProcessHost* host)
+#if defined(OS_POSIX)
+      : ipc_fd_(host->TakeClientFileDescriptor())
+#endif
+  {}
+
   virtual ~NaClSandboxedProcessLauncherDelegate() {}
 
+#if defined(OS_WIN)
   virtual void PostSpawnTarget(base::ProcessHandle process) {
     // For Native Client sel_ldr processes on 32-bit Windows, reserve 1 GB of
     // address space to prevent later failure due to address space fragmentation
@@ -148,9 +171,20 @@ class NaClSandboxedProcessLauncherDelegate
       DLOG(WARNING) << "Failed to reserve address space for Native Client";
     }
   }
-};
-
+#elif defined(OS_POSIX)
+  virtual bool ShouldUseZygote() OVERRIDE {
+    return true;
+  }
+  virtual int GetIpcFd() OVERRIDE {
+    return ipc_fd_;
+  }
 #endif  // OS_WIN
+
+ private:
+#if defined(OS_POSIX)
+  int ipc_fd_;
+#endif  // OS_POSIX
+};
 
 void SetCloseOnExec(NaClHandle fd) {
 #if defined(OS_POSIX)
@@ -221,6 +255,7 @@ NaClProcessHost::NaClProcessHost(const GURL& manifest_url,
                                  int render_view_id,
                                  uint32 permission_bits,
                                  bool uses_irt,
+                                 bool uses_nonsfi_mode,
                                  bool enable_dyncode_syscalls,
                                  bool enable_exception_handling,
                                  bool enable_crash_throttling,
@@ -238,6 +273,7 @@ NaClProcessHost::NaClProcessHost(const GURL& manifest_url,
       internal_(new NaClInternal()),
       weak_factory_(this),
       uses_irt_(uses_irt),
+      uses_nonsfi_mode_(uses_nonsfi_mode),
       enable_debug_stub_(false),
       enable_dyncode_syscalls_(enable_dyncode_syscalls),
       enable_exception_handling_(enable_exception_handling),
@@ -325,8 +361,15 @@ void NaClProcessHost::EarlyStartup() {
   UMA_HISTOGRAM_BOOLEAN(
       "NaCl.enable-nacl-debug",
       cmd->HasSwitch(switches::kEnableNaClDebug));
-  NaClBrowser::GetDelegate()->SetDebugPatterns(
-      cmd->GetSwitchValueASCII(switches::kNaClDebugMask));
+  std::string nacl_debug_mask =
+      cmd->GetSwitchValueASCII(switches::kNaClDebugMask);
+  // By default, exclude debugging SSH and the PNaCl translator.
+  // about::flags only allows empty flags as the default, so replace
+  // the empty setting with the default. To debug all apps, use a wild-card.
+  if (nacl_debug_mask.empty()) {
+    nacl_debug_mask = "!*://*/*ssh_client.nmf,chrome://pnacl-translator/*";
+  }
+  NaClBrowser::GetDelegate()->SetDebugPatterns(nacl_debug_mask);
 }
 
 void NaClProcessHost::Launch(
@@ -478,12 +521,6 @@ bool NaClProcessHost::LaunchSelLdr() {
     return false;
   }
 
-  CommandLine::StringType nacl_loader_prefix;
-#if defined(OS_POSIX)
-  nacl_loader_prefix = CommandLine::ForCurrentProcess()->GetSwitchValueNative(
-      switches::kNaClLoaderCmdPrefix);
-#endif  // defined(OS_POSIX)
-
   // Build command line for nacl.
 
 #if defined(OS_MACOSX)
@@ -495,8 +532,7 @@ bool NaClProcessHost::LaunchSelLdr() {
   // http://code.google.com/p/nativeclient/issues/detail?id=2043.
   int flags = ChildProcessHost::CHILD_NO_PIE;
 #elif defined(OS_LINUX)
-  int flags = nacl_loader_prefix.empty() ? ChildProcessHost::CHILD_ALLOW_SELF :
-                                           ChildProcessHost::CHILD_NORMAL;
+  int flags = ChildProcessHost::CHILD_ALLOW_SELF;
 #else
   int flags = ChildProcessHost::CHILD_NORMAL;
 #endif
@@ -512,6 +548,33 @@ bool NaClProcessHost::LaunchSelLdr() {
       SendErrorToRenderer("could not get path to nacl64.exe");
       return false;
     }
+
+#ifdef _DLL
+    // When using the DLL CRT on Windows, we need to amend the PATH to include
+    // the location of the x64 CRT DLLs. This is only the case when using a
+    // component=shared_library build (i.e. generally dev debug builds). The
+    // x86 CRT DLLs are in e.g. out\Debug for chrome.exe etc., so the x64 ones
+    // are put in out\Debug\x64 which we add to the PATH here so that loader
+    // can find them. See http://crbug.com/346034.
+    scoped_ptr<base::Environment> env(base::Environment::Create());
+    static const char kPath[] = "PATH";
+    std::string old_path;
+    base::FilePath module_path;
+    if (!PathService::Get(base::FILE_MODULE, &module_path)) {
+      SendErrorToRenderer("could not get path to current module");
+      return false;
+    }
+    std::string x64_crt_path =
+        base::WideToUTF8(module_path.DirName().Append(L"x64").value());
+    if (!env->GetVar(kPath, &old_path)) {
+      env->SetVar(kPath, x64_crt_path);
+    } else if (!IsInPath(old_path, x64_crt_path)) {
+      std::string new_path(old_path);
+      new_path.append(";");
+      new_path.append(x64_crt_path);
+      env->SetVar(kPath, new_path);
+    }
+#endif  // _DLL
   }
 #endif
 
@@ -524,9 +587,6 @@ bool NaClProcessHost::LaunchSelLdr() {
   if (NaClBrowser::GetDelegate()->DialogsAreSuppressed())
     cmd_line->AppendSwitch(switches::kNoErrorDialogs);
 
-  if (!nacl_loader_prefix.empty())
-    cmd_line->PrependWrapper(nacl_loader_prefix);
-
   // On Windows we might need to start the broker process to launch a new loader
 #if defined(OS_WIN)
   if (RunningOnWOW64()) {
@@ -535,17 +595,12 @@ bool NaClProcessHost::LaunchSelLdr() {
       SendErrorToRenderer("broker service did not launch process");
       return false;
     }
-  } else {
-    process_->Launch(new NaClSandboxedProcessLauncherDelegate,
-                     false,
-                     cmd_line.release());
+    return true;
   }
-#elif defined(OS_POSIX)
-  process_->Launch(nacl_loader_prefix.empty(),  // use_zygote
-                   base::EnvironmentMap(),
-                   cmd_line.release());
 #endif
-
+  process_->Launch(
+      new NaClSandboxedProcessLauncherDelegate(process_->GetHost()),
+      cmd_line.release());
   return true;
 }
 
@@ -580,13 +635,14 @@ void NaClProcessHost::OnResourcesReady() {
   if (!nacl_browser->IsReady()) {
     SendErrorToRenderer("could not acquire shared resources needed by NaCl");
     delete this;
-  } else if (!SendStart()) {
+  } else if (!StartNaClExecution()) {
     delete this;
   }
 }
 
 bool NaClProcessHost::ReplyToRenderer(
-    const IPC::ChannelHandle& channel_handle) {
+    const IPC::ChannelHandle& ppapi_channel_handle,
+    const IPC::ChannelHandle& trusted_channel_handle) {
 #if defined(OS_WIN)
   // If we are on 64-bit Windows, the NaCl process's sandbox is
   // managed by a different process from the renderer's sandbox.  We
@@ -601,7 +657,7 @@ bool NaClProcessHost::ReplyToRenderer(
   }
 #endif
 
-  FileDescriptor handle_for_renderer;
+  FileDescriptor imc_handle_for_renderer;
 #if defined(OS_WIN)
   // Copy the handle into the renderer process.
   HANDLE handle_in_renderer;
@@ -616,7 +672,7 @@ bool NaClProcessHost::ReplyToRenderer(
     SendErrorToRenderer("DuplicateHandle() failed");
     return false;
   }
-  handle_for_renderer = reinterpret_cast<FileDescriptor>(
+  imc_handle_for_renderer = reinterpret_cast<FileDescriptor>(
       handle_in_renderer);
 #else
   // No need to dup the imc_handle - we don't pass it anywhere else so
@@ -624,15 +680,16 @@ bool NaClProcessHost::ReplyToRenderer(
   FileDescriptor imc_handle;
   imc_handle.fd = internal_->socket_for_renderer;
   imc_handle.auto_close = true;
-  handle_for_renderer = imc_handle;
+  imc_handle_for_renderer = imc_handle;
 #endif
 
   const ChildProcessData& data = process_->GetData();
   SendMessageToRenderer(
-      NaClLaunchResult(handle_for_renderer,
-                             channel_handle,
-                             base::GetProcId(data.handle),
-                             data.id),
+      NaClLaunchResult(imc_handle_for_renderer,
+                       ppapi_channel_handle,
+                       trusted_channel_handle,
+                       base::GetProcId(data.handle),
+                       data.id),
       std::string() /* error_message */);
   internal_->socket_for_renderer = NACL_INVALID_HANDLE;
   return true;
@@ -710,8 +767,7 @@ bool NaClProcessHost::StartNaClExecution() {
   params.enable_ipc_proxy = enable_ppapi_proxy();
   params.uses_irt = uses_irt_;
   params.enable_dyncode_syscalls = enable_dyncode_syscalls_;
-  params.enable_nonsfi_mode = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableNaClNonSfiMode);
+  params.uses_nonsfi_mode = uses_nonsfi_mode_;
 
   const ChildProcessData& data = process_->GetData();
   if (!ShareHandleToSelLdr(data.handle,
@@ -761,27 +817,36 @@ bool NaClProcessHost::StartNaClExecution() {
   }
 #endif
 
+  if (params.uses_nonsfi_mode) {
+#if defined(OS_LINUX)
+    const bool kNonSFIModeSupported = true;
+#else
+    const bool kNonSFIModeSupported = false;
+#endif
+    if (!kNonSFIModeSupported ||
+        !CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kEnableNaClNonSfiMode)) {
+      return false;
+    }
+  }
+
   process_->Send(new NaClProcessMsg_Start(params));
 
   internal_->socket_for_sel_ldr = NACL_INVALID_HANDLE;
   return true;
 }
 
-bool NaClProcessHost::SendStart() {
-  if (!enable_ppapi_proxy()) {
-    if (!ReplyToRenderer(IPC::ChannelHandle()))
-      return false;
-  }
-  return StartNaClExecution();
-}
-
 // This method is called when NaClProcessHostMsg_PpapiChannelCreated is
 // received.
 void NaClProcessHost::OnPpapiChannelsCreated(
     const IPC::ChannelHandle& browser_channel_handle,
-    const IPC::ChannelHandle& renderer_channel_handle) {
-  // Only renderer processes should create a channel.
-  DCHECK(enable_ppapi_proxy());
+    const IPC::ChannelHandle& ppapi_renderer_channel_handle,
+    const IPC::ChannelHandle& trusted_renderer_channel_handle) {
+  if (!enable_ppapi_proxy()) {
+    ReplyToRenderer(IPC::ChannelHandle(), trusted_renderer_channel_handle);
+    return;
+  }
+
   if (!ipc_proxy_channel_.get()) {
     DCHECK_EQ(PROCESS_TYPE_NACL_LOADER, process_->GetData().process_type);
 
@@ -830,7 +895,8 @@ void NaClProcessHost::OnPpapiChannelsCreated(
     ipc_proxy_channel_->Send(new PpapiMsg_InitializeNaClDispatcher(args));
 
     // Let the renderer know that the IPC channels are established.
-    ReplyToRenderer(renderer_channel_handle);
+    ReplyToRenderer(ppapi_renderer_channel_handle,
+                    trusted_renderer_channel_handle);
   } else {
     // Attempt to open more than 1 browser channel is not supported.
     // Shut down the NaCl process.
@@ -842,7 +908,7 @@ bool NaClProcessHost::StartWithLaunchedProcess() {
   NaClBrowser* nacl_browser = NaClBrowser::GetInstance();
 
   if (nacl_browser->IsReady()) {
-    return SendStart();
+    return StartNaClExecution();
   } else if (nacl_browser->IsOk()) {
     nacl_browser->WaitForResources(
         base::Bind(&NaClProcessHost::OnResourcesReady,
@@ -868,12 +934,11 @@ void NaClProcessHost::OnSetKnownToValidate(const std::string& signature) {
 void NaClProcessHost::FileResolved(
     const base::FilePath& file_path,
     IPC::Message* reply_msg,
-    const base::PlatformFile& file) {
-  if (file != base::kInvalidPlatformFileValue) {
-    IPC::PlatformFileForTransit handle = IPC::GetFileHandleForProcess(
-        file,
-        process_->GetData().handle,
-        true /* close_source */);
+    base::File file) {
+  if (file.IsValid()) {
+    IPC::PlatformFileForTransit handle = IPC::TakeFileHandleForProcess(
+        file.Pass(),
+        process_->GetData().handle);
     NaClProcessMsg_ResolveFileToken::WriteReplyParams(
         reply_msg,
         handle,

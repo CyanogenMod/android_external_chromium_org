@@ -11,13 +11,13 @@ import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.Point;
+import android.os.Build;
 import android.os.Looper;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.CheckBox;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
@@ -73,31 +73,38 @@ public class JniInterface {
          * This enum must match the C++ enumeration remoting::protocol::ErrorCode.
          */
         public enum Error {
-            OK(0),
-            PEER_IS_OFFLINE(1),
-            SESSION_REJECTED(2),
-            INCOMPATIBLE_PROTOCOL(3),
-            AUTHENTICATION_FAILED(4),
-            CHANNEL_CONNECTION_ERROR(5),
-            SIGNALING_ERROR(6),
-            SIGNALING_TIMEOUT(7),
-            HOST_OVERLOAD(8),
-            UNKNOWN_ERROR(9);
+            OK(0, 0),
+            PEER_IS_OFFLINE(1, R.string.error_host_is_offline),
+            SESSION_REJECTED(2, R.string.error_invalid_access_code),
+            INCOMPATIBLE_PROTOCOL(3, R.string.error_incompatible_protocol),
+            AUTHENTICATION_FAILED(4, R.string.error_invalid_access_code),
+            CHANNEL_CONNECTION_ERROR(5, R.string.error_p2p_failure),
+            SIGNALING_ERROR(6, R.string.error_p2p_failure),
+            SIGNALING_TIMEOUT(7, R.string.error_p2p_failure),
+            HOST_OVERLOAD(8, R.string.error_host_overload),
+            UNKNOWN_ERROR(9, R.string.error_unexpected);
 
             private final int mValue;
+            private final int mMessage;
 
-            Error(int value) {
+            Error(int value, int message) {
                 mValue = value;
+                mMessage = message;
             }
 
             public int value() {
                 return mValue;
             }
 
+            public int message() {
+                return mMessage;
+            }
+
             public static Error fromValue(int value) {
                 return values()[value];
             }
         }
+
 
         /**
          * Notified on connection state change.
@@ -207,8 +214,8 @@ public class JniInterface {
     @CalledByNative
     private static void displayAuthenticationPrompt(boolean pairingSupported) {
         AlertDialog.Builder pinPrompt = new AlertDialog.Builder(sContext);
-        pinPrompt.setTitle(sContext.getString(R.string.pin_entry_title));
-        pinPrompt.setMessage(sContext.getString(R.string.pin_entry_message));
+        pinPrompt.setTitle(sContext.getString(R.string.title_authenticate));
+        pinPrompt.setMessage(sContext.getString(R.string.pin_message_android));
         pinPrompt.setIcon(android.R.drawable.ic_lock_lock);
 
         final View pinEntry = sContext.getLayoutInflater().inflate(R.layout.pin_dialog, null);
@@ -223,23 +230,20 @@ public class JniInterface {
         }
 
         pinPrompt.setPositiveButton(
-                R.string.pin_entry_connect, new DialogInterface.OnClickListener() {
+                R.string.connect_button, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         Log.i("jniiface", "User provided a PIN code");
                         nativeAuthenticationResponse(String.valueOf(pinTextView.getText()),
-                                                     pinCheckBox.isChecked());
+                                pinCheckBox.isChecked(), Build.MODEL);
                     }
                 });
 
         pinPrompt.setNegativeButton(
-                R.string.pin_entry_cancel, new DialogInterface.OnClickListener() {
+                R.string.cancel, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         Log.i("jniiface", "User canceled pin entry prompt");
-                        Toast.makeText(sContext,
-                                sContext.getString(R.string.msg_pin_canceled),
-                                Toast.LENGTH_LONG).show();
                         disconnectFromHost();
                     }
                 });
@@ -269,8 +273,15 @@ public class JniInterface {
         pinDialog.show();
     }
 
-    /** Performs the native response to the user's PIN. */
-    private static native void nativeAuthenticationResponse(String pin, boolean createPair);
+    /**
+     * Performs the native response to the user's PIN.
+     * @param pin The entered PIN.
+     * @param createPair Whether to create a new pairing for this client.
+     * @param deviceName The device name to appear in the pairing registry. Only used if createPair
+     *                   is true.
+     */
+    private static native void nativeAuthenticationResponse(String pin, boolean createPair,
+                                                            String deviceName);
 
     /** Saves newly-received pairing credentials to permanent storage. Called on the UI thread. */
     @CalledByNative

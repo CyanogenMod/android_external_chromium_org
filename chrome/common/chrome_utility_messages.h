@@ -273,6 +273,23 @@ IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_RequestBlobBytes_Finished,
                      std::string /* bytes */)
 #endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
 
+// Requests that the utility process write the contents of the source file to
+// the removable drive listed in the target file. The target will be restricted
+// to removable drives by the utility process.
+IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_ImageWriter_Write,
+                     base::FilePath /* source file */,
+                     base::FilePath /* target file */)
+
+// Requests that the utility process verify that the contents of the source file
+// was written to the target. As above the target will be restricted to
+// removable drives by the utility process.
+IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_ImageWriter_Verify,
+                     base::FilePath /* source file */,
+                     base::FilePath /* target file */)
+
+// Cancels a pending write or verify operation.
+IPC_MESSAGE_CONTROL0(ChromeUtilityMsg_ImageWriter_Cancel)
+
 //------------------------------------------------------------------------------
 // Utility process host messages:
 // These are messages from the utility process to the browser.
@@ -439,3 +456,31 @@ IPC_MESSAGE_CONTROL3(ChromeUtilityHostMsg_RequestBlobBytes,
                      int64 /* start_byte */,
                      int64 /* length */)
 #endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
+
+// Reply when a write or verify operation succeeds.
+IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_ImageWriter_Succeeded)
+
+// Reply when a write or verify operation has been fully cancelled.
+IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_ImageWriter_Cancelled)
+
+// Reply when a write or verify operation fails to complete.
+IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_ImageWriter_Failed,
+                     std::string /* message */)
+
+// Periodic status update about the progress of an operation.
+IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_ImageWriter_Progress,
+                     int64 /* number of bytes processed */)
+
+#if defined(OS_WIN)
+// Get plain-text WiFi credentials from the system (requires UAC privilege
+// elevation) and encrypt them with |public_key|.
+IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_GetAndEncryptWiFiCredentials,
+                     std::string /* ssid */,
+                     std::vector<uint8> /* public_key */)
+
+// Reply after getting WiFi credentials from the system and encrypting them with
+// caller's public key. |success| is false if error occurred.
+IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_GotEncryptedWiFiCredentials,
+                     std::vector<uint8> /* encrypted_key_data */,
+                     bool /* success */)
+#endif  // defined(OS_WIN)

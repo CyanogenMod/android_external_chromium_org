@@ -12,66 +12,64 @@
 #include <map>
 #include <vector>
 
+#include "Edge.h"
+
 #include "clang/AST/AST.h"
 #include "clang/AST/CXXInheritance.h"
 
 class RecordCache;
 
-// Value to track the tracing status of a point in the tracing graph.
-// (Points that might need tracing are fields and base classes.)
-class TracingStatus {
+// A potentially tracable and/or lifetime affecting point in the object graph.
+class GraphPoint {
  public:
-  static TracingStatus Unknown() { return kUnknown; }
-  static TracingStatus Required() { return kRequired; }
-  static TracingStatus Unneeded() { return kUnneeded; }
-  static TracingStatus RequiredWeak() {
-      return TracingStatus(kRequired, true);
-  }
-
-  bool IsTracingUnknown() const { return status_ == kUnknown; }
-  bool IsTracingRequired() const { return status_ == kRequired; }
-  bool IsTracingUnneeded() const { return status_ == kUnneeded; }
-
-  // Updating functions so the status can only become more defined.
-  void MarkTracingRequired() {
-    if (status_ < kRequired) status_ = kRequired;
-  }
-  void MarkTracingUnneeded() {
-    if (status_ < kUnneeded) status_ = kUnneeded;
-  }
-
-  bool is_weak() { return is_weak_; }
-
+  GraphPoint() : traced_(false) {}
+  void MarkTraced() { traced_ = true; }
+  bool IsProperlyTraced() { return traced_ || !NeedsTracing().IsNeeded(); }
+  virtual const TracingStatus NeedsTracing() = 0;
  private:
-  enum Status {
-    kUnknown,    // Point that might need to be traced.
-    kRequired,   // Point that must be traced.
-    kUnneeded    // Point that need not be traced.
-  };
+  bool traced_;
+};
 
-  TracingStatus(Status status)
-      : status_(status),
-        is_weak_(false) { }
+class BasePoint : public GraphPoint {
+ public:
+  BasePoint(const clang::CXXBaseSpecifier& spec,
+            RecordInfo* info,
+            const TracingStatus& status)
+      : spec_(spec), info_(info), status_(status) {}
+  const TracingStatus NeedsTracing() { return status_; }
+  // Needed to change the status of bases with a pure-virtual trace.
+  void MarkUnneeded() { status_ = TracingStatus::Unneeded(); }
+  const clang::CXXBaseSpecifier& spec() { return spec_; }
+  RecordInfo* info() { return info_; }
+ private:
+  const clang::CXXBaseSpecifier& spec_;
+  RecordInfo* info_;
+  TracingStatus status_;
+};
 
-  TracingStatus(Status status, bool is_weak)
-      : status_(status),
-        is_weak_(is_weak) { }
-
-  Status status_;
-  bool is_weak_;
+class FieldPoint : public GraphPoint {
+ public:
+  FieldPoint(clang::FieldDecl* field, Edge* edge) : field_(field), edge_(edge) {
+    assert(edge && "FieldPoint edge must be non-null");
+  }
+  const TracingStatus NeedsTracing() {
+    return edge_->NeedsTracing(Edge::kRecursive);
+  }
+  clang::FieldDecl* field() { return field_; }
+  Edge* edge() { return edge_; }
+ private:
+  clang::FieldDecl* field_;
+  Edge* edge_;
+  friend class RecordCache;
+  void deleteEdge() { delete edge_; }
 };
 
 // Wrapper class to lazily collect information about a C++ record.
 class RecordInfo {
-public:
-  typedef std::map<clang::CXXRecordDecl*, TracingStatus> Bases;
-  typedef std::map<clang::FieldDecl*, TracingStatus> Fields;
-  typedef std::vector<RecordInfo*> TemplateArgs;
-
-  enum NeedsTracingOption {
-    kRecursive,
-    kNonRecursive
-  };
+ public:
+  typedef std::map<clang::CXXRecordDecl*, BasePoint> Bases;
+  typedef std::map<clang::FieldDecl*, FieldPoint> Fields;
+  typedef std::vector<const clang::Type*> TemplateArgs;
 
   ~RecordInfo();
 
@@ -82,28 +80,33 @@ public:
   clang::CXXMethodDecl* GetTraceMethod();
   clang::CXXMethodDecl* GetTraceDispatchMethod();
 
-  bool IsTemplate(TemplateArgs* args = 0);
+  bool GetTemplateArgs(size_t count, TemplateArgs* output_args);
 
-  bool IsHeapAllocatedCollection(bool* is_weak = 0);
-  bool IsGCDerived(clang::CXXBasePaths* paths = 0);
+  bool IsHeapAllocatedCollection();
+  bool IsGCDerived();
+  bool IsGCAllocated();
+  bool IsGCFinalized();
+  bool IsUnmixedGCMixin();
 
-  bool IsNonNewable();
+  bool IsStackAllocated();
   bool RequiresTraceMethod();
-  TracingStatus NeedsTracing(NeedsTracingOption option = kRecursive);
+  bool NeedsFinalization();
+  TracingStatus NeedsTracing(Edge::NeedsTracingOption);
 
-private:
+ private:
   RecordInfo(clang::CXXRecordDecl* record, RecordCache* cache);
 
   Fields* CollectFields();
   Bases* CollectBases();
   void DetermineTracingMethods();
+  bool InheritsNonPureTrace();
 
-  TracingStatus NeedsTracing(clang::FieldDecl* field);
+  Edge* CreateEdge(const clang::Type* type);
 
   RecordCache* cache_;
   clang::CXXRecordDecl* record_;
   const std::string name_;
-  bool requires_trace_method_;
+  TracingStatus fields_need_tracing_;
   Bases* bases_;
   Fields* fields_;
 
@@ -111,27 +114,47 @@ private:
   clang::CXXMethodDecl* trace_method_;
   clang::CXXMethodDecl* trace_dispatch_method_;
 
+  bool is_gc_derived_;
+  clang::CXXBasePaths* base_paths_;
+
   friend class RecordCache;
 };
 
 class RecordCache {
-public:
-  RecordInfo* Lookup(clang::CXXRecordDecl* record) {
-    if (!record) return 0;
-    Cache::iterator it = cache_.find(record);
-    if (it != cache_.end())
-      return &it->second;
-    return &cache_.insert(std::make_pair(record, RecordInfo(record, this)))
-            .first->second;
-  }
+ public:
+  RecordInfo* Lookup(clang::CXXRecordDecl* record);
 
   RecordInfo* Lookup(const clang::CXXRecordDecl* record) {
     return Lookup(const_cast<clang::CXXRecordDecl*>(record));
   }
 
-private:
+  RecordInfo* Lookup(clang::Decl* decl) {
+    return Lookup(clang::dyn_cast<clang::CXXRecordDecl>(decl));
+  }
+
+  RecordInfo* Lookup(const clang::Type* type) {
+    return Lookup(type->getAsCXXRecordDecl());
+  }
+
+  RecordInfo* Lookup(const clang::QualType& type) {
+    return Lookup(type.getTypePtr());
+  }
+
+  ~RecordCache() {
+    for (Cache::iterator it = cache_.begin(); it != cache_.end(); ++it) {
+      if (!it->second.fields_)
+        continue;
+      for (RecordInfo::Fields::iterator fit = it->second.fields_->begin();
+        fit != it->second.fields_->end();
+        ++fit) {
+        fit->second.deleteEdge();
+      }
+    }
+  }
+
+ private:
   typedef std::map<clang::CXXRecordDecl*, RecordInfo> Cache;
   Cache cache_;
 };
 
-#endif // TOOLS_BLINK_GC_PLUGIN_RECORD_INFO_H_
+#endif  // TOOLS_BLINK_GC_PLUGIN_RECORD_INFO_H_

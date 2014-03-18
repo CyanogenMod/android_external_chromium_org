@@ -3,7 +3,7 @@ include_rules = [
   "+content/public/browser",
   "+content/public/common",
   "+content/public/test",
-  "+components/browser_context_keyed_service",
+  "+components/keyed_service",
   "+components/user_prefs/pref_registry_syncable.h",
   "+components/web_modal",
   "+extensions",
@@ -31,13 +31,11 @@ include_rules = [
   "+chrome/browser/extensions/extension_function_dispatcher.h",
   "+chrome/browser/extensions/extension_icon_image.h",
   "+chrome/browser/extensions/extension_host.h",
-  "+chrome/browser/extensions/extension_keybinding_registry.h",
   "+chrome/browser/extensions/extension_web_contents_observer.h",
   "+chrome/browser/extensions/suggest_permission_util.h",
   "+chrome/browser/extensions/unpacked_installer.h",
   "+chrome/common/extensions/api/app_runtime.h",
   "+chrome/common/extensions/api/app_window.h",
-  "+chrome/common/extensions/extension_messages.h",
   "+chrome/common/extensions/manifest_handlers/icons_handler.h",
 ]
 

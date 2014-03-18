@@ -1,4 +1,4 @@
-Copyright (c) 2013 The Chromium Authors. All rights reserved.
+Copyright 2014 The Chromium Authors. All rights reserved.
 Use of this useless file is governed by a BSD-style license that can be
 found in the LICENSE file.
 
@@ -80,3 +80,4 @@ AND THEN, TIME LEAPT BACKWARDS
 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaahhhh LOT
 I'm really tempted to change something above the line.
 Reeccciiiipppppeeeeeesssssss!!!!!!!!!
+PEOPLE SAY "FAILURE IS NOT AN OPTION", BUT FAILURE IS ALWAYS AN OPTION.

@@ -54,7 +54,7 @@ PictureLayerImpl::PictureLayerImpl(LayerTreeImpl* tree_impl, int id)
       is_using_lcd_text_(tree_impl->settings().can_use_lcd_text),
       needs_post_commit_initialization_(true),
       should_update_tile_priorities_(false),
-      should_use_gpu_rasterization_(tree_impl->settings().gpu_rasterization) {}
+      has_gpu_rasterization_hint_(false) {}
 
 PictureLayerImpl::~PictureLayerImpl() {}
 
@@ -91,6 +91,7 @@ void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
 
   layer_impl->SetIsMask(is_mask_);
   layer_impl->pile_ = pile_;
+  layer_impl->SetHasGpuRasterizationHint(has_gpu_rasterization_hint_);
 
   // Tilings would be expensive to push, so we swap.  This optimization requires
   // an extra invalidation in SyncFromActiveLayer.
@@ -139,6 +140,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
 
     gfx::Rect geometry_rect = rect;
     gfx::Rect opaque_rect = contents_opaque() ? geometry_rect : gfx::Rect();
+    gfx::Rect visible_geometry_rect = geometry_rect;
     gfx::Size texture_size = rect.size();
     gfx::RectF texture_rect = gfx::RectF(texture_size);
     gfx::Rect quad_content_rect = rect;
@@ -148,13 +150,14 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
     quad->SetNew(shared_quad_state,
                  geometry_rect,
                  opaque_rect,
+                 visible_geometry_rect,
                  texture_rect,
                  texture_size,
                  RGBA_8888,
                  quad_content_rect,
                  contents_scale,
                  pile_);
-    if (quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data))
+    if (quad_sink->MaybeAppend(quad.PassAs<DrawQuad>()))
       append_quads_data->num_missing_tiles++;
     return;
   }
@@ -198,9 +201,13 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
       scoped_ptr<DebugBorderDrawQuad> debug_border_quad =
           DebugBorderDrawQuad::Create();
       gfx::Rect geometry_rect = iter.geometry_rect();
-      debug_border_quad->SetNew(shared_quad_state, geometry_rect, color, width);
-      quad_sink->Append(debug_border_quad.PassAs<DrawQuad>(),
-                        append_quads_data);
+      gfx::Rect visible_geometry_rect = geometry_rect;
+      debug_border_quad->SetNew(shared_quad_state,
+                                geometry_rect,
+                                visible_geometry_rect,
+                                color,
+                                width);
+      quad_sink->MaybeAppend(debug_border_quad.PassAs<DrawQuad>());
     }
   }
 
@@ -213,19 +220,25 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
        iter;
        ++iter) {
     gfx::Rect geometry_rect = iter.geometry_rect();
+    gfx::Rect visible_geometry_rect = geometry_rect;
     if (!*iter || !iter->IsReadyToDraw()) {
-      if (DrawCheckerboardForMissingTiles()) {
+      if (draw_checkerboard_for_missing_tiles()) {
         // TODO(enne): Figure out how to show debug "invalidated checker" color
         scoped_ptr<CheckerboardDrawQuad> quad = CheckerboardDrawQuad::Create();
         SkColor color = DebugColors::DefaultCheckerboardColor();
-        quad->SetNew(shared_quad_state, geometry_rect, color);
-        if (quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data))
+        quad->SetNew(
+            shared_quad_state, geometry_rect, visible_geometry_rect, color);
+        if (quad_sink->MaybeAppend(quad.PassAs<DrawQuad>()))
           append_quads_data->num_missing_tiles++;
       } else {
         SkColor color = SafeOpaqueBackgroundColor();
         scoped_ptr<SolidColorDrawQuad> quad = SolidColorDrawQuad::Create();
-        quad->SetNew(shared_quad_state, geometry_rect, color, false);
-        if (quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data))
+        quad->SetNew(shared_quad_state,
+                     geometry_rect,
+                     visible_geometry_rect,
+                     color,
+                     false);
+        if (quad_sink->MaybeAppend(quad.PassAs<DrawQuad>()))
           append_quads_data->num_missing_tiles++;
       }
 
@@ -249,6 +262,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
         quad->SetNew(shared_quad_state,
                      geometry_rect,
                      opaque_rect,
+                     visible_geometry_rect,
                      tile_version.get_resource_id(),
                      texture_rect,
                      iter.texture_size(),
@@ -269,6 +283,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
         quad->SetNew(shared_quad_state,
                      geometry_rect,
                      opaque_rect,
+                     visible_geometry_rect,
                      texture_rect,
                      iter.texture_size(),
                      format,
@@ -282,6 +297,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
         scoped_ptr<SolidColorDrawQuad> quad = SolidColorDrawQuad::Create();
         quad->SetNew(shared_quad_state,
                      geometry_rect,
+                     visible_geometry_rect,
                      tile_version.get_solid_color(),
                      false);
         draw_quad = quad.PassAs<DrawQuad>();
@@ -290,7 +306,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
     }
 
     DCHECK(draw_quad);
-    quad_sink->Append(draw_quad.Pass(), append_quads_data);
+    quad_sink->MaybeAppend(draw_quad.Pass());
 
     if (seen_tilings.empty() || seen_tilings.back() != iter.CurrentTiling())
       seen_tilings.push_back(iter.CurrentTiling());
@@ -449,14 +465,24 @@ skia::RefPtr<SkPicture> PictureLayerImpl::GetPicture() {
   return pile_->GetFlattenedPicture();
 }
 
-void PictureLayerImpl::SetShouldUseGpuRasterization(
-    bool should_use_gpu_rasterization) {
-  if (should_use_gpu_rasterization != should_use_gpu_rasterization_) {
-    should_use_gpu_rasterization_ = should_use_gpu_rasterization;
+void PictureLayerImpl::SetHasGpuRasterizationHint(bool has_hint) {
+  bool old_should_use_gpu_rasterization = ShouldUseGpuRasterization();
+  has_gpu_rasterization_hint_ = has_hint;
+  if (ShouldUseGpuRasterization() != old_should_use_gpu_rasterization)
     RemoveAllTilings();
-  } else {
-    should_use_gpu_rasterization_ = should_use_gpu_rasterization;
+}
+
+bool PictureLayerImpl::ShouldUseGpuRasterization() const {
+  switch (layer_tree_impl()->settings().rasterization_site) {
+    case LayerTreeSettings::CpuRasterization:
+      return false;
+    case LayerTreeSettings::HybridRasterization:
+      return has_gpu_rasterization_hint_;
+    case LayerTreeSettings::GpuRasterization:
+      return true;
   }
+  NOTREACHED();
+  return false;
 }
 
 scoped_refptr<Tile> PictureLayerImpl::CreateTile(PictureLayerTiling* tiling,
@@ -467,7 +493,7 @@ scoped_refptr<Tile> PictureLayerImpl::CreateTile(PictureLayerTiling* tiling,
   int flags = 0;
   if (is_using_lcd_text_)
     flags |= Tile::USE_LCD_TEXT;
-  if (should_use_gpu_rasterization())
+  if (ShouldUseGpuRasterization())
     flags |= Tile::USE_GPU_RASTERIZATION;
   return layer_tree_impl()->tile_manager()->CreateTile(
       pile_.get(),
@@ -491,8 +517,8 @@ const Region* PictureLayerImpl::GetInvalidation() {
 const PictureLayerTiling* PictureLayerImpl::GetTwinTiling(
     const PictureLayerTiling* tiling) const {
 
-  if (!twin_layer_ || twin_layer_->should_use_gpu_rasterization() !=
-      should_use_gpu_rasterization())
+  if (!twin_layer_ ||
+      twin_layer_->ShouldUseGpuRasterization() != ShouldUseGpuRasterization())
     return NULL;
   for (size_t i = 0; i < twin_layer_->tilings_->num_tilings(); ++i)
     if (twin_layer_->tilings_->tiling_at(i)->contents_scale() ==
@@ -841,8 +867,8 @@ PictureLayerTiling* PictureLayerImpl::AddTiling(float contents_scale) {
   const Region& recorded = pile_->recorded_region();
   DCHECK(!recorded.IsEmpty());
 
-  if (twin_layer_ && twin_layer_->should_use_gpu_rasterization() ==
-      should_use_gpu_rasterization())
+  if (twin_layer_ &&
+      twin_layer_->ShouldUseGpuRasterization() == ShouldUseGpuRasterization())
     twin_layer_->SyncTiling(tiling);
 
   return tiling;
@@ -862,7 +888,8 @@ void PictureLayerImpl::RemoveTiling(float contents_scale) {
 }
 
 void PictureLayerImpl::RemoveAllTilings() {
-  tilings_->RemoveAllTilings();
+  if (tilings_)
+    tilings_->RemoveAllTilings();
   // If there are no tilings, then raster scales are no longer meaningful.
   ResetRasterScale();
 }
@@ -1164,9 +1191,7 @@ bool PictureLayerImpl::CanHaveTilingWithScale(float contents_scale) const {
 }
 
 void PictureLayerImpl::SanityCheckTilingState() const {
-  if (!DCHECK_IS_ON())
-    return;
-
+#if DCHECK_IS_ON
   if (!CanHaveTilings()) {
     DCHECK_EQ(0u, tilings_->num_tilings());
     return;
@@ -1177,6 +1202,7 @@ void PictureLayerImpl::SanityCheckTilingState() const {
   // MarkVisibleResourcesAsRequired depends on having exactly 1 high res
   // tiling to mark its tiles as being required for activation.
   DCHECK_EQ(1, tilings_->NumHighResTilings());
+#endif
 }
 
 void PictureLayerImpl::GetDebugBorderProperties(
@@ -1217,6 +1243,7 @@ void PictureLayerImpl::AsValueInto(base::DictionaryValue* state) const {
   }
   state->Set("coverage_tiles", coverage_tiles.release());
   state->SetBoolean("is_using_lcd_text", is_using_lcd_text_);
+  state->SetBoolean("using_gpu_rasterization", ShouldUseGpuRasterization());
 }
 
 size_t PictureLayerImpl::GPUMemoryUsageInBytes() const {

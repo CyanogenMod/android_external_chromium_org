@@ -127,6 +127,13 @@ const base::FilePath& GetDriveMyDriveRootPath() {
   return drive_root_path;
 }
 
+base::FilePath GetDriveMountPointPathForUserIdHash(
+    const std::string user_id_hash) {
+  return base::FilePath(kSpecialMountPointRoot).AppendASCII(
+      net::EscapePath(kDriveMountPointNameBase +
+                      (user_id_hash.empty() ? "" : "-" + user_id_hash)));
+}
+
 base::FilePath GetDriveMountPointPath(Profile* profile) {
   std::string id = chromeos::ProfileHelper::GetUserIdHashFromProfile(profile);
   if (id.empty()) {
@@ -141,8 +148,7 @@ base::FilePath GetDriveMountPointPath(Profile* profile) {
     if (user)
       id = user->username_hash();
   }
-  return base::FilePath(kSpecialMountPointRoot).AppendASCII(
-      net::EscapePath(kDriveMountPointNameBase + (id.empty() ? "" : "-" + id)));
+  return GetDriveMountPointPathForUserIdHash(id);
 }
 
 FileSystemInterface* GetFileSystemByProfile(Profile* profile) {
@@ -365,7 +371,7 @@ bool CreateGDocFile(const base::FilePath& file_path,
   std::string content = base::StringPrintf(
       "{\"url\": \"%s\", \"resource_id\": \"%s\"}",
       url.spec().c_str(), resource_id.c_str());
-  return file_util::WriteFile(file_path, content.data(), content.size()) ==
+  return base::WriteFile(file_path, content.data(), content.size()) ==
       static_cast<int>(content.size());
 }
 

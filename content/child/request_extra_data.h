@@ -23,15 +23,15 @@ class CONTENT_EXPORT RequestExtraData
                    bool was_after_preconnect_request,
                    int render_frame_id,
                    bool is_main_frame,
-                   int64 frame_id,
                    const GURL& frame_origin,
                    bool parent_is_main_frame,
-                   int64 parent_frame_id,
+                   int parent_render_frame_id,
                    bool allow_download,
                    PageTransition transition_type,
                    bool should_replace_current_entry,
                    int transferred_request_child_id,
-                   int transferred_request_request_id);
+                   int transferred_request_request_id,
+                   int service_worker_provider_id);
   virtual ~RequestExtraData();
 
   blink::WebPageVisibilityState visibility_state() const {
@@ -39,10 +39,9 @@ class CONTENT_EXPORT RequestExtraData
   }
   int render_frame_id() const { return render_frame_id_; }
   bool is_main_frame() const { return is_main_frame_; }
-  int64 frame_id() const { return frame_id_; }
   GURL frame_origin() const { return frame_origin_; }
   bool parent_is_main_frame() const { return parent_is_main_frame_; }
-  int64 parent_frame_id() const { return parent_frame_id_; }
+  int parent_render_frame_id() const { return parent_render_frame_id_; }
   bool allow_download() const { return allow_download_; }
   PageTransition transition_type() const { return transition_type_; }
   bool should_replace_current_entry() const {
@@ -54,20 +53,23 @@ class CONTENT_EXPORT RequestExtraData
   int transferred_request_request_id() const {
     return transferred_request_request_id_;
   }
+  int service_worker_provider_id() const {
+    return service_worker_provider_id_;
+  }
 
  private:
   blink::WebPageVisibilityState visibility_state_;
   int render_frame_id_;
   bool is_main_frame_;
-  int64 frame_id_;
   GURL frame_origin_;
   bool parent_is_main_frame_;
-  int64 parent_frame_id_;
+  int parent_render_frame_id_;
   bool allow_download_;
   PageTransition transition_type_;
   bool should_replace_current_entry_;
   int transferred_request_child_id_;
   int transferred_request_request_id_;
+  int service_worker_provider_id_;
 
   DISALLOW_COPY_AND_ASSIGN(RequestExtraData);
 };

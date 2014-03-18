@@ -57,10 +57,6 @@
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/widget/widget.h"
 
-#if defined(USE_AURA)
-#include "ui/native_theme/native_theme_aura.h"
-#endif
-
 using base::UserMetricsAction;
 using content::HostZoomMap;
 using content::WebContents;
@@ -187,23 +183,19 @@ class MenuButtonBackground : public views::Background {
         button ? button->state() : views::Button::STATE_NORMAL;
     int w = view->width();
     int h = view->height();
-#if defined(USE_AURA)
-    // Normal buttons get a border drawn on the right side and the rest gets
-    // filled in. The left button however does not get a line to combine
-    // buttons.
-    int border = 0;
-    if (type_ != RIGHT_BUTTON) {
-      border = 1;
-      canvas->FillRect(gfx::Rect(0, 0, border, h),
-                       BorderColor(view, views::Button::STATE_NORMAL));
-    }
     if (use_new_menu_) {
+      // Normal buttons get a border drawn on the right side and the rest gets
+      // filled in. The left button however does not get a line to combine
+      // buttons.
+      if (type_ != RIGHT_BUTTON) {
+        canvas->FillRect(gfx::Rect(0, 0, 1, h),
+                         BorderColor(view, views::Button::STATE_NORMAL));
+      }
       gfx::Rect bounds(view->GetLocalBounds());
       bounds.set_x(view->GetMirroredXForRect(bounds));
       DrawBackground(canvas, view, bounds, state);
       return;
     }
-#endif
     const SkColor border_color = BorderColor(view, state);
     switch (TypeAdjustedForRTL()) {
       // TODO(pkasting): Why don't all the following use SkPaths with rounded
@@ -374,15 +366,17 @@ class WrenchMenuView : public views::View,
     View::SchedulePaintInRect(gfx::Rect(size()));
   }
 
-  LabelButton* CreateAndConfigureButton(int string_id,
+  LabelButton* CreateAndConfigureButton(const ui::NativeTheme* native_theme,
+                                        int string_id,
                                         MenuButtonBackground::ButtonType type,
                                         int index,
                                         MenuButtonBackground** background) {
     return CreateButtonWithAccName(
-      string_id, type, index, background, string_id);
+        native_theme, string_id, type, index, background, string_id);
   }
 
-  LabelButton* CreateButtonWithAccName(int string_id,
+  LabelButton* CreateButtonWithAccName(const ui::NativeTheme* native_theme,
+                                       int string_id,
                                        MenuButtonBackground::ButtonType type,
                                        int index,
                                        MenuButtonBackground** background,
@@ -401,14 +395,12 @@ class WrenchMenuView : public views::View,
         new MenuButtonBackground(type, menu_->use_new_menu());
     button->set_background(bg);
     const MenuConfig& menu_config = menu_->GetMenuConfig();
-    button->SetTextColor(views::Button::STATE_NORMAL, menu_config.text_color);
     if (background)
       *background = bg;
     button->SetBorder(scoped_ptr<views::Border>(
         new MenuButtonBorder(menu_config, menu_->use_new_menu())));
     button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     button->SetFontList(menu_config.font_list);
-    ui::NativeTheme* native_theme = button->GetNativeTheme();
     button->SetTextColor(
         views::Button::STATE_DISABLED,
         native_theme->GetSystemColor(
@@ -534,12 +526,14 @@ class WrenchMenu::CutCopyPasteView : public WrenchMenuView {
                    int paste_index)
       : WrenchMenuView(menu, menu_model) {
     LabelButton* cut = CreateAndConfigureButton(
-        IDS_CUT, MenuButtonBackground::LEFT_BUTTON, cut_index, NULL);
+        native_theme, IDS_CUT, MenuButtonBackground::LEFT_BUTTON,
+        cut_index, NULL);
     MenuButtonBackground* copy_background = NULL;
     CreateAndConfigureButton(
-        IDS_COPY, MenuButtonBackground::CENTER_BUTTON, copy_index,
-        &copy_background);
+        native_theme, IDS_COPY, MenuButtonBackground::CENTER_BUTTON,
+        copy_index, &copy_background);
     LabelButton* paste = CreateAndConfigureButton(
+        native_theme,
         IDS_PASTE,
         menu->use_new_menu() && menu->supports_new_separators_ ?
             MenuButtonBackground::CENTER_BUTTON :
@@ -611,8 +605,8 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
                        base::Unretained(this)));
 
     decrement_button_ = CreateButtonWithAccName(
-        IDS_ZOOM_MINUS2, MenuButtonBackground::LEFT_BUTTON, decrement_index,
-        NULL, IDS_ACCNAME_ZOOM_MINUS2);
+        native_theme, IDS_ZOOM_MINUS2, MenuButtonBackground::LEFT_BUTTON,
+        decrement_index, NULL, IDS_ACCNAME_ZOOM_MINUS2);
 
     zoom_label_ = new Label(
         l10n_util::GetStringFUTF16Int(IDS_ZOOM_PERCENT, 100));
@@ -634,8 +628,8 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
     zoom_label_width_ = MaxWidthForZoomLabel();
 
     increment_button_ = CreateButtonWithAccName(
-        IDS_ZOOM_PLUS2, MenuButtonBackground::RIGHT_BUTTON, increment_index,
-        NULL, IDS_ACCNAME_ZOOM_PLUS2);
+        native_theme, IDS_ZOOM_PLUS2, MenuButtonBackground::RIGHT_BUTTON,
+        increment_index, NULL, IDS_ACCNAME_ZOOM_PLUS2);
 
     center_bg->SetOtherButtons(decrement_button_, increment_button_);
 
@@ -1208,7 +1202,8 @@ void WrenchMenu::Observe(int type,
     case chrome::NOTIFICATION_GLOBAL_ERRORS_CHANGED:
       // A change in the global errors list can add or remove items from the
       // menu. Close the menu to avoid have a stale menu on-screen.
-      root_->Cancel();
+      if (root_)
+        root_->Cancel();
       break;
     default:
       NOTREACHED();

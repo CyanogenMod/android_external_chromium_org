@@ -78,8 +78,8 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // should be a combination of values from BindingsPolicy.
   virtual void AllowBindings(int binding_flags) = 0;
 
-  // Tells the renderer to clear the focused node (if any).
-  virtual void ClearFocusedNode() = 0;
+  // Tells the renderer to clear the focused element (if any).
+  virtual void ClearFocusedElement() = 0;
 
   // Causes the renderer to close the current page, including running its
   // onunload event handler.  A ClosePage_ACK message will be sent to the
@@ -159,11 +159,13 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
       const blink::WebMediaPlayerAction& action) = 0;
 
   // Runs some javascript within the context of a frame in the page.
+  // OBSOLETE; DO NOT USE! Use RenderFrameHost::ExecuteJavaScript instead.
   virtual void ExecuteJavascriptInWebFrame(const base::string16& frame_xpath,
                                            const base::string16& jscript) = 0;
 
   // Runs some javascript within the context of a frame in the page. The result
   // is sent back via the provided callback.
+  // OBSOLETE; DO NOT USE! Use RenderFrameHost::ExecuteJavaScript instead.
   typedef base::Callback<void(const base::Value*)> JavascriptResultCallback;
   virtual void ExecuteJavascriptInWebFrameCallbackResult(
       const base::string16& frame_xpath,
@@ -177,15 +179,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
 
   // Asks the renderer to exit fullscreen
   virtual void ExitFullscreen() = 0;
-
-  // Causes the renderer to invoke the onbeforeunload event handler.  The
-  // result will be returned via ViewMsg_ShouldClose. See also ClosePage and
-  // SwapOut, which fire the PageUnload event.
-  //
-  // Set bool for_cross_site_transition when this close is just for the current
-  // RenderView in the case of a cross-site transition. False means we're
-  // closing the entire tab.
-  virtual void FirePageBeforeUnload(bool for_cross_site_transition) = 0;
 
   // Notifies the Listener that one or more files have been chosen by the user
   // from a file chooser dialog for the form. |permissions| is the file
@@ -201,11 +194,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   virtual int GetEnabledBindings() const = 0;
 
   virtual SiteInstance* GetSiteInstance() const = 0;
-
-  // Requests the renderer to evaluate an xpath to a frame and insert css
-  // into that frame's document.
-  virtual void InsertCSS(const base::string16& frame_xpath,
-                         const std::string& css) = 0;
 
   // Returns true if the RenderView is active and has not crashed. Virtual
   // because it is overridden by TestRenderViewHost.
@@ -237,9 +225,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
 
   // Passes a list of Webkit preferences to the renderer.
   virtual void UpdateWebkitPreferences(const WebPreferences& prefs) = 0;
-
-  // Informs the renderer process of a change in timezone.
-  virtual void NotifyTimezoneChange() = 0;
 
   // Retrieves the list of AudioOutputController objects associated
   // with this object and passes it to the callback you specify, on

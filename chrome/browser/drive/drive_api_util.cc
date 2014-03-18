@@ -6,7 +6,6 @@
 
 #include <string>
 
-#include "base/command_line.h"
 #include "base/files/scoped_platform_file_closer.h"
 #include "base/logging.h"
 #include "base/md5.h"
@@ -16,7 +15,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/drive/drive_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/drive/drive_api_parser.h"
 #include "google_apis/drive/gdata_wapi_parser.h"
@@ -148,21 +146,6 @@ std::string Identity(const std::string& resource_id) { return resource_id; }
 
 }  // namespace
 
-
-bool IsDriveV2ApiEnabled() {
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-
-  // Enable Drive API v2 by default.
-  if (!command_line->HasSwitch(switches::kEnableDriveV2Api))
-    return true;
-
-  std::string value =
-      command_line->GetSwitchValueASCII(switches::kEnableDriveV2Api);
-  StringToLowerASCII(&value);
-  // The value must be "" or "true" for true, or "false" for false.
-  DCHECK(value.empty() || value == "true" || value == "false");
-  return value != "false";
-}
 
 std::string EscapeQueryStringValue(const std::string& str) {
   std::string result;
@@ -340,7 +323,6 @@ scoped_ptr<google_apis::FileResource> ConvertResourceEntryToFileResource(
   file->set_shared(std::find(entry.labels().begin(), entry.labels().end(),
                              "shared") != entry.labels().end());
 
-  file->set_download_url(entry.download_url());
   if (entry.is_folder()) {
     file->set_mime_type(kDriveFolderMimeType);
   } else {
@@ -379,17 +361,8 @@ scoped_ptr<google_apis::FileResource> ConvertResourceEntryToFileResource(
         parents.push_back(parent.release());
         break;
       }
-      case Link::LINK_EDIT:
-        file->set_self_link(link.href());
-        break;
-      case Link::LINK_THUMBNAIL:
-        file->set_thumbnail_link(link.href());
-        break;
       case Link::LINK_ALTERNATE:
         file->set_alternate_link(link.href());
-        break;
-      case Link::LINK_EMBED:
-        file->set_embed_link(link.href());
         break;
       default:
         break;
@@ -448,7 +421,6 @@ ConvertFileResourceToResourceEntry(
   // This should be the url to download the file_resource.
   {
     google_apis::Content content;
-    content.set_url(file_resource.download_url());
     content.set_mime_type(file_resource.mime_type());
     entry->set_content(content);
   }
@@ -481,28 +453,10 @@ ConvertFileResourceToResourceEntry(
     link->set_href(file_resource.parents()[i]->parent_link());
     links.push_back(link);
   }
-  if (!file_resource.self_link().is_empty()) {
-    google_apis::Link* link = new google_apis::Link;
-    link->set_type(google_apis::Link::LINK_EDIT);
-    link->set_href(file_resource.self_link());
-    links.push_back(link);
-  }
-  if (!file_resource.thumbnail_link().is_empty()) {
-    google_apis::Link* link = new google_apis::Link;
-    link->set_type(google_apis::Link::LINK_THUMBNAIL);
-    link->set_href(file_resource.thumbnail_link());
-    links.push_back(link);
-  }
   if (!file_resource.alternate_link().is_empty()) {
     google_apis::Link* link = new google_apis::Link;
     link->set_type(google_apis::Link::LINK_ALTERNATE);
     link->set_href(file_resource.alternate_link());
-    links.push_back(link);
-  }
-  if (!file_resource.embed_link().is_empty()) {
-    google_apis::Link* link = new google_apis::Link;
-    link->set_type(google_apis::Link::LINK_EMBED);
-    link->set_href(file_resource.embed_link());
     links.push_back(link);
   }
   entry->set_links(links.Pass());
@@ -528,6 +482,7 @@ ConvertChangeResourceToResourceEntry(
   // If |is_deleted()| returns true, the file is removed from Drive.
   entry->set_removed(change_resource.is_deleted());
   entry->set_changestamp(change_resource.change_id());
+  entry->set_modification_date(change_resource.modification_date());
 
   return entry.Pass();
 }

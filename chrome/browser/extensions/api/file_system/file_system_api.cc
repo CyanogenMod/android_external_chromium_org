@@ -128,18 +128,11 @@ base::FilePath PrettifyPath(const base::FilePath& source_path) {
 // Prettifies |source_path|, by replacing the user's home directory with "~"
 // (if applicable).
 base::FilePath PrettifyPath(const base::FilePath& source_path) {
-#if defined(OS_WIN) || defined(OS_POSIX)
-#if defined(OS_WIN)
-  int home_key = base::DIR_PROFILE;
-#elif defined(OS_POSIX)
-  int home_key = base::DIR_HOME;
-#endif
   base::FilePath home_path;
   base::FilePath display_path = base::FilePath::FromUTF8Unsafe("~");
-  if (PathService::Get(home_key, &home_path)
+  if (PathService::Get(base::DIR_HOME, &home_path)
       && home_path.AppendRelativePath(source_path, &display_path))
     return display_path;
-#endif
   return source_path;
 }
 #endif  // defined(OS_MACOSX)
@@ -219,13 +212,11 @@ bool GetFileTypesFromAcceptOption(
 const char kLastChooseEntryDirectory[] = "last_choose_file_directory";
 
 const int kGraylistedPaths[] = {
+  base::DIR_HOME,
 #if defined(OS_WIN)
-  base::DIR_PROFILE,
   base::DIR_PROGRAM_FILES,
   base::DIR_PROGRAM_FILESX86,
   base::DIR_WINDOWS,
-#elif defined(OS_POSIX)
-  base::DIR_HOME,
 #endif
 };
 
@@ -253,6 +244,16 @@ void SetLastChooseEntryDirectory(ExtensionPrefs* prefs,
   prefs->UpdateExtensionPref(extension_id,
                              kLastChooseEntryDirectory,
                              base::CreateFilePathValue(path));
+}
+
+std::vector<base::FilePath> GetGrayListedDirectories() {
+  std::vector<base::FilePath> graylisted_directories;
+  for (size_t i = 0; i < arraysize(kGraylistedPaths); ++i) {
+    base::FilePath graylisted_path;
+    if (PathService::Get(kGraylistedPaths[i], &graylisted_path))
+      graylisted_directories.push_back(graylisted_path);
+  }
+  return graylisted_directories;
 }
 
 }  // namespace file_system_api

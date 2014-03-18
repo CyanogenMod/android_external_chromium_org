@@ -13,8 +13,8 @@
 #include "ash/sticky_keys/sticky_keys_overlay.h"
 #include "base/basictypes.h"
 #include "base/debug/stack_trace.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_code_conversion.h"
@@ -68,10 +68,10 @@ void StickyKeysHandlerDelegateImpl::DispatchMouseEvent(ui::MouseEvent* event,
   DCHECK(target);
   // We need to send a new, untransformed mouse event to the host.
   if (event->IsMouseWheelEvent()) {
-    ui::MouseWheelEvent new_event(*static_cast<ui::MouseWheelEvent*>(event));
+    ui::MouseWheelEvent new_event(event->native_event());
     DispatchEvent(&new_event, target);
   } else {
-    ui::MouseEvent new_event(*event, target, target->GetRootWindow());
+    ui::MouseEvent new_event(event->native_event());
     DispatchEvent(&new_event, target);
   }
 }
@@ -86,7 +86,7 @@ void StickyKeysHandlerDelegateImpl::DispatchEvent(ui::Event* event,
                                                   aura::Window* target) {
   DCHECK(target);
   ui::EventDispatchDetails details =
-      target->GetDispatcher()->OnEventFromSource(event);
+      target->GetHost()->dispatcher()->OnEventFromSource(event);
   if (details.dispatcher_destroyed)
     return;
 }
@@ -115,6 +115,9 @@ void StickyKeysController::Enable(bool enabled) {
       alt_sticky_key_.reset(
           new StickyKeysHandler(ui::EF_ALT_DOWN,
                                 new StickyKeysHandlerDelegateImpl()));
+      altgr_sticky_key_.reset(
+          new StickyKeysHandler(ui::EF_ALTGR_DOWN,
+                                new StickyKeysHandlerDelegateImpl()));
       ctrl_sticky_key_.reset(
           new StickyKeysHandler(ui::EF_CONTROL_DOWN,
                                 new StickyKeysHandlerDelegateImpl()));
@@ -129,18 +132,21 @@ void StickyKeysController::Enable(bool enabled) {
 bool StickyKeysController::HandleKeyEvent(ui::KeyEvent* event) {
   return shift_sticky_key_->HandleKeyEvent(event) ||
       alt_sticky_key_->HandleKeyEvent(event) ||
+      altgr_sticky_key_->HandleKeyEvent(event) ||
       ctrl_sticky_key_->HandleKeyEvent(event);
 }
 
 bool StickyKeysController::HandleMouseEvent(ui::MouseEvent* event) {
   return shift_sticky_key_->HandleMouseEvent(event) ||
       alt_sticky_key_->HandleMouseEvent(event) ||
+      altgr_sticky_key_->HandleMouseEvent(event) ||
       ctrl_sticky_key_->HandleMouseEvent(event);
 }
 
 bool StickyKeysController::HandleScrollEvent(ui::ScrollEvent* event) {
   return shift_sticky_key_->HandleScrollEvent(event) ||
       alt_sticky_key_->HandleScrollEvent(event) ||
+      altgr_sticky_key_->HandleScrollEvent(event) ||
       ctrl_sticky_key_->HandleScrollEvent(event);
 }
 
@@ -181,10 +187,13 @@ void StickyKeysController::UpdateOverlay() {
       ui::EF_CONTROL_DOWN, ctrl_sticky_key_->current_state());
   overlay_->SetModifierKeyState(
       ui::EF_ALT_DOWN, alt_sticky_key_->current_state());
+  overlay_->SetModifierKeyState(
+      ui::EF_ALTGR_DOWN, altgr_sticky_key_->current_state());
 
   bool key_in_use =
       shift_sticky_key_->current_state() != STICKY_KEY_STATE_DISABLED ||
       alt_sticky_key_->current_state() != STICKY_KEY_STATE_DISABLED ||
+      altgr_sticky_key_->current_state() != STICKY_KEY_STATE_DISABLED ||
       ctrl_sticky_key_->current_state() != STICKY_KEY_STATE_DISABLED;
 
   overlay_->Show(enabled_ && key_in_use);
@@ -303,6 +312,8 @@ StickyKeysHandler::KeyEventType
       event->key_code() == ui::VKEY_LMENU ||
       event->key_code() == ui::VKEY_RMENU) {
     is_target_key = (modifier_flag_ == ui::EF_ALT_DOWN);
+  } else if (event->key_code() == ui::VKEY_ALTGR) {
+    is_target_key = (modifier_flag_ == ui::EF_ALTGR_DOWN);
   } else {
     return event->type() == ui::ET_KEY_PRESSED ?
         NORMAL_KEY_DOWN : NORMAL_KEY_UP;
@@ -425,6 +436,9 @@ void StickyKeysHandler::AppendNativeEventMask(unsigned int* state) {
     case ui::EF_ALT_DOWN:
       state_ref |= Mod1Mask;
       break;
+    case ui::EF_ALTGR_DOWN:
+      state_ref |= Mod5Mask;
+      break;
     case ui::EF_SHIFT_DOWN:
       state_ref |= ShiftMask;
       break;
@@ -452,10 +466,29 @@ void StickyKeysHandler::AppendModifier(ui::KeyEvent* event) {
 
 void StickyKeysHandler::AppendModifier(ui::MouseEvent* event) {
 #if defined(USE_X11)
+  // The native mouse event can either be a classic X button event or an
+  // XInput2 button event.
   XEvent* xev = event->native_event();
   if (xev) {
-    XButtonEvent* xkey = &(xev->xbutton);
-    AppendNativeEventMask(&xkey->state);
+    switch (xev->type) {
+      case ButtonPress:
+      case ButtonRelease: {
+        XButtonEvent* xkey = &(xev->xbutton);
+        AppendNativeEventMask(&xkey->state);
+        break;
+      }
+      case GenericEvent: {
+        XIDeviceEvent* xievent =
+            static_cast<XIDeviceEvent*>(xev->xcookie.data);
+        CHECK(xievent->evtype == XI_ButtonPress ||
+              xievent->evtype == XI_ButtonRelease);
+        AppendNativeEventMask(
+            reinterpret_cast<unsigned int*>(&xievent->mods.effective));
+        break;
+      }
+      default:
+        NOTREACHED();
+    }
   }
 #elif defined(USE_OZONE)
   NOTIMPLEMENTED() << "Modifier key is not handled";

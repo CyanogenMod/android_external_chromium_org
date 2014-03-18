@@ -9,18 +9,17 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "chrome/browser/extensions/global_shortcut_listener.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "ui/base/accelerators/accelerator.h"
 
-class Profile;
-
-namespace extensions {
-class Extension;
+namespace content {
+class BrowserContext;
 }
 
 namespace extensions {
+class Extension;
 
 // ExtensionCommandsGlobalRegistry is a class that handles the cross-platform
 // implementation of the global shortcut registration for the Extension Commands
@@ -30,25 +29,25 @@ namespace extensions {
 // accelerators on behalf of the extensions and routes the commands to them via
 // the BrowserEventRouter.
 class ExtensionCommandsGlobalRegistry
-    : public ProfileKeyedAPI,
+    : public BrowserContextKeyedAPI,
       public ExtensionKeybindingRegistry,
       public GlobalShortcutListener::Observer {
  public:
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<
-      ExtensionCommandsGlobalRegistry>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<ExtensionCommandsGlobalRegistry>*
+      GetFactoryInstance();
 
   // Convenience method to get the ExtensionCommandsGlobalRegistry for a
   // profile.
-  static ExtensionCommandsGlobalRegistry* Get(Profile* profile);
+  static ExtensionCommandsGlobalRegistry* Get(content::BrowserContext* context);
 
-  explicit ExtensionCommandsGlobalRegistry(Profile* profile);
+  explicit ExtensionCommandsGlobalRegistry(content::BrowserContext* context);
   virtual ~ExtensionCommandsGlobalRegistry();
 
  private:
-  friend class ProfileKeyedAPIFactory<ExtensionCommandsGlobalRegistry>;
+  friend class BrowserContextKeyedAPIFactory<ExtensionCommandsGlobalRegistry>;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "ExtensionCommandsGlobalRegistry";
   }
@@ -65,8 +64,8 @@ class ExtensionCommandsGlobalRegistry
   // registered for has been pressed.
   virtual void OnKeyPressed(const ui::Accelerator& accelerator) OVERRIDE;
 
-  // Weak pointer to our profile. Not owned by us.
-  Profile* profile_;
+  // Weak pointer to our browser context. Not owned by us.
+  content::BrowserContext* browser_context_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionCommandsGlobalRegistry);
 };

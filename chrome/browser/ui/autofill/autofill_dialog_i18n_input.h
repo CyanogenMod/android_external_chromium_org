@@ -27,16 +27,6 @@ class CreditCard;
 
 namespace i18ninput {
 
-// Returns true if the internationalized address input is enabled.
-bool Enabled();
-
-// Forces Enabled() to always return true while alive.
-class ScopedEnableForTesting {
- public:
-  ScopedEnableForTesting();
-  ~ScopedEnableForTesting();
-};
-
 // Builds internationalized address input fields for |country_code| and adds
 // them (at most 13) to |inputs|. |address_type| is which kind of address to
 // build (e.g. billing or shipping).
@@ -61,6 +51,11 @@ ServerFieldType TypeForField(::i18n::addressinput::AddressField field,
 void CreateAddressData(
     const base::Callback<base::string16(const AutofillType&)>& get_info,
     ::i18n::addressinput::AddressData* address_data);
+
+// Whether or not |country_code| has a fully supported address format.
+// TODO(dbeam): remove this when filling dependent locality is supported.
+// http://crbug.com/340929
+bool CountryIsFullySupported(const std::string& country_code);
 
 }  // namespace i18ninput
 }  // namespace autofill

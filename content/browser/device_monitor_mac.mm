@@ -7,6 +7,7 @@
 #import <QTKit/QTKit.h>
 
 #include "base/logging.h"
+#include "base/mac/scoped_nsobject.h"
 #import "media/video/capture/mac/avfoundation_glue.h"
 
 namespace {
@@ -203,12 +204,36 @@ void QTKitMonitorImpl::OnDeviceChanged() {
   ConsolidateDevicesListAndNotify(snapshot_devices);
 }
 
+// Forward declaration for use by CrAVFoundationDeviceObserver.
+class AVFoundationMonitorImpl;
+
+}  // namespace
+
+// This class is a Key-Value Observer (KVO) shim.  It is needed because C++
+// classes cannot observe Key-Values directly.
+@interface CrAVFoundationDeviceObserver : NSObject {
+ @private
+  AVFoundationMonitorImpl* receiver_;
+}
+
+- (id)initWithChangeReceiver:(AVFoundationMonitorImpl*)receiver;
+- (void)startObserving:(CrAVCaptureDevice*)device;
+- (void)stopObserving:(CrAVCaptureDevice*)device;
+
+@end
+
+namespace {
+
 class AVFoundationMonitorImpl : public DeviceMonitorMacImpl {
  public:
   explicit AVFoundationMonitorImpl(content::DeviceMonitorMac* monitor);
   virtual ~AVFoundationMonitorImpl();
 
   virtual void OnDeviceChanged() OVERRIDE;
+
+ private:
+  base::scoped_nsobject<CrAVFoundationDeviceObserver> suspend_observer_;
+  DISALLOW_COPY_AND_ASSIGN(AVFoundationMonitorImpl);
 };
 
 AVFoundationMonitorImpl::AVFoundationMonitorImpl(
@@ -229,24 +254,33 @@ AVFoundationMonitorImpl::AVFoundationMonitorImpl(
                        queue:nil
                   usingBlock:^(NSNotification* notification) {
                       OnDeviceChanged();}];
+  suspend_observer_.reset(
+      [[CrAVFoundationDeviceObserver alloc] initWithChangeReceiver:this]);
+  for (CrAVCaptureDevice* device in [AVCaptureDeviceGlue devices])
+    [suspend_observer_ startObserving:device];
 }
 
 AVFoundationMonitorImpl::~AVFoundationMonitorImpl() {
   NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
   [nc removeObserver:device_arrival_];
   [nc removeObserver:device_removal_];
+  for (CrAVCaptureDevice* device in [AVCaptureDeviceGlue devices])
+    [suspend_observer_ stopObserving:device];
 }
 
 void AVFoundationMonitorImpl::OnDeviceChanged() {
   std::vector<DeviceInfo> snapshot_devices;
-
-  NSArray* devices = [AVCaptureDeviceGlue devices];
-  for (CrAVCaptureDevice* device in devices) {
+  for (CrAVCaptureDevice* device in [AVCaptureDeviceGlue devices]) {
+    [suspend_observer_ startObserving:device];
+    BOOL suspended = [device respondsToSelector:@selector(isSuspended)] &&
+        [device isSuspended];
     DeviceInfo::DeviceType device_type = DeviceInfo::kUnknown;
     if ([device hasMediaType:AVFoundationGlue::AVMediaTypeVideo()]) {
+      if (suspended)
+        continue;
       device_type = DeviceInfo::kVideo;
     } else if ([device hasMediaType:AVFoundationGlue::AVMediaTypeMuxed()]) {
-      device_type = DeviceInfo::kMuxed;
+      device_type = suspended ? DeviceInfo::kAudio : DeviceInfo::kMuxed;
     } else if ([device hasMediaType:AVFoundationGlue::AVMediaTypeAudio()]) {
       device_type = DeviceInfo::kAudio;
     }
@@ -258,24 +292,69 @@ void AVFoundationMonitorImpl::OnDeviceChanged() {
 
 }  // namespace
 
+@implementation CrAVFoundationDeviceObserver
+
+- (id)initWithChangeReceiver:(AVFoundationMonitorImpl*)receiver {
+  if ((self = [super init])) {
+    DCHECK(receiver != NULL);
+    receiver_ = receiver;
+  }
+  return self;
+}
+
+- (void)startObserving:(CrAVCaptureDevice*)device {
+  DCHECK(device != nil);
+  [device addObserver:self
+           forKeyPath:@"suspended"
+              options:0
+              context:device];
+  [device addObserver:self
+           forKeyPath:@"connected"
+              options:0
+              context:device];
+}
+
+- (void)stopObserving:(CrAVCaptureDevice*)device {
+  DCHECK(device != nil);
+  [device removeObserver:self
+              forKeyPath:@"suspended"];
+  [device removeObserver:self
+              forKeyPath:@"connected"];
+}
+
+- (void)observeValueForKeyPath:(NSString*)keyPath
+                      ofObject:(id)object
+                        change:(NSDictionary*)change
+                       context:(void*)context {
+  if ([keyPath isEqual:@"suspended"])
+    receiver_->OnDeviceChanged();
+  if ([keyPath isEqual:@"connected"])
+    [self stopObserving:static_cast<CrAVCaptureDevice*>(context)];
+}
+
+@end  // @implementation CrAVFoundationDeviceObserver
+
 namespace content {
 
 DeviceMonitorMac::DeviceMonitorMac() {
+  // Both QTKit and AVFoundation do not need to be fired up until the user
+  // exercises a GetUserMedia. Bringing up either library and enumerating the
+  // devices in the system is an operation taking in the range of hundred of ms,
+  // so it is triggered explicitly from MediaStreamManager::StartMonitoring().
+}
+
+DeviceMonitorMac::~DeviceMonitorMac() {}
+
+void DeviceMonitorMac::StartMonitoring() {
+  DCHECK(thread_checker_.CalledOnValidThread());
   if (AVFoundationGlue::IsAVFoundationSupported()) {
     DVLOG(1) << "Monitoring via AVFoundation";
     device_monitor_impl_.reset(new AVFoundationMonitorImpl(this));
-    // For the AVFoundation to start sending connect/disconnect notifications,
-    // the AVFoundation NSBundle has to be loaded and the devices enumerated.
-    // This operation seems to take in the range of hundred of ms. so should be
-    // moved to the point when is needed, and that is during
-    // DeviceVideoCaptureMac +getDeviceNames.
   } else {
     DVLOG(1) << "Monitoring via QTKit";
     device_monitor_impl_.reset(new QTKitMonitorImpl(this));
   }
 }
-
-DeviceMonitorMac::~DeviceMonitorMac() {}
 
 void DeviceMonitorMac::NotifyDeviceChanged(
     base::SystemMonitor::DeviceType type) {

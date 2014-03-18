@@ -9,6 +9,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/preference/preference_api.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/extensions/manifest_handlers/settings_overrides_handler.h"
@@ -23,7 +24,7 @@
 namespace extensions {
 
 namespace {
-base::LazyInstance<ProfileKeyedAPIFactory<SettingsOverridesAPI> >
+base::LazyInstance<BrowserContextKeyedAPIFactory<SettingsOverridesAPI> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
 
 const char kManyStartupPagesWarning[] = "* specifies more than 1 startup URL. "
@@ -69,21 +70,23 @@ TemplateURLData ConvertSearchProvider(
 }
 }  // namespace
 
-SettingsOverridesAPI::SettingsOverridesAPI(Profile* profile)
-    : profile_(profile),
-      url_service_(TemplateURLServiceFactory::GetForProfile(profile)) {
-  DCHECK(profile);
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
-                 content::Source<Profile>(profile));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                 content::Source<Profile>(profile));
+SettingsOverridesAPI::SettingsOverridesAPI(content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)),
+      url_service_(TemplateURLServiceFactory::GetForProfile(profile_)) {
+  DCHECK(profile_);
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED,
+                 content::Source<Profile>(profile_));
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                 content::Source<Profile>(profile_));
 }
 
 SettingsOverridesAPI::~SettingsOverridesAPI() {
 }
 
-ProfileKeyedAPIFactory<SettingsOverridesAPI>*
-    SettingsOverridesAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<SettingsOverridesAPI>*
+SettingsOverridesAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
@@ -218,8 +221,8 @@ void SettingsOverridesAPI::RegisterSearchProvider(
 }
 
 template <>
-void ProfileKeyedAPIFactory<SettingsOverridesAPI>::
-    DeclareFactoryDependencies() {
+void BrowserContextKeyedAPIFactory<
+    SettingsOverridesAPI>::DeclareFactoryDependencies() {
   DependsOn(ExtensionPrefsFactory::GetInstance());
   DependsOn(PreferenceAPI::GetFactoryInstance());
   DependsOn(TemplateURLServiceFactory::GetInstance());

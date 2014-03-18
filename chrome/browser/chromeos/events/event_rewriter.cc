@@ -14,7 +14,6 @@
 
 #include <vector>
 
-#include "ash/shell.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
@@ -31,12 +30,11 @@
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/ime/xkeyboard.h"
-#include "ui/aura/root_window.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
-#include "ui/views/corewm/window_util.h"
+#include "ui/wm/core/window_util.h"
 
 namespace {
 
@@ -141,11 +139,6 @@ EventRewriter::EventRewriter()
       xkeyboard_for_testing_(NULL),
       keyboard_driven_event_rewriter_(new KeyboardDrivenEventRewriter),
       pref_service_for_testing_(NULL) {
-  // The ash shell isn't instantiated for our unit tests.
-  if (ash::Shell::HasInstance()) {
-    ash::Shell::GetPrimaryRootWindow()->GetDispatcher()->
-        AddRootWindowObserver(this);
-  }
   base::MessageLoopForUI::current()->AddObserver(this);
   if (base::SysInfo::IsRunningOnChromeOS()) {
     XInputHierarchyChangedEventListener::GetInstance()->AddObserver(this);
@@ -155,10 +148,6 @@ EventRewriter::EventRewriter()
 
 EventRewriter::~EventRewriter() {
   base::MessageLoopForUI::current()->RemoveObserver(this);
-  if (ash::Shell::HasInstance()) {
-    ash::Shell::GetPrimaryRootWindow()->GetDispatcher()->
-        RemoveRootWindowObserver(this);
-  }
   if (base::SysInfo::IsRunningOnChromeOS()) {
     XInputHierarchyChangedEventListener::GetInstance()->RemoveObserver(this);
   }
@@ -196,22 +185,44 @@ void EventRewriter::RewriteForTesting(XEvent* event) {
   Rewrite(event);
 }
 
-void EventRewriter::OnKeyboardMappingChanged(const aura::RootWindow* root) {
-  RefreshKeycodes();
+void EventRewriter::DeviceKeyPressedOrReleased(int device_id) {
+  std::map<int, DeviceType>::const_iterator iter =
+      device_id_to_type_.find(device_id);
+  if (iter == device_id_to_type_.end()) {
+    // |device_id| is unknown. This means the device was connected before
+    // booting the OS. Query the name of the device and add it to the map.
+    DeviceAdded(device_id);
+  }
+
+  last_device_id_ = device_id;
 }
 
 base::EventStatus EventRewriter::WillProcessEvent(
     const base::NativeEvent& event) {
   XEvent* xevent = event;
-  if (xevent->type == KeyPress || xevent->type == KeyRelease)
+  if (xevent->type == KeyPress || xevent->type == KeyRelease) {
     Rewrite(xevent);
-  else if (xevent->type == GenericEvent)
-    RewriteLocatedEvent(xevent);
+  } else if (xevent->type == GenericEvent) {
+    XIDeviceEvent* xievent = static_cast<XIDeviceEvent*>(xevent->xcookie.data);
+    if (xievent->evtype == XI_KeyPress || xievent->evtype == XI_KeyRelease) {
+      if (xievent->deviceid == xievent->sourceid)
+        DeviceKeyPressedOrReleased(xievent->deviceid);
+    } else {
+      RewriteLocatedEvent(xevent);
+    }
+  } else if (xevent->type == MappingNotify) {
+    if (xevent->xmapping.request == MappingModifier ||
+        xevent->xmapping.request == MappingKeyboard) {
+      RefreshKeycodes();
+    }
+  }
   return base::EVENT_CONTINUE;
 }
 
 void EventRewriter::DidProcessEvent(const base::NativeEvent& event) {
 }
+
+void EventRewriter::DeviceHierarchyChanged() {}
 
 void EventRewriter::DeviceAdded(int device_id) {
   DCHECK_NE(XIAllDevices, device_id);
@@ -245,18 +256,6 @@ void EventRewriter::DeviceAdded(int device_id) {
 
 void EventRewriter::DeviceRemoved(int device_id) {
   device_id_to_type_.erase(device_id);
-}
-
-void EventRewriter::DeviceKeyPressedOrReleased(int device_id) {
-  std::map<int, DeviceType>::const_iterator iter =
-      device_id_to_type_.find(device_id);
-  if (iter == device_id_to_type_.end()) {
-    // |device_id| is unknown. This means the device was connected before
-    // booting the OS. Query the name of the device and add it to the map.
-    DeviceAdded(device_id);
-  }
-
-  last_device_id_ = device_id;
 }
 
 void EventRewriter::RefreshKeycodes() {

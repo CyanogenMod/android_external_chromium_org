@@ -94,11 +94,15 @@ IPC_ENUM_TRAITS_MAX_VALUE(
 
 // Autofill messages sent from the browser to the renderer.
 
-// Reply to the AutofillHostMsg_FillAutofillFormData message with the
-// Autofill form data.
-IPC_MESSAGE_ROUTED2(AutofillMsg_FormDataFilled,
-                    int /* id of the request message */,
-                    autofill::FormData /* form data */)
+// Instructs the renderer to fill the active form with the given form data.
+IPC_MESSAGE_ROUTED2(AutofillMsg_FillForm,
+                    int /* query_id */,
+                    autofill::FormData /* form */)
+
+// Instructs the renderer to preview the active form with the given form data.
+IPC_MESSAGE_ROUTED2(AutofillMsg_PreviewForm,
+                    int /* query_id */,
+                    autofill::FormData /* form */)
 
 // Fill a password form and prepare field autocomplete for multiple
 // matching logins. Lets the renderer know if it should disable the popup
@@ -111,21 +115,19 @@ IPC_MESSAGE_ROUTED1(
     AutofillMsg_FieldTypePredictionsAvailable,
     std::vector<autofill::FormDataPredictions> /* forms */)
 
-// Tells the renderer that the next form will be filled for real.
-IPC_MESSAGE_ROUTED0(AutofillMsg_SetAutofillActionFill)
-
 // Clears the currently displayed Autofill results.
 IPC_MESSAGE_ROUTED0(AutofillMsg_ClearForm)
-
-// Tells the renderer that the next form will be filled as a preview.
-IPC_MESSAGE_ROUTED0(AutofillMsg_SetAutofillActionPreview)
 
 // Tells the renderer that the Autofill previewed form should be cleared.
 IPC_MESSAGE_ROUTED0(AutofillMsg_ClearPreviewedForm)
 
 // Sets the currently selected node's value.
-IPC_MESSAGE_ROUTED1(AutofillMsg_SetNodeText,
-                    base::string16 /* new node text */)
+IPC_MESSAGE_ROUTED1(AutofillMsg_FillFieldWithValue,
+                    base::string16 /* value */)
+
+// Sets the suggested value for the currently previewed node.
+IPC_MESSAGE_ROUTED1(AutofillMsg_PreviewFieldWithValue,
+                    base::string16 /* value */)
 
 // Sets the currently selected node's value to be the given data list value.
 IPC_MESSAGE_ROUTED1(AutofillMsg_AcceptDataListSuggestion,
@@ -151,10 +153,6 @@ IPC_MESSAGE_ROUTED1(AutofillMsg_FormNotBlacklisted,
 IPC_MESSAGE_ROUTED2(AutofillMsg_RequestAutocompleteResult,
                     blink::WebFormElement::AutocompleteResult /* result */,
                     autofill::FormData /* form_data */)
-
-// Sent when the current page is actually displayed in the browser, possibly
-// after being preloaded.
-IPC_MESSAGE_ROUTED0(AutofillMsg_PageShown)
 
 // Sent when Autofill manager gets the query response from the Autofill server
 // and there are fields classified as ACCOUNT_CREATION_PASSWORD in the response.
@@ -206,14 +204,6 @@ IPC_MESSAGE_ROUTED5(AutofillHostMsg_QueryFormFieldAutofill,
                     gfx::RectF /* input field bounds, window-relative */,
                     bool /* display warning if autofill disabled */)
 
-// Instructs the browser to fill in the values for a form using Autofill
-// profile data.
-IPC_MESSAGE_ROUTED4(AutofillHostMsg_FillAutofillFormData,
-                    int /* id of this message */,
-                    autofill::FormData /* the form  */,
-                    autofill::FormFieldData /* the form field  */,
-                    int /* profile unique ID */)
-
 // Sent when a form is previewed with Autofill suggestions.
 IPC_MESSAGE_ROUTED0(AutofillHostMsg_DidPreviewAutofillFormData)
 
@@ -229,8 +219,8 @@ IPC_MESSAGE_ROUTED2(AutofillHostMsg_RequestAutocomplete,
 // Send when a text field is done editing.
 IPC_MESSAGE_ROUTED0(AutofillHostMsg_DidEndTextFieldEditing)
 
-// Instructs the browser to hide the Autofill UI.
-IPC_MESSAGE_ROUTED0(AutofillHostMsg_HideAutofillUI)
+// Instructs the browser to hide the Autofill popup if it is open.
+IPC_MESSAGE_ROUTED0(AutofillHostMsg_HidePopup)
 
 // Instructs the browser to show the password generation popup at the
 // specified location. This location should be specified in the renderers

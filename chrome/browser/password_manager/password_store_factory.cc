@@ -8,15 +8,17 @@
 #include "base/environment.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
+#include "chrome/browser/sync/glue/sync_start_util.h"
 #include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/pref_names.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/os_crypt/os_crypt_switches.h"
 #include "components/password_manager/core/browser/login_database.h"
 #include "components/password_manager/core/browser/password_store.h"
 #include "components/password_manager/core/browser/password_store_default.h"
+#include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -114,7 +116,7 @@ LocalProfileId PasswordStoreFactory::GetLocalProfileId(
 }
 #endif
 
-BrowserContextKeyedService* PasswordStoreFactory::BuildServiceInstanceFor(
+KeyedService* PasswordStoreFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
 
@@ -145,7 +147,8 @@ BrowserContextKeyedService* PasswordStoreFactory::BuildServiceInstanceFor(
                             WebDataService::FromBrowserContext(profile));
 #elif defined(OS_MACOSX)
   crypto::AppleKeychain* keychain =
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseMockKeychain) ?
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          os_crypt::switches::kUseMockKeychain) ?
           new crypto::MockAppleKeychain() : new crypto::AppleKeychain();
   ps = new PasswordStoreMac(
       main_thread_runner, db_thread_runner, keychain, login_db.release());
@@ -218,7 +221,8 @@ BrowserContextKeyedService* PasswordStoreFactory::BuildServiceInstanceFor(
 #else
   NOTIMPLEMENTED();
 #endif
-  if (!ps || !ps->Init()) {
+  if (!ps || !ps->Init(
+          sync_start_util::GetFlareForSyncableService(profile->GetPath()))) {
     NOTREACHED() << "Could not initialize password manager.";
     return NULL;
   }

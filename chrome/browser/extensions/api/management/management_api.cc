@@ -125,7 +125,7 @@ scoped_ptr<management::ExtensionInfo> CreateExtensionInfo(
   if (info->enabled) {
     info->disabled_reason = management::ExtensionInfo::DISABLED_REASON_NONE;
   } else {
-    ExtensionPrefs* prefs = service->extension_prefs();
+    ExtensionPrefs* prefs = ExtensionPrefs::Get(service->profile());
     if (prefs->DidExtensionEscalatePermissions(extension.id())) {
       info->disabled_reason =
           management::ExtensionInfo::DISABLED_REASON_PERMISSIONS_INCREASE;
@@ -439,7 +439,7 @@ bool ManagementLaunchAppFunction::RunImpl() {
   // If the user has not set a preference, the default launch value will be
   // returned.
   LaunchContainer launch_container =
-      GetLaunchContainer(service()->extension_prefs(), extension);
+      GetLaunchContainer(ExtensionPrefs::Get(GetProfile()), extension);
   OpenApplication(AppLaunchParams(
       GetProfile(), extension, launch_container, NEW_FOREGROUND_TAB));
 #if !defined(OS_ANDROID)
@@ -484,7 +484,7 @@ bool ManagementSetEnabledFunction::RunImpl() {
   bool currently_enabled = service()->IsExtensionEnabled(extension_id_);
 
   if (!currently_enabled && params->enabled) {
-    ExtensionPrefs* prefs = service()->extension_prefs();
+    ExtensionPrefs* prefs = ExtensionPrefs::Get(GetProfile());
     if (prefs->DidExtensionEscalatePermissions(extension_id_)) {
       if (!user_gesture()) {
         error_ = keys::kGestureNeededForEscalationError;
@@ -528,11 +528,12 @@ ManagementUninstallFunctionBase::~ManagementUninstallFunctionBase() {
 }
 
 bool ManagementUninstallFunctionBase::Uninstall(
-    const std::string& extension_id,
+    const std::string& target_extension_id,
     bool show_confirm_dialog) {
-  extension_id_ = extension_id;
-  const Extension* extension = service()->GetExtensionById(extension_id_, true);
-  if (!extension || extension->ShouldNotBeVisible()) {
+  extension_id_ = target_extension_id;
+  const Extension* target_extension =
+      service()->GetExtensionById(extension_id_, true);
+  if (!target_extension || target_extension->ShouldNotBeVisible()) {
     error_ = ErrorUtils::FormatErrorMessage(
         keys::kNoExtensionError, extension_id_);
     return false;
@@ -540,7 +541,7 @@ bool ManagementUninstallFunctionBase::Uninstall(
 
   if (!ExtensionSystem::Get(GetProfile())
            ->management_policy()
-           ->UserMayModifySettings(extension, NULL)) {
+           ->UserMayModifySettings(target_extension, NULL)) {
     error_ = ErrorUtils::FormatErrorMessage(
         keys::kUserCantModifyError, extension_id_);
     return false;
@@ -551,7 +552,13 @@ bool ManagementUninstallFunctionBase::Uninstall(
       AddRef(); // Balanced in ExtensionUninstallAccepted/Canceled
       extension_uninstall_dialog_.reset(ExtensionUninstallDialog::Create(
           GetProfile(), GetCurrentBrowser(), this));
-      extension_uninstall_dialog_->ConfirmUninstall(extension);
+      if (extension_id() != target_extension_id) {
+        extension_uninstall_dialog_->ConfirmProgrammaticUninstall(
+            target_extension, GetExtension());
+      } else {
+        // If this is a self uninstall, show the generic uninstall dialog.
+        extension_uninstall_dialog_->ConfirmUninstall(target_extension);
+      }
     } else {
       Finish(true);
     }
@@ -710,36 +717,38 @@ void ManagementEventRouter::Observe(
   ExtensionSystem::Get(profile)->event_router()->BroadcastEvent(event.Pass());
 }
 
-ManagementAPI::ManagementAPI(Profile* profile)
-    : profile_(profile) {
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, management::OnInstalled::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, management::OnUninstalled::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, management::OnEnabled::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, management::OnDisabled::kEventName);
+ManagementAPI::ManagementAPI(content::BrowserContext* context)
+    : browser_context_(context) {
+  EventRouter* event_router =
+      ExtensionSystem::Get(browser_context_)->event_router();
+  event_router->RegisterObserver(this, management::OnInstalled::kEventName);
+  event_router->RegisterObserver(this, management::OnUninstalled::kEventName);
+  event_router->RegisterObserver(this, management::OnEnabled::kEventName);
+  event_router->RegisterObserver(this, management::OnDisabled::kEventName);
 }
 
 ManagementAPI::~ManagementAPI() {
 }
 
 void ManagementAPI::Shutdown() {
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
+      this);
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<ManagementAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<ManagementAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<ManagementAPI>* ManagementAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<ManagementAPI>*
+ManagementAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 void ManagementAPI::OnListenerAdded(const EventListenerInfo& details) {
-  management_event_router_.reset(new ManagementEventRouter(profile_));
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  management_event_router_.reset(
+      new ManagementEventRouter(Profile::FromBrowserContext(browser_context_)));
+  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
+      this);
 }
 
 }  // namespace extensions

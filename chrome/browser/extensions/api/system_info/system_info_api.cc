@@ -33,6 +33,7 @@ namespace extensions {
 
 using api::system_storage::StorageUnitInfo;
 using content::BrowserThread;
+using storage_monitor::StorageMonitor;
 
 namespace system_display = api::system_display;
 namespace system_storage = api::system_storage;
@@ -53,7 +54,7 @@ bool IsSystemStorageEvent(const std::string& event_name) {
 // Event router for systemInfo API. It is a singleton instance shared by
 // multiple profiles.
 class SystemInfoEventRouter : public gfx::DisplayObserver,
-                              public RemovableStorageObserver {
+                              public storage_monitor::RemovableStorageObserver {
  public:
   static SystemInfoEventRouter* GetInstance();
 
@@ -71,8 +72,10 @@ class SystemInfoEventRouter : public gfx::DisplayObserver,
   virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE;
 
   // RemovableStorageObserver implementation.
-  virtual void OnRemovableStorageAttached(const StorageInfo& info) OVERRIDE;
-  virtual void OnRemovableStorageDetached(const StorageInfo& info) OVERRIDE;
+  virtual void OnRemovableStorageAttached(
+      const storage_monitor::StorageInfo& info) OVERRIDE;
+  virtual void OnRemovableStorageDetached(
+      const storage_monitor::StorageInfo& info) OVERRIDE;
 
   // Called from any thread to dispatch the systemInfo event to all extension
   // processes cross multiple profiles.
@@ -161,7 +164,7 @@ void SystemInfoEventRouter::RemoveEventListener(const std::string& event_name) {
 }
 
 void SystemInfoEventRouter::OnRemovableStorageAttached(
-    const StorageInfo& info) {
+    const storage_monitor::StorageInfo& info) {
   StorageUnitInfo unit;
   systeminfo::BuildStorageUnitInfo(info, &unit);
   scoped_ptr<base::ListValue> args(new base::ListValue);
@@ -170,7 +173,7 @@ void SystemInfoEventRouter::OnRemovableStorageAttached(
 }
 
 void SystemInfoEventRouter::OnRemovableStorageDetached(
-    const StorageInfo& info) {
+    const storage_monitor::StorageInfo& info) {
   scoped_ptr<base::ListValue> args(new base::ListValue);
   std::string transient_id =
       StorageMonitor::GetInstance()->GetTransientIdForDeviceId(
@@ -214,16 +217,18 @@ void RemoveEventListener(const std::string& event_name) {
 
 }  // namespace
 
-static base::LazyInstance<ProfileKeyedAPIFactory<SystemInfoAPI> >
+static base::LazyInstance<BrowserContextKeyedAPIFactory<SystemInfoAPI> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<SystemInfoAPI>* SystemInfoAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<SystemInfoAPI>*
+SystemInfoAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
-SystemInfoAPI::SystemInfoAPI(Profile* profile) : profile_(profile) {
-  EventRouter* router = ExtensionSystem::Get(profile_)->event_router();
+SystemInfoAPI::SystemInfoAPI(content::BrowserContext* context)
+    : browser_context_(context) {
+  EventRouter* router = ExtensionSystem::Get(browser_context_)->event_router();
   router->RegisterObserver(this, system_storage::OnAttached::kEventName);
   router->RegisterObserver(this, system_storage::OnDetached::kEventName);
   router->RegisterObserver(this, system_display::OnDisplayChanged::kEventName);
@@ -233,7 +238,8 @@ SystemInfoAPI::~SystemInfoAPI() {
 }
 
 void SystemInfoAPI::Shutdown() {
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
+      this);
 }
 
 void SystemInfoAPI::OnListenerAdded(const EventListenerInfo& details) {

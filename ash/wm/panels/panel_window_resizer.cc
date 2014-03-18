@@ -19,9 +19,9 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/screen.h"
@@ -181,7 +181,6 @@ void PanelWindowResizer::StartedDragging() {
     GetPanelLayoutManager(panel_container_)->StartDragging(GetTarget());
   if (!was_attached_) {
     // Attach the panel while dragging placing it in front of other panels.
-    window_state_->set_continue_drag_after_reparent(true);
     window_state_->set_panel_attached(true);
     // We use root window coordinates to ensure that during the drag the panel
     // is reparented to a container in the root window that has that window.

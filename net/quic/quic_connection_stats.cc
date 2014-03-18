@@ -22,10 +22,13 @@ QuicConnectionStats::QuicConnectionStats()
       packets_revived(0),
       packets_dropped(0),
       crypto_retransmit_count(0),
+      loss_timeout_count(0),
       tlp_count(0),
       rto_count(0),
       rtt(0),
-      estimated_bandwidth(0) {
+      estimated_bandwidth(0),
+      cwnd_increase_congestion_avoidance(0),
+      cwnd_increase_cubic_mode(0) {
 }
 
 QuicConnectionStats::~QuicConnectionStats() {}
@@ -49,6 +52,10 @@ ostream& operator<<(ostream& os, const QuicConnectionStats& s) {
      << ", tlp count: " << s.tlp_count
      << ", rtt(us): " << s.rtt
      << ", estimated_bandwidth: " << s.estimated_bandwidth
+     << ", total amount of cwnd increase in TCPCubic, in congestion avoidance: "
+     << s.cwnd_increase_congestion_avoidance
+     << ", amount of cwnd increase in TCPCubic, in cubic mode: "
+     << s.cwnd_increase_cubic_mode
      << "}\n";
   return os;
 }

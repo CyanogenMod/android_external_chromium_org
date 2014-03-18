@@ -12,6 +12,10 @@
   
   
   
+  
+  
+  
+  
 <!--
  Copyright 2013 The Polymer Authors. All rights reserved.
  Use of this source code is governed by a BSD-style
@@ -171,39 +175,9 @@ license that can be found in the LICENSE file.
   
 </polymer-element>
 
-<polymer-element name="viewer-toolbar" attributes="fadingIn" on-mouseover="{{fadeIn}}" on-mousemove="{{fadeIn}}" on-mouseout="{{fadeOut}}" assetpath="html_office/elements/viewer-toolbar/">
-  <template>
-    <style>/* Copyright 2013 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file. */
-
-:host {
-  -webkit-transition: opacity 0.4s ease-in-out;
-  bottom: 0;
-  display: block;
-  font-size: 0;
-  opacity: 1;
-  position: fixed;
-  right: 0;
-  padding: 30px 30px 15px 30vw;
-}
-
-#toolbar {
-  border-radius: 3px;
-  box-shadow: 0 1px 2px gray, 0 3px 3px rgba(0, 0, 0, .2);
-  overflow: hidden;
-}
-</style>
-    <div id="toolbar">
-      <content></content>
-    </div>
-  </template>
-  
-</polymer-element>
-
 <polymer-element name="viewer-button" attributes="src latchable" assetpath="html_office/elements/viewer-button/">
-  <template>
-    <style>/* Copyright 2013 The Chromium Authors. All rights reserved.
+<template>
+  <style>/* Copyright 2013 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
@@ -223,6 +197,7 @@ license that can be found in the LICENSE file.
   display: inline-block;
   height: 36px;
   margin: 0;
+  pointer-events: all;
   width: 43px;
 }
 
@@ -240,9 +215,246 @@ license that can be found in the LICENSE file.
   background-image: none;
 }
 </style>
-    <div id="icon"></div>
-  </template>
-  
+  <div id="icon"></div>
+</template>
+
+</polymer-element>
+
+<polymer-element name="viewer-error-screen" attributes="text" assetpath="html_office/elements/viewer-error-screen/">
+<template>
+  <style>:host {
+  background-color: #ccc;
+  color: #555;
+  font-family: sans-serif;
+  font-size: 20px;
+  height: 100%;
+  pointer-events: none;
+  position: fixed;
+  text-align: center;
+  width: 100%;
+}
+
+#load-failed-message {
+  line-height: 0;
+  position: absolute;
+  top: 50%;
+  width: 100%;
+}</style>
+  <div id="load-failed-message">{{text}}</div>
+</template>
+
+</polymer-element>
+
+<polymer-element name="viewer-page-indicator" attributes="text" assetpath="html_office/elements/viewer-page-indicator/">
+<template>
+  <style>/* Copyright 2013 The Chromium Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+:host {
+  -webkit-transition: opacity 400ms ease-in-out;
+  pointer-events: none;
+  position: fixed;
+  right: 0;
+}
+
+#text {
+  background-color: rgba(0, 0, 0, 0.5);
+  border-radius: 5px;
+  color: white;
+  float: left;
+  font-family: sans-serif;
+  font-size: 12px;
+  font-weight: bold;
+  line-height: 48px;
+  text-align: center;
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.8);
+  width: 62px;
+}
+
+#triangle-right {
+  border-bottom: 6px solid transparent;
+  border-left: 8px solid rgba(0, 0, 0, 0.5);
+  border-top: 6px solid transparent;
+  display: inline;
+  float: left;
+  height: 0;
+  margin-top: 18px;
+  width: 0;
+}</style>
+  <div id="text">{{text}}</div>
+  <div id="triangle-right"></div>
+</template>
+
+</polymer-element>
+
+<polymer-element name="viewer-password-screen" attributes="text active" assetpath="html_office/elements/viewer-password-screen/">
+<template>
+  <style>:host {
+  -webkit-transition: opacity 400ms ease-in-out;
+  background-color: #ccc;
+  color: #555;
+  display: table;
+  font-family: sans-serif;
+  font-size: 15px;
+  height: 100%;
+  pointer-events: none;
+  position: fixed;
+  text-align: center;
+  width: 100%;
+}
+
+#message {
+  padding-bottom: 10px;
+}
+
+.center {
+  display: table-cell;
+  vertical-align: middle;
+}
+
+.form {
+  border: 1px solid #777;
+  box-shadow: 1px 1px 1px;
+  display: inline-block;
+  padding: 10px;
+  width: 300px;
+}
+
+#successMessage {
+  display: inline-block;
+  padding-left: 5px;
+  pointer-events: none;
+}
+
+input {
+  color: #333;
+  pointer-events: all;
+}</style>
+  <div class="center">
+    <form class="form">
+      <div id="message">{{text}}</div>
+      <input id="password" type="password" size="20">
+      <input id="submit" type="submit" on-click="{{submit}}">
+      <div id="successMessage">{{successMessage}}</div>
+    </form>
+  </div>
+</template>
+
+</polymer-element>
+
+<polymer-element name="viewer-progress-bar" attributes="progress text numSegments" assetpath="html_office/elements/viewer-progress-bar/">
+<template>
+  <style>/* Copyright 2013 The Chromium Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+:host {
+  -webkit-transition: opacity 400ms ease-in-out;
+  background: rgb(29, 39, 57);
+  border-radius: 5px;
+  bottom: 26px;
+  box-shadow: 0 1px 2px gray, 0 3px 3px rgba(0, 0, 0, .2);
+  height: auto;
+  left: 26px;
+  pointer-events: none;
+  position: fixed;
+  width: auto;
+}
+
+.scaler {
+  -webkit-transform: scale(0.25);
+  -webkit-transform-origin: 0 0;
+  float: left;
+  height: 44px;
+  margin: 8px;
+  width: 44px;
+}
+
+#segments {
+  border-radius: 50%;
+  height: 176px;
+  list-style: none;
+  margin: 0;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  width: 176px;
+}
+
+.segment {
+  -webkit-transform-origin: 0 100%;
+  background: rgb(227, 234, 249);
+  box-shadow: 0 0 0 6px rgb(29, 39, 57) inset;
+  height: 50%;
+  overflow: hidden;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 50%;
+}
+
+.center-circle {
+  background-color: rgb(29, 39, 57);
+  border-radius: 50%;
+  height: 80px;
+  left: 44px;
+  margin: 0;
+  padding: 0;
+  position: absolute;
+  top: 44px;
+  width: 80px;
+}
+
+#text {
+  color: rgb(227, 234, 249);
+  float: left;
+  font-family: sans-serif;
+  font-size: 16px;
+  font-weight: bold;
+  line-height: 58px;
+  margin-right: 10px;
+  margin-top: 1px;
+}
+</style>
+  <div class="scaler">
+    <ul id="segments"></ul>
+    <div class="center-circle"></div>
+  </div>
+  <div id="text">{{text}}</div>
+</template>
+
+</polymer-element>
+
+<polymer-element name="viewer-toolbar" attributes="fadingIn" assetpath="html_office/elements/viewer-toolbar/">
+<template>
+  <style>/* Copyright 2013 The Chromium Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+:host {
+  -webkit-transition: opacity 400ms ease-in-out;
+  bottom: 0;
+  display: block;
+  font-size: 0;
+  opacity: 1;
+  padding: 30px 30px 15px 30vw;
+  pointer-events: none;
+  position: fixed;
+  right: 0;
+}
+
+#toolbar {
+  border-radius: 3px;
+  box-shadow: 0 1px 2px gray, 0 3px 3px rgba(0, 0, 0, .2);
+  overflow: hidden;
+}
+</style>
+  <div id="toolbar">
+    <content></content>
+  </div>
+</template>
+
 </polymer-element>
 <style>
     body {
@@ -250,25 +462,61 @@ license that can be found in the LICENSE file.
       margin: 0;
     }
     viewer-toolbar {
+      visibility: hidden;
+      z-index: 3;
+    }
+    viewer-page-indicator {
+      visibility: hidden;
+      z-index: 3;
+    }
+    viewer-progress-bar {
+      z-index: 3;
+    }
+    viewer-error-screen {
+      visibility: hidden;
       z-index: 2;
     }
-    object {
+    viewer-password-screen {
+      visibility: hidden;
+      z-index: 2;
+    }
+    #plugin {
+      height: 100%;
+      position: fixed;
+      width: 100%;
       z-index: 1;
+    }
+    #sizer {
+      position: absolute;
+      z-index: 0;
     }
   </style>
 </head>
 <body>
 
-<viewer-toolbar>
+<div id="sizer"></div>
+<viewer-password-screen id="password-screen"></viewer-password-screen>
+<viewer-page-indicator id="page-indicator"></viewer-page-indicator>
+<viewer-progress-bar id="progress-bar"></viewer-progress-bar>
+
+<viewer-toolbar id="toolbar">
   <polymer-selector>
-    <viewer-button src="button_fit_page.png" latchable="true"></viewer-button>
-    <viewer-button src="button_fit_width.png" latchable="true"></viewer-button>
-    <viewer-button src="button_zoom_in.png"></viewer-button>
-    <viewer-button src="button_zoom_out.png"></viewer-button>
+    <viewer-button id="fit-to-page-button" src="button_fit_page.png" latchable="">
+    </viewer-button>
+    <viewer-button id="fit-to-width-button" src="button_fit_width.png" latchable="">
+    </viewer-button>
+    <viewer-button id="zoom-in-button" src="button_zoom_in.png">
+    </viewer-button>
+    <viewer-button id="zoom-out-button" src="button_zoom_out.png">
+    </viewer-button>
   </polymer-selector>
-  <viewer-button src="button_save.png"></viewer-button>
-  <viewer-button src="button_print.png"></viewer-button>
+  <a id="save-button-link" download="">
+    <viewer-button id="save-button" src="button_save.png"></viewer-button>
+  </a>
+  <viewer-button id="print-button" src="button_print.png"></viewer-button>
 </viewer-toolbar>
+
+<viewer-error-screen id="error-screen"></viewer-error-screen>
 
 
 <script src="index.js"></script>

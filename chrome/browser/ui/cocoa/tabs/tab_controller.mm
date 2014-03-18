@@ -10,18 +10,16 @@
 #include "base/i18n/rtl.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "base/strings/sys_string_conversions.h"
 #import "chrome/browser/themes/theme_properties.h"
 #import "chrome/browser/themes/theme_service.h"
+#import "chrome/browser/ui/cocoa/sprite_view.h"
 #import "chrome/browser/ui/cocoa/tabs/media_indicator_view.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_controller_target.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_view.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #import "extensions/common/extension.h"
 #include "grit/generated_resources.h"
-#import "third_party/google_toolbox_for_mac/src/AppKit/GTMFadeTruncatingTextFieldCell.h"
 #import "ui/base/cocoa/menu_controller.h"
-#include "ui/base/l10n/l10n_util_mac.h"
 
 @implementation TabController
 
@@ -90,29 +88,16 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
     // Remember the icon's frame, so that if the icon is ever removed, a new
     // one can later replace it in the proper location.
     originalIconFrame_ = NSMakeRect(19, 5, 16, 16);
-    iconView_.reset([[NSImageView alloc] initWithFrame:originalIconFrame_]);
-    [iconView_ setAutoresizingMask:NSViewMaxXMargin];
+    iconView_.reset([[SpriteView alloc] initWithFrame:originalIconFrame_]);
+    [iconView_ setAutoresizingMask:NSViewMaxXMargin | NSViewMinYMargin];
 
     // When the icon is removed, the title expands to the left to fill the
     // space left by the icon.  When the close button is removed, the title
     // expands to the right to fill its space.  These are the amounts to expand
-    // and contract titleView_ under those conditions. We don't have to
+    // and contract the title frame under those conditions. We don't have to
     // explicilty save the offset between the title and the close button since
     // we can just get that value for the close button's frame.
     NSRect titleFrame = NSMakeRect(35, 6, 92, 14);
-
-    // Label.
-    titleView_.reset([[NSTextField alloc] initWithFrame:titleFrame]);
-    [titleView_ setAutoresizingMask:NSViewWidthSizable];
-    base::scoped_nsobject<GTMFadeTruncatingTextFieldCell> labelCell(
-        [[GTMFadeTruncatingTextFieldCell alloc] initTextCell:@"Label"]);
-    [labelCell setControlSize:NSSmallControlSize];
-    CGFloat fontSize = [NSFont systemFontSizeForControlSize:NSSmallControlSize];
-    NSFont* font = [NSFont fontWithName:
-        [[labelCell font] fontName] size:fontSize];
-    [labelCell setFont:font];
-    [titleView_ setCell:labelCell];
-    titleViewCell_ = labelCell;
 
     // Close button.
     closeButton_.reset([[HoverCloseButton alloc] initWithFrame:
@@ -127,8 +112,8 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
                            closeButton:closeButton_]);
     [view setAutoresizingMask:NSViewMaxXMargin | NSViewMinYMargin];
     [view addSubview:iconView_];
-    [view addSubview:titleView_];
     [view addSubview:closeButton_];
+    [view setTitleFrame:titleFrame];
     [super setView:view];
 
     isIconShowing_ = YES;
@@ -155,10 +140,12 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
 // a re-draw.
 - (void)internalSetSelected:(BOOL)selected {
   TabView* tabView = [self tabView];
-  DCHECK([tabView isKindOfClass:[TabView class]]);
-  [tabView setState:selected];
-  if ([self active])
+  if ([self active]) {
+    [tabView setState:NSOnState];
     [tabView cancelAlert];
+  } else {
+    [tabView setState:selected ? NSMixedState : NSOffState];
+  }
   [self updateVisibility];
   [self updateTitleColor];
 }
@@ -198,16 +185,10 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
   if ([[self title] isEqualToString:title])
     return;
 
-  [titleView_ setStringValue:title];
-  base::string16 title16 = base::SysNSStringToUTF16(title);
-  bool isRTL = base::i18n::GetFirstStrongCharacterDirection(title16) ==
-               base::i18n::RIGHT_TO_LEFT;
-  titleViewCell_.truncateMode = isRTL ? GTMFadeTruncatingHead
-                                      : GTMFadeTruncatingTail;
+  TabView* tabView = [self tabView];
+  [tabView setTitle:title];
 
   if ([self mini] && ![self selected]) {
-    TabView* tabView = static_cast<TabView*>([self view]);
-    DCHECK([tabView isKindOfClass:[TabView class]]);
     [tabView startAlert];
   }
   [super setTitle:title];
@@ -239,38 +220,16 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
   return selected_ || active_;
 }
 
-- (NSView*)iconView {
+- (SpriteView*)iconView {
   return iconView_;
 }
 
-- (void)setIconView:(NSView*)iconView {
+- (void)setIconView:(SpriteView*)iconView {
   [iconView_ removeFromSuperview];
   iconView_.reset([iconView retain]);
 
-  if ([self app] || [self mini]) {
-    NSRect appIconFrame = [iconView frame];
-    appIconFrame.origin = originalIconFrame_.origin;
-
-    const CGFloat tabWidth = [self app] ? [TabController appTabWidth]
-                                        : [TabController miniTabWidth];
-
-    // Center the icon.
-    appIconFrame.origin.x =
-        std::floor((tabWidth - NSWidth(appIconFrame)) / 2.0);
-    [iconView_ setFrame:appIconFrame];
-  } else {
-    [iconView_ setFrame:originalIconFrame_];
-  }
-  // Ensure that the icon is suppressed if no icon is set or if the tab is too
-  // narrow to display one.
-  [self updateVisibility];
-
   if (iconView_)
     [[self view] addSubview:iconView_];
-}
-
-- (NSTextField*)titleView {
-  return titleView_;
 }
 
 - (MediaIndicatorView*)mediaIndicatorView {
@@ -333,6 +292,42 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
       [self iconCapacity], [self mini], [self selected]);
 }
 
+- (void)setIconImage:(NSImage*)image {
+  [self setIconImage:image withToastAnimation:NO];
+}
+
+- (void)setIconImage:(NSImage*)image withToastAnimation:(BOOL)animate {
+  if (image == nil) {
+    [self setIconView:nil];
+  } else {
+    if (iconView_.get() == nil) {
+      base::scoped_nsobject<SpriteView> iconView([[SpriteView alloc] init]);
+      [iconView setAutoresizingMask:NSViewMaxXMargin | NSViewMinYMargin];
+      [self setIconView:iconView];
+    }
+
+    [iconView_ setImage:image withToastAnimation:animate];
+
+    if ([self app] || [self mini]) {
+      NSRect appIconFrame = [iconView_ frame];
+      appIconFrame.origin = originalIconFrame_.origin;
+
+      const CGFloat tabWidth = [self app] ? [TabController appTabWidth]
+                                          : [TabController miniTabWidth];
+
+      // Center the icon.
+      appIconFrame.origin.x =
+          std::floor((tabWidth - NSWidth(appIconFrame)) / 2.0);
+      [iconView_ setFrame:appIconFrame];
+    } else {
+      [iconView_ setFrame:originalIconFrame_];
+    }
+    // Ensure that the icon is suppressed if no icon is set or if the tab is too
+    // narrow to display one.
+    [self updateVisibility];
+  }
+}
+
 - (void)updateVisibility {
   // iconView_ may have been replaced or it may be nil, so [iconView_ isHidden]
   // won't work.  Instead, the state of the icon is tracked separately in
@@ -343,7 +338,8 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
   isIconShowing_ = newShowIcon;
 
   // If the tab is a mini-tab, hide the title.
-  [titleView_ setHidden:[self mini]];
+  TabView* tabView = [self tabView];
+  [tabView setTitleHidden:[self mini]];
 
   BOOL newShowCloseButton = [self shouldShowCloseButton];
 
@@ -379,7 +375,7 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
 
   // Adjust the title view based on changes to the icon's and close button's
   // visibility.
-  NSRect oldTitleFrame = [titleView_ frame];
+  NSRect oldTitleFrame = [tabView titleFrame];
   NSRect newTitleFrame;
   newTitleFrame.size.height = oldTitleFrame.size.height;
   newTitleFrame.origin.y = oldTitleFrame.origin.y;
@@ -401,7 +397,7 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
                                newTitleFrame.origin.x;
   }
 
-  [titleView_ setFrame:newTitleFrame];
+  [tabView setTitleFrame:newTitleFrame];
 }
 
 - (void)updateTitleColor {
@@ -412,7 +408,7 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
   // Default to the selected text color unless told otherwise.
   if (theme && !titleColor)
     titleColor = theme->GetNSColor(ThemeProperties::COLOR_TAB_TEXT);
-  [titleView_ setTextColor:titleColor ? titleColor : [NSColor textColor]];
+  [[self tabView] setTitleColor:titleColor ? titleColor : [NSColor textColor]];
 }
 
 - (void)themeChangedNotification:(NSNotification*)notification {

@@ -16,12 +16,12 @@ scoped_refptr<PictureLayer> PictureLayer::Create(ContentLayerClient* client) {
 }
 
 PictureLayer::PictureLayer(ContentLayerClient* client)
-  : client_(client),
-    pile_(make_scoped_refptr(new PicturePile())),
-    instrumentation_object_tracker_(id()),
-    is_mask_(false),
-    update_source_frame_number_(-1) {
-}
+    : client_(client),
+      pile_(make_scoped_refptr(new PicturePile())),
+      instrumentation_object_tracker_(id()),
+      is_mask_(false),
+      has_gpu_rasterization_hint_(false),
+      update_source_frame_number_(-1) {}
 
 PictureLayer::~PictureLayer() {
 }
@@ -51,6 +51,8 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
   }
 
   layer_impl->SetIsMask(is_mask_);
+  layer_impl->SetHasGpuRasterizationHint(has_gpu_rasterization_hint_);
+
   // Unlike other properties, invalidation must always be set on layer_impl.
   // See PictureLayerImpl::PushPropertiesTo for more details.
   layer_impl->invalidation_.Clear();
@@ -81,7 +83,7 @@ void PictureLayer::SetNeedsDisplayRect(const gfx::RectF& layer_rect) {
 }
 
 bool PictureLayer::Update(ResourceUpdateQueue* queue,
-                          const OcclusionTracker* occlusion) {
+                          const OcclusionTracker<Layer>* occlusion) {
   update_source_frame_number_ = layer_tree_host()->source_frame_number();
   bool updated = Layer::Update(queue, occlusion);
 
@@ -132,6 +134,14 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
 
 void PictureLayer::SetIsMask(bool is_mask) {
   is_mask_ = is_mask;
+}
+
+void PictureLayer::SetHasGpuRasterizationHint(bool has_hint) {
+  DCHECK(IsPropertyChangeAllowed());
+  if (has_gpu_rasterization_hint_ == has_hint)
+    return;
+  has_gpu_rasterization_hint_ = has_hint;
+  SetNeedsCommit();
 }
 
 bool PictureLayer::SupportsLCDText() const {

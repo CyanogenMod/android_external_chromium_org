@@ -7,6 +7,8 @@
 
 #include <string>
 
+class ProfileSyncServiceHarness;
+
 // Interface for a helper class that can be used to check if a desired change in
 // the state of the sync engine has taken place. Used by the desktop sync
 // integration tests.
@@ -16,22 +18,22 @@
 // ProfileSyncServiceHarness::AwaitStatusChange().
 class StatusChangeChecker {
  public:
-  explicit StatusChangeChecker(const std::string& source);
+  explicit StatusChangeChecker();
 
   // Called every time ProfileSyncServiceHarness is notified of a change in the
   // state of the sync engine. Returns true if the desired change has occurred.
   virtual bool IsExitConditionSatisfied() = 0;
 
-  std::string source() const { return source_; }
+  // Returns a string representing this current StatusChangeChecker, and
+  // possibly some small part of its state.  For example: "AwaitPassphraseError"
+  // or "AwaitMigrationDone(BOOKMARKS)".
+  virtual std::string GetDebugMessage() const = 0;
+
+  virtual void InitObserver(ProfileSyncServiceHarness*) = 0;
+  virtual void UninitObserver(ProfileSyncServiceHarness*) = 0;
 
  protected:
   virtual ~StatusChangeChecker();
-
- private:
-  // Used for logging / debugging. Can be used to hold the name of the internal
-  // function called by IsExitConditionSatisfied. Logged along with select info
-  // when ProfileSyncServiceHarness observes a change in ProfileSyncService.
-  std::string source_;
 };
 
 #endif  // CHROME_BROWSER_SYNC_TEST_INTEGRATION_STATUS_CHANGE_CHECKER_H_

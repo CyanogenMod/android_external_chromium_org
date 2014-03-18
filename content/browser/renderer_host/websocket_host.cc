@@ -11,11 +11,13 @@
 #include "ipc/ipc_message_macros.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
+#include "net/http/http_util.h"
 #include "net/websockets/websocket_channel.h"
 #include "net/websockets/websocket_event_interface.h"
 #include "net/websockets/websocket_frame.h"  // for WebSocketFrameHeader::OpCode
 #include "net/websockets/websocket_handshake_request_info.h"
 #include "net/websockets/websocket_handshake_response_info.h"
+#include "url/origin.h"
 
 namespace content {
 
@@ -125,6 +127,7 @@ ChannelState WebSocketEventHandler::OnAddChannelResponse(
            << " routing_id=" << routing_id_ << " fail=" << fail
            << " selected_protocol=\"" << selected_protocol << "\""
            << " extensions=\"" << extensions << "\"";
+
   return StateCast(dispatcher_->SendAddChannelResponse(
       routing_id_, fail, selected_protocol, extensions));
 }
@@ -136,6 +139,7 @@ ChannelState WebSocketEventHandler::OnDataFrame(
   DVLOG(3) << "WebSocketEventHandler::OnDataFrame"
            << " routing_id=" << routing_id_ << " fin=" << fin
            << " type=" << type << " data is " << data.size() << " bytes";
+
   return StateCast(dispatcher_->SendFrame(
       routing_id_, fin, OpCodeToMessageType(type), data));
 }
@@ -143,12 +147,14 @@ ChannelState WebSocketEventHandler::OnDataFrame(
 ChannelState WebSocketEventHandler::OnClosingHandshake() {
   DVLOG(3) << "WebSocketEventHandler::OnClosingHandshake"
            << " routing_id=" << routing_id_;
+
   return StateCast(dispatcher_->SendClosing(routing_id_));
 }
 
 ChannelState WebSocketEventHandler::OnFlowControl(int64 quota) {
   DVLOG(3) << "WebSocketEventHandler::OnFlowControl"
            << " routing_id=" << routing_id_ << " quota=" << quota;
+
   return StateCast(dispatcher_->SendFlowControl(routing_id_, quota));
 }
 
@@ -158,6 +164,7 @@ ChannelState WebSocketEventHandler::OnDropChannel(bool was_clean,
   DVLOG(3) << "WebSocketEventHandler::OnDropChannel"
            << " routing_id=" << routing_id_ << " was_clean=" << was_clean
            << " code=" << code << " reason=\"" << reason << "\"";
+
   return StateCast(
       dispatcher_->DoDropChannel(routing_id_, was_clean, code, reason));
 }
@@ -166,27 +173,37 @@ ChannelState WebSocketEventHandler::OnFailChannel(const std::string& message) {
   DVLOG(3) << "WebSocketEventHandler::OnFailChannel"
            << " routing_id=" << routing_id_
            << " message=\"" << message << "\"";
+
   return StateCast(dispatcher_->NotifyFailure(routing_id_, message));
 }
 
 ChannelState WebSocketEventHandler::OnStartOpeningHandshake(
     scoped_ptr<net::WebSocketHandshakeRequestInfo> request) {
-  // TODO(yhirano) Do nothing if the inspector is not attached.
   DVLOG(3) << "WebSocketEventHandler::OnStartOpeningHandshake";
+
+  // TODO(yhirano) Do nothing if the inspector is not attached.
+
   WebSocketHandshakeRequest request_to_pass;
   request_to_pass.url.Swap(&request->url);
   net::HttpRequestHeaders::Iterator it(request->headers);
   while (it.GetNext())
     request_to_pass.headers.push_back(std::make_pair(it.name(), it.value()));
+  request_to_pass.headers_text =
+      base::StringPrintf("GET %s HTTP/1.1\r\n",
+                         request_to_pass.url.spec().c_str()) +
+      request->headers.ToString();
   request_to_pass.request_time = request->request_time;
+
   return StateCast(dispatcher_->SendStartOpeningHandshake(routing_id_,
                                                           request_to_pass));
 }
 
 ChannelState WebSocketEventHandler::OnFinishOpeningHandshake(
     scoped_ptr<net::WebSocketHandshakeResponseInfo> response) {
-  // TODO(yhirano) Do nothing if the inspector is not attached.
   DVLOG(3) << "WebSocketEventHandler::OnFinishOpeningHandshake";
+
+  // TODO(yhirano) Do nothing if the inspector is not attached.
+
   WebSocketHandshakeResponse response_to_pass;
   response_to_pass.url.Swap(&response->url);
   response_to_pass.status_code = response->status_code;
@@ -195,7 +212,11 @@ ChannelState WebSocketEventHandler::OnFinishOpeningHandshake(
   std::string name, value;
   while (response->headers->EnumerateHeaderLines(&iter, &name, &value))
     response_to_pass.headers.push_back(std::make_pair(name, value));
+  response_to_pass.headers_text =
+      net::HttpUtil::ConvertHeadersBackToHTTPResponse(
+          response->headers->raw_headers());
   response_to_pass.response_time = response->response_time;
+
   return StateCast(dispatcher_->SendFinishOpeningHandshake(routing_id_,
                                                            response_to_pass));
 }
@@ -207,6 +228,7 @@ WebSocketHost::WebSocketHost(int routing_id,
                              net::URLRequestContext* url_request_context)
     : routing_id_(routing_id) {
   DVLOG(1) << "WebSocketHost: created routing_id=" << routing_id;
+
   scoped_ptr<net::WebSocketEventInterface> event_interface(
       new WebSocketEventHandler(dispatcher, routing_id));
   channel_.reset(
@@ -231,14 +253,15 @@ bool WebSocketHost::OnMessageReceived(const IPC::Message& message,
 void WebSocketHost::OnAddChannelRequest(
     const GURL& socket_url,
     const std::vector<std::string>& requested_protocols,
-    const GURL& origin) {
+    const url::Origin& origin) {
   DVLOG(3) << "WebSocketHost::OnAddChannelRequest"
            << " routing_id=" << routing_id_ << " socket_url=\"" << socket_url
            << "\" requested_protocols=\""
-           << JoinString(requested_protocols, ", ") << "\" origin=\"" << origin
-           << "\"";
+           << JoinString(requested_protocols, ", ") << "\" origin=\""
+           << origin.string() << "\"";
 
-  channel_->SendAddChannelRequest(socket_url, requested_protocols, origin);
+  channel_->SendAddChannelRequest(
+      socket_url, requested_protocols, origin);
 }
 
 void WebSocketHost::OnSendFrame(bool fin,

@@ -21,10 +21,12 @@
 #include "sync/test/fake_server/fake_server.h"
 #include "sync/test/local_sync_test_server.h"
 
-
-class CommandLine;
 class Profile;
 class ProfileSyncServiceHarness;
+
+namespace base {
+class CommandLine;
+}
 
 namespace net {
 class FakeURLFetcherFactory;
@@ -72,6 +74,17 @@ class SyncTest : public InProcessBrowserTest {
                             // LOCAL_PYTHON_SERVER.
   };
 
+  // This enum is used in conjunction with WithParamInterface to run tests with
+  // and without the fake server.
+  // TODO(pvalenzuela): Remove this when FakeServer is the default server.
+  enum FakeServerExperiment {
+    // The test should use the default logic for determining the test server.
+    USE_DEFAULT_SERVER,
+
+    // The test should use the fake server.
+    USE_FAKE_SERVER,
+  };
+
   // NOTE: IMPORTANT the enum here should match with
   // the enum defined on the chromiumsync.py test server impl.
   enum SyncErrorFrequency {
@@ -109,7 +122,7 @@ class SyncTest : public InProcessBrowserTest {
   virtual void TearDown() OVERRIDE;
 
   // Sets up command line flags required for sync tests.
-  virtual void SetUpCommandLine(CommandLine* cl) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* cl) OVERRIDE;
 
   // Used to get the number of sync clients used by a test.
   int num_clients() WARN_UNUSED_RESULT { return num_clients_; }
@@ -224,16 +237,13 @@ class SyncTest : public InProcessBrowserTest {
   // Triggers the creation the Synced Bookmarks folder on the server.
   void TriggerCreateSyncedBookmarks();
 
-  // Returns the number of default items that every client syncs.
-  int NumberOfDefaultSyncItems() const;
-
  protected:
   // Add custom switches needed for running the test.
-  virtual void AddTestSwitches(CommandLine* cl);
+  virtual void AddTestSwitches(base::CommandLine* cl);
 
   // Append the command line switches to enable experimental types that aren't
   // on by default yet.
-  virtual void AddOptionalTypesToCommandLine(CommandLine* cl);
+  virtual void AddOptionalTypesToCommandLine(base::CommandLine* cl);
 
   // InProcessBrowserTest override. Destroys all the sync clients and sync
   // profiles created by a test.
@@ -272,7 +282,7 @@ class SyncTest : public InProcessBrowserTest {
   base::FilePath password_file_;
 
   // The FakeServer used in tests with server type IN_PROCESS_FAKE_SERVER.
-  scoped_ptr<syncer::FakeServer> fake_server_;
+  scoped_ptr<fake_server::FakeServer> fake_server_;
 
  private:
   // Helper to ProfileManager::CreateProfile that handles path creation.
@@ -386,10 +396,6 @@ class SyncTest : public InProcessBrowserTest {
 
   // The URLFetcherImplFactory instance used to instantiate |fake_factory_|.
   scoped_ptr<net::URLFetcherImplFactory> factory_;
-
-  // Number of default entries (as determined by the existing entries at setup
-  // time on client 0).
-  size_t number_of_default_sync_items_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncTest);
 };

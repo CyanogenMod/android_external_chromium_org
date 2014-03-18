@@ -49,21 +49,21 @@ class TestRasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
         raster_thread_(RASTER_THREAD_NONE) {}
 
   // Overridden from internal::Task:
-  virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
+  virtual void RunOnWorkerThread() OVERRIDE {
     raster_thread_ = RASTER_THREAD_WORKER;
   }
 
   // Overridden from internal::WorkerPoolTask:
   virtual void ScheduleOnOriginThread(internal::WorkerPoolTaskClient* client)
       OVERRIDE {
-    client->AcquireCanvasForRaster(this);
+    client->AcquireCanvasForRaster(this, resource());
   }
   virtual void RunOnOriginThread() OVERRIDE {
     raster_thread_ = RASTER_THREAD_ORIGIN;
   }
   virtual void CompleteOnOriginThread(internal::WorkerPoolTaskClient* client)
       OVERRIDE {
-    client->OnRasterCompleted(this, PicturePileImpl::Analysis());
+    client->ReleaseCanvasForRaster(this, resource());
   }
   virtual void RunReplyOnOriginThread() OVERRIDE {
     reply_.Run(
@@ -92,9 +92,9 @@ class BlockingTestRasterWorkerPoolTaskImpl
         lock_(lock) {}
 
   // Overridden from internal::Task:
-  virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
+  virtual void RunOnWorkerThread() OVERRIDE {
     base::AutoLock lock(*lock_);
-    TestRasterWorkerPoolTaskImpl::RunOnWorkerThread(thread_index);
+    TestRasterWorkerPoolTaskImpl::RunOnWorkerThread();
   }
 
   // Overridden from internal::WorkerPoolTask:
@@ -113,38 +113,14 @@ class RasterWorkerPoolTest
     : public testing::TestWithParam<RasterWorkerPoolType>,
       public RasterWorkerPoolClient {
  public:
-  class RasterTask : public RasterWorkerPool::RasterTask {
-   public:
-    typedef std::vector<RasterTask> Vector;
-
-    static RasterTask Create(const Resource* resource,
-                             const TestRasterWorkerPoolTaskImpl::Reply& reply) {
-      internal::WorkerPoolTask::Vector dependencies;
-      return RasterTask(
-          new TestRasterWorkerPoolTaskImpl(resource, reply, &dependencies));
-    }
-
-    static RasterTask CreateBlocking(
-        const Resource* resource,
-        const TestRasterWorkerPoolTaskImpl::Reply& reply,
-        base::Lock* lock) {
-      internal::WorkerPoolTask::Vector dependencies;
-      return RasterTask(new BlockingTestRasterWorkerPoolTaskImpl(
-          resource, reply, lock, &dependencies));
-    }
-
-   private:
-    friend class RasterWorkerPoolTest;
-
-    explicit RasterTask(internal::RasterWorkerPoolTask* task)
-        : RasterWorkerPool::RasterTask(task) {}
-  };
-
   struct RasterTaskResult {
     unsigned id;
     bool canceled;
     RasterThread raster_thread;
   };
+
+  typedef std::vector<scoped_refptr<internal::RasterWorkerPoolTask> >
+      RasterTaskVector;
 
   RasterWorkerPoolTest()
       : context_provider_(TestContextProvider::Create()),
@@ -159,16 +135,21 @@ class RasterWorkerPoolTest
     switch (GetParam()) {
       case RASTER_WORKER_POOL_TYPE_PIXEL_BUFFER:
         raster_worker_pool_ = PixelBufferRasterWorkerPool::Create(
+            base::MessageLoopProxy::current().get(),
             resource_provider_.get(),
             std::numeric_limits<size_t>::max());
         break;
       case RASTER_WORKER_POOL_TYPE_IMAGE:
         raster_worker_pool_ = ImageRasterWorkerPool::Create(
-            resource_provider_.get(), GL_TEXTURE_2D);
+            base::MessageLoopProxy::current().get(),
+            resource_provider_.get(),
+            GL_TEXTURE_2D);
         break;
       case RASTER_WORKER_POOL_TYPE_DIRECT:
         raster_worker_pool_ = DirectRasterWorkerPool::Create(
-            resource_provider_.get(), context_provider_.get());
+            base::MessageLoopProxy::current().get(),
+            resource_provider_.get(),
+            context_provider_.get());
         break;
     }
 
@@ -212,11 +193,12 @@ class RasterWorkerPoolTest
   }
 
   void ScheduleTasks() {
-    RasterWorkerPool::RasterTask::Queue queue;
+    RasterTaskQueue queue;
 
-    for (RasterTask::Vector::iterator it = tasks_.begin(); it != tasks_.end();
+    for (RasterTaskVector::const_iterator it = tasks_.begin();
+         it != tasks_.end();
          ++it)
-      queue.Append(*it, false);
+      queue.items.push_back(RasterTaskQueue::Item(*it, false));
 
     raster_worker_pool_->ScheduleTasks(&queue);
   }
@@ -229,12 +211,14 @@ class RasterWorkerPoolTest
     resource->Allocate(size, ResourceProvider::TextureUsageAny, RGBA_8888);
     const Resource* const_resource = resource.get();
 
-    tasks_.push_back(
-        RasterTask::Create(const_resource,
-                           base::Bind(&RasterWorkerPoolTest::OnTaskCompleted,
-                                      base::Unretained(this),
-                                      base::Passed(&resource),
-                                      id)));
+    internal::WorkerPoolTask::Vector empty;
+    tasks_.push_back(new TestRasterWorkerPoolTaskImpl(
+        const_resource,
+        base::Bind(&RasterWorkerPoolTest::OnTaskCompleted,
+                   base::Unretained(this),
+                   base::Passed(&resource),
+                   id),
+        &empty));
   }
 
   void AppendBlockingTask(unsigned id, base::Lock* lock) {
@@ -245,13 +229,15 @@ class RasterWorkerPoolTest
     resource->Allocate(size, ResourceProvider::TextureUsageAny, RGBA_8888);
     const Resource* const_resource = resource.get();
 
-    tasks_.push_back(RasterTask::CreateBlocking(
+    internal::WorkerPoolTask::Vector empty;
+    tasks_.push_back(new BlockingTestRasterWorkerPoolTaskImpl(
         const_resource,
         base::Bind(&RasterWorkerPoolTest::OnTaskCompleted,
                    base::Unretained(this),
                    base::Passed(&resource),
                    id),
-        lock));
+        lock,
+        &empty));
   }
 
   const std::vector<RasterTaskResult>& completed_tasks() const {
@@ -285,7 +271,7 @@ class RasterWorkerPoolTest
   base::CancelableClosure timeout_;
   int timeout_seconds_;
   bool timed_out_;
-  std::vector<RasterTask> tasks_;
+  RasterTaskVector tasks_;
   std::vector<RasterTaskResult> completed_tasks_;
 };
 
@@ -330,7 +316,8 @@ TEST_P(RasterWorkerPoolTest, FalseThrottling) {
   // Schedule another task to replace the still-pending task. Because the old
   // task is not a throttled task in the new task set, it should not prevent
   // DidFinishRunningTasks from getting signaled.
-  tasks_.clear();
+  RasterTaskVector tasks;
+  tasks.swap(tasks_);
   AppendTask(1u);
   ScheduleTasks();
 

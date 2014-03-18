@@ -24,6 +24,7 @@
 #include "chrome/utility/cloud_print/bitmap_image.h"
 #include "chrome/utility/cloud_print/pwg_encoder.h"
 #include "chrome/utility/extensions/unpacker.h"
+#include "chrome/utility/image_writer/image_writer_handler.h"
 #include "chrome/utility/profile_import_handler.h"
 #include "chrome/utility/web_resource_unpacker.h"
 #include "content/public/child/image_decoder_utils.h"
@@ -46,7 +47,9 @@
 #if defined(OS_WIN)
 #include "base/win/iat_patch_function.h"
 #include "base/win/scoped_handle.h"
+#include "chrome/common/extensions/api/networking_private/networking_private_crypto.h"
 #include "chrome/utility/media_galleries/itunes_pref_parser_win.h"
+#include "components/wifi/wifi_service.h"
 #include "printing/emf_win.h"
 #include "ui/gfx/gdi_util.h"
 #endif  // defined(OS_WIN)
@@ -295,10 +298,12 @@ typedef PdfFunctionsBase PdfFunctions;
 #endif  // OS_WIN
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-void SendMediaMetadataToHost(
+void FinishParseMediaMetadata(
+    metadata::MediaMetadataParser* parser,
     scoped_ptr<extensions::api::media_galleries::MediaMetadata> metadata) {
   Send(new ChromeUtilityHostMsg_ParseMediaMetadata_Finished(
       true, *(metadata->ToValue().get())));
+  ReleaseProcessIfNeeded();
 }
 #endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
 
@@ -318,6 +323,8 @@ ChromeContentUtilityClient::ChromeContentUtilityClient()
     handlers_.push_back(new local_discovery::ServiceDiscoveryMessageHandler());
   }
 #endif  // ENABLE_MDNS
+
+  handlers_.push_back(new image_writer::ImageWriterHandler());
 }
 
 ChromeContentUtilityClient::~ChromeContentUtilityClient() {
@@ -397,6 +404,11 @@ bool ChromeContentUtilityClient::OnMessageReceived(
                         OnIndexPicasaAlbumsContents)
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
 
+#if defined(OS_WIN)
+    IPC_MESSAGE_HANDLER(ChromeUtilityHostMsg_GetAndEncryptWiFiCredentials,
+                        OnGetAndEncryptWiFiCredentials)
+#endif  // defined(OS_WIN)
+
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -411,7 +423,10 @@ bool ChromeContentUtilityClient::OnMessageReceived(
 // static
 void ChromeContentUtilityClient::PreSandboxStartup() {
 #if defined(ENABLE_MDNS)
-  local_discovery::ServiceDiscoveryMessageHandler::PreSandboxStartup();
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kUtilityProcessEnableMDns)) {
+    local_discovery::ServiceDiscoveryMessageHandler::PreSandboxStartup();
+  }
 #endif  // ENABLE_MDNS
 
   g_pdf_lib.Get().Init();
@@ -817,13 +832,12 @@ void ChromeContentUtilityClient::OnParseMediaMetadata(
     const std::string& mime_type,
     int64 total_size) {
   // Only one IPCDataSource may be created and added to the list of handlers.
-  CHECK(!media_metadata_parser_);
   metadata::IPCDataSource* source = new metadata::IPCDataSource(total_size);
   handlers_.push_back(source);
 
-  media_metadata_parser_.reset(new metadata::MediaMetadataParser(source,
-                                                                 mime_type));
-  media_metadata_parser_->Start(base::Bind(&SendMediaMetadataToHost));
+  metadata::MediaMetadataParser* parser =
+      new metadata::MediaMetadataParser(source, mime_type);
+  parser->Start(base::Bind(&FinishParseMediaMetadata, base::Owned(parser)));
 }
 #endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
 
@@ -898,5 +912,28 @@ void ChromeContentUtilityClient::OnIndexPicasaAlbumsContents(
   ReleaseProcessIfNeeded();
 }
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
+
+#if defined(OS_WIN)
+void ChromeContentUtilityClient::OnGetAndEncryptWiFiCredentials(
+    const std::string& network_guid,
+    const std::vector<uint8>& public_key) {
+  scoped_ptr<wifi::WiFiService> wifi_service(wifi::WiFiService::Create());
+  wifi_service->Initialize(NULL);
+
+  std::string key_data;
+  std::string error;
+  wifi_service->GetKeyFromSystem(network_guid, &key_data, &error);
+
+  std::vector<uint8> ciphertext;
+  bool success = error.empty() && !key_data.empty();
+  if (success) {
+    NetworkingPrivateCrypto crypto;
+    success = crypto.EncryptByteString(public_key, key_data, &ciphertext);
+  }
+
+  Send(new ChromeUtilityHostMsg_GotEncryptedWiFiCredentials(ciphertext,
+                                                            success));
+}
+#endif  // defined(OS_WIN)
 
 }  // namespace chrome

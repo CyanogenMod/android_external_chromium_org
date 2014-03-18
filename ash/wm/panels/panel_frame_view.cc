@@ -4,15 +4,14 @@
 
 #include "ash/wm/panels/panel_frame_view.h"
 
-#include "ash/wm/caption_buttons/frame_caption_button_container_view.h"
-#include "ash/wm/frame_border_hit_test_controller.h"
-#include "ash/wm/header_painter.h"
+#include "ash/frame/caption_buttons/frame_caption_button_container_view.h"
+#include "ash/frame/default_header_painter.h"
+#include "ash/frame/frame_border_hit_test_controller.h"
 #include "grit/ash_resources.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/controls/image_view.h"
-#include "ui/views/widget/native_widget_aura.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -25,7 +24,6 @@ PanelFrameView::PanelFrameView(views::Widget* frame, FrameType frame_type)
     : frame_(frame),
       caption_button_container_(NULL),
       window_icon_(NULL),
-      title_font_list_(views::NativeWidgetAura::GetWindowTitleFontList()),
       frame_border_hit_test_controller_(
           new FrameBorderHitTestController(frame_)) {
   DCHECK(!frame_->widget_delegate()->CanMaximize());
@@ -41,7 +39,7 @@ const char* PanelFrameView::GetClassName() const {
 }
 
 void PanelFrameView::InitHeaderPainter() {
-  header_painter_.reset(new HeaderPainter);
+  header_painter_.reset(new DefaultHeaderPainter);
 
   caption_button_container_ = new FrameCaptionButtonContainerView(frame_,
       FrameCaptionButtonContainerView::MINIMIZE_ALLOWED);
@@ -58,9 +56,7 @@ void PanelFrameView::InitHeaderPainter() {
 int PanelFrameView::NonClientTopBorderHeight() const {
   if (!header_painter_)
     return 0;
-  // Reserve enough space to see the buttons and the separator line.
-  return caption_button_container_->bounds().bottom() +
-      header_painter_->HeaderContentSeparatorSize();
+  return header_painter_->GetHeaderHeightForPainting();
 }
 
 gfx::Size PanelFrameView::GetMinimumSize() {
@@ -76,8 +72,7 @@ gfx::Size PanelFrameView::GetMinimumSize() {
 void PanelFrameView::Layout() {
   if (!header_painter_)
     return;
-  header_painter_->LayoutHeader(true);
-  header_painter_->set_header_height(NonClientTopBorderHeight());
+  header_painter_->LayoutHeader();
 }
 
 void PanelFrameView::GetWindowMask(const gfx::Size&, gfx::Path*) {
@@ -100,47 +95,38 @@ void PanelFrameView::UpdateWindowIcon() {
 void PanelFrameView::UpdateWindowTitle() {
   if (!header_painter_)
     return;
-  header_painter_->SchedulePaintForTitle(title_font_list_);
+  header_painter_->SchedulePaintForTitle();
 }
 
 int PanelFrameView::NonClientHitTest(const gfx::Point& point) {
   if (!header_painter_)
     return HTNOWHERE;
   return FrameBorderHitTestController::NonClientHitTest(this,
-      header_painter_.get(), point);
+      caption_button_container_, point);
 }
 
 void PanelFrameView::OnPaint(gfx::Canvas* canvas) {
   if (!header_painter_)
     return;
   bool paint_as_active = ShouldPaintAsActive();
-  int theme_frame_id = 0;
-  if (paint_as_active)
-    theme_frame_id = IDR_AURA_WINDOW_HEADER_BASE_ACTIVE;
-  else
-    theme_frame_id = IDR_AURA_WINDOW_HEADER_BASE_INACTIVE;
+  caption_button_container_->SetPaintAsActive(paint_as_active);
 
-  header_painter_->PaintHeader(
-      canvas,
-      theme_frame_id,
-      0);
-  header_painter_->PaintTitleBar(canvas, title_font_list_);
-  header_painter_->PaintHeaderContentSeparator(canvas);
+  HeaderPainter::Mode header_mode = paint_as_active ?
+      HeaderPainter::MODE_ACTIVE : HeaderPainter::MODE_INACTIVE;
+  header_painter_->PaintHeader(canvas, header_mode);
 }
 
 gfx::Rect PanelFrameView::GetBoundsForClientView() const {
-  if (!header_painter_)
-    return bounds();
-  return HeaderPainter::GetBoundsForClientView(
-      NonClientTopBorderHeight(), bounds());
+  gfx::Rect client_bounds = bounds();
+  client_bounds.Inset(0, NonClientTopBorderHeight(), 0, 0);
+  return client_bounds;
 }
 
 gfx::Rect PanelFrameView::GetWindowBoundsForClientBounds(
     const gfx::Rect& client_bounds) const {
-  if (!header_painter_)
-    return client_bounds;
-  return HeaderPainter::GetWindowBoundsForClientBounds(
-      NonClientTopBorderHeight(), client_bounds);
+  gfx::Rect window_bounds = client_bounds;
+  window_bounds.Inset(0, -NonClientTopBorderHeight(), 0, 0);
+  return window_bounds;
 }
 
 }  // namespace ash

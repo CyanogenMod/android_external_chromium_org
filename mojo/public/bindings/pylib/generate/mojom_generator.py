@@ -19,6 +19,15 @@ def GetStructFromMethod(interface, method):
   struct.packed = mojom_pack.PackedStruct(struct)
   return struct
 
+def GetResponseStructFromMethod(interface, method):
+  """Converts a method's response_parameters into the fields of a struct."""
+  params_class = "%s_%s_ResponseParams" % (interface.name, method.name)
+  struct = mojom.Struct(params_class)
+  for param in method.response_parameters:
+    struct.AddField(param.name, param.kind, param.ordinal)
+  struct.packed = mojom_pack.PackedStruct(struct)
+  return struct
+
 def GetStructInfo(exported, struct):
   struct.packed = mojom_pack.PackedStruct(struct)
   struct.bytes = mojom_pack.GetByteLayout(struct.packed)
@@ -28,15 +37,14 @@ def GetStructInfo(exported, struct):
 def IsStringKind(kind):
   return kind.spec == 's'
 
+def IsEnumKind(kind):
+  return isinstance(kind, mojom.Enum)
+
 def IsObjectKind(kind):
   return isinstance(kind, (mojom.Struct, mojom.Array)) or IsStringKind(kind)
 
 def IsHandleKind(kind):
   return kind.spec.startswith('h') or isinstance(kind, mojom.Interface)
-
-def CamelToUnderscores(camel):
-  s = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', camel)
-  return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s).lower()
 
 def StudlyCapsToCamel(studly):
   return studly[0].lower() + studly[1:]
@@ -64,9 +72,8 @@ def ExpressionMapper(expression, mapper):
 class Generator(object):
   # Pass |output_dir| to emit files to disk. Omit |output_dir| to echo all
   # files to stdout.
-  def __init__(self, module, header_dir, output_dir=None):
+  def __init__(self, module, output_dir=None):
     self.module = module
-    self.header_dir = header_dir
     self.output_dir = output_dir
 
   def GetStructsFromMethods(self):

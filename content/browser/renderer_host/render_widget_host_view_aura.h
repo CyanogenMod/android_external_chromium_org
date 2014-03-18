@@ -32,8 +32,8 @@
 #include "ui/aura/client/activation_delegate.h"
 #include "ui/aura/client/cursor_client_observer.h"
 #include "ui/aura/client/focus_change_observer.h"
-#include "ui/aura/root_window_observer.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_tree_host_observer.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_observer.h"
@@ -88,7 +88,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       public ui::CompositorVSyncManager::Observer,
       public ui::TextInputClient,
       public gfx::DisplayObserver,
-      public aura::RootWindowObserver,
+      public aura::WindowTreeHostObserver,
       public aura::WindowDelegate,
       public aura::client::ActivationDelegate,
       public aura::client::ActivationChangeObserver,
@@ -295,8 +295,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnCaptureLost() OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-  virtual void OnWindowDestroying() OVERRIDE;
-  virtual void OnWindowDestroyed() OVERRIDE;
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
@@ -324,9 +324,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnWindowFocused(aura::Window* gained_focus,
                                aura::Window* lost_focus) OVERRIDE;
 
-  // Overridden from aura::RootWindowObserver:
-  virtual void OnWindowTreeHostMoved(const aura::RootWindow* root,
-                                     const gfx::Point& new_origin) OVERRIDE;
+  // Overridden from aura::WindowTreeHostObserver:
+  virtual void OnHostMoved(const aura::WindowTreeHost* host,
+                           const gfx::Point& new_origin) OVERRIDE;
 
   // SoftwareFrameManagerClient implementation:
   virtual void SoftwareFrameWasFreed(
@@ -383,6 +383,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Overridden from ui::CompositorVSyncManager::Observer
   virtual void OnUpdateVSyncParameters(base::TimeTicks timebase,
                                        base::TimeDelta interval) OVERRIDE;
+
+  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SetCompositionText);
@@ -467,10 +469,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Add on compositing commit callback.
   void AddOnCommitCallbackAndDisableLocks(const base::Closure& callback);
 
-  // Called after |window_| is parented to a RootWindow.
+  // Called after |window_| is parented to a WindowEventDispatcher.
   void AddedToRootWindow();
 
-  // Called prior to removing |window_| from a RootWindow.
+  // Called prior to removing |window_| from a WindowEventDispatcher.
   void RemovingFromRootWindow();
 
   // Called after commit for the last reference to the texture going away

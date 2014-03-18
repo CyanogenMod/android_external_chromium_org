@@ -10,6 +10,7 @@
 #include "chrome/browser/ui/ash/ash_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
@@ -18,16 +19,12 @@
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/scroll_view.h"
-#include "ui/views/corewm/shadow_types.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_client_view.h"
 #include "ui/views/window/dialog_delegate.h"
-
-#if defined(USE_AURA)
-#include "ui/aura/root_window.h"
-#endif
+#include "ui/wm/core/shadow_types.h"
 
 using content::DesktopMediaID;
 
@@ -154,6 +151,7 @@ class DesktopMediaPickerDialogView : public views::DialogDelegateView {
                                gfx::NativeWindow parent_window,
                                DesktopMediaPickerViews* parent,
                                const base::string16& app_name,
+                               const base::string16& target_name,
                                scoped_ptr<DesktopMediaList> media_list);
   virtual ~DesktopMediaPickerDialogView();
 
@@ -171,6 +169,8 @@ class DesktopMediaPickerDialogView : public views::DialogDelegateView {
   // views::DialogDelegateView overrides.
   virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
+  virtual base::string16 GetDialogButtonLabel(
+      ui::DialogButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
 
@@ -197,6 +197,7 @@ class DesktopMediaPickerViews : public DesktopMediaPicker {
   virtual void Show(gfx::NativeWindow context,
                     gfx::NativeWindow parent,
                     const base::string16& app_name,
+                    const base::string16& target_name,
                     scoped_ptr<DesktopMediaList> media_list,
                     const DoneCallback& done_callback) OVERRIDE;
 
@@ -488,14 +489,20 @@ DesktopMediaPickerDialogView::DesktopMediaPickerDialogView(
     gfx::NativeWindow parent_window,
     DesktopMediaPickerViews* parent,
     const base::string16& app_name,
+    const base::string16& target_name,
     scoped_ptr<DesktopMediaList> media_list)
     : parent_(parent),
       app_name_(app_name),
       label_(new views::Label()),
       scroll_view_(views::ScrollView::CreateScrollViewWithBorder()),
       list_view_(new DesktopMediaListView(this, media_list.Pass())) {
-  label_->SetText(
-      l10n_util::GetStringFUTF16(IDS_DESKTOP_MEDIA_PICKER_TEXT, app_name_));
+  if (app_name == target_name) {
+    label_->SetText(
+        l10n_util::GetStringFUTF16(IDS_DESKTOP_MEDIA_PICKER_TEXT, app_name));
+  } else {
+    label_->SetText(l10n_util::GetStringFUTF16(
+        IDS_DESKTOP_MEDIA_PICKER_TEXT_DELEGATED, app_name, target_name));
+  }
   label_->SetMultiLine(true);
   label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   AddChildView(label_);
@@ -520,7 +527,7 @@ DesktopMediaPickerDialogView::DesktopMediaPickerDialogView(
 #endif
   {
     dialog_window_id = AcceleratedWidgetToDesktopMediaId(
-        GetWidget()->GetNativeWindow()->GetDispatcher()->host()->
+        GetWidget()->GetNativeWindow()->GetHost()->
             GetAcceleratedWidget());
   }
 
@@ -567,6 +574,12 @@ bool DesktopMediaPickerDialogView::IsDialogButtonEnabled(
   if (button == ui::DIALOG_BUTTON_OK)
     return list_view_->GetSelection() != NULL;
   return true;
+}
+
+base::string16 DesktopMediaPickerDialogView::GetDialogButtonLabel(
+    ui::DialogButton button) const {
+  return l10n_util::GetStringUTF16(button == ui::DIALOG_BUTTON_OK ?
+      IDS_DESKTOP_MEDIA_PICKER_SHARE : IDS_CANCEL);
 }
 
 bool DesktopMediaPickerDialogView::Accept() {
@@ -616,11 +629,12 @@ DesktopMediaPickerViews::~DesktopMediaPickerViews() {
 void DesktopMediaPickerViews::Show(gfx::NativeWindow context,
                                    gfx::NativeWindow parent,
                                    const base::string16& app_name,
+                                   const base::string16& target_name,
                                    scoped_ptr<DesktopMediaList> media_list,
                                    const DoneCallback& done_callback) {
   callback_ = done_callback;
   dialog_ = new DesktopMediaPickerDialogView(
-      context, parent, this, app_name, media_list.Pass());
+      context, parent, this, app_name, target_name, media_list.Pass());
 }
 
 void DesktopMediaPickerViews::NotifyDialogResult(

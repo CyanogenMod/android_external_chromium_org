@@ -6,16 +6,17 @@
 
 #include "base/memory/discardable_memory.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/stl_util.h"
 #include "base/synchronization/waitable_event.h"
+#include "content/child/fling_curve_configuration.h"
 #include "content/child/web_discardable_memory_impl.h"
+#include "content/child/webthread_impl.h"
+#include "content/child/worker_task_runner.h"
 #include "third_party/WebKit/public/platform/WebWaitableEvent.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "webkit/child/fling_curve_configuration.h"
-#include "webkit/child/webthread_impl.h"
-#include "webkit/child/worker_task_runner.h"
 
 #if defined(OS_ANDROID)
-#include "webkit/child/fling_animator_impl_android.h"
+#include "content/child/fling_animator_impl_android.h"
 #endif
 
 using blink::WebFallbackThemeEngine;
@@ -46,7 +47,7 @@ class WebWaitableEventImpl : public blink::WebWaitableEvent {
 
 WebKitPlatformSupportChildImpl::WebKitPlatformSupportChildImpl()
     : current_thread_slot_(&DestroyCurrentThread),
-      fling_curve_configuration_(new webkit_glue::FlingCurveConfiguration) {}
+      fling_curve_configuration_(new FlingCurveConfiguration) {}
 
 WebKitPlatformSupportChildImpl::~WebKitPlatformSupportChildImpl() {}
 
@@ -70,8 +71,9 @@ WebKitPlatformSupportChildImpl::createFlingAnimationCurve(
     const blink::WebFloatPoint& velocity,
     const blink::WebSize& cumulative_scroll) {
 #if defined(OS_ANDROID)
-  return webkit_glue::FlingAnimatorImpl::CreateAndroidGestureCurve(
-      velocity, cumulative_scroll);
+  return content::FlingAnimatorImpl::CreateAndroidGestureCurve(
+      velocity,
+      cumulative_scroll);
 #endif
 
   if (device_source == blink::WebGestureEvent::Touchscreen)
@@ -84,13 +86,12 @@ WebKitPlatformSupportChildImpl::createFlingAnimationCurve(
 
 blink::WebThread* WebKitPlatformSupportChildImpl::createThread(
     const char* name) {
-  return new webkit_glue::WebThreadImpl(name);
+  return new WebThreadImpl(name);
 }
 
 blink::WebThread* WebKitPlatformSupportChildImpl::currentThread() {
-  webkit_glue::WebThreadImplForMessageLoop* thread =
-      static_cast<webkit_glue::WebThreadImplForMessageLoop*>(
-          current_thread_slot_.Get());
+  WebThreadImplForMessageLoop* thread =
+      static_cast<WebThreadImplForMessageLoop*>(current_thread_slot_.Get());
   if (thread)
     return (thread);
 
@@ -99,7 +100,7 @@ blink::WebThread* WebKitPlatformSupportChildImpl::currentThread() {
   if (!message_loop.get())
     return NULL;
 
-  thread = new webkit_glue::WebThreadImplForMessageLoop(message_loop.get());
+  thread = new WebThreadImplForMessageLoop(message_loop.get());
   current_thread_slot_.Set(thread);
   return thread;
 }
@@ -110,25 +111,24 @@ blink::WebWaitableEvent* WebKitPlatformSupportChildImpl::createWaitableEvent() {
 
 blink::WebWaitableEvent* WebKitPlatformSupportChildImpl::waitMultipleEvents(
     const blink::WebVector<blink::WebWaitableEvent*>& web_events) {
-  base::WaitableEvent** events = new base::WaitableEvent*[web_events.size()];
+  std::vector<base::WaitableEvent*> events;
   for (size_t i = 0; i < web_events.size(); ++i)
-    events[i] = static_cast<WebWaitableEventImpl*>(web_events[i])->impl();
-  size_t idx = base::WaitableEvent::WaitMany(events, web_events.size());
+    events.push_back(static_cast<WebWaitableEventImpl*>(web_events[i])->impl());
+  size_t idx = base::WaitableEvent::WaitMany(
+      vector_as_array(&events), events.size());
   DCHECK_LT(idx, web_events.size());
   return web_events[idx];
 }
 
 void WebKitPlatformSupportChildImpl::didStartWorkerRunLoop(
     const blink::WebWorkerRunLoop& runLoop) {
-  webkit_glue::WorkerTaskRunner* worker_task_runner =
-      webkit_glue::WorkerTaskRunner::Instance();
+  WorkerTaskRunner* worker_task_runner = WorkerTaskRunner::Instance();
   worker_task_runner->OnWorkerRunLoopStarted(runLoop);
 }
 
 void WebKitPlatformSupportChildImpl::didStopWorkerRunLoop(
     const blink::WebWorkerRunLoop& runLoop) {
-  webkit_glue::WorkerTaskRunner* worker_task_runner =
-      webkit_glue::WorkerTaskRunner::Instance();
+  WorkerTaskRunner* worker_task_runner = WorkerTaskRunner::Instance();
   worker_task_runner->OnWorkerRunLoopStopped(runLoop);
 }
 
@@ -143,8 +143,8 @@ WebKitPlatformSupportChildImpl::allocateAndLockDiscardableMemory(size_t bytes) {
 
 // static
 void WebKitPlatformSupportChildImpl::DestroyCurrentThread(void* thread) {
-  webkit_glue::WebThreadImplForMessageLoop* impl =
-      static_cast<webkit_glue::WebThreadImplForMessageLoop*>(thread);
+  WebThreadImplForMessageLoop* impl =
+      static_cast<WebThreadImplForMessageLoop*>(thread);
   delete impl;
 }
 

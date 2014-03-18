@@ -21,36 +21,9 @@
         'remoting_protocol',
       ],
       'sources': [
-        'client/plugin/chromoting_instance.cc',
-        'client/plugin/chromoting_instance.h',
-        'client/plugin/delegating_signal_strategy.cc',
-        'client/plugin/delegating_signal_strategy.h',
-        'client/plugin/media_source_video_renderer.cc',
-        'client/plugin/media_source_video_renderer.h',
-        'client/plugin/normalizing_input_filter.cc',
-        'client/plugin/normalizing_input_filter.h',
-        'client/plugin/normalizing_input_filter_cros.cc',
-        'client/plugin/normalizing_input_filter_mac.cc',
-        'client/plugin/pepper_audio_player.cc',
-        'client/plugin/pepper_audio_player.h',
+        '<@(remoting_client_plugin_sources)',
         'client/plugin/pepper_entrypoints.cc',
         'client/plugin/pepper_entrypoints.h',
-        'client/plugin/pepper_input_handler.cc',
-        'client/plugin/pepper_input_handler.h',
-        'client/plugin/pepper_network_manager.cc',
-        'client/plugin/pepper_network_manager.h',
-        'client/plugin/pepper_packet_socket_factory.cc',
-        'client/plugin/pepper_packet_socket_factory.h',
-        'client/plugin/pepper_plugin_thread_delegate.cc',
-        'client/plugin/pepper_plugin_thread_delegate.h',
-        'client/plugin/pepper_port_allocator.cc',
-        'client/plugin/pepper_port_allocator.h',
-        'client/plugin/pepper_token_fetcher.cc',
-        'client/plugin/pepper_token_fetcher.h',
-        'client/plugin/pepper_util.cc',
-        'client/plugin/pepper_util.h',
-        'client/plugin/pepper_view.cc',
-        'client/plugin/pepper_view.h',
       ],
       'conditions' : [
         [ 'chromeos==0', {
@@ -73,30 +46,82 @@
         '../third_party/libwebm/libwebm.gyp:libwebm',
       ],
       'sources': [
-        'client/audio_decode_scheduler.cc',
-        'client/audio_decode_scheduler.h',
-        'client/audio_player.cc',
-        'client/audio_player.h',
-        'client/chromoting_client.cc',
-        'client/chromoting_client.h',
-        'client/chromoting_stats.cc',
-        'client/chromoting_stats.h',
-        'client/client_config.cc',
-        'client/client_config.h',
-        'client/client_context.cc',
-        'client/client_context.h',
-        'client/client_user_interface.h',
-        'client/frame_consumer.h',
-        'client/frame_consumer_proxy.cc',
-        'client/frame_consumer_proxy.h',
-        'client/frame_producer.h',
-        'client/key_event_mapper.cc',
-        'client/key_event_mapper.h',
-        'client/software_video_renderer.cc',
-        'client/software_video_renderer.h',
-        'client/video_renderer.h',
+        '<@(remoting_client_sources)',
       ],
     },  # end of target 'remoting_client'
 
+    {
+      'target_name': 'remoting_webapp_html',
+      'type': 'none',
+      'actions': [
+        {
+          'action_name': 'Build Remoting Webapp main.html',
+          'inputs': [
+            'webapp/build-html.py',
+            '<(remoting_webapp_template_main)',
+            '<@(remoting_webapp_template_files)',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/main.html',
+          ],
+          'action': [
+            'python', 'webapp/build-html.py',
+            '<(SHARED_INTERMEDIATE_DIR)/main.html',
+            '<(remoting_webapp_template_main)',
+            '--template', '<@(remoting_webapp_template_files)',
+            '--js', '<@(remoting_webapp_main_html_js_files)',
+          ],
+        },
+        {
+          'action_name': 'Build Remoting Webapp wcs_sandbox.html',
+          'inputs': [
+            'webapp/build-html.py',
+            '<(remoting_webapp_template_wcs_sandbox)',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/wcs_sandbox.html',
+          ],
+          'action': [
+            'python', 'webapp/build-html.py',
+            '<(SHARED_INTERMEDIATE_DIR)/wcs_sandbox.html',
+            '<(remoting_webapp_template_wcs_sandbox)',
+            '--js', '<@(remoting_webapp_wcs_sandbox_html_js_files)',
+          ],
+        },
+      ],
+    },  # end of target 'remoting_webapp_html'
+
+    {
+      'target_name': 'remoting_webapp',
+      'type': 'none',
+      'dependencies': [
+        'remoting_webapp_v1',
+        'remoting_webapp_v2',
+      ],
+    },  # end of target 'remoting_webapp'
+
+    {
+      'target_name': 'remoting_webapp_v1',
+      'type': 'none',
+      'variables': {
+        'webapp_type': 'v1',
+        'include_host_plugin': '<(enable_remoting_host)',
+        'output_dir': '<(PRODUCT_DIR)/remoting/remoting.webapp',
+        'zip_path': '<(PRODUCT_DIR)/remoting-webapp.zip',
+      },
+      'includes': [ 'remoting_webapp.gypi', ],
+    },  # end of target 'remoting_webapp_v1'
+
+    {
+      'target_name': 'remoting_webapp_v2',
+      'type': 'none',
+      'variables': {
+        'webapp_type': 'v2',
+        'output_dir': '<(PRODUCT_DIR)/remoting/remoting.webapp.v2',
+        'zip_path': '<(PRODUCT_DIR)/remoting-webapp.v2.zip',
+        'extra_files': [ 'webapp/background.js' ],
+      },
+      'includes': [ 'remoting_webapp.gypi', ],
+    },  # end of target 'remoting_webapp_v2'
   ],  # end of targets
 }

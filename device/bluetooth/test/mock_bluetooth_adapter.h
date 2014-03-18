@@ -52,11 +52,8 @@ class MockBluetoothAdapter : public BluetoothAdapter {
                     const base::Closure& callback,
                     const ErrorCallback& error_callback));
   MOCK_CONST_METHOD0(IsDiscovering, bool());
-  MOCK_METHOD2(StartDiscovering,
-               void(const base::Closure& callback,
-                    const ErrorCallback& error_callback));
-  MOCK_METHOD2(StopDiscovering,
-               void(const base::Closure& callback,
+  MOCK_METHOD2(StartDiscoverySession,
+               void(const DiscoverySessionCallback& callback,
                     const ErrorCallback& error_callback));
   MOCK_CONST_METHOD0(GetDevices, BluetoothAdapter::ConstDeviceList());
   MOCK_METHOD1(GetDevice, BluetoothDevice*(const std::string& address));
@@ -66,8 +63,22 @@ class MockBluetoothAdapter : public BluetoothAdapter {
       ReadLocalOutOfBandPairingData,
       void(const BluetoothOutOfBandPairingDataCallback& callback,
            const ErrorCallback& error_callback));
+  MOCK_METHOD2(AddPairingDelegate,
+               void(BluetoothDevice::PairingDelegate* pairing_delegate,
+                    enum PairingDelegatePriority priority));
+  MOCK_METHOD1(RemovePairingDelegate,
+               void(BluetoothDevice::PairingDelegate* pairing_delegate));
+  MOCK_METHOD0(DefaultPairingDelegate, BluetoothDevice::PairingDelegate*());
+
  protected:
+  virtual void AddDiscoverySession(const base::Closure& callback,
+                                   const ErrorCallback& error_callback);
+  virtual void RemoveDiscoverySession(const base::Closure& callback,
+                                      const ErrorCallback& error_callback);
   virtual ~MockBluetoothAdapter();
+
+  MOCK_METHOD1(RemovePairingDelegateInternal,
+               void(BluetoothDevice::PairingDelegate* pairing_delegate));
 };
 
 }  // namespace device

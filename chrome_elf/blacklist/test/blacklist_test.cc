@@ -15,6 +15,7 @@
 #include "base/win/registry.h"
 #include "chrome_elf/blacklist/blacklist.h"
 #include "chrome_elf/blacklist/test/blacklist_test_main_dll.h"
+#include "chrome_elf/chrome_elf_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "version.h"  // NOLINT
 
@@ -32,9 +33,12 @@ extern "C" {
 // functions on the test blacklist dll, not the ones linked into the test
 // executable itself.
 __declspec(dllimport) bool TestDll_AddDllToBlacklist(const wchar_t* dll_name);
-__declspec(dllimport) bool TestDLL_IsBlacklistInitialized();
+__declspec(dllimport) bool TestDll_IsBlacklistInitialized();
 __declspec(dllimport) bool TestDll_RemoveDllFromBlacklist(
     const wchar_t* dll_name);
+__declspec(dllimport) bool TestDll_SuccessfullyBlocked(
+    const wchar_t** blocked_dlls,
+    int* size);
 }
 
 class BlacklistTest : public testing::Test {
@@ -78,17 +82,6 @@ TEST_F(BlacklistTest, Beacon) {
 
   // Resetting the beacon should work when setup beacon is present.
   EXPECT_TRUE(blacklist::ResetBeacon());
-
-  // Change the version and ensure that the setup fails due to the version
-  // mismatch.
-  base::string16 different_version(L"other_version");
-  ASSERT_NE(different_version, TEXT(CHROME_VERSION_STRING));
-
-  result = blacklist_registry_key.WriteValue(blacklist::kBeaconVersion,
-                                             different_version.c_str());
-  EXPECT_EQ(ERROR_SUCCESS, result);
-
-  EXPECT_FALSE(blacklist::LeaveSetupBeacon());
 }
 
 TEST_F(BlacklistTest, AddAndRemoveModules) {
@@ -117,17 +110,49 @@ TEST_F(BlacklistTest, AddAndRemoveModules) {
     added_dlls[empty_spaces - 1].c_str()));
 }
 
+TEST_F(BlacklistTest, SuccessfullyBlocked) {
+  // Ensure that we have at least 5 dlls to blacklist.
+  int blacklist_size = blacklist::BlacklistSize();
+  const int kDesiredBlacklistSize = 5;
+  for (int i = blacklist_size; i < kDesiredBlacklistSize; ++i) {
+    base::string16 new_dll_name(base::IntToString16(i) + L".dll");
+    EXPECT_TRUE(blacklist::AddDllToBlacklist(new_dll_name.c_str()));
+  }
+
+  // Block 5 dlls, one at a time, starting from the end of the list, and
+  // ensuring SuccesfullyBlocked correctly passes the list of blocked dlls.
+  for (int i = 0; i < kDesiredBlacklistSize; ++i) {
+    blacklist::BlockedDll(i);
+
+    int size = 0;
+    blacklist::SuccessfullyBlocked(NULL, &size);
+    EXPECT_EQ(i + 1, size);
+
+    std::vector<const wchar_t*> blocked_dlls(size);
+    blacklist::SuccessfullyBlocked(&(blocked_dlls[0]), &size);
+    EXPECT_EQ(i + 1, size);
+
+    for (size_t j = 0; j < blocked_dlls.size(); ++j) {
+      EXPECT_EQ(blocked_dlls[j], blacklist::g_troublesome_dlls[j]);
+    }
+  }
+}
+
 TEST_F(BlacklistTest, LoadBlacklistedLibrary) {
   base::FilePath current_dir;
   ASSERT_TRUE(PathService::Get(base::DIR_EXE, &current_dir));
 
   // Ensure that the blacklist is loaded.
-  ASSERT_TRUE(TestDLL_IsBlacklistInitialized());
+  ASSERT_TRUE(TestDll_IsBlacklistInitialized());
 
   // Test that an un-blacklisted DLL can load correctly.
   base::ScopedNativeLibrary dll1(current_dir.Append(kTestDllName1));
   EXPECT_TRUE(dll1.is_valid());
   dll1.Reset(NULL);
+
+  int num_blocked_dlls = 0;
+  TestDll_SuccessfullyBlocked(NULL, &num_blocked_dlls);
+  EXPECT_EQ(0, num_blocked_dlls);
 
   struct TestData {
     const wchar_t* dll_name;
@@ -146,6 +171,13 @@ TEST_F(BlacklistTest, LoadBlacklistedLibrary) {
     EXPECT_FALSE(dll_blacklisted.is_valid());
     EXPECT_EQ(0u, ::GetEnvironmentVariable(test_data[i].dll_beacon, NULL, 0));
     dll_blacklisted.Reset(NULL);
+
+    // Ensure that the dll is recorded as blocked.
+    int array_size = 1;
+    const wchar_t* blocked_dll = NULL;
+    TestDll_SuccessfullyBlocked(&blocked_dll, &array_size);
+    EXPECT_EQ(1, array_size);
+    EXPECT_EQ(test_data[i].dll_name, base::string16(blocked_dll));
 
     // Remove the DLL from the blacklist. Ensure that it loads and that its
     // entry point was called.
@@ -168,5 +200,10 @@ TEST_F(BlacklistTest, LoadBlacklistedLibrary) {
     dll_blacklisted_different_case.Reset(NULL);
 
     EXPECT_TRUE(TestDll_RemoveDllFromBlacklist(uppercase_name.c_str()));
+
+    // The blocked dll was removed, so we shouldn't get anything returned
+    // here.
+    TestDll_SuccessfullyBlocked(NULL, &num_blocked_dlls);
+    EXPECT_EQ(0, num_blocked_dlls);
   }
 }

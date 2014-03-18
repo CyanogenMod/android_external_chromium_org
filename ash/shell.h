@@ -26,9 +26,7 @@
 #include "ui/gfx/insets.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
-#include "ui/views/corewm/cursor_manager.h"
-
-class CommandLine;
+#include "ui/wm/core/cursor_manager.h"
 
 namespace app_list {
 class AppListView;
@@ -40,11 +38,7 @@ class Window;
 namespace client {
 class ActivationClient;
 class FocusClient;
-class UserActionClient;
 }
-}
-namespace chromeos {
-class OutputConfigurator;
 }
 
 namespace gfx {
@@ -59,18 +53,22 @@ class KeyboardController;
 
 namespace ui {
 class Layer;
+class OutputConfigurator;
 }
 namespace views {
 class NonClientFrameView;
 class Widget;
 namespace corewm {
+class TooltipController;
+}
+}
+
+namespace wm {
 class CompoundEventFilter;
 class InputMethodEventFilter;
 class ShadowController;
-class TooltipController;
 class VisibilityController;
 class WindowModalityController;
-}
 }
 
 namespace ash {
@@ -79,7 +77,6 @@ class AcceleratorController;
 class AccessibilityDelegate;
 class AshNativeCursorManager;
 class AutoclickController;
-class CapsLockDelegate;
 class DesktopBackgroundController;
 class DisplayController;
 class FirstRunHelper;
@@ -118,6 +115,7 @@ class WindowSelectorController;
 namespace internal {
 class AcceleratorFilter;
 class AppListController;
+class BluetoothNotificationController;
 class CaptureController;
 class DisplayChangeObserver;
 class DisplayErrorObserver;
@@ -128,7 +126,10 @@ class EventRewriterEventFilter;
 class EventTransformationHandler;
 class FocusCycler;
 class KeyboardUMAEventFilter;
+class LastWindowClosedLogoutReminder;
 class LocaleNotificationController;
+class LogoutConfirmationController;
+class MaximizeModeWindowManager;
 class MouseCursorEventFilter;
 class OutputConfiguratorAnimation;
 class OverlayEventFilter;
@@ -290,6 +291,21 @@ class ASH_EXPORT Shell
   // Called when a casting session is started or stopped.
   void OnCastingSessionStartedOrStopped(bool started);
 
+  // Called when the overview mode is about to be started (before the windows
+  // get re-arranged).
+  void OnOverviewModeStarting();
+
+  // Called before the overview mode is ending (before the windows get arranged
+  // to their final position).
+  void OnOverviewModeEnding();
+
+  // Called after maximize mode has started, windows might still animate though.
+  void OnMaximizeModeStarted();
+
+  // Called after maximize mode has ended, windows might still be returning to
+  // their original position.
+  void OnMaximizeModeEnded();
+
   // Initializes |shelf_|.  Does nothing if it's already initialized.
   void CreateShelf();
 
@@ -307,6 +323,12 @@ class ASH_EXPORT Shell
   void AddShellObserver(ShellObserver* observer);
   void RemoveShellObserver(ShellObserver* observer);
 
+  // Turn the always maximize mode window manager on or off.
+  void EnableMaximizeModeWindowManager(bool enable);
+
+  // Test if the MaximizeModeWindowManager is enabled or not.
+  bool IsMaximizeModeWindowManagerEnabled();
+
   keyboard::KeyboardController* keyboard_controller() {
     return keyboard_controller_.get();
   }
@@ -318,10 +340,10 @@ class ASH_EXPORT Shell
   internal::DisplayManager* display_manager() {
     return display_manager_.get();
   }
-  views::corewm::InputMethodEventFilter* input_method_filter() {
+  ::wm::InputMethodEventFilter* input_method_filter() {
     return input_method_filter_.get();
   }
-  views::corewm::CompoundEventFilter* env_filter() {
+  ::wm::CompoundEventFilter* env_filter() {
     return env_filter_.get();
   }
   views::corewm::TooltipController* tooltip_controller() {
@@ -348,9 +370,6 @@ class ASH_EXPORT Shell
   VideoDetector* video_detector() {
     return video_detector_.get();
   }
-  WindowCycleController* window_cycle_controller() {
-    return window_cycle_controller_.get();
-  }
   WindowSelectorController* window_selector_controller() {
     return window_selector_controller_.get();
   }
@@ -366,16 +385,12 @@ class ASH_EXPORT Shell
   internal::EventTransformationHandler* event_transformation_handler() {
     return event_transformation_handler_.get();
   }
-  views::corewm::CursorManager* cursor_manager() { return &cursor_manager_; }
+  ::wm::CursorManager* cursor_manager() { return &cursor_manager_; }
 
   ShellDelegate* delegate() { return delegate_.get(); }
 
   UserWallpaperDelegate* user_wallpaper_delegate() {
     return user_wallpaper_delegate_.get();
-  }
-
-  CapsLockDelegate* caps_lock_delegate() {
-    return caps_lock_delegate_.get();
   }
 
   SessionStateDelegate* session_state_delegate() {
@@ -478,7 +493,7 @@ class ASH_EXPORT Shell
   }
 
   // Made available for tests.
-  views::corewm::ShadowController* shadow_controller() {
+  ::wm::ShadowController* shadow_controller() {
     return shadow_controller_.get();
   }
 
@@ -488,7 +503,7 @@ class ASH_EXPORT Shell
 #if defined(OS_CHROMEOS)
 #if defined(USE_X11)
   // TODO(oshima): Move these objects to DisplayController.
-  chromeos::OutputConfigurator* output_configurator() {
+  ui::OutputConfigurator* output_configurator() {
     return output_configurator_.get();
   }
   internal::OutputConfiguratorAnimation* output_configurator_animation() {
@@ -502,6 +517,10 @@ class ASH_EXPORT Shell
   internal::ResolutionNotificationController*
       resolution_notification_controller() {
     return resolution_notification_controller_.get();
+  }
+
+  internal::LogoutConfirmationController* logout_confirmation_controller() {
+    return logout_confirmation_controller_.get();
   }
 #endif  // defined(OS_CHROMEOS)
 
@@ -597,7 +616,7 @@ class ASH_EXPORT Shell
   aura::Window* scoped_target_root_window_;
 
   // The CompoundEventFilter owned by aura::Env object.
-  scoped_ptr<views::corewm::CompoundEventFilter> env_filter_;
+  scoped_ptr< ::wm::CompoundEventFilter> env_filter_;
 
   std::vector<WindowAndBoundsPair> to_restore_;
 
@@ -609,7 +628,6 @@ class ASH_EXPORT Shell
   scoped_ptr<SystemTrayDelegate> system_tray_delegate_;
   scoped_ptr<SystemTrayNotifier> system_tray_notifier_;
   scoped_ptr<UserWallpaperDelegate> user_wallpaper_delegate_;
-  scoped_ptr<CapsLockDelegate> caps_lock_delegate_;
   scoped_ptr<SessionStateDelegate> session_state_delegate_;
   scoped_ptr<AccessibilityDelegate> accessibility_delegate_;
   scoped_ptr<NewWindowDelegate> new_window_delegate_;
@@ -625,10 +643,9 @@ class ASH_EXPORT Shell
 
   scoped_ptr<internal::DragDropController> drag_drop_controller_;
   scoped_ptr<internal::ResizeShadowController> resize_shadow_controller_;
-  scoped_ptr<views::corewm::ShadowController> shadow_controller_;
-  scoped_ptr<views::corewm::VisibilityController> visibility_controller_;
-  scoped_ptr<views::corewm::WindowModalityController>
-      window_modality_controller_;
+  scoped_ptr< ::wm::ShadowController> shadow_controller_;
+  scoped_ptr< ::wm::VisibilityController> visibility_controller_;
+  scoped_ptr< ::wm::WindowModalityController> window_modality_controller_;
   scoped_ptr<views::corewm::TooltipController> tooltip_controller_;
   scoped_ptr<DesktopBackgroundController> desktop_background_controller_;
   scoped_ptr<PowerButtonController> power_button_controller_;
@@ -636,7 +653,6 @@ class ASH_EXPORT Shell
   scoped_ptr<MruWindowTracker> mru_window_tracker_;
   scoped_ptr<UserActivityDetector> user_activity_detector_;
   scoped_ptr<VideoDetector> video_detector_;
-  scoped_ptr<WindowCycleController> window_cycle_controller_;
   scoped_ptr<WindowSelectorController> window_selector_controller_;
   scoped_ptr<internal::FocusCycler> focus_cycler_;
   scoped_ptr<DisplayController> display_controller_;
@@ -645,7 +661,6 @@ class ASH_EXPORT Shell
   scoped_ptr<PartialMagnificationController> partial_magnification_controller_;
   scoped_ptr<AutoclickController> autoclick_controller_;
   scoped_ptr<aura::client::FocusClient> focus_client_;
-  scoped_ptr<aura::client::UserActionClient> user_action_client_;
   aura::client::ActivationClient* activation_client_;
   scoped_ptr<internal::MouseCursorEventFilter> mouse_cursor_filter_;
   scoped_ptr<internal::ScreenPositionController> screen_position_controller_;
@@ -672,7 +687,7 @@ class ASH_EXPORT Shell
   scoped_ptr<internal::AcceleratorFilter> accelerator_filter_;
 
   // An event filter that pre-handles all key events to send them to an IME.
-  scoped_ptr<views::corewm::InputMethodEventFilter> input_method_filter_;
+  scoped_ptr< ::wm::InputMethodEventFilter> input_method_filter_;
 
   scoped_ptr<internal::DisplayManager> display_manager_;
   scoped_ptr<base::WeakPtrFactory<internal::DisplayManager> >
@@ -681,6 +696,9 @@ class ASH_EXPORT Shell
   scoped_ptr<internal::LocaleNotificationController>
       locale_notification_controller_;
 
+  // The maximized window manager (if enabled).
+  scoped_ptr<internal::MaximizeModeWindowManager> maximize_mode_window_manager_;
+
 #if defined(OS_CHROMEOS)
   scoped_ptr<internal::PowerEventObserver> power_event_observer_;
   scoped_ptr<internal::UserActivityNotifier> user_activity_notifier_;
@@ -688,9 +706,15 @@ class ASH_EXPORT Shell
   scoped_ptr<StickyKeysController> sticky_keys_controller_;
   scoped_ptr<internal::ResolutionNotificationController>
       resolution_notification_controller_;
+  scoped_ptr<internal::BluetoothNotificationController>
+      bluetooth_notification_controller_;
+  scoped_ptr<internal::LogoutConfirmationController>
+      logout_confirmation_controller_;
+  scoped_ptr<internal::LastWindowClosedLogoutReminder>
+      last_window_closed_logout_reminder_;
 #if defined(USE_X11)
   // Controls video output device state.
-  scoped_ptr<chromeos::OutputConfigurator> output_configurator_;
+  scoped_ptr<ui::OutputConfigurator> output_configurator_;
   scoped_ptr<internal::OutputConfiguratorAnimation>
       output_configurator_animation_;
   scoped_ptr<internal::DisplayErrorObserver> display_error_observer_;
@@ -707,7 +731,7 @@ class ASH_EXPORT Shell
   // |native_cursor_manager_| is owned by |cursor_manager_|, but we keep a
   // pointer to vend to test code.
   AshNativeCursorManager* native_cursor_manager_;
-  views::corewm::CursorManager cursor_manager_;
+  ::wm::CursorManager cursor_manager_;
 
   ObserverList<ShellObserver> observers_;
 

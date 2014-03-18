@@ -11,11 +11,16 @@
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "content/renderer/media/crypto/content_decryption_module_factory.h"
+#include "media/cdm/json_web_key.h"
+#include "media/cdm/key_system_names.h"
+
+#if defined(ENABLE_PEPPER_CDMS)
+#include "content/renderer/media/crypto/pepper_cdm_wrapper.h"
+#endif  // defined(ENABLE_PEPPER_CDMS)
+
 #if defined(OS_ANDROID)
 #include "content/renderer/media/android/renderer_media_player_manager.h"
 #endif  // defined(OS_ANDROID)
-#include "media/cdm/json_web_key.h"
-#include "media/cdm/key_system_names.h"
 
 namespace content {
 
@@ -30,38 +35,32 @@ const uint32 kInvalidSessionId = 0;
 // Special system code to signal a closed persistent session in a SessionError()
 // call. This is needed because there is no SessionClosed() call in the prefixed
 // EME API.
-const int kSessionClosedSystemCode = 7 * 1024 * 1024 + 7;
-
-#if defined(ENABLE_PEPPER_CDMS)
-void ProxyDecryptor::DestroyHelperPlugin() {
-  ContentDecryptionModuleFactory::DestroyHelperPlugin(
-      web_media_player_client_, web_frame_);
-}
-#endif  // defined(ENABLE_PEPPER_CDMS)
+const int kSessionClosedSystemCode = 29127;
 
 ProxyDecryptor::ProxyDecryptor(
 #if defined(ENABLE_PEPPER_CDMS)
-    blink::WebMediaPlayerClient* web_media_player_client,
-    blink::WebFrame* web_frame,
+    const CreatePepperCdmCB& create_pepper_cdm_cb,
 #elif defined(OS_ANDROID)
     RendererMediaPlayerManager* manager,
-    int media_keys_id,
+    int cdm_id,
 #endif  // defined(ENABLE_PEPPER_CDMS)
     const KeyAddedCB& key_added_cb,
     const KeyErrorCB& key_error_cb,
     const KeyMessageCB& key_message_cb)
     : weak_ptr_factory_(this),
 #if defined(ENABLE_PEPPER_CDMS)
-      web_media_player_client_(web_media_player_client),
-      web_frame_(web_frame),
+      create_pepper_cdm_cb_(create_pepper_cdm_cb),
 #elif defined(OS_ANDROID)
       manager_(manager),
-      media_keys_id_(media_keys_id),
+      cdm_id_(cdm_id),
 #endif  // defined(ENABLE_PEPPER_CDMS)
       key_added_cb_(key_added_cb),
       key_error_cb_(key_error_cb),
       key_message_cb_(key_message_cb),
       is_clear_key_(false) {
+#if defined(ENABLE_PEPPER_CDMS)
+  DCHECK(!create_pepper_cdm_cb_.is_null());
+#endif  // defined(ENABLE_PEPPER_CDMS)
   DCHECK(!key_added_cb_.is_null());
   DCHECK(!key_error_cb_.is_null());
   DCHECK(!key_message_cb_.is_null());
@@ -188,13 +187,10 @@ scoped_ptr<media::MediaKeys> ProxyDecryptor::CreateMediaKeys(
   return ContentDecryptionModuleFactory::Create(
       key_system,
 #if defined(ENABLE_PEPPER_CDMS)
-      web_media_player_client_,
-      web_frame_,
-      base::Bind(&ProxyDecryptor::DestroyHelperPlugin,
-                 weak_ptr_factory_.GetWeakPtr()),
+      create_pepper_cdm_cb_,
 #elif defined(OS_ANDROID)
       manager_,
-      media_keys_id_,
+      cdm_id_,
       frame_url,
 #endif  // defined(ENABLE_PEPPER_CDMS)
       base::Bind(&ProxyDecryptor::OnSessionCreated,
@@ -244,7 +240,7 @@ void ProxyDecryptor::OnSessionClosed(uint32 session_id) {
 
 void ProxyDecryptor::OnSessionError(uint32 session_id,
                                     media::MediaKeys::KeyError error_code,
-                                    int system_code) {
+                                    uint32 system_code) {
   // Assumes that OnSessionCreated() has been called before this.
   key_error_cb_.Run(LookupWebSessionId(session_id), error_code, system_code);
 }

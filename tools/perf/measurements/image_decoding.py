@@ -4,6 +4,7 @@
 
 from metrics import power
 from telemetry.page import page_measurement
+from telemetry.core.timeline import model
 
 
 class ImageDecoding(page_measurement.PageMeasurement):
@@ -23,10 +24,8 @@ class ImageDecoding(page_measurement.PageMeasurement):
           chrome.gpuBenchmarking.clearImageCache();
         }
     """)
-
-  def DidNavigateToPage(self, page, tab):
     self._power_metric.Start(page, tab)
-    tab.StartTimelineRecording()
+    tab.browser.StartTracing('webkit,webkit.console')
 
   def StopBrowserAfterPage(self, browser, page):
     return not browser.tabs[0].ExecuteJavaScript("""
@@ -36,7 +35,8 @@ class ImageDecoding(page_measurement.PageMeasurement):
     """)
 
   def MeasurePage(self, page, tab, results):
-    tab.StopTimelineRecording()
+    timeline_data = tab.browser.StopTracing()
+    timeline_model = model.TimelineModel(timeline_data)
     self._power_metric.Stop(page, tab)
     self._power_metric.AddResults(tab, results)
 
@@ -44,7 +44,7 @@ class ImageDecoding(page_measurement.PageMeasurement):
       return tab.EvaluateJavaScript('isDone')
 
     decode_image_events = \
-        tab.timeline_model.GetAllEventsOfName('DecodeImage')
+        timeline_model.GetAllEventsOfName('Decode Image')
 
     # If it is a real image page, then store only the last-minIterations
     # decode tasks.

@@ -122,14 +122,14 @@ void WriteToFile(const base::FilePath& path, const std::string& content) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   DCHECK(!path.empty());
 
-  file_util::WriteFile(path, content.c_str(), content.length());
+  base::WriteFile(path, content.c_str(), content.length());
 }
 
 void AppendToFile(const base::FilePath& path, const std::string& content) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   DCHECK(!path.empty());
 
-  file_util::AppendToFile(path, content.c_str(), content.length());
+  base::AppendToFile(path, content.c_str(), content.length());
 }
 
 fileapi::IsolatedContext* isolated_context() {

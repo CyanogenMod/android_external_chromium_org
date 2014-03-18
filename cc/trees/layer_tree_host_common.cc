@@ -755,7 +755,7 @@ void ApplyPositionAdjustment(
       layer->position_constraint().is_fixed_to_right_edge();
   bool fixed_to_bottom_edge =
       layer->position_constraint().is_fixed_to_bottom_edge();
-  gfx::Vector2dF position_offset = container->fixed_container_size_delta();
+  gfx::Vector2dF position_offset = container->FixedContainerSizeDelta();
   position_offset.set_x(fixed_to_right_edge ? position_offset.x() : 0);
   position_offset.set_y(fixed_to_bottom_edge ? position_offset.y() : 0);
   if (position_offset.IsZero())
@@ -989,6 +989,9 @@ static inline void UpdateLayerContentsScale(
   if (!layer->raster_scale_is_unknown())
     raster_scale = layer->raster_scale();
 
+  gfx::Size old_content_bounds = layer->content_bounds();
+  float old_contents_scale_x = layer->contents_scale_x();
+  float old_contents_scale_y = layer->contents_scale_y();
 
   float contents_scale = raster_scale * device_scale_factor * page_scale_factor;
   CalculateContentsScale(layer,
@@ -996,6 +999,11 @@ static inline void UpdateLayerContentsScale(
                          device_scale_factor,
                          page_scale_factor,
                          animating_transform_to_screen);
+
+  if (layer->content_bounds() != old_content_bounds ||
+      layer->contents_scale_x() != old_contents_scale_x ||
+      layer->contents_scale_y() != old_contents_scale_y)
+    layer->SetNeedsPushProperties();
 }
 
 static inline RenderSurface* CreateOrReuseRenderSurface(Layer* layer) {

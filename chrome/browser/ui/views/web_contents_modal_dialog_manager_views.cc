@@ -23,16 +23,16 @@
 #if defined(USE_AURA)
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
-#include "ui/views/corewm/visibility_controller.h"
-#include "ui/views/corewm/window_animations.h"
-#include "ui/views/corewm/window_modality_controller.h"
+#include "ui/wm/core/visibility_controller.h"
+#include "ui/wm/core/window_animations.h"
+#include "ui/wm/core/window_modality_controller.h"
 #endif
 
 // TODO(wittman): this code should not depend on ash.
 #if defined(USE_ASH)
 #include "ash/ash_constants.h"
+#include "ash/frame/custom_frame_view_ash.h"
 #include "ash/shell.h"
-#include "ash/wm/custom_frame_view_ash.h"
 #endif
 
 using web_modal::NativeWebContentsModalDialog;
@@ -77,21 +77,21 @@ class NativeWebContentsModalDialogManagerViews
     widget->GetNativeWindow()->SetProperty(aura::client::kConstrainedWindowKey,
                                            true);
 
-    views::corewm::SetWindowVisibilityAnimationType(
+    wm::SetWindowVisibilityAnimationType(
         widget->GetNativeWindow(),
-        views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_ROTATE);
+        wm::WINDOW_VISIBILITY_ANIMATION_TYPE_ROTATE);
 #endif
 
 #if defined(USE_ASH)
     gfx::NativeView parent = platform_util::GetParent(widget->GetNativeView());
-    views::corewm::SetChildWindowVisibilityChangesAnimated(parent);
+    wm::SetChildWindowVisibilityChangesAnimated(parent);
     // No animations should get performed on the window since that will re-order
     // the window stack which will then cause many problems.
     if (parent && parent->parent()) {
       parent->parent()->SetProperty(aura::client::kAnimationsDisabledKey, true);
     }
 
-    views::corewm::SetModalParent(
+    wm::SetModalParent(
         widget->GetNativeWindow(),
         platform_util::GetParent(widget->GetNativeView()));
 #endif
@@ -100,9 +100,9 @@ class NativeWebContentsModalDialogManagerViews
   virtual void ShowDialog(NativeWebContentsModalDialog dialog) OVERRIDE {
     views::Widget* widget = GetWidget(dialog);
 #if defined(USE_AURA)
-    scoped_ptr<views::corewm::SuspendChildWindowVisibilityAnimations> suspend;
+    scoped_ptr<wm::SuspendChildWindowVisibilityAnimations> suspend;
     if (shown_widgets_.find(widget) != shown_widgets_.end()) {
-      suspend.reset(new views::corewm::SuspendChildWindowVisibilityAnimations(
+      suspend.reset(new wm::SuspendChildWindowVisibilityAnimations(
           widget->GetNativeWindow()->parent()));
     }
 #endif
@@ -123,8 +123,8 @@ class NativeWebContentsModalDialogManagerViews
   virtual void HideDialog(NativeWebContentsModalDialog dialog) OVERRIDE {
     views::Widget* widget = GetWidget(dialog);
 #if defined(USE_AURA)
-    scoped_ptr<views::corewm::SuspendChildWindowVisibilityAnimations> suspend;
-    suspend.reset(new views::corewm::SuspendChildWindowVisibilityAnimations(
+    scoped_ptr<wm::SuspendChildWindowVisibilityAnimations> suspend;
+    suspend.reset(new wm::SuspendChildWindowVisibilityAnimations(
         widget->GetNativeWindow()->parent()));
 #endif
     widget->Hide();

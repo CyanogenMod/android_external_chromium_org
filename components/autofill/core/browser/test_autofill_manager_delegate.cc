@@ -19,9 +19,7 @@ TestAutofillManagerDelegate::GetDatabase() {
   return scoped_refptr<AutofillWebDataService>(NULL);
 }
 
-PrefService* TestAutofillManagerDelegate::GetPrefs() {
-  return NULL;
-}
+PrefService* TestAutofillManagerDelegate::GetPrefs() { return prefs_.get(); }
 
 void TestAutofillManagerDelegate::HideRequestAutocompleteDialog() {}
 
@@ -57,5 +55,9 @@ bool TestAutofillManagerDelegate::IsAutocompleteEnabled() {
 
 void TestAutofillManagerDelegate::DetectAccountCreationForms(
     const std::vector<autofill::FormStructure*>& forms) {}
+
+void TestAutofillManagerDelegate::DidFillOrPreviewField(
+    const base::string16& autofilled_value,
+    const base::string16& profile_full_name) {}
 
 }  // namespace autofill

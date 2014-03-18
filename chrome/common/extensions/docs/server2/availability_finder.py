@@ -7,7 +7,10 @@ import posixpath
 
 from api_schema_graph import APISchemaGraph
 from branch_utility import BranchUtility
-from extensions_paths import API, JSON_TEMPLATES
+from extensions_paths import (
+    API, CHROME_API, JSON_TEMPLATES, API_FEATURES, MANIFEST_FEATURES,
+    PERMISSION_FEATURES)
+from file_system import FileNotFoundError
 from third_party.json_schema_compiler.model import UnixName
 
 
@@ -29,7 +32,7 @@ def _GetChannelFromFeatures(api_name, json_fs, filename):
   given |json_fs|. Returns None if channel information for the API cannot be
   located.
   '''
-  feature = json_fs.GetFromFile(API + filename).Get().get(api_name)
+  feature = json_fs.GetFromFile(filename).Get().get(api_name)
   if feature is None:
     return None
   if isinstance(feature, Mapping):
@@ -41,17 +44,17 @@ def _GetChannelFromFeatures(api_name, json_fs, filename):
 
 
 def _GetChannelFromApiFeatures(api_name, json_fs):
-  return _GetChannelFromFeatures(api_name, json_fs, '_api_features.json')
+  return _GetChannelFromFeatures(api_name, json_fs, API_FEATURES)
 
 
 def _GetChannelFromManifestFeatures(api_name, json_fs):
   # _manifest_features.json uses unix_style API names.
   api_name = UnixName(api_name)
-  return _GetChannelFromFeatures(api_name, json_fs, '_manifest_features.json')
+  return _GetChannelFromFeatures(api_name, json_fs, MANIFEST_FEATURES)
 
 
 def _GetChannelFromPermissionFeatures(api_name, json_fs):
-  return _GetChannelFromFeatures(api_name, json_fs, '_permission_features.json')
+  return _GetChannelFromFeatures(api_name, json_fs, PERMISSION_FEATURES)
 
 
 class AvailabilityFinder(object):
@@ -95,23 +98,23 @@ class AvailabilityFinder(object):
     single _EXTENSION_API file which all APIs share in older versions of Chrome,
     in which case it is unknown whether the API actually exists there.
     '''
-    def under_api_path(path):
-      return API + path
-
     if version == 'trunk' or version > _ORIGINAL_FEATURES_MIN_VERSION:
       # API schema filenames switch format to unix_hacker_style.
       api_name = UnixName(api_name)
 
-    # |file_system| will cache the results from the ReadSingle() call.
-    filenames = file_system.ReadSingle(API).Get()
-
-    for ext in ('json', 'idl'):
-      filename = '%s.%s' % (api_name, ext)
-      if filename in filenames:
-        return under_api_path(filename)
-    if _EXTENSION_API in filenames:
-      return under_api_path(_EXTENSION_API)
-    # API schema data could not be found in any .json or .idl file.
+    futures = [(path, file_system.ReadSingle(path))
+               for path in (API, CHROME_API)]
+    for path, future in futures:
+      try:
+        filenames = future.Get()
+        for ext in ('json', 'idl'):
+          filename = '%s.%s' % (api_name, ext)
+          if filename in filenames:
+            return path + filename
+          if _EXTENSION_API in filenames:
+            return path + _EXTENSION_API
+      except FileNotFoundError:
+        pass
     return None
 
   def _GetApiSchema(self, api_name, file_system, version):

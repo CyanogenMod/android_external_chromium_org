@@ -12,12 +12,14 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "chrome/browser/metrics/extension_metrics.h"
 #include "chrome/browser/metrics/metrics_network_observer.h"
 #include "chrome/common/metrics/metrics_log_base.h"
 #include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "ui/gfx/size.h"
 
+class HashedExtensionMetrics;
 class MetricsNetworkObserver;
 struct OmniboxLog;
 class PrefService;
@@ -113,9 +115,9 @@ class MetricsLog : public MetricsLogBase {
   //
   // If |log_type| is INITIAL_LOG, records additional info such as number of
   // incomplete shutdowns as well as extra breakpad and debugger stats.
-  void RecordStabilityMetrics(
-      base::TimeDelta incremental_uptime,
-      LogType log_type);
+  void RecordStabilityMetrics(base::TimeDelta incremental_uptime,
+                              base::TimeDelta uptime,
+                              LogType log_type);
 
   const base::TimeTicks& creation_time() const {
     return creation_time_;
@@ -168,7 +170,8 @@ class MetricsLog : public MetricsLogBase {
   // Delaying these stats would bias metrics away from happy long lived
   // chromium processes (ones that don't crash, and keep on running).
   void WriteRealtimeStabilityAttributes(PrefService* pref,
-                                        base::TimeDelta incremental_uptime);
+                                        base::TimeDelta incremental_uptime,
+                                        base::TimeDelta uptime);
 
   // Writes the list of installed plugins.
   void WritePluginList(const std::vector<content::WebPluginInfo>& plugin_list);
@@ -182,6 +185,9 @@ class MetricsLog : public MetricsLogBase {
 
   // The time when the current log was created.
   const base::TimeTicks creation_time_;
+
+  // For including information on which extensions are installed in reports.
+  HashedExtensionMetrics extension_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(MetricsLog);
 };

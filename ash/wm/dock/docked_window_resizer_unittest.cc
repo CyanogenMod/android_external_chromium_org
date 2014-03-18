@@ -24,17 +24,17 @@
 #include "ash/wm/panels/panel_layout_manager.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
-#include "ash/wm/workspace/snap_sizer.h"
+#include "ash/wm/wm_event.h"
 #include "base/command_line.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/window_tree_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ui_base_types.h"
-#include "ui/views/corewm/window_util.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/window_util.h"
 
 namespace ash {
 namespace internal {
@@ -516,7 +516,7 @@ TEST_P(DockedWindowResizerTest, AttachMinimizeRestore) {
   window_state->Restore();
   RunAllPendingInMessageLoop();
   EXPECT_TRUE(window->IsVisible());
-  EXPECT_TRUE(window_state->IsNormalShowState());
+  EXPECT_TRUE(window_state->IsNormalStateType());
 }
 
 // Maximize a docked window and check that it is maximized and no longer docked.
@@ -545,11 +545,16 @@ TEST_P(DockedWindowResizerTest, AttachMaximize) {
 TEST_P(DockedWindowResizerTest, AttachTwoWindows) {
   if (!SupportsHostWindowResize())
     return;
+  UpdateDisplay("600x600");
 
   scoped_ptr<aura::Window> w1(CreateTestWindow(gfx::Rect(0, 0, 201, 201)));
   scoped_ptr<aura::Window> w2(CreateTestWindow(gfx::Rect(0, 0, 201, 201)));
   DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w1.get(), 20);
   DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w2.get(), 50);
+
+  // Docking second window should not minimize the first.
+  wm::WindowState* window_state1 = wm::GetWindowState(w1.get());
+  EXPECT_FALSE(window_state1->IsMinimized());
 
   // Both windows should be docked at the right edge.
   EXPECT_EQ(w1->GetRootWindow()->GetBoundsInScreen().right(),
@@ -569,6 +574,7 @@ TEST_P(DockedWindowResizerTest, AttachTwoWindows) {
   DragEnd();
 
   // The first window should be still docked.
+  EXPECT_FALSE(window_state1->IsMinimized());
   EXPECT_EQ(w1->GetRootWindow()->GetBoundsInScreen().right(),
             w1->GetBoundsInScreen().right());
   EXPECT_EQ(internal::kShellWindowId_DockedContainer, w1->parent()->id());
@@ -1439,10 +1445,10 @@ TEST_P(DockedWindowResizerTest, DragWindowWithTransientChild) {
   scoped_ptr<aura::Window> window(CreateTestWindow(gfx::Rect(0, 0, 201, 201)));
   scoped_ptr<aura::Window> child(CreateTestWindowInShellWithDelegateAndType(
       NULL, ui::wm::WINDOW_TYPE_NORMAL, 0, gfx::Rect(20, 20, 150, 20)));
-  views::corewm::AddTransientChild(window.get(), child.get());
+  ::wm::AddTransientChild(window.get(), child.get());
   if (window->parent() != child->parent())
     window->parent()->AddChild(child.get());
-  EXPECT_EQ(window.get(), views::corewm::GetTransientParent(child.get()));
+  EXPECT_EQ(window.get(), ::wm::GetTransientParent(child.get()));
 
   DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, window.get(), 20);
 
@@ -1489,8 +1495,8 @@ TEST_P(DockedWindowResizerTest, DragWindowWithModalTransientChild) {
   // While still dragging create a modal window and make it a transient child of
   // the |window|.
   scoped_ptr<aura::Window> child(CreateModalWindow(gfx::Rect(20, 20, 150, 20)));
-  views::corewm::AddTransientChild(window.get(), child.get());
-  EXPECT_EQ(window.get(), views::corewm::GetTransientParent(child.get()));
+  ::wm::AddTransientChild(window.get(), child.get());
+  EXPECT_EQ(window.get(), ::wm::GetTransientParent(child.get()));
   EXPECT_EQ(internal::kShellWindowId_SystemModalContainer,
             child->parent()->id());
 
@@ -1510,7 +1516,7 @@ TEST_P(DockedWindowResizerTest, DragWindowWithModalTransientChild) {
   EXPECT_EQ(gfx::Point(20, 20).ToString(),
             child->GetBoundsInScreen().origin().ToString());
   // The |child| should still be a transient child of |window|.
-  EXPECT_EQ(window.get(), views::corewm::GetTransientParent(child.get()));
+  EXPECT_EQ(window.get(), ::wm::GetTransientParent(child.get()));
 }
 
 // Tests that side snapping a window undocks it, closes the dock and then snaps.
@@ -1533,8 +1539,8 @@ TEST_P(DockedWindowResizerTest, SideSnapDocked) {
   EXPECT_FALSE(window_state->IsSnapped());
 
   // Side snap at right edge.
-  internal::SnapSizer::SnapWindow(window_state,
-                                  internal::SnapSizer::RIGHT_EDGE);
+  const wm::WMEvent snap_right(wm::WM_EVENT_SNAP_RIGHT);
+  window_state->OnWMEvent(&snap_right);
   // The window should be snapped at the right edge and the dock should close.
   gfx::Rect work_area(ScreenUtil::GetDisplayWorkAreaBoundsInParent(w1.get()));
   EXPECT_EQ(0, docked_width(manager));
@@ -1556,8 +1562,8 @@ TEST_P(DockedWindowResizerTest, SideSnapDocked) {
   EXPECT_FALSE(window_state->IsSnapped());
 
   // Side snap at left edge.
-  internal::SnapSizer::SnapWindow(window_state,
-                                  internal::SnapSizer::LEFT_EDGE);
+  const wm::WMEvent snap_left(wm::WM_EVENT_SNAP_LEFT);
+  window_state->OnWMEvent(&snap_left);
   // The window should be snapped at the right edge and the dock should close.
   EXPECT_EQ(work_area.ToString(),
             ScreenUtil::GetDisplayWorkAreaBoundsInParent(w1.get()).ToString());
@@ -1592,7 +1598,7 @@ TEST_P(DockedWindowResizerTest, MaximizedDuringDrag) {
   EXPECT_TRUE(window_state->IsDocked());
 
   // Maximize the window while in a real drag. In particular,
-  // ToplevelWindowEventHandler::ScopedWindowResizer::OnWindowShowTypeChanged()
+  // ToplevelWindowEventHandler::ScopedWindowResizer::OnWindowStateTypeChanged()
   // must be called in order for the maximized window's size to be correct.
   delegate()->set_window_component(HTCAPTION);
   aura::test::EventGenerator& generator = GetEventGenerator();

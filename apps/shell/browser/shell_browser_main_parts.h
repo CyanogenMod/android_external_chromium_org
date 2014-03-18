@@ -9,7 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/browser_main_parts.h"
-#include "ui/aura/root_window_observer.h"
+#include "ui/aura/window_tree_host_observer.h"
 
 namespace aura {
 class TestScreen;
@@ -40,12 +40,13 @@ class WMTestHelper;
 
 namespace apps {
 
+class ShellAppsClient;
 class ShellBrowserContext;
 class ShellExtensionsClient;
 
 // Handles initialization of AppShell.
 class ShellBrowserMainParts : public content::BrowserMainParts,
-                              public aura::RootWindowObserver {
+                              public aura::WindowTreeHostObserver {
  public:
   explicit ShellBrowserMainParts(
       const content::MainFunctionParams& parameters);
@@ -68,9 +69,8 @@ class ShellBrowserMainParts : public content::BrowserMainParts,
   virtual bool MainMessageLoopRun(int* result_code) OVERRIDE;
   virtual void PostMainMessageLoopRun() OVERRIDE;
 
-  // aura::RootWindowObserver overrides:
-  virtual void OnWindowTreeHostCloseRequested(const aura::RootWindow* root)
-      OVERRIDE;
+  // aura::WindowTreeHostObserver overrides:
+  virtual void OnHostCloseRequested(const aura::WindowTreeHost* host) OVERRIDE;
 
  private:
   // Creates the window that hosts the apps.
@@ -90,6 +90,7 @@ class ShellBrowserMainParts : public content::BrowserMainParts,
   scoped_ptr<ShellExtensionsClient> extensions_client_;
   scoped_ptr<extensions::ShellExtensionsBrowserClient>
       extensions_browser_client_;
+  scoped_ptr<ShellAppsClient> apps_client_;
   scoped_ptr<net::NetLog> net_log_;
 
   // Enable a minimal set of views::corewm to be initialized.
@@ -101,7 +102,7 @@ class ShellBrowserMainParts : public content::BrowserMainParts,
 
   scoped_ptr<content::ShellDevToolsDelegate> devtools_delegate_;
 
-  // Owned by the BrowserContextKeyedService system.
+  // Owned by the KeyedService system.
   extensions::ShellExtensionSystem* extension_system_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellBrowserMainParts);

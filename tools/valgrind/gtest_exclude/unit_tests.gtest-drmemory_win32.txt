@@ -80,3 +80,6 @@ NTPUserDataLoggerTest.TestLogging
 
 # http://crbug.com/340837
 ChromeBlacklistTrialTest.*
+
+# http://crbug.com/349778
+TranslateManagerRenderViewHostTest.*

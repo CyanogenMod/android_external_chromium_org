@@ -14,6 +14,7 @@
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_constants.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_rules_registry.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
+#include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -40,14 +41,16 @@ bool IsWebView(const RulesRegistryService::WebViewKey& webview_key) {
 
 }  // namespace
 
-RulesRegistryService::RulesRegistryService(Profile* profile)
+RulesRegistryService::RulesRegistryService(content::BrowserContext* context)
     : content_rules_registry_(NULL),
-      profile_(profile) {
-  if (profile) {
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-        content::Source<Profile>(profile->GetOriginalProfile()));
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
-        content::Source<Profile>(profile->GetOriginalProfile()));
+      profile_(Profile::FromBrowserContext(context)) {
+  if (profile_) {
+    registrar_.Add(this,
+                   chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                   content::Source<Profile>(profile_->GetOriginalProfile()));
+    registrar_.Add(this,
+                   chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+                   content::Source<Profile>(profile_->GetOriginalProfile()));
     registrar_.Add(this,
                    chrome::NOTIFICATION_EXTENSION_LOADED,
                    content::Source<Profile>(profile_->GetOriginalProfile()));
@@ -119,18 +122,19 @@ void RulesRegistryService::Shutdown() {
           scoped_refptr<WebRequestRulesRegistry>(NULL)));
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<RulesRegistryService> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<RulesRegistryService> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<RulesRegistryService>*
+BrowserContextKeyedAPIFactory<RulesRegistryService>*
 RulesRegistryService::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 // static
-RulesRegistryService* RulesRegistryService::Get(Profile* profile) {
-  return ProfileKeyedAPIFactory<RulesRegistryService>::GetForProfile(profile);
+RulesRegistryService* RulesRegistryService::Get(
+    content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<RulesRegistryService>::Get(context);
 }
 
 void RulesRegistryService::RegisterRulesRegistry(

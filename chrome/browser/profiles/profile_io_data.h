@@ -18,6 +18,7 @@
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/storage_partition_descriptor.h"
 #include "chrome/common/content_settings_types.h"
 #include "content/public/browser/content_browser_client.h"
@@ -32,7 +33,6 @@ class CookieSettings;
 class HostContentSettingsMap;
 class ManagedModeURLFilter;
 class MediaDeviceIDSalt;
-class Profile;
 class ProtocolHandlerRegistry;
 class SigninNamesOnIOThread;
 
@@ -93,7 +93,8 @@ class ProfileIOData {
   // Initializes the ProfileIOData object and primes the RequestContext
   // generation. Must be called prior to any of the Get*() methods other than
   // GetResouceContext or GetMetricsEnabledStateOnIOThread.
-  void Init(content::ProtocolHandlerMap* protocol_handlers) const;
+  void Init(content::ProtocolHandlerMap* protocol_handlers,
+            content::ProtocolHandlerScopedVector protocol_interceptors) const;
 
   ChromeURLRequestContext* GetMainRequestContext() const;
   ChromeURLRequestContext* GetMediaRequestContext() const;
@@ -103,7 +104,8 @@ class ProfileIOData {
       const StoragePartitionDescriptor& partition_descriptor,
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
-      content::ProtocolHandlerMap* protocol_handlers) const;
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors) const;
   ChromeURLRequestContext* GetIsolatedMediaRequestContext(
       ChromeURLRequestContext* app_context,
       const StoragePartitionDescriptor& partition_descriptor) const;
@@ -187,9 +189,11 @@ class ProfileIOData {
   }
 #endif
 
-  bool is_incognito() const {
-    return is_incognito_;
+  Profile::ProfileType profile_type() const {
+    return profile_type_;
   }
+
+  bool IsOffTheRecord() const;
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
   policy::PolicyHeaderIOHelper* policy_header_helper() const {
@@ -292,7 +296,7 @@ class ProfileIOData {
     void* profile;
   };
 
-  explicit ProfileIOData(bool is_incognito);
+  explicit ProfileIOData(Profile::ProfileType profile_type);
 
   static std::string GetSSLSessionCacheShard();
 
@@ -301,6 +305,7 @@ class ProfileIOData {
 
   scoped_ptr<net::URLRequestJobFactory> SetUpJobFactoryDefaults(
       scoped_ptr<net::URLRequestJobFactoryImpl> job_factory,
+      content::ProtocolHandlerScopedVector protocol_interceptors,
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       net::NetworkDelegate* network_delegate,
@@ -402,7 +407,8 @@ class ProfileIOData {
   // should use the static helper functions above to implement this.
   virtual void InitializeInternal(
       ProfileParams* profile_params,
-      content::ProtocolHandlerMap* protocol_handlers) const = 0;
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors) const = 0;
 
   // Initializes the RequestContext for extensions.
   virtual void InitializeExtensionsRequestContext(
@@ -414,7 +420,8 @@ class ProfileIOData {
       const StoragePartitionDescriptor& details,
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
-      content::ProtocolHandlerMap* protocol_handlers) const = 0;
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors) const = 0;
 
   // Does an on-demand initialization of a media RequestContext for the given
   // isolated app.
@@ -426,13 +433,13 @@ class ProfileIOData {
   // context from ProfileIOData to the URLRequestContextGetter.
   virtual ChromeURLRequestContext*
       AcquireMediaRequestContext() const = 0;
-  virtual ChromeURLRequestContext*
-      AcquireIsolatedAppRequestContext(
-          ChromeURLRequestContext* main_context,
-          const StoragePartitionDescriptor& partition_descriptor,
-          scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
-              protocol_handler_interceptor,
-          content::ProtocolHandlerMap* protocol_handlers) const = 0;
+  virtual ChromeURLRequestContext* AcquireIsolatedAppRequestContext(
+      ChromeURLRequestContext* main_context,
+      const StoragePartitionDescriptor& partition_descriptor,
+      scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
+          protocol_handler_interceptor,
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors) const = 0;
   virtual ChromeURLRequestContext*
       AcquireIsolatedMediaRequestContext(
           ChromeURLRequestContext* app_context,
@@ -548,7 +555,7 @@ class ProfileIOData {
   // TODO(jhawkins): Remove once crbug.com/102004 is fixed.
   bool initialized_on_UI_thread_;
 
-  bool is_incognito_;
+  const Profile::ProfileType profile_type_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileIOData);
 };

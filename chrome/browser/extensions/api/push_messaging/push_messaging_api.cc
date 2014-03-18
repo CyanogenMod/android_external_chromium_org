@@ -281,7 +281,8 @@ void PushMessagingGetChannelIdFunction::OnObfuscatedGaiaIdFetchFailure(
   }
 }
 
-PushMessagingAPI::PushMessagingAPI(Profile* profile) : profile_(profile) {
+PushMessagingAPI::PushMessagingAPI(content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)) {
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
@@ -294,8 +295,8 @@ PushMessagingAPI::~PushMessagingAPI() {
 }
 
 // static
-PushMessagingAPI* PushMessagingAPI::Get(Profile* profile) {
-  return ProfileKeyedAPIFactory<PushMessagingAPI>::GetForProfile(profile);
+PushMessagingAPI* PushMessagingAPI::Get(content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<PushMessagingAPI>::Get(context);
 }
 
 void PushMessagingAPI::Shutdown() {
@@ -303,11 +304,11 @@ void PushMessagingAPI::Shutdown() {
   handler_.reset();
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<PushMessagingAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<PushMessagingAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<PushMessagingAPI>*
+BrowserContextKeyedAPIFactory<PushMessagingAPI>*
 PushMessagingAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
@@ -363,7 +364,8 @@ void PushMessagingAPI::SetMapperForTest(
 }
 
 template <>
-void ProfileKeyedAPIFactory<PushMessagingAPI>::DeclareFactoryDependencies() {
+void
+BrowserContextKeyedAPIFactory<PushMessagingAPI>::DeclareFactoryDependencies() {
   DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
   DependsOn(invalidation::InvalidationServiceFactory::GetInstance());
 }

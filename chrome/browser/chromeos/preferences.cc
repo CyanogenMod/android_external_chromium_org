@@ -33,6 +33,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/ime/extension_ime_util.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/ime/xkeyboard.h"
 #include "chromeos/system/statistics_provider.h"
@@ -60,7 +61,8 @@ Preferences::Preferences()
 Preferences::Preferences(input_method::InputMethodManager* input_method_manager)
     : prefs_(NULL),
       input_method_manager_(input_method_manager),
-      user_(NULL) {
+      user_(NULL),
+      user_is_primary_(false) {
   // Do not observe shell, if there is no shell instance; e.g., in some unit
   // tests.
   if (ash::Shell::HasInstance())
@@ -580,6 +582,12 @@ void Preferences::SetLanguageConfigStringListAsCSV(const char* section,
   std::vector<std::string> split_values;
   if (!value.empty())
     base::SplitString(value, ',', &split_values);
+
+  // TODO(shuchen): migration of the xkb id to extension-xkb id.
+  // Remove this function after few milestones are passed.
+  // See: http://crbug.com/345604
+  if (input_method_manager_->MigrateXkbInputMethods(&split_values))
+    preload_engines_.SetValue(JoinString(split_values, ','));
 
   if (section == std::string(language_prefs::kGeneralSectionName) &&
       name == std::string(language_prefs::kPreloadEnginesConfigName)) {

@@ -52,6 +52,18 @@ void PutFileTrackerToBatch(const FileTracker& tracker,
              value);
 }
 
+void PutFileMetadataDeletionToBatch(const std::string& file_id,
+                                    leveldb::WriteBatch* batch) {
+  if (batch)
+    batch->Delete(kFileMetadataKeyPrefix + file_id);
+}
+
+void PutFileTrackerDeletionToBatch(int64 tracker_id,
+                                   leveldb::WriteBatch* batch) {
+  if (batch)
+    batch->Delete(kFileTrackerKeyPrefix + base::Int64ToString(tracker_id));
+}
+
 void PopulateFileDetailsByFileResource(
     const google_apis::FileResource& file_resource,
     FileDetails* details) {
@@ -252,6 +264,12 @@ SyncStatusCode GDataErrorCodeToSyncStatusCode(
             "Got unexpected error: %d",
             static_cast<int>(error));
   return SYNC_STATUS_FAILED;
+}
+
+scoped_ptr<FileTracker> CloneFileTracker(const FileTracker* obj) {
+  if (!obj)
+    return scoped_ptr<FileTracker>();
+  return scoped_ptr<FileTracker>(new FileTracker(*obj));
 }
 
 }  // namespace drive_backend

@@ -5,14 +5,17 @@
 #ifndef DEVICE_BLUETOOTH_BLUETOOTH_ADAPTER_CHROMEOS_H_
 #define DEVICE_BLUETOOTH_BLUETOOTH_ADAPTER_CHROMEOS_H_
 
+#include <queue>
 #include <string>
 
 #include "base/memory/weak_ptr.h"
 #include "chromeos/dbus/bluetooth_adapter_client.h"
+#include "chromeos/dbus/bluetooth_agent_service_provider.h"
 #include "chromeos/dbus/bluetooth_device_client.h"
 #include "chromeos/dbus/bluetooth_input_client.h"
 #include "dbus/object_path.h"
 #include "device/bluetooth/bluetooth_adapter.h"
+#include "device/bluetooth/bluetooth_device.h"
 
 namespace device {
 
@@ -24,6 +27,7 @@ namespace chromeos {
 
 class BluetoothChromeOSTest;
 class BluetoothDeviceChromeOS;
+class BluetoothPairingChromeOS;
 
 // The BluetoothAdapterChromeOS class implements BluetoothAdapter for the
 // Chrome OS platform.
@@ -31,7 +35,8 @@ class BluetoothAdapterChromeOS
     : public device::BluetoothAdapter,
       private chromeos::BluetoothAdapterClient::Observer,
       private chromeos::BluetoothDeviceClient::Observer,
-      private chromeos::BluetoothInputClient::Observer {
+      private chromeos::BluetoothInputClient::Observer,
+      private chromeos::BluetoothAgentServiceProvider::Delegate {
  public:
   // BluetoothAdapter override
   virtual void AddObserver(
@@ -56,16 +61,15 @@ class BluetoothAdapterChromeOS
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
   virtual bool IsDiscovering() const OVERRIDE;
-  virtual void StartDiscovering(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void StopDiscovering(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
   virtual void ReadLocalOutOfBandPairingData(
       const device::BluetoothAdapter::BluetoothOutOfBandPairingDataCallback&
           callback,
       const ErrorCallback& error_callback) OVERRIDE;
+
+ protected:
+  // BluetoothAdapter override
+  virtual void RemovePairingDelegateInternal(
+      device::BluetoothDevice::PairingDelegate* pairing_delegate) OVERRIDE;
 
  private:
   friend class device::BluetoothAdapterFactory;
@@ -73,6 +77,12 @@ class BluetoothAdapterChromeOS
   friend class BluetoothDeviceChromeOS;
   friend class BluetoothProfileChromeOS;
   friend class BluetoothProfileChromeOSTest;
+
+  // typedef for callback parameters that are passed to AddDiscoverySession
+  // and RemoveDiscoverySession. This is used to queue incoming requests while
+  // a call to BlueZ is pending.
+  typedef std::pair<base::Closure, ErrorCallback> DiscoveryCallbackPair;
+  typedef std::queue<DiscoveryCallbackPair> DiscoveryCallbackQueue;
 
   BluetoothAdapterChromeOS();
   virtual ~BluetoothAdapterChromeOS();
@@ -94,10 +104,51 @@ class BluetoothAdapterChromeOS
   virtual void InputPropertyChanged(const dbus::ObjectPath& object_path,
                                     const std::string& property_name) OVERRIDE;
 
+  // BluetoothAgentServiceProvider::Delegate override.
+  virtual void Release() OVERRIDE;
+  virtual void RequestPinCode(const dbus::ObjectPath& device_path,
+                              const PinCodeCallback& callback) OVERRIDE;
+  virtual void DisplayPinCode(const dbus::ObjectPath& device_path,
+                              const std::string& pincode) OVERRIDE;
+  virtual void RequestPasskey(const dbus::ObjectPath& device_path,
+                              const PasskeyCallback& callback) OVERRIDE;
+  virtual void DisplayPasskey(const dbus::ObjectPath& device_path,
+                              uint32 passkey, uint16 entered) OVERRIDE;
+  virtual void RequestConfirmation(const dbus::ObjectPath& device_path,
+                                   uint32 passkey,
+                                   const ConfirmationCallback& callback)
+      OVERRIDE;
+  virtual void RequestAuthorization(const dbus::ObjectPath& device_path,
+                                    const ConfirmationCallback& callback)
+      OVERRIDE;
+  virtual void AuthorizeService(const dbus::ObjectPath& device_path,
+                                const std::string& uuid,
+                                const ConfirmationCallback& callback) OVERRIDE;
+  virtual void Cancel() OVERRIDE;
+
+  // Called by dbus:: on completion of the D-Bus method call to register the
+  // pairing agent.
+  void OnRegisterAgent();
+  void OnRegisterAgentError(const std::string& error_name,
+                            const std::string& error_message);
+
+  // Called by dbus:: on completion of the D-Bus method call to request that
+  // the pairing agent be made the default.
+  void OnRequestDefaultAgent();
+  void OnRequestDefaultAgentError(const std::string& error_name,
+                                  const std::string& error_message);
+
   // Internal method used to locate the device object by object path
   // (the devices map and BluetoothDevice methods are by address)
   BluetoothDeviceChromeOS* GetDeviceWithPath(
       const dbus::ObjectPath& object_path);
+
+  // Internal method to obtain a BluetoothPairingChromeOS object for the device
+  // with path |object_path|. Returns the existing pairing object if the device
+  // already has one (usually an outgoing connection in progress) or a new
+  // pairing object with the default pairing delegate if not. If no default
+  // pairing object exists, NULL will be returned.
+  BluetoothPairingChromeOS* GetPairing(const dbus::ObjectPath& object_path);
 
   // Set the tracked adapter to the one in |object_path|, this object will
   // subsequently operate on that adapter until it is removed.
@@ -130,9 +181,18 @@ class BluetoothAdapterChromeOS
                                  const ErrorCallback& error_callback,
                                  bool success);
 
+  // BluetoothAdapter override.
+  virtual void AddDiscoverySession(
+      const base::Closure& callback,
+      const ErrorCallback& error_callback) OVERRIDE;
+  virtual void RemoveDiscoverySession(
+      const base::Closure& callback,
+      const ErrorCallback& error_callback) OVERRIDE;
+
   // Called by dbus:: on completion of the D-Bus method call to start discovery.
   void OnStartDiscovery(const base::Closure& callback);
-  void OnStartDiscoveryError(const ErrorCallback& error_callback,
+  void OnStartDiscoveryError(const base::Closure& callback,
+                             const ErrorCallback& error_callback,
                              const std::string& error_name,
                              const std::string& error_message);
 
@@ -142,11 +202,38 @@ class BluetoothAdapterChromeOS
                             const std::string& error_name,
                             const std::string& error_message);
 
+  // Processes the queued discovery requests. For each DiscoveryCallbackPair in
+  // the queue, this method will try to add a new discovery session. This method
+  // is called whenever a pending D-Bus call to start or stop discovery has
+  // ended (with either success or failure).
+  void ProcessQueuedDiscoveryRequests();
+
+  // Number of discovery sessions that have been added.
+  int num_discovery_sessions_;
+
+  // True, if there is a pending request to start or stop discovery.
+  bool discovery_request_pending_;
+
+  // List of queued requests to add new discovery sessions. While there is a
+  // pending request to BlueZ to start or stop discovery, many requests from
+  // within Chrome to start or stop discovery sessions may occur. We only
+  // queue requests to add new sessions to be processed later. All requests to
+  // remove a session while a call is pending immediately return failure. Note
+  // that since BlueZ keeps its own reference count of applications that have
+  // requested discovery, dropping our count to 0 won't necessarily result in
+  // the controller actually stopping discovery if, for example, an application
+  // other than Chrome, such as bt_console, was also used to start discovery.
+  DiscoveryCallbackQueue discovery_request_queue_;
+
   // Object path of the adapter we track.
   dbus::ObjectPath object_path_;
 
   // List of observers interested in event notifications from us.
   ObserverList<device::BluetoothAdapter::Observer> observers_;
+
+  // Instance of the D-Bus agent object used for pairing, initialized with
+  // our own class as its delegate.
+  scoped_ptr<BluetoothAgentServiceProvider> agent_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

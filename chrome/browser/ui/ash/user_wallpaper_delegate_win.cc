@@ -27,7 +27,7 @@ class UserWallpaperDelegate : public ash::UserWallpaperDelegate {
   virtual int GetAnimationType() OVERRIDE {
     return ShouldShowInitialAnimation() ?
         ash::WINDOW_VISIBILITY_ANIMATION_TYPE_BRIGHTNESS_GRAYSCALE :
-        static_cast<int>(views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
+        static_cast<int>(wm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
   }
 
   virtual bool ShouldShowInitialAnimation() OVERRIDE {
@@ -44,7 +44,7 @@ class UserWallpaperDelegate : public ash::UserWallpaperDelegate {
     NOTIMPLEMENTED();
   }
 
-  virtual void UpdateWallpaper() OVERRIDE {
+  virtual void UpdateWallpaper(bool clear_cache) OVERRIDE {
     SkBitmap bitmap;
     bitmap.setConfig(SkBitmap::kARGB_8888_Config, 16, 16);
     bitmap.allocPixels();
@@ -63,7 +63,7 @@ class UserWallpaperDelegate : public ash::UserWallpaperDelegate {
   }
 
   virtual void InitializeWallpaper() OVERRIDE {
-    UpdateWallpaper();
+    UpdateWallpaper(false);
   }
 
   virtual void OpenSetWallpaperPage() OVERRIDE {

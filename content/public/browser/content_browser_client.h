@@ -16,7 +16,6 @@
 #include "base/memory/scoped_vector.h"
 #include "base/values.h"
 #include "content/public/browser/certificate_request_result_type.h"
-#include "content/public/browser/file_descriptor_info.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/socket_permission_request.h"
 #include "content/public/common/window_container_type.h"
@@ -31,17 +30,21 @@
 #include "base/posix/global_descriptors.h"
 #endif
 
-class CommandLine;
+#if defined(OS_POSIX)
+#include "content/public/browser/file_descriptor_info.h"
+#endif
+
 class GURL;
 struct WebPreferences;
 
-namespace blink {
-struct WebWindowFeatures;
-}
-
 namespace base {
+class CommandLine;
 class DictionaryValue;
 class FilePath;
+}
+
+namespace blink {
+struct WebWindowFeatures;
 }
 
 namespace gfx {
@@ -50,6 +53,7 @@ class ImageSkia;
 
 namespace net {
 class CookieOptions;
+class CookieStore;
 class HttpNetworkSession;
 class NetLog;
 class SSLCertRequestInfo;
@@ -104,6 +108,10 @@ struct ShowDesktopNotificationHostMsgParams;
 typedef std::map<
   std::string, linked_ptr<net::URLRequestJobFactory::ProtocolHandler> >
     ProtocolHandlerMap;
+
+// A scoped vector of protocol handlers.
+typedef ScopedVector<net::URLRequestJobFactory::ProtocolHandler>
+    ProtocolHandlerScopedVector;
 
 // Embedder API (or SPI) for participating in browser logic, to be implemented
 // by the client of the content browser. See ChromeContentBrowserClient for the
@@ -190,12 +198,18 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void GetAdditionalWebUISchemes(
       std::vector<std::string>* additional_schemes) {}
 
+  // Returns a list of webUI hosts to ignore the storage partition check in
+  // URLRequestChromeJob::CheckStoragePartitionMatches.
+  virtual void GetAdditionalWebUIHostsToIgnoreParititionCheck(
+      std::vector<std::string>* hosts) {}
+
   // Creates the main net::URLRequestContextGetter. Should only be called once
   // per ContentBrowserClient object.
   // TODO(ajwong): Remove once http://crbug.com/159193 is resolved.
   virtual net::URLRequestContextGetter* CreateRequestContext(
       BrowserContext* browser_context,
-      ProtocolHandlerMap* protocol_handlers);
+      ProtocolHandlerMap* protocol_handlers,
+      ProtocolHandlerScopedVector protocol_interceptors);
 
   // Creates the net::URLRequestContextGetter for a StoragePartition. Should
   // only be called once per partition_path per ContentBrowserClient object.
@@ -204,7 +218,8 @@ class CONTENT_EXPORT ContentBrowserClient {
       BrowserContext* browser_context,
       const base::FilePath& partition_path,
       bool in_memory,
-      ProtocolHandlerMap* protocol_handlers);
+      ProtocolHandlerMap* protocol_handlers,
+      ProtocolHandlerScopedVector protocol_interceptors);
 
   // Returns whether a specified URL is handled by the embedder's internal
   // protocol handlers.
@@ -272,7 +287,7 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Allows the embedder to pass extra command line flags.
   // switches::kProcessType will already be set at this point.
-  virtual void AppendExtraCommandLineSwitches(CommandLine* command_line,
+  virtual void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
                                               int child_process_id) {}
 
   // Returns the locale used by the application.
@@ -595,7 +610,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Populates |mappings| with all files that need to be mapped before launching
   // a child process.
   virtual void GetAdditionalMappedFilesForChildProcess(
-      const CommandLine& command_line,
+      const base::CommandLine& command_line,
       int child_process_id,
       std::vector<FileDescriptorInfo>* mappings) {}
 #endif
@@ -619,6 +634,12 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Returns true if dev channel APIs are available for plugins.
   virtual bool IsPluginAllowedToUseDevChannelAPIs();
+
+  // Returns a special cookie store to use for a given render process, or NULL
+  // if the default cookie store should be used
+  // This is called on the IO thread.
+  virtual net::CookieStore* OverrideCookieStoreForRenderProcess(
+      int render_process_id_);
 };
 
 }  // namespace content

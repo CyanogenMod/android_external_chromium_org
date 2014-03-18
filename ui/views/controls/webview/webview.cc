@@ -12,8 +12,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "ipc/ipc_message.h"
-#include "ui/base/accessibility/accessibility_types.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_enums.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/events/event.h"
 #include "ui/views/accessibility/native_view_accessibility.h"
 #include "ui/views/controls/native/native_view_host.h"
@@ -156,8 +156,8 @@ void WebView::AboutToRequestFocusFromTabTraversal(bool reverse) {
     web_contents()->FocusThroughTabTraversal(reverse);
 }
 
-void WebView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_GROUPING;
+void WebView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_GROUP;
 }
 
 gfx::NativeViewAccessible WebView::GetNativeViewAccessible() {
@@ -254,20 +254,8 @@ void WebView::DetachWebContents() {
   if (web_contents()) {
     wcv_holder_->Detach();
 #if defined(OS_WIN)
-    if (!is_embedding_fullscreen_widget_) {
-#if !defined(USE_AURA)
-      // TODO(beng): This should either not be necessary, or be done implicitly
-      // by NativeViewHostWin on Detach(). As it stands, this is needed so that
-      // the of the detached contents knows to tell the renderer it's been
-      // hidden.
-      //
-      // Moving this out of here would also mean we wouldn't be potentially
-      // calling member functions on a half-destroyed WebContents.
-      ShowWindow(web_contents()->GetView()->GetNativeView(), SW_HIDE);
-#else
+    if (!is_embedding_fullscreen_widget_)
       web_contents()->SetParentNativeViewAccessible(NULL);
-#endif
-    }
 #endif
   }
 }

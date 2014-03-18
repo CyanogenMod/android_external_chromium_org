@@ -31,21 +31,46 @@ void PostTaskAndWait(scoped_refptr<base::TaskRunner> task_runner,
   event.Wait();
 }
 
-// TestWithIOThreadBase --------------------------------------------------------
+// TestIOThread ----------------------------------------------------------------
 
-TestWithIOThreadBase::TestWithIOThreadBase() : io_thread_("io_thread") {
+TestIOThread::TestIOThread(Mode mode)
+    : io_thread_("test_io_thread"),
+      io_thread_started_(false) {
+  switch (mode) {
+    case kAutoStart:
+      Start();
+      return;
+    case kManualStart:
+      return;
+  }
+  CHECK(false) << "Invalid mode";
 }
 
-TestWithIOThreadBase::~TestWithIOThreadBase() {
+TestIOThread::~TestIOThread() {
+  Stop();
 }
 
-void TestWithIOThreadBase::SetUp() {
-  io_thread_.StartWithOptions(
-      base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
+void TestIOThread::Start() {
+  CHECK(!io_thread_started_);
+  io_thread_started_ = true;
+  CHECK(io_thread_.StartWithOptions(
+      base::Thread::Options(base::MessageLoop::TYPE_IO, 0)));
 }
 
-void TestWithIOThreadBase::TearDown() {
+void TestIOThread::Stop() {
+  // Note: It's okay to call |Stop()| even if the thread isn't running.
   io_thread_.Stop();
+  io_thread_started_ = false;
+}
+
+void TestIOThread::PostTask(const tracked_objects::Location& from_here,
+                            const base::Closure& task) {
+  task_runner()->PostTask(from_here, task);
+}
+
+void TestIOThread::PostTaskAndWait(const tracked_objects::Location& from_here,
+                                   const base::Closure& task) {
+  ::mojo::system::test::PostTaskAndWait(task_runner(), from_here, task);
 }
 
 }  // namespace test

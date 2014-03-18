@@ -174,6 +174,9 @@ class WebContents : public PageNavigator,
   // Returns the main frame for the currently active view.
   virtual RenderFrameHost* GetMainFrame() = 0;
 
+  // Returns the focused frame for the currently active view.
+  virtual RenderFrameHost* GetFocusedFrame() = 0;
+
   // Calls |on_frame| for each frame in the currently active view.
   virtual void ForEachFrame(
       const base::Callback<void(RenderFrameHost*)>& on_frame) = 0;
@@ -184,18 +187,6 @@ class WebContents : public PageNavigator,
 
   // Gets the current RenderViewHost for this tab.
   virtual RenderViewHost* GetRenderViewHost() const = 0;
-
-  typedef base::Callback<void(RenderViewHost* /* render_view_host */,
-                              int /* x */,
-                              int /* y */)> GetRenderViewHostCallback;
-  // Gets the RenderViewHost at coordinates (|x|, |y|) for this WebContents via
-  // |callback|.
-  // This can be different than the current RenderViewHost if there is a
-  // BrowserPlugin at the specified position.
-  virtual void GetRenderViewHostAtPosition(
-      int x,
-      int y,
-      const GetRenderViewHostCallback& callback) = 0;
 
   // Returns the WebContents embedding this WebContents, if any.
   // If this is a top-level WebContents then it returns NULL.

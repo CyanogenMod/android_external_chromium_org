@@ -15,10 +15,10 @@
 #include "ash/system/tray/system_tray.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/window_util.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/widget/widget.h"
@@ -252,13 +252,16 @@ TEST_F(FocusCyclerTest, CycleFocusNoBrowser) {
   EXPECT_TRUE(tray()->GetWidget()->IsActive());
 }
 
+// Tests that focus cycles from the active browser to the status area and back.
 TEST_F(FocusCyclerTest, Shelf_CycleFocusForward) {
   ASSERT_TRUE(CreateTray());
   InstallFocusCycleOnShelf();
   shelf_widget()->Hide();
 
-  // Create a single test window.
+  // Create two test windows.
   scoped_ptr<Window> window0(CreateTestWindowInShellWithId(0));
+  scoped_ptr<Window> window1(CreateTestWindowInShellWithId(1));
+  wm::ActivateWindow(window1.get());
   wm::ActivateWindow(window0.get());
   EXPECT_TRUE(wm::IsActiveWindow(window0.get()));
 
@@ -269,6 +272,10 @@ TEST_F(FocusCyclerTest, Shelf_CycleFocusForward) {
   // Cycle focus to the browser.
   focus_cycler()->RotateFocus(FocusCycler::FORWARD);
   EXPECT_TRUE(wm::IsActiveWindow(window0.get()));
+
+  // Cycle focus to the status area.
+  focus_cycler()->RotateFocus(FocusCycler::FORWARD);
+  EXPECT_TRUE(tray()->GetWidget()->IsActive());
 }
 
 TEST_F(FocusCyclerTest, Shelf_CycleFocusBackwardInvisible) {

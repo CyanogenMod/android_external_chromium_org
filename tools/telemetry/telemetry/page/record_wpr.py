@@ -55,7 +55,7 @@ class RecordPage(page_test.PageTest):
     if self.test:
       self.test.DidNavigateToPage(page, tab)
 
-  def Run(self, options, page, tab, results):
+  def Run(self, page, tab, results):
     # When recording, sleep to catch any resources that load post-onload.
     tab.WaitForDocumentReadyStateToBeComplete()
 
@@ -74,7 +74,7 @@ class RecordPage(page_test.PageTest):
     # Run the actions for all measurements. Reload the page between
     # actions.
     should_reload = False
-    for compound_action in self._CompoundActionsForPage(page, options):
+    for compound_action in self._CompoundActionsForPage(page, self.options):
       if should_reload:
         self.RunNavigateSteps(page, tab)
       self._RunCompoundAction(page, tab, compound_action)
@@ -117,10 +117,10 @@ def Main(base_dir):
 
   options = browser_options.BrowserFinderOptions()
   parser = options.CreateParser('%prog <PageSet|Measurement|Test|URL>')
-  page_runner.AddCommandLineOptions(parser)
+  page_runner.AddCommandLineArgs(parser)
 
   recorder = RecordPage(measurements)
-  recorder.AddCommandLineOptions(parser)
+  recorder.AddCommandLineArgs(parser)
 
   quick_args = [a for a in sys.argv[1:] if not a.startswith('-')]
   if len(quick_args) != 1:
@@ -129,12 +129,12 @@ def Main(base_dir):
   target = quick_args[0]
   if target in tests:
     recorder.test = tests[target]().test()
-    recorder.test.AddCommandLineOptions(parser)
+    recorder.test.AddCommandLineArgs(parser)
     parser.parse_args()
     ps = tests[target]().CreatePageSet(options)
   elif target in measurements:
     recorder.test = measurements[target]()
-    recorder.test.AddCommandLineOptions(parser)
+    recorder.test.AddCommandLineArgs(parser)
     _, args = parser.parse_args()
     ps = recorder.test.CreatePageSet(args, options)
   elif target.endswith('.json'):

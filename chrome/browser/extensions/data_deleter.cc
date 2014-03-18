@@ -4,9 +4,9 @@
 
 #include "chrome/browser/extensions/data_deleter.h"
 
-#include "chrome/browser/extensions/api/storage/settings_frontend.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
@@ -14,14 +14,22 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "net/url_request/url_request_context_getter.h"
+
+#if defined(ENABLE_EXTENSIONS)
+#include "extensions/browser/api/storage/storage_frontend.h"
+#endif
 
 using base::WeakPtr;
 using content::BrowserContext;
 using content::BrowserThread;
 using content::StoragePartition;
+
+namespace extensions {
 
 namespace {
 
@@ -34,7 +42,7 @@ void DeleteOrigin(Profile* profile,
   DCHECK(profile);
   DCHECK(partition);
 
-  if (origin.SchemeIs(extensions::kExtensionScheme)) {
+  if (origin.SchemeIs(kExtensionScheme)) {
     // TODO(ajwong): Cookies are not properly isolated for
     // chrome-extension:// scheme.  (http://crbug.com/158386).
     //
@@ -65,27 +73,26 @@ void DeleteOrigin(Profile* profile,
 void OnNeedsToGarbageCollectIsolatedStorage(WeakPtr<ExtensionService> es) {
   if (!es)
     return;
-  es->extension_prefs()->SetNeedsStorageGarbageCollection(true);
+  ExtensionPrefs::Get(es->profile())->SetNeedsStorageGarbageCollection(true);
 }
 
 } // namespace
-
-namespace extensions {
 
 // static
 void DataDeleter::StartDeleting(Profile* profile, const Extension* extension) {
   DCHECK(profile);
   DCHECK(extension);
 
-  if (extensions::AppIsolationInfo::HasIsolatedStorage(extension)) {
+  if (AppIsolationInfo::HasIsolatedStorage(extension)) {
     BrowserContext::AsyncObliterateStoragePartition(
         profile,
-        profile->GetExtensionService()->GetSiteForExtensionId(extension->id()),
-        base::Bind(&OnNeedsToGarbageCollectIsolatedStorage,
-                   profile->GetExtensionService()->AsWeakPtr()));
+        util::GetSiteForExtensionId(extension->id(), profile),
+        base::Bind(
+            &OnNeedsToGarbageCollectIsolatedStorage,
+            ExtensionSystem::Get(profile)->extension_service()->AsWeakPtr()));
   } else {
     GURL launch_web_url_origin(
-      extensions::AppLaunchInfo::GetLaunchWebURL(extension).GetOrigin());
+        AppLaunchInfo::GetLaunchWebURL(extension).GetOrigin());
 
     StoragePartition* partition = BrowserContext::GetStoragePartitionForSite(
         profile,
@@ -99,9 +106,13 @@ void DataDeleter::StartDeleting(Profile* profile, const Extension* extension) {
     DeleteOrigin(profile, partition, extension->url());
   }
 
+#if defined(ENABLE_EXTENSIONS)
   // Begin removal of the settings for the current extension.
-  profile->GetExtensionService()->settings_frontend()->
-      DeleteStorageSoon(extension->id());
+  // StorageFrontend may not exist in unit tests.
+  StorageFrontend* frontend = StorageFrontend::Get(profile);
+  if (frontend)
+    frontend->DeleteStorageSoon(extension->id());
+#endif  // defined(ENABLE_EXTENSIONS)
 }
 
 }  // namespace extensions

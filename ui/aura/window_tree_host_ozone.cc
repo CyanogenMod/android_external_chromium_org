@@ -4,7 +4,8 @@
 
 #include "ui/aura/window_tree_host_ozone.h"
 
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/base/cursor/ozone/cursor_factory_ozone.h"
 #include "ui/events/ozone/event_factory_ozone.h"
 #include "ui/gfx/ozone/surface_factory_ozone.h"
 #include "ui/ozone/ozone_platform.h"
@@ -34,16 +35,13 @@ WindowTreeHostOzone::WindowTreeHostOzone(const gfx::Rect& bounds)
 WindowTreeHostOzone::~WindowTreeHostOzone() {
   base::MessagePumpOzone::Current()->RemoveDispatcherForRootWindow(0);
   DestroyCompositor();
+  DestroyDispatcher();
 }
 
 uint32_t WindowTreeHostOzone::Dispatch(const base::NativeEvent& ne) {
   ui::Event* event = static_cast<ui::Event*>(ne);
   ui::EventDispatchDetails details ALLOW_UNUSED = SendEventToProcessor(event);
   return POST_DISPATCH_NONE;
-}
-
-RootWindow* WindowTreeHostOzone::GetRootWindow() {
-  return delegate_->AsRootWindow();
 }
 
 gfx::AcceleratedWidget WindowTreeHostOzone::GetAcceleratedWidget() {
@@ -101,11 +99,13 @@ void WindowTreeHostOzone::OnDeviceScaleFactorChanged(
 void WindowTreeHostOzone::PrepareForShutdown() { NOTIMPLEMENTED(); }
 
 void WindowTreeHostOzone::SetCursorNative(gfx::NativeCursor cursor) {
-  gfx::SurfaceFactoryOzone::GetInstance()->SetCursorImage(*cursor.platform());
+  ui::CursorFactoryOzone::GetInstance()->SetCursor(GetAcceleratedWidget(),
+                                                   cursor.platform());
 }
 
 void WindowTreeHostOzone::MoveCursorToNative(const gfx::Point& location) {
-  gfx::SurfaceFactoryOzone::GetInstance()->MoveCursorTo(location);
+  ui::EventFactoryOzone::GetInstance()->WarpCursorTo(GetAcceleratedWidget(),
+                                                     location);
 }
 
 void WindowTreeHostOzone::OnCursorVisibilityChangedNative(bool show) {
@@ -113,7 +113,7 @@ void WindowTreeHostOzone::OnCursorVisibilityChangedNative(bool show) {
 }
 
 ui::EventProcessor* WindowTreeHostOzone::GetEventProcessor() {
-  return delegate_->GetEventProcessor();
+  return dispatcher();
 }
 
 // static

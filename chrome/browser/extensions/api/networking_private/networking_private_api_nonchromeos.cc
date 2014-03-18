@@ -12,11 +12,11 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/networking_private/networking_private_service_client.h"
 #include "chrome/browser/extensions/api/networking_private/networking_private_service_client_factory.h"
-#include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/networking_private.h"
 #include "components/onc/onc_constants.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_function_registry.h"
 #include "extensions/browser/extension_system.h"
 
 using extensions::NetworkingPrivateServiceClient;
@@ -410,9 +410,30 @@ bool NetworkingPrivateVerifyAndEncryptCredentialsFunction::RunImpl() {
   scoped_ptr<api::VerifyAndEncryptCredentials::Params> params =
       api::VerifyAndEncryptCredentials::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
-  SetResult(new base::StringValue("encrypted_credentials"));
-  SendResponse(true);
+  NetworkingPrivateServiceClient* service_client =
+      NetworkingPrivateServiceClientFactory::GetForProfile(GetProfile());
+  service_client->VerifyAndEncryptCredentials(
+      args_.Pass(),
+      base::Bind(
+          &NetworkingPrivateVerifyAndEncryptCredentialsFunction::ResultCallback,
+          this),
+      base::Bind(
+          &NetworkingPrivateVerifyAndEncryptCredentialsFunction::ErrorCallback,
+          this));
   return true;
+}
+
+void NetworkingPrivateVerifyAndEncryptCredentialsFunction::ResultCallback(
+    const std::string& result) {
+  SetResult(new base::StringValue(result));
+  SendResponse(true);
+}
+
+void NetworkingPrivateVerifyAndEncryptCredentialsFunction::ErrorCallback(
+    const std::string& error_name,
+    const std::string& error) {
+  error_ = error_name;
+  SendResponse(false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

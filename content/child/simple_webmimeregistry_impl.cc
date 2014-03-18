@@ -18,7 +18,7 @@ namespace content {
 
 //static
 std::string SimpleWebMimeRegistryImpl::ToASCIIOrEmpty(const WebString& string) {
-  return IsStringASCII(string) ? UTF16ToASCII(string) : std::string();
+  return IsStringASCII(string) ? base::UTF16ToASCII(string) : std::string();
 }
 
 WebMimeRegistry::SupportsType SimpleWebMimeRegistryImpl::supportsMIMEType(
@@ -46,15 +46,23 @@ WebMimeRegistry::SupportsType SimpleWebMimeRegistryImpl::supportsMediaMIMEType(
     const WebString& mime_type,
     const WebString& codecs,
     const WebString& key_system) {
-  // Media features are only supported at the content/ layer.
+  // Media features are only supported at the content/renderer/ layer.
   return IsNotSupported;
 }
 
 bool SimpleWebMimeRegistryImpl::supportsMediaSourceMIMEType(
     const WebString& mime_type,
     const WebString& codecs) {
-  // Media features are only supported at the content/ layer.
-  return IsNotSupported;
+  // Media features are only supported at the content/renderer layer.
+  return false;
+}
+
+bool SimpleWebMimeRegistryImpl::supportsEncryptedMediaMIMEType(
+    const blink::WebString& key_system,
+    const blink::WebString& mime_type,
+    const blink::WebString& codecs) {
+  // Media features are only supported at the content/renderer layer.
+  return false;
 }
 
 WebMimeRegistry::SupportsType

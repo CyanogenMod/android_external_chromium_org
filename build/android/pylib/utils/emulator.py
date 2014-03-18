@@ -12,18 +12,16 @@ Assumes system environment ANDROID_NDK_ROOT has been set.
 
 import logging
 import os
-import shutil
 import signal
 import subprocess
-import sys
 import time
 
-import time_profile
 # TODO(craigdh): Move these pylib dependencies to pylib/utils/.
 from pylib import android_commands
 from pylib import cmd_helper
 from pylib import constants
 from pylib import pexpect
+from pylib.utils import time_profile
 
 import errors
 import run_command
@@ -98,7 +96,7 @@ def _KillAllEmulators():
   for emu_name in emulators:
     cmd_helper.RunCmd(['adb', '-s', emu_name, 'emu', 'kill'])
   logging.info('Emulator killing is async; give a few seconds for all to die.')
-  for i in range(5):
+  for _ in range(5):
     if not android_commands.GetAttachedDevices(hardware=False):
       return
     time.sleep(1)
@@ -151,8 +149,8 @@ def _GetAvailablePort():
       return port
 
 
-def LaunchEmulators(emulator_count, abi, api_level, wait_for_boot=True):
-  """Launch multiple emulators and wait for them to boot.
+def LaunchTempEmulators(emulator_count, abi, api_level, wait_for_boot=True):
+  """Create and launch temporary emulators and wait for them to boot.
 
   Args:
     emulator_count: number of emulators to launch.
@@ -170,7 +168,8 @@ def LaunchEmulators(emulator_count, abi, api_level, wait_for_boot=True):
     avd_name = 'run_tests_avd_%d' % n
     logging.info('Emulator launch %d with avd_name=%s and api=%d',
         n, avd_name, api_level)
-    emulator = Emulator(avd_name, abi, api_level)
+    emulator = Emulator(avd_name, abi)
+    emulator.CreateAVD(api_level)
     emulator.Launch(kill_all_emulators=n == 0)
     t.Stop()
     emulators.append(emulator)
@@ -179,6 +178,23 @@ def LaunchEmulators(emulator_count, abi, api_level, wait_for_boot=True):
     for emulator in emulators:
       emulator.ConfirmLaunch(True)
   return emulators
+
+
+def LaunchEmulator(avd_name, abi):
+  """Launch an existing emulator with name avd_name.
+
+  Args:
+    avd_name: name of existing emulator
+    abi: the emulator target platform
+
+  Returns:
+    emulator object.
+  """
+  logging.info('Specified emulator named avd_name=%s launched', avd_name)
+  emulator = Emulator(avd_name, abi)
+  emulator.Launch(kill_all_emulators=True)
+  emulator.ConfirmLaunch(True)
+  return emulator
 
 
 class Emulator(object):
@@ -211,13 +227,12 @@ class Emulator(object):
   # Time to wait for a "wait for boot complete" (property set on device).
   _WAITFORBOOT_TIMEOUT = 300
 
-  def __init__(self, avd_name, abi, api_level):
+  def __init__(self, avd_name, abi):
     """Init an Emulator.
 
     Args:
       avd_name: name of the AVD to create
       abi: target platform for emulator being created, defaults to x86
-      api_level: the api level of the image
     """
     android_sdk_root = os.path.join(constants.EMULATOR_SDK_ROOT, 'sdk')
     self.emulator = os.path.join(android_sdk_root, 'tools', 'emulator')
@@ -226,16 +241,18 @@ class Emulator(object):
     self.device = None
     self.abi = abi
     self.avd_name = avd_name
-    self.api_level = api_level
-    self._CreateAVD()
 
-  def _DeviceName(self):
+  @staticmethod
+  def _DeviceName():
     """Return our device name."""
     port = _GetAvailablePort()
     return ('emulator-%d' % port, port)
 
-  def _CreateAVD(self):
+  def CreateAVD(self, api_level):
     """Creates an AVD with the given name.
+
+    Args:
+      api_level: the api level of the image
 
     Return avd_name.
     """
@@ -247,7 +264,7 @@ class Emulator(object):
     else:
       abi_option = 'x86'
 
-    api_target = 'android-%s' % self.api_level
+    api_target = 'android-%s' % api_level
 
     avd_command = [
         self.android,
@@ -289,7 +306,7 @@ class Emulator(object):
     replacements = CONFIG_REPLACEMENTS[self.abi]
     for key in replacements:
       custom_config = custom_config.replace(key, replacements[key])
-    custom_config = custom_config.replace('{api.level}', str(self.api_level))
+    custom_config = custom_config.replace('{api.level}', str(api_level))
 
     with open(new_config_ini, 'w') as new_config_ini:
       new_config_ini.write(custom_config)
@@ -349,7 +366,8 @@ class Emulator(object):
                                   stderr=subprocess.STDOUT)
     self._InstallKillHandler()
 
-  def _AggressiveImageCleanup(self):
+  @staticmethod
+  def _AggressiveImageCleanup():
     """Aggressive cleanup of emulator images.
 
     Experimentally it looks like our current emulator use on the bot
@@ -386,7 +404,7 @@ class Emulator(object):
         number_of_waits -= 1
         if not number_of_waits:
           break
-      except errors.WaitForResponseTimedOutError as e:
+      except errors.WaitForResponseTimedOutError:
         seconds_waited += self._WAITFORDEVICE_TIMEOUT
         adb_cmd = "adb -s %s %s" % (self.device, 'kill-server')
         run_command.RunCommand(adb_cmd)
@@ -411,7 +429,7 @@ class Emulator(object):
         self.popen.kill()
       self.popen = None
 
-  def _ShutdownOnSignal(self, signum, frame):
+  def _ShutdownOnSignal(self, _signum, _frame):
     logging.critical('emulator _ShutdownOnSignal')
     for sig in self._SIGNALS:
       signal.signal(sig, signal.SIG_DFL)

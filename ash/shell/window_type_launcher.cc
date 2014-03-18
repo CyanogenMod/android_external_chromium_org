@@ -20,8 +20,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "content/public/browser/browser_thread.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/canvas.h"
 #include "ui/message_center/message_center.h"
@@ -29,11 +29,11 @@
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
-#include "ui/views/corewm/shadow_types.h"
 #include "ui/views/examples/examples_window_with_content.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/test/child_modal_window.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/shadow_types.h"
 
 using views::MenuItemView;
 using views::MenuRunner;
@@ -195,8 +195,8 @@ void InitWindowTypeLauncher() {
           Shell::GetPrimaryRootWindow(),
           gfx::Rect(120, 150, 300, 410));
   widget->GetNativeView()->SetName("WindowTypeLauncher");
-  views::corewm::SetShadowType(widget->GetNativeView(),
-                               views::corewm::SHADOW_TYPE_RECTANGULAR);
+  wm::SetShadowType(widget->GetNativeView(),
+                               wm::SHADOW_TYPE_RECTANGULAR);
   widget->Show();
 }
 

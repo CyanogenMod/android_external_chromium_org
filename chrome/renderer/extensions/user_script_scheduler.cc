@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/dispatcher.h"
@@ -18,12 +17,14 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebScopedUserGesture.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
 
@@ -165,6 +166,10 @@ void UserScriptScheduler::ExecuteCodeImpl(
     GetAllChildFrames(frame_, &frame_vector);
 
   std::string error;
+
+  scoped_ptr<blink::WebScopedUserGesture> gesture;
+  if (params.user_gesture)
+    gesture.reset(new blink::WebScopedUserGesture);
 
   for (std::vector<WebFrame*>::iterator frame_it = frame_vector.begin();
        frame_it != frame_vector.end(); ++frame_it) {

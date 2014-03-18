@@ -22,9 +22,16 @@
         'media_use_libvpx%': 1,
       }],
       # Enable ALSA and Pulse for runtime selection.
-      ['(OS=="linux" or OS=="freebsd" or OS=="solaris") and embedded!=1 and use_cras==0', {
+      ['(OS=="linux" or OS=="freebsd" or OS=="solaris") and embedded!=1', {
+        # ALSA is always needed for Web MIDI even if the cras is enabled.
         'use_alsa%': 1,
-        'use_pulseaudio%': 1,
+        'conditions': [
+          ['use_cras==1', {
+            'use_pulseaudio%': 0,
+          }, {
+            'use_pulseaudio%': 1,
+          }],
+        ],
       }, {
         'use_alsa%': 0,
         'use_pulseaudio%': 0,
@@ -139,8 +146,6 @@
         'audio/mac/audio_input_mac.h',
         'audio/mac/audio_low_latency_input_mac.cc',
         'audio/mac/audio_low_latency_input_mac.h',
-        'audio/mac/audio_low_latency_output_mac.cc',
-        'audio/mac/audio_low_latency_output_mac.h',
         'audio/mac/audio_manager_mac.cc',
         'audio/mac/audio_manager_mac.h',
         'audio/null_audio_sink.cc',
@@ -341,6 +346,7 @@
         'cdm/key_system_names.h',
         'ffmpeg/ffmpeg_common.cc',
         'ffmpeg/ffmpeg_common.h',
+        'ffmpeg/ffmpeg_deleters.h',
         'filters/audio_file_reader.cc',
         'filters/audio_file_reader.h',
         'filters/audio_renderer_algorithm.cc',
@@ -353,6 +359,9 @@
         'filters/chunk_demuxer.h',
         'filters/decoder_selector.cc',
         'filters/decoder_selector.h',
+        'filters/decoder_stream.cc',
+        'filters/decoder_stream.h',
+        'filters/decoder_stream_traits.cc',
         'filters/decoder_stream_traits.h',
         'filters/decrypting_audio_decoder.cc',
         'filters/decrypting_audio_decoder.h',
@@ -372,6 +381,8 @@
         'filters/ffmpeg_video_decoder.h',
         'filters/file_data_source.cc',
         'filters/file_data_source.h',
+        'filters/frame_processor_base.cc',
+        'filters/frame_processor_base.h',
         'filters/gpu_video_accelerator_factories.cc',
         'filters/gpu_video_accelerator_factories.h',
         'filters/gpu_video_decoder.cc',
@@ -384,6 +395,8 @@
         'filters/h264_to_annex_b_bitstream_converter.h',
         'filters/in_memory_url_protocol.cc',
         'filters/in_memory_url_protocol.h',
+        'filters/legacy_frame_processor.cc',
+        'filters/legacy_frame_processor.h',
         'filters/opus_audio_decoder.cc',
         'filters/opus_audio_decoder.h',
         'filters/skcanvas_video_renderer.cc',
@@ -394,8 +407,6 @@
         'filters/stream_parser_factory.h',
         'filters/video_frame_painter.cc',
         'filters/video_frame_painter.h',
-        'filters/video_frame_stream.cc',
-        'filters/video_frame_stream.h',
         'filters/video_renderer_impl.cc',
         'filters/video_renderer_impl.h',
         'filters/vpx_video_decoder.cc',
@@ -907,9 +918,10 @@
         '../skia/skia.gyp:skia',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
+        '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
+        '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        '../ui/ui.gyp:ui',
       ],
       'sources': [
         'audio/android/audio_android_unittest.cc',
@@ -942,6 +954,7 @@
         'audio/win/audio_output_win_unittest.cc',
         'audio/win/core_audio_util_win_unittest.cc',
         'base/android/media_codec_bridge_unittest.cc',
+        'base/android/media_drm_bridge_unittest.cc',
         'base/android/media_source_player_unittest.cc',
         'base/audio_buffer_unittest.cc',
         'base/audio_buffer_queue_unittest.cc',
@@ -978,8 +991,6 @@
         'base/seekable_buffer_unittest.cc',
         'base/sinc_resampler_unittest.cc',
         'base/stream_parser_unittest.cc',
-        'base/test_data_util.cc',
-        'base/test_data_util.h',
         'base/text_ranges_unittest.cc',
         'base/text_renderer_unittest.cc',
         'base/user_input_monitor_unittest.cc',
@@ -1042,6 +1053,10 @@
         'formats/webm/webm_tracks_parser_unittest.cc',
         'formats/webm/webm_webvtt_parser_unittest.cc',
       ],
+      'include_dirs': [
+        # Needed by media_drm_bridge.cc.
+        '<(SHARED_INTERMEDIATE_DIR)',
+      ],
       'conditions': [
         ['arm_neon==1', {
           'defines': [
@@ -1070,7 +1085,8 @@
         }],
         ['os_posix==1 and OS!="mac"', {
           'conditions': [
-            ['linux_use_tcmalloc==1', {
+            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -1129,6 +1145,7 @@
           'sources': [
             'formats/common/stream_parser_test_base.cc',
             'formats/common/stream_parser_test_base.h',
+            'formats/mp2t/es_parser_h264_unittest.cc',
             'formats/mp2t/mp2t_stream_parser_unittest.cc',
             'formats/mp4/aac_unittest.cc',
             'formats/mp4/avc_unittest.cc',
@@ -1151,17 +1168,17 @@
       'target_name': 'media_perftests',
       'type': '<(gtest_target_type)',
       'dependencies': [
-        'media',
-        'media_test_support',
-        'shared_memory_support',
         '../base/base.gyp:test_support_base',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../testing/perf/perf_test.gyp:perf_test',
+        '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gl/gl.gyp:gl',
-        '../ui/ui.gyp:ui',
+        'media',
+        'media_test_support',
+        'shared_memory_support',
       ],
       'sources': [
         'base/audio_bus_perftest.cc',
@@ -1169,7 +1186,6 @@
         'base/demuxer_perftest.cc',
         'base/run_all_perftests.cc',
         'base/sinc_resampler_perftest.cc',
-        'base/test_data_util.cc',
         'base/vector_math_perftest.cc',
         'filters/pipeline_integration_perftest.cc',
         'filters/pipeline_integration_test_base.cc',
@@ -1235,6 +1251,8 @@
         'base/mock_demuxer_host.h',
         'base/mock_filters.cc',
         'base/mock_filters.h',
+        'base/test_data_util.cc',
+        'base/test_data_util.h',
         'base/test_helpers.cc',
         'base/test_helpers.h',
         'filters/mock_gpu_video_accelerator_factories.cc',
@@ -1332,11 +1350,12 @@
                 'conditions': [
                   ['target_arch=="ia32"', {
                     'yasm_flags': [
-                      '-DX86_32',
+                      '-DARCH_X86_32',
                       '-DELF',
                     ],
-                  }, {
+                  }, { # target_arch=="x64"
                     'yasm_flags': [
+                      '-DARCH_X86_64',
                       '-DELF',
                       '-DPIC',
                     ],
@@ -1569,9 +1588,14 @@
           ],
           'dependencies': [
             '../base/base.gyp:base',
+            '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
             '../ui/gl/gl.gyp:gl',
             '../url/url.gyp:url_lib',
             'media_android_jni_headers',
+          ],
+          'include_dirs': [
+            # Needed by media_drm_bridge.cc.
+            '<(SHARED_INTERMEDIATE_DIR)',
           ],
           'defines': [
             'MEDIA_IMPLEMENTATION',
@@ -1634,7 +1658,8 @@
                 '../build/linux/system.gyp:gtk',
               ],
               'conditions': [
-                ['linux_use_tcmalloc==1', {
+                # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+                ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
                   'dependencies': [
                     '../base/allocator/allocator.gyp:allocator',
                   ],
@@ -1656,14 +1681,14 @@
           ],
           'sources': [
             'base/run_all_unittests.cc',
-            'base/test_data_util.cc',
             'ffmpeg/ffmpeg_regression_tests.cc',
             'filters/pipeline_integration_test_base.cc',
           ],
           'conditions': [
             ['os_posix==1 and OS!="mac"', {
               'conditions': [
-                ['linux_use_tcmalloc==1', {
+                # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+                ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
                   'dependencies': [
                     '../base/allocator/allocator.gyp:allocator',
                   ],

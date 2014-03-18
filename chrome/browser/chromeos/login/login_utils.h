@@ -9,11 +9,14 @@
 
 #include "base/memory/ref_counted.h"
 
-class CommandLine;
 class GURL;
 class PrefRegistrySimple;
 class PrefService;
 class Profile;
+
+namespace base {
+class CommandLine;
+}
 
 namespace chromeos {
 
@@ -103,9 +106,6 @@ class LoginUtils {
 
   // Initialize RLZ.
   virtual void InitRlzDelayed(Profile* user_profile) = 0;
-
-  // Initiates process of starting CertLoader for the user_profile.
-  virtual void StartCertLoader(Profile* user_profile) = 0;
 };
 
 }  // namespace chromeos

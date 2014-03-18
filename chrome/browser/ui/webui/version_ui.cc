@@ -9,19 +9,19 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/version_handler.h"
+#include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
-#include "content/public/common/content_client.h"
+#include "content/public/common/user_agent.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/google_chrome_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "v8/include/v8.h"
-#include "webkit/common/user_agent/user_agent_util.h"
 
 #if defined(ENABLE_THEMES)
 #include "chrome/browser/ui/webui/theme_source.h"
@@ -51,7 +51,7 @@ content::WebUIDataSource* CreateVersionUIDataSource(Profile* profile) {
   html_source->AddLocalizedString("os_name", IDS_ABOUT_VERSION_OS);
   html_source->AddLocalizedString("platform", IDS_PLATFORM_LABEL);
   html_source->AddString("os_type", version_info.OSType());
-  html_source->AddString("blink_version", webkit_glue::GetWebKitVersion());
+  html_source->AddString("blink_version", content::GetWebKitVersion());
   html_source->AddString("js_engine", "V8");
   html_source->AddString("js_version", v8::V8::GetVersion());
 
@@ -92,7 +92,7 @@ content::WebUIDataSource* CreateVersionUIDataSource(Profile* profile) {
                                        IDS_ABOUT_VERSION_UNOFFICIAL);
   html_source->AddLocalizedString("user_agent_name",
                                   IDS_ABOUT_VERSION_USER_AGENT);
-  html_source->AddString("useragent", content::GetUserAgent(GURL()));
+  html_source->AddString("useragent", GetUserAgent());
   html_source->AddLocalizedString("command_line_name",
                                   IDS_ABOUT_VERSION_COMMAND_LINE);
 

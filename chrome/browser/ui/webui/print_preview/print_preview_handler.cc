@@ -127,6 +127,8 @@ enum PrintDestinationBuckets {
   SIGNIN_TRIGGERED,
   PRIVET_DUPLICATE_SELECTED,
   CLOUD_DUPLICATE_SELECTED,
+  REGISTER_PROMO_SHOWN,
+  REGISTER_PROMO_SELECTED,
   PRINT_DESTINATION_BUCKET_BOUNDARY
 };
 
@@ -382,8 +384,7 @@ class PrintPreviewHandler::AccessTokenService
  public:
   explicit AccessTokenService(PrintPreviewHandler* handler)
       : OAuth2TokenService::Consumer("print_preview"),
-        handler_(handler),
-        weak_factory_(this) {
+        handler_(handler) {
   }
 
   void RequestToken(const std::string& type) {
@@ -404,35 +405,13 @@ class PrintPreviewHandler::AccessTokenService
       }
     } else if (type == "device") {
 #if defined(OS_CHROMEOS)
-      chromeos::DeviceOAuth2TokenServiceFactory::Get(
-          base::Bind(
-              &AccessTokenService::DidGetTokenService,
-              weak_factory_.GetWeakPtr(),
-              type));
-      return;
+      chromeos::DeviceOAuth2TokenService* token_service =
+          chromeos::DeviceOAuth2TokenServiceFactory::Get();
+      account_id = token_service->GetRobotAccountId();
+      service = token_service;
 #endif
     }
 
-    ContinueRequestToken(type, service, account_id);
-  }
-
-#if defined(OS_CHROMEOS)
-  // Continuation of RequestToken().
-  void DidGetTokenService(const std::string& type,
-                          chromeos::DeviceOAuth2TokenService* token_service) {
-    std::string account_id;
-    if (token_service)
-      account_id = token_service->GetRobotAccountId();
-    ContinueRequestToken(type,
-                         token_service,
-                         account_id);
-  }
-#endif
-
-  // Continuation of RequestToken().
-  void ContinueRequestToken(const std::string& type,
-                            OAuth2TokenService* service,
-                            const std::string& account_id) {
     if (service) {
       OAuth2TokenService::ScopeSet oauth_scopes;
       oauth_scopes.insert(cloud_print::kCloudPrintAuth);
@@ -472,7 +451,6 @@ class PrintPreviewHandler::AccessTokenService
                    linked_ptr<OAuth2TokenService::Request> > Requests;
   Requests requests_;
   PrintPreviewHandler* handler_;
-  base::WeakPtrFactory<AccessTokenService> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AccessTokenService);
 };
@@ -558,9 +536,8 @@ void PrintPreviewHandler::RegisterMessages() {
 
 bool PrintPreviewHandler::PrivetPrintingEnabled() {
 #if defined(ENABLE_MDNS)
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  return !command_line->HasSwitch(switches::kDisableDeviceDiscovery) &&
-      !command_line->HasSwitch(switches::kDisablePrivetLocalPrinting);
+  return !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableDeviceDiscovery);
 #else
   return false;
 #endif
@@ -862,10 +839,7 @@ void PrintPreviewHandler::HandleCancelPendingPrintRequest(
   WebContents* initiator = GetInitiator();
   if (initiator)
     ClearInitiatorDetails();
-  gfx::NativeWindow parent = initiator ?
-      initiator->GetView()->GetTopLevelNativeWindow() :
-      NULL;
-  chrome::ShowPrintErrorDialog(parent);
+  chrome::ShowPrintErrorDialog();
 }
 
 void PrintPreviewHandler::HandleSaveAppState(const base::ListValue* args) {
@@ -1383,9 +1357,13 @@ void PrintPreviewHandler::LocalPrinterChanged(
     const std::string& name,
     bool has_local_printing,
     const local_discovery::DeviceDescription& description) {
-  base::DictionaryValue info;
-  FillPrinterDescription(name, description, has_local_printing, &info);
-  web_ui()->CallJavascriptFunction("onPrivetPrinterChanged", info);
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (has_local_printing ||
+      command_line->HasSwitch(switches::kEnablePrintPreviewRegisterPromos)) {
+    base::DictionaryValue info;
+    FillPrinterDescription(name, description, has_local_printing, &info);
+    web_ui()->CallJavascriptFunction("onPrivetPrinterChanged", info);
+  }
 }
 
 void PrintPreviewHandler::LocalPrinterRemoved(const std::string& name) {
@@ -1555,12 +1533,15 @@ void PrintPreviewHandler::FillPrinterDescription(
     const local_discovery::DeviceDescription& description,
     bool has_local_printing,
     base::DictionaryValue* printer_value) {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+
   printer_value->SetString("serviceName", name);
   printer_value->SetString("name", description.name);
   printer_value->SetBoolean("hasLocalPrinting", has_local_printing);
   printer_value->SetBoolean(
       "isUnregistered",
-      description.id.empty());
+      description.id.empty() &&
+      command_line->HasSwitch(switches::kEnablePrintPreviewRegisterPromos));
   printer_value->SetString("cloudID", description.id);
 }
 

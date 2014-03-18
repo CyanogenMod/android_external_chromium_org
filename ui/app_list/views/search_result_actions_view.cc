@@ -4,6 +4,8 @@
 
 #include "ui/app_list/views/search_result_actions_view.h"
 
+#include <algorithm>
+
 #include "ui/app_list/views/search_result_actions_view_delegate.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
@@ -51,7 +53,7 @@ void SearchResultActionsView::SetSelectedAction(int action_index) {
 
   if (IsValidActionIndex(selected_action_)) {
     child_at(selected_action_)->NotifyAccessibilityEvent(
-        ui::AccessibilityTypes::EVENT_FOCUS, true);
+        ui::AX_EVENT_FOCUS, true);
   }
 }
 

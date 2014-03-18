@@ -215,4 +215,117 @@ public class ObserverListTest extends InstrumentationTestCase {
         assertTrue(it.hasNext());
         assertTrue(15 == it.next());
     }
+
+    @SmallTest
+    @Feature({"Android-AppBase"})
+    public void testAddObserverReturnValue() {
+        ObserverList<Object> observerList = new ObserverList<Object>();
+
+        Object a = new Object();
+        assertTrue(observerList.addObserver(a));
+        assertFalse(observerList.addObserver(a));
+
+        Object b = new Object();
+        assertTrue(observerList.addObserver(b));
+        assertFalse(observerList.addObserver(null));
+    }
+
+    @SmallTest
+    @Feature({"Android-AppBase"})
+    public void testRemoveObserverReturnValue() {
+        ObserverList<Object> observerList = new ObserverList<Object>();
+
+        Object a = new Object();
+        Object b = new Object();
+        observerList.addObserver(a);
+        observerList.addObserver(b);
+
+        assertTrue(observerList.removeObserver(a));
+        assertFalse(observerList.removeObserver(a));
+        assertFalse(observerList.removeObserver(new Object()));
+        assertTrue(observerList.removeObserver(b));
+        assertFalse(observerList.removeObserver(null));
+
+        // If we remove an object while iterating, it will be replaced by 'null'.
+        observerList.addObserver(a);
+        Iterator<Object> iterator = observerList.iterator();
+        assertTrue(observerList.removeObserver(a));
+        assertFalse(observerList.removeObserver(null));
+    }
+
+    @SmallTest
+    @Feature({"Android-AppBase"})
+    public void testSize() {
+        ObserverList<Object> observerList = new ObserverList<Object>();
+
+        assertEquals(0, observerList.size());
+        assertTrue(observerList.isEmpty());
+
+        observerList.addObserver(null);
+        assertEquals(0, observerList.size());
+        assertTrue(observerList.isEmpty());
+
+        Object a = new Object();
+        observerList.addObserver(a);
+        assertEquals(1, observerList.size());
+        assertFalse(observerList.isEmpty());
+
+        observerList.addObserver(a);
+        assertEquals(1, observerList.size());
+        assertFalse(observerList.isEmpty());
+
+        observerList.addObserver(null);
+        assertEquals(1, observerList.size());
+        assertFalse(observerList.isEmpty());
+
+        Object b = new Object();
+        observerList.addObserver(b);
+        assertEquals(2, observerList.size());
+        assertFalse(observerList.isEmpty());
+
+        observerList.removeObserver(null);
+        assertEquals(2, observerList.size());
+        assertFalse(observerList.isEmpty());
+
+        observerList.removeObserver(new Object());
+        assertEquals(2, observerList.size());
+        assertFalse(observerList.isEmpty());
+
+        observerList.removeObserver(b);
+        assertEquals(1, observerList.size());
+        assertFalse(observerList.isEmpty());
+
+        observerList.removeObserver(b);
+        assertEquals(1, observerList.size());
+        assertFalse(observerList.isEmpty());
+
+        observerList.removeObserver(a);
+        assertEquals(0, observerList.size());
+        assertTrue(observerList.isEmpty());
+
+        observerList.removeObserver(a);
+        observerList.removeObserver(b);
+        observerList.removeObserver(null);
+        observerList.removeObserver(new Object());
+        assertEquals(0, observerList.size());
+        assertTrue(observerList.isEmpty());
+
+        observerList.addObserver(new Object());
+        observerList.addObserver(new Object());
+        observerList.addObserver(new Object());
+        observerList.addObserver(a);
+        assertEquals(4, observerList.size());
+        assertFalse(observerList.isEmpty());
+
+        observerList.clear();
+        assertEquals(0, observerList.size());
+        assertTrue(observerList.isEmpty());
+
+        observerList.removeObserver(a);
+        observerList.removeObserver(b);
+        observerList.removeObserver(null);
+        observerList.removeObserver(new Object());
+        assertEquals(0, observerList.size());
+        assertTrue(observerList.isEmpty());
+    }
 }

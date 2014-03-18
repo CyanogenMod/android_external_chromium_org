@@ -4,10 +4,12 @@
 
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 
+#include "base/bind.h"
 #include "ui/aura/client/cursor_client.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/client/dispatcher_client.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/widget.h"
 
@@ -91,9 +93,9 @@ TEST_F(DesktopNativeWidgetAuraTest, GlobalCursorState) {
   widget_b.Init(init_params_b);
 
   aura::client::CursorClient* cursor_client_a = aura::client::GetCursorClient(
-      desktop_native_widget_aura_a->root_window()->window());
+      desktop_native_widget_aura_a->host()->window());
   aura::client::CursorClient* cursor_client_b = aura::client::GetCursorClient(
-      desktop_native_widget_aura_b->root_window()->window());
+      desktop_native_widget_aura_b->host()->window());
 
   // Verify the cursor can be locked using one client and unlocked using
   // another.
@@ -184,6 +186,34 @@ TEST_F(DesktopNativeWidgetAuraTest, DontAccessContentWindowDuringDestruction) {
 
     widget.Show();
   }
+}
+
+void QuitNestedLoopAndCloseWidget(scoped_ptr<Widget> widget,
+                                  aura::client::DispatcherClient* client) {
+  client->QuitNestedMessageLoop();
+}
+
+// Verifies that a widget can be destroyed when running a nested message-loop.
+TEST_F(DesktopNativeWidgetAuraTest, WidgetCanBeDestroyedFromNestedLoop) {
+  scoped_ptr<Widget> widget(new Widget);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
+  params.bounds = gfx::Rect(0, 0, 200, 200);
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.native_widget = new DesktopNativeWidgetAura(widget.get());
+  widget->Init(params);
+  widget->Show();
+
+  aura::Window* window = widget->GetNativeView();
+  aura::Window* root = window->GetRootWindow();
+  aura::client::DispatcherClient* client =
+      aura::client::GetDispatcherClient(root);
+
+  // Post a task that terminates the nested loop and destroyes the widget. This
+  // task will be executed from the nested loop initiated with the call to
+  // |RunWithDispatcher()| below.
+  message_loop()->PostTask(FROM_HERE,
+      base::Bind(&QuitNestedLoopAndCloseWidget, base::Passed(&widget), client));
+  client->RunWithDispatcher(NULL);
 }
 
 }  // namespace views

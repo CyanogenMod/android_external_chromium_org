@@ -12,6 +12,7 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
+#include "net/quic/quic_session_key.h"
 
 namespace net {
 
@@ -43,9 +44,9 @@ struct DiskCacheBasedQuicServerInfo::CacheOperationDataShim {
 };
 
 DiskCacheBasedQuicServerInfo::DiskCacheBasedQuicServerInfo(
-    const std::string& hostname,
+    const QuicSessionKey& server_key,
     HttpCache* http_cache)
-    : QuicServerInfo(hostname),
+    : QuicServerInfo(server_key),
       weak_factory_(this),
       data_shim_(new CacheOperationDataShim()),
       io_callback_(
@@ -55,7 +56,7 @@ DiskCacheBasedQuicServerInfo::DiskCacheBasedQuicServerInfo(
       state_(GET_BACKEND),
       ready_(false),
       found_entry_(false),
-      hostname_(hostname),
+      server_key_(server_key),
       http_cache_(http_cache),
       backend_(NULL),
       entry_(NULL) {
@@ -70,22 +71,29 @@ void DiskCacheBasedQuicServerInfo::Start() {
 int DiskCacheBasedQuicServerInfo::WaitForDataReady(
     const CompletionCallback& callback) {
   DCHECK(CalledOnValidThread());
-  DCHECK(state_ != GET_BACKEND);
+  DCHECK_NE(GET_BACKEND, state_);
 
   if (ready_)
     return OK;
 
   if (!callback.is_null()) {
-    DCHECK(user_callback_.is_null());
+    // Prevent a new callback for WaitForDataReady overwriting an existing
+    // pending callback (|user_callback_|).
+    if (!user_callback_.is_null())
+      return ERR_INVALID_ARGUMENT;
     user_callback_ = callback;
   }
 
   return ERR_IO_PENDING;
 }
 
+bool DiskCacheBasedQuicServerInfo::IsDataReady() {
+  return ready_ && state_ == NONE;
+}
+
 void DiskCacheBasedQuicServerInfo::Persist() {
   DCHECK(CalledOnValidThread());
-  DCHECK(state_ != GET_BACKEND);
+  DCHECK_NE(GET_BACKEND, state_);
 
   DCHECK(new_data_.empty());
   CHECK(ready_);
@@ -106,11 +114,12 @@ DiskCacheBasedQuicServerInfo::~DiskCacheBasedQuicServerInfo() {
 }
 
 std::string DiskCacheBasedQuicServerInfo::key() const {
-  return "quicserverinfo:" + hostname_;
+  return "quicserverinfo:" + server_key_.ToString();
 }
 
 void DiskCacheBasedQuicServerInfo::OnIOComplete(CacheOperationDataShim* unused,
                                                 int rv) {
+  DCHECK_NE(NONE, state_);
   rv = DoLoop(rv);
   if (rv != ERR_IO_PENDING && !user_callback_.is_null()) {
     CompletionCallback callback = user_callback_;
@@ -272,6 +281,7 @@ int DiskCacheBasedQuicServerInfo::DoSetDone() {
   if (entry_)
     entry_->Close();
   entry_ = NULL;
+  new_data_.clear();
   state_ = NONE;
   return OK;
 }

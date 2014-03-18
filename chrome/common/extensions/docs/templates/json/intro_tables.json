@@ -38,8 +38,8 @@
   "bluetooth": {
     "Learn More": [
       {
-        "link": "app_usb.html",
-        "text": "Accessing Hardware Devices"
+        "link": "app_bluetooth.html",
+        "text": "Bluetooth"
       }
     ]
   },
@@ -114,6 +114,14 @@
       {
         "link": "https://developers.google.com/live/shows/7320022-1001/",
         "text": "Chrome Apps Office Hours: TextDrive and AngularJS"
+      }
+    ]
+  },
+  "gcm": {
+    "Learn More": [
+      {
+        "link": "cloudMessagingV2.html",
+        "text": "Google Cloud Messaging"
       }
     ]
   },

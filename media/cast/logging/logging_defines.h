@@ -63,15 +63,18 @@ enum CastLoggingEvent {
   kVideoFrameDecoded,
   kVideoRenderDelay,
   // Send-side packet events.
-  kPacketSentToPacer,
-  kPacketSentToNetwork,
-  kPacketRetransmitted,
+  kAudioPacketSentToPacer,
+  kVideoPacketSentToPacer,
+  kAudioPacketSentToNetwork,
+  kVideoPacketSentToNetwork,
+  kAudioPacketRetransmitted,
+  kVideoPacketRetransmitted,
   // Receive-side packet events.
   kAudioPacketReceived,
   kVideoPacketReceived,
   kDuplicateAudioPacketReceived,
   kDuplicateVideoPacketReceived,
-  kNumOfLoggingEvents,
+  kNumOfLoggingEvents = kDuplicateVideoPacketReceived
 };
 
 std::string CastLoggingToString(CastLoggingEvent event);

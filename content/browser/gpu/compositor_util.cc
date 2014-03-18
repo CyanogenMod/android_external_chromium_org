@@ -269,17 +269,19 @@ bool IsDelegatedRendererEnabled() {
   return enabled;
 }
 
-bool IsDeadlineSchedulingEnabled() {
+bool IsImplSidePaintingEnabled() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
-  // Default to enabled.
-  bool enabled = true;
+  if (command_line.HasSwitch(switches::kDisableImplSidePainting))
+    return false;
+  else if (command_line.HasSwitch(switches::kEnableImplSidePainting))
+    return true;
 
-  // Flags override.
-  enabled |= command_line.HasSwitch(switches::kEnableDeadlineScheduling);
-  enabled &= !command_line.HasSwitch(switches::kDisableDeadlineScheduling);
-
-  return enabled;
+#if defined(OS_ANDROID)
+  return true;
+#else
+  return false;
+#endif
 }
 
 base::Value* GetFeatureStatus() {
@@ -304,7 +306,7 @@ base::Value* GetFeatureStatus() {
       if (gpu_feature_info.name == "css_animation") {
         status += "_software_animated";
       } else if (gpu_feature_info.name == "raster") {
-        if (cc::switches::IsImplSidePaintingEnabled())
+        if (IsImplSidePaintingEnabled())
           status += "_software_multithreaded";
         else
           status += "_software";
@@ -346,10 +348,8 @@ base::Value* GetFeatureStatus() {
       }
     }
     // TODO(reveman): Remove this when crbug.com/223286 has been fixed.
-    if (gpu_feature_info.name == "raster" &&
-        cc::switches::IsImplSidePaintingEnabled()) {
+    if (gpu_feature_info.name == "raster" && IsImplSidePaintingEnabled())
       status = "disabled_software_multithreaded";
-    }
     feature_status_dict->SetString(
         gpu_feature_info.name.c_str(), status.c_str());
   }
@@ -371,6 +371,10 @@ base::Value* GetProblems() {
         "GPU process was unable to boot: " + gpu_access_blocked_reason);
     problem->Set("crBugs", new base::ListValue());
     problem->Set("webkitBugs", new base::ListValue());
+    base::ListValue* disabled_features = new base::ListValue();
+    disabled_features->AppendString("all");
+    problem->Set("affectedGpuSettings", disabled_features);
+    problem->SetString("tag", "disabledFeatures");
     problem_list->Insert(0, problem);
   }
 
@@ -383,6 +387,10 @@ base::Value* GetProblems() {
           "description", gpu_feature_info.disabled_description);
       problem->Set("crBugs", new base::ListValue());
       problem->Set("webkitBugs", new base::ListValue());
+      base::ListValue* disabled_features = new base::ListValue();
+      disabled_features->AppendString(gpu_feature_info.name);
+      problem->Set("affectedGpuSettings", disabled_features);
+      problem->SetString("tag", "disabledFeatures");
       problem_list->Append(problem);
     }
   }

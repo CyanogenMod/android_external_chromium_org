@@ -14,6 +14,7 @@
 
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/browser_command_executor.h"
@@ -23,6 +24,7 @@
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 #import "chrome/browser/ui/cocoa/view_resizer.h"
+#include "components/translate/core/common/translate_errors.h"
 #include "ui/gfx/rect.h"
 
 @class AvatarBaseController;
@@ -38,14 +40,20 @@ class ExtensionKeybindingRegistryCocoa;
 @class InfoBarContainerController;
 class LocationBarViewMac;
 @class OverlayableContentsController;
+class PermissionBubbleCocoa;
 @class PresentationModeController;
 class StatusBubbleMac;
 @class TabStripController;
 @class TabStripView;
 @class ToolbarController;
+@class TranslateBubbleController;
 
 namespace content {
 class WebContents;
+}
+
+namespace extensions {
+class Command;
 }
 
 @interface BrowserWindowController :
@@ -86,6 +94,8 @@ class WebContents;
   BOOL initializing_;  // YES while we are currently in initWithBrowser:
   BOOL ownsBrowser_;  // Only ever NO when testing
 
+  TranslateBubbleController* translateBubbleController_;  // Weak.
+
   // The total amount by which we've grown the window up or down (to display a
   // bookmark bar and/or download shelf), respectively; reset to 0 when moved
   // away from the bottom/top or resized (or zoomed).
@@ -120,6 +130,9 @@ class WebContents;
   // The borderless window used in fullscreen mode.  Lion reuses the original
   // window in fullscreen mode, so this is always nil on Lion.
   base::scoped_nsobject<NSWindow> fullscreenWindow_;
+
+  // The Cocoa implementation of the PermissionBubbleView.
+  scoped_ptr<PermissionBubbleCocoa> permissionBubbleCocoa_;
 
   // Tracks whether presentation mode was entered from fullscreen mode or
   // directly from normal windowed mode.  Used to determine what to do when
@@ -236,6 +249,9 @@ class WebContents;
 // Sets whether or not the current page in the frontmost tab is bookmarked.
 - (void)setStarredState:(BOOL)isStarred;
 
+// Sets whether or not the current page is translated.
+- (void)setCurrentPageIsTranslated:(BOOL)on;
+
 // Happens when the zoom level is changed in the active tab, the active tab is
 // changed, or a new browser window or tab is created. |canShowBubble| denotes
 // whether it would be appropriate to show a zoom bubble or not.
@@ -309,6 +325,12 @@ class WebContents;
 - (void)showBookmarkBubbleForURL:(const GURL&)url
                alreadyBookmarked:(BOOL)alreadyBookmarked;
 
+// Show the translate bubble.
+- (void)showTranslateBubbleForWebContents:(content::WebContents*)contents
+                                     step:
+                                      (TranslateTabHelper::TranslateStep)step
+                                errorType:(TranslateErrors::Type)errorType;
+
 // Shows or hides the docked web inspector depending on |contents|'s state.
 - (void)updateDevToolsForContents:(content::WebContents*)contents;
 
@@ -348,6 +370,16 @@ class WebContents;
 // allowOverlappingViews state. Currently used for history overlay and
 // confirm bubble.
 - (void)onOverlappedViewHidden;
+
+// Executes the command registered by the extension that has the given id.
+- (void)executeExtensionCommand:(const std::string&)extension_id
+                        command:(const extensions::Command&)command;
+
+// Activates the page action for the extension that has the given id.
+- (void)activatePageAction:(const std::string&)extension_id;
+
+// Activates the browser action for the extension that has the given id.
+- (void)activateBrowserAction:(const std::string&)extension_id;
 
 @end  // @interface BrowserWindowController
 

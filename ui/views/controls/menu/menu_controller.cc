@@ -13,11 +13,16 @@
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "ui/aura/client/dispatcher_client.h"
+#include "ui/aura/env.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/keycodes/keyboard_code_conversion.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/native_widget_types.h"
@@ -40,13 +45,8 @@
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 
-#if defined(USE_AURA)
-#include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
-#endif
-
 #if defined(OS_WIN)
-#include "ui/views/win/hwnd_message_handler.h"
+#include "ui/base/win/internal_constants.h"
 #include "ui/views/win/hwnd_util.h"
 #endif
 
@@ -88,7 +88,7 @@ const float kMaximumLengthMovedToActivate = 4.0f;
 
 // Returns true if the mnemonic of |menu| matches key.
 bool MatchesMnemonic(MenuItemView* menu, base::char16 key) {
-  return menu->GetMnemonic() == key;
+  return key != 0 && menu->GetMnemonic() == key;
 }
 
 // Returns true if |menu| doesn't have a mnemonic and first character of the its
@@ -400,7 +400,7 @@ MenuItemView* MenuController::Run(Widget* parent,
      HWND window = ::WindowFromPoint(cursor_pos);
      if (::GetWindowThreadProcessId(window, NULL) ==
                                     ::GetCurrentThreadId()) {
-       ::SetProp(window, views::kIgnoreTouchMouseActivateForWindow,
+       ::SetProp(window, ui::kIgnoreTouchMouseActivateForWindow,
                  reinterpret_cast<HANDLE>(true));
      }
   }
@@ -873,7 +873,7 @@ void MenuController::SetSelection(MenuItemView* menu_item,
       (MenuDepth(menu_item) != 1 ||
        menu_item->GetType() != MenuItemView::SUBMENU)) {
     menu_item->NotifyAccessibilityEvent(
-        ui::AccessibilityTypes::EVENT_FOCUS, true);
+        ui::AX_EVENT_FOCUS, true);
   }
 }
 
@@ -934,7 +934,7 @@ void MenuController::SetSelectionOnPointerDown(SubmenuView* source,
     }
     Cancel(exit_type);
 
-#if defined(USE_AURA) && !defined(OS_WIN)
+#if !defined(OS_WIN)
     // We're going to exit the menu and want to repost the event so that is
     // is handled normally after the context menu has exited. We call
     // RepostEvent after Cancel so that mouse capture has been released so
@@ -1061,24 +1061,25 @@ uint32_t MenuController::Dispatch(const base::NativeEvent& event) {
   if (exit_type_ == EXIT_ALL || exit_type_ == EXIT_DESTROYED)
     return (POST_DISPATCH_QUIT_LOOP | POST_DISPATCH_PERFORM_DEFAULT);
 
-  // Activates mnemonics only when it it pressed without modifiers except for
-  // caps and shift.
-  int flags = ui::EventFlagsFromNative(event) &
-      ~ui::EF_CAPS_LOCK_DOWN & ~ui::EF_SHIFT_DOWN;
-  if (flags == ui::EF_NONE) {
-    switch (ui::EventTypeFromNative(event)) {
-      case ui::ET_KEY_PRESSED: {
-        if (!OnKeyDown(ui::KeyboardCodeFromNative(event)))
-          return POST_DISPATCH_QUIT_LOOP;
+  switch (ui::EventTypeFromNative(event)) {
+    case ui::ET_KEY_PRESSED: {
+      if (!OnKeyDown(ui::KeyboardCodeFromNative(event)))
+        return POST_DISPATCH_QUIT_LOOP;
 
-        bool should_exit = SelectByChar(ui::KeyboardCodeFromNative(event));
-        return should_exit ? POST_DISPATCH_QUIT_LOOP : POST_DISPATCH_NONE;
+      // Do not check mnemonics if the Alt or Ctrl modifiers are pressed.
+      int flags = ui::EventFlagsFromNative(event);
+      if ((flags & (ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN)) == 0) {
+        char c = ui::GetCharacterFromKeyCode(
+            ui::KeyboardCodeFromNative(event), flags);
+        if (SelectByChar(c))
+          return POST_DISPATCH_QUIT_LOOP;
       }
-      case ui::ET_KEY_RELEASED:
-        return POST_DISPATCH_NONE;
-      default:
-        break;
+      return POST_DISPATCH_NONE;
     }
+    case ui::ET_KEY_RELEASED:
+      return POST_DISPATCH_NONE;
+    default:
+      break;
   }
 
   return POST_DISPATCH_PERFORM_DEFAULT |
@@ -1121,7 +1122,7 @@ bool MenuController::OnKeyDown(ui::KeyboardCode key_code) {
       break;
 
     case ui::VKEY_F4:
-      if (!accept_on_f4_)
+      if (!is_combobox_)
         break;
       // Fallthrough to accept on F4, so combobox menus match Windows behavior.
     case ui::VKEY_RETURN:
@@ -1188,7 +1189,7 @@ MenuController::MenuController(ui::NativeTheme* theme,
       menu_config_(theme),
       closing_event_time_(base::TimeDelta()),
       menu_start_time_(base::TimeTicks()),
-      accept_on_f4_(false),
+      is_combobox_(false),
       item_selected_by_touch_(false) {
   active_instance_ = this;
 }
@@ -2113,10 +2114,14 @@ bool MenuController::SelectByChar(base::char16 character) {
   if (details.first_match != -1)
     return AcceptOrSelect(item, details);
 
-  // If no mnemonics found, look at first character of titles.
-  details = FindChildForMnemonic(item, key, &TitleMatchesMnemonic);
-  if (details.first_match != -1)
-    return AcceptOrSelect(item, details);
+  if (is_combobox_) {
+    item->GetSubmenu()->GetTextInputClient()->InsertChar(character, 0);
+  } else {
+    // If no mnemonics found, look at first character of titles.
+    details = FindChildForMnemonic(item, key, &TitleMatchesMnemonic);
+    if (details.first_match != -1)
+      return AcceptOrSelect(item, details);
+  }
 
   return false;
 }
@@ -2296,18 +2301,23 @@ void MenuController::SetExitType(ExitType type) {
   // Exit nested message loops as soon as possible. We do this as
   // MessagePumpDispatcher is only invoked before native events, which means
   // its entirely possible for a Widget::CloseNow() task to be processed before
-  // the next native message. By using QuitNow() we ensures the nested message
-  // loop returns as soon as possible and avoids having deleted views classes
-  // (such as widgets and rootviews) on the stack when the nested message loop
-  // stops.
+  // the next native message. We quite the nested message loop as soon as
+  // possible to avoid having deleted views classes (such as widgets and
+  // rootviews) on the stack when the nested message loop stops.
   //
-  // It's safe to invoke QuitNow multiple times, it only effects the current
-  // loop.
+  // It's safe to invoke QuitNestedMessageLoop() multiple times, it only effects
+  // the current loop.
   bool quit_now = ShouldQuitNow() && exit_type_ != EXIT_NONE &&
       message_loop_depth_;
 
-  if (quit_now)
-    base::MessageLoop::current()->QuitNow();
+  if (quit_now) {
+    if (owner_) {
+      aura::Window* root = owner_->GetNativeWindow()->GetRootWindow();
+      aura::client::GetDispatcherClient(root)->QuitNestedMessageLoop();
+    } else {
+      base::MessageLoop::current()->QuitNow();
+    }
+  }
 }
 
 void MenuController::HandleMouseLocation(SubmenuView* source,

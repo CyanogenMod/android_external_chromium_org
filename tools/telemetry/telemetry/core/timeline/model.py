@@ -16,12 +16,12 @@ from telemetry.core import browser
 
 # Register importers for data
 from telemetry.core.timeline import bounds
-from telemetry.core.timeline import empty_trace_importer
+from telemetry.core.timeline import empty_timeline_data_importer
 from telemetry.core.timeline import inspector_importer
 from telemetry.core.timeline import trace_event_importer
 
 _IMPORTERS = [
-    empty_trace_importer.EmptyTraceImporter,
+    empty_timeline_data_importer.EmptyTimelineDataImporter,
     inspector_importer.InspectorTimelineImporter,
     trace_event_importer.TraceEventTimelineImporter
 ]
@@ -40,7 +40,13 @@ class MarkerOverlapError(Exception):
 
 
 class TimelineModel(object):
-  def __init__(self, event_data=None, shift_world_to_zero=True):
+  def __init__(self, timeline_data=None, shift_world_to_zero=True):
+    """ Initializes a TimelineModel. timeline_data can be a single TimelineData
+    object, a list of TimelineData objects, or None. If timeline_data is not
+    None, all events from it will be imported into the model. The events will
+    be shifted such that the first event starts at time 0, if
+    shift_world_to_zero is True.
+    """
     self._bounds = bounds.Bounds()
     self._thread_time_bounds = {}
     self._processes = {}
@@ -54,8 +60,8 @@ class TimelineModel(object):
     # This would prevent telemetry from navigating to another page.
     self._core_object_to_timeline_container_map = weakref.WeakKeyDictionary()
 
-    if event_data is not None:
-      self.ImportTraces([event_data], shift_world_to_zero=shift_world_to_zero)
+    if timeline_data is not None:
+      self.ImportTraces(timeline_data, shift_world_to_zero=shift_world_to_zero)
 
   @property
   def bounds(self):
@@ -70,20 +76,25 @@ class TimelineModel(object):
     return self._processes
 
   @property
+  #pylint: disable=E0202
   def browser_process(self):
     return self._browser_process
 
   @browser_process.setter
+  #pylint: disable=E0202
   def browser_process(self, browser_process):
     self._browser_process = browser_process
 
-  def ImportTraces(self, traces, shift_world_to_zero=True):
+  def ImportTraces(self, timeline_data, shift_world_to_zero=True):
     if self._frozen:
       raise Exception("Cannot add events once recording is done")
 
     importers = []
-    for event_data in traces:
-      importers.append(self._CreateImporter(event_data))
+    if isinstance(timeline_data, list):
+      for item in timeline_data:
+        importers.append(self._CreateImporter(item))
+    else:
+      importers.append(self._CreateImporter(timeline_data))
 
     importers.sort(cmp=lambda x, y: x.import_priority - y.import_priority)
 
@@ -222,6 +233,9 @@ class TimelineModel(object):
     return events
 
   def GetRendererProcessFromTab(self, tab):
+    return self._core_object_to_timeline_container_map[tab].parent
+
+  def GetRendererThreadFromTab(self, tab):
     return self._core_object_to_timeline_container_map[tab]
 
   def AddCoreObjectToContainerMapping(self, core_object, container):

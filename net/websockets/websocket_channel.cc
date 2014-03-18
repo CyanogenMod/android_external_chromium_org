@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/basictypes.h"  // for size_t
+#include "base/big_endian.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
@@ -15,7 +16,6 @@
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
-#include "net/base/big_endian.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_log.h"
 #include "net/http/http_request_headers.h"
@@ -28,6 +28,7 @@
 #include "net/websockets/websocket_handshake_response_info.h"
 #include "net/websockets/websocket_mux.h"
 #include "net/websockets/websocket_stream.h"
+#include "url/origin.h"
 
 namespace net {
 
@@ -55,12 +56,14 @@ const size_t kMaximumCloseReasonLength = 125 - kWebSocketCloseCodeLength;
 // used for close codes received from a renderer that we are intending to send
 // out over the network. See ParseClose() for the restrictions on incoming close
 // codes. The |code| parameter is type int for convenience of implementation;
-// the real type is uint16.
+// the real type is uint16. Code 1005 is treated specially; it cannot be set
+// explicitly by Javascript but the renderer uses it to indicate we should send
+// a Close frame with no payload.
 bool IsStrictlyValidCloseStatusCode(int code) {
   static const int kInvalidRanges[] = {
       // [BAD, OK)
       0,    1000,   // 1000 is the first valid code
-      1005, 1007,   // 1005 and 1006 MUST NOT be set.
+      1006, 1007,   // 1006 MUST NOT be set.
       1014, 3000,   // 1014 unassigned; 1015 up to 2999 are reserved.
       5000, 65536,  // Codes above 5000 are invalid.
   };
@@ -261,7 +264,9 @@ WebSocketChannel::WebSocketChannel(
       state_(FRESHLY_CONSTRUCTED),
       notification_sender_(new HandshakeNotificationSender(this)),
       sending_text_message_(false),
-      receiving_text_message_(false) {}
+      receiving_text_message_(false),
+      expecting_to_handle_continuation_(false),
+      initial_frame_forwarded_(false) {}
 
 WebSocketChannel::~WebSocketChannel() {
   // The stream may hold a pointer to read_frames_, and so it needs to be
@@ -275,7 +280,7 @@ WebSocketChannel::~WebSocketChannel() {
 void WebSocketChannel::SendAddChannelRequest(
     const GURL& socket_url,
     const std::vector<std::string>& requested_subprotocols,
-    const GURL& origin) {
+    const url::Origin& origin) {
   // Delegate to the tested version.
   SendAddChannelRequestWithSuppliedCreator(
       socket_url,
@@ -402,7 +407,7 @@ void WebSocketChannel::StartClosingHandshake(uint16 code,
 void WebSocketChannel::SendAddChannelRequestForTesting(
     const GURL& socket_url,
     const std::vector<std::string>& requested_subprotocols,
-    const GURL& origin,
+    const url::Origin& origin,
     const WebSocketStreamCreator& creator) {
   SendAddChannelRequestWithSuppliedCreator(
       socket_url, requested_subprotocols, origin, creator);
@@ -416,7 +421,7 @@ void WebSocketChannel::SetClosingHandshakeTimeoutForTesting(
 void WebSocketChannel::SendAddChannelRequestWithSuppliedCreator(
     const GURL& socket_url,
     const std::vector<std::string>& requested_subprotocols,
-    const GURL& origin,
+    const url::Origin& origin,
     const WebSocketStreamCreator& creator) {
   DCHECK_EQ(FRESHLY_CONSTRUCTED, state_);
   if (!socket_url.SchemeIsWSOrWSS()) {
@@ -644,13 +649,18 @@ ChannelState WebSocketChannel::HandleFrame(
         "Masked frame from server");
   }
   const WebSocketFrameHeader::OpCode opcode = frame->header.opcode;
-  if (WebSocketFrameHeader::IsKnownControlOpCode(opcode) &&
-      !frame->header.final) {
-    return FailChannel(
-        base::StringPrintf("Received fragmented control frame: opcode = %d",
-                           opcode),
-        kWebSocketErrorProtocolError,
-        "Control message with FIN bit unset received");
+  DCHECK(!WebSocketFrameHeader::IsKnownControlOpCode(opcode) ||
+         frame->header.final);
+  if (frame->header.reserved1 || frame->header.reserved2 ||
+      frame->header.reserved3) {
+    return FailChannel(base::StringPrintf(
+                           "One or more reserved bits are on: reserved1 = %d, "
+                           "reserved2 = %d, reserved3 = %d",
+                           static_cast<int>(frame->header.reserved1),
+                           static_cast<int>(frame->header.reserved2),
+                           static_cast<int>(frame->header.reserved3)),
+                       kWebSocketErrorProtocolError,
+                       "Invalid reserved bit");
   }
 
   // Respond to the frame appropriately to its type.
@@ -677,40 +687,9 @@ ChannelState WebSocketChannel::HandleFrameByState(
   }
   switch (opcode) {
     case WebSocketFrameHeader::kOpCodeText:    // fall-thru
-    case WebSocketFrameHeader::kOpCodeBinary:  // fall-thru
+    case WebSocketFrameHeader::kOpCodeBinary:
     case WebSocketFrameHeader::kOpCodeContinuation:
-      if (state_ == CONNECTED) {
-        if (opcode == WebSocketFrameHeader::kOpCodeText ||
-            (opcode == WebSocketFrameHeader::kOpCodeContinuation &&
-             receiving_text_message_)) {
-          // This call is not redundant when size == 0 because it tells us what
-          // the current state is.
-          StreamingUtf8Validator::State state =
-              incoming_utf8_validator_.AddBytes(
-                  size ? data_buffer->data() : NULL, size);
-          if (state == StreamingUtf8Validator::INVALID ||
-              (state == StreamingUtf8Validator::VALID_MIDPOINT && final)) {
-            return FailChannel("Could not decode a text frame as UTF-8.",
-                               kWebSocketErrorProtocolError,
-                               "Invalid UTF-8 in text frame");
-          }
-          receiving_text_message_ = !final;
-          DCHECK(!final || state == StreamingUtf8Validator::VALID_ENDPOINT);
-        }
-        // TODO(ricea): Can this copy be eliminated?
-        const char* const data_begin = size ? data_buffer->data() : NULL;
-        const char* const data_end = data_begin + size;
-        const std::vector<char> data(data_begin, data_end);
-        // TODO(ricea): Handle the case when ReadFrames returns far
-        // more data at once than should be sent in a single IPC. This needs to
-        // be handled carefully, as an overloaded IO thread is one possible
-        // cause of receiving very large chunks.
-
-        // Sends the received frame to the renderer process.
-        return event_interface_->OnDataFrame(final, opcode, data);
-      }
-      VLOG(3) << "Ignored data packet received in state " << state_;
-      return CHANNEL_ALIVE;
+      return HandleDataFrame(opcode, final, data_buffer, size);
 
     case WebSocketFrameHeader::kOpCodePing:
       VLOG(1) << "Got Ping of size " << size;
@@ -771,6 +750,70 @@ ChannelState WebSocketChannel::HandleFrameByState(
   }
 }
 
+ChannelState WebSocketChannel::HandleDataFrame(
+    WebSocketFrameHeader::OpCode opcode,
+    bool final,
+    const scoped_refptr<IOBuffer>& data_buffer,
+    size_t size) {
+  if (state_ != CONNECTED) {
+    DVLOG(3) << "Ignored data packet received in state " << state_;
+    return CHANNEL_ALIVE;
+  }
+  DCHECK(opcode == WebSocketFrameHeader::kOpCodeContinuation ||
+         opcode == WebSocketFrameHeader::kOpCodeText ||
+         opcode == WebSocketFrameHeader::kOpCodeBinary);
+  const bool got_continuation =
+      (opcode == WebSocketFrameHeader::kOpCodeContinuation);
+  if (got_continuation != expecting_to_handle_continuation_) {
+    const std::string console_log = got_continuation
+        ? "Received unexpected continuation frame."
+        : "Received start of new message but previous message is unfinished.";
+    const std::string reason = got_continuation
+        ? "Unexpected continuation"
+        : "Previous data frame unfinished";
+    return FailChannel(console_log, kWebSocketErrorProtocolError, reason);
+  }
+  expecting_to_handle_continuation_ = !final;
+  WebSocketFrameHeader::OpCode opcode_to_send = opcode;
+  if (!initial_frame_forwarded_ &&
+      opcode == WebSocketFrameHeader::kOpCodeContinuation) {
+    opcode_to_send = receiving_text_message_
+                         ? WebSocketFrameHeader::kOpCodeText
+                         : WebSocketFrameHeader::kOpCodeBinary;
+  }
+  if (opcode == WebSocketFrameHeader::kOpCodeText ||
+      (opcode == WebSocketFrameHeader::kOpCodeContinuation &&
+       receiving_text_message_)) {
+    // This call is not redundant when size == 0 because it tells us what
+    // the current state is.
+    StreamingUtf8Validator::State state = incoming_utf8_validator_.AddBytes(
+        size ? data_buffer->data() : NULL, size);
+    if (state == StreamingUtf8Validator::INVALID ||
+        (state == StreamingUtf8Validator::VALID_MIDPOINT && final)) {
+      return FailChannel("Could not decode a text frame as UTF-8.",
+                         kWebSocketErrorProtocolError,
+                         "Invalid UTF-8 in text frame");
+    }
+    receiving_text_message_ = !final;
+    DCHECK(!final || state == StreamingUtf8Validator::VALID_ENDPOINT);
+  }
+  if (size == 0U && !final)
+    return CHANNEL_ALIVE;
+
+  initial_frame_forwarded_ = !final;
+  // TODO(ricea): Can this copy be eliminated?
+  const char* const data_begin = size ? data_buffer->data() : NULL;
+  const char* const data_end = data_begin + size;
+  const std::vector<char> data(data_begin, data_end);
+  // TODO(ricea): Handle the case when ReadFrames returns far
+  // more data at once than should be sent in a single IPC. This needs to
+  // be handled carefully, as an overloaded IO thread is one possible
+  // cause of receiving very large chunks.
+
+  // Sends the received frame to the renderer process.
+  return event_interface_->OnDataFrame(final, opcode_to_send, data);
+}
+
 ChannelState WebSocketChannel::SendIOBuffer(
     bool fin,
     WebSocketFrameHeader::OpCode op_code,
@@ -829,12 +872,13 @@ ChannelState WebSocketChannel::SendClose(uint16 code,
   if (code == kWebSocketErrorNoStatusReceived) {
     // Special case: translate kWebSocketErrorNoStatusReceived into a Close
     // frame with no payload.
+    DCHECK(reason.empty());
     body = new IOBuffer(0);
   } else {
     const size_t payload_length = kWebSocketCloseCodeLength + reason.length();
     body = new IOBuffer(payload_length);
     size = payload_length;
-    WriteBigEndian(body->data(), code);
+    base::WriteBigEndian(body->data(), code);
     COMPILE_ASSERT(sizeof(code) == kWebSocketCloseCodeLength,
                    they_should_both_be_two);
     std::copy(
@@ -877,7 +921,7 @@ bool WebSocketChannel::ParseClose(const scoped_refptr<IOBuffer>& buffer,
   }
   const char* data = buffer->data();
   uint16 unchecked_code = 0;
-  ReadBigEndian(data, &unchecked_code);
+  base::ReadBigEndian(data, &unchecked_code);
   COMPILE_ASSERT(sizeof(unchecked_code) == kWebSocketCloseCodeLength,
                  they_should_both_be_two_bytes);
   switch (unchecked_code) {

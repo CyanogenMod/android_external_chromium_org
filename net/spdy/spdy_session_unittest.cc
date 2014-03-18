@@ -774,12 +774,12 @@ TEST_P(SpdySessionTest, ClientPing) {
   session_deps_.host_resolver->set_synchronous_mode(true);
 
   MockConnect connect_data(SYNCHRONOUS, OK);
-  scoped_ptr<SpdyFrame> read_ping(spdy_util_.ConstructSpdyPing(1));
+  scoped_ptr<SpdyFrame> read_ping(spdy_util_.ConstructSpdyPing(1, true));
   MockRead reads[] = {
     CreateMockRead(*read_ping, 1),
     MockRead(ASYNC, 0, 0, 2)  // EOF
   };
-  scoped_ptr<SpdyFrame> write_ping(spdy_util_.ConstructSpdyPing(1));
+  scoped_ptr<SpdyFrame> write_ping(spdy_util_.ConstructSpdyPing(1, false));
   MockWrite writes[] = {
     CreateMockWrite(*write_ping, 0),
   };
@@ -829,12 +829,12 @@ TEST_P(SpdySessionTest, ServerPing) {
   session_deps_.host_resolver->set_synchronous_mode(true);
 
   MockConnect connect_data(SYNCHRONOUS, OK);
-  scoped_ptr<SpdyFrame> read_ping(spdy_util_.ConstructSpdyPing(2));
+  scoped_ptr<SpdyFrame> read_ping(spdy_util_.ConstructSpdyPing(2, false));
   MockRead reads[] = {
     CreateMockRead(*read_ping),
     MockRead(SYNCHRONOUS, 0, 0)  // EOF
   };
-  scoped_ptr<SpdyFrame> write_ping(spdy_util_.ConstructSpdyPing(2));
+  scoped_ptr<SpdyFrame> write_ping(spdy_util_.ConstructSpdyPing(2, true));
   MockWrite writes[] = {
     CreateMockWrite(*write_ping),
   };
@@ -873,7 +873,7 @@ TEST_P(SpdySessionTest, PingAndWriteLoop) {
   session_deps_.time_func = TheNearFuture;
 
   MockConnect connect_data(SYNCHRONOUS, OK);
-  scoped_ptr<SpdyFrame> write_ping(spdy_util_.ConstructSpdyPing(1));
+  scoped_ptr<SpdyFrame> write_ping(spdy_util_.ConstructSpdyPing(1, false));
   scoped_ptr<SpdyFrame> req(
       spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
   MockWrite writes[] = {
@@ -1006,7 +1006,7 @@ TEST_P(SpdySessionTest, FailedPing) {
   MockRead reads[] = {
     MockRead(ASYNC, 0, 0, 0)  // EOF
   };
-  scoped_ptr<SpdyFrame> write_ping(spdy_util_.ConstructSpdyPing(1));
+  scoped_ptr<SpdyFrame> write_ping(spdy_util_.ConstructSpdyPing(1, false));
   DeterministicSocketData data(reads, arraysize(reads), NULL, 0);
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
@@ -1027,7 +1027,7 @@ TEST_P(SpdySessionTest, FailedPing) {
   session->set_hung_interval(base::TimeDelta::FromSeconds(0));
 
   // Send a PING frame.
-  session->WritePingFrame(1);
+  session->WritePingFrame(1, false);
   EXPECT_LT(0, session->pings_in_flight());
   EXPECT_GE(session->next_ping_id(), static_cast<uint32>(1));
   EXPECT_TRUE(session->check_ping_status_pending());
@@ -1109,6 +1109,11 @@ TEST_P(SpdySessionTest, OnSettings) {
 // also clears the persisted data. Verify that persisted data is
 // correct.
 TEST_P(SpdySessionTest, ClearSettings) {
+  if (spdy_util_.spdy_version() >= SPDY4) {
+    // SPDY4 doesn't include settings persistence, or a CLEAR_SETTINGS flag.
+    // Flag 0x1, CLEAR_SETTINGS in SPDY3, is instead settings ACK in SPDY4.
+    return;
+  }
   session_deps_.host_resolver->set_synchronous_mode(true);
 
   SettingsMap new_settings;
@@ -4123,6 +4128,9 @@ TEST(MapFramerErrorToProtocolError, MapsValues) {
   CHECK_EQ(SPDY_ERROR_GOAWAY_FRAME_CORRUPT,
            MapFramerErrorToProtocolError(
                SpdyFramer::SPDY_GOAWAY_FRAME_CORRUPT));
+  CHECK_EQ(SPDY_ERROR_UNEXPECTED_FRAME,
+           MapFramerErrorToProtocolError(
+               SpdyFramer::SPDY_UNEXPECTED_FRAME));
 }
 
 TEST(MapRstStreamStatusToProtocolError, MapsValues) {

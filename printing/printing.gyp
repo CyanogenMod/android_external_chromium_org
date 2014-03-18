@@ -236,13 +236,13 @@
       'target_name': 'printing_unittests',
       'type': 'executable',
       'dependencies': [
-        'printing',
-        '../testing/gtest.gyp:gtest',
         '../base/base.gyp:run_all_unittests',
         '../base/base.gyp:test_support_base',
+        '../testing/gtest.gyp:gtest',
+        '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        '../ui/ui.gyp:ui',
+        'printing',
       ],
       'sources': [
         'emf_win_unittest.cc',
@@ -275,7 +275,8 @@
         }],
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            ['linux_use_tcmalloc == 1', {
+            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],

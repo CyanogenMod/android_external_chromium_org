@@ -52,8 +52,7 @@ class FakeExtensionSystem : public extensions::TestExtensionSystem {
 };
 
 // Factory function to register for the ExtensionSystem.
-BrowserContextKeyedService* BuildFakeExtensionSystem(
-    content::BrowserContext* profile) {
+KeyedService* BuildFakeExtensionSystem(content::BrowserContext* profile) {
   return new FakeExtensionSystem(static_cast<Profile*>(profile));
 }
 
@@ -66,6 +65,12 @@ class ImageWriterOperationManagerTest
     started_ = true;
     start_success_ = success;
     start_error_ = error;
+  }
+
+  void CancelCallback(bool success, const std::string& error) {
+    cancelled_ = true;
+    cancel_success_ = true;
+    cancel_error_ = error;
   }
 
  protected:
@@ -86,6 +91,10 @@ class ImageWriterOperationManagerTest
   bool started_;
   bool start_success_;
   std::string start_error_;
+
+  bool cancelled_;
+  bool cancel_success_;
+  std::string cancel_error_;
 
   TestingProfile test_profile_;
   FakeExtensionSystem* extension_system_;
@@ -112,6 +121,15 @@ TEST_F(ImageWriterOperationManagerTest, WriteFromFile) {
   EXPECT_TRUE(start_success_);
   EXPECT_EQ("", start_error_);
 
+  manager.CancelWrite(
+      kDummyExtensionId,
+      base::Bind(&ImageWriterOperationManagerTest::CancelCallback,
+                 base::Unretained(this)));
+
+  EXPECT_TRUE(cancelled_);
+  EXPECT_TRUE(cancel_success_);
+  EXPECT_EQ("", cancel_error_);
+
   base::RunLoop().RunUntilIdle();
 }
 
@@ -127,6 +145,15 @@ TEST_F(ImageWriterOperationManagerTest, DestroyPartitions) {
   EXPECT_TRUE(started_);
   EXPECT_TRUE(start_success_);
   EXPECT_EQ("", start_error_);
+
+  manager.CancelWrite(
+      kDummyExtensionId,
+      base::Bind(&ImageWriterOperationManagerTest::CancelCallback,
+                 base::Unretained(this)));
+
+  EXPECT_TRUE(cancelled_);
+  EXPECT_TRUE(cancel_success_);
+  EXPECT_EQ("", cancel_error_);
 
   base::RunLoop().RunUntilIdle();
 }

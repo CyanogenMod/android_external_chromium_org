@@ -10,11 +10,11 @@
 #include "base/json/json_reader.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "extensions/browser/extension_function.h"
+#include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/id_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -255,7 +255,7 @@ bool RunFunction(UIThreadExtensionFunction* function,
       browser->profile(), &dispatcher_delegate);
   function->set_dispatcher(dispatcher.AsWeakPtr());
 
-  function->set_context(browser->profile());
+  function->set_browser_context(browser->profile());
   function->set_include_incognito(flags & INCLUDE_INCOGNITO);
   function->Run();
 

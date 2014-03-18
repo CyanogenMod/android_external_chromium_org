@@ -15,51 +15,29 @@
 #include "net/quic/quic_bandwidth.h"
 #include "net/quic/quic_clock.h"
 #include "net/quic/quic_config.h"
+#include "net/quic/quic_connection_stats.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_time.h"
 
 namespace net {
 
+class RttStats;
+
 class NET_EXPORT_PRIVATE SendAlgorithmInterface {
  public:
-  class SentPacket {
-   public:
-    SentPacket(QuicByteCount bytes, QuicTime timestamp)
-        : bytes_sent_(bytes),
-          send_timestamp_(timestamp),
-          nack_count_(0) {
-    }
-    QuicByteCount bytes_sent() const { return bytes_sent_; }
-    const QuicTime& send_timestamp() const { return send_timestamp_; }
-    size_t nack_count() const { return nack_count_; }
-
-    void Nack(size_t min_nacks) {
-      nack_count_ = std::max(min_nacks, nack_count_ + 1);
-    }
-
-   private:
-    QuicByteCount bytes_sent_;
-    QuicTime send_timestamp_;
-    size_t nack_count_;
-  };
-
-  typedef std::map<QuicPacketSequenceNumber, SentPacket*> SentPacketsMap;
-
   static SendAlgorithmInterface* Create(const QuicClock* clock,
-                                        CongestionFeedbackType type);
+                                        const RttStats* rtt_stats,
+                                        CongestionFeedbackType type,
+                                        QuicConnectionStats* stats);
 
   virtual ~SendAlgorithmInterface() {}
 
   virtual void SetFromConfig(const QuicConfig& config, bool is_server) = 0;
 
-  // Sets the maximum size of packets that will be sent.
-  virtual void SetMaxPacketSize(QuicByteCount max_packet_size) = 0;
-
   // Called when we receive congestion feedback from remote peer.
   virtual void OnIncomingQuicCongestionFeedbackFrame(
       const QuicCongestionFeedbackFrame& feedback,
-      QuicTime feedback_receive_time,
-      const SentPacketsMap& sent_packets) = 0;
+      QuicTime feedback_receive_time) = 0;
 
   // Called for each received ACK, with sequence number from remote peer.
   virtual void OnPacketAcked(QuicPacketSequenceNumber acked_sequence_number,
@@ -101,10 +79,9 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
   virtual QuicBandwidth BandwidthEstimate() const = 0;
 
   // Updates the smoothed RTT based on a new sample.
+  // TODO(ianswett): Now that the RTT is managed by RTTStats, it may be
+  // possible to remove this method.
   virtual void UpdateRtt(QuicTime::Delta rtt_sample) = 0;
-
-  // TODO(satyamshekhar): Monitor MinRtt.
-  virtual QuicTime::Delta SmoothedRtt() const = 0;
 
   // Get the send algorithm specific retransmission delay, called RTO in TCP,
   // Note 1: the caller is responsible for sanity checking this value.

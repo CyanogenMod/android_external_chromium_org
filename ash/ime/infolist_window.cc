@@ -18,9 +18,9 @@
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/label.h"
-#include "ui/views/corewm/window_animations.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/window_animations.h"
 
 namespace ash {
 namespace ime {
@@ -211,9 +211,9 @@ InfolistWindow::~InfolistWindow() {
 
 void InfolistWindow::InitWidget() {
   views::Widget* widget = views::BubbleDelegateView::CreateBubble(this);
-  views::corewm::SetWindowVisibilityAnimationType(
+  wm::SetWindowVisibilityAnimationType(
       widget->GetNativeView(),
-      views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
+      wm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
 
   // BubbleFrameView will be initialized through CreateBubble.
   GetBubbleFrameView()->SetBubbleBorder(

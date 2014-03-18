@@ -46,14 +46,15 @@ void AddTestSurfaceQuad(TestRenderPass* pass,
 
   scoped_ptr<SurfaceDrawQuad> surface_quad = SurfaceDrawQuad::Create();
   gfx::Rect quad_rect = gfx::Rect(surface_size);
-  surface_quad->SetNew(
-      pass->shared_quad_state_list.back(), gfx::Rect(surface_size), surface_id);
+  surface_quad->SetNew(pass->shared_quad_state_list.back(),
+                       gfx::Rect(surface_size),
+                       gfx::Rect(surface_size),
+                       surface_id);
   pass->quad_list.push_back(surface_quad.PassAs<DrawQuad>());
 }
 void AddTestRenderPassQuad(TestRenderPass* pass,
                            RenderPass::Id render_pass_id) {
   MockQuadCuller quad_sink(&pass->quad_list, &pass->shared_quad_state_list);
-  AppendQuadsData data(pass->id);
   gfx::Rect output_rect = gfx::Rect(0, 0, 5, 5);
   SharedQuadState* shared_state =
       quad_sink.UseSharedQuadState(SharedQuadState::Create());
@@ -67,6 +68,7 @@ void AddTestRenderPassQuad(TestRenderPass* pass,
   scoped_ptr<RenderPassDrawQuad> quad = RenderPassDrawQuad::Create();
   quad->SetNew(shared_state,
                output_rect,
+               output_rect,
                render_pass_id,
                false,
                0,
@@ -74,7 +76,7 @@ void AddTestRenderPassQuad(TestRenderPass* pass,
                gfx::RectF(),
                FilterOperations(),
                FilterOperations());
-  quad_sink.Append(quad.PassAs<DrawQuad>(), &data);
+  quad_sink.MaybeAppend(quad.PassAs<DrawQuad>());
 }
 
 void AddQuadInPass(TestRenderPass* pass, Quad desc) {

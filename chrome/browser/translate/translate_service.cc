@@ -6,7 +6,6 @@
 
 #include "base/command_line.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/translate/translate_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/translate/core/browser/translate_download_manager.h"
 
@@ -29,8 +28,6 @@ void TranslateService::Initialize() {
   g_translate_service = new TranslateService;
   // Initialize the allowed state for resource requests.
   g_translate_service->OnResourceRequestsAllowed();
-  // Create the TranslateManager singleton.
-  TranslateManager::GetInstance();
   TranslateDownloadManager* download_manager =
       TranslateDownloadManager::GetInstance();
   download_manager->set_request_context(
@@ -46,9 +43,24 @@ void TranslateService::Shutdown(bool cleanup_pending_fetcher) {
   if (cleanup_pending_fetcher) {
     download_manager->Shutdown();
   } else {
-    // This path is only used by tests.
+    // This path is only used by browser tests.
     download_manager->set_request_context(NULL);
   }
+}
+
+// static
+void TranslateService::InitializeForTesting() {
+  if (!g_translate_service) {
+    TranslateService::Initialize();
+  } else {
+    TranslateDownloadManager::GetInstance()->ResetForTesting();
+    g_translate_service->OnResourceRequestsAllowed();
+  }
+}
+
+// static
+void TranslateService::ShutdownForTesting() {
+  TranslateDownloadManager::GetInstance()->Shutdown();
 }
 
 void TranslateService::OnResourceRequestsAllowed() {

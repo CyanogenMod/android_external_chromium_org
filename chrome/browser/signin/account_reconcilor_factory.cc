@@ -7,7 +7,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 AccountReconcilorFactory::AccountReconcilorFactory()
     : BrowserContextKeyedServiceFactory(
@@ -31,9 +31,12 @@ AccountReconcilorFactory* AccountReconcilorFactory::GetInstance() {
   return Singleton<AccountReconcilorFactory>::get();
 }
 
-BrowserContextKeyedService* AccountReconcilorFactory::BuildServiceInstanceFor(
+KeyedService* AccountReconcilorFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
-  return new AccountReconcilor(static_cast<Profile*>(context));
+  AccountReconcilor* reconcilor =
+      new AccountReconcilor(static_cast<Profile*>(context));
+  reconcilor->Initialize(true /* start_reconcile_if_tokens_available */);
+  return reconcilor;
 }
 
 void AccountReconcilorFactory::RegisterProfilePrefs(

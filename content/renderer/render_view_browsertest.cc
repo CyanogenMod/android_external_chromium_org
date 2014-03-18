@@ -9,6 +9,8 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/windows_version.h"
+#include "content/child/request_extra_data.h"
+#include "content/child/service_worker/service_worker_network_provider.h"
 #include "content/common/frame_messages.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
@@ -2126,7 +2128,8 @@ TEST_F(SuppressErrorPageTest, MAYBE_Suppresses) {
   // An error occurred.
   view()->main_render_frame()->didFailProvisionalLoad(web_frame, error);
   const int kMaxOutputCharacters = 22;
-  EXPECT_EQ("", UTF16ToASCII(web_frame->contentAsText(kMaxOutputCharacters)));
+  EXPECT_EQ("",
+            base::UTF16ToASCII(web_frame->contentAsText(kMaxOutputCharacters)));
 }
 
 #if defined(OS_ANDROID)
@@ -2156,7 +2159,7 @@ TEST_F(SuppressErrorPageTest, MAYBE_DoesNotSuppress) {
   ProcessPendingMessages();
   const int kMaxOutputCharacters = 22;
   EXPECT_EQ("A suffusion of yellow.",
-            UTF16ToASCII(web_frame->contentAsText(kMaxOutputCharacters)));
+            base::UTF16ToASCII(web_frame->contentAsText(kMaxOutputCharacters)));
 }
 
 // Tests if IME API's candidatewindow* events sent from browser are handled
@@ -2219,6 +2222,40 @@ TEST_F(RenderViewImplTest, SendFaviconURLUpdateEvent) {
       ViewHostMsg_UpdateFaviconURL::ID));
 }
 
+// Test progress tracker messages.
+TEST_F(RenderViewImplTest, SendProgressCompletionUpdates) {
+  std::string data_url_string = "data:text/html,<body>placeholder</body>";
+  GURL url(data_url_string);
+  GetMainFrame()->loadRequest(blink::WebURLRequest(url));
+
+  EXPECT_TRUE(render_thread_->sink().GetFirstMessageMatching(
+      FrameHostMsg_DidStartLoading::ID));
+
+  // The load started, we should receive a start notification and a progress
+  // update with the minimum progress.
+  const IPC::Message* message = render_thread_->sink().GetFirstMessageMatching(
+      ViewHostMsg_DidChangeLoadProgress::ID);
+  EXPECT_TRUE(message);
+  Tuple1<double> progress_value;
+  ViewHostMsg_DidChangeLoadProgress::Read(message, &progress_value);
+  EXPECT_EQ(0.1, progress_value.a);
+  render_thread_->sink().ClearMessages();
+
+  ProcessPendingMessages();
+
+  // The data url has loaded, so we should see a progress change to 1.0 (done)
+  // and a stop notification.
+  message = render_thread_->sink().GetFirstMessageMatching(
+      ViewHostMsg_DidChangeLoadProgress::ID);
+  EXPECT_TRUE(message);
+  ViewHostMsg_DidChangeLoadProgress::Read(message, &progress_value);
+  EXPECT_EQ(1.0, progress_value.a);
+
+  EXPECT_TRUE(render_thread_->sink().GetFirstMessageMatching(
+      FrameHostMsg_DidStopLoading::ID));
+  render_thread_->sink().ClearMessages();
+}
+
 TEST_F(RenderViewImplTest, FocusElementCallsFocusedNodeChanged) {
   LoadHTML("<input id='test1' value='hello1'></input>"
            "<input id='test2' value='hello2'></input>");
@@ -2241,13 +2278,55 @@ TEST_F(RenderViewImplTest, FocusElementCallsFocusedNodeChanged) {
   EXPECT_TRUE(params.a);
   render_thread_->sink().ClearMessages();
 
-  view()->webview()->clearFocusedNode();
+  view()->webview()->clearFocusedElement();
   const IPC::Message* msg3 = render_thread_->sink().GetFirstMessageMatching(
         ViewHostMsg_FocusedNodeChanged::ID);
   EXPECT_TRUE(msg3);
   ViewHostMsg_FocusedNodeChanged::Read(msg3, &params);
   EXPECT_FALSE(params.a);
   render_thread_->sink().ClearMessages();
+}
+
+TEST_F(RenderViewImplTest, ServiceWorkerNetworkProviderSetup) {
+  ServiceWorkerNetworkProvider* provider = NULL;
+  RequestExtraData* extra_data = NULL;
+
+  // Make sure each new document has a new provider and
+  // that the main request is tagged with the provider's id.
+  LoadHTML("<b>A Document</b>");
+  ASSERT_TRUE(GetMainFrame()->dataSource());
+  provider = ServiceWorkerNetworkProvider::FromDocumentState(
+      DocumentState::FromDataSource(GetMainFrame()->dataSource()));
+  ASSERT_TRUE(provider);
+  extra_data = static_cast<RequestExtraData*>(
+      GetMainFrame()->dataSource()->request().extraData());
+  ASSERT_TRUE(extra_data);
+  EXPECT_EQ(extra_data->service_worker_provider_id(),
+            provider->provider_id());
+  int provider1_id = provider->provider_id();
+
+  LoadHTML("<b>New Document B Goes Here</b>");
+  ASSERT_TRUE(GetMainFrame()->dataSource());
+  provider = ServiceWorkerNetworkProvider::FromDocumentState(
+      DocumentState::FromDataSource(GetMainFrame()->dataSource()));
+  ASSERT_TRUE(provider);
+  EXPECT_NE(provider1_id, provider->provider_id());
+  extra_data = static_cast<RequestExtraData*>(
+      GetMainFrame()->dataSource()->request().extraData());
+  ASSERT_TRUE(extra_data);
+  EXPECT_EQ(extra_data->service_worker_provider_id(),
+            provider->provider_id());
+
+  // See that subresource requests are also tagged with the provider's id.
+  EXPECT_EQ(frame(), RenderFrameImpl::FromWebFrame(GetMainFrame()));
+  blink::WebURLRequest request(GURL("http://foo.com"));
+  request.setTargetType(blink::WebURLRequest::TargetIsSubresource);
+  blink::WebURLResponse redirect_response;
+  frame()->willSendRequest(GetMainFrame(), 0, request, redirect_response);
+  extra_data = static_cast<RequestExtraData*>(request.extraData());
+  ASSERT_TRUE(extra_data);
+  EXPECT_EQ(extra_data->service_worker_provider_id(),
+            provider->provider_id());
 }
 
 }  // namespace content

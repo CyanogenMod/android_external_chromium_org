@@ -6,14 +6,19 @@
 #define ASH_WM_WINDOW_ANIMATIONS_H_
 
 #include "ash/ash_export.h"
+#include "base/memory/scoped_ptr.h"
+#include "ui/gfx/animation/tween.h"
 #include "ui/gfx/transform.h"
-#include "ui/views/corewm/window_animations.h"
+#include "ui/wm/core/window_animations.h"
 
 namespace aura {
 class Window;
 }
 namespace ui {
 class Layer;
+class LayerTreeOwner;
+}
+namespace views {
 }
 
 // This is only for animations specific to Ash. For window animations shared
@@ -25,7 +30,7 @@ namespace ash {
 enum WindowVisibilityAnimationType {
   // Window scale/rotates down to its launcher icon.
   WINDOW_VISIBILITY_ANIMATION_TYPE_MINIMIZE =
-      views::corewm::WINDOW_VISIBILITY_ANIMATION_MAX,
+      ::wm::WINDOW_VISIBILITY_ANIMATION_MAX,
   // Fade in/out using brightness and grayscale web filters.
   WINDOW_VISIBILITY_ANIMATION_TYPE_BRIGHTNESS_GRAYSCALE
 };
@@ -40,15 +45,14 @@ enum LayerScaleAnimationDirection {
 // Amount of time for the cross fade animation.
 extern const int kCrossFadeDurationMS;
 
-// Animate a cross-fade of |window| from its current bounds to |new_bounds|.
-ASH_EXPORT void CrossFadeToBounds(aura::Window* window,
-                                  const gfx::Rect& new_bounds);
-
-// Returns the duration of the cross-fade animation based on the |old_bounds|
-// and |new_bounds| of the |window|.
-ASH_EXPORT base::TimeDelta GetCrossFadeDuration(aura::Window* window,
-                                                const gfx::Rect& old_bounds,
-                                                const gfx::Rect& new_bounds);
+// Implementation of cross fading. Window is the window being cross faded. It
+// should be at the target bounds. |old_layer_owner| contains the previous layer
+// from |window|.  |tween_type| specifies the tween type of the cross fade
+// animation.
+ASH_EXPORT base::TimeDelta CrossFadeAnimation(
+    aura::Window* window,
+    scoped_ptr<ui::LayerTreeOwner> old_layer_owner,
+    gfx::Tween::Type tween_type);
 
 ASH_EXPORT bool AnimateOnChildWindowVisibilityChanged(aura::Window* window,
                                                       bool visible);

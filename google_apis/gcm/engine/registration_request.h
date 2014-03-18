@@ -40,6 +40,10 @@ class GCM_EXPORT RegistrationRequest : public net::URLFetcherDelegate {
     AUTHENTICATION_FAILED,      // Authentication failed.
     DEVICE_REGISTRATION_ERROR,  // Chrome is not properly registered.
     UNKNOWN_ERROR,              // Unknown error.
+    URL_FETCHING_FAILED,        // URL fetching failed.
+    HTTP_NOT_OK,                // HTTP status was not OK.
+    RESPONSE_PARSING_FAILED,    // Registration response parsing failed.
+    REACHED_MAX_RETRIES,        // Reached maximum number of retries.
     // NOTE: always keep this entry at the end. Add new status types only
     // immediately above this line. Make sure to update the corresponding
     // histogram enum accordingly.
@@ -58,7 +62,6 @@ class GCM_EXPORT RegistrationRequest : public net::URLFetcherDelegate {
     RequestInfo(uint64 android_id,
                 uint64 security_token,
                 const std::string& app_id,
-                const std::string& cert,
                 const std::vector<std::string>& sender_ids);
     ~RequestInfo();
 
@@ -78,6 +81,7 @@ class GCM_EXPORT RegistrationRequest : public net::URLFetcherDelegate {
       const RequestInfo& request_info,
       const net::BackoffEntry::Policy& backoff_policy,
       const RegistrationCallback& callback,
+      int max_retry_count,
       scoped_refptr<net::URLRequestContextGetter> request_context_getter);
   virtual ~RegistrationRequest();
 
@@ -91,12 +95,17 @@ class GCM_EXPORT RegistrationRequest : public net::URLFetcherDelegate {
   // failure, when |update_backoff| is true.
   void RetryWithBackoff(bool update_backoff);
 
+  // Parse the response returned by the URL fetcher into token, and returns the
+  // status.
+  Status ParseResponse(const net::URLFetcher* source, std::string* token);
+
   RegistrationCallback callback_;
   RequestInfo request_info_;
 
   net::BackoffEntry backoff_entry_;
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
   scoped_ptr<net::URLFetcher> url_fetcher_;
+  int retries_left_;
 
   base::WeakPtrFactory<RegistrationRequest> weak_ptr_factory_;
 

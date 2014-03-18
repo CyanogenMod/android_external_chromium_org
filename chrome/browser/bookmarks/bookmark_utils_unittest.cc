@@ -8,6 +8,7 @@
 
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -20,15 +21,52 @@ using std::string;
 namespace bookmark_utils {
 namespace {
 
-class BookmarkUtilsTest : public ::testing::Test {
+class BookmarkUtilsTest : public testing::Test,
+                          public BaseBookmarkModelObserver {
  public:
+  BookmarkUtilsTest()
+      : grouped_changes_beginning_count_(0),
+        grouped_changes_ended_count_(0) {}
+  virtual ~BookmarkUtilsTest() {}
+
   virtual void TearDown() OVERRIDE {
     ui::Clipboard::DestroyClipboardForCurrentThread();
   }
 
+  // Certain user actions require multiple changes to the bookmark model,
+  // however these modifications need to be atomic for the undo framework. The
+  // BaseBookmarkModelObserver is used to inform the boundaries of the user
+  // action. For example, when multiple bookmarks are cut to the clipboard we
+  // expect one call each to GroupedBookmarkChangesBeginning/Ended.
+  void ExpectGroupedChangeCount(int expected_beginning_count,
+                                int expected_ended_count) {
+    // The undo framework is not used under Android.  Thus the group change
+    // events will not be fired and so should not be tested for Android.
+#if !defined(OS_ANDROID)
+    EXPECT_EQ(grouped_changes_beginning_count_, expected_beginning_count);
+    EXPECT_EQ(grouped_changes_ended_count_, expected_ended_count);
+#endif
+  }
+
  private:
+  // BaseBookmarkModelObserver:
+  virtual void BookmarkModelChanged() OVERRIDE {}
+
+  virtual void GroupedBookmarkChangesBeginning(BookmarkModel* model) OVERRIDE {
+    ++grouped_changes_beginning_count_;
+  }
+
+  virtual void GroupedBookmarkChangesEnded(BookmarkModel* model) OVERRIDE {
+    ++grouped_changes_ended_count_;
+  }
+
+  int grouped_changes_beginning_count_;
+  int grouped_changes_ended_count_;
+
   // Clipboard requires a message loop.
-  base::MessageLoopForUI loop;
+  base::MessageLoopForUI loop_;
+
+  DISALLOW_COPY_AND_ASSIGN(BookmarkUtilsTest);
 };
 
 TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesWordPhraseQuery) {
@@ -92,17 +130,15 @@ TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesWordPhraseQuery) {
 TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesUrl) {
   BookmarkModel model(NULL);
   const BookmarkNode* node1 = model.AddURL(model.other_node(),
-                                        0,
-                                        ASCIIToUTF16("Google"),
-                                        GURL("https://www.google.com/"));
+                                           0,
+                                           ASCIIToUTF16("Google"),
+                                           GURL("https://www.google.com/"));
   model.AddURL(model.other_node(),
                0,
                ASCIIToUTF16("Google Calendar"),
                GURL("https://www.google.com/calendar"));
 
-  model.AddFolder(model.other_node(),
-                  0,
-                  ASCIIToUTF16("Folder"));
+  model.AddFolder(model.other_node(), 0, ASCIIToUTF16("Folder"));
 
   std::vector<const BookmarkNode*> nodes;
   QueryFields query;
@@ -129,17 +165,16 @@ TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesUrl) {
 TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesTitle) {
   BookmarkModel model(NULL);
   const BookmarkNode* node1 = model.AddURL(model.other_node(),
-                                        0,
-                                        ASCIIToUTF16("Google"),
-                                        GURL("https://www.google.com/"));
+                                           0,
+                                           ASCIIToUTF16("Google"),
+                                           GURL("https://www.google.com/"));
   model.AddURL(model.other_node(),
                0,
                ASCIIToUTF16("Google Calendar"),
                GURL("https://www.google.com/calendar"));
 
-  const BookmarkNode* folder1 = model.AddFolder(model.other_node(),
-                                           0,
-                                           ASCIIToUTF16("Folder"));
+  const BookmarkNode* folder1 =
+      model.AddFolder(model.other_node(), 0, ASCIIToUTF16("Folder"));
 
   std::vector<const BookmarkNode*> nodes;
   QueryFields query;
@@ -167,17 +202,15 @@ TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesTitle) {
 TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesConjunction) {
   BookmarkModel model(NULL);
   const BookmarkNode* node1 = model.AddURL(model.other_node(),
-                                        0,
-                                        ASCIIToUTF16("Google"),
-                                        GURL("https://www.google.com/"));
+                                           0,
+                                           ASCIIToUTF16("Google"),
+                                           GURL("https://www.google.com/"));
   model.AddURL(model.other_node(),
                0,
                ASCIIToUTF16("Google Calendar"),
                GURL("https://www.google.com/calendar"));
 
-  model.AddFolder(model.other_node(),
-                  0,
-                  ASCIIToUTF16("Folder"));
+  model.AddFolder(model.other_node(), 0, ASCIIToUTF16("Folder"));
 
   std::vector<const BookmarkNode*> nodes;
   QueryFields query;
@@ -242,6 +275,31 @@ TEST_F(BookmarkUtilsTest, CopyPaste) {
   EXPECT_FALSE(CanPasteFromClipboard(model.bookmark_bar_node()));
 }
 
+TEST_F(BookmarkUtilsTest, CutToClipboard) {
+  BookmarkModel model(NULL);
+  model.AddObserver(this);
+
+  base::string16 title(ASCIIToUTF16("foo"));
+  GURL url("http://foo.com");
+  const BookmarkNode* n1 = model.AddURL(model.other_node(), 0, title, url);
+  const BookmarkNode* n2 = model.AddURL(model.other_node(), 1, title, url);
+
+  // Cut the nodes to the clipboard.
+  std::vector<const BookmarkNode*> nodes;
+  nodes.push_back(n1);
+  nodes.push_back(n2);
+  CopyToClipboard(&model, nodes, true);
+
+  // Make sure the nodes were removed.
+  EXPECT_EQ(0, model.other_node()->child_count());
+
+  // Make sure observers were notified the set of changes should be grouped.
+  ExpectGroupedChangeCount(1, 1);
+
+  // And make sure we can paste from the clipboard.
+  EXPECT_TRUE(CanPasteFromClipboard(model.other_node()));
+}
+
 TEST_F(BookmarkUtilsTest, GetParentForNewNodes) {
   BookmarkModel model(NULL);
   // This tests the case where selection contains one item and that item is a
@@ -258,7 +316,8 @@ TEST_F(BookmarkUtilsTest, GetParentForNewNodes) {
 
   // This tests the case where selection contains one item and that item is an
   // url.
-  const BookmarkNode* page1 = model.AddURL(model.bookmark_bar_node(), 0,
+  const BookmarkNode* page1 = model.AddURL(model.bookmark_bar_node(),
+                                           0,
                                            ASCIIToUTF16("Google"),
                                            GURL("http://google.com"));
   nodes.push_back(page1);

@@ -8,34 +8,31 @@
 
 namespace switches {
 
-const char kDisableTestCompositor[] = "disable-test-compositor";
-
-const char kUIDisableDeadlineScheduling[] = "ui-disable-deadline-scheduling";
+// Forces tests to produce pixel output when they normally wouldn't.
+const char kEnablePixelOutputInTests[] = "enable-pixel-output-in-tests";
 
 const char kUIDisableThreadedCompositing[] = "ui-disable-threaded-compositing";
 
-const char kUIEnableDeadlineScheduling[] = "ui-enable-deadline-scheduling";
+const char kUIEnableImplSidePainting[] = "ui-enable-impl-side-painting";
 
-const char kUIEnableSoftwareCompositing[] = "ui-enable-software-compositing";
-
-const char kUIMaxFramesPending[] = "ui-max-frames-pending";
+const char kUIEnableMapImage[] = "ui-enable-map-image";
 
 const char kUIShowPaintRects[] = "ui-show-paint-rects";
 
-bool IsUIDeadlineSchedulingEnabled() {
+}  // namespace switches
+
+namespace ui {
+
+bool IsUIImplSidePaintingEnabled() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
-  // Default to disabled.
-  bool enabled = false;
-
-  // Default to enabled for Aura.
-  enabled = true;
-
-  // Flags override.
-  enabled |= command_line.HasSwitch(switches::kUIEnableDeadlineScheduling);
-  enabled &= !command_line.HasSwitch(switches::kUIDisableDeadlineScheduling);
-
-  return enabled;
+  return command_line.HasSwitch(switches::kUIEnableImplSidePainting);
 }
 
-}  // namespace switches
+bool IsUIMapImageEnabled() {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+  return command_line.HasSwitch(switches::kUIEnableMapImage);
+}
+
+}  // namespace ui

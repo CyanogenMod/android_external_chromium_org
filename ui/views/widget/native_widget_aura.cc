@@ -16,8 +16,8 @@
 #include "ui/aura/client/window_move_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/ui_base_types.h"
@@ -27,7 +27,6 @@
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/screen.h"
 #include "ui/native_theme/native_theme_aura.h"
-#include "ui/views/corewm/window_util.h"
 #include "ui/views/drag_utils.h"
 #include "ui/views/ime/input_method_bridge.h"
 #include "ui/views/views_delegate.h"
@@ -39,6 +38,7 @@
 #include "ui/views/widget/widget_aura_utils.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/window_reorderer.h"
+#include "ui/wm/core/window_util.h"
 #include "ui/wm/public/window_types.h"
 
 #if defined(OS_WIN)
@@ -132,7 +132,7 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
     // Set up the transient child before the window is added. This way the
     // LayoutManager knows the window has a transient parent.
     if (parent && parent->type() != ui::wm::WINDOW_TYPE_UNKNOWN) {
-      corewm::AddTransientChild(parent, window_);
+      wm::AddTransientChild(parent, window_);
       if (!context)
         context = parent;
       parent = NULL;
@@ -315,9 +315,9 @@ void NativeWidgetAura::CenterWindow(const gfx::Size& size) {
 
   // If |window_|'s transient parent's bounds are big enough to fit it, then we
   // center it with respect to the transient parent.
-  if (views::corewm::GetTransientParent(window_)) {
+  if (wm::GetTransientParent(window_)) {
     gfx::Rect transient_parent_rect =
-        views::corewm::GetTransientParent(window_)->GetBoundsInRootWindow();
+        wm::GetTransientParent(window_)->GetBoundsInRootWindow();
     transient_parent_rect.Intersect(work_area);
     if (transient_parent_rect.height() >= size.height() &&
         transient_parent_rect.width() >= size.width())
@@ -523,7 +523,7 @@ void NativeWidgetAura::Deactivate() {
 }
 
 bool NativeWidgetAura::IsActive() const {
-  return window_ && corewm::IsActiveWindow(window_);
+  return window_ && wm::IsActiveWindow(window_);
 }
 
 void NativeWidgetAura::SetAlwaysOnTop(bool on_top) {
@@ -533,6 +533,10 @@ void NativeWidgetAura::SetAlwaysOnTop(bool on_top) {
 
 bool NativeWidgetAura::IsAlwaysOnTop() const {
   return window_ && window_->GetProperty(aura::client::kAlwaysOnTopKey);
+}
+
+void NativeWidgetAura::SetVisibleOnAllWorkspaces(bool always_visible) {
+  // Not implemented on chromeos or for child widgets.
 }
 
 void NativeWidgetAura::Maximize() {
@@ -780,14 +784,14 @@ void NativeWidgetAura::OnDeviceScaleFactorChanged(float device_scale_factor) {
   // Repainting with new scale factor will paint the content at the right scale.
 }
 
-void NativeWidgetAura::OnWindowDestroying() {
+void NativeWidgetAura::OnWindowDestroying(aura::Window* window) {
   delegate_->OnNativeWidgetDestroying();
 
   // If the aura::Window is destroyed, we can no longer show tooltips.
   tooltip_manager_.reset();
 }
 
-void NativeWidgetAura::OnWindowDestroyed() {
+void NativeWidgetAura::OnWindowDestroyed(aura::Window* window) {
   window_ = NULL;
   delegate_->OnNativeWidgetDestroyed();
   if (ownership_ == Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET)
@@ -1079,7 +1083,7 @@ void NativeWidgetPrivate::GetAllChildWidgets(gfx::NativeView native_view,
 void NativeWidgetPrivate::GetAllOwnedWidgets(gfx::NativeView native_view,
                                              Widget::Widgets* owned) {
   const aura::Window::Windows& transient_children =
-      views::corewm::GetTransientChildren(native_view);
+      wm::GetTransientChildren(native_view);
   for (aura::Window::Windows::const_iterator i = transient_children.begin();
        i != transient_children.end(); ++i) {
     NativeWidgetPrivate* native_widget = static_cast<NativeWidgetPrivate*>(

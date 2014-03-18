@@ -293,6 +293,9 @@
             'installer/setup/uninstall.h',
           ],
           'msvs_settings': {
+            'VCCLCompilerTool': {
+              'EnableEnhancedInstructionSet': '4',  # NoExtensions
+            },
             'VCLinkerTool': {
               'SubSystem': '2',     # Set /SUBSYSTEM:WINDOWS
             },
@@ -309,7 +312,7 @@
               'rule_name': 'setup_version',
               'extension': 'version',
               'variables': {
-                'version_py_path': '../chrome/tools/build/version.py',
+                'version_py_path': '<(DEPTH)/build/util/version.py',
                 'template_input_path': 'installer/setup/setup_exe_version.rc.version',
               },
               'inputs': [
@@ -332,38 +335,8 @@
               'process_outputs_as_sources': 1,
               'message': 'Generating version information'
             },
-            {
-              'rule_name': 'server_dlls',
-              'extension': 'release',
-              'variables': {
-                'scan_server_dlls_py' : 'tools/build/win/scan_server_dlls.py',
-                'template_file': 'installer/mini_installer/chrome.release',
-              },
-              'inputs': [
-                '<(scan_server_dlls_py)',
-                '<(template_file)'
-              ],
-              'outputs': [
-                '<(INTERMEDIATE_DIR)/registered_dlls.h',
-              ],
-              'action': [
-                'python',
-                '<(scan_server_dlls_py)',
-                '--output_dir=<(PRODUCT_DIR)',
-                '--input_file=<(RULE_INPUT_PATH)',
-                '--header_output_dir=<(INTERMEDIATE_DIR)',
-                # TODO(sgk):  may just use environment variables
-                #'--distribution=$(CHROMIUM_BUILD)',
-                '--distribution=_google_chrome',
-              ],
-            },
           ],
           'conditions': [
-            ['component == "shared_library"', {
-              'variables': {
-                'win_use_external_manifest': 1,
-              },
-            }],
             # TODO(mark):  <(branding_dir) should be defined by the
             # global condition block at the bottom of the file, but
             # this doesn't work due to the following issue:
@@ -434,33 +407,6 @@
             'installer/setup/setup_util.cc',
             'installer/setup/setup_util_unittest.cc',
             'installer/setup/setup_util_unittest.h',
-          ],
-          'rules': [
-            {
-              'rule_name': 'server_dlls',               # Move to lib
-              'extension': 'release',
-              'variables': {
-                'scan_server_dlls_py' : 'tools/build/win/scan_server_dlls.py',
-                'template_file': 'installer/mini_installer/chrome.release',
-              },
-              'inputs': [
-                '<(scan_server_dlls_py)',
-                '<(template_file)'
-              ],
-              'outputs': [
-                '<(INTERMEDIATE_DIR)/registered_dlls.h',
-              ],
-              'action': [
-                'python',
-                '<(scan_server_dlls_py)',
-                '--output_dir=<(PRODUCT_DIR)',
-                '--input_file=<(RULE_INPUT_PATH)',
-                '--header_output_dir=<(INTERMEDIATE_DIR)',
-                # TODO(sgk):  may just use environment variables
-                #'--distribution=$(CHROMIUM_BUILD)',
-                '--distribution=_google_chrome',
-              ],
-            },
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
@@ -1098,40 +1044,6 @@
                 },
               ],  # actions
             }],  # buildtype=="Official"
-            ['branding=="Chrome" and buildtype=="Official"', {
-              'actions': [
-                {
-                  # copy_keychain_reauthorize.sh explains why this isn't in a
-                  # 'copies' block, but briefly: this is a prebuilt signed
-                  # binary component that relies on a correct signature to
-                  # function properly, and a normal 'copies' block sadly makes
-                  # a trivial modification to the file such that its signature
-                  # is no longer valid.
-                  'action_name': 'Copy keychain_reauthorize',
-                  'variables': {
-                    'keychain_reauthorize_path': 'tools/build/mac/copy_keychain_reauthorize.sh',
-                    'keychain_reauthorize_normal_path': 'installer/mac/internal/keychain_reauthorize/com.google.Chrome',
-                    'keychain_reauthorize_canary_path': 'installer/mac/internal/keychain_reauthorize/com.google.Chrome.canary',
-                    'keychain_reauthorize_output_dir': '<(mac_packaging_dir)/.keychain_reauthorize',
-                  },
-                  'inputs': [
-                    '<(keychain_reauthorize_path)',
-                    '<(keychain_reauthorize_normal_path)',
-                    '<(keychain_reauthorize_canary_path)',
-                  ],
-                  'outputs': [
-                    '<(keychain_reauthorize_output_dir)/com.google.Chrome',
-                    '<(keychain_reauthorize_output_dir)/com.google.Chrome.canary',
-                  ],
-                  'action': [
-                    '<(keychain_reauthorize_path)',
-                    '<(keychain_reauthorize_output_dir)',
-                    '<(keychain_reauthorize_normal_path)',
-                    '<(keychain_reauthorize_canary_path)',
-                  ],
-                },
-              ],  # actions
-            }],  # branding=="Chrome" and buildtype=="Official"
           ],  # conditions
           'copies': [
             {
@@ -1158,8 +1070,8 @@
                 }],  # mac_keystone
                 ['branding=="Chrome" and buildtype=="Official"', {
                   'files': [
-                    'app/theme/google_chrome/app_canary.icns',
-                    'app/theme/google_chrome/document_canary.icns',
+                    'app/theme/google_chrome/mac/app_canary.icns',
+                    'app/theme/google_chrome/mac/document_canary.icns',
                     'installer/mac/internal/chrome_canary_dmg_dsstore',
                     'installer/mac/internal/chrome_canary_dmg_icon.icns',
                     'installer/mac/internal/chrome_dmg_background.png',

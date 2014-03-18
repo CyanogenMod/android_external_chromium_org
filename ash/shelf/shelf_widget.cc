@@ -23,8 +23,8 @@
 #include "ash/wm/workspace_controller.h"
 #include "grit/ash_resources.h"
 #include "ui/aura/client/activation_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
@@ -37,7 +37,7 @@
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
-#include "ui/wm/public/easy_resize_window_targeter.h"
+#include "ui/wm/core/easy_resize_window_targeter.h"
 
 namespace {
 // Size of black border at bottom (or side) of shelf.
@@ -683,8 +683,6 @@ ShelfBackgroundType ShelfWidget::GetBackgroundType() const {
 
 // static
 bool ShelfWidget::ShelfAlignmentAllowed() {
-  if (!ash::switches::ShowShelfAlignmentMenu())
-    return false;
   user::LoginStatus login_status =
       Shell::GetInstance()->system_tray_delegate()->GetUserLoginStatus();
 

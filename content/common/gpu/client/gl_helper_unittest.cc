@@ -23,6 +23,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/time/time.h"
 #include "content/common/gpu/client/gl_helper.h"
+#include "content/common/gpu/client/gl_helper_readback_support.h"
 #include "content/common/gpu/client/gl_helper_scaling.h"
 #include "content/public/test/unittest_test_suite.h"
 #include "content/test/content_test_suite.h"
@@ -31,7 +32,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkTypes.h"
-#include "ui/gl/gl_surface.h"
+#include "ui/gl/gl_implementation.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 #if defined(OS_MACOSX)
@@ -1001,12 +1002,8 @@ class GLHelperTest : public testing::Test {
   bool TestTextureFormatReadback(const gfx::Size& src_size,
                          SkBitmap::Config bitmap_config,
                          bool async) {
-    DCHECK((bitmap_config == SkBitmap::kRGB_565_Config) ||
-           (bitmap_config == SkBitmap::kARGB_8888_Config));
-    bool rgb565_format = (bitmap_config == SkBitmap::kRGB_565_Config);
-    if (rgb565_format && !helper_->CanUseRgb565Readback()) {
-      LOG(INFO) << "RGB565 Format Not supported on this platform";
-      LOG(INFO) << "Skipping RGB565ReadBackTest";
+    if (!helper_->IsReadbackConfigSupported(bitmap_config)) {
+      LOG(INFO) << "Skipping test format not supported" << bitmap_config;
       return true;
     }
     WebGLId src_texture = context_->createTexture();
@@ -1451,6 +1448,11 @@ class GLHelperTest : public testing::Test {
   std::deque<GLHelperScaling::ScaleOp> x_ops_, y_ops_;
 };
 
+class GLHelperPixelTest : public GLHelperTest {
+ private:
+  gfx::DisableNullDrawGLBindings enable_pixel_output_;
+};
+
 TEST_F(GLHelperTest, ARGBSyncReadbackTest) {
   const int kTestSize = 64;
   bool result = TestTextureFormatReadback(gfx::Size(kTestSize,kTestSize),
@@ -1483,7 +1485,7 @@ TEST_F(GLHelperTest, RGB565ASyncReadbackTest) {
   EXPECT_EQ(result, true);
 }
 
-TEST_F(GLHelperTest, YUVReadbackOptTest) {
+TEST_F(GLHelperPixelTest, YUVReadbackOptTest) {
   // This test uses the cb_command tracing events to detect how many
   // scaling passes are actually performed by the YUV readback pipeline.
   StartTracing(TRACE_DISABLED_BY_DEFAULT("cb_command"));
@@ -1519,7 +1521,7 @@ TEST_F(GLHelperTest, YUVReadbackOptTest) {
   }
 }
 
-TEST_F(GLHelperTest, YUVReadbackTest) {
+TEST_F(GLHelperPixelTest, YUVReadbackTest) {
   int sizes[] = {2, 4, 14};
   for (int flip = 0; flip <= 1; flip++) {
     for (int use_mrt = 0; use_mrt <= 1; use_mrt++) {
@@ -1562,7 +1564,7 @@ TEST_F(GLHelperTest, YUVReadbackTest) {
 
 // Per pixel tests, all sizes are small so that we can print
 // out the generated bitmaps.
-TEST_F(GLHelperTest, ScaleTest) {
+TEST_F(GLHelperPixelTest, ScaleTest) {
   int sizes[] = {3, 6, 16};
   for (int flip = 0; flip <= 1; flip++) {
     for (size_t q = 0; q < arraysize(kQualities); q++) {

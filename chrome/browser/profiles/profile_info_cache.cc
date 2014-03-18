@@ -23,6 +23,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
@@ -43,6 +44,7 @@ const char kGAIANameKey[] = "gaia_name";
 const char kGAIAGivenNameKey[] = "gaia_given_name";
 const char kUseGAIANameKey[] = "use_gaia_name";
 const char kUserNameKey[] = "user_name";
+const char kIsUsingDefaultName[] = "is_using_default_name";
 const char kAvatarIconKey[] = "avatar_icon";
 const char kAuthCredentialsKey[] = "local_auth_credentials";
 const char kUseGAIAPictureKey[] = "use_gaia_picture";
@@ -133,9 +135,8 @@ void SaveBitmap(ImageData* data,
     return;
   }
 
-  if (file_util::WriteFile(image_path,
-                           reinterpret_cast<char*>(&(*data)[0]),
-                           data->size()) == -1) {
+  if (base::WriteFile(image_path, reinterpret_cast<char*>(&(*data)[0]),
+                      data->size()) == -1) {
     LOG(ERROR) << "Failed to save image to file.";
     return;
   }
@@ -172,6 +173,29 @@ void DeleteBitmap(const base::FilePath& image_path) {
   base::DeleteFile(image_path, false);
 }
 
+bool IsDefaultName(const base::string16& name) {
+  // Check if it's a "First user" old-style name.
+  if (name == l10n_util::GetStringUTF16(IDS_DEFAULT_PROFILE_NAME))
+    return true;
+
+  // Check if it's one of the old-style profile names.
+  for (size_t i = 0; i < arraysize(kDefaultNames); ++i) {
+    if (name == l10n_util::GetStringUTF16(kDefaultNames[i]))
+      return true;
+  }
+
+  // Check whether it's one of the "Person %d" style names.
+  std::string default_name_format = l10n_util::GetStringFUTF8(
+      IDS_NEW_NUMBERED_PROFILE_NAME, base::string16()) + "%d";
+
+  int generic_profile_number;  // Unused. Just a placeholder for sscanf.
+  int assignments = sscanf(base::UTF16ToUTF8(name).c_str(),
+                           default_name_format.c_str(),
+                           &generic_profile_number);
+  // Unless it matched the format, this is a custom name.
+  return assignments == 1;
+}
+
 }  // namespace
 
 ProfileInfoCache::ProfileInfoCache(PrefService* prefs,
@@ -195,6 +219,7 @@ ProfileInfoCache::ProfileInfoCache(PrefService* prefs,
       info->Remove(kIsManagedKey, NULL);
       info->SetString(kManagedUserId, is_managed ? "DUMMY_ID" : std::string());
     }
+    info->SetBoolean(kIsUsingDefaultName, IsDefaultName(name));
   }
 }
 
@@ -221,6 +246,7 @@ void ProfileInfoCache::AddProfileToCache(const base::FilePath& profile_path,
   info->SetString(kManagedUserId, managed_user_id);
   info->SetBoolean(kIsOmittedFromProfileListKey, !managed_user_id.empty());
   info->SetBoolean(kProfileIsEphemeral, false);
+  info->SetBoolean(kIsUsingDefaultName, IsDefaultName(name));
   cache->SetWithoutPathExpansion(key, info.release());
 
   sorted_keys_.insert(FindPositionForProfile(key, name), key);
@@ -290,11 +316,13 @@ size_t ProfileInfoCache::GetIndexOfProfileWithPath(
 
 base::string16 ProfileInfoCache::GetNameOfProfileAtIndex(size_t index) const {
   base::string16 name;
-  if (IsUsingGAIANameOfProfileAtIndex(index)) {
+  // Unless the user has customized the profile name, we should use the
+  // profile's Gaia given name, if it's available.
+  if (IsUsingGAIANameOfProfileAtIndex(index) &&
+      ProfileIsUsingDefaultNameAtIndex(index)) {
     base::string16 given_name = GetGAIAGivenNameOfProfileAtIndex(index);
     name = given_name.empty() ? GetGAIANameOfProfileAtIndex(index) : given_name;
   }
-
   if (name.empty())
     GetInfoForProfileAtIndex(index)->GetString(kNameKey, &name);
   return name;
@@ -440,6 +468,12 @@ bool ProfileInfoCache::ProfileIsEphemeralAtIndex(size_t index) const {
   return value;
 }
 
+bool ProfileInfoCache::ProfileIsUsingDefaultNameAtIndex(size_t index) const {
+  bool value = false;
+  GetInfoForProfileAtIndex(index)->GetBoolean(kIsUsingDefaultName, &value);
+  return value;
+}
+
 void ProfileInfoCache::OnGAIAPictureLoaded(const base::FilePath& path,
                                            gfx::Image** image) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -512,6 +546,8 @@ void ProfileInfoCache::SetNameOfProfileAtIndex(size_t index,
 
   base::string16 old_display_name = GetNameOfProfileAtIndex(index);
   info->SetString(kNameKey, name);
+  info->SetBoolean(kIsUsingDefaultName, false);
+
   // This takes ownership of |info|.
   SetInfoForProfileAtIndex(index, info.release());
   base::string16 new_display_name = GetNameOfProfileAtIndex(index);
@@ -761,11 +797,26 @@ void ProfileInfoCache::SetProfileIsEphemeralAtIndex(size_t index, bool value) {
   SetInfoForProfileAtIndex(index, info.release());
 }
 
+void ProfileInfoCache::SetProfileIsUsingDefaultNameAtIndex(
+    size_t index, bool value) {
+  if (value == ProfileIsUsingDefaultNameAtIndex(index))
+    return;
+
+  scoped_ptr<base::DictionaryValue> info(
+      GetInfoForProfileAtIndex(index)->DeepCopy());
+  info->SetBoolean(kIsUsingDefaultName, value);
+  // This takes ownership of |info|.
+  SetInfoForProfileAtIndex(index, info.release());
+}
+
 base::string16 ProfileInfoCache::ChooseNameForNewProfile(
     size_t icon_index) const {
   base::string16 name;
   for (int name_index = 1; ; ++name_index) {
-    if (icon_index < kGenericIconCount) {
+    if (switches::IsNewProfileManagement()) {
+      name = l10n_util::GetStringFUTF16Int(IDS_NEW_NUMBERED_PROFILE_NAME,
+                                           name_index);
+    } else if (icon_index < kGenericIconCount) {
       name = l10n_util::GetStringFUTF16Int(IDS_NUMBERED_PROFILE_NAME,
                                            name_index);
     } else {
@@ -817,6 +868,10 @@ bool ProfileInfoCache::ChooseAvatarIconIndexForNewProfile(
     bool allow_generic_icon,
     bool must_be_unique,
     size_t* out_icon_index) const {
+  // Always allow all icons for new profiles if using the
+  // --new-profile-management flag.
+  if (switches::IsNewProfileManagement())
+    allow_generic_icon = true;
   size_t start = allow_generic_icon ? 0 : kGenericIconCount;
   size_t end = GetDefaultAvatarIconCount();
   size_t count = end - start;

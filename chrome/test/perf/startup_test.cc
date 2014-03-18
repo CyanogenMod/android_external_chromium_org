@@ -135,11 +135,11 @@ class StartupTest : public UIPerfTest {
     // Rewrite prefs file.
     std::vector<base::string16> subst;
     subst.push_back(base::WideToUTF16(user_data_dir_w));
-    const std::string prefs_string =
-        UTF16ToASCII(ReplaceStringPlaceholders(format_string, subst, NULL));
-    EXPECT_TRUE(file_util::WriteFile(pref_path, prefs_string.c_str(),
-                                     prefs_string.size()));
-    file_util::EvictFileFromSystemCache(pref_path);
+    const std::string prefs_string = base::UTF16ToASCII(
+        ReplaceStringPlaceholders(format_string, subst, NULL));
+    EXPECT_TRUE(base::WriteFile(pref_path, prefs_string.c_str(),
+                                prefs_string.size()));
+    base::EvictFileFromSystemCache(pref_path);
   }
 
   // Runs a test which loads |tab_count| tabs on startup, either as command line

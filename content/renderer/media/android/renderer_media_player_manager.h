@@ -11,6 +11,7 @@
 
 #include "base/basictypes.h"
 #include "base/time/time.h"
+#include "content/common/media/cdm_messages_enums.h"
 #include "content/common/media/media_player_messages_enums_android.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "media/base/android/media_player_android.h"
@@ -88,19 +89,19 @@ class RendererMediaPlayerManager : public RenderViewObserver {
 #endif  // defined(VIDEO_HOLE)
 
   // Encrypted media related methods.
-  void InitializeCDM(int media_keys_id,
+  void InitializeCdm(int cdm_id,
                      ProxyMediaKeys* media_keys,
-                     const std::vector<uint8>& uuid,
+                     const std::string& key_system,
                      const GURL& frame_url);
-  void CreateSession(int media_keys_id,
+  void CreateSession(int cdm_id,
                      uint32 session_id,
-                     MediaKeysHostMsg_CreateSession_Type type,
+                     CdmHostMsg_CreateSession_ContentType conent_type,
                      const std::vector<uint8>& init_data);
-  void UpdateSession(int media_keys_id,
+  void UpdateSession(int cdm_id,
                      uint32 session_id,
                      const std::vector<uint8>& response);
-  void ReleaseSession(int media_keys_id, uint32 session_id);
-  void CancelAllPendingSessionCreations(int media_keys_id);
+  void ReleaseSession(int cdm_id, uint32 session_id);
+  void DestroyCdm(int cdm_id);
 
   // Registers and unregisters a WebMediaPlayerAndroid object.
   int RegisterMediaPlayer(WebMediaPlayerAndroid* player);
@@ -108,9 +109,9 @@ class RendererMediaPlayerManager : public RenderViewObserver {
 
   // Registers a ProxyMediaKeys object. There must be a WebMediaPlayerAndroid
   // object already registered for this id, and it is unregistered when the
-  // player is unregistered. For now |media_keys_id| is the same as player_id
+  // player is unregistered. For now |cdm_id| is the same as player_id
   // used in other methods.
-  void RegisterMediaKeys(int media_keys_id, ProxyMediaKeys* media_keys);
+  void RegisterMediaKeys(int cdm_id, ProxyMediaKeys* media_keys);
 
   // Releases the media resources managed by this object when a video
   // is playing.
@@ -132,8 +133,8 @@ class RendererMediaPlayerManager : public RenderViewObserver {
   // Gets the pointer to WebMediaPlayerAndroid given the |player_id|.
   WebMediaPlayerAndroid* GetMediaPlayer(int player_id);
 
-  // Gets the pointer to ProxyMediaKeys given the |media_keys_id|.
-  ProxyMediaKeys* GetMediaKeys(int media_keys_id);
+  // Gets the pointer to ProxyMediaKeys given the |cdm_id|.
+  ProxyMediaKeys* GetMediaKeys(int cdm_id);
 
 #if defined(VIDEO_HOLE)
   // Gets the list of media players with video geometry changes.
@@ -162,19 +163,19 @@ class RendererMediaPlayerManager : public RenderViewObserver {
   void OnPlayerPlay(int player_id);
   void OnPlayerPause(int player_id);
   void OnRequestFullscreen(int player_id);
-  void OnSessionCreated(int media_keys_id,
+  void OnSessionCreated(int cdm_id,
                         uint32 session_id,
                         const std::string& web_session_id);
-  void OnSessionMessage(int media_keys_id,
+  void OnSessionMessage(int cdm_id,
                         uint32 session_id,
                         const std::vector<uint8>& message,
                         const GURL& destination_url);
-  void OnSessionReady(int media_keys_id, uint32 session_id);
-  void OnSessionClosed(int media_keys_id, uint32 session_id);
-  void OnSessionError(int media_keys_id,
+  void OnSessionReady(int cdm_id, uint32 session_id);
+  void OnSessionClosed(int cdm_id, uint32 session_id);
+  void OnSessionError(int cdm_id,
                       uint32 session_id,
                       media::MediaKeys::KeyError error_code,
-                      int system_code);
+                      uint32 system_code);
 
   // Info for all available WebMediaPlayerAndroid on a page; kept so that
   // we can enumerate them to send updates about tab focus and visibility.

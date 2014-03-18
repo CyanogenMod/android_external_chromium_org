@@ -159,9 +159,10 @@ class CloudPolicyTest : public InProcessBrowserTest,
 
     CommandLine* command_line = CommandLine::ForCurrentProcess();
     command_line->AppendSwitchASCII(switches::kDeviceManagementUrl, url);
+    command_line->AppendSwitch(switches::kEnablePolicyKeyVerification);
 
     invalidation::InvalidationServiceFactory::GetInstance()->
-        SetBuildOnlyFakeInvalidatorsForTest(true);
+        RegisterTestingFactory(invalidation::FakeInvalidationService::Build);
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
@@ -245,8 +246,8 @@ class CloudPolicyTest : public InProcessBrowserTest,
   }
 
   void SetServerPolicy(const std::string& policy) {
-    int result = file_util::WriteFile(policy_file_path(), policy.data(),
-                                      policy.size());
+    int result = base::WriteFile(policy_file_path(), policy.data(),
+                                 policy.size());
     ASSERT_EQ(static_cast<int>(policy.size()), result);
   }
 

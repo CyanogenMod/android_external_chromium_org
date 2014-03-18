@@ -9,16 +9,19 @@
 
 namespace switches {
 
-COMPOSITOR_EXPORT extern const char kDisableTestCompositor[];
-COMPOSITOR_EXPORT extern const char kUIDisableDeadlineScheduling[];
+COMPOSITOR_EXPORT extern const char kEnablePixelOutputInTests[];
 COMPOSITOR_EXPORT extern const char kUIDisableThreadedCompositing[];
-COMPOSITOR_EXPORT extern const char kUIEnableDeadlineScheduling[];
-COMPOSITOR_EXPORT extern const char kUIEnableSoftwareCompositing[];
-COMPOSITOR_EXPORT extern const char kUIMaxFramesPending[];
+COMPOSITOR_EXPORT extern const char kUIEnableImplSidePainting[];
+COMPOSITOR_EXPORT extern const char kUIEnableMapImage[];
 COMPOSITOR_EXPORT extern const char kUIShowPaintRects[];
 
-COMPOSITOR_EXPORT bool IsUIDeadlineSchedulingEnabled();
-
 }  // namespace switches
+
+namespace ui {
+
+COMPOSITOR_EXPORT bool IsUIImplSidePaintingEnabled();
+COMPOSITOR_EXPORT bool IsUIMapImageEnabled();
+
+}  // namespace ui
 
 #endif  // UI_COMPOSITOR_COMPOSITOR_SWITCHES_H_

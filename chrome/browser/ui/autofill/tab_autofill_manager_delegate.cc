@@ -10,7 +10,6 @@
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
-#include "chrome/browser/password_manager/password_generation_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
 #include "chrome/browser/ui/autofill/autofill_popup_controller_impl.h"
@@ -21,12 +20,16 @@
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/url_constants.h"
-#include "components/autofill/content/browser/autofill_driver_impl.h"
+#include "components/autofill/content/browser/content_autofill_driver.h"
 #include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents_view.h"
 #include "ui/gfx/rect.h"
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/ui/android/autofill/autofill_logger_android.h"
+#endif
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(autofill::TabAutofillManagerDelegate);
 
@@ -148,11 +151,10 @@ void TabAutofillManagerDelegate::HideAutofillPopup() {
 
   // Password generation popups behave in the same fashion and should also
   // be hidden.
-  PasswordGenerationManager* generation_manager =
-      ChromePasswordManagerClient::GetGenerationManagerFromWebContents(
-          web_contents_);
-  if (generation_manager)
-    generation_manager->HidePopup();
+  ChromePasswordManagerClient* password_client =
+      ChromePasswordManagerClient::FromWebContents(web_contents_);
+  if (password_client)
+    password_client->HidePasswordGenerationPopup();
 }
 
 bool TabAutofillManagerDelegate::IsAutocompleteEnabled() {
@@ -163,13 +165,6 @@ bool TabAutofillManagerDelegate::IsAutocompleteEnabled() {
 void TabAutofillManagerDelegate::HideRequestAutocompleteDialog() {
   if (dialog_controller_.get())
     dialog_controller_->Hide();
-}
-
-void TabAutofillManagerDelegate::WasShown() {
-  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
-  if (!host)
-    return;
-  host->Send(new AutofillMsg_PageShown(host->GetRoutingID()));
 }
 
 void TabAutofillManagerDelegate::DidNavigateMainFrame(
@@ -193,6 +188,15 @@ void TabAutofillManagerDelegate::DetectAccountCreationForms(
           web_contents_);
   if (manager)
     manager->DetectAccountCreationForms(forms);
+}
+
+void TabAutofillManagerDelegate::DidFillOrPreviewField(
+    const base::string16& autofilled_value,
+    const base::string16& profile_full_name) {
+#if defined(OS_ANDROID)
+  AutofillLoggerAndroid::DidFillOrPreviewField(
+      autofilled_value, profile_full_name);
+#endif  // defined(OS_ANDROID)
 }
 
 }  // namespace autofill

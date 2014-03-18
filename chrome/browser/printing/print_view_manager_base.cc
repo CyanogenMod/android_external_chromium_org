@@ -163,10 +163,9 @@ void PrintViewManagerBase::OnDidPrintPage(
 
 #if defined(OS_WIN)
   bool big_emf = (params.data_size && params.data_size >= kMetafileMaxSize);
-  const CommandLine* cmdline = CommandLine::ForCurrentProcess();
   int raster_size = std::min(params.page_size.GetArea(),
                              kMaxRasterSizeInPixels);
-  if (big_emf || (cmdline && cmdline->HasSwitch(switches::kPrintRaster))) {
+  if (big_emf) {
     scoped_ptr<NativeMetafile> raster_metafile(
         metafile->RasterizeMetafile(raster_size));
     if (raster_metafile.get()) {
@@ -198,8 +197,7 @@ void PrintViewManagerBase::OnPrintingFailed(int cookie) {
   }
 
 #if defined(ENABLE_FULL_PRINTING)
-  chrome::ShowPrintErrorDialog(
-      web_contents()->GetView()->GetTopLevelNativeWindow());
+  chrome::ShowPrintErrorDialog();
 #endif
 
   ReleasePrinterQuery();

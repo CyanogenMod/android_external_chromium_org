@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_OMNIBOX_OMNIBOX_CURRENT_PAGE_DELEGATE_H_
 
 #include "base/basictypes.h"
+#include "chrome/common/omnibox_focus_state.h"
 #include "ui/base/window_open_disposition.h"
 
 class GURL;
@@ -54,10 +55,12 @@ class OmniboxCurrentPageDelegate {
                                        const AutocompleteMatch& match,
                                        WindowOpenDisposition disposition) = 0;
 
-  // Notifies the SearchTabHelper, if one exists, of relevant changes to the
-  // omnibox state.
-  virtual void NotifySearchTabHelper(bool user_input_in_progress,
-                                     bool cancelling) = 0;
+  // Called to notify clients that the omnibox input state has changed.
+  virtual void OnInputStateChanged() = 0;
+
+  // Called to notify clients that the omnibox focus state has changed.
+  virtual void OnFocusChanged(OmniboxFocusState state,
+                              OmniboxFocusChangeReason reason) = 0;
 
   // Performs prerendering for |match|.
   virtual void DoPrerender(const AutocompleteMatch& match) = 0;

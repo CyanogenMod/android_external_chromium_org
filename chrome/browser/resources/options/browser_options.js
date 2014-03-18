@@ -6,6 +6,7 @@ cr.define('options', function() {
   var OptionsPage = options.OptionsPage;
   var ArrayDataModel = cr.ui.ArrayDataModel;
   var RepeatingButton = cr.ui.RepeatingButton;
+  var HotwordSearchSettingIndicator = options.HotwordSearchSettingIndicator;
 
   //
   // BrowserOptions class
@@ -18,6 +19,16 @@ cr.define('options', function() {
 
   cr.addSingletonGetter(BrowserOptions);
 
+  /**
+   * @param {HTMLElement} section The section to show or hide.
+   * @return {boolean} Whether the section should be shown.
+   * @private
+   */
+  BrowserOptions.shouldShowSection_ = function(section) {
+    // If the section is hidden or hiding, it should be shown.
+    return section.style.height == '' || section.style.height == '0px';
+  };
+
   BrowserOptions.prototype = {
     __proto__: options.OptionsPage.prototype,
 
@@ -27,6 +38,14 @@ cr.define('options', function() {
      * @private
      */
     signedIn_: false,
+
+    /**
+     * Indicates whether signing out is allowed or whether a complete profile
+     * wipe is required to remove the current enterprise account.
+     * @type {boolean}
+     * @private
+     */
+    signoutAllowed_: true,
 
     /**
      * Keeps track of whether |onShowHomeButtonChanged_| has been called. See
@@ -44,6 +63,14 @@ cr.define('options', function() {
      * @private
      */
     initializationComplete_: false,
+
+    /**
+     * When a section is waiting to change its height, this will be a number.
+     * Otherwise it'll be null.
+     * @type {?number}
+     * @private
+     */
+    sectionHeightChangeTimeout_: null,
 
     /** @override */
     initializePage: function() {
@@ -72,7 +99,7 @@ cr.define('options', function() {
           if (focusElement)
             focusElement.focus();
         }
-      }
+      };
 
       $('advanced-settings').addEventListener('webkitTransitionEnd',
           this.updateAdvancedSettingsExpander_.bind(this));
@@ -87,12 +114,16 @@ cr.define('options', function() {
       this.updateSyncState_(loadTimeData.getValue('syncData'));
 
       $('start-stop-sync').onclick = function(event) {
-        if (self.signedIn_)
-          SyncSetupOverlay.showStopSyncingUI();
-        else if (cr.isChromeOS)
+        if (self.signedIn_) {
+          if (self.signoutAllowed_)
+            SyncSetupOverlay.showStopSyncingUI();
+          else
+            ManageProfileOverlay.showDisconnectManagedProfileDialog();
+        } else if (cr.isChromeOS) {
           SyncSetupOverlay.showSetupUI();
-        else
+        } else {
           SyncSetupOverlay.startSignIn();
+        }
       };
       $('customize-sync').onclick = function(event) {
         SyncSetupOverlay.showSetupUI();
@@ -140,6 +171,9 @@ cr.define('options', function() {
       };
 
       chrome.send('requestHotwordAvailable');
+      var hotwordIndicator = $('hotword-search-setting-indicator');
+      HotwordSearchSettingIndicator.decorate(hotwordIndicator);
+      hotwordIndicator.disabledOnErrorSection = $('hotword-search-enable');
 
       if ($('set-wallpaper')) {
         $('set-wallpaper').onclick = function(event) {
@@ -190,8 +224,8 @@ cr.define('options', function() {
 
       // Users section.
       if (loadTimeData.valueExists('profilesInfo')) {
-        $('sync-users-section').hidden = false;
         $('profiles-section').hidden = false;
+        this.maybeShowUserSection_();
 
         var profilesList = $('profiles-list');
         options.browser_options.ProfileList.decorate(profilesList);
@@ -247,10 +281,6 @@ cr.define('options', function() {
             '#enable-screen-lock + span > .controlled-setting-indicator').
             setAttribute('textshared',
                          loadTimeData.getString('screenLockShared'));
-
-        $('hotword-app-list').hidden =
-            !loadTimeData.getBoolean('shouldShowAppListHotword');
-
       } else {
         $('import-data').onclick = function(event) {
           ImportDataOverlay.show();
@@ -572,6 +602,35 @@ cr.define('options', function() {
     },
 
     /**
+     * Animatedly changes height |from| a px number |to| a px number.
+     * @param {HTMLElement} section The section to animate.
+     * @param {HTMLElement} container The container of |section|.
+     * @param {boolean} showing Whether to go from 0 -> container height or
+     *     container height -> 0.
+     * @private
+     */
+    animatedSectionHeightChange_: function(section, container, showing) {
+      // If the section is already animating, dispatch a synthetic transition
+      // end event as the upcoming code will cancel the current one.
+      if (section.classList.contains('sliding'))
+        cr.dispatchSimpleEvent(section, 'webkitTransitionEnd');
+
+      this.addTransitionEndListener_(section);
+
+      section.hidden = false;
+      section.style.height = (showing ? 0 : container.offsetHeight) + 'px';
+      section.classList.add('sliding');
+
+      if (this.sectionHeightChangeTimeout_ !== null)
+        clearTimeout(this.sectionHeightChangeTimeout_);
+
+      this.sectionHeightChangeTimeout_ = setTimeout(function() {
+        section.style.height = (showing ? container.offsetHeight : 0) + 'px';
+        this.sectionHeightChangeTimeout_ = null;
+      });
+    },
+
+    /**
      * Shows the given section.
      * @param {HTMLElement} section The section to be shown.
      * @param {HTMLElement} container The container for the section. Must be
@@ -580,30 +639,15 @@ cr.define('options', function() {
      * @private
      */
     showSection_: function(section, container, animate) {
-      if (animate)
-        this.addTransitionEndListener_(section);
-
-      // Unhide
-      section.hidden = false;
-      section.style.height = '0px';
-
-      var expander = function() {
-        // Reveal the section using a WebKit transition if animating.
-        if (animate) {
-          section.classList.add('sliding');
-          section.style.height = container.offsetHeight + 'px';
-        } else {
-          section.style.height = 'auto';
-        }
-      };
-
       // Delay starting the transition if animating so that hidden change will
       // be processed.
-      if (animate)
-        setTimeout(expander, 0);
-      else
-        expander();
-      },
+      if (animate) {
+        this.animatedSectionHeightChange_(section, container, true);
+      } else {
+        section.hidden = false;
+        section.style.height = 'auto';
+      }
+    },
 
     /**
      * Shows the given section, with animation.
@@ -613,33 +657,29 @@ cr.define('options', function() {
      * @private
      */
     showSectionWithAnimation_: function(section, container) {
-      this.showSection_(section, container, /*animate */ true);
+      this.showSection_(section, container, /* animate */ true);
     },
 
     /**
-     * See showSectionWithAnimation_.
+     * Hides the given |section| with animation.
+     * @param {HTMLElement} section The section to be hidden.
+     * @param {HTMLElement} container The container for the section. Must be
+     *     inside of |section|.
+     * @private
      */
     hideSectionWithAnimation_: function(section, container) {
-      this.addTransitionEndListener_(section);
-
-      // Before we start hiding the section, we need to set
-      // the height to a pixel value.
-      section.style.height = container.offsetHeight + 'px';
-
-      // Delay starting the transition so that the height change will be
-      // processed.
-      setTimeout(function() {
-        // Hide the section using a WebKit transition.
-        section.classList.add('sliding');
-        section.style.height = '0px';
-      }, 0);
+      this.animatedSectionHeightChange_(section, container, false);
     },
 
     /**
-     * See showSectionWithAnimation_.
+     * Toggles the visibility of |section| in an animated way.
+     * @param {HTMLElement} section The section to be toggled.
+     * @param {HTMLElement} container The container for the section. Must be
+     *     inside of |section|.
+     * @private
      */
     toggleSectionWithAnimation_: function(section, container) {
-      if (section.style.height == '')
+      if (BrowserOptions.shouldShowSection_(section))
         this.showSectionWithAnimation_(section, container);
       else
         this.hideSectionWithAnimation_(section, container);
@@ -709,16 +749,22 @@ cr.define('options', function() {
 
     /**
      * Called after an animation transition has ended.
+     * @param {Event} The webkitTransitionEnd event. NOTE: May be synthetic.
      * @private
      */
     onTransitionEnd_: function(event) {
-      if (event.propertyName != 'height')
+      if (event.propertyName && event.propertyName != 'height') {
+        // If not a synthetic event or a real transition we care about, bail.
         return;
+      }
 
       var section = event.target;
-
-      // Disable WebKit transitions.
       section.classList.remove('sliding');
+
+      if (!event.propertyName) {
+        // Only real transitions past this point.
+        return;
+      }
 
       if (section.style.height == '0px') {
         // Hide the content so it can't get tab focus.
@@ -731,9 +777,10 @@ cr.define('options', function() {
       }
     },
 
+    /** @private */
     updateAdvancedSettingsExpander_: function() {
       var expander = $('advanced-settings-expander');
-      if ($('advanced-settings').style.height == '0px')
+      if (BrowserOptions.shouldShowSection_($('advanced-settings')))
         expander.textContent = loadTimeData.getString('showAdvancedSettings');
       else
         expander.textContent = loadTimeData.getString('hideAdvancedSettings');
@@ -749,10 +796,12 @@ cr.define('options', function() {
       if (!syncData.signinAllowed &&
           (!syncData.supervisedUser || !cr.isChromeOS)) {
         $('sync-section').hidden = true;
+        this.maybeShowUserSection_();
         return;
       }
 
       $('sync-section').hidden = false;
+      this.maybeShowUserSection_();
 
       var subSection = $('sync-section').firstChild;
       while (subSection) {
@@ -801,8 +850,8 @@ cr.define('options', function() {
       // Disable the "sign in" button if we're currently signing in, or if we're
       // already signed in and signout is not allowed.
       var signInButton = $('start-stop-sync');
-      signInButton.disabled = syncData.setupInProgress ||
-                              !syncData.signoutAllowed;
+      signInButton.disabled = syncData.setupInProgress;
+      this.signoutAllowed_ = syncData.signoutAllowed;
       if (!syncData.signoutAllowed)
         $('start-stop-sync-indicator').setAttribute('controlled-by', 'policy');
       else
@@ -864,16 +913,12 @@ cr.define('options', function() {
     /**
      * Update the UI depending on whether the current profile manages any
      * supervised users.
-     * @param {boolean} value True if the current profile manages any supervised
+     * @param {boolean} show True if the current profile manages any supervised
      *     users.
      */
-    updateManagesSupervisedUsers_: function(value) {
-      if (value) {
-        $('sync-users-section').hidden = false;
-        $('profiles-supervised-dashboard-tip').hidden = false;
-      } else {
-        $('profiles-supervised-dashboard-tip').hidden = true;
-      }
+    updateManagesSupervisedUsers_: function(show) {
+      $('profiles-supervised-dashboard-tip').hidden = !show;
+      this.maybeShowUserSection_();
     },
 
     /**
@@ -909,8 +954,9 @@ cr.define('options', function() {
      * Activates the Hotword section from the System settings page.
      * @private
      */
-    showHotwordSection_: function() {
+    showHotwordSection_: function(opt_error) {
       $('hotword-search').hidden = false;
+      $('hotword-search-setting-indicator').errorText = opt_error;
     },
 
     /**
@@ -1258,6 +1304,20 @@ cr.define('options', function() {
       }
     },
 
+    setWallpaperManaged_: function(managed) {
+      var button = $('set-wallpaper');
+      button.disabled = !!managed;
+
+      // Create a synthetic pref change event decorated as
+      // CoreOptionsHandler::CreateValueForPref() does.
+      var event = new Event('account-picture');
+      if (managed)
+        event.value = { controlledBy: 'policy' };
+      else
+        event.value = {};
+      $('wallpaper-indicator').handlePrefChange(event);
+    },
+
     /**
      * Handle the 'add device' button click.
      * @private
@@ -1576,6 +1636,18 @@ cr.define('options', function() {
      */
     showImagerPickerOverlay_: function() {
       OptionsPage.navigateToPage('changePicture');
+    },
+
+    /**
+     * Shows (or not) the "User" section of the settings page based on whether
+     * any of the sub-sections are present (or not).
+     * @private
+     */
+    maybeShowUserSection_: function() {
+      $('sync-users-section').hidden =
+          $('profiles-section').hidden &&
+          $('sync-section').hidden &&
+          $('profiles-supervised-dashboard-tip').hidden;
     }
   };
 
@@ -1592,6 +1664,7 @@ cr.define('options', function() {
     'removeCloudPrintConnectorSection',
     'scrollToSection',
     'setAccountPictureManaged',
+    'setWallpaperManaged',
     'setAutoOpenFileTypesDisplayed',
     'setBluetoothState',
     'setFontSize',

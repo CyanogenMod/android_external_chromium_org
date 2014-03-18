@@ -50,20 +50,36 @@ void RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterListPref(prefs::kProfilesLastActive);
 }
 
-base::string16 GetActiveProfileDisplayName(Browser* browser) {
-  base::string16 profile_name;
-  Profile* profile = browser->profile();
+base::string16 GetAvatarNameForProfile(Profile* profile) {
+  base::string16 display_name;
 
   if (profile->IsGuestSession()) {
-    profile_name = l10n_util::GetStringUTF16(IDS_GUEST_PROFILE_NAME);
+    display_name = l10n_util::GetStringUTF16(IDS_GUEST_PROFILE_NAME);
   } else {
     ProfileInfoCache& cache =
         g_browser_process->profile_manager()->GetProfileInfoCache();
     size_t index = cache.GetIndexOfProfileWithPath(profile->GetPath());
-    if (index != std::string::npos)
-      profile_name = cache.GetNameOfProfileAtIndex(index);
+
+    if (index == std::string::npos)
+      return l10n_util::GetStringUTF16(IDS_SINGLE_PROFILE_DISPLAY_NAME);
+
+    // Using the --new-profile-management flag, there's a couple of rules
+    // about what the avatar button displays. If there's a single, local
+    // profile, with a default name (i.e. of the form Person %d), it should
+    // display IDS_SINGLE_PROFILE_DISPLAY_NAME. If this is a signed in profile,
+    // or the user has edited the profile name, or there are multiple profiles,
+    // it will return the actual name  of the profile.
+    base::string16 profile_name = cache.GetNameOfProfileAtIndex(index);
+    bool has_default_name = cache.ProfileIsUsingDefaultNameAtIndex(index);
+
+    if (cache.GetNumberOfProfiles() == 1 && has_default_name &&
+        cache.GetUserNameOfProfileAtIndex(index).empty()) {
+      display_name = l10n_util::GetStringUTF16(IDS_SINGLE_PROFILE_DISPLAY_NAME);
+    } else {
+      display_name = profile_name;
+    }
   }
-  return profile_name;
+  return display_name;
 }
 
 void UpdateProfileName(Profile* profile,

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "ash/shell.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
@@ -165,8 +165,8 @@ void AlternateAppListButton::OnPaint(gfx::Canvas* canvas) {
 }
 
 void AlternateAppListButton::GetAccessibleState(
-    ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+    ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_BUTTON;
   state->name = host_->GetAccessibleName(this);
 }
 

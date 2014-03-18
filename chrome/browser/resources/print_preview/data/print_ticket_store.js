@@ -318,14 +318,14 @@ cr.define('print_preview', function() {
      */
     isTicketValid: function() {
       return this.isTicketValidForPreview() &&
+          (!this.copies_.isCapabilityAvailable() || this.copies_.isValid()) &&
           (!this.pageRange_.isCapabilityAvailable() ||
               this.pageRange_.isValid());
     },
 
     /** @return {boolean} Whether the ticket is valid for preview generation. */
     isTicketValidForPreview: function() {
-      return (!this.copies.isCapabilityAvailable() || this.copies.isValid()) &&
-          (!this.marginsType_.isCapabilityAvailable() ||
+      return (!this.marginsType_.isCapabilityAvailable() ||
               !this.marginsType_.isValueEqual(
                   print_preview.ticket_items.MarginsType.Value.CUSTOM) ||
               this.customMargins_.isValid());
@@ -349,7 +349,7 @@ cr.define('print_preview', function() {
         print: {}
       };
       if (this.collate.isCapabilityAvailable() && this.collate.isUserEdited()) {
-        cjt.print.collate = {collate: this.collate.getValue() == 'true'};
+        cjt.print.collate = {collate: this.collate.getValue()};
       }
       if (this.color.isCapabilityAvailable() && this.color.isUserEdited()) {
         var colorType = this.color.getValue() ?

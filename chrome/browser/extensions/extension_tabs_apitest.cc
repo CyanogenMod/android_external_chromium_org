@@ -15,8 +15,8 @@
 #include "net/dns/mock_host_resolver.h"
 
 #if defined(OS_WIN)
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 // Window resizes are not completed by the time the callback happens,
@@ -226,8 +226,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest,
 
 #if defined(OS_WIN)
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, FocusWindowDoesNotUnmaximize) {
-  HWND window = browser()->window()->GetNativeWindow()->
-      GetDispatcher()->host()->GetAcceleratedWidget();
+  HWND window =
+      browser()->window()->GetNativeWindow()->GetHost()->GetAcceleratedWidget();
   ::SendMessage(window, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
   ASSERT_TRUE(RunExtensionTest("window_update/focus")) << message_;
   ASSERT_TRUE(::IsZoomed(window));

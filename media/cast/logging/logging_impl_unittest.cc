@@ -11,7 +11,6 @@
 #include "media/cast/logging/logging_defines.h"
 #include "media/cast/logging/logging_impl.h"
 #include "media/cast/logging/simple_event_subscriber.h"
-#include "media/cast/test/fake_single_thread_task_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace media {
@@ -34,8 +33,7 @@ class LoggingImplTest : public ::testing::Test {
 
     testing_clock_.Advance(
         base::TimeDelta::FromMilliseconds(kStartMillisecond));
-    task_runner_ = new test::FakeSingleThreadTaskRunner(&testing_clock_);
-    logging_.reset(new LoggingImpl(task_runner_, config_));
+    logging_.reset(new LoggingImpl(config_));
     logging_->AddRawEventSubscriber(&event_subscriber_);
   }
 
@@ -44,7 +42,6 @@ class LoggingImplTest : public ::testing::Test {
   }
 
   CastLoggingConfig config_;
-  scoped_refptr<test::FakeSingleThreadTaskRunner> task_runner_;
   scoped_ptr<LoggingImpl> logging_;
   base::SimpleTestTickClock testing_clock_;
   SimpleEventSubscriber event_subscriber_;
@@ -77,7 +74,7 @@ TEST_F(LoggingImplTest, BasicFrameLogging) {
   // which equals to number of frames in this case.
   EXPECT_EQ(frame_id, frame_events.size());
   // Verify stats.
-  FrameStatsMap frame_stats = logging_->GetFrameStatsData();
+  FrameStatsMap frame_stats = logging_->GetFrameStatsData(AUDIO_EVENT);
   // Size of stats equals the number of events.
   EXPECT_EQ(1u, frame_stats.size());
   FrameStatsMap::const_iterator it = frame_stats.find(kAudioFrameCaptured);
@@ -119,7 +116,7 @@ TEST_F(LoggingImplTest, FrameLoggingWithSize) {
   // equals to number of frames in this case.
   EXPECT_EQ(frame_id, frame_events.size());
   // Verify stats.
-  FrameStatsMap frame_stats = logging_->GetFrameStatsData();
+  FrameStatsMap frame_stats = logging_->GetFrameStatsData(AUDIO_EVENT);
   // Size of stats equals the number of events.
   EXPECT_EQ(1u, frame_stats.size());
   FrameStatsMap::const_iterator it = frame_stats.find(kAudioFrameCaptured);
@@ -155,7 +152,7 @@ TEST_F(LoggingImplTest, FrameLoggingWithDelay) {
   // Size of vector should be equal to the number of frames logged.
   EXPECT_EQ(frame_id, frame_events.size());
   // Verify stats.
-  FrameStatsMap frame_stats = logging_->GetFrameStatsData();
+  FrameStatsMap frame_stats = logging_->GetFrameStatsData(AUDIO_EVENT);
   // Size of stats equals the number of events.
   EXPECT_EQ(1u, frame_stats.size());
   FrameStatsMap::const_iterator it = frame_stats.find(kAudioFrameCaptured);
@@ -208,15 +205,25 @@ TEST_F(LoggingImplTest, PacketLogging) {
   const int kBaseSize = 2500;
   const int kSizeInterval = 100;
   base::TimeTicks start_time = testing_clock_.NowTicks();
+  base::TimeTicks latest_time;
   base::TimeDelta time_interval = testing_clock_.NowTicks() - start_time;
-  uint32 rtp_timestamp = 0;
-  uint32 frame_id = 0;
+  RtpTimestamp rtp_timestamp = 0;
+  int frame_id = 0;
+  int num_packets = 0;
+  int sum_size = 0u;
   do {
     for (int i = 0; i < kNumPacketsPerFrame; ++i) {
       int size = kBaseSize + base::RandInt(-kSizeInterval, kSizeInterval);
-      logging_->InsertPacketEvent(testing_clock_.NowTicks(), kPacketSentToPacer,
-                                  rtp_timestamp, frame_id, i,
-                                  kNumPacketsPerFrame, size);
+      sum_size += size;
+      latest_time = testing_clock_.NowTicks();
+      ++num_packets;
+      logging_->InsertPacketEvent(latest_time,
+                                  kDuplicateVideoPacketReceived,
+                                  rtp_timestamp,
+                                  frame_id,
+                                  i,
+                                  kNumPacketsPerFrame,
+                                  size);
     }
     testing_clock_.Advance(base::TimeDelta::FromMilliseconds(kFrameIntervalMs));
     rtp_timestamp += kFrameIntervalMs * 90;
@@ -227,13 +234,18 @@ TEST_F(LoggingImplTest, PacketLogging) {
   std::vector<PacketEvent> packet_events;
   event_subscriber_.GetPacketEventsAndReset(&packet_events);
   // Size of vector should be equal to the number of packets logged.
-  EXPECT_EQ(frame_id * kNumPacketsPerFrame, packet_events.size());
+  EXPECT_EQ(num_packets, static_cast<int>(packet_events.size()));
   // Verify stats.
-  PacketStatsMap stats_map = logging_->GetPacketStatsData();
-  // Size of stats equals the number of events.
+  PacketStatsMap stats_map = logging_->GetPacketStatsData(VIDEO_EVENT);
+  // Size of stats equals the number of event types.
   EXPECT_EQ(1u, stats_map.size());
-  PacketStatsMap::const_iterator it = stats_map.find(kPacketSentToPacer);
-  EXPECT_TRUE(it != stats_map.end());
+  PacketStatsMap::const_iterator it =
+      stats_map.find(kDuplicateVideoPacketReceived);
+  ASSERT_NE(stats_map.end(), it);
+  EXPECT_EQ(start_time, it->second.first_event_time);
+  EXPECT_EQ(latest_time, it->second.last_event_time);
+  EXPECT_EQ(num_packets, it->second.event_counter);
+  EXPECT_EQ(sum_size, static_cast<int>(it->second.sum_size));
 }
 
 TEST_F(LoggingImplTest, GenericLogging) {

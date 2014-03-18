@@ -89,24 +89,22 @@ class LayerWithRealCompositorTest : public testing::Test {
 
   // Overridden from testing::Test:
   virtual void SetUp() OVERRIDE {
-    bool allow_test_contexts = false;
-    InitializeContextFactoryForTests(allow_test_contexts);
+    bool enable_pixel_output = true;
+    InitializeContextFactoryForTests(enable_pixel_output);
     Compositor::Initialize();
 
     const gfx::Rect host_bounds(10, 10, 500, 500);
-    window_.reset(TestCompositorHost::Create(host_bounds));
-    window_->Show();
+    compositor_host_.reset(TestCompositorHost::Create(host_bounds));
+    compositor_host_->Show();
   }
 
   virtual void TearDown() OVERRIDE {
-    window_.reset();
+    compositor_host_.reset();
     TerminateContextFactoryForTests();
     Compositor::Terminate();
   }
 
-  Compositor* GetCompositor() {
-    return window_->GetCompositor();
-  }
+  Compositor* GetCompositor() { return compositor_host_->GetCompositor(); }
 
   Layer* CreateLayer(LayerType type) {
     return new Layer(type);
@@ -203,7 +201,7 @@ class LayerWithRealCompositorTest : public testing::Test {
     bool completed_;
   };
 
-  scoped_ptr<TestCompositorHost> window_;
+  scoped_ptr<TestCompositorHost> compositor_host_;
 
   // The root directory for test files.
   base::FilePath test_data_directory_;
@@ -234,8 +232,8 @@ class TestLayerDelegate : public LayerDelegate {
 
   // Overridden from LayerDelegate:
   virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE {
-    gfx::ImageSkiaRep contents = canvas->ExtractImageRep();
-    paint_size_ = gfx::Size(contents.pixel_width(), contents.pixel_height());
+    SkISize size = canvas->sk_canvas()->getBaseLayerSize();
+    paint_size_ = gfx::Size(size.width(), size.height());
     canvas->FillRect(gfx::Rect(paint_size_), colors_[color_index_]);
     color_index_ = (color_index_ + 1) % static_cast<int>(colors_.size());
     const SkMatrix& matrix = canvas->sk_canvas()->getTotalMatrix();
@@ -400,20 +398,22 @@ class LayerWithDelegateTest : public testing::Test {
 
   // Overridden from testing::Test:
   virtual void SetUp() OVERRIDE {
-    bool allow_test_contexts = true;
-    InitializeContextFactoryForTests(allow_test_contexts);
+    bool enable_pixel_output = false;
+    InitializeContextFactoryForTests(enable_pixel_output);
     Compositor::Initialize();
-    compositor_.reset(new Compositor(gfx::kNullAcceleratedWidget));
-    compositor_->SetScaleAndSize(1.0f, gfx::Size(1000, 1000));
+
+    const gfx::Rect host_bounds(1000, 1000);
+    compositor_host_.reset(TestCompositorHost::Create(host_bounds));
+    compositor_host_->Show();
   }
 
   virtual void TearDown() OVERRIDE {
-    compositor_.reset();
+    compositor_host_.reset();
     TerminateContextFactoryForTests();
     Compositor::Terminate();
   }
 
-  Compositor* compositor() { return compositor_.get(); }
+  Compositor* compositor() { return compositor_host_->GetCompositor(); }
 
   virtual Layer* CreateLayer(LayerType type) {
     return new Layer(type);
@@ -457,7 +457,7 @@ class LayerWithDelegateTest : public testing::Test {
   }
 
  private:
-  scoped_ptr<Compositor> compositor_;
+  scoped_ptr<TestCompositorHost> compositor_host_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerWithDelegateTest);
 };

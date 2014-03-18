@@ -89,7 +89,7 @@ class RemoteToLocalSyncerTest : public testing::Test,
                                       database_dir_.path(),
                                       in_memory_env_.get());
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    initializer.Run(CreateResultReceiver(&status));
+    initializer.RunSequential(CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     EXPECT_EQ(SYNC_STATUS_OK, status);
     metadata_database_ = initializer.PassMetadataDatabase();
@@ -172,7 +172,7 @@ class RemoteToLocalSyncerTest : public testing::Test,
   SyncStatusCode RunSyncer() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     scoped_ptr<RemoteToLocalSyncer> syncer(new RemoteToLocalSyncer(this));
-    syncer->Run(CreateResultReceiver(&status));
+    syncer->RunSequential(CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     return status;
   }
@@ -186,7 +186,7 @@ class RemoteToLocalSyncerTest : public testing::Test,
   SyncStatusCode ListChanges() {
     ListChangesTask list_changes(this);
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    list_changes.Run(CreateResultReceiver(&status));
+    list_changes.RunSequential(CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     return status;
   }
@@ -248,8 +248,7 @@ TEST_F(RemoteToLocalSyncerTest, AddNewFile) {
 
   VerifyConsistency();
 
-  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->HasDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, DeleteFile) {
@@ -286,8 +285,7 @@ TEST_F(RemoteToLocalSyncerTest, DeleteFile) {
   RunSyncerUntilIdle();
   VerifyConsistency();
 
-  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->HasDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, DeleteNestedFiles) {
@@ -329,8 +327,7 @@ TEST_F(RemoteToLocalSyncerTest, DeleteNestedFiles) {
   RunSyncerUntilIdle();
   VerifyConsistency();
 
-  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->HasDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFolder) {
@@ -351,7 +348,7 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFolder) {
 
   // Tracker for the remote file should be lowered.
   EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_TRUE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_TRUE(GetMetadataDatabase()->HasLowPriorityDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFolderOnFile) {
@@ -376,8 +373,7 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFolderOnFile) {
   RunSyncerUntilIdle();
   VerifyConsistency();
 
-  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->HasDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFolderOnFolder) {
@@ -396,8 +392,7 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFolderOnFolder) {
   RunSyncerUntilIdle();
   VerifyConsistency();
 
-  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->HasDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFile) {
@@ -418,7 +413,7 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFile) {
 
   // Tracker for the remote file should be lowered.
   EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_TRUE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_TRUE(GetMetadataDatabase()->HasLowPriorityDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateNestedFolderOnFile) {

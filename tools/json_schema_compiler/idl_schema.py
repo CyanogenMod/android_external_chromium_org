@@ -146,7 +146,9 @@ class Dictionary(object):
     result = {'id': self.node.GetName(),
               'properties': properties,
               'type': 'object'}
-    if self.node.GetProperty('inline_doc'):
+    if self.node.GetProperty('nodoc'):
+      result['nodoc'] = True
+    elif self.node.GetProperty('inline_doc'):
       result['inline_doc'] = True
     elif self.node.GetProperty('noinline_doc'):
       result['noinline_doc'] = True
@@ -216,7 +218,7 @@ class Typeref(object):
   function parameter, converts into a Python dictionary that the JSON schema
   compiler expects to see.
   '''
-  def __init__(self, typeref, parent, additional_properties=OrderedDict()):
+  def __init__(self, typeref, parent, additional_properties):
     self.typeref = typeref
     self.parent = parent
     self.additional_properties = additional_properties
@@ -225,7 +227,7 @@ class Typeref(object):
     properties = self.additional_properties
     result = properties
 
-    if self.parent.GetProperty('OPTIONAL'):
+    if self.parent.GetPropertyLocal('OPTIONAL'):
       properties['optional'] = True
 
     # The IDL parser denotes array types by adding a child 'Array' node onto
@@ -264,6 +266,13 @@ class Typeref(object):
       if 'additionalProperties' not in properties:
         properties['additionalProperties'] = OrderedDict()
       properties['additionalProperties']['type'] = 'any'
+    elif self.parent.GetPropertyLocal('Union'):
+      choices = []
+      properties['choices'] = [Typeref(node.GetProperty('TYPEREF'),
+                                       node,
+                                       OrderedDict()).process(callbacks)
+                               for node in self.parent.GetChildren()
+                               if node.cls == 'Option']
     elif self.typeref is None:
       properties['type'] = 'function'
     else:

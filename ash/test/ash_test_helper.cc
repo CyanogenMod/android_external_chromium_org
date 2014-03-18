@@ -21,8 +21,8 @@
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/message_center/message_center.h"
-#include "ui/views/corewm/capture_controller.h"
-#include "ui/views/corewm/wm_state.h"
+#include "ui/wm/core/capture_controller.h"
+#include "ui/wm/core/wm_state.h"
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/audio/cras_audio_handler.h"
@@ -52,18 +52,19 @@ AshTestHelper::~AshTestHelper() {
 }
 
 void AshTestHelper::SetUp(bool start_session) {
-  wm_state_.reset(new views::corewm::WMState);
+  wm_state_.reset(new wm::WMState);
 
   // Disable animations during tests.
   zero_duration_mode_.reset(new ui::ScopedAnimationDurationScaleMode(
       ui::ScopedAnimationDurationScaleMode::ZERO_DURATION));
   ui::InitializeInputMethodForTesting();
 
-  bool allow_test_contexts = true;
-  ui::InitializeContextFactoryForTests(allow_test_contexts);
+  bool enable_pixel_output = false;
+  ui::InitializeContextFactoryForTests(enable_pixel_output);
 
   // Creates Shell and hook with Desktop.
-  test_shell_delegate_ = new TestShellDelegate;
+  if (!test_shell_delegate_)
+    test_shell_delegate_ = new TestShellDelegate;
 
   // Creates MessageCenter since g_browser_process is not created in AshTestBase
   // tests.
@@ -126,7 +127,7 @@ void AshTestHelper::TearDown() {
   ui::ShutdownInputMethodForTesting();
   zero_duration_mode_.reset();
 
-  CHECK(!views::corewm::ScopedCaptureClient::IsActive());
+  CHECK(!wm::ScopedCaptureClient::IsActive());
 
   wm_state_.reset();
 }

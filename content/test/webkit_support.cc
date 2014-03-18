@@ -12,14 +12,13 @@
 #include "base/run_loop.h"
 #include "base/strings/string_tokenizer.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/user_agent.h"
 #include "content/test/test_webkit_platform_support.h"
 #include "third_party/WebKit/public/web/WebCache.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "url/url_util.h"
-#include "webkit/common/user_agent/user_agent.h"
-#include "webkit/common/user_agent/user_agent_util.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
@@ -93,7 +92,6 @@ TestEnvironment* test_environment;
 void SetUpTestEnvironmentForUnitTests() {
   ParseBlinkCommandLineArgumentsForUnitTests();
 
-  blink::WebRuntimeFeatures::enableStableFeatures(true);
   blink::WebRuntimeFeatures::enableExperimentalFeatures(true);
   blink::WebRuntimeFeatures::enableTestOnlyFeatures(true);
 
@@ -111,8 +109,6 @@ void SetUpTestEnvironmentForUnitTests() {
   // at same time.
   url_util::Initialize();
   test_environment = new TestEnvironment;
-  webkit_glue::SetUserAgent(webkit_glue::BuildUserAgentFromProduct(
-      "DumpRenderTree/0.0.0.0"), false);
 }
 
 void TearDownTestEnvironment() {

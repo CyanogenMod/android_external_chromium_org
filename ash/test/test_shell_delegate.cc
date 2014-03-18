@@ -6,7 +6,6 @@
 
 #include <limits>
 
-#include "ash/caps_lock_delegate_stub.h"
 #include "ash/default_accessibility_delegate.h"
 #include "ash/gpu_support_stub.h"
 #include "ash/host/window_tree_host_factory.h"
@@ -114,10 +113,6 @@ UserWallpaperDelegate* TestShellDelegate::CreateUserWallpaperDelegate() {
   return new TestUserWallpaperDelegate();
 }
 
-CapsLockDelegate* TestShellDelegate::CreateCapsLockDelegate() {
-  return new CapsLockDelegateStub;
-}
-
 SessionStateDelegate* TestShellDelegate::CreateSessionStateDelegate() {
   DCHECK(!test_session_state_delegate_);
   test_session_state_delegate_ = new TestSessionStateDelegate();
@@ -134,10 +129,6 @@ NewWindowDelegate* TestShellDelegate::CreateNewWindowDelegate() {
 
 MediaDelegate* TestShellDelegate::CreateMediaDelegate() {
   return new MediaDelegateImpl;
-}
-
-aura::client::UserActionClient* TestShellDelegate::CreateUserActionClient() {
-  return NULL;
 }
 
 ui::MenuModel* TestShellDelegate::CreateContextMenu(

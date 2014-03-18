@@ -24,6 +24,7 @@
 #include "cc/debug/micro_benchmark.h"
 #include "cc/layers/layer.h"
 #include "cc/trees/layer_tree_host.h"
+#include "content/child/child_shared_bitmap_manager.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/public/common/content_switches.h"
@@ -90,17 +91,18 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       !cmd->HasSwitch(switches::kDisableGpuVsync);
   settings.begin_impl_frame_scheduling_enabled =
       cmd->HasSwitch(switches::kEnableBeginFrameScheduling);
-  settings.deadline_scheduling_enabled =
-      cmd->HasSwitch(switches::kEnableDeadlineScheduling) &&
-      !cmd->HasSwitch(switches::kDisableDeadlineScheduling);
+  settings.main_frame_before_activation_enabled =
+      cmd->HasSwitch(cc::switches::kEnableMainFrameBeforeActivation) &&
+      !cmd->HasSwitch(cc::switches::kDisableMainFrameBeforeActivation);
+  settings.main_frame_before_draw_enabled =
+      !cmd->HasSwitch(cc::switches::kDisableMainFrameBeforeDraw);
   settings.using_synchronous_renderer_compositor =
       widget->UsingSynchronousRendererCompositor();
-  settings.per_tile_painting_enabled =
-      cmd->HasSwitch(cc::switches::kEnablePerTilePainting);
   settings.accelerated_animation_enabled =
       !cmd->HasSwitch(cc::switches::kDisableThreadedAnimation);
   settings.touch_hit_testing =
-      !cmd->HasSwitch(cc::switches::kDisableCompositorTouchHitTesting);
+      !cmd->HasSwitch(cc::switches::kDisableCompositorTouchHitTesting) &&
+      !cmd->HasSwitch(switches::kEnableBleedingEdgeRenderingFastPaths);
 
   int default_tile_width = settings.default_tile_size.width();
   if (cmd->HasSwitch(switches::kDefaultTileWidth)) {
@@ -131,8 +133,14 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.max_untiled_layer_size = gfx::Size(max_untiled_layer_width,
                                            max_untiled_layer_height);
 
-  settings.impl_side_painting = cc::switches::IsImplSidePaintingEnabled();
-  settings.gpu_rasterization = cc::switches::IsGpuRasterizationEnabled();
+  settings.impl_side_painting =
+      RenderThreadImpl::current()->is_impl_side_painting_enabled();
+  if (RenderThreadImpl::current()->is_gpu_rasterization_forced())
+    settings.rasterization_site = cc::LayerTreeSettings::GpuRasterization;
+  else if (RenderThreadImpl::current()->is_gpu_rasterization_enabled())
+    settings.rasterization_site = cc::LayerTreeSettings::HybridRasterization;
+  else
+    settings.rasterization_site = cc::LayerTreeSettings::CpuRasterization;
 
   settings.calculate_top_controls_position =
       cmd->HasSwitch(cc::switches::kEnableTopControlsPositionCalculation);
@@ -170,12 +178,8 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
         settings.top_controls_hide_threshold = hide_threshold;
   }
 
-  settings.partial_swap_enabled = widget->AllowPartialSwap();
-  settings.background_color_instead_of_checkerboard =
-      cmd->HasSwitch(cc::switches::kBackgroundColorInsteadOfCheckerboard);
-  settings.show_overdraw_in_tracing =
-      cmd->HasSwitch(cc::switches::kTraceOverdraw);
-  settings.can_use_lcd_text = cc::switches::IsLCDTextEnabled();
+  settings.can_use_lcd_text =
+      RenderThreadImpl::current()->is_lcd_text_enabled();
   settings.use_pinch_virtual_viewport =
       cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport);
   settings.allow_antialiasing &=
@@ -241,14 +245,13 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.strict_layer_property_change_checking =
       cmd->HasSwitch(cc::switches::kStrictLayerPropertyChangeChecking);
 
-  settings.use_map_image = cc::switches::IsMapImageEnabled();
+  settings.use_map_image = RenderThreadImpl::current()->is_map_image_enabled();
 
 #if defined(OS_ANDROID)
-  // TODO(danakj): Move these to the android code.
   settings.max_partial_texture_updates = 0;
   settings.scrollbar_animator = cc::LayerTreeSettings::LinearFade;
   settings.solid_color_scrollbar_color =
-      cmd->HasSwitch(switches::kHideScrollbars)
+      (widget->UsingSynchronousRendererCompositor())  // It is Android Webview.
           ? SK_ColorTRANSPARENT
           : SkColorSetARGB(128, 128, 128, 128);
   settings.highp_threshold_min = 2048;
@@ -259,8 +262,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   // and are disabled for Android WebView as it doesn't support the format.
   settings.use_rgba_4444_textures =
       base::android::SysUtils::IsLowEndDevice() &&
-      !widget->UsingSynchronousRendererCompositor() &&
-      !cmd->HasSwitch(cc::switches::kDisable4444Textures);
+      !widget->UsingSynchronousRendererCompositor();
   if (widget->UsingSynchronousRendererCompositor()) {
     // TODO(boliu): Set this ratio for Webview.
   } else if (base::android::SysUtils::IsLowEndDevice()) {
@@ -394,10 +396,13 @@ void RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
       RenderThreadImpl::current()->compositor_message_loop_proxy();
   if (compositor_message_loop_proxy.get()) {
     layer_tree_host_ = cc::LayerTreeHost::CreateThreaded(
-        this, NULL, settings, compositor_message_loop_proxy);
+        this,
+        ChildThread::current()->shared_bitmap_manager(),
+        settings,
+        compositor_message_loop_proxy);
   } else {
     layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(
-        this, this, NULL, settings);
+        this, this, ChildThread::current()->shared_bitmap_manager(), settings);
   }
   DCHECK(layer_tree_host_);
 }

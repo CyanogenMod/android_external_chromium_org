@@ -15,6 +15,7 @@ import sys
 from pylib import android_commands
 from pylib import cmd_helper
 from pylib import constants
+
 from pylib.gtest import test_package_apk
 from pylib.gtest import test_package_exe
 from pylib.gtest import test_runner
@@ -123,7 +124,7 @@ def _GenerateDepsDirUsingIsolate(suite_name):
       '--config-variable', 'OS', 'android',
       '--config-variable', 'chromeos', '0',
       '--config-variable', 'component', 'static_library',
-      '--config-variable', 'icu_use_data_file_flag', '0',
+      '--config-variable', 'icu_use_data_file_flag', '1',
       '--config-variable', 'use_openssl', '0',
   ]
   assert not cmd_helper.RunCmd(isolate_cmd)

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "mojo/public/bindings/allocation_scope.h"
+#include "mojo/public/bindings/tests/test_structs.mojom.h"
 #include "mojo/public/environment/environment.h"
-#include "mojom/test_structs.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace mojo {
@@ -64,6 +64,7 @@ class TypeConverter<test_structs::NamedRegion, RedmondNamedRegion> {
 };
 
 namespace test {
+namespace {
 
 class TypeConversionTest : public testing::Test {
  private:
@@ -230,5 +231,6 @@ TEST_F(TypeConversionTest, CustomTypeConverter_Nested) {
   }
 }
 
+}  // namespace
 }  // namespace test
 }  // namespace mojo

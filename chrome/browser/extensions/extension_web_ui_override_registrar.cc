@@ -14,11 +14,14 @@
 namespace extensions {
 
 ExtensionWebUIOverrideRegistrar::ExtensionWebUIOverrideRegistrar(
-    Profile* profile) : profile_(profile) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
-                 content::Source<Profile>(profile));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                 content::Source<Profile>(profile));
+    content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)) {
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED,
+                 content::Source<Profile>(profile_));
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                 content::Source<Profile>(profile_));
 }
 
 ExtensionWebUIOverrideRegistrar::~ExtensionWebUIOverrideRegistrar() {
@@ -43,11 +46,11 @@ void ExtensionWebUIOverrideRegistrar::Observe(
 }
 
 static base::LazyInstance<
-  ProfileKeyedAPIFactory<ExtensionWebUIOverrideRegistrar> >
-    g_factory = LAZY_INSTANCE_INITIALIZER;
+    BrowserContextKeyedAPIFactory<ExtensionWebUIOverrideRegistrar> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<ExtensionWebUIOverrideRegistrar>*
+BrowserContextKeyedAPIFactory<ExtensionWebUIOverrideRegistrar>*
 ExtensionWebUIOverrideRegistrar::GetFactoryInstance() {
   return g_factory.Pointer();
 }

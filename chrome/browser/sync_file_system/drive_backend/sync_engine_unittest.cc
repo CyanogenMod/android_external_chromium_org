@@ -36,14 +36,14 @@ void EmptyTask(SyncStatusCode status, const SyncStatusCallback& callback) {
 
 }  // namespace
 
-class MockSyncTask : public SyncTask {
+class MockSyncTask : public SequentialSyncTask {
  public:
   explicit MockSyncTask(bool used_network) {
     set_used_network(used_network);
   }
   virtual ~MockSyncTask() {}
 
-  virtual void Run(const SyncStatusCallback& callback) OVERRIDE {
+  virtual void RunSequential(const SyncStatusCallback& callback) OVERRIDE {
     callback.Run(SYNC_STATUS_OK);
   }
 
@@ -120,9 +120,10 @@ class SyncEngineTest
         scoped_ptr<drive::DriveUploaderInterface>(),
         NULL /* notification_manager */,
         extension_service_.get(),
-        NULL /* auth_token_service */,
+        NULL /* signin_manager */,
         in_memory_env_.get()));
     sync_engine_->Initialize();
+    sync_engine_->SetSyncEnabled(true);
     base::RunLoop().RunUntilIdle();
   }
 
@@ -277,77 +278,99 @@ TEST_F(SyncEngineTest, UpdateServiceState) {
   EXPECT_EQ(REMOTE_SERVICE_OK, sync_engine()->GetCurrentState());
 
   GetSyncEngineTaskManager()->ScheduleTask(
+      FROM_HERE,
       base::Bind(&EmptyTask, SYNC_STATUS_AUTHENTICATION_FAILED),
+      SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncEngineTest::CheckServiceState,
                  AsWeakPtr(),
                  SYNC_STATUS_AUTHENTICATION_FAILED,
                  REMOTE_SERVICE_AUTHENTICATION_REQUIRED));
 
   GetSyncEngineTaskManager()->ScheduleTask(
+      FROM_HERE,
       base::Bind(&EmptyTask, SYNC_STATUS_ACCESS_FORBIDDEN),
+      SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncEngineTest::CheckServiceState,
                  AsWeakPtr(),
                  SYNC_STATUS_ACCESS_FORBIDDEN,
                  REMOTE_SERVICE_AUTHENTICATION_REQUIRED));
 
   GetSyncEngineTaskManager()->ScheduleTask(
+      FROM_HERE,
       base::Bind(&EmptyTask, SYNC_STATUS_SERVICE_TEMPORARILY_UNAVAILABLE),
+      SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncEngineTest::CheckServiceState,
                  AsWeakPtr(),
                  SYNC_STATUS_SERVICE_TEMPORARILY_UNAVAILABLE,
                  REMOTE_SERVICE_TEMPORARY_UNAVAILABLE));
 
   GetSyncEngineTaskManager()->ScheduleTask(
+      FROM_HERE,
       base::Bind(&EmptyTask, SYNC_STATUS_NETWORK_ERROR),
+      SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncEngineTest::CheckServiceState,
                  AsWeakPtr(),
                  SYNC_STATUS_NETWORK_ERROR,
                  REMOTE_SERVICE_TEMPORARY_UNAVAILABLE));
 
   GetSyncEngineTaskManager()->ScheduleTask(
+      FROM_HERE,
       base::Bind(&EmptyTask, SYNC_STATUS_ABORT),
+      SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncEngineTest::CheckServiceState,
                  AsWeakPtr(),
                  SYNC_STATUS_ABORT,
                  REMOTE_SERVICE_TEMPORARY_UNAVAILABLE));
 
   GetSyncEngineTaskManager()->ScheduleTask(
+      FROM_HERE,
       base::Bind(&EmptyTask, SYNC_STATUS_FAILED),
+      SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncEngineTest::CheckServiceState,
                  AsWeakPtr(),
                  SYNC_STATUS_FAILED,
                  REMOTE_SERVICE_TEMPORARY_UNAVAILABLE));
 
   GetSyncEngineTaskManager()->ScheduleTask(
+      FROM_HERE,
       base::Bind(&EmptyTask, SYNC_DATABASE_ERROR_CORRUPTION),
+      SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncEngineTest::CheckServiceState,
                  AsWeakPtr(),
                  SYNC_DATABASE_ERROR_CORRUPTION,
                  REMOTE_SERVICE_DISABLED));
 
   GetSyncEngineTaskManager()->ScheduleTask(
+      FROM_HERE,
       base::Bind(&EmptyTask, SYNC_DATABASE_ERROR_IO_ERROR),
+      SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncEngineTest::CheckServiceState,
                  AsWeakPtr(),
                  SYNC_DATABASE_ERROR_IO_ERROR,
                  REMOTE_SERVICE_DISABLED));
 
   GetSyncEngineTaskManager()->ScheduleTask(
+      FROM_HERE,
       base::Bind(&EmptyTask, SYNC_DATABASE_ERROR_FAILED),
+      SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncEngineTest::CheckServiceState,
                  AsWeakPtr(),
                  SYNC_DATABASE_ERROR_FAILED,
                  REMOTE_SERVICE_DISABLED));
 
   GetSyncEngineTaskManager()->ScheduleSyncTask(
+      FROM_HERE,
       scoped_ptr<SyncTask>(new MockSyncTask(false)),
+      SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncEngineTest::CheckServiceState,
                  AsWeakPtr(),
                  SYNC_STATUS_OK,
                  REMOTE_SERVICE_DISABLED));
 
   GetSyncEngineTaskManager()->ScheduleSyncTask(
+      FROM_HERE,
       scoped_ptr<SyncTask>(new MockSyncTask(true)),
+      SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncEngineTest::CheckServiceState,
                  AsWeakPtr(),
                  SYNC_STATUS_OK,

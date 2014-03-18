@@ -19,8 +19,8 @@ class FakeGpuVideoAcceleratorFactories : public GpuVideoAcceleratorFactories {
   explicit FakeGpuVideoAcceleratorFactories(
       const scoped_refptr<base::SingleThreadTaskRunner>& fake_task_runner);
 
-  virtual scoped_ptr<VideoEncodeAccelerator> CreateVideoEncodeAccelerator(
-      VideoEncodeAccelerator::Client* client) OVERRIDE;
+  virtual scoped_ptr<VideoEncodeAccelerator> CreateVideoEncodeAccelerator()
+      OVERRIDE;
 
   virtual base::SharedMemory* CreateSharedMemory(size_t size) OVERRIDE;
 
@@ -29,11 +29,11 @@ class FakeGpuVideoAcceleratorFactories : public GpuVideoAcceleratorFactories {
   //
   //  The following functions are no-op.
   //
-  virtual uint32 CreateTextures(int32 count,
-                                const gfx::Size& size,
-                                std::vector<uint32>* texture_ids,
-                                std::vector<gpu::Mailbox>* texture_mailboxes,
-                                uint32 texture_target) OVERRIDE;
+  virtual bool CreateTextures(int32 count,
+                              const gfx::Size& size,
+                              std::vector<uint32>* texture_ids,
+                              std::vector<gpu::Mailbox>* texture_mailboxes,
+                              uint32 texture_target) OVERRIDE;
 
   virtual void DeleteTexture(uint32 texture_id) OVERRIDE {}
 
@@ -44,8 +44,7 @@ class FakeGpuVideoAcceleratorFactories : public GpuVideoAcceleratorFactories {
                           const SkBitmap& pixels) OVERRIDE {};
 
   virtual scoped_ptr<VideoDecodeAccelerator> CreateVideoDecodeAccelerator(
-      VideoCodecProfile profile,
-      VideoDecodeAccelerator::Client* client) OVERRIDE;
+      VideoCodecProfile profile) OVERRIDE;
 
  private:
   friend class base::RefCountedThreadSafe<FakeGpuVideoAcceleratorFactories>;

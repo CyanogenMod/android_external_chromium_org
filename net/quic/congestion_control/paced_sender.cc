@@ -8,6 +8,8 @@
 
 #include "net/quic/quic_protocol.h"
 
+using std::max;
+
 namespace net {
 
 // To prevent too aggressive pacing we allow the following packet burst size.
@@ -20,10 +22,6 @@ PacedSender::PacedSender(QuicBandwidth estimate, QuicByteCount max_segment_size)
     : leaky_bucket_(estimate),
       pace_(estimate),
       max_segment_size_(kDefaultMaxPacketSize) {
-}
-
-void PacedSender::set_max_segment_size(QuicByteCount max_segment_size) {
-  max_segment_size_ = max_segment_size;
 }
 
 void PacedSender::UpdateBandwidthEstimate(QuicTime now,
@@ -45,7 +43,7 @@ QuicTime::Delta PacedSender::TimeUntilSend(QuicTime now,
   QuicByteCount pacing_window = pace_.ToBytesPerPeriod(
       QuicTime::Delta::FromMicroseconds(kMaxSchedulingDelayUs));
   QuicByteCount min_window_size = kMinPacketBurstSize *  max_segment_size_;
-  pacing_window = std::max(pacing_window, min_window_size);
+  pacing_window = max(pacing_window, min_window_size);
 
   if (pacing_window > leaky_bucket_.BytesPending(now)) {
     // We have not filled our pacing window yet.

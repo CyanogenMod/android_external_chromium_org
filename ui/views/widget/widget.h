@@ -14,6 +14,7 @@
 #include "base/observer_list.h"
 #include "ui/aura/window_layer_type.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/events/event_source.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/focus/focus_manager.h"
@@ -92,6 +93,7 @@ class RootView;
 //      destructor).
 //
 class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
+                            public ui::EventSource,
                             public FocusTraversable {
  public:
   typedef std::set<Widget*> Widgets;
@@ -182,6 +184,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     bool accept_events;
     bool can_activate;
     bool keep_on_top;
+    bool visible_on_all_workspaces;
     Ownership ownership;
     bool mirror_origin_in_rtl;
     bool has_dropshadow;
@@ -459,6 +462,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Returns whether the widget has been set to be on top of most other widgets
   // in the windowing system.
   bool IsAlwaysOnTop() const;
+
+  // Sets the widget to be visible on all work spaces.
+  void SetVisibleOnAllWorkspaces(bool always_visible);
 
   // Maximizes/minimizes/restores the window.
   void Maximize();
@@ -738,6 +744,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   virtual Widget* AsWidget() OVERRIDE;
   virtual const Widget* AsWidget() const OVERRIDE;
   virtual bool SetInitialFocus(ui::WindowShowState show_state) OVERRIDE;
+
+  // Overridden from ui::EventSource:
+  virtual ui::EventProcessor* GetEventProcessor() OVERRIDE;
 
   // Overridden from FocusTraversable:
   virtual FocusSearch* GetFocusSearch() OVERRIDE;

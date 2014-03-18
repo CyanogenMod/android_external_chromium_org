@@ -10,7 +10,7 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
-#include "chrome/browser/sync/test/integration/status_change_checker.h"
+#include "chrome/browser/sync/test/integration/single_client_status_change_checker.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "net/http/http_status_code.h"
@@ -45,25 +45,27 @@ const char kEmptyOAuth2Token[] = "";
 
 const char kMalformedOAuth2Token[] = "{ \"foo\": ";
 
-class TestForAuthError : public StatusChangeChecker {
+class TestForAuthError : public SingleClientStatusChangeChecker {
  public:
   explicit TestForAuthError(ProfileSyncService* service);
   virtual ~TestForAuthError();
   virtual bool IsExitConditionSatisfied() OVERRIDE;
-
- private:
-  ProfileSyncService* service_;
+  virtual std::string GetDebugMessage() const OVERRIDE;
 };
 
 TestForAuthError::TestForAuthError(ProfileSyncService* service)
-  : StatusChangeChecker("Testing for auth error"), service_(service) {}
+  : SingleClientStatusChangeChecker(service) {}
 
 TestForAuthError::~TestForAuthError() {}
 
 bool TestForAuthError::IsExitConditionSatisfied() {
-  return !service_->HasUnsyncedItems() ||
-      (service_->GetSyncTokenStatus().last_get_token_error.state() !=
+  return !service()->HasUnsyncedItems() ||
+      (service()->GetSyncTokenStatus().last_get_token_error.state() !=
        GoogleServiceAuthError::NONE);
+}
+
+std::string TestForAuthError::GetDebugMessage() const {
+  return "Waiting for auth error";
 }
 
 class SyncAuthTest : public SyncTest {
@@ -82,7 +84,7 @@ class SyncAuthTest : public SyncTest {
 
     // Run until the bookmark is committed or an auth error is encountered.
     TestForAuthError checker_(GetClient(0)->service());
-    GetClient(0)->AwaitStatusChange(&checker_, "Attempt to trigger auth error");
+    GetClient(0)->AwaitStatusChange(&checker_);
 
     GoogleServiceAuthError oauth_error =
         GetClient(0)->service()->GetSyncTokenStatus().last_get_token_error;

@@ -13,7 +13,6 @@
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
-#include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model_delegate.h"
@@ -21,6 +20,7 @@
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
 #include "chrome/browser/ui/views/toolbar/reload_button.h"
+#include "components/password_manager/core/browser/password_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
@@ -137,6 +137,8 @@ SimpleWebViewDialog::SimpleWebViewDialog(Profile* profile)
 }
 
 SimpleWebViewDialog::~SimpleWebViewDialog() {
+  if (web_view_ && web_view_->web_contents())
+    web_view_->web_contents()->SetDelegate(NULL);
 }
 
 void SimpleWebViewDialog::StartLoad(const GURL& url) {
@@ -248,19 +250,19 @@ void SimpleWebViewDialog::ButtonPressed(views::Button* sender,
   command_updater_->ExecuteCommand(sender->tag());
 }
 
+content::WebContents* SimpleWebViewDialog::OpenURL(
+    const content::OpenURLParams& params) {
+  // As there are no Browsers right now, this could not actually ever work.
+  NOTIMPLEMENTED();
+  return NULL;
+}
+
 void SimpleWebViewDialog::NavigationStateChanged(
     const WebContents* source, unsigned changed_flags) {
   if (location_bar_) {
     location_bar_->Update(NULL);
     UpdateButtons();
   }
-}
-
-content::WebContents* SimpleWebViewDialog::OpenURL(
-    const content::OpenURLParams& params) {
-  // As there are no Browsers right now, this could not actually ever work.
-  NOTIMPLEMENTED();
-  return NULL;
 }
 
 void SimpleWebViewDialog::LoadingStateChanged(WebContents* source) {

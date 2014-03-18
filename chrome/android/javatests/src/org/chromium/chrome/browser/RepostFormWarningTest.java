@@ -9,10 +9,10 @@ import android.test.suitebuilder.annotation.MediumTest;
 
 import org.chromium.base.test.util.EnormousTest;
 import org.chromium.base.test.util.Feature;
-import org.chromium.chrome.test.util.TabBaseTabUtils;
+import org.chromium.chrome.shell.ChromeShellTab;
+import org.chromium.chrome.shell.ChromeShellTestBase;
+import org.chromium.chrome.test.util.TabUtils;
 import org.chromium.chrome.test.util.TestHttpServerClient;
-import org.chromium.chrome.testshell.ChromiumTestShellTestBase;
-import org.chromium.chrome.testshell.TestShellTab;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 
 import java.util.concurrent.TimeoutException;
@@ -20,9 +20,9 @@ import java.util.concurrent.TimeoutException;
 /**
  * Integration tests verifying that form resubmission dialogs are correctly displayed and handled.
  */
-public class RepostFormWarningTest extends ChromiumTestShellTestBase {
+public class RepostFormWarningTest extends ChromeShellTestBase {
     // Active tab.
-    private TestShellTab mTab;
+    private ChromeShellTab mTab;
     // Callback helper that manages waiting for pageloads to finish.
     private TestCallbackHelperContainer mCallbackHelper;
 
@@ -30,8 +30,8 @@ public class RepostFormWarningTest extends ChromiumTestShellTestBase {
     public void setUp() throws Exception {
         super.setUp();
 
-        mTab = launchChromiumTestShellWithBlankPage().getActiveTab();
-        mCallbackHelper = TabBaseTabUtils.getTestCallbackHelperContainer(mTab);
+        mTab = launchChromeShellWithBlankPage().getActiveTab();
+        mCallbackHelper = TabUtils.getTestCallbackHelperContainer(mTab);
 
         // Wait for the initial load of about://blank to finish.
         mCallbackHelper.getOnPageFinishedHelper().waitForCallback(0);

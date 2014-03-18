@@ -8,7 +8,7 @@
 
 #include "chrome/browser/ui/views/message_center/message_center_frame_view.h"
 #include "content/public/browser/user_metrics.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/gfx/screen.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/message_center_util.h"
@@ -52,10 +52,8 @@ MessageCenterWidgetDelegate::MessageCenterWidgetDelegate(
 
   AddAccelerator(ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE));
 
-  if (get_use_acceleration_when_possible()) {
-    SetPaintToLayer(true);
-    SetFillsBoundsOpaquely(true);
-  }
+  SetPaintToLayer(true);
+  SetFillsBoundsOpaquely(true);
 
   InitWidget();
 }

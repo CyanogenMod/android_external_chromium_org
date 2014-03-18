@@ -6,16 +6,14 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
-#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/shill_device_client.h"
 #include "chromeos/dbus/shill_manager_client.h"
 #include "chromeos/dbus/shill_property_changed_observer.h"
-#include "chromeos/dbus/shill_stub_helper.h"
 #include "chromeos/network/shill_property_util.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
@@ -36,6 +34,16 @@ void PassStubServiceProperties(
     DBusMethodCallStatus call_status,
     const base::DictionaryValue* properties) {
   callback.Run(call_status, *properties);
+}
+
+void CallSortManagerServices() {
+  DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface()->
+      SortManagerServices();
+}
+
+int GetInteractiveDelay() {
+  return DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface()->
+      GetInteractiveDelay();
 }
 
 }  // namespace
@@ -187,18 +195,12 @@ void FakeShillServiceClient::Connect(const dbus::ObjectPath& service_path,
                      associating_value);
 
   // Stay Associating until the state is changed again after a delay.
-  base::TimeDelta delay;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::switches::kEnableStubInteractive)) {
-    const int kConnectDelaySeconds = 5;
-    delay = base::TimeDelta::FromSeconds(kConnectDelaySeconds);
-  }
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&FakeShillServiceClient::ContinueConnect,
                  weak_ptr_factory_.GetWeakPtr(),
                  service_path.value()),
-      delay);
+      base::TimeDelta::FromSeconds(GetInteractiveDelay()));
 
   callback.Run();
 }
@@ -211,12 +213,6 @@ void FakeShillServiceClient::Disconnect(const dbus::ObjectPath& service_path,
     error_callback.Run("Error.InvalidService", "Invalid Service");
     return;
   }
-  base::TimeDelta delay;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::switches::kEnableStubInteractive)) {
-    const int kConnectDelaySeconds = 2;
-    delay = base::TimeDelta::FromSeconds(kConnectDelaySeconds);
-  }
   // Set Idle after a delay
   base::StringValue idle_value(shill::kStateIdle);
   base::MessageLoop::current()->PostDelayedTask(
@@ -228,7 +224,7 @@ void FakeShillServiceClient::Disconnect(const dbus::ObjectPath& service_path,
                  idle_value,
                  base::Bind(&base::DoNothing),
                  error_callback),
-      delay);
+      base::TimeDelta::FromSeconds(GetInteractiveDelay()));
   callback.Run();
 }
 
@@ -252,12 +248,6 @@ void FakeShillServiceClient::ActivateCellularModem(
   SetServiceProperty(service_path.value(),
                      shill::kActivationStateProperty,
                      base::StringValue(shill::kActivationStateActivating));
-  base::TimeDelta delay;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::switches::kEnableStubInteractive)) {
-    const int kConnectDelaySeconds = 2;
-    delay = base::TimeDelta::FromSeconds(kConnectDelaySeconds);
-  }
   // Set Activated after a delay
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
@@ -265,7 +255,7 @@ void FakeShillServiceClient::ActivateCellularModem(
                  weak_ptr_factory_.GetWeakPtr(),
                  service_path,
                  error_callback),
-      delay);
+      base::TimeDelta::FromSeconds(GetInteractiveDelay()));
 
   base::MessageLoop::current()->PostTask(FROM_HERE, callback);
 }
@@ -318,12 +308,7 @@ void FakeShillServiceClient::AddService(const std::string& service_path,
                                         const std::string& state,
                                         bool add_to_visible_list,
                                         bool add_to_watch_list) {
-  std::string nstate = state;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::switches::kDefaultStubNetworkStateIdle)) {
-    nstate = shill::kStateIdle;
-  }
-  AddServiceWithIPConfig(service_path, name, type, nstate, "",
+  AddServiceWithIPConfig(service_path, name, type, state, "",
                          add_to_visible_list, add_to_watch_list);
 }
 
@@ -337,6 +322,9 @@ void FakeShillServiceClient::AddServiceWithIPConfig(
     bool add_to_watch_list) {
   DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface()->
       AddManagerService(service_path, add_to_visible_list, add_to_watch_list);
+  std::string device_path =
+      DBusThreadManager::Get()->GetShillDeviceClient()->GetTestInterface()->
+      GetDevicePathForType(type);
 
   base::DictionaryValue* properties =
       GetModifiableServiceProperties(service_path, true);
@@ -347,18 +335,21 @@ void FakeShillServiceClient::AddServiceWithIPConfig(
       base::Value::CreateStringValue(name));
   properties->SetWithoutPathExpansion(
       shill::kDeviceProperty,
-      base::Value::CreateStringValue(
-          shill_stub_helper::DevicePathForType(type)));
+      base::Value::CreateStringValue(device_path));
   properties->SetWithoutPathExpansion(
       shill::kTypeProperty,
       base::Value::CreateStringValue(type));
   properties->SetWithoutPathExpansion(
       shill::kStateProperty,
       base::Value::CreateStringValue(state));
-  if (!ipconfig_path.empty())
+  if (!ipconfig_path.empty()) {
     properties->SetWithoutPathExpansion(
         shill::kIPConfigProperty,
         base::Value::CreateStringValue(ipconfig_path));
+  }
+
+  DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface()->
+      SortManagerServices();
 }
 
 void FakeShillServiceClient::RemoveService(const std::string& service_path) {
@@ -398,12 +389,22 @@ bool FakeShillServiceClient::SetServiceProperty(const std::string& service_path,
 
   dict->MergeDictionary(&new_properties);
 
+  // Notify the Manager if the state changed (affects DefaultService).
   if (property == shill::kStateProperty) {
-    // When State changes the sort order of Services may change.
+    std::string state;
+    value.GetAsString(&state);
     DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface()->
-        SortManagerServices();
+        ServiceStateChanged(service_path, state);
   }
 
+  // If the State changes, the sort order of Services may change and the
+  // DefaultService property may change.
+  if (property == shill::kStateProperty) {
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&CallSortManagerServices));
+  }
+
+  // Notifiy Chrome of the property change.
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&FakeShillServiceClient::NotifyObserversPropertyChanged,

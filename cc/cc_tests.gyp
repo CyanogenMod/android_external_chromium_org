@@ -29,6 +29,7 @@
       'layers/delegated_renderer_layer_impl_unittest.cc',
       'layers/heads_up_display_unittest.cc',
       'layers/heads_up_display_layer_impl_unittest.cc',
+      'layers/io_surface_layer_impl_unittest.cc',
       'layers/layer_impl_unittest.cc',
       'layers/layer_iterator_unittest.cc',
       'layers/layer_position_constraint_unittest.cc',
@@ -163,6 +164,8 @@
       'test/fake_video_frame_provider.h',
       'test/geometry_test_utils.cc',
       'test/geometry_test_utils.h',
+      'test/gpu_rasterization_settings.h',
+      'test/hybrid_rasterization_settings.h',
       'test/test_in_process_context_provider.cc',
       'test/test_in_process_context_provider.h',
       'test/impl_side_painting_settings.h',
@@ -176,7 +179,6 @@
       'test/layer_tree_test.h',
       'test/mock_quad_culler.cc',
       'test/mock_quad_culler.h',
-      'test/occlusion_tracker_test_common.h',
       'test/ordered_texture_map.cc',
       'test/ordered_texture_map.h',
       'test/paths.cc',
@@ -207,6 +209,7 @@
       'test/test_context_support.h',
       'test/test_gles2_interface.cc',
       'test/test_gles2_interface.h',
+      'test/test_occlusion_tracker.h',
       'test/test_texture.cc',
       'test/test_texture.h',
       'test/test_tile_priorities.cc',
@@ -257,7 +260,8 @@
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"',
           {
             'conditions': [
-              [ 'linux_use_tcmalloc==1',
+              # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+              [ '(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)',
                 {
                   'dependencies': [
                     '../base/allocator/allocator.gyp:allocator',
@@ -314,7 +318,8 @@
           }
         ],
         # See http://crbug.com/162998#c4 for why this is needed.
-        ['OS=="linux" and linux_use_tcmalloc==1',
+        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))',
           {
             'dependencies': [
               '../base/allocator/allocator.gyp:allocator',

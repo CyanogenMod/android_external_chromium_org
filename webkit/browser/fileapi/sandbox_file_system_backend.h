@@ -21,7 +21,6 @@
 
 namespace fileapi {
 
-// An interface to construct or crack sandboxed filesystem paths for
 // TEMPORARY or PERSISTENT filesystems, which are placed under the user's
 // profile directory in a sandboxed way.
 // This interface also lets one enumerate and remove storage for the origins
@@ -35,11 +34,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackend
   // FileSystemBackend overrides.
   virtual bool CanHandleType(FileSystemType type) const OVERRIDE;
   virtual void Initialize(FileSystemContext* context) OVERRIDE;
-  virtual void OpenFileSystem(
-      const GURL& origin_url,
-      FileSystemType type,
-      OpenFileSystemMode mode,
-      const OpenFileSystemCallback& callback) OVERRIDE;
+  virtual void ResolveURL(const FileSystemURL& url,
+                          OpenFileSystemMode mode,
+                          const OpenFileSystemCallback& callback) OVERRIDE;
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
   virtual CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
       FileSystemType type,
@@ -48,6 +45,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackend
       const FileSystemURL& url,
       FileSystemContext* context,
       base::File::Error* error_code) const OVERRIDE;
+  virtual bool SupportsStreaming(const FileSystemURL& url) const OVERRIDE;
   virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,

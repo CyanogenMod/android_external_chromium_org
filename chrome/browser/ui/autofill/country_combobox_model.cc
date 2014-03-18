@@ -19,16 +19,20 @@
 
 namespace autofill {
 
-CountryComboboxModel::CountryComboboxModel(const PersonalDataManager& manager) {
+CountryComboboxModel::CountryComboboxModel(
+    const PersonalDataManager& manager,
+    const base::Callback<bool(const std::string&)>& filter) {
   // Insert the default country at the top as well as in the ordered list.
-  const std::string& app_locale = g_browser_process->GetApplicationLocale();
   std::string default_country_code =
       manager.GetDefaultCountryCodeForNewAddress();
   DCHECK(!default_country_code.empty());
 
-  countries_.push_back(new AutofillCountry(default_country_code, app_locale));
-  // The separator item.
-  countries_.push_back(NULL);
+  const std::string& app_locale = g_browser_process->GetApplicationLocale();
+  if (filter.is_null() || filter.Run(default_country_code)) {
+    countries_.push_back(new AutofillCountry(default_country_code, app_locale));
+    // The separator item.
+    countries_.push_back(NULL);
+  }
 
   // The sorted list of countries.
 #if defined(ENABLE_AUTOFILL_DIALOG)
@@ -42,7 +46,8 @@ CountryComboboxModel::CountryComboboxModel(const PersonalDataManager& manager) {
   std::vector<AutofillCountry*> sorted_countries;
   for (std::vector<std::string>::const_iterator it =
            available_countries.begin(); it != available_countries.end(); ++it) {
-    sorted_countries.push_back(new AutofillCountry(*it, app_locale));
+    if (filter.is_null() || filter.Run(*it))
+      sorted_countries.push_back(new AutofillCountry(*it, app_locale));
   }
 
   l10n_util::SortStringsUsingMethod(app_locale,

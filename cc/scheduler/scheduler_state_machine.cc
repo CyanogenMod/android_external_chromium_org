@@ -43,6 +43,7 @@ SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
       draw_if_possible_failed_(false),
       did_create_and_initialize_first_output_surface_(false),
       smoothness_takes_priority_(false),
+      skip_next_begin_main_frame_to_reduce_latency_(false),
       skip_begin_main_frame_to_reduce_latency_(false) {}
 
 const char* SchedulerStateMachine::OutputSurfaceStateToString(
@@ -83,10 +84,14 @@ const char* SchedulerStateMachine::CommitStateToString(CommitState state) {
   switch (state) {
     case COMMIT_STATE_IDLE:
       return "COMMIT_STATE_IDLE";
-    case COMMIT_STATE_FRAME_IN_PROGRESS:
-      return "COMMIT_STATE_FRAME_IN_PROGRESS";
+    case COMMIT_STATE_BEGIN_MAIN_FRAME_SENT:
+      return "COMMIT_STATE_BEGIN_MAIN_FRAME_SENT";
+    case COMMIT_STATE_BEGIN_MAIN_FRAME_STARTED:
+      return "COMMIT_STATE_BEGIN_MAIN_FRAME_STARTED";
     case COMMIT_STATE_READY_TO_COMMIT:
       return "COMMIT_STATE_READY_TO_COMMIT";
+    case COMMIT_STATE_WAITING_FOR_ACTIVATION:
+      return "COMMIT_STATE_WAITING_FOR_ACTIVATION";
     case COMMIT_STATE_WAITING_FOR_FIRST_DRAW:
       return "COMMIT_STATE_WAITING_FOR_FIRST_DRAW";
   }
@@ -266,6 +271,8 @@ scoped_ptr<base::Value> SchedulerStateMachine::AsValue() const  {
                           MainThreadIsInHighLatencyMode());
   minor_state->SetBoolean("skip_begin_main_frame_to_reduce_latency",
                           skip_begin_main_frame_to_reduce_latency_);
+  minor_state->SetBoolean("skip_next_begin_main_frame_to_reduce_latency",
+                          skip_next_begin_main_frame_to_reduce_latency_);
   state->Set("minor_state", minor_state.release());
 
   return state.PassAs<base::Value>();
@@ -277,6 +284,10 @@ void SchedulerStateMachine::AdvanceCurrentFrameNumber() {
   // "Drain" the ManageTiles funnel.
   if (manage_tiles_funnel_ > 0)
     manage_tiles_funnel_--;
+
+  skip_begin_main_frame_to_reduce_latency_ =
+      skip_next_begin_main_frame_to_reduce_latency_;
+  skip_next_begin_main_frame_to_reduce_latency_ = false;
 }
 
 bool SchedulerStateMachine::HasSentBeginMainFrameThisFrame() const {
@@ -303,6 +314,11 @@ bool SchedulerStateMachine::PendingDrawsShouldBeAborted() const {
   if (PendingActivationsShouldBeForced())
     return true;
 
+  // Impl thread should not draw anymore when texture is acquired by main thread
+  // because texture is controlled under main thread.
+  if (texture_state_ == LAYER_TEXTURE_STATE_ACQUIRED_BY_MAIN_THREAD)
+    return true;
+
   // Additional states where we should abort draws.
   // Note: We don't force activation in these cases because doing so would
   // result in checkerboarding on resize, becoming visible, etc.
@@ -316,11 +332,6 @@ bool SchedulerStateMachine::PendingDrawsShouldBeAborted() const {
 bool SchedulerStateMachine::PendingActivationsShouldBeForced() const {
   // These are all the cases where, if we do not force activations to make
   // forward progress, we might deadlock with the main thread.
-
-  // The impl thread cannot lock layer textures unless the pending
-  // tree can be activated to unblock the commit.
-  if (texture_state_ == LAYER_TEXTURE_STATE_ACQUIRED_BY_MAIN_THREAD)
-    return true;
 
   // There is no output surface to trigger our activations.
   if (output_surface_state_ == OUTPUT_SURFACE_LOST)
@@ -365,10 +376,8 @@ bool SchedulerStateMachine::ShouldDraw() const {
     return false;
 
   // Draw immediately for readbacks to unblock the main thread quickly.
-  if (readback_state_ == READBACK_STATE_WAITING_FOR_DRAW_AND_READBACK) {
-    DCHECK_EQ(commit_state_, COMMIT_STATE_WAITING_FOR_FIRST_DRAW);
+  if (readback_state_ == READBACK_STATE_WAITING_FOR_DRAW_AND_READBACK)
     return true;
-  }
 
   // If we need to abort draws, we should do so ASAP since the draw could
   // be blocking other important actions (like output surface initialization),
@@ -388,10 +397,8 @@ bool SchedulerStateMachine::ShouldDraw() const {
     return false;
 
   // Only handle forced redraws due to timeouts on the regular deadline.
-  if (forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_DRAW) {
-    DCHECK_EQ(commit_state_, COMMIT_STATE_WAITING_FOR_FIRST_DRAW);
+  if (forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_DRAW)
     return true;
-  }
 
   return needs_redraw_;
 }
@@ -456,9 +463,12 @@ bool SchedulerStateMachine::ShouldSendBeginMainFrame() const {
   if (commit_state_ != COMMIT_STATE_IDLE)
     return false;
 
-  // We can't accept a commit if we have a pending tree.
-  if (has_pending_tree_)
+  // Don't send BeginMainFrame early if we are prioritizing the active tree
+  // because of smoothness_takes_priority.
+  if (smoothness_takes_priority_ &&
+      (has_pending_tree_ || active_tree_needs_first_draw_)) {
     return false;
+  }
 
   // We want to handle readback commits immediately to unblock the main thread.
   // Note: This BeginMainFrame will correspond to the replacement commit that
@@ -476,19 +486,12 @@ bool SchedulerStateMachine::ShouldSendBeginMainFrame() const {
   if (output_surface_state_ == OUTPUT_SURFACE_WAITING_FOR_FIRST_COMMIT)
     return true;
 
-  // With deadline scheduling enabled, we should not send BeginMainFrame while
-  // we are in BEGIN_IMPL_FRAME_STATE_IDLE, since we might have new user input
-  // coming in soon.
-  // However, if we are not expecting a BeginImplFrame to take us out of idle,
-  // we should not early out here to avoid blocking commits forever.
-  // This only works well when deadline scheduling is enabled because there is
-  // an interval over which to accept the commit and draw. Without deadline
-  // scheduling, delaying the commit could prevent us from having something
-  // to draw on the next BeginImplFrame.
+  // We should not send BeginMainFrame while we are in
+  // BEGIN_IMPL_FRAME_STATE_IDLE since we might have new
+  // user input arriving soon.
   // TODO(brianderson): Allow sending BeginMainFrame while idle when the main
   // thread isn't consuming user input.
-  if (settings_.deadline_scheduling_enabled &&
-      begin_impl_frame_state_ == BEGIN_IMPL_FRAME_STATE_IDLE &&
+  if (begin_impl_frame_state_ == BEGIN_IMPL_FRAME_STATE_IDLE &&
       BeginImplFrameNeeded())
     return false;
 
@@ -512,11 +515,20 @@ bool SchedulerStateMachine::ShouldSendBeginMainFrame() const {
 }
 
 bool SchedulerStateMachine::ShouldCommit() const {
-  return commit_state_ == COMMIT_STATE_READY_TO_COMMIT;
-}
+  if (commit_state_ != COMMIT_STATE_READY_TO_COMMIT)
+    return false;
 
-bool SchedulerStateMachine::IsCommitStateWaiting() const {
-  return commit_state_ == COMMIT_STATE_FRAME_IN_PROGRESS;
+  // We must not finish the commit until the pending tree is free.
+  if (has_pending_tree_) {
+    DCHECK(settings_.main_frame_before_activation_enabled);
+    return false;
+  }
+
+  // Prioritize drawing the previous commit before finishing the next commit.
+  if (active_tree_needs_first_draw_)
+    return false;
+
+  return true;
 }
 
 bool SchedulerStateMachine::ShouldManageTiles() const {
@@ -568,6 +580,11 @@ void SchedulerStateMachine::CheckInvariants() {
   // timeout simultaneously.
   DCHECK(!(forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_DRAW &&
            readback_state_ == READBACK_STATE_WAITING_FOR_DRAW_AND_READBACK));
+
+  // Main thread should never have the texture locked when there is a pending
+  // tree or active tree is not drawn for the first time.
+  if (has_pending_tree_ || active_tree_needs_first_draw_)
+    DCHECK(texture_state_ != LAYER_TEXTURE_STATE_ACQUIRED_BY_MAIN_THREAD);
 }
 
 void SchedulerStateMachine::UpdateState(Action action) {
@@ -585,10 +602,13 @@ void SchedulerStateMachine::UpdateState(Action action) {
       return;
 
     case ACTION_SEND_BEGIN_MAIN_FRAME:
-      DCHECK(!has_pending_tree_);
+      DCHECK(!has_pending_tree_ ||
+             settings_.main_frame_before_activation_enabled);
+      DCHECK(!active_tree_needs_first_draw_ ||
+             settings_.main_frame_before_draw_enabled);
       DCHECK(visible_ ||
              readback_state_ == READBACK_STATE_NEEDS_BEGIN_MAIN_FRAME);
-      commit_state_ = COMMIT_STATE_FRAME_IN_PROGRESS;
+      commit_state_ = COMMIT_STATE_BEGIN_MAIN_FRAME_SENT;
       needs_commit_ = false;
       if (readback_state_ == READBACK_STATE_NEEDS_BEGIN_MAIN_FRAME)
         readback_state_ = READBACK_STATE_WAITING_FOR_COMMIT;
@@ -642,6 +662,16 @@ void SchedulerStateMachine::UpdateState(Action action) {
 void SchedulerStateMachine::UpdateStateOnCommit(bool commit_was_aborted) {
   commit_count_++;
 
+  if (commit_was_aborted || settings_.main_frame_before_activation_enabled) {
+    commit_state_ = COMMIT_STATE_IDLE;
+  } else if (settings_.main_frame_before_draw_enabled) {
+    commit_state_ = settings_.impl_side_painting
+                        ? COMMIT_STATE_WAITING_FOR_ACTIVATION
+                        : COMMIT_STATE_IDLE;
+  } else {
+    commit_state_ = COMMIT_STATE_WAITING_FOR_FIRST_DRAW;
+  }
+
   // If we are impl-side-painting but the commit was aborted, then we behave
   // mostly as if we are not impl-side-painting since there is no pending tree.
   has_pending_tree_ = settings_.impl_side_painting && !commit_was_aborted;
@@ -687,18 +717,6 @@ void SchedulerStateMachine::UpdateStateOnCommit(bool commit_was_aborted) {
     }
   }
 
-  // Update the commit state. We expect and wait for a draw if the commit
-  // was not aborted or if we are in a readback or forced draw.
-  if (!commit_was_aborted) {
-    DCHECK(commit_state_ == COMMIT_STATE_READY_TO_COMMIT);
-    commit_state_ = COMMIT_STATE_WAITING_FOR_FIRST_DRAW;
-  } else if (readback_state_ != READBACK_STATE_IDLE ||
-             forced_redraw_state_ != FORCED_REDRAW_STATE_IDLE) {
-    commit_state_ = COMMIT_STATE_WAITING_FOR_FIRST_DRAW;
-  } else {
-    commit_state_ = COMMIT_STATE_IDLE;
-  }
-
   // Update state if we have a new active tree to draw, or if the active tree
   // was unchanged but we need to do a readback or forced draw.
   if (!has_pending_tree_ &&
@@ -724,15 +742,15 @@ void SchedulerStateMachine::UpdateStateOnCommit(bool commit_was_aborted) {
 }
 
 void SchedulerStateMachine::UpdateStateOnActivation() {
-  // Update output surface state.
+  if (commit_state_ == COMMIT_STATE_WAITING_FOR_ACTIVATION)
+    commit_state_ = COMMIT_STATE_IDLE;
+
   if (output_surface_state_ == OUTPUT_SURFACE_WAITING_FOR_FIRST_ACTIVATION)
     output_surface_state_ = OUTPUT_SURFACE_ACTIVE;
 
-  // Update readback state
   if (forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_ACTIVATION)
     forced_redraw_state_ = FORCED_REDRAW_STATE_WAITING_FOR_DRAW;
 
-  // Update forced redraw state
   if (readback_state_ == READBACK_STATE_WAITING_FOR_ACTIVATION)
     readback_state_ = READBACK_STATE_WAITING_FOR_DRAW_AND_READBACK;
   else if (readback_state_ == READBACK_STATE_WAITING_FOR_REPLACEMENT_ACTIVATION)
@@ -750,23 +768,20 @@ void SchedulerStateMachine::UpdateStateOnDraw(bool did_swap) {
       << *AsValue();
 
   if (readback_state_ == READBACK_STATE_WAITING_FOR_DRAW_AND_READBACK) {
-    // The draw correspons to a readback commit.
-    DCHECK_EQ(commit_state_, COMMIT_STATE_WAITING_FOR_FIRST_DRAW);
+    // The draw corresponds to a readback commit.
     // We are blocking commits from the main thread until after this draw, so
     // we should not have a pending tree.
     DCHECK(!has_pending_tree_);
-    // We transition to COMMIT_STATE_FRAME_IN_PROGRESS because there is a
+    // We transition to COMMIT_STATE_BEGIN_MAIN_FRAME_SENT because there is a
     // pending BeginMainFrame behind the readback request.
-    commit_state_ = COMMIT_STATE_FRAME_IN_PROGRESS;
+    commit_state_ = COMMIT_STATE_BEGIN_MAIN_FRAME_SENT;
     readback_state_ = READBACK_STATE_WAITING_FOR_REPLACEMENT_COMMIT;
   } else if (forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_DRAW) {
-    DCHECK_EQ(commit_state_, COMMIT_STATE_WAITING_FOR_FIRST_DRAW);
-    commit_state_ = COMMIT_STATE_IDLE;
     forced_redraw_state_ = FORCED_REDRAW_STATE_IDLE;
-  } else if (commit_state_ == COMMIT_STATE_WAITING_FOR_FIRST_DRAW &&
-             !has_pending_tree_) {
-    commit_state_ = COMMIT_STATE_IDLE;
   }
+
+  if (commit_state_ == COMMIT_STATE_WAITING_FOR_FIRST_DRAW)
+    commit_state_ = COMMIT_STATE_IDLE;
 
   if (texture_state_ == LAYER_TEXTURE_STATE_ACQUIRED_BY_IMPL_THREAD)
     texture_state_ = LAYER_TEXTURE_STATE_UNLOCKED;
@@ -789,8 +804,8 @@ void SchedulerStateMachine::SetMainThreadNeedsLayerTextures() {
   main_thread_needs_layer_textures_ = true;
 }
 
-void SchedulerStateMachine::SetSkipBeginMainFrameToReduceLatency(bool skip) {
-  skip_begin_main_frame_to_reduce_latency_ = skip;
+void SchedulerStateMachine::SetSkipNextBeginMainFrameToReduceLatency() {
+  skip_next_begin_main_frame_to_reduce_latency_ = true;
 }
 
 bool SchedulerStateMachine::BeginImplFrameNeeded() const {
@@ -962,6 +977,11 @@ bool SchedulerStateMachine::ShouldTriggerBeginImplFrameDeadlineEarly() const {
 }
 
 bool SchedulerStateMachine::MainThreadIsInHighLatencyMode() const {
+  // If a commit is pending before the previous commit has been drawn, we
+  // are definitely in a high latency mode.
+  if (CommitPending() && (active_tree_needs_first_draw_ || has_pending_tree_))
+    return true;
+
   // If we just sent a BeginMainFrame and haven't hit the deadline yet, the main
   // thread is in a low latency mode.
   if (last_frame_number_begin_main_frame_sent_ == current_frame_number_ &&
@@ -972,7 +992,8 @@ bool SchedulerStateMachine::MainThreadIsInHighLatencyMode() const {
   // If there's a commit in progress it must either be from the previous frame
   // or it started after the impl thread's deadline. In either case the main
   // thread is in high latency mode.
-  if (commit_state_ == COMMIT_STATE_FRAME_IN_PROGRESS ||
+  if (commit_state_ == COMMIT_STATE_BEGIN_MAIN_FRAME_SENT ||
+      commit_state_ == COMMIT_STATE_BEGIN_MAIN_FRAME_STARTED ||
       commit_state_ == COMMIT_STATE_READY_TO_COMMIT)
     return true;
 
@@ -1089,24 +1110,27 @@ void SchedulerStateMachine::SetNeedsForcedCommitForReadback() {
          readback_state_ == READBACK_STATE_WAITING_FOR_REPLACEMENT_COMMIT);
 
   // If there is already a commit in progress when we get the readback request
-  // (we are in COMMIT_STATE_FRAME_IN_PROGRESS), then we don't need to send a
-  // BeginMainFrame for the replacement commit, since there's already a
+  // (we are in COMMIT_STATE_BEGIN_MAIN_FRAME_SENT), then we don't need to send
+  // a BeginMainFrame for the replacement commit, since there's already a
   // BeginMainFrame behind the readback request. In that case, we can skip
   // READBACK_STATE_NEEDS_BEGIN_MAIN_FRAME and go directly to
   // READBACK_STATE_WAITING_FOR_COMMIT
-  if (commit_state_ == COMMIT_STATE_FRAME_IN_PROGRESS)
+  if (commit_state_ == COMMIT_STATE_BEGIN_MAIN_FRAME_SENT) {
     readback_state_ = READBACK_STATE_WAITING_FOR_COMMIT;
-  else
+  } else {
+    // Set needs_commit_ to true to trigger scheduling BeginMainFrame().
+    needs_commit_ = true;
     readback_state_ = READBACK_STATE_NEEDS_BEGIN_MAIN_FRAME;
+  }
 }
 
-void SchedulerStateMachine::FinishCommit() {
-  DCHECK(commit_state_ == COMMIT_STATE_FRAME_IN_PROGRESS) << *AsValue();
+void SchedulerStateMachine::NotifyReadyToCommit() {
+  DCHECK(commit_state_ == COMMIT_STATE_BEGIN_MAIN_FRAME_STARTED) << *AsValue();
   commit_state_ = COMMIT_STATE_READY_TO_COMMIT;
 }
 
 void SchedulerStateMachine::BeginMainFrameAborted(bool did_handle) {
-  DCHECK_EQ(commit_state_, COMMIT_STATE_FRAME_IN_PROGRESS);
+  DCHECK_EQ(commit_state_, COMMIT_STATE_BEGIN_MAIN_FRAME_SENT);
   if (did_handle) {
     bool commit_was_aborted = true;
     UpdateStateOnCommit(commit_was_aborted);
@@ -1146,6 +1170,11 @@ void SchedulerStateMachine::DidCreateAndInitializeOutputSurface() {
     needs_commit_ = true;
   }
   did_create_and_initialize_first_output_surface_ = true;
+}
+
+void SchedulerStateMachine::NotifyBeginMainFrameStarted() {
+  DCHECK_EQ(commit_state_, COMMIT_STATE_BEGIN_MAIN_FRAME_SENT);
+  commit_state_ = COMMIT_STATE_BEGIN_MAIN_FRAME_STARTED;
 }
 
 bool SchedulerStateMachine::HasInitializedOutputSurface() const {

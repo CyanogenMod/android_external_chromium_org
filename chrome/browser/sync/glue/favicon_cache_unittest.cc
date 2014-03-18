@@ -5,11 +5,13 @@
 #include "chrome/browser/sync/glue/favicon_cache.h"
 
 #include "base/message_loop/message_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "content/public/browser/notification_service.h"
+#include "sync/api/sync_change_processor_wrapper_for_test.h"
 #include "sync/api/sync_error_factory_mock.h"
 #include "sync/api/time.h"
 #include "sync/protocol/favicon_image_specifics.pb.h"
@@ -99,46 +101,6 @@ syncer::SyncError TestChangeProcessor::ProcessSyncChanges(
     change_map_[iter->sync_data().GetTitle()] = *iter;
   }
   return syncer::SyncError();
-}
-
-
-// SyncChangeProcessorDelegate ------------------------------------------------
-
-class SyncChangeProcessorDelegate : public syncer::SyncChangeProcessor {
- public:
-  explicit SyncChangeProcessorDelegate(syncer::SyncChangeProcessor* recipient);
-  virtual ~SyncChangeProcessorDelegate();
-
-  // syncer::SyncChangeProcessor implementation.
-  virtual syncer::SyncError ProcessSyncChanges(
-      const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE;
-
-  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const
-      OVERRIDE {
-    return recipient_->GetAllSyncData(type);
-  }
-
- private:
-  // The recipient of all sync changes.
-  syncer::SyncChangeProcessor* recipient_;
-
-  DISALLOW_COPY_AND_ASSIGN(SyncChangeProcessorDelegate);
-};
-
-SyncChangeProcessorDelegate::SyncChangeProcessorDelegate(
-    syncer::SyncChangeProcessor* recipient)
-    : recipient_(recipient) {
-  DCHECK(recipient_);
-}
-
-SyncChangeProcessorDelegate::~SyncChangeProcessorDelegate() {
-}
-
-syncer::SyncError SyncChangeProcessorDelegate::ProcessSyncChanges(
-    const tracked_objects::Location& from_here,
-    const syncer::SyncChangeList& change_list) {
-  return recipient_->ProcessSyncChanges(from_here, change_list);
 }
 
 // TestFaviconData ------------------------------------------------------------
@@ -272,6 +234,24 @@ testing::AssertionResult VerifyChanges(
   return testing::AssertionSuccess();
 }
 
+// Helper to extract the favicon id embedded in the tag of a sync
+// change.
+int GetFaviconId(const syncer::SyncChange change) {
+  std::string tag = change.sync_data().GetTag();
+  const std::string kPrefix = "http://bla.com/";
+  const std::string kSuffix = ".ico";
+  if (tag.find(kPrefix) != 0)
+    return -1;
+  std::string temp = tag.substr(kPrefix.length());
+  if (temp.rfind(kSuffix) <= 0)
+    return -1;
+  temp = temp.substr(0, temp.rfind(kSuffix));
+  int result = -1;
+  if (!base::StringToInt(temp, &result))
+    return -1;
+  return result;
+}
+
 }  // namespace
 
 class SyncFaviconCacheTest : public testing::Test {
@@ -315,15 +295,14 @@ class SyncFaviconCacheTest : public testing::Test {
 
   // Our dummy ChangeProcessor used to inspect changes pushed to Sync.
   scoped_ptr<TestChangeProcessor> sync_processor_;
-  scoped_ptr<SyncChangeProcessorDelegate> sync_processor_delegate_;
+  scoped_ptr<syncer::SyncChangeProcessorWrapperForTest> sync_processor_wrapper_;
 };
 
 SyncFaviconCacheTest::SyncFaviconCacheTest()
     : cache_(NULL, kMaxSyncFavicons),
       sync_processor_(new TestChangeProcessor),
-      sync_processor_delegate_(new SyncChangeProcessorDelegate(
-                                   sync_processor_.get())) {
-}
+      sync_processor_wrapper_(new syncer::SyncChangeProcessorWrapperForTest(
+          sync_processor_.get())) {}
 
 void SyncFaviconCacheTest::SetUpInitialSync(
     const syncer::SyncDataList& initial_image_data,
@@ -418,7 +397,7 @@ testing::AssertionResult SyncFaviconCacheTest::VerifyLocalCustomIcons(
 scoped_ptr<syncer::SyncChangeProcessor>
 SyncFaviconCacheTest::CreateAndPassProcessor() {
   return scoped_ptr<syncer::SyncChangeProcessor>(
-      new SyncChangeProcessorDelegate(sync_processor_.get()));
+      new syncer::SyncChangeProcessorWrapperForTest(sync_processor_.get()));
 }
 
 scoped_ptr<syncer::SyncErrorFactory> SyncFaviconCacheTest::
@@ -1170,11 +1149,14 @@ TEST_F(SyncFaviconCacheTest, ExpireOnMergeData) {
 
   EXPECT_FALSE(VerifyLocalIcons(expected_icons));
 
+  // Drops image part of the unsynced icons.
   syncer::SyncMergeResult merge_result =
       cache()->MergeDataAndStartSyncing(syncer::FAVICON_IMAGES,
                                         initial_image_data,
                                         CreateAndPassProcessor(),
                                         CreateAndPassSyncErrorFactory());
+  EXPECT_EQ((unsigned long)kMaxSyncFavicons * 2,
+            GetFaviconCount());  // Still have tracking.
   EXPECT_EQ((unsigned long)kMaxSyncFavicons,
             cache()->GetAllSyncData(syncer::FAVICON_IMAGES).size());
   EXPECT_EQ(0U, processor()->GetAndResetChangeList().size());
@@ -1182,8 +1164,9 @@ TEST_F(SyncFaviconCacheTest, ExpireOnMergeData) {
   EXPECT_EQ(0, merge_result.num_items_modified());
   EXPECT_EQ(kMaxSyncFavicons, merge_result.num_items_deleted());
   EXPECT_EQ(kMaxSyncFavicons, merge_result.num_items_before_association());
-  EXPECT_EQ(kMaxSyncFavicons, merge_result.num_items_after_association());
+  EXPECT_EQ(kMaxSyncFavicons * 2, merge_result.num_items_after_association());
 
+  // Drops tracking part of the unsynced icons.
   merge_result =
       cache()->MergeDataAndStartSyncing(syncer::FAVICON_TRACKING,
                                         initial_tracking_data,
@@ -1194,8 +1177,8 @@ TEST_F(SyncFaviconCacheTest, ExpireOnMergeData) {
   EXPECT_EQ(0U, processor()->GetAndResetChangeList().size());
   EXPECT_EQ(0, merge_result.num_items_added());
   EXPECT_EQ(kMaxSyncFavicons, merge_result.num_items_modified());
-  EXPECT_EQ(0, merge_result.num_items_deleted());
-  EXPECT_EQ(kMaxSyncFavicons, merge_result.num_items_before_association());
+  EXPECT_EQ(kMaxSyncFavicons, merge_result.num_items_deleted());
+  EXPECT_EQ(kMaxSyncFavicons * 2, merge_result.num_items_before_association());
   EXPECT_EQ(kMaxSyncFavicons, merge_result.num_items_after_association());
 
   EXPECT_TRUE(VerifyLocalIcons(expected_icons));
@@ -1770,6 +1753,84 @@ TEST_F(SyncFaviconCacheTest, VisitFaviconClockSkew) {
   }
   EXPECT_EQ(0U, GetTaskCount());
   EXPECT_EQ((unsigned long)kMaxSyncFavicons, GetFaviconCount());
+}
+
+// Simulate a case where the set of tracking info and image info doesn't match,
+// and there is more tracking info than the max. A local update should correctly
+// determine whether to update/add an image/tracking entity.
+TEST_F(SyncFaviconCacheTest, MixedThreshold) {
+  // First go through and add local favicons.
+  for (int i = kMaxSyncFavicons; i < kMaxSyncFavicons + 5; ++i) {
+    TestFaviconData favicon = BuildFaviconData(i);
+    TriggerSyncFaviconReceived(favicon.page_url,
+                               favicon.icon_url,
+                               favicon.image_16,
+                               favicon.last_visit_time);
+  }
+
+  syncer::SyncDataList initial_image_data, initial_tracking_data;
+  // Then sync with enough favicons such that the tracking info is over the max
+  // after merge completes.
+  for (int i = 0; i < kMaxSyncFavicons; ++i) {
+    sync_pb::EntitySpecifics image_specifics;
+    // Push the images forward by 5, to match the unsynced favicons.
+    FillImageSpecifics(BuildFaviconData(i + 5),
+                       image_specifics.mutable_favicon_image());
+    initial_image_data.push_back(
+        syncer::SyncData::CreateRemoteData(1,
+                                           image_specifics,
+                                           base::Time()));
+
+    sync_pb::EntitySpecifics tracking_specifics;
+    FillTrackingSpecifics(BuildFaviconData(i),
+                          tracking_specifics.mutable_favicon_tracking());
+    initial_tracking_data.push_back(
+        syncer::SyncData::CreateRemoteData(1,
+                                           tracking_specifics,
+                                           base::Time()));
+  }
+  SetUpInitialSync(initial_image_data, initial_tracking_data);
+
+  // The local unsynced tracking info should be dropped, but not deleted.
+  EXPECT_EQ(0U, processor()->GetAndResetChangeList().size());
+
+  // Because the image and tracking data don't overlap, the total number of
+  // favicons is still over the limit.
+  EXPECT_EQ((unsigned long)kMaxSyncFavicons + 5, GetFaviconCount());
+
+  // Trigger a tracking change for one of the favicons whose tracking info
+  // was dropped, resulting in a tracking add and expiration of the orphaned
+  // images.
+  TestFaviconData test_data = BuildFaviconData(kMaxSyncFavicons);
+  cache()->OnFaviconVisited(test_data.page_url, test_data.icon_url);
+
+  syncer::SyncChangeList changes = processor()->GetAndResetChangeList();
+  // 1 image update, 5 image deletions, 1 tracking deletion.
+  ASSERT_EQ(6U, changes.size());
+  // Expire image for favicon[kMaxSyncFavicons + 1].
+  EXPECT_EQ(changes[0].change_type(), syncer::SyncChange::ACTION_DELETE);
+  EXPECT_EQ(changes[0].sync_data().GetDataType(), syncer::FAVICON_IMAGES);
+  EXPECT_EQ(kMaxSyncFavicons + 1, GetFaviconId(changes[0]));
+  // Expire image for favicon[kMaxSyncFavicons + 2].
+  EXPECT_EQ(changes[1].change_type(), syncer::SyncChange::ACTION_DELETE);
+  EXPECT_EQ(changes[1].sync_data().GetDataType(), syncer::FAVICON_IMAGES);
+  EXPECT_EQ(kMaxSyncFavicons + 2, GetFaviconId(changes[1]));
+  // Expire image for favicon[kMaxSyncFavicons + 3].
+  EXPECT_EQ(changes[2].change_type(), syncer::SyncChange::ACTION_DELETE);
+  EXPECT_EQ(changes[2].sync_data().GetDataType(), syncer::FAVICON_IMAGES);
+  EXPECT_EQ(kMaxSyncFavicons + 3, GetFaviconId(changes[2]));
+  // Expire image for favicon[kMaxSyncFavicons + 4].
+  EXPECT_EQ(changes[3].change_type(), syncer::SyncChange::ACTION_DELETE);
+  EXPECT_EQ(changes[3].sync_data().GetDataType(), syncer::FAVICON_IMAGES);
+  EXPECT_EQ(kMaxSyncFavicons + 4, GetFaviconId(changes[3]));
+  // Update tracking for favicon[kMaxSyncFavicons].
+  EXPECT_EQ(changes[4].change_type(), syncer::SyncChange::ACTION_ADD);
+  EXPECT_EQ(changes[4].sync_data().GetDataType(), syncer::FAVICON_TRACKING);
+  EXPECT_EQ(kMaxSyncFavicons, GetFaviconId(changes[4]));
+  // Expire tracking for favicon[0].
+  EXPECT_EQ(changes[5].change_type(), syncer::SyncChange::ACTION_DELETE);
+  EXPECT_EQ(changes[5].sync_data().GetDataType(), syncer::FAVICON_TRACKING);
+  EXPECT_EQ(0, GetFaviconId(changes[5]));
 }
 
 }  // namespace browser_sync

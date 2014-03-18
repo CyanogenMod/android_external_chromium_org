@@ -86,7 +86,7 @@ DevToolsAgent::DevToolsAgent(RenderViewImpl* render_view)
 
 DevToolsAgent::~DevToolsAgent() {
   g_agent_for_routing_id.Get().erase(routing_id());
-  setTraceEventCallback(NULL);
+  resetTraceEventCallback();
 }
 
 // Called on the Renderer thread.
@@ -141,14 +141,20 @@ void DevToolsAgent::clearBrowserCookies() {
   Send(new DevToolsHostMsg_ClearBrowserCookies(routing_id()));
 }
 
-void DevToolsAgent::setTraceEventCallback(TraceEventCallback cb) {
+void DevToolsAgent::resetTraceEventCallback()
+{
+  TraceLog::GetInstance()->SetEventCallbackDisabled();
+  base::subtle::NoBarrier_Store(&event_callback_, 0);
+}
+
+void DevToolsAgent::setTraceEventCallback(const WebString& category_filter,
+                                          TraceEventCallback cb) {
   TraceLog* trace_log = TraceLog::GetInstance();
   base::subtle::NoBarrier_Store(&event_callback_,
                                 reinterpret_cast<base::subtle::AtomicWord>(cb));
   if (!!cb) {
     trace_log->SetEventCallbackEnabled(base::debug::CategoryFilter(
-        base::debug::CategoryFilter::kDefaultCategoryFilterString),
-        TraceEventCallbackWrapper);
+        category_filter.utf8()), TraceEventCallbackWrapper);
   } else {
     trace_log->SetEventCallbackDisabled();
   }

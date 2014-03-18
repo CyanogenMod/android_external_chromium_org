@@ -5,6 +5,8 @@
 #include "Config.h"
 #include "RecordInfo.h"
 
+#include "clang/AST/Attr.h"
+
 using namespace clang;
 using std::string;
 
@@ -12,57 +14,57 @@ RecordInfo::RecordInfo(CXXRecordDecl* record, RecordCache* cache)
     : cache_(cache),
       record_(record),
       name_(record->getName()),
-      requires_trace_method_(false),
+      fields_need_tracing_(TracingStatus::Unknown()),
       bases_(0),
       fields_(0),
       determined_trace_methods_(false),
       trace_method_(0),
-      trace_dispatch_method_(0) {
-}
+      trace_dispatch_method_(0),
+      is_gc_derived_(false),
+      base_paths_(0) {}
 
 RecordInfo::~RecordInfo() {
   delete fields_;
   delete bases_;
+  delete base_paths_;
 }
 
-bool RecordInfo::IsTemplate(TemplateArgs* output_args) {
+// Get |count| number of template arguments. Returns false if there
+// are fewer than |count| arguments or any of the arguments are not
+// of a valid Type structure. If |count| is non-positive, all
+// arguments are collected.
+bool RecordInfo::GetTemplateArgs(size_t count, TemplateArgs* output_args) {
   ClassTemplateSpecializationDecl* tmpl =
       dyn_cast<ClassTemplateSpecializationDecl>(record_);
   if (!tmpl)
     return false;
-  if (!output_args)
-    return true;
-  const TemplateArgumentList& args = tmpl->getTemplateInstantiationArgs();
-  for (unsigned i = 0; i < args.size(); ++i) {
+  const TemplateArgumentList& args = tmpl->getTemplateArgs();
+  if (args.size() < count)
+    return false;
+  if (count <= 0)
+    count = args.size();
+  for (unsigned i = 0; i < count; ++i) {
     TemplateArgument arg = args[i];
-    if (arg.getKind() == TemplateArgument::Type) {
-      if (CXXRecordDecl* decl = arg.getAsType()->getAsCXXRecordDecl())
-        output_args->push_back(cache_->Lookup(decl));
+    if (arg.getKind() == TemplateArgument::Type && !arg.getAsType().isNull()) {
+      output_args->push_back(arg.getAsType().getTypePtr());
+    } else {
+      return false;
     }
   }
   return true;
 }
 
 // Test if a record is a HeapAllocated collection.
-bool RecordInfo::IsHeapAllocatedCollection(bool* is_weak) {
-  if (is_weak)
-    *is_weak = false;
-
+bool RecordInfo::IsHeapAllocatedCollection() {
   if (!Config::IsGCCollection(name_) && !Config::IsWTFCollection(name_))
     return false;
 
   TemplateArgs args;
-  if (IsTemplate(&args)) {
+  if (GetTemplateArgs(0, &args)) {
     for (TemplateArgs::iterator it = args.begin(); it != args.end(); ++it) {
-      const string& arg = (*it)->name();
-
-      // The allocator is always after members.
-      if (arg == kHeapAllocatorName)
-        return true;
-
-      // Check for weak members.
-      if (is_weak && Config::IsWeakMember(arg))
-        *is_weak = true;
+      if (CXXRecordDecl* decl = (*it)->getAsCXXRecordDecl())
+        if (decl->getName() == kHeapAllocatorName)
+          return true;
     }
   }
 
@@ -70,14 +72,21 @@ bool RecordInfo::IsHeapAllocatedCollection(bool* is_weak) {
 }
 
 static bool IsGCBaseCallback(const CXXBaseSpecifier* specifier,
-                             CXXBasePath& path, void* data) {
+                             CXXBasePath& path,
+                             void* data) {
   if (CXXRecordDecl* record = specifier->getType()->getAsCXXRecordDecl())
     return Config::IsGCBase(record->getName());
   return false;
 }
 
 // Test if a record is derived from a garbage collected base.
-bool RecordInfo::IsGCDerived(CXXBasePaths* paths) {
+bool RecordInfo::IsGCDerived() {
+  // If already computed, return the known result.
+  if (base_paths_)
+    return is_gc_derived_;
+
+  base_paths_ = new CXXBasePaths(true, true, false);
+
   if (!record_->hasDefinition())
     return false;
 
@@ -86,19 +95,66 @@ bool RecordInfo::IsGCDerived(CXXBasePaths* paths) {
     return false;
 
   // Walk the inheritance tree to find GC base classes.
-  CXXBasePaths localPaths(false, false, false);
-  if (!paths)
-    paths = &localPaths;
-  return record_->lookupInBases(IsGCBaseCallback, 0, *paths);
+  is_gc_derived_ = record_->lookupInBases(IsGCBaseCallback, 0, *base_paths_);
+  return is_gc_derived_;
 }
 
-// TODO: we don't want to identify part objects as stack-allocated objects.
-bool RecordInfo::IsNonNewable() {
+bool RecordInfo::IsGCFinalized() {
+  if (!IsGCDerived())
+    return false;
+  for (CXXBasePaths::paths_iterator it = base_paths_->begin();
+       it != base_paths_->end();
+       ++it) {
+    const CXXBasePathElement& elem = (*it)[it->size() - 1];
+    CXXRecordDecl* base = elem.Base->getType()->getAsCXXRecordDecl();
+    if (Config::IsGCFinalizedBase(base->getName()))
+      return true;
+  }
+  return false;
+}
+
+// A mixin has not yet been "mixed in" if its only GC base is the mixin base.
+bool RecordInfo::IsUnmixedGCMixin() {
+  if (!IsGCDerived() || base_paths_->begin() == base_paths_->end())
+    return false;
+  // Get the last element of the first path.
+  CXXBasePaths::paths_iterator it = base_paths_->begin();
+  const CXXBasePathElement& elem = (*it)[it->size() - 1];
+  CXXRecordDecl* base = elem.Base->getType()->getAsCXXRecordDecl();
+  // If it is not a mixin base we are done.
+  if (!Config::IsGCMixinBase(base->getName()))
+    return false;
+  // Otherwise, this is unmixed if there are no other paths to GC bases.
+  return ++it == base_paths_->end();
+}
+
+// Test if a record is allocated on the managed heap.
+bool RecordInfo::IsGCAllocated() {
+  return IsGCDerived() || IsHeapAllocatedCollection();
+}
+
+static bool IsAnnotated(Decl* decl, const string& anno) {
+  AnnotateAttr* attr = decl->getAttr<AnnotateAttr>();
+  return attr && (attr->getAnnotation() == anno);
+}
+
+RecordInfo* RecordCache::Lookup(CXXRecordDecl* record) {
+  // Ignore classes annotated with the GC_PLUGIN_IGNORE macro.
+  if (!record || IsAnnotated(record, "blink_gc_plugin_ignore"))
+    return 0;
+  Cache::iterator it = cache_.find(record);
+  if (it != cache_.end())
+    return &it->second;
+  return &cache_.insert(std::make_pair(record, RecordInfo(record, this)))
+      .first->second;
+}
+
+bool RecordInfo::IsStackAllocated() {
   for (CXXRecordDecl::method_iterator it = record_->method_begin();
        it != record_->method_end();
        ++it) {
     if (it->getNameAsString() == kNewOperatorName)
-      return it->isDeleted();
+      return it->isDeleted() && IsAnnotated(*it, "blink_stack_allocated");
   }
   return false;
 }
@@ -106,7 +162,7 @@ bool RecordInfo::IsNonNewable() {
 // An object requires a tracing method if it has any fields that need tracing.
 bool RecordInfo::RequiresTraceMethod() {
   GetFields();
-  return requires_trace_method_;
+  return fields_need_tracing_.IsNeeded();
 }
 
 // Get the actual tracing method (ie, can be traceAfterDispatch if there is a
@@ -128,18 +184,33 @@ RecordInfo::Bases& RecordInfo::GetBases() {
   return *bases_;
 }
 
+bool RecordInfo::InheritsNonPureTrace() {
+  if (CXXMethodDecl* trace = GetTraceMethod())
+    return !trace->isPure();
+  for (Bases::iterator it = GetBases().begin(); it != GetBases().end(); ++it) {
+    if (it->second.info()->InheritsNonPureTrace())
+      return true;
+  }
+  return false;
+}
+
 RecordInfo::Bases* RecordInfo::CollectBases() {
   // Compute the collection locally to avoid inconsistent states.
   Bases* bases = new Bases;
+  if (!record_->hasDefinition())
+    return bases;
   for (CXXRecordDecl::base_class_iterator it = record_->bases_begin();
        it != record_->bases_end();
        ++it) {
-    if (CXXRecordDecl* base = it->getType()->getAsCXXRecordDecl()) {
-      // Only collect bases that might need to be traced.
-      TracingStatus status = cache_->Lookup(base)->NeedsTracing();
-      if (!status.IsTracingUnneeded())
-        bases->insert(std::make_pair(base, status));
-    }
+    const CXXBaseSpecifier& spec = *it;
+    RecordInfo* info = cache_->Lookup(spec.getType());
+    if (!info)
+      continue;
+    CXXRecordDecl* base = info->record();
+    TracingStatus status = info->InheritsNonPureTrace()
+                               ? TracingStatus::Needed()
+                               : TracingStatus::Unneeded();
+    bases->insert(std::make_pair(base, BasePoint(spec, info, status)));
   }
   return bases;
 }
@@ -153,22 +224,28 @@ RecordInfo::Fields& RecordInfo::GetFields() {
 RecordInfo::Fields* RecordInfo::CollectFields() {
   // Compute the collection locally to avoid inconsistent states.
   Fields* fields = new Fields;
+  if (!record_->hasDefinition())
+    return fields;
+  TracingStatus fields_status = TracingStatus::Unneeded();
   for (RecordDecl::field_iterator it = record_->field_begin();
        it != record_->field_end();
        ++it) {
-    // Only collect fields that might need to be traced.
-    TracingStatus status = NeedsTracing(*it);
-    if (!status.IsTracingUnneeded()) {
-      fields->insert(std::make_pair(*it, status));
-      if (status.IsTracingRequired())
-        requires_trace_method_ = true;
+    FieldDecl* field = *it;
+    // Ignore fields annotated with the GC_PLUGIN_IGNORE macro.
+    if (IsAnnotated(field, "blink_gc_plugin_ignore"))
+      continue;
+    if (Edge* edge = CreateEdge(field->getType().getTypePtrOrNull())) {
+      fields->insert(std::make_pair(field, FieldPoint(field, edge)));
+      fields_status = fields_status.LUB(edge->NeedsTracing(Edge::kRecursive));
     }
   }
+  fields_need_tracing_ = fields_status;
   return fields;
 }
 
 void RecordInfo::DetermineTracingMethods() {
-  if (determined_trace_methods_) return;
+  if (determined_trace_methods_)
+    return;
   determined_trace_methods_ = true;
   CXXMethodDecl* trace = 0;
   CXXMethodDecl* traceAfterDispatch = 0;
@@ -177,10 +254,12 @@ void RecordInfo::DetermineTracingMethods() {
        it != record_->method_end();
        ++it) {
     if (Config::IsTraceMethod(*it, &isTraceAfterDispatch)) {
-      if (isTraceAfterDispatch)
+      // TODO: Test that the formal parameter is of type Visitor*.
+      if (isTraceAfterDispatch) {
         traceAfterDispatch = *it;
-      else
+      } else {
         trace = *it;
+      }
     }
   }
   if (traceAfterDispatch) {
@@ -194,70 +273,117 @@ void RecordInfo::DetermineTracingMethods() {
   }
 }
 
-// A type needs tracing if it is either a subclass of
-// a garbage collected base or it contains fields that need tracing.
-// A collection type needs tracing if it is HeapAllocated or contains elements
-// that need tracing.
-// As a special-case, member handles always need tracing.
-TracingStatus RecordInfo::NeedsTracing(NeedsTracingOption option) {
-  if (Config::IsRefPtr(name_) ||
-      Config::IsPersistentHandle(name_)) {
-    return TracingStatus::Unneeded();
-  }
-
-  bool is_weak = false;
-  if (Config::IsMemberHandle(name_) ||
-      IsGCDerived() ||
-      IsHeapAllocatedCollection(&is_weak)) {
-    return (is_weak || Config::IsWeakMember(name_))
-        ? TracingStatus::RequiredWeak()
-        : TracingStatus::Required();
-  }
-
-  if (option == kNonRecursive) {
-    return TracingStatus::Unknown();
-  }
-
-  if (Config::IsOwnPtr(name_)) {
-    TemplateArgs args;
-    return (IsTemplate(&args) && args.size() > 0)
-        ? args[0]->NeedsTracing(kNonRecursive)
-        : TracingStatus::Unknown();
-  }
-
-  if (Config::IsWTFCollection(name_)) {
-    TemplateArgs args;
-    if (IsTemplate(&args)) {
-      for (TemplateArgs::iterator it = args.begin(); it != args.end(); ++it) {
-        TracingStatus status = (*it)->NeedsTracing(kNonRecursive);
-        if (status.IsTracingRequired())
-          return status;
-      }
-    }
-    return TracingStatus::Unknown();
-  }
-
-  if (RequiresTraceMethod()) {
-    return TracingStatus::Required();
-  }
-
-  return fields_->empty()
-      ? TracingStatus::Unneeded()
-      : TracingStatus::Unknown();
+// TODO: Add classes with a finalize() method that specialize FinalizerTrait.
+bool RecordInfo::NeedsFinalization() {
+  return record_->hasNonTrivialDestructor();
 }
 
-TracingStatus RecordInfo::NeedsTracing(FieldDecl* field) {
-  const QualType type = field->getType();
+// A class needs tracing if:
+// - it is allocated on the managed heap,
+// - it is derived from a class that needs tracing, or
+// - it contains fields that need tracing.
+// TODO: Defining NeedsTracing based on whether a class defines a trace method
+// (of the proper signature) over approximates too much. The use of transition
+// types causes some classes to have trace methods without them needing to be
+// traced.
+TracingStatus RecordInfo::NeedsTracing(Edge::NeedsTracingOption option) {
+  if (IsGCAllocated())
+    return TracingStatus::Needed();
 
-  if (type->isPointerType()) {
-    RecordInfo* info = cache_->Lookup(type->getPointeeCXXRecordDecl());
-    if (!info)
-      return TracingStatus::Unneeded();
-
-    // Don't do a recursive check for pointer types.
-    return info->NeedsTracing(kNonRecursive);
+  for (Bases::iterator it = GetBases().begin(); it != GetBases().end(); ++it) {
+    if (it->second.info()->NeedsTracing(option).IsNeeded())
+      return TracingStatus::Needed();
   }
 
-  RecordInfo* info = cache_->Lookup(type->getAsCXXRecordDecl());
-  return info ? info->NeedsTracing() : TracingStatus::Unneeded();
+  if (option == Edge::kRecursive)
+    GetFields();
+
+  return fields_need_tracing_;
+}
+
+Edge* RecordInfo::CreateEdge(const Type* type) {
+  if (!type) {
+    return 0;
+  }
+
+  if (type->isPointerType()) {
+    if (Edge* ptr = CreateEdge(type->getPointeeType().getTypePtrOrNull()))
+      return new RawPtr(ptr);
+    return 0;
+  }
+
+  RecordInfo* info = cache_->Lookup(type);
+
+  // If the type is neither a pointer or a C++ record we ignore it.
+  if (!info) {
+    return 0;
+  }
+
+  TemplateArgs args;
+
+  if (Config::IsRawPtr(info->name()) && info->GetTemplateArgs(1, &args)) {
+    if (Edge* ptr = CreateEdge(args[0]))
+      return new RawPtr(ptr);
+    return 0;
+  }
+
+  if (Config::IsRefPtr(info->name()) && info->GetTemplateArgs(1, &args)) {
+    if (Edge* ptr = CreateEdge(args[0]))
+      return new RefPtr(ptr);
+    return 0;
+  }
+
+  if (Config::IsOwnPtr(info->name()) && info->GetTemplateArgs(1, &args)) {
+    if (Edge* ptr = CreateEdge(args[0]))
+      return new OwnPtr(ptr);
+    return 0;
+  }
+
+  if (Config::IsMember(info->name()) && info->GetTemplateArgs(1, &args)) {
+    if (Edge* ptr = CreateEdge(args[0]))
+      return new Member(ptr);
+    return 0;
+  }
+
+  if (Config::IsWeakMember(info->name()) && info->GetTemplateArgs(1, &args)) {
+    if (Edge* ptr = CreateEdge(args[0]))
+      return new WeakMember(ptr);
+    return 0;
+  }
+
+  if (Config::IsPersistent(info->name())) {
+    // Persistent might refer to v8::Persistent, so check the name space.
+    // TODO: Consider using a more canonical identification than names.
+    NamespaceDecl* ns =
+        dyn_cast<NamespaceDecl>(info->record()->getDeclContext());
+    if (!ns || ns->getName() != "WebCore")
+      return 0;
+    if (!info->GetTemplateArgs(1, &args))
+      return 0;
+    if (Edge* ptr = CreateEdge(args[0]))
+      return new Persistent(ptr);
+    return 0;
+  }
+
+  if (Config::IsGCCollection(info->name()) ||
+      Config::IsWTFCollection(info->name())) {
+    bool is_root = Config::IsPersistentGCCollection(info->name());
+    bool on_heap = is_root || info->IsHeapAllocatedCollection();
+    size_t count = Config::CollectionDimension(info->name());
+    if (!info->GetTemplateArgs(count, &args))
+      return 0;
+    Collection* edge = new Collection(info, on_heap, is_root);
+    for (TemplateArgs::iterator it = args.begin(); it != args.end(); ++it) {
+      if (Edge* member = CreateEdge(*it)) {
+        edge->members().push_back(member);
+      } else {
+        // We failed to create an edge so abort the entire edge construction.
+        delete edge;  // Will delete the already allocated members.
+        return 0;
+      }
+    }
+    return edge;
+  }
+
+  return new Value(info);
 }

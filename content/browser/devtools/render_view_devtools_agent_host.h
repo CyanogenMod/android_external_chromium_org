@@ -22,6 +22,7 @@ class CompositorFrameMetadata;
 
 namespace content {
 
+class DevToolsPowerHandler;
 class DevToolsTracingHandler;
 class RendererOverridesHandler;
 class RenderViewHost;
@@ -37,6 +38,9 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
  public:
   static void OnCancelPendingNavigation(RenderViewHost* pending,
                                         RenderViewHost* current);
+
+  static bool DispatchIPCMessage(RenderViewHost* source,
+                                 const IPC::Message& message);
 
   RenderViewDevToolsAgentHost(RenderViewHost*);
 
@@ -68,12 +72,13 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
   virtual void RenderViewDeleted(RenderViewHost* rvh) OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual void DidAttachInterstitialPage() OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // NotificationObserver overrides:
   virtual void Observe(int type,
                        const NotificationSource& source,
                        const NotificationDetails& details) OVERRIDE;
+
+  bool DispatchIPCMessage(const IPC::Message& message);
 
   void SetRenderViewHost(RenderViewHost* rvh);
   void ClearRenderViewHost();
@@ -91,6 +96,7 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
   RenderViewHost* render_view_host_;
   scoped_ptr<RendererOverridesHandler> overrides_handler_;
   scoped_ptr<DevToolsTracingHandler> tracing_handler_;
+  scoped_ptr<DevToolsPowerHandler> power_handler_;
 #if defined(OS_ANDROID)
   scoped_ptr<PowerSaveBlockerImpl> power_save_blocker_;
 #endif

@@ -6,8 +6,8 @@
 
 #include "ash/ash_constants.h"
 #include "ash/ash_switches.h"
-#include "ash/wm/caption_buttons/frame_caption_button_container_view.h"
-#include "ash/wm/header_painter.h"
+#include "ash/frame/caption_buttons/frame_caption_button_container_view.h"
+#include "ash/frame/header_painter.h"
 #include "base/command_line.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -118,7 +118,7 @@ IN_PROC_BROWSER_TEST_F(BrowserNonClientFrameViewAshTest, ImmersiveFullscreen) {
   // Frame paints by default.
   EXPECT_TRUE(frame_view->ShouldPaint());
   EXPECT_LT(Tab::GetImmersiveHeight(),
-            frame_view->header_painter_->header_height());
+            frame_view->header_painter_->GetHeaderHeightForPainting());
 
   // Enter both browser fullscreen and tab fullscreen. Entering browser
   // fullscreen should enable immersive fullscreen.
@@ -152,7 +152,7 @@ IN_PROC_BROWSER_TEST_F(BrowserNonClientFrameViewAshTest, ImmersiveFullscreen) {
   revealed_lock.reset();
   EXPECT_FALSE(immersive_mode_controller->IsRevealed());
   EXPECT_FALSE(frame_view->ShouldPaint());
-  EXPECT_EQ(0, frame_view->header_painter_->header_height());
+  EXPECT_EQ(0, frame_view->header_painter_->GetHeaderHeightForPainting());
 
   // Repeat test but without tab fullscreen. The tab lightbars should now show
   // when the top-of-window views are not revealed.
@@ -172,7 +172,7 @@ IN_PROC_BROWSER_TEST_F(BrowserNonClientFrameViewAshTest, ImmersiveFullscreen) {
   EXPECT_TRUE(frame_view->caption_button_container_->visible());
   EXPECT_FALSE(frame_view->UseImmersiveLightbarHeaderStyle());
   EXPECT_LT(Tab::GetImmersiveHeight(),
-            frame_view->header_painter_->header_height());
+            frame_view->header_painter_->GetHeaderHeightForPainting());
 
   // Ending the reveal should hide the caption buttons and the header should
   // be in the lightbar style.
@@ -181,7 +181,7 @@ IN_PROC_BROWSER_TEST_F(BrowserNonClientFrameViewAshTest, ImmersiveFullscreen) {
   EXPECT_FALSE(frame_view->caption_button_container_->visible());
   EXPECT_TRUE(frame_view->UseImmersiveLightbarHeaderStyle());
   EXPECT_EQ(Tab::GetImmersiveHeight(),
-            frame_view->header_painter_->header_height());
+            frame_view->header_painter_->GetHeaderHeightForPainting());
 
   // Exiting immersive fullscreen should make the caption buttons and the frame
   // visible again.
@@ -196,6 +196,6 @@ IN_PROC_BROWSER_TEST_F(BrowserNonClientFrameViewAshTest, ImmersiveFullscreen) {
   EXPECT_TRUE(frame_view->caption_button_container_->visible());
   EXPECT_FALSE(frame_view->UseImmersiveLightbarHeaderStyle());
   EXPECT_LT(Tab::GetImmersiveHeight(),
-            frame_view->header_painter_->header_height());
+            frame_view->header_painter_->GetHeaderHeightForPainting());
 }
 #endif  // defined(OS_CHROMEOS)

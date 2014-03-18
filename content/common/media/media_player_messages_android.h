@@ -5,9 +5,6 @@
 // IPC messages for android media player.
 // Multiply-included message file, hence no include guard.
 
-#include <string>
-#include <vector>
-
 #include "base/basictypes.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
@@ -15,7 +12,6 @@
 #include "ipc/ipc_message_macros.h"
 #include "media/base/android/media_player_android.h"
 #include "media/base/android/demuxer_stream_player_params.h"
-#include "media/base/media_keys.h"
 #include "ui/gfx/rect_f.h"
 #include "url/gurl.h"
 
@@ -26,7 +22,6 @@
 IPC_ENUM_TRAITS(media::AudioCodec)
 IPC_ENUM_TRAITS(media::DemuxerStream::Status)
 IPC_ENUM_TRAITS(media::DemuxerStream::Type)
-IPC_ENUM_TRAITS(media::MediaKeys::KeyError)
 IPC_ENUM_TRAITS(media::VideoCodec)
 
 IPC_STRUCT_TRAITS_BEGIN(media::DemuxerConfigs)
@@ -65,7 +60,6 @@ IPC_STRUCT_TRAITS_BEGIN(media::SubsampleEntry)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS(MediaPlayerHostMsg_Initialize_Type)
-IPC_ENUM_TRAITS(MediaKeysHostMsg_CreateSession_Type)
 
 // Chrome for Android seek message sequence is:
 // 1. Renderer->Browser MediaPlayerHostMsg_Seek
@@ -282,54 +276,3 @@ IPC_MESSAGE_ROUTED3(MediaPlayerHostMsg_NotifyExternalSurface,
                     bool /* is_request */,
                     gfx::RectF /* rect */)
 #endif  // defined(VIDEO_HOLE)
-
-// Messages for encrypted media extensions API ------------------------------
-// TODO(xhwang): Move the following messages to a separate file.
-
-IPC_MESSAGE_ROUTED3(MediaKeysHostMsg_InitializeCDM,
-                    int /* media_keys_id */,
-                    std::vector<uint8> /* uuid */,
-                    GURL /* frame url */)
-
-IPC_MESSAGE_ROUTED4(MediaKeysHostMsg_CreateSession,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */,
-                    MediaKeysHostMsg_CreateSession_Type /* type */,
-                    std::vector<uint8> /* init_data */)
-
-IPC_MESSAGE_ROUTED3(MediaKeysHostMsg_UpdateSession,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */,
-                    std::vector<uint8> /* response */)
-
-IPC_MESSAGE_ROUTED2(MediaKeysHostMsg_ReleaseSession,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */)
-
-IPC_MESSAGE_ROUTED1(MediaKeysHostMsg_CancelAllPendingSessionCreations,
-                    int /* media_keys_id */)
-
-IPC_MESSAGE_ROUTED3(MediaKeysMsg_SessionCreated,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */,
-                    std::string /* web_session_id */)
-
-IPC_MESSAGE_ROUTED4(MediaKeysMsg_SessionMessage,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */,
-                    std::vector<uint8> /* message */,
-                    GURL /* destination_url */)
-
-IPC_MESSAGE_ROUTED2(MediaKeysMsg_SessionReady,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */)
-
-IPC_MESSAGE_ROUTED2(MediaKeysMsg_SessionClosed,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */)
-
-IPC_MESSAGE_ROUTED4(MediaKeysMsg_SessionError,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */,
-                    media::MediaKeys::KeyError /* error_code */,
-                    int /* system_code */)

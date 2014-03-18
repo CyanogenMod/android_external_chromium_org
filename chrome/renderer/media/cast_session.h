@@ -14,13 +14,16 @@
 #include "net/base/ip_endpoint.h"
 
 namespace base {
+class BinaryValue;
+class DictionaryValue;
 class MessageLoopProxy;
 }  // namespace base
 
 namespace media {
 class VideoFrame;
 namespace cast {
-class FrameInput;
+class AudioFrameInput;
+class VideoFrameInput;
 struct AudioSenderConfig;
 struct VideoSenderConfig;
 }  // namespace cast
@@ -37,10 +40,13 @@ class CastSessionDelegate;
 // CastSessionDelegate on the IO thread.
 class CastSession : public base::RefCounted<CastSession> {
  public:
-  typedef
-  base::Callback<void(const scoped_refptr<media::cast::FrameInput>&)>
-  FrameInputAvailableCallback;
+  typedef base::Callback<void(const scoped_refptr<
+      media::cast::AudioFrameInput>&)> AudioFrameInputAvailableCallback;
+  typedef base::Callback<void(const scoped_refptr<
+      media::cast::VideoFrameInput>&)> VideoFrameInputAvailableCallback;
   typedef base::Callback<void(const std::vector<char>&)> SendPacketCallback;
+  typedef base::Callback<void(scoped_ptr<base::BinaryValue>)> EventLogsCallback;
+  typedef base::Callback<void(scoped_ptr<base::DictionaryValue>)> StatsCallback;
 
   CastSession();
 
@@ -50,11 +56,25 @@ class CastSession : public base::RefCounted<CastSession> {
   // media::cast::FrameInput will be given through the callback. The
   // callback will be made on the main thread.
   void StartAudio(const media::cast::AudioSenderConfig& config,
-                  const FrameInputAvailableCallback& callback);
+                  const AudioFrameInputAvailableCallback& callback);
   void StartVideo(const media::cast::VideoSenderConfig& config,
-                  const FrameInputAvailableCallback& callback);
+                  const VideoFrameInputAvailableCallback& callback);
   void StartUDP(const net::IPEndPoint& local_endpoint,
                 const net::IPEndPoint& remote_endpoint);
+
+  // Creates or destroys event subscriber for the audio or video stream.
+  // |is_audio|: true if the event subscriber is for audio. Video otherwise.
+  // |enable|: If true, creates an event subscriber. Otherwise destroys
+  // existing subscriber and discards logs.
+  void ToggleLogging(bool is_audio, bool enable);
+
+  // Returns raw event logs in serialized format for either the audio or video
+  // stream since last call and returns result in |callback|.
+  void GetEventLogsAndReset(bool is_audio, const EventLogsCallback& callback);
+
+  // Returns stats in a DictionaryValue format for either the audio or video
+  // stream since last call and returns result in |callback|.
+  void GetStatsAndReset(bool is_audio, const StatsCallback& callback);
 
  private:
   friend class base::RefCounted<CastSession>;

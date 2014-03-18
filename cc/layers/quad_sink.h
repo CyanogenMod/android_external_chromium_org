@@ -8,12 +8,15 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 
+namespace gfx {
+class Rect;
+class Transform;
+}
+
 namespace cc {
 
 class DrawQuad;
 class SharedQuadState;
-
-struct AppendQuadsData;
 
 class CC_EXPORT QuadSink {
  public:
@@ -25,10 +28,15 @@ class CC_EXPORT QuadSink {
   virtual SharedQuadState* UseSharedQuadState(
       scoped_ptr<SharedQuadState> shared_quad_state) = 0;
 
+  virtual gfx::Rect UnoccludedContentRect(
+      const gfx::Rect& content_rect,
+      const gfx::Transform& draw_transform) = 0;
+
   // Returns true if the quad is added to the list, and false if the quad is
   // entirely culled.
-  virtual bool Append(scoped_ptr<DrawQuad> draw_quad,
-                      AppendQuadsData* append_quads_data) = 0;
+  virtual bool MaybeAppend(scoped_ptr<DrawQuad> draw_quad) = 0;
+
+  virtual void Append(scoped_ptr<DrawQuad> draw_quad) = 0;
 };
 
 }  // namespace cc

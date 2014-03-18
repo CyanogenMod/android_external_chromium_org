@@ -60,11 +60,9 @@ class RendererMediaPlayerManager;
 // media player in the browser process. It listens to all the status changes
 // sent from the browser process and sends playback controls to the media
 // player.
-class WebMediaPlayerAndroid
-    : public blink::WebMediaPlayer,
-      public cc::VideoFrameProvider,
-      public RenderFrameObserver,
-      public base::SupportsWeakPtr<WebMediaPlayerAndroid> {
+class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
+                              public cc::VideoFrameProvider,
+                              public RenderFrameObserver {
  public:
   // Construct a WebMediaPlayerAndroid object. This class communicates with the
   // MediaPlayerAndroid object in the browser process through |proxy|.
@@ -220,7 +218,7 @@ class WebMediaPlayerAndroid
   void OnKeyAdded(const std::string& session_id);
   void OnKeyError(const std::string& session_id,
                   media::MediaKeys::KeyError error_code,
-                  int system_code);
+                  uint32 system_code);
   void OnKeyMessage(const std::string& session_id,
                     const std::vector<uint8>& message,
                     const std::string& destination_url);
@@ -232,12 +230,6 @@ class WebMediaPlayerAndroid
 
   // TODO(xhwang): Implement WebMediaPlayer::setContentDecryptionModule().
   // See: http://crbug.com/224786
-
-  // Can be called on any thread.
-  static void OnReleaseRemotePlaybackTexture(
-      const scoped_refptr<base::MessageLoopProxy>& main_loop,
-      const base::WeakPtr<WebMediaPlayerAndroid>& player,
-      scoped_ptr<gpu::MailboxHolder> mailbox_holder);
 
  protected:
   // Helper method to update the playing state.
@@ -260,27 +252,27 @@ class WebMediaPlayerAndroid
   void Pause(bool is_media_related_action);
   void DrawRemotePlaybackIcon();
   void ReallocateVideoFrame();
+  void CreateWebLayerIfNeeded();
   void SetCurrentFrameInternal(scoped_refptr<media::VideoFrame>& frame);
   void DidLoadMediaInfo(MediaInfoLoader::Status status);
-  void DoReleaseRemotePlaybackTexture(uint32 sync_point);
+  void DoReleaseRemotePlaybackTexture(
+      scoped_ptr<gpu::MailboxHolder> mailbox_holder);
 
-  bool IsKeySystemSupported(const blink::WebString& key_system);
+  bool IsKeySystemSupported(const std::string& key_system);
 
   // Actually do the work for generateKeyRequest/addKey so they can easily
   // report results to UMA.
-  MediaKeyException GenerateKeyRequestInternal(
-      const blink::WebString& key_system,
-      const unsigned char* init_data,
-      unsigned init_data_length);
-  MediaKeyException AddKeyInternal(const blink::WebString& key_system,
+  MediaKeyException GenerateKeyRequestInternal(const std::string& key_system,
+                                               const unsigned char* init_data,
+                                               unsigned init_data_length);
+  MediaKeyException AddKeyInternal(const std::string& key_system,
                                    const unsigned char* key,
                                    unsigned key_length,
                                    const unsigned char* init_data,
                                    unsigned init_data_length,
-                                   const blink::WebString& session_id);
-  MediaKeyException CancelKeyRequestInternal(
-      const blink::WebString& key_system,
-      const blink::WebString& session_id);
+                                   const std::string& session_id);
+  MediaKeyException CancelKeyRequestInternal(const std::string& key_system,
+                                             const std::string& session_id);
 
   // Requests that this object notifies when a decryptor is ready through the
   // |decryptor_ready_cb| provided.
@@ -313,9 +305,6 @@ class WebMediaPlayerAndroid
   base::Lock current_frame_lock_;
 
   base::ThreadChecker main_thread_checker_;
-
-  // Message loop for main renderer thread.
-  const scoped_refptr<base::MessageLoopProxy> main_loop_;
 
   // Message loop for media thread.
   const scoped_refptr<base::MessageLoopProxy> media_loop_;
@@ -433,7 +422,7 @@ class WebMediaPlayerAndroid
 
   // The currently selected key system. Empty string means that no key system
   // has been selected.
-  blink::WebString current_key_system_;
+  std::string current_key_system_;
 
   // Temporary for EME v0.1. In the future the init data type should be passed
   // through GenerateKeyRequest() directly from WebKit.

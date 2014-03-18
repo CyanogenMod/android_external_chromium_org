@@ -55,7 +55,7 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#import "ui/base/cocoa/cocoa_event_utils.h"
+#import "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -484,6 +484,10 @@ void RecordAppLaunch(Profile* profile, GURL url) {
   if ([self isAnimationRunning]) {
     for (NSButton* button in buttons_.get())
       [button setNeedsDisplay:YES];
+    // Update the apps and other buttons explicitly, since they are not in the
+    // buttons_ array.
+    [appsPageShortcutButton_ setNeedsDisplay:YES];
+    [otherBookmarksButton_ setNeedsDisplay:YES];
   }
 }
 

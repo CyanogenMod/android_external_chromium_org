@@ -23,20 +23,20 @@
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/corewm/window_animations.h"
-#include "ui/views/corewm/window_util.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/window_animations.h"
+#include "ui/wm/core/window_util.h"
 
 using aura::Window;
 
@@ -312,10 +312,11 @@ TEST_F(WorkspaceControllerTest, MinimizeSingleWindow) {
 
   w1->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MINIMIZED);
   EXPECT_FALSE(w1->layer()->IsDrawn());
+  EXPECT_TRUE(w1->layer()->GetTargetTransform().IsIdentity());
 
   // Show the window.
   w1->Show();
-  EXPECT_TRUE(wm::GetWindowState(w1.get())->IsNormalShowState());
+  EXPECT_TRUE(wm::GetWindowState(w1.get())->IsNormalStateType());
   EXPECT_TRUE(w1->layer()->IsDrawn());
 }
 
@@ -459,6 +460,9 @@ TEST_F(WorkspaceControllerTest, ShelfStateUpdated) {
   EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
   EXPECT_EQ(SHELF_AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
   EXPECT_EQ("0,1 101x102", w1->bounds().ToString());
+  EXPECT_EQ(ScreenUtil::GetMaximizedWindowBoundsInParent(
+                w2->parent()).ToString(),
+            w2->bounds().ToString());
 
   // Switch to w1.
   wm::ActivateWindow(w1.get());
@@ -699,7 +703,7 @@ TEST_F(WorkspaceControllerTest, TransientParent) {
   // Window with a transient parent. We set the transient parent to the root,
   // which would never happen but is enough to exercise the bug.
   scoped_ptr<Window> w1(CreateTestWindowUnparented());
-  views::corewm::AddTransientChild(
+  ::wm::AddTransientChild(
       Shell::GetInstance()->GetPrimaryRootWindow(), w1.get());
   w1->SetBounds(gfx::Rect(10, 11, 250, 251));
   ParentWindowInPrimaryRootWindow(w1.get());
@@ -993,7 +997,7 @@ TEST_F(WorkspaceControllerTest, ToMinimizeRepositionsRemaining) {
 
   // |window2| should be centered now.
   EXPECT_TRUE(window2->IsVisible());
-  EXPECT_TRUE(window2_state->IsNormalShowState());
+  EXPECT_TRUE(window2_state->IsNormalStateType());
   EXPECT_EQ(base::IntToString(
                 (desktop_area.width() - window2->bounds().width()) / 2) +
             ",48 256x512", window2->bounds().ToString());
@@ -1023,7 +1027,7 @@ TEST_F(WorkspaceControllerTest, MaxToMinRepositionsRemaining) {
 
   // |window2| should be centered now.
   EXPECT_TRUE(window2->IsVisible());
-  EXPECT_TRUE(window2_state->IsNormalShowState());
+  EXPECT_TRUE(window2_state->IsNormalStateType());
   EXPECT_EQ(base::IntToString(
                 (desktop_area.width() - window2->bounds().width()) / 2) +
             ",48 256x512", window2->bounds().ToString());
@@ -1057,7 +1061,7 @@ TEST_F(WorkspaceControllerTest, NormToMaxToMinRepositionsRemaining) {
 
   // |window2| should be centered now.
   EXPECT_TRUE(window2->IsVisible());
-  EXPECT_TRUE(window2_state->IsNormalShowState());
+  EXPECT_TRUE(window2_state->IsNormalStateType());
   EXPECT_EQ(base::IntToString(
                 (desktop_area.width() - window2->bounds().width()) / 2) +
             ",40 256x512", window2->bounds().ToString());
@@ -1155,7 +1159,7 @@ TEST_F(WorkspaceControllerTest, VerifyLayerOrdering) {
                                                ui::wm::WINDOW_TYPE_POPUP,
                                                gfx::Rect(5, 6, 7, 8),
                                                NULL);
-  views::corewm::AddTransientChild(browser.get(), status_bubble);
+  ::wm::AddTransientChild(browser.get(), status_bubble);
   ParentWindowInPrimaryRootWindow(status_bubble);
   status_bubble->SetName("status_bubble");
 

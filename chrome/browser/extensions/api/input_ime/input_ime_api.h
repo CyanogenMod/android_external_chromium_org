@@ -12,10 +12,11 @@
 #include "base/memory/singleton.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/input_method/input_method_engine_interface.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_function.h"
 #include "extensions/common/extension.h"
 
@@ -63,8 +64,8 @@ class InputImeEventRouter {
   std::map<std::string, std::map<std::string,
                                  chromeos::InputMethodEngineInterface*> >
       engines_;
-  std::map<std::string, std::map<std::string, chromeos::ImeObserver*> >
-      observers_;
+  // The map from extension id to ImeObserver.
+  std::map<std::string, chromeos::ImeObserver*> observers_;
 
   unsigned int next_request_id_;
   RequestMap request_map_;
@@ -213,25 +214,29 @@ class InputImeHideInputViewFunction : public AsyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-class InputImeAPI : public ProfileKeyedAPI,
-                    public content::NotificationObserver {
+class InputImeAPI : public BrowserContextKeyedAPI,
+                    public content::NotificationObserver,
+                    public EventRouter::Observer {
  public:
-  explicit InputImeAPI(Profile* profile);
+  explicit InputImeAPI(content::BrowserContext* context);
   virtual ~InputImeAPI();
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<InputImeAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<InputImeAPI>* GetFactoryInstance();
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  // EventRouter::Observer implementation.
+  virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;
+
  private:
-  friend class ProfileKeyedAPIFactory<InputImeAPI>;
+  friend class BrowserContextKeyedAPIFactory<InputImeAPI>;
   InputImeEventRouter* input_ime_event_router();
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "InputImeAPI";
   }

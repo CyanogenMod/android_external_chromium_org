@@ -6,7 +6,7 @@
 
 #include "ash/shell.h"
 #include "cc/debug/layer_tree_debug_state.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/compositor.h"
 
 namespace ash {
@@ -18,7 +18,7 @@ void ToggleShowDebugBorders() {
   scoped_ptr<bool> value;
   for (aura::Window::Windows::iterator it = root_windows.begin();
        it != root_windows.end(); ++it) {
-    ui::Compositor* compositor = (*it)->GetDispatcher()->host()->compositor();
+    ui::Compositor* compositor = (*it)->GetHost()->compositor();
     cc::LayerTreeDebugState state = compositor->GetLayerTreeDebugState();
     if (!value.get())
       value.reset(new bool(!state.show_debug_borders));
@@ -33,7 +33,7 @@ void ToggleShowFpsCounter() {
   scoped_ptr<bool> value;
   for (aura::Window::Windows::iterator it = root_windows.begin();
        it != root_windows.end(); ++it) {
-    ui::Compositor* compositor = (*it)->GetDispatcher()->host()->compositor();
+    ui::Compositor* compositor = (*it)->GetHost()->compositor();
     cc::LayerTreeDebugState state = compositor->GetLayerTreeDebugState();
     if (!value.get())
       value.reset(new bool(!state.show_fps_counter));
@@ -48,7 +48,7 @@ void ToggleShowPaintRects() {
   scoped_ptr<bool> value;
   for (aura::Window::Windows::iterator it = root_windows.begin();
        it != root_windows.end(); ++it) {
-    ui::Compositor* compositor = (*it)->GetDispatcher()->host()->compositor();
+    ui::Compositor* compositor = (*it)->GetHost()->compositor();
     cc::LayerTreeDebugState state = compositor->GetLayerTreeDebugState();
     if (!value.get())
       value.reset(new bool(!state.show_paint_rects));

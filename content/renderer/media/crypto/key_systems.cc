@@ -15,14 +15,14 @@
 #include "content/public/renderer/key_system_info.h"
 #include "content/renderer/media/crypto/key_systems_support_uma.h"
 #include "net/base/mime_util.h"
-#include "third_party/WebKit/public/platform/WebCString.h"
-#include "third_party/WebKit/public/platform/WebString.h"
 
 #include "widevine_cdm_version.h" // In SHARED_INTERMEDIATE_DIR.
 
 namespace content {
 
-const char kClearKeyKeySystem[] = "webkit-org.w3.clearkey";
+const char kClearKeyKeySystem[] = "org.w3.clearkey";
+const char kPrefixedClearKeyKeySystem[] = "webkit-org.w3.clearkey";
+const char kUnsupportedClearKeyKeySystem[] = "unsupported-org.w3.clearkey";
 
 const char kAudioWebM[] = "audio/webm";
 const char kVideoWebM[] = "video/webm";
@@ -35,23 +35,6 @@ const char kVideoMp4[] = "video/mp4";
 const char kMp4a[] = "mp4a";
 const char kMp4aAvc1Avc3[] = "mp4a,avc1,avc3";
 #endif  // defined(USE_PROPRIETARY_CODECS)
-
-inline std::string KeySystemNameForUMAInternal(
-    const blink::WebString& key_system) {
-  if (key_system == kClearKeyKeySystem)
-    return "ClearKey";
-#if defined(WIDEVINE_CDM_AVAILABLE)
-  if (key_system == kWidevineKeySystem)
-    return "Widevine";
-#endif  // WIDEVINE_CDM_AVAILABLE
-  return "Unknown";
-}
-
-// Convert a WebString to ASCII, falling back on an empty string in the case
-// of a non-ASCII string.
-static std::string ToASCIIOrEmpty(const blink::WebString& string) {
-  return IsStringASCII(string) ? UTF16ToASCII(string) : std::string();
-}
 
 static void AddClearKey(std::vector<KeySystemInfo>* concrete_key_systems) {
   KeySystemInfo info(kClearKeyKeySystem);
@@ -83,8 +66,6 @@ class KeySystems {
 
 #if defined(ENABLE_PEPPER_CDMS)
   std::string GetPepperType(const std::string& concrete_key_system);
-#elif defined(OS_ANDROID)
-  std::vector<uint8> GetUUID(const std::string& concrete_key_system);
 #endif
 
  private:
@@ -96,12 +77,9 @@ class KeySystems {
       bool use_aes_decryptor,
 #if defined(ENABLE_PEPPER_CDMS)
       const std::string& pepper_type,
-#elif defined(OS_ANDROID)
-      const std::vector<uint8>& uuid,
 #endif
       const std::vector<KeySystemInfo::ContainerCodecsPair>& supported_types,
       const std::string& parent_key_system);
-
 
   friend struct base::DefaultLazyInstanceTraits<KeySystems>;
 
@@ -114,8 +92,6 @@ class KeySystems {
     bool use_aes_decryptor;
 #if defined(ENABLE_PEPPER_CDMS)
     std::string pepper_type;
-#elif defined(OS_ANDROID)
-    std::vector<uint8> uuid;
 #endif
     MimeTypeMap types;
   };
@@ -174,8 +150,6 @@ void KeySystems::AddConcreteSupportedKeySystems(
                                   key_system_info.use_aes_decryptor,
 #if defined(ENABLE_PEPPER_CDMS)
                                   key_system_info.pepper_type,
-#elif defined(OS_ANDROID)
-                                  key_system_info.uuid,
 #endif
                                   key_system_info.supported_types,
                                   key_system_info.parent_key_system);
@@ -187,8 +161,6 @@ void KeySystems::AddConcreteSupportedKeySystem(
     bool use_aes_decryptor,
 #if defined(ENABLE_PEPPER_CDMS)
     const std::string& pepper_type,
-#elif defined(OS_ANDROID)
-    const std::vector<uint8>& uuid,
 #endif
     const std::vector<KeySystemInfo::ContainerCodecsPair>& supported_types,
     const std::string& parent_key_system) {
@@ -203,10 +175,6 @@ void KeySystems::AddConcreteSupportedKeySystem(
 #if defined(ENABLE_PEPPER_CDMS)
   DCHECK_EQ(use_aes_decryptor, pepper_type.empty());
   properties.pepper_type = pepper_type;
-#elif defined(OS_ANDROID)
-  DCHECK_EQ(use_aes_decryptor, uuid.empty());
-  DCHECK(use_aes_decryptor || uuid.size() == 16);
-  properties.uuid = uuid;
 #endif
 
   for (size_t i = 0; i < supported_types.size(); ++i) {
@@ -337,24 +305,31 @@ std::string KeySystems::GetPepperType(const std::string& concrete_key_system) {
   DLOG_IF(FATAL, type.empty()) << concrete_key_system << " is not Pepper-based";
   return type;
 }
-#elif defined(OS_ANDROID)
-std::vector<uint8> KeySystems::GetUUID(const std::string& concrete_key_system) {
-  KeySystemPropertiesMap::iterator key_system_iter =
-      concrete_key_system_map_.find(concrete_key_system);
-  if (key_system_iter == concrete_key_system_map_.end()) {
-      DLOG(FATAL) << concrete_key_system << " is not a known concrete system";
-      return std::vector<uint8>();
-  }
-
-  return key_system_iter->second.uuid;
-}
 #endif
 
 //------------------------------------------------------------------------------
 
-bool IsConcreteSupportedKeySystem(const blink::WebString& key_system) {
-  return KeySystems::GetInstance().IsConcreteSupportedKeySystem(
-      ToASCIIOrEmpty(key_system));
+std::string GetUnprefixedKeySystemName(const std::string& key_system) {
+  if (key_system == kClearKeyKeySystem)
+    return kUnsupportedClearKeyKeySystem;
+
+  if (key_system == kPrefixedClearKeyKeySystem)
+    return kClearKeyKeySystem;
+
+  return key_system;
+}
+
+std::string GetPrefixedKeySystemName(const std::string& key_system) {
+  DCHECK_NE(key_system, kPrefixedClearKeyKeySystem);
+
+  if (key_system == kClearKeyKeySystem)
+    return kPrefixedClearKeyKeySystem;
+
+  return key_system;
+}
+
+bool IsConcreteSupportedKeySystem(const std::string& key_system) {
+  return KeySystems::GetInstance().IsConcreteSupportedKeySystem(key_system);
 }
 
 bool IsSupportedKeySystemWithMediaMimeType(
@@ -365,12 +340,14 @@ bool IsSupportedKeySystemWithMediaMimeType(
       mime_type, codecs, key_system);
 }
 
-std::string KeySystemNameForUMA(const blink::WebString& key_system) {
-  return KeySystemNameForUMAInternal(key_system);
-}
-
 std::string KeySystemNameForUMA(const std::string& key_system) {
-  return KeySystemNameForUMAInternal(blink::WebString::fromUTF8(key_system));
+  if (key_system == kClearKeyKeySystem)
+    return "ClearKey";
+#if defined(WIDEVINE_CDM_AVAILABLE)
+  if (key_system == kWidevineKeySystem)
+    return "Widevine";
+#endif  // WIDEVINE_CDM_AVAILABLE
+  return "Unknown";
 }
 
 bool CanUseAesDecryptor(const std::string& concrete_key_system) {
@@ -380,10 +357,6 @@ bool CanUseAesDecryptor(const std::string& concrete_key_system) {
 #if defined(ENABLE_PEPPER_CDMS)
 std::string GetPepperType(const std::string& concrete_key_system) {
   return KeySystems::GetInstance().GetPepperType(concrete_key_system);
-}
-#elif defined(OS_ANDROID)
-std::vector<uint8> GetUUID(const std::string& concrete_key_system) {
-  return KeySystems::GetInstance().GetUUID(concrete_key_system);
 }
 #endif
 

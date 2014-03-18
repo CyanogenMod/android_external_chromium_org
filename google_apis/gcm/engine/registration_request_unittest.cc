@@ -10,6 +10,7 @@
 #include "base/strings/string_tokenizer.h"
 #include "google_apis/gcm/engine/registration_request.h"
 #include "net/url_request/test_url_fetcher_factory.h"
+#include "net/url_request/url_request_status.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -17,10 +18,9 @@ namespace gcm {
 
 namespace {
 const uint64 kAndroidId = 42UL;
-const char kCert[] = "0DEADBEEF420";
+const char kAppId[] = "TestAppId";
 const char kDeveloperId[] = "Project1";
 const char kLoginHeader[] = "AidLogin";
-const char kAppId[] = "TestAppId";
 const uint64 kSecurityToken = 77UL;
 
 // Backoff policy for testing registration request.
@@ -66,8 +66,12 @@ class RegistrationRequestTest : public testing::Test {
   void SetResponseStatusAndString(net::HttpStatusCode status_code,
                                   const std::string& response_body);
   void CompleteFetch();
+  void set_max_retry_count(int max_retry_count) {
+    max_retry_count_ = max_retry_count;
+  }
 
  protected:
+  int max_retry_count_;
   RegistrationRequest::Status status_;
   std::string registration_id_;
   bool callback_called_;
@@ -79,7 +83,8 @@ class RegistrationRequestTest : public testing::Test {
 };
 
 RegistrationRequestTest::RegistrationRequestTest()
-    : status_(RegistrationRequest::SUCCESS),
+    : max_retry_count_(2),
+      status_(RegistrationRequest::SUCCESS),
       callback_called_(false),
       url_request_context_getter_(new net::TestURLRequestContextGetter(
           message_loop_.message_loop_proxy())) {}
@@ -104,11 +109,11 @@ void RegistrationRequestTest::CreateRequest(const std::string& sender_ids) {
       RegistrationRequest::RequestInfo(kAndroidId,
                                        kSecurityToken,
                                        kAppId,
-                                       kCert,
                                        senders),
       kDefaultBackoffPolicy,
       base::Bind(&RegistrationRequestTest::RegistrationCallback,
                  base::Unretained(this)),
+      max_retry_count_,
       url_request_context_getter_.get()));
 }
 
@@ -129,6 +134,19 @@ void RegistrationRequestTest::CompleteFetch() {
   net::TestURLFetcher* fetcher = url_fetcher_factory_.GetFetcherByID(0);
   ASSERT_TRUE(fetcher);
   fetcher->delegate()->OnURLFetchComplete(fetcher);
+}
+
+TEST_F(RegistrationRequestTest, RequestSuccessful) {
+  set_max_retry_count(0);
+  CreateRequest("sender1,sender2");
+  request_->Start();
+
+  SetResponseStatusAndString(net::HTTP_OK, "token=2501");
+  CompleteFetch();
+
+  EXPECT_TRUE(callback_called_);
+  EXPECT_EQ(RegistrationRequest::SUCCESS, status_);
+  EXPECT_EQ("2501", registration_id_);
 }
 
 TEST_F(RegistrationRequestTest, RequestDataPassedToFetcher) {
@@ -155,7 +173,6 @@ TEST_F(RegistrationRequestTest, RequestDataPassedToFetcher) {
   std::map<std::string, std::string> expected_pairs;
   expected_pairs["app"] = kAppId;
   expected_pairs["sender"] = kDeveloperId;
-  expected_pairs["cert"] = kCert;
   expected_pairs["device"] = base::Uint64ToString(kAndroidId);
 
   // Verify data was formatted properly.
@@ -273,7 +290,8 @@ TEST_F(RegistrationRequestTest, ResponseAuthenticationError) {
   CreateRequest("sender1,sender2");
   request_->Start();
 
-  SetResponseStatusAndString(net::HTTP_OK, "Error=AUTHENTICATION_FAILED");
+  SetResponseStatusAndString(net::HTTP_UNAUTHORIZED,
+                             "Error=AUTHENTICATION_FAILED");
   CompleteFetch();
 
   EXPECT_FALSE(callback_called_);
@@ -308,6 +326,94 @@ TEST_F(RegistrationRequestTest, ResponseInvalidSender) {
 
   EXPECT_TRUE(callback_called_);
   EXPECT_EQ(RegistrationRequest::INVALID_SENDER, status_);
+  EXPECT_EQ(std::string(), registration_id_);
+}
+
+TEST_F(RegistrationRequestTest, ResponseInvalidSenderBadRequest) {
+  CreateRequest("sender1");
+  request_->Start();
+
+  SetResponseStatusAndString(net::HTTP_BAD_REQUEST, "Error=INVALID_SENDER");
+  CompleteFetch();
+
+  EXPECT_TRUE(callback_called_);
+  EXPECT_EQ(RegistrationRequest::INVALID_SENDER, status_);
+  EXPECT_EQ(std::string(), registration_id_);
+}
+
+TEST_F(RegistrationRequestTest, RequestNotSuccessful) {
+  CreateRequest("sender1,sender2");
+  request_->Start();
+
+  net::URLRequestStatus request_status(net::URLRequestStatus::FAILED, 1);
+  SetResponseStatusAndString(net::HTTP_OK, "token=2501");
+  net::TestURLFetcher* fetcher = url_fetcher_factory_.GetFetcherByID(0);
+  ASSERT_TRUE(fetcher);
+  fetcher->set_status(request_status);
+
+  CompleteFetch();
+
+  EXPECT_FALSE(callback_called_);
+
+  // Ensuring a retry happened and succeeded.
+  SetResponseStatusAndString(net::HTTP_OK, "token=2501");
+  CompleteFetch();
+
+  EXPECT_TRUE(callback_called_);
+  EXPECT_EQ(RegistrationRequest::SUCCESS, status_);
+  EXPECT_EQ("2501", registration_id_);
+}
+
+TEST_F(RegistrationRequestTest, ResponseHttpNotOk) {
+  CreateRequest("sender1,sender2");
+  request_->Start();
+
+  SetResponseStatusAndString(net::HTTP_GATEWAY_TIMEOUT, "token=2501");
+  CompleteFetch();
+
+  EXPECT_FALSE(callback_called_);
+
+  // Ensuring a retry happened and succeeded.
+  SetResponseStatusAndString(net::HTTP_OK, "token=2501");
+  CompleteFetch();
+
+  EXPECT_TRUE(callback_called_);
+  EXPECT_EQ(RegistrationRequest::SUCCESS, status_);
+  EXPECT_EQ("2501", registration_id_);
+}
+
+TEST_F(RegistrationRequestTest, MaximumAttemptsReachedWithZeroRetries) {
+  set_max_retry_count(0);
+  CreateRequest("sender1,sender2");
+  request_->Start();
+
+  SetResponseStatusAndString(net::HTTP_GATEWAY_TIMEOUT, "token=2501");
+  CompleteFetch();
+
+  EXPECT_TRUE(callback_called_);
+  EXPECT_EQ(RegistrationRequest::REACHED_MAX_RETRIES, status_);
+  EXPECT_EQ(std::string(), registration_id_);
+}
+
+TEST_F(RegistrationRequestTest, MaximumAttemptsReached) {
+  CreateRequest("sender1,sender2");
+  request_->Start();
+
+  SetResponseStatusAndString(net::HTTP_GATEWAY_TIMEOUT, "token=2501");
+  CompleteFetch();
+
+  EXPECT_FALSE(callback_called_);
+
+  SetResponseStatusAndString(net::HTTP_GATEWAY_TIMEOUT, "token=2501");
+  CompleteFetch();
+
+  EXPECT_FALSE(callback_called_);
+
+  SetResponseStatusAndString(net::HTTP_GATEWAY_TIMEOUT, "token=2501");
+  CompleteFetch();
+
+  EXPECT_TRUE(callback_called_);
+  EXPECT_EQ(RegistrationRequest::REACHED_MAX_RETRIES, status_);
   EXPECT_EQ(std::string(), registration_id_);
 }
 

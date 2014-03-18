@@ -9,19 +9,22 @@ If the file was pretty-printed, the updated version is pretty-printed too.
 """
 
 import logging
+import os
 import re
 import sys
 
 from xml.dom import minidom
+import print_style
 
-from diffutil import PromptUserToAcceptDiff
-from pretty_print import PrettyPrintNode
+# Import the metrics/common module.
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
+from diff_util import PromptUserToAcceptDiff
 
 HISTOGRAMS_PATH = 'histograms.xml'
 ENUM_NAME = 'ExtensionFunctions'
 
 EXTENSION_FUNCTIONS_HISTOGRAM_VALUE_PATH = \
-  '../../../chrome/browser/extensions/extension_function_histogram_value.h'
+  '../../../extensions/browser/extension_function_histogram_value.h'
 ENUM_START_MARKER = "^enum HistogramValue {"
 ENUM_END_MARKER = "^ENUM_BOUNDARY"
 
@@ -45,7 +48,7 @@ def ExtractRegexGroup(line, regex):
 def ReadHistogramValues(filename):
   """Returns a list of pairs (label, value) corresponding to HistogramValue.
 
-  Reads the extension_functions_histogram_value.h file, locates the
+  Reads the extension_function_histogram_value.h file, locates the
   HistogramValue enum definition and returns a pair for each entry.
   """
 
@@ -136,7 +139,8 @@ def main():
   UpdateHistogramDefinitions(histogram_values, histograms_doc)
 
   Log('Writing out new histograms file.')
-  new_xml = PrettyPrintNode(histograms_doc)
+  new_xml = print_style.GetPrintStyle().PrettyPrintNode(histograms_doc)
+
   if PromptUserToAcceptDiff(xml, new_xml, 'Is the updated version acceptable?'):
     with open(HISTOGRAMS_PATH, 'wb') as f:
       f.write(new_xml)

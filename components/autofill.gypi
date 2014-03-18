@@ -28,8 +28,8 @@
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
+        '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
-        '../ui/ui.gyp:ui',
         '../url/url.gyp:url_lib',
       ],
       'conditions': [
@@ -86,12 +86,6 @@
         '..',
       ],
       'dependencies': [
-        'autofill_core_common',
-        'autofill_regexes',
-        'component_strings.gyp:component_strings',
-        'encryptor',
-        'user_prefs',
-        'webdata_common',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:base_prefs',
@@ -102,9 +96,16 @@
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/libjingle/libjingle.gyp:libjingle',
         '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
+        '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
-        '../ui/ui.gyp:ui',
         '../url/url.gyp:url_lib',
+        'autofill_core_common',
+        'autofill_regexes',
+        'component_resources.gyp:component_resources',
+        'component_strings.gyp:component_strings',
+        'os_crypt',
+        'user_prefs',
+        'webdata_common',
       ],
       'sources': [
         'autofill/core/browser/address.cc',
@@ -120,8 +121,6 @@
         'autofill/core/browser/autofill_data_model.h',
         'autofill/core/browser/autofill_download.cc',
         'autofill/core/browser/autofill_download.h',
-        'autofill/core/browser/autofill_download_url.cc',
-        'autofill/core/browser/autofill_download_url.h',
         'autofill/core/browser/autofill_driver.h',
         'autofill/core/browser/autofill_external_delegate.cc',
         'autofill/core/browser/autofill_external_delegate.h',
@@ -214,13 +213,6 @@
         ],
       },
       'conditions': [
-        # TODO(blundell): Eliminate the need for this conditional dependence.
-        # crbug.com/328150
-        ['OS != "ios"', {
-          'dependencies': [
-            '../webkit/webkit_resources.gyp:webkit_resources',
-          ],
-        }],
         ['autofill_enable_sync == 1', {
           'defines': [
             'AUTOFILL_ENABLE_SYNC',
@@ -331,14 +323,6 @@
             '..',
           ],
           'dependencies': [
-            'autofill_content_common',
-            'autofill_content_risk_proto',
-            'autofill_core_browser',
-            'autofill_core_common',
-            'autofill_regexes',
-            'encryptor',
-            'user_prefs',
-            'webdata_common',
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
             '../base/base.gyp:base_prefs',
@@ -352,17 +336,24 @@
             '../third_party/icu/icu.gyp:icuuc',
             '../third_party/libjingle/libjingle.gyp:libjingle',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
+            '../ui/base/ui_base.gyp:ui_base',
             '../ui/gfx/gfx.gyp:gfx',
             '../ui/gfx/gfx.gyp:gfx_geometry',
-            '../ui/ui.gyp:ui',
             '../url/url.gyp:url_lib',
-            '../webkit/webkit_resources.gyp:webkit_resources',
-
+            'autofill_content_common',
+            'autofill_content_risk_proto',
+            'autofill_core_browser',
+            'autofill_core_common',
+            'autofill_regexes',
+            'component_resources.gyp:component_resources',
             'component_strings.gyp:component_strings',
+            'os_crypt',
+            'user_prefs',
+            'webdata_common',
           ],
           'sources': [
-            'autofill/content/browser/autofill_driver_impl.cc',
-            'autofill/content/browser/autofill_driver_impl.h',
+            'autofill/content/browser/content_autofill_driver.cc',
+            'autofill/content/browser/content_autofill_driver.h',
             'autofill/content/browser/request_autocomplete_manager.cc',
             'autofill/content/browser/request_autocomplete_manager.h',
             'autofill/content/browser/risk/fingerprint.cc',

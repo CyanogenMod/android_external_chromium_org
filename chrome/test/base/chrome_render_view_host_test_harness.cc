@@ -15,7 +15,7 @@
 
 #if defined(USE_AURA)
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 using content::RenderViewHostTester;
@@ -35,8 +35,7 @@ RenderViewHostTester* ChromeRenderViewHostTestHarness::rvh_tester() {
   return RenderViewHostTester::For(rvh());
 }
 
-static BrowserContextKeyedService* BuildSigninManagerFake(
-    content::BrowserContext* context) {
+static KeyedService* BuildSigninManagerFake(content::BrowserContext* context) {
   Profile* profile = static_cast<Profile*>(context);
 #if defined (OS_CHROMEOS)
   SigninManagerBase* signin = new SigninManagerBase();
@@ -47,12 +46,6 @@ static BrowserContextKeyedService* BuildSigninManagerFake(
   manager->Initialize(profile, g_browser_process->local_state());
   return manager;
 #endif
-}
-
-void ChromeRenderViewHostTestHarness::SetUp() {
-  RenderViewHostTestHarness::SetUp();
-  SigninManagerFactory::GetInstance()->SetTestingFactory(
-          profile(), BuildSigninManagerFake);
 }
 
 void ChromeRenderViewHostTestHarness::TearDown() {
@@ -67,5 +60,8 @@ void ChromeRenderViewHostTestHarness::TearDown() {
 
 content::BrowserContext*
 ChromeRenderViewHostTestHarness::CreateBrowserContext() {
-  return new TestingProfile();
+  TestingProfile::Builder builder;
+  builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
+                            BuildSigninManagerFake);
+  return builder.Build().release();
 }

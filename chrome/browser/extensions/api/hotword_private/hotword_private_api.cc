@@ -19,12 +19,13 @@ namespace OnEnabledChanged =
     api::hotword_private::OnEnabledChanged;
 
 static base::LazyInstance<
-    ProfileKeyedAPIFactory<HotwordPrivateEventService> > g_factory =
-        LAZY_INSTANCE_INITIALIZER;
+    BrowserContextKeyedAPIFactory<HotwordPrivateEventService> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
-HotwordPrivateEventService::HotwordPrivateEventService(Profile* profile)
-    : profile_(profile) {
-  pref_change_registrar_.Init(profile->GetPrefs());
+HotwordPrivateEventService::HotwordPrivateEventService(
+    content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)) {
+  pref_change_registrar_.Init(profile_->GetPrefs());
   pref_change_registrar_.Add(
       prefs::kHotwordSearchEnabled,
       base::Bind(&HotwordPrivateEventService::OnEnabledChanged,
@@ -38,7 +39,7 @@ void HotwordPrivateEventService::Shutdown() {
 }
 
 // static
-ProfileKeyedAPIFactory<HotwordPrivateEventService>*
+BrowserContextKeyedAPIFactory<HotwordPrivateEventService>*
 HotwordPrivateEventService::GetFactoryInstance() {
   return g_factory.Pointer();
 }
@@ -86,6 +87,7 @@ bool HotwordPrivateGetStatusFunction::RunImpl() {
     result.available = hotword_service->IsServiceAvailable();
 
   PrefService* prefs = GetProfile()->GetPrefs();
+  result.enabled_set = prefs->HasPrefPath(prefs::kHotwordSearchEnabled);
   result.enabled =
       prefs->GetBoolean(prefs::kHotwordSearchEnabled);
 

@@ -38,7 +38,8 @@ bool ContentBrowserClient::ShouldUseProcessPerSite(
 
 net::URLRequestContextGetter* ContentBrowserClient::CreateRequestContext(
     BrowserContext* browser_context,
-    ProtocolHandlerMap* protocol_handlers) {
+    ProtocolHandlerMap* protocol_handlers,
+    ProtocolHandlerScopedVector protocol_interceptors) {
   return NULL;
 }
 
@@ -47,7 +48,8 @@ ContentBrowserClient::CreateRequestContextForStoragePartition(
     BrowserContext* browser_context,
     const base::FilePath& partition_path,
     bool in_memory,
-    ProtocolHandlerMap* protocol_handlers) {
+    ProtocolHandlerMap* protocol_handlers,
+    ProtocolHandlerScopedVector protocol_interceptors) {
   return NULL;
 }
 
@@ -306,6 +308,11 @@ bool ContentBrowserClient::IsPluginAllowedToCallRequestOSFileHandle(
 
 bool ContentBrowserClient::IsPluginAllowedToUseDevChannelAPIs() {
   return false;
+}
+
+net::CookieStore* ContentBrowserClient::OverrideCookieStoreForRenderProcess(
+    int render_process_id) {
+  return NULL;
 }
 
 }  // namespace content

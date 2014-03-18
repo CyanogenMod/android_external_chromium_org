@@ -19,18 +19,13 @@
 #include "ui/views/color_constants.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/views_delegate.h"
+#include "ui/views/widget/native_widget_aura.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/window/client_view.h"
 #include "ui/views/window/frame_background.h"
 #include "ui/views/window/window_resources.h"
 #include "ui/views/window/window_shape.h"
-
-#if defined(USE_AURA)
-#include "ui/views/widget/native_widget_aura.h"
-#elif defined(OS_WIN)
-#include "ui/views/widget/native_widget_win.h"
-#endif
 
 namespace views {
 
@@ -68,14 +63,7 @@ const SkColor kDefaultColorFrameInactive = SkColorSetRGB(161, 182, 228);
 
 const gfx::FontList& GetTitleFontList() {
   static const gfx::FontList title_font_list =
-#if defined(USE_AURA)
       NativeWidgetAura::GetWindowTitleFontList();
-#elif defined(OS_WIN)
-      NativeWidgetWin::GetWindowTitleFontList();
-#elif defined(OS_LINUX)
-    // TODO(ben): need to resolve what font this is.
-      gfx::FontList();
-#endif
   return title_font_list;
 }
 
@@ -136,8 +124,8 @@ gfx::Rect CustomFrameView::GetWindowBoundsForClientBounds(
     const gfx::Rect& client_bounds) const {
   int top_height = NonClientTopBorderHeight();
   int border_thickness = NonClientBorderThickness();
-  return gfx::Rect(std::max(0, client_bounds.x() - border_thickness),
-                   std::max(0, client_bounds.y() - top_height),
+  return gfx::Rect(client_bounds.x() - border_thickness,
+                   client_bounds.y() - top_height,
                    client_bounds.width() + (2 * border_thickness),
                    client_bounds.height() + top_height + border_thickness);
 }

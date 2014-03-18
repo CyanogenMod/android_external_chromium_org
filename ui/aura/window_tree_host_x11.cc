@@ -29,13 +29,13 @@
 #include "base/sys_info.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/client/user_action_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/view_prop.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/compositor/compositor.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
@@ -52,10 +52,6 @@ using std::min;
 namespace aura {
 
 namespace {
-
-// Standard Linux mouse buttons for going back and forward.
-const int kBackMouseButton = 8;
-const int kForwardMouseButton = 9;
 
 const char* kAtomsToCache[] = {
   "WM_DELETE_WINDOW",
@@ -74,15 +70,6 @@ const char* kAtomsToCache[] = {
     target = static_cast<XIDeviceEvent*>(xev->xcookie.data)->event;
   return target;
 }
-
-#if defined(USE_XI2_MT)
-bool IsSideBezelsEnabled() {
-  static bool side_bezels_enabled =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          switches::kTouchSideBezels) != "0";
-  return side_bezels_enabled;
-}
-#endif
 
 void SelectXInput2EventsForRootWindow(XDisplay* display, ::Window root_window) {
   CHECK(ui::IsXInput2Available());
@@ -155,19 +142,6 @@ class TouchEventCalibrate : public base::MessagePumpObserver {
   virtual ~TouchEventCalibrate() {
     base::MessageLoopForUI::current()->RemoveObserver(this);
   }
-
-#if defined(USE_XI2_MT)
-  bool IsEventOnSideBezels(
-      const base::NativeEvent& xev,
-      const gfx::Rect& bounds) {
-    if (!left_ && !right_)
-      return false;
-
-    gfx::Point location = ui::EventLocationFromNative(xev);
-    int x = location.x();
-    return x < left_ || x > bounds.width() - right_;
-  }
-#endif  // defined(USE_XI2_MT)
 
   // Modify the location of the |event|,
   // expanding it from |bounds| to (|bounds| + bezels).
@@ -266,47 +240,6 @@ class TouchEventCalibrate : public base::MessagePumpObserver {
 }  // namespace internal
 
 ////////////////////////////////////////////////////////////////////////////////
-// WindowTreeHostX11::MouseMoveFilter filters out the move events that
-// jump back and forth between two points. This happens when sub pixel mouse
-// move is enabled and mouse move events could be jumping between two neighbor
-// pixels, e.g. move(0,0), move(1,0), move(0,0), move(1,0) and on and on.
-// The filtering is done by keeping track of the last two event locations and
-// provides a Filter method to find out whether a mouse event is in a different
-// location and should be processed.
-
-class WindowTreeHostX11::MouseMoveFilter {
- public:
-  MouseMoveFilter() : insert_index_(0) {
-    for (size_t i = 0; i < kMaxEvents; ++i) {
-      const int int_max = std::numeric_limits<int>::max();
-      recent_locations_[i] = gfx::Point(int_max, int_max);
-    }
-  }
-  ~MouseMoveFilter() {}
-
-  // Returns true if |event| is known and should be ignored.
-  bool Filter(const base::NativeEvent& event) {
-    const gfx::Point& location = ui::EventLocationFromNative(event);
-    for (size_t i = 0; i < kMaxEvents; ++i) {
-      if (location == recent_locations_[i])
-        return true;
-    }
-
-    recent_locations_[insert_index_] = location;
-    insert_index_ = (insert_index_ + 1) % kMaxEvents;
-    return false;
-  }
-
- private:
-  static const size_t kMaxEvents = 2;
-
-  gfx::Point recent_locations_[kMaxEvents];
-  size_t insert_index_;
-
-  DISALLOW_COPY_AND_ASSIGN(MouseMoveFilter);
-};
-
-////////////////////////////////////////////////////////////////////////////////
 // WindowTreeHostX11
 
 WindowTreeHostX11::WindowTreeHostX11(const gfx::Rect& bounds)
@@ -318,9 +251,7 @@ WindowTreeHostX11::WindowTreeHostX11(const gfx::Rect& bounds)
       bounds_(bounds),
       is_internal_display_(false),
       touch_calibrate_(new internal::TouchEventCalibrate),
-      mouse_move_filter_(new MouseMoveFilter),
-      atom_cache_(xdisplay_, kAtomsToCache),
-      bezel_tracking_ids_(0) {
+      atom_cache_(xdisplay_, kAtomsToCache) {
   XSetWindowAttributes swa;
   memset(&swa, 0, sizeof(swa));
   swa.background_pixmap = None;
@@ -390,6 +321,7 @@ WindowTreeHostX11::~WindowTreeHostX11() {
   UnConfineCursor();
 
   DestroyCompositor();
+  DestroyDispatcher();
   XDestroyWindow(xdisplay_, xwindow_);
 }
 
@@ -404,7 +336,7 @@ uint32_t WindowTreeHostX11::Dispatch(const base::NativeEvent& event) {
 
   switch (xev->type) {
     case EnterNotify: {
-      aura::Window* root_window = GetRootWindow()->window();
+      aura::Window* root_window = window();
       client::CursorClient* cursor_client =
           client::GetCursorClient(root_window);
       if (cursor_client) {
@@ -440,20 +372,7 @@ uint32_t WindowTreeHostX11::Dispatch(const base::NativeEvent& event) {
       SendEventToProcessor(&keyup_event);
       break;
     }
-    case ButtonPress: {
-      if (static_cast<int>(xev->xbutton.button) == kBackMouseButton ||
-          static_cast<int>(xev->xbutton.button) == kForwardMouseButton) {
-        client::UserActionClient* gesture_client =
-            client::GetUserActionClient(delegate_->AsRootWindow()->window());
-        if (gesture_client) {
-          gesture_client->OnUserAction(
-              static_cast<int>(xev->xbutton.button) == kBackMouseButton ?
-              client::UserActionClient::BACK :
-              client::UserActionClient::FORWARD);
-        }
-        break;
-      }
-    }  // fallthrough
+    case ButtonPress:
     case ButtonRelease: {
       switch (ui::EventTypeFromNative(xev)) {
         case ui::ET_MOUSEWHEEL: {
@@ -477,7 +396,7 @@ uint32_t WindowTreeHostX11::Dispatch(const base::NativeEvent& event) {
     }
     case FocusOut:
       if (xev->xfocus.mode != NotifyGrab)
-        delegate_->OnHostLostWindowCapture();
+        OnHostLostWindowCapture();
       break;
     case ConfigureNotify: {
       DCHECK_EQ(xwindow_, xev->xconfigure.event);
@@ -498,9 +417,9 @@ uint32_t WindowTreeHostX11::Dispatch(const base::NativeEvent& event) {
         ConfineCursorToRootWindow();
       }
       if (size_changed)
-        NotifyHostResized(bounds.size());
+        OnHostResized(bounds.size());
       if (origin_changed)
-        delegate_->OnHostMoved(bounds_.origin());
+        OnHostMoved(bounds_.origin());
       break;
     }
     case GenericEvent:
@@ -510,7 +429,7 @@ uint32_t WindowTreeHostX11::Dispatch(const base::NativeEvent& event) {
       Atom message_type = static_cast<Atom>(xev->xclient.data.l[0]);
       if (message_type == atom_cache_.GetAtom("WM_DELETE_WINDOW")) {
         // We have received a close message from the window manager.
-        delegate_->AsRootWindow()->OnWindowTreeHostCloseRequested();
+        OnHostCloseRequested();
       } else if (message_type == atom_cache_.GetAtom("_NET_WM_PING")) {
         XEvent reply_event = *xev;
         reply_event.xclient.window = x_root_window_;
@@ -528,7 +447,6 @@ uint32_t WindowTreeHostX11::Dispatch(const base::NativeEvent& event) {
         case MappingModifier:
         case MappingKeyboard:
           XRefreshKeyboardMapping(&xev->xmapping);
-          delegate_->AsRootWindow()->OnKeyboardMappingChanged();
           break;
         case MappingPointer:
           ui::DeviceDataManager::GetInstance()->UpdateButtonMap();
@@ -563,10 +481,6 @@ uint32_t WindowTreeHostX11::Dispatch(const base::NativeEvent& event) {
     }
   }
   return POST_DISPATCH_NONE;
-}
-
-RootWindow* WindowTreeHostX11::GetRootWindow() {
-  return delegate_->AsRootWindow();
 }
 
 gfx::AcceleratedWidget WindowTreeHostX11::GetAcceleratedWidget() {
@@ -615,9 +529,8 @@ void WindowTreeHostX11::SetBounds(const gfx::Rect& bounds) {
   // Even if the host window's size doesn't change, aura's root window
   // size, which is in DIP, changes when the scale changes.
   float current_scale = compositor()->device_scale_factor();
-  float new_scale = gfx::Screen::GetScreenFor(
-      delegate_->AsRootWindow()->window())->GetDisplayNearestWindow(
-          delegate_->AsRootWindow()->window()).device_scale_factor();
+  float new_scale = gfx::Screen::GetScreenFor(window())->
+      GetDisplayNearestWindow(window()).device_scale_factor();
   bool origin_changed = bounds_.origin() != bounds.origin();
   bool size_changed = bounds_.size() != bounds.size();
   XWindowChanges changes = {0};
@@ -645,12 +558,11 @@ void WindowTreeHostX11::SetBounds(const gfx::Rect& bounds) {
   bounds_ = bounds;
   UpdateIsInternalDisplay();
   if (origin_changed)
-    delegate_->OnHostMoved(bounds.origin());
+    OnHostMoved(bounds.origin());
   if (size_changed || current_scale != new_scale) {
-    NotifyHostResized(bounds.size());
+    OnHostResized(bounds.size());
   } else {
-    delegate_->AsRootWindow()->window()->SchedulePaintInRect(
-        delegate_->AsRootWindow()->window()->bounds());
+    window()->SchedulePaintInRect(window()->bounds());
   }
 }
 
@@ -680,7 +592,7 @@ void WindowTreeHostX11::ReleaseCapture() {
 
 bool WindowTreeHostX11::QueryMouseLocation(gfx::Point* location_return) {
   client::CursorClient* cursor_client =
-      client::GetCursorClient(GetRootWindow()->window());
+      client::GetCursorClient(window());
   if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
     *location_return = gfx::Point(0, 0);
     return false;
@@ -773,7 +685,7 @@ void WindowTreeHostX11::PostNativeEvent(
       xevent.xmotion.time = CurrentTime;
 
       gfx::Point point(xevent.xmotion.x, xevent.xmotion.y);
-      delegate_->AsRootWindow()->host()->ConvertPointToNativeScreen(&point);
+      ConvertPointToNativeScreen(&point);
       xevent.xmotion.x_root = point.x();
       xevent.xmotion.y_root = point.y();
     }
@@ -811,14 +723,13 @@ void WindowTreeHostX11::OnCursorVisibilityChangedNative(bool show) {
 void WindowTreeHostX11::OnWindowInitialized(Window* window) {
 }
 
-void WindowTreeHostX11::OnRootWindowInitialized(RootWindow* root_window) {
-  // UpdateIsInternalDisplay relies on:
-  // 1. delegate_ pointing to RootWindow - available after SetDelegate.
-  // 2. RootWindow's kDisplayIdKey property set - available by the time
-  //    RootWindow::Init is called.
-  //    (set in DisplayManager::CreateRootWindowForDisplay)
-  // Ready when NotifyRootWindowInitialized is called from RootWindow::Init.
-  if (!delegate_ || root_window != GetRootWindow())
+void WindowTreeHostX11::OnHostInitialized(WindowTreeHost* host) {
+  // TODO(beng): I'm not sure that this comment makes much sense anymore??
+  // UpdateIsInternalDisplay relies on WED's kDisplayIdKey property being set
+  // available by the time WED::Init is called. (set in
+  // DisplayManager::CreateRootWindowForDisplay)
+  // Ready when NotifyHostInitialized is called from WED::Init.
+  if (host != this)
     return;
   UpdateIsInternalDisplay();
 
@@ -828,7 +739,7 @@ void WindowTreeHostX11::OnRootWindowInitialized(RootWindow* root_window) {
 }
 
 ui::EventProcessor* WindowTreeHostX11::GetEventProcessor() {
-  return delegate_->GetEventProcessor();
+  return dispatcher();
 }
 
 void WindowTreeHostX11::DispatchXI2Event(const base::NativeEvent& event) {
@@ -864,21 +775,6 @@ void WindowTreeHostX11::DispatchXI2Event(const base::NativeEvent& event) {
         break;
 #endif  // defined(OS_CHROMEOS)
       ui::TouchEvent touchev(xev);
-#if defined(USE_XI2_MT)
-      // Ignore touch events with touch press happening on the side bezel.
-      if (!IsSideBezelsEnabled()) {
-        uint32 tracking_id = (1 << touchev.touch_id());
-        if (type == ui::ET_TOUCH_PRESSED &&
-            touch_calibrate_->IsEventOnSideBezels(xev, bounds_))
-          bezel_tracking_ids_ |= tracking_id;
-        if (bezel_tracking_ids_ & tracking_id) {
-          if (type == ui::ET_TOUCH_CANCELLED || type == ui::ET_TOUCH_RELEASED)
-            bezel_tracking_ids_ =
-                (bezel_tracking_ids_ | tracking_id) ^ tracking_id;
-          return;
-        }
-      }
-#endif  // defined(USE_XI2_MT)
 #if defined(OS_CHROMEOS)
       if (base::SysInfo::IsRunningOnChromeOS()) {
         // X maps the touch-surface to the size of the X root-window.
@@ -909,30 +805,6 @@ void WindowTreeHostX11::DispatchXI2Event(const base::NativeEvent& event) {
         num_coalesced = ui::CoalescePendingMotionEvents(xev, &last_event);
         if (num_coalesced > 0)
           xev = &last_event;
-
-        if (mouse_move_filter_ && mouse_move_filter_->Filter(xev))
-          break;
-      } else if (type == ui::ET_MOUSE_PRESSED ||
-                 type == ui::ET_MOUSE_RELEASED) {
-        XIDeviceEvent* xievent =
-            static_cast<XIDeviceEvent*>(xev->xcookie.data);
-        int button = xievent->detail;
-        if (button == kBackMouseButton || button == kForwardMouseButton) {
-          if (type == ui::ET_MOUSE_RELEASED)
-            break;
-          client::UserActionClient* gesture_client =
-              client::GetUserActionClient(delegate_->AsRootWindow()->window());
-          if (gesture_client) {
-            bool reverse_direction =
-                ui::IsTouchpadEvent(xev) && ui::IsNaturalScrollEnabled();
-            gesture_client->OnUserAction(
-                (button == kBackMouseButton && !reverse_direction) ||
-                (button == kForwardMouseButton && reverse_direction) ?
-                client::UserActionClient::BACK :
-                client::UserActionClient::FORWARD);
-          }
-          break;
-        }
       }
       ui::MouseEvent mouseev(xev);
       TranslateAndDispatchMouseEvent(&mouseev);
@@ -976,7 +848,7 @@ void WindowTreeHostX11::SetCursorInternal(gfx::NativeCursor cursor) {
 
 void WindowTreeHostX11::TranslateAndDispatchMouseEvent(
     ui::MouseEvent* event) {
-  Window* root_window = GetRootWindow()->window();
+  Window* root_window = window();
   client::ScreenPositionClient* screen_position_client =
       client::GetScreenPositionClient(root_window);
   gfx::Rect local(bounds_.size());
@@ -997,7 +869,7 @@ void WindowTreeHostX11::TranslateAndDispatchMouseEvent(
 }
 
 void WindowTreeHostX11::UpdateIsInternalDisplay() {
-  Window* root_window = GetRootWindow()->window();
+  Window* root_window = window();
   gfx::Screen* screen = gfx::Screen::GetScreenFor(root_window);
   gfx::Display display = screen->GetDisplayNearestWindow(root_window);
   is_internal_display_ = display.IsInternal();

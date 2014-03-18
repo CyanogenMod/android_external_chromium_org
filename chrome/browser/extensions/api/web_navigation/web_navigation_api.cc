@@ -591,7 +591,8 @@ void WebNavigationTabObserver::DidGetRedirectForResourceRequest(
       details.resource_type != ResourceType::SUB_FRAME) {
     return;
   }
-  FrameNavigationState::FrameID frame_id(details.frame_id, render_view_host);
+  FrameNavigationState::FrameID frame_id(details.render_frame_id,
+                                         render_view_host);
   navigation_state_.SetIsServerRedirected(frame_id);
 }
 
@@ -798,47 +799,50 @@ bool WebNavigationGetAllFramesFunction::RunImpl() {
   return true;
 }
 
-WebNavigationAPI::WebNavigationAPI(Profile* profile)
-    : profile_(profile) {
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, web_navigation::OnBeforeNavigate::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, web_navigation::OnCommitted::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, web_navigation::OnCompleted::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
+WebNavigationAPI::WebNavigationAPI(content::BrowserContext* context)
+    : browser_context_(context) {
+  EventRouter* event_router =
+      ExtensionSystem::Get(browser_context_)->event_router();
+  event_router->RegisterObserver(this,
+                                 web_navigation::OnBeforeNavigate::kEventName);
+  event_router->RegisterObserver(this, web_navigation::OnCommitted::kEventName);
+  event_router->RegisterObserver(this, web_navigation::OnCompleted::kEventName);
+  event_router->RegisterObserver(
       this, web_navigation::OnCreatedNavigationTarget::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
+  event_router->RegisterObserver(
       this, web_navigation::OnDOMContentLoaded::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
+  event_router->RegisterObserver(
       this, web_navigation::OnHistoryStateUpdated::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, web_navigation::OnErrorOccurred::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
+  event_router->RegisterObserver(this,
+                                 web_navigation::OnErrorOccurred::kEventName);
+  event_router->RegisterObserver(
       this, web_navigation::OnReferenceFragmentUpdated::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, web_navigation::OnTabReplaced::kEventName);
+  event_router->RegisterObserver(this,
+                                 web_navigation::OnTabReplaced::kEventName);
 }
 
 WebNavigationAPI::~WebNavigationAPI() {
 }
 
 void WebNavigationAPI::Shutdown() {
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
+      this);
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<WebNavigationAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<WebNavigationAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<WebNavigationAPI>*
+BrowserContextKeyedAPIFactory<WebNavigationAPI>*
 WebNavigationAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 void WebNavigationAPI::OnListenerAdded(const EventListenerInfo& details) {
-  web_navigation_event_router_.reset(new WebNavigationEventRouter(profile_));
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  web_navigation_event_router_.reset(new WebNavigationEventRouter(
+      Profile::FromBrowserContext(browser_context_)));
+  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
+      this);
 }
 
 #endif  // OS_ANDROID

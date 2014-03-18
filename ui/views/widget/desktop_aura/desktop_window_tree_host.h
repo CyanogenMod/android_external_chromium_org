@@ -6,7 +6,7 @@
 #define UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_WINDOW_TREE_HOST_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/widget.h"
@@ -31,7 +31,6 @@ class NativeTheme;
 
 namespace views {
 namespace corewm {
-
 class Tooltip;
 }
 
@@ -53,14 +52,12 @@ class VIEWS_EXPORT DesktopWindowTreeHost {
   // Return the NativeTheme to use for |window|. WARNING: |window| may be NULL.
   static ui::NativeTheme* GetNativeTheme(aura::Window* window);
 
-  // Sets up resources needed before the RootWindow has been created.
+  // Sets up resources needed before the WindowEventDispatcher has been created.
   virtual void Init(aura::Window* content_window,
-                    const Widget::InitParams& params,
-                    aura::RootWindow::CreateParams* rw_create_params) = 0;
+                    const Widget::InitParams& params) = 0;
 
-  // Invoked once the RootWindow has been created. Caller owns the RootWindow.
-  virtual void OnRootWindowCreated(aura::RootWindow* root,
-                                   const Widget::InitParams& params) = 0;
+  // Invoked once the DesktopNativeWidgetAura has been created.
+  virtual void OnNativeWidgetCreated(const Widget::InitParams& params) = 0;
 
   // Creates and returns the Tooltip implementation to use. Return value is
   // owned by DesktopNativeWidgetAura and lives as long as
@@ -111,6 +108,8 @@ class VIEWS_EXPORT DesktopWindowTreeHost {
 
   virtual void SetAlwaysOnTop(bool always_on_top) = 0;
   virtual bool IsAlwaysOnTop() const = 0;
+
+  virtual void SetVisibleOnAllWorkspaces(bool always_visible) = 0;
 
   // Returns true if the title changed.
   virtual bool SetWindowTitle(const base::string16& title) = 0;

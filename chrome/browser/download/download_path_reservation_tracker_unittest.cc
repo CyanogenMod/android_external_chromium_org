@@ -281,9 +281,9 @@ TEST_F(DownloadPathReservationTrackerTest, ConflictingFiles) {
   base::FilePath path1(
       GetPathInDownloadsDirectory(FILE_PATH_LITERAL("foo (1).txt")));
   // Create a file at |path|, and a .crdownload file at |path1|.
-  ASSERT_EQ(0, file_util::WriteFile(path, "", 0));
+  ASSERT_EQ(0, base::WriteFile(path, "", 0));
   ASSERT_EQ(0,
-            file_util::WriteFile(
+            base::WriteFile(
                 DownloadTargetDeterminer::GetCrDownloadPath(path1), "", 0));
   ASSERT_TRUE(IsPathInUse(path));
 
@@ -595,7 +595,7 @@ TEST_F(DownloadPathReservationTrackerTest, UpdatesToTargetPath) {
 
 TEST_F(DownloadPathReservationTrackerTest, BasicTruncation) {
   int real_max_length =
-      file_util::GetMaximumPathComponentLength(default_download_path());
+      base::GetMaximumPathComponentLength(default_download_path());
   ASSERT_NE(-1, real_max_length);
 
   // TODO(kinaba): the current implementation leaves spaces for appending
@@ -630,7 +630,7 @@ TEST_F(DownloadPathReservationTrackerTest, BasicTruncation) {
 
 TEST_F(DownloadPathReservationTrackerTest, TruncationConflict) {
   int real_max_length =
-      file_util::GetMaximumPathComponentLength(default_download_path());
+      base::GetMaximumPathComponentLength(default_download_path());
   ASSERT_NE(-1, real_max_length);
   const size_t max_length = real_max_length - 11;
 
@@ -647,8 +647,8 @@ TEST_F(DownloadPathReservationTrackerTest, TruncationConflict) {
   // "aaa...aaaaaaa.txt" (truncated path) and
   // "aaa...aaa (1).txt" (truncated and first uniquification try) exists.
   // "aaa...aaa (2).txt" should be used.
-  ASSERT_EQ(0, file_util::WriteFile(path0, "", 0));
-  ASSERT_EQ(0, file_util::WriteFile(path1, "", 0));
+  ASSERT_EQ(0, base::WriteFile(path0, "", 0));
+  ASSERT_EQ(0, base::WriteFile(path1, "", 0));
 
   base::FilePath reserved_path;
   bool verified = false;
@@ -670,7 +670,7 @@ TEST_F(DownloadPathReservationTrackerTest, TruncationConflict) {
 
 TEST_F(DownloadPathReservationTrackerTest, TruncationFail) {
   int real_max_length =
-      file_util::GetMaximumPathComponentLength(default_download_path());
+      base::GetMaximumPathComponentLength(default_download_path());
   ASSERT_NE(-1, real_max_length);
   const size_t max_length = real_max_length - 11;
 

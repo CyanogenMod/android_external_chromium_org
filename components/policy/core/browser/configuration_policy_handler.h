@@ -9,7 +9,9 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/values.h"
 #include "components/policy/core/common/schema.h"
 #include "components/policy/policy_export.h"
@@ -19,6 +21,7 @@ class PrefValueMap;
 namespace policy {
 
 class PolicyErrorMap;
+struct PolicyHandlerParameters;
 class PolicyMap;
 
 // Maps a policy type to a preference path, and to the expected value type.
@@ -46,8 +49,17 @@ class POLICY_EXPORT ConfigurationPolicyHandler {
 
   // Processes the policies handled by this ConfigurationPolicyHandler and sets
   // the appropriate preferences in |prefs|.
+  virtual void ApplyPolicySettingsWithParameters(
+      const PolicyMap& policies,
+      const PolicyHandlerParameters& parameters,
+      PrefValueMap* prefs);
+
+  // This is a convenience version of ApplyPolicySettingsWithParameters()
+  // that leaves out the |parameters|. Anyone extending
+  // ConfigurationPolicyHandler should implement either ApplyPolicySettings or
+  // ApplyPolicySettingsWithParameters.
   virtual void ApplyPolicySettings(const PolicyMap& policies,
-                                   PrefValueMap* prefs) = 0;
+                                   PrefValueMap* prefs);
 
   // Modifies the values of some of the policies in |policies| so that they
   // are more suitable to display to the user. This can be used to remove
@@ -259,6 +271,30 @@ class POLICY_EXPORT SchemaValidatingPolicyHandler
   SchemaOnErrorStrategy strategy_;
 
   DISALLOW_COPY_AND_ASSIGN(SchemaValidatingPolicyHandler);
+};
+
+// A policy handler to deprecate multiple legacy policies with a new one.
+// This handler will completely ignore any of legacy policy values if the new
+// one is set.
+class POLICY_EXPORT LegacyPoliciesDeprecatingPolicyHandler
+    : public ConfigurationPolicyHandler {
+ public:
+  LegacyPoliciesDeprecatingPolicyHandler(
+      ScopedVector<ConfigurationPolicyHandler> legacy_policy_handlers,
+      scoped_ptr<SchemaValidatingPolicyHandler> new_policy_handler);
+  virtual ~LegacyPoliciesDeprecatingPolicyHandler();
+
+  // ConfigurationPolicyHandler:
+  virtual bool CheckPolicySettings(const PolicyMap& policies,
+                                   PolicyErrorMap* errors) OVERRIDE;
+  virtual void ApplyPolicySettings(const PolicyMap& policies,
+                                   PrefValueMap* prefs) OVERRIDE;
+
+ private:
+  ScopedVector<ConfigurationPolicyHandler> legacy_policy_handlers_;
+  scoped_ptr<SchemaValidatingPolicyHandler> new_policy_handler_;
+
+  DISALLOW_COPY_AND_ASSIGN(LegacyPoliciesDeprecatingPolicyHandler);
 };
 
 }  // namespace policy

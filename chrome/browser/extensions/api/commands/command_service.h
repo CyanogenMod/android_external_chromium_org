@@ -8,18 +8,22 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/common/extensions/command.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/common/extension.h"
 
 class Profile;
 
 namespace base {
 class DictionaryValue;
+}
+
+namespace content {
+class BrowserContext;
 }
 
 namespace ui {
@@ -35,7 +39,7 @@ namespace extensions {
 // This service keeps track of preferences related to extension commands
 // (assigning initial keybindings on install and removing them on deletion
 // and answers questions related to which commands are active.
-class CommandService : public ProfileKeyedAPI,
+class CommandService : public BrowserContextKeyedAPI,
                        public content::NotificationObserver {
  public:
   // An enum specifying whether to fetch all extension commands or only active
@@ -54,23 +58,29 @@ class CommandService : public ProfileKeyedAPI,
     ANY_SCOPE,  // All commands, regardless of scope (used when querying).
   };
 
+  // An enum specifying the types of commands that can be used by an extension.
+  enum ExtensionCommandType {
+    NAMED,
+    BROWSER_ACTION,
+    PAGE_ACTION
+  };
+
   // Register prefs for keybinding.
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Constructs a CommandService object for the given profile.
-  explicit CommandService(Profile* profile);
+  explicit CommandService(content::BrowserContext* context);
   virtual ~CommandService();
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<CommandService>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<CommandService>* GetFactoryInstance();
 
   // Convenience method to get the CommandService for a profile.
-  static CommandService* Get(Profile* profile);
+  static CommandService* Get(content::BrowserContext* context);
 
-  // Return true if the specified accelerator is one of the following multimedia
-  // keys: Next Track key, Previous Track key, Stop Media key, Play/Pause Media
-  // key, without any modifiers.
-  static bool IsMediaKey(const ui::Accelerator& accelerator);
+  // Returns true if |extension| is permitted to and does remove the bookmark
+  // shortcut key.
+  static bool RemovesBookmarkShortcut(const extensions::Extension* extension);
 
   // Gets the command (if any) for the browser action of an extension given
   // its |extension_id|. The function consults the master list to see if
@@ -81,7 +91,7 @@ class CommandService : public ProfileKeyedAPI,
   bool GetBrowserActionCommand(const std::string& extension_id,
                                QueryType type,
                                extensions::Command* command,
-                               bool* active);
+                               bool* active) const;
 
   // Gets the command (if any) for the page action of an extension given
   // its |extension_id|. The function consults the master list to see if
@@ -92,17 +102,17 @@ class CommandService : public ProfileKeyedAPI,
   bool GetPageActionCommand(const std::string& extension_id,
                             QueryType type,
                             extensions::Command* command,
-                            bool* active);
+                            bool* active) const;
 
-  // Gets the active command (if any) for the named commands of an extension
-  // given its |extension_id|. The function consults the master list to see if
-  // the command is active. Returns an empty map if the extension has no
-  // named commands of the right |scope| or no such active named commands when
-  // |type| requested is ACTIVE_ONLY.
+  // Gets the active named commands (if any) for the extension with
+  // |extension_id|. The function consults the master list to see if the
+  // commands are active. Returns an empty map if the extension has no named
+  // commands of the right |scope| or no such active named commands when |type|
+  // requested is ACTIVE_ONLY.
   bool GetNamedCommands(const std::string& extension_id,
                         QueryType type,
                         CommandScope scope,
-                        extensions::CommandMap* command_map);
+                        extensions::CommandMap* command_map) const;
 
   // Records a keybinding |accelerator| as active for an extension with id
   // |extension_id| and command with the name |command_name|. If
@@ -142,7 +152,19 @@ class CommandService : public ProfileKeyedAPI,
   // |extension_id| . Returns an empty Command object (with keycode
   // VKEY_UNKNOWN) if the command is not found.
   Command FindCommandByName(const std::string& extension_id,
-                            const std::string& command);
+                            const std::string& command) const;
+
+  // If the extension with |extension_id| binds a command to |accelerator|,
+  // returns true and assigns *|command| and *|command_type| to the command and
+  // its type if non-NULL.
+  bool GetBoundExtensionCommand(const std::string& extension_id,
+                                const ui::Accelerator& accelerator,
+                                extensions::Command* command,
+                                ExtensionCommandType* command_type) const;
+
+  // Returns true if |extension| is permitted to and does override the bookmark
+  // shortcut key.
+  bool OverridesBookmarkShortcut(const extensions::Extension* extension) const;
 
   // Overridden from content::NotificationObserver.
   virtual void Observe(int type,
@@ -150,19 +172,13 @@ class CommandService : public ProfileKeyedAPI,
                        const content::NotificationDetails& details) OVERRIDE;
 
  private:
-  friend class ProfileKeyedAPIFactory<CommandService>;
+  friend class BrowserContextKeyedAPIFactory<CommandService>;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "CommandService";
   }
   static const bool kServiceRedirectedInIncognito = true;
-
-  // An enum specifying the types of icons that can have a command.
-  enum ExtensionActionType {
-    BROWSER_ACTION,
-    PAGE_ACTION
-  };
 
   // Assigns initial keybinding for a given |extension|'s page action, browser
   // action and named commands. In each case, if the suggested keybinding is
@@ -175,7 +191,7 @@ class CommandService : public ProfileKeyedAPI,
                                  QueryType query_type,
                                  extensions::Command* command,
                                  bool* active,
-                                 ExtensionActionType action_type);
+                                 ExtensionCommandType action_type) const;
 
   // The content notification registrar for listening to extension events.
   content::NotificationRegistrar registrar_;
@@ -187,7 +203,8 @@ class CommandService : public ProfileKeyedAPI,
 };
 
 template <>
-void ProfileKeyedAPIFactory<CommandService>::DeclareFactoryDependencies();
+void
+    BrowserContextKeyedAPIFactory<CommandService>::DeclareFactoryDependencies();
 
 }  //  namespace extensions
 

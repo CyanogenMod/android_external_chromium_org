@@ -20,12 +20,16 @@
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '<(DEPTH)/net/net.gyp:net',
         '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/ui/base/ui_base.gyp:ui_base',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
-        '<(DEPTH)/ui/ui.gyp:ui',
         '<(DEPTH)/url/url.gyp:url_lib',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
+        '<(DEPTH)/third_party/WebKit/public/blink_headers.gyp:blink_headers',
+      ],
+      'export_dependent_settings': [
+        '<(DEPTH)/third_party/WebKit/public/blink_headers.gyp:blink_headers',
       ],
 
       'include_dirs': [
@@ -50,8 +54,6 @@
         'data_element.h',
         'resource_devtools_info.cc',
         'resource_devtools_info.h',
-        'resource_request_body.cc',
-        'resource_request_body.h',
         'resource_response_info.cc',
         'resource_response_info.h',
         'resource_type.cc',

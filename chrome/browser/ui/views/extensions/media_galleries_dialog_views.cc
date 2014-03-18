@@ -5,13 +5,13 @@
 #include "chrome/browser/ui/views/extensions/media_galleries_dialog_views.h"
 
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/ui/views/extensions/media_gallery_checkbox_view.h"
 #include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
-#include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/border.h"
@@ -33,9 +33,6 @@ using web_modal::WebContentsModalDialogManagerDelegate;
 
 namespace {
 
-// Equal to the #969696 color used in spec (note WebUI color is #999).
-const SkColor kDeemphasizedTextColor = SkColorSetRGB(159, 159, 159);
-
 const int kScrollAreaHeight = 192;
 
 // This container has the right Layout() impl to use within a ScrollView.
@@ -55,7 +52,7 @@ void ScrollableView::Layout() {
   int width = pref.width();
   int height = pref.height();
   if (parent()) {
-    width = std::max(parent()->width(), width);
+    width = parent()->width();
     height = std::max(parent()->height(), height);
   }
   SetBounds(x(), y(), width, height);
@@ -78,8 +75,7 @@ MediaGalleriesDialogViews::MediaGalleriesDialogViews(
       accepted_(false) {
   InitChildViews();
 
-  // May be NULL during tests.
-  if (controller->web_contents()) {
+  if (ControllerHasWebContents()) {
     // Ownership of |contents_| is handed off by this call. |window_| will take
     // care of deleting itself after calling DeleteDelegate().
     WebContentsModalDialogManager* web_contents_modal_dialog_manager =
@@ -96,7 +92,7 @@ MediaGalleriesDialogViews::MediaGalleriesDialogViews(
 }
 
 MediaGalleriesDialogViews::~MediaGalleriesDialogViews() {
-  if (!controller_->web_contents())
+  if (!ControllerHasWebContents())
     delete contents_;
 }
 
@@ -212,54 +208,30 @@ bool MediaGalleriesDialogViews::AddOrUpdateGallery(
   CheckboxMap::iterator iter = checkbox_map_.find(gallery.pref_id);
   if (iter != checkbox_map_.end() &&
       gallery.pref_id != kInvalidMediaGalleryPrefId) {
-    views::Checkbox* checkbox = iter->second;
+    views::Checkbox* checkbox = iter->second->checkbox();
     checkbox->SetChecked(permitted);
     checkbox->SetText(label);
-    checkbox->SetElideBehavior(views::Label::ELIDE_IN_MIDDLE);
     checkbox->SetTooltipText(tooltip_text);
-    // Replace the details string.
-    views::View* checkbox_view = checkbox->parent();
-    DCHECK_EQ(2, checkbox_view->child_count());
-    views::Label* secondary_text =
-        static_cast<views::Label*>(checkbox_view->child_at(1));
-    secondary_text->SetText(details);
+    iter->second->secondary_text()->SetText(details);
+    iter->second->secondary_text()->SetVisible(details.length() > 0);
     return false;
   }
 
-  views::Checkbox* checkbox = new views::Checkbox(label);
-  checkbox->set_listener(this);
+  views::ContextMenuController* menu_controller = NULL;
   if (gallery.pref_id != kInvalidMediaGalleryPrefId)
-    checkbox->set_context_menu_controller(this);
-  checkbox->SetTooltipText(tooltip_text);
-  views::Label* secondary_text = new views::Label(details);
-  if (gallery.pref_id != kInvalidMediaGalleryPrefId)
-    secondary_text->set_context_menu_controller(this);
-  secondary_text->SetTooltipText(tooltip_text);
-  secondary_text->SetEnabledColor(kDeemphasizedTextColor);
-  secondary_text->SetTooltipText(tooltip_text);
-  secondary_text->SetBorder(views::Border::CreateEmptyBorder(
-      0,
-      views::kRelatedControlSmallHorizontalSpacing,
-      0,
-      views::kRelatedControlSmallHorizontalSpacing));
+    menu_controller = this;
 
-  views::View* checkbox_view = new views::View();
-  if (gallery.pref_id != kInvalidMediaGalleryPrefId)
-    checkbox_view->set_context_menu_controller(this);
-  checkbox_view->SetBorder(views::Border::CreateEmptyBorder(
-      0, views::kPanelHorizMargin, trailing_vertical_space, 0));
-  checkbox_view->SetLayoutManager(
-      new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 0));
-  checkbox_view->AddChildView(checkbox);
-  checkbox_view->AddChildView(secondary_text);
+  MediaGalleryCheckboxView* gallery_view =
+      new MediaGalleryCheckboxView(label, tooltip_text, details, false,
+                                   trailing_vertical_space, this,
+                                   menu_controller);
+  gallery_view->checkbox()->SetChecked(permitted);
+  container->AddChildView(gallery_view);
 
-  container->AddChildView(checkbox_view);
-
-  checkbox->SetChecked(permitted);
   if (gallery.pref_id != kInvalidMediaGalleryPrefId)
-    checkbox_map_[gallery.pref_id] = checkbox;
+    checkbox_map_[gallery.pref_id] = gallery_view;
   else
-    new_checkbox_map_[checkbox] = gallery;
+    new_checkbox_map_[gallery_view] = gallery;
 
   return true;
 }
@@ -323,14 +295,11 @@ bool MediaGalleriesDialogViews::Accept() {
 }
 
 void MediaGalleriesDialogViews::ButtonPressed(views::Button* sender,
-                                              const ui::Event& event) {
-  GetWidget()->client_view()->AsDialogClientView()->UpdateDialogButtons();
-
-  ButtonPressedAction(sender);
-}
-
-void MediaGalleriesDialogViews::ButtonPressedAction(views::Button* sender) {
+                                              const ui::Event& /* event */) {
   confirm_available_ = true;
+
+  if (ControllerHasWebContents())
+    GetWidget()->client_view()->AsDialogClientView()->UpdateDialogButtons();
 
   if (sender == add_gallery_button_) {
     controller_->OnAddFolderClicked();
@@ -339,16 +308,17 @@ void MediaGalleriesDialogViews::ButtonPressedAction(views::Button* sender) {
 
   for (CheckboxMap::const_iterator iter = checkbox_map_.begin();
        iter != checkbox_map_.end(); ++iter) {
-    if (sender == iter->second) {
+    if (sender == iter->second->checkbox()) {
       controller_->DidToggleGalleryId(iter->first,
-                                      iter->second->checked());
+                                      iter->second->checkbox()->checked());
       return;
     }
   }
   for (NewCheckboxMap::const_iterator iter = new_checkbox_map_.begin();
        iter != new_checkbox_map_.end(); ++iter) {
-    if (sender == iter->first) {
-      controller_->DidToggleNewGallery(iter->second, iter->first->checked());
+    if (sender == iter->first->checkbox()) {
+      controller_->DidToggleNewGallery(iter->second,
+                                       iter->first->checkbox()->checked());
     }
   }
 }
@@ -359,7 +329,7 @@ void MediaGalleriesDialogViews::ShowContextMenuForView(
     ui::MenuSourceType source_type) {
   for (CheckboxMap::const_iterator iter = checkbox_map_.begin();
        iter != checkbox_map_.end(); ++iter) {
-    if (iter->second->parent()->Contains(source)) {
+    if (iter->second->Contains(source)) {
       ShowContextMenu(point, source_type, iter->first);
       return;
     }
@@ -379,6 +349,10 @@ void MediaGalleriesDialogViews::ShowContextMenu(const gfx::Point& point,
       views::MenuRunner::MENU_DELETED) {
     return;
   }
+}
+
+bool MediaGalleriesDialogViews::ControllerHasWebContents() const {
+  return controller_->web_contents() != NULL;
 }
 
 // MediaGalleriesDialogViewsController -----------------------------------------

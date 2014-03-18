@@ -40,10 +40,14 @@ class MessageReceiver : public EmbeddedWorkerTestHelper {
         current_request_id_(0) {}
   virtual ~MessageReceiver() {}
 
-  virtual void OnSendMessageToWorker(int thread_id,
+  virtual bool OnSendMessageToWorker(int thread_id,
                                      int embedded_worker_id,
                                      int request_id,
                                      const IPC::Message& message) OVERRIDE {
+    if (EmbeddedWorkerTestHelper::OnSendMessageToWorker(
+            thread_id, embedded_worker_id, request_id, message)) {
+      return true;
+    }
     current_embedded_worker_id_ = embedded_worker_id;
     current_request_id_ = request_id;
     bool handled = true;
@@ -52,7 +56,7 @@ class MessageReceiver : public EmbeddedWorkerTestHelper {
       IPC_MESSAGE_HANDLER(TestMsg_Request, OnRequest)
       IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
-    ASSERT_TRUE(handled);
+    return handled;
   }
 
  private:
@@ -80,6 +84,17 @@ void ReceiveResponse(ServiceWorkerStatusCode* status_out,
   ASSERT_TRUE(TestMsg_Response::Read(&message, &param));
   *status_out = status;
   *value_out = param.a;
+}
+
+void VerifyCalled(bool* called) {
+  *called = true;
+}
+
+void ObserveStatusChanges(ServiceWorkerVersion* version,
+                          std::vector<ServiceWorkerVersion::Status>* statuses) {
+  statuses->push_back(version->status());
+  version->RegisterStatusChangeCallback(
+      base::Bind(&ObserveStatusChanges, make_scoped_refptr(version), statuses));
 }
 
 }  // namespace
@@ -136,9 +151,9 @@ TEST_F(ServiceWorkerVersionTest, ConcurrentStartAndStop) {
   version_->StartWorker(CreateReceiverOnCurrentThread(&status1));
   version_->StartWorker(CreateReceiverOnCurrentThread(&status2));
 
-  EXPECT_EQ(ServiceWorkerVersion::STARTING, version_->status());
+  EXPECT_EQ(ServiceWorkerVersion::STARTING, version_->running_status());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(ServiceWorkerVersion::RUNNING, version_->status());
+  EXPECT_EQ(ServiceWorkerVersion::RUNNING, version_->running_status());
 
   // Call StartWorker() after it's started.
   version_->StartWorker(CreateReceiverOnCurrentThread(&status3));
@@ -159,9 +174,9 @@ TEST_F(ServiceWorkerVersionTest, ConcurrentStartAndStop) {
   // Also try calling StartWorker while StopWorker is in queue.
   version_->StartWorker(CreateReceiverOnCurrentThread(&status3));
 
-  EXPECT_EQ(ServiceWorkerVersion::STOPPING, version_->status());
+  EXPECT_EQ(ServiceWorkerVersion::STOPPING, version_->running_status());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(ServiceWorkerVersion::STOPPED, version_->status());
+  EXPECT_EQ(ServiceWorkerVersion::STOPPED, version_->running_status());
 
   // All StopWorker should just succeed, while StartWorker fails.
   EXPECT_EQ(SERVICE_WORKER_OK, status1);
@@ -170,7 +185,7 @@ TEST_F(ServiceWorkerVersionTest, ConcurrentStartAndStop) {
 }
 
 TEST_F(ServiceWorkerVersionTest, SendMessage) {
-  EXPECT_EQ(ServiceWorkerVersion::STOPPED, version_->status());
+  EXPECT_EQ(ServiceWorkerVersion::STOPPED, version_->running_status());
 
   // Send a message without starting the worker.
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
@@ -180,7 +195,7 @@ TEST_F(ServiceWorkerVersionTest, SendMessage) {
   EXPECT_EQ(SERVICE_WORKER_OK, status);
 
   // The worker should be now started.
-  EXPECT_EQ(ServiceWorkerVersion::RUNNING, version_->status());
+  EXPECT_EQ(ServiceWorkerVersion::RUNNING, version_->running_status());
 
   // Stop the worker, and then send the message immediately.
   ServiceWorkerStatusCode msg_status = SERVICE_WORKER_ERROR_FAILED;
@@ -197,14 +212,14 @@ TEST_F(ServiceWorkerVersionTest, SendMessage) {
 }
 
 TEST_F(ServiceWorkerVersionTest, ReSendMessageAfterStop) {
-  EXPECT_EQ(ServiceWorkerVersion::STOPPED, version_->status());
+  EXPECT_EQ(ServiceWorkerVersion::STOPPED, version_->running_status());
 
   // Start the worker.
   ServiceWorkerStatusCode start_status = SERVICE_WORKER_ERROR_FAILED;
   version_->StartWorker(CreateReceiverOnCurrentThread(&start_status));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(SERVICE_WORKER_OK, start_status);
-  EXPECT_EQ(ServiceWorkerVersion::RUNNING, version_->status());
+  EXPECT_EQ(ServiceWorkerVersion::RUNNING, version_->running_status());
 
   // Stop the worker, and then send the message immediately.
   ServiceWorkerStatusCode msg_status = SERVICE_WORKER_ERROR_FAILED;
@@ -224,7 +239,7 @@ TEST_F(ServiceWorkerVersionTest, ReSendMessageAfterStop) {
                        CreateReceiverOnCurrentThread(&msg_status));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(SERVICE_WORKER_OK, msg_status);
-  EXPECT_EQ(ServiceWorkerVersion::RUNNING, version_->status());
+  EXPECT_EQ(ServiceWorkerVersion::RUNNING, version_->running_status());
 }
 
 TEST_F(ServiceWorkerVersionTest, SendMessageAndRegisterCallback) {
@@ -245,6 +260,78 @@ TEST_F(ServiceWorkerVersionTest, SendMessageAndRegisterCallback) {
   EXPECT_EQ(SERVICE_WORKER_OK, status2);
   EXPECT_EQ(111 * 2, value1);
   EXPECT_EQ(333 * 2, value2);
+}
+
+TEST_F(ServiceWorkerVersionTest, InstallAndWaitCompletion) {
+  EXPECT_EQ(ServiceWorkerVersion::NEW, version_->status());
+
+  // Dispatch an install event.
+  ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
+  version_->DispatchInstallEvent(-1, CreateReceiverOnCurrentThread(&status));
+  EXPECT_EQ(ServiceWorkerVersion::INSTALLING, version_->status());
+
+  // Wait for the completion.
+  bool status_change_called = false;
+  version_->RegisterStatusChangeCallback(
+      base::Bind(&VerifyCalled, &status_change_called));
+
+  base::RunLoop().RunUntilIdle();
+
+  // After successful completion, version's status must be changed to
+  // INSTALLED, and status change callback must have been fired.
+  EXPECT_EQ(SERVICE_WORKER_OK, status);
+  EXPECT_TRUE(status_change_called);
+  EXPECT_EQ(ServiceWorkerVersion::INSTALLED, version_->status());
+}
+
+TEST_F(ServiceWorkerVersionTest, ActivateAndWaitCompletion) {
+  version_->SetStatus(ServiceWorkerVersion::INSTALLED);
+  EXPECT_EQ(ServiceWorkerVersion::INSTALLED, version_->status());
+
+  // Dispatch an activate event.
+  ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
+  version_->DispatchActivateEvent(CreateReceiverOnCurrentThread(&status));
+  EXPECT_EQ(ServiceWorkerVersion::ACTIVATING, version_->status());
+
+  // Wait for the completion.
+  bool status_change_called = false;
+  version_->RegisterStatusChangeCallback(
+      base::Bind(&VerifyCalled, &status_change_called));
+
+  base::RunLoop().RunUntilIdle();
+
+  // After successful completion, version's status must be changed to
+  // ACTIVE, and status change callback must have been fired.
+  EXPECT_EQ(SERVICE_WORKER_OK, status);
+  EXPECT_TRUE(status_change_called);
+  EXPECT_EQ(ServiceWorkerVersion::ACTIVE, version_->status());
+}
+
+TEST_F(ServiceWorkerVersionTest, RepeatedlyObserveStatusChanges) {
+  EXPECT_EQ(ServiceWorkerVersion::NEW, version_->status());
+
+  // Repeatedly observe status changes (the callback re-registers itself).
+  std::vector<ServiceWorkerVersion::Status> statuses;
+  version_->RegisterStatusChangeCallback(
+      base::Bind(&ObserveStatusChanges, version_, &statuses));
+
+  // Dispatch some events.
+  ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
+  version_->DispatchInstallEvent(-1, CreateReceiverOnCurrentThread(&status));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(SERVICE_WORKER_OK, status);
+
+  status = SERVICE_WORKER_ERROR_FAILED;
+  version_->DispatchActivateEvent(CreateReceiverOnCurrentThread(&status));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(SERVICE_WORKER_OK, status);
+
+  // Verify that we could successfully observe repeated status changes.
+  ASSERT_EQ(4U, statuses.size());
+  ASSERT_EQ(ServiceWorkerVersion::INSTALLING, statuses[0]);
+  ASSERT_EQ(ServiceWorkerVersion::INSTALLED, statuses[1]);
+  ASSERT_EQ(ServiceWorkerVersion::ACTIVATING, statuses[2]);
+  ASSERT_EQ(ServiceWorkerVersion::ACTIVE, statuses[3]);
 }
 
 }  // namespace content

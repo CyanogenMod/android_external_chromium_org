@@ -32,8 +32,8 @@
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 namespace {
@@ -283,8 +283,7 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
   // Carve the toast shape into the window.
   HWND toast_window;
 #if defined(USE_AURA)
-  toast_window =
-      popup_->GetNativeView()->GetDispatcher()->host()->GetAcceleratedWidget();
+  toast_window = popup_->GetNativeView()->GetHost()->GetAcceleratedWidget();
 #else
   toast_window = popup_->GetNativeView();
 #endif

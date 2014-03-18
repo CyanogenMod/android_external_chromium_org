@@ -16,6 +16,7 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
@@ -28,7 +29,6 @@
 #include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/charger_replace/charger_replacement_dialog.h"
-#include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/first_run/drive_first_run_controller.h"
 #include "chrome/browser/chromeos/first_run/first_run.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
@@ -61,6 +61,7 @@
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/ime/extension_ime_util.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/login/login_state.h"
 #include "chromeos/settings/timezone_settings.h"
@@ -81,6 +82,7 @@
 #include "ui/gfx/transform.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/window_animations.h"
 #include "url/gurl.h"
 
 namespace {
@@ -124,13 +126,13 @@ const int64 kPolicyServiceInitializationDelayMilliseconds = 100;
 // The information will be used in InputMethodUtil::GetHardwareInputMethodId().
 void DetermineAndSaveHardwareKeyboard(const std::string& locale,
                                       const std::string& oem_layout) {
+  chromeos::input_method::InputMethodManager* manager =
+      chromeos::input_method::InputMethodManager::Get();
   std::string layout;
   if (!oem_layout.empty()) {
     // If the OEM layout information is provided, use it.
     layout = oem_layout;
   } else {
-    chromeos::input_method::InputMethodManager* manager =
-        chromeos::input_method::InputMethodManager::Get();
     // Otherwise, determine the hardware keyboard from the locale.
     std::vector<std::string> input_method_ids;
     if (manager->GetInputMethodUtil()->GetInputMethodIdsFromLanguageCode(
@@ -145,8 +147,12 @@ void DetermineAndSaveHardwareKeyboard(const std::string& locale,
   }
 
   if (!layout.empty()) {
+    std::vector<std::string> layouts;
+    base::SplitString(layout, ',', &layouts);
+    manager->MigrateXkbInputMethods(&layouts);
+
     PrefService* prefs = g_browser_process->local_state();
-    prefs->SetString(prefs::kHardwareKeyboardLayout, layout);
+    prefs->SetString(prefs::kHardwareKeyboardLayout, JoinString(layouts, ","));
 
     // This asks the file thread to save the prefs (i.e. doesn't block).
     // The latest values of Local State reside in memory so we can safely
@@ -154,8 +160,6 @@ void DetermineAndSaveHardwareKeyboard(const std::string& locale,
     // yet saved to disk.
     prefs->CommitPendingWrite();
 
-    chromeos::input_method::InputMethodManager* manager =
-      chromeos::input_method::InputMethodManager::Get();
     manager->GetInputMethodUtil()->UpdateHardwareLayoutCache();
     manager->SetInputMethodLoginDefault();
   }
@@ -253,6 +257,7 @@ const int LoginDisplayHostImpl::kShowLoginWebUIid = 0x1111;
 LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
     : background_bounds_(background_bounds),
       pointer_factory_(this),
+      auto_enrollment_state_(policy::AutoEnrollmentClient::STATE_PENDING),
       shutting_down_(false),
       oobe_progress_bar_visible_(false),
       session_starting_(false),
@@ -264,7 +269,6 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
       status_area_saved_visibility_(false),
       crash_count_(0),
       restore_path_(RESTORE_UNKNOWN),
-      auto_enrollment_check_done_(false),
       finalize_animation_type_(ANIMATION_WORKSPACE),
       animation_weak_ptr_factory_(this),
       startup_sound_played_(false),
@@ -296,17 +300,14 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
   default_host_ = this;
 
   // Make sure chrome won't exit while we are at login/oobe screen.
-  chrome::StartKeepAlive();
+  chrome::IncrementKeepAliveCount();
 
   bool is_registered = StartupUtils::IsDeviceRegistered();
   bool zero_delay_enabled = WizardController::IsZeroDelayEnabled();
   bool disable_boot_animation = CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableBootAnimation);
-  bool disable_oobe_animation = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableOobeAnimation);
 
   waiting_for_wallpaper_load_ = !zero_delay_enabled &&
-                                (is_registered || !disable_oobe_animation) &&
                                 (!is_registered || !disable_boot_animation);
 
   // For slower hardware we have boot animation disabled so
@@ -374,7 +375,7 @@ LoginDisplayHostImpl::~LoginDisplayHostImpl() {
   ResetLoginWindowAndView();
 
   // Let chrome process exit after login/oobe screen if needed.
-  chrome::EndKeepAlive();
+  chrome::DecrementKeepAliveCount();
 
   default_host_ = NULL;
   // TODO(tengs): This should be refactored. See crbug.com/314934.
@@ -460,7 +461,7 @@ void LoginDisplayHostImpl::CheckForAutoEnrollment() {
 
   if (policy::AutoEnrollmentClient::IsDisabled()) {
     VLOG(1) << "CheckForAutoEnrollment: auto-enrollment disabled";
-    auto_enrollment_check_done_ = true;
+    SetAutoEnrollmentState(policy::AutoEnrollmentClient::STATE_NO_ENROLLMENT);
     return;
   }
 
@@ -471,17 +472,16 @@ void LoginDisplayHostImpl::CheckForAutoEnrollment() {
                  pointer_factory_.GetWeakPtr()));
 }
 
-void LoginDisplayHostImpl::GetAutoEnrollmentCheckResult(
-    const GetAutoEnrollmentCheckResultCallback& callback) {
+scoped_ptr<LoginDisplayHost::AutoEnrollmentProgressCallbackSubscription>
+LoginDisplayHostImpl::RegisterAutoEnrollmentProgressHandler(
+    const AutoEnrollmentProgressCallback& callback) {
   DCHECK(!callback.is_null());
 
-  if (auto_enrollment_check_done_) {
-    callback.Run(auto_enrollment_client_ &&
-                 auto_enrollment_client_->should_auto_enroll());
-    return;
-  }
+  scoped_ptr<AutoEnrollmentProgressCallbackSubscription>
+      subscription(auto_enrollment_progress_callbacks_.Add(callback));
 
-  get_auto_enrollment_result_callbacks_.push_back(callback);
+  callback.Run(auto_enrollment_state_);
+  return subscription.Pass();
 }
 
 void LoginDisplayHostImpl::StartWizard(
@@ -609,9 +609,6 @@ void LoginDisplayHostImpl::StartSignInScreen(
   // so check for auto-enrollment again. This might catch a cached decision from
   // a previous oobe flow, or might start a new check with the server.
   CheckForAutoEnrollment();
-
-  // Initiate services customization manifest fetching.
-  ServicesCustomizationDocument::GetInstance()->StartFetching();
 
   // Initiate mobile config load.
   MobileConfig::GetInstance();
@@ -850,8 +847,7 @@ void LoginDisplayHostImpl::OnOwnershipStatusCheckDone(
   if (status != DeviceSettingsService::OWNERSHIP_NONE) {
     // The device is already owned. No need for auto-enrollment checks.
     VLOG(1) << "CheckForAutoEnrollment: device already owned";
-    auto_enrollment_check_done_ = true;
-    NotifyAutoEnrollmentCheckResult(false);
+    SetAutoEnrollmentState(policy::AutoEnrollmentClient::STATE_NO_ENROLLMENT);
     return;
   }
 
@@ -867,26 +863,30 @@ void LoginDisplayHostImpl::OnOwnershipStatusCheckDone(
 
     // If the client already started and already finished too, pass the decision
     // to the |sign_in_controller_| now.
-    if (auto_enrollment_client_->should_auto_enroll())
+    if (ShouldEnrollSilently())
       ForceAutoEnrollment();
   } else {
     VLOG(1) << "CheckForAutoEnrollment: starting auto-enrollment client";
     auto_enrollment_client_.reset(policy::AutoEnrollmentClient::Create(
-        base::Bind(&LoginDisplayHostImpl::OnAutoEnrollmentClientDone,
+        base::Bind(&LoginDisplayHostImpl::OnAutoEnrollmentClientProgress,
                    base::Unretained(this))));
     auto_enrollment_client_->Start();
   }
 }
 
-void LoginDisplayHostImpl::OnAutoEnrollmentClientDone() {
-  bool auto_enroll = auto_enrollment_client_->should_auto_enroll();
-  VLOG(1) << "OnAutoEnrollmentClientDone, decision is " << auto_enroll;
+void LoginDisplayHostImpl::OnAutoEnrollmentClientProgress(
+    policy::AutoEnrollmentClient::State state) {
+  VLOG(1) << "OnAutoEnrollmentClientProgress, state " << state;
+  SetAutoEnrollmentState(state);
 
-  if (auto_enroll)
+  if (ShouldEnrollSilently())
     ForceAutoEnrollment();
+}
 
-  auto_enrollment_check_done_ = true;
-  NotifyAutoEnrollmentCheckResult(auto_enroll);
+void LoginDisplayHostImpl::SetAutoEnrollmentState(
+    policy::AutoEnrollmentClient::State new_state) {
+  auto_enrollment_state_ = new_state;
+  auto_enrollment_progress_callbacks_.Notify(auto_enrollment_state_);
 }
 
 void LoginDisplayHostImpl::ForceAutoEnrollment() {
@@ -990,12 +990,12 @@ void LoginDisplayHostImpl::InitLoginWindowAndView() {
   if (login_view_->webui_visible())
     OnLoginPromptVisible();
 
-  views::corewm::SetWindowVisibilityAnimationDuration(
+  wm::SetWindowVisibilityAnimationDuration(
       login_window_->GetNativeView(),
       base::TimeDelta::FromMilliseconds(kLoginFadeoutTransitionDurationMs));
-  views::corewm::SetWindowVisibilityAnimationTransition(
+  wm::SetWindowVisibilityAnimationTransition(
       login_window_->GetNativeView(),
-      views::corewm::ANIMATE_HIDE);
+      wm::ANIMATE_HIDE);
 
   login_window_->SetContentsView(login_view_);
 
@@ -1029,14 +1029,6 @@ void LoginDisplayHostImpl::SetOobeProgressBarVisible(bool visible) {
   GetOobeUI()->ShowOobeUI(visible);
 }
 
-void LoginDisplayHostImpl::NotifyAutoEnrollmentCheckResult(
-    bool should_auto_enroll) {
-  std::vector<GetAutoEnrollmentCheckResultCallback> callbacks;
-  callbacks.swap(get_auto_enrollment_result_callbacks_);
-  for (size_t i = 0; i < callbacks.size(); ++i)
-    callbacks[i].Run(should_auto_enroll);
-}
-
 void LoginDisplayHostImpl::TryToPlayStartupSound() {
   if (startup_sound_played_ || login_prompt_visible_time_.is_null() ||
       !CrasAudioHandler::Get()->GetActiveOutputNode()) {
@@ -1048,12 +1040,23 @@ void LoginDisplayHostImpl::TryToPlayStartupSound() {
   // Don't try play startup sound if login prompt is already visible
   // for a long time or can't be played.
   if (base::TimeTicks::Now() - login_prompt_visible_time_ >
-      base::TimeDelta::FromMilliseconds(kStartupSoundMaxDelayMs) ||
-      !ash::PlaySystemSound(SOUND_STARTUP,
-                            startup_sound_honors_spoken_feedback_)) {
+      base::TimeDelta::FromMilliseconds(kStartupSoundMaxDelayMs)) {
     EnableSystemSoundsForAccessibility();
     return;
   }
+
+  if (!startup_sound_honors_spoken_feedback_ &&
+      !ash::PlaySystemSoundAlways(SOUND_STARTUP)) {
+    EnableSystemSoundsForAccessibility();
+    return;
+  }
+
+  if (startup_sound_honors_spoken_feedback_ &&
+      !ash::PlaySystemSoundIfSpokenFeedback(SOUND_STARTUP)) {
+    EnableSystemSoundsForAccessibility();
+    return;
+  }
+
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&EnableSystemSoundsForAccessibility),
@@ -1065,6 +1068,13 @@ void LoginDisplayHostImpl::OnLoginPromptVisible() {
     return;
   login_prompt_visible_time_ = base::TimeTicks::Now();
   TryToPlayStartupSound();
+}
+
+bool LoginDisplayHostImpl::ShouldEnrollSilently() {
+  return !CommandLine::ForCurrentProcess()->HasSwitch(
+             chromeos::switches::kEnterpriseEnableForcedReEnrollment) &&
+         auto_enrollment_state_ ==
+             policy::AutoEnrollmentClient::STATE_TRIGGER_ENROLLMENT;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

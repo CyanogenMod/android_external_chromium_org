@@ -13,9 +13,8 @@
 #include "content/shell/browser/shell_platform_data_aura.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/accessibility/accessibility_types.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -151,7 +150,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
     // Resizing a widget on chromeos doesn't automatically resize the root, need
     // to explicitly do that.
 #if defined(OS_CHROMEOS)
-    GetWidget()->GetNativeWindow()->GetDispatcher()->host()->SetBounds(bounds);
+    GetWidget()->GetNativeWindow()->GetHost()->SetBounds(bounds);
 #endif
   }
 
@@ -505,7 +504,7 @@ void Shell::PlatformCreateWindow(int width, int height) {
   window_ = window_widget_->GetNativeWindow();
   // Call ShowRootWindow on RootWindow created by WMTestHelper without
   // which XWindow owned by RootWindow doesn't get mapped.
-  window_->GetDispatcher()->host()->Show();
+  window_->GetHost()->Show();
   window_widget_->Show();
 }
 
@@ -513,7 +512,7 @@ void Shell::PlatformSetContents() {
   if (headless_) {
     CHECK(platform_);
     aura::Window* content = web_contents_->GetView()->GetNativeView();
-    aura::Window* parent = platform_->window()->window();
+    aura::Window* parent = platform_->host()->window();
     if (!parent->Contains(content)) {
       parent->AddChild(content);
       content->Show();

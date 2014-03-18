@@ -17,10 +17,10 @@
         '../../skia/skia.gyp:skia',
         '../../url/url.gyp:url_lib',
         '../base/strings/ui_strings.gyp:ui_strings',
+        '../base/ui_base.gyp:ui_base',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
-        '../ui.gyp:ui',
       ],
       'defines': [
         'MESSAGE_CENTER_IMPLEMENTATION',
@@ -155,14 +155,16 @@
         '../../base/base.gyp:base',
         '../../base/base.gyp:test_support_base',
         '../../skia/skia.gyp:skia',
+        '../base/ui_base.gyp:ui_base',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
-        '../ui.gyp:ui',
         'message_center',
       ],
       'sources': [
         'fake_message_center.h',
         'fake_message_center.cc',
+        'fake_message_center_tray_delegate.h',
+        'fake_message_center_tray_delegate.cc',
         'fake_notifier_settings_provider.h',
         'fake_notifier_settings_provider.cc',
       ],
@@ -176,11 +178,11 @@
         '../../skia/skia.gyp:skia',
         '../../testing/gtest.gyp:gtest',
         '../../url/url.gyp:url_lib',
+        '../base/ui_base.gyp:ui_base',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
         '../resources/ui_resources.gyp:ui_test_pak',
-        '../ui.gyp:ui',
         'message_center',
         'message_center_test_support',
       ],
@@ -233,7 +235,8 @@
           ],
         }],
         # See http://crbug.com/162998#c4 for why this is needed.
-        ['OS=="linux" and linux_use_tcmalloc==1', {
+        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
           'dependencies': [
             '../../base/allocator/allocator.gyp:allocator',
           ],

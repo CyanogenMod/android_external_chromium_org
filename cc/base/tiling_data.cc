@@ -272,6 +272,8 @@ TilingData::BaseIterator::BaseIterator(const TilingData* tiling_data)
       index_y_(-1) {
 }
 
+TilingData::Iterator::Iterator() : BaseIterator(NULL) { done(); }
+
 TilingData::Iterator::Iterator(const TilingData* tiling_data,
                                const gfx::Rect& tiling_rect)
     : BaseIterator(tiling_data),
@@ -407,6 +409,237 @@ TilingData::DifferenceIterator& TilingData::DifferenceIterator::operator++() {
   }
 
   return *this;
+}
+
+TilingData::SpiralDifferenceIterator::SpiralDifferenceIterator()
+    : BaseIterator(NULL) {
+  done();
+}
+
+TilingData::SpiralDifferenceIterator::SpiralDifferenceIterator(
+    const TilingData* tiling_data,
+    const gfx::Rect& consider_rect,
+    const gfx::Rect& ignore_rect,
+    const gfx::Rect& center_rect)
+    : BaseIterator(tiling_data),
+      consider_left_(-1),
+      consider_top_(-1),
+      consider_right_(-1),
+      consider_bottom_(-1),
+      ignore_left_(-1),
+      ignore_top_(-1),
+      ignore_right_(-1),
+      ignore_bottom_(-1),
+      direction_(RIGHT),
+      delta_x_(1),
+      delta_y_(0),
+      current_step_(0),
+      horizontal_step_count_(0),
+      vertical_step_count_(0) {
+  if (tiling_data_->num_tiles_x() <= 0 || tiling_data_->num_tiles_y() <= 0) {
+    done();
+    return;
+  }
+
+  gfx::Rect bounds(tiling_data_->total_size());
+  gfx::Rect consider(consider_rect);
+  gfx::Rect ignore(ignore_rect);
+  gfx::Rect center(center_rect);
+  consider.Intersect(bounds);
+  ignore.Intersect(bounds);
+  if (consider.IsEmpty()) {
+    done();
+    return;
+  }
+
+  consider_left_ =
+      tiling_data_->FirstBorderTileXIndexFromSrcCoord(consider.x());
+  consider_top_ = tiling_data_->FirstBorderTileYIndexFromSrcCoord(consider.y());
+  consider_right_ =
+      tiling_data_->LastBorderTileXIndexFromSrcCoord(consider.right() - 1);
+  consider_bottom_ =
+      tiling_data_->LastBorderTileYIndexFromSrcCoord(consider.bottom() - 1);
+
+  if (!ignore.IsEmpty()) {
+    ignore_left_ = tiling_data_->FirstBorderTileXIndexFromSrcCoord(ignore.x());
+    ignore_top_ = tiling_data_->FirstBorderTileYIndexFromSrcCoord(ignore.y());
+    ignore_right_ =
+        tiling_data_->LastBorderTileXIndexFromSrcCoord(ignore.right() - 1);
+    ignore_bottom_ =
+        tiling_data_->LastBorderTileYIndexFromSrcCoord(ignore.bottom() - 1);
+
+    // Clamp ignore indices to consider indices.
+    ignore_left_ = std::max(ignore_left_, consider_left_);
+    ignore_top_ = std::max(ignore_top_, consider_top_);
+    ignore_right_ = std::min(ignore_right_, consider_right_);
+    ignore_bottom_ = std::min(ignore_bottom_, consider_bottom_);
+  }
+
+  if (ignore_left_ == consider_left_ && ignore_right_ == consider_right_ &&
+      ignore_top_ == consider_top_ && ignore_bottom_ == consider_bottom_) {
+    done();
+    return;
+  }
+
+  // Determine around left, such that it is between -1 and num_tiles_x.
+  int around_left = 0;
+  if (center.x() < 0 || center.IsEmpty())
+    around_left = -1;
+  else if (center.x() > tiling_data->total_size().width())
+    around_left = tiling_data->num_tiles_x();
+  else
+    around_left = tiling_data->FirstBorderTileXIndexFromSrcCoord(center.x());
+
+  // Determine around top, such that it is between -1 and num_tiles_y.
+  int around_top = 0;
+  if (center.y() < 0 || center.IsEmpty())
+    around_top = -1;
+  else if (center.y() > tiling_data->total_size().height())
+    around_top = tiling_data->num_tiles_y();
+  else
+    around_top = tiling_data->FirstBorderTileYIndexFromSrcCoord(center.y());
+
+  // Determine around right, such that it is between -1 and num_tiles_x.
+  int right_src_coord = center.right() - 1;
+  int around_right = 0;
+  if (right_src_coord < 0 || center.IsEmpty()) {
+    around_right = -1;
+  } else if (right_src_coord > tiling_data->total_size().width()) {
+    around_right = tiling_data->num_tiles_x();
+  } else {
+    around_right =
+        tiling_data->LastBorderTileXIndexFromSrcCoord(right_src_coord);
+  }
+
+  // Determine around bottom, such that it is between -1 and num_tiles_y.
+  int bottom_src_coord = center.bottom() - 1;
+  int around_bottom = 0;
+  if (bottom_src_coord < 0 || center.IsEmpty()) {
+    around_bottom = -1;
+  } else if (bottom_src_coord > tiling_data->total_size().height()) {
+    around_bottom = tiling_data->num_tiles_y();
+  } else {
+    around_bottom =
+        tiling_data->LastBorderTileYIndexFromSrcCoord(bottom_src_coord);
+  }
+
+  vertical_step_count_ = around_bottom - around_top + 1;
+  horizontal_step_count_ = around_right - around_left + 1;
+  current_step_ = horizontal_step_count_ - 1;
+
+  index_x_ = around_right;
+  index_y_ = around_bottom;
+
+  // The current index is the bottom right of the around rect, which is also
+  // ignored. So we have to advance.
+  ++(*this);
+}
+
+TilingData::SpiralDifferenceIterator& TilingData::SpiralDifferenceIterator::
+operator++() {
+  int cannot_hit_consider_count = 0;
+  while (cannot_hit_consider_count < 4) {
+    if (needs_direction_switch())
+      switch_direction();
+
+    index_x_ += delta_x_;
+    index_y_ += delta_y_;
+    ++current_step_;
+
+    if (in_consider_rect()) {
+      cannot_hit_consider_count = 0;
+
+      if (!in_ignore_rect())
+        break;
+
+      // Steps needed to reach the very edge of the ignore rect, while remaining
+      // inside (so that the continue would take us outside).
+      int steps_to_edge = 0;
+      switch (direction_) {
+        case UP:
+          steps_to_edge = index_y_ - ignore_top_;
+          break;
+        case LEFT:
+          steps_to_edge = index_x_ - ignore_left_;
+          break;
+        case DOWN:
+          steps_to_edge = ignore_bottom_ - index_y_;
+          break;
+        case RIGHT:
+          steps_to_edge = ignore_right_ - index_x_;
+          break;
+      }
+
+      // We need to switch directions in |max_steps|.
+      int max_steps = current_step_count() - current_step_;
+
+      int steps_to_take = std::min(steps_to_edge, max_steps);
+      DCHECK_GE(steps_to_take, 0);
+
+      index_x_ += steps_to_take * delta_x_;
+      index_y_ += steps_to_take * delta_y_;
+      current_step_ += steps_to_take;
+    } else {
+      int max_steps = current_step_count() - current_step_;
+      int steps_to_take = max_steps;
+      bool can_hit_consider_rect = false;
+      switch (direction_) {
+        case UP:
+          if (valid_column() && consider_bottom_ < index_y_)
+            steps_to_take = index_y_ - consider_bottom_ - 1;
+          can_hit_consider_rect |= consider_right_ >= index_x_;
+          break;
+        case LEFT:
+          if (valid_row() && consider_right_ < index_x_)
+            steps_to_take = index_x_ - consider_right_ - 1;
+          can_hit_consider_rect |= consider_top_ <= index_y_;
+          break;
+        case DOWN:
+          if (valid_column() && consider_top_ > index_y_)
+            steps_to_take = consider_top_ - index_y_ - 1;
+          can_hit_consider_rect |= consider_left_ <= index_x_;
+          break;
+        case RIGHT:
+          if (valid_row() && consider_left_ > index_x_)
+            steps_to_take = consider_left_ - index_x_ - 1;
+          can_hit_consider_rect |= consider_bottom_ >= index_y_;
+          break;
+      }
+      steps_to_take = std::min(steps_to_take, max_steps);
+      DCHECK_GE(steps_to_take, 0);
+
+      index_x_ += steps_to_take * delta_x_;
+      index_y_ += steps_to_take * delta_y_;
+      current_step_ += steps_to_take;
+
+      if (can_hit_consider_rect)
+        cannot_hit_consider_count = 0;
+      else
+        ++cannot_hit_consider_count;
+    }
+  }
+
+  if (cannot_hit_consider_count >= 4)
+    done();
+  return *this;
+}
+
+bool TilingData::SpiralDifferenceIterator::needs_direction_switch() const {
+  return current_step_ >= current_step_count();
+}
+
+void TilingData::SpiralDifferenceIterator::switch_direction() {
+  int new_delta_x_ = delta_y_;
+  delta_y_ = -delta_x_;
+  delta_x_ = new_delta_x_;
+
+  current_step_ = 0;
+  direction_ = static_cast<Direction>((direction_ + 1) % 4);
+
+  if (direction_ == RIGHT || direction_ == LEFT) {
+    ++vertical_step_count_;
+    ++horizontal_step_count_;
+  }
 }
 
 }  // namespace cc

@@ -63,8 +63,12 @@ class SearchIPCRouter : public content::WebContentsObserver {
     virtual void OnLogEvent(NTPLoggingEventType event) = 0;
 
     // Called to log an impression from a given provider on the New Tab Page.
-    virtual void OnLogImpression(int position,
-                                 const base::string16& provider) = 0;
+    virtual void OnLogMostVisitedImpression(int position,
+                                            const base::string16& provider) = 0;
+
+    // Called to log a navigation from a given provider on the New Tab Page.
+    virtual void OnLogMostVisitedNavigation(int position,
+                                            const base::string16& provider) = 0;
 
     // Called when the page wants to paste the |text| (or the clipboard contents
     // if the |text| is empty) into the omnibox.
@@ -98,6 +102,8 @@ class SearchIPCRouter : public content::WebContentsObserver {
     virtual bool ShouldSendSetDisplayInstantResults() = 0;
     virtual bool ShouldSendSetSuggestionToPrefetch() = 0;
     virtual bool ShouldSendSetOmniboxStartMargin() = 0;
+    virtual bool ShouldSendSetInputInProgress(bool is_active_tab) = 0;
+    virtual bool ShouldSendOmniboxFocusChanged() = 0;
     virtual bool ShouldSendMostVisitedItems() = 0;
     virtual bool ShouldSendThemeBackgroundInfo() = 0;
     virtual bool ShouldSendToggleVoiceSearch() = 0;
@@ -129,6 +135,13 @@ class SearchIPCRouter : public content::WebContentsObserver {
   // Tells the page the left margin of the omnibox. This is used by the page to
   // align text or assets properly with the omnibox.
   void SetOmniboxStartMargin(int start_margin);
+
+  // Tells the page that user input started or stopped.
+  void SetInputInProgress(bool input_in_progress);
+
+  // Tells the page that the omnibox focus has changed.
+  void OmniboxFocusChanged(OmniboxFocusState state,
+                           OmniboxFocusChangeReason reason);
 
   // Tells the renderer about the most visited items.
   void SendMostVisitedItems(const std::vector<InstantMostVisitedItem>& items);
@@ -178,9 +191,12 @@ class SearchIPCRouter : public content::WebContentsObserver {
   void OnUndoMostVisitedDeletion(int page_id, const GURL& url) const;
   void OnUndoAllMostVisitedDeletions(int page_id) const;
   void OnLogEvent(int page_id, NTPLoggingEventType event) const;
-  void OnLogImpression(int page_id,
-                       int position,
-                       const base::string16& provider) const;
+  void OnLogMostVisitedImpression(int page_id,
+                                  int position,
+                                  const base::string16& provider) const;
+  void OnLogMostVisitedNavigation(int page_id,
+                                  int position,
+                                  const base::string16& provider) const;
   void OnPasteAndOpenDropDown(int page_id, const base::string16& text) const;
   void OnChromeIdentityCheck(int page_id, const base::string16& identity) const;
 

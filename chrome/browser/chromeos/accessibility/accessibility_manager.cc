@@ -36,7 +36,6 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/api/experimental_accessibility.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/audio/chromeos_sounds.h"
@@ -53,6 +52,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/file_reader.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_resource.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
@@ -209,17 +209,21 @@ void UnloadChromeVoxExtension(Profile* profile) {
 // AccessibilityStatusEventDetails
 
 AccessibilityStatusEventDetails::AccessibilityStatusEventDetails(
+    AccessibilityNotificationType notification_type,
     bool enabled,
     ash::AccessibilityNotificationVisibility notify)
-  : enabled(enabled),
+  : notification_type(notification_type),
+    enabled(enabled),
     magnifier_type(ash::kDefaultMagnifierType),
     notify(notify) {}
 
 AccessibilityStatusEventDetails::AccessibilityStatusEventDetails(
+    AccessibilityNotificationType notification_type,
     bool enabled,
     ash::MagnifierType magnifier_type,
     ash::AccessibilityNotificationVisibility notify)
-  : enabled(enabled),
+  : notification_type(notification_type),
+    enabled(enabled),
     magnifier_type(magnifier_type),
     notify(notify) {}
 
@@ -334,6 +338,11 @@ AccessibilityManager::AccessibilityManager()
 
 AccessibilityManager::~AccessibilityManager() {
   CHECK(this == g_accessibility_manager);
+  AccessibilityStatusEventDetails details(
+      ACCESSIBILITY_MANAGER_SHUTDOWN,
+      false,
+      ash::A11Y_NOTIFICATION_NONE);
+  NotifyAccessibilityStatusChanged(details);
 }
 
 bool AccessibilityManager::ShouldShowAccessibilityMenu() {
@@ -394,11 +403,12 @@ void AccessibilityManager::UpdateLargeCursorFromPref() {
 
   large_cursor_enabled_ = enabled;
 
-  AccessibilityStatusEventDetails details(enabled, ash::A11Y_NOTIFICATION_NONE);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_LARGE_CURSOR,
-      content::NotificationService::AllSources(),
-      content::Details<AccessibilityStatusEventDetails>(&details));
+  AccessibilityStatusEventDetails details(
+      ACCESSIBILITY_TOGGLE_LARGE_CURSOR,
+      enabled,
+      ash::A11Y_NOTIFICATION_NONE);
+
+  NotifyAccessibilityStatusChanged(details);
 
 #if defined(USE_ASH)
   // Large cursor is implemented only in ash.
@@ -486,12 +496,12 @@ void AccessibilityManager::UpdateSpokenFeedbackFromPref() {
   ExtensionAccessibilityEventRouter::GetInstance()->
       SetAccessibilityEnabled(enabled);
 
-  AccessibilityStatusEventDetails details(enabled,
-                                          spoken_feedback_notification_);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK,
-      content::NotificationService::AllSources(),
-      content::Details<AccessibilityStatusEventDetails>(&details));
+  AccessibilityStatusEventDetails details(
+      ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK,
+      enabled,
+      spoken_feedback_notification_);
+
+  NotifyAccessibilityStatusChanged(details);
 
   if (enabled) {
     LoadChromeVox();
@@ -601,11 +611,12 @@ void AccessibilityManager::UpdateHighContrastFromPref() {
 
   high_contrast_enabled_ = enabled;
 
-  AccessibilityStatusEventDetails detail(enabled, ash::A11Y_NOTIFICATION_NONE);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE,
-      content::NotificationService::AllSources(),
-      content::Details<AccessibilityStatusEventDetails>(&detail));
+  AccessibilityStatusEventDetails details(
+      ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE,
+      enabled,
+      ash::A11Y_NOTIFICATION_NONE);
+
+  NotifyAccessibilityStatusChanged(details);
 
 #if defined(USE_ASH)
   ash::Shell::GetInstance()->high_contrast_controller()->SetEnabled(enabled);
@@ -617,7 +628,7 @@ void AccessibilityManager::UpdateHighContrastFromPref() {
 #endif
 }
 
-void AccessibilityManager::LocalePrefChanged() {
+void AccessibilityManager::OnLocaleChanged() {
   if (!profile_)
     return;
 
@@ -712,11 +723,12 @@ void AccessibilityManager::UpdateVirtualKeyboardFromPref() {
     return;
   virtual_keyboard_enabled_ = enabled;
 
-  AccessibilityStatusEventDetails detail(enabled, ash::A11Y_NOTIFICATION_NONE);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD,
-      content::NotificationService::AllSources(),
-      content::Details<AccessibilityStatusEventDetails>(&detail));
+  AccessibilityStatusEventDetails details(
+      ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD,
+      enabled,
+      ash::A11Y_NOTIFICATION_NONE);
+
+  NotifyAccessibilityStatusChanged(details);
 
 #if defined(USE_ASH)
   keyboard::SetAccessibilityKeyboardEnabled(enabled);
@@ -783,7 +795,7 @@ void AccessibilityManager::SetProfile(Profile* profile) {
     local_state_pref_change_registrar_->Init(g_browser_process->local_state());
     local_state_pref_change_registrar_->Add(
         prefs::kApplicationLocale,
-        base::Bind(&AccessibilityManager::LocalePrefChanged,
+        base::Bind(&AccessibilityManager::OnLocaleChanged,
                    base::Unretained(this)));
 
     content::BrowserAccessibilityState::GetInstance()->AddHistogramCallback(
@@ -833,13 +845,24 @@ base::TimeDelta AccessibilityManager::PlayShutdownSound() {
   if (!system_sounds_enabled_)
     return base::TimeDelta();
   system_sounds_enabled_ = false;
-  if (!ash::PlaySystemSound(SOUND_SHUTDOWN, true /* honor_spoken_feedback */))
+  if (!ash::PlaySystemSoundIfSpokenFeedback(SOUND_SHUTDOWN))
     return base::TimeDelta();
   return media::SoundsManager::Get()->GetDuration(SOUND_SHUTDOWN);
 }
 
 void AccessibilityManager::InjectChromeVox(RenderViewHost* render_view_host) {
   LoadChromeVoxExtension(profile_, render_view_host);
+}
+
+scoped_ptr<AccessibilityStatusSubscription>
+    AccessibilityManager::RegisterCallback(
+        const AccessibilityStatusCallback& cb) {
+  return callback_list_.Add(cb);
+}
+
+void AccessibilityManager::NotifyAccessibilityStatusChanged(
+    AccessibilityStatusEventDetails& details) {
+  callback_list_.Notify(details);
 }
 
 void AccessibilityManager::UpdateChromeOSAccessibilityHistograms() {
@@ -945,27 +968,23 @@ void AccessibilityManager::OnDisplayStateChanged(
 
 void AccessibilityManager::PostLoadChromeVox(Profile* profile) {
   // Do any setup work needed immediately after ChromeVox actually loads.
-  if (system_sounds_enabled_) {
-    ash::PlaySystemSound(SOUND_SPOKEN_FEEDBACK_ENABLED,
-                         false /* honor_spoken_feedback */);
-  }
+  if (system_sounds_enabled_)
+    ash::PlaySystemSoundAlways(SOUND_SPOKEN_FEEDBACK_ENABLED);
 
-    ExtensionAccessibilityEventRouter::GetInstance()->
-        OnChromeVoxLoadStateChanged(profile_,
-            IsSpokenFeedbackEnabled(),
-            chrome_vox_loaded_on_lock_screen_ ||
-                should_speak_chrome_vox_announcements_on_user_screen_);
+  ExtensionAccessibilityEventRouter::GetInstance()->
+      OnChromeVoxLoadStateChanged(profile_,
+          IsSpokenFeedbackEnabled(),
+          chrome_vox_loaded_on_lock_screen_ ||
+              should_speak_chrome_vox_announcements_on_user_screen_);
 
-    should_speak_chrome_vox_announcements_on_user_screen_ =
-        chrome_vox_loaded_on_lock_screen_;
+  should_speak_chrome_vox_announcements_on_user_screen_ =
+      chrome_vox_loaded_on_lock_screen_;
 }
 
 void AccessibilityManager::PostUnloadChromeVox(Profile* profile) {
   // Do any teardown work needed immediately after ChromeVox actually unloads.
-  if (system_sounds_enabled_) {
-    ash::PlaySystemSound(SOUND_SPOKEN_FEEDBACK_DISABLED,
-                         false /* honor_spoken_feedback */);
-  }
+  if (system_sounds_enabled_)
+    ash::PlaySystemSoundAlways(SOUND_SPOKEN_FEEDBACK_DISABLED);
 }
 
 }  // namespace chromeos

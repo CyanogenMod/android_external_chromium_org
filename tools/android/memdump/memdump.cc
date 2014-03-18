@@ -22,6 +22,7 @@
 #include "base/callback_helpers.h"
 #include "base/containers/hash_tables.h"
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -200,15 +201,22 @@ bool GetPagesForMemoryMap(int pagemap_fd,
                           const MemoryMap& memory_map,
                           std::vector<PageInfo>* committed_pages,
                           BitSet* committed_pages_bits) {
+  const off64_t offset = memory_map.start_address / kPageSize;
+  if (lseek64(pagemap_fd, offset * sizeof(PageMapEntry), SEEK_SET) < 0) {
+    PLOG(ERROR) << "lseek";
+    return false;
+  }
   for (uint addr = memory_map.start_address, page_index = 0;
        addr < memory_map.end_address;
        addr += kPageSize, ++page_index) {
     DCHECK_EQ(0, addr % kPageSize);
     PageMapEntry page_map_entry = {};
     COMPILE_ASSERT(sizeof(PageMapEntry) == sizeof(uint64), unexpected_size);
-    const off64_t offset = addr / kPageSize;
-    if (!ReadFromFileAtOffset(pagemap_fd, offset, &page_map_entry))
+    ssize_t bytes = read(pagemap_fd, &page_map_entry, sizeof(page_map_entry));
+    if (bytes != sizeof(PageMapEntry) && bytes != 0) {
+      PLOG(ERROR) << "read";
       return false;
+    }
     if (page_map_entry.present) {  // Ignore non-committed pages.
       if (page_map_entry.page_frame_number == 0)
         continue;
@@ -429,13 +437,12 @@ bool CollectProcessMemoryInformation(int page_count_fd,
                                      int page_flags_fd,
                                      ProcessMemory* process_memory) {
   const pid_t pid = process_memory->pid;
-  int pagemap_fd = open(
-      base::StringPrintf("/proc/%d/pagemap", pid).c_str(), O_RDONLY);
-  if (pagemap_fd < 0) {
+  base::ScopedFD pagemap_fd(open(
+      base::StringPrintf("/proc/%d/pagemap", pid).c_str(), O_RDONLY));
+  if (!pagemap_fd.is_valid()) {
     PLOG(ERROR) << "open";
     return false;
   }
-  file_util::ScopedFD auto_closer(&pagemap_fd);
   std::vector<MemoryMap>* const process_maps = &process_memory->memory_maps;
   if (!GetProcessMaps(pid, process_maps))
     return false;
@@ -443,7 +450,7 @@ bool CollectProcessMemoryInformation(int page_count_fd,
        it != process_maps->end(); ++it) {
     std::vector<PageInfo>* const committed_pages = &it->committed_pages;
     BitSet* const pages_bits = &it->committed_pages_bits;
-    GetPagesForMemoryMap(pagemap_fd, *it, committed_pages, pages_bits);
+    GetPagesForMemoryMap(pagemap_fd.get(), *it, committed_pages, pages_bits);
     SetPagesInfo(page_count_fd, page_flags_fd, committed_pages);
   }
   return true;
@@ -482,20 +489,17 @@ int main(int argc, char** argv) {
 
   std::vector<ProcessMemory> processes_memory(pids.size());
   {
-    int page_count_fd = open("/proc/kpagecount", O_RDONLY);
-    if (page_count_fd < 0) {
+    base::ScopedFD page_count_fd(open("/proc/kpagecount", O_RDONLY));
+    if (!page_count_fd.is_valid()) {
       PLOG(ERROR) << "open /proc/kpagecount";
       return EXIT_FAILURE;
     }
 
-    int page_flags_fd = open("/proc/kpageflags", O_RDONLY);
-    if (page_flags_fd < 0) {
+    base::ScopedFD page_flags_fd(open("/proc/kpageflags", O_RDONLY));
+    if (!page_flags_fd.is_valid()) {
       PLOG(ERROR) << "open /proc/kpageflags";
       return EXIT_FAILURE;
     }
-
-    file_util::ScopedFD page_count_fd_closer(&page_count_fd);
-    file_util::ScopedFD page_flags_fd_closer(&page_flags_fd);
 
     base::ScopedClosureRunner auto_resume_processes(
         base::Bind(&KillAll, pids, SIGCONT));
@@ -506,7 +510,7 @@ int main(int argc, char** argv) {
           &processes_memory[it - pids.begin()];
       process_memory->pid = *it;
       if (!CollectProcessMemoryInformation(
-              page_count_fd, page_flags_fd, process_memory)) {
+              page_count_fd.get(), page_flags_fd.get(), process_memory)) {
         return EXIT_FAILURE;
       }
     }

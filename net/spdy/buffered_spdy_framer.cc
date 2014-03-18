@@ -78,7 +78,8 @@ void BufferedSpdyFramer::OnSynStream(SpdyStreamId stream_id,
 }
 
 void BufferedSpdyFramer::OnHeaders(SpdyStreamId stream_id,
-                                   bool fin) {
+                                   bool fin,
+                                   bool end) {
   frames_received_++;
   DCHECK(!control_frame_fields_.get());
   control_frame_fields_.reset(new ControlFrameFields());
@@ -186,8 +187,16 @@ void BufferedSpdyFramer::OnSetting(SpdySettingsIds id,
   visitor_->OnSetting(id, flags, value);
 }
 
-void BufferedSpdyFramer::OnPing(SpdyPingId unique_id) {
-  visitor_->OnPing(unique_id);
+void BufferedSpdyFramer::OnSettingsAck() {
+  visitor_->OnSettingsAck();
+}
+
+void BufferedSpdyFramer::OnSettingsEnd() {
+  visitor_->OnSettingsEnd();
+}
+
+void BufferedSpdyFramer::OnPing(SpdyPingId unique_id, bool is_ack) {
+  visitor_->OnPing(unique_id, is_ack);
 }
 
 void BufferedSpdyFramer::OnRstStream(SpdyStreamId stream_id,
@@ -205,8 +214,13 @@ void BufferedSpdyFramer::OnWindowUpdate(SpdyStreamId stream_id,
 }
 
 void BufferedSpdyFramer::OnPushPromise(SpdyStreamId stream_id,
-                                       SpdyStreamId promised_stream_id) {
+                                       SpdyStreamId promised_stream_id,
+                                       bool end) {
+  // TODO(jgraettinger): Deliver headers, similar to OnHeaders.
   visitor_->OnPushPromise(stream_id, promised_stream_id);
+}
+
+void BufferedSpdyFramer::OnContinuation(SpdyStreamId stream_id, bool end) {
 }
 
 SpdyMajorVersion BufferedSpdyFramer::protocol_version() {
@@ -295,8 +309,10 @@ SpdyFrame* BufferedSpdyFramer::CreateSettings(
 }
 
 // TODO(jgraettinger): Eliminate uses of this method (prefer SpdyPingIR).
-SpdyFrame* BufferedSpdyFramer::CreatePingFrame(uint32 unique_id) const {
+SpdyFrame* BufferedSpdyFramer::CreatePingFrame(uint32 unique_id,
+                                               bool is_ack) const {
   SpdyPingIR ping_ir(unique_id);
+  ping_ir.set_is_ack(is_ack);
   return spdy_framer_.SerializePing(ping_ir);
 }
 

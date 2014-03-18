@@ -69,6 +69,7 @@ class MockRenderThread : public RenderThread {
   virtual void UpdateHistograms(int sequence_number) OVERRIDE;
   virtual int PostTaskToAllWebWorkers(const base::Closure& closure) OVERRIDE;
   virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) OVERRIDE;
+  virtual base::WaitableEvent* GetShutdownEvent() OVERRIDE;
 #if defined(OS_WIN)
   virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;
   virtual void ReleaseCachedFonts() OVERRIDE;
@@ -102,13 +103,17 @@ class MockRenderThread : public RenderThread {
   // state.
   void SendCloseMessage();
 
+  // Dispatches control messages to observers.
+  bool OnControlMessageReceived(const IPC::Message& msg);
+
+  ObserverList<RenderProcessObserver>& observers() {
+    return observers_;
+  }
+
  protected:
   // This function operates as a regular IPC listener. Subclasses
   // overriding this should first delegate to this implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
-
-  // Dispatches control messages to observers.
-  bool OnControlMessageReceived(const IPC::Message& msg);
 
   // The Widget expects to be returned valid route_id.
   void OnCreateWidget(int opener_id,
@@ -128,8 +133,6 @@ class MockRenderThread : public RenderThread {
 
   // The Frame expects to be returned a valid route_id different from its own.
   void OnCreateChildFrame(int new_frame_routing_id,
-                          int64 parent_frame_id,
-                          int64 frame_id,
                           const std::string& frame_name,
                           int* new_render_frame_id);
 

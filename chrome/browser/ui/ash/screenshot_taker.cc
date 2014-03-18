@@ -31,8 +31,8 @@
 #include "grit/ash_strings.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_strings.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -192,7 +192,7 @@ void SaveScreenshotInternal(const ShowNotificationCallback& callback,
   DCHECK(!local_path.empty());
   ScreenshotTakerObserver::Result result =
       ScreenshotTakerObserver::SCREENSHOT_SUCCESS;
-  if (static_cast<size_t>(file_util::WriteFile(
+  if (static_cast<size_t>(base::WriteFile(
           local_path,
           reinterpret_cast<char*>(&(png_data->data()[0])),
           png_data->size())) != png_data->size()) {

@@ -5,6 +5,8 @@
 #include "content/renderer/media/webrtc_local_audio_track.h"
 
 #include "content/public/renderer/media_stream_audio_sink.h"
+#include "content/renderer/media/media_stream_audio_level_calculator.h"
+#include "content/renderer/media/media_stream_audio_processor.h"
 #include "content/renderer/media/media_stream_audio_sink_owner.h"
 #include "content/renderer/media/media_stream_audio_track_sink.h"
 #include "content/renderer/media/peer_connection_audio_sink_owner.h"
@@ -18,7 +20,7 @@ WebRtcLocalAudioTrack::WebRtcLocalAudioTrack(
     WebRtcLocalAudioTrackAdapter* adapter,
     const scoped_refptr<WebRtcAudioCapturer>& capturer,
     WebAudioCapturerSource* webaudio_source)
-    : MediaStreamTrackExtraData(adapter, true),
+    : MediaStreamTrack(adapter, true),
       adapter_(adapter),
       capturer_(capturer),
       webaudio_source_(webaudio_source) {
@@ -46,6 +48,13 @@ void WebRtcLocalAudioTrack::Capture(const int16* audio_data,
                                     bool key_pressed,
                                     bool need_audio_processing) {
   DCHECK(capture_thread_checker_.CalledOnValidThread());
+
+  // Calculate the signal level regardless if the track is disabled or enabled.
+  int signal_level = level_calculator_->Calculate(
+      audio_data, audio_parameters_.channels(),
+      audio_parameters_.frames_per_buffer());
+  adapter_->SetSignalLevel(signal_level);
+
   scoped_refptr<WebRtcAudioCapturer> capturer;
   SinkList::ItemList sinks;
   SinkList::ItemList sinks_to_notify_format;
@@ -98,10 +107,21 @@ void WebRtcLocalAudioTrack::OnSetFormat(
   DCHECK(capture_thread_checker_.CalledOnValidThread());
 
   audio_parameters_ = params;
+  level_calculator_.reset(new MediaStreamAudioLevelCalculator());
 
   base::AutoLock auto_lock(lock_);
   // Remember to notify all sinks of the new format.
   sinks_.TagAll();
+}
+
+void WebRtcLocalAudioTrack::SetAudioProcessor(
+    const scoped_refptr<MediaStreamAudioProcessor>& processor) {
+  // if the |processor| does not have audio processing, which can happen if
+  // kEnableAudioTrackProcessing is not set or all the constraints in
+  // the |processor| are turned off. In such case, we pass NULL to the
+  // adapter to indicate that no stats can be gotten from the processor.
+  adapter_->SetAudioProcessor(processor->has_audio_processing() ?
+      processor : NULL);
 }
 
 void WebRtcLocalAudioTrack::AddSink(MediaStreamAudioSink* sink) {

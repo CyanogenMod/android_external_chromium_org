@@ -4,6 +4,7 @@
 
 #include "media/cast/rtcp/rtcp.h"
 
+#include "base/big_endian.h"
 #include "base/rand_util.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_defines.h"
@@ -13,12 +14,12 @@
 #include "media/cast/rtcp/rtcp_sender.h"
 #include "media/cast/rtcp/rtcp_utility.h"
 #include "media/cast/transport/cast_transport_defines.h"
-#include "net/base/big_endian.h"
 
 namespace media {
 namespace cast {
 
 static const int kMaxRttMs = 10000;  // 10 seconds.
+static const uint16 kMaxDelay = 2000;
 
 // Time limit for received RTCP messages when we stop using it for lip-sync.
 static const int64 kMaxDiffSinceReceivedRtcpMs = 100000;  // 100 seconds.
@@ -205,7 +206,8 @@ bool Rtcp::IsRtcpPacket(const uint8* packet, size_t length) {
 uint32 Rtcp::GetSsrcOfSender(const uint8* rtcp_buffer, size_t length) {
   DCHECK_GE(length, kMinLengthOfRtcp) << "Invalid RTCP packet";
   uint32 ssrc_of_sender;
-  net::BigEndianReader big_endian_reader(rtcp_buffer, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_buffer), length);
   big_endian_reader.Skip(4);  // Skip header
   big_endian_reader.ReadU32(&ssrc_of_sender);
   return ssrc_of_sender;
@@ -230,7 +232,7 @@ void Rtcp::IncomingRtcpPacket(const uint8* rtcp_buffer, size_t length) {
 
 void Rtcp::SendRtcpFromRtpReceiver(
     const RtcpCastMessage* cast_message,
-    ReceiverRtcpEventSubscriber* event_subscriber) {
+    const ReceiverRtcpEventSubscriber* event_subscriber) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   uint32 packet_type_flags = 0;
 
@@ -238,14 +240,20 @@ void Rtcp::SendRtcpFromRtpReceiver(
   transport::RtcpReportBlock report_block;
   RtcpReceiverReferenceTimeReport rrtr;
 
+  // Attach our NTP to all RTCP packets; with this information a "smart" sender
+  // can make decisions based on how old the RTCP message is.
+  packet_type_flags |= transport::kRtcpRrtr;
+  ConvertTimeTicksToNtp(now, &rrtr.ntp_seconds, &rrtr.ntp_fraction);
+  SaveLastSentNtpTime(now, rrtr.ntp_seconds, rrtr.ntp_fraction);
+
   if (cast_message) {
-    packet_type_flags |= RtcpSender::kRtcpCast;
+    packet_type_flags |= transport::kRtcpCast;
   }
   if (event_subscriber) {
-    packet_type_flags |= RtcpSender::kRtcpReceiverLog;
+    packet_type_flags |= transport::kRtcpReceiverLog;
   }
   if (rtcp_mode_ == kRtcpCompound || now >= next_time_to_send_rtcp_) {
-    packet_type_flags |= RtcpSender::kRtcpRr;
+    packet_type_flags |= transport::kRtcpRr;
 
     report_block.remote_ssrc = 0;            // Not needed to set send side.
     report_block.media_ssrc = remote_ssrc_;  // SSRC of the RTP packet sender.
@@ -271,24 +279,21 @@ void Rtcp::SendRtcpFromRtpReceiver(
     } else {
       report_block.delay_since_last_sr = 0;
     }
-
-    packet_type_flags |= RtcpSender::kRtcpRrtr;
-    ConvertTimeTicksToNtp(now, &rrtr.ntp_seconds, &rrtr.ntp_fraction);
-    SaveLastSentNtpTime(now, rrtr.ntp_seconds, rrtr.ntp_fraction);
     UpdateNextTimeToSendRtcp();
   }
   rtcp_sender_->SendRtcpFromRtpReceiver(
-      packet_type_flags, &report_block, &rrtr, cast_message, event_subscriber);
+      packet_type_flags, &report_block, &rrtr, cast_message, event_subscriber,
+      target_delay_ms_);
 }
 
 void Rtcp::SendRtcpFromRtpSender(
     const transport::RtcpSenderLogMessage& sender_log_message) {
   DCHECK(transport_sender_);
-  uint32 packet_type_flags = RtcpSender::kRtcpSr;
+  uint32 packet_type_flags = transport::kRtcpSr;
   base::TimeTicks now = cast_environment_->Clock()->NowTicks();
 
   if (sender_log_message.size()) {
-    packet_type_flags |= RtcpSender::kRtcpSenderLog;
+    packet_type_flags |= transport::kRtcpSenderLog;
   }
 
   transport::RtcpSenderInfo sender_info;
@@ -301,7 +306,7 @@ void Rtcp::SendRtcpFromRtpSender(
 
   transport::RtcpDlrrReportBlock dlrr;
   if (!time_last_report_received_.is_null()) {
-    packet_type_flags |= RtcpSender::kRtcpDlrr;
+    packet_type_flags |= transport::kRtcpDlrr;
     dlrr.last_rr = last_report_received_;
     uint32 delay_seconds = 0;
     uint32 delay_fraction = 0;
@@ -376,13 +381,22 @@ bool Rtcp::RtpTimestampInSenderTime(int frequency, uint32 rtp_timestamp,
   int64 rtp_time_diff_ms = rtp_timestamp_diff / frequency_khz;
 
   // Sanity check.
-  if (abs(rtp_time_diff_ms) > kMaxDiffSinceReceivedRtcpMs)
+  if (std::abs(rtp_time_diff_ms) > kMaxDiffSinceReceivedRtcpMs)
     return false;
 
   *rtp_timestamp_in_ticks = ConvertNtpToTimeTicks(last_received_ntp_seconds_,
                                                   last_received_ntp_fraction_) +
                             base::TimeDelta::FromMilliseconds(rtp_time_diff_ms);
   return true;
+}
+
+void Rtcp::SetCastReceiverEventHistorySize(size_t size) {
+  rtcp_receiver_->SetCastReceiverEventHistorySize(size);
+}
+
+void Rtcp::SetTargetDelay(base::TimeDelta target_delay) {
+  target_delay_ms_ = static_cast<uint16>(target_delay.InMilliseconds());
+  DCHECK(target_delay_ms_ < kMaxDelay);
 }
 
 void Rtcp::OnReceivedDelaySinceLastReport(uint32 receivers_ssrc,

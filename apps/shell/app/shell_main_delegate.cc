@@ -11,7 +11,6 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_switches.h"
 #include "extensions/common/extension_paths.h"
@@ -50,7 +49,6 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
   content_client_.reset(new ShellContentClient);
   SetContentClient(content_client_.get());
 
-  chrome::RegisterPathProvider();
 #if defined(OS_CHROMEOS)
   chromeos::RegisterPathProvider();
 #endif
@@ -89,21 +87,10 @@ bool ShellMainDelegate::ProcessNeedsResourceBundle(
 }
 
 void ShellMainDelegate::InitializeResourceBundle() {
-  ui::ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
-
-  // The extensions system needs manifest data from the Chrome PAK file.
-  // TODO(jamescook): app_shell needs its own manifest data file.
-  base::FilePath resources_pack_path;
-  PathService::Get(chrome::FILE_RESOURCES_PACK, &resources_pack_path);
-  ResourceBundle::GetSharedInstance().AddDataPackFromPath(
-      resources_pack_path, ui::SCALE_FACTOR_NONE);
-  // The dev tool needs shell_devtools_discovery_page.html from
-  // content_shell.pak file.
-  base::FilePath pak_file, pak_dir;
+  base::FilePath pak_dir;
   PathService::Get(base::DIR_MODULE, &pak_dir);
-  pak_file = pak_dir.Append(FILE_PATH_LITERAL("content_shell.pak"));
-  ResourceBundle::GetSharedInstance().AddDataPackFromPath(
-      pak_file, ui::SCALE_FACTOR_NONE);
+  ui::ResourceBundle::InitSharedInstanceWithPakPath(
+      pak_dir.AppendASCII("app_shell.pak"));
 }
 
 }  // namespace apps

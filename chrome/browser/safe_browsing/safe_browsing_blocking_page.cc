@@ -71,10 +71,12 @@ const char kSbReportPhishingErrorUrl[] =
 const char kLearnMoreMalwareUrl[] =
     "https://www.google.com/support/bin/answer.py?answer=45449&topic=360"
     "&sa=X&oi=malwarewarninglink&resnum=1&ct=help";
+
+// URL for malware and phishing, V2.
 const char kLearnMoreMalwareUrlV2[] =
-    "https://www.google.com/goodtoknow/online-safety/malware/";
+    "https://www.google.com/transparencyreport/safebrowsing/";
 const char kLearnMorePhishingUrlV2[] =
-    "https://www.google.com/goodtoknow/online-safety/phishing/";
+    "https://www.google.com/transparencyreport/safebrowsing/";
 
 // URL for the "Learn more" link on the phishing blocking page.
 const char kLearnMorePhishingUrl[] =
@@ -450,6 +452,7 @@ void SafeBrowsingBlockingPage::SetReportingPreference(bool report) {
       web_contents_->GetBrowserContext());
   PrefService* pref = profile->GetPrefs();
   pref->SetBoolean(prefs::kSafeBrowsingReportingEnabled, report);
+  UMA_HISTOGRAM_BOOLEAN("SB2.SetReportingEnabled", report);
 }
 
 void SafeBrowsingBlockingPage::OnProceed() {
@@ -761,7 +764,9 @@ void SafeBrowsingBlockingPage::FinishMalwareDetails(int64 delay_ms) {
   if (malware_details_.get() == NULL)
     return;  // Not all interstitials have malware details (eg phishing).
 
-  if (IsPrefEnabled(prefs::kSafeBrowsingReportingEnabled)) {
+  const bool enabled = IsPrefEnabled(prefs::kSafeBrowsingReportingEnabled);
+  UMA_HISTOGRAM_BOOLEAN("SB2.ReportingIsEnabled", enabled);
+  if (enabled) {
     // Finish the malware details collection, send it over.
     BrowserThread::PostDelayedTask(
         BrowserThread::IO, FROM_HERE,

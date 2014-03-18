@@ -33,10 +33,10 @@ class CONTENT_EXPORT OverscrollNavigationOverlay
 
   bool has_window() const { return !!window_.get(); }
 
-  // Starts observing |web_contents_| for page load/paint updates. This function
-  // makes sure that the screenshot window is stacked on top, so that it hides
-  // the content window behind it, and destroys the screenshot window when the
-  // page is done loading/painting.
+  // Resets state and starts observing |web_contents_| for page load/paint
+  // updates. This function makes sure that the screenshot window is stacked
+  // on top, so that it hides the content window behind it, and destroys the
+  // screenshot window when the page is done loading/painting.
   void StartObserving();
 
   // Sets the screenshot window and the delegate. This takes ownership of
@@ -57,6 +57,10 @@ class CONTENT_EXPORT OverscrollNavigationOverlay
                            FirstVisuallyNonEmptyPaint_WithImage);
   FRIEND_TEST_ALL_PREFIXES(OverscrollNavigationOverlayTest,
                            PaintUpdateWithoutNonEmptyPaint);
+  FRIEND_TEST_ALL_PREFIXES(OverscrollNavigationOverlayTest,
+                           MultiNavigation_LoadingUpdate);
+  FRIEND_TEST_ALL_PREFIXES(OverscrollNavigationOverlayTest,
+                           MultiNavigation_PaintUpdate);
 
   enum SlideDirection {
     SLIDE_UNKNOWN,
@@ -64,8 +68,9 @@ class CONTENT_EXPORT OverscrollNavigationOverlay
     SLIDE_FRONT
   };
 
-  // Stop observing the page if the page-load has completed and the page has
-  // been painted, and a window-slide isn't in progress.
+  // Stop observing the page and start the final overlay fade-out animation
+  // if the page-load has completed and the page has been painted, and a
+  // window-slide isn't in progress.
   void StopObservingIfDone();
 
   // Creates a layer to be used for window-slide. |offset| is the offset of the
@@ -83,6 +88,7 @@ class CONTENT_EXPORT OverscrollNavigationOverlay
   virtual void OnWindowSliderDestroyed() OVERRIDE;
 
   // Overridden from WebContentsObserver:
+  virtual void DocumentOnLoadCompletedInMainFrame(int32 page_id) OVERRIDE;
   virtual void DidFirstVisuallyNonEmptyPaint(int32 page_id) OVERRIDE;
   virtual void DidStopLoading(RenderViewHost* host) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -99,6 +105,11 @@ class CONTENT_EXPORT OverscrollNavigationOverlay
 
   bool loading_complete_;
   bool received_paint_update_;
+
+  // Unique ID of the NavigationEntry we are navigating to. This is needed to
+  // filter on WebContentsObserver callbacks and is used to dismiss the overlay
+  // when the relevant page loads and paints.
+  int pending_entry_id_;
 
   // The |WindowSlider| that allows sliding history layers while the page is
   // being reloaded.

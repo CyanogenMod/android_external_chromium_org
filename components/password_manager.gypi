@@ -8,13 +8,13 @@
       'target_name': 'password_manager_core_browser',
       'type': 'static_library',
       'dependencies': [
-        'autofill_core_common',
-        'encryptor',
-        'password_manager_core_common',
         '../base/base.gyp:base',
         '../net/net.gyp:net',
         '../sql/sql.gyp:sql',
         '../url/url.gyp:url_lib',
+        'autofill_core_common',
+        'os_crypt',
+        'password_manager_core_common',
       ],
       'include_dirs': [
         '..',
@@ -26,6 +26,16 @@
         'password_manager/core/browser/login_database_posix.cc',
         'password_manager/core/browser/login_database_win.cc',
         'password_manager/core/browser/login_model.h',
+        'password_manager/core/browser/password_form_manager.cc',
+        'password_manager/core/browser/password_form_manager.h',
+        'password_manager/core/browser/password_generation_manager.cc',
+        'password_manager/core/browser/password_generation_manager.h',
+        'password_manager/core/browser/password_manager.cc',
+        'password_manager/core/browser/password_manager.h',
+        'password_manager/core/browser/password_manager_client.cc',
+        'password_manager/core/browser/password_manager_client.h',
+        'password_manager/core/browser/password_manager_driver.h',
+        'password_manager/core/browser/password_manager_logger.h',
         'password_manager/core/browser/password_manager_metrics_util.cc',
         'password_manager/core/browser/password_manager_metrics_util.h',
         'password_manager/core/browser/password_store.cc',
@@ -113,5 +123,33 @@
         'password_manager/core/common/password_manager_switches.h',
       ],
     },
+  ],
+  'conditions': [
+    ['OS != "ios"', {
+      'targets': [
+        {
+          'target_name': 'password_manager_content_browser',
+          'type': 'static_library',
+          'dependencies': [
+            'autofill_content_browser',
+            'autofill_content_common',
+            'autofill_core_common',
+            'password_manager_core_browser',
+            '../base/base.gyp:base',
+            '../content/content.gyp:content_browser',
+            '../content/content.gyp:content_common',
+            '../ipc/ipc.gyp:ipc',
+            '../net/net.gyp:net',
+          ],
+          'include_dirs': [
+            '..',
+          ],
+          'sources': [
+            'password_manager/content/browser/content_password_manager_driver.cc',
+            'password_manager/content/browser/content_password_manager_driver.h',
+          ],
+        },
+      ],
+    }],
   ],
 }

@@ -8,31 +8,49 @@
 #include <list>
 
 #include "base/basictypes.h"
+#include "base/lazy_instance.h"
+#include "base/synchronization/lock.h"
+#include "base/threading/platform_thread.h"
 
 namespace android_webview {
 
-class BrowserViewRenderer;
+class SharedRendererState;
 
 class GLViewRendererManager {
-  typedef std::list<BrowserViewRenderer*> ListType;
+ public:
+  typedef SharedRendererState* RendererType;
+
+ private:
+  typedef std::list<RendererType> ListType;
+
  public:
   typedef ListType::iterator Key;
+
+  static GLViewRendererManager* GetInstance();
+
+  // TODO(boliu): Move RenderThread checking out of this class.
+  bool OnRenderThread() const;
+
+  Key PushBack(RendererType view);
+
+  // |key| must be already in manager. Move renderer corresponding to |key| to
+  // most recent.
+  void DidDrawGL(Key key);
+
+  void Remove(Key key);
+
+  RendererType GetMostRecentlyDrawn() const;
+
+ private:
+  friend struct base::DefaultLazyInstanceTraits<GLViewRendererManager>;
 
   GLViewRendererManager();
   ~GLViewRendererManager();
 
-  // If |key| is NullKey(), then |view| is inserted at the front and a new key
-  // is returned. Otherwise |key| must point to |view| which is moved to the
-  // front.
-  Key DidDrawGL(Key key, BrowserViewRenderer* view);
+  void MarkRenderThread();
 
-  void NoLongerExpectsDrawGL(Key key);
-
-  BrowserViewRenderer* GetMostRecentlyDrawn() const;
-
-  Key NullKey();
-
- private:
+  mutable base::Lock lock_;
+  base::PlatformThreadHandle render_thread_;
   ListType mru_list_;
 
   DISALLOW_COPY_AND_ASSIGN(GLViewRendererManager);

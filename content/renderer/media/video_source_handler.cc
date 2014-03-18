@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/logging.h"
+#include "content/renderer/media/media_stream.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_registry_interface.h"
 #include "content/renderer/render_thread_impl.h"
@@ -36,9 +37,11 @@ class PpFrameReceiver : public cricket::VideoRenderer {
   virtual bool RenderFrame(const cricket::VideoFrame* frame) OVERRIDE {
     base::AutoLock auto_lock(lock_);
     if (reader_) {
-      // Make a shallow copy of the frame as the |reader_| may need to queue it.
-      // Both frames will share a single reference-counted frame buffer.
-      reader_->GotFrame(frame->Copy());
+      // |frame| will be invalid after this function is returned. So keep a copy
+      // before return.
+      cricket::VideoFrame* copied_frame = frame->Copy();
+      copied_frame->MakeExclusive();
+      reader_->GotFrame(copied_frame);
     }
     return true;
   }
@@ -104,17 +107,7 @@ scoped_refptr<VideoSourceInterface> VideoSourceHandler::GetFirstVideoSource(
   }
 
   // Get the first video track from the stream.
-  MediaStreamExtraData* extra_data =
-      static_cast<MediaStreamExtraData*>(stream.extraData());
-  if (!extra_data) {
-    LOG(ERROR) << "GetFirstVideoSource - MediaStreamExtraData is NULL.";
-    return source;
-  }
-  webrtc::MediaStreamInterface* native_stream = extra_data->stream().get();
-  if (!native_stream) {
-    LOG(ERROR) << "GetFirstVideoSource - native stream is NULL.";
-    return source;
-  }
+  webrtc::MediaStreamInterface* native_stream = MediaStream::GetAdapter(stream);
   webrtc::VideoTrackVector native_video_tracks =
       native_stream->GetVideoTracks();
   if (native_video_tracks.empty()) {

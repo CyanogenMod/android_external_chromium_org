@@ -44,10 +44,6 @@ def main(argv):
                           'is enabled.'))
   parser.add_option('--no-locals',
                     help='Exclude locals list from the dex file.')
-  parser.add_option('--stamp', help='Path to touch on success.')
-
-  # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
-  parser.add_option('--ignore', help='Ignored.')
 
   options, paths = parser.parse_args()
 
@@ -56,9 +52,6 @@ def main(argv):
     paths = [options.proguard_enabled_input_path]
 
   DoDex(options, paths)
-
-  if options.stamp:
-    build_utils.Touch(options.stamp)
 
 
 if __name__ == '__main__':

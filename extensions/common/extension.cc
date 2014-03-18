@@ -224,7 +224,7 @@ bool Extension::ParsePEMKeyBytes(const std::string& input,
 
   std::string working = input;
   if (StartsWithASCII(working, kKeyBeginHeaderMarker, true)) {
-    working = CollapseWhitespaceASCII(working, true);
+    working = base::CollapseWhitespaceASCII(working, true);
     size_t header_pos = working.find(kKeyInfoEndMarker,
       sizeof(kKeyBeginHeaderMarker) - 1);
     if (header_pos == std::string::npos)
@@ -448,10 +448,6 @@ bool Extension::is_extension() const {
 bool Extension::can_be_incognito_enabled() const {
   // Only component platform apps are supported in incognito.
   return !is_platform_app() || location() == Manifest::COMPONENT;
-}
-
-bool Extension::force_incognito_enabled() const {
-  return PermissionsData::HasAPIPermission(this, APIPermission::kProxy);
 }
 
 void Extension::AddWebExtentPattern(const URLPattern& pattern) {

@@ -215,7 +215,7 @@ void AddCommandWithParameterWorkItems(const InstallerState& installer_state,
   if (installer_state.operation() == InstallerState::UNINSTALL) {
     work_item_list->AddDeleteRegKeyWorkItem(
         installer_state.root_key(), full_cmd_key)->set_log_message(
-            "removing " + WideToASCII(command_key) + " command");
+            "removing " + base::UTF16ToASCII(command_key) + " command");
   } else {
     CommandLine cmd_line(installer_state.target_path().Append(app));
     cmd_line.AppendSwitchASCII(command_with_parameter, "%1");
@@ -499,19 +499,6 @@ void AddChromeWorkItems(const InstallationState& original_state,
         target_path.Append(installer::kVisualElementsManifest),
         temp_path);
   }
-
-  // For the component build to work with the installer, we need to also drop
-  // chrome.exe.manifest (other manifests are already contained in the version
-  // directory in the archive so no explicit work is required for them).
-#if defined(COMPONENT_BUILD)
-  static const base::FilePath::CharType kChromeExeManifest[] =
-      FILE_PATH_LITERAL("chrome.exe.manifest");
-  install_list->AddMoveTreeWorkItem(
-      src_path.Append(kChromeExeManifest).value(),
-      target_path.Append(kChromeExeManifest).value(),
-      temp_path.value(),
-      WorkItem::ALWAYS_MOVE);
-#endif  // defined(COMPONENT_BUILD)
 
   // In the past, we copied rather than moved for system level installs so that
   // the permissions of %ProgramFiles% would be picked up.  Now that |temp_path|
@@ -1459,7 +1446,7 @@ void AddQuickEnableChromeFrameWorkItems(const InstallerState& installer_state,
   // not left behind in any case.
   work_item_list->AddDeleteRegKeyWorkItem(
       installer_state.root_key(), cmd_key)->set_log_message(
-          "removing " + WideToASCII(kCmdQuickEnableCf) + " command");
+          "removing " + base::UTF16ToASCII(kCmdQuickEnableCf) + " command");
 
 }
 

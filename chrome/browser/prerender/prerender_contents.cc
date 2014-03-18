@@ -38,6 +38,7 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/frame_navigate_params.h"
+#include "content/public/common/page_transition_types.h"
 #include "ui/gfx/rect.h"
 
 using content::DownloadItem;
@@ -145,10 +146,6 @@ class PrerenderContents::WebContentsDelegateImpl
     return false;
   }
 
-  virtual void JSOutOfMemory(WebContents* tab) OVERRIDE {
-    prerender_contents_->Destroy(FINAL_STATUS_JS_OUT_OF_MEMORY);
-  }
-
   virtual bool ShouldSuppressDialogs() OVERRIDE {
     // We still want to show the user the message when they navigate to this
     // page, so cancel this prerender.
@@ -241,6 +238,9 @@ PrerenderContents* PrerenderContents::CreateMatchCompleteReplacement() {
   DCHECK_EQ(alias_urls_.front(), new_contents->alias_urls_.front());
   DCHECK_EQ(1u, new_contents->alias_urls_.size());
   new_contents->alias_urls_ = alias_urls_;
+  // Erase all but the first alias URL; the replacement has adopted the
+  // remainder without increasing the renderer-side reference count.
+  alias_urls_.resize(1);
   new_contents->set_match_complete_status(
       PrerenderContents::MATCH_COMPLETE_REPLACEMENT);
   NotifyPrerenderCreatedMatchCompleteReplacement(new_contents);
@@ -325,13 +325,6 @@ void PrerenderContents::StartPrerendering(
   notification_registrar_.Add(this, chrome::NOTIFICATION_APP_TERMINATING,
                               content::NotificationService::AllSources());
 
-  // Register for our parent profile to shutdown, so we can shut ourselves down
-  // as well (should only be called for OTR profiles, as we should receive
-  // APP_TERMINATING before non-OTR profiles are destroyed).
-  // TODO(tburkard): figure out if this is needed.
-  notification_registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
-                              content::Source<Profile>(profile_));
-
   // Register to inform new RenderViews that we're prerendering.
   notification_registrar_.Add(
       this, content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
@@ -344,12 +337,16 @@ void PrerenderContents::StartPrerendering(
   content::NavigationController::LoadURLParams load_url_params(
       prerender_url_);
   load_url_params.referrer = referrer_;
-  load_url_params.transition_type =
-      (origin_ == ORIGIN_OMNIBOX || origin_ == ORIGIN_INSTANT)
-          ? content::PageTransitionFromInt(
-                content::PAGE_TRANSITION_TYPED |
-                content::PAGE_TRANSITION_FROM_ADDRESS_BAR)
-          : content::PAGE_TRANSITION_LINK;
+  load_url_params.transition_type = content::PAGE_TRANSITION_LINK;
+  if (origin_ == ORIGIN_OMNIBOX) {
+    load_url_params.transition_type = content::PageTransitionFromInt(
+        content::PAGE_TRANSITION_TYPED |
+        content::PAGE_TRANSITION_FROM_ADDRESS_BAR);
+  } else if (origin_ == ORIGIN_INSTANT) {
+    load_url_params.transition_type = content::PageTransitionFromInt(
+        content::PAGE_TRANSITION_GENERATED |
+        content::PAGE_TRANSITION_FROM_ADDRESS_BAR);
+  }
   load_url_params.override_user_agent =
       prerender_manager_->config().is_overriding_user_agent ?
       content::NavigationController::UA_OVERRIDE_TRUE :
@@ -430,10 +427,8 @@ void PrerenderContents::Observe(int type,
                                 const content::NotificationSource& source,
                                 const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_PROFILE_DESTROYED:
-      Destroy(FINAL_STATUS_PROFILE_DESTROYED);
-      return;
-
+    // TODO(davidben): Try to remove this in favor of relying on
+    // FINAL_STATUS_PROFILE_DESTROYED.
     case chrome::NOTIFICATION_APP_TERMINATING:
       Destroy(FINAL_STATUS_APP_TERMINATING);
       return;

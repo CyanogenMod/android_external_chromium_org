@@ -18,6 +18,7 @@
 #include "content/public/browser/web_contents_view.h"
 #include "ui/base/cocoa/base_view.h"
 #include "ui/base/cocoa/focus_tracker.h"
+#include "ui/gfx/mac/scoped_ns_disable_screen_updates.h"
 #include "ui/gfx/size_conversions.h"
 
 using content::WebContents;
@@ -78,6 +79,7 @@ using content::WebContents;
   }
 
   DCHECK_EQ(2u, [[self subviews] count]);
+
   gfx::Rect new_devtools_bounds;
   gfx::Rect new_contents_bounds;
   ApplyDevToolsContentsResizingStrategy(
@@ -118,6 +120,8 @@ using content::WebContents;
   DevToolsWindow* newDevToolsWindow = contents ?
       DevToolsWindow::GetDockedInstanceForInspectedTab(contents) : NULL;
 
+  // Make sure we do not draw any transient arrangements of views.
+  gfx::ScopedNSDisableScreenUpdates disabler;
   bool shouldHide = devToolsWindow_ && devToolsWindow_ != newDevToolsWindow;
   bool shouldShow = newDevToolsWindow && devToolsWindow_ != newDevToolsWindow;
 
@@ -141,8 +145,6 @@ using content::WebContents;
     [self showDevToolsView];
 
   [devToolsContainerView_ adjustSubviews];
-  if (shouldHide || shouldShow)
-    [[devToolsContainerView_ window] disableScreenUpdatesUntilFlush];
 }
 
 - (void)showDevToolsView {

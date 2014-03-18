@@ -8,10 +8,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "gin/gin_export.h"
-
-namespace v8 {
-class Isolate;
-}
+#include "v8/include/v8.h"
 
 namespace gin {
 
@@ -30,14 +27,14 @@ class PerIsolateData;
 class GIN_EXPORT IsolateHolder {
  public:
   IsolateHolder();
-  explicit IsolateHolder(v8::Isolate* isolate);
+  IsolateHolder(v8::Isolate* isolate, v8::ArrayBuffer::Allocator* allocator);
 
   ~IsolateHolder();
 
   v8::Isolate* isolate() { return isolate_; }
 
  private:
-  void Init();
+  void Init(v8::ArrayBuffer::Allocator* allocator);
 
   bool isolate_owner_;
   v8::Isolate* isolate_;

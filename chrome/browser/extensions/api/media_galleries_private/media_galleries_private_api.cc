@@ -81,15 +81,16 @@ bool GetGalleryFilePathAndId(const std::string& gallery_id,
 //                      MediaGalleriesPrivateAPI                             //
 ///////////////////////////////////////////////////////////////////////////////
 
-MediaGalleriesPrivateAPI::MediaGalleriesPrivateAPI(Profile* profile)
-    : profile_(profile),
-      weak_ptr_factory_(this) {
+MediaGalleriesPrivateAPI::MediaGalleriesPrivateAPI(
+    content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)), weak_ptr_factory_(this) {
   DCHECK(profile_);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
+  EventRouter* event_router = ExtensionSystem::Get(profile_)->event_router();
+  event_router->RegisterObserver(
       this, media_galleries_private::OnDeviceAttached::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
+  event_router->RegisterObserver(
       this, media_galleries_private::OnDeviceDetached::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
+  event_router->RegisterObserver(
       this, media_galleries_private::OnGalleryChanged::kEventName);
 }
 
@@ -104,19 +105,20 @@ void MediaGalleriesPrivateAPI::Shutdown() {
       base::Bind(&HandleProfileShutdownOnFileThread, profile_));
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<MediaGalleriesPrivateAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<MediaGalleriesPrivateAPI> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<MediaGalleriesPrivateAPI>*
-    MediaGalleriesPrivateAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<MediaGalleriesPrivateAPI>*
+MediaGalleriesPrivateAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 // static
-MediaGalleriesPrivateAPI* MediaGalleriesPrivateAPI::Get(Profile* profile) {
-  return
-      ProfileKeyedAPIFactory<MediaGalleriesPrivateAPI>::GetForProfile(profile);
+MediaGalleriesPrivateAPI* MediaGalleriesPrivateAPI::Get(
+    content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<MediaGalleriesPrivateAPI>::Get(context);
 }
 
 void MediaGalleriesPrivateAPI::OnListenerAdded(

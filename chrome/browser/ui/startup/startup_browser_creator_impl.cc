@@ -87,6 +87,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
 #include "grit/locale_settings.h"
@@ -204,12 +205,12 @@ bool GetAppLaunchContainer(
   // Look at preferences to find the right launch container. If no
   // preference is set, launch as a window.
   extensions::LaunchContainer launch_container = extensions::GetLaunchContainer(
-      extensions_service->extension_prefs(), extension);
+      extensions::ExtensionPrefs::Get(profile), extension);
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableStreamlinedHostedApps) &&
+           switches::kEnableStreamlinedHostedApps) &&
       !extensions::HasPreferredLaunchContainer(
-          extensions_service->extension_prefs(), extension)) {
+           extensions::ExtensionPrefs::Get(profile), extension)) {
     launch_container = extensions::LAUNCH_CONTAINER_WINDOW;
   }
 
@@ -305,11 +306,13 @@ class WebContentsCloseObserver : public content::NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(WebContentsCloseObserver);
 };
 
-const Extension* GetDisabledPlatformApp(Profile* profile,
+const Extension* GetDisabledOrTerminatedPlatformApp(Profile* profile,
                                         const std::string& extension_id) {
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
   const Extension* extension = service->GetExtensionById(extension_id, true);
+  if (!extension)
+    extension = service->GetTerminatedExtension(extension_id);
   return extension && extension->is_platform_app() ? extension : NULL;
 }
 
@@ -367,9 +370,10 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
   AppListService::InitAll(profile);
   if (command_line_.HasSwitch(switches::kAppId)) {
     std::string app_id = command_line_.GetSwitchValueASCII(switches::kAppId);
-    const Extension* extension = GetDisabledPlatformApp(profile, app_id);
-    // If |app_id| is a disabled platform app we handle it specially here,
-    // otherwise it will be handled below.
+    const Extension* extension =
+        GetDisabledOrTerminatedPlatformApp(profile, app_id);
+    // If |app_id| is a disabled or terminated platform app we handle it
+    // specially here, otherwise it will be handled below.
     if (extension) {
       RecordCmdLineAppHistogram(extensions::Manifest::TYPE_PLATFORM_APP);
       AppLaunchParams params(profile, extension,
@@ -830,10 +834,6 @@ Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(
 #endif
   }
 
-  // In kiosk mode, we want to always be fullscreen, so switch to that now.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode))
-    chrome::ToggleFullscreenMode(browser);
-
   bool first_tab = true;
   ProtocolHandlerRegistry* registry = profile_ ?
       ProtocolHandlerRegistryFactory::GetForProfile(profile_) : NULL;
@@ -884,6 +884,11 @@ Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(
   // to take care of that.
   if (!browser_creator_ || browser_creator_->show_main_browser_window())
     browser->window()->Show();
+
+  // In kiosk mode, we want to always be fullscreen, so switch to that now.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode) ||
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kStartFullscreen))
+    chrome::ToggleFullscreenMode(browser);
 
   return browser;
 }

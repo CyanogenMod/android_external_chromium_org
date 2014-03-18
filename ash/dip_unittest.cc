@@ -16,16 +16,16 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/client/activation_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/corewm/shadow.h"
-#include "ui/views/corewm/shadow_controller.h"
-#include "ui/views/corewm/shadow_types.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/shadow.h"
+#include "ui/wm/core/shadow_controller.h"
+#include "ui/wm/core/shadow_types.h"
 
 namespace ash {
 

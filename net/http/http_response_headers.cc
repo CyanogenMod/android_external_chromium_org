@@ -11,6 +11,7 @@
 
 #include <algorithm>
 
+#include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/pickle.h"
@@ -21,6 +22,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/escape.h"
+#include "net/http/http_byte_range.h"
 #include "net/http/http_util.h"
 
 using base::StringPiece;
@@ -372,6 +374,32 @@ void HttpResponseHeaders::ReplaceStatusLine(const std::string& new_status) {
 
   HeaderSet empty_to_remove;
   MergeWithHeaders(new_raw_headers, empty_to_remove);
+}
+
+void HttpResponseHeaders::UpdateWithNewRange(
+    const HttpByteRange& byte_range,
+    int64 resource_size,
+    bool replace_status_line) {
+  DCHECK(byte_range.IsValid());
+  DCHECK(byte_range.HasFirstBytePosition());
+  DCHECK(byte_range.HasLastBytePosition());
+
+  const char kLengthHeader[] = "Content-Length";
+  const char kRangeHeader[] = "Content-Range";
+
+  RemoveHeader(kLengthHeader);
+  RemoveHeader(kRangeHeader);
+
+  int64 start = byte_range.first_byte_position();
+  int64 end = byte_range.last_byte_position();
+  int64 range_len = end - start + 1;
+
+  if (replace_status_line)
+    ReplaceStatusLine("HTTP/1.1 206 Partial Content");
+
+  AddHeader(base::StringPrintf("%s: bytes %" PRId64 "-%" PRId64 "/%" PRId64,
+                               kRangeHeader, start, end, resource_size));
+  AddHeader(base::StringPrintf("%s: %" PRId64, kLengthHeader, range_len));
 }
 
 void HttpResponseHeaders::Parse(const std::string& raw_input) {
@@ -1009,7 +1037,7 @@ TimeDelta HttpResponseHeaders::GetFreshnessLifetime(
 
   // These responses are implicitly fresh (unless otherwise overruled):
   if (response_code_ == 300 || response_code_ == 301 || response_code_ == 410)
-    return TimeDelta::FromMicroseconds(kint64max);
+    return TimeDelta::Max();
 
   return TimeDelta();  // not fresh
 }
@@ -1431,7 +1459,8 @@ bool HttpResponseHeaders::IsChromeProxyResponse() const {
   // space following it are always |kVersionSize| characters. E.g.,
   // 'Via: 1.1 Chrome-Compression-Proxy'
   while (EnumerateHeader(&iter, "via", &value)) {
-    if (!value.compare(kVersionSize, value_len, kChromeProxyViaValue))
+    if (value.size() >= kVersionSize + value_len &&
+        !value.compare(kVersionSize, value_len, kChromeProxyViaValue))
       return true;
   }
 

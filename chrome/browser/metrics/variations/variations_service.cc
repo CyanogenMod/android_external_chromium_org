@@ -372,6 +372,13 @@ void VariationsService::DoActualFetch() {
   last_request_started_time_ = now;
 }
 
+void VariationsService::StoreSeed(const std::string& seed_data,
+                                  const std::string& seed_signature,
+                                  const base::Time& date_fetched) {
+  if (seed_store_.StoreSeedData(seed_data, seed_signature, date_fetched))
+    RecordLastFetchTime();
+}
+
 void VariationsService::FetchVariationsSeed() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
@@ -435,18 +442,13 @@ void VariationsService::OnURLFetchComplete(const net::URLFetcher* source) {
     DVLOG(1) << "Variations server request returned non-HTTP_OK response code: "
              << response_code;
     if (response_code == net::HTTP_NOT_MODIFIED) {
-      UMA_HISTOGRAM_MEDIUM_TIMES("Variations.FetchNotModifiedLatency", latency);
       RecordLastFetchTime();
       // Update the seed date value in local state (used for expiry check on
       // next start up), since 304 is a successful response.
-      local_state_->SetInt64(prefs::kVariationsSeedDate,
-                             response_date.ToInternalValue());
-    } else {
-      UMA_HISTOGRAM_MEDIUM_TIMES("Variations.FetchOtherLatency", latency);
+      seed_store_.UpdateSeedDateAndLogDayChange(response_date);
     }
     return;
   }
-  UMA_HISTOGRAM_MEDIUM_TIMES("Variations.FetchSuccessLatency", latency);
 
   std::string seed_data;
   bool success = request->GetResponseAsString(&seed_data);
@@ -456,8 +458,7 @@ void VariationsService::OnURLFetchComplete(const net::URLFetcher* source) {
   request->GetResponseHeaders()->EnumerateHeader(NULL,
                                                  "X-Seed-Signature",
                                                  &seed_signature);
-  if (seed_store_.StoreSeedData(seed_data, seed_signature, response_date))
-    RecordLastFetchTime();
+  StoreSeed(seed_data, seed_signature, response_date);
 }
 
 void VariationsService::OnResourceRequestsAllowed() {

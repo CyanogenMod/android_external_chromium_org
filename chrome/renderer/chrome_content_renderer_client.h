@@ -107,9 +107,6 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
                                       v8::Handle<v8::Context> context,
                                       int extension_group,
                                       int world_id) OVERRIDE;
-  virtual void WillReleaseScriptContext(blink::WebFrame* frame,
-                                        v8::Handle<v8::Context> context,
-                                        int world_id) OVERRIDE;
   virtual unsigned long long VisitedLinkHash(const char* canonical_url,
                                              size_t length) OVERRIDE;
   virtual bool IsLinkVisited(unsigned long long link_hash) OVERRIDE;
@@ -138,14 +135,10 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   void SetExtensionDispatcher(extensions::Dispatcher* extension_dispatcher);
 
 #if defined(ENABLE_SPELLCHECK)
-  // Sets a new |spellcheck|. Used for low-mem restart and testing only.
+  // Sets a new |spellcheck|. Used for testing only.
   // Takes ownership of |spellcheck|.
   void SetSpellcheck(SpellCheck* spellcheck);
 #endif
-
-  // Called in low-memory conditions to dump the memory used by the spellchecker
-  // and start over.
-  void OnPurgeMemory();
 
   static blink::WebPlugin* CreatePlugin(
       content::RenderFrame* render_frame,

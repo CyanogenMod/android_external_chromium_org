@@ -4,7 +4,6 @@
 
 #include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
 
-#include "apps/app_keep_alive_service_factory.h"
 #include "apps/app_load_service_factory.h"
 #include "apps/app_restore_service_factory.h"
 #include "apps/app_window_geometry_cache.h"
@@ -16,6 +15,7 @@
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
+#include "chrome/browser/dom_distiller/dom_distiller_service_factory.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
@@ -57,14 +57,14 @@
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/activity_log_private/activity_log_private_api.h"
 #include "chrome/browser/extensions/api/alarms/alarm_manager.h"
-#include "chrome/browser/extensions/api/api_resource_manager.h"
 #include "chrome/browser/extensions/api/audio/audio_api.h"
-#include "chrome/browser/extensions/api/bluetooth/bluetooth_api_factory.h"
+#include "chrome/browser/extensions/api/bluetooth/bluetooth_api.h"
+#include "chrome/browser/extensions/api/bookmark_manager_private/bookmark_manager_private_api.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmarks_api.h"
 #include "chrome/browser/extensions/api/braille_display_private/braille_display_private_api.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/api/cookies/cookies_api.h"
-#include "chrome/browser/extensions/api/developer_private/developer_private_api_factory.h"
+#include "chrome/browser/extensions/api/developer_private/developer_private_api.h"
 #include "chrome/browser/extensions/api/dial/dial_api_factory.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/api/feedback_private/feedback_private_api.h"
@@ -84,17 +84,10 @@
 #include "chrome/browser/extensions/api/preference/preference_api.h"
 #include "chrome/browser/extensions/api/processes/processes_api.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_api.h"
-#include "chrome/browser/extensions/api/runtime/runtime_api_factory.h"
+#include "chrome/browser/extensions/api/runtime/runtime_api.h"
 #include "chrome/browser/extensions/api/serial/serial_connection.h"
-#include "chrome/browser/extensions/api/sessions/sessions_api.h"
 #include "chrome/browser/extensions/api/settings_overrides/settings_overrides_api.h"
 #include "chrome/browser/extensions/api/signed_in_devices/signed_in_devices_manager.h"
-#include "chrome/browser/extensions/api/socket/socket.h"
-#include "chrome/browser/extensions/api/socket/tcp_socket.h"
-#include "chrome/browser/extensions/api/socket/udp_socket.h"
-#include "chrome/browser/extensions/api/sockets_tcp/tcp_socket_event_dispatcher.h"
-#include "chrome/browser/extensions/api/sockets_tcp_server/tcp_server_socket_event_dispatcher.h"
-#include "chrome/browser/extensions/api/sockets_udp/udp_socket_event_dispatcher.h"
 #include "chrome/browser/extensions/api/streams_private/streams_private_api.h"
 #include "chrome/browser/extensions/api/system_info/system_info_api.h"
 #include "chrome/browser/extensions/api/tab_capture/tab_capture_registry.h"
@@ -110,6 +103,14 @@
 #include "chrome/browser/extensions/menu_manager_factory.h"
 #include "chrome/browser/extensions/plugin_manager.h"
 #include "chrome/browser/extensions/token_cache/token_cache_service_factory.h"
+#include "extensions/browser/api/api_resource_manager.h"
+#include "extensions/browser/api/socket/socket.h"
+#include "extensions/browser/api/socket/tcp_socket.h"
+#include "extensions/browser/api/socket/udp_socket.h"
+#include "extensions/browser/api/sockets_tcp/tcp_socket_event_dispatcher.h"
+#include "extensions/browser/api/sockets_tcp_server/tcp_server_socket_event_dispatcher.h"
+#include "extensions/browser/api/sockets_udp/udp_socket_event_dispatcher.h"
+#include "extensions/browser/api/storage/storage_frontend.h"
 #include "extensions/browser/extension_prefs_factory.h"
 #include "extensions/browser/renderer_startup_helper.h"
 #endif  // defined(ENABLE_EXTENSIONS)
@@ -163,11 +164,8 @@
 #else
 #include "chrome/browser/media_galleries/media_galleries_preferences_factory.h"
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service_factory.h"
+#include "chrome/browser/notifications/sync_notifier/synced_notification_app_info_service_factory.h"
 #include "chrome/browser/profile_resetter/automatic_profile_resetter_factory.h"
-#endif
-
-#if defined(ENABLE_APP_LIST)
-#include "chrome/browser/ui/app_list/start_page_service_factory.h"
 #endif
 
 #if defined(ENABLE_SPELLCHECK)
@@ -207,9 +205,6 @@ ChromeBrowserMainExtraPartsProfiles::~ChromeBrowserMainExtraPartsProfiles() {
 void ChromeBrowserMainExtraPartsProfiles::
 EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   AboutSigninInternalsFactory::GetInstance();
-#if defined(ENABLE_APP_LIST)
-  app_list::StartPageServiceFactory::GetInstance();
-#endif
   autofill::PersonalDataManagerFactory::GetInstance();
 #if !defined(OS_ANDROID)
   AutomaticProfileResetterFactory::GetInstance();
@@ -235,6 +230,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
 #if defined(ENABLE_NOTIFICATIONS)
   DesktopNotificationServiceFactory::GetInstance();
 #endif
+  dom_distiller::DomDistillerServiceFactory::GetInstance();
   DownloadServiceFactory::GetInstance();
 #if defined(ENABLE_EXTENSIONS)
   AppShortcutManagerFactory::GetInstance();
@@ -242,7 +238,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   apps::AppRestoreServiceFactory::GetInstance();
   apps::AppWindowGeometryCache::Factory::GetInstance();
   EphemeralAppServiceFactory::GetInstance();
-  extensions::ActivityLogFactory::GetInstance();
+  extensions::ActivityLog::GetFactoryInstance();
   extensions::ActivityLogAPI::GetFactoryInstance();
   extensions::AlarmManager::GetFactoryInstance();
   extensions::ApiResourceManager<extensions::ResumableTCPServerSocket>::
@@ -256,17 +252,18 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::ApiResourceManager<extensions::Socket>::GetFactoryInstance();
   extensions::ApiResourceManager<extensions::UsbDeviceResource>::
       GetFactoryInstance();
-  extensions::api::TCPServerSocketEventDispatcher::GetFactoryInstance();
-  extensions::api::TCPSocketEventDispatcher::GetFactoryInstance();
-  extensions::api::UDPSocketEventDispatcher::GetFactoryInstance();
+  extensions::core_api::TCPServerSocketEventDispatcher::GetFactoryInstance();
+  extensions::core_api::TCPSocketEventDispatcher::GetFactoryInstance();
+  extensions::core_api::UDPSocketEventDispatcher::GetFactoryInstance();
   extensions::AudioAPI::GetFactoryInstance();
   extensions::BookmarksAPI::GetFactoryInstance();
-  extensions::BluetoothAPIFactory::GetInstance();
+  extensions::BookmarkManagerPrivateAPI::GetFactoryInstance();
+  extensions::BluetoothAPI::GetFactoryInstance();
   extensions::BrailleDisplayPrivateAPI::GetFactoryInstance();
   extensions::chromedirectsetting::ChromeDirectSettingAPI::GetFactoryInstance();
   extensions::CommandService::GetFactoryInstance();
   extensions::CookiesAPI::GetFactoryInstance();
-  extensions::DeveloperPrivateAPIFactory::GetInstance();
+  extensions::DeveloperPrivateAPI::GetFactoryInstance();
   extensions::DialAPIFactory::GetInstance();
   extensions::ExtensionActionAPI::GetFactoryInstance();
   extensions::ExtensionPrefsFactory::GetInstance();
@@ -309,13 +306,13 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::ProcessesAPI::GetFactoryInstance();
   extensions::PushMessagingAPI::GetFactoryInstance();
   extensions::RendererStartupHelperFactory::GetInstance();
-  extensions::RuntimeAPIFactory::GetInstance();
-  extensions::SessionsAPI::GetFactoryInstance();
+  extensions::RuntimeAPI::GetFactoryInstance();
   extensions::SettingsOverridesAPI::GetFactoryInstance();
   extensions::SignedInDevicesManager::GetFactoryInstance();
 #if defined(ENABLE_SPELLCHECK)
   extensions::SpellcheckAPI::GetFactoryInstance();
 #endif
+  extensions::StorageFrontend::GetFactoryInstance();
   extensions::StreamsPrivateAPI::GetFactoryInstance();
   extensions::SystemInfoAPI::GetFactoryInstance();
   extensions::TabCaptureRegistry::GetFactoryInstance();
@@ -355,6 +352,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
 #if !defined(OS_ANDROID)
   MediaGalleriesPreferencesFactory::GetInstance();
   notifier::ChromeNotifierServiceFactory::GetInstance();
+  notifier::SyncedNotificationAppInfoServiceFactory::GetInstance();
 #endif
   NTPResourceCacheFactory::GetInstance();
   PasswordStoreFactory::GetInstance();

@@ -60,13 +60,13 @@
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
 #include "ui/views/controls/link_listener.h"
-#include "ui/views/corewm/shadow_types.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/mouse_watcher.h"
 #include "ui/views/painter.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/shadow_types.h"
 
 namespace {
 
@@ -77,8 +77,6 @@ const int kUserIconSize = 27;
 const int kUserIconLargeSize = 32;
 const int kUserIconLargeCornerRadius = 2;
 const int kUserLabelToIconPadding = 5;
-// When using multi login, this spacing is added between user icons.
-const int kTrayLabelSpacing = 1;
 
 // When a hover border is used, it is starting this many pixels before the icon
 // position.
@@ -174,24 +172,6 @@ class RoundedImageView : public views::View {
   bool active_user_;
 
   DISALLOW_COPY_AND_ASSIGN(RoundedImageView);
-};
-
-// An inactive user view which can be clicked to make active. Note that this
-// "button" does not show as a button any click or hover changes.
-class UserSwitcherView : public RoundedImageView {
- public:
-  UserSwitcherView(int corner_radius, MultiProfileIndex user_index);
-  virtual ~UserSwitcherView() {}
-
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
-
- private:
-  // The user index to activate when the item was clicked. Note that this
-  // index refers to the LRU list of logged in users.
-  MultiProfileIndex user_index_;
-
-  DISALLOW_COPY_AND_ASSIGN(UserSwitcherView);
 };
 
 // The user details shown in public account mode. This is essentially a label
@@ -444,27 +424,6 @@ void RoundedImageView::OnPaint(gfx::Canvas* canvas) {
                                        SkXfermode::kLuminosity_Mode);
   canvas->DrawImageInPath(resized_, image_bounds.x(), image_bounds.y(),
                           path, paint);
-}
-
-UserSwitcherView::UserSwitcherView(int corner_radius,
-                                   MultiProfileIndex user_index)
-    : RoundedImageView(corner_radius, false),
-      user_index_(user_index) {
-  SetEnabled(true);
-}
-
-void UserSwitcherView::OnMouseEvent(ui::MouseEvent* event) {
-  if (event->type() == ui::ET_MOUSE_PRESSED) {
-    SwitchUser(user_index_);
-    event->SetHandled();
-  }
-}
-
-void UserSwitcherView::OnTouchEvent(ui::TouchEvent* event) {
-  if (event->type() == ui::ET_TOUCH_PRESSED) {
-    SwitchUser(user_index_);
-    event->SetHandled();
-  }
 }
 
 PublicAccountUserDetails::PublicAccountUserDetails(SystemTrayItem* owner,
@@ -820,6 +779,7 @@ void UserView::ButtonPressed(views::Button* sender, const ui::Event& event) {
     // Let the user add another account to the session.
     MultiProfileUMA::RecordSigninUser(MultiProfileUMA::SIGNIN_USER_BY_TRAY);
     Shell::GetInstance()->system_tray_delegate()->ShowUserLogin();
+    owner_->system_tray()->CloseSystemBubble();
   } else {
     NOTREACHED();
   }
@@ -961,10 +921,12 @@ views::View* UserView::CreateIconForUserCard(user::LoginStatus login) {
         GetImageNamed(IDR_AURA_UBER_TRAY_GUEST_ICON).ToImageSkia(),
         gfx::Size(kUserIconSize, kUserIconSize));
   } else {
-    icon->SetImage(
-        Shell::GetInstance()->session_state_delegate()->
-            GetUserImage(multiprofile_index_),
-        gfx::Size(kUserIconSize, kUserIconSize));
+    SessionStateDelegate* delegate =
+        Shell::GetInstance()->session_state_delegate();
+    content::BrowserContext* context = delegate->GetBrowserContextByIndex(
+        multiprofile_index_);
+    icon->SetImage(delegate->GetUserImage(context),
+                   gfx::Size(kUserIconSize, kUserIconSize));
   }
   return icon;
 }
@@ -1013,7 +975,7 @@ void UserView::ToggleAddUserMenuOption() {
   add_menu_option_->SetOpacity(0xFF);
   add_menu_option_->GetNativeWindow()->set_owned_by_parent(false);
   SetShadowType(add_menu_option_->GetNativeView(),
-                views::corewm::SHADOW_TYPE_NONE);
+                wm::SHADOW_TYPE_NONE);
 
   // Position it below our user card.
   gfx::Rect bounds = user_card_view_->GetBoundsInScreen();
@@ -1152,26 +1114,21 @@ TrayUser::TestState TrayUser::GetStateForTest() const {
   return user_->GetStateForTest();
 }
 
-bool TrayUser::CanDropWindowHereToTransferToUser(
-    const gfx::Point& point_in_screen) {
-  // Check that this item is shown in the system tray (which means it must have
-  // a view there) and that the user it represents is not the current user (in
-  // which case |GetTrayIndex()| would return NULL).
-  if (!layout_view_ || !GetTrayIndex())
-    return false;
-  return layout_view_->GetBoundsInScreen().Contains(point_in_screen);
-}
-
-bool TrayUser::TransferWindowToUser(aura::Window* window) {
-  SessionStateDelegate* session_state_delegate =
-      ash::Shell::GetInstance()->session_state_delegate();
-  return session_state_delegate->TransferWindowToDesktopOfUser(window,
-                                                               GetTrayIndex());
+gfx::Size TrayUser::GetLayoutSizeForTest() const {
+  if (!layout_view_) {
+    return gfx::Size(0, 0);
+  } else {
+    return layout_view_->size();
+  }
 }
 
 gfx::Rect TrayUser::GetUserPanelBoundsInScreenForTest() const {
   DCHECK(user_);
   return user_->GetBoundsInScreenOfUserButtonForTest();
+}
+
+void TrayUser::UpdateAfterLoginStatusChangeForTest(user::LoginStatus status) {
+  UpdateAfterLoginStatusChange(status);
 }
 
 views::View* TrayUser::CreateTrayView(user::LoginStatus status) {
@@ -1228,7 +1185,7 @@ void TrayUser::UpdateAfterLoginStatusChange(user::LoginStatus status) {
   // Only the active user is represented in the tray.
   if (!layout_view_)
     return;
-  if (GetTrayIndex() > 0 && !ash::switches::UseMultiUserTray())
+  if (GetTrayIndex() > 0)
     return;
   bool need_label = false;
   bool need_avatar = false;
@@ -1263,15 +1220,7 @@ void TrayUser::UpdateAfterLoginStatusChange(user::LoginStatus status) {
       label_ = NULL;
     }
     if (need_avatar) {
-      MultiProfileIndex tray_index = GetTrayIndex();
-      if (!tray_index) {
-        // The active user (index #0) will always be the first.
-        avatar_ = new tray::RoundedImageView(kProfileRoundedCornerRadius, true);
-      } else {
-        // All other users will be inactive users.
-        avatar_ = new tray::UserSwitcherView(kProfileRoundedCornerRadius,
-                                             tray_index);
-      }
+      avatar_ = new tray::RoundedImageView(kProfileRoundedCornerRadius, true);
       layout_view_->AddChildView(avatar_);
     } else {
       avatar_ = NULL;
@@ -1287,8 +1236,8 @@ void TrayUser::UpdateAfterLoginStatusChange(user::LoginStatus status) {
   }
 
   if (avatar_ && switches::UseAlternateShelfLayout()) {
-    int corner_radius = GetTrayItemRadius();
-    avatar_->SetCornerRadii(0, corner_radius, corner_radius, 0);
+    avatar_->SetCornerRadii(
+        0, kUserIconLargeCornerRadius, kUserIconLargeCornerRadius, 0);
     avatar_->SetBorder(views::Border::NullBorder());
   }
   UpdateAvatarImage(status);
@@ -1301,18 +1250,13 @@ void TrayUser::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
   // Inactive users won't have a layout.
   if (!layout_view_)
     return;
-  int corner_radius = GetTrayItemRadius();
   if (alignment == SHELF_ALIGNMENT_BOTTOM ||
       alignment == SHELF_ALIGNMENT_TOP) {
     if (avatar_) {
       if (switches::UseAlternateShelfLayout()) {
-        if (multiprofile_index_) {
-          avatar_->SetBorder(
-              views::Border::CreateEmptyBorder(0, kTrayLabelSpacing, 0, 0));
-        } else {
-          avatar_->SetBorder(views::Border::NullBorder());
-        }
-        avatar_->SetCornerRadii(0, corner_radius, corner_radius, 0);
+        avatar_->SetBorder(views::Border::NullBorder());
+        avatar_->SetCornerRadii(
+            0, kUserIconLargeCornerRadius, kUserIconLargeCornerRadius, 0);
       } else {
         avatar_->SetBorder(views::Border::CreateEmptyBorder(
             0,
@@ -1322,10 +1266,16 @@ void TrayUser::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
       }
     }
     if (label_) {
+      // If label_ hasn't figured out its size yet, do that first.
+      if (label_->GetContentsBounds().height() == 0)
+        label_->SizeToPreferredSize();
+      int height = label_->GetContentsBounds().height();
+      int vertical_pad = (kTrayItemSize - height) / 2;
+      int remainder = height % 2;
       label_->SetBorder(views::Border::CreateEmptyBorder(
-          0,
+          vertical_pad + remainder,
           kTrayLabelItemHorizontalPaddingBottomAlignment,
-          0,
+          vertical_pad,
           kTrayLabelItemHorizontalPaddingBottomAlignment));
     }
     layout_view_->SetLayoutManager(
@@ -1334,13 +1284,9 @@ void TrayUser::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
   } else {
     if (avatar_) {
       if (switches::UseAlternateShelfLayout()) {
-        if (multiprofile_index_) {
-          avatar_->SetBorder(
-              views::Border::CreateEmptyBorder(kTrayLabelSpacing, 0, 0, 0));
-        } else {
-          avatar_->SetBorder(views::Border::NullBorder());
-        }
-        avatar_->SetCornerRadii(0, 0, corner_radius, corner_radius);
+        avatar_->SetBorder(views::Border::NullBorder());
+        avatar_->SetCornerRadii(
+            0, 0, kUserIconLargeCornerRadius, kUserIconLargeCornerRadius);
       } else {
         SetTrayImageItemBorder(avatar_, alignment);
       }
@@ -1388,10 +1334,10 @@ void TrayUser::UpdateAvatarImage(user::LoginStatus status) {
   int icon_size = switches::UseAlternateShelfLayout() ?
       kUserIconLargeSize : kUserIconSize;
 
-  avatar_->SetImage(
-      Shell::GetInstance()->session_state_delegate()->GetUserImage(
-          GetTrayIndex()),
-      gfx::Size(icon_size, icon_size));
+  content::BrowserContext* context = session_state_delegate->
+      GetBrowserContextByIndex(GetTrayIndex());
+  avatar_->SetImage(session_state_delegate->GetUserImage(context),
+                    gfx::Size(icon_size, icon_size));
 
   // Unit tests might come here with no images for some users.
   if (avatar_->size().IsEmpty())
@@ -1407,13 +1353,6 @@ MultiProfileIndex TrayUser::GetTrayIndex() {
   // tray items are in the reverse order then the menu items.
   return shell->session_state_delegate()->GetMaximumNumberOfLoggedInUsers() -
              1 - multiprofile_index_;
-}
-
-int TrayUser::GetTrayItemRadius() {
-  SessionStateDelegate* delegate =
-      Shell::GetInstance()->session_state_delegate();
-  bool is_last_item = GetTrayIndex() == (delegate->NumberOfLoggedInUsers() - 1);
-  return is_last_item ? kUserIconLargeCornerRadius : 0;
 }
 
 void TrayUser::UpdateLayoutOfItem() {

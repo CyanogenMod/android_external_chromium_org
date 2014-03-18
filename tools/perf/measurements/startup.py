@@ -16,20 +16,25 @@ class Startup(page_measurement.PageMeasurement):
   """
 
   def __init__(self, action_name_to_run = ''):
-    super(Startup, self).__init__(needs_browser_restart_after_each_run=True,
+    super(Startup, self).__init__(needs_browser_restart_after_each_page=True,
                                   action_name_to_run=action_name_to_run)
 
-  def AddCommandLineOptions(self, parser):
+  @classmethod
+  def AddCommandLineArgs(cls, parser):
     parser.add_option('--cold', action='store_true',
                       help='Clear the OS disk cache before performing the test')
     parser.add_option('--warm', action='store_true',
                       help='Start up with everything already cached')
 
-  def CustomizeBrowserOptions(self, options):
+  @classmethod
+  def ProcessCommandLineArgs(cls, parser, args):
+    pass
     # TODO: Once the bots start running benchmarks, enforce that either --warm
     # or --cold is explicitly specified.
-    # assert options.warm != options.cold, \
-    #     "You must specify either --warm or --cold"
+    # if args.warm == args.cold:
+    #   parser.error('You must specify either --warm or --cold')
+
+  def CustomizeBrowserOptions(self, options):
     if options.cold:
       browser_options = options.browser_options
       browser_options.clear_sytem_cache_for_browser_and_profile_on_start = True
@@ -56,7 +61,7 @@ class StartWithUrl(Startup):
   start assumes the OS has already cached much of Chromium's content. For warm
   tests, you should repeat the page set to ensure it's cached.
 
-  The startup URL is taken from the page set's set_startup_url action. This
+  The startup URL is taken from the page set's startup_url. This
   allows the testing of multiple different URLs in a single benchmark.
   """
 

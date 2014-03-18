@@ -26,8 +26,8 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
+#import "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/base/clipboard/clipboard.h"
-#import "ui/base/cocoa/cocoa_event_utils.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/geometry/rect.h"
@@ -206,8 +206,15 @@ void OmniboxViewMac::OnTabChanged(const WebContents* web_contents) {
 
 void OmniboxViewMac::Update() {
   if (chrome::ShouldDisplayOriginChipV2()) {
-    [[field_ cell] setPlaceholderString:
-        base::SysUTF16ToNSString(GetHintText())];
+    NSDictionary* placeholder_attributes = @{
+      NSFontAttributeName : GetFieldFont(),
+      NSForegroundColorAttributeName : [NSColor disabledControlTextColor]
+    };
+    base::scoped_nsobject<NSMutableAttributedString> placeholder_text(
+        [[NSMutableAttributedString alloc]
+            initWithString:base::SysUTF16ToNSString(GetHintText())
+                attributes:placeholder_attributes]);
+    [[field_ cell] setPlaceholderAttributedString:placeholder_text];
   }
   if (model()->UpdatePermanentText()) {
     // Something visibly changed.  Re-enable URL replacement.
@@ -415,6 +422,12 @@ void OmniboxViewMac::EmphasizeURLComponents() {
     ApplyTextAttributes(GetText(), storage);
 
     [storage endEditing];
+
+    // This function can be called during the editor's -resignFirstResponder. If
+    // that happens, |storage| and |field_| will not be synced automatically any
+    // more. Calling -stringValue ensures that |field_| reflects the changes to
+    // |storage|.
+    [field_ stringValue];
   } else {
     SetText(GetText());
   }
@@ -775,12 +788,7 @@ void OmniboxViewMac::OnSetFocus(bool control_down) {
   model()->OnSetFocus(control_down);
   controller()->OnSetFocus();
 
-  // TODO(groby): Not entirely correct, since the chip should only be disabled
-  // after mouseDown: was handled, to allow clicking on the origin chip.
-  if (chrome::ShouldDisplayOriginChipV2()) {
-    controller()->GetToolbarModel()->set_origin_chip_enabled(false);
-    controller()->OnChanged();
-  }
+  HandleOriginChipMouseRelease();
 }
 
 void OmniboxViewMac::OnKillFocus() {
@@ -788,18 +796,7 @@ void OmniboxViewMac::OnKillFocus() {
   model()->OnWillKillFocus(NULL);
   model()->OnKillFocus();
 
-  // If user input is not in progress, re-enable the origin chip and URL
-  // replacement.  This addresses the case where the URL was shown by a call
-  // to ShowURL().  If the Omnibox achieved focus by other means, the calls to
-  // set_url_replacement_enabled, UpdatePermanentText and RevertAll are not
-  // required (a call to OnChanged would be sufficient) but do no harm.
-  if (chrome::ShouldDisplayOriginChipV2() &&
-      !model()->user_input_in_progress()) {
-    controller()->GetToolbarModel()->set_origin_chip_enabled(true);
-    controller()->GetToolbarModel()->set_url_replacement_enabled(true);
-    model()->UpdatePermanentText();
-    RevertAll();
-  }
+  OnDidKillFocus();
 }
 
 void OmniboxViewMac::OnMouseDown(NSInteger button_number) {

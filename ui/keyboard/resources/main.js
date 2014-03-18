@@ -75,6 +75,18 @@
     offsetBottom: 0,
 
     /**
+     * The ideal width of the keyboard container.
+     * @type {number}
+     */
+    width: 0,
+
+    /**
+     * The ideal height of the keyboard container.
+     * @type {number}
+     */
+    height: 0,
+
+    /**
      * Recalculates the alignment options for a specific keyset.
      * @param {Object} keyset The keyset to align.
      */
@@ -110,18 +122,18 @@
       // Total weight of the row in X.
       var totalWeightX = keyWeightSumX + interspaceWeightSumX +
           keyset.weightLeft + keyset.weightRight;
-
+      var keyAspectRatio = getKeyAspectRatio();
       var totalWeightY = (pitchWeightY * (rows.length - 1)) +
                          keyset.weightTop +
                          keyset.weightBottom;
       for (var i = 0; i < rows.length; i++) {
-        totalWeightY += rows[i].weight;
+        totalWeightY += rows[i].weight / keyAspectRatio;
       }
       // Calculate width and height of the window.
       var bounds = exports.getKeyboardBounds();
 
-      var width = bounds.width;
-      var height = bounds.height;
+      this.width = bounds.width;
+      this.height = bounds.height;
       var pixelPerWeightX = bounds.width/totalWeightX;
       var pixelPerWeightY = bounds.height/totalWeightY;
 
@@ -129,11 +141,11 @@
         if (totalWeightX/bounds.width < totalWeightY/bounds.height) {
           pixelPerWeightY = bounds.height/totalWeightY;
           pixelPerWeightX = pixelPerWeightY;
-          width = Math.floor(pixelPerWeightX * totalWeightX)
+          this.width = Math.floor(pixelPerWeightX * totalWeightX)
         } else {
           pixelPerWeightX = bounds.width/totalWeightX;
           pixelPerWeightY = pixelPerWeightX;
-          height = Math.floor(pixelPerWeightY * totalWeightY);
+          this.height = Math.floor(pixelPerWeightY * totalWeightY);
         }
       }
       // Calculate pitch.
@@ -141,26 +153,51 @@
       this.pitchY = Math.floor(pitchWeightY * pixelPerWeightY);
 
       // Convert weight to pixels on x axis.
-      this.keyWidth = Math.floor(DEFAULT_KEY_WEIGHT_X * pixelPerWeightX);
+      this.keyWidth = Math.floor(DEFAULT_KEY_WEIGHT * pixelPerWeightX);
       var offsetLeft = Math.floor(keyset.weightLeft * pixelPerWeightX);
       var offsetRight = Math.floor(keyset.weightRight * pixelPerWeightX);
-      this.availableWidth = width - offsetLeft - offsetRight;
+      this.availableWidth = this.width - offsetLeft - offsetRight;
 
       // Calculates weight to pixels on the y axis.
-      this.keyHeight = Math.floor(DEFAULT_KEY_WEIGHT_Y * pixelPerWeightY);
+      var weightY = Math.floor(DEFAULT_KEY_WEIGHT / keyAspectRatio);
+      this.keyHeight = Math.floor(weightY * pixelPerWeightY);
       var offsetTop = Math.floor(keyset.weightTop * pixelPerWeightY);
       var offsetBottom = Math.floor(keyset.weightBottom * pixelPerWeightY);
-      this.availableHeight = height - offsetTop - offsetBottom;
+      this.availableHeight = this.height - offsetTop - offsetBottom;
 
-      var dX = bounds.width - width;
+      var dX = bounds.width - this.width;
       this.offsetLeft = offsetLeft + Math.floor(dX/2);
       this.offsetRight = offsetRight + Math.ceil(dX/2)
 
-      var dY = bounds.height - height;
+      var dY = bounds.height - this.height;
       this.offsetBottom = offsetBottom + dY;
       this.offsetTop = offsetTop;
     },
   };
+
+  /**
+   * A simple binary search.
+   * @param {Array} array The array to search.
+   * @param {number} start The start index.
+   * @param {number} end The end index.
+   * @param {Function<Object>:number} The test function used for searching.
+   * @private
+   * @return {number} The index of the search, or -1 if it was not found.
+   */
+  function binarySearch_(array, start, end, testFn) {
+      if (start > end) {
+        // No match found.
+        return -1;
+      }
+      var mid = Math.floor((start+end)/2);
+      var result = testFn(mid);
+      if (result == 0)
+        return mid;
+      if (result < 0)
+        return binarySearch_(array, start, mid - 1, testFn);
+      else
+        return binarySearch_(array, mid + 1, end, testFn);
+  }
 
   /**
    * Calculate width and height of the window.
@@ -173,6 +210,16 @@
       "height": window.innerHeight,
     };
   }
+
+  /**
+   * Calculates the desired key aspect ratio based on screen size.
+   * @return {number} The aspect ratio to use.
+   */
+  function getKeyAspectRatio() {
+    return (screen.width > screen.height) ?
+        KEY_ASPECT_RATIO_LANDSCAPE : KEY_ASPECT_RATIO_PORTRAIT;
+  }
+
   /**
    * Callback function for when the window is resized.
    */
@@ -252,24 +299,9 @@
    * @param {number} pitch The pitch of the row.
    * @param {boolean} alignLeft whether to search with respect to the left or
    *   or right edge.
+   * @return {?kb-key}
    */
   function findClosestKey(allKeys, x, pitch, alignLeft) {
-    var n = allKeys.length;
-    // Simple binary search.
-    var binarySearch = function (start, end, testFn) {
-      if (start >= end) {
-        console.error("Unable to find key.");
-        return;
-      }
-      var mid = Math.floor((start+end)/2);
-      var result = testFn(mid);
-      if (result == 0)
-        return allKeys[mid];
-      if (result < 0)
-        return binarySearch(start, mid, testFn);
-      else
-        return binarySearch(mid + 1, end, testFn);
-    }
     // Test function.
     var testFn = function(i) {
       var ERROR_THRESH = 1;
@@ -287,8 +319,8 @@
         return 0;
       return x >= high? 1 : -1;
     }
-
-    return binarySearch(0, allKeys.length -1, testFn);
+    var index = exports.binarySearch(allKeys, 0, allKeys.length -1, testFn);
+    return index > 0 ? allKeys[index] : null;
   }
 
   /**
@@ -309,11 +341,11 @@
       if (key.stretch) {
         stretchWeight += key.weight;
         nStretch++;
-      } else if (key.weight == DEFAULT_KEY_WEIGHT_X) {
+      } else if (key.weight == DEFAULT_KEY_WEIGHT) {
         availableWidth -= params.keyWidth;
       } else {
         availableWidth -=
-            Math.floor(key.weight/DEFAULT_KEY_WEIGHT_X * params.keyWidth);
+            Math.floor(key.weight/DEFAULT_KEY_WEIGHT * params.keyWidth);
       }
     }
     if (stretchWeight <= 0)
@@ -323,9 +355,9 @@
     for (var i = 0; i < allKeys.length; i++) {
       var key = allKeys[i];
       var keyWidth = params.keyWidth;
-      if (key.weight != DEFAULT_KEY_WEIGHT_X) {
+      if (key.weight != DEFAULT_KEY_WEIGHT) {
         keyWidth =
-            Math.floor(key.weight/DEFAULT_KEY_WEIGHT_X * params.keyWidth);
+            Math.floor(key.weight/DEFAULT_KEY_WEIGHT * params.keyWidth);
       }
       if (key.stretch) {
         nStretch--;
@@ -446,11 +478,11 @@
     for (var i = 0; i < all.length; i++) {
       deltaWidth.push(0)
       var key = all[i];
-      if (key.weight == DEFAULT_KEY_WEIGHT_X){
+      if (key.weight == DEFAULT_KEY_WEIGHT){
         allSum += params.keyWidth;
       } else {
         var width =
-          Math.floor((params.keyWidth/DEFAULT_KEY_WEIGHT_X) * key.weight);
+          Math.floor((params.keyWidth/DEFAULT_KEY_WEIGHT) * key.weight);
         allSum += width;
       }
       if (!key.stretch)
@@ -496,8 +528,8 @@
     for (var i = 0; i < all.length; i++) {
       var key = all[i];
       var width = params.keyWidth;
-      if (key.weight != DEFAULT_KEY_WEIGHT_X)
-        width = Math.floor((params.keyWidth/DEFAULT_KEY_WEIGHT_X) * key.weight)
+      if (key.weight != DEFAULT_KEY_WEIGHT)
+        width = Math.floor((params.keyWidth/DEFAULT_KEY_WEIGHT) * key.weight)
       width += deltaWidth[i];
       updateKey(key, width, keyHeight, left, yOffset)
       left += (width + params.pitchX);
@@ -527,6 +559,7 @@
         layoutParams[layout] = new AlignmentOptions(keyset);
       realignKeyset(keyset, layoutParams[layout]);
     }
+    exports.recordKeysets();
   }
 
   /**
@@ -542,6 +575,7 @@
       realignKeyset(keysets[i], params);
     }
     keyboard.stale = false;
+    exports.recordKeysets();
   }
 
   /*
@@ -553,12 +587,19 @@
     var rows = keyset.querySelectorAll('kb-row').array();
     keyset.style.fontSize = (params.availableHeight /
       FONT_SIZE_RATIO / rows.length) + 'px';
-
+    var bounds = getKeyboardBounds();
+    // If currently the active keyset, resize if vertical padding exceeds the
+    // resize threshold.
+    // TODO(rsadam@): Add logic to stretch if necessary after overscroll lands.
+    if (bounds.height - params.height > RESIZE_THRESHOLD &&
+        $('keyboard').activeKeysetId == keyset.id) {
+      window.resizeTo(params.width, params.height);
+    }
     var heightOffset  = 0;
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
       var rowHeight =
-          Math.floor(params.keyHeight * (row.weight/DEFAULT_KEY_WEIGHT_Y))
+          Math.floor(params.keyHeight * (row.weight / DEFAULT_KEY_WEIGHT));
       if (row.querySelector('.space') && (i > 1)) {
         realignSpacebarRow(row, rows[i-1], params, rowHeight, heightOffset)
       } else {
@@ -573,6 +614,7 @@
   addEventListener('load', onResize);
 
   exports.getKeyboardBounds = getKeyboardBounds_;
+  exports.binarySearch = binarySearch_;
 })(this);
 
 /**
@@ -617,7 +659,19 @@ function expandHTML(importedContent) {
 function flattenKeysets(content) {
   var importedContent = importHTML(content);
   expandHTML(importedContent);
+  resolveAudio(importedContent);
   return importedContent;
+}
+
+function resolveAudio(content) {
+  var keyboard = $('keyboard');
+  keyboard.addSound(Sound.DEFAULT);
+  var nodes = content.querySelectorAll('[sound]').array();
+  // Get id's of all unique sounds.
+  for (var i = 0; i < nodes.length; i++) {
+    var id = nodes[i].getAttribute('sound');
+    keyboard.addSound(id);
+  }
 }
 
 // Prevents all default actions of touch. Keyboard should use its own gesture

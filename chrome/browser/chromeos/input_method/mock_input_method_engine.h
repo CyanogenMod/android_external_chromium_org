@@ -7,13 +7,19 @@
 
 #include <string>
 #include <vector>
+
 #include "chrome/browser/chromeos/input_method/input_method_engine_interface.h"
 #include "chromeos/ime/input_method_descriptor.h"
-#include "url/gurl.h"
 
 namespace ui {
 class KeyEvent;
 }  // namespace ui
+
+namespace ash {
+namespace ime {
+struct InputMethodMenuItem;
+}  // namespace ime
+}  // namespace ash
 
 namespace chromeos {
 
@@ -21,7 +27,6 @@ class CompositionText;
 
 namespace input_method {
 class CandidateWindow;
-struct InputMethodProperty;
 struct KeyEventHandle;
 }  // namespace input_method
 
@@ -34,7 +39,7 @@ class MockInputMethodEngine : public InputMethodEngineInterface {
   // InputMethodEngineInterface overrides.
   virtual const input_method::InputMethodDescriptor& GetDescriptor()
       const OVERRIDE;
-  virtual void StartIme() OVERRIDE;
+  virtual void NotifyImeReady() OVERRIDE;
   virtual bool SetComposition(int context_id,
                               const char* text,
                               int selection_start,

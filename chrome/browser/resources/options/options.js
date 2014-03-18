@@ -18,7 +18,7 @@ var CookiesView = options.CookiesView;
 var CreateProfileOverlay = options.CreateProfileOverlay;
 var EditDictionaryOverlay = cr.IsMac ? null : options.EditDictionaryOverlay;
 var FactoryResetOverlay = options.FactoryResetOverlay;
-<if expr="pp_ifdef('enable_google_now')">
+<if expr="enable_google_now">
 var GeolocationOptions = options.GeolocationOptions;
 </if>
 var FontSettings = options.FontSettings;
@@ -155,7 +155,7 @@ function load() {
                                 BrowserOptions.getInstance());
     if (!loadTimeData.getBoolean('disableCreateExistingManagedUsers')) {
       OptionsPage.registerOverlay(ManagedUserImportOverlay.getInstance(),
-                                  BrowserOptions.getInstance());
+                                  CreateProfileOverlay.getInstance());
     }
     OptionsPage.registerOverlay(ManagedUserLearnMoreOverlay.getInstance(),
                                 CreateProfileOverlay.getInstance());

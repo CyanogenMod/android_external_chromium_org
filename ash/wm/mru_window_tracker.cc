@@ -9,12 +9,12 @@
 #include "ash/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/window_cycle_list.h"
+#include "ash/switchable_windows.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace_controller.h"
 #include "ui/aura/client/activation_client.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/events/event.h"
 #include "ui/events/event_handler.h"
 
@@ -43,17 +43,6 @@ void AddDraggedWindows(aura::Window* root,
     if (wm::GetWindowState(*iter)->is_dragged())
       windows->insert(windows->end(), *iter);
   }
-}
-
-// Returns true if |window| is a container whose windows can be cycled to.
-bool IsSwitchableContainer(aura::Window* window) {
-  if (!window)
-    return false;
-  for (size_t i = 0; i < kSwitchableWindowContainerIdsLength; ++i) {
-    if (window->id() == kSwitchableWindowContainerIds[i])
-      return true;
-  }
-  return false;
 }
 
 // Returns whether |w1| should be considered less recently used than |w2|. This
@@ -133,15 +122,6 @@ MruWindowTracker::WindowList BuildWindowListInternal(
 }
 
 }  // namespace
-
-const int kSwitchableWindowContainerIds[] = {
-  internal::kShellWindowId_DefaultContainer,
-  internal::kShellWindowId_AlwaysOnTopContainer,
-  internal::kShellWindowId_PanelContainer
-};
-
-const size_t kSwitchableWindowContainerIdsLength =
-    arraysize(kSwitchableWindowContainerIds);
 
 //////////////////////////////////////////////////////////////////////////////
 // MruWindowTracker, public:

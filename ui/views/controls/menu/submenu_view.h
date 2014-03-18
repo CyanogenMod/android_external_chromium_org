@@ -10,6 +10,8 @@
 #include "base/compiler_specific.h"
 #include "ui/views/animation/scroll_animator.h"
 #include "ui/views/controls/menu/menu_delegate.h"
+#include "ui/views/controls/prefix_delegate.h"
+#include "ui/views/controls/prefix_selector.h"
 #include "ui/views/view.h"
 
 namespace views {
@@ -26,14 +28,14 @@ class MenuScrollViewContainer;
 // . Forwards the appropriate events to the MenuController. This allows the
 //   MenuController to update the selection as the user moves the mouse around.
 // . Renders the drop indicator during a drop operation.
-// . Shows and hides the window (a NativeWidgetWin) when the menu is shown on
+// . Shows and hides the window (a NativeWidget) when the menu is shown on
 //   screen.
 //
 // SubmenuView is itself contained in a MenuScrollViewContainer.
 // MenuScrollViewContainer handles showing as much of the SubmenuView as the
 // screen allows. If the SubmenuView is taller than the screen, scroll buttons
 // are provided that allow the user to see all the menu items.
-class VIEWS_EXPORT SubmenuView : public View,
+class VIEWS_EXPORT SubmenuView : public PrefixDelegate,
                                  public ScrollDelegate {
  public:
   // The submenu's class name.
@@ -56,7 +58,8 @@ class VIEWS_EXPORT SubmenuView : public View,
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
   // Override from View.
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
 
   // Painting.
   virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
@@ -78,6 +81,12 @@ class VIEWS_EXPORT SubmenuView : public View,
   // Overridden from ui::EventHandler.
   // Scrolls on menu item boundaries.
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+
+  // Overridden from PrefixDelegate.
+  virtual int GetRowCount() OVERRIDE;
+  virtual int GetSelectedRow() OVERRIDE;
+  virtual void SetSelectedRow(int row) OVERRIDE;
+  virtual base::string16 GetTextForRow(int row) OVERRIDE;
 
   // Returns true if the menu is showing.
   bool IsShowing();
@@ -207,6 +216,8 @@ class VIEWS_EXPORT SubmenuView : public View,
   // TODO(tdresser): This should be removed when raw pixel scrolling for views
   // is enabled. See crbug.com/329354.
   float roundoff_error_;
+
+  PrefixSelector prefix_selector_;
 
   DISALLOW_COPY_AND_ASSIGN(SubmenuView);
 };

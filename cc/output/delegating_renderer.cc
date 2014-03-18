@@ -100,7 +100,6 @@ void DelegatingRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
                                    float device_scale_factor,
                                    const gfx::Rect& device_viewport_rect,
                                    const gfx::Rect& device_clip_rect,
-                                   bool allow_partial_swap,
                                    bool disable_picture_quad_image_filtering) {
   TRACE_EVENT0("cc", "DelegatingRenderer::DrawFrame");
 
@@ -163,8 +162,8 @@ void DelegatingRenderer::SetVisible(bool visible) {
   // We loop visibility to the GPU process, since that's what manages memory.
   // That will allow it to feed us with memory allocations that we can act
   // upon.
-  DCHECK(context_provider);
-  context_provider->ContextSupport()->SetSurfaceVisible(visible);
+  if (context_provider)
+    context_provider->ContextSupport()->SetSurfaceVisible(visible);
 }
 
 void DelegatingRenderer::SendManagedMemoryStats(size_t bytes_visible,

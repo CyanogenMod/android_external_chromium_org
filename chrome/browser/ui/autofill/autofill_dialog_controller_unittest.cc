@@ -50,7 +50,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "google_apis/gaia/google_service_auth_error.h"
-#include "grit/webkit_resources.h"
+#include "grit/component_scaled_resources.h"
+#include "grit/generated_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_data.h"
@@ -70,10 +71,13 @@ namespace {
 
 using ::i18n::addressinput::AddressData;
 using ::i18n::addressinput::AddressProblemFilter;
+using ::i18n::addressinput::AddressProblem;
 using ::i18n::addressinput::AddressProblems;
 using ::i18n::addressinput::AddressValidator;
 using testing::AtLeast;
+using testing::DoAll;
 using testing::Return;
+using testing::SetArgPointee;
 using testing::_;
 
 const char kSourceUrl[] = "http://localbike.shop";
@@ -331,8 +335,10 @@ class TestAutofillDialogController
   using AutofillDialogControllerImpl::OnDidLoadRiskFingerprintData;
   using AutofillDialogControllerImpl::IsEditingExistingData;
   using AutofillDialogControllerImpl::IsManuallyEditingSection;
+  using AutofillDialogControllerImpl::IsPayingWithWallet;
   using AutofillDialogControllerImpl::IsSubmitPausedOn;
   using AutofillDialogControllerImpl::NOT_CHECKED;
+  using AutofillDialogControllerImpl::popup_input_type;
   using AutofillDialogControllerImpl::SignedInState;
 
  protected:
@@ -931,6 +937,74 @@ TEST_F(AutofillDialogControllerTest, AutofillProfiles) {
   EXPECT_EQ(4, shipping_model->GetItemCount());
 }
 
+// Checks that a valid profile is selected by default, but if invalid is
+// popped into edit mode.
+TEST_F(AutofillDialogControllerTest, AutofillProfilesPopInvalidIntoEdit) {
+  SwitchToAutofill();
+  SuggestionsMenuModel* shipping_model =
+      GetMenuModelForSection(SECTION_SHIPPING);
+  EXPECT_EQ(3, shipping_model->GetItemCount());
+  // "Same as billing" is selected.
+  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_BILLING));
+
+  AutofillProfile verified_profile(test::GetVerifiedProfile());
+  controller()->GetTestingManager()->AddTestingProfile(&verified_profile);
+  EXPECT_EQ(4, shipping_model->GetItemCount());
+  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_BILLING));
+
+  // Now make up a problem and make sure the profile isn't in the list.
+  Reset();
+  SwitchToAutofill();
+  AddressProblems problems;
+  problems.push_back(
+      AddressProblem(::i18n::addressinput::POSTAL_CODE,
+                     AddressProblem::MISMATCHING_VALUE,
+                     IDS_LEARN_MORE));
+  EXPECT_CALL(*controller()->GetMockValidator(),
+              ValidateAddress(CountryCodeMatcher("US"), _, _)).
+      WillRepeatedly(DoAll(SetArgPointee<2>(problems),
+                           Return(AddressValidator::SUCCESS)));
+
+  controller()->GetTestingManager()->AddTestingProfile(&verified_profile);
+  shipping_model = GetMenuModelForSection(SECTION_SHIPPING);
+  EXPECT_EQ(4, shipping_model->GetItemCount());
+  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_BILLING));
+}
+
+// Makes sure suggestion profiles are re-validated when validation rules load.
+TEST_F(AutofillDialogControllerTest, AutofillProfilesRevalidateAfterRulesLoad) {
+  SwitchToAutofill();
+  SuggestionsMenuModel* shipping_model =
+      GetMenuModelForSection(SECTION_SHIPPING);
+  EXPECT_EQ(3, shipping_model->GetItemCount());
+  // "Same as billing" is selected.
+  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_BILLING));
+  AutofillProfile verified_profile(test::GetVerifiedProfile());
+  controller()->GetTestingManager()->AddTestingProfile(&verified_profile);
+  EXPECT_EQ(4, shipping_model->GetItemCount());
+  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_BILLING));
+
+  AddressProblems problems;
+  problems.push_back(
+      AddressProblem(::i18n::addressinput::POSTAL_CODE,
+                     AddressProblem::MISMATCHING_VALUE,
+                     IDS_LEARN_MORE));
+  EXPECT_CALL(*controller()->GetMockValidator(),
+              ValidateAddress(CountryCodeMatcher("US"), _, _)).
+      WillRepeatedly(DoAll(SetArgPointee<2>(problems),
+                           Return(AddressValidator::SUCCESS)));
+
+  controller()->OnAddressValidationRulesLoaded("US", true);
+  EXPECT_EQ(4, shipping_model->GetItemCount());
+  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_BILLING));
+}
+
 // Makes sure that the choice of which Autofill profile to use for each section
 // is sticky.
 TEST_F(AutofillDialogControllerTest, AutofillProfileDefaults) {
@@ -1080,9 +1154,6 @@ TEST_F(AutofillDialogControllerTest, DoNotSuggestInvalidAddress) {
   full_profile.set_origin(kSettingsOrigin);
   full_profile.SetRawInfo(ADDRESS_HOME_STATE, ASCIIToUTF16("C"));
   controller()->GetTestingManager()->AddTestingProfile(&full_profile);
-
-  if (!i18ninput::Enabled())
-    EXPECT_FALSE(!!controller()->MenuModelForSection(SECTION_BILLING));
 }
 
 TEST_F(AutofillDialogControllerTest, DoNotSuggestIncompleteAddress) {
@@ -1091,6 +1162,22 @@ TEST_F(AutofillDialogControllerTest, DoNotSuggestIncompleteAddress) {
   profile.SetRawInfo(ADDRESS_HOME_STATE, base::string16());
   controller()->GetTestingManager()->AddTestingProfile(&profile);
 
+  // Same as shipping, manage, add new.
+  EXPECT_EQ(3,
+      controller()->MenuModelForSection(SECTION_SHIPPING)->GetItemCount());
+  EXPECT_FALSE(!!controller()->MenuModelForSection(SECTION_BILLING));
+}
+
+TEST_F(AutofillDialogControllerTest, DoSuggestShippingAddressWithoutEmail) {
+  SwitchToAutofill();
+  AutofillProfile profile(test::GetVerifiedProfile());
+  profile.SetRawInfo(EMAIL_ADDRESS, base::string16());
+  controller()->GetTestingManager()->AddTestingProfile(&profile);
+
+  // Same as shipping, manage, add new, profile with missing email.
+  EXPECT_EQ(4,
+      controller()->MenuModelForSection(SECTION_SHIPPING)->GetItemCount());
+  // Billing addresses require email.
   EXPECT_FALSE(!!controller()->MenuModelForSection(SECTION_BILLING));
 }
 
@@ -2123,7 +2210,7 @@ TEST_F(AutofillDialogControllerTest, AutofillTypes) {
 
 TEST_F(AutofillDialogControllerTest, SaveDetailsInChrome) {
   SwitchToAutofill();
-  EXPECT_CALL(*controller()->GetView(), ModelChanged()).Times(2);
+  EXPECT_CALL(*controller()->GetView(), ModelChanged()).Times(4);
 
   AutofillProfile full_profile(test::GetVerifiedProfile());
   controller()->GetTestingManager()->AddTestingProfile(&full_profile);
@@ -2138,8 +2225,53 @@ TEST_F(AutofillDialogControllerTest, SaveDetailsInChrome) {
   controller()->MenuModelForSection(SECTION_BILLING)->ActivatedAt(1);
   EXPECT_TRUE(controller()->ShouldOfferToSaveInChrome());
 
+  profile()->GetPrefs()->SetBoolean(prefs::kAutofillEnabled, false);
+  EXPECT_FALSE(controller()->ShouldOfferToSaveInChrome());
+
+  profile()->GetPrefs()->SetBoolean(prefs::kAutofillEnabled, true);
+  controller()->MenuModelForSection(SECTION_BILLING)->ActivatedAt(1);
+  EXPECT_TRUE(controller()->ShouldOfferToSaveInChrome());
+
   profile()->ForceIncognito(true);
   EXPECT_FALSE(controller()->ShouldOfferToSaveInChrome());
+}
+
+TEST_F(AutofillDialogControllerTest, DisabledAutofill) {
+  SwitchToAutofill();
+  ASSERT_TRUE(profile()->GetPrefs()->GetBoolean(prefs::kAutofillEnabled));
+
+  AutofillProfile verified_profile(test::GetVerifiedProfile());
+  controller()->GetTestingManager()->AddTestingProfile(&verified_profile);
+
+  CreditCard credit_card(test::GetVerifiedCreditCard());
+  controller()->GetTestingManager()->AddTestingCreditCard(&credit_card);
+
+  // Verify suggestions menus should be showing when Autofill is enabled.
+  EXPECT_TRUE(controller()->MenuModelForSection(SECTION_CC));
+  EXPECT_TRUE(controller()->MenuModelForSection(SECTION_BILLING));
+  EXPECT_EQ(
+      4, controller()->MenuModelForSection(SECTION_SHIPPING)->GetItemCount());
+
+  EXPECT_CALL(*controller()->GetView(), ModelChanged());
+  profile()->GetPrefs()->SetBoolean(prefs::kAutofillEnabled, false);
+
+  // Verify billing and credit card suggestions menus are hidden when Autofill
+  // is disabled.
+  EXPECT_FALSE(controller()->MenuModelForSection(SECTION_CC));
+  EXPECT_FALSE(controller()->MenuModelForSection(SECTION_BILLING));
+  // And that the shipping suggestions menu has less selections.
+  EXPECT_EQ(
+      2, controller()->MenuModelForSection(SECTION_SHIPPING)->GetItemCount());
+
+  // Additionally, editing fields should not show Autofill popups.
+  ASSERT_NO_FATAL_FAILURE(controller()->UserEditedOrActivatedInput(
+      SECTION_BILLING,
+      NAME_BILLING_FULL,
+      gfx::NativeView(),
+      gfx::Rect(),
+      verified_profile.GetRawInfo(NAME_FULL).substr(0, 1),
+      true));
+  EXPECT_EQ(UNKNOWN_TYPE, controller()->popup_input_type());
 }
 
 // Tests that user is prompted when using instrument with minimal address.
@@ -2961,12 +3093,23 @@ TEST_F(AutofillDialogControllerTest, IconReservedForCreditCardField) {
   }
 }
 
-class AutofillDialogControllerI18nTest : public AutofillDialogControllerTest {
- private:
-  i18ninput::ScopedEnableForTesting enabled_;
-};
+TEST_F(AutofillDialogControllerTest, NoPartiallySupportedCountriesSuggested) {
+  SwitchToAutofill();
 
-TEST_F(AutofillDialogControllerI18nTest, CountryChangeUpdatesSection) {
+  std::string partially_supported_country = "KR";
+  ASSERT_FALSE(i18ninput::CountryIsFullySupported(partially_supported_country));
+  ASSERT_FALSE(controller()->MenuModelForSection(SECTION_BILLING));
+
+  AutofillProfile verified_profile(test::GetVerifiedProfile());
+  verified_profile.SetRawInfo(ADDRESS_HOME_COUNTRY,
+                              ASCIIToUTF16(partially_supported_country));
+  controller()->GetTestingManager()->AddTestingProfile(&verified_profile);
+
+  EXPECT_FALSE(
+      controller()->SuggestionStateForSection(SECTION_BILLING).visible);
+}
+
+TEST_F(AutofillDialogControllerTest, CountryChangeUpdatesSection) {
   TestAutofillDialogView* view = controller()->GetView();
   view->ClearSectionUpdates();
 
@@ -2974,7 +3117,7 @@ TEST_F(AutofillDialogControllerI18nTest, CountryChangeUpdatesSection) {
                                            ADDRESS_HOME_COUNTRY,
                                            gfx::NativeView(),
                                            gfx::Rect(),
-                                           ASCIIToUTF16("China"),
+                                           ASCIIToUTF16("Belarus"),
                                            true);
   std::map<DialogSection, size_t> updates = view->section_updates();
   EXPECT_EQ(1U, updates[SECTION_SHIPPING]);
@@ -3006,12 +3149,12 @@ TEST_F(AutofillDialogControllerI18nTest, CountryChangeUpdatesSection) {
   EXPECT_EQ(1U, updates.size());
 }
 
-TEST_F(AutofillDialogControllerI18nTest, CorrectCountryFromInputs) {
+TEST_F(AutofillDialogControllerTest, CorrectCountryFromInputs) {
   EXPECT_CALL(*controller()->GetMockValidator(),
-              ValidateAddress(CountryCodeMatcher("CN"), _, _));
+              ValidateAddress(CountryCodeMatcher("DE"), _, _));
 
   FieldValueMap billing_inputs;
-  billing_inputs[ADDRESS_BILLING_COUNTRY] = ASCIIToUTF16("China");
+  billing_inputs[ADDRESS_BILLING_COUNTRY] = ASCIIToUTF16("Germany");
   controller()->InputsAreValid(SECTION_BILLING, billing_inputs);
 
   EXPECT_CALL(*controller()->GetMockValidator(),
@@ -3022,7 +3165,7 @@ TEST_F(AutofillDialogControllerI18nTest, CorrectCountryFromInputs) {
   controller()->InputsAreValid(SECTION_SHIPPING, shipping_inputs);
 }
 
-TEST_F(AutofillDialogControllerI18nTest, ValidationRulesLoadedOnCountryChange) {
+TEST_F(AutofillDialogControllerTest, ValidationRulesLoadedOnCountryChange) {
   ResetControllerWithFormData(DefaultFormData());
   EXPECT_CALL(*controller()->GetMockValidator(), LoadRules("US"));
   controller()->Show();
@@ -3036,7 +3179,7 @@ TEST_F(AutofillDialogControllerI18nTest, ValidationRulesLoadedOnCountryChange) {
                                            true);
 }
 
-TEST_F(AutofillDialogControllerI18nTest, InvalidWhenRulesNotReady) {
+TEST_F(AutofillDialogControllerTest, InvalidWhenRulesNotReady) {
   // Select "Add new shipping address...".
   controller()->MenuModelForSection(SECTION_SHIPPING)->ActivatedAt(1);
 
@@ -3057,7 +3200,7 @@ TEST_F(AutofillDialogControllerI18nTest, InvalidWhenRulesNotReady) {
   EXPECT_TRUE(messages.GetMessageOrDefault(ADDRESS_HOME_COUNTRY).text.empty());
 }
 
-TEST_F(AutofillDialogControllerI18nTest, ValidButUnverifiedWhenRulesFail) {
+TEST_F(AutofillDialogControllerTest, ValidButUnverifiedWhenRulesFail) {
   SwitchToAutofill();
 
   // Add suggestions so the credit card and billing sections aren't showing
@@ -3094,6 +3237,128 @@ TEST_F(AutofillDialogControllerI18nTest, ValidButUnverifiedWhenRulesFail) {
             full_profile.GetRawInfo(NAME_FULL));
   EXPECT_EQ(imported_profile.origin(), GURL(kSourceUrl).GetOrigin().spec());
   EXPECT_FALSE(imported_profile.IsVerified());
+}
+
+TEST_F(AutofillDialogControllerTest, LimitedCountryChoices) {
+  ui::ComboboxModel* shipping_country_model =
+      controller()->ComboboxModelForAutofillType(ADDRESS_HOME_COUNTRY);
+  const int default_number_of_countries =
+      shipping_country_model->GetItemCount();
+  // We show a lot of countries by default, but the exact number doesn't matter.
+  EXPECT_GT(default_number_of_countries, 50);
+
+  // Create a form data that simulates:
+  //   <select autocomplete="billing country">
+  //     <option value="AU">Down Under</option>
+  //     <option value="">fR</option>  <!-- Case doesn't matter -->
+  //     <option value="GRMNY">Germany</option>
+  //   </select>
+  // Only country codes are respected, whether they're in value or the option's
+  // text content. Thus the first two options should be recognized.
+  FormData form_data;
+  FormFieldData field;
+  field.autocomplete_attribute = "billing country";
+  field.option_contents.push_back(ASCIIToUTF16("Down Under"));
+  field.option_values.push_back(ASCIIToUTF16("AU"));
+  field.option_contents.push_back(ASCIIToUTF16("Fr"));
+  field.option_values.push_back(ASCIIToUTF16(""));
+  field.option_contents.push_back(ASCIIToUTF16("Germany"));
+  field.option_values.push_back(ASCIIToUTF16("GRMNY"));
+  form_data.fields.push_back(field);
+  ResetControllerWithFormData(form_data);
+  controller()->Show();
+
+  // Shipping model shouldn't have changed.
+  shipping_country_model =
+      controller()->ComboboxModelForAutofillType(ADDRESS_HOME_COUNTRY);
+  EXPECT_EQ(default_number_of_countries,
+            shipping_country_model->GetItemCount());
+  // Billing model now only has two items.
+  ui::ComboboxModel* billing_country_model =
+      controller()->ComboboxModelForAutofillType(ADDRESS_BILLING_COUNTRY);
+  ASSERT_EQ(2, billing_country_model->GetItemCount());
+  EXPECT_EQ(billing_country_model->GetItemAt(0), ASCIIToUTF16("Australia"));
+  EXPECT_EQ(billing_country_model->GetItemAt(1), ASCIIToUTF16("France"));
+
+  // Make sure it also applies to profile suggestions.
+  AutofillProfile us_profile(test::GetVerifiedProfile());
+  us_profile.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("US"));
+  controller()->GetTestingManager()->AddTestingProfile(&us_profile);
+  // Don't show a suggestion if the only one that exists is disabled.
+  EXPECT_FALSE(
+      controller()->SuggestionStateForSection(SECTION_BILLING).visible);
+
+  // Add a profile with an acceptable country; suggestion should be shown.
+  ResetControllerWithFormData(form_data);
+  controller()->Show();
+  AutofillProfile au_profile(test::GetVerifiedProfile2());
+  au_profile.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("AU"));
+  controller()->GetTestingManager()->AddTestingProfile(&us_profile);
+  controller()->GetTestingManager()->AddTestingProfile(&au_profile);
+  ui::MenuModel* model = controller()->MenuModelForSection(SECTION_BILLING);
+  ASSERT_TRUE(model);
+  EXPECT_EQ(4, model->GetItemCount());
+  EXPECT_FALSE(model->IsEnabledAt(0));
+  EXPECT_TRUE(model->IsEnabledAt(1));
+
+  // Add <input type="text" autocomplete="billing country"></input>
+  // This should open up selection of all countries again.
+  FormFieldData field2;
+  field2.autocomplete_attribute = "billing country";
+  form_data.fields.push_back(field2);
+  ResetControllerWithFormData(form_data);
+  controller()->Show();
+
+  billing_country_model =
+      controller()->ComboboxModelForAutofillType(ADDRESS_BILLING_COUNTRY);
+  EXPECT_EQ(default_number_of_countries,
+            billing_country_model->GetItemCount());
+}
+
+TEST_F(AutofillDialogControllerTest, CountriesWithDependentLocalityHidden) {
+  ui::ComboboxModel* model =
+      controller()->ComboboxModelForAutofillType(ADDRESS_BILLING_COUNTRY);
+  for (int i = 0; i < model->GetItemCount(); ++i) {
+    EXPECT_NE(base::ASCIIToUTF16("China"), model->GetItemAt(i));
+    EXPECT_NE(base::ASCIIToUTF16("South Korea"), model->GetItemAt(i));
+  }
+
+  model = controller()->ComboboxModelForAutofillType(ADDRESS_HOME_COUNTRY);
+  for (int i = 0; i < model->GetItemCount(); ++i) {
+    EXPECT_NE(base::ASCIIToUTF16("China"), model->GetItemAt(i));
+    EXPECT_NE(base::ASCIIToUTF16("South Korea"), model->GetItemAt(i));
+  }
+}
+
+TEST_F(AutofillDialogControllerTest, DontSuggestHiddenCountries) {
+  SwitchToAutofill();
+
+  AutofillProfile cn_profile(test::GetVerifiedProfile());
+  cn_profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("Chinese User"));
+  cn_profile.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("CN"));
+  controller()->GetTestingManager()->AddTestingProfile(&cn_profile);
+
+  AutofillProfile us_profile(test::GetVerifiedProfile());
+  us_profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("American User"));
+  controller()->GetTestingManager()->AddTestingProfile(&us_profile);
+
+  controller()->UserEditedOrActivatedInput(
+      SECTION_SHIPPING,
+      NAME_FULL,
+      gfx::NativeView(),
+      gfx::Rect(),
+      cn_profile.GetRawInfo(NAME_FULL).substr(0, 1),
+      true);
+  EXPECT_EQ(UNKNOWN_TYPE, controller()->popup_input_type());
+
+  controller()->UserEditedOrActivatedInput(
+      SECTION_SHIPPING,
+      NAME_FULL,
+      gfx::NativeView(),
+      gfx::Rect(),
+      us_profile.GetRawInfo(NAME_FULL).substr(0, 1),
+      true);
+  EXPECT_EQ(NAME_FULL, controller()->popup_input_type());
 }
 
 }  // namespace autofill

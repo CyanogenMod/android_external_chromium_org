@@ -119,7 +119,8 @@ Texture::Texture(GLuint service_id)
       immutable_(false),
       has_images_(false),
       estimated_size_(0),
-      can_render_condition_(CAN_RENDER_ALWAYS) {
+      can_render_condition_(CAN_RENDER_ALWAYS),
+      texture_max_anisotropy_initialized_(false) {
 }
 
 Texture::~Texture() {
@@ -569,7 +570,7 @@ bool Texture::GetLevelType(
   return false;
 }
 
-GLenum Texture::SetParameter(
+GLenum Texture::SetParameteri(
     const FeatureInfo* feature_info, GLenum pname, GLint param) {
   DCHECK(feature_info);
 
@@ -634,6 +635,31 @@ GLenum Texture::SetParameter(
   Update(feature_info);
   UpdateCleared();
   UpdateCanRenderCondition();
+  return GL_NO_ERROR;
+}
+
+GLenum Texture::SetParameterf(
+    const FeatureInfo* feature_info, GLenum pname, GLfloat param) {
+  switch (pname) {
+    case GL_TEXTURE_MIN_FILTER:
+    case GL_TEXTURE_MAG_FILTER:
+    case GL_TEXTURE_POOL_CHROMIUM:
+    case GL_TEXTURE_WRAP_S:
+    case GL_TEXTURE_WRAP_T:
+    case GL_TEXTURE_USAGE_ANGLE:
+      {
+        GLint iparam = static_cast<GLint>(param);
+        return SetParameteri(feature_info, pname, iparam);
+      }
+    case GL_TEXTURE_MAX_ANISOTROPY_EXT:
+      if (param < 1.f) {
+        return GL_INVALID_VALUE;
+      }
+      break;
+    default:
+      NOTREACHED();
+      return GL_INVALID_ENUM;
+  }
   return GL_NO_ERROR;
 }
 
@@ -755,6 +781,14 @@ bool Texture::IsLevelCleared(GLenum target, GLint level) const {
   return info.cleared;
 }
 
+void Texture::InitTextureMaxAnisotropyIfNeeded(GLenum target) {
+  if (texture_max_anisotropy_initialized_)
+    return;
+  texture_max_anisotropy_initialized_ = true;
+  GLfloat params[] = { 1.0f };
+  glTexParameterfv(target, GL_TEXTURE_MAX_ANISOTROPY_EXT, params);
+}
+
 bool Texture::ClearLevel(
     GLES2Decoder* decoder, GLenum target, GLint level) {
   DCHECK(decoder);
@@ -780,8 +814,8 @@ bool Texture::ClearLevel(
   // but only the decoder knows all the state (like unpack_alignment_) that's
   // needed to be able to call GL correctly.
   bool cleared = decoder->ClearLevel(
-      service_id_, target_, info.target, info.level, info.format, info.type,
-      info.width, info.height, immutable_);
+      service_id_, target_, info.target, info.level, info.internal_format,
+      info.format, info.type, info.width, info.height, immutable_);
   UpdateMipCleared(&info, cleared);
   return info.cleared;
 }
@@ -806,6 +840,11 @@ void Texture::SetLevelImage(
 }
 
 gfx::GLImage* Texture::GetLevelImage(GLint target, GLint level) const {
+  if (target != GL_TEXTURE_2D && target != GL_TEXTURE_EXTERNAL_OES &&
+      target != GL_TEXTURE_RECTANGLE_ARB) {
+    return NULL;
+  }
+
   size_t face_index = GLTargetToFaceIndex(target);
   if (level >= 0 && face_index < level_infos_.size() &&
       static_cast<size_t>(level) < level_infos_[face_index].size()) {
@@ -817,6 +856,17 @@ gfx::GLImage* Texture::GetLevelImage(GLint target, GLint level) const {
   return 0;
 }
 
+void Texture::OnWillModifyPixels() {
+  gfx::GLImage* image = GetLevelImage(target(), 0);
+  if (image)
+    image->WillModifyTexImage();
+}
+
+void Texture::OnDidModifyPixels() {
+  gfx::GLImage* image = GetLevelImage(target(), 0);
+  if (image)
+    image->DidModifyTexImage();
+}
 
 TextureRef::TextureRef(TextureManager* manager,
                        GLuint client_id,
@@ -1072,26 +1122,50 @@ TextureRef* TextureManager::Consume(
   return ref.get();
 }
 
-void TextureManager::SetParameter(
+void TextureManager::SetParameteri(
     const char* function_name, ErrorState* error_state,
     TextureRef* ref, GLenum pname, GLint param) {
   DCHECK(error_state);
   DCHECK(ref);
   Texture* texture = ref->texture();
-  GLenum result = texture->SetParameter(feature_info_.get(), pname, param);
+  GLenum result = texture->SetParameteri(feature_info_.get(), pname, param);
   if (result != GL_NO_ERROR) {
     if (result == GL_INVALID_ENUM) {
       ERRORSTATE_SET_GL_ERROR_INVALID_ENUM(
           error_state, function_name, param, "param");
     } else {
-      ERRORSTATE_SET_GL_ERROR_INVALID_PARAM(
-          error_state, result, function_name, pname, static_cast<GLint>(param));
+      ERRORSTATE_SET_GL_ERROR_INVALID_PARAMI(
+          error_state, result, function_name, pname, param);
     }
   } else {
     // Texture tracking pools exist only for the command decoder, so
     // do not pass them on to the native GL implementation.
     if (pname != GL_TEXTURE_POOL_CHROMIUM) {
       glTexParameteri(texture->target(), pname, param);
+    }
+  }
+}
+
+void TextureManager::SetParameterf(
+    const char* function_name, ErrorState* error_state,
+    TextureRef* ref, GLenum pname, GLfloat param) {
+  DCHECK(error_state);
+  DCHECK(ref);
+  Texture* texture = ref->texture();
+  GLenum result = texture->SetParameterf(feature_info_.get(), pname, param);
+  if (result != GL_NO_ERROR) {
+    if (result == GL_INVALID_ENUM) {
+      ERRORSTATE_SET_GL_ERROR_INVALID_ENUM(
+          error_state, function_name, param, "param");
+    } else {
+      ERRORSTATE_SET_GL_ERROR_INVALID_PARAMF(
+          error_state, result, function_name, pname, param);
+    }
+  } else {
+    // Texture tracking pools exist only for the command decoder, so
+    // do not pass them on to the native GL implementation.
+    if (pname != GL_TEXTURE_POOL_CHROMIUM) {
+      glTexParameterf(texture->target(), pname, param);
     }
   }
 }

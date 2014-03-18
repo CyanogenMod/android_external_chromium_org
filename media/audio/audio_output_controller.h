@@ -7,7 +7,6 @@
 
 #include "base/atomic_ref_count.h"
 #include "base/callback.h"
-#include "base/cancelable_callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/timer/timer.h"
 #include "media/audio/audio_io.h"
@@ -70,7 +69,6 @@ class MEDIA_EXPORT AudioOutputController
    public:
     virtual void OnCreated() = 0;
     virtual void OnPlaying() = 0;
-    virtual void OnPowerMeasured(float power_dbfs, bool clipped) = 0;
     virtual void OnPaused() = 0;
     virtual void OnError() = 0;
     virtual void OnDeviceChange(int new_buffer_size, int new_sample_rate) = 0;
@@ -169,6 +167,10 @@ class MEDIA_EXPORT AudioOutputController
   virtual void StartDiverting(AudioOutputStream* to_stream) OVERRIDE;
   virtual void StopDiverting() OVERRIDE;
 
+  // Accessor for AudioPowerMonitor::ReadCurrentPowerAndClip().  See comments in
+  // audio_power_monitor.h for usage.  This may be called on any thread.
+  std::pair<float, bool> ReadCurrentPowerAndClip();
+
  protected:
   // Internal state of the source.
   enum State {
@@ -205,20 +207,11 @@ class MEDIA_EXPORT AudioOutputController
   void DoStartDiverting(AudioOutputStream* to_stream);
   void DoStopDiverting();
 
-  // Calls EventHandler::OnPowerMeasured() with the current power level and then
-  // schedules itself to be called again later.
-  void ReportPowerMeasurementPeriodically();
-
   // Helper method that stops the physical stream.
   void StopStream();
 
   // Helper method that stops, closes, and NULLs |*stream_|.
   void DoStopCloseAndClearStream();
-
-  // Sanity-check that entry/exit to OnMoreIOData() by the hardware audio thread
-  // happens only between AudioOutputStream::Start() and Stop().
-  void AllowEntryToOnMoreIOData();
-  void DisallowEntryToOnMoreIOData();
 
   // Checks if a stream was started successfully but never calls OnMoreIOData().
   void WedgeCheck();
@@ -244,12 +237,10 @@ class MEDIA_EXPORT AudioOutputController
   // is not required for reading on the audio manager thread.
   State state_;
 
-  // Binary semaphore, used to ensure that only one thread enters the
-  // OnMoreIOData() method, and only when it is valid to do so.  This is for
-  // sanity-checking the behavior of platform implementations of
-  // AudioOutputStream.  In other words, multiple contention is not expected,
-  // nor in the design here.
-  base::AtomicRefCount num_allowed_io_;
+  // Atomic ref count indicating when when we're in the middle of handling an
+  // OnMoreIOData() callback.  Will be CHECK'd to find crashes.
+  // TODO(dalecurtis): Remove debug helpers for http://crbug.com/349651
+  base::AtomicRefCount not_currently_in_on_more_io_data_;
 
   // SyncReader is used only in low latency mode for synchronous reading.
   SyncReader* const sync_reader_;
@@ -260,9 +251,6 @@ class MEDIA_EXPORT AudioOutputController
 #if defined(AUDIO_POWER_MONITORING)
   // Scans audio samples from OnMoreIOData() as input to compute power levels.
   AudioPowerMonitor power_monitor_;
-
-  // Periodic callback to report power levels during playback.
-  base::CancelableClosure power_poll_callback_;
 #endif
 
   // Flags when we've asked for a stream to start but it never did.

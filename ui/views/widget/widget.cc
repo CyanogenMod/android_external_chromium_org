@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "ui/base/cursor/cursor.h"
 #include "ui/base/default_theme_provider.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_font_util.h"
@@ -31,10 +32,6 @@
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/custom_frame_view.h"
 #include "ui/views/window/dialog_delegate.h"
-
-#if defined(USE_AURA)
-#include "ui/base/cursor/cursor.h"
-#endif
 
 namespace views {
 
@@ -116,6 +113,7 @@ Widget::InitParams::InitParams()
       accept_events(true),
       can_activate(true),
       keep_on_top(false),
+      visible_on_all_workspaces(false),
       ownership(NATIVE_WIDGET_OWNS_WIDGET),
       mirror_origin_in_rtl(false),
       has_dropshadow(false),
@@ -141,6 +139,7 @@ Widget::InitParams::InitParams(Type type)
       can_activate(type != TYPE_POPUP && type != TYPE_MENU &&
                    type != TYPE_DRAG),
       keep_on_top(type == TYPE_MENU || type == TYPE_DRAG),
+      visible_on_all_workspaces(false),
       ownership(NATIVE_WIDGET_OWNS_WIDGET),
       mirror_origin_in_rtl(false),
       has_dropshadow(false),
@@ -262,9 +261,7 @@ Widget* Widget::CreateWindowAsFramelessChild(WidgetDelegate* widget_delegate,
   params.child = true;
   params.parent = parent;
   params.remove_standard_frame = true;
-#if defined(USE_AURA)
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
-#endif
 
   widget->Init(params);
   return widget;
@@ -655,6 +652,10 @@ void Widget::SetAlwaysOnTop(bool on_top) {
 
 bool Widget::IsAlwaysOnTop() const {
   return native_widget_->IsAlwaysOnTop();
+}
+
+void Widget::SetVisibleOnAllWorkspaces(bool always_visible) {
+  native_widget_->SetVisibleOnAllWorkspaces(always_visible);
 }
 
 void Widget::Maximize() {
@@ -1127,10 +1128,12 @@ int Widget::GetNonClientComponent(const gfx::Point& point) {
 }
 
 void Widget::OnKeyEvent(ui::KeyEvent* event) {
-  static_cast<internal::RootView*>(GetRootView())->
-      DispatchKeyEvent(event);
+  SendEventToProcessor(event);
 }
 
+// TODO(tdanderson): We should not be calling the OnMouse*() functions on
+//                   RootView from anywhere in Widget. Use
+//                   SendEventToProcessor() instead. See crbug.com/348087.
 void Widget::OnMouseEvent(ui::MouseEvent* event) {
   View* root_view = GetRootView();
   switch (event->type()) {
@@ -1213,13 +1216,11 @@ void Widget::OnMouseCaptureLost() {
 }
 
 void Widget::OnTouchEvent(ui::TouchEvent* event) {
-  static_cast<internal::RootView*>(GetRootView())->
-      DispatchTouchEvent(event);
+  SendEventToProcessor(event);
 }
 
 void Widget::OnScrollEvent(ui::ScrollEvent* event) {
-  static_cast<internal::RootView*>(GetRootView())->
-      DispatchScrollEvent(event);
+  SendEventToProcessor(event);
 }
 
 void Widget::OnGestureEvent(ui::GestureEvent* event) {
@@ -1239,7 +1240,7 @@ void Widget::OnGestureEvent(ui::GestureEvent* event) {
     default:
       break;
   }
-  static_cast<internal::RootView*>(GetRootView())->DispatchGestureEvent(event);
+  SendEventToProcessor(event);
 }
 
 bool Widget::ExecuteCommand(int command_id) {
@@ -1289,6 +1290,12 @@ bool Widget::SetInitialFocus(ui::WindowShowState show_state) {
   if (v)
     v->RequestFocus();
   return !!v;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Widget, ui::EventSource implementation:
+ui::EventProcessor* Widget::GetEventProcessor() {
+  return root_view_.get();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

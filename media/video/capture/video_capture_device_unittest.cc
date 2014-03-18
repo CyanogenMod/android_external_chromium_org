@@ -73,20 +73,19 @@ class MockClient : public media::VideoCaptureDevice::Client {
     OnErr();
   }
 
-  virtual void OnIncomingCapturedFrame(const uint8* data,
-                                       int length,
-                                       base::TimeTicks timestamp,
-                                       int rotation,
-                                       const VideoCaptureFormat& format)
-      OVERRIDE {
+  virtual void OnIncomingCapturedData(const uint8* data,
+                                      int length,
+                                      const VideoCaptureFormat& format,
+                                      int rotation,
+                                      base::TimeTicks timestamp) OVERRIDE {
     main_thread_->PostTask(FROM_HERE, base::Bind(frame_cb_, format));
   }
 
-  virtual void OnIncomingCapturedBuffer(const scoped_refptr<Buffer>& buffer,
-                                        media::VideoFrame::Format format,
-                                        const gfx::Size& dimensions,
-                                        base::TimeTicks timestamp,
-                                        int frame_rate) OVERRIDE {
+  virtual void OnIncomingCapturedVideoFrame(
+      const scoped_refptr<Buffer>& buffer,
+      const media::VideoCaptureFormat& buffer_format,
+      const scoped_refptr<media::VideoFrame>& frame,
+      base::TimeTicks timestamp) OVERRIDE {
     NOTREACHED();
   }
 
@@ -359,13 +358,7 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_CaptureMjpeg) {
   device->StopAndDeAllocate();
 }
 
-#if defined(OS_ANDROID)
-// TODO(mcasas): Reenable this test that is disabled in Android due to
-// http://crbug.com/327043.
-TEST_F(VideoCaptureDeviceTest, DISABLED_GetDeviceSupportedFormats) {
-#else
 TEST_F(VideoCaptureDeviceTest, GetDeviceSupportedFormats) {
-#endif
   VideoCaptureDevice::GetDeviceNames(&names_);
   if (!names_.size()) {
     DVLOG(1) << "No camera available. Exiting test.";
@@ -422,15 +415,19 @@ TEST_F(VideoCaptureDeviceTest, FakeGetDeviceSupportedFormats) {
        ++names_iterator) {
     FakeVideoCaptureDevice::GetDeviceSupportedFormats(*names_iterator,
                                                       &supported_formats);
-    EXPECT_EQ(supported_formats.size(), 2u);
-    EXPECT_EQ(supported_formats[0].frame_size.width(), 640);
-    EXPECT_EQ(supported_formats[0].frame_size.height(), 480);
+    EXPECT_EQ(supported_formats.size(), 3u);
+    EXPECT_EQ(supported_formats[0].frame_size.width(), 320);
+    EXPECT_EQ(supported_formats[0].frame_size.height(), 240);
     EXPECT_EQ(supported_formats[0].pixel_format, media::PIXEL_FORMAT_I420);
     EXPECT_GE(supported_formats[0].frame_rate, 20);
-    EXPECT_EQ(supported_formats[1].frame_size.width(), 320);
-    EXPECT_EQ(supported_formats[1].frame_size.height(), 240);
+    EXPECT_EQ(supported_formats[1].frame_size.width(), 640);
+    EXPECT_EQ(supported_formats[1].frame_size.height(), 480);
     EXPECT_EQ(supported_formats[1].pixel_format, media::PIXEL_FORMAT_I420);
     EXPECT_GE(supported_formats[1].frame_rate, 20);
+    EXPECT_EQ(supported_formats[2].frame_size.width(), 1280);
+    EXPECT_EQ(supported_formats[2].frame_size.height(), 720);
+    EXPECT_EQ(supported_formats[2].pixel_format, media::PIXEL_FORMAT_I420);
+    EXPECT_GE(supported_formats[2].frame_rate, 20);
   }
 }
 

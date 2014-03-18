@@ -376,7 +376,8 @@ bool PreferenceAPIBase::DoesExtensionControlPref(
       extension_id, pref_key, from_incognito);
 }
 
-PreferenceAPI::PreferenceAPI(Profile* profile) : profile_(profile) {
+PreferenceAPI::PreferenceAPI(content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)) {
   for (size_t i = 0; i < arraysize(kPrefMapping); ++i) {
     std::string event_name;
     APIPermission::ID permission = APIPermission::kInvalid;
@@ -399,17 +400,18 @@ void PreferenceAPI::Shutdown() {
   extension_prefs()->content_settings_store()->RemoveObserver(this);
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<PreferenceAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<PreferenceAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<PreferenceAPI>* PreferenceAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<PreferenceAPI>*
+PreferenceAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 // static
-PreferenceAPI* PreferenceAPI::Get(Profile* profile) {
-  return ProfileKeyedAPIFactory<PreferenceAPI>::GetForProfile(profile);
+PreferenceAPI* PreferenceAPI::Get(content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<PreferenceAPI>::Get(context);
 }
 
 void PreferenceAPI::OnListenerAdded(const EventListenerInfo& details) {
@@ -452,7 +454,9 @@ void PreferenceAPI::InitExtensionControlledPrefs(
        extension_id != extension_ids.end(); ++extension_id) {
     base::Time install_time = prefs->GetInstallTime(*extension_id);
     bool is_enabled = !prefs->IsExtensionDisabled(*extension_id);
-    value_map->RegisterExtension(*extension_id, install_time, is_enabled);
+    bool is_incognito_enabled = prefs->IsIncognitoEnabled(*extension_id);
+    value_map->RegisterExtension(
+        *extension_id, install_time, is_enabled, is_incognito_enabled);
     prefs->content_settings_store()->RegisterExtension(
         *extension_id, install_time, is_enabled);
 
@@ -529,7 +533,8 @@ ExtensionPrefValueMap* PreferenceAPI::extension_pref_value_map() {
 }
 
 template <>
-void ProfileKeyedAPIFactory<PreferenceAPI>::DeclareFactoryDependencies() {
+void
+BrowserContextKeyedAPIFactory<PreferenceAPI>::DeclareFactoryDependencies() {
   DependsOn(ExtensionPrefsFactory::GetInstance());
   DependsOn(ExtensionPrefValueMapFactory::GetInstance());
   DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());

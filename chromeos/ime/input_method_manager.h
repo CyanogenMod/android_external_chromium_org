@@ -12,7 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/ime/input_method_descriptor.h"
-#include "chromeos/ime/input_method_property.h"
 
 namespace ui {
 class Accelerator;
@@ -44,8 +43,6 @@ class CHROMEOS_EXPORT InputMethodManager {
     // indicates whether the user should be notified of this change.
     virtual void InputMethodChanged(InputMethodManager* manager,
                                     bool show_message) = 0;
-    // Called when the list of properties is changed.
-    virtual void InputMethodPropertyChanged(InputMethodManager* manager) = 0;
   };
 
   // CandidateWindowObserver is notified of events related to the candidate
@@ -127,7 +124,7 @@ class CHROMEOS_EXPORT InputMethodManager {
       const std::vector<std::string>& initial_layouts) = 0;
 
   // Activates the input method property specified by the |key|.
-  virtual void ActivateInputMethodProperty(const std::string& key) = 0;
+  virtual void ActivateInputMethodMenuItem(const std::string& key) = 0;
 
   // Updates the list of active input method IDs, and then starts or stops the
   // system input method framework as needed.
@@ -160,13 +157,6 @@ class CHROMEOS_EXPORT InputMethodManager {
   // Gets the descriptor of the input method which is currently selected.
   virtual InputMethodDescriptor GetCurrentInputMethod() const = 0;
 
-  // Gets the list of input method properties. The list could be empty().
-  virtual InputMethodPropertyList GetCurrentInputMethodProperties() const = 0;
-
-  // Sets the list of input method properties. The list could be empty().
-  virtual void SetCurrentInputMethodProperties(
-      const InputMethodPropertyList& property_list) = 0;
-
   // Returns an X keyboard object which could be used to change the current XKB
   // layout, change the caps lock status, and set the auto repeat rate/interval.
   virtual XKeyboard* GetXKeyboard() = 0;
@@ -190,6 +180,12 @@ class CHROMEOS_EXPORT InputMethodManager {
 
   // If keyboard layout can be uset at login screen
   virtual bool IsLoginKeyboard(const std::string& layout) const = 0;
+
+  // Migrates the xkb id to extension-xkb id.
+  // TODO(shuchen): Remove this function after few milestones are passed.
+  // See: http://crbug.com/345604
+  virtual bool MigrateXkbInputMethods(
+      std::vector<std::string>* input_method_ids) = 0;
 };
 
 }  // namespace input_method

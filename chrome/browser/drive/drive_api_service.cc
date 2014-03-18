@@ -96,33 +96,32 @@ const char kFolderMimeType[] = "application/vnd.google-apps.folder";
 // only the total time matters. However, the server seems to have a time limit
 // per single request, which disables us to set the largest value (1000).
 // TODO(kinaba): make it larger when the server gets faster.
-const int kMaxNumFilesResourcePerRequest = 250;
-const int kMaxNumFilesResourcePerRequestForSearch = 50;
+const int kMaxNumFilesResourcePerRequest = 300;
+const int kMaxNumFilesResourcePerRequestForSearch = 100;
 
 // For performance, we declare all fields we use.
 const char kAboutResourceFields[] =
     "kind,quotaBytesTotal,quotaBytesUsed,largestChangeId,rootFolderId";
 const char kFileResourceFields[] =
-    "kind,id,title,createdDate,sharedWithMeDate,downloadUrl,mimeType,"
+    "kind,id,title,createdDate,sharedWithMeDate,mimeType,"
     "md5Checksum,fileSize,labels/trashed,imageMediaMetadata/width,"
     "imageMediaMetadata/height,imageMediaMetadata/rotation,etag,"
-    "parents/parentLink,selfLink,thumbnailLink,alternateLink,embedLink,"
+    "parents/parentLink,alternateLink,"
     "modifiedDate,lastViewedByMeDate,shared";
 const char kFileResourceOpenWithLinksFields[] =
     "kind,id,openWithLinks/*";
 const char kFileListFields[] =
-    "kind,items(kind,id,title,createdDate,sharedWithMeDate,downloadUrl,"
+    "kind,items(kind,id,title,createdDate,sharedWithMeDate,"
     "mimeType,md5Checksum,fileSize,labels/trashed,imageMediaMetadata/width,"
     "imageMediaMetadata/height,imageMediaMetadata/rotation,etag,"
-    "parents/parentLink,selfLink,thumbnailLink,alternateLink,embedLink,"
+    "parents/parentLink,alternateLink,"
     "modifiedDate,lastViewedByMeDate,shared),nextLink";
 const char kChangeListFields[] =
-    "kind,items(file(kind,id,title,createdDate,sharedWithMeDate,downloadUrl,"
+    "kind,items(file(kind,id,title,createdDate,sharedWithMeDate,"
     "mimeType,md5Checksum,fileSize,labels/trashed,imageMediaMetadata/width,"
     "imageMediaMetadata/height,imageMediaMetadata/rotation,etag,"
-    "parents/parentLink,selfLink,thumbnailLink,alternateLink,embedLink,"
-    "modifiedDate,lastViewedByMeDate,shared),deleted,id,fileId),nextLink,"
-    "largestChangeId";
+    "parents/parentLink,alternateLink,modifiedDate,lastViewedByMeDate,shared),"
+    "deleted,id,fileId,modificationDate),nextLink,largestChangeId";
 
 // Callback invoked when the parsing of resource list is completed,
 // regardless whether it is succeeded or not.
@@ -866,6 +865,25 @@ CancelCallback DriveAPIService::GetRemainingResourceList(
                                  std::string(),  // empty search query
                                  std::string(),  // no directory resource id
                                  callback));
+}
+
+google_apis::CancelCallback DriveAPIService::AddPermission(
+    const std::string& resource_id,
+    const std::string& email,
+    google_apis::drive::PermissionRole role,
+    const google_apis::EntryActionCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  google_apis::drive::PermissionsInsertRequest* request =
+      new google_apis::drive::PermissionsInsertRequest(sender_.get(),
+                                                       url_generator_,
+                                                       callback);
+  request->set_id(resource_id);
+  request->set_role(role);
+  request->set_type(google_apis::drive::PERMISSION_TYPE_USER);
+  request->set_value(email);
+  return sender_->StartRequestWithRetry(request);
 }
 
 bool DriveAPIService::HasAccessToken() const {

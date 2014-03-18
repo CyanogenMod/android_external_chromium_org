@@ -13,21 +13,20 @@
 #include "ash/wm/resize_shadow_controller.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
-#include "ash/wm/workspace/snap_sizer.h"
 #include "ash/wm/workspace_controller.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/window_move_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/aura_test_base.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/events/event.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/corewm/window_util.h"
+#include "ui/wm/core/window_util.h"
 
 #if defined(OS_WIN)
 // Windows headers define macros for these function names which screw with us.
@@ -52,7 +51,7 @@ class TestWindowDelegate : public aura::test::TestWindowDelegate {
 
  private:
   // Overridden from aura::Test::TestWindowDelegate:
-  virtual void OnWindowDestroyed() OVERRIDE {
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE {
     delete this;
   }
 
@@ -358,7 +357,7 @@ TEST_F(ToplevelWindowEventHandlerTest, DontDragIfModalChild) {
   scoped_ptr<aura::Window> w2(CreateWindow(HTCAPTION));
   w2->SetBounds(gfx::Rect(100, 0, 100, 100));
   w2->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
-  views::corewm::AddTransientChild(w1.get(), w2.get());
+  ::wm::AddTransientChild(w1.get(), w2.get());
   gfx::Size size = w1->bounds().size();
 
   // Attempt to drag w1, position and size should not change because w1 has a
@@ -411,43 +410,28 @@ TEST_F(ToplevelWindowEventHandlerTest, GestureDrag) {
   gfx::Point end = location;
 
   // Snap right;
-  {
-    // Get the expected snapped bounds before snapping.
-    internal::SnapSizer sizer(window_state, location,
-        internal::SnapSizer::RIGHT_EDGE,
-        internal::SnapSizer::OTHER_INPUT);
-    gfx::Rect snapped_bounds = sizer.GetSnapBounds(target->bounds());
+  end.Offset(100, 0);
+  generator.GestureScrollSequence(location, end,
+      base::TimeDelta::FromMilliseconds(5),
+      10);
+  RunAllPendingInMessageLoop();
 
-    end.Offset(100, 0);
-    generator.GestureScrollSequence(location, end,
-        base::TimeDelta::FromMilliseconds(5),
-        10);
-    RunAllPendingInMessageLoop();
-
-    // Verify that the window has moved after the gesture.
-    EXPECT_NE(old_bounds.ToString(), target->bounds().ToString());
-    EXPECT_EQ(snapped_bounds.ToString(), target->bounds().ToString());
-  }
+  // Verify that the window has moved after the gesture.
+  EXPECT_NE(old_bounds.ToString(), target->bounds().ToString());
+  EXPECT_EQ(wm::WINDOW_STATE_TYPE_RIGHT_SNAPPED, window_state->GetStateType());
 
   old_bounds = target->bounds();
 
   // Snap left.
-  {
-    // Get the expected snapped bounds before snapping.
-    internal::SnapSizer sizer(window_state, location,
-        internal::SnapSizer::LEFT_EDGE,
-        internal::SnapSizer::OTHER_INPUT);
-    gfx::Rect snapped_bounds = sizer.GetSnapBounds(target->bounds());
-    end = location = target->GetBoundsInRootWindow().CenterPoint();
-    end.Offset(-100, 0);
-    generator.GestureScrollSequence(location, end,
-        base::TimeDelta::FromMilliseconds(5),
-        10);
-    RunAllPendingInMessageLoop();
+  end = location = target->GetBoundsInRootWindow().CenterPoint();
+  end.Offset(-100, 0);
+  generator.GestureScrollSequence(location, end,
+      base::TimeDelta::FromMilliseconds(5),
+      10);
+  RunAllPendingInMessageLoop();
 
-    EXPECT_NE(old_bounds.ToString(), target->bounds().ToString());
-    EXPECT_EQ(snapped_bounds.ToString(), target->bounds().ToString());
-  }
+  EXPECT_NE(old_bounds.ToString(), target->bounds().ToString());
+  EXPECT_EQ(wm::WINDOW_STATE_TYPE_LEFT_SNAPPED, window_state->GetStateType());
 
   gfx::Rect bounds_before_maximization = target->bounds();
   bounds_before_maximization.Offset(0, 100);
@@ -553,52 +537,37 @@ TEST_F(ToplevelWindowEventHandlerTest, GestureDragForUnresizableWindow) {
   gfx::Point end = location;
 
   // Try to snap right. The window is not resizable. So it should not snap.
-  {
-    // Get the expected snapped bounds before the gesture.
-    internal::SnapSizer sizer(window_state, location,
-        internal::SnapSizer::RIGHT_EDGE,
-        internal::SnapSizer::OTHER_INPUT);
-    gfx::Rect snapped_bounds = sizer.GetSnapBounds(target->bounds());
+  end.Offset(100, 0);
+  generator.GestureScrollSequence(location, end,
+      base::TimeDelta::FromMilliseconds(5),
+      10);
+  RunAllPendingInMessageLoop();
 
-    end.Offset(100, 0);
-    generator.GestureScrollSequence(location, end,
-        base::TimeDelta::FromMilliseconds(5),
-        10);
-    RunAllPendingInMessageLoop();
+  // Verify that the window has moved after the gesture.
+  gfx::Rect expected_bounds(old_bounds);
+  expected_bounds.Offset(gfx::Vector2d(100, 0));
+  EXPECT_EQ(expected_bounds.ToString(), target->bounds().ToString());
 
-    // Verify that the window has moved after the gesture.
-    gfx::Rect expected_bounds(old_bounds);
-    expected_bounds.Offset(gfx::Vector2d(100, 0));
-    EXPECT_EQ(expected_bounds.ToString(), target->bounds().ToString());
-
-    // Verify that the window did not snap left.
-    EXPECT_NE(snapped_bounds.ToString(), target->bounds().ToString());
-  }
+  // Verify that the window did not snap left.
+  EXPECT_TRUE(window_state->IsNormalStateType());
 
   old_bounds = target->bounds();
 
   // Try to snap left. It should not snap.
-  {
-    // Get the expected snapped bounds before the gesture.
-    internal::SnapSizer sizer(window_state, location,
-        internal::SnapSizer::LEFT_EDGE,
-        internal::SnapSizer::OTHER_INPUT);
-    gfx::Rect snapped_bounds = sizer.GetSnapBounds(target->bounds());
-    end = location = target->GetBoundsInRootWindow().CenterPoint();
-    end.Offset(-100, 0);
-    generator.GestureScrollSequence(location, end,
-        base::TimeDelta::FromMilliseconds(5),
-        10);
-    RunAllPendingInMessageLoop();
+  end = location = target->GetBoundsInRootWindow().CenterPoint();
+  end.Offset(-100, 0);
+  generator.GestureScrollSequence(location, end,
+      base::TimeDelta::FromMilliseconds(5),
+      10);
+  RunAllPendingInMessageLoop();
 
-    // Verify that the window has moved after the gesture.
-    gfx::Rect expected_bounds(old_bounds);
-    expected_bounds.Offset(gfx::Vector2d(-100, 0));
-    EXPECT_EQ(expected_bounds.ToString(), target->bounds().ToString());
+  // Verify that the window has moved after the gesture.
+  expected_bounds = old_bounds;
+  expected_bounds.Offset(gfx::Vector2d(-100, 0));
+  EXPECT_EQ(expected_bounds.ToString(), target->bounds().ToString());
 
-    // Verify that the window did not snap left.
-    EXPECT_NE(snapped_bounds.ToString(), target->bounds().ToString());
-  }
+  // Verify that the window did not snap left.
+  EXPECT_TRUE(window_state->IsNormalStateType());
 }
 
 // Tests that dragging multiple windows at the same time is not allowed.

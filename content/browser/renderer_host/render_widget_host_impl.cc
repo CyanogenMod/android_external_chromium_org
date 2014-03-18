@@ -159,11 +159,6 @@ class RenderWidgetHostIteratorImpl : public RenderWidgetHostIterator {
 
 
 // static
-void RenderWidgetHost::RemoveAllBackingStores() {
-  BackingStoreManager::RemoveAllBackingStores();
-}
-
-// static
 size_t RenderWidgetHost::BackingStoreMemorySize() {
   return BackingStoreManager::MemorySize();
 }
@@ -718,16 +713,15 @@ void RenderWidgetHostImpl::SetIsLoading(bool is_loading) {
 void RenderWidgetHostImpl::CopyFromBackingStore(
     const gfx::Rect& src_subrect,
     const gfx::Size& accelerated_dst_size,
-    const base::Callback<void(bool, const SkBitmap&)>& callback) {
+    const base::Callback<void(bool, const SkBitmap&)>& callback,
+    const SkBitmap::Config& bitmap_config) {
   if (view_ && is_accelerated_compositing_active_) {
     TRACE_EVENT0("browser",
         "RenderWidgetHostImpl::CopyFromBackingStore::FromCompositingSurface");
     gfx::Rect accelerated_copy_rect = src_subrect.IsEmpty() ?
         gfx::Rect(view_->GetViewBounds().size()) : src_subrect;
-    view_->CopyFromCompositingSurface(accelerated_copy_rect,
-                                      accelerated_dst_size,
-                                      callback,
-                                      SkBitmap::kARGB_8888_Config);
+    view_->CopyFromCompositingSurface(
+        accelerated_copy_rect, accelerated_dst_size, callback, bitmap_config);
     return;
   }
 
@@ -973,9 +967,6 @@ void RenderWidgetHostImpl::ForwardWheelEventWithLatencyInfo(
   if (IgnoreInputEvents())
     return;
 
-  if (delegate_->PreHandleWheelEvent(wheel_event))
-    return;
-
   input_router_->SendWheelEvent(MouseWheelEventWithLatencyInfo(wheel_event,
                                                                latency_info));
 }
@@ -1104,6 +1095,20 @@ void RenderWidgetHostImpl::ForwardKeyboardEvent(
       key_event,
       CreateRWHLatencyInfoIfNotExist(NULL, key_event.type),
       is_shortcut);
+}
+
+void RenderWidgetHostImpl::QueueSyntheticGesture(
+    scoped_ptr<SyntheticGesture> synthetic_gesture,
+    const base::Callback<void(SyntheticGesture::Result)>& on_complete) {
+  if (!synthetic_gesture_controller_ && view_) {
+    synthetic_gesture_controller_.reset(
+        new SyntheticGestureController(
+            view_->CreateSyntheticGestureTarget().Pass()));
+  }
+  if (synthetic_gesture_controller_) {
+    synthetic_gesture_controller_->QueueSyntheticGesture(
+        synthetic_gesture.Pass(), on_complete);
+  }
 }
 
 void RenderWidgetHostImpl::SendCursorVisibilityState(bool is_visible) {
@@ -1725,16 +1730,10 @@ void RenderWidgetHostImpl::DidUpdateBackingStore(
 
 void RenderWidgetHostImpl::OnQueueSyntheticGesture(
     const SyntheticGesturePacket& gesture_packet) {
-  if (!synthetic_gesture_controller_) {
-    if (!view_)
-      return;
-    synthetic_gesture_controller_.reset(
-        new SyntheticGestureController(
-            view_->CreateSyntheticGestureTarget().Pass()));
-  }
-
-  synthetic_gesture_controller_->QueueSyntheticGesture(
-      SyntheticGesture::Create(*gesture_packet.gesture_params()));
+  QueueSyntheticGesture(
+        SyntheticGesture::Create(*gesture_packet.gesture_params()),
+        base::Bind(&RenderWidgetHostImpl::OnSyntheticGestureCompleted,
+                   weak_factory_.GetWeakPtr()));
 }
 
 void RenderWidgetHostImpl::OnFocus() {
@@ -2054,8 +2053,10 @@ void RenderWidgetHostImpl::OnWheelEventAck(
   }
 
   const bool processed = (INPUT_EVENT_ACK_STATE_CONSUMED == ack_result);
-  if (!processed && !is_hidden() && view_)
-    view_->UnhandledWheelEvent(wheel_event.event);
+  if (!processed && !is_hidden() && view_) {
+    if (!delegate_->HandleWheelEvent(wheel_event.event))
+      view_->UnhandledWheelEvent(wheel_event.event);
+  }
 }
 
 void RenderWidgetHostImpl::OnGestureEventAck(
@@ -2098,6 +2099,11 @@ void RenderWidgetHostImpl::OnUnexpectedEventAck(UnexpectedEventAckType type) {
   } else if (type == UNEXPECTED_EVENT_TYPE) {
     suppress_next_char_events_ = false;
   }
+}
+
+void RenderWidgetHostImpl::OnSyntheticGestureCompleted(
+    SyntheticGesture::Result result) {
+  Send(new InputMsg_SyntheticGestureCompleted(GetRoutingID()));
 }
 
 const gfx::Vector2d& RenderWidgetHostImpl::GetLastScrollOffset() const {
@@ -2221,27 +2227,12 @@ void RenderWidgetHostImpl::Redo() {
   RecordAction(base::UserMetricsAction("Redo"));
 }
 
-void RenderWidgetHostImpl::Cut() {
-  Send(new InputMsg_Cut(GetRoutingID()));
-  RecordAction(base::UserMetricsAction("Cut"));
-}
-
-void RenderWidgetHostImpl::Copy() {
-  Send(new InputMsg_Copy(GetRoutingID()));
-  RecordAction(base::UserMetricsAction("Copy"));
-}
-
 void RenderWidgetHostImpl::CopyToFindPboard() {
 #if defined(OS_MACOSX)
   // Windows/Linux don't have the concept of a find pasteboard.
   Send(new InputMsg_CopyToFindPboard(GetRoutingID()));
   RecordAction(base::UserMetricsAction("CopyToFindPboard"));
 #endif
-}
-
-void RenderWidgetHostImpl::Paste() {
-  Send(new InputMsg_Paste(GetRoutingID()));
-  RecordAction(base::UserMetricsAction("Paste"));
 }
 
 void RenderWidgetHostImpl::PasteAndMatchStyle() {
@@ -2533,6 +2524,12 @@ void RenderWidgetHostImpl::AddLatencyInfoComponentIds(
   for (lc = new_components.begin(); lc != new_components.end(); ++lc) {
     latency_info->latency_components[lc->first] = lc->second;
   }
+}
+
+SkBitmap::Config RenderWidgetHostImpl::PreferredReadbackFormat() {
+  if (view_)
+    return view_->PreferredReadbackFormat();
+  return SkBitmap::kARGB_8888_Config;
 }
 
 }  // namespace content

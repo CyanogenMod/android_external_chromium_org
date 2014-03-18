@@ -156,13 +156,12 @@ void WebRtcLogUploader::SetupMultipart(
 #elif defined(OS_CHROMEOS)
   const char product[] = "Chrome_ChromeOS";
 #else
-  // This file should not be compiled for other platforms.
-  COMPILE_ASSERT(false);
+#error Platform not supported.
 #endif
   net::AddMultipartValueForUpload("prod", product, kMultipartBoundary,
                                   "", post_data);
   chrome::VersionInfo version_info;
-  net::AddMultipartValueForUpload("ver", version_info.Version(),
+  net::AddMultipartValueForUpload("ver", version_info.Version() + "-webrtc",
                                   kMultipartBoundary, "", post_data);
   net::AddMultipartValueForUpload("guid", "0", kMultipartBoundary,
                                   "", post_data);
@@ -302,8 +301,8 @@ void WebRtcLogUploader::AddUploadedLogInfoToUploadListFile(
   contents += base::DoubleToString(time_now.ToDoubleT()) +
               "," + report_id + '\n';
 
-  int written = file_util::WriteFile(upload_list_path, &contents[0],
-                                     contents.size());
+  int written =
+      base::WriteFile(upload_list_path, &contents[0], contents.size());
   DPCHECK(written == static_cast<int>(contents.size()));
 }
 

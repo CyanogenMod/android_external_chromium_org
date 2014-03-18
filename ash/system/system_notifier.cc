@@ -16,25 +16,28 @@ namespace {
 const char* kAlwaysShownNotifierIds[] = {
   kNotifierDisplay,
   kNotifierDisplayError,
+  kNotifierNetworkError,
   kNotifierPower,
   NULL
 };
 
 const char* kAshSystemNotifiers[] = {
+  kNotifierAuthError,
   kNotifierDisplay,
   kNotifierDisplayResolutionChange,
   kNotifierDisplayError,
-  kNotifierInputMethod,
   kNotifierLocale,
   kNotifierLocallyManagedUser,
   kNotifierMultiProfileFirstRun,
   kNotifierNetwork,
   kNotifierNetworkError,
+  kNotifierNetworkPortalDetector,
   kNotifierScreenshot,
   kNotifierScreenCapture,
   kNotifierScreenShare,
   kNotifierSessionLengthTimeout,
   kNotifierPower,
+  kNotifierBluetooth,
   NULL
 };
 
@@ -52,20 +55,22 @@ bool MatchSystemNotifierId(const message_center::NotifierId& notifier_id,
 
 }  // namespace
 
+const char kNotifierAuthError[] = "ash.auth.error";
+const char kNotifierBluetooth[] = "ash.bluetooth";
 const char kNotifierDisplay[] = "ash.display";
 const char kNotifierDisplayResolutionChange[] = "ash.display.resolution-change";
 const char kNotifierDisplayError[] = "ash.display.error";
-const char kNotifierInputMethod[] = "ash.input-method";
 const char kNotifierLocale[] = "ash.locale";
 const char kNotifierLocallyManagedUser[] = "ash.locally-managed-user";
 const char kNotifierMultiProfileFirstRun[] = "ash.multi-profile.first-run";
 const char kNotifierNetwork[] = "ash.network";
 const char kNotifierNetworkError[] = "ash.network.error";
+const char kNotifierNetworkPortalDetector[] = "ash.network.portal-detector";
+const char kNotifierPower[] = "ash.power";
 const char kNotifierScreenshot[] = "ash.screenshot";
 const char kNotifierScreenCapture[] = "ash.screen-capture";
 const char kNotifierScreenShare[] = "ash.screen-share";
 const char kNotifierSessionLengthTimeout[] = "ash.session-length-timeout";
-const char kNotifierPower[] = "ash.power";
 
 bool ShouldAlwaysShowPopups(const message_center::NotifierId& notifier_id) {
   return MatchSystemNotifierId(notifier_id, kAlwaysShownNotifierIds);

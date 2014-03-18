@@ -5,31 +5,40 @@
 #ifndef CONTENT_BROWSER_FRAME_HOST_RENDER_FRAME_HOST_IMPL_H_
 #define CONTENT_BROWSER_FRAME_HOST_RENDER_FRAME_HOST_IMPL_H_
 
+#include <map>
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/strings/string16.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/common/page_transition_types.h"
 
 class GURL;
 struct FrameHostMsg_DidFailProvisionalLoadWithError_Params;
+struct FrameHostMsg_OpenURL_Params;
 struct FrameMsg_Navigate_Params;
 
 namespace base {
 class FilePath;
+class ListValue;
 }
 
 namespace content {
 
 class CrossProcessFrameConnector;
+class CrossSiteTransferringRequest;
 class FrameTree;
 class FrameTreeNode;
 class RenderFrameHostDelegate;
 class RenderProcessHost;
 class RenderViewHostImpl;
 struct ContextMenuParams;
+struct GlobalRequestID;
+struct Referrer;
 
 class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
  public:
@@ -38,14 +47,27 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   virtual ~RenderFrameHostImpl();
 
   // RenderFrameHost
+  virtual int GetRoutingID() OVERRIDE;
   virtual SiteInstance* GetSiteInstance() OVERRIDE;
   virtual RenderProcessHost* GetProcess() OVERRIDE;
-  virtual int GetRoutingID() OVERRIDE;
+  virtual RenderFrameHost* GetParent() OVERRIDE;
+  virtual bool IsCrossProcessSubframe() OVERRIDE;
+  virtual GURL GetLastCommittedURL() OVERRIDE;
   virtual gfx::NativeView GetNativeView() OVERRIDE;
+  virtual void DispatchBeforeUnload(bool for_cross_site_transition) OVERRIDE;
   virtual void NotifyContextMenuClosed(
       const CustomContextMenuContext& context) OVERRIDE;
   virtual void ExecuteCustomContextMenuCommand(
       int action, const CustomContextMenuContext& context) OVERRIDE;
+  virtual void Cut() OVERRIDE;
+  virtual void Copy() OVERRIDE;
+  virtual void Paste() OVERRIDE;
+  virtual void InsertCSS(const std::string& css) OVERRIDE;
+  virtual void ExecuteJavaScript(
+      const base::string16& javascript) OVERRIDE;
+  virtual void ExecuteJavaScript(
+      const base::string16& javascript,
+      const JavaScriptResultCallback& callback) OVERRIDE;
   virtual RenderViewHost* GetRenderViewHost() OVERRIDE;
 
   // IPC::Sender
@@ -56,9 +78,7 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
 
   void Init();
   int routing_id() const { return routing_id_; }
-  void OnCreateChildFrame(int new_frame_routing_id,
-                          int64 parent_frame_id,
-                          int64 frame_id,
+  void OnCreateChildFrame(int new_routing_id,
                           const std::string& frame_name);
 
   RenderViewHostImpl* render_view_host() { return render_view_host_; }
@@ -76,6 +96,23 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
       CrossProcessFrameConnector* cross_process_frame_connector) {
     cross_process_frame_connector_ = cross_process_frame_connector;
   }
+
+  // Returns a bitwise OR of bindings types that have been enabled for this
+  // RenderFrameHostImpl's RenderView. See BindingsPolicy for details.
+  // TODO(creis): Make bindings frame-specific, to support cases like <webview>.
+  int GetEnabledBindings();
+
+  // Called on the pending RenderFrameHost when the network response is ready to
+  // commit.  We should ensure that the old RenderFrameHost runs its unload
+  // handler and determine whether a transfer to a different RenderFrameHost is
+  // needed.
+  void OnCrossSiteResponse(
+      const GlobalRequestID& global_request_id,
+      scoped_ptr<CrossSiteTransferringRequest> cross_site_transferring_request,
+      const std::vector<GURL>& transfer_url_chain,
+      const Referrer& referrer,
+      PageTransition page_transition,
+      bool should_replace_current_entry);
 
   // Hack to get this subframe to swap out, without yet moving over all the
   // SwapOut state and machinery from RenderViewHost.
@@ -124,15 +161,15 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   friend class TestRenderViewHost;
 
   // IPC Message handlers.
-  void OnDetach(int64 parent_frame_id, int64 frame_id);
-  void OnDidStartProvisionalLoadForFrame(int64 frame_id,
-                                         int64 parent_frame_id,
+  void OnDetach();
+  void OnFrameFocused();
+  void OnOpenURL(const FrameHostMsg_OpenURL_Params& params);
+  void OnDidStartProvisionalLoadForFrame(int parent_routing_id,
                                          bool main_frame,
                                          const GURL& url);
   void OnDidFailProvisionalLoadWithError(
       const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params);
   void OnDidFailLoadWithError(
-      int64 frame_id,
       const GURL& url,
       bool is_main_frame,
       int error_code,
@@ -142,8 +179,13 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
                                     const GURL& target_url);
   void OnNavigate(const IPC::Message& msg);
   void OnDidStopLoading();
+  void OnBeforeUnloadACK(
+      bool proceed,
+      const base::TimeTicks& renderer_before_unload_start_time,
+      const base::TimeTicks& renderer_before_unload_end_time);
   void OnSwapOutACK();
   void OnContextMenu(const ContextMenuParams& params);
+  void OnJavaScriptExecuteResponse(int id, const base::ListValue& result);
 
   // Returns whether the given URL is allowed to commit in the current process.
   // This is a more conservative check than RenderProcessHost::FilterURL, since
@@ -180,8 +222,15 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   // The FrameTreeNode which this RenderFrameHostImpl is hosted in.
   FrameTreeNode* frame_tree_node_;
 
+  // The mapping of pending JavaScript calls created by
+  // ExecuteJavaScript and their corresponding callbacks.
+  std::map<int, JavaScriptResultCallback> javascript_callbacks_;
+
   int routing_id_;
   bool is_swapped_out_;
+
+  // When the last BeforeUnload message was sent.
+  base::TimeTicks send_before_unload_start_time_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderFrameHostImpl);
 };

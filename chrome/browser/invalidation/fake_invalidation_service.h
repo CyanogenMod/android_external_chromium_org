@@ -9,9 +9,14 @@
 #include <utility>
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
 #include "chrome/browser/invalidation/invalidation_service.h"
 #include "sync/notifier/invalidator_registrar.h"
 #include "sync/notifier/mock_ack_handler.h"
+
+namespace content {
+class BrowserContext;
+}
 
 namespace syncer {
 class Invalidation;
@@ -28,6 +33,8 @@ class FakeInvalidationService : public InvalidationService {
   FakeInvalidationService();
   virtual ~FakeInvalidationService();
 
+  static KeyedService* Build(content::BrowserContext* context);
+
   virtual void RegisterInvalidationHandler(
       syncer::InvalidationHandler* handler) OVERRIDE;
   virtual void UpdateRegisteredInvalidationIds(
@@ -39,6 +46,8 @@ class FakeInvalidationService : public InvalidationService {
   virtual syncer::InvalidatorState GetInvalidatorState() const OVERRIDE;
   virtual std::string GetInvalidatorClientId() const OVERRIDE;
   virtual InvalidationLogger* GetInvalidationLogger() OVERRIDE;
+  virtual void RequestDetailedStatus(
+      base::Callback<void(const base::DictionaryValue&)> caller) OVERRIDE;
 
   void SetInvalidatorState(syncer::InvalidatorState state);
 

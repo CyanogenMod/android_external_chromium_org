@@ -23,6 +23,7 @@
 #include "chrome/browser/ui/certificate_dialogs.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/crypto_module_password_dialog_nss.h"
+#include "chrome/browser/ui/webui/certificate_viewer_webui.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -128,6 +129,15 @@ bool IsPolicyInstalledWithWebTrust(
   return std::find_if(web_trust_certs.begin(), web_trust_certs.end(),
                       CertEquals(cert)) != web_trust_certs.end();
 }
+
+#if defined(OS_CHROMEOS)
+void ShowCertificateViewerModalDialog(content::WebContents* web_contents,
+                                      gfx::NativeWindow parent,
+                                      net::X509Certificate* cert) {
+  CertificateViewerModalDialog* dialog = new CertificateViewerModalDialog(cert);
+  dialog->Show(web_contents, parent);
+}
+#endif
 
 }  // namespace
 
@@ -282,15 +292,17 @@ void FileAccessProvider::DoWrite(const base::FilePath& path,
                                  const std::string& data,
                                  int* saved_errno,
                                  int* bytes_written) {
-  *bytes_written = file_util::WriteFile(path, data.data(), data.size());
+  *bytes_written = base::WriteFile(path, data.data(), data.size());
   *saved_errno = *bytes_written >= 0 ? 0 : errno;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 //  CertificateManagerHandler
 
-CertificateManagerHandler::CertificateManagerHandler()
-    : requested_certificate_manager_model_(false),
+CertificateManagerHandler::CertificateManagerHandler(
+    bool show_certs_in_modal_dialog)
+    : show_certs_in_modal_dialog_(show_certs_in_modal_dialog),
+      requested_certificate_manager_model_(false),
       use_hardware_backed_(false),
       file_access_provider_(new FileAccessProvider()),
       cert_id_map_(new CertIdMap),
@@ -530,6 +542,14 @@ void CertificateManagerHandler::View(const base::ListValue* args) {
   net::X509Certificate* cert = cert_id_map_->CallbackArgsToCert(args);
   if (!cert)
     return;
+#if defined(OS_CHROMEOS)
+  if (show_certs_in_modal_dialog_) {
+    ShowCertificateViewerModalDialog(web_ui()->GetWebContents(),
+                                     GetParentWindow(),
+                                     cert);
+    return;
+  }
+#endif
   ShowCertificateViewer(web_ui()->GetWebContents(), GetParentWindow(), cert);
 }
 
@@ -988,9 +1008,12 @@ void CertificateManagerHandler::OnCertificateManagerModelCreated(
 }
 
 void CertificateManagerHandler::CertificateManagerModelReady() {
+  base::FundamentalValue user_db_available_value(
+      certificate_manager_model_->is_user_db_available());
   base::FundamentalValue tpm_available_value(
       certificate_manager_model_->is_tpm_available());
   web_ui()->CallJavascriptFunction("CertificateManager.onModelReady",
+                                   user_db_available_value,
                                    tpm_available_value);
   certificate_manager_model_->Refresh();
 }

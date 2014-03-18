@@ -5,13 +5,11 @@
 #ifndef DEVICE_HID_HID_CONNECTION_LINUX_H_
 #define DEVICE_HID_HID_CONNECTION_LINUX_H_
 
+#include "base/files/file.h"
 #include "base/memory/ref_counted.h"
-#include "base/platform_file.h"
-#include "base/tuple.h"
 #include "device/hid/hid_connection.h"
 #include "device/hid/hid_device_info.h"
 #include "device/hid/hid_service_linux.h"
-#include "net/base/io_buffer.h"
 
 namespace device {
 
@@ -21,20 +19,17 @@ class HidConnectionLinux : public HidConnection,
   HidConnectionLinux(HidDeviceInfo device_info,
                      ScopedUdevDevicePtr udev_raw_device);
 
-  virtual void Read(scoped_refptr<net::IOBuffer> buffer,
-                    size_t size,
+  virtual void Read(scoped_refptr<net::IOBufferWithSize> buffer,
                     const IOCallback& callback) OVERRIDE;
-  virtual void Write(scoped_refptr<net::IOBuffer> buffer,
-                     size_t size,
+  virtual void Write(uint8_t report_id,
+                     scoped_refptr<net::IOBufferWithSize> buffer,
                      const IOCallback& callback) OVERRIDE;
-  virtual void GetFeatureReport(scoped_refptr<net::IOBuffer> buffer,
-                                size_t size,
+  virtual void GetFeatureReport(uint8_t report_id,
+                                scoped_refptr<net::IOBufferWithSize> buffer,
                                 const IOCallback& callback) OVERRIDE;
-  virtual void SendFeatureReport(scoped_refptr<net::IOBuffer> buffer,
-                                 size_t size,
+  virtual void SendFeatureReport(uint8_t report_id,
+                                 scoped_refptr<net::IOBufferWithSize> buffer,
                                  const IOCallback& callback) OVERRIDE;
-
-  bool initialized() const { return initialized_; }
 
   // Implements base::MessagePumpLibevent::Watcher
   virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE;
@@ -49,17 +44,13 @@ class HidConnectionLinux : public HidConnection,
   void ProcessReadQueue();
   void Disconnect();
 
-  base::PlatformFile device_file_;
+  base::File device_file_;
   base::MessagePumpLibevent::FileDescriptorWatcher device_file_watcher_;
 
-  typedef std::pair<scoped_refptr<net::IOBuffer>, size_t> PendingReport;
-  typedef Tuple3<scoped_refptr<net::IOBuffer>, size_t, IOCallback>
-      PendingRequest;
+  std::queue<PendingHidReport> pending_reports_;
+  std::queue<PendingHidRead> pending_reads_;
 
-  std::queue<PendingReport> input_reports_;
-  std::queue<PendingRequest> read_queue_;
-
-  bool initialized_;
+  base::ThreadChecker thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(HidConnectionLinux);
 };

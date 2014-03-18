@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
@@ -137,6 +138,14 @@ std::string GetUninstallURL(ExtensionPrefs* prefs,
 }  // namespace
 
 ///////////////////////////////////////////////////////////////////////////////
+
+static base::LazyInstance<BrowserContextKeyedAPIFactory<RuntimeAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+BrowserContextKeyedAPIFactory<RuntimeAPI>* RuntimeAPI::GetFactoryInstance() {
+  return g_factory.Pointer();
+}
 
 RuntimeAPI::RuntimeAPI(content::BrowserContext* context)
     : browser_context_(context),

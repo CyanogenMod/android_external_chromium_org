@@ -4,7 +4,7 @@
  * found in the LICENSE file.
  */
 
-#define NACL_LOG_MODULE_NAME "Plugin::ServiceRuntime"
+#define NACL_LOG_MODULE_NAME "Plugin_ServiceRuntime"
 
 #include "ppapi/native_client/src/trusted/plugin/service_runtime.h"
 
@@ -137,13 +137,7 @@ void PluginReverseInterface::PostMessage_MainThreadContinuation(
 
 bool PluginReverseInterface::EnumerateManifestKeys(
     std::set<nacl::string>* out_keys) {
-  Manifest const* mp = manifest_;
-
-  if (!mp->GetFileKeys(out_keys)) {
-    return false;
-  }
-
-  return true;
+  return manifest_->GetFileKeys(out_keys);
 }
 
 // TODO(bsy): OpenManifestEntry should use the manifest to ResolveKey
@@ -173,34 +167,23 @@ bool PluginReverseInterface::OpenManifestEntry(nacl::string url_key,
   NaClLog(4,
           "PluginReverseInterface::OpenManifestEntry:"
           " waiting on main thread\n");
-  bool shutting_down;
-  do {
+
+  {
     nacl::MutexLocker take(&mu_);
-    for (;;) {
+    while (!shutting_down_ && !op_complete)
+      NaClXCondVarWait(&cv_, &mu_);
+    NaClLog(4, "PluginReverseInterface::OpenManifestEntry: done!\n");
+    if (shutting_down_) {
       NaClLog(4,
               "PluginReverseInterface::OpenManifestEntry:"
-              " got lock, checking shutdown and completion: (%s, %s)\n",
-              shutting_down_ ? "yes" : "no",
-              op_complete ? "yes" : "no");
-      shutting_down = shutting_down_;
-      if (op_complete || shutting_down) {
-        NaClLog(4,
-                "PluginReverseInterface::OpenManifestEntry:"
-                " done!\n");
-        break;
-      }
-      NaClXCondVarWait(&cv_, &mu_);
+              " plugin is shutting down\n");
+      return false;
     }
-  } while (0);
-  if (shutting_down) {
-    NaClLog(4,
-            "PluginReverseInterface::OpenManifestEntry:"
-            " plugin is shutting down\n");
-    return false;
   }
-  // out_desc has the returned descriptor if successful, else -1.
 
-  // The caller is responsible for not closing *out_desc.  If it is
+  // info->desc has the returned descriptor if successful, else -1.
+
+  // The caller is responsible for not closing info->desc.  If it is
   // closed prematurely, then another open could re-use the OS
   // descriptor, confusing the opened_ map.  If the caller is going to
   // want to make a NaClDesc object and transfer it etc., then the
@@ -208,8 +191,7 @@ bool PluginReverseInterface::OpenManifestEntry(nacl::string url_key,
   // value) for use by the NaClDesc object, which closes when the
   // object is destroyed.
   NaClLog(4,
-          "PluginReverseInterface::OpenManifestEntry:"
-          " *out_desc = %d\n",
+          "PluginReverseInterface::OpenManifestEntry: info->desc = %d\n",
           info->desc);
   if (info->desc == -1) {
     // TODO(bsy,ncbray): what else should we do with the error?  This
@@ -277,7 +259,7 @@ void PluginReverseInterface::OpenManifestEntry_MainThreadContinuation(
         nacl::MutexLocker take(&mu_);
         *p->op_complete_ptr = true;  // done...
         p->file_info->desc = -1;       // but failed.
-        p->error_info->SetReport(ERROR_MANIFEST_OPEN,
+        p->error_info->SetReport(PP_NACL_ERROR_MANIFEST_OPEN,
                                  "ServiceRuntime: StreamAsFile failed");
         NaClXCondVarBroadcast(&cv_);
         return;
@@ -298,7 +280,7 @@ void PluginReverseInterface::OpenManifestEntry_MainThreadContinuation(
                 "OpenManifestEntry_MainThreadContinuation: "
                 "GetReadonlyPnaclFd failed\n");
         // TODO(jvoung): Separate the error codes?
-        p->error_info->SetReport(ERROR_MANIFEST_OPEN,
+        p->error_info->SetReport(PP_NACL_ERROR_MANIFEST_OPEN,
                                  "ServiceRuntime: GetPnaclFd failed");
       }
       nacl::MutexLocker take(&mu_);
@@ -319,7 +301,7 @@ void PluginReverseInterface::OpenManifestEntry_MainThreadContinuation(
     *p->op_complete_ptr = true;  // done...
     p->file_info->desc = -1;  // but failed.
     p->error_info->SetReport(
-        ERROR_MANIFEST_OPEN,
+        PP_NACL_ERROR_MANIFEST_OPEN,
         "ServiceRuntime: Translating OpenManifestEntry files not supported");
     NaClXCondVarBroadcast(&cv_);
     return;
@@ -346,7 +328,7 @@ void PluginReverseInterface::StreamAsFile_MainThreadContinuation(
     NaClLog(4,
             "StreamAsFile_MainThreadContinuation: !PP_OK, setting desc -1\n");
     p->file_info->desc = -1;
-    p->error_info->SetReport(ERROR_MANIFEST_OPEN,
+    p->error_info->SetReport(PP_NACL_ERROR_MANIFEST_OPEN,
                              "Plugin StreamAsFile failed at callback");
   }
   *p->op_complete_ptr = true;
@@ -359,7 +341,6 @@ bool PluginReverseInterface::CloseManifestEntry(int32_t desc) {
   CloseManifestEntryResource* to_close =
       new CloseManifestEntryResource(desc, &op_complete, &op_result);
 
-  bool shutting_down;
   plugin::WeakRefCallOnMainThread(
       anchor_,
       0,
@@ -367,19 +348,16 @@ bool PluginReverseInterface::CloseManifestEntry(int32_t desc) {
       &plugin::PluginReverseInterface::
         CloseManifestEntry_MainThreadContinuation,
       to_close);
-  // wait for completion or surf-away.
-  do {
-    nacl::MutexLocker take(&mu_);
-    for (;;) {
-      shutting_down = shutting_down_;
-      if (op_complete || shutting_down) {
-        break;
-      }
-      NaClXCondVarWait(&cv_, &mu_);
-    }
-  } while (0);
 
-  if (shutting_down) return false;
+  // wait for completion or surf-away.
+  {
+    nacl::MutexLocker take(&mu_);
+    while (!shutting_down_ && !op_complete)
+      NaClXCondVarWait(&cv_, &mu_);
+    if (shutting_down_)
+      return false;
+  }
+
   // op_result true if close was successful; false otherwise (e.g., bad desc).
   return op_result;
 }
@@ -451,10 +429,12 @@ void PluginReverseInterface::AddTempQuotaManagedFile(
 ServiceRuntime::ServiceRuntime(Plugin* plugin,
                                const Manifest* manifest,
                                bool main_service_runtime,
+                               bool uses_nonsfi_mode,
                                pp::CompletionCallback init_done_cb,
                                pp::CompletionCallback crash_cb)
     : plugin_(plugin),
       main_service_runtime_(main_service_runtime),
+      uses_nonsfi_mode_(uses_nonsfi_mode),
       reverse_service_(NULL),
       anchor_(new nacl::WeakRefAnchor()),
       rev_interface_(new PluginReverseInterface(anchor_, plugin,
@@ -469,6 +449,18 @@ ServiceRuntime::ServiceRuntime(Plugin* plugin,
   NaClXCondVarCtor(&cond_);
 }
 
+bool ServiceRuntime::SetupCommandChannel(ErrorInfo* error_info) {
+  NaClLog(4, "ServiceRuntime::SetupCommand (this=%p, subprocess=%p)\n",
+          static_cast<void*>(this),
+          static_cast<void*>(subprocess_.get()));
+  if (!subprocess_->SetupCommand(&command_channel_)) {
+    error_info->SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_CMD_CHANNEL,
+                          "ServiceRuntime: command channel creation failed");
+    return false;
+  }
+  return true;
+}
+
 bool ServiceRuntime::LoadModule(nacl::DescWrapper* nacl_desc,
                                 ErrorInfo* error_info) {
   NaClLog(4, "ServiceRuntime::LoadModule"
@@ -476,15 +468,8 @@ bool ServiceRuntime::LoadModule(nacl::DescWrapper* nacl_desc,
           static_cast<void*>(this),
           static_cast<void*>(subprocess_.get()));
   CHECK(nacl_desc);
-  // Create the command channel to the sel_ldr and load the nexe from nacl_desc.
-  if (!subprocess_->SetupCommand(&command_channel_)) {
-    error_info->SetReport(ERROR_SEL_LDR_COMMUNICATION_CMD_CHANNEL,
-                          "ServiceRuntime: command channel creation failed");
-    return false;
-  }
-
   if (!subprocess_->LoadModule(&command_channel_, nacl_desc)) {
-    error_info->SetReport(ERROR_SEL_LDR_COMMUNICATION_CMD_CHANNEL,
+    error_info->SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_CMD_CHANNEL,
                           "ServiceRuntime: load module failed");
     return false;
   }
@@ -492,6 +477,18 @@ bool ServiceRuntime::LoadModule(nacl::DescWrapper* nacl_desc,
 }
 
 bool ServiceRuntime::InitReverseService(ErrorInfo* error_info) {
+  if (uses_nonsfi_mode_) {
+    // In non-SFI mode, open_resource() is not yet supported, so we do not
+    // need the reverse service. So, skip the initialization (with calling
+    // the completion callback).
+    // Note that there is on going work to replace SRPC by Chrome IPC (not only
+    // for non-SFI mode, but also for SFI mode) (crbug.com/333950),
+    // and non-SFI mode will use Chrome IPC for open_resource() after the
+    // refactoring is done.
+    rev_interface_->StartupInitializationComplete();
+    return true;
+  }
+
   // Hook up the reverse service channel.  We are the IMC client, but
   // provide SRPC service.
   NaClDesc* out_conn_cap;
@@ -501,7 +498,7 @@ bool ServiceRuntime::InitReverseService(ErrorInfo* error_info) {
                                 &out_conn_cap);
 
   if (NACL_SRPC_RESULT_OK != rpc_result) {
-    error_info->SetReport(ERROR_SEL_LDR_COMMUNICATION_REV_SETUP,
+    error_info->SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_REV_SETUP,
                           "ServiceRuntime: reverse setup rpc failed");
     return false;
   }
@@ -512,7 +509,7 @@ bool ServiceRuntime::InitReverseService(ErrorInfo* error_info) {
   nacl::DescWrapper* conn_cap = plugin_->wrapper_factory()->MakeGenericCleanup(
       out_conn_cap);
   if (conn_cap == NULL) {
-    error_info->SetReport(ERROR_SEL_LDR_COMMUNICATION_WRAPPER,
+    error_info->SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_WRAPPER,
                           "ServiceRuntime: wrapper allocation failure");
     return false;
   }
@@ -520,7 +517,7 @@ bool ServiceRuntime::InitReverseService(ErrorInfo* error_info) {
   NaClLog(4, "ServiceRuntime::InitReverseService: starting reverse service\n");
   reverse_service_ = new nacl::ReverseService(conn_cap, rev_interface_->Ref());
   if (!reverse_service_->Start()) {
-    error_info->SetReport(ERROR_SEL_LDR_COMMUNICATION_REV_SERVICE,
+    error_info->SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_REV_SERVICE,
                           "ServiceRuntime: starting reverse services failed");
     return false;
   }
@@ -532,24 +529,30 @@ bool ServiceRuntime::StartModule(ErrorInfo* error_info) {
   // subsystem since that is handled by user-level code (not secure!)
   // in libsrpc.
   int load_status = -1;
-  NaClSrpcResultCodes rpc_result =
-      NaClSrpcInvokeBySignature(&command_channel_,
-                                "start_module::i",
-                                &load_status);
+  if (uses_nonsfi_mode_) {
+    // In non-SFI mode, we don't need to call start_module SRPC to launch
+    // the plugin.
+    load_status = LOAD_OK;
+  } else {
+    NaClSrpcResultCodes rpc_result =
+        NaClSrpcInvokeBySignature(&command_channel_,
+                                  "start_module::i",
+                                  &load_status);
 
-  if (NACL_SRPC_RESULT_OK != rpc_result) {
-    error_info->SetReport(ERROR_SEL_LDR_START_MODULE,
-                          "ServiceRuntime: could not start nacl module");
-    return false;
+    if (NACL_SRPC_RESULT_OK != rpc_result) {
+      error_info->SetReport(PP_NACL_ERROR_SEL_LDR_START_MODULE,
+                            "ServiceRuntime: could not start nacl module");
+      return false;
+    }
   }
-  NaClLog(4, "ServiceRuntime::StartModule (load_status=%d)\n",
-          load_status);
+
+  NaClLog(4, "ServiceRuntime::StartModule (load_status=%d)\n", load_status);
   if (main_service_runtime_) {
     plugin_->ReportSelLdrLoadStatus(load_status);
   }
   if (LOAD_OK != load_status) {
     error_info->SetReport(
-        ERROR_SEL_LDR_START_STATUS,
+        PP_NACL_ERROR_SEL_LDR_START_STATUS,
         NaClErrorString(static_cast<NaClErrorCode>(load_status)));
     return false;
   }
@@ -567,7 +570,7 @@ void ServiceRuntime::StartSelLdr(const SelLdrStartParams& params,
     if (main_service_runtime_) {
       ErrorInfo error_info;
       error_info.SetReport(
-          ERROR_SEL_LDR_CREATE_LAUNCHER,
+          PP_NACL_ERROR_SEL_LDR_CREATE_LAUNCHER,
           "ServiceRuntime: failed to create sel_ldr launcher");
       plugin_->ReportLoadError(error_info);
     }
@@ -582,6 +585,7 @@ void ServiceRuntime::StartSelLdr(const SelLdrStartParams& params,
                         params.url.c_str(),
                         params.uses_irt,
                         params.uses_ppapi,
+                        params.uses_nonsfi_mode,
                         params.enable_dev_interfaces,
                         params.enable_dyncode_syscalls,
                         params.enable_exception_handling,
@@ -604,7 +608,7 @@ void ServiceRuntime::StartSelLdrContinuation(int32_t pp_error,
       }
       ErrorInfo error_info;
       error_info.SetReportWithConsoleOnlyError(
-          ERROR_SEL_LDR_LAUNCH,
+          PP_NACL_ERROR_SEL_LDR_LAUNCH,
           "ServiceRuntime: failed to start",
           error_message);
       plugin_->ReportLoadError(error_info);
@@ -631,8 +635,10 @@ bool ServiceRuntime::LoadNexeAndStart(nacl::DescWrapper* nacl_desc,
   NaClLog(4, "ServiceRuntime::LoadNexeAndStart (nacl_desc=%p)\n",
           reinterpret_cast<void*>(nacl_desc));
   ErrorInfo error_info;
-  bool ok = LoadModule(nacl_desc, &error_info) &&
+
+  bool ok = SetupCommandChannel(&error_info) &&
             InitReverseService(&error_info) &&
+            LoadModule(nacl_desc, &error_info) &&
             StartModule(&error_info);
   if (!ok) {
     if (main_service_runtime_) {

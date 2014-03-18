@@ -19,7 +19,24 @@
 
 namespace content {
 
-RendererGpuVideoAcceleratorFactories::~RendererGpuVideoAcceleratorFactories() {}
+// static
+scoped_refptr<RendererGpuVideoAcceleratorFactories>
+RendererGpuVideoAcceleratorFactories::Create(
+    GpuChannelHost* gpu_channel_host,
+    const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy,
+    const scoped_refptr<ContextProviderCommandBuffer>& context_provider) {
+  scoped_refptr<RendererGpuVideoAcceleratorFactories> factories =
+      new RendererGpuVideoAcceleratorFactories(
+          gpu_channel_host, message_loop_proxy, context_provider);
+  // Post task from outside constructor, since AddRef()/Release() is unsafe from
+  // within.
+  message_loop_proxy->PostTask(
+      FROM_HERE,
+      base::Bind(&RendererGpuVideoAcceleratorFactories::BindContext,
+                 factories));
+  return factories;
+}
+
 RendererGpuVideoAcceleratorFactories::RendererGpuVideoAcceleratorFactories(
     GpuChannelHost* gpu_channel_host,
     const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy,
@@ -28,6 +45,14 @@ RendererGpuVideoAcceleratorFactories::RendererGpuVideoAcceleratorFactories(
       gpu_channel_host_(gpu_channel_host),
       context_provider_(context_provider),
       thread_safe_sender_(ChildThread::current()->thread_safe_sender()) {}
+
+RendererGpuVideoAcceleratorFactories::~RendererGpuVideoAcceleratorFactories() {}
+
+void RendererGpuVideoAcceleratorFactories::BindContext() {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  if (!context_provider_->BindToCurrentThread())
+    context_provider_ = NULL;
+}
 
 WebGraphicsContext3DCommandBufferImpl*
 RendererGpuVideoAcceleratorFactories::GetContext3d() {
@@ -44,28 +69,26 @@ RendererGpuVideoAcceleratorFactories::GetContext3d() {
 
 scoped_ptr<media::VideoDecodeAccelerator>
 RendererGpuVideoAcceleratorFactories::CreateVideoDecodeAccelerator(
-    media::VideoCodecProfile profile,
-    media::VideoDecodeAccelerator::Client* client) {
+    media::VideoCodecProfile profile) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   WebGraphicsContext3DCommandBufferImpl* context = GetContext3d();
   if (context && context->GetCommandBufferProxy()) {
     return gpu_channel_host_->CreateVideoDecoder(
-        context->GetCommandBufferProxy()->GetRouteID(), profile, client);
+        context->GetCommandBufferProxy()->GetRouteID(), profile);
   }
 
   return scoped_ptr<media::VideoDecodeAccelerator>();
 }
 
 scoped_ptr<media::VideoEncodeAccelerator>
-RendererGpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator(
-    media::VideoEncodeAccelerator::Client* client) {
+RendererGpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  return gpu_channel_host_->CreateVideoEncoder(client);
+  return gpu_channel_host_->CreateVideoEncoder();
 }
 
-uint32 RendererGpuVideoAcceleratorFactories::CreateTextures(
+bool RendererGpuVideoAcceleratorFactories::CreateTextures(
     int32 count,
     const gfx::Size& size,
     std::vector<uint32>* texture_ids,
@@ -76,7 +99,7 @@ uint32 RendererGpuVideoAcceleratorFactories::CreateTextures(
 
   WebGraphicsContext3DCommandBufferImpl* context = GetContext3d();
   if (!context)
-    return 0;
+    return false;
 
   gpu::gles2::GLES2Implementation* gles2 = context->GetImplementation();
   texture_ids->resize(count);
@@ -106,13 +129,13 @@ uint32 RendererGpuVideoAcceleratorFactories::CreateTextures(
                                   texture_mailboxes->at(i).name);
   }
 
-  // We need a glFlush here to guarantee the decoder (in the GPU process) can
-  // use the texture ids we return here.  Since textures are expected to be
-  // reused, this should not be unacceptably expensive.
-  gles2->Flush();
+  // We need ShallowFlushCHROMIUM() here to order the command buffer commands
+  // with respect to IPC to the GPU process, to guarantee that the decoder in
+  // the GPU process can use these textures as soon as it receives IPC
+  // notification of them.
+  gles2->ShallowFlushCHROMIUM();
   DCHECK_EQ(gles2->GetError(), static_cast<GLenum>(GL_NO_ERROR));
-
-  return gles2->InsertSyncPointCHROMIUM();
+  return true;
 }
 
 void RendererGpuVideoAcceleratorFactories::DeleteTexture(uint32 texture_id) {

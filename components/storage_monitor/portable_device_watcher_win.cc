@@ -25,6 +25,8 @@
 #include "components/storage_monitor/storage_info.h"
 #include "content/public/browser/browser_thread.h"
 
+namespace storage_monitor {
+
 namespace {
 
 // Name of the client application that communicates with the MTP device.
@@ -630,11 +632,11 @@ void PortableDeviceWatcherWin::OnDidHandleDeviceAttachEvent(
       return;
 
     // Device can have several data partitions. Therefore, add the
-    // partition identifier to the storage name. E.g.: "Nexus 7 (s10001)"
-    base::string16 storage_name(name + L" (" +
+    // partition identifier to the model name. E.g.: "Nexus 7 (s10001)"
+    base::string16 model_name(name + L" (" +
                                 storage_iter->object_temporary_id + L')');
-    StorageInfo info(storage_id, storage_name, location,
-                     storage_name, base::string16(), base::string16(), 0);
+    StorageInfo info(storage_id, location, base::string16(), base::string16(),
+                     model_name, 0);
     storage_map_[storage_id] = info;
     if (storage_notifications_) {
       info.set_location(GetStoragePathFromStorageId(storage_id));
@@ -666,3 +668,5 @@ void PortableDeviceWatcherWin::HandleDeviceDetachEvent(
   }
   device_map_.erase(device_iter);
 }
+
+}  // namespace storage_monitor

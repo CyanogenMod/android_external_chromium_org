@@ -309,15 +309,10 @@ public:
         WebTestProxyBase::setStatusText(text);
         Base::setStatusText(text);
     }
-    virtual void didStopLoading()
+    virtual void didStopLoading(blink::WebFrame* frame)
     {
         WebTestProxyBase::didStopLoading();
-        Base::didStopLoading();
-    }
-    virtual void showContextMenu(blink::WebFrame* frame, const blink::WebContextMenuData& contextMenuData)
-    {
-        WebTestProxyBase::showContextMenu(frame, contextMenuData);
-        Base::showContextMenu(frame, contextMenuData);
+        Base::didStopLoading(frame);
     }
     virtual blink::WebUserMediaClient* userMediaClient()
     {
@@ -481,13 +476,6 @@ public:
     virtual bool runModalBeforeUnloadDialog(blink::WebFrame* frame, const blink::WebString& message)
     {
         return WebTestProxyBase::runModalBeforeUnloadDialog(frame, message);
-    }
-    virtual blink::WebNavigationPolicy DecidePolicyForNavigation(content::RenderFrame* render_frame, blink::WebFrame* frame, blink::WebDataSource::ExtraData* extraData, const blink::WebURLRequest& request, blink::WebNavigationType type, blink::WebNavigationPolicy defaultPolicy, bool isRedirect)
-    {
-        blink::WebNavigationPolicy policy = WebTestProxyBase::decidePolicyForNavigation(frame, extraData, request, type, defaultPolicy, isRedirect);
-        if (policy == blink::WebNavigationPolicyIgnore)
-            return policy;
-        return Base::DecidePolicyForNavigation(render_frame, frame, extraData, request, type, defaultPolicy, isRedirect);
     }
     virtual bool willCheckAndDispatchMessageEvent(blink::WebFrame* sourceFrame, blink::WebFrame* targetFrame, blink::WebSecurityOrigin target, blink::WebDOMMessageEvent event)
     {

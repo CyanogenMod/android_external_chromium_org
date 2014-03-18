@@ -243,17 +243,11 @@ void RedirectChromeLogging(const CommandLine& command_line) {
   // Always force a new symlink when redirecting.
   base::FilePath target_path = SetUpSymlinkIfNeeded(log_path, true);
 
-  logging::DcheckState dcheck_state =
-      command_line.HasSwitch(switches::kEnableDCHECK) ?
-      logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS :
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
-
   // ChromeOS always logs through the symlink, so it shouldn't be
   // deleted if it already exists.
   logging::LoggingSettings settings;
   settings.logging_dest = DetermineLogMode(command_line);
   settings.log_file = log_path.value().c_str();
-  settings.dcheck_state = dcheck_state;
   if (!logging::InitLogging(settings)) {
     DLOG(ERROR) << "Unable to initialize logging to " << log_path.value();
     RemoveSymlinkAndLog(log_path, target_path);
@@ -303,17 +297,11 @@ void InitChromeLogging(const CommandLine& command_line,
     log_locking_state = DONT_LOCK_LOG_FILE;
   }
 
-  logging::DcheckState dcheck_state =
-      command_line.HasSwitch(switches::kEnableDCHECK) ?
-      logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS :
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
-
   logging::LoggingSettings settings;
   settings.logging_dest = logging_dest;
   settings.log_file = log_path.value().c_str();
   settings.lock_log = log_locking_state;
   settings.delete_old = delete_old_log_file;
-  settings.dcheck_state = dcheck_state;
   bool success = logging::InitLogging(settings);
 
 #if defined(OS_CHROMEOS)
@@ -370,14 +358,10 @@ void InitChromeLogging(const CommandLine& command_line,
   logging::LogEventProvider::Initialize(kChromeTraceProviderName);
 #endif
 
-#ifdef NDEBUG
-  if (command_line.HasSwitch(switches::kSilentDumpOnDCHECK) &&
-      command_line.HasSwitch(switches::kEnableDCHECK)) {
-#if defined(OS_WIN)
+#if DCHECK_IS_ON && defined(NDEBUG) && defined(OS_WIN)
+  if (command_line.HasSwitch(switches::kSilentDumpOnDCHECK))
     logging::SetLogReportHandler(DumpProcessAssertHandler);
 #endif
-  }
-#endif  // NDEBUG
 
   chrome_logging_initialized_ = true;
 }

@@ -6,12 +6,12 @@
 
 #include "base/logging.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/api/storage/settings_namespace.h"
-#include "chrome/browser/value_store/value_store_change.h"
-#include "chrome/browser/value_store/value_store_util.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_types.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/api/storage/settings_namespace.h"
+#include "extensions/browser/value_store/value_store_change.h"
+#include "extensions/browser/value_store/value_store_util.h"
 
 using content::BrowserThread;
 
@@ -57,6 +57,17 @@ void PolicyValueStore::SetCurrentPolicy(const policy::PolicyMap& policy) {
   // must be removed.
   base::DictionaryValue previous_policy;
   ValueStore::ReadResult read_result = delegate_->Get();
+
+  // If the database is corrupted, try to restore it.
+  // This may have the unfortunate side-effect of incorrectly informing the
+  // extension of a "new" key, which isn't new and was corrupted. Unfortunately,
+  // there's not always a way around this - if the database is corrupted, there
+  // may be no way of telling which keys were previously present.
+  if (read_result->IsCorrupted()) {
+    if (delegate_->Restore())
+      read_result = delegate_->Get();
+  }
+
   if (read_result->HasError()) {
     LOG(WARNING) << "Failed to read managed settings for extension "
         << extension_id_ << ": " << read_result->error().message;
@@ -159,6 +170,12 @@ ValueStore::WriteResult PolicyValueStore::Remove(
 
 ValueStore::WriteResult PolicyValueStore::Clear() {
   return MakeWriteResult(ReadOnlyError(util::NoKey()));
+}
+
+bool PolicyValueStore::Restore() { return delegate_->Restore(); }
+
+bool PolicyValueStore::RestoreKey(const std::string& key) {
+  return delegate_->RestoreKey(key);
 }
 
 }  // namespace extensions

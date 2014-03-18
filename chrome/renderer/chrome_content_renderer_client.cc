@@ -365,12 +365,7 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   // Report if the renderer process has been patched by chrome_elf.
   // TODO(csharp): Remove once the renderer is no longer getting
   // patched this way.
-  typedef bool(*IsBlacklistInitializedFunc)();
-  IsBlacklistInitializedFunc is_blacklist_initialized =
-      reinterpret_cast<IsBlacklistInitializedFunc>(
-          GetProcAddress(GetModuleHandle(L"chrome_elf.dll"),
-                         "IsBlacklistInitialized"));
-  if (is_blacklist_initialized && is_blacklist_initialized())
+  if (blacklist::IsBlacklistInitialized())
     UMA_HISTOGRAM_BOOLEAN("Blacklist.PatchedInRenderer", true);
 #endif
 }
@@ -386,7 +381,8 @@ void ChromeContentRendererClient::RenderFrameCreated(
         chrome_observer_->content_setting_rules());
   }
 
-  new extensions::ExtensionFrameHelper(render_frame);
+  new extensions::ExtensionFrameHelper(render_frame,
+                                       extension_dispatcher_.get());
 
 #if defined(ENABLE_PLUGINS)
   new PepperHelper(render_frame);
@@ -988,6 +984,17 @@ bool ChromeContentRendererClient::HasErrorPage(int http_status_code,
 bool ChromeContentRendererClient::ShouldSuppressErrorPage(
     content::RenderFrame* render_frame,
     const GURL& url) {
+  // Unit tests for ChromeContentRendererClient pass a NULL RenderFrame here.
+  // Unfortunately it's very difficult to construct a mock RenderView, so skip
+  // this functionality in this case.
+  if (render_frame) {
+    content::RenderView* render_view = render_frame->GetRenderView();
+    content::RenderFrame* main_render_frame = render_view->GetMainRenderFrame();
+    blink::WebFrame* web_frame = render_frame->GetWebFrame();
+    NetErrorHelper* net_error_helper = NetErrorHelper::Get(main_render_frame);
+    if (net_error_helper->ShouldSuppressErrorPage(web_frame, url))
+      return true;
+  }
   // Do not flash an error page if the Instant new tab page fails to load.
   return search_bouncer_.get() && search_bouncer_->IsNewTabPage(url);
 }
@@ -1212,11 +1219,6 @@ void ChromeContentRendererClient::DidCreateScriptContext(
       frame, context, extension_group, world_id);
 }
 
-void ChromeContentRendererClient::WillReleaseScriptContext(
-    WebFrame* frame, v8::Handle<v8::Context> context, int world_id) {
-  extension_dispatcher_->WillReleaseScriptContext(frame, context, world_id);
-}
-
 unsigned long long ChromeContentRendererClient::VisitedLinkHash(
     const char* canonical_url, size_t length) {
   return visited_link_slave_->ComputeURLFingerprint(canonical_url, length);
@@ -1301,13 +1303,6 @@ void ChromeContentRendererClient::SetSpellcheck(SpellCheck* spellcheck) {
     thread->AddObserver(spellcheck_.get());
 }
 #endif
-
-void ChromeContentRendererClient::OnPurgeMemory() {
-#if defined(ENABLE_SPELLCHECK)
-  DVLOG(1) << "Resetting spellcheck in renderer client";
-  SetSpellcheck(new SpellCheck());
-#endif
-}
 
 bool ChromeContentRendererClient::IsAdblockInstalled() {
   return g_current_client->extension_dispatcher_->extensions()->Contains(

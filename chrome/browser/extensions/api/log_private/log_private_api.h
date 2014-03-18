@@ -10,33 +10,37 @@
 
 #include "chrome/browser/extensions/api/log_private/filter_handler.h"
 #include "chrome/browser/extensions/api/log_private/log_parser.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/feedback/system_logs/about_system_logs_fetcher.h"
 #include "chrome/common/extensions/api/log_private.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "net/base/net_log.h"
 
 class Profile;
 
+namespace content {
+class BrowserContext;
+}
+
 namespace extensions {
 
-class LogPrivateAPI : public ProfileKeyedAPI,
+class LogPrivateAPI : public BrowserContextKeyedAPI,
                       public content::NotificationObserver,
                       public net::NetLog::ThreadSafeObserver {
  public:
   // Convenience method to get the LogPrivateAPI for a profile.
-  static LogPrivateAPI* Get(Profile* profile);
+  static LogPrivateAPI* Get(content::BrowserContext* context);
 
-  explicit LogPrivateAPI(Profile* profile);
+  explicit LogPrivateAPI(content::BrowserContext* context);
   virtual ~LogPrivateAPI();
 
   void StartNetInternalsWatch(const std::string& extension_id);
   void StopNetInternalsWatch(const std::string& extension_id);
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<LogPrivateAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<LogPrivateAPI>* GetFactoryInstance();
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
@@ -44,7 +48,7 @@ class LogPrivateAPI : public ProfileKeyedAPI,
                        const content::NotificationDetails& details) OVERRIDE;
 
  private:
-  friend class ProfileKeyedAPIFactory<LogPrivateAPI>;
+  friend class BrowserContextKeyedAPIFactory<LogPrivateAPI>;
 
   // ChromeNetLog::ThreadSafeObserver implementation:
   virtual void OnAddEntry(const net::NetLog::Entry& entry) OVERRIDE;
@@ -56,7 +60,7 @@ class LogPrivateAPI : public ProfileKeyedAPI,
   void MaybeStopNetInternalLogging();
   void StopNetInternalLogging();
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "LogPrivateAPI";
   }

@@ -13,7 +13,7 @@
 #include "ipc/ipc_sender.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_property.h"
 #include "ui/base/cursor/cursor_loader_win.h"
 #include "ui/base/ime/composition_text.h"
@@ -173,6 +173,7 @@ RemoteWindowTreeHostWin::RemoteWindowTreeHostWin(const gfx::Rect& bounds)
 
 RemoteWindowTreeHostWin::~RemoteWindowTreeHostWin() {
   DestroyCompositor();
+  DestroyDispatcher();
   g_instance = NULL;
 }
 
@@ -368,11 +369,7 @@ bool RemoteWindowTreeHostWin::IsForegroundWindow() {
 }
 
 Window* RemoteWindowTreeHostWin::GetAshWindow() {
-  return GetRootWindow()->window();
-}
-
-RootWindow* RemoteWindowTreeHostWin::GetRootWindow() {
-  return delegate_->AsRootWindow();
+  return window();
 }
 
 gfx::AcceleratedWidget RemoteWindowTreeHostWin::GetAcceleratedWidget() {
@@ -402,7 +399,7 @@ gfx::Rect RemoteWindowTreeHostWin::GetBounds() const {
 
 void RemoteWindowTreeHostWin::SetBounds(const gfx::Rect& bounds) {
   window_size_ = bounds.size();
-  NotifyHostResized(bounds.size());
+  OnHostResized(bounds.size());
 }
 
 gfx::Insets RemoteWindowTreeHostWin::GetInsets() const {
@@ -424,7 +421,7 @@ void RemoteWindowTreeHostWin::ReleaseCapture() {
 
 bool RemoteWindowTreeHostWin::QueryMouseLocation(gfx::Point* location_return) {
   aura::client::CursorClient* cursor_client =
-      aura::client::GetCursorClient(GetRootWindow()->window());
+      aura::client::GetCursorClient(window());
   if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
     *location_return = gfx::Point(0, 0);
     return false;
@@ -492,7 +489,7 @@ void RemoteWindowTreeHostWin::PrepareForShutdown() {
 }
 
 ui::EventProcessor* RemoteWindowTreeHostWin::GetEventProcessor() {
-  return delegate_->GetEventProcessor();
+  return dispatcher();
 }
 
 void RemoteWindowTreeHostWin::CancelComposition() {
@@ -594,7 +591,7 @@ void RemoteWindowTreeHostWin::OnChar(uint32 key_code,
 }
 
 void RemoteWindowTreeHostWin::OnWindowActivated() {
-  delegate_->OnHostActivated();
+  OnHostActivated();
 }
 
 void RemoteWindowTreeHostWin::OnEdgeGesture() {

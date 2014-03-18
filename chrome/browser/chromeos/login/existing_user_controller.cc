@@ -34,6 +34,7 @@
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -61,7 +62,7 @@
 #include "net/http/http_transaction_factory.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ui/base/accessibility/accessibility_types.h"
+#include "ui/accessibility/ax_enums.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/widget/widget.h"
 
@@ -572,6 +573,12 @@ void ExistingUserController::OnUserSelected(const std::string& username) {
 }
 
 void ExistingUserController::OnStartEnterpriseEnrollment() {
+  if (KioskAppManager::Get()->IsConsumerKioskDeviceWithAutoLaunch()) {
+    LOG(WARNING) << "Enterprise enrollment is not available after kiosk auto "
+                    "launch is set.";
+    return;
+  }
+
   DeviceSettingsService::Get()->GetOwnershipStatusAsync(
       base::Bind(&ExistingUserController::OnEnrollmentOwnershipCheckCompleted,
                  weak_factory_.GetWeakPtr()));
@@ -1015,8 +1022,11 @@ void ExistingUserController::InitializeStartUrls() const {
   std::vector<std::string> start_urls;
 
   const base::ListValue *urls;
-  bool can_show_getstarted_guide = true;
-  if (UserManager::Get()->IsLoggedInAsDemoUser()) {
+  UserManager* user_manager = UserManager::Get();
+  bool can_show_getstarted_guide =
+      user_manager->GetActiveUser()->GetType() == User::USER_TYPE_REGULAR &&
+      !user_manager->IsCurrentUserNonCryptohomeDataEphemeral();
+  if (user_manager->IsLoggedInAsDemoUser()) {
     if (CrosSettings::Get()->GetList(kStartUpUrls, &urls)) {
       // The retail mode user will get start URLs from a special policy if it is
       // set.
@@ -1029,7 +1039,7 @@ void ExistingUserController::InitializeStartUrls() const {
     }
     can_show_getstarted_guide = false;
   // Skip the default first-run behavior for public accounts.
-  } else if (!UserManager::Get()->IsLoggedInAsPublicAccount()) {
+  } else if (!user_manager->IsLoggedInAsPublicAccount()) {
     if (AccessibilityManager::Get()->IsSpokenFeedbackEnabled()) {
       const char* url = kChromeVoxTutorialURLPattern;
       PrefService* prefs = g_browser_process->local_state();
@@ -1041,17 +1051,8 @@ void ExistingUserController::InitializeStartUrls() const {
     }
   }
 
-  ServicesCustomizationDocument* customization =
-      ServicesCustomizationDocument::GetInstance();
-  if (!ServicesCustomizationDocument::WasApplied() &&
-      customization->IsReady()) {
-    // Since we don't use OEM start URL anymore, just mark as applied.
-    customization->ApplyCustomization();
-  }
-
   // Only show getting started guide for a new user.
-  const bool should_show_getstarted_guide =
-      UserManager::Get()->IsCurrentUserNew();
+  const bool should_show_getstarted_guide = user_manager->IsCurrentUserNew();
 
   if (can_show_getstarted_guide && should_show_getstarted_guide) {
     // Don't open default Chrome window if we're going to launch the first-run
@@ -1111,7 +1112,7 @@ void ExistingUserController::SendAccessibilityAlert(
     const std::string& alert_text) {
   AccessibilityAlertInfo event(ProfileHelper::GetSigninProfile(), alert_text);
   SendControlAccessibilityNotification(
-      ui::AccessibilityTypes::EVENT_VALUE_CHANGED, &event);
+      ui::AX_EVENT_VALUE_CHANGED, &event);
 }
 
 }  // namespace chromeos

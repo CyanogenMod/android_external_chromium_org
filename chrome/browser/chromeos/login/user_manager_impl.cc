@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <set>
 
+#include "ash/multi_profile_uma.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
@@ -31,6 +32,7 @@
 #include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/login/auth_sync_observer.h"
 #include "chrome/browser/chromeos/login/auth_sync_observer_factory.h"
+#include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
 #include "chrome/browser/chromeos/login/login_display.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/multi_profile_first_run_notification.h"
@@ -46,6 +48,7 @@
 #include "chrome/browser/chromeos/session_length_limiter.h"
 #include "chrome/browser/managed_mode/chromeos/managed_user_password_service_factory.h"
 #include "chrome/browser/managed_mode/chromeos/manager_password_service_factory.h"
+#include "chrome/browser/net/nss_context.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -54,6 +57,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/cert_loader.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/cryptohome/async_method_caller.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -65,7 +69,7 @@
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "policy/policy_constants.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/views/corewm/corewm_switches.h"
+#include "ui/wm/core/wm_core_switches.h"
 
 using content::BrowserThread;
 
@@ -169,6 +173,15 @@ void ResolveLocale(
       base::Bind(on_resolve_callback, resolved_locale));
 }
 
+// Callback to GetNSSCertDatabaseForProfile. It starts CertLoader using the
+// provided NSS database. It must be called for primary user only.
+void OnGetNSSCertDatabaseForUser(net::NSSCertDatabase* database) {
+  if (!CertLoader::IsInitialized())
+    return;
+
+  CertLoader::Get()->StartWithNSSDB(database);
+}
+
 }  // namespace
 
 // static
@@ -226,13 +239,21 @@ UserManagerImpl::UserManagerImpl()
 
   policy::BrowserPolicyConnectorChromeOS* connector =
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
-  policy_observer_.reset(new policy::CloudExternalDataPolicyObserver(
+  avatar_policy_observer_.reset(new policy::CloudExternalDataPolicyObserver(
       cros_settings_,
       this,
       connector->GetDeviceLocalAccountPolicyService(),
       policy::key::kUserAvatarImage,
       this));
-  policy_observer_->Init();
+  avatar_policy_observer_->Init();
+
+  wallpaper_policy_observer_.reset(new policy::CloudExternalDataPolicyObserver(
+      cros_settings_,
+      this,
+      connector->GetDeviceLocalAccountPolicyService(),
+      policy::key::kWallpaperImage,
+      this));
+  wallpaper_policy_observer_->Init();
 
   UpdateLoginState();
 }
@@ -241,15 +262,13 @@ UserManagerImpl::~UserManagerImpl() {
   // Can't use STLDeleteElements because of the private destructor of User.
   for (UserList::iterator it = users_.begin(); it != users_.end();
        it = users_.erase(it)) {
-    if (active_user_ == *it)
-      active_user_ = NULL;
-    delete *it;
+    DeleteUser(*it);
   }
   // These are pointers to the same User instances that were in users_ list.
   logged_in_users_.clear();
   lru_logged_in_users_.clear();
 
-  delete active_user_;
+  DeleteUser(active_user_);
 }
 
 void UserManagerImpl::Shutdown() {
@@ -268,7 +287,8 @@ void UserManagerImpl::Shutdown() {
     it->second->Shutdown();
   }
   multi_profile_user_controller_.reset();
-  policy_observer_.reset();
+  avatar_policy_observer_.reset();
+  wallpaper_policy_observer_.reset();
 }
 
 MultiProfileUserController* UserManagerImpl::GetMultiProfileUserController() {
@@ -280,10 +300,7 @@ UserImageManager* UserManagerImpl::GetUserImageManager(
   UserImageManagerMap::iterator ui = user_image_managers_.find(user_id);
   if (ui != user_image_managers_.end())
     return ui->second.get();
-  linked_ptr<UserImageManagerImpl> mgr(new UserImageManagerImpl(
-      user_id,
-      cros_settings_,
-      this));
+  linked_ptr<UserImageManagerImpl> mgr(new UserImageManagerImpl(user_id, this));
   user_image_managers_[user_id] = mgr;
   return mgr.get();
 }
@@ -426,6 +443,8 @@ void UserManagerImpl::UserLoggedIn(const std::string& user_id,
              device_local_account_type ==
                  policy::DeviceLocalAccount::TYPE_KIOSK_APP) {
     KioskAppLoggedIn(user_id);
+  } else if (DemoAppLauncher::IsDemoAppSession(user_id)) {
+    DemoAccountLoggedIn();
   } else {
     EnsureUsersLoaded();
 
@@ -597,8 +616,7 @@ void UserManagerImpl::RemoveUserFromList(const std::string& user_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   RemoveNonCryptohomeData(user_id);
   if (user_loading_stage_ == STAGE_LOADED) {
-    User* user = RemoveRegularOrLocallyManagedUserFromList(user_id);
-    delete user;
+    DeleteUser(RemoveRegularOrLocallyManagedUserFromList(user_id));
   } else if (user_loading_stage_ == STAGE_LOADING) {
     DCHECK(gaia::ExtractDomainName(user_id) ==
         UserManager::kLocallyManagedUserDomain);
@@ -889,7 +907,8 @@ bool UserManagerImpl::RespectLocalePreference(
 }
 
 void UserManagerImpl::StopPolicyObserverForTesting() {
-  policy_observer_.reset();
+  avatar_policy_observer_.reset();
+  wallpaper_policy_observer_.reset();
 }
 
 void UserManagerImpl::Observe(int type,
@@ -909,12 +928,11 @@ void UserManagerImpl::Observe(int type,
       RetrieveTrustedDevicePolicies();
       UpdateOwnership();
       break;
-    case chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED:
+    case chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED: {
+      Profile* profile = content::Details<Profile>(details).ptr();
       if (IsUserLoggedIn() &&
           !IsLoggedInAsGuest() &&
           !IsLoggedInAsKioskApp()) {
-        Profile* profile = content::Details<Profile>(details).ptr();
-
         if (IsLoggedInAsLocallyManagedUser())
           ManagedUserPasswordServiceFactory::GetForProfile(profile);
         if (IsLoggedInAsRegularUser())
@@ -928,7 +946,20 @@ void UserManagerImpl::Observe(int type,
           multi_profile_first_run_notification_->UserProfilePrepared(profile);
         }
       }
+
+      // Now that the user profile has been initialized and
+      // |GetNSSCertDatabaseForProfile| is safe to be used, get the NSS cert
+      // database for the primary user and start certificate loader with it.
+      if (IsUserLoggedIn() &&
+          GetPrimaryUser() &&
+          profile == GetProfileByUser(GetPrimaryUser()) &&
+          CertLoader::IsInitialized() &&
+          base::SysInfo::IsRunningOnChromeOS()) {
+        GetNSSCertDatabaseForProfile(profile,
+                                     base::Bind(&OnGetNSSCertDatabaseForUser));
+      }
       break;
+    }
     case chrome::NOTIFICATION_PROFILE_CREATED: {
       Profile* profile = content::Source<Profile>(source).ptr();
       User* user = GetUserByProfile(profile);
@@ -944,18 +975,33 @@ void UserManagerImpl::Observe(int type,
 
 void UserManagerImpl::OnExternalDataSet(const std::string& policy,
                                         const std::string& user_id) {
-  GetUserImageManager(user_id)->OnExternalDataSet(policy);
+  if (policy == policy::key::kUserAvatarImage)
+    GetUserImageManager(user_id)->OnExternalDataSet(policy);
+  else if (policy == policy::key::kWallpaperImage)
+    WallpaperManager::Get()->OnPolicySet(policy, user_id);
+  else
+    NOTREACHED();
 }
 
 void UserManagerImpl::OnExternalDataCleared(const std::string& policy,
                                             const std::string& user_id) {
-  GetUserImageManager(user_id)->OnExternalDataCleared(policy);
+  if (policy == policy::key::kUserAvatarImage)
+    GetUserImageManager(user_id)->OnExternalDataCleared(policy);
+  else if (policy == policy::key::kWallpaperImage)
+    WallpaperManager::Get()->OnPolicyCleared(policy, user_id);
+  else
+    NOTREACHED();
 }
 
 void UserManagerImpl::OnExternalDataFetched(const std::string& policy,
                                             const std::string& user_id,
                                             scoped_ptr<std::string> data) {
-  GetUserImageManager(user_id)->OnExternalDataFetched(policy, data.Pass());
+  if (policy == policy::key::kUserAvatarImage)
+    GetUserImageManager(user_id)->OnExternalDataFetched(policy, data.Pass());
+  else if (policy == policy::key::kWallpaperImage)
+    WallpaperManager::Get()->OnPolicyFetched(policy, user_id, data.Pass());
+  else
+    NOTREACHED();
 }
 
 void UserManagerImpl::OnPolicyUpdated(const std::string& user_id) {
@@ -1161,7 +1207,7 @@ void UserManagerImpl::EnsureUsersLoaded() {
   PrefService* local_state = g_browser_process->local_state();
   const base::ListValue* prefs_regular_users =
       local_state->GetList(kRegularUsers);
-  const base::ListValue* prefs_public_accounts =
+  const base::ListValue* prefs_public_sessions =
       local_state->GetList(kPublicAccounts);
   const base::DictionaryValue* prefs_display_names =
       local_state->GetDictionary(kUserDisplayName);
@@ -1170,10 +1216,21 @@ void UserManagerImpl::EnsureUsersLoaded() {
   const base::DictionaryValue* prefs_display_emails =
       local_state->GetDictionary(kUserDisplayEmail);
 
+  // Load public sessions first.
+  std::vector<std::string> public_sessions;
+  std::set<std::string> public_sessions_set;
+  ParseUserList(*prefs_public_sessions, std::set<std::string>(),
+                &public_sessions, &public_sessions_set);
+  for (std::vector<std::string>::const_iterator it = public_sessions.begin();
+       it != public_sessions.end(); ++it) {
+    users_.push_back(User::CreatePublicAccountUser(*it));
+    UpdatePublicAccountDisplayName(*it);
+  }
+
   // Load regular users and locally managed users.
   std::vector<std::string> regular_users;
   std::set<std::string> regular_users_set;
-  ParseUserList(*prefs_regular_users, std::set<std::string>(),
+  ParseUserList(*prefs_regular_users, public_sessions_set,
                 &regular_users, &regular_users_set);
   for (std::vector<std::string>::const_iterator it = regular_users.begin();
        it != regular_users.end(); ++it) {
@@ -1205,16 +1262,6 @@ void UserManagerImpl::EnsureUsersLoaded() {
     }
   }
 
-  // Load public accounts.
-  std::vector<std::string> public_accounts;
-  std::set<std::string> public_accounts_set;
-  ParseUserList(*prefs_public_accounts, regular_users_set,
-                &public_accounts, &public_accounts_set);
-  for (std::vector<std::string>::const_iterator it = public_accounts.begin();
-       it != public_accounts.end(); ++it) {
-    users_.push_back(User::CreatePublicAccountUser(*it));
-    UpdatePublicAccountDisplayName(*it);
-  }
   user_loading_stage_ = STAGE_LOADED;
 
   for (UserList::iterator ui = users_.begin(), ue = users_.end();
@@ -1254,7 +1301,7 @@ void UserManagerImpl::RetrieveTrustedDevicePolicies() {
       if ((*it)->GetType() == User::USER_TYPE_REGULAR &&
           user_email != owner_email_) {
         RemoveNonCryptohomeData(user_email);
-        delete *it;
+        DeleteUser(*it);
         it = users_.erase(it);
         changed = true;
       } else {
@@ -1455,7 +1502,19 @@ void UserManagerImpl::KioskAppLoggedIn(const std::string& app_id) {
   // Disable window animation since kiosk app runs in a single full screen
   // window and window animation causes start-up janks.
   command_line->AppendSwitch(
-      views::corewm::switches::kWindowAnimationsDisabled);
+      wm::switches::kWindowAnimationsDisabled);
+}
+
+void UserManagerImpl::DemoAccountLoggedIn() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  active_user_ = User::CreateKioskAppUser(DemoAppLauncher::kDemoUserName);
+  active_user_->SetStubImage(User::kInvalidImageIndex, false);
+  WallpaperManager::Get()->SetUserWallpaperNow(DemoAppLauncher::kDemoUserName);
+
+  // Disable window animation since the demo app runs in a single full screen
+  // window and window animation causes start-up janks.
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      wm::switches::kWindowAnimationsDisabled);
 }
 
 void UserManagerImpl::RetailModeUserLoggedIn() {
@@ -1671,7 +1730,7 @@ bool UserManagerImpl::UpdateAndCleanUpPublicAccounts(
   for (UserList::iterator it = users_.begin(); it != users_.end();) {
     if ((*it)->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT) {
       if (*it != GetLoggedInUser())
-        delete *it;
+        DeleteUser(*it);
       it = users_.erase(it);
     } else {
       ++it;
@@ -2003,8 +2062,22 @@ void UserManagerImpl::DoUpdateAccountLocale(
 }
 
 void UserManagerImpl::UpdateNumberOfUsers() {
+  size_t users = GetLoggedInUsers().size();
+  if (users) {
+    // Write the user number as UMA stat when a multi user session is possible.
+    if ((users + GetUsersAdmittedForMultiProfile().size()) > 1)
+      ash::MultiProfileUMA::RecordUserCount(users);
+  }
+
   base::debug::SetCrashKeyValue(crash_keys::kNumberOfUsers,
       base::StringPrintf("%" PRIuS, GetLoggedInUsers().size()));
+}
+
+void UserManagerImpl::DeleteUser(User* user) {
+  const bool is_active_user = (user == active_user_);
+  delete user;
+  if (is_active_user)
+    active_user_ = NULL;
 }
 
 }  // namespace chromeos

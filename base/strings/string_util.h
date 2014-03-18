@@ -19,8 +19,6 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_piece.h"  // For implicit conversions.
 
-// Safe standard library wrappers for all platforms.
-
 namespace base {
 
 // C standard-library functions like "strncasecmp" and "snprintf" that aren't
@@ -188,16 +186,6 @@ BASE_EXPORT void TruncateUTF8ToByteSize(const std::string& input,
                                         const size_t byte_size,
                                         std::string* output);
 
-}  // namespace base
-
-#if defined(OS_WIN)
-#include "base/strings/string_util_win.h"
-#elif defined(OS_POSIX)
-#include "base/strings/string_util_posix.h"
-#else
-#error Define string operations appropriately for your platform
-#endif
-
 // Trims any whitespace from either end of the input string.  Returns where
 // whitespace was found.
 // The non-wide version has two functions:
@@ -211,7 +199,7 @@ enum TrimPositions {
   TRIM_TRAILING = 1 << 1,
   TRIM_ALL      = TRIM_LEADING | TRIM_TRAILING,
 };
-BASE_EXPORT TrimPositions TrimWhitespace(const base::string16& input,
+BASE_EXPORT TrimPositions TrimWhitespace(const string16& input,
                                          TrimPositions positions,
                                          base::string16* output);
 BASE_EXPORT TrimPositions TrimWhitespaceASCII(const std::string& input,
@@ -232,29 +220,29 @@ BASE_EXPORT TrimPositions TrimWhitespace(const std::string& input,
 // (2) If |trim_sequences_with_line_breaks| is true, any other whitespace
 //     sequences containing a CR or LF are trimmed.
 // (3) All other whitespace sequences are converted to single spaces.
-BASE_EXPORT base::string16 CollapseWhitespace(
-    const base::string16& text,
+BASE_EXPORT string16 CollapseWhitespace(
+    const string16& text,
     bool trim_sequences_with_line_breaks);
 BASE_EXPORT std::string CollapseWhitespaceASCII(
     const std::string& text,
     bool trim_sequences_with_line_breaks);
 
-// Returns true if the passed string is empty or contains only white-space
-// characters.
-BASE_EXPORT bool ContainsOnlyWhitespaceASCII(const std::string& str);
-BASE_EXPORT bool ContainsOnlyWhitespace(const base::string16& str);
-
 // Returns true if |input| is empty or contains only characters found in
 // |characters|.
-BASE_EXPORT bool ContainsOnlyChars(const base::string16& input,
-                                   const base::string16& characters);
-BASE_EXPORT bool ContainsOnlyChars(const std::string& input,
-                                   const std::string& characters);
+BASE_EXPORT bool ContainsOnlyChars(const StringPiece& input,
+                                   const StringPiece& characters);
+BASE_EXPORT bool ContainsOnlyChars(const StringPiece16& input,
+                                   const StringPiece16& characters);
 
-// Converts to 7-bit ASCII by truncating. The result must be known to be ASCII
-// beforehand.
-BASE_EXPORT std::string WideToASCII(const std::wstring& wide);
-BASE_EXPORT std::string UTF16ToASCII(const base::string16& utf16);
+}  // namespace base
+
+#if defined(OS_WIN)
+#include "base/strings/string_util_win.h"
+#elif defined(OS_POSIX)
+#include "base/strings/string_util_posix.h"
+#else
+#error Define string operations appropriately for your platform
+#endif
 
 // Returns true if the specified string matches the criteria. How can a wide
 // string be 8-bit or UTF8? It contains only characters that are < 256 (in the

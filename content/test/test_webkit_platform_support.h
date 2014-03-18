@@ -35,6 +35,9 @@ class TestWebKitPlatformSupport
   virtual blink::WebIDBFactory* idbFactory();
 
   virtual blink::WebURLLoader* createURLLoader();
+  virtual blink::WebString userAgent() OVERRIDE;
+  // TODO(jam): remove this after Blink is updated
+  virtual blink::WebString userAgent(const blink::WebURL& url);
   virtual blink::WebData loadResource(const char* name);
   virtual blink::WebString queryLocalizedString(
       blink::WebLocalizedString::Name name);
@@ -69,9 +72,9 @@ class TestWebKitPlatformSupport
   virtual webkit_glue::ResourceLoaderBridge* CreateResourceLoader(
       const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info)
      OVERRIDE;
-  virtual webkit_glue::WebSocketStreamHandleBridge* CreateWebSocketStreamBridge(
+  virtual WebSocketStreamHandleBridge* CreateWebSocketStreamBridge(
       blink::WebSocketStreamHandle* handle,
-      webkit_glue::WebSocketStreamHandleDelegate* delegate) OVERRIDE;
+      WebSocketStreamHandleDelegate* delegate) OVERRIDE;
 
   virtual blink::WebGestureCurve* createFlingAnimationCurve(
       int device_source,

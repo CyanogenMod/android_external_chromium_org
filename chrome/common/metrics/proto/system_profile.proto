@@ -11,7 +11,7 @@ option optimize_for = LITE_RUNTIME;
 
 package metrics;
 
-// Next tag: 18
+// Next tag: 19
 message SystemProfileProto {
   // The time when the client was compiled/linked, in seconds since the epoch.
   optional int64 build_timestamp = 1;
@@ -206,6 +206,24 @@ message SystemProfileProto {
         // ie. Google's OUI (00:1A:11) is encoded as 0x00001A11
         optional uint32 vendor_prefix = 4;
 
+        // The Vendor ID of a device, returned in vendor_id below, can be
+        // either allocated by the Bluetooth SIG or USB IF, providing two
+        // completely overlapping namespaces for identifiers.
+        //
+        // This field should be read along with vendor_id to correctly
+        // identify the vendor. For example Google is identified by either
+        // vendor_id_source = VENDOR_ID_BLUETOOTH, vendor_id = 0x00E0 or
+        // vendor_id_source = VENDOR_ID_USB, vendor_id = 0x18D1.
+        //
+        // If the device does not support the Device ID specification the
+        // unknown value will be set.
+        enum VendorIDSource {
+          VENDOR_ID_UNKNOWN = 0;
+          VENDOR_ID_BLUETOOTH = 1;
+          VENDOR_ID_USB = 2;
+        }
+        optional VendorIDSource vendor_id_source = 8;
+
         // Vendor ID of the device, where available.
         optional uint32 vendor_id = 5;
 
@@ -343,9 +361,23 @@ message SystemProfileProto {
   // Figures that can be used to generate application stability metrics.
   // All values are counts of events since the last time that these
   // values were reported.
+  // Next tag: 24
   message Stability {
-    // Total amount of time that the program was running, in seconds.
-    optional int64 uptime_sec = 1;
+    // Total amount of time that the program was running, in seconds,
+    // since the last time a log was recorded, as measured using a client-side
+    // clock implemented via TimeTicks, which guarantees that it is monotonic
+    // and does not jump if the user changes his/her clock.  The TimeTicks
+    // implementation also makes the clock not count time the computer is
+    // suspended.
+    optional int64 incremental_uptime_sec = 1;
+
+    // Total amount of time that the program was running, in seconds,
+    // since startup, as measured using a client-side clock implemented
+    // via TimeTicks, which guarantees that it is monotonic and does not
+    // jump if the user changes his/her clock.  The TimeTicks implementation
+    // also makes the clock not count time the computer is suspended.
+    // This field was added for M-35.
+    optional int64 uptime_sec = 23;
 
     // Page loads along with renderer crashes and hangs, since page load count
     // roughly corresponds to usage.
@@ -457,4 +489,21 @@ message SystemProfileProto {
   // A zero value indicates that the user count changed while the log is open.
   // Logged only on ChromeOS.
   optional uint32 multi_profile_user_count = 17;
+
+  // Information about extensions that are installed, masked to provide better
+  // privacy.  Only extensions from a single profile are reported; this will
+  // generally be the profile used when the browser is started.  The profile
+  // reported on will remain consistent at least until the browser is
+  // relaunched (or the profile is deleted by the user).
+  //
+  // Each client first picks a value for client_key derived from its UMA
+  // client_id:
+  //   client_key = client_id % 4096
+  // Then, each installed extension is mapped into a hash bucket according to
+  //   bucket = CityHash64(StringPrintf("%d:%s",
+  //                                    client_key, extension_id)) % 1024
+  // The client reports the set of hash buckets occupied by all installed
+  // extensions.  If multiple extensions map to the same bucket, that bucket is
+  // still only reported once.
+  repeated int32 occupied_extension_bucket = 18;
 }

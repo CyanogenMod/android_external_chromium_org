@@ -22,6 +22,7 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
+#include "chrome/browser/invalidation/fake_invalidation_service.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
@@ -40,7 +41,7 @@
 #include "chrome/browser/sync/profile_sync_test_util.h"
 #include "chrome/browser/sync/test_profile_sync_service.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/browser_context_keyed_service/refcounted_browser_context_keyed_service.h"
+#include "components/keyed_service/content/refcounted_browser_context_keyed_service.h"
 #include "components/sync_driver/data_type_error_handler_mock.h"
 #include "content/public/browser/notification_service.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -52,8 +53,8 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "url/gurl.h"
 
-using base::Time;
 using base::Thread;
+using base::Time;
 using browser_sync::TypedUrlChangeProcessor;
 using browser_sync::TypedUrlDataTypeController;
 using browser_sync::TypedUrlModelAssociator;
@@ -61,10 +62,10 @@ using history::HistoryBackend;
 using history::URLID;
 using history::URLRow;
 using syncer::syncable::WriteTransaction;
-using testing::_;
 using testing::DoAll;
 using testing::Return;
 using testing::SetArgumentPointee;
+using testing::_;
 
 namespace {
 // Visits with this timestamp are treated as expired.
@@ -72,7 +73,7 @@ static const int EXPIRED_VISIT = -1;
 
 class HistoryBackendMock : public HistoryBackend {
  public:
-  HistoryBackendMock() : HistoryBackend(base::FilePath(), 0, NULL, NULL) {}
+  HistoryBackendMock() : HistoryBackend(base::FilePath(), NULL, NULL) {}
   virtual bool IsExpiredVisitTime(const base::Time& time) OVERRIDE {
     return time.ToInternalValue() == EXPIRED_VISIT;
   }
@@ -109,8 +110,7 @@ class HistoryServiceMock : public HistoryService {
   virtual ~HistoryServiceMock() {}
 };
 
-BrowserContextKeyedService* BuildHistoryService(
-    content::BrowserContext* profile) {
+KeyedService* BuildHistoryService(content::BrowserContext* profile) {
   return new HistoryServiceMock(static_cast<Profile*>(profile));
 }
 
@@ -191,8 +191,8 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
         ProfileOAuth2TokenServiceFactory::GetInstance(),
         FakeProfileOAuth2TokenServiceWrapper::BuildAutoIssuingTokenService);
     profile_ = builder.Build().Pass();
-    invalidation::InvalidationServiceFactory::GetInstance()->
-        SetBuildOnlyFakeInvalidatorsForTest(true);
+    invalidation::InvalidationServiceFactory::GetInstance()->SetTestingFactory(
+        profile_.get(), invalidation::FakeInvalidationService::Build);
     history_backend_ = new HistoryBackendMock();
     history_service_ = static_cast<HistoryServiceMock*>(
         HistoryServiceFactory::GetInstance()->SetTestingFactoryAndUse(

@@ -2,7 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "apps/saved_files_service.h"
+#include "base/files/scoped_temp_dir.h"
+#include "base/stl_util.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
+#include "chrome/browser/extensions/api/file_system/file_system_api.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
@@ -38,6 +42,9 @@ const char kMessagingReceiverAppV2[] =
 
 const char kNotificationsTestApp[] =
     "platform_apps/ephemeral_apps/notification_settings";
+
+const char kFileSystemTestApp[] =
+    "platform_apps/ephemeral_apps/filesystem_retain_entries";
 
 typedef std::vector<message_center::Notifier*> NotifierList;
 
@@ -92,6 +99,26 @@ class EphemeralAppBrowserTest : public PlatformAppBrowserTest {
       return NULL;
 
     return extension;
+  }
+
+  bool LaunchAppAndRunTest(const Extension* app, const char* test_name) {
+    ExtensionTestMessageListener launched_listener("launched", true);
+    LaunchPlatformApp(app);
+    if (!launched_listener.WaitUntilSatisfied()) {
+      message_ = "Failed to receive launched message from test";
+      return false;
+    }
+
+    launched_listener.Reply(test_name);
+
+    ResultCatcher catcher;
+    if (!catcher.GetNextResult()) {
+      message_ = catcher.message();
+      return false;
+    }
+
+    CloseApp(app->id());
+    return true;
   }
 
   void CloseApp(const std::string& app_id) {
@@ -264,7 +291,7 @@ IN_PROC_BROWSER_TEST_F(EphemeralAppBrowserTest, StickyNotificationSettings) {
 // Verify that only running ephemeral apps will appear in the Notification
 // Settings UI. Inactive, cached ephemeral apps should not appear.
 IN_PROC_BROWSER_TEST_F(EphemeralAppBrowserTest,
-                       IncludeRunningEphmeralAppsInNotifiers) {
+                       IncludeRunningEphemeralAppsInNotifiers) {
   message_center::NotifierSettingsProvider* settings_provider =
       message_center::MessageCenter::Get()->GetNotifierSettingsProvider();
   // TODO(tmdiep): Remove once notifications settings are supported across
@@ -280,15 +307,50 @@ IN_PROC_BROWSER_TEST_F(EphemeralAppBrowserTest,
   // Since the ephemeral app is running, it should be included in the list
   // of notifiers to show in the UI.
   NotifierList notifiers;
+  STLElementDeleter<NotifierList> notifier_deleter(&notifiers);
+
   settings_provider->GetNotifierList(&notifiers);
   EXPECT_TRUE(IsNotifierInList(notifier_id, notifiers));
+  STLDeleteElements(&notifiers);
 
   // Close the ephemeral app.
   CloseApp(app->id());
 
   // Inactive ephemeral apps should not be included in the list of notifiers to
   // show in the UI.
-  notifiers.clear();
   settings_provider->GetNotifierList(&notifiers);
   EXPECT_FALSE(IsNotifierInList(notifier_id, notifiers));
+}
+
+// Verify that ephemeral apps will have no ability to retain file entries after
+// close. Normal retainEntry behavior for installed apps is tested in
+// FileSystemApiTest.
+IN_PROC_BROWSER_TEST_F(EphemeralAppBrowserTest,
+                       DisableRetainFileSystemEntries) {
+  // Create a dummy file that we can just return to the test.
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  base::FilePath temp_file;
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir.path(), &temp_file));
+
+  using extensions::FileSystemChooseEntryFunction;
+  FileSystemChooseEntryFunction::SkipPickerAndAlwaysSelectPathForTest(
+      &temp_file);
+  // The temporary file needs to be registered for the tests to pass on
+  // ChromeOS.
+  FileSystemChooseEntryFunction::RegisterTempExternalFileSystemForTest(
+      "temp", temp_dir.path());
+
+  // The first test opens the file and writes the file handle to local storage.
+  const Extension* app = InstallEphemeralApp(kFileSystemTestApp);
+  ASSERT_TRUE(LaunchAppAndRunTest(app, "OpenAndRetainFile")) << message_;
+
+  // Verify that after the app has been closed, all retained entries are
+  // flushed.
+  std::vector<apps::SavedFileEntry> file_entries =
+      apps::SavedFilesService::Get(browser()->profile())
+          ->GetAllFileEntries(app->id());
+
+  // The second test verifies that the file cannot be reopened.
+  ASSERT_TRUE(LaunchAppAndRunTest(app, "RestoreRetainedFile")) << message_;
 }

@@ -74,16 +74,17 @@ void UTF8PartsToUTF16Parts(const std::string& text_utf8,
       UTF8ComponentToUTF16Component(text_utf8, parts_utf8.ref);
 }
 
-TrimPositions TrimWhitespaceUTF8(const std::string& input,
-                                 TrimPositions positions,
-                                 std::string* output) {
+base::TrimPositions TrimWhitespaceUTF8(const std::string& input,
+                                       base::TrimPositions positions,
+                                       std::string* output) {
   // This implementation is not so fast since it converts the text encoding
   // twice. Please feel free to file a bug if this function hurts the
   // performance of Chrome.
   DCHECK(IsStringUTF8(input));
   base::string16 input16 = base::UTF8ToUTF16(input);
   base::string16 output16;
-  TrimPositions result = TrimWhitespace(input16, positions, &output16);
+  base::TrimPositions result =
+      base::TrimWhitespace(input16, positions, &output16);
   *output = base::UTF16ToUTF8(output16);
   return result;
 }
@@ -92,10 +93,10 @@ TrimPositions TrimWhitespaceUTF8(const std::string& input,
 void PrepareStringForFileOps(const base::FilePath& text,
                              base::FilePath::StringType* output) {
 #if defined(OS_WIN)
-  TrimWhitespace(text.value(), TRIM_ALL, output);
+  base::TrimWhitespace(text.value(), base::TRIM_ALL, output);
   replace(output->begin(), output->end(), '/', '\\');
 #else
-  TrimWhitespaceUTF8(text.value(), TRIM_ALL, output);
+  TrimWhitespaceUTF8(text.value(), base::TRIM_ALL, output);
 #endif
 }
 
@@ -389,7 +390,7 @@ std::string SegmentURLInternal(std::string* text, url_parse::Parsed* parts) {
   *parts = url_parse::Parsed();
 
   std::string trimmed;
-  TrimWhitespaceUTF8(*text, TRIM_ALL, &trimmed);
+  TrimWhitespaceUTF8(*text, base::TRIM_ALL, &trimmed);
   if (trimmed.empty())
     return std::string();  // Nothing to segment.
 
@@ -427,7 +428,7 @@ std::string SegmentURLInternal(std::string* text, url_parse::Parsed* parts) {
   }
 
   // Proceed with about and chrome schemes, but not file or nonstandard schemes.
-  if ((scheme != chrome::kAboutScheme) &&
+  if ((scheme != content::kAboutScheme) &&
       (scheme != content::kChromeUIScheme) &&
       ((scheme == content::kFileScheme) ||
        !url_util::IsStandard(
@@ -501,7 +502,7 @@ base::string16 URLFixerUpper::SegmentURL(const base::string16& text,
 GURL URLFixerUpper::FixupURL(const std::string& text,
                              const std::string& desired_tld) {
   std::string trimmed;
-  TrimWhitespaceUTF8(text, TRIM_ALL, &trimmed);
+  TrimWhitespaceUTF8(text, base::TRIM_ALL, &trimmed);
   if (trimmed.empty())
     return GURL();  // Nothing here.
 
@@ -534,7 +535,7 @@ GURL URLFixerUpper::FixupURL(const std::string& text,
 
   // Parse and rebuild about: and chrome: URLs, except about:blank.
   bool chrome_url = !LowerCaseEqualsASCII(trimmed, content::kAboutBlankURL) &&
-                    ((scheme == chrome::kAboutScheme) ||
+                    ((scheme == content::kAboutScheme) ||
                      (scheme == content::kChromeUIScheme));
 
   // For some schemes whose layouts we understand, we rebuild it.
@@ -584,8 +585,8 @@ GURL URLFixerUpper::FixupRelativeFile(const base::FilePath& base_dir,
   base::FilePath old_cur_directory;
   if (!base_dir.empty()) {
     // Save the old current directory before we move to the new one.
-    file_util::GetCurrentDirectory(&old_cur_directory);
-    file_util::SetCurrentDirectory(base_dir);
+    base::GetCurrentDirectory(&old_cur_directory);
+    base::SetCurrentDirectory(base_dir);
   }
 
   // Allow funny input with extra whitespace and the wrong kind of slashes.
@@ -618,7 +619,7 @@ GURL URLFixerUpper::FixupRelativeFile(const base::FilePath& base_dir,
 
   // Put back the current directory if we saved it.
   if (!base_dir.empty())
-    file_util::SetCurrentDirectory(old_cur_directory);
+    base::SetCurrentDirectory(old_cur_directory);
 
   if (is_file) {
     GURL file_url = net::FilePathToFileURL(full_path);

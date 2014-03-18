@@ -8,48 +8,35 @@
 #include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/time/time.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/signin_global_error.h"
-#include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/ui/global_error/global_error_service.h"
-#include "chrome/browser/ui/global_error/global_error_service_factory.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
+#include "chrome/browser/signin/signin_error_controller.h"
+#include "chrome/browser/signin/signin_global_error_factory.h"
 #include "net/url_request/url_request_context_getter.h"
 
 ProfileOAuth2TokenService::ProfileOAuth2TokenService()
-    : profile_(NULL) {
-}
+    : client_(NULL), profile_(NULL) {}
 
 ProfileOAuth2TokenService::~ProfileOAuth2TokenService() {
-  DCHECK(!signin_global_error_.get()) <<
+  DCHECK(!signin_error_controller_.get()) <<
       "ProfileOAuth2TokenService::Initialize called but not "
       "ProfileOAuth2TokenService::Shutdown";
 }
 
-void ProfileOAuth2TokenService::Initialize(Profile* profile) {
+void ProfileOAuth2TokenService::Initialize(SigninClient* client,
+                                           Profile* profile) {
+  DCHECK(client);
+  DCHECK(!client_);
+  client_ = client;
   DCHECK(profile);
   DCHECK(!profile_);
   profile_ = profile;
 
-  signin_global_error_.reset(new SigninGlobalError(profile));
-  GlobalErrorServiceFactory::GetForProfile(profile_)->AddGlobalError(
-      signin_global_error_.get());
+  signin_error_controller_.reset(new SigninErrorController());
 }
 
 void ProfileOAuth2TokenService::Shutdown() {
   DCHECK(profile_) << "Shutdown() called without matching call to Initialize()";
-  GlobalErrorServiceFactory::GetForProfile(profile_)->RemoveGlobalError(
-      signin_global_error_.get());
-  signin_global_error_.reset();
-}
-
-std::string ProfileOAuth2TokenService::GetRefreshToken(
-    const std::string& account_id) {
-  NOTREACHED() << "GetRefreshToken should not be called on the base PO2TS";
-  return "";
+  signin_error_controller_.reset();
 }
 
 net::URLRequestContextGetter* ProfileOAuth2TokenService::GetRequestContext() {
@@ -60,15 +47,6 @@ void ProfileOAuth2TokenService::UpdateAuthError(
     const std::string& account_id,
     const GoogleServiceAuthError& error) {
   NOTREACHED();
-}
-
-std::string ProfileOAuth2TokenService::GetPrimaryAccountId() {
-  SigninManagerBase* signin_manager =
-      SigninManagerFactory::GetForProfileIfExists(profile_);
-  // TODO(fgorski): DCHECK(signin_manager) here - it may require update to test
-  // code and the line above (SigninManager might not exist yet).
-  return signin_manager ? signin_manager->GetAuthenticatedUsername()
-      : std::string();
 }
 
 std::vector<std::string> ProfileOAuth2TokenService::GetAccounts() {

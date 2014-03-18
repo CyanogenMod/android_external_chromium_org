@@ -13,7 +13,7 @@
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service_observer.h"
 #include "chrome/browser/managed_mode/managed_users.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "sync/api/syncable_service.h"
 
 namespace base {
@@ -26,7 +26,7 @@ class PrefRegistrySyncable;
 
 class PrefService;
 
-class ManagedUserSyncService : public BrowserContextKeyedService,
+class ManagedUserSyncService : public KeyedService,
                                public syncer::SyncableService {
  public:
   // For use with GetManagedUsersAsync() below.
@@ -38,6 +38,8 @@ class ManagedUserSyncService : public BrowserContextKeyedService,
   static const char kChromeAvatar[];
   static const char kChromeOsAvatar[];
   static const char kMasterKey[];
+  static const char kPasswordSignatureKey[];
+  static const char kPasswordEncryptionKey[];
   static const char kName[];
 
   // Represents a non-existing avatar on Chrome and Chrome OS.
@@ -68,6 +70,8 @@ class ManagedUserSyncService : public BrowserContextKeyedService,
   void AddManagedUser(const std::string& id,
                       const std::string& name,
                       const std::string& master_key,
+                      const std::string& password_signature_key,
+                      const std::string& password_encryption_key,
                       int avatar_index);
   void DeleteManagedUser(const std::string& id);
 
@@ -92,7 +96,7 @@ class ManagedUserSyncService : public BrowserContextKeyedService,
   // managed by this custodian.
   void GetManagedUsersAsync(const ManagedUsersCallback& callback);
 
-  // BrowserContextKeyedService implementation:
+  // KeyedService implementation:
   virtual void Shutdown() OVERRIDE;
 
   // SyncableService implementation:

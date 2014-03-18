@@ -17,18 +17,18 @@
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/bubble/bubble_delegate.h"
-#include "ui/views/corewm/transient_window_manager.h"
-#include "ui/views/corewm/window_util.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/transient_window_manager.h"
+#include "ui/wm/core/window_util.h"
 
 using views::View;
 
@@ -87,7 +87,7 @@ bool IsWindowTransientChildOf(aura::Window* maybe_transient,
     return false;
 
   for (aura::Window* window = maybe_transient; window;
-       window = views::corewm::GetTransientParent(window)) {
+       window = ::wm::GetTransientParent(window)) {
     if (window == toplevel)
       return true;
   }
@@ -527,7 +527,7 @@ void ImmersiveFullscreenController::EnableWindowObservers(bool enable) {
     widget_->AddObserver(this);
     focus_manager->AddFocusChangeListener(this);
     Shell::GetInstance()->AddPreTargetHandler(this);
-    views::corewm::TransientWindowManager::Get(native_window_)->
+    ::wm::TransientWindowManager::Get(native_window_)->
         AddObserver(this);
 
     RecreateBubbleManager();
@@ -535,7 +535,7 @@ void ImmersiveFullscreenController::EnableWindowObservers(bool enable) {
     widget_->RemoveObserver(this);
     focus_manager->RemoveFocusChangeListener(this);
     Shell::GetInstance()->RemovePreTargetHandler(this);
-    views::corewm::TransientWindowManager::Get(native_window_)->
+    ::wm::TransientWindowManager::Get(native_window_)->
         RemoveObserver(this);
 
     // We have stopped observing whether transient children are added or removed
@@ -919,7 +919,7 @@ bool ImmersiveFullscreenController::ShouldHandleGestureEvent(
 void ImmersiveFullscreenController::RecreateBubbleManager() {
   bubble_manager_.reset(new BubbleManager(this));
   const std::vector<aura::Window*> transient_children =
-      views::corewm::GetTransientChildren(native_window_);
+      ::wm::GetTransientChildren(native_window_);
   for (size_t i = 0; i < transient_children.size(); ++i) {
     aura::Window* transient_child = transient_children[i];
     views::BubbleDelegateView* bubble_delegate =

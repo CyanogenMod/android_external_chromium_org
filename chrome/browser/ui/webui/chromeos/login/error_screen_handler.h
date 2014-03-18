@@ -31,6 +31,7 @@ class ErrorScreenHandler : public BaseScreenHandler,
   virtual ~ErrorScreenHandler();
 
   // ErrorScreenActor implementation:
+  virtual void SetDelegate(ErrorScreenActorDelegate* delegate) OVERRIDE;
   virtual void Show(OobeDisplay::Screen parent_screen,
                     base::DictionaryValue* params) OVERRIDE;
   virtual void Hide() OVERRIDE;
@@ -42,6 +43,7 @@ class ErrorScreenHandler : public BaseScreenHandler,
                              const std::string& network) OVERRIDE;
   virtual void AllowGuestSignin(bool allowed) OVERRIDE;
   virtual void AllowOfflineLogin(bool allowed) OVERRIDE;
+  virtual void ShowConnectingIndicator(bool show) OVERRIDE;
 
  private:
   // Sends notification that error message is shown.
@@ -55,6 +57,7 @@ class ErrorScreenHandler : public BaseScreenHandler,
   void HandleLocalStateErrorPowerwashButtonClicked();
   void HandleRebootButtonClicked();
   void HandleDiagnoseButtonClicked();
+  void HandleConfigureCerts();
 
   // WebUIMessageHandler implementation:
   virtual void RegisterMessages() OVERRIDE;
@@ -62,6 +65,9 @@ class ErrorScreenHandler : public BaseScreenHandler,
   // BaseScreenHandler implementation:
   virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
   virtual void Initialize() OVERRIDE;
+
+  // Non-owning ptr.
+  ErrorScreenActorDelegate* delegate_;
 
   // Proxy which manages showing of the window for captive portal entering.
   scoped_ptr<CaptivePortalWindowProxy> captive_portal_window_proxy_;

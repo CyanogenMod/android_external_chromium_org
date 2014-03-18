@@ -22,7 +22,7 @@
 #include "extensions/common/manifest_constants.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
@@ -63,16 +63,7 @@ BrowserActionView::~BrowserActionView() {
 }
 
 gfx::ImageSkia BrowserActionView::GetIconWithBadge() {
-  int tab_id = delegate_->GetCurrentTabId();
-
-  const ExtensionAction* action =
-      extensions::ExtensionActionManager::Get(browser_->profile())->
-      GetBrowserAction(*button_->extension());
-  gfx::Size spacing(0, ToolbarView::kVertSpacing);
-  gfx::ImageSkia icon = *button_->icon_factory().GetIcon(tab_id).ToImageSkia();
-  if (!button_->IsEnabled(tab_id))
-    icon = gfx::ImageSkiaOperations::CreateTransparentImage(icon, .25);
-  return action->GetIconWithBadge(icon, tab_id, spacing);
+  return button_->GetIconWithBadge();
 }
 
 void BrowserActionView::Layout() {
@@ -88,10 +79,10 @@ void BrowserActionView::Layout() {
                      BrowserActionsContainer::IconHeight());
 }
 
-void BrowserActionView::GetAccessibleState(ui::AccessibleViewState* state) {
+void BrowserActionView::GetAccessibleState(ui::AXViewState* state) {
   state->name = l10n_util::GetStringUTF16(
       IDS_ACCNAME_EXTENSIONS_BROWSER_ACTION);
-  state->role = ui::AccessibilityTypes::ROLE_GROUPING;
+  state->role = ui::AX_ROLE_GROUP;
 }
 
 gfx::Size BrowserActionView::GetPreferredSize() {
@@ -122,7 +113,8 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
       icon_factory_(browser->profile(), extension, browser_action_, this),
       delegate_(delegate),
       context_menu_(NULL),
-      called_registered_extension_command_(false) {
+      called_registered_extension_command_(false),
+      icon_observer_(NULL) {
   SetBorder(views::Border::NullBorder());
   set_alignment(TextButton::ALIGN_CENTER);
   set_context_menu_controller(this);
@@ -177,9 +169,9 @@ bool BrowserActionButton::CanHandleAccelerators() const {
   return true;
 }
 
-void BrowserActionButton::GetAccessibleState(ui::AccessibleViewState* state) {
+void BrowserActionButton::GetAccessibleState(ui::AXViewState* state) {
   views::MenuButton::GetAccessibleState(state);
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+  state->role = ui::AX_ROLE_BUTTON;
 }
 
 void BrowserActionButton::ButtonPressed(views::Button* sender,
@@ -311,6 +303,8 @@ void BrowserActionButton::Observe(int type,
 
 void BrowserActionButton::OnIconUpdated() {
   UpdateState();
+  if (icon_observer_)
+    icon_observer_->OnIconUpdated(GetIconWithBadge());
 }
 
 bool BrowserActionButton::Activate() {
@@ -391,6 +385,15 @@ void BrowserActionButton::SetButtonNotPushed() {
 
 bool BrowserActionButton::IsEnabled(int tab_id) const {
   return browser_action_->GetIsVisible(tab_id);
+}
+
+gfx::ImageSkia BrowserActionButton::GetIconWithBadge() {
+  int tab_id = delegate_->GetCurrentTabId();
+  gfx::Size spacing(0, ToolbarView::kVertSpacing);
+  gfx::ImageSkia icon = *icon_factory_.GetIcon(tab_id).ToImageSkia();
+  if (!IsEnabled(tab_id))
+    icon = gfx::ImageSkiaOperations::CreateTransparentImage(icon, .25);
+  return browser_action_->GetIconWithBadge(icon, tab_id, spacing);
 }
 
 gfx::ImageSkia BrowserActionButton::GetIconForTest() {

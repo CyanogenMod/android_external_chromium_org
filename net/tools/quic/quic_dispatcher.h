@@ -75,23 +75,24 @@ class QuicDispatcher : public QuicServerSessionVisitor {
                              const IPEndPoint& client_address,
                              const QuicEncryptedPacket& packet);
 
-  // Called when the underyling connection becomes writable to allow
-  // queued writes to happen.
-  //
-  // Returns true if more writes are possible, false otherwise.
-  virtual bool OnCanWrite();
+  // Called when the socket becomes writable to allow queued writes to happen.
+  virtual void OnCanWrite();
+
+  // Returns true if there's anything in the blocked writer list.
+  virtual bool HasPendingWrites() const;
 
   // Sends ConnectionClose frames to all connected clients.
   void Shutdown();
 
   // QuicServerSessionVisitor interface implementation:
   // Ensure that the closed connection is cleaned up asynchronously.
-  virtual void OnConnectionClosed(QuicGuid guid, QuicErrorCode error) OVERRIDE;
+  virtual void OnConnectionClosed(QuicConnectionId connection_id,
+                                  QuicErrorCode error) OVERRIDE;
 
   // Queues the blocked writer for later resumption.
   virtual void OnWriteBlocked(QuicBlockedWriterInterface* writer) OVERRIDE;
 
-  typedef base::hash_map<QuicGuid, QuicSession*> SessionMap;
+  typedef base::hash_map<QuicConnectionId, QuicSession*> SessionMap;
 
   // Deletes all sessions on the closed session list and clears the list.
   void DeleteSessions();
@@ -110,11 +111,11 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   virtual QuicPacketWriterWrapper* CreateWriterWrapper(
       QuicPacketWriter* writer);
 
-  virtual QuicSession* CreateQuicSession(QuicGuid guid,
+  virtual QuicSession* CreateQuicSession(QuicConnectionId connection_id,
                                          const IPEndPoint& server_address,
                                          const IPEndPoint& client_address);
 
-  QuicConnection* CreateQuicConnection(QuicGuid guid,
+  QuicConnection* CreateQuicConnection(QuicConnectionId connection_id,
                                        const IPEndPoint& server_address,
                                        const IPEndPoint& client_address);
 
@@ -125,7 +126,6 @@ class QuicDispatcher : public QuicServerSessionVisitor {
     return time_wait_list_manager_.get();
   }
 
-  QuicEpollConnectionHelper* helper() { return helper_.get(); }
   EpollServer* epoll_server() { return epoll_server_; }
 
   const QuicVersionVector& supported_versions() const {
@@ -136,10 +136,6 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   virtual bool OnUnauthenticatedPublicHeader(
       const QuicPacketPublicHeader& header);
 
-  // Information about the packet currently being dispatched.
-  const IPEndPoint& current_client_address() {
-    return current_client_address_;
-  }
   const IPEndPoint& current_server_address() {
     return current_server_address_;
   }
@@ -160,7 +156,7 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   void OnUnauthenticatedHeader(const QuicPacketHeader& header);
 
   // Removes the session from the session map and write blocked list, and
-  // adds the GUID to the time-wait list.
+  // adds the ConnectionId to the time-wait list.
   void CleanUpSession(SessionMap::iterator it);
 
   bool HandlePacketForTimeWait(const QuicPacketPublicHeader& header);
@@ -174,7 +170,7 @@ class QuicDispatcher : public QuicServerSessionVisitor {
 
   SessionMap session_map_;
 
-  // Entity that manages guids in time wait state.
+  // Entity that manages connection_ids in time wait state.
   scoped_ptr<QuicTimeWaitListManager> time_wait_list_manager_;
 
   // An alarm which deletes closed sessions.

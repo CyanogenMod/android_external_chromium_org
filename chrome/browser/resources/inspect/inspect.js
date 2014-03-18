@@ -50,6 +50,8 @@ function onHashChange() {
  * @return {boolean} True if successful.
  */
 function selectTab(id) {
+  closePortForwardingConfig();
+
   var tabContents = document.querySelectorAll('#content > div');
   var tabHeaders = $('navigation').querySelectorAll('.tab-header');
   var found = false;
@@ -387,7 +389,8 @@ function addFavicon(row, data) {
   var favicon = document.createElement('img');
   if (data['faviconUrl'])
     favicon.src = data['faviconUrl'];
-  row.insertBefore(favicon, row.firstChild);
+  var propertiesBox = row.querySelector('.properties-box');
+  propertiesBox.insertBefore(favicon, propertiesBox.firstChild);
 }
 
 function addWebViewDetails(row, data) {
@@ -476,16 +479,21 @@ function addWebViewThumbnail(row, webview, screenWidth, screenHeight) {
     screenRect.appendChild(viewRect);
   }
 
-  row.insertBefore(thumbnail, row.firstChild);
+  var propertiesBox = row.querySelector('.properties-box');
+  propertiesBox.insertBefore(thumbnail, propertiesBox.firstChild);
 }
 
 function addTargetToList(data, list, properties) {
   var row = document.createElement('div');
   row.className = 'row';
 
+  var propertiesBox = document.createElement('div');
+  propertiesBox.className = 'properties-box';
+  row.appendChild(propertiesBox);
+
   var subrowBox = document.createElement('div');
   subrowBox.className = 'subrow-box';
-  row.appendChild(subrowBox);
+  propertiesBox.appendChild(subrowBox);
 
   var subrow = document.createElement('div');
   subrow.className = 'subrow';
@@ -612,6 +620,9 @@ function openPortForwardingConfig() {
 }
 
 function closePortForwardingConfig() {
+  if (!$('port-forwarding-overlay').classList.contains('open'))
+    return;
+
   $('port-forwarding-overlay').classList.remove('open');
   document.removeEventListener('keyup', handleKey);
   unsetModal($('port-forwarding-overlay'));

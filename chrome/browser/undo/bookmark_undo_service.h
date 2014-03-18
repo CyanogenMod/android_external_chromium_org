@@ -11,7 +11,7 @@
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/undo/bookmark_renumber_observer.h"
 #include "chrome/browser/undo/undo_manager.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 
 class Profile;
 namespace {
@@ -23,7 +23,7 @@ class BookmarkUndoOperation;
 // BookmarkUndoService is owned by the profile, and is responsible for observing
 // BookmarkModel changes in order to provide an undo for those changes.
 class BookmarkUndoService : public BaseBookmarkModelObserver,
-                            public BrowserContextKeyedService,
+                            public KeyedService,
                             public BookmarkRenumberObserver {
  public:
   explicit BookmarkUndoService(Profile* profile);
@@ -54,6 +54,8 @@ class BookmarkUndoService : public BaseBookmarkModelObserver,
                                         const BookmarkNode* node) OVERRIDE;
   virtual void OnWillReorderBookmarkNode(BookmarkModel* model,
                                          const BookmarkNode* node) OVERRIDE;
+  virtual void GroupedBookmarkChangesBeginning(BookmarkModel* model) OVERRIDE;
+  virtual void GroupedBookmarkChangesEnded(BookmarkModel* model) OVERRIDE;
 
   // BookmarkRenumberObserver:
   virtual void OnBookmarkRenumbered(int64 old_id, int64 new_id) OVERRIDE;

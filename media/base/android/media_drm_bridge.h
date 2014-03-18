@@ -6,8 +6,6 @@
 #define MEDIA_BASE_ANDROID_MEDIA_DRM_BRIDGE_H_
 
 #include <jni.h>
-#include <map>
-#include <queue>
 #include <string>
 #include <vector>
 
@@ -39,25 +37,30 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
   virtual ~MediaDrmBridge();
 
   // Checks whether MediaDRM is available.
+  // All other static methods check IsAvailable() internally. There's no need
+  // to check IsAvailable() explicitly before calling them.
   static bool IsAvailable();
 
-  static bool IsSecurityLevelSupported(const std::vector<uint8>& scheme_uuid,
+  static bool IsSecurityLevelSupported(const std::string& key_system,
                                        SecurityLevel security_level);
 
-  static bool IsCryptoSchemeSupported(const std::vector<uint8>& scheme_uuid,
-                                      const std::string& container_mime_type);
+  // TODO(xhwang): The |container_mime_type| is not the same as contentType in
+  // the EME spec. Revisit this once the spec issue with initData type is
+  // resolved.
+  static bool IsKeySystemSupportedWithType(
+      const std::string& key_system,
+      const std::string& container_mime_type);
 
   static bool IsSecureDecoderRequired(SecurityLevel security_level);
 
   static bool RegisterMediaDrmBridge(JNIEnv* env);
 
-  // Returns a MediaDrmBridge instance if |scheme_uuid| is supported, or a NULL
+  // Returns a MediaDrmBridge instance if |key_system| is supported, or a NULL
   // pointer otherwise.
-  static scoped_ptr<MediaDrmBridge> Create(
-      int media_keys_id,
-      const std::vector<uint8>& scheme_uuid,
-      const GURL& frame_url,
-      MediaPlayerManager* manager);
+  static scoped_ptr<MediaDrmBridge> Create(int cdm_id,
+                                           const std::string& key_system,
+                                           const GURL& frame_url,
+                                           MediaPlayerManager* manager);
 
   // Returns true if |security_level| is successfully set, or false otherwise.
   // Call this function right after Create() and before any other calls.
@@ -115,12 +118,12 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
   // video playback.
   bool IsProtectedSurfaceRequired();
 
-  int media_keys_id() const { return media_keys_id_; }
+  int cdm_id() const { return cdm_id_; }
 
   GURL frame_url() const { return frame_url_; }
 
  private:
-  MediaDrmBridge(int media_keys_id,
+  MediaDrmBridge(int cdm_id,
                  const std::vector<uint8>& scheme_uuid,
                  const GURL& frame_url,
                  MediaPlayerManager* manager);
@@ -128,8 +131,8 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
   // Get the security level of the media.
   SecurityLevel GetSecurityLevel();
 
-  // ID of the MediaKeys object.
-  int media_keys_id_;
+  // ID of the CDM object.
+  int cdm_id_;
 
   // UUID of the key system.
   std::vector<uint8> scheme_uuid_;

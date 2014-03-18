@@ -22,11 +22,14 @@
 #include "net/socket/next_proto.h"
 
 class ChromeNetLog;
-class CommandLine;
 class PrefProxyConfigTracker;
 class PrefService;
 class PrefRegistrySimple;
 class SystemURLRequestContextGetter;
+
+namespace base {
+class CommandLine;
+}
 
 namespace chrome_browser_net {
 class DnsProbeService;
@@ -156,15 +159,15 @@ class IOThread : public content::BrowserThreadDelegate {
     uint16 testing_fixed_http_port;
     uint16 testing_fixed_https_port;
     Optional<size_t> initial_max_spdy_concurrent_streams;
-    Optional<size_t> max_spdy_concurrent_streams_limit;
     Optional<bool> force_spdy_single_domain;
-    Optional<bool> enable_spdy_ip_pooling;
     Optional<bool> enable_spdy_compression;
     Optional<bool> enable_spdy_ping_based_connection_checking;
     Optional<net::NextProto> spdy_default_protocol;
     Optional<string> trusted_spdy_proxy;
     Optional<bool> enable_quic;
     Optional<bool> enable_quic_https;
+    Optional<bool> enable_quic_pacing;
+    Optional<bool> enable_quic_persist_server_info;
     Optional<bool> enable_quic_port_selection;
     Optional<size_t> quic_max_packet_length;
     Optional<net::QuicVersionVector> quic_supported_versions;
@@ -222,7 +225,7 @@ class IOThread : public content::BrowserThreadDelegate {
   virtual void InitAsync() OVERRIDE;
   virtual void CleanUp() OVERRIDE;
 
-  void InitializeNetworkOptions(const CommandLine& parsed_command_line);
+  void InitializeNetworkOptions(const base::CommandLine& parsed_command_line);
 
   // Enable SPDY with the given mode, which may contain the following:
   //
@@ -263,32 +266,41 @@ class IOThread : public content::BrowserThreadDelegate {
 
   // Configures QUIC options based on the flags in |command_line| as
   // well as the QUIC field trial group.
-  void ConfigureQuic(const CommandLine& command_line);
+  void ConfigureQuic(const base::CommandLine& command_line);
 
   // Returns true if QUIC should be enabled, either as a result
   // of a field trial or a command line flag.
-  bool ShouldEnableQuic(const CommandLine& command_line,
+  bool ShouldEnableQuic(const base::CommandLine& command_line,
                         base::StringPiece quic_trial_group);
 
   // Returns true if HTTPS over QUIC should be enabled, either as a result
   // of a field trial or a command line flag.
-  bool ShouldEnableQuicHttps(const CommandLine& command_line,
+  bool ShouldEnableQuicHttps(const base::CommandLine& command_line,
                              base::StringPiece quic_trial_group);
 
   // Returns true if the selection of the ephemeral port in bind() should be
   // performed by Chromium, and false if the OS should select the port.  The OS
   // option is used to prevent Windows from posting a security security warning
   // dialog.
-  bool ShouldEnableQuicPortSelection(const CommandLine& command_line);
+  bool ShouldEnableQuicPortSelection(const base::CommandLine& command_line);
+
+  // Returns true if QUIC packet pacing should be negotiated during the
+  // QUIC handshake.
+  bool ShouldEnableQuicPacing(const base::CommandLine& command_line,
+                              base::StringPiece quic_trial_group);
+
+  // Returns true if Chromium should persist QUIC server config information to
+  // disk cache.
+  bool ShouldEnableQuicPersistServerInfo(const base::CommandLine& command_line);
 
   // Returns the maximum length for QUIC packets, based on any flags in
   // |command_line| or the field trial.  Returns 0 if there is an error
   // parsing any of the options, or if the default value should be used.
-  size_t GetQuicMaxPacketLength(const CommandLine& command_line,
+  size_t GetQuicMaxPacketLength(const base::CommandLine& command_line,
                                 base::StringPiece quic_trial_group);
 
   // Returns the quic versions specified by any flags in |command_line|.
-  net::QuicVersion GetQuicVersion(const CommandLine& command_line);
+  net::QuicVersion GetQuicVersion(const base::CommandLine& command_line);
 
   // The NetLog is owned by the browser process, to allow logging from other
   // threads during shutdown, but is used most frequently on the IOThread.

@@ -16,8 +16,8 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
+#include "ui/accessibility/ax_enums.h"
 #include "ui/base/accelerators/accelerator.h"
-#include "ui/base/accessibility/accessibility_types.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drop_target_event.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
@@ -46,7 +46,7 @@ class Transform;
 }
 
 namespace ui {
-struct AccessibleViewState;
+struct AXViewState;
 class Compositor;
 class Layer;
 class NativeTheme;
@@ -323,12 +323,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Compositor.
   void SetPaintToLayer(bool paint_to_layer);
 
-  // Recreates a layer for the view and returns the old layer. After this call,
-  // the View no longer has a pointer to the old layer (so it won't be able to
-  // update the old layer or destroy it). The caller must free the returned
-  // layer.
-  // Returns NULL and does not recreate layer if view does not own its layer.
-  ui::Layer* RecreateLayer() WARN_UNUSED_RESULT;
+  // Overriden from ui:LayerOwner:
+  virtual scoped_ptr<ui::Layer> RecreateLayer() OVERRIDE;
 
   // RTL positioning -----------------------------------------------------------
 
@@ -556,12 +552,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   void EnableCanvasFlippingForRTLUI(bool enable) {
     flip_canvas_on_paint_for_rtl_ui_ = enable;
   }
-
-  // Accelerated painting ------------------------------------------------------
-
-  // Enable/Disable accelerated compositing.
-  static void set_use_acceleration_when_possible(bool use);
-  static bool get_use_acceleration_when_possible();
 
   // Input ---------------------------------------------------------------------
   // The points, rects, mouse locations, and touch locations in the following
@@ -934,7 +924,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Accessibility -------------------------------------------------------------
 
   // Modifies |state| to reflect the current accessible state of this view.
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) { }
+  virtual void GetAccessibleState(ui::AXViewState* state) { }
 
   // Returns an instance of the native accessibility interface for this view.
   virtual gfx::NativeViewAccessible GetNativeViewAccessible();
@@ -945,7 +935,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // cases where the view is a native control that's already sending a
   // native accessibility event and the duplicate event would cause
   // problems.
-  void NotifyAccessibilityEvent(ui::AccessibilityTypes::Event event_type,
+  void NotifyAccessibilityEvent(ui::AXEvent event_type,
                                 bool send_native_event);
 
   // Scrolling -----------------------------------------------------------------

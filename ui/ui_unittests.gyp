@@ -62,7 +62,6 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:test_support_base',
-        '../chrome/chrome_resources.gyp:packed_resources',
         '../skia/skia.gyp:skia',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
@@ -71,11 +70,11 @@
         '../third_party/libpng/libpng.gyp:libpng',
         '../url/url.gyp:url_lib',
         'base/strings/ui_strings.gyp:ui_strings',
+        'base/ui_base.gyp:ui_base',
         'events/events.gyp:events_base',
-        'gfx/gfx.gyp:gfx_geometry_unittests',
         'gfx/gfx.gyp:gfx_test_support',
         'resources/ui_resources.gyp:ui_resources',
-        'ui.gyp:ui',
+        'resources/ui_resources.gyp:ui_test_pak',
         'ui_test_support',
       ],
       # iOS uses a small subset of ui. common_sources are the only files that
@@ -123,7 +122,7 @@
         'base/clipboard/clipboard_unittest.cc',
         'base/clipboard/custom_data_helper_unittest.cc',
         'base/cocoa/base_view_unittest.mm',
-        'base/cocoa/cocoa_event_utils_unittest.mm',
+        'base/cocoa/cocoa_base_utils_unittest.mm',
         'base/cocoa/controls/blue_label_button_unittest.mm',
         'base/cocoa/controls/hover_image_menu_button_unittest.mm',
         'base/cocoa/controls/hyperlink_button_cell_unittest.mm',
@@ -161,6 +160,9 @@
         'gfx/sequential_id_generator_unittest.cc',
         'gfx/transform_util_unittest.cc',
         'gfx/utf16_indexing_unittest.cc',
+      ],
+      'includes': [
+        'display/display_unittests.gypi',
       ],
       'include_dirs': [
         '../',
@@ -222,6 +224,11 @@
             'gfx/interpolated_transform_unittest.cc',
           ],
         }],
+        ['OS == "android"', {
+          'sources': [
+            'gfx/android/scroller_unittest.cc',
+          ],
+        }],
         ['OS == "android" and gtest_target_type == "shared_library"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
@@ -241,7 +248,8 @@
             'gfx/platform_font_pango_unittest.cc',
           ],
           'conditions': [
-            ['linux_use_tcmalloc==1', {
+            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
                'dependencies': [
                  '../base/allocator/allocator.gyp:allocator',
                ],
@@ -280,6 +288,11 @@
           'dependencies': [
             'events/events.gyp:events_test_support',
             'gfx/gfx.gyp:gfx_test_support',
+            'ui_unittests_bundle',
+          ],
+        }, { # OS!="mac"
+          'dependencies': [
+            'base/strings/ui_strings.gyp:ui_unittest_strings',
           ],
         }],
         ['use_aura==1 or toolkit_views==1',  {
@@ -330,6 +343,19 @@
     },
   ],
   'conditions': [
+    # Mac target to build a test Framework bundle to mock out resource loading.
+    ['OS == "mac"', {
+      'targets': [
+        {
+          'target_name': 'ui_unittests_bundle',
+          'type': 'shared_library',
+          'dependencies': [
+            'resources/ui_resources.gyp:ui_test_pak',
+          ],
+          'includes': [ 'ui_unittests_bundle.gypi' ],
+        },
+      ],
+    }],
     # Special target to wrap a gtest_target_type==shared_library
     # ui_unittests into an android apk for execution.
     # See base.gyp for TODO(jrg)s about this strategy.

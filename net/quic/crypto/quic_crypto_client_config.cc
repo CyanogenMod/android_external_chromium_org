@@ -15,7 +15,7 @@
 #include "net/quic/crypto/p256_key_exchange.h"
 #include "net/quic/crypto/proof_verifier.h"
 #include "net/quic/crypto/quic_encrypter.h"
-#include "net/quic/crypto/quic_server_info.h"
+#include "net/quic/quic_session_key.h"
 #include "net/quic/quic_utils.h"
 
 #if defined(OS_WIN)
@@ -23,14 +23,14 @@
 #endif
 
 using base::StringPiece;
+using std::make_pair;
 using std::map;
 using std::string;
 using std::vector;
 
 namespace net {
 
-QuicCryptoClientConfig::QuicCryptoClientConfig() {
-}
+QuicCryptoClientConfig::QuicCryptoClientConfig() {}
 
 QuicCryptoClientConfig::~QuicCryptoClientConfig() {
   STLDeleteValues(&cached_states_);
@@ -39,12 +39,6 @@ QuicCryptoClientConfig::~QuicCryptoClientConfig() {
 QuicCryptoClientConfig::CachedState::CachedState()
     : server_config_valid_(false),
       generation_counter_(0) {}
-
-QuicCryptoClientConfig::CachedState::CachedState(
-    scoped_ptr<QuicServerInfo> quic_server_info)
-    : server_config_valid_(false),
-      generation_counter_(0),
-      quic_server_info_(quic_server_info.Pass()) {}
 
 QuicCryptoClientConfig::CachedState::~CachedState() {}
 
@@ -67,6 +61,10 @@ bool QuicCryptoClientConfig::CachedState::IsComplete(QuicWallTime now) const {
   }
 
   return true;
+}
+
+bool QuicCryptoClientConfig::CachedState::IsEmpty() const {
+  return server_config_.empty();
 }
 
 const CryptoHandshakeMessage*
@@ -167,6 +165,32 @@ void QuicCryptoClientConfig::CachedState::SetProofInvalid() {
   ++generation_counter_;
 }
 
+bool QuicCryptoClientConfig::CachedState::Initialize(
+    StringPiece server_config,
+    StringPiece source_address_token,
+    const vector<string>& certs,
+    StringPiece signature,
+    QuicWallTime now) {
+  DCHECK(server_config_.empty());
+
+  if (server_config.empty()) {
+    return false;
+  }
+
+  string error_details;
+  QuicErrorCode error = SetServerConfig(server_config, now,
+                                        &error_details);
+  if (error != QUIC_NO_ERROR) {
+    DVLOG(1) << "SetServerConfig failed with " << error_details;
+    return false;
+  }
+
+  signature.CopyToString(&server_config_sig_);
+  source_address_token.CopyToString(&source_address_token_);
+  certs_ = certs;
+  return true;
+}
+
 const string& QuicCryptoClientConfig::CachedState::server_config() const {
   return server_config_;
 }
@@ -216,6 +240,7 @@ void QuicCryptoClientConfig::CachedState::InitializeFrom(
   certs_ = other.certs_;
   server_config_sig_ = other.server_config_sig_;
   server_config_valid_ = other.server_config_valid_;
+  ++generation_counter_;
 }
 
 void QuicCryptoClientConfig::SetDefaults() {
@@ -229,30 +254,17 @@ void QuicCryptoClientConfig::SetDefaults() {
   aead[0] = kAESG;
 }
 
-QuicCryptoClientConfig::CachedState* QuicCryptoClientConfig::Create(
-    const string& server_hostname,
-    QuicServerInfoFactory* quic_server_info_factory) {
-  DCHECK(cached_states_.find(server_hostname) == cached_states_.end());
-  scoped_ptr<QuicServerInfo> quic_server_info;
-  if (quic_server_info_factory) {
-    quic_server_info.reset(
-        quic_server_info_factory->GetForHost(server_hostname));
-    quic_server_info->Start();
-  }
-
-  CachedState* cached = new CachedState(quic_server_info.Pass());
-  cached_states_.insert(make_pair(server_hostname, cached));
-  return cached;
-}
-
 QuicCryptoClientConfig::CachedState* QuicCryptoClientConfig::LookupOrCreate(
-    const string& server_hostname) {
-  map<string, CachedState*>::const_iterator it =
-      cached_states_.find(server_hostname);
+    const QuicSessionKey& server_key) {
+  map<QuicSessionKey, CachedState*>::const_iterator it =
+      cached_states_.find(server_key);
   if (it != cached_states_.end()) {
     return it->second;
   }
-  return Create(server_hostname, NULL);
+
+  CachedState* cached = new CachedState;
+  cached_states_.insert(make_pair(server_key, cached));
+  return cached;
 }
 
 void QuicCryptoClientConfig::FillInchoateClientHello(
@@ -269,8 +281,6 @@ void QuicCryptoClientConfig::FillInchoateClientHello(
   if (CryptoUtils::IsValidSNI(server_hostname)) {
     out->SetStringPiece(kSNI, server_hostname);
   }
-  // TODO(rch): Remove once we remove QUIC_VERSION_12.
-  out->SetValue(kVERS, static_cast<uint16>(0));
   out->SetValue(kVER, QuicVersionToQuicTag(preferred_version));
 
   if (!cached->source_address_token().empty()) {
@@ -315,7 +325,7 @@ void QuicCryptoClientConfig::FillInchoateClientHello(
 
 QuicErrorCode QuicCryptoClientConfig::FillClientHello(
     const string& server_hostname,
-    QuicGuid guid,
+    QuicConnectionId connection_id,
     const QuicVersion preferred_version,
     const CachedState* cached,
     QuicWallTime now,
@@ -438,7 +448,8 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
     const QuicData& client_hello_serialized = out->GetSerialized();
     hkdf_input.append(QuicCryptoConfig::kCETVLabel,
                       strlen(QuicCryptoConfig::kCETVLabel) + 1);
-    hkdf_input.append(reinterpret_cast<char*>(&guid), sizeof(guid));
+    hkdf_input.append(reinterpret_cast<char*>(&connection_id),
+                      sizeof(connection_id));
     hkdf_input.append(client_hello_serialized.data(),
                       client_hello_serialized.length());
     hkdf_input.append(cached->server_config());
@@ -479,8 +490,8 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
   }
 
   out_params->hkdf_input_suffix.clear();
-  out_params->hkdf_input_suffix.append(reinterpret_cast<char*>(&guid),
-                                       sizeof(guid));
+  out_params->hkdf_input_suffix.append(reinterpret_cast<char*>(&connection_id),
+                                       sizeof(connection_id));
   const QuicData& client_hello_serialized = out->GetSerialized();
   out_params->hkdf_input_suffix.append(client_hello_serialized.data(),
                                        client_hello_serialized.length());
@@ -567,7 +578,7 @@ QuicErrorCode QuicCryptoClientConfig::ProcessRejection(
 
 QuicErrorCode QuicCryptoClientConfig::ProcessServerHello(
     const CryptoHandshakeMessage& server_hello,
-    QuicGuid guid,
+    QuicConnectionId connection_id,
     const QuicVersionVector& negotiated_versions,
     CachedState* cached,
     QuicCryptoNegotiatedParameters* out_params,
@@ -581,23 +592,24 @@ QuicErrorCode QuicCryptoClientConfig::ProcessServerHello(
 
   const QuicTag* supported_version_tags;
   size_t num_supported_versions;
-  // TODO(rch): Once QUIC_VERSION_12 is removed, then make it a failure
-  // if the server does not have a version list.
+
   if (server_hello.GetTaglist(kVER, &supported_version_tags,
-                              &num_supported_versions) == QUIC_NO_ERROR) {
-    if (!negotiated_versions.empty()) {
-      bool mismatch = num_supported_versions != negotiated_versions.size();
-      for (size_t i = 0; i < num_supported_versions && !mismatch; ++i) {
-        mismatch = QuicTagToQuicVersion(supported_version_tags[i]) !=
-            negotiated_versions[i];
-      }
-      // The server sent a list of supported versions, and the connection
-      // reports that there was a version negotiation during the handshake.
+                              &num_supported_versions) != QUIC_NO_ERROR) {
+    *error_details = "server hello missing version list";
+    return QUIC_INVALID_CRYPTO_MESSAGE_PARAMETER;
+  }
+  if (!negotiated_versions.empty()) {
+    bool mismatch = num_supported_versions != negotiated_versions.size();
+    for (size_t i = 0; i < num_supported_versions && !mismatch; ++i) {
+      mismatch = QuicTagToQuicVersion(supported_version_tags[i]) !=
+          negotiated_versions[i];
+    }
+    // The server sent a list of supported versions, and the connection
+    // reports that there was a version negotiation during the handshake.
       // Ensure that these two lists are identical.
-      if (mismatch) {
-        *error_details = "Downgrade attack detected";
-        return QUIC_VERSION_NEGOTIATION_MISMATCH;
-      }
+    if (mismatch) {
+      *error_details = "Downgrade attack detected";
+      return QUIC_VERSION_NEGOTIATION_MISMATCH;
     }
   }
 
@@ -656,15 +668,15 @@ void QuicCryptoClientConfig::SetChannelIDSigner(ChannelIDSigner* signer) {
 }
 
 void QuicCryptoClientConfig::InitializeFrom(
-    const std::string& server_hostname,
-    const std::string& canonical_server_hostname,
+    const QuicSessionKey& server_key,
+    const QuicSessionKey& canonical_server_key,
     QuicCryptoClientConfig* canonical_crypto_config) {
   CachedState* canonical_cached =
-      canonical_crypto_config->LookupOrCreate(canonical_server_hostname);
+      canonical_crypto_config->LookupOrCreate(canonical_server_key);
   if (!canonical_cached->proof_valid()) {
     return;
   }
-  CachedState* cached = LookupOrCreate(server_hostname);
+  CachedState* cached = LookupOrCreate(server_key);
   cached->InitializeFrom(*canonical_cached);
 }
 

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "remoting/host/it2me/it2me_native_messaging_host_main.h"
+
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/i18n/icu_util.h"
@@ -31,7 +33,7 @@ namespace remoting {
 
 // Creates a It2MeNativeMessagingHost instance, attaches it to stdin/stdout and
 // runs the message loop until It2MeNativeMessagingHost signals shutdown.
-int It2MeNativeMessagingHostMain() {
+int StartIt2MeNativeMessagingHost() {
 #if defined(OS_MACOSX)
   // Needed so we don't leak objects when threads are created.
   base::mac::ScopedNSAutoreleasePool pool;
@@ -81,6 +83,17 @@ int It2MeNativeMessagingHostMain() {
   // redirected to a pipe or file.
   base::PlatformFile read_file = GetStdHandle(STD_INPUT_HANDLE);
   base::PlatformFile write_file = GetStdHandle(STD_OUTPUT_HANDLE);
+
+  // After the native messaging channel starts the native messaging reader
+  // will keep doing blocking read operations on the input named pipe.
+  // If any other thread tries to perform any operation on STDIN, it will also
+  // block because the input named pipe is synchronous (non-overlapped).
+  // It is pretty common for a DLL to query the device info (GetFileType) of
+  // the STD* handles at startup. So any LoadLibrary request can potentially
+  // be blocked. To prevent that from happening we close STDIN and STDOUT
+  // handles as soon as we retrieve the corresponding file handles.
+  SetStdHandle(STD_INPUT_HANDLE, NULL);
+  SetStdHandle(STD_OUTPUT_HANDLE, NULL);
 #elif defined(OS_POSIX)
   base::PlatformFile read_file = STDIN_FILENO;
   base::PlatformFile write_file = STDOUT_FILENO;
@@ -112,14 +125,14 @@ int It2MeNativeMessagingHostMain() {
   return kSuccessExitCode;
 }
 
-}  // namespace remoting
-
-int main(int argc, char** argv) {
+int It2MeNativeMessagingHostMain(int argc, char** argv) {
   // This object instance is required by Chrome code (such as MessageLoop).
   base::AtExitManager exit_manager;
 
   CommandLine::Init(argc, argv);
   remoting::InitHostLogging();
 
-  return remoting::It2MeNativeMessagingHostMain();
+  return StartIt2MeNativeMessagingHost();
 }
+
+}  // namespace remoting

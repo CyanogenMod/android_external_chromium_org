@@ -22,6 +22,7 @@ class MockErrorScreenActor : public ErrorScreenActor {
   MockErrorScreenActor();
   virtual ~MockErrorScreenActor();
 
+  MOCK_METHOD1(SetDelegate, void(ErrorScreenActorDelegate* delegate));
   MOCK_METHOD2(Show, void(OobeDisplay::Screen parent_screen,
                           base::DictionaryValue* params));
   MOCK_METHOD0(Hide, void(void));
@@ -33,6 +34,7 @@ class MockErrorScreenActor : public ErrorScreenActor {
                                    const std::string& network));
   MOCK_METHOD1(AllowGuestSignin, void(bool allowed));
   MOCK_METHOD1(AllowOfflineLogin, void(bool allowed));
+  MOCK_METHOD1(ShowConnectingIndicator, void(bool show));
 };
 
 }  // namespace chromeos

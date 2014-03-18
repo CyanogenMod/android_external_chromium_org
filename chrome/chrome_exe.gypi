@@ -59,8 +59,6 @@
         'app/chrome_exe_resource.h',
         'app/client_util.cc',
         'app/client_util.h',
-        'app/metro_driver_win.cc',
-        'app/metro_driver_win.h',
         'app/signature_validator_win.cc',
         'app/signature_validator_win.h',
         '<(DEPTH)/content/app/startup_helper_win.cc',
@@ -80,11 +78,6 @@
         'INFOPLIST_FILE': 'app/app-Info.plist',
       },
       'conditions': [
-        ['component == "shared_library"', {
-          'variables': {
-            'win_use_external_manifest': 1,
-          },
-        }],
         ['order_profiling!=0 and (chromeos==1 or OS=="linux")', {
           'dependencies' : [
             '../tools/cygprofile/cygprofile.gyp:cygprofile',
@@ -149,7 +142,8 @@
             },
           ],
           'conditions': [
-            ['linux_use_tcmalloc==1', {
+            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
                 'dependencies': [
                   '<(allocator_target)',
                 ],
@@ -201,11 +195,16 @@
                 '<@(chromium_child_dependencies)',
                 '../content/content.gyp:content_app_both',
                 # Needed for chrome_main.cc initialization of libraries.
-                '../build/linux/system.gyp:x11',
                 '../build/linux/system.gyp:pangocairo',
-                '../build/linux/system.gyp:xext',
                 # Needed to use the master_preferences functions
                 'installer_util',
+              ],
+            }],
+            # x11 build. Needed for chrome_main.cc initialization of libraries.
+            ['use_x11==1', {
+              'dependencies': [
+                '../build/linux/system.gyp:x11',
+                '../build/linux/system.gyp:xext',
               ],
             }],
           ],
@@ -581,6 +580,14 @@
             'app/client_util.cc',
           ],
         }],
+        ['OS=="win" and target_arch=="ia32"', {
+          'sources': [
+            # TODO(scottmg): This is a workaround for
+            # http://crbug.com/348525 that affects VS2013 before Update 2.
+            # This should be removed once Update 2 is released.
+            '../build/win/ftol3.obj',
+          ],
+        }],
         ['OS=="win" and component=="shared_library"', {
           'defines': ['COMPILE_CONTENT_STATICALLY'],
         }],
@@ -623,6 +630,7 @@
                 '../content/common/sandbox_init_win.cc',
                 '../content/common/sandbox_win.cc',
                 '../content/public/common/content_switches.cc',
+                '../content/public/common/sandboxed_process_launcher_delegate.cc',
                 '<(SHARED_INTERMEDIATE_DIR)/chrome_version/nacl64_exe_version.rc',
               ],
               'dependencies': [

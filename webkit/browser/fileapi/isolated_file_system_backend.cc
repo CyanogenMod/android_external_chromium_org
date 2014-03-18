@@ -57,17 +57,16 @@ bool IsolatedFileSystemBackend::CanHandleType(FileSystemType type) const {
 void IsolatedFileSystemBackend::Initialize(FileSystemContext* context) {
 }
 
-void IsolatedFileSystemBackend::OpenFileSystem(
-    const GURL& origin_url,
-    FileSystemType type,
+void IsolatedFileSystemBackend::ResolveURL(
+    const FileSystemURL& url,
     OpenFileSystemMode mode,
     const OpenFileSystemCallback& callback) {
-  // We never allow opening a new isolated FileSystem via usual OpenFileSystem.
+  // We never allow opening a new isolated FileSystem via usual ResolveURL.
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(callback,
-                 GetFileSystemRootURI(origin_url, type),
-                 GetFileSystemName(origin_url, type),
+                 GURL(),
+                 std::string(),
                  base::File::FILE_ERROR_SECURITY));
 }
 
@@ -100,6 +99,11 @@ FileSystemOperation* IsolatedFileSystemBackend::CreateFileSystemOperation(
     base::File::Error* error_code) const {
   return FileSystemOperation::Create(
       url, context, make_scoped_ptr(new FileSystemOperationContext(context)));
+}
+
+bool IsolatedFileSystemBackend::SupportsStreaming(
+    const fileapi::FileSystemURL& url) const {
+  return false;
 }
 
 scoped_ptr<webkit_blob::FileStreamReader>

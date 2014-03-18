@@ -7,6 +7,7 @@
 
 #include "apps/app_window.h"
 #include "components/web_modal/web_contents_modal_dialog_host.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/base_window.h"
 #include "ui/gfx/insets.h"
 
@@ -57,6 +58,10 @@ class NativeAppWindow : public ui::BaseWindow,
   // chrome.app.window.create with the option 'frame' set to 'none'.
   virtual bool IsFrameless() const = 0;
 
+  // Returns information about the window's frame.
+  virtual bool HasFrameColor() const = 0;
+  virtual SkColor FrameColor() const = 0;
+
   // Returns the difference between the window bounds (including titlebar and
   // borders) and the content bounds, if any.
   virtual gfx::Insets GetFrameInsets() const = 0;
@@ -67,9 +72,19 @@ class NativeAppWindow : public ui::BaseWindow,
   virtual void ShowWithApp() = 0;
   virtual void HideWithApp() = 0;
 
-  // Updates the minimum and maximum size of the native window with the current
-  // size constraints.
-  virtual void UpdateWindowMinMaxSize() = 0;
+  // Updates custom entries for the context menu of the app's taskbar/dock/shelf
+  // icon.
+  virtual void UpdateShelfMenu() = 0;
+
+  // Returns the minimum size constraints of the content.
+  virtual gfx::Size GetContentMinimumSize() const = 0;
+
+  // Returns the maximum size constraints of the content.
+  virtual gfx::Size GetContentMaximumSize() const = 0;
+
+  // Updates the minimum and maximum size constraints of the content.
+  virtual void SetContentSizeConstraints(const gfx::Size& min_size,
+                                         const gfx::Size& max_size) = 0;
 
   virtual ~NativeAppWindow() {}
 };

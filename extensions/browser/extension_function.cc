@@ -6,17 +6,16 @@
 
 #include "base/logging.h"
 #include "base/metrics/sparse_histogram.h"
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/renderer_host/chrome_render_message_filter.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/common/extension_api.h"
+#include "extensions/common/extension_messages.h"
 
 using content::BrowserThread;
 using content::RenderViewHost;

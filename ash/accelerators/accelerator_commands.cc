@@ -6,9 +6,10 @@
 
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
-#include "ash/wm/window_cycle_controller.h"
+#include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
+#include "ash/wm/wm_event.h"
 #include "base/metrics/user_metrics.h"
 
 namespace ash {
@@ -19,8 +20,10 @@ bool ToggleMinimized() {
   // Attempt to restore the window that would be cycled through next from
   // the launcher when there is no active window.
   if (!window) {
-    ash::Shell::GetInstance()->window_cycle_controller()->
-        HandleCycleWindow(WindowCycleController::FORWARD, false);
+    MruWindowTracker::WindowList mru_windows(
+        Shell::GetInstance()->mru_window_tracker()->BuildMruWindowList());
+    if (!mru_windows.empty())
+      wm::GetWindowState(mru_windows.front())->Activate();
     return true;
   }
   wm::WindowState* window_state = wm::GetWindowState(window);
@@ -35,13 +38,16 @@ void ToggleMaximized() {
   if (!window_state)
     return;
   base::RecordAction(base::UserMetricsAction("Accel_Toggle_Maximized"));
-  window_state->OnWMEvent(wm::TOGGLE_MAXIMIZE);
+  wm::WMEvent event(wm::WM_EVENT_TOGGLE_MAXIMIZE);
+  window_state->OnWMEvent(&event);
 }
 
 void ToggleFullscreen() {
   wm::WindowState* window_state = wm::GetActiveWindowState();
-  if (window_state)
-    window_state->ToggleFullscreen();
+  if (window_state) {
+    const wm::WMEvent event(wm::WM_EVENT_TOGGLE_FULLSCREEN);
+    window_state->OnWMEvent(&event);
+  }
 }
 
 }  // namespace accelerators

@@ -5,6 +5,8 @@
 #ifndef CHROMEOS_IME_COMPONENT_EXTENSION_IME_MANAGER_H_
 #define CHROMEOS_IME_COMPONENT_EXTENSION_IME_MANAGER_H_
 
+#include <set>
+
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
@@ -53,8 +55,7 @@ class CHROMEOS_EXPORT ComponentExtensionIMEManagerDelegate {
                     const base::FilePath& path) = 0;
 
   // Unloads component extension IME associated with |extension_id|.
-  // Returns false if it fails, otherwise returns true;
-  virtual bool Unload(const std::string& extension_id,
+  virtual void Unload(const std::string& extension_id,
                       const base::FilePath& path) = 0;
 };
 
@@ -64,7 +65,7 @@ class CHROMEOS_EXPORT ComponentExtensionIMEManager {
   class Observer {
    public:
     // Called when the initialization is done.
-    virtual void OnInitialized() = 0;
+    virtual void OnImeComponentExtensionInitialized() = 0;
   };
 
   ComponentExtensionIMEManager();
@@ -74,6 +75,9 @@ class CHROMEOS_EXPORT ComponentExtensionIMEManager {
   // mapping between input method id and engine components. This function must
   // be called before using any other function.
   void Initialize(scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate);
+
+  // Notifies the observers for the component extension IMEs are initialized.
+  void NotifyInitialized();
 
   // Returns true if the initialization is done, otherwise returns false.
   bool IsInitialized();
@@ -112,6 +116,9 @@ class CHROMEOS_EXPORT ComponentExtensionIMEManager {
   // Returns all IME as InputMethodDescriptors.
   input_method::InputMethodDescriptors GetAllIMEAsInputMethodDescriptor();
 
+  // Returns all XKB keyboard IME as InputMethodDescriptors.
+  input_method::InputMethodDescriptors GetXkbIMEAsInputMethodDescriptor();
+
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
@@ -122,6 +129,9 @@ class CHROMEOS_EXPORT ComponentExtensionIMEManager {
   bool FindEngineEntry(const std::string& input_method_id,
                        ComponentExtensionIME* out_extension,
                        ComponentExtensionEngine* out_engine);
+
+  bool IsInLoginLayoutWhitelist(const std::vector<std::string>& layouts);
+
   scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate_;
 
   std::vector<ComponentExtensionIME> component_extension_imes_;
@@ -129,6 +139,10 @@ class CHROMEOS_EXPORT ComponentExtensionIMEManager {
   ObserverList<Observer> observers_;
 
   bool is_initialized_;
+
+  bool was_initialization_notified_;
+
+  std::set<std::string> login_layout_set_;
 
   DISALLOW_COPY_AND_ASSIGN(ComponentExtensionIMEManager);
 };

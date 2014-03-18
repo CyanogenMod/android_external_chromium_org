@@ -4,6 +4,7 @@
 
 #include "content/browser/service_worker/service_worker_registration.h"
 
+#include "content/browser/service_worker/service_worker_info.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace content {
@@ -14,7 +15,6 @@ ServiceWorkerRegistration::ServiceWorkerRegistration(const GURL& pattern,
     : pattern_(pattern),
       script_url_(script_url),
       registration_id_(registration_id),
-      next_version_id_(0L),
       is_shutdown_(false) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 }
@@ -35,9 +35,22 @@ void ServiceWorkerRegistration::Shutdown() {
   is_shutdown_ = true;
 }
 
+ServiceWorkerRegistrationInfo ServiceWorkerRegistration::GetInfo() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  return ServiceWorkerRegistrationInfo(
+      script_url(),
+      pattern(),
+      active_version_ ? active_version_->GetInfo() : ServiceWorkerVersionInfo(),
+      pending_version_ ? pending_version_->GetInfo()
+                       : ServiceWorkerVersionInfo());
+}
+
 void ServiceWorkerRegistration::ActivatePendingVersion() {
+  active_version_->SetStatus(ServiceWorkerVersion::DEACTIVATED);
   active_version_->Shutdown();
   active_version_ = pending_version_;
+  // TODO(kinuko): This should be set to ACTIVATING until activation finishes.
+  active_version_->SetStatus(ServiceWorkerVersion::ACTIVE);
   pending_version_ = NULL;
 }
 

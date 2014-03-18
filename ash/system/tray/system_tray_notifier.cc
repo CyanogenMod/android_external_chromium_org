@@ -29,20 +29,20 @@ void SystemTrayNotifier::RemoveAccessibilityObserver(
   accessibility_observers_.RemoveObserver(observer);
 }
 
+void SystemTrayNotifier::AddAudioObserver(AudioObserver* observer) {
+  audio_observers_.AddObserver(observer);
+}
+
+void SystemTrayNotifier::RemoveAudioObserver(AudioObserver* observer) {
+  audio_observers_.RemoveObserver(observer);
+}
+
 void SystemTrayNotifier::AddBluetoothObserver(BluetoothObserver* observer) {
   bluetooth_observers_.AddObserver(observer);
 }
 
 void SystemTrayNotifier::RemoveBluetoothObserver(BluetoothObserver* observer) {
   bluetooth_observers_.RemoveObserver(observer);
-}
-
-void SystemTrayNotifier::AddCapsLockObserver(CapsLockObserver* observer) {
-  caps_lock_observers_.AddObserver(observer);
-}
-
-void SystemTrayNotifier::RemoveCapsLockObserver(CapsLockObserver* observer) {
-  caps_lock_observers_.RemoveObserver(observer);
 }
 
 void SystemTrayNotifier::AddClockObserver(ClockObserver* observer) {
@@ -77,26 +77,6 @@ void SystemTrayNotifier::RemoveLocaleObserver(LocaleObserver* observer) {
   locale_observers_.RemoveObserver(observer);
 }
 
-void SystemTrayNotifier::AddLogoutButtonObserver(
-    LogoutButtonObserver* observer) {
-  logout_button_observers_.AddObserver(observer);
-}
-
-void SystemTrayNotifier::RemoveLogoutButtonObserver(
-    LogoutButtonObserver* observer) {
-  logout_button_observers_.RemoveObserver(observer);
-}
-
-void SystemTrayNotifier::AddSessionLengthLimitObserver(
-    SessionLengthLimitObserver* observer) {
-  session_length_limit_observers_.AddObserver(observer);
-}
-
-void SystemTrayNotifier::RemoveSessionLengthLimitObserver(
-    SessionLengthLimitObserver* observer) {
-  session_length_limit_observers_.RemoveObserver(observer);
-}
-
 void SystemTrayNotifier::AddTracingObserver(TracingObserver* observer) {
   tracing_observers_.AddObserver(observer);
 }
@@ -123,12 +103,42 @@ void SystemTrayNotifier::RemoveUserObserver(UserObserver* observer) {
 
 #if defined(OS_CHROMEOS)
 
+void SystemTrayNotifier::AddLogoutButtonObserver(
+    LogoutButtonObserver* observer) {
+  logout_button_observers_.AddObserver(observer);
+}
+
+void SystemTrayNotifier::RemoveLogoutButtonObserver(
+    LogoutButtonObserver* observer) {
+  logout_button_observers_.RemoveObserver(observer);
+}
+
+void SystemTrayNotifier::AddSessionLengthLimitObserver(
+    SessionLengthLimitObserver* observer) {
+  session_length_limit_observers_.AddObserver(observer);
+}
+
+void SystemTrayNotifier::RemoveSessionLengthLimitObserver(
+    SessionLengthLimitObserver* observer) {
+  session_length_limit_observers_.RemoveObserver(observer);
+}
+
 void SystemTrayNotifier::AddNetworkObserver(NetworkObserver* observer) {
   network_observers_.AddObserver(observer);
 }
 
 void SystemTrayNotifier::RemoveNetworkObserver(NetworkObserver* observer) {
   network_observers_.RemoveObserver(observer);
+}
+
+void SystemTrayNotifier::AddNetworkPortalDetectorObserver(
+    NetworkPortalDetectorObserver* observer) {
+  network_portal_detector_observers_.AddObserver(observer);
+}
+
+void SystemTrayNotifier::RemoveNetworkPortalDetectorObserver(
+    NetworkPortalDetectorObserver* observer) {
+  network_portal_detector_observers_.RemoveObserver(observer);
 }
 
 void SystemTrayNotifier::AddEnterpriseDomainObserver(
@@ -160,6 +170,16 @@ void SystemTrayNotifier::RemoveScreenShareObserver(
     ScreenShareObserver* observer) {
   screen_share_observers_.RemoveObserver(observer);
 }
+
+void SystemTrayNotifier::AddLastWindowClosedObserver(
+    LastWindowClosedObserver* observer) {
+  last_window_closed_observers_.AddObserver(observer);
+}
+
+void SystemTrayNotifier::RemoveLastWindowClosedObserver(
+    LastWindowClosedObserver* observer) {
+  last_window_closed_observers_.RemoveObserver(observer);
+}
 #endif
 
 void SystemTrayNotifier::NotifyAccessibilityModeChanged(
@@ -168,6 +188,41 @@ void SystemTrayNotifier::NotifyAccessibilityModeChanged(
       AccessibilityObserver,
       accessibility_observers_,
       OnAccessibilityModeChanged(notify));
+}
+
+void SystemTrayNotifier::NotifyAudioOutputVolumeChanged() {
+  FOR_EACH_OBSERVER(
+      AudioObserver,
+      audio_observers_,
+      OnOutputVolumeChanged());
+}
+
+void SystemTrayNotifier::NotifyAudioOutputMuteChanged() {
+  FOR_EACH_OBSERVER(
+      AudioObserver,
+      audio_observers_,
+      OnOutputMuteChanged());
+}
+
+void SystemTrayNotifier::NotifyAudioNodesChanged() {
+  FOR_EACH_OBSERVER(
+      AudioObserver,
+      audio_observers_,
+      OnAudioNodesChanged());
+}
+
+void SystemTrayNotifier::NotifyAudioActiveOutputNodeChanged() {
+  FOR_EACH_OBSERVER(
+      AudioObserver,
+      audio_observers_,
+      OnActiveOutputNodeChanged());
+}
+
+void SystemTrayNotifier::NotifyAudioActiveInputNodeChanged() {
+  FOR_EACH_OBSERVER(
+      AudioObserver,
+      audio_observers_,
+      OnActiveInputNodeChanged());
 }
 
 void SystemTrayNotifier::NotifyTracingModeChanged(bool value) {
@@ -187,14 +242,6 @@ void SystemTrayNotifier::NotifyBluetoothDiscoveringChanged() {
   FOR_EACH_OBSERVER(BluetoothObserver,
                     bluetooth_observers_,
                     OnBluetoothDiscoveringChanged());
-}
-
-void SystemTrayNotifier::NotifyCapsLockChanged(
-    bool enabled,
-    bool search_mapped_to_caps_lock) {
-  FOR_EACH_OBSERVER(CapsLockObserver,
-                    caps_lock_observers_,
-                    OnCapsLockChanged(enabled, search_mapped_to_caps_lock));
 }
 
 void SystemTrayNotifier::NotifyRefreshClock() {
@@ -220,23 +267,10 @@ void SystemTrayNotifier::NotifyDriveJobUpdated(
                     OnDriveJobUpdated(status));
 }
 
-void SystemTrayNotifier::NotifyRefreshIME(bool show_message) {
+void SystemTrayNotifier::NotifyRefreshIME() {
   FOR_EACH_OBSERVER(IMEObserver,
                     ime_observers_,
-                    OnIMERefresh(show_message));
-}
-
-void SystemTrayNotifier::NotifyShowLoginButtonChanged(bool show_login_button) {
-  FOR_EACH_OBSERVER(LogoutButtonObserver,
-                    logout_button_observers_,
-                    OnShowLogoutButtonInTrayChanged(show_login_button));
-}
-
-void SystemTrayNotifier::NotifyLogoutDialogDurationChanged(
-    base::TimeDelta duration) {
-  FOR_EACH_OBSERVER(LogoutButtonObserver,
-                    logout_button_observers_,
-                    OnLogoutDialogDurationChanged(duration));
+                    OnIMERefresh());
 }
 
 void SystemTrayNotifier::NotifyLocaleChanged(
@@ -248,18 +282,6 @@ void SystemTrayNotifier::NotifyLocaleChanged(
       LocaleObserver,
       locale_observers_,
       OnLocaleChanged(delegate, cur_locale, from_locale, to_locale));
-}
-
-void SystemTrayNotifier::NotifySessionStartTimeChanged() {
-  FOR_EACH_OBSERVER(SessionLengthLimitObserver,
-                    session_length_limit_observers_,
-                    OnSessionStartTimeChanged());
-}
-
-void SystemTrayNotifier::NotifySessionLengthLimitChanged() {
-  FOR_EACH_OBSERVER(SessionLengthLimitObserver,
-                    session_length_limit_observers_,
-                    OnSessionLengthLimitChanged());
 }
 
 void SystemTrayNotifier::NotifyUpdateRecommended(
@@ -283,10 +305,42 @@ void SystemTrayNotifier::NotifyUserAddedToSession() {
 
 #if defined(OS_CHROMEOS)
 
+void SystemTrayNotifier::NotifyShowLoginButtonChanged(bool show_login_button) {
+  FOR_EACH_OBSERVER(LogoutButtonObserver,
+                    logout_button_observers_,
+                    OnShowLogoutButtonInTrayChanged(show_login_button));
+}
+
+void SystemTrayNotifier::NotifyLogoutDialogDurationChanged(
+    base::TimeDelta duration) {
+  FOR_EACH_OBSERVER(LogoutButtonObserver,
+                    logout_button_observers_,
+                    OnLogoutDialogDurationChanged(duration));
+}
+
+void SystemTrayNotifier::NotifySessionStartTimeChanged() {
+  FOR_EACH_OBSERVER(SessionLengthLimitObserver,
+                    session_length_limit_observers_,
+                    OnSessionStartTimeChanged());
+}
+
+void SystemTrayNotifier::NotifySessionLengthLimitChanged() {
+  FOR_EACH_OBSERVER(SessionLengthLimitObserver,
+                    session_length_limit_observers_,
+                    OnSessionLengthLimitChanged());
+}
+
 void SystemTrayNotifier::NotifyRequestToggleWifi() {
   FOR_EACH_OBSERVER(NetworkObserver,
                     network_observers_,
                     RequestToggleWifi());
+}
+
+void SystemTrayNotifier::NotifyOnCaptivePortalDetected(
+    const std::string& service_path) {
+  FOR_EACH_OBSERVER(NetworkPortalDetectorObserver,
+                    network_portal_detector_observers_,
+                    OnCaptivePortalDetected(service_path));
 }
 
 void SystemTrayNotifier::NotifyEnterpriseDomainChanged() {
@@ -316,6 +370,12 @@ void SystemTrayNotifier::NotifyScreenShareStart(
 void SystemTrayNotifier::NotifyScreenShareStop() {
   FOR_EACH_OBSERVER(ScreenShareObserver, screen_share_observers_,
                     OnScreenShareStop());
+}
+
+void SystemTrayNotifier::NotifyLastWindowClosed() {
+  FOR_EACH_OBSERVER(LastWindowClosedObserver,
+                    last_window_closed_observers_,
+                    OnLastWindowClosed());
 }
 
 #endif  // OS_CHROMEOS

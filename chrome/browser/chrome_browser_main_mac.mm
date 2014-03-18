@@ -18,7 +18,6 @@
 #include "chrome/browser/browser_process.h"
 #import "chrome/browser/chrome_browser_application_mac.h"
 #include "chrome/browser/mac/install_from_dmg.h"
-#include "chrome/browser/mac/keychain_reauthorize.h"
 #import "chrome/browser/mac/keystone_glue.h"
 #include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/common/chrome_paths.h"
@@ -31,17 +30,6 @@
 #include "ui/base/resource/resource_handle.h"
 
 namespace {
-
-// Some users rarely restart Chrome, so they might never get a chance to run
-// the at-launch KeychainReauthorize. To account for them, there's also an
-// at-update KeychainReauthorize option, which runs from .keystone_install for
-// users on a user Keystone ticket. This operation may make sense for a period
-// of time after the application switches to being signed by the new
-// certificate, as long as the at-update stub executable is still signed by
-// the old one.
-NSString* const kKeychainReauthorizeAtUpdatePref =
-    @"KeychainReauthorizeAtUpdateMay2012";
-const int kKeychainReauthorizeAtUpdateMaxTries = 3;
 
 // This is one enum instead of two so that the values can be correlated in a
 // histogram.
@@ -162,25 +150,6 @@ ChromeBrowserMainPartsMac::~ChromeBrowserMainPartsMac() {
 }
 
 void ChromeBrowserMainPartsMac::PreEarlyInitialization() {
-  if (parsed_command_line().HasSwitch(switches::kKeychainReauthorize)) {
-    if (base::mac::AmIBundled()) {
-      LOG(FATAL) << "Inappropriate process type for Keychain reauthorization";
-    }
-
-    // Do Keychain reauthorization at the time of update installation. This
-    // gets three chances to run. If the first or second try doesn't complete
-    // successfully (crashes or is interrupted for any reason), there will be
-    // another chance. Once this step completes successfully, it should never
-    // have to run again.
-    //
-    // This is kicked off by a special stub executable during an automatic
-    // update. See chrome/installer/mac/keychain_reauthorize_main.cc.
-    chrome::KeychainReauthorizeIfNeeded(kKeychainReauthorizeAtUpdatePref,
-                                        kKeychainReauthorizeAtUpdateMaxTries);
-
-    exit(0);
-  }
-
   ChromeBrowserMainPartsPosix::PreEarlyInitialization();
 
   if (base::mac::WasLaunchedAsHiddenLoginItem()) {
@@ -260,18 +229,19 @@ void ChromeBrowserMainPartsMac::PreMainMessageLoopStart() {
   // Make sure the app controller has been created.
   DCHECK([NSApp delegate]);
 
-  // Prevent Cocoa from turning command-line arguments into
-  // |-application:openFiles:|, since we already handle them directly.
-  [[NSUserDefaults standardUserDefaults]
-      setObject:@"NO" forKey:@"NSTreatUnknownArgumentsAsOpen"];
-  // CoreAnimation has poor performance and CoreAnimation and non-CoreAnimation
-  // exhibit window flickering when layers are not hosted in the window server,
-  // which is the default when not not using the 10.9 SDK.
-  // TODO: Remove this when we build with the 10.9 SDK.
-  if (base::mac::IsOSMavericksOrLater())
-    [[NSUserDefaults standardUserDefaults]
-        setObject:@"YES"
-          forKey:@"NSWindowHostsLayersInWindowServer"];
+  [[NSUserDefaults standardUserDefaults] registerDefaults:@{
+      // Prevent Cocoa from turning command-line arguments into
+      // |-application:openFiles:|, since we already handle them directly.
+      // @"NO" looks like a mistake, but the value really is supposed to be a
+      // string.
+      @"NSTreatUnknownArgumentsAsOpen": @"NO",
+      // CoreAnimation has poor performance and CoreAnimation and
+      // non-CoreAnimation exhibit window flickering when layers are not hosted
+      // in the window server, which is the default when not not using the
+      // 10.9 SDK.
+      // TODO: Remove this when we build with the 10.9 SDK.
+      @"NSWindowHostsLayersInWindowServer": @(base::mac::IsOSMavericksOrLater())
+  }];
 }
 
 void ChromeBrowserMainPartsMac::PostProfileInit() {

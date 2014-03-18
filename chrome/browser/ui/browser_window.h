@@ -45,6 +45,7 @@ struct SSLStatus;
 }
 
 namespace extensions {
+class Command;
 class Extension;
 }
 
@@ -386,6 +387,19 @@ class BrowserWindow : public ui::BaseWindow {
   // shown.  Invoked when a new RenderHostView is created for a non-NTP
   // navigation entry and the bookmark bar is detached.
   virtual int GetRenderViewHeightInsetWithDetachedBookmarkBar() = 0;
+
+  // Executes |command| registered by |extension|.
+  virtual void ExecuteExtensionCommand(const extensions::Extension* extension,
+                                       const extensions::Command& command) = 0;
+
+  // Shows the page action for the extension.
+  virtual void ShowPageActionPopup(const extensions::Extension* extension) = 0;
+
+  // Shows the browser action for the extension. NOTE(wittman): This function
+  // grants tab permissions to the browser action popup, so it should only be
+  // invoked due to user action, not due to invocation from an extensions API.
+  virtual void ShowBrowserActionPopup(
+      const extensions::Extension* extension) = 0;
 
  protected:
   friend class BrowserCloseManager;

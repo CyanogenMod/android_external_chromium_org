@@ -39,13 +39,13 @@ class FakeProfileSyncService : public ProfileSyncService {
             profile,
             NULL,
             ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
-            ProfileSyncService::MANUAL_START),
+            browser_sync::MANUAL_START),
         sync_initialized_(true),
         initialized_state_violation_(false) {}
 
   virtual ~FakeProfileSyncService() {}
 
-  static BrowserContextKeyedService* BuildFakeProfileSyncService(
+  static KeyedService* BuildFakeProfileSyncService(
       content::BrowserContext* context) {
     return new FakeProfileSyncService(static_cast<Profile*>(context));
   }
@@ -167,7 +167,7 @@ PreferencesPrivateApiTest::TestGetSyncCategoriesWithoutPassphraseFunction() {
                "Encrypted categories should not be present";
   EXPECT_EQ(categories->end(),
            categories->Find(base::StringValue("Typed URLs"))) <<
-               "Unsynced categories should not be present";;
+               "Unsynced categories should not be present";
 }
 
 IN_PROC_BROWSER_TEST_F(PreferencesPrivateApiTest,

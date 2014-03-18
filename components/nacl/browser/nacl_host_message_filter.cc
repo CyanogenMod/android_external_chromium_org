@@ -51,7 +51,8 @@ bool NaClHostMessageFilter::OnMessageReceived(const IPC::Message& message,
                         OnGetNexeFd)
     IPC_MESSAGE_HANDLER(NaClHostMsg_ReportTranslationFinished,
                         OnTranslationFinished)
-    IPC_MESSAGE_HANDLER(NaClHostMsg_NaClErrorStatus, OnNaClErrorStatus)
+    IPC_MESSAGE_HANDLER(NaClHostMsg_MissingArchError,
+                        OnMissingArchError)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(NaClHostMsg_OpenNaClExecutable,
                                     OnOpenNaClExecutable)
     IPC_MESSAGE_HANDLER(NaClHostMsg_NaClGetNumProcessors,
@@ -76,6 +77,7 @@ void NaClHostMessageFilter::OnLaunchNaCl(
       launch_params.render_view_id,
       launch_params.permission_bits,
       launch_params.uses_irt,
+      launch_params.uses_nonsfi_mode,
       launch_params.enable_dyncode_syscalls,
       launch_params.enable_exception_handling,
       launch_params.enable_crash_throttling,
@@ -106,13 +108,13 @@ void NaClHostMessageFilter::OnGetReadonlyPnaclFd(
 // NaClHostMsg_NaClCreateTemporaryFile sync message.
 void NaClHostMessageFilter::SyncReturnTemporaryFile(
     IPC::Message* reply_msg,
-    base::PlatformFile fd) {
-  if (fd == base::kInvalidPlatformFileValue) {
-    reply_msg->set_reply_error();
-  } else {
+    base::File file) {
+  if (file.IsValid()) {
     NaClHostMsg_NaClCreateTemporaryFile::WriteReplyParams(
         reply_msg,
-        IPC::GetFileHandleForProcess(fd, PeerHandle(), true));
+        IPC::TakeFileHandleForProcess(file.Pass(), PeerHandle()));
+  } else {
+    reply_msg->set_reply_error();
   }
   Send(reply_msg);
 }
@@ -137,7 +139,7 @@ void NaClHostMessageFilter::AsyncReturnTemporaryFile(
       IPC::GetFileHandleForProcess(fd, PeerHandle(), false)));
 }
 
-void NaClHostMessageFilter::OnNaClGetNumProcessors(int *num_processors) {
+void NaClHostMessageFilter::OnNaClGetNumProcessors(int* num_processors) {
   *num_processors = base::SysInfo::NumberOfProcessors();
 }
 
@@ -168,10 +170,9 @@ void NaClHostMessageFilter::OnTranslationFinished(int instance, bool success) {
       render_process_id_, instance, success);
 }
 
-void NaClHostMessageFilter::OnNaClErrorStatus(int render_view_id,
-                                              int error_id) {
-  nacl::NaClBrowser::GetDelegate()->ShowNaClInfobar(render_process_id_,
-                                                    render_view_id, error_id);
+void NaClHostMessageFilter::OnMissingArchError(int render_view_id) {
+  nacl::NaClBrowser::GetDelegate()->
+      ShowMissingArchInfobar(render_process_id_, render_view_id);
 }
 
 void NaClHostMessageFilter::OnOpenNaClExecutable(int render_view_id,

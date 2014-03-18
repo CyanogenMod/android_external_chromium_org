@@ -10,6 +10,8 @@
 #include "base/message_loop/message_loop.h"
 #include "chromeos/cryptohome/async_method_caller.h"
 #include "chromeos/dbus/blocking_method_caller.h"
+#include "chromeos/dbus/cryptohome/key.pb.h"
+#include "chromeos/dbus/cryptohome/rpc.pb.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
@@ -357,7 +359,7 @@ class CryptohomeClientImpl : public CryptohomeClient {
     if (!response.get())
       return false;
     dbus::MessageReader reader(response.get());
-    uint8* bytes = NULL;
+    const uint8* bytes = NULL;
     size_t length = 0;
     if (!reader.PopArrayOfBytes(&bytes, &length) ||
         !reader.PopBool(successful))
@@ -432,10 +434,13 @@ class CryptohomeClientImpl : public CryptohomeClient {
 
   // CryptohomeClient override.
   virtual void AsyncTpmAttestationCreateEnrollRequest(
+      attestation::PrivacyCAType pca_type,
       const AsyncMethodCallback& callback) OVERRIDE {
     dbus::MethodCall method_call(
         cryptohome::kCryptohomeInterface,
-        cryptohome::kCryptohomeAsyncTpmAttestationCreateEnrollRequest);
+        cryptohome::kCryptohomeAsyncTpmAttestationCreateEnrollRequestNew);
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendInt32(pca_type);
     proxy_->CallMethod(&method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
                        base::Bind(&CryptohomeClientImpl::OnAsyncMethodCall,
                                   weak_ptr_factory_.GetWeakPtr(),
@@ -444,12 +449,14 @@ class CryptohomeClientImpl : public CryptohomeClient {
 
   // CryptohomeClient override.
   virtual void AsyncTpmAttestationEnroll(
+      attestation::PrivacyCAType pca_type,
       const std::string& pca_response,
       const AsyncMethodCallback& callback) OVERRIDE {
     dbus::MethodCall method_call(
         cryptohome::kCryptohomeInterface,
-        cryptohome::kCryptohomeAsyncTpmAttestationEnroll);
+        cryptohome::kCryptohomeAsyncTpmAttestationEnrollNew);
     dbus::MessageWriter writer(&method_call);
+    writer.AppendInt32(pca_type);
     writer.AppendArrayOfBytes(
         reinterpret_cast<const uint8*>(pca_response.data()),
         pca_response.size());
@@ -461,14 +468,16 @@ class CryptohomeClientImpl : public CryptohomeClient {
 
   // CryptohomeClient override.
   virtual void AsyncTpmAttestationCreateCertRequest(
+      attestation::PrivacyCAType pca_type,
       attestation::AttestationCertificateProfile certificate_profile,
       const std::string& user_id,
       const std::string& request_origin,
       const AsyncMethodCallback& callback) OVERRIDE {
     dbus::MethodCall method_call(
         cryptohome::kCryptohomeInterface,
-        cryptohome::kCryptohomeAsyncTpmAttestationCreateCertRequestByProfile);
+        cryptohome::kCryptohomeAsyncTpmAttestationCreateCertRequest);
     dbus::MessageWriter writer(&method_call);
+    writer.AppendInt32(pca_type);
     writer.AppendInt32(certificate_profile);
     writer.AppendString(user_id);
     writer.AppendString(request_origin);
@@ -691,6 +700,86 @@ class CryptohomeClientImpl : public CryptohomeClient {
     CallBoolMethod(&method_call, callback);
   }
 
+  virtual void CheckKeyEx(
+      const cryptohome::AccountIdentifier& id,
+      const cryptohome::AuthorizationRequest& auth,
+      const cryptohome::CheckKeyRequest& request,
+      const ProtobufMethodCallback& callback) OVERRIDE {
+    const char* method_name = cryptohome::kCryptohomeCheckKeyEx;
+    dbus::MethodCall method_call(cryptohome::kCryptohomeInterface,
+                                 method_name);
+
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendProtoAsArrayOfBytes(id);
+    writer.AppendProtoAsArrayOfBytes(auth);
+    writer.AppendProtoAsArrayOfBytes(request);
+
+    proxy_->CallMethod(&method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+                        base::Bind(&CryptohomeClientImpl::OnBaseReplyMethod,
+                                   weak_ptr_factory_.GetWeakPtr(),
+                                   callback));
+  }
+
+  virtual void MountEx(
+      const cryptohome::AccountIdentifier& id,
+      const cryptohome::AuthorizationRequest& auth,
+      const cryptohome::MountRequest& request,
+      const ProtobufMethodCallback& callback) OVERRIDE {
+    const char* method_name = cryptohome::kCryptohomeMountEx;
+    dbus::MethodCall method_call(cryptohome::kCryptohomeInterface,
+                                 method_name);
+
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendProtoAsArrayOfBytes(id);
+    writer.AppendProtoAsArrayOfBytes(auth);
+    writer.AppendProtoAsArrayOfBytes(request);
+
+    proxy_->CallMethod(&method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+                       base::Bind(&CryptohomeClientImpl::OnBaseReplyMethod,
+                                  weak_ptr_factory_.GetWeakPtr(),
+                                  callback));
+  }
+
+  virtual void AddKeyEx(
+      const cryptohome::AccountIdentifier& id,
+      const cryptohome::AuthorizationRequest& auth,
+      const cryptohome::AddKeyRequest& request,
+      const ProtobufMethodCallback& callback) OVERRIDE {
+    const char* method_name = cryptohome::kCryptohomeAddKeyEx;
+    dbus::MethodCall method_call(cryptohome::kCryptohomeInterface,
+                                 method_name);
+
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendProtoAsArrayOfBytes(id);
+    writer.AppendProtoAsArrayOfBytes(auth);
+    writer.AppendProtoAsArrayOfBytes(request);
+
+    proxy_->CallMethod(&method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+                       base::Bind(&CryptohomeClientImpl::OnBaseReplyMethod,
+                                  weak_ptr_factory_.GetWeakPtr(),
+                                  callback));
+  }
+
+  virtual void UpdateKeyEx(
+      const cryptohome::AccountIdentifier& id,
+      const cryptohome::AuthorizationRequest& auth,
+      const cryptohome::UpdateKeyRequest& request,
+      const ProtobufMethodCallback& callback) OVERRIDE {
+    const char* method_name = cryptohome::kCryptohomeUpdateKeyEx;
+    dbus::MethodCall method_call(cryptohome::kCryptohomeInterface,
+                                 method_name);
+
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendProtoAsArrayOfBytes(id);
+    writer.AppendProtoAsArrayOfBytes(auth);
+    writer.AppendProtoAsArrayOfBytes(request);
+
+    proxy_->CallMethod(&method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+                       base::Bind(&CryptohomeClientImpl::OnBaseReplyMethod,
+                                  weak_ptr_factory_.GetWeakPtr(),
+                                  callback));
+  }
+
  protected:
   virtual void Init(dbus::Bus* bus) OVERRIDE {
     proxy_ = bus->GetObjectProxy(
@@ -737,7 +826,7 @@ class CryptohomeClientImpl : public CryptohomeClient {
       return;
     }
     dbus::MessageReader reader(response);
-    uint8* bytes = NULL;
+    const uint8* bytes = NULL;
     size_t length = 0;
     if (!reader.PopArrayOfBytes(&bytes, &length)) {
       callback.Run(DBUS_METHOD_CALL_FAILURE, std::vector<uint8>());
@@ -827,7 +916,7 @@ class CryptohomeClientImpl : public CryptohomeClient {
       return;
     }
     dbus::MessageReader reader(response);
-    uint8* data_buffer = NULL;
+    const uint8* data_buffer = NULL;
     size_t data_length = 0;
     bool result = false;
     if (!reader.PopArrayOfBytes(&data_buffer, &data_length) ||
@@ -835,8 +924,24 @@ class CryptohomeClientImpl : public CryptohomeClient {
       callback.Run(DBUS_METHOD_CALL_FAILURE, false, std::string());
       return;
     }
-    std::string data(reinterpret_cast<char*>(data_buffer), data_length);
+    std::string data(reinterpret_cast<const char*>(data_buffer), data_length);
     callback.Run(DBUS_METHOD_CALL_SUCCESS, result, data);
+  }
+
+  // Handles responses for methods with a BaseReply protobuf method.
+  void OnBaseReplyMethod(const ProtobufMethodCallback& callback,
+                         dbus::Response* response) {
+    cryptohome::BaseReply reply;
+    if (!response) {
+      callback.Run(DBUS_METHOD_CALL_FAILURE, false, reply);
+      return;
+    }
+    dbus::MessageReader reader(response);
+    if (!reader.PopArrayOfBytesAsProto(&reply)) {
+      callback.Run(DBUS_METHOD_CALL_FAILURE, false, reply);
+      return;
+    }
+    callback.Run(DBUS_METHOD_CALL_SUCCESS, true, reply);
   }
 
   // Handles responses for Pkcs11GetTpmTokenInfo.
@@ -900,7 +1005,7 @@ class CryptohomeClientImpl : public CryptohomeClient {
     dbus::MessageReader reader(signal);
     int async_id = 0;
     bool return_status = false;
-    uint8* return_data_buffer = NULL;
+    const uint8* return_data_buffer = NULL;
     size_t return_data_length = 0;
     if (!reader.PopInt32(&async_id) ||
         !reader.PopBool(&return_status) ||
@@ -909,7 +1014,7 @@ class CryptohomeClientImpl : public CryptohomeClient {
       return;
     }
     if (!async_call_status_data_handler_.is_null()) {
-      std::string return_data(reinterpret_cast<char*>(return_data_buffer),
+      std::string return_data(reinterpret_cast<const char*>(return_data_buffer),
                               return_data_length);
       async_call_status_data_handler_.Run(async_id, return_status, return_data);
     }

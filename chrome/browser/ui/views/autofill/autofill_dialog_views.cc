@@ -952,7 +952,7 @@ AutofillDialogViews::SuggestedButton::SuggestedButton(
     : views::MenuButton(NULL, base::string16(), listener, false) {
   const int kFocusBorderWidth = 1;
   SetBorder(views::Border::CreateEmptyBorder(kMenuButtonTopInset,
-                                             kDialogEdgePadding,
+                                             kFocusBorderWidth,
                                              kMenuButtonBottomInset,
                                              kFocusBorderWidth));
   gfx::Insets insets = GetInsets();
@@ -1434,6 +1434,11 @@ void AutofillDialogViews::HideSignIn() {
 
 void AutofillDialogViews::ModelChanged() {
   menu_runner_.reset();
+
+  for (DetailGroupMap::const_iterator iter = detail_groups_.begin();
+       iter != detail_groups_.end(); ++iter) {
+    UpdateDetailsGroupState(iter->second);
+  }
 }
 
 void AutofillDialogViews::OnSignInResize(const gfx::Size& pref_size) {
@@ -1995,7 +2000,25 @@ void AutofillDialogViews::UpdateSectionImpl(
   DetailsGroup* group = GroupForSection(section);
 
   if (clobber_inputs) {
+    ServerFieldType type = UNKNOWN_TYPE;
+    views::View* focused = GetFocusManager()->GetFocusedView();
+    if (focused && group->container->Contains(focused)) {
+      // Remember which view was focused before the inputs are clobbered.
+      if (focused->GetClassName() == DecoratedTextfield::kViewClassName)
+        type = TypeForTextfield(static_cast<DecoratedTextfield*>(focused));
+      else if (focused->GetClassName() == views::Combobox::kViewClassName)
+        type = TypeForCombobox(static_cast<views::Combobox*>(focused));
+    }
+
     InitInputsView(section);
+
+    if (type != UNKNOWN_TYPE) {
+      // Restore the focus to the input with the previous type (e.g. country).
+      views::View* to_focus = TextfieldForType(type);
+      if (!to_focus) to_focus = ComboboxForType(type);
+      if (to_focus)
+        to_focus->RequestFocus();
+    }
   } else {
     const DetailInputs& updated_inputs =
         delegate_->RequestedFieldsForSection(section);

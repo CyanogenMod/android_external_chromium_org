@@ -85,12 +85,18 @@ std::string ConvertFromBase16String(const std::string base_16) {
   return compressed;
 }
 
-// Dummy callback function that does nothing except to accept ownership of
-// |audio_bus| for destruction.
-void OwnThatAudioBus(scoped_ptr<AudioBus> audio_bus) {}
-
 void UpdateCastTransportStatus(transport::CastTransportStatus status) {
-  EXPECT_EQ(status, transport::TRANSPORT_INITIALIZED);
+  bool result = (status == transport::TRANSPORT_AUDIO_INITIALIZED ||
+                 status == transport::TRANSPORT_VIDEO_INITIALIZED);
+  EXPECT_TRUE(result);
+}
+
+void AudioInitializationStatus(CastInitializationStatus status) {
+  EXPECT_EQ(STATUS_AUDIO_INITIALIZED, status);
+}
+
+void VideoInitializationStatus(CastInitializationStatus status) {
+  EXPECT_EQ(STATUS_VIDEO_INITIALIZED, status);
 }
 
 // This is wrapped in a struct because it needs to be put into a std::map.
@@ -392,24 +398,39 @@ class End2EndTest : public ::testing::Test {
  protected:
   End2EndTest()
       : start_time_(),
-        testing_clock_(new base::SimpleTestTickClock()),
-        task_runner_(new test::FakeSingleThreadTaskRunner(testing_clock_)),
-        cast_environment_(new CastEnvironment(
-            scoped_ptr<base::TickClock>(testing_clock_).Pass(),
+        testing_clock_sender_(new base::SimpleTestTickClock()),
+        testing_clock_receiver_(new base::SimpleTestTickClock()),
+        task_runner_(
+            new test::FakeSingleThreadTaskRunner(testing_clock_sender_)),
+        logging_config_(GetLoggingConfigWithRawEventsAndStatsEnabled()),
+        cast_environment_sender_(new CastEnvironment(
+            scoped_ptr<base::TickClock>(testing_clock_sender_).Pass(),
             task_runner_,
             task_runner_,
             task_runner_,
             task_runner_,
             task_runner_,
             task_runner_,
-            GetLoggingConfigWithRawEventsAndStatsEnabled())),
-        receiver_to_sender_(cast_environment_),
-        sender_to_receiver_(cast_environment_),
+            logging_config_)),
+        cast_environment_receiver_(new CastEnvironment(
+            scoped_ptr<base::TickClock>(testing_clock_receiver_).Pass(),
+            task_runner_,
+            task_runner_,
+            task_runner_,
+            task_runner_,
+            task_runner_,
+            task_runner_,
+            logging_config_)),
+        receiver_to_sender_(cast_environment_receiver_),
+        sender_to_receiver_(cast_environment_sender_),
         test_receiver_audio_callback_(new TestReceiverAudioCallback()),
         test_receiver_video_callback_(new TestReceiverVideoCallback()) {
-    testing_clock_->Advance(
+    testing_clock_sender_->Advance(
         base::TimeDelta::FromMilliseconds(kStartMillisecond));
-    cast_environment_->Logging()->AddRawEventSubscriber(&event_subscriber_);
+    testing_clock_receiver_->Advance(
+        base::TimeDelta::FromMilliseconds(kStartMillisecond));
+    cast_environment_sender_->Logging()->AddRawEventSubscriber(
+        &event_subscriber_sender_);
   }
 
   void SetupConfig(transport::AudioCodec audio_codec,
@@ -464,41 +485,51 @@ class End2EndTest : public ::testing::Test {
     video_receiver_config_.use_external_decoder = false;
     video_receiver_config_.codec = video_sender_config_.codec;
 
-    transport_config_.audio_ssrc = audio_sender_config_.sender_ssrc;
-    transport_config_.video_ssrc = video_sender_config_.sender_ssrc;
-    transport_config_.video_codec = video_sender_config_.codec;
-    transport_config_.audio_codec = audio_sender_config_.codec;
-    transport_config_.video_rtp_config = video_sender_config_.rtp_config;
-    transport_config_.audio_rtp_config = audio_sender_config_.rtp_config;
-    transport_config_.audio_frequency = audio_sender_config_.frequency;
-    transport_config_.audio_channels = audio_sender_config_.channels;
+    transport_audio_config_.base.ssrc = audio_sender_config_.sender_ssrc;
+    transport_audio_config_.codec = audio_sender_config_.codec;
+    transport_audio_config_.base.rtp_config = audio_sender_config_.rtp_config;
+    transport_audio_config_.frequency = audio_sender_config_.frequency;
+    transport_audio_config_.channels = audio_sender_config_.channels;
+    transport_video_config_.base.ssrc = video_sender_config_.sender_ssrc;
+    transport_video_config_.codec = video_sender_config_.codec;
+    transport_video_config_.base.rtp_config = video_sender_config_.rtp_config;
   }
 
   void Create() {
-    cast_receiver_.reset(
-        CastReceiver::CreateCastReceiver(cast_environment_,
-                                         audio_receiver_config_,
-                                         video_receiver_config_,
-                                         &receiver_to_sender_));
+    cast_receiver_ = CastReceiver::Create(cast_environment_receiver_,
+                                          audio_receiver_config_,
+                                          video_receiver_config_,
+                                          &receiver_to_sender_);
+    net::IPEndPoint dummy_endpoint;
     transport_sender_.reset(new transport::CastTransportSenderImpl(
-        testing_clock_,
-        transport_config_,
+        NULL,
+        testing_clock_sender_,
+        dummy_endpoint,
+        dummy_endpoint,
+        logging_config_,
         base::Bind(&UpdateCastTransportStatus),
+        base::Bind(&End2EndTest::LogRawEvents, base::Unretained(this)),
+        base::TimeDelta::FromSeconds(1),
         task_runner_,
         &sender_to_receiver_));
+    transport_sender_->InitializeAudio(transport_audio_config_);
+    transport_sender_->InitializeVideo(transport_video_config_);
 
-    cast_sender_.reset(CastSender::CreateCastSender(
-        cast_environment_,
-        &audio_sender_config_,
-        &video_sender_config_,
-        NULL,
-        base::Bind(&End2EndTest::InitializationResult, base::Unretained(this)),
-        transport_sender_.get()));
+    cast_sender_ =
+        CastSender::Create(cast_environment_sender_, transport_sender_.get());
+
+    // Initializing audio and video senders.
+    cast_sender_->InitializeAudio(audio_sender_config_,
+                                  base::Bind(&AudioInitializationStatus));
+    cast_sender_->InitializeVideo(
+        video_sender_config_, base::Bind(&VideoInitializationStatus), NULL);
 
     receiver_to_sender_.SetPacketReceiver(cast_sender_->packet_receiver());
     sender_to_receiver_.SetPacketReceiver(cast_receiver_->packet_receiver());
 
-    frame_input_ = cast_sender_->frame_input();
+    audio_frame_input_ = cast_sender_->audio_frame_input();
+    video_frame_input_ = cast_sender_->video_frame_input();
+
     frame_receiver_ = cast_receiver_->frame_receiver();
 
     audio_bus_factory_.reset(
@@ -509,11 +540,11 @@ class End2EndTest : public ::testing::Test {
   }
 
   virtual ~End2EndTest() {
-    cast_environment_->Logging()->RemoveRawEventSubscriber(&event_subscriber_);
+    cast_environment_sender_->Logging()->RemoveRawEventSubscriber(
+        &event_subscriber_sender_);
   }
 
   virtual void TearDown() OVERRIDE {
-
     cast_sender_.reset();
     cast_receiver_.reset();
     task_runner_->RunTasks();
@@ -530,31 +561,48 @@ class End2EndTest : public ::testing::Test {
         media::VideoFrame::CreateFrame(
             VideoFrame::I420, size, gfx::Rect(size), size, time_diff);
     PopulateVideoFrame(video_frame, start_value);
-    frame_input_->InsertRawVideoFrame(video_frame, capture_time);
+    video_frame_input_->InsertRawVideoFrame(video_frame, capture_time);
   }
 
   void RunTasks(int during_ms) {
     for (int i = 0; i < during_ms; ++i) {
       // Call process the timers every 1 ms.
-      testing_clock_->Advance(base::TimeDelta::FromMilliseconds(1));
+      testing_clock_sender_->Advance(base::TimeDelta::FromMilliseconds(1));
+      testing_clock_receiver_->Advance(base::TimeDelta::FromMilliseconds(1));
       task_runner_->RunTasks();
     }
   }
 
-  void InitializationResult(CastInitializationStatus result) {
-    EXPECT_EQ(result, STATUS_INITIALIZED);
+  void LogRawEvents(const std::vector<PacketEvent>& packet_events) {
+    EXPECT_FALSE(packet_events.empty());
+    for (std::vector<media::cast::PacketEvent>::const_iterator it =
+             packet_events.begin();
+         it != packet_events.end();
+         ++it) {
+      cast_environment_sender_->Logging()->InsertPacketEvent(it->timestamp,
+                                                             it->type,
+                                                             it->rtp_timestamp,
+                                                             it->frame_id,
+                                                             it->packet_id,
+                                                             it->max_packet_id,
+                                                             it->size);
+    }
   }
 
   AudioReceiverConfig audio_receiver_config_;
   VideoReceiverConfig video_receiver_config_;
   AudioSenderConfig audio_sender_config_;
   VideoSenderConfig video_sender_config_;
-  transport::CastTransportConfig transport_config_;
+  transport::CastTransportAudioConfig transport_audio_config_;
+  transport::CastTransportVideoConfig transport_video_config_;
 
   base::TimeTicks start_time_;
-  base::SimpleTestTickClock* testing_clock_;
+  base::SimpleTestTickClock* testing_clock_sender_;
+  base::SimpleTestTickClock* testing_clock_receiver_;
   scoped_refptr<test::FakeSingleThreadTaskRunner> task_runner_;
-  scoped_refptr<CastEnvironment> cast_environment_;
+  CastLoggingConfig logging_config_;
+  scoped_refptr<CastEnvironment> cast_environment_sender_;
+  scoped_refptr<CastEnvironment> cast_environment_receiver_;
 
   LoopBackTransport receiver_to_sender_;
   LoopBackTransport sender_to_receiver_;
@@ -562,7 +610,8 @@ class End2EndTest : public ::testing::Test {
 
   scoped_ptr<CastReceiver> cast_receiver_;
   scoped_ptr<CastSender> cast_sender_;
-  scoped_refptr<FrameInput> frame_input_;
+  scoped_refptr<AudioFrameInput> audio_frame_input_;
+  scoped_refptr<VideoFrameInput> video_frame_input_;
   scoped_refptr<FrameReceiver> frame_receiver_;
 
   scoped_refptr<TestReceiverAudioCallback> test_receiver_audio_callback_;
@@ -570,19 +619,15 @@ class End2EndTest : public ::testing::Test {
 
   scoped_ptr<TestAudioBusFactory> audio_bus_factory_;
 
-  SimpleEventSubscriber event_subscriber_;
+  SimpleEventSubscriber event_subscriber_sender_;
   std::vector<FrameEvent> frame_events_;
   std::vector<PacketEvent> packet_events_;
   std::vector<GenericEvent> generic_events_;
+  // |transport_sender_| has a RepeatingTimer which needs a MessageLoop.
+  base::MessageLoop message_loop_;
 };
 
-#if defined(OS_WIN)
-#define MAYBE_LoopNoLossPcm16 DISABLED_LoopNoLossPcm16
-#else
-#define MAYBE_LoopNoLossPcm16 LoopNoLossPcm16
-#endif
-// TODO(mikhal): Crashes in win bots (http://crbug.com/329563)
-TEST_F(End2EndTest, MAYBE_LoopNoLossPcm16) {
+TEST_F(End2EndTest, LoopNoLossPcm16) {
   SetupConfig(transport::kPcm16, 32000, false, 1);
   // Reduce video resolution to allow processing multiple frames within a
   // reasonable time frame.
@@ -601,7 +646,7 @@ TEST_F(End2EndTest, MAYBE_LoopNoLossPcm16) {
     scoped_ptr<AudioBus> audio_bus(audio_bus_factory_->NextAudioBus(
         base::TimeDelta::FromMilliseconds(10) * num_10ms_blocks));
 
-    base::TimeTicks send_time = testing_clock_->NowTicks();
+    base::TimeTicks send_time = testing_clock_sender_->NowTicks();
     if (i != 0) {
       // Due to the re-sampler and NetEq in the webrtc AudioCodingModule the
       // first samples will be 0 and then slowly ramp up to its real
@@ -613,11 +658,7 @@ TEST_F(End2EndTest, MAYBE_LoopNoLossPcm16) {
           send_time);
     }
 
-    AudioBus* const audio_bus_ptr = audio_bus.get();
-    frame_input_->InsertAudio(
-        audio_bus_ptr,
-        send_time,
-        base::Bind(&OwnThatAudioBus, base::Passed(&audio_bus)));
+    audio_frame_input_->InsertAudio(audio_bus.Pass(), send_time);
 
     test_receiver_video_callback_->AddExpectedResult(
         video_start,
@@ -654,23 +695,15 @@ TEST_F(End2EndTest, MAYBE_LoopNoLossPcm16) {
   EXPECT_EQ(i, test_receiver_video_callback_->number_times_called());
 }
 
-// TODO(mikhal): Crashes on the Win7 x64 bots. Re-enable.
-// http://crbug.com/329563
-#if defined(OS_WIN)
-#define MAYBE_LoopNoLossPcm16ExternalDecoder \
-  DISABLED_LoopNoLossPcm16ExternalDecoder
-#else
-#define MAYBE_LoopNoLossPcm16ExternalDecoder LoopNoLossPcm16ExternalDecoder
-#endif
 // This tests our external decoder interface for Audio.
 // Audio test without packet loss using raw PCM 16 audio "codec";
-TEST_F(End2EndTest, MAYBE_LoopNoLossPcm16ExternalDecoder) {
+TEST_F(End2EndTest, LoopNoLossPcm16ExternalDecoder) {
   SetupConfig(transport::kPcm16, 32000, true, 1);
   Create();
 
   int i = 0;
   for (; i < 10; ++i) {
-    base::TimeTicks send_time = testing_clock_->NowTicks();
+    base::TimeTicks send_time = testing_clock_sender_->NowTicks();
     scoped_ptr<AudioBus> audio_bus(audio_bus_factory_->NextAudioBus(
         base::TimeDelta::FromMilliseconds(10)));
     test_receiver_audio_callback_->AddExpectedResult(
@@ -678,11 +711,7 @@ TEST_F(End2EndTest, MAYBE_LoopNoLossPcm16ExternalDecoder) {
         1,
         send_time);
 
-    AudioBus* const audio_bus_ptr = audio_bus.get();
-    frame_input_->InsertAudio(
-        audio_bus_ptr,
-        send_time,
-        base::Bind(&OwnThatAudioBus, base::Passed(&audio_bus)));
+    audio_frame_input_->InsertAudio(audio_bus.Pass(), send_time);
 
     RunTasks(10);
     frame_receiver_->GetCodedAudioFrame(
@@ -693,21 +722,15 @@ TEST_F(End2EndTest, MAYBE_LoopNoLossPcm16ExternalDecoder) {
   EXPECT_EQ(10, test_receiver_audio_callback_->number_times_called());
 }
 
-// TODO(mikhal): Crashes on the bots. Re-enable. http://crbug.com/329563
-#if defined(OS_WIN)
-#define MAYBE_LoopNoLossOpus DISABLED_LoopNoLossOpus
-#else
-#define MAYBE_LoopNoLossOpus LoopNoLossOpus
-#endif
 // This tests our Opus audio codec without video.
-TEST_F(End2EndTest, MAYBE_LoopNoLossOpus) {
+TEST_F(End2EndTest, LoopNoLossOpus) {
   SetupConfig(transport::kOpus, kDefaultAudioSamplingRate, false, 1);
   Create();
 
   int i = 0;
   for (; i < 10; ++i) {
     int num_10ms_blocks = 3;
-    base::TimeTicks send_time = testing_clock_->NowTicks();
+    base::TimeTicks send_time = testing_clock_sender_->NowTicks();
 
     scoped_ptr<AudioBus> audio_bus(audio_bus_factory_->NextAudioBus(
         base::TimeDelta::FromMilliseconds(10) * num_10ms_blocks));
@@ -719,11 +742,7 @@ TEST_F(End2EndTest, MAYBE_LoopNoLossOpus) {
           send_time);
     }
 
-    AudioBus* const audio_bus_ptr = audio_bus.get();
-    frame_input_->InsertAudio(
-        audio_bus_ptr,
-        send_time,
-        base::Bind(&OwnThatAudioBus, base::Passed(&audio_bus)));
+    audio_frame_input_->InsertAudio(audio_bus.Pass(), send_time);
 
     RunTasks(30);
 
@@ -745,11 +764,9 @@ TEST_F(End2EndTest, MAYBE_LoopNoLossOpus) {
   EXPECT_EQ(i - 1, test_receiver_audio_callback_->number_times_called());
 }
 
-// This tests start sending audio and video before the receiver is ready.
-//
-// TODO(miu): Test disabled because of non-determinism.
-// http://crbug.com/314233
-TEST_F(End2EndTest, DISABLED_StartSenderBeforeReceiver) {
+// This tests start sending audio and video at start-up time before the receiver
+// is ready; it sends 2 frames before the receiver comes online.
+TEST_F(End2EndTest, StartSenderBeforeReceiver) {
   SetupConfig(transport::kOpus, kDefaultAudioSamplingRate, false, 1);
   Create();
 
@@ -758,34 +775,46 @@ TEST_F(End2EndTest, DISABLED_StartSenderBeforeReceiver) {
 
   sender_to_receiver_.SetSendPackets(false);
 
-  for (int i = 0; i < 3; ++i) {
+  const int test_delay_ms = 100;
+
+  base::TimeTicks initial_send_time;
+  for (int i = 0; i < 2; ++i) {
     int num_10ms_blocks = audio_diff / 10;
     audio_diff -= num_10ms_blocks * 10;
 
-    base::TimeTicks send_time = testing_clock_->NowTicks();
+    base::TimeTicks send_time = testing_clock_sender_->NowTicks();
+    if (initial_send_time.is_null())
+      initial_send_time = send_time;
     scoped_ptr<AudioBus> audio_bus(audio_bus_factory_->NextAudioBus(
         base::TimeDelta::FromMilliseconds(10) * num_10ms_blocks));
 
-    AudioBus* const audio_bus_ptr = audio_bus.get();
-    frame_input_->InsertAudio(
-        audio_bus_ptr,
-        send_time,
-        base::Bind(&OwnThatAudioBus, base::Passed(&audio_bus)));
+    audio_frame_input_->InsertAudio(audio_bus.Pass(), send_time);
+
+    // Frame will be rendered with 100mS delay, as the transmission is delayed.
+    // The receiver at this point cannot be synced to the sender's clock, as no
+    // packets, and specifically no RTCP packets were sent.
+    test_receiver_video_callback_->AddExpectedResult(
+        video_start,
+        video_sender_config_.width,
+        video_sender_config_.height,
+        initial_send_time +
+            base::TimeDelta::FromMilliseconds(test_delay_ms + kFrameTimerMs));
 
     SendVideoFrame(video_start, send_time);
     RunTasks(kFrameTimerMs);
     audio_diff += kFrameTimerMs;
     video_start++;
   }
-  RunTasks(100);
+
+  RunTasks(test_delay_ms);
   sender_to_receiver_.SetSendPackets(true);
 
   int j = 0;
-  const int number_of_audio_frames_to_ignore = 3;
+  const int number_of_audio_frames_to_ignore = 2;
   for (; j < 10; ++j) {
     int num_10ms_blocks = audio_diff / 10;
     audio_diff -= num_10ms_blocks * 10;
-    base::TimeTicks send_time = testing_clock_->NowTicks();
+    base::TimeTicks send_time = testing_clock_sender_->NowTicks();
 
     scoped_ptr<AudioBus> audio_bus(audio_bus_factory_->NextAudioBus(
         base::TimeDelta::FromMilliseconds(10) * num_10ms_blocks));
@@ -797,11 +826,7 @@ TEST_F(End2EndTest, DISABLED_StartSenderBeforeReceiver) {
           send_time);
     }
 
-    AudioBus* const audio_bus_ptr = audio_bus.get();
-    frame_input_->InsertAudio(
-        audio_bus_ptr,
-        send_time,
-        base::Bind(&OwnThatAudioBus, base::Passed(&audio_bus)));
+    audio_frame_input_->InsertAudio(audio_bus.Pass(), send_time);
 
     test_receiver_video_callback_->AddExpectedResult(
         video_start,
@@ -838,33 +863,37 @@ TEST_F(End2EndTest, DISABLED_StartSenderBeforeReceiver) {
 }
 
 // This tests a network glitch lasting for 10 video frames.
-TEST_F(End2EndTest, GlitchWith3Buffers) {
+// Flaky. See crbug.com/351596.
+TEST_F(End2EndTest, DISABLED_GlitchWith3Buffers) {
   SetupConfig(transport::kOpus, kDefaultAudioSamplingRate, false, 3);
   video_sender_config_.rtp_config.max_delay_ms = 67;
   video_receiver_config_.rtp_max_delay_ms = 67;
   Create();
 
   int video_start = kVideoStart;
-  base::TimeTicks send_time = testing_clock_->NowTicks();
-  SendVideoFrame(video_start, send_time);
-  RunTasks(kFrameTimerMs);
-
-  test_receiver_video_callback_->AddExpectedResult(video_start,
-                                                   video_sender_config_.width,
-                                                   video_sender_config_.height,
-                                                   send_time);
-  frame_receiver_->GetRawVideoFrame(
-      base::Bind(&TestReceiverVideoCallback::CheckVideoFrame,
-                 test_receiver_video_callback_));
-
-  RunTasks(750);  // Make sure that we send a RTCP packet.
-
-  video_start++;
+  base::TimeTicks send_time;
+  // Frames will rendered on completion until the render time stabilizes, i.e.
+  // we got enough data.
+  const int frames_before_glitch = 20;
+  for (int i = 0; i < frames_before_glitch; ++i) {
+    send_time = testing_clock_sender_->NowTicks();
+    SendVideoFrame(video_start, send_time);
+    test_receiver_video_callback_->AddExpectedResult(
+        video_start,
+        video_sender_config_.width,
+        video_sender_config_.height,
+        send_time);
+    frame_receiver_->GetRawVideoFrame(
+        base::Bind(&TestReceiverVideoCallback::CheckVideoFrame,
+                   test_receiver_video_callback_));
+    RunTasks(kFrameTimerMs);
+    video_start++;
+  }
 
   // Introduce a glitch lasting for 10 frames.
   sender_to_receiver_.SetSendPackets(false);
   for (int i = 0; i < 10; ++i) {
-    send_time = testing_clock_->NowTicks();
+    send_time = testing_clock_sender_->NowTicks();
     // First 3 will be sent and lost.
     SendVideoFrame(video_start, send_time);
     RunTasks(kFrameTimerMs);
@@ -872,7 +901,7 @@ TEST_F(End2EndTest, GlitchWith3Buffers) {
   }
   sender_to_receiver_.SetSendPackets(true);
   RunTasks(100);
-  send_time = testing_clock_->NowTicks();
+  send_time = testing_clock_sender_->NowTicks();
 
   // Frame 1 should be acked by now and we should have an opening to send 4.
   SendVideoFrame(video_start, send_time);
@@ -890,7 +919,8 @@ TEST_F(End2EndTest, GlitchWith3Buffers) {
                  test_receiver_video_callback_));
 
   RunTasks(2 * kFrameTimerMs + 1);  // Empty the receiver pipeline.
-  EXPECT_EQ(2, test_receiver_video_callback_->number_times_called());
+  EXPECT_EQ(frames_before_glitch + 1,
+            test_receiver_video_callback_->number_times_called());
 }
 
 TEST_F(End2EndTest, DropEveryOtherFrame3Buffers) {
@@ -905,7 +935,7 @@ TEST_F(End2EndTest, DropEveryOtherFrame3Buffers) {
 
   int i = 0;
   for (; i < 20; ++i) {
-    send_time = testing_clock_->NowTicks();
+    send_time = testing_clock_sender_->NowTicks();
     SendVideoFrame(video_start, send_time);
 
     if (i % 2 == 0) {
@@ -937,8 +967,8 @@ TEST_F(End2EndTest, ResetReferenceFrameId) {
   sender_to_receiver_.AlwaysResetReferenceFrameId();
 
   int frames_counter = 0;
-  for (; frames_counter < 20; ++frames_counter) {
-    const base::TimeTicks send_time = testing_clock_->NowTicks();
+  for (; frames_counter < 10; ++frames_counter) {
+    const base::TimeTicks send_time = testing_clock_sender_->NowTicks();
     SendVideoFrame(frames_counter, send_time);
 
     test_receiver_video_callback_->AddExpectedResult(
@@ -962,19 +992,19 @@ TEST_F(End2EndTest, ResetReferenceFrameId) {
 TEST_F(End2EndTest, CryptoVideo) {
   SetupConfig(transport::kPcm16, 32000, false, 1);
 
-  transport_config_.aes_iv_mask =
+  transport_video_config_.base.aes_iv_mask =
       ConvertFromBase16String("1234567890abcdeffedcba0987654321");
-  transport_config_.aes_key =
+  transport_video_config_.base.aes_key =
       ConvertFromBase16String("deadbeefcafeb0b0b0b0cafedeadbeef");
 
-  video_receiver_config_.aes_iv_mask = transport_config_.aes_iv_mask;
-  video_receiver_config_.aes_key = transport_config_.aes_key;
+  video_receiver_config_.aes_iv_mask = transport_video_config_.base.aes_iv_mask;
+  video_receiver_config_.aes_key = transport_video_config_.base.aes_key;
 
   Create();
 
   int frames_counter = 0;
   for (; frames_counter < 3; ++frames_counter) {
-    const base::TimeTicks send_time = testing_clock_->NowTicks();
+    const base::TimeTicks send_time = testing_clock_sender_->NowTicks();
 
     SendVideoFrame(frames_counter, send_time);
 
@@ -996,22 +1026,16 @@ TEST_F(End2EndTest, CryptoVideo) {
             test_receiver_video_callback_->number_times_called());
 }
 
-// TODO(mikhal): Crashes on the bots. Re-enable. http://crbug.com/329563
-#if defined(OS_WIN)
-#define MAYBE_CryptoAudio DISABLED_CryptoAudio
-#else
-#define MAYBE_CryptoAudio CryptoAudio
-#endif
-TEST_F(End2EndTest, MAYBE_CryptoAudio) {
+TEST_F(End2EndTest, CryptoAudio) {
   SetupConfig(transport::kPcm16, 32000, false, 1);
 
-  transport_config_.aes_iv_mask =
+  transport_audio_config_.base.aes_iv_mask =
       ConvertFromBase16String("abcdeffedcba12345678900987654321");
-  transport_config_.aes_key =
+  transport_audio_config_.base.aes_key =
       ConvertFromBase16String("deadbeefcafecafedeadbeefb0b0b0b0");
 
-  audio_receiver_config_.aes_iv_mask = transport_config_.aes_iv_mask;
-  audio_receiver_config_.aes_key = transport_config_.aes_key;
+  audio_receiver_config_.aes_iv_mask = transport_audio_config_.base.aes_iv_mask;
+  audio_receiver_config_.aes_key = transport_audio_config_.base.aes_key;
 
   Create();
 
@@ -1019,7 +1043,7 @@ TEST_F(End2EndTest, MAYBE_CryptoAudio) {
   for (; frames_counter < 3; ++frames_counter) {
     int num_10ms_blocks = 2;
 
-    const base::TimeTicks send_time = testing_clock_->NowTicks();
+    const base::TimeTicks send_time = testing_clock_sender_->NowTicks();
 
     scoped_ptr<AudioBus> audio_bus(audio_bus_factory_->NextAudioBus(
         base::TimeDelta::FromMilliseconds(10) * num_10ms_blocks));
@@ -1034,11 +1058,7 @@ TEST_F(End2EndTest, MAYBE_CryptoAudio) {
           num_10ms_blocks,
           send_time);
     }
-    AudioBus* const audio_bus_ptr = audio_bus.get();
-    frame_input_->InsertAudio(
-        audio_bus_ptr,
-        send_time,
-        base::Bind(&OwnThatAudioBus, base::Passed(&audio_bus)));
+    audio_frame_input_->InsertAudio(audio_bus.Pass(), send_time);
 
     RunTasks(num_10ms_blocks * 10);
 
@@ -1068,9 +1088,9 @@ TEST_F(End2EndTest, VideoLogging) {
   Create();
 
   int video_start = kVideoStart;
-  const int num_frames = 1;
+  const int num_frames = 5;
   for (int i = 0; i < num_frames; ++i) {
-    base::TimeTicks send_time = testing_clock_->NowTicks();
+    base::TimeTicks send_time = testing_clock_sender_->NowTicks();
     test_receiver_video_callback_->AddExpectedResult(
         video_start,
         video_sender_config_.width,
@@ -1098,7 +1118,7 @@ TEST_F(End2EndTest, VideoLogging) {
   // Logging tests.
   // Frame logging.
   // Verify that all frames and all required events were logged.
-  event_subscriber_.GetFrameEventsAndReset(&frame_events_);
+  event_subscriber_sender_.GetFrameEventsAndReset(&frame_events_);
 
   // For each frame, count the number of events that occurred for each event
   // for that frame.
@@ -1120,24 +1140,34 @@ TEST_F(End2EndTest, VideoLogging) {
 
     int expected_event_count_for_frame = 0;
 
-    EXPECT_GT(map_it->second.counter[kVideoFrameSentToEncoder], 0);
+    EXPECT_EQ(1, map_it->second.counter[kVideoFrameSentToEncoder]);
     expected_event_count_for_frame +=
         map_it->second.counter[kVideoFrameSentToEncoder];
 
-    EXPECT_GT(map_it->second.counter[kVideoFrameEncoded], 0);
+    EXPECT_EQ(1, map_it->second.counter[kVideoFrameEncoded]);
     expected_event_count_for_frame +=
         map_it->second.counter[kVideoFrameEncoded];
 
-    EXPECT_GT(map_it->second.counter[kVideoFrameReceived], 0);
+    EXPECT_EQ(1, map_it->second.counter[kVideoFrameReceived]);
     expected_event_count_for_frame +=
         map_it->second.counter[kVideoFrameReceived];
 
-    EXPECT_GT(map_it->second.counter[kVideoRenderDelay], 0);
+    EXPECT_EQ(1, map_it->second.counter[kVideoRenderDelay]);
     expected_event_count_for_frame += map_it->second.counter[kVideoRenderDelay];
 
-    EXPECT_GT(map_it->second.counter[kVideoFrameDecoded], 0);
+    EXPECT_EQ(1, map_it->second.counter[kVideoFrameDecoded]);
     expected_event_count_for_frame +=
         map_it->second.counter[kVideoFrameDecoded];
+
+    // There is no guarantee that kVideoAckSent is loggeed exactly once per
+    // frame.
+    EXPECT_GT(map_it->second.counter[kVideoAckSent], 0);
+    expected_event_count_for_frame += map_it->second.counter[kVideoAckSent];
+
+    // There is no guarantee that kVideoAckReceived is loggeed exactly once per
+    // frame.
+    EXPECT_GT(map_it->second.counter[kVideoAckReceived], 0);
+    expected_event_count_for_frame += map_it->second.counter[kVideoAckReceived];
 
     // Verify that there were no other events logged with respect to this
     // frame.
@@ -1147,7 +1177,7 @@ TEST_F(End2EndTest, VideoLogging) {
 
   // Packet logging.
   // Verify that all packet related events were logged.
-  event_subscriber_.GetPacketEventsAndReset(&packet_events_);
+  event_subscriber_sender_.GetPacketEventsAndReset(&packet_events_);
   std::map<uint16, LoggingEventCounts> event_count_for_packet =
       GetEventCountForPacketEvents(packet_events_);
 
@@ -1172,27 +1202,24 @@ TEST_F(End2EndTest, VideoLogging) {
   }
 }
 
-// TODO(mikhal): Crashes on the bots. Re-enable. http://crbug.com/329563
-#if defined(OS_WIN)
-#define MAYBE_AudioLogging DISABLED_AudioLogging
-#else
-#define MAYBE_AudioLogging AudioLogging
-#endif
 // Audio test without packet loss - tests the logging aspects of the end2end,
 // but is basically equivalent to LoopNoLossPcm16.
-TEST_F(End2EndTest, MAYBE_AudioLogging) {
+TEST_F(End2EndTest, AudioLogging) {
   SetupConfig(transport::kPcm16, 32000, false, 1);
   Create();
 
   int audio_diff = kFrameTimerMs;
-  const int num_frames = 10;
-  for (int i = 0; i < num_frames; ++i) {
+  const int num_audio_buses = 10;
+  int num_frames = 0;
+  for (int i = 0; i < num_audio_buses; ++i) {
     int num_10ms_blocks = audio_diff / 10;
     audio_diff -= num_10ms_blocks * 10;
-    base::TimeTicks send_time = testing_clock_->NowTicks();
+    base::TimeTicks send_time = testing_clock_sender_->NowTicks();
 
+    // Each audio bus can contain more than one frame.
     scoped_ptr<AudioBus> audio_bus(audio_bus_factory_->NextAudioBus(
         base::TimeDelta::FromMilliseconds(10) * num_10ms_blocks));
+    num_frames += num_10ms_blocks;
 
     if (i != 0) {
       // Due to the re-sampler and NetEq in the webrtc AudioCodingModule the
@@ -1205,11 +1232,7 @@ TEST_F(End2EndTest, MAYBE_AudioLogging) {
           send_time);
     }
 
-    AudioBus* const audio_bus_ptr = audio_bus.get();
-    frame_input_->InsertAudio(
-        audio_bus_ptr,
-        send_time,
-        base::Bind(&OwnThatAudioBus, base::Passed(&audio_bus)));
+    audio_frame_input_->InsertAudio(audio_bus.Pass(), send_time);
 
     RunTasks(kFrameTimerMs);
     audio_diff += kFrameTimerMs;
@@ -1233,51 +1256,68 @@ TEST_F(End2EndTest, MAYBE_AudioLogging) {
   RunTasks(2 * kFrameTimerMs + 1);  // Empty the receiver pipeline.
 
   int num_times_called = test_receiver_audio_callback_->number_times_called();
-  EXPECT_EQ(num_frames - 1, num_times_called);
+  EXPECT_EQ(num_audio_buses - 1, num_times_called);
 
   // Logging tests.
   // Verify that all frames and all required events were logged.
-  event_subscriber_.GetFrameEventsAndReset(&frame_events_);
+  event_subscriber_sender_.GetFrameEventsAndReset(&frame_events_);
 
   // Construct a map from each frame (RTP timestamp) to a count of each event
   // type logged for that frame.
   std::map<RtpTimestamp, LoggingEventCounts> event_counter_for_frame =
       GetEventCountForFrameEvents(frame_events_);
 
-  // Verify that each frame have the expected types of events logged.
+  int received_count = 0;
+  int encoded_count = 0;
+
+  // Verify the right number of events were logged for each event type.
+  for (std::map<RtpTimestamp, LoggingEventCounts>::iterator it =
+           event_counter_for_frame.begin();
+       it != event_counter_for_frame.end();
+       ++it) {
+    received_count += it->second.counter[kAudioFrameReceived];
+    encoded_count += it->second.counter[kAudioFrameEncoded];
+  }
+
+  EXPECT_EQ(num_frames, received_count);
+  EXPECT_EQ(num_frames, encoded_count);
+
   std::map<RtpTimestamp, LoggingEventCounts>::iterator map_it =
       event_counter_for_frame.begin();
 
+  // Verify that each frame have the expected types of events logged.
   // TODO(imcheng): This only checks the first frame. This doesn't work
-  // properly for all frames for two reasons:
-  // 1. There is a loopback of kAudioPlayoutDelay and kAudioFrameDecoded
-  // events due to shared CastEnvironment between sender and
-  // receiver in the test setup. We will need to create separate
-  // CastEnvironment once again to fix this.
-  // 2. kAudioPlayoutDelay and kAudioFrameDecoded RTP timestamps aren't
+  // properly for all frames because:
+  // 1. kAudioPlayoutDelay and kAudioFrameDecoded RTP timestamps aren't
   // exactly aligned with those of kAudioFrameReceived and kAudioFrameEncoded.
   // Note that these RTP timestamps are output from webrtc::AudioCodingModule
   // which are different from RTP timestamps that the cast library generates
   // during the encode step (and which are sent to receiver). The first frame
   // just happen to be aligned.
+  // 2. Currently, kAudioFrameDecoded and kAudioPlayoutDelay are logged per
+  // audio bus.
+  // Both 1 and 2 may change since we are currently refactoring audio_decoder.
+  // 3. There is no guarantee that exactly one kAudioAckSent is sent per frame.
   int total_event_count_for_frame = 0;
   for (int j = 0; j < kNumOfLoggingEvents; ++j)
     total_event_count_for_frame += map_it->second.counter[j];
 
   int expected_event_count_for_frame = 0;
 
-  EXPECT_GT(map_it->second.counter[kAudioFrameReceived], 0);
+  EXPECT_EQ(1, map_it->second.counter[kAudioFrameReceived]);
   expected_event_count_for_frame += map_it->second.counter[kAudioFrameReceived];
 
-  EXPECT_GT(map_it->second.counter[kAudioFrameEncoded], 0);
+  EXPECT_EQ(1, map_it->second.counter[kAudioFrameEncoded]);
   expected_event_count_for_frame += map_it->second.counter[kAudioFrameEncoded];
 
-  // Note that this is a big positive number instead of just 1 due to loopback
-  // described in TODO above.
-  EXPECT_GT(map_it->second.counter[kAudioPlayoutDelay], 0);
+  EXPECT_EQ(1, map_it->second.counter[kAudioPlayoutDelay]);
   expected_event_count_for_frame += map_it->second.counter[kAudioPlayoutDelay];
-  EXPECT_GT(map_it->second.counter[kAudioFrameDecoded], 0);
+
+  EXPECT_EQ(1, map_it->second.counter[kAudioFrameDecoded]);
   expected_event_count_for_frame += map_it->second.counter[kAudioFrameDecoded];
+
+  EXPECT_GT(map_it->second.counter[kAudioAckSent], 0);
+  expected_event_count_for_frame += map_it->second.counter[kAudioAckSent];
 
   // Verify that there were no other events logged with respect to this frame.
   // (i.e. Total event count = expected event count)

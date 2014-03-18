@@ -19,6 +19,7 @@
 #include "content/public/renderer/render_view_observer.h"
 #include "content/renderer/media/media_stream_client.h"
 #include "content/renderer/media/media_stream_dispatcher_eventhandler.h"
+#include "content/renderer/media/media_stream_source.h"
 #include "third_party/WebKit/public/platform/WebMediaStream.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
@@ -30,7 +31,8 @@ namespace content {
 class MediaStreamAudioRenderer;
 class MediaStreamDependencyFactory;
 class MediaStreamDispatcher;
-class MediaStreamSource;
+class MediaStreamVideoSource;
+class VideoCapturerDelegate;
 class WebRtcAudioRenderer;
 class WebRtcLocalAudioRenderer;
 
@@ -75,7 +77,9 @@ class CONTENT_EXPORT MediaStreamImpl
       const std::string& label,
       const StreamDeviceInfoArray& audio_array,
       const StreamDeviceInfoArray& video_array) OVERRIDE;
-  virtual void OnStreamGenerationFailed(int request_id) OVERRIDE;
+  virtual void OnStreamGenerationFailed(
+      int request_id,
+      content::MediaStreamRequestResult result) OVERRIDE;
   virtual void OnDeviceStopped(const std::string& label,
                                const StreamDeviceInfo& device_info) OVERRIDE;
   virtual void OnDevicesEnumerated(
@@ -109,11 +113,17 @@ class CONTENT_EXPORT MediaStreamImpl
   virtual void CompleteGetUserMediaRequest(
       const blink::WebMediaStream& stream,
       blink::WebUserMediaRequest* request_info,
-      bool request_succeeded);
+      content::MediaStreamRequestResult result);
 
   // Returns the WebKit representation of a MediaStream given an URL.
   // This is virtual for test purposes.
   virtual blink::WebMediaStream GetMediaStream(const GURL& url);
+
+  // Creates a MediaStreamVideoSource object.
+  // This is virtual for test purposes.
+  virtual MediaStreamVideoSource* CreateVideoSource(
+      const StreamDeviceInfo& device,
+      const MediaStreamSource::SourceStoppedCallback& stop_callback);
 
  private:
   // Class for storing information about a WebKit request to create a
@@ -122,7 +132,8 @@ class CONTENT_EXPORT MediaStreamImpl
       : public base::SupportsWeakPtr<UserMediaRequestInfo> {
    public:
     typedef base::Callback<void(UserMediaRequestInfo* request_info,
-                                bool request_succeeded)> ResourcesReady;
+                                content::MediaStreamRequestResult result)>
+      ResourcesReady;
 
     UserMediaRequestInfo(int request_id,
                          blink::WebFrame* frame,
@@ -199,7 +210,7 @@ class CONTENT_EXPORT MediaStreamImpl
   // underlying media sources and tracks have been created and started.
   void OnCreateNativeTracksCompleted(
       UserMediaRequestInfo* request,
-      bool request_succeeded);
+      content::MediaStreamRequestResult result);
 
   UserMediaRequestInfo* FindUserMediaRequestInfo(int request_id);
   UserMediaRequestInfo* FindUserMediaRequestInfo(

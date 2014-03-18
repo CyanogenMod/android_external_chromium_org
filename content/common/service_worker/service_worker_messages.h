@@ -26,6 +26,16 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerFetchRequest)
   IPC_STRUCT_TRAITS_MEMBER(headers)
 IPC_STRUCT_TRAITS_END()
 
+IPC_ENUM_TRAITS_MAX_VALUE(content::ServiceWorkerFetchEventResult,
+                          content::SERVICE_WORKER_FETCH_EVENT_LAST)
+
+IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerResponse)
+  IPC_STRUCT_TRAITS_MEMBER(status_code)
+  IPC_STRUCT_TRAITS_MEMBER(status_text)
+  IPC_STRUCT_TRAITS_MEMBER(method)
+  IPC_STRUCT_TRAITS_MEMBER(headers)
+IPC_STRUCT_TRAITS_END()
+
 // Messages sent from the child process to the browser.
 
 IPC_MESSAGE_CONTROL4(ServiceWorkerHostMsg_RegisterServiceWorker,
@@ -77,8 +87,23 @@ IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_ProviderCreated,
 IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_ProviderDestroyed,
                      int /* provider_id */)
 
+// Informs the browser of a new scriptable API client in the child process.
+IPC_MESSAGE_CONTROL2(ServiceWorkerHostMsg_AddScriptClient,
+                     int /* thread_id */,
+                     int /* provider_id */)
+
+// Informs the browser that the scriptable API client is unregistered.
+IPC_MESSAGE_CONTROL2(ServiceWorkerHostMsg_RemoveScriptClient,
+                     int /* thread_id */,
+                     int /* provider_id */)
+
 // Informs the browser that install event handling has finished.
 // Sent via EmbeddedWorker. If there was an exception during the
 // event handling it'll be reported back separately (to be propagated
 // to the documents).
 IPC_MESSAGE_CONTROL0(ServiceWorkerHostMsg_InstallEventFinished)
+
+// Informs the browser that fetch event handling has finished.
+IPC_MESSAGE_CONTROL2(ServiceWorkerHostMsg_FetchEventFinished,
+                     content::ServiceWorkerFetchEventResult,
+                     content::ServiceWorkerResponse)

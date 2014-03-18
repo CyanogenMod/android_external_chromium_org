@@ -30,8 +30,8 @@
         '../third_party/sqlite/sqlite.gyp:*',
         '../third_party/zlib/zlib.gyp:*',
         '../ui/accessibility/accessibility.gyp:*',
+        '../ui/base/ui_base.gyp:*',
         '../ui/snapshot/snapshot.gyp:*',
-        '../ui/ui.gyp:*',
         '../url/url.gyp:*',
       ],
       'conditions': [
@@ -49,7 +49,7 @@
             '<@(android_app_targets)',
             'android_builder_tests',
             '../android_webview/android_webview.gyp:android_webview_apk',
-            '../chrome/chrome.gyp:chromium_testshell',
+            '../chrome/chrome.gyp:chrome_shell_apk',
             '../remoting/remoting.gyp:remoting_apk',
             '../tools/telemetry/telemetry.gyp:*#host',
             # TODO(nyquist) This should instead by a target for sync when all of
@@ -111,11 +111,6 @@
         ['OS!="android" and OS!="ios"', {
           'dependencies': [
             '../chrome/tools/profile_reset/jtl_compiler.gyp:*',
-          ],
-        }],
-        ['os_posix==1 and OS!="android" and OS!="ios"', {
-          'dependencies': [
-            '../third_party/yasm/yasm.gyp:*#host',
           ],
         }],
         ['OS=="mac" or OS=="ios" or OS=="win"', {
@@ -208,7 +203,6 @@
         ['use_aura==1', {
           'dependencies': [
             '../ui/aura/aura.gyp:*',
-            '../ui/oak/oak.gyp:*',
           ],
         }],
         ['use_ash==1', {
@@ -272,8 +266,6 @@
             '../chrome/chrome.gyp:browser_tests',
             '../chrome/chrome.gyp:chromedriver_tests',
             '../chrome/chrome.gyp:chromedriver_unittests',
-            # TODO(kkania): Remove these after infra no longer depends on them.
-            '../chrome/chrome.gyp:chromedriver2_unittests',
             '../chrome/chrome.gyp:interactive_ui_tests',
             '../chrome/chrome.gyp:sync_integration_tests',
             '../chrome/chrome.gyp:unit_tests',
@@ -316,7 +308,6 @@
             '../sandbox/sandbox.gyp:sbox_unittests',
             '../sandbox/sandbox.gyp:sbox_validation_tests',
             '../ui/app_list/app_list.gyp:app_list_unittests',
-            '../ui/views/views.gyp:views_unittests',
           ],
           'conditions': [
             # remoting_host_installation uses lots of non-trivial GYP that tend
@@ -386,6 +377,7 @@
             '../ui/aura/aura.gyp:aura_unittests',
             '../ui/compositor/compositor.gyp:compositor_unittests',
             '../ui/keyboard/keyboard.gyp:keyboard_unittests',
+            '../ui/views/views.gyp:views_unittests',
           ],
         }],
         ['use_aura==1 or toolkit_views==1', {
@@ -480,6 +472,7 @@
           'dependencies': [
             '../cc/cc_tests.gyp:cc_perftests',
             '../chrome/chrome.gyp:chrome',
+            '../chrome/chrome.gyp:load_library_perf_tests',
             '../chrome/chrome.gyp:performance_browser_tests',
             '../chrome/chrome.gyp:performance_ui_tests',
             '../chrome/chrome.gyp:sync_performance_tests',
@@ -701,6 +694,20 @@
             }],
           ],
         },
+        {
+          'target_name': 'chromium_builder_nacl_sdk',
+          'type': 'none',
+          'dependencies': [
+            '../chrome/chrome.gyp:chrome',
+          ],
+          'conditions': [
+            ['OS=="win"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:chrome_nacl_win64',
+              ]
+            }],
+          ],
+        },  #target_name: chromium_builder_nacl_sdk
       ],  # targets
     }], #OS!=ios and OS!=android
     ['OS=="android"', {
@@ -751,6 +758,7 @@
             '../tools/android/android_tools.gyp:android_tools',
             '../tools/android/android_tools.gyp:memconsumer',
             '../tools/android/findbugs_plugin/findbugs_plugin.gyp:findbugs_plugin_test',
+            '../ui/events/events.gyp:events_unittests',
             '../ui/ui_unittests.gyp:ui_unittests',
             # Required by ui_unittests.
             # TODO(wangxianzhu): It'd better let ui_unittests depend on it, but
@@ -779,10 +787,11 @@
                 '../sandbox/sandbox.gyp:sandbox_linux_jni_unittests_apk',
                 '../sql/sql.gyp:sql_unittests_apk',
                 '../sync/sync.gyp:sync_unit_tests_apk',
+                '../ui/events/events.gyp:events_unittests_apk',
                 '../ui/ui_unittests.gyp:ui_unittests_apk',
                 '../android_webview/android_webview.gyp:android_webview_test_apk',
-                '../chrome/chrome.gyp:chromium_testshell_test_apk',
-                '../chrome/chrome.gyp:chromium_testshell_uiautomator_tests',
+                '../chrome/chrome.gyp:chrome_shell_test_apk',
+                '../chrome/chrome.gyp:chrome_shell_uiautomator_tests',
                 '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests_apk'
               ],
             }],
@@ -1231,7 +1240,8 @@
             '../base/base.gyp:base_unittests_run',
             '../chrome/chrome.gyp:browser_tests_run',
             '../chrome/chrome.gyp:interactive_ui_tests_run',
-            '../chrome/chrome.gyp:sync_integration_tests_run',
+            # http://crbug.com/157234
+            #'../chrome/chrome.gyp:sync_integration_tests_run',
             '../chrome/chrome.gyp:unit_tests_run',
             '../net/net.gyp:net_unittests_run',
           ],

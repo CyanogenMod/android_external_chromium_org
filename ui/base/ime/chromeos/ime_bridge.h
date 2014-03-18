@@ -26,7 +26,7 @@ namespace chromeos {
 
 class CompositionText;
 
-class UI_BASE_EXPORT IBusInputContextHandlerInterface {
+class UI_BASE_EXPORT IMEInputContextHandlerInterface {
  public:
   // Called when the engine commit a text.
   virtual void CommitText(const std::string& text) = 0;
@@ -104,9 +104,9 @@ class UI_BASE_EXPORT IMEEngineHandlerInterface {
 };
 
 // A interface to handle the candidate window related method call.
-class UI_BASE_EXPORT IBusPanelCandidateWindowHandlerInterface {
+class UI_BASE_EXPORT IMECandidateWindowHandlerInterface {
  public:
-  virtual ~IBusPanelCandidateWindowHandlerInterface() {}
+  virtual ~IMECandidateWindowHandlerInterface() {}
 
   // Called when the IME updates the lookup table.
   virtual void UpdateLookupTable(const ui::CandidateWindow& candidate_window,
@@ -127,7 +127,7 @@ class UI_BASE_EXPORT IBusPanelCandidateWindowHandlerInterface {
   virtual void FocusStateChanged(bool is_focused) {}
 
  protected:
-  IBusPanelCandidateWindowHandlerInterface() {}
+  IMECandidateWindowHandlerInterface() {}
 };
 
 
@@ -148,12 +148,12 @@ class UI_BASE_EXPORT IMEBridge {
 
   // Returns current InputContextHandler. This function returns NULL if input
   // context is not ready to use.
-  virtual IBusInputContextHandlerInterface* GetInputContextHandler() const = 0;
+  virtual IMEInputContextHandlerInterface* GetInputContextHandler() const = 0;
 
   // Updates current InputContextHandler. If there is no active input context,
   // pass NULL for |handler|. Caller must release |handler|.
   virtual void SetInputContextHandler(
-      IBusInputContextHandlerInterface* handler) = 0;
+      IMEInputContextHandlerInterface* handler) = 0;
 
   // Initializes the mapping from |engine_id| to |handler|.
   // |engine_id| must not be empty and |handler| must not be null.
@@ -182,13 +182,13 @@ class UI_BASE_EXPORT IMEBridge {
 
   // Returns current CandidateWindowHandler. This function returns NULL if
   // current candidate window is not ready to use.
-  virtual IBusPanelCandidateWindowHandlerInterface*
-      GetCandidateWindowHandler() const = 0;
+  virtual IMECandidateWindowHandlerInterface* GetCandidateWindowHandler()
+      const = 0;
 
   // Updates current CandidatWindowHandler. If there is no active candidate
   // window service, pass NULL for |handler|. Caller must release |handler|.
   virtual void SetCandidateWindowHandler(
-      IBusPanelCandidateWindowHandlerInterface* handler) = 0;
+      IMECandidateWindowHandlerInterface* handler) = 0;
 
  protected:
   IMEBridge();

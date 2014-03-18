@@ -14,7 +14,7 @@
 #include "grit/keyboard_resources.h"
 #include "grit/keyboard_resources_map.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/keyboard/keyboard_switches.h"
@@ -240,6 +240,7 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
     {"keyboard/elements/kb-shift-key.html", IDR_KEYBOARD_ELEMENTS_SHIFT_KEY},
     {"keyboard/layouts/function-key-row.html", IDR_KEYBOARD_FUNCTION_KEY_ROW},
     {"keyboard/images/back.svg", IDR_KEYBOARD_IMAGES_BACK},
+    {"keyboard/images/backspace.svg", IDR_KEYBOARD_IMAGES_BACKSPACE},
     {"keyboard/images/brightness-down.svg",
         IDR_KEYBOARD_IMAGES_BRIGHTNESS_DOWN},
     {"keyboard/images/brightness-up.svg", IDR_KEYBOARD_IMAGES_BRIGHTNESS_UP},
@@ -247,6 +248,7 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
     {"keyboard/images/down.svg", IDR_KEYBOARD_IMAGES_DOWN},
     {"keyboard/images/forward.svg", IDR_KEYBOARD_IMAGES_FORWARD},
     {"keyboard/images/fullscreen.svg", IDR_KEYBOARD_IMAGES_FULLSCREEN},
+    {"keyboard/images/hide-keyboard.svg", IDR_KEYBOARD_IMAGES_HIDE_KEYBOARD},
     {"keyboard/images/keyboard.svg", IDR_KEYBOARD_IMAGES_KEYBOARD},
     {"keyboard/images/left.svg", IDR_KEYBOARD_IMAGES_LEFT},
     {"keyboard/images/microphone.svg", IDR_KEYBOARD_IMAGES_MICROPHONE},
@@ -254,9 +256,13 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
         IDR_KEYBOARD_IMAGES_MICROPHONE_GREEN},
     {"keyboard/images/mute.svg", IDR_KEYBOARD_IMAGES_MUTE},
     {"keyboard/images/reload.svg", IDR_KEYBOARD_IMAGES_RELOAD},
+    {"keyboard/images/return.svg", IDR_KEYBOARD_IMAGES_RETURN},
     {"keyboard/images/right.svg", IDR_KEYBOARD_IMAGES_RIGHT},
     {"keyboard/images/search.svg", IDR_KEYBOARD_IMAGES_SEARCH},
+    {"keyboard/images/shift.svg", IDR_KEYBOARD_IMAGES_SHIFT},
+    {"keyboard/images/shift-filled.svg", IDR_KEYBOARD_IMAGES_SHIFT_FILLED},
     {"keyboard/images/shutdown.svg", IDR_KEYBOARD_IMAGES_SHUTDOWN},
+    {"keyboard/images/tab.svg", IDR_KEYBOARD_IMAGES_TAB},
     {"keyboard/images/up.svg", IDR_KEYBOARD_IMAGES_UP},
     {"keyboard/images/volume-down.svg", IDR_KEYBOARD_IMAGES_VOLUME_DOWN},
     {"keyboard/images/volume-up.svg", IDR_KEYBOARD_IMAGES_VOLUME_UP},
@@ -274,6 +280,15 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
     {"keyboard/main.css", IDR_KEYBOARD_MAIN_CSS},
     {"keyboard/polymer_loader.js", IDR_KEYBOARD_POLYMER_LOADER},
     {"keyboard/roboto_bold.ttf", IDR_KEYBOARD_ROBOTO_BOLD_TTF},
+    {"keyboard/sounds/keypress-delete.wav",
+        IDR_KEYBOARD_SOUNDS_KEYPRESS_DELETE},
+    {"keyboard/sounds/keypress-return.wav",
+        IDR_KEYBOARD_SOUNDS_KEYPRESS_RETURN},
+    {"keyboard/sounds/keypress-spacebar.wav",
+        IDR_KEYBOARD_SOUNDS_KEYPRESS_SPACEBAR},
+    {"keyboard/sounds/keypress-standard.wav",
+        IDR_KEYBOARD_SOUNDS_KEYPRESS_STANDARD},
+    {"keyboard/touch_fuzzing.js", IDR_KEYBOARD_TOUCH_FUZZING_JS},
     {"keyboard/voice_input.js", IDR_KEYBOARD_VOICE_INPUT_JS},
   };
   static const size_t kKeyboardResourcesSize = arraysize(kKeyboardResources);

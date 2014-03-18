@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_DOM_DISTILLER_CORE_FAKE_DISTILLER_H_
 #define COMPONENTS_DOM_DISTILLER_CORE_FAKE_DISTILLER_H_
 
+#include "components/dom_distiller/core/article_distillation_update.h"
 #include "components/dom_distiller/core/article_entry.h"
 #include "components/dom_distiller/core/distiller.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -27,25 +28,36 @@ class MockDistillerFactory : public DistillerFactory {
 
 class FakeDistiller : public Distiller {
  public:
+  // If execute_callback is true, when DistillPage is called, a task will
+  // immediately be posted to execute the callback with a simple
+  // DistilledArticleProto.
   explicit FakeDistiller(bool execute_callback);
   virtual ~FakeDistiller();
   MOCK_METHOD0(Die, void());
 
   virtual void DistillPage(const GURL& url,
-                           const DistillerCallback& callback) OVERRIDE;
+                           const DistillationFinishedCallback& article_callback,
+                           const DistillationUpdateCallback& page_callback)
+      OVERRIDE;
 
   void RunDistillerCallback(scoped_ptr<DistilledArticleProto> proto);
 
   GURL GetUrl() { return url_; }
 
-  DistillerCallback GetCallback() { return callback_; }
+  DistillationFinishedCallback GetArticleCallback() {
+    return article_callback_;
+  }
 
  private:
+  void PostDistillerCallback(scoped_ptr<DistilledArticleProto> proto);
   void RunDistillerCallbackInternal(scoped_ptr<DistilledArticleProto> proto);
 
   bool execute_callback_;
   GURL url_;
-  DistillerCallback callback_;
+  DistillationFinishedCallback article_callback_;
+  DistillationUpdateCallback page_callback_;
+
+  bool destruction_allowed_;
 };
 
 }  // namespace test

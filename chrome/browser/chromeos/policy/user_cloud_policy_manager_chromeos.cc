@@ -16,12 +16,12 @@
 #include "chrome/browser/chromeos/policy/wildcard_login_checker.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/common/chrome_content_client.h"
 #include "components/policy/core/common/cloud/cloud_external_data_manager.h"
 #include "components/policy/core/common/cloud/cloud_policy_refresh_scheduler.h"
 #include "components/policy/core/common/cloud/device_management_service.h"
 #include "components/policy/core/common/cloud/system_policy_request_context.h"
 #include "components/policy/core/common/policy_pref_names.h"
-#include "content/public/common/content_client.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "url/gurl.h"
 
@@ -49,8 +49,9 @@ const char kUMAInitialFetchOAuth2Error[] =
 const char kUMAInitialFetchOAuth2NetworkError[] =
     "Enterprise.UserPolicyChromeOS.InitialFetch.OAuth2NetworkError";
 
-void OnWildcardCheckCompleted(const std::string& username, bool result) {
-  if (!result) {
+void OnWildcardCheckCompleted(const std::string& username,
+                              WildcardLoginChecker::Result result) {
+  if (result == WildcardLoginChecker::RESULT_BLOCKED) {
     LOG(ERROR) << "Online wildcard login check failed, terminating session.";
 
     // TODO(mnissler): This only removes the user pod from the login screen, but
@@ -114,9 +115,7 @@ void UserCloudPolicyManagerChromeOS::Connect(
     // TODO(atwilson): Change this to use a UserPolicyRequestContext once
     // Connect() is called after profile initialization. http://crbug.com/323591
     request_context = new SystemPolicyRequestContext(
-        system_request_context,
-        content::GetUserAgent(GURL(
-            device_management_service->GetServerUrl())));
+        system_request_context, GetUserAgent());
   }
   scoped_ptr<CloudPolicyClient> cloud_policy_client(
       new CloudPolicyClient(std::string(), std::string(),

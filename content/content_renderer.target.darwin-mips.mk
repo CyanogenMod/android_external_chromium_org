@@ -20,6 +20,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp \
 	$(call intermediates-dir-for,GYP,third_party_widevine_cdm_widevine_cdm_version_h_gyp)/widevine_cdm_version_h.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_accessibility_accessibility_gyp)/ui_accessibility_accessibility_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_accessibility_ax_gen_gyp)/ui_accessibility_ax_gen_gyp.a \
 	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp)/v8.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_child_webkit_child_gyp)/webkit_child_webkit_child_gyp.a \
@@ -123,9 +124,11 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/buffered_data_source.cc \
 	content/renderer/media/buffered_resource_loader.cc \
 	content/renderer/media/cache_util.cc \
+	content/renderer/media/cdm_session_adapter.cc \
 	content/renderer/media/crypto/content_decryption_module_factory.cc \
 	content/renderer/media/crypto/key_systems.cc \
 	content/renderer/media/crypto/key_systems_support_uma.cc \
+	content/renderer/media/crypto/pepper_cdm_wrapper_impl.cc \
 	content/renderer/media/crypto/proxy_decryptor.cc \
 	content/renderer/media/midi_dispatcher.cc \
 	content/renderer/media/midi_message_filter.cc \
@@ -173,6 +176,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/resizing_mode_selector.cc \
 	content/renderer/sad_plugin.cc \
 	content/renderer/savable_resources.cc \
+	content/renderer/screen_orientation/screen_orientation_dispatcher.cc \
 	content/renderer/scoped_clipboard_writer_glue.cc \
 	content/renderer/service_worker/embedded_worker_context_client.cc \
 	content/renderer/service_worker/embedded_worker_context_message_filter.cc \
@@ -190,12 +194,13 @@ LOCAL_SRC_FILES := \
 	content/renderer/web_preferences.cc \
 	content/renderer/web_ui_extension.cc \
 	content/renderer/web_ui_extension_data.cc \
+	content/renderer/web_ui_mojo.cc \
+	content/renderer/web_ui_mojo_context_state.cc \
+	content/renderer/web_ui_runner.cc \
 	content/renderer/webclipboard_impl.cc \
-	content/renderer/webcrypto/webcrypto_impl.cc \
-	content/renderer/webcrypto/webcrypto_impl_openssl.cc \
-	content/renderer/webcrypto/webcrypto_util.cc \
 	content/renderer/webgraphicscontext3d_provider_impl.cc \
 	content/renderer/webpublicsuffixlist_impl.cc \
+	content/renderer/webscrollbarbehavior_impl_gtkoraura.cc \
 	content/renderer/websharedworker_proxy.cc \
 	content/renderer/media/webrtc_logging_noop.cc
 
@@ -237,6 +242,7 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -244,9 +250,9 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
@@ -259,8 +265,13 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
+	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
+	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
+	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
+	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -273,7 +284,6 @@ MY_DEFS_Debug := \
 	'-DFEATURE_ENABLE_VOICEMAIL' \
 	'-DEXPAT_RELATIVE_PATH' \
 	'-DGTEST_RELATIVE_PATH' \
-	'-DJSONCPP_RELATIVE_PATH' \
 	'-DNO_MAIN_THREAD_WRAPPING' \
 	'-DNO_SOUND_SYSTEM' \
 	'-DANDROID' \
@@ -282,6 +292,7 @@ MY_DEFS_Debug := \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
+	'-DUSE_OPENSSL=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-D__GNU_SOURCE=1' \
@@ -304,6 +315,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/third_party/WebKit \
 	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
@@ -332,8 +344,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/webrtc \
 	$(PWD)/external/expat/lib \
-	$(LOCAL_PATH)/third_party/jsoncpp/overrides/include \
-	$(LOCAL_PATH)/third_party/jsoncpp/source/include \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
@@ -342,7 +352,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
-	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -396,6 +405,7 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -403,9 +413,9 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
@@ -418,8 +428,13 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
+	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
+	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
+	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
+	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -432,7 +447,6 @@ MY_DEFS_Release := \
 	'-DFEATURE_ENABLE_VOICEMAIL' \
 	'-DEXPAT_RELATIVE_PATH' \
 	'-DGTEST_RELATIVE_PATH' \
-	'-DJSONCPP_RELATIVE_PATH' \
 	'-DNO_MAIN_THREAD_WRAPPING' \
 	'-DNO_SOUND_SYSTEM' \
 	'-DANDROID' \
@@ -441,6 +455,7 @@ MY_DEFS_Release := \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
+	'-DUSE_OPENSSL=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-D__GNU_SOURCE=1' \
@@ -464,6 +479,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/third_party/WebKit \
 	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
@@ -492,8 +508,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/webrtc \
 	$(PWD)/external/expat/lib \
-	$(LOCAL_PATH)/third_party/jsoncpp/overrides/include \
-	$(LOCAL_PATH)/third_party/jsoncpp/source/include \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
@@ -502,7 +516,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
-	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -522,9 +535,11 @@ LOCAL_CPPFLAGS_Release := \
 LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
 LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
+LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -534,7 +549,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
@@ -542,6 +556,7 @@ LOCAL_LDFLAGS_Debug := \
 
 
 LOCAL_LDFLAGS_Release := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -554,7 +569,6 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,-O1 \
 	-Wl,--as-needed \
 	-Wl,--gc-sections \
-	-Wl,--fatal-warnings \
 	-Wl,--warn-shared-textrel
 
 
@@ -563,6 +577,7 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 LOCAL_STATIC_LIBRARIES := \
 	cpufeatures \
 	skia_skia_library_gyp \
+	ui_accessibility_accessibility_gyp \
 	ui_accessibility_ax_gen_gyp \
 	webkit_child_webkit_child_gyp \
 	third_party_libphonenumber_libphonenumber_without_metadata_gyp

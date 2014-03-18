@@ -77,8 +77,14 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramerVisitorInterface {
   // and validated.
   virtual void OnSetting(SpdySettingsIds id, uint8 flags, uint32 value) = 0;
 
+  // Called when a SETTINGS frame is received with the ACK flag set.
+  virtual void OnSettingsAck() {}
+
+  // Called at the completion of parsing SETTINGS id and value tuples.
+  virtual void OnSettingsEnd() {};
+
   // Called when a PING frame has been parsed.
-  virtual void OnPing(SpdyPingId unique_id) = 0;
+  virtual void OnPing(SpdyPingId unique_id, bool is_ack) = 0;
 
   // Called when a RST_STREAM frame has been parsed.
   virtual void OnRstStream(SpdyStreamId stream_id,
@@ -129,7 +135,7 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
                            bool fin,
                            bool unidirectional) OVERRIDE;
   virtual void OnSynReply(SpdyStreamId stream_id, bool fin) OVERRIDE;
-  virtual void OnHeaders(SpdyStreamId stream_id, bool fin) OVERRIDE;
+  virtual void OnHeaders(SpdyStreamId stream_id, bool fin, bool end) OVERRIDE;
   virtual bool OnControlFrameHeaderData(SpdyStreamId stream_id,
                                         const char* header_data,
                                         size_t len) OVERRIDE;
@@ -140,7 +146,9 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
   virtual void OnSettings(bool clear_persisted) OVERRIDE;
   virtual void OnSetting(
       SpdySettingsIds id, uint8 flags, uint32 value) OVERRIDE;
-  virtual void OnPing(SpdyPingId unique_id) OVERRIDE;
+  virtual void OnSettingsAck() OVERRIDE;
+  virtual void OnSettingsEnd() OVERRIDE;
+  virtual void OnPing(SpdyPingId unique_id, bool is_ack) OVERRIDE;
   virtual void OnRstStream(SpdyStreamId stream_id,
                            SpdyRstStreamStatus status) OVERRIDE;
   virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,
@@ -148,10 +156,12 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
   virtual void OnWindowUpdate(SpdyStreamId stream_id,
                               uint32 delta_window_size) OVERRIDE;
   virtual void OnPushPromise(SpdyStreamId stream_id,
-                             SpdyStreamId promised_stream_id) OVERRIDE;
+                             SpdyStreamId promised_stream_id,
+                             bool end) OVERRIDE;
   virtual void OnDataFrameHeader(SpdyStreamId stream_id,
                                  size_t length,
                                  bool fin) OVERRIDE;
+  virtual void OnContinuation(SpdyStreamId stream_id, bool end) OVERRIDE;
 
   // SpdyFramer methods.
   size_t ProcessInput(const char* data, size_t len);
@@ -172,7 +182,7 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
   SpdyFrame* CreateRstStream(SpdyStreamId stream_id,
                              SpdyRstStreamStatus status) const;
   SpdyFrame* CreateSettings(const SettingsMap& values) const;
-  SpdyFrame* CreatePingFrame(uint32 unique_id) const;
+  SpdyFrame* CreatePingFrame(uint32 unique_id, bool is_ack) const;
   SpdyFrame* CreateGoAway(
       SpdyStreamId last_accepted_stream_id,
       SpdyGoAwayStatus status) const;

@@ -140,25 +140,18 @@ ScopedJavaLocalRef<jobject> FaviconHelper::GetSyncedFaviconImageForURL(
   return gfx::ConvertToJavaBitmap(&favicon_bitmap);
 }
 
-jint FaviconHelper::GetDominantColorForBitmap(JNIEnv* env,
-                                              jobject obj,
-                                              jobject bitmap) {
+FaviconHelper::~FaviconHelper() {}
+
+static jint GetDominantColorForBitmap(JNIEnv* env,
+                                      jclass clazz,
+                                      jobject bitmap) {
   if (!bitmap)
     return 0;
 
-  gfx::JavaBitmap bitmap_lock(bitmap);
-  SkBitmap skbitmap = gfx::CreateSkBitmapFromJavaBitmap(bitmap_lock);
-  skbitmap.setImmutable();
-  scoped_refptr<base::RefCountedMemory> png_data =
-      gfx::Image::CreateFrom1xBitmap(skbitmap).As1xPNGBytes();
-  uint32_t max_brightness = 665;
-  uint32_t min_darkness = 100;
-  color_utils::GridSampler sampler;
-  return color_utils::CalculateKMeanColorOfPNG(
-      png_data, min_darkness, max_brightness, &sampler);
+    gfx::JavaBitmap bitmap_lock(bitmap);
+    SkBitmap skbitmap = gfx::CreateSkBitmapFromJavaBitmap(bitmap_lock);
+    return color_utils::CalculateKMeanColorOfBitmap(skbitmap);
 }
-
-FaviconHelper::~FaviconHelper() {}
 
 // static
 bool FaviconHelper::RegisterFaviconHelper(JNIEnv* env) {

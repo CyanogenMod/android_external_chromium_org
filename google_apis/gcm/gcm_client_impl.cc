@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner.h"
 #include "base/time/default_clock.h"
 #include "google_apis/gcm/base/mcs_message.h"
@@ -69,6 +70,7 @@ enum MessageType {
 };
 
 const char kMCSEndpoint[] = "https://mtalk.google.com:5228";
+const int kMaxRegistrationRetries = 5;
 const char kMessageTypeDataMessage[] = "gcm";
 const char kMessageTypeDeletedMessagesKey[] = "deleted_messages";
 const char kMessageTypeKey[] = "message_type";
@@ -126,6 +128,7 @@ GCMClientImpl::~GCMClientImpl() {
 void GCMClientImpl::Initialize(
     const checkin_proto::ChromeBuildProto& chrome_build_proto,
     const base::FilePath& path,
+    const std::vector<std::string>& account_ids,
     const scoped_refptr<base::SequencedTaskRunner>& blocking_task_runner,
     const scoped_refptr<net::URLRequestContextGetter>&
         url_request_context_getter,
@@ -136,31 +139,21 @@ void GCMClientImpl::Initialize(
 
   chrome_build_proto_.CopyFrom(chrome_build_proto);
   url_request_context_getter_ = url_request_context_getter;
+  account_ids_ = account_ids;
 
   gcm_store_.reset(new GCMStoreImpl(false, path, blocking_task_runner));
-  gcm_store_->Load(base::Bind(&GCMClientImpl::OnLoadCompleted,
-                              weak_ptr_factory_.GetWeakPtr()));
 
   delegate_ = delegate;
 
-  // |mcs_client_| might already be set for testing at this point. No need to
-  // create a |connection_factory_|.
-  if (!mcs_client_.get()) {
-    const net::HttpNetworkSession::Params* network_session_params =
-        url_request_context_getter->GetURLRequestContext()->
-            GetNetworkSessionParams();
-    DCHECK(network_session_params);
-    network_session_ = new net::HttpNetworkSession(*network_session_params);
-    connection_factory_.reset(new ConnectionFactoryImpl(
-        GURL(kMCSEndpoint),
-        kDefaultBackoffPolicy,
-        network_session_,
-        net_log_.net_log()));
-    mcs_client_.reset(new MCSClient(clock_.get(),
-                                    connection_factory_.get(),
-                                    gcm_store_.get()));
-  }
+  state_ = INITIALIZED;
+}
 
+void GCMClientImpl::Load() {
+  DCHECK_EQ(INITIALIZED, state_);
+
+  // Once the loading is completed, the check-in will be initiated.
+  gcm_store_->Load(base::Bind(&GCMClientImpl::OnLoadCompleted,
+                              weak_ptr_factory_.GetWeakPtr()));
   state_ = LOADING;
 }
 
@@ -187,6 +180,25 @@ void GCMClientImpl::OnLoadCompleted(scoped_ptr<GCMStore::LoadResult> result) {
 
 void GCMClientImpl::InitializeMCSClient(
     scoped_ptr<GCMStore::LoadResult> result) {
+  // |mcs_client_| might already be set for testing at this point. No need to
+  // create a |connection_factory_|.
+  if (!mcs_client_.get()) {
+    const net::HttpNetworkSession::Params* network_session_params =
+        url_request_context_getter_->GetURLRequestContext()->
+            GetNetworkSessionParams();
+    DCHECK(network_session_params);
+    network_session_ = new net::HttpNetworkSession(*network_session_params);
+    connection_factory_.reset(new ConnectionFactoryImpl(
+        GURL(kMCSEndpoint),
+        kDefaultBackoffPolicy,
+        network_session_,
+        net_log_.net_log()));
+    mcs_client_.reset(new MCSClient(chrome_build_proto_.chrome_version(),
+                                    clock_.get(),
+                                    connection_factory_.get(),
+                                    gcm_store_.get()));
+  }
+
   mcs_client_->Initialize(
       base::Bind(&GCMClientImpl::OnMCSError, weak_ptr_factory_.GetWeakPtr()),
       base::Bind(&GCMClientImpl::OnMessageReceivedFromMCS,
@@ -231,14 +243,14 @@ void GCMClientImpl::ResetState() {
 
 void GCMClientImpl::StartCheckin(const CheckinInfo& checkin_info) {
   checkin_request_.reset(
-      new CheckinRequest(
-          base::Bind(&GCMClientImpl::OnCheckinCompleted,
-                     weak_ptr_factory_.GetWeakPtr()),
-          kDefaultBackoffPolicy,
-          chrome_build_proto_,
-          checkin_info.android_id,
-          checkin_info.secret,
-          url_request_context_getter_));
+      new CheckinRequest(base::Bind(&GCMClientImpl::OnCheckinCompleted,
+                                    weak_ptr_factory_.GetWeakPtr()),
+                         kDefaultBackoffPolicy,
+                         chrome_build_proto_,
+                         checkin_info.android_id,
+                         checkin_info.secret,
+                         account_ids_,
+                         url_request_context_getter_));
   checkin_request_->Start();
 }
 
@@ -274,24 +286,28 @@ void GCMClientImpl::SetDeviceCredentialsCallback(bool success) {
   DCHECK(success);
 }
 
-void GCMClientImpl::CheckOut() {
-  delegate_ = NULL;
+void GCMClientImpl::Stop() {
   device_checkin_info_.Reset();
-  mcs_client_->Destroy();  // This will also destroy GCM store.
   mcs_client_.reset();
   checkin_request_.reset();
   pending_registrations_.clear();
+  state_ = INITIALIZED;
+  gcm_store_->Close();
+}
+
+void GCMClientImpl::CheckOut() {
+  Stop();
+  gcm_store_->Destroy(base::Bind(&GCMClientImpl::OnGCMStoreDestroyed,
+                                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 void GCMClientImpl::Register(const std::string& app_id,
-                             const std::string& cert,
                              const std::vector<std::string>& sender_ids) {
   DCHECK_EQ(state_, READY);
   RegistrationRequest::RequestInfo request_info(
       device_checkin_info_.android_id,
       device_checkin_info_.secret,
       app_id,
-      cert,
       sender_ids);
   DCHECK_EQ(0u, pending_registrations_.count(app_id));
 
@@ -301,6 +317,7 @@ void GCMClientImpl::Register(const std::string& app_id,
                               base::Bind(&GCMClientImpl::OnRegisterCompleted,
                                          weak_ptr_factory_.GetWeakPtr(),
                                          app_id),
+                              kMaxRegistrationRetries,
                               url_request_context_getter_);
   pending_registrations_[app_id] = registration_request;
   registration_request->Start();
@@ -367,6 +384,11 @@ void GCMClientImpl::OnUnregisterCompleted(const std::string& app_id,
   pending_unregistrations_.erase(iter);
 }
 
+void GCMClientImpl::OnGCMStoreDestroyed(bool success) {
+  DLOG_IF(ERROR, !success) << "GCM store failed to be destroyed!";
+  UMA_HISTOGRAM_BOOLEAN("GCM.StoreDestroySucceeded", success);
+}
+
 void GCMClientImpl::Send(const std::string& app_id,
                          const std::string& receiver_id,
                          const OutgoingMessage& message) {
@@ -394,8 +416,35 @@ void GCMClientImpl::Send(const std::string& app_id,
   mcs_client_->SendMessage(mcs_message);
 }
 
-bool GCMClientImpl::IsReady() const {
-  return state_ == READY;
+std::string GCMClientImpl::GetStateString() const {
+  switch(state_) {
+    case GCMClientImpl::INITIALIZED:
+      return "INITIALIZED";
+    case GCMClientImpl::UNINITIALIZED:
+      return "UNINITIALIZED";
+    case GCMClientImpl::LOADING:
+      return "LOADING";
+    case GCMClientImpl::INITIAL_DEVICE_CHECKIN:
+      return "INITIAL_DEVICE_CHECKIN";
+    case GCMClientImpl::READY:
+      return "READY";
+    default:
+      NOTREACHED();
+      return std::string();
+  }
+}
+
+GCMClient::GCMStatistics GCMClientImpl::GetStatistics() const {
+  GCMClient::GCMStatistics stats;
+  stats.gcm_client_state = GCMClientImpl::GetStateString();
+  stats.connection_client_created = mcs_client_.get() != NULL;
+  if (mcs_client_.get()) {
+    stats.connection_state = mcs_client_->GetStateString();
+    // TODO(juyik): add more statistics such as message metadata list, etc.
+  }
+  if (device_checkin_info_.android_id > 0)
+    stats.android_id = device_checkin_info_.android_id;
+  return stats;
 }
 
 void GCMClientImpl::OnMessageReceivedFromMCS(const gcm::MCSMessage& message) {
@@ -422,17 +471,21 @@ void GCMClientImpl::OnMessageSentToMCS(int64 user_serial_number,
 
   // TTL_EXCEEDED is singled out here, because it can happen long time after the
   // message was sent. That is why it comes as |OnMessageSendError| event rather
-  // than |OnSendFinished|. All other errors will be raised immediately, through
-  // asynchronous callback.
+  // than |OnSendFinished|. SendErrorDetails.additional_data is left empty.
+  // All other errors will be raised immediately, through asynchronous callback.
   // It is expected that TTL_EXCEEDED will be issued for a message that was
   // previously issued |OnSendFinished| with status SUCCESS.
   // For now, we do not report that the message has been sent and acked
   // successfully.
   // TODO(jianli): Consider adding UMA for this status.
-  if (status == MCSClient::TTL_EXCEEDED)
-    delegate_->OnMessageSendError(app_id, message_id, GCMClient::TTL_EXCEEDED);
-  else if (status != MCSClient::SENT)
+  if (status == MCSClient::TTL_EXCEEDED) {
+    SendErrorDetails send_error_details;
+    send_error_details.message_id = message_id;
+    send_error_details.result = GCMClient::TTL_EXCEEDED;
+    delegate_->OnMessageSendError(app_id, send_error_details);
+  } else if (status != MCSClient::SENT) {
     delegate_->OnSendFinished(app_id, message_id, ToGCMClientResult(status));
+  }
 }
 
 void GCMClientImpl::OnMCSError() {
@@ -441,33 +494,38 @@ void GCMClientImpl::OnMCSError() {
 }
 
 void GCMClientImpl::HandleIncomingMessage(const gcm::MCSMessage& message) {
+  DCHECK(delegate_);
+
   const mcs_proto::DataMessageStanza& data_message_stanza =
       reinterpret_cast<const mcs_proto::DataMessageStanza&>(
           message.GetProtobuf());
-  IncomingMessage incoming_message;
-  MessageType message_type = DATA_MESSAGE;
+  DCHECK_EQ(data_message_stanza.device_user_id(), kDefaultUserSerialNumber);
+
+  // Copying all the data from the stanza to a MessageData object. When present,
+  // keys like kMessageTypeKey or kSendErrorMessageIdKey will be filtered out
+  // later.
+  MessageData message_data;
   for (int i = 0; i < data_message_stanza.app_data_size(); ++i) {
     std::string key = data_message_stanza.app_data(i).key();
-    if (key == kMessageTypeKey)
-      message_type = DecodeMessageType(data_message_stanza.app_data(i).value());
-    else
-      incoming_message.data[key] = data_message_stanza.app_data(i).value();
+    message_data[key] = data_message_stanza.app_data(i).value();
   }
 
-  DCHECK_EQ(data_message_stanza.device_user_id(), kDefaultUserSerialNumber);
-  DCHECK(delegate_);
+  MessageType message_type = DATA_MESSAGE;
+  MessageData::iterator iter = message_data.find(kMessageTypeKey);
+  if (iter != message_data.end()) {
+    message_type = DecodeMessageType(iter->second);
+    message_data.erase(iter);
+  }
 
   switch (message_type) {
     case DATA_MESSAGE:
-      delegate_->OnMessageReceived(data_message_stanza.category(),
-                                   incoming_message);
+      HandleIncomingDataMessage(data_message_stanza, message_data);
       break;
     case DELETED_MESSAGES:
       delegate_->OnMessagesDeleted(data_message_stanza.category());
       break;
     case SEND_ERROR:
-      NotifyDelegateOnMessageSendError(
-          delegate_, data_message_stanza.category(), incoming_message);
+      HandleIncomingSendError(data_message_stanza, message_data);
       break;
     case UNKNOWN:
     default:  // Treat default the same as UNKNOWN.
@@ -477,16 +535,34 @@ void GCMClientImpl::HandleIncomingMessage(const gcm::MCSMessage& message) {
   }
 }
 
-void GCMClientImpl::NotifyDelegateOnMessageSendError(
-    GCMClient::Delegate* delegate,
-    const std::string& app_id,
-    const IncomingMessage& incoming_message) {
-  MessageData::const_iterator iter =
-      incoming_message.data.find(kSendErrorMessageIdKey);
-  std::string message_id;
-  if (iter != incoming_message.data.end())
-    message_id = iter->second;
-  delegate->OnMessageSendError(app_id, message_id, SERVER_ERROR);
+void GCMClientImpl::HandleIncomingDataMessage(
+    const mcs_proto::DataMessageStanza& data_message_stanza,
+    MessageData& message_data) {
+  IncomingMessage incoming_message;
+  incoming_message.sender_id = data_message_stanza.from();
+  if (data_message_stanza.has_token())
+    incoming_message.collapse_key = data_message_stanza.token();
+  incoming_message.data = message_data;
+  delegate_->OnMessageReceived(data_message_stanza.category(),
+                               incoming_message);
+}
+
+void GCMClientImpl::HandleIncomingSendError(
+    const mcs_proto::DataMessageStanza& data_message_stanza,
+    MessageData& message_data) {
+  SendErrorDetails send_error_details;
+  send_error_details.additional_data = message_data;
+  send_error_details.result = SERVER_ERROR;
+
+  MessageData::iterator iter =
+      send_error_details.additional_data.find(kSendErrorMessageIdKey);
+  if (iter != send_error_details.additional_data.end()) {
+    send_error_details.message_id = iter->second;
+    send_error_details.additional_data.erase(iter);
+  }
+
+  delegate_->OnMessageSendError(data_message_stanza.category(),
+                                send_error_details);
 }
 
 void GCMClientImpl::SetMCSClientForTesting(scoped_ptr<MCSClient> mcs_client) {

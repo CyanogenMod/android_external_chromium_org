@@ -39,9 +39,7 @@ class WebUIImpl;
 
 // Manages RenderFrameHosts for a FrameTreeNode.  This class acts as a state
 // machine to make cross-process navigations in a frame possible.
-class CONTENT_EXPORT RenderFrameHostManager
-    : public RenderViewHostDelegate::RendererManagement,
-      public NotificationObserver {
+class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
  public:
   // Functions implemented by our owner that we need.
   //
@@ -114,6 +112,11 @@ class CONTENT_EXPORT RenderFrameHostManager
     virtual ~Delegate() {}
   };
 
+  // Used with FrameTree::ForEach to delete RenderFrameHosts pending shutdown
+  // from a FrameTreeNode's RenderFrameHostManager. Used during destruction of
+  // WebContentsImpl.
+  static bool ClearRFHsPendingShutdown(FrameTreeNode* node);
+
   // All three delegate pointers must be non-NULL and are not owned by this
   // class.  They must outlive this class. The RenderViewHostDelegate and
   // RenderWidgetHostDelegate are what will be installed into all
@@ -140,7 +143,7 @@ class CONTENT_EXPORT RenderFrameHostManager
   // check it in many cases, however. Windows can send us messages during the
   // destruction process after it has been shut down.
   RenderFrameHostImpl* current_frame_host() const {
-    return render_frame_host_;
+    return render_frame_host_.get();
   }
 
   // TODO(creis): Remove this when we no longer use RVH for navigation.
@@ -152,7 +155,7 @@ class CONTENT_EXPORT RenderFrameHostManager
 
   // Returns the pending RenderFrameHost, or NULL if there is no pending one.
   RenderFrameHostImpl* pending_frame_host() const {
-    return pending_render_frame_host_;
+    return pending_render_frame_host_.get();
   }
 
   // TODO(creis): Remove this when we no longer use RVH for navigation.
@@ -190,6 +193,29 @@ class CONTENT_EXPORT RenderFrameHostManager
   // handler. If we are mid-crosssite navigation, then we should proceed
   // with the navigation instead of closing the tab.
   bool ShouldCloseTabOnUnresponsiveRenderer();
+
+  // Confirms whether we should close the page or navigate away.  This is called
+  // before a cross-site request or before a tab/window is closed (as indicated
+  // by the first parameter) to allow the appropriate renderer to approve or
+  // deny the request.  |proceed| indicates whether the user chose to proceed.
+  // |proceed_time| is the time when the request was allowed to proceed.
+  void OnBeforeUnloadACK(bool for_cross_site_transition,
+                         bool proceed,
+                         const base::TimeTicks& proceed_time);
+
+  // The |pending_render_frame_host| is ready to commit a page.  We should
+  // ensure that the old RenderFrameHost runs its unload handler first and
+  // determine whether a RenderFrameHost transfer is needed.
+  // |cross_site_transferring_request| is NULL if a request is not being
+  // transferred between renderers.
+  void OnCrossSiteResponse(
+      RenderFrameHostImpl* pending_render_frame_host,
+      const GlobalRequestID& global_request_id,
+      scoped_ptr<CrossSiteTransferringRequest> cross_site_transferring_request,
+      const std::vector<GURL>& transfer_url_chain,
+      const Referrer& referrer,
+      PageTransition page_transition,
+      bool should_replace_current_entry);
 
   // The RenderViewHost has been swapped out, so we should resume the pending
   // network response and allow the pending RenderViewHost to commit.
@@ -231,21 +257,6 @@ class CONTENT_EXPORT RenderFrameHostManager
   // Returns the currently showing interstitial, NULL if no interstitial is
   // showing.
   InterstitialPageImpl* interstitial_page() const { return interstitial_page_; }
-
-  // RenderViewHostDelegate::RendererManagement implementation.
-  virtual void ShouldClosePage(
-      bool for_cross_site_transition,
-      bool proceed,
-      const base::TimeTicks& proceed_time) OVERRIDE;
-  virtual void OnCrossSiteResponse(
-      RenderViewHost* pending_render_view_host,
-      const GlobalRequestID& global_request_id,
-      scoped_ptr<CrossSiteTransferringRequest> cross_site_transferring_request,
-      const std::vector<GURL>& transfer_url_chain,
-      const Referrer& referrer,
-      PageTransition page_transition,
-      int64 frame_id,
-      bool should_replace_current_entry) OVERRIDE;
 
   // NotificationObserver implementation.
   virtual void Observe(int type,
@@ -292,7 +303,7 @@ class CONTENT_EXPORT RenderFrameHostManager
         const std::vector<GURL>& transfer_url,
         Referrer referrer,
         PageTransition page_transition,
-        int64 frame_id,
+        int render_frame_id,
         bool should_replace_current_entry);
     ~PendingNavigationParams();
 
@@ -317,8 +328,8 @@ class CONTENT_EXPORT RenderFrameHostManager
     // This is the transition type for the original navigation.
     PageTransition page_transition;
 
-    // This is the frame ID to use in RequestTransferURL.
-    int64 frame_id;
+    // This is the frame routing ID to use in RequestTransferURL.
+    int render_frame_id;
 
     // This is whether the navigation should replace the current history entry.
     bool should_replace_current_entry;
@@ -415,7 +426,7 @@ class CONTENT_EXPORT RenderFrameHostManager
   // a child RenderFrame instance.
   // For now, RenderFrameHost keeps a RenderViewHost in its SiteInstance alive.
   // Eventually, RenderViewHost will be replaced with a page context.
-  RenderFrameHostImpl* render_frame_host_;
+  scoped_ptr<RenderFrameHostImpl> render_frame_host_;
   scoped_ptr<WebUIImpl> web_ui_;
 
   // A RenderFrameHost used to load a cross-site page. This remains hidden
@@ -428,7 +439,7 @@ class CONTENT_EXPORT RenderFrameHostManager
   // transitioning between two Web UI pages: the RFH won't be swapped, so the
   // pending pointer will be unused, but there will be a pending Web UI
   // associated with the navigation.
-  RenderFrameHostImpl* pending_render_frame_host_;
+  scoped_ptr<RenderFrameHostImpl> pending_render_frame_host_;
 
   // Tracks information about any current pending cross-process navigation.
   scoped_ptr<PendingNavigationParams> pending_nav_params_;

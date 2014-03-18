@@ -20,6 +20,7 @@ STABLE_TEST_SUITES = [
     'components_unittests',
     'content_browsertests',
     'content_unittests',
+    'events_unittests',
     'gl_tests',
     'gpu_unittests',
     'ipc_tests',
@@ -32,6 +33,13 @@ STABLE_TEST_SUITES = [
     'unit_tests',
     'webkit_compositor_bindings_unittests',
     'webkit_unit_tests',
+]
+
+# Tests fail in component=shared_library build, which is required for ASan.
+# http://crbug.com/344868
+ASAN_EXCLUDED_TEST_SUITES = [
+    'breakpad_unittests',
+    'sandbox_linux_unittests'
 ]
 
 WEBRTC_CHROMIUM_TEST_SUITES = [

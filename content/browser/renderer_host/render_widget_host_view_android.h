@@ -120,6 +120,7 @@ class RenderWidgetHostViewAndroid
                                 const gfx::Range& range) OVERRIDE;
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
+  virtual void SelectionRootBoundsChanged(const gfx::Rect& bounds) OVERRIDE;
   virtual void ScrollOffsetChanged() OVERRIDE;
   virtual BackingStore* AllocBackingStore(const gfx::Size& size) OVERRIDE;
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
@@ -201,6 +202,8 @@ class RenderWidgetHostViewAndroid
   // DelegatedFrameEvictor implementation
   virtual void EvictDelegatedFrame() OVERRIDE;
 
+  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+
   // Non-virtual methods
   void SetContentViewCore(ContentViewCoreImpl* content_view_core);
   SkColor GetCachedBackgroundColor() const;
@@ -220,15 +223,15 @@ class RenderWidgetHostViewAndroid
   void LockResources();
   void UnlockResources();
 
-  int GetNativeImeAdapter();
+  long GetNativeImeAdapter();
 
   void WasResized();
 
   void GetScaledContentBitmap(
       float scale,
-      gfx::Size* out_size,
+      SkBitmap::Config bitmap_config,
+      gfx::Rect src_subrect,
       const base::Callback<void(bool, const SkBitmap&)>& result_callback);
-  bool PopulateBitmapWithContents(jobject jbitmap);
 
   bool HasValidFrame() const;
 
@@ -236,9 +239,6 @@ class RenderWidgetHostViewAndroid
   void SelectRange(const gfx::Point& start, const gfx::Point& end);
 
   void MoveCaret(const gfx::Point& point);
-
-  void RequestContentClipping(const gfx::Rect& clipping,
-                              const gfx::Size& content_size);
 
   // Returns true when animation ticks are still needed. This avoids a separate
   // round-trip for requesting follow-up animation.
@@ -294,6 +294,8 @@ class RenderWidgetHostViewAndroid
       const gfx::Size& dst_size_in_pixel,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       const SkBitmap::Config config);
+
+  bool IsReadbackConfigSupported(SkBitmap::Config bitmap_config);
 
   // The model object.
   RenderWidgetHostImpl* host_;

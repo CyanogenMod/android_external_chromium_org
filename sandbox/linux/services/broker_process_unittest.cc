@@ -15,14 +15,15 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/posix/eintr_wrapper.h"
+#include "sandbox/linux/tests/test_utils.h"
 #include "sandbox/linux/tests/unit_tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-using file_util::ScopedFD;
 
 namespace sandbox {
 
@@ -60,13 +61,9 @@ class ScopedTemporaryFile {
   DISALLOW_COPY_AND_ASSIGN(ScopedTemporaryFile);
 };
 
-}  // namespace
+bool NoOpCallback() { return true; }
 
-#if defined(OS_ANDROID)
-  #define DISABLE_ON_ANDROID(function) DISABLED_##function
-#else
-  #define DISABLE_ON_ANDROID(function) function
-#endif
+}  // namespace
 
 TEST(BrokerProcess, CreateAndDestroy) {
   std::vector<std::string> read_whitelist;
@@ -74,21 +71,18 @@ TEST(BrokerProcess, CreateAndDestroy) {
 
   scoped_ptr<BrokerProcess> open_broker(
       new BrokerProcess(EPERM, read_whitelist, std::vector<std::string>()));
-  ASSERT_TRUE(open_broker->Init(NULL));
-  pid_t broker_pid = open_broker->broker_pid();
+  ASSERT_TRUE(open_broker->Init(base::Bind(&NoOpCallback)));
 
+  ASSERT_TRUE(TestUtils::CurrentProcessHasChildren());
   // Destroy the broker and check it has exited properly.
   open_broker.reset();
-  int status = 0;
-  ASSERT_EQ(waitpid(broker_pid, &status, 0), broker_pid);
-  ASSERT_TRUE(WIFEXITED(status));
-  ASSERT_EQ(WEXITSTATUS(status), 0);
+  ASSERT_FALSE(TestUtils::CurrentProcessHasChildren());
 }
 
 TEST(BrokerProcess, TestOpenAccessNull) {
   const std::vector<std::string> empty;
   BrokerProcess open_broker(EPERM, empty, empty);
-  ASSERT_TRUE(open_broker.Init(NULL));
+  ASSERT_TRUE(open_broker.Init(base::Bind(&NoOpCallback)));
 
   int fd = open_broker.Open(NULL, O_RDONLY);
   ASSERT_EQ(fd, -EFAULT);
@@ -119,7 +113,7 @@ void TestOpenFilePerms(bool fast_check_in_client, int denied_errno) {
                             read_whitelist,
                             write_whitelist,
                             fast_check_in_client);
-  ASSERT_TRUE(open_broker.Init(NULL));
+  ASSERT_TRUE(open_broker.Init(base::Bind(&NoOpCallback)));
 
   int fd = -1;
   fd = open_broker.Open(kR_WhiteListed, O_RDONLY);
@@ -270,12 +264,11 @@ void TestOpenCpuinfo(bool fast_check_in_client) {
 
   scoped_ptr<BrokerProcess> open_broker(new BrokerProcess(
       EPERM, read_whitelist, std::vector<std::string>(), fast_check_in_client));
-  ASSERT_TRUE(open_broker->Init(NULL));
-  pid_t broker_pid = open_broker->broker_pid();
+  ASSERT_TRUE(open_broker->Init(base::Bind(&NoOpCallback)));
 
   int fd = -1;
   fd = open_broker->Open(kFileCpuInfo, O_RDWR);
-  ScopedFD fd_closer(&fd);
+  base::ScopedFD fd_closer(fd);
   ASSERT_EQ(fd, -EPERM);
 
   // Check we can read /proc/cpuinfo.
@@ -287,7 +280,7 @@ void TestOpenCpuinfo(bool fast_check_in_client) {
 
   // Open cpuinfo via the broker.
   int cpuinfo_fd = open_broker->Open(kFileCpuInfo, O_RDONLY);
-  ScopedFD cpuinfo_fd_closer(&cpuinfo_fd);
+  base::ScopedFD cpuinfo_fd_closer(cpuinfo_fd);
   ASSERT_GE(cpuinfo_fd, 0);
   char buf[3];
   memset(buf, 0, sizeof(buf));
@@ -296,7 +289,7 @@ void TestOpenCpuinfo(bool fast_check_in_client) {
 
   // Open cpuinfo directly.
   int cpuinfo_fd2 = open(kFileCpuInfo, O_RDONLY);
-  ScopedFD cpuinfo_fd2_closer(&cpuinfo_fd2);
+  base::ScopedFD cpuinfo_fd2_closer(cpuinfo_fd2);
   ASSERT_GE(cpuinfo_fd2, 0);
   char buf2[3];
   memset(buf2, 1, sizeof(buf2));
@@ -309,13 +302,9 @@ void TestOpenCpuinfo(bool fast_check_in_client) {
   // ourselves.
   ASSERT_EQ(memcmp(buf, buf2, read_len1), 0);
 
+  ASSERT_TRUE(TestUtils::CurrentProcessHasChildren());
   open_broker.reset();
-
-  // Now we check that the broker has exited properly.
-  int status = 0;
-  ASSERT_EQ(waitpid(broker_pid, &status, 0), broker_pid);
-  ASSERT_TRUE(WIFEXITED(status));
-  ASSERT_EQ(WEXITSTATUS(status), 0);
+  ASSERT_FALSE(TestUtils::CurrentProcessHasChildren());
 }
 
 // Run the same thing twice. The second time, we make sure that no security
@@ -340,7 +329,7 @@ TEST(BrokerProcess, OpenFileRW) {
   whitelist.push_back(tempfile_name);
 
   BrokerProcess open_broker(EPERM, whitelist, whitelist);
-  ASSERT_TRUE(open_broker.Init(NULL));
+  ASSERT_TRUE(open_broker.Init(base::Bind(&NoOpCallback)));
 
   // Check we can access that file with read or write.
   int can_access = open_broker.Access(tempfile_name, R_OK | W_OK);
@@ -377,15 +366,19 @@ SANDBOX_TEST(BrokerProcess, BrokerDied) {
                             std::vector<std::string>(),
                             true /* fast_check_in_client */,
                             true /* quiet_failures_for_tests */);
-  SANDBOX_ASSERT(open_broker.Init(NULL));
-  pid_t broker_pid = open_broker.broker_pid();
+  SANDBOX_ASSERT(open_broker.Init(base::Bind(&NoOpCallback)));
+  const pid_t broker_pid = open_broker.broker_pid();
   SANDBOX_ASSERT(kill(broker_pid, SIGKILL) == 0);
 
-  // Now we check that the broker has exited properly.
-  int status = 0;
-  SANDBOX_ASSERT(waitpid(broker_pid, &status, 0) == broker_pid);
-  SANDBOX_ASSERT(WIFSIGNALED(status));
-  SANDBOX_ASSERT(WTERMSIG(status) == SIGKILL);
+  // Now we check that the broker has been signaled, but do not reap it.
+  siginfo_t process_info;
+  SANDBOX_ASSERT(HANDLE_EINTR(waitid(
+                     P_PID, broker_pid, &process_info, WEXITED | WNOWAIT)) ==
+                 0);
+  SANDBOX_ASSERT(broker_pid == process_info.si_pid);
+  SANDBOX_ASSERT(CLD_KILLED == process_info.si_code);
+  SANDBOX_ASSERT(SIGKILL == process_info.si_status);
+
   // Check that doing Open with a dead broker won't SIGPIPE us.
   SANDBOX_ASSERT(open_broker.Open("/proc/cpuinfo", O_RDONLY) == -ENOMEM);
   SANDBOX_ASSERT(open_broker.Access("/proc/cpuinfo", O_RDONLY) == -ENOMEM);
@@ -400,7 +393,7 @@ void TestOpenComplexFlags(bool fast_check_in_client) {
                             whitelist,
                             whitelist,
                             fast_check_in_client);
-  ASSERT_TRUE(open_broker.Init(NULL));
+  ASSERT_TRUE(open_broker.Init(base::Bind(&NoOpCallback)));
   // Test that we do the right thing for O_CLOEXEC and O_NONBLOCK.
   int fd = -1;
   int ret = 0;

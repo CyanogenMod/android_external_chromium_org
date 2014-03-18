@@ -132,8 +132,6 @@ extern const char kWebKitFontScaleFactor[];
 extern const char kWebKitForceEnableZoom[];
 extern const char kWebKitPasswordEchoEnabled[];
 #endif
-extern const char kPasswordManagerEnabled[];
-extern const char kPasswordManagerAllowShowPasswords[];
 extern const char kAutologinEnabled[];
 extern const char kReverseAutologinEnabled[];
 extern const char kReverseAutologinRejectedEmailList[];
@@ -182,6 +180,8 @@ extern const char kAlternateProtocolServers[];
 extern const char kDisabledSchemes[];
 #if defined(OS_ANDROID)
 extern const char kLastPolicyCheckTime[];
+#endif
+#if defined(OS_ANDROID) || defined(OS_IOS)
 extern const char kManagedBookmarks[];
 #endif
 extern const char kInstantUIZeroSuggestUrlPrefix[];
@@ -283,7 +283,7 @@ extern const char kMultiProfileUserBehavior[];
 extern const char kFirstRunTutorialShown[];
 extern const char kSAMLOfflineSigninTimeLimit[];
 extern const char kSAMLLastGAIASignInTime[];
-extern const char kDerelictMachine[];
+extern const char kTimeOnOobe[];
 #endif  // defined(OS_CHROMEOS)
 extern const char kIpcDisabledMessages[];
 extern const char kShowHomeButton[];
@@ -373,11 +373,6 @@ extern const char kImportHomepage[];
 extern const char kImportSearchEngine[];
 extern const char kImportSavedPasswords[];
 
-#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
-extern const char kLocalProfileId[];
-extern const char kPasswordsUseLocalProfileId[];
-#endif
-
 extern const char kProfileAvatarIndex[];
 extern const char kProfileName[];
 extern const char kProfileIsManaged[];
@@ -407,6 +402,7 @@ extern const char kFullscreenAllowed[];
 
 extern const char kLocalDiscoveryNotificationsEnabled[];
 
+extern const char kPreferenceResetTime[];
 extern const char kProfileResetPromptMemento[];
 
 extern const char kGCMChannelEnabled[];
@@ -421,7 +417,6 @@ extern const char kCipherSuiteBlacklist[];
 extern const char kEnableOriginBoundCerts[];
 extern const char kDisableSSLRecordSplitting[];
 extern const char kEnableUnrestrictedSSL3Fallback[];
-extern const char kEnableMemoryInfo[];
 
 extern const char kGLVendorString[];
 extern const char kGLRendererString[];
@@ -654,6 +649,8 @@ extern const char kSignInPromoUserSkipped[];
 extern const char kSignInPromoShowOnFirstRunAllowed[];
 extern const char kSignInPromoShowNTPBubble[];
 
+extern const char kProfileAvatarTutorialShown[];
+
 extern const char kProfileGAIAInfoUpdateTime[];
 extern const char kProfileGAIAInfoPictureURL[];
 
@@ -680,6 +677,7 @@ extern const char kRemoteAccessHostDomain[];
 extern const char kRemoteAccessHostTalkGadgetPrefix[];
 extern const char kRemoteAccessHostRequireCurtain[];
 extern const char kRemoteAccessHostAllowClientPairing[];
+extern const char kRemoteAccessHostAllowGnubbyAuth[];
 
 extern const char kPrintPreviewStickySettings[];
 extern const char kCloudPrintRoot[];
@@ -740,10 +738,6 @@ extern const char kVideoCaptureAllowedUrls[];
 extern const char kHotwordSearchEnabled[];
 extern const char kHotwordOptInPopupTimesShown[];
 
-#if defined(OS_CHROMEOS)
-extern const char kHotwordAppListEnabled[];
-#endif
-
 #if defined(OS_ANDROID)
 extern const char kProtectedMediaIdentifierEnabled[];
 #endif
@@ -775,6 +769,7 @@ extern const char kInitialLocale[];
 extern const char kOobeComplete[];
 extern const char kDeviceRegistered[];
 extern const char kUsedPolicyCertificates[];
+extern const char kServerBackedDeviceState[];
 #endif
 
 extern const char kClearPluginLSODataEnabled[];
@@ -943,17 +938,11 @@ extern const char kWatchdogExtensionActive[];
 extern const char kWatchdogExtensionActiveOld[];
 
 extern const char kProfilePreferenceHashes[];
-extern const char kProfilePreferenceResetTime[];
 
 extern const char kNetworkTimeMapping[];
 
 #if defined(OS_ANDROID)
 extern const char kPartnerBookmarkMappings[];
-#endif
-
-#if defined(OS_WIN)
-extern const char kOsPasswordBlank[];
-extern const char kOsPasswordLastChanged[];
 #endif
 
 extern const char kQuickCheckEnabled[];

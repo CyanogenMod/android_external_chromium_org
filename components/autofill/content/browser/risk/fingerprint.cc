@@ -35,7 +35,6 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
-#include "content/public/common/content_client.h"
 #include "content/public/common/geoposition.h"
 #include "content/public/common/webplugininfo.h"
 #include "gpu/config/gpu_info.h"
@@ -263,6 +262,7 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
       const std::string& accept_languages,
       const base::Time& install_time,
       const std::string& app_locale,
+      const std::string& user_agent,
       const base::TimeDelta& timeout,
       const base::Callback<void(scoped_ptr<Fingerprint>)>& callback);
 
@@ -301,6 +301,8 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
   const std::string version_;
   const std::string charset_;
   const std::string accept_languages_;
+  const std::string app_locale_;
+  const std::string user_agent_;
   const base::Time install_time_;
 
   // Data that will be loaded asynchronously.
@@ -316,9 +318,6 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
   // For invalidating asynchronous callbacks that might arrive after |this|
   // instance is destroyed.
   base::WeakPtrFactory<FingerprintDataLoader> weak_ptr_factory_;
-
-  // The current application locale.
-  std::string app_locale_;
 
   // The callback that will be called once all the data is available.
   base::Callback<void(scoped_ptr<Fingerprint>)> callback_;
@@ -336,6 +335,7 @@ FingerprintDataLoader::FingerprintDataLoader(
     const std::string& accept_languages,
     const base::Time& install_time,
     const std::string& app_locale,
+    const std::string& user_agent,
     const base::TimeDelta& timeout,
     const base::Callback<void(scoped_ptr<Fingerprint>)>& callback)
     : gpu_data_manager_(content::GpuDataManager::GetInstance()),
@@ -347,6 +347,8 @@ FingerprintDataLoader::FingerprintDataLoader(
       version_(version),
       charset_(charset),
       accept_languages_(accept_languages),
+      app_locale_(app_locale),
+      user_agent_(user_agent),
       install_time_(install_time),
       waiting_on_plugins_(true),
       weak_ptr_factory_(this),
@@ -445,7 +447,7 @@ void FingerprintDataLoader::FillFingerprint() {
   machine->set_utc_offset_ms(GetTimezoneOffset().InMilliseconds());
   machine->set_browser_language(app_locale_);
   machine->set_charset(charset_);
-  machine->set_user_agent(content::GetUserAgent(GURL()));
+  machine->set_user_agent(user_agent_);
   machine->set_ram(base::SysInfo::AmountOfPhysicalMemory());
   machine->set_browser_build(version_);
   machine->set_browser_feature(
@@ -511,13 +513,15 @@ void GetFingerprintInternal(
     const std::string& accept_languages,
     const base::Time& install_time,
     const std::string& app_locale,
+    const std::string& user_agent,
     const base::TimeDelta& timeout,
     const base::Callback<void(scoped_ptr<Fingerprint>)>& callback) {
   // Begin loading all of the data that we need to load asynchronously.
   // This class is responsible for freeing its own memory.
   new FingerprintDataLoader(obfuscated_gaia_id, window_bounds, content_bounds,
                             screen_info, version, charset, accept_languages,
-                            install_time, app_locale, timeout, callback);
+                            install_time, app_locale, user_agent, timeout,
+                            callback);
 }
 
 }  // namespace internal
@@ -531,6 +535,7 @@ void GetFingerprint(
     const std::string& accept_languages,
     const base::Time& install_time,
     const std::string& app_locale,
+    const std::string& user_agent,
     const base::Callback<void(scoped_ptr<Fingerprint>)>& callback) {
   gfx::Rect content_bounds;
   web_contents.GetView()->GetContainerBounds(&content_bounds);
@@ -543,7 +548,7 @@ void GetFingerprint(
 
   internal::GetFingerprintInternal(
       obfuscated_gaia_id, window_bounds, content_bounds, screen_info, version,
-      charset, accept_languages, install_time, app_locale,
+      charset, accept_languages, install_time, app_locale, user_agent,
       base::TimeDelta::FromSeconds(kTimeoutSeconds), callback);
 }
 

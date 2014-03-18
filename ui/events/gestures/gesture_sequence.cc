@@ -633,7 +633,7 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
     case GST_PENDING_TWO_FINGER_TAP_FIRST_RELEASED:
     case GST_PENDING_TWO_FINGER_TAP_SECOND_RELEASED:
       TwoFingerTouchReleased(event, point, gestures.get());
-      set_state(GS_SCROLL);
+      StartRailFreeScroll(point, gestures.get());
       break;
     case GST_PENDING_TWO_FINGER_TAP_FIRST_MOVED:
     case GST_PENDING_TWO_FINGER_TAP_SECOND_MOVED:
@@ -648,8 +648,7 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
     case GST_PENDING_TWO_FINGER_TAP_SECOND_RELEASED_HANDLED:
     case GST_PENDING_TWO_FINGER_TAP_FIRST_CANCELLED:
     case GST_PENDING_TWO_FINGER_TAP_SECOND_CANCELLED:
-      scroll_type_ = ST_FREE;
-      set_state(GS_SCROLL);
+      StartRailFreeScroll(point, gestures.get());
       break;
     case GST_PENDING_TWO_FINGER_TAP_THIRD_PRESSED:
       set_state(GS_PENDING_PINCH);
@@ -661,18 +660,17 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
     case GST_PENDING_TWO_FINGER_TAP_NO_PINCH_FIRST_RELEASED:
     case GST_PENDING_TWO_FINGER_TAP_NO_PINCH_SECOND_RELEASED:
       TwoFingerTouchReleased(event, point, gestures.get());
-      // We transit into GS_SCROLL even though the touch move can be
-      // consumed and no scroll should happen. crbug.com/240399.
-      set_state(GS_SCROLL);
+      // We transition into GS_SCROLL even though the touch move can be consumed
+      // and no scroll should happen. crbug.com/240399.
+      StartRailFreeScroll(point, gestures.get());
       break;
     case GST_PENDING_TWO_FINGER_TAP_NO_PINCH_FIRST_RELEASED_HANDLED:
     case GST_PENDING_TWO_FINGER_TAP_NO_PINCH_SECOND_RELEASED_HANDLED:
     case GST_PENDING_TWO_FINGER_TAP_NO_PINCH_FIRST_CANCELLED:
     case GST_PENDING_TWO_FINGER_TAP_NO_PINCH_SECOND_CANCELLED:
-      // We transit into GS_SCROLL even though the touch move can be
-      // consumed and no scroll should happen. crbug.com/240399.
-      scroll_type_ = ST_FREE;
-      set_state(GS_SCROLL);
+      // We transition into GS_SCROLL even though the touch move can be consumed
+      // and no scroll should happen. crbug.com/240399.
+      StartRailFreeScroll(point, gestures.get());
       break;
     case GST_PENDING_PINCH_FIRST_MOVED:
     case GST_PENDING_PINCH_SECOND_MOVED:
@@ -687,10 +685,9 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
     case GST_PENDING_PINCH_SECOND_RELEASED:
     case GST_PENDING_PINCH_FIRST_CANCELLED:
     case GST_PENDING_PINCH_SECOND_CANCELLED:
-      // We transit into GS_SCROLL even though the touch move can be
-      // consumed and no scroll should happen. crbug.com/240399.
-      scroll_type_ = ST_FREE;
-      set_state(GS_SCROLL);
+      // We transition into GS_SCROLL even though the touch move can be consumed
+      // and no scroll should happen. crbug.com/240399.
+      StartRailFreeScroll(point, gestures.get());
       break;
     case GST_PENDING_PINCH_NO_PINCH_FIRST_MOVED:
     case GST_PENDING_PINCH_NO_PINCH_SECOND_MOVED:
@@ -700,10 +697,9 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
     case GST_PENDING_PINCH_NO_PINCH_SECOND_RELEASED:
     case GST_PENDING_PINCH_NO_PINCH_FIRST_CANCELLED:
     case GST_PENDING_PINCH_NO_PINCH_SECOND_CANCELLED:
-      // We transit into GS_SCROLL even though the touch move can be
-      // consumed and no scroll should happen. crbug.com/240399.
-      scroll_type_ = ST_FREE;
-      set_state(GS_SCROLL);
+      // We transition into GS_SCROLL even though the touch move can be consumed
+      // and no scroll should happen. crbug.com/240399.
+      StartRailFreeScroll(point, gestures.get());
       break;
     case GST_PINCH_FIRST_MOVED_HANDLED:
     case GST_PINCH_SECOND_MOVED_HANDLED:
@@ -1322,15 +1318,15 @@ bool GestureSequence::PinchStart(const TouchEvent& event,
   const GesturePoint* point1 = GetPointByPointId(0);
   const GesturePoint* point2 = GetPointByPointId(1);
 
-  pinch_distance_current_ = BoundingBoxDiagonal(bounding_box_);
-  pinch_distance_start_ = pinch_distance_current_;
-  latest_multi_scroll_update_location_ = bounding_box_.CenterPoint();
-  AppendPinchGestureBegin(*point1, *point2, gestures);
-
   if (state_ == GS_PENDING_TWO_FINGER_TAP ||
       state_ == GS_PENDING_PINCH) {
     AppendScrollGestureBegin(point, bounding_box_.CenterPoint(), gestures);
   }
+
+  pinch_distance_current_ = BoundingBoxDiagonal(bounding_box_);
+  pinch_distance_start_ = pinch_distance_current_;
+  latest_multi_scroll_update_location_ = bounding_box_.CenterPoint();
+  AppendPinchGestureBegin(*point1, *point2, gestures);
 
   return true;
 }
@@ -1358,7 +1354,7 @@ bool GestureSequence::PinchUpdate(const TouchEvent& event,
 
   float distance = BoundingBoxDiagonal(bounding_box_);
 
-  if (abs(distance - pinch_distance_current_) >=
+  if (std::abs(distance - pinch_distance_current_) >=
       GestureConfiguration::min_pinch_update_distance_in_pixels()) {
     AppendPinchGestureUpdate(point,
         distance / pinch_distance_current_, gestures);
@@ -1477,6 +1473,13 @@ void GestureSequence::StopTimersIfRequired(const TouchEvent& event) {
     GetLongPressTimer()->Stop();
     GetShowPressTimer()->Stop();
   }
+}
+
+void GestureSequence::StartRailFreeScroll(const GesturePoint& point,
+                                          Gestures* gestures) {
+  AppendScrollGestureBegin(point, point.first_touch_position(), gestures);
+  scroll_type_ = ST_FREE;
+  set_state(GS_SCROLL);
 }
 
 }  // namespace ui

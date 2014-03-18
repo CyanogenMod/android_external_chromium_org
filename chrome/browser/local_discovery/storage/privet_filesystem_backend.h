@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
+#include "content/public/browser/browser_context.h"
 #include "webkit/browser/blob/file_stream_reader.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_stream_writer.h"
@@ -20,18 +21,17 @@ class PrivetFileSystemAsyncUtil;
 
 class PrivetFileSystemBackend : public fileapi::FileSystemBackend {
  public:
-  explicit PrivetFileSystemBackend(fileapi::ExternalMountPoints* mount_points);
+  PrivetFileSystemBackend(fileapi::ExternalMountPoints* mount_points,
+                          content::BrowserContext* browser_context);
   virtual ~PrivetFileSystemBackend();
 
   // FileSystemBackend implementation.
   virtual bool CanHandleType(fileapi::FileSystemType type) const OVERRIDE;
   virtual void Initialize(fileapi::FileSystemContext* context) OVERRIDE;
 
-  virtual void OpenFileSystem(
-      const GURL& origin_url,
-      fileapi::FileSystemType type,
-      fileapi::OpenFileSystemMode mode,
-      const OpenFileSystemCallback& callback) OVERRIDE;
+  virtual void ResolveURL(const fileapi::FileSystemURL& url,
+                          fileapi::OpenFileSystemMode mode,
+                          const OpenFileSystemCallback& callback) OVERRIDE;
 
   virtual fileapi::AsyncFileUtil* GetAsyncFileUtil(
       fileapi::FileSystemType type) OVERRIDE;
@@ -44,6 +44,9 @@ class PrivetFileSystemBackend : public fileapi::FileSystemBackend {
       const fileapi::FileSystemURL& url,
       fileapi::FileSystemContext* context,
       base::File::Error* error_code) const OVERRIDE;
+
+  virtual bool SupportsStreaming(
+      const fileapi::FileSystemURL& url) const OVERRIDE;
 
   virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
       const fileapi::FileSystemURL& url,

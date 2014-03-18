@@ -19,7 +19,6 @@
 namespace gfx {
 
 class Rect;
-class Font;
 class FontList;
 class Point;
 class Size;
@@ -144,8 +143,6 @@ class GFX_EXPORT Canvas {
   // |text| with |font_list|.
   static int GetStringWidth(const base::string16& text,
                             const FontList& font_list);
-  // Obsolete version.  Use the above version which takes FontList.
-  static int GetStringWidth(const base::string16& text, const Font& font);
 
   // This is same as GetStringWidth except that fractional width is returned.
   // Use this method for the scenario that multiple string widths need to be
@@ -201,13 +198,14 @@ class GFX_EXPORT Canvas {
   // call Restore() more times than Save*().
   void Restore();
 
-  // Adds |rect| to the current clip. Returns true if the resulting clip is
-  // non-empty.
-  bool ClipRect(const Rect& rect);
+  // Adds |rect| to the current clip.
+  void ClipRect(const Rect& rect);
 
-  // Adds |path| to the current clip. Returns true if the resulting clip is
-  // non-empty.
-  bool ClipPath(const SkPath& path);
+  // Adds |path| to the current clip.
+  void ClipPath(const SkPath& path);
+
+  // Returns true if the current clip is empty.
+  bool IsClipEmpty() const;
 
   // Returns the bounds of the current clip (in local coordinates) in the
   // |bounds| parameter, and returns true if it is non empty.

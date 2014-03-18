@@ -6,8 +6,8 @@
 
 #include "base/logging.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/native_widget_types.h"
@@ -31,26 +31,24 @@ TestScreen* TestScreen::CreateFullscreen() {
 TestScreen::~TestScreen() {
 }
 
-RootWindow* TestScreen::CreateRootWindowForPrimaryDisplay() {
-  DCHECK(!root_window_);
-  root_window_ = new RootWindow(
-      RootWindow::CreateParams(gfx::Rect(display_.GetSizeInPixel())));
-  root_window_->window()->AddObserver(this);
-  root_window_->host()->InitHost();
-  return root_window_;
+WindowTreeHost* TestScreen::CreateHostForPrimaryDisplay() {
+  DCHECK(!host_);
+  host_ = WindowTreeHost::Create(gfx::Rect(display_.GetSizeInPixel()));
+  host_->window()->AddObserver(this);
+  host_->InitHost();
+  return host_;
 }
 
 void TestScreen::SetDeviceScaleFactor(float device_scale_factor) {
   gfx::Rect bounds_in_pixel(display_.GetSizeInPixel());
   display_.SetScaleAndBounds(device_scale_factor, bounds_in_pixel);
-  root_window_->host()->NotifyHostResized(bounds_in_pixel.size());
+  host_->OnHostResized(bounds_in_pixel.size());
 }
 
 void TestScreen::SetDisplayRotation(gfx::Display::Rotation rotation) {
   display_.set_rotation(rotation);
   // TODO(oshima|mukai): Update the display_ as well.
-  root_window_->host()->SetTransform(
-      GetRotationTransform() * GetUIScaleTransform());
+  host_->SetTransform(GetRotationTransform() * GetUIScaleTransform());
 }
 
 void TestScreen::SetUIScale(float ui_scale) {
@@ -59,8 +57,7 @@ void TestScreen::SetUIScale(float ui_scale) {
   gfx::Rect new_bounds = gfx::ToNearestRect(
       gfx::ScaleRect(bounds_in_pixel, 1.0f / ui_scale));
   display_.SetScaleAndBounds(display_.device_scale_factor(), new_bounds);
-  root_window_->host()->SetTransform(
-      GetRotationTransform() * GetUIScaleTransform());
+  host_->SetTransform(GetRotationTransform() * GetUIScaleTransform());
 }
 
 gfx::Transform TestScreen::GetRotationTransform() const {
@@ -99,14 +96,14 @@ bool TestScreen::IsDIPEnabled() {
 
 void TestScreen::OnWindowBoundsChanged(
     Window* window, const gfx::Rect& old_bounds, const gfx::Rect& new_bounds) {
-  DCHECK_EQ(root_window_->window(), window);
+  DCHECK_EQ(host_->window(), window);
   display_.SetSize(gfx::ToFlooredSize(
       gfx::ScaleSize(new_bounds.size(), display_.device_scale_factor())));
 }
 
 void TestScreen::OnWindowDestroying(Window* window) {
-  if (root_window_->window() == window)
-    root_window_ = NULL;
+  if (host_->window() == window)
+    host_ = NULL;
 }
 
 gfx::Point TestScreen::GetCursorScreenPoint() {
@@ -118,7 +115,7 @@ gfx::NativeWindow TestScreen::GetWindowUnderCursor() {
 }
 
 gfx::NativeWindow TestScreen::GetWindowAtScreenPoint(const gfx::Point& point) {
-  return root_window_->window()->GetTopWindowContainingPoint(point);
+  return host_->window()->GetTopWindowContainingPoint(point);
 }
 
 int TestScreen::GetNumDisplays() const {
@@ -153,7 +150,7 @@ void TestScreen::RemoveObserver(gfx::DisplayObserver* observer) {
 }
 
 TestScreen::TestScreen(const gfx::Rect& screen_bounds)
-    : root_window_(NULL),
+    : host_(NULL),
       ui_scale_(1.0f) {
   static int64 synthesized_display_id = 2000;
   display_.set_id(synthesized_display_id++);

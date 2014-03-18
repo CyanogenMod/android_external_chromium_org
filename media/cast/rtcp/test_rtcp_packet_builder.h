@@ -7,9 +7,9 @@
 #ifndef MEDIA_CAST_RTCP_TEST_RTCP_PACKET_BUILDER_H_
 #define MEDIA_CAST_RTCP_TEST_RTCP_PACKET_BUILDER_H_
 
+#include "base/big_endian.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/rtcp/rtcp_defines.h"
-#include "net/base/big_endian.h"
 
 namespace media {
 namespace cast {
@@ -79,7 +79,7 @@ class TestRtcpPacketBuilder {
   void AddPli(uint32 sender_ssrc, uint32 media_ssrc);
   void AddRpsi(uint32 sender_ssrc, uint32 media_ssrc);
   void AddRemb(uint32 sender_ssrc, uint32 media_ssrc);
-  void AddCast(uint32 sender_ssrc, uint32 media_ssrc);
+  void AddCast(uint32 sender_ssrc, uint32 media_ssrc, uint16 target_delay_ms);
   void AddSenderLog(uint32 sender_ssrc);
   void AddSenderFrameLog(uint8 event_id, uint32 rtp_timestamp);
   void AddReceiverLog(uint32 sender_ssrc);
@@ -102,7 +102,7 @@ class TestRtcpPacketBuilder {
   // Note: 0 is not a legal value, it is used for "uninitialized".
   uint8 buffer_[kMaxIpPacketSize];
   char* ptr_of_length_;
-  net::BigEndianWriter big_endian_writer_;
+  base::BigEndianWriter big_endian_writer_;
 
   DISALLOW_COPY_AND_ASSIGN(TestRtcpPacketBuilder);
 };

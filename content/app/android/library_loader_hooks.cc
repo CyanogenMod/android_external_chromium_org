@@ -18,7 +18,6 @@
 #include "base/tracked_objects.h"
 #include "content/app/android/app_jni_registrar.h"
 #include "content/browser/android/browser_jni_registrar.h"
-#include "content/child/android/child_jni_registrar.h"
 #include "content/common/android/common_jni_registrar.h"
 #include "content/common/content_constants_internal.h"
 #include "content/public/common/content_switches.h"
@@ -52,9 +51,6 @@ bool EnsureJniRegistered(JNIEnv* env) {
       return false;
 
     if (!ui::shell_dialogs::RegisterJni(env))
-      return false;
-
-    if (!content::android::RegisterChildJni(env))
       return false;
 
     if (!content::android::RegisterCommonJni(env))
@@ -99,15 +95,8 @@ bool LibraryLoaded(JNIEnv* env, jclass clazz,
   // Can only use event tracing after setting up the command line.
   TRACE_EVENT0("jni", "JNI_OnLoad continuation");
 
-  // Note: because logging is setup here right after copying the command line
-  // array from java to native up top of this method, any code that adds the
-  // --enable-dcheck switch must do so on the Java side.
   logging::LoggingSettings settings;
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
-  settings.dcheck_state =
-      command_line->HasSwitch(switches::kEnableDCHECK) ?
-      logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS :
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
   logging::InitLogging(settings);
   // To view log output with IDs and timestamps use "adb logcat -v threadtime".
   logging::SetLogItems(false,    // Process ID

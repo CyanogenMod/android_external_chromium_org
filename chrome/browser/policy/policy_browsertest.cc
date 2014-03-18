@@ -367,7 +367,7 @@ bool IsWebGLEnabled(content::WebContents* contents) {
 
 bool IsJavascriptEnabled(content::WebContents* contents) {
   scoped_ptr<base::Value> value = content::ExecuteScriptAndGetValue(
-      contents->GetRenderViewHost(), "123");
+      contents->GetMainFrame(), "123");
   int result = 0;
   if (!value->GetAsInteger(&result))
     EXPECT_EQ(base::Value::TYPE_NULL, value->GetType());
@@ -1449,7 +1449,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DownloadDirectory) {
   // Verify that downloads end up on the default directory.
   base::FilePath file(FILE_PATH_LITERAL("download-test1.lib"));
   DownloadAndVerifyFile(browser(), initial_dir.path(), file);
-  file_util::DieFileDie(initial_dir.path().Append(file), false);
+  base::DieFileDie(initial_dir.path().Append(file), false);
 
   // Override the download directory with the policy and verify a download.
   base::ScopedTempDir forced_dir;
@@ -2646,7 +2646,7 @@ IN_PROC_BROWSER_TEST_F(PolicyStatisticsCollectorTest, Startup) {
   // CompleteInitialization() task has executed as well.
   content::RunAllPendingInMessageLoop();
 
-  GURL kAboutHistograms = GURL(std::string(chrome::kAboutScheme) +
+  GURL kAboutHistograms = GURL(std::string(content::kAboutScheme) +
                                std::string(content::kStandardSchemeSeparator) +
                                std::string(content::kChromeUIHistogramHost));
   ui_test_utils::NavigateToURL(browser(), kAboutHistograms);
@@ -2727,6 +2727,7 @@ class MediaStreamDevicesControllerBrowserTest
   }
 
   void Accept(const content::MediaStreamDevices& devices,
+              content::MediaStreamRequestResult result,
               scoped_ptr<content::MediaStreamUI> ui) {
     if (policy_value_ || request_url_allowed_via_whitelist_) {
       ASSERT_EQ(1U, devices.size());
@@ -2794,7 +2795,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
 
   content::BrowserThread::PostTaskAndReply(
       content::BrowserThread::IO, FROM_HERE,
-      base::Bind(&MediaCaptureDevicesDispatcher::OnAudioCaptureDevicesChanged,
+      base::Bind(&MediaCaptureDevicesDispatcher::SetTestAudioCaptureDevices,
                  base::Unretained(MediaCaptureDevicesDispatcher::GetInstance()),
                  audio_devices),
       base::Bind(&MediaStreamDevicesControllerBrowserTest::FinishAudioTest,
@@ -2827,7 +2828,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
     content::BrowserThread::PostTaskAndReply(
         content::BrowserThread::IO, FROM_HERE,
         base::Bind(
-            &MediaCaptureDevicesDispatcher::OnAudioCaptureDevicesChanged,
+            &MediaCaptureDevicesDispatcher::SetTestAudioCaptureDevices,
             base::Unretained(MediaCaptureDevicesDispatcher::GetInstance()),
             audio_devices),
         base::Bind(
@@ -2851,7 +2852,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
 
   content::BrowserThread::PostTaskAndReply(
       content::BrowserThread::IO, FROM_HERE,
-      base::Bind(&MediaCaptureDevicesDispatcher::OnVideoCaptureDevicesChanged,
+      base::Bind(&MediaCaptureDevicesDispatcher::SetTestVideoCaptureDevices,
                  base::Unretained(MediaCaptureDevicesDispatcher::GetInstance()),
                  video_devices),
       base::Bind(&MediaStreamDevicesControllerBrowserTest::FinishVideoTest,
@@ -2883,8 +2884,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
 
     content::BrowserThread::PostTaskAndReply(
         content::BrowserThread::IO, FROM_HERE,
-        base::Bind(
-            &MediaCaptureDevicesDispatcher::OnVideoCaptureDevicesChanged,
+        base::Bind(&MediaCaptureDevicesDispatcher::SetTestVideoCaptureDevices,
             base::Unretained(MediaCaptureDevicesDispatcher::GetInstance()),
             video_devices),
         base::Bind(

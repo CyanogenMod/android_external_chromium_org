@@ -767,7 +767,7 @@ void SanitizeGeneratedFileName(base::FilePath::StringType* filename,
     size_t length = filename->size();
     size_t pos = filename->find_last_not_of(FILE_PATH_LITERAL(" ."));
     filename->resize((pos == std::string::npos) ? 0 : (pos + 1));
-    TrimWhitespace(*filename, TRIM_TRAILING, filename);
+    base::TrimWhitespace(*filename, base::TRIM_TRAILING, filename);
     if (filename->empty())
       return;
     size_t trimmed = length - filename->size();
@@ -1058,8 +1058,9 @@ std::string GetSpecificHeader(const std::string& headers,
   begin += match.length();
 
   std::string ret;
-  TrimWhitespace(std::string(begin, std::find(begin, headers.end(), '\n')),
-                 TRIM_ALL, &ret);
+  base::TrimWhitespace(std::string(begin,
+                                   std::find(begin, headers.end(), '\n')),
+                       base::TRIM_ALL, &ret);
   return ret;
 }
 
@@ -2193,10 +2194,12 @@ NetworkInterface::NetworkInterface() : network_prefix(0) {
 }
 
 NetworkInterface::NetworkInterface(const std::string& name,
+                                   const std::string& friendly_name,
                                    uint32 interface_index,
                                    const IPAddressNumber& address,
                                    size_t network_prefix)
     : name(name),
+      friendly_name(friendly_name),
       interface_index(interface_index),
       address(address),
       network_prefix(network_prefix) {

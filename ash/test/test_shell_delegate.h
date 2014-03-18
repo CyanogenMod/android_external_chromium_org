@@ -44,12 +44,10 @@ class TestShellDelegate : public ShellDelegate {
   virtual ShelfDelegate* CreateShelfDelegate(ShelfModel* model) OVERRIDE;
   virtual SystemTrayDelegate* CreateSystemTrayDelegate() OVERRIDE;
   virtual UserWallpaperDelegate* CreateUserWallpaperDelegate() OVERRIDE;
-  virtual CapsLockDelegate* CreateCapsLockDelegate() OVERRIDE;
   virtual SessionStateDelegate* CreateSessionStateDelegate() OVERRIDE;
   virtual AccessibilityDelegate* CreateAccessibilityDelegate() OVERRIDE;
   virtual NewWindowDelegate* CreateNewWindowDelegate() OVERRIDE;
   virtual MediaDelegate* CreateMediaDelegate() OVERRIDE;
-  virtual aura::client::UserActionClient* CreateUserActionClient() OVERRIDE;
   virtual ui::MenuModel* CreateContextMenu(
       aura::Window* root,
       ash::ShelfItemDelegate* item_delegate,

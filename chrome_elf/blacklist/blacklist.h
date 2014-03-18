@@ -12,34 +12,10 @@
 namespace blacklist {
 
 // Max size of the DLL blacklist.
-const int kTroublesomeDllsMaxCount = 64;
+const size_t kTroublesomeDllsMaxCount = 64;
 
 // The DLL blacklist.
 extern const wchar_t* g_troublesome_dlls[kTroublesomeDllsMaxCount];
-
-// The registry path of the blacklist beacon.
-extern const wchar_t kRegistryBeaconPath[];
-
-// The properties for the blacklist beacon.
-extern const wchar_t kBeaconVersion[];
-extern const wchar_t kBeaconState[];
-
-// The states for the blacklist setup code.
-enum BlacklistState {
-  BLACKLIST_DISABLED = 0,
-  BLACKLIST_ENABLED,
-  // The blacklist setup code is running. If this is still set at startup,
-  // it means the last setup crashed.
-  BLACKLIST_SETUP_RUNNING,
-  // The blacklist thunk setup code is running. If this is still set at startup,
-  // it means the last setup crashed during thunk setup.
-  BLACKLIST_THUNK_SETUP,
-  // The blacklist code is currently intercepting MapViewOfSection. If this is
-  // still set at startup, it means we crashed during interception.
-  BLACKLIST_INTERCEPTING,
-  // Always keep this at the end.
-  BLACKLIST_STATE_MAX,
-};
 
 #if defined(_WIN64)
 extern NtMapViewOfSectionFunction g_nt_map_view_of_section_func;
@@ -68,11 +44,24 @@ extern "C" bool IsBlacklistInitialized();
 // the blacklist when this returns, false on error. Note that this will copy
 // |dll_name| and will leak it on exit if the string is not subsequently removed
 // using RemoveDllFromBlacklist.
+// Exposed for testing only, this shouldn't be exported from chrome_elf.dll.
 extern "C" bool AddDllToBlacklist(const wchar_t* dll_name);
 
 // Removes the given dll name from the blacklist. Returns true if it was
 // removed, false on error.
+// Exposed for testing only, this shouldn't be exported from chrome_elf.dll.
 extern "C" bool RemoveDllFromBlacklist(const wchar_t* dll_name);
+
+// Returns a list of all the dlls that have been successfully blocked by the
+// blacklist via blocked_dlls, if there is enough space (according to |size|).
+// |size| will always be modified to be the number of dlls that were blocked.
+// The caller doesn't own the strings and isn't expected to free them. These
+// strings won't be hanging unless RemoveDllFromBlacklist is called, but it
+// is only exposed in tests (and should stay that way).
+extern "C" void SuccessfullyBlocked(const wchar_t** blocked_dlls, int* size);
+
+// Record that the dll at the given index was blocked.
+void BlockedDll(size_t blocked_index);
 
 // Initializes the DLL blacklist in the current process. This should be called
 // before any undesirable DLLs might be loaded. If |force| is set to true, then

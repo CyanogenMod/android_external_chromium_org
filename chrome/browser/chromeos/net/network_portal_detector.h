@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_CHROMEOS_NET_NETWORK_PORTAL_DETECTOR_H_
 
 #include "base/basictypes.h"
+#include "chrome/browser/chromeos/login/screens/error_screen.h"
 #include "net/url_request/url_fetcher.h"
 
 namespace chromeos {
@@ -15,7 +16,7 @@ class NetworkState;
 // This class handles all notifications about network changes from
 // NetworkStateHandler and delegates portal detection for the active
 // network to CaptivePortalService.
-class NetworkPortalDetector {
+class NetworkPortalDetector : public ErrorScreen::Observer {
  public:
   enum CaptivePortalStatus {
     CAPTIVE_PORTAL_STATUS_UNKNOWN  = 0,
@@ -75,9 +76,9 @@ class NetworkPortalDetector {
   // Removes |observer| from the observers list.
   virtual void RemoveObserver(Observer* observer) = 0;
 
-  // Returns Captive Portal state for a given |network|.
+  // Returns Captive Portal state for the network specified by |service_path|.
   virtual CaptivePortalState GetCaptivePortalState(
-      const chromeos::NetworkState* network) = 0;
+      const std::string& service_path) = 0;
 
   // Returns true if portal detection is enabled.
   virtual bool IsEnabled() = 0;
@@ -94,12 +95,8 @@ class NetworkPortalDetector {
   // started.
   virtual bool StartDetectionIfIdle() = 0;
 
-  // Enables lazy detection mode. In this mode portal detection after
-  // first 3 consecutive attemps will be performed once in 5 seconds.
-  virtual void EnableLazyDetection() = 0;
-
-  // Dizables lazy detection mode.
-  virtual void DisableLazyDetection() = 0;
+  virtual void OnErrorScreenShow() OVERRIDE {}
+  virtual void OnErrorScreenHide() OVERRIDE {}
 
   // Initializes network portal detector for testing. The
   // |network_portal_detector| will be owned by the internal pointer
@@ -113,7 +110,9 @@ class NetworkPortalDetector {
   // Deletes the instance of the NetworkPortalDetector.
   static void Shutdown();
 
-  // Gets the instance of the NetworkPortalDetector.
+  // Gets the instance of the NetworkPortalDetector. Return value should
+  // be used carefully in tests, because it can be changed "on the fly"
+  // by calls to InitializeForTesting().
   static NetworkPortalDetector* Get();
 
   // Returns non-localized string representation of |status|.

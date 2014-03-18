@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/stl_util.h"
+#include "net/quic/congestion_control/rtt_stats.h"
 #include "net/quic/test_tools/mock_clock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -21,26 +22,22 @@ class InterArrivalSenderTest : public ::testing::Test {
        one_s_(QuicTime::Delta::FromMilliseconds(1000)),
        nine_ms_(QuicTime::Delta::FromMilliseconds(9)),
        send_start_time_(send_clock_.Now()),
-       sender_(&send_clock_),
+       sender_(&send_clock_, &rtt_stats_),
        sequence_number_(1),
        acked_sequence_number_(1),
        feedback_sequence_number_(1) {
     send_clock_.AdvanceTime(one_ms_);
     receive_clock_.AdvanceTime(one_ms_);
+    rtt_stats_.set_initial_rtt_us(60 * base::Time::kMicrosecondsPerMillisecond);
   }
 
   virtual ~InterArrivalSenderTest() {
-    STLDeleteValues(&sent_packets_);
   }
 
   void SendAvailableCongestionWindow() {
     while (sender_.TimeUntilSend(send_clock_.Now(),
         NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA, NOT_HANDSHAKE).IsZero()) {
       QuicByteCount bytes_in_packet = kDefaultMaxPacketSize;
-      sent_packets_[sequence_number_] =
-          new class SendAlgorithmInterface::SentPacket(
-              bytes_in_packet, send_clock_.Now());
-
       sender_.OnPacketSent(send_clock_.Now(), sequence_number_, bytes_in_packet,
                            NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA);
       sequence_number_++;
@@ -73,8 +70,7 @@ class InterArrivalSenderTest : public ::testing::Test {
             feedback_sequence_number_, receive_time));
     feedback_sequence_number_++;
 
-    sender_.OnIncomingQuicCongestionFeedbackFrame(feedback, send_clock_.Now(),
-                                                  sent_packets_);
+    sender_.OnIncomingQuicCongestionFeedbackFrame(feedback, send_clock_.Now());
   }
 
   void SendFeedbackMessageNPackets(int n,
@@ -94,8 +90,7 @@ class InterArrivalSenderTest : public ::testing::Test {
               feedback_sequence_number_, receive_time));
       feedback_sequence_number_++;
     }
-    sender_.OnIncomingQuicCongestionFeedbackFrame(feedback, send_clock_.Now(),
-                                                  sent_packets_);
+    sender_.OnIncomingQuicCongestionFeedbackFrame(feedback, send_clock_.Now());
   }
 
   QuicTime::Delta SenderDeltaSinceStart() {
@@ -108,11 +103,11 @@ class InterArrivalSenderTest : public ::testing::Test {
   MockClock send_clock_;
   MockClock receive_clock_;
   const QuicTime send_start_time_;
+  RttStats rtt_stats_;
   InterArrivalSender sender_;
   QuicPacketSequenceNumber sequence_number_;
   QuicPacketSequenceNumber acked_sequence_number_;
   QuicPacketSequenceNumber feedback_sequence_number_;
-  SendAlgorithmInterface::SentPacketsMap sent_packets_;
 };
 
 TEST_F(InterArrivalSenderTest, ProbeFollowedByFullRampUpCycle) {

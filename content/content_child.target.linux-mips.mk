@@ -14,10 +14,11 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_base_ui_base_gyp)/ui_base_ui_base_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_child_webkit_child_gyp)/webkit_child_webkit_child_gyp.a
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_child_webkit_child_gyp)/webkit_child_webkit_child_gyp.a \
+	$(call intermediates-dir-for,GYP,webkit_webkit_resources_gyp)/webkit_resources.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -30,23 +31,28 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	content/child/android/child_jni_registrar.cc \
 	content/child/appcache/appcache_backend_proxy.cc \
 	content/child/appcache/appcache_dispatcher.cc \
 	content/child/appcache/appcache_frontend_impl.cc \
 	content/child/appcache/web_application_cache_host_impl.cc \
 	content/child/blink_glue.cc \
+	content/child/blink_platform_impl.cc \
 	content/child/child_histogram_message_filter.cc \
 	content/child/child_message_filter.cc \
 	content/child/child_process.cc \
 	content/child/child_resource_message_filter.cc \
+	content/child/child_shared_bitmap_manager.cc \
 	content/child/child_thread.cc \
+	content/child/content_child_helpers.cc \
 	content/child/database_util.cc \
 	content/child/db_message_filter.cc \
 	content/child/fileapi/file_system_dispatcher.cc \
 	content/child/fileapi/webfilesystem_impl.cc \
 	content/child/fileapi/webfilewriter_base.cc \
 	content/child/fileapi/webfilewriter_impl.cc \
+	content/child/fling_animator_impl_android.cc \
+	content/child/fling_curve_configuration.cc \
+	content/child/ftp_directory_listing_response_delegate.cc \
 	content/child/image_decoder.cc \
 	content/child/indexed_db/indexed_db_dispatcher.cc \
 	content/child/indexed_db/indexed_db_key_builders.cc \
@@ -70,6 +76,7 @@ LOCAL_SRC_FILES := \
 	content/child/scoped_child_process_reference.cc \
 	content/child/service_worker/service_worker_dispatcher.cc \
 	content/child/service_worker/service_worker_message_filter.cc \
+	content/child/service_worker/service_worker_network_provider.cc \
 	content/child/service_worker/web_service_worker_impl.cc \
 	content/child/service_worker/web_service_worker_provider_impl.cc \
 	content/child/shared_worker_devtools_agent.cc \
@@ -79,15 +86,25 @@ LOCAL_SRC_FILES := \
 	content/child/thread_safe_sender.cc \
 	content/child/web_database_observer_impl.cc \
 	content/child/web_discardable_memory_impl.cc \
+	content/child/web_socket_stream_handle_impl.cc \
+	content/child/web_url_loader_impl.cc \
 	content/child/webblobregistry_impl.cc \
+	content/child/webcrypto/crypto_data.cc \
+	content/child/webcrypto/jwk.cc \
+	content/child/webcrypto/platform_crypto_openssl.cc \
+	content/child/webcrypto/shared_crypto.cc \
+	content/child/webcrypto/webcrypto_impl.cc \
+	content/child/webcrypto/webcrypto_util.cc \
+	content/child/webfallbackthemeengine_impl.cc \
 	content/child/webfileutilities_impl.cc \
 	content/child/webkitplatformsupport_child_impl.cc \
 	content/child/webkitplatformsupport_impl.cc \
 	content/child/webmessageportchannel_impl.cc \
 	content/child/websocket_bridge.cc \
 	content/child/websocket_dispatcher.cc \
-	content/child/webfallbackthemeengine_impl.cc \
 	content/child/webthemeengine_impl_android.cc \
+	content/child/webthread_impl.cc \
+	content/child/worker_task_runner.cc \
 	content/child/worker_thread_task_runner.cc
 
 
@@ -128,6 +145,7 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -135,9 +153,9 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
@@ -148,17 +166,23 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
+	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
+	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
+	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
+	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DPOSIX_AVOID_MMAP' \
+	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
 	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
+	'-DUSE_OPENSSL=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -206,6 +230,9 @@ LOCAL_C_INCLUDES_Debug := \
 	$(PWD)/external/jpeg \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
+	$(LOCAL_PATH)/third_party/WebKit \
+	$(gyp_shared_intermediate_dir)/webkit \
+	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -259,6 +286,7 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -266,9 +294,9 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
@@ -279,17 +307,23 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
+	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
+	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
+	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
+	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DPOSIX_AVOID_MMAP' \
+	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
 	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
+	'-DUSE_OPENSSL=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -338,6 +372,9 @@ LOCAL_C_INCLUDES_Release := \
 	$(PWD)/external/jpeg \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
+	$(LOCAL_PATH)/third_party/WebKit \
+	$(gyp_shared_intermediate_dir)/webkit \
+	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -357,9 +394,11 @@ LOCAL_CPPFLAGS_Release := \
 LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
 LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
+LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -369,7 +408,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
@@ -377,6 +415,7 @@ LOCAL_LDFLAGS_Debug := \
 
 
 LOCAL_LDFLAGS_Release := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -389,7 +428,6 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,-O1 \
 	-Wl,--as-needed \
 	-Wl,--gc-sections \
-	-Wl,--fatal-warnings \
 	-Wl,--warn-shared-textrel
 
 
@@ -398,7 +436,7 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 LOCAL_STATIC_LIBRARIES := \
 	cpufeatures \
 	skia_skia_library_gyp \
-	ui_ui_gyp \
+	ui_base_ui_base_gyp \
 	webkit_child_webkit_child_gyp
 
 # Enable grouping to fix circular references

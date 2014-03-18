@@ -8,13 +8,12 @@ import os
 import subprocess
 import sys
 
-from telemetry import decorators
 from telemetry.core import browser
-from telemetry.core import platform as core_platform
 from telemetry.core import possible_browser
 from telemetry.core import util
 from telemetry.core.backends.chrome import cros_interface
 from telemetry.core.backends.chrome import desktop_browser_backend
+from telemetry.core.platform import factory
 
 ALL_BROWSER_TYPES = [
     'exact',
@@ -50,9 +49,8 @@ class PossibleDesktopBrowser(possible_browser.PossibleBrowser):
         self.browser_type, self._local_executable)
 
   @property
-  @decorators.Cache
   def _platform_backend(self):
-    return core_platform.CreatePlatformBackendForCurrentOS()
+    return factory.GetPlatformBackendForCurrentOS()
 
   def Create(self):
     backend = desktop_browser_backend.DesktopBrowserBackend(
@@ -207,27 +205,27 @@ def FindAllAvailableBrowsers(finder_options):
                         os.getenv('PROGRAMFILES'),
                         os.getenv('LOCALAPPDATA')]
 
-    def AddIfFoundWin(browser_name, app_path):
-      browser_directory = os.path.join(path, app_path)
+    def AddIfFoundWin(browser_name, search_path, app_path):
+      browser_directory = os.path.join(search_path, app_path)
       for chromium_app_name in chromium_app_names:
         app = os.path.join(browser_directory, chromium_app_name)
         if IsExecutable(app):
           browsers.append(PossibleDesktopBrowser(browser_name, finder_options,
                                                  app, None, False,
                                                  browser_directory))
-        return True
+          return True
       return False
 
     for path in win_search_paths:
       if not path:
         continue
-      if AddIfFoundWin('canary', canary_path):
+      if AddIfFoundWin('canary', path, canary_path):
         break
 
     for path in win_search_paths:
       if not path:
         continue
-      if AddIfFoundWin('system', system_path):
+      if AddIfFoundWin('system', path, system_path):
         break
 
   if len(browsers) and not has_display:

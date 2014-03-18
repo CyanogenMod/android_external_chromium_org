@@ -8,6 +8,7 @@
 #include <gtk/gtk.h>
 
 #include "apps/app_window.h"
+#include "apps/size_constraints.h"
 #include "apps/ui/native_app_window.h"
 #include "base/observer_list.h"
 #include "base/timer/timer.h"
@@ -79,11 +80,16 @@ class NativeAppWindowGtk : public apps::NativeAppWindow,
   virtual void HandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
   virtual bool IsFrameless() const OVERRIDE;
+  virtual bool HasFrameColor() const OVERRIDE;
+  virtual SkColor FrameColor() const OVERRIDE;
   virtual gfx::Insets GetFrameInsets() const OVERRIDE;
   virtual void HideWithApp() OVERRIDE;
   virtual void ShowWithApp() OVERRIDE;
-  // Calls gtk_window_set_geometry_hints with the current size constraints.
-  virtual void UpdateWindowMinMaxSize() OVERRIDE;
+  virtual void UpdateShelfMenu() OVERRIDE;
+  virtual gfx::Size GetContentMinimumSize() const OVERRIDE;
+  virtual gfx::Size GetContentMaximumSize() const OVERRIDE;
+  virtual void SetContentSizeConstraints(const gfx::Size& min_size,
+                                         const gfx::Size& max_size) OVERRIDE;
 
   // web_modal::WebContentsModalDialogHost implementation.
   virtual gfx::NativeView GetHostView() const OVERRIDE;
@@ -123,6 +129,8 @@ class NativeAppWindowGtk : public apps::NativeAppWindow,
                      OnXEvent, GdkXEvent*, GdkEvent*);
 
   void OnConfigureDebounced();
+
+  void UpdateContentMinMaxSize();
 
   apps::AppWindow* app_window_;  // weak - AppWindow owns NativeAppWindow.
 
@@ -164,6 +172,9 @@ class NativeAppWindowGtk : public apps::NativeAppWindow,
   // True if the window should be kept on top of other windows that do not have
   // this flag enabled.
   bool always_on_top_;
+
+  // The size constraints of the window.
+  apps::SizeConstraints size_constraints_;
 
   // The current window cursor.  We set it to a resize cursor when over the
   // custom frame border.  We set it to NULL if we want the default cursor.

@@ -6,7 +6,6 @@
 
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
-#include "crypto/sha2.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -283,9 +282,7 @@ TEST(SafeBrowsingUtilTest, CanonicalizeUrl) {
 TEST(SafeBrowsingUtilTest, GetUrlHashIndex) {
   GURL url("http://www.evil.com/phish.html");
   SBFullHashResult full_hash;
-  crypto::SHA256HashString(url.host() + url.path(),
-                         &full_hash.hash,
-                         sizeof(SBFullHash));
+  full_hash.hash = SBFullHashForString(url.host() + url.path());
   std::vector<SBFullHashResult> full_hashes;
   full_hashes.push_back(full_hash);
 
@@ -316,13 +313,6 @@ TEST(SafeBrowsingUtilTest, ListIdListNameConversion) {
   EXPECT_EQ(list_name, std::string(safe_browsing_util::kBinUrlList));
   EXPECT_EQ(safe_browsing_util::BINURL,
             safe_browsing_util::GetListId(list_name));
-
-
-  EXPECT_TRUE(safe_browsing_util::GetListName(safe_browsing_util::BINHASH,
-                                              &list_name));
-  EXPECT_EQ(list_name, std::string(safe_browsing_util::kBinHashList));
-  EXPECT_EQ(safe_browsing_util::BINHASH,
-            safe_browsing_util::GetListId(list_name));
 }
 
 // Since the ids are saved in file, we need to make sure they don't change.
@@ -332,14 +322,13 @@ TEST(SafeBrowsingUtilTest, ListIdVerification) {
   EXPECT_EQ(0, safe_browsing_util::MALWARE % 2);
   EXPECT_EQ(1, safe_browsing_util::PHISH % 2);
   EXPECT_EQ(0, safe_browsing_util::BINURL %2);
-  EXPECT_EQ(1, safe_browsing_util::BINHASH % 2);
 }
 
 TEST(SafeBrowsingUtilTest, StringToSBFullHashAndSBFullHashToString) {
   // 31 chars plus the last \0 as full_hash.
   const std::string hash_in = "12345678902234567890323456789012";
   SBFullHash hash_out = safe_browsing_util::StringToSBFullHash(hash_in);
-  EXPECT_EQ(0x34333231, hash_out.prefix);
+  EXPECT_EQ(0x34333231U, hash_out.prefix);
   EXPECT_EQ(0, memcmp(hash_in.data(), hash_out.full_hash, sizeof(SBFullHash)));
 
   std::string hash_final = safe_browsing_util::SBFullHashToString(hash_out);

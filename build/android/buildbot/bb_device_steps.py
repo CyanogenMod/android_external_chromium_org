@@ -64,12 +64,12 @@ INSTRUMENTATION_TESTS = dict((suite.name, suite) for suite in [
       'org.chromium.content_shell_apk',
       'ContentShellTest',
       'content:content/test/data/android/device_files'),
-    I('ChromiumTestShell',
-      'ChromiumTestShell.apk',
-      'org.chromium.chrome.testshell',
-      'ChromiumTestShellTest',
+    I('ChromeShell',
+      'ChromeShell.apk',
+      'org.chromium.chrome.shell',
+      'ChromeShellTest',
       'chrome:chrome/test/data/android/device_files',
-      constants.CHROMIUM_TEST_SHELL_HOST_DRIVEN_DIR),
+      constants.CHROME_SHELL_HOST_DRIVEN_DIR),
     I('AndroidWebView',
       'AndroidWebView.apk',
       'org.chromium.android_webview.shell',
@@ -156,7 +156,7 @@ def RunChromeDriverTests(options):
   bb_annotations.PrintNamedStep('chromedriver_annotation')
   RunCmd(['chrome/test/chromedriver/run_buildbot_steps.py',
           '--android-packages=%s,%s,%s,%s' %
-          ('chromium_test_shell',
+          ('chrome_shell',
            'chrome_stable',
            'chrome_beta',
            'chromedriver_webview_shell'),
@@ -426,7 +426,11 @@ def GetDeviceSetupStepCmds():
 
 
 def RunUnitTests(options):
-  RunTestSuites(options, gtest_config.STABLE_TEST_SUITES)
+  suites = gtest_config.STABLE_TEST_SUITES
+  if options.asan:
+    suites = [s for s in suites
+              if s not in gtest_config.ASAN_EXCLUDED_TEST_SUITES]
+  RunTestSuites(options, suites)
 
 
 def RunInstrumentationTests(options):
@@ -452,7 +456,7 @@ def RunGPUTests(options):
 
   bb_annotations.PrintNamedStep('gpu_tests')
   revision = _GetRevision(options)
-  RunCmd(['content/test/gpu/run_gpu_test',
+  RunCmd(['content/test/gpu/run_gpu_test.py',
           'pixel',
           '--browser',
           'android-content-shell',
@@ -468,7 +472,7 @@ def RunGPUTests(options):
               options.build_properties.get('buildername', 'noname'))])
 
   bb_annotations.PrintNamedStep('webgl_conformance_tests')
-  RunCmd(['content/test/gpu/run_gpu_test',
+  RunCmd(['content/test/gpu/run_gpu_test.py',
           '--browser=android-content-shell', 'webgl_conformance',
           '--webgl-conformance-version=1.0.1'])
 

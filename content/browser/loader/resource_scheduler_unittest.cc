@@ -103,6 +103,7 @@ class FakeResourceMessageFilter : public ResourceMessageFilter {
           NULL  /* appcache_service */,
           NULL  /* blob_storage_context */,
           NULL  /* file_system_context */,
+          NULL  /* service_worker_context */,
           base::Bind(&FakeResourceMessageFilter::GetContexts,
                      base::Unretained(this))) {
   }
@@ -139,7 +140,7 @@ class ResourceSchedulerTest : public testing::Test {
       net::RequestPriority priority,
       int route_id) {
     scoped_ptr<net::URLRequest> url_request(
-        context_.CreateRequest(GURL(url), priority, NULL));
+        context_.CreateRequest(GURL(url), priority, NULL, NULL));
     ResourceRequestInfoImpl* info = new ResourceRequestInfoImpl(
         PROCESS_TYPE_RENDERER,             // process_type
         kChildId,                          // child_id
@@ -148,9 +149,8 @@ class ResourceSchedulerTest : public testing::Test {
         ++next_request_id_,                // request_id
         MSG_ROUTING_NONE,                  // render_frame_id
         false,                             // is_main_frame
-        0,                                 // frame_id
         false,                             // parent_is_main_frame
-        0,                                 // parent_frame_id
+        0,                                 // parent_render_frame_id
         ResourceType::SUB_RESOURCE,        // resource_type
         PAGE_TRANSITION_LINK,              // transition_type
         false,                             // should_replace_current_entry

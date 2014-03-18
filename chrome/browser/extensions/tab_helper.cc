@@ -36,9 +36,9 @@
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/chrome_extension_messages.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/render_messages.h"
@@ -60,6 +60,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/feature_switch.h"
@@ -149,65 +150,63 @@ void TabHelper::GenerateContainerIcon(std::map<int, SkBitmap>* bitmaps,
   const SkColor kBackgroundColor = 0xFFFFFFFF;
 
   // Create a separate canvas for the color strip.
-  scoped_ptr<SkCanvas> color_strip_canvas(
-      skia::CreateBitmapCanvas(output_size, output_size, false));
-  DCHECK(color_strip_canvas);
+  SkBitmap color_strip_bitmap;
+  color_strip_bitmap.allocN32Pixels(output_size, output_size);
+  SkCanvas color_strip_canvas(color_strip_bitmap);
+  color_strip_canvas.clear(SK_ColorTRANSPARENT);
 
   // Draw a rounded rect of the |base_icon|'s dominant color.
   SkPaint color_strip_paint;
-  color_utils::GridSampler sampler;
   color_strip_paint.setFlags(SkPaint::kAntiAlias_Flag);
   color_strip_paint.setColor(
-      color_utils::CalculateKMeanColorOfPNG(
-          gfx::Image::CreateFrom1xBitmap(base_icon).As1xPNGBytes(),
-          100, 665, &sampler));
-  color_strip_canvas->drawRoundRect(
-      SkRect::MakeWH(output_size, output_size),
-      kBorderRadius, kBorderRadius, color_strip_paint);
+      color_utils::CalculateKMeanColorOfBitmap(base_icon));
+  color_strip_canvas.drawRoundRect(SkRect::MakeWH(output_size, output_size),
+                                   kBorderRadius,
+                                   kBorderRadius,
+                                   color_strip_paint);
 
   // Erase the top of the rounded rect to leave a color strip.
   SkPaint clear_paint;
   clear_paint.setColor(SK_ColorTRANSPARENT);
   clear_paint.setXfermodeMode(SkXfermode::kSrc_Mode);
-  color_strip_canvas->drawRect(
+  color_strip_canvas.drawRect(
       SkRect::MakeWH(output_size, output_size - kColorStripHeight),
       clear_paint);
 
   // Draw each element to an output canvas.
-  scoped_ptr<SkCanvas> canvas(
-      skia::CreateBitmapCanvas(output_size, output_size, false));
-  DCHECK(canvas);
+  SkBitmap generated_icon;
+  generated_icon.allocN32Pixels(output_size, output_size);
+  SkCanvas generated_icon_canvas(generated_icon);
+  generated_icon_canvas.clear(SK_ColorTRANSPARENT);
 
   // Draw the background.
   SkPaint background_paint;
   background_paint.setColor(kBackgroundColor);
   background_paint.setFlags(SkPaint::kAntiAlias_Flag);
-  canvas->drawRoundRect(
-      SkRect::MakeWH(output_size, output_size),
-      kBorderRadius, kBorderRadius, background_paint);
+  generated_icon_canvas.drawRoundRect(SkRect::MakeWH(output_size, output_size),
+                                      kBorderRadius,
+                                      kBorderRadius,
+                                      background_paint);
 
   // Draw the color strip.
-  canvas->drawBitmap(color_strip_canvas->getDevice()->accessBitmap(false),
-                     0, 0);
+  generated_icon_canvas.drawBitmap(color_strip_bitmap, 0, 0);
 
   // Draw the border.
   SkPaint border_paint;
   border_paint.setColor(kBorderColor);
   border_paint.setStyle(SkPaint::kStroke_Style);
   border_paint.setFlags(SkPaint::kAntiAlias_Flag);
-  canvas->drawRoundRect(
-      SkRect::MakeWH(output_size, output_size),
-      kBorderRadius, kBorderRadius, border_paint);
+  generated_icon_canvas.drawRoundRect(SkRect::MakeWH(output_size, output_size),
+                                      kBorderRadius,
+                                      kBorderRadius,
+                                      border_paint);
 
   // Draw the centered base icon to the output canvas.
-  canvas->drawBitmap(base_icon,
-                     (output_size - base_icon.width()) / 2,
-                     (output_size - base_icon.height()) / 2);
+  generated_icon_canvas.drawBitmap(base_icon,
+                                   (output_size - base_icon.width()) / 2,
+                                   (output_size - base_icon.height()) / 2);
 
-  const SkBitmap& generated_icon =
-      canvas->getDevice()->accessBitmap(false);
-  generated_icon.deepCopyTo(&(*bitmaps)[output_size],
-                            generated_icon.getConfig());
+  generated_icon.deepCopyTo(&(*bitmaps)[output_size]);
 }
 
 TabHelper::TabHelper(content::WebContents* web_contents)
@@ -388,7 +387,7 @@ void TabHelper::DidNavigateMainFrame(
 bool TabHelper::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(TabHelper, message)
-    IPC_MESSAGE_HANDLER(ExtensionHostMsg_DidGetApplicationInfo,
+    IPC_MESSAGE_HANDLER(ChromeExtensionHostMsg_DidGetApplicationInfo,
                         OnDidGetApplicationInfo)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_InlineWebstoreInstall,
                         OnInlineWebstoreInstall)
@@ -721,7 +720,7 @@ WebContents* TabHelper::GetAssociatedWebContents() const {
 }
 
 void TabHelper::GetApplicationInfo(int32 page_id) {
-  Send(new ExtensionMsg_GetApplicationInfo(routing_id(), page_id));
+  Send(new ChromeExtensionMsg_GetApplicationInfo(routing_id(), page_id));
 }
 
 void TabHelper::Observe(int type,

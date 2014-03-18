@@ -65,7 +65,7 @@ int32 StreamTexture::Create(
 StreamTexture::StreamTexture(GpuCommandBufferStub* owner_stub,
                              int32 route_id,
                              uint32 texture_id)
-    : surface_texture_(new gfx::SurfaceTexture(texture_id)),
+    : surface_texture_(gfx::SurfaceTexture::Create(texture_id)),
       size_(0, 0),
       has_valid_frame_(false),
       has_pending_frame_(false),
@@ -133,7 +133,9 @@ void StreamTexture::WillUseTexImage() {
       const gpu::gles2::TextureUnit& active_unit =
           state->texture_units[state->active_texture_unit];
       glBindTexture(GL_TEXTURE_EXTERNAL_OES,
-                    active_unit.bound_texture_external_oes->service_id());
+                    active_unit.bound_texture_external_oes
+                        ? active_unit.bound_texture_external_oes->service_id()
+                        : 0);
     }
   }
 
@@ -191,6 +193,15 @@ void StreamTexture::OnEstablishPeer(int32 primary_id, int32 secondary_id) {
 
   SurfaceTexturePeer::GetInstance()->EstablishSurfaceTexturePeer(
       process, surface_texture_, primary_id, secondary_id);
+}
+
+bool StreamTexture::BindTexImage(unsigned target) {
+  NOTREACHED();
+  return false;
+}
+
+void StreamTexture::ReleaseTexImage(unsigned target) {
+  NOTREACHED();
 }
 
 }  // namespace content

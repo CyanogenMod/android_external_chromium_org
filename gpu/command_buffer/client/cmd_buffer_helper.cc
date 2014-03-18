@@ -28,7 +28,8 @@ CommandBufferHelper::CommandBufferHelper(CommandBuffer* command_buffer)
       usable_(true),
       context_lost_(false),
       flush_automatically_(true),
-      last_flush_time_(0) {
+      last_flush_time_(0),
+      flush_generation_(0) {
 }
 
 void CommandBufferHelper::SetAutomaticFlushes(bool enabled) {
@@ -156,6 +157,7 @@ bool CommandBufferHelper::FlushSync() {
   last_flush_time_ = clock();
   last_put_sent_ = put_;
   CommandBuffer::State state = command_buffer_->FlushSync(put_, get_offset());
+  ++flush_generation_;
   CalcImmediateEntries(0);
   return state.error == error::kNoError;
 }
@@ -169,6 +171,7 @@ void CommandBufferHelper::Flush() {
     last_flush_time_ = clock();
     last_put_sent_ = put_;
     command_buffer_->Flush(put_);
+    ++flush_generation_;
     CalcImmediateEntries(0);
   }
 }

@@ -22,9 +22,11 @@
 #include "chrome/browser/chromeos/display/display_preferences.h"
 #include "chrome/browser/chromeos/extensions/media_player_api.h"
 #include "chrome/browser/chromeos/extensions/media_player_event_router.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/signin/signin_error_notifier_factory_ash.h"
 #include "chrome/browser/speech/tts_controller.h"
-#include "chrome/browser/ui/ash/caps_lock_delegate_chromeos.h"
 #include "chrome/browser/ui/ash/chrome_new_window_delegate_chromeos.h"
 #include "chrome/browser/ui/ash/session_state_delegate_chromeos.h"
 #include "chrome/browser/ui/ash/system_tray_delegate_chromeos.h"
@@ -45,18 +47,16 @@
 namespace {
 
 void InitAfterSessionStart() {
-  // Restor focus after the user session is started.  It's needed
-  // because some windows can be opened in background while login UI
-  // is still active because we currently restore browser windows
-  // before login UI is deleted.
+  // Restore focus after the user session is started.  It's needed because some
+  // windows can be opened in background while login UI is still active because
+  // we currently restore browser windows before login UI is deleted.
   ash::Shell* shell = ash::Shell::GetInstance();
   ash::MruWindowTracker::WindowList mru_list =
       shell->mru_window_tracker()->BuildMruWindowList();
   if (!mru_list.empty())
     mru_list.front()->Focus();
 
-  // Enable magnifier scroll keys as there may be no mouse cursor in
-  // kiosk mode.
+  // Enable magnifier scroll keys as there may be no mouse cursor in kiosk mode.
   ash::MagnifierKeyScroller::SetEnabled(chrome::IsRunningInForcedAppMode());
 
   // Enable long press action to toggle spoken feedback with hotrod
@@ -174,7 +174,7 @@ class AccessibilityDelegateImpl : public ash::AccessibilityDelegate {
           AccessibilityAlertInfo event(
               profile, l10n_util::GetStringUTF8(IDS_A11Y_ALERT_WINDOW_NEEDED));
           SendControlAccessibilityNotification(
-              ui::AccessibilityTypes::EVENT_ALERT, &event);
+              ui::AX_EVENT_ALERT, &event);
           break;
         }
         case ash::A11Y_ALERT_NONE:
@@ -243,12 +243,6 @@ void ChromeShellDelegate::Shutdown() {
       RequestShutdown();
 }
 
-ash::CapsLockDelegate* ChromeShellDelegate::CreateCapsLockDelegate() {
-  chromeos::input_method::XKeyboard* xkeyboard =
-      chromeos::input_method::InputMethodManager::Get()->GetXKeyboard();
-  return new CapsLockDelegate(xkeyboard);
-}
-
 ash::SessionStateDelegate* ChromeShellDelegate::CreateSessionStateDelegate() {
   return new SessionStateDelegateChromeos;
 }
@@ -277,9 +271,16 @@ void ChromeShellDelegate::Observe(int type,
                                   const content::NotificationSource& source,
                                   const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED:
+    case chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED: {
+      Profile* profile = content::Details<Profile>(details).ptr();
+      if (!chromeos::ProfileHelper::IsSigninProfile(profile) &&
+          !profile->IsGuestSession() && !profile->IsManaged()) {
+        // Start the error notifier service to show auth notifications.
+        SigninErrorNotifierFactory::GetForProfile(profile);
+      }
       ash::Shell::GetInstance()->OnLoginUserProfilePrepared();
       break;
+    }
     case chrome::NOTIFICATION_SESSION_STARTED:
       InitAfterSessionStart();
       ash::Shell::GetInstance()->ShowShelf();

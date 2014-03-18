@@ -45,6 +45,8 @@ content::WebUIDataSource* CreateKeyboardUIDataSource() {
                           IDR_KEYBOARD_ELEMENTS_SHIFT_KEY);
   source->AddResourcePath("images/back.svg",
                           IDR_KEYBOARD_IMAGES_BACK);
+  source->AddResourcePath("images/backspace.svg",
+                          IDR_KEYBOARD_IMAGES_BACKSPACE);
   source->AddResourcePath("images/brightness-down.svg",
                           IDR_KEYBOARD_IMAGES_BRIGHTNESS_DOWN);
   source->AddResourcePath("images/brightness-up.svg",
@@ -57,6 +59,8 @@ content::WebUIDataSource* CreateKeyboardUIDataSource() {
                           IDR_KEYBOARD_IMAGES_FORWARD);
   source->AddResourcePath("images/fullscreen.svg",
                           IDR_KEYBOARD_IMAGES_FULLSCREEN);
+  source->AddResourcePath("images/hide-keyboard.svg",
+                          IDR_KEYBOARD_IMAGES_HIDE_KEYBOARD);
   source->AddResourcePath("images/left.svg",
                           IDR_KEYBOARD_IMAGES_LEFT);
   source->AddResourcePath("images/microphone.svg",
@@ -67,12 +71,20 @@ content::WebUIDataSource* CreateKeyboardUIDataSource() {
                           IDR_KEYBOARD_IMAGES_MUTE);
   source->AddResourcePath("images/reload.svg",
                           IDR_KEYBOARD_IMAGES_RELOAD);
+  source->AddResourcePath("images/return.svg",
+                          IDR_KEYBOARD_IMAGES_RETURN);
   source->AddResourcePath("images/right.svg",
                           IDR_KEYBOARD_IMAGES_RIGHT);
   source->AddResourcePath("images/search.svg",
                           IDR_KEYBOARD_IMAGES_SEARCH);
+  source->AddResourcePath("images/shift.svg",
+                          IDR_KEYBOARD_IMAGES_SHIFT);
+  source->AddResourcePath("images/shift-filled.svg",
+                          IDR_KEYBOARD_IMAGES_SHIFT_FILLED);
   source->AddResourcePath("images/shutdown.svg",
                           IDR_KEYBOARD_IMAGES_SHUTDOWN);
+  source->AddResourcePath("images/tab.svg",
+                          IDR_KEYBOARD_IMAGES_TAB);
   source->AddResourcePath("images/up.svg",
                           IDR_KEYBOARD_IMAGES_UP);
   source->AddResourcePath("images/volume-down.svg",
@@ -87,6 +99,15 @@ content::WebUIDataSource* CreateKeyboardUIDataSource() {
   source->AddResourcePath("main.js", IDR_KEYBOARD_MAIN_JS);
   source->AddResourcePath("polymer_loader.js", IDR_KEYBOARD_POLYMER_LOADER);
   source->AddResourcePath("roboto_bold.ttf", IDR_KEYBOARD_ROBOTO_BOLD_TTF);
+  source->AddResourcePath("sounds/keypress-delete.wav",
+                          IDR_KEYBOARD_SOUNDS_KEYPRESS_DELETE);
+  source->AddResourcePath("sounds/keypress-return.wav",
+                          IDR_KEYBOARD_SOUNDS_KEYPRESS_RETURN);
+  source->AddResourcePath("sounds/keypress-spacebar.wav",
+                          IDR_KEYBOARD_SOUNDS_KEYPRESS_SPACEBAR);
+  source->AddResourcePath("sounds/keypress-standard.wav",
+                          IDR_KEYBOARD_SOUNDS_KEYPRESS_STANDARD);
+  source->AddResourcePath("touch_fuzzing.js", IDR_KEYBOARD_TOUCH_FUZZING_JS);
   source->AddResourcePath("voice_input.js", IDR_KEYBOARD_VOICE_INPUT_JS);
 
   // These files are specific to the WebUI version

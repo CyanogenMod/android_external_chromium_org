@@ -13,7 +13,6 @@
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_packet_writer.h"
 #include "net/quic/quic_session.h"
-#include "net/quic/quic_spdy_decompressor.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/tools/quic/quic_server_session.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -26,7 +25,7 @@ class IPEndPoint;
 namespace tools {
 namespace test {
 
-static const QuicGuid kTestGuid = 42;
+static const QuicConnectionId kTestConnectionId = 42;
 static const int kTestPort = 123;
 
 // Simple random number generator used to compute random numbers suitable
@@ -48,16 +47,16 @@ class SimpleRandom {
 
 class MockConnection : public QuicConnection {
  public:
-  // Uses a MockHelper, GUID of 42, and 127.0.0.1:123.
+  // Uses a MockHelper, ConnectionId of 42, and 127.0.0.1:123.
   explicit MockConnection(bool is_server);
 
-  // Uses a MockHelper, GUID of 42.
+  // Uses a MockHelper, ConnectionId of 42.
   MockConnection(IPEndPoint address, bool is_server);
 
   // Uses a MockHelper, and 127.0.0.1:123
-  MockConnection(QuicGuid guid, bool is_server);
+  MockConnection(QuicConnectionId connection_id, bool is_server);
 
-  // Uses a Mock helper, GUID of 42, and 127.0.0.1:123.
+  // Uses a Mock helper, ConnectionId of 42, and 127.0.0.1:123.
   MockConnection(bool is_server, const QuicVersionVector& supported_versions);
 
   virtual ~MockConnection();
@@ -73,13 +72,19 @@ class MockConnection : public QuicConnection {
   MOCK_METHOD2(SendConnectionCloseWithDetails, void(
       QuicErrorCode error,
       const std::string& details));
+  MOCK_METHOD2(SendConnectionClosePacket, void(QuicErrorCode error,
+                                               const std::string& details));
   MOCK_METHOD3(SendRstStream, void(QuicStreamId id,
                                    QuicRstStreamErrorCode error,
                                    QuicStreamOffset bytes_written));
   MOCK_METHOD3(SendGoAway, void(QuicErrorCode error,
                                 QuicStreamId last_good_stream_id,
                                 const std::string& reason));
-  MOCK_METHOD0(OnCanWrite, bool());
+  MOCK_METHOD1(SendBlocked, void(QuicStreamId id));
+  MOCK_METHOD2(SendWindowUpdate, void(QuicStreamId id,
+                                      QuicStreamOffset byte_offset));
+  MOCK_METHOD0(OnCanWrite, void());
+  MOCK_CONST_METHOD0(HasPendingWrites, bool());
 
   void ReallyProcessUdpPacket(const IPEndPoint& self_address,
                               const IPEndPoint& peer_address,
@@ -132,29 +137,19 @@ class MockQuicServerSessionVisitor : public QuicServerSessionVisitor {
  public:
   MockQuicServerSessionVisitor();
   virtual ~MockQuicServerSessionVisitor();
-  MOCK_METHOD2(OnConnectionClosed, void(QuicGuid guid, QuicErrorCode error));
+  MOCK_METHOD2(OnConnectionClosed, void(QuicConnectionId connection_id,
+                                        QuicErrorCode error));
   MOCK_METHOD1(OnWriteBlocked, void(QuicBlockedWriterInterface* writer));
-};
-
-class TestDecompressorVisitor : public QuicSpdyDecompressor::Visitor {
- public:
-  virtual ~TestDecompressorVisitor() {}
-  virtual bool OnDecompressedData(base::StringPiece data) OVERRIDE;
-  virtual void OnDecompressionError() OVERRIDE;
-
-  std::string data() { return data_; }
-  bool error() { return error_; }
-
- private:
-  std::string data_;
-  bool error_;
 };
 
 class MockAckNotifierDelegate : public QuicAckNotifier::DelegateInterface {
  public:
   MockAckNotifierDelegate();
 
-  MOCK_METHOD0(OnAckNotification, void());
+  MOCK_METHOD4(OnAckNotification, void(int num_original_packets,
+                                       int num_original_bytes,
+                                       int num_retransmitted_packets,
+                                       int num_retransmitted_bytes));
 
  protected:
   // Object is ref counted.

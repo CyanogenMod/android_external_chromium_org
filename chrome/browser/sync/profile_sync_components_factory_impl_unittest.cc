@@ -37,6 +37,9 @@ class ProfileSyncComponentsFactoryImplTest : public testing::Test {
   static std::vector<syncer::ModelType> DefaultDatatypes() {
     std::vector<syncer::ModelType> datatypes;
     datatypes.push_back(syncer::APPS);
+#if defined(ENABLE_APP_LIST)
+    datatypes.push_back(syncer::APP_LIST);
+#endif
     datatypes.push_back(syncer::APP_SETTINGS);
     datatypes.push_back(syncer::AUTOFILL);
     datatypes.push_back(syncer::AUTOFILL_PROFILE);
@@ -58,6 +61,13 @@ class ProfileSyncComponentsFactoryImplTest : public testing::Test {
     datatypes.push_back(syncer::FAVICON_TRACKING);
     datatypes.push_back(syncer::FAVICON_IMAGES);
     datatypes.push_back(syncer::SYNCED_NOTIFICATIONS);
+    // TODO(petewil): Enable on stable once we have tested on stable.
+    chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+    if (channel == chrome::VersionInfo::CHANNEL_UNKNOWN ||
+        channel == chrome::VersionInfo::CHANNEL_DEV ||
+        channel == chrome::VersionInfo::CHANNEL_CANARY) {
+      datatypes.push_back(syncer::SYNCED_NOTIFICATION_APP_INFO);
+    }
     datatypes.push_back(syncer::MANAGED_USERS);
     datatypes.push_back(syncer::MANAGED_USER_SHARED_SETTINGS);
 
@@ -99,7 +109,7 @@ class ProfileSyncComponentsFactoryImplTest : public testing::Test {
             profile_.get(),
             NULL,
             ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get()),
-            ProfileSyncService::MANUAL_START));
+            browser_sync::MANUAL_START));
     pss->factory()->RegisterDataTypes(pss.get());
     DataTypeController::StateMap controller_states;
     pss->GetDataTypeControllerStates(&controller_states);
@@ -119,7 +129,7 @@ TEST_F(ProfileSyncComponentsFactoryImplTest, CreatePSSDefault) {
       profile_.get(),
       NULL,
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get()),
-      ProfileSyncService::MANUAL_START));
+      browser_sync::MANUAL_START));
   pss->factory()->RegisterDataTypes(pss.get());
   DataTypeController::StateMap controller_states;
   pss->GetDataTypeControllerStates(&controller_states);

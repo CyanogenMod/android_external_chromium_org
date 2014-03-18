@@ -12,8 +12,8 @@
 #include "base/message_loop/message_pump_dispatcher.h"
 #include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/client/drag_drop_delegate.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drop_target_event.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
@@ -388,7 +388,8 @@ DesktopDragDropClientAuraX11::DesktopDragDropClientAuraX11(
       resulting_operation_(0),
       grab_cursor_(cursor_manager->GetInitializedCursor(ui::kCursorGrabbing)),
       copy_grab_cursor_(cursor_manager->GetInitializedCursor(ui::kCursorCopy)),
-      move_grab_cursor_(cursor_manager->GetInitializedCursor(ui::kCursorMove)) {
+      move_grab_cursor_(cursor_manager->GetInitializedCursor(ui::kCursorMove)),
+      weak_ptr_factory_(this) {
   DCHECK(g_live_client_map.Get().find(xwindow) ==
          g_live_client_map.Get().end());
   g_live_client_map.Get().insert(std::make_pair(xwindow, this));
@@ -588,20 +589,30 @@ int DesktopDragDropClientAuraX11::StartDragAndDrop(
   std::vector< ::Atom> actions = GetOfferedDragOperations();
   ui::SetAtomArrayProperty(xwindow_, "XdndActionList", "ATOM", actions);
 
+  // It is possible for the DesktopWindowTreeHostX11 to be destroyed during the
+  // move loop, which would also destroy this drag-client. So keep track of
+  // whether it is alive after the drag ends.
+  base::WeakPtr<DesktopDragDropClientAuraX11> alive(
+      weak_ptr_factory_.GetWeakPtr());
+
   // Windows has a specific method, DoDragDrop(), which performs the entire
   // drag. We have to emulate this, so we spin off a nested runloop which will
   // track all cursor movement and reroute events to a specific handler.
   move_loop_.SetDragImage(source_provider_->GetDragImage(),
                           source_provider_->GetDragImageOffset());
   move_loop_.RunMoveLoop(source_window, grab_cursor_);
-  move_loop_.SetDragImage(gfx::ImageSkia(), gfx::Vector2dF());
 
-  source_provider_ = NULL;
-  g_current_drag_drop_client = NULL;
-  drag_operation_ = 0;
-  XDeleteProperty(xdisplay_, xwindow_, atom_cache_.GetAtom("XdndActionList"));
+  if (alive) {
+    move_loop_.SetDragImage(gfx::ImageSkia(), gfx::Vector2dF());
 
-  return resulting_operation_;
+    source_provider_ = NULL;
+    g_current_drag_drop_client = NULL;
+    drag_operation_ = 0;
+    XDeleteProperty(xdisplay_, xwindow_, atom_cache_.GetAtom("XdndActionList"));
+
+    return resulting_operation_;
+  }
+  return ui::DragDropTypes::DRAG_NONE;
 }
 
 void DesktopDragDropClientAuraX11::DragUpdate(aura::Window* target,
@@ -682,6 +693,8 @@ void DesktopDragDropClientAuraX11::OnMouseReleased() {
 }
 
 void DesktopDragDropClientAuraX11::OnMoveLoopEnded() {
+  if (source_current_window_ != None)
+    SendXdndLeave(source_current_window_);
   target_current_context_.reset();
 }
 
@@ -691,8 +704,7 @@ void DesktopDragDropClientAuraX11::DragTranslate(
     scoped_ptr<ui::DropTargetEvent>* event,
     aura::client::DragDropDelegate** delegate) {
   gfx::Point root_location = root_window_location;
-  root_window_->GetDispatcher()->host()->ConvertPointFromNativeScreen(
-      &root_location);
+  root_window_->GetHost()->ConvertPointFromNativeScreen(&root_location);
   aura::Window* target_window =
       root_window_->GetEventHandlerForPoint(root_location);
   bool target_window_changed = false;

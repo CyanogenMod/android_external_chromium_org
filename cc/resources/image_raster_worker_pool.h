@@ -14,26 +14,25 @@ class CC_EXPORT ImageRasterWorkerPool : public RasterWorkerPool {
   virtual ~ImageRasterWorkerPool();
 
   static scoped_ptr<RasterWorkerPool> Create(
+      base::SequencedTaskRunner* task_runner,
       ResourceProvider* resource_provider,
       unsigned texture_target);
 
   // Overridden from RasterWorkerPool:
-  virtual void ScheduleTasks(RasterTask::Queue* queue) OVERRIDE;
+  virtual void ScheduleTasks(RasterTaskQueue* queue) OVERRIDE;
   virtual unsigned GetResourceTarget() const OVERRIDE;
   virtual ResourceFormat GetResourceFormat() const OVERRIDE;
   virtual void CheckForCompletedTasks() OVERRIDE;
 
   // Overridden from internal::WorkerPoolTaskClient:
-  virtual SkCanvas* AcquireCanvasForRaster(internal::RasterWorkerPoolTask* task)
-      OVERRIDE;
-  virtual void OnRasterCompleted(internal::RasterWorkerPoolTask* task,
-                                 const PicturePileImpl::Analysis& analysis)
-      OVERRIDE;
-  virtual void OnImageDecodeCompleted(internal::WorkerPoolTask* task) OVERRIDE {
-  }
+  virtual SkCanvas* AcquireCanvasForRaster(internal::WorkerPoolTask* task,
+                                           const Resource* resource) OVERRIDE;
+  virtual void ReleaseCanvasForRaster(internal::WorkerPoolTask* task,
+                                      const Resource* resource) OVERRIDE;
 
  protected:
-  ImageRasterWorkerPool(internal::TaskGraphRunner* task_graph_runner,
+  ImageRasterWorkerPool(base::SequencedTaskRunner* task_runner,
+                        internal::TaskGraphRunner* task_graph_runner,
                         ResourceProvider* resource_provider,
                         unsigned texture_target);
 
@@ -45,8 +44,6 @@ class CC_EXPORT ImageRasterWorkerPool : public RasterWorkerPool {
   scoped_ptr<base::Value> StateAsValue() const;
 
   const unsigned texture_target_;
-
-  RasterTask::Queue raster_tasks_;
 
   bool raster_tasks_pending_;
   bool raster_tasks_required_for_activation_pending_;

@@ -8,6 +8,7 @@
 
 #include "base/strings/string16.h"
 #include "chrome_elf/chrome_elf_constants.h"
+#include "chrome_elf/chrome_elf_util.h"
 #include "chrome_elf/ntdll_cache.h"
 #include "sandbox/win/src/nt_internals.h"
 
@@ -42,6 +43,9 @@ PathAppendFunction g_path_append_func;
 PathIsPrefixFunction g_path_is_prefix_func;
 PathFindFileName g_path_find_filename_func;
 SHGetFolderPathFunction g_get_folder_func;
+
+// Record the number of calls we've redirected so far.
+int g_redirect_count = 0;
 
 // Populates the g_*_func pointers to functions which will be used in
 // ShouldBypass(). Chrome_elf cannot have a load-time dependency on shell32 or
@@ -83,6 +87,27 @@ bool PopulateShellFunctions() {
 
 }  // namespace
 
+// Turn off optimization to make sure these calls don't get inlined.
+#pragma optimize("", off)
+// Wrapper method for kernel32!CreateFile, to avoid setting off caller
+// mitigation detectors.
+HANDLE CreateFileWImpl(LPCWSTR file_name,
+                       DWORD desired_access,
+                       DWORD share_mode,
+                       LPSECURITY_ATTRIBUTES security_attributes,
+                       DWORD creation_disposition,
+                       DWORD flags_and_attributes,
+                       HANDLE template_file) {
+  return CreateFile(file_name,
+                    desired_access,
+                    share_mode,
+                    security_attributes,
+                    creation_disposition,
+                    flags_and_attributes,
+                    template_file);
+
+}
+
 HANDLE WINAPI CreateFileWRedirect(
     LPCWSTR file_name,
     DWORD desired_access,
@@ -92,6 +117,7 @@ HANDLE WINAPI CreateFileWRedirect(
     DWORD flags_and_attributes,
     HANDLE template_file) {
   if (ShouldBypass(file_name)) {
+    ++g_redirect_count;
     return CreateFileNTDLL(file_name,
                            desired_access,
                            share_mode,
@@ -100,14 +126,18 @@ HANDLE WINAPI CreateFileWRedirect(
                            flags_and_attributes,
                            template_file);
   }
-  return CreateFile(file_name,
-                    desired_access,
-                    share_mode,
-                    security_attributes,
-                    creation_disposition,
-                    flags_and_attributes,
-                    template_file);
+  return CreateFileWImpl(file_name,
+                         desired_access,
+                         share_mode,
+                         security_attributes,
+                         creation_disposition,
+                         flags_and_attributes,
+                         template_file);
+}
+#pragma optimize("", on)
 
+int GetRedirectCount() {
+  return g_redirect_count;
 }
 
 HANDLE CreateFileNTDLL(
@@ -243,15 +273,9 @@ HANDLE CreateFileNTDLL(
   return file_handle;
 }
 
-bool IsCanary(LPWSTR exe_path) {
-  wchar_t* found = wcsstr(exe_path, L"Google\\Chrome SxS");
-  return !!found;
-}
-
 bool ShouldBypass(LPCWSTR file_path) {
   // Do not redirect in non-browser processes.
-  wchar_t* command_line = ::GetCommandLine();
-  if (command_line && wcsstr(command_line, L"--type"))
+  if (IsNonBrowserProcess())
     return false;
 
   // If the shell functions are not present, forward the call to kernel32.

@@ -5,16 +5,17 @@
 #include "content/browser/renderer_host/p2p/socket_host_udp.h"
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/stl_util.h"
 #include "content/browser/renderer_host/p2p/socket_host_throttler.h"
 #include "content/common/p2p_messages.h"
-#include "content/public/common/content_switches.h"
+#include "content/public/browser/content_browser_client.h"
+#include "content/public/common/content_client.h"
 #include "ipc/ipc_sender.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "third_party/libjingle/source/talk/base/asyncpacketsocket.h"
 
 namespace {
 
@@ -43,11 +44,6 @@ bool IsTransientError(int error) {
          error == net::ERR_OUT_OF_MEMORY;
 }
 
-bool AllowUDPWithoutSTUN() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableP2PSocketSTUNFilter);
-}
-
 }  // namespace
 
 namespace content {
@@ -55,12 +51,12 @@ namespace content {
 P2PSocketHostUdp::PendingPacket::PendingPacket(
     const net::IPEndPoint& to,
     const std::vector<char>& content,
-    net::DiffServCodePoint dscp_,
+    const talk_base::PacketOptions& options,
     uint64 id)
     : to(to),
       data(new net::IOBuffer(content.size())),
       size(content.size()),
-      dscp(dscp_),
+      packet_options(options),
       id(id) {
   memcpy(data->data(), &content[0], size);
 }
@@ -72,7 +68,9 @@ P2PSocketHostUdp::P2PSocketHostUdp(IPC::Sender* message_sender,
                                    int id,
                                    P2PMessageThrottler* throttler)
     : P2PSocketHost(message_sender, id),
-      socket_(new net::UDPServerSocket(NULL, net::NetLog::Source())),
+      socket_(new net::UDPServerSocket(
+          GetContentClient()->browser()->GetNetLog(),
+          net::NetLog::Source())),
       send_pending_(false),
       last_dscp_(net::DSCP_CS0),
       throttler_(throttler) {
@@ -86,7 +84,7 @@ P2PSocketHostUdp::~P2PSocketHostUdp() {
 }
 
 bool P2PSocketHostUdp::Init(const net::IPEndPoint& local_address,
-                            const net::IPEndPoint& remote_address) {
+                            const P2PHostAndIPEndPoint& remote_address) {
   DCHECK_EQ(state_, STATE_UNINITIALIZED);
 
   int result = socket_->Listen(local_address);
@@ -162,7 +160,7 @@ void P2PSocketHostUdp::HandleReadResult(int result) {
     if (!ContainsKey(connected_peers_, recv_address_)) {
       P2PSocketHost::StunMessageType type;
       bool stun = GetStunPacketType(&*data.begin(), data.size(), &type);
-      if ((stun && IsRequestOrResponse(type)) || AllowUDPWithoutSTUN()) {
+      if ((stun && IsRequestOrResponse(type))) {
         connected_peers_.insert(recv_address_);
       } else if (!stun || type == STUN_DATA_INDICATION) {
         LOG(ERROR) << "Received unexpected data packet from "
@@ -182,7 +180,7 @@ void P2PSocketHostUdp::HandleReadResult(int result) {
 
 void P2PSocketHostUdp::Send(const net::IPEndPoint& to,
                             const std::vector<char>& data,
-                            net::DiffServCodePoint dscp,
+                            const talk_base::PacketOptions& options,
                             uint64 packet_id) {
   if (!socket_) {
     // The Send message may be sent after the an OnError message was
@@ -190,7 +188,7 @@ void P2PSocketHostUdp::Send(const net::IPEndPoint& to,
     return;
   }
 
-  if (!ContainsKey(connected_peers_, to) && !AllowUDPWithoutSTUN()) {
+  if (!ContainsKey(connected_peers_, to)) {
     P2PSocketHost::StunMessageType type = P2PSocketHost::StunMessageType();
     bool stun = GetStunPacketType(&*data.begin(), data.size(), &type);
     if (!stun || type == STUN_DATA_INDICATION) {
@@ -208,9 +206,10 @@ void P2PSocketHostUdp::Send(const net::IPEndPoint& to,
   }
 
   if (send_pending_) {
-    send_queue_.push_back(PendingPacket(to, data, dscp, packet_id));
+    send_queue_.push_back(PendingPacket(to, data, options, packet_id));
   } else {
-    PendingPacket packet(to, data, dscp, packet_id);
+    // TODO(mallinath: Remove unnecessary memcpy in this case.
+    PendingPacket packet(to, data, options, packet_id);
     DoSend(packet);
   }
 }
@@ -222,11 +221,13 @@ void P2PSocketHostUdp::DoSend(const PendingPacket& packet) {
   // 1. If the outgoing packet is set to DSCP_NO_CHANGE
   // 2. If no change in DSCP value from last packet
   // 3. If there is any error in setting DSCP on socket.
-  if (packet.dscp != net::DSCP_NO_CHANGE &&
-      last_dscp_ != packet.dscp && last_dscp_ != net::DSCP_NO_CHANGE) {
-    int result = socket_->SetDiffServCodePoint(packet.dscp);
+  net::DiffServCodePoint dscp =
+      static_cast<net::DiffServCodePoint>(packet.packet_options.dscp);
+  if (dscp != net::DSCP_NO_CHANGE && last_dscp_ != dscp &&
+      last_dscp_ != net::DSCP_NO_CHANGE) {
+    int result = socket_->SetDiffServCodePoint(dscp);
     if (result == net::OK) {
-      last_dscp_ = packet.dscp;
+      last_dscp_ = dscp;
     } else if (!IsTransientError(result) && last_dscp_ != net::DSCP_CS0) {
       // We receieved a non-transient error, and it seems we have
       // not changed the DSCP in the past, disable DSCP as it unlikely
@@ -234,6 +235,8 @@ void P2PSocketHostUdp::DoSend(const PendingPacket& packet) {
       last_dscp_ = net::DSCP_NO_CHANGE;
     }
   }
+  packet_processing_helpers::ApplyPacketOptions(
+      packet.data->data(), packet.size, packet.packet_options, 0);
   int result = socket_->SendTo(
       packet.data.get(),
       packet.size,

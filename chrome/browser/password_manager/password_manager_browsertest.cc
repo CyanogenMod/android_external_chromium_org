@@ -31,6 +31,7 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 
@@ -174,9 +175,24 @@ class PasswordManagerBrowserTest : public InProcessBrowserTest {
     observer.Wait();
   }
 
+  // Executes |script| and uses the EXPECT macros to check the return value
+  // against |expected_return_value|.
+  void CheckScriptReturnValue(std::string& script, bool expected_return_value);
+
  private:
   DISALLOW_COPY_AND_ASSIGN(PasswordManagerBrowserTest);
 };
+
+void PasswordManagerBrowserTest::CheckScriptReturnValue(
+    std::string& script,
+    bool expected_return_value) {
+  const std::string wrapped_script =
+      std::string("window.domAutomationController.send(") + script + ");";
+  bool return_value = !expected_return_value;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      RenderViewHost(), wrapped_script, &return_value));
+  EXPECT_EQ(expected_return_value, return_value) << "script = " << script;
+}
 
 // Actual tests ---------------------------------------------------------------
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
@@ -423,7 +439,7 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
   net::TestURLFetcherFactory factory;
   // Disable Autofill requesting access to AddressBook data. This causes
   // the test to hang on Mac.
-  autofill::test::DisableSystemServices(browser()->profile());
+  autofill::test::DisableSystemServices(browser()->profile()->GetPrefs());
 
   // Visit a signup form.
   NavigateToFile("/password/signup_form.html");
@@ -445,8 +461,8 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
 
   // Simulate a user click to force an autofill of the form's DOM value, not
   // just the suggested value.
-  std::string click = "document.getElementById('testform_no_name').click()";
-  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), click));
+  content::SimulateMouseClick(
+      WebContents(), 0, blink::WebMouseEvent::ButtonLeft);
 
   // The form should be filled with the previously submitted username.
   std::string get_username =
@@ -574,4 +590,66 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, DeleteFrameBeforeSubmit) {
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), navigate_frame));
   observer.Wait();
   // The only thing we check here is that there is no use-after-free reported.
+}
+
+// Disabled on Windows due to flakiness: http://crbug.com/163072
+// TODO(vabr): Also disabled on Android, because the tested feature is currently
+// disabled there. http://crbug.com/345510#c13
+#if defined(OS_WIN) || defined(OS_ANDROID)
+#define MAYBE_PasswordValueAccessible DISABLED_PasswordValueAccessible
+#else
+#define MAYBE_PasswordValueAccessible PasswordValueAccessible
+#endif
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
+                       MAYBE_PasswordValueAccessible) {
+  NavigateToFile("/password/form_and_link.html");
+
+  // Click on a link to open a new tab, then switch back to the first one.
+  EXPECT_EQ(1, browser()->tab_strip_model()->count());
+  std::string click =
+      "document.getElementById('testlink').click();";
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), click));
+  EXPECT_EQ(2, browser()->tab_strip_model()->count());
+  browser()->tab_strip_model()->ActivateTabAt(0, false);
+
+  // Fill in the credentials, and make sure they are saved.
+  NavigationObserver form_submit_observer(WebContents());
+  std::string fill_and_submit =
+      "document.getElementById('username_field').value = 'temp';"
+      "document.getElementById('password_field').value = 'random';"
+      "document.getElementById('input_submit_button').click();";
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
+  form_submit_observer.Wait();
+  EXPECT_TRUE(form_submit_observer.infobar_shown());
+
+  // Reload the original page to have the saved credentials autofilled.
+  NavigationObserver reload_observer(WebContents());
+  NavigateToFile("/password/form_and_link.html");
+  reload_observer.Wait();
+
+  // Check that while the username is immediately available, the password value
+  // needs a user interaction to show up.
+  std::string check_username =
+      "document.getElementById('username_field').value == 'temp'";
+  std::string check_password =
+      "document.getElementById('password_field').value == 'random'";
+  CheckScriptReturnValue(check_username, true);
+  CheckScriptReturnValue(check_password, false);
+  content::SimulateMouseClick(
+      WebContents(), 0, blink::WebMouseEvent::ButtonLeft);
+  CheckScriptReturnValue(check_username, true);
+  CheckScriptReturnValue(check_password, true);
+}
+
+// Test fix for crbug.com/338650.
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
+                       DontPromptForPasswordFormWithDefaultValue) {
+  NavigateToFile("/password/password_form_with_default_value.html");
+
+  // Don't prompt if we navigate away even if there is a password value since
+  // it's not coming from the user.
+  NavigationObserver observer(WebContents());
+  NavigateToFile("/password/done.html");
+  observer.Wait();
+  EXPECT_FALSE(observer.infobar_shown());
 }

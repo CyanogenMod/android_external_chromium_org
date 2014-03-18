@@ -19,7 +19,7 @@ $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h: gyp_shared_inte
 $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h: $(LOCAL_PATH)/tools/json_schema_compiler/cc_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/code.py $(LOCAL_PATH)/tools/json_schema_compiler/compiler.py $(LOCAL_PATH)/tools/json_schema_compiler/cpp_bundle_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/cpp_type_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/cpp_util.py $(LOCAL_PATH)/tools/json_schema_compiler/h_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/idl_schema.py $(LOCAL_PATH)/tools/json_schema_compiler/json_schema.py $(LOCAL_PATH)/tools/json_schema_compiler/model.py $(LOCAL_PATH)/tools/json_schema_compiler/util_cc_helper.py $(LOCAL_PATH)/ui/accessibility/ax_enums.idl $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: Generating C++ API bundle code ($@)"
-	$(hide)cd $(gyp_local_path)/ui/accessibility; mkdir -p $(gyp_shared_intermediate_dir)/ui/accessibility; python ../../tools/json_schema_compiler/compiler.py "--root=../.." "--destdir=$(gyp_shared_intermediate_dir)" "--namespace=" "--generator=cpp-bundle" ax_enums.idl
+	$(hide)cd $(gyp_local_path)/ui/accessibility; mkdir -p $(gyp_shared_intermediate_dir)/ui/accessibility; python ../../tools/json_schema_compiler/compiler.py "--root=../.." "--destdir=$(gyp_shared_intermediate_dir)" "--namespace=" "--generator=cpp-bundle" "--impl-dir=chrome/browser/extensions/api" ax_enums.idl
 
 $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.cc: $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h ;
 $(gyp_shared_intermediate_dir)/ui/accessibility/generated_schemas.h: $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h ;
@@ -28,13 +28,13 @@ $(gyp_shared_intermediate_dir)/ui/accessibility/generated_schemas.cc: $(gyp_shar
 
 
 ### Generated for rule "ui_accessibility_accessibility_gyp_ax_gen_target_genapi_idl":
-# "{'inputs': ['../../tools/json_schema_compiler/cc_generator.py', '../../tools/json_schema_compiler/code.py', '../../tools/json_schema_compiler/compiler.py', '../../tools/json_schema_compiler/cpp_generator.py', '../../tools/json_schema_compiler/cpp_type_generator.py', '../../tools/json_schema_compiler/cpp_util.py', '../../tools/json_schema_compiler/h_generator.py', '../../tools/json_schema_compiler/idl_schema.py', '../../tools/json_schema_compiler/model.py', '../../tools/json_schema_compiler/util.cc', '../../tools/json_schema_compiler/util.h', '../../tools/json_schema_compiler/util_cc_helper.py'], 'process_outputs_as_sources': '1', 'extension': 'idl', 'msvs_external_rule': '1', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_ROOT)s.cc', '$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_ROOT)s.h'], 'rule_name': 'genapi_idl', 'rule_sources': ['ax_enums.idl'], 'action': ['python', '../../tools/json_schema_compiler/compiler.py', '$(RULE_SOURCES)', '--root=../..', '--destdir=$(gyp_shared_intermediate_dir)', '--namespace=', '--generator=cpp'], 'message': 'Generating C++ code from $(RULE_SOURCES) IDL files'}":
+# "{'inputs': ['../../tools/json_schema_compiler/cc_generator.py', '../../tools/json_schema_compiler/code.py', '../../tools/json_schema_compiler/compiler.py', '../../tools/json_schema_compiler/cpp_generator.py', '../../tools/json_schema_compiler/cpp_type_generator.py', '../../tools/json_schema_compiler/cpp_util.py', '../../tools/json_schema_compiler/h_generator.py', '../../tools/json_schema_compiler/idl_schema.py', '../../tools/json_schema_compiler/model.py', '../../tools/json_schema_compiler/util.cc', '../../tools/json_schema_compiler/util.h', '../../tools/json_schema_compiler/util_cc_helper.py'], 'process_outputs_as_sources': '1', 'extension': 'idl', 'msvs_external_rule': '1', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_ROOT)s.cc', '$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_ROOT)s.h'], 'rule_name': 'genapi_idl', 'rule_sources': ['ax_enums.idl'], 'action': ['python', '../../tools/json_schema_compiler/compiler.py', '$(RULE_SOURCES)', '--root=../..', '--destdir=$(gyp_shared_intermediate_dir)', '--namespace=', '--generator=cpp', '--impl-dir=chrome/browser/extensions/api'], 'message': 'Generating C++ code from $(RULE_SOURCES) IDL files'}":
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: $(LOCAL_PATH)/ui/accessibility/ax_enums.idl $(LOCAL_PATH)/tools/json_schema_compiler/cc_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/code.py $(LOCAL_PATH)/tools/json_schema_compiler/compiler.py $(LOCAL_PATH)/tools/json_schema_compiler/cpp_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/cpp_type_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/cpp_util.py $(LOCAL_PATH)/tools/json_schema_compiler/h_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/idl_schema.py $(LOCAL_PATH)/tools/json_schema_compiler/model.py $(LOCAL_PATH)/tools/json_schema_compiler/util.cc $(LOCAL_PATH)/tools/json_schema_compiler/util.h $(LOCAL_PATH)/tools/json_schema_compiler/util_cc_helper.py $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/accessibility; cd $(gyp_local_path)/ui/accessibility; python ../../tools/json_schema_compiler/compiler.py ax_enums.idl "--root=../.." "--destdir=$(gyp_shared_intermediate_dir)" "--namespace=" "--generator=cpp"
+	mkdir -p $(gyp_shared_intermediate_dir)/ui/accessibility; cd $(gyp_local_path)/ui/accessibility; python ../../tools/json_schema_compiler/compiler.py ax_enums.idl "--root=../.." "--destdir=$(gyp_shared_intermediate_dir)" "--namespace=" "--generator=cpp" "--impl-dir=chrome/browser/extensions/api"
 
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.h: $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc ;
 .PHONY: ui_accessibility_ax_gen_gyp_rule_trigger
@@ -112,6 +112,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -119,13 +120,14 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DUSE_OPENSSL=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -196,6 +198,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -203,13 +206,14 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DUSE_OPENSSL=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -247,9 +251,11 @@ LOCAL_CPPFLAGS_Release := \
 LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
 LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
+LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -261,7 +267,6 @@ LOCAL_LDFLAGS_Debug := \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
 	-Wl,--icf=safe \
-	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
@@ -269,6 +274,7 @@ LOCAL_LDFLAGS_Debug := \
 
 
 LOCAL_LDFLAGS_Release := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -283,7 +289,6 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,-O1 \
 	-Wl,--as-needed \
 	-Wl,--gc-sections \
-	-Wl,--fatal-warnings \
 	-Wl,--warn-shared-textrel
 
 

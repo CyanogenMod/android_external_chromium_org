@@ -39,10 +39,11 @@ class BrailleDisplayPrivateAPI::DefaultEventDelegate
   Profile* profile_;
 };
 
-BrailleDisplayPrivateAPI::BrailleDisplayPrivateAPI(Profile* profile)
-    : profile_(profile), scoped_observer_(this),
-      event_delegate_(new DefaultEventDelegate(this, profile_)) {
-}
+BrailleDisplayPrivateAPI::BrailleDisplayPrivateAPI(
+    content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)),
+      scoped_observer_(this),
+      event_delegate_(new DefaultEventDelegate(this, profile_)) {}
 
 BrailleDisplayPrivateAPI::~BrailleDisplayPrivateAPI() {
 }
@@ -50,11 +51,12 @@ BrailleDisplayPrivateAPI::~BrailleDisplayPrivateAPI() {
 void BrailleDisplayPrivateAPI::Shutdown() {
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<BrailleDisplayPrivateAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<BrailleDisplayPrivateAPI> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<BrailleDisplayPrivateAPI>*
+BrowserContextKeyedAPIFactory<BrailleDisplayPrivateAPI>*
 BrailleDisplayPrivateAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }

@@ -17,6 +17,7 @@
 namespace net {
 
 class ProofVerifier;
+class QuicSessionKey;
 
 namespace tools {
 
@@ -30,14 +31,15 @@ class MockableQuicClient;
 // A toy QUIC client used for testing.
 class QuicTestClient :  public QuicDataStream::Visitor {
  public:
-  QuicTestClient(IPEndPoint server_address, const string& server_hostname,
+  QuicTestClient(IPEndPoint server_address,
+                 const QuicSessionKey& server_key,
                  const QuicVersionVector& supported_versions);
   QuicTestClient(IPEndPoint server_address,
-                 const string& server_hostname,
+                 const QuicSessionKey& server_key,
                  bool secure,
                  const QuicVersionVector& supported_versions);
   QuicTestClient(IPEndPoint server_address,
-                 const string& server_hostname,
+                 const QuicSessionKey& server_key,
                  bool secure,
                  const QuicConfig& config,
                  const QuicVersionVector& supported_versions);
@@ -89,9 +91,9 @@ class QuicTestClient :  public QuicDataStream::Visitor {
   // Configures client_ to take ownership of and use the writer.
   // Must be called before initial connect.
   void UseWriter(QuicPacketWriterWrapper* writer);
-  // If the given GUID is nonzero, configures client_ to use a specific GUID
-  // instead of a random one.
-  void UseGuid(QuicGuid guid);
+  // If the given ConnectionId is nonzero, configures client_ to use a specific
+  // ConnectionId instead of a random one.
+  void UseConnectionId(QuicConnectionId connection_id);
 
   // Returns NULL if the maximum number of streams have already been created.
   QuicSpdyClientStream* GetOrCreateStream();
@@ -118,10 +120,13 @@ class QuicTestClient :  public QuicDataStream::Visitor {
   void WaitForWriteToFlush();
 
  private:
-  void Initialize(IPEndPoint address, const string& hostname, bool secure);
+  void Initialize(IPEndPoint address,
+                  const QuicSessionKey& server_key,
+                  bool secure);
 
   IPEndPoint server_address_;
   IPEndPoint client_address_;
+  QuicSessionKey server_key_;
   scoped_ptr<MockableQuicClient> client_;  // The actual client
   QuicSpdyClientStream* stream_;
 

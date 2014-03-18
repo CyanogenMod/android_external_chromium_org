@@ -18,6 +18,7 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
+#include "content/browser/web_contents/aura/gesture_nav_simple.h"
 #include "content/browser/web_contents/aura/image_window_delegate.h"
 #include "content/browser/web_contents/aura/overscroll_navigation_overlay.h"
 #include "content/browser/web_contents/aura/shadow_layer_delegate.h"
@@ -47,10 +48,10 @@
 #include "ui/aura/client/drag_drop_delegate.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
-#include "ui/aura/root_window_observer.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
+#include "ui/aura/window_tree_host_observer.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
@@ -445,7 +446,7 @@ int ConvertAuraEventFlagsToWebInputEventModifiers(int aura_event_flags) {
 }  // namespace
 
 class WebContentsViewAura::WindowObserver
-    : public aura::WindowObserver, public aura::RootWindowObserver {
+    : public aura::WindowObserver, public aura::WindowTreeHostObserver {
  public:
   explicit WindowObserver(WebContentsViewAura* view)
       : view_(view),
@@ -460,8 +461,8 @@ class WebContentsViewAura::WindowObserver
 
   virtual ~WindowObserver() {
     view_->window_->RemoveObserver(this);
-    if (view_->window_->GetDispatcher())
-      view_->window_->GetDispatcher()->RemoveRootWindowObserver(this);
+    if (view_->window_->GetHost())
+      view_->window_->GetHost()->RemoveObserver(this);
     if (parent_)
       parent_->RemoveObserver(this);
 
@@ -592,7 +593,7 @@ class WebContentsViewAura::WindowObserver
 
   virtual void OnWindowAddedToRootWindow(aura::Window* window) OVERRIDE {
     if (window == view_->window_) {
-      window->GetDispatcher()->AddRootWindowObserver(this);
+      window->GetHost()->AddObserver(this);
 #if defined(OS_WIN)
       if (!window->GetRootWindow()->HasObserver(this))
         window->GetRootWindow()->AddObserver(this);
@@ -602,7 +603,7 @@ class WebContentsViewAura::WindowObserver
 
   virtual void OnWindowRemovingFromRootWindow(aura::Window* window) OVERRIDE {
     if (window == view_->window_) {
-      window->GetDispatcher()->RemoveRootWindowObserver(this);
+      window->GetHost()->RemoveObserver(this);
 #if defined(OS_WIN)
       window->GetRootWindow()->RemoveObserver(this);
 
@@ -616,11 +617,11 @@ class WebContentsViewAura::WindowObserver
     }
   }
 
-  // Overridden RootWindowObserver:
-  virtual void OnWindowTreeHostMoved(const aura::RootWindow* root,
-                                     const gfx::Point& new_origin) OVERRIDE {
+  // Overridden WindowTreeHostObserver:
+  virtual void OnHostMoved(const aura::WindowTreeHost* host,
+                           const gfx::Point& new_origin) OVERRIDE {
     TRACE_EVENT1("ui",
-                 "WebContentsViewAura::WindowObserver::OnWindowTreeHostMoved",
+                 "WebContentsViewAura::WindowObserver::OnHostMoved",
                  "new_origin", new_origin.ToString());
 
     // This is for the desktop case (i.e. Aura desktop).
@@ -740,6 +741,26 @@ void WebContentsViewAura::EndDrag(blink::WebDragOperationsMask ops) {
     return;
   web_contents_->DragSourceEndedAt(client_loc.x(), client_loc.y(),
       screen_loc.x(), screen_loc.y(), ops);
+}
+
+void WebContentsViewAura::InstallOverscrollControllerDelegate(
+    RenderWidgetHostImpl* host) {
+  const std::string value = CommandLine::ForCurrentProcess()->
+      GetSwitchValueASCII(switches::kOverscrollHistoryNavigation);
+  if (value == "0") {
+    navigation_overlay_.reset();
+    return;
+  }
+  if (value == "2") {
+    navigation_overlay_.reset();
+    if (!gesture_nav_simple_)
+      gesture_nav_simple_.reset(new GestureNavSimple(web_contents_));
+    host->overscroll_controller()->set_delegate(gesture_nav_simple_.get());
+    return;
+  }
+  host->overscroll_controller()->set_delegate(this);
+  if (!navigation_overlay_)
+    navigation_overlay_.reset(new OverscrollNavigationOverlay(web_contents_));
 }
 
 void WebContentsViewAura::PrepareOverscrollWindow() {
@@ -1079,9 +1100,7 @@ RenderWidgetHostView* WebContentsViewAura::CreateViewForWidget(
   if (host_impl->overscroll_controller() &&
       (!web_contents_->GetDelegate() ||
        web_contents_->GetDelegate()->CanOverscrollContent())) {
-    host_impl->overscroll_controller()->set_delegate(this);
-    if (!navigation_overlay_)
-      navigation_overlay_.reset(new OverscrollNavigationOverlay(web_contents_));
+    InstallOverscrollControllerDelegate(host_impl);
   }
 
   AttachTouchEditableToRenderView();
@@ -1112,7 +1131,7 @@ void WebContentsViewAura::SetOverscrollControllerEnabled(bool enabled) {
   if (host) {
     host->SetOverscrollControllerEnabled(enabled);
     if (enabled)
-      host->overscroll_controller()->set_delegate(this);
+      InstallOverscrollControllerDelegate(host);
   }
 
   if (!enabled)
@@ -1126,8 +1145,9 @@ void WebContentsViewAura::SetOverscrollControllerEnabled(bool enabled) {
 
 void WebContentsViewAura::ShowContextMenu(RenderFrameHost* render_frame_host,
                                           const ContextMenuParams& params) {
-  if (touch_editable_)
+  if (touch_editable_) {
     touch_editable_->EndTouchEditing(false);
+  }
   if (delegate_) {
     delegate_->ShowContextMenu(render_frame_host, params);
     // WARNING: we may have been deleted during the call to ShowContextMenu().
@@ -1394,7 +1414,7 @@ void WebContentsViewAura::OnDeviceScaleFactorChanged(
     float device_scale_factor) {
 }
 
-void WebContentsViewAura::OnWindowDestroying() {
+void WebContentsViewAura::OnWindowDestroying(aura::Window* window) {
   // This means the destructor is going to be called soon. If there is an
   // overscroll gesture in progress (i.e. |overscroll_window_| is not NULL),
   // then destroying it in the WebContentsViewAura destructor can trigger other
@@ -1404,7 +1424,7 @@ void WebContentsViewAura::OnWindowDestroying() {
   overscroll_window_.reset();
 }
 
-void WebContentsViewAura::OnWindowDestroyed() {
+void WebContentsViewAura::OnWindowDestroyed(aura::Window* window) {
 }
 
 void WebContentsViewAura::OnWindowTargetVisibilityChanged(bool visible) {

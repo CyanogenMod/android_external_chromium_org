@@ -23,8 +23,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ash_strings.h"
 #include "grit/ui_strings.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/screen.h"
 #include "ui/message_center/message_center_style.h"
@@ -316,7 +316,17 @@ WebNotificationTray::WebNotificationTray(
   message_center_tray_.reset(new message_center::MessageCenterTray(
       this,
       message_center::MessageCenter::Get()));
+  popup_collection_.reset(new message_center::MessagePopupCollection(
+      ash::Shell::GetContainer(
+          status_area_widget->GetNativeView()->GetRootWindow(),
+          internal::kShellWindowId_StatusContainer),
+      message_center(),
+      message_center_tray_.get(),
+      ash::switches::UseAlternateShelfLayout()));
   work_area_observer_.reset(new internal::WorkAreaObserver());
+  work_area_observer_->StartObserving(
+      popup_collection_.get(),
+      status_area_widget->GetNativeView()->GetRootWindow());
   OnMessageCenterTrayChanged();
 }
 
@@ -403,24 +413,13 @@ bool WebNotificationTray::ShowPopups() {
   if (message_center_bubble())
     return false;
 
-  popup_collection_.reset(new message_center::MessagePopupCollection(
-      ash::Shell::GetContainer(
-          GetWidget()->GetNativeView()->GetRootWindow(),
-          internal::kShellWindowId_StatusContainer),
-      message_center(),
-      message_center_tray_.get(),
-      ash::switches::UseAlternateShelfLayout()));
-  work_area_observer_->StartObserving(
-      popup_collection_.get(), GetWidget()->GetNativeView()->GetRootWindow());
+  popup_collection_->DoUpdateIfPossible();
   return true;
 }
 
 void WebNotificationTray::HidePopups() {
   DCHECK(popup_collection_.get());
-
   popup_collection_->MarkAllPopupsShown();
-  popup_collection_.reset();
-  work_area_observer_->StopObserving();
 }
 
 // Private methods.

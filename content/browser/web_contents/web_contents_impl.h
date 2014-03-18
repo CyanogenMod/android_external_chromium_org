@@ -24,6 +24,7 @@
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/ax_event_notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents.h"
@@ -65,6 +66,7 @@ class WebContentsImpl;
 class WebContentsObserver;
 class WebContentsViewPort;
 class WebContentsViewDelegate;
+struct AXEventNotificationDetails;
 struct ColorSuggestion;
 struct FaviconURL;
 struct LoadNotificationDetails;
@@ -132,6 +134,7 @@ class CONTENT_EXPORT WebContentsImpl
 #endif
 
   // Expose the render manager for testing.
+  // TODO(creis): Remove this now that we can get to it via FrameTreeNode.
   RenderFrameHostManager* GetRenderManagerForTesting();
 
   // Returns guest browser plugin object, or NULL if this WebContents is not a
@@ -185,14 +188,11 @@ class CONTENT_EXPORT WebContentsImpl
   virtual BrowserContext* GetBrowserContext() const OVERRIDE;
   virtual RenderProcessHost* GetRenderProcessHost() const OVERRIDE;
   virtual RenderFrameHost* GetMainFrame() OVERRIDE;
+  virtual RenderFrameHost* GetFocusedFrame() OVERRIDE;
   virtual void ForEachFrame(
       const base::Callback<void(RenderFrameHost*)>& on_frame) OVERRIDE;
   virtual void SendToAllFrames(IPC::Message* message) OVERRIDE;
   virtual RenderViewHost* GetRenderViewHost() const OVERRIDE;
-  virtual void GetRenderViewHostAtPosition(
-      int x,
-      int y,
-      const GetRenderViewHostCallback& callback) OVERRIDE;
   virtual WebContents* GetEmbedderWebContents() const OVERRIDE;
   virtual int GetEmbeddedInstanceID() const OVERRIDE;
   virtual int GetRoutingID() const OVERRIDE;
@@ -313,8 +313,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   // RenderViewHostDelegate ----------------------------------------------------
   virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
-  virtual RenderViewHostDelegate::RendererManagement*
-      GetRendererManagementDelegate() OVERRIDE;
   virtual bool OnMessageReceived(RenderViewHost* render_view_host,
                                  const IPC::Message& message) OVERRIDE;
   virtual const GURL& GetURL() const OVERRIDE;
@@ -352,23 +350,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void DocumentOnLoadCompletedInMainFrame(
       RenderViewHost* render_view_host,
       int32 page_id) OVERRIDE;
-  virtual void RequestOpenURL(RenderViewHost* rvh,
-                              const GURL& url,
-                              const Referrer& referrer,
-                              WindowOpenDisposition disposition,
-                              int64 source_frame_id,
-                              bool should_replace_current_entry,
-                              bool user_gesture) OVERRIDE;
-  virtual void RequestTransferURL(
-      const GURL& url,
-      const std::vector<GURL>& redirect_chain,
-      const Referrer& referrer,
-      PageTransition page_transition,
-      WindowOpenDisposition disposition,
-      int64 source_frame_id,
-      const GlobalRequestID& transferred_global_request_id,
-      bool should_replace_current_entry,
-      bool user_gesture) OVERRIDE;
   virtual void RouteCloseEvent(RenderViewHost* rvh) OVERRIDE;
   virtual void RouteMessageEvent(
       RenderViewHost* rvh,
@@ -443,13 +424,14 @@ class CONTENT_EXPORT WebContentsImpl
   virtual SessionStorageNamespace* GetSessionStorageNamespace(
       SiteInstance* instance) OVERRIDE;
   virtual FrameTree* GetFrameTree() OVERRIDE;
+  virtual void AccessibilityEventReceived(
+      const std::vector<AXEventNotificationDetails>& details) OVERRIDE;
 
   // NavigatorDelegate ---------------------------------------------------------
 
   virtual void DidStartProvisionalLoad(
       RenderFrameHostImpl* render_frame_host,
-      int64 frame_id,
-      int64 parent_frame_id,
+      int parent_routing_id,
       bool is_main_frame,
       const GURL& validated_url,
       bool is_error_page,
@@ -460,7 +442,6 @@ class CONTENT_EXPORT WebContentsImpl
       OVERRIDE;
   virtual void DidFailLoadWithError(
       RenderFrameHostImpl* render_frame_host,
-      int64 frame_id,
       const GURL& url,
       bool is_main_frame,
       int error_code,
@@ -469,12 +450,11 @@ class CONTENT_EXPORT WebContentsImpl
       RenderFrameHostImpl* render_frame_host,
       const GURL& validated_target_url) OVERRIDE;
   virtual void DidCommitProvisionalLoad(
-      int64 frame_id,
+      RenderFrameHostImpl* render_frame_host,
       const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
-      PageTransition transition_type,
-      RenderFrameHostImpl* render_frame_host) OVERRIDE;
+      PageTransition transition_type) OVERRIDE;
   virtual void DidNavigateMainFramePostCommit(
       const LoadCommittedDetails& details,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params) OVERRIDE;
@@ -492,6 +472,8 @@ class CONTENT_EXPORT WebContentsImpl
       RenderFrameHostImpl* render_frame_host,
       const GURL& url,
       NavigationController::ReloadType reload_type) OVERRIDE;
+  virtual void RequestOpenURL(RenderFrameHostImpl* render_frame_host,
+                              const OpenURLParams& params) OVERRIDE;
 
   // RenderWidgetHostDelegate --------------------------------------------------
 
@@ -502,7 +484,7 @@ class CONTENT_EXPORT WebContentsImpl
       bool* is_keyboard_shortcut) OVERRIDE;
   virtual void HandleKeyboardEvent(
       const NativeWebKeyboardEvent& event) OVERRIDE;
-  virtual bool PreHandleWheelEvent(
+  virtual bool HandleWheelEvent(
       const blink::WebMouseWheelEvent& event) OVERRIDE;
   virtual bool PreHandleGestureEvent(
       const blink::WebGestureEvent& event) OVERRIDE;
@@ -683,16 +665,14 @@ class CONTENT_EXPORT WebContentsImpl
   void OnDidDisplayInsecureContent();
   void OnDidRunInsecureContent(const std::string& security_origin,
                                const GURL& target_url);
-  void OnDocumentLoadedInFrame(int64 frame_id);
-  void OnDidFinishLoad(int64 frame_id,
-                       const GURL& url,
+  void OnDocumentLoadedInFrame();
+  void OnDidFinishLoad(const GURL& url,
                        bool is_main_frame);
   void OnGoToEntryAtOffset(int offset);
   void OnUpdateZoomLimits(int minimum_percent,
                           int maximum_percent,
                           bool remember);
   void OnEnumerateDirectory(int request_id, const base::FilePath& path);
-  void OnJSOutOfMemory();
 
   void OnRegisterProtocolHandler(const std::string& protocol,
                                  const GURL& url,
@@ -717,6 +697,8 @@ class CONTENT_EXPORT WebContentsImpl
                           bool is_hung);
   void OnPluginCrashed(const base::FilePath& plugin_path,
                        base::ProcessId plugin_pid);
+  void OnDomOperationResponse(const std::string& json_string,
+                              int automation_id);
   void OnAppCacheAccessed(const GURL& manifest_url, bool blocked_by_policy);
   void OnOpenColorChooser(int color_chooser_id,
                           SkColor color,
@@ -839,7 +821,8 @@ class CONTENT_EXPORT WebContentsImpl
   // Helper function to invoke WebContentsDelegate::GetSizeForNewRenderView().
   gfx::Size GetSizeForNewRenderView() const;
 
-  void OnFrameRemoved(RenderViewHostImpl* render_view_host, int64 frame_id);
+  void OnFrameRemoved(RenderViewHostImpl* render_view_host,
+                      int frame_routing_id);
 
   // Helper method that's called whenever |preferred_size_| or
   // |preferred_size_for_capture_| changes, to propagate the new value to the

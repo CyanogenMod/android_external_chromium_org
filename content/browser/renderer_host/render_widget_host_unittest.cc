@@ -4,6 +4,7 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
 #include "base/timer/timer.h"
@@ -21,6 +22,7 @@
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_widget_host_view_port.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/test/test_render_view_host.h"
@@ -34,7 +36,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "ui/aura/env.h"
 #include "ui/aura/test/test_screen.h"
-#include "ui/compositor/test/test_context_factory.h"
+#include "ui/compositor/test/in_process_context_factory.h"
 #endif
 
 #if defined(OS_WIN) || defined(USE_AURA)
@@ -427,6 +429,7 @@ class TestView : public TestRenderWidgetHostView {
  public:
   explicit TestView(RenderWidgetHostImpl* rwh)
       : TestRenderWidgetHostView(rwh),
+        unhandled_wheel_event_count_(0),
         acked_event_count_(0),
         gesture_event_type_(-1),
         use_fake_physical_backing_size_(false),
@@ -447,6 +450,9 @@ class TestView : public TestRenderWidgetHostView {
 
   const WebMouseWheelEvent& unhandled_wheel_event() const {
     return unhandled_wheel_event_;
+  }
+  int unhandled_wheel_event_count() const {
+    return unhandled_wheel_event_count_;
   }
   int gesture_event_type() const { return gesture_event_type_; }
   InputEventAckState ack_result() const { return ack_result_; }
@@ -469,6 +475,7 @@ class TestView : public TestRenderWidgetHostView {
     ++acked_event_count_;
   }
   virtual void UnhandledWheelEvent(const WebMouseWheelEvent& event) OVERRIDE {
+    unhandled_wheel_event_count_++;
     unhandled_wheel_event_ = event;
   }
   virtual void GestureEventAck(const WebGestureEvent& event,
@@ -484,6 +491,7 @@ class TestView : public TestRenderWidgetHostView {
 
  protected:
   WebMouseWheelEvent unhandled_wheel_event_;
+  int unhandled_wheel_event_count_;
   WebTouchEvent acked_event_;
   int acked_event_count_;
   int gesture_event_type_;
@@ -504,7 +512,9 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
         prehandle_keyboard_event_called_(false),
         prehandle_keyboard_event_type_(WebInputEvent::Undefined),
         unhandled_keyboard_event_called_(false),
-        unhandled_keyboard_event_type_(WebInputEvent::Undefined) {
+        unhandled_keyboard_event_type_(WebInputEvent::Undefined),
+        handle_wheel_event_(false),
+        handle_wheel_event_called_(false) {
   }
   virtual ~MockRenderWidgetHostDelegate() {}
 
@@ -530,6 +540,14 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
     prehandle_keyboard_event_ = handle;
   }
 
+  void set_handle_wheel_event(bool handle) {
+    handle_wheel_event_ = handle;
+  }
+
+  bool handle_wheel_event_called() {
+    return handle_wheel_event_called_;
+  }
+
  protected:
   virtual bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
                                       bool* is_keyboard_shortcut) OVERRIDE {
@@ -544,6 +562,12 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
     unhandled_keyboard_event_called_ = true;
   }
 
+  virtual bool HandleWheelEvent(
+      const blink::WebMouseWheelEvent& event) OVERRIDE {
+    handle_wheel_event_called_ = true;
+    return handle_wheel_event_;
+  }
+
  private:
   bool prehandle_keyboard_event_;
   bool prehandle_keyboard_event_called_;
@@ -551,6 +575,9 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
 
   bool unhandled_keyboard_event_called_;
   WebInputEvent::Type unhandled_keyboard_event_type_;
+
+  bool handle_wheel_event_;
+  bool handle_wheel_event_called_;
 };
 
 // RenderWidgetHostTest --------------------------------------------------------
@@ -575,12 +602,15 @@ class RenderWidgetHostTest : public testing::Test {
  protected:
   // testing::Test
   virtual void SetUp() {
+    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    command_line->AppendSwitch(switches::kValidateInputEventStream);
+
     browser_context_.reset(new TestBrowserContext());
     delegate_.reset(new MockRenderWidgetHostDelegate());
     process_ = new RenderWidgetHostProcess(browser_context_.get());
 #if defined(USE_AURA)
     ImageTransportFactory::InitializeForUnitTests(
-        scoped_ptr<ui::ContextFactory>(new ui::TestContextFactory));
+        scoped_ptr<ui::ContextFactory>(new ui::InProcessContextFactory));
     aura::Env::CreateInstance();
     screen_.reset(aura::TestScreen::Create());
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
@@ -1145,11 +1175,35 @@ TEST_F(RenderWidgetHostTest, UnhandledWheelEvent) {
   // Send the simulated response from the renderer back.
   SendInputEventACK(WebInputEvent::MouseWheel,
                     INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  EXPECT_TRUE(delegate_->handle_wheel_event_called());
+  EXPECT_EQ(1, view_->unhandled_wheel_event_count());
   EXPECT_EQ(-5, view_->unhandled_wheel_event().deltaX);
 }
 
+TEST_F(RenderWidgetHostTest, HandleWheelEvent) {
+  // Indicate that we're going to handle this wheel event
+  delegate_->set_handle_wheel_event(true);
+
+  SimulateWheelEvent(-5, 0, 0, true);
+
+  // Make sure we sent the input event to the renderer.
+  EXPECT_TRUE(process_->sink().GetUniqueMessageMatching(
+                  InputMsg_HandleInputEvent::ID));
+  process_->sink().ClearMessages();
+
+  // Send the simulated response from the renderer back.
+  SendInputEventACK(WebInputEvent::MouseWheel,
+                    INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+
+  // ensure the wheel event handler was invoked
+  EXPECT_TRUE(delegate_->handle_wheel_event_called());
+
+  // and that it suppressed the unhandled wheel event handler.
+  EXPECT_EQ(0, view_->unhandled_wheel_event_count());
+}
+
 TEST_F(RenderWidgetHostTest, UnhandledGestureEvent) {
-  SimulateGestureEvent(WebInputEvent::GestureScrollUpdate,
+  SimulateGestureEvent(WebInputEvent::GestureTwoFingerTap,
                        WebGestureEvent::Touchscreen);
 
   // Make sure we sent the input event to the renderer.
@@ -1158,9 +1212,9 @@ TEST_F(RenderWidgetHostTest, UnhandledGestureEvent) {
   process_->sink().ClearMessages();
 
   // Send the simulated response from the renderer back.
-  SendInputEventACK(WebInputEvent::GestureScrollUpdate,
+  SendInputEventACK(WebInputEvent::GestureTwoFingerTap,
                     INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
-  EXPECT_EQ(WebInputEvent::GestureScrollUpdate, view_->gesture_event_type());
+  EXPECT_EQ(WebInputEvent::GestureTwoFingerTap, view_->gesture_event_type());
   EXPECT_EQ(INPUT_EVENT_ACK_STATE_NOT_CONSUMED, view_->ack_result());
 }
 
@@ -2341,12 +2395,9 @@ TEST_F(RenderWidgetHostTest, OverscrollResetsOnBlur) {
 
 TEST_InputRouterRoutes_NOARGS(Undo);
 TEST_InputRouterRoutes_NOARGS(Redo);
-TEST_InputRouterRoutes_NOARGS(Cut);
-TEST_InputRouterRoutes_NOARGS(Copy);
 #if defined(OS_MACOSX)
 TEST_InputRouterRoutes_NOARGS(CopyToFindPboard);
 #endif
-TEST_InputRouterRoutes_NOARGS(Paste);
 TEST_InputRouterRoutes_NOARGS(PasteAndMatchStyle);
 TEST_InputRouterRoutes_NOARGS(Delete);
 TEST_InputRouterRoutes_NOARGS(SelectAll);
@@ -2356,6 +2407,18 @@ TEST_InputRouterRoutes_NOARGS(Blur);
 TEST_InputRouterRoutes_NOARGS(LostCapture);
 
 #undef TEST_InputRouterRoutes_NOARGS
+
+#define TEST_InputRouterRoutes_NOARGS_FromRFH(INPUTMSG) \
+  TEST_F(RenderWidgetHostTest, InputRouterRoutes##INPUTMSG) { \
+    host_->SetupForInputRouterTest(); \
+    host_->Send(new INPUTMSG(host_->GetRoutingID())); \
+    EXPECT_TRUE(host_->mock_input_router()->send_event_called_); \
+  }
+
+TEST_InputRouterRoutes_NOARGS_FromRFH(InputMsg_Cut);
+TEST_InputRouterRoutes_NOARGS_FromRFH(InputMsg_Copy);
+TEST_InputRouterRoutes_NOARGS_FromRFH(InputMsg_Paste);
+#undef TEST_InputRouterRoutes_NOARGS_FromRFH
 
 TEST_F(RenderWidgetHostTest, InputRouterRoutesReplace) {
   host_->SetupForInputRouterTest();
@@ -2536,11 +2599,11 @@ TEST_F(RenderWidgetHostTest, InputEventRWHLatencyComponent) {
   SendInputEventACK(WebInputEvent::MouseMove, INPUT_EVENT_ACK_STATE_CONSUMED);
 
   // Tests RWHI::ForwardGestureEvent().
-  SimulateGestureEvent(WebInputEvent::GestureScrollUpdate,
+  SimulateGestureEvent(WebInputEvent::GestureScrollBegin,
                        WebGestureEvent::Touchscreen);
   CheckLatencyInfoComponentInMessage(
-      process_, GetLatencyComponentId(), WebInputEvent::GestureScrollUpdate);
-  SendInputEventACK(WebInputEvent::GestureScrollUpdate,
+      process_, GetLatencyComponentId(), WebInputEvent::GestureScrollBegin);
+  SendInputEventACK(WebInputEvent::GestureScrollBegin,
                     INPUT_EVENT_ACK_STATE_CONSUMED);
 
   // Tests RWHI::ForwardGestureEventWithLatencyInfo().

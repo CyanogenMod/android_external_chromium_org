@@ -51,7 +51,7 @@ class ProxyLauncher {
     base::Closure setup_profile_callback;
 
     // Command line to launch the browser.
-    CommandLine command;
+    base::CommandLine command;
 
     // Should we supply the testing channel id on the command line?
     bool include_testing_id;
@@ -148,7 +148,7 @@ class ProxyLauncher {
   bool WaitForBrowserLaunch(bool wait_for_initial_loads) WARN_UNUSED_RESULT;
 
   // Prepare command line that will be used to launch the child browser process.
-  void PrepareTestCommandline(CommandLine* command_line,
+  void PrepareTestCommandline(base::CommandLine* command_line,
                               bool include_testing_id);
 
   bool LaunchBrowserHelper(const LaunchState& state,
@@ -185,9 +185,6 @@ class ProxyLauncher {
 
   // If true, a user is paying attention to the test, so show error dialogs.
   bool show_error_dialogs_;
-
-  // Enable dchecks in release mode.
-  bool enable_dcheck_;
 
   // Dump process memory on dcheck without crashing.
   bool silent_dump_on_dcheck_;

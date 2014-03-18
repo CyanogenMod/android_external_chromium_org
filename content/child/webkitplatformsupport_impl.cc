@@ -5,6 +5,7 @@
 #include "base/command_line.h"
 #include "content/child/child_thread.h"
 #include "content/child/socket_stream_dispatcher.h"
+#include "content/child/webcrypto/webcrypto_impl.h"
 #include "content/child/webkitplatformsupport_impl.h"
 #include "content/child/websocket_bridge.h"
 #include "content/public/common/content_client.h"
@@ -33,10 +34,10 @@ WebKitPlatformSupportImpl::CreateResourceLoader(
   return ChildThread::current()->CreateBridge(request_info);
 }
 
-webkit_glue::WebSocketStreamHandleBridge*
+WebSocketStreamHandleBridge*
 WebKitPlatformSupportImpl::CreateWebSocketStreamBridge(
     blink::WebSocketStreamHandle* handle,
-    webkit_glue::WebSocketStreamHandleDelegate* delegate) {
+    WebSocketStreamHandleDelegate* delegate) {
   SocketStreamDispatcher* dispatcher =
       ChildThread::current()->socket_stream_dispatcher();
   return dispatcher->CreateBridge(handle, delegate);
@@ -44,6 +45,12 @@ WebKitPlatformSupportImpl::CreateWebSocketStreamBridge(
 
 blink::WebSocketHandle* WebKitPlatformSupportImpl::createWebSocketHandle() {
   return new WebSocketBridge;
+}
+
+blink::WebCrypto* WebKitPlatformSupportImpl::crypto() {
+  if (!web_crypto_)
+    web_crypto_.reset(new WebCryptoImpl());
+  return web_crypto_.get();
 }
 
 }  // namespace content

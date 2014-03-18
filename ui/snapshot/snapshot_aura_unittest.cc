@@ -7,13 +7,14 @@
 #include "base/bind.h"
 #include "base/test/test_simple_task_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/aura_test_helper.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/compositor/test/draw_waiter_for_test.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/gfx_paths.h"
@@ -83,11 +84,15 @@ class SnapshotAuraTest : public testing::Test {
 
   virtual void SetUp() OVERRIDE {
     testing::Test::SetUp();
+
+    // The ContextFactory must exist before any Compositors are created.
+    // Snapshot test tests real drawing and readback, so needs pixel output.
+    bool enable_pixel_output = true;
+    ui::InitializeContextFactoryForTests(enable_pixel_output);
+
     helper_.reset(
         new aura::test::AuraTestHelper(base::MessageLoopForUI::current()));
-    // Snapshot test tests real drawing and readback, so needs a real context.
-    bool allow_test_contexts = false;
-    helper_->SetUp(allow_test_contexts);
+    helper_->SetUp();
   }
 
   virtual void TearDown() OVERRIDE {
@@ -95,18 +100,18 @@ class SnapshotAuraTest : public testing::Test {
     delegate_.reset();
     helper_->RunAllPendingInMessageLoop();
     helper_->TearDown();
+    ui::TerminateContextFactoryForTests();
     testing::Test::TearDown();
   }
 
  protected:
   aura::Window* test_window() { return test_window_.get(); }
   aura::Window* root_window() { return helper_->root_window(); }
-  aura::WindowEventDispatcher* dispatcher() { return helper_->dispatcher(); }
   aura::TestScreen* test_screen() { return helper_->test_screen(); }
 
   void WaitForDraw() {
-    dispatcher()->host()->compositor()->ScheduleDraw();
-    ui::DrawWaiterForTest::Wait(dispatcher()->host()->compositor());
+    helper_->host()->compositor()->ScheduleDraw();
+    ui::DrawWaiterForTest::Wait(helper_->host()->compositor());
   }
 
   void SetupTestWindow(const gfx::Rect& window_bounds) {

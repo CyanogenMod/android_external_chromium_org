@@ -2548,6 +2548,10 @@ TEST(NetUtilTest, FormatUrl) {
      L"http://xn--qcka1pmc.jp/\x30B0\x30FC\x30B0\x30EB"
      L"?q=\x30B0\x30FC\x30B0\x30EB", 7},
 
+    {"Unescape normally with BiDi control character",
+     "http://example.com/%E2%80%AEabc?q=%E2%80%8Fxy", "en", default_format_type,
+     UnescapeRule::NORMAL, L"http://example.com/%E2%80%AEabc?q=%E2%80%8Fxy", 7},
+
     {"Unescape normally including unescape spaces",
      "http://www.google.com/search?q=Hello%20World", "en", default_format_type,
      UnescapeRule::SPACES, L"http://www.google.com/search?q=Hello World", 7},
@@ -3305,8 +3309,9 @@ TEST(NetUtilTest, GetNetworkList) {
   ASSERT_TRUE(GetNetworkList(&list, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES));
   for (NetworkInterfaceList::iterator it = list.begin();
        it != list.end(); ++it) {
-    // Verify that the name is not empty.
+    // Verify that the names are not empty.
     EXPECT_FALSE(it->name.empty());
+    EXPECT_FALSE(it->friendly_name.empty());
 
     // Verify that the address is correct.
     EXPECT_TRUE(it->address.size() == kIPv4AddressSize ||

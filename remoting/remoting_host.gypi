@@ -112,6 +112,12 @@
             'host/disconnect_window_win.cc',
             'host/dns_blackhole_checker.cc',
             'host/dns_blackhole_checker.h',
+            'host/gnubby_auth_handler_posix.cc',
+            'host/gnubby_auth_handler_posix.h',
+            'host/gnubby_auth_handler_win.cc',
+            'host/gnubby_auth_handler.h',
+            'host/gnubby_util.cc',
+            'host/gnubby_util.h',
             'host/heartbeat_sender.cc',
             'host/heartbeat_sender.h',
             'host/host_change_notification_listener.cc',
@@ -218,6 +224,8 @@
             'host/shaped_screen_capturer.h',
             'host/signaling_connector.cc',
             'host/signaling_connector.h',
+            'host/token_validator_base.cc',
+            'host/token_validator_base.h',
             'host/token_validator_factory_impl.cc',
             'host/token_validator_factory_impl.h',
             'host/usage_stats_consent.h',
@@ -227,6 +235,7 @@
             'host/username.h',
             'host/video_scheduler.cc',
             'host/video_scheduler.h',
+            'host/win/com_imported_mstscax.tlh',
             'host/win/com_security.cc',
             'host/win/com_security.h',
             'host/win/launch_process_with_token.cc',
@@ -237,7 +246,6 @@
             'host/win/rdp_client.h',
             'host/win/rdp_client_window.cc',
             'host/win/rdp_client_window.h',
-            'host/win/com_imported_mstscax.tlh',
             'host/win/security_descriptor.cc',
             'host/win/security_descriptor.h',
             'host/win/session_desktop_environment.cc',
@@ -314,7 +322,6 @@
                 # Rule to run the message compiler.
                 'rule_name': 'message_compiler',
                 'extension': 'mc',
-                'inputs': [ '<(RULE_INPUT_PATH)' ],
                 'outputs': [
                   '<(output_dir)/<(RULE_INPUT_ROOT).h',
                   '<(output_dir)/<(RULE_INPUT_ROOT).rc',
@@ -407,8 +414,6 @@
             'host/setup/daemon_controller_delegate_win.h',
             'host/setup/daemon_installer_win.cc',
             'host/setup/daemon_installer_win.h',
-            'host/setup/me2me_native_messaging_host.cc',
-            'host/setup/me2me_native_messaging_host.h',
             'host/setup/oauth_client.cc',
             'host/setup/oauth_client.h',
             'host/setup/oauth_helper.cc',
@@ -557,75 +562,6 @@
             'host/it2me/it2me_native_messaging_host.h',
           ],
         },  # end of target 'remoting_it2me_host_static'
-        {
-          'target_name': 'remoting_me2me_native_messaging_host',
-          'type': 'executable',
-          'product_name': 'remoting_native_messaging_host',
-          'variables': { 'enable_wexit_time_destructors': 1, },
-          'dependencies': [
-            '../base/base.gyp:base',
-            'remoting_host',
-            'remoting_host_setup_base',
-            'remoting_native_messaging_base',
-          ],
-          'sources': [
-            'host/setup/me2me_native_messaging_host_main.cc',
-          ],
-          'conditions': [
-            ['OS=="linux" and linux_use_tcmalloc==1', {
-              'dependencies': [
-                '../base/allocator/allocator.gyp:allocator',
-              ],
-            }],
-          ],
-        },  # end of target 'remoting_me2me_native_messaging_host'
-        {
-          'target_name': 'remoting_it2me_native_messaging_host',
-          'type': 'executable',
-          'variables': { 'enable_wexit_time_destructors': 1, },
-          'dependencies': [
-            '../base/base.gyp:base',
-            'remoting_base',
-            'remoting_breakpad',
-            'remoting_host',
-            'remoting_it2me_host_static',
-            'remoting_native_messaging_base',
-            'remoting_protocol',
-          ],
-          'sources': [
-            'host/it2me/it2me_native_messaging_host_main.cc',
-          ],
-          'conditions': [
-            ['OS=="linux"', {
-              'dependencies': [
-                # Always use GTK on Linux, even for Aura builds.
-                '../build/linux/system.gyp:gtk',
-              ],
-            }],
-            ['OS=="linux" and linux_use_tcmalloc==1', {
-              'dependencies': [
-                '../base/allocator/allocator.gyp:allocator',
-              ],
-            }],
-            ['OS=="win"', {
-              'product_name': 'remote_assistance_host',
-              'msvs_settings': {
-                'VCManifestTool': {
-                  'EmbedManifest': 'true',
-                  'AdditionalManifestFiles': [
-                    'host/win/common-controls.manifest',
-                    'host/win/dpi_aware.manifest',
-                  ],
-                },
-                'VCLinkerTool': {
-                  'AdditionalDependencies': [
-                    'comctl32.lib',
-                  ],
-                },
-              },
-            }],
-          ],
-        },  # end of target 'remoting_it2me_native_messaging_host'
 
         # Generates native messaging manifest files.
         {
@@ -665,7 +601,6 @@
             'inputs': [
               '<(remoting_localize_path)',
               '<(branding_path)',
-              '<(RULE_INPUT_PATH)',
             ],
             'outputs': [
               '<(PRODUCT_DIR)/remoting/<(RULE_INPUT_ROOT)',
@@ -699,7 +634,6 @@
             'extension': 'jinja2',
             'inputs': [
               '<(remoting_localize_path)',
-              '<(RULE_INPUT_PATH)',
             ],
             'outputs': [
               '<!@pymod_do_main(remoting_localize --locale_output '
@@ -806,13 +740,74 @@
                 }],  # mac_breakpad==1
               ],  # conditions
             }],  # OS=mac
-            ['OS=="linux" and linux_use_tcmalloc==1', {
+            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+            ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
             }],  # OS=linux
           ],  # end of 'conditions'
         },  # end of target 'remoting_me2me_host'
+        {
+          'target_name': 'remoting_me2me_native_messaging_host',
+          'type': 'executable',
+          'product_name': 'remoting_native_messaging_host',
+          'variables': { 'enable_wexit_time_destructors': 1, },
+          'dependencies': [
+            '../base/base.gyp:base',
+            'remoting_host',
+            'remoting_host_setup_base',
+            'remoting_native_messaging_base',
+          ],
+          'sources': [
+            'host/setup/me2me_native_messaging_host.cc',
+            'host/setup/me2me_native_messaging_host.h',
+            'host/setup/me2me_native_messaging_host_entry_point.cc',
+            'host/setup/me2me_native_messaging_host_main.cc',
+            'host/setup/me2me_native_messaging_host_main.h',
+          ],
+          'conditions': [
+            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+            ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+              'dependencies': [
+                '../base/allocator/allocator.gyp:allocator',
+              ],
+            }],
+          ],
+        },  # end of target 'remoting_me2me_native_messaging_host'
+        {
+          'target_name': 'remoting_it2me_native_messaging_host',
+          'type': 'executable',
+          'variables': { 'enable_wexit_time_destructors': 1, },
+          'dependencies': [
+            '../base/base.gyp:base',
+            'remoting_base',
+            'remoting_breakpad',
+            'remoting_host',
+            'remoting_it2me_host_static',
+            'remoting_native_messaging_base',
+            'remoting_protocol',
+          ],
+          'sources': [
+            'host/it2me/it2me_native_messaging_host_entry_point.cc',
+            'host/it2me/it2me_native_messaging_host_main.cc',
+            'host/it2me/it2me_native_messaging_host_main.h',
+          ],
+          'conditions': [
+            ['OS=="linux"', {
+              'dependencies': [
+                # Always use GTK on Linux, even for Aura builds.
+                '../build/linux/system.gyp:gtk',
+              ],
+            }],
+            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+            ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+              'dependencies': [
+                '../base/allocator/allocator.gyp:allocator',
+              ],
+            }],
+          ],
+        },  # end of target 'remoting_it2me_native_messaging_host'
       ],  # end of 'targets'
     }],  # OS!="win"
 

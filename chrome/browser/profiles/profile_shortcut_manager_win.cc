@@ -135,20 +135,17 @@ SkBitmap BadgeIcon(const SkBitmap& app_icon_bitmap,
 
   // Overlay the avatar on the icon, anchoring it to the bottom-right of the
   // icon.
-  scoped_ptr<SkCanvas> offscreen_canvas(
-      skia::CreateBitmapCanvas(app_icon_bitmap.width(),
-                               app_icon_bitmap.height(),
-                               false));
-  DCHECK(offscreen_canvas);
-  offscreen_canvas->drawBitmap(app_icon_bitmap, 0, 0);
-  offscreen_canvas->drawBitmap(sk_icon,
-                               app_icon_bitmap.width() - sk_icon.width(),
-                               app_icon_bitmap.height() - sk_icon.height());
-  const SkBitmap& badged_bitmap =
-      offscreen_canvas->getDevice()->accessBitmap(false);
-  SkBitmap badged_bitmap_copy;
-  badged_bitmap.deepCopyTo(&badged_bitmap_copy, badged_bitmap.getConfig());
-  return badged_bitmap_copy;
+  SkBitmap badged_bitmap;
+  badged_bitmap.allocN32Pixels(app_icon_bitmap.width(),
+                               app_icon_bitmap.height());
+  SkCanvas offscreen_canvas(badged_bitmap);
+  offscreen_canvas.clear(SK_ColorTRANSPARENT);
+
+  offscreen_canvas.drawBitmap(app_icon_bitmap, 0, 0);
+  offscreen_canvas.drawBitmap(sk_icon,
+                              app_icon_bitmap.width() - sk_icon.width(),
+                              app_icon_bitmap.height() - sk_icon.height());
+  return badged_bitmap;
 }
 
 // Updates the preferences with the current icon version on icon creation
@@ -596,10 +593,10 @@ base::string16 SanitizeShortcutProfileNameString(
     pos = sanitized.find_first_of(kReservedCharacters, pos + 1);
   }
 
-  TrimWhitespace(sanitized, TRIM_LEADING, &sanitized);
+  base::TrimWhitespace(sanitized, base::TRIM_LEADING, &sanitized);
   if (sanitized.size() > kMaxProfileShortcutFileNameLength)
     sanitized.erase(kMaxProfileShortcutFileNameLength);
-  TrimWhitespace(sanitized, TRIM_TRAILING, &sanitized);
+  base::TrimWhitespace(sanitized, base::TRIM_TRAILING, &sanitized);
 
   return sanitized;
 }
@@ -613,7 +610,7 @@ SkBitmap GetImageResourceSkBitmapCopy(int resource_id) {
 
   const SkBitmap* image_bitmap = image.ToSkBitmap();
   SkBitmap bitmap_copy;
-  image_bitmap->deepCopyTo(&bitmap_copy, image_bitmap->getConfig());
+  image_bitmap->deepCopyTo(&bitmap_copy);
   return bitmap_copy;
 }
 

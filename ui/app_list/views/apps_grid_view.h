@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
 #include "ui/app_list/app_list_export.h"
 #include "ui/app_list/app_list_model.h"
@@ -104,9 +105,9 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
                     Pointer pointer,
                     const ui::LocatedEvent& event);
 
-  // Called from AppListItemView when it receives a drag event.
-  void UpdateDragFromItem(Pointer pointer,
-                          const ui::LocatedEvent& event);
+  // Called from AppListItemView when it receives a drag event. Returns true
+  // if the drag is still happening.
+  bool UpdateDragFromItem(Pointer pointer, const ui::LocatedEvent& event);
 
   // Called when the user is dragging an app. |point| is in grid view
   // coordinates.
@@ -331,6 +332,10 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // parent folder with UI animation.
   void CancelFolderItemReparent(AppListItemView* drag_item_view);
 
+  // Removes the folder matching |folder_id| if there is only one item left
+  // in it.
+  void RemoveFolderIfOnlyOneItemLeft(const std::string& folder_id);
+
   // Cancels any context menus showing for app items on the current page.
   void CancelContextMenusOnCurrentPage();
 
@@ -395,6 +400,10 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // Gets the bounds of the tile located at |row| and |col| on current page.
   gfx::Rect GetTileBounds(int row, int col) const;
 
+  // Returns true if the slot of |index| is the first empty slot next to the
+  // last item on the last page.
+  bool IsFirstEmptySlot(const Index& index) const;
+
   // Gets the item view located at |slot| on the current page. If there is
   // no item located at |slot|, returns NULL.
   views::View* GetViewAtSlotOnCurrentPage(int slot);
@@ -451,6 +460,9 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   views::View* selected_view_;
 
   AppListItemView* drag_view_;
+
+  // The index of the drag_view_ when the drag starts.
+  Index drag_view_init_index_;
 
   // The point where the drag started in AppListItemView coordinates.
   gfx::Point drag_view_offset_;
@@ -518,6 +530,8 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
 
   // True if the drag_view_ item is a folder item being dragged for reparenting.
   bool dragging_for_reparent_item_;
+
+  base::WeakPtrFactory<AppsGridView> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AppsGridView);
 };

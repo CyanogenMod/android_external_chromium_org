@@ -11,6 +11,7 @@ import os.path
 import sys
 import re
 from optparse import OptionParser
+from subprocess import call
 
 _SIZE_OF_UINT32 = 4
 _SIZE_OF_COMMAND_HEADER = 4
@@ -24,6 +25,8 @@ _LICENSE = """// Copyright (c) 2014 The Chromium Authors. All rights reserved.
 
 _DO_NOT_EDIT_WARNING = """// This file is auto-generated from
 // gpu/command_buffer/build_gles2_cmd_buffer.py
+// It's formatted by clang-format using chromium coding style:
+//    clang-format -i -style=chromium filename
 // DO NOT EDIT!
 
 """
@@ -1179,6 +1182,7 @@ _PEPPER_INTERFACES = [
   {'name': 'ChromiumEnableFeature', 'dev': False},
   {'name': 'ChromiumMapSub', 'dev': False},
   {'name': 'Query', 'dev': False},
+  {'name': 'DrawBuffers', 'dev': True},
 ]
 
 # This table specifies types and other special data for the commands that
@@ -1778,12 +1782,20 @@ _FUNCTION_INFO = {
     'client_test': False,
     },
   'GetString': {
-      'type': 'Custom',
-      'client_test': False,
-      'cmd_args': 'GLenumStringType name, uint32 bucket_id',
+    'type': 'Custom',
+    'client_test': False,
+    'cmd_args': 'GLenumStringType name, uint32 bucket_id',
   },
-  'GetTexParameterfv': {'type': 'GETn', 'result': ['SizedResult<GLfloat>']},
-  'GetTexParameteriv': {'type': 'GETn', 'result': ['SizedResult<GLint>']},
+  'GetTexParameterfv': {
+    'type': 'GETn',
+    'decoder_func': 'DoGetTexParameterfv',
+    'result': ['SizedResult<GLfloat>']
+  },
+  'GetTexParameteriv': {
+    'type': 'GETn',
+    'decoder_func': 'DoGetTexParameteriv',
+    'result': ['SizedResult<GLint>']
+  },
   'GetTranslatedShaderSourceANGLE': {
     'type': 'STRn',
     'get_len_func': 'DoGetShaderiv',
@@ -2018,7 +2030,6 @@ _FUNCTION_INFO = {
   },
   'TexParameterf': {
     'decoder_func': 'DoTexParameterf',
-    'gl_test_func': 'glTexParameteri',
     'valid_args': {
       '2': 'GL_NEAREST'
     },
@@ -2035,7 +2046,7 @@ _FUNCTION_INFO = {
     'data_value': 'GL_NEAREST',
     'count': 1,
     'decoder_func': 'DoTexParameterfv',
-    'gl_test_func': 'glTexParameteri',
+    'gl_test_func': 'glTexParameterf',
     'first_element_only': True,
   },
   'TexParameteriv': {
@@ -2278,6 +2289,7 @@ _FUNCTION_INFO = {
     'client_test': False,
     'unit_test': False,
     'extension': True,
+    'pepper_interface': 'DrawBuffers',
   },
   'DrawElementsInstancedANGLE': {
     'type': 'Manual',
@@ -2571,72 +2583,9 @@ class CWriter(object):
     lines = string.splitlines()
     num_lines = len(lines)
     for ii in range(0, num_lines):
-      self.__WriteLine(lines[ii], ii < (num_lines - 1) or string[-1] == '\n')
-
-  def __FindSplit(self, string):
-    """Finds a place to split a string."""
-    splitter = string.find('=')
-    if splitter >= 1 and not string[splitter + 1] == '=' and splitter < 80:
-      return splitter
-    # parts = string.split('(')
-    parts = re.split("(?<=[^\"])\((?!\")", string)
-    fptr = re.compile('\*\w*\)')
-    if len(parts) > 1:
-      splitter = len(parts[0])
-      for ii in range(1, len(parts)):
-        # Don't split on the dot in "if (.condition)".
-        if (not parts[ii - 1][-3:] == "if " and
-            # Don't split "(.)" or "(.*fptr)".
-            (len(parts[ii]) > 0 and
-                not parts[ii][0] == ")" and not fptr.match(parts[ii]))
-            and splitter < 80):
-          return splitter
-        splitter += len(parts[ii]) + 1
-    done = False
-    end = len(string)
-    last_splitter = -1
-    while not done:
-      splitter = string[0:end].rfind(',')
-      if splitter < 0 or (splitter > 0 and string[splitter - 1] == '"'):
-        return last_splitter
-      elif splitter >= 80:
-        end = splitter
-      else:
-        return splitter
-
-  def __WriteLine(self, line, ends_with_eol):
-    """Given a signle line, writes it to a file, splitting if it's > 80 chars"""
-    if len(line) >= 80:
-      i = self.__FindSplit(line)
-      if i > 0:
-        line1 = line[0:i + 1]
-        if line1[-1] == ' ':
-          line1 = line1[:-1]
-        lineend = ''
-        if line1[0] == '#':
-          lineend = ' \\'
-        nolint = ''
-        if len(line1) > 80:
-          nolint = '  // NOLINT'
-        self.__AddLine(line1 + nolint + lineend + '\n')
-        match = re.match("( +)", line1)
-        indent = ""
-        if match:
-          indent = match.group(1)
-        splitter = line[i]
-        if not splitter == ',':
-          indent = "    " + indent
-        self.__WriteLine(indent + line[i + 1:].lstrip(), True)
-        return
-    nolint = ''
-    if len(line) > 80:
-      nolint = '  // NOLINT'
-    self.__AddLine(line + nolint)
-    if ends_with_eol:
-      self.__AddLine('\n')
-
-  def __AddLine(self, line):
-    self.content.append(line)
+      self.content.append(lines[ii])
+      if ii < (num_lines - 1) or string[-1] == '\n':
+        self.content.append('\n')
 
   def Close(self):
     """Close the file."""
@@ -3955,7 +3904,8 @@ class GENnHandler(TypeHandler):
       MakeIds(this, 0, %(args)s);
   %(name)sHelper(%(args)s);
   helper_->%(name)sImmediate(%(args)s);
-  helper_->CommandBufferHelper::Flush();
+  if (share_group_->bind_generates_resource())
+    helper_->CommandBufferHelper::Flush();
 %(log_code)s
   CheckGLError();
 }
@@ -6969,7 +6919,7 @@ class GLGenerator(object):
 
   def ParseGLH(self, filename):
     """Parses the cmd_buffer_functions.txt file and extracts the functions"""
-    f = open("gpu/command_buffer/cmd_buffer_functions.txt", "r")
+    f = open(filename, "r")
     functions = f.read()
     f.close()
     for line in functions.splitlines():
@@ -7818,12 +7768,13 @@ const size_t GLES2Util::enum_to_string_table_len_ =
 
     file.Close()
 
+def Format(generated_files):
+  for filename in generated_files:
+    call(["clang-format", "-i", "-style=chromium", filename])
+
 def main(argv):
   """This is the main function."""
   parser = OptionParser()
-  parser.add_option(
-      "-g", "--generate-implementation-templates", action="store_true",
-      help="generates files that are generally hand edited..")
   parser.add_option(
       "--output-dir",
       help="base directory for resulting files, under chrome/src. default is "
@@ -7851,7 +7802,7 @@ def main(argv):
   os.chdir(os.path.dirname(__file__) + "/../..")
 
   gen = GLGenerator(options.verbose)
-  gen.ParseGLH("common/GLES2/gl2.h")
+  gen.ParseGLH("gpu/command_buffer/cmd_buffer_functions.txt")
 
   # Support generating files under gen/
   if options.output_dir != None:
@@ -7895,6 +7846,42 @@ def main(argv):
   gen.WriteGLES2Header("../GLES2/gl2chromium_autogen.h")
   gen.WriteMojoGLCallVisitor(
       "../../mojo/public/gles2/gles2_call_visitor_autogen.h")
+
+  Format([
+      "common/gles2_cmd_format_autogen.h",
+      "common/gles2_cmd_format_test_autogen.h",
+      "common/gles2_cmd_ids_autogen.h",
+      "common/gles2_cmd_utils_autogen.h",
+      "common/gles2_cmd_utils_implementation_autogen.h",
+      "client/client_context_state_autogen.h",
+      "client/client_context_state_impl_autogen.h",
+      "client/gles2_cmd_helper_autogen.h",
+      "client/gles2_c_lib_autogen.h",
+      "client/gles2_implementation_autogen.h",
+      "client/gles2_implementation_impl_autogen.h",
+      "client/gles2_implementation_unittest_autogen.h",
+      "client/gles2_interface_autogen.h",
+      "client/gles2_interface_stub_autogen.h",
+      "client/gles2_interface_stub_impl_autogen.h",
+      "client/gles2_trace_implementation_autogen.h",
+      "client/gles2_trace_implementation_impl_autogen.h",
+      "service/context_state_autogen.h",
+      "service/context_state_impl_autogen.h",
+      "service/gles2_cmd_decoder_autogen.h",
+      "service/gles2_cmd_decoder_unittest_0_autogen.h",
+      "service/gles2_cmd_decoder_unittest_1_autogen.h",
+      "service/gles2_cmd_decoder_unittest_2_autogen.h",
+      "service/gles2_cmd_decoder_unittest_3_autogen.h",
+      "service/gles2_cmd_validation_autogen.h",
+      "service/gles2_cmd_validation_implementation_autogen.h"])
+  os.chdir("../..")
+  Format([
+      "gpu/GLES2/gl2chromium_autogen.h",
+      "mojo/public/gles2/gles2_call_visitor_autogen.h",
+      "ppapi/c/dev/ppb_opengles2ext_dev.h",
+      "ppapi/c/ppb_opengles2.h",
+      "ppapi/lib/gl/gles2/gles2.c",
+      "ppapi/shared_impl/ppb_opengles2_shared.cc"])
 
   if gen.errors > 0:
     print "%d errors" % gen.errors

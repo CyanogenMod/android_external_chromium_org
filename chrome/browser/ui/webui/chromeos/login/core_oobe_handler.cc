@@ -8,7 +8,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
@@ -21,7 +20,6 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chromeos/chromeos_constants.h"
-#include "content/public/browser/notification_service.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 
@@ -51,26 +49,11 @@ CoreOobeHandler::CoreOobeHandler(OobeUI* oobe_ui)
       show_oobe_ui_(false),
       version_info_updater_(this),
       delegate_(NULL) {
-  registrar_.Add(
-      this,
-      chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE,
-      content::NotificationService::AllSources());
-  registrar_.Add(
-      this,
-      chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER,
-      content::NotificationService::AllSources());
-  registrar_.Add(
-      this,
-      chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK,
-      content::NotificationService::AllSources());
-  registrar_.Add(
-      this,
-      chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_LARGE_CURSOR,
-      content::NotificationService::AllSources());
-  registrar_.Add(
-      this,
-      chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD,
-      content::NotificationService::AllSources());
+  AccessibilityManager* accessibility_manager = AccessibilityManager::Get();
+  CHECK(accessibility_manager);
+  accessibility_subscription_ = accessibility_manager->RegisterCallback(
+      base::Bind(&CoreOobeHandler::OnAccessibilityStatusChanged,
+                 base::Unretained(this)));
 }
 
 CoreOobeHandler::~CoreOobeHandler() {
@@ -92,6 +75,7 @@ void CoreOobeHandler::DeclareLocalizedValues(LocalizedValuesBuilder* builder) {
   builder->Add("highContrastOption", IDS_OOBE_HIGH_CONTRAST_MODE_OPTION);
   builder->Add("screenMagnifierOption", IDS_OOBE_SCREEN_MAGNIFIER_OPTION);
   builder->Add("virtualKeyboardOption", IDS_OOBE_VIRTUAL_KEYBOARD_OPTION);
+  builder->Add("closeAccessibilityMenu", IDS_OOBE_CLOSE_ACCESSIBILITY_MENU);
 
   // Strings for the device requisition prompt.
   builder->Add("deviceRequisitionPromptCancel",
@@ -142,6 +126,8 @@ void CoreOobeHandler::RegisterMessages() {
               &CoreOobeHandler::HandleScreenAssetsLoaded);
   AddRawCallback("skipToLoginForTesting",
                  &CoreOobeHandler::HandleSkipToLoginForTesting);
+  AddCallback("launchHelpApp",
+              &CoreOobeHandler::HandleLaunchHelpApp);
 }
 
 void CoreOobeHandler::ShowSignInError(
@@ -247,9 +233,14 @@ void CoreOobeHandler::HandleSetDeviceRequisition(
     const std::string& requisition) {
   policy::BrowserPolicyConnectorChromeOS* connector =
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  std::string initial_requisition =
+      connector->GetDeviceCloudPolicyManager()->GetDeviceRequisition();
   connector->GetDeviceCloudPolicyManager()->SetDeviceRequisition(requisition);
   // Exit Chrome to force the restart as soon as a new requisition is set.
-  chrome::AttemptRestart();
+  if (initial_requisition !=
+          connector->GetDeviceCloudPolicyManager()->GetDeviceRequisition()) {
+    chrome::AttemptRestart();
+  }
 }
 
 void CoreOobeHandler::HandleScreenAssetsLoaded(
@@ -326,20 +317,19 @@ void CoreOobeHandler::UpdateDeviceRequisition() {
          connector->GetDeviceCloudPolicyManager()->GetDeviceRequisition());
 }
 
-void CoreOobeHandler::Observe(int type,
-                              const content::NotificationSource& source,
-                              const content::NotificationDetails& details) {
-  if (type ==
-          chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE ||
-      type == chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_LARGE_CURSOR ||
-      type == chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER ||
-      type == chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK ||
-      type == chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD)
-  {
+void CoreOobeHandler::OnAccessibilityStatusChanged(
+    const AccessibilityStatusEventDetails& details) {
+  if (details.notification_type == ACCESSIBILITY_MANAGER_SHUTDOWN)
+    accessibility_subscription_.reset();
+  else
     UpdateA11yState();
-  } else {
-    NOTREACHED() << "Unexpected notification " << type;
-  }
+}
+
+void CoreOobeHandler::HandleLaunchHelpApp(double help_topic_id) {
+  if (!help_app_)
+    help_app_ = new HelpAppLauncher(GetNativeWindow());
+  help_app_->ShowHelpTopic(
+      static_cast<HelpAppLauncher::HelpTopic>(help_topic_id));
 }
 
 }  // namespace chromeos

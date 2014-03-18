@@ -126,16 +126,12 @@ class AppWindowAPITest : public extensions::PlatformAppBrowserTest {
 // These tests are flaky after https://codereview.chromium.org/57433010/.
 // See http://crbug.com/319613.
 
-IN_PROC_BROWSER_TEST_F(AppWindowAPITest, DISABLED_TestCreate) {
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestCreate) {
   ASSERT_TRUE(RunAppWindowAPITest("testCreate")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestSingleton) {
   ASSERT_TRUE(RunAppWindowAPITest("testSingleton")) << message_;
-}
-
-IN_PROC_BROWSER_TEST_F(AppWindowAPITest, DISABLED_TestBounds) {
-  ASSERT_TRUE(RunAppWindowAPITest("testBounds")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestCloseEvent) {
@@ -154,8 +150,44 @@ IN_PROC_BROWSER_TEST_F(AppWindowAPITest, DISABLED_TestRestoreAfterClose) {
   ASSERT_TRUE(RunAppWindowAPITest("testRestoreAfterClose")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(AppWindowAPITest, DISABLED_TestSizeConstraints) {
-  ASSERT_TRUE(RunAppWindowAPITest("testSizeConstraints")) << message_;
+// These tests will be flaky in Linux as window bounds change asynchronously.
+#if defined(OS_LINUX)
+#define MAYBE_TestDeprecatedBounds DISABLED_TestDeprecatedBounds
+#define MAYBE_TestInitialBounds DISABLED_TestInitialBounds
+#define MAYBE_TestInitialConstraints DISABLED_TestInitialConstraints
+#define MAYBE_TestSetBounds DISABLED_TestSetBounds
+#define MAYBE_TestSetSizeConstraints DISABLED_TestSetSizeConstraints
+#else
+#define MAYBE_TestDeprecatedBounds TestDeprecatedBounds
+#define MAYBE_TestInitialBounds TestInitialBounds
+#define MAYBE_TestInitialConstraints TestInitialConstraints
+#define MAYBE_TestSetBounds TestSetBounds
+#define MAYBE_TestSetSizeConstraints TestSetSizeConstraints
+#endif
+
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, MAYBE_TestDeprecatedBounds) {
+  ASSERT_TRUE(RunAppWindowAPITest("testDeprecatedBounds")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, MAYBE_TestInitialBounds) {
+  ASSERT_TRUE(RunAppWindowAPITest("testInitialBounds")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, MAYBE_TestInitialConstraints) {
+  ASSERT_TRUE(RunAppWindowAPITest("testInitialConstraints")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, MAYBE_TestSetBounds) {
+  ASSERT_TRUE(RunAppWindowAPITest("testSetBounds")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, MAYBE_TestSetSizeConstraints) {
+  ASSERT_TRUE(RunAppWindowAPITest("testSetSizeConstraints")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestNewBoundsApiInStable) {
+  extensions::ScopedCurrentChannel channel(chrome::VersionInfo::CHANNEL_STABLE);
+  ASSERT_TRUE(RunAppWindowAPITest("testNewBoundsApiInStable")) << message_;
 }
 
 // Flaky failures on mac_rel and WinXP, see http://crbug.com/324915.
@@ -215,3 +247,15 @@ IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestBadging) {
   ASSERT_TRUE(
       RunAppWindowAPITestAndWaitForRoundTrip("testBadging")) << message_;
 }
+
+// TODO(benwells): Implement on Mac.
+#if defined(USE_AURA)
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestFrameColors) {
+  ASSERT_TRUE(RunAppWindowAPITest("testFrameColors")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestFrameColorsInStable) {
+  extensions::ScopedCurrentChannel channel(chrome::VersionInfo::CHANNEL_STABLE);
+  ASSERT_TRUE(RunAppWindowAPITest("testFrameColorsInStable")) << message_;
+}
+#endif

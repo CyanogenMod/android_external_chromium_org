@@ -16,6 +16,10 @@
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
 
+#if defined(USE_X11)
+#include <X11/Xlib.h>
+#endif
+
 namespace gfx {
 
 namespace {
@@ -92,6 +96,12 @@ bool GLSurface::InitializeOneOffImplementation(GLImplementation impl,
 
 // static
 void GLSurface::InitializeOneOffForTests() {
+  DCHECK_EQ(kGLImplementationNone, GetGLImplementation());
+
+#if defined(USE_X11)
+  XInitThreads();
+#endif
+
   bool use_osmesa = true;
 
   // We usually use OSMesa as this works on all bots. The command line can
@@ -117,9 +127,7 @@ void GLSurface::InitializeOneOffForTests() {
 
   bool fallback_to_osmesa = false;
   bool gpu_service_logging = false;
-  bool disable_gl_drawing = false;
-  // TODO(danakj): Unit tests do not produce pixel output by default.
-  // bool disable_gl_drawing = true;
+  bool disable_gl_drawing = true;
 
   CHECK(InitializeOneOffImplementation(
       impl, fallback_to_osmesa, gpu_service_logging, disable_gl_drawing));

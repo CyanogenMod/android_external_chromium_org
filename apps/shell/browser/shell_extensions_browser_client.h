@@ -12,6 +12,8 @@ class PrefService;
 
 namespace extensions {
 
+class ExtensionsAPIClient;
+
 // An ExtensionsBrowserClient that supports a single content::BrowserContent
 // with no related incognito context.
 class ShellExtensionsBrowserClient : public ExtensionsBrowserClient {
@@ -22,7 +24,7 @@ class ShellExtensionsBrowserClient : public ExtensionsBrowserClient {
 
   // ExtensionsBrowserClient overrides:
   virtual bool IsShuttingDown() OVERRIDE;
-  virtual bool AreExtensionsDisabled(const CommandLine& command_line,
+  virtual bool AreExtensionsDisabled(const base::CommandLine& command_line,
                                      content::BrowserContext* context) OVERRIDE;
   virtual bool IsValidContext(content::BrowserContext* context) OVERRIDE;
   virtual bool IsSameContext(content::BrowserContext* first,
@@ -33,7 +35,7 @@ class ShellExtensionsBrowserClient : public ExtensionsBrowserClient {
       content::BrowserContext* context) OVERRIDE;
   virtual content::BrowserContext* GetOriginalContext(
       content::BrowserContext* context) OVERRIDE;
-  virtual bool IsGuestSession(content::BrowserContext* context) OVERRIDE;
+  virtual bool IsGuestSession(content::BrowserContext* context) const OVERRIDE;
   virtual bool IsExtensionIncognitoEnabled(
       const std::string& extension_id,
       content::BrowserContext* context) const OVERRIDE;
@@ -51,6 +53,7 @@ class ShellExtensionsBrowserClient : public ExtensionsBrowserClient {
   virtual void OnRenderViewCreatedForBackgroundPage(ExtensionHost* host)
       OVERRIDE;
   virtual bool DidVersionUpdate(content::BrowserContext* context) OVERRIDE;
+  virtual void PermitExternalProtocolHandler() OVERRIDE;
   virtual scoped_ptr<AppSorting> CreateAppSorting() OVERRIDE;
   virtual bool IsRunningInForcedAppMode() OVERRIDE;
   virtual content::JavaScriptDialogManager* GetJavaScriptDialogManager()
@@ -58,10 +61,15 @@ class ShellExtensionsBrowserClient : public ExtensionsBrowserClient {
   virtual ApiActivityMonitor* GetApiActivityMonitor(
       content::BrowserContext* context) OVERRIDE;
   virtual ExtensionSystemProvider* GetExtensionSystemFactory() OVERRIDE;
+  virtual void RegisterExtensionFunctions(
+      ExtensionFunctionRegistry* registry) const OVERRIDE;
 
  private:
   // The single BrowserContext for app_shell. Not owned.
   content::BrowserContext* browser_context_;
+
+  // Support for extension APIs.
+  scoped_ptr<ExtensionsAPIClient> api_client_;
 
   // The PrefService for |browser_context_|.
   scoped_ptr<PrefService> prefs_;

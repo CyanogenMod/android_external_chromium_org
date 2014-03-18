@@ -13,7 +13,7 @@
 
 namespace gfx {
 class Rect;
-class Point;
+class Size;
 }
 
 namespace views {
@@ -49,17 +49,16 @@ class ASH_EXPORT TrayUser : public SystemTrayItem,
   };
   TestState GetStateForTest() const;
 
-  // Checks if a drag and drop operation would be able to land a window on this
-  // |point_in_screen|.
-  bool CanDropWindowHereToTransferToUser(const gfx::Point& point_in_screen);
-
-  // Try to re-parent the |window| to a new owner. Returns true if the window
-  // got transfered.
-  bool TransferWindowToUser(aura::Window* window);
+  // Returns the size of layout_view_.
+  gfx::Size GetLayoutSizeForTest() const;
 
   // Returns the bounds of the user panel in screen coordinates.
   // Note: This only works when the panel shown.
   gfx::Rect GetUserPanelBoundsInScreenForTest() const;
+
+  // Update the TrayUser as if the current LoginStatus is |status|.
+  void UpdateAfterLoginStatusChangeForTest(user::LoginStatus status);
+
 
  private:
   // Overridden from SystemTrayItem.
@@ -81,9 +80,6 @@ class ASH_EXPORT TrayUser : public SystemTrayItem,
 
   // Get the user index which should be used for the tray icon of this item.
   MultiProfileIndex GetTrayIndex();
-
-  // Return the radius for the tray item to use.
-  int GetTrayItemRadius();
 
   // Updates the layout of this item.
   void UpdateLayoutOfItem();

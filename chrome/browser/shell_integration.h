@@ -14,7 +14,9 @@
 #include "ui/gfx/image/image_family.h"
 #include "url/gurl.h"
 
+namespace base {
 class CommandLine;
+}
 
 class ShellIntegration {
  public:
@@ -59,9 +61,11 @@ class ShellIntegration {
   // client application for specific protocols.
   static DefaultWebClientSetPermission CanSetAsDefaultProtocolClient();
 
-  // Returns the path of the application to be launched given the protocol
-  // of the requested url. Returns an empty string on failure.
-  static base::string16 GetApplicationForProtocol(const GURL& url);
+  // Returns a string representing the application to be launched given the
+  // protocol of the requested url. This string may be a name or a path, but
+  // neither is guaranteed and it should only be used as a display string.
+  // Returns an empty string on failure.
+  static base::string16 GetApplicationNameForProtocol(const GURL& url);
 
   // On Linux, it may not be possible to determine or set the default browser
   // on some desktop environments or configurations. So, we use this enum and
@@ -158,10 +162,17 @@ class ShellIntegration {
   // login profile, for ChromeOS).
   // If |extension_app_id| is non-empty, the arguments use kAppId=<id>.
   // Otherwise, kApp=<url> is used.
-  static CommandLine CommandLineArgsForLauncher(
+  static base::CommandLine CommandLineArgsForLauncher(
       const GURL& url,
       const std::string& extension_app_id,
       const base::FilePath& profile_path);
+
+  // Append command line arguments for launching a new chrome.exe process
+  // based on the current process.
+  // The new command line reuses the current process's user data directory and
+  // profile.
+  static void AppendProfileArgs(const base::FilePath& profile_path,
+                                base::CommandLine* command_line);
 
 #if defined(OS_WIN)
   // Generates an application user model ID (AppUserModelId) for a given app

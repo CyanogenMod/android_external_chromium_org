@@ -13,11 +13,11 @@
 #include "ui/gfx/native_widget_types.h"
 
 class AppListControllerDelegate;
-class CommandLine;
 class PrefRegistrySimple;
 class Profile;
 
 namespace base {
+class CommandLine;
 class FilePath;
 }
 
@@ -28,7 +28,8 @@ class ImageSkia;
 class AppListService {
  public:
   // Source that triggers the app launcher being enabled. This is used for UMA
-  // to track discoverability of the app lancher shortcut after install.
+  // to track discoverability of the app lancher shortcut after install. Also
+  // used to provide custom install behavior (e.g. "always" enable).
   enum AppListEnableSource {
     ENABLE_NOT_RECORDED,        // Indicates app launcher not recently enabled.
     ENABLE_FOR_APP_INSTALL,     // Triggered by a webstore packaged app install.
@@ -50,7 +51,7 @@ class AppListService {
 
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
-  static void RecordShowTimings(const CommandLine& command_line);
+  static void RecordShowTimings(const base::CommandLine& command_line);
 
   // Indicates that |callback| should be called next time the app list is
   // painted.

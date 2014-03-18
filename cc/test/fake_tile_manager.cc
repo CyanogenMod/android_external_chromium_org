@@ -15,13 +15,18 @@ namespace {
 
 class FakeRasterWorkerPool : public RasterWorkerPool {
  public:
-  FakeRasterWorkerPool() : RasterWorkerPool(NULL, NULL) {}
+  FakeRasterWorkerPool() : RasterWorkerPool(NULL, NULL, NULL) {}
 
   // Overridden from RasterWorkerPool:
-  virtual void ScheduleTasks(RasterTask::Queue* queue) OVERRIDE {
-    for (RasterTaskQueueIterator it(queue); it; ++it) {
-      internal::RasterWorkerPoolTask* task = *it;
+  virtual void ScheduleTasks(RasterTaskQueue* queue) OVERRIDE {
+    for (RasterTaskQueue::Item::Vector::const_iterator it =
+             queue->items.begin();
+         it != queue->items.end();
+         ++it) {
+      internal::RasterWorkerPoolTask* task = it->task;
 
+      task->WillSchedule();
+      task->ScheduleOnOriginThread(this);
       task->DidSchedule();
 
       completed_tasks_.push_back(task);
@@ -32,7 +37,9 @@ class FakeRasterWorkerPool : public RasterWorkerPool {
       internal::WorkerPoolTask* task = completed_tasks_.front().get();
 
       task->WillComplete();
+      task->CompleteOnOriginThread(this);
       task->DidComplete();
+
       task->RunReplyOnOriginThread();
 
       completed_tasks_.pop_front();
@@ -46,15 +53,12 @@ class FakeRasterWorkerPool : public RasterWorkerPool {
   }
 
   // Overridden from internal::WorkerPoolTaskClient:
-  virtual SkCanvas* AcquireCanvasForRaster(internal::RasterWorkerPoolTask* task)
-      OVERRIDE {
+  virtual SkCanvas* AcquireCanvasForRaster(internal::WorkerPoolTask* task,
+                                           const Resource* resource) OVERRIDE {
     return NULL;
   }
-  virtual void OnRasterCompleted(internal::RasterWorkerPoolTask* task,
-                                 const PicturePileImpl::Analysis& analysis)
-      OVERRIDE {}
-  virtual void OnImageDecodeCompleted(internal::WorkerPoolTask* task) OVERRIDE {
-  }
+  virtual void ReleaseCanvasForRaster(internal::WorkerPoolTask* task,
+                                      const Resource* resource) OVERRIDE {}
 
  private:
   // Overridden from RasterWorkerPool:
@@ -68,6 +72,7 @@ class FakeRasterWorkerPool : public RasterWorkerPool {
 
 FakeTileManager::FakeTileManager(TileManagerClient* client)
     : TileManager(client,
+                  base::MessageLoopProxy::current().get(),
                   NULL,
                   NULL,
                   make_scoped_ptr<RasterWorkerPool>(new FakeRasterWorkerPool),
@@ -79,6 +84,7 @@ FakeTileManager::FakeTileManager(TileManagerClient* client)
 FakeTileManager::FakeTileManager(TileManagerClient* client,
                                  ResourceProvider* resource_provider)
     : TileManager(client,
+                  base::MessageLoopProxy::current().get(),
                   resource_provider,
                   NULL,
                   make_scoped_ptr<RasterWorkerPool>(new FakeRasterWorkerPool),
@@ -91,6 +97,7 @@ FakeTileManager::FakeTileManager(TileManagerClient* client,
                                  ResourceProvider* resource_provider,
                                  bool allow_on_demand_raster)
     : TileManager(client,
+                  base::MessageLoopProxy::current().get(),
                   resource_provider,
                   NULL,
                   make_scoped_ptr<RasterWorkerPool>(new FakeRasterWorkerPool),
@@ -103,6 +110,7 @@ FakeTileManager::FakeTileManager(TileManagerClient* client,
                                  ResourceProvider* resource_provider,
                                  size_t raster_task_limit_bytes)
     : TileManager(client,
+                  base::MessageLoopProxy::current().get(),
                   resource_provider,
                   NULL,
                   make_scoped_ptr<RasterWorkerPool>(new FakeRasterWorkerPool),

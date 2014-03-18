@@ -17,18 +17,9 @@
 
 namespace {
 
-using media::cast::kMaxIpPacketSize;
-using media::cast::kRtcpCastLogHeaderSize;
-using media::cast::kRtcpReceiverEventLogSize;
-
 // Max time we wait until an audio frame is due to be played out is released.
 static const int64 kMaxAudioFrameWaitMs = 20;
 static const int64 kMinSchedulingDelayMs = 1;
-
-// This is an upper bound on number of events that can fit into a single RTCP
-// packet.
-static const int64 kMaxEventSubscriberEntries =
-    (kMaxIpPacketSize - kRtcpCastLogHeaderSize) / kRtcpReceiverEventLogSize;
 
 }  // namespace
 
@@ -94,9 +85,8 @@ AudioReceiver::AudioReceiver(scoped_refptr<CastEnvironment> cast_environment,
                              const AudioReceiverConfig& audio_config,
                              transport::PacedPacketSender* const packet_sender)
     : cast_environment_(cast_environment),
-      event_subscriber_(
-          kMaxEventSubscriberEntries,
-          ReceiverRtcpEventSubscriber::kAudioEventSubscriber),
+      event_subscriber_(kReceiverRtcpEventHistorySize,
+                        ReceiverRtcpEventSubscriber::kAudioEventSubscriber),
       codec_(audio_config.codec),
       frequency_(audio_config.frequency),
       audio_buffer_(),
@@ -129,7 +119,10 @@ AudioReceiver::AudioReceiver(scoped_refptr<CastEnvironment> cast_environment,
                        audio_config.rtcp_mode, rtcp_interval_delta,
                        audio_config.feedback_ssrc, audio_config.incoming_ssrc,
                        audio_config.rtcp_c_name));
+  // Set the target delay that will be conveyed to the sender.
+  rtcp_->SetTargetDelay(target_delay_delta_);
   cast_environment_->Logging()->AddRawEventSubscriber(&event_subscriber_);
+  memset(frame_id_to_rtp_timestamp_, 0, sizeof(frame_id_to_rtp_timestamp_));
 }
 
 AudioReceiver::~AudioReceiver() {
@@ -148,6 +141,8 @@ void AudioReceiver::IncomingParsedRtpPacket(const uint8* payload_data,
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   base::TimeTicks now = cast_environment_->Clock()->NowTicks();
 
+  frame_id_to_rtp_timestamp_[rtp_header.frame_id & 0xff] =
+      rtp_header.webrtc.header.timestamp;
   cast_environment_->Logging()->InsertPacketEvent(
       now, kAudioPacketReceived, rtp_header.webrtc.header.timestamp,
       rtp_header.frame_id, rtp_header.packet_id, rtp_header.max_packet_id,
@@ -374,10 +369,17 @@ void AudioReceiver::IncomingPacket(scoped_ptr<Packet> packet) {
   }
 }
 
+void AudioReceiver::SetTargetDelay(base::TimeDelta target_delay) {
+  target_delay_delta_ = target_delay;
+  rtcp_->SetTargetDelay(target_delay_delta_);
+}
+
 void AudioReceiver::CastFeedback(const RtcpCastMessage& cast_message) {
   base::TimeTicks now = cast_environment_->Clock()->NowTicks();
-  cast_environment_->Logging()->InsertGenericEvent(now, kAudioAckSent,
-                                                   cast_message.ack_frame_id_);
+  RtpTimestamp rtp_timestamp =
+      frame_id_to_rtp_timestamp_[cast_message.ack_frame_id_ & 0xff];
+  cast_environment_->Logging()->InsertFrameEvent(
+      now, kAudioAckSent, rtp_timestamp, cast_message.ack_frame_id_);
 
   rtcp_->SendRtcpFromRtpReceiver(&cast_message, &event_subscriber_);
 }

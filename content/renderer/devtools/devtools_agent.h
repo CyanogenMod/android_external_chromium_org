@@ -63,7 +63,9 @@ class DevToolsAgent : public RenderViewObserver,
       int numArgs, const char* const* argNames, const unsigned char* argTypes,
       const unsigned long long* argValues,
       unsigned char flags, double timestamp);
-  virtual void setTraceEventCallback(TraceEventCallback cb) OVERRIDE;
+  virtual void resetTraceEventCallback() OVERRIDE;
+  virtual void setTraceEventCallback(const blink::WebString& category_filter,
+                                     TraceEventCallback cb) OVERRIDE;
   virtual void startGPUEventsRecording() OVERRIDE;
   virtual void stopGPUEventsRecording() OVERRIDE;
 

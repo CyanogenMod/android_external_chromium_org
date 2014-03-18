@@ -515,12 +515,14 @@ NET_EXPORT_PRIVATE bool IsLocalhost(const std::string& host);
 struct NET_EXPORT NetworkInterface {
   NetworkInterface();
   NetworkInterface(const std::string& name,
+                   const std::string& friendly_name,
                    uint32 interface_index,
                    const IPAddressNumber& address,
                    size_t network_prefix);
   ~NetworkInterface();
 
   std::string name;
+  std::string friendly_name;  // Same as |name| on non-Windows.
   uint32 interface_index;  // Always 0 on Android.
   IPAddressNumber address;
   size_t network_prefix;
@@ -545,7 +547,7 @@ NET_EXPORT bool GetNetworkList(NetworkInterfaceList* networks,
 enum WifiPHYLayerProtocol {
   // No wifi support or no associated AP.
   WIFI_PHY_LAYER_PROTOCOL_NONE,
-  // An obsolete modes introduced by the original 802.11, e.g. IR, FHSS,
+  // An obsolete modes introduced by the original 802.11, e.g. IR, FHSS.
   WIFI_PHY_LAYER_PROTOCOL_ANCIENT,
   // 802.11a, OFDM-based rates.
   WIFI_PHY_LAYER_PROTOCOL_A,

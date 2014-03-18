@@ -13,6 +13,7 @@
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/quic_decrypter.h"
 #include "net/quic/crypto/quic_encrypter.h"
+#include "net/quic/crypto/quic_server_info.h"
 #include "net/quic/quic_default_packet_writer.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_client_session_peer.h"
@@ -27,6 +28,7 @@ namespace test {
 namespace {
 
 const char kServerHostname[] = "www.example.com";
+const uint16 kServerPort = 80;
 
 class TestPacketWriter : public QuicDefaultPacketWriter {
  public:
@@ -66,9 +68,10 @@ class QuicClientSessionTest : public ::testing::TestWithParam<QuicVersion> {
       : writer_(new TestPacketWriter()),
         connection_(
             new PacketSavingConnection(false, SupportedVersions(GetParam()))),
-        session_(connection_, GetSocket().Pass(), writer_.Pass(), NULL, NULL,
-                 kServerHostname, DefaultQuicConfig(), &crypto_config_,
-                 &net_log_) {
+        session_(connection_, GetSocket().Pass(), writer_.Pass(), NULL,
+                 make_scoped_ptr((QuicServerInfo*)NULL), NULL,
+                 QuicSessionKey(kServerHostname, kServerPort, false),
+                 DefaultQuicConfig(), &crypto_config_, &net_log_) {
     session_.config()->SetDefaults();
     crypto_config_.SetDefaults();
   }

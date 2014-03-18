@@ -50,7 +50,6 @@
 #include "chrome/browser/network_time/network_time_service.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/notification_prefs_manager.h"
-#include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/pepper_flash_settings_manager.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/prefs/chrome_pref_service_factory.h"
@@ -73,9 +72,9 @@
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/browser/task_manager/task_manager.h"
-#include "chrome/browser/ui/alternate_error_tab_observer.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/browser_ui_prefs.h"
+#include "chrome/browser/ui/navigation_correction_tab_observer.h"
 #include "chrome/browser/ui/network_profile_bubble.h"
 #include "chrome/browser/ui/prefs/prefs_tab_helper.h"
 #include "chrome/browser/ui/search_engines/keyword_editor_controller.h"
@@ -93,6 +92,8 @@
 #include "chrome/common/metrics/caching_permuted_entropy_provider.h"
 #include "chrome/common/pref_names.h"
 #include "components/autofill/core/browser/autofill_manager.h"
+#include "components/password_manager/core/browser/password_manager.h"
+#include "components/rappor/rappor_service.h"
 #include "components/translate/core/browser/translate_prefs.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/render_process_host.h"
@@ -244,6 +245,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   ProfileInfoCache::RegisterPrefs(registry);
   profiles::RegisterPrefs(registry);
   PromoResourceService::RegisterPrefs(registry);
+  rappor::RapporService::RegisterPrefs(registry);
   RegisterScreenshotPrefs(registry);
   SigninManagerFactory::RegisterPrefs(registry);
   SSLConfigServiceManager::RegisterPrefs(registry);
@@ -333,7 +335,6 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   TRACE_EVENT0("browser", "chrome::RegisterUserPrefs");
   // User prefs. Please keep this list alphabetized.
-  AlternateErrorPageTabObserver::RegisterProfilePrefs(registry);
   apps::RegisterProfilePrefs(registry);
   autofill::AutofillManager::RegisterProfilePrefs(registry);
   BookmarkPromptPrefs::RegisterProfilePrefs(registry);
@@ -344,6 +345,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   chrome_browser_net::HttpServerPropertiesManager::RegisterProfilePrefs(
       registry);
   chrome_browser_net::Predictor::RegisterProfilePrefs(registry);
+  chrome_prefs::RegisterProfilePrefs(registry);
   DownloadPrefs::RegisterProfilePrefs(registry);
   extensions::ExtensionPrefs::RegisterProfilePrefs(registry);
   extensions::launch_util::RegisterProfilePrefs(registry);
@@ -351,6 +353,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   HostContentSettingsMap::RegisterProfilePrefs(registry);
   IncognitoModePrefs::RegisterProfilePrefs(registry);
   InstantUI::RegisterProfilePrefs(registry);
+  NavigationCorrectionTabObserver::RegisterProfilePrefs(registry);
   MediaCaptureDevicesDispatcher::RegisterProfilePrefs(registry);
   MediaDeviceIDSalt::RegisterProfilePrefs(registry);
   MediaStreamDevicesController::RegisterProfilePrefs(registry);
@@ -437,6 +440,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   chromeos::Preferences::RegisterProfilePrefs(registry);
   chromeos::proxy_config::RegisterProfilePrefs(registry);
   chromeos::SAMLOfflineSigninLimiter::RegisterProfilePrefs(registry);
+  chromeos::ServicesCustomizationDocument::RegisterProfilePrefs(registry);
   chromeos::UserImageSyncObserver::RegisterProfilePrefs(registry);
   extensions::EnterprisePlatformKeysPrivateChallengeUserKeyFunction::
       RegisterProfilePrefs(registry);
@@ -474,6 +478,10 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif
+
+#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+  RegisterNewProfileUIPrefs(registry);
+#endif
 }
 
 void RegisterUserProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
@@ -493,6 +501,15 @@ void RegisterLoginProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   RegisterProfilePrefs(registry);
 
   chromeos::PowerPrefs::RegisterLoginProfilePrefs(registry);
+}
+#endif
+
+#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+void RegisterNewProfileUIPrefs(user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterIntegerPref(
+      prefs::kProfileAvatarTutorialShown,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 #endif
 

@@ -19,7 +19,6 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/extensions/api/messaging/message.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/extensions/manifest_handlers/externally_connectable.h"
 #include "chrome/common/extensions/message_bundle.h"
@@ -65,6 +64,7 @@
 #include "chrome/renderer/extensions/tab_finder.h"
 #include "chrome/renderer/extensions/tabs_custom_bindings.h"
 #include "chrome/renderer/extensions/user_script_slave.h"
+#include "chrome/renderer/extensions/utils_native_handler.h"
 #include "chrome/renderer/extensions/webstore_bindings.h"
 #include "chrome/renderer/resource_bundle_source_map.h"
 #include "content/public/renderer/render_thread.h"
@@ -73,6 +73,7 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_api.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/features/feature.h"
 #include "extensions/common/features/feature_provider.h"
@@ -529,7 +530,6 @@ void Dispatcher::WebKitInitialized() {
        iter != active_extension_ids_.end(); ++iter) {
     const Extension* extension = extensions_.GetByID(*iter);
     CHECK(extension);
-    InitOriginPermissions(extension);
   }
 
   EnableCustomElementWhiteList();
@@ -775,6 +775,9 @@ void Dispatcher::AddOrRemoveBindingsForContext(ChromeV8Context* context) {
         if (context->IsAnyFeatureAvailableToContext(*feature))
           RegisterBinding(api_name, context);
       }
+      if (CommandLine::ForCurrentProcess()->HasSwitch(::switches::kTestType)) {
+        RegisterBinding("test", context);
+      }
       break;
     }
   }
@@ -965,6 +968,8 @@ void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
 
 void Dispatcher::PopulateSourceMap() {
   // Libraries.
+  source_map_.RegisterSource("automationNode", IDR_AUTOMATION_NODE_JS);
+  source_map_.RegisterSource("automationTree", IDR_AUTOMATION_TREE_JS);
   source_map_.RegisterSource("entryIdManager", IDR_ENTRY_ID_MANAGER);
   source_map_.RegisterSource(kEventBindings, IDR_EVENT_BINDINGS_JS);
   source_map_.RegisterSource("imageUtil", IDR_IMAGE_UTIL_JS);
@@ -984,7 +989,9 @@ void Dispatcher::PopulateSourceMap() {
   source_map_.RegisterSource("app", IDR_APP_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("app.runtime", IDR_APP_RUNTIME_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("app.window", IDR_APP_WINDOW_CUSTOM_BINDINGS_JS);
-  source_map_.RegisterSource("bluetooth", IDR_BLUETOOTH_CUSTOM_BINDINGS_JS);
+  source_map_.RegisterSource("automation", IDR_AUTOMATION_CUSTOM_BINDINGS_JS);
+  source_map_.RegisterSource("automationNode", IDR_AUTOMATION_NODE_JS);
+  source_map_.RegisterSource("automationTree", IDR_AUTOMATION_TREE_JS);
   source_map_.RegisterSource("browserAction",
                              IDR_BROWSER_ACTION_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("contextMenus",
@@ -999,8 +1006,6 @@ void Dispatcher::PopulateSourceMap() {
                              IDR_DEVELOPER_PRIVATE_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("downloads",
                              IDR_DOWNLOADS_CUSTOM_BINDINGS_JS);
-  source_map_.RegisterSource("experimental.offscreen",
-                             IDR_EXPERIMENTAL_OFFSCREENTABS_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("extension", IDR_EXTENSION_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("feedbackPrivate",
                              IDR_FEEDBACK_PRIVATE_CUSTOM_BINDINGS_JS);
@@ -1064,6 +1069,7 @@ void Dispatcher::PopulateSourceMap() {
 
   // Platform app sources that are not API-specific..
   source_map_.RegisterSource("tagWatcher", IDR_TAG_WATCHER_JS);
+  source_map_.RegisterSource("webview", IDR_WEBVIEW_CUSTOM_BINDINGS_JS);
   // Note: webView not webview so that this doesn't interfere with the
   // chrome.webview API bindings.
   source_map_.RegisterSource("webView", IDR_WEB_VIEW_JS);
@@ -1133,6 +1139,9 @@ void Dispatcher::DidCreateScriptContext(
       new ChromeV8Context(v8_context, frame, extension, context_type);
   v8_context_set_.Add(context);
 
+  if (extension)
+    InitOriginPermissions(extension, context_type);
+
   {
     scoped_ptr<ModuleSystem> module_system(new ModuleSystem(context,
                                                             &source_map_));
@@ -1163,6 +1172,8 @@ void Dispatcher::DidCreateScriptContext(
       scoped_ptr<NativeHandler>(new TestFeaturesNativeHandler(context)));
   module_system->RegisterNativeHandler("user_gestures",
       scoped_ptr<NativeHandler>(new UserGesturesNativeHandler(context)));
+  module_system->RegisterNativeHandler("utils",
+      scoped_ptr<NativeHandler>(new UtilsNativeHandler(context)));
 
   int manifest_version = extension ? extension->manifest_version() : 1;
   bool send_request_disabled =
@@ -1341,17 +1352,18 @@ void Dispatcher::OnActivateExtension(const std::string& extension_id) {
   UpdateActiveExtensions();
 
   if (is_webkit_initialized_) {
-    InitOriginPermissions(extension);
     DOMActivityLogger::AttachToWorld(DOMActivityLogger::kMainWorldId,
                                      extension_id);
   }
 }
 
-void Dispatcher::InitOriginPermissions(const Extension* extension) {
+void Dispatcher::InitOriginPermissions(const Extension* extension,
+                                       Feature::Context context_type) {
   // TODO(jstritar): We should try to remove this special case. Also, these
   // whitelist entries need to be updated when the kManagement permission
   // changes.
-  if (extension->HasAPIPermission(APIPermission::kManagement)) {
+  if (context_type == Feature::BLESSED_EXTENSION_CONTEXT &&
+      extension->HasAPIPermission(APIPermission::kManagement)) {
     WebSecurityPolicy::addOriginAccessWhitelistEntry(
         extension->url(),
         WebString::fromUTF8(content::kChromeUIScheme),
@@ -1362,7 +1374,7 @@ void Dispatcher::InitOriginPermissions(const Extension* extension) {
   AddOrRemoveOriginPermissions(
       UpdatedExtensionPermissionsInfo::ADDED,
       extension,
-      extension->GetActivePermissions()->explicit_hosts());
+      PermissionsData::GetEffectiveHostPermissions(extension));
 }
 
 void Dispatcher::AddOrRemoveOriginPermissions(
@@ -1376,6 +1388,7 @@ void Dispatcher::AddOrRemoveOriginPermissions(
       content::kHttpsScheme,
       content::kFileScheme,
       content::kChromeUIScheme,
+      content::kFtpScheme,
     };
     for (size_t j = 0; j < arraysize(schemes); ++j) {
       if (i->MatchesScheme(schemes[j])) {

@@ -16,20 +16,22 @@ namespace {
 
 using gpu::gles2::ShaderTranslator;
 
+bool g_translator_initialized = false;
+
 void FinalizeShaderTranslator(void* /* dummy */) {
   TRACE_EVENT0("gpu", "ShFinalize");
   ShFinalize();
+  g_translator_initialized = false;
 }
 
 bool InitializeShaderTranslator() {
-  static bool initialized = false;
-  if (!initialized) {
+  if (!g_translator_initialized) {
     TRACE_EVENT0("gpu", "ShInitialize");
     CHECK(ShInitialize());
     base::AtExitManager::RegisterCallback(&FinalizeShaderTranslator, NULL);
-    initialized = true;
+    g_translator_initialized = true;
   }
-  return initialized;
+  return g_translator_initialized;
 }
 
 #if !defined(ANGLE_SH_VERSION) || ANGLE_SH_VERSION < 108
@@ -152,11 +154,9 @@ bool ShaderTranslator::Init(
 
 int ShaderTranslator::GetCompileOptions() const {
   int compile_options =
-      SH_OBJECT_CODE | SH_VARIABLES |
-      SH_MAP_LONG_VARIABLE_NAMES | SH_ENFORCE_PACKING_RESTRICTIONS |
-      SH_LIMIT_EXPRESSION_COMPLEXITY | SH_LIMIT_CALL_STACK_DEPTH;
-
-  compile_options |= SH_CLAMP_INDIRECT_ARRAY_BOUNDS;
+      SH_OBJECT_CODE | SH_VARIABLES | SH_ENFORCE_PACKING_RESTRICTIONS |
+      SH_LIMIT_EXPRESSION_COMPLEXITY | SH_LIMIT_CALL_STACK_DEPTH |
+      SH_CLAMP_INDIRECT_ARRAY_BOUNDS;
 
   compile_options |= driver_bug_workarounds_;
 

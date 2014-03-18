@@ -9,10 +9,15 @@
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/rand_util.h"
 #include "components/nacl/common/nacl_host_messages.h"
+#include "components/nacl/common/nacl_messages.h"
+#include "components/nacl/common/nacl_switches.h"
 #include "components/nacl/common/nacl_types.h"
 #include "components/nacl/renderer/pnacl_translation_resource_host.h"
+#include "components/nacl/renderer/sandbox_arch.h"
+#include "components/nacl/renderer/trusted_plugin_channel.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/sandbox_init.h"
@@ -68,6 +73,25 @@ typedef std::map<PP_Instance, InstanceInfo> InstanceInfoMap;
 base::LazyInstance<InstanceInfoMap> g_instance_info =
     LAZY_INSTANCE_INITIALIZER;
 
+typedef std::map<PP_Instance, nacl::TrustedPluginChannel*>
+    InstanceTrustedChannelMap;
+
+base::LazyInstance<InstanceTrustedChannelMap> g_channel_map =
+    LAZY_INSTANCE_INITIALIZER;
+
+void HistogramEnumerate(const std::string& name,
+                        int32_t sample,
+                        int32_t boundary_value) {
+  base::HistogramBase* counter =
+      base::LinearHistogram::FactoryGet(
+          name,
+          1,
+          boundary_value,
+          boundary_value + 1,
+          base::HistogramBase::kUmaTargetedHistogramFlag);
+  counter->Add(sample);
+}
+
 static int GetRoutingID(PP_Instance instance) {
   // Check that we are on the main renderer thread.
   DCHECK(content::RenderThread::Get());
@@ -83,6 +107,7 @@ void LaunchSelLdr(PP_Instance instance,
                   const char* alleged_url,
                   PP_Bool uses_irt,
                   PP_Bool uses_ppapi,
+                  PP_Bool uses_nonsfi_mode,
                   PP_Bool enable_ppapi_dev,
                   PP_Bool enable_dyncode_syscalls,
                   PP_Bool enable_exception_handling,
@@ -90,6 +115,9 @@ void LaunchSelLdr(PP_Instance instance,
                   void* imc_handle,
                   struct PP_Var* error_message,
                   PP_CompletionCallback callback) {
+  CHECK(ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->
+            BelongsToCurrentThread());
+
   nacl::FileDescriptor result_socket;
   IPC::Sender* sender = content::RenderThread::Get();
   DCHECK(sender);
@@ -129,6 +157,7 @@ void LaunchSelLdr(PP_Instance instance,
                                  routing_id,
                                  perm_bits,
                                  PP_ToBool(uses_irt),
+                                 PP_ToBool(uses_nonsfi_mode),
                                  PP_ToBool(enable_dyncode_syscalls),
                                  PP_ToBool(enable_exception_handling),
                                  PP_ToBool(enable_crash_throttling)),
@@ -149,7 +178,7 @@ void LaunchSelLdr(PP_Instance instance,
     return;
   }
   result_socket = launch_result.imc_channel_handle;
-  instance_info.channel_handle = launch_result.ipc_channel_handle;
+  instance_info.channel_handle = launch_result.ppapi_ipc_channel_handle;
   instance_info.plugin_pid = launch_result.plugin_pid;
   instance_info.plugin_child_id = launch_result.plugin_child_id;
   // Don't save instance_info if channel handle is invalid.
@@ -161,12 +190,20 @@ void LaunchSelLdr(PP_Instance instance,
   if (!invalid_handle)
     g_instance_info.Get()[instance] = instance_info;
 
+  // Stash the trusted handle as well.
+  invalid_handle = launch_result.trusted_ipc_channel_handle.name.empty();
+#if defined(OS_POSIX)
+  if (!invalid_handle)
+    invalid_handle = (launch_result.trusted_ipc_channel_handle.socket.fd == -1);
+#endif
+  if (!invalid_handle) {
+    g_channel_map.Get()[instance] = new nacl::TrustedPluginChannel(
+        launch_result.trusted_ipc_channel_handle, callback,
+        content::RenderThread::Get()->GetShutdownEvent());
+  }
+
   *(static_cast<NaClHandle*>(imc_handle)) =
       nacl::ToNativeHandle(result_socket);
-  ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
-      FROM_HERE,
-      base::Bind(callback.func, callback.user_data,
-                 static_cast<int32_t>(PP_OK)));
 }
 
 PP_ExternalPluginResult StartPpapiProxy(PP_Instance instance) {
@@ -266,6 +303,15 @@ int32_t GetNumberOfProcessors() {
   return num_processors;
 }
 
+PP_Bool IsNonSFIModeEnabled() {
+#if defined(OS_LINUX)
+  return PP_FromBool(CommandLine::ForCurrentProcess()->HasSwitch(
+                         switches::kEnableNaClNonSfiMode));
+#else
+  return PP_FALSE;
+#endif
+}
+
 int32_t GetNexeFd(PP_Instance instance,
                   const char* pexe_url,
                   uint32_t abi_version,
@@ -320,21 +366,6 @@ void ReportTranslationFinished(PP_Instance instance, PP_Bool success) {
   g_pnacl_resource_host.Get()->ReportTranslationFinished(instance, success);
 }
 
-PP_ExternalPluginResult ReportNaClError(PP_Instance instance,
-                              PP_NaClError error_id) {
-  IPC::Sender* sender = content::RenderThread::Get();
-
-  if (!sender->Send(
-          new NaClHostMsg_NaClErrorStatus(
-              // TODO(dschuff): does this enum need to be sent as an int,
-              // or is it safe to include the appropriate headers in
-              // render_messages.h?
-              GetRoutingID(instance), static_cast<int>(error_id)))) {
-    return PP_EXTERNAL_PLUGIN_FAILED;
-  }
-  return PP_EXTERNAL_PLUGIN_OK;
-}
-
 PP_FileHandle OpenNaClExecutable(PP_Instance instance,
                                  const char* file_url,
                                  uint64_t* nonce_lo,
@@ -385,6 +416,14 @@ blink::WebString EventTypeToString(PP_NaClEventType event_type) {
 }
 
 struct ProgressEvent {
+  explicit ProgressEvent(PP_Instance instance_param,
+                         PP_NaClEventType event_type_param)
+      : instance(instance_param),
+        event_type(event_type_param),
+        length_is_computable(false),
+        loaded_bytes(0),
+        total_bytes(0) {
+  }
   PP_Instance instance;
   PP_NaClEventType event_type;
   std::string resource_url;
@@ -401,9 +440,7 @@ void DispatchEvent(PP_Instance instance,
                    PP_Bool length_is_computable,
                    uint64_t loaded_bytes,
                    uint64_t total_bytes) {
-  ProgressEvent p;
-  p.instance = instance;
-  p.event_type = event_type;
+  ProgressEvent p(instance, event_type);
   p.length_is_computable = PP_ToBool(length_is_computable);
   p.loaded_bytes = loaded_bytes;
   p.total_bytes = total_bytes;
@@ -471,6 +508,57 @@ void SetReadOnlyProperty(PP_Instance instance,
   plugin_instance->SetEmbedProperty(key, value);
 }
 
+void ReportLoadError(PP_Instance instance,
+                     PP_NaClError error,
+                     PP_Bool is_installed) {
+  // Check that we are on the main renderer thread.
+  DCHECK(content::RenderThread::Get());
+
+  if (error == PP_NACL_ERROR_MANIFEST_PROGRAM_MISSING_ARCH) {
+    // A special case: the manifest may otherwise be valid but is missing
+    // a program/file compatible with the user's sandbox.
+    IPC::Sender* sender = content::RenderThread::Get();
+    sender->Send(
+        new NaClHostMsg_MissingArchError(GetRoutingID(instance)));
+  }
+  // TODO(dmichael): Move the following actions here:
+  // - Set ready state to DONE.
+  // - Set last error string.
+  // - Print error message to JavaScript console.
+
+  // Inform JavaScript that loading encountered an error and is complete.
+  DispatchEvent(instance, PP_NACL_EVENT_ERROR, NULL, PP_FALSE, 0, 0);
+  DispatchEvent(instance, PP_NACL_EVENT_LOADEND, NULL, PP_FALSE, 0, 0);
+
+  HistogramEnumerate("NaCl.LoadStatus.Plugin", error,
+                     PP_NACL_ERROR_MAX);
+  std::string uma_name = (is_installed == PP_TRUE) ?
+                         "NaCl.LoadStatus.Plugin.InstalledApp" :
+                         "NaCl.LoadStatus.Plugin.NotInstalledApp";
+  HistogramEnumerate(uma_name, error, PP_NACL_ERROR_MAX);
+}
+
+void InstanceDestroyed(PP_Instance instance) {
+  InstanceTrustedChannelMap& map = g_channel_map.Get();
+  InstanceTrustedChannelMap::iterator it = map.find(instance);
+  if (it == map.end()) {
+    DLOG(ERROR) << "Could not find instance ID";
+    return;
+  }
+  nacl::TrustedPluginChannel* instance_info = it->second;
+  map.erase(it);
+  delete instance_info;
+}
+
+PP_Bool NaClDebugStubEnabled() {
+  return PP_FromBool(CommandLine::ForCurrentProcess()->HasSwitch(
+                         switches::kEnableNaClDebug));
+}
+
+const char* GetSandboxArch() {
+  return nacl::GetSandboxArch();
+}
+
 const PPB_NaCl_Private nacl_interface = {
   &LaunchSelLdr,
   &StartPpapiProxy,
@@ -480,12 +568,16 @@ const PPB_NaCl_Private nacl_interface = {
   &GetReadonlyPnaclFD,
   &CreateTemporaryFile,
   &GetNumberOfProcessors,
+  &IsNonSFIModeEnabled,
   &GetNexeFd,
   &ReportTranslationFinished,
-  &ReportNaClError,
   &OpenNaClExecutable,
   &DispatchEvent,
-  &SetReadOnlyProperty
+  &SetReadOnlyProperty,
+  &ReportLoadError,
+  &InstanceDestroyed,
+  &NaClDebugStubEnabled,
+  &GetSandboxArch
 };
 
 }  // namespace

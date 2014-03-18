@@ -19,7 +19,7 @@
 
 #if !defined(OS_ANDROID)
 #include "google_apis/gaia/oauth2_access_token_consumer.h"
-#include "google_apis/gaia/oauth2_access_token_fetcher.h"
+#include "google_apis/gaia/oauth2_access_token_fetcher_impl.h"
 #endif
 
 namespace policy {
@@ -134,7 +134,7 @@ void CloudPolicyClientRegistrationHelper::LoginTokenHelper::FetchAccessToken(
   // Start fetching an OAuth2 access token for the device management and
   // userinfo services.
   oauth2_access_token_fetcher_.reset(
-      new OAuth2AccessTokenFetcher(this, context));
+      new OAuth2AccessTokenFetcherImpl(this, context, login_refresh_token));
   std::vector<std::string> scopes;
   scopes.push_back(GaiaConstants::kDeviceManagementServiceOAuth);
   scopes.push_back(kServiceScopeGetUserInfo);
@@ -142,7 +142,6 @@ void CloudPolicyClientRegistrationHelper::LoginTokenHelper::FetchAccessToken(
   oauth2_access_token_fetcher_->Start(
       gaia_urls->oauth2_chrome_client_id(),
       gaia_urls->oauth2_chrome_client_secret(),
-      login_refresh_token,
       scopes);
 }
 
@@ -161,11 +160,9 @@ void CloudPolicyClientRegistrationHelper::LoginTokenHelper::OnGetTokenFailure(
 
 CloudPolicyClientRegistrationHelper::CloudPolicyClientRegistrationHelper(
     CloudPolicyClient* client,
-    bool should_force_load_policy,
     enterprise_management::DeviceRegisterRequest::Type registration_type)
     : context_(client->GetRequestContext()),
       client_(client),
-      should_force_load_policy_(should_force_load_policy),
       registration_type_(registration_type) {
   DCHECK(context_);
   DCHECK(client_);
@@ -248,7 +245,7 @@ void CloudPolicyClientRegistrationHelper::OnGetUserInfoFailure(
 void CloudPolicyClientRegistrationHelper::OnGetUserInfoSuccess(
     const base::DictionaryValue* data) {
   user_info_fetcher_.reset();
-  if (!data->HasKey(kGetHostedDomainKey) && !should_force_load_policy_) {
+  if (!data->HasKey(kGetHostedDomainKey)) {
     DVLOG(1) << "User not from a hosted domain - skipping registration";
     RequestCompleted();
     return;

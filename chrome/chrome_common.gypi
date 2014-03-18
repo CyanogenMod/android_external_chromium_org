@@ -37,10 +37,12 @@
         '<(DEPTH)/chrome/chrome_resources.gyp:theme_resources',
         '<(DEPTH)/chrome/common_constants.gyp:common_constants',
         '<(DEPTH)/components/components.gyp:json_schema',
+        '<(DEPTH)/components/components.gyp:metrics',
         '<(DEPTH)/components/components.gyp:policy_component_common',
         '<(DEPTH)/components/components.gyp:translate_core_common',
         '<(DEPTH)/components/components.gyp:variations',
         '<(DEPTH)/content/content.gyp:content_common',
+        '<(DEPTH)/crypto/crypto.gyp:crypto',
         '<(DEPTH)/net/net.gyp:net',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
@@ -50,7 +52,6 @@
         '<(DEPTH)/third_party/zlib/google/zip.gyp:zip',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/url/url.gyp:url_lib',
-        '<(DEPTH)/webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
       ],
       'sources': [
         '../apps/app_shim/app_shim_launch.h',
@@ -160,6 +161,7 @@
         'common/extensions/api/system_indicator/system_indicator_handler.h',
         'common/extensions/api/url_handlers/url_handlers_parser.cc',
         'common/extensions/api/url_handlers/url_handlers_parser.h',
+        'common/extensions/chrome_extension_messages.h',
         'common/extensions/chrome_extensions_client.cc',
         'common/extensions/chrome_extensions_client.h',
         'common/extensions/chrome_manifest_handlers.cc',
@@ -175,8 +177,6 @@
         'common/extensions/extension_icon_set.h',
         'common/extensions/extension_l10n_util.cc',
         'common/extensions/extension_l10n_util.h',
-        'common/extensions/extension_messages.cc',
-        'common/extensions/extension_messages.h',
         'common/extensions/extension_process_policy.cc',
         'common/extensions/extension_process_policy.h',
         'common/extensions/features/api_feature.cc',
@@ -213,6 +213,8 @@
         'common/extensions/manifest_handlers/settings_overrides_handler.h',
         'common/extensions/manifest_handlers/theme_handler.cc',
         'common/extensions/manifest_handlers/theme_handler.h',
+        'common/extensions/manifest_handlers/ui_overrides_handler.cc',
+        'common/extensions/manifest_handlers/ui_overrides_handler.h',
         'common/extensions/manifest_url_handler.cc',
         'common/extensions/manifest_url_handler.h',
         'common/extensions/message_bundle.cc',
@@ -396,6 +398,8 @@
         }],
         ['OS=="win" or OS=="mac"', {
           'sources': [
+            'common/extensions/api/networking_private/networking_private_crypto.cc',
+            'common/extensions/api/networking_private/networking_private_crypto.h',
             'common/media_galleries/itunes_library.cc',
             'common/media_galleries/itunes_library.h',
             'common/media_galleries/picasa_types.cc',
@@ -412,7 +416,7 @@
         ['OS != "ios"', {
           'dependencies': [
             '<(DEPTH)/third_party/re2/re2.gyp:re2',
-            '<(DEPTH)/chrome/common/extensions/api/api.gyp:api',
+            '<(DEPTH)/chrome/common/extensions/api/api.gyp:chrome_api',
             '<(DEPTH)/components/components.gyp:autofill_core_common',
             '<(DEPTH)/components/components.gyp:autofill_content_common',
             '<(DEPTH)/components/components.gyp:password_manager_core_common',
@@ -463,6 +467,9 @@
         ['OS=="android"', {
           'sources/': [
             ['exclude', '^common/chrome_version_info_posix.cc'],
+            ['exclude', '^common/importer/'],
+            ['include', '^common/importer/imported_favicon_usage.cc$'],
+            ['include', '^common/importer/imported_favicon_usage.h$'],
             ['exclude', '^common/service_'],
           ],
           'sources!': [
@@ -473,10 +480,6 @@
             'common/extensions/manifest_handlers/minimum_chrome_version_checker.cc',
             'common/extensions/manifest_handlers/nacl_modules_handler.cc',
             'common/icon_with_badge_image_source.cc',
-            'common/importer/imported_bookmark_entry.cc',
-            'common/importer/importer_bridge.cc',
-            'common/importer/importer_data_types.cc',
-            'common/importer/importer_url_row.cc',
             'common/net/url_util.cc',
             'common/spellcheck_common.cc',
           ],
@@ -584,9 +587,8 @@
             {
               'action_name': 'posix_version',
               'variables': {
-                'lastchange_path':
-                  '<(DEPTH)/build/util/LASTCHANGE',
-                'version_py_path': 'tools/build/version.py',
+                'lastchange_path': '<(DEPTH)/build/util/LASTCHANGE',
+                'version_py_path': '<(DEPTH)/build/util/version.py',
                 'version_path': 'VERSION',
                 'template_input_path': 'common/chrome_version_info_posix.h.version',
               },
@@ -689,6 +691,8 @@
         }],
         ['use_openssl==1', {
             'sources!': [
+              # networking_private_crypto.cc uses NSS functions.
+              'common/extensions/api/networking_private/networking_private_crypto.cc',
               'common/net/x509_certificate_model_nss.cc',
             ],
           },

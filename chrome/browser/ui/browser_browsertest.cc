@@ -49,6 +49,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
@@ -60,6 +61,7 @@
 #include "content/public/browser/interstitial_page_delegate.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -417,8 +419,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, JavascriptAlertActivatesTab) {
   EXPECT_EQ(0, browser()->tab_strip_model()->active_index());
   WebContents* second_tab = browser()->tab_strip_model()->GetWebContentsAt(1);
   ASSERT_TRUE(second_tab);
-  second_tab->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-      base::string16(),
+  second_tab->GetMainFrame()->ExecuteJavaScript(
       ASCIIToUTF16("alert('Activate!');"));
   AppModalDialog* alert = ui_test_utils::WaitForAppModalDialog();
   alert->CloseModalDialog();
@@ -480,8 +481,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CrossProcessNavCancelsDialogs) {
   // even if the renderer tries to synchronously create more.
   // See http://crbug.com/312490.
   WebContents* contents = browser()->tab_strip_model()->GetActiveWebContents();
-  contents->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-      base::string16(),
+  contents->GetMainFrame()->ExecuteJavaScript(
       ASCIIToUTF16("alert('one'); alert('two');"));
   AppModalDialog* alert = ui_test_utils::WaitForAppModalDialog();
   EXPECT_TRUE(alert->IsValid());
@@ -495,6 +495,37 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CrossProcessNavCancelsDialogs) {
 
   // Make sure input events still work in the renderer process.
   EXPECT_FALSE(contents->GetRenderProcessHost()->IgnoreInputEvents());
+}
+
+// Make sure that dialogs are closed after a renderer process dies, and that
+// subsequent navigations work.  See http://crbug/com/343265.
+IN_PROC_BROWSER_TEST_F(BrowserTest, SadTabCancelsDialogs) {
+  ASSERT_TRUE(test_server()->Start());
+  host_resolver()->AddRule("www.example.com", "127.0.0.1");
+  GURL beforeunload_url(test_server()->GetURL("files/beforeunload.html"));
+  ui_test_utils::NavigateToURL(browser(), beforeunload_url);
+
+  // Start a navigation to trigger the beforeunload dialog.
+  WebContents* contents = browser()->tab_strip_model()->GetActiveWebContents();
+  contents->GetMainFrame()->ExecuteJavaScript(
+      ASCIIToUTF16("window.location.href = 'data:text/html,foo'"));
+  AppModalDialog* alert = ui_test_utils::WaitForAppModalDialog();
+  EXPECT_TRUE(alert->IsValid());
+  AppModalDialogQueue* dialog_queue = AppModalDialogQueue::GetInstance();
+  EXPECT_TRUE(dialog_queue->HasActiveDialog());
+
+  // Crash the renderer process and ensure the dialog is gone.
+  content::RenderProcessHost* child_process = contents->GetRenderProcessHost();
+  content::RenderProcessHostWatcher crash_observer(
+      child_process,
+      content::RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+  base::KillProcess(child_process->GetHandle(), 0, false);
+  crash_observer.Wait();
+  EXPECT_FALSE(dialog_queue->HasActiveDialog());
+
+  // Make sure subsequent navigations work.
+  GURL url2("http://www.example.com/files/empty.html");
+  ui_test_utils::NavigateToURL(browser(), url2);
 }
 
 // Test for crbug.com/22004.  Reloading a page with a before unload handler and
@@ -512,9 +543,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, ReloadThenCancelBeforeUnload) {
       browser()->tab_strip_model()->GetActiveWebContents()->IsLoading());
 
   // Clear the beforeunload handler so the test can easily exit.
-  browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost()->
-      ExecuteJavascriptInWebFrame(base::string16(),
-                                  ASCIIToUTF16("onbeforeunload=null;"));
+  browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame()->
+      ExecuteJavaScript(ASCIIToUTF16("onbeforeunload=null;"));
 }
 
 class RedirectObserver : public content::WebContentsObserver {
@@ -673,9 +703,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CancelBeforeUnloadResetsURL) {
   EXPECT_EQ(url, browser()->toolbar_model()->GetURL());
 
   // Clear the beforeunload handler so the test can easily exit.
-  browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost()->
-      ExecuteJavascriptInWebFrame(base::string16(),
-                                  ASCIIToUTF16("onbeforeunload=null;"));
+  browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame()->
+      ExecuteJavaScript(ASCIIToUTF16("onbeforeunload=null;"));
 }
 
 // Crashy on mac.  http://crbug.com/38522  Crashy on win too (after 3 years).
@@ -690,16 +719,14 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CancelBeforeUnloadResetsURL) {
 // Test for crbug.com/11647.  A page closed with window.close() should not have
 // two beforeunload dialogs shown.
 IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_SingleBeforeUnloadAfterWindowClose) {
-  browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost()->
-      ExecuteJavascriptInWebFrame(base::string16(),
-                                  ASCIIToUTF16(kOpenNewBeforeUnloadPage));
+  browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame()->
+      ExecuteJavaScript(ASCIIToUTF16(kOpenNewBeforeUnloadPage));
 
   // Close the new window with JavaScript, which should show a single
   // beforeunload dialog.  Then show another alert, to make it easy to verify
   // that a second beforeunload dialog isn't shown.
-  browser()->tab_strip_model()->GetWebContentsAt(0)->GetRenderViewHost()->
-      ExecuteJavascriptInWebFrame(base::string16(),
-                                  ASCIIToUTF16("w.close(); alert('bar');"));
+  browser()->tab_strip_model()->GetWebContentsAt(0)->GetMainFrame()->
+      ExecuteJavaScript(ASCIIToUTF16("w.close(); alert('bar');"));
   AppModalDialog* alert = ui_test_utils::WaitForAppModalDialog();
   alert->native_dialog()->AcceptAppModalDialog();
 
@@ -855,8 +882,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, NullOpenerRedirectForksProcess) {
   content::WindowedNotificationObserver nav_observer(
       content::NOTIFICATION_NAV_ENTRY_COMMITTED,
       content::NotificationService::AllSources());
-  oldtab->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-      base::string16(), ASCIIToUTF16(redirect_popup));
+  oldtab->GetMainFrame()->ExecuteJavaScript(ASCIIToUTF16(redirect_popup));
 
   // Wait for popup window to appear and finish navigating.
   popup_observer.Wait();
@@ -889,8 +915,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, NullOpenerRedirectForksProcess) {
   content::WindowedNotificationObserver nav_observer2(
       content::NOTIFICATION_NAV_ENTRY_COMMITTED,
       content::NotificationService::AllSources());
-  oldtab->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-      base::string16(), ASCIIToUTF16(refresh_popup));
+  oldtab->GetMainFrame()->ExecuteJavaScript(ASCIIToUTF16(refresh_popup));
 
   // Wait for popup window to appear and finish navigating.
   popup_observer2.Wait();
@@ -943,8 +968,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, OtherRedirectsDontForkProcess) {
   content::WindowedNotificationObserver nav_observer(
       content::NOTIFICATION_NAV_ENTRY_COMMITTED,
       content::NotificationService::AllSources());
-  oldtab->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-      base::string16(), ASCIIToUTF16(dont_fork_popup));
+  oldtab->GetMainFrame()->ExecuteJavaScript(ASCIIToUTF16(dont_fork_popup));
 
   // Wait for popup window to appear and finish navigating.
   popup_observer.Wait();
@@ -970,8 +994,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, OtherRedirectsDontForkProcess) {
   content::WindowedNotificationObserver nav_observer2(
         content::NOTIFICATION_NAV_ENTRY_COMMITTED,
         content::NotificationService::AllSources());
-  oldtab->GetRenderViewHost()->
-      ExecuteJavascriptInWebFrame(base::string16(), ASCIIToUTF16(navigate_str));
+  oldtab->GetMainFrame()->ExecuteJavaScript(ASCIIToUTF16(navigate_str));
   nav_observer2.Wait();
   ASSERT_TRUE(oldtab->GetController().GetLastCommittedEntry());
   EXPECT_EQ(https_url.spec(),
@@ -1777,8 +1800,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, InterstitialClosesDialogs) {
   ui_test_utils::NavigateToURL(browser(), url);
 
   WebContents* contents = browser()->tab_strip_model()->GetActiveWebContents();
-  contents->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-      base::string16(),
+  contents->GetMainFrame()->ExecuteJavaScript(
       ASCIIToUTF16("alert('Dialog showing!');"));
   AppModalDialog* alert = ui_test_utils::WaitForAppModalDialog();
   EXPECT_TRUE(alert->IsValid());
@@ -2458,16 +2480,14 @@ IN_PROC_BROWSER_TEST_F(ClickModifierTest, HrefShiftMiddleClickTest) {
   RunTest(browser(), GetHrefURL(), modifiers, button, disposition);
 }
 
-// Does not work with Instant Extended. http://crbug.com/317760.
-// // TODO(sail): enable this for MAC when
-// // BrowserWindowCocoa::GetRenderViewHeightInsetWithDetachedBookmarkBar
-// // is fixed.
-// #if defined(OS_MACOSX)
-// #define MAYBE_GetSizeForNewRenderView DISABLED_GetSizeForNewRenderView
-// #else
-// #define MAYBE_GetSizeForNewRenderView GetSizeForNewRenderView
-// #endif
-IN_PROC_BROWSER_TEST_F(BrowserTest, DISABLED_GetSizeForNewRenderView) {
+IN_PROC_BROWSER_TEST_F(BrowserTest, GetSizeForNewRenderView) {
+  // The instant extended NTP has javascript that does not work with
+  // ui_test_utils::NavigateToURL.  The NTP rvh reloads when the browser tries
+  // to navigate away from the page, which causes the WebContents to end up in
+  // an inconsistent state. (is_loaded = true, last_commited_url=ntp,
+  // visible_url=title1.html)
+  browser()->profile()->GetPrefs()->SetBoolean(prefs::kWebKitJavascriptEnabled,
+                                               false);
   ASSERT_TRUE(test_server()->Start());
   // Create an HTTPS server for cross-site transition.
   net::SpawnedTestServer https_test_server(net::SpawnedTestServer::TYPE_HTTPS,
@@ -2513,7 +2533,17 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, DISABLED_GetSizeForNewRenderView) {
   // RenderViewSizeObserver).
   EXPECT_EQ(rwhv_commit_size0,
             web_contents->GetRenderWidgetHostView()->GetViewBounds().size());
+// The behavior differs between OSX and views.
+// In OSX, the wcv does not change size until after the commit, when the
+// bookmark bar disappears (correct).
+// In views, the wcv changes size at commit time.
+#if defined(OS_MACOSX)
+  EXPECT_EQ(gfx::Size(wcv_commit_size0.width(),
+                      wcv_commit_size0.height() + height_inset),
+            web_contents->GetView()->GetContainerSize());
+#else
   EXPECT_EQ(wcv_commit_size0, web_contents->GetView()->GetContainerSize());
+#endif
 
   // Navigate to another non-NTP page, without resizing WebContentsView.
   ui_test_utils::NavigateToURL(browser(),
@@ -2534,7 +2564,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, DISABLED_GetSizeForNewRenderView) {
   // Navigate from NTP to a non-NTP page, resizing WebContentsView while
   // navigation entry is pending.
   ui_test_utils::NavigateToURL(browser(), GURL("chrome://newtab"));
-  gfx::Size wcv_resize_insets(-34, -57);
+  gfx::Size wcv_resize_insets(1, 1);
   observer.set_wcv_resize_insets(wcv_resize_insets);
   ui_test_utils::NavigateToURL(browser(),
                                test_server()->GetURL("files/title2.html"));
@@ -2544,22 +2574,40 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, DISABLED_GetSizeForNewRenderView) {
                                     &rwhv_create_size2,
                                     &rwhv_commit_size2,
                                     &wcv_commit_size2);
+
+  // The behavior on OSX and Views is incorrect in this edge case, but they are
+  // differently incorrect.
+  // The behavior should be:
+  // initial wcv size: (100,100)  (to choose random numbers)
+  // initial rwhv size: (100,140)
+  // commit wcv size: (101, 101)
+  // commit rwhv size: (101, 141)
+  // final wcv size: (101, 141)
+  // final rwhv size: (101, 141)
+  //
+  // On OSX, the commit rwhv size is (101, 101)
+  // On views, the commit wcv size is (101, 141)
+  // All other sizes are correct.
+
   // The create height of RenderWidgetHostView should include the height inset.
   EXPECT_EQ(gfx::Size(initial_wcv_size.width(),
                       initial_wcv_size.height() + height_inset),
             rwhv_create_size2);
-  // WebContentsView was resized in
-  // RenderViewSizeObserver::DidStartNavigationToPendingEntry after
-  // RenderWidgetHostView was created, so the commit size should be resized
-  // accordingly.
   gfx::Size exp_commit_size(initial_wcv_size);
+
+#if defined(OS_MACOSX)
+  exp_commit_size.Enlarge(wcv_resize_insets.width(),
+                          wcv_resize_insets.height());
+#else
   exp_commit_size.Enlarge(wcv_resize_insets.width(),
                           wcv_resize_insets.height() + height_inset);
+#endif
   EXPECT_EQ(exp_commit_size, rwhv_commit_size2);
   EXPECT_EQ(exp_commit_size, wcv_commit_size2);
-  // Sizes of RenderWidgetHostView and WebContentsView before and after
-  // WebContentsDelegate::DidNavigateMainFramePostCommit should be the same.
-  EXPECT_EQ(rwhv_commit_size2,
+  gfx::Size exp_final_size(initial_wcv_size);
+  exp_final_size.Enlarge(wcv_resize_insets.width(),
+                         wcv_resize_insets.height() + height_inset);
+  EXPECT_EQ(exp_final_size,
             web_contents->GetRenderWidgetHostView()->GetViewBounds().size());
-  EXPECT_EQ(wcv_commit_size2, web_contents->GetView()->GetContainerSize());
+  EXPECT_EQ(exp_final_size, web_contents->GetView()->GetContainerSize());
 }

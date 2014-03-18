@@ -7,11 +7,11 @@
 #include <algorithm>
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -25,6 +25,7 @@
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
@@ -58,14 +59,14 @@ ExtensionAppModelBuilder::ExtensionAppModelBuilder(
 
 ExtensionAppModelBuilder::~ExtensionAppModelBuilder() {
   OnShutdown();
-  model_->item_list()->RemoveObserver(this);
+  if (!service_)
+    model_->top_level_item_list()->RemoveObserver(this);
 }
 
 void ExtensionAppModelBuilder::InitializeWithService(
     app_list::AppListSyncableService* service) {
   DCHECK(!service_ && !profile_);
   model_ = service->model();
-  model_->item_list()->AddObserver(this);
   service_ = service;
   profile_ = service->profile();
   InitializePrefChangeRegistrar();
@@ -78,7 +79,7 @@ void ExtensionAppModelBuilder::InitializeWithProfile(
     app_list::AppListModel* model) {
   DCHECK(!service_ && !profile_);
   model_ = model;
-  model_->item_list()->AddObserver(this);
+  model_->top_level_item_list()->AddObserver(this);
   profile_ = profile;
   InitializePrefChangeRegistrar();
 
@@ -90,13 +91,12 @@ void ExtensionAppModelBuilder::InitializePrefChangeRegistrar() {
           switches::kEnableStreamlinedHostedApps))
     return;
 
-  const ExtensionService* extension_service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-  if (!extension_service)
-    return;
-
+  // TODO(calamity): analyze the performance impact of doing this every
+  // extension pref change.
+  extensions::ExtensionsBrowserClient* client =
+      extensions::ExtensionsBrowserClient::Get();
   extension_pref_change_registrar_.Init(
-      extension_service->extension_prefs()->pref_service());
+      client->GetPrefServiceForContext(profile_));
   extension_pref_change_registrar_.Add(
     extensions::pref_names::kExtensions,
     base::Bind(&ExtensionAppModelBuilder::OnExtensionPreferenceChanged,
@@ -104,16 +104,7 @@ void ExtensionAppModelBuilder::InitializePrefChangeRegistrar() {
 }
 
 void ExtensionAppModelBuilder::OnExtensionPreferenceChanged() {
-  // TODO(calamity): analyze the performance impact of doing this every
-  // extension pref change.
-  app_list::AppListItemList* item_list = model_->item_list();
-  for (size_t i = 0; i < item_list->item_count(); ++i) {
-    app_list::AppListItem* item = item_list->item_at(i);
-    if (item->GetItemType() != ExtensionAppItem::kItemType)
-      continue;
-
-    static_cast<ExtensionAppItem*>(item)->UpdateIconOverlay();
-  }
+  model_->NotifyExtensionPreferenceChanged();
 }
 
 void ExtensionAppModelBuilder::OnBeginExtensionInstall(
@@ -184,10 +175,6 @@ void ExtensionAppModelBuilder::OnExtensionUninstalled(
     return;
   }
   model_->DeleteItem(extension->id());
-}
-
-void ExtensionAppModelBuilder::OnAppsReordered() {
-  // Do nothing; App List order does not track extensions order.
 }
 
 void ExtensionAppModelBuilder::OnAppInstalledToAppList(
@@ -268,8 +255,7 @@ void ExtensionAppModelBuilder::SetHighlightedApp(
 
 ExtensionAppItem* ExtensionAppModelBuilder::GetExtensionAppItem(
     const std::string& extension_id) {
-  app_list::AppListItem* item =
-      model_->item_list()->FindItem(extension_id);
+  app_list::AppListItem* item = model_->FindItem(extension_id);
   LOG_IF(ERROR, item &&
          item->GetItemType() != ExtensionAppItem::kItemType)
       << "App Item matching id: " << extension_id
@@ -291,15 +277,14 @@ void ExtensionAppModelBuilder::UpdateHighlight() {
 void ExtensionAppModelBuilder::OnListItemMoved(size_t from_index,
                                                size_t to_index,
                                                app_list::AppListItem* item) {
+  DCHECK(!service_);
+
   // This will get called from AppListItemList::ListItemMoved after
   // set_position is called for the item.
-  app_list::AppListItemList* item_list = model_->item_list();
   if (item->GetItemType() != ExtensionAppItem::kItemType)
     return;
 
-  if (service_)
-    return;
-
+  app_list::AppListItemList* item_list = model_->top_level_item_list();
   ExtensionAppItem* prev = NULL;
   for (size_t idx = to_index; idx > 0; --idx) {
     app_list::AppListItem* item = item_list->item_at(idx - 1);

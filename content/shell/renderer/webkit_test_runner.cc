@@ -115,7 +115,7 @@ void MakeBitmapOpaque(SkBitmap* bitmap) {
 void CopyCanvasToBitmap(SkCanvas* canvas,  SkBitmap* snapshot) {
   SkBaseDevice* device = skia::GetTopDevice(*canvas);
   const SkBitmap& bitmap = device->accessBitmap(false);
-  const bool success = bitmap.copyTo(snapshot, SkBitmap::kARGB_8888_Config);
+  const bool success = bitmap.copyTo(snapshot, kPMColor_SkColorType);
   DCHECK(success);
 
 #if !defined(OS_MACOSX)
@@ -631,12 +631,8 @@ void WebKitTestRunner::CaptureDump() {
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
 
   if (interfaces->testRunner()->shouldDumpAsAudio()) {
-    const WebArrayBufferView* audio_data =
-        interfaces->testRunner()->audioData();
-    std::vector<unsigned char> vector_data(
-        static_cast<const unsigned char*>(audio_data->baseAddress()),
-        static_cast<const unsigned char*>(audio_data->baseAddress()) +
-            audio_data->byteLength());
+    std::vector<unsigned char> vector_data;
+    interfaces->testRunner()->getAudioData(&vector_data);
     Send(new ShellViewHostMsg_AudioDump(routing_id(), vector_data));
   } else {
     Send(new ShellViewHostMsg_TextDump(routing_id(),

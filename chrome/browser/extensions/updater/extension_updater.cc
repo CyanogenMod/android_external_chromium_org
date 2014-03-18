@@ -20,6 +20,7 @@
 #include "chrome/browser/extensions/api/module/module.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/extensions/updater/extension_downloader.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
@@ -29,7 +30,6 @@
 #include "content/public/browser/notification_source.h"
 #include "crypto/sha2.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/browser/pending_extension_manager.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -52,7 +52,7 @@ namespace {
 const int kStartupWaitSeconds = 60 * 5;
 
 // For sanity checking on update frequency - enforced in release mode only.
-#ifdef NDEBUG
+#if defined(NDEBUG)
 const int kMinUpdateFrequencySeconds = 30;
 #endif
 const int kMaxUpdateFrequencySeconds = 60 * 60 * 24 * 7;  // 7 days
@@ -147,7 +147,7 @@ ExtensionUpdater::ExtensionUpdater(ExtensionServiceInterface* service,
       extension_cache_(cache) {
   DCHECK_GE(frequency_seconds_, 5);
   DCHECK_LE(frequency_seconds_, kMaxUpdateFrequencySeconds);
-#ifdef NDEBUG
+#if defined(NDEBUG)
   // In Release mode we enforce that update checks don't happen too often.
   frequency_seconds_ = std::max(frequency_seconds_, kMinUpdateFrequencySeconds);
 #endif

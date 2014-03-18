@@ -10,8 +10,12 @@
 
 #include "base/memory/scoped_ptr.h"
 
-class CommandLine;
+class ExtensionFunctionRegistry;
 class PrefService;
+
+namespace base {
+class CommandLine;
+}
 
 namespace content {
 class BrowserContext;
@@ -43,7 +47,7 @@ class ExtensionsBrowserClient {
 
   // Returns true if extensions have been disabled (e.g. via a command-line flag
   // or preference).
-  virtual bool AreExtensionsDisabled(const CommandLine& command_line,
+  virtual bool AreExtensionsDisabled(const base::CommandLine& command_line,
                                      content::BrowserContext* context) = 0;
 
   // Returns true if the |context| is known to the embedder.
@@ -70,7 +74,7 @@ class ExtensionsBrowserClient {
       content::BrowserContext* context) = 0;
 
   // Returns true if |context| corresponds to a guest session.
-  virtual bool IsGuestSession(content::BrowserContext* context) = 0;
+  virtual bool IsGuestSession(content::BrowserContext* context) const = 0;
 
   // Returns true if |extension_id| can run in an incognito window.
   virtual bool IsExtensionIncognitoEnabled(
@@ -107,6 +111,10 @@ class ExtensionsBrowserClient {
   // version for later comparison.
   virtual bool DidVersionUpdate(content::BrowserContext* context) = 0;
 
+  // Permits an external protocol handler to be launched. See
+  // ExternalProtocolHandler::PermitLaunchUrl() in Chrome.
+  virtual void PermitExternalProtocolHandler() = 0;
+
   // Creates a new AppSorting instance.
   virtual scoped_ptr<AppSorting> CreateAppSorting() = 0;
 
@@ -125,6 +133,10 @@ class ExtensionsBrowserClient {
   // Returns the factory that provides an ExtensionSystem to be returned from
   // ExtensionSystem::Get.
   virtual ExtensionSystemProvider* GetExtensionSystemFactory() = 0;
+
+  // Registers extension functions not belonging to the core extensions APIs.
+  virtual void RegisterExtensionFunctions(
+      ExtensionFunctionRegistry* registry) const = 0;
 
   // Returns the single instance of |this|.
   static ExtensionsBrowserClient* Get();

@@ -148,16 +148,8 @@ bool CheckForCompatibleVersion(const base::DictionaryValue& manifest,
                                VersionCheckFunc version_check_func) {
   std::string versions_string;
   if (!manifest.GetString(version_name, &versions_string)) {
-    DLOG(WARNING)
-        << "Widevine CDM component manifest is missing " << version_name;
-    // TODO(ddorwin): Remove this once all users have been updated.
-    // The original manifests did not include this string, so add its version.
-    if (version_name == kCdmModuleVersionsName)
-      versions_string = "4";
-    else if (version_name == kCdmInterfaceVersionsName)
-      versions_string = "1";
-    else if (version_name == kCdmHostVersionsName)
-      versions_string = "1";
+    DLOG(WARNING) << "Widevine CDM component manifest missing " << version_name;
+    return false;
   }
   DLOG_IF(WARNING, versions_string.empty())
       << "Widevine CDM component manifest has empty " << version_name;
@@ -343,7 +335,7 @@ void WidevineCdmComponentInstallerTraits::UpdateCdmAdapter(
   if (!base::ReadFileToString(adapter_version_path, &adapter_version) ||
       adapter_version != chrome_version ||
       !base::PathExists(adapter_install_path)) {
-    int bytes_written = file_util::WriteFile(
+    int bytes_written = base::WriteFile(
         adapter_version_path, chrome_version.data(), chrome_version.size());
     if (bytes_written < 0 ||
         static_cast<size_t>(bytes_written) != chrome_version.size()) {

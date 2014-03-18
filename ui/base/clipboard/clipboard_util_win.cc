@@ -134,13 +134,14 @@ bool GetFileUrl(IDataObject* data_object, base::string16* url,
 
 }  // namespace
 
-bool ClipboardUtil::HasUrl(IDataObject* data_object) {
+bool ClipboardUtil::HasUrl(IDataObject* data_object, bool convert_filenames) {
   DCHECK(data_object);
   return HasData(data_object, Clipboard::GetMozUrlFormatType()) ||
          HasData(data_object, Clipboard::GetUrlWFormatType()) ||
          HasData(data_object, Clipboard::GetUrlFormatType()) ||
-         HasData(data_object, Clipboard::GetFilenameWFormatType()) ||
-         HasData(data_object, Clipboard::GetFilenameFormatType());
+         (convert_filenames && (
+             HasData(data_object, Clipboard::GetFilenameWFormatType()) ||
+             HasData(data_object, Clipboard::GetFilenameFormatType())));
 }
 
 bool ClipboardUtil::HasFilenames(IDataObject* data_object) {
@@ -168,7 +169,7 @@ bool ClipboardUtil::HasPlainText(IDataObject* data_object) {
 bool ClipboardUtil::GetUrl(IDataObject* data_object,
     base::string16* url, base::string16* title, bool convert_filenames) {
   DCHECK(data_object && url && title);
-  if (!HasUrl(data_object))
+  if (!HasUrl(data_object, convert_filenames))
     return false;
 
   // Try to extract a URL from |data_object| in a variety of formats.
@@ -455,7 +456,7 @@ void ClipboardUtil::CFHtmlToHtml(const std::string& cf_html,
       fragment_start != std::string::npos &&
       fragment_end != std::string::npos) {
     *html = cf_html.substr(fragment_start, fragment_end - fragment_start);
-    TrimWhitespace(*html, TRIM_ALL, html);
+    base::TrimWhitespace(*html, base::TRIM_ALL, html);
   }
 }
 
@@ -473,7 +474,7 @@ void ClipboardUtil::CFHtmlExtractMetadata(const std::string& cf_html,
       size_t src_start = line_start + src_url_str.length();
       if (src_end != std::string::npos && src_start != std::string::npos) {
         *base_url = cf_html.substr(src_start, src_end - src_start);
-        TrimWhitespace(*base_url, TRIM_ALL, base_url);
+        base::TrimWhitespace(*base_url, base::TRIM_ALL, base_url);
       }
     }
   }

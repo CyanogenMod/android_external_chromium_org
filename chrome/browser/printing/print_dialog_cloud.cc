@@ -41,8 +41,8 @@
 #include "webkit/common/webpreferences.h"
 
 #if defined(USE_AURA)
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 #if defined(OS_WIN)
@@ -540,7 +540,7 @@ void CloudPrintWebDialogDelegate::Init(content::BrowserContext* browser_context,
   // If we're not modal we can show the dialog with no browser.
   // We need this to keep Chrome alive while our dialog is up.
   if (!modal_parent_ && keep_alive_when_non_modal_)
-    chrome::StartKeepAlive();
+    chrome::IncrementKeepAliveCount();
 }
 
 CloudPrintWebDialogDelegate::~CloudPrintWebDialogDelegate() {
@@ -592,8 +592,8 @@ void CloudPrintWebDialogDelegate::OnDialogClosed(
   // End the keep-alive so that Chrome can exit.
   if (!modal_parent_ && keep_alive_when_non_modal_) {
     // Post to prevent recursive call tho this function.
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::Bind(&chrome::EndKeepAlive));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&chrome::DecrementKeepAliveCount));
   }
   delete this;
 }
@@ -635,7 +635,7 @@ void CreateDialogImpl(content::BrowserContext* browser_context,
   if (window) {
     HWND dialog_handle;
 #if defined(USE_AURA)
-    dialog_handle = window->GetDispatcher()->host()->GetAcceleratedWidget();
+    dialog_handle = window->GetHost()->GetAcceleratedWidget();
 #else
     dialog_handle = window;
 #endif
@@ -651,8 +651,7 @@ void CreateDialogForFileImpl(content::BrowserContext* browser_context,
                              const base::FilePath& path_to_file,
                              const base::string16& print_job_title,
                              const base::string16& print_ticket,
-                             const std::string& file_type,
-                             bool delete_on_close) {
+                             const std::string& file_type) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   scoped_refptr<base::RefCountedMemory> data;
   int64 file_size = 0;
@@ -673,8 +672,7 @@ void CreateDialogForFileImpl(content::BrowserContext* browser_context,
       base::Bind(&print_dialog_cloud::CreatePrintDialogForBytes,
                  browser_context, modal_parent, data, print_job_title,
                  print_ticket, file_type));
-  if (delete_on_close)
-    base::DeleteFile(path_to_file, false);
+  base::DeleteFile(path_to_file, false);
 }
 
 }  // namespace internal_cloud_print_helpers
@@ -700,15 +698,14 @@ void CreatePrintDialogForFile(content::BrowserContext* browser_context,
                               const base::FilePath& path_to_file,
                               const base::string16& print_job_title,
                               const base::string16& print_ticket,
-                              const std::string& file_type,
-                              bool delete_on_close) {
+                              const std::string& file_type) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
       base::Bind(&internal_cloud_print_helpers::CreateDialogForFileImpl,
                  browser_context, modal_parent, path_to_file, print_job_title,
-                 print_ticket, file_type, delete_on_close));
+                 print_ticket, file_type));
 }
 
 void CreateCloudPrintSigninTab(Browser* browser,
@@ -761,17 +758,8 @@ bool CreatePrintDialogFromCommandLine(Profile* profile,
             switches::kCloudPrintFileType);
       }
 
-      bool delete_on_close = CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kCloudPrintDeleteFile);
-
-      print_dialog_cloud::CreatePrintDialogForFile(
-          profile,
-          NULL,
-          cloud_print_file,
-          print_job_title,
-          print_job_print_ticket,
-          file_type,
-          delete_on_close);
+      print_dialog_cloud::CreatePrintDialogForFile(profile, NULL,
+          cloud_print_file, print_job_title, print_job_print_ticket, file_type);
       return true;
     }
   }

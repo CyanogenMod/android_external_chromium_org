@@ -27,7 +27,8 @@ class SyncTest(test_case.HostDrivenTestCase):
     # These ought not to change in the middle of a test for obvious reasons.
     self.additional_flags = [
         '--sync-url=http://%s:%d/chromiumsync' %
-        (self.test_server.host, self.test_server.port)]
+        (self.test_server.host, self.test_server.port),
+        '--sync-deferred-startup-timeout-seconds=0']
     super(SyncTest, self).SetUp(device, shard_index, push_deps,
                                 cleanup_test_files,
                                 [self.test_server.port])
@@ -42,7 +43,7 @@ class SyncTest(test_case.HostDrivenTestCase):
       full_names.append('SyncTest.' + test_name)
     return self._RunJavaTestFilters(full_names, self.additional_flags)
 
-  # Disabled for http://crbug.com/329757
+  # http://crbug.com/348951
   # @tests_annotations.Feature(['Sync'])
   # @tests_annotations.EnormousTest
   @tests_annotations.DisabledTest
@@ -50,7 +51,7 @@ class SyncTest(test_case.HostDrivenTestCase):
     java_tests = ['testGetAboutSyncInfoYieldsValidData']
     return self._RunSyncTests(java_tests)
 
-  # Disabled for http://crbug.com/309997
+  # http://crbug.com/348117
   # @tests_annotations.Feature(['Sync'])
   # @tests_annotations.EnormousTest
   @tests_annotations.DisabledTest
@@ -58,7 +59,7 @@ class SyncTest(test_case.HostDrivenTestCase):
     java_tests = ['testAboutSyncPageDisplaysCurrentSyncStatus']
     return self._RunSyncTests(java_tests)
 
-  # Disabled for http://crbug.com/311091
+  # http://crbug.com/348951
   # @tests_annotations.Feature(['Sync'])
   # @tests_annotations.EnormousTest
   @tests_annotations.DisabledTest

@@ -28,9 +28,12 @@ class ShellContentBrowserClient : public content::ContentBrowserClient {
       const content::MainFunctionParams& parameters) OVERRIDE;
   virtual void RenderProcessWillLaunch(
       content::RenderProcessHost* host) OVERRIDE;
+  virtual bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
+                                       const GURL& effective_url) OVERRIDE;
   virtual net::URLRequestContextGetter* CreateRequestContext(
       content::BrowserContext* browser_context,
-      content::ProtocolHandlerMap* protocol_handlers) OVERRIDE;
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
   // TODO(jamescook): Quota management?
   // TODO(jamescook): Speech recognition?
   virtual bool IsHandledURL(const GURL& url) OVERRIDE;
@@ -38,8 +41,10 @@ class ShellContentBrowserClient : public content::ContentBrowserClient {
       OVERRIDE;
   virtual void SiteInstanceDeleting(content::SiteInstance* site_instance)
       OVERRIDE;
-  virtual void AppendExtraCommandLineSwitches(CommandLine* command_line,
+  virtual void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
                                               int child_process_id) OVERRIDE;
+  virtual void GetAdditionalAllowedSchemesForFileSystem(
+      std::vector<std::string>* additional_schemes) OVERRIDE;
 
  private:
   // Returns the extension or app associated with |site_instance| or NULL.

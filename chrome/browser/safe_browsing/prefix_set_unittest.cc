@@ -8,6 +8,7 @@
 #include <iterator>
 
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/md5.h"
@@ -17,6 +18,9 @@
 #include "testing/platform_test.h"
 
 namespace {
+
+const SBPrefix kHighBitClear = 1000u * 1000u * 1000u;
+const SBPrefix kHighBitSet = 3u * 1000u * 1000u * 1000u;
 
 class PrefixSetTest : public PlatformTest {
  protected:
@@ -99,11 +103,11 @@ class PrefixSetTest : public PlatformTest {
     return true;
   }
 
-  // Helper function to read the int32 value at |offset|, increment it
+  // Helper function to read the uint32 value at |offset|, increment it
   // by |inc|, and write it back in place.  |fp| should be opened in
   // r+ mode.
   static void IncrementIntAt(FILE* fp, long offset, int inc) {
-    int32 value = 0;
+    uint32 value = 0;
 
     ASSERT_NE(-1, fseek(fp, offset, SEEK_SET));
     ASSERT_EQ(1U, fread(&value, sizeof(value), 1, fp));
@@ -144,14 +148,14 @@ class PrefixSetTest : public PlatformTest {
     ASSERT_EQ(file_size, ftell(fp));
   }
 
-  // Open |filename| and increment the int32 at |offset| by |inc|.
+  // Open |filename| and increment the uint32 at |offset| by |inc|.
   // Then re-generate the checksum to account for the new contents.
   void ModifyAndCleanChecksum(const base::FilePath& filename, long offset,
                               int inc) {
     int64 size_64;
     ASSERT_TRUE(base::GetFileSize(filename, &size_64));
 
-    file_util::ScopedFILE file(base::OpenFile(filename, "r+b"));
+    base::ScopedFILE file(base::OpenFile(filename, "r+b"));
     IncrementIntAt(file.get(), offset, inc);
     CleanChecksum(file.get());
     file.reset();
@@ -231,12 +235,9 @@ TEST_F(PrefixSetTest, IntMinMax) {
 TEST_F(PrefixSetTest, AllBig) {
   std::vector<SBPrefix> prefixes;
 
-  const SBPrefix kVeryPositive = 1000 * 1000 * 1000;
-  const SBPrefix kVeryNegative = -kVeryPositive;
   const unsigned kDelta = 10 * 1000 * 1000;
-
-  for (SBPrefix prefix = kVeryNegative;
-       prefix < kVeryPositive; prefix += kDelta) {
+  for (SBPrefix prefix = kHighBitSet;
+       prefix < kHighBitClear; prefix += kDelta) {
     prefixes.push_back(prefix);
   }
 
@@ -262,11 +263,8 @@ TEST_F(PrefixSetTest, AllBig) {
 TEST_F(PrefixSetTest, EdgeCases) {
   std::vector<SBPrefix> prefixes;
 
-  const SBPrefix kVeryPositive = 1000 * 1000 * 1000;
-  const SBPrefix kVeryNegative = -kVeryPositive;
-
-  // Put in a very negative prefix.
-  SBPrefix prefix = kVeryNegative;
+  // Put in a high-bit prefix.
+  SBPrefix prefix = kHighBitSet;
   prefixes.push_back(prefix);
 
   // Add a sequence with very large deltas.
@@ -289,7 +287,7 @@ TEST_F(PrefixSetTest, EdgeCases) {
   // Add a long sequence with deltas smaller than the maximum delta,
   // so a new index item will be injected.
   delta = 256 * 256 - 1;
-  prefix = kVeryPositive - delta * 1000;
+  prefix = kHighBitClear - delta * 1000;
   prefixes.push_back(prefix);
   for (int i = 0; i < 1000; ++i) {
     prefix += delta;
@@ -310,8 +308,8 @@ TEST_F(PrefixSetTest, EdgeCases) {
                          prefixes_copy.begin()));
 
   // Items before and after the set are not present, and don't crash.
-  EXPECT_FALSE(prefix_set.Exists(kVeryNegative - 100));
-  EXPECT_FALSE(prefix_set.Exists(kVeryPositive + 100));
+  EXPECT_FALSE(prefix_set.Exists(kHighBitSet - 100));
+  EXPECT_FALSE(prefix_set.Exists(kHighBitClear + 100));
 
   // Check that the set correctly flags all of the inputs, and also
   // check items just above and below the inputs to make sure they
@@ -340,12 +338,9 @@ TEST_F(PrefixSetTest, ReadWrite) {
 
   // Test writing and reading a very sparse set containing no deltas.
   {
-    const SBPrefix kVeryPositive = 1000 * 1000 * 1000;
-    const SBPrefix kVeryNegative = -kVeryPositive;
-
     std::vector<SBPrefix> prefixes;
-    prefixes.push_back(kVeryNegative);
-    prefixes.push_back(kVeryPositive);
+    prefixes.push_back(kHighBitClear);
+    prefixes.push_back(kHighBitSet);
 
     safe_browsing::PrefixSet prefix_set_to_write(prefixes);
     ASSERT_TRUE(prefix_set_to_write.WriteFile(filename));
@@ -373,7 +368,7 @@ TEST_F(PrefixSetTest, CorruptionHelpers) {
   ASSERT_TRUE(GetPrefixSetFile(&filename));
 
   // This will modify data in |index_|, which will fail the digest check.
-  file_util::ScopedFILE file(base::OpenFile(filename, "r+b"));
+  base::ScopedFILE file(base::OpenFile(filename, "r+b"));
   IncrementIntAt(file.get(), kPayloadOffset, 1);
   file.reset();
   scoped_ptr<safe_browsing::PrefixSet>
@@ -443,7 +438,7 @@ TEST_F(PrefixSetTest, CorruptionPayload) {
   base::FilePath filename;
   ASSERT_TRUE(GetPrefixSetFile(&filename));
 
-  file_util::ScopedFILE file(base::OpenFile(filename, "r+b"));
+  base::ScopedFILE file(base::OpenFile(filename, "r+b"));
   ASSERT_NO_FATAL_FAILURE(IncrementIntAt(file.get(), 666, 1));
   file.reset();
   scoped_ptr<safe_browsing::PrefixSet>
@@ -458,7 +453,7 @@ TEST_F(PrefixSetTest, CorruptionDigest) {
 
   int64 size_64;
   ASSERT_TRUE(base::GetFileSize(filename, &size_64));
-  file_util::ScopedFILE file(base::OpenFile(filename, "r+b"));
+  base::ScopedFILE file(base::OpenFile(filename, "r+b"));
   long digest_offset = static_cast<long>(size_64 - sizeof(base::MD5Digest));
   ASSERT_NO_FATAL_FAILURE(IncrementIntAt(file.get(), digest_offset, 1));
   file.reset();
@@ -473,7 +468,7 @@ TEST_F(PrefixSetTest, CorruptionExcess) {
   ASSERT_TRUE(GetPrefixSetFile(&filename));
 
   // Add some junk to the trunk.
-  file_util::ScopedFILE file(base::OpenFile(filename, "ab"));
+  base::ScopedFILE file(base::OpenFile(filename, "ab"));
   const char buf[] = "im in ur base, killing ur d00dz.";
   ASSERT_EQ(strlen(buf), fwrite(buf, 1, strlen(buf), file.get()));
   file.reset();
@@ -482,13 +477,13 @@ TEST_F(PrefixSetTest, CorruptionExcess) {
   ASSERT_FALSE(prefix_set.get());
 }
 
-// Test that files which had 64-bit size_t can be read.
+// Test that files which had 64-bit size_t are discarded.
 TEST_F(PrefixSetTest, SizeTRecovery) {
   base::FilePath filename;
   ASSERT_TRUE(GetPrefixSetFile(&filename));
 
   // Open the file for rewrite.
-  file_util::ScopedFILE file(base::OpenFile(filename, "r+b"));
+  base::ScopedFILE file(base::OpenFile(filename, "r+b"));
 
   // Leave existing magic and version.
   ASSERT_NE(-1, fseek(file.get(), sizeof(uint32) * 2, SEEK_SET));
@@ -522,15 +517,70 @@ TEST_F(PrefixSetTest, SizeTRecovery) {
 
   scoped_ptr<safe_browsing::PrefixSet>
       prefix_set(safe_browsing::PrefixSet::LoadFile(filename));
+  ASSERT_FALSE(prefix_set.get());
+}
+
+// Test that a version 1 file is re-ordered correctly on read.
+TEST_F(PrefixSetTest, ReadWriteSigned) {
+  base::FilePath filename;
+  ASSERT_TRUE(GetPrefixSetFile(&filename));
+
+  // Open the file for rewrite.
+  base::ScopedFILE file(base::OpenFile(filename, "r+b"));
+
+  // Leave existing magic.
+  ASSERT_NE(-1, fseek(file.get(), sizeof(uint32), SEEK_SET));
+
+  // Version 1.
+  uint32 version = 1;
+  ASSERT_EQ(sizeof(version), fwrite(&version, 1, sizeof(version), file.get()));
+
+  // Indicate two index values and two deltas.
+  uint32 val = 2;
+  ASSERT_EQ(sizeof(val), fwrite(&val, 1, sizeof(val), file.get()));
+  ASSERT_EQ(sizeof(val), fwrite(&val, 1, sizeof(val), file.get()));
+
+  std::pair<int32, uint32> item;
+  memset(&item, 0, sizeof(item));  // Includes any padding.
+  item.first = -1000;
+  item.second = 0;
+  ASSERT_EQ(sizeof(item), fwrite(&item, 1, sizeof(item), file.get()));
+  item.first = 1000;
+  item.second = 1;
+  ASSERT_EQ(sizeof(item), fwrite(&item, 1, sizeof(item), file.get()));
+
+  // Write two delta values.
+  uint16 delta = 23;
+  ASSERT_EQ(sizeof(delta), fwrite(&delta, 1, sizeof(delta), file.get()));
+  ASSERT_EQ(sizeof(delta), fwrite(&delta, 1, sizeof(delta), file.get()));
+
+  // Leave space for the digest at the end, and regenerate it.
+  base::MD5Digest dummy = { { 0 } };
+  ASSERT_EQ(sizeof(dummy), fwrite(&dummy, 1, sizeof(dummy), file.get()));
+  ASSERT_TRUE(base::TruncateFile(file.get()));
+  CleanChecksum(file.get());
+  file.reset();  // Flush updates.
+
+  scoped_ptr<safe_browsing::PrefixSet>
+      prefix_set(safe_browsing::PrefixSet::LoadFile(filename));
   ASSERT_TRUE(prefix_set.get());
+
+  // |Exists()| uses |std::upper_bound()| to find a starting point, which
+  // assumes |index_| is sorted.  Depending on how |upper_bound()| is
+  // implemented, if the actual list is sorted by |int32|, then one of these
+  // test pairs should fail.
+  EXPECT_TRUE(prefix_set->Exists(1000u));
+  EXPECT_TRUE(prefix_set->Exists(1023u));
+  EXPECT_TRUE(prefix_set->Exists(static_cast<uint32>(-1000)));
+  EXPECT_TRUE(prefix_set->Exists(static_cast<uint32>(-1000 + 23)));
 
   std::vector<SBPrefix> prefixes_copy;
   prefix_set->GetPrefixes(&prefixes_copy);
   EXPECT_EQ(prefixes_copy.size(), 4u);
-  EXPECT_EQ(prefixes_copy[0], 17);
-  EXPECT_EQ(prefixes_copy[1], 40);
-  EXPECT_EQ(prefixes_copy[2], 100042);
-  EXPECT_EQ(prefixes_copy[3], 100065);
+  EXPECT_EQ(prefixes_copy[0], 1000u);
+  EXPECT_EQ(prefixes_copy[1], 1023u);
+  EXPECT_EQ(prefixes_copy[2], static_cast<uint32>(-1000));
+  EXPECT_EQ(prefixes_copy[3], static_cast<uint32>(-1000 + 23));
 }
 
 }  // namespace

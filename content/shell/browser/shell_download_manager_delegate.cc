@@ -29,8 +29,8 @@
 #include "net/base/net_util.h"
 
 #if defined(OS_WIN)
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 namespace content {
@@ -176,7 +176,7 @@ void ShellDownloadManagerDelegate::ChooseDownloadPath(
   ZeroMemory(&save_as, sizeof(save_as));
   save_as.lStructSize = sizeof(OPENFILENAME);
   save_as.hwndOwner = item->GetWebContents()->GetView()->GetNativeView()->
-      GetDispatcher()->host()->GetAcceleratedWidget();
+      GetHost()->GetAcceleratedWidget();
   save_as.lpstrFile = file_name;
   save_as.nMaxFile = arraysize(file_name);
 

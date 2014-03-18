@@ -14,16 +14,18 @@ namespace cc {
 
 // static
 scoped_ptr<RasterWorkerPool> DirectRasterWorkerPool::Create(
+    base::SequencedTaskRunner* task_runner,
     ResourceProvider* resource_provider,
     ContextProvider* context_provider) {
-  return make_scoped_ptr<RasterWorkerPool>(
-      new DirectRasterWorkerPool(resource_provider, context_provider));
+  return make_scoped_ptr<RasterWorkerPool>(new DirectRasterWorkerPool(
+      task_runner, resource_provider, context_provider));
 }
 
 DirectRasterWorkerPool::DirectRasterWorkerPool(
+    base::SequencedTaskRunner* task_runner,
     ResourceProvider* resource_provider,
     ContextProvider* context_provider)
-    : RasterWorkerPool(NULL, resource_provider),
+    : RasterWorkerPool(task_runner, NULL, resource_provider),
       context_provider_(context_provider),
       run_tasks_on_origin_thread_pending_(false),
       raster_tasks_pending_(false),
@@ -34,8 +36,14 @@ DirectRasterWorkerPool::~DirectRasterWorkerPool() {
   DCHECK_EQ(0u, completed_tasks_.size());
 }
 
-void DirectRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
+void DirectRasterWorkerPool::ScheduleTasks(RasterTaskQueue* queue) {
   TRACE_EVENT0("cc", "DirectRasterWorkerPool::ScheduleTasks");
+
+  DCHECK_EQ(queue->required_for_activation_count,
+            static_cast<size_t>(
+                std::count_if(queue->items.begin(),
+                              queue->items.end(),
+                              RasterTaskQueue::Item::IsRequiredForActivation)));
 
   raster_tasks_pending_ = true;
   raster_tasks_required_for_activation_pending_ = true;
@@ -43,7 +51,7 @@ void DirectRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
   scoped_refptr<internal::WorkerPoolTask>
       new_raster_required_for_activation_finished_task(
           CreateRasterRequiredForActivationFinishedTask(
-              queue->required_for_activation_count()));
+              queue->required_for_activation_count));
   scoped_refptr<internal::WorkerPoolTask> new_raster_finished_task(
       CreateRasterFinishedTask());
 
@@ -52,13 +60,16 @@ void DirectRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
   // TODO(reveman): Remove this once only tasks for which
   // ::ScheduleOnOriginThread has been called need to be canceled.
   if (run_tasks_on_origin_thread_pending_) {
-    for (RasterTaskQueueIterator it(&raster_tasks_); it; ++it) {
-      internal::RasterWorkerPoolTask* task = *it;
+    for (RasterTaskQueue::Item::Vector::const_iterator it =
+             raster_tasks_.items.begin();
+         it != raster_tasks_.items.end();
+         ++it) {
+      internal::RasterWorkerPoolTask* task = it->task;
 
-      if (std::find_if(queue->tasks_.begin(),
-                       queue->tasks_.end(),
-                       RasterTask::Queue::QueuedTask::TaskComparator(task)) ==
-          queue->tasks_.end())
+      if (std::find_if(queue->items.begin(),
+                       queue->items.end(),
+                       RasterTaskQueue::Item::TaskComparator(task)) ==
+          queue->items.end())
         completed_tasks_.push_back(task);
     }
   }
@@ -95,14 +106,15 @@ void DirectRasterWorkerPool::CheckForCompletedTasks() {
 }
 
 SkCanvas* DirectRasterWorkerPool::AcquireCanvasForRaster(
-    internal::RasterWorkerPoolTask* task) {
-  return resource_provider()->MapDirectRasterBuffer(task->resource()->id());
+    internal::WorkerPoolTask* task,
+    const Resource* resource) {
+  return resource_provider()->MapDirectRasterBuffer(resource->id());
 }
 
-void DirectRasterWorkerPool::OnRasterCompleted(
-    internal::RasterWorkerPoolTask* task,
-    const PicturePileImpl::Analysis& analysis) {
-  resource_provider()->UnmapDirectRasterBuffer(task->resource()->id());
+void DirectRasterWorkerPool::ReleaseCanvasForRaster(
+    internal::WorkerPoolTask* task,
+    const Resource* resource) {
+  resource_provider()->UnmapDirectRasterBuffer(resource->id());
 }
 
 void DirectRasterWorkerPool::OnRasterTasksFinished() {
@@ -121,7 +133,7 @@ void DirectRasterWorkerPool::ScheduleRunTasksOnOriginThread() {
   if (run_tasks_on_origin_thread_pending_)
     return;
 
-  base::MessageLoopProxy::current()->PostTask(
+  task_runner()->PostTask(
       FROM_HERE,
       base::Bind(&DirectRasterWorkerPool::RunTasksOnOriginThread,
                  weak_factory_.GetWeakPtr()));
@@ -129,17 +141,30 @@ void DirectRasterWorkerPool::ScheduleRunTasksOnOriginThread() {
 }
 
 void DirectRasterWorkerPool::RunTasksOnOriginThread() {
+  TRACE_EVENT0("cc", "DirectRasterWorkerPool::RunTasksOnOriginThread");
+
   DCHECK(run_tasks_on_origin_thread_pending_);
   run_tasks_on_origin_thread_pending_ = false;
 
-  if (!raster_tasks_.tasks_.empty()) {
+  if (!raster_tasks_.items.empty()) {
+    DCHECK(context_provider_);
+    DCHECK(context_provider_->ContextGL());
+    // TODO(alokp): Use a trace macro to push/pop markers.
+    // Using push/pop functions directly incurs cost to evaluate function
+    // arguments even when tracing is disabled.
+    context_provider_->ContextGL()->PushGroupMarkerEXT(
+        0, "DirectRasterWorkerPool::RunTasksOnOriginThread");
+
     GrContext* gr_context = context_provider_->GrContext();
     // TODO(alokp): Implement TestContextProvider::GrContext().
     if (gr_context)
       gr_context->resetContext();
 
-    for (RasterTaskQueueIterator it(&raster_tasks_); it; ++it) {
-      internal::RasterWorkerPoolTask* task = *it;
+    for (RasterTaskQueue::Item::Vector::const_iterator it =
+             raster_tasks_.items.begin();
+         it != raster_tasks_.items.end();
+         ++it) {
+      internal::RasterWorkerPoolTask* task = it->task;
       DCHECK(!task->HasCompleted());
 
       // First need to run all dependencies.
@@ -148,23 +173,22 @@ void DirectRasterWorkerPool::RunTasksOnOriginThread() {
            it != task->dependencies().end();
            ++it) {
         internal::WorkerPoolTask* dependency = it->get();
-
         if (dependency->HasCompleted())
           continue;
 
         RunTaskOnOriginThread(dependency);
-
         completed_tasks_.push_back(dependency);
       }
 
       RunTaskOnOriginThread(task);
-
       completed_tasks_.push_back(task);
     }
 
     // TODO(alokp): Implement TestContextProvider::GrContext().
     if (gr_context)
       gr_context->flush();
+
+    context_provider_->ContextGL()->PopGroupMarkerEXT();
   }
 
   RunTaskOnOriginThread(raster_required_for_activation_finished_task());

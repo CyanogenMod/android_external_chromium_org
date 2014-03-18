@@ -71,7 +71,7 @@ TEST_F(PasswordStoreDefaultTest, NonASCIIData) {
       base::MessageLoopProxy::current(),
       base::MessageLoopProxy::current(),
       login_db_.release()));
-  store->Init();
+  store->Init(syncer::SyncableService::StartSyncFlare());
 
   // Some non-ASCII password form data.
   static const PasswordFormData form_data[] = {
@@ -109,6 +109,7 @@ TEST_F(PasswordStoreDefaultTest, NonASCIIData) {
 
   STLDeleteElements(&expected_forms);
   store->Shutdown();
+  base::MessageLoop::current()->RunUntilIdle();
 }
 
 TEST_F(PasswordStoreDefaultTest, Notifications) {
@@ -116,7 +117,7 @@ TEST_F(PasswordStoreDefaultTest, Notifications) {
       base::MessageLoopProxy::current(),
       base::MessageLoopProxy::current(),
       login_db_.release()));
-  store->Init();
+  store->Init(syncer::SyncableService::StartSyncFlare());
 
   PasswordFormData form_data =
   { PasswordForm::SCHEME_HTML,
@@ -175,4 +176,5 @@ TEST_F(PasswordStoreDefaultTest, Notifications) {
 
   store->RemoveObserver(&observer);
   store->Shutdown();
+  base::MessageLoop::current()->RunUntilIdle();
 }

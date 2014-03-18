@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from telemetry.core.timeline import model
+from telemetry.core.backends.chrome import inspector_timeline_data
+from telemetry.core.backends.chrome import timeline_recorder
 
 
 class TabBackendException(Exception):
@@ -10,7 +11,7 @@ class TabBackendException(Exception):
   pass
 
 
-class InspectorTimeline(object):
+class InspectorTimeline(timeline_recorder.TimelineRecorder):
   """Implementation of dev tools timeline."""
 
   class Recorder(object):
@@ -33,13 +34,13 @@ class InspectorTimeline(object):
       self._tab.StopTimelineRecording()
 
   def __init__(self, inspector_backend):
+    super(InspectorTimeline, self).__init__()
     self._inspector_backend = inspector_backend
     self._is_recording = False
-    self._timeline_model = None
 
   @property
-  def timeline_model(self):
-    return self._timeline_model
+  def is_timeline_recording_running(self):
+    return self._is_recording
 
   def Start(self):
     """Starts recording."""
@@ -57,15 +58,16 @@ class InspectorTimeline(object):
     self._SendSyncRequest(request)
 
   def Stop(self):
-    """Stops recording and makes a TimelineModel with the event data."""
-    assert self._is_recording, 'Stop should be called after Start.'
+    """Stops recording and returns timeline event data."""
+    if not self._is_recording:
+      return None
     request = {'method': 'Timeline.stop'}
     result = self._SendSyncRequest(request)
-    raw_events = result['events']
-    self._timeline_model = model.TimelineModel(
-        event_data=raw_events, shift_world_to_zero=False)
     self._inspector_backend.UnregisterDomain('Timeline')
     self._is_recording = False
+
+    raw_events = result['events']
+    return inspector_timeline_data.InspectorTimelineData(raw_events)
 
   def _SendSyncRequest(self, request, timeout=60):
     """Sends a devtools remote debugging protocol request.
@@ -97,4 +99,3 @@ class InspectorTimeline(object):
   def _OnClose(self):
     """Handler called when a domain is unregistered."""
     pass
-

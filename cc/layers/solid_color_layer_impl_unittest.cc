@@ -165,5 +165,66 @@ TEST(SolidColorLayerImplTest, VerifyOpaqueRect) {
   }
 }
 
+TEST(SolidColorLayerImplTest, Occlusion) {
+  gfx::Size layer_size(1000, 1000);
+  gfx::Size viewport_size(1000, 1000);
+
+  LayerTestCommon::LayerImplTest impl;
+  MockQuadCuller quad_culler;
+  AppendQuadsData data;
+
+  SolidColorLayerImpl* solid_color_layer_impl =
+      impl.AddChildToRoot<SolidColorLayerImpl>();
+  solid_color_layer_impl->SetBackgroundColor(SkColorSetARGB(255, 10, 20, 30));
+  solid_color_layer_impl->SetAnchorPoint(gfx::PointF());
+  solid_color_layer_impl->SetBounds(layer_size);
+  solid_color_layer_impl->SetContentBounds(layer_size);
+  solid_color_layer_impl->SetDrawsContent(true);
+
+  impl.CalcDrawProps(viewport_size);
+
+  // No occlusion.
+  {
+    gfx::Rect occluded;
+    quad_culler.clear_lists();
+    quad_culler.set_occluded_content_rect(occluded);
+    solid_color_layer_impl->AppendQuads(&quad_culler, &data);
+
+    LayerTestCommon::VerifyQuadsExactlyCoverRect(quad_culler.quad_list(),
+                                                 gfx::Rect(viewport_size));
+    EXPECT_EQ(16u, quad_culler.quad_list().size());
+  }
+
+  // Full occlusion.
+  {
+    gfx::Rect occluded = solid_color_layer_impl->visible_content_rect();
+    quad_culler.clear_lists();
+    quad_culler.set_occluded_content_rect(occluded);
+    solid_color_layer_impl->AppendQuads(&quad_culler, &data);
+
+    LayerTestCommon::VerifyQuadsExactlyCoverRect(quad_culler.quad_list(),
+                                                 gfx::Rect());
+    EXPECT_EQ(quad_culler.quad_list().size(), 0u);
+  }
+
+  // Partial occlusion.
+  {
+    gfx::Rect occluded(200, 200, 256 * 3, 256 * 3);
+    quad_culler.clear_lists();
+    quad_culler.set_occluded_content_rect(occluded);
+    solid_color_layer_impl->AppendQuads(&quad_culler, &data);
+
+    size_t partially_occluded_count = 0;
+    LayerTestCommon::VerifyQuadsCoverRectWithOcclusion(
+        quad_culler.quad_list(),
+        gfx::Rect(viewport_size),
+        occluded,
+        &partially_occluded_count);
+    // 4 quads are completely occluded, 8 are partially occluded.
+    EXPECT_EQ(16u - 4u, quad_culler.quad_list().size());
+    EXPECT_EQ(8u, partially_occluded_count);
+  }
+}
+
 }  // namespace
 }  // namespace cc

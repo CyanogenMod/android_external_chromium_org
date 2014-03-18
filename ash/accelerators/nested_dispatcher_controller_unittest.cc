@@ -11,9 +11,9 @@
 #include "base/event_types.h"
 #include "base/message_loop/message_loop.h"
 #include "ui/aura/client/dispatcher_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_utils.h"
@@ -84,11 +84,10 @@ void DispatchKeyReleaseA() {
 #elif defined(USE_X11)
   ui::ScopedXI2Event native_event;
   native_event.InitKeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_A, 0);
-  aura::WindowEventDispatcher* dispatcher =
-      ash::Shell::GetPrimaryRootWindow()->GetDispatcher();
-  dispatcher->host()->PostNativeEvent(native_event);
+  aura::WindowTreeHost* host = ash::Shell::GetPrimaryRootWindow()->GetHost();
+  host->PostNativeEvent(native_event);
   native_event.InitKeyEvent(ui::ET_KEY_RELEASED, ui::VKEY_A, 0);
-  dispatcher->host()->PostNativeEvent(native_event);
+  host->PostNativeEvent(native_event);
 #endif
   // Make sure the inner message-loop terminates after dispatching the events.
   base::MessageLoop::current()->PostTask(FROM_HERE,
@@ -98,21 +97,6 @@ void DispatchKeyReleaseA() {
 }  // namespace
 
 typedef AshTestBase NestedDispatcherTest;
-
-// Aura window below lock screen in z order.
-TEST_F(NestedDispatcherTest, AssociatedWindowBelowLockScreen) {
-  MockDispatcher inner_dispatcher;
-  scoped_ptr<aura::Window> associated_window(CreateTestWindowInShellWithId(0));
-
-  Shell::GetInstance()->session_state_delegate()->LockScreen();
-  DispatchKeyReleaseA();
-  aura::Window* root_window = ash::Shell::GetPrimaryRootWindow();
-  aura::client::GetDispatcherClient(root_window)->RunWithDispatcher(
-      &inner_dispatcher,
-      associated_window.get());
-  EXPECT_EQ(0, inner_dispatcher.num_key_events_dispatched());
-  Shell::GetInstance()->session_state_delegate()->UnlockScreen();
-}
 
 // Aura window above lock screen in z order.
 TEST_F(NestedDispatcherTest, AssociatedWindowAboveLockScreen) {
@@ -128,8 +112,7 @@ TEST_F(NestedDispatcherTest, AssociatedWindowAboveLockScreen) {
   DispatchKeyReleaseA();
   aura::Window* root_window = ash::Shell::GetPrimaryRootWindow();
   aura::client::GetDispatcherClient(root_window)->RunWithDispatcher(
-      &inner_dispatcher,
-      associated_window.get());
+      &inner_dispatcher);
   EXPECT_EQ(1, inner_dispatcher.num_key_events_dispatched());
 }
 
@@ -146,8 +129,7 @@ TEST_F(NestedDispatcherTest, AcceleratorsHandled) {
 
   DispatchKeyReleaseA();
   aura::client::GetDispatcherClient(root_window)->RunWithDispatcher(
-      &inner_dispatcher,
-      root_window);
+      &inner_dispatcher);
   EXPECT_EQ(0, inner_dispatcher.num_key_events_dispatched());
   EXPECT_EQ(1, target.accelerator_pressed_count());
 }

@@ -7,6 +7,9 @@
 
 #include <string>
 
+#include "base/platform_file.h"
+#include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
+
 namespace blink {
 class WebMediaConstraints;
 }
@@ -16,6 +19,7 @@ namespace webrtc {
 class AudioFrame;
 class AudioProcessing;
 class MediaConstraintsInterface;
+class TypingDetection;
 
 }
 
@@ -53,22 +57,32 @@ void EnableEchoCancellation(AudioProcessing* audio_processing);
 // Enables the noise suppression in |audio_processing|.
 void EnableNoiseSuppression(AudioProcessing* audio_processing);
 
+// Enables the experimental noise suppression in |audio_processing|.
+void EnableExperimentalNoiseSuppression(AudioProcessing* audio_processing);
+
 // Enables the high pass filter in |audio_processing|.
 void EnableHighPassFilter(AudioProcessing* audio_processing);
 
 // Enables the typing detection in |audio_processing|.
-void EnableTypingDetection(AudioProcessing* audio_processing);
+void EnableTypingDetection(AudioProcessing* audio_processing,
+                           webrtc::TypingDetection* typing_detector);
 
 // Enables the experimental echo cancellation in |audio_processing|.
 void EnableExperimentalEchoCancellation(AudioProcessing* audio_processing);
 
 // Starts the echo cancellation dump in |audio_processing|.
-void StartAecDump(AudioProcessing* audio_processing);
+void StartEchoCancellationDump(AudioProcessing* audio_processing,
+                  const base::PlatformFile& aec_dump_file);
 
 // Stops the echo cancellation dump in |audio_processing|.
-void StopAecDump(AudioProcessing* audio_processing);
+// This method has no impact if echo cancellation dump has not been started on
+// |audio_processing|.
+void StopEchoCancellationDump(AudioProcessing* audio_processing);
 
 void EnableAutomaticGainControl(AudioProcessing* audio_processing);
+
+void GetAecStats(AudioProcessing* audio_processing,
+                 webrtc::AudioProcessorInterface::AudioProcessorStats* stats);
 
 }  // namespace content
 

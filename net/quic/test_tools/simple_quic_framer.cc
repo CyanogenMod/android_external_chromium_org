@@ -80,6 +80,11 @@ class SimpleFramerVisitor : public QuicFramerVisitorInterface {
     return true;
   }
 
+  virtual bool OnStopWaitingFrame(const QuicStopWaitingFrame& frame) OVERRIDE {
+    stop_waiting_frames_.push_back(frame);
+    return true;
+  }
+
   virtual void OnFecData(const QuicFecData& fec) OVERRIDE {
     fec_data_ = fec;
     fec_redundancy_ = fec_data_.redundancy.as_string();
@@ -102,6 +107,17 @@ class SimpleFramerVisitor : public QuicFramerVisitorInterface {
     return true;
   }
 
+  virtual bool OnWindowUpdateFrame(
+      const QuicWindowUpdateFrame& frame) OVERRIDE {
+    window_update_frames_.push_back(frame);
+    return true;
+  }
+
+  virtual bool OnBlockedFrame(const QuicBlockedFrame& frame) OVERRIDE {
+    blocked_frames_.push_back(frame);
+    return true;
+  }
+
   virtual void OnPacketComplete() OVERRIDE {}
 
   const QuicPacketHeader& header() const { return header_; }
@@ -121,6 +137,9 @@ class SimpleFramerVisitor : public QuicFramerVisitorInterface {
   const vector<QuicStreamFrame>& stream_frames() const {
     return stream_frames_;
   }
+  const vector<QuicStopWaitingFrame>& stop_waiting_frames() const {
+    return stop_waiting_frames_;
+  }
   const QuicFecData& fec_data() const {
     return fec_data_;
   }
@@ -133,10 +152,13 @@ class SimpleFramerVisitor : public QuicFramerVisitorInterface {
   string fec_redundancy_;
   vector<QuicAckFrame> ack_frames_;
   vector<QuicCongestionFeedbackFrame> feedback_frames_;
+  vector<QuicStopWaitingFrame> stop_waiting_frames_;
   vector<QuicStreamFrame> stream_frames_;
   vector<QuicRstStreamFrame> rst_stream_frames_;
   vector<QuicGoAwayFrame> goaway_frames_;
   vector<QuicConnectionCloseFrame> connection_close_frames_;
+  vector<QuicWindowUpdateFrame> window_update_frames_;
+  vector<QuicBlockedFrame> blocked_frames_;
   vector<string*> stream_data_;
 
   DISALLOW_COPY_AND_ASSIGN(SimpleFramerVisitor);
@@ -179,15 +201,21 @@ QuicFramer* SimpleQuicFramer::framer() {
 
 size_t SimpleQuicFramer::num_frames() const {
   return ack_frames().size() +
-      stream_frames().size() +
       feedback_frames().size() +
-      rst_stream_frames().size() +
       goaway_frames().size() +
+      rst_stream_frames().size() +
+      stop_waiting_frames().size() +
+      stream_frames().size() +
       connection_close_frames().size();
 }
 
 const vector<QuicAckFrame>& SimpleQuicFramer::ack_frames() const {
   return visitor_->ack_frames();
+}
+
+const vector<QuicStopWaitingFrame>&
+SimpleQuicFramer::stop_waiting_frames() const {
+  return visitor_->stop_waiting_frames();
 }
 
 const vector<QuicStreamFrame>& SimpleQuicFramer::stream_frames() const {

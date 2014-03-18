@@ -23,7 +23,7 @@
 #import "chrome/browser/ui/cocoa/panels/panel_utils_cocoa.h"
 #import "chrome/browser/ui/cocoa/tab_contents/favicon_util_mac.h"
 #import "chrome/browser/ui/cocoa/tab_contents/tab_contents_controller.h"
-#import "chrome/browser/ui/cocoa/tabs/throbber_view.h"
+#import "chrome/browser/ui/cocoa/sprite_view.h"
 #include "chrome/browser/ui/panels/panel_bounds_animation.h"
 #include "chrome/browser/ui/panels/panel_collection.h"
 #include "chrome/browser/ui/panels/panel_constants.h"
@@ -286,31 +286,30 @@ const double kWidthOfMouseResizeArea = 15.0;
 }
 
 - (void)updateIcon {
-  NSView* icon = nil;
-  NSRect iconFrame = [[titlebar_view_ icon] frame];
+  base::scoped_nsobject<NSView> iconView;
   if (throbberShouldSpin_) {
     // If the throbber is spinning now, no need to replace it.
-    if ([[titlebar_view_ icon] isKindOfClass:[ThrobberView class]])
+    if ([[titlebar_view_ icon] isKindOfClass:[SpriteView class]])
       return;
 
     NSImage* iconImage =
         ResourceBundle::GetSharedInstance().GetNativeImageNamed(
             IDR_THROBBER).ToNSImage();
-    icon = [ThrobberView filmstripThrobberViewWithFrame:iconFrame
-                                                  image:iconImage];
+    SpriteView* spriteView = [[SpriteView alloc] init];
+    [spriteView setImage:iconImage];
+    iconView.reset(spriteView);
   } else {
     const gfx::Image& page_icon = windowShim_->panel()->GetCurrentPageIcon();
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    NSRect iconFrame = [[titlebar_view_ icon] frame];
     NSImage* iconImage = page_icon.IsEmpty() ?
         rb.GetNativeImageNamed(IDR_DEFAULT_FAVICON).ToNSImage() :
         page_icon.ToNSImage();
-    NSImageView* iconView =
-        [[[NSImageView alloc] initWithFrame:iconFrame] autorelease];
-    [iconView setImage:iconImage];
-    icon = iconView;
+    NSImageView* imageView = [[NSImageView alloc] initWithFrame:iconFrame];
+    [imageView setImage:iconImage];
+    iconView.reset(imageView);
   }
-
-  [titlebar_view_ setIcon:icon];
+  [titlebar_view_ setIcon:iconView];
 }
 
 - (void)updateThrobber:(BOOL)shouldSpin {
@@ -498,10 +497,10 @@ const double kWidthOfMouseResizeArea = 15.0;
   // is too large, we clip the duration (effectively increasing speed) to
   // limit total duration of animation. This makes 'small' transitions fast.
   // 'distance' is the max travel between 4 potentially traveling corners.
-  double distanceX = std::max(abs(NSMinX(currentFrame) - NSMinX(frame)),
-                              abs(NSMaxX(currentFrame) - NSMaxX(frame)));
-  double distanceY = std::max(abs(NSMinY(currentFrame) - NSMinY(frame)),
-                              abs(NSMaxY(currentFrame) - NSMaxY(frame)));
+  double distanceX = std::max(std::abs(NSMinX(currentFrame) - NSMinX(frame)),
+                              std::abs(NSMaxX(currentFrame) - NSMaxX(frame)));
+  double distanceY = std::max(std::abs(NSMinY(currentFrame) - NSMinY(frame)),
+                              std::abs(NSMaxY(currentFrame) - NSMaxY(frame)));
   double distance = std::max(distanceX, distanceY);
   double duration = std::min(distance / kBoundsAnimationSpeedPixelsPerSecond,
                              kBoundsAnimationMaxDurationSeconds);

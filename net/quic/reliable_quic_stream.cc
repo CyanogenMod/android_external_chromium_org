@@ -6,7 +6,6 @@
 
 #include "base/logging.h"
 #include "net/quic/quic_session.h"
-#include "net/quic/quic_spdy_decompressor.h"
 #include "net/quic/quic_write_blocked_list.h"
 
 using base::StringPiece;
@@ -115,7 +114,7 @@ void ReliableQuicStream::CloseConnectionWithDetails(QuicErrorCode error,
   session()->connection()->SendConnectionCloseWithDetails(error, details);
 }
 
-QuicVersion ReliableQuicStream::version() {
+QuicVersion ReliableQuicStream::version() const {
   return session()->connection()->version();
 }
 
@@ -180,9 +179,15 @@ QuicConsumedData ReliableQuicStream::WritevData(
   size_t write_length = 0u;
   for (int i = 0; i < iov_count; ++i) {
     write_length += iov[i].iov_len;
+    // TODO(rjshade): Maybe block write based on available flow control window.
   }
+
+  // Fill an IOVector with bytes from the iovec.
+  IOVector data;
+  data.AppendIovecAtMostBytes(iov, iov_count, write_length);
+
   QuicConsumedData consumed_data = session()->WritevData(
-      id(), iov, iov_count, stream_bytes_written_, fin, ack_notifier_delegate);
+      id(), data, stream_bytes_written_, fin, ack_notifier_delegate);
   stream_bytes_written_ += consumed_data.bytes_consumed;
   if (consumed_data.bytes_consumed == write_length) {
     if (fin && consumed_data.fin_consumed) {

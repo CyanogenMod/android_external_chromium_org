@@ -11,6 +11,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -25,8 +26,10 @@ base::string16 OmniboxView::StripJavascriptSchemas(const base::string16& text) {
   const base::string16 kJsPrefix(
       base::ASCIIToUTF16(content::kJavaScriptScheme) + base::ASCIIToUTF16(":"));
   base::string16 out(text);
-  while (StartsWith(out, kJsPrefix, false))
-    TrimWhitespace(out.substr(kJsPrefix.length()), TRIM_LEADING, &out);
+  while (StartsWith(out, kJsPrefix, false)) {
+    base::TrimWhitespace(out.substr(kJsPrefix.length()), base::TRIM_LEADING,
+                         &out);
+  }
   return out;
 }
 
@@ -38,7 +41,7 @@ base::string16 OmniboxView::SanitizeTextForPaste(const base::string16& text) {
   // trailing whitespace when making this determination.
   for (size_t i = 0; i < text.size(); ++i) {
     if (IsWhitespace(text[i]) && text[i] != '\n' && text[i] != '\r') {
-      const base::string16 collapsed = CollapseWhitespace(text, false);
+      const base::string16 collapsed = base::CollapseWhitespace(text, false);
       // If the user is pasting all-whitespace, paste a single space
       // rather than nothing, since pasting nothing feels broken.
       return collapsed.empty() ?
@@ -47,7 +50,7 @@ base::string16 OmniboxView::SanitizeTextForPaste(const base::string16& text) {
   }
 
   // Otherwise, all whitespace is newlines; remove it entirely.
-  return StripJavascriptSchemas(CollapseWhitespace(text, true));
+  return StripJavascriptSchemas(base::CollapseWhitespace(text, true));
 }
 
 // static
@@ -82,6 +85,32 @@ base::string16 OmniboxView::GetClipboardText() {
 }
 
 OmniboxView::~OmniboxView() {
+}
+
+void OmniboxView::HandleOriginChipMouseRelease() {
+  // HIDE_ON_MOUSE_RELEASE only hides if there isn't any current text in the
+  // Omnibox (e.g. search terms).
+  if ((chrome::GetOriginChipV2HideTrigger() ==
+       chrome::ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE) &&
+      controller()->GetToolbarModel()->GetText().empty()) {
+    controller()->GetToolbarModel()->set_origin_chip_enabled(false);
+    controller()->OnChanged();
+  }
+}
+
+void OmniboxView::OnDidKillFocus() {
+  // If user input is not in progress, re-enable the origin chip and URL
+  // replacement.  This addresses the case where the URL was shown by a call
+  // to ShowURL().  If the Omnibox achieved focus by other means, the calls to
+  // set_url_replacement_enabled, UpdatePermanentText and RevertAll are not
+  // required (a call to OnChanged would be sufficient) but do no harm.
+  if (chrome::ShouldDisplayOriginChipV2() &&
+      !model()->user_input_in_progress()) {
+    controller()->GetToolbarModel()->set_origin_chip_enabled(true);
+    controller()->GetToolbarModel()->set_url_replacement_enabled(true);
+    model()->UpdatePermanentText();
+    RevertAll();
+  }
 }
 
 void OmniboxView::OpenMatch(const AutocompleteMatch& match,
@@ -142,6 +171,7 @@ void OmniboxView::SetUserText(const base::string16& text,
 
 void OmniboxView::ShowURL() {
   SetFocus();
+  controller_->GetToolbarModel()->set_origin_chip_enabled(false);
   controller_->GetToolbarModel()->set_url_replacement_enabled(false);
   model_->UpdatePermanentText();
   RevertWithoutResettingSearchTermReplacement();

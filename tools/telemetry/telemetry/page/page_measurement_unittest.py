@@ -22,7 +22,7 @@ class MeasurementThatFails(page_measurement.PageMeasurement):
     raise page_measurement.MeasurementFailure('Intentional failure.')
 
 class MeasurementThatHasDefaults(page_measurement.PageMeasurement):
-  def AddCommandLineOptions(self, parser):
+  def AddCommandLineArgs(self, parser):
     parser.add_option('-x', dest='x', default=3)
 
   def MeasurePage(self, page, tab, results):
@@ -148,7 +148,7 @@ class PageMeasurementUnitTest(
   def testActions(self):
     action_called = [False]
     class MockAction(page_action.PageAction):
-      def RunAction(self, page, tab, previous_action):
+      def RunAction(self, page, tab):
         action_called[0] = True
     all_page_actions.RegisterClassForTest('mock', MockAction)
 

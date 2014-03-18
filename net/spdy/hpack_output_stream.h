@@ -16,8 +16,7 @@
 #include "net/spdy/hpack_encoding_context.h"
 
 // All section references below are to
-// http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-05
-// .
+// http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-06
 
 namespace net {
 
@@ -43,6 +42,12 @@ class NET_EXPORT_PRIVATE HpackOutputStream {
   // internal state.
   void TakeString(std::string* output);
 
+  // Appends the lower |bit_size| bits of |bits| to the internal buffer.
+  //
+  // |bit_size| must be > 0 and <= 8. |bits| must not have any bits
+  // set other than the lower |bit_size| bits.
+  void AppendBits(uint8 bits, size_t bit_size);
+
   // Accessors for testing.
 
   void AppendBitsForTest(uint8 bits, size_t size) {
@@ -58,12 +63,6 @@ class NET_EXPORT_PRIVATE HpackOutputStream {
   }
 
  private:
-  // Appends the lower |bit_size| bits of |bits| to the internal buffer.
-  //
-  // |bit_size| must be > 0 and <= 8. |bits| must not have any bits
-  // set other than the lower |bit_size| bits.
-  void AppendBits(uint8 bits, size_t bit_size);
-
   // Simply forwards to AppendBits(prefix.bits, prefix.bit-size).
   void AppendPrefix(HpackPrefix prefix);
 

@@ -37,7 +37,7 @@ class AndroidPlatform(cr.Platform):
           '{CR_SRC}', 'build', 'android', 'test_runner.py'),
       CR_ADB_GDB=os.path.join('{CR_SRC}', 'build', 'android', 'adb_gdb'),
       CHROMIUM_OUT_DIR='{CR_OUT_BASE}',
-      CR_DEFAULT_TARGET='chromium_testshell',
+      CR_DEFAULT_TARGET='chrome_shell',
   )
 
   def __init__(self):
@@ -59,8 +59,10 @@ class AndroidPlatform(cr.Platform):
       if not self._env_ready:
         # See what the env would be without env setup
         before = context.exported
-        # Run env setup and capture/parse it's output
-        envsetup = 'source {CR_ENVSETUP} --target-arch={CR_ENVSETUP_ARCH}'
+        before['GYP_DEFINES'] = before.get(
+            'GYP_DEFINES', '') + ' target_arch={CR_ENVSETUP_ARCH}'
+        # Run env setup and capture/parse its output
+        envsetup = 'source {CR_ENVSETUP}'
         output = cr.Host.CaptureShell(context, envsetup + ' > /dev/null && env')
         env_setup = cr.Config('envsetup', literal=True, export=True)
         for line in output.split('\n'):

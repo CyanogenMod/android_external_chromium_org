@@ -364,7 +364,7 @@ void ProfileManager::CreateProfileAsync(
     ProfileInfoCache& cache = GetProfileInfoCache();
     // Get the icon index from the user's icon url
     size_t icon_index;
-    std::string icon_url_std = UTF16ToASCII(icon_url);
+    std::string icon_url_std = base::UTF16ToASCII(icon_url);
     if (cache.IsDefaultAvatarIconUrl(icon_url_std, &icon_index)) {
       // add profile to cache with user selected name and avatar
       cache.AddProfileToCache(profile_path, name, base::string16(), icon_index,
@@ -383,9 +383,11 @@ void ProfileManager::CreateProfileAsync(
   if (!callback.is_null()) {
     if (iter != profiles_info_.end() && info->created) {
       Profile* profile = info->profile.get();
-      // If this was the guest profile, apply settings.
-      if (profile->GetPath() == ProfileManager::GetGuestProfilePath())
+      // If this was the guest profile, apply settings and go OffTheRecord.
+      if (profile->GetPath() == ProfileManager::GetGuestProfilePath()) {
         SetGuestProfilePrefs(profile);
+        profile = profile->GetOffTheRecordProfile();
+      }
       // Profile has already been created. Run callback immediately.
       callback.Run(profile, Profile::CREATE_STATUS_INITIALIZED);
     } else {
@@ -475,8 +477,11 @@ Profile* ProfileManager::GetLastUsedProfile(
       profile_dir =
           chromeos::ProfileHelper::GetProfileDirByLegacyLoginProfileSwitch();
     }
+
     base::FilePath profile_path(user_data_dir);
-    return GetProfile(profile_path.Append(profile_dir));
+    Profile* profile = GetProfile(profile_path.Append(profile_dir));
+    return profile->IsGuestSession() ? profile->GetOffTheRecordProfile() :
+                                       profile;
   }
 #endif
 
@@ -718,7 +723,10 @@ void ProfileManager::InitProfileUserPrefs(Profile* profile) {
     } else if (profile->GetPath() ==
                profiles::GetDefaultProfileDir(cache.GetUserDataDir())) {
       avatar_index = 0;
-      profile_name = l10n_util::GetStringUTF8(IDS_DEFAULT_PROFILE_NAME);
+      // The --new-profile-management flag no longer uses the "First User" name.
+      profile_name = switches::IsNewProfileManagement() ?
+          base::UTF16ToUTF8(cache.ChooseNameForNewProfile(avatar_index)) :
+          l10n_util::GetStringUTF8(IDS_DEFAULT_PROFILE_NAME);
     } else {
       avatar_index = cache.ChooseAvatarIconIndexForNewProfile();
       profile_name =

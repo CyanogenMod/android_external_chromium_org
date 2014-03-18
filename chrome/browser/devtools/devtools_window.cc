@@ -57,6 +57,7 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
@@ -86,7 +87,7 @@ class DevToolsConfirmInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
   // If |infobar_service| is NULL, runs |callback| with a single argument with
   // value "false".  Otherwise, creates a dev tools confirm infobar and delegate
-  // and adds the inofbar to |infobar_service|.
+  // and adds the infobar to |infobar_service|.
   static void Create(InfoBarService* infobar_service,
                      const DevToolsWindow::InfoBarCallback& callback,
                      const base::string16& message);
@@ -603,7 +604,7 @@ bool DevToolsWindow::InterceptPageBeforeUnload(content::WebContents* contents) {
   // Handle case of devtools inspecting another devtools instance by passing
   // the call up to the inspecting devtools instance.
   if (!DevToolsWindow::InterceptPageBeforeUnload(window->web_contents())) {
-    window->web_contents()->GetRenderViewHost()->FirePageBeforeUnload(false);
+    window->web_contents()->GetMainFrame()->DispatchBeforeUnload(false);
   }
   return true;
 }
@@ -700,7 +701,7 @@ DevToolsWindow::DevToolsWindow(Profile* profile,
         content::WebContents::FromRenderViewHost(inspected_rvh)));
 
   embedder_message_dispatcher_.reset(
-      new DevToolsEmbedderMessageDispatcher(this));
+      DevToolsEmbedderMessageDispatcher::createForDevToolsFrontend(this));
 }
 
 // static
@@ -719,6 +720,7 @@ DevToolsWindow* DevToolsWindow::Create(
         content::WebContents::FromRenderViewHost(inspected_rvh);
     if (!FindInspectedBrowserAndTabIndex(inspected_web_contents,
                                          &browser, &tab) ||
+        inspected_rvh->GetMainFrame()->IsCrossProcessSubframe() ||
         browser->is_type_popup()) {
       can_dock = false;
     }
@@ -874,7 +876,7 @@ void DevToolsWindow::BeforeUnloadFired(content::WebContents* tab,
     // Inspected page is attempting to close.
     content::WebContents* inspected_web_contents = GetInspectedWebContents();
     if (proceed) {
-      inspected_web_contents->GetRenderViewHost()->FirePageBeforeUnload(false);
+      inspected_web_contents->GetMainFrame()->DispatchBeforeUnload(false);
     } else {
       bool should_proceed;
       inspected_web_contents->GetDelegate()->BeforeUnloadFired(
@@ -969,7 +971,8 @@ void DevToolsWindow::DispatchOnEmbedder(const std::string& message) {
   int id = 0;
   dict->GetInteger(kFrontendHostId, &id);
 
-  std::string error = embedder_message_dispatcher_->Dispatch(method, params);
+  std::string error;
+  embedder_message_dispatcher_->Dispatch(method, params, &error);
   if (id) {
     scoped_ptr<base::Value> id_value(base::Value::CreateIntegerValue(id));
     scoped_ptr<base::Value> error_value(base::Value::CreateStringValue(error));
@@ -999,7 +1002,7 @@ void DevToolsWindow::CloseWindow() {
   // This will prevent any activity after frontend is loaded.
   action_on_load_ = DevToolsToggleAction::NoOp();
   ignore_set_is_docked_ = true;
-  web_contents_->GetRenderViewHost()->FirePageBeforeUnload(false);
+  web_contents_->GetMainFrame()->DispatchBeforeUnload(false);
 }
 
 void DevToolsWindow::SetContentsInsets(
@@ -1432,8 +1435,7 @@ void DevToolsWindow::UpdateTheme() {
       "\", \"" +
       SkColorToRGBAString(tp->GetColor(ThemeProperties::COLOR_BOOKMARK_TEXT)) +
       "\")");
-  web_contents_->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-      base::string16(), base::ASCIIToUTF16(command));
+  web_contents_->GetMainFrame()->ExecuteJavaScript(base::ASCIIToUTF16(command));
 }
 
 void DevToolsWindow::AddDevToolsExtensionsToClient() {
@@ -1495,8 +1497,7 @@ void DevToolsWindow::CallClientFunction(const std::string& function_name,
   }
   base::string16 javascript =
       base::ASCIIToUTF16(function_name + "(" + params + ");");
-  web_contents_->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-      base::string16(), javascript);
+  web_contents_->GetMainFrame()->ExecuteJavaScript(javascript);
 }
 
 void DevToolsWindow::UpdateBrowserToolbar() {

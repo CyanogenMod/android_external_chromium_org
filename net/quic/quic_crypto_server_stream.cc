@@ -24,7 +24,11 @@ QuicCryptoServerStream::QuicCryptoServerStream(
 }
 
 QuicCryptoServerStream::~QuicCryptoServerStream() {
-  // Detach from the validation callback.
+  CancelOutstandingCallbacks();
+}
+
+void QuicCryptoServerStream::CancelOutstandingCallbacks() {
+  // Detach from the validation callback.  Calling this multiple times is safe.
   if (validate_client_hello_cb_ != NULL) {
     validate_client_hello_cb_->Cancel();
   }
@@ -161,7 +165,7 @@ QuicErrorCode QuicCryptoServerStream::ProcessClientHello(
     string* error_details) {
   return crypto_config_.ProcessClientHello(
       result,
-      session()->connection()->guid(),
+      session()->connection()->connection_id(),
       session()->connection()->peer_address(),
       session()->connection()->version(),
       session()->connection()->supported_versions(),

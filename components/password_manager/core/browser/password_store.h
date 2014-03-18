@@ -16,6 +16,7 @@
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "components/password_manager/core/browser/password_store_change.h"
+#include "sync/api/syncable_service.h"
 
 class PasswordStore;
 class PasswordStoreConsumer;
@@ -37,6 +38,10 @@ namespace passwords_helper {
 void AddLogin(PasswordStore* store, const autofill::PasswordForm& form);
 void RemoveLogin(PasswordStore* store, const autofill::PasswordForm& form);
 void UpdateLogin(PasswordStore* store, const autofill::PasswordForm& form);
+}
+
+namespace syncer {
+class SyncableService;
 }
 
 // Interface for storing form passwords in a platform-specific secure way.
@@ -109,13 +114,13 @@ class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
       scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner);
 
   // Reimplement this to add custom initialization. Always call this too.
-  virtual bool Init();
+  virtual bool Init(const syncer::SyncableService::StartSyncFlare& flare);
 
   // Adds the given PasswordForm to the secure password store asynchronously.
   virtual void AddLogin(const autofill::PasswordForm& form);
 
   // Updates the matching PasswordForm in the secure password store (async).
-  void UpdateLogin(const autofill::PasswordForm& form);
+  virtual void UpdateLogin(const autofill::PasswordForm& form);
 
   // Removes the matching PasswordForm from the secure password store (async).
   void RemoveLogin(const autofill::PasswordForm& form);
@@ -158,6 +163,10 @@ class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
   // Before you destruct the store, call Shutdown to indicate that the store
   // needs to shut itself down.
   virtual void Shutdown();
+
+#if defined(PASSWORD_MANAGER_ENABLE_SYNC)
+  base::WeakPtr<syncer::SyncableService> GetPasswordSyncableService();
+#endif
 
  protected:
   friend class base::RefCountedThreadSafe<PasswordStore>;
@@ -245,6 +254,8 @@ class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
   // background tasks -- see |GetBackgroundTaskRunner|.
   scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner_;
 
+  scoped_ptr<PasswordSyncableService> syncable_service_;
+
  private:
   // Schedule the given |func| to be run in the PasswordStore's own thread with
   // responses delivered to |consumer| on the current thread.
@@ -270,6 +281,15 @@ class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
   void CopyAndForwardLoginsResult(
       PasswordStore::GetLoginsRequest* request,
       const std::vector<autofill::PasswordForm*>& matched_forms);
+
+#if defined(PASSWORD_MANAGER_ENABLE_SYNC)
+  // Creates PasswordSyncableService instance on the background thread.
+  void InitSyncableService(
+      const syncer::SyncableService::StartSyncFlare& flare);
+
+  // Deletes PasswordSyncableService instance on the background thread.
+  void DestroySyncableService();
+#endif
 
   // The observers.
   scoped_refptr<ObserverListThreadSafe<Observer> > observers_;

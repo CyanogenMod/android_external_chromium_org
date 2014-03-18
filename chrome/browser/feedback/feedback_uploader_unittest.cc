@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "chrome/browser/feedback/feedback_uploader_chrome.h"
 #include "chrome/browser/feedback/feedback_uploader_factory.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
@@ -25,9 +26,9 @@ const char kReportFive[] = "five";
 const base::TimeDelta kRetryDelayForTest =
     base::TimeDelta::FromMilliseconds(100);
 
-BrowserContextKeyedService* CreateFeedbackUploaderService(
-    content::BrowserContext* context) {
-  return new feedback::FeedbackUploader(Profile::FromBrowserContext(context));
+KeyedService* CreateFeedbackUploaderService(content::BrowserContext* context) {
+  return new feedback::FeedbackUploaderChrome(
+      Profile::FromBrowserContext(context));
 }
 
 }  // namespace
@@ -125,11 +126,11 @@ TEST_F(FeedbackUploaderTest, MAYBE_QueueMultiple) {
   EXPECT_EQ(dispatched_reports_[kReportFour], 1u);
 }
 
-#if defined(OS_LINUX) || defined(OS_CHROMEOS) || defined(OS_MACOSX)
-#define MAYBE_QueueMultipleWithFailures QueueMultipleWithFailures
-#else
+#if defined(OS_WIN) || defined(OS_ANDROID)
 // crbug.com/330547
 #define MAYBE_QueueMultipleWithFailures DISABLED_QueueMultipleWithFailures
+#else
+#define MAYBE_QueueMultipleWithFailures QueueMultipleWithFailures
 #endif
 TEST_F(FeedbackUploaderTest, MAYBE_QueueMultipleWithFailures) {
   dispatched_reports_.clear();

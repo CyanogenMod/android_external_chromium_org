@@ -15,13 +15,12 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/processes/processes_api_constants.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
-#include "chrome/browser/extensions/extension_function_registry.h"
-#include "chrome/browser/extensions/extension_function_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/task_manager/resource_provider.h"
 #include "chrome/browser/task_manager/task_manager.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -33,6 +32,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/result_codes.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_function_registry.h"
+#include "extensions/browser/extension_function_util.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/error_utils.h"
 
@@ -146,8 +147,11 @@ base::DictionaryValue* CreateProcessFromModel(int process_id,
   result->SetInteger(keys::kIdKey, process_id);
   result->SetInteger(keys::kOsProcessIdKey, model->GetProcessId(index));
   SetProcessType(result, model, index);
+  result->SetString(keys::kTitleKey, model->GetResourceTitle(index));
   result->SetString(keys::kProfileKey,
       model->GetResourceProfileName(index));
+  result->SetInteger(keys::kNaClDebugPortKey,
+                     model->GetNaClDebugStubPort(index));
 
   result->Set(keys::kTabsListKey, GetTabsForProcess(process_id));
 
@@ -212,10 +216,8 @@ void AddMemoryDetails(base::DictionaryValue* result,
 
 }  // namespace
 
-ProcessesEventRouter::ProcessesEventRouter(Profile* profile)
-    : profile_(profile),
-      listeners_(0),
-      task_manager_listening_(false) {
+ProcessesEventRouter::ProcessesEventRouter(content::BrowserContext* context)
+    : browser_context_(context), listeners_(0), task_manager_listening_(false) {
 #if defined(ENABLE_TASK_MANAGER)
   model_ = TaskManager::GetInstance()->model();
   model_->AddObserver(this);
@@ -435,7 +437,6 @@ void ProcessesEventRouter::ProcessHangEvent(content::RenderWidgetHost* widget) {
     }
   }
 
-  DCHECK(process);
   if (process == NULL)
     return;
 
@@ -469,26 +470,28 @@ void ProcessesEventRouter::ProcessClosedEvent(
 void ProcessesEventRouter::DispatchEvent(
     const std::string& event_name,
     scoped_ptr<base::ListValue> event_args) {
-  if (extensions::ExtensionSystem::Get(profile_)->event_router()) {
+  if (extensions::ExtensionSystem::Get(browser_context_)->event_router()) {
     scoped_ptr<extensions::Event> event(new extensions::Event(
         event_name, event_args.Pass()));
-    extensions::ExtensionSystem::Get(profile_)->event_router()->
-        BroadcastEvent(event.Pass());
+    extensions::ExtensionSystem::Get(browser_context_)
+        ->event_router()
+        ->BroadcastEvent(event.Pass());
   }
 }
 
 bool ProcessesEventRouter::HasEventListeners(const std::string& event_name) {
   extensions::EventRouter* router =
-      extensions::ExtensionSystem::Get(profile_)->event_router();
+      extensions::ExtensionSystem::Get(browser_context_)->event_router();
   if (router && router->HasEventListener(event_name))
     return true;
   return false;
 }
 
-ProcessesAPI::ProcessesAPI(Profile* profile) : profile_(profile) {
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
+ProcessesAPI::ProcessesAPI(content::BrowserContext* context)
+    : browser_context_(context) {
+  ExtensionSystem::Get(browser_context_)->event_router()->RegisterObserver(
       this, processes_api_constants::kOnUpdated);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
+  ExtensionSystem::Get(browser_context_)->event_router()->RegisterObserver(
       this, processes_api_constants::kOnUpdatedWithMemory);
   ExtensionFunctionRegistry* registry =
       ExtensionFunctionRegistry::GetInstance();
@@ -501,25 +504,27 @@ ProcessesAPI::~ProcessesAPI() {
 }
 
 void ProcessesAPI::Shutdown() {
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
+      this);
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<ProcessesAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<ProcessesAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<ProcessesAPI>* ProcessesAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<ProcessesAPI>*
+ProcessesAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 // static
-ProcessesAPI* ProcessesAPI::Get(Profile* profile) {
-  return ProfileKeyedAPIFactory<ProcessesAPI>::GetForProfile(profile);
+ProcessesAPI* ProcessesAPI::Get(content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<ProcessesAPI>::Get(context);
 }
 
 ProcessesEventRouter* ProcessesAPI::processes_event_router() {
   if (!processes_event_router_)
-    processes_event_router_.reset(new ProcessesEventRouter(profile_));
+    processes_event_router_.reset(new ProcessesEventRouter(browser_context_));
   return processes_event_router_.get();
 }
 

@@ -12,15 +12,15 @@
       'dependencies': [
         '../../base/base.gyp:base_static',
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../../cc/cc.gyp:cc',
         '../../components/components.gyp:autofill_content_browser',
         '../../components/components.gyp:web_contents_delegate_android',
-        '../../cc/cc.gyp:cc',
+        '../../content/content.gyp:content_common',
         '../../net/net.gyp:net',
         '../../skia/skia.gyp:skia',
+        '../../ui/base/ui_base.gyp:ui_base',
         '../../ui/gfx/gfx.gyp:gfx',
         '../../ui/gfx/gfx.gyp:gfx_geometry',
-        '../../ui/ui.gyp:ui',
-        '../../webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
         '../../webkit/common/webkit_common.gyp:webkit_common',
         '../../webkit/storage_browser.gyp:webkit_storage_browser',
         '../../webkit/storage_common.gyp:webkit_storage_common',
@@ -81,6 +81,14 @@
         'state_serializer.cc',
         'state_serializer.h',
       ],
+      'conditions': [
+        ['video_hole==1', {
+          'sources': [
+            'external_video_surface_container_impl.cc',
+            'external_video_surface_container_impl.h',
+          ],
+        }],
+      ],
     },
     {
       'target_name': 'input_stream_android_jar_jni_headers',
@@ -119,6 +127,7 @@
           '../java/src/org/chromium/android_webview/AwResource.java',
           '../java/src/org/chromium/android_webview/AwSettings.java',
           '../java/src/org/chromium/android_webview/AwWebContentsDelegate.java',
+          '../java/src/org/chromium/android_webview/ExternalVideoSurfaceContainer.java',
           '../java/src/org/chromium/android_webview/InterceptedRequestData.java',
           '../java/src/org/chromium/android_webview/JavaBrowserViewRendererHelper.java',
       ],

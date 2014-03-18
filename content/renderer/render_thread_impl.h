@@ -20,7 +20,6 @@
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/public/renderer/render_thread.h"
-#include "content/renderer/media/renderer_gpu_video_accelerator_factories.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -31,6 +30,7 @@
 class GrContext;
 class SkBitmap;
 struct ViewMsg_New_Params;
+struct WorkerProcessMsg_CreateWorker_Params;
 
 namespace blink {
 class WebGamepads;
@@ -54,6 +54,7 @@ class ForwardingMessageFilter;
 
 namespace media {
 class AudioHardwareConfig;
+class GpuVideoAcceleratorFactories;
 }
 
 namespace v8 {
@@ -120,6 +121,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // module are registered properly.  Static to allow sharing with tests.
   static void RegisterSchemes();
 
+  // Notify V8 that the date/time configuration of the system might have
+  // changed.
+  static void NotifyTimezoneChange();
+
   // RenderThread implementation:
   virtual bool Send(IPC::Message* msg) OVERRIDE;
   virtual base::MessageLoop* GetMessageLoop() OVERRIDE;
@@ -151,6 +156,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual void UpdateHistograms(int sequence_number) OVERRIDE;
   virtual int PostTaskToAllWebWorkers(const base::Closure& closure) OVERRIDE;
   virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) OVERRIDE;
+  virtual base::WaitableEvent* GetShutdownEvent() OVERRIDE;
 #if defined(OS_WIN)
   virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;
   virtual void ReleaseCachedFonts() OVERRIDE;
@@ -193,6 +199,22 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy() const {
     return compositor_message_loop_proxy_;
   }
+
+  bool is_gpu_rasterization_enabled() const {
+    return is_gpu_rasterization_enabled_;
+  }
+
+  bool is_gpu_rasterization_forced() const {
+    return is_gpu_rasterization_forced_;
+  }
+
+  bool is_impl_side_painting_enabled() const {
+    return is_impl_side_painting_enabled_;
+  }
+
+  bool is_lcd_text_enabled() const { return is_lcd_text_enabled_; }
+
+  bool is_map_image_enabled() const { return is_map_image_enabled_; }
 
   AppCacheDispatcher* appcache_dispatcher() const {
     return appcache_dispatcher_.get();
@@ -264,7 +286,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // not sent for at least one notification delay.
   void PostponeIdleNotification();
 
-  scoped_refptr<RendererGpuVideoAcceleratorFactories> GetGpuFactories();
+  scoped_refptr<media::GpuVideoAcceleratorFactories> GetGpuFactories();
 
   scoped_refptr<cc::ContextProvider> OffscreenCompositorContextProvider();
   scoped_refptr<webkit::gpu::ContextProviderWebContext>
@@ -358,7 +380,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual bool IsMainThread() OVERRIDE;
   virtual base::MessageLoop* GetMainLoop() OVERRIDE;
   virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() OVERRIDE;
-  virtual base::WaitableEvent* GetShutDownEvent() OVERRIDE;
   virtual scoped_ptr<base::SharedMemory> AllocateSharedMemory(
       size_t size) OVERRIDE;
   virtual int32 CreateViewCommandBuffer(
@@ -385,6 +406,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   void OnNetworkStateChanged(bool online);
   void OnGetAccessibilityTree();
   void OnTempCrashWithData(const GURL& data);
+  void OnUpdateTimezone();
   void OnMemoryPressure(
       base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
 #if defined(OS_ANDROID)
@@ -397,6 +419,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
                               blink::ScrollerStyle preferred_scroller_style,
                               bool redraw);
 #endif
+  void OnCreateNewSharedWorker(
+      const WorkerProcessMsg_CreateWorker_Params& params);
 
   void IdleHandlerInForegroundTab();
 
@@ -462,7 +486,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // Cache of variables that are needed on the compositor thread by
   // GpuChannelHostFactory methods.
   scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
-  base::WaitableEvent* shutdown_event_;
 
   // A lazily initiated thread on which file operations are run.
   scoped_ptr<base::Thread> file_thread_;
@@ -504,6 +527,13 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // multiple threads. Current allocation mechanism for IOSurface
   // backed GpuMemoryBuffers prevent this. crbug.com/325045
   base::ThreadChecker allocate_gpu_memory_buffer_thread_checker_;
+
+  // Compositor settings
+  bool is_gpu_rasterization_enabled_;
+  bool is_gpu_rasterization_forced_;
+  bool is_impl_side_painting_enabled_;
+  bool is_lcd_text_enabled_;
+  bool is_map_image_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderThreadImpl);
 };

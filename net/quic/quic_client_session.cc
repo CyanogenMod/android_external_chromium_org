@@ -13,9 +13,11 @@
 #include "base/values.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/quic/crypto/quic_server_info.h"
 #include "net/quic/quic_connection_helper.h"
 #include "net/quic/quic_crypto_client_stream_factory.h"
 #include "net/quic/quic_default_packet_writer.h"
+#include "net/quic/quic_session_key.h"
 #include "net/quic/quic_stream_factory.h"
 #include "net/ssl/ssl_info.h"
 #include "net/udp/datagram_client_socket.h"
@@ -85,8 +87,9 @@ QuicClientSession::QuicClientSession(
     scoped_ptr<DatagramClientSocket> socket,
     scoped_ptr<QuicDefaultPacketWriter> writer,
     QuicStreamFactory* stream_factory,
+    scoped_ptr<QuicServerInfo> server_info,
     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
-    const string& server_hostname,
+    const QuicSessionKey& server_key,
     const QuicConfig& config,
     QuicCryptoClientConfig* crypto_config,
     NetLog* net_log)
@@ -105,14 +108,16 @@ QuicClientSession::QuicClientSession(
   crypto_stream_.reset(
       crypto_client_stream_factory ?
           crypto_client_stream_factory->CreateQuicCryptoClientStream(
-              server_hostname, this, crypto_config) :
-          new QuicCryptoClientStream(server_hostname, this, crypto_config));
+              server_key, this, crypto_config) :
+          new QuicCryptoClientStream(server_key, this, crypto_config));
+
+  crypto_stream_->SetQuicServerInfo(server_info.Pass());
 
   connection->set_debug_visitor(&logger_);
   // TODO(rch): pass in full host port proxy pair
   net_log_.BeginEvent(
       NetLog::TYPE_QUIC_SESSION,
-      NetLog::StringCallback("host", &server_hostname));
+      NetLog::StringCallback("host", &server_key.host()));
 }
 
 QuicClientSession::~QuicClientSession() {
@@ -493,21 +498,24 @@ void QuicClientSession::CloseAllObservers(int net_error) {
 }
 
 base::Value* QuicClientSession::GetInfoAsValue(
-    const std::set<HostPortProxyPair>& aliases) const {
+    const std::set<HostPortPair>& aliases) const {
   base::DictionaryValue* dict = new base::DictionaryValue();
   // TODO(rch): remove "host_port_pair" when Chrome 34 is stable.
-  dict->SetString("host_port_pair", aliases.begin()->first.ToString());
+  dict->SetString("host_port_pair", aliases.begin()->ToString());
   dict->SetString("version", QuicVersionToString(connection()->version()));
   dict->SetInteger("open_streams", GetNumOpenStreams());
   dict->SetInteger("total_streams", num_total_streams_);
   dict->SetString("peer_address", peer_address().ToString());
-  dict->SetString("guid", base::Uint64ToString(guid()));
+  dict->SetString("connection_id", base::Uint64ToString(connection_id()));
   dict->SetBoolean("connected", connection()->connected());
+  SSLInfo ssl_info;
+  dict->SetBoolean("secure",
+                   crypto_stream_->GetSSLInfo(&ssl_info) && ssl_info.cert);
 
   base::ListValue* alias_list = new base::ListValue();
-  for (std::set<HostPortProxyPair>::const_iterator it = aliases.begin();
+  for (std::set<HostPortPair>::const_iterator it = aliases.begin();
        it != aliases.end(); it++) {
-    alias_list->Append(new base::StringValue(it->first.ToString()));
+    alias_list->Append(new base::StringValue(it->ToString()));
   }
   dict->Set("aliases", alias_list);
 

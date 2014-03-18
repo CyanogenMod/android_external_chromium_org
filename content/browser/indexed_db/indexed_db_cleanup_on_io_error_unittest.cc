@@ -4,6 +4,7 @@
 
 #include <cerrno>
 
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/strings/string16.h"
@@ -29,12 +30,11 @@ class BustedLevelDBDatabase : public LevelDBDatabase {
       const LevelDBComparator* /*comparator*/) {
     return scoped_ptr<LevelDBDatabase>(new BustedLevelDBDatabase);
   }
-  virtual bool Get(const base::StringPiece& key,
-                   std::string* value,
-                   bool* found,
-                   const LevelDBSnapshot* = 0) OVERRIDE {
-    // false means IO error.
-    return false;
+  virtual leveldb::Status Get(const base::StringPiece& key,
+                              std::string* value,
+                              bool* found,
+                              const LevelDBSnapshot* = 0) OVERRIDE {
+    return leveldb::Status::IOError("It's busted!");
   }
 };
 
@@ -49,10 +49,11 @@ class MockLevelDBFactory : public LevelDBFactory {
     *db = BustedLevelDBDatabase::Open(file_name, comparator);
     return leveldb::Status::OK();
   }
-  virtual bool DestroyLevelDB(const base::FilePath& file_name) OVERRIDE {
+  virtual leveldb::Status DestroyLevelDB(const base::FilePath& file_name)
+      OVERRIDE {
     EXPECT_FALSE(destroy_called_);
     destroy_called_ = true;
-    return false;
+    return leveldb::Status::IOError("error");
   }
   virtual ~MockLevelDBFactory() { EXPECT_TRUE(destroy_called_); }
 
@@ -96,10 +97,11 @@ class MockErrorLevelDBFactory : public LevelDBFactory {
     return MakeIOError(
         "some filename", "some message", leveldb_env::kNewLogger, error_);
   }
-  virtual bool DestroyLevelDB(const base::FilePath& file_name) OVERRIDE {
+  virtual leveldb::Status DestroyLevelDB(const base::FilePath& file_name)
+      OVERRIDE {
     EXPECT_FALSE(destroy_called_);
     destroy_called_ = true;
-    return false;
+    return leveldb::Status::IOError("error");
   }
   virtual ~MockErrorLevelDBFactory() {
     EXPECT_EQ(expect_destroy_, destroy_called_);
@@ -130,8 +132,8 @@ TEST(IndexedDBNonRecoverableIOErrorTest, NuancedCleanupTest) {
                                   &disk_full,
                                   &mock_leveldb_factory);
 
-  MockErrorLevelDBFactory<base::PlatformFileError> mock_leveldb_factory2(
-      base::PLATFORM_FILE_ERROR_NO_MEMORY, false);
+  MockErrorLevelDBFactory<base::File::Error> mock_leveldb_factory2(
+      base::File::FILE_ERROR_NO_MEMORY, false);
   scoped_refptr<IndexedDBBackingStore> backing_store2 =
       IndexedDBBackingStore::Open(origin,
                                   path,
@@ -149,8 +151,8 @@ TEST(IndexedDBNonRecoverableIOErrorTest, NuancedCleanupTest) {
                                   &disk_full,
                                   &mock_leveldb_factory3);
 
-  MockErrorLevelDBFactory<base::PlatformFileError> mock_leveldb_factory4(
-      base::PLATFORM_FILE_ERROR_FAILED, false);
+  MockErrorLevelDBFactory<base::File::Error> mock_leveldb_factory4(
+      base::File::FILE_ERROR_FAILED, false);
   scoped_refptr<IndexedDBBackingStore> backing_store4 =
       IndexedDBBackingStore::Open(origin,
                                   path,

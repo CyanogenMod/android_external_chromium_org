@@ -248,12 +248,6 @@ class ChromeOSTermsHandler
       BrowserThread::PostTask(
           BrowserThread::FILE, FROM_HERE,
           base::Bind(&ChromeOSTermsHandler::LoadOemEulaFileOnFileThread, this));
-    } else if (CommandLine::ForCurrentProcess()->HasSwitch(
-                   chromeos::switches::kDisableOnlineEULA)) {
-      // Fallback to the local file.
-      BrowserThread::PostTask(
-          BrowserThread::FILE, FROM_HERE,
-          base::Bind(&ChromeOSTermsHandler::LoadEulaFileOnFileThread, this));
     } else {
       // Try to load online version of ChromeOS terms first.
       // ChromeOSOnlineTermsHandler object destroys itself.
@@ -826,6 +820,10 @@ std::string AboutSandbox() {
                   std::string(),
                   IDS_ABOUT_SANDBOX_SECCOMP_BPF_SANDBOX,
                   status & content::kSandboxLinuxSeccompBPF);
+  AboutSandboxRow(&data,
+                  std::string(),
+                  IDS_ABOUT_SANDBOX_YAMA_LSM,
+                  status & content::kSandboxLinuxYama);
 
   data.append("</table>");
 

@@ -99,9 +99,9 @@ void CoreOptionsHandler::GetStaticLocalizedValues(
   localized_strings->SetString("controlledSettingExtensionWithName",
       l10n_util::GetStringUTF16(
           IDS_OPTIONS_CONTROLLED_SETTING_EXTENSION_WITH_NAME));
-  localized_strings->SetString("controlledSettingManageExtensions",
+  localized_strings->SetString("controlledSettingManageExtension",
       l10n_util::GetStringUTF16(
-          IDS_OPTIONS_CONTROLLED_SETTING_MANAGE_EXTENSIONS));
+          IDS_OPTIONS_CONTROLLED_SETTING_MANAGE_EXTENSION));
   localized_strings->SetString("controlledSettingDisableExtension",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_DISABLE));
   localized_strings->SetString("controlledSettingRecommended",
@@ -436,7 +436,7 @@ void CoreOptionsHandler::HandleFetchPrefs(const base::ListValue* args) {
 
     result_value.Set(pref_name.c_str(), FetchPref(pref_name));
   }
-  web_ui()->CallJavascriptFunction(UTF16ToASCII(callback_function),
+  web_ui()->CallJavascriptFunction(base::UTF16ToASCII(callback_function),
                                    result_value);
 }
 

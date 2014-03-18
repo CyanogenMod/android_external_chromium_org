@@ -43,14 +43,7 @@ SystemKeyEventListener* SystemKeyEventListener::GetInstance() {
 
 SystemKeyEventListener::SystemKeyEventListener()
     : stopped_(false),
-      num_lock_mask_(0),
-      pressed_modifiers_(0),
       xkb_event_base_(0) {
-  input_method::XKeyboard* xkeyboard =
-      input_method::InputMethodManager::Get()->GetXKeyboard();
-  num_lock_mask_ = xkeyboard->GetNumLockMask();
-  xkeyboard->GetLockedModifiers(&caps_lock_is_on_, NULL);
-
   XDisplay* display = gfx::GetXDisplay();
   int xkb_major_version = XkbMajorVersion;
   int xkb_minor_version = XkbMinorVersion;
@@ -83,42 +76,12 @@ void SystemKeyEventListener::Stop() {
   stopped_ = true;
 }
 
-void SystemKeyEventListener::AddCapsLockObserver(CapsLockObserver* observer) {
-  caps_lock_observers_.AddObserver(observer);
-}
-
-void SystemKeyEventListener::AddModifiersObserver(ModifiersObserver* observer) {
-  modifiers_observers_.AddObserver(observer);
-}
-
-void SystemKeyEventListener::RemoveCapsLockObserver(
-    CapsLockObserver* observer) {
-  caps_lock_observers_.RemoveObserver(observer);
-}
-
-void SystemKeyEventListener::RemoveModifiersObserver(
-    ModifiersObserver* observer) {
-  modifiers_observers_.RemoveObserver(observer);
-}
-
 base::EventStatus SystemKeyEventListener::WillProcessEvent(
     const base::NativeEvent& event) {
   return ProcessedXEvent(event) ? base::EVENT_HANDLED : base::EVENT_CONTINUE;
 }
 
 void SystemKeyEventListener::DidProcessEvent(const base::NativeEvent& event) {
-}
-
-void SystemKeyEventListener::OnCapsLock(bool enabled) {
-  FOR_EACH_OBSERVER(CapsLockObserver,
-                    caps_lock_observers_,
-                    OnCapsLockChange(enabled));
-}
-
-void SystemKeyEventListener::OnModifiers(int state) {
-  FOR_EACH_OBSERVER(ModifiersObserver,
-                    modifiers_observers_,
-                    OnModifiersChange(state));
 }
 
 bool SystemKeyEventListener::ProcessedXEvent(XEvent* xevent) {
@@ -129,28 +92,10 @@ bool SystemKeyEventListener::ProcessedXEvent(XEvent* xevent) {
     // TODO(yusukes): Move this part to aura::WindowTreeHost.
     XkbEvent* xkey_event = reinterpret_cast<XkbEvent*>(xevent);
     if (xkey_event->any.xkb_type == XkbStateNotify) {
-      const bool caps_lock_enabled = (xkey_event->state.locked_mods) & LockMask;
-      if (caps_lock_is_on_ != caps_lock_enabled) {
-        caps_lock_is_on_ = caps_lock_enabled;
-        OnCapsLock(caps_lock_is_on_);
-      }
       if (xkey_event->state.mods) {
         // TODO(yusukes,adlr): Let the user know that num lock is unsupported.
         // Force turning off Num Lock (crosbug.com/29169)
-        input_method_manager->GetXKeyboard()->SetLockedModifiers(
-            input_method::kDontChange  /* caps lock */,
-            input_method::kDisableLock  /* num lock */);
-      }
-      int current_modifiers = 0;
-      if (xkey_event->state.mods & ShiftMask)
-        current_modifiers |= ModifiersObserver::SHIFT_PRESSED;
-      if (xkey_event->state.mods & ControlMask)
-        current_modifiers |= ModifiersObserver::CTRL_PRESSED;
-      if (xkey_event->state.mods & Mod1Mask)
-        current_modifiers |= ModifiersObserver::ALT_PRESSED;
-      if (current_modifiers != pressed_modifiers_) {
-        pressed_modifiers_ = current_modifiers;
-        OnModifiers(pressed_modifiers_);
+        input_method_manager->GetXKeyboard()->DisableNumLock();
       }
       return true;
     }

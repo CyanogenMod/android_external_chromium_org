@@ -64,6 +64,7 @@ class SpeechRecognitionBubbleView : public views::BubbleDelegateView,
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
 
   // views::View overrides.
+  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void Layout() OVERRIDE;
 
@@ -107,10 +108,12 @@ SpeechRecognitionBubbleView::SpeechRecognitionBubbleView(
       display_mode_(SpeechRecognitionBubbleBase::DISPLAY_MODE_WARM_UP),
       kIconLayoutMinWidth(ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
                           IDR_SPEECH_INPUT_MIC_EMPTY)->width()) {
-  // The bubble lifetime is managed by its controller; closing on escape or
-  // explicitly closing on deactivation will cause unexpected behavior.
-  set_close_on_esc(false);
+  // The bubble lifetime is managed by its controller; explicitly closing
+  // on deactivation will cause unexpected behavior.
   set_close_on_deactivate(false);
+  // Prevent default behavior of bubble closure on escape key and handle
+  // it in the AcceleratorPressed() to avoid an unexpected behavior.
+  set_close_on_esc(false);
 }
 
 void SpeechRecognitionBubbleView::OnWidgetActivationChanged(
@@ -225,6 +228,17 @@ void SpeechRecognitionBubbleView::LinkClicked(views::Link* source,
   content::SpeechRecognitionManager::GetInstance()->ShowAudioInputSettings();
 }
 
+bool SpeechRecognitionBubbleView::AcceleratorPressed(
+    const ui::Accelerator& accelerator) {
+  // The accelerator is added by BubbleDelegateView.
+  if (accelerator.key_code() == ui::VKEY_ESCAPE) {
+    delegate_->InfoBubbleButtonClicked(SpeechRecognitionBubble::BUTTON_CANCEL);
+    return true;
+  }
+
+  return BubbleDelegateView::AcceleratorPressed(accelerator);
+}
+
 gfx::Size SpeechRecognitionBubbleView::GetPreferredSize() {
   int width = heading_->GetPreferredSize().width();
   int control_width = cancel_->GetPreferredSize().width();
@@ -312,7 +326,7 @@ void SpeechRecognitionBubbleView::Layout() {
 // Implementation of SpeechRecognitionBubble.
 class SpeechRecognitionBubbleImpl : public SpeechRecognitionBubbleBase {
  public:
-  SpeechRecognitionBubbleImpl(WebContents* web_contents,
+  SpeechRecognitionBubbleImpl(int render_process_id, int render_view_id,
                               Delegate* delegate,
                               const gfx::Rect& element_rect);
   virtual ~SpeechRecognitionBubbleImpl();
@@ -334,9 +348,9 @@ class SpeechRecognitionBubbleImpl : public SpeechRecognitionBubbleBase {
 };
 
 SpeechRecognitionBubbleImpl::SpeechRecognitionBubbleImpl(
-    WebContents* web_contents, Delegate* delegate,
+    int render_process_id, int render_view_id, Delegate* delegate,
     const gfx::Rect& element_rect)
-    : SpeechRecognitionBubbleBase(web_contents),
+    : SpeechRecognitionBubbleBase(render_process_id, render_view_id),
       delegate_(delegate),
       bubble_(NULL),
       element_rect_(element_rect) {
@@ -350,11 +364,14 @@ SpeechRecognitionBubbleImpl::~SpeechRecognitionBubbleImpl() {
 }
 
 void SpeechRecognitionBubbleImpl::Show() {
+  WebContents* web_contents = GetWebContents();
+  if (!web_contents)
+    return;
+
   if (!bubble_) {
     views::View* icon = NULL;
 
     // Anchor to the location bar, in case |element_rect| is offscreen.
-    WebContents* web_contents = GetWebContents();
     Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
     if (browser) {
       BrowserView* browser_view =
@@ -385,20 +402,22 @@ void SpeechRecognitionBubbleImpl::Hide() {
 }
 
 void SpeechRecognitionBubbleImpl::UpdateLayout() {
-  if (bubble_)
+  if (bubble_ && GetWebContents())
     bubble_->UpdateLayout(display_mode(), message_text(), icon_image());
 }
 
 void SpeechRecognitionBubbleImpl::UpdateImage() {
-  if (bubble_)
+  if (bubble_ && GetWebContents())
     bubble_->SetImage(icon_image());
 }
 
 }  // namespace
 
 SpeechRecognitionBubble* SpeechRecognitionBubble::CreateNativeBubble(
-    WebContents* web_contents,
+    int render_process_id,
+    int render_view_id,
     SpeechRecognitionBubble::Delegate* delegate,
     const gfx::Rect& element_rect) {
-  return new SpeechRecognitionBubbleImpl(web_contents, delegate, element_rect);
+  return new SpeechRecognitionBubbleImpl(render_process_id, render_view_id,
+      delegate, element_rect);
 }

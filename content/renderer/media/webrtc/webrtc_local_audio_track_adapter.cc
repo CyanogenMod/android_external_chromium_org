@@ -5,7 +5,10 @@
 #include "content/renderer/media/webrtc/webrtc_local_audio_track_adapter.h"
 
 #include "base/logging.h"
+#include "content/renderer/media/media_stream_audio_processor.h"
+#include "content/renderer/media/webrtc/webrtc_audio_sink_adapter.h"
 #include "content/renderer/media/webrtc_local_audio_track.h"
+#include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
 
 namespace content {
 
@@ -26,7 +29,8 @@ WebRtcLocalAudioTrackAdapter::WebRtcLocalAudioTrackAdapter(
     webrtc::AudioSourceInterface* track_source)
     : webrtc::MediaStreamTrack<webrtc::AudioTrackInterface>(label),
       owner_(NULL),
-      track_source_(track_source) {
+      track_source_(track_source),
+      signal_level_(0) {
 }
 
 WebRtcLocalAudioTrackAdapter::~WebRtcLocalAudioTrackAdapter() {
@@ -38,13 +42,68 @@ void WebRtcLocalAudioTrackAdapter::Initialize(WebRtcLocalAudioTrack* owner) {
   owner_ = owner;
 }
 
+void WebRtcLocalAudioTrackAdapter::SetAudioProcessor(
+    const scoped_refptr<MediaStreamAudioProcessor>& processor) {
+  base::AutoLock auto_lock(lock_);
+  audio_processor_ = processor;
+}
+
 std::string WebRtcLocalAudioTrackAdapter::kind() const {
   return kAudioTrackKind;
+}
+
+void WebRtcLocalAudioTrackAdapter::AddSink(
+    webrtc::AudioTrackSinkInterface* sink) {
+  DCHECK(sink);
+#ifndef NDEBUG
+  // Verify that |sink| has not been added.
+  for (ScopedVector<WebRtcAudioSinkAdapter>::const_iterator it =
+           sink_adapters_.begin();
+       it != sink_adapters_.end(); ++it) {
+    DCHECK(!(*it)->IsEqual(sink));
+  }
+#endif
+
+  scoped_ptr<WebRtcAudioSinkAdapter> adapter(
+      new WebRtcAudioSinkAdapter(sink));
+  owner_->AddSink(adapter.get());
+  sink_adapters_.push_back(adapter.release());
+}
+
+void WebRtcLocalAudioTrackAdapter::RemoveSink(
+    webrtc::AudioTrackSinkInterface* sink) {
+  DCHECK(sink);
+  for (ScopedVector<WebRtcAudioSinkAdapter>::iterator it =
+           sink_adapters_.begin();
+       it != sink_adapters_.end(); ++it) {
+    if ((*it)->IsEqual(sink)) {
+      owner_->RemoveSink(*it);
+      sink_adapters_.erase(it);
+      return;
+    }
+  }
+}
+
+bool WebRtcLocalAudioTrackAdapter::GetSignalLevel(int* level) {
+  base::AutoLock auto_lock(lock_);
+  *level = signal_level_;
+  return true;
+}
+
+talk_base::scoped_refptr<webrtc::AudioProcessorInterface>
+WebRtcLocalAudioTrackAdapter::GetAudioProcessor() {
+  base::AutoLock auto_lock(lock_);
+  return audio_processor_.get();
 }
 
 std::vector<int> WebRtcLocalAudioTrackAdapter::VoeChannels() const {
   base::AutoLock auto_lock(lock_);
   return voe_channels_;
+}
+
+void WebRtcLocalAudioTrackAdapter::SetSignalLevel(int signal_level) {
+  base::AutoLock auto_lock(lock_);
+  signal_level_ = signal_level;
 }
 
 void WebRtcLocalAudioTrackAdapter::AddChannel(int channel_id) {

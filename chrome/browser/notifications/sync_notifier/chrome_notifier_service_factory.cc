@@ -9,13 +9,13 @@
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 namespace notifier {
 
 // static
 ChromeNotifierService* ChromeNotifierServiceFactory::GetForProfile(
-    Profile* profile, Profile::ServiceAccessType sat) {
+    Profile* profile, Profile::ServiceAccessType service_access_type) {
   return static_cast<ChromeNotifierService*>(
       GetInstance()->GetServiceForBrowserContext(profile, true));
 }
@@ -51,8 +51,7 @@ ChromeNotifierServiceFactory::ChromeNotifierServiceFactory()
 ChromeNotifierServiceFactory::~ChromeNotifierServiceFactory() {
 }
 
-BrowserContextKeyedService*
-ChromeNotifierServiceFactory::BuildServiceInstanceFor(
+KeyedService* ChromeNotifierServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   NotificationUIManager* notification_manager =
       g_browser_process->notification_ui_manager();

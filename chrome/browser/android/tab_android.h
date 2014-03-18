@@ -37,14 +37,24 @@ class ContentViewCore;
 class WebContents;
 }
 
+namespace prerender {
+class PrerenderManager;
+}
+
 class TabAndroid : public CoreTabHelperDelegate,
                    public content::NotificationObserver {
  public:
+  enum TabLoadStatus {
+#define DEFINE_TAB_LOAD_STATUS(name, value)  name = value,
+#include "chrome/browser/android/tab_load_status.h"
+#undef DEFINE_TAB_LOAD_STATUS
+  };
+
   // Convenience method to retrieve the Tab associated with the passed
   // WebContents.  Can return NULL.
   static TabAndroid* FromWebContents(content::WebContents* web_contents);
 
-  // Returns the native TabAndroid stored in the Java TabBase represented by
+  // Returns the native TabAndroid stored in the Java Tab represented by
   // |obj|.
   static TabAndroid* GetNativeTab(JNIEnv* env, jobject obj);
 
@@ -76,6 +86,7 @@ class TabAndroid : public CoreTabHelperDelegate,
   Profile* GetProfile() const;
   browser_sync::SyncedTabDelegate* GetSyncedTabDelegate() const;
 
+  void SetWindowSessionID(SessionID::id_type window_id);
   void SetSyncId(int sync_id);
 
   virtual void HandlePopupNavigation(chrome::NavigateParams* params);
@@ -106,8 +117,7 @@ class TabAndroid : public CoreTabHelperDelegate,
   // of service and the privacy notice.
   virtual bool ShouldWelcomePageLinkToTermsOfService();
 
-  // Register the Tab's native methods through JNI.
-  static bool RegisterTabAndroid(JNIEnv* env);
+  bool HasPrerenderedUrl(GURL gurl);
 
   // CoreTabHelperDelegate ----------------------------------------------------
 
@@ -137,6 +147,14 @@ class TabAndroid : public CoreTabHelperDelegate,
                                                             jobject obj);
   base::android::ScopedJavaLocalRef<jobject> GetProfileAndroid(JNIEnv* env,
                                                                jobject obj);
+  virtual TabLoadStatus LoadUrl(JNIEnv* env,
+                                jobject obj,
+                                jstring url,
+                                jstring j_extra_headers,
+                                jbyteArray j_post_data,
+                                jint page_transition,
+                                jstring j_referrer_url,
+                                jint referrer_policy);
   ToolbarModel::SecurityLevel GetSecurityLevel(JNIEnv* env, jobject obj);
   void SetActiveNavigationEntryTitleForUrl(JNIEnv* env,
                                            jobject obj,
@@ -144,10 +162,19 @@ class TabAndroid : public CoreTabHelperDelegate,
                                            jstring jtitle);
   bool Print(JNIEnv* env, jobject obj);
 
+  // Register the Tab's native methods through JNI.
+  static bool RegisterTabAndroid(JNIEnv* env);
+
  private:
+  prerender::PrerenderManager* GetPrerenderManager() const;
+
   JavaObjectWeakGlobalRef weak_java_tab_;
 
+  // The identifier used by session restore for this tab.
   SessionID session_tab_id_;
+
+  // Identifier of the window the tab is in.
+  SessionID session_window_id_;
 
   content::NotificationRegistrar notification_registrar_;
 

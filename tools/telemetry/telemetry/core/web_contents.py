@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import os
+
 from telemetry.core import util
 
 DEFAULT_WEB_CONTENTS_TIMEOUT = 90
@@ -13,11 +15,9 @@ class WebContents(object):
   def __init__(self, inspector_backend):
     self._inspector_backend = inspector_backend
 
-  def __del__(self):
-    self.Disconnect()
-
-  def Disconnect(self):
-    self._inspector_backend.Disconnect()
+    with open(os.path.join(os.path.dirname(__file__),
+        'network_quiescence.js')) as f:
+      self._quiescence_js = f.read()
 
   def Close(self):
     """Closes this page.
@@ -52,12 +52,29 @@ class WebContents(object):
         return False
     util.WaitFor(IsTrue, timeout)
 
+  def HasReachedQuiescence(self):
+    """Determine whether the page has reached quiescence after loading.
+
+    Returns:
+      True if 2 seconds have passed since last resource received, false
+      otherwise."""
+
+    # Inclusion of the script that provides
+    # window.__telemetry_testHasReachedNetworkQuiescence()
+    # is idempotent, it's run on every call because WebContents doesn't track
+    # page loads and we need to execute anew for every newly loaded page.
+    has_reached_quiescence = (
+        self.EvaluateJavaScript(self._quiescence_js +
+            "window.__telemetry_testHasReachedNetworkQuiescence()"))
+    return has_reached_quiescence
+
   def ExecuteJavaScript(self, expr, timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
     """Executes expr in JavaScript. Does not return the result.
 
     If the expression failed to evaluate, EvaluateException will be raised.
     """
-    self._inspector_backend.ExecuteJavaScript(expr, timeout)
+    return self.ExecuteJavaScriptInContext(
+        expr, context_id=None, timeout=timeout)
 
   def EvaluateJavaScript(self, expr, timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
     """Evalutes expr in JavaScript and returns the JSONized result.
@@ -71,7 +88,24 @@ class WebContents(object):
     If the result of the evaluation cannot be JSONized, then an
     EvaluationException will be raised.
     """
-    return self._inspector_backend.EvaluateJavaScript(expr, timeout)
+    return self.EvaluateJavaScriptInContext(
+        expr, context_id=None, timeout=timeout)
+
+  def ExecuteJavaScriptInContext(self, expr, context_id,
+                                 timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
+    """Similar to ExecuteJavaScript, except context_id can refer to an iframe.
+    The main page has context_id=1, the first iframe context_id=2, etc.
+    """
+    return self._inspector_backend.ExecuteJavaScript(
+        expr, context_id=context_id, timeout=timeout)
+
+  def EvaluateJavaScriptInContext(self, expr, context_id,
+                                  timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
+    """Similar to ExecuteJavaScript, except context_id can refer to an iframe.
+    The main page has context_id=1, the first iframe context_id=2, etc.
+    """
+    return self._inspector_backend.EvaluateJavaScript(
+        expr, context_id=context_id, timeout=timeout)
 
   @property
   def message_output_stream(self):
@@ -85,8 +119,12 @@ class WebContents(object):
   def timeline_model(self):
     return self._inspector_backend.timeline_model
 
-  def StartTimelineRecording(self):
-    self._inspector_backend.StartTimelineRecording()
+  def StartTimelineRecording(self, options=None):
+    self._inspector_backend.StartTimelineRecording(options)
+
+  @property
+  def is_timeline_recording_running(self):
+    return self._inspector_backend.is_timeline_recording_running
 
   def StopTimelineRecording(self):
     self._inspector_backend.StopTimelineRecording()

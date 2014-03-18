@@ -6,10 +6,12 @@
 #define CC_LAYERS_HEADS_UP_DISPLAY_LAYER_IMPL_H_
 
 #include <string>
+#include <vector>
 
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
+#include "cc/debug/debug_rect_history.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/resources/memory_history.h"
 #include "cc/resources/scoped_resource.h"
@@ -21,7 +23,6 @@ struct SkRect;
 
 namespace cc {
 
-class DebugRectHistory;
 class FrameRateCounter;
 class PaintTimeCounter;
 
@@ -45,7 +46,7 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
 
   virtual void ReleaseResources() OVERRIDE;
 
-  virtual bool LayerIsAlwaysDamaged() const OVERRIDE;
+  bool IsAnimatingHUDContents() const { return fade_step_ > 0; }
 
  private:
   class Graph {
@@ -108,6 +109,13 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
                               const PaintTimeCounter* paint_time_counter,
                               int top,
                               int right) const;
+  void DrawDebugRect(SkCanvas* canvas,
+                     SkPaint& paint,
+                     const DebugRect& rect,
+                     SkColor stroke_color,
+                     SkColor fill_color,
+                     float stroke_width,
+                     const std::string& label_text) const;
   void DrawDebugRects(SkCanvas* canvas, DebugRectHistory* debug_rect_history);
 
   scoped_ptr<ScopedResource> hud_resource_;
@@ -118,7 +126,8 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
   Graph fps_graph_;
   Graph paint_time_graph_;
   MemoryHistory::Entry memory_entry_;
-  int current_paint_rect_color_;
+  int fade_step_;
+  std::vector<DebugRect> paint_rects_;
 
   base::TimeTicks time_of_last_graph_update_;
 

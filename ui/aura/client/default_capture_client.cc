@@ -4,8 +4,8 @@
 
 #include "ui/aura/client/default_capture_client.h"
 
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 
 namespace aura {
 namespace client {
@@ -31,7 +31,7 @@ void DefaultCaptureClient::SetCapture(Window* window) {
   Window* old_capture_window = capture_window_;
   capture_window_ = window;
 
-  CaptureDelegate* capture_delegate = root_window_->GetDispatcher();
+  CaptureDelegate* capture_delegate = root_window_->GetHost()->dispatcher();
   if (capture_window_)
     capture_delegate->SetNativeCapture();
   else

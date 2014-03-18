@@ -41,6 +41,7 @@
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/ui/webui/omnibox/omnibox_ui.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "chrome/browser/ui/webui/password_manager_internals/password_manager_internals_ui.h"
 #include "chrome/browser/ui/webui/performance_monitor/performance_monitor_ui.h"
 #include "chrome/browser/ui/webui/plugins_ui.h"
 #include "chrome/browser/ui/webui/predictors/predictors_ui.h"
@@ -62,6 +63,7 @@
 #include "components/dom_distiller/core/dom_distiller_constants.h"
 #include "components/dom_distiller/core/dom_distiller_service.h"
 #include "components/dom_distiller/webui/dom_distiller_ui.h"
+#include "components/password_manager/core/common/password_manager_switches.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_client.h"
@@ -103,6 +105,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/ui/webui/chromeos/bluetooth_pairing_ui.h"
+#include "chrome/browser/ui/webui/chromeos/certificate_manager_dialog_ui.h"
 #include "chrome/browser/ui/webui/chromeos/charger_replacement_ui.h"
 #include "chrome/browser/ui/webui/chromeos/choose_mobile_network_ui.h"
 #include "chrome/browser/ui/webui/chromeos/cryptohome_ui.h"
@@ -282,6 +285,11 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<NewTabUI>;
   if (url.host() == chrome::kChromeUIOmniboxHost)
     return &NewWebUI<OmniboxUI>;
+  if (url.host() == chrome::kChromeUIPasswordManagerInternalsHost &&
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnablePasswordManagerInternalsUI)) {
+    return &NewWebUI<PasswordManagerInternalsUI>;
+  }
   if (url.host() == chrome::kChromeUIPredictorsHost)
     return &NewWebUI<PredictorsUI>;
   if (url.host() == chrome::kChromeUIProfilerHost)
@@ -381,10 +389,16 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #if (defined(USE_NSS) || defined(USE_OPENSSL)) && defined(USE_AURA)
   if (url.host() == chrome::kChromeUICertificateViewerHost)
     return &NewWebUI<CertificateViewerUI>;
+#if defined(OS_CHROMEOS)
+  if (url.host() == chrome::kChromeUICertificateViewerDialogHost)
+    return &NewWebUI<CertificateViewerModalDialogUI>;
+#endif
 #endif
 #if defined(OS_CHROMEOS)
   if (url.host() == chrome::kChromeUIBluetoothPairingHost)
     return &NewWebUI<chromeos::BluetoothPairingUI>;
+  if (url.host() == chrome::kChromeUICertificateManagerHost)
+    return &NewWebUI<chromeos::CertificateManagerDialogUI>;
   if (url.host() == chrome::kChromeUIChargerReplacementHost)
     return &NewWebUI<chromeos::ChargerReplacementUI>;
   if (url.host() == chrome::kChromeUIChooseMobileNetworkHost)

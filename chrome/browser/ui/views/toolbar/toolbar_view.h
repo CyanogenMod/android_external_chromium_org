@@ -24,12 +24,17 @@ class BackButton;
 class BrowserActionsContainer;
 class Browser;
 class HomeButton;
-class OriginChipView;
 class ReloadButton;
 class ToolbarButton;
+class ToolbarOriginChipView;
 class WrenchMenu;
 class WrenchMenuModel;
 class WrenchToolbarButton;
+
+namespace extensions {
+class Command;
+class Extension;
+}
 
 namespace views {
 class MenuListener;
@@ -82,17 +87,27 @@ class ToolbarView : public views::AccessiblePaneView,
   // Returns the view to which the Translate bubble should be anchored.
   views::View* GetTranslateBubbleAnchor();
 
+  // Executes |command| registered by |extension|.
+  void ExecuteExtensionCommand(const extensions::Extension* extension,
+                               const extensions::Command& command);
+
+  // Shows the extension's page action, if present.
+  void ShowPageActionPopup(const extensions::Extension* extension);
+
+  // Shows the extension's browser action, if present.
+  void ShowBrowserActionPopup(const extensions::Extension* extension);
+
   // Accessors...
   Browser* browser() const { return browser_; }
   BrowserActionsContainer* browser_actions() const { return browser_actions_; }
   ReloadButton* reload_button() const { return reload_; }
   LocationBarView* location_bar() const { return location_bar_; }
-  OriginChipView* origin_chip() const { return origin_chip_view_; }
+  ToolbarOriginChipView* origin_chip() const { return origin_chip_view_; }
   views::MenuButton* app_menu() const;
 
   // Overridden from AccessiblePaneView
   virtual bool SetPaneFocus(View* initial_focus) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // Overridden from views::MenuButtonListener:
   virtual void OnMenuButtonClicked(views::View* source,
@@ -213,7 +228,7 @@ class ToolbarView : public views::AccessiblePaneView,
   ReloadButton* reload_;
   HomeButton* home_;
   LocationBarView* location_bar_;
-  OriginChipView* origin_chip_view_;
+  ToolbarOriginChipView* origin_chip_view_;
   BrowserActionsContainer* browser_actions_;
   WrenchToolbarButton* app_menu_;
   Browser* browser_;

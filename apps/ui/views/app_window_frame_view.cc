@@ -51,11 +51,13 @@ AppWindowFrameView::AppWindowFrameView(NativeAppWindow* window)
 AppWindowFrameView::~AppWindowFrameView() {}
 
 void AppWindowFrameView::Init(views::Widget* frame,
+                              const SkColor& frame_color,
                               int resize_inside_bounds_size,
                               int resize_outside_bounds_size,
                               int resize_outside_scale_for_touch,
                               int resize_area_corner_size) {
   frame_ = frame;
+  frame_color_ = frame_color;
   resize_inside_bounds_size_ = resize_inside_bounds_size;
   resize_outside_bounds_size_ = resize_outside_bounds_size;
   resize_area_corner_size_ = resize_area_corner_size;
@@ -118,17 +120,6 @@ void AppWindowFrameView::Init(views::Widget* frame,
         l10n_util::GetStringUTF16(IDS_APP_ACCNAME_MINIMIZE));
     AddChildView(minimize_button_);
   }
-
-#if defined(USE_AURA)
-  aura::Window* window = frame->GetNativeWindow();
-  // Ensure we get resize cursors just inside our bounds as well.
-  // TODO(jeremya): do we need to update these when in fullscreen/maximized?
-  window->set_hit_test_bounds_override_inner(
-      gfx::Insets(resize_inside_bounds_size_,
-                  resize_inside_bounds_size_,
-                  resize_inside_bounds_size_,
-                  resize_inside_bounds_size_));
-#endif
 }
 
 // views::NonClientFrameView implementation.
@@ -157,7 +148,7 @@ gfx::Rect AppWindowFrameView::GetWindowBoundsForClientBounds(
   int closeButtonOffsetX = (kCaptionHeight - close_button_->height()) / 2;
   int header_width = close_button_->width() + closeButtonOffsetX * 2;
   return gfx::Rect(client_bounds.x(),
-                   std::max(0, client_bounds.y() - kCaptionHeight),
+                   client_bounds.y() - kCaptionHeight,
                    std::max(header_width, client_bounds.width()),
                    client_bounds.height() + kCaptionHeight);
 }
@@ -167,11 +158,12 @@ int AppWindowFrameView::NonClientHitTest(const gfx::Point& point) {
     return HTCLIENT;
 
   gfx::Rect expanded_bounds = bounds();
-  if (resize_outside_bounds_size_)
+  if (resize_outside_bounds_size_) {
     expanded_bounds.Inset(gfx::Insets(-resize_outside_bounds_size_,
                                       -resize_outside_bounds_size_,
                                       -resize_outside_bounds_size_,
                                       -resize_outside_bounds_size_));
+  }
   // Points outside the (possibly expanded) bounds can be discarded.
   if (!expanded_bounds.Contains(point))
     return HTNOWHERE;
@@ -308,7 +300,7 @@ void AppWindowFrameView::OnPaint(gfx::Canvas* canvas) {
   SkPaint paint;
   paint.setAntiAlias(false);
   paint.setStyle(SkPaint::kFill_Style);
-  paint.setColor(SK_ColorWHITE);
+  paint.setColor(frame_color_);
   gfx::Path path;
   path.moveTo(0, 0);
   path.lineTo(width(), 0);

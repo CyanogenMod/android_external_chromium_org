@@ -15,9 +15,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "chrome/browser/extensions/extension_function_histogram_value.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/console_message_level.h"
+#include "extensions/browser/extension_function_histogram_value.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/common/extension.h"
 #include "ipc/ipc_message.h"
@@ -302,8 +302,10 @@ class UIThreadExtensionFunction : public ExtensionFunction {
 
   // Set the browser context which contains the extension that has originated
   // this function call.
-  void set_context(content::BrowserContext* context) { context_ = context; }
-  content::BrowserContext* context() const { return context_; }
+  void set_browser_context(content::BrowserContext* context) {
+    context_ = context;
+  }
+  content::BrowserContext* browser_context() const { return context_; }
 
   void SetRenderViewHost(content::RenderViewHost* render_view_host);
   content::RenderViewHost* render_view_host() const {

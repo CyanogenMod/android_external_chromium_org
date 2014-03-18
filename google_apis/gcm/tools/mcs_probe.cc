@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 #include "base/at_exit.h"
 #include "base/command_line.h"
@@ -299,7 +300,8 @@ void MCSProbe::Start() {
       new GCMStoreImpl(true,
                        gcm_store_path_,
                        file_thread_.message_loop_proxy()));
-  mcs_client_.reset(new MCSClient(&clock_,
+  mcs_client_.reset(new MCSClient("probe",
+                                  &clock_,
                                   connection_factory_.get(),
                                   gcm_store_.get()));
   run_loop_.reset(new base::RunLoop());
@@ -425,6 +427,7 @@ void MCSProbe::CheckIn() {
       chrome_build_proto,
       0,
       0,
+      std::vector<std::string>(),
       url_request_context_getter_.get()));
   checkin_request_->Start();
 }

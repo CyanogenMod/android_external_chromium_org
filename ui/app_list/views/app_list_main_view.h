@@ -58,7 +58,7 @@ class APP_LIST_EXPORT AppListMainView : public views::View,
   void SetDragAndDropHostOfCurrentAppList(
       ApplicationDragAndDropHost* drag_and_drop_host);
 
-  ContentsView* contents_view() { return contents_view_; }
+  ContentsView* contents_view() const { return contents_view_; }
 
  private:
   class IconLoader;
@@ -75,6 +75,9 @@ class APP_LIST_EXPORT AppListMainView : public views::View,
   // Invoked from an IconLoader when icon loading is finished.
   void OnItemIconLoaded(IconLoader* loader);
 
+  // Overridden from views::View:
+  virtual void ChildVisibilityChanged(views::View* child) OVERRIDE;
+
   // Overridden from AppsGridViewDelegate:
   virtual void ActivateApp(AppListItem* item, int event_flags) OVERRIDE;
   virtual void GetShortcutPathForApp(
@@ -85,12 +88,6 @@ class APP_LIST_EXPORT AppListMainView : public views::View,
   virtual void QueryChanged(SearchBoxView* sender) OVERRIDE;
 
   // Overridden from SearchResultListViewDelegate:
-  virtual void OpenResult(SearchResult* result,
-                          bool auto_launch,
-                          int event_flags) OVERRIDE;
-  virtual void InvokeResultAction(SearchResult* result,
-                                  int action_index,
-                                  int event_flags) OVERRIDE;
   virtual void OnResultInstalled(SearchResult* result) OVERRIDE;
   virtual void OnResultUninstalled(SearchResult* result) OVERRIDE;
 

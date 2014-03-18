@@ -13,8 +13,8 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/x11/edid_parser_x11.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/layout.h"
 #include "ui/base/x/x11_util.h"
@@ -63,6 +63,50 @@ std::vector<gfx::Display> GetFallbackDisplayList() {
   return std::vector<gfx::Display>(1, gfx_display);
 }
 
+// Helper class to GetWindowAtScreenPoint() which returns the topmost window at
+// the location passed to FindAt(). NULL is returned if a window which does not
+// belong to Chromium is topmost at the passed in location.
+class ToplevelWindowFinder : public ui::EnumerateWindowsDelegate {
+ public:
+  ToplevelWindowFinder() : toplevel_(NULL) {
+  }
+
+  virtual ~ToplevelWindowFinder() {
+  }
+
+  aura::Window* FindAt(const gfx::Point& screen_loc) {
+    screen_loc_ = screen_loc;
+    ui::EnumerateTopLevelWindows(this);
+    return toplevel_;
+  }
+
+ protected:
+  virtual bool ShouldStopIterating(XID xid) OVERRIDE {
+    aura::Window* window =
+        views::DesktopWindowTreeHostX11::GetContentWindowForXID(xid);
+    if (window) {
+      if (window->IsVisible() &&
+          window->GetBoundsInScreen().Contains(screen_loc_)) {
+        toplevel_ = window;
+        return true;
+      }
+      return false;
+    }
+
+    if (ui::IsWindowVisible(xid) &&
+        ui::WindowContainsPoint(xid, screen_loc_)) {
+      // toplevel_ = NULL
+      return true;
+    }
+    return false;
+  }
+
+  gfx::Point screen_loc_;
+  aura::Window* toplevel_;
+
+  DISALLOW_COPY_AND_ASSIGN(ToplevelWindowFinder);
+};
+
 }  // namespace
 
 namespace views {
@@ -106,12 +150,16 @@ DesktopScreenX11::~DesktopScreenX11() {
 
 void DesktopScreenX11::ProcessDisplayChange(
     const std::vector<gfx::Display>& incoming) {
-  std::vector<gfx::Display>::const_iterator cur_it = displays_.begin();
-  for (; cur_it != displays_.end(); ++cur_it) {
+  std::vector<gfx::Display> old_displays = displays_;
+  displays_ = incoming;
+
+  typedef std::vector<gfx::Display>::const_iterator DisplayIt;
+  std::vector<gfx::Display>::const_iterator old_it = old_displays.begin();
+  for (; old_it != old_displays.end(); ++old_it) {
     bool found = false;
-    for (std::vector<gfx::Display>::const_iterator incoming_it =
-             incoming.begin(); incoming_it != incoming.end(); ++incoming_it) {
-      if (cur_it->id() == incoming_it->id()) {
+    for (std::vector<gfx::Display>::const_iterator new_it =
+             displays_.begin(); new_it != displays_.end(); ++new_it) {
+      if (old_it->id() == new_it->id()) {
         found = true;
         break;
       }
@@ -119,19 +167,19 @@ void DesktopScreenX11::ProcessDisplayChange(
 
     if (!found) {
       FOR_EACH_OBSERVER(gfx::DisplayObserver, observer_list_,
-                        OnDisplayRemoved(*cur_it));
+                        OnDisplayRemoved(*old_it));
     }
   }
 
-  std::vector<gfx::Display>::const_iterator incoming_it = incoming.begin();
-  for (; incoming_it != incoming.end(); ++incoming_it) {
+  std::vector<gfx::Display>::const_iterator new_it = displays_.begin();
+  for (; new_it != displays_.end(); ++new_it) {
     bool found = false;
-    for (std::vector<gfx::Display>::const_iterator cur_it = displays_.begin();
-         cur_it != displays_.end(); ++cur_it) {
-      if (incoming_it->id() == cur_it->id()) {
-        if (incoming_it->bounds() != cur_it->bounds()) {
+    for (std::vector<gfx::Display>::const_iterator old_it =
+         old_displays.begin(); old_it != old_displays.end(); ++old_it) {
+      if (new_it->id() == old_it->id()) {
+        if (new_it->bounds() != old_it->bounds()) {
           FOR_EACH_OBSERVER(gfx::DisplayObserver, observer_list_,
-                            OnDisplayBoundsChanged(*incoming_it));
+                            OnDisplayBoundsChanged(*new_it));
         }
 
         found = true;
@@ -141,11 +189,9 @@ void DesktopScreenX11::ProcessDisplayChange(
 
     if (!found) {
       FOR_EACH_OBSERVER(gfx::DisplayObserver, observer_list_,
-                        OnDisplayAdded(*incoming_it));
+                        OnDisplayAdded(*new_it));
     }
   }
-
-  displays_ = incoming;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -182,16 +228,8 @@ gfx::NativeWindow DesktopScreenX11::GetWindowUnderCursor() {
 
 gfx::NativeWindow DesktopScreenX11::GetWindowAtScreenPoint(
     const gfx::Point& point) {
-  std::vector<aura::Window*> windows =
-      DesktopWindowTreeHostX11::GetAllOpenWindows();
-
-  for (std::vector<aura::Window*>::const_iterator it = windows.begin();
-       it != windows.end(); ++it) {
-    if ((*it)->GetBoundsInScreen().Contains(point))
-      return *it;
-  }
-
-  return NULL;
+  ToplevelWindowFinder finder;
+  return finder.FindAt(point);
 }
 
 int DesktopScreenX11::GetNumDisplays() const {
@@ -207,16 +245,16 @@ gfx::Display DesktopScreenX11::GetDisplayNearestWindow(
   // Getting screen bounds here safely is hard.
   //
   // You'd think we'd be able to just call window->GetBoundsInScreen(), but we
-  // can't because |window| (and the associated RootWindow*) can be partially
-  // initialized at this point; RootWindow initializations call through into
-  // GetDisplayNearestWindow(). But the X11 resources are created before we
-  // create the aura::RootWindow. So we ask what the DRWHX11 believes the
-  // window bounds are instead of going through the aura::Window's screen
-  // bounds.
-  aura::WindowEventDispatcher* dispatcher = window->GetDispatcher();
-  if (dispatcher) {
+  // can't because |window| (and the associated WindowEventDispatcher*) can be
+  // partially initialized at this point; WindowEventDispatcher initializations
+  // call through into GetDisplayNearestWindow(). But the X11 resources are
+  // created before we create the aura::WindowEventDispatcher. So we ask what
+  // the DRWHX11 believes the window bounds are instead of going through the
+  // aura::Window's screen bounds.
+  aura::WindowTreeHost* host = window->GetHost();
+  if (host) {
     DesktopWindowTreeHostX11* rwh = DesktopWindowTreeHostX11::GetHostForXID(
-        dispatcher->host()->GetAcceleratedWidget());
+        host->GetAcceleratedWidget());
     if (rwh)
       return GetDisplayMatching(rwh->GetX11RootWindowBounds());
   }

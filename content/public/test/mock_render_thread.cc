@@ -26,6 +26,11 @@ MockRenderThread::MockRenderThread()
 }
 
 MockRenderThread::~MockRenderThread() {
+  while (!filters_.empty()) {
+    scoped_refptr<IPC::ChannelProxy::MessageFilter> filter = filters_.back();
+    filters_.pop_back();
+    filter->OnFilterRemoved();
+  }
 }
 
 void MockRenderThread::VerifyRunJavaScriptMessageSend(
@@ -180,6 +185,10 @@ bool MockRenderThread::ResolveProxy(const GURL& url, std::string* proxy_list) {
   return false;
 }
 
+base::WaitableEvent* MockRenderThread::GetShutdownEvent() {
+  return NULL;
+}
+
 #if defined(OS_WIN)
 void MockRenderThread::PreCacheFont(const LOGFONT& log_font) {
 }
@@ -219,8 +228,6 @@ void MockRenderThread::OnCreateWindow(
 
 // The Frame expects to be returned a valid route_id different from its own.
 void MockRenderThread::OnCreateChildFrame(int new_frame_routing_id,
-                                          int64 parent_frame_id,
-                                          int64 frame_id,
                                           const std::string& frame_name,
                                           int* new_render_frame_id) {
   *new_render_frame_id = new_frame_routing_id_;

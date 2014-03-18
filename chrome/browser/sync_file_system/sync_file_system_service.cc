@@ -10,6 +10,7 @@
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/sync_file_system/extension_sync_event_observer.h"
@@ -25,7 +26,7 @@
 #include "chrome/browser/sync_file_system/sync_process_runner.h"
 #include "chrome/browser/sync_file_system/sync_status_code.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -61,6 +62,8 @@ SyncServiceState RemoteStateToSyncServiceState(
       return SYNC_SERVICE_AUTHENTICATION_REQUIRED;
     case REMOTE_SERVICE_DISABLED:
       return SYNC_SERVICE_DISABLED;
+    case REMOTE_SERVICE_STATE_MAX:
+      NOTREACHED();
   }
   NOTREACHED() << "Unknown remote service state: " << state;
   return SYNC_SERVICE_DISABLED;
@@ -381,14 +384,17 @@ void SyncFileSystemService::RemoveSyncEventObserver(
   observers_.RemoveObserver(observer);
 }
 
-ConflictResolutionPolicy
-SyncFileSystemService::GetConflictResolutionPolicy() const {
-  return remote_service_->GetConflictResolutionPolicy();
+ConflictResolutionPolicy SyncFileSystemService::GetConflictResolutionPolicy(
+    const GURL& origin) {
+  return GetRemoteService(origin)->GetConflictResolutionPolicy(origin);
 }
 
 SyncStatusCode SyncFileSystemService::SetConflictResolutionPolicy(
+    const GURL& origin,
     ConflictResolutionPolicy policy) {
-  return remote_service_->SetConflictResolutionPolicy(policy);
+  UMA_HISTOGRAM_ENUMERATION("SyncFileSystem.ConflictResolutionPolicy",
+                            policy, CONFLICT_RESOLUTION_POLICY_MAX);
+  return GetRemoteService(origin)->SetConflictResolutionPolicy(origin, policy);
 }
 
 LocalChangeProcessor* SyncFileSystemService::GetLocalChangeProcessor(
@@ -473,6 +479,10 @@ void SyncFileSystemService::DidRegisterOrigin(
             "DidInitializeForApp (registered the origin): %s: %s",
             app_origin.spec().c_str(),
             SyncStatusCodeToString(status));
+
+  UMA_HISTOGRAM_ENUMERATION("SyncFileSystem.RegisterOriginResult",
+                            GetRemoteService(app_origin)->GetCurrentState(),
+                            REMOTE_SERVICE_STATE_MAX);
 
   if (status == SYNC_STATUS_FAILED) {
     // If we got generic error return the service status information.
@@ -764,6 +774,9 @@ RemoteFileSyncService* SyncFileSystemService::GetRemoteService(
     v2_remote_service_->AddServiceObserver(v2_remote_syncer.get());
     v2_remote_service_->AddFileStatusObserver(this);
     v2_remote_service_->SetRemoteChangeProcessor(local_service_.get());
+    v2_remote_service_->SetSyncEnabled(sync_enabled_);
+    v2_remote_service_->SetDefaultConflictResolutionPolicy(
+        remote_service_->GetDefaultConflictResolutionPolicy());
     remote_sync_runners_.push_back(v2_remote_syncer.release());
   }
   return v2_remote_service_.get();

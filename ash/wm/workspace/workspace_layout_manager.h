@@ -13,6 +13,7 @@
 #include "ash/wm/wm_types.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "ui/aura/client/activation_change_observer.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/window_observer.h"
@@ -30,11 +31,13 @@ class Layer;
 namespace ash {
 namespace wm {
 class WindowState;
+class WMEvent;
 }
 
 namespace internal {
 
 class ShelfLayoutManager;
+class WorkspaceLayoutManagerDelegate;
 
 // LayoutManager used on the window created for a workspace.
 class ASH_EXPORT WorkspaceLayoutManager
@@ -48,6 +51,12 @@ class ASH_EXPORT WorkspaceLayoutManager
   virtual ~WorkspaceLayoutManager();
 
   void SetShelf(internal::ShelfLayoutManager* shelf);
+
+  // A delegate which can be set to add a backdrop behind the top most visible
+  // window. With the call the ownership of the delegate will be transferred to
+  // the WorkspaceLayoutManager.
+  void SetMaximizeBackdropDelegate(
+      scoped_ptr<WorkspaceLayoutManagerDelegate> delegate);
 
   // Overridden from aura::LayoutManager:
   virtual void OnWindowResized() OVERRIDE {}
@@ -63,6 +72,8 @@ class ASH_EXPORT WorkspaceLayoutManager
   virtual void OnDisplayWorkAreaInsetsChanged() OVERRIDE;
 
   // Overriden from WindowObserver:
+  virtual void OnWindowHierarchyChanged(
+      const WindowObserver::HierarchyChangeParams& params) OVERRIDE;
   virtual void OnWindowPropertyChanged(aura::Window* window,
                                        const void* key,
                                        intptr_t old) OVERRIDE;
@@ -77,33 +88,21 @@ class ASH_EXPORT WorkspaceLayoutManager
                                  aura::Window* lost_active) OVERRIDE;
 
   // WindowStateObserver overrides:
-  virtual void OnPostWindowShowTypeChange(wm::WindowState* window_state,
-                                          wm::WindowShowType old_type) OVERRIDE;
+  virtual void OnPostWindowStateTypeChange(
+      wm::WindowState* window_state,
+      wm::WindowStateType old_type) OVERRIDE;
 
  private:
   typedef std::set<aura::Window*> WindowSet;
 
-  enum AdjustWindowReason {
-    ADJUST_WINDOW_DISPLAY_SIZE_CHANGED,
-    ADJUST_WINDOW_WORK_AREA_INSETS_CHANGED,
-  };
-
-  // Adjusts the window's bounds when the display area changes for given
-  // window. This happens when the display size, work area insets or
-  // the display on which the window exists has changed.
-  // If this is called for a display size change (i.e. |reason|
-  // is ADJUST_WINDOW_DISPLAY_SIZE_CHANGED), the non-maximized/non-fullscreen
+  // Adjusts the bounds of all managed windows when the display area changes.
+  // This happens when the display size, work area insets has changed.
+  // If this is called for a display size change (i.e. |event|
+  // is DISPLAY_RESIZED), the non-maximized/non-fullscreen
   // windows are readjusted to make sure the window is completely within the
   // display region. Otherwise, it makes sure at least some parts of the window
   // is on display.
-  void AdjustAllWindowsBoundsForWorkAreaChange(AdjustWindowReason reason);
-
-  // Adjusts the sizes of the specific window in respond to a screen change or
-  // display-area size change.
-  void AdjustWindowBoundsForWorkAreaChange(wm::WindowState* window_state,
-                                           AdjustWindowReason reason);
-
-  void AdjustWindowBoundsWhenAdded(wm::WindowState* window_state);
+  void AdjustAllWindowsBoundsForWorkAreaChange(const wm::WMEvent* event);
 
   // Updates the visibility state of the shelf.
   void UpdateShelfVisibility();
@@ -112,10 +111,10 @@ class ASH_EXPORT WorkspaceLayoutManager
   // has changed.
   void UpdateFullscreenState();
 
-  // Updates the bounds of the window for a show type change from
+  // Updates the bounds of the window for a stte type change from
   // |old_show_type|.
-  void UpdateBoundsFromShowType(wm::WindowState* window_state,
-                                wm::WindowShowType old_show_type);
+  void UpdateBoundsFromStateType(wm::WindowState* window_state,
+                                 wm::WindowStateType old_state_type);
 
   // If |window_state| is maximized or fullscreen the bounds of the
   // window are set and true is returned. Does nothing otherwise.
@@ -136,6 +135,10 @@ class ASH_EXPORT WorkspaceLayoutManager
 
   // True if this workspace is currently in fullscreen mode.
   bool is_fullscreen_;
+
+  // A window which covers the full container and which gets inserted behind the
+  // topmost visible window.
+  scoped_ptr<WorkspaceLayoutManagerDelegate> backdrop_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(WorkspaceLayoutManager);
 };

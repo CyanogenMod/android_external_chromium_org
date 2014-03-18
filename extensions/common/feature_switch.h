@@ -9,7 +9,9 @@
 
 #include "base/basictypes.h"
 
+namespace base {
 class CommandLine;
+}
 
 namespace extensions {
 
@@ -46,9 +48,11 @@ class FeatureSwitch {
     DISALLOW_COPY_AND_ASSIGN(ScopedOverride);
   };
 
+  // |switch_name| can be NULL, in which case the feature is controlled solely
+  // by the default and override values.
   FeatureSwitch(const char* switch_name,
                 DefaultValue default_value);
-  FeatureSwitch(const CommandLine* command_line,
+  FeatureSwitch(const base::CommandLine* command_line,
                 const char* switch_name,
                 DefaultValue default_value);
 
@@ -58,15 +62,15 @@ class FeatureSwitch {
 
   bool IsEnabled() const;
 
-  std::string GetLegacyEnableFlag() const;
-  std::string GetLegacyDisableFlag() const;
-
  private:
-  void Init(const CommandLine* command_line,
+  void Init(const base::CommandLine* command_line,
             const char* switch_name,
             DefaultValue default_value);
 
-  const CommandLine* command_line_;
+  std::string GetLegacyEnableFlag() const;
+  std::string GetLegacyDisableFlag() const;
+
+  const base::CommandLine* command_line_;
   const char* switch_name_;
   bool default_value_;
   OverrideValue override_value_;

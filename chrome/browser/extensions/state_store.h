@@ -10,9 +10,9 @@
 
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/value_store/value_store_frontend.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/value_store/value_store_frontend.h"
 
 class Profile;
 
@@ -51,6 +51,9 @@ class StateStore
   // Removes a value for a given extension and key.
   void RemoveExtensionValue(const std::string& extension_id,
                             const std::string& key);
+
+  // Return whether or not the StateStore has initialized itself.
+  bool IsInitialized() const;
 
  private:
   class DelayedTaskQueue;

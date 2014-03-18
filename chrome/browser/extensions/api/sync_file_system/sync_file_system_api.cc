@@ -11,7 +11,6 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/api/sync_file_system/extension_sync_event_observer.h"
-#include "chrome/browser/extensions/api/sync_file_system/extension_sync_event_observer_factory.h"
 #include "chrome/browser/extensions/api/sync_file_system/sync_file_system_api_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_service.h"
@@ -51,7 +50,7 @@ sync_file_system::SyncFileSystemService* GetSyncFileSystemService(
       SyncFileSystemServiceFactory::GetForProfile(profile);
   DCHECK(service);
   ExtensionSyncEventObserver* observer =
-      ExtensionSyncEventObserverFactory::GetForProfile(profile);
+      ExtensionSyncEventObserver::GetFactoryInstance()->Get(profile);
   DCHECK(observer);
   observer->InitializeForService(service);
   return service;
@@ -354,7 +353,8 @@ bool SyncFileSystemSetConflictResolutionPolicyFunction::RunImpl() {
   sync_file_system::SyncFileSystemService* service =
       GetSyncFileSystemService(GetProfile());
   DCHECK(service);
-  SyncStatusCode status = service->SetConflictResolutionPolicy(policy);
+  SyncStatusCode status = service->SetConflictResolutionPolicy(
+      source_url().GetOrigin(), policy);
   if (status != sync_file_system::SYNC_STATUS_OK) {
     SetError(ErrorToString(status));
     return false;
@@ -368,7 +368,7 @@ bool SyncFileSystemGetConflictResolutionPolicyFunction::RunImpl() {
   DCHECK(service);
   api::sync_file_system::ConflictResolutionPolicy policy =
       ConflictResolutionPolicyToExtensionEnum(
-          service->GetConflictResolutionPolicy());
+          service->GetConflictResolutionPolicy(source_url().GetOrigin()));
   SetResult(new base::StringValue(
           api::sync_file_system::ToString(policy)));
   return true;

@@ -49,9 +49,17 @@ import StringIO
 import subprocess
 import sys
 import time
+import zipfile
 
 import bisect_utils
+import post_perf_builder_job
 
+
+try:
+  from telemetry.page import cloud_storage
+except ImportError:
+  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), 'telemetry'))
+  from telemetry.page import cloud_storage
 
 # The additional repositories that might need to be bisected.
 # If the repository has any dependant repositories (such as skia/src needs
@@ -270,7 +278,158 @@ def IsWindows():
   Returns:
     True if running on Windows.
   """
-  return os.name == 'nt'
+  return sys.platform == 'cygwin' or sys.platform.startswith('win')
+
+
+def Is64BitWindows():
+  """Returns whether or not Windows is a 64-bit version.
+
+  Returns:
+    True if Windows is 64-bit, False if 32-bit.
+  """
+  platform = os.environ['PROCESSOR_ARCHITECTURE']
+  try:
+    platform = os.environ['PROCESSOR_ARCHITEW6432']
+  except KeyError:
+    # Must not be running in WoW64, so PROCESSOR_ARCHITECTURE is correct
+    pass
+
+  return platform in ['AMD64', 'I64']
+
+
+def IsLinux():
+  """Checks whether or not the script is running on Linux.
+
+  Returns:
+    True if running on Linux.
+  """
+  return sys.platform.startswith('linux')
+
+
+def IsMac():
+  """Checks whether or not the script is running on Mac.
+
+  Returns:
+    True if running on Mac.
+  """
+  return sys.platform.startswith('darwin')
+
+
+def GetZipFileName(build_revision=None, target_arch='ia32'):
+  """Gets the archive file name for the given revision."""
+  def PlatformName():
+    """Return a string to be used in paths for the platform."""
+    if IsWindows():
+      # Build archive for x64 is still stored with 'win32'suffix
+      # (chromium_utils.PlatformName()).
+      if Is64BitWindows() and target_arch == 'x64':
+        return 'win32'
+      return 'win32'
+    if IsLinux():
+      return 'linux'
+    if IsMac():
+      return 'mac'
+    raise NotImplementedError('Unknown platform "%s".' % sys.platform)
+
+  base_name = 'full-build-%s' % PlatformName()
+  if not build_revision:
+    return base_name
+  return '%s_%s.zip' % (base_name, build_revision)
+
+
+def GetRemoteBuildPath(build_revision, target_arch='ia32'):
+  """Compute the url to download the build from."""
+  def GetGSRootFolderName():
+    """Gets Google Cloud Storage root folder names"""
+    if IsWindows():
+      if Is64BitWindows() and target_arch == 'x64':
+        return 'Win x64 Builder'
+      return 'Win Builder'
+    if IsLinux():
+      return 'Linux Builder'
+    if IsMac():
+      return 'Mac Builder'
+    raise NotImplementedError('Unsupported Platform "%s".' % sys.platform)
+
+  base_filename = GetZipFileName(build_revision, target_arch)
+  builder_folder = GetGSRootFolderName()
+  return '%s/%s' % (builder_folder, base_filename)
+
+
+def FetchFromCloudStorage(bucket_name, source_path, destination_path):
+  """Fetches file(s) from the Google Cloud Storage.
+
+  Args:
+    bucket_name: Google Storage bucket name.
+    source_path: Source file path.
+    destination_path: Destination file path.
+
+  Returns:
+    True if the fetching succeeds, otherwise False.
+  """
+  target_file = os.path.join(destination_path, os.path.basename(source_path))
+  try:
+    if cloud_storage.Exists(bucket_name, source_path):
+      print 'Fetching file from gs//%s/%s ...' % (bucket_name, source_path)
+      cloud_storage.Get(bucket_name, source_path, destination_path)
+      if os.path.exists(target_file):
+        return True
+    else:
+      print ('File gs://%s/%s not found in cloud storage.' % (
+          bucket_name, source_path))
+  except e:
+    print 'Something went wrong while fetching file from cloud: %s' % e
+    if os.path.exists(target_file):
+       os.remove(target_file)
+  return False
+
+
+# This is copied from Chromium's project build/scripts/common/chromium_utils.py.
+def MaybeMakeDirectory(*path):
+  """Creates an entire path, if it doesn't already exist."""
+  file_path = os.path.join(*path)
+  try:
+    os.makedirs(file_path)
+  except OSError, e:
+    if e.errno != errno.EEXIST:
+      return False
+  return True
+
+
+# This is copied from Chromium's project build/scripts/common/chromium_utils.py.
+def ExtractZip(filename, output_dir, verbose=True):
+  """ Extract the zip archive in the output directory."""
+  MaybeMakeDirectory(output_dir)
+
+  # On Linux and Mac, we use the unzip command as it will
+  # handle links and file bits (executable), which is much
+  # easier then trying to do that with ZipInfo options.
+  #
+  # On Windows, try to use 7z if it is installed, otherwise fall back to python
+  # zip module and pray we don't have files larger than 512MB to unzip.
+  unzip_cmd = None
+  if IsMac() or IsLinux():
+    unzip_cmd = ['unzip', '-o']
+  elif IsWindows() and os.path.exists('C:\\Program Files\\7-Zip\\7z.exe'):
+    unzip_cmd = ['C:\\Program Files\\7-Zip\\7z.exe', 'x', '-y']
+
+  if unzip_cmd:
+    # Make sure path is absolute before changing directories.
+    filepath = os.path.abspath(filename)
+    saved_dir = os.getcwd()
+    os.chdir(output_dir)
+    command = unzip_cmd + [filepath]
+    result = RunProcess(command)
+    os.chdir(saved_dir)
+    if result:
+      raise IOError('unzip failed: %s => %s' % (str(command), result))
+  else:
+    assert IsWindows()
+    zf = zipfile.ZipFile(filename)
+    for name in zf.namelist():
+      if verbose:
+        print 'Extracting %s' % name
+      zf.extract(name, output_dir)
 
 
 def RunProcess(command):
@@ -455,6 +614,9 @@ class Builder(object):
   def Build(self, depot, opts):
     raise NotImplementedError()
 
+  def GetBuildOutputDirectory(self, opts, src_dir=None):
+    raise NotImplementedError()
+
 
 class DesktopBuilder(Builder):
   """DesktopBuilder is used to build Chromium on linux/mac/windows."""
@@ -490,6 +652,20 @@ class DesktopBuilder(Builder):
       assert False, 'No build system defined.'
     return build_success
 
+  def GetBuildOutputDirectory(self, opts, src_dir=None):
+    """Returns the path to the build directory, relative to the checkout root.
+
+      Assumes that the current working directory is the checkout root.
+    """
+    src_dir = src_dir or 'src'
+    if opts.build_preference == 'ninja' or IsLinux():
+      return os.path.join(src_dir, 'out')
+    if IsMac():
+      return os.path.join(src_dir, 'xcodebuild')
+    if IsWindows():
+      return os.path.join(src_dir, 'build')
+    raise NotImplementedError('Unexpected platform %s' % sys.platform)
+
 
 class AndroidBuilder(Builder):
   """AndroidBuilder is used to build on android."""
@@ -497,7 +673,7 @@ class AndroidBuilder(Builder):
     super(AndroidBuilder, self).__init__(opts)
 
   def _GetTargets(self):
-    return ['chromium_testshell', 'cc_perftests_apk', 'android_tools']
+    return ['chrome_shell', 'cc_perftests_apk', 'android_tools']
 
   def Build(self, depot, opts):
     """Builds the android content shell and other necessary tools using options
@@ -970,6 +1146,10 @@ class BisectPerformanceMetrics(object):
       #  1. trunk revision N has description "Version X.Y.Z"
       #  2. bleeding_edge revision (N-1) has description "Prepare push to
       #     trunk. Now working on X.Y.(Z+1)."
+      #
+      # As of 01/24/2014, V8 trunk descriptions are formatted:
+      # "Version 3.X.Y (based on bleeding_edge revision rZ)"
+      # So we can just try parsing that out first and fall back to the old way.
       v8_dir = self._GetDepotDirectory('v8')
       v8_bleeding_edge_dir = self._GetDepotDirectory('v8_bleeding_edge')
 
@@ -981,11 +1161,25 @@ class BisectPerformanceMetrics(object):
       regex_results = version_re.search(revision_info['subject'])
 
       if regex_results:
-        version = regex_results.group('values')
+        git_revision = None
 
-        git_revision = self.source_control.ResolveToRevision(
-            int(svn_revision) - 1, 'v8_bleeding_edge', -1,
-            cwd=v8_bleeding_edge_dir)
+        # Look for "based on bleeding_edge" and parse out revision
+        if 'based on bleeding_edge' in revision_info['subject']:
+          try:
+            bleeding_edge_revision = revision_info['subject'].split(
+                'bleeding_edge revision r')[1]
+            bleeding_edge_revision = int(bleeding_edge_revision.split(')')[0])
+            git_revision = self.source_control.ResolveToRevision(
+                bleeding_edge_revision, 'v8_bleeding_edge', 1,
+                cwd=v8_bleeding_edge_dir)
+          except IndexError, ValueError:
+            pass
+
+        if not git_revision:
+          # Wasn't successful, try the old way of looking for "Prepare push to"
+          git_revision = self.source_control.ResolveToRevision(
+              int(svn_revision) - 1, 'v8_bleeding_edge', -1,
+              cwd=v8_bleeding_edge_dir)
 
         if git_revision:
           revision_info = self.source_control.QueryRevisionInfo(git_revision,
@@ -1117,7 +1311,128 @@ class BisectPerformanceMetrics(object):
 
     return results
 
-  def BuildCurrentRevision(self, depot):
+  def BackupOrRestoreOutputdirectory(self, restore=False, build_type='Release'):
+    """Backs up or restores build output directory based on restore argument.
+
+    Args:
+      restore: Indicates whether to restore or backup. Default is False(Backup)
+      build_type: Target build type ('Release', 'Debug', 'Release_x64' etc.)
+
+    Returns:
+      Path to backup or restored location as string. otherwise None if it fails.
+    """
+    build_dir = os.path.abspath(
+        self.builder.GetBuildOutputDirectory(self.opts, self.src_cwd))
+    source_dir = os.path.join(build_dir, build_type)
+    destination_dir = os.path.join(build_dir, '%s.bak' % build_type)
+    if restore:
+      source_dir, destination_dir = destination_dir, source_dir
+    if os.path.exists(source_dir):
+      RmTreeAndMkDir(destination_dir, skip_makedir=True)
+      shutil.move(source_dir, destination_dir)
+      return destination_dir
+    return None
+
+  def DownloadCurrentBuild(self, revision, build_type='Release'):
+    """Download the build archive for the given revision.
+
+    Args:
+      revision: The SVN revision to build.
+      build_type: Target build type ('Release', 'Debug', 'Release_x64' etc.)
+
+    Returns:
+      True if download succeeds, otherwise False.
+    """
+    abs_build_dir = os.path.abspath(
+        self.builder.GetBuildOutputDirectory(self.opts, self.src_cwd))
+    target_build_output_dir = os.path.join(abs_build_dir, build_type)
+    # Get build target architecture.
+    build_arch = self.opts.target_arch
+    # File path of the downloaded archive file.
+    archive_file_dest = os.path.join(abs_build_dir,
+                                     GetZipFileName(revision, build_arch))
+    remote_build = GetRemoteBuildPath(revision, build_arch)
+    fetch_build_func = lambda: FetchFromCloudStorage(self.opts.gs_bucket,
+                                                     remote_build,
+                                                     abs_build_dir)
+    if not fetch_build_func():
+      if not self.PostBuildRequestAndWait(revision, condition=fetch_build_func):
+        raise RuntimeError('Somewthing went wrong while processing build'
+                           'request for: %s' % revision)
+
+    # Generic name for the archive, created when archive file is extracted.
+    output_dir = os.path.join(abs_build_dir,
+                              GetZipFileName(target_arch=build_arch))
+    # Unzip build archive directory.
+    try:
+      RmTreeAndMkDir(output_dir, skip_makedir=True)
+      ExtractZip(archive_file_dest, abs_build_dir)
+      if os.path.exists(output_dir):
+        self.BackupOrRestoreOutputdirectory(restore=False)
+        print 'Moving build from %s to %s' % (
+            output_dir, target_build_output_dir)
+        shutil.move(output_dir, target_build_output_dir)
+        return True
+      raise IOError('Missing extracted folder %s ' % output_dir)
+    except e:
+      print 'Somewthing went wrong while extracting archive file: %s' % e
+      self.BackupOrRestoreOutputdirectory(restore=True)
+      # Cleanup any leftovers from unzipping.
+      if os.path.exists(output_dir):
+        RmTreeAndMkDir(output_dir, skip_makedir=True)
+    finally:
+      # Delete downloaded archive
+      if os.path.exists(archive_file_dest):
+        os.remove(archive_file_dest)
+    return False
+
+  def PostBuildRequestAndWait(self, revision, condition, patch=None):
+    """POSTs the build request job to the tryserver instance."""
+
+    def GetBuilderNameAndBuildTime(target_arch='ia32'):
+      """Gets builder name and buildtime in seconds based on platform."""
+      if IsWindows():
+        if Is64BitWindows() and target_arch == 'x64':
+          return ('Win x64 Bisect Builder', 3600)
+        return ('Win Bisect Builder', 3600)
+      if IsLinux():
+        return ('Linux Bisect Builder', 1800)
+      if IsMac():
+        return ('Mac Bisect Builder', 2700)
+      raise NotImplementedError('Unsupported Platform "%s".' % sys.platform)
+    if not condition:
+      return False
+
+    bot_name, build_timeout = GetBuilderNameAndBuildTime(self.opts.target_arch)
+
+    # Creates a try job description.
+    job_args = {'host': self.opts.builder_host,
+                'port': self.opts.builder_port,
+                'revision': revision,
+                'bot': bot_name,
+                'name': 'Bisect Job-%s' % revision
+               }
+    # Update patch information if supplied.
+    if patch:
+      job_args['patch'] = patch
+    # Posts job to build the revision on the server.
+    if post_perf_builder_job.PostTryJob(job_args):
+      poll_interval = 60
+      start_time = time.time()
+      while True:
+        res = condition()
+        if res:
+          return res
+        elapsed_time = time.time() - start_time
+        if elapsed_time > build_timeout:
+          raise RuntimeError('Timed out while waiting %ds for %s build.' %
+                             (build_timeout, revision))
+        print ('Time elapsed: %ss, still waiting for %s build' %
+               (elapsed_time, revision))
+        time.sleep(poll_interval)
+    return False
+
+  def BuildCurrentRevision(self, depot, revision=None):
     """Builds chrome and performance_ui_tests on the current revision.
 
     Returns:
@@ -1125,14 +1440,28 @@ class BisectPerformanceMetrics(object):
     """
     if self.opts.debug_ignore_build:
       return True
-
     cwd = os.getcwd()
     os.chdir(self.src_cwd)
+    # Fetch build archive for the given revision from the cloud storage when
+    # the storage bucket is passed.
+    if depot == 'chromium' and self.opts.gs_bucket and revision:
+      # Get SVN revision for the given SHA, since builds are archived using SVN
+      # revision.
+      revision = self.source_control.SVNFindRev(revision)
+      if not revision:
+        raise RuntimeError(
+            'Failed to determine SVN revision for %s' % sha_revision)
+      if self.DownloadCurrentBuild(revision):
+        os.chdir(cwd)
+        return True
+      raise RuntimeError('Failed to download build archive for revision %s.\n'
+                         'Unfortunately, bisection couldn\'t continue any '
+                         'further. Please try running script without '
+                         '--gs_bucket flag to produce local builds.' % revision)
+
 
     build_success = self.builder.Build(depot, self.opts)
-
     os.chdir(cwd)
-
     return build_success
 
   def RunGClientHooks(self):
@@ -1605,17 +1934,20 @@ class BisectPerformanceMetrics(object):
 
     if success:
       success = self.RunPostSync(depot)
-
       if success:
         if skippable and self.ShouldSkipRevision(depot, revision):
           return ('Skipped revision: [%s]' % str(revision),
               BUILD_RESULT_SKIPPED)
 
         start_build_time = time.time()
-        if self.BuildCurrentRevision(depot):
+        if self.BuildCurrentRevision(depot, revision):
           after_build_time = time.time()
           results = self.RunPerformanceTestAndParseResults(command_to_run,
                                                            metric)
+          # Restore build output directory once the tests are done, to avoid
+          # any descrepancy.
+          if depot == 'chromium' and self.opts.gs_bucket and revision:
+            self.BackupOrRestoreOutputdirectory(restore=True)
 
           if results[1] == 0:
             external_revisions = self.Get3rdPartyRevisionsFromCurrentRevision(
@@ -1981,7 +2313,6 @@ class BisectPerformanceMetrics(object):
         If an error occurred, the 'error' field will contain the message and
         'revision_data' will be empty.
     """
-
     results = {'revision_data' : {},
                'error' : None}
 
@@ -2026,7 +2357,6 @@ class BisectPerformanceMetrics(object):
       bisect_utils.OutputAnnotationStepStart('Gathering Revisions')
 
     print 'Gathering revision range for bisection.'
-
     # Retrieve a list of revisions to do bisection on.
     src_revision_list = self.GetRevisionList(target_depot,
                                              bad_revision,
@@ -2706,12 +3036,13 @@ def IsPlatformSupported(opts):
   return os.name in supported
 
 
-def RmTreeAndMkDir(path_to_dir):
+def RmTreeAndMkDir(path_to_dir, skip_makedir=False):
   """Removes the directory tree specified, and then creates an empty
-  directory in the same location.
+  directory in the same location (if not specified to skip).
 
   Args:
     path_to_dir: Path to the directory tree.
+    skip_makedir: Whether to skip creating empty directory, default is False.
 
   Returns:
     True if successful, False if an error occurred.
@@ -2723,11 +3054,8 @@ def RmTreeAndMkDir(path_to_dir):
     if e.errno != errno.ENOENT:
       return False
 
-  try:
-    os.makedirs(path_to_dir)
-  except OSError, e:
-    if e.errno != errno.EEXIST:
-      return False
+  if not skip_makedir:
+    return MaybeMakeDirectory(path_to_dir)
 
   return True
 
@@ -2764,6 +3092,10 @@ class BisectOptions(object):
     self.debug_ignore_build = None
     self.debug_ignore_sync = None
     self.debug_ignore_perf_test = None
+    self.gs_bucket = None
+    self.target_arch = 'ia32'
+    self.builder_host = None
+    self.builder_port = None
 
   def _CreateCommandLineParser(self):
     """Creates a parser with bisect options.
@@ -2864,6 +3196,29 @@ class BisectOptions(object):
     group.add_option('--output_buildbot_annotations',
                      action="store_true",
                      help='Add extra annotation output for buildbot.')
+    group.add_option('--gs_bucket',
+                     default='',
+                     dest='gs_bucket',
+                     type='str',
+                     help=('Name of Google Storage bucket to upload or '
+                     'download build. e.g., chrome-perf'))
+    group.add_option('--target_arch',
+                     type='choice',
+                     choices=['ia32', 'x64', 'arm'],
+                     default='ia32',
+                     dest='target_arch',
+                     help=('The target build architecture. Choices are "ia32" '
+                     '(default), "x64" or "arm".'))
+    group.add_option('--builder_host',
+                     dest='builder_host',
+                     type='str',
+                     help=('Host address of server to produce build by posting'
+                           ' try job request.'))
+    group.add_option('--builder_port',
+                     dest='builder_port',
+                     type='int',
+                     help=('HTTP port of the server to produce build by posting'
+                           ' try job request.'))
     parser.add_option_group(group)
 
     group = optparse.OptionGroup(parser, 'Debug options')
@@ -2877,8 +3232,6 @@ class BisectOptions(object):
                      action="store_true",
                      help='DEBUG: Don\'t perform performance tests.')
     parser.add_option_group(group)
-
-
     return parser
 
   def ParseCommandLine(self):
@@ -2899,6 +3252,15 @@ class BisectOptions(object):
       if not opts.metric:
         raise RuntimeError('missing required parameter: --metric')
 
+      if opts.gs_bucket:
+        if not cloud_storage.List(opts.gs_bucket):
+          raise RuntimeError('Invalid Google Storage: gs://%s' % opts.gs_bucket)
+        if not opts.builder_host:
+          raise RuntimeError('Must specify try server hostname, when '
+                             'gs_bucket is used: --builder_host')
+        if not opts.builder_port:
+          raise RuntimeError('Must specify try server port number, when '
+                             'gs_bucket is used: --builder_port')
       if opts.target_platform == 'cros':
         # Run sudo up front to make sure credentials are cached for later.
         print 'Sudo is required to build cros:'
@@ -2946,7 +3308,6 @@ class BisectOptions(object):
       An instance of BisectOptions.
     """
     opts = BisectOptions()
-
     for k, v in values.iteritems():
       assert hasattr(opts, k), 'Invalid %s attribute in '\
           'BisectOptions.' % k
@@ -3004,7 +3365,6 @@ def main():
         not opts.debug_ignore_sync and
         not opts.working_directory):
       raise RuntimeError("You must switch to master branch to run bisection.")
-
     bisect_test = BisectPerformanceMetrics(source_control, opts)
     try:
       bisect_results = bisect_test.Run(opts.command,

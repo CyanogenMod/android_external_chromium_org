@@ -16,14 +16,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
-#include "ui/aura/root_window_observer.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host_observer.h"
 #include "ui/gfx/display_observer.h"
 #include "ui/gfx/point.h"
 
 namespace aura {
 class Display;
-class RootWindow;
+class WindowTreeHost;
 }
 
 namespace base {
@@ -50,11 +50,15 @@ class VirtualKeyboardWindowController;
 // DisplayController owns and maintains RootWindows for each attached
 // display, keeping them in sync with display configuration changes.
 class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
-                                     public aura::RootWindowObserver,
+                                     public aura::WindowTreeHostObserver,
                                      public internal::DisplayManager::Delegate {
  public:
   class ASH_EXPORT Observer {
    public:
+    // Invoked only once after all displays are initialized
+    // after startup.
+    virtual void OnDisplaysInitialized() {}
+
     // Invoked when the display configuration change is requested,
     // but before the change is applied to aura/ash.
     virtual void OnDisplayConfigurationChanging() {}
@@ -149,8 +153,8 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   virtual void OnDisplayAdded(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayRemoved(const gfx::Display& display) OVERRIDE;
 
-  // RootWindowObserver overrides:
-  virtual void OnWindowTreeHostResized(const aura::RootWindow* root) OVERRIDE;
+  // aura::WindowTreeHostObserver overrides:
+  virtual void OnHostResized(const aura::WindowTreeHost* host) OVERRIDE;
 
   // aura::DisplayManager::Delegate overrides:
   virtual void CreateOrUpdateNonDesktopDisplay(
@@ -165,9 +169,10 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   friend class internal::DisplayManager;
   friend class internal::MirrorWindowController;
 
-  // Creates a root window for |display| and stores it in the |root_windows_|
+  // Creates a WindowTreeHost for |display| and stores it in the |root_windows_|
   // map.
-  aura::RootWindow* AddRootWindowForDisplay(const gfx::Display& display);
+  aura::WindowTreeHost* AddWindowTreeHostForDisplay(
+      const gfx::Display& display);
 
   void OnFadeOutForSwapDisplayFinished();
 

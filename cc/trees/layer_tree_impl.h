@@ -80,7 +80,6 @@ class CC_EXPORT LayerTreeImpl {
   int MaxTextureSize() const;
   bool PinchGestureActive() const;
   base::TimeTicks CurrentFrameTimeTicks() const;
-  base::Time CurrentFrameTime() const;
   base::TimeTicks CurrentPhysicalTimeTicks() const;
   void SetNeedsCommit();
   gfx::Size DrawViewportSize() const;
@@ -123,11 +122,11 @@ class CC_EXPORT LayerTreeImpl {
   gfx::Vector2dF TotalMaxScrollOffset() const;
   gfx::Vector2dF TotalScrollDelta() const;
 
-  LayerImpl* RootContainerLayer() const;
+  LayerImpl* InnerViewportContainerLayer() const;
   LayerImpl* CurrentlyScrollingLayer() const;
   void SetCurrentlyScrollingLayer(LayerImpl* layer);
   void ClearCurrentlyScrollingLayer();
-  float VerticalAdjust(const LayerImpl* layer) const;
+  float VerticalAdjust(const int clip_layer_id) const;
 
   void SetViewportLayersFromIds(int page_scale_layer_id,
                                 int inner_viewport_scroll_layer_id,
@@ -245,8 +244,6 @@ class CC_EXPORT LayerTreeImpl {
 
  protected:
   explicit LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl);
-
-  void UpdateRootScrollLayerSizeDelta();
 
   LayerTreeHostImpl* layer_tree_host_impl_;
   int source_frame_number_;

@@ -4,6 +4,8 @@
 
 #include "chrome/browser/sync_file_system/drive_backend/register_app_task.h"
 
+#include <vector>
+
 #include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
 #include "base/run_loop.h"
@@ -143,7 +145,7 @@ class RegisterAppTaskTest : public testing::Test,
   SyncStatusCode RunRegisterAppTask(const std::string& app_id) {
     RegisterAppTask task(this, app_id);
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    task.Run(CreateResultReceiver(&status));
+    task.RunSequential(CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     return status;
   }
@@ -201,23 +203,13 @@ class RegisterAppTaskTest : public testing::Test,
   }
 
   size_t CountRegisteredAppRoot() {
-    // TODO(tzik): Add function to MetadataDatabase to list trackers by parent.
-    typedef MetadataDatabase::TrackersByTitle TrackersByTitle;
-    const TrackersByTitle& trackers_by_title =
-        metadata_database_->trackers_by_parent_and_title_[kSyncRootTrackerID];
-
-    size_t count = 0;
-    for (TrackersByTitle::const_iterator itr = trackers_by_title.begin();
-         itr != trackers_by_title.end(); ++itr) {
-      if (itr->second.has_active())
-        ++count;
-    }
-
-    return count;
+    std::vector<std::string> app_ids;
+    metadata_database_->GetRegisteredAppIDs(&app_ids);
+    return app_ids.size();
   }
 
   bool IsAppRegistered(const std::string& app_id) {
-    TrackerSet trackers;
+    TrackerIDSet trackers;
     if (!metadata_database_->FindTrackersByParentAndTitle(
             kSyncRootTrackerID, app_id, &trackers))
       return false;
@@ -233,13 +225,16 @@ class RegisterAppTaskTest : public testing::Test,
   }
 
   bool HasRemoteAppRoot(const std::string& app_id) {
-    TrackerSet files;
+    TrackerIDSet files;
     if (!metadata_database_->FindTrackersByParentAndTitle(
             kSyncRootTrackerID, app_id, &files) ||
         !files.has_active())
       return false;
 
-    std::string app_root_folder_id = files.active_tracker()->file_id();
+    FileTracker app_root_tracker;
+    EXPECT_TRUE(metadata_database_->FindTrackerByTrackerID(
+        files.active_tracker(), &app_root_tracker));
+    std::string app_root_folder_id = app_root_tracker.file_id();
     scoped_ptr<google_apis::ResourceEntry> entry;
     if (google_apis::HTTP_SUCCESS !=
         fake_drive_service_helper_->GetResourceEntry(

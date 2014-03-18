@@ -56,6 +56,8 @@ const char kChromeURLContentSecurityPolicyHeaderBase[] =
 
 const char kChromeURLXFrameOptionsHeader[] = "X-Frame-Options: DENY";
 
+const int kNoRenderProcessId = -1;
+
 bool SchemeIsInSchemes(const std::string& scheme,
                        const std::vector<std::string>& schemes) {
   return std::find(schemes.begin(), schemes.end(), scheme) != schemes.end();
@@ -237,8 +239,10 @@ URLRequestChromeJob::~URLRequestChromeJob() {
 
 void URLRequestChromeJob::Start() {
   int render_process_id, unused;
-  ResourceRequestInfo::GetRenderFrameForRequest(
+  bool is_renderer_request = ResourceRequestInfo::GetRenderFrameForRequest(
       request_, &render_process_id, &unused);
+  if (!is_renderer_request)
+    render_process_id = kNoRenderProcessId;
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
@@ -357,7 +361,15 @@ void URLRequestChromeJob::CheckStoragePartitionMatches(
   // exploited renderer pretending to add them as a subframe. We skip this check
   // for resources.
   bool allowed = false;
-  if (url.SchemeIs(kChromeUIScheme) && url.host() == kChromeUIResourcesHost) {
+  std::vector<std::string> hosts;
+  GetContentClient()->
+      browser()->GetAdditionalWebUIHostsToIgnoreParititionCheck(&hosts);
+  if (url.SchemeIs(kChromeUIScheme) &&
+      (url.SchemeIs(kChromeUIScheme) ||
+       std::find(hosts.begin(), hosts.end(), url.host()) != hosts.end())) {
+    allowed = true;
+  } else if (render_process_id == kNoRenderProcessId) {
+    // Request was not issued by renderer.
     allowed = true;
   } else {
     RenderProcessHost* process = RenderProcessHost::FromID(render_process_id);

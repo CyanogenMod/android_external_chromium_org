@@ -7,16 +7,16 @@
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
+#include "mojo/examples/launcher/launcher.mojom.h"
+#include "mojo/examples/view_manager/view_manager.mojom.h"
 #include "mojo/public/bindings/allocation_scope.h"
 #include "mojo/public/bindings/remote_ptr.h"
 #include "mojo/public/shell/application.h"
+#include "mojo/public/shell/shell.mojom.h"
 #include "mojo/public/system/core.h"
 #include "mojo/public/system/macros.h"
 #include "mojo/services/native_viewport/geometry_conversions.h"
-#include "mojom/launcher.h"
-#include "mojom/native_viewport.h"
-#include "mojom/shell.h"
-#include "mojom/view_manager.h"
+#include "mojo/services/native_viewport/native_viewport.mojom.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/rect.h"
@@ -36,9 +36,9 @@ namespace examples {
 
 class ViewImpl : public View {
  public:
-  explicit ViewImpl(ScopedViewClientHandle client_handle)
+  explicit ViewImpl(ScopedViewClientHandle handle)
       : id_(-1),
-        client_(client_handle.Pass()) {}
+        client_(handle.Pass(), this) {}
   virtual ~ViewImpl() {}
 
  private:
@@ -46,8 +46,9 @@ class ViewImpl : public View {
   virtual void SetId(int view_id) MOJO_OVERRIDE {
     id_ = view_id;
   }
-  virtual void GetId() MOJO_OVERRIDE {
-    client_->OnGotId(id_);
+  virtual void GetId(const mojo::Callback<void(int32_t)>& callback)
+      MOJO_OVERRIDE {
+    callback.Run(id_);
   }
 
   int id_;
@@ -66,10 +67,11 @@ class ViewManagerImpl : public Service<ViewManager, ViewManagerImpl>,
 
  private:
   // Overridden from ViewManager:
-  virtual void CreateView() MOJO_OVERRIDE {
+  virtual void CreateView(const Callback<void(ScopedViewHandle)>& callback)
+      MOJO_OVERRIDE {
     InterfacePipe<View> pipe;
     views_.push_back(new ViewImpl(pipe.handle_to_peer.Pass()));
-    client()->OnViewCreated(pipe.handle_to_self.Pass());
+    callback.Run(pipe.handle_to_self.Pass());
   }
 
   // Overridden from NativeViewportClient:

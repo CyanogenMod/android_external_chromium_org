@@ -21,7 +21,7 @@ ProfileSyncServiceMock::ProfileSyncServiceMock(Profile* profile)
           new ManagedUserSigninManagerWrapper(
               SigninManagerFactory::GetForProfile(profile)),
           ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
-          ProfileSyncService::MANUAL_START) {}
+          browser_sync::MANUAL_START) {}
 
 ProfileSyncServiceMock::~ProfileSyncServiceMock() {
 }
@@ -34,7 +34,7 @@ TestingProfile* ProfileSyncServiceMock::MakeSignedInTestingProfile() {
 }
 
 // static
-BrowserContextKeyedService* ProfileSyncServiceMock::BuildMockProfileSyncService(
+KeyedService* ProfileSyncServiceMock::BuildMockProfileSyncService(
     content::BrowserContext* profile) {
   return new ProfileSyncServiceMock(static_cast<Profile*>(profile));
 }

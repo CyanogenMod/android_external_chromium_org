@@ -10,19 +10,17 @@
 #include "ash/shell.h"
 #include "ash/shell/panel_window.h"
 #include "ash/shell_window_ids.h"
+#include "ash/system/audio/tray_audio.h"
 #include "ash/system/bluetooth/tray_bluetooth.h"
 #include "ash/system/date/tray_date.h"
 #include "ash/system/drive/tray_drive.h"
 #include "ash/system/ime/tray_ime.h"
-#include "ash/system/monitor/tray_monitor.h"
-#include "ash/system/session_length_limit/tray_session_length_limit.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_item.h"
 #include "ash/system/tray/tray_bubble_wrapper.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray_accessibility.h"
-#include "ash/system/tray_caps_lock.h"
 #include "ash/system/tray_update.h"
 #include "ash/system/user/login_status.h"
 #include "ash/system/user/tray_user.h"
@@ -33,7 +31,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/timer/timer.h"
 #include "grit/ash_strings.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event_constants.h"
@@ -47,7 +45,7 @@
 #include "ui/views/view.h"
 
 #if defined(OS_CHROMEOS)
-#include "ash/system/chromeos/audio/tray_audio.h"
+#include "ash/system/chromeos/audio/tray_audio_chromeos.h"
 #include "ash/system/chromeos/brightness/tray_brightness.h"
 #include "ash/system/chromeos/enterprise/tray_enterprise.h"
 #include "ash/system/chromeos/managed/tray_locally_managed_user.h"
@@ -57,10 +55,15 @@
 #include "ash/system/chromeos/power/tray_power.h"
 #include "ash/system/chromeos/screen_security/screen_capture_tray_item.h"
 #include "ash/system/chromeos/screen_security/screen_share_tray_item.h"
+#include "ash/system/chromeos/session/tray_session_length_limit.h"
 #include "ash/system/chromeos/settings/tray_settings.h"
+#include "ash/system/chromeos/tray_caps_lock.h"
 #include "ash/system/chromeos/tray_display.h"
 #include "ash/system/chromeos/tray_tracing.h"
 #include "ui/message_center/message_center.h"
+#elif defined(OS_WIN)
+#include "ash/system/win/audio/tray_audio_win.h"
+#include "media/audio/win/core_audio_util_win.h"
 #endif
 
 using views::TrayBubbleView;
@@ -158,17 +161,17 @@ void SystemTray::InitializeTrayItems(SystemTrayDelegate* delegate) {
 }
 
 void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
-#if !defined(OS_WIN)
+#if defined(OS_CHROMEOS)
   AddTrayItem(new internal::TraySessionLengthLimit(this));
+#endif
+#if !defined(OS_WIN)
   // Create user items for each possible user.
   ash::Shell* shell = ash::Shell::GetInstance();
   int maximum_user_profiles =
           shell->session_state_delegate()->GetMaximumNumberOfLoggedInUsers();
-  for (int i = 0; i < maximum_user_profiles; i++) {
-    internal::TrayUser* tray_user = new internal::TrayUser(this, i);
-    AddTrayItem(tray_user);
-    user_items_.push_back(tray_user);
-  }
+  for (int i = 0; i < maximum_user_profiles; i++)
+    AddTrayItem(new internal::TrayUser(this, i));
+
   if (maximum_user_profiles > 1) {
     // Add a special double line separator between users and the rest of the
     // menu if more then one user is logged in.
@@ -195,7 +198,7 @@ void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
   AddTrayItem(new internal::TrayDisplay(this));
   AddTrayItem(new internal::ScreenCaptureTrayItem(this));
   AddTrayItem(new internal::ScreenShareTrayItem(this));
-  AddTrayItem(new internal::TrayAudio(this));
+  AddTrayItem(new internal::TrayAudioChromeOs(this));
   AddTrayItem(new internal::TrayBrightness(this));
   AddTrayItem(new internal::TrayCapsLock(this));
   AddTrayItem(new internal::TraySettings(this));
@@ -203,6 +206,8 @@ void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
   AddTrayItem(tray_date_);
 #elif defined(OS_WIN)
   AddTrayItem(tray_accessibility_);
+  if (media::CoreAudioUtil::IsSupported())
+    AddTrayItem(new internal::TrayAudioWin(this));
   AddTrayItem(new internal::TrayUpdate(this));
   AddTrayItem(tray_date_);
 #elif defined(OS_LINUX)
@@ -210,15 +215,8 @@ void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
   AddTrayItem(tray_accessibility_);
   AddTrayItem(new internal::TrayBluetooth(this));
   AddTrayItem(new internal::TrayDrive(this));
-  AddTrayItem(new internal::TrayCapsLock(this));
   AddTrayItem(new internal::TrayUpdate(this));
   AddTrayItem(tray_date_);
-#endif
-
-#if defined(OS_LINUX)
-  CommandLine* cmd = CommandLine::ForCurrentProcess();
-  if (cmd->HasSwitch(ash::switches::kAshEnableMemoryMonitor))
-    AddTrayItem(new internal::TrayMonitor(this));
 #endif
 
   SetVisible(ash::Shell::GetInstance()->system_tray_delegate()->
@@ -245,10 +243,6 @@ void SystemTray::RemoveTrayItem(SystemTrayItem* item) {
 
 const std::vector<SystemTrayItem*>& SystemTray::GetTrayItems() const {
   return items_.get();
-}
-
-const std::vector<internal::TrayUser*>& SystemTray::GetTrayUserItems() const {
-  return user_items_;
 }
 
 void SystemTray::ShowDefaultView(BubbleCreationType creation_type) {
@@ -690,11 +684,6 @@ views::View* SystemTray::GetTrayItemViewForTest(SystemTrayItem* item) {
   std::map<SystemTrayItem*, views::View*>::iterator it =
       tray_item_map_.find(item);
   return it == tray_item_map_.end() ? NULL : it->second;
-}
-
-void SystemTray::AddTrayUserItemForTest(internal::TrayUser* tray_user) {
-  AddTrayItem(tray_user);
-  user_items_.push_back(tray_user);
 }
 
 internal::TrayDate* SystemTray::GetTrayDateForTesting() const {

@@ -83,13 +83,11 @@ class PnaclTranslateThread {
   // Runs the streaming translation. Called from the helper thread.
   void DoTranslate() ;
   // Signal that Pnacl translation failed, from the translation thread only.
-  void TranslateFailed(enum PluginErrorCode err_code,
+  void TranslateFailed(PP_NaClError err_code,
                        const nacl::string& error_string);
-  // Run the LD subprocess, returning true on success
-  bool RunLdSubprocess(int modules_used,
-                       int is_shared_library,
-                       const nacl::string& soname,
-                       const nacl::string& lib_dependencies);
+  // Run the LD subprocess, returning true on success.
+  // On failure, it returns false and runs the callback.
+  bool RunLdSubprocess();
 
 
   // Callback to run when tasks are completed or an error has occurred.

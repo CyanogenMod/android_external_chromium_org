@@ -349,10 +349,6 @@ class GFX_EXPORT RenderText {
   // Draws a cursor at |position|.
   void DrawCursor(Canvas* canvas, const SelectionModel& position);
 
-  // Draw the selected text without a cursor or selection highlight. Subpixel
-  // antialiasing is disabled and foreground color is forced to black.
-  void DrawSelectedTextForDrag(Canvas* canvas);
-
   // Gets the SelectionModel from a visual point in local coordinates.
   virtual SelectionModel FindCursorPosition(const Point& point) = 0;
 
@@ -397,6 +393,12 @@ class GFX_EXPORT RenderText {
   // specifies the character range for which the corresponding font has been
   // chosen.
   virtual std::vector<FontSpan> GetFontSpansForTesting() = 0;
+
+  // Gets the horizontal bounds (relative to the left of the text, not the view)
+  // of the glyph starting at |index|. If the glyph is RTL then the returned
+  // Range will have is_reversed() true.  (This does not return a Rect because a
+  // Rect can't have a negative width.)
+  virtual Range GetGlyphBounds(size_t index) = 0;
 
  protected:
   RenderText();
@@ -461,12 +463,6 @@ class GFX_EXPORT RenderText {
 
   // Sets the selection model, the argument is assumed to be valid.
   virtual void SetSelectionModel(const SelectionModel& model);
-
-  // Get the horizontal bounds (relative to the left of the text, not the view)
-  // of the glyph starting at |index|. If the glyph is RTL then the returned
-  // Range will have is_reversed() true.  (This does not return a Rect because a
-  // Rect can't have a negative width.)
-  virtual Range GetGlyphBounds(size_t index) = 0;
 
   // Get the visual bounds containing the logical substring within the |range|.
   // If |range| is empty, the result is empty. These bounds could be visually

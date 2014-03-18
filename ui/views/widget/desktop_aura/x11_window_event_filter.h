@@ -6,8 +6,6 @@
 #define UI_VIEWS_WIDGET_DESKTOP_AURA_X11_WINDOW_EVENT_FILTER_H_
 
 #include <X11/Xlib.h>
-// Get rid of a macro from Xlib.h that conflicts with Aura's RootWindow class.
-#undef RootWindow
 
 #include "base/compiler_specific.h"
 #include "base/message_loop/message_loop.h"
@@ -17,7 +15,6 @@
 #include "ui/views/views_export.h"
 
 namespace aura {
-class RootWindow;
 class Window;
 }
 
@@ -32,8 +29,7 @@ class NativeWidgetAura;
 // An EventFilter that sets properties on X11 windows.
 class VIEWS_EXPORT X11WindowEventFilter : public ui::EventHandler {
  public:
-  X11WindowEventFilter(aura::RootWindow* root_window,
-                       DesktopWindowTreeHost* window_tree_host);
+  explicit X11WindowEventFilter(DesktopWindowTreeHost* window_tree_host);
   virtual ~X11WindowEventFilter();
 
   // Changes whether borders are shown on this |root_window|.

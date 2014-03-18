@@ -9,19 +9,21 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/task_manager/task_manager.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
-
-class Profile;
 
 namespace base {
 class ListValue;
+}
+
+namespace content {
+class BrowserContext;
 }
 
 namespace extensions {
@@ -31,7 +33,7 @@ namespace extensions {
 class ProcessesEventRouter : public TaskManagerModelObserver,
                              public content::NotificationObserver {
  public:
-  explicit ProcessesEventRouter(Profile* profile);
+  explicit ProcessesEventRouter(content::BrowserContext* context);
   virtual ~ProcessesEventRouter();
 
   // Called when an extension process wants to listen to process events.
@@ -76,7 +78,7 @@ class ProcessesEventRouter : public TaskManagerModelObserver,
   // Used for tracking registrations to process related notifications.
   content::NotificationRegistrar registrar_;
 
-  Profile* profile_;
+  content::BrowserContext* browser_context_;
 
   // TaskManager to observe for updates.
   TaskManagerModel* model_;
@@ -92,20 +94,20 @@ class ProcessesEventRouter : public TaskManagerModelObserver,
 };
 
 // The profile-keyed service that manages the processes extension API.
-class ProcessesAPI : public ProfileKeyedAPI,
+class ProcessesAPI : public BrowserContextKeyedAPI,
                      public EventRouter::Observer {
  public:
-  explicit ProcessesAPI(Profile* profile);
+  explicit ProcessesAPI(content::BrowserContext* context);
   virtual ~ProcessesAPI();
 
-  // BrowserContextKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<ProcessesAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<ProcessesAPI>* GetFactoryInstance();
 
   // Convenience method to get the ProcessesAPI for a profile.
-  static ProcessesAPI* Get(Profile* profile);
+  static ProcessesAPI* Get(content::BrowserContext* context);
 
   ProcessesEventRouter* processes_event_router();
 
@@ -114,11 +116,11 @@ class ProcessesAPI : public ProfileKeyedAPI,
   virtual void OnListenerRemoved(const EventListenerInfo& details) OVERRIDE;
 
  private:
-  friend class ProfileKeyedAPIFactory<ProcessesAPI>;
+  friend class BrowserContextKeyedAPIFactory<ProcessesAPI>;
 
-  Profile* profile_;
+  content::BrowserContext* browser_context_;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "ProcessesAPI";
   }

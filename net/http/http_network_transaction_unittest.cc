@@ -35,6 +35,7 @@
 #include "net/cert/mock_cert_verifier.h"
 #include "net/dns/host_cache.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/http/http_auth_challenge_tokenizer.h"
 #include "net/http/http_auth_handler_digest.h"
 #include "net/http/http_auth_handler_mock.h"
 #include "net/http/http_auth_handler_ntlm.h"
@@ -303,7 +304,7 @@ class HttpNetworkTransactionTest
 
     TestCompletionCallback callback;
 
-    EXPECT_TRUE(log.bound().IsLoggingAllEvents());
+    EXPECT_TRUE(log.bound().IsLogging());
     int rv = trans->Start(&request, callback.callback(), log.bound());
     EXPECT_EQ(ERR_IO_PENDING, rv);
 
@@ -7861,7 +7862,7 @@ TEST_P(HttpNetworkTransactionTest, UploadUnreadableFile) {
   base::FilePath temp_file;
   ASSERT_TRUE(base::CreateTemporaryFile(&temp_file));
   std::string temp_file_content("Unreadable file.");
-  ASSERT_TRUE(file_util::WriteFile(temp_file, temp_file_content.c_str(),
+  ASSERT_TRUE(base::WriteFile(temp_file, temp_file_content.c_str(),
                                    temp_file_content.length()));
   ASSERT_TRUE(file_util::MakeFileUnreadable(temp_file));
 
@@ -8144,7 +8145,7 @@ TEST_P(HttpNetworkTransactionTest, HonorAlternateProtocolHeader) {
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
   HostPortPair http_host_port_pair("www.google.com", 80);
-  const HttpServerProperties& http_server_properties =
+  HttpServerProperties& http_server_properties =
       *session->http_server_properties();
   EXPECT_FALSE(
       http_server_properties.HasAlternateProtocol(http_host_port_pair));
@@ -9381,8 +9382,8 @@ TEST_P(HttpNetworkTransactionTest, GenerateAuthToken) {
         HttpAuthHandlerMock* auth_handler(new HttpAuthHandlerMock());
         std::string auth_challenge = "Mock realm=proxy";
         GURL origin(test_config.proxy_url);
-        HttpAuth::ChallengeTokenizer tokenizer(auth_challenge.begin(),
-                                               auth_challenge.end());
+        HttpAuthChallengeTokenizer tokenizer(auth_challenge.begin(),
+                                             auth_challenge.end());
         auth_handler->InitFromChallenge(&tokenizer, HttpAuth::AUTH_PROXY,
                                         origin, BoundNetLog());
         auth_handler->SetGenerateExpectation(
@@ -9395,8 +9396,8 @@ TEST_P(HttpNetworkTransactionTest, GenerateAuthToken) {
       HttpAuthHandlerMock* auth_handler(new HttpAuthHandlerMock());
       std::string auth_challenge = "Mock realm=server";
       GURL origin(test_config.server_url);
-      HttpAuth::ChallengeTokenizer tokenizer(auth_challenge.begin(),
-                                             auth_challenge.end());
+      HttpAuthChallengeTokenizer tokenizer(auth_challenge.begin(),
+                                           auth_challenge.end());
       auth_handler->InitFromChallenge(&tokenizer, HttpAuth::AUTH_SERVER,
                                       origin, BoundNetLog());
       auth_handler->SetGenerateExpectation(
@@ -9492,8 +9493,8 @@ TEST_P(HttpNetworkTransactionTest, MultiRoundAuth) {
   auth_handler->set_connection_based(true);
   std::string auth_challenge = "Mock realm=server";
   GURL origin("http://www.example.com");
-  HttpAuth::ChallengeTokenizer tokenizer(auth_challenge.begin(),
-                                         auth_challenge.end());
+  HttpAuthChallengeTokenizer tokenizer(auth_challenge.begin(),
+                                       auth_challenge.end());
   auth_handler->InitFromChallenge(&tokenizer, HttpAuth::AUTH_SERVER,
                                   origin, BoundNetLog());
   auth_factory->AddMockHandler(auth_handler, HttpAuth::AUTH_SERVER);

@@ -57,7 +57,7 @@ TEST(AppCacheDatabaseTest, ReCreate) {
   const base::FilePath kNestedDir = temp_dir.path().AppendASCII("nested");
   const base::FilePath kOtherFile =  kNestedDir.AppendASCII("other_file");
   EXPECT_TRUE(base::CreateDirectory(kNestedDir));
-  EXPECT_EQ(3, file_util::WriteFile(kOtherFile, "foo", 3));
+  EXPECT_EQ(3, base::WriteFile(kOtherFile, "foo", 3));
 
   AppCacheDatabase db(kDbFile);
   EXPECT_FALSE(db.LazyOpen(false));
@@ -90,14 +90,15 @@ TEST(AppCacheDatabaseTest, QuickIntegrityCheck) {
 
   const base::FilePath kDbFile = mock_dir.AppendASCII("appcache.db");
   const base::FilePath kOtherFile = mock_dir.AppendASCII("other_file");
-  EXPECT_EQ(3, file_util::WriteFile(kOtherFile, "foo", 3));
+  EXPECT_EQ(3, base::WriteFile(kOtherFile, "foo", 3));
 
   // First create a valid db file.
-  AppCacheDatabase db(kDbFile);
-  EXPECT_TRUE(db.LazyOpen(true));
-  EXPECT_TRUE(base::PathExists(kOtherFile));
-  EXPECT_TRUE(base::PathExists(kDbFile));
-  db.CloseConnection();
+  {
+    AppCacheDatabase db(kDbFile);
+    EXPECT_TRUE(db.LazyOpen(true));
+    EXPECT_TRUE(base::PathExists(kOtherFile));
+    EXPECT_TRUE(base::PathExists(kDbFile));
+  }
 
   // Break it.
   ASSERT_TRUE(sql::test::CorruptSizeInHeader(kDbFile));
@@ -106,6 +107,7 @@ TEST(AppCacheDatabaseTest, QuickIntegrityCheck) {
   {
     sql::ScopedErrorIgnorer ignore_errors;
     ignore_errors.IgnoreError(SQLITE_CORRUPT);
+    AppCacheDatabase db(kDbFile);
     EXPECT_TRUE(db.LazyOpen(true));
     EXPECT_FALSE(base::PathExists(kOtherFile));
     EXPECT_TRUE(base::PathExists(kDbFile));
@@ -150,25 +152,29 @@ TEST(AppCacheDatabaseTest, ExperimentalFlags) {
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   const base::FilePath kDbFile = temp_dir.path().AppendASCII("appcache.db");
   const base::FilePath kOtherFile =  temp_dir.path().AppendASCII("other_file");
-  EXPECT_EQ(3, file_util::WriteFile(kOtherFile, "foo", 3));
+  EXPECT_EQ(3, base::WriteFile(kOtherFile, "foo", 3));
   EXPECT_TRUE(base::PathExists(kOtherFile));
 
-  AppCacheDatabase db(kDbFile);
-  EXPECT_TRUE(db.LazyOpen(true));
-
   // Inject a non empty flags value, and verify it got there.
-  EXPECT_TRUE(db.meta_table_->SetValue(kExperimentFlagsKey, kInjectedFlags));
-  std::string flags;
-  EXPECT_TRUE(db.meta_table_->GetValue(kExperimentFlagsKey, &flags));
-  EXPECT_EQ(kInjectedFlags, flags);
-  db.CloseConnection();
+  {
+    AppCacheDatabase db(kDbFile);
+    EXPECT_TRUE(db.LazyOpen(true));
+    EXPECT_TRUE(db.meta_table_->SetValue(kExperimentFlagsKey, kInjectedFlags));
+    std::string flags;
+    EXPECT_TRUE(db.meta_table_->GetValue(kExperimentFlagsKey, &flags));
+    EXPECT_EQ(kInjectedFlags, flags);
+  }
 
   // If flags don't match the expected value, empty string by default,
   // the database should be recreated and other files should be cleared out.
-  EXPECT_TRUE(db.LazyOpen(false));
-  EXPECT_TRUE(db.meta_table_->GetValue(kExperimentFlagsKey, &flags));
-  EXPECT_TRUE(flags.empty());
-  EXPECT_FALSE(base::PathExists(kOtherFile));
+  {
+    AppCacheDatabase db(kDbFile);
+    EXPECT_TRUE(db.LazyOpen(false));
+    std::string flags;
+    EXPECT_TRUE(db.meta_table_->GetValue(kExperimentFlagsKey, &flags));
+    EXPECT_TRUE(flags.empty());
+    EXPECT_FALSE(base::PathExists(kOtherFile));
+  }
 }
 
 TEST(AppCacheDatabaseTest, EntryRecords) {

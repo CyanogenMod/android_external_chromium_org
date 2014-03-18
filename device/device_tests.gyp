@@ -23,6 +23,7 @@
       ],
       'sources': [
         'bluetooth/bluetooth_adapter_mac_unittest.mm',
+        'bluetooth/bluetooth_adapter_unittest.cc',
         'bluetooth/bluetooth_adapter_win_unittest.cc',
         'bluetooth/bluetooth_device_win_unittest.cc',
         'bluetooth/bluetooth_chromeos_unittest.cc',
@@ -55,7 +56,8 @@
         }],
         ['os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            ['linux_use_tcmalloc == 1', {
+            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],

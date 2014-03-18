@@ -25,25 +25,26 @@ bool ShouldPauseOnReceiveError(serial::ReceiveError error) {
 
 }  // namespace
 
-static base::LazyInstance<ProfileKeyedAPIFactory<SerialEventDispatcher> >
+static base::LazyInstance<BrowserContextKeyedAPIFactory<SerialEventDispatcher> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<SerialEventDispatcher>*
-    SerialEventDispatcher::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<SerialEventDispatcher>*
+SerialEventDispatcher::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 // static
-SerialEventDispatcher* SerialEventDispatcher::Get(Profile* profile) {
-  return ProfileKeyedAPIFactory<SerialEventDispatcher>::GetForProfile(profile);
+SerialEventDispatcher* SerialEventDispatcher::Get(
+    content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<SerialEventDispatcher>::Get(context);
 }
 
-SerialEventDispatcher::SerialEventDispatcher(Profile* profile)
+SerialEventDispatcher::SerialEventDispatcher(content::BrowserContext* context)
     : thread_id_(SerialConnection::kThreadId),
-      profile_(profile) {
+      profile_(Profile::FromBrowserContext(context)) {
   ApiResourceManager<SerialConnection>* manager =
-      ApiResourceManager<SerialConnection>::Get(profile);
+      ApiResourceManager<SerialConnection>::Get(profile_);
   DCHECK(manager) << "No serial connection manager.";
   connections_ = manager->data_;
 }

@@ -18,16 +18,15 @@
 #include "ash/wm/gestures/long_press_affordance_handler.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
-#include "ash/wm/workspace/snap_sizer.h"
 #include "base/command_line.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_event_handler.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/events/event.h"
@@ -137,8 +136,6 @@ class SystemGestureEventFilterTest
 
   // Overridden from AshTestBase:
   virtual void SetUp() OVERRIDE {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        ash::switches::kAshEnableAdvancedGestures);
     if (!docked_enabled_) {
       CommandLine::ForCurrentProcess()->AppendSwitch(
           ash::switches::kAshDisableDockedWindows);
@@ -193,7 +190,7 @@ TEST_P(SystemGestureEventFilterTest, LongPressAffordanceStateOnCaptureLoss) {
                        kTouchId,
                        ui::EventTimeForNow());
   ui::EventDispatchDetails details =
-      root_window->GetDispatcher()->OnEventFromSource(&press);
+      root_window->GetHost()->dispatcher()->OnEventFromSource(&press);
   ASSERT_FALSE(details.dispatcher_destroyed);
   EXPECT_TRUE(window1->HasCapture());
 
@@ -226,64 +223,6 @@ TEST_P(SystemGestureEventFilterTest, LongPressAffordanceStateOnCaptureLoss) {
   // Check if state has reset.
   EXPECT_EQ(NULL, GetLongPressAffordanceTarget());
   EXPECT_EQ(NULL, GetLongPressAffordanceView());
-}
-
-TEST_P(SystemGestureEventFilterTest, MultiFingerSwipeGestures) {
-  aura::Window* root_window = Shell::GetPrimaryRootWindow();
-  views::Widget* toplevel = views::Widget::CreateWindowWithContextAndBounds(
-      new ResizableWidgetDelegate, root_window, gfx::Rect(0, 0, 600, 600));
-  toplevel->Show();
-
-  const int kSteps = 15;
-  const int kTouchPoints = 4;
-  gfx::Point points[kTouchPoints] = {
-    gfx::Point(250, 250),
-    gfx::Point(250, 350),
-    gfx::Point(350, 250),
-    gfx::Point(350, 350)
-  };
-
-  aura::test::EventGenerator generator(root_window,
-                                       toplevel->GetNativeWindow());
-
-  // Swipe down to minimize.
-  generator.GestureMultiFingerScroll(kTouchPoints, points, 15, kSteps, 0, 150);
-
-  wm::WindowState* toplevel_state =
-      wm::GetWindowState(toplevel->GetNativeWindow());
-  EXPECT_TRUE(toplevel_state->IsMinimized());
-
-  toplevel->Restore();
-
-  // Swipe up to maximize.
-  generator.GestureMultiFingerScroll(kTouchPoints, points, 15, kSteps, 0, -150);
-  EXPECT_TRUE(toplevel_state->IsMaximized());
-
-  toplevel->Restore();
-
-  // Swipe right to snap.
-  gfx::Rect normal_bounds = toplevel->GetWindowBoundsInScreen();
-  generator.GestureMultiFingerScroll(kTouchPoints, points, 15, kSteps, 150, 0);
-  gfx::Rect right_tile_bounds = toplevel->GetWindowBoundsInScreen();
-  EXPECT_NE(normal_bounds.ToString(), right_tile_bounds.ToString());
-
-  // Swipe left to snap.
-  gfx::Point left_points[kTouchPoints];
-  for (int i = 0; i < kTouchPoints; ++i) {
-    left_points[i] = points[i];
-    left_points[i].Offset(right_tile_bounds.x(), right_tile_bounds.y());
-  }
-  generator.GestureMultiFingerScroll(kTouchPoints, left_points, 15, kSteps,
-      -150, 0);
-  gfx::Rect left_tile_bounds = toplevel->GetWindowBoundsInScreen();
-  EXPECT_NE(normal_bounds.ToString(), left_tile_bounds.ToString());
-  EXPECT_NE(right_tile_bounds.ToString(), left_tile_bounds.ToString());
-
-  // Swipe right again.
-  generator.GestureMultiFingerScroll(kTouchPoints, points, 15, kSteps, 150, 0);
-  gfx::Rect current_bounds = toplevel->GetWindowBoundsInScreen();
-  EXPECT_NE(current_bounds.ToString(), left_tile_bounds.ToString());
-  EXPECT_EQ(current_bounds.ToString(), right_tile_bounds.ToString());
 }
 
 TEST_P(SystemGestureEventFilterTest, TwoFingerDrag) {
@@ -580,8 +519,8 @@ TEST_P(SystemGestureEventFilterTest, DragLeftNearEdgeSnaps) {
     gfx::Point(bounds.x() + bounds.width() / 2, bounds.y() + 5),
     gfx::Point(bounds.x() + bounds.width() / 2, bounds.y() + 5),
   };
-  aura::test::EventGenerator generator(root_window,
-                                       toplevel->GetNativeWindow());
+  aura::Window* toplevel_window = toplevel->GetNativeWindow();
+  aura::test::EventGenerator generator(root_window, toplevel_window);
 
   // Check that dragging left snaps before reaching the screen edge.
   gfx::Rect work_area =
@@ -590,14 +529,9 @@ TEST_P(SystemGestureEventFilterTest, DragLeftNearEdgeSnaps) {
   generator.GestureMultiFingerScroll(
       kTouchPoints, points, 120, kSteps, drag_x, 0);
 
-  internal::SnapSizer snap_sizer(
-      wm::GetWindowState(toplevel->GetNativeWindow()),
-      gfx::Point(),
-      internal::SnapSizer::LEFT_EDGE,
-      internal::SnapSizer::OTHER_INPUT);
-  gfx::Rect expected_bounds(snap_sizer.target_bounds());
-  EXPECT_EQ(expected_bounds.ToString(),
-            toplevel->GetWindowBoundsInScreen().ToString());
+  EXPECT_EQ(wm::GetDefaultLeftSnappedWindowBoundsInParent(
+                toplevel_window).ToString(),
+            toplevel_window->bounds().ToString());
 }
 
 TEST_P(SystemGestureEventFilterTest, DragRightNearEdgeSnaps) {
@@ -613,8 +547,8 @@ TEST_P(SystemGestureEventFilterTest, DragRightNearEdgeSnaps) {
     gfx::Point(bounds.x() + bounds.width() / 2, bounds.y() + 5),
     gfx::Point(bounds.x() + bounds.width() / 2, bounds.y() + 5),
   };
-  aura::test::EventGenerator generator(root_window,
-                                       toplevel->GetNativeWindow());
+  aura::Window* toplevel_window = toplevel->GetNativeWindow();
+  aura::test::EventGenerator generator(root_window, toplevel_window);
 
   // Check that dragging right snaps before reaching the screen edge.
   gfx::Rect work_area =
@@ -622,14 +556,9 @@ TEST_P(SystemGestureEventFilterTest, DragRightNearEdgeSnaps) {
   int drag_x = work_area.right() - 20 - points[0].x();
   generator.GestureMultiFingerScroll(
       kTouchPoints, points, 120, kSteps, drag_x, 0);
-  internal::SnapSizer snap_sizer(
-      wm::GetWindowState(toplevel->GetNativeWindow()),
-      gfx::Point(),
-      internal::SnapSizer::RIGHT_EDGE,
-      internal::SnapSizer::OTHER_INPUT);
-  gfx::Rect expected_bounds(snap_sizer.target_bounds());
-  EXPECT_EQ(expected_bounds.ToString(),
-            toplevel->GetWindowBoundsInScreen().ToString());
+  EXPECT_EQ(wm::GetDefaultRightSnappedWindowBoundsInParent(
+                toplevel_window).ToString(),
+            toplevel_window->bounds().ToString());
 }
 
 // Tests that the window manager does not consume gesture events targetted to

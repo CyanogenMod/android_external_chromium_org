@@ -175,20 +175,13 @@ TEST(DriveAPIParserTest, FileListParser) {
             file1.parents()[0]->parent_link());
   EXPECT_FALSE(file1.parents()[0]->is_root());
 
-  EXPECT_EQ(GURL("https://www.example.com/download"), file1.download_url());
   EXPECT_EQ("ext", file1.file_extension());
   EXPECT_EQ("d41d8cd98f00b204e9800998ecf8427e", file1.md5_checksum());
   EXPECT_EQ(1000U, file1.file_size());
 
-  EXPECT_EQ(GURL("https://www.googleapis.com/drive/v2/files/"
-                 "0B4v7G8yEYAWHUmRrU2lMS2hLABC"),
-            file1.self_link());
   EXPECT_EQ(GURL("https://docs.google.com/file/d/"
                  "0B4v7G8yEYAWHUmRrU2lMS2hLABC/edit"),
             file1.alternate_link());
-  EXPECT_EQ(GURL("https://docs.google.com/uc?"
-                 "id=0B4v7G8yEYAWHUmRrU2lMS2hLABC&export=download"),
-            file1.web_content_link());
   ASSERT_EQ(1U, file1.open_with_links().size());
   EXPECT_EQ("1234567890", file1.open_with_links()[0].app_id);
   EXPECT_EQ(GURL("http://open_with_link/url"),
@@ -219,13 +212,6 @@ TEST(DriveAPIParserTest, FileListParser) {
 
   ASSERT_EQ(0U, file2.parents().size());
 
-  EXPECT_EQ(GURL("https://docs.google.com/a/chromium.org/document/d/"
-                 "1Pc8jzfU1ErbN_eucMMqdqzY3eBm0v8sxXm_1CtLxABC/preview"),
-            file2.embed_link());
-  EXPECT_EQ(GURL("https://docs.google.com/feeds/vt?gd=true&"
-                 "id=1Pc8jzfU1ErbN_eucMMqdqzY3eBm0v8sxXm_1CtLxABC&"
-                 "v=3&s=AMedNnoAAAAAUBJyB0g8HbxZaLRnlztxefZPS24LiXYZ&sz=s220"),
-            file2.thumbnail_link());
   EXPECT_EQ(0U, file2.open_with_links().size());
 
   // Check file 3 (a folder)
@@ -268,6 +254,7 @@ TEST(DriveAPIParserTest, ChangeListParser) {
   EXPECT_EQ("1Pc8jzfU1ErbN_eucMMqdqzY3eBm0v8sxXm_1CtLxABC", change1.file_id());
   EXPECT_EQ(change1.file_id(), change1.file()->file_id());
   EXPECT_FALSE(change1.file()->shared());
+  EXPECT_EQ(change1.file()->modified_date(), change1.modification_date());
 
   const ChangeResource& change2 = *changelist->items()[1];
   EXPECT_EQ(8424, change2.change_id());
@@ -275,6 +262,7 @@ TEST(DriveAPIParserTest, ChangeListParser) {
   EXPECT_EQ("0B4v7G8yEYAWHUmRrU2lMS2hLABC", change2.file_id());
   EXPECT_EQ(change2.file_id(), change2.file()->file_id());
   EXPECT_TRUE(change2.file()->shared());
+  EXPECT_EQ(change2.file()->modified_date(), change2.modification_date());
 
   const ChangeResource& change3 = *changelist->items()[2];
   EXPECT_EQ(8429, change3.change_id());
@@ -282,12 +270,17 @@ TEST(DriveAPIParserTest, ChangeListParser) {
   EXPECT_EQ("0B4v7G8yEYAWHYW1OcExsUVZLABC", change3.file_id());
   EXPECT_EQ(change3.file_id(), change3.file()->file_id());
   EXPECT_FALSE(change3.file()->shared());
+  EXPECT_EQ(change3.file()->modified_date(), change3.modification_date());
 
   // Deleted entry.
   const ChangeResource& change4 = *changelist->items()[3];
   EXPECT_EQ(8430, change4.change_id());
   EXPECT_EQ("ABCv7G8yEYAWHc3Y5X0hMSkJYXYZ", change4.file_id());
   EXPECT_TRUE(change4.is_deleted());
+  base::Time modification_time;
+  ASSERT_TRUE(util::GetTimeFromString("2012-07-27T12:34:56.789Z",
+                                      &modification_time));
+  EXPECT_EQ(modification_time, change4.modification_date());
 }
 
 TEST(DriveAPIParserTest, HasKind) {

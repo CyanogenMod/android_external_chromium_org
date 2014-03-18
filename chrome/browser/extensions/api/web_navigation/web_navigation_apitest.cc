@@ -21,12 +21,13 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/renderer_context_menu/render_view_context_menu_test_util.h"
 #include "chrome/browser/renderer_host/chrome_resource_dispatcher_host_delegate.h"
-#include "chrome/browser/tab_contents/render_view_context_menu.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_controller.h"
@@ -49,26 +50,6 @@ using content::WebContents;
 namespace extensions {
 
 namespace {
-
-// An UI-less RenderViewContextMenu.
-class TestRenderViewContextMenu : public RenderViewContextMenu {
- public:
-  TestRenderViewContextMenu(content::RenderFrameHost* render_frame_host,
-                            const content::ContextMenuParams& params)
-      : RenderViewContextMenu(render_frame_host, params) {
-  }
-  virtual ~TestRenderViewContextMenu() {}
-
- private:
-  virtual void PlatformInit() OVERRIDE {}
-  virtual void PlatformCancel() OVERRIDE {}
-  virtual bool GetAcceleratorForCommandId(int, ui::Accelerator*) OVERRIDE {
-    return false;
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(TestRenderViewContextMenu);
-};
-
 
 // This class can defer requests for arbitrary URLs.
 class TestNavigationListener
@@ -203,8 +184,7 @@ class DelayLoadStartAndExecuteJavascript
     if (validated_url != delay_url_ || !rvh_)
       return;
 
-    rvh_->ExecuteJavascriptInWebFrame(base::string16(),
-                                      base::UTF8ToUTF16(script_));
+    rvh_->GetMainFrame()->ExecuteJavaScript(base::UTF8ToUTF16(script_));
     script_was_executed_ = true;
   }
 

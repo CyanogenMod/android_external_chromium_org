@@ -35,7 +35,7 @@ const base::FilePath::CharType kPolicyKeyFile[] =
     FILE_PATH_LITERAL("%s/policy.pub");
 
 // Maximum key size that will be loaded, in bytes.
-const int kKeySizeLimit = 16 * 1024;
+const size_t kKeySizeLimit = 16 * 1024;
 
 enum ValidationFailure {
   VALIDATION_FAILURE_DBUS,
@@ -256,10 +256,9 @@ void UserCloudPolicyStoreChromeOS::LoadImmediately() {
   LoadPolicyKey(policy_key_path_, &policy_key_);
   policy_key_loaded_ = true;
 
-  scoped_ptr<UserCloudPolicyValidator> validator =
-      CreateValidator(policy.Pass(),
-                      CloudPolicyValidatorBase::TIMESTAMP_REQUIRED);
-  validator->ValidateUsername(username_);
+  scoped_ptr<UserCloudPolicyValidator> validator = CreateValidator(
+      policy.Pass(), CloudPolicyValidatorBase::TIMESTAMP_NOT_BEFORE);
+  validator->ValidateUsername(username_, true);
   const bool allow_rotation = false;
   validator->ValidateSignature(
       policy_key_,
@@ -276,7 +275,7 @@ void UserCloudPolicyStoreChromeOS::ValidatePolicyForStore(
   scoped_ptr<UserCloudPolicyValidator> validator =
       CreateValidator(policy.Pass(),
                       CloudPolicyValidatorBase::TIMESTAMP_REQUIRED);
-  validator->ValidateUsername(username_);
+  validator->ValidateUsername(username_, true);
   if (policy_key_.empty()) {
     validator->ValidateInitialKey(GetPolicyVerificationKey(),
                                   ExtractDomain(username_));
@@ -376,10 +375,9 @@ void UserCloudPolicyStoreChromeOS::OnPolicyRetrieved(
 void UserCloudPolicyStoreChromeOS::ValidateRetrievedPolicy(
     scoped_ptr<em::PolicyFetchResponse> policy) {
   // Create and configure a validator for the loaded policy.
-  scoped_ptr<UserCloudPolicyValidator> validator =
-      CreateValidator(policy.Pass(),
-                      CloudPolicyValidatorBase::TIMESTAMP_REQUIRED);
-  validator->ValidateUsername(username_);
+  scoped_ptr<UserCloudPolicyValidator> validator = CreateValidator(
+      policy.Pass(), CloudPolicyValidatorBase::TIMESTAMP_NOT_BEFORE);
+  validator->ValidateUsername(username_, true);
   const bool allow_rotation = false;
   validator->ValidateSignature(policy_key_,
                                GetPolicyVerificationKey(),
@@ -434,7 +432,7 @@ void UserCloudPolicyStoreChromeOS::OnLegacyLoadFinished(
     scoped_ptr<UserCloudPolicyValidator> validator =
         CreateValidator(policy.Pass(),
                         CloudPolicyValidatorBase::TIMESTAMP_REQUIRED);
-    validator->ValidateUsername(username_);
+    validator->ValidateUsername(username_, true);
     validator.release()->StartValidation(
         base::Bind(&UserCloudPolicyStoreChromeOS::OnLegacyPolicyValidated,
                    weak_factory_.GetWeakPtr(),
@@ -515,20 +513,16 @@ void UserCloudPolicyStoreChromeOS::LoadPolicyKey(const base::FilePath& path,
     return;
   }
 
-  int64 size;
-  key->clear();
-  if (!base::GetFileSize(path, &size)) {
-    LOG(ERROR) << "Could not get size of " << path.value();
-  } else if (size == 0 || size > kKeySizeLimit) {
-    LOG(ERROR) << "Key at " << path.value() << " has bad size " << size;
-  } else {
-    char buf[size];
-    int read_size = base::ReadFile(path, buf, size);
-    if (read_size != size) {
-      LOG(ERROR) << "Failed to read key at " << path.value();
-    } else {
-      key->append(buf, size);
-    }
+  const bool read_success = base::ReadFileToString(path, key, kKeySizeLimit);
+  // If the read was successful and the file size is 0 or if the read fails
+  // due to file size exceeding |kKeySizeLimit|, log error.
+  if ((read_success && key->length() == 0) ||
+      (!read_success && key->length() == kKeySizeLimit)) {
+    LOG(ERROR) << "Key at " << path.value()
+               << (read_success ? " is empty." : " exceeds size limit");
+    key->clear();
+  } else if (!read_success) {
+    LOG(ERROR) << "Failed to read key at " << path.value();
   }
 
   if (key->empty())

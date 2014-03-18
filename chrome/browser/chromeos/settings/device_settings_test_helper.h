@@ -24,6 +24,8 @@
 
 namespace chromeos {
 
+class FakeDBusThreadManager;
+
 // A helper class for tests mocking out session_manager's device settings
 // interface. The pattern is to initialize DeviceSettingsService with the helper
 // for the SessionManagerClient pointer. The helper records calls made by
@@ -79,6 +81,8 @@ class DeviceSettingsTestHelper : public SessionManagerClient {
 
   // SessionManagerClient:
   virtual void Init(dbus::Bus* bus) OVERRIDE;
+  virtual void SetStubDelegate(SessionManagerClient::StubDelegate* delegate)
+      OVERRIDE;
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
   virtual bool HasObserver(Observer* observer) OVERRIDE;
@@ -178,6 +182,8 @@ class DeviceSettingsTestBase : public testing::Test {
   // Local DeviceSettingsService instance for tests. Avoid using in combination
   // with the global instance (DeviceSettingsService::Get()).
   DeviceSettingsService device_settings_service_;
+
+  chromeos::FakeDBusThreadManager* fake_dbus_thread_manager_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DeviceSettingsTestBase);

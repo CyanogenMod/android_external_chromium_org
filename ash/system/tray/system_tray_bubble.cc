@@ -158,7 +158,7 @@ void SystemTrayBubble::UpdateView(
   if (bubble_type != bubble_type_) {
     base::TimeDelta swipe_duration =
         base::TimeDelta::FromMilliseconds(kSwipeDelayMS);
-    scoped_layer.reset(bubble_view_->RecreateLayer());
+    scoped_layer = bubble_view_->RecreateLayer();
     // Keep the reference to layer as we need it after releasing it.
     ui::Layer* layer = scoped_layer.get();
     DCHECK(layer);
@@ -267,7 +267,7 @@ void SystemTrayBubble::InitView(views::View* anchor,
 
   if (bubble_view_->CanActivate()) {
     bubble_view_->NotifyAccessibilityEvent(
-        ui::AccessibilityTypes::EVENT_ALERT, true);
+        ui::AX_EVENT_ALERT, true);
   }
 }
 

@@ -19,8 +19,9 @@ CONTENT_EXPORT bool IsForceCompositingModeEnabled();
 // Returns true if delegated-renderer is on (via flags, or platform default).
 CONTENT_EXPORT bool IsDelegatedRendererEnabled();
 
-// Returns true if deadline scheduling is on (via flags, or platform default).
-CONTENT_EXPORT bool IsDeadlineSchedulingEnabled();
+// Returns true if impl-side painting is on (via flags, or platform default)
+// for the renderer.
+CONTENT_EXPORT bool IsImplSidePaintingEnabled();
 
 CONTENT_EXPORT base::Value* GetFeatureStatus();
 CONTENT_EXPORT base::Value* GetProblems();

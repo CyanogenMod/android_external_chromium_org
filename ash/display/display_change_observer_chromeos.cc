@@ -16,23 +16,23 @@
 #include "ash/shell.h"
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "chromeos/display/output_util.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/compositor/dip_util.h"
+#include "ui/display/chromeos/x11/display_util.h"
 #include "ui/gfx/display.h"
 
 namespace ash {
 namespace internal {
 
-using chromeos::OutputConfigurator;
+using ui::OutputConfigurator;
 
 namespace {
 
 // The DPI threshold to detect high density screen.
 // Higher DPI than this will use device_scale_factor=2.
-const unsigned int kHighDensityDPIThreshold = 160;
+const unsigned int kHighDensityDPIThreshold = 170;
 
 // 1 inch in mm.
 const float kInchInMm = 25.4f;
@@ -95,11 +95,6 @@ DisplayChangeObserver::~DisplayChangeObserver() {
 
 ui::OutputState DisplayChangeObserver::GetStateForDisplayIds(
     const std::vector<int64>& display_ids) const {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kAshForceMirrorMode)) {
-    return ui::OUTPUT_STATE_DUAL_MIRROR;
-  }
-
   CHECK_EQ(2U, display_ids.size());
   DisplayIdPair pair = std::make_pair(display_ids[0], display_ids[1]);
   DisplayLayout layout = Shell::GetInstance()->display_manager()->
@@ -154,13 +149,13 @@ void DisplayChangeObserver::OnDisplayModeChanged(
 
     std::string name =
         output.type == ui::OUTPUT_TYPE_INTERNAL
-            ? l10n_util::GetStringUTF8(IDS_ASH_INTERNAL_DISPLAY_NAME)
-            : chromeos::GetDisplayName(output.output);
+            ? l10n_util::GetStringUTF8(IDS_ASH_INTERNAL_DISPLAY_NAME) :
+              ui::GetDisplayName(output);
     if (name.empty())
       name = l10n_util::GetStringUTF8(IDS_ASH_STATUS_TRAY_UNKNOWN_DISPLAY_NAME);
 
     bool has_overscan = false;
-    chromeos::GetOutputOverscanFlag(output.output, &has_overscan);
+    ui::GetOutputOverscanFlag(output, &has_overscan);
 
     int64 id = output.display_id;
     if (id == gfx::Display::kInvalidDisplayID || ids.find(id) != ids.end())
@@ -185,7 +180,7 @@ void DisplayChangeObserver::OnAppTerminating() {
 #if defined(USE_ASH)
   // Stop handling display configuration events once the shutdown
   // process starts. crbug.com/177014.
-  Shell::GetInstance()->output_configurator()->Stop();
+  Shell::GetInstance()->output_configurator()->PrepareForExit();
 #endif
 }
 

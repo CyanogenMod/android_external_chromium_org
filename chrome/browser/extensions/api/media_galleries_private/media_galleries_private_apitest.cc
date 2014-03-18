@@ -14,12 +14,16 @@
 #include "components/storage_monitor/storage_info.h"
 #include "components/storage_monitor/storage_monitor.h"
 #include "components/storage_monitor/test_storage_monitor.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
-#include "url/gurl.h"
+
+using storage_monitor::StorageInfo;
+using storage_monitor::StorageMonitor;
+using storage_monitor::TestStorageMonitor;
 
 namespace {
 
@@ -48,7 +52,7 @@ const char kDetachTestOk[] = "detach_test_ok";
 
 // Dummy device properties.
 const char kDeviceId[] = "testDeviceId";
-const char kDeviceName[] = "foobar";
+const char kVolumeLabel[] = "foobar";
 base::FilePath::CharType kDevicePath[] = FILE_PATH_LITERAL("/qux");
 
 }  // namespace
@@ -77,8 +81,7 @@ class MediaGalleriesPrivateApiTest : public ExtensionApiTest {
                       const std::string& js_command,
                       const std::string& ok_message) {
     ExtensionTestMessageListener listener(ok_message, false  /* no reply */);
-    host->ExecuteJavascriptInWebFrame(base::string16(),
-                                      base::ASCIIToUTF16(js_command));
+    host->GetMainFrame()->ExecuteJavaScript(base::ASCIIToUTF16(js_command));
     EXPECT_TRUE(listener.WaitUntilSatisfied());
   }
 
@@ -89,8 +92,9 @@ class MediaGalleriesPrivateApiTest : public ExtensionApiTest {
 
   void Attach() {
     DCHECK(StorageMonitor::GetInstance()->IsInitialized());
-    StorageInfo info(device_id_, base::ASCIIToUTF16(kDeviceName), kDevicePath,
-                     base::string16(), base::string16(), base::string16(), 0);
+    const StorageInfo info(device_id_, kDevicePath,
+                           base::ASCIIToUTF16(kVolumeLabel), base::string16(),
+                           base::string16(), 0);
     StorageMonitor::GetInstance()->receiver()->ProcessAttach(info);
     content::RunAllPendingInMessageLoop();
   }
@@ -137,7 +141,7 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateApiTest,
 
   // Attach / detach
   const std::string expect_attach_msg =
-      base::StringPrintf("%s,%s", kAttachTestOk, kDeviceName);
+      base::StringPrintf("%s,%s", kAttachTestOk, kVolumeLabel);
   ExtensionTestMessageListener attach_finished_listener(expect_attach_msg,
                                                         false  /* no reply */);
   Attach();

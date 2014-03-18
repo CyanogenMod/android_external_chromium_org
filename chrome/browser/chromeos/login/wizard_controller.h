@@ -14,10 +14,11 @@
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
+#include "chrome/browser/chromeos/login/login_display_host.h"
 #include "chrome/browser/chromeos/login/screens/screen_observer.h"
 #include "chrome/browser/chromeos/login/screens/wizard_screen.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 #include "ui/gfx/rect.h"
 #include "url/gurl.h"
 
@@ -36,7 +37,6 @@ class EulaScreen;
 class KioskAutolaunchScreen;
 class KioskEnableScreen;
 class LocallyManagedUserCreationScreen;
-class LoginDisplayHost;
 class LoginScreenContext;
 class NetworkScreen;
 class OobeDisplay;
@@ -49,8 +49,7 @@ class WrongHWIDScreen;
 
 // Class that manages control flow between wizard screens. Wizard controller
 // interacts with screen controllers to move the user between screens.
-class WizardController : public ScreenObserver,
-                         public content::NotificationObserver {
+class WizardController : public ScreenObserver {
  public:
   // Observes screen changes.
   class Observer {
@@ -227,10 +226,9 @@ class WizardController : public ScreenObserver,
   virtual void ShowErrorScreen() OVERRIDE;
   virtual void HideErrorScreen(WizardScreen* parent_screen) OVERRIDE;
 
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // Notification of a change in the state of an accessibility setting.
+  void OnAccessibilityStatusChanged(
+      const AccessibilityStatusEventDetails& details);
 
   // Switches from one screen to another.
   void SetCurrentScreen(WizardScreen* screen);
@@ -253,6 +251,13 @@ class WizardController : public ScreenObserver,
 
   // Called when LocalState is initialized.
   void OnLocalStateInitialized(bool /* succeeded */);
+
+  // Checks auto enrollment state and eventually triggers the next wizard step.
+  void CheckAutoEnrollmentState();
+
+  // Handles update notifications regarding the auto-enrollment check.
+  void OnAutoEnrollmentCheckProgressed(
+      policy::AutoEnrollmentClient::State state);
 
   // Returns local state.
   PrefService* GetLocalState();
@@ -342,9 +347,11 @@ class WizardController : public ScreenObserver,
   friend class WizardInProcessBrowserTest;
   friend class WizardControllerBrokenLocalStateTest;
 
-  base::WeakPtrFactory<WizardController> weak_factory_;
+  scoped_ptr<AccessibilityStatusSubscription> accessibility_subscription_;
+  scoped_ptr<LoginDisplayHost::AutoEnrollmentProgressCallbackSubscription>
+      auto_enrollment_progress_subscription_;
 
-  content::NotificationRegistrar registrar_;
+  base::WeakPtrFactory<WizardController> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WizardController);
 };

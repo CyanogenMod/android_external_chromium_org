@@ -4,6 +4,8 @@
 
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine.h"
 
+#include <vector>
+
 #include "base/bind.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
@@ -11,7 +13,6 @@
 #include "chrome/browser/drive/drive_notification_manager.h"
 #include "chrome/browser/drive/drive_notification_manager_factory.h"
 #include "chrome/browser/drive/drive_service_interface.h"
-#include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -27,10 +28,10 @@
 #include "chrome/browser/sync_file_system/drive_backend/register_app_task.h"
 #include "chrome/browser/sync_file_system/drive_backend/remote_to_local_syncer.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_initializer.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task.h"
 #include "chrome/browser/sync_file_system/drive_backend/uninstall_app_task.h"
 #include "chrome/browser/sync_file_system/file_status_observer.h"
 #include "chrome/browser/sync_file_system/logger.h"
-#include "chrome/browser/sync_file_system/sync_task.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
@@ -96,15 +97,14 @@ scoped_ptr<SyncEngine> SyncEngine::CreateForBrowserContext(
           base::SequencedWorkerPool::SKIP_ON_SHUTDOWN));
 
   scoped_ptr<drive_backend::SyncEngine> sync_engine(
-      new SyncEngine(
-          GetSyncFileSystemDir(context->GetPath()),
-          task_runner.get(),
-          drive_service.Pass(),
-          drive_uploader.Pass(),
-          notification_manager,
-          extension_service,
-          token_service,
-          NULL));
+      new SyncEngine(GetSyncFileSystemDir(context->GetPath()),
+                     task_runner.get(),
+                     drive_service.Pass(),
+                     drive_uploader.Pass(),
+                     notification_manager,
+                     extension_service,
+                     signin_manager,
+                     NULL));
   sync_engine->Initialize();
 
   return sync_engine.Pass();
@@ -114,7 +114,7 @@ void SyncEngine::AppendDependsOnFactories(
     std::set<BrowserContextKeyedServiceFactory*>* factories) {
   DCHECK(factories);
   factories->insert(drive::DriveNotificationManagerFactory::GetInstance());
-  factories->insert(ProfileOAuth2TokenServiceFactory::GetInstance());
+  factories->insert(SigninManagerFactory::GetInstance());
   factories->insert(
       extensions::ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
 }
@@ -158,8 +158,15 @@ void SyncEngine::RegisterOrigin(
   if (!metadata_database_ && drive_service_->HasRefreshToken())
     PostInitializeTask();
 
-  task_manager_->ScheduleSyncTaskAtPriority(
-      scoped_ptr<SyncTask>(new RegisterAppTask(this, origin.host())),
+  scoped_ptr<RegisterAppTask> task(new RegisterAppTask(this, origin.host()));
+  if (task->CanFinishImmediately()) {
+    callback.Run(SYNC_STATUS_OK);
+    return;
+  }
+
+  task_manager_->ScheduleSyncTask(
+      FROM_HERE,
+      task.PassAs<SyncTask>(),
       SyncTaskManager::PRIORITY_HIGH,
       callback);
 }
@@ -167,7 +174,8 @@ void SyncEngine::RegisterOrigin(
 void SyncEngine::EnableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
-  task_manager_->ScheduleTaskAtPriority(
+  task_manager_->ScheduleTask(
+      FROM_HERE,
       base::Bind(&SyncEngine::DoEnableApp,
                  weak_ptr_factory_.GetWeakPtr(),
                  origin.host()),
@@ -178,7 +186,8 @@ void SyncEngine::EnableOrigin(
 void SyncEngine::DisableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
-  task_manager_->ScheduleTaskAtPriority(
+  task_manager_->ScheduleTask(
+      FROM_HERE,
       base::Bind(&SyncEngine::DoDisableApp,
                  weak_ptr_factory_.GetWeakPtr(),
                  origin.host()),
@@ -190,7 +199,8 @@ void SyncEngine::UninstallOrigin(
     const GURL& origin,
     UninstallFlag flag,
     const SyncStatusCallback& callback) {
-  task_manager_->ScheduleSyncTaskAtPriority(
+  task_manager_->ScheduleSyncTask(
+      FROM_HERE,
       scoped_ptr<SyncTask>(new UninstallAppTask(this, origin.host(), flag)),
       SyncTaskManager::PRIORITY_HIGH,
       callback);
@@ -200,7 +210,9 @@ void SyncEngine::ProcessRemoteChange(
     const SyncFileCallback& callback) {
   RemoteToLocalSyncer* syncer = new RemoteToLocalSyncer(this);
   task_manager_->ScheduleSyncTask(
+      FROM_HERE,
       scoped_ptr<SyncTask>(syncer),
+      SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncEngine::DidProcessRemoteChange,
                  weak_ptr_factory_.GetWeakPtr(),
                  syncer, callback));
@@ -221,6 +233,8 @@ bool SyncEngine::IsConflicting(const fileapi::FileSystemURL& url) {
 }
 
 RemoteServiceState SyncEngine::GetCurrentState() const {
+  if (!sync_enabled_)
+    return REMOTE_SERVICE_DISABLED;
   return service_state_;
 }
 
@@ -269,15 +283,29 @@ void SyncEngine::SetSyncEnabled(bool enabled) {
       OnRemoteServiceStateUpdated(GetCurrentState(), status_message));
 }
 
-SyncStatusCode SyncEngine::SetConflictResolutionPolicy(
+SyncStatusCode SyncEngine::SetDefaultConflictResolutionPolicy(
     ConflictResolutionPolicy policy) {
-  conflict_resolution_policy_ = policy;
+  default_conflict_resolution_policy_ = policy;
   return SYNC_STATUS_OK;
 }
 
-ConflictResolutionPolicy
-SyncEngine::GetConflictResolutionPolicy() const {
-  return conflict_resolution_policy_;
+SyncStatusCode SyncEngine::SetConflictResolutionPolicy(
+    const GURL& origin,
+    ConflictResolutionPolicy policy) {
+  NOTIMPLEMENTED();
+  default_conflict_resolution_policy_ = policy;
+  return SYNC_STATUS_OK;
+}
+
+ConflictResolutionPolicy SyncEngine::GetDefaultConflictResolutionPolicy()
+    const {
+  return default_conflict_resolution_policy_;
+}
+
+ConflictResolutionPolicy SyncEngine::GetConflictResolutionPolicy(
+    const GURL& origin) const {
+  NOTIMPLEMENTED();
+  return default_conflict_resolution_policy_;
 }
 
 void SyncEngine::GetRemoteVersions(
@@ -296,8 +324,14 @@ void SyncEngine::DownloadRemoteVersion(
 }
 
 void SyncEngine::PromoteDemotedChanges() {
-  if (metadata_database_)
+  if (metadata_database_ && metadata_database_->HasLowPriorityDirtyTracker()) {
     metadata_database_->PromoteLowerPriorityTrackersToNormal();
+    FOR_EACH_OBSERVER(
+        Observer,
+        service_observers_,
+        OnRemoteChangeQueueUpdated(
+            metadata_database_->CountDirtyTracker()));
+  }
 }
 
 void SyncEngine::ApplyLocalChange(
@@ -309,7 +343,9 @@ void SyncEngine::ApplyLocalChange(
   LocalToRemoteSyncer* syncer = new LocalToRemoteSyncer(
       this, local_metadata, local_change, local_path, url);
   task_manager_->ScheduleSyncTask(
+      FROM_HERE,
       scoped_ptr<SyncTask>(syncer),
+      SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncEngine::DidApplyLocalChange,
                  weak_ptr_factory_.GetWeakPtr(),
                  syncer, callback));
@@ -335,7 +371,7 @@ void SyncEngine::NotifyLastOperationStatus(
         Observer,
         service_observers_,
         OnRemoteChangeQueueUpdated(
-            metadata_database_->GetDirtyTrackerCount()));
+            metadata_database_->CountDirtyTracker()));
   }
 }
 
@@ -354,10 +390,8 @@ void SyncEngine::OnReadyToSendRequests() {
     return;
   UpdateServiceState(REMOTE_SERVICE_OK, "Authenticated");
 
-  if (!metadata_database_ && auth_token_service_) {
-    SigninManagerBase* signin_manager =
-        SigninManagerFactory::GetForProfile(auth_token_service_->profile());
-    drive_service_->Initialize(signin_manager->GetAuthenticatedAccountId());
+  if (!metadata_database_ && signin_manager_) {
+    drive_service_->Initialize(signin_manager_->GetAuthenticatedAccountId());
     PostInitializeTask();
     return;
   }
@@ -407,15 +441,14 @@ base::SequencedTaskRunner* SyncEngine::GetBlockingTaskRunner() {
   return task_runner_.get();
 }
 
-SyncEngine::SyncEngine(
-    const base::FilePath& base_dir,
-    base::SequencedTaskRunner* task_runner,
-    scoped_ptr<drive::DriveServiceInterface> drive_service,
-    scoped_ptr<drive::DriveUploaderInterface> drive_uploader,
-    drive::DriveNotificationManager* notification_manager,
-    ExtensionServiceInterface* extension_service,
-    ProfileOAuth2TokenService* auth_token_service,
-    leveldb::Env* env_override)
+SyncEngine::SyncEngine(const base::FilePath& base_dir,
+                       base::SequencedTaskRunner* task_runner,
+                       scoped_ptr<drive::DriveServiceInterface> drive_service,
+                       scoped_ptr<drive::DriveUploaderInterface> drive_uploader,
+                       drive::DriveNotificationManager* notification_manager,
+                       ExtensionServiceInterface* extension_service,
+                       SigninManagerBase* signin_manager,
+                       leveldb::Env* env_override)
     : base_dir_(base_dir),
       task_runner_(task_runner),
       env_override_(env_override),
@@ -423,17 +456,17 @@ SyncEngine::SyncEngine(
       drive_uploader_(drive_uploader.Pass()),
       notification_manager_(notification_manager),
       extension_service_(extension_service),
-      auth_token_service_(auth_token_service),
+      signin_manager_(signin_manager),
       remote_change_processor_(NULL),
       service_state_(REMOTE_SERVICE_TEMPORARY_UNAVAILABLE),
       should_check_conflict_(true),
       should_check_remote_change_(true),
       listing_remote_changes_(false),
       sync_enabled_(false),
-      conflict_resolution_policy_(CONFLICT_RESOLUTION_POLICY_LAST_WRITE_WIN),
+      default_conflict_resolution_policy_(
+          CONFLICT_RESOLUTION_POLICY_LAST_WRITE_WIN),
       network_available_(false),
-      weak_ptr_factory_(this) {
-}
+      weak_ptr_factory_(this) {}
 
 void SyncEngine::DoDisableApp(const std::string& app_id,
                               const SyncStatusCallback& callback) {
@@ -462,7 +495,8 @@ void SyncEngine::PostInitializeTask() {
                                 drive_service_.get(),
                                 base_dir_.Append(kDatabaseName),
                                 env_override_);
-  task_manager_->ScheduleSyncTaskAtPriority(
+  task_manager_->ScheduleSyncTask(
+      FROM_HERE,
       scoped_ptr<SyncTask>(initializer),
       SyncTaskManager::PRIORITY_HIGH,
       base::Bind(&SyncEngine::DidInitialize, weak_ptr_factory_.GetWeakPtr(),
@@ -548,7 +582,8 @@ void SyncEngine::DidApplyLocalChange(LocalToRemoteSyncer* syncer,
 
   if (syncer->needs_remote_change_listing() &&
       !listing_remote_changes_) {
-    task_manager_->ScheduleSyncTaskAtPriority(
+    task_manager_->ScheduleSyncTask(
+        FROM_HERE,
         scoped_ptr<SyncTask>(new ListChangesTask(this)),
         SyncTaskManager::PRIORITY_HIGH,
         base::Bind(&SyncEngine::DidFetchChanges,
@@ -587,6 +622,7 @@ void SyncEngine::MaybeStartFetchChanges() {
     if (!metadata_database_->HasDirtyTracker() && should_check_conflict_) {
       should_check_conflict_ = false;
       task_manager_->ScheduleSyncTaskIfIdle(
+          FROM_HERE,
           scoped_ptr<SyncTask>(new ConflictResolver(this)),
           base::Bind(&SyncEngine::DidResolveConflict,
                      weak_ptr_factory_.GetWeakPtr()));
@@ -595,6 +631,7 @@ void SyncEngine::MaybeStartFetchChanges() {
   }
 
   if (task_manager_->ScheduleSyncTaskIfIdle(
+          FROM_HERE,
           scoped_ptr<SyncTask>(new ListChangesTask(this)),
           base::Bind(&SyncEngine::DidFetchChanges,
                      weak_ptr_factory_.GetWeakPtr()))) {

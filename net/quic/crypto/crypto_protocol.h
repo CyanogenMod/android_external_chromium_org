@@ -40,6 +40,7 @@ const QuicTag kC255 = TAG('C', '2', '5', '5');  // ECDH, Curve25519
 // AEAD algorithms
 const QuicTag kNULL = TAG('N', 'U', 'L', 'N');  // null algorithm
 const QuicTag kAESG = TAG('A', 'E', 'S', 'G');  // AES128 + GCM-12
+const QuicTag kCC12 = TAG('C', 'C', '1', '2');  // ChaCha20 + Poly1305
 
 // Congestion control feedback types
 const QuicTag kQBIC = TAG('Q', 'B', 'I', 'C');  // TCP cubic
@@ -56,8 +57,6 @@ const QuicTag kX59R = TAG('X', '5', '9', 'R');  // X.509 certificate, RSA keys
 const QuicTag kCHID = TAG('C', 'H', 'I', 'D');  // Channel ID.
 
 // Client hello tags
-// TODO(rch): Remove once we remove QUIC_VERSION_12.
-const QuicTag kVERS = TAG('V', 'E', 'R', 'S');  // Version (obsolete)
 const QuicTag kVER  = TAG('V', 'E', 'R', '\0'); // Version (new)
 const QuicTag kNONC = TAG('N', 'O', 'N', 'C');  // The client's nonce
 const QuicTag kKEXS = TAG('K', 'E', 'X', 'S');  // Key exchange methods
@@ -82,6 +81,8 @@ const QuicTag kPROF = TAG('P', 'R', 'O', 'F');  // Proof (signature).
 const QuicTag kCCS  = TAG('C', 'C', 'S', 0);    // Common certificate set
 const QuicTag kCCRT = TAG('C', 'C', 'R', 'T');  // Cached certificate
 const QuicTag kEXPY = TAG('E', 'X', 'P', 'Y');  // Expiry
+const QuicTag kIFCW = TAG('I', 'F', 'C', 'W');  // Initial flow control receive
+                                                // window.
 
 // Server hello tags
 const QuicTag kCADR = TAG('C', 'A', 'D', 'R');  // Client IP address and port
@@ -139,12 +140,6 @@ const char kProofSignatureLabel[] = "QUIC server config signature";
 // kClientHelloMinimumSize to make it more likely to receive a complete
 // rejection message.
 const size_t kClientHelloMinimumSize = 1024;
-
-// kClientHelloMinimumSizeOld is the previous value of kClientHelloMinimumSize.
-// To support old clients, the server only enforces this size.
-// TODO(wtc): Replace it with kClientHelloMinimumSize when we drop support for
-// QUIC_VERSION_12 clients.
-const size_t kClientHelloMinimumSizeOld = 512;
 
 }  // namespace net
 

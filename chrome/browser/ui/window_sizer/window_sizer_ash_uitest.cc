@@ -13,8 +13,8 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/test/ui_controls.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/view.h"
@@ -69,16 +69,14 @@ void OpenBrowserUsingShelfOnRootWindow(aura::Window* root_window) {
 
 #if defined(OS_WIN)
 #define MAYBE_OpenBrowserUsingShelfOnOtherDisplay DISABLED_OpenBrowserUsingShelfOnOtherDisplay
-#define MAYBE_OpenBrowserUsingContextMenuOnOtherDisplay DISABLED_OpenBrowserUsingContextMenuOnOtherDisplay
 #else
 #define MAYBE_OpenBrowserUsingShelfOnOtherDisplay OpenBrowserUsingShelfOnOtherDisplay
-#define MAYBE_OpenBrowserUsingContextMenuOnOtherDisplay OpenBrowserUsingContextMenuOnOtherDisplay
 #endif
 
 IN_PROC_BROWSER_TEST_F(WindowSizerTest,
                        MAYBE_OpenBrowserUsingShelfOnOtherDisplay) {
   // Don't shutdown when closing the last browser window.
-  chrome::StartKeepAlive();
+  chrome::IncrementKeepAliveCount();
 
   aura::Window::Windows root_windows = ash::Shell::GetAllRootWindows();
 
@@ -111,8 +109,8 @@ IN_PROC_BROWSER_TEST_F(WindowSizerTest,
             browser_list->get(0)->window()->GetNativeWindow()->GetRootWindow());
   EXPECT_EQ(root_windows[0], ash::Shell::GetTargetRootWindow());
 
-  // Balanced with the chrome::StartKeepAlive above.
-  chrome::EndKeepAlive();
+  // Balanced with the chrome::IncrementKeepAliveCount above.
+  chrome::DecrementKeepAliveCount();
 }
 
 namespace {
@@ -163,10 +161,11 @@ void OpenBrowserUsingContextMenuOnRootWindow(aura::Window* root_window) {
 
 }  // namespace
 
+// Test is flaky: http://crbug.com/346799
 IN_PROC_BROWSER_TEST_F(WindowSizerContextMenuTest,
-                       MAYBE_OpenBrowserUsingContextMenuOnOtherDisplay) {
+                       DISABLED_OpenBrowserUsingContextMenuOnOtherDisplay) {
   // Don't shutdown when closing the last browser window.
-  chrome::StartKeepAlive();
+  chrome::IncrementKeepAliveCount();
 
   views::MenuController::TurnOffMenuSelectionHoldForTest();
 
@@ -195,6 +194,6 @@ IN_PROC_BROWSER_TEST_F(WindowSizerContextMenuTest,
             browser_list->get(1)->window()->GetNativeWindow()->GetRootWindow());
   EXPECT_EQ(root_windows[0], ash::Shell::GetTargetRootWindow());
 
-  // Balanced with the chrome::StartKeepAlive above.
-  chrome::EndKeepAlive();
+  // Balanced with the chrome::IncrementKeepAliveCount above.
+  chrome::DecrementKeepAliveCount();
 }

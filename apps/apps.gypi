@@ -15,7 +15,7 @@
       # browser, then we can clean up these dependencies.
       'dependencies': [
         'browser_extensions',
-        'common/extensions/api/api.gyp:api',
+        'common/extensions/api/api.gyp:chrome_api',
         '../skia/skia.gyp:skia',
       ],
       'include_dirs': [
@@ -23,10 +23,6 @@
         '<(grit_out_dir)',
       ],
       'sources': [
-        'app_keep_alive_service.cc',
-        'app_keep_alive_service.h',
-        'app_keep_alive_service_factory.cc',
-        'app_keep_alive_service_factory.h',
         'app_lifetime_monitor.cc',
         'app_lifetime_monitor.h',
         'app_lifetime_monitor_factory.cc',
@@ -60,11 +56,15 @@
         'saved_files_service.h',
         'saved_files_service_factory.cc',
         'saved_files_service_factory.h',
+        'size_constraints.cc',
+        'size_constraints.h',
         'switches.cc',
         'switches.h',
         'ui/native_app_window.h',
         'ui/views/app_window_frame_view.cc',
         'ui/views/app_window_frame_view.h',
+        'ui/views/native_app_window_views.cc',
+        'ui/views/native_app_window_views.h',
       ],
       'conditions': [
         ['chromeos==1',
@@ -100,6 +100,57 @@
     ['chromeos==1 or (OS=="linux" and use_aura==1) or (OS=="win" and use_aura==1)', {
       'targets': [
         {
+          'target_name': 'app_shell_pak',
+          'type': 'none',
+          'dependencies': [
+            # Need extension related resources in common_resources.pak and
+            # renderer_resources_100_percent.pak
+            'chrome_resources.gyp:chrome_resources',
+            # Need app related resources in theme_resources_100_percent.pak
+            'chrome_resources.gyp:theme_resources',
+            # Need dev-tools related resources in shell_resources.pak and
+            # devtools_resources.pak.
+            '../content/content_shell_and_tests.gyp:generate_content_shell_resources',
+            '../content/browser/devtools/devtools_resources.gyp:devtools_resources',
+            '../ui/base/strings/ui_strings.gyp:ui_strings',
+            '../ui/resources/ui_resources.gyp:ui_resources',
+          ],
+          'variables': {
+            'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
+          },
+          'actions': [
+            {
+              'action_name': 'repack_app_shell_pack',
+              'variables': {
+                'pak_inputs': [
+                  '<(grit_out_dir)/common_resources.pak',
+                  '<(grit_out_dir)/extensions_api_resources.pak',
+                  # TODO(jamescook): extra the extension/app related resources
+                  # from generated_resources_en-US.pak and
+                  # theme_resources_100_percent.pak.
+                  '<(SHARED_INTERMEDIATE_DIR)/chrome/generated_resources_en-US.pak',
+                  '<(SHARED_INTERMEDIATE_DIR)/chrome/renderer_resources_100_percent.pak',
+                  '<(SHARED_INTERMEDIATE_DIR)/chrome/theme_resources_100_percent.pak',
+                  '<(SHARED_INTERMEDIATE_DIR)/content/shell_resources.pak',
+                  '<(SHARED_INTERMEDIATE_DIR)/ui/app_locale_settings/app_locale_settings_en-US.pak',
+                  '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
+                  '<(SHARED_INTERMEDIATE_DIR)/ui/ui_strings/ui_strings_en-US.pak',
+                  '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
+                ],
+              },
+              'inputs': [
+                '<(repack_path)',
+                '<@(pak_inputs)',
+              ],
+              'outputs': [
+                '<(PRODUCT_DIR)/app_shell.pak',
+              ],
+              'action': ['python', '<(repack_path)', '<@(_outputs)',
+                         '<@(pak_inputs)'],
+            },
+          ],
+        },
+        {
           'target_name': 'app_shell',
           'type': 'executable',
           'defines!': ['CONTENT_IMPLEMENTATION'],
@@ -107,10 +158,8 @@
             'chromium_code': 1,
           },
           'dependencies': [
+            'app_shell_pak',
             'apps',
-            'chrome_resources.gyp:packed_resources',
-            # For resources.pak for features JSON files.
-            'chrome_resources.gyp:packed_extra_resources',
             'test_support_common',
             '../base/base.gyp:base',
             '../base/base.gyp:base_prefs_test_support',
@@ -129,6 +178,10 @@
             'shell/app/shell_main.cc',
             'shell/browser/shell_app_sorting.cc',
             'shell/browser/shell_app_sorting.h',
+            'shell/browser/shell_app_window_delegate.cc',
+            'shell/browser/shell_app_window_delegate.h',
+            'shell/browser/shell_apps_client.cc',
+            'shell/browser/shell_apps_client.h',
             'shell/browser/shell_browser_context.cc',
             'shell/browser/shell_browser_context.h',
             'shell/browser/shell_browser_main_parts.cc',
@@ -157,6 +210,7 @@
                   'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
                 },
               },
+              'msvs_large_pdb': 1,
               'dependencies': [
                 '../sandbox/sandbox.gyp:sandbox',
               ],

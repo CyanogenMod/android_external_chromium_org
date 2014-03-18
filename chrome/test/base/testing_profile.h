@@ -11,7 +11,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/profiles/profile.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 namespace content {
 class MockResourceContext;
@@ -41,7 +41,6 @@ class SpecialStoragePolicy;
 }
 
 class BrowserContextDependencyManager;
-class CommandLine;
 class ExtensionSpecialStoragePolicy;
 class HostContentSettingsMap;
 class PrefServiceSyncable;
@@ -213,7 +212,8 @@ class TestingProfile : public Profile {
       GetDownloadManagerDelegate() OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
   virtual net::URLRequestContextGetter* CreateRequestContext(
-      content::ProtocolHandlerMap* protocol_handlers) OVERRIDE;
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
       int renderer_child_id) OVERRIDE;
   virtual content::ResourceContext* GetResourceContext() OVERRIDE;
@@ -222,7 +222,10 @@ class TestingProfile : public Profile {
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
 
   virtual TestingProfile* AsTestingProfile() OVERRIDE;
+
+  // Profile
   virtual std::string GetProfileName() OVERRIDE;
+  virtual ProfileType GetProfileType() const OVERRIDE;
 
   // DEPRECATED, because it's fragile to change a profile from non-incognito
   // to incognito after the ProfileKeyedServices have been created (some
@@ -296,7 +299,8 @@ class TestingProfile : public Profile {
   virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
       const base::FilePath& partition_path,
       bool in_memory,
-      content::ProtocolHandlerMap* protocol_handlers) OVERRIDE;
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
   virtual net::SSLConfigService* GetSSLConfigService() OVERRIDE;
   virtual HostContentSettingsMap* GetHostContentSettingsMap() OVERRIDE;
   virtual std::wstring GetName();

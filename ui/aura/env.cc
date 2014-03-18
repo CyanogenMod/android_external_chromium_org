@@ -76,11 +76,6 @@ bool Env::IsMouseButtonDown() const {
       mouse_button_flags_ != 0;
 }
 
-void Env::RootWindowActivated(RootWindow* root_window) {
-  FOR_EACH_OBSERVER(EnvObserver, observers_,
-                    OnRootWindowActivated(root_window));
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Env, private:
 
@@ -98,10 +93,12 @@ void Env::NotifyWindowInitialized(Window* window) {
   FOR_EACH_OBSERVER(EnvObserver, observers_, OnWindowInitialized(window));
 }
 
-void Env::NotifyRootWindowInitialized(RootWindow* root_window) {
-  FOR_EACH_OBSERVER(EnvObserver,
-                    observers_,
-                    OnRootWindowInitialized(root_window));
+void Env::NotifyHostInitialized(WindowTreeHost* host) {
+  FOR_EACH_OBSERVER(EnvObserver, observers_, OnHostInitialized(host));
+}
+
+void Env::NotifyHostActivated(WindowTreeHost* host) {
+  FOR_EACH_OBSERVER(EnvObserver, observers_, OnHostActivated(host));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

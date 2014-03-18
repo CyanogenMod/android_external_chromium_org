@@ -20,6 +20,10 @@
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
 #include "third_party/WebKit/public/web/WebDOMFileSystem.h"
 #include "third_party/WebKit/public/web/WebDOMMediaStreamTrack.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "webkit/common/fileapi/file_system_util.h"
+
+using ppapi::ResourceVar;
 
 namespace content {
 namespace {
@@ -49,6 +53,30 @@ PP_FileSystemType WebFileSystemTypeToPPAPI(blink::WebFileSystem::Type type) {
     default:
       NOTREACHED();
       return PP_FILESYSTEMTYPE_LOCALTEMPORARY;
+  }
+}
+
+// Converts a fileapi::FileSystemType to a blink::WebFileSystemType.
+// Returns true on success, false if |type| does not correspond to a
+// WebFileSystemType.
+bool FileApiFileSystemTypeToWebFileSystemType(
+    fileapi::FileSystemType type,
+    blink::WebFileSystemType* result_type) {
+  switch (type) {
+    case fileapi::kFileSystemTypeTemporary:
+      *result_type = blink::WebFileSystemTypeTemporary;
+      return true;
+    case fileapi::kFileSystemTypePersistent:
+      *result_type = blink::WebFileSystemTypePersistent;
+      return true;
+    case fileapi::kFileSystemTypeIsolated:
+      *result_type = blink::WebFileSystemTypeIsolated;
+      return true;
+    case fileapi::kFileSystemTypeExternal:
+      *result_type = blink::WebFileSystemTypeExternal;
+      return true;
+    default:
+      return false;
   }
 }
 
@@ -87,6 +115,31 @@ bool DOMFileSystemToResource(
   browser_host_create_message->reset(
       new PpapiHostMsg_FileSystem_CreateFromRenderer(root_url.spec(),
                                                      file_system_type));
+  return true;
+}
+
+bool ResourceHostToDOMFileSystem(
+    content::PepperFileSystemHost* file_system_host,
+    v8::Handle<v8::Context> context,
+    v8::Handle<v8::Value>* dom_file_system) {
+  GURL root_url = file_system_host->GetRootUrl();
+  GURL origin;
+  fileapi::FileSystemType type;
+  base::FilePath virtual_path;
+  fileapi::ParseFileSystemSchemeURL(root_url, &origin, &type, &virtual_path);
+
+  std::string name = fileapi::GetFileSystemName(origin, type);
+  blink::WebFileSystemType blink_type;
+  if (!FileApiFileSystemTypeToWebFileSystemType(type, &blink_type))
+    return false;
+  blink::WebFrame* frame = blink::WebFrame::frameForContext(context);
+  blink::WebDOMFileSystem web_dom_file_system = blink::WebDOMFileSystem::create(
+      frame,
+      blink_type,
+      blink::WebString::fromUTF8(name),
+      root_url,
+      blink::WebDOMFileSystem::SerializableTypeSerializable);
+  *dom_file_system = web_dom_file_system.toV8Value();
   return true;
 }
 
@@ -203,6 +256,50 @@ void ResourceConverterImpl::Flush(const base::Callback<void(bool)>& callback) {
       base::Bind(&FlushComplete, callback, browser_vars));
   browser_host_create_messages_.clear();
   browser_vars.clear();
+}
+
+bool ResourceConverterImpl::ToV8Value(const PP_Var& var,
+                                      v8::Handle<v8::Context> context,
+                                      v8::Handle<v8::Value>* result) {
+  DCHECK(var.type == PP_VARTYPE_RESOURCE);
+
+  ResourceVar* resource = ResourceVar::FromPPVar(var);
+  if (!resource) {
+    NOTREACHED();
+    return false;
+  }
+  PP_Resource resource_id = resource->GetPPResource();
+
+  // Get the renderer-side resource host for this resource.
+  content::RendererPpapiHost* renderer_ppapi_host =
+      content::RendererPpapiHost::GetForPPInstance(instance_);
+  if (!renderer_ppapi_host) {
+    // This should never happen: the RendererPpapiHost is owned by the module
+    // and should outlive instances associated with it. However, if it doesn't
+    // for some reason, we do not want to crash.
+    NOTREACHED();
+    return false;
+  }
+  ::ppapi::host::PpapiHost* ppapi_host =
+      renderer_ppapi_host->GetPpapiHost();
+  ::ppapi::host::ResourceHost* resource_host =
+      ppapi_host->GetResourceHost(resource_id);
+  if (resource_host == NULL) {
+    LOG(ERROR) << "No resource host for resource #" << resource_id;
+    return false;
+  }
+
+  // Convert to the appropriate type of resource host.
+  if (resource_host->IsFileSystemHost()) {
+    return ResourceHostToDOMFileSystem(
+        static_cast<content::PepperFileSystemHost*>(resource_host),
+        context,
+        result);
+  } else {
+    LOG(ERROR) << "The type of resource #" << resource_id
+               << " cannot be converted to a JavaScript object.";
+    return false;
+  }
 }
 
 scoped_refptr<HostResourceVar> ResourceConverterImpl::CreateResourceVar(

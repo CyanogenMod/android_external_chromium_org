@@ -24,23 +24,65 @@ bool PermissionBubbleManager::Enabled() {
       switches::kEnablePermissionsBubbles);
 }
 
+
+
+PermissionBubbleManager::PermissionBubbleManager(
+    content::WebContents* web_contents)
+  : content::WebContentsObserver(web_contents),
+    bubble_showing_(false),
+    view_(NULL),
+    customization_mode_(false) {
+  timer_.reset(new base::Timer(FROM_HERE,
+      base::TimeDelta::FromMilliseconds(kPermissionsCoalesceIntervalMs),
+      base::Bind(&PermissionBubbleManager::ShowBubble, base::Unretained(this)),
+      false));
+}
+
+PermissionBubbleManager::~PermissionBubbleManager() {
+  if (view_ != NULL)
+    view_->SetDelegate(NULL);
+
+  std::vector<PermissionBubbleRequest*>::iterator requests_iter;
+  for (requests_iter = requests_.begin();
+       requests_iter != requests_.end();
+       requests_iter++) {
+    (*requests_iter)->RequestFinished();
+  }
+  for (requests_iter = queued_requests_.begin();
+       requests_iter != queued_requests_.end();
+       requests_iter++) {
+    (*requests_iter)->RequestFinished();
+  }
+}
+
 void PermissionBubbleManager::AddRequest(PermissionBubbleRequest* request) {
-  // Don't re-add an existing request.
+  // Don't re-add an existing request or one with a duplicate text request.
   std::vector<PermissionBubbleRequest*>::iterator requests_iter;
   for (requests_iter = requests_.begin();
        requests_iter != requests_.end();
        requests_iter++) {
     if (*requests_iter == request)
       return;
+    // TODO(gbillock): worry about the requesting host name as well.
+    if ((*requests_iter)->GetMessageTextFragment() ==
+        request->GetMessageTextFragment()) {
+      request->RequestFinished();
+      return;
+    }
+  }
+  for (requests_iter = queued_requests_.begin();
+       requests_iter != queued_requests_.end();
+       requests_iter++) {
+    if (*requests_iter == request)
+      return;
+    if ((*requests_iter)->GetMessageTextFragment() ==
+        request->GetMessageTextFragment()) {
+      request->RequestFinished();
+      return;
+    }
   }
 
   if (bubble_showing_) {
-    for (requests_iter = queued_requests_.begin();
-         requests_iter != queued_requests_.end();
-         requests_iter++) {
-      if (*requests_iter == request)
-        return;
-    }
     queued_requests_.push_back(request);
     return;
   }
@@ -52,6 +94,11 @@ void PermissionBubbleManager::AddRequest(PermissionBubbleRequest* request) {
   // Start the timer when there is both a view and a request.
   if (view_ && !timer_->IsRunning())
     timer_->Reset();
+}
+
+void PermissionBubbleManager::CancelRequest(PermissionBubbleRequest* request) {
+  // TODO(gbillock): implement
+  NOTREACHED();
 }
 
 void PermissionBubbleManager::SetView(PermissionBubbleView* view) {
@@ -77,20 +124,6 @@ void PermissionBubbleManager::SetView(PermissionBubbleView* view) {
   else
     view_->Hide();
 }
-
-PermissionBubbleManager::PermissionBubbleManager(
-    content::WebContents* web_contents)
-  : content::WebContentsObserver(web_contents),
-    bubble_showing_(false),
-    view_(NULL),
-    customization_mode_(false) {
-  timer_.reset(new base::Timer(FROM_HERE,
-      base::TimeDelta::FromMilliseconds(kPermissionsCoalesceIntervalMs),
-      base::Bind(&PermissionBubbleManager::ShowBubble, base::Unretained(this)),
-      false));
-}
-
-PermissionBubbleManager::~PermissionBubbleManager() {}
 
 void PermissionBubbleManager::DidFinishLoad(
     int64 frame_id,
@@ -162,17 +195,17 @@ void PermissionBubbleManager::Closing() {
 
 void PermissionBubbleManager::ShowBubble() {
   if (view_ && !bubble_showing_ && requests_.size()) {
-    view_->SetDelegate(this);
-    view_->Show(requests_, accept_states_, customization_mode_);
+    // Note: this should appear above Show() for testing, since in that
+    // case we may do in-line calling of finalization.
     bubble_showing_ = true;
+    view_->Show(requests_, accept_states_, customization_mode_);
   }
 }
 
 void PermissionBubbleManager::FinalizeBubble() {
-  if (view_) {
-    view_->SetDelegate(NULL);
+  if (view_)
     view_->Hide();
-  }
+  bubble_showing_ = false;
 
   std::vector<PermissionBubbleRequest*>::iterator requests_iter;
   for (requests_iter = requests_.begin();
@@ -182,7 +215,6 @@ void PermissionBubbleManager::FinalizeBubble() {
   }
   requests_.clear();
   accept_states_.clear();
-  bubble_showing_ = false;
   if (queued_requests_.size()) {
     requests_ = queued_requests_;
     accept_states_.resize(requests_.size(), true);

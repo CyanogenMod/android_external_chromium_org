@@ -122,12 +122,13 @@ class ChromeContentUtilityClient : public content::ContentUtilityClient {
       const std::vector<picasa::FolderINIContents>& folders_inis);
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
 
+#if defined(OS_WIN)
+  void OnGetAndEncryptWiFiCredentials(const std::string& network_guid,
+                                      const std::vector<uint8>& public_key);
+#endif  // defined(OS_WIN)
+
   typedef ScopedVector<UtilityMessageHandler> Handlers;
   Handlers handlers_;
-
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
-  scoped_ptr<metadata::MediaMetadataParser> media_metadata_parser_;
-#endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
 
   // Flag to enable whitelisting.
   bool filter_messages_;

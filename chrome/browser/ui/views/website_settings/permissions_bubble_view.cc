@@ -43,7 +43,7 @@ class PermissionsBubbleDelegateView : public views::BubbleDelegateView,
       bool customization_mode);
   virtual ~PermissionsBubbleDelegateView();
 
-  void ResetOwner();
+  void Close();
   void SizeToContents();
 
   // BubbleDelegateView:
@@ -158,26 +158,15 @@ PermissionsBubbleDelegateView::PermissionsBubbleDelegateView(
     button_layout->AddView(new views::View());
   }
 
-  // Lay out the Deny/Allow buttons. Use custom text if there is only
-  // one permission request.
-  base::string16 deny_text;
-  base::string16 allow_text;
-  if (requests.size() == 1) {
-    deny_text = requests[0]->GetAlternateDenyButtonText();
-    allow_text = requests[0]->GetAlternateAcceptButtonText();
-  }
-
-  if (deny_text.empty())
-    deny_text = l10n_util::GetStringUTF16(IDS_PERMISSION_DENY);
-  if (allow_text.empty())
-    allow_text = l10n_util::GetStringUTF16(IDS_PERMISSION_ALLOW);
-
+  // Lay out the Deny/Allow buttons.
+  base::string16 deny_text = l10n_util::GetStringUTF16(IDS_PERMISSION_DENY);
   views::LabelButton* deny_button = new views::LabelButton(this, deny_text);
   deny_button->SetStyle(views::Button::STYLE_BUTTON);
   deny_button->SetFontList(rb.GetFontList(ui::ResourceBundle::MediumFont));
   button_layout->AddView(deny_button);
   deny_ = deny_button;
 
+  base::string16 allow_text = l10n_util::GetStringUTF16(IDS_PERMISSION_ALLOW);
   views::LabelButton* allow_button = new views::LabelButton(this, allow_text);
   allow_button->SetStyle(views::Button::STYLE_BUTTON);
   allow_button->SetFontList(rb.GetFontList(ui::ResourceBundle::MediumFont));
@@ -192,8 +181,9 @@ PermissionsBubbleDelegateView::~PermissionsBubbleDelegateView() {
     owner_->Closing();
 }
 
-void PermissionsBubbleDelegateView::ResetOwner() {
+void PermissionsBubbleDelegateView::Close() {
   owner_ = NULL;
+  GetWidget()->Close();
 }
 
 bool PermissionsBubbleDelegateView::ShouldShowCloseButton() const {
@@ -242,7 +232,10 @@ PermissionBubbleViewViews::PermissionBubbleViewViews(views::View* anchor_view)
       delegate_(NULL),
       bubble_delegate_(NULL) {}
 
-PermissionBubbleViewViews::~PermissionBubbleViewViews() {}
+PermissionBubbleViewViews::~PermissionBubbleViewViews() {
+  if (delegate_)
+    delegate_->SetView(NULL);
+}
 
 void PermissionBubbleViewViews::SetDelegate(Delegate* delegate) {
   delegate_ = delegate;
@@ -252,25 +245,26 @@ void PermissionBubbleViewViews::Show(
     const std::vector<PermissionBubbleRequest*>& requests,
     const std::vector<bool>& values,
     bool customization_mode) {
-  if (bubble_delegate_ != NULL) {
-    bubble_delegate_->ResetOwner();
-    bubble_delegate_->StartFade(false);
-  }
+  if (bubble_delegate_ != NULL)
+    bubble_delegate_->Close();
 
-  PermissionsBubbleDelegateView* bubble_delegate =
+  bubble_delegate_ =
       new PermissionsBubbleDelegateView(anchor_view_, this,
                                         requests, values, customization_mode);
-  bubble_delegate_ = bubble_delegate;
-  views::BubbleDelegateView::CreateBubble(bubble_delegate_);
+  views::BubbleDelegateView::CreateBubble(bubble_delegate_)->Show();
+  bubble_delegate_->SizeToContents();
+}
 
-  bubble_delegate_->StartFade(true);
-  bubble_delegate->SizeToContents();
+bool PermissionBubbleViewViews::CanAcceptRequestUpdate() {
+  // TODO(gbillock): support this.
+  // return bubble_delegate_ && bubble_delegate_->IsMouseHovered();
+  return false;
 }
 
 void PermissionBubbleViewViews::Hide() {
   if (bubble_delegate_) {
-    bubble_delegate_->ResetOwner();
-    bubble_delegate_->StartFade(false);
+    bubble_delegate_->Close();
+    bubble_delegate_ = NULL;
   }
 }
 

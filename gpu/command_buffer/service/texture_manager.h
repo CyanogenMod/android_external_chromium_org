@@ -159,9 +159,16 @@ class GPU_EXPORT Texture {
     return estimated_size() > 0;
   }
 
+  // Initialize TEXTURE_MAX_ANISOTROPY to 1 if we haven't done so yet.
+  void InitTextureMaxAnisotropyIfNeeded(GLenum target);
+
+  void OnWillModifyPixels();
+  void OnDidModifyPixels();
+
  private:
   friend class MailboxManager;
   friend class MailboxManagerTest;
+  friend class TextureDefinition;
   friend class TextureManager;
   friend class TextureRef;
   friend class TextureTestHelper;
@@ -249,10 +256,12 @@ class GPU_EXPORT Texture {
   bool ClearLevel(GLES2Decoder* decoder, GLenum target, GLint level);
 
   // Sets a texture parameter.
-  // TODO(gman): Expand to SetParameteri,f,iv,fv
+  // TODO(gman): Expand to SetParameteriv,fv
   // Returns GL_NO_ERROR on success. Otherwise the error to generate.
-  GLenum SetParameter(
+  GLenum SetParameteri(
       const FeatureInfo* feature_info, GLenum pname, GLint param);
+  GLenum SetParameterf(
+      const FeatureInfo* feature_info, GLenum pname, GLfloat param);
 
   // Makes each of the mip levels as though they were generated.
   bool MarkMipmapsGenerated(const FeatureInfo* feature_info);
@@ -378,6 +387,9 @@ class GPU_EXPORT Texture {
 
   // Cache of the computed CanRenderCondition flag.
   CanRenderCondition can_render_condition_;
+
+  // Whether we have initialized TEXTURE_MAX_ANISOTROPY to 1.
+  bool texture_max_anisotropy_initialized_;
 
   DISALLOW_COPY_AND_ASSIGN(Texture);
 };
@@ -570,10 +582,13 @@ class GPU_EXPORT TextureManager {
 
   // Sets a texture parameter of a Texture
   // Returns GL_NO_ERROR on success. Otherwise the error to generate.
-  // TODO(gman): Expand to SetParameteri,f,iv,fv
-  void SetParameter(
+  // TODO(gman): Expand to SetParameteriv,fv
+  void SetParameteri(
       const char* function_name, ErrorState* error_state,
       TextureRef* ref, GLenum pname, GLint param);
+  void SetParameterf(
+      const char* function_name, ErrorState* error_state,
+      TextureRef* ref, GLenum pname, GLfloat param);
 
   // Makes each of the mip levels as though they were generated.
   // Returns false if that's not allowed for the given texture.

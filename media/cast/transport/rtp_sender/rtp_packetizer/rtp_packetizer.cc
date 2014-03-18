@@ -4,9 +4,9 @@
 
 #include "media/cast/transport/rtp_sender/rtp_packetizer/rtp_packetizer.h"
 
+#include "base/big_endian.h"
 #include "base/logging.h"
 #include "media/cast/transport/pacing/paced_sender.h"
-#include "net/base/big_endian.h"
 
 namespace media {
 namespace cast {
@@ -31,10 +31,14 @@ RtpPacketizerConfig::~RtpPacketizerConfig() {}
 
 RtpPacketizer::RtpPacketizer(PacedSender* const transport,
                              PacketStorage* packet_storage,
-                             RtpPacketizerConfig rtp_packetizer_config)
+                             RtpPacketizerConfig rtp_packetizer_config,
+                             base::TickClock* clock,
+                             LoggingImpl* logging)
     : config_(rtp_packetizer_config),
       transport_(transport),
       packet_storage_(packet_storage),
+      clock_(clock),
+      logging_(logging),
       sequence_number_(config_.sequence_number),
       rtp_timestamp_(0),
       packet_id_(0),
@@ -124,7 +128,8 @@ void RtpPacketizer::Cast(bool is_key,
     packet.push_back(frame_id);
     size_t start_size = packet.size();
     packet.resize(start_size + 4);
-    net::BigEndianWriter big_endian_writer(&(packet[start_size]), 4);
+    base::BigEndianWriter big_endian_writer(
+        reinterpret_cast<char*>(&(packet[start_size])), 4);
     big_endian_writer.WriteU16(packet_id_);
     big_endian_writer.WriteU16(static_cast<uint16>(num_packets - 1));
     packet.push_back(static_cast<uint8>(reference_frame_id));
@@ -144,6 +149,11 @@ void RtpPacketizer::Cast(bool is_key,
   }
   DCHECK(packet_id_ == num_packets) << "Invalid state";
 
+  logging_->InsertPacketListEvent(
+      clock_->NowTicks(),
+      config_.audio ? kAudioPacketSentToPacer : kVideoPacketSentToPacer,
+      packets);
+
   // Send to network.
   transport_->SendPackets(packets);
 
@@ -159,7 +169,8 @@ void RtpPacketizer::BuildCommonRTPheader(Packet* packet,
                     (marker_bit ? kRtpMarkerBitMask : 0));
   size_t start_size = packet->size();
   packet->resize(start_size + 10);
-  net::BigEndianWriter big_endian_writer(&((*packet)[start_size]), 10);
+  base::BigEndianWriter big_endian_writer(
+      reinterpret_cast<char*>(&((*packet)[start_size])), 10);
   big_endian_writer.WriteU16(sequence_number_);
   big_endian_writer.WriteU32(time_stamp);
   big_endian_writer.WriteU32(config_.ssrc);

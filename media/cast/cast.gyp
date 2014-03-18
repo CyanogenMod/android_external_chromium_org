@@ -8,63 +8,6 @@
     'chromium_code': 1,
   },
   'targets': [
-    {
-      'target_name': 'cast_config',
-      'type': 'static_library',
-      'include_dirs': [
-        '<(DEPTH)/',
-      ],
-      'dependencies': [
-        '<(DEPTH)/base/base.gyp:base',
-      ],
-      'sources': [
-        'cast_config.cc',
-        'cast_config.h',
-        'cast_defines.h',
-        'cast_environment.cc',
-        'cast_environment.h',
-        'logging/logging_defines.cc',
-        'logging/logging_defines.h',
-        'logging/logging_impl.cc',
-        'logging/logging_impl.h',
-        'logging/logging_raw.cc',
-        'logging/logging_raw.h',
-        'logging/logging_stats.cc',
-        'logging/logging_stats.h',
-        'logging/raw_event_subscriber.h',
-        'logging/simple_event_subscriber.cc',
-        'logging/simple_event_subscriber.h',
-      ], # source
-    },
-    {
-      'target_name': 'cast_logging_proto_lib',
-      'type': 'static_library',
-      'sources': [
-        'logging/proto/proto_utils.cc',
-        'logging/proto/raw_events.proto',
-      ],
-      'variables': {
-        'proto_in_dir': 'logging/proto',
-        'proto_out_dir': 'media/cast/logging/proto',
-      },
-      'includes': ['../../build/protoc.gypi'],
-    },
-    {
-      'target_name': 'sender_logging',
-      'type': 'static_library',
-      'include_dirs': [
-        '<(DEPTH)/',
-      ],
-      'dependencies': [
-        'cast_config',
-        'cast_logging_proto_lib',
-        '<(DEPTH)/base/base.gyp:base',
-      ],
-      'sources': [
-        'logging/encoding_event_subscriber.cc',
-        'logging/encoding_event_subscriber.h',
-      ], # source
-    },
   ],  # targets,
   'conditions': [
     ['include_tests==1', {
@@ -73,14 +16,14 @@
           'target_name': 'cast_unittests',
           'type': '<(gtest_target_type)',
           'dependencies': [
-            'cast_config',
-            'cast_logging_proto_lib',
+            'cast_config.gyp:cast_config',
             'cast_receiver.gyp:cast_receiver',
             'cast_sender.gyp:cast_sender',
-            'sender_logging',
+            'logging/logging.gyp:cast_log_analysis',
+            'logging/logging.gyp:cast_logging_proto_lib',
+            'logging/logging.gyp:sender_logging',
             'test/utility/utility.gyp:cast_test_utility',
             'transport/cast_transport.gyp:cast_transport',
-            '<(DEPTH)/base/base.gyp:run_all_unittests',
             '<(DEPTH)/base/base.gyp:test_support_base',
             '<(DEPTH)/net/net.gyp:net',
             '<(DEPTH)/testing/gmock.gyp:gmock',
@@ -92,6 +35,7 @@
             '<(DEPTH)/third_party/webrtc/',
           ],
           'sources': [
+            '<(DEPTH)/media/base/run_all_unittests.cc',
             'audio_receiver/audio_decoder_unittest.cc',
             'audio_receiver/audio_receiver_unittest.cc',
             'audio_sender/audio_encoder_unittest.cc',
@@ -101,6 +45,7 @@
             'framer/frame_buffer_unittest.cc',
             'framer/framer_unittest.cc',
             'logging/encoding_event_subscriber_unittest.cc',
+            'logging/serialize_deserialize_test.cc',
             'logging/logging_impl_unittest.cc',
             'logging/logging_raw_unittest.cc',
             'logging/simple_event_subscriber_unittest.cc',
@@ -127,6 +72,9 @@
             'test/fake_single_thread_task_runner.h',
             'test/fake_video_encode_accelerator.cc',
             'test/fake_video_encode_accelerator.h',
+            'test/utility/audio_utility_unittest.cc',
+            'test/utility/barcode_unittest.cc',
+            'transport/cast_transport_sender_impl_unittest.cc',
             'transport/pacing/mock_paced_packet_sender.cc',
             'transport/pacing/mock_paced_packet_sender.h',
             'transport/pacing/paced_sender_unittest.cc',
@@ -149,7 +97,8 @@
             '<(DEPTH)/',
           ],
           'dependencies': [
-            'cast_config',
+            'cast_config.gyp:cast_config',
+            'logging/logging.gyp:sender_logging',
             '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
             '<(DEPTH)/net/net.gyp:net_test_support',
             '<(DEPTH)/media/cast/cast_sender.gyp:*',
@@ -170,7 +119,7 @@
             '<(DEPTH)/',
           ],
           'dependencies': [
-            'cast_config',
+            'cast_config.gyp:cast_config',
             '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
             '<(DEPTH)/net/net.gyp:net_test_support',
             '<(DEPTH)/media/cast/cast_receiver.gyp:*',
@@ -184,7 +133,7 @@
             '<(DEPTH)/media/cast/test/receiver.cc',
           ],
           'conditions': [
-            ['OS == "linux"', {
+            ['OS == "linux" and use_x11==1', {
               'dependencies': [
                 '<(DEPTH)/build/linux/system.gyp:x11',
                 '<(DEPTH)/build/linux/system.gyp:xext',

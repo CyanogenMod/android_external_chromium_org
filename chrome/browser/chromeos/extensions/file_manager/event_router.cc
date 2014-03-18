@@ -38,6 +38,7 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_process_host.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/fileapi/file_system_util.h"
@@ -47,6 +48,8 @@ using chromeos::NetworkHandler;
 using content::BrowserThread;
 using drive::DriveIntegrationService;
 using drive::DriveIntegrationServiceFactory;
+using file_manager::util::EntryDefinition;
+using file_manager::util::FileDefinition;
 
 namespace file_browser_private = extensions::api::file_browser_private;
 
@@ -120,6 +123,7 @@ void JobInfoToTransferStatus(
 }
 
 // Checks for availability of the Google+ Photos app.
+// TODO(mtomasz): Replace with crbug.com/341902 solution.
 bool IsGooglePhotosInstalled(Profile *profile) {
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
@@ -129,14 +133,36 @@ bool IsGooglePhotosInstalled(Profile *profile) {
   // Google+ Photos uses several ids for different channels. Therefore, all of
   // them should be checked.
   const std::string kGooglePlusPhotosIds[] = {
-    "ebpbnabdhheoknfklmpddcdijjkmklkp",  // G+ Photos staging
-    "efjnaogkjbogokcnohkmnjdojkikgobo",  // G+ Photos prod
-    "ejegoaikibpmikoejfephaneibodccma"   // G+ Photos dev
+      "ebpbnabdhheoknfklmpddcdijjkmklkp",  // G+ Photos staging
+      "efjnaogkjbogokcnohkmnjdojkikgobo",  // G+ Photos prod
+      "ejegoaikibpmikoejfephaneibodccma"   // G+ Photos dev
   };
 
   for (size_t i = 0; i < arraysize(kGooglePlusPhotosIds); ++i) {
     if (service->GetExtensionById(kGooglePlusPhotosIds[i],
                                   false /* include_disable */) != NULL)
+      return true;
+  }
+
+  return false;
+}
+
+// Checks if the Recovery Tool is running. This is a temporary solution.
+// TODO(mtomasz): Replace with crbug.com/341902 solution.
+bool IsRecoveryToolRunning(Profile* profile) {
+  extensions::ExtensionPrefs* extension_prefs =
+      extensions::ExtensionPrefs::Get(profile);
+  if (!extension_prefs)
+    return false;
+
+  const std::string kRecoveryToolIds[] = {
+      "kkebgepbbgbcmghedmmdfcbdcodlkngh",  // Recovert tool staging
+      "jndclpdbaamdhonoechobihbbiimdgai"   // Recovery tool prod
+  };
+
+  for (size_t i = 0; i < arraysize(kRecoveryToolIds); ++i) {
+    const std::string extension_id = kRecoveryToolIds[i];
+    if (extension_prefs->IsExtensionRunning(extension_id))
       return true;
   }
 
@@ -223,12 +249,6 @@ void BroadcastMountCompletedEvent(
       profile, volume_info, &event.volume_metadata);
   event.is_remounting = is_remounting;
 
-  if (!volume_info.mount_path.empty() &&
-      event.volume_metadata.mount_path.empty()) {
-    event.status =
-        file_browser_private::MOUNT_COMPLETED_STATUS_ERROR_PATH_UNMOUNTED;
-  }
-
   BroadcastEvent(
       profile,
       file_browser_private::OnMountCompleted::kEventName,
@@ -248,6 +268,35 @@ CopyProgressTypeToCopyProgressStatusType(
   }
   NOTREACHED();
   return file_browser_private::COPY_PROGRESS_STATUS_TYPE_NONE;
+}
+
+std::string FileErrorToErrorName(base::File::Error error_code) {
+  namespace js = extensions::api::file_browser_private;
+  switch (error_code) {
+    case base::File::FILE_ERROR_NOT_FOUND:
+      return "NotFoundError";
+    case base::File::FILE_ERROR_INVALID_OPERATION:
+    case base::File::FILE_ERROR_EXISTS:
+    case base::File::FILE_ERROR_NOT_EMPTY:
+      return "InvalidModificationError";
+    case base::File::FILE_ERROR_NOT_A_DIRECTORY:
+    case base::File::FILE_ERROR_NOT_A_FILE:
+      return "TypeMismatchError";
+    case base::File::FILE_ERROR_ACCESS_DENIED:
+      return "NoModificationAllowedError";
+    case base::File::FILE_ERROR_FAILED:
+      return "InvalidStateError";
+    case base::File::FILE_ERROR_ABORT:
+      return "AbortError";
+    case base::File::FILE_ERROR_SECURITY:
+      return "SecurityError";
+    case base::File::FILE_ERROR_NO_SPACE:
+      return "QuotaExceededError";
+    case base::File::FILE_ERROR_INVALID_URL:
+      return "EncodingError";
+    default:
+      return "InvalidModificationError";
+  }
 }
 
 void GrantAccessForAddedProfileToRunningInstance(Profile* added_profile,
@@ -456,8 +505,7 @@ void EventRouter::OnCopyCompleted(int copy_id,
   } else {
     // Send error event.
     status.type = file_browser_private::COPY_PROGRESS_STATUS_TYPE_ERROR;
-    status.error.reset(
-        new int(fileapi::FileErrorToWebFileError(error)));
+    status.error.reset(new std::string(FileErrorToErrorName(error)));
   }
 
   BroadcastEvent(
@@ -655,28 +703,48 @@ void EventRouter::DispatchDirectoryChangeEvent(
 
   for (size_t i = 0; i < extension_ids.size(); ++i) {
     const std::string& extension_id = extension_ids[i];
-    const GURL target_origin_url(
-        extensions::Extension::GetBaseURLFromExtensionId(extension_id));
-    // This will be replaced with a real Entry in custom bindings.
-    const fileapi::FileSystemInfo info =
-        fileapi::GetFileSystemInfoForChromeOS(target_origin_url.GetOrigin());
 
-    file_browser_private::FileWatchEvent event;
-    event.event_type = got_error ?
-        file_browser_private::FILE_WATCH_EVENT_TYPE_ERROR :
-        file_browser_private::FILE_WATCH_EVENT_TYPE_CHANGED;
-    event.entry.additional_properties.SetString("fileSystemName", info.name);
-    event.entry.additional_properties.SetString("fileSystemRoot",
-                                                info.root_url.spec());
-    event.entry.additional_properties.SetString("fileFullPath",
-                                                "/" + virtual_path.value());
-    event.entry.additional_properties.SetBoolean("fileIsDirectory", true);
+    FileDefinition file_definition;
+    file_definition.virtual_path = virtual_path;
+    file_definition.is_directory = true;
 
-    BroadcastEvent(
+    file_manager::util::ConvertFileDefinitionToEntryDefinition(
         profile_,
-        file_browser_private::OnDirectoryChanged::kEventName,
-        file_browser_private::OnDirectoryChanged::Create(event));
+        extension_id,
+        file_definition,
+        base::Bind(
+            &EventRouter::DispatchDirectoryChangeEventWithEntryDefinition,
+            weak_factory_.GetWeakPtr(),
+            got_error));
   }
+}
+
+void EventRouter::DispatchDirectoryChangeEventWithEntryDefinition(
+    bool watcher_error,
+    const EntryDefinition& entry_definition) {
+  if (entry_definition.error != base::File::FILE_OK) {
+    DVLOG(1) << "Unable to dispatch event because resolving the entry "
+             << "definition failed.";
+    return;
+  }
+
+  file_browser_private::FileWatchEvent event;
+  event.event_type = watcher_error
+      ? file_browser_private::FILE_WATCH_EVENT_TYPE_ERROR
+      : file_browser_private::FILE_WATCH_EVENT_TYPE_CHANGED;
+
+  event.entry.additional_properties.SetString(
+      "fileSystemName", entry_definition.file_system_name);
+  event.entry.additional_properties.SetString(
+      "fileSystemRoot", entry_definition.file_system_root_url);
+  event.entry.additional_properties.SetString(
+      "fileFullPath", "/" + entry_definition.full_path.value());
+  event.entry.additional_properties.SetBoolean("fileIsDirectory",
+                                               entry_definition.is_directory);
+
+  BroadcastEvent(profile_,
+                 file_browser_private::OnDirectoryChanged::kEventName,
+                 file_browser_private::OnDirectoryChanged::Create(event));
 }
 
 void EventRouter::ShowRemovableDeviceInFileManager(
@@ -690,18 +758,22 @@ void EventRouter::ShowRemovableDeviceInFileManager(
       profile_ != ProfileManager::GetActiveUserProfile())
     return;
 
+  // Do not pop-up the File Manager, if the recovery tool is running.
+  if (IsRecoveryToolRunning(profile_))
+    return;
+
   // According to DCF (Design rule of Camera File system) by JEITA / CP-3461
   // cameras should have pictures located in the DCIM root directory.
   const base::FilePath dcim_path = mount_path.Append(
       FILE_PATH_LITERAL("DCIM"));
 
-  // If there is no DCIM folder or an external photo importer is not available,
-  // then launch Files.app.
+  // If there is a DCIM folder and Google+ Photos is installed, then do not
+  // launch Files.app.
   DirectoryExistsOnUIThread(
       dcim_path,
-      IsGooglePhotosInstalled(profile_) ?
-      base::Bind(&base::DoNothing) :
-      base::Bind(&util::OpenRemovableDrive, profile_, mount_path),
+      IsGooglePhotosInstalled(profile_)
+          ? base::Bind(&base::DoNothing)
+          : base::Bind(&util::OpenRemovableDrive, profile_, mount_path),
       base::Bind(&util::OpenRemovableDrive, profile_, mount_path));
 }
 

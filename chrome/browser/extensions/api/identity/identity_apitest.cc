@@ -107,7 +107,7 @@ class AsyncExtensionBrowserTest : public ExtensionBrowserTest {
       function->set_extension(empty_extension.get());
     }
 
-    function->set_context(browser()->profile());
+    function->set_browser_context(browser()->profile());
     function->set_has_callback(true);
     function->Run();
   }
@@ -150,7 +150,8 @@ class TestOAuth2MintTokenFlow : public OAuth2MintTokenFlow {
     ISSUE_ADVICE_SUCCESS,
     MINT_TOKEN_SUCCESS,
     MINT_TOKEN_FAILURE,
-    MINT_TOKEN_BAD_CREDENTIALS
+    MINT_TOKEN_BAD_CREDENTIALS,
+    MINT_TOKEN_SERVICE_ERROR
   };
 
   TestOAuth2MintTokenFlow(ResultType result,
@@ -179,6 +180,12 @@ class TestOAuth2MintTokenFlow : public OAuth2MintTokenFlow {
       case MINT_TOKEN_BAD_CREDENTIALS: {
         GoogleServiceAuthError error(
             GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
+        delegate_->OnMintTokenFailure(error);
+        break;
+      }
+      case MINT_TOKEN_SERVICE_ERROR: {
+        GoogleServiceAuthError error =
+            GoogleServiceAuthError::FromServiceError("invalid_scope");
         delegate_->OnMintTokenFailure(error);
         break;
       }
@@ -366,8 +373,7 @@ class GetAuthTokenFunctionTest : public AsyncExtensionBrowserTest {
   }
 
   IdentityAPI* id_api() {
-    return IdentityAPI::GetFactoryInstance()->GetForProfile(
-        browser()->profile());
+    return IdentityAPI::GetFactoryInstance()->Get(browser()->profile());
   }
 
   const std::string GetPrimaryAccountId() {
@@ -498,6 +504,27 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
   EXPECT_TRUE(StartsWithASCII(error, errors::kAuthFailure, false));
   EXPECT_FALSE(func->login_ui_shown());
   EXPECT_FALSE(func->scope_ui_shown());
+
+  EXPECT_EQ(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS,
+            id_api()->GetAuthStatusForTest().state());
+}
+
+IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
+                       NonInteractiveMintServiceError) {
+  scoped_refptr<MockGetAuthTokenFunction> func(new MockGetAuthTokenFunction());
+  func->set_extension(CreateExtension(CLIENT_ID | SCOPES));
+  EXPECT_CALL(*func.get(), HasLoginToken()).WillOnce(Return(true));
+  TestOAuth2MintTokenFlow* flow = new TestOAuth2MintTokenFlow(
+      TestOAuth2MintTokenFlow::MINT_TOKEN_SERVICE_ERROR, func.get());
+  EXPECT_CALL(*func.get(), CreateMintTokenFlow(_)).WillOnce(Return(flow));
+  std::string error =
+      utils::RunFunctionAndReturnError(func.get(), "[{}]", browser());
+  EXPECT_TRUE(StartsWithASCII(error, errors::kAuthFailure, false));
+  EXPECT_FALSE(func->login_ui_shown());
+  EXPECT_FALSE(func->scope_ui_shown());
+
+  EXPECT_EQ(GoogleServiceAuthError::AuthErrorNone(),
+            id_api()->GetAuthStatusForTest());
 }
 
 IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
@@ -1028,8 +1055,7 @@ class RemoveCachedAuthTokenFunctionTest : public ExtensionBrowserTest {
   }
 
   IdentityAPI* id_api() {
-    return IdentityAPI::GetFactoryInstance()->GetForProfile(
-        browser()->profile());
+    return IdentityAPI::GetFactoryInstance()->Get(browser()->profile());
   }
 
   void SetCachedToken(IdentityTokenCacheValue& token_data) {

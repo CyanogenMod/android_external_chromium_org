@@ -10,7 +10,7 @@
 
 #include "base/command_line.h"
 #include "base/files/file_path.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -24,7 +24,7 @@ namespace apps {
 
 // Monitors apps being reloaded and performs app specific actions (like launch
 // or restart) on them. Also provides an interface to schedule these actions.
-class AppLoadService : public BrowserContextKeyedService,
+class AppLoadService : public KeyedService,
                        public content::NotificationObserver {
  public:
   enum PostReloadActionType {
@@ -37,7 +37,7 @@ class AppLoadService : public BrowserContextKeyedService,
     PostReloadAction();
 
     PostReloadActionType action_type;
-    CommandLine command_line;
+    base::CommandLine command_line;
     base::FilePath current_dir;
   };
 
@@ -53,7 +53,7 @@ class AppLoadService : public BrowserContextKeyedService,
   // launch parameters. Returns true if loading the extension has begun
   // successfully.
   bool LoadAndLaunch(const base::FilePath& extension_path,
-                     const CommandLine& command_line,
+                     const base::CommandLine& command_line,
                      const base::FilePath& current_dir);
 
   static AppLoadService* Get(Profile* profile);

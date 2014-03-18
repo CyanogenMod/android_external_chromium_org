@@ -177,6 +177,10 @@ class StubLogin : public LoginStatusConsumer,
 
   // LoginUtils::Delegate implementation:
   virtual void OnProfilePrepared(Profile* profile) OVERRIDE {
+    std::string login_user =
+        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            chromeos::switches::kLoginUser);
+    profile->GetPrefs()->SetString(prefs::kGoogleServicesUsername, login_user);
     profile_prepared_ = true;
     LoginUtils::Get()->DoBrowserLaunch(profile, NULL);
     delete this;
@@ -298,8 +302,7 @@ class DBusServices {
 
     if (base::SysInfo::IsRunningOnChromeOS()) {
       // Disable Num Lock on X start up for http://crosbug.com/29169.
-      input_method::InputMethodManager::Get()->GetXKeyboard()->
-          SetNumLockEnabled(false);
+      input_method::InputMethodManager::Get()->GetXKeyboard()->DisableNumLock();
     }
 
     // Initialize the device settings service so that we'll take actions per
@@ -470,11 +473,10 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
 
   // Initialize the screen locker now so that it can receive
   // LOGIN_USER_CHANGED notification from UserManager.
-  if (KioskModeSettings::Get()->IsKioskModeEnabled()) {
+  if (KioskModeSettings::Get()->IsKioskModeEnabled())
     KioskModeIdleLogout::Initialize();
-  } else {
+  else
     ScreenLocker::InitClass();
-  }
 
   // This forces the ProfileManager to be created and register for the
   // notification it needs to track the logged in user.
@@ -625,6 +627,15 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
   //    i.e. not on Chrome OS device w/o login flow.
   if (parsed_command_line().HasSwitch(switches::kLoginUser) &&
       !parsed_command_line().HasSwitch(switches::kLoginPassword)) {
+    std::string login_user = parsed_command_line().GetSwitchValueASCII(
+        chromeos::switches::kLoginUser);
+    if (!base::SysInfo::IsRunningOnChromeOS() &&
+        login_user == UserManager::kStubUser) {
+      // For dev machines and stub user emulate as if sync has been initialized.
+      profile()->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
+                                       login_user);
+    }
+
     // This is done in LoginUtils::OnProfileCreated during normal login.
     LoginUtils::Get()->InitRlzDelayed(profile());
 
@@ -779,6 +790,11 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   peripheral_battery_observer_.reset();
   power_prefs_.reset();
   event_rewriter_.reset();
+
+  // Let the ScreenLocker unregister itself from SessionManagerClient before
+  // DBusThreadManager is shut down.
+  if (!KioskModeSettings::Get()->IsKioskModeEnabled())
+    ScreenLocker::ShutDownClass();
 
   // The XInput2 event listener needs to be shut down earlier than when
   // Singletons are finally destroyed in AtExitManager.

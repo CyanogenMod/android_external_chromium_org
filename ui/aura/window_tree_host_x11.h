@@ -45,7 +45,6 @@ class AURA_EXPORT WindowTreeHostX11 : public WindowTreeHost,
   virtual uint32_t Dispatch(const base::NativeEvent& event) OVERRIDE;
 
   // WindowTreeHost Overrides.
-  virtual RootWindow* GetRootWindow() OVERRIDE;
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
@@ -69,14 +68,12 @@ class AURA_EXPORT WindowTreeHostX11 : public WindowTreeHost,
 
   // EnvObserver overrides.
   virtual void OnWindowInitialized(Window* window) OVERRIDE;
-  virtual void OnRootWindowInitialized(RootWindow* root_window) OVERRIDE;
+  virtual void OnHostInitialized(WindowTreeHost* host) OVERRIDE;
 
   // ui::EventSource overrides.
   virtual ui::EventProcessor* GetEventProcessor() OVERRIDE;
 
  private:
-  class MouseMoveFilter;
-
   // Dispatches XI2 events. Note that some events targetted for the X root
   // window are dispatched to the aura root window (e.g. touch events after
   // calibration).
@@ -92,7 +89,7 @@ class AURA_EXPORT WindowTreeHostX11 : public WindowTreeHost,
   void SetCursorInternal(gfx::NativeCursor cursor);
 
   // Translates the native mouse location into screen coordinates and and
-  // dispatches the event to WindowTreeHostDelegate.
+  // dispatches the event via WindowEventDispatcher.
   void TranslateAndDispatchMouseEvent(ui::MouseEvent* event);
 
   // Update is_internal_display_ based on delegate_ state
@@ -128,12 +125,7 @@ class AURA_EXPORT WindowTreeHostX11 : public WindowTreeHost,
 
   scoped_ptr<internal::TouchEventCalibrate> touch_calibrate_;
 
-  scoped_ptr<MouseMoveFilter> mouse_move_filter_;
-
   ui::X11AtomCache atom_cache_;
-
-  // Touch ids of which the touch press happens at side bezel region.
-  uint32 bezel_tracking_ids_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowTreeHostX11);
 };

@@ -8,16 +8,12 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/common/chrome_switches.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_ASH)
 #include "ash/shell.h"
 #include "ui/aura/client/capture_client.h"
-#endif
-
-#if defined(OS_CHROMEOS)
-#include "chromeos/display/output_configurator.h"
 #endif
 
 namespace chrome {
@@ -44,8 +40,8 @@ void HandleAppExitingForPlatform() {
 #if defined(OS_CHROMEOS)
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableZeroBrowsersOpenForTests)) {
-    // App is exiting, call EndKeepAlive() on behalf of Aura Shell.
-    EndKeepAlive();
+    // App is exiting, call DecrementKeepAliveCount() on behalf of Aura Shell.
+    DecrementKeepAliveCount();
     // Make sure we have notified the session manager that we are exiting.
     // This might be called from FastShutdown() or CloseAllBrowsers(), but not
     // if something prevents a browser from closing before SetTryingToQuit()

@@ -6,6 +6,7 @@
 #include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/automation/automation_util.h"
 #include "chrome/browser/chrome_content_browser_client.h"
@@ -13,7 +14,11 @@
 #include "chrome/browser/prerender/prerender_link_manager.h"
 #include "chrome/browser/prerender/prerender_link_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
+#include "chrome/browser/renderer_context_menu/render_view_context_menu_test_util.h"
+#include "chrome/browser/task_manager/task_manager_browsertest_util.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/gpu_data_manager.h"
@@ -42,8 +47,19 @@
 #include "base/win/windows_version.h"
 #endif
 
+using extensions::MenuItem;
 using prerender::PrerenderLinkManager;
 using prerender::PrerenderLinkManagerFactory;
+using task_manager::browsertest_util::MatchAboutBlankTab;
+using task_manager::browsertest_util::MatchAnyApp;
+using task_manager::browsertest_util::MatchAnyBackground;
+using task_manager::browsertest_util::MatchAnyTab;
+using task_manager::browsertest_util::MatchAnyWebView;
+using task_manager::browsertest_util::MatchApp;
+using task_manager::browsertest_util::MatchBackground;
+using task_manager::browsertest_util::MatchWebView;
+using task_manager::browsertest_util::WaitForTaskManagerRows;
+using ui::MenuModel;
 
 namespace {
 const char kEmptyResponsePath[] = "/close-socket";
@@ -486,6 +502,25 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
     return scoped_ptr<net::test_server::HttpResponse>();
   }
 
+  // Shortcut to return the current MenuManager.
+  extensions::MenuManager* menu_manager() {
+    return extensions::MenuManager::Get(browser()->profile());
+  }
+
+  // This gets all the items that any extension has registered for possible
+  // inclusion in context menus.
+  MenuItem::List GetItems() {
+    MenuItem::List result;
+    std::set<MenuItem::ExtensionKey> extension_ids =
+        menu_manager()->ExtensionIds();
+    std::set<MenuItem::ExtensionKey>::iterator i;
+    for (i = extension_ids.begin(); i != extension_ids.end(); ++i) {
+      const MenuItem::List* list = menu_manager()->MenuItems(*i);
+      result.insert(result.end(), list->begin(), list->end());
+    }
+    return result;
+  }
+
   enum TestServer {
     NEEDS_TEST_SERVER,
     NO_TEST_SERVER
@@ -637,8 +672,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, AutoSize) {
 #if !defined(OS_CHROMEOS)
 // This test ensures <webview> doesn't crash in SW rendering when autosize is
 // turned on.
-// Flaky on Windows http://crbug.com/299507
-#if defined(OS_WIN) || defined(OS_MACOSX)
+#if defined(OS_MACOSX) || defined(USE_AURA)
 #define MAYBE_AutoSizeSW DISABLED_AutoSizeSW
 #else
 #define MAYBE_AutoSizeSW AutoSizeSW
@@ -969,7 +1003,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestResizeWebviewResizesContent) {
 
 // This test makes sure we do not crash if app is closed while interstitial
 // page is being shown in guest.
-IN_PROC_BROWSER_TEST_F(WebViewTest, InterstitialTeardown) {
+// Disabled under LeakSanitizer due to memory leaks. http://crbug.com/321662
+#if defined(LEAK_SANITIZER)
+#define MAYBE_InterstitialTeardown DISABLED_InterstitialTeardown
+#else
+#define MAYBE_InterstitialTeardown InterstitialTeardown
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_InterstitialTeardown) {
 #if defined(OS_WIN)
   // Flaky on XP bot http://crbug.com/297014
   if (base::win::GetVersion() <= base::win::VERSION_XP)
@@ -1036,6 +1076,51 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, NoPrerenderer) {
           Profile::FromBrowserContext(guest_web_contents->GetBrowserContext()));
   ASSERT_TRUE(prerender_link_manager != NULL);
   EXPECT_TRUE(prerender_link_manager->IsEmpty());
+}
+
+// Verify that existing <webview>'s are detected when the task manager starts
+// up.
+IN_PROC_BROWSER_TEST_F(WebViewTest, TaskManagerExistingWebView) {
+  ASSERT_TRUE(StartEmbeddedTestServer());
+
+  LoadGuest("/extensions/platform_apps/web_view/task_manager/guest.html",
+            "web_view/task_manager");
+
+  chrome::ShowTaskManager(browser());  // Show task manager AFTER guest loads.
+
+  const char* guest_title = "WebViewed test content";
+  const char* app_name = "<webview> task manager test";
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchWebView(guest_title)));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAboutBlankTab()));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchApp(app_name)));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchBackground(app_name)));
+
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyWebView()));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyTab()));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyApp()));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyBackground()));
+}
+
+// Verify that the task manager notices the creation of new <webview>'s.
+IN_PROC_BROWSER_TEST_F(WebViewTest, TaskManagerNewWebView) {
+  ASSERT_TRUE(StartEmbeddedTestServer());
+
+  chrome::ShowTaskManager(browser());  // Show task manager BEFORE guest loads.
+
+  LoadGuest("/extensions/platform_apps/web_view/task_manager/guest.html",
+            "web_view/task_manager");
+
+  const char* guest_title = "WebViewed test content";
+  const char* app_name = "<webview> task manager test";
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchWebView(guest_title)));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAboutBlankTab()));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchApp(app_name)));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchBackground(app_name)));
+
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyWebView()));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyTab()));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyApp()));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyBackground()));
 }
 
 // This tests cookie isolation for packaged apps with webview tags. It navigates
@@ -1505,6 +1590,69 @@ void WebViewTest::MediaAccessAPIAllowTestHelper(const std::string& test_name) {
   mock->WaitForSetMediaPermission();
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, ContextMenusAPI_Basic) {
+  GuestContentBrowserClient new_client;
+  content::ContentBrowserClient* old_client =
+      SetBrowserClientForTesting(&new_client);
+
+  ExtensionTestMessageListener launched_listener("Launched", false);
+  launched_listener.AlsoListenForFailureMessage("TEST_FAILED");
+  LoadAndLaunchPlatformApp("web_view/context_menus/basic");
+  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+
+  content::WebContents* guest_web_contents = new_client.WaitForGuestCreated();
+  ASSERT_TRUE(guest_web_contents);
+  SetBrowserClientForTesting(old_client);
+
+  content::WebContents* embedder = GetFirstAppWindowWebContents();
+  ASSERT_TRUE(embedder);
+
+  // 1. Basic property test.
+  ExecuteScriptWaitForTitle(embedder, "checkProperties()", "ITEM_CHECKED");
+
+  // 2. Create a menu item and wait for created callback to be called.
+  ExecuteScriptWaitForTitle(embedder, "createMenuItem()", "ITEM_CREATED");
+
+  // 3. Click the created item, wait for the click handlers to fire from JS.
+  ExtensionTestMessageListener click_listener("ITEM_CLICKED", false);
+  GURL page_url("http://www.google.com");
+  // Create and build our test context menu.
+  scoped_ptr<TestRenderViewContextMenu> menu(TestRenderViewContextMenu::Create(
+      guest_web_contents, page_url, GURL(), GURL()));
+
+  // Look for the extension item in the menu, and execute it.
+  int command_id = IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST;
+  ASSERT_TRUE(menu->IsCommandIdEnabled(command_id));
+  menu->ExecuteCommand(command_id, 0);
+
+  // Wait for embedder's script to tell us its onclick fired, it does
+  // chrome.test.sendMessage('ITEM_CLICKED')
+  ASSERT_TRUE(click_listener.WaitUntilSatisfied());
+
+  // 4. Update the item's title and verify.
+  ExecuteScriptWaitForTitle(embedder, "updateMenuItem()", "ITEM_UPDATED");
+  MenuItem::List items = GetItems();
+  ASSERT_EQ(1u, items.size());
+  MenuItem* item = items.at(0);
+  EXPECT_EQ("new_title", item->title());
+
+  // 5. Remove the item.
+  ExecuteScriptWaitForTitle(embedder, "removeItem()", "ITEM_REMOVED");
+  MenuItem::List items_after_removal = GetItems();
+  ASSERT_EQ(0u, items_after_removal.size());
+
+  // 6. Add some more items.
+  ExecuteScriptWaitForTitle(
+      embedder, "createThreeMenuItems()", "ITEM_MULTIPLE_CREATED");
+  MenuItem::List items_after_insertion = GetItems();
+  ASSERT_EQ(3u, items_after_insertion.size());
+
+  // 7. Test removeAll().
+  ExecuteScriptWaitForTitle(embedder, "removeAllItems()", "ITEM_ALL_REMOVED");
+  MenuItem::List items_after_all_removal = GetItems();
+  ASSERT_EQ(0u, items_after_all_removal.size());
+}
+
 IN_PROC_BROWSER_TEST_F(WebViewTest, MediaAccessAPIAllow_TestAllow) {
   MediaAccessAPIAllowTestHelper("testAllow");
 }
@@ -1786,13 +1934,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Dialog_TestAlertDialog) {
   TestHelper("testAlertDialog", "web_view/dialog", NO_TEST_SERVER);
 }
 
-// Fails on official Windows and Linux builds. See http://crbug.com/313868
-#if defined(GOOGLE_CHROME_BUILD) && (defined(OS_WIN) || defined(OS_LINUX))
-#define MAYBE_Dialog_TestConfirmDialog DISABLED_Dialog_TestConfirmDialog
-#else
-#define MAYBE_Dialog_TestConfirmDialog Dialog_TestConfirmDialog
-#endif
-IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_Dialog_TestConfirmDialog) {
+IN_PROC_BROWSER_TEST_F(WebViewTest, TestConfirmDialog) {
   TestHelper("testConfirmDialog", "web_view/dialog", NO_TEST_SERVER);
 }
 
@@ -1812,13 +1954,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Dialog_TestConfirmDialogDefaultGCCancel) {
              NO_TEST_SERVER);
 }
 
-// Fails on official Windows and Linux builds. See http://crbug.com/313868
-#if defined(GOOGLE_CHROME_BUILD) && (defined(OS_WIN) || defined(OS_LINUX))
-#define MAYBE_Dialog_TestPromptDialog DISABLED_Dialog_TestPromptDialog
-#else
-#define MAYBE_Dialog_TestPromptDialog Dialog_TestPromptDialog
-#endif
-IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_Dialog_TestPromptDialog) {
+IN_PROC_BROWSER_TEST_F(WebViewTest, Dialog_TestPromptDialog) {
   TestHelper("testPromptDialog", "web_view/dialog", NO_TEST_SERVER);
 }
 
@@ -1879,6 +2015,14 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestZoomAPI) {
   TestHelper("testZoomAPI", "web_view/shim", NO_TEST_SERVER);
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestFindAPI) {
+  TestHelper("testFindAPI", "web_view/shim", NO_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestFindAPI_findupdate) {
+  TestHelper("testFindAPI_findupdate", "web_view/shim", NO_TEST_SERVER);
+}
+
 // <webview> screenshot capture fails with ubercomp.
 // See http://crbug.com/327035.
 IN_PROC_BROWSER_TEST_P(WebViewCaptureTest,
@@ -1886,12 +2030,14 @@ IN_PROC_BROWSER_TEST_P(WebViewCaptureTest,
   TestHelper("testScreenshotCapture", "web_view/shim", NO_TEST_SERVER);
 }
 
+// Threaded compositing is always enabled on Aura and Mac.
+#if !defined(USE_AURA) && !defined(OS_MACOSX)
 INSTANTIATE_TEST_CASE_P(WithoutThreadedCompositor,
     WebViewCaptureTest,
     ::testing::Values(std::string(switches::kDisableThreadedCompositing)));
+#endif
 
-// http://crbug.com/171744
-#if !defined(OS_MACOSX)
+#if defined(USE_AURA) || defined(OS_MACOSX)
 INSTANTIATE_TEST_CASE_P(WithThreadedCompositor,
     WebViewCaptureTest,
     ::testing::Values(std::string(switches::kEnableThreadedCompositing)));

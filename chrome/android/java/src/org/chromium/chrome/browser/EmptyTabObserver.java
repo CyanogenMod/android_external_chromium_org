@@ -12,36 +12,45 @@ import android.view.ContextMenu;
 public class EmptyTabObserver implements TabObserver {
 
     @Override
-    public void onDestroyed(TabBase tab) { }
+    public void onDestroyed(Tab tab) { }
 
     @Override
-    public void onContentChanged(TabBase tab) { }
+    public void onContentChanged(Tab tab) { }
 
     @Override
-    public void onFaviconUpdated(TabBase tab) { }
+    public void onLoadUrl(Tab tab, String url, int loadType) { }
 
     @Override
-    public void onTitleUpdated(TabBase tab) { }
+    public void onFaviconUpdated(Tab tab) { }
 
     @Override
-    public void onUrlUpdated(TabBase tab) { }
+    public void onTitleUpdated(Tab tab) { }
 
     @Override
-    public void onWebContentsSwapped(TabBase tab, boolean didStartLoad, boolean didFinishLoad) { }
+    public void onUrlUpdated(Tab tab) { }
 
     @Override
-    public void onContextMenuShown(TabBase tab, ContextMenu menu) { }
+    public void onWebContentsSwapped(Tab tab, boolean didStartLoad, boolean didFinishLoad) { }
 
     @Override
-    public void onLoadProgressChanged(TabBase tab, int progress) { }
+    public void onContextMenuShown(Tab tab, ContextMenu menu) { }
 
     @Override
-    public void onUpdateUrl(TabBase tab, String url) { }
+    public void onLoadStarted(Tab tabBase) { }
 
     @Override
-    public void onToggleFullscreenMode(TabBase tab, boolean enable) { }
+    public void onLoadStopped(Tab tabBase) { }
 
     @Override
-    public void onDidFailLoad(TabBase tab, boolean isProvisionalLoad, boolean isMainFrame,
+    public void onLoadProgressChanged(Tab tab, int progress) { }
+
+    @Override
+    public void onUpdateUrl(Tab tab, String url) { }
+
+    @Override
+    public void onToggleFullscreenMode(Tab tab, boolean enable) { }
+
+    @Override
+    public void onDidFailLoad(Tab tab, boolean isProvisionalLoad, boolean isMainFrame,
             int errorCode, String description, String failingUrl) { }
 }

@@ -23,7 +23,7 @@
 #include "chrome/browser/ui/libgtk2ui/gtk2_signal.h"
 #include "chrome/browser/ui/libgtk2ui/select_file_dialog_impl.h"
 #include "grit/ui_strings.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
@@ -42,7 +42,7 @@ void SetGtkTransientForAura(GtkWidget* dialog, aura::Window* parent) {
   // display server ever happens. Otherwise, this will crash.
   XSetTransientForHint(GDK_WINDOW_XDISPLAY(gdk_window),
                        GDK_WINDOW_XID(gdk_window),
-                       parent->GetDispatcher()->host()->GetAcceleratedWidget());
+                       parent->GetHost()->GetAcceleratedWidget());
 
   // We also set the |parent| as a property of |dialog|, so that we can unlink
   // the two later.

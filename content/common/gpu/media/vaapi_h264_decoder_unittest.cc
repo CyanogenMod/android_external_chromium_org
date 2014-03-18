@@ -150,7 +150,7 @@ bool VaapiH264DecoderLoop::Initialize(base::FilePath input_file,
   // This creates or truncates output_file.
   // Without it, AppendToFile() will not work.
   if (!output_file.empty()) {
-    if (file_util::WriteFile(output_file, NULL, 0) != 0) {
+    if (base::WriteFile(output_file, NULL, 0) != 0) {
       return false;
     }
     output_file_ = output_file;
@@ -248,7 +248,7 @@ bool VaapiH264DecoderLoop::ProcessVideoFrame(
     int to_write = media::VideoFrame::PlaneAllocationSize(
         frame->format(), i, frame->coded_size());
     const char* buf = reinterpret_cast<const char*>(frame->data(i));
-    int written = file_util::AppendToFile(output_file_, buf, to_write);
+    int written = base::AppendToFile(output_file_, buf, to_write);
     if (written != to_write)
       return false;
   }
@@ -354,8 +354,6 @@ int main(int argc, char** argv) {
   // Needed to enable DVLOG through --vmodule.
   logging::LoggingSettings settings;
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
-  settings.dcheck_state =
-      logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
   CHECK(logging::InitLogging(settings));
 
   // Process command line.

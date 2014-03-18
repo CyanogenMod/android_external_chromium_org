@@ -10,7 +10,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "ash/display/output_configurator_animation.h"
-#include "chromeos/display/output_configurator.h"
+#include "ui/display/chromeos/output_configurator.h"
 #endif
 
 namespace ash {
@@ -22,7 +22,7 @@ internal::RootWindowLayoutManager* ShellTestApi::root_window_layout() {
   return shell_->GetPrimaryRootWindowController()->root_window_layout();
 }
 
-views::corewm::InputMethodEventFilter*
+wm::InputMethodEventFilter*
 ShellTestApi::input_method_event_filter() {
   return shell_->input_method_filter_.get();
 }
@@ -55,6 +55,11 @@ internal::DragDropController* ShellTestApi::drag_drop_controller() {
 
 internal::AppListController* ShellTestApi::app_list_controller() {
   return shell_->app_list_controller_.get();
+}
+
+internal::MaximizeModeWindowManager*
+ShellTestApi::maximize_mode_window_manager() {
+  return shell_->maximize_mode_window_manager_.get();
 }
 
 void ShellTestApi::DisableOutputConfiguratorAnimation() {

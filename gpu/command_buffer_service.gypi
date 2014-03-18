@@ -12,18 +12,18 @@
     ],
   },
   'dependencies': [
-    '../third_party/re2/re2.gyp:re2',
     '../base/base.gyp:base',
     '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
     '../crypto/crypto.gyp:crypto',
+    '../third_party/khronos/khronos.gyp:khronos_headers',
+    '../third_party/protobuf/protobuf.gyp:protobuf_lite',
+    '../third_party/re2/re2.gyp:re2',
+    '../third_party/smhasher/smhasher.gyp:cityhash',
+    '../ui/base/ui_base.gyp:ui_base',
     '../ui/gfx/gfx.gyp:gfx',
     '../ui/gfx/gfx.gyp:gfx_geometry',
     '../ui/gl/gl.gyp:gl',
-    '../ui/ui.gyp:ui',
     '<(angle_path)/src/build_angle.gyp:translator',
-    '../third_party/khronos/khronos.gyp:khronos_headers',
-    '../third_party/protobuf/protobuf.gyp:protobuf_lite',
-    '../third_party/smhasher/smhasher.gyp:cityhash',
   ],
   'sources': [
     'command_buffer/service/async_pixel_transfer_delegate.cc',
@@ -99,6 +99,8 @@
     'command_buffer/service/logger.h',
     'command_buffer/service/mailbox_manager.cc',
     'command_buffer/service/mailbox_manager.h',
+    'command_buffer/service/mailbox_synchronizer.cc',
+    'command_buffer/service/mailbox_synchronizer.h',
     'command_buffer/service/memory_program_cache.h',
     'command_buffer/service/memory_program_cache.cc',
     'command_buffer/service/mocks.h',
@@ -120,6 +122,8 @@
     'command_buffer/service/shader_translator_cache.cc',
     'command_buffer/service/stream_texture_manager_in_process_android.h',
     'command_buffer/service/stream_texture_manager_in_process_android.cc',
+    'command_buffer/service/texture_definition.h',
+    'command_buffer/service/texture_definition.cc',
     'command_buffer/service/texture_manager.h',
     'command_buffer/service/texture_manager.cc',
     'command_buffer/service/transfer_buffer_manager.cc',
@@ -145,6 +149,13 @@
         'command_buffer/service/async_pixel_transfer_manager_egl.cc',
         'command_buffer/service/async_pixel_transfer_manager_egl.h',
       ],
+    }],
+    ['OS=="android"', {
+      'configurations': {
+        'Release': {
+          'cflags': ['-O2']
+        }
+      }
     }]
   ],
 }

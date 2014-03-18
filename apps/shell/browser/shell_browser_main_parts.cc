@@ -4,6 +4,7 @@
 
 #include "apps/shell/browser/shell_browser_main_parts.h"
 
+#include "apps/shell/browser/shell_apps_client.h"
 #include "apps/shell/browser/shell_browser_context.h"
 #include "apps/shell/browser/shell_extension_system.h"
 #include "apps/shell/browser/shell_extension_system_factory.h"
@@ -14,15 +15,16 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/run_loop.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "content/public/common/result_codes.h"
 #include "content/shell/browser/shell_devtools_delegate.h"
 #include "content/shell/browser/shell_net_log.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/renderer_startup_helper.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_screen.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/ime/input_method_initializer.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/screen.h"
@@ -39,7 +41,7 @@ using extensions::ShellExtensionSystem;
 namespace apps {
 namespace {
 
-// Register additional BrowserContextKeyedService factories here. See
+// Register additional KeyedService factories here. See
 // ChromeBrowserMainExtraPartsProfiles for details.
 void EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::RendererStartupHelperFactory::GetInstance();
@@ -111,8 +113,11 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
       new extensions::ShellExtensionsBrowserClient(browser_context_.get()));
   extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
 
+  apps_client_.reset(new ShellAppsClient(browser_context_.get()));
+  AppsClient::Set(apps_client_.get());
+
   // Create our custom ExtensionSystem first because other
-  // BrowserContextKeyedServices depend on it.
+  // KeyedServices depend on it.
   // TODO(yoz): Move this after EnsureBrowserContextKeyedServiceFactoriesBuilt.
   CreateExtensionSystem();
 
@@ -136,7 +141,7 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
     // TODO(jamescook): For demo purposes create a window with a WebView just
     // to ensure that the content module is properly initialized.
     webview_window_.reset(CreateWebViewWindow(browser_context_.get(),
-        wm_test_helper_->root_window()->window()));
+        wm_test_helper_->host()->window()));
     webview_window_->Show();
   }
 }
@@ -149,7 +154,6 @@ bool ShellBrowserMainParts::MainMessageLoopRun(int* result_code)  {
 }
 
 void ShellBrowserMainParts::PostMainMessageLoopRun() {
-  devtools_delegate_->Stop();
   DestroyViewsDelegate();
   DestroyRootWindow();
   BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(
@@ -161,8 +165,9 @@ void ShellBrowserMainParts::PostMainMessageLoopRun() {
   aura::Env::DeleteInstance();
 }
 
-void ShellBrowserMainParts::OnWindowTreeHostCloseRequested(
-    const aura::RootWindow* root) {
+void ShellBrowserMainParts::OnHostCloseRequested(
+    const aura::WindowTreeHost* host) {
+  extension_system_->CloseApp();
   base::MessageLoop::current()->PostTask(FROM_HERE,
                                          base::MessageLoop::QuitClosure());
 }
@@ -176,16 +181,17 @@ void ShellBrowserMainParts::CreateRootWindow() {
   // Set up basic pieces of views::corewm.
   wm_test_helper_.reset(new wm::WMTestHelper(gfx::Size(800, 600)));
   // Ensure the X window gets mapped.
-  wm_test_helper_->root_window()->host()->Show();
+  wm_test_helper_->host()->Show();
   // Watch for the user clicking the close box.
-  wm_test_helper_->root_window()->AddRootWindowObserver(this);
+  wm_test_helper_->host()->AddObserver(this);
 }
 
 void ShellBrowserMainParts::DestroyRootWindow() {
   // We should close widget before destroying root window.
   webview_window_.reset();
-  wm_test_helper_->root_window()->RemoveRootWindowObserver(this);
-  wm_test_helper_->root_window()->PrepareForShutdown();
+  devtools_delegate_->Stop();
+  wm_test_helper_->host()->RemoveObserver(this);
+  wm_test_helper_->host()->dispatcher()->PrepareForShutdown();
   wm_test_helper_.reset();
   ui::ShutdownInputMethodForTesting();
 }
@@ -193,7 +199,7 @@ void ShellBrowserMainParts::DestroyRootWindow() {
 void ShellBrowserMainParts::CreateViewsDelegate() {
   DCHECK(!views::ViewsDelegate::views_delegate);
   views::ViewsDelegate::views_delegate =
-      new ShellViewsDelegate(wm_test_helper_->root_window()->window());
+      new ShellViewsDelegate(wm_test_helper_->host()->window());
 }
 
 void ShellBrowserMainParts::DestroyViewsDelegate() {

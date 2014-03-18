@@ -45,6 +45,8 @@ struct ReliablePacketInfo;
 // network requests are performed on.
 class GCM_EXPORT MCSClient {
  public:
+  // Any change made to this enum should have corresponding change in the
+  // GetStateString(...) function.
   enum State {
     UNINITIALIZED,  // Uninitialized.
     LOADED,         // GCM Load finished, waiting to connect.
@@ -84,7 +86,8 @@ class GCM_EXPORT MCSClient {
            const std::string& message_id,
            MessageSendStatus status)> OnMessageSentCallback;
 
-  MCSClient(base::Clock* clock,
+  MCSClient(const std::string& version_string,
+            base::Clock* clock,
             ConnectionFactory* connection_factory,
             GCMStore* gcm_store);
   virtual ~MCSClient();
@@ -121,15 +124,11 @@ class GCM_EXPORT MCSClient {
   // |message_sent_callback_| is invoked with a TTL expiration error.
   virtual void SendMessage(const MCSMessage& message);
 
-  // Disconnects the client and permanently destroys the persistent GCM store.
-  // WARNING: This is permanent, and the client must be recreated with new
-  // credentials afterwards.
-  // TODO(jianli): destroying the persistent GCM store should be moved to
-  // GCMClient.
-  void Destroy();
-
   // Returns the current state of the client.
   State state() const { return state_; }
+
+  // Returns text representation of the state enum.
+  std::string GetStateString() const;
 
  protected:
   // Sets a |gcm_store| for testing. Does not take ownership.
@@ -196,6 +195,9 @@ class GCM_EXPORT MCSClient {
   // Pops the next message from the front of the send queue (cleaning up
   // any associated state).
   MCSPacketInternal PopMessageForSend();
+
+  // Local version string. Sent on login.
+  const std::string version_string_;
 
   // Clock for enforcing TTL. Passed in for testing.
   base::Clock* const clock_;

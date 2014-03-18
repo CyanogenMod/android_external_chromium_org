@@ -491,7 +491,7 @@ html[dir=rtl] #managed-user-creation-flip-photo {
 
 .camera:not(.live) #managed-user-creation-discard-photo {
   background: url('chrome://theme/IDR_USER_IMAGE_RECYCLE')
-      no-repeat center 0;
+      no-repeat center center;
   display: block;
 }
 
@@ -503,6 +503,10 @@ html[dir=rtl] #managed-user-creation-flip-photo {
 
 #managed-user-creation-image-preview .perspective-box {
   -webkit-perspective: 600px;
+   border: solid 1px #cacaca;
+   border-radius: 4px;
+   padding: 2px;
+   width: 220px;
 }
 
 .managed-user-creation-image-stream-area .spinner {

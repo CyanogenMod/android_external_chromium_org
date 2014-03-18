@@ -32,7 +32,6 @@ using blink::WebIDBMetadata;
 using blink::WebString;
 using blink::WebVector;
 using base::ThreadLocalPointer;
-using webkit_glue::WorkerTaskRunner;
 
 namespace content {
 static base::LazyInstance<ThreadLocalPointer<IndexedDBDispatcher> >::Leaky
@@ -45,7 +44,9 @@ IndexedDBDispatcher* const kHasBeenDeleted =
 
 }  // unnamed namespace
 
-const size_t kMaxIDBValueSizeInBytes = 64 * 1024 * 1024;
+const size_t kMaxIDBMessageOverhead = 1024 * 1024;  // 1MB; arbitrarily chosen.
+const size_t kMaxIDBValueSizeInBytes =
+    IPC::Channel::kMaximumMessageSize - kMaxIDBMessageOverhead;
 
 IndexedDBDispatcher::IndexedDBDispatcher(ThreadSafeSender* thread_safe_sender)
     : thread_safe_sender_(thread_safe_sender) {
@@ -75,7 +76,7 @@ IndexedDBDispatcher* IndexedDBDispatcher::ThreadSpecificInstance(
 
   IndexedDBDispatcher* dispatcher = new IndexedDBDispatcher(thread_safe_sender);
   if (WorkerTaskRunner::Instance()->CurrentWorkerId())
-    webkit_glue::WorkerTaskRunner::Instance()->AddStopObserver(dispatcher);
+    WorkerTaskRunner::Instance()->AddStopObserver(dispatcher);
   return dispatcher;
 }
 
@@ -329,7 +330,7 @@ void IndexedDBDispatcher::RequestIDBDatabasePut(
     const WebVector<long long>& index_ids,
     const WebVector<WebVector<WebIDBKey> >& index_keys) {
 
-  if (value.size() > kMaxIDBValueSizeInBytes) {
+  if (value.size() + key.size_estimate() > kMaxIDBValueSizeInBytes) {
     callbacks->onError(WebIDBDatabaseError(
         blink::WebIDBDatabaseExceptionUnknownError,
         WebString::fromUTF8(base::StringPrintf(

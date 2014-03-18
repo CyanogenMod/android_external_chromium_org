@@ -33,8 +33,8 @@
 
 #if defined(USE_AURA)
 #include "ui/aura/remote_window_tree_host_win.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 namespace {
@@ -601,7 +601,7 @@ void SelectFileDialogImpl::SelectFileImpl(
     }
   }
   HWND owner = owning_window && owning_window->GetRootWindow()
-      ? owning_window->GetDispatcher()->host()->GetAcceleratedWidget() : NULL;
+      ? owning_window->GetHost()->GetAcceleratedWidget() : NULL;
 #else
   HWND owner = owning_window;
 #endif
@@ -623,7 +623,7 @@ bool SelectFileDialogImpl::IsRunning(gfx::NativeWindow owning_window) const {
 #if defined(USE_AURA)
   if (!owning_window->GetRootWindow())
     return false;
-  HWND owner = owning_window->GetDispatcher()->host()->GetAcceleratedWidget();
+  HWND owner = owning_window->GetHost()->GetAcceleratedWidget();
 #else
   HWND owner = owning_window;
 #endif

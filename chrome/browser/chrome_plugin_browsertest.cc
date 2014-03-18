@@ -35,8 +35,8 @@
 
 #if defined(OS_WIN)
 #include "content/public/browser/web_contents_view.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 using content::BrowserThread;
@@ -327,8 +327,8 @@ IN_PROC_BROWSER_TEST_F(ChromePluginTest, WindowedNPAPIPluginHidden) {
   EXPECT_EQ(expected_title2, title_watcher2.WaitAndGetTitle());
 
   HWND child = NULL;
-  HWND hwnd = tab->GetView()->GetNativeView()->GetDispatcher()->host()->
-      GetAcceleratedWidget();
+  HWND hwnd =
+      tab->GetView()->GetNativeView()->GetHost()->GetAcceleratedWidget();
   EnumChildWindows(hwnd, EnumerateChildren,reinterpret_cast<LPARAM>(&child));
 
   RECT region;

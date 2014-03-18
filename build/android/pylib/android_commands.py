@@ -6,10 +6,12 @@
 
 Assumes adb binary is currently on system path.
 """
+# pylint: disable-all
 
 import collections
 import datetime
 import inspect
+import json
 import logging
 import os
 import re
@@ -27,7 +29,7 @@ import system_properties
 
 try:
   from pylib import pexpect
-except:
+except ImportError:
   pexpect = None
 
 sys.path.append(os.path.join(
@@ -77,6 +79,29 @@ def GetAVDs():
   return avds
 
 
+def ResetBadDevices():
+  """Removes the file that keeps track of bad devices for a current build."""
+  if os.path.exists(constants.BAD_DEVICES_JSON):
+    os.remove(constants.BAD_DEVICES_JSON)
+
+
+def ExtendBadDevices(devices):
+  """Adds devices to BAD_DEVICES_JSON file.
+
+  The devices listed in the BAD_DEVICES_JSON file will not be returned by
+  GetAttachedDevices.
+
+  Args:
+    devices: list of bad devices to be added to the BAD_DEVICES_JSON file.
+  """
+  if os.path.exists(constants.BAD_DEVICES_JSON):
+    with open(constants.BAD_DEVICES_JSON, 'r') as f:
+      bad_devices = json.load(f)
+    devices.extend(bad_devices)
+  with open(constants.BAD_DEVICES_JSON, 'w') as f:
+    json.dump(list(set(devices)), f)
+
+
 def GetAttachedDevices(hardware=True, emulator=True, offline=False):
   """Returns a list of attached, android devices and emulators.
 
@@ -123,6 +148,13 @@ def GetAttachedDevices(hardware=True, emulator=True, offline=False):
   # Now add offline devices if offline is true
   if offline:
     devices = devices + offline_devices
+
+  # Remove bad devices listed in the bad_devices json file.
+  if os.path.exists(constants.BAD_DEVICES_JSON):
+    with open(constants.BAD_DEVICES_JSON, 'r') as f:
+      bad_devices = json.load(f)
+    logging.info('Avoiding bad devices %s', ' '.join(bad_devices))
+    devices = [device for device in devices if device not in bad_devices]
 
   preferred_device = os.environ.get('ANDROID_SERIAL')
   if preferred_device in devices:
@@ -231,14 +263,12 @@ def GetLogTimestamp(log_line, year):
 class AndroidCommands(object):
   """Helper class for communicating with Android device via adb."""
 
-  def __init__(self, device=None, api_strict_mode=False):
+  def __init__(self, device=None):
     """Constructor.
 
     Args:
       device: If given, adb commands are only send to the device of this ID.
           Otherwise commands are sent to all attached devices.
-      api_strict_mode: A boolean indicating whether fatal errors should be
-          raised if this API is used improperly.
     """
     adb_dir = os.path.dirname(constants.GetAdbPath())
     if adb_dir and adb_dir not in os.environ['PATH'].split(os.pathsep):
@@ -257,15 +287,8 @@ class AndroidCommands(object):
     self._actual_push_size = 0
     self._external_storage = ''
     self._util_wrapper = ''
-    self._api_strict_mode = api_strict_mode
     self._system_properties = system_properties.SystemProperties(self.Adb())
     self._push_if_needed_cache = {}
-
-    if not self._api_strict_mode:
-      logging.warning(
-          'API STRICT MODE IS DISABLED.\n'
-          'It should be enabled as soon as possible as it will eventually '
-          'become the default.')
 
   @property
   def system_properties(self):
@@ -281,7 +304,8 @@ class AndroidCommands(object):
 
   def Adb(self):
     """Returns our AdbInterface to avoid us wrapping all its methods."""
-    # TODO(tonyg): Disable this method when in _api_strict_mode.
+    # TODO(tonyg): Goal should be to git rid of this method by making this API
+    # complete and alleviating the need.
     return self._adb
 
   def GetDevice(self):
@@ -350,7 +374,7 @@ class AndroidCommands(object):
         logging.warning('Restarting and retrying after timeout: %s', e)
         retries -= 1
         self.RestartShell()
-    raise last_err  # Only reached after max retries, re-raise the last error.
+    raise last_err # Only reached after max retries, re-raise the last error.
 
   def RestartShell(self):
     """Restarts the shell on the device. Does not block for it to return."""
@@ -489,7 +513,7 @@ class AndroidCommands(object):
     if not adb_pids:
       raise errors.MsgException('Unable to obtain adbd pid')
     try:
-      self.KillAll('adbd', signal=signal.SIGTERM, with_su=True)
+      self.KillAll('adbd', signum=signal.SIGTERM, with_su=True)
       logging.info('Waiting for device to settle...')
       self._adb.SendCommand('wait-for-device')
       new_adb_pids = self.ExtractPid('adbd')
@@ -508,7 +532,8 @@ class AndroidCommands(object):
     if ret != 0:
       raise errors.MsgException('StartAdbServer: %d' % ret)
 
-  def KillAdbServer(self):
+  @staticmethod
+  def KillAdbServer():
     """Kill adb server."""
     adb_cmd = [constants.GetAdbPath(), 'kill-server']
     ret = cmd_helper.RunCmd(adb_cmd)
@@ -611,12 +636,9 @@ class AndroidCommands(object):
         (base_command not in whitelisted_callers or
          whitelisted_callers[base_command] not in [
           f[3] for f in inspect.stack()])):
-      error_msg = ('%s cannot be run directly. Instead use: %s' %
+      error_msg = ('%s should not be run directly. Instead use: %s' %
                    (base_command, preferred_apis[base_command]))
-      if self._api_strict_mode:
-        raise ValueError(error_msg)
-      else:
-        logging.warning(error_msg)
+      raise ValueError(error_msg)
 
   # It is tempting to turn this function into a generator, however this is not
   # possible without using a private (local) adb_shell instance (to ensure no
@@ -638,7 +660,8 @@ class AndroidCommands(object):
     """
     self._CheckCommandIsValid(command)
     self._LogShell(command)
-    if "'" in command: logging.warning(command + " contains ' quotes")
+    if "'" in command:
+      logging.warning(command + " contains ' quotes")
     result = self._adb.SendShellCommand(
         "'%s'" % command, timeout_time).splitlines()
     # TODO(b.kelemen): we should really be able to drop the stderr of the
@@ -669,12 +692,12 @@ class AndroidCommands(object):
       lines = lines[:-1] + [last_line[:status_pos]]
     return (status, lines)
 
-  def KillAll(self, process, signal=9, with_su=False):
+  def KillAll(self, process, signum=9, with_su=False):
     """Android version of killall, connected via adb.
 
     Args:
       process: name of the process to kill off.
-      signal: signal to use, 9 (SIGKILL) by default.
+      signum: signal to use, 9 (SIGKILL) by default.
       with_su: wether or not to use su to kill the processes.
 
     Returns:
@@ -682,7 +705,7 @@ class AndroidCommands(object):
     """
     pids = self.ExtractPid(process)
     if pids:
-      cmd = 'kill -%d %s' % (signal, ' '.join(pids))
+      cmd = 'kill -%d %s' % (signum, ' '.join(pids))
       if with_su:
         self.RunShellCommandWithSU(cmd)
       else:
@@ -714,7 +737,8 @@ class AndroidCommands(object):
         return 0
     return processes_killed
 
-  def _GetActivityCommand(self, package, activity, wait_for_completion, action,
+  @staticmethod
+  def _GetActivityCommand(package, activity, wait_for_completion, action,
                           category, data, extras, trace_file_name, force_stop,
                           flags):
     """Creates command to start |package|'s activity on the device.
@@ -1073,7 +1097,7 @@ class AndroidCommands(object):
     r = self.RunShellCommandWithSU('cat /dev/null')
     return r == [] or r[0].strip() == ''
 
-  def GetProtectedFileContents(self, filename, log_result=False):
+  def GetProtectedFileContents(self, filename):
     """Gets contents from the protected file specified by |filename|.
 
     This is less efficient than GetFileContents, but will work for protected
@@ -1321,7 +1345,8 @@ class AndroidCommands(object):
           # Note this will block for upto the timeout _per log line_, so we need
           # to calculate the overall timeout remaining since t0.
           time_remaining = t0 + timeout - time.time()
-          if time_remaining < 0: raise pexpect.TIMEOUT(self._logcat)
+          if time_remaining < 0:
+            raise pexpect.TIMEOUT(self._logcat)
           self._logcat.expect(PEXPECT_LINE_RE, timeout=time_remaining)
           line = self._logcat.match.group(1)
           if error_re:
@@ -1350,7 +1375,7 @@ class AndroidCommands(object):
                                      timeout=self._logcat.timeout,
                                      logfile=self._logcat.logfile)
 
-  def StartRecordingLogcat(self, clear=True, filters=['*:v']):
+  def StartRecordingLogcat(self, clear=True, filters=None):
     """Starts recording logcat output to eventually be saved as a string.
 
     This call should come before some series of tests are run, with either
@@ -1360,6 +1385,8 @@ class AndroidCommands(object):
       clear: True if existing log output should be cleared.
       filters: A list of logcat filters to be used.
     """
+    if not filters:
+      filters = ['*:v']
     if clear:
       self._adb.SendCommand('logcat -c')
     logcat_command = 'adb %s logcat -v threadtime %s' % (self._adb._target_arg,
@@ -1404,7 +1431,8 @@ class AndroidCommands(object):
     self._logcat_tmpoutfile = None
     return output
 
-  def SearchLogcatRecord(self, record, message, thread_id=None, proc_id=None,
+  @staticmethod
+  def SearchLogcatRecord(record, message, thread_id=None, proc_id=None,
                          log_level=None, component=None):
     """Searches the specified logcat output and returns results.
 
@@ -1520,8 +1548,7 @@ class AndroidCommands(object):
     usage_dict = collections.defaultdict(int)
     smaps = collections.defaultdict(dict)
     current_smap = ''
-    for line in self.GetProtectedFileContents('/proc/%s/smaps' % pid,
-                                              log_result=False):
+    for line in self.GetProtectedFileContents('/proc/%s/smaps' % pid):
       items = line.split()
       # See man 5 proc for more details. The format is:
       # address perms offset dev inode pathname
@@ -1541,8 +1568,7 @@ class AndroidCommands(object):
       # Presumably the process died between ps and calling this method.
       logging.warning('Could not find memory usage for pid ' + str(pid))
 
-    for line in self.GetProtectedFileContents('/d/nvmap/generic-0/clients',
-                                              log_result=False):
+    for line in self.GetProtectedFileContents('/d/nvmap/generic-0/clients'):
       match = re.match(NVIDIA_MEMORY_INFO_RE, line)
       if match and match.group('pid') == pid:
         usage_bytes = int(match.group('usage_bytes'))
@@ -1550,8 +1576,7 @@ class AndroidCommands(object):
         break
 
     peak_value_kb = 0
-    for line in self.GetProtectedFileContents('/proc/%s/status' % pid,
-                                              log_result=False):
+    for line in self.GetProtectedFileContents('/proc/%s/status' % pid):
       if not line.startswith('VmHWM:'):  # Format: 'VmHWM: +[0-9]+ kB'
         continue
       peak_value_kb = int(line.split(':')[1].strip().split(' ')[0])
@@ -1774,6 +1799,37 @@ class AndroidCommands(object):
     if match:
       logging.error('Still showing a %s dialog for %s' % match.groups())
     return package
+
+  def EfficientDeviceDirectoryCopy(self, source, dest):
+    """ Copy a directory efficiently on the device
+
+    Uses a shell script running on the target to copy new and changed files the
+    source directory to the destination directory and remove added files. This
+    is in some cases much faster than cp -r.
+
+    Args:
+      source: absolute path of source directory
+      dest: absolute path of destination directory
+    """
+    logging.info('In EfficientDeviceDirectoryCopy %s %s', source, dest)
+    temp_script_file = self._GetDeviceTempFileName(
+        AndroidCommands._TEMP_SCRIPT_FILE_BASE_FMT)
+    host_script_path = os.path.join(constants.DIR_SOURCE_ROOT,
+                                    'build',
+                                    'android',
+                                    'pylib',
+                                    'efficient_android_directory_copy.sh')
+    self._adb.Push(host_script_path, temp_script_file)
+    self.EnableAdbRoot
+    out = self.RunShellCommand('sh %s %s %s' % (temp_script_file, source, dest),
+                               timeout_time=120)
+    if self._device:
+      device_repr = self._device[-4:]
+    else:
+      device_repr = '????'
+    for line in out:
+      logging.info('[%s]> %s', device_repr, line)
+    self.RunShellCommand('rm %s' % temp_script_file)
 
 
 class NewLineNormalizer(object):

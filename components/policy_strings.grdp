@@ -197,6 +197,9 @@
   <message name="IDS_POLICY_JSON_PARSE_ERROR" desc="The text displayed in the status column when a policy that should have been specified in JSON format could not be parsed.">
     Failed to parse JSON format: <ph name="JSON_PARSE_ERROR">$1<ex>Unexpected token.</ex></ph>
   </message>
+  <message name="IDS_POLICY_SCOPE_ERROR" desc="Text displayed in the status column when a policy is set in an unsupported scope.">
+    Policy scope is not supported.
+  </message>
   <message name="IDS_POLICY_OK" desc="Text displayed in the status column when a valid value is set for a policy.">
     OK
   </message>
@@ -280,12 +283,12 @@
   <message name="IDS_POLICY_SCOPE_USER" desc="Text displayed in the Applies to column when a policy applies to the current user only.">
     Current user
   </message>
-  <if expr="not is_android and not pp_ifdef('chromeos')">
+  <if expr="not is_android and not chromeos">
     <message name="IDS_POLICY_SCOPE_DEVICE" desc="Text displayed in the Applies to column when a policy applies to everyone on the machine.">
       Machine
     </message>
   </if>
-  <if expr="pp_ifdef('chromeos') or is_android">
+  <if expr="chromeos or is_android">
     <message name="IDS_POLICY_SCOPE_DEVICE" desc="Mobile: Text displayed in the Applies To column when a policy applies to everyone on the device.">
       Device
     </message>
@@ -297,7 +300,7 @@
     Mandatory
   </message>
 
-  <if expr="is_android">
+  <if expr="is_android or is_ios">
     <message name="IDS_POLICY_MANAGED_BOOKMARKS" desc="Mobile: name of the managed bookmarks folder">
       <ph name="DOMAIN">$1<ex>google.com</ex></ph> bookmarks
     </message>

@@ -9,7 +9,6 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
-#include "base/debug/trace_event.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "jni/VideoCapture_jni.h"
@@ -232,7 +231,6 @@ void VideoCaptureDeviceAndroid::OnFrameAvailable(
     jbyteArray data,
     jint length,
     jint rotation) {
-  TRACE_EVENT0("video", "VideoCaptureDeviceAndroid::OnFrameAvailable");
   DVLOG(3) << "VideoCaptureDeviceAndroid::OnFrameAvailable: length =" << length;
 
   base::AutoLock lock(lock_);
@@ -257,11 +255,11 @@ void VideoCaptureDeviceAndroid::OnFrameAvailable(
   if (expected_next_frame_time_ <= current_time) {
     expected_next_frame_time_ += frame_interval_;
 
-    client_->OnIncomingCapturedFrame(reinterpret_cast<uint8*>(buffer),
-                                     length,
-                                     base::TimeTicks::Now(),
-                                     rotation,
-                                     capture_format_);
+    client_->OnIncomingCapturedData(reinterpret_cast<uint8*>(buffer),
+                                    length,
+                                    capture_format_,
+                                    rotation,
+                                    base::TimeTicks::Now());
   }
 
   env->ReleaseByteArrayElements(data, buffer, JNI_ABORT);

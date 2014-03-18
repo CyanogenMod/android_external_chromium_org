@@ -21,7 +21,23 @@ namespace cast {
 namespace {
 static const uint32 kSendingSsrc = 0x12345678;
 static const uint32 kMediaSsrc = 0x87654321;
+static const int16 kDefaultDelay = 100;
 static const std::string kCName("test@10.1.1.1");
+
+transport::RtcpReportBlock GetReportBlock() {
+  transport::RtcpReportBlock report_block;
+  // Initialize remote_ssrc to a "clearly illegal" value.
+  report_block.remote_ssrc = 0xDEAD;
+  report_block.media_ssrc = kMediaSsrc;  // SSRC of the RTP packet sender.
+  report_block.fraction_lost = kLoss >> 24;
+  report_block.cumulative_lost = kLoss;  // 24 bits valid.
+  report_block.extended_high_sequence_number = kExtendedMax;
+  report_block.jitter = kTestJitter;
+  report_block.last_sr = kLastSr;
+  report_block.delay_since_last_sr = kDelayLastSr;
+  return report_block;
+}
+
 }  // namespace
 
 class TestRtcpTransport : public transport::PacedPacketSender {
@@ -90,7 +106,7 @@ TEST_F(RtcpSenderTest, RtcpReceiverReport) {
   test_transport_.SetExpectedRtcpPacket(p1.GetPacket());
 
   rtcp_sender_->SendRtcpFromRtpReceiver(
-      RtcpSender::kRtcpRr, NULL, NULL, NULL, NULL);
+      transport::kRtcpRr, NULL, NULL, NULL, NULL, kDefaultDelay);
 
   EXPECT_EQ(1, test_transport_.packet_count());
 
@@ -101,19 +117,10 @@ TEST_F(RtcpSenderTest, RtcpReceiverReport) {
   p2.AddSdesCname(kSendingSsrc, kCName);
   test_transport_.SetExpectedRtcpPacket(p2.GetPacket().Pass());
 
-  transport::RtcpReportBlock report_block;
-  // Initialize remote_ssrc to a "clearly illegal" value.
-  report_block.remote_ssrc = 0xDEAD;
-  report_block.media_ssrc = kMediaSsrc;  // SSRC of the RTP packet sender.
-  report_block.fraction_lost = kLoss >> 24;
-  report_block.cumulative_lost = kLoss;  // 24 bits valid.
-  report_block.extended_high_sequence_number = kExtendedMax;
-  report_block.jitter = kTestJitter;
-  report_block.last_sr = kLastSr;
-  report_block.delay_since_last_sr = kDelayLastSr;
+  transport::RtcpReportBlock report_block = GetReportBlock();
 
   rtcp_sender_->SendRtcpFromRtpReceiver(
-      RtcpSender::kRtcpRr, &report_block, NULL, NULL, NULL);
+      transport::kRtcpRr, &report_block, NULL, NULL, NULL, kDefaultDelay);
 
   EXPECT_EQ(2, test_transport_.packet_count());
 }
@@ -128,27 +135,19 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithRrtr) {
   p.AddXrRrtrBlock();
   test_transport_.SetExpectedRtcpPacket(p.GetPacket().Pass());
 
-  transport::RtcpReportBlock report_block;
-  // Initialize remote_ssrc to a "clearly illegal" value.
-  report_block.remote_ssrc = 0xDEAD;
-  report_block.media_ssrc = kMediaSsrc;  // SSRC of the RTP packet sender.
-  report_block.fraction_lost = kLoss >> 24;
-  report_block.cumulative_lost = kLoss;  // 24 bits valid.
-  report_block.extended_high_sequence_number = kExtendedMax;
-  report_block.jitter = kTestJitter;
-  report_block.last_sr = kLastSr;
-  report_block.delay_since_last_sr = kDelayLastSr;
+  transport::RtcpReportBlock report_block = GetReportBlock();
 
   RtcpReceiverReferenceTimeReport rrtr;
   rrtr.ntp_seconds = kNtpHigh;
   rrtr.ntp_fraction = kNtpLow;
 
   rtcp_sender_->SendRtcpFromRtpReceiver(
-      RtcpSender::kRtcpRr | RtcpSender::kRtcpRrtr,
+      transport::kRtcpRr | transport::kRtcpRrtr,
       &report_block,
       &rrtr,
       NULL,
-      NULL);
+      NULL,
+      kDefaultDelay);
 
   EXPECT_EQ(1, test_transport_.packet_count());
 }
@@ -159,19 +158,10 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithCast) {
   p.AddRr(kSendingSsrc, 1);
   p.AddRb(kMediaSsrc);
   p.AddSdesCname(kSendingSsrc, kCName);
-  p.AddCast(kSendingSsrc, kMediaSsrc);
+  p.AddCast(kSendingSsrc, kMediaSsrc, kDefaultDelay);
   test_transport_.SetExpectedRtcpPacket(p.GetPacket().Pass());
 
-  transport::RtcpReportBlock report_block;
-  // Initialize remote_ssrc to a "clearly illegal" value.
-  report_block.remote_ssrc = 0xDEAD;
-  report_block.media_ssrc = kMediaSsrc;  // SSRC of the RTP packet sender.
-  report_block.fraction_lost = kLoss >> 24;
-  report_block.cumulative_lost = kLoss;  // 24 bits valid.
-  report_block.extended_high_sequence_number = kExtendedMax;
-  report_block.jitter = kTestJitter;
-  report_block.last_sr = kLastSr;
-  report_block.delay_since_last_sr = kDelayLastSr;
+  transport::RtcpReportBlock report_block = GetReportBlock();
 
   RtcpCastMessage cast_message(kMediaSsrc);
   cast_message.ack_frame_id_ = kAckFrameId;
@@ -185,11 +175,12 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithCast) {
       missing_packets;
 
   rtcp_sender_->SendRtcpFromRtpReceiver(
-      RtcpSender::kRtcpRr | RtcpSender::kRtcpCast,
+      transport::kRtcpRr | transport::kRtcpCast,
       &report_block,
       NULL,
       &cast_message,
-      NULL);
+      NULL,
+      kDefaultDelay);
 
   EXPECT_EQ(1, test_transport_.packet_count());
 }
@@ -201,19 +192,10 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithRrtraAndCastMessage) {
   p.AddSdesCname(kSendingSsrc, kCName);
   p.AddXrHeader(kSendingSsrc);
   p.AddXrRrtrBlock();
-  p.AddCast(kSendingSsrc, kMediaSsrc);
+  p.AddCast(kSendingSsrc, kMediaSsrc, kDefaultDelay);
   test_transport_.SetExpectedRtcpPacket(p.GetPacket().Pass());
 
-  transport::RtcpReportBlock report_block;
-  // Initialize remote_ssrc to a "clearly illegal" value.
-  report_block.remote_ssrc = 0xDEAD;
-  report_block.media_ssrc = kMediaSsrc;  // SSRC of the RTP packet sender.
-  report_block.fraction_lost = kLoss >> 24;
-  report_block.cumulative_lost = kLoss;  // 24 bits valid.
-  report_block.extended_high_sequence_number = kExtendedMax;
-  report_block.jitter = kTestJitter;
-  report_block.last_sr = kLastSr;
-  report_block.delay_since_last_sr = kDelayLastSr;
+  transport::RtcpReportBlock report_block = GetReportBlock();
 
   RtcpReceiverReferenceTimeReport rrtr;
   rrtr.ntp_seconds = kNtpHigh;
@@ -231,11 +213,12 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithRrtraAndCastMessage) {
       missing_packets;
 
   rtcp_sender_->SendRtcpFromRtpReceiver(
-      RtcpSender::kRtcpRr | RtcpSender::kRtcpRrtr | RtcpSender::kRtcpCast,
+      transport::kRtcpRr | transport::kRtcpRrtr | transport::kRtcpCast,
       &report_block,
       &rrtr,
       &cast_message,
-      NULL);
+      NULL,
+      kDefaultDelay);
 
   EXPECT_EQ(1, test_transport_.packet_count());
 }
@@ -250,19 +233,10 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithRrtrCastMessageAndLog) {
   p.AddSdesCname(kSendingSsrc, kCName);
   p.AddXrHeader(kSendingSsrc);
   p.AddXrRrtrBlock();
-  p.AddCast(kSendingSsrc, kMediaSsrc);
+  p.AddCast(kSendingSsrc, kMediaSsrc, kDefaultDelay);
   test_transport_.SetExpectedRtcpPacket(p.GetPacket().Pass());
 
-  transport::RtcpReportBlock report_block;
-  // Initialize remote_ssrc to a "clearly illegal" value.
-  report_block.remote_ssrc = 0xDEAD;
-  report_block.media_ssrc = kMediaSsrc;  // SSRC of the RTP packet sender.
-  report_block.fraction_lost = kLoss >> 24;
-  report_block.cumulative_lost = kLoss;  // 24 bits valid.
-  report_block.extended_high_sequence_number = kExtendedMax;
-  report_block.jitter = kTestJitter;
-  report_block.last_sr = kLastSr;
-  report_block.delay_since_last_sr = kDelayLastSr;
+  transport::RtcpReportBlock report_block = GetReportBlock();
 
   RtcpReceiverReferenceTimeReport rrtr;
   rrtr.ntp_seconds = kNtpHigh;
@@ -283,12 +257,13 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithRrtrCastMessageAndLog) {
       500, ReceiverRtcpEventSubscriber::kVideoEventSubscriber);
 
   rtcp_sender_->SendRtcpFromRtpReceiver(
-      RtcpSender::kRtcpRr | RtcpSender::kRtcpRrtr | RtcpSender::kRtcpCast |
-          RtcpSender::kRtcpReceiverLog,
+      transport::kRtcpRr | transport::kRtcpRrtr | transport::kRtcpCast |
+          transport::kRtcpReceiverLog,
       &report_block,
       &rrtr,
       &cast_message,
-      &event_subscriber);
+      &event_subscriber,
+      kDefaultDelay);
 
   base::SimpleTestTickClock testing_clock;
   testing_clock.Advance(base::TimeDelta::FromMilliseconds(kTimeBaseMs));
@@ -313,16 +288,30 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithRrtrCastMessageAndLog) {
   packet_event.timestamp = testing_clock.NowTicks();
   packet_event.packet_id = kLostPacketId1;
   event_subscriber.OnReceivePacketEvent(packet_event);
+  EXPECT_EQ(2u, event_subscriber.get_rtcp_events().size());
 
   rtcp_sender_->SendRtcpFromRtpReceiver(
-      RtcpSender::kRtcpRr | RtcpSender::kRtcpRrtr | RtcpSender::kRtcpCast |
-          RtcpSender::kRtcpReceiverLog,
+      transport::kRtcpRr | transport::kRtcpRrtr | transport::kRtcpCast |
+          transport::kRtcpReceiverLog,
       &report_block,
       &rrtr,
       &cast_message,
-      &event_subscriber);
+      &event_subscriber,
+      kDefaultDelay);
 
   EXPECT_EQ(2, test_transport_.packet_count());
+
+  // We expect to see the same packet because we send redundant events.
+  rtcp_sender_->SendRtcpFromRtpReceiver(
+      transport::kRtcpRr | transport::kRtcpRrtr | transport::kRtcpCast |
+          transport::kRtcpReceiverLog,
+      &report_block,
+      &rrtr,
+      &cast_message,
+      &event_subscriber,
+      kDefaultDelay);
+
+  EXPECT_EQ(3, test_transport_.packet_count());
 }
 
 TEST_F(RtcpSenderTest, RtcpReceiverReportWithOversizedFrameLog) {
@@ -334,28 +323,25 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithOversizedFrameLog) {
   p.AddRb(kMediaSsrc);
   p.AddSdesCname(kSendingSsrc, kCName);
 
-  transport::RtcpReportBlock report_block;
-  // Initialize remote_ssrc to a "clearly illegal" value.
-  report_block.remote_ssrc = 0xDEAD;
-  report_block.media_ssrc = kMediaSsrc;  // SSRC of the RTP packet sender.
-  report_block.fraction_lost = kLoss >> 24;
-  report_block.cumulative_lost = kLoss;  // 24 bits valid.
-  report_block.extended_high_sequence_number = kExtendedMax;
-  report_block.jitter = kTestJitter;
-  report_block.last_sr = kLastSr;
-  report_block.delay_since_last_sr = kDelayLastSr;
+  transport::RtcpReportBlock report_block = GetReportBlock();
 
   base::SimpleTestTickClock testing_clock;
   testing_clock.Advance(base::TimeDelta::FromMilliseconds(kTimeBaseMs));
 
   p.AddReceiverLog(kSendingSsrc);
 
-  p.AddReceiverFrameLog(kRtpTimestamp, 1, kTimeBaseMs);
-  p.AddReceiverEventLog(0, 5, 0);
-  p.AddReceiverFrameLog(
-      kRtpTimestamp + 2345, kRtcpMaxReceiverLogMessages, kTimeBaseMs);
+  int remaining_bytes = kMaxReceiverLogBytes;
+  remaining_bytes -= kRtcpCastLogHeaderSize;
 
-  for (size_t i = 0; i < kRtcpMaxReceiverLogMessages; ++i) {
+  remaining_bytes -= kRtcpReceiverFrameLogSize;
+  int num_events = remaining_bytes / kRtcpReceiverEventLogSize;
+  EXPECT_LE(num_events, static_cast<int>(kRtcpMaxReceiverLogMessages));
+  // Only the last |num_events| events are sent due to receiver log size cap.
+  p.AddReceiverFrameLog(
+      kRtpTimestamp + 2345,
+      num_events,
+      kTimeBaseMs + (kRtcpMaxReceiverLogMessages - num_events) * kTimeDelayMs);
+  for (int i = 0; i < num_events; i++) {
     p.AddReceiverEventLog(
         kLostPacketId1, 8, static_cast<uint16>(kTimeDelayMs * i));
   }
@@ -381,11 +367,12 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithOversizedFrameLog) {
   }
 
   rtcp_sender_->SendRtcpFromRtpReceiver(
-      RtcpSender::kRtcpRr | RtcpSender::kRtcpReceiverLog,
+      transport::kRtcpRr | transport::kRtcpReceiverLog,
       &report_block,
       NULL,
       NULL,
-      &event_subscriber);
+      &event_subscriber,
+      kDefaultDelay);
 
   EXPECT_EQ(1, test_transport_.packet_count());
 }
@@ -399,23 +386,23 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithTooManyLogFrames) {
   p.AddRb(kMediaSsrc);
   p.AddSdesCname(kSendingSsrc, kCName);
 
-  transport::RtcpReportBlock report_block;
-  // Initialize remote_ssrc to a "clearly illegal" value.
-  report_block.remote_ssrc = 0xDEAD;
-  report_block.media_ssrc = kMediaSsrc;  // SSRC of the RTP packet sender.
-  report_block.fraction_lost = kLoss >> 24;
-  report_block.cumulative_lost = kLoss;  // 24 bits valid.
-  report_block.extended_high_sequence_number = kExtendedMax;
-  report_block.jitter = kTestJitter;
-  report_block.last_sr = kLastSr;
-  report_block.delay_since_last_sr = kDelayLastSr;
+  transport::RtcpReportBlock report_block = GetReportBlock();
 
   base::SimpleTestTickClock testing_clock;
   testing_clock.Advance(base::TimeDelta::FromMilliseconds(kTimeBaseMs));
 
   p.AddReceiverLog(kSendingSsrc);
 
-  for (int i = 0; i < 119; ++i) {
+  int remaining_bytes = kMaxReceiverLogBytes;
+  remaining_bytes -= kRtcpCastLogHeaderSize;
+
+  int num_events =
+      remaining_bytes / (kRtcpReceiverFrameLogSize + kRtcpReceiverEventLogSize);
+
+  // The last |num_events| events are sent due to receiver log size cap.
+  for (size_t i = kRtcpMaxReceiverLogMessages - num_events;
+       i < kRtcpMaxReceiverLogMessages;
+       ++i) {
     p.AddReceiverFrameLog(kRtpTimestamp + i, 1, kTimeBaseMs + i * kTimeDelayMs);
     p.AddReceiverEventLog(0, 5, 0);
   }
@@ -423,6 +410,7 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithTooManyLogFrames) {
 
   ReceiverRtcpEventSubscriber event_subscriber(
       500, ReceiverRtcpEventSubscriber::kVideoEventSubscriber);
+
   for (size_t i = 0; i < kRtcpMaxReceiverLogMessages; ++i) {
     FrameEvent frame_event;
     frame_event.rtp_timestamp = kRtpTimestamp + static_cast<int>(i);
@@ -433,11 +421,60 @@ TEST_F(RtcpSenderTest, RtcpReceiverReportWithTooManyLogFrames) {
   }
 
   rtcp_sender_->SendRtcpFromRtpReceiver(
-      RtcpSender::kRtcpRr | RtcpSender::kRtcpReceiverLog,
+      transport::kRtcpRr | transport::kRtcpReceiverLog,
       &report_block,
       NULL,
       NULL,
-      &event_subscriber);
+      &event_subscriber,
+      kDefaultDelay);
+
+  EXPECT_EQ(1, test_transport_.packet_count());
+}
+
+TEST_F(RtcpSenderTest, RtcpReceiverReportWithOldLogFrames) {
+  static const uint32 kTimeBaseMs = 12345678;
+
+  TestRtcpPacketBuilder p;
+  p.AddRr(kSendingSsrc, 1);
+  p.AddRb(kMediaSsrc);
+  p.AddSdesCname(kSendingSsrc, kCName);
+
+  transport::RtcpReportBlock report_block = GetReportBlock();
+
+  base::SimpleTestTickClock testing_clock;
+  testing_clock.Advance(base::TimeDelta::FromMilliseconds(kTimeBaseMs));
+
+  p.AddReceiverLog(kSendingSsrc);
+
+  // Log 11 events for a single frame, each |kTimeBetweenEventsMs| apart.
+  // Only last 10 events will be sent because the first event is more than
+  // 4095 milliseconds away from latest event.
+  const int kTimeBetweenEventsMs = 410;
+  p.AddReceiverFrameLog(kRtpTimestamp, 10, kTimeBaseMs + kTimeBetweenEventsMs);
+  for (int i = 0; i < 10; ++i) {
+    p.AddReceiverEventLog(0, 5, i * kTimeBetweenEventsMs);
+  }
+  test_transport_.SetExpectedRtcpPacket(p.GetPacket().Pass());
+
+  ReceiverRtcpEventSubscriber event_subscriber(
+      500, ReceiverRtcpEventSubscriber::kVideoEventSubscriber);
+  for (int i = 0; i < 11; ++i) {
+    FrameEvent frame_event;
+    frame_event.rtp_timestamp = kRtpTimestamp;
+    frame_event.type = media::cast::kVideoAckSent;
+    frame_event.timestamp = testing_clock.NowTicks();
+    event_subscriber.OnReceiveFrameEvent(frame_event);
+    testing_clock.Advance(
+        base::TimeDelta::FromMilliseconds(kTimeBetweenEventsMs));
+  }
+
+  rtcp_sender_->SendRtcpFromRtpReceiver(
+      transport::kRtcpRr | transport::kRtcpReceiverLog,
+      &report_block,
+      NULL,
+      NULL,
+      &event_subscriber,
+      kDefaultDelay);
 
   EXPECT_EQ(1, test_transport_.packet_count());
 }

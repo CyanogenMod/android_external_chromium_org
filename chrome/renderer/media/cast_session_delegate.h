@@ -5,17 +5,23 @@
 #ifndef CHROME_RENDERER_MEDIA_CAST_SESSION_DELEGATE_H_
 #define CHROME_RENDERER_MEDIA_CAST_SESSION_DELEGATE_H_
 
+#include <map>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/default_tick_clock.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_sender.h"
+#include "media/cast/logging/logging_defines.h"
 
 namespace base {
+class BinaryValue;
+class DictionaryValue;
 class MessageLoopProxy;
 }  // namespace base
 
@@ -24,6 +30,7 @@ class VideoFrame;
 
 namespace cast {
 class CastEnvironment;
+class EncodingEventSubscriber;
 class FrameInput;
 
 namespace transport {
@@ -38,66 +45,65 @@ class CastTransportSender;
 // thread. All methods are accessible only on the IO thread.
 class CastSessionDelegate {
  public:
-  typedef base::Callback<void(const scoped_refptr<media::cast::FrameInput>&)>
-      FrameInputAvailableCallback;
+  typedef base::Callback<void(const scoped_refptr<
+      media::cast::AudioFrameInput>&)> AudioFrameInputAvailableCallback;
+  typedef base::Callback<void(const scoped_refptr<
+      media::cast::VideoFrameInput>&)> VideoFrameInputAvailableCallback;
+  typedef base::Callback<void(scoped_ptr<base::BinaryValue>)> EventLogsCallback;
+  typedef base::Callback<void(scoped_ptr<base::DictionaryValue>)> StatsCallback;
 
   CastSessionDelegate();
   virtual ~CastSessionDelegate();
+
+  // This will start the session by configuring and creating the Cast transport
+  // and the Cast sender.
+  // Must be called before initialization of audio or video.
+  void StartUDP(const net::IPEndPoint& local_endpoint,
+                const net::IPEndPoint& remote_endpoint);
 
   // After calling StartAudio() or StartVideo() encoding of that media will
   // begin as soon as data is delivered to its sink, if the second method is
   // called the first media will be restarted. It is strongly recommended not to
   // deliver any data between calling the two methods.
   // It's OK to call only one of the two methods.
+  // StartUDP must be called before these methods.
   void StartAudio(const media::cast::AudioSenderConfig& config,
-                  const FrameInputAvailableCallback& callback);
+                  const AudioFrameInputAvailableCallback& callback);
   void StartVideo(const media::cast::VideoSenderConfig& config,
-                  const FrameInputAvailableCallback& callback);
-  void StartUDP(const net::IPEndPoint& local_endpoint,
-                const net::IPEndPoint& remote_endpoint);
+                  const VideoFrameInputAvailableCallback& callback);
+
+  void ToggleLogging(bool is_audio, bool enable);
+  void GetEventLogsAndReset(bool is_audio, const EventLogsCallback& callback);
+  void GetStatsAndReset(bool is_audio, const StatsCallback& callback);
 
  protected:
   // Callback with the result of the initialization.
   // If this callback is called with STATUS_INITIALIZED it will report back
   // to the sinks that it's ready to accept incoming audio / video frames.
-  void InitializationResult(media::cast::CastInitializationStatus result) const;
+  void InitializationResultCB(
+      media::cast::CastInitializationStatus result) const;
 
  private:
-  // Start encoding threads and initialize the CastEnvironment.
-  void Initialize();
-
-  // Configure CastSender. It is ready to accept audio / video frames after
-  // receiving a successful call to InitializationResult.
-  void StartSendingInternal();
-
   void StatusNotificationCB(
       media::cast::transport::CastTransportStatus status);
+
+  // Adds logs collected from transport on browser side.
+  void LogRawEvents(const std::vector<media::cast::PacketEvent>& packet_events);
 
   base::ThreadChecker thread_checker_;
   scoped_refptr<media::cast::CastEnvironment> cast_environment_;
   scoped_ptr<media::cast::CastSender> cast_sender_;
   scoped_ptr<media::cast::transport::CastTransportSender> cast_transport_;
 
-  // Utilities threads owned by this class. They are used by CastSender for
-  // encoding.
-  // TODO(hclam): See crbug.com/317006 for more details.
-  // This class shouldn't create and own threads.
-  base::Thread audio_encode_thread_;
-  base::Thread video_encode_thread_;
+  AudioFrameInputAvailableCallback audio_frame_input_available_callback_;
+  VideoFrameInputAvailableCallback video_frame_input_available_callback_;
 
-  // Configuration for audio and video.
-  scoped_ptr<media::cast::AudioSenderConfig> audio_config_;
-  scoped_ptr<media::cast::VideoSenderConfig> video_config_;
-
-  FrameInputAvailableCallback audio_frame_input_available_callback_;
-  FrameInputAvailableCallback video_frame_input_available_callback_;
-
-  net::IPEndPoint local_endpoint_;
-  net::IPEndPoint remote_endpoint_;
-  bool transport_configured_;
+  scoped_ptr<media::cast::EncodingEventSubscriber> audio_event_subscriber_;
+  scoped_ptr<media::cast::EncodingEventSubscriber> video_event_subscriber_;
 
   // Proxy to the IO message loop.
   scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
+  base::WeakPtrFactory<CastSessionDelegate> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CastSessionDelegate);
 };

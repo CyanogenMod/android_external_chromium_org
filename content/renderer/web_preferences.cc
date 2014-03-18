@@ -161,6 +161,7 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setCaretBrowsingEnabled(prefs.caret_browsing_enabled);
   settings->setHyperlinkAuditingEnabled(prefs.hyperlink_auditing_enabled);
   settings->setCookieEnabled(prefs.cookie_enabled);
+  settings->setNavigateOnDragDrop(prefs.navigate_on_drag_drop);
 
   // This setting affects the behavior of links in an editable region:
   // clicking the link should select it rather than navigate to it.
@@ -196,19 +197,6 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   // Enable WebGL errors to the JS console if requested.
   settings->setWebGLErrorsToConsoleEnabled(
       prefs.webgl_errors_to_console_enabled);
-
-  // Enables accelerated compositing for overflow scroll.
-  settings->setAcceleratedCompositingForOverflowScrollEnabled(
-      prefs.accelerated_compositing_for_overflow_scroll_enabled);
-
-  // Enables accelerated compositing for scrollable frames if requested on
-  // command line.
-  settings->setAcceleratedCompositingForScrollableFramesEnabled(
-      prefs.accelerated_compositing_for_scrollable_frames_enabled);
-
-  // Enables composited scrolling for frames if requested on command line.
-  settings->setCompositedScrollingForFramesEnabled(
-      prefs.composited_scrolling_for_frames_enabled);
 
   // Uses the mock theme engine for scrollbars.
   settings->setMockScrollbarsEnabled(prefs.mock_scrollbars_enabled);
@@ -266,9 +254,6 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setAcceleratedCompositingForCanvasEnabled(
       prefs.experimental_webgl_enabled || prefs.accelerated_2d_canvas_enabled);
 
-  // Enable memory info reporting to page if requested on the command line.
-  settings->setMemoryInfoEnabled(prefs.memory_info_enabled);
-
   settings->setAsynchronousSpellCheckingEnabled(
       prefs.asynchronous_spell_checking_enabled);
   settings->setUnifiedTextCheckerEnabled(prefs.unified_textchecker_enabled);
@@ -285,7 +270,8 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   // ChromeClient::tabsToLinks which is part of the glue code.
   web_view->setTabsToLinks(prefs.tabs_to_links);
 
-  settings->setFullScreenEnabled(prefs.fullscreen_enabled);
+  // TODO(scheib): crbug.com/344002 Remove FullScreenEnabled from Blink
+  settings->setFullScreenEnabled(true);
   settings->setAllowDisplayOfInsecureContent(
       prefs.allow_displaying_insecure_content);
   settings->setAllowRunningOfInsecureContent(

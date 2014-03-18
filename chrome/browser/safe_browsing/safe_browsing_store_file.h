@@ -11,7 +11,8 @@
 #include "chrome/browser/safe_browsing/safe_browsing_store.h"
 
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 
 // Implement SafeBrowsingStore in terms of a flat file.  The file
 // format is pretty literal:
@@ -35,12 +36,12 @@
 // }
 // array[add_prefix_count] {
 //   int32 chunk_id;
-//   int32 prefix;
+//   uint32 prefix;
 // }
 // array[sub_prefix_count] {
 //   int32 chunk_id;
 //   int32 add_chunk_id;
-//   int32 add_prefix;
+//   uint32 add_prefix;
 // }
 // array[add_hash_count] {
 //   int32 chunk_id;
@@ -66,12 +67,12 @@
 //   uint32 sub_hash_count;
 //   array[add_prefix_count] {
 //     int32 chunk_id;
-//     int32 prefix;
+//     uint32 prefix;
 //   }
 //   array[sub_prefix_count] {
 //     int32 chunk_id;
 //     int32 add_chunk_id;
-//     int32 add_prefix;
+//     uint32 add_prefix;
 //   }
 //   array[add_hash_count] {
 //     int32 chunk_id;
@@ -266,8 +267,8 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
 
   // Handles to the main and scratch files.  |empty_| is true if the
   // main file didn't exist when the update was started.
-  file_util::ScopedFILE file_;
-  file_util::ScopedFILE new_file_;
+  base::ScopedFILE file_;
+  base::ScopedFILE new_file_;
   bool empty_;
 
   // Cache of chunks which have been seen.  Loaded from the database

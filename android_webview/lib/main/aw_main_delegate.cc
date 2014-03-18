@@ -6,7 +6,7 @@
 
 #include "android_webview/browser/aw_content_browser_client.h"
 #include "android_webview/browser/gpu_memory_buffer_factory_impl.h"
-#include "android_webview/browser/in_process_view_renderer.h"
+#include "android_webview/browser/hardware_renderer.h"
 #include "android_webview/browser/scoped_allow_wait_for_legacy_web_view_api.h"
 #include "android_webview/common/aw_switches.h"
 #include "android_webview/lib/aw_browser_dependency_factory_impl.h"
@@ -20,12 +20,12 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_restrictions.h"
-#include "cc/base/switches.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/client/gl_in_process_context.h"
 #include "gpu/command_buffer/service/in_process_command_buffer.h"
+#include "media/base/media_switches.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 namespace android_webview {
@@ -52,33 +52,34 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   gpu::InProcessCommandBuffer::SetGpuMemoryBufferFactory(
       gpu_memory_buffer_factory_.get());
 
-  InProcessViewRenderer::CalculateTileMemoryPolicy();
+  HardwareRenderer::CalculateTileMemoryPolicy();
 
   CommandLine* cl = CommandLine::ForCurrentProcess();
   cl->AppendSwitch(switches::kEnableBeginFrameScheduling);
-  cl->AppendSwitch(cc::switches::kEnableMapImage);
+  cl->AppendSwitch(switches::kEnableMapImage);
+  cl->AppendSwitch(switches::kEnableImplSidePainting);
 
   // WebView uses the Android system's scrollbars and overscroll glow.
-  cl->AppendSwitch(switches::kHideScrollbars);
   cl->AppendSwitch(switches::kDisableOverscrollEdgeEffect);
 
   // Not yet supported in single-process mode.
   cl->AppendSwitch(switches::kDisableExperimentalWebGL);
   cl->AppendSwitch(switches::kDisableSharedWorkers);
 
-  // Ganesh backed 2D-Canvas integration is being implemented but not ready to
-  // be turned on by default yet.
-  if (!cl->HasSwitch(switches::kEnableAccelerated2dCanvas))
-    cl->AppendSwitch(switches::kDisableAccelerated2dCanvas);
 
   // File system API not supported (requires some new API; internal bug 6930981)
   cl->AppendSwitch(switches::kDisableFileSystem);
 
-  // Disable compositor touch hit testing for now to mitigate risk of bugs.
-  cl->AppendSwitch(cc::switches::kDisableCompositorTouchHitTesting);
+  // Fullscreen video with subtitle is not yet supported.
+  cl->AppendSwitch(switches::kDisableOverlayFullscreenVideoSubtitle);
 
   // Disable WebRTC.
   cl->AppendSwitch(switches::kDisableWebRTC);
+
+#if defined(VIDEO_HOLE)
+  // Support EME/L1 with hole-punching.
+  cl->AppendSwitch(switches::kMediaDrmEnableNonCompositing);
+#endif
 
   return false;
 }

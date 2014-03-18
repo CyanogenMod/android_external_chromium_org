@@ -26,11 +26,14 @@
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
 
+using storage_monitor::StorageInfo;
+using storage_monitor::TestStorageMonitor;
+
 namespace {
 
 std::string GalleryName(const MediaGalleryPrefInfo& gallery) {
   base::string16 name = gallery.GetGalleryDisplayName();
-  return UTF16ToASCII(name);
+  return base::UTF16ToASCII(name);
 }
 
 class MockMediaGalleriesDialog

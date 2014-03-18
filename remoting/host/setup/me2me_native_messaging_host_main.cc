@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "remoting/host/setup/me2me_native_messaging_host_main.h"
+
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
@@ -51,7 +53,7 @@ bool IsProcessElevated() {
 }
 #endif  // defined(OS_WIN)
 
-int Me2MeNativeMessagingHostMain() {
+int StartMe2MeNativeMessagingHost() {
   // Mac OS X requires that the main thread be a UI message loop in order to
   // receive distributed notifications from the System Preferences pane. An
   // IO thread is needed for the pairing registry and URL context getter.
@@ -68,10 +70,10 @@ int Me2MeNativeMessagingHostMain() {
   // Pass handle of the native view to the controller so that the UAC prompts
   // are focused properly.
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  int64 native_view_handle = 0;
   if (command_line->HasSwitch(kParentWindowSwitchName)) {
     std::string native_view =
         command_line->GetSwitchValueASCII(kParentWindowSwitchName);
-    int64 native_view_handle = 0;
     if (base::StringToInt64(native_view, &native_view_handle)) {
       daemon_controller->SetWindow(reinterpret_cast<void*>(native_view_handle));
     } else {
@@ -128,6 +130,17 @@ int Me2MeNativeMessagingHostMain() {
     // output are redirected to a pipe or file.
     read_file = GetStdHandle(STD_INPUT_HANDLE);
     write_file = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    // After the native messaging channel starts the native messaging reader
+    // will keep doing blocking read operations on the input named pipe.
+    // If any other thread tries to perform any operation on STDIN, it will also
+    // block because the input named pipe is synchronous (non-overlapped).
+    // It is pretty common for a DLL to query the device info (GetFileType) of
+    // the STD* handles at startup. So any LoadLibrary request can potentially
+    // be blocked. To prevent that from happening we close STDIN and STDOUT
+    // handles as soon as we retrieve the corresponding file handles.
+    SetStdHandle(STD_INPUT_HANDLE, NULL);
+    SetStdHandle(STD_OUTPUT_HANDLE, NULL);
   }
 #elif defined(OS_POSIX)
   read_file = STDIN_FILENO;
@@ -202,6 +215,7 @@ int Me2MeNativeMessagingHostMain() {
   scoped_ptr<Me2MeNativeMessagingHost> host(
       new Me2MeNativeMessagingHost(
           needs_elevation,
+          static_cast<intptr_t>(native_view_handle),
           channel.Pass(),
           daemon_controller,
           pairing_registry,
@@ -213,14 +227,14 @@ int Me2MeNativeMessagingHostMain() {
   return kSuccessExitCode;
 }
 
-}  // namespace remoting
-
-int main(int argc, char** argv) {
+int Me2MeNativeMessagingHostMain(int argc, char** argv) {
   // This object instance is required by Chrome code (such as MessageLoop).
   base::AtExitManager exit_manager;
 
   CommandLine::Init(argc, argv);
   remoting::InitHostLogging();
 
-  return remoting::Me2MeNativeMessagingHostMain();
+  return StartMe2MeNativeMessagingHost();
 }
+
+}  // namespace remoting

@@ -17,13 +17,19 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 
 const char WebRtcTestBase::kAudioVideoCallConstraints[] =
     "'{audio: true, video: true}'";
+const char WebRtcTestBase::kAudioVideoCallConstraints360p[] =
+   "'{audio: true, video: {mandatory: {minWidth: 640, maxWidth: 640, "
+   " minHeight: 360, maxHeight: 360}}}'";
 const char WebRtcTestBase::kAudioOnlyCallConstraints[] = "'{audio: true}'";
 const char WebRtcTestBase::kVideoOnlyCallConstraints[] = "'{video: true}'";
 const char WebRtcTestBase::kFailedWithPermissionDeniedError[] =
     "failed-with-error-PermissionDeniedError";
+const char WebRtcTestBase::kFailedWithPermissionDismissedError[] =
+    "failed-with-error-PermissionDismissedError";
 
 namespace {
 
@@ -115,7 +121,8 @@ void WebRtcTestBase::GetUserMediaAndDismiss(
 
   // A dismiss should be treated like a deny.
   EXPECT_TRUE(PollingWaitUntil("obtainGetUserMediaResult()",
-                               kFailedWithPermissionDeniedError, tab_contents));
+                               kFailedWithPermissionDismissedError,
+                               tab_contents));
 }
 
 void WebRtcTestBase::GetUserMedia(content::WebContents* tab_contents,
@@ -145,7 +152,15 @@ InfoBar* WebRtcTestBase::GetUserMediaAndWaitForInfoBar(
 }
 
 content::WebContents* WebRtcTestBase::OpenPageAndGetUserMediaInNewTab(
-      const GURL& url) const {
+    const GURL& url) const {
+  return OpenPageAndGetUserMediaInNewTabWithConstraints(
+      url, kAudioVideoCallConstraints);
+}
+
+content::WebContents*
+WebRtcTestBase::OpenPageAndGetUserMediaInNewTabWithConstraints(
+    const GURL& url,
+    const std::string& constraints) const {
   chrome::AddTabAt(browser(), GURL(), -1, true);
   ui_test_utils::NavigateToURL(browser(), url);
 #if defined (OS_LINUX)
@@ -154,8 +169,14 @@ content::WebContents* WebRtcTestBase::OpenPageAndGetUserMediaInNewTab(
 #endif
   content::WebContents* new_tab =
       browser()->tab_strip_model()->GetActiveWebContents();
-  GetUserMediaAndAccept(new_tab);
+  GetUserMediaWithSpecificConstraintsAndAccept(new_tab, constraints);
   return new_tab;
+}
+
+content::WebContents* WebRtcTestBase::OpenTestPageAndGetUserMediaInNewTab(
+    const std::string& test_page) const {
+  return OpenPageAndGetUserMediaInNewTab(
+      embedded_test_server()->GetURL(test_page));
 }
 
 content::WebContents* WebRtcTestBase::OpenPageAndAcceptUserMedia(
@@ -213,6 +234,33 @@ void WebRtcTestBase::ConnectToPeerConnectionServer(
       "connect('http://localhost:%s', '%s');",
       PeerConnectionServerRunner::kDefaultPort, peer_name.c_str());
   EXPECT_EQ("ok-connected", ExecuteJavascript(javascript, tab_contents));
+}
+
+void WebRtcTestBase::EstablishCall(content::WebContents* from_tab,
+                                   content::WebContents* to_tab) const {
+  ConnectToPeerConnectionServer("peer 1", from_tab);
+  ConnectToPeerConnectionServer("peer 2", to_tab);
+
+  EXPECT_EQ("ok-peerconnection-created",
+            ExecuteJavascript("preparePeerConnection()", from_tab));
+  EXPECT_EQ("ok-added", ExecuteJavascript("addLocalStream()", from_tab));
+  EXPECT_EQ("ok-negotiating", ExecuteJavascript("negotiateCall()", from_tab));
+
+  // Ensure the call gets up on both sides.
+  EXPECT_TRUE(PollingWaitUntil("getPeerConnectionReadyState()",
+                               "active", from_tab));
+  EXPECT_TRUE(PollingWaitUntil("getPeerConnectionReadyState()",
+                               "active", to_tab));
+}
+
+void WebRtcTestBase::HangUp(content::WebContents* from_tab) const {
+  EXPECT_EQ("ok-call-hung-up", ExecuteJavascript("hangUp()", from_tab));
+}
+
+void WebRtcTestBase::WaitUntilHangupVerified(
+    content::WebContents* tab_contents) const {
+  EXPECT_TRUE(PollingWaitUntil("getPeerConnectionReadyState()",
+                               "no-peer-connection", tab_contents));
 }
 
 void WebRtcTestBase::DetectErrorsInJavaScript() {

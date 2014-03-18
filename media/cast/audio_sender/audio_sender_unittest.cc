@@ -15,16 +15,12 @@
 #include "media/cast/test/utility/audio_utility.h"
 #include "media/cast/transport/cast_transport_config.h"
 #include "media/cast/transport/cast_transport_sender_impl.h"
-#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace media {
 namespace cast {
 
 static const int64 kStartMillisecond = GG_INT64_C(12345678900000);
-
-using testing::_;
-using testing::Exactly;
 
 class TestPacketSender : public transport::PacketSender {
  public:
@@ -51,9 +47,6 @@ class TestPacketSender : public transport::PacketSender {
 };
 
 class AudioSenderTest : public ::testing::Test {
- public:
-  MOCK_METHOD0(InsertAudioCallback, void());
-
  protected:
   AudioSenderTest() {
     InitializeMediaLibraryForTesting();
@@ -61,6 +54,7 @@ class AudioSenderTest : public ::testing::Test {
     testing_clock_->Advance(
         base::TimeDelta::FromMilliseconds(kStartMillisecond));
     task_runner_ = new test::FakeSingleThreadTaskRunner(testing_clock_);
+    CastLoggingConfig logging_config = GetDefaultCastSenderLoggingConfig();
     cast_environment_ =
         new CastEnvironment(scoped_ptr<base::TickClock>(testing_clock_).Pass(),
                             task_runner_,
@@ -69,7 +63,7 @@ class AudioSenderTest : public ::testing::Test {
                             task_runner_,
                             task_runner_,
                             task_runner_,
-                            GetDefaultCastSenderLoggingConfig());
+                            logging_config);
     audio_config_.codec = transport::kOpus;
     audio_config_.use_external_encoder = false;
     audio_config_.frequency = kDefaultAudioSamplingRate;
@@ -77,15 +71,23 @@ class AudioSenderTest : public ::testing::Test {
     audio_config_.bitrate = kDefaultAudioEncoderBitrate;
     audio_config_.rtp_config.payload_type = 127;
 
-    transport::CastTransportConfig transport_config;
-    transport_config.audio_rtp_config.payload_type = 127;
-    transport_config.audio_channels = 2;
+    transport::CastTransportAudioConfig transport_config;
+    transport_config.base.rtp_config.payload_type = 127;
+    transport_config.channels = 2;
+    net::IPEndPoint dummy_endpoint;
+
     transport_sender_.reset(new transport::CastTransportSenderImpl(
+        NULL,
         testing_clock_,
-        transport_config,
+        dummy_endpoint,
+        dummy_endpoint,
+        logging_config,
         base::Bind(&UpdateCastTransportStatus),
+        transport::BulkRawEventsCallback(),
+        base::TimeDelta(),
         task_runner_,
         &transport_));
+    transport_sender_->InitializeAudio(transport_config);
     audio_sender_.reset(new AudioSender(
         cast_environment_, audio_config_, transport_sender_.get()));
     task_runner_->RunTasks();
@@ -94,7 +96,7 @@ class AudioSenderTest : public ::testing::Test {
   virtual ~AudioSenderTest() {}
 
   static void UpdateCastTransportStatus(transport::CastTransportStatus status) {
-    EXPECT_EQ(status, transport::TRANSPORT_INITIALIZED);
+    EXPECT_EQ(status, transport::TRANSPORT_AUDIO_INITIALIZED);
   }
 
   base::SimpleTestTickClock* testing_clock_;  // Owned by CastEnvironment.
@@ -107,8 +109,6 @@ class AudioSenderTest : public ::testing::Test {
 };
 
 TEST_F(AudioSenderTest, Encode20ms) {
-  EXPECT_CALL(*this, InsertAudioCallback()).Times(Exactly(1));
-
   const base::TimeDelta kDuration = base::TimeDelta::FromMilliseconds(20);
   scoped_ptr<AudioBus> bus(
       TestAudioBusFactory(audio_config_.channels,
@@ -117,10 +117,7 @@ TEST_F(AudioSenderTest, Encode20ms) {
                           0.5f).NextAudioBus(kDuration));
 
   base::TimeTicks recorded_time = base::TimeTicks::Now();
-  audio_sender_->InsertAudio(bus.get(),
-                             recorded_time,
-                             base::Bind(&AudioSenderTest::InsertAudioCallback,
-                                        base::Unretained(this)));
+  audio_sender_->InsertAudio(bus.Pass(), recorded_time);
   task_runner_->RunTasks();
   EXPECT_GE(
       transport_.number_of_rtp_packets() + transport_.number_of_rtcp_packets(),
@@ -128,8 +125,6 @@ TEST_F(AudioSenderTest, Encode20ms) {
 }
 
 TEST_F(AudioSenderTest, RtcpTimer) {
-  EXPECT_CALL(*this, InsertAudioCallback()).Times(Exactly(1));
-
   const base::TimeDelta kDuration = base::TimeDelta::FromMilliseconds(20);
   scoped_ptr<AudioBus> bus(
       TestAudioBusFactory(audio_config_.channels,
@@ -138,10 +133,7 @@ TEST_F(AudioSenderTest, RtcpTimer) {
                           0.5f).NextAudioBus(kDuration));
 
   base::TimeTicks recorded_time = base::TimeTicks::Now();
-  audio_sender_->InsertAudio(bus.get(),
-                             recorded_time,
-                             base::Bind(&AudioSenderTest::InsertAudioCallback,
-                                        base::Unretained(this)));
+  audio_sender_->InsertAudio(bus.Pass(), recorded_time);
   task_runner_->RunTasks();
 
   // Make sure that we send at least one RTCP packet.

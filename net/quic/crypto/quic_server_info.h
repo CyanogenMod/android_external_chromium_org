@@ -13,6 +13,7 @@
 #include "base/time/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
+#include "net/quic/quic_session_key.h"
 
 namespace net {
 
@@ -24,7 +25,7 @@ class X509Certificate;
 // crypto config.
 class NET_EXPORT_PRIVATE QuicServerInfo {
  public:
-  QuicServerInfo(const std::string& hostname);
+  QuicServerInfo(const QuicSessionKey& server_key);
   virtual ~QuicServerInfo();
 
   // Start will commence the lookup. This must be called before any other
@@ -44,6 +45,10 @@ class NET_EXPORT_PRIVATE QuicServerInfo {
   // but, obviously, a callback will never be made.
   virtual int WaitForDataReady(const CompletionCallback& callback) = 0;
 
+  // Returns true if data is loaded from disk cache and ready (WaitForDataReady
+  // doesn't have a pending callback).
+  virtual bool IsDataReady() = 0;
+
   // Persist allows for the server information to be updated for future users.
   // This is a fire and forget operation: the caller may drop its reference
   // from this object and the store operation will still complete. This can
@@ -57,8 +62,12 @@ class NET_EXPORT_PRIVATE QuicServerInfo {
 
     void Clear();
 
-    // TODO(rtenneti): figure out what are the data members.
-    std::vector<std::string> data;
+    // This class matches QuicClientCryptoConfig::CachedState.
+    std::string server_config;         // A serialized handshake message.
+    std::string source_address_token;  // An opaque proof of IP ownership.
+    std::vector<std::string> certs;    // A list of certificates in leaf-first
+                                       // order.
+    std::string server_config_sig;     // A signature of |server_config_|.
 
    private:
     DISALLOW_COPY_AND_ASSIGN(State);
@@ -70,29 +79,32 @@ class NET_EXPORT_PRIVATE QuicServerInfo {
   State* mutable_state();
 
  protected:
-  // Parse parses an opaque blob of data and fills out the public member fields
-  // of this object. It returns true iff the parse was successful. The public
-  // member fields will be set to something sane in any case.
+  // Parse parses pickled data and fills out the public member fields of this
+  // object. It returns true iff the parse was successful. The public member
+  // fields will be set to something sane in any case.
   bool Parse(const std::string& data);
-  std::string Serialize() const;
+  std::string Serialize();
   State state_;
 
  private:
   // ParseInner is a helper function for Parse.
   bool ParseInner(const std::string& data);
 
-  // This is the QUIC server hostname for which we restore the crypto_config.
-  const std::string hostname_;
-  base::WeakPtrFactory<QuicServerInfo> weak_factory_;
+  // SerializeInner is a helper function for Serialize.
+  std::string SerializeInner() const;
+
+  // This is the QUIC server (hostname, port, is_https) tuple for which we
+  // restore the crypto_config.
+  const QuicSessionKey server_key_;
 };
 
 class QuicServerInfoFactory {
  public:
   virtual ~QuicServerInfoFactory();
 
-  // GetForHost returns a fresh, allocated QuicServerInfo for the given
-  // hostname or NULL on failure.
-  virtual QuicServerInfo* GetForHost(const std::string& hostname) = 0;
+  // GetForServer returns a fresh, allocated QuicServerInfo for the given
+  // |server_key| or NULL on failure.
+  virtual QuicServerInfo* GetForServer(const QuicSessionKey& server_key) = 0;
 };
 
 }  // namespace net

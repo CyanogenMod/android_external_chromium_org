@@ -35,10 +35,10 @@ const char kPackagedApp2Id[] = "jlklkagmeajbjiobondfhiekepofmljl";
 // Get a string of all apps in |model| joined with ','.
 std::string GetModelContent(app_list::AppListModel* model) {
   std::string content;
-  for (size_t i = 0; i < model->item_list()->item_count(); ++i) {
+  for (size_t i = 0; i < model->top_level_item_list()->item_count(); ++i) {
     if (i > 0)
       content += ',';
-    content += model->item_list()->item_at(i)->title();
+    content += model->top_level_item_list()->item_at(i)->name();
   }
   return content;
 }
@@ -163,7 +163,7 @@ class ExtensionAppModelBuilderTest : public ExtensionServiceTestBase {
 
 TEST_F(ExtensionAppModelBuilderTest, Build) {
   // The apps list would have 3 extension apps in the profile.
-  EXPECT_EQ(kDefaultAppCount, model_->item_list()->item_count());
+  EXPECT_EQ(kDefaultAppCount, model_->top_level_item_list()->item_count());
   EXPECT_EQ(std::string(kDefaultApps), GetModelContent(model_.get()));
 }
 
@@ -250,7 +250,8 @@ TEST_F(ExtensionAppModelBuilderTest, Reinstall) {
 }
 
 TEST_F(ExtensionAppModelBuilderTest, OrdinalPrefsChange) {
-  extensions::AppSorting* sorting = service_->extension_prefs()->app_sorting();
+  extensions::AppSorting* sorting =
+      extensions::ExtensionPrefs::Get(profile_.get())->app_sorting();
 
   syncer::StringOrdinal package_app_page =
       sorting->GetPageOrdinal(kPackagedApp1Id);
@@ -272,7 +273,8 @@ TEST_F(ExtensionAppModelBuilderTest, OrdinalPrefsChange) {
 }
 
 TEST_F(ExtensionAppModelBuilderTest, OnExtensionMoved) {
-  extensions::AppSorting* sorting = service_->extension_prefs()->app_sorting();
+  extensions::AppSorting* sorting =
+      extensions::ExtensionPrefs::Get(profile_.get())->app_sorting();
   sorting->SetPageOrdinal(kHostedAppId,
                           sorting->GetPageOrdinal(kPackagedApp1Id));
 
@@ -294,11 +296,13 @@ TEST_F(ExtensionAppModelBuilderTest, OnExtensionMoved) {
 
 TEST_F(ExtensionAppModelBuilderTest, InvalidOrdinal) {
   // Creates a no-ordinal case.
-  extensions::AppSorting* sorting = service_->extension_prefs()->app_sorting();
+  extensions::AppSorting* sorting =
+      extensions::ExtensionPrefs::Get(profile_.get())->app_sorting();
   sorting->ClearOrdinals(kPackagedApp1Id);
 
   // Creates a corrupted ordinal case.
-  extensions::ExtensionScopedPrefs* scoped_prefs = service_->extension_prefs();
+  extensions::ExtensionScopedPrefs* scoped_prefs =
+      extensions::ExtensionPrefs::Get(profile_.get());
   scoped_prefs->UpdateExtensionPref(
       kHostedAppId,
       "page_ordinal",
@@ -313,7 +317,8 @@ TEST_F(ExtensionAppModelBuilderTest, OrdinalConfilicts) {
   syncer::StringOrdinal conflict_ordinal =
       syncer::StringOrdinal::CreateInitialOrdinal();
 
-  extensions::AppSorting* sorting = service_->extension_prefs()->app_sorting();
+  extensions::AppSorting* sorting =
+      extensions::ExtensionPrefs::Get(profile_.get())->app_sorting();
   sorting->SetPageOrdinal(kHostedAppId, conflict_ordinal);
   sorting->SetAppLaunchOrdinal(kHostedAppId, conflict_ordinal);
 
@@ -354,6 +359,6 @@ TEST_F(ExtensionAppModelBuilderTest, BookmarkApp) {
   EXPECT_TRUE(err.empty());
 
   service_->AddExtension(bookmark_app.get());
-  EXPECT_EQ(kDefaultAppCount + 1, model_->item_list()->item_count());
+  EXPECT_EQ(kDefaultAppCount + 1, model_->top_level_item_list()->item_count());
   EXPECT_NE(std::string::npos, GetModelContent(model_.get()).find(kAppName));
 }

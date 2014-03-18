@@ -37,18 +37,23 @@ namespace plugin {
 // that are part of Chrome.
 class PnaclManifest : public Manifest {
  public:
-  PnaclManifest() : manifest_base_url_(PnaclUrls::GetBaseUrl()) { }
+  PnaclManifest(const nacl::string& sandbox_arch)
+      : manifest_base_url_(PnaclUrls::GetBaseUrl()),
+        sandbox_arch_(sandbox_arch) { }
+
   virtual ~PnaclManifest() { }
 
   virtual bool GetProgramURL(nacl::string* full_url,
                              PnaclOptions* pnacl_options,
+                             bool* uses_nonsfi_mode,
                              ErrorInfo* error_info) const {
     // Does not contain program urls.
     UNREFERENCED_PARAMETER(full_url);
     UNREFERENCED_PARAMETER(pnacl_options);
+    UNREFERENCED_PARAMETER(uses_nonsfi_mode);
     UNREFERENCED_PARAMETER(error_info);
     PLUGIN_PRINTF(("PnaclManifest does not contain a program\n"));
-    error_info->SetReport(ERROR_MANIFEST_GET_NEXE_URL,
+    error_info->SetReport(PP_NACL_ERROR_MANIFEST_GET_NEXE_URL,
                           "pnacl manifest does not contain a program.");
     return false;
   }
@@ -80,14 +85,14 @@ class PnaclManifest : public Manifest {
     const nacl::string kFilesPrefix = "files/";
     size_t files_prefix_pos = key.find(kFilesPrefix);
     if (files_prefix_pos == nacl::string::npos) {
-      error_info->SetReport(ERROR_MANIFEST_RESOLVE_URL,
+      error_info->SetReport(PP_NACL_ERROR_MANIFEST_RESOLVE_URL,
                             "key did not start with files/");
       return false;
     }
     // Resolve the full URL to the file. Provide it with a platform-specific
     // prefix.
     nacl::string key_basename = key.substr(kFilesPrefix.length());
-    return ResolveURL(PnaclUrls::PrependPlatformPrefix(key_basename),
+    return ResolveURL(sandbox_arch_ + "/" + key_basename,
                       full_url, error_info);
   }
 
@@ -95,6 +100,7 @@ class PnaclManifest : public Manifest {
   NACL_DISALLOW_COPY_AND_ASSIGN(PnaclManifest);
 
   nacl::string manifest_base_url_;
+  nacl::string sandbox_arch_;
 };
 
 //////////////////////////////////////////////////////////////////////
@@ -220,7 +226,7 @@ PnaclCoordinator::PnaclCoordinator(
     plugin_(plugin),
     translate_notify_callback_(translate_notify_callback),
     translation_finished_reported_(false),
-    manifest_(new PnaclManifest()),
+    manifest_(new PnaclManifest(plugin->nacl_interface()->GetSandboxArch())),
     pexe_url_(pexe_url),
     pnacl_options_(pnacl_options),
     split_module_count_(1),
@@ -253,6 +259,12 @@ PnaclCoordinator::~PnaclCoordinator() {
         plugin_->pp_instance(),
         PP_FALSE);
   }
+  // Force deleting the translate_thread now. It must be deleted
+  // before any scoped_* fields hanging off of PnaclCoordinator
+  // since the thread may be accessing those fields.
+  // It will also be accessing obj_files_.
+  translate_thread_.reset(NULL);
+  // TODO(jvoung): use base/memory/scoped_vector.h to hold obj_files_.
   for (int i = 0; i < num_object_files_opened_; i++) {
     delete obj_files_[i];
   }
@@ -263,13 +275,13 @@ nacl::DescWrapper* PnaclCoordinator::ReleaseTranslatedFD() {
   return temp_nexe_file_->release_read_wrapper();
 }
 
-void PnaclCoordinator::ReportNonPpapiError(enum PluginErrorCode err_code,
+void PnaclCoordinator::ReportNonPpapiError(PP_NaClError err_code,
                                            const nacl::string& message) {
   error_info_.SetReport(err_code, message);
   ExitWithError();
 }
 
-void PnaclCoordinator::ReportPpapiError(enum PluginErrorCode err_code,
+void PnaclCoordinator::ReportPpapiError(PP_NaClError err_code,
                                         int32_t pp_error,
                                         const nacl::string& message) {
   nacl::stringstream ss;
@@ -386,18 +398,18 @@ void PnaclCoordinator::NexeReadDidOpen(int32_t pp_error) {
                  NACL_PRId32 ")\n", pp_error));
   if (pp_error != PP_OK) {
     if (pp_error == PP_ERROR_FILENOTFOUND) {
-      ReportPpapiError(ERROR_PNACL_CACHE_FETCH_NOTFOUND,
+      ReportPpapiError(PP_NACL_ERROR_PNACL_CACHE_FETCH_NOTFOUND,
                        pp_error,
                        "Failed to open translated nexe (not found).");
       return;
     }
     if (pp_error == PP_ERROR_NOACCESS) {
-      ReportPpapiError(ERROR_PNACL_CACHE_FETCH_NOACCESS,
+      ReportPpapiError(PP_NACL_ERROR_PNACL_CACHE_FETCH_NOACCESS,
                        pp_error,
                        "Failed to open translated nexe (no access).");
       return;
     }
-    ReportPpapiError(ERROR_PNACL_CACHE_FETCH_OTHER,
+    ReportPpapiError(PP_NACL_ERROR_PNACL_CACHE_FETCH_OTHER,
                      pp_error,
                      "Failed to open translated nexe.");
     return;
@@ -422,7 +434,7 @@ void PnaclCoordinator::OpenBitcodeStream() {
   translate_thread_.reset(new PnaclTranslateThread());
   if (translate_thread_ == NULL) {
     ReportNonPpapiError(
-        ERROR_PNACL_THREAD_CREATE,
+        PP_NACL_ERROR_PNACL_THREAD_CREATE,
         "PnaclCoordinator: could not allocate translation thread.");
     return;
   }
@@ -431,7 +443,7 @@ void PnaclCoordinator::OpenBitcodeStream() {
       callback_factory_.NewCallback(&PnaclCoordinator::BitcodeStreamDidOpen);
   if (!streaming_downloader_->OpenStream(pexe_url_, cb, this)) {
     ReportNonPpapiError(
-        ERROR_PNACL_PEXE_FETCH_OTHER,
+        PP_NACL_ERROR_PNACL_PEXE_FETCH_OTHER,
         nacl::string("PnaclCoordinator: failed to open stream ") + pexe_url_);
     return;
   }
@@ -492,7 +504,7 @@ void PnaclCoordinator::ResourcesDidLoad(int32_t pp_error) {
   int32_t nexe_fd_err =
       plugin_->nacl_interface()->GetNexeFd(
           plugin_->pp_instance(),
-          streaming_downloader_->url().c_str(),
+          streaming_downloader_->full_url().c_str(),
           // TODO(dschuff): Get this value from the pnacl json file after it
           // rolls in from NaCl.
           1,
@@ -500,13 +512,13 @@ void PnaclCoordinator::ResourcesDidLoad(int32_t pp_error) {
           parser.GetHeader("last-modified").c_str(),
           parser.GetHeader("etag").c_str(),
           PP_FromBool(parser.CacheControlNoStore()),
-          GetSandboxISA(),
+          plugin_->nacl_interface()->GetSandboxArch(),
           "", // No extra compile flags yet.
           &is_cache_hit_,
           temp_nexe_file_->existing_handle(),
           cb.pp_completion_callback());
   if (nexe_fd_err < PP_OK_COMPLETIONPENDING) {
-    ReportPpapiError(ERROR_PNACL_CREATE_TEMP, nexe_fd_err,
+    ReportPpapiError(PP_NACL_ERROR_PNACL_CREATE_TEMP, nexe_fd_err,
                      nacl::string("Call to GetNexeFd failed"));
   }
 }
@@ -517,14 +529,14 @@ void PnaclCoordinator::NexeFdDidOpen(int32_t pp_error) {
                  is_cache_hit_ == PP_TRUE,
                  *temp_nexe_file_->existing_handle()));
   if (pp_error < PP_OK) {
-    ReportPpapiError(ERROR_PNACL_CREATE_TEMP, pp_error,
+    ReportPpapiError(PP_NACL_ERROR_PNACL_CREATE_TEMP, pp_error,
                      nacl::string("GetNexeFd failed"));
     return;
   }
 
   if (*temp_nexe_file_->existing_handle() == PP_kInvalidFileHandle) {
     ReportNonPpapiError(
-        ERROR_PNACL_CREATE_TEMP,
+        PP_NACL_ERROR_PNACL_CREATE_TEMP,
         nacl::string(
             "PnaclCoordinator: Got bad temp file handle from GetNexeFd"));
     return;
@@ -569,16 +581,16 @@ void PnaclCoordinator::BitcodeStreamDidFinish(int32_t pp_error) {
     // objects or writing to the files.
     translate_finish_error_ = pp_error;
     if (pp_error == PP_ERROR_ABORTED) {
-      error_info_.SetReport(ERROR_PNACL_PEXE_FETCH_ABORTED,
+      error_info_.SetReport(PP_NACL_ERROR_PNACL_PEXE_FETCH_ABORTED,
                             "PnaclCoordinator: pexe load failed (aborted).");
     }
     if (pp_error == PP_ERROR_NOACCESS) {
-      error_info_.SetReport(ERROR_PNACL_PEXE_FETCH_NOACCESS,
+      error_info_.SetReport(PP_NACL_ERROR_PNACL_PEXE_FETCH_NOACCESS,
                             "PnaclCoordinator: pexe load failed (no access).");
     } else {
       nacl::stringstream ss;
       ss << "PnaclCoordinator: pexe load failed (pp_error=" << pp_error << ").";
-      error_info_.SetReport(ERROR_PNACL_PEXE_FETCH_OTHER, ss.str());
+      error_info_.SetReport(PP_NACL_ERROR_PNACL_PEXE_FETCH_OTHER, ss.str());
     }
     translate_thread_->AbortSubprocesses();
   } else {
@@ -652,7 +664,7 @@ void PnaclCoordinator::ObjectFileDidOpen(int32_t pp_error) {
   PLUGIN_PRINTF(("PnaclCoordinator::ObjectFileDidOpen (pp_error=%"
                  NACL_PRId32 ")\n", pp_error));
   if (pp_error != PP_OK) {
-    ReportPpapiError(ERROR_PNACL_CREATE_TEMP,
+    ReportPpapiError(PP_NACL_ERROR_PNACL_CREATE_TEMP,
                      pp_error,
                      "Failed to open scratch object file.");
     return;

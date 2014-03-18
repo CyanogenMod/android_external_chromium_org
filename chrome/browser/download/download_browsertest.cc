@@ -46,7 +46,7 @@
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/tab_contents/render_view_context_menu.h"
+#include "chrome/browser/renderer_context_menu/render_view_context_menu_test_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -68,6 +68,7 @@
 #include "content/public/browser/download_save_info.h"
 #include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/web_contents.h"
@@ -321,24 +322,6 @@ class MockAutoConfirmExtensionInstallPrompt : public ExtensionInstallPrompt {
 static DownloadManager* DownloadManagerForBrowser(Browser* browser) {
   return BrowserContext::GetDownloadManager(browser->profile());
 }
-
-class TestRenderViewContextMenu : public RenderViewContextMenu {
- public:
-  TestRenderViewContextMenu(content::RenderFrameHost* render_frame_host,
-                            const content::ContextMenuParams& params)
-      : RenderViewContextMenu(render_frame_host, params) {
-  }
-  virtual ~TestRenderViewContextMenu() {}
-
- private:
-  virtual void PlatformInit() OVERRIDE {}
-  virtual void PlatformCancel() OVERRIDE {}
-  virtual bool GetAcceleratorForCommandId(int, ui::Accelerator*) OVERRIDE {
-    return false;
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(TestRenderViewContextMenu);
-};
 
 bool WasAutoOpened(DownloadItem* item) {
   return item->GetAutoOpened();
@@ -682,8 +665,7 @@ class DownloadTest : public InProcessBrowserTest {
         VerifyFile(downloaded_file, original_file_contents, origin_file_size));
 
     // Delete the downloaded copy of the file.
-    bool downloaded_file_deleted =
-        file_util::DieFileDie(downloaded_file, false);
+    bool downloaded_file_deleted = base::DieFileDie(downloaded_file, false);
     EXPECT_TRUE(downloaded_file_deleted);
     return downloaded_file_deleted;
   }
@@ -798,7 +780,7 @@ class DownloadTest : public InProcessBrowserTest {
     EXPECT_TRUE(VerifyFile(download_path, expected_contents, file_size));
 
     // Delete the file we just downloaded.
-    EXPECT_TRUE(file_util::DieFileDie(download_path, true));
+    EXPECT_TRUE(base::DieFileDie(download_path, true));
     EXPECT_FALSE(base::PathExists(download_path));
 
     return true;
@@ -1164,8 +1146,8 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, CheckInternetZone) {
   // as CheckDownload will delete the output file.
   EXPECT_EQ(1, browser()->tab_strip_model()->count());
   base::FilePath downloaded_file(DestinationFile(browser(), file));
-  if (file_util::VolumeSupportsADS(downloaded_file))
-    EXPECT_TRUE(file_util::HasInternetZoneIdentifier(downloaded_file));
+  if (base::VolumeSupportsADS(downloaded_file))
+    EXPECT_TRUE(base::HasInternetZoneIdentifier(downloaded_file));
   CheckDownload(browser(), file, file);
   EXPECT_TRUE(browser()->window()->IsDownloadShelfVisible());
 }
@@ -1950,11 +1932,11 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_History) {
   EXPECT_EQ(download_url, item->GetURL());
   // The following are set by download-test1.lib.mock-http-headers.
   std::string etag = item->GetETag();
-  TrimWhitespaceASCII(etag, TRIM_ALL, &etag);
+  base::TrimWhitespaceASCII(etag, base::TRIM_ALL, &etag);
   EXPECT_EQ("abracadabra", etag);
 
   std::string last_modified = item->GetLastModifiedTime();
-  TrimWhitespaceASCII(last_modified, TRIM_ALL, &last_modified);
+  base::TrimWhitespaceASCII(last_modified, base::TRIM_ALL, &last_modified);
   EXPECT_EQ("Mon, 13 Nov 2006 20:31:09 GMT", last_modified);
 }
 
@@ -2377,10 +2359,9 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, SavePageNonHTMLViaPost) {
       content::NOTIFICATION_NAV_ENTRY_COMMITTED,
       content::Source<content::NavigationController>(
           &web_contents->GetController()));
-  content::RenderViewHost* render_view_host = web_contents->GetRenderViewHost();
-  ASSERT_TRUE(render_view_host != NULL);
-  render_view_host->ExecuteJavascriptInWebFrame(
-        base::string16(), base::ASCIIToUTF16("SubmitForm()"));
+  content::RenderFrameHost* render_frame_host = web_contents->GetMainFrame();
+  ASSERT_TRUE(render_frame_host != NULL);
+  render_frame_host->ExecuteJavaScript(base::ASCIIToUTF16("SubmitForm()"));
   observer.Wait();
   EXPECT_EQ(jpeg_url, web_contents->GetURL());
 
@@ -3053,9 +3034,8 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_PercentComplete) {
 #else
   ASSERT_EQ(size + 1, downloaded_size);
 #endif
-  ASSERT_TRUE(file_util::DieFileDie(file_path, false));
-  ASSERT_TRUE(file_util::DieFileDie(download_items[0]->GetTargetFilePath(),
-                                    false));
+  ASSERT_TRUE(base::DieFileDie(file_path, false));
+  ASSERT_TRUE(base::DieFileDie(download_items[0]->GetTargetFilePath(), false));
 }
 
 IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_DenyDanger) {

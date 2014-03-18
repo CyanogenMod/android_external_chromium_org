@@ -5,17 +5,19 @@
 #include "chrome/browser/search/hotword_service_factory.h"
 
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/hotword_service.h"
 #include "chrome/common/pref_names.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
+#include "content/public/browser/browser_context.h"
+
+using content::BrowserContext;
 
 // static
-HotwordService* HotwordServiceFactory::GetForProfile(Profile* profile) {
+HotwordService* HotwordServiceFactory::GetForProfile(BrowserContext* context) {
   return static_cast<HotwordService*>(
-      GetInstance()->GetServiceForBrowserContext(profile, true));
+      GetInstance()->GetServiceForBrowserContext(context, true));
 }
 
 // static
@@ -24,21 +26,27 @@ HotwordServiceFactory* HotwordServiceFactory::GetInstance() {
 }
 
 // static
-bool HotwordServiceFactory::ShouldShowOptInPopup(Profile* profile) {
-  HotwordService* hotword_service = GetForProfile(profile);
+bool HotwordServiceFactory::ShouldShowOptInPopup(BrowserContext* context) {
+  HotwordService* hotword_service = GetForProfile(context);
   return hotword_service && hotword_service->ShouldShowOptInPopup();
 }
 
 // static
-bool HotwordServiceFactory::IsServiceAvailable(Profile* profile) {
-  HotwordService* hotword_service = GetForProfile(profile);
+bool HotwordServiceFactory::IsServiceAvailable(BrowserContext* context) {
+  HotwordService* hotword_service = GetForProfile(context);
   return hotword_service && hotword_service->IsServiceAvailable();
 }
 
 // static
-bool HotwordServiceFactory::IsHotwordAllowed(Profile* profile) {
-  HotwordService* hotword_service = GetForProfile(profile);
+bool HotwordServiceFactory::IsHotwordAllowed(BrowserContext* context) {
+  HotwordService* hotword_service = GetForProfile(context);
   return hotword_service && hotword_service->IsHotwordAllowed();
+}
+
+// static
+bool HotwordServiceFactory::RetryHotwordExtension(Profile* profile) {
+  HotwordService* hotword_service = GetForProfile(profile);
+  return hotword_service && hotword_service->RetryHotwordExtension();
 }
 
 HotwordServiceFactory::HotwordServiceFactory()
@@ -61,7 +69,7 @@ void HotwordServiceFactory::RegisterProfilePrefs(
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
-BrowserContextKeyedService* HotwordServiceFactory::BuildServiceInstanceFor(
-    content::BrowserContext* profile) const {
-  return new HotwordService(static_cast<Profile*>(profile));
+KeyedService* HotwordServiceFactory::BuildServiceInstanceFor(
+    BrowserContext* context) const {
+  return new HotwordService(Profile::FromBrowserContext(context));
 }

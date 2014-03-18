@@ -31,10 +31,10 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/format_macros.h"
 #include "base/md5.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/platform_file.h"
 #include "base/process/process.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -54,17 +54,15 @@
 
 #if defined(OS_WIN)
 #include "content/common/gpu/media/dxva_video_decode_accelerator.h"
-#elif defined(OS_CHROMEOS)
-#if defined(ARCH_CPU_ARMEL)
+#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
 #include "content/common/gpu/media/v4l2_video_decode_accelerator.h"
 #include "content/common/gpu/media/v4l2_video_device.h"
-#elif defined(ARCH_CPU_X86_FAMILY)
+#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
 #include "content/common/gpu/media/vaapi_video_decode_accelerator.h"
 #include "content/common/gpu/media/vaapi_wrapper.h"
 #if defined(USE_X11)
 #include "ui/gl/gl_implementation.h"
 #endif  // USE_X11
-#endif  // ARCH_CPU_ARMEL
 #else
 #error The VideoAccelerator tests are not supported on this platform.
 #endif  // OS_WIN
@@ -405,7 +403,7 @@ class GLRenderingVDAClient
   virtual void NotifyResetDone() OVERRIDE;
   virtual void NotifyError(VideoDecodeAccelerator::Error error) OVERRIDE;
 
-  void OutputFrameDeliveryTimes(base::PlatformFile output);
+  void OutputFrameDeliveryTimes(base::File* output);
 
   void NotifyFrameDropped(int32 picture_buffer_id);
 
@@ -555,9 +553,8 @@ void GLRenderingVDAClient::CreateAndStartDecoder() {
   }
 #if defined(OS_WIN)
   decoder_.reset(
-      new DXVAVideoDecodeAccelerator(client, base::Bind(&DoNothingReturnTrue)));
-#elif defined(OS_CHROMEOS)
-#if defined(ARCH_CPU_ARMEL)
+      new DXVAVideoDecodeAccelerator(base::Bind(&DoNothingReturnTrue)));
+#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
 
   scoped_ptr<V4L2Device> device = V4L2Device::Create();
   if (!device.get()) {
@@ -566,26 +563,23 @@ void GLRenderingVDAClient::CreateAndStartDecoder() {
   }
   decoder_.reset(new V4L2VideoDecodeAccelerator(
       static_cast<EGLDisplay>(rendering_helper_->GetGLDisplay()),
-      client,
       weak_client,
       base::Bind(&DoNothingReturnTrue),
       device.Pass(),
       base::MessageLoopProxy::current()));
-#elif defined(ARCH_CPU_X86_FAMILY)
+#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
   CHECK_EQ(gfx::kGLImplementationDesktopGL, gfx::GetGLImplementation())
       << "Hardware video decode does not work with OSMesa";
   decoder_.reset(new VaapiVideoDecodeAccelerator(
       static_cast<Display*>(rendering_helper_->GetGLDisplay()),
-      client,
       base::Bind(&DoNothingReturnTrue)));
-#endif  // ARCH_CPU_ARMEL
 #endif  // OS_WIN
   CHECK(decoder_.get());
   SetState(CS_DECODER_SET);
   if (decoder_deleted())
     return;
 
-  CHECK(decoder_->Initialize(profile_));
+  CHECK(decoder_->Initialize(profile_, client));
 }
 
 void GLRenderingVDAClient::ProvidePictureBuffers(
@@ -742,17 +736,17 @@ void GLRenderingVDAClient::NotifyError(VideoDecodeAccelerator::Error error) {
   SetState(CS_ERROR);
 }
 
-void GLRenderingVDAClient::OutputFrameDeliveryTimes(base::PlatformFile output) {
+void GLRenderingVDAClient::OutputFrameDeliveryTimes(base::File* output) {
   std::string s = base::StringPrintf("frame count: %" PRIuS "\n",
                                      frame_delivery_times_.size());
-  base::WritePlatformFileAtCurrentPos(output, s.data(), s.length());
+  output->WriteAtCurrentPos(s.data(), s.length());
   base::TimeTicks t0 = initialize_done_ticks_;
   for (size_t i = 0; i < frame_delivery_times_.size(); ++i) {
     s = base::StringPrintf("frame %04" PRIuS ": %" PRId64 " us\n",
                            i,
                            (frame_delivery_times_[i] - t0).InMicroseconds());
     t0 = frame_delivery_times_[i];
-    base::WritePlatformFileAtCurrentPos(output, s.data(), s.length());
+    output->WriteAtCurrentPos(s.data(), s.length());
   }
 }
 
@@ -1145,13 +1139,9 @@ void VideoDecodeAcceleratorTest::WaitUntilIdle() {
 void VideoDecodeAcceleratorTest::OutputLogFile(
     const base::FilePath::CharType* log_path,
     const std::string& content) {
-  base::PlatformFile file = base::CreatePlatformFile(
-      base::FilePath(log_path),
-      base::PLATFORM_FILE_CREATE_ALWAYS | base::PLATFORM_FILE_WRITE,
-      NULL,
-      NULL);
-  base::WritePlatformFileAtCurrentPos(file, content.data(), content.length());
-  base::ClosePlatformFile(file);
+  base::File file(base::FilePath(log_path),
+                  base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
+  file.WriteAtCurrentPos(content.data(), content.length());
 }
 
 // Test parameters:
@@ -1376,7 +1366,7 @@ TEST_P(VideoDecodeAcceleratorParamTest, TestSimpleDecode) {
       base::FilePath filepath(test_video_files_[0]->file_name);
       filepath = filepath.AddExtension(FILE_PATH_LITERAL(".bad_thumbnails"));
       filepath = filepath.AddExtension(FILE_PATH_LITERAL(".png"));
-      int num_bytes = file_util::WriteFile(filepath,
+      int num_bytes = base::WriteFile(filepath,
                                            reinterpret_cast<char*>(&png[0]),
                                            png.size());
       ASSERT_EQ(num_bytes, static_cast<int>(png.size()));
@@ -1389,15 +1379,12 @@ TEST_P(VideoDecodeAcceleratorParamTest, TestSimpleDecode) {
   // We can only make performance/correctness assertions if the decoder was
   // allowed to finish.
   if (g_output_log != NULL && delete_decoder_state >= CS_FLUSHED) {
-    base::PlatformFile output_file = base::CreatePlatformFile(
+    base::File output_file(
         base::FilePath(g_output_log),
-        base::PLATFORM_FILE_CREATE_ALWAYS | base::PLATFORM_FILE_WRITE,
-        NULL,
-        NULL);
+        base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
     for (size_t i = 0; i < num_concurrent_decoders; ++i) {
-      clients[i]->OutputFrameDeliveryTimes(output_file);
+      clients[i]->OutputFrameDeliveryTimes(&output_file);
     }
-    base::ClosePlatformFile(output_file);
   }
 
   rendering_loop_proxy_->PostTask(
@@ -1550,8 +1537,6 @@ int main(int argc, char **argv) {
   // Needed to enable DVLOG through --vmodule.
   logging::LoggingSettings settings;
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
-  settings.dcheck_state =
-      logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
   CHECK(logging::InitLogging(settings));
 
   CommandLine* cmd_line = CommandLine::ForCurrentProcess();

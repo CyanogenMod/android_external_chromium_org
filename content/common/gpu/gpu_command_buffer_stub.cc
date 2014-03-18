@@ -30,6 +30,7 @@
 #include "gpu/command_buffer/service/gpu_control_service.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/logger.h"
+#include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/query_manager.h"
 #include "ui/gl/gl_bindings.h"
@@ -400,11 +401,8 @@ void GpuCommandBufferStub::OnInitialize(
   command_buffer_.reset(new gpu::CommandBufferService(
       context_group_->transfer_buffer_manager()));
 
-  if (!command_buffer_->Initialize()) {
-    DLOG(ERROR) << "CommandBufferService failed to initialize.\n";
-    OnInitializeFailed(reply_message);
-    return;
-  }
+  bool result = command_buffer_->Initialize();
+  DCHECK(result);
 
   decoder_.reset(::gpu::gles2::GLES2Decoder::Create(context_group_.get()));
 
@@ -419,7 +417,7 @@ void GpuCommandBufferStub::OnInitialize(
   if (!handle_.is_null()) {
 #if defined(OS_MACOSX) || defined(UI_COMPOSITOR_IMAGE_TRANSPORT)
     if (software_) {
-      DLOG(ERROR) << "No software support.\n";
+      LOG(ERROR) << "No software support.\n";
       OnInitializeFailed(reply_message);
       return;
     }
@@ -773,11 +771,15 @@ void GpuCommandBufferStub::AddSyncPoint(uint32 sync_point) {
 void GpuCommandBufferStub::OnRetireSyncPoint(uint32 sync_point) {
   DCHECK(!sync_points_.empty() && sync_points_.front() == sync_point);
   sync_points_.pop_front();
+  if (context_group_->mailbox_manager()->UsesSync() && MakeCurrent())
+    context_group_->mailbox_manager()->PushTextureUpdates();
   GpuChannelManager* manager = channel_->gpu_channel_manager();
   manager->sync_point_manager()->RetireSyncPoint(sync_point);
 }
 
 bool GpuCommandBufferStub::OnWaitSyncPoint(uint32 sync_point) {
+  if (!sync_point)
+    return true;
   GpuChannelManager* manager = channel_->gpu_channel_manager();
   if (manager->sync_point_manager()->IsSyncPointRetired(sync_point))
     return true;

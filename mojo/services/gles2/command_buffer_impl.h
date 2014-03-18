@@ -9,7 +9,7 @@
 #include "base/timer/timer.h"
 #include "mojo/public/bindings/remote_ptr.h"
 #include "mojo/public/system/core_cpp.h"
-#include "mojom/command_buffer.h"
+#include "mojo/services/gles2/command_buffer.mojom.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 
@@ -41,7 +41,7 @@ class CommandBufferImpl : public CommandBuffer {
                                       const ShmHandle& transfer_buffer,
                                       uint32_t size) OVERRIDE;
   virtual void DestroyTransferBuffer(int32_t id) OVERRIDE;
-  virtual void Echo() OVERRIDE;
+  virtual void Echo(const Callback<void()>& callback) OVERRIDE;
 
   virtual void RequestAnimationFrames() OVERRIDE;
   virtual void CancelAnimationFrames() OVERRIDE;

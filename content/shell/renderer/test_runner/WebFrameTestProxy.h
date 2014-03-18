@@ -92,6 +92,10 @@ public:
     {
         Base::didFinishLoad(frame);
     }
+    virtual void showContextMenu(const blink::WebContextMenuData& contextMenuData) {
+        m_baseProxy->showContextMenu(Base::GetWebFrame(), contextMenuData);
+        Base::showContextMenu(contextMenuData);
+    }
     virtual void didDetectXSS(blink::WebFrame* frame, const blink::WebURL& insecureURL, bool didBlockEntirePage)
     {
         // This is not implemented in RenderFrameImpl, so need to explicitly call
@@ -140,6 +144,10 @@ public:
     }
     virtual blink::WebNavigationPolicy decidePolicyForNavigation(blink::WebFrame* frame, blink::WebDataSource::ExtraData* extraData, const blink::WebURLRequest& request, blink::WebNavigationType type, blink::WebNavigationPolicy defaultPolicy, bool isRedirect)
     {
+        blink::WebNavigationPolicy policy = m_baseProxy->decidePolicyForNavigation(frame, extraData, request, type, defaultPolicy, isRedirect);
+        if (policy == blink::WebNavigationPolicyIgnore)
+            return policy;
+
         return Base::decidePolicyForNavigation(frame, extraData, request, type, defaultPolicy, isRedirect);
     }
     virtual bool willCheckAndDispatchMessageEvent(blink::WebFrame* sourceFrame, blink::WebFrame* targetFrame, blink::WebSecurityOrigin target, blink::WebDOMMessageEvent event)

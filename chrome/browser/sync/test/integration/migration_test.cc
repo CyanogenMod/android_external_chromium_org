@@ -10,7 +10,7 @@
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
 #include "chrome/browser/sync/test/integration/preferences_helper.h"
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
-#include "chrome/browser/sync/test/integration/status_change_checker.h"
+#include "chrome/browser/sync/test/integration/single_client_status_change_checker.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -67,11 +67,11 @@ MigrationList MakeList(syncer::ModelType type1,
 
 // Helper class that checks if the sync backend has successfully completed
 // migration for a set of data types.
-class MigrationChecker : public StatusChangeChecker,
+class MigrationChecker : public SingleClientStatusChangeChecker,
                          public browser_sync::MigrationObserver {
  public:
   explicit MigrationChecker(ProfileSyncServiceHarness* harness)
-      : StatusChangeChecker("MigrationChecker"),
+      : SingleClientStatusChangeChecker(harness->service()),
         harness_(harness) {
     DCHECK(harness_);
     browser_sync::BackendMigrator* migrator =
@@ -96,6 +96,10 @@ class MigrationChecker : public StatusChangeChecker,
              << syncer::ModelTypeSetToString(expected_types_);
     return all_expected_types_migrated &&
            !HasPendingBackendMigration();
+  }
+
+  virtual std::string GetDebugMessage() const OVERRIDE {
+    return "Waiting to migrate (" + ModelTypeSetToString(expected_types_) + ")";
   }
 
   bool HasPendingBackendMigration() const {
@@ -234,7 +238,7 @@ class MigrationTest : public SyncTest  {
       MigrationChecker* checker = migration_checkers_[i];
       checker->set_expected_types(migrate_types);
       if (!checker->IsExitConditionSatisfied())
-        ASSERT_TRUE(GetClient(i)->AwaitStatusChange(checker, "AwaitMigration"));
+        ASSERT_TRUE(GetClient(i)->AwaitStatusChange(checker));
     }
   }
 
@@ -511,7 +515,7 @@ class MigrationReconfigureTest : public MigrationTwoClientTest {
  public:
   MigrationReconfigureTest() {}
 
-  virtual void SetUpCommandLine(CommandLine* cl) OVERRIDE {
+  virtual void SetUpCommandLine(base::CommandLine* cl) OVERRIDE {
     AddTestSwitches(cl);
     // Do not add optional datatypes.
   }

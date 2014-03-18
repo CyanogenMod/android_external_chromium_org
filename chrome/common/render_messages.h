@@ -262,12 +262,6 @@ IPC_MESSAGE_CONTROL3(ChromeViewMsg_SetCacheCapacities,
 IPC_MESSAGE_CONTROL1(ChromeViewMsg_ClearCache,
                      bool /* on_navigation */)
 
-// Tells the renderer to dump as much memory as it can, perhaps because we
-// have memory pressure or the renderer is (or will be) paged out.  This
-// should only result in purging objects we can recalculate, e.g. caches or
-// JS garbage, not in purging irreplaceable objects.
-IPC_MESSAGE_CONTROL0(ChromeViewMsg_PurgeMemory)
-
 // For WebUI testing, this message stores parameters to do ScriptEvalRequest at
 // a time which is late enough to not be thrown out, and early enough to be
 // before onload events are fired.
@@ -443,9 +437,14 @@ IPC_MESSAGE_ROUTED0(ChromeViewMsg_SetAsInterstitial)
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_NetErrorInfo,
                     int /* DNS probe status */)
 
-// Sets the alternate error page URL (Link Doctor) for the renderer process.
-// Handled by the NetErrorHelper.
-IPC_MESSAGE_ROUTED1(ChromeViewMsg_SetAltErrorPageURL, GURL)
+// Provides the information needed by the renderer process to contact a
+// navigation correction service.  Handled by the NetErrorHelper.
+IPC_MESSAGE_ROUTED5(ChromeViewMsg_SetNavigationCorrectionInfo,
+                    GURL /* Navigation correction service base URL */,
+                    std::string /* language */,
+                    std::string /* origin_country */,
+                    std::string /* API key to use */,
+                    GURL /* Google Search URL to use */)
 
 //-----------------------------------------------------------------------------
 // Misc messages
@@ -703,7 +702,14 @@ IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_LogEvent,
 
 // Logs an impression on one of the Most Visited tile on the InstantExtended
 // New Tab Page.
-IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_LogImpression,
+IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_LogMostVisitedImpression,
+                    int /* page_id */,
+                    int /* position */,
+                    base::string16 /* provider */)
+
+// Logs a navigation on one of the Most Visited tile on the InstantExtended
+// New Tab Page.
+IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_LogMostVisitedNavigation,
                     int /* page_id */,
                     int /* position */,
                     base::string16 /* provider */)

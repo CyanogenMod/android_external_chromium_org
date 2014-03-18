@@ -4,15 +4,17 @@
 
 #include "chrome_elf/blacklist/blacklist.h"
 
+#include <assert.h>
 #include <string.h>
 
 #include "base/basictypes.h"
 #include "chrome_elf/blacklist/blacklist_interceptions.h"
+#include "chrome_elf/chrome_elf_constants.h"
+#include "chrome_elf/chrome_elf_util.h"
 #include "sandbox/win/src/interception_internal.h"
 #include "sandbox/win/src/internal_types.h"
 #include "sandbox/win/src/sandbox_utils.h"
 #include "sandbox/win/src/service_resolver.h"
-#include "version.h"  // NOLINT
 
 // http://blogs.msdn.com/oldnewthing/archive/2004/10/25/247180.aspx
 extern "C" IMAGE_DOS_HEADER __ImageBase;
@@ -28,9 +30,8 @@ const wchar_t* g_troublesome_dlls[kTroublesomeDllsMaxCount] = {
   NULL,
 };
 
-const wchar_t kRegistryBeaconPath[] = L"SOFTWARE\\Google\\Chrome\\BLBeacon";
-const wchar_t kBeaconVersion[] = L"version";
-const wchar_t kBeaconState[] = L"state";
+bool g_blocked_dlls[kTroublesomeDllsMaxCount] = {};
+int g_num_blocked_dlls = 0;
 
 }  // namespace blacklist
 
@@ -144,17 +145,6 @@ class OSInfo {
   DISALLOW_COPY_AND_ASSIGN(OSInfo);
 };
 
-bool IsNonBrowserProcess() {
-  typedef bool (*IsSandboxedProcessFunc)();
-  IsSandboxedProcessFunc is_sandboxed_process =
-      reinterpret_cast<IsSandboxedProcessFunc>(
-          GetProcAddress(GetModuleHandle(NULL), "IsSandboxedProcess"));
-  if (is_sandboxed_process && is_sandboxed_process())
-    return true;
-
-  return false;
-}
-
 // Record that the thunk setup completed succesfully and close the registry
 // key handle since it is no longer needed.
 void RecordSuccessfulThunkSetup(HKEY* key) {
@@ -210,23 +200,6 @@ bool LeaveSetupBeacon() {
 
   if (blacklist_state != BLACKLIST_ENABLED ||
       result != ERROR_SUCCESS || type != REG_DWORD) {
-    ::RegCloseKey(key);
-    return false;
-  }
-
-  // If the blacklist wasn't set as enabled for this version, don't
-  // use it.
-  wchar_t key_data[255] = {};
-  DWORD key_data_size = sizeof(key_data);
-  result = ::RegQueryValueEx(key,
-                             blacklist::kBeaconVersion,
-                             0,
-                             &type,
-                             reinterpret_cast<LPBYTE>(key_data),
-                             &key_data_size);
-
-  if (wcscmp(key_data, TEXT(CHROME_VERSION_STRING)) != 0 ||
-      result != ERROR_SUCCESS || type != REG_SZ) {
     ::RegCloseKey(key);
     return false;
   }
@@ -298,6 +271,7 @@ bool AddDllToBlacklist(const wchar_t* dll_name) {
   wcscpy(str_buffer, dll_name);
 
   g_troublesome_dlls[blacklist_size] = str_buffer;
+  g_blocked_dlls[blacklist_size] = false;
   return true;
 }
 
@@ -310,10 +284,50 @@ bool RemoveDllFromBlacklist(const wchar_t* dll_name) {
       delete[] g_troublesome_dlls[i];
       g_troublesome_dlls[i] = g_troublesome_dlls[blacklist_size - 1];
       g_troublesome_dlls[blacklist_size - 1] = NULL;
+
+      // Also update the stats recording if we have blocked this dll or not.
+      if (g_blocked_dlls[i])
+        --g_num_blocked_dlls;
+      g_blocked_dlls[i] = g_blocked_dlls[blacklist_size - 1];
       return true;
     }
   }
   return false;
+}
+
+// TODO(csharp): Maybe store these values in the registry so we can
+// still report them if Chrome crashes early.
+void SuccessfullyBlocked(const wchar_t** blocked_dlls, int* size) {
+  if (size == NULL)
+    return;
+
+  // If the array isn't valid or big enough, just report the size it needs to
+  // be and return.
+  if (blocked_dlls == NULL && *size < g_num_blocked_dlls) {
+    *size = g_num_blocked_dlls;
+    return;
+  }
+
+  *size = g_num_blocked_dlls;
+
+  int strings_to_fill = 0;
+  for (int i = 0; strings_to_fill < g_num_blocked_dlls && g_troublesome_dlls[i];
+       ++i) {
+    if (g_blocked_dlls[i]) {
+      blocked_dlls[strings_to_fill] = g_troublesome_dlls[i];
+      ++strings_to_fill;
+    }
+  }
+}
+
+void BlockedDll(size_t blocked_index) {
+  assert(blocked_index < kTroublesomeDllsMaxCount);
+
+  if (!g_blocked_dlls[blocked_index] &&
+      blocked_index < kTroublesomeDllsMaxCount) {
+    ++g_num_blocked_dlls;
+    g_blocked_dlls[blocked_index] = true;
+  }
 }
 
 bool Initialize(bool force) {

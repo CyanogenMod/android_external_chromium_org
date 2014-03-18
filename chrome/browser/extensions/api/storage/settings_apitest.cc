@@ -7,20 +7,21 @@
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/api/storage/settings_frontend.h"
-#include "chrome/browser/extensions/api/storage/settings_namespace.h"
 #include "chrome/browser/extensions/api/storage/settings_sync_util.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "extensions/browser/api/storage/settings_namespace.h"
+#include "extensions/browser/api/storage/storage_frontend.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/value_builder.h"
+#include "sync/api/fake_sync_change_processor.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_change_processor.h"
+#include "sync/api/sync_change_processor_wrapper_for_test.h"
 #include "sync/api/sync_error_factory.h"
 #include "sync/api/sync_error_factory_mock.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -58,49 +59,6 @@ const syncer::ModelType kModelType = syncer::EXTENSION_SETTINGS;
 // its extension ID is well-known and the policy system can push policies for
 // the extension.
 const char kManagedStorageExtensionId[] = "kjmkgkdkpedkejedfhmfcenooemhbpbo";
-
-class NoopSyncChangeProcessor : public syncer::SyncChangeProcessor {
- public:
-  virtual syncer::SyncError ProcessSyncChanges(
-      const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE {
-    return syncer::SyncError();
-  }
-
-  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const
-      OVERRIDE {
-    return syncer::SyncDataList();
-  }
-
-  virtual ~NoopSyncChangeProcessor() {};
-};
-
-class SyncChangeProcessorDelegate : public syncer::SyncChangeProcessor {
- public:
-  explicit SyncChangeProcessorDelegate(syncer::SyncChangeProcessor* recipient)
-      : recipient_(recipient) {
-    DCHECK(recipient_);
-  }
-  virtual ~SyncChangeProcessorDelegate() {}
-
-  // syncer::SyncChangeProcessor implementation.
-  virtual syncer::SyncError ProcessSyncChanges(
-      const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE {
-    return recipient_->ProcessSyncChanges(from_here, change_list);
-  }
-
-  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const
-      OVERRIDE {
-    return recipient_->GetAllSyncData(type);
-  }
-
- private:
-  // The recipient of all sync changes.
-  syncer::SyncChangeProcessor* recipient_;
-
-  DISALLOW_COPY_AND_ASSIGN(SyncChangeProcessorDelegate);
-};
 
 class MockSchemaRegistryObserver : public policy::SchemaRegistry::Observer {
  public:
@@ -156,20 +114,19 @@ class ExtensionSettingsApiTest : public ExtensionApiTest {
         settings_namespace, normal_action, incognito_action, NULL, true);
   }
 
+  syncer::SyncableService* GetSyncableService() {
+    return settings_sync_util::GetSyncableService(browser()->profile(),
+                                                  kModelType);
+  }
+
   void InitSync(syncer::SyncChangeProcessor* sync_processor) {
     base::MessageLoop::current()->RunUntilIdle();
-    InitSyncWithSyncableService(
-        sync_processor,
-        browser()->profile()->GetExtensionService()->settings_frontend()->
-              GetBackendForSync(kModelType));
+    InitSyncWithSyncableService(sync_processor, GetSyncableService());
   }
 
   void SendChanges(const syncer::SyncChangeList& change_list) {
     base::MessageLoop::current()->RunUntilIdle();
-    SendChangesToSyncableService(
-        change_list,
-        browser()->profile()->GetExtensionService()->settings_frontend()->
-              GetBackendForSync(kModelType));
+    SendChangesToSyncableService(change_list, GetSyncableService());
   }
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
@@ -229,13 +186,17 @@ class ExtensionSettingsApiTest : public ExtensionApiTest {
   void InitSyncWithSyncableService(
       syncer::SyncChangeProcessor* sync_processor,
       syncer::SyncableService* settings_service) {
-    EXPECT_FALSE(settings_service->MergeDataAndStartSyncing(
-        kModelType,
-        syncer::SyncDataList(),
-        scoped_ptr<syncer::SyncChangeProcessor>(
-            new SyncChangeProcessorDelegate(sync_processor)),
-        scoped_ptr<syncer::SyncErrorFactory>(
-            new syncer::SyncErrorFactoryMock())).error().IsSet());
+    EXPECT_FALSE(
+        settings_service->MergeDataAndStartSyncing(
+                              kModelType,
+                              syncer::SyncDataList(),
+                              scoped_ptr<syncer::SyncChangeProcessor>(
+                                  new syncer::SyncChangeProcessorWrapperForTest(
+                                      sync_processor)),
+                              scoped_ptr<syncer::SyncErrorFactory>(
+                                  new syncer::SyncErrorFactoryMock()))
+            .error()
+            .IsSet());
   }
 
   void SendChangesToSyncableService(
@@ -370,7 +331,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest,
           "assertNoNotifications", "assertNoNotifications", "split_incognito");
   const std::string& extension_id = extension->id();
 
-  NoopSyncChangeProcessor sync_processor;
+  syncer::FakeSyncChangeProcessor sync_processor;
   InitSync(&sync_processor);
 
   // Set "foo" to "bar" via sync.
@@ -415,7 +376,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest,
           "assertNoNotifications", "assertNoNotifications", "split_incognito");
   const std::string& extension_id = extension->id();
 
-  NoopSyncChangeProcessor sync_processor;
+  syncer::FakeSyncChangeProcessor sync_processor;
   InitSync(&sync_processor);
 
   // Set "foo" to "bar" via sync.
@@ -441,8 +402,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest,
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, IsStorageEnabled) {
-  SettingsFrontend* frontend =
-      browser()->profile()->GetExtensionService()->settings_frontend();
+  StorageFrontend* frontend = StorageFrontend::Get(browser()->profile());
   EXPECT_TRUE(frontend->IsStorageEnabled(LOCAL));
   EXPECT_TRUE(frontend->IsStorageEnabled(SYNC));
 
@@ -610,8 +570,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest,
 IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, ManagedStorageDisabled) {
   // Disable the 'managed' namespace. This is redundant when
   // ENABLE_CONFIGURATION_POLICY is not defined.
-  SettingsFrontend* frontend =
-      browser()->profile()->GetExtensionService()->settings_frontend();
+  StorageFrontend* frontend = StorageFrontend::Get(browser()->profile());
   frontend->DisableStorageForTesting(MANAGED);
   EXPECT_FALSE(frontend->IsStorageEnabled(MANAGED));
   // Now run the extension.

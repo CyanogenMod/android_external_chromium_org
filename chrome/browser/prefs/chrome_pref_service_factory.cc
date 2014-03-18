@@ -4,6 +4,9 @@
 
 #include "chrome/browser/prefs/chrome_pref_service_factory.h"
 
+#include <string>
+#include <vector>
+
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/debug/trace_event.h"
@@ -69,9 +72,21 @@ using content::BrowserThread;
 
 namespace {
 
-// The delay in seconds before actual work kicks in after calling
-// SchedulePrefHashStoresUpdateCheck can be set to 0 for tests.
-int g_pref_hash_store_update_check_delay_seconds = 55;
+// TODO(erikwright): Enable this on Android when race condition is sorted out.
+// TODO(erikwright): Enable this on Chrome OS once MACs are moved out of Local
+// State.
+const bool kCanUsePrefHashStoreOnPlatform =
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
+    false;
+#else
+    true;
+#endif
+
+// Whether we are in testing mode; can be enabled via
+// DisableDelaysAndDomainCheckForTesting(). Forces startup checks to occur
+// with no delay and ignores the presence of a domain when determining the
+// active SettingsEnforcement group.
+bool g_disable_delays_and_domain_check_for_testing = false;
 
 // These preferences must be kept in sync with the TrackedPreference enum in
 // tools/metrics/histograms/histograms.xml. To add a new preference, append it
@@ -167,15 +182,17 @@ enum SettingsEnforcementGroup {
 
 SettingsEnforcementGroup GetSettingsEnforcementGroup() {
 # if defined(OS_WIN)
-  static bool first_call = true;
-  static const bool is_enrolled_to_domain = base::win::IsEnrolledToDomain();
-  if (first_call) {
-    UMA_HISTOGRAM_BOOLEAN("Settings.TrackedPreferencesNoEnforcementOnDomain",
-                          is_enrolled_to_domain);
-    first_call = false;
+  if (!g_disable_delays_and_domain_check_for_testing) {
+    static bool first_call = true;
+    static const bool is_enrolled_to_domain = base::win::IsEnrolledToDomain();
+    if (first_call) {
+      UMA_HISTOGRAM_BOOLEAN("Settings.TrackedPreferencesNoEnforcementOnDomain",
+                            is_enrolled_to_domain);
+      first_call = false;
+    }
+    if (is_enrolled_to_domain)
+      return GROUP_NO_ENFORCEMENT;
   }
-  if (is_enrolled_to_domain)
-    return GROUP_NO_ENFORCEMENT;
 #endif
 
   struct {
@@ -190,6 +207,9 @@ SettingsEnforcementGroup GetSettingsEnforcementGroup() {
       GROUP_ENFORCE_ALWAYS },
   };
 
+  // TODO(gab): Switch the default to GROUP_ENFORCE_ALWAYS.
+  SettingsEnforcementGroup enforcement_group = GROUP_NO_ENFORCEMENT;
+  bool group_determined_from_trial = false;
   base::FieldTrial* trial =
       base::FieldTrialList::Find(
           chrome_prefs::internals::kSettingsEnforcementTrialName);
@@ -200,19 +220,36 @@ SettingsEnforcementGroup GetSettingsEnforcementGroup() {
     // non-array pointer types; this is fine since kEnforcementLevelMap is
     // clearly an array.
     for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kEnforcementLevelMap); ++i) {
-      if (kEnforcementLevelMap[i].group_name == group_name)
-        return kEnforcementLevelMap[i].group;
+      if (kEnforcementLevelMap[i].group_name == group_name) {
+        enforcement_group = kEnforcementLevelMap[i].group;
+        group_determined_from_trial = true;
+        break;
+      }
     }
   }
-#if defined(OS_WIN)
-  // Default to GROUP_ENFORCE_ALWAYS in the absence of a valid value for the
-  // SettingsEnforcement field trial.
-  // TODO(gab): Switch other platforms over to this mode.
-  return GROUP_ENFORCE_ALWAYS;
-#else
-  return GROUP_NO_ENFORCEMENT;
-#endif
+  UMA_HISTOGRAM_BOOLEAN("Settings.EnforcementGroupDeterminedFromTrial",
+                        group_determined_from_trial);
+  return enforcement_group;
 }
+
+// Returns the effective preference tracking configuration.
+std::vector<PrefHashFilter::TrackedPreferenceMetadata>
+GetTrackingConfiguration() {
+  const PrefHashFilter::EnforcementLevel maximum_level =
+      GetSettingsEnforcementGroup() == GROUP_NO_ENFORCEMENT
+          ? PrefHashFilter::NO_ENFORCEMENT
+          : PrefHashFilter::ENFORCE_ON_LOAD;
+
+  std::vector<PrefHashFilter::TrackedPreferenceMetadata> result;
+  for (size_t i = 0; i < arraysize(kTrackedPrefs); ++i) {
+    PrefHashFilter::TrackedPreferenceMetadata data = kTrackedPrefs[i];
+    if (data.enforcement_level > maximum_level)
+      data.enforcement_level = maximum_level;
+    result.push_back(data);
+  }
+  return result;
+}
+
 
 // Shows notifications which correspond to PersistentPrefStore's reading errors.
 void HandleReadError(PersistentPrefStore::PrefReadError error) {
@@ -255,10 +292,11 @@ base::FilePath GetPrefFilePathFromProfilePath(
 // on some platforms.
 scoped_ptr<PrefHashStoreImpl> GetPrefHashStoreImpl(
     const base::FilePath& profile_path) {
-  // TODO(erikwright): Enable this on Android when race condition is sorted out.
-#if defined(OS_ANDROID)
-  return scoped_ptr<PrefHashStoreImpl>();
-#else
+  // TODO(erikwright): Remove this check and change this method's definition to
+  // never NULL once a pref hash store can be used on every platform.
+  if (!kCanUsePrefHashStoreOnPlatform)
+    return scoped_ptr<PrefHashStoreImpl>();
+
   std::string seed = ResourceBundle::GetSharedInstance().GetRawDataResource(
       IDR_PREF_HASH_SEED_BIN).as_string();
   std::string device_id;
@@ -278,26 +316,13 @@ scoped_ptr<PrefHashStoreImpl> GetPrefHashStoreImpl(
       seed,
       device_id,
       g_browser_process->local_state()));
-#endif
-}
-
-void HandleResetEvent() {
-  g_browser_process->local_state()->SetInt64(
-      prefs::kProfilePreferenceResetTime,
-      base::Time::Now().ToInternalValue());
 }
 
 scoped_ptr<PrefHashFilter> CreatePrefHashFilter(
     scoped_ptr<PrefHashStore> pref_hash_store) {
-  const PrefHashFilter::EnforcementLevel enforcement_level =
-      GetSettingsEnforcementGroup() == GROUP_NO_ENFORCEMENT ?
-          PrefHashFilter::NO_ENFORCEMENT : PrefHashFilter::ENFORCE_ON_LOAD;
   return make_scoped_ptr(new PrefHashFilter(pref_hash_store.Pass(),
-                                            kTrackedPrefs,
-                                            arraysize(kTrackedPrefs),
-                                            kTrackedPrefsReportingIDsCount,
-                                            enforcement_level,
-                                            base::Bind(&HandleResetEvent)));
+                                            GetTrackingConfiguration(),
+                                            kTrackedPrefsReportingIDsCount));
 }
 
 void PrepareBuilder(
@@ -421,11 +446,12 @@ void InitializeHashStoreObserver::OnInitializationCompleted(bool succeeded) {
 // Initializes/updates the PrefHashStore for the profile preferences file under
 // |profile_path| without actually loading that profile. Also reports the
 // version of that PrefHashStore via UMA, whether it proceeds with initializing
-// it or not.
+// it or not. This should only be called if |kCanUsePrefHashStoreOnPlatform|.
 void UpdatePrefHashStoreIfRequired(
     const base::FilePath& profile_path) {
   scoped_ptr<PrefHashStoreImpl> pref_hash_store_impl(
       GetPrefHashStoreImpl(profile_path));
+  DCHECK(pref_hash_store_impl);
 
   const PrefHashStoreImpl::StoreVersion current_version =
       pref_hash_store_impl->GetCurrentVersion();
@@ -526,23 +552,32 @@ void SchedulePrefsFilePathVerification(const base::FilePath& profile_path) {
         FROM_HERE,
         base::Bind(&VerifyPreferencesFile,
                    GetPrefFilePathFromProfilePath(profile_path)),
-        base::TimeDelta::FromSeconds(kVerifyPrefsFileDelaySeconds));
+        base::TimeDelta::FromSeconds(
+            g_disable_delays_and_domain_check_for_testing ?
+                0 : kVerifyPrefsFileDelaySeconds));
 #endif
 }
 
-void EnableZeroDelayPrefHashStoreUpdateForTesting() {
-  g_pref_hash_store_update_check_delay_seconds = 0;
+void DisableDelaysAndDomainCheckForTesting() {
+  g_disable_delays_and_domain_check_for_testing = true;
 }
 
 void SchedulePrefHashStoresUpdateCheck(
     const base::FilePath& initial_profile_path) {
+  if (!kCanUsePrefHashStoreOnPlatform) {
+    PrefHashStoreImpl::ResetAllPrefHashStores(g_browser_process->local_state());
+    return;
+  }
+
+  const int kDefaultPrefHashStoresUpdateCheckDelaySeconds = 55;
   BrowserThread::PostDelayedTask(
         BrowserThread::UI,
         FROM_HERE,
         base::Bind(&UpdateAllPrefHashStoresIfRequired,
                    initial_profile_path),
         base::TimeDelta::FromSeconds(
-            g_pref_hash_store_update_check_delay_seconds));
+            g_disable_delays_and_domain_check_for_testing ?
+                0 : kDefaultPrefHashStoresUpdateCheckDelaySeconds));
 }
 
 void ResetPrefHashStore(const base::FilePath& profile_path) {
@@ -579,8 +614,19 @@ bool InitializePrefsFromMasterPrefs(
   return success;
 }
 
+base::Time GetResetTime(Profile* profile) {
+  return PrefHashFilter::GetResetTime(profile->GetPrefs());
+}
+
+void ClearResetTime(Profile* profile) {
+  PrefHashFilter::ClearResetTime(profile->GetPrefs());
+}
+
+void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+  PrefHashFilter::RegisterProfilePrefs(registry);
+}
+
 void RegisterPrefs(PrefRegistrySimple* registry) {
-  registry->RegisterInt64Pref(prefs::kProfilePreferenceResetTime, 0L);
   PrefHashStoreImpl::RegisterPrefs(registry);
 }
 

@@ -8,6 +8,8 @@ import android.content.Context;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.SpannableString;
+import android.text.style.URLSpan;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewParent;
@@ -59,10 +61,13 @@ public class BrowserAccessibilityManager {
     @CalledByNative
     private static BrowserAccessibilityManager create(long nativeBrowserAccessibilityManagerAndroid,
             ContentViewCore contentViewCore) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            return new KitKatBrowserAccessibilityManager(
-                    nativeBrowserAccessibilityManagerAndroid, contentViewCore);
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+        // A bug in the KitKat framework prevents us from using these new APIs.
+        // http://crbug.com/348088/
+        // if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+        //     return new KitKatBrowserAccessibilityManager(
+        //             nativeBrowserAccessibilityManagerAndroid, contentViewCore);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
             return new JellyBeanBrowserAccessibilityManager(
                     nativeBrowserAccessibilityManagerAndroid, contentViewCore);
         } else {
@@ -189,6 +194,28 @@ public class BrowserAccessibilityManager {
             case AccessibilityNodeInfo.ACTION_CLEAR_FOCUS:
                 nativeBlur(mNativeObj);
                 return true;
+
+            case AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT: {
+                if (arguments == null)
+                    return false;
+                String elementType = arguments.getString(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING);
+                if (elementType == null)
+                    return false;
+                elementType = elementType.toUpperCase();
+                return jumpToElementType(elementType, true);
+            }
+            case AccessibilityNodeInfo.ACTION_PREVIOUS_HTML_ELEMENT: {
+                if (arguments == null)
+                    return false;
+                String elementType = arguments.getString(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING);
+                if (elementType == null)
+                    return false;
+                elementType = elementType.toUpperCase();
+                return jumpToElementType(elementType, false);
+            }
+
             default:
                 break;
         }
@@ -254,6 +281,16 @@ public class BrowserAccessibilityManager {
             sendAccessibilityEvent(mAccessibilityFocusId,
                                    AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED);
         }
+    }
+
+    private boolean jumpToElementType(String elementType, boolean forwards) {
+        int id = nativeFindElementType(mNativeObj, mAccessibilityFocusId, elementType, forwards);
+        if (id == 0)
+            return false;
+
+        mAccessibilityFocusId = id;
+        sendAccessibilityEvent(id, AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED);
+        return true;
     }
 
     private void sendAccessibilityEvent(int virtualViewId, int eventType) {
@@ -380,6 +417,11 @@ public class BrowserAccessibilityManager {
     }
 
     @CalledByNative
+    private void handleScrollPositionChanged(int id) {
+        sendAccessibilityEvent(id, AccessibilityEvent.TYPE_VIEW_SCROLLED);
+    }
+
+    @CalledByNative
     private void handleScrolledToAnchor(int id) {
         if (mAccessibilityFocusId == id) {
             return;
@@ -420,6 +462,9 @@ public class BrowserAccessibilityManager {
         node.setSelected(selected);
         node.setVisibleToUser(visibleToUser);
 
+        node.addAction(AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT);
+        node.addAction(AccessibilityNodeInfo.ACTION_PREVIOUS_HTML_ELEMENT);
+
         if (focusable) {
             if (focused) {
                 node.addAction(AccessibilityNodeInfo.ACTION_CLEAR_FOCUS);
@@ -442,10 +487,21 @@ public class BrowserAccessibilityManager {
     }
 
     @CalledByNative
-    private void setAccessibilityNodeInfoStringAttributes(AccessibilityNodeInfo node,
-            String className, String contentDescription) {
+    private void setAccessibilityNodeInfoClassName(AccessibilityNodeInfo node,
+            String className) {
         node.setClassName(className);
-        node.setContentDescription(contentDescription);
+    }
+
+    @CalledByNative
+    private void setAccessibilityNodeInfoContentDescription(
+            AccessibilityNodeInfo node, String contentDescription, boolean annotateAsLink) {
+        if (annotateAsLink) {
+            SpannableString spannable = new SpannableString(contentDescription);
+            spannable.setSpan(new URLSpan(""), 0, spannable.length(), 0);
+            node.setContentDescription(spannable);
+        } else {
+            node.setContentDescription(contentDescription);
+        }
     }
 
     @CalledByNative
@@ -628,4 +684,6 @@ public class BrowserAccessibilityManager {
     private native void nativeBlur(long nativeBrowserAccessibilityManagerAndroid);
     private native void nativeScrollToMakeNodeVisible(
             long nativeBrowserAccessibilityManagerAndroid, int id);
+    private native int nativeFindElementType(long nativeBrowserAccessibilityManagerAndroid,
+            int startId, String elementType, boolean forwards);
 }

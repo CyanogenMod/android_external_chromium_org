@@ -7,11 +7,10 @@
 
 #include <string>
 
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/login/screens/core_oobe_actor.h"
 #include "chrome/browser/chromeos/login/version_info_updater.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 
 namespace base {
 class ListValue;
@@ -19,12 +18,12 @@ class ListValue;
 
 namespace chromeos {
 
+class HelpAppLauncher;
 class OobeUI;
 
 // The core handler for Javascript messages related to the "oobe" view.
 class CoreOobeHandler : public BaseScreenHandler,
                         public VersionInfoUpdater::Delegate,
-                        public content::NotificationObserver,
                         public CoreOobeActor {
  public:
   class Delegate {
@@ -90,6 +89,7 @@ class CoreOobeHandler : public BaseScreenHandler,
   void HandleSetDeviceRequisition(const std::string& requisition);
   void HandleScreenAssetsLoaded(const std::string& screen_async_load_id);
   void HandleSkipToLoginForTesting(const base::ListValue* args);
+  void HandleLaunchHelpApp(double help_topic_id);
 
   // Updates a11y menu state based on the current a11y features state(on/off).
   void UpdateA11yState();
@@ -103,10 +103,9 @@ class CoreOobeHandler : public BaseScreenHandler,
   // Updates the device requisition string on the UI side.
   void UpdateDeviceRequisition();
 
-  // content::NotificationObserver implementation:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // Notification of a change in the accessibility settings.
+  void OnAccessibilityStatusChanged(
+      const AccessibilityStatusEventDetails& details);
 
   // Owner of this handler.
   OobeUI* oobe_ui_;
@@ -117,9 +116,12 @@ class CoreOobeHandler : public BaseScreenHandler,
   // Updates when version info is changed.
   VersionInfoUpdater version_info_updater_;
 
+  // Help application used for help dialogs.
+  scoped_refptr<HelpAppLauncher> help_app_;
+
   Delegate* delegate_;
 
-  content::NotificationRegistrar registrar_;
+  scoped_ptr<AccessibilityStatusSubscription> accessibility_subscription_;
 
   DISALLOW_COPY_AND_ASSIGN(CoreOobeHandler);
 };

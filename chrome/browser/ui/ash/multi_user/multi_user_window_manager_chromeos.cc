@@ -39,14 +39,14 @@
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/events/event.h"
 #include "ui/message_center/message_center.h"
-#include "ui/views/corewm/transient_window_manager.h"
-#include "ui/views/corewm/window_animations.h"
-#include "ui/views/corewm/window_util.h"
+#include "ui/wm/core/transient_window_manager.h"
+#include "ui/wm/core/window_animations.h"
+#include "ui/wm/core/window_util.h"
 
 namespace {
 
@@ -96,7 +96,7 @@ bool IsProcessingUserEvent() {
   for (aura::Window::Windows::iterator it = root_window_list.begin();
        it != root_window_list.end();
        ++it) {
-    if (IsUserEvent((*it)->GetDispatcher()->current_event()))
+    if (IsUserEvent((*it)->GetHost()->dispatcher()->current_event()))
       return true;
   }
   return false;
@@ -155,21 +155,21 @@ class AnimationSetter {
   AnimationSetter(aura::Window* window, int animation_time_in_ms)
       : window_(window),
         previous_animation_type_(
-            views::corewm::GetWindowVisibilityAnimationType(window_)),
+            wm::GetWindowVisibilityAnimationType(window_)),
         previous_animation_time_(
-            views::corewm::GetWindowVisibilityAnimationDuration(*window_)) {
-    views::corewm::SetWindowVisibilityAnimationType(
+            wm::GetWindowVisibilityAnimationDuration(*window_)) {
+    wm::SetWindowVisibilityAnimationType(
         window_,
-        views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
-    views::corewm::SetWindowVisibilityAnimationDuration(
+        wm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
+    wm::SetWindowVisibilityAnimationDuration(
         window_,
         base::TimeDelta::FromMilliseconds(animation_time_in_ms));
   }
 
   ~AnimationSetter() {
-    views::corewm::SetWindowVisibilityAnimationType(window_,
+    wm::SetWindowVisibilityAnimationType(window_,
                                                     previous_animation_type_);
-    views::corewm::SetWindowVisibilityAnimationDuration(
+    wm::SetWindowVisibilityAnimationDuration(
         window_,
         previous_animation_time_);
   }
@@ -296,7 +296,7 @@ void MultiUserWindowManagerChromeOS::SetWindowOwner(
 
   // Add observers to track state changes.
   window->AddObserver(this);
-  views::corewm::TransientWindowManager::Get(window)->AddObserver(this);
+  wm::TransientWindowManager::Get(window)->AddObserver(this);
 
   // Check if this window was created due to a user interaction. If it was,
   // transfer it to the current user.
@@ -373,7 +373,8 @@ const std::string& MultiUserWindowManagerChromeOS::GetUserPresentingWindow(
   return it->second->show_for_user();
 }
 
-void MultiUserWindowManagerChromeOS::AddUser(Profile* profile) {
+void MultiUserWindowManagerChromeOS::AddUser(content::BrowserContext* context) {
+  Profile* profile = Profile::FromBrowserContext(context);
   const std::string& user_id = multi_user_util::GetUserIDFromProfile(profile);
   if (user_id_to_app_observer_.find(user_id) != user_id_to_app_observer_.end())
     return;
@@ -443,7 +444,7 @@ void MultiUserWindowManagerChromeOS::OnWindowDestroyed(aura::Window* window) {
     RemoveTransientOwnerRecursive(window);
     return;
   }
-  views::corewm::TransientWindowManager::Get(window)->RemoveObserver(this);
+  wm::TransientWindowManager::Get(window)->RemoveObserver(this);
   // Remove the window from the owners list.
   delete window_to_entry_[window];
   window_to_entry_.erase(window);
@@ -662,20 +663,18 @@ void MultiUserWindowManagerChromeOS::TransitionUser(
 void MultiUserWindowManagerChromeOS::TransitionWallpaper(
     MultiUserWindowManagerChromeOS::AnimationStep animation_step) {
   // Handle the wallpaper switch.
-  if (chromeos::WallpaperManager::Get()) {
-    ash::UserWallpaperDelegate* wallpaper_delegate =
-        ash::Shell::GetInstance()->user_wallpaper_delegate();
-    if (animation_step == HIDE_OLD_USER) {
-      // Set the wallpaper cross dissolve animation duration to our complete
-      // animation cycle for a fade in and fade out.
-      wallpaper_delegate->SetAnimationDurationOverride(2 * kUserFadeTimeMS);
-      chromeos::WallpaperManager::Get()->SetUserWallpaperDelayed(
-          current_user_id_);
-    } else {
-      // Revert the wallpaper cross dissolve animation duration back to the
-      // default.
-      wallpaper_delegate->SetAnimationDurationOverride(0);
-    }
+  ash::UserWallpaperDelegate* wallpaper_delegate =
+      ash::Shell::GetInstance()->user_wallpaper_delegate();
+  if (animation_step == HIDE_OLD_USER) {
+    // Set the wallpaper cross dissolve animation duration to our complete
+    // animation cycle for a fade in and fade out.
+    wallpaper_delegate->SetAnimationDurationOverride(2 * kUserFadeTimeMS);
+    chromeos::WallpaperManager::Get()->SetUserWallpaperDelayed(
+        current_user_id_);
+  } else {
+    // Revert the wallpaper cross dissolve animation duration back to the
+    // default.
+    wallpaper_delegate->SetAnimationDurationOverride(0);
   }
 }
 
@@ -770,8 +769,8 @@ void MultiUserWindowManagerChromeOS::SetWindowVisibility(
 void MultiUserWindowManagerChromeOS::ShowWithTransientChildrenRecursive(
     aura::Window* window, int animation_time_in_ms) {
   aura::Window::Windows::const_iterator it =
-      views::corewm::GetTransientChildren(window).begin();
-  for (; it != views::corewm::GetTransientChildren(window).end(); ++it)
+      wm::GetTransientChildren(window).begin();
+  for (; it != wm::GetTransientChildren(window).end(); ++it)
     ShowWithTransientChildrenRecursive(*it, animation_time_in_ms);
 
   // We show all children which were not explicitly hidden.
@@ -785,11 +784,11 @@ aura::Window* MultiUserWindowManagerChromeOS::GetOwningWindowInTransientChain(
     aura::Window* window) {
   if (!GetWindowOwner(window).empty())
     return NULL;
-  aura::Window* parent = views::corewm::GetTransientParent(window);
+  aura::Window* parent = wm::GetTransientParent(window);
   while (parent) {
     if (!GetWindowOwner(parent).empty())
       return parent;
-    parent = views::corewm::GetTransientParent(parent);
+    parent = wm::GetTransientParent(parent);
   }
   return NULL;
 }
@@ -799,8 +798,8 @@ void MultiUserWindowManagerChromeOS::AddTransientOwnerRecursive(
     aura::Window* owned_parent) {
   // First add all child windows.
   aura::Window::Windows::const_iterator it =
-      views::corewm::GetTransientChildren(window).begin();
-  for (; it != views::corewm::GetTransientChildren(window).end(); ++it)
+      wm::GetTransientChildren(window).begin();
+  for (; it != wm::GetTransientChildren(window).end(); ++it)
     AddTransientOwnerRecursive(*it, owned_parent);
 
   // If this window is the owned window, we do not have to handle it again.
@@ -814,7 +813,7 @@ void MultiUserWindowManagerChromeOS::AddTransientOwnerRecursive(
 
   // Add observers to track state changes.
   window->AddObserver(this);
-  views::corewm::TransientWindowManager::Get(window)->AddObserver(this);
+  wm::TransientWindowManager::Get(window)->AddObserver(this);
 
   // Hide the window if it should not be shown. Note that this hide operation
   // will hide recursively this and all children - but we have already collected
@@ -827,8 +826,8 @@ void MultiUserWindowManagerChromeOS::RemoveTransientOwnerRecursive(
     aura::Window* window) {
   // First remove all child windows.
   aura::Window::Windows::const_iterator it =
-      views::corewm::GetTransientChildren(window).begin();
-  for (; it != views::corewm::GetTransientChildren(window).end(); ++it)
+      wm::GetTransientChildren(window).begin();
+  for (; it != wm::GetTransientChildren(window).end(); ++it)
     RemoveTransientOwnerRecursive(*it);
 
   // Find from transient window storage the visibility for the given window,
@@ -838,7 +837,7 @@ void MultiUserWindowManagerChromeOS::RemoveTransientOwnerRecursive(
   DCHECK(visibility_item != transient_window_to_visibility_.end());
 
   window->RemoveObserver(this);
-  views::corewm::TransientWindowManager::Get(window)->RemoveObserver(this);
+  wm::TransientWindowManager::Get(window)->RemoveObserver(this);
 
   bool unowned_view_state = visibility_item->second;
   transient_window_to_visibility_.erase(visibility_item);

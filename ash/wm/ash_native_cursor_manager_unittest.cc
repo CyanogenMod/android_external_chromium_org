@@ -8,10 +8,10 @@
 #include "ash/test/ash_test_base.h"
 #include "ash/test/cursor_manager_test_api.h"
 #include "ash/wm/image_cursors.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/screen.h"
 
 #if defined(OS_WIN)
@@ -19,7 +19,7 @@
 #include "ui/base/cursor/cursor_loader_win.h"
 #endif
 
-using views::corewm::CursorManager;
+using ::wm::CursorManager;
 
 namespace ash {
 namespace test {
@@ -193,12 +193,12 @@ TEST_F(AshNativeCursorManagerTest, DisabledQueryMouseLocation) {
   Sleep(100);
   RunAllPendingInMessageLoop();
 #endif
-  aura::WindowEventDispatcher* dispatcher = root_window->GetDispatcher();
+  aura::WindowTreeHost* host = root_window->GetHost();
   gfx::Point mouse_location;
-  EXPECT_TRUE(dispatcher->host()->QueryMouseLocation(&mouse_location));
+  EXPECT_TRUE(host->QueryMouseLocation(&mouse_location));
   EXPECT_EQ("10,10", mouse_location.ToString());
   Shell::GetInstance()->cursor_manager()->DisableMouseEvents();
-  EXPECT_FALSE(dispatcher->host()->QueryMouseLocation(&mouse_location));
+  EXPECT_FALSE(host->QueryMouseLocation(&mouse_location));
   EXPECT_EQ("0,0", mouse_location.ToString());
 }
 

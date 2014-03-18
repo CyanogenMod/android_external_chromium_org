@@ -356,10 +356,7 @@ bool SendSeparateInitialStabilityLog() {
 }  // namespace
 
 
-SyntheticTrialGroup::SyntheticTrialGroup(uint32 trial,
-                                         uint32 group,
-                                         base::TimeTicks start)
-    : start_time(start) {
+SyntheticTrialGroup::SyntheticTrialGroup(uint32 trial, uint32 group) {
   id.name = trial;
   id.group = group;
 }
@@ -737,16 +734,19 @@ void MetricsService::Observe(int type,
   DCHECK(log_manager_.current_log());
   DCHECK(IsSingleThreaded());
 
-  if (!CanLogNotification())
-    return;
-
+  // Check for notifications related to core stability metrics, or that are
+  // just triggers to end idle mode. Anything else should be added in the later
+  // switch statement, where they take effect only if general metrics should be
+  // logged.
+  bool handled = false;
   switch (type) {
     case chrome::NOTIFICATION_BROWSER_OPENED:
     case chrome::NOTIFICATION_BROWSER_CLOSED:
     case chrome::NOTIFICATION_TAB_PARENTED:
     case chrome::NOTIFICATION_TAB_CLOSING:
     case content::NOTIFICATION_LOAD_STOP:
-      // These notifications are currently used only to break out of idle mode.
+      // These notifications are used only to break out of idle mode.
+      handled = true;
       break;
 
     case content::NOTIFICATION_LOAD_START: {
@@ -754,37 +754,50 @@ void MetricsService::Observe(int type,
           content::Source<content::NavigationController>(source).ptr();
       content::WebContents* web_contents = controller->GetWebContents();
       LogLoadStarted(web_contents);
+      handled = true;
       break;
     }
 
     case content::NOTIFICATION_RENDERER_PROCESS_CLOSED: {
-        content::RenderProcessHost::RendererClosedDetails* process_details =
-            content::Details<
-                content::RenderProcessHost::RendererClosedDetails>(
-                    details).ptr();
-        content::RenderProcessHost* host =
-            content::Source<content::RenderProcessHost>(source).ptr();
-        LogRendererCrash(
-            host, process_details->status, process_details->exit_code);
-      }
-      break;
-
-    case content::NOTIFICATION_RENDER_WIDGET_HOST_HANG:
-      LogRendererHang();
-      break;
-
-    case chrome::NOTIFICATION_OMNIBOX_OPENED_URL: {
-      MetricsLog* current_log =
-          static_cast<MetricsLog*>(log_manager_.current_log());
-      DCHECK(current_log);
-      current_log->RecordOmniboxOpenedURL(
-          *content::Details<OmniboxLog>(details).ptr());
+      content::RenderProcessHost::RendererClosedDetails* process_details =
+          content::Details<
+              content::RenderProcessHost::RendererClosedDetails>(
+                  details).ptr();
+      content::RenderProcessHost* host =
+          content::Source<content::RenderProcessHost>(source).ptr();
+      LogRendererCrash(
+          host, process_details->status, process_details->exit_code);
+      handled = true;
       break;
     }
 
-    default:
-      NOTREACHED();
+    case content::NOTIFICATION_RENDER_WIDGET_HOST_HANG:
+      LogRendererHang();
+      handled = true;
       break;
+
+    default:
+      // Everything else is handled after the early return check below.
+      break;
+  }
+
+  // If it wasn't one of the stability-related notifications, and event
+  // logging isn't suppressed, handle it.
+  if (!handled && ShouldLogEvents()) {
+    switch (type) {
+      case chrome::NOTIFICATION_OMNIBOX_OPENED_URL: {
+        MetricsLog* current_log =
+            static_cast<MetricsLog*>(log_manager_.current_log());
+        DCHECK(current_log);
+        current_log->RecordOmniboxOpenedURL(
+            *content::Details<OmniboxLog>(details).ptr());
+        break;
+      }
+
+      default:
+        NOTREACHED();
+        break;
+    }
   }
 
   HandleIdleSinceLastTransmission(false);
@@ -997,8 +1010,11 @@ void MetricsService::InitializeMetricsState(ReportingState reporting_state) {
     pref->SetBoolean(prefs::kStabilitySessionEndCompleted, true);
   }
 
-  // Initialize uptime counters.
-  const base::TimeDelta startup_uptime = GetIncrementalUptime(pref);
+  // Call GetUptimes() for the first time, thus allowing all later calls
+  // to record incremental uptimes accurately.
+  base::TimeDelta ignored_uptime_parameter;
+  base::TimeDelta startup_uptime;
+  GetUptimes(pref, &startup_uptime, &ignored_uptime_parameter);
   DCHECK_EQ(0, startup_uptime.InMicroseconds());
   // For backwards compatibility, leave this intact in case Omaha is checking
   // them.  prefs::kStabilityLastTimestampSec may also be useless now.
@@ -1118,7 +1134,7 @@ void MetricsService::OnInitTaskGotGoogleUpdateData(
 }
 
 void MetricsService::OnUserAction(const std::string& action) {
-  if (!CanLogNotification())
+  if (!ShouldLogEvents())
     return;
 
   log_manager_.current_log()->RecordUserAction(action.c_str());
@@ -1144,22 +1160,26 @@ void MetricsService::FinishedReceivingProfilerData() {
   scheduler_->InitTaskComplete();
 }
 
-base::TimeDelta MetricsService::GetIncrementalUptime(PrefService* pref) {
+void MetricsService::GetUptimes(PrefService* pref,
+                                base::TimeDelta* incremental_uptime,
+                                base::TimeDelta* uptime) {
   base::TimeTicks now = base::TimeTicks::Now();
-  // If this is the first call, init |last_updated_time_|.
-  if (last_updated_time_.is_null())
+  // If this is the first call, init |first_updated_time_| and
+  // |last_updated_time_|.
+  if (last_updated_time_.is_null()) {
+    first_updated_time_ = now;
     last_updated_time_ = now;
-  const base::TimeDelta incremental_time = now - last_updated_time_;
+  }
+  *incremental_uptime = now - last_updated_time_;
+  *uptime = now - first_updated_time_;
   last_updated_time_ = now;
 
-  const int64 incremental_time_secs = incremental_time.InSeconds();
+  const int64 incremental_time_secs = incremental_uptime->InSeconds();
   if (incremental_time_secs > 0) {
     int64 metrics_uptime = pref->GetInt64(prefs::kUninstallMetricsUptimeSec);
     metrics_uptime += incremental_time_secs;
     pref->SetInt64(prefs::kUninstallMetricsUptimeSec, metrics_uptime);
   }
-
-  return incremental_time;
 }
 
 int MetricsService::GetLowEntropySource() {
@@ -1283,7 +1303,10 @@ void MetricsService::CloseCurrentLog() {
   current_log->RecordEnvironment(plugins_, google_update_metrics_,
                                  synthetic_trials);
   PrefService* pref = g_browser_process->local_state();
-  current_log->RecordStabilityMetrics(GetIncrementalUptime(pref),
+  base::TimeDelta incremental_uptime;
+  base::TimeDelta uptime;
+  GetUptimes(pref, &incremental_uptime, &uptime);
+  current_log->RecordStabilityMetrics(incremental_uptime, uptime,
                                       MetricsLog::ONGOING_LOG);
 
   RecordCurrentHistograms();
@@ -1539,8 +1562,8 @@ void MetricsService::PrepareInitialStabilityLog() {
       new MetricsLog(client_id_, session_id_));
   if (!initial_stability_log->LoadSavedEnvironmentFromPrefs())
     return;
-  initial_stability_log->RecordStabilityMetrics(base::TimeDelta(),
-                                                MetricsLog::INITIAL_LOG);
+  initial_stability_log->RecordStabilityMetrics(
+      base::TimeDelta(), base::TimeDelta(), MetricsLog::INITIAL_LOG);
   log_manager_.LoadPersistedUnsentLogs();
 
   log_manager_.PauseCurrentLog();
@@ -1569,7 +1592,10 @@ void MetricsService::PrepareInitialMetricsLog(MetricsLog::LogType log_type) {
   initial_metrics_log_->RecordEnvironment(plugins_, google_update_metrics_,
                                           synthetic_trials);
   PrefService* pref = g_browser_process->local_state();
-  initial_metrics_log_->RecordStabilityMetrics(GetIncrementalUptime(pref),
+  base::TimeDelta incremental_uptime;
+  base::TimeDelta uptime;
+  GetUptimes(pref, &incremental_uptime, &uptime);
+  initial_metrics_log_->RecordStabilityMetrics(incremental_uptime, uptime,
                                                log_type);
 
   // Histograms only get written to the current log, so make the new log current
@@ -1821,14 +1847,14 @@ void MetricsService::RegisterSyntheticFieldTrial(
     if (synthetic_trial_groups_[i].id.name == trial.id.name) {
       if (synthetic_trial_groups_[i].id.group != trial.id.group) {
         synthetic_trial_groups_[i].id.group = trial.id.group;
-        synthetic_trial_groups_[i].start_time = trial.start_time;
+        synthetic_trial_groups_[i].start_time = base::TimeTicks::Now();
       }
       return;
     }
   }
 
-  SyntheticTrialGroup trial_group(
-      trial.id.name, trial.id.group, base::TimeTicks::Now());
+  SyntheticTrialGroup trial_group = trial;
+  trial_group.start_time = base::TimeTicks::Now();
   synthetic_trial_groups_.push_back(trial_group);
 }
 
@@ -1991,8 +2017,8 @@ void MetricsService::RecordPluginChanges(PrefService* pref) {
   child_process_stats_buffer_.clear();
 }
 
-bool MetricsService::CanLogNotification() {
-  // We simply don't log anything to UMA if there is a single incognito
+bool MetricsService::ShouldLogEvents() {
+  // We simply don't log events to UMA if there is a single incognito
   // session visible. The problem is that we always notify using the orginal
   // profile in order to simplify notification processing.
   return !chrome::IsOffTheRecordSessionActive();

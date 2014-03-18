@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "base/lazy_instance.h"
 #include "base/memory/linked_ptr.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
@@ -16,16 +17,14 @@
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/extensions/api/bookmark_manager_private/bookmark_manager_private_api_constants.h"
+#include "chrome/browser/bookmarks/scoped_group_bookmark_actions.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_constants.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_helpers.h"
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_drag_drop.h"
 #include "chrome/browser/undo/bookmark_undo_service.h"
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
-#include "chrome/browser/undo/bookmark_undo_utils.h"
 #include "chrome/common/extensions/api/bookmark_manager_private.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/user_prefs.h"
@@ -33,7 +32,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
-#include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/view_type_utils.h"
 #include "grit/generated_resources.h"
@@ -54,7 +53,6 @@ namespace Copy = api::bookmark_manager_private::Copy;
 namespace Cut = api::bookmark_manager_private::Cut;
 namespace Drop = api::bookmark_manager_private::Drop;
 namespace GetSubtree = api::bookmark_manager_private::GetSubtree;
-namespace manager_keys = bookmark_manager_api_constants;
 namespace GetMetaInfo = api::bookmark_manager_private::GetMetaInfo;
 namespace Paste = api::bookmark_manager_private::Paste;
 namespace RedoInfo = api::bookmark_manager_private::GetRedoInfo;
@@ -97,96 +95,166 @@ bool GetNodesFromVector(BookmarkModel* model,
   return true;
 }
 
-// Recursively adds a node to a list. This is by used |BookmarkNodeDataToJSON|
-// when the data comes from the current profile. In this case we have a
-// BookmarkNode since we got the data from the current profile.
-void AddNodeToList(base::ListValue* list, const BookmarkNode& node) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
-
+// Recursively create a bookmark_manager_private::BookmarkNodeDataElement from
+// a bookmark node. This is by used |BookmarkNodeDataToJSON| when the data comes
+// from the current profile. In this case we have a BookmarkNode since we got
+// the data from the current profile.
+linked_ptr<bookmark_manager_private::BookmarkNodeDataElement>
+CreateNodeDataElementFromBookmarkNode(const BookmarkNode& node) {
+  linked_ptr<bookmark_manager_private::BookmarkNodeDataElement> element(
+      new bookmark_manager_private::BookmarkNodeDataElement);
   // Add id and parentId so we can associate the data with existing nodes on the
   // client side.
-  std::string id_string = base::Int64ToString(node.id());
-  dict->SetString(bookmark_keys::kIdKey, id_string);
-
-  std::string parent_id_string = base::Int64ToString(node.parent()->id());
-  dict->SetString(bookmark_keys::kParentIdKey, parent_id_string);
+  element->id.reset(new std::string(base::Int64ToString(node.id())));
+  element->parent_id.reset(
+      new std::string(base::Int64ToString(node.parent()->id())));
 
   if (node.is_url())
-    dict->SetString(bookmark_keys::kUrlKey, node.url().spec());
+    element->url.reset(new std::string(node.url().spec()));
 
-  dict->SetString(bookmark_keys::kTitleKey, node.GetTitle());
+  element->title = base::UTF16ToUTF8(node.GetTitle());
+  for (int i = 0; i < node.child_count(); ++i) {
+    element->children.push_back(
+        CreateNodeDataElementFromBookmarkNode(*node.GetChild(i)));
+  }
 
-  base::ListValue* children = new base::ListValue();
-  for (int i = 0; i < node.child_count(); ++i)
-    AddNodeToList(children, *node.GetChild(i));
-  dict->Set(bookmark_keys::kChildrenKey, children);
-
-  list->Append(dict);
+  return element;
 }
 
-// Recursively adds an element to a list. This is used by
-// |BookmarkNodeDataToJSON| when the data comes from a different profile. When
-// the data comes from a different profile we do not have any IDs or parent IDs.
-void AddElementToList(base::ListValue* list,
-                      const BookmarkNodeData::Element& element) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+// Recursively create a bookmark_manager_private::BookmarkNodeDataElement from
+// a BookmarkNodeData::Element. This is used by |BookmarkNodeDataToJSON| when
+// the data comes from a different profile. When the data comes from a different
+// profile we do not have any IDs or parent IDs.
+linked_ptr<bookmark_manager_private::BookmarkNodeDataElement>
+CreateApiNodeDataElement(const BookmarkNodeData::Element& element) {
+  linked_ptr<bookmark_manager_private::BookmarkNodeDataElement> node_element(
+      new bookmark_manager_private::BookmarkNodeDataElement);
 
   if (element.is_url)
-    dict->SetString(bookmark_keys::kUrlKey, element.url.spec());
+    node_element->url.reset(new std::string(element.url.spec()));
+  node_element->title = base::UTF16ToUTF8(element.title);
+  for (size_t i = 0; i < element.children.size(); ++i) {
+    node_element->children.push_back(
+        CreateApiNodeDataElement(element.children[i]));
+  }
 
-  dict->SetString(bookmark_keys::kTitleKey, element.title);
-
-  base::ListValue* children = new base::ListValue();
-  for (size_t i = 0; i < element.children.size(); ++i)
-    AddElementToList(children, element.children[i]);
-  dict->Set(bookmark_keys::kChildrenKey, children);
-
-  list->Append(dict);
+  return node_element;
 }
 
-// Builds the JSON structure based on the BookmarksDragData.
-void BookmarkNodeDataToJSON(Profile* profile, const BookmarkNodeData& data,
-                            base::ListValue* args) {
-  bool same_profile = data.IsFromProfile(profile);
-  base::DictionaryValue* value = new base::DictionaryValue();
-  value->SetBoolean(manager_keys::kSameProfileKey, same_profile);
+// Creates a bookmark_manager_private::BookmarkNodeData from a BookmarkNodeData.
+scoped_ptr<bookmark_manager_private::BookmarkNodeData>
+CreateApiBookmarkNodeData(Profile* profile, const BookmarkNodeData& data) {
+  scoped_ptr<bookmark_manager_private::BookmarkNodeData> node_data(
+      new bookmark_manager_private::BookmarkNodeData);
+  node_data->same_profile = data.IsFromProfile(profile);
 
-  base::ListValue* list = new base::ListValue();
-  if (same_profile) {
+  if (node_data->same_profile) {
     std::vector<const BookmarkNode*> nodes = data.GetNodes(profile);
-    for (size_t i = 0; i < nodes.size(); ++i)
-      AddNodeToList(list, *nodes[i]);
+    for (size_t i = 0; i < nodes.size(); ++i) {
+      node_data->elements.push_back(
+          CreateNodeDataElementFromBookmarkNode(*nodes[i]));
+    }
   } else {
-    // We do not have an node IDs when the data comes from a different profile.
+    // We do not have a node IDs when the data comes from a different profile.
     std::vector<BookmarkNodeData::Element> elements = data.elements;
     for (size_t i = 0; i < elements.size(); ++i)
-      AddElementToList(list, elements[i]);
+      node_data->elements.push_back(CreateApiNodeDataElement(elements[i]));
   }
-  value->Set(manager_keys::kElementsKey, list);
-
-  args->Append(value);
+  return node_data.Pass();
 }
 
 }  // namespace
 
 BookmarkManagerPrivateEventRouter::BookmarkManagerPrivateEventRouter(
+    content::BrowserContext* browser_context,
+    BookmarkModel* bookmark_model)
+    : browser_context_(browser_context), bookmark_model_(bookmark_model) {
+  bookmark_model_->AddObserver(this);
+}
+
+BookmarkManagerPrivateEventRouter::~BookmarkManagerPrivateEventRouter() {
+  if (bookmark_model_)
+    bookmark_model_->RemoveObserver(this);
+}
+
+void BookmarkManagerPrivateEventRouter::DispatchEvent(
+    const std::string& event_name,
+    scoped_ptr<base::ListValue> event_args) {
+  extensions::ExtensionSystem::Get(browser_context_)
+      ->event_router()
+      ->BroadcastEvent(make_scoped_ptr(
+          new extensions::Event(event_name, event_args.Pass())));
+}
+
+void BookmarkManagerPrivateEventRouter::BookmarkModelChanged() {}
+
+void BookmarkManagerPrivateEventRouter::BookmarkModelBeingDeleted(
+    BookmarkModel* model) {
+  bookmark_model_ = NULL;
+}
+
+void BookmarkManagerPrivateEventRouter::BookmarkMetaInfoChanged(
+    BookmarkModel* model,
+    const BookmarkNode* node) {
+  DispatchEvent(bookmark_manager_private::OnMetaInfoChanged::kEventName,
+                bookmark_manager_private::OnMetaInfoChanged::Create(
+                    base::Int64ToString(node->id())));
+}
+
+BookmarkManagerPrivateAPI::BookmarkManagerPrivateAPI(
+    content::BrowserContext* browser_context)
+    : browser_context_(browser_context) {
+  EventRouter* event_router =
+      ExtensionSystem::Get(browser_context)->event_router();
+  event_router->RegisterObserver(
+      this, bookmark_manager_private::OnMetaInfoChanged::kEventName);
+}
+
+BookmarkManagerPrivateAPI::~BookmarkManagerPrivateAPI() {}
+
+void BookmarkManagerPrivateAPI::Shutdown() {
+  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
+      this);
+}
+
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<BookmarkManagerPrivateAPI> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
+
+// static
+BrowserContextKeyedAPIFactory<BookmarkManagerPrivateAPI>*
+BookmarkManagerPrivateAPI::GetFactoryInstance() {
+  return g_factory.Pointer();
+}
+
+void BookmarkManagerPrivateAPI::OnListenerAdded(
+    const EventListenerInfo& details) {
+  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
+      this);
+  event_router_.reset(new BookmarkManagerPrivateEventRouter(
+      browser_context_,
+      BookmarkModelFactory::GetForProfile(
+          Profile::FromBrowserContext(browser_context_))));
+}
+
+BookmarkManagerPrivateDragEventRouter::BookmarkManagerPrivateDragEventRouter(
     Profile* profile,
     content::WebContents* web_contents)
-    : profile_(profile),
-      web_contents_(web_contents) {
+    : profile_(profile), web_contents_(web_contents) {
   BookmarkTabHelper* bookmark_tab_helper =
       BookmarkTabHelper::FromWebContents(web_contents_);
   bookmark_tab_helper->set_bookmark_drag_delegate(this);
 }
 
-BookmarkManagerPrivateEventRouter::~BookmarkManagerPrivateEventRouter() {
+BookmarkManagerPrivateDragEventRouter::
+    ~BookmarkManagerPrivateDragEventRouter() {
   BookmarkTabHelper* bookmark_tab_helper =
       BookmarkTabHelper::FromWebContents(web_contents_);
   if (bookmark_tab_helper->bookmark_drag_delegate() == this)
     bookmark_tab_helper->set_bookmark_drag_delegate(NULL);
 }
 
-void BookmarkManagerPrivateEventRouter::DispatchEvent(
+void BookmarkManagerPrivateDragEventRouter::DispatchEvent(
     const std::string& event_name,
     scoped_ptr<base::ListValue> args) {
   if (!ExtensionSystem::Get(profile_)->event_router())
@@ -196,35 +264,37 @@ void BookmarkManagerPrivateEventRouter::DispatchEvent(
   ExtensionSystem::Get(profile_)->event_router()->BroadcastEvent(event.Pass());
 }
 
-void BookmarkManagerPrivateEventRouter::DispatchDragEvent(
-    const BookmarkNodeData& data,
-    const std::string& event_name) {
+void BookmarkManagerPrivateDragEventRouter::OnDragEnter(
+    const BookmarkNodeData& data) {
   if (data.size() == 0)
     return;
-
-  scoped_ptr<base::ListValue> args(new base::ListValue());
-  BookmarkNodeDataToJSON(profile_, data, args.get());
-  DispatchEvent(event_name, args.Pass());
+  DispatchEvent(bookmark_manager_private::OnDragEnter::kEventName,
+                bookmark_manager_private::OnDragEnter::Create(
+                    *CreateApiBookmarkNodeData(profile_, data)));
 }
 
-void BookmarkManagerPrivateEventRouter::OnDragEnter(
-    const BookmarkNodeData& data) {
-  DispatchDragEvent(data, bookmark_manager_private::OnDragEnter::kEventName);
-}
-
-void BookmarkManagerPrivateEventRouter::OnDragOver(
+void BookmarkManagerPrivateDragEventRouter::OnDragOver(
     const BookmarkNodeData& data) {
   // Intentionally empty since these events happens too often and floods the
   // message queue. We do not need this event for the bookmark manager anyway.
 }
 
-void BookmarkManagerPrivateEventRouter::OnDragLeave(
+void BookmarkManagerPrivateDragEventRouter::OnDragLeave(
     const BookmarkNodeData& data) {
-  DispatchDragEvent(data, bookmark_manager_private::OnDragLeave::kEventName);
+  if (data.size() == 0)
+    return;
+  DispatchEvent(bookmark_manager_private::OnDragLeave::kEventName,
+                bookmark_manager_private::OnDragLeave::Create(
+                    *CreateApiBookmarkNodeData(profile_, data)));
 }
 
-void BookmarkManagerPrivateEventRouter::OnDrop(const BookmarkNodeData& data) {
-  DispatchDragEvent(data, bookmark_manager_private::OnDrop::kEventName);
+void BookmarkManagerPrivateDragEventRouter::OnDrop(
+    const BookmarkNodeData& data) {
+  if (data.size() == 0)
+    return;
+  DispatchEvent(bookmark_manager_private::OnDrop::kEventName,
+                bookmark_manager_private::OnDrop::Create(
+                    *CreateApiBookmarkNodeData(profile_, data)));
 
   // Make a copy that is owned by this instance.
   ClearBookmarkNodeData();
@@ -232,13 +302,13 @@ void BookmarkManagerPrivateEventRouter::OnDrop(const BookmarkNodeData& data) {
 }
 
 const BookmarkNodeData*
-BookmarkManagerPrivateEventRouter::GetBookmarkNodeData() {
+BookmarkManagerPrivateDragEventRouter::GetBookmarkNodeData() {
   if (bookmark_drag_data_.is_valid())
     return &bookmark_drag_data_;
   return NULL;
 }
 
-void BookmarkManagerPrivateEventRouter::ClearBookmarkNodeData() {
+void BookmarkManagerPrivateDragEventRouter::ClearBookmarkNodeData() {
   bookmark_drag_data_.Clear();
 }
 
@@ -477,8 +547,8 @@ bool BookmarkManagerPrivateDropFunction::RunImpl() {
     ExtensionWebUI* web_ui =
         static_cast<ExtensionWebUI*>(web_contents->GetWebUI()->GetController());
     CHECK(web_ui);
-    BookmarkManagerPrivateEventRouter* router =
-        web_ui->bookmark_manager_private_event_router();
+    BookmarkManagerPrivateDragEventRouter* router =
+        web_ui->bookmark_manager_private_drag_event_router();
 
     DCHECK(router);
     const BookmarkNodeData* drag_data = router->GetBookmarkNodeData();

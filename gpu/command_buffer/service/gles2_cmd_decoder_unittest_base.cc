@@ -113,7 +113,7 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
     bool request_depth,
     bool request_stencil,
     bool bind_generates_resource,
-    const CommandLine* command_line) {
+    const base::CommandLine* command_line) {
   Framebuffer::ClearFramebufferCompleteComboMap();
 
   gfx::SetGLGetProcAddressProc(gfx::MockGLInterface::GetGLProcAddress);
@@ -134,10 +134,6 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
       memory_tracker_,
       feature_info.get(),
       bind_generates_resource));
-  // These two workarounds are always turned on.
-  group_->feature_info(
-      )->workarounds_.set_texture_filter_before_generating_mipmap = true;
-  group_->feature_info()->workarounds_.clear_alpha_in_readpixels = true;
 
   InSequence sequence;
 
@@ -164,7 +160,8 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
   EXPECT_TRUE(
       group_->Initialize(mock_decoder_.get(), DisallowedFeatures()));
 
-  AddExpectationsForVertexAttribManager();
+  if (group_->feature_info()->workarounds().init_vertex_attributes)
+    AddExpectationsForVertexAttribManager();
 
   AddExpectationsForBindVertexArrayOES();
 
@@ -340,7 +337,9 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
 
-void GLES2DecoderTestBase::TearDown() {
+void GLES2DecoderTestBase::ResetDecoder() {
+  if (!decoder_.get())
+    return;
   // All Tests should have read all their GLErrors before getting here.
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 
@@ -355,6 +354,10 @@ void GLES2DecoderTestBase::TearDown() {
   engine_.reset();
   ::gfx::MockGLInterface::SetGLInterface(NULL);
   gl_.reset();
+}
+
+void GLES2DecoderTestBase::TearDown() {
+  ResetDecoder();
 }
 
 void GLES2DecoderTestBase::ExpectEnableDisable(GLenum cap, bool enable) {
@@ -442,12 +445,13 @@ void GLES2DecoderTestBase::SetBucketAsCString(
   }
 }
 
-void GLES2DecoderTestBase::SetupClearTextureExpections(
+void GLES2DecoderTestBase::SetupClearTextureExpectations(
       GLuint service_id,
       GLuint old_service_id,
       GLenum bind_target,
       GLenum target,
       GLint level,
+      GLenum internal_format,
       GLenum format,
       GLenum type,
       GLsizei width,
@@ -456,7 +460,7 @@ void GLES2DecoderTestBase::SetupClearTextureExpections(
       .Times(1)
       .RetiresOnSaturation();
   EXPECT_CALL(*gl_, TexImage2D(
-      target, level, format, width, height, 0, format, type, _))
+      target, level, internal_format, width, height, 0, format, type, _))
       .Times(1)
       .RetiresOnSaturation();
   EXPECT_CALL(*gl_, BindTexture(bind_target, old_service_id))
@@ -1415,10 +1419,12 @@ void GLES2DecoderTestBase::AddExpectationsForSimulatedAttrib0(
 
 GLES2DecoderWithShaderTestBase::MockCommandBufferEngine::
 MockCommandBufferEngine() {
-  data_.reset(new int8[kSharedBufferSize]);
-  ClearSharedMemory();
-  valid_buffer_.ptr = data_.get();
+  shm_.reset(new base::SharedMemory());
+  shm_->CreateAndMapAnonymous(kSharedBufferSize);
   valid_buffer_.size = kSharedBufferSize;
+  valid_buffer_.shared_memory = shm_.get();
+  valid_buffer_.ptr = shm_->memory();
+  ClearSharedMemory();
 }
 
 GLES2DecoderWithShaderTestBase::MockCommandBufferEngine::

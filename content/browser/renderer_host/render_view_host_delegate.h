@@ -55,6 +55,7 @@ class SessionStorageNamespace;
 class SiteInstance;
 class WebContents;
 class WebContentsImpl;
+struct AXEventNotificationDetails;
 struct FileChooserParams;
 struct GlobalRequestID;
 struct NativeWebKeyboardEvent;
@@ -74,49 +75,9 @@ struct RendererPreferences;
 //  listener here to serve that need.
 class CONTENT_EXPORT RenderViewHostDelegate {
  public:
-  // RendererManagerment -------------------------------------------------------
-  // Functions for managing switching of Renderers. For WebContents, this is
-  // implemented by the RenderFrameHostManager.
-
-  class CONTENT_EXPORT RendererManagement {
-   public:
-    // Notification whether we should close the page, after an explicit call to
-    // AttemptToClosePage.  This is called before a cross-site request or before
-    // a tab/window is closed (as indicated by the first parameter) to allow the
-    // appropriate renderer to approve or deny the request.  |proceed| indicates
-    // whether the user chose to proceed.  |proceed_time| is the time when the
-    // request was allowed to proceed.
-    virtual void ShouldClosePage(
-        bool for_cross_site_transition,
-        bool proceed,
-        const base::TimeTicks& proceed_time) = 0;
-
-    // The |pending_render_view_host| is ready to commit a page.  The delegate
-    // should ensure that the old RenderViewHost runs its unload handler first
-    // and determine whether a RenderViewHost transfer is needed.
-    // |cross_site_transferring_request| is NULL if a request is not being
-    // transferred between renderers.
-    virtual void OnCrossSiteResponse(
-        RenderViewHost* pending_render_view_host,
-        const GlobalRequestID& global_request_id,
-        scoped_ptr<CrossSiteTransferringRequest>
-            cross_site_transferring_request,
-        const std::vector<GURL>& transfer_url_chain,
-        const Referrer& referrer,
-        PageTransition page_transition,
-        int64 frame_id,
-        bool should_replace_current_entry) = 0;
-
-   protected:
-    virtual ~RendererManagement() {}
-  };
-
-  // ---------------------------------------------------------------------------
-
   // Returns the current delegate associated with a feature. May return NULL if
   // there is no corresponding delegate.
   virtual RenderViewHostDelegateView* GetDelegateView();
-  virtual RendererManagement* GetRendererManagementDelegate();
 
   // This is used to give the delegate a chance to filter IPC messages.
   virtual bool OnMessageReceived(RenderViewHost* render_view_host,
@@ -203,29 +164,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual void DocumentOnLoadCompletedInMainFrame(
       RenderViewHost* render_view_host,
       int32 page_id) {}
-
-  // The page wants to open a URL with the specified disposition.
-  virtual void RequestOpenURL(RenderViewHost* rvh,
-                              const GURL& url,
-                              const Referrer& referrer,
-                              WindowOpenDisposition disposition,
-                              int64 source_frame_id,
-                              bool is_redirect,
-                              bool user_gesture) {}
-
-  // The page wants to transfer the request to a new renderer.
-  // |redirect_chain| contains any redirect URLs (excluding |url|) that happened
-  // before the transfer.
-  virtual void RequestTransferURL(
-      const GURL& url,
-      const std::vector<GURL>& redirect_chain,
-      const Referrer& referrer,
-      PageTransition page_transition,
-      WindowOpenDisposition disposition,
-      int64 source_frame_id,
-      const GlobalRequestID& old_request_id,
-      bool is_redirect,
-      bool user_gesture) {}
 
   // The page wants to close the active view in this tab.
   virtual void RouteCloseEvent(RenderViewHost* rvh) {}
@@ -403,6 +341,10 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // TODO(ajwong): Remove once the main frame RenderFrameHost is no longer
   // created by the RenderViewHost.
   virtual FrameTree* GetFrameTree();
+
+  // Invoked when an accessibility event is received from the renderer.
+  virtual void AccessibilityEventReceived(
+      const std::vector<AXEventNotificationDetails>& details) {}
 
  protected:
   virtual ~RenderViewHostDelegate() {}

@@ -9,8 +9,8 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/linked_ptr.h"
-#include "chrome/browser/signin/signin_global_error.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "chrome/browser/signin/signin_error_controller.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 
 namespace net {
@@ -19,7 +19,7 @@ class URLRequestContextGetter;
 
 class GoogleServiceAuthError;
 class Profile;
-class SigninGlobalError;
+class SigninClient;
 
 // ProfileOAuth2TokenService is a class that retrieves
 // OAuth2 access tokens for a given set of scopes using the OAuth2 login
@@ -39,14 +39,12 @@ class ProfileOAuth2TokenService : public OAuth2TokenService {
  public:
   virtual ~ProfileOAuth2TokenService();
 
-  // Initializes this token service with the profile.
-  virtual void Initialize(Profile* profile);
+  // Initializes this token service with the SigninClient and profile.
+  // TODO(blundell): Eliminate this class knowing about Profile.
+  // crbug.com/334217
+  virtual void Initialize(SigninClient* client, Profile* profile);
 
   virtual void Shutdown();
-
-  // Gets an account id of the primary account related to the profile.
-  // DEPRECATED: Use SigninManagerBase::GetAuthenticatedAccountId() instead.
-  std::string GetPrimaryAccountId();
 
   // Lists account IDs of all accounts with a refresh token.
   virtual std::vector<std::string> GetAccounts() OVERRIDE;
@@ -70,15 +68,15 @@ class ProfileOAuth2TokenService : public OAuth2TokenService {
   // Revokes all credentials handled by the object.
   virtual void RevokeAllCredentials();
 
-  SigninGlobalError* signin_global_error() {
-    return signin_global_error_.get();
+  SigninErrorController* signin_error_controller() {
+    return signin_error_controller_.get();
   }
 
-  const SigninGlobalError* signin_global_error() const {
-    return signin_global_error_.get();
+  const SigninErrorController* signin_error_controller() const {
+    return signin_error_controller_.get();
   }
 
-  Profile* profile() const { return profile_; }
+  SigninClient* client() const { return client_; }
 
  protected:
   ProfileOAuth2TokenService();
@@ -90,10 +88,6 @@ class ProfileOAuth2TokenService : public OAuth2TokenService {
   // Simply returns NULL and should be overriden by subsclasses.
   virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
 
-  // Default implementation of this method is NOTREACHED as it should be be
-  // overriden by subclasses.
-  virtual std::string GetRefreshToken(const std::string& account_id) OVERRIDE;
-
   // Updates the internal cache of the result from the most-recently-completed
   // auth request (used for reporting errors to the user).
   virtual void UpdateAuthError(
@@ -101,14 +95,14 @@ class ProfileOAuth2TokenService : public OAuth2TokenService {
       const GoogleServiceAuthError& error) OVERRIDE;
 
  private:
+  // The client with which this instance was initialized, or NULL.
+  SigninClient* client_;
+
   // The profile with which this instance was initialized, or NULL.
   Profile* profile_;
 
-  // Used to show auth errors in the wrench menu. The SigninGlobalError is
-  // different than most GlobalErrors in that its lifetime is controlled by
-  // ProfileOAuth2TokenService (so we can expose a reference for use in the
-  // wrench menu).
-  scoped_ptr<SigninGlobalError> signin_global_error_;
+  // Used to expose auth errors to the UI.
+  scoped_ptr<SigninErrorController> signin_error_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileOAuth2TokenService);
 };

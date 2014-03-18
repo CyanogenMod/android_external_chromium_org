@@ -23,11 +23,11 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/window_tree_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ime/input_method_initializer.h"
 #include "ui/events/gestures/gesture_configuration.h"
 #include "ui/gfx/display.h"
@@ -58,12 +58,12 @@ class AshEventGeneratorDelegate : public aura::test::EventGeneratorDelegate {
   virtual ~AshEventGeneratorDelegate() {}
 
   // aura::test::EventGeneratorDelegate overrides:
-  virtual aura::RootWindow* GetRootWindowAt(
+  virtual aura::WindowTreeHost* GetHostAt(
       const gfx::Point& point_in_screen) const OVERRIDE {
     gfx::Screen* screen = Shell::GetScreen();
     gfx::Display display = screen->GetDisplayNearestPoint(point_in_screen);
     return Shell::GetInstance()->display_controller()->
-        GetRootWindowForDisplayId(display.id())->GetDispatcher();
+        GetRootWindowForDisplayId(display.id())->GetHost();
   }
 
   virtual aura::client::ScreenPositionClient* GetScreenPositionClient(
@@ -123,7 +123,7 @@ void AshTestBase::SetUp() {
   ash_test_helper_->SetUp(start_session_);
 
   Shell::GetPrimaryRootWindow()->Show();
-  Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->Show();
+  Shell::GetPrimaryRootWindow()->GetHost()->Show();
   // Move the mouse cursor to far away so that native events doesn't
   // interfere test expectations.
   Shell::GetPrimaryRootWindow()->MoveCursorTo(gfx::Point(-1000, -1000));

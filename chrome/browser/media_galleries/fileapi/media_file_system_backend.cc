@@ -108,17 +108,16 @@ bool MediaFileSystemBackend::CanHandleType(
 void MediaFileSystemBackend::Initialize(fileapi::FileSystemContext* context) {
 }
 
-void MediaFileSystemBackend::OpenFileSystem(
-    const GURL& origin_url,
-    fileapi::FileSystemType type,
+void MediaFileSystemBackend::ResolveURL(
+    const FileSystemURL& url,
     fileapi::OpenFileSystemMode mode,
     const OpenFileSystemCallback& callback) {
-  // We never allow opening a new isolated FileSystem via usual OpenFileSystem.
+  // We never allow opening a new isolated FileSystem via usual ResolveURL.
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(callback,
-                 GetFileSystemRootURI(origin_url, type),
-                 GetFileSystemName(origin_url, type),
+                 GURL(),
+                 std::string(),
                  base::File::FILE_ERROR_SECURITY));
 }
 
@@ -176,6 +175,16 @@ MediaFileSystemBackend::CreateFileSystemOperation(
           context, media_task_runner_.get()));
   return fileapi::FileSystemOperation::Create(
       url, context, operation_context.Pass());
+}
+
+bool MediaFileSystemBackend::SupportsStreaming(
+    const fileapi::FileSystemURL& url) const {
+  if (url.type() == fileapi::kFileSystemTypeDeviceMedia) {
+    DCHECK(device_media_async_file_util_);
+    return device_media_async_file_util_->SupportsStreaming(url);
+  }
+
+  return false;
 }
 
 scoped_ptr<webkit_blob::FileStreamReader>

@@ -4,6 +4,7 @@
 
 #include "components/password_manager/core/browser/password_syncable_service.h"
 
+#include "base/auto_reset.h"
 #include "base/location.h"
 #include "base/memory/scoped_vector.h"
 #include "base/metrics/histogram.h"
@@ -104,9 +105,9 @@ void AppendChanges(const PasswordStoreChangeList& new_changes,
 
 }  // namespace
 
-PasswordSyncableService::PasswordSyncableService(
-    scoped_refptr<PasswordStore> password_store)
-    : password_store_(password_store) {
+PasswordSyncableService::PasswordSyncableService(PasswordStore* password_store)
+    : password_store_(password_store),
+      is_processing_sync_changes_(false) {
 }
 
 PasswordSyncableService::~PasswordSyncableService() {}
@@ -116,7 +117,9 @@ syncer::SyncMergeResult PasswordSyncableService::MergeDataAndStartSyncing(
     const syncer::SyncDataList& initial_sync_data,
     scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
     scoped_ptr<syncer::SyncErrorFactory> sync_error_factory) {
+  DCHECK(CalledOnValidThread());
   DCHECK_EQ(syncer::PASSWORDS, type);
+  base::AutoReset<bool> processing_changes(&is_processing_sync_changes_, true);
   syncer::SyncMergeResult merge_result(type);
   sync_error_factory_ = sync_error_factory.Pass();
   sync_processor_ = sync_processor.Pass();
@@ -181,12 +184,16 @@ syncer::SyncMergeResult PasswordSyncableService::MergeDataAndStartSyncing(
 }
 
 void PasswordSyncableService::StopSyncing(syncer::ModelType type) {
+  DCHECK(CalledOnValidThread());
+  DCHECK_EQ(syncer::PASSWORDS, type);
+
   sync_processor_.reset();
   sync_error_factory_.reset();
 }
 
 syncer::SyncDataList PasswordSyncableService::GetAllSyncData(
     syncer::ModelType type) const {
+  DCHECK(CalledOnValidThread());
   DCHECK_EQ(syncer::PASSWORDS, type);
   ScopedVector<autofill::PasswordForm> password_entries;
   ReadFromPasswordStore(&password_entries, NULL);
@@ -202,6 +209,8 @@ syncer::SyncDataList PasswordSyncableService::GetAllSyncData(
 syncer::SyncError PasswordSyncableService::ProcessSyncChanges(
     const tracked_objects::Location& from_here,
     const syncer::SyncChangeList& change_list) {
+  DCHECK(CalledOnValidThread());
+  base::AutoReset<bool> processing_changes(&is_processing_sync_changes_, true);
   // The |db_entries_map| and associated vectors are filled only in case of
   // update change.
   PasswordEntryMap db_entries_map;
@@ -268,7 +277,19 @@ syncer::SyncError PasswordSyncableService::ProcessSyncChanges(
 
 void PasswordSyncableService::ActOnPasswordStoreChanges(
     const PasswordStoreChangeList& local_changes) {
-  if (!sync_processor_)
+  DCHECK(CalledOnValidThread());
+
+  if (!sync_processor_) {
+    if (!flare_.is_null()) {
+      flare_.Run(syncer::PASSWORDS);
+      flare_.Reset();
+    }
+    return;
+  }
+
+  // ActOnPasswordStoreChanges() can be called from ProcessSyncChanges(). Do
+  // nothing in this case.
+  if (is_processing_sync_changes_)
     return;
   syncer::SyncChangeList sync_changes;
   for (PasswordStoreChangeList::const_iterator it = local_changes.begin();
@@ -280,6 +301,12 @@ void PasswordSyncableService::ActOnPasswordStoreChanges(
                            SyncDataFromPassword(it->form())));
   }
   sync_processor_->ProcessSyncChanges(FROM_HERE, sync_changes);
+}
+
+void PasswordSyncableService::InjectStartSyncFlare(
+    const syncer::SyncableService::StartSyncFlare& flare) {
+  DCHECK(CalledOnValidThread());
+  flare_ = flare;
 }
 
 bool PasswordSyncableService::ReadFromPasswordStore(

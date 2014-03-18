@@ -22,6 +22,7 @@
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/nix/xdg_util.h"
@@ -1171,7 +1172,7 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
   // each relevant name-value pair to the appropriate value table.
   void UpdateCachedSettings() {
     base::FilePath kioslaverc = kde_config_dir_.Append("kioslaverc");
-    file_util::ScopedFILE input(base::OpenFile(kioslaverc, "r"));
+    base::ScopedFILE input(base::OpenFile(kioslaverc, "r"));
     if (!input.get())
       return;
     ResetCachedSettings();
@@ -1215,8 +1216,8 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
         *(split++) = 0;
         std::string key = line;
         std::string value = split;
-        TrimWhitespaceASCII(key, TRIM_ALL, &key);
-        TrimWhitespaceASCII(value, TRIM_ALL, &value);
+        base::TrimWhitespaceASCII(key, base::TRIM_ALL, &key);
+        base::TrimWhitespaceASCII(value, base::TRIM_ALL, &value);
         // Skip this line if the key name is empty.
         if (key.empty())
           continue;
@@ -1230,7 +1231,7 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
           // Trim the localization indicator off.
           key.resize(length);
           // Remove any resulting trailing whitespace.
-          TrimWhitespaceASCII(key, TRIM_TRAILING, &key);
+          base::TrimWhitespaceASCII(key, base::TRIM_TRAILING, &key);
           // Skip this line if the key name is now empty.
           if (key.empty())
             continue;

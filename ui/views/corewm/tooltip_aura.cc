@@ -6,22 +6,19 @@
 
 #include "base/command_line.h"
 #include "base/strings/string_split.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/gfx/text_utils.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
-#include "ui/views/corewm/corewm_switches.h"
 #include "ui/views/widget/widget.h"
 
 namespace {
 
 const SkColor kTooltipBackground = 0xFFFFFFCC;
-const SkColor kTooltipBorder = 0xFF646450;
-const int kTooltipBorderWidth = 1;
 const int kTooltipHorizontalPadding = 3;
 
 // Max visual tooltip width. If a tooltip is greater than this width, it will
@@ -65,12 +62,9 @@ TooltipAura::TooltipAura(gfx::ScreenType screen_type)
       tooltip_window_(NULL) {
   label_.set_background(
       views::Background::CreateSolidBackground(kTooltipBackground));
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoDropShadows)) {
-    label_.SetBorder(
-        views::Border::CreateSolidBorder(kTooltipBorderWidth, kTooltipBorder));
-  }
   label_.set_owned_by_client();
   label_.SetMultiLine(true);
+  label_.SetHorizontalAlignment(gfx::ALIGN_LEFT);
 }
 
 TooltipAura::~TooltipAura() {
@@ -168,7 +162,7 @@ gfx::Rect TooltipAura::GetBoundsForTooltip(
   // (which comes from the RootWindow).
   if (screen_type_ == gfx::SCREEN_TYPE_NATIVE &&
       gfx::SCREEN_TYPE_NATIVE != gfx::SCREEN_TYPE_ALTERNATE) {
-    widget_bounds = tooltip_window_->GetDispatcher()->host()->GetBounds();
+    widget_bounds = tooltip_window_->GetHost()->GetBounds();
   }
   gfx::Screen* screen = gfx::Screen::GetScreenByType(screen_type_);
   gfx::Rect bounds(screen->GetDisplayNearestPoint(origin).bounds());
@@ -239,10 +233,6 @@ void TooltipAura::SetText(aura::Window* window,
   int width = max_width + 2 * kTooltipHorizontalPadding;
   int height = label_.GetHeightForWidth(max_width) +
       2 * kTooltipVerticalPadding;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoDropShadows)) {
-    width += 2 * kTooltipBorderWidth;
-    height += 2 * kTooltipBorderWidth;
-  }
   CreateWidget();
   SetTooltipBounds(location, width, height);
 }

@@ -25,6 +25,7 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/test/test_utils.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
@@ -122,7 +123,8 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
   }
 
   void CheckJavascriptErrors() {
-    content::RenderViewHost* host = dialog_->GetRenderViewHost();
+    content::RenderFrameHost* host =
+        dialog_->GetRenderViewHost()->GetMainFrame();
     scoped_ptr<base::Value> value =
         content::ExecuteScriptAndGetValue(host, "window.JSErrorCount");
     int js_error_count = 0;
@@ -194,7 +196,6 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
         content::NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
         content::NotificationService::AllSources());
     content::RenderViewHost* host = dialog_->GetRenderViewHost();
-    base::string16 main_frame;
     std::string button_class =
         (button_type == DIALOG_BTN_OK) ? ".button-panel .ok" :
                                          ".button-panel .cancel";
@@ -203,7 +204,7 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
         "document.querySelector(\'" + button_class + "\').click();");
     // The file selection handler closes the dialog and does not return control
     // to JavaScript, so do not wait for return values.
-    host->ExecuteJavascriptInWebFrame(main_frame, script);
+    host->GetMainFrame()->ExecuteJavaScript(script);
     LOG(INFO) << "Waiting for window close notification.";
     host_destroyed.Wait();
 

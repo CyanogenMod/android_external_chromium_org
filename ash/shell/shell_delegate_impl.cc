@@ -5,7 +5,6 @@
 #include "ash/shell/shell_delegate_impl.h"
 
 #include "ash/accessibility_delegate.h"
-#include "ash/caps_lock_delegate_stub.h"
 #include "ash/default_accessibility_delegate.h"
 #include "ash/default_user_wallpaper_delegate.h"
 #include "ash/gpu_support_stub.h"
@@ -24,7 +23,7 @@
 #include "ash/wm/window_state.h"
 #include "base/message_loop/message_loop.h"
 #include "ui/aura/window.h"
-#include "ui/views/corewm/input_method_event_filter.h"
+#include "ui/wm/core/input_method_event_filter.h"
 
 namespace ash {
 namespace shell {
@@ -135,10 +134,6 @@ ash::UserWallpaperDelegate* ShellDelegateImpl::CreateUserWallpaperDelegate() {
   return new DefaultUserWallpaperDelegate();
 }
 
-ash::CapsLockDelegate* ShellDelegateImpl::CreateCapsLockDelegate() {
-  return new CapsLockDelegateStub;
-}
-
 ash::SessionStateDelegate* ShellDelegateImpl::CreateSessionStateDelegate() {
   return new SessionStateDelegateStub;
 }
@@ -153,10 +148,6 @@ ash::NewWindowDelegate* ShellDelegateImpl::CreateNewWindowDelegate() {
 
 ash::MediaDelegate* ShellDelegateImpl::CreateMediaDelegate() {
   return new MediaDelegateImpl;
-}
-
-aura::client::UserActionClient* ShellDelegateImpl::CreateUserActionClient() {
-  return NULL;
 }
 
 ui::MenuModel* ShellDelegateImpl::CreateContextMenu(

@@ -42,13 +42,18 @@ class MediaGalleriesScanResultDialog {
   // Constructs a platform-specific dialog owned and controlled by |controller|.
   static MediaGalleriesScanResultDialog* Create(
       MediaGalleriesScanResultDialogController* controller);
+
+ private:
+  friend class TestMediaGalleriesAddScanResultsFunction;
+
+  virtual void AcceptDialogForTesting() = 0;
 };
 
 // The controller is responsible for handling the logic of the dialog and
 // interfacing with the model (i.e., MediaGalleriesPreferences). It shows
 // the dialog and owns itself.
 class MediaGalleriesScanResultDialogController
-    : public RemovableStorageObserver,
+    : public storage_monitor::RemovableStorageObserver,
       public MediaGalleriesPreferences::GalleryChangeObserver {
  public:
   struct ScanResult {
@@ -124,6 +129,7 @@ class MediaGalleriesScanResultDialogController
  private:
   friend class MediaGalleriesScanResultDialogControllerTest;
   friend class MediaGalleriesScanResultDialogCocoaTest;
+  friend class TestMediaGalleriesAddScanResultsFunction;
 
   // Bottom half of constructor -- called when |preferences_| is initialized.
   void OnPreferencesInitialized();
@@ -138,8 +144,10 @@ class MediaGalleriesScanResultDialogController
 
   // RemovableStorageObserver implementation.
   // Used to keep dialog in sync with removable device status.
-  virtual void OnRemovableStorageAttached(const StorageInfo& info) OVERRIDE;
-  virtual void OnRemovableStorageDetached(const StorageInfo& info) OVERRIDE;
+  virtual void OnRemovableStorageAttached(
+      const storage_monitor::StorageInfo& info) OVERRIDE;
+  virtual void OnRemovableStorageDetached(
+      const storage_monitor::StorageInfo& info) OVERRIDE;
 
   // MediaGalleriesPreferences::GalleryChangeObserver implementations.
   // Used to keep the dialog in sync when the preferences change.

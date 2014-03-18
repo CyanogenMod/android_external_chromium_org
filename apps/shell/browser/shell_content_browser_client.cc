@@ -50,23 +50,33 @@ void ShellContentBrowserClient::RenderProcessWillLaunch(
       render_process_id, browser_main_parts_->browser_context()));
 }
 
-net::URLRequestContextGetter*
-ShellContentBrowserClient::CreateRequestContext(
+bool ShellContentBrowserClient::ShouldUseProcessPerSite(
+    content::BrowserContext* browser_context,
+    const GURL& effective_url) {
+  // This ensures that all render views created for a single app will use the
+  // same render process (see content::SiteInstance::GetProcess). Otherwise the
+  // default behavior of ContentBrowserClient will lead to separate render
+  // processes for the background page and each app window view.
+  return true;
+}
+
+net::URLRequestContextGetter* ShellContentBrowserClient::CreateRequestContext(
     content::BrowserContext* content_browser_context,
-    content::ProtocolHandlerMap* protocol_handlers) {
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::ProtocolHandlerScopedVector protocol_interceptors) {
   // Handle chrome-extension: and chrome-extension-resource: requests.
   extensions::InfoMap* extension_info_map =
       browser_main_parts_->extension_system()->info_map();
   (*protocol_handlers)[extensions::kExtensionScheme] =
       linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
-          CreateExtensionProtocolHandler(false /*is_incognito*/,
+          CreateExtensionProtocolHandler(Profile::REGULAR_PROFILE,
                                          extension_info_map));
   (*protocol_handlers)[extensions::kExtensionResourceScheme] =
       linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
           CreateExtensionResourceProtocolHandler());
   // Let content::ShellBrowserContext handle the rest of the setup.
   return browser_main_parts_->browser_context()->CreateRequestContext(
-      protocol_handlers);
+      protocol_handlers, protocol_interceptors.Pass());
 }
 
 bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
@@ -75,7 +85,7 @@ bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
   // Keep in sync with ProtocolHandlers added in CreateRequestContext() and in
   // content::ShellURLRequestContextGetter::GetURLRequestContext().
   static const char* const kProtocolList[] = {
-      chrome::kBlobScheme,
+      content::kBlobScheme,
       content::kChromeDevToolsScheme,
       content::kChromeUIScheme,
       content::kDataScheme,
@@ -145,6 +155,13 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
     // renderers?
     command_line->AppendSwitch(extensions::switches::kExtensionProcess);
   }
+}
+
+void ShellContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
+    std::vector<std::string>* additional_allowed_schemes) {
+  ContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
+      additional_allowed_schemes);
+  additional_allowed_schemes->push_back(extensions::kExtensionScheme);
 }
 
 const extensions::Extension* ShellContentBrowserClient::GetExtension(

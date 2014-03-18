@@ -34,7 +34,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
 #include "ui/gfx/image/image.h"
-#include "ui/views/corewm/window_animations.h"
+#include "ui/wm/core/window_animations.h"
 
 BrowserShortcutLauncherItemController::BrowserShortcutLauncherItemController(
     ChromeLauncherController* launcher_controller)
@@ -289,7 +289,7 @@ void BrowserShortcutLauncherItemController::ActivateOrAdvanceToNextBrowser() {
     // bounce it (if it is already active).
     if (browser == items[0]) {
       AnimateWindow(browser->window()->GetNativeWindow(),
-                    views::corewm::WINDOW_ANIMATION_TYPE_BOUNCE);
+                    wm::WINDOW_ANIMATION_TYPE_BOUNCE);
       return;
     }
     browser = items[0];

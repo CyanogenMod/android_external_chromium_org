@@ -8,51 +8,40 @@
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
 #include "base/metrics/histogram.h"
-#include "chrome/browser/password_manager/password_form_manager.h"
-#include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/password_manager/password_manager_util.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/password_manager/save_password_infobar_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/ui/autofill/password_generation_popup_controller_impl.h"
 #include "chrome/browser/ui/passwords/manage_passwords_bubble_ui_controller.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "components/autofill/content/common/autofill_messages.h"
+#include "components/autofill/core/browser/password_generator.h"
+#include "components/autofill/core/common/password_form.h"
+#include "components/password_manager/core/browser/password_form_manager.h"
+#include "components/password_manager/core/browser/password_manager.h"
+#include "components/password_manager/core/browser/password_manager_logger.h"
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
+#include "ipc/ipc_message_macros.h"
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/android/password_authentication_manager.h"
 #endif  // OS_ANDROID
 
-namespace {
-
-void ReportOsPassword() {
-  password_manager_util::OsPasswordStatus status =
-      password_manager_util::GetOsPasswordStatus();
-
-  UMA_HISTOGRAM_ENUMERATION("PasswordManager.OsPasswordStatus",
-                            status,
-                            password_manager_util::MAX_PASSWORD_STATUS);
-}
-
-}  // namespace
-
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(ChromePasswordManagerClient);
 
 ChromePasswordManagerClient::ChromePasswordManagerClient(
     content::WebContents* web_contents)
-    : web_contents_(web_contents),
+    : content::WebContentsObserver(web_contents),
       driver_(web_contents, this),
-      weak_factory_(this) {
-  // Avoid checking OS password until later on in browser startup
-  // since it calls a few Windows APIs.
-  base::MessageLoopProxy::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&ReportOsPassword),
-      base::TimeDelta::FromSeconds(10));
-}
+      observer_(NULL),
+      weak_factory_(this),
+      logger_(NULL) {}
 
 ChromePasswordManagerClient::~ChromePasswordManagerClient() {}
 
@@ -61,7 +50,7 @@ void ChromePasswordManagerClient::PromptUserToSavePassword(
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableSavePasswordBubble)) {
     ManagePasswordsBubbleUIController* manage_passwords_bubble_ui_controller =
-        ManagePasswordsBubbleUIController::FromWebContents(web_contents_);
+        ManagePasswordsBubbleUIController::FromWebContents(web_contents());
     if (manage_passwords_bubble_ui_controller) {
       manage_passwords_bubble_ui_controller->OnPasswordSubmitted(form_to_save);
     } else {
@@ -73,14 +62,14 @@ void ChromePasswordManagerClient::PromptUserToSavePassword(
             password_manager_metrics_util::MonitoredDomainGroupId(
                 form_to_save->realm(), GetPrefs())));
     SavePasswordInfoBarDelegate::Create(
-        web_contents_, form_to_save, uma_histogram_suffix);
+        web_contents(), form_to_save, uma_histogram_suffix);
   }
 }
 
 void ChromePasswordManagerClient::PasswordWasAutofilled(
     const autofill::PasswordFormMap& best_matches) const {
   ManagePasswordsBubbleUIController* manage_passwords_bubble_ui_controller =
-      ManagePasswordsBubbleUIController::FromWebContents(web_contents_);
+      ManagePasswordsBubbleUIController::FromWebContents(web_contents());
   if (manage_passwords_bubble_ui_controller &&
       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableSavePasswordBubble)) {
@@ -92,7 +81,7 @@ void ChromePasswordManagerClient::AuthenticateAutofillAndFillForm(
       scoped_ptr<autofill::PasswordFormFillData> fill_data) {
 #if defined(OS_ANDROID)
   PasswordAuthenticationManager::AuthenticatePasswordAutofill(
-      web_contents_,
+      web_contents(),
       base::Bind(&ChromePasswordManagerClient::CommitFillPasswordForm,
                  weak_factory_.GetWeakPtr(),
                  base::Owned(fill_data.release())));
@@ -104,7 +93,12 @@ void ChromePasswordManagerClient::AuthenticateAutofillAndFillForm(
 }
 
 Profile* ChromePasswordManagerClient::GetProfile() {
-  return Profile::FromBrowserContext(web_contents_->GetBrowserContext());
+  return Profile::FromBrowserContext(web_contents()->GetBrowserContext());
+}
+
+void ChromePasswordManagerClient::HidePasswordGenerationPopup() {
+  if (popup_controller_)
+    popup_controller_->HideAndDestroy();
 }
 
 PrefService* ChromePasswordManagerClient::GetPrefs() {
@@ -148,6 +142,23 @@ bool ChromePasswordManagerClient::IsPasswordSyncEnabled() {
   return false;
 }
 
+void ChromePasswordManagerClient::SetLogger(
+    PasswordManagerLogger* logger) {
+  // We should never be replacing one logger with a different one, because that
+  // will leave the first without further updates, and the user likely confused.
+  // TODO(vabr): For the reason above, before moving the internals page from
+  // behind the flag, make sure to restrict the number of internals page
+  // instances to 1 in normal profiles, and 0 in incognito.
+  DCHECK(!logger || !logger_);
+  logger_ = logger;
+}
+
+void ChromePasswordManagerClient::LogSavePasswordProgress(
+    const std::string& text) {
+  if (logger_)
+    logger_->LogSavePasswordProgress(text);
+}
+
 // static
 PasswordGenerationManager*
 ChromePasswordManagerClient::GetGenerationManagerFromWebContents(
@@ -167,6 +178,78 @@ PasswordManager* ChromePasswordManagerClient::GetManagerFromWebContents(
   if (!client)
     return NULL;
   return client->GetDriver()->GetPasswordManager();
+}
+
+void ChromePasswordManagerClient::SetTestObserver(
+    autofill::PasswordGenerationPopupObserver* observer) {
+  observer_ = observer;
+}
+
+bool ChromePasswordManagerClient::OnMessageReceived(
+    const IPC::Message& message) {
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(ChromePasswordManagerClient, message)
+    IPC_MESSAGE_HANDLER(AutofillHostMsg_ShowPasswordGenerationPopup,
+                        ShowPasswordGenerationPopup)
+    IPC_MESSAGE_HANDLER(AutofillHostMsg_ShowPasswordEditingPopup,
+                        ShowPasswordEditingPopup)
+    IPC_MESSAGE_HANDLER(AutofillHostMsg_HidePasswordGenerationPopup,
+                        HidePasswordGenerationPopup)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  return handled;
+}
+
+gfx::RectF ChromePasswordManagerClient::GetBoundsInScreenSpace(
+    const gfx::RectF& bounds) {
+  gfx::Rect client_area;
+  web_contents()->GetView()->GetContainerBounds(&client_area);
+  return bounds + client_area.OffsetFromOrigin();
+}
+
+void ChromePasswordManagerClient::ShowPasswordGenerationPopup(
+    const gfx::RectF& bounds,
+    int max_length,
+    const autofill::PasswordForm& form) {
+  // TODO(gcasto): Validate data in PasswordForm.
+
+  // Only implemented for Aura right now.
+#if defined(USE_AURA)
+  gfx::RectF element_bounds_in_screen_space = GetBoundsInScreenSpace(bounds);
+
+  popup_controller_ =
+      autofill::PasswordGenerationPopupControllerImpl::GetOrCreate(
+          popup_controller_,
+          element_bounds_in_screen_space,
+          form,
+          max_length,
+          driver_.GetPasswordManager(),
+          observer_,
+          web_contents(),
+          web_contents()->GetView()->GetNativeView());
+  popup_controller_->Show(true /* display_password */);
+#endif  // #if defined(USE_AURA)
+}
+
+void ChromePasswordManagerClient::ShowPasswordEditingPopup(
+    const gfx::RectF& bounds,
+    const autofill::PasswordForm& form) {
+  // Only implemented for Aura right now.
+#if defined(USE_AURA)
+  gfx::RectF element_bounds_in_screen_space = GetBoundsInScreenSpace(bounds);
+
+  popup_controller_ =
+      autofill::PasswordGenerationPopupControllerImpl::GetOrCreate(
+          popup_controller_,
+          element_bounds_in_screen_space,
+          form,
+          0,  // Unspecified max length.
+          driver_.GetPasswordManager(),
+          observer_,
+          web_contents(),
+          web_contents()->GetView()->GetNativeView());
+  popup_controller_->Show(false /* display_password */);
+#endif  // #if defined(USE_AURA)
 }
 
 void ChromePasswordManagerClient::CommitFillPasswordForm(

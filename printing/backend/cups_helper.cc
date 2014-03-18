@@ -62,7 +62,7 @@ void ParseLpOptions(const base::FilePath& filepath,
       continue;
     }
 
-    TrimWhitespaceASCII(line, TRIM_ALL, &line);
+    base::TrimWhitespaceASCII(line, base::TRIM_ALL, &line);
     if (line.empty())
       continue;
 
@@ -80,7 +80,8 @@ void ParseLpOptions(const base::FilePath& filepath,
     }
 
     line = line.substr(space_found + 1);
-    TrimWhitespaceASCII(line, TRIM_ALL, &line);  // Remove extra spaces.
+    // Remove extra spaces.
+    base::TrimWhitespaceASCII(line, base::TRIM_ALL, &line);
     if (line.empty())
       continue;
     // Parse the selected printer custom options.
@@ -345,7 +346,7 @@ bool ParsePpdCapabilities(
     return false;
 
   int data_size = printer_capabilities.length();
-  if (data_size != file_util::WriteFile(
+  if (data_size != base::WriteFile(
                        ppd_file_path,
                        printer_capabilities.data(),
                        data_size)) {

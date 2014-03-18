@@ -14,8 +14,8 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -200,10 +200,7 @@ ContentSetting CookieSettings::GetCookieSetting(
       info.secondary_pattern.MatchesAllHosts() &&
       ShouldBlockThirdPartyCookies() &&
       !first_party_url.SchemeIs(extensions::kExtensionScheme)) {
-    bool not_strict = CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kOnlyBlockSettingThirdPartyCookies);
-    net::StaticCookiePolicy policy(not_strict ?
-        net::StaticCookiePolicy::BLOCK_SETTING_THIRD_PARTY_COOKIES :
+    net::StaticCookiePolicy policy(
         net::StaticCookiePolicy::BLOCK_ALL_THIRD_PARTY_COOKIES);
     int rv;
     if (setting_cookie)

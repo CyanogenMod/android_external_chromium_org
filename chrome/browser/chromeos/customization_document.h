@@ -12,26 +12,38 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
+#include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "url/gurl.h"
 
 class PrefRegistrySimple;
+class Profile;
 
 namespace base {
 class DictionaryValue;
 class FilePath;
 }
 
+namespace extensions {
+class ExternalLoader;
+}
+
 namespace net {
 class URLFetcher;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 // This test is in global namespace so it must be declared here.
 void Test__InitStartupCustomizationDocument(const std::string& manifest);
 
 namespace chromeos {
+
+class ServicesCustomizationExternalLoader;
 
 namespace system {
 class StatisticsProvider;
@@ -73,10 +85,7 @@ class StartupCustomizationDocument : public CustomizationDocument {
  public:
   static StartupCustomizationDocument* GetInstance();
 
-  std::string GetHelpPage(const std::string& locale) const;
   std::string GetEULAPage(const std::string& locale) const;
-
-  const std::string& registration_url() const { return registration_url_; }
 
   // These methods can be called even if !IsReady(), in this case VPD values
   // will be returned.
@@ -120,16 +129,15 @@ class StartupCustomizationDocument : public CustomizationDocument {
   std::vector<std::string> configured_locales_;
   std::string initial_timezone_;
   std::string keyboard_layout_;
-  std::string registration_url_;
 
   DISALLOW_COPY_AND_ASSIGN(StartupCustomizationDocument);
 };
 
 // OEM services customization document class.
-// ServicesCustomizationDocument is fetched from network or local file but on
-// FILE thread therefore it may not be ready just after creation. Fetching of
-// the manifest should be initiated outside this class by calling
-// StartFetching() method. User of the file should check IsReady before use it.
+// ServicesCustomizationDocument is fetched from network therefore it is not
+// ready just after creation. Fetching of the manifest should be initiated
+// outside this class by calling StartFetching() method.
+// User of the file should check IsReady before use it.
 class ServicesCustomizationDocument : public CustomizationDocument,
                                       private net::URLFetcherDelegate {
  public:
@@ -137,26 +145,36 @@ class ServicesCustomizationDocument : public CustomizationDocument,
 
   // Registers preferences.
   static void RegisterPrefs(PrefRegistrySimple* registry);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+
+  static const char kManifestUrl[];
 
   // Return true if the customization was applied. Customization is applied only
   // once per machine.
-  static bool WasApplied();
+  static bool WasOOBECustomizationApplied();
 
   // Start fetching customization document.
   void StartFetching();
 
   // Apply customization and save in machine options that customization was
   // applied successfully. Return true if customization was applied.
-  bool ApplyCustomization();
+  bool ApplyOOBECustomization();
 
-  std::string GetInitialStartPage(const std::string& locale) const;
-  std::string GetSupportPage(const std::string& locale) const;
+  // Returns default wallpaper URL.
+  GURL GetDefaultWallpaperUrl() const;
+
+  // Returns list of default apps.
+  bool GetDefaultApps(std::vector<std::string>* ids) const;
+
+  // Creates an extensions::ExternalLoader that will provide OEM default apps.
+  // Cache of OEM default apps stored in profile preferences.
+  extensions::ExternalLoader* CreateExternalLoader(Profile* profile);
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(ServicesCustomizationDocumentTest, Basic);
-  FRIEND_TEST_ALL_PREFIXES(ServicesCustomizationDocumentTest, BadManifest);
-  FRIEND_TEST_ALL_PREFIXES(ServicesCustomizationDocumentTest, MultiLanguage);
   friend struct DefaultSingletonTraits<ServicesCustomizationDocument>;
+
+  typedef std::vector<base::WeakPtr<ServicesCustomizationExternalLoader> >
+      ExternalLoaders;
 
   // C-tor for singleton construction.
   ServicesCustomizationDocument();
@@ -169,6 +187,9 @@ class ServicesCustomizationDocument : public CustomizationDocument,
   // Save applied state in machine settings.
   static void SetApplied(bool val);
 
+  // Overriden from CustomizationDocument:
+  virtual bool LoadManifestFromString(const std::string& manifest) OVERRIDE;
+
   // Overriden from net::URLFetcherDelegate:
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
 
@@ -177,6 +198,19 @@ class ServicesCustomizationDocument : public CustomizationDocument,
 
   // Executes on FILE thread and reads file to string.
   void ReadFileInBackground(const base::FilePath& file);
+
+  // Called on UI thread with results of ReadFileInBackground.
+  void OnManifesteRead(const std::string& manifest);
+
+  // Method called when manifest was successfully loaded.
+  void OnManifestLoaded();
+
+  // Returns list of default apps in ExternalProvider format.
+  static scoped_ptr<base::DictionaryValue> GetDefaultAppsInProviderFormat(
+      const base::DictionaryValue& root);
+
+  // Update cached manifest for |profile|.
+  void UpdateCachedManifest(Profile* profile);
 
   // Services customization manifest URL.
   GURL url_;
@@ -189,6 +223,12 @@ class ServicesCustomizationDocument : public CustomizationDocument,
 
   // How many times we already tried to fetch customization manifest file.
   int num_retries_;
+
+  // Manifest fetch is already in progress.
+  bool fetch_started_;
+
+  // Known external loaders.
+  ExternalLoaders external_loaders_;
 
   DISALLOW_COPY_AND_ASSIGN(ServicesCustomizationDocument);
 };

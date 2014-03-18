@@ -51,6 +51,7 @@ struct SelLdrStartParams {
   SelLdrStartParams(const nacl::string& url,
                     bool uses_irt,
                     bool uses_ppapi,
+                    bool uses_nonsfi_mode,
                     bool enable_dev_interfaces,
                     bool enable_dyncode_syscalls,
                     bool enable_exception_handling,
@@ -58,6 +59,7 @@ struct SelLdrStartParams {
       : url(url),
         uses_irt(uses_irt),
         uses_ppapi(uses_ppapi),
+        uses_nonsfi_mode(uses_nonsfi_mode),
         enable_dev_interfaces(enable_dev_interfaces),
         enable_dyncode_syscalls(enable_dyncode_syscalls),
         enable_exception_handling(enable_exception_handling),
@@ -66,6 +68,7 @@ struct SelLdrStartParams {
   nacl::string url;
   bool uses_irt;
   bool uses_ppapi;
+  bool uses_nonsfi_mode;
   bool enable_dev_interfaces;
   bool enable_dyncode_syscalls;
   bool enable_exception_handling;
@@ -210,7 +213,8 @@ class ServiceRuntime {
   // Start method below.
   ServiceRuntime(Plugin* plugin,
                  const Manifest* manifest,
-                 bool should_report_uma,
+                 bool main_service_runtime,
+                 bool uses_nonsfi_mode,
                  pp::CompletionCallback init_done_cb,
                  pp::CompletionCallback crash_cb);
   // The destructor terminates the sel_ldr process.
@@ -257,6 +261,7 @@ class ServiceRuntime {
 
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(ServiceRuntime);
+  bool SetupCommandChannel(ErrorInfo* error_info);
   bool LoadModule(nacl::DescWrapper* shm, ErrorInfo* error_info);
   bool InitReverseService(ErrorInfo* error_info);
   bool StartModule(ErrorInfo* error_info);
@@ -266,6 +271,7 @@ class ServiceRuntime {
   NaClSrpcChannel command_channel_;
   Plugin* plugin_;
   bool main_service_runtime_;
+  bool uses_nonsfi_mode_;
   nacl::ReverseService* reverse_service_;
   nacl::scoped_ptr<nacl::SelLdrLauncherBase> subprocess_;
 

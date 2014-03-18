@@ -11,7 +11,6 @@
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/drive/drive_uploader.h"
-#include "chrome/browser/sync_file_system/drive_backend/conflict_resolver.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
@@ -30,7 +29,7 @@ ConflictResolver::ConflictResolver(SyncEngineContext* sync_context)
 ConflictResolver::~ConflictResolver() {
 }
 
-void ConflictResolver::Run(const SyncStatusCallback& callback) {
+void ConflictResolver::RunSequential(const SyncStatusCallback& callback) {
   if (!IsContextReady()) {
     NOTREACHED();
     callback.Run(SYNC_STATUS_FAILED);
@@ -38,14 +37,13 @@ void ConflictResolver::Run(const SyncStatusCallback& callback) {
   }
 
   // Conflict resolution should be invoked on clean tree.
-  if (metadata_database()->GetNormalPriorityDirtyTracker(NULL) ||
-      metadata_database()->GetLowPriorityDirtyTracker(NULL)) {
+  if (metadata_database()->HasDirtyTracker()) {
     NOTREACHED();
     callback.Run(SYNC_STATUS_FAILED);
     return;
   }
 
-  TrackerSet trackers;
+  TrackerIDSet trackers;
   if (metadata_database()->GetMultiParentFileTrackers(
           &target_file_id_, &trackers)) {
     DCHECK_LT(1u, trackers.size());
@@ -58,12 +56,17 @@ void ConflictResolver::Run(const SyncStatusCallback& callback) {
     util::Log(logging::LOG_VERBOSE, FROM_HERE,
               "[ConflictResolver] Detected multi-parent trackers "
               "(active tracker_id=%" PRId64 ")",
-              trackers.active_tracker()->tracker_id());
+              trackers.active_tracker());
 
     DCHECK(trackers.has_active());
-    for (TrackerSet::const_iterator itr = trackers.begin();
+    for (TrackerIDSet::const_iterator itr = trackers.begin();
          itr != trackers.end(); ++itr) {
-      const FileTracker& tracker = **itr;
+      FileTracker tracker;
+      if (!metadata_database()->FindTrackerByTrackerID(*itr, &tracker)) {
+        NOTREACHED();
+        continue;
+      }
+
       if (tracker.active())
         continue;
 
@@ -85,9 +88,13 @@ void ConflictResolver::Run(const SyncStatusCallback& callback) {
     target_file_id_ = PickPrimaryFile(trackers);
     DCHECK(!target_file_id_.empty());
     int64 primary_tracker_id = -1;
-    for (TrackerSet::const_iterator itr = trackers.begin();
+    for (TrackerIDSet::const_iterator itr = trackers.begin();
          itr != trackers.end(); ++itr) {
-      const FileTracker& tracker = **itr;
+      FileTracker tracker;
+      if (!metadata_database()->FindTrackerByTrackerID(*itr, &tracker)) {
+        NOTREACHED();
+        continue;
+      }
       if (tracker.file_id() != target_file_id_) {
         non_primary_file_ids_.push_back(
             std::make_pair(tracker.file_id(), tracker.synced_details().etag()));
@@ -142,15 +149,19 @@ void ConflictResolver::DidDetachFromParent(const SyncStatusCallback& callback,
   callback.Run(SYNC_STATUS_OK);
 }
 
-std::string ConflictResolver::PickPrimaryFile(const TrackerSet& trackers) {
+std::string ConflictResolver::PickPrimaryFile(const TrackerIDSet& trackers) {
   scoped_ptr<FileMetadata> primary;
-  for (TrackerSet::const_iterator itr = trackers.begin();
+  for (TrackerIDSet::const_iterator itr = trackers.begin();
        itr != trackers.end(); ++itr) {
-    const FileTracker& tracker = **itr;
+    FileTracker tracker;
+    if (!metadata_database()->FindTrackerByTrackerID(*itr, &tracker)) {
+      NOTREACHED();
+      continue;
+    }
+
     scoped_ptr<FileMetadata> file_metadata(new FileMetadata);
-    bool should_success = metadata_database()->FindFileByFileID(
-        tracker.file_id(), file_metadata.get());
-    if (!should_success) {
+    if (!metadata_database()->FindFileByFileID(
+            tracker.file_id(), file_metadata.get())) {
       NOTREACHED();
       continue;
     }

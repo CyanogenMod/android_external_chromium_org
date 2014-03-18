@@ -24,6 +24,11 @@ class PageNavigator;
 class WebContents;
 }
 
+namespace extensions {
+class CommandService;
+class Extension;
+}
+
 namespace chrome {
 
 // Number of bookmarks we'll open before prompting the user to see if they
@@ -100,6 +105,10 @@ bool IsAppsShortcutEnabled(Profile* profile,
 bool ShouldShowAppsShortcutInBookmarkBar(
     Profile* profile,
     chrome::HostDesktopType host_desktop_type);
+
+// Whether the menu item and shortcut to bookmark a page should be removed from
+// the user interface.
+bool ShouldRemoveBookmarkThisPageUI(Profile* profile);
 
 }  // namespace chrome
 

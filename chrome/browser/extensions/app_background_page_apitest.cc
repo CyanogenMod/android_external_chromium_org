@@ -51,9 +51,9 @@ class AppBackgroundPageApiTest : public ExtensionApiTest {
       return false;
     }
     base::FilePath manifest_path = app_dir_.path().AppendASCII("manifest.json");
-    int bytes_written = file_util::WriteFile(manifest_path,
-                                             app_manifest.data(),
-                                             app_manifest.size());
+    int bytes_written = base::WriteFile(manifest_path,
+                                        app_manifest.data(),
+                                        app_manifest.size());
     if (bytes_written != static_cast<int>(app_manifest.size())) {
       LOG(ERROR) << "Unable to write complete manifest to file. Return code="
                  << bytes_written;
@@ -600,7 +600,14 @@ IN_PROC_BROWSER_TEST_F(AppBackgroundPageApiTest, UnloadExtensionWhileHidden) {
 }
 
 // Verify active NaCl embeds cause many keepalive impulses to be sent.
-IN_PROC_BROWSER_TEST_F(AppBackgroundPageNaClTest, BackgroundKeepaliveActive) {
+// Disabled on Windows due to flakiness: http://crbug.com/346278
+#if defined(OS_WIN)
+#define MAYBE_BackgroundKeepaliveActive DISABLED_BackgroundKeepaliveActive
+#else
+#define MAYBE_BackgroundKeepaliveActive BackgroundKeepaliveActive
+#endif
+IN_PROC_BROWSER_TEST_F(AppBackgroundPageNaClTest,
+                       MAYBE_BackgroundKeepaliveActive) {
   ExtensionTestMessageListener nacl_modules_loaded("nacl_modules_loaded", true);
   LaunchTestingApp();
   extensions::ProcessManager* manager =

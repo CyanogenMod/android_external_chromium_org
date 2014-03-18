@@ -58,7 +58,7 @@ ui::AXNodeData BrowserAccessibilityManagerWin::GetEmptyDocument() {
   empty_document.id = 0;
   empty_document.role = ui::AX_ROLE_ROOT_WEB_AREA;
   empty_document.state =
-      (1 << blink::WebAXStateEnabled) |
+      (1 << ui::AX_STATE_ENABLED) |
       (1 << ui::AX_STATE_READ_ONLY) |
       (1 << ui::AX_STATE_BUSY);
   return empty_document;
@@ -154,6 +154,9 @@ void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
       break;
     case ui::AX_EVENT_SHOW:
       event_id = EVENT_OBJECT_SHOW;
+      break;
+    case ui::AX_EVENT_SCROLL_POSITION_CHANGED:
+      event_id = EVENT_SYSTEM_SCROLLINGEND;
       break;
     case ui::AX_EVENT_SCROLLED_TO_ANCHOR:
       event_id = EVENT_SYSTEM_SCROLLINGSTART;

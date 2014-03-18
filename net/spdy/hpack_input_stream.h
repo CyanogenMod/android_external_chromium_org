@@ -6,24 +6,18 @@
 #define NET_SPDY_HPACK_INPUT_STREAM_H_
 
 #include <string>
-#include <vector>
 
 #include "base/basictypes.h"
 #include "base/macros.h"
 #include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
-#include "net/spdy/hpack_constants.h"  // For HpackPrefix.
+#include "net/spdy/hpack_constants.h"
+#include "net/spdy/hpack_huffman_table.h"
 
 // All section references below are to
-// http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-05
-// .
+// http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-06
 
 namespace net {
-
-// TODO(akalin): When we use a callback/delegate instead of a vector,
-// use StringPiece instead of string.
-typedef std::pair<std::string, std::string> HpackHeaderPair;
-typedef std::vector<HpackHeaderPair> HpackHeaderPairVector;
 
 // An HpackInputStream handles all the low-level details of decoding
 // header fields.
@@ -46,7 +40,23 @@ class NET_EXPORT_PRIVATE HpackInputStream {
   // decoding was successful, or false if an error was encountered.
 
   bool DecodeNextUint32(uint32* I);
-  bool DecodeNextStringLiteral(base::StringPiece* str);
+  bool DecodeNextIdentityString(base::StringPiece* str);
+  bool DecodeNextHuffmanString(const HpackHuffmanTable& table,
+                               std::string* str);
+
+  // Stores input bits into the most-significant, unfilled bits of |out|.
+  // |peeked_count| is the number of filled bits in |out| which have been
+  // previously peeked. PeekBits() will fill some number of remaining bits,
+  // returning the new total number via |peeked_count|. Returns true if one
+  // or more additional bits could be peeked, and false otherwise.
+  bool PeekBits(size_t* peeked_count, uint32* out);
+
+  // Consumes |count| bits of input. Generally paired with PeekBits().
+  void ConsumeBits(size_t count);
+
+  // If not currently on a byte boundary, consumes and discards
+  // remaining bits in the current byte.
+  void ConsumeByteRemainder();
 
   // Accessors for testing.
 
@@ -56,10 +66,6 @@ class NET_EXPORT_PRIVATE HpackInputStream {
 
   bool DecodeNextUint32ForTest(uint32* I) {
     return DecodeNextUint32(I);
-  }
-
-  bool DecodeNextStringLiteralForTest(base::StringPiece *str) {
-    return DecodeNextStringLiteral(str);
   }
 
  private:

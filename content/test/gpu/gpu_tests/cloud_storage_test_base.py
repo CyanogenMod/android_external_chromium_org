@@ -21,6 +21,30 @@ default_generated_data_dir = os.path.join(test_data_dir, 'generated')
 
 error_image_cloud_storage_bucket = 'chromium-browser-gpu-tests'
 
+def _CompareScreenshotSamples(screenshot, expectations, device_pixel_ratio):
+  for expectation in expectations:
+    location = expectation["location"]
+    x = location[0] * device_pixel_ratio
+    y = location[1] * device_pixel_ratio
+
+    if x < 0 or y < 0 or x > screenshot.width or y > screenshot.height:
+      raise page_test.Failure(
+          'Expected pixel location [%d, %d] is out of range on [%d, %d] image' %
+          (x, y, screenshot.width, screenshot.height))
+
+    actual_color = screenshot.GetPixelColor(x, y)
+    expected_color = bitmap.RgbaColor(
+        expectation["color"][0],
+        expectation["color"][1],
+        expectation["color"][2])
+    if not actual_color.IsEqual(expected_color, expectation["tolerance"]):
+      raise page_test.Failure('Expected pixel at ' + str(location) +
+          ' to be ' +
+          str(expectation["color"]) + " but got [" +
+          str(actual_color.r) + ", " +
+          str(actual_color.g) + ", " +
+          str(actual_color.b) + "]")
+
 class ValidatorBase(page_test.PageTest):
   def __init__(self, test_method_name):
     super(ValidatorBase, self).__init__(test_method_name)
@@ -172,38 +196,57 @@ class ValidatorBase(page_test.PageTest):
            'view_test_results.html?%s for this run\'s test results') % (
       error_image_cloud_storage_bucket, upload_dir)
 
+  def _ValidateScreenshotSamples(self, url,
+                                 screenshot, expectations, device_pixel_ratio):
+    """Samples the given screenshot and verifies pixel color values.
+       The sample locations and expected color values are given in expectations.
+       In case any of the samples do not match the expected color, it raises
+       a Failure and dumps the screenshot locally or cloud storage depending on
+       what machine the test is being run."""
+    try:
+      _CompareScreenshotSamples(screenshot, expectations, device_pixel_ratio)
+    except page_test.Failure:
+      image_name = self._UrlToImageName(url)
+      if self.options.test_machine_name:
+        self._UploadErrorImagesToCloudStorage(image_name, screenshot, None)
+      else:
+        self._WriteErrorImages(self.options.generated_dir, image_name,
+                               screenshot, None)
+      raise
+
+
 class TestBase(test.Test):
-  @staticmethod
-  def _AddTestCommandLineOptions(parser, option_group):
-    option_group.add_option('--build-revision',
+  @classmethod
+  def AddTestCommandLineArgs(cls, group):
+    group.add_option('--build-revision',
         help='Chrome revision being tested.',
         default="unknownrev")
-    option_group.add_option('--upload-refimg-to-cloud-storage',
+    group.add_option('--upload-refimg-to-cloud-storage',
         dest='upload_refimg_to_cloud_storage',
         action='store_true', default=False,
         help='Upload resulting images to cloud storage as reference images')
-    option_group.add_option('--download-refimg-from-cloud-storage',
+    group.add_option('--download-refimg-from-cloud-storage',
         dest='download_refimg_from_cloud_storage',
         action='store_true', default=False,
         help='Download reference images from cloud storage')
-    option_group.add_option('--refimg-cloud-storage-bucket',
+    group.add_option('--refimg-cloud-storage-bucket',
         help='Name of the cloud storage bucket to use for reference images; '
         'required with --upload-refimg-to-cloud-storage and '
         '--download-refimg-from-cloud-storage. Example: '
         '"chromium-gpu-archive/reference-images"')
-    option_group.add_option('--os-type',
+    group.add_option('--os-type',
         help='Type of operating system on which the pixel test is being run, '
         'used only to distinguish different operating systems with the same '
         'graphics card. Any value is acceptable, but canonical values are '
         '"win", "mac", and "linux", and probably, eventually, "chromeos" '
         'and "android").',
         default='')
-    option_group.add_option('--test-machine-name',
+    group.add_option('--test-machine-name',
         help='Name of the test machine. Specifying this argument causes this '
         'script to upload failure images and diffs to cloud storage directly, '
         'instead of relying on the archive_gpu_pixel_test_results.py script.',
         default='')
-    option_group.add_option('--generated-dir',
+    group.add_option('--generated-dir',
         help='Overrides the default on-disk location for generated test images '
         '(only used for local testing without a cloud storage account)',
         default=default_generated_data_dir)

@@ -5,10 +5,12 @@
 #ifndef CHROME_BROWSER_SYNC_FILE_SYSTEM_DRIVE_BACKEND_REGISTER_APP_TASK_H_
 #define CHROME_BROWSER_SYNC_FILE_SYSTEM_DRIVE_BACKEND_REGISTER_APP_TASK_H_
 
+#include <string>
+
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
-#include "chrome/browser/sync_file_system/sync_task.h"
 #include "google_apis/drive/gdata_errorcode.h"
 
 namespace drive {
@@ -27,21 +29,22 @@ class FileTracker;
 class FolderCreator;
 class MetadataDatabase;
 class SyncEngineContext;
-class TrackerSet;
+class TrackerIDSet;
 
-class RegisterAppTask : public SyncTask {
+class RegisterAppTask : public SequentialSyncTask {
  public:
   RegisterAppTask(SyncEngineContext* sync_context, const std::string& app_id);
   virtual ~RegisterAppTask();
 
-  virtual void Run(const SyncStatusCallback& callback) OVERRIDE;
+  bool CanFinishImmediately();
+  virtual void RunSequential(const SyncStatusCallback& callback) OVERRIDE;
 
  private:
   void CreateAppRootFolder(const SyncStatusCallback& callback);
   void DidCreateAppRootFolder(const SyncStatusCallback& callback,
                               const std::string& file_id,
                               SyncStatusCode status);
-  bool FilterCandidates(const TrackerSet& trackers,
+  bool FilterCandidates(const TrackerIDSet& trackers,
                         FileTracker* candidate);
   void RegisterAppIntoDatabase(const FileTracker& tracker,
                                const SyncStatusCallback& callback);

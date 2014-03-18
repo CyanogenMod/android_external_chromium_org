@@ -27,7 +27,9 @@
 #include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/translate/translate_ui_delegate.h"
 #include "chrome/browser/ui/bookmarks/bookmark_editor.h"
+#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -63,14 +65,18 @@
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_view.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
+#import "chrome/browser/ui/cocoa/translate/translate_bubble_controller.h"
+#include "chrome/browser/ui/cocoa/website_settings/permission_bubble_cocoa.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
-#include "chrome/browser/ui/tabs/dock_info.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
+#include "chrome/browser/ui/translate/translate_bubble_model_impl.h"
+#include "chrome/browser/ui/website_settings/permission_bubble_manager.h"
 #include "chrome/browser/ui/window_sizer/window_sizer.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/command.h"
 #include "chrome/common/profile_management_switches.h"
 #include "chrome/common/url_constants.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
@@ -81,7 +87,7 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
-#import "ui/base/cocoa/cocoa_event_utils.h"
+#import "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/gfx/mac/scoped_ns_disable_screen_updates.h"
@@ -259,6 +265,10 @@ enum {
     browser_.reset(browser);
     ownsBrowser_ = ownIt;
     NSWindow* window = [self window];
+    // Make the content view for the window have a layer. This will make all
+    // sub-views have layers. This is necessary to ensure correct layer
+    // ordering of all child views and their layers.
+    [[window contentView] cr_setWantsLayer:YES];
     windowShim_.reset(new BrowserWindowCocoa(browser, self));
 
     // Set different minimum sizes on tabbed windows vs non-tabbed, e.g. popups.
@@ -418,6 +428,9 @@ enum {
 
     // Create the bridge for the status bubble.
     statusBubble_ = new StatusBubbleMac([self window], self);
+
+    // Create the permissions bubble.
+    permissionBubbleCocoa_.reset(new PermissionBubbleCocoa([self window]));
 
     // Register for application hide/unhide notifications.
     [[NSNotificationCenter defaultCenter]
@@ -976,10 +989,7 @@ enum {
     return;
 
   // Disable screen updates to prevent flickering.
-  if (view == [bookmarkBarController_ view] ||
-      view == [downloadShelfController_ view]) {
-    [[self window] disableScreenUpdatesUntilFlush];
-  }
+  gfx::ScopedNSDisableScreenUpdates disabler;
 
   // Grow or shrink the window by the amount of the height change.  We adjust
   // the window height only in two cases:
@@ -1126,6 +1136,17 @@ enum {
                                      currentProfile:original_profile];
           break;
         }
+        case IDC_BOOKMARK_PAGE: {
+          // Extensions have the ability to hide the bookmark page menu item.
+          // This only affects the bookmark page menu item under the main menu.
+          // The bookmark page menu item under the wrench menu has its
+          // visibility controlled by WrenchMenuModel.
+          bool shouldHide =
+              chrome::ShouldRemoveBookmarkThisPageUI(browser_->profile());
+          NSMenuItem* menuItem = base::mac::ObjCCast<NSMenuItem>(item);
+          [menuItem setHidden:shouldHide];
+          break;
+        }
         default:
           // Special handling for the contents of the Text Encoding submenu. On
           // Mac OS, instead of enabling/disabling the top-level menu item, we
@@ -1243,6 +1264,10 @@ enum {
   [toolbarController_ setStarredState:isStarred];
 }
 
+- (void)setCurrentPageIsTranslated:(BOOL)on {
+  [toolbarController_ setTranslateIconLit:on];
+}
+
 - (void)zoomChangedForActiveTab:(BOOL)canShowBubble {
   [toolbarController_ zoomChangedForActiveTab:canShowBubble];
 }
@@ -1287,57 +1312,70 @@ enum {
 // placed into this one. The implementation will call |-removePlaceholder| since
 // the drag is now complete.  This also calls |-layoutTabs| internally so
 // clients do not need to call it again.
-- (void)moveTabView:(NSView*)view
-     fromController:(TabWindowController*)dragController {
+- (void)moveTabViews:(NSArray*)views
+      fromController:(TabWindowController*)dragController {
   if (dragController) {
-    // Moving between windows. Figure out the WebContents to drop into our tab
-    // model from the source window's model.
+    // Moving between windows.
+    NSView* activeTabView = [dragController activeTabView];
     BrowserWindowController* dragBWC =
         base::mac::ObjCCastStrict<BrowserWindowController>(dragController);
-    int index = [dragBWC->tabStripController_ modelIndexForTabView:view];
-    WebContents* contents =
-        dragBWC->browser_->tab_strip_model()->GetWebContentsAt(index);
-    // The tab contents may have gone away if given a window.close() while it
-    // is being dragged. If so, bail, we've got nothing to drop.
-    if (!contents)
-      return;
 
-    // Convert |view|'s frame (which starts in the source tab strip's coordinate
-    // system) to the coordinate system of the destination tab strip. This needs
-    // to be done before being detached so the window transforms can be
-    // performed.
-    NSRect destinationFrame = [view frame];
-    NSPoint tabOrigin = destinationFrame.origin;
-    tabOrigin = [[dragController tabStripView] convertPoint:tabOrigin
-                                                     toView:nil];
-    tabOrigin = [[view window] convertBaseToScreen:tabOrigin];
-    tabOrigin = [[self window] convertScreenToBase:tabOrigin];
-    tabOrigin = [[self tabStripView] convertPoint:tabOrigin fromView:nil];
-    destinationFrame.origin = tabOrigin;
+    // We will drop the tabs starting at indexOfPlaceholder, and increment from
+    // there. We remove the placehoder before dropping the tabs, so that the
+    // new tab animation's destination frame is correct.
+    int tabIndex = [tabStripController_ indexOfPlaceholder];
+    [self removePlaceholder];
 
-    // Before the tab is detached from its originating tab strip, store the
-    // pinned state so that it can be maintained between the windows.
-    bool isPinned = dragBWC->browser_->tab_strip_model()->IsTabPinned(index);
+    for (NSView* view in views) {
+      // Figure out the WebContents to drop into our tab model from the source
+      // window's model.
+      int index = [dragBWC->tabStripController_ modelIndexForTabView:view];
+      WebContents* contents =
+          dragBWC->browser_->tab_strip_model()->GetWebContentsAt(index);
+      // The tab contents may have gone away if given a window.close() while it
+      // is being dragged. If so, bail, we've got nothing to drop.
+      if (!contents)
+        continue;
 
-    // Now that we have enough information about the tab, we can remove it from
-    // the dragging window. We need to do this *before* we add it to the new
-    // window as this will remove the WebContents' delegate.
-    [dragController detachTabView:view];
+      // Convert |view|'s frame (which starts in the source tab strip's
+      // coordinate system) to the coordinate system of the destination tab
+      // strip. This needs to be done before being detached so the window
+      // transforms can be performed.
+      NSRect destinationFrame = [view frame];
+      NSPoint tabOrigin = destinationFrame.origin;
+      tabOrigin = [[dragController tabStripView] convertPoint:tabOrigin
+                                                       toView:nil];
+      tabOrigin = [[dragController window] convertBaseToScreen:tabOrigin];
+      tabOrigin = [[self window] convertScreenToBase:tabOrigin];
+      tabOrigin = [[self tabStripView] convertPoint:tabOrigin fromView:nil];
+      destinationFrame.origin = tabOrigin;
 
-    // Deposit it into our model at the appropriate location (it already knows
-    // where it should go from tracking the drag). Doing this sets the tab's
-    // delegate to be the Browser.
-    [tabStripController_ dropWebContents:contents
-                               withFrame:destinationFrame
-                             asPinnedTab:isPinned];
+      // Before the tab is detached from its originating tab strip, store the
+      // pinned state so that it can be maintained between the windows.
+      bool isPinned = dragBWC->browser_->tab_strip_model()->IsTabPinned(index);
+
+      // Now that we have enough information about the tab, we can remove it
+      // from the dragging window. We need to do this *before* we add it to the
+      // new window as this will remove the WebContents' delegate.
+      [dragController detachTabView:view];
+
+      // Deposit it into our model at the appropriate location (it already knows
+      // where it should go from tracking the drag). Doing this sets the tab's
+      // delegate to be the Browser.
+      [tabStripController_ dropWebContents:contents
+                                   atIndex:tabIndex++
+                                 withFrame:destinationFrame
+                               asPinnedTab:isPinned
+                                  activate:view == activeTabView];
+    }
   } else {
     // Moving within a window.
-    int index = [tabStripController_ modelIndexForTabView:view];
-    [tabStripController_ moveTabFromIndex:index];
+    for (NSView* view in views) {
+      int index = [tabStripController_ modelIndexForTabView:view];
+      [tabStripController_ moveTabFromIndex:index];
+    }
+    [self removePlaceholder];
   }
-
-  // Remove the placeholder since the drag is now complete.
-  [self removePlaceholder];
 }
 
 // Tells the tab strip to forget about this tab in preparation for it being
@@ -1345,6 +1383,10 @@ enum {
 - (void)detachTabView:(NSView*)view {
   int index = [tabStripController_ modelIndexForTabView:view];
   browser_->tab_strip_model()->DetachWebContentsAt(index);
+}
+
+- (NSArray*)tabViews {
+  return [tabStripController_ tabViews];
 }
 
 - (NSView*)activeTabView {
@@ -1368,55 +1410,52 @@ enum {
   [tabStripController_ layoutTabs];
 }
 
-- (TabWindowController*)detachTabToNewWindow:(TabView*)tabView {
+- (TabWindowController*)detachTabsToNewWindow:(NSArray*)tabViews
+                                   draggedTab:(NSView*)draggedTab {
+  DCHECK_GT([tabViews count], 0U);
+
   // Disable screen updates so that this appears as a single visual change.
   gfx::ScopedNSDisableScreenUpdates disabler;
-
-  // Fetch the tab contents for the tab being dragged.
-  int index = [tabStripController_ modelIndexForTabView:tabView];
-  WebContents* contents = browser_->tab_strip_model()->GetWebContentsAt(index);
 
   // Set the window size. Need to do this before we detach the tab so it's
   // still in the window. We have to flip the coordinates as that's what
   // is expected by the Browser code.
-  NSWindow* sourceWindow = [tabView window];
+  NSWindow* sourceWindow = [draggedTab window];
   NSRect windowRect = [sourceWindow frame];
   NSScreen* screen = [sourceWindow screen];
   windowRect.origin.y = NSHeight([screen frame]) - NSMaxY(windowRect);
   gfx::Rect browserRect(windowRect.origin.x, windowRect.origin.y,
                         NSWidth(windowRect), NSHeight(windowRect));
 
-  NSRect sourceTabRect = [tabView frame];
-  NSView* tabStrip = [self tabStripView];
-
-  // Pushes tabView's frame back inside the tabstrip.
-  NSSize tabOverflow =
-      [self overflowFrom:[tabStrip convertRect:sourceTabRect toView:nil]
-                      to:[tabStrip frame]];
-  NSRect tabRect = NSOffsetRect(sourceTabRect,
-                                -tabOverflow.width, -tabOverflow.height);
-
-  // Before detaching the tab, store the pinned state.
-  bool isPinned = browser_->tab_strip_model()->IsTabPinned(index);
-
-  // Detach it from the source window, which just updates the model without
-  // deleting the tab contents. This needs to come before creating the new
-  // Browser because it clears the WebContents' delegate, which gets hooked
-  // up during creation of the new window.
-  browser_->tab_strip_model()->DetachWebContentsAt(index);
-
-  // Create the new window with a single tab in its model, the one being
-  // dragged.
-  DockInfo dockInfo;
-  TabStripModelDelegate::NewStripContents item;
-  item.web_contents = contents;
-  item.add_types = TabStripModel::ADD_ACTIVE |
-                   (isPinned ? TabStripModel::ADD_PINNED
-                             : TabStripModel::ADD_NONE);
   std::vector<TabStripModelDelegate::NewStripContents> contentses;
-  contentses.push_back(item);
+  TabStripModel* model = browser_->tab_strip_model();
+
+  for (TabView* tabView in tabViews) {
+    // Fetch the tab contents for the tab being dragged.
+    int index = [tabStripController_ modelIndexForTabView:tabView];
+    bool isPinned = model->IsTabPinned(index);
+    bool isActive = (index == model->active_index());
+
+    TabStripModelDelegate::NewStripContents item;
+    item.web_contents = model->GetWebContentsAt(index);
+    item.add_types =
+        (isActive ? TabStripModel::ADD_ACTIVE : TabStripModel::ADD_NONE) |
+        (isPinned ? TabStripModel::ADD_PINNED : TabStripModel::ADD_NONE);
+    contentses.push_back(item);
+  }
+
+  for (TabView* tabView in tabViews) {
+    int index = [tabStripController_ modelIndexForTabView:tabView];
+    // Detach it from the source window, which just updates the model without
+    // deleting the tab contents. This needs to come before creating the new
+    // Browser because it clears the WebContents' delegate, which gets hooked
+    // up during creation of the new window.
+    model->DetachWebContentsAt(index);
+  }
+
+  // Create a new window with the dragged tabs in its model.
   Browser* newBrowser = browser_->tab_strip_model()->delegate()->
-      CreateNewStripWithContents(contentses, browserRect, dockInfo, false);
+      CreateNewStripWithContents(contentses, browserRect, false);
 
   // Get the new controller by asking the new window for its delegate.
   BrowserWindowController* controller =
@@ -1424,11 +1463,27 @@ enum {
           [newBrowser->window()->GetNativeWindow() delegate]);
   DCHECK(controller && [controller isKindOfClass:[TabWindowController class]]);
 
-  // Force the added tab to the right size (remove stretching.)
-  tabRect.size.height = [TabStripController defaultTabHeight];
-
   // And make sure we use the correct frame in the new view.
-  [[controller tabStripController] setFrameOfActiveTab:tabRect];
+  TabStripController* tabStripController = [controller tabStripController];
+  NSView* tabStrip = [self tabStripView];
+  NSEnumerator* tabEnumerator = [tabViews objectEnumerator];
+  for (NSView* newView in [tabStripController tabViews]) {
+    NSView* oldView = [tabEnumerator nextObject];
+    if (oldView) {
+      // Pushes tabView's frame back inside the tabstrip.
+      NSRect sourceTabRect = [oldView frame];
+      NSSize tabOverflow =
+          [self overflowFrom:[tabStrip convertRect:sourceTabRect toView:nil]
+                          to:[tabStrip frame]];
+      NSRect tabRect =
+          NSOffsetRect(sourceTabRect, -tabOverflow.width, -tabOverflow.height);
+      // Force the added tab to the right size (remove stretching.)
+      tabRect.size.height = [TabStripController defaultTabHeight];
+
+      [tabStripController setFrame:tabRect ofTabView:newView];
+    }
+  }
+
   return controller;
 }
 
@@ -1588,6 +1643,14 @@ enum {
 
   [infoBarContainerController_ changeWebContents:contents];
 
+  // No need to remove previous bubble. It will close itself.
+  // TODO(leng):  The PermissionBubbleManager for the previous contents should
+  // have SetView(NULL) called.  Fix this when the previous contents are
+  // available here or move to BrowserWindowCocoa::OnActiveTabChanged().
+  // crbug.com/340720
+  PermissionBubbleManager::FromWebContents(contents)->SetView(
+      permissionBubbleCocoa_.get());
+
   // Must do this after bookmark and infobar updates to avoid
   // unnecesary resize in contents.
   [devToolsController_ updateDevToolsForWebContents:contents
@@ -1697,6 +1760,62 @@ enum {
           BookmarkEditor::EditDetails::EditNode(node),
           BookmarkEditor::SHOW_TREE);
   }
+}
+
+- (void)showTranslateBubbleForWebContents:(content::WebContents*)contents
+                                     step:
+                                    (TranslateTabHelper::TranslateStep)step
+                                errorType:(TranslateErrors::Type)errorType {
+  // TODO(hajimehoshi): The similar logic exists at TranslateBubbleView::
+  // ShowBubble. This should be unified.
+  if (translateBubbleController_) {
+    // When the user reads the advanced setting panel, the bubble should not be
+    // changed because he/she is focusing on the bubble.
+    if (translateBubbleController_.webContents == contents &&
+        translateBubbleController_.model->GetViewState() ==
+        TranslateBubbleModel::VIEW_STATE_ADVANCED) {
+      return;
+    }
+    if (step != TranslateTabHelper::TRANSLATE_ERROR) {
+      TranslateBubbleModel::ViewState viewState =
+          TranslateBubbleModelImpl::TranslateStepToViewState(step);
+      [translateBubbleController_ switchView:viewState];
+    } else {
+      [translateBubbleController_ switchToErrorView:errorType];
+    }
+    return;
+  }
+
+  // TODO(hajimehoshi): Set the initial languages correctly.
+  std::string sourceLanguage = "xx";
+  std::string targetLanguage = "yy";
+
+  scoped_ptr<TranslateUIDelegate> uiDelegate(
+      new TranslateUIDelegate(contents, sourceLanguage, targetLanguage));
+  scoped_ptr<TranslateBubbleModel> model(
+      new TranslateBubbleModelImpl(step, uiDelegate.Pass()));
+  translateBubbleController_ = [[TranslateBubbleController alloc]
+                                 initWithParentWindow:self
+                                                model:model.Pass()
+                                          webContents:contents];
+  [translateBubbleController_ showWindow:nil];
+
+  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+  [center addObserver:self
+             selector:@selector(translateBubbleWindowWillClose:)
+                 name:NSWindowWillCloseNotification
+               object:[translateBubbleController_ window]];
+}
+
+// Nil out the weak translate bubble controller reference.
+- (void)translateBubbleWindowWillClose:(NSNotification*)notification {
+  DCHECK_EQ([notification object], [translateBubbleController_ window]);
+
+  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+  [center removeObserver:self
+                    name:NSWindowWillCloseNotification
+                  object:[translateBubbleController_ window]];
+  translateBubbleController_ = nil;
 }
 
 // If the browser is in incognito mode or has multi-profiles, install the image
@@ -1959,6 +2078,23 @@ willAnimateFromState:(BookmarkBar::State)oldState
 - (void)onOverlappedViewHidden {
   --overlappedViewCount_;
   [self updateAllowOverlappingViews:[self inPresentationMode]];
+}
+
+- (void)executeExtensionCommand:(const std::string&)extension_id
+                        command:(const extensions::Command&)command {
+  // Global commands are handled by the ExtensionCommandsGlobalRegistry
+  // instance.
+  DCHECK(!command.global());
+  extension_keybinding_registry_->ExecuteCommand(extension_id,
+                                                 command.accelerator());
+}
+
+- (void)activatePageAction:(const std::string&)extension_id {
+  [toolbarController_ activatePageAction:extension_id];
+}
+
+- (void)activateBrowserAction:(const std::string&)extension_id {
+  [toolbarController_ activateBrowserAction:extension_id];
 }
 
 @end  // @implementation BrowserWindowController

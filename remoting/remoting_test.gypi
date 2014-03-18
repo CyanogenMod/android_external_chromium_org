@@ -18,9 +18,9 @@
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/webrtc/modules/modules.gyp:desktop_capture',
+        '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        '../ui/ui.gyp:ui',
         'remoting_base',
         'remoting_breakpad',
         'remoting_client',
@@ -74,6 +74,8 @@
         'host/daemon_process_unittest.cc',
         'host/desktop_process_unittest.cc',
         'host/desktop_shape_tracker_unittest.cc',
+        'host/gnubby_auth_handler_posix_unittest.cc',
+        'host/gnubby_util_unittest.cc',
         'host/heartbeat_sender_unittest.cc',
         'host/host_change_notification_listener_unittest.cc',
         'host/host_mock_objects.cc',
@@ -98,6 +100,8 @@
         'host/register_support_host_request_unittest.cc',
         'host/remote_input_filter_unittest.cc',
         'host/resizing_host_observer_unittest.cc',
+        'host/setup/me2me_native_messaging_host.cc',
+        'host/setup/me2me_native_messaging_host.h',
         'host/screen_capturer_fake.cc',
         'host/screen_capturer_fake.h',
         'host/screen_resolution_unittest.cc',
@@ -194,7 +198,7 @@
             'webapp/browser_globals.gtestjs',
             'webapp/all_js_load.gtestjs',
             'webapp/format_iq.gtestjs',
-            '<@(remoting_webapp_js_files)',
+            '<@(remoting_webapp_all_js_files)',
           ],
         }],
         [ 'OS=="android"', {
@@ -225,7 +229,8 @@
             ['exclude', '^base/resources_unittest\\.cc$'],
           ]
         }],
-        [ 'OS == "linux" and linux_use_tcmalloc==1', {
+        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+        [ 'OS == "linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator',
           ],

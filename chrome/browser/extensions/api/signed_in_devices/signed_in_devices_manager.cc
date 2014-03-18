@@ -92,20 +92,21 @@ void SignedInDevicesChangeObserver::OnDeviceInfoChange() {
       extension_id_, event.Pass());
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<SignedInDevicesManager> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<SignedInDevicesManager> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<SignedInDevicesManager>*
-    SignedInDevicesManager::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<SignedInDevicesManager>*
+SignedInDevicesManager::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 SignedInDevicesManager::SignedInDevicesManager()
     : profile_(NULL) {}
 
-SignedInDevicesManager::SignedInDevicesManager(Profile* profile)
-    : profile_(profile) {
+SignedInDevicesManager::SignedInDevicesManager(content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)) {
   extensions::EventRouter* router = extensions::ExtensionSystem::Get(
       profile_)->event_router();
 
@@ -169,4 +170,3 @@ void SignedInDevicesManager::Observe(
 }
 
 }  // namespace extensions
-

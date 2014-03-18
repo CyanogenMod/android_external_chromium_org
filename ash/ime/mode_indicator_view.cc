@@ -10,8 +10,8 @@
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/label.h"
-#include "ui/views/corewm/window_animations.h"
 #include "ui/views/layout/fill_layout.h"
+#include "ui/wm/core/window_animations.h"
 
 namespace ash {
 namespace ime {
@@ -57,19 +57,15 @@ ModeIndicatorView::ModeIndicatorView(gfx::NativeView parent,
 
 ModeIndicatorView::~ModeIndicatorView() {}
 
-void ModeIndicatorView::FadeOut() {
-  StartFade(false);
-}
-
 void ModeIndicatorView::ShowAndFadeOut() {
-  views::corewm::SetWindowVisibilityAnimationTransition(
+  wm::SetWindowVisibilityAnimationTransition(
       GetWidget()->GetNativeView(),
-      views::corewm::ANIMATE_HIDE);
+      wm::ANIMATE_HIDE);
   GetWidget()->Show();
   timer_.Start(FROM_HERE,
                base::TimeDelta::FromMilliseconds(kShowingDuration),
-               this,
-               &ModeIndicatorView::FadeOut);
+               GetWidget(),
+               &views::Widget::Close);
 }
 
 gfx::Size ModeIndicatorView::GetPreferredSize() {

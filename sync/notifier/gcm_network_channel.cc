@@ -2,6 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/base64.h"
+#include "base/strings/string_util.h"
+#if !defined(ANDROID)
+// channel_common.proto defines ANDROID constant that conflicts with Android
+// build. At the same time TiclInvalidationService is not used on Android so it
+// is safe to exclude these protos from Android build.
+#include "google/cacheinvalidation/android_channel.pb.h"
+#include "google/cacheinvalidation/channel_common.pb.h"
+#endif
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/url_fetcher.h"
@@ -12,6 +21,10 @@
 namespace syncer {
 
 namespace {
+
+const char kCacheInvalidationEndpointUrl[] =
+    "https://clients4.google.com/invalidation/android/request/";
+const char kCacheInvalidationPackageName[] = "com.google.chrome.invalidations";
 
 // Register backoff policy.
 const net::BackoffEntry::Policy kRegisterBackoffPolicy = {
@@ -49,6 +62,7 @@ GCMNetworkChannel::GCMNetworkChannel(
       delegate_(delegate.Pass()),
       register_backoff_entry_(new net::BackoffEntry(&kRegisterBackoffPolicy)),
       weak_factory_(this) {
+  delegate_->Initialize();
   Register();
 }
 
@@ -80,7 +94,7 @@ void GCMNetworkChannel::OnRegisterComplete(
     DVLOG(2) << "Got registration_id";
     register_backoff_entry_->Reset();
     registration_id_ = registration_id;
-    if (!encoded_message_.empty())
+    if (!cached_message_.empty())
       RequestAccessToken();
   } else {
     DVLOG(2) << "Register failed: " << result;
@@ -104,15 +118,22 @@ void GCMNetworkChannel::OnRegisterComplete(
   }
 }
 
-void GCMNetworkChannel::SendEncodedMessage(const std::string& encoded_message) {
+void GCMNetworkChannel::SendMessage(const std::string& message) {
   DCHECK(CalledOnValidThread());
-  DCHECK(!encoded_message.empty());
-  DVLOG(2) << "SendEncodedMessage";
-  encoded_message_ = encoded_message;
+  DCHECK(!message.empty());
+  DVLOG(2) << "SendMessage";
+  cached_message_ = message;
 
   if (!registration_id_.empty()) {
     RequestAccessToken();
   }
+}
+
+void GCMNetworkChannel::SetMessageReceiver(
+    invalidation::MessageCallback* incoming_receiver) {
+  delegate_->SetMessageReceiver(base::Bind(
+      &GCMNetworkChannel::OnIncomingMessage, weak_factory_.GetWeakPtr()));
+  SyncNetworkChannel::SetMessageReceiver(incoming_receiver);
 }
 
 void GCMNetworkChannel::RequestAccessToken() {
@@ -125,7 +146,7 @@ void GCMNetworkChannel::OnGetTokenComplete(
     const GoogleServiceAuthError& error,
     const std::string& token) {
   DCHECK(CalledOnValidThread());
-  if (encoded_message_.empty()) {
+  if (cached_message_.empty()) {
     // Nothing to do.
     return;
   }
@@ -142,16 +163,41 @@ void GCMNetworkChannel::OnGetTokenComplete(
   access_token_ = token;
 
   DVLOG(2) << "Got access token, sending message";
-
-  fetcher_.reset(net::URLFetcher::Create(BuildUrl(), net::URLFetcher::POST,
-                                         this));
+  fetcher_.reset(net::URLFetcher::Create(
+      BuildUrl(registration_id_), net::URLFetcher::POST, this));
   fetcher_->SetRequestContext(request_context_getter_);
   const std::string auth_header("Authorization: Bearer " + access_token_);
   fetcher_->AddExtraRequestHeader(auth_header);
-  fetcher_->SetUploadData("application/x-protobuffer", encoded_message_);
+  if (!echo_token_.empty()) {
+    const std::string echo_header("echo-token: " + echo_token_);
+    fetcher_->AddExtraRequestHeader(echo_header);
+  }
+  fetcher_->SetUploadData("application/x-protobuffer", cached_message_);
   fetcher_->Start();
   // Clear message to prevent accidentally resending it in the future.
-  encoded_message_.clear();
+  cached_message_.clear();
+}
+
+void GCMNetworkChannel::OnIncomingMessage(const std::string& message,
+                                          const std::string& echo_token) {
+#if !defined(ANDROID)
+  DCHECK(!message.empty());
+  if (!echo_token.empty())
+    echo_token_ = echo_token;
+  std::string data;
+  if (!Base64DecodeURLSafe(message, &data))
+    return;
+  ipc::invalidation::AddressedAndroidMessage android_message;
+  if (!android_message.ParseFromString(data))
+    return;
+  if (!android_message.has_message())
+    return;
+  DVLOG(2) << "Deliver incoming message";
+  DeliverIncomingMessage(android_message.message());
+#else
+  // This code shouldn't be invoked on Android.
+  NOTREACHED();
+#endif
 }
 
 void GCMNetworkChannel::OnURLFetchComplete(const net::URLFetcher* source) {
@@ -174,13 +220,62 @@ void GCMNetworkChannel::OnURLFetchComplete(const net::URLFetcher* source) {
   DVLOG(2) << "URLFetcher success";
 }
 
-GURL GCMNetworkChannel::BuildUrl() {
-  DCHECK(!registration_id_.empty());
-  // Prepare NetworkEndpointId using registration_id
-  // Serialize NetworkEndpointId into byte array and base64 encode.
-  // Format url using encoded NetworkEndpointId.
-  // TODO(pavely): implement all of the above.
-  return GURL("http://invalid.url.com");
+GURL GCMNetworkChannel::BuildUrl(const std::string& registration_id) {
+  DCHECK(!registration_id.empty());
+
+#if !defined(ANDROID)
+  ipc::invalidation::EndpointId endpoint_id;
+  endpoint_id.set_c2dm_registration_id(registration_id);
+  endpoint_id.set_client_key(std::string());
+  endpoint_id.set_package_name(kCacheInvalidationPackageName);
+  endpoint_id.mutable_channel_version()->set_major_version(
+      ipc::invalidation::INITIAL);
+  std::string endpoint_id_buffer;
+  endpoint_id.SerializeToString(&endpoint_id_buffer);
+
+  ipc::invalidation::NetworkEndpointId network_endpoint_id;
+  network_endpoint_id.set_network_address(
+      ipc::invalidation::NetworkEndpointId_NetworkAddress_ANDROID);
+  network_endpoint_id.set_client_address(endpoint_id_buffer);
+  std::string network_endpoint_id_buffer;
+  network_endpoint_id.SerializeToString(&network_endpoint_id_buffer);
+
+  std::string base64URLPiece;
+  Base64EncodeURLSafe(network_endpoint_id_buffer, &base64URLPiece);
+
+  std::string url(kCacheInvalidationEndpointUrl);
+  url += base64URLPiece;
+  return GURL(url);
+#else
+  // This code shouldn't be invoked on Android.
+  NOTREACHED();
+  return GURL();
+#endif
+}
+
+void GCMNetworkChannel::Base64EncodeURLSafe(const std::string& input,
+                                            std::string* output) {
+  base::Base64Encode(input, output);
+  // Covert to url safe alphabet.
+  base::ReplaceChars(*output, "+", "-", output);
+  base::ReplaceChars(*output, "/", "_", output);
+  // Trim padding.
+  size_t padding_size = 0;
+  for (size_t i = output->size(); i > 0 && (*output)[i - 1] == '='; --i)
+    ++padding_size;
+  output->resize(output->size() - padding_size);
+}
+
+bool GCMNetworkChannel::Base64DecodeURLSafe(const std::string& input,
+                                            std::string* output) {
+  // Add padding.
+  size_t padded_size = (input.size() + 3) - (input.size() + 3) % 4;
+  std::string padded_input(input);
+  padded_input.resize(padded_size, '=');
+  // Convert to standard base64 alphabet.
+  base::ReplaceChars(padded_input, "-", "+", &padded_input);
+  base::ReplaceChars(padded_input, "_", "/", &padded_input);
+  return base::Base64Decode(padded_input, output);
 }
 
 }  // namespace syncer

@@ -31,6 +31,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 // Hacky macros to construct the body of a Close message from a code and a
 // string, while ensuring the result is a compile-time constant string.
@@ -680,7 +681,7 @@ struct ArgumentCopyingWebSocketStreamCreator {
   scoped_ptr<WebSocketStreamRequest> Create(
       const GURL& socket_url,
       const std::vector<std::string>& requested_subprotocols,
-      const GURL& origin,
+      const url::Origin& origin,
       URLRequestContext* url_request_context,
       const BoundNetLog& net_log,
       scoped_ptr<WebSocketStream::ConnectDelegate> connect_delegate) {
@@ -694,7 +695,7 @@ struct ArgumentCopyingWebSocketStreamCreator {
   }
 
   GURL socket_url;
-  GURL origin;
+  url::Origin origin;
   std::vector<std::string> requested_subprotocols;
   URLRequestContext* url_request_context;
   BoundNetLog net_log;
@@ -754,7 +755,7 @@ class WebSocketChannelTest : public ::testing::Test {
   // A struct containing the data that will be used to connect the channel.
   // Grouped for readability.
   struct ConnectData {
-    ConnectData() : socket_url("ws://ws/"), origin("http://ws/") {}
+    ConnectData() : socket_url("ws://ws/"), origin("http://ws") {}
 
     // URLRequestContext object.
     URLRequestContext url_request_context;
@@ -764,7 +765,7 @@ class WebSocketChannelTest : public ::testing::Test {
     // Requested protocols for the request.
     std::vector<std::string> requested_subprotocols;
     // Origin of the request
-    GURL origin;
+    url::Origin origin;
 
     // A fake WebSocketStreamCreator that just records its arguments.
     ArgumentCopyingWebSocketStreamCreator creator;
@@ -959,7 +960,7 @@ class WebSocketChannelReceiveUtf8Test : public WebSocketChannelStreamTest {
 // passed to the creator function.
 TEST_F(WebSocketChannelTest, EverythingIsPassedToTheCreatorFunction) {
   connect_data_.socket_url = GURL("ws://example.com/test");
-  connect_data_.origin = GURL("http://example.com/test");
+  connect_data_.origin = url::Origin("http://example.com");
   connect_data_.requested_subprotocols.push_back("Sinbad");
 
   CreateChannelAndConnect();
@@ -971,7 +972,7 @@ TEST_F(WebSocketChannelTest, EverythingIsPassedToTheCreatorFunction) {
   EXPECT_EQ(connect_data_.socket_url, actual.socket_url);
   EXPECT_EQ(connect_data_.requested_subprotocols,
             actual.requested_subprotocols);
-  EXPECT_EQ(connect_data_.origin, actual.origin);
+  EXPECT_EQ(connect_data_.origin.string(), actual.origin.string());
 }
 
 // Verify that calling SendFlowControl before the connection is established does
@@ -1181,7 +1182,7 @@ TEST_F(WebSocketChannelDeletingTest, FailChannelDueToBadControlFrame) {
   scoped_ptr<ReadableFakeWebSocketStream> stream(
       new ReadableFakeWebSocketStream);
   static const InitFrame frames[] = {
-      {NOT_FINAL_FRAME, WebSocketFrameHeader::kOpCodePong, NOT_MASKED, ""}};
+      {FINAL_FRAME, 0xF, NOT_MASKED, ""}};
   stream->PrepareReadFrames(ReadableFakeWebSocketStream::SYNC, OK, frames);
   set_stream(stream.Pass());
   deleting_ = EVENT_ON_FAIL_CHANNEL;
@@ -1195,7 +1196,7 @@ TEST_F(WebSocketChannelDeletingTest, FailChannelDueToBadControlFrameNull) {
   scoped_ptr<ReadableFakeWebSocketStream> stream(
       new ReadableFakeWebSocketStream);
   static const InitFrame frames[] = {
-      {NOT_FINAL_FRAME, WebSocketFrameHeader::kOpCodePong, NOT_MASKED, NULL}};
+      {FINAL_FRAME, 0xF, NOT_MASKED, NULL}};
   stream->PrepareReadFrames(ReadableFakeWebSocketStream::SYNC, OK, frames);
   set_stream(stream.Pass());
   deleting_ = EVENT_ON_FAIL_CHANNEL;
@@ -1513,29 +1514,6 @@ TEST_F(WebSocketChannelEventInterfaceTest, NullMessage) {
       *event_interface_,
       OnDataFrame(true, WebSocketFrameHeader::kOpCodeText, AsVector("")));
   CreateChannelAndConnectSuccessfully();
-}
-
-// A control frame is not permitted to be split into multiple frames. RFC6455
-// 5.5 "All control frames ... MUST NOT be fragmented."
-TEST_F(WebSocketChannelEventInterfaceTest, MultiFrameControlMessageIsRejected) {
-  scoped_ptr<ReadableFakeWebSocketStream> stream(
-      new ReadableFakeWebSocketStream);
-  static const InitFrame frames[] = {
-      {NOT_FINAL_FRAME, WebSocketFrameHeader::kOpCodePing, NOT_MASKED, "Pi"},
-      {FINAL_FRAME, WebSocketFrameHeader::kOpCodeContinuation,
-       NOT_MASKED,  "ng"}};
-  stream->PrepareReadFrames(ReadableFakeWebSocketStream::ASYNC, OK, frames);
-  set_stream(stream.Pass());
-  {
-    InSequence s;
-    EXPECT_CALL(*event_interface_, OnAddChannelResponse(false, _, _));
-    EXPECT_CALL(*event_interface_, OnFlowControl(_));
-    EXPECT_CALL(*event_interface_,
-                OnFailChannel("Received fragmented control frame: opcode = 9"));
-  }
-
-  CreateChannelAndConnectSuccessfully();
-  base::MessageLoop::current()->RunUntilIdle();
 }
 
 // Connection closed by the remote host without a closing handshake.
@@ -2071,6 +2049,31 @@ TEST_F(WebSocketChannelEventInterfaceTest, ClosePayloadInvalidReason) {
       *event_interface_,
       OnFailChannel(
           "Received a broken close frame containing invalid UTF-8."));
+
+  CreateChannelAndConnectSuccessfully();
+}
+
+// The reserved bits must all be clear on received frames. Extensions should
+// clear the bits when they are set correctly before passing on the frame.
+TEST_F(WebSocketChannelEventInterfaceTest, ReservedBitsMustNotBeSet) {
+  scoped_ptr<ReadableFakeWebSocketStream> stream(
+      new ReadableFakeWebSocketStream);
+  static const InitFrame frames[] = {
+      {FINAL_FRAME, WebSocketFrameHeader::kOpCodeText,
+       NOT_MASKED,  "sakana"}};
+  // It is not worth adding support for reserved bits to InitFrame just for this
+  // one test, so set the bit manually.
+  ScopedVector<WebSocketFrame> raw_frames = CreateFrameVector(frames);
+  raw_frames[0]->header.reserved1 = true;
+  stream->PrepareRawReadFrames(
+      ReadableFakeWebSocketStream::SYNC, OK, raw_frames.Pass());
+  set_stream(stream.Pass());
+  EXPECT_CALL(*event_interface_, OnAddChannelResponse(false, _, _));
+  EXPECT_CALL(*event_interface_, OnFlowControl(_));
+  EXPECT_CALL(*event_interface_,
+              OnFailChannel(
+                  "One or more reserved bits are on: reserved1 = 1, "
+                  "reserved2 = 0, reserved3 = 0"));
 
   CreateChannelAndConnectSuccessfully();
 }
@@ -2844,6 +2847,72 @@ TEST_F(WebSocketChannelReceiveUtf8Test, ValidateMultipleReceived) {
   EXPECT_CALL(*mock_stream_, ReadFrames(_, _))
       .WillOnce(ReturnFrames(&frames))
       .WillRepeatedly(Return(ERR_IO_PENDING));
+
+  CreateChannelAndConnectSuccessfully();
+}
+
+// A new data message cannot start in the middle of another data message.
+TEST_F(WebSocketChannelEventInterfaceTest, BogusContinuation) {
+  scoped_ptr<ReadableFakeWebSocketStream> stream(
+      new ReadableFakeWebSocketStream);
+  static const InitFrame frames[] = {
+      {NOT_FINAL_FRAME, WebSocketFrameHeader::kOpCodeBinary,
+       NOT_MASKED, "frame1"},
+      {FINAL_FRAME, WebSocketFrameHeader::kOpCodeText,
+       NOT_MASKED, "frame2"}};
+  stream->PrepareReadFrames(ReadableFakeWebSocketStream::SYNC, OK, frames);
+  set_stream(stream.Pass());
+
+  EXPECT_CALL(*event_interface_, OnAddChannelResponse(false, _, _));
+  EXPECT_CALL(*event_interface_, OnFlowControl(kDefaultInitialQuota));
+  EXPECT_CALL(
+      *event_interface_,
+      OnDataFrame(
+          false, WebSocketFrameHeader::kOpCodeBinary, AsVector("frame1")));
+  EXPECT_CALL(
+      *event_interface_,
+      OnFailChannel(
+          "Received start of new message but previous message is unfinished."));
+
+  CreateChannelAndConnectSuccessfully();
+}
+
+// A new message cannot start with a Continuation frame.
+TEST_F(WebSocketChannelEventInterfaceTest, MessageStartingWithContinuation) {
+  scoped_ptr<ReadableFakeWebSocketStream> stream(
+      new ReadableFakeWebSocketStream);
+  static const InitFrame frames[] = {
+      {FINAL_FRAME, WebSocketFrameHeader::kOpCodeContinuation,
+       NOT_MASKED, "continuation"}};
+  stream->PrepareReadFrames(ReadableFakeWebSocketStream::SYNC, OK, frames);
+  set_stream(stream.Pass());
+
+  EXPECT_CALL(*event_interface_, OnAddChannelResponse(false, _, _));
+  EXPECT_CALL(*event_interface_, OnFlowControl(kDefaultInitialQuota));
+  EXPECT_CALL(*event_interface_,
+              OnFailChannel("Received unexpected continuation frame."));
+
+  CreateChannelAndConnectSuccessfully();
+}
+
+// A frame passed to the renderer must be either non-empty or have the final bit
+// set.
+TEST_F(WebSocketChannelEventInterfaceTest, DataFramesNonEmptyOrFinal) {
+  scoped_ptr<ReadableFakeWebSocketStream> stream(
+      new ReadableFakeWebSocketStream);
+  static const InitFrame frames[] = {
+      {NOT_FINAL_FRAME, WebSocketFrameHeader::kOpCodeText, NOT_MASKED, ""},
+      {NOT_FINAL_FRAME, WebSocketFrameHeader::kOpCodeContinuation,
+       NOT_MASKED, ""},
+      {FINAL_FRAME, WebSocketFrameHeader::kOpCodeContinuation, NOT_MASKED, ""}};
+  stream->PrepareReadFrames(ReadableFakeWebSocketStream::SYNC, OK, frames);
+  set_stream(stream.Pass());
+
+  EXPECT_CALL(*event_interface_, OnAddChannelResponse(false, _, _));
+  EXPECT_CALL(*event_interface_, OnFlowControl(kDefaultInitialQuota));
+  EXPECT_CALL(
+      *event_interface_,
+      OnDataFrame(true, WebSocketFrameHeader::kOpCodeText, AsVector("")));
 
   CreateChannelAndConnectSuccessfully();
 }

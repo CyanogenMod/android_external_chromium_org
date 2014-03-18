@@ -224,11 +224,14 @@ def CheckChangeOnUpload(input_api, output_api):
   results += input_api.canned_checks.CheckPatchFormatted(input_api, output_api)
   return results
 
-def GetPreferredTrySlaves(project, change):
-  return [
-    'linux_layout_rel',
-    'linux_gpu',
-    'mac_gpu',
-    'mac_gpu_retina',
-    'win_gpu',
-  ]
+def GetPreferredTryMasters(project, change):
+  return {
+    'tryserver.chromium': {
+      'linux_blink_rel': set(['defaulttests']),
+    },
+    'tryserver.chromium.gpu': {
+      'linux_gpu': set(['defaulttests']),
+      'mac_gpu': set(['defaulttests']),
+      'win_gpu': set(['defaulttests']),
+    },
+  }

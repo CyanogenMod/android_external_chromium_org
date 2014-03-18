@@ -6,9 +6,9 @@
 #include "ash/accelerators/accelerator_table.h"
 #include "ash/accessibility_delegate.h"
 #include "ash/ash_switches.h"
-#include "ash/caps_lock_delegate.h"
 #include "ash/display/display_manager.h"
 #include "ash/ime_control_delegate.h"
+#include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/brightness_control_delegate.h"
@@ -22,11 +22,11 @@
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
 #include "ui/events/event.h"
+#include "ui/events/event_processor.h"
 #include "ui/gfx/screen.h"
 
 #if defined(USE_X11)
@@ -469,9 +469,6 @@ TEST_F(AcceleratorControllerTest, IsRegistered) {
 }
 
 TEST_F(AcceleratorControllerTest, WindowSnap) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kAshMultipleSnapWindowWidths);
-
   scoped_ptr<aura::Window> window(
       CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
   const ui::Accelerator dummy;
@@ -482,27 +479,15 @@ TEST_F(AcceleratorControllerTest, WindowSnap) {
 
   {
     GetController()->PerformAction(WINDOW_SNAP_LEFT, dummy);
-    gfx::Rect snap_left = window->bounds();
-    GetController()->PerformAction(WINDOW_SNAP_LEFT, dummy);
-    EXPECT_NE(window->bounds().ToString(), snap_left.ToString());
-    GetController()->PerformAction(WINDOW_SNAP_LEFT, dummy);
-    EXPECT_NE(window->bounds().ToString(), snap_left.ToString());
-
-    // It should cycle back to the first snapped position.
-    GetController()->PerformAction(WINDOW_SNAP_LEFT, dummy);
-    EXPECT_EQ(window->bounds().ToString(), snap_left.ToString());
+    gfx::Rect expected_bounds = wm::GetDefaultLeftSnappedWindowBoundsInParent(
+        window.get());
+    EXPECT_EQ(expected_bounds.ToString(), window->bounds().ToString());
   }
   {
     GetController()->PerformAction(WINDOW_SNAP_RIGHT, dummy);
-    gfx::Rect snap_right = window->bounds();
-    GetController()->PerformAction(WINDOW_SNAP_RIGHT, dummy);
-    EXPECT_NE(window->bounds().ToString(), snap_right.ToString());
-    GetController()->PerformAction(WINDOW_SNAP_RIGHT, dummy);
-    EXPECT_NE(window->bounds().ToString(), snap_right.ToString());
-
-    // It should cycle back to the first snapped position.
-    GetController()->PerformAction(WINDOW_SNAP_RIGHT, dummy);
-    EXPECT_EQ(window->bounds().ToString(), snap_right.ToString());
+    gfx::Rect expected_bounds = wm::GetDefaultRightSnappedWindowBoundsInParent(
+        window.get());
+    EXPECT_EQ(expected_bounds.ToString(), window->bounds().ToString());
   }
   {
     gfx::Rect normal_bounds = window_state->GetRestoreBoundsInParent();
@@ -649,8 +634,8 @@ TEST_F(AcceleratorControllerTest, MAYBE_ProcessOnce) {
   GetController()->Register(accelerator_a, &target);
 
   // The accelerator is processed only once.
-  aura::WindowEventDispatcher* dispatcher =
-      Shell::GetPrimaryRootWindow()->GetDispatcher();
+  ui::EventProcessor* dispatcher =
+      Shell::GetPrimaryRootWindow()->GetHost()->event_processor();
 #if defined(OS_WIN)
   MSG msg1 = { NULL, WM_KEYDOWN, ui::VKEY_A, 0 };
   ui::TranslatedKeyEvent key_event1(msg1, false);
@@ -725,97 +710,6 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
     EXPECT_EQ(2, delegate->handle_take_screenshot_count());
   }
 #endif
-  // DisableCapsLock
-  {
-    CapsLockDelegate* delegate = Shell::GetInstance()->caps_lock_delegate();
-    delegate->SetCapsLockEnabled(true);
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    // Handled only on key release.
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_LSHIFT, ui::EF_NONE)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_TRUE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_SHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(delegate->IsCapsLockEnabled());
-    delegate->SetCapsLockEnabled(true);
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_RSHIFT, ui::EF_NONE)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_TRUE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_LSHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(delegate->IsCapsLockEnabled());
-    delegate->SetCapsLockEnabled(true);
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_SHIFT, ui::EF_NONE)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_TRUE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_RSHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(delegate->IsCapsLockEnabled());
-
-    // Do not handle when a shift pressed with other keys.
-    delegate->SetCapsLockEnabled(true);
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_A, ui::EF_SHIFT_DOWN)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_A, ui::EF_SHIFT_DOWN)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-
-    // Do not handle when a shift pressed with other keys, and shift is
-    // released first.
-    delegate->SetCapsLockEnabled(true);
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_A, ui::EF_SHIFT_DOWN)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_LSHIFT, ui::EF_NONE)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_A, ui::EF_SHIFT_DOWN)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_SHIFT, ui::EF_NONE)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_A, ui::EF_SHIFT_DOWN)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_RSHIFT, ui::EF_NONE)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-
-    // Do not consume shift keyup when caps lock is off.
-    delegate->SetCapsLockEnabled(false);
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_LSHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_LSHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_RSHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_RSHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_SHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_SHIFT, ui::EF_NONE)));
-  }
-  // ToggleCapsLock
-  {
-    CapsLockDelegate* delegate = Shell::GetInstance()->caps_lock_delegate();
-    delegate->SetCapsLockEnabled(true);
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_LWIN, ui::EF_ALT_DOWN)));
-    EXPECT_TRUE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_LWIN, ui::EF_ALT_DOWN)));
-    EXPECT_FALSE(delegate->IsCapsLockEnabled());
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_LWIN, ui::EF_ALT_DOWN)));
-    EXPECT_TRUE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_LWIN, ui::EF_ALT_DOWN)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-  }
   const ui::Accelerator volume_mute(ui::VKEY_VOLUME_MUTE, ui::EF_NONE);
   const ui::Accelerator volume_down(ui::VKEY_VOLUME_DOWN, ui::EF_NONE);
   const ui::Accelerator volume_up(ui::VKEY_VOLUME_UP, ui::EF_NONE);

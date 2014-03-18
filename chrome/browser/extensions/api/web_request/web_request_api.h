@@ -16,9 +16,9 @@
 #include "base/time/time.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/request_stage.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api_helpers.h"
 #include "chrome/browser/extensions/api/web_request/web_request_permissions.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_function.h"
 #include "extensions/common/url_pattern_set.h"
@@ -59,22 +59,22 @@ class WebRequestRulesRegistry;
 // work is done by ExtensionWebRequestEventRouter below. This class observes
 // extension::EventRouter to deal with event listeners. There is one instance
 // per BrowserContext which is shared with incognito.
-class WebRequestAPI : public ProfileKeyedAPI,
+class WebRequestAPI : public BrowserContextKeyedAPI,
                       public EventRouter::Observer {
  public:
   explicit WebRequestAPI(content::BrowserContext* context);
   virtual ~WebRequestAPI();
 
-  // ProfileKeyedAPI support:
-  static ProfileKeyedAPIFactory<WebRequestAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI support:
+  static BrowserContextKeyedAPIFactory<WebRequestAPI>* GetFactoryInstance();
 
   // EventRouter::Observer overrides:
   virtual void OnListenerRemoved(const EventListenerInfo& details) OVERRIDE;
 
  private:
-  friend class ProfileKeyedAPIFactory<WebRequestAPI>;
+  friend class BrowserContextKeyedAPIFactory<WebRequestAPI>;
 
-  // ProfileKeyedAPI support:
+  // BrowserContextKeyedAPI support:
   static const char* service_name() { return "WebRequestAPI"; }
   static const bool kServiceRedirectedInIncognito = true;
   static const bool kServiceIsNULLWhileTesting = true;
@@ -485,6 +485,17 @@ class WebRequestEventHandled : public SyncIOThreadExtensionFunction {
 
  protected:
   virtual ~WebRequestEventHandled() {}
+
+  // Cancels and unblocks the network request, and sets error_ such that the
+  // developer console will show the respective error message. Use this function
+  // to handle incorrect requests from the extension that cannot be detected by
+  // the schema validator.
+  void CancelWithError(
+      const std::string& event_name,
+      const std::string& sub_event_name,
+      uint64 request_id,
+      scoped_ptr<ExtensionWebRequestEventRouter::EventResponse> response,
+      const std::string& error);
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;

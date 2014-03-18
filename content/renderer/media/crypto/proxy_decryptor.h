@@ -17,14 +17,11 @@
 #include "media/base/decryptor.h"
 #include "media/base/media_keys.h"
 
-class GURL;
-
-namespace blink {
 #if defined(ENABLE_PEPPER_CDMS)
-class WebFrame;
-class WebMediaPlayerClient;
-#endif  // defined(ENABLE_PEPPER_CDMS)
-}
+#include "content/renderer/media/crypto/pepper_cdm_wrapper.h"
+#endif
+
+class GURL;
 
 namespace content {
 
@@ -52,18 +49,17 @@ class ProxyDecryptor {
   typedef base::Callback<void(const std::string& session_id)> KeyAddedCB;
   typedef base::Callback<void(const std::string& session_id,
                               media::MediaKeys::KeyError error_code,
-                              int system_code)> KeyErrorCB;
+                              uint32 system_code)> KeyErrorCB;
   typedef base::Callback<void(const std::string& session_id,
                               const std::vector<uint8>& message,
                               const std::string& default_url)> KeyMessageCB;
 
   ProxyDecryptor(
 #if defined(ENABLE_PEPPER_CDMS)
-      blink::WebMediaPlayerClient* web_media_player_client,
-      blink::WebFrame* web_frame,
+      const CreatePepperCdmCB& create_pepper_cdm_cb,
 #elif defined(OS_ANDROID)
       RendererMediaPlayerManager* manager,
-      int media_keys_id,
+      int cdm_id,
 #endif  // defined(ENABLE_PEPPER_CDMS)
       const KeyAddedCB& key_added_cb,
       const KeyErrorCB& key_error_cb,
@@ -103,7 +99,7 @@ class ProxyDecryptor {
   void OnSessionClosed(uint32 session_id);
   void OnSessionError(uint32 session_id,
                       media::MediaKeys::KeyError error_code,
-                      int system_code);
+                      uint32 system_code);
 
   // Helper function to determine session_id for the provided |web_session_id|.
   uint32 LookupSessionId(const std::string& web_session_id) const;
@@ -116,15 +112,11 @@ class ProxyDecryptor {
   base::WeakPtrFactory<ProxyDecryptor> weak_ptr_factory_;
 
 #if defined(ENABLE_PEPPER_CDMS)
-  // Callback for cleaning up a Pepper-based CDM.
-  void DestroyHelperPlugin();
-
-  // Needed to create the PpapiDecryptor.
-  blink::WebMediaPlayerClient* web_media_player_client_;
-  blink::WebFrame* web_frame_;
+  // Callback to create the Pepper plugin.
+  CreatePepperCdmCB create_pepper_cdm_cb_;
 #elif defined(OS_ANDROID)
   RendererMediaPlayerManager* manager_;
-  int media_keys_id_;
+  int cdm_id_;
 #endif  // defined(ENABLE_PEPPER_CDMS)
 
   // The real MediaKeys that manages key operations for the ProxyDecryptor.

@@ -7,12 +7,24 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkPaint.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/insets.h"
 #include "ui/views/painter.h"
 
 namespace views {
+
+namespace {
+
+// Returns the pixels for the bitmap in |image| at scale |image_scale|.
+void* GetBitmapPixels(const gfx::ImageSkia& img, float image_scale) {
+  DCHECK_NE(0.0f, image_scale);
+  const SkBitmap& bitmap = img.GetRepresentation(image_scale).sk_bitmap();
+  SkAutoLockPixels pixel_lock(bitmap);
+  return bitmap.getPixels();
+}
+
+}  // namespace
 
 ImageView::ImageView()
     : image_size_set_(false),
@@ -99,8 +111,7 @@ bool ImageView::IsImageEqual(const gfx::ImageSkia& img) const {
   // the backing store but also the pixels of the last image we painted.
   return image_.BackedBySameObjectAs(img) &&
       last_paint_scale_ != 0.0f &&
-      last_painted_bitmap_pixels_ ==
-      img.GetRepresentation(last_paint_scale_).sk_bitmap().getPixels();
+      last_painted_bitmap_pixels_ == GetBitmapPixels(img, last_paint_scale_);
 }
 
 gfx::Point ImageView::ComputeImageOrigin(const gfx::Size& image_size) const {
@@ -150,8 +161,8 @@ void ImageView::OnPaint(gfx::Canvas* canvas) {
   Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
 }
 
-void ImageView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_GRAPHIC;
+void ImageView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_IMAGE;
   state->name = tooltip_text_;
 }
 
@@ -220,8 +231,7 @@ void ImageView::OnPaintImage(gfx::Canvas* canvas) {
   } else {
     canvas->DrawImageInt(image_, image_bounds.x(), image_bounds.y());
   }
-  last_painted_bitmap_pixels_ =
-      image_.GetRepresentation(last_paint_scale_).sk_bitmap().getPixels();
+  last_painted_bitmap_pixels_ = GetBitmapPixels(image_, last_paint_scale_);
 }
 
 }  // namespace views

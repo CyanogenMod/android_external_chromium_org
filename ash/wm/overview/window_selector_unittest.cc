@@ -18,6 +18,7 @@
 #include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
+#include "ash/wm/wm_event.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_vector.h"
@@ -27,15 +28,15 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/focus_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/transform.h"
-#include "ui/views/corewm/window_util.h"
+#include "ui/wm/core/window_util.h"
 
 namespace ash {
 namespace internal {
@@ -198,6 +199,20 @@ class WindowSelectorTest : public test::AshTestBase {
     return bounds;
   }
 
+  gfx::RectF GetTransformedBoundsInRootWindow(aura::Window* window) {
+    gfx::RectF bounds = gfx::Rect(window->bounds().size());
+    aura::Window* root = window->GetRootWindow();
+    CHECK(window->layer());
+    CHECK(root->layer());
+    gfx::Transform transform;
+    if (!window->layer()->GetTargetTransformRelativeTo(root->layer(),
+                                                       &transform)) {
+      return gfx::RectF();
+    }
+    transform.TransformRect(&bounds);
+    return bounds;
+  }
+
   void ClickWindow(aura::Window* window) {
     aura::test::EventGenerator event_generator(window->GetRootWindow(), window);
     gfx::RectF target = GetTransformedBounds(window);
@@ -255,7 +270,7 @@ TEST_F(WindowSelectorTest, Basic) {
 
   // The cursor should be visible and locked as a pointer
   EXPECT_EQ(ui::kCursorPointer,
-            root_window->GetDispatcher()->host()->last_cursor().native_type());
+            root_window->GetHost()->last_cursor().native_type());
   EXPECT_TRUE(aura::client::GetCursorClient(root_window)->IsCursorLocked());
   EXPECT_TRUE(aura::client::GetCursorClient(root_window)->IsCursorVisible());
 
@@ -277,7 +292,8 @@ TEST_F(WindowSelectorTest, FullscreenWindow) {
   scoped_ptr<aura::Window> panel1(CreatePanelWindow(bounds));
   wm::ActivateWindow(window1.get());
 
-  wm::GetWindowState(window1.get())->ToggleFullscreen();
+  const wm::WMEvent toggle_fullscreen_event(wm::WM_EVENT_TOGGLE_FULLSCREEN);
+  wm::GetWindowState(window1.get())->OnWMEvent(&toggle_fullscreen_event);
   // The panel is hidden in fullscreen mode.
   EXPECT_FALSE(panel1->IsVisible());
   EXPECT_TRUE(wm::GetWindowState(window1.get())->IsFullscreen());
@@ -301,6 +317,16 @@ TEST_F(WindowSelectorTest, FullscreenWindow) {
   ToggleOverview();
   ClickWindow(window2.get());
   EXPECT_TRUE(wm::GetWindowState(window1.get())->IsFullscreen());
+
+  // Verify that selecting the panel will make it visible.
+  // TODO(flackr): Click on panel rather than cycle to it when
+  // clicking on panels is fixed, see http://crbug.com/339834.
+  Cycle(WindowSelector::FORWARD);
+  Cycle(WindowSelector::FORWARD);
+  StopCycling();
+  EXPECT_TRUE(wm::GetWindowState(panel1.get())->IsActive());
+  EXPECT_TRUE(wm::GetWindowState(window1.get())->IsFullscreen());
+  EXPECT_TRUE(panel1->IsVisible());
 }
 
 // Tests that the shelf dimming state is removed while in overview and restored
@@ -702,7 +728,7 @@ TEST_F(WindowSelectorTest, ModalChild) {
   scoped_ptr<aura::Window> window1(CreateWindow(bounds));
   scoped_ptr<aura::Window> child1(CreateWindow(bounds));
   child1->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
-  views::corewm::AddTransientChild(window1.get(), child1.get());
+  ::wm::AddTransientChild(window1.get(), child1.get());
   EXPECT_EQ(window1->parent(), child1->parent());
   ToggleOverview();
   EXPECT_TRUE(window1->IsVisible());
@@ -718,7 +744,7 @@ TEST_F(WindowSelectorTest, ClickModalWindowParent) {
   scoped_ptr<aura::Window> window1(CreateWindow(gfx::Rect(0, 0, 180, 180)));
   scoped_ptr<aura::Window> child1(CreateWindow(gfx::Rect(200, 0, 180, 180)));
   child1->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
-  views::corewm::AddTransientChild(window1.get(), child1.get());
+  ::wm::AddTransientChild(window1.get(), child1.get());
   EXPECT_FALSE(WindowsOverlapping(window1.get(), child1.get()));
   EXPECT_EQ(window1->parent(), child1->parent());
   ToggleOverview();
@@ -839,7 +865,7 @@ TEST_F(WindowSelectorTest, CycleMultipleDisplaysCopiesWindows) {
   unmoved2->SetName("unmoved2");
   moved1->SetName("moved1");
   moved1->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
-  views::corewm::AddTransientChild(moved1_trans_parent.get(), moved1.get());
+  ::wm::AddTransientChild(moved1_trans_parent.get(), moved1.get());
   moved1_trans_parent->SetName("moved1_trans_parent");
 
   EXPECT_EQ(root_windows[0], moved1->GetRootWindow());
@@ -1028,6 +1054,39 @@ TEST_F(WindowSelectorTest, DISABLED_DragDropInProgress) {
   EXPECT_FALSE(drag_canceled_by_test);
   ASSERT_TRUE(IsSelecting());
   RunAllPendingInMessageLoop();
+}
+
+TEST_F(WindowSelectorTest, HitTestingInOverview) {
+  gfx::Rect window_bounds(20, 10, 200, 300);
+  aura::Window* root_window = Shell::GetPrimaryRootWindow();
+  scoped_ptr<aura::Window> window1(CreateWindow(window_bounds));
+  scoped_ptr<aura::Window> window2(CreateWindow(window_bounds));
+
+  ToggleOverview();
+  gfx::RectF bounds1 = GetTransformedBoundsInRootWindow(window1.get());
+  gfx::RectF bounds2 = GetTransformedBoundsInRootWindow(window2.get());
+  EXPECT_NE(bounds1.ToString(), bounds2.ToString());
+
+  ui::EventTarget* root_target = root_window;
+  ui::EventTargeter* targeter = root_target->GetEventTargeter();
+  aura::Window* windows[] = { window1.get(), window2.get() };
+  for (size_t w = 0; w < arraysize(windows); ++w) {
+    gfx::RectF bounds = GetTransformedBoundsInRootWindow(windows[w]);
+    // The close button covers the top-right corner of the window so we skip
+    // this in hit testing.
+    gfx::Point points[] = {
+      gfx::Point(bounds.x(), bounds.y()),
+      gfx::Point(bounds.x(), bounds.bottom() - 1),
+      gfx::Point(bounds.right() - 1, bounds.bottom() - 1),
+    };
+
+    for (size_t p = 0; p < arraysize(points); ++p) {
+      ui::MouseEvent event(ui::ET_MOUSE_MOVED, points[p], points[p],
+                           ui::EF_NONE, ui::EF_NONE);
+      EXPECT_EQ(windows[w],
+                targeter->FindTargetForEvent(root_target, &event));
+    }
+  }
 }
 
 }  // namespace internal

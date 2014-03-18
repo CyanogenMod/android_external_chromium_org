@@ -27,6 +27,7 @@
 #include "content/child/child_histogram_message_filter.h"
 #include "content/child/child_process.h"
 #include "content/child/child_resource_message_filter.h"
+#include "content/child/child_shared_bitmap_manager.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
 #include "content/child/power_monitor_broadcast_source.h"
 #include "content/child/quota_dispatcher.h"
@@ -166,7 +167,10 @@ base::LazyInstance<base::Lock> g_lazy_child_thread_lock =
 // doesn't handle the case. Thus, we need our own class here.
 struct CondVarLazyInstanceTraits {
   static const bool kRegisterOnExit = true;
-  static const bool kAllowedToAccessOnNonjoinableThread ALLOW_UNUSED = false;
+#ifndef NDEBUG
+  static const bool kAllowedToAccessOnNonjoinableThread = false;
+#endif
+
   static base::ConditionVariable* New(void* instance) {
     return new (instance) base::ConditionVariable(
         g_lazy_child_thread_lock.Pointer());
@@ -189,8 +193,17 @@ void QuitMainThreadMessageLoop() {
 
 }  // namespace
 
+ChildThread::ChildThreadMessageRouter::ChildThreadMessageRouter(
+    IPC::Sender* sender)
+    : sender_(sender) {}
+
+bool ChildThread::ChildThreadMessageRouter::Send(IPC::Message* msg) {
+  return sender_->Send(msg);
+}
+
 ChildThread::ChildThread()
-    : channel_connected_factory_(this),
+    : router_(this),
+      channel_connected_factory_(this),
       in_browser_process_(false) {
   channel_name_ = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
       switches::kProcessChannelID);
@@ -199,6 +212,7 @@ ChildThread::ChildThread()
 
 ChildThread::ChildThread(const std::string& channel_name)
     : channel_name_(channel_name),
+      router_(this),
       channel_connected_factory_(this),
       in_browser_process_(true) {
   Init();
@@ -298,6 +312,9 @@ void ChildThread::Init() {
       ::HeapProfilerStop,
       ::GetHeapProfile));
 #endif
+
+  shared_bitmap_manager_.reset(
+      new ChildSharedBitmapManager(thread_safe_sender()));
 }
 
 ChildThread::~ChildThread() {
@@ -346,16 +363,9 @@ bool ChildThread::Send(IPC::Message* msg) {
   return channel_->Send(msg);
 }
 
-void ChildThread::AddRoute(int32 routing_id, IPC::Listener* listener) {
+MessageRouter* ChildThread::GetRouter() {
   DCHECK(base::MessageLoop::current() == message_loop());
-
-  router_.AddRoute(routing_id, listener);
-}
-
-void ChildThread::RemoveRoute(int32 routing_id) {
-  DCHECK(base::MessageLoop::current() == message_loop());
-
-  router_.RemoveRoute(routing_id);
+  return &router_;
 }
 
 webkit_glue::ResourceLoaderBridge* ChildThread::CreateBridge(

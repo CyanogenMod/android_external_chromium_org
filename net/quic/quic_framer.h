@@ -113,6 +113,9 @@ class NET_EXPORT_PRIVATE QuicFramerVisitorInterface {
   virtual bool OnCongestionFeedbackFrame(
       const QuicCongestionFeedbackFrame& frame) = 0;
 
+  // Called when a StopWaitingFrame has been parsed.
+  virtual bool OnStopWaitingFrame(const QuicStopWaitingFrame& frame) = 0;
+
   // Called when a RstStreamFrame has been parsed.
   virtual bool OnRstStreamFrame(const QuicRstStreamFrame& frame) = 0;
 
@@ -124,12 +127,10 @@ class NET_EXPORT_PRIVATE QuicFramerVisitorInterface {
   virtual bool OnGoAwayFrame(const QuicGoAwayFrame& frame) = 0;
 
   // Called when a WindowUpdateFrame has been parsed.
-  // TODO(rjshade): Make this abstract, and implement in subclasses.
-  virtual bool OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame);
+  virtual bool OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) = 0;
 
   // Called when a BlockedFrame has been parsed.
-  // TODO(rjshade): Make this abstract, and implement in subclasses.
-  virtual bool OnBlockedFrame(const QuicBlockedFrame& frame);
+  virtual bool OnBlockedFrame(const QuicBlockedFrame& frame) = 0;
 
   // Called when FEC data has been parsed.
   virtual void OnFecData(const QuicFecData& fec) = 0;
@@ -250,6 +251,9 @@ class NET_EXPORT_PRIVATE QuicFramer {
       QuicVersion version,
       QuicSequenceNumberLength sequence_number_length,
       QuicSequenceNumberLength largest_observed_length);
+  // Size in bytes of a stop waiting frame.
+  static size_t GetStopWaitingFrameSize(
+      QuicSequenceNumberLength sequence_number_length);
   // Size in bytes of all reset stream frame without the error details.
   static size_t GetMinRstStreamFrameSize(QuicVersion quic_version);
   // Size in bytes of all connection close frame fields without the error
@@ -261,9 +265,6 @@ class NET_EXPORT_PRIVATE QuicFramer {
   static size_t GetWindowUpdateFrameSize();
   // Size in bytes of all Blocked frame fields.
   static size_t GetBlockedFrameSize();
-  // The maximum number of nacks which can be transmitted in a single ack packet
-  // without exceeding kDefaultMaxPacketSize.
-  static size_t GetMaxUnackedPackets(QuicPacketHeader header);
   // Size in bytes required to serialize the stream id.
   static size_t GetStreamIdSize(QuicStreamId stream_id);
   // Size in bytes required to serialize the stream offset.
@@ -285,7 +286,7 @@ class NET_EXPORT_PRIVATE QuicFramer {
   // stringpiece.
   static base::StringPiece GetAssociatedDataFromEncryptedPacket(
       const QuicEncryptedPacket& encrypted,
-      QuicGuidLength guid_length,
+      QuicConnectionIdLength connection_id_length,
       bool includes_version,
       QuicSequenceNumberLength sequence_number_length);
 
@@ -403,8 +404,8 @@ class NET_EXPORT_PRIVATE QuicFramer {
                        uint8 frame_type,
                        QuicAckFrame* frame);
   bool ProcessReceivedInfo(uint8 frame_type, ReceivedPacketInfo* received_info);
-  bool ProcessSentInfo(const QuicPacketHeader& public_header,
-                       SentPacketInfo* sent_info);
+  bool ProcessStopWaitingFrame(const QuicPacketHeader& public_header,
+                               QuicStopWaitingFrame* stop_waiting);
   bool ProcessQuicCongestionFeedbackFrame(
       QuicCongestionFeedbackFrame* congestion_feedback);
   bool ProcessRstStreamFrame(QuicRstStreamFrame* frame);
@@ -454,9 +455,11 @@ class NET_EXPORT_PRIVATE QuicFramer {
   bool AppendAckFrameAndTypeByte(const QuicPacketHeader& header,
                                  const QuicAckFrame& frame,
                                  QuicDataWriter* builder);
-  bool AppendQuicCongestionFeedbackFrame(
-      const QuicCongestionFeedbackFrame& frame,
-      QuicDataWriter* builder);
+  bool AppendCongestionFeedbackFrame(const QuicCongestionFeedbackFrame& frame,
+                                     QuicDataWriter* builder);
+  bool AppendStopWaitingFrame(const QuicPacketHeader& header,
+                              const QuicStopWaitingFrame& frame,
+                              QuicDataWriter* builder);
   bool AppendRstStreamFrame(const QuicRstStreamFrame& frame,
                             QuicDataWriter* builder);
   bool AppendConnectionCloseFrame(const QuicConnectionCloseFrame& frame,
@@ -486,7 +489,7 @@ class NET_EXPORT_PRIVATE QuicFramer {
   // Updated by ProcessPacketHeader when it succeeds.
   QuicPacketSequenceNumber last_sequence_number_;
   // Updated by WritePacketHeader.
-  QuicGuid last_serialized_guid_;
+  QuicConnectionId last_serialized_connection_id_;
   // Buffer containing decrypted payload data during parsing.
   scoped_ptr<QuicData> decrypted_;
   // Version of the protocol being used.

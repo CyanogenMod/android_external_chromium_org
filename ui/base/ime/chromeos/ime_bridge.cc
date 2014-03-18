@@ -25,14 +25,14 @@ class IMEBridgeImpl : public IMEBridge {
   }
 
   // IMEBridge override.
-  virtual IBusInputContextHandlerInterface*
+  virtual IMEInputContextHandlerInterface*
       GetInputContextHandler() const OVERRIDE {
     return input_context_handler_;
   }
 
   // IMEBridge override.
   virtual void SetInputContextHandler(
-      IBusInputContextHandlerInterface* handler) OVERRIDE {
+      IMEInputContextHandlerInterface* handler) OVERRIDE {
     input_context_handler_ = handler;
   }
 
@@ -66,9 +66,9 @@ class IMEBridgeImpl : public IMEBridge {
       const std::string& engine_id) OVERRIDE {
     std::map<std::string, IMEEngineHandlerInterface*>::const_iterator itor =
         engine_handler_map_.find(engine_id);
-    // |engine_id| must be found unless it's empty, but if it's not found, fall
-    // back to NULL when non-debug build.
-    DCHECK(itor != engine_handler_map_.end() || engine_id.empty());
+    // It is normal in that the engine is not found, because sometimes the
+    // extension based xkb id may be provided but the xkb component extension
+    // is not installed, for example, in browser_tests.
     if (itor == engine_handler_map_.end()) {
       engine_handler_ = NULL;
       return NULL;
@@ -84,21 +84,21 @@ class IMEBridgeImpl : public IMEBridge {
   }
 
   // IMEBridge override.
-  virtual IBusPanelCandidateWindowHandlerInterface*
-  GetCandidateWindowHandler() const OVERRIDE {
+  virtual IMECandidateWindowHandlerInterface* GetCandidateWindowHandler() const
+      OVERRIDE {
     return candidate_window_handler_;
   }
 
   // IMEBridge override.
   virtual void SetCandidateWindowHandler(
-      IBusPanelCandidateWindowHandlerInterface* handler) OVERRIDE {
+      IMECandidateWindowHandlerInterface* handler) OVERRIDE {
     candidate_window_handler_ = handler;
   }
 
  private:
-  IBusInputContextHandlerInterface* input_context_handler_;
+  IMEInputContextHandlerInterface* input_context_handler_;
   IMEEngineHandlerInterface* engine_handler_;
-  IBusPanelCandidateWindowHandlerInterface* candidate_window_handler_;
+  IMECandidateWindowHandlerInterface* candidate_window_handler_;
   std::map<std::string, IMEEngineHandlerInterface*> engine_handler_map_;
 
   DISALLOW_COPY_AND_ASSIGN(IMEBridgeImpl);

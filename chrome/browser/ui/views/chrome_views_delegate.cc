@@ -30,7 +30,7 @@
 #endif
 
 #if defined(USE_AURA)
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 #if defined(USE_AURA) && !defined(OS_CHROMEOS)
@@ -140,7 +140,7 @@ bool ChromeViewsDelegate::GetSavedWindowPlacement(
 }
 
 void ChromeViewsDelegate::NotifyAccessibilityEvent(
-    views::View* view, ui::AccessibilityTypes::Event event_type) {
+    views::View* view, ui::AXEvent event_type) {
   AccessibilityEventRouterViews::GetInstance()->HandleAccessibilityEvent(
       view, event_type);
 }

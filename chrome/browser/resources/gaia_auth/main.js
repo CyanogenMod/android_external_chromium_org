@@ -60,23 +60,6 @@ Authenticator.prototype = {
     this.initialFrameUrl_ = params.frameUrl || this.constructInitialFrameUrl_();
     this.initialFrameUrlWithoutParams_ = stripParams(this.initialFrameUrl_);
 
-    if (this.desktopMode_) {
-      this.supportChannel_ = new Channel();
-      this.supportChannel_.connect('authMain');
-
-      this.supportChannel_.send({
-        name: 'initDesktopFlow',
-        gaiaUrl: this.gaiaUrl_,
-        continueUrl: stripParams(this.continueUrl_),
-        isConstrainedWindow: this.isConstrainedWindow_
-      });
-
-      this.supportChannel_.registerMessage(
-        'switchToFullTab', this.switchToFullTab_.bind(this));
-      this.supportChannel_.registerMessage(
-        'completeLogin', this.completeLogin_.bind(this));
-    }
-
     document.addEventListener('DOMContentLoaded', this.onPageLoad_.bind(this));
     document.addEventListener('enableSAML', this.onEnableSAML_.bind(this));
   },
@@ -111,19 +94,48 @@ Authenticator.prototype = {
 
   onPageLoad_: function() {
     window.addEventListener('message', this.onMessage.bind(this), false);
-    this.loadFrame_();
-  },
 
-  loadFrame_: function() {
     var gaiaFrame = $('gaia-frame');
     gaiaFrame.src = this.initialFrameUrl_;
+
     if (this.desktopMode_) {
       var handler = function() {
         this.onLoginUILoaded_();
         gaiaFrame.removeEventListener('load', handler);
+
+        this.initDesktopChannel_();
       }.bind(this);
       gaiaFrame.addEventListener('load', handler);
     }
+  },
+
+  initDesktopChannel_: function() {
+    this.supportChannel_ = new Channel();
+    this.supportChannel_.connect('authMain');
+
+    var channelConnected = false;
+    this.supportChannel_.registerMessage('channelConnected', function() {
+      channelConnected = true;
+
+      this.supportChannel_.send({
+        name: 'initDesktopFlow',
+        gaiaUrl: this.gaiaUrl_,
+        continueUrl: stripParams(this.continueUrl_),
+        isConstrainedWindow: this.isConstrainedWindow_
+      });
+      this.supportChannel_.registerMessage(
+        'switchToFullTab', this.switchToFullTab_.bind(this));
+      this.supportChannel_.registerMessage(
+        'completeLogin', this.completeLogin_.bind(this));
+    }.bind(this));
+
+    window.setTimeout(function() {
+      if (!channelConnected) {
+        // Re-initialize the channel if it is not connected properly, e.g.
+        // connect may be called before background script started running.
+        this.initDesktopChannel_();
+      }
+    }.bind(this), 200);
   },
 
   /**

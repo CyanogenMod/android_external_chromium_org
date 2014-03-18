@@ -24,16 +24,11 @@
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/form_field_data.h"
+#include "grit/component_scaled_resources.h"
 #include "grit/component_strings.h"
 #include "third_party/icu/source/common/unicode/uloc.h"
 #include "third_party/icu/source/i18n/unicode/dtfmtsym.h"
 #include "ui/base/l10n/l10n_util.h"
-
-// TODO(blundell): Eliminate the need for this conditional include.
-// crbug.com/328150
-#if !defined(OS_IOS)
-#include "grit/webkit_resources.h"
-#endif
 
 namespace autofill {
 
@@ -169,12 +164,6 @@ base::string16 CreditCard::TypeForDisplay(const std::string& type) {
 
 // static
 int CreditCard::IconResourceId(const std::string& type) {
-  // TODO(blundell): Either move these resources out of webkit_resources or
-  // this function into //components/autofill/content/browser to eliminate the
-  // need for this ifdef-ing. crbug.com/328150
-#if defined(OS_IOS)
-  return 0;
-#else
   if (type == kAmericanExpressCard)
     return IDR_AUTOFILL_CC_AMEX;
   if (type == kDinersCard)
@@ -194,7 +183,6 @@ int CreditCard::IconResourceId(const std::string& type) {
   // include a new card.
   DCHECK_EQ(kGenericCard, type);
   return IDR_AUTOFILL_CC_GENERIC;
-#endif  // defined(OS_IOS)
 }
 
 // static

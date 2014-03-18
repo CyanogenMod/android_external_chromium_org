@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -42,7 +43,7 @@ bool GetRootPage(sql::Connection* db, const char* name, int* page_number) {
 }
 
 // Helper for reading a number from the SQLite header.
-// See net/base/big_endian.h.
+// See base/big_endian.h.
 unsigned ReadBigEndian(unsigned char* buf, size_t bytes) {
   unsigned r = buf[0];
   for (size_t i = 1; i < bytes; i++) {
@@ -75,7 +76,7 @@ bool CorruptSizeInHeader(const base::FilePath& db_path) {
 
   unsigned char header[kHeaderSize];
 
-  file_util::ScopedFILE file(base::OpenFile(db_path, "rb+"));
+  base::ScopedFILE file(base::OpenFile(db_path, "rb+"));
   if (!file.get())
     return false;
 
@@ -128,7 +129,7 @@ bool CorruptTableOrIndex(const base::FilePath& db_path,
   scoped_ptr<char[]> page_buf(new char[page_size]);
 
   // Get the page into page_buf.
-  file_util::ScopedFILE file(base::OpenFile(db_path, "rb+"));
+  base::ScopedFILE file(base::OpenFile(db_path, "rb+"));
   if (!file.get())
     return false;
   if (0 != fseek(file.get(), page_ofs, SEEK_SET))

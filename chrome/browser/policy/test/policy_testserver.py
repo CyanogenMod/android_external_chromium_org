@@ -54,6 +54,7 @@ Example:
 
 """
 
+import base64
 import BaseHTTPServer
 import cgi
 import google.protobuf.text_format
@@ -95,9 +96,6 @@ except ImportError:
 # ASN.1 object identifier for PKCS#1/RSA.
 PKCS1_RSA_OID = '\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01'
 
-# SHA256 sum of "0".
-SHA256_0 = hashlib.sha256('0').digest()
-
 # List of bad machine identifiers that trigger the |valid_serial_number_missing|
 # flag to be set set in the policy fetch response.
 BAD_MACHINE_IDS = [ '123490EN400015' ]
@@ -106,6 +104,85 @@ BAD_MACHINE_IDS = [ '123490EN400015' ]
 # for the register request.
 KIOSK_MACHINE_IDS = [ 'KIOSK' ]
 
+# Dictionary containing base64-encoded policy signing keys plus per-domain
+# signatures. Format is:
+# {
+#   'key': <base64-encoded PKCS8-format private key>,
+#   'signatures': {
+#     <domain1>: <base64-encdoded SHA256 signature for key + domain1>
+#     <domain2>: <base64-encdoded SHA256 signature for key + domain2>
+#     ...
+#   }
+# }
+SIGNING_KEYS = [
+    # Key1
+    {'key':
+       'MIIBVQIBADANBgkqhkiG9w0BAQEFAASCAT8wggE7AgEAAkEA2c3KzcPqvnJ5HCk3OZkf1'
+       'LMO8Ht4dw4FO2U0EmKvpo0zznj4RwUdmKobH1AFWzwZP4CDY2M67MsukE/1Jnbx1QIDAQ'
+       'ABAkBkKcLZa/75hHVz4PR3tZaw34PATlfxEG6RiRIwXlf/FFlfGIZOSxdW/I1A3XRl0/9'
+       'nZMuctBSKBrcTRZQWfT/hAiEA9g8xbQbMO6BEH/XCRSsQbPlvj4c9wDtVEzeAzZ/ht9kC'
+       'IQDiml+/lXS1emqml711jJcYJNYJzdy1lL/ieKogR59oXQIhAK+Pl4xa1U2VxAWpq7r+R'
+       'vH55wdZT03hB4p2h4gvEzXBAiAkw9kvE0eZPiBZoRrrHIFTOH7FnnHlwBmV2+/2RsiVPQ'
+       'IhAKqx/4qisivvmoM/xbzUagfoxwsu1A/4mGjhBKiS0BCq',
+     'signatures':
+       {'example.com':
+          'l+sT5mziei/GbmiP7VtRCCfwpZcg7uKbW2OlnK5B/TTELutjEIAMdHduNBwbO44qOn'
+          '/5c7YrtkXbBehaaDYFPGI6bGTbDmG9KRxhS+DaB7opgfCQWLi79Gn/jytKLZhRN/VS'
+          'y+PEbezqMi3d1/xDxlThwWZDNwnhv9ER/Nu/32ZTjzgtqonSn2CQtwXCIILm4FdV/1'
+          '/BdmZG+Ge4i4FTqYtInir5YFe611KXU/AveGhQGBIAXo4qYg1IqbVrvKBSU9dlI6Sl'
+          '9TJJLbJ3LGaXuljgFhyMAl3gcy7ftC9MohEmwa+sc7y2mOAgYQ5SSmyAtQwQgAkX9J'
+          '3+tfxjmoA/dg==',
+        'chromepolicytest.com':
+          'TzBiigZKwBdr6lyP6tUDsw+Q9wYO1Yepyxm0O4JZ4RID32L27sWzC1/hwC51fRcCvP'
+          'luEVIW6mH+BFODXMrteUFWfbbG7jgV+Wg+QdzMqgJjxhNKFXPTsZ7/286LAd1vBY/A'
+          'nGd8Wog6AhzfrgMbLNsH794GD0xIUwRvXUWFNP8pClj5VPgQnJrIA9aZwW8FNGbteA'
+          'HacFB0T/oqP5s7XT4Qvkj14RLmCgTwEM8Vcpqy5teJaF8yN17wniveddoOQGH6s0HC'
+          'ocprEccrH5fP/WVAPxCfx4vVYQY5q4CZ4K3f6dTC2FV4IDelM6dugEkvSS02YCzDaO'
+          'N+Z7IwElzTKg==',
+        'managedchrome.com':
+          'T0wXC5w3GXyovA09pyOLX7ui/NI603UfbZXYyTbHI7xtzCIaHVPH35Nx4zdqVrdsej'
+          'ErQ12yVLDDIJokY4Yl+/fj/zrkAPxThI+TNQ+jo0i+al05PuopfpzvCzIXiZBbkbyW'
+          '3XfedxXP3IPN2XU2/3vX+ZXUNG6pxeETem64kGezkjkUraqnHw3JVzwJYHhpMcwdLP'
+          'PYK6V23BbEHEVBtQZd/ledXacz7gOzm1zGni4e+vxA2roAdJWyhbjU0dTKNNUsZmMv'
+          'ryQH9Af1Jw+dqs0RAbhcJXm2i8EUWIgNv6aMn1Z2DzZwKKjXsKgcYSRo8pdYa8RZAo'
+          'UExd9roA9a5w==',
+        }
+     },
+    # Key2
+    {'key':
+       'MIIBVAIBADANBgkqhkiG9w0BAQEFAASCAT4wggE6AgEAAkEAmZhreV04M3knCi6wibr49'
+       'oDesHny1G33PKOX9ko8pcxAiu9ZqsKCj7wNW2PGqnLi81fddACwQtYn5xdhCtzB9wIDAQ'
+       'ABAkA0z8m0cy8N08xundspoFZWO71WJLgv/peSDBYGI0RzJR1l9Np355EukQUQwRs5XrL'
+       '3vRQZy2vDqeiR96epkAhRAiEAzJ4DVI8k3pAl7CGv5icqFkJ02viExIwehhIEXBcB6p0C'
+       'IQDAKmzpoRpBEZRQ9xrTvPOi+Ea8Jnd478BU7CI/LFfgowIgMfLIoVWoDGRnvXKju60Hy'
+       'xNB70oHLut9cADp64j6QMkCIDrgxN4QbmrhaAAmtiGKE1wrlgCwCIsVamiasSOKAqLhAi'
+       'EAo/ItVcFtQPod97qG71CY/O4JzOciuU6AMhprs181vfM=',
+     'signatures':
+       # Key2 signatures
+       {'example.com':
+          'cO0nQjRptkeefKDw5QpJSQDavHABxUvbR9Wvoa235OG9Whw1RFqq2ye6pKnI3ezW6/'
+          '7b4ANcpi5a7HV5uF8K7gWyYdxY8NHLeyrbwXxg5j6HAmHmkP1UZcf/dAnWqo7cW8g4'
+          'DIQOhC43KkveMYJ2HnelwdXt/7zqkbe8/3Yj4nhjAUeARx86Sb8Nzydwkrvqs5Jw/x'
+          '5LG+BODExrXXcGu/ubDlW4ivJFqfNUPQysqBXSMY2XCHPJDx3eECLGVVN/fFAWWgjM'
+          'HFObAriAt0b18cc9Nr0mAt4Qq1oDzWcAHCPHE+5dr8Uf46BUrMLJRNRKCY7rrsoIin'
+          '9Be9gs3W+Aww==',
+        'chromepolicytest.com':
+          'mr+9CCYvR0cTvPwlzkxqlpGYy55gY7cPiIkPAPoql51yHK1tkMTOSFru8Dy/nMt+0o'
+          '4z7WO60F1wnIBGkQxnTj/DsO6QpCYi7oHqtLmZ2jsLQFlMyvPGUtpJEFvRwjr/TNbh'
+          '6RqUtz1LQFuJQ848kBrx7nkte1L8SuPDExgx+Q3LtbNj4SuTdvMUBMvEERXiLuwfFL'
+          'BefGjtsqfWETQVlJTCW7xcqOLedIX8UYgEDBpDOZ23A3GzCShuBsIut5m87R5mODht'
+          'EUmKNDK1+OMc6SyDpf+r48Wph4Db1bVaKy8fcpSNJOwEgsrmH7/+owKPGcN7I5jYAF'
+          'Z2PGxHTQ9JNA==',
+        'managedchrome.com':
+          'o5MVSo4bRwIJ/aooGyXpRXsEsWPG8fNA2UTG8hgwnLYhNeJCCnLs/vW2vdp0URE8jn'
+          'qiG4N8KjbuiGw0rJtO1EygdLfpnMEtqYlFjrOie38sy92l/AwohXj6luYzMWL+FqDu'
+          'WQeXasjgyY4s9BOLQVDEnEj3pvqhrk/mXvMwUeXGpbxTNbWAd0C8BTZrGOwU/kIXxo'
+          'vAMGg8L+rQaDwBTEnMsMZcvlrIyqSg5v4BxCWuL3Yd2xvUqZEUWRp1aKetsHRnz5hw'
+          'H7WK7DzvKepDn06XjPG9lchi448U3HB3PRKtCzfO3nD9YXMKTuqRpKPF8PeK11CWh1'
+          'DBvBYwi20vbQ==',
+       },
+    },
+]
 
 class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
   """Decodes and handles device management requests from clients.
@@ -205,17 +282,23 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         len(self.GetUniqueParam('agent')) >= 64):
       return (400, 'Invalid request parameter')
     if request_type == 'register':
-      return self.ProcessRegister(rmsg.register_request)
-    if request_type == 'api_authorization':
-      return self.ProcessApiAuthorization(rmsg.service_api_access_request)
+      response = self.ProcessRegister(rmsg.register_request)
+    elif request_type == 'api_authorization':
+      response = self.ProcessApiAuthorization(rmsg.service_api_access_request)
     elif request_type == 'unregister':
-      return self.ProcessUnregister(rmsg.unregister_request)
+      response = self.ProcessUnregister(rmsg.unregister_request)
     elif request_type == 'policy' or request_type == 'ping':
-      return self.ProcessPolicy(rmsg.policy_request, request_type)
+      response = self.ProcessPolicy(rmsg, request_type)
     elif request_type == 'enterprise_check':
-      return self.ProcessAutoEnrollment(rmsg.auto_enrollment_request)
+      response = self.ProcessAutoEnrollment(rmsg.auto_enrollment_request)
+    elif request_type == 'device_state_retrieval':
+      response = self.ProcessDeviceStateRetrievalRequest(
+          rmsg.device_state_retrieval_request)
     else:
       return (400, 'Invalid request parameter')
+
+    self.DumpMessage('Response', response[1])
+    return (response[0], response[1].SerializeToString())
 
   def CreatePolicyForExternalPolicyData(self, policy_key):
     """Returns an ExternalPolicyData protobuf for policy_key.
@@ -292,9 +375,7 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     response.register_response.machine_name = token_info['machine_name']
     response.register_response.enrollment_type = token_info['enrollment_mode']
 
-    self.DumpMessage('Response', response)
-
-    return (200, response.SerializeToString())
+    return (200, response)
 
   def ProcessApiAuthorization(self, msg):
     """Handles an API authorization request.
@@ -312,9 +393,8 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     response = dm.DeviceManagementResponse()
     response.service_api_access_response.auth_code = policy.get(
         'robot_api_auth_code', 'policy_testserver.py-auth_code')
-    self.DumpMessage('Response', response)
 
-    return (200, response.SerializeToString())
+    return (200, response)
 
   def ProcessUnregister(self, msg):
     """Handles a register request.
@@ -340,9 +420,7 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     response = dm.DeviceManagementResponse()
     response.unregister_response.CopyFrom(dm.DeviceUnregisterResponse())
 
-    self.DumpMessage('Response', response)
-
-    return (200, response.SerializeToString())
+    return (200, response)
 
   def ProcessPolicy(self, msg, request_type):
     """Handles a policy request.
@@ -351,7 +429,7 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     and constructs the response.
 
     Args:
-      msg: The DevicePolicyRequest message received from the client.
+      msg: The DeviceManagementRequest message received from the client.
 
     Returns:
       A tuple of HTTP status code and response data to send to the client.
@@ -360,8 +438,13 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     if not token_info:
       return error
 
+    key_update_request = msg.device_state_key_update_request
+    if len(key_update_request.server_backed_state_key) > 0:
+      self.server.UpdateStateKeys(token_info['device_token'],
+                                  key_update_request.server_backed_state_key)
+
     response = dm.DeviceManagementResponse()
-    for request in msg.request:
+    for request in msg.policy_request.request:
       fetch_response = response.policy_response.response.add()
       if (request.policy_type in
              ('google/android/user',
@@ -380,7 +463,7 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         fetch_response.error_code = 400
         fetch_response.error_message = 'Invalid policy_type'
 
-    return (200, response.SerializeToString())
+    return (200, response)
 
   def ProcessAutoEnrollment(self, msg):
     """Handles an auto-enrollment check request.
@@ -405,7 +488,9 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     auto_enrollment_response = dm.DeviceAutoEnrollmentResponse()
 
     if msg.modulus == 1:
-      auto_enrollment_response.hash.append(SHA256_0)
+      keys = self.server.GetMatchingStateKeys(msg.modulus, msg.remainder)
+      auto_enrollment_response.hash.extend(
+          map(lambda key : hashlib.sha256(key.decode('hex')).digest(), keys))
     elif msg.modulus == 2:
       auto_enrollment_response.expected_modulus = 4
     elif msg.modulus == 4:
@@ -419,7 +504,33 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
     response = dm.DeviceManagementResponse()
     response.auto_enrollment_response.CopyFrom(auto_enrollment_response)
-    return (200, response.SerializeToString())
+    return (200, response)
+
+  def ProcessDeviceStateRetrievalRequest(self, msg):
+    """Handles a device state retrieval request.
+
+    Response data is taken from server configuration.
+
+    Returns:
+      A tuple of HTTP status code and response data to send to the client.
+    """
+    device_state_retrieval_response = dm.DeviceStateRetrievalResponse()
+
+    client = self.server.LookupByStateKey(msg.server_backed_state_key)
+    if client is not None:
+      state = self.server.GetPolicies().get('device_state', {})
+      FIELDS = [
+          'management_domain',
+          'restore_mode',
+      ]
+      for field in FIELDS:
+        if field in state:
+          setattr(device_state_retrieval_response, field, state[field])
+
+    response = dm.DeviceManagementResponse()
+    response.device_state_retrieval_response.CopyFrom(
+        device_state_retrieval_response)
+    return (200, response)
 
   def SetProtobufMessageField(self, group_message, field, field_value):
     '''Sets a field in a protobuf message.
@@ -628,13 +739,42 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
           signing_key['private_key'].hashAndSign(signed_data).tostring())
       if msg.public_key_version != current_key_index + 1:
         response.new_public_key = signing_key['public_key']
+
+        # Set the verification signature appropriate for the policy domain.
+        # TODO(atwilson): Use the enrollment domain for public accounts when
+        # we add key validation for ChromeOS (http://crbug.com/328038).
+        if 'signatures' in signing_key:
+          verification_sig = self.GetSignatureForDomain(
+              signing_key['signatures'], policy_data.username)
+
+          if verification_sig:
+            assert len(verification_sig) == 256, \
+                'bad signature size: %d' % len(verification_sig)
+            response.new_public_key_verification_signature = verification_sig
+
         if req_key:
           response.new_public_key_signature = (
               req_key.hashAndSign(response.new_public_key).tostring())
 
-    self.DumpMessage('Response', response)
-
     return (200, response.SerializeToString())
+
+  def GetSignatureForDomain(self, signatures, username):
+    parsed_username = username.split("@", 1)
+    if len(parsed_username) != 2:
+      logging.error('Could not extract domain from username: %s' % username)
+      return None
+    domain = parsed_username[1]
+
+    # Lookup the domain's signature in the passed dictionary. If none is found,
+    # fallback to a wildcard signature.
+    if domain in signatures:
+      return signatures[domain]
+    if '*' in signatures:
+      return signatures['*']
+
+    # No key matching this domain.
+    logging.error('No verification signature matching domain: %s' % domain)
+    return None
 
   def CheckToken(self):
     """Helper for checking whether the client supplied a valid DM token.
@@ -705,7 +845,6 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
         except IOError:
           print 'Failed to load private key from %s' % key_path
           continue
-
         try:
           key = tlslite.api.parsePEMKey(key_str, private=True)
         except SyntaxError:
@@ -713,13 +852,31 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
               tlslite.utils.cryptomath.stringToBytes(key_str))
 
         assert key is not None
-        self.keys.append({ 'private_key' : key })
+        key_info = { 'private_key' : key }
+
+        # Now try to read in a signature, if one exists.
+        try:
+          key_sig = open(key_path + '.sig').read()
+          # Create a dictionary with the wildcard domain + signature
+          key_info['signatures'] = {'*': key_sig}
+        except IOError:
+          print 'Failed to read validation signature from %s.sig' % key_path
+        self.keys.append(key_info)
     else:
-      # Generate 2 private keys if none were passed from the command line.
-      for i in range(2):
-        key = tlslite.api.generateRSAKey(512)
+      # Use the canned private keys if none were passed from the command line.
+      for signing_key in SIGNING_KEYS:
+        decoded_key = base64.b64decode(signing_key['key']);
+        key = tlslite.utils.Python_RSAKey.Python_RSAKey._parsePKCS8(
+            tlslite.utils.cryptomath.stringToBytes(decoded_key))
         assert key is not None
-        self.keys.append({ 'private_key' : key })
+        # Grab the signature dictionary for this key and decode all of the
+        # signatures.
+        signature_dict = signing_key['signatures']
+        decoded_signatures = {}
+        for domain in signature_dict:
+          decoded_signatures[domain] = base64.b64decode(signature_dict[domain])
+        self.keys.append({'private_key': key,
+                          'signatures': decoded_signatures})
 
     # Derive the public keys from the private keys.
     for entry in self.keys:
@@ -816,6 +973,18 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
       self._registered_tokens[dmtoken]['machine_id'] = machine_id
       self.WriteClientState()
 
+  def UpdateStateKeys(self, dmtoken, state_keys):
+    """Updates the state keys for a given client.
+
+    Args:
+      dmtoken: The device management token provided by the client.
+      state_keys: The state keys to set.
+    """
+    if dmtoken in self._registered_tokens:
+      self._registered_tokens[dmtoken]['state_keys'] = map(
+          lambda key : key.encode('hex'), state_keys)
+      self.WriteClientState()
+
   def LookupToken(self, dmtoken):
     """Looks up a device or a user by DM token.
 
@@ -827,6 +996,32 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
       dmtoken, or None if the token is not found.
     """
     return self._registered_tokens.get(dmtoken, None)
+
+  def LookupByStateKey(self, state_key):
+    """Looks up a device or a user by a state key.
+
+    Args:
+      state_key: The state key provided by the client.
+
+    Returns:
+      A dictionary with information about a device or user or None if there is
+      no matching record.
+    """
+    for client in self._registered_tokens.values():
+      if state_key.encode('hex') in client.get('state_keys', []):
+        return client
+
+    return None
+
+  def GetMatchingStateKeys(self, modulus, remainder):
+    """Returns all clients registered with the server.
+
+    Returns:
+      The list of registered clients.
+    """
+    state_keys = sum([ c.get('state_keys', [])
+                       for c in self._registered_tokens.values() ], [])
+    return filter(lambda key : int(key, 16) & modulus == remainder, state_keys)
 
   def UnregisterDevice(self, dmtoken):
     """Unregisters a device identified by the given DM token.
@@ -957,12 +1152,18 @@ class PolicyServerRunner(testserver_base.TestServerRunner):
                                   help='Specify a path to a PEM-encoded '
                                   'private key to use for policy signing. May '
                                   'be specified multiple times in order to '
-                                  'load multipe keys into the server. If the '
+                                  'load multiple keys into the server. If the '
                                   'server has multiple keys, it will rotate '
                                   'through them in at each request in a '
                                   'round-robin fashion. The server will '
-                                  'generate a random key if none is specified '
-                                  'on the command line.')
+                                  'use a canned key if none is specified '
+                                  'on the command line. The test server will '
+                                  'also look for a verification signature file '
+                                  'in the same location: <filename>.sig and if '
+                                  'present will add the signature to the '
+                                  'policy blob as appropriate via the '
+                                  'new_public_key_verification_signature '
+                                  'field.')
     self.option_parser.add_option('--log-level', dest='log_level',
                                   default='WARN',
                                   help='Log level threshold to use.')

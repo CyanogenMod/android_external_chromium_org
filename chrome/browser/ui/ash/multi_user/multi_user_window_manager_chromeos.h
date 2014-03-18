@@ -17,12 +17,15 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/aura/window_observer.h"
-#include "ui/views/corewm/transient_window_observer.h"
+#include "ui/wm/core/transient_window_observer.h"
 
 class Browser;
 class MultiUserNotificationBlockerChromeOS;
 class MultiUserNotificationBlockerChromeOSTest;
-class Profile;
+
+namespace content {
+class BrowserContext;
+}
 
 namespace aura {
 class Window;
@@ -56,7 +59,7 @@ class MultiUserWindowManagerChromeOS
       public ash::SessionStateObserver,
       public aura::WindowObserver,
       public content::NotificationObserver,
-      public views::corewm::TransientWindowObserver {
+      public wm::TransientWindowObserver {
  public:
   // Create the manager and use |active_user_id| as the active user.
   explicit MultiUserWindowManagerChromeOS(const std::string& active_user_id);
@@ -75,7 +78,7 @@ class MultiUserWindowManagerChromeOS
                                        const std::string& user_id) OVERRIDE;
   virtual const std::string& GetUserPresentingWindow(
       aura::Window* window) OVERRIDE;
-  virtual void AddUser(Profile* profile) OVERRIDE;
+  virtual void AddUser(content::BrowserContext* context) OVERRIDE;
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
 

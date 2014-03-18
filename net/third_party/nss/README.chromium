@@ -75,9 +75,6 @@ Patches:
     patches/cachelocks.patch
     https://bugzilla.mozilla.org/show_bug.cgi?id=764646
 
-  * Always add an extension to a ClientHello to make it 512 bytes.
-    patches/paddingextensionall.patch
-
   * Support the Certificate Transparency (RFC 6962) TLS extension
     signed_certificate_timestamp (client only).
     patches/signedcertificatetimestamps.patch
@@ -93,11 +90,6 @@ Patches:
     This is a temporary workaround until Chromium migrates to NSS's
     asynchronous certificate verification.
     patches/sessioncache.patch
-
-  * Remove static storage qualifier from variables in sslnonce.c. Due to
-    a clang codegen bug on Mac, this caused an infinite loop.
-    https://code.google.com/p/chromium/issues/detail?id=326011
-    patches/sslnoncestatics.patch
 
   * Use NSSRWLock instead of PRRWLock in sslSessionID. This avoids the bugs
     in the lock rank checking code in PRRWLock.

@@ -19,7 +19,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/bookmarks/bookmark_service.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/base/models/tree_node_model.h"
@@ -34,6 +34,7 @@ class BookmarkModelObserver;
 class BookmarkStorage;
 struct BookmarkTitleMatch;
 class Profile;
+class ScopedGroupBookmarkActions;
 
 namespace base {
 class SequencedTaskRunner;
@@ -240,7 +241,7 @@ class BookmarkPermanentNode : public BookmarkNode {
 // BookmarkModelFactory.
 class BookmarkModel : public content::NotificationObserver,
                       public BookmarkService,
-                      public BrowserContextKeyedService {
+                      public KeyedService {
  public:
   explicit BookmarkModel(Profile* profile);
   virtual ~BookmarkModel();
@@ -439,6 +440,7 @@ class BookmarkModel : public content::NotificationObserver,
   friend class BookmarkCodecTest;
   friend class BookmarkModelTest;
   friend class BookmarkStorage;
+  friend class ScopedGroupBookmarkActions;
 
   // Used to order BookmarkNodes by URL.
   class NodeURLComparator {
@@ -513,6 +515,11 @@ class BookmarkModel : public content::NotificationObserver,
 
   // If we're waiting on a favicon for node, the load request is canceled.
   void CancelPendingFaviconLoadRequests(BookmarkNode* node);
+
+  // Notifies the observers that a set of changes initiated by a single user
+  // action is about to happen and has completed.
+  void BeginGroupedChanges();
+  void EndGroupedChanges();
 
   // content::NotificationObserver:
   virtual void Observe(int type,

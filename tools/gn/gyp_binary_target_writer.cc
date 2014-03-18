@@ -208,6 +208,10 @@ void GypBinaryTargetWriter::WriteName(int indent) {
   // targets here.
 
   Indent(indent) << "'product_name': '" << product_name << "',\n";
+
+  std::string product_extension = target_->output_extension();
+  if (!product_extension.empty())
+    Indent(indent) << "'product_extension': '" << product_extension << "',\n";
 }
 
 void GypBinaryTargetWriter::WriteType(int indent) {
@@ -473,7 +477,7 @@ void GypBinaryTargetWriter::WriteMacFlags(const Target* target,
     // When writing an iOS "target" (not host) target, we set VALID_ARCHS
     // instead of ARCHS and always use this hardcoded value. This matches the
     // GYP build.
-    Indent(indent + kExtraIndent) << "'VALID_ARCHS': 'armv7 i386',\n";
+    Indent(indent + kExtraIndent) << "'VALID_ARCHS': ['armv7', 'i386'],\n";
 
     // Tell XCode to target both iPhone and iPad. GN has no such concept.
     Indent(indent + kExtraIndent) << "'TARGETED_DEVICE_FAMILY': '1,2',\n";

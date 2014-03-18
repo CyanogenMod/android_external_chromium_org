@@ -16,11 +16,11 @@
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../../skia/skia.gyp:skia',
         '../base/strings/ui_strings.gyp:ui_strings',
+        '../base/ui_base.gyp:ui_base',
         '../compositor/compositor.gyp:compositor',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
-        '../ui.gyp:ui',
       ],
       'defines': [
         'APP_LIST_IMPLEMENTATION',
@@ -105,6 +105,8 @@
         'views/apps_grid_view_delegate.h',
         'views/cached_label.cc',
         'views/cached_label.h',
+        'views/contents_switcher_view.cc',
+        'views/contents_switcher_view.h',
         'views/contents_view.cc',
         'views/contents_view.h',
         'views/folder_background_view.cc',
@@ -128,7 +130,6 @@
         'views/search_result_list_view_delegate.h',
         'views/search_result_view.cc',
         'views/search_result_view.h',
-        'views/search_result_view_delegate.h',
         'views/signin_view.cc',
         'views/signin_view.h',
         'views/speech_view.cc',
@@ -148,7 +149,7 @@
             '../events/events.gyp:events',
             '../views/controls/webview/webview.gyp:webview',
             '../views/views.gyp:views',
-            '../wm/wm.gyp:wm_public',
+            '../wm/wm.gyp:wm_core',
           ],
         }, {  # toolkit_views==0
           'sources/': [
@@ -197,10 +198,10 @@
         '../../base/base.gyp:test_support_base',
         '../../skia/skia.gyp:skia',
         '../../testing/gtest.gyp:gtest',
+        '../base/ui_base.gyp:ui_base',
         '../compositor/compositor.gyp:compositor',
         '../resources/ui_resources.gyp:ui_resources',
         '../resources/ui_resources.gyp:ui_test_pak',
-        '../ui.gyp:ui',
         'app_list',
         'app_list_test_support',
       ],
@@ -259,7 +260,8 @@
           ],
         }],
         # See http://crbug.com/162998#c4 for why this is needed.
-        ['OS=="linux" and linux_use_tcmalloc==1', {
+        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
           'dependencies': [
             '../../base/allocator/allocator.gyp:allocator',
             # The following two dependencies provide the missing

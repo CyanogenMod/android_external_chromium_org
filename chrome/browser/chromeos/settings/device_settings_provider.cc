@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
@@ -66,6 +65,7 @@ const char* kKnownSettings[] = {
   kReportDeviceVersionInfo,
   kScreenSaverExtensionId,
   kScreenSaverTimeout,
+  kServiceAccountIdentity,
   kSignedDataRoamingEnabled,
   kStartUpFlags,
   kStartUpUrls,
@@ -401,6 +401,7 @@ void DeviceSettingsProvider::SetInPolicy() {
     //   kReportDeviceUsers
     //   kScreenSaverExtensionId
     //   kScreenSaverTimeout
+    //   kServiceAccountIdentity
     //   kStartUpUrls
     //   kSystemTimezonePolicy
     //   kVariationsRestrictParameter
@@ -486,38 +487,35 @@ void DeviceSettingsProvider::DecodeLoginPolicies(
   new_values_cache->SetValue(kAccountsPrefUsers, list);
 
   scoped_ptr<base::ListValue> account_list(new base::ListValue());
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (!command_line->HasSwitch(switches::kDisableLocalAccounts)) {
-    const em::DeviceLocalAccountsProto device_local_accounts_proto =
-        policy.device_local_accounts();
-    const RepeatedPtrField<em::DeviceLocalAccountInfoProto>& accounts =
-        device_local_accounts_proto.account();
-    RepeatedPtrField<em::DeviceLocalAccountInfoProto>::const_iterator entry;
-    for (entry = accounts.begin(); entry != accounts.end(); ++entry) {
-      scoped_ptr<base::DictionaryValue> entry_dict(new base::DictionaryValue());
-      if (entry->has_type()) {
-        if (entry->has_account_id()) {
-          entry_dict->SetStringWithoutPathExpansion(
-              kAccountsPrefDeviceLocalAccountsKeyId, entry->account_id());
-        }
-        entry_dict->SetIntegerWithoutPathExpansion(
-            kAccountsPrefDeviceLocalAccountsKeyType, entry->type());
-        if (entry->kiosk_app().has_app_id()) {
-          entry_dict->SetStringWithoutPathExpansion(
-              kAccountsPrefDeviceLocalAccountsKeyKioskAppId,
-              entry->kiosk_app().app_id());
-        }
-      } else if (entry->has_deprecated_public_session_id()) {
-        // Deprecated public session specification.
+  const em::DeviceLocalAccountsProto device_local_accounts_proto =
+      policy.device_local_accounts();
+  const RepeatedPtrField<em::DeviceLocalAccountInfoProto>& accounts =
+      device_local_accounts_proto.account();
+  RepeatedPtrField<em::DeviceLocalAccountInfoProto>::const_iterator entry;
+  for (entry = accounts.begin(); entry != accounts.end(); ++entry) {
+    scoped_ptr<base::DictionaryValue> entry_dict(new base::DictionaryValue());
+    if (entry->has_type()) {
+      if (entry->has_account_id()) {
         entry_dict->SetStringWithoutPathExpansion(
-            kAccountsPrefDeviceLocalAccountsKeyId,
-            entry->deprecated_public_session_id());
-        entry_dict->SetIntegerWithoutPathExpansion(
-            kAccountsPrefDeviceLocalAccountsKeyType,
-            policy::DeviceLocalAccount::TYPE_PUBLIC_SESSION);
+            kAccountsPrefDeviceLocalAccountsKeyId, entry->account_id());
       }
-      account_list->Append(entry_dict.release());
+      entry_dict->SetIntegerWithoutPathExpansion(
+          kAccountsPrefDeviceLocalAccountsKeyType, entry->type());
+      if (entry->kiosk_app().has_app_id()) {
+        entry_dict->SetStringWithoutPathExpansion(
+            kAccountsPrefDeviceLocalAccountsKeyKioskAppId,
+            entry->kiosk_app().app_id());
+      }
+    } else if (entry->has_deprecated_public_session_id()) {
+      // Deprecated public session specification.
+      entry_dict->SetStringWithoutPathExpansion(
+          kAccountsPrefDeviceLocalAccountsKeyId,
+          entry->deprecated_public_session_id());
+      entry_dict->SetIntegerWithoutPathExpansion(
+          kAccountsPrefDeviceLocalAccountsKeyType,
+          policy::DeviceLocalAccount::TYPE_PUBLIC_SESSION);
     }
+    account_list->Append(entry_dict.release());
   }
   new_values_cache->SetValue(kAccountsPrefDeviceLocalAccounts,
                              account_list.release());
@@ -761,6 +759,11 @@ void DeviceSettingsProvider::UpdateValuesCache(
 
   if (policy_data.has_username() && !policy_data.has_request_token())
     new_values_cache.SetString(kDeviceOwner, policy_data.username());
+
+  if (policy_data.has_service_account_identity()) {
+    new_values_cache.SetString(kServiceAccountIdentity,
+                               policy_data.service_account_identity());
+  }
 
   DecodeLoginPolicies(settings, &new_values_cache);
   DecodeKioskPolicies(settings, &new_values_cache);

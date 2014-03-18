@@ -87,6 +87,8 @@ std::string EventTypeName(ui::EventType type) {
     CASE_TYPE(ET_GESTURE_LONG_PRESS);
     CASE_TYPE(ET_GESTURE_LONG_TAP);
     CASE_TYPE(ET_GESTURE_MULTIFINGER_SWIPE);
+    CASE_TYPE(ET_GESTURE_TAP_UNCONFIRMED);
+    CASE_TYPE(ET_GESTURE_DOUBLE_TAP);
     CASE_TYPE(ET_SCROLL);
     CASE_TYPE(ET_SCROLL_FLING_START);
     CASE_TYPE(ET_SCROLL_FLING_CANCEL);
@@ -315,10 +317,10 @@ bool MouseEvent::IsRepeatedClickEvent(
   if (time_difference.InMilliseconds() > kDoubleClickTimeMS)
     return false;
 
-  if (abs(event2.x() - event1.x()) > kDoubleClickWidth / 2)
+  if (std::abs(event2.x() - event1.x()) > kDoubleClickWidth / 2)
     return false;
 
-  if (abs(event2.y() - event1.y()) > kDoubleClickHeight / 2)
+  if (std::abs(event2.y() - event1.y()) > kDoubleClickHeight / 2)
     return false;
 
   return true;
@@ -582,6 +584,7 @@ uint16 KeyEvent::GetCharacter() const {
 }
 
 bool KeyEvent::IsUnicodeKeyCode() const {
+#if defined(OS_WIN)
   if (!IsAltDown())
     return false;
   const int key = key_code();
@@ -595,6 +598,9 @@ bool KeyEvent::IsUnicodeKeyCode() const {
            key == VKEY_NEXT   || key == VKEY_LEFT || key == VKEY_CLEAR ||
            key == VKEY_RIGHT  || key == VKEY_HOME || key == VKEY_UP ||
            key == VKEY_PRIOR));
+#else
+  return false;
+#endif
 }
 
 void KeyEvent::NormalizeFlags() {

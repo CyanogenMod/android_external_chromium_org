@@ -10,9 +10,24 @@
 
 #include "base/files/file_path.h"
 
-namespace file_util {
+// Make sure some of the newer macros from magic.h are defined.
+// TODO(mostynb@opera.com): remove this after 2014.
+#ifndef BTRFS_SUPER_MAGIC
+#define BTRFS_SUPER_MAGIC 0x9123683E
+#endif
+#ifndef HUGETLBFS_MAGIC
+#define HUGETLBFS_MAGIC 0x958458f6
+#endif
+#ifndef RAMFS_MAGIC
+#define RAMFS_MAGIC 0x858458f6
+#endif
+#ifndef TMPFS_MAGIC
+#define TMPFS_MAGIC 0x01021994
+#endif
 
-bool GetFileSystemType(const base::FilePath& path, FileSystemType* type) {
+namespace base {
+
+bool GetFileSystemType(const FilePath& path, FileSystemType* type) {
   struct statfs statfs_buf;
   if (statfs(path.value().c_str(), &statfs_buf) < 0) {
     if (errno == ENOENT)
@@ -46,7 +61,8 @@ bool GetFileSystemType(const base::FilePath& path, FileSystemType* type) {
     case CODA_SUPER_MAGIC:
       *type = FILE_SYSTEM_CODA;
       break;
-    case HUGETLBFS_MAGIC:  // AKA ramfs
+    case HUGETLBFS_MAGIC:
+    case RAMFS_MAGIC:
     case TMPFS_MAGIC:
       *type = FILE_SYSTEM_MEMORY;
       break;
@@ -59,4 +75,4 @@ bool GetFileSystemType(const base::FilePath& path, FileSystemType* type) {
   return true;
 }
 
-}  // namespace file_util
+}  // namespace base

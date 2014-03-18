@@ -11,11 +11,11 @@
 #include "gin/modules/module_registry.h"
 #include "gin/modules/timer.h"
 #include "gin/try_catch.h"
-#include "mojo/apps/js/bindings/core.h"
 #include "mojo/apps/js/bindings/gl/module.h"
 #include "mojo/apps/js/bindings/monotonic_clock.h"
-#include "mojo/apps/js/bindings/support.h"
 #include "mojo/apps/js/bindings/threading.h"
+#include "mojo/bindings/js/core.h"
+#include "mojo/bindings/js/support.h"
 
 namespace mojo {
 namespace apps {
@@ -35,7 +35,7 @@ std::vector<base::FilePath> GetModuleSearchPaths() {
 void StartCallback(base::WeakPtr<gin::Runner> runner,
                    MojoHandle pipe,
                    v8::Handle<v8::Value> module) {
-  v8::Isolate* isolate = runner->isolate();
+  v8::Isolate* isolate = runner->GetContextHolder()->isolate();
   v8::Handle<v8::Function> start;
   CHECK(gin::ConvertFromV8(isolate, module, &start));
 
@@ -63,13 +63,14 @@ void MojoRunnerDelegate::Start(gin::Runner* runner,
                                MojoHandle pipe,
                                const std::string& module) {
   gin::Runner::Scope scope(runner);
-  gin::ModuleRegistry* registry = gin::ModuleRegistry::From(runner->context());
-  registry->LoadModule(runner->isolate(), module,
+  gin::ModuleRegistry* registry =
+      gin::ModuleRegistry::From(runner->GetContextHolder()->context());
+  registry->LoadModule(runner->GetContextHolder()->isolate(), module,
                        base::Bind(StartCallback, runner->GetWeakPtr(), pipe));
   AttemptToLoadMoreModules(runner);
 }
 
-void MojoRunnerDelegate::UnhandledException(gin::Runner* runner,
+void MojoRunnerDelegate::UnhandledException(gin::ShellRunner* runner,
                                             gin::TryCatch& try_catch) {
   gin::ModuleRunnerDelegate::UnhandledException(runner, try_catch);
   LOG(ERROR) << try_catch.GetStackTrace();

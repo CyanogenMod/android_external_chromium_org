@@ -28,7 +28,6 @@ const char kRegistrationRequestContentType[] =
 
 // Request constants.
 const char kAppIdKey[] = "app";
-const char kCertKey[] = "cert";
 const char kDeviceIdKey[] = "device";
 const char kLoginHeader[] = "AidLogin";
 const char kSenderKey[] = "sender";
@@ -54,13 +53,15 @@ void BuildFormEncoding(const std::string& key,
 
 // Gets correct status from the error message.
 RegistrationRequest::Status GetStatusFromError(const std::string& error) {
-  if (error == kDeviceRegistrationError)
+  // TODO(fgorski): Improve error parsing in case there is nore then just an
+  // Error=ERROR_STRING in response.
+  if (error.find(kDeviceRegistrationError) != std::string::npos)
     return RegistrationRequest::DEVICE_REGISTRATION_ERROR;
-  if (error == kAuthenticationFailed)
+  if (error.find(kAuthenticationFailed) != std::string::npos)
     return RegistrationRequest::AUTHENTICATION_FAILED;
-  if (error == kInvalidSender)
+  if (error.find(kInvalidSender) != std::string::npos)
     return RegistrationRequest::INVALID_SENDER;
-  if (error == kInvalidParameters)
+  if (error.find(kInvalidParameters) != std::string::npos)
     return RegistrationRequest::INVALID_PARAMETERS;
   return RegistrationRequest::UNKNOWN_ERROR;
 }
@@ -70,7 +71,10 @@ RegistrationRequest::Status GetStatusFromError(const std::string& error) {
 bool ShouldRetryWithStatus(RegistrationRequest::Status status) {
   return status == RegistrationRequest::UNKNOWN_ERROR ||
          status == RegistrationRequest::AUTHENTICATION_FAILED ||
-         status == RegistrationRequest::DEVICE_REGISTRATION_ERROR;
+         status == RegistrationRequest::DEVICE_REGISTRATION_ERROR ||
+         status == RegistrationRequest::HTTP_NOT_OK ||
+         status == RegistrationRequest::URL_FETCHING_FAILED ||
+         status == RegistrationRequest::RESPONSE_PARSING_FAILED;
 }
 
 void RecordRegistrationStatusToUMA(RegistrationRequest::Status status) {
@@ -84,12 +88,10 @@ RegistrationRequest::RequestInfo::RequestInfo(
     uint64 android_id,
     uint64 security_token,
     const std::string& app_id,
-    const std::string& cert,
     const std::vector<std::string>& sender_ids)
     : android_id(android_id),
       security_token(security_token),
       app_id(app_id),
-      cert(cert),
       sender_ids(sender_ids) {
 }
 
@@ -99,12 +101,15 @@ RegistrationRequest::RegistrationRequest(
     const RequestInfo& request_info,
     const net::BackoffEntry::Policy& backoff_policy,
     const RegistrationCallback& callback,
+    int max_retry_count,
     scoped_refptr<net::URLRequestContextGetter> request_context_getter)
     : callback_(callback),
       request_info_(request_info),
       backoff_entry_(&backoff_policy),
       request_context_getter_(request_context_getter),
+      retries_left_(max_retry_count),
       weak_ptr_factory_(this) {
+  DCHECK_GE(max_retry_count, 0);
 }
 
 RegistrationRequest::~RegistrationRequest() {}
@@ -113,7 +118,6 @@ void RegistrationRequest::Start() {
   DCHECK(!callback_.is_null());
   DCHECK(request_info_.android_id != 0UL);
   DCHECK(request_info_.security_token != 0UL);
-  DCHECK(!request_info_.cert.empty());
   DCHECK(0 < request_info_.sender_ids.size() &&
          request_info_.sender_ids.size() <= kMaxSenders);
 
@@ -131,7 +135,6 @@ void RegistrationRequest::Start() {
 
   std::string body;
   BuildFormEncoding(kAppIdKey, request_info_.app_id, &body);
-  BuildFormEncoding(kCertKey, request_info_.cert, &body);
   BuildFormEncoding(kDeviceIdKey, android_id, &body);
 
   std::string senders;
@@ -154,6 +157,8 @@ void RegistrationRequest::Start() {
 
 void RegistrationRequest::RetryWithBackoff(bool update_backoff) {
   if (update_backoff) {
+    DCHECK_GT(retries_left_, 0);
+    --retries_left_;
     url_fetcher_.reset();
     backoff_entry_.InformOfRequest(false);
   }
@@ -175,43 +180,63 @@ void RegistrationRequest::RetryWithBackoff(bool update_backoff) {
   Start();
 }
 
-void RegistrationRequest::OnURLFetchComplete(const net::URLFetcher* source) {
+RegistrationRequest::Status RegistrationRequest::ParseResponse(
+    const net::URLFetcher* source, std::string* token) {
+  if (!source->GetStatus().is_success()) {
+    LOG(ERROR) << "URL fetching failed.";
+    return URL_FETCHING_FAILED;
+  }
+
   std::string response;
-  if (!source->GetStatus().is_success() ||
-      source->GetResponseCode() != net::HTTP_OK ||
-      !source->GetResponseAsString(&response)) {
-    LOG(ERROR) << "Failed to get registration response: "
-               << source->GetStatus().is_success() << " "
-               << source->GetResponseCode();
-    RetryWithBackoff(true);
-    return;
+  if (!source->GetResponseAsString(&response)) {
+    LOG(ERROR) << "Failed to parse registration response as a string.";
+    return RESPONSE_PARSING_FAILED;
   }
 
-  DVLOG(1) << "Parsing registration response: " << response;
-  size_t token_pos = response.find(kTokenPrefix);
-  if (token_pos != std::string::npos) {
-    std::string token =
-        response.substr(token_pos + arraysize(kTokenPrefix) - 1);
-    RecordRegistrationStatusToUMA(SUCCESS);
-    callback_.Run(SUCCESS, token);
-    return;
+  if (source->GetResponseCode() == net::HTTP_OK) {
+    size_t token_pos = response.find(kTokenPrefix);
+    if (token_pos != std::string::npos) {
+      *token = response.substr(token_pos + arraysize(kTokenPrefix) - 1);
+      return SUCCESS;
+    }
   }
 
+  // If we are able to parse a meaningful known error, let's do so. Some errors
+  // will have HTTP_BAD_REQUEST, some will have HTTP_OK response code.
   size_t error_pos = response.find(kErrorPrefix);
-  Status status = UNKNOWN_ERROR;
   if (error_pos != std::string::npos) {
-    std::string error =
-        response.substr(error_pos + arraysize(kErrorPrefix) - 1);
-    status = GetStatusFromError(error);
+    std::string error = response.substr(
+        error_pos + arraysize(kErrorPrefix) - 1);
+    return GetStatusFromError(error);
   }
+
+  // If we cannot tell what the error is, but at least we know response code was
+  // not OK.
+  if (source->GetResponseCode() != net::HTTP_OK) {
+    DLOG(ERROR) << "URL fetching HTTP response code is not OK. It is "
+                << source->GetResponseCode();
+    return HTTP_NOT_OK;
+  }
+
+  return UNKNOWN_ERROR;
+}
+
+void RegistrationRequest::OnURLFetchComplete(const net::URLFetcher* source) {
+  std::string token;
+  Status status = ParseResponse(source, &token);
   RecordRegistrationStatusToUMA(status);
 
   if (ShouldRetryWithStatus(status)) {
-    RetryWithBackoff(true);
-    return;
+    if (retries_left_ > 0) {
+      RetryWithBackoff(true);
+      return;
+    }
+
+    status = REACHED_MAX_RETRIES;
+    RecordRegistrationStatusToUMA(status);
   }
 
-  callback_.Run(status, std::string());
+  callback_.Run(status, token);
 }
 
 }  // namespace gcm

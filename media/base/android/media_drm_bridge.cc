@@ -15,6 +15,8 @@
 #include "jni/MediaDrmBridge_jni.h"
 #include "media/base/android/media_player_manager.h"
 
+#include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
+
 using base::android::AttachCurrentThread;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::ConvertJavaStringToUTF8;
@@ -50,13 +52,26 @@ static uint64 ReadUint64(const uint8_t* data) {
 //   uint32 DataSize
 //   uint8[DataSize] Data
 // }
-static const int kBoxHeaderSize = 8;  // Box's header contains Size and Type.
-static const int kBoxLargeSizeSize = 8;
-static const int kPsshVersionFlagSize = 4;
-static const int kPsshSystemIdSize = 16;
-static const int kPsshDataSizeSize = 4;
-static const uint32 kTencType = 0x74656e63;
-static const uint32 kPsshType = 0x70737368;
+const int kBoxHeaderSize = 8;  // Box's header contains Size and Type.
+const int kBoxLargeSizeSize = 8;
+const int kPsshVersionFlagSize = 4;
+const int kPsshSystemIdSize = 16;
+const int kPsshDataSizeSize = 4;
+const uint32 kTencType = 0x74656e63;
+const uint32 kPsshType = 0x70737368;
+const uint8 kWidevineUuid[16] = {
+    0xED, 0xEF, 0x8B, 0xA9, 0x79, 0xD6, 0x4A, 0xCE,
+    0xA3, 0xC8, 0x27, 0xDC, 0xD5, 0x1D, 0x21, 0xED };
+
+static std::vector<uint8> GetUUID(const std::string& key_system) {
+  // For security reasons, we only do exact string comparisons here - we don't
+  // try to parse the |key_system| in any way.
+  if (key_system == kWidevineKeySystem) {
+    return std::vector<uint8>(kWidevineUuid,
+                              kWidevineUuid + arraysize(kWidevineUuid));
+  }
+  return std::vector<uint8>();
+}
 
 // Tries to find a PSSH box whose "SystemId" is |uuid| in |data|, parses the
 // "Data" of the box and put it in |pssh_data|. Returns true if such a box is
@@ -172,25 +187,37 @@ bool MediaDrmBridge::IsAvailable() {
 
 // static
 bool MediaDrmBridge::IsSecureDecoderRequired(SecurityLevel security_level) {
+  DCHECK(IsAvailable());
   return SECURITY_LEVEL_1 == security_level;
 }
 
-bool MediaDrmBridge::IsSecurityLevelSupported(
-    const std::vector<uint8>& scheme_uuid,
-    SecurityLevel security_level) {
-  // Pass 0 as |media_keys_id| and NULL as |manager| as they are not used in
+// static
+bool MediaDrmBridge::IsSecurityLevelSupported(const std::string& key_system,
+                                              SecurityLevel security_level) {
+  if (!IsAvailable())
+    return false;
+
+  // Pass 0 as |cdm_id| and NULL as |manager| as they are not used in
   // creation time of MediaDrmBridge.
   scoped_ptr<MediaDrmBridge> media_drm_bridge =
-      MediaDrmBridge::Create(0, scheme_uuid, GURL(), NULL);
+      MediaDrmBridge::Create(0, key_system, GURL(), NULL);
   if (!media_drm_bridge)
     return false;
 
   return media_drm_bridge->SetSecurityLevel(security_level);
 }
 
-bool MediaDrmBridge::IsCryptoSchemeSupported(
-    const std::vector<uint8>& scheme_uuid,
+// static
+bool MediaDrmBridge::IsKeySystemSupportedWithType(
+    const std::string& key_system,
     const std::string& container_mime_type) {
+  if (!IsAvailable())
+    return false;
+
+  std::vector<uint8> scheme_uuid = GetUUID(key_system);
+  if (scheme_uuid.empty())
+    return false;
+
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jbyteArray> j_scheme_uuid =
       base::android::ToJavaByteArray(env, &scheme_uuid[0], scheme_uuid.size());
@@ -204,11 +231,11 @@ bool MediaDrmBridge::RegisterMediaDrmBridge(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }
 
-MediaDrmBridge::MediaDrmBridge(int media_keys_id,
+MediaDrmBridge::MediaDrmBridge(int cdm_id,
                                const std::vector<uint8>& scheme_uuid,
                                const GURL& frame_url,
                                MediaPlayerManager* manager)
-    : media_keys_id_(media_keys_id),
+    : cdm_id_(cdm_id),
       scheme_uuid_(scheme_uuid),
       frame_url_(frame_url),
       manager_(manager) {
@@ -228,20 +255,22 @@ MediaDrmBridge::~MediaDrmBridge() {
 }
 
 // static
-scoped_ptr<MediaDrmBridge> MediaDrmBridge::Create(
-    int media_keys_id,
-    const std::vector<uint8>& scheme_uuid,
-    const GURL& frame_url,
-    MediaPlayerManager* manager) {
+scoped_ptr<MediaDrmBridge> MediaDrmBridge::Create(int cdm_id,
+                                                  const std::string& key_system,
+                                                  const GURL& frame_url,
+                                                  MediaPlayerManager* manager) {
   scoped_ptr<MediaDrmBridge> media_drm_bridge;
+  if (!IsAvailable())
+    return media_drm_bridge.Pass();
 
-  if (IsAvailable() && !scheme_uuid.empty()) {
-    // TODO(qinmin): check whether the uuid is valid.
-    media_drm_bridge.reset(new MediaDrmBridge(
-        media_keys_id, scheme_uuid, frame_url, manager));
-    if (media_drm_bridge->j_media_drm_.is_null())
-      media_drm_bridge.reset();
-  }
+  std::vector<uint8> scheme_uuid = GetUUID(key_system);
+  if (scheme_uuid.empty())
+    return media_drm_bridge.Pass();
+
+  media_drm_bridge.reset(
+      new MediaDrmBridge(cdm_id, scheme_uuid, frame_url, manager));
+  if (media_drm_bridge->j_media_drm_.is_null())
+    media_drm_bridge.reset();
 
   return media_drm_bridge.Pass();
 }
@@ -328,7 +357,7 @@ void MediaDrmBridge::OnSessionCreated(JNIEnv* env,
                                       jstring j_web_session_id) {
   uint32 session_id = j_session_id;
   std::string web_session_id = ConvertJavaStringToUTF8(env, j_web_session_id);
-  manager_->OnSessionCreated(media_keys_id_, session_id, web_session_id);
+  manager_->OnSessionCreated(cdm_id_, session_id, web_session_id);
 }
 
 void MediaDrmBridge::OnSessionMessage(JNIEnv* env,
@@ -347,30 +376,28 @@ void MediaDrmBridge::OnSessionMessage(JNIEnv* env,
     destination_gurl = GURL::EmptyGURL();  // Replace invalid destination_url.
   }
 
-  manager_->OnSessionMessage(
-      media_keys_id_, session_id, message, destination_gurl);
+  manager_->OnSessionMessage(cdm_id_, session_id, message, destination_gurl);
 }
 
 void MediaDrmBridge::OnSessionReady(JNIEnv* env,
                                     jobject j_media_drm,
                                     jint j_session_id) {
   uint32 session_id = j_session_id;
-  manager_->OnSessionReady(media_keys_id_, session_id);
+  manager_->OnSessionReady(cdm_id_, session_id);
 }
 
 void MediaDrmBridge::OnSessionClosed(JNIEnv* env,
                                      jobject j_media_drm,
                                      jint j_session_id) {
   uint32 session_id = j_session_id;
-  manager_->OnSessionClosed(media_keys_id_, session_id);
+  manager_->OnSessionClosed(cdm_id_, session_id);
 }
 
 void MediaDrmBridge::OnSessionError(JNIEnv* env,
                                     jobject j_media_drm,
                                     jint j_session_id) {
   uint32 session_id = j_session_id;
-  manager_->OnSessionError(
-      media_keys_id_, session_id, MediaKeys::kUnknownError, 0);
+  manager_->OnSessionError(cdm_id_, session_id, MediaKeys::kUnknownError, 0);
 }
 
 ScopedJavaLocalRef<jobject> MediaDrmBridge::GetMediaCrypto() {

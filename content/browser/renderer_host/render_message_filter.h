@@ -19,6 +19,7 @@
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/strings/string16.h"
 #include "build/build_config.h"
+#include "cc/resources/shared_bitmap_manager.h"
 #include "content/common/pepper_renderer_instance_data.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/common/three_d_api_types.h"
@@ -62,6 +63,7 @@ struct MediaLogEvent;
 }
 
 namespace net {
+class CookieStore;
 class KeygenHandler;
 class URLRequestContext;
 class URLRequestContextGetter;
@@ -108,10 +110,10 @@ class RenderMessageFilter : public BrowserMessageFilter {
 
   int render_process_id() const { return render_process_id_; }
 
-  // Returns the correct net::URLRequestContext depending on what type of url is
+  // Returns the correct net::CookieStore depending on what type of url is
   // given.
   // Only call on the IO thread.
-  net::URLRequestContext* GetRequestContextForURL(const GURL& url);
+  net::CookieStore* GetCookieStoreForURL(const GURL& url);
 
  private:
   friend class BrowserThread;
@@ -212,6 +214,13 @@ class RenderMessageFilter : public BrowserMessageFilter {
   // in the renderer on POSIX due to the sandbox.
   void OnAllocateSharedMemory(uint32 buffer_size,
                               base::SharedMemoryHandle* handle);
+  void OnAllocateSharedBitmap(uint32 buffer_size,
+                              const cc::SharedBitmapId& id,
+                              base::SharedMemoryHandle* handle);
+  void OnAllocatedSharedBitmap(size_t buffer_size,
+                               const base::SharedMemoryHandle& handle,
+                               const cc::SharedBitmapId& id);
+  void OnDeletedSharedBitmap(const cc::SharedBitmapId& id);
   void OnResolveProxy(const GURL& url, IPC::Message* reply_msg);
 
   // Browser side transport DIB allocation

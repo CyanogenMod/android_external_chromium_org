@@ -121,7 +121,7 @@ static bool IsCodedSizeSupported(const gfx::Size& coded_size) {
 
   base::CPU cpu;
   bool hw_large_video_support =
-      (cpu.vendor_name() == "GenuineIntel") && cpu.model() >= 58;
+      (cpu.vendor_name() == "GenuineIntel") && cpu.model() >= 55;
   bool os_large_video_support = true;
 #if defined(OS_WIN)
   os_large_video_support = false;
@@ -136,7 +136,7 @@ static void ReportGpuVideoDecoderInitializeStatusToUMAAndRunCB(
     const PipelineStatusCB& cb,
     PipelineStatus status) {
   UMA_HISTOGRAM_ENUMERATION(
-      "Media.GpuVideoDecoderInitializeStatus", status, PIPELINE_STATUS_MAX);
+      "Media.GpuVideoDecoderInitializeStatus", status, PIPELINE_STATUS_MAX + 1);
   cb.Run(status);
 }
 
@@ -154,15 +154,6 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
                  BindToCurrentLoop(orig_status_cb));
 
   bool previously_initialized = config_.IsValidConfig();
-#if !defined(OS_CHROMEOS) && !defined(OS_WIN)
-  if (previously_initialized) {
-    // TODO(xhwang): Make GpuVideoDecoder reinitializable.
-    // See http://crbug.com/233608
-    DVLOG(1) << "GpuVideoDecoder reinitialization not supported.";
-    status_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
-    return;
-  }
-#endif
   DVLOG(1) << "(Re)initializing GVD with config: "
            << config.AsHumanReadableString();
 
@@ -190,9 +181,8 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
     return;
   }
 
-  vda_ =
-      factories_->CreateVideoDecodeAccelerator(config.profile(), this).Pass();
-  if (!vda_) {
+  vda_ = factories_->CreateVideoDecodeAccelerator(config.profile()).Pass();
+  if (!vda_ || !vda_->Initialize(config.profile(), this)) {
     status_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
     return;
   }
@@ -364,8 +354,6 @@ void GpuVideoDecoder::ProvidePictureBuffers(uint32 count,
   std::vector<uint32> texture_ids;
   std::vector<gpu::Mailbox> texture_mailboxes;
   decoder_texture_target_ = texture_target;
-  // Discards the sync point returned here since PictureReady will imply that
-  // the produce has already happened, and the texture is ready for use.
   if (!factories_->CreateTextures(count,
                                   size,
                                   &texture_ids,

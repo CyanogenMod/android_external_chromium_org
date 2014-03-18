@@ -35,14 +35,14 @@
       'type': 'static_library',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../gpu/gpu.gyp:gpu',
-        '../../gpu/gpu.gyp:gles2_implementation_client_side_arrays_no_check',
         '../../gpu/gpu.gyp:command_buffer_service',
+        '../../gpu/gpu.gyp:gles2_implementation_client_side_arrays_no_check',
+        '../../gpu/gpu.gyp:gpu',
         '../../third_party/khronos/khronos.gyp:khronos_headers',
+        '../../ui/base/ui_base.gyp:ui_base',
         '../../ui/gfx/gfx.gyp:gfx',
         '../../ui/gfx/gfx.gyp:gfx_geometry',
         '../../ui/gl/gl.gyp:gl',
-        '../../ui/ui.gyp:ui',
       ],
       'sources': [
         'egl/config.cc',
@@ -121,7 +121,8 @@
           'dependencies': ['../../build/linux/system.gyp:gtk'],
         }],
         # See http://crbug.com/162998#c4 for why this is needed.
-        ['OS=="linux" and linux_use_tcmalloc==1', {
+        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
           'dependencies': [
             '../../base/allocator/allocator.gyp:allocator',
           ],

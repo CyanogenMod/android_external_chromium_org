@@ -304,7 +304,7 @@ class ScopedGLErrorSuppressor {
 // unit zero in case the client has changed that to something invalid.
 class ScopedTextureBinder {
  public:
-  ScopedTextureBinder(ContextState* state, GLuint id, GLenum target);
+  explicit ScopedTextureBinder(ContextState* state, GLuint id, GLenum target);
   ~ScopedTextureBinder();
 
  private:
@@ -317,7 +317,7 @@ class ScopedTextureBinder {
 // object goes out of scope.
 class ScopedRenderBufferBinder {
  public:
-  ScopedRenderBufferBinder(ContextState* state, GLuint id);
+  explicit ScopedRenderBufferBinder(ContextState* state, GLuint id);
   ~ScopedRenderBufferBinder();
 
  private:
@@ -329,7 +329,7 @@ class ScopedRenderBufferBinder {
 // object goes out of scope.
 class ScopedFrameBufferBinder {
  public:
-  ScopedFrameBufferBinder(GLES2DecoderImpl* decoder, GLuint id);
+  explicit ScopedFrameBufferBinder(GLES2DecoderImpl* decoder, GLuint id);
   ~ScopedFrameBufferBinder();
 
  private:
@@ -343,9 +343,9 @@ class ScopedFrameBufferBinder {
 // true, the resolved framebuffer is not visible to the parent.
 class ScopedResolvedFrameBufferBinder {
  public:
-  ScopedResolvedFrameBufferBinder(GLES2DecoderImpl* decoder,
-                                  bool enforce_internal_framebuffer,
-                                  bool internal);
+  explicit ScopedResolvedFrameBufferBinder(GLES2DecoderImpl* decoder,
+                                           bool enforce_internal_framebuffer,
+                                           bool internal);
   ~ScopedResolvedFrameBufferBinder();
 
  private:
@@ -353,6 +353,45 @@ class ScopedResolvedFrameBufferBinder {
   bool resolve_and_bind_;
   DISALLOW_COPY_AND_ASSIGN(ScopedResolvedFrameBufferBinder);
 };
+
+class ScopedModifyPixels {
+ public:
+  explicit ScopedModifyPixels(TextureRef* ref);
+  ~ScopedModifyPixels();
+
+ private:
+  TextureRef* ref_;
+};
+
+ScopedModifyPixels::ScopedModifyPixels(TextureRef* ref) : ref_(ref) {
+  if (ref_)
+    ref_->texture()->OnWillModifyPixels();
+}
+
+ScopedModifyPixels::~ScopedModifyPixels() {
+  if (ref_)
+    ref_->texture()->OnDidModifyPixels();
+}
+
+class ScopedRenderTo {
+ public:
+  explicit ScopedRenderTo(Framebuffer* framebuffer);
+  ~ScopedRenderTo();
+
+ private:
+  const Framebuffer* framebuffer_;
+};
+
+ScopedRenderTo::ScopedRenderTo(Framebuffer* framebuffer)
+    : framebuffer_(framebuffer) {
+  if (framebuffer)
+    framebuffer_->OnWillRenderTo();
+}
+
+ScopedRenderTo::~ScopedRenderTo() {
+  if (framebuffer_)
+    framebuffer_->OnDidRenderTo();
+}
 
 // Encapsulates an OpenGL texture.
 class BackTexture {
@@ -504,12 +543,6 @@ void GLES2Decoder::EndDecoding() {}
 class GLES2DecoderImpl : public GLES2Decoder,
                          public FramebufferManager::TextureDetachObserver {
  public:
-  // Used by PrepForSetUniformByLocation to validate types.
-  struct BaseUniformInfo {
-    const GLenum* const valid_types;
-    size_t num_valid_types;
-  };
-
   explicit GLES2DecoderImpl(ContextGroup* group);
   virtual ~GLES2DecoderImpl();
 
@@ -1065,6 +1098,7 @@ class GLES2DecoderImpl : public GLES2Decoder,
                           unsigned bind_target,
                           unsigned target,
                           int level,
+                          unsigned internal_format,
                           unsigned format,
                           unsigned type,
                           int width,
@@ -1103,10 +1137,12 @@ class GLES2DecoderImpl : public GLES2Decoder,
   // errors if the current program is not valid. Returns true if the current
   // program is valid and the location exists. Adjusts count so it
   // does not overflow the uniform.
-  bool PrepForSetUniformByLocation(
-      GLint fake_location, const char* function_name,
-      const BaseUniformInfo& base_info,
-      GLint* real_location, GLenum* type, GLsizei* count);
+  bool PrepForSetUniformByLocation(GLint fake_location,
+                                   const char* function_name,
+                                   Program::UniformApiType api_type,
+                                   GLint* real_location,
+                                   GLenum* type,
+                                   GLsizei* count);
 
   // Gets the service id for any simulated backbuffer fbo.
   GLuint GetBackbufferServiceId() const;
@@ -1263,6 +1299,11 @@ class GLES2DecoderImpl : public GLES2Decoder,
 
   // Wrapper for glGetShaderiv
   void DoGetShaderiv(GLuint shader, GLenum pname, GLint* params);
+
+  // Wrappers for glGetTexParameter.
+  void DoGetTexParameterfv(GLenum target, GLenum pname, GLfloat* params);
+  void DoGetTexParameteriv(GLenum target, GLenum pname, GLint* params);
+  void InitTextureMaxAnisotropyIfNeeded(GLenum target, GLenum pname);
 
   // Wrappers for glGetVertexAttrib.
   void DoGetVertexAttribfv(GLuint index, GLenum pname, GLfloat *params);
@@ -2266,7 +2307,9 @@ bool GLES2DecoderImpl::Initialize(
 
   state_.attrib_values.resize(group_->max_vertex_attribs());
   default_vertex_attrib_manager_ = new VertexAttribManager();
-  default_vertex_attrib_manager_->Initialize(group_->max_vertex_attribs());
+  default_vertex_attrib_manager_->Initialize(
+      group_->max_vertex_attribs(),
+      feature_info_->workarounds().init_vertex_attributes);
 
   // vertex_attrib_manager is set to default_vertex_attrib_manager_ by this call
   DoBindVertexArrayOES(0);
@@ -2660,6 +2703,8 @@ bool GLES2DecoderImpl::InitializeShaderTranslator() {
     driver_bug_workarounds |= SH_UNFOLD_SHORT_CIRCUIT;
   if (workarounds().init_varyings_without_static_use)
     driver_bug_workarounds |= SH_INIT_VARYINGS_WITHOUT_STATIC_USE;
+  if (workarounds().unroll_for_loop_with_sampler_array_index)
+    driver_bug_workarounds |= SH_UNROLL_FOR_LOOP_WITH_SAMPLER_ARRAY_INDEX;
 
   ShaderTranslatorCache* cache = ShaderTranslatorCache::GetInstance();
   vertex_translator_ = cache->GetTranslator(
@@ -3090,25 +3135,25 @@ void GLES2DecoderImpl::UpdateParentTextureInfo() {
       GL_RGBA,
       GL_UNSIGNED_BYTE,
       true);
-  texture_manager()->SetParameter(
+  texture_manager()->SetParameteri(
       "UpdateParentTextureInfo",
       GetErrorState(),
       offscreen_saved_color_texture_info_.get(),
       GL_TEXTURE_MAG_FILTER,
       GL_NEAREST);
-  texture_manager()->SetParameter(
+  texture_manager()->SetParameteri(
       "UpdateParentTextureInfo",
       GetErrorState(),
       offscreen_saved_color_texture_info_.get(),
       GL_TEXTURE_MIN_FILTER,
       GL_NEAREST);
-  texture_manager()->SetParameter(
+  texture_manager()->SetParameteri(
       "UpdateParentTextureInfo",
       GetErrorState(),
       offscreen_saved_color_texture_info_.get(),
       GL_TEXTURE_WRAP_S,
       GL_CLAMP_TO_EDGE);
-  texture_manager()->SetParameter(
+  texture_manager()->SetParameteri(
       "UpdateParentTextureInfo",
       GetErrorState(),
       offscreen_saved_color_texture_info_.get(),
@@ -5459,9 +5504,8 @@ void GLES2DecoderImpl::DoTexParameterf(
     return;
   }
 
-  texture_manager()->SetParameter(
-      "glTexParameterf", GetErrorState(), texture, pname,
-      static_cast<GLint>(param));
+  texture_manager()->SetParameterf(
+      "glTexParameterf", GetErrorState(), texture, pname, param);
 }
 
 void GLES2DecoderImpl::DoTexParameteri(
@@ -5473,7 +5517,7 @@ void GLES2DecoderImpl::DoTexParameteri(
     return;
   }
 
-  texture_manager()->SetParameter(
+  texture_manager()->SetParameteri(
       "glTexParameteri", GetErrorState(), texture, pname, param);
 }
 
@@ -5486,9 +5530,8 @@ void GLES2DecoderImpl::DoTexParameterfv(
     return;
   }
 
-  texture_manager()->SetParameter(
-      "glTexParameterfv", GetErrorState(), texture, pname,
-      static_cast<GLint>(params[0]));
+  texture_manager()->SetParameterf(
+      "glTexParameterfv", GetErrorState(), texture, pname, *params);
 }
 
 void GLES2DecoderImpl::DoTexParameteriv(
@@ -5501,7 +5544,7 @@ void GLES2DecoderImpl::DoTexParameteriv(
     return;
   }
 
-  texture_manager()->SetParameter(
+  texture_manager()->SetParameteri(
       "glTexParameteriv", GetErrorState(), texture, pname, *params);
 }
 
@@ -5528,125 +5571,13 @@ bool GLES2DecoderImpl::CheckCurrentProgramForUniform(
   return location != -1;
 }
 
-namespace {
-
-static const GLenum valid_int_vec1_types_list[] = {
-  GL_INT,
-  GL_BOOL,
-  GL_SAMPLER_2D,
-  GL_SAMPLER_2D_RECT_ARB,
-  GL_SAMPLER_CUBE,
-  GL_SAMPLER_EXTERNAL_OES,
-};
-
-static const GLenum valid_int_vec2_types_list[] = {
-  GL_INT_VEC2,
-  GL_BOOL_VEC2,
-};
-
-static const GLenum valid_int_vec3_types_list[] = {
-  GL_INT_VEC3,
-  GL_BOOL_VEC3,
-};
-
-static const GLenum valid_int_vec4_types_list[] = {
-  GL_INT_VEC4,
-  GL_BOOL_VEC4,
-};
-
-static const GLenum valid_float_vec1_types_list[] = {
-  GL_FLOAT,
-  GL_BOOL,
-};
-
-static const GLenum valid_float_vec2_types_list[] = {
-  GL_FLOAT_VEC2,
-  GL_BOOL_VEC2,
-};
-
-static const GLenum valid_float_vec3_types_list[] = {
-  GL_FLOAT_VEC3,
-  GL_BOOL_VEC3,
-};
-
-static const GLenum valid_float_vec4_types_list[] = {
-  GL_FLOAT_VEC4,
-  GL_BOOL_VEC4,
-};
-
-static const GLenum valid_float_mat2_types_list[] = {
-  GL_FLOAT_MAT2,
-};
-
-static const GLenum valid_float_mat3_types_list[] = {
-  GL_FLOAT_MAT3,
-};
-
-static const GLenum valid_float_mat4_types_list[] = {
-  GL_FLOAT_MAT4,
-};
-
-static const GLES2DecoderImpl::BaseUniformInfo valid_int_vec1_base_info = {
-  valid_int_vec1_types_list,
-  arraysize(valid_int_vec1_types_list),
-};
-
-static const GLES2DecoderImpl::BaseUniformInfo valid_int_vec2_base_info = {
-  valid_int_vec2_types_list,
-  arraysize(valid_int_vec2_types_list),
-};
-
-static const GLES2DecoderImpl::BaseUniformInfo valid_int_vec3_base_info = {
-  valid_int_vec3_types_list,
-  arraysize(valid_int_vec3_types_list),
-};
-
-static const GLES2DecoderImpl::BaseUniformInfo valid_int_vec4_base_info = {
-  valid_int_vec4_types_list,
-  arraysize(valid_int_vec4_types_list),
-};
-
-static const GLES2DecoderImpl::BaseUniformInfo valid_float_vec1_base_info = {
-  valid_float_vec1_types_list,
-  arraysize(valid_float_vec1_types_list),
-};
-
-static const GLES2DecoderImpl::BaseUniformInfo valid_float_vec2_base_info = {
-  valid_float_vec2_types_list,
-  arraysize(valid_float_vec2_types_list),
-};
-
-static const GLES2DecoderImpl::BaseUniformInfo valid_float_vec3_base_info = {
-  valid_float_vec3_types_list,
-  arraysize(valid_float_vec3_types_list),
-};
-
-static const GLES2DecoderImpl::BaseUniformInfo valid_float_vec4_base_info = {
-  valid_float_vec4_types_list,
-  arraysize(valid_float_vec4_types_list),
-};
-
-static const GLES2DecoderImpl::BaseUniformInfo valid_float_mat2_base_info = {
-  valid_float_mat2_types_list,
-  arraysize(valid_float_mat2_types_list),
-};
-
-static const GLES2DecoderImpl::BaseUniformInfo valid_float_mat3_base_info = {
-  valid_float_mat3_types_list,
-  arraysize(valid_float_mat3_types_list),
-};
-
-static const GLES2DecoderImpl::BaseUniformInfo valid_float_mat4_base_info = {
-  valid_float_mat4_types_list,
-  arraysize(valid_float_mat4_types_list),
-};
-
-}  // anonymous namespace.
-
 bool GLES2DecoderImpl::PrepForSetUniformByLocation(
-    GLint fake_location, const char* function_name,
-    const GLES2DecoderImpl::BaseUniformInfo& base_info,
-    GLint* real_location, GLenum* type, GLsizei* count) {
+    GLint fake_location,
+    const char* function_name,
+    Program::UniformApiType api_type,
+    GLint* real_location,
+    GLenum* type,
+    GLsizei* count) {
   DCHECK(type);
   DCHECK(count);
   DCHECK(real_location);
@@ -5663,14 +5594,8 @@ bool GLES2DecoderImpl::PrepForSetUniformByLocation(
         GL_INVALID_OPERATION, function_name, "unknown location");
     return false;
   }
-  bool okay = false;
-  for (size_t ii = 0; ii < base_info.num_valid_types; ++ii) {
-    if (base_info.valid_types[ii] == info->type) {
-      okay = true;
-      break;
-    }
-  }
-  if (!okay) {
+
+  if ((api_type & info->accepts_api_type) == 0) {
     LOCAL_SET_GL_ERROR(
         GL_INVALID_OPERATION, function_name,
         "wrong uniform function for type");
@@ -5693,9 +5618,12 @@ void GLES2DecoderImpl::DoUniform1i(GLint fake_location, GLint v0) {
   GLenum type = 0;
   GLsizei count = 1;
   GLint real_location = -1;
-  if (!PrepForSetUniformByLocation(
-      fake_location, "glUniform1i", valid_int_vec1_base_info,
-      &real_location, &type, &count)) {
+  if (!PrepForSetUniformByLocation(fake_location,
+                                   "glUniform1i",
+                                   Program::kUniform1i,
+                                   &real_location,
+                                   &type,
+                                   &count)) {
     return;
   }
   if (!state_.current_program->SetSamplers(
@@ -5711,9 +5639,12 @@ void GLES2DecoderImpl::DoUniform1iv(
     GLint fake_location, GLsizei count, const GLint *value) {
   GLenum type = 0;
   GLint real_location = -1;
-  if (!PrepForSetUniformByLocation(
-      fake_location, "glUniform1iv", valid_int_vec1_base_info,
-      &real_location, &type, &count)) {
+  if (!PrepForSetUniformByLocation(fake_location,
+                                   "glUniform1iv",
+                                   Program::kUniform1i,
+                                   &real_location,
+                                   &type,
+                                   &count)) {
     return;
   }
   if (type == GL_SAMPLER_2D || type == GL_SAMPLER_2D_RECT_ARB ||
@@ -5732,9 +5663,12 @@ void GLES2DecoderImpl::DoUniform1fv(
     GLint fake_location, GLsizei count, const GLfloat* value) {
   GLenum type = 0;
   GLint real_location = -1;
-  if (!PrepForSetUniformByLocation(
-      fake_location, "glUniform1fv", valid_float_vec1_base_info,
-      &real_location, &type, &count)) {
+  if (!PrepForSetUniformByLocation(fake_location,
+                                   "glUniform1fv",
+                                   Program::kUniform1f,
+                                   &real_location,
+                                   &type,
+                                   &count)) {
     return;
   }
   if (type == GL_BOOL) {
@@ -5752,9 +5686,12 @@ void GLES2DecoderImpl::DoUniform2fv(
     GLint fake_location, GLsizei count, const GLfloat* value) {
   GLenum type = 0;
   GLint real_location = -1;
-  if (!PrepForSetUniformByLocation(
-      fake_location, "glUniform2fv", valid_float_vec2_base_info,
-      &real_location, &type, &count)) {
+  if (!PrepForSetUniformByLocation(fake_location,
+                                   "glUniform2fv",
+                                   Program::kUniform2f,
+                                   &real_location,
+                                   &type,
+                                   &count)) {
     return;
   }
   if (type == GL_BOOL_VEC2) {
@@ -5773,9 +5710,12 @@ void GLES2DecoderImpl::DoUniform3fv(
     GLint fake_location, GLsizei count, const GLfloat* value) {
   GLenum type = 0;
   GLint real_location = -1;
-  if (!PrepForSetUniformByLocation(
-      fake_location, "glUniform3fv", valid_float_vec3_base_info,
-      &real_location, &type, &count)) {
+  if (!PrepForSetUniformByLocation(fake_location,
+                                   "glUniform3fv",
+                                   Program::kUniform3f,
+                                   &real_location,
+                                   &type,
+                                   &count)) {
     return;
   }
   if (type == GL_BOOL_VEC3) {
@@ -5794,9 +5734,12 @@ void GLES2DecoderImpl::DoUniform4fv(
     GLint fake_location, GLsizei count, const GLfloat* value) {
   GLenum type = 0;
   GLint real_location = -1;
-  if (!PrepForSetUniformByLocation(
-      fake_location, "glUniform4fv", valid_float_vec4_base_info,
-      &real_location, &type, &count)) {
+  if (!PrepForSetUniformByLocation(fake_location,
+                                   "glUniform4fv",
+                                   Program::kUniform4f,
+                                   &real_location,
+                                   &type,
+                                   &count)) {
     return;
   }
   if (type == GL_BOOL_VEC4) {
@@ -5815,9 +5758,12 @@ void GLES2DecoderImpl::DoUniform2iv(
     GLint fake_location, GLsizei count, const GLint* value) {
   GLenum type = 0;
   GLint real_location = -1;
-  if (!PrepForSetUniformByLocation(
-      fake_location, "glUniform2iv", valid_int_vec2_base_info,
-      &real_location, &type, &count)) {
+  if (!PrepForSetUniformByLocation(fake_location,
+                                   "glUniform2iv",
+                                   Program::kUniform2i,
+                                   &real_location,
+                                   &type,
+                                   &count)) {
     return;
   }
   glUniform2iv(real_location, count, value);
@@ -5827,9 +5773,12 @@ void GLES2DecoderImpl::DoUniform3iv(
     GLint fake_location, GLsizei count, const GLint* value) {
   GLenum type = 0;
   GLint real_location = -1;
-  if (!PrepForSetUniformByLocation(
-      fake_location, "glUniform3iv", valid_int_vec3_base_info,
-      &real_location, &type, &count)) {
+  if (!PrepForSetUniformByLocation(fake_location,
+                                   "glUniform3iv",
+                                   Program::kUniform3i,
+                                   &real_location,
+                                   &type,
+                                   &count)) {
     return;
   }
   glUniform3iv(real_location, count, value);
@@ -5839,9 +5788,12 @@ void GLES2DecoderImpl::DoUniform4iv(
     GLint fake_location, GLsizei count, const GLint* value) {
   GLenum type = 0;
   GLint real_location = -1;
-  if (!PrepForSetUniformByLocation(
-      fake_location, "glUniform4iv", valid_int_vec4_base_info,
-      &real_location, &type, &count)) {
+  if (!PrepForSetUniformByLocation(fake_location,
+                                   "glUniform4iv",
+                                   Program::kUniform4i,
+                                   &real_location,
+                                   &type,
+                                   &count)) {
     return;
   }
   glUniform4iv(real_location, count, value);
@@ -5852,9 +5804,12 @@ void GLES2DecoderImpl::DoUniformMatrix2fv(
     const GLfloat* value) {
   GLenum type = 0;
   GLint real_location = -1;
-  if (!PrepForSetUniformByLocation(
-      fake_location, "glUniformMatrix2fv", valid_float_mat2_base_info,
-      &real_location, &type, &count)) {
+  if (!PrepForSetUniformByLocation(fake_location,
+                                   "glUniformMatrix2fv",
+                                   Program::kUniformMatrix2f,
+                                   &real_location,
+                                   &type,
+                                   &count)) {
     return;
   }
   glUniformMatrix2fv(real_location, count, transpose, value);
@@ -5865,9 +5820,12 @@ void GLES2DecoderImpl::DoUniformMatrix3fv(
     const GLfloat* value) {
   GLenum type = 0;
   GLint real_location = -1;
-  if (!PrepForSetUniformByLocation(
-      fake_location, "glUniformMatrix3fv",  valid_float_mat3_base_info,
-      &real_location, &type, &count)) {
+  if (!PrepForSetUniformByLocation(fake_location,
+                                   "glUniformMatrix3fv",
+                                   Program::kUniformMatrix3f,
+                                   &real_location,
+                                   &type,
+                                   &count)) {
     return;
   }
   glUniformMatrix3fv(real_location, count, transpose, value);
@@ -5878,9 +5836,12 @@ void GLES2DecoderImpl::DoUniformMatrix4fv(
     const GLfloat* value) {
   GLenum type = 0;
   GLint real_location = -1;
-  if (!PrepForSetUniformByLocation(
-      fake_location, "glUniformMatrix4fv",  valid_float_mat4_base_info,
-      &real_location, &type, &count)) {
+  if (!PrepForSetUniformByLocation(fake_location,
+                                   "glUniformMatrix4fv",
+                                   Program::kUniformMatrix4f,
+                                   &real_location,
+                                   &type,
+                                   &count)) {
     return;
   }
   glUniformMatrix4fv(real_location, count, transpose, value);
@@ -6386,6 +6347,7 @@ error::Error GLES2DecoderImpl::DoDrawArrays(
         primcount)) {
       bool textures_set = !PrepareTexturesForRender();
       ApplyDirtyState();
+      ScopedRenderTo do_render(framebuffer_state_.bound_draw_framebuffer.get());
       if (!instanced) {
         glDrawArrays(mode, first, count);
       } else {
@@ -6515,6 +6477,7 @@ error::Error GLES2DecoderImpl::DoDrawElements(
         indices = element_array_buffer->GetRange(offset, 0);
       }
 
+      ScopedRenderTo do_render(framebuffer_state_.bound_draw_framebuffer.get());
       if (!instanced) {
         glDrawElements(mode, count, type, indices);
       } else {
@@ -6858,6 +6821,39 @@ void GLES2DecoderImpl::GetVertexAttribHelper(
       NOTREACHED();
       break;
   }
+}
+
+void GLES2DecoderImpl::DoGetTexParameterfv(
+    GLenum target, GLenum pname, GLfloat* params) {
+  InitTextureMaxAnisotropyIfNeeded(target, pname);
+  glGetTexParameterfv(target, pname, params);
+}
+
+void GLES2DecoderImpl::DoGetTexParameteriv(
+    GLenum target, GLenum pname, GLint* params) {
+  InitTextureMaxAnisotropyIfNeeded(target, pname);
+  glGetTexParameteriv(target, pname, params);
+}
+
+void GLES2DecoderImpl::InitTextureMaxAnisotropyIfNeeded(
+    GLenum target, GLenum pname) {
+  if (!workarounds().init_texture_max_anisotropy)
+    return;
+  if (pname != GL_TEXTURE_MAX_ANISOTROPY_EXT ||
+      !validators_->texture_parameter.IsValid(pname)) {
+    return;
+  }
+
+  TextureRef* texture_ref = texture_manager()->GetTextureInfoForTarget(
+      &state_, target);
+  if (!texture_ref) {
+    LOCAL_SET_GL_ERROR(
+        GL_INVALID_OPERATION,
+        "glGetTexParamter{fi}v", "unknown texture for target");
+    return;
+  }
+  Texture* texture = texture_ref->texture();
+  texture->InitTextureMaxAnisotropyIfNeeded(target);
 }
 
 void GLES2DecoderImpl::DoGetVertexAttribfv(
@@ -7368,6 +7364,9 @@ error::Error GLES2DecoderImpl::HandleReadPixels(
             c, buffer));
         glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, 0);
         return error::kNoError;
+      } else {
+        // On error, unbind pack buffer and fall through to sync readpixels
+        glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, 0);
       }
     }
     glReadPixels(x, y, width, height, format, type, pixels);
@@ -7672,6 +7671,7 @@ bool GLES2DecoderImpl::ClearLevel(
     unsigned bind_target,
     unsigned target,
     int level,
+    unsigned internal_format,
     unsigned format,
     unsigned type,
     int width,
@@ -7758,7 +7758,8 @@ bool GLES2DecoderImpl::ClearLevel(
       glTexSubImage2D(target, level, 0, y, width, h, format, type, zero.get());
     } else {
       glTexImage2D(
-          target, level, format, width, h, 0, format, type, zero.get());
+          target, level, internal_format, width, h, 0, format, type,
+          zero.get());
     }
     y += tile_height;
   }
@@ -8293,8 +8294,8 @@ void GLES2DecoderImpl::DoCopyTexImage2D(
     // some part was clipped so clear the texture.
     if (!ClearLevel(
         texture->service_id(), texture->target(),
-        target, level, internal_format, GL_UNSIGNED_BYTE, width, height,
-        texture->IsImmutable())) {
+        target, level, internal_format, internal_format, GL_UNSIGNED_BYTE,
+        width, height, texture->IsImmutable())) {
       LOCAL_SET_GL_ERROR(
           GL_OUT_OF_MEMORY, "glCopyTexImage2D", "dimensions too big");
       return;
@@ -8304,11 +8305,13 @@ void GLES2DecoderImpl::DoCopyTexImage2D(
       GLint dy = copyY - y;
       GLint destX = dx;
       GLint destY = dy;
+      ScopedModifyPixels modify(texture_ref);
       glCopyTexSubImage2D(target, level,
                           destX, destY, copyX, copyY,
                           copyWidth, copyHeight);
     }
   } else {
+    ScopedModifyPixels modify(texture_ref);
     glCopyTexImage2D(target, level, internal_format,
                      copyX, copyY, copyWidth, copyHeight, border);
   }
@@ -8408,6 +8411,7 @@ void GLES2DecoderImpl::DoCopyTexSubImage2D(
     }
     scoped_ptr<char[]> zero(new char[pixels_size]);
     memset(zero.get(), 0, pixels_size);
+    ScopedModifyPixels modify(texture_ref);
     glTexSubImage2D(
         target, level, xoffset, yoffset, width, height,
         format, type, zero.get());
@@ -8418,6 +8422,7 @@ void GLES2DecoderImpl::DoCopyTexSubImage2D(
     GLint dy = copyY - y;
     GLint destX = xoffset + dx;
     GLint destY = yoffset + dy;
+    ScopedModifyPixels modify(texture_ref);
     glCopyTexSubImage2D(target, level,
                         destX, destY, copyX, copyY,
                         copyWidth, copyHeight);
@@ -8539,10 +8544,13 @@ error::Error GLES2DecoderImpl::DoTexSubImage2D(
   if (!texture_state_.texsubimage2d_faster_than_teximage2d &&
       !texture->IsImmutable()) {
     ScopedTextureUploadTimer timer(&texture_state_);
-    // NOTE: In OpenGL ES 2.0 border is always zero and format is always the
-    // same as internal_foramt. If that changes we'll need to look them up.
+    GLenum internal_format;
+    GLenum tex_type;
+    texture->GetLevelType(target, level, &tex_type, &internal_format);
+    // NOTE: In OpenGL ES 2.0 border is always zero. If that changes we'll need
+    // to look it up.
     glTexImage2D(
-        target, level, format, width, height, 0, format, type, data);
+        target, level, internal_format, width, height, 0, format, type, data);
   } else {
     ScopedTextureUploadTimer timer(&texture_state_);
     glTexSubImage2D(
@@ -9286,6 +9294,7 @@ error::Error GLES2DecoderImpl::HandleInsertSyncPointCHROMIUM(
 
 error::Error GLES2DecoderImpl::HandleWaitSyncPointCHROMIUM(
     uint32 immediate_data_size, const cmds::WaitSyncPointCHROMIUM& c) {
+  group_->mailbox_manager()->PullTextureUpdates();
   if (wait_sync_point_callback_.is_null())
     return error::kNoError;
 
@@ -9750,15 +9759,9 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
 
   int source_width, source_height, dest_width, dest_height;
 
-  if (source_texture->target() == GL_TEXTURE_EXTERNAL_OES) {
-    gfx::GLImage* image =
-        source_texture->GetLevelImage(source_texture->target(), 0);
-    if (!image) {
-      LOCAL_SET_GL_ERROR(
-          GL_INVALID_OPERATION,
-          "glCopyTextureChromium", "No external image");
-      return;
-    }
+  gfx::GLImage* image =
+      source_texture->GetLevelImage(source_texture->target(), 0);
+  if (image) {
     gfx::Size size = image->GetSize();
     source_width = size.width();
     source_height = size.height();
@@ -9841,6 +9844,7 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
   }
 
   DoWillUseTexImageIfNeeded(source_texture, source_texture->target());
+  ScopedModifyPixels modify(dest_texture_ref);
 
   // GL_TEXTURE_EXTERNAL_OES texture requires apply a transform matrix
   // before presenting.

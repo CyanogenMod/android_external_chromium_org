@@ -11,13 +11,8 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/time/time.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-
-namespace content {
-class NotificationSource;
-}
+#include "chrome/browser/signin/signin_manager_base.h"
+#include "components/keyed_service/core/keyed_service.h"
 
 class Profile;
 
@@ -26,8 +21,8 @@ namespace extensions {
 // This class caches tokens for the current user.  It will clear tokens out
 // when the user logs out or after the specified timeout interval, or when
 // the instance of chrome shuts down.
-class TokenCacheService : public BrowserContextKeyedService,
-                          public content::NotificationObserver {
+class TokenCacheService : public KeyedService,
+                          public SigninManagerBase::Observer {
  public:
   explicit TokenCacheService(Profile* profile);
   virtual ~TokenCacheService();
@@ -43,13 +38,15 @@ class TokenCacheService : public BrowserContextKeyedService,
   // string if the token was not found or timed out.
   std::string RetrieveToken(const std::string& token_name);
 
-  // Inherited from NotificationObserver.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // KeyedService:
+  virtual void Shutdown() OVERRIDE;
 
  private:
   friend class TokenCacheTest;
+  FRIEND_TEST_ALL_PREFIXES(TokenCacheTest, SignoutTest);
+
+  // SigninManagerBase::Observer:
+  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
 
   struct TokenCacheData {
     std::string token;
@@ -58,7 +55,6 @@ class TokenCacheService : public BrowserContextKeyedService,
 
   // Map the token name (string) to token data.
   std::map<std::string, TokenCacheData> token_cache_;
-  content::NotificationRegistrar registrar_;
   const Profile* const profile_;
 
   DISALLOW_COPY_AND_ASSIGN(TokenCacheService);

@@ -4,6 +4,8 @@
 
 #include "chrome/browser/sync_file_system/drive_backend/list_changes_task.h"
 
+#include <string>
+
 #include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
 #include "base/run_loop.h"
@@ -84,15 +86,15 @@ class ListChangesTaskTest : public testing::Test,
   }
 
  protected:
-  SyncStatusCode RunTask(SyncTask* sync_task) {
+  SyncStatusCode RunTask(SequentialSyncTask* sync_task) {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    sync_task->Run(CreateResultReceiver(&status));
+    sync_task->RunSequential(CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     return status;
   }
 
   size_t CountDirtyTracker() {
-    return metadata_database_->dirty_trackers_.size();
+    return metadata_database_->CountDirtyTracker();
   }
 
   FakeDriveServiceHelper* fake_drive_service_helper() {

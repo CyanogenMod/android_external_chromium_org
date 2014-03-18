@@ -7,18 +7,17 @@ import "sample_import2.mojom"
 
 module sample {
 
-enum BarType {
-  BAR_VERTICAL = 1 << 0,
-  BAR_HORIZONTAL = (1 << 1) + 0,
-  BAR_BOTH = BAR_VERTICAL | BAR_HORIZONTAL,
-  BAR_INVALID
-};
-
 struct Bar {
+  enum Type {
+    TYPE_VERTICAL = 1 << 0,
+    TYPE_HORIZONTAL = (1 << 1) + 0,
+    TYPE_BOTH = TYPE_VERTICAL | TYPE_HORIZONTAL,
+    TYPE_INVALID
+  };
   uint8 alpha = (0x100 - 1) @0;
   uint8 beta @1;
   uint8 gamma @2;
-  int32 type @3;
+  Type type = sample.Bar.TYPE_VERTICAL @3;
 };
 
 [RequiredFields=7]
@@ -49,10 +48,11 @@ struct DefaultsTest {
   imported.Point point = {7, 15} @3;
   int32[] shape_masks = [1 << imported.SHAPE_RECTANGLE] @4;
   imported.Thing thing = {imported.SHAPE_CIRCLE, imported.COLOR_BLACK};
+  Bar.Type bar_type = Bar.TYPE_BOTH;
 };
 
 interface Port {
-  void PostMessage(string message_text @0) @0;
+  PostMessage@0(string message_text @0);
 };
 
 [Peer=ServiceClient]
@@ -61,12 +61,12 @@ interface Service {
     BAZ_REGULAR = 0,
     BAZ_EXTRA
   };
-  void Frobinate(Foo foo @0, int32 baz @1, Port port @2) @0;
+  Frobinate@0(Foo foo @0, BazOptions baz @1, Port port @2);
 };
 
 [Peer=Service]
 interface ServiceClient {
-  void DidFrobinate(int32 result @0) @0;
+  DidFrobinate@0(int32 result @0);
 };
 
 }

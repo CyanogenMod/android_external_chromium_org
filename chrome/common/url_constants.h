@@ -22,6 +22,7 @@ extern const char kChromeUIAppsURL[];
 extern const char kChromeUIAppListStartPageURL[];
 extern const char kChromeUIBookmarksURL[];
 extern const char kChromeUICertificateViewerURL[];
+extern const char kChromeUICertificateViewerDialogURL[];
 extern const char kChromeUIChromeSigninURL[];
 extern const char kChromeUIChromeURLsURL[];
 extern const char kChromeUICloudPrintResourcesURL[];
@@ -60,6 +61,7 @@ extern const char kChromeUINetInternalsURL[];
 extern const char kChromeUINewProfile[];
 extern const char kChromeUINewTabURL[];
 extern const char kChromeUIOmniboxURL[];
+extern const char kChromeUIPasswordManagerInternalsHost[];
 extern const char kChromeUIPerformanceMonitorURL[];
 extern const char kChromeUIPluginsURL[];
 extern const char kChromeUIPolicyURL[];
@@ -71,6 +73,7 @@ extern const char kChromeUIRestartURL[];
 extern const char kChromeUISessionFaviconURL[];
 extern const char kChromeUISettingsURL[];
 extern const char kChromeUISettingsFrameURL[];
+extern const char kChromeUISuggestions[];
 extern const char kChromeUISuggestionsInternalsURL[];
 extern const char kChromeUISSLClientCertificateSelectorURL[];
 extern const char kChromeUITaskManagerURL[];
@@ -91,6 +94,7 @@ extern const char kChromeUIWelcomeURL[];
 #if defined(OS_CHROMEOS)
 extern const char kChromeUIActivationMessage[];
 extern const char kChromeUIBluetoothPairingURL[];
+extern const char kChromeUICertificateManagerDialogURL[];
 extern const char kChromeUIChargerReplacementURL[];
 extern const char kChromeUIChooseMobileNetworkURL[];
 extern const char kChromeUIDiagnosticsURL[];
@@ -139,6 +143,7 @@ extern const char kChromeUIAppListStartPageHost[];
 extern const char kChromeUIBookmarksHost[];
 extern const char kChromeUICacheHost[];
 extern const char kChromeUICertificateViewerHost[];
+extern const char kChromeUICertificateViewerDialogHost[];
 extern const char kChromeUIChromeSigninHost[];
 extern const char kChromeUIChromeURLsHost[];
 extern const char kChromeUICloudPrintResourcesHost[];
@@ -205,6 +210,7 @@ extern const char kChromeUISettingsHost[];
 extern const char kChromeUISettingsFrameHost[];
 extern const char kChromeUIShorthangHost[];
 extern const char kChromeUISignInInternalsHost[];
+extern const char kChromeUISuggestionsHost[];
 extern const char kChromeUISuggestionsInternalsHost[];
 extern const char kChromeUISSLClientCertificateSelectorHost[];
 extern const char kChromeUIStatsHost[];
@@ -243,6 +249,7 @@ extern const char kChromeUISandboxHost[];
 extern const char kChromeUIActivationMessageHost[];
 extern const char kChromeUIAppLaunchHost[];
 extern const char kChromeUIBluetoothPairingHost[];
+extern const char kChromeUICertificateManagerHost[];
 extern const char kChromeUIChargerReplacementHost[];
 extern const char kChromeUIChooseMobileNetworkHost[];
 extern const char kChromeUICryptohomeHost[];
@@ -441,6 +448,10 @@ extern const char kSyncEncryptionHelpURL[];
 
 // The URL for the "Learn more" link when there is a sync error.
 extern const char kSyncErrorsHelpURL[];
+
+// The URL for the "Learn more" link displayed when disconnecting a managed
+// profile.
+extern const char kEnterpriseManagedAccountHelpURL[];
 
 #if defined(OS_CHROMEOS)
 // The URL for the "Learn more" link for natural scrolling on ChromeOS.

@@ -15,16 +15,16 @@
       ],
       "endure": [
         {
-          "action": "click_element",
-          "selector": "a[href=\"https://mail.google.com/mail/u/0/?shva=1#sent\"]"
+          "action": "javascript_click",
+          "selector": "a[href=\"https://mail.google.com/mail/u/0/?shva=1#sent\"]",
+          "wait_until" : { "condition" : "href_change" }
         },
-        { "action": "wait", "condition": "href_change" },
         { "action": "wait", "seconds": 1 },
         {
-          "action": "click_element",
-          "selector": "a[href=\"https://mail.google.com/mail/u/0/?shva=1#inbox\"]"
+          "action": "javascript_click",
+          "selector": "a[href=\"https://mail.google.com/mail/u/0/?shva=1#inbox\"]",
+          "wait_until" : { "condition" : "href_change" }
         },
-        { "action": "wait", "condition": "href_change" },
         { "action": "wait", "seconds": 1 }
       ]
     }

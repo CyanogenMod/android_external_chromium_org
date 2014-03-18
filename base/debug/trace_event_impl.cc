@@ -71,8 +71,10 @@ const size_t kEchoToConsoleTraceEventBufferChunks = 256;
 
 const int kThreadFlushTimeoutMs = 3000;
 
+#if !defined(OS_NACL)
 // These categories will cause deadlock when ECHO_TO_CONSOLE. crbug.com/325575.
 const char kEchoToConsoleCategoryFilter[] = "-ipc,-task";
+#endif
 
 const char kSyntheticDelayCategoryFilterPrefix[] = "DELAY(";
 
@@ -1319,12 +1321,12 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
 
     if (IsEnabled()) {
       if (options != old_options) {
-        DLOG(ERROR) << "Attemting to re-enable tracing with a different "
+        DLOG(ERROR) << "Attempting to re-enable tracing with a different "
                     << "set of options.";
       }
 
       if (mode != mode_) {
-        DLOG(ERROR) << "Attemting to re-enable tracing with a different mode.";
+        DLOG(ERROR) << "Attempting to re-enable tracing with a different mode.";
       }
 
       category_filter_.Merge(category_filter);
@@ -1955,8 +1957,7 @@ void TraceLog::AddTraceEventEtw(char phase,
 void TraceLog::AddTraceEventEtw(char phase,
                                 const char* name,
                                 const void* id,
-                                const std::string& extra)
-{
+                                const std::string& extra) {
 #if defined(OS_WIN)
   TraceEventETWProvider::Trace(name, phase, id, extra);
 #endif

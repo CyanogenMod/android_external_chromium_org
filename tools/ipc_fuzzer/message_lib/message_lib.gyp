@@ -14,7 +14,9 @@
         '../../../base/base.gyp:base',
         '../../../chrome/chrome.gyp:common',
         '../../../ipc/ipc.gyp:ipc',
+        '../../../media/cast/transport/cast_transport.gyp:cast_transport',
         '../../../skia/skia.gyp:skia',
+        '../../../third_party/libjingle/libjingle.gyp:libjingle',
         '../../../ui/accessibility/accessibility.gyp:ax_gen',
       ],
       'sources': [
@@ -29,6 +31,9 @@
       ],
       'include_dirs': [
         '../../..',
+      ],
+      'defines': [
+        'USE_CUPS',
       ],
     },
   ],

@@ -529,9 +529,7 @@ bool CommandBufferProxyImpl::ProduceFrontBuffer(const gpu::Mailbox& mailbox) {
 }
 
 scoped_ptr<media::VideoDecodeAccelerator>
-CommandBufferProxyImpl::CreateVideoDecoder(
-    media::VideoCodecProfile profile,
-    media::VideoDecodeAccelerator::Client* client) {
+CommandBufferProxyImpl::CreateVideoDecoder(media::VideoCodecProfile profile) {
   int decoder_route_id;
   scoped_ptr<media::VideoDecodeAccelerator> vda;
   if (!Send(new GpuCommandBufferMsg_CreateVideoDecoder(route_id_, profile,
@@ -546,8 +544,7 @@ CommandBufferProxyImpl::CreateVideoDecoder(
   }
 
   GpuVideoDecodeAcceleratorHost* decoder_host =
-      new GpuVideoDecodeAcceleratorHost(channel_, decoder_route_id, client,
-                                        this);
+      new GpuVideoDecodeAcceleratorHost(channel_, decoder_route_id, this);
   vda.reset(decoder_host);
   return vda.Pass();
 }
@@ -567,6 +564,7 @@ bool CommandBufferProxyImpl::Send(IPC::Message* msg) {
       // Flag the command buffer as lost. Defer deleting the channel until
       // OnChannelError is called after returning to the message loop in case
       // it is referenced elsewhere.
+      DVLOG(1) << "CommandBufferProxyImpl::Send failed. Losing context.";
       last_state_.error = gpu::error::kLostContext;
       return false;
     }

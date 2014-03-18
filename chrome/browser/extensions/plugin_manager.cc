@@ -25,21 +25,25 @@ static const char* kNaClPluginMimeType = "application/x-nacl";
 
 namespace extensions {
 
-PluginManager::PluginManager(Profile* profile) : profile_(profile) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
-                 content::Source<Profile>(profile));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                 content::Source<Profile>(profile));
+PluginManager::PluginManager(content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)) {
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED,
+                 content::Source<Profile>(profile_));
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                 content::Source<Profile>(profile_));
 }
 
 PluginManager::~PluginManager() {
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<PluginManager> >
+static base::LazyInstance<BrowserContextKeyedAPIFactory<PluginManager> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<PluginManager>* PluginManager::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<PluginManager>*
+PluginManager::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 

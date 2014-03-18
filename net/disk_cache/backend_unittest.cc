@@ -15,20 +15,20 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
-#include "net/disk_cache/backend_impl.h"
+#include "net/disk_cache/blockfile/backend_impl.h"
+#include "net/disk_cache/blockfile/entry_impl.h"
+#include "net/disk_cache/blockfile/experiments.h"
+#include "net/disk_cache/blockfile/histogram_macros.h"
+#include "net/disk_cache/blockfile/mapped_file.h"
 #include "net/disk_cache/cache_util.h"
 #include "net/disk_cache/disk_cache_test_base.h"
 #include "net/disk_cache/disk_cache_test_util.h"
-#include "net/disk_cache/entry_impl.h"
-#include "net/disk_cache/experiments.h"
-#include "net/disk_cache/histogram_macros.h"
-#include "net/disk_cache/mapped_file.h"
-#include "net/disk_cache/mem_backend_impl.h"
+#include "net/disk_cache/memory/mem_backend_impl.h"
 #include "net/disk_cache/simple/simple_backend_impl.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
 #include "net/disk_cache/simple/simple_test_util.h"
 #include "net/disk_cache/simple/simple_util.h"
-#include "net/disk_cache/tracing_cache_backend.h"
+#include "net/disk_cache/tracing/tracing_cache_backend.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_WIN)
@@ -482,7 +482,7 @@ TEST_F(DiskCacheBackendTest, ExternalFiles) {
   const int kSize = 50;
   scoped_refptr<net::IOBuffer> buffer1(new net::IOBuffer(kSize));
   CacheTestFillBuffer(buffer1->data(), kSize, false);
-  ASSERT_EQ(kSize, file_util::WriteFile(filename, buffer1->data(), kSize));
+  ASSERT_EQ(kSize, base::WriteFile(filename, buffer1->data(), kSize));
 
   // Now let's create a file with the cache.
   disk_cache::Entry* entry;
@@ -671,7 +671,7 @@ TEST_F(DiskCacheBackendTest, ShutdownWithPendingCreate_Fast) {
 TEST_F(DiskCacheTest, TruncatedIndex) {
   ASSERT_TRUE(CleanupCacheDir());
   base::FilePath index = cache_path_.AppendASCII("index");
-  ASSERT_EQ(5, file_util::WriteFile(index, "hello", 5));
+  ASSERT_EQ(5, base::WriteFile(index, "hello", 5));
 
   base::Thread cache_thread("CacheThread");
   ASSERT_TRUE(cache_thread.StartWithOptions(
@@ -3317,7 +3317,7 @@ TEST_F(DiskCacheBackendTest, SimpleCacheOpenBadFile) {
   header.initial_magic_number = GG_UINT64_C(0xbadf00d);
   EXPECT_EQ(
       implicit_cast<int>(sizeof(header)),
-      file_util::WriteFile(entry_file1_path, reinterpret_cast<char*>(&header),
+      base::WriteFile(entry_file1_path, reinterpret_cast<char*>(&header),
                            sizeof(header)));
   ASSERT_EQ(net::ERR_FAILED, OpenEntry(key, &entry));
 }

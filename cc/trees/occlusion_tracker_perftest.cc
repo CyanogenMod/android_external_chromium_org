@@ -71,8 +71,7 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_FullyOccluded) {
   SetTestName("unoccluded_content_rect_fully_occluded");
 
   gfx::Rect viewport_rect(768, 1038);
-  OcclusionTrackerBase<LayerImpl, LayerImpl::RenderSurfaceType> tracker(
-      viewport_rect, false);
+  OcclusionTracker<LayerImpl> tracker(viewport_rect);
 
   CreateHost();
   host_impl_->SetViewportSize(viewport_rect.size());
@@ -102,7 +101,6 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_FullyOccluded) {
 
   gfx::Transform transform_to_target;
   transform_to_target.Translate(0, 96);
-  bool impl_draw_transform_is_unknown = false;
 
   do {
     for (int x = 0; x < viewport_rect.width(); x += 256) {
@@ -111,8 +109,7 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_FullyOccluded) {
         gfx::Rect unoccluded =
             tracker.UnoccludedContentRect(pos.target_render_surface_layer,
                                           query_content_rect,
-                                          transform_to_target,
-                                          impl_draw_transform_is_unknown);
+                                          transform_to_target);
         // Sanity test that we're not hitting early outs.
         bool expect_empty =
             query_content_rect.right() <= viewport_rect.width() &&
@@ -140,8 +137,7 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_10OpaqueLayers) {
   SetTestName("unoccluded_content_rect_10_opaque_layers");
 
   gfx::Rect viewport_rect(768, 1038);
-  OcclusionTrackerBase<LayerImpl, LayerImpl::RenderSurfaceType> tracker(
-      viewport_rect, false);
+  OcclusionTracker<LayerImpl> tracker(viewport_rect);
 
   CreateHost();
   host_impl_->SetViewportSize(viewport_rect.size());
@@ -182,7 +178,6 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_10OpaqueLayers) {
 
   gfx::Transform transform_to_target;
   transform_to_target.Translate(0, 96);
-  bool impl_draw_transform_is_unknown = false;
 
   do {
     for (int x = 0; x < viewport_rect.width(); x += 256) {
@@ -191,8 +186,7 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_10OpaqueLayers) {
         gfx::Rect unoccluded =
             tracker.UnoccludedContentRect(pos.target_render_surface_layer,
                                           query_content_rect,
-                                          transform_to_target,
-                                          impl_draw_transform_is_unknown);
+                                          transform_to_target);
       }
     }
 

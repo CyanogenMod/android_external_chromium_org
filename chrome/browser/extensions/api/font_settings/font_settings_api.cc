@@ -204,18 +204,19 @@ void FontSettingsEventRouter::OnFontPrefChanged(
       pref_name);
 }
 
-FontSettingsAPI::FontSettingsAPI(Profile* profile)
-    : font_settings_event_router_(new FontSettingsEventRouter(profile)) {
-}
+FontSettingsAPI::FontSettingsAPI(content::BrowserContext* context)
+    : font_settings_event_router_(
+          new FontSettingsEventRouter(Profile::FromBrowserContext(context))) {}
 
 FontSettingsAPI::~FontSettingsAPI() {
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<FontSettingsAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<FontSettingsAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<FontSettingsAPI>* FontSettingsAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<FontSettingsAPI>*
+FontSettingsAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 

@@ -46,13 +46,12 @@ class EncodingEventSubscriber : public RawEventSubscriber {
   virtual void OnReceiveGenericEvent(const GenericEvent& generic_event)
       OVERRIDE;
 
-  // Assigns frame events received so far to |frame_events| and clears them
-  // from this object.
-  void GetFrameEventsAndReset(FrameEventMap* frame_events);
-
-  // Assigns packet events received so far to |packet_events| and clears them
-  // from this object.
-  void GetPacketEventsAndReset(PacketEventMap* packet_events);
+  // Assigns frame events and packet events received so far to |frame_events|
+  // and |packet_events| and resets the internal state.
+  // In addition, assign metadata associated with these events to |metadata|.
+  void GetEventsAndReset(media::cast::proto::LogMetadata* metadata,
+                         FrameEventMap* frame_events,
+                         PacketEventMap* packet_events);
 
  private:
   bool ShouldProcessEvent(CastLoggingEvent event);
@@ -63,6 +62,13 @@ class EncodingEventSubscriber : public RawEventSubscriber {
   // Removes oldest entry from |packet_event_map_| (ordered by RTP timestamp).
   void TruncatePacketEventMapIfNeeded();
 
+  // Returns the difference between |rtp_timestamp| and |first_rtp_timestamp_|.
+  // Sets |first_rtp_timestamp_| if it is not already set.
+  RtpTimestamp GetRelativeRtpTimestamp(RtpTimestamp rtp_timestamp);
+
+  // Clears the maps and first RTP timestamp seen.
+  void Reset();
+
   const EventMediaType event_media_type_;
   const size_t max_frames_;
 
@@ -71,6 +77,12 @@ class EncodingEventSubscriber : public RawEventSubscriber {
 
   // All functions must be called on the main thread.
   base::ThreadChecker thread_checker_;
+
+  // Set to true on first event encountered after a |Reset()|.
+  bool seen_first_rtp_timestamp_;
+
+  // Set to RTP timestamp of first event encountered after a |Reset()|.
+  RtpTimestamp first_rtp_timestamp_;
 
   DISALLOW_COPY_AND_ASSIGN(EncodingEventSubscriber);
 };

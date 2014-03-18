@@ -38,9 +38,10 @@ LOCAL_SRC_FILES := \
 	base/third_party/dmg_fp/dtoa_wrapper.cc \
 	base/third_party/icu/icu_utf.cc \
 	base/third_party/nspr/prtime.cc \
+	base/third_party/superfasthash/superfasthash.c \
 	base/allocator/allocator_extension.cc \
 	base/allocator/type_profiler_control.cc \
-	base/android/activity_status.cc \
+	base/android/application_status_listener.cc \
 	base/android/base_jni_registrar.cc \
 	base/android/build_info.cc \
 	base/android/command_line_android.cc \
@@ -64,9 +65,10 @@ LOCAL_SRC_FILES := \
 	base/at_exit.cc \
 	base/atomicops_internals_x86_gcc.cc \
 	base/barrier_closure.cc \
+	base/base64.cc \
 	base/base_paths.cc \
 	base/base_paths_android.cc \
-	base/base64.cc \
+	base/big_endian.cc \
 	base/bind_helpers.cc \
 	base/build_time.cc \
 	base/callback_helpers.cc \
@@ -101,10 +103,12 @@ LOCAL_SRC_FILES := \
 	base/files/file_path_watcher.cc \
 	base/files/file_path_watcher_linux.cc \
 	base/files/file_posix.cc \
+	base/files/file_proxy.cc \
 	base/files/file_util_proxy.cc \
 	base/files/important_file_writer.cc \
 	base/files/memory_mapped_file.cc \
 	base/files/memory_mapped_file_posix.cc \
+	base/files/scoped_file.cc \
 	base/files/scoped_platform_file_closer.cc \
 	base/files/scoped_temp_dir.cc \
 	base/guid.cc \
@@ -246,6 +250,7 @@ LOCAL_SRC_FILES := \
 	base/time/time_posix.cc \
 	base/timer/elapsed_timer.cc \
 	base/timer/hi_res_timer_manager_posix.cc \
+	base/timer/mock_timer.cc \
 	base/timer/timer.cc \
 	base/tracked_objects.cc \
 	base/tracking_info.cc \
@@ -267,11 +272,10 @@ MY_CFLAGS_Debug := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-m32 \
-	-mmmx \
-	-march=pentium4 \
 	-msse2 \
 	-mfpmath=sse \
+	-mmmx \
+	-m32 \
 	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
@@ -294,6 +298,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -301,13 +306,14 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DUSE_OPENSSL=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DBASE_IMPLEMENTATION' \
@@ -354,11 +360,10 @@ MY_CFLAGS_Release := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-m32 \
-	-mmmx \
-	-march=pentium4 \
 	-msse2 \
 	-mfpmath=sse \
+	-mmmx \
+	-m32 \
 	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
@@ -381,6 +386,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -388,13 +394,14 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DUSE_OPENSSL=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DBASE_IMPLEMENTATION' \
@@ -433,9 +440,11 @@ LOCAL_CPPFLAGS_Release := \
 LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
 LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
+LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -445,7 +454,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
@@ -453,6 +461,7 @@ LOCAL_LDFLAGS_Debug := \
 
 
 LOCAL_LDFLAGS_Release := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -465,7 +474,6 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,-O1 \
 	-Wl,--as-needed \
 	-Wl,--gc-sections \
-	-Wl,--fatal-warnings \
 	-Wl,--warn-shared-textrel
 
 

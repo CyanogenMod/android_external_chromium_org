@@ -23,7 +23,7 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/tab_contents/render_view_context_menu.h"
+#include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -1009,9 +1009,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   ASSERT_FALSE(should_not_install.seen());
 
   // Simulate a "downgrade" from version 2 in the test manifest.json to 1.
-  ExtensionPrefs* extension_prefs =
-      extensions::ExtensionSystem::Get(browser()->profile())->
-      extension_service()->extension_prefs();
+  ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(browser()->profile());
 
   // Clear the registered events to ensure they are updated.
   extensions::ExtensionSystem::Get(browser()->profile())->event_router()->

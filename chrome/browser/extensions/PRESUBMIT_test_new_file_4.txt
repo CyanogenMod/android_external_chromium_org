@@ -1,3 +1,0 @@
-// Missing "HistrogramValue" enum 
-
-  ENUM_BOUNDARY // Last entry: Add new entries above.

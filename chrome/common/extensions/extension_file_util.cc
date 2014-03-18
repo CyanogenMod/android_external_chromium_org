@@ -22,12 +22,12 @@
 #include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/extensions/manifest_handlers/theme_handler.h"
 #include "chrome/common/extensions/message_bundle.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/install_warning.h"
 #include "extensions/common/manifest.h"
@@ -351,7 +351,7 @@ void GarbageCollectExtensions(
 
     // Parse directory name as a potential extension ID.
     if (IsStringASCII(basename.value())) {
-      extension_id = UTF16ToASCII(basename.LossyDisplayName());
+      extension_id = base::UTF16ToASCII(basename.LossyDisplayName());
       if (!Extension::IdIsValid(extension_id))
         extension_id.clear();
     }

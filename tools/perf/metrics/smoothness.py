@@ -4,9 +4,10 @@
 
 from metrics import Metric
 from metrics import rendering_stats
-from metrics import statistics
 from telemetry.page import page_measurement
 from telemetry.page.perf_tests_helper import FlattenList
+from telemetry.util import statistics
+from telemetry.core.timeline.model import TimelineModel
 
 TIMELINE_MARKER = 'Smoothness'
 
@@ -60,7 +61,8 @@ class SmoothnessMetric(Metric):
     if tab.browser.platform.IsRawDisplayFrameRateSupported():
       tab.browser.platform.StopRawDisplayFrameRateMeasurement()
     tab.ExecuteJavaScript('console.timeEnd("' + TIMELINE_MARKER + '")')
-    timeline_model = tab.browser.StopTracing().AsTimelineModel()
+    tracing_timeline_data = tab.browser.StopTracing()
+    timeline_model = TimelineModel(timeline_data=tracing_timeline_data)
     timeline_ranges = [ action.GetActiveRangeOnTimeline(timeline_model)
                         for action in self._actions ]
 
@@ -71,46 +73,49 @@ class SmoothnessMetric(Metric):
     if not self._stats.frame_times:
       raise NotEnoughFramesError()
 
-  def SetStats(self, stats):
-    """ Pass in a RenderingStats object directly. For unittests that don't call
-        Start/Stop.
-    """
-    self._stats = stats
-
   def AddResults(self, tab, results):
     if self._stats.mouse_wheel_scroll_latency:
       mean_mouse_wheel_scroll_latency = statistics.ArithmeticMean(
-          self._stats.mouse_wheel_scroll_latency,
-          len(self._stats.mouse_wheel_scroll_latency))
+          self._stats.mouse_wheel_scroll_latency)
+      mouse_wheel_scroll_latency_discrepancy = statistics.DurationsDiscrepancy(
+          self._stats.mouse_wheel_scroll_latency)
       results.Add('mean_mouse_wheel_scroll_latency', 'ms',
                   round(mean_mouse_wheel_scroll_latency, 3))
+      results.Add('mouse_wheel_scroll_latency_discrepancy', '',
+                  round(mouse_wheel_scroll_latency_discrepancy, 4))
 
     if self._stats.touch_scroll_latency:
       mean_touch_scroll_latency = statistics.ArithmeticMean(
-          self._stats.touch_scroll_latency,
-          len(self._stats.touch_scroll_latency))
+          self._stats.touch_scroll_latency)
+      touch_scroll_latency_discrepancy = statistics.DurationsDiscrepancy(
+          self._stats.touch_scroll_latency)
       results.Add('mean_touch_scroll_latency', 'ms',
                   round(mean_touch_scroll_latency, 3))
+      results.Add('touch_scroll_latency_discrepancy', '',
+                  round(touch_scroll_latency_discrepancy, 4))
 
     if self._stats.js_touch_scroll_latency:
       mean_js_touch_scroll_latency = statistics.ArithmeticMean(
-          self._stats.js_touch_scroll_latency,
-          len(self._stats.js_touch_scroll_latency))
+          self._stats.js_touch_scroll_latency)
+      js_touch_scroll_latency_discrepancy = statistics.DurationsDiscrepancy(
+          self._stats.js_touch_scroll_latency)
       results.Add('mean_js_touch_scroll_latency', 'ms',
                   round(mean_js_touch_scroll_latency, 3))
+      results.Add('js_touch_scroll_latency_discrepancy', '',
+                  round(js_touch_scroll_latency_discrepancy, 4))
 
     # List of raw frame times.
     frame_times = FlattenList(self._stats.frame_times)
     results.Add('frame_times', 'ms', frame_times)
 
     # Arithmetic mean of frame times.
-    mean_frame_time = statistics.ArithmeticMean(frame_times,
-                                                len(frame_times))
+    mean_frame_time = statistics.ArithmeticMean(frame_times)
     results.Add('mean_frame_time', 'ms', round(mean_frame_time, 3))
 
     # Absolute discrepancy of frame time stamps.
-    jank = statistics.FrameDiscrepancy(self._stats.frame_timestamps)
-    results.Add('jank', '', round(jank, 4))
+    frame_discrepancy = statistics.TimestampsDiscrepancy(
+        self._stats.frame_timestamps)
+    results.Add('jank', 'ms', round(frame_discrepancy, 4))
 
     # Are we hitting 60 fps for 95 percent of all frames?
     # We use 19ms as a somewhat looser threshold, instead of 1000.0/60.0.

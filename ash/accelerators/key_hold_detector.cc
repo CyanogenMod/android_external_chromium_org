@@ -11,7 +11,7 @@
 
 #include "ash/shell.h"
 #include "base/message_loop/message_loop.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/events/event_dispatcher.h"
 
@@ -27,7 +27,7 @@ void DispatchPressedEvent(XEvent native_event,
   ui::KeyEvent event(&native_event, false);
   event.set_flags(event.flags() | ui::EF_IS_SYNTHESIZED);
   ui::EventDispatchDetails result ALLOW_UNUSED =
-      target->GetDispatcher()->OnEventFromSource(&event);
+      target->GetHost()->dispatcher()->OnEventFromSource(&event);
 }
 
 void PostPressedEvent(ui::KeyEvent* event) {

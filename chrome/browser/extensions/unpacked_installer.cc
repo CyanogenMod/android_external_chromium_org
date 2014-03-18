@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -15,6 +16,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/plugins/plugins_handler.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
@@ -68,6 +70,17 @@ SimpleExtensionLoadPrompt::~SimpleExtensionLoadPrompt() {
 }
 
 void SimpleExtensionLoadPrompt::ShowPrompt() {
+  std::string confirm = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      switches::kAppsGalleryInstallAutoConfirmForTests);
+  if (confirm == "accept") {
+    InstallUIProceed();
+    return;
+  }
+  if (confirm == "cancel") {
+    InstallUIAbort(false);
+    return;
+  }
+
   install_ui_->ConfirmInstall(
       this,
       extension_.get(),
@@ -195,7 +208,7 @@ int UnpackedInstaller::GetFlags() {
   std::string id = id_util::GenerateIdForPath(extension_path_);
   bool allow_file_access =
       Manifest::ShouldAlwaysAllowFileAccess(Manifest::UNPACKED);
-  ExtensionPrefs* prefs = service_weak_->extension_prefs();
+  ExtensionPrefs* prefs = ExtensionPrefs::Get(service_weak_->profile());
   if (prefs->HasAllowFileAccessSetting(id))
     allow_file_access = prefs->AllowFileAccess(id);
 
@@ -213,7 +226,7 @@ bool UnpackedInstaller::IsLoadingUnpackedAllowed() const {
     return true;
   // If there is a "*" in the extension blacklist, then no extensions should be
   // allowed at all (except explicitly whitelisted extensions).
-  ExtensionPrefs* prefs = service_weak_->extension_prefs();
+  ExtensionPrefs* prefs = ExtensionPrefs::Get(service_weak_->profile());
   return !prefs->ExtensionsBlacklistedByDefault();
 }
 

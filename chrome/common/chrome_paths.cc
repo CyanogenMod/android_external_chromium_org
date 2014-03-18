@@ -5,6 +5,7 @@
 #include "chrome/common/chrome_paths.h"
 
 #include "base/file_util.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #include "base/path_service.h"
@@ -94,9 +95,8 @@ const base::FilePath::CharType kFilepathSinglePrefExtensions[] =
 #endif  // defined(GOOGLE_CHROME_BUILD)
 #endif  // defined(OS_LINUX)
 
-}  // namespace
-
-namespace chrome {
+static base::LazyInstance<base::FilePath>
+    g_invalid_specified_user_data_dir = LAZY_INSTANCE_INITIALIZER;
 
 // Gets the path for internal plugins.
 bool GetInternalPluginsDirectory(base::FilePath* result) {
@@ -115,6 +115,10 @@ bool GetInternalPluginsDirectory(base::FilePath* result) {
   // The rest of the world expects plugins in the module directory.
   return PathService::Get(base::DIR_MODULE, result);
 }
+
+}  // namespace
+
+namespace chrome {
 
 bool PathProvider(int key, base::FilePath* result) {
   // Some keys are just aliases...
@@ -459,6 +463,20 @@ bool PathProvider(int key, base::FilePath* result) {
         return false;
       break;
     }
+    case chrome::DIR_USER_LIBRARY: {
+      if (!GetUserLibraryDirectory(&cur))
+        return false;
+      if (!base::PathExists(cur))  // We don't want to create this.
+        return false;
+      break;
+    }
+    case chrome::DIR_USER_APPLICATIONS: {
+      if (!GetUserApplicationsDirectory(&cur))
+        return false;
+      if (!base::PathExists(cur))  // We don't want to create this.
+        return false;
+      break;
+    }
 #endif
 #if defined(OS_CHROMEOS) || (defined(OS_MACOSX) && !defined(OS_IOS))
     case chrome::DIR_USER_EXTERNAL_EXTENSIONS: {
@@ -549,6 +567,14 @@ bool PathProvider(int key, base::FilePath* result) {
 // eliminate this object file if there is no direct entry point into it.
 void RegisterPathProvider() {
   PathService::RegisterProvider(PathProvider, PATH_START, PATH_END);
+}
+
+void SetInvalidSpecifiedUserDataDir(const base::FilePath& user_data_dir) {
+  g_invalid_specified_user_data_dir.Get() = user_data_dir;
+}
+
+const base::FilePath& GetInvalidSpecifiedUserDataDir() {
+  return g_invalid_specified_user_data_dir.Get();
 }
 
 }  // namespace chrome

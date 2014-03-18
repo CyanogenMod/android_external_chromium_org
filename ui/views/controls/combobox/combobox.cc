@@ -9,7 +9,7 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ui_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
@@ -90,6 +90,11 @@ class TransparentButton : public CustomButton {
     SetAnimationDuration(LabelButton::kHoverAnimationDurationMs);
   }
   virtual ~TransparentButton() {}
+
+  virtual bool OnMousePressed(const ui::MouseEvent& mouse_event) OVERRIDE {
+    parent()->RequestFocus();
+    return true;
+  }
 
   double GetAnimationValue() const {
     return hover_animation_->GetCurrentValue();
@@ -385,7 +390,10 @@ int Combobox::GetSelectedRow() {
 }
 
 void Combobox::SetSelectedRow(int row) {
+  int prev_index = selected_index_;
   SetSelectedIndex(row);
+  if (selected_index_ != prev_index)
+    OnPerformAction();
 }
 
 base::string16 Combobox::GetTextForRow(int row) {
@@ -542,8 +550,8 @@ void Combobox::OnBlur() {
   SchedulePaint();
 }
 
-void Combobox::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_COMBOBOX;
+void Combobox::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_COMBO_BOX;
   state->name = accessible_name_;
   state->value = model_->GetItemAt(selected_index_);
   state->index = selected_index_;
@@ -556,6 +564,9 @@ void Combobox::OnComboboxModelChanged(ui::ComboboxModel* model) {
 }
 
 void Combobox::ButtonPressed(Button* sender, const ui::Event& event) {
+  if (!enabled())
+    return;
+
   RequestFocus();
 
   if (sender == text_button_) {
@@ -586,9 +597,14 @@ void Combobox::UpdateFromModel() {
 
   int num_items = model()->GetItemCount();
   int width = 0;
+  bool text_item_appended = false;
   for (int i = 0; i < num_items; ++i) {
+    // When STYLE_ACTION is used, the first item and the following separators
+    // are not added to the dropdown menu. It is assumed that the first item is
+    // always selected and rendered on the top of the action button.
     if (model()->IsItemSeparatorAt(i)) {
-      menu->AppendSeparator();
+      if (text_item_appended || style_ != STYLE_ACTION)
+        menu->AppendSeparator();
       continue;
     }
 
@@ -598,7 +614,10 @@ void Combobox::UpdateFromModel() {
     // text is displayed correctly in right-to-left UIs.
     base::i18n::AdjustStringForLocaleDirection(&text);
 
-    menu->AppendMenuItem(i + kFirstMenuItemId, text, MenuItemView::NORMAL);
+    if (style_ != STYLE_ACTION || i > 0) {
+      menu->AppendMenuItem(i + kFirstMenuItemId, text, MenuItemView::NORMAL);
+      text_item_appended = true;
+    }
 
     if (style_ != STYLE_ACTION || i == selected_index_)
       width = std::max(width, gfx::GetStringWidth(text, font_list));
@@ -770,7 +789,7 @@ void Combobox::ShowDropDownMenu(ui::MenuSourceType source_type) {
 }
 
 void Combobox::OnPerformAction() {
-  NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_VALUE_CHANGED, false);
+  NotifyAccessibilityEvent(ui::AX_EVENT_VALUE_CHANGED, false);
   SchedulePaint();
 
   // This combobox may be deleted by the listener.

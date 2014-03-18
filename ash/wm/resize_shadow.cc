@@ -11,7 +11,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
-#include "ui/views/corewm/image_grid.h"
+#include "ui/wm/core/image_grid.h"
 
 namespace {
 
@@ -49,7 +49,7 @@ ResizeShadow::~ResizeShadow() {}
 void ResizeShadow::Init(aura::Window* window) {
   // Set up our image grid and images.
   ResourceBundle& res = ResourceBundle::GetSharedInstance();
-  image_grid_.reset(new views::corewm::ImageGrid);
+  image_grid_.reset(new ::wm::ImageGrid);
   image_grid_->SetImages(
       &res.GetImageNamed(IDR_AURA_RESIZE_SHADOW_TOP_LEFT),
       &res.GetImageNamed(IDR_AURA_RESIZE_SHADOW_TOP),

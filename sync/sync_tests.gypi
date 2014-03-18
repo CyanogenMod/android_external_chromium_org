@@ -40,6 +40,8 @@
         'test/engine/fake_sync_scheduler.h',
         'test/engine/mock_connection_manager.cc',
         'test/engine/mock_connection_manager.h',
+        'test/engine/mock_update_handler.cc',
+        'test/engine/mock_update_handler.h',
         'test/engine/test_directory_setter_upper.cc',
         'test/engine/test_directory_setter_upper.h',
         'test/engine/test_id_factory.h',
@@ -107,12 +109,22 @@
         'sync',
       ],
       'sources': [
-        'test/fake_server/fake_server.h',
+        'test/fake_server/bookmark_entity.cc',
+        'test/fake_server/bookmark_entity.h',
         'test/fake_server/fake_server.cc',
-        'test/fake_server/fake_server_http_post_provider.h',
+        'test/fake_server/fake_server.h',
+        'test/fake_server/fake_server_entity.cc',
+        'test/fake_server/fake_server_entity.h',
         'test/fake_server/fake_server_http_post_provider.cc',
-        'test/fake_server/fake_server_network_resources.h',
+        'test/fake_server/fake_server_http_post_provider.h',
         'test/fake_server/fake_server_network_resources.cc',
+        'test/fake_server/fake_server_network_resources.h',
+        'test/fake_server/permanent_entity.cc',
+        'test/fake_server/permanent_entity.h',
+        'test/fake_server/tombstone_entity.cc',
+        'test/fake_server/tombstone_entity.h',
+        'test/fake_server/unique_client_entity.cc',
+        'test/fake_server/unique_client_entity.h',
       ],
     },
 
@@ -215,6 +227,8 @@
         'api/fake_syncable_service.h',
         'api/fake_sync_change_processor.cc',
         'api/fake_sync_change_processor.h',
+        'api/sync_change_processor_wrapper_for_test.cc',
+        'api/sync_change_processor_wrapper_for_test.h',
         'api/sync_error_factory_mock.cc',
         'api/sync_error_factory_mock.h',
       ],
@@ -270,9 +284,9 @@
           'internal_api/public/util/weak_handle_unittest.cc',
           'engine/apply_control_data_updates_unittest.cc',
           'engine/backoff_delay_provider_unittest.cc',
-          'engine/download_unittest.cc',
-          'engine/sync_directory_commit_contribution_unittest.cc',
-          'engine/sync_directory_update_handler_unittest.cc',
+          'engine/directory_commit_contribution_unittest.cc',
+          'engine/directory_update_handler_unittest.cc',
+          'engine/get_updates_processor_unittest.cc',
           'engine/sync_scheduler_unittest.cc',
           'engine/syncer_proto_util_unittest.cc',
           'engine/syncer_unittest.cc',
@@ -449,6 +463,7 @@
           'api/attachments/attachment_unittest.cc',
           'api/attachments/fake_attachment_store_unittest.cc',
           'api/sync_change_unittest.cc',
+          'api/sync_data_unittest.cc',
           'api/sync_error_unittest.cc',
           'api/sync_merge_result_unittest.cc',
         ],
@@ -475,7 +490,8 @@
         # TODO(akalin): This is needed because histogram.cc uses
         # leak_annotations.h, which pulls this in.  Make 'base'
         # propagate this dependency.
-        ['OS=="linux" and linux_use_tcmalloc==1', {
+        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator',
           ],

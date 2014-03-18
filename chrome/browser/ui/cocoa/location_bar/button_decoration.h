@@ -44,6 +44,14 @@ class ButtonDecoration : public LocationBarDecoration {
   // Changes the icon for all button states.
   void SetIcon(int icon_id);
 
+  // Changes the background image for all button states.
+  void SetBackgroundImageIds(ui::NinePartImageIds normal_image_ids,
+                             ui::NinePartImageIds hover_image_ids,
+                             ui::NinePartImageIds pressed_image_ids);
+
+  ui::NinePartImageIds GetBackgroundImageIds() const;
+  NSImage* GetIconImage() const;
+
   // Implement |LocationBarDecoration|.
   virtual CGFloat GetWidthForSpace(CGFloat width) OVERRIDE;
   virtual void DrawInFrame(NSRect frame, NSView* control_view) OVERRIDE;
@@ -61,9 +69,6 @@ class ButtonDecoration : public LocationBarDecoration {
   int pressed_icon_id_;
   ButtonState state_;
   CGFloat max_inner_padding_;
-
-  ui::NinePartImageIds GetImageIds() const;
-  int GetIconId() const;
 
   DISALLOW_COPY_AND_ASSIGN(ButtonDecoration);
 };

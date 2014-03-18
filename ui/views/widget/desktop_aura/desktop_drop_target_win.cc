@@ -8,7 +8,7 @@
 #include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/client/drag_drop_delegate.h"
 #include "ui/aura/window.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drop_target_event.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
@@ -96,7 +96,7 @@ void DesktopDropTargetWin::Translate(
     DragDropDelegate** delegate) {
   gfx::Point location(position.x, position.y);
   gfx::Point root_location = location;
-  root_window_->GetDispatcher()->host()->ConvertPointFromNativeScreen(
+  root_window_->GetHost()->ConvertPointFromNativeScreen(
       &root_location);
   aura::Window* target_window =
       root_window_->GetEventHandlerForPoint(root_location);

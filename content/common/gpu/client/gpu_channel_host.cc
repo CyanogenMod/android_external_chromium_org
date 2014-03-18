@@ -35,11 +35,11 @@ GpuListenerInfo::~GpuListenerInfo() {}
 scoped_refptr<GpuChannelHost> GpuChannelHost::Create(
     GpuChannelHostFactory* factory,
     const gpu::GPUInfo& gpu_info,
-    const IPC::ChannelHandle& channel_handle) {
+    const IPC::ChannelHandle& channel_handle,
+    base::WaitableEvent* shutdown_event) {
   DCHECK(factory->IsMainThread());
-  scoped_refptr<GpuChannelHost> host = new GpuChannelHost(
-      factory, gpu_info);
-  host->Connect(channel_handle);
+  scoped_refptr<GpuChannelHost> host = new GpuChannelHost(factory, gpu_info);
+  host->Connect(channel_handle, shutdown_event);
   return host;
 }
 
@@ -65,7 +65,8 @@ GpuChannelHost::GpuChannelHost(GpuChannelHostFactory* factory,
   next_gpu_memory_buffer_id_.GetNext();
 }
 
-void GpuChannelHost::Connect(const IPC::ChannelHandle& channel_handle) {
+void GpuChannelHost::Connect(const IPC::ChannelHandle& channel_handle,
+                             base::WaitableEvent* shutdown_event) {
   // Open a channel to the GPU process. We pass NULL as the main listener here
   // since we need to filter everything to route it to the right thread.
   scoped_refptr<base::MessageLoopProxy> io_loop = factory_->GetIOLoopProxy();
@@ -74,10 +75,9 @@ void GpuChannelHost::Connect(const IPC::ChannelHandle& channel_handle) {
                                       NULL,
                                       io_loop.get(),
                                       true,
-                                      factory_->GetShutDownEvent()));
+                                      shutdown_event));
 
-  sync_filter_ = new IPC::SyncMessageFilter(
-      factory_->GetShutDownEvent());
+  sync_filter_ = new IPC::SyncMessageFilter(shutdown_event);
 
   channel_->AddFilter(sync_filter_.get());
 
@@ -107,9 +107,15 @@ bool GpuChannelHost::Send(IPC::Message* msg) {
   if (factory_->IsMainThread()) {
     // http://crbug.com/125264
     base::ThreadRestrictions::ScopedAllowWait allow_wait;
-    return channel_->Send(message.release());
+    bool result = channel_->Send(message.release());
+    if (!result)
+      DVLOG(1) << "GpuChannelHost::Send failed: Channel::Send failed";
+    return result;
   } else if (base::MessageLoop::current()) {
-    return sync_filter_->Send(message.release());
+    bool result = sync_filter_->Send(message.release());
+    if (!result)
+      DVLOG(1) << "GpuChannelHost::Send failed: SyncMessageFilter::Send failed";
+    return result;
   }
 
   return false;
@@ -133,8 +139,10 @@ CommandBufferProxyImpl* GpuChannelHost::CreateViewCommandBuffer(
   init_params.active_url = active_url;
   init_params.gpu_preference = gpu_preference;
   int32 route_id = factory_->CreateViewCommandBuffer(surface_id, init_params);
-  if (route_id == MSG_ROUTING_NONE)
+  if (route_id == MSG_ROUTING_NONE) {
+    LOG(ERROR) << "GpuChannelHost::CreateViewCommandBuffer failed.";
     return NULL;
+  }
 
   CommandBufferProxyImpl* command_buffer =
       new CommandBufferProxyImpl(this, route_id);
@@ -163,11 +171,15 @@ CommandBufferProxyImpl* GpuChannelHost::CreateOffscreenCommandBuffer(
   if (!Send(new GpuChannelMsg_CreateOffscreenCommandBuffer(size,
                                                            init_params,
                                                            &route_id))) {
+    LOG(ERROR) << "Failed to send GpuChannelMsg_CreateOffscreenCommandBuffer.";
     return NULL;
   }
 
-  if (route_id == MSG_ROUTING_NONE)
+  if (route_id == MSG_ROUTING_NONE) {
+    LOG(ERROR)
+        << "GpuChannelMsg_CreateOffscreenCommandBuffer returned failure.";
     return NULL;
+  }
 
   CommandBufferProxyImpl* command_buffer =
       new CommandBufferProxyImpl(this, route_id);
@@ -180,17 +192,15 @@ CommandBufferProxyImpl* GpuChannelHost::CreateOffscreenCommandBuffer(
 
 scoped_ptr<media::VideoDecodeAccelerator> GpuChannelHost::CreateVideoDecoder(
     int command_buffer_route_id,
-    media::VideoCodecProfile profile,
-    media::VideoDecodeAccelerator::Client* client) {
+    media::VideoCodecProfile profile) {
   AutoLock lock(context_lock_);
   ProxyMap::iterator it = proxies_.find(command_buffer_route_id);
   DCHECK(it != proxies_.end());
   CommandBufferProxyImpl* proxy = it->second;
-  return proxy->CreateVideoDecoder(profile, client).Pass();
+  return proxy->CreateVideoDecoder(profile).Pass();
 }
 
-scoped_ptr<media::VideoEncodeAccelerator> GpuChannelHost::CreateVideoEncoder(
-    media::VideoEncodeAccelerator::Client* client) {
+scoped_ptr<media::VideoEncodeAccelerator> GpuChannelHost::CreateVideoEncoder() {
   TRACE_EVENT0("gpu", "GpuChannelHost::CreateVideoEncoder");
 
   scoped_ptr<media::VideoEncodeAccelerator> vea;
@@ -200,7 +210,7 @@ scoped_ptr<media::VideoEncodeAccelerator> GpuChannelHost::CreateVideoEncoder(
   if (route_id == MSG_ROUTING_NONE)
     return vea.Pass();
 
-  vea.reset(new GpuVideoEncodeAcceleratorHost(client, this, route_id));
+  vea.reset(new GpuVideoEncodeAcceleratorHost(this, route_id));
   return vea.Pass();
 }
 

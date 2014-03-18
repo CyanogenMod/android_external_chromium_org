@@ -22,16 +22,20 @@ class CC_EXPORT LayerTreeSettings {
   bool allow_antialiasing;
   bool throttle_frame_production;
   bool begin_impl_frame_scheduling_enabled;
-  bool deadline_scheduling_enabled;
+  bool main_frame_before_draw_enabled;
+  bool main_frame_before_activation_enabled;
   bool using_synchronous_renderer_compositor;
   bool per_tile_painting_enabled;
   bool partial_swap_enabled;
   bool accelerated_animation_enabled;
-  bool background_color_instead_of_checkerboard;
-  bool show_overdraw_in_tracing;
   bool can_use_lcd_text;
   bool should_clear_root_render_pass;
-  bool gpu_rasterization;
+  enum RasterizationSite {
+    CpuRasterization,
+    HybridRasterization,
+    GpuRasterization,
+  };
+  RasterizationSite rasterization_site;
 
   enum ScrollbarAnimator {
     NoAnimator,

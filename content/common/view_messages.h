@@ -337,15 +337,6 @@ IPC_STRUCT_BEGIN(ViewHostMsg_DateTimeDialogValue_Params)
   IPC_STRUCT_MEMBER(std::vector<content::DateTimeSuggestion>, suggestions)
 IPC_STRUCT_END()
 
-IPC_STRUCT_BEGIN(ViewHostMsg_OpenURL_Params)
-  IPC_STRUCT_MEMBER(GURL, url)
-  IPC_STRUCT_MEMBER(content::Referrer, referrer)
-  IPC_STRUCT_MEMBER(WindowOpenDisposition, disposition)
-  IPC_STRUCT_MEMBER(int64, frame_id)
-  IPC_STRUCT_MEMBER(bool, should_replace_current_entry)
-  IPC_STRUCT_MEMBER(bool, user_gesture)
-IPC_STRUCT_END()
-
 IPC_STRUCT_BEGIN(ViewHostMsg_SelectionBounds_Params)
   IPC_STRUCT_MEMBER(gfx::Rect, anchor_rect)
   IPC_STRUCT_MEMBER(blink::WebTextDirection, anchor_dir)
@@ -519,11 +510,6 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
 
   // The accessibility mode of the renderer.
   IPC_STRUCT_MEMBER(AccessibilityMode, accessibility_mode)
-
-  // Specifies whether partially swapping composited buffers is
-  // allowed for a renderer. Partial swaps will be used if they are both
-  // allowed and supported.
-  IPC_STRUCT_MEMBER(bool, allow_partial_swap)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewMsg_PostMessage_Params)
@@ -618,7 +604,7 @@ IPC_MESSAGE_ROUTED1(ViewMsg_UpdateWebPreferences,
                     WebPreferences)
 
 // Informs the renderer that the timezone has changed.
-IPC_MESSAGE_ROUTED0(ViewMsg_TimezoneChange)
+IPC_MESSAGE_CONTROL0(ViewMsg_TimezoneChange)
 
 // Tells the render view to close.
 IPC_MESSAGE_ROUTED0(ViewMsg_Close)
@@ -756,13 +742,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_PostMessageEvent,
 // Requests that the RenderView's main frame sets its opener to null.
 IPC_MESSAGE_ROUTED0(ViewMsg_DisownOpener)
 
-// Request for the renderer to evaluate an xpath to a frame and insert css
-// into that frame's document. See ViewMsg_ScriptEvalRequest for details on
-// allowed xpath expressions.
-IPC_MESSAGE_ROUTED2(ViewMsg_CSSInsertRequest,
-                    base::string16,  /* frame_xpath */
-                    std::string  /* css string */)
-
 // Change the zoom level for the current main frame.  If the level actually
 // changes, a ViewHostMsg_DidZoomURL message will be sent back to the browser
 // telling it what url got zoomed and what its current zoom level is.
@@ -774,12 +753,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_Zoom,
 // telling it what url got zoomed and what its current zoom level is.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetZoomLevel,
                     double /* zoom_level */)
-
-// Zooms the page by the factor defined in the renderer.
-IPC_MESSAGE_ROUTED3(ViewMsg_ZoomFactor,
-                    content::PageZoom,
-                    int /* zoom center_x */,
-                    int /* zoom center_y */)
 
 // Set the zoom level for a particular url that the renderer is in the
 // process of loading.  This will be stored, to be used if the load commits
@@ -890,11 +863,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_EnumerateDirectoryResponse,
 // the renderer.
 IPC_MESSAGE_ROUTED0(ViewMsg_CantFocus)
 
-// Instructs the renderer to invoke the frame's shouldClose method, which
-// runs the onbeforeunload event handler.  Expects the result to be returned
-// via ViewHostMsg_ShouldClose.
-IPC_MESSAGE_ROUTED0(ViewMsg_ShouldClose)
-
 // Tells the renderer to suppress any further modal dialogs until it receives a
 // corresponding ViewMsg_SwapOut message.  This ensures that no
 // PageGroupLoadDeferrer is on the stack for SwapOut.
@@ -951,8 +919,8 @@ IPC_MESSAGE_ROUTED1(ViewMsg_DisableAutoResize,
 IPC_MESSAGE_ROUTED1(ViewMsg_SetTextDirection,
                     blink::WebTextDirection /* direction */)
 
-// Tells the renderer to clear the focused node (if any).
-IPC_MESSAGE_ROUTED0(ViewMsg_ClearFocusedNode)
+// Tells the renderer to clear the focused element (if any).
+IPC_MESSAGE_ROUTED0(ViewMsg_ClearFocusedElement)
 
 // Make the RenderView transparent and render it onto a custom background. The
 // background will be tiled in both directions if it is not large enough.
@@ -1067,10 +1035,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_FindMatchRects,
 IPC_MESSAGE_ROUTED2(ViewMsg_SelectPopupMenuItems,
                     bool /* user canceled the popup */,
                     std::vector<int> /* selected indices */)
-
-// Tells the renderer to try to revert to the zoom level we were at before
-// ViewMsg_ScrollFocusedEditableNodeIntoView was called.
-IPC_MESSAGE_ROUTED0(ViewMsg_UndoScrollFocusedEditableNodeIntoView)
 
 // Notifies the renderer whether hiding/showing the top controls is enabled
 // and whether or not to animate to the proper state.
@@ -1262,15 +1226,6 @@ IPC_MESSAGE_ROUTED5(ViewHostMsg_Find_Reply,
                     int /* active_match_ordinal */,
                     bool /* final_update */)
 
-// Provides the result from running OnMsgShouldClose.  |proceed| matches the
-// return value of the the frame's shouldClose method (which includes the
-// onbeforeunload handler): true if the user decided to proceed with leaving
-// the page.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_ShouldClose_ACK,
-                    bool /* proceed */,
-                    base::TimeTicks /* before_unload_start_time */,
-                    base::TimeTicks /* before_unload_end_time */)
-
 // Indicates that the current renderer has swapped out, after a SwapOut
 // message.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_SwapOut_ACK)
@@ -1292,12 +1247,6 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_MediaPausedNotification,
 IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateState,
                     int32 /* page_id */,
                     content::PageState /* state */)
-
-// Notifies the browser that a frame finished loading.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_DidFinishLoad,
-                    int64 /* frame_id */,
-                    GURL /* validated_url */,
-                    bool /* is_main_frame */)
 
 // Changes the title for the page in the UI when the page is navigated or the
 // title changes.
@@ -1493,9 +1442,6 @@ IPC_SYNC_MESSAGE_ROUTED4_2(ViewHostMsg_RunJavaScriptMessage,
                            bool         /* out - success */,
                            base::string16     /* out - user_input field */)
 
-// Requests that the given URL be opened in the specified manner.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_OpenURL, ViewHostMsg_OpenURL_Params)
-
 // Notifies that the preferred size of the content changed.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_DidContentsPreferredSizeChange,
                     gfx::Size /* pref_size */)
@@ -1638,6 +1584,12 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_SelectionChanged,
 // Notification that the selection bounds have changed.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_SelectionBoundsChanged,
                     ViewHostMsg_SelectionBounds_Params)
+
+#if defined(OS_ANDROID)
+// Notification that the selection root bounds have changed.
+IPC_MESSAGE_ROUTED1(ViewHostMsg_SelectionRootBoundsChanged,
+                    gfx::Rect /* bounds of the selection root */)
+#endif
 
 // Asks the browser to open the color chooser.
 IPC_MESSAGE_ROUTED3(ViewHostMsg_OpenColorChooser,
@@ -1792,9 +1744,6 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_DidGenerateCacheableMetadata,
                      double /* expected_response_time */,
                      std::vector<char> /* data */)
 
-// Displays a JavaScript out-of-memory message in the infobar.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_JSOutOfMemory)
-
 // Register a new handler for URL requests with the given scheme.
 IPC_MESSAGE_ROUTED4(ViewHostMsg_RegisterProtocolHandler,
                     std::string /* scheme */,
@@ -1855,15 +1804,6 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_UnlockMouse)
 // After this, it is no longer safe to show a pending navigation's URL without
 // making a URL spoof possible.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_DidAccessInitialDocument)
-
-// Following message is used to communicate the values received by the
-// callback binding the JS to Cpp.
-// An instance of browser that has an automation host listening to it can
-// have a javascript send a native value (string, number, boolean) to the
-// listener in Cpp. (DomAutomationController)
-IPC_MESSAGE_ROUTED2(ViewHostMsg_DomOperationResponse,
-                    std::string  /* json_string */,
-                    int  /* automation_id */)
 
 // Notifies that multiple touch targets may have been pressed, and to show
 // the disambiguation popup.

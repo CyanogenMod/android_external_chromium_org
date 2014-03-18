@@ -75,7 +75,7 @@ class TestProfileSyncService : public ProfileSyncService {
       Profile* profile,
       SigninManagerBase* signin,
       ProfileOAuth2TokenService* oauth2_token_service,
-      ProfileSyncService::StartBehavior behavior);
+      browser_sync::ProfileSyncServiceStartBehavior behavior);
 
   virtual ~TestProfileSyncService();
 
@@ -93,8 +93,7 @@ class TestProfileSyncService : public ProfileSyncService {
   syncer::TestIdFactory* id_factory();
 
  protected:
-  static BrowserContextKeyedService* TestFactoryFunction(
-      content::BrowserContext* profile);
+  static KeyedService* TestFactoryFunction(content::BrowserContext* profile);
 
   // Return NULL handle to use in backend initialization to avoid receiving
   // js messages on UI loop when it's being destroyed, which are not deleted

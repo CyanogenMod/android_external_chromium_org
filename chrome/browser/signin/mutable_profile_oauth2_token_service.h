@@ -5,6 +5,8 @@
 #ifndef CHROME_BROWSER_SIGNIN_MUTABLE_PROFILE_OAUTH2_TOKEN_SERVICE_H_
 #define CHROME_BROWSER_SIGNIN_MUTABLE_PROFILE_OAUTH2_TOKEN_SERVICE_H_
 
+#include "base/memory/scoped_vector.h"
+#include "base/threading/thread_checker.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "components/webdata/common/web_data_service_base.h"
 #include "components/webdata/common/web_data_service_consumer.h"
@@ -20,16 +22,21 @@ class MutableProfileOAuth2TokenService : public ProfileOAuth2TokenService,
   // ProfileOAuth2TokenService overrides.
   virtual void Shutdown() OVERRIDE;
   virtual std::vector<std::string> GetAccounts() OVERRIDE;
+
+  // The below three methods should be called only on the thread on which this
+  // object was created.
   virtual void LoadCredentials(const std::string& primary_account_id) OVERRIDE;
   virtual void UpdateCredentials(const std::string& account_id,
                                  const std::string& refresh_token) OVERRIDE;
   virtual void RevokeAllCredentials() OVERRIDE;
+  virtual bool RefreshTokenIsAvailable(const std::string& account_id) const
+      OVERRIDE;
 
   // Revokes credentials related to |account_id|.
   void RevokeCredentials(const std::string& account_id);
 
  protected:
-  class AccountInfo : public SigninGlobalError::AuthStatusProvider {
+  class AccountInfo : public SigninErrorController::AuthStatusProvider {
    public:
     AccountInfo(ProfileOAuth2TokenService* token_service,
                 const std::string& account_id,
@@ -43,7 +50,7 @@ class MutableProfileOAuth2TokenService : public ProfileOAuth2TokenService,
 
     void SetLastAuthError(const GoogleServiceAuthError& error);
 
-    // SigninGlobalError::AuthStatusProvider implementation.
+    // SigninErrorController::AuthStatusProvider implementation.
     virtual std::string GetAccountId() const OVERRIDE;
     virtual GoogleServiceAuthError GetAuthStatus() const OVERRIDE;
 
@@ -66,24 +73,30 @@ class MutableProfileOAuth2TokenService : public ProfileOAuth2TokenService,
   virtual ~MutableProfileOAuth2TokenService();
 
   // OAuth2TokenService implementation.
-  virtual std::string GetRefreshToken(const std::string& account_id) OVERRIDE;
+  virtual OAuth2AccessTokenFetcher* CreateAccessTokenFetcher(
+      const std::string& account_id,
+      net::URLRequestContextGetter* getter,
+      OAuth2AccessTokenConsumer* consumer) OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
+
+  // Updates the internal cache of the result from the most-recently-completed
+  // auth request (used for reporting errors to the user).
+  virtual void UpdateAuthError(const std::string& account_id,
+                               const GoogleServiceAuthError& error) OVERRIDE;
+
+  virtual std::string GetRefreshToken(const std::string& account_id) const;
 
   AccountInfoMap& refresh_tokens() { return refresh_tokens_; }
 
  private:
+  class RevokeServerRefreshToken;
+
   FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceTest,
                            TokenServiceUpdateClearsCache);
   FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceTest,
                            PersistenceDBUpgrade);
   FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceTest,
                            PersistenceLoadCredentials);
-
-  // Updates the internal cache of the result from the most-recently-completed
-  // auth request (used for reporting errors to the user).
-  virtual void UpdateAuthError(
-      const std::string& account_id,
-      const GoogleServiceAuthError& error) OVERRIDE;
 
   // WebDataServiceConsumer implementation:
   virtual void OnWebDataServiceRequestDone(
@@ -118,6 +131,12 @@ class MutableProfileOAuth2TokenService : public ProfileOAuth2TokenService,
   // The primary account id of this service's profile during the loading of
   // credentials.  This member is empty otherwise.
   std::string loading_primary_account_id_;
+
+  ScopedVector<RevokeServerRefreshToken> server_revokes_;
+
+  // Used to verify that certain methods are called only on the thread on which
+  // this instance was created.
+  base::ThreadChecker thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(MutableProfileOAuth2TokenService);
 };

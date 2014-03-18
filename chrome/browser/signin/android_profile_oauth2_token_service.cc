@@ -11,8 +11,6 @@
 #include "base/logging.h"
 #include "chrome/browser/profiles/profile_android.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service_android.h"
 #include "content/public/browser/browser_thread.h"
 #include "jni/OAuth2TokenService_jni.h"
@@ -76,7 +74,7 @@ static jobject GetForProfile(JNIEnv* env,
 }
 
 bool AndroidProfileOAuth2TokenService::RefreshTokenIsAvailable(
-    const std::string& account_id) {
+    const std::string& account_id) const {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jstring> j_account_id =
       ConvertUTF8ToJavaString(env, account_id);
@@ -130,6 +128,15 @@ void AndroidProfileOAuth2TokenService::FetchOAuth2Token(
       j_username.obj(),
       j_scope.obj(),
       reinterpret_cast<intptr_t>(heap_callback.release()));
+}
+
+OAuth2AccessTokenFetcher*
+AndroidProfileOAuth2TokenService::CreateAccessTokenFetcher(
+    const std::string& account_id,
+    net::URLRequestContextGetter* getter,
+    OAuth2AccessTokenConsumer* consumer) {
+  NOTREACHED();
+  return NULL;
 }
 
 void AndroidProfileOAuth2TokenService::InvalidateOAuth2Token(

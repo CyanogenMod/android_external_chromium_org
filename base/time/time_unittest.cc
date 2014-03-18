@@ -481,6 +481,46 @@ TEST_F(TimeTest, ExplodeBeforeUnixEpoch) {
   EXPECT_EQ(1, exploded.millisecond);
 }
 
+TEST_F(TimeTest, TimeDeltaMax) {
+  TimeDelta max = TimeDelta::Max();
+  EXPECT_TRUE(max.is_max());
+  EXPECT_EQ(max, TimeDelta::Max());
+  EXPECT_GT(max, TimeDelta::FromDays(100 * 365));
+  EXPECT_GT(max, TimeDelta());
+}
+
+TEST_F(TimeTest, TimeDeltaMaxConversions) {
+  TimeDelta t = TimeDelta::Max();
+  EXPECT_EQ(std::numeric_limits<int64>::max(), t.ToInternalValue());
+
+  EXPECT_EQ(std::numeric_limits<int>::max(), t.InDays());
+  EXPECT_EQ(std::numeric_limits<int>::max(), t.InHours());
+  EXPECT_EQ(std::numeric_limits<int>::max(), t.InMinutes());
+  EXPECT_EQ(std::numeric_limits<double>::infinity(), t.InSecondsF());
+  EXPECT_EQ(std::numeric_limits<int64>::max(), t.InSeconds());
+  EXPECT_EQ(std::numeric_limits<double>::infinity(), t.InMillisecondsF());
+  EXPECT_EQ(std::numeric_limits<int64>::max(), t.InMilliseconds());
+  EXPECT_EQ(std::numeric_limits<int64>::max(), t.InMillisecondsRoundedUp());
+
+  t = TimeDelta::FromDays(std::numeric_limits<int>::max());
+  EXPECT_TRUE(t.is_max());
+
+  t = TimeDelta::FromHours(std::numeric_limits<int>::max());
+  EXPECT_TRUE(t.is_max());
+
+  t = TimeDelta::FromMinutes(std::numeric_limits<int>::max());
+  EXPECT_TRUE(t.is_max());
+
+  t = TimeDelta::FromSeconds(std::numeric_limits<int64>::max());
+  EXPECT_TRUE(t.is_max());
+
+  t = TimeDelta::FromMilliseconds(std::numeric_limits<int64>::max());
+  EXPECT_TRUE(t.is_max());
+
+  t = TimeDelta::FromMicroseconds(std::numeric_limits<int64>::max());
+  EXPECT_TRUE(t.is_max());
+}
+
 TEST_F(TimeTest, Max) {
   Time max = Time::Max();
   EXPECT_TRUE(max.is_max());
@@ -493,13 +533,13 @@ TEST_F(TimeTest, MaxConversions) {
   Time t = Time::Max();
   EXPECT_EQ(std::numeric_limits<int64>::max(), t.ToInternalValue());
 
-  t = Time::FromDoubleT(std::numeric_limits<double>::max());
+  t = Time::FromDoubleT(std::numeric_limits<double>::infinity());
   EXPECT_TRUE(t.is_max());
-  EXPECT_EQ(std::numeric_limits<double>::max(), t.ToDoubleT());
+  EXPECT_EQ(std::numeric_limits<double>::infinity(), t.ToDoubleT());
 
-  t = Time::FromJsTime(std::numeric_limits<double>::max());
+  t = Time::FromJsTime(std::numeric_limits<double>::infinity());
   EXPECT_TRUE(t.is_max());
-  EXPECT_EQ(std::numeric_limits<double>::max(), t.ToJsTime());
+  EXPECT_EQ(std::numeric_limits<double>::infinity(), t.ToJsTime());
 
   t = Time::FromTimeT(std::numeric_limits<time_t>::max());
   EXPECT_TRUE(t.is_max());
@@ -518,9 +558,10 @@ TEST_F(TimeTest, MaxConversions) {
 #endif
 
 #if defined(OS_MACOSX)
-  t = Time::FromCFAbsoluteTime(std::numeric_limits<CFAbsoluteTime>::max());
+  t = Time::FromCFAbsoluteTime(std::numeric_limits<CFAbsoluteTime>::infinity());
   EXPECT_TRUE(t.is_max());
-  EXPECT_EQ(std::numeric_limits<CFAbsoluteTime>::max(), t.ToCFAbsoluteTime());
+  EXPECT_EQ(std::numeric_limits<CFAbsoluteTime>::infinity(),
+            t.ToCFAbsoluteTime());
 #endif
 
 #if defined(OS_WIN)
@@ -635,7 +676,14 @@ TEST(TimeTicks, HighResNow) {
   HighResClockTest(&TimeTicks::HighResNow);
 }
 
-TEST(TimeTicks, ThreadNow) {
+// Fails frequently on Android http://crbug.com/352633 with:
+// Expected: (delta_thread.InMicroseconds()) > (0), actual: 0 vs 0
+#if defined(OS_ANDROID)
+#define MAYBE_ThreadNow DISABLED_ThreadNow
+#else
+#define MAYBE_ThreadNow ThreadNow
+#endif
+TEST(TimeTicks, MAYBE_ThreadNow) {
   if (TimeTicks::IsThreadNowSupported()) {
     TimeTicks begin = TimeTicks::Now();
     TimeTicks begin_thread = TimeTicks::ThreadNow();

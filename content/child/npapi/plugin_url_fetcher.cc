@@ -6,22 +6,23 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "content/child/child_thread.h"
-#include "content/child/npapi/webplugin.h"
 #include "content/child/npapi/plugin_host.h"
 #include "content/child/npapi/plugin_instance.h"
 #include "content/child/npapi/plugin_stream_url.h"
+#include "content/child/npapi/webplugin.h"
 #include "content/child/npapi/webplugin_resource_client.h"
 #include "content/child/plugin_messages.h"
 #include "content/child/request_extra_data.h"
 #include "content/child/resource_dispatcher.h"
+#include "content/child/web_url_loader_impl.h"
+#include "content/common/resource_request_body.h"
+#include "content/common/service_worker/service_worker_types.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "webkit/child/multipart_response_delegate.h"
-#include "webkit/child/weburlloader_impl.h"
-#include "webkit/common/resource_request_body.h"
 
 namespace content {
 namespace {
@@ -111,7 +112,6 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
                               false,
                               render_frame_id,
                               false,
-                              -1,
                               GURL(),
                               false,
                               -1,
@@ -119,7 +119,8 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
                               PAGE_TRANSITION_LINK,
                               false,
                               -1,
-                              -1);
+                              -1,
+                              kInvalidServiceWorkerProviderId);
 
   request_info.extra_data = &extra_data;
 
@@ -147,8 +148,8 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
   bridge_.reset(ChildThread::current()->resource_dispatcher()->CreateBridge(
       request_info));
   if (!body.empty()) {
-    scoped_refptr<webkit_glue::ResourceRequestBody> request_body =
-        new webkit_glue::ResourceRequestBody;
+    scoped_refptr<ResourceRequestBody> request_body =
+        new ResourceRequestBody;
     request_body->AppendBytes(&body[0], body.size());
     bridge_->SetRequestBody(request_body.get());
   }
@@ -237,7 +238,7 @@ void PluginURLFetcher::OnReceivedResponse(
     if (response_code == 206) {
       blink::WebURLResponse response;
       response.initialize();
-      webkit_glue::WebURLLoaderImpl::PopulateURLResponse(url_, info, &response);
+      WebURLLoaderImpl::PopulateURLResponse(url_, info, &response);
 
       std::string multipart_boundary;
       if (webkit_glue::MultipartResponseDelegate::ReadMultipartBoundary(

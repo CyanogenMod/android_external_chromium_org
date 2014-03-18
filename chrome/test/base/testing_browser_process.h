@@ -57,6 +57,7 @@ class TestingBrowserProcess : public BrowserProcess {
   virtual void ResourceDispatcherHostCreated() OVERRIDE;
   virtual void EndSession() OVERRIDE;
   virtual MetricsService* metrics_service() OVERRIDE;
+  virtual rappor::RapporService* rappor_service() OVERRIDE;
   virtual IOThread* io_thread() OVERRIDE;
   virtual WatchDogThread* watchdog_thread() OVERRIDE;
   virtual ProfileManager* profile_manager() OVERRIDE;
@@ -86,8 +87,7 @@ class TestingBrowserProcess : public BrowserProcess {
   virtual void CreateDevToolsHttpProtocolHandler(
       chrome::HostDesktopType host_desktop_type,
       const std::string& ip,
-      int port,
-      const std::string& frontend_url) OVERRIDE;
+      int port) OVERRIDE;
   virtual unsigned int AddRefModule() OVERRIDE;
   virtual unsigned int ReleaseModule() OVERRIDE;
   virtual bool IsShuttingDown() OVERRIDE;

@@ -16,7 +16,7 @@
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "components/storage_monitor/removable_storage_observer.h"
 
 class Profile;
@@ -132,31 +132,33 @@ typedef std::set<MediaGalleryPrefId> MediaGalleryPrefIdSet;
 
 // A class to manage the media gallery preferences.  There is one instance per
 // user profile.
-class MediaGalleriesPreferences : public BrowserContextKeyedService,
-                                  public RemovableStorageObserver {
+class MediaGalleriesPreferences
+    : public KeyedService,
+      public storage_monitor::RemovableStorageObserver {
  public:
   class GalleryChangeObserver {
-    public:
-     // |extension_id| specifies the extension affected by this change.
-     // |pref_id| refers to the gallery.
-     virtual void OnPermissionAdded(MediaGalleriesPreferences* pref,
-                                    const std::string& extension_id,
-                                    MediaGalleryPrefId pref_id) {}
-
-     virtual void OnPermissionRemoved(MediaGalleriesPreferences* pref,
-                                      const std::string& extension_id,
-                                      MediaGalleryPrefId pref_id) {}
-
-     virtual void OnGalleryAdded(MediaGalleriesPreferences* pref,
-                                 MediaGalleryPrefId pref_id) {}
-
-     virtual void OnGalleryRemoved(MediaGalleriesPreferences* pref,
+   public:
+    // |extension_id| specifies the extension affected by this change.
+    // |pref_id| refers to the gallery.
+    virtual void OnPermissionAdded(MediaGalleriesPreferences* pref,
+                                   const std::string& extension_id,
                                    MediaGalleryPrefId pref_id) {}
 
-     virtual void OnGalleryInfoUpdated(MediaGalleriesPreferences* pref,
-                                       MediaGalleryPrefId pref_id) {}
-    protected:
-     virtual ~GalleryChangeObserver();
+    virtual void OnPermissionRemoved(MediaGalleriesPreferences* pref,
+                                     const std::string& extension_id,
+                                     MediaGalleryPrefId pref_id) {}
+
+    virtual void OnGalleryAdded(MediaGalleriesPreferences* pref,
+                                MediaGalleryPrefId pref_id) {}
+
+    virtual void OnGalleryRemoved(MediaGalleriesPreferences* pref,
+                                  MediaGalleryPrefId pref_id) {}
+
+    virtual void OnGalleryInfoUpdated(MediaGalleriesPreferences* pref,
+                                      MediaGalleryPrefId pref_id) {}
+
+   protected:
+    virtual ~GalleryChangeObserver();
   };
 
   explicit MediaGalleriesPreferences(Profile* profile);
@@ -181,7 +183,8 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
   void RemoveGalleryChangeObserver(GalleryChangeObserver* observer);
 
   // RemovableStorageObserver implementation.
-  virtual void OnRemovableStorageAttached(const StorageInfo& info) OVERRIDE;
+  virtual void OnRemovableStorageAttached(
+      const storage_monitor::StorageInfo& info) OVERRIDE;
 
   // Lookup a media gallery and fill in information about it and return true if
   // it exists. Return false if it does not, filling in default information.
@@ -252,7 +255,7 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
   base::Time GetLastScanCompletionTime() const;
   void SetLastScanCompletionTime(const base::Time& time);
 
-  // BrowserContextKeyedService implementation:
+  // KeyedService implementation:
   virtual void Shutdown() OVERRIDE;
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
@@ -348,9 +351,9 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
   // The profile that owns |this|.
   Profile* profile_;
 
-  // The ExtensionPrefs used in a testing environment, where
-  // BrowserContextKeyedServices aren't used. This will be NULL unless it is
-  // set with SetExtensionPrefsForTesting().
+  // The ExtensionPrefs used in a testing environment, where KeyedServices
+  // aren't used. This will be NULL unless it is set with
+  // SetExtensionPrefsForTesting().
   extensions::ExtensionPrefs* extension_prefs_for_testing_;
 
   // An in-memory cache of known galleries.

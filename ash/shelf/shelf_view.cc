@@ -35,10 +35,10 @@
 #include "base/metrics/histogram.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -584,8 +584,12 @@ void ShelfView::CreateDragIconProxy(
 
 void ShelfView::UpdateDragIconProxy(
     const gfx::Point& location_in_screen_coordinates) {
-  drag_image_->SetScreenPosition(
-      location_in_screen_coordinates - drag_image_offset_);
+  // TODO(jennyz): Investigate why drag_image_ becomes NULL at this point per
+  // crbug.com/34722, while the app list item is still being dragged around.
+  if (drag_image_) {
+    drag_image_->SetScreenPosition(
+        location_in_screen_coordinates - drag_image_offset_);
+  }
 }
 
 void ShelfView::DestroyDragIconProxy() {
@@ -1031,7 +1035,7 @@ void ShelfView::ContinueDrag(const ui::LocatedEvent& event) {
 
   // If this is not a drag and drop host operation and not the app list item,
   // check if the item got ripped off the shelf - if it did we are done.
-  if (!drag_and_drop_shelf_id_ && ash::switches::UseDragOffShelf() &&
+  if (!drag_and_drop_shelf_id_ &&
       RemovableByRipOff(current_index) != NOT_REMOVABLE) {
     if (HandleRipOffDrag(event))
       return;
@@ -1529,8 +1533,8 @@ views::FocusTraversable* ShelfView::GetPaneFocusTraversable() {
   return this;
 }
 
-void ShelfView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_TOOLBAR;
+void ShelfView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_TOOLBAR;
   state->name = l10n_util::GetStringUTF16(IDS_ASH_SHELF_ACCESSIBLE_NAME);
 }
 

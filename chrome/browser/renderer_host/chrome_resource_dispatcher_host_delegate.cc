@@ -32,6 +32,7 @@
 #include "chrome/browser/renderer_host/safe_browsing_resource_throttle_factory.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/signin/signin_header_helper.h"
+#include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/auto_login_prompter.h"
 #include "chrome/browser/ui/login/login_prompt.h"
 #include "chrome/browser/ui/sync/one_click_signin_helper.h"
@@ -113,19 +114,24 @@ void NotifyDownloadInitiatedOnUI(int render_process_id, int render_view_id) {
       content::NotificationService::NoDetails());
 }
 
-prerender::PrerenderContents* FindPrerenderContents(int render_process_id,
-                                                    int render_view_id) {
+prerender::PrerenderManager* GetPrerenderManager(int render_process_id,
+                                                 int render_view_id) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  content::RenderViewHost* rvh =
-      content::RenderViewHost::FromID(render_process_id, render_view_id);
-  if (!rvh)
-    return NULL;
+
   content::WebContents* web_contents =
-      content::WebContents::FromRenderViewHost(rvh);
+      tab_util::GetWebContentsByID(render_process_id, render_view_id);
   if (!web_contents)
     return NULL;
 
-  return prerender::PrerenderContents::FromWebContents(web_contents);
+  content::BrowserContext* browser_context = web_contents->GetBrowserContext();
+  if (!browser_context)
+    return NULL;
+
+  Profile* profile = Profile::FromBrowserContext(browser_context);
+  if (!profile)
+    return NULL;
+
+  return prerender::PrerenderManagerFactory::GetForProfile(profile);
 }
 
 void UpdatePrerenderNetworkBytesCallback(int render_process_id,
@@ -133,14 +139,19 @@ void UpdatePrerenderNetworkBytesCallback(int render_process_id,
                                          int64 bytes) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
+  content::WebContents* web_contents =
+      tab_util::GetWebContentsByID(render_process_id, render_view_id);
+  // PrerenderContents::FromWebContents handles the NULL case.
   prerender::PrerenderContents* prerender_contents =
-      FindPrerenderContents(render_process_id, render_view_id);
+      prerender::PrerenderContents::FromWebContents(web_contents);
 
-  if (!prerender_contents)
-    return;
-  prerender_contents->AddNetworkBytes(bytes);
-  prerender_contents->prerender_manager()->AddProfileNetworkBytesIfEnabled(
-      bytes);
+  if (prerender_contents)
+    prerender_contents->AddNetworkBytes(bytes);
+
+  prerender::PrerenderManager* prerender_manager =
+      GetPrerenderManager(render_process_id, render_view_id);
+  if (prerender_manager)
+    prerender_manager->AddProfileNetworkBytesIfEnabled(bytes);
 }
 
 #if !defined(OS_ANDROID)
@@ -163,23 +174,22 @@ void SendExecuteMimeTypeHandlerEvent(scoped_ptr<content::StreamHandle> stream,
                                      const std::string& extension_id) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-  content::RenderViewHost* render_view_host =
-      content::RenderViewHost::FromID(render_process_id, render_view_id);
-  if (!render_view_host)
-    return;
-
   content::WebContents* web_contents =
-      content::WebContents::FromRenderViewHost(render_view_host);
+      tab_util::GetWebContentsByID(render_process_id, render_view_id);
   if (!web_contents)
     return;
 
-  content::BrowserContext* browser_context = web_contents->GetBrowserContext();
-  if (!browser_context)
+  // If the request was for a prerender, abort the prerender and do not
+  // continue.
+  prerender::PrerenderContents* prerender_contents =
+      prerender::PrerenderContents::FromWebContents(web_contents);
+  if (prerender_contents) {
+    prerender_contents->Destroy(prerender::FINAL_STATUS_DOWNLOAD);
     return;
+  }
 
-  Profile* profile = Profile::FromBrowserContext(browser_context);
-  if (!profile)
-    return;
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
 
   StreamsPrivateAPI* streams_private = StreamsPrivateAPI::Get(profile);
   if (!streams_private)
@@ -191,9 +201,14 @@ void SendExecuteMimeTypeHandlerEvent(scoped_ptr<content::StreamHandle> stream,
 void LaunchURL(const GURL& url, int render_process_id, int render_view_id) {
   // If there is no longer a WebContents, the request may have raced with tab
   // closing. Don't fire the external request. (It may have been a prerender.)
+  content::WebContents* web_contents =
+      tab_util::GetWebContentsByID(render_process_id, render_view_id);
+  if (!web_contents)
+    return;
 
+  // Do not launch external requests attached to unswapped prerenders.
   prerender::PrerenderContents* prerender_contents =
-      FindPrerenderContents(render_process_id, render_view_id);
+      prerender::PrerenderContents::FromWebContents(web_contents);
   if (prerender_contents) {
     prerender_contents->Destroy(prerender::FINAL_STATUS_UNSUPPORTED_SCHEME);
     prerender::ReportPrerenderExternalURL();
@@ -346,11 +361,12 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
   if (!request->is_pending()) {
     net::HttpRequestHeaders headers;
     headers.CopyFrom(request->extra_request_headers());
-    bool incognito = io_data->is_incognito();
+    bool is_off_the_record = io_data->IsOffTheRecord();
     chrome_variations::VariationsHttpHeaderProvider::GetInstance()->
         AppendHeaders(request->url(),
-                      incognito,
-                      !incognito && io_data->GetMetricsEnabledStateOnIOThread(),
+                      is_off_the_record,
+                      !is_off_the_record &&
+                          io_data->GetMetricsEnabledStateOnIOThread(),
                       &headers);
     request->SetExtraRequestHeaders(headers);
   }
@@ -527,7 +543,7 @@ bool ChromeResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
 #if !defined(OS_ANDROID)
   ProfileIOData* io_data =
       ProfileIOData::FromResourceContext(resource_context);
-  bool profile_is_incognito = io_data->is_incognito();
+  bool profile_is_off_the_record = io_data->IsOffTheRecord();
   const scoped_refptr<const extensions::InfoMap> extension_info_map(
       io_data->GetExtensionInfoMap());
   std::vector<std::string> whitelist = MimeTypesHandler::GetMIMETypeWhitelist();
@@ -540,7 +556,7 @@ bool ChromeResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
     // The white-listed extension may not be installed, so we have to NULL check
     // |extension|.
     if (!extension ||
-        (profile_is_incognito &&
+        (profile_is_off_the_record &&
          !extension_info_map->IsIncognitoEnabled(extension_id))) {
       continue;
     }

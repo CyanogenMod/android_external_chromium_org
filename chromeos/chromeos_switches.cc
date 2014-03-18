@@ -21,20 +21,20 @@ const char kAuthExtensionPath[]             = "auth-ext-path";
 // Forces the stub implementation of dbus clients.
 const char kDbusStub[] = "dbus-stub";
 
-// All stub networks are idle by default.
-const char kDefaultStubNetworkStateIdle[] = "default-stub-network-state-idle";
-
 // Time before a machine at OOBE is considered derelict
 const char kDerelictDetectionTimeout[] = "derelict-detection-timeout";
 
 // Time before a derelict machines starts demo mode.
 const char kDerelictIdleTimeout[] = "derelict-idle-timeout";
 
+// Integer flag that sets the DeviceRegistered local state pref.
+const char kDeviceRegistered[]              = "device-registered";
+
 // Disables wallpaper boot animation (except of OOBE case).
 const char kDisableBootAnimation[]          = "disable-boot-animation";
 
-// Disables Google Drive integration.
-const char kDisableDrive[]                  = "disable-drive";
+// Disables the ChromeOS demo.
+const char kDisableDemoMode[]               = "disable-demo-mode";
 
 // Disables reporting recently logged in users for enterprise-managed devices.
 const char kDisableEnterpriseUserReporting[] =
@@ -42,13 +42,6 @@ const char kDisableEnterpriseUserReporting[] =
 
 // Disable Genius App and use the original Help App instead.
 const char kDisableGeniusApp[]              = "disable-genius-app";
-
-// Disable to show the indicator about the IME (input method editor) mode
-// on Chrome OS.
-const char kDisableIMEModeIndicator[] = "disable-ime-mode-indicator";
-
-// Disable policy-configured local accounts.
-const char kDisableLocalAccounts[]          = "disable-local-accounts";
 
 // Avoid doing expensive animations upon login.
 const char kDisableLoginAnimations[]        = "disable-login-animations";
@@ -67,11 +60,9 @@ const char kDisableQuickofficeComponentApp[] =
 // Disables volume adjust sound.
 const char kDisableVolumeAdjustSound[] = "disable-volume-adjust-sound";
 
-// Disables fetching online CrOS EULA page, only static version is shown.
-const char kDisableOnlineEULA[] = "disable-cros-online-eula";
-
-// Avoid doing animations upon oobe.
-const char kDisableOobeAnimation[]          = "disable-oobe-animation";
+// Disables notifications about captive portals in session.
+const char kDisableNetworkPortalNotification[] =
+    "disable-network-portal-notification";
 
 // Disables portal detection and network error handling before auto
 // update.
@@ -82,31 +73,19 @@ const char kDisableOOBEBlockingUpdate[] =
 // Useful for testing.
 const char kEchoExtensionPath[]             = "echo-ext-path";
 
-// Enables component extension that initializes background pages of
-// certain hosted applications.
-const char kEnableBackgroundLoader[]        = "enable-background-loader";
-
 // Enables switching between different cellular carriers from the UI.
 const char kEnableCarrierSwitching[]        = "enable-carrier-switching";
 
-// Enable "interactive" mode for stub implemenations (e.g. NetworkStateHandler)
-const char kEnableStubInteractive[] = "enable-stub-interactive";
+// Enables notifications about captive portals in session.
+const char kEnableNetworkPortalNotification[] =
+    "enable-network-portal-notification";
 
-// Enable stub portalled wifi network for testing.
-const char kEnableStubPortalledWifi[] = "enable-stub-portalled-wifi";
+// Enable "interactive" mode for stub implemenations (e.g. PowerManagerClient)
+const char kEnableStubInteractive[] = "enable-stub-interactive";
 
 // Enables touchpad three-finger-click as middle button.
 const char kEnableTouchpadThreeFingerClick[]
     = "enable-touchpad-three-finger-click";
-
-// Specifies stub network types to be enabled.  If this switch is not specified,
-// ethernet, wifi and vpn are enabled by default.
-//
-// Examples:
-// Disable all network types: --enabled-stub-network-types=''
-// Enable wifi only: --enabled-stub-network-types=wifi
-// Enable ethernet and wifi: --enabled-stub-network-types=ethernet,wifi
-const char kEnabledStubNetworkTypes[] = "enabled-stub-network-types";
 
 // Enable Kiosk mode for ChromeOS. Note this switch refers to retail mode rather
 // than the kiosk app mode.
@@ -114,6 +93,10 @@ const char kEnableKioskMode[]               = "enable-kiosk-mode";
 
 // Enables request of tablet site (via user agent override).
 const char kEnableRequestTabletSite[]       = "enable-request-tablet-site";
+
+// Whether to enable forced enterprise re-enrollment.
+const char kEnterpriseEnableForcedReEnrollment[] =
+    "enterprise-enable-forced-re-enrollment";
 
 // Power of the power-of-2 initial modulus that will be used by the
 // auto-enrollment client. E.g. "4" means the modulus will be 2^4 = 16.
@@ -130,16 +113,9 @@ const char kEnterpriseEnrollmentModulusLimit[] =
 const char kEnterpriseEnrollmentSkipRobotAuth[] =
     "enterprise-enrollment-skip-robot-auth";
 
-// Shows the selecting checkboxes in the Files.app.
-const char kFileManagerShowCheckboxes[]     = "file-manager-show-checkboxes";
-
 // Enables the new audio player in the Files.app.
 const char kFileManagerEnableNewAudioPlayer[] =
     "file-manager-enable-new-audio-player";
-
-// Enables the multi-profile support in the Files.app.
-const char kFileManagerEnableMultiProfile[] =
-    "file-manager-enable-multi-profile";
 
 // Passed to Chrome the first time that it's run after the system boots.
 // Not passed on restart after sign out.
@@ -148,9 +124,6 @@ const char kFirstExecAfterBoot[]            = "first-exec-after-boot";
 // Usually in browser tests the usual login manager bringup is skipped so that
 // tests can change how it's brought up. This flag disables that.
 const char kForceLoginManagerInTests[]      = "force-login-manager-in-tests";
-
-// Makes GPU sandbox failures nonfatal.
-const char kGpuSandboxFailuresNonfatal[] = "gpu-sandbox-failures-nonfatal";
 
 // Indicates that the browser is in "browse without sign-in" (Guest session)
 // mode. Should completely disable extensions, sync and bookmarks.
@@ -187,8 +160,22 @@ const char kNaturalScrollDefault[]          = "enable-natural-scroll-default";
 // Skips all other OOBE pages after user login.
 const char kOobeSkipPostLogin[]             = "oobe-skip-postlogin";
 
-// Integer flag that sets the DeviceRegistered local state pref.
-const char kDeviceRegistered[]              = "device-registered";
+// Interval at which we check for total time on OOBE.
+const char kOobeTimerInterval[]             = "oobe-timer-interval";
+
+// Specifies network stub behavior. If this switch is not specified,
+// ethernet, wifi and vpn are enabled by default, and transitions occur
+// instantaneously. Multiple options can be comma separated (no spaces).
+// See FakeShillManagerClient::SetInitialNetworkState for implementation.
+// Examples:
+//  'wifi=on' - A wifi network is initially connected ('1' also works)
+//  'wifi=off' - Wifi networks are all initially disconnected ('0' also works)
+//  'wifi=disabled' - Wifi is initially disabled
+//  'wifi=none' - Wifi is unavailable
+//  'wifi=portal' - Wifi connection will be in Portal state
+//  'cellular=1' - Cellular is initially connected
+//  'interactive=3' - Interactive mode, connect/scan/etc requests take 3 secs
+const char kShillStub[] = "shill-stub";
 
 // Skips the machine hwid check. Useful for running in VMs because they have no
 // hwid.

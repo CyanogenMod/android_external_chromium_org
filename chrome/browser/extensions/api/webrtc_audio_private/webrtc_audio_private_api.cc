@@ -10,7 +10,9 @@
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/media_device_id.h"
+#include "content/public/browser/resource_context.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_system.h"
@@ -28,11 +30,12 @@ using media::AudioManager;
 namespace wap = api::webrtc_audio_private;
 
 static base::LazyInstance<
-    ProfileKeyedAPIFactory<WebrtcAudioPrivateEventService> > g_factory =
-        LAZY_INSTANCE_INITIALIZER;
+    BrowserContextKeyedAPIFactory<WebrtcAudioPrivateEventService> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
 WebrtcAudioPrivateEventService::WebrtcAudioPrivateEventService(
-    Profile* profile) : profile_(profile) {
+    content::BrowserContext* context)
+    : browser_context_(context) {
   // In unit tests, the SystemMonitor may not be created.
   base::SystemMonitor* system_monitor = base::SystemMonitor::Get();
   if (system_monitor)
@@ -50,7 +53,7 @@ void WebrtcAudioPrivateEventService::Shutdown() {
 }
 
 // static
-ProfileKeyedAPIFactory<WebrtcAudioPrivateEventService>*
+BrowserContextKeyedAPIFactory<WebrtcAudioPrivateEventService>*
 WebrtcAudioPrivateEventService::GetFactoryInstance() {
   return g_factory.Pointer();
 }
@@ -77,12 +80,11 @@ void WebrtcAudioPrivateEventService::OnDevicesChanged(
 void WebrtcAudioPrivateEventService::SignalEvent() {
   using api::webrtc_audio_private::OnSinksChanged::kEventName;
 
-  EventRouter* router =
-      ExtensionSystem::Get(profile_)->event_router();
+  EventRouter* router = ExtensionSystem::Get(browser_context_)->event_router();
   if (!router || !router->HasEventListener(kEventName))
     return;
   ExtensionService* extension_service =
-      ExtensionSystem::Get(profile_)->extension_service();
+      ExtensionSystem::Get(browser_context_)->extension_service();
   const ExtensionSet* extensions = extension_service->extensions();
   for (ExtensionSet::const_iterator it = extensions->begin();
        it != extensions->end(); ++it) {

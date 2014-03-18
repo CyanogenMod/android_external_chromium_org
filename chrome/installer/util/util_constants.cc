@@ -151,6 +151,9 @@ const char kSelfDestruct[] = "self-destruct";
 // Install Chrome to system wise location. The default is per user install.
 const char kSystemLevel[] = "system-level";
 
+// Signals to setup.exe that it should trigger the active setup command.
+const char kTriggerActiveSetup[] = "trigger-active-setup";
+
 // If present, setup will uninstall chrome.
 const char kUninstall[] = "uninstall";
 
@@ -215,6 +218,7 @@ const wchar_t kChromeFrameHelperDll[] = L"chrome_frame_helper.dll";
 const wchar_t kChromeFrameHelperExe[] = L"chrome_frame_helper.exe";
 const wchar_t kChromeFrameHelperWndClass[] = L"ChromeFrameHelperWindowClass";
 const wchar_t kChromeLauncherExe[] = L"chrome_launcher.exe";
+const wchar_t kChromeMetroDll[] = L"metro_driver.dll";
 const wchar_t kChromeNewExe[] = L"new_chrome.exe";
 const wchar_t kChromeOldExe[] = L"old_chrome.exe";
 const wchar_t kCmdInstallApp[] = L"install-application";

@@ -8,26 +8,22 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/prefs/pref_service.h"
+#include "base/run_loop.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "chrome/browser/autofill/autofill_cc_infobar_delegate.h"
-#include "chrome/browser/autofill/personal_data_manager_factory.h"
-#include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
-#include "chrome/test/base/chrome_render_view_host_test_harness.h"
-#include "chrome/test/base/testing_profile.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_manager.h"
-#include "components/autofill/core/browser/autofill_manager_delegate.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
+#include "components/autofill/core/browser/test_autofill_manager_delegate.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/forms_seen_state.h"
 #include "components/webdata/common/web_data_results.h"
-#include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/rect.h"
@@ -50,20 +46,15 @@ class MockAutofillMetrics : public AutofillMetrics {
   MOCK_CONST_METHOD1(LogCreditCardInfoBarMetric, void(InfoBarMetric metric));
   MOCK_CONST_METHOD1(LogDeveloperEngagementMetric,
                      void(DeveloperEngagementMetric metric));
-  MOCK_CONST_METHOD3(LogHeuristicTypePrediction,
+  MOCK_CONST_METHOD2(LogHeuristicTypePrediction,
                      void(FieldTypeQualityMetric metric,
-                          ServerFieldType field_type,
-                          const std::string& experiment_id));
-  MOCK_CONST_METHOD3(LogOverallTypePrediction,
+                          ServerFieldType field_type));
+  MOCK_CONST_METHOD2(LogOverallTypePrediction,
                      void(FieldTypeQualityMetric metric,
-                          ServerFieldType field_type,
-                          const std::string& experiment_id));
-  MOCK_CONST_METHOD3(LogServerTypePrediction,
+                          ServerFieldType field_type));
+  MOCK_CONST_METHOD2(LogServerTypePrediction,
                      void(FieldTypeQualityMetric metric,
-                          ServerFieldType field_type,
-                          const std::string& experiment_id));
-  MOCK_CONST_METHOD2(LogQualityMetric, void(QualityMetric metric,
-                                            const std::string& experiment_id));
+                          ServerFieldType field_type));
   MOCK_CONST_METHOD1(LogServerQueryMetric, void(ServerQueryMetric metric));
   MOCK_CONST_METHOD1(LogUserHappinessMetric, void(UserHappinessMetric metric));
   MOCK_CONST_METHOD1(LogFormFillDurationFromLoadWithAutofill,
@@ -78,10 +69,6 @@ class MockAutofillMetrics : public AutofillMetrics {
   MOCK_CONST_METHOD1(LogIsAutofillEnabledAtStartup, void(bool enabled));
   MOCK_CONST_METHOD1(LogStoredProfileCount, void(size_t num_profiles));
   MOCK_CONST_METHOD1(LogAddressSuggestionsCount, void(size_t num_suggestions));
-  MOCK_CONST_METHOD1(LogServerExperimentIdForQuery,
-                     void(const std::string& experiment_id));
-  MOCK_CONST_METHOD1(LogServerExperimentIdForUpload,
-                     void(const std::string& experiment_id));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAutofillMetrics);
@@ -97,7 +84,7 @@ class TestPersonalDataManager : public PersonalDataManager {
   }
 
   using PersonalDataManager::set_database;
-  using PersonalDataManager::set_pref_service;
+  using PersonalDataManager::SetPrefService;
 
   // Overridden to avoid a trip to the database. This should be a no-op except
   // for the side-effect of logging the profile count.
@@ -172,15 +159,7 @@ class TestFormStructure : public FormStructure {
     UpdateAutofillCount();
   }
 
-  virtual std::string server_experiment_id() const OVERRIDE {
-    return server_experiment_id_;
-  }
-  void set_server_experiment_id(const std::string& server_experiment_id) {
-    server_experiment_id_ = server_experiment_id;
-  }
-
  private:
-  std::string server_experiment_id_;
   DISALLOW_COPY_AND_ASSIGN(TestFormStructure);
 };
 
@@ -208,8 +187,7 @@ class TestAutofillManager : public AutofillManager {
 
   void AddSeenForm(const FormData& form,
                    const std::vector<ServerFieldType>& heuristic_types,
-                   const std::vector<ServerFieldType>& server_types,
-                   const std::string& experiment_id) {
+                   const std::vector<ServerFieldType>& server_types) {
     FormData empty_form = form;
     for (size_t i = 0; i < empty_form.fields.size(); ++i) {
       empty_form.fields[i].value = base::string16();
@@ -218,17 +196,16 @@ class TestAutofillManager : public AutofillManager {
     // |form_structure| will be owned by |form_structures()|.
     TestFormStructure* form_structure = new TestFormStructure(empty_form);
     form_structure->SetFieldTypes(heuristic_types, server_types);
-    form_structure->set_server_experiment_id(experiment_id);
     form_structures()->push_back(form_structure);
   }
 
   void FormSubmitted(const FormData& form, const TimeTicks& timestamp) {
-    message_loop_runner_ = new content::MessageLoopRunner();
+    run_loop_.reset(new base::RunLoop());
     if (!OnFormSubmitted(form, timestamp))
       return;
 
     // Wait for the asynchronous FormSubmitted() call to complete.
-    message_loop_runner_->Run();
+    run_loop_->Run();
   }
 
   virtual void UploadFormDataAsyncCallback(
@@ -236,7 +213,7 @@ class TestAutofillManager : public AutofillManager {
       const base::TimeTicks& load_time,
       const base::TimeTicks& interaction_time,
       const base::TimeTicks& submission_time) OVERRIDE {
-    message_loop_runner_->Quit();
+    run_loop_->Quit();
 
     AutofillManager::UploadFormDataAsyncCallback(submitted_form,
                                                  load_time,
@@ -246,14 +223,14 @@ class TestAutofillManager : public AutofillManager {
 
  private:
   bool autofill_enabled_;
-  scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
+  scoped_ptr<base::RunLoop> run_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(TestAutofillManager);
 };
 
 }  // namespace
 
-class AutofillMetricsTest : public ChromeRenderViewHostTestHarness {
+class AutofillMetricsTest : public testing::Test {
  public:
   virtual ~AutofillMetricsTest();
 
@@ -261,9 +238,8 @@ class AutofillMetricsTest : public ChromeRenderViewHostTestHarness {
   virtual void TearDown() OVERRIDE;
 
  protected:
-  scoped_ptr<ConfirmInfoBarDelegate> CreateDelegate(
-      MockAutofillMetrics* metric_logger);
-
+  base::MessageLoop message_loop_;
+  TestAutofillManagerDelegate manager_delegate_;
   scoped_ptr<TestAutofillDriver> autofill_driver_;
   scoped_ptr<TestAutofillManager> autofill_manager_;
   scoped_ptr<TestPersonalDataManager> personal_data_;
@@ -277,23 +253,17 @@ AutofillMetricsTest::~AutofillMetricsTest() {
 }
 
 void AutofillMetricsTest::SetUp() {
-  ChromeRenderViewHostTestHarness::SetUp();
+  manager_delegate_.SetPrefs(test::PrefServiceForTesting());
 
   // Ensure Mac OS X does not pop up a modal dialog for the Address Book.
-  autofill::test::DisableSystemServices(profile());
-
-  PersonalDataManagerFactory::GetInstance()->SetTestingFactory(profile(), NULL);
-
-  TabAutofillManagerDelegate::CreateForWebContents(web_contents());
-  autofill::TabAutofillManagerDelegate* manager_delegate =
-      autofill::TabAutofillManagerDelegate::FromWebContents(web_contents());
+  test::DisableSystemServices(manager_delegate_.GetPrefs());
 
   personal_data_.reset(new TestPersonalDataManager());
-  personal_data_->set_database(manager_delegate->GetDatabase());
-  personal_data_->set_pref_service(profile()->GetPrefs());
+  personal_data_->set_database(manager_delegate_.GetDatabase());
+  personal_data_->SetPrefService(manager_delegate_.GetPrefs());
   autofill_driver_.reset(new TestAutofillDriver());
   autofill_manager_.reset(new TestAutofillManager(
-      autofill_driver_.get(), manager_delegate, personal_data_.get()));
+      autofill_driver_.get(), &manager_delegate_, personal_data_.get()));
 
   external_delegate_.reset(new AutofillExternalDelegate(
       autofill_manager_.get(),
@@ -307,20 +277,6 @@ void AutofillMetricsTest::TearDown() {
   autofill_manager_.reset();
   autofill_driver_.reset();
   personal_data_.reset();
-  ChromeRenderViewHostTestHarness::TearDown();
-}
-
-scoped_ptr<ConfirmInfoBarDelegate> AutofillMetricsTest::CreateDelegate(
-    MockAutofillMetrics* metric_logger) {
-  EXPECT_CALL(*metric_logger,
-              LogCreditCardInfoBarMetric(AutofillMetrics::INFOBAR_SHOWN));
-
-  CreditCard credit_card;
-  return AutofillCCInfoBarDelegate::Create(
-      metric_logger,
-      base::Bind(
-          base::IgnoreResult(&TestPersonalDataManager::SaveImportedCreditCard),
-          base::Unretained(personal_data_.get()), credit_card));
 }
 
 // Test that we log quality metrics appropriately.
@@ -375,210 +331,55 @@ TEST_F(AutofillMetricsTest, QualityMetrics) {
   server_types.push_back(PHONE_HOME_WHOLE_NUMBER);
 
   // Simulate having seen this form on page load.
-  autofill_manager_->AddSeenForm(form, heuristic_types, server_types,
-                                 std::string());
+  autofill_manager_->AddSeenForm(form, heuristic_types, server_types);
 
   // Establish our expectations.
   ::testing::InSequence dummy;
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogServerExperimentIdForUpload(std::string()));
   // Autofilled field
   EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogHeuristicTypePrediction(AutofillMetrics::TYPE_MATCH,
-                  NAME_FULL, std::string()));
+                  NAME_FULL));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogServerTypePrediction(AutofillMetrics::TYPE_MISMATCH,
-                  NAME_FULL, std::string()));
+                  NAME_FULL));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogOverallTypePrediction(AutofillMetrics::TYPE_MISMATCH,
-                  NAME_FULL, std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_AUTOFILLED,
-                               std::string()));
+                  NAME_FULL));
   // Non-autofilled field for which we had data
   EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogHeuristicTypePrediction(AutofillMetrics::TYPE_MISMATCH,
-                  EMAIL_ADDRESS, std::string()));
+                  EMAIL_ADDRESS));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogServerTypePrediction(AutofillMetrics::TYPE_MATCH,
-                  EMAIL_ADDRESS, std::string()));
+                  EMAIL_ADDRESS));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogOverallTypePrediction(AutofillMetrics::TYPE_MATCH,
-                  EMAIL_ADDRESS, std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_NOT_AUTOFILLED,
-                               std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(
-                  AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_MISMATCH,
-                  std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(
-                  AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_MATCH,
-                  std::string()));
+                  EMAIL_ADDRESS));
   // Empty field
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               std::string()));
   // Unknown field
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               std::string()));
   // <select> field
   EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogHeuristicTypePrediction(AutofillMetrics::TYPE_UNKNOWN,
-                  ADDRESS_HOME_COUNTRY, std::string()));
+                  ADDRESS_HOME_COUNTRY));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogServerTypePrediction(AutofillMetrics::TYPE_UNKNOWN,
-                  ADDRESS_HOME_COUNTRY, std::string()));
+                  ADDRESS_HOME_COUNTRY));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogOverallTypePrediction(AutofillMetrics::TYPE_UNKNOWN,
-                  ADDRESS_HOME_COUNTRY, std::string()));
+                  ADDRESS_HOME_COUNTRY));
   // Phone field
   EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogHeuristicTypePrediction(AutofillMetrics::TYPE_MATCH,
-                  PHONE_HOME_WHOLE_NUMBER, std::string()));
+                  PHONE_HOME_WHOLE_NUMBER));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogServerTypePrediction(AutofillMetrics::TYPE_MATCH,
-                  PHONE_HOME_WHOLE_NUMBER, std::string()));
+                  PHONE_HOME_WHOLE_NUMBER));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogOverallTypePrediction(AutofillMetrics::TYPE_MATCH,
-                  PHONE_HOME_WHOLE_NUMBER, std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_AUTOFILLED,
-                               std::string()));
+                  PHONE_HOME_WHOLE_NUMBER));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogUserHappinessMetric(
                   AutofillMetrics::SUBMITTED_FILLABLE_FORM_AUTOFILLED_SOME));
-
-  // Simulate form submission.
-  EXPECT_NO_FATAL_FAILURE(autofill_manager_->FormSubmitted(form,
-                                                           TimeTicks::Now()));
-}
-
-// Test that we log the appropriate additional metrics when Autofill failed.
-TEST_F(AutofillMetricsTest, QualityMetricsForFailure) {
-  // Set up our form data.
-  FormData form;
-  form.name = ASCIIToUTF16("TestForm");
-  form.method = ASCIIToUTF16("POST");
-  form.origin = GURL("http://example.com/form.html");
-  form.action = GURL("http://example.com/submit.html");
-  form.user_submitted = true;
-
-  struct {
-    const char* label;
-    const char* name;
-    const char* value;
-    ServerFieldType heuristic_type;
-    ServerFieldType server_type;
-    AutofillMetrics::QualityMetric heuristic_metric;
-    AutofillMetrics::QualityMetric server_metric;
-  } failure_cases[] = {
-    {
-      "Heuristics unknown, server unknown", "0,0", "Elvis",
-      UNKNOWN_TYPE, NO_SERVER_DATA,
-      AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_UNKNOWN,
-      AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_UNKNOWN
-    },
-    {
-      "Heuristics match, server unknown", "1,0", "Aaron",
-      NAME_MIDDLE, NO_SERVER_DATA,
-      AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_MATCH,
-      AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_UNKNOWN
-    },
-    {
-      "Heuristics mismatch, server unknown", "2,0", "Presley",
-      PHONE_HOME_NUMBER, NO_SERVER_DATA,
-      AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_MISMATCH,
-      AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_UNKNOWN
-    },
-    {
-      "Heuristics unknown, server match", "0,1", "theking@gmail.com",
-      UNKNOWN_TYPE, EMAIL_ADDRESS,
-      AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_UNKNOWN,
-      AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_MATCH
-    },
-    {
-      "Heuristics match, server match", "1,1", "3734 Elvis Presley Blvd.",
-      ADDRESS_HOME_LINE1, ADDRESS_HOME_LINE1,
-      AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_MATCH,
-      AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_MATCH
-    },
-    {
-      "Heuristics mismatch, server match", "2,1", "Apt. 10",
-      PHONE_HOME_NUMBER, ADDRESS_HOME_LINE2,
-      AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_MISMATCH,
-      AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_MATCH
-    },
-    {
-      "Heuristics unknown, server mismatch", "0,2", "Memphis",
-      UNKNOWN_TYPE, PHONE_HOME_NUMBER,
-      AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_UNKNOWN,
-      AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_MISMATCH
-    },
-    {
-      "Heuristics match, server mismatch", "1,2", "Tennessee",
-      ADDRESS_HOME_STATE, PHONE_HOME_NUMBER,
-      AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_MATCH,
-      AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_MISMATCH
-    },
-    {
-      "Heuristics mismatch, server mismatch", "2,2", "38116",
-      PHONE_HOME_NUMBER, PHONE_HOME_NUMBER,
-      AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_MISMATCH,
-      AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_MISMATCH
-    }
-  };
-
-  std::vector<ServerFieldType> heuristic_types, server_types;
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(failure_cases); ++i) {
-    FormFieldData field;
-    test::CreateTestFormField(failure_cases[i].label,
-                              failure_cases[i].name,
-                              failure_cases[i].value, "text", &field);
-    form.fields.push_back(field);
-    heuristic_types.push_back(failure_cases[i].heuristic_type);
-    server_types.push_back(failure_cases[i].server_type);
-
-  }
-
-  // Simulate having seen this form with the desired heuristic and server types.
-  // |form_structure| will be owned by |autofill_manager_|.
-  autofill_manager_->AddSeenForm(form, heuristic_types, server_types,
-                                 std::string());
-
-
-  // Establish our expectations.
-  ::testing::InSequence dummy;
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogServerExperimentIdForUpload(std::string()));
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(failure_cases); ++i) {
-    EXPECT_CALL(*autofill_manager_->metric_logger(),
-                LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                                 std::string()));
-    EXPECT_CALL(*autofill_manager_->metric_logger(),
-                LogQualityMetric(AutofillMetrics::FIELD_NOT_AUTOFILLED,
-                                 std::string()));
-    EXPECT_CALL(*autofill_manager_->metric_logger(),
-                LogQualityMetric(failure_cases[i].heuristic_metric,
-                                 std::string()));
-    EXPECT_CALL(*autofill_manager_->metric_logger(),
-                LogQualityMetric(failure_cases[i].server_metric,
-                                 std::string()));
-  }
 
   // Simulate form submission.
   EXPECT_NO_FATAL_FAILURE(autofill_manager_->FormSubmitted(form,
@@ -625,8 +426,7 @@ TEST_F(AutofillMetricsTest, SaneMetricsWithCacheMismatch) {
 
   // Simulate having seen this form with the desired heuristic and server types.
   // |form_structure| will be owned by |autofill_manager_|.
-  autofill_manager_->AddSeenForm(form, heuristic_types, server_types,
-                                 std::string());
+  autofill_manager_->AddSeenForm(form, heuristic_types, server_types);
 
 
   // Add a field and re-arrange the remaining form fields before submitting.
@@ -644,98 +444,45 @@ TEST_F(AutofillMetricsTest, SaneMetricsWithCacheMismatch) {
   ::testing::InSequence dummy;
   // New field
   EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogServerExperimentIdForUpload(std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogHeuristicTypePrediction(AutofillMetrics::TYPE_UNKNOWN,
-                  ADDRESS_HOME_STATE, std::string()));
+                  ADDRESS_HOME_STATE));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogServerTypePrediction(AutofillMetrics::TYPE_UNKNOWN,
-                  ADDRESS_HOME_STATE, std::string()));
+                  ADDRESS_HOME_STATE));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogOverallTypePrediction(AutofillMetrics::TYPE_UNKNOWN,
-                  ADDRESS_HOME_STATE, std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_NOT_AUTOFILLED,
-                               std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(
-                  AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_UNKNOWN,
-                  std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(
-                  AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_UNKNOWN,
-                  std::string()));
+                  ADDRESS_HOME_STATE));
   // Only heuristics match
   EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogHeuristicTypePrediction(AutofillMetrics::TYPE_MATCH,
-                  ADDRESS_HOME_CITY, std::string()));
+                  ADDRESS_HOME_CITY));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogServerTypePrediction(AutofillMetrics::TYPE_MISMATCH,
-                  ADDRESS_HOME_CITY, std::string()));
+                  ADDRESS_HOME_CITY));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogOverallTypePrediction(AutofillMetrics::TYPE_MISMATCH,
-                  ADDRESS_HOME_CITY, std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_NOT_AUTOFILLED,
-                               std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(
-                  AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_MATCH,
-                  std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(
-                  AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_MISMATCH,
-                  std::string()));
+                  ADDRESS_HOME_CITY));
   // Both mismatch
   EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogHeuristicTypePrediction(AutofillMetrics::TYPE_MISMATCH,
-                  EMAIL_ADDRESS, std::string()));
+                  EMAIL_ADDRESS));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogServerTypePrediction(AutofillMetrics::TYPE_MISMATCH,
-                  EMAIL_ADDRESS, std::string()));
+                  EMAIL_ADDRESS));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogOverallTypePrediction(AutofillMetrics::TYPE_MISMATCH,
-                  EMAIL_ADDRESS, std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_NOT_AUTOFILLED,
-                               std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(
-                  AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_MISMATCH,
-                  std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(
-                  AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_MISMATCH,
-                  std::string()));
+                  EMAIL_ADDRESS));
   // Unknown
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               std::string()));
   // Both match
   EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogHeuristicTypePrediction(AutofillMetrics::TYPE_MATCH,
-                  NAME_FULL, std::string()));
+                  NAME_FULL));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogServerTypePrediction(AutofillMetrics::TYPE_MATCH,
-                  NAME_FULL, std::string()));
+                  NAME_FULL));
   EXPECT_CALL(*autofill_manager_->metric_logger(),
               LogOverallTypePrediction(AutofillMetrics::TYPE_MATCH,
-                  NAME_FULL, std::string()));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_AUTOFILLED,
-                               std::string()));
+                  NAME_FULL));
 
   // Simulate form submission.
   EXPECT_NO_FATAL_FAILURE(autofill_manager_->FormSubmitted(form,
@@ -823,168 +570,6 @@ TEST_F(AutofillMetricsTest, DeveloperEngagement) {
   }
 }
 
-// Test that we don't log quality metrics for non-autofillable forms.
-TEST_F(AutofillMetricsTest, NoQualityMetricsForNonAutofillableForms) {
-  // Forms must include at least three fields to be auto-fillable.
-  FormData form;
-  form.name = ASCIIToUTF16("TestForm");
-  form.method = ASCIIToUTF16("POST");
-  form.origin = GURL("http://example.com/form.html");
-  form.action = GURL("http://example.com/submit.html");
-  form.user_submitted = true;
-
-  FormFieldData field;
-  test::CreateTestFormField(
-      "Autofilled", "autofilled", "Elvis Presley", "text", &field);
-  field.is_autofilled = true;
-  form.fields.push_back(field);
-  test::CreateTestFormField(
-      "Autofill Failed", "autofillfailed", "buddy@gmail.com", "text", &field);
-  form.fields.push_back(field);
-
-  // Simulate form submission.
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               std::string())).Times(0);
-  EXPECT_NO_FATAL_FAILURE(autofill_manager_->FormSubmitted(form,
-                                                           TimeTicks::Now()));
-
-  // Search forms are not auto-fillable.
-  form.action = GURL("http://example.com/search?q=Elvis%20Presley");
-  test::CreateTestFormField("Empty", "empty", "", "text", &field);
-  form.fields.push_back(field);
-
-  // Simulate form submission.
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               std::string())).Times(0);
-  EXPECT_NO_FATAL_FAILURE(autofill_manager_->FormSubmitted(form,
-                                                           TimeTicks::Now()));
-}
-
-// Test that we recored the experiment id appropriately.
-TEST_F(AutofillMetricsTest, QualityMetricsWithExperimentId) {
-  // Set up our form data.
-  FormData form;
-  form.name = ASCIIToUTF16("TestForm");
-  form.method = ASCIIToUTF16("POST");
-  form.origin = GURL("http://example.com/form.html");
-  form.action = GURL("http://example.com/submit.html");
-  form.user_submitted = true;
-
-  std::vector<ServerFieldType> heuristic_types, server_types;
-  FormFieldData field;
-
-  test::CreateTestFormField(
-      "Autofilled", "autofilled", "Elvis Aaron Presley", "text", &field);
-  field.is_autofilled = true;
-  form.fields.push_back(field);
-  heuristic_types.push_back(NAME_FULL);
-  server_types.push_back(NAME_FIRST);
-
-  test::CreateTestFormField(
-      "Autofill Failed", "autofillfailed", "buddy@gmail.com", "text", &field);
-  field.is_autofilled = false;
-  form.fields.push_back(field);
-  heuristic_types.push_back(PHONE_HOME_NUMBER);
-  server_types.push_back(EMAIL_ADDRESS);
-
-  test::CreateTestFormField("Empty", "empty", "", "text", &field);
-  field.is_autofilled = false;
-  form.fields.push_back(field);
-  heuristic_types.push_back(NAME_FULL);
-  server_types.push_back(NAME_FIRST);
-
-  test::CreateTestFormField("Unknown", "unknown", "garbage", "text", &field);
-  field.is_autofilled = false;
-  form.fields.push_back(field);
-  heuristic_types.push_back(PHONE_HOME_NUMBER);
-  server_types.push_back(EMAIL_ADDRESS);
-
-  test::CreateTestFormField("Select", "select", "USA", "select-one", &field);
-  field.is_autofilled = false;
-  form.fields.push_back(field);
-  heuristic_types.push_back(UNKNOWN_TYPE);
-  server_types.push_back(NO_SERVER_DATA);
-
-  const std::string experiment_id = "ThatOughtaDoIt";
-
-  // Simulate having seen this form on page load.
-  // |form_structure| will be owned by |autofill_manager_|.
-  autofill_manager_->AddSeenForm(form, heuristic_types, server_types,
-                                 experiment_id);
-
-  // Establish our expectations.
-  ::testing::InSequence dummy;
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogServerExperimentIdForUpload(experiment_id));
-  // Autofilled field
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               experiment_id));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogHeuristicTypePrediction(AutofillMetrics::TYPE_MATCH,
-                                         NAME_FULL, experiment_id));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogServerTypePrediction(AutofillMetrics::TYPE_MISMATCH,
-                                      NAME_FULL, experiment_id));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogOverallTypePrediction(AutofillMetrics::TYPE_MISMATCH,
-                                       NAME_FULL, experiment_id));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_AUTOFILLED,
-                               experiment_id));
-  // Non-autofilled field for which we had data
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               experiment_id));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogHeuristicTypePrediction(AutofillMetrics::TYPE_MISMATCH,
-                                         EMAIL_ADDRESS, experiment_id));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogServerTypePrediction(AutofillMetrics::TYPE_MATCH,
-                                      EMAIL_ADDRESS, experiment_id));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogOverallTypePrediction(AutofillMetrics::TYPE_MATCH,
-                                       EMAIL_ADDRESS, experiment_id));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_NOT_AUTOFILLED,
-                               experiment_id));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(
-                  AutofillMetrics::NOT_AUTOFILLED_HEURISTIC_TYPE_MISMATCH,
-                  experiment_id));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(
-                  AutofillMetrics::NOT_AUTOFILLED_SERVER_TYPE_MATCH,
-                  experiment_id));
-  // Empty field
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               experiment_id));
-  // Unknown field
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               experiment_id));
-  // <select> field
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogQualityMetric(AutofillMetrics::FIELD_SUBMITTED,
-                               experiment_id));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogHeuristicTypePrediction(AutofillMetrics::TYPE_UNKNOWN,
-                                         ADDRESS_HOME_COUNTRY, experiment_id));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogServerTypePrediction(AutofillMetrics::TYPE_UNKNOWN,
-                                      ADDRESS_HOME_COUNTRY, experiment_id));
-  EXPECT_CALL(*autofill_manager_->metric_logger(),
-              LogOverallTypePrediction(AutofillMetrics::TYPE_UNKNOWN,
-                                       ADDRESS_HOME_COUNTRY, experiment_id));
-
-  // Simulate form submission.
-  EXPECT_NO_FATAL_FAILURE(autofill_manager_->FormSubmitted(form,
-                                                           TimeTicks::Now()));
-}
-
 // Test that the profile count is logged correctly.
 TEST_F(AutofillMetricsTest, StoredProfileCount) {
   // The metric should be logged when the profiles are first loaded.
@@ -1003,11 +588,8 @@ TEST_F(AutofillMetricsTest, AutofillIsEnabledAtStartup) {
   personal_data_->set_autofill_enabled(true);
   EXPECT_CALL(*personal_data_->metric_logger(),
               LogIsAutofillEnabledAtStartup(true)).Times(1);
-  autofill::TabAutofillManagerDelegate* manager_delegate =
-      autofill::TabAutofillManagerDelegate::FromWebContents(web_contents());
-  personal_data_->Init(manager_delegate->GetDatabase(),
-                       profile()->GetPrefs(),
-                       profile()->IsOffTheRecord());
+  personal_data_->Init(
+      manager_delegate_.GetDatabase(), manager_delegate_.GetPrefs(), false);
 }
 
 // Test that we correctly log when Autofill is disabled.
@@ -1015,11 +597,8 @@ TEST_F(AutofillMetricsTest, AutofillIsDisabledAtStartup) {
   personal_data_->set_autofill_enabled(false);
   EXPECT_CALL(*personal_data_->metric_logger(),
               LogIsAutofillEnabledAtStartup(false)).Times(1);
-  autofill::TabAutofillManagerDelegate* manager_delegate =
-      autofill::TabAutofillManagerDelegate::FromWebContents(web_contents());
-  personal_data_->Init(manager_delegate->GetDatabase(),
-                       profile()->GetPrefs(),
-                       profile()->IsOffTheRecord());
+  personal_data_->Init(
+      manager_delegate_.GetDatabase(), manager_delegate_.GetPrefs(), false);
 }
 
 // Test that we log the number of Autofill suggestions when filling a form.
@@ -1046,8 +625,7 @@ TEST_F(AutofillMetricsTest, AddressSuggestionsCount) {
 
   // Simulate having seen this form on page load.
   // |form_structure| will be owned by |autofill_manager_|.
-  autofill_manager_->AddSeenForm(form, field_types, field_types,
-                                 std::string());
+  autofill_manager_->AddSeenForm(form, field_types, field_types);
 
   // Establish our expectations.
   ::testing::InSequence dummy;
@@ -1066,8 +644,7 @@ TEST_F(AutofillMetricsTest, AddressSuggestionsCount) {
 
   // Reset the autofill manager state.
   autofill_manager_->Reset();
-  autofill_manager_->AddSeenForm(form, field_types, field_types,
-                                 std::string());
+  autofill_manager_->AddSeenForm(form, field_types, field_types);
 
   // Establish our expectations.
   EXPECT_CALL(*autofill_manager_->metric_logger(),
@@ -1079,8 +656,7 @@ TEST_F(AutofillMetricsTest, AddressSuggestionsCount) {
 
   // Reset the autofill manager state again.
   autofill_manager_->Reset();
-  autofill_manager_->AddSeenForm(form, field_types, field_types,
-                                 std::string());
+  autofill_manager_->AddSeenForm(form, field_types, field_types);
 
   // Establish our expectations.
   EXPECT_CALL(*autofill_manager_->metric_logger(),
@@ -1113,90 +689,6 @@ TEST_F(AutofillMetricsTest, AutofillIsEnabledAtPageLoad) {
   autofill_manager_->set_autofill_enabled(false);
   autofill_manager_->OnFormsSeen(std::vector<FormData>(), TimeTicks(),
                                  autofill::NO_SPECIAL_FORMS_SEEN);
-}
-
-// Test that credit card infobar metrics are logged correctly.
-TEST_F(AutofillMetricsTest, CreditCardInfoBar) {
-  testing::NiceMock<MockAutofillMetrics> metric_logger;
-  ::testing::InSequence dummy;
-
-  // Accept the infobar.
-  {
-    scoped_ptr<ConfirmInfoBarDelegate> infobar(CreateDelegate(&metric_logger));
-    ASSERT_TRUE(infobar);
-    EXPECT_CALL(*personal_data_, SaveImportedCreditCard(_));
-    EXPECT_CALL(metric_logger,
-        LogCreditCardInfoBarMetric(AutofillMetrics::INFOBAR_ACCEPTED)).Times(1);
-    EXPECT_CALL(metric_logger,
-        LogCreditCardInfoBarMetric(AutofillMetrics::INFOBAR_IGNORED)).Times(0);
-    EXPECT_TRUE(infobar->Accept());
-  }
-
-  // Cancel the infobar.
-  {
-    scoped_ptr<ConfirmInfoBarDelegate> infobar(CreateDelegate(&metric_logger));
-    ASSERT_TRUE(infobar);
-    EXPECT_CALL(metric_logger,
-        LogCreditCardInfoBarMetric(AutofillMetrics::INFOBAR_DENIED)).Times(1);
-    EXPECT_CALL(metric_logger,
-        LogCreditCardInfoBarMetric(AutofillMetrics::INFOBAR_IGNORED)).Times(0);
-    EXPECT_TRUE(infobar->Cancel());
-  }
-
-  // Dismiss the infobar.
-  {
-    scoped_ptr<ConfirmInfoBarDelegate> infobar(CreateDelegate(&metric_logger));
-    ASSERT_TRUE(infobar);
-    EXPECT_CALL(metric_logger,
-        LogCreditCardInfoBarMetric(AutofillMetrics::INFOBAR_DENIED)).Times(1);
-    EXPECT_CALL(metric_logger,
-        LogCreditCardInfoBarMetric(AutofillMetrics::INFOBAR_IGNORED)).Times(0);
-    infobar->InfoBarDismissed();
-  }
-
-  // Ignore the infobar.
-  {
-    scoped_ptr<ConfirmInfoBarDelegate> infobar(CreateDelegate(&metric_logger));
-    ASSERT_TRUE(infobar);
-    EXPECT_CALL(metric_logger,
-        LogCreditCardInfoBarMetric(AutofillMetrics::INFOBAR_IGNORED)).Times(1);
-  }
-}
-
-// Test that server query response experiment id metrics are logged correctly.
-TEST_F(AutofillMetricsTest, ServerQueryExperimentIdForQuery) {
-  testing::NiceMock<MockAutofillMetrics> metric_logger;
-  ::testing::InSequence dummy;
-
-  // No experiment specified.
-  EXPECT_CALL(metric_logger,
-              LogServerQueryMetric(AutofillMetrics::QUERY_RESPONSE_RECEIVED));
-  EXPECT_CALL(metric_logger,
-              LogServerQueryMetric(AutofillMetrics::QUERY_RESPONSE_PARSED));
-  EXPECT_CALL(metric_logger,
-              LogServerExperimentIdForQuery(std::string()));
-  EXPECT_CALL(metric_logger,
-              LogServerQueryMetric(
-                  AutofillMetrics::QUERY_RESPONSE_MATCHED_LOCAL_HEURISTICS));
-  FormStructure::ParseQueryResponse(
-      "<autofillqueryresponse></autofillqueryresponse>",
-      std::vector<FormStructure*>(),
-      metric_logger);
-
-  // Experiment "ar1" specified.
-  EXPECT_CALL(metric_logger,
-              LogServerQueryMetric(AutofillMetrics::QUERY_RESPONSE_RECEIVED));
-  EXPECT_CALL(metric_logger,
-              LogServerQueryMetric(AutofillMetrics::QUERY_RESPONSE_PARSED));
-  EXPECT_CALL(metric_logger,
-              LogServerExperimentIdForQuery("ar1"));
-  EXPECT_CALL(metric_logger,
-              LogServerQueryMetric(
-                  AutofillMetrics::QUERY_RESPONSE_MATCHED_LOCAL_HEURISTICS));
-  FormStructure::ParseQueryResponse(
-      "<autofillqueryresponse experimentid=\"ar1\"></autofillqueryresponse>",
-      std::vector<FormStructure*>(),
-      metric_logger);
 }
 
 // Verify that we correctly log user happiness metrics dealing with form loading
@@ -1381,8 +873,8 @@ TEST_F(AutofillMetricsTest, UserHappinessFormInteraction) {
     EXPECT_CALL(*autofill_manager_->metric_logger(),
                 LogUserHappinessMetric(
                     AutofillMetrics::SUGGESTIONS_SHOWN_ONCE)).Times(1);
-    autofill_manager_->OnDidShowAutofillSuggestions(true);
-    autofill_manager_->OnDidShowAutofillSuggestions(false);
+    autofill_manager_->DidShowSuggestions(true);
+    autofill_manager_->DidShowSuggestions(false);
   }
 
   // Simulate suggestions shown for a different field.
@@ -1392,7 +884,7 @@ TEST_F(AutofillMetricsTest, UserHappinessFormInteraction) {
     EXPECT_CALL(*autofill_manager_->metric_logger(),
                 LogUserHappinessMetric(
                     AutofillMetrics::SUGGESTIONS_SHOWN_ONCE)).Times(0);
-    autofill_manager_->OnDidShowAutofillSuggestions(true);
+    autofill_manager_->DidShowSuggestions(true);
   }
 
   // Simulate invoking autofill.
@@ -1416,7 +908,8 @@ TEST_F(AutofillMetricsTest, UserHappinessFormInteraction) {
     PersonalDataManager::GUIDPair guid(
         "00000000-0000-0000-0000-000000000001", 0);
     PersonalDataManager::GUIDPair empty(std::string(), 0);
-    autofill_manager_->OnFillAutofillFormData(
+    autofill_manager_->FillOrPreviewForm(
+        AutofillDriver::FORM_DATA_ACTION_FILL,
         0, form, form.fields.front(),
         autofill_manager_->PackGUIDs(empty, guid));
     autofill_manager_->OnTextFieldDidChange(form, form.fields.front(),

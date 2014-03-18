@@ -104,9 +104,7 @@ class RoundedCornersImageSource : public gfx::CanvasImageSource {
 };
 
 extensions::AppSorting* GetAppSorting(Profile* profile) {
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
-  return service->extension_prefs()->app_sorting();
+  return extensions::ExtensionPrefs::Get(profile)->app_sorting();
 }
 
 const color_utils::HSL shift = {-1, 0, 0.6};
@@ -134,8 +132,9 @@ ExtensionAppItem::ExtensionAppItem(
   if (sync_item && sync_item->item_ordinal.IsValid()) {
     // An existing synced position exists, use that.
     set_position(sync_item->item_ordinal);
-    if (title().empty())
-      SetTitleAndFullName(sync_item->item_name, sync_item->item_name);
+    // Only set the name from the sync item if it is empty.
+    if (name().empty())
+      SetName(sync_item->item_name);
     return;
   }
   GetAppSorting(profile_)->EnsureValidOrdinals(extension_id_,
@@ -155,12 +154,11 @@ bool ExtensionAppItem::NeedsOverlay() const {
   if (!streamlined_hosted_apps)
     return false;
 #endif
-  const ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-
-  extensions::LaunchType launch_type = GetExtension()
-      ? extensions::GetLaunchType(service->extension_prefs(), GetExtension())
-      : extensions::LAUNCH_TYPE_WINDOW;
+  extensions::LaunchType launch_type =
+      GetExtension()
+          ? extensions::GetLaunchType(extensions::ExtensionPrefs::Get(profile_),
+                                      GetExtension())
+          : extensions::LAUNCH_TYPE_WINDOW;
 
   return !is_platform_app_ && extension_id_ != extension_misc::kChromeAppId &&
       (!streamlined_hosted_apps ||
@@ -172,11 +170,11 @@ void ExtensionAppItem::Reload() {
   bool is_installing = !extension;
   SetIsInstalling(is_installing);
   if (is_installing) {
-    SetTitleAndFullName(extension_name_, extension_name_);
+    SetName(extension_name_);
     UpdateIcon();
     return;
   }
-  SetTitleAndFullName(extension->short_name(), extension->name());
+  SetNameAndShortName(extension->name(), extension->short_name());
   LoadImage(extension);
 }
 
@@ -205,11 +203,6 @@ void ExtensionAppItem::UpdateIcon() {
   SetIcon(icon, true);
 }
 
-void ExtensionAppItem::UpdateIconOverlay() {
-  if (has_overlay_ != NeedsOverlay())
-    UpdateIcon();
-}
-
 void ExtensionAppItem::Move(const ExtensionAppItem* prev,
                             const ExtensionAppItem* next) {
   if (!prev && !next)
@@ -217,7 +210,8 @@ void ExtensionAppItem::Move(const ExtensionAppItem* prev,
 
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile_)->extension_service();
-  extensions::AppSorting* sorting = service->extension_prefs()->app_sorting();
+  extensions::ExtensionPrefs* prefs = extensions::ExtensionPrefs::Get(profile_);
+  extensions::AppSorting* sorting = GetAppSorting(profile_);
 
   syncer::StringOrdinal page;
   std::string prev_id, next_id;
@@ -234,7 +228,7 @@ void ExtensionAppItem::Move(const ExtensionAppItem* prev,
     if (page.Equals(sorting->GetPageOrdinal(next->extension_id())))
       next_id = next->extension_id();
   }
-  service->extension_prefs()->SetAppDraggedByUser(extension_id_);
+  prefs->SetAppDraggedByUser(extension_id_);
   sorting->SetPageOrdinal(extension_id_, page);
   service->OnExtensionMoved(extension_id_, prev_id, next_id);
   UpdatePositionFromExtensionOrdering();
@@ -334,6 +328,11 @@ ui::MenuModel* ExtensionAppItem::GetContextMenuModel() {
   if (IsInFolder())
     context_menu_->set_is_in_folder(true);
   return context_menu_->GetMenuModel();
+}
+
+void ExtensionAppItem::OnExtensionPreferenceChanged() {
+  if (has_overlay_ != NeedsOverlay())
+    UpdateIcon();
 }
 
 // static

@@ -10,33 +10,35 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/extension_function.h"
 
-class Profile;
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
 class MediaPlayerEventRouter;
 
-class MediaPlayerAPI : public ProfileKeyedAPI {
+class MediaPlayerAPI : public BrowserContextKeyedAPI {
  public:
-  explicit MediaPlayerAPI(Profile* profile);
+  explicit MediaPlayerAPI(content::BrowserContext* context);
   virtual ~MediaPlayerAPI();
 
   // Convenience method to get the MediaPlayerAPI for a profile.
-  static MediaPlayerAPI* Get(Profile* profile);
+  static MediaPlayerAPI* Get(content::BrowserContext* context);
 
   MediaPlayerEventRouter* media_player_event_router();
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<MediaPlayerAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<MediaPlayerAPI>* GetFactoryInstance();
 
  private:
-  friend class ProfileKeyedAPIFactory<MediaPlayerAPI>;
+  friend class BrowserContextKeyedAPIFactory<MediaPlayerAPI>;
 
-  Profile* const profile_;
+  content::BrowserContext* const browser_context_;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "MediaPlayerAPI";
   }

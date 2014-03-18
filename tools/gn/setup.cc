@@ -84,9 +84,6 @@ const char kTimeSwitch[] = "time";
 
 const char kTracelogSwitch[] = "tracelog";
 
-// Set build output directory.
-const char kSwitchBuildOutput[] = "output";
-
 const char kSecondarySource[] = "secondary";
 
 const base::FilePath::CharType kGnFile[] = FILE_PATH_LITERAL(".gn");
@@ -196,7 +193,7 @@ Setup::Setup()
 Setup::~Setup() {
 }
 
-bool Setup::DoSetup() {
+bool Setup::DoSetup(const std::string& build_dir) {
   CommandLine* cmdline = CommandLine::ForCurrentProcess();
 
   scheduler_.set_verbose_logging(cmdline->HasSwitch(kSwitchVerbose));
@@ -212,24 +209,9 @@ bool Setup::DoSetup() {
     return false;
   if (!FillOtherConfig(*cmdline))
     return false;
+  if (!FillBuildDir(build_dir))  // Must be after FillSourceDir to resolve.
+    return false;
   FillPythonPath();
-
-  base::FilePath build_path = cmdline->GetSwitchValuePath(kSwitchBuildOutput);
-  if (!build_path.empty()) {
-    // We accept either repo paths "//out/Debug" or raw source-root-relative
-    // paths "out/Debug".
-    std::string build_path_8 = FilePathToUTF8(build_path);
-    if (build_path_8.compare(0, 2, "//") != 0)
-      build_path_8.insert(0, "//");
-#if defined(OS_WIN)
-    // Canonicalize to forward slashes on Windows.
-    std::replace(build_path_8.begin(), build_path_8.end(), '\\', '/');
-#endif
-    build_settings_.SetBuildDir(SourceDir(build_path_8));
-  } else {
-    // Default output dir.
-    build_settings_.SetBuildDir(SourceDir("//out/Default/"));
-  }
 
   return true;
 }
@@ -292,7 +274,7 @@ bool Setup::FillSourceDir(const CommandLine& cmdline) {
     dotfile_name_ = root_path.Append(kGnFile);
   } else {
     base::FilePath cur_dir;
-    file_util::GetCurrentDirectory(&cur_dir);
+    base::GetCurrentDirectory(&cur_dir);
     dotfile_name_ = FindDotFile(cur_dir);
     if (dotfile_name_.empty()) {
       Err(Location(), "Can't find source root.",
@@ -311,6 +293,25 @@ bool Setup::FillSourceDir(const CommandLine& cmdline) {
   return true;
 }
 
+bool Setup::FillBuildDir(const std::string& build_dir) {
+  std::string normalized_build_dir = PathToSystem(build_dir);
+
+  SourceDir resolved =
+      SourceDirForCurrentDirectory(build_settings_.root_path()).
+          ResolveRelativeDir(normalized_build_dir);
+  if (resolved.is_null()) {
+    Err(Location(), "Couldn't resolve build directory.",
+        "The build directory supplied (\"" + build_dir + "\") was not valid.").
+        PrintToStdout();
+    return false;
+  }
+
+  if (scheduler_.verbose_logging())
+    scheduler_.Log("Using build dir", resolved.value());
+  build_settings_.SetBuildDir(resolved);
+  return true;
+}
+
 void Setup::FillPythonPath() {
 #if defined(OS_WIN)
   // Find Python on the path so we can use the absolute path in the build.
@@ -318,7 +319,7 @@ void Setup::FillPythonPath() {
       L"cmd.exe /c python -c \"import sys; print sys.executable\"";
   std::string python_path;
   if (base::GetAppOutput(kGetPython, &python_path)) {
-    TrimWhitespaceASCII(python_path, TRIM_ALL, &python_path);
+    base::TrimWhitespaceASCII(python_path, base::TRIM_ALL, &python_path);
     if (scheduler_.verbose_logging())
       scheduler_.Log("Found python", python_path);
   } else {

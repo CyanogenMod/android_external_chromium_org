@@ -36,7 +36,6 @@
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_settings.h"
-#include "cc/trees/occlusion_tracker.h"
 #include "cc/trees/proxy.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/rect.h"
@@ -184,8 +183,7 @@ class CC_EXPORT LayerTreeHost {
 
   void SetNextCommitForcesRedraw();
 
-  void SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
-                          base::Time wall_clock_time);
+  void SetAnimationEvents(scoped_ptr<AnimationEventsVector> events);
 
   void SetRootLayer(scoped_refptr<Layer> root_layer);
   Layer* root_layer() { return root_layer_.get(); }
@@ -345,8 +343,7 @@ class CC_EXPORT LayerTreeHost {
   void ReduceMemoryUsage();
 
   void PrioritizeTextures(
-      const RenderSurfaceLayerList& render_surface_layer_list,
-      OverdrawMetrics* metrics);
+      const RenderSurfaceLayerList& render_surface_layer_list);
   void SetPrioritiesForSurfaces(size_t surface_memory_bytes);
   void SetPrioritiesForLayers(const RenderSurfaceLayerList& update_list);
   size_t CalculateMemoryForRenderSurfaces(

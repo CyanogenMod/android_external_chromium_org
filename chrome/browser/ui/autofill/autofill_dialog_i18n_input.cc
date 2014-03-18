@@ -4,10 +4,8 @@
 
 #include "chrome/browser/ui/autofill/autofill_dialog_i18n_input.h"
 
-#include "base/command_line.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/common/chrome_switches.h"
 #include "components/autofill/core/browser/autofill_profile.h"
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/field_types.h"
@@ -23,8 +21,6 @@ namespace i18ninput {
 
 namespace {
 
-static int g_enabled_for_testing_ = 0;
-
 using base::UTF16ToUTF8;
 using ::i18n::addressinput::AddressData;
 using ::i18n::addressinput::AddressField;
@@ -38,24 +34,6 @@ DetailInput::Length LengthFromHint(AddressUiComponent::LengthHint hint) {
 }
 
 }  // namespace
-
-bool Enabled() {
-  if (g_enabled_for_testing_ > 0)
-    return true;
-
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  return !command_line->HasSwitch(::switches::kDisableAutofillAddressI18n);
-}
-
-ScopedEnableForTesting::ScopedEnableForTesting() {
-  ++g_enabled_for_testing_;
-  DCHECK_GE(g_enabled_for_testing_, 1);
-}
-
-ScopedEnableForTesting::~ScopedEnableForTesting() {
-  --g_enabled_for_testing_;
-  DCHECK_GE(g_enabled_for_testing_, 0);
-}
 
 void BuildAddressInputs(common::AddressType address_type,
                         const std::string& country_code,
@@ -135,7 +113,6 @@ bool AddressHasCompleteAndVerifiedData(const AutofillProfile& profile) {
 
   const ServerFieldType more_required_fields[] = {
       NAME_FULL,
-      EMAIL_ADDRESS,
       PHONE_HOME_WHOLE_NUMBER
   };
 
@@ -196,6 +173,17 @@ void CreateAddressData(
       UTF16ToUTF8(get_info.Run(AutofillType(ADDRESS_HOME_STREET_ADDRESS))),
       '\n',
       &address_data->address_lines);
+}
+
+bool CountryIsFullySupported(const std::string& country_code) {
+  DCHECK_EQ(2U, country_code.size());
+  std::vector< ::i18n::addressinput::AddressUiComponent> components =
+      ::i18n::addressinput::BuildComponents(country_code);
+  for (size_t i = 0; i < components.size(); ++i) {
+    if (components[i].field == ::i18n::addressinput::DEPENDENT_LOCALITY)
+      return false;
+  }
+  return true;
 }
 
 }  // namespace i18ninput

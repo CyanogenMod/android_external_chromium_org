@@ -6,8 +6,7 @@
 
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ui/aura/root_window.h"
-#include "ui/views/corewm/compound_event_filter.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_property.h"
 #include "ui/gfx/screen.h"
@@ -15,6 +14,7 @@
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/wm/core/compound_event_filter.h"
 
 namespace {
 
@@ -137,7 +137,8 @@ void PartialMagnificationController::CreateMagnifierWindow() {
 
   root_window->AddObserver(this);
 
-  gfx::Point mouse(root_window->GetDispatcher()->GetLastMouseLocationInRoot());
+  gfx::Point mouse(
+      root_window->GetHost()->dispatcher()->GetLastMouseLocationInRoot());
 
   zoom_widget_ = new views::Widget;
   views::Widget::InitParams params(
@@ -202,7 +203,7 @@ aura::Window* PartialMagnificationController::GetCurrentRootWindow() {
        iter != root_windows.end(); ++iter) {
     aura::Window* root_window = *iter;
     if (root_window->ContainsPointInRoot(
-            root_window->GetDispatcher()->GetLastMouseLocationInRoot()))
+            root_window->GetHost()->dispatcher()->GetLastMouseLocationInRoot()))
       return root_window;
   }
   return NULL;

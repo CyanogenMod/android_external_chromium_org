@@ -367,11 +367,11 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
     EXPECT_CALL(*gl, BindTexture(GL_TEXTURE_2D, gl_ids[0]))
         .Times(1)
         .RetiresOnSaturation();
-    if (DCHECK_IS_ON()) {
-      EXPECT_CALL(*gl, GetError())
-          .WillOnce(Return(GL_NO_ERROR))
-          .RetiresOnSaturation();
-    }
+#if DCHECK_IS_ON
+    EXPECT_CALL(*gl, GetError())
+        .WillOnce(Return(GL_NO_ERROR))
+        .RetiresOnSaturation();
+#endif
   }
 }
 
@@ -600,7 +600,7 @@ void TestHelper::DoBufferData(
   manager->DoBufferData(error_state, buffer, size, usage, data);
 }
 
-void TestHelper::SetTexParameterWithExpectations(
+void TestHelper::SetTexParameteriWithExpectations(
     ::gfx::MockGLInterface* gl, MockErrorState* error_state,
     TextureManager* manager, TextureRef* texture_ref,
     GLenum pname, GLint value, GLenum error) {
@@ -616,11 +616,11 @@ void TestHelper::SetTexParameterWithExpectations(
         .Times(1)
         .RetiresOnSaturation();
   } else {
-    EXPECT_CALL(*error_state, SetGLErrorInvalidParam(_, _, error, _, _, _))
+    EXPECT_CALL(*error_state, SetGLErrorInvalidParami(_, _, error, _, _, _))
         .Times(1)
         .RetiresOnSaturation();
   }
-  manager->SetParameter("", error_state, texture_ref, pname, value);
+  manager->SetParameteri("", error_state, texture_ref, pname, value);
 }
 
 ScopedGLImplementationSetter::ScopedGLImplementationSetter(

@@ -451,7 +451,11 @@ class NotificationBridge
 }
 
 - (void)setStarredState:(BOOL)isStarred {
-  locationBarView_->SetStarred(isStarred ? true : false);
+  locationBarView_->SetStarred(isStarred);
+}
+
+- (void)setTranslateIconLit:(BOOL)on {
+  locationBarView_->SetTranslateIconLit(on);
 }
 
 - (void)zoomChangedForActiveTab:(BOOL)canShowBubble {
@@ -745,6 +749,10 @@ class NotificationBridge
   return [self.view convertPoint:point toView:nil];
 }
 
+- (NSPoint)translateBubblePoint {
+  return locationBarView_->GetTranslateBubblePoint();
+}
+
 - (CGFloat)desiredHeightForCompression:(CGFloat)compressByHeight {
   // With no toolbar, just ignore the compression.
   if (!hasToolbar_)
@@ -773,6 +781,15 @@ class NotificationBridge
 
 - (NSView*)wrenchButton {
   return wrenchButton_;
+}
+
+- (void)activatePageAction:(const std::string&)extension_id {
+  locationBarView_->ActivatePageAction(extension_id);
+}
+
+// Activates the browser action for the extension that has the given id.
+- (void)activateBrowserAction:(const std::string&)extension_id {
+  [browserActionsController_ activateBrowserAction:extension_id];
 }
 
 // (URLDropTargetController protocol)

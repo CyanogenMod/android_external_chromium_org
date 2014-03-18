@@ -229,12 +229,16 @@ struct GL_EXPORT DriverGL {
   void InitializeCustomDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void InitializeNullDrawBindings();
+  // TODO(danakj): Remove this when all test suites are using null-draw.
+  bool HasInitializedNullDrawBindings();
+  bool SetNullDrawBindingsEnabled(bool enabled);
   void ClearBindings();
 
   ProcsGL fn;
   ProcsGL orig_fn;
   ProcsGL debug_fn;
   ExtensionsGL ext;
+  bool null_draw_bindings_enabled;
 
  private:
   void InitializeDynamicBindings(GLContext* context);

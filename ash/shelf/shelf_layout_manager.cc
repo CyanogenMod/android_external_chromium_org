@@ -38,7 +38,7 @@
 #include "base/strings/string_util.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/cursor_client.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
@@ -556,6 +556,7 @@ void ShelfLayoutManager::SetChildBounds(aura::Window* child,
 void ShelfLayoutManager::OnLockStateChanged(bool locked) {
   // Force the shelf to layout for alignment (bottom if locked, restore
   // the previous alignment otherwise).
+  state_.is_screen_locked = locked;
   shelf_->SetAlignment(locked ? SHELF_ALIGNMENT_BOTTOM : alignment_);
   UpdateVisibilityState();
   LayoutShelf();
@@ -590,8 +591,6 @@ void ShelfLayoutManager::SetState(ShelfVisibilityState visibility_state) {
   State state;
   state.visibility_state = visibility_state;
   state.auto_hide_state = CalculateAutoHideState(visibility_state);
-  state.is_screen_locked =
-      Shell::GetInstance()->session_state_delegate()->IsScreenLocked();
   state.window_state = workspace_controller_ ?
       workspace_controller_->GetWindowState() : WORKSPACE_WINDOW_STATE_DEFAULT;
 
@@ -721,8 +720,10 @@ void ShelfLayoutManager::UpdateBoundsAndOpacity(
       ScreenUtil::ConvertRectToScreen(
           shelf_->status_area_widget()->GetNativeView()->parent(),
           status_bounds));
-  Shell::GetInstance()->SetDisplayWorkAreaInsets(
-      root_window_, target_bounds.work_area_insets);
+  if (!state_.is_screen_locked) {
+    Shell::GetInstance()->SetDisplayWorkAreaInsets(
+        root_window_, target_bounds.work_area_insets);
+  }
 }
 
 void ShelfLayoutManager::StopAnimating() {
@@ -1147,6 +1148,9 @@ void ShelfLayoutManager::OnDockBoundsChanging(
 
 void ShelfLayoutManager::OnLockStateEvent(LockStateObserver::EventType event) {
   if (event == EVENT_LOCK_ANIMATION_STARTED) {
+    // Enter the screen locked state as the animation starts to prevent
+    // layout changes as the screen locks.
+    state_.is_screen_locked = true;
     // Hide the status area widget (using auto hide animation).
     base::AutoReset<ShelfVisibilityState> state(&state_.visibility_state,
                                                 SHELF_HIDDEN);
@@ -1155,21 +1159,6 @@ void ShelfLayoutManager::OnLockStateEvent(LockStateObserver::EventType event) {
     UpdateBoundsAndOpacity(target_bounds, true, NULL);
     UpdateVisibilityState();
   }
-}
-
-gfx::Insets ShelfLayoutManager::GetInsetsForAlignment(int distance) const {
-  switch (GetAlignment()) {
-    case SHELF_ALIGNMENT_BOTTOM:
-      return gfx::Insets(distance, 0, 0, 0);
-    case SHELF_ALIGNMENT_LEFT:
-      return gfx::Insets(0, 0, 0, distance);
-    case SHELF_ALIGNMENT_RIGHT:
-      return gfx::Insets(0, distance, 0, 0);
-    case SHELF_ALIGNMENT_TOP:
-      return gfx::Insets(0, 0, distance, 0);
-  }
-  NOTREACHED();
-  return gfx::Insets();
 }
 
 }  // namespace internal

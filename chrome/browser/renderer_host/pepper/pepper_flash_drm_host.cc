@@ -24,8 +24,12 @@
 #include "ppapi/proxy/ppapi_messages.h"
 
 #if defined(USE_AURA)
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "chrome/browser/renderer_host/pepper/monitor_finder_mac.h"
 #endif
 
 using content::BrowserPpapiHost;
@@ -77,10 +81,10 @@ class MonitorFinder : public base::RefCountedThreadSafe<MonitorFinder> {
       return;
     gfx::NativeView native_view = rfh->GetNativeView();
 #if defined(USE_AURA)
-    aura::WindowEventDispatcher* dispatcher = native_view->GetDispatcher();
-    if (!dispatcher)
+    aura::WindowTreeHost* host = native_view->GetHost();
+    if (!host)
       return;
-    HWND window = dispatcher->host()->GetAcceleratedWidget();
+    HWND window = host->GetAcceleratedWidget();
 #else
     HWND window = native_view;
 #endif
@@ -94,8 +98,8 @@ class MonitorFinder : public base::RefCountedThreadSafe<MonitorFinder> {
   volatile HMONITOR monitor_;
   volatile long request_sent_;
 };
-#else
-// TODO(cpu): Support Mac and Linux someday.
+#elif !defined(OS_MACOSX)
+// TODO(cpu): Support Linux someday.
 class MonitorFinder : public base::RefCountedThreadSafe<MonitorFinder> {
  public:
   MonitorFinder(int, int) { }

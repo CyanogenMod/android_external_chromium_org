@@ -46,8 +46,6 @@
 #    By default, the package given in AndroidManifest.xml will be used.
 #  java_strings_grd - The name of the grd file from which to generate localized
 #    strings.xml files, if any.
-#  library_manifest_paths'- Paths to additional AndroidManifest.xml files from
-#    libraries.
 #  use_chromium_linker - Enable the content dynamic linker that allows sharing the
 #    RELRO section of the native libraries between the different processes.
 #  enable_chromium_linker_tests - Enable the content dynamic linker test support
@@ -73,12 +71,10 @@
     'additional_res_packages': [],
     'is_test_apk%': 0,
     'java_strings_grd%': '',
-    'library_manifest_paths' : [],
     'resource_input_paths': [],
     'intermediate_dir': '<(PRODUCT_DIR)/<(_target_name)',
     'asset_location%': '<(intermediate_dir)/assets',
     'codegen_stamp': '<(intermediate_dir)/codegen.stamp',
-    'compile_input_paths': [],
     'package_input_paths': [],
     'ordered_libraries_file': '<(intermediate_dir)/native_libraries.json',
     'native_libraries_template': '<(DEPTH)/base/android/java/templates/NativeLibraries.template',
@@ -109,7 +105,6 @@
     'push_stamp': '<(intermediate_dir)/push.stamp',
     'link_stamp': '<(intermediate_dir)/link.stamp',
     'package_resources_stamp': '<(intermediate_dir)/package_resources.stamp',
-    'codegen_input_paths': [],
     'unsigned_apk_path': '<(intermediate_dir)/<(apk_name)-unsigned.apk',
     'final_apk_path%': '<(PRODUCT_DIR)/apks/<(apk_name).apk',
     'incomplete_apk_path': '<(intermediate_dir)/<(apk_name)-incomplete.apk',
@@ -189,7 +184,6 @@
     }],
     ['native_lib_target != ""', {
       'variables': {
-        'compile_input_paths': [ '<(native_libraries_java_stamp)' ],
         'generated_src_dirs': [ '<(native_libraries_java_dir)' ],
         'native_libs_paths': [
           '<(SHARED_LIB_DIR)/<(native_lib_target).>(android_product_extension)'
@@ -483,8 +477,6 @@
         '<(DEPTH)/build/android/gyp/ant.py',
         '<(android_manifest_path)',
         '>@(additional_input_paths)',
-        '>@(codegen_input_paths)',
-        '>@(library_manifest_paths)',
         '>@(resource_input_paths)',
       ],
       'outputs': [
@@ -501,7 +493,6 @@
         '-DANDROID_SDK_ROOT=<(android_sdk_root)',
         '-DANDROID_SDK_VERSION=<(android_sdk_version)',
         '-DANDROID_SDK_TOOLS=<(android_sdk_tools)',
-        '-DLIBRARY_MANIFEST_PATHS=>(library_manifest_paths)',
         '-DOUT_DIR=<(intermediate_dir)',
         '-DRESOURCE_DIR=<(resource_dir)',
 
@@ -520,22 +511,34 @@
       'action_name': 'javac_<(_target_name)',
       'message': 'Compiling java for <(_target_name)',
       'variables': {
-        'all_src_dirs': [
-          '<(java_in_dir)/src',
+        'gen_src_dirs': [
           '<(intermediate_dir)/gen',
-          '>@(additional_src_dirs)',
           '>@(generated_src_dirs)',
         ],
+        # If there is a separate find for additional_src_dirs, it will find the
+        # wrong .java files when additional_src_dirs is empty.
+        # TODO(thakis): Gyp caches >! evaluation by command. Both java.gypi and
+        # java_apk.gypi evaluate the same command, and at the moment two targets
+        # set java_in_dir to "java". Add a dummy comment here to make sure
+        # that the two targets (one uses java.gypi, the other java_apk.gypi)
+        # get distinct source lists. Medium-term, make targets list all their
+        # Java files instead of using find. (As is, this will be broken if two
+        # targets use the same java_in_dir and both use java_apk.gypi or
+        # both use java.gypi.)
+        'java_sources': ['>!@(find >(java_in_dir)/src >(additional_src_dirs) -name "*.java"  # apk)'],
+
       },
       'inputs': [
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
         '<(DEPTH)/build/android/gyp/javac.py',
-        # If there is a separate find for additional_src_dirs, it will find the
-        # wrong .java files when additional_src_dirs is empty.
-        '>!@(find >(java_in_dir) >(additional_src_dirs) -name "*.java")',
+        '>@(java_sources)',
         '>@(input_jars_paths)',
         '<(codegen_stamp)',
-        '>@(compile_input_paths)',
+      ],
+      'conditions': [
+        ['native_lib_target != ""', {
+          'inputs': [ '<(native_libraries_java_stamp)' ],
+        }],
       ],
       'outputs': [
         '<(compile_stamp)',
@@ -544,13 +547,11 @@
         'python', '<(DEPTH)/build/android/gyp/javac.py',
         '--output-dir=<(classes_dir)',
         '--classpath=>(input_jars_paths) <(android_sdk_jar)',
-        '--src-dirs=>(all_src_dirs)',
+        '--src-gendirs=>(gen_src_dirs)',
         '--javac-includes=<(javac_includes)',
         '--chromium-code=<(chromium_code)',
         '--stamp=<(compile_stamp)',
-
-        # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
-        '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
+        '>@(java_sources)',
       ],
     },
     {
@@ -592,10 +593,10 @@
       'action_name': 'jar_<(_target_name)',
       'message': 'Creating <(_target_name) jar',
       'inputs': [
-        '<(instr_stamp)',
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
         '<(DEPTH)/build/android/gyp/util/md5_check.py',
         '<(DEPTH)/build/android/gyp/jar.py',
+        '<(instr_stamp)',
       ],
       'outputs': [
         '<(jar_stamp)',
@@ -606,9 +607,6 @@
         '--jar-path=<(jar_path)',
         '--excluded-classes=<(jar_excluded_classes)',
         '--stamp=<(jar_stamp)',
-
-        # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
-        '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
       ]
     },
     {
@@ -619,16 +617,20 @@
         '<(DEPTH)/build/android/ant/create-test-jar.js',
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
         '<(DEPTH)/build/android/gyp/ant.py',
-        '<(instr_stamp)',
+        '<(android_manifest_path)',
         '>@(proguard_flags_paths)',
+        '<(instr_stamp)',
       ],
       'outputs': [
+        # This lists obfuscate_stamp instead of obfuscated_jar_path because
+        # ant only writes the latter if the md5 of the inputs changes.
         '<(obfuscate_stamp)',
       ],
       'action': [
         'python', '<(DEPTH)/build/android/gyp/ant.py',
         '-quiet',
         '-DADDITIONAL_SRC_DIRS=>(additional_src_dirs)',
+        '-DANDROID_MANIFEST=<(android_manifest_path)',
         '-DANDROID_SDK_JAR=<(android_sdk_jar)',
         '-DANDROID_SDK_ROOT=<(android_sdk_root)',
         '-DANDROID_SDK_VERSION=<(android_sdk_version)',
@@ -650,21 +652,12 @@
         '-Dbasedir=.',
         '-buildfile',
         '<(DEPTH)/build/android/ant/apk-obfuscate.xml',
-
-        # Add list of inputs to the command line, so if inputs change
-        # (e.g. if a Java file is removed), the command will be re-run.
-        # TODO(newt): remove this once crbug.com/177552 is fixed in ninja.
-        '-DTHIS_IS_IGNORED=>!(echo \'>(_inputs)\' | md5sum)',
       ],
     },
     {
       'action_name': 'dex_<(_target_name)',
       'variables': {
         'conditions': [
-          ['proguard_enabled == "true"', {
-            'input_paths': [ '<(obfuscate_stamp)' ],
-            'proguard_enabled_input_path': '<(obfuscated_jar_path)',
-          }],
           ['emma_instrument != 0', {
             'dex_no_locals': 1,
           }],
@@ -672,11 +665,15 @@
             'dex_input_paths': [ '<(emma_device_jar)' ],
           }],
         ],
-        'input_paths': [ '<(instr_stamp)' ],
         'dex_input_paths': [ '>@(library_dexed_jars_paths)' ],
         'dex_generated_input_dirs': [ '<(classes_final_dir)' ],
         'output_path': '<(dex_path)',
+        'proguard_enabled_input_path': '<(obfuscated_jar_path)',
       },
+      'conditions': [
+        ['proguard_enabled == "true"', { 'inputs': [ '<(obfuscate_stamp)' ] },
+                                       { 'inputs': [ '<(instr_stamp)' ] }],
+      ],
       'includes': [ 'android/dex_action.gypi' ],
     },
     {
@@ -688,8 +685,8 @@
         '<(DEPTH)/build/android/gyp/ant.py',
         '<(android_manifest_path)',
         '<(codegen_stamp)',
+        # TODO: This isn't always rerun correctly, http://crbug.com/351928
 
-        '>@(library_manifest_paths)',
         '>@(additional_input_paths)',
       ],
       'conditions': [
@@ -709,6 +706,7 @@
         '-DADDITIONAL_RES_DIRS=>(additional_res_dirs)',
         '-DADDITIONAL_RES_PACKAGES=>(additional_res_packages)',
         '-DADDITIONAL_R_TEXT_FILES=>(additional_R_text_files)',
+        '-DANDROID_MANIFEST=<(android_manifest_path)',
         '-DANDROID_SDK_JAR=<(android_sdk_jar)',
         '-DANDROID_SDK_ROOT=<(android_sdk_root)',
         '-DANDROID_SDK_TOOLS=<(android_sdk_tools)',
@@ -725,11 +723,6 @@
         '-Dbasedir=.',
         '-buildfile',
         '<(DEPTH)/build/android/ant/apk-package-resources.xml',
-
-        # Add list of inputs to the command line, so if inputs change
-        # (e.g. if a Java file is removed), the command will be re-run.
-        # TODO(newt): remove this once crbug.com/177552 is fixed in ninja.
-        '-DTHIS_IS_IGNORED=>!(echo \'>(_inputs)\' | md5sum)',
       ]
     },
     {

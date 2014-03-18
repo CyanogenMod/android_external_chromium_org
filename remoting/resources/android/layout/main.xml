@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!-- Copyright 2014 The Chromium Authors. All rights reserved.
+     Use of this source code is governed by a BSD-style license that can be
+     found in the LICENSE file.
+-->
+
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        android:layout_height="match_parent"
+        android:layout_width="match_parent">
+    <LinearLayout android:id="@+id/hostList_main"
+            android:orientation="vertical"
+            android:layout_height="match_parent"
+            android:layout_width="match_parent">
+        <TextView android:id="@+id/hostList_greeting"
+                android:layout_height="wrap_content"
+                android:layout_width="match_parent"/>
+        <ListView android:id="@+id/hostList_chooser"
+                android:layout_height="match_parent"
+                android:layout_width="match_parent"/>
+    </LinearLayout>
+    <ProgressBar android:id="@+id/hostList_progress"
+            android:layout_height="wrap_content"
+            android:layout_width="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone"
+            style="@android:style/Widget.Holo.ProgressBar.Large"/>
+</FrameLayout>

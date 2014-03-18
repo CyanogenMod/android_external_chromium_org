@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
-#include "content/public/common/p2p_socket_type.h"
-#include "content/public/renderer/p2p_socket_client.h"
+#include "content/common/p2p_socket_type.h"
+#include "content/renderer/p2p/socket_client.h"
 #include "net/base/ip_endpoint.h"
 
 namespace base {
@@ -35,7 +35,7 @@ class P2PSocketClientImpl : public P2PSocketClient {
   // P2P_SOCKET_TCP_CLIENT.
   virtual void Init(P2PSocketType type,
                     const net::IPEndPoint& local_address,
-                    const net::IPEndPoint& remote_address,
+                    const P2PHostAndIPEndPoint& remote_address,
                     P2PSocketClientDelegate* delegate);
 
   // Send the |data| to the |address|.
@@ -46,7 +46,7 @@ class P2PSocketClientImpl : public P2PSocketClient {
   // |dscp|.
   virtual void SendWithDscp(const net::IPEndPoint& address,
                             const std::vector<char>& data,
-                            net::DiffServCodePoint dscp) OVERRIDE;
+                            const talk_base::PacketOptions& options) OVERRIDE;
 
   // Setting socket options.
   virtual void SetOption(P2PSocketOption option, int value) OVERRIDE;
@@ -96,7 +96,7 @@ class P2PSocketClientImpl : public P2PSocketClient {
   // Scheduled on the IPC thread to finish initialization.
   void DoInit(P2PSocketType type,
               const net::IPEndPoint& local_address,
-              const net::IPEndPoint& remote_address);
+              const P2PHostAndIPEndPoint& remote_address);
 
   // Scheduled on the IPC thread to finish closing the connection.
   void DoClose();

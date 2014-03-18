@@ -56,6 +56,11 @@ class MockResourceConverter : public content::ResourceConverter {
     *was_resource = false;
     return true;
   }
+  virtual bool ToV8Value(const PP_Var& var,
+                         v8::Handle<v8::Context> context,
+                         v8::Handle<v8::Value>* result) OVERRIDE {
+    return false;
+  }
 };
 
 // Maps PP_Var IDs to the V8 value handle they correspond to.
@@ -414,7 +419,7 @@ TEST_F(V8VarConverterTest, StrangeDictionaryKeyTest) {
         "})();";
 
     v8::Handle<v8::Script> script(
-        v8::Script::New(v8::String::NewFromUtf8(isolate_, source)));
+        v8::Script::Compile(v8::String::NewFromUtf8(isolate_, source)));
     v8::Handle<v8::Object> object = script->Run().As<v8::Object>();
     ASSERT_FALSE(object.IsEmpty());
 

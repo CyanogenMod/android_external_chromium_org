@@ -52,6 +52,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/extensions/mime_types_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
@@ -64,6 +65,7 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
@@ -95,11 +97,13 @@ using content::DevToolsManager;
 using content::NavigationController;
 using content::OpenURLParams;
 using content::Referrer;
+using content::RenderFrameHost;
 using content::RenderViewHost;
 using content::RenderWidgetHost;
 using content::TestNavigationObserver;
 using content::WebContents;
 using content::WebContentsObserver;
+using task_manager::browsertest_util::WaitForTaskManagerRows;
 
 // Prerender tests work as follows:
 //
@@ -775,8 +779,10 @@ class HangingFirstRequestProtocolHandler
       net::NetworkDelegate* network_delegate) const OVERRIDE {
     if (first_run_) {
       first_run_ = false;
-      BrowserThread::PostTask(
-          BrowserThread::UI, FROM_HERE, callback_);
+      if (!callback_.is_null()) {
+        BrowserThread::PostTask(
+            BrowserThread::UI, FROM_HERE, callback_);
+      }
       return new HangingURLRequestJob(request, network_delegate);
     }
     return new content::URLRequestMockHTTPJob(request, network_delegate, file_);
@@ -1182,18 +1188,14 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
   }
 
   void RemoveLinkElement(int i) const {
-    GetActiveWebContents()->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-            base::string16(),
-            base::ASCIIToUTF16(base::StringPrintf("RemoveLinkElement(%d)", i)));
+    GetActiveWebContents()->GetMainFrame()->ExecuteJavaScript(
+        base::ASCIIToUTF16(base::StringPrintf("RemoveLinkElement(%d)", i)));
   }
 
   void ClickToNextPageAfterPrerender() {
     TestNavigationObserver nav_observer(GetActiveWebContents());
-    RenderViewHost* render_view_host =
-        GetActiveWebContents()->GetRenderViewHost();
-    render_view_host->ExecuteJavascriptInWebFrame(
-        base::string16(),
-        base::ASCIIToUTF16("ClickOpenLink()"));
+    RenderFrameHost* render_frame_host = GetActiveWebContents()->GetMainFrame();
+    render_frame_host->ExecuteJavaScript(base::ASCIIToUTF16("ClickOpenLink()"));
     nav_observer.Wait();
   }
 
@@ -1280,56 +1282,46 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
     return prerender_link_manager;
   }
 
-  bool DidReceivePrerenderStartEventForLinkNumber(int index) const {
-    bool received_prerender_started;
+  int GetPrerenderEventCount(int index, const std::string& type) const {
+    int event_count;
     std::string expression = base::StringPrintf(
-        "window.domAutomationController.send(Boolean("
-            "receivedPrerenderStartEvents[%d]))", index);
+        "window.domAutomationController.send("
+        "    GetPrerenderEventCount(%d, '%s'))", index, type.c_str());
 
-    CHECK(content::ExecuteScriptAndExtractBool(
-        GetActiveWebContents(),
-        expression,
-        &received_prerender_started));
-    return received_prerender_started;
+    CHECK(content::ExecuteScriptAndExtractInt(
+        GetActiveWebContents(), expression, &event_count));
+    return event_count;
+  }
+
+  bool DidReceivePrerenderStartEventForLinkNumber(int index) const {
+    return GetPrerenderEventCount(index, "webkitprerenderstart") > 0;
   }
 
   int GetPrerenderLoadEventCountForLinkNumber(int index) const {
-    int load_event_count;
-    std::string expression = base::StringPrintf(
-        "window.domAutomationController.send("
-            "receivedPrerenderLoadEvents[%d] || 0)", index);
-
-    CHECK(content::ExecuteScriptAndExtractInt(
-        GetActiveWebContents(),
-        expression,
-        &load_event_count));
-    return load_event_count;
+    return GetPrerenderEventCount(index, "webkitprerenderload");
   }
 
   int GetPrerenderDomContentLoadedEventCountForLinkNumber(int index) const {
-    int dom_content_loaded_event_count;
-    std::string expression = base::StringPrintf(
-        "window.domAutomationController.send("
-            "receivedPrerenderDomContentLoadedEvents[%d] || 0)", index);
-
-    CHECK(content::ExecuteScriptAndExtractInt(
-        GetActiveWebContents(),
-        expression,
-        &dom_content_loaded_event_count));
-    return dom_content_loaded_event_count;
+    return GetPrerenderEventCount(index, "webkitprerenderdomcontentloaded");
   }
 
   bool DidReceivePrerenderStopEventForLinkNumber(int index) const {
-    bool received_prerender_stopped;
-    std::string expression = base::StringPrintf(
-        "window.domAutomationController.send(Boolean("
-            "receivedPrerenderStopEvents[%d]))", index);
+    return GetPrerenderEventCount(index, "webkitprerenderstop") > 0;
+  }
 
-    CHECK(content::ExecuteScriptAndExtractBool(
-        GetActiveWebContents(),
-        expression,
-        &received_prerender_stopped));
-    return received_prerender_stopped;
+  void WaitForPrerenderEventCount(int index,
+                                  const std::string& type,
+                                  int count) const {
+    int dummy;
+    std::string expression = base::StringPrintf(
+        "WaitForPrerenderEventCount(%d, '%s', %d,"
+        "    window.domAutomationController.send.bind("
+        "        window.domAutomationController, 0))",
+        index, type.c_str(), count);
+
+    CHECK(content::ExecuteScriptAndExtractInt(
+        GetActiveWebContents(), expression, &dummy));
+    CHECK_EQ(0, dummy);
   }
 
   bool HadPrerenderEventErrors() const {
@@ -1397,8 +1389,8 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
     loader_path_ = path;
   }
 
-  void set_loader_query_and_fragment(const std::string& query_and_fragment) {
-    loader_query_and_fragment_ = query_and_fragment;
+  void set_loader_query(const std::string& query) {
+    loader_query_ = query;
   }
 
   GURL GetCrossDomainTestUrl(const std::string& path) {
@@ -1460,10 +1452,20 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
   void AddPrerender(const GURL& url, int index) {
     std::string javascript = base::StringPrintf(
         "AddPrerender('%s', %d)", url.spec().c_str(), index);
-    RenderViewHost* render_view_host =
-        GetActiveWebContents()->GetRenderViewHost();
-    render_view_host->ExecuteJavascriptInWebFrame(
-        base::string16(), base::ASCIIToUTF16(javascript));
+    RenderFrameHost* render_frame_host = GetActiveWebContents()->GetMainFrame();
+    render_frame_host->ExecuteJavaScript(base::ASCIIToUTF16(javascript));
+  }
+
+  // Returns a string for pattern-matching TaskManager tab entries.
+  base::string16 MatchTaskManagerTab(const char* page_title) {
+    return l10n_util::GetStringFUTF16(IDS_TASK_MANAGER_TAB_PREFIX,
+                                      base::ASCIIToUTF16(page_title));
+  }
+
+  // Returns a string for pattern-matching TaskManager prerender entries.
+  base::string16 MatchTaskManagerPrerender(const char* page_title) {
+    return l10n_util::GetStringFUTF16(IDS_TASK_MANAGER_PRERENDER_PREFIX,
+                                      base::ASCIIToUTF16(page_title));
   }
 
  protected:
@@ -1494,8 +1496,8 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
     const net::SpawnedTestServer* src_server = test_server();
     if (https_src_server_)
       src_server = https_src_server_.get();
-    GURL loader_url = src_server->GetURL(replacement_path +
-                                         loader_query_and_fragment_);
+    GURL loader_url = src_server->GetURL(
+        replacement_path + "&" + loader_query_);
 
     GURL::Replacements loader_replacements;
     if (!loader_host_override_.empty())
@@ -1585,8 +1587,7 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
                          const GURL& ping_url,
                          bool new_web_contents) const {
     WebContents* web_contents = GetActiveWebContents();
-    RenderViewHost* render_view_host =
-        GetActiveWebContents()->GetRenderViewHost();
+    RenderFrameHost* render_frame_host = web_contents->GetMainFrame();
     // Extra arguments in JS are ignored.
     std::string javascript = base::StringPrintf(
         "%s('%s', '%s')", javascript_function_name.c_str(),
@@ -1594,14 +1595,12 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
 
     if (new_web_contents) {
       NewTabNavigationOrSwapObserver observer;
-      render_view_host->ExecuteJavascriptInWebFrame(
-          base::string16(), base::ASCIIToUTF16(javascript));
+      render_frame_host->ExecuteJavaScript(base::ASCIIToUTF16(javascript));
       observer.Wait();
     } else {
       NavigationOrSwapObserver observer(current_browser()->tab_strip_model(),
                                         web_contents);
-      render_view_host->ExecuteJavascriptInWebFrame(
-          base::string16(), base::ASCIIToUTF16(javascript));
+      render_frame_host->ExecuteJavaScript(base::ASCIIToUTF16(javascript));
       observer.Wait();
     }
   }
@@ -1617,7 +1616,7 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
   bool check_load_events_;
   std::string loader_host_override_;
   std::string loader_path_;
-  std::string loader_query_and_fragment_;
+  std::string loader_query_;
   Browser* explicitly_set_browser_;
 };
 
@@ -1724,18 +1723,17 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPageRemovesPending) {
   ASSERT_TRUE(IsEmptyPrerenderLinkManager());
 }
 
-// Flaky, http://crbug.com/167340.
-IN_PROC_BROWSER_TEST_F(
-    PrerenderBrowserTest, DISABLED_PrerenderPageRemovingLink) {
-  set_loader_path("files/prerender/prerender_loader_removing_links.html");
-  set_loader_query_and_fragment("?links_to_insert=1");
-  PrerenderTestURL("files/prerender/prerender_page.html",
-                   FINAL_STATUS_CANCELLED, 1);
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPageRemovingLink) {
+  scoped_ptr<TestPrerender> prerender =
+      PrerenderTestURL("files/prerender/prerender_page.html",
+                       FINAL_STATUS_CANCELLED, 1);
 
   // No ChannelDestructionWatcher is needed here, since prerenders in the
   // PrerenderLinkManager should be deleted by removing the links, rather than
   // shutting down the renderer process.
   RemoveLinkElement(0);
+  prerender->WaitForStop();
+
   EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(0));
   EXPECT_FALSE(DidReceivePrerenderStopEventForLinkNumber(0));
   EXPECT_FALSE(HadPrerenderEventErrors());
@@ -1745,16 +1743,15 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_TRUE(IsEmptyPrerenderLinkManager());
 }
 
-// Flaky, http://crbug.com/167340.
 IN_PROC_BROWSER_TEST_F(
-    PrerenderBrowserTest, DISABLED_PrerenderPageRemovingLinkWithTwoLinks) {
+    PrerenderBrowserTest, PrerenderPageRemovingLinkWithTwoLinks) {
   GetPrerenderManager()->mutable_config().max_link_concurrency = 2;
   GetPrerenderManager()->mutable_config().max_link_concurrency_per_launcher = 2;
 
-  set_loader_path("files/prerender/prerender_loader_removing_links.html");
-  set_loader_query_and_fragment("?links_to_insert=2");
-  PrerenderTestURL("files/prerender/prerender_page.html",
-                   FINAL_STATUS_CANCELLED, 1);
+  set_loader_query("links_to_insert=2");
+  scoped_ptr<TestPrerender> prerender =
+      PrerenderTestURL("files/prerender/prerender_page.html",
+                       FINAL_STATUS_CANCELLED, 1);
   EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(0));
   EXPECT_FALSE(DidReceivePrerenderStopEventForLinkNumber(0));
   EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(1));
@@ -1762,6 +1759,8 @@ IN_PROC_BROWSER_TEST_F(
 
   RemoveLinkElement(0);
   RemoveLinkElement(1);
+  prerender->WaitForStop();
+
   EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(0));
   EXPECT_FALSE(DidReceivePrerenderStopEventForLinkNumber(0));
   EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(1));
@@ -1773,21 +1772,44 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_TRUE(IsEmptyPrerenderLinkManager());
 }
 
-#if defined(OS_WIN)
-// TODO(gavinp): Fails on XP Rel - http://crbug.com/128841
-#define MAYBE_PrerenderPageRemovingLinkWithTwoLinksRemovingOne \
-    DISABLED_PrerenderPageRemovingLinkWithTwoLinksRemovingOne
-#else
-#define MAYBE_PrerenderPageRemovingLinkWithTwoLinksRemovingOne \
-    PrerenderPageRemovingLinkWithTwoLinksRemovingOne
-#endif  // defined(OS_WIN)
 IN_PROC_BROWSER_TEST_F(
-    PrerenderBrowserTest,
-    MAYBE_PrerenderPageRemovingLinkWithTwoLinksRemovingOne) {
+    PrerenderBrowserTest, PrerenderPageRemovingLinkWithTwoLinksOneLate) {
   GetPrerenderManager()->mutable_config().max_link_concurrency = 2;
   GetPrerenderManager()->mutable_config().max_link_concurrency_per_launcher = 2;
-  set_loader_path("files/prerender/prerender_loader_removing_links.html");
-  set_loader_query_and_fragment("?links_to_insert=2");
+
+  GURL url = test_server()->GetURL("files/prerender/prerender_page.html");
+  scoped_ptr<TestPrerender> prerender =
+      PrerenderTestURL(url, FINAL_STATUS_CANCELLED, 1);
+
+  // Add a second prerender for the same link. It reuses the prerender, so only
+  // the start event fires here.
+  AddPrerender(url, 1);
+  WaitForPrerenderEventCount(1, "webkitprerenderstart", 1);
+  EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(1));
+  EXPECT_EQ(0, GetPrerenderLoadEventCountForLinkNumber(1));
+  EXPECT_FALSE(DidReceivePrerenderStopEventForLinkNumber(1));
+
+  RemoveLinkElement(0);
+  RemoveLinkElement(1);
+  prerender->WaitForStop();
+
+  EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(0));
+  EXPECT_FALSE(DidReceivePrerenderStopEventForLinkNumber(0));
+  EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(1));
+  EXPECT_FALSE(DidReceivePrerenderStopEventForLinkNumber(1));
+  EXPECT_FALSE(HadPrerenderEventErrors());
+  // IsEmptyPrerenderLinkManager() is not racy because the earlier DidReceive*
+  // calls did a thread/process hop to the renderer which insured pending
+  // renderer events have arrived.
+  EXPECT_TRUE(IsEmptyPrerenderLinkManager());
+}
+
+IN_PROC_BROWSER_TEST_F(
+    PrerenderBrowserTest,
+    PrerenderPageRemovingLinkWithTwoLinksRemovingOne) {
+  GetPrerenderManager()->mutable_config().max_link_concurrency = 2;
+  GetPrerenderManager()->mutable_config().max_link_concurrency_per_launcher = 2;
+  set_loader_query("links_to_insert=2");
   PrerenderTestURL("files/prerender/prerender_page.html",
                    FINAL_STATUS_USED, 1);
   EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(0));
@@ -2385,68 +2407,93 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderAbortPendingOnCancel) {
   EXPECT_TRUE(IsEmptyPrerenderLinkManager());
 }
 
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderTaskManager) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, OpenTaskManagerBeforePrerender) {
+  const base::string16 any_prerender = MatchTaskManagerPrerender("*");
+  const base::string16 any_tab = MatchTaskManagerTab("*");
+  const base::string16 original = MatchTaskManagerTab("Preloader");
+  const base::string16 prerender = MatchTaskManagerPrerender("Prerender Page");
+  const base::string16 final = MatchTaskManagerTab("Prerender Page");
+
   // Show the task manager. This populates the model.
   chrome::OpenTaskManager(current_browser());
-  // Wait for the model of task manager to start.
-  TaskManagerBrowserTestUtil::WaitForWebResourceChange(1);
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, any_tab));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(0, any_prerender));
+
+  // Prerender a page in addition to the original tab.
+  PrerenderTestURL("files/prerender/prerender_page.html", FINAL_STATUS_USED, 1);
+
+  // A TaskManager entry should appear like "Prerender: Prerender Page"
+  // alongside the original tab entry. There should be just these two entries.
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, prerender));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, original));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(0, final));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, any_prerender));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, any_tab));
+
+  // Swap in the prerendered content.
+  NavigateToDestURL();
+
+  // The "Prerender: " TaskManager entry should disappear, being replaced by a
+  // "Tab: Prerender Page" entry, and nothing else.
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(0, prerender));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(0, original));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, final));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, any_tab));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(0, any_prerender));
+}
+
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, OpenTaskManagerAfterPrerender) {
+  const base::string16 any_prerender = MatchTaskManagerPrerender("*");
+  const base::string16 any_tab = MatchTaskManagerTab("*");
+  const base::string16 original = MatchTaskManagerTab("Preloader");
+  const base::string16 prerender = MatchTaskManagerPrerender("Prerender Page");
+  const base::string16 final = MatchTaskManagerTab("Prerender Page");
 
   // Start with two resources.
   PrerenderTestURL("files/prerender/prerender_page.html", FINAL_STATUS_USED, 1);
 
-  // One of the resources that has a WebContents associated with it should have
-  // the Prerender prefix.
-  const base::string16 prefix =
-      l10n_util::GetStringFUTF16(IDS_TASK_MANAGER_PRERENDER_PREFIX,
-                                 base::string16());
-  base::string16 prerender_title;
-  int num_prerender_tabs = 0;
+  // Show the task manager. This populates the model. Importantly, we're doing
+  // this after the prerender WebContents already exists - the task manager
+  // needs to find it, it can't just listen for creation.
+  chrome::OpenTaskManager(current_browser());
 
-  TaskManagerModel* model = GetModel();
-  // The task manager caches values. Force the titles to be fresh.
-  model->Refresh();
-  for (int i = 0; i < model->ResourceCount(); ++i) {
-    if (model->GetResourceWebContents(i)) {
-      prerender_title = model->GetResourceTitle(i);
-      if (StartsWith(prerender_title, prefix, true))
-        ++num_prerender_tabs;
-    }
-  }
-  EXPECT_EQ(1, num_prerender_tabs);
-  const base::string16 prerender_page_title =
-      prerender_title.substr(prefix.length());
+  // A TaskManager entry should appear like "Prerender: Prerender Page"
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, prerender));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, original));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(0, final));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, any_prerender));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, any_tab));
 
+  // Swap in the tab.
   NavigateToDestURL();
 
-  // There should be no tabs with the Prerender prefix.
-  const base::string16 tab_prefix =
-      l10n_util::GetStringFUTF16(IDS_TASK_MANAGER_TAB_PREFIX, base::string16());
-  num_prerender_tabs = 0;
-  int num_tabs_with_prerender_page_title = 0;
-  model->Refresh();
-  for (int i = 0; i < model->ResourceCount(); ++i) {
-    if (model->GetResourceWebContents(i)) {
-      base::string16 tab_title = model->GetResourceTitle(i);
-      if (StartsWith(tab_title, prefix, true)) {
-        ++num_prerender_tabs;
-      } else {
-        EXPECT_TRUE(StartsWith(tab_title, tab_prefix, true));
+  // The "Prerender: Prerender Page" TaskManager row should disappear, being
+  // replaced by "Tab: Prerender Page"
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(0, prerender));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(0, original));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, final));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, any_tab));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(0, any_prerender));
+}
 
-        // The prerender tab should now be a normal tab but the title should be
-        // the same. Depending on timing, there may be more than one of these.
-        const base::string16 tab_page_title =
-            tab_title.substr(tab_prefix.length());
-        if (prerender_page_title.compare(tab_page_title) == 0)
-          ++num_tabs_with_prerender_page_title;
-      }
-    }
-  }
-  EXPECT_EQ(0, num_prerender_tabs);
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, OpenTaskManagerAfterSwapIn) {
+  const base::string16 any_prerender = MatchTaskManagerPrerender("*");
+  const base::string16 any_tab = MatchTaskManagerTab("*");
+  const base::string16 final = MatchTaskManagerTab("Prerender Page");
 
-  // We may have deleted the prerender tab, but the swapped in tab should be
-  // active.
-  EXPECT_GE(num_tabs_with_prerender_page_title, 1);
-  EXPECT_LE(num_tabs_with_prerender_page_title, 2);
+  // Prerender, and swap it in.
+  PrerenderTestURL("files/prerender/prerender_page.html", FINAL_STATUS_USED, 1);
+  NavigateToDestURL();
+
+  // Show the task manager. This populates the model. Importantly, we're doing
+  // this after the prerender has been swapped in.
+  chrome::OpenTaskManager(current_browser());
+
+  // We should not see a prerender resource in the task manager, just a normal
+  // page.
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, final));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, any_tab));
+  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(0, any_prerender));
 }
 
 // Checks that audio loads are deferred on prerendering.
@@ -3022,17 +3069,41 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderFavicon) {
 
 // Checks that when a prerendered page is swapped in to a referring page, the
 // unload handlers on the referring page are executed.
-// Fails about 50% on CrOS, 5-10% on linux, win, mac. http://crbug.com/128986
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderUnload) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderUnload) {
+  // Matches URL in prerender_loader_with_unload.html.
+  const GURL unload_url("http://unload-url.test");
+  base::FilePath empty_file = ui_test_utils::GetTestFilePath(
+      base::FilePath(), base::FilePath(FILE_PATH_LITERAL("empty.html")));
+  RequestCounter unload_counter;
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&CreateCountingProtocolHandlerOnIO,
+                 unload_url, empty_file, unload_counter.AsWeakPtr()));
+
   set_loader_path("files/prerender/prerender_loader_with_unload.html");
   PrerenderTestURL("files/prerender/prerender_page.html", FINAL_STATUS_USED, 1);
-  base::string16 expected_title = base::ASCIIToUTF16("Unloaded");
-  content::TitleWatcher title_watcher(
-      current_browser()->tab_strip_model()->GetActiveWebContents(),
-      expected_title);
   NavigateToDestURL();
-  EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
+  unload_counter.WaitForCount(1);
 }
+
+// Checks that a hanging unload on the referring page of a prerender swap does
+// not crash the browser on exit.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderHangingUnload) {
+  // Matches URL in prerender_loader_with_unload.html.
+  const GURL hang_url("http://unload-url.test");
+  base::FilePath empty_file = ui_test_utils::GetTestFilePath(
+      base::FilePath(), base::FilePath(FILE_PATH_LITERAL("empty.html")));
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&CreateHangingFirstRequestProtocolHandlerOnIO,
+                 hang_url, empty_file,
+                 base::Closure()));
+
+  set_loader_path("files/prerender/prerender_loader_with_unload.html");
+  PrerenderTestURL("files/prerender/prerender_page.html", FINAL_STATUS_USED, 1);
+  NavigateToDestURL();
+}
+
 
 // Checks that when the history is cleared, prerendering is cancelled and
 // prerendering history is cleared.
@@ -3153,21 +3224,27 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClickNavigateGoBack) {
   GoBackToPrerender();
 }
 
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClickNewWindow) {
+// http://crbug.com/345474
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
+                       DISABLED_PrerenderClickNewWindow) {
   PrerenderTestURL("files/prerender/prerender_page_with_link.html",
                    FINAL_STATUS_WINDOW_OPENER,
                    1);
   OpenDestURLViaClickNewWindow();
 }
 
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClickNewForegroundTab) {
+// http://crbug.com/345474
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
+                       DISABLED_PrerenderClickNewForegroundTab) {
   PrerenderTestURL("files/prerender/prerender_page_with_link.html",
                    FINAL_STATUS_WINDOW_OPENER,
                    1);
   OpenDestURLViaClickNewForegroundTab();
 }
 
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClickNewBackgroundTab) {
+// http://crbug.com/345474
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
+                       DISABLED_PrerenderClickNewBackgroundTab) {
   scoped_ptr<TestPrerender> prerender =
       PrerenderTestURL("files/prerender/prerender_page_with_link.html",
                        FINAL_STATUS_WINDOW_OPENER,
@@ -3471,6 +3548,31 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithExtensions, MAYBE_TabsApi) {
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
+// Test that prerenders abort when navigating to a stream.
+// See chrome/browser/extensions/api/streams_private/streams_private_apitest.cc
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithExtensions, StreamsTest) {
+  ASSERT_TRUE(StartSpawnedTestServer());
+
+  const extensions::Extension* extension = LoadExtension(
+      test_data_dir_.AppendASCII("streams_private/handle_mime_type"));
+  ASSERT_TRUE(extension);
+  EXPECT_EQ(std::string(extension_misc::kStreamsPrivateTestExtensionId),
+            extension->id());
+  MimeTypesHandler* handler = MimeTypesHandler::GetHandler(extension);
+  ASSERT_TRUE(handler);
+  EXPECT_TRUE(handler->CanHandleMIMEType("application/msword"));
+
+  PrerenderTestURL("files/prerender/document.doc", FINAL_STATUS_DOWNLOAD, 0);
+
+  // Sanity-check that the extension would have picked up the stream in a normal
+  // navigation had prerender not intercepted it.
+  // streams_private/handle_mime_type reports success if it has handled the
+  // application/msword type.
+  ResultCatcher catcher;
+  NavigateToDestURL();
+  EXPECT_TRUE(catcher.GetNextResult());
+}
+
 // Checks that non-http/https/chrome-extension subresource cancels the
 // prerender.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
@@ -3553,7 +3655,6 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
   PrerenderTestURL(replacement_path, FINAL_STATUS_USED, 1);
   NavigateToDestURL();
 }
-
 
 // Checks that non-http/https main page redirects cancel the prerender.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,

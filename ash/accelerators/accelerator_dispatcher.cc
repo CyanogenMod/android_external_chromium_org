@@ -6,17 +6,12 @@
 
 #if defined(USE_X11)
 #include <X11/Xlib.h>
-
-// Xlib defines RootWindow
-#ifdef RootWindow
-#undef RootWindow
-#endif
 #endif  // defined(USE_X11)
 
 #include "ash/accelerators/accelerator_controller.h"
 #include "ash/shell.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
@@ -66,31 +61,14 @@ bool IsPossibleAcceleratorNotForMenu(const ui::KeyEvent& key_event) {
 }  // namespace
 
 AcceleratorDispatcher::AcceleratorDispatcher(
-    base::MessagePumpDispatcher* nested_dispatcher,
-    aura::Window* associated_window)
-    : nested_dispatcher_(nested_dispatcher),
-      associated_window_(associated_window) {
-  DCHECK(nested_dispatcher_);
-  associated_window_->AddObserver(this);
+    base::MessagePumpDispatcher* nested_dispatcher)
+    : nested_dispatcher_(nested_dispatcher) {
 }
 
 AcceleratorDispatcher::~AcceleratorDispatcher() {
-  if (associated_window_)
-    associated_window_->RemoveObserver(this);
-}
-
-void AcceleratorDispatcher::OnWindowDestroying(aura::Window* window) {
-  if (associated_window_ == window)
-    associated_window_ = NULL;
 }
 
 uint32_t AcceleratorDispatcher::Dispatch(const base::NativeEvent& event) {
-  if (!associated_window_)
-    return POST_DISPATCH_QUIT_LOOP;
-
-  if (!associated_window_->CanReceiveEvents())
-    return POST_DISPATCH_PERFORM_DEFAULT;
-
   if (IsKeyEvent(event)) {
     ui::KeyEvent key_event(event, false);
     if (IsPossibleAcceleratorNotForMenu(key_event)) {
@@ -121,10 +99,13 @@ uint32_t AcceleratorDispatcher::Dispatch(const base::NativeEvent& event) {
         return POST_DISPATCH_NONE;
     }
 
-    return nested_dispatcher_->Dispatch(key_event.native_event());
+    return nested_dispatcher_
+               ? nested_dispatcher_->Dispatch(key_event.native_event())
+               : POST_DISPATCH_PERFORM_DEFAULT;
   }
 
-  return nested_dispatcher_->Dispatch(event);
+  return nested_dispatcher_ ? nested_dispatcher_->Dispatch(event)
+                            : POST_DISPATCH_PERFORM_DEFAULT;
 }
 
 }  // namespace ash

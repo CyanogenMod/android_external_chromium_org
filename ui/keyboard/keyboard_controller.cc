@@ -23,7 +23,12 @@
 #include "ui/keyboard/keyboard_controller_proxy.h"
 #include "ui/keyboard/keyboard_switches.h"
 #include "ui/keyboard/keyboard_util.h"
-#include "ui/wm/public/masked_window_targeter.h"
+#include "ui/wm/core/masked_window_targeter.h"
+
+#if defined(OS_CHROMEOS)
+#include "base/process/launch.h"
+#include "base/sys_info.h"
+#endif
 
 namespace {
 
@@ -123,8 +128,8 @@ class KeyboardWindowDelegate : public aura::WindowDelegate {
   virtual void OnCaptureLost() OVERRIDE {}
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {}
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE {}
-  virtual void OnWindowDestroying() OVERRIDE {}
-  virtual void OnWindowDestroyed() OVERRIDE { delete this; }
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {}
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE { delete this; }
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE {}
   virtual bool HasHitTestMask() const OVERRIDE { return true; }
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {
@@ -140,6 +145,21 @@ class KeyboardWindowDelegate : public aura::WindowDelegate {
 
   DISALLOW_COPY_AND_ASSIGN(KeyboardWindowDelegate);
 };
+
+void ToggleTouchEventLogging(bool enable) {
+#if defined(OS_CHROMEOS)
+  if (!base::SysInfo::IsRunningOnChromeOS())
+    return;
+  CommandLine command(
+      base::FilePath("/opt/google/touchscreen/toggle_touch_event_logging"));
+  if (enable)
+    command.AppendArg("1");
+  else
+    command.AppendArg("0");
+  VLOG(1) << "Running " << command.GetCommandLineString();
+  base::LaunchProcess(command, base::LaunchOptions(), NULL);
+#endif
+}
 
 }  // namespace
 
@@ -281,6 +301,7 @@ void KeyboardController::NotifyKeyboardBoundsChanging(
 
 void KeyboardController::HideKeyboard(HideReason reason) {
   keyboard_visible_ = false;
+  ToggleTouchEventLogging(true);
 
   keyboard::LogKeyboardControlEvent(
       reason == HIDE_REASON_AUTOMATIC ?
@@ -288,6 +309,8 @@ void KeyboardController::HideKeyboard(HideReason reason) {
           keyboard::KEYBOARD_CONTROL_HIDE_USER);
 
   NotifyKeyboardBoundsChanging(gfx::Rect());
+
+  set_lock_keyboard(false);
 
   ui::LayerAnimator* container_animator = container_->layer()->GetAnimator();
   animation_observer_.reset(new CallbackAnimationObserver(
@@ -312,6 +335,11 @@ void KeyboardController::AddObserver(KeyboardControllerObserver* observer) {
 
 void KeyboardController::RemoveObserver(KeyboardControllerObserver* observer) {
   observer_list_.RemoveObserver(observer);
+}
+
+void KeyboardController::ShowAndLockKeyboard() {
+  set_lock_keyboard(true);
+  OnShowImeIfNeeded();
 }
 
 void KeyboardController::OnWindowHierarchyChanged(
@@ -406,6 +434,7 @@ void KeyboardController::OnShowImeIfNeeded() {
 }
 
 void KeyboardController::ShowKeyboard() {
+  ToggleTouchEventLogging(false);
   ui::LayerAnimator* container_animator = container_->layer()->GetAnimator();
 
   // If the container is not animating, makes sure the position and opacity

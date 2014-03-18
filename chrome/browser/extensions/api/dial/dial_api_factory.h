@@ -6,9 +6,7 @@
 #define CHROME_BROWSER_EXTENSIONS_API_DIAL_DIAL_API_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "components/browser_context_keyed_service/refcounted_browser_context_keyed_service_factory.h"
-
-class Profile;
+#include "components/keyed_service/content/refcounted_browser_context_keyed_service_factory.h"
 
 namespace extensions {
 
@@ -16,7 +14,8 @@ class DialAPI;
 
 class DialAPIFactory : public RefcountedBrowserContextKeyedServiceFactory {
  public:
-  static scoped_refptr<DialAPI> GetForProfile(Profile* profile);
+  static scoped_refptr<DialAPI> GetForBrowserContext(
+      content::BrowserContext* context);
 
   static DialAPIFactory* GetInstance();
 

@@ -99,13 +99,20 @@ void File::InitializeUnsafe(const FilePath& name, uint32 flags) {
 bool File::IsValid() const {
   return file_.IsValid();
 }
+
+PlatformFile File::GetPlatformFile() const {
+  return file_;
+}
+
 PlatformFile File::TakePlatformFile() {
   return file_.Take();
 }
 
 void File::Close() {
-  base::ThreadRestrictions::AssertIOAllowed();
-  file_.Close();
+  if (file_.IsValid()) {
+    base::ThreadRestrictions::AssertIOAllowed();
+    file_.Close();
+  }
 }
 
 int64 File::Seek(Whence whence, int64 offset) {
@@ -137,7 +144,7 @@ int File::Read(int64 offset, char* data, int size) {
   overlapped.OffsetHigh = offset_li.HighPart;
 
   DWORD bytes_read;
-  if (::ReadFile(file_, data, size, &bytes_read, &overlapped) != 0)
+  if (::ReadFile(file_, data, size, &bytes_read, &overlapped))
     return bytes_read;
   if (ERROR_HANDLE_EOF == GetLastError())
     return 0;
@@ -153,7 +160,7 @@ int File::ReadAtCurrentPos(char* data, int size) {
     return -1;
 
   DWORD bytes_read;
-  if (::ReadFile(file_, data, size, &bytes_read, NULL) != 0)
+  if (::ReadFile(file_, data, size, &bytes_read, NULL))
     return bytes_read;
   if (ERROR_HANDLE_EOF == GetLastError())
     return 0;
@@ -182,14 +189,23 @@ int File::Write(int64 offset, const char* data, int size) {
   overlapped.OffsetHigh = offset_li.HighPart;
 
   DWORD bytes_written;
-  if (::WriteFile(file_, data, size, &bytes_written, &overlapped) != 0)
+  if (::WriteFile(file_, data, size, &bytes_written, &overlapped))
     return bytes_written;
 
   return -1;
 }
 
 int File::WriteAtCurrentPos(const char* data, int size) {
-  NOTREACHED();
+  base::ThreadRestrictions::AssertIOAllowed();
+  DCHECK(IsValid());
+  DCHECK(!async_);
+  if (size < 0)
+    return -1;
+
+  DWORD bytes_written;
+  if (::WriteFile(file_, data, size, &bytes_written, NULL))
+    return bytes_written;
+
   return -1;
 }
 
@@ -215,7 +231,7 @@ bool File::SetLength(int64 length) {
   LARGE_INTEGER file_pointer;
   LARGE_INTEGER zero;
   zero.QuadPart = 0;
-  if (::SetFilePointerEx(file_, zero, &file_pointer, FILE_CURRENT) == 0)
+  if (!::SetFilePointerEx(file_, zero, &file_pointer, FILE_CURRENT))
     return false;
 
   LARGE_INTEGER length_li;
@@ -231,8 +247,8 @@ bool File::SetLength(int64 length) {
   // TODO(rvargas): Emulating ftruncate details seem suspicious and it is not
   // promised by the interface (nor was promised by PlatformFile). See if this
   // implementation detail can be removed.
-  return ((::SetEndOfFile(file_) != 0) &&
-          (::SetFilePointerEx(file_, file_pointer, NULL, FILE_BEGIN) != 0));
+  return ((::SetEndOfFile(file_) != FALSE) &&
+          (::SetFilePointerEx(file_, file_pointer, NULL, FILE_BEGIN) != FALSE));
 }
 
 bool File::Flush() {
@@ -248,7 +264,7 @@ bool File::SetTimes(Time last_access_time, Time last_modified_time) {
   FILETIME last_access_filetime = last_access_time.ToFileTime();
   FILETIME last_modified_filetime = last_modified_time.ToFileTime();
   return (::SetFileTime(file_, NULL, &last_access_filetime,
-                        &last_modified_filetime) != 0);
+                        &last_modified_filetime) != FALSE);
 }
 
 bool File::GetInfo(Info* info) {
@@ -256,7 +272,7 @@ bool File::GetInfo(Info* info) {
   DCHECK(IsValid());
 
   BY_HANDLE_FILE_INFORMATION file_info;
-  if (GetFileInformationByHandle(file_, &file_info) == 0)
+  if (!GetFileInformationByHandle(file_, &file_info))
     return false;
 
   LARGE_INTEGER size;

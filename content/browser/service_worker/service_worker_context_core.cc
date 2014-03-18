@@ -4,17 +4,16 @@
 
 #include "content/browser/service_worker/service_worker_context_core.h"
 
-#include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/strings/string_util.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
+#include "content/browser/service_worker/service_worker_info.h"
 #include "content/browser/service_worker/service_worker_job_coordinator.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/browser/service_worker/service_worker_register_job.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_storage.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/content_switches.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -62,17 +61,12 @@ void ServiceWorkerContextCore::RemoveAllProviderHostsForProcess(
     providers_.Remove(process_id);
 }
 
-bool ServiceWorkerContextCore::IsEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableServiceWorker);
-}
-
 void ServiceWorkerContextCore::RegisterServiceWorker(
     const GURL& pattern,
     const GURL& script_url,
     int source_process_id,
     const RegistrationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   job_coordinator_->Register(
       pattern,
@@ -87,7 +81,7 @@ void ServiceWorkerContextCore::UnregisterServiceWorker(
     const GURL& pattern,
     int source_process_id,
     const UnregistrationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   job_coordinator_->Unregister(pattern, source_process_id, callback);
 }

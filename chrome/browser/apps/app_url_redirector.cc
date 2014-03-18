@@ -10,7 +10,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/common/extensions/api/url_handlers/url_handlers_parser.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "components/navigation_interception/intercept_navigation_resource_throttle.h"
 #include "components/navigation_interception/navigation_params.h"
 #include "content/public/browser/browser_thread.h"
@@ -20,6 +19,7 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_set.h"
 #include "net/url_request/url_request.h"
 
@@ -92,7 +92,7 @@ AppUrlRedirector::MaybeCreateThrottleFor(net::URLRequest* request,
   // Never redirect URLs to apps in incognito. Technically, apps are not
   // supported in incognito, but that may change in future.
   // See crbug.com/240879, which tracks incognito support for v2 apps.
-  if (profile_io_data->is_incognito()) {
+  if (profile_io_data->IsOffTheRecord()) {
     DVLOG(1) << "Skip redirection: unsupported in incognito";
     return NULL;
   }

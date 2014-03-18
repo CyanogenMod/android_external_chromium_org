@@ -207,7 +207,7 @@ void ThreadProxy::ForceCommitForReadbackOnImplThread(
   impl().readback_request = request;
 
   impl().scheduler->SetNeedsForcedCommitForReadback();
-  if (impl().scheduler->CommitPending()) {
+  if (impl().scheduler->IsBeginMainFrameSent()) {
     begin_main_frame_sent_completion->Signal();
     return;
   }
@@ -381,7 +381,6 @@ void ThreadProxy::SetNeedsAnimate() {
 
   TRACE_EVENT0("cc", "ThreadProxy::SetNeedsAnimate");
   main().animate_requested = true;
-  main().can_cancel_commit = false;
   SendCommitRequestToImplThreadIfNeeded();
 }
 
@@ -482,8 +481,7 @@ void ThreadProxy::SetNeedsCommitOnImplThread() {
 }
 
 void ThreadProxy::PostAnimationEventsToMainThreadOnImplThread(
-    scoped_ptr<AnimationEventsVector> events,
-    base::Time wall_clock_time) {
+    scoped_ptr<AnimationEventsVector> events) {
   TRACE_EVENT0("cc",
                "ThreadProxy::PostAnimationEventsToMainThreadOnImplThread");
   DCHECK(IsImplThread());
@@ -491,8 +489,7 @@ void ThreadProxy::PostAnimationEventsToMainThreadOnImplThread(
       FROM_HERE,
       base::Bind(&ThreadProxy::SetAnimationEvents,
                  main_thread_weak_ptr_,
-                 base::Passed(&events),
-                 wall_clock_time));
+                 base::Passed(&events)));
 }
 
 bool ThreadProxy::ReduceContentsTextureMemoryOnImplThread(size_t limit_bytes,
@@ -911,6 +908,17 @@ void ThreadProxy::BeginMainFrame(
 
   layer_tree_host()->WillCommit();
 
+  // Before calling animate, we set main().animate_requested to false. If it is
+  // true now, it means SetNeedAnimate was called again, but during a state when
+  // main().commit_request_sent_to_impl_thread = true. We need to force that
+  // call to happen again now so that the commit request is sent to the impl
+  // thread.
+  if (main().animate_requested) {
+    // Forces SetNeedsAnimate to consider posting a commit task.
+    main().animate_requested = false;
+    SetNeedsAnimate();
+  }
+
   if (!updated && can_cancel_this_commit) {
     TRACE_EVENT_INSTANT0("cc", "EarlyOut_NoUpdates", TRACE_EVENT_SCOPE_THREAD);
     bool did_handle = true;
@@ -926,18 +934,6 @@ void ThreadProxy::BeginMainFrame(
     layer_tree_host()->CommitComplete();
     layer_tree_host()->DidBeginMainFrame();
     return;
-  }
-
-  // Before calling animate, we set main().animate_requested to false. If it is
-  // true
-  // now, it means SetNeedAnimate was called again, but during a state when
-  // main().commit_request_sent_to_impl_thread = true. We need to force that
-  // call to
-  // happen again now so that the commit request is sent to the impl thread.
-  if (main().animate_requested) {
-    // Forces SetNeedsAnimate to consider posting a commit task.
-    main().animate_requested = false;
-    SetNeedsAnimate();
   }
 
   scoped_refptr<ContextProvider> offscreen_context_provider;
@@ -988,8 +984,6 @@ void ThreadProxy::StartCommitOnImplThread(
     CompletionEvent* completion,
     ResourceUpdateQueue* raw_queue,
     scoped_refptr<ContextProvider> offscreen_context_provider) {
-  scoped_ptr<ResourceUpdateQueue> queue(raw_queue);
-
   TRACE_EVENT0("cc", "ThreadProxy::StartCommitOnImplThread");
   DCHECK(!impl().commit_completion_event);
   DCHECK(IsImplThread() && IsMainThreadBlocked());
@@ -1002,6 +996,12 @@ void ThreadProxy::StartCommitOnImplThread(
     completion->Signal();
     return;
   }
+
+  // Ideally, we should inform to impl thread when BeginMainFrame is started.
+  // But, we can avoid a PostTask in here.
+  impl().scheduler->NotifyBeginMainFrameStarted();
+
+  scoped_ptr<ResourceUpdateQueue> queue(raw_queue);
 
   if (offscreen_context_provider.get())
     offscreen_context_provider->BindToCurrentThread();
@@ -1152,14 +1152,10 @@ DrawSwapReadbackResult ThreadProxy::DrawSwapReadbackInternal(
   else
     monotonic_time = impl().layer_tree_host_impl->CurrentFrameTimeTicks();
 
-  // TODO(ajuma): Remove wall_clock_time once the legacy implementation of
-  // animations in Blink is removed.
-  base::Time wall_clock_time = impl().layer_tree_host_impl->CurrentFrameTime();
-
   // TODO(enne): This should probably happen post-animate.
   if (impl().layer_tree_host_impl->pending_tree())
     impl().layer_tree_host_impl->pending_tree()->UpdateDrawProperties();
-  impl().layer_tree_host_impl->Animate(monotonic_time, wall_clock_time);
+  impl().layer_tree_host_impl->Animate(monotonic_time);
 
   // This method is called on a forced draw, regardless of whether we are able
   // to produce a frame, as the calling site on main thread is blocked until its
@@ -1401,7 +1397,7 @@ void ThreadProxy::DidBeginImplFrameDeadline() {
 
 void ThreadProxy::ReadyToFinalizeTextureUpdates() {
   DCHECK(IsImplThread());
-  impl().scheduler->FinishCommit();
+  impl().scheduler->NotifyReadyToCommit();
 }
 
 void ThreadProxy::DidCommitAndDrawFrame() {
@@ -1418,13 +1414,12 @@ void ThreadProxy::DidCompleteSwapBuffers() {
   layer_tree_host()->DidCompleteSwapBuffers();
 }
 
-void ThreadProxy::SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
-                                     base::Time wall_clock_time) {
+void ThreadProxy::SetAnimationEvents(scoped_ptr<AnimationEventsVector> events) {
   TRACE_EVENT0("cc", "ThreadProxy::SetAnimationEvents");
   DCHECK(IsMainThread());
   if (!layer_tree_host())
     return;
-  layer_tree_host()->SetAnimationEvents(events.Pass(), wall_clock_time);
+  layer_tree_host()->SetAnimationEvents(events.Pass());
 }
 
 void ThreadProxy::CreateAndInitializeOutputSurface() {
@@ -1470,8 +1465,10 @@ void ThreadProxy::InitializeImplOnImplThread(CompletionEvent* completion) {
       layer_tree_host()->CreateLayerTreeHostImpl(this);
   const LayerTreeSettings& settings = layer_tree_host()->settings();
   SchedulerSettings scheduler_settings;
-  scheduler_settings.deadline_scheduling_enabled =
-      settings.deadline_scheduling_enabled;
+  scheduler_settings.main_frame_before_draw_enabled =
+      settings.main_frame_before_draw_enabled;
+  scheduler_settings.main_frame_before_activation_enabled =
+      settings.main_frame_before_activation_enabled;
   scheduler_settings.impl_side_painting = settings.impl_side_painting;
   scheduler_settings.timeout_and_draw_when_animation_checkerboards =
       settings.timeout_and_draw_when_animation_checkerboards;
@@ -1659,8 +1656,13 @@ void ThreadProxy::RenewTreePriority() {
   if (impl().layer_tree_host_impl->active_tree()->ContentsTexturesPurged() ||
       impl().layer_tree_host_impl->active_tree()->ViewportSizeInvalid() ||
       impl().layer_tree_host_impl->EvictedUIResourcesExist() ||
-      impl().input_throttled_until_commit)
+      impl().input_throttled_until_commit) {
+    // Once we enter NEW_CONTENTS_TAKES_PRIORITY mode, visible tiles on active
+    // tree might be freed. We need to set RequiresHighResToDraw to ensure that
+    // high res tiles will be required to activate pending tree.
+    impl().layer_tree_host_impl->active_tree()->SetRequiresHighResToDraw();
     priority = NEW_CONTENT_TAKES_PRIORITY;
+  }
 
   impl().layer_tree_host_impl->SetTreePriority(priority);
   impl().scheduler->SetSmoothnessTakesPriority(priority ==

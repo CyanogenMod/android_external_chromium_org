@@ -91,7 +91,7 @@ void MockInputMethodManager::ChangeInputMethod(
     const std::string& input_method_id) {
 }
 
-void MockInputMethodManager::ActivateInputMethodProperty(
+void MockInputMethodManager::ActivateInputMethodMenuItem(
     const std::string& key) {
 }
 
@@ -144,15 +144,6 @@ InputMethodDescriptor MockInputMethodManager::GetCurrentInputMethod() const {
   return descriptor;
 }
 
-InputMethodPropertyList
-MockInputMethodManager::GetCurrentInputMethodProperties() const {
-  return InputMethodPropertyList();
-}
-
-void MockInputMethodManager::SetCurrentInputMethodProperties(
-    const InputMethodPropertyList& property_list) {
-}
-
 XKeyboard* MockInputMethodManager::GetXKeyboard() {
   return &xkeyboard_;
 }
@@ -174,5 +165,11 @@ bool MockInputMethodManager::IsLoginKeyboard(
     const std::string& layout) const {
   return true;
 }
+
+bool MockInputMethodManager::MigrateXkbInputMethods(
+    std::vector<std::string>* input_method_ids) {
+  return false;
+}
+
 }  // namespace input_method
 }  // namespace chromeos

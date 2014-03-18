@@ -8,7 +8,7 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/chrome_signin_manager_delegate.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/signin_global_error.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
@@ -23,8 +23,7 @@ FakeSigninManagerBase::~FakeSigninManagerBase() {
 }
 
 // static
-BrowserContextKeyedService* FakeSigninManagerBase::Build(
-    content::BrowserContext* context) {
+KeyedService* FakeSigninManagerBase::Build(content::BrowserContext* context) {
   SigninManagerBase* manager;
   Profile* profile = static_cast<Profile*>(context);
 #if defined(OS_CHROMEOS)
@@ -41,23 +40,23 @@ BrowserContextKeyedService* FakeSigninManagerBase::Build(
 #if !defined (OS_CHROMEOS)
 
 FakeSigninManager::FakeSigninManager(Profile* profile)
-    : SigninManager(scoped_ptr<SigninManagerDelegate>(
-        new ChromeSigninManagerDelegate(profile))) {
-}
+    : SigninManager(
+          ChromeSigninClientFactory::GetInstance()->GetForProfile(profile)) {}
 
 FakeSigninManager::~FakeSigninManager() {
 }
 
-void FakeSigninManager::StartSignInWithCredentials(
-    const std::string& session_index,
+void FakeSigninManager::StartSignInWithRefreshToken(
+    const std::string& refresh_token,
     const std::string& username,
     const std::string& password,
     const OAuthTokenFetchedCallback& oauth_fetched_callback) {
   set_auth_in_progress(username);
   set_password(password);
   if (!oauth_fetched_callback.is_null())
-    oauth_fetched_callback.Run("fake_oauth_token");
+    oauth_fetched_callback.Run(refresh_token);
 }
+
 
 void FakeSigninManager::CompletePendingSignin() {
   SetAuthenticatedUsername(GetUsernameForAuthInProgress());
@@ -69,9 +68,13 @@ void FakeSigninManager::CompletePendingSignin() {
 
 void FakeSigninManager::SignIn(const std::string& username,
                                const std::string& password) {
-  StartSignInWithCredentials(
+  StartSignInWithRefreshToken(
       std::string(), username, password, OAuthTokenFetchedCallback());
   CompletePendingSignin();
+}
+
+void FakeSigninManager::FailSignin(const GoogleServiceAuthError& error) {
+  FOR_EACH_OBSERVER(Observer, observer_list_, GoogleSigninFailed(error));
 }
 
 void FakeSigninManager::SignOut() {

@@ -42,7 +42,6 @@ LOCAL_SRC_FILES := \
 	net/base/auth.cc \
 	net/base/backoff_entry.cc \
 	net/base/bandwidth_metrics.cc \
-	net/base/big_endian.cc \
 	net/base/connection_type_histograms.cc \
 	net/base/crypto_module_openssl.cc \
 	net/base/data_url.cc \
@@ -62,6 +61,8 @@ LOCAL_SRC_FILES := \
 	net/base/host_port_pair.cc \
 	net/base/io_buffer.cc \
 	net/base/ip_endpoint.cc \
+	net/base/ip_mapping_rules.cc \
+	net/base/ip_pattern.cc \
 	net/base/keygen_handler.cc \
 	net/base/keygen_handler_openssl.cc \
 	net/base/load_timing_info.cc \
@@ -130,33 +131,37 @@ LOCAL_SRC_FILES := \
 	net/cookies/cookie_store.cc \
 	net/cookies/cookie_util.cc \
 	net/cookies/parsed_cookie.cc \
-	net/disk_cache/addr.cc \
-	net/disk_cache/backend_impl.cc \
-	net/disk_cache/bitmap.cc \
-	net/disk_cache/block_files.cc \
+	net/disk_cache/blockfile/addr.cc \
+	net/disk_cache/blockfile/backend_impl.cc \
+	net/disk_cache/blockfile/backend_impl_v3.cc \
+	net/disk_cache/blockfile/bitmap.cc \
+	net/disk_cache/blockfile/block_bitmaps_v3.cc \
+	net/disk_cache/blockfile/block_files.cc \
+	net/disk_cache/blockfile/disk_format.cc \
+	net/disk_cache/blockfile/entry_impl.cc \
+	net/disk_cache/blockfile/entry_impl_v3.cc \
+	net/disk_cache/blockfile/eviction.cc \
+	net/disk_cache/blockfile/eviction_v3.cc \
+	net/disk_cache/blockfile/file.cc \
+	net/disk_cache/blockfile/file_lock.cc \
+	net/disk_cache/blockfile/file_posix.cc \
+	net/disk_cache/blockfile/in_flight_backend_io.cc \
+	net/disk_cache/blockfile/in_flight_io.cc \
+	net/disk_cache/blockfile/index_table_v3.cc \
+	net/disk_cache/blockfile/mapped_file.cc \
+	net/disk_cache/blockfile/mapped_file_posix.cc \
+	net/disk_cache/blockfile/rankings.cc \
+	net/disk_cache/blockfile/sparse_control.cc \
+	net/disk_cache/blockfile/stats.cc \
+	net/disk_cache/blockfile/stats_histogram.cc \
+	net/disk_cache/blockfile/trace.cc \
 	net/disk_cache/cache_creator.cc \
 	net/disk_cache/cache_util.cc \
 	net/disk_cache/cache_util_posix.cc \
-	net/disk_cache/disk_format.cc \
-	net/disk_cache/entry_impl.cc \
-	net/disk_cache/eviction.cc \
-	net/disk_cache/file.cc \
-	net/disk_cache/file_lock.cc \
-	net/disk_cache/file_posix.cc \
-	net/disk_cache/in_flight_backend_io.cc \
-	net/disk_cache/in_flight_io.cc \
-	net/disk_cache/mapped_file.cc \
-	net/disk_cache/mapped_file_posix.cc \
-	net/disk_cache/mem_backend_impl.cc \
-	net/disk_cache/mem_entry_impl.cc \
-	net/disk_cache/mem_rankings.cc \
+	net/disk_cache/memory/mem_backend_impl.cc \
+	net/disk_cache/memory/mem_entry_impl.cc \
+	net/disk_cache/memory/mem_rankings.cc \
 	net/disk_cache/net_log_parameters.cc \
-	net/disk_cache/rankings.cc \
-	net/disk_cache/sparse_control.cc \
-	net/disk_cache/stats.cc \
-	net/disk_cache/stats_histogram.cc \
-	net/disk_cache/trace.cc \
-	net/disk_cache/tracing_cache_backend.cc \
 	net/disk_cache/simple/simple_backend_impl.cc \
 	net/disk_cache/simple/simple_entry_format.cc \
 	net/disk_cache/simple/simple_entry_impl.cc \
@@ -168,17 +173,7 @@ LOCAL_SRC_FILES := \
 	net/disk_cache/simple/simple_synchronous_entry.cc \
 	net/disk_cache/simple/simple_util.cc \
 	net/disk_cache/simple/simple_version_upgrade.cc \
-	net/disk_cache/flash/flash_entry_impl.cc \
-	net/disk_cache/flash/internal_entry.cc \
-	net/disk_cache/flash/log_store.cc \
-	net/disk_cache/flash/log_store_entry.cc \
-	net/disk_cache/flash/segment.cc \
-	net/disk_cache/flash/storage.cc \
-	net/disk_cache/v3/backend_impl_v3.cc \
-	net/disk_cache/v3/block_bitmaps.cc \
-	net/disk_cache/v3/entry_impl_v3.cc \
-	net/disk_cache/v3/eviction_v3.cc \
-	net/disk_cache/v3/index_table.cc \
+	net/disk_cache/tracing/tracing_cache_backend.cc \
 	net/dns/address_sorter_posix.cc \
 	net/dns/dns_client.cc \
 	net/dns/dns_config_service.cc \
@@ -194,6 +189,7 @@ LOCAL_SRC_FILES := \
 	net/dns/host_resolver_impl.cc \
 	net/dns/host_resolver_proc.cc \
 	net/dns/mapped_host_resolver.cc \
+	net/dns/mapped_ip_resolver.cc \
 	net/dns/serial_worker.cc \
 	net/dns/single_request_host_resolver.cc \
 	net/filter/filter.cc \
@@ -219,6 +215,7 @@ LOCAL_SRC_FILES := \
 	net/http/failing_http_transaction_factory.cc \
 	net/http/http_auth.cc \
 	net/http/http_auth_cache.cc \
+	net/http/http_auth_challenge_tokenizer.cc \
 	net/http/http_auth_controller.cc \
 	net/http/http_auth_filter.cc \
 	net/http/http_auth_handler.cc \
@@ -302,15 +299,23 @@ LOCAL_SRC_FILES := \
 	net/quic/congestion_control/inter_arrival_sender.cc \
 	net/quic/congestion_control/inter_arrival_state_machine.cc \
 	net/quic/congestion_control/leaky_bucket.cc \
+	net/quic/congestion_control/loss_detection_interface.cc \
 	net/quic/congestion_control/paced_sender.cc \
 	net/quic/congestion_control/pacing_sender.cc \
 	net/quic/congestion_control/receive_algorithm_interface.cc \
+	net/quic/congestion_control/rtt_stats.cc \
 	net/quic/congestion_control/send_algorithm_interface.cc \
 	net/quic/congestion_control/tcp_cubic_sender.cc \
+	net/quic/congestion_control/tcp_loss_algorithm.cc \
 	net/quic/congestion_control/tcp_receiver.cc \
+	net/quic/congestion_control/time_loss_algorithm.cc \
+	net/quic/crypto/aead_base_decrypter_openssl.cc \
+	net/quic/crypto/aead_base_encrypter_openssl.cc \
 	net/quic/crypto/aes_128_gcm_12_decrypter_openssl.cc \
 	net/quic/crypto/aes_128_gcm_12_encrypter_openssl.cc \
 	net/quic/crypto/cert_compressor.cc \
+	net/quic/crypto/chacha20_poly1305_decrypter_openssl.cc \
+	net/quic/crypto/chacha20_poly1305_encrypter_openssl.cc \
 	net/quic/crypto/channel_id.cc \
 	net/quic/crypto/channel_id_openssl.cc \
 	net/quic/crypto/common_cert_set.cc \
@@ -341,6 +346,7 @@ LOCAL_SRC_FILES := \
 	net/quic/port_suggester.cc \
 	net/quic/quic_ack_notifier.cc \
 	net/quic/quic_ack_notifier_manager.cc \
+	net/quic/quic_address_mismatch.cc \
 	net/quic/quic_alarm.cc \
 	net/quic/quic_bandwidth.cc \
 	net/quic/quic_client_session.cc \
@@ -370,12 +376,12 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_sent_entropy_manager.cc \
 	net/quic/quic_sent_packet_manager.cc \
 	net/quic/quic_session.cc \
+	net/quic/quic_session_key.cc \
 	net/quic/quic_socket_address_coder.cc \
-	net/quic/quic_spdy_compressor.cc \
-	net/quic/quic_spdy_decompressor.cc \
 	net/quic/quic_stream_factory.cc \
 	net/quic/quic_stream_sequencer.cc \
 	net/quic/quic_time.cc \
+	net/quic/quic_unacked_packet_map.cc \
 	net/quic/quic_utils.cc \
 	net/quic/quic_write_blocked_list.cc \
 	net/quic/reliable_quic_stream.cc \
@@ -413,11 +419,13 @@ LOCAL_SRC_FILES := \
 	net/socket_stream/socket_stream_job_manager.cc \
 	net/socket_stream/socket_stream_metrics.cc \
 	net/spdy/buffered_spdy_framer.cc \
+	net/spdy/hpack_constants.cc \
 	net/spdy/hpack_decoder.cc \
 	net/spdy/hpack_encoder.cc \
 	net/spdy/hpack_encoding_context.cc \
 	net/spdy/hpack_entry.cc \
 	net/spdy/hpack_header_table.cc \
+	net/spdy/hpack_huffman_table.cc \
 	net/spdy/hpack_input_stream.cc \
 	net/spdy/hpack_output_stream.cc \
 	net/spdy/hpack_string_util.cc \
@@ -430,6 +438,8 @@ LOCAL_SRC_FILES := \
 	net/spdy/spdy_headers_block_parser.cc \
 	net/spdy/spdy_http_stream.cc \
 	net/spdy/spdy_http_utils.cc \
+	net/spdy/spdy_pinnable_buffer_piece.cc \
+	net/spdy/spdy_prefixed_buffer_reader.cc \
 	net/spdy/spdy_protocol.cc \
 	net/spdy/spdy_proxy_client_socket.cc \
 	net/spdy/spdy_read_queue.cc \
@@ -526,11 +536,10 @@ MY_CFLAGS_Debug := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-m32 \
-	-mmmx \
-	-march=pentium4 \
 	-msse2 \
 	-mfpmath=sse \
+	-mmmx \
+	-m32 \
 	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
@@ -553,6 +562,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -560,9 +570,9 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
@@ -570,6 +580,7 @@ MY_DEFS_Debug := \
 	'-DNET_IMPLEMENTATION' \
 	'-DENABLE_BUILT_IN_DNS' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DUSE_OPENSSL=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -622,11 +633,10 @@ MY_CFLAGS_Release := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-m32 \
-	-mmmx \
-	-march=pentium4 \
 	-msse2 \
 	-mfpmath=sse \
+	-mmmx \
+	-m32 \
 	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
@@ -649,6 +659,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
+	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -656,9 +667,9 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
@@ -666,6 +677,7 @@ MY_DEFS_Release := \
 	'-DNET_IMPLEMENTATION' \
 	'-DENABLE_BUILT_IN_DNS' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DUSE_OPENSSL=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -710,9 +722,11 @@ LOCAL_CPPFLAGS_Release := \
 LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
 LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
+LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -722,7 +736,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
@@ -730,6 +743,7 @@ LOCAL_LDFLAGS_Debug := \
 
 
 LOCAL_LDFLAGS_Release := \
+	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -742,7 +756,6 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,-O1 \
 	-Wl,--as-needed \
 	-Wl,--gc-sections \
-	-Wl,--fatal-warnings \
 	-Wl,--warn-shared-textrel
 
 

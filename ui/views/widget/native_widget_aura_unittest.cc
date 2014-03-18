@@ -12,8 +12,8 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/events/event.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/layout/fill_layout.h"
@@ -40,19 +40,19 @@ class NativeWidgetAuraTest : public ViewsTestBase {
   // testing::Test overrides:
   virtual void SetUp() OVERRIDE {
     ViewsTestBase::SetUp();
-    dispatcher()->host()->SetBounds(gfx::Rect(640, 480));
+    host()->SetBounds(gfx::Rect(640, 480));
   }
 
  protected:
   aura::Window* root_window() { return GetContext(); }
-  aura::RootWindow* dispatcher() { return root_window()->GetDispatcher(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NativeWidgetAuraTest);
 };
 
 TEST_F(NativeWidgetAuraTest, CenterWindowLargeParent) {
-  // Make a parent window larger than the host represented by rootwindow.
+  // Make a parent window larger than the host represented by
+  // WindowEventDispatcher.
   scoped_ptr<aura::Window> parent(new aura::Window(NULL));
   parent->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   parent->SetBounds(gfx::Rect(0, 0, 1024, 800));
@@ -68,7 +68,8 @@ TEST_F(NativeWidgetAuraTest, CenterWindowLargeParent) {
 }
 
 TEST_F(NativeWidgetAuraTest, CenterWindowSmallParent) {
-  // Make a parent window smaller than the host represented by rootwindow.
+  // Make a parent window smaller than the host represented by
+  // WindowEventDispatcher.
   scoped_ptr<aura::Window> parent(new aura::Window(NULL));
   parent->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   parent->SetBounds(gfx::Rect(0, 0, 480, 320));
@@ -85,8 +86,8 @@ TEST_F(NativeWidgetAuraTest, CenterWindowSmallParent) {
 
 // Verifies CenterWindow() constrains to parent size.
 TEST_F(NativeWidgetAuraTest, CenterWindowSmallParentNotAtOrigin) {
-  // Make a parent window smaller than the host represented by rootwindow and
-  // offset it slightly from the origin.
+  // Make a parent window smaller than the host represented by
+  // WindowEventDispatcher and offset it slightly from the origin.
   scoped_ptr<aura::Window> parent(new aura::Window(NULL));
   parent->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   parent->SetBounds(gfx::Rect(20, 40, 480, 320));
@@ -249,7 +250,8 @@ TEST_F(NativeWidgetAuraTest, DontCaptureOnGesture) {
 
   ui::TouchEvent press(ui::ET_TOUCH_PRESSED, gfx::Point(41, 51), 1,
                        base::TimeDelta());
-  ui::EventDispatchDetails details = dispatcher()->OnEventFromSource(&press);
+  ui::EventDispatchDetails details =
+      event_processor()->OnEventFromSource(&press);
   ASSERT_FALSE(details.dispatcher_destroyed);
   // Both views should get the press.
   EXPECT_TRUE(view->got_gesture_event());
@@ -263,7 +265,7 @@ TEST_F(NativeWidgetAuraTest, DontCaptureOnGesture) {
   // the press.
   ui::TouchEvent release(ui::ET_TOUCH_RELEASED, gfx::Point(250, 251), 1,
                              base::TimeDelta());
-  details = dispatcher()->OnEventFromSource(&release);
+  details = event_processor()->OnEventFromSource(&release);
   ASSERT_FALSE(details.dispatcher_destroyed);
   EXPECT_TRUE(view->got_gesture_event());
   EXPECT_FALSE(child->got_gesture_event());
@@ -401,7 +403,7 @@ TEST_F(NativeWidgetAuraTest, OnWidgetMovedInvokedAfterAcquireLayer) {
   widget->Show();
   delegate->ClearGotMove();
   // Simulate a maximize with animation.
-  delete widget->GetNativeView()->RecreateLayer();
+  delete widget->GetNativeView()->RecreateLayer().release();
   widget->SetBounds(gfx::Rect(0, 0, 500, 500));
   EXPECT_TRUE(delegate->got_move());
   widget->CloseNow();

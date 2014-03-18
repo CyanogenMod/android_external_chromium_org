@@ -12,6 +12,7 @@
 
 #include "apps/app_window.h"
 #include "apps/app_window_registry.h"
+#include "base/callback.h"
 #include "base/lazy_instance.h"
 #include "base/platform_file.h"
 #include "base/stl_util.h"
@@ -22,6 +23,7 @@
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
 #include "chrome/browser/extensions/blob_reader.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/media_galleries/fileapi/safe_media_metadata_parser.h"
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
 #include "chrome/browser/media_galleries/media_galleries_dialog_controller.h"
 #include "chrome/browser/media_galleries/media_galleries_histograms.h"
@@ -53,6 +55,8 @@
 #include "ui/base/l10n/l10n_util.h"
 
 using content::WebContents;
+using storage_monitor::MediaStorageUtil;
+using storage_monitor::StorageInfo;
 using web_modal::WebContentsModalDialogManager;
 
 namespace extensions {
@@ -255,9 +259,9 @@ class SelectDirectoryDialog : public ui::SelectFileDialog::Listener,
 
 }  // namespace
 
-MediaGalleriesEventRouter::MediaGalleriesEventRouter(Profile* profile)
-    : profile_(profile),
-      weak_ptr_factory_(this) {
+MediaGalleriesEventRouter::MediaGalleriesEventRouter(
+    content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)), weak_ptr_factory_(this) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   DCHECK(profile_);
   media_scan_manager()->AddObserver(profile_, this);
@@ -273,21 +277,23 @@ void MediaGalleriesEventRouter::Shutdown() {
   media_scan_manager()->CancelScansForProfile(profile_);
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<MediaGalleriesEventRouter> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<MediaGalleriesEventRouter> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<MediaGalleriesEventRouter>*
+BrowserContextKeyedAPIFactory<MediaGalleriesEventRouter>*
 MediaGalleriesEventRouter::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 // static
-MediaGalleriesEventRouter* MediaGalleriesEventRouter::Get(Profile* profile) {
-  DCHECK(media_file_system_registry()->GetPreferences(profile)->
-             IsInitialized());
-  return ProfileKeyedAPIFactory<MediaGalleriesEventRouter>::GetForProfile(
-      profile);
+MediaGalleriesEventRouter* MediaGalleriesEventRouter::Get(
+    content::BrowserContext* context) {
+  DCHECK(media_file_system_registry()
+             ->GetPreferences(Profile::FromBrowserContext(context))
+             ->IsInitialized());
+  return BrowserContextKeyedAPIFactory<MediaGalleriesEventRouter>::Get(context);
 }
 
 bool MediaGalleriesEventRouter::ExtensionHasScanProgressListener(
@@ -320,6 +326,7 @@ void MediaGalleriesEventRouter::OnScanCancelled(
 void MediaGalleriesEventRouter::OnScanFinished(
     const std::string& extension_id, int gallery_count,
     const MediaGalleryScanResult& file_counts) {
+  media_galleries::UsageCount(media_galleries::SCAN_FINISHED);
   MediaGalleries::ScanProgressDetails details;
   details.type = MediaGalleries::SCAN_PROGRESS_TYPE_FINISH;
   details.gallery_count.reset(new int(gallery_count));
@@ -698,6 +705,16 @@ bool MediaGalleriesAddScanResultsFunction::RunImpl() {
       &MediaGalleriesAddScanResultsFunction::OnPreferencesInit, this));
 }
 
+MediaGalleriesScanResultDialogController*
+MediaGalleriesAddScanResultsFunction::MakeDialog(
+    content::WebContents* web_contents,
+    const extensions::Extension& extension,
+    const base::Closure& on_finish) {
+  // Controller will delete itself.
+  return new MediaGalleriesScanResultDialogController(web_contents, extension,
+                                                      on_finish);
+}
+
 void MediaGalleriesAddScanResultsFunction::OnPreferencesInit() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   const Extension* extension = GetExtension();
@@ -716,10 +733,9 @@ void MediaGalleriesAddScanResultsFunction::OnPreferencesInit() {
     return;
   }
 
-  // Controller will delete itself.
   base::Closure cb = base::Bind(
       &MediaGalleriesAddScanResultsFunction::GetAndReturnGalleries, this);
-  new MediaGalleriesScanResultDialogController(contents, *extension, cb);
+  MakeDialog(contents, *extension, cb);
 }
 
 void MediaGalleriesAddScanResultsFunction::GetAndReturnGalleries() {
@@ -780,27 +796,48 @@ void MediaGalleriesGetMetadataFunction::OnPreferencesInit(
       GetProfile(),
       blob_uuid,
       base::Bind(&MediaGalleriesGetMetadataFunction::SniffMimeType, this,
-                 mime_type_only));
+                 mime_type_only, blob_uuid));
   reader->SetByteRange(0, net::kMaxBytesToSniff);
   reader->Start();
 }
 
 void MediaGalleriesGetMetadataFunction::SniffMimeType(
-    bool mime_type_only, scoped_ptr<std::string> blob_header,
-    int64 /* total_blob_length */) {
+    bool mime_type_only, const std::string& blob_uuid,
+    scoped_ptr<std::string> blob_header, int64 total_blob_length) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-  MediaGalleries::MediaMetadata metadata;
 
   std::string mime_type;
   bool mime_type_sniffed = net::SniffMimeTypeFromLocalData(
       blob_header->c_str(), blob_header->size(), &mime_type);
-  if (mime_type_sniffed)
+
+  if (!mime_type_sniffed) {
+    SendResponse(false);
+    return;
+  }
+
+  if (mime_type_only) {
+    MediaGalleries::MediaMetadata metadata;
     metadata.mime_type = mime_type;
+    SetResult(metadata.ToValue().release());
+    SendResponse(true);
+    return;
+  }
 
-  // TODO(tommycli): Kick off SafeMediaMetadataParser if |mime_type_only| false.
+  scoped_refptr<metadata::SafeMediaMetadataParser> parser(
+      new metadata::SafeMediaMetadataParser(GetProfile(), blob_uuid,
+                                            total_blob_length, mime_type));
+  parser->Start(base::Bind(
+      &MediaGalleriesGetMetadataFunction::OnSafeMediaMetadataParserDone, this));
+}
 
-  SetResult(metadata.ToValue().release());
+void MediaGalleriesGetMetadataFunction::OnSafeMediaMetadataParserDone(
+    bool parse_success, base::DictionaryValue* metadata_dictionary) {
+  if (!parse_success) {
+    SendResponse(false);
+    return;
+  }
+
+  SetResult(metadata_dictionary->DeepCopy());
   SendResponse(true);
 }
 

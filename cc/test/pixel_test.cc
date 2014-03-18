@@ -5,6 +5,7 @@
 #include "cc/test/pixel_test.h"
 
 #include "base/command_line.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "cc/base/switches.h"
@@ -73,15 +74,12 @@ bool PixelTest::RunPixelTestWithReadbackTarget(
   gfx::Rect device_clip_rect = external_device_clip_rect_.IsEmpty()
                                    ? device_viewport_rect
                                    : external_device_clip_rect_;
-  bool allow_partial_swap = true;
-
   renderer_->DecideRenderPassAllocationsForFrame(*pass_list);
   renderer_->DrawFrame(pass_list,
                        offscreen_contexts.get(),
                        device_scale_factor,
                        device_viewport_rect,
                        device_clip_rect,
-                       allow_partial_swap,
                        disable_picture_quad_image_filtering_);
 
   // Wait for the readback to complete.
@@ -117,6 +115,8 @@ bool PixelTest::PixelsMatchReference(const base::FilePath& ref_file,
 }
 
 void PixelTest::SetUpGLRenderer(bool use_skia_gpu_backend) {
+  enable_pixel_output_.reset(new gfx::DisableNullDrawGLBindings);
+
   output_surface_.reset(
       new PixelTestOutputSurface(new TestInProcessContextProvider));
   output_surface_->BindToClient(output_surface_client_.get());
@@ -124,7 +124,8 @@ void PixelTest::SetUpGLRenderer(bool use_skia_gpu_backend) {
   resource_provider_ =
       ResourceProvider::Create(output_surface_.get(), NULL, 0, false, 1);
 
-  texture_mailbox_deleter_ = make_scoped_ptr(new TextureMailboxDeleter);
+  texture_mailbox_deleter_ = make_scoped_ptr(
+      new TextureMailboxDeleter(base::MessageLoopProxy::current()));
 
   renderer_ = GLRenderer::Create(this,
                                  &settings_,

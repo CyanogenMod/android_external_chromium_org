@@ -387,39 +387,7 @@ Polymer={},"function"==typeof window.Polymer&&(Polymer={}),function(a){function 
     });
   ;
 
-    Polymer('viewer-toolbar', {
-      fadingIn: false,
-      timerId: undefined,
-      ready: function() {
-        this.fadingInChanged();
-      },
-      fadeIn: function() {
-        this.fadingIn = true;
-      },
-      fadeOut: function() {
-        this.fadingIn = false;
-      },
-      fadingInChanged: function() {
-        if (this.fadingIn) {
-          this.style.opacity = 1;
-          if (this.timerId !== undefined) {
-            clearTimeout(this.timerId);
-            this.timerId = undefined;
-          }
-        } else {
-          if (this.timerId === undefined) {
-            this.timerId = setTimeout(
-              function() {
-                this.style.opacity = 0;
-                this.timerId = undefined;
-              }.bind(this), 3000);
-          }
-        }
-      }
-    });
-  ;
-
-    (function() {
+  (function() {
     var dpi = '';
 
     Polymer('viewer-button', {
@@ -435,7 +403,7 @@ Polymer={},"function"==typeof window.Polymer&&(Polymer={}),function(a){function 
         if (this.src) {
           this.$.icon.style.backgroundImage =
               'url(' + this.getAttribute('assetpath') + 'img/' + dpi +
-                  'DPI/' + this.src + ')';
+              'DPI/' + this.src + ')';
         } else {
           this.$.icon.style.backgroundImage = '';
         }
@@ -447,5 +415,181 @@ Polymer={},"function"==typeof window.Polymer&&(Polymer={}),function(a){function 
           this.classList.remove('latchable');
       },
     });
-    })();
-  
+  })();
+;
+
+  Polymer('viewer-error-screen', {});
+;
+
+  Polymer('viewer-page-indicator', {
+    text: '1',
+    timerId: undefined,
+    ready: function() {
+      var callback = this.fadeIn.bind(this, 2000);
+      window.addEventListener('scroll', function() {
+        requestAnimationFrame(callback);
+      });
+    },
+    initialFadeIn: function() {
+      this.fadeIn(6000);
+    },
+    fadeIn: function(displayTime) {
+      var percent = window.scrollY /
+          (document.body.scrollHeight -
+           document.documentElement.clientHeight);
+      this.style.top = percent *
+          (document.documentElement.clientHeight - this.offsetHeight) + 'px';
+      this.style.opacity = 1;
+      clearTimeout(this.timerId);
+
+      this.timerId = setTimeout(function() {
+        this.style.opacity = 0;
+        this.timerId = undefined;
+      }.bind(this), displayTime);
+    }
+  });
+;
+
+  Polymer('viewer-password-screen', {
+    text: 'This document is password protected. Please enter a password.',
+    active: false,
+    timerId: undefined,
+    ready: function () {
+      this.activeChanged();
+    },
+    accept: function() {
+      this.successMessage = '✔'  // Tick.
+      this.$.successMessage.style.color = 'rgb(0,125,0)';
+      this.active = false;
+    },
+    deny: function() {
+      this.successMessage = '✘';  // Cross.
+      this.$.successMessage.style.color = 'rgb(255,0,0)';
+      this.$.password.disabled = false;
+      this.$.submit.disabled = false;
+      this.$.password.focus();
+      this.$.password.select();
+    },
+    submit: function(e) {
+      // Prevent the default form submission behavior.
+      e.preventDefault();
+      if (this.$.password.value.length == 0)
+        return;
+      this.successMessage = '...';
+      this.$.successMessage.style.color = 'rgb(0,0,0)';
+      this.$.password.disabled = true;
+      this.$.submit.disabled = true;
+      this.fire('password-submitted', {password: this.$.password.value});
+    },
+    activeChanged: function() {
+      clearTimeout(this.timerId);
+      this.timerId = undefined;
+      if (this.active) {
+        this.style.visibility = 'visible';
+        this.style.opacity = 1;
+        this.successMessage = '';
+        this.$.password.focus();
+      } else {
+        this.style.opacity = 0;
+        this.timerId = setTimeout(function() {
+          this.style.visibility = 'hidden'
+        }.bind(this), 400);
+      }
+    }
+  });
+;
+
+  Polymer('viewer-progress-bar', {
+    progress: 0,
+    text: 'Loading',
+    numSegments: 8,
+    segments: [],
+    ready: function() {
+      this.numSegmentsChanged();
+    },
+    progressChanged: function() {
+      var numVisible = this.progress * this.segments.length / 100.0;
+      for (var i = 0; i < this.segments.length; i++) {
+        this.segments[i].style.visibility =
+            i < numVisible ? 'visible' : 'hidden';
+      }
+
+      if (this.progress >= 100 || this.progress < 0)
+        this.style.opacity = 0;
+    },
+    numSegmentsChanged: function() {
+      // Clear the existing segments.
+      this.segments = [];
+      var segmentsElement = this.$.segments;
+      segmentsElement.innerHTML = '';
+
+      // Create the new segments.
+      var segment = document.createElement('li');
+      segment.classList.add('segment');
+      var angle = 360 / this.numSegments;
+      for (var i = 0; i < this.numSegments; ++i) {
+        var segmentCopy = segment.cloneNode(true);
+        segmentCopy.style.webkitTransform =
+            'rotate(' + (i * angle) + 'deg) skewY(' +
+            -1 * (90 - angle) + 'deg)';
+        segmentsElement.appendChild(segmentCopy);
+        this.segments.push(segmentCopy);
+      }
+      this.progressChanged();
+    }
+  });
+;
+
+  Polymer('viewer-toolbar', {
+    fadingIn: false,
+    timerId_: undefined,
+    inInitialFadeIn_: false,
+    ready: function() {
+      this.mousemoveCallback = function(e) {
+        var rect = this.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right &&
+            e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          this.fadingIn = true;
+          // If we hover over the toolbar, cancel the initial fade in.
+          if (this.inInitialFadeIn_)
+            this.inInitialFadeIn_ = false;
+        } else {
+          // Initially we want to keep the toolbar up for a longer period.
+          if (!this.inInitialFadeIn_)
+            this.fadingIn = false;
+        }
+      }.bind(this);
+    },
+    attached: function() {
+      this.parentNode.addEventListener('mousemove', this.mousemoveCallback);
+    },
+    detached: function() {
+      this.parentNode.removeEventListener('mousemove', this.mousemoveCallback);
+    },
+    initialFadeIn: function() {
+      this.inInitialFadeIn_ = true;
+      this.fadeIn();
+      this.fadeOutAfterDelay(6000);
+    },
+    fadingInChanged: function() {
+      if (this.fadingIn) {
+        this.fadeIn();
+      } else {
+        if (this.timerId_ === undefined)
+          this.fadeOutAfterDelay(3000);
+      }
+    },
+    fadeIn: function() {
+      this.style.opacity = 1;
+      clearTimeout(this.timerId_);
+      this.timerId_ = undefined;
+    },
+    fadeOutAfterDelay: function(delay) {
+      this.timerId_ = setTimeout(
+        function() {
+          this.style.opacity = 0;
+          this.timerId_ = undefined;
+          this.inInitialFadeIn_ = false;
+        }.bind(this), delay);
+    }
+  });

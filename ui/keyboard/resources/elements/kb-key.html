@@ -5,14 +5,10 @@
   -->
 
 <polymer-element name="kb-key" extends="kb-key-base"
-    attributes="image keyCode keyName shiftModifier stretch weight">
+    attributes="image keyCode keyName shiftModifier sound stretch weight">
   <template>
     <style>
       :host {
-        /* TODO(kevers): A regression in the Polymer library broke
-         * handling of {{}} in CSS rules. Switch back to
-         * "-webkit-box-flex: {{weight}}" once the regression is fixed
-         * (https://github.com/Polymer/polymer/issues/270). */
         background-color: #3b3b3e;
         border-radius: 2px;
         border-style: solid;
@@ -22,7 +18,7 @@
         font-weight: 300;
       }
 
-      ::part(key) {
+      :host .key {
         background-image: none;
         background-position: center;
         background-repeat: no-repeat;
@@ -31,19 +27,37 @@
         height: 1.2em;
         left: 0;
         margin: auto;
-        padding-left: 0.7em;
-        padding-right: 0.7em;
         position: absolute;
         right: 0;
         top: 0;
       }
 
-      :host[image]::part(key) {
-        height: 2em;
-        width: 1em;
+      :host([align=left]) .key {
+        padding-left: 1em;
       }
 
-      ::part(hint) {
+      /* TODO(rsadam@): Remove when we fully switch to native shadow dom. */
+      /* TODO(rsadam@): Move shift key rules to kb-shift-key. */
+      kb-shift-key .key,
+      :host(kb-shift-key) .key,
+      :host([image]) .key {
+        height: 70%;
+        width: auto;
+      }
+
+      :host([image].cursor) .key {
+        height: 85%;
+      }
+
+      :host([image].hide-keyboard) .key {
+        height: 100%;
+      }
+
+      :host([image].search) .key {
+        height: 80%;
+      }
+
+      :host .hint {
         color: #313131;
         font-size: 70%;
         position: absolute;
@@ -51,18 +65,119 @@
         top: 5%;
       }
 
-      :host[invert] ::part(key) {
+      :host([invert]) .key {
         color: #313131;
       }
 
-      :host[invert] ::part(hint) {
+      :host([invert]) .hint {
         color: #ffffff;
       }
+
+      :host(.dark) {
+        font-size: 70%;
+      }
+
+      :host(.active) {
+        -webkit-box-shadow: inset 0px 1px #969696, inset 0px -1px #6f6f6f;
+        background-image: -webkit-linear-gradient(#8b8b8b, #7d7d7d);
+        background-size: cover;
+        border-bottom-color: #5b5b5b;
+        border-top-color: #a4a4a4;
+      }
+
+      :host(.dark:not(.active)) {
+        -webkit-box-shadow: inset 0px 1px #313131, inset 0px -1px #202020;
+        background-color: #222222;
+        border-bottom-color: #1c1c1c;
+        border-top-color: #4f4f4f;
+      }
+
+      :host(:not(.dark):not(.active)) {
+        -webkit-box-shadow: inset 0px 1px #6f6f6f, inset 0px -1px #565656;
+        background-image: -webkit-linear-gradient(#636363, #5b5b5b);
+        background-size: cover;
+        border-bottom-color: #4a4a4a;
+        border-top-color: #878787;
+      }
+
+      /** TODO(rsadam@): Move to kb-row once /shadow/ is supported. */
+      :ancestor(kb-row:nth-child(2)):host(:not(.dark):not(.active)) {
+        -webkit-box-shadow: inset 0px 1px #666666, inset 0px -1px #4c4c4c;
+        background-image: -webkit-linear-gradient(#5a5a5a, #515151);
+        background-size: cover;
+        border-bottom-color: #414141;
+        border-top-color: #7f7f7f;
+      }
+
+      :ancestor(kb-row:nth-child(3)):host(:not(.dark):not(.active)) {
+        -webkit-box-shadow: inset 0px 1px #5d5d5d, inset 0px -1px #444444;
+        background-image: -webkit-linear-gradient(#505050, #494949);
+        background-size: cover;
+        border-bottom-color: #3a3a3a;
+        border-top-color: #787878;
+      }
+
+      :ancestor(kb-row:nth-child(n+3)):host(:not(.dark):not(.active)) {
+        -webkit-box-shadow: inset 0px 1px #565656, inset 0px -1px #434343;
+        background-image: -webkit-linear-gradient(#484848, #474747);
+        background-size: cover;
+        border-bottom-color: #393939;
+        border-top-color: #717171;
+      }
+
+      :ancestor(kb-row:nth-child(2)):host(:not([invert])) .hint {
+        color: #2C2C2C;
+      }
+
+      :ancestor(kb-row:nth-child(3)):host(:not([invert])) .hint {
+        color: #272727;
+      }
+
+      :ancestor(kb-row:nth-child(n+3)):host(:not([invert])) .hint {
+        color: #232323;
+      }
+
+      /**
+       * The microphone key is handled separately from other images since the
+       * image displayed changes depending on whether it's pressed or not.
+       */
+      :ancestor(.microphone) .key {
+        background-image: url('../images/microphone.svg');
+        background-position: 10%;
+      }
+
+      :ancestor(.audio .microphone) .key {
+        background-image: url('../images/microphone-green.svg');
+      }
+
+      /* TODO(rsadam@): Use different assets for caps-lock and highlight. */
+      :ancestor(.caps-locked):host(kb-shift-key.dark) .key,
+      /**
+       * Controls whether the shift key should be highlighted.
+       * Only highlights if we are in the upper keyset, but not
+       * capslocked.
+       */
+      :ancestor(kb-keyboard:not(.caps-locked)[keyset=upper]):host(
+          kb-shift-key) .key {
+        background-image: url('../images/shift-filled.svg');
+      }
+
+      :ancestor(kb-keyboard:not(.caps-locked)[keyset=lower]):host(
+          kb-shift-key) .key {
+        background-image: url('../images/shift.svg');
+      }
+
+      :ancestor(kb-keyboard.ctrl-active):host(
+          kb-modifier-key[char=Ctrl]),
+      :ancestor(kb-keyboard.alt-active):host(
+          kb-modifier-key[char=Alt]) {
+        color: lightblue;
+      }
     </style>
-    <div id="key" part="key">
+    <div id="key" class="key">
       <content></content>
     </div>
-    <div part="hint">{{hintText}}</div>
+    <div class="hint" part="hint">{{hintText}}</div>
   </template>
   <script>
     Polymer('kb-key', {
@@ -104,6 +219,12 @@
       shiftModifier: false,
 
       /**
+       * The sound to play when this key is pressed.
+       * @type {Sound}
+       */
+      sound: Sound.DEFAULT,
+
+      /**
        * Whether the key can be stretched to accomodate pixel rounding errors.
        */
       stretch: false,
@@ -113,7 +234,7 @@
        * Keys with a high weighting are wider than normal keys.
        * @type {number}
        */
-      weight: 100,
+      weight: DEFAULT_KEY_WEIGHT,
 
       /**
        * Called when the image attribute changes. This is used to set the
@@ -121,10 +242,12 @@
        * TODO(rsadam): Remove when polymer {{}} syntax regression is fixed.
        */
       imageChanged: function() {
-        if (!this.image)
+        if (!this.image) {
           this.$.key.style.backgroundImage = "none";
-        else
-          this.$.key.style.backgroundImage = "url(images/" + this.image + ".svg)";
+        } else {
+          this.$.key.style.backgroundImage =
+              "url(images/" + this.image + ".svg)";
+        }
       },
 
       /**
@@ -138,6 +261,7 @@
         details.keyCode = this.keyCode;
         details.keyName = this.keyName;
         details.shiftModifier = this.shiftModifier;
+        details.sound = this.sound;
         return details;
       },
     });
@@ -165,10 +289,20 @@
 </polymer-element>
 
 <polymer-element name="kb-hide-keyboard-key" class="hide-keyboard dark"
-    align="right" char="Invalid" extends="kb-key">
+    align="center" attributes="showMenu" char="Invalid" extends="kb-key">
   <script>
     Polymer('kb-hide-keyboard-key', {
+      /**
+       * Whether to show the options menu on key-up.
+       * @type {boolean}
+       */
+      showMenu: true,
+
       up: function(event) {
+        if (!this.showMenu) {
+          hideKeyboard();
+          return;
+        }
         var details = {
           left: this.offsetLeft,
           top: this.offsetTop,

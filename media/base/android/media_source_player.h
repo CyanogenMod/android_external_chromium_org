@@ -41,13 +41,10 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // the lifetime of this object.
   MediaSourcePlayer(int player_id,
                     MediaPlayerManager* manager,
+                    const RequestMediaResourcesCB& request_media_resources_cb,
+                    const ReleaseMediaResourcesCB& release_media_resources_cb,
                     scoped_ptr<DemuxerAndroid> demuxer);
   virtual ~MediaSourcePlayer();
-
-  static bool IsTypeSupported(const std::vector<uint8>& scheme_uuid,
-                              MediaDrmBridge::SecurityLevel security_level,
-                              const std::string& container,
-                              const std::vector<std::string>& codecs);
 
   // MediaPlayerAndroid implementation.
   virtual void SetVideoSurface(gfx::ScopedJavaSurface surface) OVERRIDE;
@@ -67,6 +64,7 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   virtual bool IsPlayerReady() OVERRIDE;
   virtual void SetDrmBridge(MediaDrmBridge* drm_bridge) OVERRIDE;
   virtual void OnKeyAdded() OVERRIDE;
+  virtual bool IsSurfaceInUse() const OVERRIDE;
 
   // DemuxerAndroidClient implementation.
   virtual void OnDemuxerConfigsAvailable(const DemuxerConfigs& params) OVERRIDE;
@@ -280,6 +278,9 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
 
   // Test-only callback for hooking the completion of the next decode cycle.
   base::Closure decode_callback_for_testing_;
+
+  // Whether |surface_| is currently used by the player.
+  bool is_surface_in_use_;
 
   friend class MediaSourcePlayerTest;
   DISALLOW_COPY_AND_ASSIGN(MediaSourcePlayer);

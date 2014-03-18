@@ -12,12 +12,12 @@ import android.security.KeyChainAliasCallback;
 import android.security.KeyChainException;
 import android.util.Log;
 
-import org.chromium.base.ActivityStatus;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
 import org.chromium.net.AndroidPrivateKey;
 import org.chromium.net.DefaultAndroidKeyStore;
+import org.chromium.ui.base.WindowAndroid;
 
 import java.security.Principal;
 import java.security.cert.CertificateEncodingException;
@@ -54,9 +54,9 @@ public class SSLClientCertificateRequest {
         private AndroidPrivateKey mAndroidPrivateKey;
 
         // Pointer to the native certificate request needed to return the results.
-        private final int mNativePtr;
+        private final long mNativePtr;
 
-        CertAsyncTask(int nativePtr) {
+        CertAsyncTask(long nativePtr) {
             mNativePtr = nativePtr;
         }
 
@@ -106,7 +106,7 @@ public class SSLClientCertificateRequest {
         final Context mContext;
         final String mAlias;
 
-        CertAsyncTaskKeyChain(Context context, int nativePtr, String alias) {
+        CertAsyncTaskKeyChain(Context context, long nativePtr, String alias) {
             super(nativePtr);
             mContext = context;
             assert alias != null;
@@ -151,7 +151,7 @@ public class SSLClientCertificateRequest {
         private final String mHostName;
         private final int mPort;
 
-        CertAsyncTaskPKCS11(int nativePtr, String hostName, int port,
+        CertAsyncTaskPKCS11(long nativePtr, String hostName, int port,
                 PKCS11AuthenticationManager pkcs11CardAuthManager) {
             super(nativePtr);
             mHostName = hostName;
@@ -180,10 +180,10 @@ public class SSLClientCertificateRequest {
      * certificate selected by the user.
      */
     private static class KeyChainCertSelectionCallback implements KeyChainAliasCallback {
-        private final int mNativePtr;
+        private final long mNativePtr;
         private final Context mContext;
 
-        KeyChainCertSelectionCallback(Context context, int nativePtr) {
+        KeyChainCertSelectionCallback(Context context, long nativePtr) {
             mContext = context;
             mNativePtr = nativePtr;
         }
@@ -214,21 +214,24 @@ public class SSLClientCertificateRequest {
     /**
      * Create a new asynchronous request to select a client certificate.
      *
-     * @param nativePtr The native object responsible for this request.
-     * @param keyTypes The list of supported key exchange types.
+     * @param nativePtr         The native object responsible for this request.
+     * @param window            A WindowAndroid instance.
+     * @param keyTypes          The list of supported key exchange types.
      * @param encodedPrincipals The list of CA DistinguishedNames.
-     * @param hostName The server host name is available (empty otherwise).
-     * @param port The server port if available (0 otherwise).
-     * @return true on success.
+     * @param hostName          The server host name is available (empty otherwise).
+     * @param port              The server port if available (0 otherwise).
+     * @return                  true on success.
      * Note that nativeOnSystemRequestComplete will be called iff this method returns true.
      */
     @CalledByNative
-    private static boolean selectClientCertificate(final int nativePtr, final String[] keyTypes,
-            byte[][] encodedPrincipals, final String hostName, final int port) {
+    private static boolean selectClientCertificate(final long nativePtr, final WindowAndroid window,
+            final String[] keyTypes, byte[][] encodedPrincipals, final String hostName,
+            final int port) {
         ThreadUtils.assertOnUiThread();
-        final Activity activity = ActivityStatus.getActivity();
+
+        final Activity activity = window.getActivity().get();
         if (activity == null) {
-            Log.w(TAG, "No active Chromium main activity!?");
+            Log.w(TAG, "Certificate request on GC'd activity.");
             return false;
         }
 
@@ -293,8 +296,6 @@ public class SSLClientCertificateRequest {
         return true;
     }
 
-    // TODO(yfriedman): Java code doesn't have a global for the IO thread so it's exposed here.
-    // X509Util helper function could probably move here (as it's still in net/)
     public static void notifyClientCertificatesChangedOnIOThread() {
         Log.d(TAG, "ClientCertificatesChanged!");
         nativeNotifyClientCertificatesChangedOnIOThread();
@@ -304,5 +305,5 @@ public class SSLClientCertificateRequest {
 
     // Called to pass request results to native side.
     private static native void nativeOnSystemRequestCompletion(
-            int requestPtr, byte[][] certChain, AndroidPrivateKey androidKey);
+            long requestPtr, byte[][] certChain, AndroidPrivateKey androidKey);
 }

@@ -21,6 +21,7 @@
 #include "base/time/time.h"
 #include "base/timer/hi_res_timer_manager.h"
 #include "content/child/child_process.h"
+#include "content/child/content_child_helpers.h"
 #include "content/common/content_constants_internal.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
@@ -31,7 +32,6 @@
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_main_platform_delegate.h"
 #include "ui/base/ui_base_switches.h"
-#include "webkit/child/webkit_child_helpers.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/sys_utils.h"
@@ -45,6 +45,7 @@
 
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
+#include "base/message_loop/message_pump_mac.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #endif  // OS_MACOSX
 
@@ -104,7 +105,7 @@ class MemoryObserver : public base::MessageLoop::TaskObserver {
   }
 
   virtual void DidProcessTask(const base::PendingTask& pending_task) OVERRIDE {
-    HISTOGRAM_MEMORY_KB("Memory.RendererUsed", webkit_glue::MemoryUsageKB());
+    HISTOGRAM_MEMORY_KB("Memory.RendererUsed", GetMemoryUsageKB());
   }
  private:
   DISALLOW_COPY_AND_ASSIGN(MemoryObserver);
@@ -158,9 +159,11 @@ int RendererMain(const MainFunctionParams& parameters) {
 
   RendererMessageLoopObserver task_observer;
 #if defined(OS_MACOSX)
-  // As long as we use Cocoa in the renderer (for the forseeable future as of
-  // now; see http://crbug.com/306348 for info) we need to have a UI loop.
-  base::MessageLoopForUI main_message_loop;
+  // As long as scrollbars on Mac are painted with Cocoa, the message pump
+  // needs to be backed by a Foundation-level loop to process NSTimers. See
+  // http://crbug.com/306348#c24 for details.
+  scoped_ptr<base::MessagePump> pump(new base::MessagePumpNSRunLoop());
+  base::MessageLoop main_message_loop(pump.Pass());
 #else
   // The main message loop of the renderer services doesn't have IO or UI tasks.
   base::MessageLoop main_message_loop;

@@ -12,6 +12,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/app/chrome_command_ids.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
@@ -22,12 +23,14 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
 #include "chrome/browser/ui/browser_list.h"
 #import "chrome/browser/ui/cocoa/content_settings/content_setting_bubble_cocoa.h"
@@ -41,10 +44,12 @@
 #import "chrome/browser/ui/cocoa/location_bar/keyword_hint_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_icon_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/mic_search_decoration.h"
+#import "chrome/browser/ui/cocoa/location_bar/origin_chip_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/page_action_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/search_button_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/selected_keyword_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/star_decoration.h"
+#import "chrome/browser/ui/cocoa/location_bar/translate_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/zoom_decoration.h"
 #import "chrome/browser/ui/cocoa/omnibox/omnibox_view_mac.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
@@ -56,6 +61,7 @@
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/translate/core/browser/language_state.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_system.h"
@@ -65,7 +71,7 @@
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
 #include "skia/ext/skia_utils_mac.h"
-#import "ui/base/cocoa/cocoa_event_utils.h"
+#import "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -105,11 +111,10 @@ class IsPageActionViewRightAligned {
 // TODO(shess): This code is mostly copied from the gtk
 // implementation.  Make sure it's all appropriate and flesh it out.
 
-LocationBarViewMac::LocationBarViewMac(
-    AutocompleteTextField* field,
-    CommandUpdater* command_updater,
-    Profile* profile,
-    Browser* browser)
+LocationBarViewMac::LocationBarViewMac(AutocompleteTextField* field,
+                                       CommandUpdater* command_updater,
+                                       Profile* profile,
+                                       Browser* browser)
     : LocationBar(profile),
       OmniboxEditController(command_updater),
       omnibox_view_(new OmniboxViewMac(this, profile, command_updater, field)),
@@ -119,6 +124,7 @@ LocationBarViewMac::LocationBarViewMac(
       ev_bubble_decoration_(
           new EVBubbleDecoration(location_icon_decoration_.get())),
       star_decoration_(new StarDecoration(command_updater)),
+      translate_decoration_(new TranslateDecoration(command_updater)),
       zoom_decoration_(new ZoomDecoration(this)),
       keyword_hint_decoration_(new KeywordHintDecoration()),
       mic_search_decoration_(new MicSearchDecoration(command_updater)),
@@ -153,6 +159,9 @@ LocationBarViewMac::LocationBarViewMac(
 
   [[field_ cell] setIsPopupMode:
       !browser->SupportsWindowFeature(Browser::FEATURE_TABSTRIP)];
+
+  if (chrome::ShouldDisplayOriginChipV2())
+    origin_chip_decoration_.reset(new OriginChipDecoration(this));
 }
 
 LocationBarViewMac::~LocationBarViewMac() {
@@ -319,6 +328,11 @@ void LocationBarViewMac::SetStarred(bool starred) {
   OnDecorationsChanged();
 }
 
+void LocationBarViewMac::SetTranslateIconLit(bool on) {
+  translate_decoration_->SetLit(on);
+  OnDecorationsChanged();
+}
+
 void LocationBarViewMac::ZoomChangedForActiveTab(bool can_show_bubble) {
   UpdateZoomDecoration();
   OnDecorationsChanged();
@@ -342,6 +356,14 @@ NSPoint LocationBarViewMac::GetBookmarkBubblePoint() const {
   const NSRect frame = [cell frameForDecoration:star_decoration_.get()
                                         inFrame:[field_ bounds]];
   const NSPoint point = star_decoration_->GetBubblePointInFrame(frame);
+  return [field_ convertPoint:point toView:nil];
+}
+
+NSPoint LocationBarViewMac::GetTranslateBubblePoint() const {
+  AutocompleteTextFieldCell* cell = [field_ cell];
+  const NSRect frame = [cell frameForDecoration:translate_decoration_.get()
+                                        inFrame:[field_ bounds]];
+  const NSPoint point = translate_decoration_->GetBubblePointInFrame(frame);
   return [field_ convertPoint:point toView:nil];
 }
 
@@ -390,11 +412,15 @@ void LocationBarViewMac::Layout() {
   // the constructor.  I am still wrestling with how best to deal with
   // right-hand decorations, which are not a static set.
   [cell clearDecorations];
+  if (origin_chip_decoration_.get())
+    [cell addLeftDecoration:origin_chip_decoration_.get()];
   [cell addLeftDecoration:location_icon_decoration_.get()];
   [cell addLeftDecoration:selected_keyword_decoration_.get()];
-  [cell addLeftDecoration:ev_bubble_decoration_.get()];
+  if (!origin_chip_decoration_.get())
+    [cell addLeftDecoration:ev_bubble_decoration_.get()];
   [cell addRightDecoration:search_button_decoration_.get()];
   [cell addRightDecoration:star_decoration_.get()];
+  [cell addRightDecoration:translate_decoration_.get()];
   [cell addRightDecoration:zoom_decoration_.get()];
   [cell addRightDecoration:generated_credit_card_decoration_.get()];
 
@@ -413,7 +439,8 @@ void LocationBarViewMac::Layout() {
   [cell addRightDecoration:mic_search_decoration_.get()];
 
   // By default only the location icon is visible.
-  location_icon_decoration_->SetVisible(true);
+  location_icon_decoration_->SetVisible(!origin_chip_decoration_.get() ||
+                                        !origin_chip_decoration_->IsVisible());
   selected_keyword_decoration_->SetVisible(false);
   ev_bubble_decoration_->SetVisible(false);
   keyword_hint_decoration_->SetVisible(false);
@@ -512,6 +539,7 @@ NSPoint LocationBarViewMac::GetPageActionBubblePoint(
 
 void LocationBarViewMac::Update(const WebContents* contents) {
   UpdateStarDecorationVisibility();
+  UpdateTranslateDecoration();
   UpdateZoomDecoration();
   RefreshPageActionDecorations();
   RefreshContentSettingsDecorations();
@@ -530,6 +558,9 @@ void LocationBarViewMac::OnChanged() {
   NSImage* image = OmniboxViewMac::ImageForResource(resource_id);
   location_icon_decoration_->SetImage(image);
   ev_bubble_decoration_->SetImage(image);
+
+  if (origin_chip_decoration_.get())
+    origin_chip_decoration_->Update();
 
   ToolbarModel* toolbar_model = GetToolbarModel();
   const chrome::DisplaySearchButtonConditions conditions =
@@ -627,6 +658,16 @@ void LocationBarViewMac::ModelChanged(const SearchModel::State& old_state,
                                       const SearchModel::State& new_state) {
   if (UpdateMicSearchDecorationVisibility())
     Layout();
+}
+
+void LocationBarViewMac::ActivatePageAction(const std::string& extension_id) {
+  for (size_t i = 0; i < page_action_decorations_.size(); ++i) {
+    if (page_action_decorations_[i]->page_action()->extension_id() ==
+        extension_id) {
+      page_action_decorations_[i]->ActivatePageAction();
+      return;
+    }
+  }
 }
 
 void LocationBarViewMac::PostNotification(NSString* notification) {
@@ -730,6 +771,18 @@ void LocationBarViewMac::ShowFirstRunBubbleInternal() {
                                  offset:kOffset
                                 browser:browser_
                                 profile:profile()];
+}
+
+void LocationBarViewMac::UpdateTranslateDecoration() {
+  WebContents* web_contents = GetWebContents();
+  if (!web_contents)
+    return;
+  LanguageState& language_state =
+      TranslateTabHelper::FromWebContents(web_contents)->GetLanguageState();
+  bool enabled = language_state.translate_enabled();
+  command_updater()->UpdateCommandEnabled(IDC_TRANSLATE_PAGE, enabled);
+  translate_decoration_->SetVisible(enabled);
+  translate_decoration_->SetLit(language_state.IsPageTranslated());
 }
 
 void LocationBarViewMac::UpdateZoomDecoration() {

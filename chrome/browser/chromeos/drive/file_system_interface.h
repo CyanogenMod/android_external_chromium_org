@@ -34,16 +34,15 @@ struct SearchResultInfo {
 // Struct to represent a search result for SearchMetadata().
 struct MetadataSearchResult {
   MetadataSearchResult(const base::FilePath& in_path,
-                       const ResourceEntry& in_entry,
+                       bool is_directory,
                        const std::string& in_highlighted_base_name)
       : path(in_path),
-        entry(in_entry),
-        highlighted_base_name(in_highlighted_base_name) {
-  }
+        is_directory(is_directory),
+        highlighted_base_name(in_highlighted_base_name) {}
 
   // The two members are used to create FileEntry object.
   base::FilePath path;
-  ResourceEntry entry;
+  bool is_directory;
 
   // The base name to be displayed in the UI. The parts matched the search
   // query are highlighted with <b> tag. Meta characters are escaped like &lt;
@@ -58,6 +57,12 @@ struct MetadataSearchResult {
 };
 
 typedef std::vector<MetadataSearchResult> MetadataSearchResultVector;
+
+// Used to get a resource entry from the file system.
+// If |error| is not FILE_ERROR_OK, |entry_info| is set to NULL.
+typedef base::Callback<void(FileError error,
+                            scoped_ptr<ResourceEntry> entry)>
+    GetResourceEntryCallback;
 
 // Used to get files from the file system.
 typedef base::Callback<void(FileError error,
@@ -144,19 +149,6 @@ enum OpenMode {
   OPEN_OR_CREATE_FILE,
 };
 
-// Priority of a job.  Higher values are lower priority.
-enum ContextType {
-  USER_INITIATED,
-  BACKGROUND,
-  // Indicates the number of values of this enum.
-  NUM_CONTEXT_TYPES,
-};
-
-struct ClientContext {
-  explicit ClientContext(ContextType in_type) : type(in_type) {}
-  ContextType type;
-};
-
 // Option enum to control eligible entries for SearchMetadata().
 // SEARCH_METADATA_ALL is the default to investigate all the entries.
 // SEARCH_METADATA_EXCLUDE_HOSTED_DOCUMENTS excludes the hosted documents.
@@ -241,9 +233,6 @@ class FileSystemInterface {
   // |dest_file_path| is expected to be of the same type of |src_file_path|
   // (i.e. if |src_file_path| is a file, |dest_file_path| will be created as
   // a file).
-  // If |preserve_last_modified| is set to true, the last modified time will be
-  // preserved. This feature is only supported on Drive API v2 protocol because
-  // GData WAPI doesn't support updating modification time.
   //
   // This method also has the following assumptions/limitations that may be
   // relaxed or addressed later:
@@ -257,7 +246,6 @@ class FileSystemInterface {
   // |callback| must not be null.
   virtual void Move(const base::FilePath& src_file_path,
                     const base::FilePath& dest_file_path,
-                    bool preserve_last_modified,
                     const FileOperationCallback& callback) = 0;
 
   // Removes |file_path| from the file system.  If |is_recursive| is set and

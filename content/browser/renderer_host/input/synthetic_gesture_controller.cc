@@ -19,50 +19,63 @@ SyntheticGestureController::SyntheticGestureController(
 SyntheticGestureController::~SyntheticGestureController() {}
 
 void SyntheticGestureController::QueueSyntheticGesture(
-    scoped_ptr<SyntheticGesture> synthetic_gesture) {
+    scoped_ptr<SyntheticGesture> synthetic_gesture,
+    const OnGestureCompleteCallback& completion_callback) {
   DCHECK(synthetic_gesture);
 
-  pending_gesture_queue_.push_back(synthetic_gesture.release());
+  bool was_empty = pending_gesture_queue_.IsEmpty();
 
-  // Start forwarding input events if the queue was previously empty.
-  if (pending_gesture_queue_.size() == 1)
-    StartGesture(*pending_gesture_queue_.front());
+  pending_gesture_queue_.Push(synthetic_gesture.Pass(), completion_callback);
+
+  if (was_empty)
+    StartGesture(*pending_gesture_queue_.FrontGesture());
 }
 
 void SyntheticGestureController::Flush(base::TimeTicks timestamp) {
-  TRACE_EVENT0("benchmark", "SyntheticGestureController::Flush");
-  if (pending_gesture_queue_.empty())
+  TRACE_EVENT0("input", "SyntheticGestureController::Flush");
+  if (pending_gesture_queue_.IsEmpty())
     return;
 
-  SyntheticGesture::Result result =
-      pending_gesture_queue_.front()->ForwardInputEvents(timestamp,
-                                                         gesture_target_.get());
+  SyntheticGesture* gesture = pending_gesture_queue_.FrontGesture();
+  SyntheticGesture::Result result = gesture->ForwardInputEvents(timestamp,
+      gesture_target_.get());
 
   if (result == SyntheticGesture::GESTURE_RUNNING) {
     gesture_target_->SetNeedsFlush();
     return;
   }
 
-  StopGesture(*pending_gesture_queue_.front(), result);
-  pending_gesture_queue_.erase(pending_gesture_queue_.begin());
+  StopGesture(*gesture, pending_gesture_queue_.FrontCallback(), result);
+  pending_gesture_queue_.Pop();
 
-  if (!pending_gesture_queue_.empty())
-    StartGesture(*pending_gesture_queue_.front());
+  if (!pending_gesture_queue_.IsEmpty())
+    StartGesture(*pending_gesture_queue_.FrontGesture());
 }
 
 void SyntheticGestureController::StartGesture(const SyntheticGesture& gesture) {
-  TRACE_EVENT_ASYNC_BEGIN0("benchmark", "SyntheticGestureController::running",
+  TRACE_EVENT_ASYNC_BEGIN0("input,benchmark",
+                           "SyntheticGestureController::running",
                            &gesture);
   gesture_target_->SetNeedsFlush();
 }
 
 void SyntheticGestureController::StopGesture(
-    const SyntheticGesture& gesture, SyntheticGesture::Result result) {
+    const SyntheticGesture& gesture,
+    const OnGestureCompleteCallback& completion_callback,
+    SyntheticGesture::Result result) {
   DCHECK_NE(result, SyntheticGesture::GESTURE_RUNNING);
-  TRACE_EVENT_ASYNC_END0("benchmark", "SyntheticGestureController::running",
+  TRACE_EVENT_ASYNC_END0("input,benchmark",
+                         "SyntheticGestureController::running",
                          &gesture);
 
-  gesture_target_->OnSyntheticGestureCompleted(result);
+  completion_callback.Run(result);
+}
+
+SyntheticGestureController::GestureAndCallbackQueue::GestureAndCallbackQueue() {
+}
+
+SyntheticGestureController::GestureAndCallbackQueue::
+    ~GestureAndCallbackQueue() {
 }
 
 }  // namespace content

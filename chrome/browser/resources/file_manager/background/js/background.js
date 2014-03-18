@@ -257,14 +257,14 @@ AppWindowWrapper.prototype = {
  *     dropped, the window is focused on the current window.
  */
 AppWindowWrapper.focusOnDesktop = function(appWindow, opt_profileId) {
-  new Promise(function(onFullfilled, onRejected) {
+  new Promise(function(onFulfilled, onRejected) {
     if (opt_profileId) {
-      onFullfilled(opt_profileId);
+      onFulfilled(opt_profileId);
     } else {
       chrome.fileBrowserPrivate.getProfiles(function(profiles,
                                                      currentId,
                                                      displayedId) {
-        onFullfilled(currentId);
+        onFulfilled(currentId);
       });
     }
   }).then(function(profileId) {
@@ -294,9 +294,11 @@ AppWindowWrapper.prototype.setIcon = function(iconPath) {
  * Opens the window.
  *
  * @param {Object} appState App state.
+ * @param {boolean} reopen True if the launching is triggered automatically.
+ *     False otherwize.
  * @param {function()=} opt_callback Completion callback.
  */
-AppWindowWrapper.prototype.launch = function(appState, opt_callback) {
+AppWindowWrapper.prototype.launch = function(appState, reopen, opt_callback) {
   // Check if the window is opened or not.
   if (this.openingOrOpened_) {
     console.error('The window is already opened.');
@@ -392,6 +394,7 @@ AppWindowWrapper.prototype.launch = function(appState, opt_callback) {
     var contentWindow = appWindow.contentWindow;
     contentWindow.appID = this.id_;
     contentWindow.appState = this.appState_;
+    contentWindow.appReopen = reopen;
     contentWindow.appInitialURL = this.url_;
     if (window.IN_TEST)
       contentWindow.IN_TEST = true;
@@ -474,12 +477,16 @@ SingletonAppWindowWrapper.prototype = {__proto__: AppWindowWrapper.prototype};
  * Activates an existing window or creates a new one.
  *
  * @param {Object} appState App state.
+ * @param {boolean} reopen True if the launching is triggered automatically.
+ *     False otherwize.
  * @param {function()=} opt_callback Completion callback.
  */
-SingletonAppWindowWrapper.prototype.launch = function(appState, opt_callback) {
+SingletonAppWindowWrapper.prototype.launch =
+    function(appState, reopen, opt_callback) {
   // If the window is not opened yet, just call the parent method.
   if (!this.openingOrOpened_) {
-    AppWindowWrapper.prototype.launch.call(this, appState, opt_callback);
+    AppWindowWrapper.prototype.launch.call(
+        this, appState, reopen, opt_callback);
     return;
   }
 
@@ -487,6 +494,7 @@ SingletonAppWindowWrapper.prototype.launch = function(appState, opt_callback) {
   // The queue is used to wait until the window is opened.
   this.queue.run(function(nextStep) {
     this.window_.contentWindow.appState = appState;
+    this.window_.contentWindow.appReopen = reopen;
     this.window_.contentWindow.reload();
     if (opt_callback)
       opt_callback();
@@ -513,7 +521,7 @@ SingletonAppWindowWrapper.prototype.reopen = function(opt_callback) {
       opt_callback && opt_callback();
       return;
     }
-    this.launch(appState, opt_callback);
+    this.launch(appState, true, opt_callback);
   }.bind(this));
 };
 
@@ -657,7 +665,7 @@ function launchFileManager(opt_appState, opt_id, opt_type, opt_callback) {
         'main.html',
         appId,
         FILE_MANAGER_WINDOW_CREATE_OPTIONS);
-    appWindow.launch(opt_appState || {}, function() {
+    appWindow.launch(opt_appState || {}, false, function() {
       AppWindowWrapper.focusOnDesktop(
           appWindow.window_, (opt_appState || {}).displayedId);
       if (opt_callback)
@@ -764,9 +772,12 @@ audioPlayerInitializationQueue.run(function(callback) {
   var audioPlayerCreateOptions = Object.freeze({
       type: 'panel',
       hidden: true,
-      minHeight: newAudioPlayerEnabled ? 116 : (35 + 58),
+      minHeight:
+          newAudioPlayerEnabled ?
+              (44 + 73) :  // 44px: track, 73px: controller
+              (35 + 58),  // 35px: track, 58px: controller
       minWidth: newAudioPlayerEnabled ? 292 : 280,
-      height: newAudioPlayerEnabled ? 356 : (35 + 58),
+      height: newAudioPlayerEnabled ? (44 + 73) : (35 + 58),  // collapsed
       width: newAudioPlayerEnabled ? 292 : 280,
   });
 
@@ -783,8 +794,8 @@ audioPlayerInitializationQueue.run(function(callback) {
  */
 function launchAudioPlayer(playlist, opt_displayedId) {
   audioPlayerInitializationQueue.run(function(callback) {
-    audioPlayer.launch(playlist, function(appWindow) {
-      audioPlayer.setIcon(AUDIO_PLAYRE_ICON);
+    audioPlayer.launch(playlist, false, function(appWindow) {
+      audioPlayer.setIcon(AUDIO_PLAYER_ICON);
       AppWindowWrapper.focusOnDesktop(audioPlayer.rawAppWindow,
                                       opt_displayedId);
     });
@@ -802,7 +813,7 @@ var videoPlayer = new SingletonAppWindowWrapper('video_player.html',
  *     player should show.
  */
 function launchVideoPlayer(url, opt_displayedId) {
-  videoPlayer.launch({url: url}, function(appWindow) {
+  videoPlayer.launch({url: url}, false, function(appWindow) {
     AppWindowWrapper.focusOnDesktop(videoPlayer.rawAppWindow, opt_displayedId);
   });
 }
@@ -853,7 +864,10 @@ Background.prototype.onRestarted_ = function() {
   // Reopen audio player.
   audioPlayerInitializationQueue.run(function(callback) {
     audioPlayer.reopen(function() {
-      audioPlayer.setIcon(AUDIO_PLAYER_ICON);
+      // If the audioPlayer is reopened, change its window's icon. Otherwise
+      // there is no reopened window so just skip the call of setIcon.
+      if (audioPlayer.rawAppWindow)
+        audioPlayer.setIcon(AUDIO_PLAYER_ICON);
     });
     callback();
   });

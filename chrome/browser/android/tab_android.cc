@@ -5,11 +5,18 @@
 #include "chrome/browser/android/tab_android.h"
 
 #include "base/android/jni_android.h"
+#include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "base/debug/trace_event.h"
 #include "chrome/browser/android/chrome_web_contents_delegate_android.h"
+#include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
+#include "chrome/browser/google/google_url_tracker.h"
+#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/prerender/prerender_contents.h"
+#include "chrome/browser/prerender/prerender_manager.h"
+#include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/printing/print_view_manager_basic.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_android.h"
@@ -25,11 +32,15 @@
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/tab_helpers.h"
 #include "chrome/browser/ui/toolbar/toolbar_model_impl.h"
+#include "chrome/common/net/url_fixer_upper.h"
+#include "chrome/common/url_constants.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
-#include "jni/TabBase_jni.h"
+#include "jni/Tab_jni.h"
+#include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
 
 TabAndroid* TabAndroid::FromWebContents(content::WebContents* web_contents) {
   CoreTabHelper* core_tab_helper = CoreTabHelper::FromWebContents(web_contents);
@@ -44,14 +55,13 @@ TabAndroid* TabAndroid::FromWebContents(content::WebContents* web_contents) {
 }
 
 TabAndroid* TabAndroid::GetNativeTab(JNIEnv* env, jobject obj) {
-  return reinterpret_cast<TabAndroid*>(Java_TabBase_getNativePtr(env, obj));
+  return reinterpret_cast<TabAndroid*>(Java_Tab_getNativePtr(env, obj));
 }
 
 TabAndroid::TabAndroid(JNIEnv* env, jobject obj)
     : weak_java_tab_(env, obj),
-      session_tab_id_(),
       synced_tab_delegate_(new browser_sync::SyncedTabDelegateAndroid(this)) {
-  Java_TabBase_setNativePtr(env, obj, reinterpret_cast<intptr_t>(this));
+  Java_Tab_setNativePtr(env, obj, reinterpret_cast<intptr_t>(this));
 }
 
 TabAndroid::~TabAndroid() {
@@ -60,7 +70,7 @@ TabAndroid::~TabAndroid() {
   if (obj.is_null())
     return;
 
-  Java_TabBase_clearNativePtr(env, obj.obj());
+  Java_Tab_clearNativePtr(env, obj.obj());
 }
 
 base::android::ScopedJavaLocalRef<jobject> TabAndroid::GetJavaObject() {
@@ -73,7 +83,7 @@ int TabAndroid::GetAndroidId() const {
   ScopedJavaLocalRef<jobject> obj = weak_java_tab_.get(env);
   if (obj.is_null())
     return -1;
-  return Java_TabBase_getId(env, obj.obj());
+  return Java_Tab_getId(env, obj.obj());
 }
 
 int TabAndroid::GetSyncId() const {
@@ -81,7 +91,7 @@ int TabAndroid::GetSyncId() const {
   ScopedJavaLocalRef<jobject> obj = weak_java_tab_.get(env);
   if (obj.is_null())
     return 0;
-  return Java_TabBase_getSyncId(env, obj.obj());
+  return Java_Tab_getSyncId(env, obj.obj());
 }
 
 base::string16 TabAndroid::GetTitle() const {
@@ -90,7 +100,7 @@ base::string16 TabAndroid::GetTitle() const {
   if (obj.is_null())
     return base::string16();
   return base::android::ConvertJavaStringToUTF16(
-      Java_TabBase_getTitle(env, obj.obj()));
+      Java_Tab_getTitle(env, obj.obj()));
 }
 
 GURL TabAndroid::GetURL() const {
@@ -99,7 +109,7 @@ GURL TabAndroid::GetURL() const {
   if (obj.is_null())
     return GURL::EmptyGURL();
   return GURL(base::android::ConvertJavaStringToUTF8(
-      Java_TabBase_getUrl(env, obj.obj())));
+      Java_Tab_getUrl(env, obj.obj())));
 }
 
 bool TabAndroid::RestoreIfNeeded() {
@@ -107,7 +117,7 @@ bool TabAndroid::RestoreIfNeeded() {
   ScopedJavaLocalRef<jobject> obj = weak_java_tab_.get(env);
   if (obj.is_null())
     return false;
-  return Java_TabBase_restoreIfNeeded(env, obj.obj());
+  return Java_Tab_restoreIfNeeded(env, obj.obj());
 }
 
 content::ContentViewCore* TabAndroid::GetContentViewCore() const {
@@ -128,12 +138,23 @@ browser_sync::SyncedTabDelegate* TabAndroid::GetSyncedTabDelegate() const {
   return synced_tab_delegate_.get();
 }
 
+void TabAndroid::SetWindowSessionID(SessionID::id_type window_id) {
+  session_window_id_.set_id(window_id);
+
+  if (!web_contents())
+    return;
+
+  SessionTabHelper* session_tab_helper =
+          SessionTabHelper::FromWebContents(web_contents());
+  session_tab_helper->SetWindowID(session_window_id_);
+}
+
 void TabAndroid::SetSyncId(int sync_id) {
   JNIEnv* env = base::android::AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = weak_java_tab_.get(env);
   if (obj.is_null())
     return;
-  Java_TabBase_setSyncId(env, obj.obj(), sync_id);
+  Java_Tab_setSyncId(env, obj.obj(), sync_id);
 }
 
 void TabAndroid::HandlePopupNavigation(chrome::NavigateParams* params) {
@@ -171,6 +192,25 @@ bool TabAndroid::ShouldWelcomePageLinkToTermsOfService() {
   return false;
 }
 
+bool TabAndroid::HasPrerenderedUrl(GURL gurl) {
+  prerender::PrerenderManager* prerender_manager = GetPrerenderManager();
+  if (!prerender_manager)
+    return false;
+
+  std::vector<content::WebContents*> contents =
+      prerender_manager->GetAllPrerenderingContents();
+  prerender::PrerenderContents* prerender_contents;
+  for (size_t i = 0; i < contents.size(); ++i) {
+    prerender_contents = prerender_manager->
+        GetPrerenderContents(contents.at(i));
+    if (prerender_contents->prerender_url() == gurl &&
+        prerender_contents->has_finished_loading()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void TabAndroid::SwapTabContents(content::WebContents* old_contents,
                                  content::WebContents* new_contents,
                                  bool did_start_load,
@@ -180,14 +220,14 @@ void TabAndroid::SwapTabContents(content::WebContents* old_contents,
   // We need to notify the native InfobarContainer so infobars can be swapped.
   InfoBarContainerAndroid* infobar_container =
       reinterpret_cast<InfoBarContainerAndroid*>(
-          Java_TabBase_getNativeInfoBarContainer(
+          Java_Tab_getNativeInfoBarContainer(
               env,
               weak_java_tab_.get(env).obj()));
   InfoBarService* new_infobar_service = new_contents ?
       InfoBarService::FromWebContents(new_contents) : NULL;
   infobar_container->ChangeInfoBarService(new_infobar_service);
 
-  Java_TabBase_swapWebContents(
+  Java_Tab_swapWebContents(
       env,
       weak_java_tab_.get(env).obj(),
       reinterpret_cast<intptr_t>(new_contents),
@@ -221,10 +261,10 @@ void TabAndroid::Observe(int type,
       break;
     }
     case chrome::NOTIFICATION_FAVICON_UPDATED:
-      Java_TabBase_onFaviconUpdated(env, weak_java_tab_.get(env).obj());
+      Java_Tab_onFaviconUpdated(env, weak_java_tab_.get(env).obj());
       break;
     case content::NOTIFICATION_NAV_ENTRY_CHANGED:
-      Java_TabBase_onNavEntryChanged(env, weak_java_tab_.get(env).obj());
+      Java_Tab_onNavEntryChanged(env, weak_java_tab_.get(env).obj());
       break;
     default:
       NOTREACHED() << "Unexpected notification " << type;
@@ -250,6 +290,8 @@ void TabAndroid::InitWebContents(JNIEnv* env,
 
   web_contents_.reset(content_view_core->GetWebContents());
   TabHelpers::AttachTabHelpers(web_contents_.get());
+
+  SetWindowSessionID(session_window_id_.id());
 
   session_tab_id_.set_id(
       SessionTabHelper::FromWebContents(web_contents())->session_id().id());
@@ -279,17 +321,6 @@ void TabAndroid::InitWebContents(JNIEnv* env,
            &web_contents()->GetController()));
 
   synced_tab_delegate_->SetWebContents(web_contents());
-
-  // Set the window ID if there is a valid TabModel.
-  TabModel* model = TabModelList::GetTabModelWithProfile(GetProfile());
-  if (model) {
-    SessionID window_id;
-    window_id.set_id(model->GetSessionId());
-
-    SessionTabHelper* session_tab_helper =
-        SessionTabHelper::FromWebContents(web_contents());
-    session_tab_helper->SetWindowID(window_id);
-  }
 
   // Verify that the WebContents this tab represents matches the expected
   // off the record state.
@@ -342,6 +373,86 @@ base::android::ScopedJavaLocalRef<jobject> TabAndroid::GetProfileAndroid(
   return profile_android->GetJavaObject();
 }
 
+TabAndroid::TabLoadStatus TabAndroid::LoadUrl(JNIEnv* env,
+                                              jobject obj,
+                                              jstring url,
+                                              jstring j_extra_headers,
+                                              jbyteArray j_post_data,
+                                              jint page_transition,
+                                              jstring j_referrer_url,
+                                              jint referrer_policy) {
+  content::ContentViewCore* content_view = GetContentViewCore();
+  if (!content_view)
+    return PAGE_LOAD_FAILED;
+
+  GURL gurl(base::android::ConvertJavaStringToUTF8(env, url));
+  if (gurl.is_empty())
+    return PAGE_LOAD_FAILED;
+
+  // If the page was prerendered, use it.
+  // Note in incognito mode, we don't have a PrerenderManager.
+
+  prerender::PrerenderManager* prerender_manager =
+      prerender::PrerenderManagerFactory::GetForProfile(GetProfile());
+  if (prerender_manager) {
+    bool prefetched_page_loaded = HasPrerenderedUrl(gurl);
+    // Getting the load status before MaybeUsePrerenderedPage() b/c it resets.
+    chrome::NavigateParams params(NULL, web_contents());
+    if (prerender_manager->MaybeUsePrerenderedPage(gurl, &params)) {
+      return prefetched_page_loaded ?
+          FULL_PRERENDERED_PAGE_LOAD : PARTIAL_PRERENDERED_PAGE_LOAD;
+    }
+  }
+
+  GURL fixed_url(URLFixerUpper::FixupURL(gurl.possibly_invalid_spec(),
+                                         std::string()));
+  if (!fixed_url.is_valid())
+    return PAGE_LOAD_FAILED;
+
+  if (!HandleNonNavigationAboutURL(fixed_url)) {
+    // Notify the GoogleURLTracker of searches, it might want to change the
+    // actual Google site used (for instance when in the UK, google.co.uk, when
+    // in the US google.com).
+    // Note that this needs to happen before we initiate the navigation as the
+    // GoogleURLTracker uses the navigation pending notification to trigger the
+    // infobar.
+    if (google_util::IsGoogleSearchUrl(fixed_url) &&
+        (page_transition & content::PAGE_TRANSITION_GENERATED)) {
+      GoogleURLTracker::GoogleURLSearchCommitted(GetProfile());
+    }
+
+    // Record UMA "ShowHistory" here. That way it'll pick up both user
+    // typing chrome://history as well as selecting from the drop down menu.
+    if (fixed_url.spec() == chrome::kChromeUIHistoryURL) {
+      content::RecordAction(base::UserMetricsAction("ShowHistory"));
+    }
+
+    content::NavigationController::LoadURLParams load_params(fixed_url);
+    if (j_extra_headers) {
+      load_params.extra_headers = base::android::ConvertJavaStringToUTF8(
+          env,
+          j_extra_headers);
+    }
+    if (j_post_data) {
+      load_params.load_type =
+          content::NavigationController::LOAD_TYPE_BROWSER_INITIATED_HTTP_POST;
+      std::vector<uint8> post_data;
+      base::android::JavaByteArrayToByteVector(env, j_post_data, &post_data);
+      load_params.browser_initiated_post_data =
+          base::RefCountedBytes::TakeVector(&post_data);
+    }
+    load_params.transition_type =
+        content::PageTransitionFromInt(page_transition);
+    if (j_referrer_url) {
+      load_params.referrer = content::Referrer(
+          GURL(base::android::ConvertJavaStringToUTF8(env, j_referrer_url)),
+          static_cast<blink::WebReferrerPolicy>(referrer_policy));
+    }
+    content_view->LoadUrl(load_params);
+  }
+  return DEFAULT_PAGE_LOAD;
+}
+
 ToolbarModel::SecurityLevel TabAndroid::GetSecurityLevel(JNIEnv* env,
                                                          jobject obj) {
   return ToolbarModelImpl::GetSecurityLevelForWebContents(web_contents());
@@ -379,6 +490,13 @@ bool TabAndroid::Print(JNIEnv* env, jobject obj) {
 
   print_view_manager->PrintNow();
   return true;
+}
+
+prerender::PrerenderManager* TabAndroid::GetPrerenderManager() const {
+  Profile* profile = GetProfile();
+  if (!profile)
+    return NULL;
+  return prerender::PrerenderManagerFactory::GetForProfile(profile);
 }
 
 static void Init(JNIEnv* env, jobject obj) {

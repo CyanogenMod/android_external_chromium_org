@@ -7,13 +7,13 @@
 #include <algorithm>
 
 #include "base/strings/utf_string_conversions.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/views/apps_grid_view.h"
 #include "ui/app_list/views/cached_label.h"
 #include "ui/app_list/views/progress_bar_view.h"
-#include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
@@ -85,7 +85,7 @@ AppListItemView::AppListItemView(AppsGridView* apps_grid_view,
   AddChildView(progress_bar_);
 
   ItemIconChanged();
-  ItemTitleChanged();
+  ItemNameChanged();
   ItemIsInstallingChanged();
   item_->AddObserver(this);
 
@@ -133,8 +133,9 @@ void AppListItemView::UpdateIcon() {
 }
 
 void AppListItemView::UpdateTooltip() {
-  title_->SetTooltipText(item_->title() == item_->full_name() ? base::string16()
-                         : base::UTF8ToUTF16(item_->full_name()));
+  std::string display_name = item_->GetDisplayName();
+  title_->SetTooltipText(display_name == item_->name() ? base::string16()
+                         : base::UTF8ToUTF16(item_->name()));
 }
 
 void AppListItemView::SetUIState(UIState state) {
@@ -225,10 +226,12 @@ void AppListItemView::ItemIconChanged() {
   UpdateIcon();
 }
 
-void AppListItemView::ItemTitleChanged() {
-  title_->SetText(base::UTF8ToUTF16(item_->title()));
+void AppListItemView::ItemNameChanged() {
+  title_->SetText(base::UTF8ToUTF16(item_->GetDisplayName()));
   title_->Invalidate();
   UpdateTooltip();
+  // Use full name for accessibility.
+  SetAccessibleName(base::UTF8ToUTF16(item_->name()));
   Layout();
 }
 
@@ -310,11 +313,6 @@ void AppListItemView::OnPaint(gfx::Canvas* canvas) {
     paint.setColor(kFolderBubbleColor);
     canvas->DrawCircle(center, kFolderPreviewRadius, paint);
   }
-}
-
-void AppListItemView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
-  state->name = base::UTF8ToUTF16(item_->title());
 }
 
 void AppListItemView::ShowContextMenuForView(views::View* source,
@@ -404,8 +402,14 @@ void AppListItemView::OnMouseCaptureLost() {
 
 bool AppListItemView::OnMouseDragged(const ui::MouseEvent& event) {
   CustomButton::OnMouseDragged(event);
-  if (apps_grid_view_->IsDraggedView(this))
-    apps_grid_view_->UpdateDragFromItem(AppsGridView::MOUSE, event);
+  if (apps_grid_view_->IsDraggedView(this)) {
+    // If the drag is no longer happening, it could be because this item
+    // got removed, in which case this item has been destroyed. So, bail out
+    // now as there will be nothing else to do anyway as
+    // apps_grid_view_->dragging() will be false.
+    if (!apps_grid_view_->UpdateDragFromItem(AppsGridView::MOUSE, event))
+      return true;
+  }
 
   // Shows dragging UI when it's confirmed without waiting for the timer.
   if (ui_state_ != UI_STATE_DRAGGING &&

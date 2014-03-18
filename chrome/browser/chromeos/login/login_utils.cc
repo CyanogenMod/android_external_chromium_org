@@ -37,6 +37,7 @@
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/login/chrome_restart_request.h"
+#include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
 #include "chrome/browser/chromeos/login/input_events_blocker.h"
 #include "chrome/browser/chromeos/login/login_display_host.h"
 #include "chrome/browser/chromeos/login/oauth2_login_manager.h"
@@ -54,11 +55,12 @@
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/google/google_util_chromeos.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/net/nss_context.h"
 #include "chrome/browser/pref_service_flags_storage.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/rlz/rlz.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/app_list/start_page_service.h"
@@ -67,7 +69,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/cert_loader.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/cryptohome/cryptohome_util.h"
 #include "chromeos/dbus/cryptohome_client.h"
@@ -85,10 +86,6 @@
 #include "url/gurl.h"
 
 using content::BrowserThread;
-
-namespace net {
-class NSSCertDatabase;
-}
 
 namespace chromeos {
 
@@ -143,7 +140,6 @@ class LoginUtilsImpl
       LoginStatusConsumer* consumer) OVERRIDE;
   virtual void RestoreAuthenticationSession(Profile* profile) OVERRIDE;
   virtual void InitRlzDelayed(Profile* user_profile) OVERRIDE;
-  virtual void StartCertLoader(Profile* user_profile) OVERRIDE;
 
   // OAuth2LoginManager::Observer overrides.
   virtual void OnSessionRestoreStateChanged(
@@ -185,9 +181,18 @@ class LoginUtilsImpl
                         Profile* profile,
                         Profile::CreateStatus status);
 
+  // Callback for asynchronous off the record profile creation.
+  void OnOTRProfileCreated(const std::string& email,
+                        Profile* profile,
+                        Profile::CreateStatus status);
+
   // Callback for Profile::CREATE_STATUS_INITIALIZED profile state.
   // Profile is created, extensions and promo resources are initialized.
   void UserProfileInitialized(Profile* user_profile);
+
+  // Callback for Profile::CREATE_STATUS_INITIALIZED profile state for an OTR
+  // login.
+  void OTRProfileInitialized(Profile* user_profile);
 
   // Callback to resume profile creation after transferring auth data from
   // the authentication profile.
@@ -206,10 +211,6 @@ class LoginUtilsImpl
 
   // Initializes RLZ. If |disabled| is true, RLZ pings are disabled.
   void InitRlz(Profile* user_profile, bool disabled);
-
-  // Starts CertLoader with the provided NSS database. It must be called at most
-  // once, and with the primary user's database.
-  void StartCertLoaderWithNSSDB(net::NSSCertDatabase* database);
 
   // Attempts restarting the browser process and esures that this does
   // not happen while we are still fetching new OAuth refresh tokens.
@@ -414,13 +415,22 @@ void LoginUtilsImpl::PrepareProfile(
   delegate_ = delegate;
   InitSessionRestoreStrategy();
 
-  // Can't use display_email because it is empty when existing user logs in
-  // using sing-in pod on login screen (i.e. user didn't type email).
-  g_browser_process->profile_manager()->CreateProfileAsync(
-      user_manager->GetUserProfileDir(user_context.username),
-      base::Bind(&LoginUtilsImpl::OnProfileCreated, AsWeakPtr(),
-                 user_context.username),
-      base::string16(), base::string16(), std::string());
+  base::FilePath profile_dir;
+  if (DemoAppLauncher::IsDemoAppSession(user_context.username)) {
+    g_browser_process->profile_manager()->CreateProfileAsync(
+        ProfileManager::GetGuestProfilePath(),
+        base::Bind(&LoginUtilsImpl::OnOTRProfileCreated, AsWeakPtr(),
+                   user_context.username),
+        base::string16(), base::string16(), std::string());
+  } else {
+    // Can't use display_email because it is empty when existing user logs in
+    // using sing-in pod on login screen (i.e. user didn't type email).
+    g_browser_process->profile_manager()->CreateProfileAsync(
+        user_manager->GetUserProfileDir(user_context.username),
+        base::Bind(&LoginUtilsImpl::OnProfileCreated, AsWeakPtr(),
+                   user_context.username),
+        base::string16(), base::string16(), std::string());
+  }
 }
 
 void LoginUtilsImpl::DelegateDeleted(LoginUtils::Delegate* delegate) {
@@ -450,10 +460,9 @@ void LoginUtilsImpl::InitProfilePreferences(Profile* user_profile,
     // Make sure that the google service username is properly set (we do this
     // on every sign in, not just the first login, to deal with existing
     // profiles that might not have it set yet).
-    StringPrefMember google_services_username;
-    google_services_username.Init(prefs::kGoogleServicesUsername,
-                                  user_profile->GetPrefs());
-    google_services_username.SetValue(user_id);
+    SigninManagerBase* signin_manager =
+        SigninManagerFactory::GetForProfile(user_profile);
+    signin_manager->SetAuthenticatedUsername(user_id);
   }
 }
 
@@ -519,6 +528,28 @@ void LoginUtilsImpl::OnProfileCreated(
   }
 }
 
+void LoginUtilsImpl::OnOTRProfileCreated(
+    const std::string& user_id,
+    Profile* user_profile,
+    Profile::CreateStatus status) {
+  CHECK(user_profile);
+
+  switch (status) {
+    case Profile::CREATE_STATUS_CREATED:
+      InitProfilePreferences(user_profile, user_id);
+      break;
+    case Profile::CREATE_STATUS_INITIALIZED:
+      OTRProfileInitialized(user_profile);
+      break;
+    case Profile::CREATE_STATUS_LOCAL_FAIL:
+    case Profile::CREATE_STATUS_REMOTE_FAIL:
+    case Profile::CREATE_STATUS_CANCELED:
+    case Profile::MAX_CREATE_STATUS:
+      NOTREACHED();
+      break;
+  }
+}
+
 void LoginUtilsImpl::UserProfileInitialized(Profile* user_profile) {
   BootTimesLoader* btl = BootTimesLoader::Get();
   btl->AddLoginTimeMarker("UserProfileGotten", false);
@@ -540,6 +571,19 @@ void LoginUtilsImpl::UserProfileInitialized(Profile* user_profile) {
   }
 
   FinalizePrepareProfile(user_profile);
+}
+
+void LoginUtilsImpl::OTRProfileInitialized(Profile* user_profile) {
+  user_profile->OnLogin();
+  // Send the notification before creating the browser so additional objects
+  // that need the profile (e.g. the launcher) can be created first.
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED,
+      content::NotificationService::AllSources(),
+      content::Details<Profile>(user_profile));
+
+  if (delegate_)
+    delegate_->OnProfilePrepared(user_profile);
 }
 
 void LoginUtilsImpl::CompleteProfileCreate(Profile* user_profile) {
@@ -605,12 +649,10 @@ void LoginUtilsImpl::FinalizePrepareProfile(Profile* user_profile) {
       content::NotificationService::AllSources(),
       content::Details<Profile>(user_profile));
 
-  // Initialize RLZ and CertLoader only for primary user.
+  // Initialize RLZ only for primary user.
   if (UserManager::Get()->GetPrimaryUser() ==
       UserManager::Get()->GetUserByProfile(user_profile)) {
     InitRlzDelayed(user_profile);
-    if (CertLoader::IsInitialized())
-      StartCertLoader(user_profile);
   }
   // TODO(altimofeev): This pointer should probably never be NULL, but it looks
   // like LoginUtilsImpl::OnProfileCreated() may be getting called before
@@ -625,8 +667,8 @@ void LoginUtilsImpl::FinalizePrepareProfile(Profile* user_profile) {
 void LoginUtilsImpl::InitRlzDelayed(Profile* user_profile) {
 #if defined(ENABLE_RLZ)
   if (!g_browser_process->local_state()->HasPrefPath(prefs::kRLZBrand)) {
-    // Read brand code asynchronously from an OEM file and repost ourselves.
-    google_util::chromeos::SetBrandFromFile(
+    // Read brand code asynchronously from an OEM data and repost ourselves.
+    google_util::chromeos::InitBrand(
         base::Bind(&LoginUtilsImpl::InitRlzDelayed, AsWeakPtr(), user_profile));
     return;
   }
@@ -661,16 +703,6 @@ void LoginUtilsImpl::InitRlz(Profile* user_profile, bool disabled) {
   if (delegate_)
     delegate_->OnRlzInitialized(user_profile);
 #endif
-}
-
-void LoginUtilsImpl::StartCertLoader(Profile* user_profile) {
-  GetNSSCertDatabaseForProfile(
-      user_profile,
-      base::Bind(&LoginUtilsImpl::StartCertLoaderWithNSSDB, AsWeakPtr()));
-}
-
-void LoginUtilsImpl::StartCertLoaderWithNSSDB(net::NSSCertDatabase* database) {
-  CertLoader::Get()->StartWithNSSDB(database);
 }
 
 void LoginUtilsImpl::CompleteOffTheRecordLogin(const GURL& start_url) {

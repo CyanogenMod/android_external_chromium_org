@@ -39,15 +39,11 @@ public class AwContentsClientShouldInterceptRequestTest extends AwTestBase {
                 = new ConcurrentHashMap<String, InterceptedRequestData>();
             // This is read from the IO thread, so needs to be marked volatile.
             private volatile InterceptedRequestData mShouldInterceptRequestReturnValue = null;
-            private String mUrlToWaitFor;
             void setReturnValue(InterceptedRequestData value) {
                 mShouldInterceptRequestReturnValue = value;
             }
             void setReturnValueForUrl(String url, InterceptedRequestData value) {
                 mReturnValuesByUrls.put(url, value);
-            }
-            public void setUrlToWaitFor(String url) {
-                mUrlToWaitFor = url;
             }
             public List<String> getUrls() {
                 assert getCallCount() > 0;
@@ -59,10 +55,8 @@ public class AwContentsClientShouldInterceptRequestTest extends AwTestBase {
                 return mShouldInterceptRequestReturnValue;
             }
             public void notifyCalled(String url) {
-                if (mUrlToWaitFor == null || mUrlToWaitFor.equals(url)) {
-                    mShouldInterceptRequestUrls.add(url);
-                    notifyCalled();
-                }
+                mShouldInterceptRequestUrls.add(url);
+                notifyCalled();
             }
         }
 
@@ -349,6 +343,39 @@ public class AwContentsClientShouldInterceptRequestTest extends AwTestBase {
                 executeJavaScriptAndWaitForResult(mAwContents, mContentsClient, syncGetJs));
     }
 
+    @SmallTest
+    @Feature({"AndroidWebView"})
+    public void testHttpResponseClientHeader() throws Throwable {
+        final String clientResponseHeaderName = "Client-Via";
+        // JSON stringification applied by executeJavaScriptAndWaitForResult adds quotes
+        // around returned strings.
+        final String clientResponseHeaderValue = "\"shouldInterceptRequest\"";
+        final String syncGetUrl = mWebServer.getResponseUrl("/intercept_me");
+        final String syncGetJs =
+            "(function() {" +
+            "  var xhr = new XMLHttpRequest();" +
+            "  xhr.open('GET', '" + syncGetUrl + "', false);" +
+            "  xhr.send(null);" +
+            "  console.info(xhr.getAllResponseHeaders());" +
+            "  return xhr.getResponseHeader('" + clientResponseHeaderName + "');" +
+            "})();";
+        enableJavaScriptOnUiThread(mAwContents);
+
+        final String aboutPageUrl = addAboutPageToTestServer(mWebServer);
+        loadUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(), aboutPageUrl);
+
+        // The response header is set regardless of whether the embedder has provided a
+        // valid resource stream.
+        mShouldInterceptRequestHelper.setReturnValue(
+                new InterceptedRequestData("text/html", "UTF-8", null));
+        assertEquals(clientResponseHeaderValue,
+                executeJavaScriptAndWaitForResult(mAwContents, mContentsClient, syncGetJs));
+        mShouldInterceptRequestHelper.setReturnValue(
+                new InterceptedRequestData("text/html", "UTF-8", new EmptyInputStream()));
+        assertEquals(clientResponseHeaderValue,
+                executeJavaScriptAndWaitForResult(mAwContents, mContentsClient, syncGetJs));
+    }
+
 
     private String makePageWithTitle(String title) {
         return CommonResources.makeHtmlPageFrom("<title>" + title + "</title>",
@@ -457,13 +484,10 @@ public class AwContentsClientShouldInterceptRequestTest extends AwTestBase {
                     "<iframe src=\"" + aboutPageUrl + "\"/>"));
 
         int callCount = mShouldInterceptRequestHelper.getCallCount();
-        // These callbacks can race with favicon.ico callback.
-        mShouldInterceptRequestHelper.setUrlToWaitFor(aboutPageUrl);
         loadUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(), pageWithIframe);
-
-        mShouldInterceptRequestHelper.waitForCallback(callCount, 1);
-        assertEquals(1, mShouldInterceptRequestHelper.getUrls().size());
-        assertEquals(aboutPageUrl, mShouldInterceptRequestHelper.getUrls().get(0));
+        mShouldInterceptRequestHelper.waitForCallback(callCount, 2);
+        assertEquals(2, mShouldInterceptRequestHelper.getUrls().size());
+        assertEquals(aboutPageUrl, mShouldInterceptRequestHelper.getUrls().get(1));
     }
 
     private void calledForUrlTemplate(final String url) throws Exception {

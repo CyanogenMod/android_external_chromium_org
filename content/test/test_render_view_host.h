@@ -122,6 +122,9 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual void SetTooltipText(const base::string16& tooltip_text) OVERRIDE {}
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE {}
+#if defined(OS_ANDROID)
+  virtual void SelectionRootBoundsChanged(const gfx::Rect&) OVERRIDE {}
+#endif
   virtual void ScrollOffsetChanged() OVERRIDE {}
   virtual BackingStore* AllocBackingStore(const gfx::Size& size) OVERRIDE;
   virtual void CopyFromCompositingSurface(
@@ -236,7 +239,7 @@ class TestRenderViewHost
   // RenderViewHostTester implementation.  Note that CreateRenderView
   // is not specified since it is synonymous with the one from
   // RenderViewHostImpl, see below.
-  virtual void SendShouldCloseACK(bool proceed) OVERRIDE;
+  virtual void SendBeforeUnloadACK(bool proceed) OVERRIDE;
   virtual void SetContentsMimeType(const std::string& mime_type) OVERRIDE;
   virtual void SimulateSwapOutACK() OVERRIDE;
   virtual void SimulateWasHidden() OVERRIDE;
@@ -319,6 +322,7 @@ class TestRenderViewHost
                                 int opener_route_id,
                                 int32 max_page_id) OVERRIDE;
   virtual bool IsRenderViewLive() const OVERRIDE;
+  virtual bool IsFullscreen() const OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(RenderViewHostTest, FilterNavigate);

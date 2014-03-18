@@ -39,6 +39,7 @@ bool IsEqual(const net::IPEndPoint& addr1, const net::IPEndPoint& addr2) {
 }  // namespace
 
 UdpTransport::UdpTransport(
+    net::NetLog* net_log,
     const scoped_refptr<base::SingleThreadTaskRunner>& io_thread_proxy,
     const net::IPEndPoint& local_end_point,
     const net::IPEndPoint& remote_end_point,
@@ -48,10 +49,10 @@ UdpTransport::UdpTransport(
       remote_addr_(remote_end_point),
       udp_socket_(new net::UDPSocket(net::DatagramSocket::DEFAULT_BIND,
                                      net::RandIntCallback(),
-                                     NULL,
+                                     net_log,
                                      net::NetLog::Source())),
       send_pending_(false),
-      recv_buf_(new net::IOBuffer(kMaxPacketSize)),
+      client_connected_(false),
       status_callback_(status_callback),
       weak_factory_(this) {
   DCHECK(!IsEmpty(local_end_point) || !IsEmpty(remote_end_point));
@@ -78,51 +79,63 @@ void UdpTransport::StartReceiving(
       LOG(ERROR) << "Failed to connect to remote address.";
       return;
     }
+    client_connected_ = true;
   } else {
     NOTREACHED() << "Either local or remote address has to be defined.";
   }
-  ReceiveOnePacket();
+
+  ReceiveNextPacket(net::ERR_IO_PENDING);
 }
 
-void UdpTransport::ReceiveOnePacket() {
+void UdpTransport::ReceiveNextPacket(int length_or_status) {
   DCHECK(io_thread_proxy_->RunsTasksOnCurrentThread());
 
-  int result = udp_socket_->RecvFrom(
-      recv_buf_,
-      kMaxPacketSize,
-      &recv_addr_,
-      base::Bind(&UdpTransport::OnReceived, weak_factory_.GetWeakPtr()));
-  if (result > 0) {
-    OnReceived(result);
-  } else if (result != net::ERR_IO_PENDING) {
-    LOG(ERROR) << "Failed to receive packet: " << result << "."
-               << " Stop receiving packets.";
-    status_callback_.Run(TRANSPORT_SOCKET_ERROR);
-  }
-}
+  // Loop while UdpSocket is delivering data synchronously.  When it responds
+  // with a "pending" status, break and expect this method to be called back in
+  // the future when a packet is ready.
+  while (true) {
+    if (length_or_status == net::ERR_IO_PENDING) {
+      next_packet_.reset(new Packet(kMaxPacketSize));
+      recv_buf_ = new net::WrappedIOBuffer(
+          reinterpret_cast<char*>(&next_packet_->front()));
+      length_or_status = udp_socket_->RecvFrom(
+          recv_buf_,
+          kMaxPacketSize,
+          &recv_addr_,
+          base::Bind(&UdpTransport::ReceiveNextPacket,
+                     weak_factory_.GetWeakPtr()));
+      if (length_or_status == net::ERR_IO_PENDING)
+        return;
+    }
 
-void UdpTransport::OnReceived(int result) {
-  DCHECK(io_thread_proxy_->RunsTasksOnCurrentThread());
-  if (result < 0) {
-    LOG(ERROR) << "Failed to receive packet: " << result << "."
-               << " Stop receiving packets.";
-    status_callback_.Run(TRANSPORT_SOCKET_ERROR);
-    return;
-  }
+    // Note: At this point, either a packet is ready or an error has occurred.
 
-  if (IsEmpty(remote_addr_)) {
-    remote_addr_ = recv_addr_;
-    VLOG(1) << "First packet received from: " << remote_addr_.ToString() << ".";
-  } else if (!IsEqual(remote_addr_, recv_addr_)) {
-    LOG(ERROR) << "Received from an unrecognized address: "
-               << recv_addr_.ToString() << ".";
-    return;
+    if (length_or_status < 0) {
+      VLOG(1) << "Failed to receive packet: Status code is "
+              << length_or_status << ".  Stop receiving packets.";
+      status_callback_.Run(TRANSPORT_SOCKET_ERROR);
+      return;
+    }
+
+    // Confirm the packet has come from the expected remote address; otherwise,
+    // ignore it.  If this is the first packet being received and no remote
+    // address has been set, set the remote address and expect all future
+    // packets to come from the same one.
+    if (IsEmpty(remote_addr_)) {
+      remote_addr_ = recv_addr_;
+      VLOG(1) << "Setting remote address from first received packet: "
+              << remote_addr_.ToString();
+    } else if (!IsEqual(remote_addr_, recv_addr_)) {
+      VLOG(1) << "Ignoring packet received from an unrecognized address: "
+              << recv_addr_.ToString() << ".";
+      length_or_status = net::ERR_IO_PENDING;
+      continue;
+    }
+
+    next_packet_->resize(length_or_status);
+    packet_receiver_.Run(next_packet_.Pass());
+    length_or_status = net::ERR_IO_PENDING;
   }
-  // TODO(hclam): The interfaces should use net::IOBuffer to eliminate memcpy.
-  scoped_ptr<Packet> packet(
-      new Packet(recv_buf_->data(), recv_buf_->data() + result));
-  packet_receiver_.Run(packet.Pass());
-  ReceiveOnePacket();
 }
 
 bool UdpTransport::SendPacket(const Packet& packet) {
@@ -138,11 +151,25 @@ bool UdpTransport::SendPacket(const Packet& packet) {
   scoped_refptr<net::IOBuffer> buf =
       new net::IOBuffer(static_cast<int>(packet.size()));
   memcpy(buf->data(), &packet[0], packet.size());
-  int ret = udp_socket_->SendTo(
+
+  int ret;
+  if (client_connected_) {
+    // If we called Connect() before we must call Write() instead of
+    // SendTo(). Otherwise on some platforms we might get
+    // ERR_SOCKET_IS_CONNECTED.
+    ret = udp_socket_->Write(
+      buf,
+      static_cast<int>(packet.size()),
+      base::Bind(&UdpTransport::OnSent, weak_factory_.GetWeakPtr(), buf));
+  } else if (!IsEmpty(remote_addr_)) {
+    ret = udp_socket_->SendTo(
       buf,
       static_cast<int>(packet.size()),
       remote_addr_,
       base::Bind(&UdpTransport::OnSent, weak_factory_.GetWeakPtr(), buf));
+  } else {
+    return false;
+  }
   if (ret == net::ERR_IO_PENDING)
     send_pending_ = true;
   // When ok, will return a positive value equal the number of bytes sent.

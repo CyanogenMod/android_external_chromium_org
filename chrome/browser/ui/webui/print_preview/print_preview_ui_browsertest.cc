@@ -24,8 +24,8 @@
 
 #if defined(OS_WIN)
 #include "content/public/browser/web_contents_view.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 namespace {
@@ -110,7 +110,7 @@ IN_PROC_BROWSER_TEST_F(PrintPreviewTest, WindowedNPAPIPluginHidden) {
 
   // Now get the region of the plugin before and after the print preview is
   // shown. They should be different.
-  HWND hwnd = tab->GetView()->GetNativeView()->GetDispatcher()->host()->
+  HWND hwnd = tab->GetView()->GetNativeView()->GetHost()->
       GetAcceleratedWidget();
   HWND child = NULL;
   EnumChildWindows(hwnd, EnumerateChildren,reinterpret_cast<LPARAM>(&child));

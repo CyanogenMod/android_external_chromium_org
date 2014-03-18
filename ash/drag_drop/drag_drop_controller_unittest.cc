@@ -12,8 +12,8 @@
 #include "base/location.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/aura/client/capture_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
@@ -283,7 +283,7 @@ void DispatchGesture(ui::EventType gesture_type, gfx::Point location) {
       ui::EventTimeForNow(),
       ui::GestureEventDetails(gesture_type, 0, 0),
       1);
-  Shell::GetPrimaryRootWindow()->GetDispatcher()->DispatchGestureEvent(
+  Shell::GetPrimaryRootWindow()->GetHost()->dispatcher()->DispatchGestureEvent(
       &gesture_event);
 }
 
@@ -738,7 +738,7 @@ TEST_F(DragDropControllerTest, SyntheticEventsDuringDragDrop) {
     ui::MouseEvent mouse_move(ui::ET_MOUSE_MOVED, mouse_move_location,
                               mouse_move_location, 0, 0);
     ui::EventDispatchDetails details = Shell::GetPrimaryRootWindow()->
-        GetDispatcher()->OnEventFromSource(&mouse_move);
+        GetHost()->dispatcher()->OnEventFromSource(&mouse_move);
     ASSERT_FALSE(details.dispatcher_destroyed);
   }
 

@@ -12,7 +12,7 @@
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
-#include "ui/views/corewm/window_animations.h"
+#include "ui/wm/core/window_animations.h"
 #endif
 
 namespace autofill {
@@ -58,8 +58,8 @@ void AutofillPopupBaseView::DoShow() {
     widget->SetContentsView(this);
 #if defined(USE_AURA)
     // No animation for popup appearance (too distracting).
-    views::corewm::SetWindowVisibilityAnimationTransition(
-        widget->GetNativeView(), views::corewm::ANIMATE_HIDE);
+    wm::SetWindowVisibilityAnimationTransition(
+        widget->GetNativeView(), wm::ANIMATE_HIDE);
 #endif
   }
 
@@ -186,7 +186,7 @@ void AutofillPopupBaseView::OnGestureEvent(ui::GestureEvent* event) {
     case ui::ET_GESTURE_TAP:
     case ui::ET_GESTURE_SCROLL_END:
       if (HitTestPoint(event->location()))
-        SetSelection(event->location());
+        AcceptSelection(event->location());
       else
         ClearSelection();
       break;

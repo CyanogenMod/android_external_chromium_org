@@ -60,7 +60,7 @@ const int kAppendTimeMs = kAppendTimeSec * 1000;
 const int k320WebMFileDurationMs = 2737;
 const int k640WebMFileDurationMs = 2763;
 const int kOpusEndTrimmingWebMFileDurationMs = 2771;
-const int kVP9WebMFileDurationMs = 2735;
+const int kVP9WebMFileDurationMs = 2703;
 const int kVP8AWebMFileDurationMs = 2700;
 
 #if defined(USE_PROPRIETARY_CODECS)
@@ -93,7 +93,7 @@ class FakeEncryptedMedia {
     // Errors are not expected unless overridden.
     virtual void OnSessionError(uint32 session_id,
                                 MediaKeys::KeyError error_code,
-                                int system_code) {
+                                uint32 system_code) {
       FAIL() << "Unexpected Key Error";
     }
 
@@ -140,7 +140,7 @@ class FakeEncryptedMedia {
 
   void OnSessionError(uint32 session_id,
                       MediaKeys::KeyError error_code,
-                      int system_code) {
+                      uint32 system_code) {
     app_->OnSessionError(session_id, error_code, system_code);
   }
 
@@ -297,16 +297,23 @@ class MockMediaSource {
     DCHECK(chunk_demuxer_);
     DCHECK_LT(current_position_, file_data_->data_size());
     DCHECK_LE(current_position_ + size, file_data_->data_size());
+
+    // TODO(wolenetz): Test timestamp offset updating once "sequence" append
+    // mode processing is implemented. See http://crbug.com/249422.
+    base::TimeDelta timestamp_offset;
     chunk_demuxer_->AppendData(
-        kSourceId, file_data_->data() + current_position_, size);
+        kSourceId, file_data_->data() + current_position_, size,
+        base::TimeDelta(), kInfiniteDuration(), &timestamp_offset);
     current_position_ += size;
   }
 
   void AppendAtTime(const base::TimeDelta& timestampOffset,
                     const uint8* pData, int size) {
-    CHECK(chunk_demuxer_->SetTimestampOffset(kSourceId, timestampOffset));
-    chunk_demuxer_->AppendData(kSourceId, pData, size);
-    CHECK(chunk_demuxer_->SetTimestampOffset(kSourceId, base::TimeDelta()));
+    base::TimeDelta timestamp_offset = timestampOffset;
+    CHECK(!chunk_demuxer_->IsParsingMediaSegment(kSourceId));
+    chunk_demuxer_->AppendData(kSourceId, pData, size,
+                               base::TimeDelta(), kInfiniteDuration(),
+                               &timestamp_offset);
   }
 
   void EndOfStream() {
@@ -514,11 +521,8 @@ TEST_F(PipelineIntegrationTest, BasicPlayback_MediaSource) {
   Stop();
 }
 
-// TODO(fgalligan): Enable after new vp9 files are landed.
-// http://crbug.com/259116
-TEST_F(PipelineIntegrationTest,
-       DISABLED_BasicPlayback_MediaSource_VideoOnly_VP9_WebM) {
-  MockMediaSource source("bear-vp9.webm", kWebMVP9, 32393);
+TEST_F(PipelineIntegrationTest, BasicPlayback_MediaSource_VP9_WebM) {
+  MockMediaSource source("bear-vp9.webm", kWebMVP9, 67504);
   StartPipelineWithMediaSource(&source);
   source.EndOfStream();
 
@@ -1069,9 +1073,7 @@ TEST_F(PipelineIntegrationTest, BasicPlayback_AudioOnly_Opus_WebM) {
 }
 
 // Verify that VP9 video in WebM containers can be played back.
-// TODO(fgalligan): Enable after new vp9 files are landed.
-// http://crbug.com/259116
-TEST_F(PipelineIntegrationTest, DISABLED_BasicPlayback_VideoOnly_VP9_WebM) {
+TEST_F(PipelineIntegrationTest, BasicPlayback_VideoOnly_VP9_WebM) {
   ASSERT_TRUE(Start(GetTestDataFilePath("bear-vp9.webm"),
                     PIPELINE_OK));
   Play();
@@ -1080,9 +1082,7 @@ TEST_F(PipelineIntegrationTest, DISABLED_BasicPlayback_VideoOnly_VP9_WebM) {
 
 // Verify that VP9 video and Opus audio in the same WebM container can be played
 // back.
-// TODO(fgalligan): Enable after new vp9 files are landed.
-// http://crbug.com/259116
-TEST_F(PipelineIntegrationTest, DISABLED_BasicPlayback_VP9_Opus_WebM) {
+TEST_F(PipelineIntegrationTest, BasicPlayback_VP9_Opus_WebM) {
   ASSERT_TRUE(Start(GetTestDataFilePath("bear-vp9-opus.webm"),
                     PIPELINE_OK));
   Play();

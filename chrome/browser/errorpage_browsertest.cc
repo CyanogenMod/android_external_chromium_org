@@ -3,6 +3,11 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
+#include "base/command_line.h"
+#include "base/compiler_specific.h"
+#include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -14,10 +19,14 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/chrome_paths.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -33,13 +42,155 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_filter.h"
+#include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_job_factory.h"
+#include "net/url_request/url_request_test_job.h"
+#include "net/url_request/url_request_test_util.h"
 
 using content::BrowserThread;
 using content::NavigationController;
 using content::URLRequestFailedJob;
+using net::URLRequestJobFactory;
+using net::URLRequestTestJob;
 
 namespace {
+
+// Returns true if |text| is displayed on the page |browser| is currently
+// displaying.  Uses "innerText", so will miss hidden text, and whitespace
+// space handling may be weird.
+bool WARN_UNUSED_RESULT IsDisplayingText(Browser* browser,
+                                         const std::string& text) {
+  std::string command = base::StringPrintf(
+      "var textContent = document.body.innerText;"
+      "var hasText = textContent.indexOf('%s') >= 0;"
+      "domAutomationController.send(hasText);",
+      text.c_str());
+  bool result = false;
+  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+      browser->tab_strip_model()->GetActiveWebContents(), command, &result));
+  return result;
+}
+
+// Expands the more box on the currently displayed error page.
+void ToggleHelpBox(Browser* browser) {
+  EXPECT_TRUE(content::ExecuteScript(
+      browser->tab_strip_model()->GetActiveWebContents(),
+      "document.getElementById('more-less-button').click();"));
+}
+
+// Returns true if |browser| is displaying the text representation of
+// |error_code| on the current page.
+bool WARN_UNUSED_RESULT IsDisplayingNetError(Browser* browser,
+                                             net::Error error_code) {
+  // Get the error as a string, and remove the leading "net::", which is not
+  // included on error pages.
+  std::string error_string = net::ErrorToString(error_code);
+  base::RemoveChars(error_string, "net:", &error_string);
+
+  return IsDisplayingText(browser, error_string);
+}
+
+// Checks that the local error page is being displayed, without remotely
+// retrieved navigation corrections, and with the specified error code.
+void ExpectDisplayingLocalErrorPage(Browser* browser, net::Error error_code) {
+  // Expand the help box so innerText will include text below the fold.
+  ToggleHelpBox(browser);
+
+  EXPECT_TRUE(IsDisplayingNetError(browser, error_code));
+
+  // Locally generated error pages should not have navigation corrections.
+  EXPECT_FALSE(IsDisplayingText(browser, "http://correction1/"));
+  EXPECT_FALSE(IsDisplayingText(browser, "http://correction2/"));
+
+  // Locally generated error pages should not have a populated search box.
+  bool search_box_populated = false;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      browser->tab_strip_model()->GetActiveWebContents(),
+      "var searchText = document.getElementById('search-box').value;"
+          "domAutomationController.send(searchText == 'search query');",
+      &search_box_populated));
+  EXPECT_FALSE(search_box_populated);
+}
+
+// Checks that an error page with information retrieved from the navigation
+// correction service is being displayed, with the specified specified error
+// code.
+void ExpectDisplayingNavigationCorrections(Browser* browser,
+                                           net::Error error_code) {
+  // Expand the help box so innerText will include text below the fold.
+  ToggleHelpBox(browser);
+
+  EXPECT_TRUE(IsDisplayingNetError(browser, error_code));
+
+  // Check that the mock navigation corrections are displayed.
+  EXPECT_TRUE(IsDisplayingText(browser, "http://correction1/"));
+  EXPECT_TRUE(IsDisplayingText(browser, "http://correction2/"));
+
+  // Check that the search box is populated correctly.
+  bool search_box_populated = false;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      browser->tab_strip_model()->GetActiveWebContents(),
+      "var searchText = document.getElementById('search-box').value;"
+          "domAutomationController.send(searchText == 'search query');",
+      &search_box_populated));
+  EXPECT_TRUE(search_box_populated);
+}
+
+// A protocol handler that fails a configurable number of requests, then
+// succeeds all requests after that, keeping count of failures and successes.
+class FailFirstNRequestsProtocolHandler
+    : public URLRequestJobFactory::ProtocolHandler {
+ public:
+  FailFirstNRequestsProtocolHandler(const GURL& url, int requests_to_fail)
+      : url_(url), requests_(0), failures_(0),
+        requests_to_fail_(requests_to_fail) {}
+  virtual ~FailFirstNRequestsProtocolHandler() {}
+
+  // This method deliberately violates pointer ownership rules:
+  // AddUrlProtocolHandler() takes a scoped_ptr, taking ownership of the
+  // supplied ProtocolHandler (i.e., |this|), but also having the caller retain
+  // a pointer to |this| so the caller can use the requests() and failures()
+  // accessors.
+  void AddUrlHandler() {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    scoped_ptr<URLRequestJobFactory::ProtocolHandler> scoped_handler(this);
+    net::URLRequestFilter::GetInstance()->AddUrlProtocolHandler(
+        url_,
+        scoped_handler.Pass());
+  }
+
+  // net::URLRequestJobFactory::ProtocolHandler implementation
+  virtual net::URLRequestJob* MaybeCreateJob(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE {
+    DCHECK_EQ(url_, request->url());
+    requests_++;
+    if (failures_ < requests_to_fail_) {
+      failures_++;
+      // Note: net::ERR_CONNECTION_RESET does not summon the Link Doctor; see
+      // NetErrorHelperCore::GetErrorPageURL.
+      return new URLRequestFailedJob(request,
+                                     network_delegate,
+                                     net::ERR_CONNECTION_RESET);
+    } else {
+      return new URLRequestTestJob(request, network_delegate,
+                                   URLRequestTestJob::test_headers(),
+                                   URLRequestTestJob::test_data_1(),
+                                   true);
+    }
+  }
+
+  int requests() const { return requests_; }
+  int failures() const { return failures_; }
+
+ private:
+  const GURL url_;
+  // These are mutable because MaybeCreateJob is const but we want this state
+  // for testing.
+  mutable int requests_;
+  mutable int failures_;
+  int requests_to_fail_;
+};
 
 class ErrorPageTest : public InProcessBrowserTest {
  public:
@@ -89,6 +240,14 @@ class ErrorPageTest : public InProcessBrowserTest {
                                    HISTORY_NAVIGATE_FORWARD);
   }
 
+  void GoBackAndWaitForNavigations(int num_navigations) {
+    NavigateHistory(num_navigations, HISTORY_NAVIGATE_BACK);
+  }
+
+  void GoForwardAndWaitForNavigations(int num_navigations) {
+    NavigateHistory(num_navigations, HISTORY_NAVIGATE_FORWARD);
+  }
+
   // Confirms that the javascript variable indicating whether or not we have
   // a stale copy in the cache has been set to |expected|.
   bool ProbeStaleCopyValue(bool expected) {
@@ -116,10 +275,21 @@ class ErrorPageTest : public InProcessBrowserTest {
   }
 
  protected:
+  static void EnableMocks(const GURL& search_url) {
+    chrome_browser_net::SetUrlRequestMocksEnabled(true);
+
+    // Add a mock for the search engine the error page will use.
+    base::FilePath root_http;
+    PathService::Get(chrome::DIR_TEST_DATA, &root_http);
+    content::URLRequestMockHTTPJob::AddHostnameToFileHandler(
+        search_url.host(), root_http.AppendASCII("title3.html"));
+  }
+
   virtual void SetUpOnMainThread() OVERRIDE {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        base::Bind(&chrome_browser_net::SetUrlRequestMocksEnabled, true));
+        base::Bind(&ErrorPageTest::EnableMocks,
+                   google_util::GetGoogleSearchURL(browser()->profile())));
   }
 
   // Returns a GURL that results in a DNS error.
@@ -137,6 +307,14 @@ class ErrorPageTest : public InProcessBrowserTest {
         browser()->tab_strip_model()->GetActiveWebContents(),
         base::ASCIIToUTF16(expected_title));
 
+    NavigateHistory(num_navigations, direction);
+
+    EXPECT_EQ(title_watcher.WaitAndGetTitle(),
+              base::ASCIIToUTF16(expected_title));
+  }
+
+  void NavigateHistory(int num_navigations,
+                       HistoryNavigationDirection direction) {
     content::TestNavigationObserver test_navigation_observer(
         browser()->tab_strip_model()->GetActiveWebContents(),
         num_navigations);
@@ -148,9 +326,6 @@ class ErrorPageTest : public InProcessBrowserTest {
       FAIL();
     }
     test_navigation_observer.Wait();
-
-    EXPECT_EQ(title_watcher.WaitAndGetTitle(),
-              base::ASCIIToUTF16(expected_title));
   }
 };
 
@@ -203,7 +378,9 @@ void InterceptNetworkTransactions(net::URLRequestContextGetter* getter,
 IN_PROC_BROWSER_TEST_F(ErrorPageTest, MAYBE_DNSError_Basic) {
   // The first navigation should fail, and the second one should be the error
   // page.
-  NavigateToURLAndWaitForTitle(GetDnsErrorURL(), "Mock Link Doctor", 2);
+  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
+       browser(), GetDnsErrorURL(), 2);
+  ExpectDisplayingNavigationCorrections(browser(), net::ERR_NAME_NOT_RESOLVED);
 }
 
 // See crbug.com/109669
@@ -217,7 +394,9 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, MAYBE_DNSError_Basic) {
 // additional session history entry.
 IN_PROC_BROWSER_TEST_F(ErrorPageTest, MAYBE_DNSError_GoBack1) {
   NavigateToFileURL(FILE_PATH_LITERAL("title2.html"));
-  NavigateToURLAndWaitForTitle(GetDnsErrorURL(), "Mock Link Doctor", 2);
+  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
+       browser(), GetDnsErrorURL(), 2);
+  ExpectDisplayingNavigationCorrections(browser(), net::ERR_NAME_NOT_RESOLVED);
   GoBackAndWaitForTitle("Title Of Awesomeness", 1);
 }
 
@@ -232,10 +411,15 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, MAYBE_DNSError_GoBack1) {
 IN_PROC_BROWSER_TEST_F(ErrorPageTest, DNSError_GoBack2) {
   NavigateToFileURL(FILE_PATH_LITERAL("title2.html"));
 
-  NavigateToURLAndWaitForTitle(GetDnsErrorURL(), "Mock Link Doctor", 2);
+  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
+       browser(), GetDnsErrorURL(), 2);
+  ExpectDisplayingNavigationCorrections(browser(), net::ERR_NAME_NOT_RESOLVED);
+
   NavigateToFileURL(FILE_PATH_LITERAL("title3.html"));
 
-  GoBackAndWaitForTitle("Mock Link Doctor", 2);
+  GoBackAndWaitForNavigations(2);
+  ExpectDisplayingNavigationCorrections(browser(), net::ERR_NAME_NOT_RESOLVED);
+
   GoBackAndWaitForTitle("Title Of Awesomeness", 1);
 }
 
@@ -250,13 +434,19 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, DNSError_GoBack2) {
 IN_PROC_BROWSER_TEST_F(ErrorPageTest, DNSError_GoBack2AndForward) {
   NavigateToFileURL(FILE_PATH_LITERAL("title2.html"));
 
-  NavigateToURLAndWaitForTitle(GetDnsErrorURL(), "Mock Link Doctor", 2);
+  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
+       browser(), GetDnsErrorURL(), 2);
+  ExpectDisplayingNavigationCorrections(browser(), net::ERR_NAME_NOT_RESOLVED);
+
   NavigateToFileURL(FILE_PATH_LITERAL("title3.html"));
 
-  GoBackAndWaitForTitle("Mock Link Doctor", 2);
+  GoBackAndWaitForNavigations(2);
+  ExpectDisplayingNavigationCorrections(browser(), net::ERR_NAME_NOT_RESOLVED);
+
   GoBackAndWaitForTitle("Title Of Awesomeness", 1);
 
-  GoForwardAndWaitForTitle("Mock Link Doctor", 2);
+  GoForwardAndWaitForNavigations(2);
+  ExpectDisplayingNavigationCorrections(browser(), net::ERR_NAME_NOT_RESOLVED);
 }
 
 // See crbug.com/109669
@@ -270,17 +460,67 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, DNSError_GoBack2AndForward) {
 IN_PROC_BROWSER_TEST_F(ErrorPageTest, DNSError_GoBack2Forward2) {
   NavigateToFileURL(FILE_PATH_LITERAL("title3.html"));
 
-  NavigateToURLAndWaitForTitle(GetDnsErrorURL(), "Mock Link Doctor", 2);
+  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
+       browser(), GetDnsErrorURL(), 2);
+  ExpectDisplayingNavigationCorrections(browser(), net::ERR_NAME_NOT_RESOLVED);
+
   NavigateToFileURL(FILE_PATH_LITERAL("title2.html"));
 
-  GoBackAndWaitForTitle("Mock Link Doctor", 2);
+  GoBackAndWaitForNavigations(2);
+  ExpectDisplayingNavigationCorrections(browser(), net::ERR_NAME_NOT_RESOLVED);
+
   GoBackAndWaitForTitle("Title Of More Awesomeness", 1);
 
-  GoForwardAndWaitForTitle("Mock Link Doctor", 2);
+  GoForwardAndWaitForNavigations(2);
+  ExpectDisplayingNavigationCorrections(browser(), net::ERR_NAME_NOT_RESOLVED);
+
   GoForwardAndWaitForTitle("Title Of Awesomeness", 1);
 }
 
-// Test that a DNS error occuring in an iframe.
+// See crbug.com/109669
+#if defined(USE_AURA)
+#define MAYBE_DNSError_DoSearch DNSError_DoSearch
+#else
+#define MAYBE_DNSError_DoSearch DNSError_DoSearch
+#endif
+// Test that the search button on a DNS error page works.
+IN_PROC_BROWSER_TEST_F(ErrorPageTest, MAYBE_DNSError_DoSearch) {
+  // The first navigation should fail, and the second one should be the error
+  // page.
+  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
+       browser(), GetDnsErrorURL(), 2);
+  ExpectDisplayingNavigationCorrections(browser(), net::ERR_NAME_NOT_RESOLVED);
+
+  // Do a search and make sure the browser ends up at the right page.
+  content::TestNavigationObserver nav_observer(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      1);
+  content::TitleWatcher title_watcher(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      base::ASCIIToUTF16("Title Of More Awesomeness"));
+  ASSERT_TRUE(content::ExecuteScript(
+                  browser()->tab_strip_model()->GetActiveWebContents(),
+                  "document.getElementById('search-button').click();"));
+  nav_observer.Wait();
+  EXPECT_EQ(base::ASCIIToUTF16("Title Of More Awesomeness"),
+            title_watcher.WaitAndGetTitle());
+
+  // Check the path and query string.
+  std::string url;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+                  browser()->tab_strip_model()->GetActiveWebContents(),
+                  "domAutomationController.send(window.location.href);",
+                  &url));
+  EXPECT_EQ("/search", GURL(url).path());
+  EXPECT_EQ("q=search%20query", GURL(url).query());
+
+  // Go back to the error page, to make sure the history is correct.
+  GoBackAndWaitForNavigations(2);
+  ExpectDisplayingNavigationCorrections(browser(), net::ERR_NAME_NOT_RESOLVED);
+}
+
+// Test that a DNS error occuring in an iframe does not result in showing
+// navigation corrections.
 IN_PROC_BROWSER_TEST_F(ErrorPageTest, IFrameDNSError_Basic) {
   NavigateToURLAndWaitForTitle(
       content::URLRequestMockHTTPJob::GetMockUrl(
@@ -350,8 +590,7 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, IFrameDNSError_JavaScript) {
     content::WindowedNotificationObserver load_observer(
         content::NOTIFICATION_LOAD_STOP,
         content::Source<NavigationController>(&wc->GetController()));
-    wc->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-        base::string16(), base::ASCIIToUTF16(script));
+    wc->GetMainFrame()->ExecuteJavaScript(base::ASCIIToUTF16(script));
     load_observer.Wait();
 
     // Ensure we saw the expected failure.
@@ -371,8 +610,7 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, IFrameDNSError_JavaScript) {
     content::WindowedNotificationObserver load_observer(
         content::NOTIFICATION_LOAD_STOP,
         content::Source<NavigationController>(&wc->GetController()));
-    wc->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-        base::string16(), base::ASCIIToUTF16(script));
+    wc->GetMainFrame()->ExecuteJavaScript(base::ASCIIToUTF16(script));
     load_observer.Wait();
   }
 
@@ -383,8 +621,7 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, IFrameDNSError_JavaScript) {
     content::WindowedNotificationObserver load_observer(
         content::NOTIFICATION_LOAD_STOP,
         content::Source<NavigationController>(&wc->GetController()));
-    wc->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-        base::string16(), base::ASCIIToUTF16(script));
+    wc->GetMainFrame()->ExecuteJavaScript(base::ASCIIToUTF16(script));
     load_observer.Wait();
 
     EXPECT_EQ(fail_url, fail_observer.fail_url());
@@ -392,7 +629,8 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, IFrameDNSError_JavaScript) {
   }
 }
 
-// Checks that the Link Doctor is not loaded when we receive an actual 404 page.
+// Checks that navigation corrections are not loaded when we receive an actual
+// 404 page.
 IN_PROC_BROWSER_TEST_F(ErrorPageTest, Page404) {
   NavigateToURLAndWaitForTitle(
       content::URLRequestMockHTTPJob::GetMockUrl(
@@ -417,17 +655,10 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, StaleCacheStatus) {
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&InterceptNetworkTransactions, url_request_context_getter,
-                 // Note that we can't use an error that'll invoke the link
-                 // doctor.  In normal network error conditions that would
-                 // work (because the link doctor fetch would also fail,
-                 // putting us back in the main offline path), but
-                 // SetUrlRequestMocksEnabled() has also specfied a link
-                 // doctor mock, which will be accessible because it
-                 // won't go through the network cache.
                  net::ERR_FAILED));
 
   ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
-      // With no link doctor load, there's only one navigation.
+      // With no navigation corrections to load, there's only one navigation.
       browser(), test_url, 1);
   EXPECT_TRUE(ProbeStaleCopyValue(true));
 
@@ -442,15 +673,67 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, StaleCacheStatus) {
   EXPECT_TRUE(ProbeStaleCopyValue(false));
 }
 
-// Returns Javascript code that executes plain text search for the page.
-// Pass into content::ExecuteScriptAndExtractBool as |script| parameter.
-std::string GetTextContentContainsStringScript(
-    const std::string& value_to_search) {
-  return base::StringPrintf(
-      "var textContent = document.body.textContent;"
-      "var hasError = textContent.indexOf('%s') >= 0;"
-      "domAutomationController.send(hasError);",
-      value_to_search.c_str());
+class ErrorPageAutoReloadTest : public InProcessBrowserTest {
+ public:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    command_line->AppendSwitch(switches::kEnableOfflineAutoReload);
+  }
+
+  void InstallProtocolHandler(const GURL& url, int requests_to_fail) {
+    protocol_handler_ = new FailFirstNRequestsProtocolHandler(
+        url,
+        requests_to_fail);
+    // Tests don't need to wait for this task to complete before using the
+    // filter; any requests that might be affected by it will end up in the IO
+    // thread's message loop after this posted task anyway.
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&ErrorPageAutoReloadTest::AddFilters,
+                   base::Unretained(this)));
+  }
+
+  void NavigateToURLAndWaitForTitle(const GURL& url,
+                                    const std::string& expected_title,
+                                    int num_navigations) {
+    content::TitleWatcher title_watcher(
+        browser()->tab_strip_model()->GetActiveWebContents(),
+        base::ASCIIToUTF16(expected_title));
+
+    ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
+        browser(), url, num_navigations);
+
+    EXPECT_EQ(base::ASCIIToUTF16(expected_title),
+              title_watcher.WaitAndGetTitle());
+  }
+
+  FailFirstNRequestsProtocolHandler* protocol_handler() {
+    return protocol_handler_;
+  }
+
+ private:
+  void AddFilters() {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    // Note: in theory, AddUrlHandler gives ownership of |protocol_handler_| to
+    // URLRequestFilter. As soon as anything calls
+    // URLRequestFilter::ClearHandlers(), |protocol_handler_| can become
+    // invalid.
+    protocol_handler_->AddUrlHandler();
+  }
+
+  FailFirstNRequestsProtocolHandler* protocol_handler_;
+};
+
+IN_PROC_BROWSER_TEST_F(ErrorPageAutoReloadTest, AutoReload) {
+  GURL test_url("http://error.page.auto.reload");
+  const int kRequestsToFail = 2;
+  InstallProtocolHandler(test_url, kRequestsToFail);
+  NavigateToURLAndWaitForTitle(test_url, "Test One", kRequestsToFail + 1);
+  // Note that the protocol handler updates these variables on the IO thread,
+  // but this function reads them on the main thread. The requests have to be
+  // created (on the IO thread) before NavigateToURLAndWaitForTitle returns or
+  // this becomes racey.
+  EXPECT_EQ(kRequestsToFail, protocol_handler()->failures());
+  EXPECT_EQ(kRequestsToFail + 1, protocol_handler()->requests());
 }
 
 // Protocol handler that fails all requests with net::ERR_ADDRESS_UNREACHABLE.
@@ -473,38 +756,36 @@ class AddressUnreachableProtocolHandler
   DISALLOW_COPY_AND_ASSIGN(AddressUnreachableProtocolHandler);
 };
 
-// A test fixture that returns ERR_ADDRESS_UNREACHABLE for all Link Doctor
-// requests.  ERR_NAME_NOT_RESOLVED is more typical, but need to use a different
-// error for the Link Doctor and the original page to validate the right page
-// is being displayed.
-class ErrorPageLinkDoctorFailTest : public ErrorPageTest {
+// A test fixture that returns ERR_ADDRESS_UNREACHABLE for all navigation
+// correction requests.  ERR_NAME_NOT_RESOLVED is more typical, but need to use
+// a different error for the correction service and the original page to
+// validate the right page is being displayed.
+class ErrorPageNavigationCorrectionsFailTest : public ErrorPageTest {
  public:
   // InProcessBrowserTest:
   virtual void SetUpOnMainThread() OVERRIDE {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        base::Bind(&ErrorPageLinkDoctorFailTest::AddFilters));
+        base::Bind(&ErrorPageNavigationCorrectionsFailTest::AddFilters));
   }
 
   virtual void CleanUpOnMainThread() OVERRIDE {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        base::Bind(&ErrorPageLinkDoctorFailTest::RemoveFilters));
+        base::Bind(&ErrorPageNavigationCorrectionsFailTest::RemoveFilters));
   }
 
  private:
-  // Adds a filter that causes all requests for the Link Doctor's scheme and
-  // host to fail with ERR_ADDRESS_UNREACHABLE.  Since the Link Doctor adds
-  // query strings, it's not enough to just fail exact matches.
+  // Adds a filter that causes all correction service requests to fail with
+  // ERR_ADDRESS_UNREACHABLE.
   //
   // Also adds the content::URLRequestFailedJob filter.
   static void AddFilters() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     content::URLRequestFailedJob::AddUrlHandler();
 
-    net::URLRequestFilter::GetInstance()->AddHostnameProtocolHandler(
-        google_util::LinkDoctorBaseURL().scheme(),
-        google_util::LinkDoctorBaseURL().host(),
+    net::URLRequestFilter::GetInstance()->AddUrlProtocolHandler(
+        google_util::LinkDoctorBaseURL(),
         scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>(
             new AddressUnreachableProtocolHandler()));
   }
@@ -515,29 +796,24 @@ class ErrorPageLinkDoctorFailTest : public ErrorPageTest {
   }
 };
 
-// Make sure that when the Link Doctor fails to load, the network error page is
+// Make sure that when corrections fail to load, the network error page is
 // successfully loaded.
-IN_PROC_BROWSER_TEST_F(ErrorPageLinkDoctorFailTest, LinkDoctorFail) {
+IN_PROC_BROWSER_TEST_F(ErrorPageNavigationCorrectionsFailTest,
+                       FetchCorrectionsFails) {
   ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
       browser(),
       URLRequestFailedJob::GetMockHttpUrl(net::ERR_NAME_NOT_RESOLVED),
       2);
 
-  // Verify that the expected error page is being displayed.  Do this by making
-  // sure the original error code (ERR_NAME_NOT_RESOLVED) is displayed.
-  bool result = false;
-  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
-      browser()->tab_strip_model()->GetActiveWebContents(),
-      GetTextContentContainsStringScript("ERR_NAME_NOT_RESOLVED"),
-      &result));
-  EXPECT_TRUE(result);
+  // Verify that the expected error page is being displayed.
+  ExpectDisplayingLocalErrorPage(browser(), net::ERR_NAME_NOT_RESOLVED);
 }
 
-// Checks that when an error occurs and a link doctor load fails, the stale
+// Checks that when an error occurs and a corrections fail to load, the stale
 // cache status of the page is correctly transferred.  Most logic copied
 // from StaleCacheStatus above.
-IN_PROC_BROWSER_TEST_F(ErrorPageLinkDoctorFailTest,
-                       StaleCacheStatusFailedLinkDoctor) {
+IN_PROC_BROWSER_TEST_F(ErrorPageNavigationCorrectionsFailTest,
+                       StaleCacheStatusFailedCorrections) {
   ASSERT_TRUE(test_server()->Start());
   // Load cache with entry with "nocache" set, to create stale
   // cache.
@@ -611,19 +887,15 @@ const char ErrorPageForIDNTest::kHostnameJSUnicode[] =
 
 // Make sure error page shows correct unicode for IDN.
 IN_PROC_BROWSER_TEST_F(ErrorPageForIDNTest, IDN) {
-  // ERR_UNSAFE_PORT will not trigger the link doctor.
+  // ERR_UNSAFE_PORT will not trigger navigation corrections.
   ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
       browser(),
       URLRequestFailedJob::GetMockHttpUrlForHostname(net::ERR_UNSAFE_PORT,
                                                      kHostname),
       1);
 
-  bool result = false;
-  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
-      browser()->tab_strip_model()->GetActiveWebContents(),
-      GetTextContentContainsStringScript(kHostnameJSUnicode),
-      &result));
-  EXPECT_TRUE(result);
+  ToggleHelpBox(browser());
+  EXPECT_TRUE(IsDisplayingText(browser(), kHostnameJSUnicode));
 }
 
 }  // namespace

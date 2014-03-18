@@ -5,6 +5,7 @@
 #ifndef MEDIA_FILTERS_CHUNK_DEMUXER_H_
 #define MEDIA_FILTERS_CHUNK_DEMUXER_H_
 
+#include <deque>
 #include <map>
 #include <string>
 #include <utility>
@@ -19,9 +20,105 @@
 
 namespace media {
 
-class ChunkDemuxerStream;
 class FFmpegURLProtocol;
 class SourceState;
+
+class ChunkDemuxerStream : public DemuxerStream {
+ public:
+  typedef std::deque<scoped_refptr<StreamParserBuffer> > BufferQueue;
+
+  explicit ChunkDemuxerStream(Type type);
+  virtual ~ChunkDemuxerStream();
+
+  // ChunkDemuxerStream control methods.
+  void StartReturningData();
+  void AbortReads();
+  void CompletePendingReadIfPossible();
+  void Shutdown();
+
+  // SourceBufferStream manipulation methods.
+  void Seek(base::TimeDelta time);
+  bool IsSeekWaitingForData() const;
+
+  // Add buffers to this stream.  Buffers are stored in SourceBufferStreams,
+  // which handle ordering and overlap resolution.
+  // Returns true if buffers were successfully added.
+  bool Append(const StreamParser::BufferQueue& buffers);
+
+  // Removes buffers between |start| and |end| according to the steps
+  // in the "Coded Frame Removal Algorithm" in the Media Source
+  // Extensions Spec.
+  // https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#sourcebuffer-coded-frame-removal
+  //
+  // |duration| is the current duration of the presentation. It is
+  // required by the computation outlined in the spec.
+  void Remove(base::TimeDelta start, base::TimeDelta end,
+              base::TimeDelta duration);
+
+  // Signal to the stream that duration has changed to |duration|.
+  void OnSetDuration(base::TimeDelta duration);
+
+  // Returns the range of buffered data in this stream, capped at |duration|.
+  Ranges<base::TimeDelta> GetBufferedRanges(base::TimeDelta duration) const;
+
+  // Returns the duration of the buffered data.
+  // Returns base::TimeDelta() if the stream has no buffered data.
+  base::TimeDelta GetBufferedDuration() const;
+
+  // Signal to the stream that buffers handed in through subsequent calls to
+  // Append() belong to a media segment that starts at |start_timestamp|.
+  void OnNewMediaSegment(base::TimeDelta start_timestamp);
+
+  // Called when midstream config updates occur.
+  // Returns true if the new config is accepted.
+  // Returns false if the new config should trigger an error.
+  bool UpdateAudioConfig(const AudioDecoderConfig& config, const LogCB& log_cb);
+  bool UpdateVideoConfig(const VideoDecoderConfig& config, const LogCB& log_cb);
+  void UpdateTextConfig(const TextTrackConfig& config, const LogCB& log_cb);
+
+  void MarkEndOfStream();
+  void UnmarkEndOfStream();
+
+  // DemuxerStream methods.
+  virtual void Read(const ReadCB& read_cb) OVERRIDE;
+  virtual Type type() OVERRIDE;
+  virtual void EnableBitstreamConverter() OVERRIDE;
+  virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
+  virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
+
+  // Returns the text track configuration.  It is an error to call this method
+  // if type() != TEXT.
+  TextTrackConfig text_track_config();
+
+  // Sets the memory limit, in bytes, on the SourceBufferStream.
+  void set_memory_limit_for_testing(int memory_limit) {
+    stream_->set_memory_limit_for_testing(memory_limit);
+  }
+
+ private:
+  enum State {
+    UNINITIALIZED,
+    RETURNING_DATA_FOR_READS,
+    RETURNING_ABORT_FOR_READS,
+    SHUTDOWN,
+  };
+
+  // Assigns |state_| to |state|
+  void ChangeState_Locked(State state);
+
+  void CompletePendingReadIfPossible_Locked();
+
+  // Specifies the type of the stream.
+  Type type_;
+
+  scoped_ptr<SourceBufferStream> stream_;
+
+  mutable base::Lock lock_;
+  State state_;
+  ReadCB read_cb_;
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(ChunkDemuxerStream);
+};
 
 // Demuxer implementation that allows chunks of media data to be passed
 // from JavaScript to the media stack.
@@ -98,8 +195,15 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // Gets the currently buffered ranges for the specified ID.
   Ranges<base::TimeDelta> GetBufferedRanges(const std::string& id) const;
 
-  // Appends media data to the source buffer associated with |id|.
-  void AppendData(const std::string& id, const uint8* data, size_t length);
+  // Appends media data to the source buffer associated with |id|, applying
+  // and possibly updating |*timestamp_offset| during coded frame processing.
+  // |append_window_start| and |append_window_end| correspond to the MSE spec's
+  // similarly named source buffer attributes that are used in coded frame
+  // processing.
+  void AppendData(const std::string& id, const uint8* data, size_t length,
+                  base::TimeDelta append_window_start,
+                  base::TimeDelta append_window_end,
+                  base::TimeDelta* timestamp_offset);
 
   // Aborts parsing the current segment and reset the parser to a state where
   // it can accept a new segment.
@@ -118,33 +222,21 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // |duration|.
   void SetDuration(double duration);
 
-  // Sets a time |offset| to be applied to subsequent buffers appended to the
-  // source buffer associated with |id|. Returns true if the offset is set
-  // properly, false if the offset cannot be applied because we're in the
-  // middle of parsing a media segment.
-  bool SetTimestampOffset(const std::string& id, base::TimeDelta offset);
+  // Returns true if the source buffer associated with |id| is currently parsing
+  // a media segment, or false otherwise.
+  bool IsParsingMediaSegment(const std::string& id);
 
   // Set the append mode to be applied to subsequent buffers appended to the
   // source buffer associated with |id|. If |sequence_mode| is true, caller
   // is requesting "sequence" mode. Otherwise, caller is requesting "segments"
-  // mode. Returns true if the mode update was allowed. Returns false if
-  // the mode cannot be updated because we're in the middle of parsing a media
-  // segment.
-  // In "sequence" mode, appended media will be treated as adjacent in time.
-  // In "segments" mode, timestamps in appended media determine coded frame
-  // placement.
-  bool SetSequenceMode(const std::string& id, bool sequence_mode);
+  // mode.
+  void SetSequenceMode(const std::string& id, bool sequence_mode);
 
   // Called to signal changes in the "end of stream"
   // state. UnmarkEndOfStream() must not be called if a matching
   // MarkEndOfStream() has not come before it.
   void MarkEndOfStream(PipelineStatus status);
   void UnmarkEndOfStream();
-
-  // Set the append window start and end values for the source buffer
-  // associated with |id|.
-  void SetAppendWindowStart(const std::string& id, base::TimeDelta start);
-  void SetAppendWindowEnd(const std::string& id, base::TimeDelta end);
 
   void Shutdown();
 
@@ -193,10 +285,6 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
                       const TextTrackConfig& config);
   void OnNewMediaSegment(const std::string& source_id,
                          base::TimeDelta start_timestamp);
-
-  // Applies |time_offset| to the timestamps of |buffers|.
-  void AdjustBufferTimestamps(const StreamParser::BufferQueue& buffers,
-                              base::TimeDelta timestamp_offset);
 
   // Returns true if |source_id| is valid, false otherwise.
   bool IsValidId(const std::string& source_id) const;

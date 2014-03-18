@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -21,9 +21,9 @@ class Profile;
 
 namespace invalidation {
 
+class FakeInvalidationService;
 class InvalidationService;
 class P2PInvalidationService;
-class FakeInvalidationService;
 
 // A BrowserContextKeyedServiceFactory to construct InvalidationServices.  The
 // implementation of the InvalidationService may be completely different on
@@ -36,14 +36,9 @@ class InvalidationServiceFactory : public BrowserContextKeyedServiceFactory {
 
   static InvalidationServiceFactory* GetInstance();
 
-  // A helper function to set this factory to return FakeInvalidationServices
-  // instead of the default InvalidationService objects.
-  void SetBuildOnlyFakeInvalidatorsForTest(bool test_mode_enabled);
-
-  // These helper functions to set the factory to build a test-only type of
-  // invalidator and return the instance immeidately.
-  P2PInvalidationService* BuildAndUseP2PInvalidationServiceForTest(
-      content::BrowserContext* context);
+  // Switches service creation to go through |testing_factory| for all browser
+  // contexts.
+  void RegisterTestingFactory(TestingFactoryFunction testing_factory);
 
  private:
   friend struct DefaultSingletonTraits<InvalidationServiceFactory>;
@@ -52,13 +47,12 @@ class InvalidationServiceFactory : public BrowserContextKeyedServiceFactory {
   virtual ~InvalidationServiceFactory();
 
   // BrowserContextKeyedServiceFactory:
-  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
+  virtual KeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const OVERRIDE;
   virtual void RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
 
-  // If true, this factory will return only FakeInvalidationService instances.
-  bool build_fake_invalidators_;
+  TestingFactoryFunction testing_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(InvalidationServiceFactory);
 };

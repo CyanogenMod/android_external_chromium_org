@@ -7,22 +7,22 @@
 #include "ash/shell_window_ids.h"
 #include "ash/wm/window_util.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/layer_tree_owner.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
-#include "ui/views/corewm/shadow_types.h"
-#include "ui/views/corewm/window_util.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/shadow_types.h"
+#include "ui/wm/core/window_util.h"
 
 namespace ash {
 namespace internal {
 
 DragWindowController::DragWindowController(aura::Window* window)
     : window_(window),
-      drag_widget_(NULL),
-      layer_(NULL) {
+      drag_widget_(NULL) {
 }
 
 DragWindowController::~DragWindowController() {
@@ -51,10 +51,7 @@ void DragWindowController::Hide() {
     drag_widget_->Close();
     drag_widget_ = NULL;
   }
-  if (layer_) {
-    views::corewm::DeepDeleteLayers(layer_);
-    layer_ = NULL;
-  }
+  layer_owner_.reset();
 }
 
 void DragWindowController::SetOpacity(float opacity) {
@@ -79,15 +76,15 @@ void DragWindowController::CreateDragWidget(const gfx::Rect& bounds) {
   drag_widget_->GetNativeWindow()->set_id(kShellWindowId_PhantomWindow);
   // Show shadow for the dragging window.
   SetShadowType(drag_widget_->GetNativeWindow(),
-                views::corewm::SHADOW_TYPE_RECTANGULAR);
+                ::wm::SHADOW_TYPE_RECTANGULAR);
   SetBoundsInternal(bounds);
   drag_widget_->StackAbove(window_);
 
   RecreateWindowLayers();
   aura::Window* window = drag_widget_->GetNativeWindow();
-  layer_->SetVisible(true);
-  window->layer()->Add(layer_);
-  window->layer()->StackAtTop(layer_);
+  layer_owner_->root()->SetVisible(true);
+  window->layer()->Add(layer_owner_->root());
+  window->layer()->StackAtTop(layer_owner_->root());
 
   // Show the widget after all the setups.
   drag_widget_->Show();
@@ -110,16 +107,16 @@ void DragWindowController::SetBoundsInternal(const gfx::Rect& bounds) {
 }
 
 void DragWindowController::RecreateWindowLayers() {
-  DCHECK(!layer_);
-  layer_ = views::corewm::RecreateWindowLayers(window_, true);
-  layer_->set_delegate(window_->layer()->delegate());
+  DCHECK(!layer_owner_.get());
+  layer_owner_ = ::wm::RecreateLayers(window_);
+  layer_owner_->root()->set_delegate(window_->layer()->delegate());
   // Place the layer at (0, 0) of the DragWindowController's window.
-  gfx::Rect layer_bounds = layer_->bounds();
+  gfx::Rect layer_bounds = layer_owner_->root()->bounds();
   layer_bounds.set_origin(gfx::Point(0, 0));
-  layer_->SetBounds(layer_bounds);
-  layer_->SetVisible(false);
+  layer_owner_->root()->SetBounds(layer_bounds);
+  layer_owner_->root()->SetVisible(false);
   // Detach it from the current container.
-  layer_->parent()->Remove(layer_);
+  layer_owner_->root()->parent()->Remove(layer_owner_->root());
 }
 
 }  // namespace internal

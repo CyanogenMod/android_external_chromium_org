@@ -8,8 +8,8 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/test/base/testing_profile.h"
 #include "components/autofill/core/browser/autofill_manager.h"
+#include "components/autofill/core/browser/popup_item_ids.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
 #include "components/autofill/core/browser/test_autofill_external_delegate.h"
 #include "components/autofill/core/browser/test_autofill_manager_delegate.h"
@@ -18,11 +18,9 @@
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/web/WebAutofillClient.h"
 #include "ui/gfx/rect.h"
 
 using base::ASCIIToUTF16;
-using blink::WebAutofillClient;
 using testing::_;
 
 namespace autofill {
@@ -39,13 +37,13 @@ class MockAutofillDriver : public TestAutofillDriver {
  public:
   MockAutofillDriver() {}
   // Mock methods to enable testability.
-  MOCK_METHOD1(SetRendererActionOnFormDataReception,
-               void(RendererFormDataAction action));
   MOCK_METHOD1(RendererShouldAcceptDataListSuggestion,
                void(const base::string16&));
   MOCK_METHOD0(RendererShouldClearFilledForm, void());
   MOCK_METHOD0(RendererShouldClearPreviewedForm, void());
-  MOCK_METHOD1(RendererShouldSetNodeText, void(const base::string16&));
+  MOCK_METHOD1(RendererShouldFillFieldWithValue, void(const base::string16&));
+  MOCK_METHOD1(RendererShouldPreviewFieldWithValue,
+               void(const base::string16&));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAutofillDriver);
@@ -85,8 +83,9 @@ class MockAutofillManager : public AutofillManager {
   }
   virtual ~MockAutofillManager() {}
 
-  MOCK_METHOD4(OnFillAutofillFormData,
-               void(int query_id,
+  MOCK_METHOD5(FillOrPreviewForm,
+               void(AutofillDriver::RendererFormDataAction action,
+                    int query_id,
                     const FormData& form,
                     const FormFieldData& field,
                     int unique_id));
@@ -141,15 +140,18 @@ TEST_F(AutofillExternalDelegateUnitTest, TestExternalDelegateVirtualCalls) {
   IssueOnQuery(kQueryId);
 
   // The enums must be cast to ints to prevent compile errors on linux_rel.
-  EXPECT_CALL(manager_delegate_,
-              ShowAutofillPopup(
-                  _, _, _, _, _,
-                  testing::ElementsAre(
-                      kAutofillProfileId,
-                      static_cast<int>(WebAutofillClient::MenuItemIDSeparator),
-                      static_cast<int>(
-                          WebAutofillClient::MenuItemIDAutofillOptions)),
-                  _));
+  EXPECT_CALL(
+      manager_delegate_,
+      ShowAutofillPopup(_,
+                        _,
+                        _,
+                        _,
+                        _,
+                        testing::ElementsAre(
+                            kAutofillProfileId,
+                            static_cast<int>(POPUP_ITEM_ID_SEPARATOR),
+                            static_cast<int>(POPUP_ITEM_ID_AUTOFILL_OPTIONS)),
+                        _));
 
   // This should call ShowAutofillPopup.
   std::vector<base::string16> autofill_item;
@@ -162,12 +164,9 @@ TEST_F(AutofillExternalDelegateUnitTest, TestExternalDelegateVirtualCalls) {
                                             autofill_item,
                                             autofill_ids);
 
-  // Called by DidAutofillSuggestions, add expectation to remove warning.
-  EXPECT_CALL(*autofill_manager_, OnFillAutofillFormData(_, _, _, _));
-
-  EXPECT_CALL(*autofill_driver_, SetRendererActionOnFormDataReception(
-      AutofillDriver::FORM_DATA_ACTION_FILL));
-
+  EXPECT_CALL(*autofill_manager_,
+              FillOrPreviewForm(
+                  AutofillDriver::FORM_DATA_ACTION_FILL, _, _, _, _));
   EXPECT_CALL(manager_delegate_, HideAutofillPopup());
 
   // This should trigger a call to hide the popup since we've selected an
@@ -186,18 +185,20 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateDataList) {
                                                data_list_items);
 
   // The enums must be cast to ints to prevent compile errors on linux_rel.
-  EXPECT_CALL(manager_delegate_,
-              ShowAutofillPopup(
-                  _, _, _, _, _,
-                  testing::ElementsAre(
-                      static_cast<int>(
-                          WebAutofillClient::MenuItemIDDataListEntry),
-                      static_cast<int>(WebAutofillClient::MenuItemIDSeparator),
-                      kAutofillProfileId,
-                      static_cast<int>(WebAutofillClient::MenuItemIDSeparator),
-                      static_cast<int>(
-                          WebAutofillClient::MenuItemIDAutofillOptions)),
-                  _));
+  EXPECT_CALL(
+      manager_delegate_,
+      ShowAutofillPopup(_,
+                        _,
+                        _,
+                        _,
+                        _,
+                        testing::ElementsAre(
+                            static_cast<int>(POPUP_ITEM_ID_DATALIST_ENTRY),
+                            static_cast<int>(POPUP_ITEM_ID_SEPARATOR),
+                            kAutofillProfileId,
+                            static_cast<int>(POPUP_ITEM_ID_SEPARATOR),
+                            static_cast<int>(POPUP_ITEM_ID_AUTOFILL_OPTIONS)),
+                        _));
 
   // This should call ShowAutofillPopup.
   std::vector<base::string16> autofill_item;
@@ -213,13 +214,16 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateDataList) {
   // Try calling OnSuggestionsReturned with no Autofill values and ensure
   // the datalist items are still shown.
   // The enum must be cast to an int to prevent compile errors on linux_rel.
-  EXPECT_CALL(manager_delegate_,
-              ShowAutofillPopup(
-                  _, _, _, _, _,
-                  testing::ElementsAre(
-                      static_cast<int>(
-                          WebAutofillClient::MenuItemIDDataListEntry)),
-                  _));
+  EXPECT_CALL(
+      manager_delegate_,
+      ShowAutofillPopup(
+          _,
+          _,
+          _,
+          _,
+          _,
+          testing::ElementsAre(static_cast<int>(POPUP_ITEM_ID_DATALIST_ENTRY)),
+          _));
 
   autofill_item = std::vector<base::string16>();
   autofill_ids = std::vector<int>();
@@ -246,18 +250,20 @@ TEST_F(AutofillExternalDelegateUnitTest, UpdateDataListWhileShowingPopup) {
                                                data_list_items);
 
   // The enums must be cast to ints to prevent compile errors on linux_rel.
-  EXPECT_CALL(manager_delegate_,
-              ShowAutofillPopup(
-                  _, _, _, _, _,
-                  testing::ElementsAre(
-                      static_cast<int>(
-                          WebAutofillClient::MenuItemIDDataListEntry),
-                      static_cast<int>(WebAutofillClient::MenuItemIDSeparator),
-                      kAutofillProfileId,
-                      static_cast<int>(WebAutofillClient::MenuItemIDSeparator),
-                      static_cast<int>(
-                          WebAutofillClient::MenuItemIDAutofillOptions)),
-                  _));
+  EXPECT_CALL(
+      manager_delegate_,
+      ShowAutofillPopup(_,
+                        _,
+                        _,
+                        _,
+                        _,
+                        testing::ElementsAre(
+                            static_cast<int>(POPUP_ITEM_ID_DATALIST_ENTRY),
+                            static_cast<int>(POPUP_ITEM_ID_SEPARATOR),
+                            kAutofillProfileId,
+                            static_cast<int>(POPUP_ITEM_ID_SEPARATOR),
+                            static_cast<int>(POPUP_ITEM_ID_AUTOFILL_OPTIONS)),
+                        _));
 
   // Ensure the popup is displayed.
   std::vector<base::string16> autofill_item;
@@ -293,19 +299,22 @@ TEST_F(AutofillExternalDelegateUnitTest, AutofillWarnings) {
   IssueOnQuery(kQueryId);
 
   // The enums must be cast to ints to prevent compile errors on linux_rel.
-  EXPECT_CALL(manager_delegate_,
-              ShowAutofillPopup(
-                  _, _, _, _, _,
-                  testing::ElementsAre(
-                      static_cast<int>(
-                          WebAutofillClient::MenuItemIDWarningMessage)),
-                  _));
+  EXPECT_CALL(
+      manager_delegate_,
+      ShowAutofillPopup(
+          _,
+          _,
+          _,
+          _,
+          _,
+          testing::ElementsAre(static_cast<int>(POPUP_ITEM_ID_WARNING_MESSAGE)),
+          _));
 
   // This should call ShowAutofillPopup.
   std::vector<base::string16> autofill_item;
   autofill_item.push_back(base::string16());
   std::vector<int> autofill_ids;
-  autofill_ids.push_back(WebAutofillClient::MenuItemIDWarningMessage);
+  autofill_ids.push_back(POPUP_ITEM_ID_WARNING_MESSAGE);
   external_delegate_->OnSuggestionsReturned(kQueryId,
                                             autofill_item,
                                             autofill_item,
@@ -333,7 +342,7 @@ TEST_F(AutofillExternalDelegateUnitTest, NoAutofillWarningsWithoutSuggestions) {
   std::vector<base::string16> autofill_item;
   autofill_item.push_back(base::string16());
   std::vector<int> autofill_ids;
-  autofill_ids.push_back(WebAutofillClient::MenuItemIDAutocompleteEntry);
+  autofill_ids.push_back(POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY);
   external_delegate_->OnSuggestionsReturned(kQueryId,
                                             autofill_item,
                                             autofill_item,
@@ -345,36 +354,37 @@ TEST_F(AutofillExternalDelegateUnitTest, NoAutofillWarningsWithoutSuggestions) {
 // negative unique id.
 TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateInvalidUniqueId) {
   // Ensure it doesn't try to preview the negative id.
-  EXPECT_CALL(*autofill_manager_, OnFillAutofillFormData(_, _, _, _)).Times(0);
-  EXPECT_CALL(*autofill_driver_,
-              SetRendererActionOnFormDataReception(_)).Times(0);
+  EXPECT_CALL(*autofill_manager_, FillOrPreviewForm(_, _, _, _, _)).Times(0);
   EXPECT_CALL(*autofill_driver_, RendererShouldClearPreviewedForm()).Times(1);
-  external_delegate_->DidSelectSuggestion(-1);
+  external_delegate_->DidSelectSuggestion(base::string16(), -1);
 
   // Ensure it doesn't try to fill the form in with the negative id.
   EXPECT_CALL(manager_delegate_, HideAutofillPopup());
-  EXPECT_CALL(*autofill_manager_, OnFillAutofillFormData(_, _, _, _)).Times(0);
-  EXPECT_CALL(*autofill_driver_,
-              SetRendererActionOnFormDataReception(_)).Times(0);
+  EXPECT_CALL(*autofill_manager_, FillOrPreviewForm(_, _, _, _, _)).Times(0);
   external_delegate_->DidAcceptSuggestion(base::string16(), -1);
 }
 
 // Test that the ClearPreview call is only sent if the form was being previewed
 // (i.e. it isn't autofilling a password).
 TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateClearPreviewedForm) {
-  // Called by DidSelectSuggestion, add expectation to remove warning.
-  EXPECT_CALL(*autofill_manager_, OnFillAutofillFormData(_, _, _, _));
-
   // Ensure selecting a new password entries or Autofill entries will
   // cause any previews to get cleared.
   EXPECT_CALL(*autofill_driver_, RendererShouldClearPreviewedForm()).Times(1);
-  external_delegate_->DidSelectSuggestion(
-      WebAutofillClient::MenuItemIDPasswordEntry);
-
+  external_delegate_->DidSelectSuggestion(ASCIIToUTF16("baz foo"),
+                                          POPUP_ITEM_ID_PASSWORD_ENTRY);
   EXPECT_CALL(*autofill_driver_, RendererShouldClearPreviewedForm()).Times(1);
-  EXPECT_CALL(*autofill_driver_, SetRendererActionOnFormDataReception(
-      AutofillDriver::FORM_DATA_ACTION_PREVIEW));
-  external_delegate_->DidSelectSuggestion(1);
+  EXPECT_CALL(*autofill_manager_,
+              FillOrPreviewForm(
+                  AutofillDriver::FORM_DATA_ACTION_PREVIEW, _, _, _, _));
+  external_delegate_->DidSelectSuggestion(ASCIIToUTF16("baz foo"), 1);
+
+  // Ensure selecting an autocomplete entry will cause any previews to
+  // get cleared.
+  EXPECT_CALL(*autofill_driver_, RendererShouldClearPreviewedForm()).Times(1);
+  EXPECT_CALL(*autofill_driver_, RendererShouldPreviewFieldWithValue(
+                                     ASCIIToUTF16("baz foo")));
+  external_delegate_->DidSelectSuggestion(ASCIIToUTF16("baz foo"),
+                                          POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY);
 }
 
 // Test that the popup is hidden once we are done editing the autofill field.
@@ -409,13 +419,16 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegatePasswordSuggestions) {
   external_delegate_->AddPasswordFormMapping(field, password_form_fill_data);
 
   // The enums must be cast to ints to prevent compile errors on linux_rel.
-  EXPECT_CALL(manager_delegate_,
-              ShowAutofillPopup(
-                  _, _, _, _, _,
-                  testing::ElementsAre(
-                      static_cast<int>(
-                           WebAutofillClient::MenuItemIDPasswordEntry)),
-                  _));
+  EXPECT_CALL(
+      manager_delegate_,
+      ShowAutofillPopup(
+          _,
+          _,
+          _,
+          _,
+          _,
+          testing::ElementsAre(static_cast<int>(POPUP_ITEM_ID_PASSWORD_ENTRY)),
+          _));
 
   external_delegate_->OnShowPasswordSuggestions(suggestions,
                                                 realms,
@@ -426,9 +439,8 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegatePasswordSuggestions) {
 
   // This should trigger a call to hide the popup since
   // we've selected an option.
-  external_delegate_->DidAcceptSuggestion(
-      suggestions[0],
-      WebAutofillClient::MenuItemIDPasswordEntry);
+  external_delegate_->DidAcceptSuggestion(suggestions[0],
+                                          POPUP_ITEM_ID_PASSWORD_ENTRY);
 }
 
 // Test that the driver is directed to accept the data list after being notified
@@ -438,9 +450,8 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateAcceptSuggestion) {
   base::string16 dummy_string(ASCIIToUTF16("baz qux"));
   EXPECT_CALL(*autofill_driver_,
               RendererShouldAcceptDataListSuggestion(dummy_string));
-  external_delegate_->DidAcceptSuggestion(
-      dummy_string,
-      WebAutofillClient::MenuItemIDDataListEntry);
+  external_delegate_->DidAcceptSuggestion(dummy_string,
+                                          POPUP_ITEM_ID_DATALIST_ENTRY);
 }
 
 // Test that the driver is directed to clear the form after being notified that
@@ -449,9 +460,8 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateClearForm) {
   EXPECT_CALL(manager_delegate_, HideAutofillPopup());
   EXPECT_CALL(*autofill_driver_, RendererShouldClearFilledForm());
 
-  external_delegate_->DidAcceptSuggestion(
-      base::string16(),
-      WebAutofillClient::MenuItemIDClearForm);
+  external_delegate_->DidAcceptSuggestion(base::string16(),
+                                          POPUP_ITEM_ID_CLEAR_FORM);
 }
 
 TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateHideWarning) {
@@ -467,7 +477,7 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateHideWarning) {
   std::vector<base::string16> autofill_items;
   autofill_items.push_back(base::string16());
   std::vector<int> autofill_ids;
-  autofill_ids.push_back(WebAutofillClient::MenuItemIDAutocompleteEntry);
+  autofill_ids.push_back(POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY);
 
   // Ensure the popup tries to hide itself, since it is not allowed to show
   // anything.
@@ -480,14 +490,13 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateHideWarning) {
                                             autofill_ids);
 }
 
-TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateSetNodeText) {
+TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateFillFieldWithValue) {
   EXPECT_CALL(manager_delegate_, HideAutofillPopup());
   base::string16 dummy_string(ASCIIToUTF16("baz foo"));
   EXPECT_CALL(*autofill_driver_,
-              RendererShouldSetNodeText(dummy_string));
-  external_delegate_->DidAcceptSuggestion(
-      dummy_string,
-      WebAutofillClient::MenuItemIDAutocompleteEntry);
+              RendererShouldFillFieldWithValue(dummy_string));
+  external_delegate_->DidAcceptSuggestion(dummy_string,
+                                          POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY);
 }
 
 }  // namespace autofill

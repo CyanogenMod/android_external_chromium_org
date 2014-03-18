@@ -15,7 +15,9 @@
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/gpu_export.h"
 
+namespace base {
 class CommandLine;
+}
 
 namespace gpu {
 namespace gles2 {
@@ -83,7 +85,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
   FeatureInfo();
 
   // Constructor with workarounds taken from |command_line|
-  FeatureInfo(const CommandLine& command_line);
+  FeatureInfo(const base::CommandLine& command_line);
 
   // Initializes the feature information. Needs a current GL context.
   bool Initialize();
@@ -112,7 +114,6 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
  private:
   friend class base::RefCounted<FeatureInfo>;
   friend class BufferManagerClientSideArraysTest;
-  friend class GLES2DecoderTestBase;
 
   typedef base::hash_map<GLenum, ValueValidator<GLenum> > ValidatorMap;
   ValidatorMap texture_format_validators_;
@@ -120,7 +121,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
   ~FeatureInfo();
 
   void AddExtensionString(const std::string& str);
-  void InitializeBasicState(const CommandLine& command_line);
+  void InitializeBasicState(const base::CommandLine& command_line);
   void InitializeFeatures();
 
   Validators validators_;

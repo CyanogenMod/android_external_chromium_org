@@ -104,6 +104,7 @@
 #include "chrome/browser/chromeos/extensions/wallpaper_manager_util.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/wallpaper_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/system/timezone_util.h"
@@ -248,6 +249,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "hotwordConfirmEnable", IDS_HOTWORD_CONFIRM_BUBBLE_ENABLE },
     { "hotwordConfirmDisable", IDS_HOTWORD_CONFIRM_BUBBLE_DISABLE },
     { "hotwordConfirmMessage", IDS_HOTWORD_SEARCH_PREF_DESCRIPTION },
+    { "hotwordRetryDownloadButton", IDS_HOTWORD_RETRY_DOWNLOAD_BUTTON },
     { "importData", IDS_OPTIONS_IMPORT_DATA_BUTTON },
     { "improveBrowsingExperience", IDS_OPTIONS_IMPROVE_BROWSING_EXPERIENCE },
     { "languageAndSpellCheckSettingsButton",
@@ -366,7 +368,6 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       IDS_OPTIONS_SETTINGS_ACCESSIBILITY_AUTOCLICK_DELAY_VERY_LONG },
     { "enableContentProtectionAttestation",
       IDS_OPTIONS_ENABLE_CONTENT_PROTECTION_ATTESTATION },
-    { "enableHotwordAppList", IDS_OPTIONS_ENABLE_HOTWORD_APP_LIST },
     { "factoryResetHeading", IDS_OPTIONS_FACTORY_RESET_HEADING },
     { "factoryResetTitle", IDS_OPTIONS_FACTORY_RESET },
     { "factoryResetRestart", IDS_OPTIONS_FACTORY_RESET_BUTTON },
@@ -533,12 +534,6 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   magnifier_list->Append(option_partial.release());
 
   values->Set("magnifierList", magnifier_list.release());
-
-  scoped_ptr<base::FundamentalValue> should_show_app_list_hotword(
-      new base::FundamentalValue(
-          HotwordService::DoesHotwordSupportLanguage(profile)));
-  values->Set(
-      "shouldShowAppListHotword", should_show_app_list_hotword.release());
 #endif
 
 #if defined(OS_MACOSX)
@@ -709,6 +704,11 @@ void BrowserOptionsHandler::RegisterMessages() {
       "requestHotwordAvailable",
       base::Bind(&BrowserOptionsHandler::HandleRequestHotwordAvailable,
                  base::Unretained(this)));
+
+  web_ui()->RegisterMessageCallback(
+      "requestHotwordSetupRetry",
+      base::Bind(&BrowserOptionsHandler::HandleRequestHotwordSetupRetry,
+                 base::Unretained(this)));
 }
 
 void BrowserOptionsHandler::Uninitialize() {
@@ -814,6 +814,10 @@ void BrowserOptionsHandler::InitializeHandler() {
         policy::key::kUserAvatarImage,
         base::Bind(&BrowserOptionsHandler::OnUserImagePolicyChanged,
                    base::Unretained(this)));
+    policy_registrar_->Observe(
+        policy::key::kWallpaperImage,
+        base::Bind(&BrowserOptionsHandler::OnWallpaperPolicyChanged,
+                   base::Unretained(this)));
   }
 #else  // !defined(OS_CHROMEOS)
   profile_pref_registrar_.Add(
@@ -869,6 +873,10 @@ void BrowserOptionsHandler::InitializePage() {
               policy::PolicyNamespace(policy::POLICY_DOMAIN_CHROME,
                                       std::string()))
              .Get(policy::key::kUserAvatarImage));
+
+  OnWallpaperManagedChanged(
+      chromeos::WallpaperManager::Get()->IsPolicyControlled(
+          chromeos::UserManager::Get()->GetActiveUser()->email()));
 #endif
 }
 
@@ -1256,6 +1264,11 @@ void BrowserOptionsHandler::OnAccountPictureManagedChanged(bool managed) {
   web_ui()->CallJavascriptFunction("BrowserOptions.setAccountPictureManaged",
                                    base::FundamentalValue(managed));
 }
+
+void BrowserOptionsHandler::OnWallpaperManagedChanged(bool managed) {
+  web_ui()->CallJavascriptFunction("BrowserOptions.setWallpaperManaged",
+                                   base::FundamentalValue(managed));
+}
 #endif
 
 scoped_ptr<base::DictionaryValue>
@@ -1288,7 +1301,7 @@ BrowserOptionsHandler::GetSyncStateDictionary() {
   DCHECK(signin);
   sync_status->SetBoolean("signoutAllowed", !signout_prohibited);
   sync_status->SetBoolean("signinAllowed", signin->IsSigninAllowed());
-  sync_status->SetBoolean("syncSystemEnabled", !!service);
+  sync_status->SetBoolean("syncSystemEnabled", (service != NULL));
   sync_status->SetBoolean("setupCompleted",
                           service && service->HasSyncSetupCompleted());
   sync_status->SetBoolean("setupInProgress",
@@ -1357,10 +1370,19 @@ void BrowserOptionsHandler::MouseExists(bool exists) {
 void BrowserOptionsHandler::OnUserImagePolicyChanged(
     const base::Value* previous_policy,
     const base::Value* current_policy) {
-  const bool had_policy = !!previous_policy;
-  const bool has_policy = !!current_policy;
+  const bool had_policy = previous_policy;
+  const bool has_policy = current_policy;
   if (had_policy != has_policy)
     OnAccountPictureManagedChanged(has_policy);
+}
+
+void BrowserOptionsHandler::OnWallpaperPolicyChanged(
+    const base::Value* previous_policy,
+    const base::Value* current_policy) {
+  const bool had_policy = previous_policy;
+  const bool has_policy = current_policy;
+  if (had_policy != has_policy)
+    OnWallpaperManagedChanged(has_policy);
 }
 
 #endif  // defined(OS_CHROMEOS)
@@ -1545,10 +1567,23 @@ void BrowserOptionsHandler::HandleRequestHotwordAvailable(
     const base::ListValue* args) {
   Profile* profile = Profile::FromWebUI(web_ui());
   std::string group = base::FieldTrialList::FindFullName("VoiceTrigger");
-  if (group != "" && group != "Disabled" &&
-      HotwordServiceFactory::IsServiceAvailable(profile)) {
-    web_ui()->CallJavascriptFunction("BrowserOptions.showHotwordSection");
+  if (group != "" && group != "Disabled") {
+    if (HotwordServiceFactory::IsServiceAvailable(profile)) {
+      web_ui()->CallJavascriptFunction("BrowserOptions.showHotwordSection");
+    } else if (HotwordServiceFactory::IsHotwordAllowed(profile)) {
+      base::StringValue error_message(l10n_util::GetStringUTF16(
+          IDS_HOTWORD_GENERIC_ERROR_MESSAGE));
+      web_ui()->CallJavascriptFunction("BrowserOptions.showHotwordSection",
+                                       error_message);
+    }
   }
+}
+
+void BrowserOptionsHandler::HandleRequestHotwordSetupRetry(
+    const base::ListValue* args) {
+  // TODO(joshtrask): invoke BrowserOptions.showHotwordSection again, passing
+  // the new error message if any.
+  HotwordServiceFactory::RetryHotwordExtension(Profile::FromWebUI(web_ui()));
 }
 
 #if defined(OS_CHROMEOS)

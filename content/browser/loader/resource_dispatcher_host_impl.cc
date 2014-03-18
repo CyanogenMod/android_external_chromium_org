@@ -47,12 +47,14 @@
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/resource_context_impl.h"
+#include "content/browser/service_worker/service_worker_request_handler.h"
 #include "content/browser/streams/stream.h"
 #include "content/browser/streams/stream_context.h"
 #include "content/browser/streams/stream_registry.h"
 #include "content/browser/worker_host/worker_service_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/resource_messages.h"
+#include "content/common/resource_request_body.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -94,13 +96,11 @@
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/common/appcache/appcache_interfaces.h"
 #include "webkit/common/blob/shareable_file_reference.h"
-#include "webkit/common/resource_request_body.h"
 
 using base::Time;
 using base::TimeDelta;
 using base::TimeTicks;
 using webkit_blob::ShareableFileReference;
-using webkit_glue::ResourceRequestBody;
 
 // ----------------------------------------------------------------------------
 
@@ -539,7 +539,7 @@ DownloadInterruptReason ResourceDispatcherHostImpl::BeginDownload(
       CreateRequestInfo(child_id, route_id, true, context);
   extra_info->AssociateWithRequest(request.get());  // Request takes ownership.
 
-  if (request->url().SchemeIs(chrome::kBlobScheme)) {
+  if (request->url().SchemeIs(kBlobScheme)) {
     ChromeBlobStorageContext* blob_context =
         GetChromeBlobStorageContextForResourceContext(context);
     webkit_blob::BlobProtocolHandler::SetRequestedBlobDataHandle(
@@ -610,6 +610,9 @@ ResourceDispatcherHostImpl::MaybeInterceptAsStream(net::URLRequest* request,
                                                    ResourceResponse* response) {
   ResourceRequestInfoImpl* info = ResourceRequestInfoImpl::ForRequest(request);
   const std::string& mime_type = response->head.mime_type;
+  std::string response_headers;
+  if (response->head.headers)
+    response->head.headers->GetNormalizedHeaders(&response_headers);
 
   GURL origin;
   std::string target_id;
@@ -636,7 +639,8 @@ ResourceDispatcherHostImpl::MaybeInterceptAsStream(net::URLRequest* request,
       info->GetChildID(),
       info->GetRouteID(),
       target_id,
-      handler->stream()->CreateHandle(request->url(), mime_type),
+      handler->stream()->CreateHandle(request->url(), mime_type,
+                                      response_headers),
       request->GetExpectedContentSize());
   return handler.PassAs<ResourceHandler>();
 }
@@ -859,6 +863,10 @@ bool ResourceDispatcherHostImpl::OnMessageReceived(
         handled = delegate->OnMessageReceived(message, message_was_ok);
       }
     }
+
+    // As the unhandled resource message effectively has no consumer, mark it as
+    // handled to prevent needless propagation through the filter pipeline.
+    handled = true;
   }
 
   filter_ = NULL;
@@ -913,8 +921,8 @@ void ResourceDispatcherHostImpl::UpdateRequestForTransfer(
   // ResourceRequestInfo rather than caching it locally.  This lets us update
   // the info object when a transfer occurs.
   info->UpdateForTransfer(child_id, route_id, request_data.origin_pid,
-                          request_id, request_data.frame_id,
-                          request_data.parent_frame_id, filter_->GetWeakPtr());
+                          request_id, request_data.parent_render_frame_id,
+                          filter_->GetWeakPtr());
 
   // Update maps that used the old IDs, if necessary.  Some transfers in tests
   // do not actually use a different ID, so not all maps need to be updated.
@@ -984,7 +992,6 @@ void ResourceDispatcherHostImpl::BeginRequest(
 
   // If the request that's coming in is being transferred from another process,
   // we want to reuse and resume the old loader rather than start a new one.
-  linked_ptr<ResourceLoader> deferred_loader;
   {
     LoaderMap::iterator it = pending_loaders_.find(
         GlobalRequestID(request_data.transferred_request_child_id,
@@ -993,7 +1000,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
       // If the request is transferring to a new process, we can update our
       // state and let it resume with its existing ResourceHandlers.
       if (it->second->is_transferring()) {
-        deferred_loader = it->second;
+        linked_ptr<ResourceLoader> deferred_loader = it->second;
         UpdateRequestForTransfer(child_id, route_id, request_id,
                                  request_data, deferred_loader);
 
@@ -1018,8 +1025,6 @@ void ResourceDispatcherHostImpl::BeginRequest(
     AbortRequestBeforeItStarts(filter_, sync_result, request_id);
     return;
   }
-
-  const Referrer referrer(request_data.referrer, request_data.referrer_policy);
 
   // Allow the observer to block/handle the request.
   if (delegate_ && !delegate_->ShouldBeginRequest(child_id,
@@ -1052,28 +1057,32 @@ void ResourceDispatcherHostImpl::BeginRequest(
   }
 
   // Construct the request.
+  net::CookieStore* cookie_store =
+      GetContentClient()->browser()->OverrideCookieStoreForRenderProcess(
+          child_id);
   scoped_ptr<net::URLRequest> new_request;
-  net::URLRequest* request;
   new_request = request_context->CreateRequest(
-      request_data.url, request_data.priority, NULL);
-  request = new_request.get();
+      request_data.url, request_data.priority, NULL, cookie_store);
 
-  request->set_method(request_data.method);
-  request->set_first_party_for_cookies(request_data.first_party_for_cookies);
-  SetReferrerForRequest(request, referrer);
+  new_request->set_method(request_data.method);
+  new_request->set_first_party_for_cookies(
+      request_data.first_party_for_cookies);
+
+  const Referrer referrer(request_data.referrer, request_data.referrer_policy);
+  SetReferrerForRequest(new_request.get(), referrer);
 
   net::HttpRequestHeaders headers;
   headers.AddHeadersFromString(request_data.headers);
-  request->SetExtraRequestHeaders(headers);
+  new_request->SetExtraRequestHeaders(headers);
 
-  request->SetLoadFlags(load_flags);
+  new_request->SetLoadFlags(load_flags);
 
   // Resolve elements from request_body and prepare upload data.
   if (request_data.request_body.get()) {
     webkit_blob::BlobStorageContext* blob_context = NULL;
     if (filter_->blob_storage_context())
       blob_context = filter_->blob_storage_context()->context();
-    request->set_upload(UploadDataStreamBuilder::Build(
+    new_request->set_upload(UploadDataStreamBuilder::Build(
         request_data.request_body.get(),
         blob_context,
         filter_->file_system_context(),
@@ -1094,9 +1103,8 @@ void ResourceDispatcherHostImpl::BeginRequest(
           request_id,
           request_data.render_frame_id,
           request_data.is_main_frame,
-          request_data.frame_id,
           request_data.parent_is_main_frame,
-          request_data.parent_frame_id,
+          request_data.parent_render_frame_id,
           request_data.resource_type,
           request_data.transition_type,
           request_data.should_replace_current_entry,
@@ -1109,25 +1117,34 @@ void ResourceDispatcherHostImpl::BeginRequest(
           resource_context,
           filter_->GetWeakPtr(),
           !is_sync_load);
-  extra_info->AssociateWithRequest(request);  // Request takes ownership.
+  // Request takes ownership.
+  extra_info->AssociateWithRequest(new_request.get());
 
-  if (request->url().SchemeIs(chrome::kBlobScheme)) {
+  if (new_request->url().SchemeIs(kBlobScheme)) {
     // Hang on to a reference to ensure the blob is not released prior
     // to the job being started.
     webkit_blob::BlobProtocolHandler::SetRequestedBlobDataHandle(
-        request,
+        new_request.get(),
         filter_->blob_storage_context()->context()->
-            GetBlobDataFromPublicURL(request->url()));
+            GetBlobDataFromPublicURL(new_request->url()));
   }
+
+  // Initialize the service worker handler for the request.
+  ServiceWorkerRequestHandler::InitializeHandler(
+      new_request.get(),
+      filter_->service_worker_context(),
+      child_id,
+      request_data.service_worker_provider_id,
+      request_data.resource_type);
 
   // Have the appcache associate its extra info with the request.
   appcache::AppCacheInterceptor::SetExtraRequestInfo(
-      request, filter_->appcache_service(), child_id,
+      new_request.get(), filter_->appcache_service(), child_id,
       request_data.appcache_host_id, request_data.resource_type);
 
   scoped_ptr<ResourceHandler> handler(
        CreateResourceHandler(
-           request,
+           new_request.get(),
            request_data, sync_result, route_id, process_type, child_id,
            resource_context));
 
@@ -1148,18 +1165,20 @@ scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::CreateResourceHandler(
     handler.reset(new SyncResourceHandler(request, sync_result, this));
   } else {
     handler.reset(new AsyncResourceHandler(request, this));
-    if (IsDetachableResourceType(request_data.resource_type)) {
-      handler.reset(new DetachableResourceHandler(
-          request,
-          base::TimeDelta::FromMilliseconds(kDefaultDetachableCancelDelayMs),
-          handler.Pass()));
-    }
   }
 
   // The RedirectToFileResourceHandler depends on being next in the chain.
   if (request_data.download_to_file) {
     handler.reset(
-        new RedirectToFileResourceHandler(handler.Pass(), request, this));
+        new RedirectToFileResourceHandler(handler.Pass(), request));
+  }
+
+  // Prefetches and <a ping> requests outlive their child process.
+  if (!sync_result && IsDetachableResourceType(request_data.resource_type)) {
+    handler.reset(new DetachableResourceHandler(
+        request,
+        base::TimeDelta::FromMilliseconds(kDefaultDetachableCancelDelayMs),
+        handler.Pass()));
   }
 
   // Install a CrossSiteResourceHandler for all main frame requests.  This will
@@ -1214,7 +1233,11 @@ void ResourceDispatcherHostImpl::OnDataDownloadedACK(int request_id) {
 }
 
 void ResourceDispatcherHostImpl::RegisterDownloadedTempFile(
-    int child_id, int request_id, ShareableFileReference* reference) {
+    int child_id, int request_id, const base::FilePath& file_path) {
+  scoped_refptr<ShareableFileReference> reference =
+      ShareableFileReference::Get(file_path);
+  DCHECK(reference);
+
   registered_temp_files_[child_id][request_id] = reference;
   ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadFile(
       child_id, reference->path());
@@ -1291,9 +1314,8 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       request_id_,
       MSG_ROUTING_NONE,  // render_frame_id
       false,     // is_main_frame
-      -1,        // frame_id
       false,     // parent_is_main_frame
-      -1,        // parent_frame_id
+      -1,        // parent_render_frame_id
       ResourceType::SUB_RESOURCE,
       PAGE_TRANSITION_LINK,
       false,     // should_replace_current_entry
@@ -1355,8 +1377,13 @@ void ResourceDispatcherHostImpl::BeginSaveFile(
     return;
   }
 
+  net::CookieStore* cookie_store =
+      GetContentClient()->browser()->OverrideCookieStoreForRenderProcess(
+          child_id);
   scoped_ptr<net::URLRequest> request(
-      request_context->CreateRequest(url, net::DEFAULT_PRIORITY, NULL));
+      request_context->CreateRequest(url, net::DEFAULT_PRIORITY, NULL,
+                                     cookie_store));
+
   request->set_method("GET");
   SetReferrerForRequest(request.get(), referrer);
 

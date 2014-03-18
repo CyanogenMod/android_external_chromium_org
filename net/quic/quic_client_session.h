@@ -29,6 +29,7 @@ class DatagramClientSocket;
 class QuicConnectionHelper;
 class QuicCryptoClientStreamFactory;
 class QuicDefaultPacketWriter;
+class QuicSessionKey;
 class QuicStreamFactory;
 class SSLInfo;
 
@@ -90,8 +91,9 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
                     scoped_ptr<DatagramClientSocket> socket,
                     scoped_ptr<QuicDefaultPacketWriter> writer,
                     QuicStreamFactory* stream_factory,
+                    scoped_ptr<QuicServerInfo> server_info,
                     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
-                    const std::string& server_hostname,
+                    const QuicSessionKey& server_key,
                     const QuicConfig& config,
                     QuicCryptoClientConfig* crypto_config,
                     NetLog* net_log);
@@ -147,7 +149,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
   // that this session has been closed, which will delete the session.
   void CloseSessionOnError(int error);
 
-  base::Value* GetInfoAsValue(const std::set<HostPortProxyPair>& aliases) const;
+  base::Value* GetInfoAsValue(const std::set<HostPortPair>& aliases) const;
 
   const BoundNetLog& net_log() const { return net_log_; }
 

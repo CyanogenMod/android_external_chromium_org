@@ -21,8 +21,6 @@ namespace helpers = extensions::context_menus_api_helpers;
 
 namespace {
 
-const char kGeneratedIdKey[] = "generatedId";
-
 const char kIdRequiredError[] = "Extensions using event pages must pass an "
     "id parameter to chrome.contextMenus.create";
 
@@ -35,7 +33,8 @@ namespace Remove = api::context_menus::Remove;
 namespace Update = api::context_menus::Update;
 
 bool ContextMenusCreateFunction::RunImpl() {
-  MenuItem::Id id(GetProfile()->IsOffTheRecord(), extension_id());
+  MenuItem::Id id(GetProfile()->IsOffTheRecord(),
+                  MenuItem::ExtensionKey(extension_id()));
   scoped_ptr<Create::Params> params(Create::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
@@ -50,8 +49,8 @@ bool ContextMenusCreateFunction::RunImpl() {
     // The Generated Id is added by context_menus_custom_bindings.js.
     base::DictionaryValue* properties = NULL;
     EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &properties));
-    EXTENSION_FUNCTION_VALIDATE(properties->GetInteger(kGeneratedIdKey,
-                                                       &id.uid));
+    EXTENSION_FUNCTION_VALIDATE(
+        properties->GetInteger(helpers::kGeneratedIdKey, &id.uid));
   }
 
   return helpers::CreateMenuItem(params->create_properties, GetProfile(),
@@ -59,7 +58,8 @@ bool ContextMenusCreateFunction::RunImpl() {
 }
 
 bool ContextMenusUpdateFunction::RunImpl() {
-  MenuItem::Id item_id(GetProfile()->IsOffTheRecord(), extension_id());
+  MenuItem::Id item_id(GetProfile()->IsOffTheRecord(),
+                       MenuItem::ExtensionKey(extension_id()));
   scoped_ptr<Update::Params> params(Update::Params::Create(*args_));
 
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -80,7 +80,8 @@ bool ContextMenusRemoveFunction::RunImpl() {
 
   MenuManager* manager = MenuManager::Get(GetProfile());
 
-  MenuItem::Id id(GetProfile()->IsOffTheRecord(), extension_id());
+  MenuItem::Id id(GetProfile()->IsOffTheRecord(),
+                  MenuItem::ExtensionKey(extension_id()));
   if (params->menu_item_id.as_string)
     id.string_uid = *params->menu_item_id.as_string;
   else if (params->menu_item_id.as_integer)
@@ -98,14 +99,15 @@ bool ContextMenusRemoveFunction::RunImpl() {
 
   if (!manager->RemoveContextMenuItem(id))
     return false;
-  manager->WriteToStorage(GetExtension());
+  manager->WriteToStorage(GetExtension(), id.extension_key);
   return true;
 }
 
 bool ContextMenusRemoveAllFunction::RunImpl() {
   MenuManager* manager = MenuManager::Get(GetProfile());
-  manager->RemoveAllContextItems(GetExtension()->id());
-  manager->WriteToStorage(GetExtension());
+  manager->RemoveAllContextItems(MenuItem::ExtensionKey(GetExtension()->id()));
+  manager->WriteToStorage(GetExtension(),
+                          MenuItem::ExtensionKey(GetExtension()->id()));
   return true;
 }
 

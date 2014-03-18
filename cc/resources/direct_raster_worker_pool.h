@@ -9,31 +9,32 @@
 
 namespace cc {
 
+class ContextProvider;
+
 class CC_EXPORT DirectRasterWorkerPool : public RasterWorkerPool {
  public:
   virtual ~DirectRasterWorkerPool();
 
   static scoped_ptr<RasterWorkerPool> Create(
+      base::SequencedTaskRunner* task_runner,
       ResourceProvider* resource_provider,
       ContextProvider* context_provider);
 
   // Overridden from RasterWorkerPool:
-  virtual void ScheduleTasks(RasterTask::Queue* queue) OVERRIDE;
+  virtual void ScheduleTasks(RasterTaskQueue* queue) OVERRIDE;
   virtual unsigned GetResourceTarget() const OVERRIDE;
   virtual ResourceFormat GetResourceFormat() const OVERRIDE;
   virtual void CheckForCompletedTasks() OVERRIDE;
 
   // Overridden from internal::WorkerPoolTaskClient:
-  virtual SkCanvas* AcquireCanvasForRaster(internal::RasterWorkerPoolTask* task)
-      OVERRIDE;
-  virtual void OnRasterCompleted(internal::RasterWorkerPoolTask* task,
-                                 const PicturePileImpl::Analysis& analysis)
-      OVERRIDE;
-  virtual void OnImageDecodeCompleted(internal::WorkerPoolTask* task) OVERRIDE {
-  }
+  virtual SkCanvas* AcquireCanvasForRaster(internal::WorkerPoolTask* task,
+                                           const Resource* resource) OVERRIDE;
+  virtual void ReleaseCanvasForRaster(internal::WorkerPoolTask* task,
+                                      const Resource* resource) OVERRIDE;
 
  protected:
-  DirectRasterWorkerPool(ResourceProvider* resource_provider,
+  DirectRasterWorkerPool(base::SequencedTaskRunner* task_runner,
+                         ResourceProvider* resource_provider,
                          ContextProvider* context_provider);
 
  private:
@@ -48,7 +49,7 @@ class CC_EXPORT DirectRasterWorkerPool : public RasterWorkerPool {
 
   bool run_tasks_on_origin_thread_pending_;
 
-  RasterTask::Queue raster_tasks_;
+  RasterTaskQueue raster_tasks_;
 
   bool raster_tasks_pending_;
   bool raster_tasks_required_for_activation_pending_;

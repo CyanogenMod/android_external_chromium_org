@@ -62,7 +62,7 @@ def _DiffKnownWarnings(current_warnings_set, known_bugs_file):
 def _Rebaseline(current_warnings_set, known_bugs_file):
   with file(known_bugs_file, 'w') as known_bugs:
     for warning in sorted(current_warnings_set):
-      print >>known_bugs, warning
+      print >> known_bugs, warning
   return 0
 
 
@@ -107,8 +107,19 @@ def _Run(exclude, known_bugs, classes_to_analyze, auxiliary_classes,
     for classes in auxiliary_classes:
       system_classes.append(os.path.abspath(classes))
 
-  cmd = '%s -textui -sortByClass ' % os.path.join(chrome_src, 'third_party',
-                                                  'findbugs', 'bin', 'findbugs')
+  findbugs_javacmd = 'java'
+  findbugs_home = os.path.join(chrome_src, 'third_party', 'findbugs')
+  findbugs_jar = os.path.join(findbugs_home, 'lib', 'findbugs.jar')
+  findbugs_pathsep = ':'
+  findbugs_maxheap = '768'
+
+  cmd = '%s ' % findbugs_javacmd
+  cmd = '%s -classpath %s%s' % (cmd, findbugs_jar, findbugs_pathsep)
+  cmd = '%s -Xmx%sm ' % (cmd, findbugs_maxheap)
+  cmd = '%s -Dfindbugs.home="%s" ' % (cmd, findbugs_home)
+  cmd = '%s -jar %s ' % (cmd, findbugs_jar)
+
+  cmd = '%s -textui -sortByClass ' % cmd
   cmd = '%s -pluginList %s' % (cmd, os.path.join(chrome_src, 'tools', 'android',
                                                  'findbugs_plugin', 'lib',
                                                  'chromiumPlugin.jar'))
@@ -124,7 +135,6 @@ def _Run(exclude, known_bugs, classes_to_analyze, auxiliary_classes,
   if findbug_args:
     cmd = '%s %s ' % (cmd, findbug_args)
 
-
   chrome_classes = _GetChromeClasses(release_version)
   if not chrome_classes:
     return 1
@@ -132,7 +142,7 @@ def _Run(exclude, known_bugs, classes_to_analyze, auxiliary_classes,
 
   proc = subprocess.Popen(shlex.split(cmd),
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-  out, err = proc.communicate()
+  out, _err = proc.communicate()
   current_warnings_set = set(_StripLineNumbers(filter(None, out.splitlines())))
 
   if rebaseline:
@@ -220,7 +230,7 @@ def GetCommonParser():
   return parser
 
 
-def main(argv):
+def main():
   parser = GetCommonParser()
   options, _ = parser.parse_args()
 
@@ -228,4 +238,4 @@ def main(argv):
 
 
 if __name__ == '__main__':
-  sys.exit(main(sys.argv))
+  sys.exit(main())

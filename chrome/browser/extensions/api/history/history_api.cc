@@ -31,6 +31,8 @@
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 
 namespace extensions {
 
@@ -200,10 +202,11 @@ void HistoryEventRouter::DispatchEvent(
   }
 }
 
-HistoryAPI::HistoryAPI(Profile* profile) : profile_(profile) {
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
+HistoryAPI::HistoryAPI(content::BrowserContext* context)
+    : browser_context_(context) {
+  ExtensionSystem::Get(browser_context_)->event_router()->RegisterObserver(
       this, api::history::OnVisited::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
+  ExtensionSystem::Get(browser_context_)->event_router()->RegisterObserver(
       this, api::history::OnVisitRemoved::kEventName);
 }
 
@@ -211,25 +214,29 @@ HistoryAPI::~HistoryAPI() {
 }
 
 void HistoryAPI::Shutdown() {
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
+      this);
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<HistoryAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<HistoryAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<HistoryAPI>* HistoryAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<HistoryAPI>* HistoryAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
-template<>
-void ProfileKeyedAPIFactory<HistoryAPI>::DeclareFactoryDependencies() {
-  DependsOn(ActivityLogFactory::GetInstance());
+template <>
+void BrowserContextKeyedAPIFactory<HistoryAPI>::DeclareFactoryDependencies() {
+  DependsOn(ActivityLog::GetFactoryInstance());
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
 }
 
 void HistoryAPI::OnListenerAdded(const EventListenerInfo& details) {
-  history_event_router_.reset(new HistoryEventRouter(profile_));
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  history_event_router_.reset(
+      new HistoryEventRouter(Profile::FromBrowserContext(browser_context_)));
+  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
+      this);
 }
 
 void HistoryFunction::Run() {

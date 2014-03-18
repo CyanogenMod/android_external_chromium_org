@@ -86,9 +86,45 @@ void ButtonDecoration::SetIcon(int icon_id) {
   pressed_icon_id_ = icon_id;
 }
 
+void ButtonDecoration::SetBackgroundImageIds(
+    ui::NinePartImageIds normal_image_ids,
+    ui::NinePartImageIds hover_image_ids,
+    ui::NinePartImageIds pressed_image_ids) {
+  DCHECK(IsValidNinePartImageIds(normal_image_ids));
+  DCHECK(IsValidNinePartImageIds(hover_image_ids));
+  DCHECK(IsValidNinePartImageIds(pressed_image_ids));
+  normal_image_ids_ = normal_image_ids;
+  hover_image_ids_ = hover_image_ids;
+  pressed_image_ids_ = pressed_image_ids;
+}
+
+ui::NinePartImageIds ButtonDecoration::GetBackgroundImageIds() const {
+  switch (state_) {
+    case kButtonStateHover:
+      return hover_image_ids_;
+    case kButtonStatePressed:
+      return pressed_image_ids_;
+    case kButtonStateNormal:
+    default:
+      return normal_image_ids_;
+  }
+}
+
+NSImage* ButtonDecoration::GetIconImage() const {
+  switch (state_) {
+    case kButtonStateHover:
+      return GetImageFromId(hover_icon_id_);
+    case kButtonStatePressed:
+      return GetImageFromId(pressed_icon_id_);
+    case kButtonStateNormal:
+    default:
+      return GetImageFromId(normal_icon_id_);
+  }
+}
+
 CGFloat ButtonDecoration::GetWidthForSpace(CGFloat width) {
-  const ui::NinePartImageIds image_ids = GetImageIds();
-  NSImage* icon = GetImageFromId(GetIconId());
+  const ui::NinePartImageIds image_ids = GetBackgroundImageIds();
+  NSImage* icon = GetIconImage();
 
   if (!icon)
     return kOmittedWidth;
@@ -104,8 +140,8 @@ CGFloat ButtonDecoration::GetWidthForSpace(CGFloat width) {
 }
 
 void ButtonDecoration::DrawInFrame(NSRect frame, NSView* control_view) {
-  const ui::NinePartImageIds image_ids = GetImageIds();
-  NSImage* icon = GetImageFromId(GetIconId());
+  const ui::NinePartImageIds image_ids = GetBackgroundImageIds();
+  NSImage* icon = GetIconImage();
 
   if (!icon)
     return;
@@ -139,28 +175,4 @@ bool ButtonDecoration::OnMousePressed(NSRect frame) {
 
 ButtonDecoration* ButtonDecoration::AsButtonDecoration() {
   return this;
-}
-
-ui::NinePartImageIds ButtonDecoration::GetImageIds() const {
-  switch (state_) {
-    case kButtonStateHover:
-      return hover_image_ids_;
-    case kButtonStatePressed:
-      return pressed_image_ids_;
-    case kButtonStateNormal:
-    default:
-      return normal_image_ids_;
-  }
-}
-
-int ButtonDecoration::GetIconId() const {
-  switch (state_) {
-    case kButtonStateHover:
-      return hover_icon_id_;
-    case kButtonStatePressed:
-      return pressed_icon_id_;
-    case kButtonStateNormal:
-    default:
-      return normal_icon_id_;
-  }
 }

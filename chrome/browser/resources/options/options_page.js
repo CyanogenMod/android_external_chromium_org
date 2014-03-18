@@ -58,6 +58,11 @@ cr.define('options', function() {
   OptionsPage.registeredOverlayPages = {};
 
   /**
+   * True if options page is served from a dialog.
+   */
+  OptionsPage.isDialog = false;
+
+  /**
    * Gets the default page (to be shown on initial load).
    */
   OptionsPage.getDefaultPage = function() {
@@ -216,6 +221,9 @@ cr.define('options', function() {
    * @private
    */
   OptionsPage.updateHistoryState_ = function(replace, opt_params) {
+    if (OptionsPage.isDialog)
+      return;
+
     var page = this.getTopmostVisiblePage();
     var path = window.location.pathname + window.location.hash;
     if (path)
@@ -286,7 +294,7 @@ cr.define('options', function() {
       }
     }
 
-    if ($('search-field').value == '') {
+    if ($('search-field') && $('search-field').value == '') {
       var section = overlay.associatedSection;
       if (section)
         options.BrowserOptions.scrollToSection(section);
@@ -344,6 +352,15 @@ cr.define('options', function() {
     this.updateHistoryState_(false, {ignoreHash: true});
 
     this.restoreLastFocusedElement_();
+  };
+
+  /**
+   * Closes all overlays and updates the history after each closed overlay.
+   */
+  OptionsPage.closeAllOverlays = function() {
+    while (this.isOverlayVisible_()) {
+      this.closeOverlay();
+    }
   };
 
   /**
@@ -887,11 +904,16 @@ cr.define('options', function() {
         // TODO(flackr): Use an event delegate to avoid having to subscribe and
         // unsubscribe for webkitTransitionEnd events.
         container.addEventListener('webkitTransitionEnd', function f(e) {
-            if (e.target != e.currentTarget || e.propertyName != 'opacity')
+            var propName = e.propertyName;
+            if (e.target != e.currentTarget ||
+                (propName && propName != 'opacity')) {
               return;
+            }
             container.removeEventListener('webkitTransitionEnd', f);
             self.fadeCompleted_();
         });
+        // -webkit-transition is 200ms. Let's wait for 400ms.
+        ensureTransitionEndEvent(container, 400);
       }
 
       if (visible) {

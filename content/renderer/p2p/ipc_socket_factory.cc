@@ -11,8 +11,9 @@
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "content/public/renderer/p2p_socket_client_delegate.h"
+#include "base/threading/non_thread_safe.h"
 #include "content/renderer/p2p/host_address_request.h"
+#include "content/renderer/p2p/socket_client_delegate.h"
 #include "content/renderer/p2p/socket_client_impl.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "jingle/glue/utils.h"
@@ -159,6 +160,32 @@ class IpcPacketSocket : public talk_base::AsyncPacketSocket,
   DISALLOW_COPY_AND_ASSIGN(IpcPacketSocket);
 };
 
+// Simple wrapper around P2PAsyncAddressResolver. The main purpose of this
+// class is to send SignalDone, after OnDone callback from
+// P2PAsyncAddressResolver. Libjingle sig slots are not thread safe. In case
+// of MT sig slots clients must call disconnect. This class is to make sure
+// we destruct from the same thread on which is created.
+class AsyncAddressResolverImpl :  public base::NonThreadSafe,
+                                  public talk_base::AsyncResolverInterface {
+ public:
+  AsyncAddressResolverImpl(P2PSocketDispatcher* dispatcher);
+  virtual ~AsyncAddressResolverImpl();
+
+  // talk_base::AsyncResolverInterface interface.
+  virtual void Start(const talk_base::SocketAddress& addr) OVERRIDE;
+  virtual bool GetResolvedAddress(
+      int family, talk_base::SocketAddress* addr) const OVERRIDE;
+  virtual int GetError() const OVERRIDE;
+  virtual void Destroy(bool wait) OVERRIDE;
+
+ private:
+  virtual void OnAddressResolved(const net::IPAddressList& addresses);
+
+  scoped_refptr<P2PAsyncAddressResolver> resolver_;
+  int port_;   // Port number in |addr| from Start() method.
+  std::vector<talk_base::IPAddress> addresses_;  // Resolved addresses.
+};
+
 IpcPacketSocket::IpcPacketSocket()
     : type_(P2P_SOCKET_UDP),
       message_loop_(base::MessageLoop::current()),
@@ -211,7 +238,12 @@ bool IpcPacketSocket::Init(P2PSocketType type,
     return false;
   }
 
-  client->Init(type, local_endpoint, remote_endpoint, this);
+  // We need to send both resolved and unresolved address in Init. Unresolved
+  // address will be used in case of TLS for certificate hostname matching.
+  // Certificate will be tied to domain name not to IP address.
+  P2PHostAndIPEndPoint remote_info(remote_address.hostname(), remote_endpoint);
+
+  client->Init(type, local_endpoint, remote_info, this);
 
   return true;
 }
@@ -296,8 +328,7 @@ int IpcPacketSocket::SendTo(const void *data, size_t data_size,
 
   const char* data_char = reinterpret_cast<const char*>(data);
   std::vector<char> data_vector(data_char, data_char + data_size);
-  client_->SendWithDscp(address_chrome, data_vector,
-                        static_cast<net::DiffServCodePoint>(options.dscp));
+  client_->SendWithDscp(address_chrome, data_vector, options);
 
   // Fake successful send. The caller ignores result anyway.
   return data_size;
@@ -465,6 +496,69 @@ void IpcPacketSocket::OnDataReceived(const net::IPEndPoint& address,
                    packet_time);
 }
 
+AsyncAddressResolverImpl::AsyncAddressResolverImpl(
+    P2PSocketDispatcher* dispatcher)
+    : resolver_(new P2PAsyncAddressResolver(dispatcher)) {
+}
+
+AsyncAddressResolverImpl::~AsyncAddressResolverImpl() {
+}
+
+void AsyncAddressResolverImpl::Start(const talk_base::SocketAddress& addr) {
+  DCHECK(CalledOnValidThread());
+  // Copy port number from |addr|. |port_| must be copied
+  // when resolved address is returned in GetResolvedAddress.
+  port_ = addr.port();
+
+  resolver_->Start(addr, base::Bind(
+      &AsyncAddressResolverImpl::OnAddressResolved,
+      base::Unretained(this)));
+}
+
+bool AsyncAddressResolverImpl::GetResolvedAddress(
+    int family, talk_base::SocketAddress* addr) const {
+  DCHECK(CalledOnValidThread());
+
+  if (addresses_.empty())
+   return false;
+
+  for (size_t i = 0; i < addresses_.size(); ++i) {
+    if (family == addresses_[i].family()) {
+      addr->SetIP(addresses_[i]);
+      addr->SetPort(port_);
+      return true;
+    }
+  }
+  return false;
+}
+
+int AsyncAddressResolverImpl::GetError() const {
+  DCHECK(CalledOnValidThread());
+  return addresses_.empty() ? -1 : 0;
+}
+
+void AsyncAddressResolverImpl::Destroy(bool wait) {
+  DCHECK(CalledOnValidThread());
+  resolver_->Cancel();
+  // Libjingle doesn't need this object any more and it's not going to delete
+  // it explicitly.
+  delete this;
+}
+
+void AsyncAddressResolverImpl::OnAddressResolved(
+    const net::IPAddressList& addresses) {
+  DCHECK(CalledOnValidThread());
+  for (size_t i = 0; i < addresses.size(); ++i) {
+    talk_base::SocketAddress socket_address;
+    if (!jingle_glue::IPEndPointToSocketAddress(
+            net::IPEndPoint(addresses[i], 0), &socket_address)) {
+      NOTREACHED();
+    }
+    addresses_.push_back(socket_address.ipaddr());
+  }
+  SignalDone(this);
+}
+
 }  // namespace
 
 IpcPacketSocketFactory::IpcPacketSocketFactory(
@@ -535,7 +629,9 @@ talk_base::AsyncPacketSocket* IpcPacketSocketFactory::CreateClientTcpSocket(
 
 talk_base::AsyncResolverInterface*
 IpcPacketSocketFactory::CreateAsyncResolver() {
-  return new P2PAsyncAddressResolver(socket_dispatcher_);
+  scoped_ptr<AsyncAddressResolverImpl> resolver(
+    new AsyncAddressResolverImpl(socket_dispatcher_));
+  return resolver.release();
 }
 
 }  // namespace content

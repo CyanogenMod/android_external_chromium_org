@@ -17,10 +17,6 @@ namespace base {
 class SequencedTaskRunner;
 }
 
-namespace content {
-class BrowserContext;
-}
-
 namespace feedback {
 
 typedef base::Callback<void(const std::string&)> QueueCallback;
@@ -30,9 +26,10 @@ typedef base::Callback<void(const std::string&)> QueueCallback;
 // deleted by calling DeleteReportOnDisk.
 class FeedbackReport : public base::RefCounted<FeedbackReport> {
  public:
-  FeedbackReport(content::BrowserContext* context,
+  FeedbackReport(const base::FilePath& path,
                  const base::Time& upload_at,
-                 const std::string& data);
+                 const std::string& data,
+                 scoped_refptr<base::SequencedTaskRunner> task_runner);
 
   // Stops the disk write of the report and deletes the report file if already
   // written.
@@ -43,7 +40,7 @@ class FeedbackReport : public base::RefCounted<FeedbackReport> {
 
   // Loads the reports still on disk and queues then using the given callback.
   // This call blocks on the file reads.
-  static void LoadReportsAndQueue(content::BrowserContext* context,
+  static void LoadReportsAndQueue(const base::FilePath& user_dir,
                                   QueueCallback callback);
 
  private:

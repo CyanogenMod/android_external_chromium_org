@@ -13,7 +13,7 @@
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
-#include "chrome/browser/sync_file_system/drive_backend/tracker_set.h"
+#include "chrome/browser/sync_file_system/drive_backend/tracker_id_set.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "google_apis/drive/drive_api_parser.h"
 #include "google_apis/drive/gdata_wapi_parser.h"
@@ -42,7 +42,12 @@ RegisterAppTask::RegisterAppTask(SyncEngineContext* sync_context,
 RegisterAppTask::~RegisterAppTask() {
 }
 
-void RegisterAppTask::Run(const SyncStatusCallback& callback) {
+bool RegisterAppTask::CanFinishImmediately() {
+  return metadata_database() &&
+         metadata_database()->FindAppRootTracker(app_id_, NULL);
+}
+
+void RegisterAppTask::RunSequential(const SyncStatusCallback& callback) {
   if (create_folder_retry_count_++ >= kMaxRetry) {
     callback.Run(SYNC_STATUS_FAILED);
     return;
@@ -54,7 +59,7 @@ void RegisterAppTask::Run(const SyncStatusCallback& callback) {
   }
 
   int64 sync_root = metadata_database()->GetSyncRootTrackerID();
-  TrackerSet trackers;
+  TrackerIDSet trackers;
   if (!metadata_database()->FindTrackersByParentAndTitle(
           sync_root, app_id_, &trackers)) {
     CreateAppRootFolder(callback);
@@ -68,6 +73,8 @@ void RegisterAppTask::Run(const SyncStatusCallback& callback) {
   }
 
   if (candidate.active()) {
+    DCHECK(candidate.tracker_kind() == TRACKER_KIND_APP_ROOT ||
+           candidate.tracker_kind() == TRACKER_KIND_DISABLED_APP_ROOT);
     RunSoon(FROM_HERE, base::Bind(callback, SYNC_STATUS_OK));
     return;
   }
@@ -102,21 +109,30 @@ void RegisterAppTask::DidCreateAppRootFolder(
     return;
   }
 
-  Run(callback);
+  RunSequential(callback);
 }
 
-bool RegisterAppTask::FilterCandidates(const TrackerSet& trackers,
+bool RegisterAppTask::FilterCandidates(const TrackerIDSet& trackers,
                                        FileTracker* candidate) {
   DCHECK(candidate);
   if (trackers.has_active()) {
-    *candidate = *trackers.active_tracker();
-    return true;
+    if (metadata_database()->FindTrackerByTrackerID(
+            trackers.active_tracker(), candidate)) {
+      return true;
+    }
+    NOTREACHED();
   }
 
-  FileTracker* oldest_tracker = NULL;
-  for (TrackerSet::const_iterator itr = trackers.begin();
+  scoped_ptr<FileTracker> oldest_tracker;
+  for (TrackerIDSet::const_iterator itr = trackers.begin();
        itr != trackers.end(); ++itr) {
-    FileTracker* tracker = *itr;
+    scoped_ptr<FileTracker> tracker(new FileTracker);
+    if (!metadata_database()->FindTrackerByTrackerID(
+            *itr, tracker.get())) {
+      NOTREACHED();
+      continue;
+    }
+
     FileMetadata file;
     DCHECK(!tracker->active());
     DCHECK(tracker->has_synced_details());
@@ -139,7 +155,7 @@ bool RegisterAppTask::FilterCandidates(const TrackerSet& trackers,
     if (oldest_tracker && CompareOnCTime(*oldest_tracker, *tracker))
       continue;
 
-    oldest_tracker = tracker;
+    oldest_tracker = tracker.Pass();
   }
 
   if (!oldest_tracker)

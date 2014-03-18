@@ -17,6 +17,11 @@ FakeInvalidationService::FakeInvalidationService()
 FakeInvalidationService::~FakeInvalidationService() {
 }
 
+// static
+KeyedService* FakeInvalidationService::Build(content::BrowserContext* context) {
+  return new FakeInvalidationService();
+}
+
 void FakeInvalidationService::RegisterInvalidationHandler(
       syncer::InvalidationHandler* handler) {
   invalidator_registrar_.RegisterHandler(handler);
@@ -43,6 +48,12 @@ std::string FakeInvalidationService::GetInvalidatorClientId() const {
 
 InvalidationLogger* FakeInvalidationService::GetInvalidationLogger() {
   return NULL;
+}
+
+void FakeInvalidationService::RequestDetailedStatus(
+    base::Callback<void(const base::DictionaryValue&)> caller) {
+  base::DictionaryValue value;
+  caller.Run(value);
 }
 
 void FakeInvalidationService::SetInvalidatorState(

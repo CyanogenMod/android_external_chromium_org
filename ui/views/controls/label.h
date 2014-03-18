@@ -43,10 +43,12 @@ class VIEWS_EXPORT Label : public View {
   };
 
   enum ElideBehavior {
-    NO_ELIDE,         // Do not elide the label text; truncate as needed.
-    ELIDE_IN_MIDDLE,  // Add ellipsis in the middle of the string as needed.
-    ELIDE_AT_END,     // Add ellipsis at the end of the string as needed.
-    ELIDE_AS_EMAIL,   // Elide while retaining username/domain chars as needed.
+    NO_ELIDE,            // Do not elide the label text; truncate as needed.
+    ELIDE_AT_BEGINNING,  // Add ellipsis at the start of the string as needed.
+    ELIDE_IN_MIDDLE,     // Add ellipsis in the middle of the string as needed.
+    ELIDE_AT_END,        // Add ellipsis at the end of the string as needed.
+    ELIDE_AS_EMAIL,      // Elide while retaining username/domain chars
+                         // as needed.
   };
 
   // Internal class name.
@@ -173,7 +175,7 @@ class VIEWS_EXPORT Label : public View {
   virtual const char* GetClassName() const OVERRIDE;
   virtual View* GetTooltipHandlerForPoint(const gfx::Point& point) OVERRIDE;
   virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   // Gets the tooltip text for labels that are wider than their bounds, except
   // when the label is multiline, in which case it just returns false (no
   // tooltip).  If a custom tooltip has been specified with SetTooltipText()

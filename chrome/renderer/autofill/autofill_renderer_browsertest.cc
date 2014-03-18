@@ -82,54 +82,6 @@ TEST_F(ChromeRenderViewTest, SendForms) {
   expected.form_control_type = "select-one";
   expected.max_length = 0;
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, forms[0].fields[3]);
-
-  // Verify that |didAcceptAutofillSuggestion()| sends the expected number of
-  // fields.
-  WebFrame* web_frame = GetMainFrame();
-  WebDocument document = web_frame->document();
-  WebInputElement firstname =
-      document.getElementById("firstname").to<WebInputElement>();
-
-  // Make sure to query for Autofill suggestions before selecting one.
-  autofill_agent_->element_ = firstname;
-  autofill_agent_->QueryAutofillSuggestions(firstname, false, false);
-
-  // Fill the form with a suggestion that contained a label.  Labeled items
-  // indicate Autofill as opposed to Autocomplete.  We're testing this
-  // distinction below with the |AutofillHostMsg_FillAutofillFormData::ID|
-  // message.
-  autofill_agent_->FillAutofillFormData(
-      firstname,
-      1,
-      AutofillAgent::AUTOFILL_PREVIEW);
-
-  ProcessPendingMessages();
-  const IPC::Message* message2 =
-      render_thread_->sink().GetUniqueMessageMatching(
-          AutofillHostMsg_FillAutofillFormData::ID);
-  ASSERT_NE(static_cast<IPC::Message*>(NULL), message2);
-  AutofillHostMsg_FillAutofillFormData::Param params2;
-  AutofillHostMsg_FillAutofillFormData::Read(message2, &params2);
-  const FormData& form2 = params2.b;
-  ASSERT_EQ(3UL, form2.fields.size());
-
-  expected.name = ASCIIToUTF16("firstname");
-  expected.value = base::string16();
-  expected.form_control_type = "text";
-  expected.max_length = WebInputElement::defaultMaxLength();
-  EXPECT_FORM_FIELD_DATA_EQUALS(expected, form2.fields[0]);
-
-  expected.name = ASCIIToUTF16("middlename");
-  expected.value = base::string16();
-  expected.form_control_type = "text";
-  expected.max_length = WebInputElement::defaultMaxLength();
-  EXPECT_FORM_FIELD_DATA_EQUALS(expected, form2.fields[1]);
-
-  expected.name = ASCIIToUTF16("state");
-  expected.value = ASCIIToUTF16("?");
-  expected.form_control_type = "select-one";
-  expected.max_length = 0;
-  EXPECT_FORM_FIELD_DATA_EQUALS(expected, form2.fields[2]);
 }
 
 TEST_F(ChromeRenderViewTest, EnsureNoFormSeenIfTooFewFields) {
@@ -181,7 +133,7 @@ TEST_F(ChromeRenderViewTest, ShowAutofillWarning) {
   // Simulate attempting to Autofill the form from the first element, which
   // specifies autocomplete="off".  This should still trigger an IPC which
   // shouldn't display warnings.
-  autofill_agent_->InputElementClicked(firstname, true, true);
+  autofill_agent_->FormControlElementClicked(firstname, true);
   const IPC::Message* message1 = render_thread_->sink().GetFirstMessageMatching(
       AutofillHostMsg_QueryFormFieldAutofill::ID);
   EXPECT_NE(static_cast<IPC::Message*>(NULL), message1);
@@ -195,13 +147,33 @@ TEST_F(ChromeRenderViewTest, ShowAutofillWarning) {
   // does not specify autocomplete="off".  This should trigger an IPC that will
   // show warnings, as we *do* show warnings for elements that don't themselves
   // set autocomplete="off", but for which the form does.
-  autofill_agent_->InputElementClicked(middlename, true, true);
+  autofill_agent_->FormControlElementClicked(middlename, true);
   const IPC::Message* message2 = render_thread_->sink().GetFirstMessageMatching(
       AutofillHostMsg_QueryFormFieldAutofill::ID);
   ASSERT_NE(static_cast<IPC::Message*>(NULL), message2);
 
   AutofillHostMsg_QueryFormFieldAutofill::Read(message2, &query_param);
   EXPECT_TRUE(query_param.e);
+}
+
+// Regression test for [ http://crbug.com/346010 ].
+TEST_F(ChromeRenderViewTest, DontCrashWhileAssociatingForms) {
+  // Don't want any delay for form state sync changes. This will still post a
+  // message so updates will get coalesced, but as soon as we spin the message
+  // loop, it will generate an update.
+  SendContentStateImmediately();
+
+  LoadHTML("<form id='form'>"
+           "<foo id='foo'>"
+           "<script id='script'>"
+           "document.documentElement.appendChild(foo);"
+           "newDoc = document.implementation.createDocument("
+           "    \"http://www.w3.org/1999/xhtml\", \"html\");"
+           "foo.insertBefore(form, script);"
+           "newDoc.adoptNode(foo);"
+           "</script>");
+
+  // Shouldn't crash.
 }
 
 }  // namespace autofill

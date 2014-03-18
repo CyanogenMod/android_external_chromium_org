@@ -67,7 +67,7 @@ class PasswordGenerator;
 }
 
 namespace content {
-class RenderWidgetHost;
+class RenderFrameHost;
 }
 
 namespace extensions {
@@ -382,6 +382,13 @@ class BrowserView : public BrowserWindow,
       autofill::PasswordGenerator* password_generator) OVERRIDE;
   virtual void OverscrollUpdate(int delta_y) OVERRIDE;
   virtual int GetRenderViewHeightInsetWithDetachedBookmarkBar() OVERRIDE;
+  virtual void ExecuteExtensionCommand(
+      const extensions::Extension* extension,
+      const extensions::Command& command) OVERRIDE;
+  virtual void ShowPageActionPopup(
+      const extensions::Extension* extension) OVERRIDE;
+  virtual void ShowBrowserActionPopup(
+      const extensions::Extension* extension) OVERRIDE;
 
   // Overridden from BrowserWindowTesting:
   virtual BookmarkBarView* GetBookmarkBarView() const OVERRIDE;
@@ -450,7 +457,7 @@ class BrowserView : public BrowserWindow,
   virtual void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) OVERRIDE;
   virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // Overridden from ui::AcceleratorTarget:
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
@@ -563,17 +570,17 @@ class BrowserView : public BrowserWindow,
   void UpdateAcceleratorMetrics(const ui::Accelerator& accelerator,
                                 int command_id);
 
-  // Calls |method| which is either RenderWidgetHost::Cut, ::Copy, or ::Paste,
+  // Calls |method| which is either RenderFrameHost::Cut, ::Copy, or ::Paste,
   // first trying the content WebContents, then the devtools WebContents, and
   // lastly the Views::Textfield if one is focused.
-  void DoCutCopyPaste(void (content::RenderWidgetHost::*method)(),
+  void DoCutCopyPaste(void (content::RenderFrameHost::*method)(),
                       int command_id);
 
-  // Calls |method| which is either RenderWidgetHost::Cut, ::Copy, or ::Paste on
+  // Calls |method| which is either RenderFrameHost::Cut, ::Copy, or ::Paste on
   // the given WebContents, returning true if it consumed the event.
   bool DoCutCopyPasteForWebContents(
       content::WebContents* contents,
-      void (content::RenderWidgetHost::*method)());
+      void (content::RenderFrameHost::*method)());
 
   // Shows the next app-modal dialog box, if there is one to be shown, or moves
   // an existing showing one to the front.

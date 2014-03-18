@@ -11,7 +11,6 @@
 #include "chrome/browser/signin/signin_manager.h"
 
 class Profile;
-class BrowserContextKeyedService;
 
 // SigninManager to use for testing. Tests should use the type
 // SigninManagerForTesting to ensure that the right type for their platform is
@@ -24,11 +23,11 @@ class FakeSigninManagerBase : public SigninManagerBase {
   virtual ~FakeSigninManagerBase();
 
   // Helper function to be used with
-  // BrowserContextKeyedService::SetTestingFactory(). In order to match
+  // KeyedService::SetTestingFactory(). In order to match
   // the API of SigninManagerFactory::GetForProfile(), returns a
   // FakeSigninManagerBase* on ChromeOS, and a FakeSigninManager* on all other
   // platforms. The returned instance is initialized.
-  static BrowserContextKeyedService* Build(content::BrowserContext* context);
+  static KeyedService* Build(content::BrowserContext* context);
 };
 
 #if !defined(OS_CHROMEOS)
@@ -48,13 +47,15 @@ class FakeSigninManager : public SigninManager {
 
   void SignIn(const std::string& username, const std::string& password);
 
-  virtual void SignOut() OVERRIDE;
+  void FailSignin(const GoogleServiceAuthError& error);
 
-  virtual void StartSignInWithCredentials(
-      const std::string& session_index,
+  virtual void StartSignInWithRefreshToken(
+      const std::string& refresh_token,
       const std::string& username,
       const std::string& password,
       const OAuthTokenFetchedCallback& oauth_fetched_callback) OVERRIDE;
+
+  virtual void SignOut() OVERRIDE;
 
   virtual void CompletePendingSignin() OVERRIDE;
 };

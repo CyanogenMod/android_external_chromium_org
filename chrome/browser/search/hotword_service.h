@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_SEARCH_HOTWORD_SERVICE_H_
 
 #include "base/basictypes.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 
 class Profile;
 
@@ -18,7 +18,7 @@ extern const char kHotwordFieldTrialDisabledGroupName[];
 
 // Provides an interface for the Hotword component that does voice triggered
 // search.
-class HotwordService : public BrowserContextKeyedService {
+class HotwordService : public KeyedService {
  public:
   // Returns true if the hotword supports the current system language.
   static bool DoesHotwordSupportLanguage(Profile* profile);
@@ -43,6 +43,12 @@ class HotwordService : public BrowserContextKeyedService {
   // Determine if hotwording is allowed in this profile based on field trials
   // and language.
   virtual bool IsHotwordAllowed();
+
+  // Used in the case of an error with the current hotword extension. Tries
+  // to reload the extension or in the case of failure, tries to re-download it.
+  // Returns true upon successful attempt at reload or if the extension has
+  // already loaded successfully by some other means.
+  virtual bool RetryHotwordExtension();
 
  private:
   Profile* profile_;

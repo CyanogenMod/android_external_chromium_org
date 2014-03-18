@@ -26,8 +26,8 @@
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/window_tree_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/canvas.h"
@@ -459,9 +459,9 @@ void PanelLayoutManager::OnShelfAlignmentChanged(aura::Window* root_window) {
 /////////////////////////////////////////////////////////////////////////////
 // PanelLayoutManager, WindowObserver implementation:
 
-void PanelLayoutManager::OnPostWindowShowTypeChange(
+void PanelLayoutManager::OnPostWindowStateTypeChange(
     wm::WindowState* window_state,
-    wm::WindowShowType old_type) {
+    wm::WindowStateType old_type) {
   // If the shelf is currently hidden then windows will not actually be shown
   // but the set to restore when the shelf becomes visible is updated.
   if (restore_windows_on_shelf_visible_) {
@@ -545,7 +545,7 @@ void PanelLayoutManager::WillChangeVisibilityState(
 // PanelLayoutManager private implementation:
 
 void PanelLayoutManager::MinimizePanel(aura::Window* panel) {
-  views::corewm::SetWindowVisibilityAnimationType(
+  ::wm::SetWindowVisibilityAnimationType(
       panel, WINDOW_VISIBILITY_ANIMATION_TYPE_MINIMIZE);
   ui::Layer* layer = panel->layer();
   ui::ScopedLayerAnimationSettings panel_slide_settings(layer->GetAnimator());
@@ -608,8 +608,10 @@ void PanelLayoutManager::Relayout() {
     }
 
     // If the shelf is currently hidden (full-screen mode), minimize panel until
-    // full-screen mode is exited.
-    if (restore_windows_on_shelf_visible_) {
+    // full-screen mode is exited. When a panel is dragged from another display
+    // the shelf state does not update before the panel is added so we exclude
+    // the dragged panel.
+    if (panel != dragged_panel_ && restore_windows_on_shelf_visible_) {
       wm::GetWindowState(panel)->Minimize();
       restore_windows_on_shelf_visible_->Add(panel);
       continue;

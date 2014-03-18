@@ -8,7 +8,9 @@
       'target_name': 'libc++',
       'type': 'shared_library',
       'variables': {
-         'prune_self_dependency': 1,
+        'prune_self_dependency': 1,
+        # Don't add this target to the dependencies of targets with type=none.
+        'link_dependency': 1,
       },
       'dependencies=': [],
       'sources': [
@@ -42,8 +44,6 @@
       'include_dirs': [
         'trunk/include',
         '../libc++abi/trunk/include',
-        # TODO(earthdok): remove when http://crbug.com/337426 is fixed
-        '../llvm-build/Release+Asserts/lib/clang/3.5/include/'
       ],
       'cflags': [
         '-g', '-Os', '-fPIC',
@@ -65,8 +65,6 @@
           ['_type!="none"', {
             'include_dirs': [
               'trunk/include',
-              # TODO(earthdok): remove when http://crbug.com/337426 is fixed
-              '../llvm-build/Release+Asserts/lib/clang/3.5/include/'
             ],
             'cflags_cc': [
               '-nostdinc++',

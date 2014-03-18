@@ -284,4 +284,13 @@ int DefaultSystemTrayDelegate::GetSystemTrayMenuWidth() {
 void DefaultSystemTrayDelegate::ActiveUserWasChanged() {
 }
 
+bool DefaultSystemTrayDelegate::IsNetworkBehindCaptivePortal(
+    const std::string& /* service_path */) const {
+  return false;
+}
+
+bool DefaultSystemTrayDelegate::IsSearchKeyMappedToCapsLock() {
+  return false;
+}
+
 }  // namespace ash

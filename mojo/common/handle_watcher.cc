@@ -13,10 +13,10 @@
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/threading/thread.h"
-#include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "mojo/common/message_pump_mojo.h"
 #include "mojo/common/message_pump_mojo_handler.h"
+#include "mojo/common/time_helper.h"
 
 namespace mojo {
 namespace common {
@@ -33,6 +33,11 @@ MessagePumpMojo* message_pump_mojo = NULL;
 scoped_ptr<base::MessagePump> CreateMessagePumpMojo() {
   message_pump_mojo = new MessagePumpMojo;
   return scoped_ptr<base::MessagePump>(message_pump_mojo).Pass();
+}
+
+base::TimeTicks MojoDeadlineToTimeTicks(MojoDeadline deadline) {
+  return deadline == MOJO_DEADLINE_INDEFINITE ? base::TimeTicks() :
+      internal::NowTicks() + base::TimeDelta::FromMicroseconds(deadline);
 }
 
 // Tracks the data for a single call to Start().
@@ -197,7 +202,8 @@ WatcherID WatcherThreadManager::StartWatching(
   data.wait_flags = wait_flags;
   data.deadline = deadline;
   data.message_loop = base::MessageLoopProxy::current();
-  DCHECK_NE(static_cast<base::MessageLoopProxy*>(NULL), data.message_loop);
+  DCHECK_NE(static_cast<base::MessageLoopProxy*>(NULL),
+            data.message_loop.get());
   // We outlive |thread_|, so it's safe to use Unretained() here.
   thread_.message_loop()->PostTask(
       FROM_HERE,
@@ -256,9 +262,6 @@ struct HandleWatcher::StartState {
 
 // HandleWatcher ---------------------------------------------------------------
 
-// static
-base::TickClock* HandleWatcher::tick_clock_ = NULL;
-
 HandleWatcher::HandleWatcher() {
 }
 
@@ -300,17 +303,6 @@ void HandleWatcher::OnHandleReady(MojoResult result) {
   old_state->callback.Run(result);
 
   // NOTE: We may have been deleted during callback execution.
-}
-
-// static
-base::TimeTicks HandleWatcher::NowTicks() {
-  return tick_clock_ ? tick_clock_->NowTicks() : base::TimeTicks::Now();
-}
-
-// static
-base::TimeTicks HandleWatcher::MojoDeadlineToTimeTicks(MojoDeadline deadline) {
-  return deadline == MOJO_DEADLINE_INDEFINITE ? base::TimeTicks() :
-      NowTicks() + base::TimeDelta::FromMicroseconds(deadline);
 }
 
 }  // namespace common

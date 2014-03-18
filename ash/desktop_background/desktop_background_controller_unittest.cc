@@ -27,7 +27,7 @@
 #include "content/public/test/test_utils.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/test/layer_animator_test_controller.h"
 #include "ui/gfx/codec/jpeg_codec.h"
@@ -215,7 +215,7 @@ class DesktopBackgroundControllerTest : public test::AshTestBase {
       return false;
     }
 
-    size_t bytes_written = file_util::WriteFile(
+    size_t bytes_written = base::WriteFile(
         path, reinterpret_cast<const char*>(&output[0]), output.size());
     if (bytes_written != output.size()) {
       LOG(ERROR) << "Wrote " << bytes_written << " byte(s) instead of "

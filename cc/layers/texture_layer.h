@@ -131,6 +131,12 @@ class CC_EXPORT TextureLayer : public Layer {
   void SetTextureMailbox(const TextureMailbox& mailbox,
                          scoped_ptr<SingleReleaseCallback> release_callback);
 
+  // Use this for special cases where the same texture is used to back the
+  // TextureLayer across all frames.
+  // WARNING: DON'T ACTUALLY USE THIS WHAT YOU ARE DOING IS WRONG.
+  // TODO(danakj): Remove this when pepper doesn't need it. crbug.com/350204
+  void SetTextureMailboxWithoutReleaseCallback(const TextureMailbox& mailbox);
+
   void WillModifyTexture();
 
   virtual void SetNeedsDisplayRect(const gfx::RectF& dirty_rect) OVERRIDE;
@@ -138,7 +144,7 @@ class CC_EXPORT TextureLayer : public Layer {
   virtual void SetLayerTreeHost(LayerTreeHost* layer_tree_host) OVERRIDE;
   virtual bool DrawsContent() const OVERRIDE;
   virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker* occlusion) OVERRIDE;
+                      const OcclusionTracker<Layer>* occlusion) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual Region VisibleContentOpaqueRegion() const OVERRIDE;
 
@@ -150,7 +156,8 @@ class CC_EXPORT TextureLayer : public Layer {
   void SetTextureMailboxInternal(
       const TextureMailbox& mailbox,
       scoped_ptr<SingleReleaseCallback> release_callback,
-      bool requires_commit);
+      bool requires_commit,
+      bool allow_mailbox_reuse);
 
   TextureLayerClient* client_;
   bool uses_mailbox_;

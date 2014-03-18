@@ -12,6 +12,7 @@
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/size.h"
 #include "ui/surface/transport_dib.h"
 
@@ -107,9 +108,6 @@ class RenderWidgetHostView;
 // the RenderWidgetHost's IPC message map.
 class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
  public:
-  // Free all backing stores used for rendering to drop memory usage.
-  static void RemoveAllBackingStores();
-
   // Returns the size of all the backing stores used for rendering
   static size_t BackingStoreMemorySize();
 
@@ -124,12 +122,10 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   virtual ~RenderWidgetHost() {}
 
   // Edit operations.
+  // TODO(jam): move the rest of these to RenderFrameHost
   virtual void Undo() = 0;
   virtual void Redo() = 0;
-  virtual void Cut() = 0;
-  virtual void Copy() = 0;
   virtual void CopyToFindPboard() = 0;
-  virtual void Paste() = 0;
   virtual void PasteAndMatchStyle() = 0;
   virtual void Delete() = 0;
   virtual void SelectAll() = 0;
@@ -199,7 +195,8 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   virtual void CopyFromBackingStore(
       const gfx::Rect& src_rect,
       const gfx::Size& accelerated_dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback) = 0;
+      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      const SkBitmap::Config& bitmap_config) = 0;
 #if defined(TOOLKIT_GTK)
   // Paint the backing store into the target's |dest_rect|.
   virtual bool CopyFromBackingStoreToGtkWindow(const gfx::Rect& dest_rect,
@@ -295,6 +292,8 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   virtual void GetSnapshotFromRenderer(
       const gfx::Rect& src_subrect,
       const base::Callback<void(bool, const SkBitmap&)>& callback) = 0;
+
+  virtual SkBitmap::Config PreferredReadbackFormat() = 0;
 
  protected:
   friend class RenderWidgetHostImpl;

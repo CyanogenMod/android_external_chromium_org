@@ -7,6 +7,7 @@
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/path_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
@@ -154,10 +155,12 @@ void ShellContentBrowserClient::RenderProcessWillLaunch(
 
 net::URLRequestContextGetter* ShellContentBrowserClient::CreateRequestContext(
     BrowserContext* content_browser_context,
-    ProtocolHandlerMap* protocol_handlers) {
+    ProtocolHandlerMap* protocol_handlers,
+    ProtocolHandlerScopedVector protocol_interceptors) {
   ShellBrowserContext* shell_browser_context =
       ShellBrowserContextForBrowserContext(content_browser_context);
-  return shell_browser_context->CreateRequestContext(protocol_handlers);
+  return shell_browser_context->CreateRequestContext(
+      protocol_handlers, protocol_interceptors.Pass());
 }
 
 net::URLRequestContextGetter*
@@ -165,11 +168,15 @@ ShellContentBrowserClient::CreateRequestContextForStoragePartition(
     BrowserContext* content_browser_context,
     const base::FilePath& partition_path,
     bool in_memory,
-    ProtocolHandlerMap* protocol_handlers) {
+    ProtocolHandlerMap* protocol_handlers,
+    ProtocolHandlerScopedVector protocol_interceptors) {
   ShellBrowserContext* shell_browser_context =
       ShellBrowserContextForBrowserContext(content_browser_context);
   return shell_browser_context->CreateRequestContextForStoragePartition(
-      partition_path, in_memory, protocol_handlers);
+      partition_path,
+      in_memory,
+      protocol_handlers,
+      protocol_interceptors.Pass());
 }
 
 bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
@@ -179,7 +186,7 @@ bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
   // Keep in sync with ProtocolHandlers added by
   // ShellURLRequestContextGetter::GetURLRequestContext().
   static const char* const kProtocolList[] = {
-      chrome::kBlobScheme,
+      kBlobScheme,
       kFileSystemScheme,
       kChromeUIScheme,
       kChromeDevToolsScheme,
@@ -286,25 +293,25 @@ void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
   pak_file = pak_file.Append(FILE_PATH_LITERAL("paks"));
   pak_file = pak_file.Append(FILE_PATH_LITERAL("content_shell.pak"));
 
-  base::PlatformFile f =
-      base::CreatePlatformFile(pak_file, flags, NULL, NULL);
-  if (f == base::kInvalidPlatformFileValue) {
+  base::File f(pak_file, flags);
+  if (!f.IsValid()) {
     NOTREACHED() << "Failed to open file when creating renderer process: "
                  << "content_shell.pak";
   }
   mappings->push_back(
       content::FileDescriptorInfo(kShellPakDescriptor,
-                                  base::FileDescriptor(f, true)));
+                                  base::FileDescriptor(f.Pass())));
 
   if (breakpad::IsCrashReporterEnabled()) {
     f = breakpad::CrashDumpManager::GetInstance()->CreateMinidumpFile(
         child_process_id);
-    if (f == base::kInvalidPlatformFileValue) {
+    if (!f.IsValid()) {
       LOG(ERROR) << "Failed to create file for minidump, crash reporting will "
                  << "be disabled for this process.";
     } else {
-      mappings->push_back(FileDescriptorInfo(kAndroidMinidumpDescriptor,
-                                             base::FileDescriptor(f, true)));
+      mappings->push_back(
+          FileDescriptorInfo(kAndroidMinidumpDescriptor,
+                             base::FileDescriptor(f.Pass())));
     }
   }
 #else  // !defined(OS_ANDROID)

@@ -215,14 +215,21 @@ bool FormatElement::operator==(const FormatElement& other) const {
 }
 
 Rule::Rule()
-    : format_(),
+    : key_(),
+      name_(),
+      latin_name_(),
+      format_(),
       required_(),
       sub_keys_(),
+      sub_names_(),
+      sub_lnames_(),
       languages_(),
       language_(),
       postal_code_format_(),
       admin_area_name_message_id_(INVALID_MESSAGE_ID),
-      postal_code_name_message_id_(INVALID_MESSAGE_ID) {}
+      invalid_admin_area_message_id_(INVALID_MESSAGE_ID),
+      postal_code_name_message_id_(INVALID_MESSAGE_ID),
+      invalid_postal_code_message_id_(INVALID_MESSAGE_ID) {}
 
 Rule::~Rule() {}
 
@@ -239,11 +246,17 @@ const Rule& Rule::GetDefault() {
 }
 
 void Rule::CopyFrom(const Rule& rule) {
+  key_ = rule.key_;
+  name_ = rule.name_;
+  latin_name_ = rule.latin_name_;
   format_ = rule.format_;
   required_ = rule.required_;
   sub_keys_ = rule.sub_keys_;
   languages_ = rule.languages_;
   language_ = rule.language_;
+  sub_keys_ = rule.sub_keys_;
+  sub_names_ = rule.sub_names_;
+  sub_lnames_ = rule.sub_lnames_;
   postal_code_format_ = rule.postal_code_format_;
   admin_area_name_message_id_ = rule.admin_area_name_message_id_;
   invalid_admin_area_message_id_ = rule.invalid_admin_area_message_id_;
@@ -262,6 +275,18 @@ bool Rule::ParseSerializedRule(const std::string& serialized_rule) {
 
 void Rule::ParseJsonRule(const Json& json_rule) {
   std::string value;
+  if (json_rule.GetStringValueForKey("key", &value)) {
+    key_.swap(value);
+  }
+
+  if (json_rule.GetStringValueForKey("name", &value)) {
+    name_.swap(value);
+  }
+
+  if (json_rule.GetStringValueForKey("lname", &value)) {
+    latin_name_.swap(value);
+  }
+
   if (json_rule.GetStringValueForKey("fmt", &value)) {
     ParseAddressFieldsFormat(value, &format_);
   }
@@ -308,6 +333,20 @@ void Rule::ParseJsonRule(const Json& json_rule) {
     postal_code_name_message_id_ = GetPostalCodeMessageId(value, false);
     invalid_postal_code_message_id_ = GetPostalCodeMessageId(value, true);
   }
+}
+
+const std::string& Rule::GetIdentityField(IdentityField identity_field) const {
+  switch (identity_field) {
+    case KEY:
+      return key_;
+    case NAME:
+      return name_;
+    case LATIN_NAME:
+      return latin_name_;
+    case IDENTITY_FIELDS_SIZE:
+      assert(false);
+  }
+  return key_;
 }
 
 int Rule::GetInvalidFieldMessageId(AddressField field) const {

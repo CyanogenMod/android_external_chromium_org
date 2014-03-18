@@ -14,7 +14,6 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_vector.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/autocomplete/base_search_provider.h"
@@ -23,12 +22,7 @@
 
 class Profile;
 class SearchProviderTest;
-class SuggestionDeletionHandler;
 class TemplateURLService;
-
-namespace base {
-class Value;
-}
 
 namespace net {
 class URLFetcher;
@@ -46,15 +40,6 @@ class URLFetcher;
 // suggestions.
 class SearchProvider : public BaseSearchProvider {
  public:
-  // ID used in creating URLFetcher for default provider's suggest results.
-  static const int kDefaultProviderURLFetcherID;
-
-  // ID used in creating URLFetcher for keyword provider's suggest results.
-  static const int kKeywordProviderURLFetcherID;
-
-  // ID used in creating URLFetcher for deleting suggestion results.
-  static const int kDeletionURLFetcherID;
-
   SearchProvider(AutocompleteProviderListener* listener, Profile* profile);
 
   // Extracts the suggest response metadata which SearchProvider previously
@@ -62,7 +47,6 @@ class SearchProvider : public BaseSearchProvider {
   static std::string GetSuggestMetadata(const AutocompleteMatch& match);
 
   // AutocompleteProvider:
-  virtual void DeleteMatch(const AutocompleteMatch& match) OVERRIDE;
   virtual void ResetSession() OVERRIDE;
 
   // This URL may be sent with suggest requests; see comments on CanSendURL().
@@ -136,7 +120,6 @@ class SearchProvider : public BaseSearchProvider {
   class CompareScoredResults;
 
   typedef std::vector<history::KeywordSearchTermVisit> HistoryResults;
-  typedef ScopedVector<SuggestionDeletionHandler> SuggestionDeletionHandlers;
 
   // Removes non-inlineable results until either the top result can inline
   // autocomplete the current input or verbatim outscores the top result.
@@ -163,27 +146,18 @@ class SearchProvider : public BaseSearchProvider {
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
 
   // BaseSearchProvider:
+  virtual void SortResults(bool is_keyword,
+                           const base::ListValue* relevances,
+                           Results* results) OVERRIDE;
   virtual const TemplateURL* GetTemplateURL(
       const SuggestResult& result) const OVERRIDE;
-  virtual const AutocompleteInput GetInput(
-      const SuggestResult& result) const OVERRIDE;
+  virtual const AutocompleteInput GetInput(bool is_keyword) const OVERRIDE;
   virtual bool ShouldAppendExtraParams(
       const SuggestResult& result) const OVERRIDE;
   virtual void StopSuggest() OVERRIDE;
   virtual void ClearAllResults() OVERRIDE;
-
-  // This gets called when we have requested a suggestion deletion from the
-  // server to handle the results of the deletion.
-  void OnDeletionComplete(bool success,
-                          SuggestionDeletionHandler* handler);
-
-  // Records in UMA whether the deletion request resulted in success.
-  // This is virtual so test code can override it to check that we
-  // correctly handle the request result.
-  virtual void RecordDeletionResult(bool success);
-
-  // Removes the deleted match from the list of |matches_|.
-  void DeleteMatchFromMatches(const AutocompleteMatch& match);
+  virtual int GetDefaultResultRelevance() const OVERRIDE;
+  virtual void RecordDeletionResult(bool success) OVERRIDE;
 
   // Called when timer_ expires.
   void Run();
@@ -216,11 +190,6 @@ class SearchProvider : public BaseSearchProvider {
   net::URLFetcher* CreateSuggestFetcher(int id,
                                         const TemplateURL* template_url,
                                         const AutocompleteInput& input);
-
-  // Parses results from the suggest server and updates the appropriate suggest
-  // and navigation result lists, depending on whether |is_keyword| is true.
-  // Returns whether the appropriate result list members were updated.
-  bool ParseSuggestResults(base::Value* root_val, bool is_keyword);
 
   // Converts the parsed results to a set of AutocompleteMatches, |matches_|.
   void ConvertResultsToAutocompleteMatches();
@@ -361,11 +330,6 @@ class SearchProvider : public BaseSearchProvider {
   // Results from the default and keyword search providers.
   Results default_results_;
   Results keyword_results_;
-
-  // Each deletion handler in this vector corresponds to an outstanding request
-  // that a server delete a personalized suggestion. Making this a ScopedVector
-  // causes us to auto-cancel all such requests on shutdown.
-  SuggestionDeletionHandlers deletion_handlers_;
 
   GURL current_page_url_;
 

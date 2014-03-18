@@ -25,8 +25,7 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
 
   // Navigator implementation.
   virtual void DidStartProvisionalLoad(RenderFrameHostImpl* render_frame_host,
-                                       int64 frame_id,
-                                       int64 parent_frame_id,
+                                       int parent_routing_id,
                                        bool main_frame,
                                        const GURL& url) OVERRIDE;
   virtual void DidFailProvisionalLoadWithError(
@@ -35,7 +34,6 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
       OVERRIDE;
   virtual void DidFailLoadWithError(
       RenderFrameHostImpl* render_frame_host,
-      int64 frame_id,
       const GURL& url,
       bool is_main_frame,
       int error_code,
@@ -49,17 +47,36 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
       RenderFrameHostImpl* render_frame_host,
       const FrameHostMsg_DidCommitProvisionalLoad_Params&
           input_params) OVERRIDE;
-  virtual bool NavigateToEntry(
-      RenderFrameHostImpl* render_frame_host,
-      const NavigationEntryImpl& entry,
-      NavigationController::ReloadType reload_type) OVERRIDE;
   virtual bool NavigateToPendingEntry(
       RenderFrameHostImpl* render_frame_host,
       NavigationController::ReloadType reload_type) OVERRIDE;
   virtual base::TimeTicks GetCurrentLoadStart() OVERRIDE;
+  virtual void RequestOpenURL(RenderFrameHostImpl* render_frame_host,
+                              const GURL& url,
+                              const Referrer& referrer,
+                              WindowOpenDisposition disposition,
+                              bool should_replace_current_entry,
+                              bool user_gesture) OVERRIDE;
+  virtual void RequestTransferURL(
+      RenderFrameHostImpl* render_frame_host,
+      const GURL& url,
+      const std::vector<GURL>& redirect_chain,
+      const Referrer& referrer,
+      PageTransition page_transition,
+      WindowOpenDisposition disposition,
+      const GlobalRequestID& transferred_global_request_id,
+      bool should_replace_current_entry,
+      bool user_gesture) OVERRIDE;
 
  private:
   virtual ~NavigatorImpl() {}
+
+  // Navigates to the given entry, which must be the pending entry.  Private
+  // because all callers should use NavigateToPendingEntry.
+  bool NavigateToEntry(
+      RenderFrameHostImpl* render_frame_host,
+      const NavigationEntryImpl& entry,
+      NavigationController::ReloadType reload_type);
 
   bool ShouldAssignSiteForURL(const GURL& url);
 

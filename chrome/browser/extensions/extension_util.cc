@@ -32,8 +32,6 @@ bool IsIncognitoEnabled(const std::string& extension_id,
     // work in incognito mode.
     if (extension->location() == Manifest::COMPONENT)
       return true;
-    if (extension->force_incognito_enabled())
-      return true;
   }
 
   return ExtensionPrefs::Get(context)->IsIncognitoEnabled(extension_id);
@@ -63,7 +61,7 @@ void SetIsIncognitoEnabled(const std::string& extension_id,
     }
   }
 
-  ExtensionPrefs* extension_prefs = service->extension_prefs();
+  ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(service->profile());
   // Broadcast unloaded and loaded events to update browser state. Only bother
   // if the value changed and the extension is actually enabled, since there is
   // no UI otherwise.
@@ -129,7 +127,7 @@ void SetAllowFileAccess(const std::string& extension_id,
   if (allow == AllowFileAccess(extension_id, context))
     return;
 
-  service->extension_prefs()->SetAllowFileAccess(extension_id, allow);
+  ExtensionPrefs::Get(context)->SetAllowFileAccess(extension_id, allow);
 
   bool extension_is_enabled = service->extensions()->Contains(extension_id);
   if (extension_is_enabled)
@@ -171,6 +169,12 @@ bool IsExtensionInstalledPermanently(const std::string& extension_id,
   const Extension* extension = ExtensionRegistry::Get(context)->
       GetExtensionById(extension_id, ExtensionRegistry::EVERYTHING);
   return extension && !extension->is_ephemeral();
+}
+
+GURL GetSiteForExtensionId(const std::string& extension_id,
+                           content::BrowserContext* context) {
+  return content::SiteInstance::GetSiteForURL(
+      context, Extension::GetBaseURLFromExtensionId(extension_id));
 }
 
 }  // namespace util

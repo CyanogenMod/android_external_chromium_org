@@ -10,7 +10,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/cast_channel/cast_socket.h"
 #include "chrome/browser/net/chrome_net_log.h"
-#include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_system.h"
@@ -44,21 +43,22 @@ std::string ParamToString(const T& info) {
 
 }  // namespace
 
-CastChannelAPI::CastChannelAPI(Profile* profile)
-  : profile_(profile) {
-  DCHECK(profile_);
+CastChannelAPI::CastChannelAPI(content::BrowserContext* context)
+    : browser_context_(context) {
+  DCHECK(browser_context_);
 }
 
 // static
-CastChannelAPI* CastChannelAPI::Get(Profile* profile) {
-  return ProfileKeyedAPIFactory<CastChannelAPI>::GetForProfile(profile);
+CastChannelAPI* CastChannelAPI::Get(content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<CastChannelAPI>::Get(context);
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<CastChannelAPI> > g_factory =
-    LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<CastChannelAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<CastChannelAPI>* CastChannelAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<CastChannelAPI>*
+CastChannelAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
@@ -85,8 +85,9 @@ void CastChannelAPI::OnError(const CastSocket* socket,
   channel_info.error_state = error;
   scoped_ptr<base::ListValue> results = OnError::Create(channel_info);
   scoped_ptr<Event> event(new Event(OnError::kEventName, results.Pass()));
-  extensions::ExtensionSystem::Get(profile_)->event_router()->
-    DispatchEventToExtension(socket->owner_extension_id(), event.Pass());
+  extensions::ExtensionSystem::Get(browser_context_)
+      ->event_router()
+      ->DispatchEventToExtension(socket->owner_extension_id(), event.Pass());
 }
 
 void CastChannelAPI::OnMessage(const CastSocket* socket,
@@ -99,8 +100,9 @@ void CastChannelAPI::OnMessage(const CastSocket* socket,
   VLOG(1) << "Sending message " << ParamToString(message_info)
           << " to channel " << ParamToString(channel_info);
   scoped_ptr<Event> event(new Event(OnMessage::kEventName, results.Pass()));
-  extensions::ExtensionSystem::Get(profile_)->event_router()->
-    DispatchEventToExtension(socket->owner_extension_id(), event.Pass());
+  extensions::ExtensionSystem::Get(browser_context_)
+      ->event_router()
+      ->DispatchEventToExtension(socket->owner_extension_id(), event.Pass());
 }
 
 CastChannelAPI::~CastChannelAPI() {}
@@ -111,7 +113,7 @@ CastChannelAsyncApiFunction::CastChannelAsyncApiFunction()
 CastChannelAsyncApiFunction::~CastChannelAsyncApiFunction() { }
 
 bool CastChannelAsyncApiFunction::PrePrepare() {
-  manager_ = ApiResourceManager<CastSocket>::Get(GetProfile());
+  manager_ = ApiResourceManager<CastSocket>::Get(browser_context());
   return true;
 }
 
@@ -181,7 +183,7 @@ CastChannelOpenFunction::CastChannelOpenFunction()
 CastChannelOpenFunction::~CastChannelOpenFunction() { }
 
 bool CastChannelOpenFunction::PrePrepare() {
-  api_ = CastChannelAPI::Get(GetProfile());
+  api_ = CastChannelAPI::Get(browser_context());
   return CastChannelAsyncApiFunction::PrePrepare();
 }
 

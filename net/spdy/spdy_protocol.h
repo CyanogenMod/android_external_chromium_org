@@ -285,7 +285,8 @@ enum SpdyFrameType {
   CREDENTIAL,  // No longer valid.  Kept for identifiability/enum order.
   BLOCKED,
   PUSH_PROMISE,
-  LAST_CONTROL_TYPE = PUSH_PROMISE
+  CONTINUATION,
+  LAST_CONTROL_TYPE = CONTINUATION
 };
 
 // Flags on data packets.
@@ -301,13 +302,26 @@ enum SpdyControlFlags {
   CONTROL_FLAG_UNIDIRECTIONAL = 2
 };
 
+enum SpdyPingFlags {
+  PING_FLAG_ACK = 0x1,
+};
+
 enum SpdyHeadersFlags {
-  HEADERS_FLAG_PRIORITY = 0x08
+  HEADERS_FLAG_END_HEADERS = 0x4,
+  HEADERS_FLAG_PRIORITY = 0x8
+};
+
+enum SpdyPushPromiseFlags {
+  PUSH_PROMISE_FLAG_END_PUSH_PROMISE = 0x4
 };
 
 // Flags on the SETTINGS control frame.
 enum SpdySettingsControlFlags {
   SETTINGS_FLAG_CLEAR_PREVIOUSLY_PERSISTED_SETTINGS = 0x1
+};
+
+enum Http2SettingsControlFlags {
+  SETTINGS_FLAG_ACK = 0x1,
 };
 
 // Flags for settings within a SETTINGS frame.
@@ -359,7 +373,7 @@ enum SpdyGoAwayStatus {
 };
 
 // A SPDY priority is a number between 0 and 7 (inclusive).
-// SPDY priority range is version-dependant. For SPDY 2 and below, priority is a
+// SPDY priority range is version-dependent. For SPDY 2 and below, priority is a
 // number between 0 and 3.
 typedef uint8 SpdyPriority;
 
@@ -593,9 +607,14 @@ class NET_EXPORT_PRIVATE SpdySettingsIR : public SpdyFrameIR {
     values_[id].persisted = persisted;
     values_[id].value = value;
   }
+
   bool clear_settings() const { return clear_settings_; }
   void set_clear_settings(bool clear_settings) {
     clear_settings_ = clear_settings;
+  }
+  bool is_ack() const { return is_ack_; }
+  void set_is_ack(bool is_ack) {
+    is_ack_ = is_ack;
   }
 
   virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
@@ -603,19 +622,25 @@ class NET_EXPORT_PRIVATE SpdySettingsIR : public SpdyFrameIR {
  private:
   ValueMap values_;
   bool clear_settings_;
+  bool is_ack_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdySettingsIR);
 };
 
 class NET_EXPORT_PRIVATE SpdyPingIR : public SpdyFrameIR {
  public:
-  explicit SpdyPingIR(SpdyPingId id) : id_(id) {}
+  explicit SpdyPingIR(SpdyPingId id) : id_(id), is_ack_(false) {}
   SpdyPingId id() const { return id_; }
+
+  // ACK logic is valid only for SPDY versions 4 and above.
+  bool is_ack() const { return is_ack_; }
+  void set_is_ack(bool is_ack) { is_ack_ = is_ack; }
 
   virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
 
  private:
   SpdyPingId id_;
+  bool is_ack_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyPingIR);
 };
@@ -652,11 +677,25 @@ class NET_EXPORT_PRIVATE SpdyGoAwayIR : public SpdyFrameIR {
 class NET_EXPORT_PRIVATE SpdyHeadersIR : public SpdyFrameWithNameValueBlockIR {
  public:
   explicit SpdyHeadersIR(SpdyStreamId stream_id)
-      : SpdyFrameWithNameValueBlockIR(stream_id) {}
+    : SpdyFrameWithNameValueBlockIR(stream_id),
+      end_headers_(true),
+      has_priority_(false),
+      priority_(0) {}
 
   virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
 
+  bool end_headers() const { return end_headers_; }
+  void set_end_headers(bool end_headers) {end_headers_ = end_headers;}
+  bool has_priority() const { return has_priority_; }
+  void set_has_priority(bool has_priority) { has_priority_ = has_priority; }
+  uint32 priority() const { return priority_; }
+  void set_priority(SpdyPriority priority) { priority_ = priority; }
+
  private:
+  bool end_headers_;
+  bool has_priority_;
+  // 31-bit priority.
+  uint32 priority_;
   DISALLOW_COPY_AND_ASSIGN(SpdyHeadersIR);
 };
 
@@ -698,17 +737,39 @@ class NET_EXPORT_PRIVATE SpdyPushPromiseIR
  public:
   SpdyPushPromiseIR(SpdyStreamId stream_id, SpdyStreamId promised_stream_id)
       : SpdyFrameWithNameValueBlockIR(stream_id),
-        promised_stream_id_(promised_stream_id) {}
+        promised_stream_id_(promised_stream_id),
+        end_push_promise_(true) {}
   SpdyStreamId promised_stream_id() const { return promised_stream_id_; }
   void set_promised_stream_id(SpdyStreamId id) { promised_stream_id_ = id; }
+  bool end_push_promise() const { return end_push_promise_; }
+  void set_end_push_promise(bool end_push_promise) {
+    end_push_promise_ = end_push_promise;
+  }
 
   virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
 
  private:
   SpdyStreamId promised_stream_id_;
+  bool end_push_promise_;
   DISALLOW_COPY_AND_ASSIGN(SpdyPushPromiseIR);
 };
 
+class NET_EXPORT_PRIVATE SpdyContinuationIR
+    : public SpdyFrameWithNameValueBlockIR {
+ public:
+  explicit SpdyContinuationIR(SpdyStreamId stream_id)
+      : SpdyFrameWithNameValueBlockIR(stream_id),
+        end_headers_(false) {}
+
+  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+
+  bool end_headers() const { return end_headers_; }
+  void set_end_headers(bool end_headers) {end_headers_ = end_headers;}
+
+ private:
+  bool end_headers_;
+  DISALLOW_COPY_AND_ASSIGN(SpdyContinuationIR);
+};
 
 // -------------------------------------------------------------------------
 // Wrapper classes for various SPDY frames.
@@ -769,6 +830,7 @@ class SpdyFrameVisitor {
   virtual void VisitWindowUpdate(const SpdyWindowUpdateIR& window_update) = 0;
   virtual void VisitBlocked(const SpdyBlockedIR& blocked) = 0;
   virtual void VisitPushPromise(const SpdyPushPromiseIR& push_promise) = 0;
+  virtual void VisitContinuation(const SpdyContinuationIR& continuation) = 0;
   virtual void VisitData(const SpdyDataIR& data) = 0;
 
  protected:

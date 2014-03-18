@@ -12,6 +12,7 @@ from telemetry.core import exceptions
 from telemetry.core import platform
 from telemetry.core import util
 from telemetry.core.platform import proc_supporting_platform_backend
+from telemetry.core.platform import factory
 from telemetry.core.platform.power_monitor import android_ds2784_power_monitor
 from telemetry.core.platform.power_monitor import monsoon_power_monitor
 from telemetry.core.platform.power_monitor import power_monitor_controller
@@ -46,7 +47,7 @@ class AndroidPlatformBackend(
     self._thermal_throttle = thermal_throttle.ThermalThrottle(self._adb)
     self._no_performance_mode = no_performance_mode
     self._raw_display_frame_rate_measurements = []
-    self._host_platform_backend = platform.CreatePlatformBackendForCurrentOS()
+    self._host_platform_backend = factory.GetPlatformBackendForCurrentOS()
     self._can_access_protected_file_contents = \
         self._adb.CanAccessProtectedFileContents()
     self._powermonitor = power_monitor_controller.PowerMonitorController([
@@ -130,7 +131,9 @@ class AndroidPlatformBackend(
 
     This can be used to make memory measurements more stable in particular.
     """
-    android_prebuilt_profiler_helper.InstallOnDevice(self._adb, 'purge_ashmem')
+    if not android_prebuilt_profiler_helper.InstallOnDevice(
+        self._adb, 'purge_ashmem'):
+      raise Exception('Error installing purge_ashmem.')
     if self._adb.RunShellCommand(
         android_prebuilt_profiler_helper.GetDevicePath('purge_ashmem'),
         log_result=True):
@@ -222,15 +225,19 @@ class AndroidPlatformBackend(
       raise ValueError('Android video capture cannot capture at %dmbps. '
                        'Max capture rate is 100mbps.' % min_bitrate_mbps)
     self._video_output = tempfile.mkstemp()[1]
-    if self._video_recorder:
+    if self.is_video_capture_running:
       self._video_recorder.Stop()
     self._video_recorder = screenshot.VideoRecorder(
         self._adb, self._video_output, megabits_per_second=min_bitrate_mbps)
     self._video_recorder.Start()
     util.WaitFor(self._video_recorder.IsStarted, 5)
 
+  @property
+  def is_video_capture_running(self):
+    return self._video_recorder is not None
+
   def StopVideoCapture(self):
-    assert self._video_recorder, 'Must start video capture first'
+    assert self.is_video_capture_running, 'Must start video capture first'
     self._video_recorder.Stop()
     self._video_output = self._video_recorder.Pull()
     self._video_recorder = None
@@ -305,7 +312,7 @@ class AndroidPlatformBackend(
       logging.warning('%s cannot be retrieved on non-rooted device.' % fname)
       return ''
     return '\n'.join(
-        self._adb.GetProtectedFileContents(fname, log_result=False))
+        self._adb.GetProtectedFileContents(fname))
 
   def _GetPsOutput(self, columns, pid=None):
     assert columns == ['pid', 'name'] or columns == ['pid'], \

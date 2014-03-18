@@ -4,19 +4,14 @@
 
 #include "chrome/browser/signin/mutable_profile_oauth2_token_service.h"
 
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/webdata/web_data_service_factory.h"
+#include "components/signin/core/signin_client.h"
 #include "components/signin/core/webdata/token_web_data.h"
 #include "components/webdata/common/web_data_service_base.h"
-#include "content/public/browser/browser_thread.h"
 #include "google_apis/gaia/gaia_auth_fetcher.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/google_service_auth_error.h"
+#include "google_apis/gaia/oauth2_access_token_fetcher_impl.h"
 #include "net/url_request/url_request_context_getter.h"
-
-#if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_constants.h"
-#endif
 
 namespace {
 
@@ -39,40 +34,50 @@ std::string RemoveAccountIdPrefix(const std::string& prefixed_account_id) {
   return prefixed_account_id.substr(kAccountIdPrefixLength);
 }
 
+}  // namespace
+
 // This class sends a request to GAIA to revoke the given refresh token from
 // the server.  This is a best effort attempt only.  This class deletes itself
 // when done sucessfully or otherwise.
-class RevokeServerRefreshToken : public GaiaAuthConsumer {
+class MutableProfileOAuth2TokenService::RevokeServerRefreshToken
+    : public GaiaAuthConsumer {
  public:
-  RevokeServerRefreshToken(const std::string& account_id,
-                           net::URLRequestContextGetter* request_context);
+  RevokeServerRefreshToken(MutableProfileOAuth2TokenService* token_service,
+                           const std::string& account_id);
   virtual ~RevokeServerRefreshToken();
 
  private:
   // GaiaAuthConsumer overrides:
   virtual void OnOAuth2RevokeTokenCompleted() OVERRIDE;
 
-  scoped_refptr<net::URLRequestContextGetter> request_context_;
+  MutableProfileOAuth2TokenService* token_service_;
   GaiaAuthFetcher fetcher_;
 
   DISALLOW_COPY_AND_ASSIGN(RevokeServerRefreshToken);
 };
 
-RevokeServerRefreshToken::RevokeServerRefreshToken(
-    const std::string& refresh_token,
-    net::URLRequestContextGetter* request_context)
-    : request_context_(request_context),
-      fetcher_(this, GaiaConstants::kChromeSource, request_context) {
+MutableProfileOAuth2TokenService::
+    RevokeServerRefreshToken::RevokeServerRefreshToken(
+    MutableProfileOAuth2TokenService* token_service,
+    const std::string& refresh_token)
+    : token_service_(token_service),
+      fetcher_(this, GaiaConstants::kChromeSource,
+               token_service_->GetRequestContext()) {
   fetcher_.StartRevokeOAuth2Token(refresh_token);
 }
 
-RevokeServerRefreshToken::~RevokeServerRefreshToken() {}
+MutableProfileOAuth2TokenService::
+    RevokeServerRefreshToken::~RevokeServerRefreshToken() {}
 
-void RevokeServerRefreshToken::OnOAuth2RevokeTokenCompleted() {
-  delete this;
+void MutableProfileOAuth2TokenService::
+    RevokeServerRefreshToken::OnOAuth2RevokeTokenCompleted() {
+  // |this| pointer will be deleted when removed from the vector, so don't
+  // access any members after call to erase().
+  token_service_->server_revokes_.erase(
+      std::find(token_service_->server_revokes_.begin(),
+                token_service_->server_revokes_.end(),
+                this));
 }
-
-}  // namespace
 
 MutableProfileOAuth2TokenService::AccountInfo::AccountInfo(
     ProfileOAuth2TokenService* token_service,
@@ -84,18 +89,18 @@ MutableProfileOAuth2TokenService::AccountInfo::AccountInfo(
     last_auth_error_(GoogleServiceAuthError::NONE) {
   DCHECK(token_service_);
   DCHECK(!account_id_.empty());
-  token_service_->signin_global_error()->AddProvider(this);
+  token_service_->signin_error_controller()->AddProvider(this);
 }
 
 MutableProfileOAuth2TokenService::AccountInfo::~AccountInfo() {
-  token_service_->signin_global_error()->RemoveProvider(this);
+  token_service_->signin_error_controller()->RemoveProvider(this);
 }
 
 void MutableProfileOAuth2TokenService::AccountInfo::SetLastAuthError(
     const GoogleServiceAuthError& error) {
   if (error.state() != last_auth_error_.state()) {
     last_auth_error_ = error;
-    token_service_->signin_global_error()->AuthStatusChanged();
+    token_service_->signin_error_controller()->AuthStatusChanged();
   }
 }
 
@@ -114,9 +119,11 @@ MutableProfileOAuth2TokenService::MutableProfileOAuth2TokenService()
 }
 
 MutableProfileOAuth2TokenService::~MutableProfileOAuth2TokenService() {
+  DCHECK(server_revokes_.empty());
 }
 
 void MutableProfileOAuth2TokenService::Shutdown() {
+  server_revokes_.clear();
   CancelWebTokenFetch();
   CancelAllRequests();
   refresh_tokens_.clear();
@@ -124,17 +131,32 @@ void MutableProfileOAuth2TokenService::Shutdown() {
   ProfileOAuth2TokenService::Shutdown();
 }
 
+bool MutableProfileOAuth2TokenService::RefreshTokenIsAvailable(
+    const std::string& account_id) const {
+  return !GetRefreshToken(account_id).empty();
+}
+
 std::string MutableProfileOAuth2TokenService::GetRefreshToken(
-    const std::string& account_id) {
+    const std::string& account_id) const {
   AccountInfoMap::const_iterator iter = refresh_tokens_.find(account_id);
   if (iter != refresh_tokens_.end())
     return iter->second->refresh_token();
   return std::string();
 }
 
+OAuth2AccessTokenFetcher*
+MutableProfileOAuth2TokenService::CreateAccessTokenFetcher(
+    const std::string& account_id,
+    net::URLRequestContextGetter* getter,
+    OAuth2AccessTokenConsumer* consumer) {
+  std::string refresh_token = GetRefreshToken(account_id);
+  DCHECK(!refresh_token.empty());
+  return new OAuth2AccessTokenFetcherImpl(consumer, getter, refresh_token);
+}
+
 net::URLRequestContextGetter*
 MutableProfileOAuth2TokenService::GetRequestContext() {
-  return profile()->GetRequestContext();
+  return client()->GetURLRequestContext();
 }
 
 void MutableProfileOAuth2TokenService::LoadCredentials(
@@ -146,9 +168,7 @@ void MutableProfileOAuth2TokenService::LoadCredentials(
   CancelAllRequests();
   refresh_tokens().clear();
   loading_primary_account_id_ = primary_account_id;
-  scoped_refptr<TokenWebData> token_web_data =
-      WebDataServiceFactory::GetTokenWebDataForProfile(
-          profile(), Profile::EXPLICIT_ACCESS);
+  scoped_refptr<TokenWebData> token_web_data = client()->GetDatabase();
   if (token_web_data.get())
     web_data_service_request_ = token_web_data->GetAllTokens(this);
 }
@@ -206,9 +226,7 @@ void MutableProfileOAuth2TokenService::LoadAllCredentialsIntoMemory(
       old_login_token = refresh_token;
 
     if (IsLegacyServiceId(prefixed_account_id)) {
-      scoped_refptr<TokenWebData> token_web_data =
-          WebDataServiceFactory::GetTokenWebDataForProfile(
-              profile(), Profile::EXPLICIT_ACCESS);
+      scoped_refptr<TokenWebData> token_web_data = client()->GetDatabase();
       if (token_web_data.get())
         token_web_data->RemoveTokenForService(prefixed_account_id);
     } else {
@@ -272,7 +290,7 @@ std::vector<std::string> MutableProfileOAuth2TokenService::GetAccounts() {
 void MutableProfileOAuth2TokenService::UpdateCredentials(
     const std::string& account_id,
     const std::string& refresh_token) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(!account_id.empty());
   DCHECK(!refresh_token.empty());
 
@@ -282,6 +300,10 @@ void MutableProfileOAuth2TokenService::UpdateCredentials(
     // If token present, and different from the new one, cancel its requests,
     // and clear the entries in cache related to that account.
     if (refresh_token_present) {
+      std::string revoke_reason = refresh_token_present ? "token differs" :
+                                                          "token is missing";
+      LOG(WARNING) << "Revoking refresh token on server. "
+                   << "Reason: token update, " << revoke_reason;
       RevokeCredentialsOnServer(refresh_tokens_[account_id]->refresh_token());
       CancelRequestsForAccount(account_id);
       ClearCacheForAccount(account_id);
@@ -301,7 +323,7 @@ void MutableProfileOAuth2TokenService::UpdateCredentials(
 
 void MutableProfileOAuth2TokenService::RevokeCredentials(
     const std::string& account_id) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK(thread_checker_.CalledOnValidThread());
 
   if (refresh_tokens_.count(account_id) > 0) {
     RevokeCredentialsOnServer(refresh_tokens_[account_id]->refresh_token());
@@ -316,9 +338,7 @@ void MutableProfileOAuth2TokenService::RevokeCredentials(
 void MutableProfileOAuth2TokenService::PersistCredentials(
     const std::string& account_id,
     const std::string& refresh_token) {
-  scoped_refptr<TokenWebData> token_web_data =
-      WebDataServiceFactory::GetTokenWebDataForProfile(
-          profile(), Profile::EXPLICIT_ACCESS);
+  scoped_refptr<TokenWebData> token_web_data = client()->GetDatabase();
   if (token_web_data.get()) {
     token_web_data->SetTokenForService(ApplyAccountIdPrefix(account_id),
                                        refresh_token);
@@ -327,15 +347,15 @@ void MutableProfileOAuth2TokenService::PersistCredentials(
 
 void MutableProfileOAuth2TokenService::ClearPersistedCredentials(
     const std::string& account_id) {
-  scoped_refptr<TokenWebData> token_web_data =
-      WebDataServiceFactory::GetTokenWebDataForProfile(
-          profile(), Profile::EXPLICIT_ACCESS);
+  scoped_refptr<TokenWebData> token_web_data = client()->GetDatabase();
   if (token_web_data.get())
     token_web_data->RemoveTokenForService(ApplyAccountIdPrefix(account_id));
 }
 
 void MutableProfileOAuth2TokenService::RevokeAllCredentials() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  if (!client()->CanRevokeCredentials())
+    return;
+  DCHECK(thread_checker_.CalledOnValidThread());
   CancelWebTokenFetch();
   CancelAllRequests();
   ClearCache();
@@ -348,15 +368,15 @@ void MutableProfileOAuth2TokenService::RevokeAllCredentials() {
 
 void MutableProfileOAuth2TokenService::RevokeCredentialsOnServer(
     const std::string& refresh_token) {
-  // RevokeServerRefreshToken deletes itself when done.
-  new RevokeServerRefreshToken(refresh_token, GetRequestContext());
+  // Keep track or all server revoke requests.  This way they can be deleted
+  // before the token service is shutdown and won't outlive the profile.
+  server_revokes_.push_back(
+      new RevokeServerRefreshToken(this, refresh_token));
 }
 
 void MutableProfileOAuth2TokenService::CancelWebTokenFetch() {
   if (web_data_service_request_ != 0) {
-    scoped_refptr<TokenWebData> token_web_data =
-        WebDataServiceFactory::GetTokenWebDataForProfile(
-            profile(), Profile::EXPLICIT_ACCESS);
+    scoped_refptr<TokenWebData> token_web_data = client()->GetDatabase();
     DCHECK(token_web_data.get());
     token_web_data->CancelRequest(web_data_service_request_);
     web_data_service_request_  = 0;

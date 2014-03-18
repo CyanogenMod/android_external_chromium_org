@@ -20,9 +20,6 @@ namespace {
 
 class MockObserver : public SyncStartupTracker::Observer {
  public:
-  MockObserver() {}
-  ~MockObserver() {}
-
   MOCK_METHOD0(SyncStartupCompleted, void(void));
   MOCK_METHOD0(SyncStartupFailed, void(void));
 };
@@ -45,7 +42,8 @@ class SyncStartupTrackerTest : public testing::Test {
     EXPECT_CALL(*mock_pss_, RemoveObserver(_)).Times(AnyNumber());
     EXPECT_CALL(*mock_pss_, GetAuthError()).
         WillRepeatedly(ReturnRef(no_error_));
-
+    ON_CALL(*mock_pss_, GetRegisteredDataTypes())
+        .WillByDefault(Return(syncer::ModelTypeSet()));
     mock_pss_->Initialize();
   }
 

@@ -41,6 +41,13 @@ void ServiceWorkerScriptContext::DidHandleInstallEvent(int request_id) {
   Send(request_id, ServiceWorkerHostMsg_InstallEventFinished());
 }
 
+void ServiceWorkerScriptContext::DidHandleFetchEvent(
+    int request_id,
+    ServiceWorkerFetchEventResult result,
+    const ServiceWorkerResponse& response) {
+  Send(request_id, ServiceWorkerHostMsg_FetchEventFinished(result, response));
+}
+
 void ServiceWorkerScriptContext::Send(int request_id,
                                       const IPC::Message& message) {
   embedded_context_->SendMessageToBrowser(request_id, message);
@@ -53,7 +60,8 @@ void ServiceWorkerScriptContext::OnInstallEvent(
 
 void ServiceWorkerScriptContext::OnFetchEvent(
     const ServiceWorkerFetchRequest& request) {
-  NOTIMPLEMENTED();
+  // TODO(falken): Pass in the request.
+  proxy_->dispatchFetchEvent(current_request_id_);
 }
 
 }  // namespace content

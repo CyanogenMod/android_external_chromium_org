@@ -79,20 +79,13 @@ class StartupAppLauncher
     std::string client_secret;
   };
 
-  // A class to check if the app has an update. It invokes BeginInstall
-  // if the app is not installed or not up-to-date. Otherwise, it invokes
-  // OnReadyToLaunch.
-  class AppUpdateChecker;
-
   void OnLaunchSuccess();
   void OnLaunchFailure(KioskAppLaunchError::Error error);
 
   void MaybeInstall();
 
-  // Callbacks from AppUpdateChecker
-  void OnUpdateCheckNotInstalled();
-  void OnUpdateCheckUpdateAvailable();
-  void OnUpdateCheckNoUpdate();
+  // Callbacks from ExtensionUpdater.
+  void OnUpdateCheckFinished();
 
   void BeginInstall();
   void InstallCallback(bool success, const std::string& error);
@@ -114,13 +107,12 @@ class StartupAppLauncher
   const std::string app_id_;
   const bool diagnostic_mode_;
   Delegate* delegate_;
-  bool install_attempted_;
+  bool network_ready_handled_;
+  int install_attempt_;
   bool ready_to_launch_;
 
   scoped_refptr<extensions::WebstoreStandaloneInstaller> installer_;
   KioskOAuthParams auth_params_;
-
-  scoped_ptr<AppUpdateChecker> update_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(StartupAppLauncher);
 };

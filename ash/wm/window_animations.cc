@@ -31,13 +31,14 @@
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/layer_animation_sequence.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/compositor/layer_tree_owner.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/interpolated_transform.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/vector3d_f.h"
-#include "ui/views/corewm/window_util.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/window_util.h"
 
 namespace ash {
 namespace {
@@ -56,8 +57,6 @@ const float kWindowAnimation_ShowBrightnessGrayscale = 0.f;
 
 const float kWindowAnimation_HideOpacity = 0.f;
 const float kWindowAnimation_ShowOpacity = 1.f;
-// TODO(sky): if we end up sticking with 0, nuke the code doing the rotation.
-const float kWindowAnimation_MinimizeRotate = 0.f;
 
 // Scales for AshWindow above/below current workspace.
 const float kLayerScaleAboveSize = 1.1f;
@@ -65,6 +64,31 @@ const float kLayerScaleBelowSize = .9f;
 
 int64 Round64(float f) {
   return static_cast<int64>(f + 0.5f);
+}
+
+base::TimeDelta GetCrossFadeDuration(aura::Window* window,
+                                     const gfx::Rect& old_bounds,
+                                     const gfx::Rect& new_bounds) {
+  if (::wm::WindowAnimationsDisabled(window))
+    return base::TimeDelta();
+
+  int old_area = old_bounds.width() * old_bounds.height();
+  int new_area = new_bounds.width() * new_bounds.height();
+  int max_area = std::max(old_area, new_area);
+  // Avoid divide by zero.
+  if (max_area == 0)
+    return base::TimeDelta::FromMilliseconds(kCrossFadeDurationMS);
+
+  int delta_area = std::abs(old_area - new_area);
+  // If the area didn't change, the animation is instantaneous.
+  if (delta_area == 0)
+    return base::TimeDelta::FromMilliseconds(kCrossFadeDurationMS);
+
+  float factor =
+      static_cast<float>(delta_area) / static_cast<float>(max_area);
+  const float kRange = kCrossFadeDurationMaxMs - kCrossFadeDurationMinMs;
+  return base::TimeDelta::FromMilliseconds(
+      Round64(kCrossFadeDurationMinMs + (factor * kRange)));
 }
 
 }  // namespace
@@ -92,25 +116,15 @@ void AddLayerAnimationsForMinimize(aura::Window* window, bool show) {
           gfx::Point(target_bounds.x() - bounds.x(),
                      target_bounds.y() - bounds.y())));
 
-  scoped_ptr<ui::InterpolatedTransform> rotation(
-      new ui::InterpolatedRotation(0, kWindowAnimation_MinimizeRotate));
-
-  scoped_ptr<ui::InterpolatedTransform> rotation_about_pivot(
-      new ui::InterpolatedTransformAboutPivot(
-          gfx::Point(bounds.width() * 0.5, bounds.height() * 0.5),
-          rotation.release()));
-
   scale->SetChild(translation.release());
-  rotation_about_pivot->SetChild(scale.release());
-
-  rotation_about_pivot->SetReversed(show);
+  scale->SetReversed(show);
 
   base::TimeDelta duration = window->layer()->GetAnimator()->
       GetTransitionDuration();
 
   scoped_ptr<ui::LayerAnimationElement> transition(
       ui::LayerAnimationElement::CreateInterpolatedTransformElement(
-          rotation_about_pivot.release(), duration));
+          scale.release(), duration));
 
   transition->set_tween_type(
       show ? gfx::Tween::EASE_IN : gfx::Tween::EASE_IN_OUT);
@@ -131,6 +145,13 @@ void AddLayerAnimationsForMinimize(aura::Window* window, bool show) {
       new ui::LayerAnimationSequence(
           ui::LayerAnimationElement::CreateOpacityElement(
               opacity, duration / 4)));
+
+  // Reset the transform to identity when the minimize animation is completed.
+  window->layer()->GetAnimator()->ScheduleAnimation(
+      new ui::LayerAnimationSequence(
+          ui::LayerAnimationElement::CreateTransformElement(
+              gfx::Transform(),
+              base::TimeDelta())));
 }
 
 void AnimateShowWindow_Minimize(aura::Window* window) {
@@ -144,8 +165,8 @@ void AnimateShowWindow_Minimize(aura::Window* window) {
 
   // Now that the window has been restored, we need to clear its animation style
   // to default so that normal animation applies.
-  views::corewm::SetWindowVisibilityAnimationType(
-      window, views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_DEFAULT);
+  ::wm::SetWindowVisibilityAnimationType(
+      window, ::wm::WINDOW_VISIBILITY_ANIMATION_TYPE_DEFAULT);
 }
 
 void AnimateHideWindow_Minimize(aura::Window* window) {
@@ -157,7 +178,7 @@ void AnimateHideWindow_Minimize(aura::Window* window) {
       kLayerAnimationsForMinimizeDurationMS);
   settings.SetTransitionDuration(duration);
   settings.AddObserver(
-      views::corewm::CreateHidingWindowAnimationObserver(window));
+      ::wm::CreateHidingWindowAnimationObserver(window));
   window->layer()->SetVisible(false);
 
   AddLayerAnimationsForMinimize(window, false);
@@ -190,7 +211,7 @@ void AnimateShowHideWindowCommon_BrightnessGrayscale(aura::Window* window,
   settings.SetTransitionDuration(duration);
   if (!show) {
     settings.AddObserver(
-        views::corewm::CreateHidingWindowAnimationObserver(window));
+        ::wm::CreateHidingWindowAnimationObserver(window));
   }
 
   window->layer()->GetAnimator()->
@@ -211,12 +232,12 @@ void AnimateHideWindow_BrightnessGrayscale(aura::Window* window) {
 }
 
 bool AnimateShowWindow(aura::Window* window) {
-  if (!views::corewm::HasWindowVisibilityAnimationTransition(
-          window, views::corewm::ANIMATE_SHOW)) {
+  if (!::wm::HasWindowVisibilityAnimationTransition(
+          window, ::wm::ANIMATE_SHOW)) {
     return false;
   }
 
-  switch (views::corewm::GetWindowVisibilityAnimationType(window)) {
+  switch (::wm::GetWindowVisibilityAnimationType(window)) {
     case WINDOW_VISIBILITY_ANIMATION_TYPE_MINIMIZE:
       AnimateShowWindow_Minimize(window);
       return true;
@@ -230,12 +251,12 @@ bool AnimateShowWindow(aura::Window* window) {
 }
 
 bool AnimateHideWindow(aura::Window* window) {
-  if (!views::corewm::HasWindowVisibilityAnimationTransition(
-          window, views::corewm::ANIMATE_HIDE)) {
+  if (!::wm::HasWindowVisibilityAnimationTransition(
+          window, ::wm::ANIMATE_HIDE)) {
     return false;
   }
 
-  switch (views::corewm::GetWindowVisibilityAnimationType(window)) {
+  switch (::wm::GetWindowVisibilityAnimationType(window)) {
     case WINDOW_VISIBILITY_ANIMATION_TYPE_MINIMIZE:
       AnimateHideWindow_Minimize(window);
       return true;
@@ -257,18 +278,17 @@ class CrossFadeObserver : public ui::CompositorObserver,
  public:
   // Observes |window| for destruction, but does not take ownership.
   // Takes ownership of |layer| and its child layers.
-  CrossFadeObserver(aura::Window* window, ui::Layer* layer)
+  CrossFadeObserver(aura::Window* window,
+                    scoped_ptr<ui::LayerTreeOwner> layer_owner)
       : window_(window),
-        layer_(layer) {
+        layer_owner_(layer_owner.Pass()) {
     window_->AddObserver(this);
-    layer_->GetCompositor()->AddObserver(this);
+    layer_owner_->root()->GetCompositor()->AddObserver(this);
   }
   virtual ~CrossFadeObserver() {
     window_->RemoveObserver(this);
     window_ = NULL;
-    layer_->GetCompositor()->RemoveObserver(this);
-    views::corewm::DeepDeleteLayers(layer_);
-    layer_ = NULL;
+    layer_owner_->root()->GetCompositor()->RemoveObserver(this);
   }
 
   // ui::CompositorObserver overrides:
@@ -281,7 +301,7 @@ class CrossFadeObserver : public ui::CompositorObserver,
   }
   virtual void OnCompositingAborted(ui::Compositor* compositor) OVERRIDE {
     // Triggers OnImplicitAnimationsCompleted() to be called and deletes us.
-    layer_->GetAnimator()->StopAnimating();
+    layer_owner_->root()->GetAnimator()->StopAnimating();
   }
   virtual void OnCompositingLockStateChanged(
       ui::Compositor* compositor) OVERRIDE {
@@ -290,10 +310,10 @@ class CrossFadeObserver : public ui::CompositorObserver,
   // aura::WindowObserver overrides:
   virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {
     // Triggers OnImplicitAnimationsCompleted() to be called and deletes us.
-    layer_->GetAnimator()->StopAnimating();
+    layer_owner_->root()->GetAnimator()->StopAnimating();
   }
   virtual void OnWindowRemovingFromRootWindow(aura::Window* window) OVERRIDE {
-    layer_->GetAnimator()->StopAnimating();
+    layer_owner_->root()->GetAnimator()->StopAnimating();
   }
 
   // ui::ImplicitAnimationObserver overrides:
@@ -303,20 +323,17 @@ class CrossFadeObserver : public ui::CompositorObserver,
 
  private:
   aura::Window* window_;  // not owned
-  ui::Layer* layer_;  // owned
+  scoped_ptr<ui::LayerTreeOwner> layer_owner_;
 
   DISALLOW_COPY_AND_ASSIGN(CrossFadeObserver);
 };
 
-// Implementation of cross fading. Window is the window being cross faded. It
-// should be at the target bounds. |old_layer| the previous layer from |window|.
-// This takes ownership of |old_layer| and deletes when the animation is done.
-// |pause_duration| is the duration to pause at the current bounds before
-// animating. Returns the duration of the fade.
-base::TimeDelta CrossFadeImpl(aura::Window* window,
-                              ui::Layer* old_layer,
-                              gfx::Tween::Type tween_type) {
-  const gfx::Rect old_bounds(old_layer->bounds());
+base::TimeDelta CrossFadeAnimation(
+    aura::Window* window,
+    scoped_ptr<ui::LayerTreeOwner> old_layer_owner,
+    gfx::Tween::Type tween_type) {
+  DCHECK(old_layer_owner->root());
+  const gfx::Rect old_bounds(old_layer_owner->root()->bounds());
   const gfx::Rect new_bounds(window->bounds());
   const bool old_on_top = (old_bounds.width() > new_bounds.width());
 
@@ -326,11 +343,12 @@ base::TimeDelta CrossFadeImpl(aura::Window* window,
 
   // Scale up the old layer while translating to new position.
   {
+    ui::Layer* old_layer = old_layer_owner->root();
     old_layer->GetAnimator()->StopAnimating();
     ui::ScopedLayerAnimationSettings settings(old_layer->GetAnimator());
 
     // Animation observer owns the old layer and deletes itself.
-    settings.AddObserver(new CrossFadeObserver(window, old_layer));
+    settings.AddObserver(new CrossFadeObserver(window, old_layer_owner.Pass()));
     settings.SetTransitionDuration(duration);
     settings.SetTweenType(tween_type);
     gfx::Transform out_transform;
@@ -382,69 +400,12 @@ base::TimeDelta CrossFadeImpl(aura::Window* window,
   return duration;
 }
 
-void CrossFadeToBounds(aura::Window* window, const gfx::Rect& new_bounds) {
-  // Some test results in invoking CrossFadeToBounds when window is not visible.
-  // No animation is necessary in that case, thus just change the bounds and
-  // quit.
-  if (!window->TargetVisibility()) {
-    window->SetBounds(new_bounds);
-    return;
-  }
-
-  const gfx::Rect old_bounds = window->bounds();
-
-  // Create fresh layers for the window and all its children to paint into.
-  // Takes ownership of the old layer and all its children, which will be
-  // cleaned up after the animation completes.
-  // Specify |set_bounds| to true here to keep the old bounds in the child
-  // windows of |window|.
-  ui::Layer* old_layer = views::corewm::RecreateWindowLayers(window, true);
-  ui::Layer* new_layer = window->layer();
-
-  // Resize the window to the new size, which will force a layout and paint.
-  window->SetBounds(new_bounds);
-
-  // Ensure the higher-resolution layer is on top.
-  bool old_on_top = (old_bounds.width() > new_bounds.width());
-  if (old_on_top)
-    old_layer->parent()->StackBelow(new_layer, old_layer);
-  else
-    old_layer->parent()->StackAbove(new_layer, old_layer);
-
-  CrossFadeImpl(window, old_layer, gfx::Tween::EASE_OUT);
-}
-
-base::TimeDelta GetCrossFadeDuration(aura::Window* window,
-                                     const gfx::Rect& old_bounds,
-                                     const gfx::Rect& new_bounds) {
-  if (views::corewm::WindowAnimationsDisabled(window))
-    return base::TimeDelta();
-
-  int old_area = old_bounds.width() * old_bounds.height();
-  int new_area = new_bounds.width() * new_bounds.height();
-  int max_area = std::max(old_area, new_area);
-  // Avoid divide by zero.
-  if (max_area == 0)
-    return base::TimeDelta::FromMilliseconds(kCrossFadeDurationMS);
-
-  int delta_area = std::abs(old_area - new_area);
-  // If the area didn't change, the animation is instantaneous.
-  if (delta_area == 0)
-    return base::TimeDelta::FromMilliseconds(kCrossFadeDurationMS);
-
-  float factor =
-      static_cast<float>(delta_area) / static_cast<float>(max_area);
-  const float kRange = kCrossFadeDurationMaxMs - kCrossFadeDurationMinMs;
-  return base::TimeDelta::FromMilliseconds(
-      Round64(kCrossFadeDurationMinMs + (factor * kRange)));
-}
-
 bool AnimateOnChildWindowVisibilityChanged(aura::Window* window, bool visible) {
-  if (views::corewm::WindowAnimationsDisabled(window))
+  if (::wm::WindowAnimationsDisabled(window))
     return false;
 
   // Attempt to run CoreWm supplied animation types.
-  if (views::corewm::AnimateOnChildWindowVisibilityChanged(window, visible))
+  if (::wm::AnimateOnChildWindowVisibilityChanged(window, visible))
     return true;
 
   // Otherwise try to run an Ash-specific animation.

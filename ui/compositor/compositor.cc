@@ -45,6 +45,7 @@ enum SwapType {
 
 bool g_compositor_initialized = false;
 base::Thread* g_compositor_thread = NULL;
+cc::SharedBitmapManager* g_shared_bitmap_manager;
 
 ui::ContextFactory* g_context_factory = NULL;
 
@@ -80,6 +81,7 @@ ContextFactory* ContextFactory::GetInstance() {
 
 // static
 void ContextFactory::SetInstance(ContextFactory* instance) {
+  DCHECK_NE(!!g_context_factory, !!instance);
   g_context_factory = instance;
 }
 
@@ -209,12 +211,13 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
       ContextFactory::GetInstance()->DoesCreateTestContexts()
       ? kTestRefreshRate
       : kDefaultRefreshRate;
-  settings.deadline_scheduling_enabled =
-      switches::IsUIDeadlineSchedulingEnabled();
+  settings.main_frame_before_draw_enabled = false;
+  settings.main_frame_before_activation_enabled = false;
   settings.partial_swap_enabled =
       !command_line->HasSwitch(cc::switches::kUIDisablePartialSwap);
-  settings.per_tile_painting_enabled =
-      command_line->HasSwitch(cc::switches::kUIEnablePerTilePainting);
+#if defined(OS_CHROMEOS)
+  settings.per_tile_painting_enabled = true;
+#endif
 
   // These flags should be mirrored by renderer versions in content/renderer/.
   settings.initial_debug_state.show_debug_borders =
@@ -241,12 +244,19 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
   settings.initial_debug_state.SetRecordRenderingStats(
       command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking));
 
+  settings.impl_side_painting = IsUIImplSidePaintingEnabled();
+  settings.use_map_image = IsUIMapImageEnabled();
+
   base::TimeTicks before_create = base::TimeTicks::Now();
   if (!!g_compositor_thread) {
     host_ = cc::LayerTreeHost::CreateThreaded(
-        this, NULL, settings, g_compositor_thread->message_loop_proxy());
+        this,
+        g_shared_bitmap_manager,
+        settings,
+        g_compositor_thread->message_loop_proxy());
   } else {
-    host_ = cc::LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings);
+    host_ = cc::LayerTreeHost::CreateSingleThreaded(
+        this, this, g_shared_bitmap_manager, settings);
   }
   UMA_HISTOGRAM_TIMES("GPU.CreateBrowserCompositor",
                       base::TimeTicks::Now() - before_create);
@@ -313,6 +323,11 @@ void Compositor::Terminate() {
 
   DCHECK(g_compositor_initialized) << "Compositor::Initialize() didn't happen.";
   g_compositor_initialized = false;
+}
+
+// static
+void Compositor::SetSharedBitmapManager(cc::SharedBitmapManager* manager) {
+  g_shared_bitmap_manager = manager;
 }
 
 void Compositor::ScheduleDraw() {

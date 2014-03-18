@@ -11,6 +11,7 @@
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -306,14 +307,14 @@ base::Time IndexedDBContextImpl::GetOriginLastModified(const GURL& origin_url) {
 
 void IndexedDBContextImpl::DeleteForOrigin(const GURL& origin_url) {
   DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
-  ForceClose(origin_url);
+  ForceClose(origin_url, FORCE_CLOSE_DELETE_ORIGIN);
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return;
 
   base::FilePath idb_directory = GetFilePath(origin_url);
   EnsureDiskUsageCacheInitialized(origin_url);
-  bool deleted = LevelDBDatabase::Destroy(idb_directory);
-  if (!deleted) {
+  leveldb::Status s = LevelDBDatabase::Destroy(idb_directory);
+  if (!s.ok()) {
     LOG(WARNING) << "Failed to delete LevelDB database: "
                  << idb_directory.AsUTF8Unsafe();
   } else {
@@ -325,15 +326,20 @@ void IndexedDBContextImpl::DeleteForOrigin(const GURL& origin_url) {
   }
 
   QueryDiskAndUpdateQuotaUsage(origin_url);
-  if (deleted) {
+  if (s.ok()) {
     RemoveFromOriginSet(origin_url);
     origin_size_map_.erase(origin_url);
     space_available_map_.erase(origin_url);
   }
 }
 
-void IndexedDBContextImpl::ForceClose(const GURL origin_url) {
+void IndexedDBContextImpl::ForceClose(const GURL origin_url,
+                                      ForceCloseReason reason) {
   DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
+  UMA_HISTOGRAM_ENUMERATION("WebCore.IndexedDB.Context.ForceCloseReason",
+                            reason,
+                            FORCE_CLOSE_REASON_MAX);
+
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return;
 

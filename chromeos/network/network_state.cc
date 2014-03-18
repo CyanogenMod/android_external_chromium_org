@@ -88,6 +88,8 @@ bool NetworkState::PropertyChanged(const std::string& key,
     // Shill uses "Unknown" to indicate an unset error state.
     if (error_ == kErrorUnknown)
       error_.clear();
+    if (!error_.empty())
+      last_error_ = error_;
     return true;
   } else if (key == IPConfigProperty(shill::kAddressProperty)) {
     return GetStringValue(key, value, &ip_address_);
@@ -236,7 +238,7 @@ bool NetworkState::IsConnectingState() const {
 
 bool NetworkState::IsPrivate() const {
   return !profile_path_.empty() &&
-      profile_path_ != NetworkProfileHandler::kSharedProfilePath;
+      profile_path_ != NetworkProfileHandler::GetSharedProfilePath();
 }
 
 std::string NetworkState::GetDnsServersAsString() const {

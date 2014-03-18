@@ -10,6 +10,53 @@
 
 namespace chromeos {
 
+namespace {
+
+// The whitelist for enabling extension based xkb keyboards at login session.
+const char* kLoginLayoutWhitelist[] = {
+  "be",
+  "br",
+  "ca",
+  "ca(eng)",
+  "ca(multix)",
+  "ch",
+  "ch(fr)",
+  "cz",
+  "cz(qwerty)",
+  "de",
+  "de(neo)",
+  "dk",
+  "ee",
+  "es",
+  "es(cat)",
+  "fi",
+  "fr",
+  "gb(dvorak)",
+  "gb(extd)",
+  "hr",
+  "hu",
+  "is",
+  "it",
+  "jp",
+  "latam",
+  "lt",
+  "lv(apostrophe)",
+  "no",
+  "pl",
+  "pt",
+  "ro",
+  "se",
+  "si",
+  "tr",
+  "us",
+  "us(altgr-intl)",
+  "us(colemak)",
+  "us(dvorak)",
+  "us(intl)"
+};
+
+} // namespace
+
 ComponentExtensionEngine::ComponentExtensionEngine() {
 }
 
@@ -29,7 +76,10 @@ ComponentExtensionIMEManagerDelegate::~ComponentExtensionIMEManagerDelegate() {
 }
 
 ComponentExtensionIMEManager::ComponentExtensionIMEManager()
-    : is_initialized_(false) {
+    : is_initialized_(false), was_initialization_notified_(false) {
+  for (size_t i = 0; i < arraysize(kLoginLayoutWhitelist); ++i) {
+    login_layout_set_.insert(kLoginLayoutWhitelist[i]);
+  }
 }
 
 ComponentExtensionIMEManager::~ComponentExtensionIMEManager() {
@@ -40,7 +90,14 @@ void ComponentExtensionIMEManager::Initialize(
   delegate_ = delegate.Pass();
   component_extension_imes_ = delegate_->ListIME();
   is_initialized_ = true;
-  FOR_EACH_OBSERVER(Observer, observers_, OnInitialized());
+}
+
+void ComponentExtensionIMEManager::NotifyInitialized() {
+  if (is_initialized_ && !was_initialization_notified_) {
+    FOR_EACH_OBSERVER(
+        Observer, observers_, OnImeComponentExtensionInitialized());
+    was_initialization_notified_ = true;
+  }
 }
 
 bool ComponentExtensionIMEManager::IsInitialized() {
@@ -59,10 +116,10 @@ bool ComponentExtensionIMEManager::LoadComponentExtensionIME(
 bool ComponentExtensionIMEManager::UnloadComponentExtensionIME(
     const std::string& input_method_id) {
   ComponentExtensionIME ime;
-  if (FindEngineEntry(input_method_id, &ime, NULL))
-    return delegate_->Unload(ime.id, ime.path);
-  else
+  if (!FindEngineEntry(input_method_id, &ime, NULL))
     return false;
+  delegate_->Unload(ime.id, ime.path);
+  return true;
 }
 
 bool ComponentExtensionIMEManager::IsWhitelisted(
@@ -130,19 +187,37 @@ input_method::InputMethodDescriptors
   input_method::InputMethodDescriptors result;
   for (size_t i = 0; i < component_extension_imes_.size(); ++i) {
     for (size_t j = 0; j < component_extension_imes_[i].engines.size(); ++j) {
+      const std::string input_method_id =
+          extension_ime_util::GetComponentInputMethodID(
+              component_extension_imes_[i].id,
+              component_extension_imes_[i].engines[j].engine_id);
+      const std::vector<std::string>& layouts =
+          component_extension_imes_[i].engines[j].layouts;
       result.push_back(
           input_method::InputMethodDescriptor(
-              extension_ime_util::GetComponentInputMethodID(
-                  component_extension_imes_[i].id,
-                  component_extension_imes_[i].engines[j].engine_id),
+              input_method_id,
               component_extension_imes_[i].engines[j].display_name,
               std::string(), // TODO(uekawa): Set short name.
-              component_extension_imes_[i].engines[j].layouts,
+              layouts,
               component_extension_imes_[i].engines[j].language_codes,
-              false,  // Do not use IME on login screen.
+              // Enables extension based xkb keyboards on login screen.
+              extension_ime_util::IsKeyboardLayoutExtension(
+                  input_method_id) && IsInLoginLayoutWhitelist(layouts),
               component_extension_imes_[i].options_page_url,
               component_extension_imes_[i].input_view_url));
     }
+  }
+  return result;
+}
+
+input_method::InputMethodDescriptors
+ComponentExtensionIMEManager::GetXkbIMEAsInputMethodDescriptor() {
+  input_method::InputMethodDescriptors result;
+  const input_method::InputMethodDescriptors& descriptors =
+      GetAllIMEAsInputMethodDescriptor();
+  for (size_t i = 0; i < descriptors.size(); ++i) {
+    if (extension_ime_util::IsKeyboardLayoutExtension(descriptors[i].id()))
+      result.push_back(descriptors[i]);
   }
   return result;
 }
@@ -179,6 +254,15 @@ bool ComponentExtensionIMEManager::FindEngineEntry(
         *out_engine = component_extension_imes_[i].engines[j];
       return true;
     }
+  }
+  return false;
+}
+
+bool ComponentExtensionIMEManager::IsInLoginLayoutWhitelist(
+    const std::vector<std::string>& layouts) {
+  for (size_t i = 0; i < layouts.size(); ++i) {
+    if (login_layout_set_.find(layouts[i]) != login_layout_set_.end())
+      return true;
   }
   return false;
 }

@@ -90,6 +90,9 @@ class ASH_EXPORT DefaultSystemTrayDelegate : public SystemTrayDelegate {
       base::TimeDelta* session_length_limit) OVERRIDE;
   virtual int GetSystemTrayMenuWidth() OVERRIDE;
   virtual void ActiveUserWasChanged() OVERRIDE;
+  virtual bool IsNetworkBehindCaptivePortal(
+      const std::string& service_path) const OVERRIDE;
+  virtual bool IsSearchKeyMappedToCapsLock() OVERRIDE;
 
  private:
   bool bluetooth_enabled_;

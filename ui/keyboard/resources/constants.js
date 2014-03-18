@@ -22,7 +22,17 @@ var FONT_SIZE_RATIO = 2.5;
 var LayoutAlignment = {
   CENTER: "center",
   STRETCH: "stretch",
-}
+};
+
+/**
+ * The enumerations of key sounds.
+ * @const
+ * @type {enum}
+ */
+var Sound = {
+  NONE: "none",
+  DEFAULT: "keypress-standard",
+};
 
 /**
  * The enumeration of swipe directions.
@@ -37,16 +47,28 @@ var SwipeDirection = {
 };
 
 /**
- * The default weight of a key in the X direction.
+ * The ratio between the width and height of the key when in portrait mode.
  * @type {number}
  */
-var DEFAULT_KEY_WEIGHT_X = 100;
+var KEY_ASPECT_RATIO_PORTRAIT = 1;
 
 /**
- * The default weight of a key in the Y direction.
+ * The ratio between the width and height of the key when in landscape mode.
  * @type {number}
  */
-var DEFAULT_KEY_WEIGHT_Y = 70;
+var KEY_ASPECT_RATIO_LANDSCAPE = 1.46;
+
+/**
+ * The default weight of a key.
+ * @type {number}
+ */
+var DEFAULT_KEY_WEIGHT = 100;
+
+/**
+ * The default volume for keyboard sounds.
+ * @type {number}
+ */
+var DEFAULT_VOLUME = 0.2;
 
 /**
  * The top padding on each key.
@@ -56,3 +78,17 @@ var DEFAULT_KEY_WEIGHT_Y = 70;
 // number before the key is rendered.
 var KEY_PADDING_TOP = 1;
 var KEY_PADDING_BOTTOM = 1;
+
+/**
+ * The maximum number of extra pixels before a resize is triggered.
+ * @type {number}
+ */
+var RESIZE_THRESHOLD = 50;
+
+/**
+ * The size of the pool to use for playing audio sounds on key press. This is to
+ * enable the same sound to be overlayed, for example, when a repeat key is
+ * pressed.
+ * @type {number}
+ */
+var SOUND_POOL_SIZE = 10;

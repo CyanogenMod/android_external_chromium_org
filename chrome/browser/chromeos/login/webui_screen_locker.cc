@@ -28,7 +28,7 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_ui.h"
 #include "ui/aura/client/capture_client.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/gfx/screen.h"
@@ -111,6 +111,28 @@ void WebUIScreenLocker::ShowUserPodButton(
   if (!webui_ready_)
     return;
   login_display_->ShowUserPodButton(username, iconURL, click_callback);
+}
+
+void WebUIScreenLocker::HideUserPodButton(const std::string& username) {
+  if (!webui_ready_)
+    return;
+  login_display_->HideUserPodButton(username);
+}
+
+void WebUIScreenLocker::SetAuthType(const std::string& username,
+                                    LoginDisplay::AuthType auth_type,
+                                    const std::string& initial_value) {
+  if (!webui_ready_)
+    return;
+  login_display_->SetAuthType(username, auth_type, initial_value);
+}
+
+LoginDisplay::AuthType WebUIScreenLocker::GetAuthType(
+    const std::string& username) const {
+  // Return default auth type if login display is not ready.
+  if (!webui_ready_)
+    return LoginDisplay::OFFLINE_PASSWORD;
+  return login_display_->GetAuthType(username);
 }
 
 void WebUIScreenLocker::ShowErrorMessage(

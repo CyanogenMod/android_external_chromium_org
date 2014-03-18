@@ -41,6 +41,8 @@ def JavaScriptDefaultValue(field):
     return "[]";
   if isinstance(field.kind, mojom.Interface):
     return _kind_to_javascript_default_value[mojom.MSGPIPE]
+  if isinstance(field.kind, mojom.Enum):
+    return "0"
 
 
 def JavaScriptPayloadSize(packed):
@@ -82,6 +84,8 @@ def GetJavaScriptType(kind):
     return "new codec.ArrayOf(%s)" % GetJavaScriptType(kind.kind)
   if isinstance(kind, mojom.Interface):
     return GetJavaScriptType(mojom.MSGPIPE)
+  if isinstance(kind, mojom.Enum):
+    return _kind_to_javascript_type[mojom.INT32]
   return kind
 
 
@@ -114,6 +118,8 @@ def JavaScriptDecodeSnippet(kind):
     return "decodeArrayPointer(%s)" % GetJavaScriptType(kind.kind);
   if isinstance(kind, mojom.Interface):
     return JavaScriptDecodeSnippet(mojom.MSGPIPE)
+  if isinstance(kind, mojom.Enum):
+    return _kind_to_javascript_decode_snippet[mojom.INT32]
 
 
 _kind_to_javascript_encode_snippet = {
@@ -145,52 +151,23 @@ def JavaScriptEncodeSnippet(kind):
     return "encodeArrayPointer(%s, " % GetJavaScriptType(kind.kind);
   if isinstance(kind, mojom.Interface):
     return JavaScriptEncodeSnippet(mojom.MSGPIPE)
+  if isinstance(kind, mojom.Enum):
+    return _kind_to_javascript_encode_snippet[mojom.INT32]
 
-
-def GetConstants(module):
-  """Returns a generator that enumerates all constants that can be referenced
-  from this module."""
-  class Constant:
-    pass
-
-  for enum in module.enums:
-    for field in enum.fields:
-      constant = Constant()
-      constant.namespace = module.namespace
-      constant.is_current_namespace = True
-      constant.import_item = None
-      constant.name = (enum.name, field.name)
-      yield constant
-
-  for each in module.imports:
-    for enum in each["module"].enums:
-      for field in enum.fields:
-        constant = Constant()
-        constant.namespace = each["namespace"]
-        constant.is_current_namespace = constant.namespace == module.namespace
-        constant.import_item = each
-        constant.name = (enum.name, field.name)
-        yield constant
-
-
-def TranslateConstants(value, module):
-  # We're assuming we're dealing with an identifier, but that may not be
-  # the case. If we're not, we just won't find any matches.
-  if value.find(".") != -1:
-    namespace, identifier = value.split(".")
-  else:
-    namespace, identifier = "", value
-
-  for constant in GetConstants(module):
-    if namespace == constant.namespace or (
-        namespace == "" and constant.is_current_namespace):
-      if constant.name[1] == identifier:
-        if constant.import_item:
-          return "%s.%s.%s" % (constant.import_item["unique_name"],
-              constant.name[0], constant.name[1])
-        else:
-          return "%s.%s" % (constant.name[0], constant.name[1])
-  return value
+def TranslateConstants(token, module):
+  if isinstance(token, mojom.Constant):
+    # Enum constants are constructed like:
+    # NamespaceUid.Struct_Enum.FIELD_NAME
+    name = []
+    if token.imported_from:
+      name.append(token.imported_from["unique_name"])
+    if token.parent_kind:
+      name.append(token.parent_kind.name + "_" + token.name[0])
+    else:
+      name.append(token.name[0])
+    name.append(token.name[1])
+    return ".".join(name)
+  return token
 
 
 def ExpressionToText(value, module):
@@ -209,7 +186,6 @@ def JavascriptType(kind):
 class Generator(mojom_generator.Generator):
 
   js_filters = {
-    "camel_to_underscores": mojom_generator.CamelToUnderscores,
     "default_value": JavaScriptDefaultValue,
     "payload_size": JavaScriptPayloadSize,
     "decode_snippet": JavaScriptDecodeSnippet,

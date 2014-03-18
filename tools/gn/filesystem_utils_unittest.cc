@@ -130,6 +130,7 @@ TEST(FilesystemUtils, InvertDir) {
   EXPECT_TRUE(InvertDir(SourceDir("//")) == "");
 
   EXPECT_TRUE(InvertDir(SourceDir("//foo/bar")) == "../../");
+  EXPECT_TRUE(InvertDir(SourceDir("//foo\\bar")) == "../../");
   EXPECT_TRUE(InvertDir(SourceDir("/foo/bar/")) == "../../");
 }
 
@@ -171,7 +172,7 @@ TEST(FilesystemUtils, NormalizePath) {
   NormalizePath(&input);
   EXPECT_EQ("/foo", input);
 
-  input = "//../foo";  // Don't go aboe the root dir.
+  input = "//../foo";  // Don't go above the root dir.
   NormalizePath(&input);
   EXPECT_EQ("//foo", input);
 
@@ -194,6 +195,11 @@ TEST(FilesystemUtils, NormalizePath) {
   input = "../";
   NormalizePath(&input);
   EXPECT_EQ("../", input);
+
+  // Backslash normalization.
+  input = "foo\\..\\..\\bar";
+  NormalizePath(&input);
+  EXPECT_EQ("../bar", input);
 }
 
 TEST(FilesystemUtils, RebaseSourceAbsolutePath) {
@@ -252,6 +258,55 @@ TEST(FilesystemUtils, DirectoryWithNoLastSlash) {
   EXPECT_EQ("//.", DirectoryWithNoLastSlash(SourceDir("//")));
   EXPECT_EQ("//foo", DirectoryWithNoLastSlash(SourceDir("//foo/")));
   EXPECT_EQ("/bar", DirectoryWithNoLastSlash(SourceDir("/bar/")));
+}
+
+TEST(FilesystemUtils, SourceDirForPath) {
+#if defined(OS_WIN)
+  base::FilePath root(L"C:\\source\\foo\\");
+  EXPECT_EQ("/C:/foo/bar/", SourceDirForPath(root,
+            base::FilePath(L"C:\\foo\\bar")).value());
+  EXPECT_EQ("/", SourceDirForPath(root,
+            base::FilePath(L"/")).value());
+  EXPECT_EQ("//", SourceDirForPath(root,
+            base::FilePath(L"C:\\source\\foo")).value());
+  EXPECT_EQ("//bar/", SourceDirForPath(root,
+            base::FilePath(L"C:\\source\\foo\\bar\\")). value());
+  EXPECT_EQ("//bar/baz/", SourceDirForPath(root,
+            base::FilePath(L"C:\\source\\foo\\bar\\baz")).value());
+
+  // Should be case-and-slash-insensitive.
+  EXPECT_EQ("//baR/", SourceDirForPath(root,
+            base::FilePath(L"c:/SOURCE\\Foo/baR/")).value());
+
+  // Some "weird" Windows paths.
+  EXPECT_EQ("/foo/bar/", SourceDirForPath(root,
+            base::FilePath(L"/foo/bar/")).value());
+  EXPECT_EQ("/C:/foo/bar/", SourceDirForPath(root,
+            base::FilePath(L"C:foo/bar/")).value());
+
+  // Also allow absolute GN-style Windows paths.
+  EXPECT_EQ("/C:/foo/bar/", SourceDirForPath(root,
+            base::FilePath(L"/C:/foo/bar")).value());
+  EXPECT_EQ("//bar/", SourceDirForPath(root,
+            base::FilePath(L"/C:/source/foo/bar")).value());
+
+#else
+  base::FilePath root("/source/foo/");
+  EXPECT_EQ("/foo/bar/", SourceDirForPath(root,
+            base::FilePath("/foo/bar/")).value());
+  EXPECT_EQ("/", SourceDirForPath(root,
+            base::FilePath("/")).value());
+  EXPECT_EQ("//", SourceDirForPath(root,
+            base::FilePath("/source/foo")).value());
+  EXPECT_EQ("//bar/", SourceDirForPath(root,
+            base::FilePath("/source/foo/bar/")).value());
+  EXPECT_EQ("//bar/baz/", SourceDirForPath(root,
+            base::FilePath("/source/foo/bar/baz/")).value());
+
+  // Should be case-sensitive.
+  EXPECT_EQ("/SOURCE/foo/bar/", SourceDirForPath(root,
+            base::FilePath("/SOURCE/foo/bar/")).value());
+#endif
 }
 
 TEST(FilesystemUtils, GetToolchainDirs) {

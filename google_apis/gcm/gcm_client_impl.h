@@ -50,25 +50,31 @@ class GCM_EXPORT GCMClientImpl : public GCMClient {
   virtual void Initialize(
       const checkin_proto::ChromeBuildProto& chrome_build_proto,
       const base::FilePath& store_path,
+      const std::vector<std::string>& account_ids,
       const scoped_refptr<base::SequencedTaskRunner>& blocking_task_runner,
       const scoped_refptr<net::URLRequestContextGetter>&
           url_request_context_getter,
       Delegate* delegate) OVERRIDE;
+  virtual void Load() OVERRIDE;
+  virtual void Stop() OVERRIDE;
   virtual void CheckOut() OVERRIDE;
   virtual void Register(const std::string& app_id,
-                        const std::string& cert,
                         const std::vector<std::string>& sender_ids) OVERRIDE;
   virtual void Unregister(const std::string& app_id) OVERRIDE;
   virtual void Send(const std::string& app_id,
                     const std::string& receiver_id,
                     const OutgoingMessage& message) OVERRIDE;
-  virtual bool IsReady() const OVERRIDE;
+  virtual GCMStatistics GetStatistics() const OVERRIDE;
 
  private:
   // State representation of the GCMClient.
+  // Any change made to this enum should have corresponding change in the
+  // GetStateString(...) function.
   enum State {
     // Uninitialized.
     UNINITIALIZED,
+    // Initialized,
+    INITIALIZED,
     // GCM store loading is in progress.
     LOADING,
     // Initial device checkin is in progress.
@@ -103,6 +109,9 @@ class GCM_EXPORT GCMClientImpl : public GCMClient {
       PendingUnregistrations;
 
   friend class GCMClientImplTest;
+
+  // Returns text representation of the enum State.
+  std::string GetStateString() const;
 
   // Callbacks for the MCSClient.
   // Receives messages and dispatches them to relevant user delegates.
@@ -149,16 +158,23 @@ class GCM_EXPORT GCMClientImpl : public GCMClient {
   // Completes the unregistration request.
   void OnUnregisterCompleted(const std::string& app_id, bool status);
 
-  // Handles incoming data message and dispatches it the a relevant user
-  // delegate.
+  // Completes the GCM store destroy request.
+  void OnGCMStoreDestroyed(bool success);
+
+  // Handles incoming data message and dispatches it the delegate of this class.
   void HandleIncomingMessage(const gcm::MCSMessage& message);
 
-  // Fires OnMessageSendError event on |delegate|, with specified |app_id| and
-  // message ID obtained from |incoming_message| if one is available.
-  void NotifyDelegateOnMessageSendError(
-      GCMClient::Delegate* delegate,
-      const std::string& app_id,
-      const IncomingMessage& incoming_message);
+  // Fires OnMessageReceived event on the delegate of this class, based on the
+  // details in |data_message_stanza| and |message_data|.
+  void HandleIncomingDataMessage(
+      const mcs_proto::DataMessageStanza& data_message_stanza,
+      MessageData& message_data);
+
+  // Fires OnMessageSendError event on the delegate of this calss, based on the
+  // details in |data_message_stanza| and |message_data|.
+  void HandleIncomingSendError(
+      const mcs_proto::DataMessageStanza& data_message_stanza,
+      MessageData& message_data);
 
   // For testing purpose only.
   // Sets an |mcs_client_| for testing. Takes the ownership of |mcs_client|.
@@ -195,6 +211,7 @@ class GCM_EXPORT GCMClientImpl : public GCMClient {
   scoped_ptr<MCSClient> mcs_client_;
 
   scoped_ptr<CheckinRequest> checkin_request_;
+  std::vector<std::string> account_ids_;
 
   // Currently pending registrations. GCMClientImpl owns the
   // RegistrationRequests.

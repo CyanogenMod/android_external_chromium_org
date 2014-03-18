@@ -82,16 +82,35 @@ function getMockHandlerContainer(eventIdentifier) {
 var Promise = function() {
   function PromisePrototypeObject(asyncTask) {
     var result;
+    var resolved = false;
     asyncTask(
         function(asyncResult) {
           result = asyncResult;
+          resolved = true;
         },
-        function() {}); // Errors are unsupported.
+        function(asyncFailureResult) {
+          result = asyncFailureResult;
+          resolved = false;
+        });
 
     function then(callback) {
-      callback.call(null, result);
+      if (resolved) {
+        callback.call(null, result);
+      }
+      return this;
     }
-    return {then: then, isPromise: true};
+
+    // Promises use the function name "catch" to call back error handlers.
+    // We can't use "catch" since function or variable names cannot use the word
+    // "catch".
+    function catchFunc(callback) {
+      if (!resolved) {
+        callback.call(null, result);
+      }
+      return this;
+    }
+
+    return {then: then, catch: catchFunc, isPromise: true};
   }
 
   function all(arrayOfPromises) {
@@ -110,6 +129,36 @@ var Promise = function() {
     });
     return promise;
   }
+
+  function resolve(value) {
+    var promise = new PromisePrototypeObject(function(resolve) {
+      resolve(value);
+    });
+    return promise;
+  }
+
   PromisePrototypeObject.all = all;
+  PromisePrototypeObject.resolve = resolve;
   return PromisePrototypeObject;
 }();
+
+
+/**
+ * Sets up the test to expect a Chrome Local Storage call.
+ * @param {Object} fixture Mock JS Test Object.
+ * @param {Object} defaultObject Storage request default object.
+ * @param {Object} result Storage result.
+ * @param {boolean=} opt_AllowRejection Allow Promise Rejection
+ */
+function expectChromeLocalStorageGet(
+    fixture, defaultObject, result, opt_AllowRejection) {
+  if (opt_AllowRejection === undefined) {
+    fixture.mockApis.expects(once()).
+      fillFromChromeLocalStorage(eqJSON(defaultObject)).
+      will(returnValue(Promise.resolve(result)));
+  } else {
+    fixture.mockApis.expects(once()).
+      fillFromChromeLocalStorage(eqJSON(defaultObject), opt_AllowRejection).
+      will(returnValue(Promise.resolve(result)));
+  }
+}

@@ -51,28 +51,6 @@
                 'resources/icon_host.png',
               ],
             },
-            {
-              'destination': '<(SHARED_INTERMEDIATE_DIR)/remoting/android/res/layout',
-              'files': [
-                'resources/layout/desktop.xml',
-                'resources/layout/host.xml',
-                'resources/layout/main.xml',
-                'resources/layout/pin_dialog.xml',
-              ],
-            },
-            {
-              'destination': '<(SHARED_INTERMEDIATE_DIR)/remoting/android/res/menu',
-              'files': [
-                'resources/menu/chromoting_actionbar.xml',
-                'resources/menu/desktop_actionbar.xml',
-              ],
-            },
-            {
-              'destination': '<(SHARED_INTERMEDIATE_DIR)/remoting/android/res/values',
-              'files': [
-                'resources/strings.xml',
-              ],
-            },
           ],
         },  # end of target 'remoting_android_resources'
         {
@@ -87,7 +65,6 @@
             'inputs': [
               '<(remoting_localize_path)',
               '<(branding_path)',
-              '<(RULE_INPUT_PATH)',
             ],
             'outputs': [
               '<(SHARED_INTERMEDIATE_DIR)/remoting/android/<(RULE_INPUT_ROOT)',
@@ -118,9 +95,11 @@
             'java_in_dir': 'android/java',
             'R_package': 'org.chromium.chromoting',
             'package_name': '<(_target_name)',
+            'resource_dir': 'resources/android',
             'additional_res_dirs': [ '<(SHARED_INTERMEDIATE_DIR)/remoting/android/res' ],
             'additional_input_paths': [
               '<(PRODUCT_DIR)/obj/remoting/remoting_android_resources.actions_rules_copies.stamp',
+              '<(PRODUCT_DIR)/obj/remoting/remoting_resources.actions_rules_copies.stamp',
             ],
           },
           'includes': [ '../build/java_apk.gypi' ],

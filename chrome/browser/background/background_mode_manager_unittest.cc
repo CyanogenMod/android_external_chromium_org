@@ -365,6 +365,7 @@ TEST_F(BackgroundModeManagerTest, ProfileInfoCacheObserver) {
   EXPECT_EQ(base::UTF8ToUTF16("p1"),
             manager.GetBackgroundModeData(profile1)->name());
 
+  EXPECT_TRUE(chrome::WillKeepAlive());
   TestingProfile* profile2 = profile_manager->CreateTestingProfile("p2");
   manager.RegisterProfile(profile2);
   EXPECT_EQ(2, manager.NumberOfBackgroundModeData());
@@ -374,11 +375,41 @@ TEST_F(BackgroundModeManagerTest, ProfileInfoCacheObserver) {
             manager.GetBackgroundModeData(profile2)->name());
 
   manager.OnProfileWillBeRemoved(profile2->GetPath());
+  // Should still be in background mode after deleting profile.
+  EXPECT_TRUE(chrome::WillKeepAlive());
   EXPECT_EQ(1, manager.NumberOfBackgroundModeData());
 
   // Check that the background mode data we think is in the map actually is.
   EXPECT_EQ(base::UTF8ToUTF16("p1"),
             manager.GetBackgroundModeData(profile1)->name());
+}
+
+TEST_F(BackgroundModeManagerTest, DeleteBackgroundProfile) {
+  // Tests whether deleting the only profile when it is a BG profile works
+  // or not (http://crbug.com/346214).
+  scoped_ptr<TestingProfileManager> profile_manager =
+      CreateTestingProfileManager();
+  TestingProfile* profile = profile_manager->CreateTestingProfile("p1");
+  TestBackgroundModeManager manager(
+      command_line_.get(), profile_manager->profile_info_cache(), true);
+  manager.RegisterProfile(profile);
+  EXPECT_FALSE(chrome::WillKeepAlive());
+
+  // Install app, should show status tray icon.
+  manager.OnBackgroundAppInstalled(NULL);
+  manager.SetBackgroundAppCount(1);
+  manager.SetBackgroundAppCountForProfile(1);
+  manager.OnApplicationListChanged(profile);
+
+  manager.OnProfileNameChanged(
+      profile->GetPath(),
+      manager.GetBackgroundModeData(profile)->name());
+
+  EXPECT_TRUE(chrome::WillKeepAlive());
+  manager.SetBackgroundAppCount(0);
+  manager.SetBackgroundAppCountForProfile(0);
+  manager.OnProfileWillBeRemoved(profile->GetPath());
+  EXPECT_FALSE(chrome::WillKeepAlive());
 }
 
 TEST_F(BackgroundModeManagerTest, DisableBackgroundModeUnderTestFlag) {
@@ -420,7 +451,7 @@ TEST_F(BackgroundModeManagerTest, BackgroundMenuGeneration) {
   // tearing down our thread bundle before we've had chance to clean
   // everything up. Keeping Chrome alive prevents this.
   // We aren't interested in if the keep alive works correctly in this test.
-  chrome::StartKeepAlive();
+  chrome::IncrementKeepAliveCount();
   TestingProfile* profile = profile_manager->CreateTestingProfile("p");
 
 #if defined(OS_CHROMEOS)
@@ -430,9 +461,9 @@ TEST_F(BackgroundModeManagerTest, BackgroundMenuGeneration) {
   chromeos::ScopedTestUserManager test_user_manager;
 
   // On ChromeOS shutdown, HandleAppExitingForPlatform will call
-  // chrome::EndKeepAlive because it assumes the aura shell
-  // called chrome::StartKeepAlive. Simulate the call here.
-  chrome::StartKeepAlive();
+  // chrome::DecrementKeepAliveCount because it assumes the aura shell
+  // called chrome::IncrementKeepAliveCount. Simulate the call here.
+  chrome::IncrementKeepAliveCount();
 #endif
 
   scoped_refptr<extensions::Extension> component_extension(
@@ -519,7 +550,8 @@ TEST_F(BackgroundModeManagerTest, BackgroundMenuGeneration) {
 
   // We're getting ready to shutdown the message loop. Clear everything out!
   base::MessageLoop::current()->RunUntilIdle();
-  chrome::EndKeepAlive(); // Matching the above chrome::StartKeepAlive().
+  chrome::DecrementKeepAliveCount();  // Matching the above
+                                      // chrome::IncrementKeepAliveCount().
 
   // TestBackgroundModeManager has dependencies on the infrastructure.
   // It should get cleared first.
@@ -532,8 +564,9 @@ TEST_F(BackgroundModeManagerTest, BackgroundMenuGeneration) {
   // before tearing down the Message Center.
   profile_manager.reset();
 
-  // Message Center shutdown must occur after the EndKeepAlive because
-  // EndKeepAlive will end up referencing the message center during cleanup.
+  // Message Center shutdown must occur after the DecrementKeepAliveCount
+  // because DecrementKeepAliveCount will end up referencing the message
+  // center during cleanup.
   message_center::MessageCenter::Shutdown();
 
   // Clear the shutdown flag to isolate the remaining effect of this test.
@@ -554,7 +587,7 @@ TEST_F(BackgroundModeManagerTest, BackgroundMenuGenerationMultipleProfile) {
   // tearing down our thread bundle before we've had chance to clean
   // everything up. Keeping Chrome alive prevents this.
   // We aren't interested in if the keep alive works correctly in this test.
-  chrome::StartKeepAlive();
+  chrome::IncrementKeepAliveCount();
   TestingProfile* profile1 = profile_manager->CreateTestingProfile("p1");
   TestingProfile* profile2 = profile_manager->CreateTestingProfile("p2");
 
@@ -565,9 +598,9 @@ TEST_F(BackgroundModeManagerTest, BackgroundMenuGenerationMultipleProfile) {
   chromeos::ScopedTestUserManager test_user_manager;
 
   // On ChromeOS shutdown, HandleAppExitingForPlatform will call
-  // chrome::EndKeepAlive because it assumes the aura shell
-  // called chrome::StartKeepAlive. Simulate the call here.
-  chrome::StartKeepAlive();
+  // chrome::DecrementKeepAliveCount because it assumes the aura shell
+  // called chrome::IncrementKeepAliveCount. Simulate the call here.
+  chrome::IncrementKeepAliveCount();
 #endif
 
   scoped_refptr<extensions::Extension> component_extension(
@@ -742,7 +775,8 @@ TEST_F(BackgroundModeManagerTest, BackgroundMenuGenerationMultipleProfile) {
 
   // We're getting ready to shutdown the message loop. Clear everything out!
   base::MessageLoop::current()->RunUntilIdle();
-  chrome::EndKeepAlive(); // Matching the above chrome::StartKeepAlive().
+  chrome::DecrementKeepAliveCount();  // Matching the above
+                                      // chrome::IncrementKeepAliveCount().
 
   // TestBackgroundModeManager has dependencies on the infrastructure.
   // It should get cleared first.
@@ -755,8 +789,9 @@ TEST_F(BackgroundModeManagerTest, BackgroundMenuGenerationMultipleProfile) {
   // before tearing down the Message Center.
   profile_manager.reset();
 
-  // Message Center shutdown must occur after the EndKeepAlive because
-  // EndKeepAlive will end up referencing the message center during cleanup.
+  // Message Center shutdown must occur after the DecrementKeepAliveCount
+  // because DecrementKeepAliveCount will end up referencing the message
+  // center during cleanup.
   message_center::MessageCenter::Shutdown();
 
   // Clear the shutdown flag to isolate the remaining effect of this test.

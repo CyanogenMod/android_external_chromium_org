@@ -5,10 +5,12 @@
 #include "sandbox/linux/services/broker_process.h"
 
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -16,6 +18,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/pickle.h"
@@ -132,11 +135,19 @@ BrokerProcess::BrokerProcess(int denied_errno,
 
 BrokerProcess::~BrokerProcess() {
   if (initialized_ && ipc_socketpair_ != -1) {
-    close(ipc_socketpair_);
+    // Closing the socket should be enough to notify the child to die,
+    // unless it has been duplicated.
+    PCHECK(0 == IGNORE_EINTR(close(ipc_socketpair_)));
+    PCHECK(0 == kill(broker_pid_, SIGKILL));
+    siginfo_t process_info;
+    // Reap the child.
+    int ret = HANDLE_EINTR(waitid(P_PID, broker_pid_, &process_info, WEXITED));
+    PCHECK(0 == ret);
   }
 }
 
-bool BrokerProcess::Init(bool (*sandbox_callback)(void)) {
+bool BrokerProcess::Init(
+    const base::Callback<bool(void)>& broker_process_init_callback) {
   CHECK(!initialized_);
   int socket_pair[2];
   // Use SOCK_SEQPACKET, because we need to preserve message boundaries
@@ -147,7 +158,9 @@ bool BrokerProcess::Init(bool (*sandbox_callback)(void)) {
     return false;
   }
 
+#if !defined(THREAD_SANITIZER)
   DCHECK_EQ(1, base::GetNumberOfThreads(base::GetCurrentProcessHandle()));
+#endif
   int child_pid = fork();
   if (child_pid == -1) {
     close(socket_pair[0]);
@@ -173,10 +186,7 @@ bool BrokerProcess::Init(bool (*sandbox_callback)(void)) {
     shutdown(socket_pair[0], SHUT_WR);
     ipc_socketpair_ = socket_pair[0];
     is_child_ = true;
-    // Enable the sandbox if provided.
-    if (sandbox_callback) {
-      CHECK(sandbox_callback());
-    }
+    CHECK(broker_process_init_callback.Run());
     initialized_ = true;
     for (;;) {
       HandleRequest();

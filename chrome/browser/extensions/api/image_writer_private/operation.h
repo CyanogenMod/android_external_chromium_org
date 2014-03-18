@@ -6,12 +6,13 @@
 #define CHROME_BROWSER_EXTENSIONS_API_IMAGE_WRITER_PRIVATE_OPERATION_H_
 
 #include "base/callback.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/md5.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "base/timer/timer.h"
-#include "chrome/browser/extensions/api/image_writer_private/image_writer_utils.h"
+#include "chrome/browser/extensions/api/image_writer_private/image_writer_utility_client.h"
 #include "chrome/common/extensions/api/image_writer_private.h"
 #include "third_party/zlib/google/zip_reader.h"
 
@@ -38,6 +39,13 @@ class OperationManager;
 // Run, Complete.  Start and Complete run on the UI thread and are responsible
 // for advancing to the next stage and other UI interaction.  The Run phase does
 // the work on the FILE thread and calls SendProgress or Error as appropriate.
+//
+// TODO(haven): This class is current refcounted because it is owned by the
+// OperationManager on the UI thread but needs to do work on the FILE thread.
+// There is probably a better way to organize this so that it can be represented
+// by a WeakPtr, but those are not thread-safe.  Additionally, if destruction is
+// done on the UI thread then that causes problems if any of the fields were
+// allocated/accessed on the FILE thread.  http://crbug.com/344713
 class Operation : public base::RefCountedThreadSafe<Operation> {
  public:
   typedef base::Callback<void(bool, const std::string&)> StartWriteCallback;
@@ -46,10 +54,10 @@ class Operation : public base::RefCountedThreadSafe<Operation> {
 
   Operation(base::WeakPtr<OperationManager> manager,
             const ExtensionId& extension_id,
-            const std::string& storage_unit_id);
+            const std::string& device_path);
 
   // Starts the operation.
-  virtual void Start() = 0;
+  void Start();
 
   // Cancel the operation. This must be called to clean up internal state and
   // cause the the operation to actually stop.  It will not be destroyed until
@@ -63,8 +71,31 @@ class Operation : public base::RefCountedThreadSafe<Operation> {
   int GetProgress();
   image_writer_api::Stage GetStage();
 
+#if !defined(OS_CHROMEOS)
+  // Set an ImageWriterClient to use.  Should be called only when testing.
+  void SetUtilityClientForTesting(
+      scoped_refptr<ImageWriterUtilityClient> client);
+#endif
+
  protected:
   virtual ~Operation();
+
+  // This function should be overriden by subclasses to set up the work of the
+  // operation.  It will be called from Start().
+  virtual void StartImpl() = 0;
+
+  // Unzips the current file if it ends in ".zip".  The current_file will be set
+  // to the unzipped file.
+  void Unzip(const base::Closure& continuation);
+
+  // Writes the current file to device_path.
+  void Write(const base::Closure& continuation);
+
+  // Verifies that the current file and device_path contents match.
+  void VerifyWrite(const base::Closure& continuation);
+
+  // Completes the operation.
+  void Finish();
 
   // Generates an error.
   // |error_message| is used to create an OnWriteError event which is
@@ -84,12 +115,11 @@ class Operation : public base::RefCountedThreadSafe<Operation> {
   // Adds a callback that will be called during clean-up, whether the operation
   // is aborted, encounters and error, or finishes successfully.  These
   // functions will be run on the FILE thread.
-  void AddCleanUpFunction(base::Closure);
+  void AddCleanUpFunction(const base::Closure& callback);
 
-  void UnzipStart(scoped_ptr<base::FilePath> zip_file);
-  void WriteStart();
-  void VerifyWriteStart();
-  void Finish();
+  // Completes the current operation (progress set to 100) and runs the
+  // continuation.
+  void CompleteAndContinue(const base::Closure& continuation);
 
   // If |file_size| is non-zero, only |file_size| bytes will be read from file,
   // otherwise the entire file will be read.
@@ -98,43 +128,45 @@ class Operation : public base::RefCountedThreadSafe<Operation> {
   // sum.  |progress_offset| is an percentage that will be added to the progress
   // of the MD5 sum before updating |progress_| but after scaling.
   void GetMD5SumOfFile(
-      scoped_ptr<base::FilePath> file,
+      const base::FilePath& file,
       int64 file_size,
       int progress_offset,
       int progress_scale,
-      const base::Callback<void(scoped_ptr<std::string>)>& callback);
+      const base::Callback<void(const std::string&)>& callback);
 
   base::WeakPtr<OperationManager> manager_;
   const ExtensionId extension_id_;
 
   base::FilePath image_path_;
-  const std::string storage_unit_id_;
+  base::FilePath device_path_;
 
-  // Whether or not to run the final verification step.
-  bool verify_write_;
+  // Temporary directory to store files as we go.
+  base::ScopedTempDir temp_dir_;
 
  private:
   friend class base::RefCountedThreadSafe<Operation>;
 
-  // TODO(haven): Clean up these switches. http://crbug.com/292956
-#if defined(OS_LINUX) && !defined(CHROMEOS)
-  void WriteRun();
-  void WriteChunk(scoped_ptr<image_writer_utils::ImageReader> reader,
-                  scoped_ptr<image_writer_utils::ImageWriter> writer,
-                  int64 bytes_written);
-  bool WriteCleanUp(scoped_ptr<image_writer_utils::ImageReader> reader,
-                    scoped_ptr<image_writer_utils::ImageWriter> writer);
-  void WriteComplete();
+#if !defined(OS_CHROMEOS)
+  // Ensures the client is started.  This may be called many times but will only
+  // instantiate one client which should exist for the lifetime of the
+  // Operation.
+  void StartUtilityClient();
 
-  void VerifyWriteStage2(scoped_ptr<std::string> image_hash);
-  void VerifyWriteCompare(scoped_ptr<std::string> image_hash,
-                          scoped_ptr<std::string> device_hash);
+  // Stops the client.  This must be called to ensure the utility process can
+  // shutdown.
+  void StopUtilityClient();
+
+  // Reports progress from the client, transforming from bytes to percentage.
+  virtual void WriteImageProgress(int64 total_bytes, int64 curr_bytes);
+
+  scoped_refptr<ImageWriterUtilityClient> image_writer_client_;
 #endif
 
 #if defined(OS_CHROMEOS)
-  void StartWriteOnUIThread();
+  void StartWriteOnUIThread(const base::Closure& continuation);
 
-  void OnBurnFinished(const std::string& target_path,
+  void OnBurnFinished(const base::Closure& continuation,
+                      const std::string& target_path,
                       bool success,
                       const std::string& error);
   void OnBurnProgress(const std::string& target_path,
@@ -144,15 +176,14 @@ class Operation : public base::RefCountedThreadSafe<Operation> {
 #endif
 
   // Incrementally calculates the MD5 sum of a file.
-  void MD5Chunk(scoped_ptr<image_writer_utils::ImageReader> reader,
+  void MD5Chunk(const base::PlatformFile& file,
                 int64 bytes_processed,
                 int64 bytes_total,
                 int progress_offset,
                 int progress_scale,
-                const base::Callback<void(scoped_ptr<std::string>)>& callback);
+                const base::Callback<void(const std::string&)>& callback);
 
   // Callbacks for zip::ZipReader.
-  void OnUnzipSuccess();
   void OnUnzipFailure();
   void OnUnzipProgress(int64 total_bytes, int64 progress_bytes);
 

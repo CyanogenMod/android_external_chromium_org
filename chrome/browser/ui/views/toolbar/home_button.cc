@@ -65,8 +65,7 @@ void HomePageUndoBubble::ShowBubble(Browser* browser,
                                                   undo_value_is_ntp,
                                                   undo_url,
                                                   anchor_view);
-  views::BubbleDelegateView::CreateBubble(home_page_undo_bubble_);
-  home_page_undo_bubble_->StartFade(true);
+  views::BubbleDelegateView::CreateBubble(home_page_undo_bubble_)->Show();
 }
 
 void HomePageUndoBubble::HideBubble() {
@@ -154,7 +153,7 @@ bool HomeButton::GetDropFormats(
 }
 
 bool HomeButton::CanDrop(const OSExchangeData& data) {
-  return data.HasURL();
+  return data.HasURL(ui::OSExchangeData::CONVERT_FILENAMES);
 }
 
 int HomeButton::OnDragUpdated(const ui::DropTargetEvent& event) {

@@ -31,13 +31,18 @@ public class TranslateOptions {
     private final boolean[] mOptions;
     private int mSourceLanguageIndex;
     private int mTargetLanguageIndex;
+    private final boolean mTriggeredFromMenu;
+
+    // Placeholder while i18tn is supported.
+    private static final String UNTRANSLATED_LANGUAGE_PLAHOLDER = "\ud83c\udfc4";
 
     private TranslateOptions(int sourceLanguageCode, int targetLanguageCode, String[] allLanguages,
             boolean neverLanguage, boolean neverDomain, boolean alwaysLanguage,
-            boolean[] originalOptions) {
+            boolean triggeredFromMenu, boolean[] originalOptions) {
         mAllLanguages = allLanguages;
         mSourceLanguageIndex = sourceLanguageCode;
         mTargetLanguageIndex = targetLanguageCode;
+        mTriggeredFromMenu = triggeredFromMenu;
 
         mOptions = new boolean[3];
         mOptions[NEVER_LANGUAGE] = neverLanguage;
@@ -56,9 +61,9 @@ public class TranslateOptions {
     }
 
     public TranslateOptions(int sourceLanguageCode, int targetLanguageCode, String[] allLanguages,
-            boolean alwaysTranslate) {
+           boolean alwaysTranslate, boolean triggeredFromMenu) {
         this(sourceLanguageCode, targetLanguageCode, allLanguages, false, false, alwaysTranslate,
-                null);
+                triggeredFromMenu, null);
     }
 
     /**
@@ -67,18 +72,27 @@ public class TranslateOptions {
     public TranslateOptions(TranslateOptions other) {
         this(other.mSourceLanguageIndex, other.mTargetLanguageIndex, other.mAllLanguages,
                 other.mOptions[NEVER_LANGUAGE], other.mOptions[NEVER_DOMAIN],
-                other.mOptions[ALWAYS_LANGUAGE], other.mOriginalOptions);
+                other.mOptions[ALWAYS_LANGUAGE], other.mTriggeredFromMenu,
+                other.mOriginalOptions);
     }
 
     public String sourceLanguage() {
-        if (checkLanguageBoundaries(mSourceLanguageIndex))
+        if (checkLanguageBoundaries(mSourceLanguageIndex)) {
+            if (mAllLanguages[mSourceLanguageIndex].isEmpty()) {
+                return TranslateOptions.UNTRANSLATED_LANGUAGE_PLAHOLDER;
+            }
             return mAllLanguages[mSourceLanguageIndex];
+        }
         return "";
     }
 
     public String targetLanguage() {
-        if (checkLanguageBoundaries(mTargetLanguageIndex))
+        if (checkLanguageBoundaries(mTargetLanguageIndex)) {
+            if (mAllLanguages[mTargetLanguageIndex].isEmpty()) {
+                return TranslateOptions.UNTRANSLATED_LANGUAGE_PLAHOLDER;
+            }
             return mAllLanguages[mTargetLanguageIndex];
+        }
         return "";
     }
 
@@ -88,6 +102,10 @@ public class TranslateOptions {
 
     public int targetLanguageIndex() {
         return checkLanguageBoundaries(mTargetLanguageIndex) ? mTargetLanguageIndex : 0;
+    }
+
+    public boolean triggeredFromMenu() {
+        return mTriggeredFromMenu;
     }
 
     public boolean optionsChanged() {

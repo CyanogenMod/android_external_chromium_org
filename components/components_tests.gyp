@@ -8,6 +8,7 @@
     # platforms to include source files on (e.g. files ending in
     # _mac.h or _mac.cc are only compiled on MacOSX).
     'chromium_code': 1,
+    'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/components',
    },
   'conditions': [
     ['android_webview_build == 0', {
@@ -17,13 +18,42 @@
           'type': '<(gtest_target_type)',
           'sources': [
             'auto_login_parser/auto_login_parser_unittest.cc',
-            'autofill/core/browser/webdata/autofill_entry_unittest.cc',
+            'autofill/core/browser/address_field_unittest.cc',
+            'autofill/core/browser/address_unittest.cc',
+            'autofill/core/browser/android/auxiliary_profile_unittest_android.cc',
+            'autofill/core/browser/autocomplete_history_manager_unittest.cc',
+            'autofill/core/browser/autofill_country_unittest.cc',
+            'autofill/core/browser/autofill_data_model_unittest.cc',
+            'autofill/core/browser/autofill_download_unittest.cc',
+            'autofill/core/browser/autofill_external_delegate_unittest.cc',
+            'autofill/core/browser/autofill_field_unittest.cc',
+            'autofill/core/browser/autofill_ie_toolbar_import_win_unittest.cc',
+            'autofill/core/browser/autofill_manager_unittest.cc',
+            'autofill/core/browser/autofill_merge_unittest.cc',
+            'autofill/core/browser/autofill_metrics_unittest.cc',
+            'autofill/core/browser/autofill_profile_unittest.cc',
+            'autofill/core/browser/autofill_regexes_unittest.cc',
+            'autofill/core/browser/autofill_type_unittest.cc',
+            'autofill/core/browser/autofill_xml_parser_unittest.cc',
+            'autofill/core/browser/contact_info_unittest.cc',
+            'autofill/core/browser/credit_card_field_unittest.cc',
+            'autofill/core/browser/credit_card_unittest.cc',
+            'autofill/core/browser/form_field_unittest.cc',
+            'autofill/core/browser/form_structure_unittest.cc',
+            'autofill/core/browser/name_field_unittest.cc',
+            'autofill/core/browser/password_autofill_manager_unittest.cc',
+            'autofill/core/browser/password_generator_unittest.cc',
+            'autofill/core/browser/personal_data_manager_unittest.cc',
+            'autofill/core/browser/phone_field_unittest.cc',
+            'autofill/core/browser/phone_number_i18n_unittest.cc',
+            'autofill/core/browser/phone_number_unittest.cc',
+            'autofill/core/browser/validation_unittest.cc',
+            'autofill/core/browser/webdata/autofill_profile_syncable_service_unittest.cc',
+            'autofill/core/browser/webdata/autofill_table_unittest.cc',
             'autofill/core/browser/webdata/web_data_service_unittest.cc',
             'autofill/core/common/form_data_unittest.cc',
             'autofill/core/common/form_field_data_unittest.cc',
             'autofill/core/common/password_form_fill_data_unittest.cc',
-            'browser_context_keyed_service/browser_context_dependency_manager_unittest.cc',
-            'browser_context_keyed_service/dependency_graph_unittest.cc',
             'cloud_devices/printer_description_unittest.cc',
             'dom_distiller/core/article_entry_unittest.cc',
             'dom_distiller/core/distiller_unittest.cc',
@@ -33,20 +63,35 @@
             'dom_distiller/core/dom_distiller_service_unittest.cc',
             'dom_distiller/core/dom_distiller_store_unittest.cc',
             'dom_distiller/core/task_tracker_unittest.cc',
+            'dom_distiller/core/url_utils_unittest.cc',
             'json_schema/json_schema_validator_unittest.cc',
             'json_schema/json_schema_validator_unittest_base.cc',
             'json_schema/json_schema_validator_unittest_base.h',
+            'keyed_service/content/browser_context_dependency_manager_unittest.cc',
+            'keyed_service/core/dependency_graph_unittest.cc',
             'language_usage_metrics/language_usage_metrics_unittest.cc',
+            'metrics/metrics_hashes_unittest.cc',
             'navigation_interception/intercept_navigation_resource_throttle_unittest.cc',
+            'os_crypt/ie7_password_win_unittest.cc',
+            'os_crypt/keychain_password_mac_unittest.mm',
+            'os_crypt/os_crypt_unittest.cc',
             'password_manager/core/browser/login_database_unittest.cc',
-            'password_manager/core/browser/psl_matching_helper_unittest.cc',
+            'password_manager/core/browser/password_form_manager_unittest.cc',
+            'password_manager/core/browser/password_generation_manager_unittest.cc',
+            'password_manager/core/browser/password_manager_unittest.cc',
             'password_manager/core/browser/password_store_default_unittest.cc',
             'password_manager/core/browser/password_store_unittest.cc',
             'password_manager/core/browser/password_syncable_service_unittest.cc',
+            'password_manager/core/browser/psl_matching_helper_unittest.cc',
             'precache/content/precache_manager_unittest.cc',
             'precache/core/precache_database_unittest.cc',
             'precache/core/precache_fetcher_unittest.cc',
             'precache/core/precache_url_table_unittest.cc',
+            'rappor/bloom_filter_unittest.cc',
+            'rappor/byte_vector_utils_unittest.cc',
+            'rappor/log_uploader_unittest.cc',
+            'rappor/rappor_metric_unittest.cc',
+            'rappor/rappor_service_unittest.cc',
             'sessions/serialized_navigation_entry_unittest.cc',
             'signin/core/webdata/token_service_table_unittest.cc',
             'storage_monitor/image_capture_device_manager_unittest.mm',
@@ -73,16 +118,12 @@
             'url_matcher/substring_set_matcher_unittest.cc',
             'url_matcher/url_matcher_factory_unittest.cc',
             'url_matcher/url_matcher_unittest.cc',
-            # TODO(asvitkine): These should be tested on iOS too.
             'variations/entropy_provider_unittest.cc',
             'variations/metrics_util_unittest.cc',
             'variations/variations_associated_data_unittest.cc',
             'variations/variations_seed_processor_unittest.cc',
             'variations/variations_seed_simulator_unittest.cc',
             'visitedlink/test/visitedlink_unittest.cc',
-            'webdata/encryptor/encryptor_password_mac_unittest.cc',
-            'webdata/encryptor/encryptor_unittest.cc',
-            'webdata/encryptor/ie7_password_unittest_win.cc',
             'web_modal/web_contents_modal_dialog_manager_unittest.cc',
           ],
           'include_dirs': [
@@ -91,14 +132,20 @@
           'dependencies': [
             '../base/base.gyp:base_prefs_test_support',
             '../base/base.gyp:test_support_base',
+            # TODO(blundell): Eliminate this dependency by having
+            # components_unittests have its own pakfile. crbug.com/348563
+            '../chrome/chrome_resources.gyp:packed_extra_resources',
             # TODO(blundell): Eliminate the need for this dependency in code
             # that iOS shares. crbug.com/325243
             '../content/content_shell_and_tests.gyp:test_support_content',
             '../sync/sync.gyp:sync',
+            '../sync/sync.gyp:test_support_sync_api',
             '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
+            '../ui/base/ui_base.gyp:ui_base',
             '../ui/gfx/gfx.gyp:gfx',
-            '../ui/ui.gyp:ui',
+
+            'component_resources.gyp:component_resources',
 
             # Dependencies of auto_login_parser
             'components.gyp:auto_login_parser',
@@ -107,6 +154,8 @@
             'components.gyp:autofill_core_browser',
             'components.gyp:autofill_core_common',
             'components.gyp:autofill_core_test_support',
+            'component_strings.gyp:component_strings',
+            '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
 
             # Dependencies of cloud_devices
             'components.gyp:cloud_devices',
@@ -116,11 +165,14 @@
             'components.gyp:dom_distiller_core',
             'components.gyp:dom_distiller_test_support',
 
-            # Dependencies of encryptor
-            'components.gyp:encryptor',
+            # Dependencies of os_crypt
+            'components.gyp:os_crypt',
 
             # Dependencies of json_schema
             'components.gyp:json_schema',
+
+            # Dependencies of keyed_service
+            'components.gyp:keyed_service_core',
 
             # Dependencies of language_usage_metrics
             'components.gyp:language_usage_metrics',
@@ -132,6 +184,9 @@
             # Dependencies of precache/core
             'components.gyp:password_manager_core_browser',
             'components.gyp:precache_core',
+
+            # Dependencies of rappor
+            'components.gyp:rappor',
 
             # Dependencies of signin
             'components.gyp:signin_core',
@@ -149,14 +204,20 @@
           ],
           'conditions': [
             ['OS != "ios"', {
+              'sources': [
+                'dom_distiller/content/dom_distiller_viewer_source_unittest.cc',
+              ],
               'dependencies': [
-                # Dependencies of browser_context_keyed_service
-                'components.gyp:browser_context_keyed_service',
+                # Dependencies of dom_distiller
+                'components.gyp:dom_distiller_content',
 
                 # Dependencies of
                 # intercept_navigation_resource_throttle_unittest.cc
                 '../skia/skia.gyp:skia',
                 'components.gyp:navigation_interception',
+
+                # Dependencies of keyed_service
+                'components.gyp:keyed_service_content',
 
                 # Dependencies of precache/content
                 'components.gyp:precache_content',
@@ -183,26 +244,35 @@
                 'components.gyp:web_modal_test_support',
               ],
             }, { # 'OS == "ios"'
+              'includes': ['../chrome/chrome_ios_bundle_resources.gypi'],
               'sources/': [
                 ['exclude', '\\.cc$'],
                 ['exclude', '\\.mm$'],
                 ['include', '^test/run_all_unittests\\.cc$'],
-                # TODO(ios): Include files here as they are made to work, see
-                # http://crbug.com/303011.
-                # TODO(asvitkine): Bring up variations/ unittests on iOS.
-                # TODO(blundell): Bring up json_schema/ unittests on iOS.
                 ['include', '^auto_login_parser/'],
                 ['include', '^autofill/'],
                 ['include', '^dom_distiller/'],
+                ['include', '^json_schema/'],
+                ['include', '^keyed_service/core/'],
                 ['include', '^language_usage_metrics/'],
                 ['include', '^password_manager/'],
                 ['include', '^precache/core/'],
                 ['include', '^signin/'],
                 ['include', '^sync_driver/'],
                 ['include', '^translate/'],
-                # TODO(blundell): Provide the iOS login DB implementation and
-                # then re-enable this test. http://crbug.com/341429
-                ['exclude', '^password_manager/core/browser/login_database_unittest.cc'],
+                ['include', '^variations/'],
+              ],
+              'actions': [
+                {
+                  'action_name': 'copy_test_data',
+                  'variables': {
+                    'test_data_files': [
+                      'test/data',
+                    ],
+                    'test_data_prefix': 'components',
+                  },
+                  'includes': [ '../build/copy_test_data_ios.gypi' ],
+                },
               ],
               'conditions': [
                 ['configuration_policy==1', {
@@ -227,6 +297,12 @@
               ],
             }],
             ['OS == "mac"', {
+              'dependencies': [
+                # TODO(blundell): Eliminate this dependency by having
+                # ./test/run_all_unittests.cc avoid using the //chrome
+                # constant to get the framework name on OS X. crbug.com/348563
+                '../chrome/chrome.gyp:common',
+              ],
               'link_settings': {
                 'libraries': [
                   '$(SDKROOT)/System/Library/Frameworks/AddressBook.framework',
@@ -276,7 +352,8 @@
                 '../base/allocator/allocator.gyp:allocator',
               ],
             }],
-            ['OS=="linux" and component=="shared_library" and linux_use_tcmalloc==1', {
+            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+            ['OS=="linux" and component=="shared_library" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
             'dependencies': [
                 '<(DEPTH)/base/allocator/allocator.gyp:allocator',
             ],
@@ -294,6 +371,8 @@
                 'policy/core/browser/autofill_policy_handler_unittest.cc',
                 'policy/core/browser/browser_policy_connector_unittest.cc',
                 'policy/core/browser/configuration_policy_handler_unittest.cc',
+                'policy/core/browser/configuration_policy_pref_store_unittest.cc',
+                'policy/core/browser/url_blacklist_policy_handler_unittest.cc',
                 'policy/core/common/async_policy_provider_unittest.cc',
                 'policy/core/common/cloud/cloud_policy_client_unittest.cc',
                 'policy/core/common/cloud/cloud_policy_core_unittest.cc',
@@ -318,6 +397,7 @@
                 'policy/core/common/forwarding_policy_provider_unittest.cc',
                 'policy/core/common/generate_policy_source_unittest.cc',
                 'policy/core/common/policy_bundle_unittest.cc',
+                'policy/core/common/policy_loader_ios_unittest.mm',
                 'policy/core/common/policy_loader_mac_unittest.cc',
                 'policy/core/common/policy_loader_win_unittest.cc',
                 'policy/core/common/policy_map_unittest.cc',
@@ -331,13 +411,17 @@
                 'policy/core/common/schema_unittest.cc',
               ],
               'conditions': [
+                ['OS=="android"', {
+                  'sources/': [
+                    ['exclude', '^policy/core/common/async_policy_provider_unittest\\.cc'],
+                  ],
+                }],
                 ['OS=="android" or OS=="ios"', {
                   # Note: 'sources!' is processed before any 'sources/', so the
                   # ['include', '^policy/'] on iOS above will include all of the
                   # policy source files again. Using 'source/' here too will get
                   # these files excluded as expected.
                   'sources/': [
-                    ['exclude', '^policy/core/common/async_policy_provider_unittest\\.cc'],
                     ['exclude', '^policy/core/common/cloud/component_cloud_policy_service_unittest\\.cc'],
                     ['exclude', '^policy/core/common/cloud/component_cloud_policy_store_unittest\\.cc'],
                     ['exclude', '^policy/core/common/cloud/component_cloud_policy_updater_unittest\\.cc'],
@@ -354,6 +438,11 @@
                   'sources!': [
                     'policy/core/common/cloud/user_cloud_policy_manager_unittest.cc',
                     'policy/core/common/cloud/user_cloud_policy_store_unittest.cc',
+                  ],
+                }],
+                ['OS=="ios" or OS=="mac"', {
+                  'sources': [
+                    'policy/core/common/mac_util_unittest.cc',
                   ],
                 }],
               ],

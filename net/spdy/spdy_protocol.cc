@@ -47,7 +47,9 @@ void SpdyRstStreamIR::Visit(SpdyFrameVisitor* visitor) const {
   return visitor->VisitRstStream(*this);
 }
 
-SpdySettingsIR::SpdySettingsIR() : clear_settings_(false) {}
+SpdySettingsIR::SpdySettingsIR()
+    : clear_settings_(false),
+      is_ack_(false) {}
 
 SpdySettingsIR::~SpdySettingsIR() {}
 
@@ -91,6 +93,10 @@ void SpdyBlockedIR::Visit(SpdyFrameVisitor* visitor) const {
 
 void SpdyPushPromiseIR::Visit(SpdyFrameVisitor* visitor) const {
   return visitor->VisitPushPromise(*this);
+}
+
+void SpdyContinuationIR::Visit(SpdyFrameVisitor* visitor) const {
+  return visitor->VisitContinuation(*this);
 }
 
 }  // namespace net

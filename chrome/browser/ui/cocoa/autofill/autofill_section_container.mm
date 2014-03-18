@@ -493,7 +493,25 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
 
 - (void)updateAndClobber:(BOOL)shouldClobber {
   if (shouldClobber) {
+    // Remember which one of the inputs was first responder so focus can be
+    // restored after the inputs are rebuilt.
+    NSView* firstResponderView =
+        base::mac::ObjCCast<NSView>([[inputs_ window] firstResponder]);
+    autofill::ServerFieldType type = autofill::UNKNOWN_TYPE;
+    for (NSControl* field in [inputs_ subviews]) {
+      if ([firstResponderView isDescendantOf:field]) {
+        type = [self fieldTypeForControl:field];
+        break;
+      }
+    }
+
     [self makeInputControls];
+
+    if (type != autofill::UNKNOWN_TYPE) {
+      NSView* view = [inputs_ viewWithTag:type];
+      if (view)
+        [[inputs_ window] makeFirstResponder:view];
+    }
   } else {
     const autofill::DetailInputs& updatedInputs =
         delegate_->RequestedFieldsForSection(section_);
@@ -621,8 +639,12 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
       base::scoped_nsobject<AutofillPopUpButton> popup(
           [[AutofillPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO]);
       for (int i = 0; i < inputModel->GetItemCount(); ++i) {
-         [popup addItemWithTitle:
-             base::SysUTF16ToNSString(inputModel->GetItemAt(i))];
+        if (inputModel->IsItemSeparatorAt(i)) {
+          [[popup menu] addItem:[NSMenuItem separatorItem]];
+        } else {
+          [popup addItemWithTitle:
+              base::SysUTF16ToNSString(inputModel->GetItemAt(i))];
+        }
       }
       [popup setDefaultValue:base::SysUTF16ToNSString(
           inputModel->GetItemAt(inputModel->GetDefaultIndex()))];

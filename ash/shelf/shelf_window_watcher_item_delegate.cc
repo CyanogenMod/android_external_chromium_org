@@ -10,8 +10,8 @@
 #include "ash/shell_delegate.h"
 #include "ash/wm/window_state.h"
 #include "ui/aura/window.h"
-#include "ui/views/corewm/window_animations.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/window_animations.h"
 
 namespace ash {
 namespace internal {
@@ -33,8 +33,7 @@ bool ShelfWindowWatcherItemDelegate::ItemSelected(const ui::Event& event) {
   wm::WindowState* window_state = wm::GetWindowState(window_);
   if (window_state->IsActive()) {
     if (event.type() & ui::ET_KEY_RELEASED) {
-      views::corewm::AnimateWindow(window_,
-                                   views::corewm::WINDOW_ANIMATION_TYPE_BOUNCE);
+      ::wm::AnimateWindow(window_, ::wm::WINDOW_ANIMATION_TYPE_BOUNCE);
     } else {
       window_state->Minimize();
     }

@@ -29,6 +29,15 @@ SessionStateDelegateChromeos::SessionStateDelegateChromeos() {
 SessionStateDelegateChromeos::~SessionStateDelegateChromeos() {
 }
 
+content::BrowserContext* SessionStateDelegateChromeos::GetBrowserContextByIndex(
+    ash::MultiProfileIndex index) {
+  DCHECK_LT(index, NumberOfLoggedInUsers());
+  chromeos::User* user =
+      chromeos::UserManager::Get()->GetLRULoggedInUsers()[index];
+  DCHECK(user);
+  return chromeos::UserManager::Get()->GetProfileByUser(user);
+}
+
 int SessionStateDelegateChromeos::GetMaximumNumberOfLoggedInUsers() const {
   // We limit list of logged in users to 10 due to memory constraints.
   // Note that 10 seems excessive, but we want to test how many users are
@@ -115,19 +124,15 @@ const std::string SessionStateDelegateChromeos::GetUserID(
 }
 
 const gfx::ImageSkia& SessionStateDelegateChromeos::GetUserImage(
-    ash::MultiProfileIndex index) const {
-  DCHECK_LT(index, NumberOfLoggedInUsers());
-  return chromeos::UserManager::Get()->GetLRULoggedInUsers()[index]->image();
+    content::BrowserContext* context) const {
+  DCHECK(context);
+  return chromeos::UserManager::Get()->GetUserByProfile(
+      Profile::FromBrowserContext(context))->image();
 }
 
-void SessionStateDelegateChromeos::GetLoggedInUsers(ash::UserIdList* users) {
-  const chromeos::UserList& logged_in_users =
-      chromeos::UserManager::Get()->GetLoggedInUsers();
-  for (chromeos::UserList::const_iterator it = logged_in_users.begin();
-       it != logged_in_users.end(); ++it) {
-    const chromeos::User* user = (*it);
-    users->push_back(user->email());
-  }
+bool SessionStateDelegateChromeos::ShouldShowAvatar(aura::Window* window) {
+  return chrome::MultiUserWindowManager::GetInstance()->
+      ShouldShowAvatar(window);
 }
 
 void SessionStateDelegateChromeos::SwitchActiveUser(
@@ -191,26 +196,6 @@ void SessionStateDelegateChromeos::AddSessionStateObserver(
 void SessionStateDelegateChromeos::RemoveSessionStateObserver(
     ash::SessionStateObserver* observer) {
   session_state_observer_list_.RemoveObserver(observer);
-}
-
-bool SessionStateDelegateChromeos::TransferWindowToDesktopOfUser(
-    aura::Window* window,
-    ash::MultiProfileIndex index) {
-  if (chrome::MultiUserWindowManager::GetMultiProfileMode() !=
-          chrome::MultiUserWindowManager::MULTI_PROFILE_MODE_SEPARATED)
-    return false;
-  chrome::MultiUserWindowManager* window_manager =
-      chrome::MultiUserWindowManager::GetInstance();
-  if (window_manager->GetWindowOwner(window).empty())
-    return false;
-
-  ash::MultiProfileUMA::RecordTeleportAction(
-      ash::MultiProfileUMA::TELEPORT_WINDOW_DRAG_AND_DROP);
-
-  DCHECK_LT(index, NumberOfLoggedInUsers());
-  window_manager->ShowWindowForUser(window,
-      chromeos::UserManager::Get()->GetLRULoggedInUsers()[index]->email());
-  return true;
 }
 
 void SessionStateDelegateChromeos::ActiveUserChanged(

@@ -30,12 +30,16 @@ class PnaclOptions;
 class JsonManifest : public Manifest {
  public:
   JsonManifest(const pp::URLUtil_Dev* url_util,
-           const nacl::string& manifest_base_url,
-           const nacl::string& sandbox_isa)
+               const nacl::string& manifest_base_url,
+               const nacl::string& sandbox_isa,
+               bool nonsfi_enabled,
+               bool pnacl_debug)
       : url_util_(url_util),
         manifest_base_url_(manifest_base_url),
         sandbox_isa_(sandbox_isa),
-        dictionary_(Json::nullValue) { }
+        nonsfi_enabled_(nonsfi_enabled),
+        dictionary_(Json::nullValue),
+        pnacl_debug_(pnacl_debug) { }
   virtual ~JsonManifest() { }
 
   // Initialize the manifest object for use by later lookups.  The return
@@ -46,6 +50,7 @@ class JsonManifest : public Manifest {
   // manifest file.
   virtual bool GetProgramURL(nacl::string* full_url,
                              PnaclOptions* pnacl_options,
+                             bool* uses_nonsfi_mode,
                              ErrorInfo* error_info) const;
 
   // Resolves a URL relative to the manifest base URL
@@ -76,13 +81,27 @@ class JsonManifest : public Manifest {
   // if not.
   bool MatchesSchema(ErrorInfo* error_info);
 
+  bool GetKeyUrl(const Json::Value& dictionary,
+                 const nacl::string& key,
+                 nacl::string* full_url,
+                 PnaclOptions* pnacl_options,
+                 ErrorInfo* error_info) const;
+
+  bool GetURLFromISADictionary(const Json::Value& dictionary,
+                               const nacl::string& parent_key,
+                               nacl::string* url,
+                               PnaclOptions* pnacl_options,
+                               bool* uses_nonsfi_mode,
+                               ErrorInfo* error_info) const;
+
   const pp::URLUtil_Dev* url_util_;
   nacl::string manifest_base_url_;
   nacl::string sandbox_isa_;
+  bool nonsfi_enabled_;
 
   Json::Value dictionary_;
+  bool pnacl_debug_;  // Search for a pnacl-debug entry.
 };
-
 
 }  // namespace plugin
 

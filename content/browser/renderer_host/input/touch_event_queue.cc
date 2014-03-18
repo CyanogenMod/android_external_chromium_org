@@ -9,7 +9,7 @@
 #include "base/debug/trace_event.h"
 #include "base/stl_util.h"
 #include "content/browser/renderer_host/input/timeout_monitor.h"
-#include "content/common/input/web_input_event_traits.h"
+#include "content/browser/renderer_host/input/web_touch_event_traits.h"
 #include "content/public/common/content_switches.h"
 #include "ui/gfx/geometry/point_f.h"
 
@@ -32,18 +32,6 @@ TouchEventWithLatencyInfo ObtainCancelEventForTouchEvent(
   return event;
 }
 
-bool IsNewTouchSequence(const WebTouchEvent& event) {
-  if (event.type != WebInputEvent::TouchStart)
-    return false;
-  if (!event.touchesLength)
-    return false;
-  for (size_t i = 0; i < event.touchesLength; i++) {
-    if (event.touches[i].state != WebTouchPoint::StatePressed)
-      return false;
-  }
-  return true;
-}
-
 bool ShouldTouchTypeTriggerTimeout(WebInputEvent::Type type) {
   return type == WebInputEvent::TouchStart ||
          type == WebInputEvent::TouchMove;
@@ -56,9 +44,10 @@ bool ShouldTouchTypeTriggerTimeout(WebInputEvent::Type type) {
 // sufficiently delayed.
 class TouchEventQueue::TouchTimeoutHandler {
  public:
-  TouchTimeoutHandler(TouchEventQueue* touch_queue, size_t timeout_delay_ms)
+  TouchTimeoutHandler(TouchEventQueue* touch_queue,
+                      base::TimeDelta timeout_delay)
       : touch_queue_(touch_queue),
-        timeout_delay_(base::TimeDelta::FromMilliseconds(timeout_delay_ms)),
+        timeout_delay_(timeout_delay),
         pending_ack_state_(PENDING_ACK_NONE),
         timeout_monitor_(base::Bind(&TouchTimeoutHandler::OnTimeOut,
                                     base::Unretained(this))) {}
@@ -108,6 +97,10 @@ class TouchEventQueue::TouchTimeoutHandler {
     timeout_monitor_.Stop();
   }
 
+  void set_timeout_delay(base::TimeDelta timeout_delay) {
+    timeout_delay_ = timeout_delay;
+  }
+
  private:
   enum PendingAckState {
     PENDING_ACK_NONE,
@@ -126,7 +119,7 @@ class TouchEventQueue::TouchTimeoutHandler {
     DCHECK(HasTimeoutEvent());
     if (ack_result != INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS)
       return true;
-    return !IsNewTouchSequence(timeout_event_.event);
+    return !WebTouchEventTraits::IsTouchSequenceStart(timeout_event_.event);
   }
 
   void SetPendingAckState(PendingAckState new_pending_ack_state) {
@@ -176,15 +169,17 @@ class TouchEventQueue::TouchTimeoutHandler {
 // a given slop region, unless the touchstart is preventDefault'ed.
 class TouchEventQueue::TouchMoveSlopSuppressor {
  public:
+  // TODO(jdduke): Remove int cast on suppression length, crbug.com/336807.
   TouchMoveSlopSuppressor(double slop_suppression_length_dips)
-      : slop_suppression_length_dips_squared_(slop_suppression_length_dips *
-                                              slop_suppression_length_dips),
+      : slop_suppression_length_dips_squared_(
+            static_cast<int>(slop_suppression_length_dips) *
+            static_cast<int>(slop_suppression_length_dips)),
         suppressing_touch_moves_(false) {}
 
   bool FilterEvent(const WebTouchEvent& event) {
-    if (IsNewTouchSequence(event)) {
+    if (WebTouchEventTraits::IsTouchSequenceStart(event)) {
       touch_sequence_start_position_ =
-          gfx::Point(event.touches[0].position);
+          gfx::PointF(event.touches[0].position.x, event.touches[0].position.y);
       suppressing_touch_moves_ = slop_suppression_length_dips_squared_ != 0;
     }
 
@@ -197,8 +192,10 @@ class TouchEventQueue::TouchMoveSlopSuppressor {
         suppressing_touch_moves_ = false;
       } else if (event.touchesLength == 1) {
         // Movement outside of the slop region should terminate suppression.
-        gfx::PointF position = gfx::Point(event.touches[0].position);
-        if ((position - touch_sequence_start_position_).LengthSquared() >
+        // TODO(jdduke): Use strict inequality, crbug.com/336807.
+        gfx::PointF position(event.touches[0].position.x,
+                             event.touches[0].position.y);
+        if ((position - touch_sequence_start_position_).LengthSquared() >=
                 slop_suppression_length_dips_squared_)
           suppressing_touch_moves_ = false;
       }
@@ -317,7 +314,7 @@ void TouchEventQueue::QueueEvent(const TouchEventWithLatencyInfo& event) {
     // yields identical results, but this avoids unnecessary allocations.
     if (touch_filtering_state_ == DROP_ALL_TOUCHES ||
         (touch_filtering_state_ == DROP_TOUCHES_IN_SEQUENCE &&
-         !IsNewTouchSequence(event.event))) {
+         !WebTouchEventTraits::IsTouchSequenceStart(event.event))) {
       client_->OnTouchEventAck(event, INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS);
       return;
     }
@@ -354,12 +351,20 @@ void TouchEventQueue::ProcessTouchAck(InputEventAckState ack_result,
   if (touch_queue_.empty())
     return;
 
-  if (ack_result == INPUT_EVENT_ACK_STATE_CONSUMED &&
-      touch_filtering_state_ == FORWARD_TOUCHES_UNTIL_TIMEOUT)
-    touch_filtering_state_ = FORWARD_ALL_TOUCHES;
-
   const WebTouchEvent& acked_event =
       touch_queue_.front()->coalesced_event().event;
+
+  if (ack_result == INPUT_EVENT_ACK_STATE_CONSUMED &&
+      touch_filtering_state_ == FORWARD_TOUCHES_UNTIL_TIMEOUT) {
+    touch_filtering_state_ = FORWARD_ALL_TOUCHES;
+  }
+
+  if (ack_result == INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS &&
+      touch_filtering_state_ != DROP_ALL_TOUCHES &&
+      WebTouchEventTraits::IsTouchSequenceStart(acked_event)) {
+    touch_filtering_state_ = DROP_TOUCHES_IN_SEQUENCE;
+  }
+
   UpdateTouchAckStates(acked_event, ack_result);
   PopTouchEventToClient(ack_result, latency_info);
   TryForwardNextEventToRenderer();
@@ -396,7 +401,7 @@ void TouchEventQueue::ForwardToRenderer(
   DCHECK(!dispatching_touch_);
   DCHECK_NE(touch_filtering_state_, DROP_ALL_TOUCHES);
 
-  if (IsNewTouchSequence(touch.event)) {
+  if (WebTouchEventTraits::IsTouchSequenceStart(touch.event)) {
     touch_filtering_state_ =
         ack_timeout_enabled_ ? FORWARD_TOUCHES_UNTIL_TIMEOUT
                              : FORWARD_ALL_TOUCHES;
@@ -420,6 +425,9 @@ void TouchEventQueue::OnGestureScrollEvent(
     const GestureEventWithLatencyInfo& gesture_event) {
   if (gesture_event.event.type != blink::WebInputEvent::GestureScrollBegin)
     return;
+
+  if (touch_scrolling_mode_ == TOUCH_SCROLLING_MODE_ABSORB_TOUCHMOVE)
+    absorbing_touch_moves_ = true;
 
   if (touch_scrolling_mode_ != TOUCH_SCROLLING_MODE_TOUCHCANCEL)
     return;
@@ -461,8 +469,6 @@ void TouchEventQueue::OnGestureEventAck(
   // gesture event (or even part of the current sequence).  Worst case, the
   // delay in updating the absorption state should only result in minor UI
   // glitches.
-  // TODO(rbyers): Define precise timing requirements and potentially implement
-  // mitigations for races.
   absorbing_touch_moves_ = (ack_result == INPUT_EVENT_ACK_STATE_CONSUMED);
 }
 
@@ -501,17 +507,24 @@ bool TouchEventQueue::IsPendingAckTouchStart() const {
 }
 
 void TouchEventQueue::SetAckTimeoutEnabled(bool enabled,
-                                           size_t ack_timeout_delay_ms) {
+                                           base::TimeDelta ack_timeout_delay) {
   if (!enabled) {
-    // Avoid resetting |timeout_handler_|, as an outstanding timeout may
-    // be active and must be completed for ack handling consistency.
     ack_timeout_enabled_ = false;
+    if (touch_filtering_state_ == FORWARD_TOUCHES_UNTIL_TIMEOUT)
+      touch_filtering_state_ = FORWARD_ALL_TOUCHES;
+    // Only reset the |timeout_handler_| if the timer is running and has not yet
+    // timed out. This ensures that an already timed out sequence is properly
+    // flushed by the handler.
+    if (timeout_handler_ && timeout_handler_->IsTimeoutTimerRunning())
+      timeout_handler_->Reset();
     return;
   }
 
   ack_timeout_enabled_ = true;
   if (!timeout_handler_)
-    timeout_handler_.reset(new TouchTimeoutHandler(this, ack_timeout_delay_ms));
+    timeout_handler_.reset(new TouchTimeoutHandler(this, ack_timeout_delay));
+  else
+    timeout_handler_->set_timeout_delay(ack_timeout_delay);
 }
 
 bool TouchEventQueue::IsTimeoutRunningForTesting() const {
@@ -528,8 +541,10 @@ void TouchEventQueue::FlushQueue() {
   DCHECK(!dispatching_touch_);
   if (touch_filtering_state_ != DROP_ALL_TOUCHES)
     touch_filtering_state_ = DROP_TOUCHES_IN_SEQUENCE;
-  while (!touch_queue_.empty())
-    PopTouchEventToClient(INPUT_EVENT_ACK_STATE_NOT_CONSUMED, LatencyInfo());
+  while (!touch_queue_.empty()) {
+    PopTouchEventToClient(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS,
+                          LatencyInfo());
+  }
 }
 
 void TouchEventQueue::PopTouchEventToClient(
@@ -570,7 +585,7 @@ TouchEventQueue::FilterBeforeForwarding(const WebTouchEvent& event) {
 
   if (touch_filtering_state_ == DROP_TOUCHES_IN_SEQUENCE &&
       event.type != WebInputEvent::TouchCancel) {
-    if (IsNewTouchSequence(event))
+    if (WebTouchEventTraits::IsTouchSequenceStart(event))
       return FORWARD_TO_RENDERER;
     return ACK_WITH_NOT_CONSUMED;
   }

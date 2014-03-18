@@ -62,6 +62,14 @@ struct FormatElement {
 //    }
 class Rule {
  public:
+  // The types of fields that describe the rule.
+  enum IdentityField {
+    KEY,
+    NAME,
+    LATIN_NAME,
+    IDENTITY_FIELDS_SIZE
+  };
+
   Rule();
   ~Rule();
 
@@ -79,6 +87,21 @@ class Rule {
 
   // Parses |json_rule|, which must contain parsed serialized rule.
   void ParseJsonRule(const Json& json_rule);
+
+  // Returns the value of the |identity_field| for this rule, for example, can
+  // return "TX" or "Texas". The |identity_field| parameter should not be
+  // IDENTITY_FIELDS_SIZE.
+  const std::string& GetIdentityField(IdentityField identity_field) const;
+
+  // Returns the key for this rule. For example, can return "TX".
+  const std::string& GetKey() const { return key_; }
+
+  // Returns the name for this rule. For example, the name for "TX" is "Texas".
+  const std::string& GetName() const { return name_; }
+
+  // Returns the latinized version of the name. For example, the latinized
+  // version of "北京市" is "Beijing Shi".
+  const std::string& GetLatinName() const { return latin_name_; }
 
   // Returns the format of the address as it should appear on an envelope.
   const std::vector<std::vector<FormatElement> >& GetFormat() const {
@@ -141,6 +164,9 @@ class Rule {
                          const std::vector<std::string>& values,
                          std::string* sub_key) const;
 
+  std::string key_;
+  std::string name_;
+  std::string latin_name_;
   std::vector<std::vector<FormatElement> > format_;
   std::vector<AddressField> required_;
   std::vector<std::string> sub_keys_;

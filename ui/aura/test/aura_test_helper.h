@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 
 namespace base {
 class MessageLoopForUI;
@@ -37,7 +37,7 @@ class AuraTestHelper {
   ~AuraTestHelper();
 
   // Creates and initializes (shows and sizes) the RootWindow for use in tests.
-  void SetUp(bool allow_test_contexts);
+  void SetUp();
 
   // Clean up objects that are created for tests. This also deletes the Env
   // object.
@@ -46,8 +46,9 @@ class AuraTestHelper {
   // Flushes message loop.
   void RunAllPendingInMessageLoop();
 
-  Window* root_window() { return root_window_->window(); }
-  RootWindow* dispatcher() { return root_window_.get(); }
+  Window* root_window() { return host_->window(); }
+  ui::EventProcessor* event_processor() { return host_->event_processor(); }
+  WindowTreeHost* host() { return host_.get(); }
 
   TestScreen* test_screen() { return test_screen_.get(); }
 
@@ -55,8 +56,8 @@ class AuraTestHelper {
   base::MessageLoopForUI* message_loop_;
   bool setup_called_;
   bool teardown_called_;
-  bool owns_root_window_;
-  scoped_ptr<RootWindow> root_window_;
+  bool owns_host_;
+  scoped_ptr<WindowTreeHost> host_;
   scoped_ptr<TestWindowTreeClient> stacking_client_;
   scoped_ptr<client::DefaultActivationClient> activation_client_;
   scoped_ptr<client::DefaultCaptureClient> capture_client_;

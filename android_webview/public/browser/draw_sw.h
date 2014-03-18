@@ -48,8 +48,6 @@ typedef bool (AwIsSkiaVersionCompatibleFunction)(SkiaVersionFunction function);
 struct AwDrawSWFunctionTable {
   AwAccessPixelsFunction* access_pixels;
   AwReleasePixelsFunction* release_pixels;
-  AwCreatePictureFunction* create_picture;
-  AwIsSkiaVersionCompatibleFunction* is_skia_version_compatible;
 };
 
 #endif  // ANDROID_WEBVIEW_PUBLIC_BROWSER_DRAW_SW_H_

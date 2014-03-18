@@ -11,7 +11,7 @@
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/scoped_tooltip_disabler.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_property.h"
 #include "ui/base/cursor/cursor_loader_win.h"
 #include "ui/base/ime/input_method.h"
@@ -25,11 +25,7 @@
 #include "ui/gfx/win/dpi.h"
 #include "ui/native_theme/native_theme_aura.h"
 #include "ui/native_theme/native_theme_win.h"
-#include "ui/views/corewm/compound_event_filter.h"
-#include "ui/views/corewm/corewm_switches.h"
-#include "ui/views/corewm/input_method_event_filter.h"
 #include "ui/views/corewm/tooltip_win.h"
-#include "ui/views/corewm/window_animations.h"
 #include "ui/views/ime/input_method_bridge.h"
 #include "ui/views/widget/desktop_aura/desktop_cursor_loader_updater.h"
 #include "ui/views/widget/desktop_aura/desktop_drag_drop_client_win.h"
@@ -41,6 +37,9 @@
 #include "ui/views/win/fullscreen_handler.h"
 #include "ui/views/win/hwnd_message_handler.h"
 #include "ui/views/window/native_frame_view.h"
+#include "ui/wm/core/compound_event_filter.h"
+#include "ui/wm/core/input_method_event_filter.h"
+#include "ui/wm/core/window_animations.h"
 
 namespace views {
 
@@ -64,7 +63,8 @@ void InsetBottomRight(gfx::Rect* rect, gfx::Vector2d vector) {
 
 DEFINE_WINDOW_PROPERTY_KEY(aura::Window*, kContentWindowForRootWindow, NULL);
 
-// Identifies the DesktopWindowTreeHostWin associated with the RootWindow.
+// Identifies the DesktopWindowTreeHostWin associated with the
+// WindowEventDispatcher.
 DEFINE_WINDOW_PROPERTY_KEY(DesktopWindowTreeHostWin*, kDesktopWindowTreeHostKey,
                            NULL);
 
@@ -76,8 +76,7 @@ bool DesktopWindowTreeHostWin::is_cursor_visible_ = true;
 DesktopWindowTreeHostWin::DesktopWindowTreeHostWin(
     internal::NativeWidgetDelegate* native_widget_delegate,
     DesktopNativeWidgetAura* desktop_native_widget_aura)
-    : root_window_(NULL),
-      message_handler_(new HWNDMessageHandler(this)),
+    : message_handler_(new HWNDMessageHandler(this)),
       native_widget_delegate_(native_widget_delegate),
       desktop_native_widget_aura_(desktop_native_widget_aura),
       content_window_(NULL),
@@ -90,24 +89,24 @@ DesktopWindowTreeHostWin::DesktopWindowTreeHostWin(
 
 DesktopWindowTreeHostWin::~DesktopWindowTreeHostWin() {
   // WARNING: |content_window_| has been destroyed by the time we get here.
-  desktop_native_widget_aura_->OnDesktopWindowTreeHostDestroyed(
-      root_window_);
+  desktop_native_widget_aura_->OnDesktopWindowTreeHostDestroyed(this);
+  DestroyDispatcher();
 }
 
 // static
 aura::Window* DesktopWindowTreeHostWin::GetContentWindowForHWND(HWND hwnd) {
-  aura::RootWindow* root = aura::RootWindow::GetForAcceleratedWidget(hwnd);
-  return root ? root->window()->GetProperty(kContentWindowForRootWindow) : NULL;
+  aura::WindowTreeHost* host =
+      aura::WindowTreeHost::GetForAcceleratedWidget(hwnd);
+  return host ? host->window()->GetProperty(kContentWindowForRootWindow) : NULL;
 }
 
 // static
 ui::NativeTheme* DesktopWindowTreeHost::GetNativeTheme(aura::Window* window) {
   // Use NativeThemeWin for windows shown on the desktop, those not on the
   // desktop come from Ash and get NativeThemeAura.
-  aura::WindowEventDispatcher* dispatcher =
-      window ? window->GetDispatcher() : NULL;
-  if (dispatcher) {
-    HWND host_hwnd = dispatcher->host()->GetAcceleratedWidget();
+  aura::WindowTreeHost* host = window ? window->GetHost() : NULL;
+  if (host) {
+    HWND host_hwnd = host->GetAcceleratedWidget();
     if (host_hwnd &&
         DesktopWindowTreeHostWin::GetContentWindowForHWND(host_hwnd)) {
       return ui::NativeThemeWin::instance();
@@ -119,10 +118,8 @@ ui::NativeTheme* DesktopWindowTreeHost::GetNativeTheme(aura::Window* window) {
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopWindowTreeHostWin, DesktopWindowTreeHost implementation:
 
-void DesktopWindowTreeHostWin::Init(
-    aura::Window* content_window,
-    const Widget::InitParams& params,
-    aura::RootWindow::CreateParams* rw_create_params) {
+void DesktopWindowTreeHostWin::Init(aura::Window* content_window,
+                                    const Widget::InitParams& params) {
   // TODO(beng): SetInitParams().
   content_window_ = content_window;
 
@@ -133,10 +130,8 @@ void DesktopWindowTreeHostWin::Init(
                         native_widget_delegate_);
 
   HWND parent_hwnd = NULL;
-  if (params.parent && params.parent->GetDispatcher()) {
-    parent_hwnd =
-        params.parent->GetDispatcher()->host()->GetAcceleratedWidget();
-  }
+  if (params.parent && params.parent->GetHost())
+    parent_hwnd = params.parent->GetHost()->GetAcceleratedWidget();
 
   message_handler_->set_remove_standard_frame(params.remove_standard_frame);
 
@@ -150,28 +145,22 @@ void DesktopWindowTreeHostWin::Init(
               reinterpret_cast<HANDLE>(true));
   }
   CreateCompositor(GetAcceleratedWidget());
-
-  rw_create_params->host = this;
 }
 
-void DesktopWindowTreeHostWin::OnRootWindowCreated(
-    aura::RootWindow* root,
+void DesktopWindowTreeHostWin::OnNativeWidgetCreated(
     const Widget::InitParams& params) {
-  root_window_ = root;
-
   // The cursor is not necessarily visible when the root window is created.
   aura::client::CursorClient* cursor_client =
-      aura::client::GetCursorClient(root_window_->window());
+      aura::client::GetCursorClient(window());
   if (cursor_client)
     is_cursor_visible_ = cursor_client->IsCursorVisible();
 
-  root_window_->window()->SetProperty(kContentWindowForRootWindow,
-                                      content_window_);
-  root_window_->window()->SetProperty(kDesktopWindowTreeHostKey, this);
+  window()->SetProperty(kContentWindowForRootWindow, content_window_);
+  window()->SetProperty(kDesktopWindowTreeHostKey, this);
 
   should_animate_window_close_ =
       content_window_->type() != ui::wm::WINDOW_TYPE_NORMAL &&
-      !views::corewm::WindowAnimationsDisabled(content_window_);
+      !wm::WindowAnimationsDisabled(content_window_);
 
 // TODO this is not invoked *after* Init(), but should be ok.
   SetWindowTransparency();
@@ -186,8 +175,7 @@ scoped_ptr<corewm::Tooltip> DesktopWindowTreeHostWin::CreateTooltip() {
 scoped_ptr<aura::client::DragDropClient>
 DesktopWindowTreeHostWin::CreateDragDropClient(
     DesktopNativeCursorManager* cursor_manager) {
-  drag_drop_client_ = new DesktopDragDropClientWin(root_window_->window(),
-                                                   GetHWND());
+  drag_drop_client_ = new DesktopDragDropClientWin(window(), GetHWND());
   return scoped_ptr<aura::client::DragDropClient>(drag_drop_client_).Pass();
 }
 
@@ -345,6 +333,10 @@ bool DesktopWindowTreeHostWin::IsAlwaysOnTop() const {
   return message_handler_->IsAlwaysOnTop();
 }
 
+void DesktopWindowTreeHostWin::SetVisibleOnAllWorkspaces(bool always_visible) {
+  // Windows does not have the concept of workspaces.
+}
+
 bool DesktopWindowTreeHostWin::SetWindowTitle(const base::string16& title) {
   return message_handler_->SetTitle(title);
 }
@@ -444,10 +436,6 @@ bool DesktopWindowTreeHostWin::IsAnimatingClosed() const {
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopWindowTreeHostWin, WindowTreeHost implementation:
 
-aura::RootWindow* DesktopWindowTreeHostWin::GetRootWindow() {
-  return root_window_;
-}
-
 gfx::AcceleratedWidget DesktopWindowTreeHostWin::GetAcceleratedWidget() {
   return message_handler_->hwnd();
 }
@@ -533,7 +521,7 @@ void DesktopWindowTreeHostWin::ReleaseCapture() {
 
 bool DesktopWindowTreeHostWin::QueryMouseLocation(gfx::Point* location_return) {
   aura::client::CursorClient* cursor_client =
-      aura::client::GetCursorClient(root_window_->window());
+      aura::client::GetCursorClient(window());
   if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
     *location_return = gfx::Point(0, 0);
     return false;
@@ -546,7 +534,7 @@ bool DesktopWindowTreeHostWin::QueryMouseLocation(gfx::Point* location_return) {
 }
 
 bool DesktopWindowTreeHostWin::ConfineCursorToRootWindow() {
-  RECT window_rect = root_window_->window()->GetBoundsInScreen().ToRECT();
+  RECT window_rect = window()->GetBoundsInScreen().ToRECT();
   ::ClipCursor(&window_rect);
   return true;
 }
@@ -590,7 +578,7 @@ void DesktopWindowTreeHostWin::MoveCursorToNative(const gfx::Point& location) {
 // DesktopWindowTreeHostWin, ui::EventSource implementation:
 
 ui::EventProcessor* DesktopWindowTreeHostWin::GetEventProcessor() {
-  return delegate_->GetEventProcessor();
+  return dispatcher();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -740,11 +728,12 @@ void DesktopWindowTreeHostWin::HandleAppDeactivated() {
 void DesktopWindowTreeHostWin::HandleActivationChanged(bool active) {
   // This can be invoked from HWNDMessageHandler::Init(), at which point we're
   // not in a good state and need to ignore it.
-  if (!delegate_)
+  // TODO(beng): Do we need this still now the host owns the dispatcher?
+  if (!dispatcher())
     return;
 
   if (active)
-    delegate_->OnHostActivated();
+    OnHostActivated();
   desktop_native_widget_aura_->HandleActivationChanged(active);
 }
 
@@ -756,11 +745,11 @@ bool DesktopWindowTreeHostWin::HandleAppCommand(short command) {
 }
 
 void DesktopWindowTreeHostWin::HandleCancelMode() {
-  delegate_->OnHostCancelMode();
+  dispatcher()->DispatchCancelModeEvent();
 }
 
 void DesktopWindowTreeHostWin::HandleCaptureLost() {
-  delegate_->OnHostLostWindowCapture();
+  OnHostLostWindowCapture();
   native_widget_delegate_->OnMouseCaptureLost();
 }
 
@@ -813,8 +802,7 @@ void DesktopWindowTreeHostWin::HandleEndWMSizeMove() {
 
 void DesktopWindowTreeHostWin::HandleMove() {
   native_widget_delegate_->OnNativeWidgetMove();
-  if (delegate_)
-    delegate_->OnHostMoved(GetBounds().origin());
+  OnHostMoved(GetBounds().origin());
 }
 
 void DesktopWindowTreeHostWin::HandleWorkAreaChanged() {
@@ -831,8 +819,8 @@ void DesktopWindowTreeHostWin::HandleVisibilityChanged(bool visible) {
 
 void DesktopWindowTreeHostWin::HandleClientSizeChanged(
     const gfx::Size& new_size) {
-  if (delegate_)
-    NotifyHostResized(new_size);
+  if (dispatcher())
+    OnHostResized(new_size);
 }
 
 void DesktopWindowTreeHostWin::HandleFrameChanged() {
@@ -874,17 +862,17 @@ bool DesktopWindowTreeHostWin::HandleUntranslatedKeyEvent(
 void DesktopWindowTreeHostWin::HandleTouchEvent(
     const ui::TouchEvent& event) {
   // HWNDMessageHandler asynchronously processes touch events. Because of this
-  // it's possible for the aura::RootWindow to have been destroyed by the time
-  // we attempt to process them.
+  // it's possible for the aura::WindowEventDispatcher to have been destroyed
+  // by the time we attempt to process them.
   if (!GetWidget()->GetNativeView())
     return;
 
   // Currently we assume the window that has capture gets touch events too.
-  aura::RootWindow* root =
-      aura::RootWindow::GetForAcceleratedWidget(GetCapture());
-  if (root) {
+  aura::WindowTreeHost* host =
+      aura::WindowTreeHost::GetForAcceleratedWidget(GetCapture());
+  if (host) {
     DesktopWindowTreeHostWin* target =
-        root->window()->GetProperty(kDesktopWindowTreeHostKey);
+        host->window()->GetProperty(kDesktopWindowTreeHostKey);
     if (target && target->HasCapture() && target != this) {
       POINT target_location(event.location().ToPOINT());
       ClientToScreen(GetHWND(), &target_location);
@@ -945,7 +933,7 @@ void DesktopWindowTreeHostWin::HandleTooltipMouseMove(UINT message,
 void DesktopWindowTreeHostWin::HandleMenuLoop(bool in_menu_loop) {
   if (in_menu_loop) {
     tooltip_disabler_.reset(
-        new aura::client::ScopedTooltipDisabler(root_window_->window()));
+        new aura::client::ScopedTooltipDisabler(window()));
   } else {
     tooltip_disabler_.reset();
   }
@@ -986,21 +974,20 @@ HWND DesktopWindowTreeHostWin::GetHWND() const {
 
 void DesktopWindowTreeHostWin::SetWindowTransparency() {
   bool transparent = ShouldUseNativeFrame() && !IsFullscreen();
-  root_window_->host()->compositor()->SetHostHasTransparentBackground(
-      transparent);
-  root_window_->window()->SetTransparent(transparent);
+  compositor()->SetHostHasTransparentBackground(transparent);
+  window()->SetTransparent(transparent);
   content_window_->SetTransparent(transparent);
 }
 
 bool DesktopWindowTreeHostWin::IsModalWindowActive() const {
   // This function can get called during window creation which occurs before
-  // root_window_ has been created.
-  if (!root_window_)
+  // dispatcher() has been created.
+  if (!dispatcher())
     return false;
 
   aura::Window::Windows::const_iterator index;
-  for (index = root_window_->window()->children().begin();
-       index != root_window_->window()->children().end();
+  for (index = window()->children().begin();
+       index != window()->children().end();
        ++index) {
     if ((*index)->GetProperty(aura::client::kModalKey) !=
         ui:: MODAL_TYPE_NONE && (*index)->TargetVisibility())

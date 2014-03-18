@@ -54,7 +54,6 @@
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/web/WebHelperPlugin.h"
 #include "third_party/WebKit/public/web/WebPagePopup.h"
 #include "third_party/WebKit/public/web/WebPopupMenu.h"
 #include "third_party/WebKit/public/web/WebPopupMenuInfo.h"
@@ -437,8 +436,6 @@ WebWidget* RenderWidget::CreateWebWidget(RenderWidget* render_widget) {
       return WebPopupMenu::create(render_widget);
     case blink::WebPopupTypePage:
       return WebPagePopup::create(render_widget);
-    case blink::WebPopupTypeHelperPlugin:
-      return blink::WebHelperPlugin::create(render_widget);
     default:
       NOTREACHED();
   }
@@ -509,10 +506,6 @@ void RenderWidget::SetSwappedOut(bool is_swapped_out) {
   // exiting.
   if (!is_swapped_out)
     RenderProcess::current()->AddRefProcess();
-}
-
-bool RenderWidget::AllowPartialSwap() const {
-  return true;
 }
 
 bool RenderWidget::UsingSynchronousRendererCompositor() const {
@@ -1088,6 +1081,9 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
           base::HistogramBase::kUmaTargetedHistogramFlag);
   counter_for_type->Add(delta);
 
+  if (WebInputEvent::isUserGestureEventType(input_event->type))
+    WillProcessUserGesture();
+
   bool prevent_default = false;
   if (WebInputEvent::isMouseEventType(input_event->type)) {
     const WebMouseEvent& mouse_event =
@@ -1503,6 +1499,9 @@ void RenderWidget::DoDeferredUpdate() {
   // enable GPU acceleration so they need to be called before any painting
   // is done.
   UpdateTextInputType();
+#if defined(OS_ANDROID)
+  UpdateSelectionRootBounds();
+#endif
   UpdateSelectionBounds();
 
   // Suppress painting if nothing is dirty.  This has to be done after updating
@@ -1811,7 +1810,39 @@ void RenderWidget::AutoResizeCompositor()  {
     compositor_->setViewportSize(size_, physical_backing_size_);
 }
 
+// FIXME: To be removed as soon as chromium and blink side changes land
+// didActivateCompositor with parameters is still kept in order to land
+// these changes s-chromium - https://codereview.chromium.org/137893025/.
+// s-blink - https://codereview.chromium.org/138523003/
 void RenderWidget::didActivateCompositor(int input_handler_identifier) {
+  TRACE_EVENT0("gpu", "RenderWidget::didActivateCompositor");
+
+#if !defined(OS_MACOSX)
+  if (!is_accelerated_compositing_active_) {
+    // When not in accelerated compositing mode, in certain cases (e.g. waiting
+    // for a resize or if no backing store) the RenderWidgetHost is blocking the
+    // browser's UI thread for some time, waiting for an UpdateRect. If we are
+    // going to switch to accelerated compositing, the GPU process may need
+    // round-trips to the browser's UI thread before finishing the frame,
+    // causing deadlocks if we delay the UpdateRect until we receive the
+    // OnSwapBuffersComplete.  So send a dummy message that will unblock the
+    // browser's UI thread. This is not necessary on Mac, because SwapBuffers
+    // now unblocks GetBackingStore on Mac.
+    Send(new ViewHostMsg_UpdateIsDelayed(routing_id_));
+  }
+#endif
+
+  is_accelerated_compositing_active_ = true;
+  Send(new ViewHostMsg_DidActivateAcceleratedCompositing(
+      routing_id_, is_accelerated_compositing_active_));
+
+  if (!was_accelerated_compositing_ever_active_) {
+    was_accelerated_compositing_ever_active_ = true;
+    webwidget_->enterForceCompositingMode(true);
+  }
+}
+
+void RenderWidget::didActivateCompositor() {
   TRACE_EVENT0("gpu", "RenderWidget::didActivateCompositor");
 
 #if !defined(OS_MACOSX)
@@ -1888,6 +1919,7 @@ void RenderWidget::willBeginCompositorFrame() {
   UpdateTextInputType();
 #if defined(OS_ANDROID)
   UpdateTextInputState(false, true);
+  UpdateSelectionRootBounds();
 #endif
   UpdateSelectionBounds();
 }
@@ -2205,7 +2237,7 @@ bool RenderWidget::OnSnapshotHelper(const gfx::Rect& src_subrect,
   canvas->restore();
 
   const SkBitmap& bitmap = skia::GetTopDevice(*canvas)->accessBitmap(false);
-  if (!bitmap.copyTo(snapshot, SkBitmap::kARGB_8888_Config))
+  if (!bitmap.copyTo(snapshot, kPMColor_SkColorType))
     return false;
 
   UMA_HISTOGRAM_TIMES("Renderer4.Snapshot",
@@ -2391,6 +2423,9 @@ void RenderWidget::FinishHandlingImeEvent() {
   // While handling an ime event, text input state and selection bounds updates
   // are ignored. These must explicitly be updated once finished handling the
   // ime event.
+#if defined(OS_ANDROID)
+  UpdateSelectionRootBounds();
+#endif
   UpdateSelectionBounds();
 #if defined(OS_ANDROID)
   UpdateTextInputState(false, false);
@@ -2723,11 +2758,20 @@ void RenderWidget::setTouchAction(
    COMPILE_ASSERT(static_cast<blink::WebTouchAction>(TOUCH_ACTION_PAN_Y) ==
                       blink::WebTouchActionPanY,
                   enum_values_must_match_for_touch_action);
+   COMPILE_ASSERT(
+       static_cast<blink::WebTouchAction>(TOUCH_ACTION_PINCH_ZOOM) ==
+           blink::WebTouchActionPinchZoom,
+       enum_values_must_match_for_touch_action);
 
    content::TouchAction content_touch_action =
        static_cast<content::TouchAction>(web_touch_action);
   Send(new InputHostMsg_SetTouchAction(routing_id_, content_touch_action));
 }
+
+#if defined(OS_ANDROID)
+void RenderWidget::UpdateSelectionRootBounds() {
+}
+#endif
 
 bool RenderWidget::HasTouchEventHandlersAt(const gfx::Point& point) const {
   return true;
@@ -2781,7 +2825,8 @@ RenderWidget::CreateGraphicsContext3D(
           gpu_channel_host.get(),
           attributes,
           false /* bind generates resources */,
-          limits));
+          limits,
+          NULL));
   return context.Pass();
 }
 

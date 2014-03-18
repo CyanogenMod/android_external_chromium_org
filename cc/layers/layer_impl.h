@@ -111,7 +111,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   const LayerImpl* scroll_parent() const { return scroll_parent_; }
 
   void SetScrollChildren(std::set<LayerImpl*>* children);
-  void RemoveScrollChild(LayerImpl* child);
 
   std::set<LayerImpl*>* scroll_children() { return scroll_children_.get(); }
   const std::set<LayerImpl*>* scroll_children() const {
@@ -128,7 +127,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   }
 
   void SetClipChildren(std::set<LayerImpl*>* children);
-  void RemoveClipChild(LayerImpl* child);
 
   std::set<LayerImpl*>* clip_children() { return clip_children_.get(); }
   const std::set<LayerImpl*>* clip_children() const {
@@ -248,12 +246,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return is_container_for_fixed_position_layers_;
   }
 
-  void SetFixedContainerSizeDelta(const gfx::Vector2dF& delta) {
-    fixed_container_size_delta_ = delta;
-  }
-  gfx::Vector2dF fixed_container_size_delta() const {
-    return fixed_container_size_delta_;
-  }
+  gfx::Vector2dF FixedContainerSizeDelta() const;
 
   void SetPositionConstraint(const LayerPositionConstraint& constraint) {
     position_constraint_ = constraint;
@@ -342,7 +335,12 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // them from the other values.
 
   void SetBounds(const gfx::Size& bounds);
-  gfx::Size bounds() const { return bounds_; }
+  void SetTemporaryImplBounds(const gfx::SizeF& bounds);
+  gfx::Size bounds() const;
+  gfx::Vector2dF BoundsDelta() const {
+    return gfx::Vector2dF(temporary_impl_bounds_.width() - bounds_.width(),
+                          temporary_impl_bounds_.height() - bounds_.height());
+  }
 
   void SetContentBounds(const gfx::Size& content_bounds);
   gfx::Size content_bounds() const { return draw_properties_.content_bounds; }
@@ -385,6 +383,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   gfx::Vector2dF ScrollBy(const gfx::Vector2dF& scroll);
 
   void SetScrollClipLayer(int scroll_clip_layer_id);
+  LayerImpl* scroll_clip_layer() const { return scroll_clip_layer_; }
   bool scrollable() const { return !!scroll_clip_layer_; }
 
   void set_user_scrollable_horizontal(bool scrollable) {
@@ -426,7 +425,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetDrawCheckerboardForMissingTiles(bool checkerboard) {
     draw_checkerboard_for_missing_tiles_ = checkerboard;
   }
-  bool DrawCheckerboardForMissingTiles() const;
+  bool draw_checkerboard_for_missing_tiles() const {
+    return draw_checkerboard_for_missing_tiles_;
+  }
 
   InputHandler::ScrollStatus TryScroll(
       const gfx::PointF& screen_space_point,
@@ -449,13 +450,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   void SetStackingOrderChanged(bool stacking_order_changed);
 
-  bool LayerPropertyChanged() const {
-    return layer_property_changed_ || LayerIsAlwaysDamaged();
-  }
+  bool LayerPropertyChanged() const { return layer_property_changed_; }
 
   void ResetAllChangeTrackingForSubtree();
-
-  virtual bool LayerIsAlwaysDamaged() const;
 
   LayerAnimationController* layer_animation_controller() {
     return layer_animation_controller_.get();
@@ -575,6 +572,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   gfx::PointF anchor_point_;
   float anchor_point_z_;
   gfx::Size bounds_;
+  gfx::SizeF temporary_impl_bounds_;
   gfx::Vector2d scroll_offset_;
   LayerScrollOffsetDelegate* scroll_offset_delegate_;
   LayerImpl* scroll_clip_layer_;
@@ -611,10 +609,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   SkXfermode::Mode blend_mode_;
   gfx::PointF position_;
   gfx::Transform transform_;
-
-  // This property is effective when
-  // is_container_for_fixed_position_layers_ == true,
-  gfx::Vector2dF fixed_container_size_delta_;
 
   LayerPositionConstraint position_constraint_;
 

@@ -65,7 +65,6 @@ class NET_EXPORT HttpNetworkSession
     TransportSecurityState* transport_security_state;
     CTVerifier* cert_transparency_verifier;
     ProxyService* proxy_service;
-    QuicServerInfoFactory* quic_server_info_factory;
     std::string ssl_session_cache_shard;
     SSLConfigService* ssl_config_service;
     HttpAuthHandlerFactory* http_auth_handler_factory;
@@ -79,7 +78,6 @@ class NET_EXPORT HttpNetworkSession
     uint16 testing_fixed_http_port;
     uint16 testing_fixed_https_port;
     bool force_spdy_single_domain;
-    bool enable_spdy_ip_pooling;
     bool enable_spdy_compression;
     bool enable_spdy_ping_based_connection_checking;
     NextProto spdy_default_protocol;
@@ -91,6 +89,8 @@ class NET_EXPORT HttpNetworkSession
     bool enable_quic;
     bool enable_quic_https;
     bool enable_quic_port_selection;
+    bool enable_quic_pacing;
+    bool enable_quic_persist_server_info;
     HostPortPair origin_to_force_quic_on;
     QuicClock* quic_clock;  // Will be owned by QuicStreamFactory.
     QuicRandom* quic_random;

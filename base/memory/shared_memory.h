@@ -22,6 +22,7 @@
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #endif
 
 namespace base {
@@ -32,35 +33,34 @@ class FilePath;
 // the underlying OS handle to a shared memory segment.
 #if defined(OS_WIN)
 typedef HANDLE SharedMemoryHandle;
-typedef HANDLE SharedMemoryLock;
 #elif defined(OS_POSIX)
 // A SharedMemoryId is sufficient to identify a given shared memory segment on a
 // system, but insufficient to map it.
 typedef FileDescriptor SharedMemoryHandle;
 typedef ino_t SharedMemoryId;
-// On POSIX, the lock is implemented as a lockf() on the mapped file,
-// so no additional member (or definition of SharedMemoryLock) is
-// needed.
 #endif
 
 // Options for creating a shared memory object.
 struct SharedMemoryCreateOptions {
-  SharedMemoryCreateOptions() : name(NULL), size(0), open_existing(false),
+  SharedMemoryCreateOptions() : name_deprecated(NULL), size(0),
+                                open_existing_deprecated(false),
                                 executable(false) {}
 
+  // DEPRECATED (crbug.com/345734):
   // If NULL, the object is anonymous.  This pointer is owned by the caller
   // and must live through the call to Create().
-  const std::string* name;
+  const std::string* name_deprecated;
 
   // Size of the shared memory object to be created.
   // When opening an existing object, this has no effect.
   size_t size;
 
+  // DEPRECATED (crbug.com/345734):
   // If true, and the shared memory already exists, Create() will open the
   // existing shared memory and ignore the size parameter.  If false,
-  // shared memory must not exist.  This flag is meaningless unless name is
-  // non-NULL.
-  bool open_existing;
+  // shared memory must not exist.  This flag is meaningless unless
+  // name_deprecated is non-NULL.
+  bool open_existing_deprecated;
 
   // If true, mappings might need to be made executable later.
   bool executable;
@@ -74,8 +74,8 @@ class BASE_EXPORT SharedMemory {
 
 #if defined(OS_WIN)
   // Similar to the default constructor, except that this allows for
-  // calling Lock() to acquire the named mutex before either Create or Open
-  // are called on Windows.
+  // calling LockDeprecated() to acquire the named mutex before either Create or
+  // Open are called on Windows.
   explicit SharedMemory(const std::wstring& name);
 #endif
 
@@ -126,16 +126,18 @@ class BASE_EXPORT SharedMemory {
     return Create(options);
   }
 
+  // DEPRECATED (crbug.com/345734):
   // Creates or opens a shared memory segment based on a name.
   // If open_existing is true, and the shared memory already exists,
   // opens the existing shared memory and ignores the size parameter.
   // If open_existing is false, shared memory must not exist.
   // size is the size of the block to be created.
   // Returns true on success, false on failure.
-  bool CreateNamed(const std::string& name, bool open_existing, size_t size) {
+  bool CreateNamedDeprecated(
+      const std::string& name, bool open_existing, size_t size) {
     SharedMemoryCreateOptions options;
-    options.name = &name;
-    options.open_existing = open_existing;
+    options.name_deprecated = &name;
+    options.open_existing_deprecated = open_existing;
     options.size = size;
     return Create(options);
   }
@@ -243,28 +245,22 @@ class BASE_EXPORT SharedMemory {
     return ShareToProcessCommon(process, new_handle, true, SHARE_CURRENT_MODE);
   }
 
+  // DEPRECATED (crbug.com/345734):
   // Locks the shared memory.
   //
   // WARNING: on POSIX the memory locking primitive only works across
-  // processes, not across threads.  The Lock method is not currently
+  // processes, not across threads.  The LockDeprecated method is not currently
   // used in inner loops, so we protect against multiple threads in a
   // critical section using a class global lock.
-  void Lock();
+  void LockDeprecated();
 
-#if defined(OS_WIN)
-  // A Lock() implementation with a timeout that also allows setting
-  // security attributes on the mutex. sec_attr may be NULL.
-  // Returns true if the Lock() has been acquired, false if the timeout was
-  // reached.
-  bool Lock(uint32 timeout_ms, SECURITY_ATTRIBUTES* sec_attr);
-#endif
-
+  // DEPRECATED (crbug.com/345734):
   // Releases the shared memory lock.
-  void Unlock();
+  void UnlockDeprecated();
 
  private:
 #if defined(OS_POSIX) && !defined(OS_NACL)
-  bool PrepareMapFile(file_util::ScopedFILE fp, file_util::ScopedFD readonly);
+  bool PrepareMapFile(ScopedFILE fp, ScopedFD readonly);
   bool FilePathForMemoryName(const std::string& mem_name, FilePath* path);
   void LockOrUnlockCommon(int function);
 #endif
@@ -290,28 +286,29 @@ class BASE_EXPORT SharedMemory {
   bool               read_only_;
   size_t             requested_size_;
 #if !defined(OS_POSIX)
-  SharedMemoryLock   lock_;
+  HANDLE             lock_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(SharedMemory);
 };
 
+// DEPRECATED (crbug.com/345734):
 // A helper class that acquires the shared memory lock while
-// the SharedMemoryAutoLock is in scope.
-class SharedMemoryAutoLock {
+// the SharedMemoryAutoLockDeprecated is in scope.
+class SharedMemoryAutoLockDeprecated {
  public:
-  explicit SharedMemoryAutoLock(SharedMemory* shared_memory)
+  explicit SharedMemoryAutoLockDeprecated(SharedMemory* shared_memory)
       : shared_memory_(shared_memory) {
-    shared_memory_->Lock();
+    shared_memory_->LockDeprecated();
   }
 
-  ~SharedMemoryAutoLock() {
-    shared_memory_->Unlock();
+  ~SharedMemoryAutoLockDeprecated() {
+    shared_memory_->UnlockDeprecated();
   }
 
  private:
   SharedMemory* shared_memory_;
-  DISALLOW_COPY_AND_ASSIGN(SharedMemoryAutoLock);
+  DISALLOW_COPY_AND_ASSIGN(SharedMemoryAutoLockDeprecated);
 };
 
 }  // namespace base

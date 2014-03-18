@@ -9,10 +9,13 @@
 #include "base/prefs/pref_service.h"
 #include "base/prefs/pref_service_factory.h"
 #include "base/prefs/testing_pref_store.h"
+#include "chrome/common/extensions/api/generated_api.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "components/user_prefs/user_prefs.h"
+#include "extensions/browser/api/extensions_api_client.h"
 #include "extensions/browser/app_sorting.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/common/api/generated_api.h"
 
 using content::BrowserContext;
 
@@ -26,10 +29,9 @@ void RegisterPrefs(user_prefs::PrefRegistrySyncable* registry) {
 
 }  // namespace
 
-
 ShellExtensionsBrowserClient::ShellExtensionsBrowserClient(
     BrowserContext* context)
-    : browser_context_(context) {
+    : browser_context_(context), api_client_(new ExtensionsAPIClient) {
   // Set up the preferences service.
   base::PrefServiceFactory factory;
   factory.set_user_prefs(new TestingPrefStore);
@@ -52,7 +54,7 @@ bool ShellExtensionsBrowserClient::IsShuttingDown() {
 }
 
 bool ShellExtensionsBrowserClient::AreExtensionsDisabled(
-    const CommandLine& command_line,
+    const base::CommandLine& command_line,
     BrowserContext* context) {
   return false;
 }
@@ -82,7 +84,8 @@ BrowserContext* ShellExtensionsBrowserClient::GetOriginalContext(
   return context;
 }
 
-bool ShellExtensionsBrowserClient::IsGuestSession(BrowserContext* context) {
+bool ShellExtensionsBrowserClient::IsGuestSession(
+    BrowserContext* context) const {
   return false;
 }
 
@@ -126,6 +129,9 @@ bool ShellExtensionsBrowserClient::DidVersionUpdate(BrowserContext* context) {
   return false;
 }
 
+void ShellExtensionsBrowserClient::PermitExternalProtocolHandler() {
+}
+
 scoped_ptr<AppSorting> ShellExtensionsBrowserClient::CreateAppSorting() {
   return scoped_ptr<AppSorting>(new apps::ShellAppSorting).Pass();
 }
@@ -151,6 +157,14 @@ ApiActivityMonitor* ShellExtensionsBrowserClient::GetApiActivityMonitor(
 ExtensionSystemProvider*
 ShellExtensionsBrowserClient::GetExtensionSystemFactory() {
   return ShellExtensionSystemFactory::GetInstance();
+}
+
+void ShellExtensionsBrowserClient::RegisterExtensionFunctions(
+    ExtensionFunctionRegistry* registry) const {
+  extensions::core_api::GeneratedFunctionRegistry::RegisterAll(registry);
+  // TODO(rockot): Remove dependency on src/chrome once we have some core APIs
+  // moved out. See http://crbug.com/349042.
+  extensions::api::GeneratedFunctionRegistry::RegisterAll(registry);
 }
 
 }  // namespace extensions

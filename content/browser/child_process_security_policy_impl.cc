@@ -313,11 +313,11 @@ ChildProcessSecurityPolicyImpl::ChildProcessSecurityPolicyImpl() {
   RegisterWebSafeScheme(kFtpScheme);
   RegisterWebSafeScheme(kDataScheme);
   RegisterWebSafeScheme("feed");
-  RegisterWebSafeScheme(chrome::kBlobScheme);
+  RegisterWebSafeScheme(kBlobScheme);
   RegisterWebSafeScheme(kFileSystemScheme);
 
   // We know about the following pseudo schemes and treat them specially.
-  RegisterPseudoScheme(chrome::kAboutScheme);
+  RegisterPseudoScheme(kAboutScheme);
   RegisterPseudoScheme(kJavaScriptScheme);
   RegisterPseudoScheme(kViewSourceScheme);
 }

@@ -4,6 +4,8 @@
 
 #include "ui/app_list/views/app_list_view.h"
 
+#include <algorithm>
+
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "base/win/windows_version.h"
@@ -21,6 +23,7 @@
 #include "ui/app_list/views/speech_view.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/insets.h"
@@ -34,7 +37,7 @@
 
 #if defined(USE_AURA)
 #include "ui/aura/window.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #if defined(OS_WIN)
 #include "ui/base/win/shell.h"
 #endif
@@ -249,7 +252,7 @@ HWND AppListView::GetHWND() const {
 #if defined(USE_AURA)
   gfx::NativeWindow window =
       GetWidget()->GetTopLevelWidget()->GetNativeWindow();
-  return window->GetDispatcher()->host()->GetAcceleratedWidget();
+  return window->GetHost()->GetAcceleratedWidget();
 #else
   return GetWidget()->GetTopLevelWidget()->GetNativeWindow();
 #endif
@@ -326,6 +329,8 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
   // the border to be shown. See http://crbug.com/231687 .
   GetWidget()->Hide();
 #endif
+
+  OnSpeechRecognitionStateChanged(delegate_->GetSpeechUI()->state());
 
   if (delegate_)
     delegate_->ViewInitialized();
@@ -404,6 +409,12 @@ void AppListView::Layout() {
     speech_bounds.Inset(-speech_view_->GetInsets());
     speech_view_->SetBoundsRect(speech_bounds);
   }
+}
+
+void AppListView::SchedulePaintInRect(const gfx::Rect& rect) {
+  BubbleDelegateView::SchedulePaintInRect(rect);
+  if (GetBubbleFrameView())
+    GetBubbleFrameView()->SchedulePaint();
 }
 
 void AppListView::OnWidgetDestroying(views::Widget* widget) {

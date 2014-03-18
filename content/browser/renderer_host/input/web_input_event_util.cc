@@ -5,7 +5,14 @@
 #include "content/browser/renderer_host/input/web_input_event_util.h"
 
 #include "base/strings/string_util.h"
-#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "ui/events/gesture_detection/gesture_event_data.h"
+#include "ui/events/gesture_detection/motion_event.h"
+
+using blink::WebGestureEvent;
+using blink::WebInputEvent;
+using blink::WebTouchEvent;
+using blink::WebTouchPoint;
+using ui::MotionEvent;
 
 namespace {
 
@@ -125,6 +132,69 @@ const char* GetKeyIdentifier(ui::KeyboardCode key_code) {
   };
 }
 
+WebInputEvent::Type ToWebInputEventType(MotionEvent::Action action) {
+  switch (action) {
+    case MotionEvent::ACTION_DOWN:
+      return WebInputEvent::TouchStart;
+    case MotionEvent::ACTION_MOVE:
+      return WebInputEvent::TouchMove;
+    case MotionEvent::ACTION_UP:
+      return WebInputEvent::TouchEnd;
+    case MotionEvent::ACTION_CANCEL:
+      return WebInputEvent::TouchCancel;
+    case MotionEvent::ACTION_POINTER_DOWN:
+      return WebInputEvent::TouchStart;
+    case MotionEvent::ACTION_POINTER_UP:
+      return WebInputEvent::TouchEnd;
+  }
+  NOTREACHED() << "Invalid MotionEvent::Action.";
+  return WebInputEvent::Undefined;
+}
+
+// Note that |is_action_pointer| is meaningful only in the context of
+// |ACTION_POINTER_UP| and |ACTION_POINTER_DOWN|; other actions map directly to
+// WebTouchPoint::State.
+WebTouchPoint::State ToWebTouchPointState(MotionEvent::Action action,
+                                          bool is_action_pointer) {
+  switch (action) {
+    case MotionEvent::ACTION_DOWN:
+      return WebTouchPoint::StatePressed;
+    case MotionEvent::ACTION_MOVE:
+      return WebTouchPoint::StateMoved;
+    case MotionEvent::ACTION_UP:
+      return WebTouchPoint::StateReleased;
+    case MotionEvent::ACTION_CANCEL:
+      return WebTouchPoint::StateCancelled;
+    case MotionEvent::ACTION_POINTER_DOWN:
+      return is_action_pointer ? WebTouchPoint::StatePressed
+                               : WebTouchPoint::StateStationary;
+    case MotionEvent::ACTION_POINTER_UP:
+      return is_action_pointer ? WebTouchPoint::StateReleased
+                               : WebTouchPoint::StateStationary;
+  }
+  NOTREACHED() << "Invalid MotionEvent::Action.";
+  return WebTouchPoint::StateUndefined;
+}
+
+WebTouchPoint CreateWebTouchPoint(const MotionEvent& event,
+                                 size_t pointer_index,
+                                 float scale) {
+  WebTouchPoint touch;
+  touch.id = event.GetPointerId(pointer_index);
+  touch.state = ToWebTouchPointState(
+      event.GetAction(),
+      static_cast<int>(pointer_index) == event.GetActionIndex());
+  touch.position.x = event.GetX(pointer_index) * scale;
+  touch.position.y = event.GetY(pointer_index) * scale;
+  // TODO(joth): Raw event co-ordinates.
+  touch.screenPosition = touch.position;
+  touch.radiusX = touch.radiusY =
+      event.GetTouchMajor(pointer_index) * 0.5f * scale;
+  touch.force = event.GetPressure(pointer_index);
+
+  return touch;
+}
+
 }  // namespace
 
 namespace content {
@@ -140,6 +210,131 @@ void UpdateWindowsKeyCodeAndKeyIdentifier(blink::WebKeyboardEvent* event,
     base::snprintf(event->keyIdentifier, sizeof(event->keyIdentifier), "U+%04X",
                    base::ToUpperASCII(static_cast<int>(windows_key_code)));
   }
+}
+
+blink::WebTouchEvent CreateWebTouchEventFromMotionEvent(
+    const ui::MotionEvent& event,
+    float scale) {
+  blink::WebTouchEvent result;
+
+  result.type = ToWebInputEventType(event.GetAction());
+  DCHECK(WebInputEvent::isTouchEventType(result.type));
+
+  result.timeStampSeconds =
+      (event.GetEventTime() - base::TimeTicks()).InSecondsF();
+
+  result.touchesLength =
+      std::min(event.GetPointerCount(),
+               static_cast<size_t>(WebTouchEvent::touchesLengthCap));
+  DCHECK_GT(result.touchesLength, 0U);
+
+  for (size_t i = 0; i < result.touchesLength; ++i)
+    result.touches[i] = CreateWebTouchPoint(event, i, scale);
+
+  return result;
+}
+
+WebGestureEvent CreateWebGestureEventFromGestureEventData(
+    const ui::GestureEventData& data,
+    float scale) {
+  WebGestureEvent gesture;
+  gesture.x = data.x * scale;
+  gesture.y = data.y * scale;
+  gesture.timeStampSeconds = (data.time - base::TimeTicks()).InSecondsF();
+  gesture.sourceDevice = WebGestureEvent::Touchscreen;
+
+  switch (data.type) {
+    case ui::ET_GESTURE_SHOW_PRESS:
+      gesture.type = WebInputEvent::GestureShowPress;
+      gesture.data.showPress.width = data.details.show_press.width * scale;
+      gesture.data.showPress.width = data.details.show_press.width * scale;
+      break;
+    case ui::ET_GESTURE_DOUBLE_TAP:
+      gesture.type = WebInputEvent::GestureDoubleTap;
+      DCHECK_EQ(1, data.details.tap.tap_count);
+      gesture.data.tap.tapCount = data.details.tap.tap_count;
+      gesture.data.tap.width = data.details.tap.width * scale;
+      gesture.data.tap.height = data.details.tap.height * scale;
+      break;
+    case ui::ET_GESTURE_TAP:
+      gesture.type = WebInputEvent::GestureTap;
+      DCHECK_EQ(1, data.details.tap.tap_count);
+      gesture.data.tap.tapCount = data.details.tap.tap_count;
+      gesture.data.tap.width = data.details.tap.width * scale;
+      gesture.data.tap.height = data.details.tap.height * scale;
+      break;
+    case ui::ET_GESTURE_TAP_UNCONFIRMED:
+      gesture.type = WebInputEvent::GestureTapUnconfirmed;
+      DCHECK_EQ(1, data.details.tap.tap_count);
+      gesture.data.tap.tapCount = data.details.tap.tap_count;
+      gesture.data.tap.width = data.details.tap.width * scale;
+      gesture.data.tap.height = data.details.tap.height * scale;
+      break;
+    case ui::ET_GESTURE_LONG_PRESS:
+      gesture.type = WebInputEvent::GestureLongPress;
+      gesture.data.longPress.width = data.details.long_press.width * scale;
+      gesture.data.longPress.height = data.details.long_press.height * scale;
+      break;
+    case ui::ET_GESTURE_LONG_TAP:
+      gesture.type = WebInputEvent::GestureLongTap;
+      gesture.data.longPress.width = data.details.long_press.width * scale;
+      gesture.data.longPress.height = data.details.long_press.height * scale;
+      break;
+    case ui::ET_GESTURE_SCROLL_BEGIN:
+      gesture.type = WebInputEvent::GestureScrollBegin;
+      gesture.data.scrollBegin.deltaXHint =
+          data.details.scroll_begin.delta_x_hint * scale;
+      gesture.data.scrollBegin.deltaYHint =
+          data.details.scroll_begin.delta_y_hint * scale;
+      break;
+    case ui::ET_GESTURE_SCROLL_UPDATE:
+      gesture.type = WebInputEvent::GestureScrollUpdate;
+      gesture.data.scrollUpdate.deltaX =
+          data.details.scroll_update.delta_x * scale;
+      gesture.data.scrollUpdate.deltaY =
+          data.details.scroll_update.delta_y * scale;
+      gesture.data.scrollUpdate.velocityX =
+          data.details.scroll_update.velocity_x * scale;
+      gesture.data.scrollUpdate.velocityY =
+          data.details.scroll_update.velocity_y * scale;
+      break;
+    case ui::ET_GESTURE_SCROLL_END:
+      gesture.type = WebInputEvent::GestureScrollEnd;
+      break;
+    case ui::ET_SCROLL_FLING_START:
+      gesture.type = WebInputEvent::GestureFlingStart;
+      gesture.data.flingStart.velocityX =
+          data.details.fling_start.velocity_x * scale;
+      gesture.data.flingStart.velocityY =
+          data.details.fling_start.velocity_y * scale;
+      break;
+    case ui::ET_SCROLL_FLING_CANCEL:
+      gesture.type = WebInputEvent::GestureFlingCancel;
+      break;
+    case ui::ET_GESTURE_PINCH_BEGIN:
+      gesture.type = WebInputEvent::GesturePinchBegin;
+      break;
+    case ui::ET_GESTURE_PINCH_UPDATE:
+      gesture.type = WebInputEvent::GesturePinchUpdate;
+      gesture.data.pinchUpdate.scale = data.details.pinch_update.scale;
+      break;
+    case ui::ET_GESTURE_PINCH_END:
+      gesture.type = WebInputEvent::GesturePinchEnd;
+      break;
+    case ui::ET_GESTURE_TAP_CANCEL:
+      gesture.type = WebInputEvent::GestureTapCancel;
+      break;
+    case ui::ET_GESTURE_TAP_DOWN:
+      gesture.type = WebInputEvent::GestureTapDown;
+      gesture.data.tapDown.width = data.details.tap_down.width * scale;
+      gesture.data.tapDown.height = data.details.tap_down.height * scale;
+      break;
+    default:
+      NOTREACHED() << "ui::EventType provided wasn't a valid gesture event.";
+      break;
+  }
+
+  return gesture;
 }
 
 }  // namespace content

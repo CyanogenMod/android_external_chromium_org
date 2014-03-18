@@ -40,11 +40,13 @@ void PyUITestSuiteBase::SetCrSourceRoot(const base::FilePath& path) {
   PathService::Override(base::DIR_SOURCE_ROOT, path);
 }
 
+bool PyUITestSuiteBase::IsBrowserTestSuite() { return true; }
+
 // PyUITestBase
 PyUITestBase::PyUITestBase(bool clear_profile, std::wstring homepage)
     : UITestBase() {
   set_clear_profile(clear_profile);
-  set_homepage(WideToASCII(homepage));
+  set_homepage(base::WideToUTF8(homepage));
   // We add this so that pyauto can execute javascript in the renderer and
   // read values back.
   dom_automation_enabled_ = true;

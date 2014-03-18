@@ -8,7 +8,7 @@
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
 #include "chrome/browser/sync/test/integration/passwords_helper.h"
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
-#include "chrome/browser/sync/test/integration/status_change_checker.h"
+#include "chrome/browser/sync/test/integration/single_client_status_change_checker.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/common/pref_names.h"
 #include "google_apis/gaia/google_service_auth_error.h"
@@ -29,28 +29,27 @@ class SyncErrorTest : public SyncTest {
 };
 
 // Helper class that waits until the sync engine has hit an actionable error.
-class ActionableErrorChecker : public StatusChangeChecker {
+class ActionableErrorChecker : public SingleClientStatusChangeChecker {
  public:
   explicit ActionableErrorChecker(ProfileSyncService* service)
-      : StatusChangeChecker("ActionableErrorChecker"),
-        service_(service) {}
+      : SingleClientStatusChangeChecker(service) {}
 
   virtual ~ActionableErrorChecker() {}
 
   // Checks if an actionable error has been hit. Called repeatedly each time PSS
   // notifies observers of a state change.
   virtual bool IsExitConditionSatisfied() OVERRIDE {
-    DCHECK(service_);
     ProfileSyncService::Status status;
-    service_->QueryDetailedSyncStatus(&status);
+    service()->QueryDetailedSyncStatus(&status);
     return (status.sync_protocol_error.action != syncer::UNKNOWN_ACTION &&
-            service_->HasUnrecoverableError());
+            service()->HasUnrecoverableError());
+  }
+
+  virtual std::string GetDebugMessage() const OVERRIDE {
+    return "ActionableErrorChecker";
   }
 
  private:
-  // The PSS instance that will eventually hit an actionable error.
-  ProfileSyncService* service_;
-
   DISALLOW_COPY_AND_ASSIGN(ActionableErrorChecker);
 };
 
@@ -89,8 +88,7 @@ IN_PROC_BROWSER_TEST_F(SyncErrorTest, ActionableErrorTest) {
 
   // Wait until an actionable error is encountered.
   ActionableErrorChecker actionable_error_checker(GetClient(0)->service());
-  ASSERT_TRUE(GetClient(0)->AwaitStatusChange(&actionable_error_checker,
-                                              "Awaiting actionable error"));
+  ASSERT_TRUE(GetClient(0)->AwaitStatusChange(&actionable_error_checker));
 
   ProfileSyncService::Status status = GetClient(0)->GetStatus();
   ASSERT_EQ(status.sync_protocol_error.error_type, protocol_error.error_type);
@@ -100,7 +98,8 @@ IN_PROC_BROWSER_TEST_F(SyncErrorTest, ActionableErrorTest) {
       protocol_error.error_description);
 }
 
-IN_PROC_BROWSER_TEST_F(SyncErrorTest, ErrorWhileSettingUp) {
+// Disabled, http://crbug.com/351160 .
+IN_PROC_BROWSER_TEST_F(SyncErrorTest, DISABLED_ErrorWhileSettingUp) {
   ASSERT_TRUE(SetupClients());
 
   syncer::SyncProtocolError protocol_error;

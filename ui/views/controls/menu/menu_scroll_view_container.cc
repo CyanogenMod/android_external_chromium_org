@@ -6,8 +6,9 @@
 
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPath.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/gfx/canvas.h"
+#include "ui/native_theme/native_theme_aura.h"
 #include "ui/views/border.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/controls/menu/menu_config.h"
@@ -15,10 +16,6 @@
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/round_rect_painter.h"
-
-#if defined(USE_AURA)
-#include "ui/native_theme/native_theme_aura.h"
-#endif
 
 using ui::NativeTheme;
 
@@ -254,15 +251,15 @@ gfx::Size MenuScrollViewContainer::GetPreferredSize() {
 }
 
 void MenuScrollViewContainer::GetAccessibleState(
-    ui::AccessibleViewState* state) {
+    ui::AXViewState* state) {
   // Get the name from the submenu view.
   content_view_->GetAccessibleState(state);
 
   // Now change the role.
-  state->role = ui::AccessibilityTypes::ROLE_MENUBAR;
+  state->role = ui::AX_ROLE_MENU_BAR;
   // Some AT (like NVDA) will not process focus events on menu item children
   // unless a parent claims to be focused.
-  state->state = ui::AccessibilityTypes::STATE_FOCUSED;
+  state->state = ui::AX_STATE_FOCUSED;
 }
 
 void MenuScrollViewContainer::OnBoundsChanged(
@@ -284,14 +281,12 @@ void MenuScrollViewContainer::CreateDefaultBorder() {
   int padding = menu_config.corner_radius > 0 ?
         kBorderPaddingDueToRoundedCorners : 0;
 
-#if defined(USE_AURA)
   if (menu_config.native_theme == ui::NativeThemeAura::instance()) {
     // In case of NativeThemeAura the border gets drawn with the shadow.
     // Furthermore no additional padding is wanted.
     use_border = false;
     padding = 0;
   }
-#endif
 
   int top = menu_config.menu_vertical_border_size + padding;
   int left = menu_config.menu_horizontal_border_size + padding;

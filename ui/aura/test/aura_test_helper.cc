@@ -12,17 +12,16 @@
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/input_state_lookup.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/env_test_helper.h"
 #include "ui/aura/test/test_focus_client.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/test/test_window_tree_client.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ime/dummy_input_method.h"
 #include "ui/base/ime/input_method_initializer.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
-#include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/gfx/screen.h"
 
 #if defined(USE_X11)
@@ -36,7 +35,7 @@ namespace test {
 AuraTestHelper::AuraTestHelper(base::MessageLoopForUI* message_loop)
     : setup_called_(false),
       teardown_called_(false),
-      owns_root_window_(false) {
+      owns_host_(false) {
   DCHECK(message_loop);
   message_loop_ = message_loop;
   // Disable animations during tests.
@@ -54,11 +53,8 @@ AuraTestHelper::~AuraTestHelper() {
       << "AuraTestHelper::TearDown() never called.";
 }
 
-void AuraTestHelper::SetUp(bool allow_test_contexts) {
+void AuraTestHelper::SetUp() {
   setup_called_ = true;
-
-  // The ContextFactory must exist before any Compositors are created.
-  ui::InitializeContextFactoryForTests(allow_test_contexts);
 
   Env::CreateInstance();
   // Unit tests generally don't want to query the system, rather use the state
@@ -70,7 +66,7 @@ void AuraTestHelper::SetUp(bool allow_test_contexts) {
 
   test_screen_.reset(TestScreen::Create());
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen_.get());
-  root_window_.reset(test_screen_->CreateRootWindowForPrimaryDisplay());
+  host_.reset(test_screen_->CreateHostForPrimaryDisplay());
 
   focus_client_.reset(new TestFocusClient);
   client::SetFocusClient(root_window(), focus_client_.get());
@@ -85,7 +81,7 @@ void AuraTestHelper::SetUp(bool allow_test_contexts) {
 
   root_window()->Show();
   // Ensure width != height so tests won't confuse them.
-  dispatcher()->host()->SetBounds(gfx::Rect(800, 600));
+  host()->SetBounds(gfx::Rect(800, 600));
 }
 
 void AuraTestHelper::TearDown() {
@@ -96,7 +92,7 @@ void AuraTestHelper::TearDown() {
   capture_client_.reset();
   focus_client_.reset();
   client::SetFocusClient(root_window(), NULL);
-  root_window_.reset();
+  host_.reset();
   ui::GestureRecognizer::Reset();
   test_screen_.reset();
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, NULL);
@@ -108,8 +104,6 @@ void AuraTestHelper::TearDown() {
   ui::ShutdownInputMethodForTesting();
 
   Env::DeleteInstance();
-
-  ui::TerminateContextFactoryForTests();
 }
 
 void AuraTestHelper::RunAllPendingInMessageLoop() {

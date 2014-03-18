@@ -55,6 +55,9 @@
 #endif
 
 using content::BrowserThread;
+using storage_monitor::StorageInfo;
+using storage_monitor::StorageMonitor;
+using storage_monitor::TestStorageMonitor;
 
 // Not anonymous so it can be friends with MediaFileSystemRegistry.
 class TestMediaFileSystemContext : public MediaFileSystemContext {
@@ -327,8 +330,7 @@ class MediaFileSystemRegistryTest : public ChromeRenderViewHostTestHarness {
   void ProcessAttach(const std::string& id,
                      const base::string16& name,
                      const base::FilePath::StringType& location) {
-    StorageInfo info(id, base::string16(), location, name, base::string16(),
-                     base::string16(), 0);
+    StorageInfo info(id, location, name, base::string16(), base::string16(), 0);
     StorageMonitor::GetInstance()->receiver()->ProcessAttach(info);
   }
 
@@ -779,7 +781,8 @@ void MediaFileSystemRegistryTest::SetUp() {
   ASSERT_TRUE(base::CreateDirectory(empty_dir_));
   dcim_dir_ = galleries_dir_.path().AppendASCII("with_dcim");
   ASSERT_TRUE(base::CreateDirectory(dcim_dir_));
-  ASSERT_TRUE(base::CreateDirectory(dcim_dir_.Append(kDCIMDirectoryName)));
+  ASSERT_TRUE(base::CreateDirectory(
+      dcim_dir_.Append(storage_monitor::kDCIMDirectoryName)));
 }
 
 void MediaFileSystemRegistryTest::TearDown() {

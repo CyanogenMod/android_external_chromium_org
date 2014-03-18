@@ -95,11 +95,11 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
 
   // Run |translate_notify_callback_| with an error condition that is not
   // PPAPI specific.  Also set ErrorInfo report.
-  void ReportNonPpapiError(PluginErrorCode err, const nacl::string& message);
+  void ReportNonPpapiError(PP_NaClError err, const nacl::string& message);
   // Run when faced with a PPAPI error condition. Bring control back to the
   // plugin by invoking the |translate_notify_callback_|.
   // Also set ErrorInfo report.
-  void ReportPpapiError(PluginErrorCode err,
+  void ReportPpapiError(PP_NaClError err,
                         int32_t pp_error, const nacl::string& message);
   // Bring control back to the plugin by invoking the
   // |translate_notify_callback_|.  This does not set the ErrorInfo report,
@@ -234,8 +234,8 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   int64_t expected_pexe_size_;   // Expected download total (-1 if unknown).
 
   // The helper thread used to do translations via SRPC.
-  // Keep this last in declaration order to ensure the other variables
-  // haven't been destroyed yet when its destructor runs.
+  // It accesses fields of PnaclCoordinator so it must have a
+  // shorter lifetime.
   nacl::scoped_ptr<PnaclTranslateThread> translate_thread_;
 };
 

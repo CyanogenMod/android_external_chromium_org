@@ -622,7 +622,9 @@ void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
 
     UpdateBlacklistedFeatures(features);
   }
-  if (gpu_driver_bug_list_) {
+  gpu_driver_bugs_ =
+      gpu::WorkaroundsFromCommandLine(CommandLine::ForCurrentProcess());
+  if (gpu_driver_bugs_.empty() && gpu_driver_bug_list_) {
     gpu_driver_bugs_ = gpu_driver_bug_list_->MakeDecision(
         gpu::GpuControlList::kOsAny, std::string(), gpu_info_);
   }
@@ -795,6 +797,7 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
     prefs->force_compositing_mode = true;
     prefs->accelerated_compositing_enabled = true;
     prefs->accelerated_compositing_for_3d_transforms_enabled = true;
+    prefs->accelerated_compositing_for_animation_enabled = true;
     prefs->accelerated_compositing_for_plugins_enabled = true;
     prefs->accelerated_compositing_for_video_enabled = true;
   }
@@ -805,6 +808,12 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
     prefs->pepper_3d_enabled = false;
   }
 #endif
+
+  if (!IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE) &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableAcceleratedVideoDecode)) {
+    prefs->pepper_accelerated_video_decode_enabled = true;
+  }
 }
 
 void GpuDataManagerImplPrivate::DisableHardwareAcceleration() {
@@ -832,7 +841,9 @@ std::string GpuDataManagerImplPrivate::GetDriverBugListVersion() const {
 void GpuDataManagerImplPrivate::GetBlacklistReasons(
     base::ListValue* reasons) const {
   if (gpu_blacklist_)
-    gpu_blacklist_->GetReasons(reasons);
+    gpu_blacklist_->GetReasons(reasons, "disabledFeatures");
+  if (gpu_driver_bug_list_)
+    gpu_driver_bug_list_->GetReasons(reasons, "workarounds");
 }
 
 void GpuDataManagerImplPrivate::GetDriverBugWorkarounds(

@@ -8,6 +8,7 @@
 #include <math.h>
 
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/md5.h"
 #include "base/metrics/histogram.h"
@@ -19,8 +20,15 @@ namespace {
 // md5 -qs chrome/browser/safe_browsing/prefix_set.cc | colrm 9
 static uint32 kMagic = 0x864088dd;
 
-// Current version the code writes out.
-static uint32 kVersion = 0x1;
+// TODO(shess): Update v2 history info once landed.
+
+// Version history:
+// Version 1: b6cb7cfe/r74487 by shess@chromium.org on 2011-02-10
+// version 2: ????????/r????? by shess@chromium.org on 2014-02-24
+
+// Version 2 layout is identical to version 1.  The sort order of |index_|
+// changed from |int32| to |uint32| to match the change of |SBPrefix|.
+static uint32 kVersion = 0x2;
 
 typedef struct {
   uint32 magic;
@@ -158,7 +166,7 @@ PrefixSet* PrefixSet::LoadFile(const base::FilePath& filter_name) {
   if (size_64 < static_cast<int64>(sizeof(FileHeader) + sizeof(MD5Digest)))
     return NULL;
 
-  file_util::ScopedFILE file(base::OpenFile(filter_name, "rb"));
+  base::ScopedFILE file(base::OpenFile(filter_name, "rb"));
   if (!file.get())
     return NULL;
 
@@ -167,17 +175,16 @@ PrefixSet* PrefixSet::LoadFile(const base::FilePath& filter_name) {
   if (read != 1)
     return NULL;
 
-  if (header.magic != kMagic || header.version != kVersion)
+  // TODO(shess): Version 1 and 2 use the same file structure, with version 1
+  // data using a signed sort.  For M-35, the data is re-sorted before return.
+  // After M-35, just drop v1 support. <http://crbug.com/346405>
+  if (header.magic != kMagic ||
+      (header.version != kVersion && header.version != 1)) {
     return NULL;
+  }
 
   IndexVector index;
   const size_t index_bytes = sizeof(index[0]) * header.index_size;
-
-  // For a time, the second element of the index_ pair was a size_t rather than
-  // a fixed-size value.  This structure will be used to check, read and convert
-  // in case a 64-bit size_t was written.
-  std::vector<std::pair<SBPrefix,uint64> > alt_index;
-  const size_t alt_index_bytes = sizeof(alt_index[0]) * header.index_size;
 
   std::vector<uint16> deltas;
   const size_t deltas_bytes = sizeof(deltas[0]) * header.deltas_size;
@@ -185,15 +192,8 @@ PrefixSet* PrefixSet::LoadFile(const base::FilePath& filter_name) {
   // Check for bogus sizes before allocating any space.
   const size_t expected_bytes =
       sizeof(header) + index_bytes + deltas_bytes + sizeof(MD5Digest);
-  bool read_alt_index = false;
-  if (static_cast<int64>(expected_bytes) != size_64) {
-    const size_t alt_expected_bytes =
-        sizeof(header) + alt_index_bytes + deltas_bytes + sizeof(MD5Digest);
-    if (static_cast<int64>(alt_expected_bytes) != size_64)
-      return NULL;
-
-    read_alt_index = true;
-  }
+  if (static_cast<int64>(expected_bytes) != size_64)
+    return NULL;
 
   // The file looks valid, start building the digest.
   base::MD5Context context;
@@ -204,24 +204,7 @@ PrefixSet* PrefixSet::LoadFile(const base::FilePath& filter_name) {
   // Read the index vector.  Herb Sutter indicates that vectors are
   // guaranteed to be contiuguous, so reading to where element 0 lives
   // is valid.
-  if (read_alt_index) {
-    alt_index.resize(header.index_size);
-    read = fread(&(alt_index[0]), sizeof(alt_index[0]), alt_index.size(),
-                 file.get());
-    if (read != alt_index.size())
-      return NULL;
-    base::MD5Update(&context,
-                    base::StringPiece(reinterpret_cast<char*>(&(alt_index[0])),
-                                      alt_index_bytes));
-
-    index.reserve(alt_index.size());
-    for (size_t i = 0; i < alt_index.size(); ++i) {
-      const uint32 ofs = static_cast<uint32>(alt_index[i].second);
-      if (static_cast<uint64>(ofs) != alt_index[i].second)
-        return NULL;
-      index.push_back(std::make_pair(alt_index[i].first, ofs));
-    }
-  } else if (header.index_size) {
+  if (header.index_size) {
     index.resize(header.index_size);
     read = fread(&(index[0]), sizeof(index[0]), index.size(), file.get());
     if (read != index.size())
@@ -253,6 +236,14 @@ PrefixSet* PrefixSet::LoadFile(const base::FilePath& filter_name) {
   if (0 != memcmp(&file_digest, &calculated_digest, sizeof(file_digest)))
     return NULL;
 
+  // For version 1, fetch the prefixes and re-sort.
+  if (header.version == 1) {
+    std::vector<SBPrefix> prefixes;
+    PrefixSet(&index, &deltas).GetPrefixes(&prefixes);
+    std::sort(prefixes.begin(), prefixes.end());
+    return new PrefixSet(prefixes);
+  }
+
   // Steals contents of |index| and |deltas| via swap().
   return new PrefixSet(&index, &deltas);
 }
@@ -271,7 +262,7 @@ bool PrefixSet::WriteFile(const base::FilePath& filter_name) const {
     return false;
   }
 
-  file_util::ScopedFILE file(base::OpenFile(filter_name, "wb"));
+  base::ScopedFILE file(base::OpenFile(filter_name, "wb"));
   if (!file.get())
     return false;
 

@@ -13,14 +13,13 @@
 #include "mojo/public/bindings/allocation_scope.h"
 #include "mojo/public/gles2/gles2_cpp.h"
 #include "mojo/public/shell/application.h"
+#include "mojo/public/shell/shell.mojom.h"
 #include "mojo/public/system/core.h"
 #include "mojo/public/system/macros.h"
-#include "mojom/native_viewport.h"
-#include "mojom/shell.h"
+#include "mojo/services/native_viewport/native_viewport.mojom.h"
 #include "ui/aura/client/default_capture_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/base/hit_test.h"
@@ -72,8 +71,8 @@ class DemoWindowDelegate : public aura::WindowDelegate {
     canvas->DrawColor(color_, SkXfermode::kSrc_Mode);
   }
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE {}
-  virtual void OnWindowDestroying() OVERRIDE {}
-  virtual void OnWindowDestroyed() OVERRIDE {}
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {}
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE {}
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE {}
   virtual bool HasHitTestMask() const OVERRIDE { return false; }
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {}
@@ -134,28 +133,24 @@ class AuraDemo : public Application {
 
  private:
   void HostContextCreated() {
-    aura::RootWindow::CreateParams params(
-        gfx::Rect(window_tree_host_->bounds().size()));
-    params.host = window_tree_host_.get();
-    root_window_.reset(new aura::RootWindow(params));
-    window_tree_host_->set_delegate(root_window_.get());
-    root_window_->host()->InitHost();
+    window_tree_host_->InitHost();
 
-    window_tree_client_.reset(new DemoWindowTreeClient(root_window_->window()));
+    window_tree_client_.reset(
+        new DemoWindowTreeClient(window_tree_host_->window()));
 
     delegate1_.reset(new DemoWindowDelegate(SK_ColorBLUE));
     window1_ = new aura::Window(delegate1_.get());
     window1_->Init(aura::WINDOW_LAYER_TEXTURED);
     window1_->SetBounds(gfx::Rect(100, 100, 400, 400));
     window1_->Show();
-    root_window_->window()->AddChild(window1_);
+    window_tree_host_->window()->AddChild(window1_);
 
     delegate2_.reset(new DemoWindowDelegate(SK_ColorRED));
     window2_ = new aura::Window(delegate2_.get());
     window2_->Init(aura::WINDOW_LAYER_TEXTURED);
     window2_->SetBounds(gfx::Rect(200, 200, 350, 350));
     window2_->Show();
-    root_window_->window()->AddChild(window2_);
+    window_tree_host_->window()->AddChild(window2_);
 
     delegate21_.reset(new DemoWindowDelegate(SK_ColorGREEN));
     window21_ = new aura::Window(delegate21_.get());
@@ -164,7 +159,7 @@ class AuraDemo : public Application {
     window21_->Show();
     window2_->AddChild(window21_);
 
-    root_window_->host()->Show();
+    window_tree_host_->Show();
   }
 
   scoped_ptr<DemoScreen> screen_;
@@ -179,8 +174,7 @@ class AuraDemo : public Application {
   aura::Window* window2_;
   aura::Window* window21_;
 
-  scoped_ptr<WindowTreeHostMojo> window_tree_host_;
-  scoped_ptr<aura::RootWindow> root_window_;
+  scoped_ptr<aura::WindowTreeHost> window_tree_host_;
 };
 
 }  // namespace examples

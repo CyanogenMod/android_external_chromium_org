@@ -40,6 +40,9 @@ class InputMethodUtil {
   // into Chrome's string ID, then pulls internationalized resource string from
   // the resource bundle and returns it. These functions are not thread-safe.
   // Non-UI threads are not allowed to call them.
+  // The english_string to should be a xkb id with "xkb:...:...:..." format.
+  // TODO(shuchen): this method should be removed when finish the wrapping of
+  // xkb to extension.
   base::string16 TranslateString(const std::string& english_string) const;
 
   // Converts an input method ID to a language code of the IME. Returns "Eng"
@@ -98,6 +101,14 @@ class InputMethodUtil {
   // Returns empty string on error.
   std::string GetLanguageDefaultInputMethodId(const std::string& language_code);
 
+  // Migrates the legacy xkb id to extension based xkb id.
+  // Returns true if the given input method id list is modified,
+  // returns false otherwise.
+  // TODO(shuchen): Remove this function after few milestones are passed.
+  // See: http://crbug.com/345604
+  bool MigrateXkbInputMethods(
+      std::vector<std::string>* input_method_ids);
+
   // Updates the internal cache of hardware layouts.
   void UpdateHardwareLayoutCache();
 
@@ -128,6 +139,9 @@ class InputMethodUtil {
 
   // Sets the list of component extension IMEs.
   void SetComponentExtensions(const InputMethodDescriptors& imes);
+
+  // Initializes the extension based xkb IMEs for testing.
+  void InitXkbInputMethodsForTesting();
 
   // Returns the fallback input method descriptor (the very basic US
   // keyboard). This function is mostly used for testing, but may be used
@@ -179,7 +193,7 @@ class InputMethodUtil {
   std::map<std::string, std::string> id_to_language_code_;
   InputMethodIdToDescriptorMap id_to_descriptor_;
   XkbIdToDescriptorMap xkb_id_to_descriptor_;
-  ComponentExtIMEMap component_extension_ime_id_to_descriptor_;
+  std::map<std::string, std::string> xkb_layout_to_indicator_;
 
   typedef base::hash_map<std::string, int> HashType;
   HashType english_to_resource_id_;

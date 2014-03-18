@@ -8,11 +8,19 @@
 #include <jni.h>
 
 #include "base/android/scoped_java_ref.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/size.h"
 
-class SkBitmap;
-
 namespace gfx {
+
+// Define Bitmap Config values like BITMAP_CONFIG_ARGB_8888 in a
+// way that ensures they're always the same than their Java counterpart.
+
+enum BitmapConfig {
+#define DEFINE_BITMAP_CONFIG(x, y) BITMAP_##x = y,
+#include "bitmap_config_list.h"
+#undef DEFINE_BITMAP_CONFIG
+};
 
 // This class wraps a JNI AndroidBitmap object to make it easier to use. It
 // handles locking and unlocking of the underlying pixels, along with wrapping
@@ -41,6 +49,13 @@ class GFX_EXPORT JavaBitmap {
   DISALLOW_COPY_AND_ASSIGN(JavaBitmap);
 };
 
+// Allocates a Java-backed bitmap (android.graphics.Bitmap) with the given size
+// and configuration.
+GFX_EXPORT base::android::ScopedJavaLocalRef<jobject> CreateJavaBitmap(
+    int width,
+    int height,
+    SkBitmap::Config bitmap_config);
+
 GFX_EXPORT base::android::ScopedJavaLocalRef<jobject> ConvertToJavaBitmap(
     const SkBitmap* skbitmap);
 
@@ -50,6 +65,9 @@ GFX_EXPORT SkBitmap CreateSkBitmapFromJavaBitmap(JavaBitmap& jbitmap);
 // Note: If the source resource is smaller than |size|, quality may suffer.
 GFX_EXPORT SkBitmap CreateSkBitmapFromResource(const char* name,
                                                gfx::Size size);
+
+// Returns a Skia config value for the requested input java Bitmap.Config.
+GFX_EXPORT SkBitmap::Config ConvertToSkiaConfig(jobject bitmap_config);
 
 }  // namespace gfx
 

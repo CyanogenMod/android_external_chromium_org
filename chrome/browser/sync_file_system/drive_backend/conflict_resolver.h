@@ -6,12 +6,13 @@
 #define CHROME_BROWSER_SYNC_FILE_SYSTEM_DRIVE_BACKEND_CONFLICT_RESOLVER_H_
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
-#include "chrome/browser/sync_file_system/sync_task.h"
 #include "google_apis/drive/gdata_errorcode.h"
 
 namespace drive {
@@ -27,7 +28,7 @@ namespace drive_backend {
 
 class MetadataDatabase;
 class SyncEngineContext;
-class TrackerSet;
+class TrackerIDSet;
 
 // Resolves server side file confliction.
 // If a remote file has an active tracker and multiple managed parents,
@@ -35,13 +36,13 @@ class TrackerSet;
 // of the active tracker.
 // If multiple trackers have the same local path or the same remote file,
 // ConflictResolver picks up one of them and delete others.
-class ConflictResolver : public SyncTask {
+class ConflictResolver : public SequentialSyncTask {
  public:
   typedef std::vector<std::string> FileIDList;
 
   explicit ConflictResolver(SyncEngineContext* sync_context);
   virtual ~ConflictResolver();
-  virtual void Run(const SyncStatusCallback& callback) OVERRIDE;
+  virtual void RunSequential(const SyncStatusCallback& callback) OVERRIDE;
 
  private:
   typedef std::pair<std::string, std::string> FileIDAndETag;
@@ -50,7 +51,7 @@ class ConflictResolver : public SyncTask {
   void DidDetachFromParent(const SyncStatusCallback& callback,
                            google_apis::GDataErrorCode error);
 
-  std::string PickPrimaryFile(const TrackerSet& trackers);
+  std::string PickPrimaryFile(const TrackerIDSet& trackers);
   void RemoveNonPrimaryFiles(const SyncStatusCallback& callback);
   void DidRemoveFile(const SyncStatusCallback& callback,
                      const std::string& file_id,

@@ -237,6 +237,9 @@ class UserManagerImpl
   // Indicates that a kiosk app robot just logged in.
   void KioskAppLoggedIn(const std::string& app_id);
 
+  // Indicates that the demo account has just logged in.
+  void DemoAccountLoggedIn();
+
   // Indicates that a user just logged into a retail mode session.
   void RetailModeUserLoggedIn();
 
@@ -358,6 +361,10 @@ class UserManagerImpl
   // Update the number of users.
   void UpdateNumberOfUsers();
 
+  // A wrapper around C++ delete operator. Deletes |user|, and when |user|
+  // equals to active_user_, active_user_ is reset to NULL.
+  void DeleteUser(User* user);
+
   // Interface to the signed settings store.
   CrosSettings* cros_settings_;
 
@@ -473,7 +480,11 @@ class UserManagerImpl
       multi_profile_first_run_notification_;
 
   // Observer for the policy that can be used to manage user images.
-  scoped_ptr<policy::CloudExternalDataPolicyObserver> policy_observer_;
+  scoped_ptr<policy::CloudExternalDataPolicyObserver> avatar_policy_observer_;
+
+  // Observer for the policy that can be used to manage wallpapers.
+  scoped_ptr<policy::CloudExternalDataPolicyObserver>
+      wallpaper_policy_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(UserManagerImpl);
 };

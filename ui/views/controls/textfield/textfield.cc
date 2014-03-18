@@ -8,8 +8,9 @@
 
 #include "base/debug/trace_event.h"
 #include "grit/ui_strings.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
+#include "ui/base/cursor/cursor.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -17,10 +18,13 @@
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/display.h"
 #include "ui/gfx/insets.h"
+#include "ui/gfx/screen.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/focusable_border.h"
+#include "ui/views/controls/label.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/native/native_view_host.h"
@@ -32,30 +36,26 @@
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/widget.h"
 
-#if defined(USE_AURA)
-#include "ui/base/cursor/cursor.h"
-#endif
-
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
 #include "base/win/win_util.h"
 #endif
+
+namespace views {
 
 namespace {
 
 // Default placeholder text color.
 const SkColor kDefaultPlaceholderTextColor = SK_ColorLTGRAY;
 
-void ConvertRectToScreen(const views::View* src, gfx::Rect* r) {
+void ConvertRectToScreen(const View* src, gfx::Rect* r) {
   DCHECK(src);
 
   gfx::Point new_origin = r->origin();
-  views::View::ConvertPointToScreen(src, &new_origin);
+  View::ConvertPointToScreen(src, &new_origin);
   r->set_origin(new_origin);
 }
 
 }  // namespace
-
-namespace views {
 
 // static
 const char Textfield::kViewClassName[] = "Textfield";
@@ -126,7 +126,7 @@ void Textfield::SetText(const base::string16& new_text) {
   model_->SetText(new_text);
   OnCaretBoundsChanged();
   SchedulePaint();
-  NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_TEXT_CHANGED, true);
+  NotifyAccessibilityEvent(ui::AX_EVENT_TEXT_CHANGED, true);
 }
 
 void Textfield::AppendText(const base::string16& new_text) {
@@ -315,22 +315,107 @@ gfx::Size Textfield::GetPreferredSize() {
                    insets.width(), GetFontList().GetHeight() + insets.height());
 }
 
-void Textfield::AboutToRequestFocusFromTabTraversal(bool reverse) {
-  SelectAll(false);
+const char* Textfield::GetClassName() const {
+  return kViewClassName;
 }
 
-bool Textfield::SkipDefaultKeyEventProcessing(const ui::KeyEvent& e) {
-  // Skip any accelerator handling of backspace; textfields handle this key.
-  // Also skip processing of [Alt]+<num-pad digit> Unicode alt key codes.
-  return e.key_code() == ui::VKEY_BACK || e.IsUnicodeKeyCode();
+gfx::NativeCursor Textfield::GetCursor(const ui::MouseEvent& event) {
+  bool in_selection = GetRenderText()->IsPointInSelection(event.location());
+  bool drag_event = event.type() == ui::ET_MOUSE_DRAGGED;
+  bool text_cursor = !initiating_drag_ && (drag_event || !in_selection);
+  return text_cursor ? ui::kCursorIBeam : ui::kCursorNull;
 }
 
-void Textfield::OnPaint(gfx::Canvas* canvas) {
-  OnPaintBackground(canvas);
-  PaintTextAndCursor(canvas);
-  OnPaintBorder(canvas);
-  if (NativeViewHost::kRenderNativeControlFocus)
-    Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
+bool Textfield::OnMousePressed(const ui::MouseEvent& event) {
+  TrackMouseClicks(event);
+
+  if (!controller_ || !controller_->HandleMouseEvent(this, event)) {
+    if (event.IsOnlyLeftMouseButton() || event.IsOnlyRightMouseButton()) {
+      RequestFocus();
+      ShowImeIfNeeded();
+    }
+
+    if (event.IsOnlyLeftMouseButton()) {
+      OnBeforeUserAction();
+      initiating_drag_ = false;
+      switch (aggregated_clicks_) {
+        case 0:
+          if (GetRenderText()->IsPointInSelection(event.location()))
+            initiating_drag_ = true;
+          else
+            MoveCursorTo(event.location(), event.IsShiftDown());
+          break;
+        case 1:
+          model_->MoveCursorTo(event.location(), false);
+          model_->SelectWord();
+          UpdateAfterChange(false, true);
+          double_click_word_ = GetRenderText()->selection();
+          break;
+        case 2:
+          SelectAll(false);
+          break;
+        default:
+          NOTREACHED();
+      }
+      OnAfterUserAction();
+    }
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+    if (event.IsOnlyMiddleMouseButton()) {
+      if (GetRenderText()->IsPointInSelection(event.location())) {
+        OnBeforeUserAction();
+        ClearSelection();
+        ui::ScopedClipboardWriter(
+            ui::Clipboard::GetForCurrentThread(),
+            ui::CLIPBOARD_TYPE_SELECTION).WriteText(base::string16());
+        OnAfterUserAction();
+      } else if(!read_only()) {
+        PasteSelectionClipboard(event);
+      }
+    }
+#endif
+  }
+
+  touch_selection_controller_.reset();
+  return true;
+}
+
+bool Textfield::OnMouseDragged(const ui::MouseEvent& event) {
+  // Don't adjust the cursor on a potential drag and drop, or if the mouse
+  // movement from the last mouse click does not exceed the drag threshold.
+  if (initiating_drag_ || !event.IsOnlyLeftMouseButton() ||
+      !ExceededDragThreshold(event.location() - last_click_location_)) {
+    return true;
+  }
+
+  OnBeforeUserAction();
+  model_->MoveCursorTo(event.location(), true);
+  if (aggregated_clicks_ == 1) {
+    model_->SelectWord();
+    // Expand the selection so the initially selected word remains selected.
+    gfx::Range selection = GetRenderText()->selection();
+    const size_t min = std::min(selection.GetMin(),
+                                double_click_word_.GetMin());
+    const size_t max = std::max(selection.GetMax(),
+                                double_click_word_.GetMax());
+    const bool reversed = selection.is_reversed();
+    selection.set_start(reversed ? max : min);
+    selection.set_end(reversed ? min : max);
+    model_->SelectRange(selection);
+  }
+  UpdateAfterChange(false, true);
+  OnAfterUserAction();
+  return true;
+}
+
+void Textfield::OnMouseReleased(const ui::MouseEvent& event) {
+  OnBeforeUserAction();
+  // Cancel suspected drag initiations, the user was clicking in the selection.
+  if (initiating_drag_)
+    MoveCursorTo(event.location(), false);
+  initiating_drag_ = false;
+  UpdateSelectionClipboard();
+  OnAfterUserAction();
 }
 
 bool Textfield::OnKeyPressed(const ui::KeyEvent& event) {
@@ -461,185 +546,8 @@ bool Textfield::OnKeyPressed(const ui::KeyEvent& event) {
   return false;
 }
 
-bool Textfield::OnMousePressed(const ui::MouseEvent& event) {
-  TrackMouseClicks(event);
-
-  if (!controller_ || !controller_->HandleMouseEvent(this, event)) {
-    if (event.IsOnlyLeftMouseButton() || event.IsOnlyRightMouseButton()) {
-      RequestFocus();
-      ShowImeIfNeeded();
-    }
-
-    if (event.IsOnlyLeftMouseButton()) {
-      OnBeforeUserAction();
-      initiating_drag_ = false;
-      switch (aggregated_clicks_) {
-        case 0:
-          if (GetRenderText()->IsPointInSelection(event.location()))
-            initiating_drag_ = true;
-          else
-            MoveCursorTo(event.location(), event.IsShiftDown());
-          break;
-        case 1:
-          model_->MoveCursorTo(event.location(), false);
-          model_->SelectWord();
-          UpdateAfterChange(false, true);
-          double_click_word_ = GetRenderText()->selection();
-          break;
-        case 2:
-          SelectAll(false);
-          break;
-        default:
-          NOTREACHED();
-      }
-      OnAfterUserAction();
-    }
-
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-    if (event.IsOnlyMiddleMouseButton()) {
-      if (GetRenderText()->IsPointInSelection(event.location())) {
-        OnBeforeUserAction();
-        ClearSelection();
-        ui::ScopedClipboardWriter(
-            ui::Clipboard::GetForCurrentThread(),
-            ui::CLIPBOARD_TYPE_SELECTION).WriteText(base::string16());
-        OnAfterUserAction();
-      } else if(!read_only()) {
-        PasteSelectionClipboard(event);
-      }
-    }
-#endif
-  }
-
-  touch_selection_controller_.reset();
-  return true;
-}
-
-bool Textfield::OnMouseDragged(const ui::MouseEvent& event) {
-  // Don't adjust the cursor on a potential drag and drop, or if the mouse
-  // movement from the last mouse click does not exceed the drag threshold.
-  if (initiating_drag_ || !event.IsOnlyLeftMouseButton() ||
-      !ExceededDragThreshold(event.location() - last_click_location_)) {
-    return true;
-  }
-
-  OnBeforeUserAction();
-  model_->MoveCursorTo(event.location(), true);
-  if (aggregated_clicks_ == 1) {
-    model_->SelectWord();
-    // Expand the selection so the initially selected word remains selected.
-    gfx::Range selection = GetRenderText()->selection();
-    const size_t min = std::min(selection.GetMin(),
-                                double_click_word_.GetMin());
-    const size_t max = std::max(selection.GetMax(),
-                                double_click_word_.GetMax());
-    const bool reversed = selection.is_reversed();
-    selection.set_start(reversed ? max : min);
-    selection.set_end(reversed ? min : max);
-    model_->SelectRange(selection);
-  }
-  UpdateAfterChange(false, true);
-  OnAfterUserAction();
-  return true;
-}
-
-void Textfield::OnMouseReleased(const ui::MouseEvent& event) {
-  OnBeforeUserAction();
-  // Cancel suspected drag initiations, the user was clicking in the selection.
-  if (initiating_drag_)
-    MoveCursorTo(event.location(), false);
-  initiating_drag_ = false;
-  UpdateSelectionClipboard();
-  OnAfterUserAction();
-}
-
-void Textfield::OnFocus() {
-  GetRenderText()->set_focused(true);
-  cursor_visible_ = true;
-  SchedulePaint();
-  GetInputMethod()->OnFocus();
-  OnCaretBoundsChanged();
-
-  const size_t caret_blink_ms = Textfield::GetCaretBlinkMs();
-  if (caret_blink_ms != 0) {
-    cursor_repaint_timer_.Start(FROM_HERE,
-        base::TimeDelta::FromMilliseconds(caret_blink_ms), this,
-        &Textfield::UpdateCursor);
-  }
-
-  View::OnFocus();
-  SchedulePaint();
-}
-
-void Textfield::OnBlur() {
-  GetRenderText()->set_focused(false);
-  GetInputMethod()->OnBlur();
-  cursor_repaint_timer_.Stop();
-  if (cursor_visible_) {
-    cursor_visible_ = false;
-    RepaintCursor();
-  }
-
-  touch_selection_controller_.reset();
-
-  // Border typically draws focus indicator.
-  SchedulePaint();
-}
-
-void Textfield::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_TEXT;
-  state->name = accessible_name_;
-  if (read_only())
-    state->state |= ui::AccessibilityTypes::STATE_READONLY;
-  if (text_input_type_ == ui::TEXT_INPUT_TYPE_PASSWORD)
-    state->state |= ui::AccessibilityTypes::STATE_PROTECTED;
-  state->value = text();
-
-  const gfx::Range range = GetSelectedRange();
-  state->selection_start = range.start();
-  state->selection_end = range.end();
-
-  if (!read_only()) {
-    state->set_value_callback =
-        base::Bind(&Textfield::AccessibilitySetValue,
-                   weak_ptr_factory_.GetWeakPtr());
-  }
-}
-
 ui::TextInputClient* Textfield::GetTextInputClient() {
   return read_only_ ? NULL : this;
-}
-
-gfx::Point Textfield::GetKeyboardContextMenuLocation() {
-  return GetCaretBounds().bottom_right();
-}
-
-void Textfield::OnNativeThemeChanged(const ui::NativeTheme* theme) {
-  UpdateColorsFromTheme(theme);
-}
-
-void Textfield::OnEnabledChanged() {
-  View::OnEnabledChanged();
-  if (GetInputMethod())
-    GetInputMethod()->OnTextInputTypeChanged(this);
-  SchedulePaint();
-}
-
-const char* Textfield::GetClassName() const {
-  return kViewClassName;
-}
-
-gfx::NativeCursor Textfield::GetCursor(const ui::MouseEvent& event) {
-  bool in_selection = GetRenderText()->IsPointInSelection(event.location());
-  bool drag_event = event.type() == ui::ET_MOUSE_DRAGGED;
-  bool text_cursor = !initiating_drag_ && (drag_event || !in_selection);
-#if defined(USE_AURA)
-  return text_cursor ? ui::kCursorIBeam : ui::kCursorNull;
-#elif defined(OS_WIN)
-  static HCURSOR ibeam = LoadCursor(NULL, IDC_IBEAM);
-  static HCURSOR arrow = LoadCursor(NULL, IDC_ARROW);
-  return text_cursor ? ibeam : arrow;
-#endif
 }
 
 void Textfield::OnGestureEvent(ui::GestureEvent* event) {
@@ -721,6 +629,16 @@ void Textfield::OnGestureEvent(ui::GestureEvent* event) {
     default:
       return;
   }
+}
+
+void Textfield::AboutToRequestFocusFromTabTraversal(bool reverse) {
+  SelectAll(false);
+}
+
+bool Textfield::SkipDefaultKeyEventProcessing(const ui::KeyEvent& e) {
+  // Skip any accelerator handling of backspace; textfields handle this key.
+  // Also skip processing Windows [Alt]+<num-pad digit> Unicode alt-codes.
+  return e.key_code() == ui::VKEY_BACK || e.IsUnicodeKeyCode();
 }
 
 bool Textfield::GetDropFormats(
@@ -814,15 +732,91 @@ void Textfield::OnDragDone() {
   drop_cursor_visible_ = false;
 }
 
+void Textfield::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_TEXT_FIELD;
+  state->name = accessible_name_;
+  if (read_only())
+    state->state |= ui::AX_STATE_READ_ONLY;
+  if (text_input_type_ == ui::TEXT_INPUT_TYPE_PASSWORD)
+    state->state |= ui::AX_STATE_PROTECTED;
+  state->value = text();
+
+  const gfx::Range range = GetSelectedRange();
+  state->selection_start = range.start();
+  state->selection_end = range.end();
+
+  if (!read_only()) {
+    state->set_value_callback =
+        base::Bind(&Textfield::AccessibilitySetValue,
+                   weak_ptr_factory_.GetWeakPtr());
+  }
+}
+
 void Textfield::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   GetRenderText()->SetDisplayRect(GetContentsBounds());
   OnCaretBoundsChanged();
+}
+
+void Textfield::OnEnabledChanged() {
+  View::OnEnabledChanged();
+  if (GetInputMethod())
+    GetInputMethod()->OnTextInputTypeChanged(this);
+  SchedulePaint();
 }
 
 void Textfield::ViewHierarchyChanged(
     const ViewHierarchyChangedDetails& details) {
   if (details.is_add && details.child == this)
     UpdateColorsFromTheme(GetNativeTheme());
+}
+
+void Textfield::OnPaint(gfx::Canvas* canvas) {
+  OnPaintBackground(canvas);
+  PaintTextAndCursor(canvas);
+  OnPaintBorder(canvas);
+  if (NativeViewHost::kRenderNativeControlFocus)
+    Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
+}
+
+void Textfield::OnFocus() {
+  GetRenderText()->set_focused(true);
+  cursor_visible_ = true;
+  SchedulePaint();
+  GetInputMethod()->OnFocus();
+  OnCaretBoundsChanged();
+
+  const size_t caret_blink_ms = Textfield::GetCaretBlinkMs();
+  if (caret_blink_ms != 0) {
+    cursor_repaint_timer_.Start(FROM_HERE,
+        base::TimeDelta::FromMilliseconds(caret_blink_ms), this,
+        &Textfield::UpdateCursor);
+  }
+
+  View::OnFocus();
+  SchedulePaint();
+}
+
+void Textfield::OnBlur() {
+  GetRenderText()->set_focused(false);
+  GetInputMethod()->OnBlur();
+  cursor_repaint_timer_.Stop();
+  if (cursor_visible_) {
+    cursor_visible_ = false;
+    RepaintCursor();
+  }
+
+  touch_selection_controller_.reset();
+
+  // Border typically draws focus indicator.
+  SchedulePaint();
+}
+
+gfx::Point Textfield::GetKeyboardContextMenuLocation() {
+  return GetCaretBounds().bottom_right();
+}
+
+void Textfield::OnNativeThemeChanged(const ui::NativeTheme* theme) {
+  UpdateColorsFromTheme(theme);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -836,40 +830,47 @@ void Textfield::OnCompositionTextConfirmedOrCleared() {
 ////////////////////////////////////////////////////////////////////////////////
 // Textfield, ContextMenuController overrides:
 
-void Textfield::ShowContextMenuForView(
-    View* source,
-    const gfx::Point& point,
-    ui::MenuSourceType source_type) {
+void Textfield::ShowContextMenuForView(View* source,
+                                       const gfx::Point& point,
+                                       ui::MenuSourceType source_type) {
   UpdateContextMenu();
-  if (context_menu_runner_->RunMenuAt(GetWidget(), NULL,
-          gfx::Rect(point, gfx::Size()), views::MenuItemView::TOPLEFT,
-          source_type,
-          MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
-      MenuRunner::MENU_DELETED)
-    return;
+  ignore_result(context_menu_runner_->RunMenuAt(GetWidget(), NULL,
+      gfx::Rect(point, gfx::Size()), MenuItemView::TOPLEFT, source_type,
+      MenuRunner::HAS_MNEMONICS | MenuRunner::CONTEXT_MENU));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Textfield, views::DragController overrides:
+// Textfield, DragController overrides:
 
-void Textfield::WriteDragDataForView(views::View* sender,
+void Textfield::WriteDragDataForView(View* sender,
                                      const gfx::Point& press_pt,
                                      OSExchangeData* data) {
-  DCHECK_NE(ui::DragDropTypes::DRAG_NONE,
-            GetDragOperationsForView(sender, press_pt));
-  data->SetString(model_->GetSelectedText());
+  const base::string16& selected_text(GetSelectedText());
+  data->SetString(selected_text);
+  Label label(selected_text, GetFontList());
+  const SkColor background = GetBackgroundColor();
+  label.SetBackgroundColor(SkColorSetA(background, SK_AlphaTRANSPARENT));
+  gfx::Size size(label.GetPreferredSize());
+  gfx::NativeView native_view = GetWidget()->GetNativeView();
+  gfx::Display display = gfx::Screen::GetScreenFor(native_view)->
+      GetDisplayNearestWindow(native_view);
+  size.SetToMin(gfx::Size(display.size().width(), height()));
+  label.SetBoundsRect(gfx::Rect(size));
   scoped_ptr<gfx::Canvas> canvas(
-      views::GetCanvasForDragImage(GetWidget(), size()));
-  GetRenderText()->DrawSelectedTextForDrag(canvas.get());
-  drag_utils::SetDragImageOnDataObject(*canvas, size(),
-                                       press_pt.OffsetFromOrigin(),
-                                       data);
+      GetCanvasForDragImage(GetWidget(), label.size()));
+  label.SetEnabledColor(GetTextColor());
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // Desktop Linux Aura does not yet support transparency in drag images.
+  canvas->DrawColor(background);
+#endif
+  label.Paint(canvas.get());
+  const gfx::Vector2d kOffset(-15, 0);
+  drag_utils::SetDragImageOnDataObject(*canvas, label.size(), kOffset, data);
   if (controller_)
     controller_->OnWriteDragData(data);
 }
 
-int Textfield::GetDragOperationsForView(views::View* sender,
-                                        const gfx::Point& p) {
+int Textfield::GetDragOperationsForView(View* sender, const gfx::Point& p) {
   int drag_operations = ui::DragDropTypes::DRAG_COPY;
   if (!enabled() || text_input_type_ == ui::TEXT_INPUT_TYPE_PASSWORD ||
       !GetRenderText()->IsPointInSelection(p)) {
@@ -1303,7 +1304,7 @@ void Textfield::UpdateAfterChange(bool text_changed, bool cursor_changed) {
   if (text_changed) {
     if (controller_)
       controller_->ContentsChanged(this, text());
-    NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_TEXT_CHANGED, true);
+    NotifyAccessibilityEvent(ui::AX_EVENT_TEXT_CHANGED, true);
   }
   if (cursor_changed) {
     cursor_visible_ = true;
@@ -1313,8 +1314,7 @@ void Textfield::UpdateAfterChange(bool text_changed, bool cursor_changed) {
     if (!text_changed) {
       // TEXT_CHANGED implies SELECTION_CHANGED, so we only need to fire
       // this if only the selection changed.
-      NotifyAccessibilityEvent(
-          ui::AccessibilityTypes::EVENT_SELECTION_CHANGED, true);
+      NotifyAccessibilityEvent(ui::AX_EVENT_SELECTION_CHANGED, true);
     }
   }
   if (text_changed || cursor_changed) {

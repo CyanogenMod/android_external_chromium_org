@@ -57,16 +57,18 @@ WebSocketDeflateStream::~WebSocketDeflateStream() {}
 
 int WebSocketDeflateStream::ReadFrames(ScopedVector<WebSocketFrame>* frames,
                                        const CompletionCallback& callback) {
-  CompletionCallback callback_to_pass =
+  int result = stream_->ReadFrames(
+      frames,
       base::Bind(&WebSocketDeflateStream::OnReadComplete,
                  base::Unretained(this),
                  base::Unretained(frames),
-                 callback);
-  int result = stream_->ReadFrames(frames, callback_to_pass);
+                 callback));
   if (result < 0)
     return result;
   DCHECK_EQ(OK, result);
-  return InflateAndReadIfNecessary(frames, callback_to_pass);
+  DCHECK(!frames->empty());
+
+  return InflateAndReadIfNecessary(frames, callback);
 }
 
 int WebSocketDeflateStream::WriteFrames(ScopedVector<WebSocketFrame>* frames,
@@ -277,6 +279,11 @@ int WebSocketDeflateStream::Inflate(ScopedVector<WebSocketFrame>* frames) {
   for (size_t i = 0; i < frames_passed.size(); ++i) {
     scoped_ptr<WebSocketFrame> frame(frames_passed[i]);
     frames_passed[i] = NULL;
+    DVLOG(3) << "Input frame: opcode=" << frame->header.opcode
+             << " final=" << frame->header.final
+             << " reserved1=" << frame->header.reserved1
+             << " payload_length=" << frame->header.payload_length;
+
     if (!WebSocketFrameHeader::IsKnownDataOpCode(frame->header.opcode)) {
       frames_to_output.push_back(frame.release());
       continue;
@@ -340,7 +347,10 @@ int WebSocketDeflateStream::Inflate(ScopedVector<WebSocketFrame>* frames) {
         inflated->header.reserved1 = false;
         inflated->data = data;
         inflated->header.payload_length = data->size();
-
+        DVLOG(3) << "Inflated frame: opcode=" << inflated->header.opcode
+                 << " final=" << inflated->header.final
+                 << " reserved1=" << inflated->header.reserved1
+                 << " payload_length=" << inflated->header.payload_length;
         frames_to_output.push_back(inflated.release());
         current_reading_opcode_ = WebSocketFrameHeader::kOpCodeContinuation;
         if (is_final)
@@ -360,11 +370,18 @@ int WebSocketDeflateStream::InflateAndReadIfNecessary(
   int result = Inflate(frames);
   while (result == ERR_IO_PENDING) {
     DCHECK(frames->empty());
-    result = stream_->ReadFrames(frames, callback);
+
+    result = stream_->ReadFrames(
+        frames,
+        base::Bind(&WebSocketDeflateStream::OnReadComplete,
+                   base::Unretained(this),
+                   base::Unretained(frames),
+                   callback));
     if (result < 0)
       break;
     DCHECK_EQ(OK, result);
     DCHECK(!frames->empty());
+
     result = Inflate(frames);
   }
   if (result < 0)

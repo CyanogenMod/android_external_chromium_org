@@ -18,10 +18,13 @@ namespace transport {
 
 // TODO(mikhal): Implement and add more types.
 enum CastTransportStatus {
-  TRANSPORT_UNINITIALIZED = 0,
-  TRANSPORT_INITIALIZED,
+  TRANSPORT_AUDIO_UNINITIALIZED = 0,
+  TRANSPORT_VIDEO_UNINITIALIZED,
+  TRANSPORT_AUDIO_INITIALIZED,
+  TRANSPORT_VIDEO_INITIALIZED,
   TRANSPORT_INVALID_CRYPTO_CONFIG,
-  TRANSPORT_SOCKET_ERROR
+  TRANSPORT_SOCKET_ERROR,
+  CAST_TRANSPORT_STATUS_LAST = TRANSPORT_SOCKET_ERROR
 };
 
 const size_t kMaxIpPacketSize = 1500;
@@ -52,7 +55,7 @@ inline std::string GetAesNonce(uint32 frame_id, const std::string& iv_mask) {
 
 // Rtcp defines.
 
-enum RtcpPacketTypes {
+enum RtcpPacketFields {
   kPacketTypeLow = 194,  // SMPTE time-code mapping.
   kPacketTypeInterArrivalJitterReport = 195,
   kPacketTypeSenderReport = 200,
@@ -65,6 +68,23 @@ enum RtcpPacketTypes {
   kPacketTypeXr = 207,
   kPacketTypeHigh = 210,  // Port Mapping.
 };
+
+enum RtcpPacketField {
+    kRtcpSr     = 0x0002,
+    kRtcpRr     = 0x0004,
+    kRtcpBye    = 0x0008,
+    kRtcpPli    = 0x0010,
+    kRtcpNack   = 0x0020,
+    kRtcpFir    = 0x0040,
+    kRtcpSrReq  = 0x0200,
+    kRtcpDlrr   = 0x0400,
+    kRtcpRrtr   = 0x0800,
+    kRtcpRpsi   = 0x8000,
+    kRtcpRemb   = 0x10000,
+    kRtcpCast   = 0x20000,
+    kRtcpSenderLog = 0x40000,
+    kRtcpReceiverLog = 0x80000,
+  };
 
 // Each uint16 represents one packet id within a cast frame.
 typedef std::set<uint16> PacketIdSet;
@@ -92,19 +112,19 @@ class FrameIdWrapHelper {
             over_the_wire_frame_id < kHighRangeThreshold) {
           range_ = kMiddleRange;
         }
-        if (over_the_wire_frame_id > kHighRangeThreshold) {
+        if (over_the_wire_frame_id >= kHighRangeThreshold) {
           // Wrap count was incremented in High->Low transition, but this frame
           // is 'old', actually from before the wrap count got incremented.
           --wrap_count;
         }
         break;
       case kMiddleRange:
-        if (over_the_wire_frame_id > kHighRangeThreshold) {
+        if (over_the_wire_frame_id >= kHighRangeThreshold) {
           range_ = kHighRange;
         }
         break;
       case kHighRange:
-        if (over_the_wire_frame_id < kLowRangeThreshold) {
+        if (over_the_wire_frame_id <= kLowRangeThreshold) {
           // Wrap-around detected.
           range_ = kLowRange;
           ++frame_id_wrap_count_;
@@ -120,8 +140,8 @@ class FrameIdWrapHelper {
  private:
   enum Range { kLowRange, kMiddleRange, kHighRange, };
 
-  static const uint8 kLowRangeThreshold = 0x0f;
-  static const uint8 kHighRangeThreshold = 0xf0;
+  static const uint8 kLowRangeThreshold = 63;
+  static const uint8 kHighRangeThreshold = 192;
   static const uint32 kStartFrameId = GG_UINT32_C(0xffffffff);
 
   bool first_;

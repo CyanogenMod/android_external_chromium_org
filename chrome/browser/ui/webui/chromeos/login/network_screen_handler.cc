@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/webui/chromeos/login/network_screen_handler.h"
 
+#include <algorithm>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
@@ -15,6 +17,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/idle_detector.h"
@@ -28,6 +31,7 @@
 #include "chrome/browser/ui/webui/options/chromeos/cros_language_options_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/ime/extension_ime_util.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -46,10 +50,11 @@ const char kJsApiNetworkOnLanguageChanged[] = "networkOnLanguageChanged";
 const char kJsApiNetworkOnInputMethodChanged[] = "networkOnInputMethodChanged";
 const char kJsApiNetworkOnTimezoneChanged[] = "networkOnTimezoneChanged";
 
-const char kUSlayout[] = "xkb:us::eng";
+const char kUSLayout[] = "xkb:us::eng";
 
-const int64 kDerelectDetectionTimeoutSeconds = 8 * 60 * 60; // 8 hours.
-const int64 kDerelectIdleTimeoutSeconds = 5 * 60; // 5 minutes.
+const int kDerelectDetectionTimeoutSeconds = 8 * 60 * 60; // 8 hours.
+const int kDerelectIdleTimeoutSeconds = 5 * 60; // 5 minutes.
+const int kOobeTimerUpdateIntervalSeconds = 5 * 60; // 5 minutes.
 
 // Returns true if element was inserted.
 bool InsertString(const std::string& str, std::set<std::string>& to) {
@@ -77,16 +82,24 @@ NetworkScreenHandler::NetworkScreenHandler(CoreOobeActor* core_oobe_actor)
       screen_(NULL),
       core_oobe_actor_(core_oobe_actor),
       is_continue_enabled_(false),
-      is_derelict_(false),
       show_on_init_(false),
       weak_ptr_factory_(this) {
   DCHECK(core_oobe_actor_);
   SetupTimeouts();
+
+  input_method::InputMethodManager* manager =
+      input_method::InputMethodManager::Get();
+  manager->SetInputMethodLoginDefault();
+  manager->GetComponentExtensionIMEManager()->AddObserver(this);
 }
 
 NetworkScreenHandler::~NetworkScreenHandler() {
   if (screen_)
     screen_->OnActorDestroyed(this);
+
+  input_method::InputMethodManager::Get()
+      ->GetComponentExtensionIMEManager()
+      ->RemoveObserver(this);
 }
 
 // NetworkScreenHandler, NetworkScreenActor implementation: --------------------
@@ -105,7 +118,14 @@ void NetworkScreenHandler::Show() {
   }
 
   ShowScreen(OobeUI::kScreenOobeNetwork, NULL);
-  StartIdleDetection();
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableDemoMode))
+    return;
+
+  if (IsDerelict())
+    StartIdleDetection();
+  else
+    StartOobeTimer();
 }
 
 void NetworkScreenHandler::Hide() {
@@ -192,7 +212,7 @@ void NetworkScreenHandler::RegisterMessages() {
 
 // static
 void NetworkScreenHandler::RegisterPrefs(PrefRegistrySimple* registry) {
-  registry->RegisterBooleanPref(prefs::kDerelictMachine, false);
+  registry->RegisterInt64Pref(prefs::kTimeOnOobe, 0);
 }
 
 // NetworkScreenHandler, private: ----------------------------------------------
@@ -233,6 +253,8 @@ void NetworkScreenHandler::OnLanguageChangedCallback(
 
   // Buttons are recreated, updated "Continue" button state.
   self->EnableContinue(self->is_continue_enabled_);
+
+  AccessibilityManager::Get()->OnLocaleChanged();
 }
 
 void NetworkScreenHandler::HandleOnLanguageChanged(const std::string& locale) {
@@ -281,20 +303,29 @@ void NetworkScreenHandler::StartIdleDetection() {
                          base::Bind(&NetworkScreenHandler::OnIdle,
                                     weak_ptr_factory_.GetWeakPtr())));
   }
+  detector_->Start(derelict_idle_timeout_);
+}
 
-  detector_->Start(
-      is_derelict_ ? derelict_idle_timeout_ : derelict_detection_timeout_);
+void NetworkScreenHandler::StartOobeTimer() {
+  oobe_timer_.Start(FROM_HERE,
+                    oobe_timer_update_interval_,
+                    this,
+                    &NetworkScreenHandler::OnOobeTimerUpdate);
 }
 
 void NetworkScreenHandler::OnIdle() {
-  if (is_derelict_) {
-    LoginDisplayHost* host = LoginDisplayHostImpl::default_host();
-    host->StartDemoAppLaunch();
-  } else {
-    is_derelict_ = true;
-    PrefService* prefs = g_browser_process->local_state();
-    prefs->SetBoolean(prefs::kDerelictMachine, true);
+  LoginDisplayHost* host = LoginDisplayHostImpl::default_host();
+  host->StartDemoAppLaunch();
+}
 
+void NetworkScreenHandler::OnOobeTimerUpdate() {
+  time_on_oobe_ += oobe_timer_update_interval_;
+
+  PrefService* prefs = g_browser_process->local_state();
+  prefs->SetInt64(prefs::kTimeOnOobe, time_on_oobe_.InSeconds());
+
+  if (IsDerelict()) {
+    oobe_timer_.Stop();
     StartIdleDetection();
   }
 }
@@ -304,11 +335,12 @@ void NetworkScreenHandler::SetupTimeouts() {
   DCHECK(cmdline);
 
   PrefService* prefs = g_browser_process->local_state();
-  is_derelict_ = prefs->GetBoolean(prefs::kDerelictMachine);
+  time_on_oobe_ =
+      base::TimeDelta::FromSeconds(prefs->GetInt64(prefs::kTimeOnOobe));
 
-  int64 derelict_detection_timeout;
+  int derelict_detection_timeout;
   if (!cmdline->HasSwitch(switches::kDerelictDetectionTimeout) ||
-      !base::StringToInt64(
+      !base::StringToInt(
           cmdline->GetSwitchValueASCII(switches::kDerelictDetectionTimeout),
           &derelict_detection_timeout)) {
     derelict_detection_timeout = kDerelectDetectionTimeoutSeconds;
@@ -316,14 +348,36 @@ void NetworkScreenHandler::SetupTimeouts() {
   derelict_detection_timeout_ =
       base::TimeDelta::FromSeconds(derelict_detection_timeout);
 
-  int64 derelict_idle_timeout;
+  int derelict_idle_timeout;
   if (!cmdline->HasSwitch(switches::kDerelictIdleTimeout) ||
-      !base::StringToInt64(
+      !base::StringToInt(
           cmdline->GetSwitchValueASCII(switches::kDerelictIdleTimeout),
           &derelict_idle_timeout)) {
     derelict_idle_timeout = kDerelectIdleTimeoutSeconds;
   }
   derelict_idle_timeout_ = base::TimeDelta::FromSeconds(derelict_idle_timeout);
+
+
+  int oobe_timer_update_interval;
+  if (!cmdline->HasSwitch(switches::kOobeTimerInterval) ||
+      !base::StringToInt(
+          cmdline->GetSwitchValueASCII(switches::kOobeTimerInterval),
+          &oobe_timer_update_interval)) {
+    oobe_timer_update_interval = kOobeTimerUpdateIntervalSeconds;
+  }
+  oobe_timer_update_interval_ =
+      base::TimeDelta::FromSeconds(oobe_timer_update_interval);
+
+  // In case we'd be derelict before our timer is set to trigger, reduce
+  // the interval so we check again when we're scheduled to go derelict.
+  oobe_timer_update_interval_ =
+      std::max(std::min(oobe_timer_update_interval_,
+                        derelict_detection_timeout_ - time_on_oobe_),
+               base::TimeDelta::FromSeconds(0));
+}
+
+bool NetworkScreenHandler::IsDerelict() {
+  return time_on_oobe_ >= derelict_detection_timeout_;
 }
 
 // static
@@ -331,11 +385,17 @@ base::ListValue* NetworkScreenHandler::GetLanguageList() {
   const std::string app_locale = g_browser_process->GetApplicationLocale();
   input_method::InputMethodManager* manager =
       input_method::InputMethodManager::Get();
-  // GetSupportedInputMethods() never returns NULL.
-  scoped_ptr<input_method::InputMethodDescriptors> descriptors(
-      manager->GetSupportedInputMethods());
+  ComponentExtensionIMEManager* comp_manager =
+      manager->GetComponentExtensionIMEManager();
+  input_method::InputMethodDescriptors descriptors;
+  if (extension_ime_util::UseWrappedExtensionKeyboardLayouts()) {
+    if (comp_manager->IsInitialized())
+      descriptors = comp_manager->GetXkbIMEAsInputMethodDescriptor();
+  } else {
+    descriptors = *(manager->GetSupportedInputMethods());
+  }
   base::ListValue* languages_list =
-      options::CrosLanguageOptionsHandler::GetUILanguageList(*descriptors);
+      options::CrosLanguageOptionsHandler::GetUILanguageList(descriptors);
   for (size_t i = 0; i < languages_list->GetSize(); ++i) {
     base::DictionaryValue* language_info = NULL;
     if (!languages_list->GetDictionary(i, &language_info))
@@ -380,15 +440,40 @@ base::DictionaryValue* CreateInputMethodsEntry(
   return input_method.release();
 }
 
+void NetworkScreenHandler::OnImeComponentExtensionInitialized() {
+  input_method::InputMethodManager::Get()->SetInputMethodLoginDefault();
+
+  // Refreshes the language and keyboard list once the component extension
+  // IMEs are initialized.
+  base::DictionaryValue localized_strings;
+  static_cast<OobeUI*>(this->web_ui()->GetController())
+      ->GetLocalizedStrings(&localized_strings);
+  this->core_oobe_actor_->ReloadContent(localized_strings);
+  this->EnableContinue(this->is_continue_enabled_);
+}
+
 // static
 base::ListValue* NetworkScreenHandler::GetInputMethods() {
   base::ListValue* input_methods_list = new base::ListValue;
   input_method::InputMethodManager* manager =
       input_method::InputMethodManager::Get();
   input_method::InputMethodUtil* util = manager->GetInputMethodUtil();
+  if (extension_ime_util::UseWrappedExtensionKeyboardLayouts()) {
+    ComponentExtensionIMEManager* comp_manager =
+        manager->GetComponentExtensionIMEManager();
+    if (!comp_manager->IsInitialized()) {
+      input_method::InputMethodDescriptor fallback =
+          util->GetFallbackInputMethodDescriptor();
+      input_methods_list->Append(
+          CreateInputMethodsEntry(fallback, fallback.id()));
+      return input_methods_list;
+    }
+  }
+
   scoped_ptr<input_method::InputMethodDescriptors> input_methods(
       manager->GetActiveInputMethods());
-  std::string current_input_method_id = manager->GetCurrentInputMethod().id();
+  const std::string& current_input_method_id =
+      manager->GetCurrentInputMethod().id();
   const std::vector<std::string>& hardware_login_input_methods =
       util->GetHardwareLoginInputMethodIds();
   std::set<std::string> input_methods_added;
@@ -397,12 +482,12 @@ base::ListValue* NetworkScreenHandler::GetInputMethods() {
            hardware_login_input_methods.begin();
        i != hardware_login_input_methods.end();
        ++i) {
-    input_methods_added.insert(*i);
     const input_method::InputMethodDescriptor* ime =
         util->GetInputMethodDescriptorFromId(*i);
     DCHECK(ime != NULL);
     // Do not crash in case of misconfiguration.
     if (ime != NULL) {
+      input_methods_added.insert(*i);
       input_methods_list->Append(
           CreateInputMethodsEntry(*ime, current_input_method_id));
     }
@@ -410,7 +495,8 @@ base::ListValue* NetworkScreenHandler::GetInputMethods() {
 
   bool optgroup_added = false;
   for (size_t i = 0; i < input_methods->size(); ++i) {
-    const std::string& ime_id = input_methods->at(i).id();
+    // Makes sure the id is in legacy xkb id format.
+    const std::string& ime_id = (*input_methods)[i].id();
     if (!InsertString(ime_id, input_methods_added))
       continue;
     if (!optgroup_added) {
@@ -418,12 +504,14 @@ base::ListValue* NetworkScreenHandler::GetInputMethods() {
       AddOptgroupOtherLayouts(input_methods_list);
     }
     input_methods_list->Append(
-        CreateInputMethodsEntry(input_methods->at(i), current_input_method_id));
+        CreateInputMethodsEntry((*input_methods)[i], current_input_method_id));
   }
   // "xkb:us::eng" should always be in the list of available layouts.
-  if (input_methods_added.count(kUSlayout) == 0) {
+  const std::string& us_keyboard_id =
+      extension_ime_util::GetInputMethodIDByKeyboardLayout(kUSLayout);
+  if (input_methods_added.find(us_keyboard_id) == input_methods_added.end()) {
     const input_method::InputMethodDescriptor* us_eng_descriptor =
-        util->GetInputMethodDescriptorFromId(kUSlayout);
+        util->GetInputMethodDescriptorFromId(us_keyboard_id);
     DCHECK(us_eng_descriptor != NULL);
     if (!optgroup_added) {
       optgroup_added = true;

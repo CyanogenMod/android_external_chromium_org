@@ -11,18 +11,18 @@
 #include "ash/system/tray/system_tray.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/coordinate_conversion.h"
-#include "ash/wm/window_cycle_controller.h"
 #include "ash/wm/window_properties.h"
 #include "ash/wm/window_util.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/focus_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/test/window_test_api.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/events/event_handler.h"
 #include "ui/gfx/display.h"
@@ -252,15 +252,13 @@ TEST_F(ExtendedDesktopTest, TestCursor) {
 
   UpdateDisplay("1000x600,600x400");
   aura::Window::Windows root_windows = Shell::GetAllRootWindows();
-  aura::WindowEventDispatcher* dispatcher0 = root_windows[0]->GetDispatcher();
-  aura::WindowEventDispatcher* dispatcher1 = root_windows[1]->GetDispatcher();
-  EXPECT_EQ(ui::kCursorPointer,
-            dispatcher0->host()->last_cursor().native_type());
-  EXPECT_EQ(ui::kCursorPointer,
-            dispatcher1->host()->last_cursor().native_type());
+  aura::WindowTreeHost* host0 = root_windows[0]->GetHost();
+  aura::WindowTreeHost* host1 = root_windows[1]->GetHost();
+  EXPECT_EQ(ui::kCursorPointer, host0->last_cursor().native_type());
+  EXPECT_EQ(ui::kCursorPointer, host1->last_cursor().native_type());
   Shell::GetInstance()->cursor_manager()->SetCursor(ui::kCursorCopy);
-  EXPECT_EQ(ui::kCursorCopy, dispatcher0->host()->last_cursor().native_type());
-  EXPECT_EQ(ui::kCursorCopy, dispatcher1->host()->last_cursor().native_type());
+  EXPECT_EQ(ui::kCursorCopy, host0->last_cursor().native_type());
+  EXPECT_EQ(ui::kCursorCopy, host1->last_cursor().native_type());
 }
 
 TEST_F(ExtendedDesktopTest, TestCursorLocation) {
@@ -284,57 +282,6 @@ TEST_F(ExtendedDesktopTest, TestCursorLocation) {
   EXPECT_EQ("20,10", Shell::GetScreen()->GetCursorScreenPoint().ToString());
   EXPECT_TRUE(root_window0_test_api.ContainsMouse());
   EXPECT_FALSE(root_window1_test_api.ContainsMouse());
-}
-
-TEST_F(ExtendedDesktopTest, CycleWindows) {
-  if (!SupportsMultipleDisplays())
-    return;
-
-  UpdateDisplay("700x500,500x500");
-  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
-
-  WindowCycleController* controller =
-      Shell::GetInstance()->window_cycle_controller();
-
-  views::Widget* d1_w1 = CreateTestWidget(gfx::Rect(10, 10, 100, 100));
-  EXPECT_EQ(root_windows[0], d1_w1->GetNativeView()->GetRootWindow());
-  views::Widget* d2_w1 = CreateTestWidget(gfx::Rect(800, 10, 100, 100));
-  EXPECT_EQ(root_windows[1], d2_w1->GetNativeView()->GetRootWindow());
-  EXPECT_TRUE(wm::IsActiveWindow(d2_w1->GetNativeView()));
-
-  controller->HandleCycleWindow(WindowCycleController::FORWARD, false);
-  EXPECT_TRUE(wm::IsActiveWindow(d1_w1->GetNativeView()));
-  controller->HandleCycleWindow(WindowCycleController::FORWARD, false);
-  EXPECT_TRUE(wm::IsActiveWindow(d2_w1->GetNativeView()));
-  controller->HandleCycleWindow(WindowCycleController::BACKWARD, false);
-  EXPECT_TRUE(wm::IsActiveWindow(d1_w1->GetNativeView()));
-  controller->HandleCycleWindow(WindowCycleController::BACKWARD, false);
-  EXPECT_TRUE(wm::IsActiveWindow(d2_w1->GetNativeView()));
-
-  // Cycle through all windows across root windows.
-  views::Widget* d1_w2 = CreateTestWidget(gfx::Rect(10, 200, 100, 100));
-  EXPECT_EQ(root_windows[0], d1_w2->GetNativeView()->GetRootWindow());
-  views::Widget* d2_w2 = CreateTestWidget(gfx::Rect(800, 200, 100, 100));
-  EXPECT_EQ(root_windows[1], d2_w2->GetNativeView()->GetRootWindow());
-
-  controller->HandleCycleWindow(WindowCycleController::FORWARD, true);
-  EXPECT_TRUE(wm::IsActiveWindow(d1_w2->GetNativeView()));
-  controller->HandleCycleWindow(WindowCycleController::FORWARD, true);
-  EXPECT_TRUE(wm::IsActiveWindow(d2_w1->GetNativeView()));
-  controller->HandleCycleWindow(WindowCycleController::FORWARD, true);
-  EXPECT_TRUE(wm::IsActiveWindow(d1_w1->GetNativeView()));
-  controller->HandleCycleWindow(WindowCycleController::FORWARD, true);
-  EXPECT_TRUE(wm::IsActiveWindow(d2_w2->GetNativeView()));
-
-  // Backwards
-  controller->HandleCycleWindow(WindowCycleController::BACKWARD, true);
-  EXPECT_TRUE(wm::IsActiveWindow(d1_w1->GetNativeView()));
-  controller->HandleCycleWindow(WindowCycleController::BACKWARD, true);
-  EXPECT_TRUE(wm::IsActiveWindow(d2_w1->GetNativeView()));
-  controller->HandleCycleWindow(WindowCycleController::BACKWARD, true);
-  EXPECT_TRUE(wm::IsActiveWindow(d1_w2->GetNativeView()));
-  controller->HandleCycleWindow(WindowCycleController::BACKWARD, true);
-  EXPECT_TRUE(wm::IsActiveWindow(d2_w2->GetNativeView()));
 }
 
 TEST_F(ExtendedDesktopTest, GetRootWindowAt) {
@@ -421,34 +368,46 @@ TEST_F(ExtendedDesktopTest, Capture) {
   EXPECT_EQ(r1_w1.get(),
             aura::client::GetCaptureWindow(r2_w1->GetRootWindow()));
 
-  aura::test::EventGenerator generator2(root_windows[1]);
-  generator2.MoveMouseToCenterOf(r2_w1.get());
-  generator2.ClickLeftButton();
+  aura::test::EventGenerator& generator = GetEventGenerator();
+  generator.MoveMouseToCenterOf(r2_w1.get());
+  // |r1_w1| will receive the events because it has capture.
+  EXPECT_EQ("1 1 0", r1_d1.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 0", r1_d2.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 0", r2_d1.GetMouseMotionCountsAndReset());
+
+  generator.ClickLeftButton();
   EXPECT_EQ("0 0 0", r2_d1.GetMouseMotionCountsAndReset());
   EXPECT_EQ("0 0", r2_d1.GetMouseButtonCountsAndReset());
   // The mouse is outside. On chromeos, the mouse is warped to the
   // dest root window, but it's not implemented on Win yet, so
   // no mouse move event on Win.
-  EXPECT_EQ("1 1 0", r1_d1.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 0", r1_d1.GetMouseMotionCountsAndReset());
   EXPECT_EQ("1 1", r1_d1.GetMouseButtonCountsAndReset());
-  // Emulate passive grab. (15,15) on 1st display is (-985,15) on 2nd
-  // display.
-  generator2.MoveMouseTo(-985, 15);
+
+  generator.MoveMouseTo(15, 15);
   EXPECT_EQ("0 1 0", r1_d1.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 0", r1_d2.GetMouseMotionCountsAndReset());
 
   r1_w2->SetCapture();
   EXPECT_EQ(r1_w2.get(),
             aura::client::GetCaptureWindow(r2_w1->GetRootWindow()));
-  generator2.MoveMouseBy(10, 10);
-  generator2.ClickLeftButton();
+  generator.MoveMouseBy(10, 10);
+  // |r1_w2| has the capture. So it will receive the mouse-move event.
+  EXPECT_EQ("0 0 0", r1_d1.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 1 0", r1_d2.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 0", r2_d1.GetMouseMotionCountsAndReset());
+
+  generator.ClickLeftButton();
   EXPECT_EQ("0 0 0", r2_d1.GetMouseMotionCountsAndReset());
   EXPECT_EQ("0 0", r2_d1.GetMouseButtonCountsAndReset());
-  EXPECT_EQ("1 1 0", r1_d2.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 0", r1_d2.GetMouseMotionCountsAndReset());
   EXPECT_EQ("1 1", r1_d2.GetMouseButtonCountsAndReset());
+
   r1_w2->ReleaseCapture();
   EXPECT_EQ(NULL, aura::client::GetCaptureWindow(r2_w1->GetRootWindow()));
-  generator2.MoveMouseTo(15, 15);
-  generator2.ClickLeftButton();
+
+  generator.MoveMouseToCenterOf(r2_w1.get());
+  generator.ClickLeftButton();
   EXPECT_EQ("1 1 0", r2_d1.GetMouseMotionCountsAndReset());
   EXPECT_EQ("1 1", r2_d1.GetMouseButtonCountsAndReset());
   // Make sure the mouse_moved_handler_ is properly reset.
@@ -778,40 +737,40 @@ TEST_F(ExtendedDesktopTest, KeyEventsOnLockScreen) {
   // The lock window should get events on both root windows.
   aura::test::EventGenerator& event_generator(GetEventGenerator());
 
-  event_generator.set_current_root_window(root_windows[0]->GetDispatcher());
+  event_generator.set_current_host(root_windows[0]->GetHost());
   event_generator.PressKey(ui::VKEY_A, 0);
   event_generator.ReleaseKey(ui::VKEY_A, 0);
   EXPECT_EQ(lock_widget->GetNativeView(), focus_client->GetFocusedWindow());
-  EXPECT_EQ("a", UTF16ToASCII(textfield->text()));
+  EXPECT_EQ("a", base::UTF16ToASCII(textfield->text()));
 
-  event_generator.set_current_root_window(root_windows[1]->GetDispatcher());
+  event_generator.set_current_host(root_windows[1]->GetHost());
   event_generator.PressKey(ui::VKEY_B, 0);
   event_generator.ReleaseKey(ui::VKEY_B, 0);
   EXPECT_EQ(lock_widget->GetNativeView(), focus_client->GetFocusedWindow());
-  EXPECT_EQ("ab", UTF16ToASCII(textfield->text()));
+  EXPECT_EQ("ab", base::UTF16ToASCII(textfield->text()));
 
   // Deleting 2nd display. The lock window still should get the events.
   UpdateDisplay("100x100");
   event_generator.PressKey(ui::VKEY_C, 0);
   event_generator.ReleaseKey(ui::VKEY_C, 0);
   EXPECT_EQ(lock_widget->GetNativeView(), focus_client->GetFocusedWindow());
-  EXPECT_EQ("abc", UTF16ToASCII(textfield->text()));
+  EXPECT_EQ("abc", base::UTF16ToASCII(textfield->text()));
 
   // Creating 2nd display again, and lock window still should get events
   // on both root windows.
   UpdateDisplay("100x100,200x200");
   root_windows = Shell::GetAllRootWindows();
-  event_generator.set_current_root_window(root_windows[0]->GetDispatcher());
+  event_generator.set_current_host(root_windows[0]->GetHost());
   event_generator.PressKey(ui::VKEY_D, 0);
   event_generator.ReleaseKey(ui::VKEY_D, 0);
   EXPECT_EQ(lock_widget->GetNativeView(), focus_client->GetFocusedWindow());
-  EXPECT_EQ("abcd", UTF16ToASCII(textfield->text()));
+  EXPECT_EQ("abcd", base::UTF16ToASCII(textfield->text()));
 
-  event_generator.set_current_root_window(root_windows[1]->GetDispatcher());
+  event_generator.set_current_host(root_windows[1]->GetHost());
   event_generator.PressKey(ui::VKEY_E, 0);
   event_generator.ReleaseKey(ui::VKEY_E, 0);
   EXPECT_EQ(lock_widget->GetNativeView(), focus_client->GetFocusedWindow());
-  EXPECT_EQ("abcde", UTF16ToASCII(textfield->text()));
+  EXPECT_EQ("abcde", base::UTF16ToASCII(textfield->text()));
 }
 
 TEST_F(ExtendedDesktopTest, PassiveGrab) {

@@ -130,7 +130,12 @@ class CONTENT_EXPORT RenderWidget
   virtual void didScrollRect(int dx, int dy,
                              const blink::WebRect& clipRect);
   virtual void didAutoResize(const blink::WebSize& new_size);
+  // FIXME: To be removed as soon as chromium and blink side changes land
+  // didActivateCompositor with parameters is still kept in order to land
+  // these changes s-chromium - https://codereview.chromium.org/137893025/.
+  // s-blink - https://codereview.chromium.org/138523003/
   virtual void didActivateCompositor(int input_handler_identifier);
+  virtual void didActivateCompositor() OVERRIDE;
   virtual void didDeactivateCompositor();
   virtual void initializeLayerTreeView();
   virtual blink::WebLayerTreeView* layerTreeView();
@@ -197,7 +202,6 @@ class CONTENT_EXPORT RenderWidget
   virtual void InstrumentDidCancelFrame() {}
   virtual void InstrumentWillComposite() {}
 
-  virtual bool AllowPartialSwap() const;
   bool UsingSynchronousRendererCompositor() const;
 
   bool is_swapped_out() { return is_swapped_out_; }
@@ -500,6 +504,10 @@ class CONTENT_EXPORT RenderWidget
   // just handled.
   virtual void DidHandleKeyEvent() {}
 
+  // Called by OnHandleInputEvent() to notify subclasses that a user gesture
+  // event will be processed.
+  virtual void WillProcessUserGesture() {}
+
   // Called by OnHandleInputEvent() to notify subclasses that a mouse event is
   // about to be handled.
   // Returns true if no further handling is needed. In that case, the event
@@ -529,6 +537,12 @@ class CONTENT_EXPORT RenderWidget
 
   // Tell the browser about the actions permitted for a new touch point.
   virtual void setTouchAction(blink::WebTouchAction touch_action);
+
+#if defined(OS_ANDROID)
+  // Checks if the selection root bounds have changed. If they have changed, the
+  // new value will be sent to the browser process.
+  virtual void UpdateSelectionRootBounds();
+#endif
 
   // Creates a 3D context associated with this view.
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> CreateGraphicsContext3D(
@@ -672,6 +686,11 @@ class CONTENT_EXPORT RenderWidget
   // Stores the current selection bounds.
   gfx::Rect selection_focus_rect_;
   gfx::Rect selection_anchor_rect_;
+
+  // Stores the current selection root bounds.
+#if defined(OS_ANDROID)
+  gfx::Rect selection_root_rect_;
+#endif
 
   // Stores the current composition character bounds.
   std::vector<gfx::Rect> composition_character_bounds_;

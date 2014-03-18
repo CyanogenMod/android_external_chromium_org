@@ -514,7 +514,7 @@ Gallery.prototype.delete_ = function() {
 
 
   var confirm = new cr.ui.dialogs.ConfirmDialog(this.container_);
-  confirm.show(str(plural ?
+  confirm.show(strf(plural ?
       'GALLERY_CONFIRM_DELETE_SOME' : 'GALLERY_CONFIRM_DELETE_ONE', param),
       function() {
         restoreListener();
@@ -655,7 +655,7 @@ Gallery.prototype.updateSelectionAndState_ = function() {
       // be recorded in the app state and the relaunch will just open the
       // gallery in the curDirEntry directory.
       window.top.document.title = this.context_.curDirEntry.name;
-      displayName = str('GALLERY_ITEMS_SELECTED', numSelectedItems);
+      displayName = strf('GALLERY_ITEMS_SELECTED', numSelectedItems);
     }
   }
 

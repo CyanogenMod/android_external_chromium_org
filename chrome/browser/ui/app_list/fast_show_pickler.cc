@@ -146,18 +146,21 @@ bool UnpickleImage(PickleIterator* it, gfx::ImageSkia* out) {
   return true;
 }
 
-scoped_ptr<AppListItem> UnpickleAppListItem(PickleIterator* it) {
+}  // namespace
+
+scoped_ptr<AppListItem> FastShowPickler::UnpickleAppListItem(
+    PickleIterator* it) {
   std::string id;
   if (!it->ReadString(&id))
     return scoped_ptr<AppListItem>();
   scoped_ptr<AppListItem> result(new AppListItem(id));
-  std::string title;
-  if (!it->ReadString(&title))
+  std::string name;
+  if (!it->ReadString(&name))
     return scoped_ptr<AppListItem>();
-  std::string full_name;
-  if (!it->ReadString(&full_name))
+  std::string short_name;
+  if (!it->ReadString(&short_name))
     return scoped_ptr<AppListItem>();
-  result->SetTitleAndFullName(title, full_name);
+  result->SetNameAndShortName(name, short_name);
   bool has_shadow = false;
   if (!it->ReadBool(&has_shadow))
     return scoped_ptr<AppListItem>();
@@ -168,12 +171,12 @@ scoped_ptr<AppListItem> UnpickleAppListItem(PickleIterator* it) {
   return result.Pass();
 }
 
-bool PickleAppListItem(Pickle* pickle, AppListItem* item) {
+bool FastShowPickler::PickleAppListItem(Pickle* pickle, AppListItem* item) {
   if (!pickle->WriteString(item->id()))
     return false;
-  if (!pickle->WriteString(item->title()))
+  if (!pickle->WriteString(item->name()))
     return false;
-  if (!pickle->WriteString(item->full_name()))
+  if (!pickle->WriteString(item->short_name()))
     return false;
   if (!pickle->WriteBool(item->has_shadow()))
     return false;
@@ -182,13 +185,12 @@ bool PickleAppListItem(Pickle* pickle, AppListItem* item) {
   return true;
 }
 
-void CopyOverItem(AppListItem* src_item, AppListItem* dest_item) {
-  dest_item->SetTitleAndFullName(src_item->title(), src_item->full_name());
+void FastShowPickler::CopyOverItem(AppListItem* src_item,
+                                   AppListItem* dest_item) {
+  dest_item->SetNameAndShortName(src_item->name(), src_item->short_name());
   dest_item->SetIcon(src_item->icon(), src_item->has_shadow());
   // Do not set folder_id, pass that to AppListModel::AddItemToFolder() instead.
 }
-
-}  // namespace
 
 // The version of the pickle format defined here. This needs to be incremented
 // whenever this format is changed so new clients can invalidate old versions.
@@ -199,19 +201,21 @@ scoped_ptr<Pickle> FastShowPickler::PickleAppListModelForFastShow(
   scoped_ptr<Pickle> result(new Pickle);
   if (!result->WriteInt(kVersion))
     return scoped_ptr<Pickle>();
-  if (!result->WriteInt((int) model->item_list()->item_count()))
+  if (!result->WriteInt((int)model->top_level_item_list()->item_count()))
     return scoped_ptr<Pickle>();
-  for (size_t i = 0; i < model->item_list()->item_count(); ++i) {
-    if (!PickleAppListItem(result.get(), model->item_list()->item_at(i)))
+  for (size_t i = 0; i < model->top_level_item_list()->item_count(); ++i) {
+    if (!PickleAppListItem(result.get(),
+                           model->top_level_item_list()->item_at(i))) {
       return scoped_ptr<Pickle>();
+    }
   }
   return result.Pass();
 }
 
 void FastShowPickler::CopyOver(AppListModel* src, AppListModel* dest) {
-  DCHECK_EQ(0u, dest->item_list()->item_count());
-  for (size_t i = 0; i < src->item_list()->item_count(); i++) {
-    AppListItem* src_item = src->item_list()->item_at(i);
+  DCHECK_EQ(0u, dest->top_level_item_list()->item_count());
+  for (size_t i = 0; i < src->top_level_item_list()->item_count(); i++) {
+    AppListItem* src_item = src->top_level_item_list()->item_at(i);
     scoped_ptr<AppListItem> dest_item(new AppListItem(src_item->id()));
     CopyOverItem(src_item, dest_item.get());
     dest->AddItemToFolder(dest_item.Pass(), src_item->folder_id());

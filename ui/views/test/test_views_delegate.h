@@ -9,20 +9,20 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
-#include "ui/base/accessibility/accessibility_types.h"
+#include "ui/accessibility/ax_enums.h"
 #include "ui/views/views_delegate.h"
 
 namespace ui {
 class Clipboard;
 }
 
+namespace wm {
+class WMState;
+}
+
 namespace views {
 class View;
 class Widget;
-
-namespace corewm {
-class WMState;
-}
 
 class TestViewsDelegate : public ViewsDelegate {
  public:
@@ -43,7 +43,7 @@ class TestViewsDelegate : public ViewsDelegate {
       ui::WindowShowState* show_state) const OVERRIDE;
 
   virtual void NotifyAccessibilityEvent(
-      View* view, ui::AccessibilityTypes::Event event_type) OVERRIDE {}
+      View* view, ui::AXEvent event_type) OVERRIDE {}
 
   virtual void NotifyMenuItemFocused(const base::string16& menu_name,
                                      const base::string16& menu_item_name,
@@ -76,9 +76,7 @@ class TestViewsDelegate : public ViewsDelegate {
  private:
   bool use_transparent_windows_;
 
-#if defined(USE_AURA)
-  scoped_ptr<views::corewm::WMState> wm_state_;
-#endif
+  scoped_ptr<wm::WMState> wm_state_;
 
   DISALLOW_COPY_AND_ASSIGN(TestViewsDelegate);
 };

@@ -4,6 +4,8 @@
 
 #include "google_apis/gcm/engine/mcs_client.h"
 
+#include <set>
+
 #include "base/basictypes.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
@@ -126,10 +128,28 @@ ReliablePacketInfo::ReliablePacketInfo()
 }
 ReliablePacketInfo::~ReliablePacketInfo() {}
 
-MCSClient::MCSClient(base::Clock* clock,
+std::string MCSClient::GetStateString() const {
+  switch(state_) {
+    case UNINITIALIZED:
+      return "UNINITIALIZED";
+    case LOADED:
+      return "LOADED";
+    case CONNECTING:
+      return "CONNECTING";
+    case CONNECTED:
+      return "CONNECTED";
+    default:
+      NOTREACHED();
+      return std::string();
+  }
+}
+
+MCSClient::MCSClient(const std::string& version_string,
+                     base::Clock* clock,
                      ConnectionFactory* connection_factory,
                      GCMStore* gcm_store)
-    : clock_(clock),
+    : version_string_(version_string),
+      clock_(clock),
       state_(UNINITIALIZED),
       android_id_(0),
       security_token_(0),
@@ -333,11 +353,6 @@ void MCSClient::SendMessage(const MCSMessage& message) {
   MaybeSendMessage();
 }
 
-void MCSClient::Destroy() {
-  gcm_store_->Destroy(base::Bind(&MCSClient::OnGCMUpdateFinished,
-                                 weak_ptr_factory_.GetWeakPtr()));
-}
-
 void MCSClient::ResetStateAndBuildLoginRequest(
     mcs_proto::LoginRequest* request) {
   DCHECK(android_id_);
@@ -369,7 +384,9 @@ void MCSClient::ResetStateAndBuildLoginRequest(
   acked_server_ids_.clear();
 
   // Then build the request, consuming all pending acknowledgments.
-  request->Swap(BuildLoginRequest(android_id_, security_token_).get());
+  request->Swap(BuildLoginRequest(android_id_,
+                                  security_token_,
+                                  version_string_).get());
   for (PersistentIdList::const_iterator iter =
            restored_unackeds_server_ids_.begin();
        iter != restored_unackeds_server_ids_.end(); ++iter) {
@@ -735,43 +752,67 @@ void MCSClient::HandleStreamAck(StreamId last_stream_id_received) {
 }
 
 void MCSClient::HandleSelectiveAck(const PersistentIdList& id_list) {
-  // First check the to_resend_ queue. Acknowledgments should always happen
-  // in the order they were sent, so if messages are present they should match
-  // the acknowledge list.
-  PersistentIdList::const_iterator iter = id_list.begin();
-  for (; iter != id_list.end() && !to_resend_.empty(); ++iter) {
+  std::set<PersistentId> remaining_ids(id_list.begin(), id_list.end());
+
+  StreamId last_stream_id_received = -1;
+
+  // First check the to_resend_ queue. Acknowledgments are always contiguous,
+  // so if there's a pending message that hasn't been acked, all newer messages
+  // must also be unacked.
+  while(!to_resend_.empty() && !remaining_ids.empty()) {
     const MCSPacketInternal& outgoing_packet = to_resend_.front();
-    DCHECK_EQ(outgoing_packet->persistent_id, *iter);
+    if (remaining_ids.count(outgoing_packet->persistent_id) == 0)
+      break;  // Newer message must be unacked too.
+    remaining_ids.erase(outgoing_packet->persistent_id);
     NotifyMessageSendStatus(*outgoing_packet->protobuf, SENT);
 
     // No need to re-acknowledge any server messages this message already
     // acknowledged.
     StreamId device_stream_id = outgoing_packet->stream_id;
-    HandleServerConfirmedReceipt(device_stream_id);
-
+    if (device_stream_id > last_stream_id_received)
+      last_stream_id_received = device_stream_id;
     to_resend_.pop_front();
   }
 
   // If the acknowledged ids aren't all there, they might be in the to_send_
-  // queue (typically when a StreamAck confirms messages as part of a login
+  // queue (typically when a SelectiveAck confirms messages as part of a login
   // response).
-  for (; iter != id_list.end() && !to_send_.empty(); ++iter) {
-    const MCSPacketInternal& outgoing_packet = PopMessageForSend();
-    DCHECK_EQ(outgoing_packet->persistent_id, *iter);
+  while (!to_send_.empty() && !remaining_ids.empty()) {
+    const MCSPacketInternal& outgoing_packet = to_send_.front();
+    if (remaining_ids.count(outgoing_packet->persistent_id) == 0)
+      break;  // Newer messages must be unacked too.
+    remaining_ids.erase(outgoing_packet->persistent_id);
     NotifyMessageSendStatus(*outgoing_packet->protobuf, SENT);
 
     // No need to re-acknowledge any server messages this message already
     // acknowledged.
     StreamId device_stream_id = outgoing_packet->stream_id;
-    HandleServerConfirmedReceipt(device_stream_id);
+    if (device_stream_id > last_stream_id_received)
+      last_stream_id_received = device_stream_id;
+    PopMessageForSend();
   }
 
-  DCHECK(iter == id_list.end());
+  // Only handle the largest stream id value. All other stream ids are
+  // implicitly handled.
+  if (last_stream_id_received > 0)
+    HandleServerConfirmedReceipt(last_stream_id_received);
 
-  DVLOG(1) << "Server acked " << id_list.size()
+  // At this point, all remaining acked ids are redundant.
+  PersistentIdList acked_ids;
+  if (remaining_ids.size() > 0) {
+    for (size_t i = 0; i < id_list.size(); ++i) {
+      if (remaining_ids.count(id_list[i]) > 0)
+        continue;
+      acked_ids.push_back(id_list[i]);
+    }
+  } else {
+    acked_ids = id_list;
+  }
+
+  DVLOG(1) << "Server acked " << acked_ids.size()
            << " messages, " << to_resend_.size() << " remaining unacked.";
   gcm_store_->RemoveOutgoingMessages(
-      id_list,
+      acked_ids,
       base::Bind(&MCSClient::OnGCMUpdateFinished,
                  weak_ptr_factory_.GetWeakPtr()));
 

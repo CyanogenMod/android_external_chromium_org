@@ -9,12 +9,12 @@
 #include "base/timer/timer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/aura_test_base.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/events/event.h"
@@ -354,9 +354,9 @@ class GestureEventConsumeDelegate : public TestWindowDelegate {
 
 class QueueTouchEventDelegate : public GestureEventConsumeDelegate {
  public:
-  explicit QueueTouchEventDelegate(RootWindow* root_window)
+  explicit QueueTouchEventDelegate(WindowEventDispatcher* dispatcher)
       : window_(NULL),
-        root_window_(root_window),
+        dispatcher_(dispatcher),
         queue_events_(true) {
   }
   virtual ~QueueTouchEventDelegate() {
@@ -387,14 +387,14 @@ class QueueTouchEventDelegate : public GestureEventConsumeDelegate {
  private:
   void ReceivedAckImpl(bool prevent_defaulted) {
     scoped_ptr<ui::TouchEvent> event(queue_.front());
-    root_window_->ProcessedTouchEvent(event.get(), window_,
+    dispatcher_->ProcessedTouchEvent(event.get(), window_,
         prevent_defaulted ? ui::ER_HANDLED : ui::ER_UNHANDLED);
     queue_.pop();
   }
 
   std::queue<ui::TouchEvent*> queue_;
   Window* window_;
-  RootWindow* root_window_;
+  WindowEventDispatcher* dispatcher_;
   bool queue_events_;
 
   DISALLOW_COPY_AND_ASSIGN(QueueTouchEventDelegate);
@@ -577,7 +577,7 @@ class TimedEvents {
     return base::TimeDelta::FromMilliseconds(simulated_now_ + time_in_millis);
   }
 
-  void SendScrollEvents(RootWindow* root_window,
+  void SendScrollEvents(ui::EventProcessor* dispatcher,
                         float x_start,
                         float y_start,
                         int dx,
@@ -595,13 +595,13 @@ class TimedEvents {
       ui::TouchEvent move(ui::ET_TOUCH_MOVED, gfx::PointF(x, y),
                           touch_id,
                           base::TimeDelta::FromMilliseconds(simulated_now_));
-      ui::EventDispatchDetails details = root_window->OnEventFromSource(&move);
+      ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&move);
       ASSERT_FALSE(details.dispatcher_destroyed);
       simulated_now_ += time_step;
     }
   }
 
-  void SendScrollEvent(RootWindow* root_window,
+  void SendScrollEvent(ui::EventProcessor* dispatcher,
                        float x,
                        float y,
                        int touch_id,
@@ -610,7 +610,7 @@ class TimedEvents {
     ui::TouchEvent move(ui::ET_TOUCH_MOVED, gfx::PointF(x, y),
                         touch_id,
                         base::TimeDelta::FromMilliseconds(simulated_now_));
-    ui::EventDispatchDetails details = root_window->OnEventFromSource(&move);
+    ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&move);
     ASSERT_FALSE(details.dispatcher_destroyed);
     simulated_now_++;
   }
@@ -1030,7 +1030,8 @@ TEST_F(GestureRecognizerTest, GestureEventScroll) {
   // should generate both SCROLL_BEGIN and SCROLL_UPDATE gestures.
   // The first movement is diagonal, to ensure that we have a free scroll,
   // and not a rail scroll.
-  tes.SendScrollEvent(dispatcher(), 111.5, 211.5, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 111.5, 211.5, kTouchId,
+                      delegate.get());
   EXPECT_3_EVENTS(delegate->events(),
                   ui::ET_GESTURE_TAP_CANCEL,
                   ui::ET_GESTURE_SCROLL_BEGIN,
@@ -1046,13 +1047,13 @@ TEST_F(GestureRecognizerTest, GestureEventScroll) {
   EXPECT_TRUE(delegate->bounding_box().IsEmpty());
 
   // Move some more to generate a few more scroll updates.
-  tes.SendScrollEvent(dispatcher(), 91, 192, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 91, 192, kTouchId, delegate.get());
   EXPECT_1_EVENT(delegate->events(), ui::ET_GESTURE_SCROLL_UPDATE);
   EXPECT_FLOAT_EQ(-20.5, delegate->scroll_x());
   EXPECT_FLOAT_EQ(-19.5, delegate->scroll_y());
   EXPECT_TRUE(delegate->bounding_box().IsEmpty());
 
-  tes.SendScrollEvent(dispatcher(), 121, 196, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 121, 196, kTouchId, delegate.get());
   EXPECT_1_EVENT(delegate->events(), ui::ET_GESTURE_SCROLL_UPDATE);
   EXPECT_EQ(30, delegate->scroll_x());
   EXPECT_EQ(4, delegate->scroll_y());
@@ -1118,7 +1119,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollPrediction) {
   // The first movement is diagonal, to ensure that we have a free scroll,
   // and not a rail scroll.
   tes.LeapForward(30);
-  tes.SendScrollEvent(dispatcher(), 130, 230, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 130, 230, kTouchId, delegate.get());
   EXPECT_1_EVENT(delegate->events(),
                  ui::ET_GESTURE_SCROLL_UPDATE);
   EXPECT_GT(delegate->scroll_velocity_x(), 0);
@@ -1132,7 +1133,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollPrediction) {
 
   // Move some more to generate a few more scroll updates.
   tes.LeapForward(30);
-  tes.SendScrollEvent(dispatcher(), 110, 211, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 110, 211, kTouchId, delegate.get());
   EXPECT_1_EVENT(delegate->events(), ui::ET_GESTURE_SCROLL_UPDATE);
   total_scroll.set_x(total_scroll.x() + delegate->scroll_x());
   total_scroll.set_y(total_scroll.y() + delegate->scroll_y());
@@ -1142,7 +1143,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollPrediction) {
             (int)(total_scroll.y()));
 
   tes.LeapForward(30);
-  tes.SendScrollEvent(dispatcher(), 140, 215, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 140, 215, kTouchId, delegate.get());
   EXPECT_1_EVENT(delegate->events(), ui::ET_GESTURE_SCROLL_UPDATE);
   total_scroll.set_x(total_scroll.x() + delegate->scroll_x());
   total_scroll.set_y(total_scroll.y() + delegate->scroll_y());
@@ -1188,7 +1189,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollBoundingBox) {
               delegate->bounding_box().ToString());
 
     const int kScrollAmount = 50;
-    tes.SendScrollEvents(dispatcher(), kPositionX, kPositionY,
+    tes.SendScrollEvents(event_processor(), kPositionX, kPositionY,
         1, 1, kTouchId, 1, kScrollAmount, delegate.get());
     EXPECT_EQ(gfx::Point(1, 1).ToString(),
               delegate->scroll_begin_position().ToString());
@@ -1239,14 +1240,14 @@ TEST_F(GestureRecognizerTest, GestureEventHorizontalRailFling) {
 
   // Move the touch-point horizontally enough that it is considered a
   // horizontal scroll.
-  tes.SendScrollEvent(dispatcher(), 25, 1, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 25, 1, kTouchId, delegate.get());
   EXPECT_EQ(0, delegate->scroll_y());
   EXPECT_EQ(1, delegate->scroll_y_ordinal());
   EXPECT_EQ(20, delegate->scroll_x());
   EXPECT_EQ(20, delegate->scroll_x_ordinal());
 
   // Get a high x velocity, while still staying on the rail
-  tes.SendScrollEvents(dispatcher(), 1, 1,
+  tes.SendScrollEvents(event_processor(), 1, 1,
                    100, 10, kTouchId, 1,
                    ui::GestureConfiguration::points_buffered_for_velocity(),
                    delegate.get());
@@ -1289,7 +1290,7 @@ TEST_F(GestureRecognizerTest, GestureEventVerticalRailFling) {
 
   // Move the touch-point vertically enough that it is considered a
   // vertical scroll.
-  tes.SendScrollEvent(dispatcher(), 1, 25, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 1, 25, kTouchId, delegate.get());
   EXPECT_EQ(20, delegate->scroll_y());
   EXPECT_EQ(20, delegate->scroll_y_ordinal());
   EXPECT_EQ(0, delegate->scroll_x());
@@ -1298,7 +1299,7 @@ TEST_F(GestureRecognizerTest, GestureEventVerticalRailFling) {
   EXPECT_GT(delegate->scroll_velocity_x_ordinal(), 0);
 
   // Get a high y velocity, while still staying on the rail
-  tes.SendScrollEvents(dispatcher(), 1, 6,
+  tes.SendScrollEvents(event_processor(), 1, 6,
                        10, 100, kTouchId, 1,
                        ui::GestureConfiguration::points_buffered_for_velocity(),
                        delegate.get());
@@ -1333,11 +1334,11 @@ TEST_F(GestureRecognizerTest, GestureEventNonRailFling) {
   DispatchEventUsingWindowDispatcher(&press);
 
   // Move the touch-point such that a non-rail scroll begins
-  tes.SendScrollEvent(dispatcher(), 20, 20, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 20, 20, kTouchId, delegate.get());
   EXPECT_EQ(20, delegate->scroll_y());
   EXPECT_EQ(20, delegate->scroll_x());
 
-  tes.SendScrollEvents(dispatcher(), 1, 1,
+  tes.SendScrollEvents(event_processor(), 1, 1,
                        10, 100, kTouchId, 1,
                        ui::GestureConfiguration::points_buffered_for_velocity(),
                        delegate.get());
@@ -1431,7 +1432,7 @@ TEST_F(GestureRecognizerTest, GestureEventLongPressCancelledByScroll) {
   EXPECT_FALSE(delegate->tap_cancel());
 
   // Scroll around, to cancel the long press
-  tes.SendScrollEvent(dispatcher(), 130, 230, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 130, 230, kTouchId, delegate.get());
   // Wait until the timer runs out
   gesture_sequence->ForceTimeout();
   EXPECT_FALSE(delegate->long_press());
@@ -1571,11 +1572,11 @@ TEST_F(GestureRecognizerTest, GestureEventHorizontalRailScroll) {
 
   // Move the touch-point horizontally enough that it is considered a
   // horizontal scroll.
-  tes.SendScrollEvent(dispatcher(), 25, 1, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 25, 1, kTouchId, delegate.get());
   EXPECT_EQ(0, delegate->scroll_y());
   EXPECT_EQ(20, delegate->scroll_x());
 
-  tes.SendScrollEvent(dispatcher(), 30, 6, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 30, 6, kTouchId, delegate.get());
   EXPECT_TRUE(delegate->scroll_update());
   EXPECT_EQ(5, delegate->scroll_x());
   // y shouldn't change, as we're on a horizontal rail.
@@ -1583,7 +1584,7 @@ TEST_F(GestureRecognizerTest, GestureEventHorizontalRailScroll) {
 
   // Send enough information that a velocity can be calculated for the gesture,
   // and we can break the rail
-  tes.SendScrollEvents(dispatcher(), 1, 1,
+  tes.SendScrollEvents(event_processor(), 1, 1,
                        6, 100, kTouchId, 1,
                        ui::GestureConfiguration::points_buffered_for_velocity(),
                        delegate.get());
@@ -1592,8 +1593,8 @@ TEST_F(GestureRecognizerTest, GestureEventHorizontalRailScroll) {
   EXPECT_GT(delegate->scroll_velocity_x(), 0);
   EXPECT_GT(delegate->scroll_velocity_y(), 0);
 
-  tes.SendScrollEvent(dispatcher(), 5, 0, kTouchId, delegate.get());
-  tes.SendScrollEvent(dispatcher(), 10, 5, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 5, 0, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 10, 5, kTouchId, delegate.get());
 
   // The rail should be broken
   EXPECT_TRUE(delegate->scroll_update());
@@ -1624,11 +1625,11 @@ TEST_F(GestureRecognizerTest, GestureEventVerticalRailScroll) {
 
   // Move the touch-point vertically enough that it is considered a
   // vertical scroll.
-  tes.SendScrollEvent(dispatcher(), 1, 25, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 1, 25, kTouchId, delegate.get());
   EXPECT_EQ(0, delegate->scroll_x());
   EXPECT_EQ(20, delegate->scroll_y());
 
-  tes.SendScrollEvent(dispatcher(), 6, 30, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 6, 30, kTouchId, delegate.get());
   EXPECT_TRUE(delegate->scroll_update());
   EXPECT_EQ(5, delegate->scroll_y());
   // x shouldn't change, as we're on a vertical rail.
@@ -1637,15 +1638,15 @@ TEST_F(GestureRecognizerTest, GestureEventVerticalRailScroll) {
 
   // Send enough information that a velocity can be calculated for the gesture,
   // and we can break the rail
-  tes.SendScrollEvents(dispatcher(), 1, 6,
+  tes.SendScrollEvents(event_processor(), 1, 6,
                        100, 1, kTouchId, 1,
                        ui::GestureConfiguration::points_buffered_for_velocity(),
                        delegate.get());
   EXPECT_GT(delegate->scroll_velocity_x(), 0);
   EXPECT_GT(delegate->scroll_velocity_y(), 0);
 
-  tes.SendScrollEvent(dispatcher(), 0, 5, kTouchId, delegate.get());
-  tes.SendScrollEvent(dispatcher(), 5, 10, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 0, 5, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 5, 10, kTouchId, delegate.get());
 
   // The rail should be broken
   EXPECT_TRUE(delegate->scroll_update());
@@ -1782,7 +1783,7 @@ TEST_F(GestureRecognizerTest, GestureTapFollowedByScroll) {
 
 TEST_F(GestureRecognizerTest, AsynchronousGestureRecognition) {
   scoped_ptr<QueueTouchEventDelegate> queued_delegate(
-      new QueueTouchEventDelegate(dispatcher()));
+      new QueueTouchEventDelegate(host()->dispatcher()));
   const int kWindowWidth = 123;
   const int kWindowHeight = 45;
   const int kTouchId1 = 6;
@@ -2079,12 +2080,12 @@ scoped_ptr<GestureEventConsumeDelegate> delegate(
   EXPECT_FALSE(delegate->pinch_begin());
 
   // Touch move triggers pinch begin.
-  tes.SendScrollEvent(dispatcher(), 130, 230, kTouchId1, delegate.get());
+  tes.SendScrollEvent(event_processor(), 130, 230, kTouchId1, delegate.get());
   EXPECT_TRUE(delegate->pinch_begin());
   EXPECT_FALSE(delegate->pinch_update());
 
   // Touch move triggers pinch update.
-  tes.SendScrollEvent(dispatcher(), 160, 200, kTouchId1, delegate.get());
+  tes.SendScrollEvent(event_processor(), 160, 200, kTouchId1, delegate.get());
   EXPECT_FALSE(delegate->pinch_begin());
   EXPECT_TRUE(delegate->pinch_update());
 
@@ -2095,7 +2096,7 @@ scoped_ptr<GestureEventConsumeDelegate> delegate(
   DispatchEventUsingWindowDispatcher(&release);
   EXPECT_TRUE(delegate->pinch_end());
 
-  tes.SendScrollEvent(dispatcher(), 130, 230, kTouchId2, delegate.get());
+  tes.SendScrollEvent(event_processor(), 130, 230, kTouchId2, delegate.get());
   EXPECT_TRUE(delegate->scroll_update());
 
   // Pinch again
@@ -2110,7 +2111,7 @@ scoped_ptr<GestureEventConsumeDelegate> delegate(
   DispatchEventUsingWindowDispatcher(&move2);
   EXPECT_TRUE(delegate->pinch_begin());
 
-  tes.SendScrollEvent(dispatcher(), 130, 230, kTouchId1, delegate.get());
+  tes.SendScrollEvent(event_processor(), 130, 230, kTouchId1, delegate.get());
   EXPECT_TRUE(delegate->pinch_update());
 }
 
@@ -2152,8 +2153,8 @@ TEST_F(GestureRecognizerTest, GestureEventPinchFromTap) {
                        kTouchId1, tes.Now());
   DispatchEventUsingWindowDispatcher(&move3);
   EXPECT_2_EVENTS(delegate->events(),
-                  ui::ET_GESTURE_PINCH_BEGIN,
-                  ui::ET_GESTURE_SCROLL_BEGIN);
+                  ui::ET_GESTURE_SCROLL_BEGIN,
+                  ui::ET_GESTURE_PINCH_BEGIN);
   EXPECT_EQ(gfx::Rect(10, 10, 55, 191).ToString(),
             delegate->bounding_box().ToString());
 
@@ -2349,7 +2350,7 @@ TEST_F(GestureRecognizerTest, GestureEventOutsideRootWindowTap) {
 
 TEST_F(GestureRecognizerTest, NoTapWithPreventDefaultedRelease) {
   scoped_ptr<QueueTouchEventDelegate> delegate(
-      new QueueTouchEventDelegate(dispatcher()));
+      new QueueTouchEventDelegate(host()->dispatcher()));
   TimedEvents tes;
   const int kTouchId = 2;
   gfx::Rect bounds(100, 200, 100, 100);
@@ -2376,7 +2377,7 @@ TEST_F(GestureRecognizerTest, NoTapWithPreventDefaultedRelease) {
 
 TEST_F(GestureRecognizerTest, PinchScrollWithPreventDefaultedRelease) {
   scoped_ptr<QueueTouchEventDelegate> delegate(
-      new QueueTouchEventDelegate(dispatcher()));
+      new QueueTouchEventDelegate(host()->dispatcher()));
   TimedEvents tes;
   const int kTouchId1 = 7;
   const int kTouchId2 = 5;
@@ -2662,7 +2663,7 @@ TEST_F(GestureRecognizerTest, TwoFingerTap) {
   EXPECT_FALSE(delegate->tap());
   EXPECT_FALSE(delegate->tap_down());
   EXPECT_FALSE(delegate->tap_cancel());
-  EXPECT_FALSE(delegate->scroll_begin());
+  EXPECT_TRUE(delegate->scroll_begin());
   EXPECT_FALSE(delegate->scroll_update());
   EXPECT_FALSE(delegate->scroll_end());
   EXPECT_TRUE(delegate->two_finger_tap());
@@ -2751,7 +2752,7 @@ TEST_F(GestureRecognizerTest, TwoFingerTapChangesToPinch) {
                           kTouchId2, tes.Now());
     DispatchEventUsingWindowDispatcher(&press2);
 
-    tes.SendScrollEvent(dispatcher(), 130, 230, kTouchId1, delegate.get());
+    tes.SendScrollEvent(event_processor(), 130, 230, kTouchId1, delegate.get());
     EXPECT_FALSE(delegate->two_finger_tap());
     EXPECT_TRUE(delegate->pinch_begin());
 
@@ -2782,7 +2783,7 @@ TEST_F(GestureRecognizerTest, TwoFingerTapChangesToPinch) {
                           kTouchId2, tes.Now());
     DispatchEventUsingWindowDispatcher(&press2);
 
-    tes.SendScrollEvent(dispatcher(), 101, 230, kTouchId2, delegate.get());
+    tes.SendScrollEvent(event_processor(), 101, 230, kTouchId2, delegate.get());
     EXPECT_FALSE(delegate->two_finger_tap());
     EXPECT_TRUE(delegate->pinch_begin());
 
@@ -2815,7 +2816,7 @@ TEST_F(GestureRecognizerTest, NoTwoFingerTapWhenFirstFingerHasScrolled) {
   ui::TouchEvent press1(ui::ET_TOUCH_PRESSED, gfx::Point(101, 201),
                         kTouchId1, tes.Now());
   DispatchEventUsingWindowDispatcher(&press1);
-  tes.SendScrollEvent(dispatcher(), 130, 230, kTouchId1, delegate.get());
+  tes.SendScrollEvent(event_processor(), 130, 230, kTouchId1, delegate.get());
 
   delegate->Reset();
   ui::TouchEvent press2(ui::ET_TOUCH_PRESSED, gfx::Point(130, 201),
@@ -3031,7 +3032,7 @@ TEST_F(GestureRecognizerTest, FlushAllOnHide) {
 
 TEST_F(GestureRecognizerTest, LongPressTimerStopsOnPreventDefaultedTouchMoves) {
   scoped_ptr<QueueTouchEventDelegate> delegate(
-      new QueueTouchEventDelegate(dispatcher()));
+      new QueueTouchEventDelegate(host()->dispatcher()));
   const int kTouchId = 2;
   gfx::Rect bounds(100, 200, 100, 100);
   scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
@@ -3052,7 +3053,7 @@ TEST_F(GestureRecognizerTest, LongPressTimerStopsOnPreventDefaultedTouchMoves) {
                        kTouchId, tes.Now());
   DispatchEventUsingWindowDispatcher(&press);
   // Scroll around, to cancel the long press
-  tes.SendScrollEvent(dispatcher(), 130, 230, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 130, 230, kTouchId, delegate.get());
 
   delegate->Reset();
   delegate->ReceivedAck();
@@ -3115,7 +3116,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollTouchMoveConsumed) {
   // Move the touch-point enough so that it would normally be considered a
   // scroll. But since the touch-moves will be consumed, the scroll should not
   // start.
-  tes.SendScrollEvent(dispatcher(), 130, 230, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 130, 230, kTouchId, delegate.get());
   EXPECT_FALSE(delegate->tap());
   EXPECT_FALSE(delegate->tap_down());
   EXPECT_TRUE(delegate->tap_cancel());
@@ -3158,7 +3159,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollTwoFingerTouchMoveConsumed) {
   ui::TouchEvent press1(ui::ET_TOUCH_PRESSED, gfx::Point(101, 201),
                         kTouchId1, tes.Now());
   DispatchEventUsingWindowDispatcher(&press1);
-  tes.SendScrollEvent(dispatcher(), 131, 231, kTouchId1, delegate.get());
+  tes.SendScrollEvent(event_processor(), 131, 231, kTouchId1, delegate.get());
 
   // First finger touches down and moves.
   EXPECT_FALSE(delegate->tap());
@@ -3171,7 +3172,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollTwoFingerTouchMoveConsumed) {
   ui::TouchEvent press2(ui::ET_TOUCH_PRESSED, gfx::Point(130, 201),
                         kTouchId2, tes.LeapForward(50));
   DispatchEventUsingWindowDispatcher(&press2);
-  tes.SendScrollEvent(dispatcher(), 161, 231, kTouchId2, delegate.get());
+  tes.SendScrollEvent(event_processor(), 161, 231, kTouchId2, delegate.get());
 
   // PinchBegin & ScrollBegin were not sent if the touch-move events were
   // consumed.
@@ -3189,7 +3190,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollTwoFingerTouchMoveConsumed) {
 
   delegate->Reset();
   // Moves First finger again, no PinchUpdate & ScrollUpdate.
-  tes.SendScrollEvent(dispatcher(), 161, 261, kTouchId1, delegate.get());
+  tes.SendScrollEvent(event_processor(), 161, 261, kTouchId1, delegate.get());
 
   EXPECT_FALSE(delegate->pinch_update());
   EXPECT_FALSE(delegate->pinch_end());
@@ -3201,7 +3202,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollTwoFingerTouchMoveConsumed) {
 
   delegate->Reset();
   // Making a pinch gesture.
-  tes.SendScrollEvent(dispatcher(), 161, 251, kTouchId1, delegate.get());
+  tes.SendScrollEvent(event_processor(), 161, 251, kTouchId1, delegate.get());
   // If touch moves are ever consumed, we should not see PinchBegin/Update
   // even touch moves become not consumed.
   EXPECT_FALSE(delegate->scroll_begin());
@@ -3213,7 +3214,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollTwoFingerTouchMoveConsumed) {
   EXPECT_FALSE(delegate->pinch_end());
 
   delegate->Reset();
-  tes.SendScrollEvent(dispatcher(), 161, 241, kTouchId2, delegate.get());
+  tes.SendScrollEvent(event_processor(), 161, 241, kTouchId2, delegate.get());
   EXPECT_FALSE(delegate->scroll_begin());
   EXPECT_FALSE(delegate->scroll_update());
   EXPECT_FALSE(delegate->scroll_end());
@@ -3234,10 +3235,11 @@ TEST_F(GestureRecognizerTest, GestureEventScrollTwoFingerTouchMoveConsumed) {
   // Touch release is not consumed, so we still see two finger tap.
   EXPECT_TRUE(delegate->two_finger_tap());
 
-  // Should not see PinchEnd & ScrollEnd.
-  EXPECT_FALSE(delegate->scroll_begin());
+  // Should not see PinchEnd.
+  EXPECT_TRUE(delegate->scroll_begin());
   EXPECT_FALSE(delegate->scroll_update());
   EXPECT_FALSE(delegate->scroll_end());
+  EXPECT_TRUE(delegate->fling());
 
   EXPECT_FALSE(delegate->pinch_begin());
   EXPECT_FALSE(delegate->pinch_update());
@@ -3273,7 +3275,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollTouchMovePartialConsumed) {
   // Move the touch-point enough so that it would normally be considered a
   // scroll. But since the touch-moves will be consumed, the scroll should not
   // start.
-  tes.SendScrollEvent(dispatcher(), 130, 230, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 130, 230, kTouchId, delegate.get());
   EXPECT_FALSE(delegate->tap());
   EXPECT_FALSE(delegate->tap_down());
   EXPECT_TRUE(delegate->tap_cancel());
@@ -3284,7 +3286,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollTouchMovePartialConsumed) {
 
   // Now, stop consuming touch-move events, and move the touch-point again.
   delegate->set_consume_touch_move(false);
-  tes.SendScrollEvent(dispatcher(), 159, 259, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 159, 259, kTouchId, delegate.get());
   EXPECT_FALSE(delegate->tap());
   EXPECT_FALSE(delegate->tap_down());
   EXPECT_FALSE(delegate->tap_cancel());
@@ -3302,7 +3304,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollTouchMovePartialConsumed) {
   delegate->set_consume_touch_move(true);
 
   // Move some more to generate a few more scroll updates.
-  tes.SendScrollEvent(dispatcher(), 110, 211, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 110, 211, kTouchId, delegate.get());
   EXPECT_FALSE(delegate->tap());
   EXPECT_FALSE(delegate->tap_down());
   EXPECT_FALSE(delegate->tap_cancel());
@@ -3313,7 +3315,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollTouchMovePartialConsumed) {
   EXPECT_EQ(0, delegate->scroll_x());
   EXPECT_EQ(0, delegate->scroll_y());
 
-  tes.SendScrollEvent(dispatcher(), 140, 215, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 140, 215, kTouchId, delegate.get());
   EXPECT_FALSE(delegate->tap());
   EXPECT_FALSE(delegate->tap_down());
   EXPECT_FALSE(delegate->tap_cancel());
@@ -3654,7 +3656,7 @@ TEST_F(GestureRecognizerTest, GestureEventConsumedTouchMoveCanFireTapCancel) {
   // Move the touch-point enough so that it would normally be considered a
   // scroll. But since the touch-moves will be consumed, the scroll should not
   // start.
-  tes.SendScrollEvent(dispatcher(), 130, 230, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 130, 230, kTouchId, delegate.get());
   EXPECT_FALSE(delegate->tap());
   EXPECT_FALSE(delegate->tap_down());
   EXPECT_TRUE(delegate->tap_cancel());
@@ -3783,7 +3785,7 @@ TEST_F(GestureRecognizerTest, GestureEventShowPressCancelledByScroll) {
   EXPECT_FALSE(delegate->tap_cancel());
 
   // Scroll around, to cancel the show press
-  tes.SendScrollEvent(dispatcher(), 130, 230, kTouchId, delegate.get());
+  tes.SendScrollEvent(event_processor(), 130, 230, kTouchId, delegate.get());
   // Wait until the timer runs out
   gesture_sequence->ForceTimeout();
   EXPECT_FALSE(delegate->show_press());
@@ -3832,7 +3834,7 @@ TEST_F(GestureRecognizerTest, GestureEventShowPressSentOnTap) {
 // Test that consuming the first move touch event prevents a scroll.
 TEST_F(GestureRecognizerTest, GestureEventConsumedTouchMoveScrollTest) {
   scoped_ptr<QueueTouchEventDelegate> delegate(
-      new QueueTouchEventDelegate(dispatcher()));
+      new QueueTouchEventDelegate(host()->dispatcher()));
   TimedEvents tes;
   const int kTouchId = 7;
   gfx::Rect bounds(0, 0, 1000, 1000);
@@ -3862,7 +3864,7 @@ TEST_F(GestureRecognizerTest, GestureEventConsumedTouchMoveScrollTest) {
 // prevent pinching once an additional touch has been pressed.
 TEST_F(GestureRecognizerTest, GestureEventConsumedTouchMovePinchTest) {
   scoped_ptr<QueueTouchEventDelegate> delegate(
-      new QueueTouchEventDelegate(dispatcher()));
+      new QueueTouchEventDelegate(host()->dispatcher()));
   TimedEvents tes;
   const int kTouchId1 = 7;
   const int kTouchId2 = 4;
@@ -3919,7 +3921,7 @@ TEST_F(GestureRecognizerTest, GestureEventConsumedTouchMovePinchTest) {
 // Test that consuming the first move touch doesn't prevent a tap.
 TEST_F(GestureRecognizerTest, GestureEventConsumedTouchMoveTapTest) {
   scoped_ptr<QueueTouchEventDelegate> delegate(
-      new QueueTouchEventDelegate(dispatcher()));
+      new QueueTouchEventDelegate(host()->dispatcher()));
   TimedEvents tes;
   const int kTouchId = 7;
   gfx::Rect bounds(0, 0, 1000, 1000);
@@ -3947,7 +3949,7 @@ TEST_F(GestureRecognizerTest, GestureEventConsumedTouchMoveTapTest) {
 // Test that consuming the first move touch doesn't prevent a long press.
 TEST_F(GestureRecognizerTest, GestureEventConsumedTouchMoveLongPressTest) {
   scoped_ptr<QueueTouchEventDelegate> delegate(
-      new QueueTouchEventDelegate(dispatcher()));
+      new QueueTouchEventDelegate(host()->dispatcher()));
   TimedEvents tes;
   const int kWindowWidth = 123;
   const int kWindowHeight = 45;
@@ -4040,7 +4042,7 @@ TEST_F(GestureRecognizerTest, TestExceedingSlopSlowly) {
 
 TEST_F(GestureRecognizerTest, ScrollAlternatelyConsumedTest) {
   scoped_ptr<QueueTouchEventDelegate> delegate(
-      new QueueTouchEventDelegate(dispatcher()));
+      new QueueTouchEventDelegate(host()->dispatcher()));
   TimedEvents tes;
   const int kWindowWidth = 3000;
   const int kWindowHeight = 3000;

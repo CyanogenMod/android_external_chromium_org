@@ -781,12 +781,18 @@ EVENT_TYPE(URL_REQUEST_JOB_BYTES_READ)
 EVENT_TYPE(URL_REQUEST_JOB_FILTERED_BYTES_READ)
 
 // This event is sent when the priority of a net::URLRequest is
-// changed after it has started. The parameters attached to this event
-// are:
+// changed after it has started. The following parameters are attached:
 //   {
 //     "priority": <Numerical value of the priority (higher is more important)>,
 //   }
 EVENT_TYPE(URL_REQUEST_SET_PRIORITY)
+
+EVENT_TYPE(URL_REQUEST_REDIRECT_JOB)
+// This event is logged when a URLRequestRedirectJob is started for a request.
+// The following parameters are attached:
+//   {
+//     "reason": <Reason for the redirect, as a string>,
+//   }
 
 // ------------------------------------------------------------------------
 // HttpCache
@@ -1338,12 +1344,13 @@ EVENT_TYPE(QUIC_SESSION_PACKET_RECEIVED)
 
 // Session sent a QUIC packet.
 //   {
-//     "encryption_level": <The EncryptionLevel of the packet>
+//     "encryption_level": <The EncryptionLevel of the packet>,
+//     "transmission_type": <The TransmissionType of the packet>,
 //     "packet_sequence_number": <The packet's full 64-bit sequence number,
 //                                as a base-10 string.>,
 //     "size": <The size of the packet in bytes>
 //   }
-EVENT_TYPE(QUIC_SESSION_PACKET_RETRANSMITTED)
+EVENT_TYPE(QUIC_SESSION_PACKET_SENT)
 
 // Session retransmitted a QUIC packet.
 //   {
@@ -1352,11 +1359,12 @@ EVENT_TYPE(QUIC_SESSION_PACKET_RETRANSMITTED)
 //     "new_packet_sequence_number": <The new packet's full 64-bit sequence
 //                                    number, as a base-10 string.>,
 //   }
-EVENT_TYPE(QUIC_SESSION_PACKET_SENT)
+EVENT_TYPE(QUIC_SESSION_PACKET_RETRANSMITTED)
 
 // Session received a QUIC packet header for a valid packet.
 //   {
-//     "guid": <The 64-bit GUID for this connection, as a base-10 string>,
+//     "connection_id": <The 64-bit CONNECTION_ID for this connection, as a
+//                       base-10 string>,
 //     "public_flags": <The public flags set for this packet>,
 //     "packet_sequence_number": <The packet's full 64-bit sequence number,
 //                                as a base-10 string.>,
@@ -1418,6 +1426,39 @@ EVENT_TYPE(QUIC_SESSION_ACK_FRAME_RECEIVED)
 //       }
 //   }
 EVENT_TYPE(QUIC_SESSION_ACK_FRAME_SENT)
+
+// Session sent a WINDOW_UPDATE frame.
+//   {
+//     "stream_id": <The id of the stream which this data is for>,
+//     "byte_offset": <Byte offset in the stream>,
+//   }
+EVENT_TYPE(QUIC_SESSION_WINDOW_UPDATE_FRAME_SENT)
+
+// Session sent a BLOCKED frame.
+//   {
+//     "stream_id": <The id of the stream which this data is for>,
+//   }
+EVENT_TYPE(QUIC_SESSION_BLOCKED_FRAME_SENT)
+
+// Session received a STOP_WAITING frame.
+//   {
+//     "sent_info": <Details of packet sent by the peer>
+//       {
+//         "least_unacked": <Lowest sequence number of a packet sent by the peer
+//                           for which it has not received an ACK>,
+//       }
+//   }
+EVENT_TYPE(QUIC_SESSION_STOP_WAITING_FRAME_RECEIVED)
+
+// Session sent an STOP_WAITING frame.
+//   {
+//     "sent_info": <Details of packet sent by the peer>
+//       {
+//         "least_unacked": <Lowest sequence number of a packet sent by the peer
+//                           for which it has not received an ACK>,
+//       }
+//   }
+EVENT_TYPE(QUIC_SESSION_STOP_WAITING_FRAME_SENT)
 
 // Session recevied a RST_STREAM frame.
 //   {
@@ -1510,7 +1551,8 @@ EVENT_TYPE(QUIC_SESSION_VERSION_NEGOTIATED)
 
 // Session revived a QUIC packet packet via FEC.
 //   {
-//     "guid": <The 64-bit GUID for this connection, as a base-10 string>,
+//     "connection_id": <The 64-bit CONNECTION_ID for this connection, as a
+//                       base-10 string>,
 //     "public_flags": <The public flags set for this packet>,
 //     "packet_sequence_number": <The packet's full 64-bit sequence number,
 //                                as a base-10 string.>,

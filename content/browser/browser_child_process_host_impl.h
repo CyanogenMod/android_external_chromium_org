@@ -17,6 +17,10 @@
 #include "content/public/browser/child_process_data.h"
 #include "content/public/common/child_process_host_delegate.h"
 
+namespace base {
+class CommandLine;
+}
+
 namespace content {
 
 class BrowserChildProcessHostIterator;
@@ -43,14 +47,8 @@ class CONTENT_EXPORT BrowserChildProcessHostImpl
   // BrowserChildProcessHost implementation:
   virtual bool Send(IPC::Message* message) OVERRIDE;
   virtual void Launch(
-#if defined(OS_WIN)
       SandboxedProcessLauncherDelegate* delegate,
-      bool launch_elevated,
-#elif defined(OS_POSIX)
-      bool use_zygote,
-      const base::EnvironmentMap& environ,
-#endif
-      CommandLine* cmd_line) OVERRIDE;
+      base::CommandLine* cmd_line) OVERRIDE;
   virtual const ChildProcessData& GetData() const OVERRIDE;
   virtual ChildProcessHost* GetHost() const OVERRIDE;
   virtual base::TerminationStatus GetTerminationStatus(

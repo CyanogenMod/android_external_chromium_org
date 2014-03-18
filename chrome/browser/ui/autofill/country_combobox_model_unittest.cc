@@ -4,6 +4,9 @@
 
 #include "chrome/browser/ui/autofill/country_combobox_model.h"
 
+#include "base/memory/scoped_ptr.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/test/base/testing_profile.h"
 #include "components/autofill/core/browser/autofill_country.h"
 #include "components/autofill/core/browser/test_personal_data_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -12,24 +15,40 @@
 
 namespace autofill {
 
-TEST(CountryComboboxModel, RespectsManagerDefaultCountry) {
-  const std::string test_country = "AQ";
-  TestPersonalDataManager manager;
-  manager.set_timezone_country_code(test_country);
+class CountryComboboxModelTest : public testing::Test {
+ public:
+  CountryComboboxModelTest() {
+    manager_.Init(NULL, profile_.GetPrefs(), false);
+    manager_.set_timezone_country_code("KR");
+    model_.reset(new CountryComboboxModel(
+        manager_, base::Callback<bool(const std::string&)>()));
+  }
 
-  CountryComboboxModel model(manager);
-  EXPECT_EQ(test_country, model.GetDefaultCountryCode());
+  TestPersonalDataManager* manager() { return &manager_; }
+  CountryComboboxModel* model() { return model_.get(); }
+
+ private:
+  // NB: order is important here - |profile_| must go down after |manager_|.
+  TestingProfile profile_;
+  TestPersonalDataManager manager_;
+  scoped_ptr<CountryComboboxModel> model_;
+};
+
+TEST_F(CountryComboboxModelTest, DefaultCountryCode) {
+  std::string default_country = model()->GetDefaultCountryCode();
+  EXPECT_EQ(manager()->GetDefaultCountryCodeForNewAddress(), default_country);
+
+  AutofillCountry country(default_country,
+                          g_browser_process->GetApplicationLocale());
+  EXPECT_EQ(country.name(), model()->GetItemAt(0));
 }
 
-TEST(CountryComboboxModel, AllCountriesHaveComponents) {
-  TestPersonalDataManager manager;
-  CountryComboboxModel model(manager);
-
-  for (int i = 0; i < model.GetItemCount(); ++i) {
-    if (model.IsItemSeparatorAt(i))
+TEST_F(CountryComboboxModelTest, AllCountriesHaveComponents) {
+  for (int i = 0; i < model()->GetItemCount(); ++i) {
+    if (model()->IsItemSeparatorAt(i))
       continue;
 
-    std::string country_code = model.countries()[i]->country_code();
+    std::string country_code = model()->countries()[i]->country_code();
     std::vector< ::i18n::addressinput::AddressUiComponent> components =
         ::i18n::addressinput::BuildComponents(country_code);
     EXPECT_FALSE(components.empty());

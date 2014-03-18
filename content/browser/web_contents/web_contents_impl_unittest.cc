@@ -4,13 +4,14 @@
 
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/browser/frame_host/cross_site_transferring_request.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
-#include "content/browser/renderer_host/cross_site_transferring_request.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/common/frame_messages.h"
+#include "content/common/input/synthetic_web_input_event_builders.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/interstitial_page_delegate.h"
@@ -18,6 +19,7 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/common/bindings_policy.h"
@@ -293,6 +295,29 @@ class TestWebContentsObserver : public WebContentsObserver {
   DISALLOW_COPY_AND_ASSIGN(TestWebContentsObserver);
 };
 
+// Pretends to be a normal browser that receives toggles and transitions to/from
+// a fullscreened state.
+class FakeFullscreenDelegate : public WebContentsDelegate {
+ public:
+  FakeFullscreenDelegate() : fullscreened_contents_(NULL) {}
+  virtual ~FakeFullscreenDelegate() {}
+
+  virtual void ToggleFullscreenModeForTab(WebContents* web_contents,
+                                          bool enter_fullscreen) OVERRIDE {
+    fullscreened_contents_ = enter_fullscreen ? web_contents : NULL;
+  }
+
+  virtual bool IsFullscreenForTabOrPending(const WebContents* web_contents)
+      const OVERRIDE {
+    return fullscreened_contents_ && web_contents == fullscreened_contents_;
+  }
+
+ private:
+  WebContents* fullscreened_contents_;
+
+  DISALLOW_COPY_AND_ASSIGN(FakeFullscreenDelegate);
+};
+
 }  // namespace
 
 // Test to make sure that title updates get stripped of whitespace.
@@ -303,7 +328,7 @@ TEST_F(WebContentsImplTest, UpdateTitle) {
   InitNavigateParams(&params, 0, GURL(kAboutBlankURL), PAGE_TRANSITION_TYPED);
 
   LoadCommittedDetails details;
-  cont.RendererDidNavigate(test_rvh(), params, &details);
+  cont.RendererDidNavigate(main_test_rfh(), params, &details);
 
   contents()->UpdateTitle(rvh(), 0,
                           base::ASCIIToUTF16("    Lots O' Whitespace\n"),
@@ -350,7 +375,7 @@ TEST_F(WebContentsImplTest, NTPViewSource) {
   FrameHostMsg_DidCommitProvisionalLoad_Params params;
   InitNavigateParams(&params, 0, kGURL, PAGE_TRANSITION_TYPED);
   LoadCommittedDetails details;
-  cont.RendererDidNavigate(test_rvh(), params, &details);
+  cont.RendererDidNavigate(main_test_rfh(), params, &details);
   // Also check title and url.
   EXPECT_EQ(base::ASCIIToUTF16(kUrl), contents()->GetTitle());
 }
@@ -462,9 +487,9 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   RenderFrameHostImpl* pending_rfh = contents()->GetFrameTree()->root()->
       render_manager()->pending_frame_host();
 
-  // Navigations should be suspended in pending_rvh until ShouldCloseACK.
+  // Navigations should be suspended in pending_rvh until BeforeUnloadACK.
   EXPECT_TRUE(pending_rvh->are_navigations_suspended());
-  orig_rvh->SendShouldCloseACK(true);
+  orig_rvh->SendBeforeUnloadACK(true);
   EXPECT_FALSE(pending_rvh->are_navigations_suspended());
 
   // DidNavigate from the pending page
@@ -498,9 +523,9 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   EXPECT_EQ(orig_rvh, goback_rvh);
   EXPECT_TRUE(contents()->cross_navigation_pending());
 
-  // Navigations should be suspended in goback_rvh until ShouldCloseACK.
+  // Navigations should be suspended in goback_rvh until BeforeUnloadACK.
   EXPECT_TRUE(goback_rvh->are_navigations_suspended());
-  pending_rvh->SendShouldCloseACK(true);
+  pending_rvh->SendBeforeUnloadACK(true);
   EXPECT_FALSE(goback_rvh->are_navigations_suspended());
 
   // DidNavigate from the back action
@@ -596,7 +621,7 @@ TEST_F(WebContentsImplTest, NavigateTwoTabsCrossSite) {
   const GURL url2a("http://www.yahoo.com");
   controller().LoadURL(
       url2a, Referrer(), PAGE_TRANSITION_TYPED, std::string());
-  orig_rvh->SendShouldCloseACK(true);
+  orig_rvh->SendBeforeUnloadACK(true);
   TestRenderViewHost* pending_rvh_a =
       static_cast<TestRenderViewHost*>(contents()->GetPendingRenderViewHost());
   contents()->TestDidNavigate(
@@ -611,7 +636,7 @@ TEST_F(WebContentsImplTest, NavigateTwoTabsCrossSite) {
                                     std::string());
   TestRenderViewHost* rvh2 =
       static_cast<TestRenderViewHost*>(contents2->GetRenderViewHost());
-  rvh2->SendShouldCloseACK(true);
+  rvh2->SendBeforeUnloadACK(true);
   TestRenderViewHost* pending_rvh_b =
       static_cast<TestRenderViewHost*>(contents2->GetPendingRenderViewHost());
   EXPECT_TRUE(pending_rvh_b != NULL);
@@ -691,9 +716,9 @@ TEST_F(WebContentsImplTest, NavigateDoesNotUseUpSiteInstance) {
   int pending_rvh_delete_count = 0;
   pending_rvh->set_delete_counter(&pending_rvh_delete_count);
 
-  // Navigations should be suspended in pending_rvh until ShouldCloseACK.
+  // Navigations should be suspended in pending_rvh until BeforeUnloadACK.
   EXPECT_TRUE(pending_rvh->are_navigations_suspended());
-  orig_rvh->SendShouldCloseACK(true);
+  orig_rvh->SendBeforeUnloadACK(true);
   EXPECT_FALSE(pending_rvh->are_navigations_suspended());
 
   // DidNavigate from the pending page.
@@ -735,7 +760,7 @@ TEST_F(WebContentsImplTest, FindOpenerRVHWhenPending) {
   const GURL url2("http://www.yahoo.com");
   controller().LoadURL(
       url2, Referrer(), PAGE_TRANSITION_TYPED, std::string());
-  orig_rvh->SendShouldCloseACK(true);
+  orig_rvh->SendBeforeUnloadACK(true);
   TestRenderViewHost* pending_rvh =
       static_cast<TestRenderViewHost*>(contents()->GetPendingRenderViewHost());
 
@@ -822,7 +847,8 @@ TEST_F(WebContentsImplTest, CrossSiteUnloadHandlers) {
       url2, Referrer(), PAGE_TRANSITION_TYPED, std::string());
   EXPECT_TRUE(orig_rvh->is_waiting_for_beforeunload_ack());
   base::TimeTicks now = base::TimeTicks::Now();
-  orig_rvh->OnMessageReceived(ViewHostMsg_ShouldClose_ACK(0, false, now, now));
+  orig_rvh->GetMainFrame()->OnMessageReceived(
+      FrameHostMsg_BeforeUnload_ACK(0, false, now, now));
   EXPECT_FALSE(orig_rvh->is_waiting_for_beforeunload_ack());
   EXPECT_FALSE(contents()->cross_navigation_pending());
   EXPECT_EQ(orig_rvh, contents()->GetRenderViewHost());
@@ -832,7 +858,8 @@ TEST_F(WebContentsImplTest, CrossSiteUnloadHandlers) {
       url2, Referrer(), PAGE_TRANSITION_TYPED, std::string());
   EXPECT_TRUE(orig_rvh->is_waiting_for_beforeunload_ack());
   now = base::TimeTicks::Now();
-  orig_rvh->OnMessageReceived(ViewHostMsg_ShouldClose_ACK(0, true, now, now));
+  orig_rvh->GetMainFrame()->OnMessageReceived(
+      FrameHostMsg_BeforeUnload_ACK(0, true, now, now));
   EXPECT_FALSE(orig_rvh->is_waiting_for_beforeunload_ack());
   EXPECT_TRUE(contents()->cross_navigation_pending());
   TestRenderViewHost* pending_rvh = static_cast<TestRenderViewHost*>(
@@ -872,7 +899,8 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationPreempted) {
       url2, Referrer(), PAGE_TRANSITION_TYPED, std::string());
   EXPECT_TRUE(orig_rvh->is_waiting_for_beforeunload_ack());
   base::TimeTicks now = base::TimeTicks::Now();
-  orig_rvh->OnMessageReceived(ViewHostMsg_ShouldClose_ACK(0, true, now, now));
+  orig_rvh->GetMainFrame()->OnMessageReceived(
+      FrameHostMsg_BeforeUnload_ACK(0, true, now, now));
   EXPECT_TRUE(contents()->cross_navigation_pending());
 
   // Suppose the original renderer navigates before the new one is ready.
@@ -917,7 +945,8 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationBackPreempted) {
   // Simulate beforeunload approval.
   EXPECT_TRUE(ntp_rvh->is_waiting_for_beforeunload_ack());
   base::TimeTicks now = base::TimeTicks::Now();
-  ntp_rvh->OnMessageReceived(ViewHostMsg_ShouldClose_ACK(0, true, now, now));
+  ntp_rvh->GetMainFrame()->OnMessageReceived(
+      FrameHostMsg_BeforeUnload_ACK(0, true, now, now));
 
   // DidNavigate from the pending page.
   contents()->TestDidNavigate(
@@ -966,7 +995,8 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationBackPreempted) {
   // Simulate beforeunload approval.
   EXPECT_TRUE(google_rvh->is_waiting_for_beforeunload_ack());
   now = base::TimeTicks::Now();
-  google_rvh->OnMessageReceived(ViewHostMsg_ShouldClose_ACK(0, true, now, now));
+  google_rvh->GetMainFrame()->OnMessageReceived(
+      FrameHostMsg_BeforeUnload_ACK(0, true, now, now));
 
   // DidNavigate from the first back. This aborts the second back's pending RVH.
   contents()->TestDidNavigate(google_rvh, 1, url2, PAGE_TRANSITION_TYPED);
@@ -1015,7 +1045,8 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationNotPreemptedByFrame) {
   // Now simulate the onbeforeunload approval and verify the navigation is
   // not canceled.
   base::TimeTicks now = base::TimeTicks::Now();
-  orig_rvh->OnMessageReceived(ViewHostMsg_ShouldClose_ACK(0, true, now, now));
+  orig_rvh->GetMainFrame()->OnMessageReceived(
+      FrameHostMsg_BeforeUnload_ACK(0, true, now, now));
   EXPECT_FALSE(orig_rvh->is_waiting_for_beforeunload_ack());
   EXPECT_TRUE(contents()->cross_navigation_pending());
 }
@@ -1079,7 +1110,8 @@ TEST_F(WebContentsImplTest, CrossSiteCantPreemptAfterUnload) {
   controller().LoadURL(
       url2, Referrer(), PAGE_TRANSITION_TYPED, std::string());
   base::TimeTicks now = base::TimeTicks::Now();
-  orig_rvh->OnMessageReceived(ViewHostMsg_ShouldClose_ACK(0, true, now, now));
+  orig_rvh->GetMainFrame()->OnMessageReceived(
+      FrameHostMsg_BeforeUnload_ACK(0, true, now, now));
   EXPECT_TRUE(contents()->cross_navigation_pending());
   TestRenderViewHost* pending_rvh = static_cast<TestRenderViewHost*>(
       contents()->GetPendingRenderViewHost());
@@ -1089,9 +1121,9 @@ TEST_F(WebContentsImplTest, CrossSiteCantPreemptAfterUnload) {
   std::vector<GURL> url_chain;
   url_chain.push_back(GURL());
   contents()->GetRenderManagerForTesting()->OnCrossSiteResponse(
-      pending_rvh, GlobalRequestID(0, 0),
-      scoped_ptr<CrossSiteTransferringRequest>(), url_chain,
-      Referrer(), PAGE_TRANSITION_TYPED, 1, false);
+      contents()->GetRenderManagerForTesting()->pending_frame_host(),
+      GlobalRequestID(0, 0), scoped_ptr<CrossSiteTransferringRequest>(),
+      url_chain, Referrer(), PAGE_TRANSITION_TYPED, false);
 
   // Suppose the original renderer navigates now, while the unload request is in
   // flight.  We should ignore it, wait for the unload ack, and let the pending
@@ -1136,7 +1168,8 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationCanceled) {
   controller().LoadURL(url2, Referrer(), PAGE_TRANSITION_TYPED, std::string());
   EXPECT_TRUE(orig_rvh->is_waiting_for_beforeunload_ack());
   base::TimeTicks now = base::TimeTicks::Now();
-  orig_rvh->OnMessageReceived(ViewHostMsg_ShouldClose_ACK(0, true, now, now));
+  orig_rvh->GetMainFrame()->OnMessageReceived(
+      FrameHostMsg_BeforeUnload_ACK(0, true, now, now));
   EXPECT_TRUE(contents()->cross_navigation_pending());
 
   // Simulate swap out message when the response arrives.
@@ -1224,6 +1257,82 @@ TEST_F(WebContentsImplTest, NavigationEntryContentStateNewWindow) {
       controller().GetLastCommittedEntry());
   EXPECT_EQ(site_instance_id, entry_impl2->site_instance()->GetId());
   EXPECT_TRUE(entry_impl2->site_instance()->HasSite());
+}
+
+// Tests that fullscreen is exited throughout the object hierarchy when
+// navigating to a new page.
+TEST_F(WebContentsImplTest, NavigationExitsFullscreen) {
+  FakeFullscreenDelegate fake_delegate;
+  contents()->SetDelegate(&fake_delegate);
+  TestRenderViewHost* orig_rvh = test_rvh();
+
+  // Navigate to a site.
+  const GURL url("http://www.google.com");
+  controller().LoadURL(
+      url, Referrer(), PAGE_TRANSITION_TYPED, std::string());
+  contents()->TestDidNavigate(orig_rvh, 1, url, PAGE_TRANSITION_TYPED);
+  EXPECT_EQ(orig_rvh, contents()->GetRenderViewHost());
+
+  // Toggle fullscreen mode on (as if initiated via IPC from renderer).
+  EXPECT_FALSE(orig_rvh->IsFullscreen());
+  EXPECT_FALSE(contents()->IsFullscreenForCurrentTab());
+  EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
+  orig_rvh->OnMessageReceived(
+      ViewHostMsg_ToggleFullscreen(orig_rvh->GetRoutingID(), true));
+  EXPECT_TRUE(orig_rvh->IsFullscreen());
+  EXPECT_TRUE(contents()->IsFullscreenForCurrentTab());
+  EXPECT_TRUE(fake_delegate.IsFullscreenForTabOrPending(contents()));
+
+  // Navigate to a new site.
+  const GURL url2("http://www.yahoo.com");
+  controller().LoadURL(
+      url2, Referrer(), PAGE_TRANSITION_TYPED, std::string());
+  RenderViewHost* const pending_rvh = contents()->GetPendingRenderViewHost();
+  contents()->TestDidNavigate(
+      pending_rvh, 1, url2, PAGE_TRANSITION_TYPED);
+
+  // Confirm fullscreen has exited.
+  EXPECT_FALSE(orig_rvh->IsFullscreen());
+  EXPECT_FALSE(contents()->IsFullscreenForCurrentTab());
+  EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
+
+  contents()->SetDelegate(NULL);
+}
+
+// Tests that fullscreen is exited throughout the object hierarchy on a renderer
+// crash.
+TEST_F(WebContentsImplTest, CrashExitsFullscreen) {
+  FakeFullscreenDelegate fake_delegate;
+  contents()->SetDelegate(&fake_delegate);
+
+  // Navigate to a site.
+  const GURL url("http://www.google.com");
+  controller().LoadURL(
+      url, Referrer(), PAGE_TRANSITION_TYPED, std::string());
+  contents()->TestDidNavigate(test_rvh(), 1, url, PAGE_TRANSITION_TYPED);
+  EXPECT_EQ(test_rvh(), contents()->GetRenderViewHost());
+
+  // Toggle fullscreen mode on (as if initiated via IPC from renderer).
+  EXPECT_FALSE(test_rvh()->IsFullscreen());
+  EXPECT_FALSE(contents()->IsFullscreenForCurrentTab());
+  EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
+  test_rvh()->OnMessageReceived(
+      ViewHostMsg_ToggleFullscreen(test_rvh()->GetRoutingID(), true));
+  EXPECT_TRUE(test_rvh()->IsFullscreen());
+  EXPECT_TRUE(contents()->IsFullscreenForCurrentTab());
+  EXPECT_TRUE(fake_delegate.IsFullscreenForTabOrPending(contents()));
+
+  // Crash the renderer.
+  test_rvh()->OnMessageReceived(
+      ViewHostMsg_RenderProcessGone(
+          0, base::TERMINATION_STATUS_PROCESS_CRASHED, -1));
+
+  // Confirm fullscreen has exited.
+  EXPECT_FALSE(test_rvh()->IsFullscreen());
+  EXPECT_FALSE(contents()->IsFullscreenForCurrentTab());
+  EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
+
+  contents()->SetDelegate(NULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2147,7 +2256,7 @@ TEST_F(WebContentsImplTest, FilterURLs) {
   contents()->NavigateAndCommit(url_normalized);
 
   // Check that an IPC with about:whatever is correctly normalized.
-  contents()->TestDidFinishLoad(1, url_from_ipc, true);
+  contents()->TestDidFinishLoad(url_from_ipc, true);
 
   EXPECT_EQ(url_normalized, observer.last_url());
 
@@ -2159,7 +2268,7 @@ TEST_F(WebContentsImplTest, FilterURLs) {
 
   // Check that an IPC with about:whatever is correctly normalized.
   other_contents->TestDidFailLoadWithError(
-      1, url_from_ipc, true, 1, base::string16());
+      url_from_ipc, true, 1, base::string16());
   EXPECT_EQ(url_normalized, other_observer.last_url());
 }
 
@@ -2230,6 +2339,95 @@ TEST_F(WebContentsImplTest, GetLastActiveTime) {
   // Simulate activating the WebContents. The active time should update.
   contents()->WasShown();
   EXPECT_FALSE(contents()->GetLastActiveTime().is_null());
+}
+
+class ContentsZoomChangedDelegate : public WebContentsDelegate {
+ public:
+  ContentsZoomChangedDelegate() :
+    contents_zoom_changed_call_count_(0),
+    last_zoom_in_(false) {
+  }
+
+  int GetAndResetContentsZoomChangedCallCount() {
+    int count = contents_zoom_changed_call_count_;
+    contents_zoom_changed_call_count_ = 0;
+    return count;
+  }
+
+  bool last_zoom_in() const {
+    return last_zoom_in_;
+  }
+
+  // WebContentsDelegate:
+  virtual void ContentsZoomChange(bool zoom_in) OVERRIDE {
+    contents_zoom_changed_call_count_++;
+    last_zoom_in_ = zoom_in;
+  }
+
+ private:
+  int contents_zoom_changed_call_count_;
+  bool last_zoom_in_;
+
+  DISALLOW_COPY_AND_ASSIGN(ContentsZoomChangedDelegate);
+};
+
+// Tests that some mouseehweel events get turned into browser zoom requests.
+TEST_F(WebContentsImplTest, HandleWheelEvent) {
+  using blink::WebInputEvent;
+
+  scoped_ptr<ContentsZoomChangedDelegate> delegate(
+      new ContentsZoomChangedDelegate());
+  contents()->SetDelegate(delegate.get());
+
+  int modifiers = 0;
+  float dy = 1;
+  // Verify that normal mouse wheel events do nothing to change the zoom level.
+  blink::WebMouseWheelEvent event =
+      SyntheticWebMouseWheelEventBuilder::Build(0, dy, modifiers, false);
+  EXPECT_FALSE(contents()->HandleWheelEvent(event));
+  EXPECT_EQ(0, delegate->GetAndResetContentsZoomChangedCallCount());
+
+  modifiers = WebInputEvent::ShiftKey | WebInputEvent::AltKey;
+  event = SyntheticWebMouseWheelEventBuilder::Build(0, dy, modifiers, false);
+  EXPECT_FALSE(contents()->HandleWheelEvent(event));
+  EXPECT_EQ(0, delegate->GetAndResetContentsZoomChangedCallCount());
+
+  // But whenever the ctrl modifier is applied, they can increase/decrease zoom.
+  // Except on MacOS where we never want to adjust zoom with mousewheel.
+  modifiers = WebInputEvent::ControlKey;
+  event = SyntheticWebMouseWheelEventBuilder::Build(0, dy, modifiers, false);
+  bool handled = contents()->HandleWheelEvent(event);
+#if defined(OS_MACOSX)
+  EXPECT_FALSE(handled);
+  EXPECT_EQ(0, delegate->GetAndResetContentsZoomChangedCallCount());
+#else
+  EXPECT_TRUE(handled);
+  EXPECT_EQ(1, delegate->GetAndResetContentsZoomChangedCallCount());
+  EXPECT_TRUE(delegate->last_zoom_in());
+#endif
+
+  modifiers = WebInputEvent::ControlKey | WebInputEvent::ShiftKey |
+      WebInputEvent::AltKey;
+  dy = -5;
+  event = SyntheticWebMouseWheelEventBuilder::Build(2, dy, modifiers, false);
+  handled = contents()->HandleWheelEvent(event);
+#if defined(OS_MACOSX)
+  EXPECT_FALSE(handled);
+  EXPECT_EQ(0, delegate->GetAndResetContentsZoomChangedCallCount());
+#else
+  EXPECT_TRUE(handled);
+  EXPECT_EQ(1, delegate->GetAndResetContentsZoomChangedCallCount());
+  EXPECT_FALSE(delegate->last_zoom_in());
+#endif
+
+  // Unless there is no vertical movement.
+  dy = 0;
+  event = SyntheticWebMouseWheelEventBuilder::Build(2, dy, modifiers, false);
+  EXPECT_FALSE(contents()->HandleWheelEvent(event));
+  EXPECT_EQ(0, delegate->GetAndResetContentsZoomChangedCallCount());
+
+  // Ensure pointers to the delegate aren't kept beyond it's lifetime.
+  contents()->SetDelegate(NULL);
 }
 
 }  // namespace content

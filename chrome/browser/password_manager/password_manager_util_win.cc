@@ -19,9 +19,10 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "base/win/windows_version.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/password_manager/password_manager.h"
-#include "chrome/common/pref_names.h"
+#include "components/password_manager/core/browser/password_manager.h"
+#include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "grit/chromium_strings.h"
@@ -29,8 +30,8 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(USE_AURA)
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 // static
@@ -160,6 +161,12 @@ bool AuthenticateUser(gfx::NativeWindow window) {
   bool use_principalname = false;
   DWORD logon_result = 0;
 
+  // Disable password manager reauthentication before Windows 7.
+  // This is because of an interaction between LogonUser() and the sandbox.
+  // http://crbug.com/345916
+  if (base::win::GetVersion() < base::win::VERSION_WIN7)
+    return true;
+
   // On a domain, we obtain the User Principal Name
   // for domain authentication.
   if (GetUserNameEx(NameUserPrincipal, username, &username_length)) {
@@ -186,7 +193,7 @@ bool AuthenticateUser(gfx::NativeWindow window) {
   cui.cbSize = sizeof(CREDUI_INFO);
   cui.hwndParent = NULL;
 #if defined(USE_AURA)
-  cui.hwndParent = window->GetDispatcher()->host()->GetAcceleratedWidget();
+  cui.hwndParent = window->GetHost()->GetAcceleratedWidget();
 #else
   cui.hwndParent = window;
 #endif

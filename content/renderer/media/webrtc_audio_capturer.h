@@ -10,6 +10,7 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "base/platform_file.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
@@ -82,7 +83,6 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   int Volume() const;
   int MaxVolume() const;
 
-
   // Audio parameters utilized by the source of the audio capturer.
   // TODO(phoglund): Think over the implications of this accessor and if we can
   // remove it.
@@ -109,18 +109,13 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   void GetAudioProcessingParams(base::TimeDelta* delay, int* volume,
                                 bool* key_pressed);
 
-  // Called by the WebRtcAudioDeviceImpl to push the render audio to
-  // audio processor for echo cancellation analysis.
-  void FeedRenderDataToAudioProcessor(const int16* render_audio,
-                                      int sample_rate,
-                                      int number_of_channels,
-                                      int number_of_frames,
-                                      base::TimeDelta render_delay);
-
-  // Use by the unittests to inject their own source to the capturer.
+  // Used by the unittests to inject their own source to the capturer.
   void SetCapturerSourceForTesting(
       const scoped_refptr<media::AudioCapturerSource>& source,
       media::AudioParameters params);
+
+  void StartAecDump(const base::PlatformFile& aec_dump_file);
+  void StopAecDump();
 
  protected:
   friend class base::RefCountedThreadSafe<WebRtcAudioCapturer>;
@@ -154,9 +149,7 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   void SetCapturerSource(
       const scoped_refptr<media::AudioCapturerSource>& source,
       media::ChannelLayout channel_layout,
-      float sample_rate,
-      int effects,
-      const blink::WebMediaConstraints& constraints);
+      float sample_rate);
 
   // Starts recording audio.
   // Triggered by AddSink() on the main render thread or a Libjingle working

@@ -17,7 +17,7 @@
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service_observer.h"
 #include "chrome/browser/managed_mode/managed_users.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 
 class GoogleServiceAuthError;
 class ManagedUserRefreshTokenFetcher;
@@ -33,9 +33,12 @@ class DeviceInfo;
 // Structure to store registration information.
 struct ManagedUserRegistrationInfo {
   ManagedUserRegistrationInfo(const base::string16& name, int avatar_index);
+  ~ManagedUserRegistrationInfo();
   int avatar_index;
   base::string16 name;
   std::string master_key;
+  std::string password_signature_key;
+  std::string password_encryption_key;
 };
 
 // Holds the state necessary for registering a new managed user with the

@@ -25,8 +25,12 @@ class GLImageImpl : public gfx::GLImage {
   // implement gfx::GLImage
   virtual void Destroy() OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
+  virtual bool BindTexImage(unsigned target) OVERRIDE;
+  virtual void ReleaseTexImage(unsigned target) OVERRIDE;
   virtual void WillUseTexImage() OVERRIDE;
   virtual void DidUseTexImage() OVERRIDE {}
+  virtual void WillModifyTexImage() OVERRIDE {}
+  virtual void DidModifyTexImage() OVERRIDE {}
 
  private:
   virtual ~GLImageImpl();
@@ -52,6 +56,15 @@ void GLImageImpl::Destroy() {
 
 void GLImageImpl::WillUseTexImage() {
   surface_texture_->UpdateTexImage();
+}
+
+bool GLImageImpl::BindTexImage(unsigned target) {
+  NOTREACHED();
+  return false;
+}
+
+void GLImageImpl::ReleaseTexImage(unsigned target) {
+  NOTREACHED();
 }
 
 gfx::Size GLImageImpl::GetSize() {
@@ -83,7 +96,7 @@ GLuint StreamTextureManagerInProcess::CreateStreamTexture(
   }
 
   scoped_refptr<gfx::SurfaceTexture> surface_texture(
-      new gfx::SurfaceTexture(texture->service_id()));
+      gfx::SurfaceTexture::Create(texture->service_id()));
 
   uint32 stream_id = next_id_++;
   base::Closure release_callback =

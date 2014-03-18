@@ -19,16 +19,16 @@
 #include "base/prefs/pref_change_registrar.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/extensions/blacklist.h"
-#include "chrome/browser/extensions/extension_function_histogram_value.h"
 #include "chrome/browser/extensions/extension_sync_service.h"
+#include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/extension_function_histogram_value.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/external_provider_interface.h"
 #include "extensions/browser/management_policy.h"
-#include "extensions/browser/pending_extension_manager.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
@@ -36,13 +36,13 @@
 #include "extensions/common/manifest_handlers/shared_module_info.h"
 #include "extensions/common/one_shot_event.h"
 
-class CommandLine;
 class ExtensionErrorUI;
 class ExtensionToolbarModel;
 class GURL;
 class Profile;
 
 namespace base {
+class CommandLine;
 class SequencedTaskRunner;
 class Version;
 }
@@ -50,7 +50,6 @@ class Version;
 namespace extensions {
 class BrowserEventRouter;
 class ComponentLoader;
-class ContentSettingsStore;
 class CrxInstaller;
 class ExtensionActionStorageManager;
 class ExtensionRegistry;
@@ -58,7 +57,6 @@ class ExtensionSystem;
 class ExtensionUpdater;
 class PendingExtensionManager;
 class RendererStartupHelper;
-class SettingsFrontend;
 class UpdateObserver;
 }  // namespace extensions
 
@@ -154,7 +152,7 @@ class ExtensionService
   // Constructor stores pointers to |profile| and |extension_prefs| but
   // ownership remains at caller.
   ExtensionService(Profile* profile,
-                   const CommandLine* command_line,
+                   const base::CommandLine* command_line,
                    const base::FilePath& install_directory,
                    extensions::ExtensionPrefs* extension_prefs,
                    extensions::Blacklist* blacklist,
@@ -216,10 +214,6 @@ class ExtensionService
   // extensions.
   virtual const extensions::Extension* GetExtensionById(
       const std::string& id, bool include_disabled) const OVERRIDE;
-
-  // Returns the site of the given |extension_id|. Suitable for use with
-  // BrowserContext::GetStoragePartitionForSite().
-  GURL GetSiteForExtensionId(const std::string& extension_id);
 
   // Looks up a terminated (crashed) extension by ID.
   // DEPRECATED: Replace with:
@@ -418,19 +412,10 @@ class ExtensionService
   // Returns profile_ as a BrowserContext.
   content::BrowserContext* GetBrowserContext() const;
 
-  // TODO(skerner): Change to const ExtensionPrefs& extension_prefs() const,
-  // ExtensionPrefs* mutable_extension_prefs().
-  extensions::ExtensionPrefs* extension_prefs();
-  const extensions::ExtensionPrefs* extension_prefs() const;
-
-  extensions::SettingsFrontend* settings_frontend();
-
   void set_extension_sync_service(
       ExtensionSyncService* extension_sync_service) {
     extension_sync_service_ = extension_sync_service;
   }
-
-  extensions::ContentSettingsStore* GetContentSettingsStore();
 
   // Whether the extension service is ready.
   virtual bool is_ready() OVERRIDE;
@@ -709,9 +694,6 @@ class ExtensionService
 
   // Blacklist for the owning profile.
   extensions::Blacklist* blacklist_;
-
-  // Settings for the owning profile.
-  scoped_ptr<extensions::SettingsFrontend> settings_frontend_;
 
   // The ExtensionSyncService that is used by this ExtensionService.
   ExtensionSyncService* extension_sync_service_;

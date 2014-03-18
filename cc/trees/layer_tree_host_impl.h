@@ -74,8 +74,7 @@ class LayerTreeHostImplClient {
   virtual void SetNeedsCommitOnImplThread() = 0;
   virtual void SetNeedsManageTilesOnImplThread() = 0;
   virtual void PostAnimationEventsToMainThreadOnImplThread(
-      scoped_ptr<AnimationEventsVector> events,
-      base::Time wall_clock_time) = 0;
+      scoped_ptr<AnimationEventsVector> events) = 0;
   // Returns true if resources were deleted by this call.
   virtual bool ReduceContentsTextureMemoryOnImplThread(
       size_t limit_bytes,
@@ -113,11 +112,11 @@ class CC_EXPORT LayerTreeHostImpl
   // InputHandler implementation
   virtual void BindToClient(InputHandlerClient* client) OVERRIDE;
   virtual InputHandler::ScrollStatus ScrollBegin(
-      gfx::Point viewport_point,
+      const gfx::Point& viewport_point,
       InputHandler::ScrollInputType type) OVERRIDE;
-  virtual bool ScrollBy(gfx::Point viewport_point,
+  virtual bool ScrollBy(const gfx::Point& viewport_point,
                         const gfx::Vector2dF& scroll_delta) OVERRIDE;
-  virtual bool ScrollVerticallyByPage(gfx::Point viewport_point,
+  virtual bool ScrollVerticallyByPage(const gfx::Point& viewport_point,
                                       ScrollDirection direction) OVERRIDE;
   virtual void SetRootLayerScrollOffsetDelegate(
       LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate) OVERRIDE;
@@ -126,17 +125,18 @@ class CC_EXPORT LayerTreeHostImpl
   virtual InputHandler::ScrollStatus FlingScrollBegin() OVERRIDE;
   virtual void NotifyCurrentFlingVelocity(
       const gfx::Vector2dF& velocity) OVERRIDE;
-  virtual void MouseMoveAt(gfx::Point viewport_point) OVERRIDE;
+  virtual void MouseMoveAt(const gfx::Point& viewport_point) OVERRIDE;
   virtual void PinchGestureBegin() OVERRIDE;
   virtual void PinchGestureUpdate(float magnify_delta,
-                                  gfx::Point anchor) OVERRIDE;
+                                  const gfx::Point& anchor) OVERRIDE;
   virtual void PinchGestureEnd() OVERRIDE;
   virtual void StartPageScaleAnimation(const gfx::Vector2d& target_offset,
                                        bool anchor_point,
                                        float page_scale,
                                        base::TimeDelta duration) OVERRIDE;
   virtual void ScheduleAnimation() OVERRIDE;
-  virtual bool HaveTouchEventHandlersAt(gfx::Point viewport_port) OVERRIDE;
+  virtual bool HaveTouchEventHandlersAt(const gfx::Point& viewport_port)
+      OVERRIDE;
   virtual scoped_ptr<SwapPromiseMonitor> CreateLatencyInfoSwapPromiseMonitor(
       ui::LatencyInfo* latency) OVERRIDE;
 
@@ -167,8 +167,7 @@ class CC_EXPORT LayerTreeHostImpl
   virtual void BeginMainFrameAborted(bool did_handle);
   virtual void BeginCommit();
   virtual void CommitComplete();
-  virtual void Animate(base::TimeTicks monotonic_time,
-                       base::Time wall_clock_time);
+  virtual void Animate(base::TimeTicks monotonic_time);
   virtual void UpdateAnimationState(bool start_ready_animations);
   void MainThreadHasStoppedFlinging();
   void UpdateBackgroundAnimateTicking(bool should_background_tick);
@@ -213,6 +212,7 @@ class CC_EXPORT LayerTreeHostImpl
   // excludes the URL bar and non-overlay scrollbars and is in DIP (and
   // invariant relative to page scale).
   gfx::SizeF UnscaledScrollableViewportSize() const;
+  float VerticalAdjust() const;
 
   // RendererClient implementation.
   virtual void SetFullRootLayerDamage() OVERRIDE;
@@ -347,6 +347,9 @@ class CC_EXPORT LayerTreeHostImpl
   TopControlsManager* top_controls_manager() {
     return top_controls_manager_.get();
   }
+  const GlobalStateThatImpactsTilePriority& global_tile_state() {
+    return global_tile_state_;
+  }
 
   Proxy* proxy() const { return proxy_; }
 
@@ -387,7 +390,6 @@ class CC_EXPORT LayerTreeHostImpl
 
   void ResetCurrentFrameTimeForNextFrame();
   virtual base::TimeTicks CurrentFrameTimeTicks();
-  base::Time CurrentFrameTime();
 
   virtual base::TimeTicks CurrentPhysicalTimeTicks() const;
 
@@ -440,9 +442,11 @@ class CC_EXPORT LayerTreeHostImpl
       SharedBitmapManager* manager,
       int id);
 
+  gfx::SizeF ComputeInnerViewportContainerSize() const;
+  void UpdateInnerViewportContainerSize();
+
   // Virtual for testing.
-  virtual void AnimateLayers(base::TimeTicks monotonic_time,
-                             base::Time wall_clock_time);
+  virtual void AnimateLayers(base::TimeTicks monotonic_time);
 
   // Virtual for testing.
   virtual base::TimeDelta LowFrequencyAnimationInterval() const;
@@ -501,7 +505,7 @@ class CC_EXPORT LayerTreeHostImpl
   void AnimateScrollbarsRecursive(LayerImpl* layer,
                                   base::TimeTicks time);
 
-  void UpdateCurrentFrameTime(base::TimeTicks* ticks, base::Time* now) const;
+  void UpdateCurrentFrameTime(base::TimeTicks* ticks) const;
 
   LayerImpl* FindScrollLayerForDeviceViewportPoint(
       const gfx::PointF& device_viewport_point,
@@ -574,10 +578,6 @@ class CC_EXPORT LayerTreeHostImpl
   bool pinch_gesture_end_should_clear_scrolling_layer_;
   gfx::Point previous_pinch_anchor_;
 
-  // This is set by AnimateLayers() and used by UpdateAnimationState()
-  // when sending animation events to the main thread.
-  base::Time last_animation_time_;
-
   scoped_ptr<TopControlsManager> top_controls_manager_;
 
   scoped_ptr<PageScaleAnimation> page_scale_animation_;
@@ -638,7 +638,6 @@ class CC_EXPORT LayerTreeHostImpl
   gfx::Rect viewport_damage_rect_;
 
   base::TimeTicks current_frame_timeticks_;
-  base::Time current_frame_time_;
 
   scoped_ptr<AnimationRegistrar> animation_registrar_;
 

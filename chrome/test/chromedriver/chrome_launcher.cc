@@ -12,6 +12,7 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/format_macros.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
@@ -65,7 +66,7 @@ Status UnpackAutomationExtension(const base::FilePath& temp_dir,
 
   base::FilePath extension_zip = temp_dir.AppendASCII("internal.zip");
   int size = static_cast<int>(decoded_extension.length());
-  if (file_util::WriteFile(extension_zip, decoded_extension.c_str(), size)
+  if (base::WriteFile(extension_zip, decoded_extension.c_str(), size)
       != size) {
     return Status(kUnknownError, "failed to write automation extension zip");
   }
@@ -250,15 +251,14 @@ Status LaunchDesktopChrome(
 
 #if defined(OS_POSIX)
   base::FileHandleMappingVector no_stderr;
-  int devnull = -1;
-  file_util::ScopedFD scoped_devnull(&devnull);
+  base::ScopedFD devnull;
   if (!CommandLine::ForCurrentProcess()->HasSwitch("verbose")) {
     // Redirect stderr to /dev/null, so that Chrome log spew doesn't confuse
     // users.
-    devnull = open("/dev/null", O_WRONLY);
-    if (devnull == -1)
+    devnull.reset(open("/dev/null", O_WRONLY));
+    if (!devnull.is_valid())
       return Status(kUnknownError, "couldn't open /dev/null");
-    no_stderr.push_back(std::make_pair(devnull, STDERR_FILENO));
+    no_stderr.push_back(std::make_pair(devnull.get(), STDERR_FILENO));
     options.fds_to_remap = &no_stderr;
   }
 #endif
@@ -513,7 +513,7 @@ Status ProcessExtension(const std::string& extension,
     return Status(kUnknownError, "cannot create temp dir");
   base::FilePath extension_crx = temp_crx_dir.path().AppendASCII("temp.crx");
   int size = static_cast<int>(decoded_extension.length());
-  if (file_util::WriteFile(extension_crx, decoded_extension.c_str(), size) !=
+  if (base::WriteFile(extension_crx, decoded_extension.c_str(), size) !=
       size) {
     return Status(kUnknownError, "cannot write file");
   }
@@ -553,7 +553,7 @@ Status ProcessExtension(const std::string& extension,
   } else {
     manifest->SetString("key", public_key_base64);
     base::JSONWriter::Write(manifest, &manifest_data);
-    if (file_util::WriteFile(
+    if (base::WriteFile(
             manifest_path, manifest_data.c_str(), manifest_data.size()) !=
         static_cast<int>(manifest_data.size())) {
       return Status(kUnknownError, "cannot add 'key' to manifest");
@@ -651,7 +651,7 @@ Status WritePrefsFile(
   base::JSONWriter::Write(prefs, &prefs_str);
   VLOG(0) << "Populating " << path.BaseName().value()
           << " file: " << PrettyPrintValue(*prefs);
-  if (static_cast<int>(prefs_str.length()) != file_util::WriteFile(
+  if (static_cast<int>(prefs_str.length()) != base::WriteFile(
           path, prefs_str.c_str(), prefs_str.length())) {
     return Status(kUnknownError, "failed to write prefs file");
   }
@@ -682,7 +682,7 @@ Status PrepareUserDataDir(
 
   // Write empty "First Run" file, otherwise Chrome will wipe the default
   // profile that was written.
-  if (file_util::WriteFile(
+  if (base::WriteFile(
           user_data_dir.Append(chrome::kFirstRunSentinel), "", 0) != 0) {
     return Status(kUnknownError, "failed to write first run file");
   }

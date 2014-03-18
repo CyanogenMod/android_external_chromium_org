@@ -20,7 +20,9 @@
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
+#include "cc/resources/raster_worker_pool.h"
 #include "skia/ext/opacity_draw_filter.h"
+#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
@@ -50,9 +52,14 @@ class OnDemandRasterTaskImpl : public internal::Task {
   }
 
   // Overridden from internal::Task:
-  virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
+  virtual void RunOnWorkerThread() OVERRIDE {
     TRACE_EVENT0("cc", "OnDemandRasterTaskImpl::RunOnWorkerThread");
-    picture_pile_->RasterDirect(canvas_, content_rect_, contents_scale_, NULL);
+
+    PicturePileImpl* picture_pile = picture_pile_->GetCloneForDrawingOnThread(
+        RasterWorkerPool::GetPictureCloneIndexForCurrentThread());
+    DCHECK(picture_pile);
+
+    picture_pile->RasterDirect(canvas_, content_rect_, contents_scale_, NULL);
   }
 
  protected:
@@ -177,8 +184,8 @@ void SoftwareRenderer::EnsureScissorTestDisabled() {
   // clipRect on the current SkCanvas. This is done by setting clipRect to
   // the viewport's dimensions.
   is_scissor_enabled_ = false;
-  SkBaseDevice* device = current_canvas_->getDevice();
-  SetClipRect(gfx::Rect(device->width(), device->height()));
+  SkISize size = current_canvas_->getDeviceSize();
+  SetClipRect(gfx::Rect(size.width(), size.height()));
 }
 
 void SoftwareRenderer::Finish() {}
@@ -525,21 +532,17 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     // TODO(ajuma): Apply the filter in the same pass as the content where
     // possible (e.g. when there's no origin offset). See crbug.com/308201.
     if (filter) {
-      bool is_opaque = false;
-      skia::RefPtr<SkBaseDevice> device =
-          skia::AdoptRef(new SkBitmapDevice(SkBitmap::kARGB_8888_Config,
-                                            content_texture->size().width(),
-                                            content_texture->size().height(),
-                                            is_opaque));
-      SkCanvas canvas(device.get());
-      SkPaint paint;
-      paint.setImageFilter(filter.get());
-      canvas.clear(SK_ColorTRANSPARENT);
-      canvas.translate(SkIntToScalar(-quad->rect.origin().x()),
-                       SkIntToScalar(-quad->rect.origin().y()));
-      canvas.drawSprite(*content, 0, 0, &paint);
-      bool will_change_pixels = false;
-      filter_bitmap = device->accessBitmap(will_change_pixels);
+      SkImageInfo info = SkImageInfo::MakeN32Premul(
+          content_texture->size().width(), content_texture->size().height());
+      if (filter_bitmap.allocPixels(info)) {
+        SkCanvas canvas(filter_bitmap);
+        SkPaint paint;
+        paint.setImageFilter(filter.get());
+        canvas.clear(SK_ColorTRANSPARENT);
+        canvas.translate(SkIntToScalar(-quad->rect.origin().x()),
+                         SkIntToScalar(-quad->rect.origin().y()));
+        canvas.drawSprite(*content, 0, 0, &paint);
+      }
     }
   }
 

@@ -10,6 +10,7 @@
 
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_defines.h"
+#include "media/cast/rtcp/receiver_rtcp_event_subscriber.h"
 #include "media/cast/rtcp/rtcp.h"
 #include "media/cast/rtcp/rtcp_defines.h"
 #include "media/cast/transport/cast_transport_defines.h"
@@ -17,6 +18,12 @@
 
 namespace media {
 namespace cast {
+
+// We limit the size of receiver logs to avoid queuing up packets. We also
+// do not need the amount of redundancy that results from filling up every
+// RTCP packet with log messages. This number should give a redundancy of
+// about 2-3 per log message.
+const size_t kMaxReceiverLogBytes = 200;
 
 class ReceiverRtcpEventSubscriber;
 
@@ -34,27 +41,13 @@ class RtcpSender {
   // Such an event should be sent via RTCP.
   static bool IsReceiverEvent(const media::cast::CastLoggingEvent& event);
 
-  void SendRtcpFromRtpReceiver(uint32 packet_type_flags,
-                               const transport::RtcpReportBlock* report_block,
-                               const RtcpReceiverReferenceTimeReport* rrtr,
-                               const RtcpCastMessage* cast_message,
-                               ReceiverRtcpEventSubscriber* event_subscriber);
-  enum RtcpPacketType {
-    kRtcpSr = 0x0002,
-    kRtcpRr = 0x0004,
-    kRtcpBye = 0x0008,
-    kRtcpPli = 0x0010,
-    kRtcpNack = 0x0020,
-    kRtcpFir = 0x0040,
-    kRtcpSrReq = 0x0200,
-    kRtcpDlrr = 0x0400,
-    kRtcpRrtr = 0x0800,
-    kRtcpRpsi = 0x8000,
-    kRtcpRemb = 0x10000,
-    kRtcpCast = 0x20000,
-    kRtcpSenderLog = 0x40000,
-    kRtcpReceiverLog = 0x80000,
-  };
+  void SendRtcpFromRtpReceiver(
+      uint32 packet_type_flags,
+      const transport::RtcpReportBlock* report_block,
+      const RtcpReceiverReferenceTimeReport* rrtr,
+      const RtcpCastMessage* cast_message,
+      const ReceiverRtcpEventSubscriber* event_subscriber,
+      uint16 target_delay_ms);
 
  private:
   void BuildRR(const transport::RtcpReportBlock* report_block,
@@ -78,10 +71,13 @@ class RtcpSender {
   void BuildRrtr(const RtcpReceiverReferenceTimeReport* rrtr,
                  Packet* packet) const;
 
-  void BuildCast(const RtcpCastMessage* cast_message, Packet* packet) const;
+  void BuildCast(const RtcpCastMessage* cast_message,
+                 uint16 target_delay_ms,
+                 Packet* packet) const;
 
-  void BuildReceiverLog(RtcpReceiverLogMessage* receiver_log_message,
-                        Packet* packet) const;
+  void BuildReceiverLog(
+      const ReceiverRtcpEventSubscriber::RtcpEventMultiMap& rtcp_events,
+      Packet* packet) const;
 
   inline void BitrateToRembExponentBitrate(uint32 bitrate,
                                            uint8* exponent,

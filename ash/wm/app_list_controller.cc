@@ -14,11 +14,12 @@
 #include "ash/shell_window_ids.h"
 #include "base/command_line.h"
 #include "ui/app_list/app_list_constants.h"
+#include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/pagination_model.h"
 #include "ui/app_list/views/app_list_view.h"
 #include "ui/aura/client/focus_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event.h"
@@ -166,7 +167,15 @@ void AppListController::SetVisible(bool visible, aura::Window* window) {
     aura::Window* root_window = window->GetRootWindow();
     aura::Window* container = GetRootWindowController(root_window)->
         GetContainer(kShellWindowId_AppListContainer);
-    if (ash::switches::UseAlternateShelfLayout()) {
+    if (app_list::switches::IsExperimentalAppListPositionEnabled()) {
+      // The experimental app list is centered over the primary display.
+      view->InitAsBubbleAtFixedLocation(
+          NULL,
+          pagination_model_.get(),
+          Shell::GetScreen()->GetPrimaryDisplay().bounds().CenterPoint(),
+          views::BubbleBorder::FLOAT,
+          true /* border_accepts_events */);
+    } else if (ash::switches::UseAlternateShelfLayout()) {
       gfx::Rect applist_button_bounds = Shelf::ForWindow(container)->
           GetAppListButtonView()->GetBoundsInScreen();
       // We need the location of the button within the local screen.
@@ -195,11 +204,8 @@ void AppListController::SetVisible(bool visible, aura::Window* window) {
     SetView(view);
     // By setting us as DnD recipient, the app list knows that we can
     // handle items.
-    if (!CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kAshDisableDragAndDropAppListToLauncher)) {
-      SetDragAndDropHostOfCurrentAppList(
-          Shelf::ForWindow(window)->GetDragAndDropHostForAppList());
-    }
+    SetDragAndDropHostOfCurrentAppList(
+        Shelf::ForWindow(window)->GetDragAndDropHostForAppList());
   }
   // Update applist button status when app list visibility is changed.
   Shelf::ForWindow(window)->GetAppListButtonView()->SchedulePaint();
@@ -279,6 +285,9 @@ void AppListController::ScheduleAnimation() {
 }
 
 void AppListController::ProcessLocatedEvent(ui::LocatedEvent* event) {
+  if (!view_ || !is_visible_)
+    return;
+
   // If the event happened on a menu, then the event should not close the app
   // list.
   aura::Window* target = static_cast<aura::Window*>(event->target());
@@ -297,16 +306,9 @@ void AppListController::ProcessLocatedEvent(ui::LocatedEvent* event) {
     }
   }
 
-  if (view_ && is_visible_) {
-    aura::Window* window = view_->GetWidget()->GetNativeView();
-    gfx::Point window_local_point(event->root_location());
-    aura::Window::ConvertPointToTarget(window->GetRootWindow(),
-                                       window,
-                                       &window_local_point);
-    // Use HitTest to respect the hit test mask of the bubble.
-    if (!window->HitTest(window_local_point))
-      SetVisible(false, window);
-  }
+  aura::Window* window = view_->GetWidget()->GetNativeView();
+  if (!window->Contains(target))
+    SetVisible(false, window);
 }
 
 void AppListController::UpdateBounds() {

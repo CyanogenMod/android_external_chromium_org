@@ -13,8 +13,8 @@
 #include "ash/system/user/login_status.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/ui_base_types.h"
 
 class SkBitmap;
@@ -28,22 +28,22 @@ namespace gfx {
 class Point;
 }
 
-namespace views {
-class Widget;
-
-namespace corewm {
-class InputMethodEventFilter;
-class RootWindowEventFilter;
-class ScopedCaptureClient;
-}
-}
-
 namespace keyboard {
 class KeyboardController;
 }
 
 namespace ui {
 class EventHandler;
+}
+
+namespace views {
+class Widget;
+}
+
+namespace wm {
+class InputMethodEventFilter;
+class RootWindowEventFilter;
+class ScopedCaptureClient;
 }
 
 namespace ash {
@@ -78,19 +78,19 @@ class BootSplashScreen;
 // indirectly owned and deleted by |DisplayController|.
 // The RootWindowController for particular root window is stored in
 // its property (RootWindowSettings) and can be obtained using
-// |GetRootWindowController(aura::RootWindow*)| function.
+// |GetRootWindowController(aura::WindowEventDispatcher*)| function.
 class ASH_EXPORT RootWindowController : public ShellObserver {
  public:
 
   // Creates and Initialize the RootWindowController for primary display.
-  static void CreateForPrimaryDisplay(aura::RootWindow* root_window);
+  static void CreateForPrimaryDisplay(aura::WindowTreeHost* host);
 
   // Creates and Initialize the RootWindowController for secondary displays.
-  static void CreateForSecondaryDisplay(aura::RootWindow* root_window);
+  static void CreateForSecondaryDisplay(aura::WindowTreeHost* host);
 
   // Creates and Initialize the RootWindowController for virtual
   // keyboard displays.
-  static void CreateForVirtualKeyboardDisplay(aura::RootWindow* root_window);
+  static void CreateForVirtualKeyboardDisplay(aura::WindowTreeHost* host);
 
   // Returns a RootWindowController that has a shelf for given
   // |window|. This returns the RootWindowController for the |window|'s
@@ -109,8 +109,10 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
 
   virtual ~RootWindowController();
 
-  aura::Window* root_window() { return dispatcher()->window(); }
-  aura::WindowEventDispatcher* dispatcher() { return root_window_.get(); }
+  aura::Window* root_window() { return host_->window(); }
+  const aura::Window* root_window() const { return host_->window(); }
+  aura::WindowTreeHost* host() { return host_.get(); }
+  const aura::WindowTreeHost* host() const { return host_.get(); }
 
   RootWindowLayoutManager* root_window_layout() { return root_window_layout_; }
 
@@ -233,7 +235,7 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   void DeactivateKeyboard(keyboard::KeyboardController* keyboard_controller);
 
  private:
-  explicit RootWindowController(aura::RootWindow* root_window);
+  explicit RootWindowController(aura::WindowTreeHost* host);
   enum RootWindowType {
     PRIMARY,
     SECONDARY,
@@ -265,7 +267,7 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   virtual void OnLoginStateChanged(user::LoginStatus status) OVERRIDE;
   virtual void OnTouchHudProjectionToggled(bool enabled) OVERRIDE;
 
-  scoped_ptr<aura::RootWindow> root_window_;
+  scoped_ptr<aura::WindowTreeHost> host_;
   RootWindowLayoutManager* root_window_layout_;
 
   scoped_ptr<StackingController> stacking_controller_;
@@ -305,7 +307,7 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
 
   scoped_ptr<DesktopBackgroundWidgetController> wallpaper_controller_;
   scoped_ptr<AnimatingDesktopController> animating_wallpaper_controller_;
-  scoped_ptr<views::corewm::ScopedCaptureClient> capture_client_;
+  scoped_ptr< ::wm::ScopedCaptureClient> capture_client_;
 
   DISALLOW_COPY_AND_ASSIGN(RootWindowController);
 };

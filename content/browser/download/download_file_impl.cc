@@ -110,7 +110,7 @@ void DownloadFileImpl::RenameAndUniquify(
 
   base::FilePath new_path(full_path);
 
-  int uniquifier = file_util::GetUniquePathNumber(
+  int uniquifier = base::GetUniquePathNumber(
       new_path, base::FilePath::StringType());
   if (uniquifier > 0) {
     new_path = new_path.InsertBeforeExtensionASCII(
@@ -297,7 +297,7 @@ void DownloadFileImpl::StreamActive() {
             &DownloadDestinationObserver::DestinationCompleted,
             observer_, hash));
   }
-  if (bound_net_log_.IsLoggingAllEvents()) {
+  if (bound_net_log_.IsLogging()) {
     bound_net_log_.AddEvent(
         net::NetLog::TYPE_DOWNLOAD_STREAM_DRAINED,
         base::Bind(&FileStreamDrainedNetLogCallback, total_incoming_data_size,

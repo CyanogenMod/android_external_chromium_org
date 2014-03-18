@@ -165,7 +165,8 @@ class AutofillDialogControllerImpl
   virtual void OnPopupShown() OVERRIDE;
   virtual void OnPopupHidden() OVERRIDE;
   virtual bool ShouldRepostEvent(const ui::MouseEvent& event) OVERRIDE;
-  virtual void DidSelectSuggestion(int identifier) OVERRIDE;
+  virtual void DidSelectSuggestion(const base::string16& value,
+                                   int identifier) OVERRIDE;
   virtual void DidAcceptSuggestion(const base::string16& value,
                                    int identifier) OVERRIDE;
   virtual void RemoveSuggestion(const base::string16& value,
@@ -427,7 +428,15 @@ class AutofillDialogControllerImpl
   // Gets the value for |type| in |section|, whether it comes from manual user
   // input or the active suggestion.
   base::string16 GetValueFromSection(DialogSection section,
-                               ServerFieldType type);
+                                     ServerFieldType type);
+
+  // Returns whether the given section can accept an address with the given
+  // country code.
+  bool CanAcceptCountry(DialogSection section, const std::string& country_code);
+
+  // Whether |profile| should be suggested for |section|.
+  bool ShouldSuggestProfile(DialogSection section,
+                            const AutofillProfile& profile);
 
   // Gets the SuggestionsMenuModel for |section|.
   SuggestionsMenuModel* SuggestionsMenuModelForSection(DialogSection section);
@@ -513,9 +522,17 @@ class AutofillDialogControllerImpl
   bool IsCreditCardExpirationValid(const base::string16& year,
                                    const base::string16& month) const;
 
+  // Returns true if |profile| has an address we can be sure is invalid.
+  // Profiles with invalid addresses are not suggested in the dropdown menu for
+  // billing and shipping addresses.
+  bool HasInvalidAddress(const AutofillProfile& profile);
+
   // Returns true if |key| refers to a suggestion, as opposed to some control
   // menu item.
   bool IsASuggestionItemKey(const std::string& key) const;
+
+  // Returns whether Autofill is enabled for |profile_|.
+  bool IsAutofillEnabled() const;
 
   // Whether the billing section should be used to fill in the shipping details.
   bool ShouldUseBillingForShipping();
@@ -688,8 +705,8 @@ class AutofillDialogControllerImpl
   YearComboboxModel cc_exp_year_combobox_model_;
 
   // Models for country input.
-  CountryComboboxModel billing_country_combobox_model_;
-  CountryComboboxModel shipping_country_combobox_model_;
+  scoped_ptr<CountryComboboxModel> billing_country_combobox_model_;
+  scoped_ptr<CountryComboboxModel> shipping_country_combobox_model_;
 
   // Models for the suggestion views.
   SuggestionsMenuModel suggested_cc_;

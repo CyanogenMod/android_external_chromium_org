@@ -8,6 +8,9 @@
 #include <string>
 
 #include "base/command_line.h"
+#include "base/files/file_path.h"
+#include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -571,6 +574,22 @@ GoogleUpdateSettings::UpdatePolicy GoogleUpdateSettings::GetAppUpdatePolicy(
   return update_policy;
 }
 
+void GoogleUpdateSettings::RecordChromeUpdatePolicyHistograms() {
+  const bool is_multi_install = InstallUtil::IsMultiInstall(
+      BrowserDistribution::GetDistribution(), IsSystemInstall());
+  const base::string16 app_guid =
+      BrowserDistribution::GetSpecificDistribution(
+          is_multi_install ? BrowserDistribution::CHROME_BINARIES :
+                             BrowserDistribution::CHROME_BROWSER)->GetAppGuid();
+
+  bool is_overridden = false;
+  const UpdatePolicy update_policy = GetAppUpdatePolicy(app_guid,
+                                                        &is_overridden);
+  UMA_HISTOGRAM_BOOLEAN("GoogleUpdate.UpdatePolicyIsOverridden", is_overridden);
+  UMA_HISTOGRAM_ENUMERATION("GoogleUpdate.EffectivePolicy", update_policy,
+                            UPDATE_POLICIES_COUNT);
+}
+
 base::string16 GoogleUpdateSettings::GetUninstallCommandLine(
     bool system_install) {
   const HKEY root_key = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
@@ -658,7 +677,7 @@ bool GoogleUpdateSettings::GetUpdateDetailForApp(bool system_install,
         (clientstate.ReadValue(google_update::kRegVersionField,
                                &version) == ERROR_SUCCESS)) {
       product_found = true;
-      data->version = WideToASCII(version);
+      data->version = base::UTF16ToASCII(version);
       data->last_success = base::Time::FromTimeT(dword_value);
       data->last_result = 0;
       data->last_error_code = 0;

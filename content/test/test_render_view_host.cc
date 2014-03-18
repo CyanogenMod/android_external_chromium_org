@@ -24,13 +24,6 @@
 
 namespace content {
 
-namespace {
-
-const int64 kFrameId = 13UL;
-
-}  // namespace
-
-
 void InitNavigateParams(FrameHostMsg_DidCommitProvisionalLoad_Params* params,
                         int page_id,
                         const GURL& url,
@@ -251,8 +244,6 @@ TestRenderViewHost::TestRenderViewHost(
   // constructor, and deletes itself when TestRenderWidgetHostView::Destroy() is
   // called.
   new TestRenderWidgetHostView(this);
-
-  main_frame_id_ = kFrameId;
 }
 
 TestRenderViewHost::~TestRenderViewHost() {
@@ -272,6 +263,10 @@ bool TestRenderViewHost::CreateRenderView(
 
 bool TestRenderViewHost::IsRenderViewLive() const {
   return render_view_created_;
+}
+
+bool TestRenderViewHost::IsFullscreen() const {
+  return RenderViewHostImpl::IsFullscreen();
 }
 
 void TestRenderViewHost::SendNavigate(int page_id, const GURL& url) {
@@ -331,9 +326,10 @@ void TestRenderViewHost::SendNavigateWithParameters(
       file_path_for_history_item);
 }
 
-void TestRenderViewHost::SendShouldCloseACK(bool proceed) {
+void TestRenderViewHost::SendBeforeUnloadACK(bool proceed) {
+  // TODO(creis): Move this whole method to TestRenderFrameHost.
   base::TimeTicks now = base::TimeTicks::Now();
-  OnShouldCloseACK(proceed, now, now);
+  main_render_frame_host_->OnBeforeUnloadACK(proceed, now, now);
 }
 
 void TestRenderViewHost::SetContentsMimeType(const std::string& mime_type) {

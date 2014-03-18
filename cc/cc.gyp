@@ -21,6 +21,9 @@
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
         '<(DEPTH)/ui/gl/gl.gyp:gl',
       ],
+      'variables': {
+        'optimize': 'max',
+      },
       'export_dependent_settings': [
         '<(DEPTH)/skia/skia.gyp:skia',
       ],
@@ -103,8 +106,6 @@
         'debug/micro_benchmark_controller.h',
         'debug/micro_benchmark_controller_impl.cc',
         'debug/micro_benchmark_controller_impl.h',
-        'debug/overdraw_metrics.cc',
-        'debug/overdraw_metrics.h',
         'debug/paint_time_counter.cc',
         'debug/paint_time_counter.h',
         'debug/picture_record_benchmark.cc',

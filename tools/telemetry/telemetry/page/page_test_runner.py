@@ -11,14 +11,14 @@ from telemetry.page import page_test as page_test_module
 from telemetry.page import page_runner
 from telemetry.page import page_set
 
-def Main(base_dir, page_set_filenames):
+def Main(env):
   """Turns a PageTest into a command-line program.
 
   Args:
     base_dir: Path to directory containing tests and ProfileCreators.
   """
   runner = PageTestRunner()
-  sys.exit(runner.Run(base_dir, page_set_filenames))
+  sys.exit(runner.Run(env))
 
 class PageTestRunner(object):
   def __init__(self):
@@ -34,19 +34,21 @@ class PageTestRunner(object):
   def test_class_name(self):
     return 'test'
 
-  def Run(self, base_dir, page_set_filenames):
-    test, ps, expectations = self.ParseCommandLine(sys.argv, base_dir,
-        page_set_filenames)
+  def Run(self, env):
+    test, ps, expectations = self.ParseCommandLine(sys.argv, env)
     results = page_runner.Run(test, ps, expectations, self._options)
     results.PrintSummary()
     return min(255, len(results.failures + results.errors))
 
-  def FindTestConstructors(self, base_dir):
+  def FindTestConstructors(self, base_dirs):
     # Look for both Tests and PageTests, but Tests get priority, because
-    test_constructors = discover.DiscoverClasses(
-        base_dir, base_dir, self.test_class)
-    test_constructors.update(discover.DiscoverClasses(
-        base_dir, base_dir, test_module.Test, index_by_class_name=True))
+    test_constructors = {}
+    for base_dir in base_dirs:
+      test_constructors.update(discover.DiscoverClasses(
+          base_dir, base_dir, self.test_class))
+    for base_dir in base_dirs:
+      test_constructors.update(discover.DiscoverClasses(
+          base_dir, base_dir, test_module.Test, index_by_class_name=True))
     return test_constructors
 
   def FindTestName(self, test_constructors, args):
@@ -60,26 +62,26 @@ class PageTestRunner(object):
       test_name or None
     """
     test_name = None
-    for arg in [self.GetModernizedTestName(a) for a in args]:
+    for arg in args:
       if arg in test_constructors:
         test_name = arg
 
     return test_name
 
-  def GetModernizedTestName(self, arg):
-    """Sometimes tests change names but buildbots keep calling the old name.
-
-    If arg matches an old test name, return the new test name instead.
-    Otherwise, return the arg.
-    """
-    return arg
-
-  def GetPageSet(self, test, page_set_filenames):
+  def GetPageSet(self, test, env):
     ps = test.CreatePageSet(self._args, self._options)
     if ps:
       return ps
 
     if len(self._args) < 2:
+      page_set_filenames = []
+      for perf_path in env.base_paths:
+        # Check if page_sets subfolder is present, and get all page_sets
+        # files if present.
+        page_set_dir = os.path.join(perf_path, "page_sets")
+        if not os.path.exists(page_set_dir):
+          continue
+        page_set_filenames += discover.GetAllPageSetFilenames(page_set_dir)
       page_set_list = ',\n'.join(
           sorted([os.path.relpath(f) for f in page_set_filenames]))
       self.PrintParseError(
@@ -125,22 +127,23 @@ class PageTestRunner(object):
     raise Exception('Did not understand "%s". Pass a page set, file or URL.' %
                     page_set_arg)
 
-  def ParseCommandLine(self, args, base_dir, page_set_filenames):
+  def ParseCommandLine(self, args, env):
     self._options = browser_options.BrowserFinderOptions()
     self._parser = self._options.CreateParser(
         '%%prog [options] %s page_set' % self.test_class_name)
 
-    test_constructors = self.FindTestConstructors(base_dir)
+    test_constructors = self.FindTestConstructors(env.base_paths)
     test_name = self.FindTestName(test_constructors, args)
     test = None
     if test_name:
       test = test_constructors[test_name]()
       if isinstance(test, test_module.Test):
         page_test = test.test()
+        test.AddCommandLineArgs(self._parser)
       else:
         page_test = test
-      page_test.AddCommandLineOptions(self._parser)
-    page_runner.AddCommandLineOptions(self._parser)
+        page_test.AddCommandLineArgs(self._parser)
+    page_runner.AddCommandLineArgs(self._parser)
 
     _, self._args = self._parser.parse_args()
 
@@ -159,12 +162,16 @@ class PageTestRunner(object):
     if isinstance(test, test_module.Test):
       ps = test.CreatePageSet(self._options)
       expectations = test.CreateExpectations(ps)
+      test.ProcessCommandLineArgs(self._parser, self._options)
     else:
-      ps = self.GetPageSet(test, page_set_filenames)
+      ps = self.GetPageSet(test, env)
       expectations = test.CreateExpectations(ps)
+      page_test.ProcessCommandLineArgs(self._parser, self._options)
+    page_runner.ProcessCommandLineArgs(self._parser, self._options)
 
     if len(self._args) > 2:
       self.PrintParseError('Too many arguments.')
+
 
     return page_test, ps, expectations
 

@@ -7,8 +7,10 @@
 namespace app_list {
 
 const SkColor kContentsBackgroundColor = SkColorSetRGB(0xFB, 0xFB, 0xFB);
+const SkColor kContentsSwitcherBackgroundColor = SK_ColorWHITE;
 const SkColor kSearchBoxBackground = SK_ColorWHITE;
 const SkColor kTopSeparatorColor = SkColorSetRGB(0xE5, 0xE5, 0xE5);
+const SkColor kBottomSeparatorColor = SkColorSetRGB(0xE5, 0xE5, 0xE5);
 
 // 6% black over kContentsBackgroundColor
 const SkColor kHighlightedColor = SkColorSetRGB(0xE6, 0xE6, 0xE6);
@@ -51,7 +53,7 @@ const gfx::Tween::Type kFolderFadeInTweenType = gfx::Tween::EASE_IN_2;
 
 // Animation curve used for fading out the target page when opening or closing
 // a folder.
-const gfx::Tween::Type kFolderFadeOutTweenType = gfx::Tween::EASE_IN_3;
+const gfx::Tween::Type kFolderFadeOutTweenType = gfx::Tween::FAST_OUT_LINEAR_IN;
 
 // Preferred number of columns and rows in apps grid.
 const int kPreferredCols = 4;

@@ -23,9 +23,9 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/screen.h"
@@ -197,9 +197,6 @@ void DockedWindowResizer::StartedDragging() {
   // panels and windows that are already docked. Those do not need reparenting.
   if (GetTarget()->type() != ui::wm::WINDOW_TYPE_PANEL &&
       GetTarget()->parent()->id() == kShellWindowId_DefaultContainer) {
-    // The window is going to be reparented - avoid completing the drag.
-    window_state_->set_continue_drag_after_reparent(true);
-
     // Reparent the window into the docked windows container in order to get it
     // on top of other docked windows.
     aura::Window* docked_container = Shell::GetContainer(
@@ -224,15 +221,11 @@ void DockedWindowResizer::FinishedDragging(
   const bool is_resized =
       (details().bounds_change & WindowResizer::kBoundsChange_Resizes) != 0;
 
-  // Undock the window if it is not in the normal or minimized show type. This
+  // Undock the window if it is not in the normal or minimized state type. This
   // happens if a user snaps or maximizes a window using a keyboard shortcut
   // while it is being dragged.
-  if (window_state_->IsSnapped()) {
+  if (!window_state_->IsMinimized() && !window_state_->IsNormalStateType())
     is_docked_ = false;
-  } else if (!window_state_->IsMinimized() &&
-             !window_state_->IsNormalShowState()) {
-    is_docked_ = false;
-  }
 
   // When drag is completed the dragged docked window is resized to the bounds
   // calculated by the layout manager that conform to other docked windows.

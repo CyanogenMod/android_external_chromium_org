@@ -13,7 +13,6 @@
 #include "ash/accelerators/accelerator_table.h"
 #include "ash/accelerators/debug_commands.h"
 #include "ash/ash_switches.h"
-#include "ash/caps_lock_delegate.h"
 #include "ash/debug.h"
 #include "ash/display/display_controller.h"
 #include "ash/display/display_manager.h"
@@ -49,15 +48,14 @@
 #include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/partial_screenshot_view.h"
 #include "ash/wm/power_button_controller.h"
-#include "ash/wm/window_cycle_controller.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
-#include "ash/wm/workspace/snap_sizer.h"
+#include "ash/wm/wm_event.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/metrics/user_metrics.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/accelerators/accelerator_manager.h"
 #include "ui/compositor/debug_utils.h"
@@ -67,7 +65,6 @@
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/screen.h"
-#include "ui/oak/oak.h"
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/debug_utils.h"
 #include "ui/views/widget/widget.h"
@@ -76,6 +73,8 @@
 #include "ash/session_state_delegate.h"
 #include "ash/system/chromeos/keyboard_brightness_controller.h"
 #include "base/sys_info.h"
+#include "chromeos/ime/input_method_manager.h"
+#include "chromeos/ime/xkeyboard.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace ash {
@@ -125,72 +124,27 @@ bool HandleAccessibleFocusCycle(bool reverse) {
 }
 
 bool HandleCycleBackwardMRU(const ui::Accelerator& accelerator) {
-  Shell* shell = Shell::GetInstance();
-
   if (accelerator.key_code() == ui::VKEY_TAB)
     base::RecordAction(base::UserMetricsAction("Accel_PrevWindow_Tab"));
 
-  if (switches::UseOverviewMode()) {
-    shell->window_selector_controller()->HandleCycleWindow(
-        WindowSelector::BACKWARD);
-    return true;
-  }
-  shell->window_cycle_controller()->HandleCycleWindow(
-      WindowCycleController::BACKWARD, accelerator.IsAltDown());
+  Shell::GetInstance()->window_selector_controller()->HandleCycleWindow(
+      WindowSelector::BACKWARD);
   return true;
 }
 
 bool HandleCycleForwardMRU(const ui::Accelerator& accelerator) {
-  Shell* shell = Shell::GetInstance();
-
   if (accelerator.key_code() == ui::VKEY_TAB)
     base::RecordAction(base::UserMetricsAction("Accel_NextWindow_Tab"));
 
-  if (switches::UseOverviewMode()) {
-    shell->window_selector_controller()->HandleCycleWindow(
-        WindowSelector::FORWARD);
-    return true;
-  }
-  shell->window_cycle_controller()->HandleCycleWindow(
-      WindowCycleController::FORWARD, accelerator.IsAltDown());
+  Shell::GetInstance()->window_selector_controller()->HandleCycleWindow(
+      WindowSelector::FORWARD);
   return true;
 }
 
-bool HandleCycleLinear(const ui::Accelerator& accelerator) {
-  Shell* shell = Shell::GetInstance();
-
-  // TODO(jamescook): When overview becomes the default the AcceleratorAction
-  // should be renamed from CYCLE_LINEAR to TOGGLE_OVERVIEW.
-  if (switches::UseOverviewMode()) {
-    base::RecordAction(base::UserMetricsAction("Accel_Overview_F5"));
-    shell->window_selector_controller()->ToggleOverview();
-    return true;
-  }
-  if (accelerator.key_code() == ui::VKEY_MEDIA_LAUNCH_APP1)
-    base::RecordAction(base::UserMetricsAction("Accel_NextWindow_F5"));
-  shell->window_cycle_controller()->HandleLinearCycleWindow();
+bool ToggleOverview(const ui::Accelerator& accelerator) {
+  base::RecordAction(base::UserMetricsAction("Accel_Overview_F5"));
+  Shell::GetInstance()->window_selector_controller()->ToggleOverview();
   return true;
-}
-
-bool HandleDisableCapsLock(ui::KeyboardCode key_code,
-                           ui::EventType previous_event_type,
-                           ui::KeyboardCode previous_key_code) {
-  Shell* shell = Shell::GetInstance();
-
-  if (previous_event_type == ui::ET_KEY_RELEASED ||
-      (previous_key_code != ui::VKEY_LSHIFT &&
-       previous_key_code != ui::VKEY_SHIFT &&
-       previous_key_code != ui::VKEY_RSHIFT)) {
-    // If something else was pressed between the Shift key being pressed
-    // and released, then ignore the release of the Shift key.
-    return false;
-  }
-  base::RecordAction(UserMetricsAction("Accel_Disable_Caps_Lock"));
-  if (shell->caps_lock_delegate()->IsCapsLockEnabled()) {
-    shell->caps_lock_delegate()->SetCapsLockEnabled(false);
-    return true;
-  }
-  return false;
 }
 
 bool HandleFocusLauncher() {
@@ -455,15 +409,6 @@ void HandleShowMessageCenterBubble() {
   }
 }
 
-bool HandleShowOak() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kAshEnableOak)) {
-    oak::ShowOakWindowWithContext(Shell::GetPrimaryRootWindow());
-    return true;
-  }
-  return false;
-}
-
 bool HandleShowSystemTrayBubble() {
   base::RecordAction(UserMetricsAction("Accel_Show_System_Tray_Bubble"));
   internal::RootWindowController* controller =
@@ -544,24 +489,6 @@ bool HandleToggleAppList(ui::KeyboardCode key_code,
   return true;
 }
 
-bool HandleToggleCapsLock(ui::KeyboardCode key_code,
-                          ui::EventType previous_event_type,
-                          ui::KeyboardCode previous_key_code) {
-  Shell* shell = Shell::GetInstance();
-  if (key_code == ui::VKEY_LWIN) {
-    // If something else was pressed between the Search key (LWIN)
-    // being pressed and released, then ignore the release of the
-    // Search key.
-    // TODO(danakj): Releasing Alt first breaks this: crbug.com/166495
-    if (previous_event_type == ui::ET_KEY_RELEASED ||
-        previous_key_code != ui::VKEY_LWIN)
-      return false;
-  }
-  base::RecordAction(UserMetricsAction("Accel_Toggle_Caps_Lock"));
-  shell->caps_lock_delegate()->ToggleCapsLock();
-  return true;
-}
-
 bool HandleToggleFullscreen(ui::KeyboardCode key_code) {
   if (key_code == ui::VKEY_MEDIA_LAUNCH_APP2) {
     base::RecordAction(UserMetricsAction("Accel_Fullscreen_F4"));
@@ -571,7 +498,7 @@ bool HandleToggleFullscreen(ui::KeyboardCode key_code) {
 }
 
 bool HandleToggleRootWindowFullScreen() {
-  Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->ToggleFullScreen();
+  Shell::GetPrimaryRootWindow()->GetHost()->ToggleFullScreen();
   return true;
 }
 
@@ -590,10 +517,9 @@ bool HandleWindowSnap(int action) {
   } else {
     base::RecordAction(UserMetricsAction("Accel_Window_Snap_Right"));
   }
-
-  internal::SnapSizer::SnapWindow(window_state,
-      action == WINDOW_SNAP_LEFT ? internal::SnapSizer::LEFT_EDGE :
-      internal::SnapSizer::RIGHT_EDGE);
+  const wm::WMEvent event(action == WINDOW_SNAP_LEFT ?
+                          wm::WM_EVENT_SNAP_LEFT : wm::WM_EVENT_SNAP_RIGHT);
+  window_state->OnWMEvent(&event);
   return true;
 }
 
@@ -665,6 +591,18 @@ bool HandleToggleSpokenFeedback() {
   return true;
 }
 
+bool HandleToggleTouchViewTesting() {
+  // TODO(skuhne): This is only temporary! Remove this!
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshEnableTouchViewTesting)) {
+    Shell* shell = Shell::GetInstance();
+    shell->EnableMaximizeModeWindowManager(
+        !shell->IsMaximizeModeWindowManagerEnabled());
+    return true;
+  }
+  return false;
+}
+
 bool HandleTouchHudClear() {
   internal::RootWindowController* controller =
       internal::RootWindowController::ForTargetRootWindow();
@@ -692,6 +630,51 @@ bool HandleTouchHudProjectToggle() {
   return true;
 }
 
+bool HandleDisableCapsLock(ui::KeyboardCode key_code,
+                           ui::EventType previous_event_type,
+                           ui::KeyboardCode previous_key_code) {
+  if (previous_event_type == ui::ET_KEY_RELEASED ||
+      (previous_key_code != ui::VKEY_LSHIFT &&
+       previous_key_code != ui::VKEY_SHIFT &&
+       previous_key_code != ui::VKEY_RSHIFT)) {
+    // If something else was pressed between the Shift key being pressed
+    // and released, then ignore the release of the Shift key.
+    return false;
+  }
+  base::RecordAction(UserMetricsAction("Accel_Disable_Caps_Lock"));
+  chromeos::input_method::InputMethodManager* ime =
+      chromeos::input_method::InputMethodManager::Get();
+  chromeos::input_method::XKeyboard* xkeyboard =
+      ime ? ime->GetXKeyboard() : NULL;
+  if (xkeyboard && xkeyboard->CapsLockIsEnabled()) {
+    xkeyboard->SetCapsLockEnabled(false);
+    return true;
+  }
+  return false;
+}
+
+bool HandleToggleCapsLock(ui::KeyboardCode key_code,
+                          ui::EventType previous_event_type,
+                          ui::KeyboardCode previous_key_code) {
+  if (key_code == ui::VKEY_LWIN) {
+    // If something else was pressed between the Search key (LWIN)
+    // being pressed and released, then ignore the release of the
+    // Search key.
+    // TODO(danakj): Releasing Alt first breaks this: crbug.com/166495
+    if (previous_event_type == ui::ET_KEY_RELEASED ||
+        previous_key_code != ui::VKEY_LWIN)
+      return false;
+  }
+  base::RecordAction(UserMetricsAction("Accel_Toggle_Caps_Lock"));
+  chromeos::input_method::InputMethodManager* ime =
+      chromeos::input_method::InputMethodManager::Get();
+  chromeos::input_method::XKeyboard* xkeyboard =
+      ime ? ime->GetXKeyboard() : NULL;
+  if (xkeyboard)
+    xkeyboard->SetCapsLockEnabled(!xkeyboard->CapsLockIsEnabled());
+  return true;
+}
+
 #endif  // defined(OS_CHROMEOS)
 
 // Debug print methods.
@@ -701,7 +684,7 @@ bool HandlePrintLayerHierarchy() {
   for (size_t i = 0; i < root_windows.size(); ++i) {
     ui::PrintLayerHierarchy(
         root_windows[i]->layer(),
-        root_windows[i]->GetDispatcher()->GetLastMouseLocationInRoot());
+        root_windows[i]->GetHost()->dispatcher()->GetLastMouseLocationInRoot());
   }
   return true;
 }
@@ -934,8 +917,8 @@ bool AcceleratorController::PerformAction(int action,
       return HandleCycleBackwardMRU(accelerator);
     case CYCLE_FORWARD_MRU:
       return HandleCycleForwardMRU(accelerator);
-    case CYCLE_LINEAR:
-      return HandleCycleLinear(accelerator);
+    case TOGGLE_OVERVIEW:
+      return ToggleOverview(accelerator);
 #if defined(OS_CHROMEOS)
     case ADD_REMOVE_DISPLAY:
       return HandleAddRemoveDisplay();
@@ -958,6 +941,8 @@ bool AcceleratorController::PerformAction(int action,
       return HandleCycleUser(SessionStateDelegate::CYCLE_TO_PREVIOUS_USER);
     case TOGGLE_SPOKEN_FEEDBACK:
       return HandleToggleSpokenFeedback();
+    case TOGGLE_TOUCH_VIEW_TESTING:
+      return HandleToggleTouchViewTesting();
     case TOGGLE_WIFI:
       Shell::GetInstance()->system_tray_notifier()->NotifyRequestToggleWifi();
       return true;
@@ -970,6 +955,12 @@ bool AcceleratorController::PerformAction(int action,
     case DISABLE_GPU_WATCHDOG:
       Shell::GetInstance()->gpu_support()->DisableGpuWatchdog();
       return true;
+    case DISABLE_CAPS_LOCK:
+      return HandleDisableCapsLock(
+          key_code, previous_event_type, previous_key_code);
+    case TOGGLE_CAPS_LOCK:
+      return HandleToggleCapsLock(
+          key_code, previous_event_type, previous_key_code);
 #endif  // OS_CHROMEOS
     case OPEN_FEEDBACK_PAGE:
       return HandleOpenFeedbackPage();
@@ -992,12 +983,6 @@ bool AcceleratorController::PerformAction(int action,
     case TOGGLE_APP_LIST:
       return HandleToggleAppList(
           key_code, previous_event_type, previous_key_code, accelerator);
-    case DISABLE_CAPS_LOCK:
-      return HandleDisableCapsLock(
-          key_code, previous_event_type, previous_key_code);
-    case TOGGLE_CAPS_LOCK:
-      return HandleToggleCapsLock(
-          key_code, previous_event_type, previous_key_code);
     case BRIGHTNESS_DOWN:
       if (brightness_control_delegate_)
         return brightness_control_delegate_->HandleBrightnessDown(accelerator);
@@ -1039,8 +1024,6 @@ bool AcceleratorController::PerformAction(int action,
       return HandleRotatePaneFocus(Shell::BACKWARD);
     case SHOW_KEYBOARD_OVERLAY:
       return HandleShowKeyboardOverlay();
-    case SHOW_OAK:
-      return HandleShowOak();
     case SHOW_SYSTEM_TRAY_BUBBLE:
       return HandleShowSystemTrayBubble();
     case SHOW_MESSAGE_CENTER_BUBBLE:

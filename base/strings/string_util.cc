@@ -242,18 +242,16 @@ void TruncateUTF8ToByteSize(const std::string& input,
     output->clear();
 }
 
-}  // namespace base
-
-TrimPositions TrimWhitespace(const base::string16& input,
+TrimPositions TrimWhitespace(const string16& input,
                              TrimPositions positions,
-                             base::string16* output) {
-  return base::TrimStringT(input, base::kWhitespaceUTF16, positions, output);
+                             string16* output) {
+  return TrimStringT(input, kWhitespaceUTF16, positions, output);
 }
 
 TrimPositions TrimWhitespaceASCII(const std::string& input,
                                   TrimPositions positions,
                                   std::string* output) {
-  return base::TrimStringT(input, base::kWhitespaceASCII, positions, output);
+  return TrimStringT(input, kWhitespaceASCII, positions, output);
 }
 
 // This function is only for backward-compatibility.
@@ -316,50 +314,17 @@ std::string CollapseWhitespaceASCII(const std::string& text,
   return CollapseWhitespaceT(text, trim_sequences_with_line_breaks);
 }
 
-bool ContainsOnlyWhitespaceASCII(const std::string& str) {
-  for (std::string::const_iterator i(str.begin()); i != str.end(); ++i) {
-    if (!IsAsciiWhitespace(*i))
-      return false;
-  }
-  return true;
+bool ContainsOnlyChars(const StringPiece& input,
+                       const StringPiece& characters) {
+  return input.find_first_not_of(characters) == StringPiece::npos;
 }
 
-bool ContainsOnlyWhitespace(const base::string16& str) {
-  return str.find_first_not_of(base::kWhitespaceUTF16) == string16::npos;
+bool ContainsOnlyChars(const StringPiece16& input,
+                       const StringPiece16& characters) {
+  return input.find_first_not_of(characters) == StringPiece16::npos;
 }
 
-template<typename STR>
-static bool ContainsOnlyCharsT(const STR& input, const STR& characters) {
-  for (typename STR::const_iterator iter = input.begin();
-       iter != input.end(); ++iter) {
-    if (characters.find(*iter) == STR::npos)
-      return false;
-  }
-  return true;
-}
-
-bool ContainsOnlyChars(const string16& input, const string16& characters) {
-  return ContainsOnlyCharsT(input, characters);
-}
-
-bool ContainsOnlyChars(const std::string& input,
-                       const std::string& characters) {
-  return ContainsOnlyCharsT(input, characters);
-}
-
-#if !defined(WCHAR_T_IS_UTF16)
-bool IsStringASCII(const std::wstring& str);
-#endif
-
-std::string WideToASCII(const std::wstring& wide) {
-  DCHECK(IsStringASCII(wide)) << wide;
-  return std::string(wide.begin(), wide.end());
-}
-
-std::string UTF16ToASCII(const string16& utf16) {
-  DCHECK(IsStringASCII(utf16)) << utf16;
-  return std::string(utf16.begin(), utf16.end());
-}
+}  // namespace base
 
 template<class STR>
 static bool DoIsStringASCII(const STR& str) {
@@ -371,17 +336,11 @@ static bool DoIsStringASCII(const STR& str) {
   return true;
 }
 
-#if !defined(WCHAR_T_IS_UTF16)
-bool IsStringASCII(const std::wstring& str) {
-  return DoIsStringASCII(str);
-}
-#endif
-
-bool IsStringASCII(const string16& str) {
-  return DoIsStringASCII(str);
-}
-
 bool IsStringASCII(const base::StringPiece& str) {
+  return DoIsStringASCII(str);
+}
+
+bool IsStringASCII(const base::string16& str) {
   return DoIsStringASCII(str);
 }
 

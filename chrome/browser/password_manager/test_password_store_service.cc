@@ -7,10 +7,10 @@
 #include "components/password_manager/core/browser/test_password_store.h"
 
 // static
-BrowserContextKeyedService* TestPasswordStoreService::Build(
+KeyedService* TestPasswordStoreService::Build(
     content::BrowserContext* /*profile*/) {
   scoped_refptr<PasswordStore> store(new TestPasswordStore);
-  if (!store || !store->Init())
+  if (!store || !store->Init(syncer::SyncableService::StartSyncFlare()))
     return NULL;
   return new TestPasswordStoreService(store);
 }

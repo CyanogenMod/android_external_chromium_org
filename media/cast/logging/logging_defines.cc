@@ -58,16 +58,16 @@ std::string CastLoggingToString(CastLoggingEvent event) {
     ENUM_TO_STRING(VideoFrameEncoded);
     ENUM_TO_STRING(VideoFrameDecoded);
     ENUM_TO_STRING(VideoRenderDelay);
-    ENUM_TO_STRING(PacketSentToPacer);
-    ENUM_TO_STRING(PacketSentToNetwork);
-    ENUM_TO_STRING(PacketRetransmitted);
+    ENUM_TO_STRING(AudioPacketSentToPacer);
+    ENUM_TO_STRING(VideoPacketSentToPacer);
+    ENUM_TO_STRING(AudioPacketSentToNetwork);
+    ENUM_TO_STRING(VideoPacketSentToNetwork);
+    ENUM_TO_STRING(AudioPacketRetransmitted);
+    ENUM_TO_STRING(VideoPacketRetransmitted);
     ENUM_TO_STRING(AudioPacketReceived);
     ENUM_TO_STRING(VideoPacketReceived);
     ENUM_TO_STRING(DuplicateAudioPacketReceived);
     ENUM_TO_STRING(DuplicateVideoPacketReceived);
-    case kNumOfLoggingEvents:
-      NOTREACHED();
-      return "";
   }
   NOTREACHED();
   return "";
@@ -80,10 +80,6 @@ EventMediaType GetEventMediaType(CastLoggingEvent event) {
     case kPacketLoss:
     case kJitterMs:
     case kRembBitrate:
-    // TODO(imcheng): These need to be split into video/audio events.
-    case kPacketSentToPacer:
-    case kPacketSentToNetwork:
-    case kPacketRetransmitted:
       return OTHER_EVENT;
     case kAudioAckSent:
     case kAudioFrameReceived:
@@ -91,6 +87,9 @@ EventMediaType GetEventMediaType(CastLoggingEvent event) {
     case kAudioFrameEncoded:
     case kAudioPlayoutDelay:
     case kAudioFrameDecoded:
+    case kAudioPacketSentToPacer:
+    case kAudioPacketSentToNetwork:
+    case kAudioPacketRetransmitted:
     case kAudioPacketReceived:
     case kDuplicateAudioPacketReceived:
       return AUDIO_EVENT;
@@ -102,12 +101,12 @@ EventMediaType GetEventMediaType(CastLoggingEvent event) {
     case kVideoFrameEncoded:
     case kVideoFrameDecoded:
     case kVideoRenderDelay:
+    case kVideoPacketSentToPacer:
+    case kVideoPacketSentToNetwork:
+    case kVideoPacketRetransmitted:
     case kVideoPacketReceived:
     case kDuplicateVideoPacketReceived:
       return VIDEO_EVENT;
-    case kNumOfLoggingEvents:
-      NOTREACHED();
-      return OTHER_EVENT;
   }
   NOTREACHED();
   return OTHER_EVENT;

@@ -14,12 +14,17 @@
 
 #include "string_compare.h"
 
+#include <libaddressinput/util/scoped_ptr.h>
+
+#include "canonicalize_string.h"
+
 namespace i18n {
 namespace addressinput {
 
 bool LooseStringCompare(const std::string& a, const std::string& b) {
-  // The best we can do without ICU.
-  return a == b;
+  scoped_ptr<StringCanonicalizer> canonicalizer(StringCanonicalizer::Build());
+  return canonicalizer->CanonicalizeString(a) ==
+         canonicalizer->CanonicalizeString(b);
 }
 
 }  // namespace addressinput

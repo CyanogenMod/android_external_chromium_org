@@ -260,18 +260,17 @@ MitigationFlags FilterPostStartupProcessMitigations(MitigationFlags flags) {
   if (version < base::win::VERSION_VISTA) {
     return flags & (MITIGATION_DEP |
                     MITIGATION_DEP_NO_ATL_THUNK);
+  }
 
   // Windows Vista
   if (version < base::win::VERSION_WIN7) {
-    return flags & (MITIGATION_DEP |
-                    MITIGATION_DEP_NO_ATL_THUNK |
-                    MITIGATION_BOTTOM_UP_ASLR |
+    return flags & (MITIGATION_BOTTOM_UP_ASLR |
                     MITIGATION_DLL_SEARCH_ORDER |
                     MITIGATION_HEAP_TERMINATE);
   }
 
-  // Windows 7 and Vista.
-  } else if (version < base::win::VERSION_WIN8) {
+  // Windows 7.
+  if (version < base::win::VERSION_WIN8) {
     return flags & (MITIGATION_BOTTOM_UP_ASLR |
                     MITIGATION_DLL_SEARCH_ORDER |
                     MITIGATION_HEAP_TERMINATE);

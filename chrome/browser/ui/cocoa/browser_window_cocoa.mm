@@ -20,6 +20,7 @@
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands_mac.h"
@@ -127,7 +128,13 @@ void BrowserWindowCocoa::Show() {
     [window() setAnimationBehavior:NSWindowAnimationBehaviorNone];
   }
 
-  [window() makeKeyAndOrderFront:controller_];
+  {
+    TRACE_EVENT0("ui", "BrowserWindowCocoa::Show makeKeyAndOrderFront");
+    // This call takes up a substantial part of startup time, and an even more
+    // substantial part of startup time when any CALayers are part of the
+    // window's NSView heirarchy.
+    [window() makeKeyAndOrderFront:controller_];
+  }
 
   // When creating windows from nibs it is necessary to |makeKeyAndOrderFront:|
   // prior to |orderOut:| then |miniaturize:| when restoring windows in the
@@ -279,11 +286,11 @@ void BrowserWindowCocoa::UpdateLoadingAnimations(bool should_animate) {
 }
 
 void BrowserWindowCocoa::SetStarredState(bool is_starred) {
-  [controller_ setStarredState:is_starred ? YES : NO];
+  [controller_ setStarredState:is_starred];
 }
 
 void BrowserWindowCocoa::SetTranslateIconToggled(bool is_lit) {
-  NOTIMPLEMENTED();
+  [controller_ setCurrentPageIsTranslated:is_lit];
 }
 
 void BrowserWindowCocoa::OnActiveTabChanged(content::WebContents* old_contents,
@@ -488,7 +495,14 @@ void BrowserWindowCocoa::ShowTranslateBubble(
     content::WebContents* contents,
     TranslateTabHelper::TranslateStep step,
     TranslateErrors::Type error_type) {
-  NOTIMPLEMENTED();
+  TranslateTabHelper* translate_tab_helper =
+      TranslateTabHelper::FromWebContents(contents);
+  LanguageState& language_state = translate_tab_helper->GetLanguageState();
+  language_state.SetTranslateEnabled(true);
+
+  [controller_ showTranslateBubbleForWebContents:contents
+                                            step:step
+                                       errorType:error_type];
 }
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
@@ -723,35 +737,21 @@ int
 BrowserWindowCocoa::GetRenderViewHeightInsetWithDetachedBookmarkBar() {
   if (browser_->bookmark_bar_state() != BookmarkBar::DETACHED)
     return 0;
-  // TODO(sail): please make this work with cocoa, then enable
-  // BrowserTest.GetSizeForNewRenderView and
-  // WebContentsImplBrowserTest.GetSizeForNewRenderView.
-  // This function should return the extra height of the render view when
-  // detached bookmark bar is hidden.
-  // However, I (kuan) return 0 for now to retain the original behavior,
-  // because I encountered the following problem on cocoa:
-  // 1) When a navigation is requested,
-  //    WebContentsImpl::CreateRenderViewForRenderManager creates the new
-  //    RenderWidgetHostView at the size specified by
-  //    WebContentsDelegate::GetSizeForNewRenderView implemented by Browser.
-  // 2) When the pending navigation entry is committed,
-  //    WebContentsImpl::UpdateRenderViewSizeForRenderManager udpates the size
-  //    of WebContentsView to the size in (1).
-  // 3) WebContentsImpl::DidNavigateMainFramePostCommit() is called, where
-  //    the detached bookmark bar is hidden, resulting in relayout of tab
-  //    contents area.
-  // On cocoa, (2) causes RenderWidgetHostView to resize (enlarge) further.
-  // e.g. if size in (1) is size A, and this function returns height H, height
-  // of RenderWidgetHostView after (2) becomes A.height() + H; it's supposed to
-  // stay at A.height().
-  // Then, in (3), WebContentsView and RenderWidgetHostView enlarge even
-  // further, both by another H, i.e. WebContentsView's height becomes
-  // A.height() + H and RenderWidgetHostView's height becomes A.height() + 2H.
-  // Strangely, the RenderWidgetHostView for the previous navigation entry also
-  // gets enlarged by H.
-  // I believe these "automatic" resizing are caused by setAutoresizingMask of
-  // of the cocoa view in WebContentsViewMac, which defeats the purpose of
-  // WebContentsDelegate::GetSizeForNewRenderView i.e. to prevent resizing of
-  // RenderWidgetHostView in (2) and (3).
-  return 0;
+  return 40;
+}
+
+void BrowserWindowCocoa::ExecuteExtensionCommand(
+    const extensions::Extension* extension,
+    const extensions::Command& command) {
+  [cocoa_controller() executeExtensionCommand:extension->id() command:command];
+}
+
+void BrowserWindowCocoa::ShowPageActionPopup(
+    const extensions::Extension* extension) {
+  [cocoa_controller() activatePageAction:extension->id()];
+}
+
+void BrowserWindowCocoa::ShowBrowserActionPopup(
+    const extensions::Extension* extension) {
+  [cocoa_controller() activateBrowserAction:extension->id()];
 }

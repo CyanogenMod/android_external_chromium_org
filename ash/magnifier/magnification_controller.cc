@@ -13,9 +13,9 @@
 #include "base/command_line.h"
 #include "base/synchronization/waitable_event.h"
 #include "ui/aura/client/cursor_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/root_window_transformer.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_property.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
@@ -28,7 +28,7 @@
 #include "ui/gfx/point_f.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/corewm/compound_event_filter.h"
+#include "ui/wm/core/compound_event_filter.h"
 
 namespace {
 
@@ -44,11 +44,10 @@ const float kScrollScaleChangeFactor = 0.05f;
 // |kPanningMergin| from the edge, the view-port moves.
 const int kPanningMergin = 100;
 
-void MoveCursorTo(aura::RootWindow* root_window,
-                  const gfx::Point& root_location) {
+void MoveCursorTo(aura::WindowTreeHost* host, const gfx::Point& root_location) {
   gfx::Point3F host_location_3f(root_location);
-  root_window->host()->GetRootTransform().TransformPoint(&host_location_3f);
-  root_window->host()->MoveCursorToHostLocation(
+  host->GetRootTransform().TransformPoint(&host_location_3f);
+  host->MoveCursorToHostLocation(
       gfx::ToCeiledPoint(host_location_3f.AsPointF()));
 }
 
@@ -273,8 +272,7 @@ bool MagnificationControllerImpl::RedrawDIP(const gfx::PointF& position_in_dip,
       Shell::GetScreen()->GetDisplayNearestWindow(root_window_);
   scoped_ptr<aura::RootWindowTransformer> transformer(
       internal::CreateRootWindowTransformerForDisplay(root_window_, display));
-  root_window_->GetDispatcher()->host()->SetRootWindowTransformer(
-      transformer.Pass());
+  root_window_->GetHost()->SetRootWindowTransformer(transformer.Pass());
 
   if (animate)
     is_on_animation_ = true;
@@ -362,7 +360,7 @@ void MagnificationControllerImpl::OnMouseMove(const gfx::Point& location) {
     if (ret) {
       // If the magnified region is moved, hides the mouse cursor and moves it.
       if (x_diff != 0 || y_diff != 0)
-        MoveCursorTo(root_window_->GetDispatcher(), mouse);
+        MoveCursorTo(root_window_->GetHost(), mouse);
     }
   }
 }
@@ -419,7 +417,7 @@ void MagnificationControllerImpl::OnImplicitAnimationsCompleted() {
     return;
 
   if (move_cursor_after_animation_) {
-    MoveCursorTo(root_window_->GetDispatcher(), position_after_animation_);
+    MoveCursorTo(root_window_->GetHost(), position_after_animation_);
     move_cursor_after_animation_ = false;
 
     aura::client::CursorClient* cursor_client =

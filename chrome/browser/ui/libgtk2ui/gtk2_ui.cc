@@ -7,6 +7,7 @@
 #include <set>
 
 #include "base/command_line.h"
+#include "base/debug/leak_annotations.h"
 #include "base/environment.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
@@ -17,6 +18,7 @@
 #include "chrome/browser/ui/libgtk2ui/app_indicator_icon.h"
 #include "chrome/browser/ui/libgtk2ui/chrome_gtk_frame.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_border.h"
+#include "chrome/browser/ui/libgtk2ui/gtk2_signal_registrar.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_util.h"
 #include "chrome/browser/ui/libgtk2ui/native_theme_gtk2.h"
 #include "chrome/browser/ui/libgtk2ui/print_dialog_gtk2.h"
@@ -50,12 +52,8 @@
 //
 // TODO(erg): There's still a lot that needs ported or done for the first time:
 //
-// - Render and inject the button overlay from the gtk theme.
 // - Render and inject the omnibox background.
-// - Listen for the "style-set" signal on |fake_frame_| and recreate theme
-//   colors and images.
 // - Make sure to test with a light on dark theme, too.
-// - Everything else that we're not doing.
 
 namespace {
 
@@ -315,11 +313,13 @@ color_utils::HSL GetDefaultTint(int id) {
 
 namespace libgtk2ui {
 
-Gtk2UI::Gtk2UI() : use_gtk_(false) {
+Gtk2UI::Gtk2UI() {
   GtkInitFromCommandLine(*CommandLine::ForCurrentProcess());
 }
 
 void Gtk2UI::Initialize() {
+  signals_.reset(new Gtk2SignalRegistrar);
+
   // Create our fake widgets.
   fake_window_ = gtk_window_new(GTK_WINDOW_TOPLEVEL);
   fake_frame_ = chrome_gtk_frame_new();
@@ -331,10 +331,10 @@ void Gtk2UI::Initialize() {
   // properties, too, which we query for some colors.
   gtk_widget_realize(fake_frame_);
   gtk_widget_realize(fake_window_);
-  // TODO: Also listen for "style-set" on the fake frame.
 
-  // TODO(erg): Be lazy about generating this data and connect it to the
-  // style-set signal handler.
+  signals_->Connect(fake_frame_, "style-set",
+                    G_CALLBACK(&OnStyleSetThunk), this);
+
   LoadGtkValues();
   SetXDGIconTheme();
 
@@ -366,7 +366,7 @@ gfx::Image Gtk2UI::GetThemeImageNamed(int id) const {
   if (it != gtk_images_.end())
     return it->second;
 
-  if (/*use_gtk_ && */ IsOverridableImage(id)) {
+  if (IsOverridableImage(id)) {
     gfx::Image image = gfx::Image(
         gfx::ImageSkia::CreateFrom1xBitmap(GenerateGtkThemeBitmap(id)));
     gtk_images_[id] = image;
@@ -443,19 +443,7 @@ double Gtk2UI::GetCursorBlinkInterval() const {
 }
 
 ui::NativeTheme* Gtk2UI::GetNativeTheme() const {
-  return use_gtk_ ? NativeThemeGtk2::instance() :
-                    ui::NativeTheme::instance();
-}
-
-void Gtk2UI::SetUseSystemTheme(bool use_system_theme) {
-  use_gtk_ = use_system_theme;
-
-  FOR_EACH_OBSERVER(Gtk2Border, border_list_,
-                    InvalidateAndSetUsesGtk(use_system_theme));
-}
-
-bool Gtk2UI::GetUseSystemTheme() const {
-  return use_gtk_;
+  return NativeThemeGtk2::instance();
 }
 
 bool Gtk2UI::GetDefaultUsesSystemTheme() const {
@@ -657,6 +645,16 @@ ui::SelectFileDialog* Gtk2UI::CreateSelectFileDialog(
   return SelectFileDialogImpl::Create(listener, policy);
 }
 
+void Gtk2UI::AddNativeThemeChangeObserver(
+    views::NativeThemeChangeObserver* observer) {
+  theme_change_observers_.AddObserver(observer);
+}
+
+void Gtk2UI::RemoveNativeThemeChangeObserver(
+    views::NativeThemeChangeObserver* observer) {
+  theme_change_observers_.RemoveObserver(observer);
+}
+
 bool Gtk2UI::UnityIsRunning() {
   return unity::IsRunning();
 }
@@ -670,9 +668,9 @@ void Gtk2UI::NotifyWindowManagerStartupComplete() {
 void Gtk2UI::GetScrollbarColors(GdkColor* thumb_active_color,
                                 GdkColor* thumb_inactive_color,
                                 GdkColor* track_color) {
-  const GdkColor* theme_thumb_active = NULL;
-  const GdkColor* theme_thumb_inactive = NULL;
-  const GdkColor* theme_trough_color = NULL;
+  GdkColor* theme_thumb_active = NULL;
+  GdkColor* theme_thumb_inactive = NULL;
+  GdkColor* theme_trough_color = NULL;
   gtk_widget_style_get(GTK_WIDGET(fake_frame_),
                        "scrollbar-slider-prelight-color", &theme_thumb_active,
                        "scrollbar-slider-normal-color", &theme_thumb_inactive,
@@ -685,6 +683,10 @@ void Gtk2UI::GetScrollbarColors(GdkColor* thumb_active_color,
     *thumb_active_color = *theme_thumb_active;
     *thumb_inactive_color = *theme_thumb_inactive;
     *track_color = *theme_trough_color;
+
+    gdk_color_free(theme_thumb_active);
+    gdk_color_free(theme_thumb_inactive);
+    gdk_color_free(theme_trough_color);
     return;
   }
 
@@ -757,14 +759,20 @@ void Gtk2UI::GetScrollbarColors(GdkColor* thumb_active_color,
 
   // Override any of the default colors with ones that were specified by the
   // theme.
-  if (theme_thumb_active)
+  if (theme_thumb_active) {
     *thumb_active_color = *theme_thumb_active;
+    gdk_color_free(theme_thumb_active);
+  }
 
-  if (theme_thumb_inactive)
+  if (theme_thumb_inactive) {
     *thumb_inactive_color = *theme_thumb_inactive;
+    gdk_color_free(theme_thumb_inactive);
+  }
 
-  if (theme_trough_color)
+  if (theme_trough_color) {
     *track_color = *theme_trough_color;
+    gdk_color_free(theme_trough_color);
+  }
 }
 
 void Gtk2UI::SetXDGIconTheme() {
@@ -1283,7 +1291,12 @@ SkBitmap Gtk2UI::DrawGtkButtonBorder(int gtk_state,
 
   gtk_widget_set_state(button, static_cast<GtkStateType>(gtk_state));
 
-  GdkPixmap* pixmap = gtk_widget_get_snapshot(button, NULL);
+  GdkPixmap* pixmap;
+  {
+    // http://crbug.com/346740
+    ANNOTATE_SCOPED_MEMORY_LEAK;
+    pixmap = gtk_widget_get_snapshot(button, NULL);
+  }
   int w, h;
   gdk_drawable_get_size(GDK_DRAWABLE(pixmap), &w, &h);
   DCHECK_EQ(w, width);
@@ -1308,14 +1321,6 @@ SkBitmap Gtk2UI::DrawGtkButtonBorder(int gtk_state,
 
 gfx::Insets Gtk2UI::GetButtonInsets() const {
   return button_insets_;
-}
-
-void Gtk2UI::AddGtkBorder(Gtk2Border* border) {
-  border_list_.AddObserver(border);
-}
-
-void Gtk2UI::RemoveGtkBorder(Gtk2Border* border) {
-  border_list_.RemoveObserver(border);
 }
 
 void Gtk2UI::UpdateButtonInsets() {
@@ -1344,6 +1349,14 @@ void Gtk2UI::UpdateButtonInsets() {
 
 void Gtk2UI::ClearAllThemeData() {
   gtk_images_.clear();
+}
+
+void Gtk2UI::OnStyleSet(GtkWidget* widget, GtkStyle* previous_style) {
+  ClearAllThemeData();
+  LoadGtkValues();
+
+  FOR_EACH_OBSERVER(views::NativeThemeChangeObserver, theme_change_observers_,
+                    OnNativeThemeChanged());
 }
 
 }  // namespace libgtk2ui

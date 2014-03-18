@@ -4,6 +4,8 @@
 
 package org.chromium.ui.base;
 
+import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -16,6 +18,7 @@ import android.widget.Toast;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 
+import java.lang.ref.WeakReference;
 import java.util.HashMap;
 
 /**
@@ -36,11 +39,16 @@ public class WindowAndroid {
 
     protected Context mApplicationContext;
     protected SparseArray<IntentCallback> mOutstandingIntents;
+
+    // Ideally, this would be a SparseArray<String>, but there's no easy way to store a
+    // SparseArray<String> in a bundle during saveInstanceState(). So we use a HashMap and suppress
+    // the Android lint warning "UseSparseArrays".
     protected HashMap<Integer, String> mIntentErrors;
 
     /**
      * @param context The application context.
      */
+    @SuppressLint("UseSparseArrays")
     public WindowAndroid(Context context) {
         assert context == context.getApplicationContext();
         mApplicationContext = context;
@@ -156,14 +164,12 @@ public class WindowAndroid {
     }
 
     /**
-     * TODO(nileshagrawal): Stop returning Activity Context crbug.com/233440.
-     * @return Activity context, it could be null. Note, in most cases, you probably
-     * just need Application Context returned by getApplicationContext().
-     * @see #getApplicationContext()
+     * @return A reference to owning Activity.  The returned WeakReference will never be null, but
+     *         the contained Activity can be null (either if it has been garbage collected or if
+     *         this is in the context of a WebView that was not created using an Activity).
      */
-    @Deprecated
-    public Context getContext() {
-        return null;
+    public WeakReference<Activity> getActivity() {
+        return new WeakReference<Activity>(null);
     }
 
     /**

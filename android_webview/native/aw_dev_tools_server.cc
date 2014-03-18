@@ -4,7 +4,7 @@
 
 #include "android_webview/native/aw_dev_tools_server.h"
 
-#include "android_webview/browser/in_process_view_renderer.h"
+#include "android_webview/native/aw_contents.h"
 #include "base/bind.h"
 #include "base/json/json_writer.h"
 #include "base/strings/stringprintf.h"
@@ -16,9 +16,9 @@
 #include "content/public/browser/devtools_http_handler_delegate.h"
 #include "content/public/browser/devtools_target.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/user_agent.h"
 #include "jni/AwDevToolsServer_jni.h"
 #include "net/socket/unix_domain_socket_posix.h"
-#include "webkit/common/user_agent/user_agent_util.h"
 
 using content::DevToolsAgentHost;
 using content::RenderViewHost;
@@ -137,8 +137,9 @@ std::string AwDevToolsServerDelegate::GetDiscoveryPageHTML() {
 }
 
 std::string GetViewDescription(WebContents* web_contents) {
-  android_webview::BrowserViewRenderer* bvr
-      = android_webview::InProcessViewRenderer::FromWebContents(web_contents);
+  const android_webview::BrowserViewRenderer* bvr =
+      android_webview::AwContents::FromWebContents(web_contents)
+          ->GetBrowserViewRenderer();
   if (!bvr) return "";
   base::DictionaryValue description;
   description.SetBoolean("attached", bvr->IsAttachedToWindow());
@@ -177,8 +178,7 @@ void AwDevToolsServer::Start() {
           base::StringPrintf(kSocketNameFormat, getpid()),
           "",
           base::Bind(&content::CanUserConnectToDevTools)),
-      base::StringPrintf(kFrontEndURL,
-                         webkit_glue::GetWebKitRevision().c_str()),
+      base::StringPrintf(kFrontEndURL, content::GetWebKitRevision().c_str()),
       new AwDevToolsServerDelegate());
 }
 

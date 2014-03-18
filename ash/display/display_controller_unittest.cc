@@ -13,17 +13,20 @@
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/test/ash_test_helper.h"
 #include "ash/test/cursor_manager_test_api.h"
 #include "ash/test/display_manager_test_api.h"
+#include "ash/test/test_shell_delegate.h"
 #include "ash/wm/window_state.h"
+#include "ash/wm/wm_event.h"
 #include "base/command_line.h"
 #include "ui/aura/client/activation_change_observer.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/focus_change_observer.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/events/event_handler.h"
 #include "ui/gfx/display.h"
@@ -182,6 +185,9 @@ void SetDefaultDisplayLayout(DisplayLayout::Position position) {
 
 class DisplayControllerShutdownTest : public test::AshTestBase {
  public:
+  DisplayControllerShutdownTest() {}
+  virtual ~DisplayControllerShutdownTest() {}
+
   virtual void TearDown() OVERRIDE {
     test::AshTestBase::TearDown();
     if (!SupportsMultipleDisplays())
@@ -192,6 +198,59 @@ class DisplayControllerShutdownTest : public test::AshTestBase {
     EXPECT_EQ("0,0 444x333", primary.bounds().ToString());
     EXPECT_EQ(2, Shell::GetScreen()->GetNumDisplays());
   }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DisplayControllerShutdownTest);
+};
+
+class StartupHelper : public test::TestShellDelegate,
+                      public DisplayController::Observer {
+ public:
+  StartupHelper() : displays_initialized_(false) {}
+  virtual ~StartupHelper() {}
+
+  // ash::ShellSelegate:
+  virtual void PreInit() OVERRIDE {
+    Shell::GetInstance()->display_controller()->AddObserver(this);
+  }
+
+  // ash::DisplayController::Observer:
+  virtual void OnDisplaysInitialized() OVERRIDE {
+    DCHECK(!displays_initialized_);
+    displays_initialized_ = true;
+  }
+
+  const bool displays_initialized() const {
+    return displays_initialized_;
+  }
+
+ private:
+  bool displays_initialized_;
+
+  DISALLOW_COPY_AND_ASSIGN(StartupHelper);
+};
+
+class DisplayControllerStartupTest : public test::AshTestBase {
+ public:
+  DisplayControllerStartupTest() : startup_helper_(new StartupHelper) {}
+  virtual ~DisplayControllerStartupTest() {}
+
+  // ash::test::AshTestBase:
+  virtual void SetUp() OVERRIDE {
+    ash_test_helper()->set_test_shell_delegate(startup_helper_);
+    test::AshTestBase::SetUp();
+  }
+  virtual void TearDown() OVERRIDE {
+    Shell::GetInstance()->display_controller()->RemoveObserver(startup_helper_);
+    test::AshTestBase::TearDown();
+  }
+
+  const StartupHelper* startup_helper() const { return startup_helper_; }
+
+ private:
+  StartupHelper* startup_helper_;  // Owned by ash::Shell.
+
+  DISALLOW_COPY_AND_ASSIGN(DisplayControllerStartupTest);
 };
 
 class TestEventHandler : public ui::EventHandler {
@@ -289,9 +348,9 @@ void GetPrimaryAndSeconary(aura::Window** primary,
   *secondary = root_windows[0] == *primary ? root_windows[1] : root_windows[0];
 }
 
-std::string GetXWindowName(aura::RootWindow* window) {
+std::string GetXWindowName(aura::WindowTreeHost* host) {
   char* name = NULL;
-  XFetchName(gfx::GetXDisplay(), window->host()->GetAcceleratedWidget(), &name);
+  XFetchName(gfx::GetXDisplay(), host->GetAcceleratedWidget(), &name);
   std::string ret(name);
   XFree(name);
   return ret;
@@ -307,6 +366,13 @@ TEST_F(DisplayControllerShutdownTest, Shutdown) {
     return;
 
   UpdateDisplay("444x333, 200x200");
+}
+
+TEST_F(DisplayControllerStartupTest, Startup) {
+  if (!SupportsMultipleDisplays())
+    return;
+
+  EXPECT_TRUE(startup_helper()->displays_initialized());
 }
 
 TEST_F(DisplayControllerTest, SecondaryDisplayLayout) {
@@ -481,7 +547,8 @@ TEST_F(DisplayControllerTest, MirrorToDockedWithFullscreen) {
   EXPECT_EQ(1U, display_manager->GetNumDisplays());
 
   wm::WindowState* window_state = wm::GetWindowState(w1.get());
-  window_state->ToggleFullscreen();
+  const wm::WMEvent toggle_fullscreen_event(wm::WM_EVENT_TOGGLE_FULLSCREEN);
+  window_state->OnWMEvent(&toggle_fullscreen_event);
   EXPECT_TRUE(window_state->IsFullscreen());
   EXPECT_EQ("0,0 250x250", w1->bounds().ToString());
   // Dock mode.
@@ -732,7 +799,7 @@ TEST_F(DisplayControllerTest, SwapPrimaryForLegacyShelfLayout) {
     return;
 
   CommandLine::ForCurrentProcess()->AppendSwitch(
-      ash::switches::kAshDisableAlternateShelfLayout);
+      switches::kAshDisableAlternateShelfLayout);
 
   DisplayController* display_controller =
       Shell::GetInstance()->display_controller();
@@ -964,11 +1031,11 @@ TEST_F(DisplayControllerTest, CursorDeviceScaleFactorSwapPrimary) {
 
   test::CursorManagerTestApi test_api(Shell::GetInstance()->cursor_manager());
 
-  EXPECT_EQ(1.0f, primary_root->GetDispatcher()->host()->compositor()->
+  EXPECT_EQ(1.0f, primary_root->GetHost()->compositor()->
       device_scale_factor());
   primary_root->MoveCursorTo(gfx::Point(50, 50));
   EXPECT_EQ(1.0f, test_api.GetDisplay().device_scale_factor());
-  EXPECT_EQ(2.0f, secondary_root->GetDispatcher()->host()->compositor()->
+  EXPECT_EQ(2.0f, secondary_root->GetHost()->compositor()->
       device_scale_factor());
   secondary_root->MoveCursorTo(gfx::Point(50, 50));
   EXPECT_EQ(2.0f, test_api.GetDisplay().device_scale_factor());
@@ -978,12 +1045,12 @@ TEST_F(DisplayControllerTest, CursorDeviceScaleFactorSwapPrimary) {
 
   // Cursor's device scale factor should be updated accroding to the swap of
   // primary and secondary.
-  EXPECT_EQ(1.0f, secondary_root->GetDispatcher()->host()->compositor()->
+  EXPECT_EQ(1.0f, secondary_root->GetHost()->compositor()->
       device_scale_factor());
   secondary_root->MoveCursorTo(gfx::Point(50, 50));
   EXPECT_EQ(1.0f, test_api.GetDisplay().device_scale_factor());
   primary_root->MoveCursorTo(gfx::Point(50, 50));
-  EXPECT_EQ(2.0f, primary_root->GetDispatcher()->host()->compositor()->
+  EXPECT_EQ(2.0f, primary_root->GetHost()->compositor()->
       device_scale_factor());
   EXPECT_EQ(2.0f, test_api.GetDisplay().device_scale_factor());
 
@@ -995,7 +1062,7 @@ TEST_F(DisplayControllerTest, CursorDeviceScaleFactorSwapPrimary) {
   EXPECT_EQ(1.0f, test_api.GetDisplay().device_scale_factor());
 
   primary_root->MoveCursorTo(gfx::Point(50, 50));
-  EXPECT_EQ(1.0f, primary_root->GetDispatcher()->host()->compositor()->
+  EXPECT_EQ(1.0f, primary_root->GetHost()->compositor()->
       device_scale_factor());
   EXPECT_EQ(1.0f, test_api.GetDisplay().device_scale_factor());
 }
@@ -1037,13 +1104,13 @@ TEST_F(DisplayControllerTest, OverscanInsets) {
   UpdateDisplay("400x300*2,600x400/o");
   root_windows = Shell::GetAllRootWindows();
   gfx::Point point;
-  Shell::GetAllRootWindows()[1]->GetDispatcher()->host()->
+  Shell::GetAllRootWindows()[1]->GetHost()->
       GetRootTransform().TransformPoint(&point);
   EXPECT_EQ("15,10", point.ToString());
 
   display_controller->SwapPrimaryDisplay();
   point.SetPoint(0, 0);
-  Shell::GetAllRootWindows()[1]->GetDispatcher()->host()->
+  Shell::GetAllRootWindows()[1]->GetHost()->
       GetRootTransform().TransformPoint(&point);
   EXPECT_EQ("15,10", point.ToString());
 
@@ -1296,7 +1363,7 @@ TEST_F(DisplayControllerTest, DockToSingle) {
   display_info_list.push_back(external_display_info);
   display_manager->OnNativeDisplaysChanged(display_info_list);
   EXPECT_EQ(1U, display_manager->GetNumDisplays());
-  EXPECT_FALSE(Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->
+  EXPECT_FALSE(Shell::GetPrimaryRootWindow()->GetHost()->
                GetRootTransform().IsIdentityOrIntegerTranslation());
 
   // Switch to single mode and make sure the transform is the one
@@ -1304,33 +1371,33 @@ TEST_F(DisplayControllerTest, DockToSingle) {
   display_info_list.clear();
   display_info_list.push_back(internal_display_info);
   display_manager->OnNativeDisplaysChanged(display_info_list);
-  EXPECT_TRUE(Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->
+  EXPECT_TRUE(Shell::GetPrimaryRootWindow()->GetHost()->
               GetRootTransform().IsIdentityOrIntegerTranslation());
 }
 
 #if defined(USE_X11)
 TEST_F(DisplayControllerTest, XWidowNameForRootWindow) {
   EXPECT_EQ("aura_root_0", GetXWindowName(
-      Shell::GetPrimaryRootWindow()->GetDispatcher()));
+      Shell::GetPrimaryRootWindow()->GetHost()));
 
   // Multiple display.
   UpdateDisplay("200x200,300x300");
   aura::Window* primary, *secondary;
   GetPrimaryAndSeconary(&primary, &secondary);
-  EXPECT_EQ("aura_root_0", GetXWindowName(primary->GetDispatcher()));
-  EXPECT_EQ("aura_root_x", GetXWindowName(secondary->GetDispatcher()));
+  EXPECT_EQ("aura_root_0", GetXWindowName(primary->GetHost()));
+  EXPECT_EQ("aura_root_x", GetXWindowName(secondary->GetHost()));
 
   // Swap primary.
   primary = secondary = NULL;
   Shell::GetInstance()->display_controller()->SwapPrimaryDisplay();
   GetPrimaryAndSeconary(&primary, &secondary);
-  EXPECT_EQ("aura_root_0", GetXWindowName(primary->GetDispatcher()));
-  EXPECT_EQ("aura_root_x", GetXWindowName(secondary->GetDispatcher()));
+  EXPECT_EQ("aura_root_0", GetXWindowName(primary->GetHost()));
+  EXPECT_EQ("aura_root_x", GetXWindowName(secondary->GetHost()));
 
   // Switching back to single display.
   UpdateDisplay("300x400");
   EXPECT_EQ("aura_root_0", GetXWindowName(
-      Shell::GetPrimaryRootWindow()->GetDispatcher()));
+      Shell::GetPrimaryRootWindow()->GetHost()));
 }
 #endif
 

@@ -18,7 +18,23 @@
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 
+#if defined(ENABLE_APP_LIST)
+#include "ui/app_list/app_list_switches.h"
+#endif
+
 namespace extensions {
+
+namespace {
+
+bool IsAppListVoiceSearchEnabled() {
+#if defined(ENABLE_APP_LIST)
+  return app_list::switches::IsVoiceSearchEnabled();
+#else
+  return false;
+#endif
+}
+
+}  // namespace
 
 ExternalComponentLoader::ExternalComponentLoader(Profile* profile)
     : profile_(profile) {
@@ -32,30 +48,62 @@ void ExternalComponentLoader::StartLoading() {
   prefs_->SetString(appId + ".external_update_url",
                     extension_urls::GetWebstoreUpdateUrl().spec());
 
-  if (HotwordServiceFactory::IsHotwordAllowed(profile_)) {
+  if (HotwordServiceFactory::IsHotwordAllowed(profile_) ||
+      IsAppListVoiceSearchEnabled()) {
     std::string hotwordId = extension_misc::kHotwordExtensionId;
     prefs_->SetString(hotwordId + ".external_update_url",
                       extension_urls::GetWebstoreUpdateUrl().spec());
   }
 
-  if (CommandLine::ForCurrentProcess()->
-          GetSwitchValueASCII(switches::kEnableEnhancedBookmarks) != "0") {
-    std::string ext_id;
-    if (profile_->GetPrefs()->GetBoolean(
-            prefs::kEnhancedBookmarksExperimentEnabled)) {
-      ext_id =
-          profile_->GetPrefs()->GetString(prefs::kEnhancedBookmarksExtensionId);
+  BookmarksExperimentState bookmarks_experiment_state_before =
+      static_cast<BookmarksExperimentState>(profile_->GetPrefs()->GetInteger(
+          prefs::kEnhancedBookmarksExperimentEnabled));
+  if (bookmarks_experiment_state_before == kBookmarksExperimentEnabled) {
+    // kEnhancedBookmarksExperiment flag could have values "", "1" and "0".
+    // "0" - user opted out.
+    if (CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            switches::kEnhancedBookmarksExperiment) != "0") {
+      // Experiment enabled.
+      std::string ext_id = profile_->GetPrefs()->GetString(
+          prefs::kEnhancedBookmarksExtensionId);
+      if (!ext_id.empty()) {
+        prefs_->SetString(ext_id + ".external_update_url",
+                          extension_urls::GetWebstoreUpdateUrl().spec());
+      }
     } else {
-      ext_id = GetEnhancedBookmarksExtensionIdFromFinch();
+      // Experiment enabled but user opted out.
+      profile_->GetPrefs()->SetInteger(
+          prefs::kEnhancedBookmarksExperimentEnabled,
+          kBookmarksExperimentEnabledUserOptOut);
     }
-    if (!ext_id.empty()) {
-      prefs_->SetString(ext_id + ".external_update_url",
-                        extension_urls::GetWebstoreUpdateUrl().spec());
+  } else if (bookmarks_experiment_state_before ==
+             kBookmarksExperimentEnabledUserOptOut) {
+    if (CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            switches::kEnhancedBookmarksExperiment) != "0") {
+      // User opted in again.
+      profile_->GetPrefs()->SetInteger(
+          prefs::kEnhancedBookmarksExperimentEnabled,
+          kBookmarksExperimentEnabled);
+      std::string ext_id = profile_->GetPrefs()->GetString(
+          prefs::kEnhancedBookmarksExtensionId);
+      if (!ext_id.empty()) {
+        prefs_->SetString(ext_id + ".external_update_url",
+                          extension_urls::GetWebstoreUpdateUrl().spec());
+      }
     }
   } else {
+    // Experiment disabled.
     profile_->GetPrefs()->ClearPref(prefs::kEnhancedBookmarksExperimentEnabled);
     profile_->GetPrefs()->ClearPref(prefs::kEnhancedBookmarksExtensionId);
   }
+  BookmarksExperimentState bookmarks_experiment_state =
+      static_cast<BookmarksExperimentState>(profile_->GetPrefs()->GetInteger(
+          prefs::kEnhancedBookmarksExperimentEnabled));
+  if (bookmarks_experiment_state_before != bookmarks_experiment_state) {
+    UpdateBookmarksExperiment(g_browser_process->local_state(),
+                              bookmarks_experiment_state);
+  }
+
   LoadFinished();
 }
 

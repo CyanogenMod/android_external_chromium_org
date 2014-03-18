@@ -22,6 +22,11 @@ class QuicSentPacketManagerPeer {
   static void SetSendAlgorithm(QuicSentPacketManager* sent_packet_manager,
                                SendAlgorithmInterface* send_algorithm);
 
+  static void SetLossAlgorithm(QuicSentPacketManager* sent_packet_manager,
+                               LossDetectionInterface* loss_detector);
+
+  static RttStats* GetRttStats(QuicSentPacketManager* sent_packet_manager);
+
   static size_t GetNackCount(
       const QuicSentPacketManager* sent_packet_manager,
       QuicPacketSequenceNumber sequence_number);
@@ -35,8 +40,6 @@ class QuicSentPacketManagerPeer {
   static QuicTime GetSentTime(const QuicSentPacketManager* sent_packet_manager,
                               QuicPacketSequenceNumber sequence_number);
 
-  static QuicTime::Delta rtt(QuicSentPacketManager* sent_packet_manager);
-
   // Returns true if |sequence_number| is a retransmission of a packet.
   static bool IsRetransmission(QuicSentPacketManager* sent_packet_manager,
                                QuicPacketSequenceNumber sequence_number);
@@ -49,6 +52,12 @@ class QuicSentPacketManagerPeer {
       const QuicSentPacketManager* sent_packet_manager);
 
   static bool HasUnackedCryptoPackets(
+      const QuicSentPacketManager* sent_packet_manager);
+
+  static size_t GetNumRetransmittablePackets(
+      const QuicSentPacketManager* sent_packet_manager);
+
+  static SequenceNumberSet GetUnackedPackets(
       const QuicSentPacketManager* sent_packet_manager);
 
  private:

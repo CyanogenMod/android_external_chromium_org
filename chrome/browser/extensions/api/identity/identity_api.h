@@ -19,21 +19,18 @@
 #include "chrome/browser/extensions/api/identity/identity_mint_queue.h"
 #include "chrome/browser/extensions/api/identity/identity_signin_flow.h"
 #include "chrome/browser/extensions/api/identity/web_auth_flow.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/signin/signin_global_error.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "google_apis/gaia/oauth2_mint_token_flow.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 
 class GoogleServiceAuthError;
 class MockGetAuthTokenFunction;
-class Profile;
 
-#if defined(OS_CHROMEOS)
-namespace chromeos {
-class DeviceOAuth2TokenService;
+namespace content {
+class BrowserContext;
 }
-#endif
 
 namespace extensions {
 
@@ -140,9 +137,6 @@ class IdentityGetAuthTokenFunction : public ChromeAsyncExtensionFunction,
   // Starts a login access token request for device robot account. This method
   // will be called only in enterprise kiosk mode in ChromeOS.
   virtual void StartDeviceLoginAccessTokenRequest();
-
-  // Continuation of StartDeviceLoginAccessTokenRequest().
-  virtual void DidGetTokenService(chromeos::DeviceOAuth2TokenService* service);
 #endif
 
   // Starts a mint token request to GAIA.
@@ -251,12 +245,12 @@ class IdentityTokenCacheValue {
   base::Time expiration_time_;
 };
 
-class IdentityAPI : public ProfileKeyedAPI,
+class IdentityAPI : public BrowserContextKeyedAPI,
                     public AccountTracker::Observer {
  public:
   typedef std::map<ExtensionTokenKey, IdentityTokenCacheValue> CachedTokens;
 
-  explicit IdentityAPI(Profile* profile);
+  explicit IdentityAPI(content::BrowserContext* context);
   virtual ~IdentityAPI();
 
   // Request serialization queue for getAuthToken.
@@ -273,10 +267,11 @@ class IdentityAPI : public ProfileKeyedAPI,
   const CachedTokens& GetAllCachedTokens();
 
   void ReportAuthError(const GoogleServiceAuthError& error);
+  GoogleServiceAuthError GetAuthStatusForTest() const;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   virtual void Shutdown() OVERRIDE;
-  static ProfileKeyedAPIFactory<IdentityAPI>* GetFactoryInstance();
+  static BrowserContextKeyedAPIFactory<IdentityAPI>* GetFactoryInstance();
 
   // AccountTracker::Observer implementation:
   virtual void OnAccountAdded(const AccountIds& ids) OVERRIDE;
@@ -285,22 +280,22 @@ class IdentityAPI : public ProfileKeyedAPI,
       OVERRIDE;
 
  private:
-  friend class ProfileKeyedAPIFactory<IdentityAPI>;
+  friend class BrowserContextKeyedAPIFactory<IdentityAPI>;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "IdentityAPI";
   }
   static const bool kServiceIsNULLWhileTesting = true;
 
-  Profile* profile_;
+  content::BrowserContext* browser_context_;
   IdentityMintRequestQueue mint_queue_;
   CachedTokens token_cache_;
   AccountTracker account_tracker_;
 };
 
 template <>
-void ProfileKeyedAPIFactory<IdentityAPI>::DeclareFactoryDependencies();
+void BrowserContextKeyedAPIFactory<IdentityAPI>::DeclareFactoryDependencies();
 
 }  // namespace extensions
 

@@ -31,8 +31,11 @@ MediaPlayerBridge::MediaPlayerBridge(
     const GURL& first_party_for_cookies,
     const std::string& user_agent,
     bool hide_url_log,
-    MediaPlayerManager* manager)
-    : MediaPlayerAndroid(player_id, manager),
+    MediaPlayerManager* manager,
+    const RequestMediaResourcesCB& request_media_resources_cb,
+    const ReleaseMediaResourcesCB& release_media_resources_cb)
+    : MediaPlayerAndroid(player_id, manager, request_media_resources_cb,
+                         release_media_resources_cb),
       prepared_(false),
       pending_play_(false),
       url_(url),
@@ -46,7 +49,8 @@ MediaPlayerBridge::MediaPlayerBridge(
       can_seek_backward_(true),
       weak_this_(this),
       listener_(base::MessageLoopProxy::current(),
-                weak_this_.GetWeakPtr()) {
+                weak_this_.GetWeakPtr()),
+      is_surface_in_use_(false) {
 }
 
 MediaPlayerBridge::~MediaPlayerBridge() {
@@ -122,7 +126,7 @@ void MediaPlayerBridge::SetVideoSurface(gfx::ScopedJavaSurface surface) {
 
   JNIEnv* env = base::android::AttachCurrentThread();
   CHECK(env);
-
+  is_surface_in_use_ = true;
   Java_MediaPlayerBridge_setSurface(
       env, j_media_player_bridge_.obj(), surface.j_surface().obj());
 }
@@ -173,7 +177,7 @@ void MediaPlayerBridge::SetDataSource(const std::string& url) {
     return;
   }
 
-  manager()->RequestMediaResources(player_id());
+  request_media_resources_cb_.Run(player_id());
   if (!Java_MediaPlayerBridge_prepareAsync(env, j_media_player_bridge_.obj()))
     OnMediaError(MEDIA_ERROR_FORMAT);
 }
@@ -185,7 +189,7 @@ void MediaPlayerBridge::OnDidSetDataUriDataSource(JNIEnv* env, jobject obj,
     return;
   }
 
-  manager()->RequestMediaResources(player_id());
+  request_media_resources_cb_.Run(player_id());
   if (!Java_MediaPlayerBridge_prepareAsync(env, j_media_player_bridge_.obj()))
     OnMediaError(MEDIA_ERROR_FORMAT);
 }
@@ -300,12 +304,12 @@ void MediaPlayerBridge::Release() {
     pending_seek_ = GetCurrentTime();
   prepared_ = false;
   pending_play_ = false;
+  is_surface_in_use_ = false;
   SetVideoSurface(gfx::ScopedJavaSurface());
-
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_MediaPlayerBridge_release(env, j_media_player_bridge_.obj());
   j_media_player_bridge_.Reset();
-  manager()->ReleaseMediaResources(player_id());
+  release_media_resources_cb_.Run(player_id());
   listener_.ReleaseMediaPlayerListenerResources();
 }
 
@@ -460,6 +464,10 @@ GURL MediaPlayerBridge::GetUrl() {
 
 GURL MediaPlayerBridge::GetFirstPartyForCookies() {
   return first_party_for_cookies_;
+}
+
+bool MediaPlayerBridge::IsSurfaceInUse() const {
+  return is_surface_in_use_;
 }
 
 }  // namespace media

@@ -32,7 +32,6 @@ RenderWidgetHost* RenderWidgetHostViewChildFrame::GetRenderWidgetHost() const {
 }
 
 void RenderWidgetHostViewChildFrame::SetSize(const gfx::Size& size) {
-  size_ = size;
   host_->WasResized();
 }
 
@@ -68,8 +67,6 @@ gfx::Rect RenderWidgetHostViewChildFrame::GetViewBounds() const {
   gfx::Rect rect;
   if (frame_connector_)
     rect = frame_connector_->ChildFrameRect();
-  rect.set_width(size_.width());
-  rect.set_height(size_.height());
   return rect;
 }
 
@@ -94,7 +91,10 @@ void RenderWidgetHostViewChildFrame::SetBackground(
 }
 
 gfx::Size RenderWidgetHostViewChildFrame::GetPhysicalBackingSize() const {
-  return size_;
+  gfx::Size size;
+  if (frame_connector_)
+    size = frame_connector_->ChildFrameRect().size();
+  return size;
 }
 
 void RenderWidgetHostViewChildFrame::InitAsPopup(
@@ -167,10 +167,14 @@ void RenderWidgetHostViewChildFrame::RenderProcessGone(
     int error_code) {
   if (frame_connector_)
     frame_connector_->RenderProcessGone();
+  Destroy();
 }
 
 void RenderWidgetHostViewChildFrame::Destroy() {
-  frame_connector_ = NULL;
+  if (frame_connector_) {
+    frame_connector_->set_view(NULL);
+    frame_connector_ = NULL;
+  }
 
   host_->SetView(NULL);
   host_ = NULL;
@@ -190,6 +194,12 @@ void RenderWidgetHostViewChildFrame::SelectionChanged(
 void RenderWidgetHostViewChildFrame::SelectionBoundsChanged(
     const ViewHostMsg_SelectionBounds_Params& params) {
 }
+
+#if defined(OS_ANDROID)
+void RenderWidgetHostViewChildFrame::SelectionRootBoundsChanged(
+    const gfx::Rect& bounds) {
+}
+#endif
 
 void RenderWidgetHostViewChildFrame::ScrollOffsetChanged() {
 }
@@ -361,5 +371,9 @@ gfx::NativeViewId RenderWidgetHostViewChildFrame::GetParentForWindowlessPlugin()
   return NULL;
 }
 #endif // defined(OS_WIN)
+
+SkBitmap::Config RenderWidgetHostViewChildFrame::PreferredReadbackFormat() {
+  return SkBitmap::kARGB_8888_Config;
+}
 
 }  // namespace content

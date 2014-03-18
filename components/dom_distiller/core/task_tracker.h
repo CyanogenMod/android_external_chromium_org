@@ -11,6 +11,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
+#include "components/dom_distiller/core/article_distillation_update.h"
 #include "components/dom_distiller/core/article_entry.h"
 #include "components/dom_distiller/core/distiller.h"
 #include "components/dom_distiller/core/proto/distilled_page.pb.h"
@@ -24,9 +25,8 @@ class DistilledArticleProto;
 // A handle to a request to view a DOM distiller entry or URL. The request will
 // be cancelled when the handle is destroyed.
 class ViewerHandle {
-  typedef base::Callback<void()> CancelCallback;
-
  public:
+  typedef base::Callback<void()> CancelCallback;
   explicit ViewerHandle(CancelCallback callback);
   ~ViewerHandle();
 
@@ -45,6 +45,9 @@ class ViewRequestDelegate {
   // when the corresponding ViewerHandle is destroyed (or when the
   // DomDistillerService is destroyed).
   virtual void OnArticleReady(const DistilledArticleProto* article_proto) = 0;
+
+  // Called when an article that is currently under distillation is updated.
+  virtual void OnArticleUpdated(ArticleDistillationUpdate article_update) = 0;
 };
 
 // A TaskTracker manages the various tasks related to viewing, saving,
@@ -91,8 +94,12 @@ class TaskTracker {
   bool HasUrl(const GURL& url) const;
 
  private:
-  void OnDistilledDataReady(
+  void OnDistillerFinished(scoped_ptr<DistilledArticleProto> distilled_article);
+
+  void OnDistilledArticleReady(
       scoped_ptr<DistilledArticleProto> distilled_article);
+  void OnArticleDistillationUpdated(
+      const ArticleDistillationUpdate& article_update);
   // Posts a task to run DoSaveCallbacks with |distillation_succeeded|.
   void ScheduleSaveCallbacks(bool distillation_succeeded);
 
@@ -116,7 +123,10 @@ class TaskTracker {
 
   ArticleEntry entry_;
   scoped_ptr<DistilledArticleProto> distilled_article_;
-  bool distillation_complete_;
+
+  bool content_ready_;
+
+  bool destruction_allowed_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

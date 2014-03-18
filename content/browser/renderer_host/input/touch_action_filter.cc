@@ -17,6 +17,8 @@ namespace content {
 TouchActionFilter::TouchActionFilter() :
   drop_scroll_gesture_events_(false),
   drop_pinch_gesture_events_(false),
+  drop_current_tap_ending_event_(false),
+  allow_current_double_tap_event_(true),
   allowed_touch_action_(TOUCH_ACTION_AUTO) {
 }
 
@@ -59,10 +61,13 @@ bool TouchActionFilter::FilterGestureEvent(WebGestureEvent* gesture_event) {
 
     case WebInputEvent::GesturePinchBegin:
       DCHECK(!drop_pinch_gesture_events_);
-      if (allowed_touch_action_ == TOUCH_ACTION_AUTO) {
+      if (allowed_touch_action_ == TOUCH_ACTION_AUTO ||
+          allowed_touch_action_ & TOUCH_ACTION_PINCH_ZOOM) {
         // Pinch events are always bracketed by scroll events, and the W3C
         // standard touch-action provides no way to disable scrolling without
-        // also disabling pinching.
+        // also disabling pinching (validated by the IPC ENUM traits).
+        DCHECK(allowed_touch_action_ == TOUCH_ACTION_AUTO ||
+            allowed_touch_action_ == TOUCH_ACTION_MANIPULATION);
         DCHECK(!drop_scroll_gesture_events_);
       } else {
         drop_pinch_gesture_events_ = true;
@@ -80,6 +85,41 @@ bool TouchActionFilter::FilterGestureEvent(WebGestureEvent* gesture_event) {
       DCHECK(!drop_scroll_gesture_events_);
       break;
 
+    // The double tap gesture is a tap ending event. If a double tap gesture is
+    // filtered out, replace it with a tap event.
+    case WebInputEvent::GestureDoubleTap:
+      DCHECK_EQ(1, gesture_event->data.tap.tapCount);
+      if (!allow_current_double_tap_event_)
+        gesture_event->type = WebInputEvent::GestureTap;
+      allow_current_double_tap_event_ = true;
+      break;
+
+    // If double tap is disabled, there's no reason for the tap delay.
+    case WebInputEvent::GestureTapUnconfirmed:
+      DCHECK_EQ(1, gesture_event->data.tap.tapCount);
+      allow_current_double_tap_event_ =
+          allowed_touch_action_ == TOUCH_ACTION_AUTO;
+      if (!allow_current_double_tap_event_) {
+        gesture_event->type = WebInputEvent::GestureTap;
+        drop_current_tap_ending_event_ = true;
+      }
+      break;
+
+    case WebInputEvent::GestureTap:
+      allow_current_double_tap_event_ =
+          allowed_touch_action_ == TOUCH_ACTION_AUTO;
+      // Fall through.
+    case WebInputEvent::GestureTapCancel:
+      if (drop_current_tap_ending_event_) {
+        drop_current_tap_ending_event_ = false;
+        return true;
+      }
+      break;
+
+    case WebInputEvent::GestureTapDown:
+      DCHECK(!drop_current_tap_ending_event_);
+      break;
+
     default:
       // Gesture events unrelated to touch actions (panning/zooming) are left
       // alone.
@@ -90,7 +130,6 @@ bool TouchActionFilter::FilterGestureEvent(WebGestureEvent* gesture_event) {
 }
 
 bool TouchActionFilter::FilterScrollEndingGesture() {
-  allowed_touch_action_ = TOUCH_ACTION_AUTO;
   DCHECK(!drop_pinch_gesture_events_);
   if (drop_scroll_gesture_events_) {
     drop_scroll_gesture_events_ = false;
@@ -112,6 +151,12 @@ void TouchActionFilter::OnSetTouchAction(TouchAction touch_action) {
   // 2. Only subtractive - eg. can't trigger scrolling on a element that
   //    otherwise has scrolling disabling by the addition of a finger.
   allowed_touch_action_ = Intersect(allowed_touch_action_, touch_action);
+}
+
+void TouchActionFilter::ResetTouchAction() {
+  DCHECK(!drop_scroll_gesture_events_);
+  DCHECK(!drop_pinch_gesture_events_);
+  allowed_touch_action_ = TOUCH_ACTION_AUTO;
 }
 
 bool TouchActionFilter::ShouldSuppressScroll(

@@ -35,8 +35,15 @@ class ChannelProxy::Context::MessageFilterRouter {
     if (filter->GetSupportedMessageClasses(&supported_message_classes)) {
       DCHECK(!supported_message_classes.empty());
       for (size_t i = 0; i < supported_message_classes.size(); ++i) {
-        DCHECK(ValidMessageClass(supported_message_classes[i]));
-        message_class_filters_[supported_message_classes[i]].push_back(filter);
+        const int message_class = supported_message_classes[i];
+        DCHECK(ValidMessageClass(message_class));
+        // Safely ignore repeated subscriptions to a given message class for the
+        // current filter being added.
+        if (!message_class_filters_[message_class].empty() &&
+            message_class_filters_[message_class].back() == filter) {
+          continue;
+        }
+        message_class_filters_[message_class].push_back(filter);
       }
     } else {
       global_filters_.push_back(filter);
@@ -80,11 +87,11 @@ class ChannelProxy::Context::MessageFilterRouter {
 
   static bool RemoveFilter(MessageFilters& filters, MessageFilter* filter) {
     MessageFilters::iterator it =
-        std::find(filters.begin(), filters.end(), filter);
+        std::remove(filters.begin(), filters.end(), filter);
     if (it == filters.end())
       return false;
 
-    filters.erase(it);
+    filters.erase(it, filters.end());
     return true;
   }
 
@@ -245,8 +252,8 @@ void ChannelProxy::Context::OnChannelClosed() {
   }
 
   // We don't need the filters anymore.
-  filters_.clear();
   message_filter_router_->Clear();
+  filters_.clear();
 
   channel_.reset();
 

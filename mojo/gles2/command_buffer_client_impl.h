@@ -6,17 +6,15 @@
 #define MOJO_GLES2_COMMAND_BUFFER_CLIENT_IMPL_H_
 
 #include <map>
-#include <queue>
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
 #include "gpu/command_buffer/common/gpu_control.h"
-
 #include "mojo/public/bindings/error_handler.h"
 #include "mojo/public/bindings/remote_ptr.h"
-#include "mojom/command_buffer.h"
+#include "mojo/services/gles2/command_buffer.mojom.h"
 
 namespace base {
 class RunLoop;
@@ -93,7 +91,6 @@ class CommandBufferClientImpl : public CommandBufferClient,
   virtual void DidInitialize(bool success) MOJO_OVERRIDE;
   virtual void DidMakeProgress(const CommandBufferState& state) MOJO_OVERRIDE;
   virtual void DidDestroy() MOJO_OVERRIDE;
-  virtual void EchoAck() MOJO_OVERRIDE;
   virtual void LostContext(int32_t lost_reason) MOJO_OVERRIDE;
 
   // ErrorHandler implementation:
@@ -118,7 +115,6 @@ class CommandBufferClientImpl : public CommandBufferClient,
   TransferBufferMap transfer_buffers_;
   int32 last_put_offset_;
   int32 next_transfer_buffer_id_;
-  std::queue<base::Closure> echo_closures_;
 
   bool initialize_result_;
 };
