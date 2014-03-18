@@ -39,16 +39,10 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,net_net_resources_gyp)/net_resources.stamp \
 	$(call intermediates-dir-for,GYP,net_net_jni_headers_gyp)/net_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_opts_gyp)/skia_skia_opts_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_opts_ssse3_gyp)/skia_skia_opts_ssse3_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_sfntly_sfntly_gyp)/third_party_sfntly_sfntly_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_skia_config_gyp)/blink_skia_config.stamp \
-	$(call intermediates-dir-for,GYP,third_party_expat_expat_gyp)/expat.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_freetype_ft2_gyp)/third_party_freetype_ft2_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libpng_libpng_gyp)/third_party_libpng_libpng_gyp.a \
+	$(call intermediates-dir-for,GYP,skia_skia_library_gyp)/skia_library.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_chrome_gyp)/skia_skia_chrome_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_chrome_opts_gyp)/skia_skia_chrome_opts_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libpng_libpng_gyp)/third_party_libpng_libpng_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_libjpeg_libjpeg_gyp)/libjpeg.stamp \
 	$(call intermediates-dir-for,GYP,ui_gfx_gfx_jni_headers_gyp)/gfx_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,ui_gfx_gfx_view_jni_headers_gyp)/gfx_view_jni_headers.stamp \
@@ -220,6 +214,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_seccomp_bpf_helpers_gyp)/sandbox_seccomp_bpf_helpers_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_webdata_common_gyp)/components_webdata_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_gyp)/third_party_libjingle_libjingle_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_expat_expat_gyp)/expat.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_p2p_constants_gyp)/third_party_libjingle_libjingle_p2p_constants_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_gyp)/third_party_libphonenumber_libphonenumber_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_without_metadata_gyp)/third_party_libphonenumber_libphonenumber_without_metadata_gyp.a \
@@ -322,6 +317,7 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
+	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
@@ -415,6 +411,7 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
@@ -449,13 +446,13 @@ LOCAL_LDFLAGS_Debug := \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
 	-fPIC \
-	-Wl,--no-fatal-warnings \
 	-m32 \
 	-fuse-ld=gold \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
 	-Wl,-shared,-Bsymbolic \
+	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
@@ -467,7 +464,6 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
 	-fPIC \
-	-Wl,--no-fatal-warnings \
 	-m32 \
 	-fuse-ld=gold \
 	-nostdlib \
@@ -477,6 +473,7 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,-O1 \
 	-Wl,--as-needed \
 	-Wl,--gc-sections \
+	-Wl,--fatal-warnings \
 	-Wl,--warn-shared-textrel
 
 
@@ -503,14 +500,9 @@ LOCAL_STATIC_LIBRARIES := \
 	sdch_sdch_gyp \
 	third_party_zlib_zlib_gyp \
 	url_url_lib_gyp \
-	skia_skia_library_gyp \
-	skia_skia_opts_gyp \
-	skia_skia_opts_ssse3_gyp \
-	third_party_sfntly_sfntly_gyp \
-	third_party_freetype_ft2_gyp \
-	third_party_libpng_libpng_gyp \
 	skia_skia_chrome_gyp \
 	skia_skia_chrome_opts_gyp \
+	third_party_libpng_libpng_gyp \
 	ui_ui_gyp \
 	ui_events_events_base_gyp \
 	ui_events_dom4_keycode_converter_gyp \
@@ -634,8 +626,9 @@ LOCAL_SHARED_LIBRARIES := \
 	libjnigraphics \
 	libicui18n \
 	libicuuc \
-	libexpat \
+	libskia \
 	libjpeg \
+	libexpat \
 	libstlport \
 	libdl
 
