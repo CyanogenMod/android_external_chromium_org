@@ -33,14 +33,15 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   gfx::Size size() const { return tiling_.total_size(); }
   void SetMinContentsScale(float min_contents_scale);
 
-  void UpdateRecordedRegion();
-  const Region& recorded_region() const { return recorded_region_; }
-
   int num_tiles_x() const { return tiling_.num_tiles_x(); }
   int num_tiles_y() const { return tiling_.num_tiles_y(); }
   gfx::Rect tile_bounds(int x, int y) const { return tiling_.TileBounds(x, y); }
   bool HasRecordingAt(int x, int y);
   bool CanRaster(float contents_scale, gfx::Rect content_rect);
+
+  // If this pile contains any valid recordings. May have false positives.
+  bool HasRecordings() const { return has_any_recordings_; }
+
 
   static void ComputeTileGridInfo(gfx::Size tile_grid_size,
                                   SkTileGridPicture::TileGridInfo* info);
@@ -84,10 +85,6 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
 
   virtual ~PicturePileBase();
 
-  void SetRecordedRegionForTesting(const Region& recorded_region) {
-    recorded_region_ = recorded_region;
-  }
-
   int num_raster_threads() { return num_raster_threads_; }
   int buffer_pixels() const { return tiling_.border_texels(); }
   void Clear();
@@ -95,11 +92,16 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   gfx::Rect PaddedRect(const PictureMapKey& key);
   gfx::Rect PadRect(gfx::Rect rect);
 
+  // An internal CanRaster check that goes to the picture_map rather than
+  // using the recorded_viewport hint.
+  bool CanRasterSlowTileCheck(const gfx::Rect& layer_rect) const;
+
   // A picture pile is a tiled set of pictures. The picture map is a map of tile
   // indices to picture infos.
   PictureMap picture_map_;
   TilingData tiling_;
-  Region recorded_region_;
+  // If non-empty, all pictures tiles inside this rect are recorded.
+  gfx::Rect recorded_viewport_;
   float min_contents_scale_;
   SkTileGridPicture::TileGridInfo tile_grid_info_;
   SkColor background_color_;
@@ -108,6 +110,9 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   bool show_debug_picture_borders_;
   bool clear_canvas_with_debug_color_;
   int num_raster_threads_;
+  // A hint about whether there are any recordings. This may be a false
+  // positive.
+  bool has_any_recordings_;
 
  private:
   void SetBufferPixels(int buffer_pixels);

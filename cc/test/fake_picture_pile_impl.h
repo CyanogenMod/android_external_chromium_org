@@ -21,12 +21,10 @@ class FakePicturePileImpl : public PicturePileImpl {
       gfx::Size tile_size,
       gfx::Size layer_bounds);
 
-  static scoped_refptr<FakePicturePileImpl> CreatePileWithRecordedRegion(
-      gfx::Size tile_size,
-      gfx::Size layer_bounds,
-      const Region& recorded_region);
-
-  static scoped_refptr<FakePicturePileImpl> CreatePile();
+  static scoped_refptr<FakePicturePileImpl>
+      CreateEmptyPileThatThinksItHasRecordings(const gfx::Size& tile_size,
+                                               const gfx::Size& layer_bounds);
+  static scoped_refptr<FakePicturePileImpl> CreateInfiniteFilledPile();
 
   TilingData& tiling() { return tiling_; }
 
