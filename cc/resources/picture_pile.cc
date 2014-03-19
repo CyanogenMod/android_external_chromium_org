@@ -169,8 +169,10 @@ bool PicturePile::Update(
     gfx::Rect invalidation = i.rect();
     // Split this inflated invalidation across tile boundaries and apply it
     // to all tiles that it touches.
-    for (TilingData::Iterator iter(&tiling_, invalidation);
-         iter; ++iter) {
+    bool include_borders = true;
+    for (TilingData::Iterator iter(&tiling_, invalidation, include_borders);
+         iter;
+         ++iter) {
       const PictureMapKey& key = iter.index();
 
       PictureMap::iterator picture_it = picture_map_.find(key);
@@ -185,9 +187,9 @@ bool PicturePile::Update(
   // Make a list of all invalid tiles; we will attempt to
   // cluster these into multiple invalidation regions.
   std::vector<gfx::Rect> invalid_tiles;
-
-  for (TilingData::Iterator it(&tiling_, interest_rect);
-       it; ++it) {
+  bool include_borders = true;
+  for (TilingData::Iterator it(&tiling_, interest_rect, include_borders); it;
+       ++it) {
     const PictureMapKey& key = it.index();
     PictureInfo& info = picture_map_[key];
 
@@ -237,8 +239,9 @@ bool PicturePile::Update(
       picture->CloneForDrawing(num_raster_threads_);
     }
 
-    for (TilingData::Iterator it(&tiling_, record_rect);
-        it; ++it) {
+    bool include_borders = true;
+    for (TilingData::Iterator it(&tiling_, record_rect, include_borders); it;
+         ++it) {
       const PictureMapKey& key = it.index();
       gfx::Rect tile = PaddedRect(key);
       if (record_rect.Contains(tile)) {

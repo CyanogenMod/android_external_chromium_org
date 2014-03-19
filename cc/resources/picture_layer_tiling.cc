@@ -115,7 +115,10 @@ void PictureLayerTiling::SetCanUseLCDText(bool can_use_lcd_text) {
 
 void PictureLayerTiling::CreateMissingTilesInLiveTilesRect() {
   const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
-  for (TilingData::Iterator iter(&tiling_data_, live_tiles_rect_); iter;
+  bool include_borders = true;
+  for (TilingData::Iterator iter(
+           &tiling_data_, live_tiles_rect_, include_borders);
+       iter;
        ++iter) {
     TileMapKey key = iter.index();
     TileMap::iterator find = tiles_.find(key);
@@ -166,7 +169,11 @@ void PictureLayerTiling::Invalidate(const Region& layer_region) {
     content_rect.Intersect(live_tiles_rect_);
     if (content_rect.IsEmpty())
       continue;
-    for (TilingData::Iterator iter(&tiling_data_, content_rect); iter; ++iter) {
+    bool include_borders = true;
+    for (TilingData::Iterator iter(
+             &tiling_data_, content_rect, include_borders);
+         iter;
+         ++iter) {
       TileMapKey key(iter.index());
       TileMap::iterator find = tiles_.find(key);
       if (find == tiles_.end())
@@ -407,7 +414,8 @@ void PictureLayerTiling::UpdateTilePriorities(
         last_screen_transform.matrix().get(0, 3),
         last_screen_transform.matrix().get(1, 3));
 
-    for (TilingData::Iterator iter(&tiling_data_, interest_rect);
+    bool include_borders = true;
+    for (TilingData::Iterator iter(&tiling_data_, interest_rect, include_borders);
          iter; ++iter) {
       TileMap::iterator find = tiles_.find(iter.index());
       if (find == tiles_.end())
@@ -476,7 +484,8 @@ void PictureLayerTiling::UpdateTilePriorities(
         last_screen_transform.matrix().get(0, 1) * last_tile_height,
         last_screen_transform.matrix().get(1, 1) * last_tile_height);
 
-    for (TilingData::Iterator iter(&tiling_data_, interest_rect);
+    bool include_borders = true;
+    for (TilingData::Iterator iter(&tiling_data_, interest_rect, include_borders);
          iter; ++iter) {
       TileMap::iterator find = tiles_.find(iter.index());
       if (find == tiles_.end())
@@ -518,7 +527,8 @@ void PictureLayerTiling::UpdateTilePriorities(
       tile->SetPriority(tree, priority);
     }
   } else {
-    for (TilingData::Iterator iter(&tiling_data_, interest_rect);
+    bool include_borders = true;
+    for (TilingData::Iterator iter(&tiling_data_, interest_rect, include_borders);
          iter; ++iter) {
       TileMap::iterator find = tiles_.find(iter.index());
       if (find == tiles_.end())
