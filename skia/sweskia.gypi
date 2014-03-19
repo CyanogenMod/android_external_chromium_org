@@ -50,7 +50,8 @@
                 'inputs': ['<(DEPTH)/third_party/skia/src/lib/target',],
                 'outputs': ['<(PRODUCT_DIR)/lib/libsweskia.so'],
                 'action': ['python', '<(PRODUCT_DIR)/swe_skia.py',
-                             '<(DEPTH)/third_party/skia/src/lib/target'],
+                             '<(DEPTH)/third_party/skia/src/lib/target',
+                             '<(clang)'],
               },
             ],
 

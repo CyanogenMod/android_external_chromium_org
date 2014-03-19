@@ -1,4 +1,4 @@
-#Copyright (c) 2013, The Linux Foundation. All rights reserved.
+#Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without
 #modification, are permitted provided that the following conditions are
@@ -27,24 +27,54 @@
 
 #!/usr/bin/env python
 
-
 import subprocess
 import sys
 import os
 
 def abs_path():
-  return os.path.dirname( __file__ )
+    return os.path.dirname( __file__ )
 
+# Parse args:
+#   arg1 : base path to prebilt libraries
+#   arg2 : '0' if gcc build, '1' if llvm (clang)
 rel_prebuilt_path = os.path.relpath(sys.argv[1])
+is_llvm_build = sys.argv[2]
 
+# Setup default version based on whether the current build is clang or not
+if is_llvm_build != '0':
+    default_skia_compiler = 'llvm'
+else:
+    default_skia_compiler = 'gcc'
+
+# Potentially override default version based on ENV var
+skia_compiler = os.getenv('SWE_SKIA_PREBUILT_COMPILER', default_skia_compiler)
+
+# Check to see if the prebuilts are in the legacy config
+if os.path.isdir(rel_prebuilt_path + "/Debug") and os.path.isdir(rel_prebuilt_path + "/Release"):
+    debug_lib   = rel_prebuilt_path + "/Debug/libsweskia.so"
+    release_lib = rel_prebuilt_path + "/Release/libsweskia.so"
+else:
+    # Path to the libs
+    debug_lib   = rel_prebuilt_path+"/" + skia_compiler + "/Debug/libsweskia.so"
+    release_lib = rel_prebuilt_path+"/" + skia_compiler + "/Release/libsweskia.so"
+
+    # If skia_compiler is llvm, there is a chance that the llvm libraries are not
+    # yet available.  Default back to gcc in this case.
+    if not os.path.isfile(debug_lib) or not os.path.isfile(release_lib) :
+        skia_compiler = 'gcc'
+        debug_lib   = rel_prebuilt_path+"/" + skia_compiler + "/Debug/libsweskia.so"
+        release_lib = rel_prebuilt_path+"/" + skia_compiler + "/Release/libsweskia.so"
+
+# Set dest path
 path = abs_path()
 
+# Finally, perform the copy.
 if "out/Debug" in path:
-  print "Debug"
-  subprocess.call(["cp", rel_prebuilt_path+"/Debug/libsweskia.so",path+"/lib"]);
+    print "Debug " + skia_compiler
+    subprocess.call(["cp", debug_lib, path+"/lib"]);
 elif "out/Release" in path:
-  print "Release"
-  subprocess.call(["cp", rel_prebuilt_path+"/Release/libsweskia.so",path+"/lib"]);
+    print "Release " + skia_compiler
+    subprocess.call(["cp", release_lib, path+"/lib"]);
 else:
-  print "Error unknown path"
+    print "Error unknown path"
 
