@@ -31,8 +31,8 @@ using blink::WebString;
 namespace {
 
 // The size of the access unit to transfer in an IPC in case of MediaSource.
-// 16: approximately 250ms of content in 60 fps movies.
-const size_t kAccessUnitSizeForMediaSource = 16;
+// 4: approximately 64ms of content in 60 fps movies.
+const size_t kAccessUnitSizeForMediaSource = 4;
 
 const uint8 kVorbisPadding[] = { 0xff, 0xff, 0xff, 0xff };
 
@@ -50,12 +50,7 @@ MediaSourceDelegate::MediaSourceDelegate(
     int demuxer_client_id,
     const scoped_refptr<base::MessageLoopProxy>& media_loop,
     media::MediaLog* media_log)
-    : main_loop_(base::MessageLoopProxy::current()),
-      main_weak_factory_(this),
-      main_weak_this_(main_weak_factory_.GetWeakPtr()),
-      media_loop_(media_loop),
-      media_weak_factory_(this),
-      demuxer_client_(demuxer_client),
+    : demuxer_client_(demuxer_client),
       demuxer_client_id_(demuxer_client_id),
       media_log_(media_log),
       is_demuxer_ready_(false),
@@ -66,7 +61,12 @@ MediaSourceDelegate::MediaSourceDelegate(
       doing_browser_seek_(false),
       browser_seek_time_(media::kNoTimestamp()),
       expecting_regular_seek_(false),
-      access_unit_size_(0) {
+      access_unit_size_(0),
+      main_loop_(base::MessageLoopProxy::current()),
+      media_loop_(media_loop),
+      main_weak_factory_(this),
+      media_weak_factory_(this),
+      main_weak_this_(main_weak_factory_.GetWeakPtr()) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 }
 

@@ -170,7 +170,6 @@ const char kChromeUIDNSHost[] = "dns";
 const char kChromeUIDownloadsHost[] = "downloads";
 const char kChromeUIDriveInternalsHost[] = "drive-internals";
 const char kChromeUIEditSearchEngineDialogHost[] = "editsearchengine";
-const char kChromeUIEnhancedBookmarksHost[] = "enhanced-bookmarks";
 const char kChromeUIExtensionIconHost[] = "extension-icon";
 const char kChromeUIExtensionInfoHost[] = "extension-info";
 const char kChromeUIExtensionsFrameHost[] = "extensions-frame";
@@ -563,7 +562,7 @@ const char* const kChromeHostURLs[] = {
   kChromeUIComponentsHost,
   kChromeUICrashesHost,
   kChromeUICreditsHost,
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
   kChromeUIDevicesHost,
 #endif
   kChromeUIDNSHost,
@@ -708,5 +707,10 @@ const char kMac32BitDeprecationURL[] =
     "";
 #endif
 #endif
+
+// TODO(tengs): Replace with real URL when ready.
+const char kEasyUnlockLearnMoreUrl[] =
+    "https://support.google.com/chromebook/?p=easy_unlock";
+const char kEasyUnlockManagementUrl[] = "https://chrome.com";
 
 }  // namespace chrome

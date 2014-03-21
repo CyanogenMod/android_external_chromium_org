@@ -53,6 +53,11 @@ IN_PROC_BROWSER_TEST_F(CastStreamingApiTest, BadLogging) {
       << message_;
 }
 
+IN_PROC_BROWSER_TEST_F(CastStreamingApiTest, DestinationNotSet) {
+  ASSERT_TRUE(RunExtensionSubtest("cast_streaming", "destination_not_set.html"))
+      << message_;
+}
+
 namespace {
 
 // An in-process Cast receiver that examines the audio/video frames being
@@ -327,6 +332,10 @@ IN_PROC_BROWSER_TEST_F(CastStreamingApiTestWithPixelOutput, DISABLED_EndToEnd) {
   // (see http://crbug.com/349786):
   // receiver->DestroySoon();
   cast_environment->Shutdown();
+}
+
+IN_PROC_BROWSER_TEST_F(CastStreamingApiTestWithPixelOutput, RtpStreamError) {
+  ASSERT_TRUE(RunExtensionSubtest("cast_streaming", "rtp_stream_error.html"));
 }
 
 }  // namespace extensions

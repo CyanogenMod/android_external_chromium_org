@@ -13,13 +13,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/common/extension.h"
 
 namespace extensions {
@@ -78,7 +78,7 @@ class ApiResourceManager : public BrowserContextKeyedAPI,
   explicit ApiResourceManager(content::BrowserContext* context)
       : thread_id_(T::kThreadId), data_(new ApiResourceData(thread_id_)) {
     registrar_.Add(this,
-                   chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                   chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                    content::NotificationService::AllSources());
     registrar_.Add(this,
                    chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED,
@@ -135,7 +135,7 @@ class ApiResourceManager : public BrowserContextKeyedAPI,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE {
     switch (type) {
-      case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+      case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
         std::string id = content::Details<extensions::UnloadedExtensionInfo>(
                              details)->extension->id();
         data_->InitiateExtensionUnloadedCleanup(id);

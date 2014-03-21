@@ -27,6 +27,7 @@
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/compositor/clone_layer.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event_target_iterator.h"
@@ -270,50 +271,11 @@ void Window::Init(WindowLayerType window_layer_type) {
     SetLayer(new ui::Layer(WindowLayerTypeToUILayerType(window_layer_type)));
     layer()->SetVisible(false);
     layer()->set_delegate(this);
-    UpdateLayerName(name_);
+    UpdateLayerName();
     layer()->SetFillsBoundsOpaquely(!transparent_);
   }
 
   Env::GetInstance()->NotifyWindowInitialized(this);
-}
-
-// TODO(sky): move to match new position.
-scoped_ptr<ui::Layer> Window::RecreateLayer() {
-  // Disconnect the old layer, but don't delete it.
-  scoped_ptr<ui::Layer> old_layer(AcquireLayer());
-  if (!old_layer)
-    return old_layer.Pass();
-
-  old_layer->set_delegate(NULL);
-
-  const gfx::Rect layer_bounds(old_layer->bounds());
-  SetLayer(new ui::Layer(old_layer->type()));
-  layer()->SetVisible(old_layer->visible());
-  layer()->set_scale_content(old_layer->scale_content());
-  layer()->SetBounds(layer_bounds);
-  layer()->set_delegate(this);
-  layer()->SetMasksToBounds(old_layer->GetMasksToBounds());
-
-  if (delegate_)
-    delegate_->DidRecreateLayer(old_layer.get(), layer());
-
-  UpdateLayerName(name_);
-  layer()->SetFillsBoundsOpaquely(!transparent_);
-  // Install new layer as a sibling of the old layer, stacked below it.
-  if (old_layer->parent()) {
-    old_layer->parent()->Add(layer());
-    old_layer->parent()->StackBelow(layer(), old_layer.get());
-  }
-  // Migrate all the child layers over to the new layer. Copy the list because
-  // the items are removed during iteration.
-  std::vector<ui::Layer*> children_copy = old_layer->children();
-  for (std::vector<ui::Layer*>::const_iterator it = children_copy.begin();
-       it != children_copy.end();
-       ++it) {
-    ui::Layer* child = *it;
-    layer()->Add(child);
-  }
-  return old_layer.Pass();
 }
 
 void Window::SetType(ui::wm::WindowType type) {
@@ -326,7 +288,7 @@ void Window::SetName(const std::string& name) {
   name_ = name;
 
   if (layer())
-    UpdateLayerName(name_);
+    UpdateLayerName();
 }
 
 void Window::SetTransparent(bool transparent) {
@@ -789,6 +751,17 @@ void Window::OnDeviceScaleFactorChanged(float device_scale_factor) {
     host_->OnDeviceScaleFactorChanged(device_scale_factor);
   if (delegate_)
     delegate_->OnDeviceScaleFactorChanged(device_scale_factor);
+}
+
+scoped_ptr<ui::Layer> Window::RecreateLayer() {
+  scoped_ptr<ui::Layer> old_layer(ui::CloneLayer(this));
+  if (!old_layer)
+    return old_layer.Pass();
+
+  if (delegate_)
+    delegate_->DidRecreateLayer(old_layer.get(), layer());
+
+  return old_layer.Pass();
 }
 
 #if !defined(NDEBUG)
@@ -1414,7 +1387,7 @@ void Window::ConvertEventToTarget(ui::EventTarget* target,
                                  static_cast<Window*>(target));
 }
 
-void Window::UpdateLayerName(const std::string& name) {
+void Window::UpdateLayerName() {
 #if !defined(NDEBUG)
   DCHECK(layer());
 

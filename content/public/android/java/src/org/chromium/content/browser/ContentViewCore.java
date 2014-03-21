@@ -26,6 +26,7 @@ import android.os.SystemClock;
 import android.provider.Browser;
 import android.provider.Settings;
 import android.text.Editable;
+import android.text.Selection;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.ActionMode;
@@ -43,7 +44,6 @@ import android.view.accessibility.AccessibilityNodeProvider;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.AbsoluteLayout;
 import android.widget.FrameLayout;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -415,9 +415,26 @@ public class ContentViewCore
     // sequence, so this will also be true for the duration of a pinch gesture.
     private boolean mTouchScrollInProgress;
 
+    // The outstanding fling start events that hasn't got fling end yet. It may be > 1 because
+    // onNativeFlingStopped() is called asynchronously.
+    private int mPotentiallyActiveFlingCount;
+
     private ViewAndroid mViewAndroid;
 
     private SmartClipDataListener mSmartClipDataListener = null;
+
+    // This holds the state of editable text (e.g. contents of <input>, contenteditable) of
+    // a focused element.
+    // Every time the user, IME, javascript (Blink), autofill etc. modifies the content, the new
+    //  state must be reflected to this to keep consistency.
+    private Editable mEditable;
+
+    /**
+     * PID used to indicate an invalid render process.
+     */
+    // Keep in sync with the value returned from ContentViewCoreImpl::GetCurrentRendererProcessId()
+    // if there is no render process.
+    public static final int INVALID_RENDER_PROCESS_PID = 0;
 
     /**
      * Constructs a new ContentViewCore. Embedders must call initialize() after constructing
@@ -446,6 +463,9 @@ public class ContentViewCore
                 getContext().getSystemService(Context.ACCESSIBILITY_SERVICE);
         mGestureStateListeners = new ObserverList<GestureStateListener>();
         mGestureStateListenersIterator = mGestureStateListeners.rewindableIterator();
+
+        mEditable = Editable.Factory.getInstance().newEditable("");
+        Selection.setSelection(mEditable, 0);
     }
 
     /**
@@ -507,7 +527,7 @@ public class ContentViewCore
             }
 
             @Override
-            @SuppressWarnings("deprecation")  // AbsoluteLayout.LayoutParams
+            @SuppressWarnings("deprecation")  // AbsoluteLayout
             public void setAnchorViewPosition(
                     View view, float x, float y, float width, float height) {
                 assert view.getParent() == mContainerView;
@@ -528,7 +548,7 @@ public class ContentViewCore
                     lp.leftMargin = leftMargin;
                     lp.topMargin = topMargin;
                     view.setLayoutParams(lp);
-                } else if (mContainerView instanceof AbsoluteLayout) {
+                } else if (mContainerView instanceof android.widget.AbsoluteLayout) {
                     // This fixes the offset due to a difference in
                     // scrolling model of WebView vs. Chrome.
                     // TODO(sgurun) fix this to use mContainerView.getScroll[X/Y]()
@@ -576,6 +596,11 @@ public class ContentViewCore
     @VisibleForTesting
     public AdapterInputConnection getInputConnectionForTest() {
         return mInputConnection;
+    }
+
+    @VisibleForTesting
+    public void setContainerViewForTest(ViewGroup view) {
+        mContainerView = view;
     }
 
     private ImeAdapter createImeAdapter(Context context) {
@@ -1182,10 +1207,15 @@ public class ContentViewCore
         nativeIgnoreRemainingTouchEvents(mNativeContentViewCore);
     }
 
+    public boolean isScrollInProgress() {
+        return mTouchScrollInProgress || mPotentiallyActiveFlingCount > 0;
+    }
+
     @SuppressWarnings("unused")
     @CalledByNative
     private void onFlingStartEventConsumed(int vx, int vy) {
         mTouchScrollInProgress = false;
+        mPotentiallyActiveFlingCount++;
         temporarilyHideTextHandles();
         for (mGestureStateListenersIterator.rewind();
                     mGestureStateListenersIterator.hasNext();) {
@@ -1371,12 +1401,20 @@ public class ContentViewCore
     public void onShow() {
         assert mNativeContentViewCore != 0;
         if (!mInForeground) {
-            int pid = nativeGetCurrentRenderProcessId(mNativeContentViewCore);
-            ChildProcessLauncher.getBindingManager().setInForeground(pid, true);
+            ChildProcessLauncher.getBindingManager().setInForeground(getCurrentRenderProcessId(),
+                    true);
         }
         mInForeground = true;
         nativeOnShow(mNativeContentViewCore);
         setAccessibilityState(mAccessibilityManager.isEnabled());
+    }
+
+    /**
+     * @return The ID of the renderer process that backs this tab or
+     *         {@link #INVALID_RENDER_PROCESS_PID} if there is none.
+     */
+    public int getCurrentRenderProcessId() {
+        return nativeGetCurrentRenderProcessId(mNativeContentViewCore);
     }
 
     /**
@@ -1385,8 +1423,8 @@ public class ContentViewCore
     public void onHide() {
         assert mNativeContentViewCore != 0;
         if (mInForeground) {
-            int pid = nativeGetCurrentRenderProcessId(mNativeContentViewCore);
-            ChildProcessLauncher.getBindingManager().setInForeground(pid, false);
+            ChildProcessLauncher.getBindingManager().setInForeground(getCurrentRenderProcessId(),
+                    false);
         }
         mInForeground = false;
         hidePopupDialog();
@@ -1484,13 +1522,19 @@ public class ContentViewCore
             // enter fullscreen mode.
             outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN;
         }
-        mInputConnection =
-                mAdapterInputConnectionFactory.get(mContainerView, mImeAdapter, outAttrs);
+        mInputConnection = mAdapterInputConnectionFactory.get(mContainerView, mImeAdapter,
+                mEditable, outAttrs);
         return mInputConnection;
     }
 
+    @VisibleForTesting
+    public AdapterInputConnection getAdapterInputConnectionForTest() {
+        return mInputConnection;
+    }
+
+    @VisibleForTesting
     public Editable getEditableForTest() {
-        return mInputConnection.getEditable();
+        return mEditable;
     }
 
     /**
@@ -1509,9 +1553,7 @@ public class ContentViewCore
 
         if (newConfig.keyboard != Configuration.KEYBOARD_NOKEYS) {
             mImeAdapter.attach(nativeGetNativeImeAdapter(mNativeContentViewCore),
-                    ImeAdapter.getTextInputTypeNone(),
-                    AdapterInputConnection.INVALID_SELECTION,
-                    AdapterInputConnection.INVALID_SELECTION);
+                    ImeAdapter.getTextInputTypeNone());
             mInputMethodManagerWrapper.restartInput(mContainerView);
         }
         mContainerViewInternals.super_onConfigurationChanged(newConfig);
@@ -2336,8 +2378,7 @@ public class ContentViewCore
 
         if (mActionMode != null) mActionMode.invalidate();
 
-        mImeAdapter.attachAndShowIfNeeded(nativeImeAdapterAndroid, textInputType,
-                selectionStart, selectionEnd, showImeIfNeeded);
+        mImeAdapter.attachAndShowIfNeeded(nativeImeAdapterAndroid, textInputType, showImeIfNeeded);
 
         if (mInputConnection != null) {
             mInputConnection.updateState(text, selectionStart, selectionEnd, compositionStart,
@@ -3080,6 +3121,7 @@ public class ContentViewCore
         // Note that mTouchScrollInProgress should normally be false at this
         // point, but we reset it anyway as another failsafe.
         mTouchScrollInProgress = false;
+        if (mPotentiallyActiveFlingCount > 0) mPotentiallyActiveFlingCount--;
         updateGestureStateListener(GestureEventType.FLING_END);
     }
 

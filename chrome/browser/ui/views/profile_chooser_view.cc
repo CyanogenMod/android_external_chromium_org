@@ -11,8 +11,6 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
-#include "chrome/browser/signin/mutable_profile_oauth2_token_service.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -23,6 +21,8 @@
 #include "chrome/browser/ui/views/user_manager_view.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/signin/core/mutable_profile_oauth2_token_service.h"
+#include "components/signin/core/profile_oauth2_token_service.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -327,7 +327,8 @@ ProfileChooserView::ProfileChooserView(views::View* anchor_view,
                                        Browser* browser)
     : BubbleDelegateView(anchor_view, arrow),
       browser_(browser),
-      view_mode_(PROFILE_CHOOSER_VIEW) {
+      view_mode_(PROFILE_CHOOSER_VIEW),
+      tutorial_showing_(false) {
   // Reset the default margins inherited from the BubbleDelegateView.
   set_margins(gfx::Insets());
 
@@ -367,6 +368,7 @@ void ProfileChooserView::ResetView() {
   tutorial_learn_more_link_ = NULL;
   open_other_profile_indexes_map_.clear();
   current_profile_accounts_map_.clear();
+  tutorial_showing_ = false;
 }
 
 void ProfileChooserView::Init() {
@@ -409,6 +411,8 @@ void ProfileChooserView::ShowView(BubbleViewMode view_to_display,
     DCHECK(active_item.signed_in);
   }
 
+  // Records if the tutorial card is currently shown before resetting the view.
+  bool tutorial_shown = tutorial_showing_;
   ResetView();
   RemoveAllChildViews(true);
   view_mode_ = view_to_display;
@@ -449,7 +453,7 @@ void ProfileChooserView::ShowView(BubbleViewMode view_to_display,
     const AvatarMenu::Item& item = avatar_menu->GetItemAt(i);
     if (item.active) {
       if (view_to_display == PROFILE_CHOOSER_VIEW) {
-        tutorial_view = CreateTutorialView(item);
+        tutorial_view = CreateTutorialView(item, tutorial_shown);
         current_profile_view = CreateCurrentProfileView(item, false);
       } else {
         current_profile_view = CreateCurrentProfileEditableView(item);
@@ -517,13 +521,9 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
   } else if (sender == end_guest_button_) {
     profiles::CloseGuestProfileWindows();
   } else if (sender == users_button_) {
-    // Only non-guest users appear in the User Manager.
-    base::FilePath profile_path;
-    if (!end_guest_button_) {
-      size_t active_index = avatar_menu_->GetActiveProfileIndex();
-      profile_path = avatar_menu_->GetItemAt(active_index).profile_path;
-    }
-    chrome::ShowUserManager(profile_path);
+    // Guest users cannot appear in the User Manager, nor display a tutorial.
+    profiles::ShowUserManagerMaybeWithTutorial(
+        end_guest_button_ ? NULL : browser_->profile());
   } else if (sender == add_user_button_) {
     profiles::CreateAndSwitchToNewProfile(
         browser_->host_desktop_type(),
@@ -534,8 +534,12 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
   } else if (sender == current_profile_photo_->change_photo_button()) {
     avatar_menu_->EditProfile(avatar_menu_->GetActiveProfileIndex());
   } else if (sender == tutorial_ok_button_) {
+    // If the user manually dismissed the tutorial, never show it again by
+    // setting the number of times shown to the maximum plus 1, so that later we
+    // could distinguish between the dismiss case and the case when the tutorial
+    // is indeed shown for the maximum number of times.
     browser_->profile()->GetPrefs()->SetInteger(
-        prefs::kProfileAvatarTutorialShown, kProfileAvatarTutorialShowMax);
+        prefs::kProfileAvatarTutorialShown, kProfileAvatarTutorialShowMax + 1);
     ShowView(PROFILE_CHOOSER_VIEW, avatar_menu_.get());
   } else {
     // One of the "other profiles" buttons was pressed.
@@ -613,18 +617,24 @@ bool ProfileChooserView::HandleKeyEvent(views::Textfield* sender,
 }
 
 views::View* ProfileChooserView::CreateTutorialView(
-    const AvatarMenu::Item& current_avatar_item) {
+    const AvatarMenu::Item& current_avatar_item, bool tutorial_shown) {
   if (!current_avatar_item.signed_in)
     return NULL;
 
   Profile* profile = browser_->profile();
-  int show_count = profile->GetPrefs()->GetInteger(
+  const int show_count = profile->GetPrefs()->GetInteger(
       prefs::kProfileAvatarTutorialShown);
-  if (show_count++ >= kProfileAvatarTutorialShowMax)
+  // Do not show the tutorial if user has dismissed it.
+  if (show_count > kProfileAvatarTutorialShowMax)
     return NULL;
 
-  profile->GetPrefs()->SetInteger(
-      prefs::kProfileAvatarTutorialShown, show_count);
+  if (!tutorial_shown) {
+    if (show_count == kProfileAvatarTutorialShowMax)
+      return NULL;
+    profile->GetPrefs()->SetInteger(
+        prefs::kProfileAvatarTutorialShown, show_count + 1);
+  }
+  tutorial_showing_ = true;
 
   views::View* view = new views::View();
   ui::NativeTheme* theme = GetNativeTheme();

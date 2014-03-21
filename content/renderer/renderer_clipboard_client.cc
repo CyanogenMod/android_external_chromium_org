@@ -107,9 +107,8 @@ uint64 RendererClipboardClient::GetSequenceNumber(ui::ClipboardType type) {
   return sequence_number;
 }
 
-bool RendererClipboardClient::IsFormatAvailable(
-    const ui::Clipboard::FormatType& format,
-    ui::ClipboardType type) {
+bool RendererClipboardClient::IsFormatAvailable(content::ClipboardFormat format,
+                                                ui::ClipboardType type) {
   bool result;
   RenderThreadImpl::current()->Send(
       new ClipboardHostMsg_IsFormatAvailable(format, type, &result));
@@ -132,12 +131,6 @@ void RendererClipboardClient::ReadText(ui::ClipboardType type,
                                        base::string16* result) {
   RenderThreadImpl::current()->Send(
       new ClipboardHostMsg_ReadText(type, result));
-}
-
-void RendererClipboardClient::ReadAsciiText(ui::ClipboardType type,
-                                            std::string* result) {
-  RenderThreadImpl::current()->Send(
-      new ClipboardHostMsg_ReadAsciiText(type, result));
 }
 
 void RendererClipboardClient::ReadHTML(ui::ClipboardType type,
@@ -171,12 +164,6 @@ void RendererClipboardClient::ReadCustomData(ui::ClipboardType clipboard_type,
                                              base::string16* data) {
   RenderThreadImpl::current()->Send(
       new ClipboardHostMsg_ReadCustomData(clipboard_type, type, data));
-}
-
-void RendererClipboardClient::ReadData(const ui::Clipboard::FormatType& format,
-                                       std::string* data) {
-  RenderThreadImpl::current()->Send(
-      new ClipboardHostMsg_ReadData(format, data));
 }
 
 ClipboardClient::WriteContext* RendererClipboardClient::CreateWriteContext() {

@@ -146,6 +146,10 @@
 #include "content/renderer/npapi/plugin_channel_host.h"
 #endif
 
+#if defined(USE_MOJO)
+#include "content/renderer/mojo/mojo_render_process_observer.h"
+#endif
+
 using base::ThreadRestrictions;
 using blink::WebDocument;
 using blink::WebFrame;
@@ -393,6 +397,11 @@ void RenderThreadImpl::Init() {
 
   AddFilter((new EmbeddedWorkerContextMessageFilter())->GetFilter());
 
+#if defined(USE_MOJO)
+  // MojoRenderProcessObserver deletes itself as necessary.
+  new MojoRenderProcessObserver(this);
+#endif
+
   GetContentClient()->renderer()->RenderThreadStarted();
 
   InitSkiaEventTracer();
@@ -434,6 +443,12 @@ void RenderThreadImpl::Init() {
                    switches::kEnableBleedingEdgeRenderingFastPaths)) {
       is_gpu_rasterization_enabled_ = true;
     }
+  }
+
+  is_low_res_tiling_enabled_ = !is_gpu_rasterization_enabled_;
+  if (command_line.HasSwitch(switches::kDisableLowResTiling) &&
+      !command_line.HasSwitch(switches::kEnableLowResTiling)) {
+    is_low_res_tiling_enabled_ = false;
   }
 
   // Note that under Linux, the media library will normally already have
@@ -541,6 +556,7 @@ void RenderThreadImpl::Shutdown() {
     compositor_output_surface_filter_ = NULL;
   }
 
+  media_thread_.reset();
   compositor_thread_.reset();
   input_handler_manager_.reset();
   if (input_event_filter_.get()) {
@@ -666,6 +682,23 @@ void RenderThreadImpl::AddRoute(int32 routing_id, IPC::Listener* listener) {
 
 void RenderThreadImpl::RemoveRoute(int32 routing_id) {
   ChildThread::GetRouter()->RemoveRoute(routing_id);
+}
+
+void RenderThreadImpl::AddSharedWorkerRoute(int32 routing_id,
+                                            IPC::Listener* listener) {
+  AddRoute(routing_id, listener);
+  if (devtools_agent_message_filter_.get()) {
+    devtools_agent_message_filter_->AddSharedWorkerRouteOnMainThread(
+        routing_id);
+  }
+}
+
+void RenderThreadImpl::RemoveSharedWorkerRoute(int32 routing_id) {
+  RemoveRoute(routing_id);
+  if (devtools_agent_message_filter_.get()) {
+    devtools_agent_message_filter_->RemoveSharedWorkerRouteOnMainThread(
+        routing_id);
+  }
 }
 
 int RenderThreadImpl::GenerateRoutingID() {

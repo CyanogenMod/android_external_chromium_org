@@ -168,23 +168,11 @@ class ExtensionService
 
   const extensions::ExtensionSet* delayed_installs() const;
 
-  // Returns a set of all installed, disabled, blacklisted, and terminated
-  // extensions.
-  scoped_ptr<extensions::ExtensionSet> GenerateInstalledExtensionsSet() const;
-
   // Gets the object managing the set of pending extensions.
   virtual extensions::PendingExtensionManager*
       pending_extension_manager() OVERRIDE;
 
   const base::FilePath& install_directory() const { return install_directory_; }
-
-  // Updates the app launcher value for the moved extension so that it is now
-  // located after the given predecessor and before the successor. This will
-  // trigger a sync if needed. Empty strings are used to indicate no successor
-  // or predecessor.
-  void OnExtensionMoved(const std::string& moved_extension_id,
-                        const std::string& predecessor_extension_id,
-                        const std::string& successor_extension_id);
 
   // Getter and setter for the flag that specifies whether the extension is
   // being reloaded.
@@ -314,10 +302,6 @@ class ExtensionService
   // permissions the given extension has been granted.
   bool ExtensionBindingsAllowed(const GURL& url);
 
-  // Returns true if a normal browser window should avoid showing |url| in a
-  // tab. In this case, |url| is also rewritten to an error URL.
-  bool ShouldBlockUrlInBrowserTab(GURL* url);
-
   // Called when the initial extensions load has completed.
   virtual void OnLoadedInstalledExtensions();
 
@@ -428,12 +412,6 @@ class ExtensionService
 
   // Note that this may return NULL if autoupdate is not turned on.
   extensions::ExtensionUpdater* updater();
-
-  // Sets the name, id and icon resource path of the given extension into the
-  // returned dictionary. Returns an empty dictionary if the given extension id
-  // is not found.
-  scoped_ptr<base::DictionaryValue> GetExtensionInfo(
-      const std::string& extension_id) const;
 
   // Notify the frontend that there was an error loading an extension.
   // This method is public because UnpackedInstaller and InstalledLoader

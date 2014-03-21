@@ -35,7 +35,6 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/extensions/api/messaging/native_message_process_host.h"
 #include "chrome/browser/extensions/crx_installer.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/updater/extension_cache_fake.h"
@@ -120,6 +119,7 @@
 #include "content/public/test/test_utils.h"
 #include "content/test/net/url_request_failed_job.h"
 #include "content/test/net/url_request_mock_http_job.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/common/constants.h"
@@ -313,7 +313,6 @@ void CheckURLIsBlocked(Browser* browser, const char* spec) {
   EXPECT_TRUE(result);
 }
 
-#if !defined(OS_CHROMEOS)
 // Downloads a file named |file| and expects it to be saved to |dir|, which
 // must be empty.
 void DownloadAndVerifyFile(
@@ -338,8 +337,7 @@ void DownloadAndVerifyFile(
   EXPECT_EQ(base::FilePath(), enumerator.Next());
 }
 
-#else
-
+#if defined(OS_CHROMEOS)
 int CountScreenshots() {
   DownloadPrefs* download_prefs = DownloadPrefs::FromBrowserContext(
       ProfileManager::GetActiveUserProfile());
@@ -1432,8 +1430,6 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_WebStoreIconHidden) {
   EXPECT_FALSE(ContainsVisibleElement(contents, "chrome-web-store-link"));
 }
 
-// This policy isn't available on Chrome OS.
-#if !defined(OS_CHROMEOS)
 IN_PROC_BROWSER_TEST_F(PolicyTest, DownloadDirectory) {
   // Verifies that the download directory can be forced by policy.
 
@@ -1463,7 +1459,6 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DownloadDirectory) {
   // Verify that the first download location wasn't affected.
   EXPECT_FALSE(base::PathExists(initial_dir.path().Append(file)));
 }
-#endif
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallBlacklistSelective) {
   // Verifies that blacklisted extensions can't be installed.

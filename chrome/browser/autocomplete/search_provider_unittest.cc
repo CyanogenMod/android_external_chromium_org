@@ -39,6 +39,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/sync_driver/pref_names.h"
 #include "components/variations/entropy_provider.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/url_request/test_url_fetcher_factory.h"
@@ -3084,6 +3085,14 @@ TEST_F(SearchProviderTest, NavigationInline) {
     { "http://www.abc.com/", "http://www.abc.com",
                              "http://www.abc.com", std::string(), true, true },
 
+    // Inputs with trailing whitespace should inline when possible.
+    { "abc.com ",      "http://www.abc.com",
+                              "www.abc.com",      std::string(), true,  true },
+    { "abc.com/ ",     "http://www.abc.com",
+                              "www.abc.com",      std::string(), true,  true },
+    { "abc.com ",      "http://www.abc.com/bar",
+                              "www.abc.com/bar",  "/bar",        false, false },
+
     // Inline matches when the input is a leading substring of the scheme.
     { "h",             "http://www.abc.com",
                        "http://www.abc.com", "ttp://www.abc.com", true, false },
@@ -3997,13 +4006,14 @@ TEST_F(SearchProviderTest, CanSendURL) {
       AutocompleteInput::OTHER, profile_.GetOffTheRecordProfile()));
 
   // Tab sync not enabled.
-  profile_.GetPrefs()->SetBoolean(prefs::kSyncKeepEverythingSynced, false);
-  profile_.GetPrefs()->SetBoolean(prefs::kSyncTabs, false);
+  profile_.GetPrefs()->SetBoolean(sync_driver::prefs::kSyncKeepEverythingSynced,
+                                  false);
+  profile_.GetPrefs()->SetBoolean(sync_driver::prefs::kSyncTabs, false);
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
       AutocompleteInput::OTHER, &profile_));
-  profile_.GetPrefs()->SetBoolean(prefs::kSyncTabs, true);
+  profile_.GetPrefs()->SetBoolean(sync_driver::prefs::kSyncTabs, true);
 
   // Tab sync is encrypted.
   ProfileSyncService* service =

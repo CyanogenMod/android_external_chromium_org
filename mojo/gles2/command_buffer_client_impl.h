@@ -7,6 +7,7 @@
 
 #include <map>
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
 #include "gpu/command_buffer/common/command_buffer.h"
@@ -52,7 +53,8 @@ class CommandBufferClientImpl : public CommandBufferClient,
   virtual State GetLastState() OVERRIDE;
   virtual int32 GetLastToken() OVERRIDE;
   virtual void Flush(int32 put_offset) OVERRIDE;
-  virtual State FlushSync(int32 put_offset, int32 last_known_get) OVERRIDE;
+  virtual void WaitForTokenInRange(int32 start, int32 end) OVERRIDE;
+  virtual void WaitForGetOffsetInRange(int32 start, int32 end) OVERRIDE;
   virtual void SetGetBuffer(int32 shm_id) OVERRIDE;
   virtual void SetGetOffset(int32 get_offset) OVERRIDE;
   virtual gpu::Buffer CreateTransferBuffer(size_t size, int32* id) OVERRIDE;
@@ -88,15 +90,15 @@ class CommandBufferClientImpl : public CommandBufferClient,
   typedef std::map<int32, gpu::Buffer> TransferBufferMap;
 
   // CommandBufferClient implementation:
-  virtual void DidInitialize(bool success) MOJO_OVERRIDE;
-  virtual void DidMakeProgress(const CommandBufferState& state) MOJO_OVERRIDE;
-  virtual void DidDestroy() MOJO_OVERRIDE;
-  virtual void LostContext(int32_t lost_reason) MOJO_OVERRIDE;
+  virtual void DidInitialize(bool success) OVERRIDE;
+  virtual void DidMakeProgress(const CommandBufferState& state) OVERRIDE;
+  virtual void DidDestroy() OVERRIDE;
+  virtual void LostContext(int32_t lost_reason) OVERRIDE;
 
   // ErrorHandler implementation:
-  virtual void OnError() MOJO_OVERRIDE;
+  virtual void OnError() OVERRIDE;
 
-  virtual void DrawAnimationFrame() MOJO_OVERRIDE;
+  virtual void DrawAnimationFrame() OVERRIDE;
 
   void TryUpdateState();
   void MakeProgressAndUpdateState();

@@ -71,7 +71,7 @@ static int CallLstat(const char *path, stat_wrapper_t *sb) {
   ThreadRestrictions::AssertIOAllowed();
   return lstat(path, sb);
 }
-#else
+#else  // defined(OS_BSD) || defined(OS_MACOSX)
 typedef struct stat64 stat_wrapper_t;
 static int CallStat(const char *path, stat_wrapper_t *sb) {
   ThreadRestrictions::AssertIOAllowed();
@@ -81,13 +81,7 @@ static int CallLstat(const char *path, stat_wrapper_t *sb) {
   ThreadRestrictions::AssertIOAllowed();
   return lstat64(path, sb);
 }
-#if defined(OS_ANDROID)
-static int CallFstat(int fd, stat_wrapper_t *sb) {
-  ThreadRestrictions::AssertIOAllowed();
-  return fstat64(fd, sb);
-}
-#endif
-#endif
+#endif // !(defined(OS_BSD) || defined(OS_MACOSX))
 
 // Helper for NormalizeFilePath(), defined below.
 bool RealPath(const FilePath& path, FilePath* real_path) {
@@ -463,25 +457,6 @@ bool GetTempDir(FilePath* path) {
 }
 #endif  // !defined(OS_MACOSX)
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
-// This is implemented in file_util_mac.mm and file_util_android.cc for those
-// platforms.
-bool GetShmemTempDir(bool executable, FilePath* path) {
-#if defined(OS_LINUX)
-  bool use_dev_shm = true;
-  if (executable) {
-    static const bool s_dev_shm_executable = DetermineDevShmExecutable();
-    use_dev_shm = s_dev_shm_executable;
-  }
-  if (use_dev_shm) {
-    *path = FilePath("/dev/shm");
-    return true;
-  }
-#endif
-  return GetTempDir(path);
-}
-#endif  // !defined(OS_MACOSX) && !defined(OS_ANDROID)
-
 #if !defined(OS_MACOSX)  // Mac implementation is in file_util_mac.mm.
 FilePath GetHomeDir() {
 #if defined(OS_CHROMEOS)
@@ -526,14 +501,6 @@ bool CreateTemporaryFile(FilePath* path) {
     return false;
   close(fd);
   return true;
-}
-
-FILE* CreateAndOpenTemporaryShmemFile(FilePath* path, bool executable) {
-  FilePath directory;
-  if (!GetShmemTempDir(executable, &directory))
-    return NULL;
-
-  return CreateAndOpenTemporaryFileInDir(directory, path);
 }
 
 FILE* CreateAndOpenTemporaryFileInDir(const FilePath& dir, FilePath* path) {
@@ -661,11 +628,10 @@ bool GetFileInfo(const FilePath& file_path, File::Info* results) {
   stat_wrapper_t file_info;
 #if defined(OS_ANDROID)
   if (file_path.IsContentUri()) {
-    ScopedFD fd(OpenContentUriForRead(file_path));
-    if (!fd.is_valid())
+    File file = OpenContentUriForRead(file_path);
+    if (!file.IsValid())
       return false;
-    if (CallFstat(fd.get(), &file_info) != 0)
-      return false;
+    return file.GetInfo(results);
   } else {
 #endif  // defined(OS_ANDROID)
     if (CallStat(file_path.value().c_str(), &file_info) != 0)
@@ -846,6 +812,24 @@ int GetMaximumPathComponentLength(const FilePath& path) {
   ThreadRestrictions::AssertIOAllowed();
   return pathconf(path.value().c_str(), _PC_NAME_MAX);
 }
+
+#if !defined(OS_ANDROID)
+// This is implemented in file_util_android.cc for that platform.
+bool GetShmemTempDir(bool executable, FilePath* path) {
+#if defined(OS_LINUX)
+  bool use_dev_shm = true;
+  if (executable) {
+    static const bool s_dev_shm_executable = DetermineDevShmExecutable();
+    use_dev_shm = s_dev_shm_executable;
+  }
+  if (use_dev_shm) {
+    *path = FilePath("/dev/shm");
+    return true;
+  }
+#endif
+  return GetTempDir(path);
+}
+#endif  // !defined(OS_ANDROID)
 
 // -----------------------------------------------------------------------------
 

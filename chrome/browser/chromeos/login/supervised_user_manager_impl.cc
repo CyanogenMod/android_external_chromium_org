@@ -91,8 +91,12 @@ namespace chromeos {
 const char kSchemaVersion[] = "SchemaVersion";
 const char kPasswordRevision[] = "PasswordRevision";
 const char kSalt[] = "PasswordSalt";
+const char kPasswordSignature[] = "PasswordSignature";
 const char kEncryptedPassword[] = "EncryptedPassword";
 const char kRequirePasswordUpdate[] = "RequirePasswordUpdate";
+const char kPasswordEncryptionKey[] = "password.hmac.encryption";
+const char kPasswordSignatureKey[] = "password.hmac.signature";
+
 const char kPasswordUpdateFile[] = "password.update";
 const int kMinPasswordRevision = 1;
 

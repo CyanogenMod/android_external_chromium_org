@@ -68,8 +68,6 @@
         'browser/browsing_data/mock_browsing_data_server_bound_cert_helper.h',
         'browser/captive_portal/testing_utils.cc',
         'browser/captive_portal/testing_utils.h',
-        'browser/chromeos/contacts/contact_test_util.cc',
-        'browser/chromeos/contacts/contact_test_util.h',
         'browser/chromeos/input_method/mock_candidate_window_controller.cc',
         'browser/chromeos/input_method/mock_candidate_window_controller.h',
         'browser/chromeos/input_method/mock_input_method_engine.cc',
@@ -425,7 +423,13 @@
         }],
         ['OS=="mac"', {
           'dependencies': [
-            '../components/components.gyp:breakpad_stubs',
+            '../breakpad/breakpad.gyp:breakpad',
+            '../components/components.gyp:breakpad_component',
+          ],
+          'sources': [
+            'app/chrome_breakpad_client.cc',
+            'app/chrome_breakpad_client_mac.mm',
+            'app/chrome_main_mac.mm',
           ],
         }],
         ['enable_mdns == 1', {
@@ -494,7 +498,7 @@
         '<@(chromium_child_dependencies)',
         # 2) test-specific support libraries:
         '../base/base.gyp:test_support_base',
-        '../components/component_resources.gyp:component_resources',
+        '../components/components_resources.gyp:components_resources',
         '../content/content.gyp:content_app_both',
         '../net/net.gyp:net',
         '../net/net.gyp:net_test_support',
@@ -597,12 +601,12 @@
         'browser/autocomplete/autocomplete_result_unittest.cc',
         'browser/autocomplete/bookmark_provider_unittest.cc',
         'browser/autocomplete/builtin_provider_unittest.cc',
-        'browser/autocomplete/contact_provider_chromeos_unittest.cc',
         'browser/autocomplete/extension_app_provider_unittest.cc',
         'browser/autocomplete/history_quick_provider_unittest.cc',
         'browser/autocomplete/history_url_provider_unittest.cc',
         'browser/autocomplete/keyword_provider_unittest.cc',
         'browser/autocomplete/search_provider_unittest.cc',
+        'browser/autocomplete/shortcuts_backend_unittest.cc',
         'browser/autocomplete/shortcuts_provider_unittest.cc',
         'browser/autofill/autofill_cc_infobar_delegate_unittest.cc',
         'browser/background/background_application_list_model_unittest.cc',
@@ -643,19 +647,6 @@
         'browser/chromeos/attestation/fake_certificate.cc',
         'browser/chromeos/attestation/fake_certificate.h',
         'browser/chromeos/attestation/platform_verification_flow_unittest.cc',
-        'browser/chromeos/contacts/contact_database_unittest.cc',
-        'browser/chromeos/contacts/contact_manager_stub.cc',
-        'browser/chromeos/contacts/contact_manager_stub.h',
-        'browser/chromeos/contacts/contact_manager_unittest.cc',
-        'browser/chromeos/contacts/contact_map_unittest.cc',
-        'browser/chromeos/contacts/fake_contact_database.cc',
-        'browser/chromeos/contacts/fake_contact_database.h',
-        'browser/chromeos/contacts/fake_contact_store.cc',
-        'browser/chromeos/contacts/fake_contact_store.h',
-        'browser/chromeos/contacts/gdata_contacts_service_stub.cc',
-        'browser/chromeos/contacts/gdata_contacts_service_stub.h',
-        'browser/chromeos/contacts/gdata_contacts_service_unittest.cc',
-        'browser/chromeos/contacts/google_contact_store_unittest.cc',
         'browser/chromeos/customization_document_unittest.cc',
         'browser/chromeos/dbus/cros_dbus_service_unittest.cc',
         'browser/chromeos/dbus/printer_service_provider_unittest.cc',
@@ -976,6 +967,7 @@
         'browser/extensions/webstore_installer_unittest.cc',
         'browser/external_protocol/external_protocol_handler_unittest.cc',
         'browser/favicon/favicon_handler_unittest.cc',
+        'browser/feedback/feedback_common_unittest.cc',
         'browser/feedback/feedback_uploader_unittest.cc',
         'browser/file_select_helper_unittest.cc',
         'browser/first_run/first_run_unittest.cc',
@@ -1008,7 +1000,6 @@
         'browser/history/query_parser_unittest.cc',
         'browser/history/scored_history_match_unittest.cc',
         'browser/history/select_favicon_frames_unittest.cc',
-        'browser/history/shortcuts_backend_unittest.cc',
         'browser/history/shortcuts_database_unittest.cc',
         'browser/history/snippet_unittest.cc',
         'browser/history/thumbnail_database_unittest.cc',
@@ -1164,6 +1155,7 @@
         'browser/prefs/proxy_prefs_unittest.cc',
         'browser/prefs/session_startup_pref_unittest.cc',
         'browser/prefs/tracked/pref_hash_calculator_helper_win_unittest.cc',
+        'browser/prefs/tracked/pref_service_hash_store_contents_unittest.cc',
         'browser/prerender/prerender_history_unittest.cc',
         'browser/prerender/prerender_tracker_unittest.cc',
         'browser/prerender/prerender_unittest.cc',
@@ -1350,7 +1342,6 @@
         'browser/sync/startup_controller_unittest.cc',
         'browser/sync/sync_global_error_unittest.cc',
         'browser/sync/sync_policy_handler_unittest.cc',
-        'browser/sync/sync_prefs_unittest.cc',
         'browser/sync/sync_startup_tracker_unittest.cc',
         'browser/sync/sync_ui_util_unittest.cc',
         'browser/sync/test/test_http_bridge_factory.cc',
@@ -1679,6 +1670,7 @@
         'browser/ui/login/login_prompt_unittest.cc',
         'browser/ui/omnibox/omnibox_controller_unittest.cc',
         'browser/ui/omnibox/omnibox_edit_unittest.cc',
+        'browser/ui/omnibox/omnibox_popup_model_unittest.cc',
         'browser/ui/omnibox/omnibox_view_unittest.cc',
         'browser/ui/panels/panel_mouse_watcher_unittest.cc',
         'browser/ui/passwords/password_manager_presenter_unittest.cc',
@@ -1740,7 +1732,6 @@
         'browser/ui/views/frame/opaque_browser_frame_view_layout_unittest.cc',
         'browser/ui/views/frame/test_with_browser_view.cc',
         'browser/ui/views/frame/test_with_browser_view.h',
-        'browser/ui/views/omnibox/omnibox_result_view_unittest.cc',
         'browser/ui/views/toolbar/reload_button_unittest.cc',
         'browser/ui/views/select_file_dialog_extension_unittest.cc',
         'browser/ui/views/status_icons/status_tray_win_unittest.cc',
@@ -1956,13 +1947,6 @@
         # remaining dependencies back to //chrome are eliminated.
         '../components/autofill/content/browser/content_autofill_driver_unittest.cc',
         '../components/autofill/content/browser/request_autocomplete_manager_unittest.cc',
-        '../components/autofill/content/browser/wallet/full_wallet_unittest.cc',
-        '../components/autofill/content/browser/wallet/instrument_unittest.cc',
-        '../components/autofill/content/browser/wallet/wallet_address_unittest.cc',
-        '../components/autofill/content/browser/wallet/wallet_client_unittest.cc',
-        '../components/autofill/content/browser/wallet/wallet_items_unittest.cc',
-        '../components/autofill/content/browser/wallet/wallet_service_url_unittest.cc',
-        '../components/autofill/content/browser/wallet/wallet_signin_helper_unittest.cc',
 
         # TODO(yael): Move to //components/components_tests.gypi once
         # nacl_defines is moved out of chrome.gyp into a common place.
@@ -2007,9 +1991,8 @@
       'conditions': [
         ['OS!="ios"', {
           'dependencies': [
-            'common/extensions/api/api.gyp:chrome_api',
             '../components/components.gyp:autofill_content_test_support',
-            '../components/component_strings.gyp:component_strings',
+            '../components/components_strings.gyp:components_strings',
             '../device/bluetooth/bluetooth.gyp:device_bluetooth_mocks',
             '../gpu/gpu.gyp:gpu_unittest_utils',
             '../media/media.gyp:media_test_support',
@@ -2022,6 +2005,7 @@
             '../ui/gl/gl.gyp:gl',
             '../v8/tools/gyp/v8.gyp:v8',
             '../webkit/webkit_resources.gyp:webkit_resources',
+            'common/extensions/api/api.gyp:chrome_api',
           ],
           # TODO(scr): Use this in browser_tests too.
           'includes': [
@@ -2180,6 +2164,9 @@
         }],
         ['chromeos==0', {
           'sources!': [
+            # TODO(zturner): Enable this on Windows.  See
+            # BrowserWithTestWindowTest::SetUp() for a comment explaining why
+            # this is broken.
             'browser/ui/views/frame/immersive_mode_controller_ash_unittest.cc',
             'browser/ui/views/select_file_dialog_extension_unittest.cc',
           ],

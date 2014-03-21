@@ -138,7 +138,9 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
     DCHECK(!options.open_existing_deprecated);
     // Q: Why not use the shm_open() etc. APIs?
     // A: Because they're limited to 4mb on OS X.  FFFFFFFUUUUUUUUUUU
-    fp.reset(base::CreateAndOpenTemporaryShmemFile(&path, options.executable));
+    FilePath directory;
+    if (GetShmemTempDir(options.executable, &directory))
+      fp.reset(CreateAndOpenTemporaryFileInDir(directory, &path));
 
     if (fp) {
       // Also open as readonly so that we can ShareReadOnlyToProcess.
@@ -276,6 +278,9 @@ bool SharedMemory::MapAt(off_t offset, size_t bytes) {
     return false;
 
   if (bytes > static_cast<size_t>(std::numeric_limits<int>::max()))
+    return false;
+
+  if (memory_)
     return false;
 
 #if defined(OS_ANDROID)

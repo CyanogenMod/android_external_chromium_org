@@ -79,6 +79,7 @@ class RecordInfo {
   Bases& GetBases();
   clang::CXXMethodDecl* GetTraceMethod();
   clang::CXXMethodDecl* GetTraceDispatchMethod();
+  clang::CXXMethodDecl* GetFinalizeDispatchMethod();
 
   bool GetTemplateArgs(size_t count, TemplateArgs* output_args);
 
@@ -86,12 +87,14 @@ class RecordInfo {
   bool IsGCDerived();
   bool IsGCAllocated();
   bool IsGCFinalized();
-  bool IsUnmixedGCMixin();
+  bool IsGCMixin();
 
   bool IsStackAllocated();
   bool RequiresTraceMethod();
   bool NeedsFinalization();
   TracingStatus NeedsTracing(Edge::NeedsTracingOption);
+  clang::CXXMethodDecl* InheritsNonVirtualTrace();
+  bool IsConsideredAbstract();
 
  private:
   RecordInfo(clang::CXXRecordDecl* record, RecordCache* cache);
@@ -110,9 +113,13 @@ class RecordInfo {
   Bases* bases_;
   Fields* fields_;
 
+  enum CachedBool { kFalse = 0, kTrue = 1, kNotComputed = 2 };
+  CachedBool is_stack_allocated_;
+
   bool determined_trace_methods_;
   clang::CXXMethodDecl* trace_method_;
   clang::CXXMethodDecl* trace_dispatch_method_;
+  clang::CXXMethodDecl* finalize_dispatch_method_;
 
   bool is_gc_derived_;
   clang::CXXBasePaths* base_paths_;

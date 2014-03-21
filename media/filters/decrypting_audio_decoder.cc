@@ -38,15 +38,14 @@ DecryptingAudioDecoder::DecryptingAudioDecoder(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     const SetDecryptorReadyCB& set_decryptor_ready_cb)
     : task_runner_(task_runner),
-      weak_factory_(this),
       state_(kUninitialized),
       set_decryptor_ready_cb_(set_decryptor_ready_cb),
       decryptor_(NULL),
       key_added_while_decode_pending_(false),
       bits_per_channel_(0),
       channel_layout_(CHANNEL_LAYOUT_NONE),
-      samples_per_second_(0) {
-}
+      samples_per_second_(0),
+      weak_factory_(this) {}
 
 void DecryptingAudioDecoder::Initialize(const AudioDecoderConfig& config,
                                         const PipelineStatusCB& status_cb) {
@@ -81,11 +80,7 @@ void DecryptingAudioDecoder::Initialize(const AudioDecoderConfig& config,
 
   // Reinitialization (i.e. upon a config change)
   decryptor_->DeinitializeDecoder(Decryptor::kAudio);
-  state_ = kPendingDecoderInit;
-  decryptor_->InitializeAudioDecoder(
-      config,
-      BindToCurrentLoop(base::Bind(
-          &DecryptingAudioDecoder::FinishInitialization, weak_this_)));
+  InitializeDecoder();
 }
 
 void DecryptingAudioDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
@@ -227,6 +222,11 @@ void DecryptingAudioDecoder::SetDecryptor(Decryptor* decryptor) {
 
   decryptor_ = decryptor;
 
+  InitializeDecoder();
+}
+
+void DecryptingAudioDecoder::InitializeDecoder() {
+  // Force to use S16 due to limitations of the CDM. See b/13548512
   config_.Initialize(config_.codec(),
                      kSampleFormatS16,
                      config_.channel_layout(),
@@ -248,8 +248,7 @@ void DecryptingAudioDecoder::SetDecryptor(Decryptor* decryptor) {
 void DecryptingAudioDecoder::FinishInitialization(bool success) {
   DVLOG(2) << "FinishInitialization()";
   DCHECK(task_runner_->BelongsToCurrentThread());
-  DCHECK(state_ == kPendingDecoderInit)
-      << state_;
+  DCHECK(state_ == kPendingDecoderInit) << state_;
   DCHECK(!init_cb_.is_null());
   DCHECK(reset_cb_.is_null());  // No Reset() before initialization finished.
   DCHECK(decode_cb_.is_null());  // No Decode() before initialization finished.

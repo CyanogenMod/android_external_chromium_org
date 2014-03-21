@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_GCM_GCM_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_GCM_GCM_API_H_
 
-#include "chrome/browser/services/gcm/gcm_event_router.h"
 #include "chrome/common/extensions/api/gcm.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_function.h"
@@ -55,6 +54,22 @@ class GcmRegisterFunction : public GcmApiFunction {
                                   gcm::GCMClient::Result result);
 };
 
+class GcmUnregisterFunction : public GcmApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("gcm.unregister", GCM_UNREGISTER);
+
+  GcmUnregisterFunction();
+
+ protected:
+  virtual ~GcmUnregisterFunction();
+
+  // Register function implementation.
+  virtual bool DoWork() OVERRIDE FINAL;
+
+ private:
+  void CompleteFunctionWithResult(gcm::GCMClient::Result result);
+};
+
 class GcmSendFunction : public GcmApiFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("gcm.send", GCM_SEND);
@@ -76,21 +91,17 @@ class GcmSendFunction : public GcmApiFunction {
   bool ValidateMessageData(const gcm::GCMClient::MessageData& data) const;
 };
 
-class GcmJsEventRouter : public gcm::GCMEventRouter,
-                         public EventRouter::Observer {
+class GcmJsEventRouter : public EventRouter::Observer {
  public:
   explicit GcmJsEventRouter(Profile* profile);
 
   virtual ~GcmJsEventRouter();
 
-  // GCMEventRouter:
-  virtual void OnMessage(
-      const std::string& app_id,
-      const gcm::GCMClient::IncomingMessage& message) OVERRIDE;
-  virtual void OnMessagesDeleted(const std::string& app_id) OVERRIDE;
-  virtual void OnSendError(
-      const std::string& app_id,
-      const gcm::GCMClient::SendErrorDetails& send_error_details) OVERRIDE;
+  void OnMessage(const std::string& app_id,
+                 const gcm::GCMClient::IncomingMessage& message);
+  void OnMessagesDeleted(const std::string& app_id);
+  void OnSendError(const std::string& app_id,
+                   const gcm::GCMClient::SendErrorDetails& send_error_details);
 
   // EventRouter::Observer:
   virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;

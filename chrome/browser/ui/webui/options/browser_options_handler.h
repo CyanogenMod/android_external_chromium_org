@@ -234,7 +234,7 @@ class BrowserOptionsHandler
   void ShowManageSSLCertificates(const base::ListValue* args);
 #endif
 
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
   void ShowCloudPrintDevicesPage(const base::ListValue* args);
 #endif
 
@@ -278,6 +278,9 @@ class BrowserOptionsHandler
   // Callback for "requestHotwordSetupRetry" message.
   void HandleRequestHotwordSetupRetry(const base::ListValue* args);
 
+  // Callback for "launchEasyUnlockSetup" message.
+  void HandleLaunchEasyUnlockSetup(const base::ListValue* args);
+
 #if defined(OS_CHROMEOS)
   // Opens the wallpaper manager component extension.
   void HandleOpenWallpaperManager(const base::ListValue* args);
@@ -312,6 +315,9 @@ class BrowserOptionsHandler
 
   // Setup the UI specific to managing supervised users.
   void SetupManagingSupervisedUsers();
+
+  // Setup the UI for Easy Unlock.
+  void SetupEasyUnlock();
 
 #if defined(OS_CHROMEOS)
   // Setup the accessibility features for ChromeOS.

@@ -164,14 +164,18 @@ bool PicturePile::Update(
       -kPixelDistanceToRecord,
       -kPixelDistanceToRecord,
       -kPixelDistanceToRecord);
+  recorded_viewport_ = interest_rect;
+  recorded_viewport_.Intersect(gfx::Rect(size()));
 
   bool invalidated = false;
   for (Region::Iterator i(invalidation); i.has_rect(); i.next()) {
     gfx::Rect invalidation = i.rect();
     // Split this inflated invalidation across tile boundaries and apply it
     // to all tiles that it touches.
-    for (TilingData::Iterator iter(&tiling_, invalidation);
-         iter; ++iter) {
+    bool include_borders = true;
+    for (TilingData::Iterator iter(&tiling_, invalidation, include_borders);
+         iter;
+         ++iter) {
       const PictureMapKey& key = iter.index();
 
       PictureMap::iterator picture_it = picture_map_.find(key);
@@ -186,9 +190,9 @@ bool PicturePile::Update(
   // Make a list of all invalid tiles; we will attempt to
   // cluster these into multiple invalidation regions.
   std::vector<gfx::Rect> invalid_tiles;
-
-  for (TilingData::Iterator it(&tiling_, interest_rect);
-       it; ++it) {
+  bool include_borders = true;
+  for (TilingData::Iterator it(&tiling_, interest_rect, include_borders); it;
+       ++it) {
     const PictureMapKey& key = it.index();
     PictureInfo& info = picture_map_[key];
 
@@ -199,17 +203,20 @@ bool PicturePile::Update(
     if (info.NeedsRecording(frame_number, distance_to_visible)) {
       gfx::Rect tile = tiling_.TileBounds(key.first, key.second);
       invalid_tiles.push_back(tile);
+    } else if (!info.GetPicture() && recorded_viewport_.Intersects(rect)) {
+      // Recorded viewport is just an optimization for a fully recorded
+      // interest rect.  In this case, a tile in that rect has declined
+      // to be recorded (probably due to frequent invalidations).
+      // TODO(enne): Shrink the recorded_viewport_ rather than clearing.
+      recorded_viewport_ = gfx::Rect();
     }
   }
 
   std::vector<gfx::Rect> record_rects;
   ClusterTiles(invalid_tiles, &record_rects);
 
-  if (record_rects.empty()) {
-    if (invalidated)
-      UpdateRecordedRegion();
+  if (record_rects.empty())
     return invalidated;
-  }
 
   for (std::vector<gfx::Rect>::iterator it = record_rects.begin();
        it != record_rects.end();
@@ -245,18 +252,24 @@ bool PicturePile::Update(
       stats_instrumentation->AddRecord(best_duration, recorded_pixel_count);
     }
 
-    for (TilingData::Iterator it(&tiling_, record_rect);
-        it; ++it) {
+    bool found_tile_for_recorded_picture = false;
+
+    bool include_borders = true;
+    for (TilingData::Iterator it(&tiling_, record_rect, include_borders); it;
+         ++it) {
       const PictureMapKey& key = it.index();
       gfx::Rect tile = PaddedRect(key);
       if (record_rect.Contains(tile)) {
         PictureInfo& info = picture_map_[key];
         info.SetPicture(picture);
+        found_tile_for_recorded_picture = true;
       }
     }
+    DCHECK(found_tile_for_recorded_picture);
   }
 
-  UpdateRecordedRegion();
+  has_any_recordings_ = true;
+  DCHECK(CanRasterSlowTileCheck(recorded_viewport_));
   return true;
 }
 

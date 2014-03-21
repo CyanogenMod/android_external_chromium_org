@@ -8,7 +8,7 @@ from telemetry.page import page_measurement
 
 class Memory(page_measurement.PageMeasurement):
   def __init__(self):
-    super(Memory, self).__init__('stress_memory')
+    super(Memory, self).__init__('RunStressMemory')
     self._memory_metric = None
     self._power_metric = power.PowerMetric()
 
@@ -24,9 +24,6 @@ class Memory(page_measurement.PageMeasurement):
     # Since this is a memory benchmark, we want to sample memory histograms at
     # a high frequency.
     options.AppendExtraBrowserArgs('--memory-metrics')
-
-  def CanRunForPage(self, page):
-    return hasattr(page, 'stress_memory')
 
   def MeasurePage(self, page, tab, results):
     self._power_metric.Stop(page, tab)

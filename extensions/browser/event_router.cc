@@ -12,10 +12,10 @@
 #include "base/stl_util.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "extensions/browser/api_activity_monitor.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
@@ -170,7 +170,7 @@ EventRouter::EventRouter(BrowserContext* browser_context,
                  content::Source<BrowserContext>(browser_context_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::Source<BrowserContext>(browser_context_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<BrowserContext>(browser_context_));
 }
 
@@ -699,7 +699,7 @@ void EventRouter::Observe(int type,
         listeners_.LoadFilteredLazyListeners(extension->id(), *filtered_events);
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
       // Remove all registered lazy listeners from our cache.
       UnloadedExtensionInfo* unloaded =
           content::Details<UnloadedExtensionInfo>(details).ptr();

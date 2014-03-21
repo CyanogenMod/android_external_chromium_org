@@ -162,7 +162,6 @@ extern const char kChromeUIDNSHost[];
 extern const char kChromeUIDownloadsHost[];
 extern const char kChromeUIDriveInternalsHost[];
 extern const char kChromeUIEditSearchEngineDialogHost[];
-extern const char kChromeUIEnhancedBookmarksHost[];
 extern const char kChromeUIExtensionIconHost[];
 extern const char kChromeUIExtensionInfoHost[];
 extern const char kChromeUIExtensionsFrameHost[];
@@ -536,6 +535,12 @@ extern const char kLanguageSettingsLearnMoreUrl[];
 // The URL for the 32-bit Mac deprecation help center article
 extern const char kMac32BitDeprecationURL[];
 #endif
+
+// The URL for the "Learn more" link the the Easy Unlock settings.
+extern const char kEasyUnlockLearnMoreUrl[];
+
+// The URL to the device management page in the Easy Unlock settings.
+extern const char kEasyUnlockManagementUrl[];
 
 }  // namespace chrome
 

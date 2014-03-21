@@ -31,8 +31,8 @@ include $(LOCAL_PATH)/components/autofill_core_browser.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/autofill_core_common.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/autofill_jni_headers.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/autofill_regexes.target.darwin-arm.mk
-include $(LOCAL_PATH)/components/component_resources.target.darwin-arm.mk
-include $(LOCAL_PATH)/components/component_strings.target.darwin-arm.mk
+include $(LOCAL_PATH)/components/components_resources.target.darwin-arm.mk
+include $(LOCAL_PATH)/components/components_strings.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/os_crypt.target.darwin-arm.mk
@@ -88,11 +88,6 @@ include $(LOCAL_PATH)/media/media_android_jni_headers.target.darwin-arm.mk
 include $(LOCAL_PATH)/media/player_android.target.darwin-arm.mk
 include $(LOCAL_PATH)/media/shared_memory_support.target.darwin-arm.mk
 include $(LOCAL_PATH)/media/video_capture_android_jni_headers.target.darwin-arm.mk
-include $(LOCAL_PATH)/mojo/mojo_common_lib.target.darwin-arm.mk
-include $(LOCAL_PATH)/mojo/mojo_environment_chromium.target.darwin-arm.mk
-include $(LOCAL_PATH)/mojo/mojo_environment_chromium_impl.target.darwin-arm.mk
-include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.darwin-arm.mk
-include $(LOCAL_PATH)/mojo/mojo_system.target.darwin-arm.mk
 include $(LOCAL_PATH)/net/cert_verify_status_android_java.target.darwin-arm.mk
 include $(LOCAL_PATH)/net/certificate_mime_types_java.target.darwin-arm.mk
 include $(LOCAL_PATH)/net/http_server.target.darwin-arm.mk

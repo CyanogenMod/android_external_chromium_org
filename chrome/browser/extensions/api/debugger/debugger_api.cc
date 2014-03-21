@@ -21,7 +21,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_target_impl.h"
 #include "chrome/browser/extensions/api/debugger/debugger_api_constants.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
@@ -43,6 +42,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_utils.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
@@ -307,7 +307,7 @@ ExtensionDevToolsClientHost::ExtensionDevToolsClientHost(
   AttachedClientHosts::GetInstance()->Add(this);
 
   // Detach from debugger when extension unloads.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
 
   // RVH-based agents disconnect from their clients when the app is terminating
@@ -400,7 +400,7 @@ void ExtensionDevToolsClientHost::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED) {
+  if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED) {
     if (content::Details<extensions::UnloadedExtensionInfo>(details)->
         extension->id() == extension_id_)
       Close();

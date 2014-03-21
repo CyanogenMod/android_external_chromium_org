@@ -9,31 +9,36 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "chrome/browser/services/gcm/gcm_event_router.h"
+#include "chrome/browser/services/gcm/gcm_app_handler.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 #include "google_apis/gcm/gcm_client.h"
 #include "sync/notifier/gcm_network_channel_delegate.h"
-
-class Profile;
 
 namespace base {
 class SingleThreadTaskRunner;
 }  // namespace base
 
+namespace gcm {
+class GCMProfileService;
+}  // namespace gcm
+
 namespace invalidation {
+
+class InvalidationAuthProvider;
 
 // GCMInvalidationBridge and GCMInvalidationBridge::Core implement functions
 // needed for GCMNetworkChannel. GCMInvalidationBridge lives on UI thread while
 // Core lives on IO thread. Core implements GCMNetworkChannelDelegate and posts
 // all function calls to GCMInvalidationBridge which does actual work to perform
 // them.
-class GCMInvalidationBridge : public gcm::GCMEventRouter,
+class GCMInvalidationBridge : public gcm::GCMAppHandler,
                               public OAuth2TokenService::Consumer,
                               public base::NonThreadSafe {
  public:
   class Core;
 
-  explicit GCMInvalidationBridge(Profile* profile);
+  GCMInvalidationBridge(gcm::GCMProfileService* gcm_profile_service,
+                        InvalidationAuthProvider* auth_provider);
   virtual ~GCMInvalidationBridge();
 
   // OAuth2TokenService::Consumer implementation.
@@ -44,6 +49,7 @@ class GCMInvalidationBridge : public gcm::GCMEventRouter,
                                  const GoogleServiceAuthError& error) OVERRIDE;
 
   // gcm::GCMEventRouter implementation.
+  virtual void ShutdownHandler() OVERRIDE;
   virtual void OnMessage(const std::string& app_id,
                          const gcm::GCMClient::IncomingMessage& message)
       OVERRIDE;
@@ -74,9 +80,8 @@ class GCMInvalidationBridge : public gcm::GCMEventRouter,
       gcm::GCMClient::Result result);
 
  private:
-  // GCMInvalidationBridge is owned by TiclInvalidationService therefore it is
-  // expected that profile_ pointer is valid throughout lifetime of this object.
-  Profile* profile_;
+  gcm::GCMProfileService* const gcm_profile_service_;
+  InvalidationAuthProvider* const auth_provider_;
 
   base::WeakPtr<Core> core_;
   scoped_refptr<base::SingleThreadTaskRunner> core_thread_task_runner_;

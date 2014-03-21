@@ -719,9 +719,6 @@
           'win/windows_version.h',
           'win/wrapped_window_proc.cc',
           'win/wrapped_window_proc.h',
-          'x11/x11_error_tracker.cc',
-          'x11/x11_error_tracker.h',
-          'x11/x11_error_tracker_gtk.cc',
         ],
         'conditions': [
           ['use_aura==1 and use_x11==1', {
@@ -823,8 +820,12 @@
             ],
           }],
           ['OS == "android" and _toolset == "host" and host_os == "linux"', {
+            'defines': [
+              'OS_ANDROID_HOST=Linux',
+            ],
             'sources/': [
               # Pull in specific files for host builds.
+              ['include', '^atomicops_internals_x86_gcc\\.cc$'],
               ['include', '^threading/platform_thread_linux\\.cc$'],
             ],
           }],
@@ -941,11 +942,6 @@
           # command-line-string limitation when building NaCl on Windows.
           ['OS == "win" and >(nacl_untrusted_build)==1', {
               'sources/': [ ['exclude', '\\.h$'] ],
-          }],
-          ['<(toolkit_uses_gtk) == 1', {
-            'sources!': [
-              'x11/x11_error_tracker.cc',
-            ],
           }],
         ],
       }],

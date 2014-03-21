@@ -202,6 +202,11 @@ const char kDisableGpuProcessPrelaunch[]    = "disable-gpu-process-prelaunch";
 // Overrides the kEnableGpuRasterization and kForceGpuRasterization flags.
 const char kDisableGpuRasterization[]       = "disable-gpu-rasterization";
 
+// When using CPU rasterizing disable low resolution tiling. This uses
+// less power, particularly during animations, but more white may be seen
+// during fast scrolling especially on slower devices.
+const char kDisableLowResTiling[] = "disable-low-res-tiling";
+
 // Disable the GPU process sandbox.
 const char kDisableGpuSandbox[]             = "disable-gpu-sandbox";
 
@@ -249,9 +254,6 @@ const char kDisableLogging[]                = "disable-logging";
 // Disable rasterizer that writes directly to GPU memory.
 // Overrides the kEnableMapImage flag.
 const char kDisableMapImage[]               = "disable-map-image";
-
-// Disables overlay scrollbars on Aura or Linux. Does nothing on Mac.
-const char kDisableOverlayScrollbar[]       = "disable-overlay-scrollbar";
 
 // Disable Pepper3D.
 const char kDisablePepper3d[]               = "disable-pepper-3d";
@@ -335,9 +337,6 @@ const char kDisableXSSAuditor[]             = "disable-xss-auditor";
 // be a performance bottleneck. One should only enable it when automating dom
 // based tests.
 const char kDomAutomationController[]       = "dom-automation";
-
-// Enable gpu-accelerated SVG/W3C filters.
-const char kEnableAcceleratedFilters[]      = "enable-accelerated-filters";
 
 // Enable bleeding-edge code to make Chrome draw content faster. The changes
 // behind this path are very likely to break lots of content.
@@ -446,6 +445,10 @@ const char kEnableGpuClientTracing[]        = "enable-gpu-client-tracing";
 // impl-side painting.
 const char kEnableGpuRasterization[]        = "enable-gpu-rasterization";
 
+// When using CPU rasterizing generate low resolution tiling. Low res
+// tiles may be displayed during fast scrolls especially on slower devices.
+const char kEnableLowResTiling[] = "enable-low-res-tiling";
+
 // See comment for kEnableCompositingForFixedPosition.
 const char kEnableHighDpiCompositingForFixedPosition[] =
      "enable-high-dpi-fixed-position-compositing";
@@ -494,9 +497,6 @@ const char kEnableOverlayFullscreenVideo[]  = "enable-overlay-fullscreen-video";
 // Disables blink subtitle and media control on top of overlay fullscreen video.
 const char kDisableOverlayFullscreenVideoSubtitle[] =
     "disable-overlay-fullscreen-video-subtitle";
-
-// Enables overlay scrollbars on Aura or Linux. Does nothing on Mac.
-const char kEnableOverlayScrollbar[]        = "enable-overlay-scrollbar";
 
 // Forward overscroll event data from the renderer to the browser.
 const char kEnableOverscrollNotifications[] = "enable-overscroll-notifications";

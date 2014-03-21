@@ -101,12 +101,6 @@ const char kRestoreStartupURLsMigrationTime[] =
 // data in the profile folder on disk but only in memory.
 const char kForceEphemeralProfiles[] = "profile.ephemeral_mode";
 
-// Set to true when enhanced bookmarks experiment is enabled via Chrome sync.
-const char kEnhancedBookmarksExperimentEnabled[] = "enhanced_bookmarks_enabled";
-
-// Enhanced bookmarks extension id passed via Chrome sync.
-const char kEnhancedBookmarksExtensionId[] = "enhanced_bookmarks_extension_id";
-
 // The application locale.
 // For OS_CHROMEOS we maintain kApplicationLocale property in both local state
 // and user's profile.  Global property determines locale of login screen,
@@ -1209,6 +1203,23 @@ const char kProfileIsManaged[] = "profile.is_managed";
 // The managed user ID.
 const char kManagedUserId[] = "profile.managed_user_id";
 
+// 64-bit integer serialization of the base::Time when the user's GAIA info
+// was last updated.
+const char kProfileGAIAInfoUpdateTime[] = "profile.gaia_info_update_time";
+
+// The URL from which the GAIA profile picture was downloaded. This is cached to
+// prevent the same picture from being downloaded multiple times.
+const char kProfileGAIAInfoPictureURL[] = "profile.gaia_info_picture_url";
+
+// Integer that specifies the number of times that we have shown the tutorial
+// card in the profile avatar bubble.
+const char kProfileAvatarTutorialShown[] =
+    "profile.avatar_bubble_tutorial_shown";
+
+// Boolean that specifies whether we have shown the user manager tutorial.
+const char kProfileUserManagerTutorialShown[] =
+    "profile.user_manager_tutorial_shown";
+
 // Indicates if we've already shown a notification that high contrast
 // mode is on, recommending high-contrast extensions and themes.
 const char kInvertNotificationShown[] = "invert_notification_version_2_shown";
@@ -1300,6 +1311,15 @@ const char kGCMChannelEnabled[] = "gcm.channel_enabled";
 
 // Registered GCM application ids.
 const char kGCMRegisteredAppIDs[] = "gcm.register_app_ids";
+
+// Whether Easy Unlock is enabled.
+extern const char kEasyUnlockEnabled[] = "easy_unlock.enabled";
+
+// Whether to show the Easy Unlock first run tutorial.
+extern const char kEasyUnlockShowTutorial[] = "easy_unlock.show_tutorial";
+
+// Preference storing Easy Unlock pairing data.
+extern const char kEasyUnlockPairing[] = "easy_unlock.pairing";
 
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
@@ -1804,68 +1824,6 @@ const char kSpdyProxyAuthWasEnabledBefore[] = "spdy_proxy.was_enabled_before";
 // Boolean which stores if the user is allowed to signin to chrome.
 const char kSigninAllowed[] = "signin.allowed";
 
-// 64-bit integer serialization of the base::Time when the last sync occurred.
-const char kSyncLastSyncedTime[] = "sync.last_synced_time";
-
-// Boolean specifying whether the user finished setting up sync.
-const char kSyncHasSetupCompleted[] = "sync.has_setup_completed";
-
-// Boolean specifying whether sync has an auth error.
-const char kSyncHasAuthError[] = "sync.has_auth_error";
-
-// Boolean specifying whether to automatically sync all data types (including
-// future ones, as they're added).  If this is true, the following preferences
-// (kSyncBookmarks, kSyncPasswords, etc.) can all be ignored.
-const char kSyncKeepEverythingSynced[] = "sync.keep_everything_synced";
-
-// Booleans specifying whether the user has selected to sync the following
-// datatypes.
-const char kSyncAppList[] = "sync.app_list";
-const char kSyncAppNotifications[] = "sync.app_notifications";
-const char kSyncAppSettings[] = "sync.app_settings";
-const char kSyncApps[] = "sync.apps";
-const char kSyncAutofillProfile[] = "sync.autofill_profile";
-const char kSyncAutofill[] = "sync.autofill";
-const char kSyncBookmarks[] = "sync.bookmarks";
-const char kSyncDictionary[] = "sync.dictionary";
-const char kSyncExtensionSettings[] = "sync.extension_settings";
-const char kSyncExtensions[] = "sync.extensions";
-const char kSyncFaviconImages[] = "sync.favicon_images";
-const char kSyncFaviconTracking[] = "sync.favicon_tracking";
-const char kSyncHistoryDeleteDirectives[] = "sync.history_delete_directives";
-const char kSyncManagedUserSettings[] = "sync.managed_user_settings";
-const char kSyncManagedUserSharedSettings[] =
-    "sync.managed_user_shared_settings";
-const char kSyncManagedUsers[] = "sync.managed_users";
-const char kSyncArticles[] = "sync.articles";
-const char kSyncPasswords[] = "sync.passwords";
-const char kSyncPreferences[] = "sync.preferences";
-const char kSyncPriorityPreferences[] = "sync.priority_preferences";
-const char kSyncSearchEngines[] = "sync.search_engines";
-const char kSyncSessions[] = "sync.sessions";
-const char kSyncSyncedNotificationAppInfo[] =
-    "sync.synced_notification_app_info";
-const char kSyncSyncedNotifications[] = "sync.synced_notifications";
-const char kSyncTabs[] = "sync.tabs";
-const char kSyncThemes[] = "sync.themes";
-const char kSyncTypedUrls[] = "sync.typed_urls";
-
-// Boolean used by enterprise configuration management in order to lock down
-// sync.
-const char kSyncManaged[] = "sync.managed";
-
-// Boolean to prevent sync from automatically starting up.  This is
-// used when sync is disabled by the user via the privacy dashboard.
-const char kSyncSuppressStart[] = "sync.suppress_start";
-
-// List of the currently acknowledged set of sync types, used to figure out
-// if a new sync type has rolled out so we can notify the user.
-const char kSyncAcknowledgedSyncTypes[] = "sync.acknowledged_types";
-
-// The GUID session sync will use to identify this client, even across sync
-// disable/enable events.
-const char kSyncSessionsGUID[] = "sync.session_sync_guid";
-
 // An ID to uniquely identify this client to the invalidator service.
 const char kInvalidatorClientId[] = "invalidator.client_id";
 
@@ -1876,20 +1834,6 @@ const char kInvalidatorInvalidationState[] = "invalidator.invalidation_state";
 // List of received invalidations that have not been acted on by any clients
 // yet.  Used to keep invalidation clients in sync in case of a restart.
 const char kInvalidatorSavedInvalidations[] = "invalidator.saved_invalidations";
-
-// A string that can be used to restore sync encryption infrastructure on
-// startup so that the user doesn't need to provide credentials on each start.
-const char kSyncEncryptionBootstrapToken[] =
-    "sync.encryption_bootstrap_token";
-
-// Same as kSyncEncryptionBootstrapToken, but derived from the keystore key,
-// so we don't have to do a GetKey command at restart.
-const char kSyncKeystoreEncryptionBootstrapToken[] =
-    "sync.keystore_encryption_bootstrap_token";
-
-// Boolean tracking whether the user chose to specify a secondary encryption
-// passphrase.
-const char kSyncUsingSecondaryPassphrase[] = "sync.using_secondary_passphrase";
 
 // String the identifies the last user that logged into sync and other
 // google services. As opposed to kGoogleServicesUsername, this value is not
@@ -1932,18 +1876,6 @@ const char kSignInPromoShowOnFirstRunAllowed[] =
 // The bubble is used to confirm that the user is signed into sync.
 const char kSignInPromoShowNTPBubble[] = "sync_promo.show_ntp_bubble";
 #endif
-
-// Integer that specifies the number of times that we have shown the tutorial
-// card in the profile avatar bubble.
-const char kProfileAvatarTutorialShown[] =
-    "profile.avatar_bubble_tutorial_shown";
-
-// Time when the user's GAIA info was last updated (represented as an int64).
-const char kProfileGAIAInfoUpdateTime[] = "profile.gaia_info_update_time";
-
-// The URL from which the GAIA profile picture was downloaded. This is cached to
-// prevent the same picture from being downloaded multiple times.
-const char kProfileGAIAInfoPictureURL[] = "profile.gaia_info_picture_url";
 
 // Create web application shortcut dialog preferences.
 const char kWebAppCreateOnDesktop[] = "browser.web_app.create_on_desktop";
@@ -2176,10 +2108,6 @@ const char kDeviceActivityTimes[] = "device_status.activity_times";
 // A pref holding the last known location when device location reporting is
 // enabled.
 const char kDeviceLocation[] = "device_status.location";
-
-// A string that is used to store first-time sync startup after once sync is
-// disabled. This will be refreshed every sign-in.
-const char kSyncSpareBootstrapToken[] = "sync.spare_bootstrap_token";
 
 // A pref holding the value of the policy used to disable mounting of external
 // storage for the user.
@@ -2672,4 +2600,5 @@ const char kPartnerBookmarkMappings[] = "partnerbookmarks.mappings";
 
 // Whether DNS Quick Check is disabled in proxy resolution.
 const char kQuickCheckEnabled[] = "proxy.quick_check_enabled";
+
 }  // namespace prefs

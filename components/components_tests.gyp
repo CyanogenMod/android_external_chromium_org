@@ -18,6 +18,13 @@
           'type': '<(gtest_target_type)',
           'sources': [
             'auto_login_parser/auto_login_parser_unittest.cc',
+            'autofill/content/browser/wallet/full_wallet_unittest.cc',
+            'autofill/content/browser/wallet/instrument_unittest.cc',
+            'autofill/content/browser/wallet/wallet_address_unittest.cc',
+            'autofill/content/browser/wallet/wallet_client_unittest.cc',
+            'autofill/content/browser/wallet/wallet_items_unittest.cc',
+            'autofill/content/browser/wallet/wallet_service_url_unittest.cc',
+            'autofill/content/browser/wallet/wallet_signin_helper_unittest.cc',
             'autofill/core/browser/address_field_unittest.cc',
             'autofill/core/browser/address_unittest.cc',
             'autofill/core/browser/android/auxiliary_profile_unittest_android.cc',
@@ -64,6 +71,11 @@
             'dom_distiller/core/dom_distiller_store_unittest.cc',
             'dom_distiller/core/task_tracker_unittest.cc',
             'dom_distiller/core/url_utils_unittest.cc',
+            'domain_reliability/context_unittest.cc',
+            'domain_reliability/monitor_unittest.cc',
+            'domain_reliability/test_util.cc',
+            'domain_reliability/test_util.h',
+            'domain_reliability/util_unittest.cc',
             'json_schema/json_schema_validator_unittest.cc',
             'json_schema/json_schema_validator_unittest_base.cc',
             'json_schema/json_schema_validator_unittest_base.h',
@@ -104,6 +116,7 @@
             'storage_monitor/storage_monitor_unittest.cc',
             'storage_monitor/storage_monitor_win_unittest.cc',
             'sync_driver/model_association_manager_unittest.cc',
+            'sync_driver/sync_prefs_unittest.cc',
             'sync_driver/system_encryptor_unittest.cc',
             'test/run_all_unittests.cc',
             'translate/core/browser/language_state_unittest.cc',
@@ -145,7 +158,7 @@
             '../ui/base/ui_base.gyp:ui_base',
             '../ui/gfx/gfx.gyp:gfx',
 
-            'component_resources.gyp:component_resources',
+            'components_resources.gyp:components_resources',
 
             # Dependencies of auto_login_parser
             'components.gyp:auto_login_parser',
@@ -154,7 +167,7 @@
             'components.gyp:autofill_core_browser',
             'components.gyp:autofill_core_common',
             'components.gyp:autofill_core_test_support',
-            'component_strings.gyp:component_strings',
+            'components_strings.gyp:components_strings',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
 
             # Dependencies of cloud_devices
@@ -165,8 +178,8 @@
             'components.gyp:dom_distiller_core',
             'components.gyp:dom_distiller_test_support',
 
-            # Dependencies of os_crypt
-            'components.gyp:os_crypt',
+            # Dependencies of domain_reliability
+            'components.gyp:domain_reliability',
 
             # Dependencies of json_schema
             'components.gyp:json_schema',
@@ -176,6 +189,9 @@
 
             # Dependencies of language_usage_metrics
             'components.gyp:language_usage_metrics',
+
+            # Dependencies of os_crypt
+            'components.gyp:os_crypt',
 
             # Dependencies of password_manager
             'components.gyp:password_manager_core_browser',
@@ -208,6 +224,10 @@
                 'dom_distiller/content/dom_distiller_viewer_source_unittest.cc',
               ],
               'dependencies': [
+                # Dependencies of autofill
+                'components.gyp:autofill_content_browser',
+                'components.gyp:autofill_content_test_support',
+
                 # Dependencies of dom_distiller
                 'components.gyp:dom_distiller_content',
 
@@ -250,7 +270,7 @@
                 ['exclude', '\\.mm$'],
                 ['include', '^test/run_all_unittests\\.cc$'],
                 ['include', '^auto_login_parser/'],
-                ['include', '^autofill/'],
+                ['include', '^autofill/core/'],
                 ['include', '^dom_distiller/'],
                 ['include', '^json_schema/'],
                 ['include', '^keyed_service/core/'],
@@ -297,12 +317,6 @@
               ],
             }],
             ['OS == "mac"', {
-              'dependencies': [
-                # TODO(blundell): Eliminate this dependency by having
-                # ./test/run_all_unittests.cc avoid using the //chrome
-                # constant to get the framework name on OS X. crbug.com/348563
-                '../chrome/chrome.gyp:common',
-              ],
               'link_settings': {
                 'libraries': [
                   '$(SDKROOT)/System/Library/Frameworks/AddressBook.framework',
@@ -508,12 +522,20 @@
           'type': '<(gtest_target_type)',
           'defines!': ['CONTENT_IMPLEMENTATION'],
           'dependencies': [
+            'components.gyp:dom_distiller_content',
+            'components.gyp:dom_distiller_core',
+            'components_resources.gyp:components_resources',
+            '../content/content.gyp:content_common',
+            '../content/content.gyp:content_gpu',
+            '../content/content.gyp:content_plugin',
+            '../content/content.gyp:content_renderer',
+            '../content/content_resources.gyp:content_resources',
             '../content/content_shell_and_tests.gyp:content_browser_test_support',
+            '../content/content_shell_and_tests.gyp:content_shell_lib',
+            '../content/content_shell_and_tests.gyp:content_shell_pak',
             '../content/content_shell_and_tests.gyp:test_support_content',
             '../skia/skia.gyp:skia',
             '../testing/gtest.gyp:gtest',
-            'components.gyp:dom_distiller_content',
-            'components.gyp:dom_distiller_core',
           ],
           'include_dirs': [
             '..',
@@ -524,6 +546,31 @@
           'sources': [
             '../content/test/content_test_launcher.cc',
             'dom_distiller/content/distiller_page_web_contents_browsertest.cc',
+
+            # content_extractor is a standalone content extraction tool built as
+            # a MANUAL component_browsertest.
+            'dom_distiller/standalone/content_extractor.cc',
+          ],
+          'actions': [
+            {
+              'action_name': 'repack_components_pack',
+              'variables': {
+                'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
+                'pak_inputs': [
+                  '<(SHARED_INTERMEDIATE_DIR)/components/component_resources.pak',
+                  '<(SHARED_INTERMEDIATE_DIR)/components/strings/component_strings_en-US.pak',
+                ],
+              },
+              'inputs': [
+                '<(repack_path)',
+                '<@(pak_inputs)',
+              ],
+              'outputs': [
+                '<(PRODUCT_DIR)/components_resources.pak',
+              ],
+              'action': ['python', '<(repack_path)', '<@(_outputs)',
+                         '<@(pak_inputs)'],
+            },
           ],
           'conditions': [
             ['OS=="win"', {

@@ -240,6 +240,7 @@ _BANNED_CPP_FUNCTIONS = (
 _VALID_OS_MACROS = (
     # Please keep sorted.
     'OS_ANDROID',
+    'OS_ANDROID_HOST',
     'OS_BSD',
     'OS_CAT',       # For testing.
     'OS_CHROMEOS',
@@ -1301,10 +1302,11 @@ def GetDefaultTryConfigs(bots=None):
           'ui_unittests',
       ],
       'ios_rel_device': ['compile'],
-      'linux_asan': ['defaulttests'],
+      'linux_asan': ['compile'],
+      'mac_asan': ['compile'],
       #TODO(stip): Change the name of this builder to reflect that it's release.
       'linux_gtk': standard_tests,
-      'linux_chromeos_asan': ['defaulttests'],
+      'linux_chromeos_asan': ['compile'],
       'linux_chromium_chromeos_clang_dbg': ['defaulttests'],
       'linux_chromium_chromeos_rel': ['defaulttests'],
       'linux_chromium_compile_dbg': ['defaulttests'],
@@ -1352,9 +1354,10 @@ def GetDefaultTryConfigs(bots=None):
   }
 
   swarm_enabled_builders = (
-      'linux_rel',
-      'mac_rel',
-      'win_rel',
+  # http://crbug.com/354263
+  #    'linux_rel',
+  #    'mac_rel',
+  #    'win_rel',
   )
 
   swarm_enabled_tests = (

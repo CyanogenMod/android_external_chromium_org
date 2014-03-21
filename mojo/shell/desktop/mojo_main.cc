@@ -7,13 +7,12 @@
 #include "base/logging.h"
 #include "base/macros.h"  // TODO(vtl): Remove.
 #include "base/message_loop/message_loop.h"
-#include "mojo/common/message_pump_mojo.h"
+#include "mojo/common/message_pump_mojo.h"  // TODO(vtl): Remove.
 #include "mojo/shell/child_process.h"
 #include "mojo/shell/child_process_host.h"  // TODO(vtl): Remove.
 #include "mojo/shell/context.h"
 #include "mojo/shell/init.h"
 #include "mojo/shell/run.h"
-#include "mojo/system/embedder/embedder.h"
 #include "ui/gl/gl_surface.h"
 
 namespace {
@@ -24,8 +23,11 @@ class TestChildProcessHostDelegate
  public:
   TestChildProcessHostDelegate() {}
   virtual ~TestChildProcessHostDelegate() {}
+  virtual void WillStart() OVERRIDE {
+    VLOG(2) << "TestChildProcessHostDelegate::WillStart()";
+  }
   virtual void DidStart(bool success) OVERRIDE {
-    VLOG(2) << "TestChildProcessHostDelegate::DidStart: success = " << success;
+    VLOG(2) << "TestChildProcessHostDelegate::DidStart(" << success << ")";
     base::MessageLoop::current()->QuitWhenIdle();
   }
 };
@@ -58,17 +60,7 @@ int main(int argc, char** argv) {
   if (scoped_ptr<mojo::shell::ChildProcess> child_process =
           mojo::shell::ChildProcess::Create(
               *CommandLine::ForCurrentProcess())) {
-    // TODO(vtl): Consider making a |Context| for child processes, and
-    // initializing stuff there.
-    mojo::embedder::Init();
-    base::MessageLoop message_loop(
-        scoped_ptr<base::MessagePump>(new mojo::common::MessagePumpMojo()));
-    message_loop.PostTask(
-        FROM_HERE,
-        base::Bind(&mojo::shell::ChildProcess::Run,
-                   base::Unretained(child_process.get())));
-
-    message_loop.Run();
+    child_process->Main();
   } else {
     gfx::GLSurface::InitializeOneOff();
 

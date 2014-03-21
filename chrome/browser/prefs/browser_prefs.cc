@@ -68,9 +68,9 @@
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
+#include "chrome/browser/signin/easy_unlock_controller.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
-#include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/browser_ui_prefs.h"
@@ -94,6 +94,7 @@
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/rappor/rappor_service.h"
+#include "components/sync_driver/sync_prefs.h"
 #include "components/translate/core/browser/translate_prefs.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/render_process_host.h"
@@ -115,7 +116,7 @@
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #endif
 
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
 #include "chrome/browser/ui/webui/local_discovery/local_discovery_ui.h"
 #endif
 
@@ -339,7 +340,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   autofill::AutofillManager::RegisterProfilePrefs(registry);
   BookmarkPromptPrefs::RegisterProfilePrefs(registry);
   bookmark_utils::RegisterProfilePrefs(registry);
-  browser_sync::SyncPrefs::RegisterProfilePrefs(registry);
+  sync_driver::SyncPrefs::RegisterProfilePrefs(registry);
   ChromeContentBrowserClient::RegisterProfilePrefs(registry);
   ChromeVersionService::RegisterProfilePrefs(registry);
   chrome_browser_net::HttpServerPropertiesManager::RegisterProfilePrefs(
@@ -347,6 +348,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   chrome_browser_net::Predictor::RegisterProfilePrefs(registry);
   chrome_prefs::RegisterProfilePrefs(registry);
   DownloadPrefs::RegisterProfilePrefs(registry);
+  EasyUnlockController::RegisterProfilePrefs(registry);
   extensions::ExtensionPrefs::RegisterProfilePrefs(registry);
   extensions::launch_util::RegisterProfilePrefs(registry);
   ExtensionWebUI::RegisterProfilePrefs(registry);
@@ -397,12 +399,12 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   ManagedUserSyncService::RegisterProfilePrefs(registry);
 #endif
 
-#if defined(ENABLE_MDNS)
-  LocalDiscoveryUI::RegisterProfilePrefs(registry);
-#endif
-
 #if defined(ENABLE_NOTIFICATIONS)
   DesktopNotificationService::RegisterProfilePrefs(registry);
+#endif
+
+#if defined(ENABLE_SERVICE_DISCOVERY)
+  LocalDiscoveryUI::RegisterProfilePrefs(registry);
 #endif
 
 #if defined(OS_ANDROID)
@@ -478,10 +480,6 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif
-
-#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
-  RegisterNewProfileUIPrefs(registry);
-#endif
 }
 
 void RegisterUserProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
@@ -501,15 +499,6 @@ void RegisterLoginProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   RegisterProfilePrefs(registry);
 
   chromeos::PowerPrefs::RegisterLoginProfilePrefs(registry);
-}
-#endif
-
-#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
-void RegisterNewProfileUIPrefs(user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterIntegerPref(
-      prefs::kProfileAvatarTutorialShown,
-      0,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 #endif
 

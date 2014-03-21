@@ -102,9 +102,6 @@
       <include name="IDR_ABOUT_VERSION_CSS" file="resources\about_version.css" type="BINDATA" />
 
       <include name="IDR_BOOKMARKS_MANIFEST" file="resources\bookmark_manager\manifest.json" type="BINDATA" />
-      <if expr="enable_enhanced_bookmarks">
-        <include name="IDR_ENHANCED_BOOKMARKS_MANIFEST" file="resources\enhanced_bookmark_manager\manifest.json" type="BINDATA" />
-      </if>
       <if expr="is_posix and not is_macosx and not is_ios">
         <include name="IDR_CERTIFICATE_VIEWER_HTML" file="resources\certificate_viewer.html" type="BINDATA" />
         <include name="IDR_CERTIFICATE_VIEWER_JS" file="resources\certificate_viewer.js" type="BINDATA" />
@@ -185,7 +182,7 @@
         <include name="IDR_NOTIFICATION_ICON_HTML" file="resources\notification_icon.html" type="BINDATA" />
       </if>
 
-      <if expr="enable_mdns">
+      <if expr="enable_service_discovery">
         <include name="IDR_LOCAL_DISCOVERY_HTML" file="resources\local_discovery\local_discovery.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
         <include name="IDR_LOCAL_DISCOVERY_CSS" file="resources\local_discovery\local_discovery.css" type="BINDATA" />
         <include name="IDR_LOCAL_DISCOVERY_JS" file="resources\local_discovery\local_discovery.js" flattenhtml="true" type="BINDATA" />
@@ -319,16 +316,12 @@
         <include name="IDR_KEYBOARD_OVERLAY_CSS" file="resources\chromeos\keyboard_overlay.css" flattenhtml="true" type="BINDATA" />
         <include name="IDR_KEYBOARD_OVERLAY_HTML" file="resources\chromeos\keyboard_overlay.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
         <include name="IDR_KEYBOARD_OVERLAY_JS" file="resources\chromeos\keyboard_overlay.js" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_MENU_HTML" file="resources\chromeos\menu.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_MOBILE_MANIFEST" file="resources\chromeos\mobile_app\manifest.json" type="BINDATA" />
         <include name="IDR_MOBILE_SETUP_PAGE_HTML" file="resources\chromeos\mobile_setup.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_MOBILE_SETUP_PORTAL_PAGE_HTML" file="resources\chromeos\mobile_setup_portal.html" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_NETWORK_MENU_CSS" file="resources\chromeos\network_menu.css" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_NETWORK_MENU_JS" file="resources\chromeos\network_menu.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_NFC_DEBUG_HTML" file="resources\chromeos\nfc_debug.html" type="BINDATA" />
         <include name="IDR_NFC_DEBUG_CSS" file="resources\chromeos\nfc_debug.css" type="BINDATA" />
         <include name="IDR_NFC_DEBUG_JS" file="resources\chromeos\nfc_debug.js" type="BINDATA" />
-        <include name="IDR_NOTIFICATION_ICON_LINK_HTML" file="resources\chromeos\notification_icon_link.html" type="BINDATA" />
         <include name="IDR_ECHO_MANIFEST" file="resources\chromeos\echo\manifest.json" type="BINDATA" />
         <include name="IDR_OFFLINE_APP_LOAD_HTML" file="resources\chromeos\offline_app_load.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_OFFLINE_NET_LOAD_HTML" file="resources\chromeos\offline_net_load.html" flattenhtml="true" type="BINDATA" />
@@ -338,8 +331,6 @@
         <include name="IDR_CERT_MANAGER_DIALOG_HTML" file="resources\chromeos\certificate_manager_dialog.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_BLUETOOTH_PAIR_DEVICE_HTML" file="resources\chromeos\bluetooth_pair_device.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_SIM_UNLOCK_HTML" file="resources\chromeos\sim_unlock.html" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_WRENCH_MENU_CSS" file="resources\chromeos\wrench_menu.css" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_WRENCH_MENU_JS" file="resources\chromeos\wrench_menu.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_SLOW_HTML" file="resources\chromeos\slow.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_SLOW_JS" file="resources\chromeos\slow.js" type="BINDATA" />
         <include name="IDR_CHARGER_REPLACEMENT_HTML" file="resources\chromeos\charger_replacement.html" flattenhtml="true" type="BINDATA" />
@@ -357,10 +348,6 @@
       </if>
       <if expr="chromeos">
         <include name="IDR_NETWORK_CONFIGURATION_MANIFEST" file="resources\chromeos\network_configuration\manifest.json" type="BINDATA" />
-      </if>
-      <if expr="(desktop_linux and toolkit_views) or use_ash">
-        <include name="IDR_HTTP_AUTH_HTML" file="resources\http_auth.html" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_TAB_MODAL_CONFIRM_DIALOG_HTML" file="resources\tab_modal_confirm_dialog.html" flattenhtml="true" type="BINDATA" />
       </if>
       <if expr="chromeos and _google_chrome">
         <include name="IDR_GENIUS_APP_MANIFEST" file="resources\chromeos\genius_app\manifest.json" type="BINDATA" />

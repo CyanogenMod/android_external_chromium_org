@@ -4,8 +4,6 @@
 
 #include "components/nacl/renderer/ppb_nacl_private_impl.h"
 
-#ifndef DISABLE_NACL
-
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -39,9 +37,13 @@
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebView.h"
+#include "url/gurl.h"
 #include "v8/include/v8.h"
 
 namespace {
+
+// Forward declare LogToConsole() we can use it in other functions here.
+void LogToConsole(PP_Instance instance, const char* message);
 
 base::LazyInstance<scoped_refptr<PnaclTranslationResourceHost> >
     g_pnacl_resource_host = LAZY_INSTANCE_INITIALIZER;
@@ -510,6 +512,8 @@ void SetReadOnlyProperty(PP_Instance instance,
 
 void ReportLoadError(PP_Instance instance,
                      PP_NaClError error,
+                     const char* error_message,
+                     const char* console_message,
                      PP_Bool is_installed) {
   // Check that we are on the main renderer thread.
   DCHECK(content::RenderThread::Get());
@@ -523,8 +527,6 @@ void ReportLoadError(PP_Instance instance,
   }
   // TODO(dmichael): Move the following actions here:
   // - Set ready state to DONE.
-  // - Set last error string.
-  // - Print error message to JavaScript console.
 
   // Inform JavaScript that loading encountered an error and is complete.
   DispatchEvent(instance, PP_NACL_EVENT_ERROR, NULL, PP_FALSE, 0, 0);
@@ -536,6 +538,18 @@ void ReportLoadError(PP_Instance instance,
                          "NaCl.LoadStatus.Plugin.InstalledApp" :
                          "NaCl.LoadStatus.Plugin.NotInstalledApp";
   HistogramEnumerate(uma_name, error, PP_NACL_ERROR_MAX);
+
+  std::string error_string = std::string("NaCl module load failed: ") +
+      std::string(error_message);
+  content::PepperPluginInstance* plugin_instance =
+      content::PepperPluginInstance::Get(instance);
+  plugin_instance->SetEmbedProperty(
+      ppapi::StringVar::StringToPPVar("lastError"),
+      ppapi::StringVar::StringToPPVar(error_string));
+
+  std::string console_string = std::string("NaCl module load failed: ") +
+      std::string(console_message);
+  LogToConsole(instance, console_string.c_str());
 }
 
 void InstanceDestroyed(PP_Instance instance) {
@@ -559,6 +573,27 @@ const char* GetSandboxArch() {
   return nacl::GetSandboxArch();
 }
 
+PP_UrlSchemeType GetUrlScheme(PP_Var url) {
+  scoped_refptr<ppapi::StringVar> url_string = ppapi::StringVar::FromPPVar(url);
+  if (!url_string)
+    return PP_SCHEME_OTHER;
+
+  GURL gurl(url_string->value());
+  if (gurl.SchemeIs("chrome-extension"))
+    return PP_SCHEME_CHROME_EXTENSION;
+  if (gurl.SchemeIs("data"))
+    return PP_SCHEME_DATA;
+  return PP_SCHEME_OTHER;
+}
+
+void LogToConsole(PP_Instance instance, const char* message) {
+  std::string source("NativeClient");
+  ppapi::PpapiGlobals::Get()->LogWithSource(instance,
+                                            PP_LOGLEVEL_LOG,
+                                            source,
+                                            std::string(message));
+}
+
 const PPB_NaCl_Private nacl_interface = {
   &LaunchSelLdr,
   &StartPpapiProxy,
@@ -577,7 +612,9 @@ const PPB_NaCl_Private nacl_interface = {
   &ReportLoadError,
   &InstanceDestroyed,
   &NaClDebugStubEnabled,
-  &GetSandboxArch
+  &GetSandboxArch,
+  &GetUrlScheme,
+  &LogToConsole
 };
 
 }  // namespace
@@ -589,5 +626,3 @@ const PPB_NaCl_Private* GetNaClPrivateInterface() {
 }
 
 }  // namespace nacl
-
-#endif  // DISABLE_NACL

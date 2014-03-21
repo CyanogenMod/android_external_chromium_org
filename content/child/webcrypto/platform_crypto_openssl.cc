@@ -13,6 +13,7 @@
 
 #include "base/logging.h"
 #include "content/child/webcrypto/crypto_data.h"
+#include "content/child/webcrypto/status.h"
 #include "content/child/webcrypto/webcrypto_util.h"
 #include "crypto/openssl_util.h"
 #include "third_party/WebKit/public/platform/WebArrayBuffer.h"
@@ -363,7 +364,7 @@ Status VerifyRsaSsaPkcs1v1_5(PublicKey* key,
   return Status::ErrorUnsupported();
 }
 
-Status ImportKeySpki(const blink::WebCryptoAlgorithm& algorithm_or_null,
+Status ImportKeySpki(const blink::WebCryptoAlgorithm& algorithm,
                      const CryptoData& key_data,
                      bool extractable,
                      blink::WebCryptoKeyUsageMask usage_mask,
@@ -372,7 +373,7 @@ Status ImportKeySpki(const blink::WebCryptoAlgorithm& algorithm_or_null,
   return Status::ErrorUnsupported();
 }
 
-Status ImportKeyPkcs8(const blink::WebCryptoAlgorithm& algorithm_or_null,
+Status ImportKeyPkcs8(const blink::WebCryptoAlgorithm& algorithm,
                       const CryptoData& key_data,
                       bool extractable,
                       blink::WebCryptoKeyUsageMask usage_mask,
@@ -399,6 +400,13 @@ Status UnwrapSymKeyAesKw(const CryptoData& wrapped_key_data,
                          bool extractable,
                          blink::WebCryptoKeyUsageMask usage_mask,
                          blink::WebCryptoKey* key) {
+  // TODO(eroman): http://crbug.com/267888
+  return Status::ErrorUnsupported();
+}
+
+Status DecryptAesKw(SymKey* key,
+                    const CryptoData& data,
+                    blink::WebArrayBuffer* buffer) {
   // TODO(eroman): http://crbug.com/267888
   return Status::ErrorUnsupported();
 }

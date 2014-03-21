@@ -30,7 +30,6 @@ LOCAL_SRC_FILES := \
 	google_apis/drive/drive_api_parser.cc \
 	google_apis/drive/drive_api_requests.cc \
 	google_apis/drive/drive_api_url_generator.cc \
-	google_apis/drive/gdata_contacts_requests.cc \
 	google_apis/drive/gdata_errorcode.cc \
 	google_apis/drive/gdata_wapi_requests.cc \
 	google_apis/drive/gdata_wapi_parser.cc \
@@ -102,7 +101,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -196,7 +194,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \

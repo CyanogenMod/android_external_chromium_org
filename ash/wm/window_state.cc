@@ -229,7 +229,7 @@ void WindowState::OnWMEvent(const WMEvent* event) {
 void WindowState::SaveCurrentBoundsForRestore() {
   gfx::Rect bounds_in_screen =
       ScreenUtil::ConvertRectToScreen(window_->parent(),
-                                     window_->bounds());
+                                      window_->bounds());
   SetRestoreBoundsInScreen(bounds_in_screen);
 }
 
@@ -253,6 +253,15 @@ void WindowState::SetRestoreBoundsInParent(const gfx::Rect& bounds) {
 
 void WindowState::ClearRestoreBounds() {
   window_->ClearProperty(aura::client::kRestoreBoundsKey);
+}
+
+scoped_ptr<WindowState::State> WindowState::SetStateObject(
+    scoped_ptr<WindowState::State> new_state) {
+  current_state_->DetachState(this);
+  scoped_ptr<WindowState::State> old_object = current_state_.Pass();
+  current_state_ = new_state.Pass();
+  current_state_->AttachState(this, old_object.get());
+  return old_object.Pass();
 }
 
 void WindowState::SetPreAutoManageWindowBounds(

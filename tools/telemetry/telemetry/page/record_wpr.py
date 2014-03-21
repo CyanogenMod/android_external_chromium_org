@@ -55,7 +55,7 @@ class RecordPage(page_test.PageTest):
     if self.test:
       self.test.DidNavigateToPage(page, tab)
 
-  def Run(self, page, tab, results):
+  def RunPage(self, page, tab, results):
     # When recording, sleep to catch any resources that load post-onload.
     tab.WaitForDocumentReadyStateToBeComplete()
 
@@ -116,7 +116,7 @@ def Main(base_dir):
                                    index_by_class_name=True)
 
   options = browser_options.BrowserFinderOptions()
-  parser = options.CreateParser('%prog <PageSet|Measurement|Test|URL>')
+  parser = options.CreateParser('%prog <PageSet|Test|URL>')
   page_runner.AddCommandLineArgs(parser)
 
   recorder = RecordPage(measurements)
@@ -131,12 +131,8 @@ def Main(base_dir):
     recorder.test = tests[target]().test()
     recorder.test.AddCommandLineArgs(parser)
     parser.parse_args()
+    recorder.test.ProcessCommandLineArgs(parser, options)
     ps = tests[target]().CreatePageSet(options)
-  elif target in measurements:
-    recorder.test = measurements[target]()
-    recorder.test.AddCommandLineArgs(parser)
-    _, args = parser.parse_args()
-    ps = recorder.test.CreatePageSet(args, options)
   elif target.endswith('.json'):
     parser.parse_args()
     ps = page_set.PageSet.FromFile(target)
@@ -146,6 +142,9 @@ def Main(base_dir):
   else:
     parser.print_usage()
     sys.exit(1)
+
+  page_runner.ProcessCommandLineArgs(parser, options)
+  recorder.ProcessCommandLineArgs(parser, options)
 
   expectations = test_expectations.TestExpectations()
 

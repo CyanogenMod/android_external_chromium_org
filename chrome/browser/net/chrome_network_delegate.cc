@@ -34,6 +34,7 @@
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/domain_reliability/monitor.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -347,6 +348,7 @@ ChromeNetworkDelegate::ChromeNetworkDelegate(
       enable_do_not_track_(NULL),
       force_google_safe_search_(NULL),
       url_blacklist_manager_(NULL),
+      domain_reliability_monitor_(NULL),
       received_content_length_(0),
       original_content_length_(0) {
   DCHECK(event_router);
@@ -518,6 +520,8 @@ int ChromeNetworkDelegate::OnHeadersReceived(
 
 void ChromeNetworkDelegate::OnBeforeRedirect(net::URLRequest* request,
                                              const GURL& new_location) {
+  if (domain_reliability_monitor_)
+    domain_reliability_monitor_->OnBeforeRedirect(request);
   ExtensionWebRequestEventRouter::GetInstance()->OnBeforeRedirect(
       profile_, extension_info_map_.get(), request, new_location);
 }
@@ -612,6 +616,8 @@ void ChromeNetworkDelegate::OnCompleted(net::URLRequest* request,
   } else {
     NOTREACHED();
   }
+  if (domain_reliability_monitor_)
+    domain_reliability_monitor_->OnCompleted(request, started);
   ForwardProxyErrors(request, event_router_.get(), profile_);
 
   ForwardRequestStatus(REQUEST_DONE, request, profile_);
@@ -651,6 +657,19 @@ bool ChromeNetworkDelegate::OnCanGetCookies(
 
   int render_process_id = -1;
   int render_frame_id = -1;
+
+  // |is_for_blocking_resource| indicates whether the cookies read were for a
+  // blocking resource (eg script, css). It is only temporarily added for
+  // diagnostic purposes, per bug 353678. Will be removed again once data
+  // collection is finished.
+  bool is_for_blocking_resource = false;
+  const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(&request);
+  if (info && ((!info->IsAsync()) ||
+               info->GetResourceType() == ResourceType::STYLESHEET ||
+               info->GetResourceType() == ResourceType::SCRIPT)) {
+    is_for_blocking_resource = true;
+  }
+
   if (content::ResourceRequestInfo::GetRenderFrameForRequest(
           &request, &render_process_id, &render_frame_id)) {
     BrowserThread::PostTask(
@@ -658,7 +677,7 @@ bool ChromeNetworkDelegate::OnCanGetCookies(
         base::Bind(&TabSpecificContentSettings::CookiesRead,
                    render_process_id, render_frame_id,
                    request.url(), request.first_party_for_cookies(),
-                   cookie_list, !allow));
+                   cookie_list, !allow, is_for_blocking_resource));
   }
 
   return allow;

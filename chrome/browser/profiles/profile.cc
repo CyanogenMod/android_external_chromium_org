@@ -13,8 +13,8 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/common/pref_names.h"
+#include "components/sync_driver/sync_prefs.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -166,10 +166,19 @@ void Profile::RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       prefs::kSpdyProxyAuthWasEnabledBefore,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
+#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS) && !defined(OS_IOS)
+  // Preferences related to the avatar bubble and user manager tutorials.
+  registry->RegisterIntegerPref(
+      prefs::kProfileAvatarTutorialShown,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kProfileUserManagerTutorialShown,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+#endif
 }
-
 
 std::string Profile::GetDebugName() {
   std::string name = GetPath().BaseName().MaybeAsASCII();
@@ -204,7 +213,7 @@ bool Profile::IsSyncAccessible() {
 
   // No ProfileSyncService created yet - we don't want to create one, so just
   // infer the accessible state by looking at prefs/command line flags.
-  browser_sync::SyncPrefs prefs(GetPrefs());
+  sync_driver::SyncPrefs prefs(GetPrefs());
   return ProfileSyncService::IsSyncEnabled() && !prefs.IsManaged();
 }
 

@@ -130,9 +130,6 @@ class Plugin : public pp::Instance {
   // Report loading a module was aborted, typically due to user action.
   void ReportLoadAbort();
 
-  // Write a text string on the JavaScript console.
-  void AddToConsole(const nacl::string& text);
-
   // Dispatch a JavaScript event to indicate a key step in loading.
   // |event_type| is a character string indicating which type of progress
   // event (loadstart, progress, error, abort, load, loadend).  Events are
@@ -207,10 +204,6 @@ class Plugin : public pp::Instance {
   // contains a file descriptor. The caller must take ownership of this
   // descriptor.
   struct NaClFileInfo GetFileInfo(const nacl::string& url);
-
-  // A helper function that gets the scheme type for |url|. Uses URLUtil_Dev
-  // interface which this class has as a member.
-  UrlSchemeType GetUrlScheme(const std::string& url);
 
   // A helper function that indicates if |url| can be requested by the document
   // under the same-origin policy. Strictly speaking, it may be possible for the

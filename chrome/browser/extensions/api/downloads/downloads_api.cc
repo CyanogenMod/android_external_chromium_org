@@ -114,6 +114,7 @@ const char kTooManyListeners[] = "Each extension may have at most one "
   "onDeterminingFilename listener between all of its renderer execution "
   "contexts.";
 const char kUnexpectedDeterminer[] = "Unexpected determineFilename call";
+const char kUserGesture[] = "User gesture required";
 
 }  // namespace download_extension_errors
 
@@ -1355,6 +1356,7 @@ bool DownloadsOpenFunction::RunImpl() {
   DownloadItem* download_item =
       GetDownload(GetProfile(), include_incognito(), params->download_id);
   if (InvalidId(download_item, &error_) ||
+      Fault(!user_gesture(), errors::kUserGesture, &error_) ||
       Fault(download_item->GetState() != DownloadItem::COMPLETE,
             errors::kNotComplete, &error_) ||
       Fault(!GetExtension()->HasAPIPermission(
@@ -1517,7 +1519,7 @@ ExtensionDownloadsEventRouter::ExtensionDownloadsEventRouter(
       notifier_(manager, this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(profile_);
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
   extensions::EventRouter* router = extensions::ExtensionSystem::Get(profile_)->
       event_router();
@@ -1894,7 +1896,7 @@ void ExtensionDownloadsEventRouter::Observe(
     const content::NotificationDetails& details) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
       extensions::UnloadedExtensionInfo* unloaded =
           content::Details<extensions::UnloadedExtensionInfo>(details).ptr();
       std::set<const extensions::Extension*>::iterator iter =

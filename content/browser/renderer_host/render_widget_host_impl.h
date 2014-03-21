@@ -38,7 +38,6 @@
 #include "ui/events/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
 
-class WebCursor;
 struct AcceleratedSurfaceMsg_BufferPresented_Params;
 struct ViewHostMsg_CompositorSurfaceBuffersSwapped_Params;
 struct ViewHostMsg_UpdateRect_Params;
@@ -84,6 +83,7 @@ class RenderWidgetHostDelegate;
 class RenderWidgetHostViewPort;
 class SyntheticGestureController;
 class TimeoutMonitor;
+class WebCursor;
 struct EditCommand;
 
 // This implements the RenderWidgetHost interface that is exposed to
@@ -138,6 +138,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       const gfx::Size& accelerated_dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       const SkBitmap::Config& bitmap_config) OVERRIDE;
+  virtual bool CanCopyFromBackingStore() OVERRIDE;
+#if defined(OS_ANDROID)
+  virtual void LockBackingStore() OVERRIDE;
+  virtual void UnlockBackingStore() OVERRIDE;
+#endif
 #if defined(TOOLKIT_GTK)
   virtual bool CopyFromBackingStoreToGtkWindow(const gfx::Rect& dest_rect,
                                                GdkWindow* target) OVERRIDE;
@@ -241,6 +246,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   // Indicates if the page has finished loading.
   void SetIsLoading(bool is_loading);
+
+  // Pause for a moment to wait for pending repaint or resize messages sent to
+  // the renderer to arrive. If pending resize messages are for an old window
+  // size, then also pump through a new resize message if there is time.
+  void PauseForPendingResizeOrRepaints();
 
   // Check for the existance of a BackingStore of the given |desired_size| and
   // return it if it exists. If the BackingStore is GPU, true is returned and

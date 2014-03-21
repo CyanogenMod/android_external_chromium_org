@@ -12,6 +12,7 @@ import sys
 import zipfile
 
 from telemetry import test
+from telemetry.core import command_line
 from telemetry.core import discover
 from telemetry.core import util
 from telemetry.page import cloud_storage
@@ -200,12 +201,15 @@ def ZipDependencies(paths, dependencies, options):
     # location in the archive. This can be confusing for users.
     gsutil_path = cloud_storage.FindGsutil()
     if cloud_storage.SupportsProdaccess(gsutil_path):
+      gsutil_base_dir = os.path.join(os.path.dirname(gsutil_path), os.pardir)
       gsutil_dependencies = path_set.PathSet()
       gsutil_dependencies.add(os.path.dirname(gsutil_path))
+      # Also add modules from depot_tools that are needed by gsutil.
+      gsutil_dependencies.add(os.path.join(gsutil_base_dir, 'boto'))
+      gsutil_dependencies.add(os.path.join(gsutil_base_dir, 'retry_decorator'))
       gsutil_dependencies -= FindExcludedFiles(
           set(gsutil_dependencies), options)
 
-      gsutil_base_dir = os.path.join(os.path.dirname(gsutil_path), os.pardir)
       for path in gsutil_dependencies:
         path_in_archive = os.path.join(
             'telemetry', os.path.relpath(util.GetTelemetryDir(), base_dir),
@@ -213,43 +217,42 @@ def ZipDependencies(paths, dependencies, options):
         zip_file.write(path, path_in_archive)
 
 
-def ParseCommandLine():
-  parser = optparse.OptionParser()
-  parser.add_option(
-      '-v', '--verbose', action='count', dest='verbosity',
-      help='Increase verbosity level (repeat as needed).')
+class FindDependenciesCommand(command_line.OptparseCommand):
+  """Prints all dependencies"""
 
-  parser.add_option(
-      '-p', '--include-page-set-data', action='store_true', default=False,
-      help='Scan tests for page set data and include them.')
+  @classmethod
+  def AddCommandLineArgs(cls, parser):
+    parser.add_option(
+        '-v', '--verbose', action='count', dest='verbosity',
+        help='Increase verbosity level (repeat as needed).')
 
-  parser.add_option(
-      '-e', '--exclude', action='append', default=[],
-      help='Exclude paths matching EXCLUDE. Can be used multiple times.')
+    parser.add_option(
+        '-p', '--include-page-set-data', action='store_true', default=False,
+        help='Scan tests for page set data and include them.')
 
-  parser.add_option(
-      '-z', '--zip',
-      help='Store files in a zip archive at ZIP.')
+    parser.add_option(
+        '-e', '--exclude', action='append', default=[],
+        help='Exclude paths matching EXCLUDE. Can be used multiple times.')
 
-  options, args = parser.parse_args()
+    parser.add_option(
+        '-z', '--zip',
+        help='Store files in a zip archive at ZIP.')
 
-  if options.verbosity >= 2:
-    logging.getLogger().setLevel(logging.DEBUG)
-  elif options.verbosity:
-    logging.getLogger().setLevel(logging.INFO)
-  else:
-    logging.getLogger().setLevel(logging.WARNING)
+  @classmethod
+  def ProcessCommandLineArgs(cls, parser, args):
+    if args.verbosity >= 2:
+      logging.getLogger().setLevel(logging.DEBUG)
+    elif args.verbosity:
+      logging.getLogger().setLevel(logging.INFO)
+    else:
+      logging.getLogger().setLevel(logging.WARNING)
 
-  return options, args
-
-
-def main():
-  options, paths = ParseCommandLine()
-
-  dependencies = FindDependencies(paths, options)
-
-  if options.zip:
-    ZipDependencies(paths, dependencies, options)
-    print 'Zip archive written to %s.' % options.zip
-  else:
-    print '\n'.join(sorted(dependencies))
+  def Run(self, args):
+    paths = args.positional_args
+    dependencies = FindDependencies(paths, args)
+    if args.zip:
+      ZipDependencies(paths, dependencies, args)
+      print 'Zip archive written to %s.' % args.zip
+    else:
+      print '\n'.join(sorted(dependencies))
+    return 0

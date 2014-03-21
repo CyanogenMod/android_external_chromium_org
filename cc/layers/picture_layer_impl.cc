@@ -54,9 +54,14 @@ PictureLayerImpl::PictureLayerImpl(LayerTreeImpl* tree_impl, int id)
       is_using_lcd_text_(tree_impl->settings().can_use_lcd_text),
       needs_post_commit_initialization_(true),
       should_update_tile_priorities_(false),
-      has_gpu_rasterization_hint_(false) {}
+      has_gpu_rasterization_hint_(false),
+      should_use_low_res_tiling_(tree_impl->settings().create_low_res_tiling),
+      layer_needs_to_register_itself_(true) {}
 
-PictureLayerImpl::~PictureLayerImpl() {}
+PictureLayerImpl::~PictureLayerImpl() {
+  if (!layer_needs_to_register_itself_)
+    layer_tree_impl()->tile_manager()->UnregisterPictureLayerImpl(this);
+}
 
 const char* PictureLayerImpl::LayerTypeAsString() const {
   return "cc::PictureLayerImpl";
@@ -319,9 +324,18 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
   CleanUpTilingsOnActiveLayer(seen_tilings);
 }
 
+void PictureLayerImpl::DidUnregisterLayer() {
+  layer_needs_to_register_itself_ = true;
+}
+
 void PictureLayerImpl::UpdateTilePriorities() {
   DCHECK(!needs_post_commit_initialization_);
   CHECK(should_update_tile_priorities_);
+
+  if (layer_needs_to_register_itself_) {
+    layer_tree_impl()->tile_manager()->RegisterPictureLayerImpl(this);
+    layer_needs_to_register_itself_ = false;
+  }
 
   if (!layer_tree_impl()->device_viewport_valid_for_tile_management()) {
     for (size_t i = 0; i < tilings_->num_tilings(); ++i)
@@ -468,6 +482,8 @@ skia::RefPtr<SkPicture> PictureLayerImpl::GetPicture() {
 void PictureLayerImpl::SetHasGpuRasterizationHint(bool has_hint) {
   bool old_should_use_gpu_rasterization = ShouldUseGpuRasterization();
   has_gpu_rasterization_hint_ = has_hint;
+  if (has_gpu_rasterization_hint_)
+    should_use_low_res_tiling_ = false;
   if (ShouldUseGpuRasterization() != old_should_use_gpu_rasterization)
     RemoveAllTilings();
 }
@@ -864,8 +880,7 @@ PictureLayerTiling* PictureLayerImpl::AddTiling(float contents_scale) {
 
   PictureLayerTiling* tiling = tilings_->AddTiling(contents_scale);
 
-  const Region& recorded = pile_->recorded_region();
-  DCHECK(!recorded.IsEmpty());
+  DCHECK(pile_->HasRecordings());
 
   if (twin_layer_ &&
       twin_layer_->ShouldUseGpuRasterization() == ShouldUseGpuRasterization())
@@ -1177,7 +1192,7 @@ void PictureLayerImpl::ResetRasterScale() {
 bool PictureLayerImpl::CanHaveTilings() const {
   if (!DrawsContent())
     return false;
-  if (pile_->recorded_region().IsEmpty())
+  if (!pile_->HasRecordings())
     return false;
   return true;
 }
@@ -1221,11 +1236,6 @@ void PictureLayerImpl::AsValueInto(base::DictionaryValue* state) const {
   state->Set("pictures", pile_->AsValue().release());
   state->Set("invalidation", invalidation_.AsValue().release());
 
-  Region unrecorded_region(gfx::Rect(pile_->size()));
-  unrecorded_region.Subtract(pile_->recorded_region());
-  if (!unrecorded_region.IsEmpty())
-    state->Set("unrecorded_region", unrecorded_region.AsValue().release());
-
   scoped_ptr<base::ListValue> coverage_tiles(new base::ListValue);
   for (PictureLayerTilingSet::CoverageIterator iter(tilings_.get(),
                                                     contents_scale_x(),
@@ -1253,6 +1263,118 @@ size_t PictureLayerImpl::GPUMemoryUsageInBytes() const {
 
 void PictureLayerImpl::RunMicroBenchmark(MicroBenchmarkImpl* benchmark) {
   benchmark->RunOnLayer(this);
+}
+
+WhichTree PictureLayerImpl::GetTree() const {
+  return layer_tree_impl()->IsActiveTree() ? ACTIVE_TREE : PENDING_TREE;
+}
+
+bool PictureLayerImpl::IsOnActiveOrPendingTree() const {
+  return !layer_tree_impl()->IsRecycleTree();
+}
+
+PictureLayerImpl::LayerRasterTileIterator::LayerRasterTileIterator()
+    : layer_(NULL) {}
+
+PictureLayerImpl::LayerRasterTileIterator::LayerRasterTileIterator(
+    PictureLayerImpl* layer,
+    bool prioritize_low_res)
+    : layer_(layer), current_stage_(0) {
+  DCHECK(layer_);
+  if (!layer_->tilings_ || !layer_->tilings_->num_tilings())
+    return;
+
+  WhichTree tree =
+      layer_->layer_tree_impl()->IsActiveTree() ? ACTIVE_TREE : PENDING_TREE;
+
+  // Find high and low res tilings and initialize the iterators.
+  for (size_t i = 0; i < layer_->tilings_->num_tilings(); ++i) {
+    PictureLayerTiling* tiling = layer_->tilings_->tiling_at(i);
+    if (tiling->resolution() == HIGH_RESOLUTION) {
+      iterators_[HIGH_RES] =
+          PictureLayerTiling::TilingRasterTileIterator(tiling, tree);
+    }
+
+    if (tiling->resolution() == LOW_RESOLUTION) {
+      iterators_[LOW_RES] =
+          PictureLayerTiling::TilingRasterTileIterator(tiling, tree);
+    }
+  }
+
+  if (prioritize_low_res) {
+    stages_[0].iterator_type = LOW_RES;
+    stages_[0].tile_type =
+        PictureLayerTiling::TilingRasterTileIterator::VISIBLE;
+
+    stages_[1].iterator_type = HIGH_RES;
+    stages_[1].tile_type =
+        PictureLayerTiling::TilingRasterTileIterator::VISIBLE;
+  } else {
+    stages_[0].iterator_type = HIGH_RES;
+    stages_[0].tile_type =
+        PictureLayerTiling::TilingRasterTileIterator::VISIBLE;
+
+    stages_[1].iterator_type = LOW_RES;
+    stages_[1].tile_type =
+        PictureLayerTiling::TilingRasterTileIterator::VISIBLE;
+  }
+
+  stages_[2].iterator_type = HIGH_RES;
+  stages_[2].tile_type = PictureLayerTiling::TilingRasterTileIterator::SKEWPORT;
+
+  stages_[3].iterator_type = HIGH_RES;
+  stages_[3].tile_type =
+      PictureLayerTiling::TilingRasterTileIterator::EVENTUALLY;
+
+  IteratorType index = stages_[current_stage_].iterator_type;
+  PictureLayerTiling::TilingRasterTileIterator::Type tile_type =
+      stages_[current_stage_].tile_type;
+  if (!iterators_[index] || iterators_[index].get_type() != tile_type)
+    ++(*this);
+}
+
+PictureLayerImpl::LayerRasterTileIterator::~LayerRasterTileIterator() {}
+
+PictureLayerImpl::LayerRasterTileIterator::operator bool() const {
+  return layer_ && static_cast<size_t>(current_stage_) < arraysize(stages_);
+}
+
+PictureLayerImpl::LayerRasterTileIterator&
+PictureLayerImpl::LayerRasterTileIterator::
+operator++() {
+  IteratorType index = stages_[current_stage_].iterator_type;
+  PictureLayerTiling::TilingRasterTileIterator::Type tile_type =
+      stages_[current_stage_].tile_type;
+
+  // First advance the iterator.
+  if (iterators_[index])
+    ++iterators_[index];
+
+  if (iterators_[index] && iterators_[index].get_type() == tile_type)
+    return *this;
+
+  // Next, advance the stage.
+  int stage_count = arraysize(stages_);
+  ++current_stage_;
+  while (current_stage_ < stage_count) {
+    index = stages_[current_stage_].iterator_type;
+    tile_type = stages_[current_stage_].tile_type;
+
+    if (iterators_[index] && iterators_[index].get_type() == tile_type)
+      break;
+    ++current_stage_;
+  }
+  return *this;
+}
+
+Tile* PictureLayerImpl::LayerRasterTileIterator::operator*() {
+  DCHECK(*this);
+
+  IteratorType index = stages_[current_stage_].iterator_type;
+  DCHECK(iterators_[index]);
+  DCHECK(iterators_[index].get_type() == stages_[current_stage_].tile_type);
+
+  return *iterators_[index];
 }
 
 }  // namespace cc

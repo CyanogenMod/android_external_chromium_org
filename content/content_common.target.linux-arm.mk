@@ -39,6 +39,8 @@ LOCAL_SRC_FILES := \
 	content/public/common/assert_matching_enums.cc \
 	content/public/common/child_process_host_delegate.cc \
 	content/public/common/color_suggestion.cc \
+	content/public/common/common_param_traits.cc \
+	content/public/common/content_client.cc \
 	content/public/common/content_constants.cc \
 	content/public/common/content_switches.cc \
 	content/public/common/context_menu_params.cc \
@@ -62,6 +64,7 @@ LOCAL_SRC_FILES := \
 	content/public/common/url_constants.cc \
 	content/public/common/url_utils.cc \
 	content/public/common/webplugininfo.cc \
+	content/public/common/window_container_type.cc \
 	content/common/android/address_parser.cc \
 	content/common/android/address_parser_internal.cc \
 	content/common/android/common_jni_registrar.cc \
@@ -71,7 +74,6 @@ LOCAL_SRC_FILES := \
 	content/common/browser_plugin/browser_plugin_constants.cc \
 	content/common/cc_messages.cc \
 	content/common/child_process_host_impl.cc \
-	content/common/clipboard_messages.cc \
 	content/common/content_constants_internal.cc \
 	content/common/content_ipc_logging.cc \
 	content/common/content_message_generator.cc \
@@ -79,6 +81,8 @@ LOCAL_SRC_FILES := \
 	content/common/content_paths.cc \
 	content/common/content_switches_internal.cc \
 	content/common/cookie_data.cc \
+	content/common/cursors/webcursor.cc \
+	content/common/cursors/webcursor_android.cc \
 	content/common/dom_storage/dom_storage_map.cc \
 	content/common/font_list.cc \
 	content/common/font_list_android.cc \
@@ -118,9 +122,9 @@ LOCAL_SRC_FILES := \
 	content/common/indexed_db/indexed_db_key_path.cc \
 	content/common/indexed_db/indexed_db_key_range.cc \
 	content/common/indexed_db/indexed_db_param_traits.cc \
-	content/common/input/input_event_stream_validator.cc \
 	content/common/input/gesture_event_stream_validator.cc \
 	content/common/input/input_event.cc \
+	content/common/input/input_event_stream_validator.cc \
 	content/common/input/input_param_traits.cc \
 	content/common/input/scoped_web_input_event.cc \
 	content/common/input/synthetic_gesture_packet.cc \
@@ -151,13 +155,10 @@ LOCAL_SRC_FILES := \
 	content/common/set_process_title.cc \
 	content/common/ssl_status_serialization.cc \
 	content/common/swapped_out_messages.cc \
-	content/common/user_agent.cc \
 	content/common/url_schemes.cc \
+	content/common/user_agent.cc \
 	content/common/webplugin_geometry.cc \
 	content/common/websocket.cc \
-	content/public/common/common_param_traits.cc \
-	content/public/common/content_client.cc \
-	content/public/common/window_container_type.cc \
 	content/common/gpu/media/android_video_decode_accelerator.cc
 
 
@@ -208,7 +209,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -227,6 +227,7 @@ MY_DEFS_Debug := \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
+	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -369,7 +370,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -388,6 +388,7 @@ MY_DEFS_Release := \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
+	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \

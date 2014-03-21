@@ -62,6 +62,7 @@
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tracker.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ime/input_method.h"
@@ -266,6 +267,16 @@ bool CanRendererHandleEvent(const ui::MouseEvent* event) {
     case WM_NCXBUTTONUP:
     case WM_NCXBUTTONDBLCLK:
       return false;
+    default:
+      break;
+  }
+#elif defined(USE_X11)
+  // Renderer only supports standard mouse buttons, so ignore programmable
+  // buttons.
+  switch (event->type()) {
+    case ui::ET_MOUSE_PRESSED:
+    case ui::ET_MOUSE_RELEASED:
+      return event->IsAnyButton();
     default:
       break;
   }
@@ -707,10 +718,9 @@ bool RenderWidgetHostViewAura::ShouldCreateResizeLock() {
   // whiteout. Because this causes the content to be drawn at wrong sizes while
   // resizing we compensate by blocking the UI thread in Compositor::Draw() by
   // issuing a FinishAllRendering() if we are resizing.
-#if defined (OS_WIN)
+#if defined(OS_WIN)
   return false;
-#endif
-
+#else
   if (resize_lock_)
     return false;
 
@@ -732,13 +742,14 @@ bool RenderWidgetHostViewAura::ShouldCreateResizeLock() {
     return false;
 
   return true;
+#endif
 }
 
 scoped_ptr<ResizeLock> RenderWidgetHostViewAura::CreateResizeLock(
     bool defer_compositor_lock) {
   gfx::Size desired_size = window_->bounds().size();
   return scoped_ptr<ResizeLock>(new CompositorResizeLock(
-      window_->GetHost()->dispatcher(),
+      window_->GetHost(),
       desired_size,
       defer_compositor_lock,
       base::TimeDelta::FromMilliseconds(kResizeLockTimeoutMs)));
@@ -1041,12 +1052,20 @@ void RenderWidgetHostViewAura::SelectionChanged(const base::string16& text,
 #if defined(USE_X11) && !defined(OS_CHROMEOS)
   if (text.empty() || range.is_empty())
     return;
+  size_t pos = range.GetMin() - offset;
+  size_t n = range.length();
+
+  DCHECK(pos + n <= text.length()) << "The text can not fully cover range.";
+  if (pos >= text.length()) {
+    NOTREACHED() << "The text can not cover range.";
+    return;
+  }
 
   // Set the CLIPBOARD_TYPE_SELECTION to the ui::Clipboard.
   ui::ScopedClipboardWriter clipboard_writer(
       ui::Clipboard::GetForCurrentThread(),
       ui::CLIPBOARD_TYPE_SELECTION);
-  clipboard_writer.WriteText(text);
+  clipboard_writer.WriteText(text.substr(pos, n));
 #endif  // defined(USE_X11) && !defined(OS_CHROMEOS)
 }
 

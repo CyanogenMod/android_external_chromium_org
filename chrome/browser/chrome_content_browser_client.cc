@@ -34,7 +34,6 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/browser_permissions_policy_delegate.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/extensions/extension_webkit_preferences.h"
@@ -124,6 +123,7 @@
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_descriptors.h"
 #include "content/public/common/url_utils.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_message_filter.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
@@ -242,8 +242,7 @@
 #include "chrome/browser/spellchecker/spellcheck_message_filter.h"
 #endif
 
-
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
 #include "chrome/browser/local_discovery/storage/privet_filesystem_backend.h"
 #endif
 
@@ -385,9 +384,6 @@ bool HandleWebUI(GURL* url, content::BrowserContext* browser_context) {
   if (chromeos::UserManager::Get()->IsLoggedInAsGuest()) {
     if (url->SchemeIs(content::kChromeUIScheme) &&
         (url->DomainIs(chrome::kChromeUIBookmarksHost) ||
-#if defined(ENABLE_ENHANCED_BOOKMARKS)
-         url->DomainIs(chrome::kChromeUIEnhancedBookmarksHost) ||
-#endif
          url->DomainIs(chrome::kChromeUIHistoryHost))) {
       // Rewrite with new tab URL
       *url = GURL(chrome::kChromeUINewTabURL);
@@ -1701,7 +1697,7 @@ bool ChromeContentBrowserClient::AllowGetCookie(
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&TabSpecificContentSettings::CookiesRead, render_process_id,
-                 render_frame_id, url, first_party, cookie_list, !allow));
+                 render_frame_id, url, first_party, cookie_list, !allow, true));
   return allow;
 }
 
@@ -2559,6 +2555,10 @@ void ChromeContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
   additional_allowed_schemes->push_back(extensions::kExtensionScheme);
 }
 
+void ChromeContentBrowserClient::GetURLRequestAutoMountHandlers(
+    std::vector<fileapi::URLRequestAutoMountHandler>* handlers) {
+}
+
 void ChromeContentBrowserClient::GetAdditionalFileSystemBackends(
     content::BrowserContext* browser_context,
     const base::FilePath& storage_partition_path,
@@ -2589,7 +2589,7 @@ void ChromeContentBrowserClient::GetAdditionalFileSystemBackends(
       new sync_file_system::SyncFileSystemBackend(
           Profile::FromBrowserContext(browser_context)));
 
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnablePrivetStorage)) {
     additional_backends->push_back(

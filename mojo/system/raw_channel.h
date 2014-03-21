@@ -12,8 +12,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
+#include "mojo/embedder/scoped_platform_handle.h"
 #include "mojo/system/constants.h"
-#include "mojo/system/embedder/scoped_platform_handle.h"
 #include "mojo/system/message_in_transit.h"
 #include "mojo/system/system_impl_export.h"
 
@@ -24,8 +24,8 @@ class MessageLoopForIO;
 namespace mojo {
 namespace system {
 
-// |RawChannel| is an interface to objects that wrap an OS "pipe". It presents
-// the following interface to users:
+// |RawChannel| is an interface and base class for objects that wrap an OS
+// "pipe". It presents the following interface to users:
 //  - Receives and dispatches messages on an I/O thread (running a
 //    |MessageLoopForIO|.
 //  - Provides a thread-safe way of writing messages (|WriteMessage()|);

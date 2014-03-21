@@ -77,7 +77,6 @@ RTCVideoDecoder::BufferData::~BufferData() {}
 RTCVideoDecoder::RTCVideoDecoder(
     const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories)
     : factories_(factories),
-      vda_task_runner_(factories->GetTaskRunner()),
       decoder_texture_target_(0),
       next_picture_buffer_id_(0),
       state_(UNINITIALIZED),
@@ -86,13 +85,12 @@ RTCVideoDecoder::RTCVideoDecoder(
       next_bitstream_buffer_id_(0),
       reset_bitstream_buffer_id_(ID_INVALID),
       weak_factory_(this) {
-  DCHECK(!vda_task_runner_->BelongsToCurrentThread());
-  weak_this_ = weak_factory_.GetWeakPtr();
+  DCHECK(!factories_->GetTaskRunner()->BelongsToCurrentThread());
 }
 
 RTCVideoDecoder::~RTCVideoDecoder() {
   DVLOG(2) << "~RTCVideoDecoder";
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   DestroyVDA();
 
   // Delete all shared memories.
@@ -129,7 +127,7 @@ scoped_ptr<RTCVideoDecoder> RTCVideoDecoder::Create(
 
   base::WaitableEvent waiter(true, false);
   decoder.reset(new RTCVideoDecoder(factories));
-  decoder->vda_task_runner_->PostTask(
+  decoder->factories_->GetTaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(&RTCVideoDecoder::CreateVDA,
                  base::Unretained(decoder.get()),
@@ -161,11 +159,12 @@ int32_t RTCVideoDecoder::InitDecode(const webrtc::VideoCodec* codecSettings,
   }
   // Create some shared memory if the queue is empty.
   if (available_shm_segments_.size() == 0) {
-    vda_task_runner_->PostTask(FROM_HERE,
-                               base::Bind(&RTCVideoDecoder::CreateSHM,
-                                          weak_this_,
-                                          kMaxInFlightDecodes,
-                                          kSharedMemorySegmentBytes));
+    factories_->GetTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&RTCVideoDecoder::CreateSHM,
+                   weak_factory_.GetWeakPtr(),
+                   kMaxInFlightDecodes,
+                   kSharedMemorySegmentBytes));
   }
   return RecordInitDecodeUMA(WEBRTC_VIDEO_CODEC_OK);
 }
@@ -251,8 +250,10 @@ int32_t RTCVideoDecoder::Decode(
   }
 
   SaveToDecodeBuffers_Locked(inputImage, shm_buffer.Pass(), buffer_data);
-  vda_task_runner_->PostTask(
-      FROM_HERE, base::Bind(&RTCVideoDecoder::RequestBufferDecode, weak_this_));
+  factories_->GetTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&RTCVideoDecoder::RequestBufferDecode,
+                 weak_factory_.GetWeakPtr()));
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
@@ -285,8 +286,10 @@ int32_t RTCVideoDecoder::Reset() {
   // If VDA is already resetting, no need to request the reset again.
   if (state_ != RESETTING) {
     state_ = RESETTING;
-    vda_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&RTCVideoDecoder::ResetInternal, weak_this_));
+    factories_->GetTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&RTCVideoDecoder::ResetInternal,
+                   weak_factory_.GetWeakPtr()));
   }
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -299,7 +302,7 @@ void RTCVideoDecoder::NotifyInitializeDone() {
 void RTCVideoDecoder::ProvidePictureBuffers(uint32 count,
                                             const gfx::Size& size,
                                             uint32 texture_target) {
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   DVLOG(3) << "ProvidePictureBuffers. texture_target=" << texture_target;
 
   if (!vda_)
@@ -332,7 +335,7 @@ void RTCVideoDecoder::ProvidePictureBuffers(uint32 count,
 
 void RTCVideoDecoder::DismissPictureBuffer(int32 id) {
   DVLOG(3) << "DismissPictureBuffer. id=" << id;
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
 
   std::map<int32, media::PictureBuffer>::iterator it =
       assigned_picture_buffers_.find(id);
@@ -360,7 +363,7 @@ void RTCVideoDecoder::DismissPictureBuffer(int32 id) {
 
 void RTCVideoDecoder::PictureReady(const media::Picture& picture) {
   DVLOG(3) << "PictureReady";
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
 
   std::map<int32, media::PictureBuffer>::iterator it =
       assigned_picture_buffers_.find(picture.picture_buffer_id());
@@ -441,7 +444,7 @@ scoped_refptr<media::VideoFrame> RTCVideoDecoder::CreateVideoFrame(
       make_scoped_ptr(new gpu::MailboxHolder(
           pb.texture_mailbox(), decoder_texture_target_, 0)),
       media::BindToCurrentLoop(base::Bind(&RTCVideoDecoder::ReusePictureBuffer,
-                                          weak_this_,
+                                          weak_factory_.GetWeakPtr(),
                                           picture.picture_buffer_id())),
       pb.size(),
       visible_rect,
@@ -452,7 +455,7 @@ scoped_refptr<media::VideoFrame> RTCVideoDecoder::CreateVideoFrame(
 
 void RTCVideoDecoder::NotifyEndOfBitstreamBuffer(int32 id) {
   DVLOG(3) << "NotifyEndOfBitstreamBuffer. id=" << id;
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
 
   std::map<int32, SHMBuffer*>::iterator it =
       bitstream_buffers_in_decoder_.find(id);
@@ -477,7 +480,7 @@ void RTCVideoDecoder::NotifyFlushDone() {
 }
 
 void RTCVideoDecoder::NotifyResetDone() {
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   DVLOG(3) << "NotifyResetDone";
 
   if (!vda_)
@@ -493,7 +496,7 @@ void RTCVideoDecoder::NotifyResetDone() {
 }
 
 void RTCVideoDecoder::NotifyError(media::VideoDecodeAccelerator::Error error) {
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   if (!vda_)
     return;
 
@@ -508,7 +511,7 @@ void RTCVideoDecoder::NotifyError(media::VideoDecodeAccelerator::Error error) {
 }
 
 void RTCVideoDecoder::RequestBufferDecode() {
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   if (!vda_)
     return;
 
@@ -630,7 +633,7 @@ void RTCVideoDecoder::MovePendingBuffersToDecodeBuffers() {
 }
 
 void RTCVideoDecoder::ResetInternal() {
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   DVLOG(2) << "ResetInternal";
   if (vda_)
     vda_->Reset();
@@ -639,7 +642,7 @@ void RTCVideoDecoder::ResetInternal() {
 void RTCVideoDecoder::ReusePictureBuffer(
     int64 picture_buffer_id,
     scoped_ptr<gpu::MailboxHolder> mailbox_holder) {
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   DVLOG(3) << "ReusePictureBuffer. id=" << picture_buffer_id;
 
   if (!vda_)
@@ -649,6 +652,8 @@ void RTCVideoDecoder::ReusePictureBuffer(
 
   size_t num_erased = picture_buffers_at_display_.erase(picture_buffer_id);
   DCHECK(num_erased);
+
+  factories_->WaitSyncPoint(mailbox_holder->sync_point);
 
   std::map<int32, media::PictureBuffer>::iterator it =
       assigned_picture_buffers_.find(picture_buffer_id);
@@ -662,14 +667,12 @@ void RTCVideoDecoder::ReusePictureBuffer(
     return;
   }
 
-  factories_->WaitSyncPoint(mailbox_holder->sync_point);
-
   vda_->ReusePictureBuffer(picture_buffer_id);
 }
 
 void RTCVideoDecoder::CreateVDA(media::VideoCodecProfile profile,
                                 base::WaitableEvent* waiter) {
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   vda_ = factories_->CreateVideoDecodeAccelerator(profile);
   if (vda_ && !vda_->Initialize(profile, this))
     vda_.release()->Destroy();
@@ -677,7 +680,7 @@ void RTCVideoDecoder::CreateVDA(media::VideoCodecProfile profile,
 }
 
 void RTCVideoDecoder::DestroyTextures() {
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   std::map<int32, media::PictureBuffer>::iterator it;
 
   for (it = assigned_picture_buffers_.begin();
@@ -697,7 +700,7 @@ void RTCVideoDecoder::DestroyTextures() {
 
 void RTCVideoDecoder::DestroyVDA() {
   DVLOG(2) << "DestroyVDA";
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   if (vda_)
     vda_.release()->Destroy();
   DestroyTextures();
@@ -718,9 +721,12 @@ scoped_ptr<RTCVideoDecoder::SHMBuffer> RTCVideoDecoder::GetSHM_Locked(
   // queue is almost empty.
   if (num_shm_buffers_ < kMaxNumSharedMemorySegments &&
       (ret == NULL || available_shm_segments_.size() <= 1)) {
-    vda_task_runner_->PostTask(
+    factories_->GetTaskRunner()->PostTask(
         FROM_HERE,
-        base::Bind(&RTCVideoDecoder::CreateSHM, weak_this_, 1, min_size));
+        base::Bind(&RTCVideoDecoder::CreateSHM,
+                   weak_factory_.GetWeakPtr(),
+                   1,
+                   min_size));
   }
   return scoped_ptr<SHMBuffer>(ret);
 }
@@ -730,7 +736,7 @@ void RTCVideoDecoder::PutSHM_Locked(scoped_ptr<SHMBuffer> shm_buffer) {
 }
 
 void RTCVideoDecoder::CreateSHM(int number, size_t min_size) {
-  DCHECK(vda_task_runner_->BelongsToCurrentThread());
+  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   DVLOG(2) << "CreateSHM. size=" << min_size;
   int number_to_allocate;
   {
@@ -788,6 +794,11 @@ int32_t RTCVideoDecoder::RecordInitDecodeUMA(int32_t status) {
   bool sample = (status == WEBRTC_VIDEO_CODEC_OK) ? true : false;
   UMA_HISTOGRAM_BOOLEAN("Media.RTCVideoDecoderInitDecodeSuccess", sample);
   return status;
+}
+
+void RTCVideoDecoder::DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent()
+    const {
+  DCHECK(factories_->GetTaskRunner()->BelongsToCurrentThread());
 }
 
 }  // namespace content

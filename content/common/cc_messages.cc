@@ -285,6 +285,7 @@ void ParamTraits<gfx::Transform>::Log(
 
 void ParamTraits<cc::RenderPass>::Write(
     Message* m, const param_type& p) {
+  DCHECK(p.overlay_state == cc::RenderPass::NO_OVERLAY);
   WriteParam(m, p.id);
   WriteParam(m, p.output_rect);
   WriteParam(m, p.damage_rect);
@@ -421,7 +422,8 @@ bool ParamTraits<cc::RenderPass>::Read(
             output_rect,
             damage_rect,
             transform_to_root_target,
-            has_transparent_background);
+            has_transparent_background,
+            cc::RenderPass::NO_OVERLAY);
 
   size_t last_shared_quad_state_index = kuint32max;
   for (size_t i = 0; i < quad_list_size; ++i) {
@@ -751,6 +753,44 @@ void ParamTraits<cc::DelegatedFrameData>::Log(const param_type& p,
     LogParam(*p.render_pass_list[i], l);
   }
   l->append("])");
+}
+
+void ParamTraits<cc::SoftwareFrameData>::Write(Message* m,
+                                               const param_type& p) {
+  DCHECK(p.CheckedSizeInBytes().IsValid());
+
+  m->Reserve(sizeof(cc::SoftwareFrameData));
+  WriteParam(m, p.id);
+  WriteParam(m, p.size);
+  WriteParam(m, p.damage_rect);
+  WriteParam(m, p.handle);
+}
+
+bool ParamTraits<cc::SoftwareFrameData>::Read(const Message* m,
+                                              PickleIterator* iter,
+                                              param_type* p) {
+  if (!ReadParam(m, iter, &p->id))
+    return false;
+  if (!ReadParam(m, iter, &p->size) || !p->CheckedSizeInBytes().IsValid())
+    return false;
+  if (!ReadParam(m, iter, &p->damage_rect))
+    return false;
+  if (!ReadParam(m, iter, &p->handle))
+    return false;
+  return true;
+}
+
+void ParamTraits<cc::SoftwareFrameData>::Log(const param_type& p,
+                                             std::string* l) {
+  l->append("SoftwareFrameData(");
+  LogParam(p.id, l);
+  l->append(", ");
+  LogParam(p.size, l);
+  l->append(", ");
+  LogParam(p.damage_rect, l);
+  l->append(", ");
+  LogParam(p.handle, l);
+  l->append(")");
 }
 
 }  // namespace IPC

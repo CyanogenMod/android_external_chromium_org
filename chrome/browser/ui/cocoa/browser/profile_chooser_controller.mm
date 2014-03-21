@@ -20,8 +20,6 @@
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
-#include "chrome/browser/signin/mutable_profile_oauth2_token_service.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -32,9 +30,12 @@
 #include "chrome/browser/ui/chrome_style.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
+#import "chrome/browser/ui/cocoa/user_manager_mac.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/signin/core/mutable_profile_oauth2_token_service.h"
+#include "components/signin/core/profile_oauth2_token_service.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -585,20 +586,16 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
 - (IBAction)switchToProfile:(id)sender {
   // Check the event flags to see if a new window should be created.
-  bool always_create = ui::WindowOpenDispositionFromNSEvent(
+  bool alwaysCreate = ui::WindowOpenDispositionFromNSEvent(
       [NSApp currentEvent]) == NEW_WINDOW;
-  avatarMenu_->SwitchToProfile([sender tag], always_create,
+  avatarMenu_->SwitchToProfile([sender tag], alwaysCreate,
                                ProfileMetrics::SWITCH_PROFILE_ICON);
 }
 
 - (IBAction)showUserManager:(id)sender {
-  // Only non-guest users appear in the User Manager.
-  base::FilePath profile_path;
-  if (!isGuestSession_) {
-    size_t active_index = avatarMenu_->GetActiveProfileIndex();
-    profile_path = avatarMenu_->GetItemAt(active_index).profile_path;
-  }
-  chrome::ShowUserManager(profile_path);
+  // Guest users cannot appear in the User Manager, nor display a tutorial.
+  profiles::ShowUserManagerMaybeWithTutorial(
+      isGuestSession_ ? NULL : browser_->profile());
 }
 
 - (IBAction)switchToGuestProfile:(id)sender {
@@ -646,9 +643,11 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
 - (IBAction)dismissTutorial:(id)sender {
   // If the user manually dismissed the tutorial, never show it again by setting
-  // the number of times shown to the maximum.
+  // the number of times shown to the maximum plus 1, so that later we could
+  // distinguish between the dismiss case and the case when the tutorial is
+  // indeed shown for the maximum number of times.
   browser_->profile()->GetPrefs()->SetInteger(
-      prefs::kProfileAvatarTutorialShown, kProfileAvatarTutorialShowMax);
+      prefs::kProfileAvatarTutorialShown, kProfileAvatarTutorialShowMax + 1);
   [self initMenuContentsWithView:PROFILE_CHOOSER_VIEW];
 }
 
@@ -668,6 +667,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
                          anchoredAt:point])) {
     browser_ = browser;
     viewMode_ = PROFILE_CHOOSER_VIEW;
+    tutorialShowing_ = false;
     observer_.reset(new ActiveProfileObserverBridge(self, browser_));
 
     avatarMenu_.reset(new AvatarMenu(
@@ -781,6 +781,8 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
                                              yOffset)];
     [contentView addSubview:tutorialView];
     yOffset = NSMaxY([tutorialView frame]) + kVerticalSpacing;
+  } else {
+    tutorialShowing_ = false;
   }
 
   SetWindowSize([self window], NSMakeSize(kFixedMenuWidth, yOffset));
@@ -793,11 +795,17 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   Profile* profile = browser_->profile();
   const int showCount = profile->GetPrefs()->GetInteger(
       prefs::kProfileAvatarTutorialShown);
-  if (showCount >= kProfileAvatarTutorialShowMax)
+  // Do not show the tutorial if user has dismissed it.
+  if (showCount > kProfileAvatarTutorialShowMax)
     return nil;
 
-  profile->GetPrefs()->SetInteger(
+  if (!tutorialShowing_) {
+    if (showCount == kProfileAvatarTutorialShowMax)
+      return nil;
+    profile->GetPrefs()->SetInteger(
       prefs::kProfileAvatarTutorialShown, showCount + 1);
+    tutorialShowing_ = true;
+  }
 
   CGFloat availableWidth = kFixedMenuWidth - 2 * kHorizontalSpacing;
   base::scoped_nsobject<NSView> container([[NSView alloc]
@@ -1212,4 +1220,3 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   return label.autorelease();
 }
 @end
-

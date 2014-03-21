@@ -17,7 +17,7 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/timer/timer.h"
-#include "ui/aura/window_event_dispatcher.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/compositor/layer_animation_sequence.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/views/controls/menu/menu_controller.h"
@@ -600,9 +600,22 @@ void LockStateController::PreLockAnimationFinished(bool request_lock) {
     delegate_->RequestLockScreen();
   }
 
+  int lock_timeout = kLockFailTimeoutMs;
+
+#if defined(OS_CHROMEOS)
+  std::string board = base::SysInfo::GetLsbReleaseBoard();
+
+  // Increase lock timeout for slower hardware, see http://crbug.com/350628
+  if (board == "x86-mario" ||
+      board.substr(0, 8) == "x86-alex" ||
+      board.substr(0, 7) == "x86-zgb") {
+    lock_timeout *= 2;
+  }
+#endif
+
   lock_fail_timer_.Start(
       FROM_HERE,
-      base::TimeDelta::FromMilliseconds(kLockFailTimeoutMs),
+      base::TimeDelta::FromMilliseconds(lock_timeout),
       this,
       &LockStateController::OnLockFailTimeout);
 }

@@ -5,6 +5,7 @@
 #include "chrome/browser/autocomplete/base_search_provider.h"
 
 #include "base/i18n/case_conversion.h"
+#include "base/i18n/icu_string_conversions.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
@@ -24,10 +25,12 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
+#include "components/sync_driver/sync_prefs.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/escape.h"
 #include "net/base/net_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+#include "net/http/http_response_headers.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "url/gurl.h"
 
@@ -73,7 +76,6 @@ class SuggestionDeletionHandler : public net::URLFetcherDelegate {
   DISALLOW_COPY_AND_ASSIGN(SuggestionDeletionHandler);
 };
 
-
 SuggestionDeletionHandler::SuggestionDeletionHandler(
     const std::string& deletion_url,
     Profile* profile,
@@ -113,7 +115,9 @@ BaseSearchProvider::BaseSearchProvider(AutocompleteProviderListener* listener,
                                        AutocompleteProvider::Type type)
     : AutocompleteProvider(listener, profile, type),
       field_trial_triggered_(false),
-      field_trial_triggered_in_session_(false) {}
+      field_trial_triggered_in_session_(false),
+      suggest_results_pending_(0) {
+}
 
 // static
 bool BaseSearchProvider::ShouldPrefetch(const AutocompleteMatch& match) {
@@ -508,36 +512,26 @@ scoped_ptr<base::Value> BaseSearchProvider::DeserializeJsonData(
 }
 
 // static
-bool BaseSearchProvider::CanSendURL(
-    const GURL& current_page_url,
+bool BaseSearchProvider::ZeroSuggestEnabled(
     const GURL& suggest_url,
     const TemplateURL* template_url,
     AutocompleteInput::PageClassification page_classification,
     Profile* profile) {
-  if (!current_page_url.is_valid())
+  if (!OmniboxFieldTrial::InZeroSuggestFieldTrial())
     return false;
 
-  // TODO(hfung): Show Most Visited on NTP with appropriate verbatim
-  // description when the user actively focuses on the omnibox as discussed in
-  // crbug/305366 if Most Visited (or something similar) will launch.
+  // Make sure we are sending the suggest request through HTTPS to prevent
+  // exposing the current page URL or personalized results without encryption.
+  if (!suggest_url.SchemeIs(content::kHttpsScheme))
+    return false;
+
+  // Don't show zero suggest on the NTP.
+  // TODO(hfung): Experiment with showing MostVisited zero suggest on NTP
+  // under the conditions described in crbug.com/305366.
   if ((page_classification ==
        AutocompleteInput::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS) ||
       (page_classification ==
        AutocompleteInput::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS))
-    return false;
-
-  // Only allow HTTP URLs or HTTPS URLs for the same domain as the search
-  // provider.
-  if ((current_page_url.scheme() != content::kHttpScheme) &&
-      ((current_page_url.scheme() != content::kHttpsScheme) ||
-       !net::registry_controlled_domains::SameDomainOrHost(
-           current_page_url, suggest_url,
-           net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES)))
-    return false;
-
-  // Make sure we are sending the suggest request through HTTPS to prevent
-  // exposing the current page URL to networks before the search provider.
-  if (!suggest_url.SchemeIs(content::kHttpsScheme))
     return false;
 
   // Don't run if there's no profile or in incognito mode.
@@ -556,12 +550,37 @@ bool BaseSearchProvider::CanSendURL(
       SEARCH_ENGINE_GOOGLE)
     return false;
 
+  return true;
+}
+
+// static
+bool BaseSearchProvider::CanSendURL(
+    const GURL& current_page_url,
+    const GURL& suggest_url,
+    const TemplateURL* template_url,
+    AutocompleteInput::PageClassification page_classification,
+    Profile* profile) {
+  if (!ZeroSuggestEnabled(suggest_url, template_url, page_classification,
+                          profile))
+    return false;
+
+  if (!current_page_url.is_valid())
+    return false;
+
+  // Only allow HTTP URLs or HTTPS URLs for the same domain as the search
+  // provider.
+  if ((current_page_url.scheme() != content::kHttpScheme) &&
+      ((current_page_url.scheme() != content::kHttpsScheme) ||
+       !net::registry_controlled_domains::SameDomainOrHost(
+           current_page_url, suggest_url,
+           net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES)))
+    return false;
+
   // Check field trials and settings allow sending the URL on suggest requests.
   ProfileSyncService* service =
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
-  browser_sync::SyncPrefs sync_prefs(prefs);
-  if (!OmniboxFieldTrial::InZeroSuggestFieldTrial() ||
-      service == NULL ||
+  sync_driver::SyncPrefs sync_prefs(profile->GetPrefs());
+  if (service == NULL ||
       !service->IsSyncEnabledAndLoggedIn() ||
       !sync_prefs.GetPreferredDataTypes(syncer::UserTypes()).Has(
           syncer::PROXY_TABS) ||
@@ -569,6 +588,53 @@ bool BaseSearchProvider::CanSendURL(
     return false;
 
   return true;
+}
+
+void BaseSearchProvider::OnURLFetchComplete(const net::URLFetcher* source) {
+  DCHECK(!done_);
+  suggest_results_pending_--;
+  DCHECK_GE(suggest_results_pending_, 0);  // Should never go negative.
+
+  const bool is_keyword = IsKeywordFetcher(source);
+
+  // Ensure the request succeeded and that the provider used is still available.
+  // A verbatim match cannot be generated without this provider, causing errors.
+  const bool request_succeeded =
+      source->GetStatus().is_success() && (source->GetResponseCode() == 200) &&
+      GetTemplateURL(is_keyword);
+
+  LogFetchComplete(request_succeeded, is_keyword);
+
+  bool results_updated = false;
+  if (request_succeeded) {
+    const net::HttpResponseHeaders* const response_headers =
+        source->GetResponseHeaders();
+    std::string json_data;
+    source->GetResponseAsString(&json_data);
+
+    // JSON is supposed to be UTF-8, but some suggest service providers send
+    // JSON files in non-UTF-8 encodings.  The actual encoding is usually
+    // specified in the Content-Type header field.
+    if (response_headers) {
+      std::string charset;
+      if (response_headers->GetCharset(&charset)) {
+        base::string16 data_16;
+        // TODO(jungshik): Switch to CodePageToUTF8 after it's added.
+        if (base::CodepageToUTF16(json_data, charset.c_str(),
+                                  base::OnStringConversionError::FAIL,
+                                  &data_16))
+          json_data = base::UTF16ToUTF8(data_16);
+      }
+    }
+
+    scoped_ptr<base::Value> data(DeserializeJsonData(json_data));
+    results_updated = data.get() && ParseSuggestResults(
+        *data.get(), is_keyword, GetResultsToFill(is_keyword));
+  }
+
+  UpdateMatches();
+  if (done_ || results_updated)
+    listener_->OnProviderUpdate(results_updated);
 }
 
 void BaseSearchProvider::AddMatchToMap(const SuggestResult& result,
@@ -584,8 +650,8 @@ void BaseSearchProvider::AddMatchToMap(const SuggestResult& result,
 
   AutocompleteMatch match = CreateSearchSuggestion(
       this, GetInput(result.from_keyword_provider()), result,
-      GetTemplateURL(result), accepted_suggestion, omnibox_start_margin,
-      ShouldAppendExtraParams(result));
+      GetTemplateURL(result.from_keyword_provider()), accepted_suggestion,
+      omnibox_start_margin, ShouldAppendExtraParams(result));
   if (!match.destination_url.is_valid())
     return;
   match.search_terms_args->bookmark_bar_pinned =

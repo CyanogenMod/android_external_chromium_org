@@ -70,10 +70,6 @@ const size_t kNaClManifestMaxFileBytes = 1024 * 1024;
 // collide with any user-defined HTML attribute, make the first character '@'.
 const char* const kDevAttribute = "@dev";
 
-// URL schemes that we treat in special ways.
-const char* const kChromeExtensionUriScheme = "chrome-extension";
-const char* const kDataUriScheme = "data";
-
 // Up to 20 seconds
 const int64_t kTimeSmallMin = 1;         // in ms
 const int64_t kTimeSmallMax = 20000;     // in ms
@@ -806,7 +802,8 @@ void Plugin::NexeFileDidOpenContinuation(int32_t pp_error) {
 static void LogLineToConsole(Plugin* plugin, const nacl::string& one_line) {
   PLUGIN_PRINTF(("LogLineToConsole: %s\n",
                  one_line.c_str()));
-  plugin->AddToConsole(one_line);
+  plugin->nacl_interface()->LogToConsole(plugin->pp_instance(),
+                                         one_line.c_str());
 }
 
 void Plugin::CopyCrashLogToJsConsole() {
@@ -922,7 +919,7 @@ void Plugin::ReportDeadNexe() {
 
     nacl::string message = nacl::string("NaCl module crashed");
     set_last_error_string(message);
-    AddToConsole(message);
+    nacl_interface()->LogToConsole(pp_instance(), message.c_str());
 
     EnqueueProgressEvent(PP_NACL_EVENT_CRASH);
     set_nexe_error_reported(true);
@@ -1050,7 +1047,9 @@ void Plugin::ProcessNaClManifest(const nacl::string& manifest_json) {
   bool uses_nonsfi_mode;
   if (manifest_->GetProgramURL(
           &program_url, &pnacl_options, &uses_nonsfi_mode, &error_info)) {
-    is_installed_ = GetUrlScheme(program_url) == SCHEME_CHROME_EXTENSION;
+    pp::Var program_url_var(program_url);
+    is_installed_ = (nacl_interface_->GetUrlScheme(program_url_var.pp_var()) ==
+                     PP_SCHEME_CHROME_EXTENSION);
     uses_nonsfi_mode_ = uses_nonsfi_mode;
     set_nacl_ready_state(LOADING);
     // Inform JavaScript that we found a nexe URL to load.
@@ -1106,13 +1105,15 @@ void Plugin::RequestNaClManifest(const nacl::string& url) {
   }
   PLUGIN_PRINTF(("Plugin::RequestNaClManifest (resolved url='%s')\n",
                  nmf_resolved_url.AsString().c_str()));
-  is_installed_ = GetUrlScheme(nmf_resolved_url.AsString()) ==
-      SCHEME_CHROME_EXTENSION;
+  is_installed_ = (nacl_interface_->GetUrlScheme(nmf_resolved_url.pp_var()) ==
+                   PP_SCHEME_CHROME_EXTENSION);
   set_manifest_base_url(nmf_resolved_url.AsString());
   // Inform JavaScript that a load is starting.
   set_nacl_ready_state(OPENED);
   EnqueueProgressEvent(PP_NACL_EVENT_LOADSTART);
-  bool is_data_uri = GetUrlScheme(nmf_resolved_url.AsString()) == SCHEME_DATA;
+  bool is_data_uri =
+      (nacl_interface_->GetUrlScheme(nmf_resolved_url.pp_var()) ==
+       PP_SCHEME_DATA);
   HistogramEnumerateManifestIsDataURI(static_cast<int>(is_data_uri));
   if (is_data_uri) {
     pp::CompletionCallback open_callback =
@@ -1261,17 +1262,13 @@ void Plugin::ReportLoadError(const ErrorInfo& error_info) {
                  error_info.message().c_str()));
   nacl_interface_->ReportLoadError(pp_instance(),
                                    error_info.error_code(),
+                                   error_info.message().c_str(),
+                                   error_info.console_message().c_str(),
                                    PP_FromBool(is_installed_));
 
   // Set the readyState attribute to indicate we need to start over.
   set_nacl_ready_state(DONE);
   set_nexe_error_reported(true);
-  // Report an error in lastError and on the JavaScript console.
-  nacl::string message = nacl::string("NaCl module load failed: ") +
-      error_info.message();
-  set_last_error_string(message);
-  AddToConsole(nacl::string("NaCl module load failed: ") +
-               error_info.console_message());
 }
 
 
@@ -1283,7 +1280,7 @@ void Plugin::ReportLoadAbort() {
   // Report an error in lastError and on the JavaScript console.
   nacl::string error_string("NaCl module load failed: user aborted");
   set_last_error_string(error_string);
-  AddToConsole(error_string);
+  nacl_interface()->LogToConsole(pp_instance(), error_string.c_str());
   // Inform JavaScript that loading was aborted and is complete.
   EnqueueProgressEvent(PP_NACL_EVENT_ABORT);
   EnqueueProgressEvent(PP_NACL_EVENT_LOADEND);
@@ -1385,7 +1382,9 @@ void Plugin::EnqueueProgressEvent(PP_NaClEventType event_type,
 bool Plugin::OpenURLFast(const nacl::string& url,
                          FileDownloader* downloader) {
   // Fast path only works for installed file URLs.
-  if (GetUrlScheme(url) != SCHEME_CHROME_EXTENSION)
+  pp::Var url_var(url);
+  if (nacl_interface_->GetUrlScheme(url_var.pp_var()) !=
+      PP_SCHEME_CHROME_EXTENSION)
     return false;
   // IMPORTANT: Make sure the document can request the given URL. If we don't
   // check, a malicious app could probe the extension system. This enforces a
@@ -1409,54 +1408,9 @@ bool Plugin::OpenURLFast(const nacl::string& url,
   return true;
 }
 
-UrlSchemeType Plugin::GetUrlScheme(const std::string& url) {
-  CHECK(url_util_ != NULL);
-  PP_URLComponents_Dev comps;
-  pp::Var canonicalized =
-      url_util_->Canonicalize(pp::Var(url), &comps);
-
-  if (canonicalized.is_null() ||
-      (comps.scheme.begin == 0 && comps.scheme.len == -1)) {
-    // |url| was an invalid URL or has no scheme.
-    return SCHEME_OTHER;
-  }
-
-  CHECK(comps.scheme.begin <
-            static_cast<int>(canonicalized.AsString().size()));
-  CHECK(comps.scheme.begin + comps.scheme.len <
-            static_cast<int>(canonicalized.AsString().size()));
-
-  std::string scheme = canonicalized.AsString().substr(comps.scheme.begin,
-                                                       comps.scheme.len);
-  if (scheme == kChromeExtensionUriScheme)
-    return SCHEME_CHROME_EXTENSION;
-  if (scheme == kDataUriScheme)
-    return SCHEME_DATA;
-  return SCHEME_OTHER;
-}
-
 bool Plugin::DocumentCanRequest(const std::string& url) {
   CHECK(url_util_ != NULL);
   return url_util_->DocumentCanRequest(this, pp::Var(url));
-}
-
-void Plugin::AddToConsole(const nacl::string& text) {
-  pp::Module* module = pp::Module::Get();
-  const PPB_Var* var_interface =
-      static_cast<const PPB_Var*>(
-          module->GetBrowserInterface(PPB_VAR_INTERFACE));
-  nacl::string prefix_string("NativeClient");
-  PP_Var prefix =
-      var_interface->VarFromUtf8(prefix_string.c_str(),
-                                 static_cast<uint32_t>(prefix_string.size()));
-  PP_Var str = var_interface->VarFromUtf8(text.c_str(),
-                                          static_cast<uint32_t>(text.size()));
-  const PPB_Console* console_interface =
-      static_cast<const PPB_Console*>(
-          module->GetBrowserInterface(PPB_CONSOLE_INTERFACE));
-  console_interface->LogWithSource(pp_instance(), PP_LOGLEVEL_LOG, prefix, str);
-  var_interface->Release(prefix);
-  var_interface->Release(str);
 }
 
 void Plugin::set_last_error_string(const nacl::string& error) {

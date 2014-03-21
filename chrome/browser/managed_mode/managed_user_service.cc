@@ -19,6 +19,8 @@
 #include "chrome/browser/managed_mode/managed_user_registration_utility.h"
 #include "chrome/browser/managed_mode/managed_user_settings_service.h"
 #include "chrome/browser/managed_mode/managed_user_settings_service_factory.h"
+#include "chrome/browser/managed_mode/managed_user_shared_settings_service.h"
+#include "chrome/browser/managed_mode/managed_user_shared_settings_service_factory.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
 #include "chrome/browser/managed_mode/supervised_user_pref_mapping_service.h"
@@ -26,7 +28,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_base.h"
@@ -38,6 +39,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/managed_mode_private/managed_mode_handler.h"
 #include "chrome/common/pref_names.h"
+#include "components/signin/core/profile_oauth2_token_service.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
@@ -66,6 +68,11 @@ const char kQuitBrowserKeyPrefix[] = "X-ManagedUser-Events-QuitBrowser";
 const char kSwitchFromManagedProfileKeyPrefix[] =
     "X-ManagedUser-Events-SwitchProfile";
 const char kEventTimestamp[] = "timestamp";
+
+// Key for the notification setting of the custodian. This is a shared setting
+// so we can include the setting in the access request data that is used to
+// trigger notifications.
+const char kNotificationSetting[] = "custodian-notification-setting";
 
 ManagedUserService::URLFilterContext::URLFilterContext()
     : ui_url_filter_(new ManagedModeURLFilter),
@@ -351,7 +358,7 @@ void ManagedUserService::Observe(int type,
       }
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
       const extensions::UnloadedExtensionInfo* extension_info =
           content::Details<extensions::UnloadedExtensionInfo>(details).ptr();
       if (!extensions::ManagedModeInfo::GetContentPackSiteList(
@@ -467,6 +474,19 @@ void ManagedUserService::AddAccessRequest(const GURL& url) {
 
   dict->SetString(kManagedUserName, profile_->GetProfileName());
 
+  // Copy the notification setting of the custodian.
+  std::string managed_user_id =
+      profile_->GetPrefs()->GetString(prefs::kManagedUserId);
+  const base::Value* value =
+      ManagedUserSharedSettingsServiceFactory::GetForBrowserContext(profile_)
+          ->GetValue(managed_user_id, kNotificationSetting);
+  bool notifications_enabled = false;
+  if (value) {
+    bool success = value->GetAsBoolean(&notifications_enabled);
+    DCHECK(success);
+  }
+  dict->SetBoolean(kNotificationSetting, notifications_enabled);
+
   GetSettingsService()->UploadItem(key, dict.PassAs<base::Value>());
 }
 
@@ -557,7 +577,7 @@ void ManagedUserService::Init() {
 
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::Source<Profile>(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
 
   pref_change_registrar_.Init(profile_->GetPrefs());

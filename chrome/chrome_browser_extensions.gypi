@@ -29,10 +29,10 @@
         'safe_browsing_proto',
         'sync_file_system_proto',
         '../third_party/re2/re2.gyp:re2',
-        '../components/component_strings.gyp:component_strings',
         '../components/components.gyp:onc_component',
         '../components/components.gyp:url_matcher',
         '../components/components.gyp:wifi_component',
+        '../components/components_strings.gyp:components_strings',
         '../content/content.gyp:content_browser',
         '../content/content.gyp:content_common',
         '../crypto/crypto.gyp:crypto',
@@ -610,6 +610,8 @@
         'browser/extensions/blob_reader.cc',
         'browser/extensions/blob_reader.h',
         'browser/extensions/browser_action_test_util.h',
+        'browser/extensions/browser_context_keyed_service_factories.cc',
+        'browser/extensions/browser_context_keyed_service_factories.h',
         'browser/extensions/browser_extension_window_controller.cc',
         'browser/extensions/browser_extension_window_controller.h',
         'browser/extensions/browser_permissions_policy_delegate.cc',
@@ -620,6 +622,10 @@
         'browser/extensions/chrome_app_sorting.h',
         'browser/extensions/chrome_extension_function.cc',
         'browser/extensions/chrome_extension_function.h',
+        'browser/extensions/chrome_extension_host_delegate.cc',
+        'browser/extensions/chrome_extension_host_delegate.h',
+        'browser/extensions/chrome_extension_web_contents_observer.cc',
+        'browser/extensions/chrome_extension_web_contents_observer.h',
         'browser/extensions/chrome_extensions_browser_client.cc',
         'browser/extensions/chrome_extensions_browser_client.h',
         'browser/extensions/chrome_notification_observer.cc',
@@ -671,8 +677,8 @@
         'browser/extensions/extension_error_ui.h',
         'browser/extensions/extension_error_ui_default.cc',
         'browser/extensions/extension_error_ui_default.h',
-        'browser/extensions/extension_host.cc',
-        'browser/extensions/extension_host.h',
+        'browser/extensions/extension_gcm_app_handler.cc',
+        'browser/extensions/extension_gcm_app_handler.h',
         'browser/extensions/extension_icon_image.cc',
         'browser/extensions/extension_icon_image.h',
         'browser/extensions/extension_icon_manager.cc',
@@ -737,8 +743,6 @@
         'browser/extensions/extension_warning_service.h',
         'browser/extensions/extension_warning_set.cc',
         'browser/extensions/extension_warning_set.h',
-        'browser/extensions/extension_web_contents_observer.cc',
-        'browser/extensions/extension_web_contents_observer.h',
         'browser/extensions/extension_web_ui.cc',
         'browser/extensions/extension_web_ui.h',
         'browser/extensions/extension_web_ui_override_registrar.cc',
@@ -881,7 +885,6 @@
             '../build/linux/system.gyp:dbus',
             '../chromeos/ime/input_method.gyp:gencode',
             '../third_party/libevent/libevent.gyp:libevent',
-            'contacts_proto',
           ],
           'sources!': [
             'browser/extensions/api/audio/audio_service.cc',
@@ -930,6 +933,10 @@
           ],
         }],
         ['enable_extensions==0', {
+          'sources!': [
+            'browser/extensions/browser_context_keyed_service_factories.cc',
+            'browser/extensions/browser_context_keyed_service_factories.h',
+          ],
           'sources/': [
             # Handle files in browser/extensions/api. Exclude everything by default, white list
             # files if they are needed for linking.
@@ -1181,22 +1188,5 @@
       },
       'includes': [ '../build/protoc.gypi' ]
     },
-  ],
-  'conditions': [
-    ['chromeos==1', {
-      'targets': [
-        {
-          # Protobuf compiler / generator for contacts-related protocol buffers.
-          'target_name': 'contacts_proto',
-          'type': 'static_library',
-          'sources': [ 'browser/chromeos/contacts/contact.proto' ],
-          'variables': {
-            'proto_in_dir': 'browser/chromeos/contacts',
-            'proto_out_dir': 'chrome/browser/chromeos/contacts',
-          },
-          'includes': [ '../build/protoc.gypi' ]
-        },
-      ],
-    },],  # 'chromeos=1'
   ],  # 'conditions'
 }

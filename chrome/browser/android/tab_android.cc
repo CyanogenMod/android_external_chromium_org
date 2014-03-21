@@ -58,6 +58,12 @@ TabAndroid* TabAndroid::GetNativeTab(JNIEnv* env, jobject obj) {
   return reinterpret_cast<TabAndroid*>(Java_Tab_getNativePtr(env, obj));
 }
 
+void TabAndroid::AttachTabHelpers(content::WebContents* web_contents) {
+  DCHECK(web_contents);
+
+  TabHelpers::AttachTabHelpers(web_contents);
+}
+
 TabAndroid::TabAndroid(JNIEnv* env, jobject obj)
     : weak_java_tab_(env, obj),
       synced_tab_delegate_(new browser_sync::SyncedTabDelegateAndroid(this)) {
@@ -289,7 +295,7 @@ void TabAndroid::InitWebContents(JNIEnv* env,
   DCHECK(content_view_core->GetWebContents());
 
   web_contents_.reset(content_view_core->GetWebContents());
-  TabHelpers::AttachTabHelpers(web_contents_.get());
+  AttachTabHelpers(web_contents_.get());
 
   SetWindowSessionID(session_window_id_.id());
 
@@ -340,6 +346,11 @@ void TabAndroid::DestroyWebContents(JNIEnv* env,
       this,
       chrome::NOTIFICATION_FAVICON_UPDATED,
       content::Source<content::WebContents>(web_contents()));
+  notification_registrar_.Remove(
+      this,
+      content::NOTIFICATION_NAV_ENTRY_CHANGED,
+      content::Source<content::NavigationController>(
+           &web_contents()->GetController()));
 
   web_contents()->SetDelegate(NULL);
 

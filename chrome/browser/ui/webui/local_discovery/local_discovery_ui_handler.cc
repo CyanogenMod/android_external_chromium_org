@@ -23,7 +23,6 @@
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service_factory.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_url.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_base.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -32,6 +31,7 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/signin/core/profile_oauth2_token_service.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui.h"
@@ -74,8 +74,10 @@ LocalDiscoveryUIHandler::LocalDiscoveryUIHandler() : is_visible_(false) {
 
 LocalDiscoveryUIHandler::~LocalDiscoveryUIHandler() {
   Profile* profile = Profile::FromWebUI(web_ui());
-  SigninManagerFactory::GetInstance()->GetForProfile(profile)
-      ->RemoveObserver(this);
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetInstance()->GetForProfile(profile);
+  if (signin_manager)
+    signin_manager->RemoveObserver(this);
   ResetCurrentRegistration();
   SetIsVisible(false);
 }
@@ -146,8 +148,10 @@ void LocalDiscoveryUIHandler::HandleStart(const base::ListValue* args) {
 
   CheckUserLoggedIn();
 
-  SigninManagerFactory::GetInstance()->GetForProfile(profile)
-      ->AddObserver(this);
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetInstance()->GetForProfile(profile);
+  if (signin_manager)
+    signin_manager->AddObserver(this);
 }
 
 void LocalDiscoveryUIHandler::HandleIsVisible(const base::ListValue* args) {

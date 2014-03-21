@@ -36,15 +36,12 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/signin/chrome_signin_client.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_error_controller.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_names_io_thread.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -64,13 +61,17 @@
 #include "chrome/common/url_constants.h"
 #include "components/autofill/core/common/password_form.h"
 #include "components/password_manager/core/browser/password_manager.h"
+#include "components/signin/core/profile_oauth2_token_service.h"
 #include "components/signin/core/signin_client.h"
+#include "components/signin/core/signin_error_controller.h"
 #include "components/signin/core/signin_manager_cookie_helper.h"
+#include "components/sync_driver/sync_prefs.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/page_transition_types.h"
@@ -252,7 +253,7 @@ void StartSync(const OneClickSigninHelper::StartSyncArgs& args,
     return;
   }
 
-  // The wrapper deletes itself once its done.
+  // The wrapper deletes itself once it's done.
   OneClickSigninHelper::SyncStarterWrapper* wrapper =
       new OneClickSigninHelper::SyncStarterWrapper(args, start_mode);
   wrapper->Start();
@@ -330,10 +331,10 @@ void ClearPendingEmailOnIOThread(content::ResourceContext* context) {
   io_data->set_reverse_autologin_pending_email(std::string());
 }
 
-// Determines the source of the sign in and the continue URL.  Its either one
-// of the known sign in access point (first run, NTP, Apps page, menu, settings)
-// or its an implicit sign in via another Google property.  In the former case,
-// "service" is also checked to make sure its "chromiumsync".
+// Determines the source of the sign in and the continue URL.  It's either one
+// of the known sign-in access points (first run, NTP, Apps page, menu, or
+// settings) or it's an implicit sign in via another Google property.  In the
+// former case, "service" is also checked to make sure its "chromiumsync".
 signin::Source GetSigninSource(const GURL& url, GURL* continue_url) {
   DCHECK(url.is_valid());
   std::string value;
@@ -483,17 +484,9 @@ void CurrentHistoryCleaner::WebContentsDestroyed(
 }
 
 void CloseTab(content::WebContents* tab) {
-  Browser* browser = chrome::FindBrowserWithWebContents(tab);
-  if (browser) {
-    TabStripModel* tab_strip_model = browser->tab_strip_model();
-    if (tab_strip_model) {
-      int index = tab_strip_model->GetIndexOfWebContents(tab);
-      if (index != TabStripModel::kNoTab) {
-        tab_strip_model->ExecuteContextMenuCommand(
-            index, TabStripModel::CommandCloseTab);
-      }
-    }
-  }
+  content::WebContentsDelegate* tab_delegate = tab->GetDelegate();
+  if (tab_delegate)
+    tab_delegate->CloseContents(tab);
 }
 
 }  // namespace
@@ -669,7 +662,7 @@ void
 OneClickSigninHelper::SyncStarterWrapper::StartOneClickSigninSyncStarter(
     const std::string& email,
     const std::string& refresh_token) {
-  // The starter deletes itself once its done.
+  // The starter deletes itself once it's done.
   new OneClickSigninSyncStarter(args_.profile, args_.browser,
                                 email, args_.password,
                                 refresh_token, start_mode_,

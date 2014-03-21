@@ -2,7 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import argparse
 import optparse
+
+from telemetry.core import camel_case
 
 
 class ArgumentHandlerMixIn(object):
@@ -47,7 +50,7 @@ class Command(ArgumentHandlerMixIn):
 
   @classmethod
   def Name(cls):
-    return cls.__name__.lower()
+    return camel_case.ToUnderscore(cls.__name__)
 
   @classmethod
   def Description(cls):
@@ -58,6 +61,14 @@ class Command(ArgumentHandlerMixIn):
 
   def Run(self, args):
     raise NotImplementedError()
+
+  @classmethod
+  def main(cls):
+    parser = argparse.ArgumentParser()
+    cls.AddCommandLineArgs(parser)
+    args = parser.parse_args()
+    cls.ProcessCommandLineArgs(parser, args)
+    cls().Run(args)
 
 
 # TODO: Convert everything to argparse.
@@ -70,3 +81,12 @@ class OptparseCommand(Command):
 
   def Run(self, args):
     raise NotImplementedError()
+
+  @classmethod
+  def main(cls):
+    parser = optparse.OptionParser()
+    cls.AddCommandLineArgs(parser)
+    options, args = parser.parse_args()
+    options.positional_args = args
+    cls.ProcessCommandLineArgs(parser, options)
+    cls().Run(options)

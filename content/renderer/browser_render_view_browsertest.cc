@@ -137,7 +137,7 @@ void ClearCache(net::URLRequestContextGetter* getter,
 
 class RenderViewBrowserTest : public ContentBrowserTest {
  public:
-  RenderViewBrowserTest() : renderer_client_(NULL) {}
+  RenderViewBrowserTest() {}
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     // This method is needed to allow interaction with in-process renderer
@@ -145,13 +145,13 @@ class RenderViewBrowserTest : public ContentBrowserTest {
     command_line->AppendSwitch(switches::kSingleProcess);
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUpOnMainThread() OVERRIDE {
     // Override setting of renderer client.
     renderer_client_ = new TestShellContentRendererClient();
-    SetContentRendererClient(
-        scoped_ptr<ContentRendererClient>(renderer_client_).Pass());
-
-    ContentBrowserTest::SetUp();
+    // Explicitly leaks ownership; this object will remain alive
+    // until process death.  We don't deleted the returned value,
+    // since some contexts set the pointer to a non-heap address.
+    SetRendererClientForTesting(renderer_client_);
   }
 
   // Navigates to the given URL and waits for |num_navigations| to occur, and
@@ -193,19 +193,10 @@ class RenderViewBrowserTest : public ContentBrowserTest {
         error_code, stale_cache_entry_present);
   }
 
-  // Actually owned by the superclass, so safe to keep a bare pointer.
   TestShellContentRendererClient* renderer_client_;
 };
 
-#if defined(OS_ANDROID)
-// Flaky https://crbug.com/341745
-#define MAYBE_ConfirmCacheInformationPlumbed DISABLED_ConfirmCacheInformationPlumbed
-#else
-#define MAYBE_ConfirmCacheInformationPlumbed ConfirmCacheInformationPlumbed
-#endif
-
-IN_PROC_BROWSER_TEST_F(RenderViewBrowserTest,
-                       MAYBE_ConfirmCacheInformationPlumbed) {
+IN_PROC_BROWSER_TEST_F(RenderViewBrowserTest, ConfirmCacheInformationPlumbed) {
   ASSERT_TRUE(test_server()->Start());
 
   // Load URL with "nocache" set, to create stale cache.

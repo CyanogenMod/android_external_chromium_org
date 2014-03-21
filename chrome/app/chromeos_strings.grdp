@@ -4,6 +4,12 @@
 <grit-part>
   <message name="IDS_EMPTY_STRING" desc="Empty string, exist only to make code generic. No translation required.">
   </message>
+  <message name="IDS_CHROMEBOOK" desc="The localized name for Chromebook.">
+    Chromebook
+  </message>
+  <message name="IDS_CHROMEBOX" desc="The localized name for Chromebox">
+    Chromebox
+  </message>
   <!-- Idle logout dialog for retail mode -->
   <message name="IDS_IDLE_LOGOUT_TITLE" desc="Dialog title for the idle logout dialog. Used in retail mode only.">
     Are you still there?
@@ -650,6 +656,27 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_FILE_BROWSER_OPEN_IN_OTHER_DESKTOP_MESSAGE_PLURAL" desc="Prural verson of the message of an alert dialog that is shown when a user opens a file in a desktop of another profile but the file is opened in the original desktop.">
     These files opened on a different desktop. Move to <ph name="USER_NAME">$1<ex>John Doe</ex></ph> (<ph name="MAIL_ADDRESS">$2<ex>xxxxxx@gmail.com</ex></ph>) to view it.
+  </message>
+  <message name="IDS_FILE_BROWSER_MULTI_PROFILE_SHARE_DIALOG_TITLE" desc="Title of a dialog to request drive share for files that come from other profiles during file transfering.">
+    This Drive file isn't shared yet
+  </message>
+  <message name="IDS_FILE_BROWSER_MULTI_PROFILE_SHARE_DIALOG_TITLE_PLURAL" desc="Title of a dialog to request drive share for files that come from other profiles during file transfering.">
+    These Drive files aren't shared yet
+  </message>
+  <message name="IDS_FILE_BROWSER_MULTI_PROFILE_SHARE_DIALOG_MESSAGE" desc="Message of a dialog to request drive share for files that come from other profiles during file transfering. Below the message, there are the e-mail address of the account to be shared with the file, and a drop down list to select a share type.">
+    Change how this file is shared.
+  </message>
+  <message name="IDS_FILE_BROWSER_MULTI_PROFILE_SHARE_DIALOG_MESSAGE_PLURAL" desc="Message of a dialog to request drive share for files that come from other profiles during file transfering. Below the message, there are the e-mail address of the account to be shared with the file, and a drop down list to select a share type.">
+    Change how these files are shared.
+  </message>
+  <message name="IDS_FILE_BROWSER_DRIVE_SHARE_TYPE_CAN_EDIT" desc="Label text of 'Can edit' share type. Please use the same string with Google Drive.">
+    Can edit
+  </message>
+  <message name="IDS_FILE_BROWSER_DRIVE_SHARE_TYPE_CAN_COMMENT" desc="Label text of 'Can comment' share type. Please use the same string with Google Drive.">
+    Can comment
+  </message>
+  <message name="IDS_FILE_BROWSER_DRIVE_SHARE_TYPE_CAN_VIEW" desc="Label text of 'Can view' share type. Please use the same string with Google Drive.">
+    Can view
   </message>
   <message name="IDS_FILE_BROWSER_DRIVE_MOBILE_CONNECTION_OPTION" desc="Option that determines if we will allow Google Drive content sync over mobile connections.">
     Do not use mobile data for sync
@@ -1583,6 +1610,9 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_LOGIN_CAPTCHA_INSTRUCTIONS" desc="Explanatory message shown when the user must type letters shown in a captcha image to reauthenticate.">
     Type the characters you see in the picture below.
+  </message>
+  <message name="IDS_OPTIONS_EASY_UNLOCK_CHECKBOX_LABEL_CHROMEOS" desc="The label beside the checkbox to enable or disable easy unlock. This is the ChromeOS specific label.">
+    Enable Easy Unlock for this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_SECONDARY_USER_BANNER" desc="Banner displayed in settings page when the user is secondary in a multi-profile session.">
     Some settings belonging to <ph name="PRIMARY_EMAIL">$1<ex>john@google.com</ex></ph> are being shared with you. These settings only affect your account when using multiple sign-in.
@@ -4978,10 +5008,7 @@ All users must sign out to continue.
     Action required to connect
   </message>
   <message name="IDS_PORTAL_DETECTION_NOTIFICATION_MESSAGE" desc="Body of the system notification that current network is behind captive portal">
-    To use <ph name="NETWORK_ID">$1<ex>Public Wifi</ex></ph> you need to visit the network's login page.
-  </message>
-  <message name="IDS_PORTAL_DETECTION_NOTIFICATION_SIGNIN_BUTTON" desc="Label on the button on the system notification that current network is behind captive portal. When clicked, captive portal login page is opened.">
-    Go to login page
+    To use <ph name="NETWORK_ID">$1<ex>Public Wifi</ex></ph> you need to visit the network's login page. Click to go to login page.
   </message>
 
   <!-- Locale Change Notification-->

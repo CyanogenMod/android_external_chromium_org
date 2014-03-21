@@ -24,7 +24,6 @@
 #include "ui/surface/transport_dib.h"
 
 class SkBitmap;
-class WebCursor;
 
 struct AccessibilityHostMsg_EventParams;
 struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
@@ -45,6 +44,7 @@ class BackingStore;
 class RenderWidgetHostViewFrameSubscriber;
 class SyntheticGesture;
 class SyntheticGestureTarget;
+class WebCursor;
 struct WebPluginGeometry;
 struct NativeWebKeyboardEvent;
 
@@ -188,6 +188,10 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
       const gfx::Size& dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       const SkBitmap::Config config) = 0;
+
+  // Instructs the view to not drop the surface even when the view is hidden.
+  virtual void LockCompositingSurface() = 0;
+  virtual void UnlockCompositingSurface() = 0;
 
   // Copies a given subset of the compositing surface's content into a YV12
   // VideoFrame, and invokes a callback with a success/fail parameter. |target|

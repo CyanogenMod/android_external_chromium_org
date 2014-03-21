@@ -12,12 +12,12 @@
 #include "chrome/browser/extensions/api/image_writer_private/write_from_file_operation.h"
 #include "chrome/browser/extensions/api/image_writer_private/write_from_url_operation.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_system.h"
 
 namespace image_writer_api = extensions::api::image_writer_private;
@@ -31,7 +31,7 @@ OperationManager::OperationManager(content::BrowserContext* context)
     : profile_(Profile::FromBrowserContext(context)), weak_factory_(this) {
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
                  content::Source<Profile>(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
                  content::Source<Profile>(profile_));
@@ -213,7 +213,7 @@ void OperationManager::Observe(int type,
       DeleteOperation(content::Details<const Extension>(details).ptr()->id());
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
       DeleteOperation(content::Details<const Extension>(details).ptr()->id());
       break;
     }

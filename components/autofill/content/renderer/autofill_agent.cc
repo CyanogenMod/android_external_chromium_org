@@ -41,12 +41,12 @@
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebOptionElement.h"
-#include "third_party/WebKit/public/web/WebTextAreaElement.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 using blink::WebAutofillClient;
+using blink::WebElement;
 using blink::WebElementCollection;
 using blink::WebFormControlElement;
 using blink::WebFormElement;
@@ -56,7 +56,7 @@ using blink::WebKeyboardEvent;
 using blink::WebNode;
 using blink::WebOptionElement;
 using blink::WebString;
-using blink::WebTextAreaElement;
+using blink::WebVector;
 
 namespace autofill {
 
@@ -64,7 +64,7 @@ namespace {
 
 // Gets all the data list values (with corresponding label) for the given
 // element.
-void GetDataListSuggestions(const blink::WebInputElement& element,
+void GetDataListSuggestions(const WebInputElement& element,
                             bool ignore_current_value,
                             std::vector<base::string16>* values,
                             std::vector<base::string16>* labels) {
@@ -196,6 +196,19 @@ void AutofillAgent::FrameDetached(WebFrame* frame) {
   form_cache_.ResetFrame(*frame);
 }
 
+void AutofillAgent::FrameWillClose(WebFrame* frame) {
+  if (in_flight_request_form_.isNull())
+    return;
+
+  for (WebFrame* temp = in_flight_request_form_.document().frame();
+       temp; temp = temp->parent()) {
+    if (temp == frame) {
+      Send(new AutofillHostMsg_CancelRequestAutocomplete(routing_id()));
+      break;
+    }
+  }
+}
+
 void AutofillAgent::WillSubmitForm(WebFrame* frame,
                                    const WebFormElement& form) {
   FormData form_data;
@@ -218,11 +231,11 @@ void AutofillAgent::ZoomLevelChanged() {
   HidePopup();
 }
 
-void AutofillAgent::FocusedNodeChanged(const blink::WebNode& node) {
+void AutofillAgent::FocusedNodeChanged(const WebNode& node) {
   if (node.isNull() || !node.isElementNode())
     return;
 
-  blink::WebElement web_element = node.toConst<blink::WebElement>();
+  WebElement web_element = node.toConst<WebElement>();
 
   if (!web_element.document().frame())
       return;
@@ -240,11 +253,11 @@ void AutofillAgent::OrientationChangeEvent(int orientation) {
   HidePopup();
 }
 
-void AutofillAgent::DidChangeScrollOffset(blink::WebFrame*) {
+void AutofillAgent::DidChangeScrollOffset(WebFrame*) {
   HidePopup();
 }
 
-void AutofillAgent::didRequestAutocomplete(blink::WebFrame* frame,
+void AutofillAgent::didRequestAutocomplete(WebFrame* frame,
                                            const WebFormElement& form) {
   // Disallow the dialog over non-https or broken https, except when the
   // ignore SSL flag is passed. See http://crbug.com/272512.
@@ -283,19 +296,14 @@ void AutofillAgent::setIgnoreTextChanges(bool ignore) {
   ignore_text_changes_ = ignore;
 }
 
-void AutofillAgent::FormControlElementClicked(
-    const WebFormControlElement& element,
-    bool was_focused) {
-  const WebInputElement* input_element = toWebInputElement(&element);
-  if (!IsAutofillableInputElement(input_element) &&
-      !IsTextAreaElement(element))
-    return;
-
+void AutofillAgent::InputElementClicked(const WebInputElement& element,
+                                        bool was_focused,
+                                        bool is_focused) {
   if (was_focused)
     ShowSuggestions(element, true, false, true, false);
 }
 
-void AutofillAgent::FormControlElementLostFocus() {
+void AutofillAgent::InputElementLostFocus() {
   HidePopup();
 }
 
@@ -305,19 +313,9 @@ void AutofillAgent::textFieldDidEndEditing(const WebInputElement& element) {
   Send(new AutofillHostMsg_DidEndTextFieldEditing(routing_id()));
 }
 
-// TODO(ziran.sun): This function is to be removed once next Blink roll is done
 void AutofillAgent::textFieldDidChange(const WebInputElement& element) {
-  const WebFormControlElement control_element =
-      element.toConst<WebFormControlElement>();
-  textFieldDidChange(control_element);
-}
-
-void AutofillAgent::textFieldDidChange(const WebFormControlElement& element) {
   if (ignore_text_changes_)
     return;
-
-  DCHECK(IsAutofillableInputElement(toWebInputElement(&element)) ||
-         IsTextAreaElement(element));
 
   if (did_set_node_text_) {
     did_set_node_text_ = false;
@@ -335,34 +333,27 @@ void AutofillAgent::textFieldDidChange(const WebFormControlElement& element) {
                  element));
 }
 
-void AutofillAgent::TextFieldDidChangeImpl(
-    const WebFormControlElement& element) {
+void AutofillAgent::TextFieldDidChangeImpl(const WebInputElement& element) {
   // If the element isn't focused then the changes don't matter. This check is
   // required to properly handle IME interactions.
   if (!element.focused())
     return;
 
-  const WebInputElement* input_element = toWebInputElement(&element);
-  if (IsAutofillableInputElement(input_element)) {
-    if (password_generation_agent_ &&
-        password_generation_agent_->TextDidChangeInTextField(*input_element)) {
-      return;
-    }
+  if (password_generation_agent_ &&
+      password_generation_agent_->TextDidChangeInTextField(element)) {
+    return;
+  }
 
-    if (password_autofill_agent_->TextDidChangeInTextField(*input_element)) {
-      element_ = element;
-      return;
-    }
+  if (password_autofill_agent_->TextDidChangeInTextField(element)) {
+    element_ = element;
+    return;
   }
 
   ShowSuggestions(element, false, true, false, false);
 
   FormData form;
   FormFieldData field;
-  if (FindFormAndFieldForFormControlElement(element,
-                                            &form,
-                                            &field,
-                                            REQUIRE_NONE)) {
+  if (FindFormAndFieldForInputElement(element, &form, &field, REQUIRE_NONE)) {
     Send(new AutofillHostMsg_TextFieldDidChange(routing_id(), form, field,
                                                 base::TimeTicks::Now()));
   }
@@ -386,16 +377,14 @@ void AutofillAgent::openTextDataListChooser(const WebInputElement& element) {
 
 void AutofillAgent::AcceptDataListSuggestion(
     const base::string16& suggested_value) {
-  WebInputElement* input_element = toWebInputElement(&element_);
-  DCHECK(IsAutofillableInputElement(input_element));
   base::string16 new_value = suggested_value;
   // If this element takes multiple values then replace the last part with
   // the suggestion.
-  if (input_element->isMultiple() &&
-      input_element->formControlType() == WebString::fromUTF8("email")) {
+  if (element_.isMultiple() &&
+      element_.formControlType() == WebString::fromUTF8("email")) {
     std::vector<base::string16> parts;
 
-    base::SplitStringDontTrim(input_element->editingValue(), ',', &parts);
+    base::SplitStringDontTrim(element_.editingValue(), ',', &parts);
     if (parts.size() == 0)
       parts.push_back(base::string16());
 
@@ -412,7 +401,7 @@ void AutofillAgent::AcceptDataListSuggestion(
 
     new_value = JoinString(parts, ',');
   }
-  FillFieldWithValue(new_value, input_element);
+  FillFieldWithValue(new_value, &element_);
 }
 
 void AutofillAgent::OnFieldTypePredictionsAvailable(
@@ -462,17 +451,11 @@ void AutofillAgent::OnClearPreviewedForm() {
 }
 
 void AutofillAgent::OnFillFieldWithValue(const base::string16& value) {
-  WebInputElement* input_element = toWebInputElement(&element_);
-  DCHECK(IsAutofillableInputElement(input_element));
-
-  FillFieldWithValue(value, input_element);
+  FillFieldWithValue(value, &element_);
 }
 
 void AutofillAgent::OnPreviewFieldWithValue(const base::string16& value) {
-  WebInputElement* input_element = toWebInputElement(&element_);
-  DCHECK(IsAutofillableInputElement(input_element));
-
-  PreviewFieldWithValue(value, input_element);
+  PreviewFieldWithValue(value, &element_);
 }
 
 void AutofillAgent::OnAcceptDataListSuggestion(const base::string16& value) {
@@ -491,7 +474,8 @@ void AutofillAgent::OnAcceptPasswordAutofillSuggestion(
 }
 
 void AutofillAgent::OnRequestAutocompleteResult(
-    WebFormElement::AutocompleteResult result, const FormData& form_data) {
+    WebFormElement::AutocompleteResult result,
+    const FormData& form_data) {
   if (in_flight_request_form_.isNull())
     return;
 
@@ -505,25 +489,16 @@ void AutofillAgent::OnRequestAutocompleteResult(
   in_flight_request_form_.reset();
 }
 
-void AutofillAgent::ShowSuggestions(const WebFormControlElement& element,
+void AutofillAgent::ShowSuggestions(const WebInputElement& element,
                                     bool autofill_on_empty_values,
                                     bool requires_caret_at_end,
                                     bool display_warning_if_disabled,
                                     bool datalist_only) {
-  if (!element.isEnabled() || element.isReadOnly())
+  if (!element.isEnabled() || element.isReadOnly() || !element.isTextField() ||
+      element.isPasswordField())
     return;
-
-  const WebInputElement* input_element = toWebInputElement(&element);
-  if (IsAutofillableInputElement(input_element)) {
-    if (!input_element->isTextField() || input_element->isPasswordField())
-      return;
-    if (!datalist_only && !input_element->suggestedValue().isEmpty())
-      return;
-  } else {
-    DCHECK(IsTextAreaElement(element));
-    if (!element.toConst<WebTextAreaElement>().suggestedValue().isEmpty())
-      return;
-  }
+  if (!datalist_only && !element.suggestedValue().isEmpty())
+    return;
 
   // Don't attempt to autofill with values that are too large or if filling
   // criteria are not met.
@@ -540,8 +515,7 @@ void AutofillAgent::ShowSuggestions(const WebFormControlElement& element,
   }
 
   element_ = element;
-  if (IsAutofillableInputElement(input_element) &&
-      password_autofill_agent_->ShowSuggestions(*input_element)) {
+  if (password_autofill_agent_->ShowSuggestions(element)) {
     is_popup_possibly_visible_ = true;
     return;
   }
@@ -561,15 +535,11 @@ void AutofillAgent::ShowSuggestions(const WebFormControlElement& element,
                            datalist_only);
 }
 
-void AutofillAgent::QueryAutofillSuggestions(
-    const WebFormControlElement& element,
-    bool display_warning_if_disabled,
-    bool datalist_only) {
+void AutofillAgent::QueryAutofillSuggestions(const WebInputElement& element,
+                                             bool display_warning_if_disabled,
+                                             bool datalist_only) {
   if (!element.document().frame())
     return;
-
-  DCHECK(IsAutofillableInputElement(toWebInputElement(&element)) ||
-         IsTextAreaElement(element));
 
   static int query_counter = 0;
   autofill_query_id_ = query_counter++;
@@ -585,8 +555,7 @@ void AutofillAgent::QueryAutofillSuggestions(
 
   FormData form;
   FormFieldData field;
-  if (!FindFormAndFieldForFormControlElement(element, &form, &field,
-                                             requirements)) {
+  if (!FindFormAndFieldForInputElement(element, &form, &field, requirements)) {
     // If we didn't find the cached form, at least let autocomplete have a shot
     // at providing suggestions.
     WebFormControlElementToFormField(element, EXTRACT_VALUE, &field);
@@ -597,24 +566,21 @@ void AutofillAgent::QueryAutofillSuggestions(
   gfx::RectF bounding_box_scaled =
       GetScaledBoundingBox(web_view_->pageScaleFactor(), &element_);
 
-  const WebInputElement* input_element = toWebInputElement(&element);
-  if (IsAutofillableInputElement(input_element)) {
-    // Find the datalist values and send them to the browser process.
-    std::vector<base::string16> data_list_values;
-    std::vector<base::string16> data_list_labels;
-    GetDataListSuggestions(*input_element,
-                           datalist_only,
-                           &data_list_values,
-                           &data_list_labels);
-    TrimStringVectorForIPC(&data_list_values);
-    TrimStringVectorForIPC(&data_list_labels);
-
-    Send(new AutofillHostMsg_SetDataList(routing_id(),
-                                         data_list_values,
-                                         data_list_labels));
-  }
+  // Find the datalist values and send them to the browser process.
+  std::vector<base::string16> data_list_values;
+  std::vector<base::string16> data_list_labels;
+  GetDataListSuggestions(element_,
+                         datalist_only,
+                         &data_list_values,
+                         &data_list_labels);
+  TrimStringVectorForIPC(&data_list_values);
+  TrimStringVectorForIPC(&data_list_labels);
 
   is_popup_possibly_visible_ = true;
+  Send(new AutofillHostMsg_SetDataList(routing_id(),
+                                       data_list_values,
+                                       data_list_labels));
+
   Send(new AutofillHostMsg_QueryFormFieldAutofill(routing_id(),
                                                   autofill_query_id_,
                                                   form,
@@ -624,14 +590,14 @@ void AutofillAgent::QueryAutofillSuggestions(
 }
 
 void AutofillAgent::FillFieldWithValue(const base::string16& value,
-                                       blink::WebInputElement* node) {
+                                       WebInputElement* node) {
   did_set_node_text_ = true;
   node->setEditingValue(value.substr(0, node->maxLength()));
   node->setAutofilled(true);
 }
 
 void AutofillAgent::PreviewFieldWithValue(const base::string16& value,
-                                          blink::WebInputElement* node) {
+                                          WebInputElement* node) {
   was_query_node_autofilled_ = element_.isAutofilled();
   node->setSuggestedValue(value.substr(0, node->maxLength()));
   node->setAutofilled(true);
@@ -649,10 +615,9 @@ void AutofillAgent::HidePopup() {
 }
 
 // TODO(isherman): Decide if we want to support non-password autofill with AJAX.
-void AutofillAgent::didAssociateFormControls(
-    const blink::WebVector<blink::WebNode>& nodes) {
+void AutofillAgent::didAssociateFormControls(const WebVector<WebNode>& nodes) {
   for (size_t i = 0; i < nodes.size(); ++i) {
-    blink::WebFrame* frame = nodes[i].document().frame();
+    WebFrame* frame = nodes[i].document().frame();
     // Only monitors dynamic forms created in the top frame. Dynamic forms
     // inserted in iframes are not captured yet.
     if (frame && !frame->parent()) {

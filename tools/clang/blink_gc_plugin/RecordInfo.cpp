@@ -17,9 +17,11 @@ RecordInfo::RecordInfo(CXXRecordDecl* record, RecordCache* cache)
       fields_need_tracing_(TracingStatus::Unknown()),
       bases_(0),
       fields_(0),
+      is_stack_allocated_(kNotComputed),
       determined_trace_methods_(false),
       trace_method_(0),
       trace_dispatch_method_(0),
+      finalize_dispatch_method_(0),
       is_gc_derived_(false),
       base_paths_(0) {}
 
@@ -113,8 +115,9 @@ bool RecordInfo::IsGCFinalized() {
   return false;
 }
 
-// A mixin has not yet been "mixed in" if its only GC base is the mixin base.
-bool RecordInfo::IsUnmixedGCMixin() {
+// A GC mixin is a class that inherits from a GC mixin base and has
+// has not yet been "mixed in" with another GC base class.
+bool RecordInfo::IsGCMixin() {
   if (!IsGCDerived() || base_paths_->begin() == base_paths_->end())
     return false;
   // Get the last element of the first path.
@@ -124,7 +127,7 @@ bool RecordInfo::IsUnmixedGCMixin() {
   // If it is not a mixin base we are done.
   if (!Config::IsGCMixinBase(base->getName()))
     return false;
-  // Otherwise, this is unmixed if there are no other paths to GC bases.
+  // This is a mixin if there are no other paths to GC bases.
   return ++it == base_paths_->end();
 }
 
@@ -150,17 +153,34 @@ RecordInfo* RecordCache::Lookup(CXXRecordDecl* record) {
 }
 
 bool RecordInfo::IsStackAllocated() {
-  for (CXXRecordDecl::method_iterator it = record_->method_begin();
-       it != record_->method_end();
-       ++it) {
-    if (it->getNameAsString() == kNewOperatorName)
-      return it->isDeleted() && IsAnnotated(*it, "blink_stack_allocated");
+  if (is_stack_allocated_ == kNotComputed) {
+    is_stack_allocated_ = kFalse;
+    for (Bases::iterator it = GetBases().begin();
+         it != GetBases().end();
+         ++it) {
+      if (it->second.info()->IsStackAllocated()) {
+        is_stack_allocated_ = kTrue;
+        break;
+      }
+    }
+    for (CXXRecordDecl::method_iterator it = record_->method_begin();
+         it != record_->method_end();
+         ++it) {
+      if (it->getNameAsString() == kNewOperatorName) {
+        if (it->isDeleted() && IsAnnotated(*it, "blink_stack_allocated")) {
+          is_stack_allocated_ = kTrue;
+          break;
+        }
+      }
+    }
   }
-  return false;
+  return is_stack_allocated_;
 }
 
 // An object requires a tracing method if it has any fields that need tracing.
 bool RecordInfo::RequiresTraceMethod() {
+  if (IsStackAllocated())
+    return false;
   GetFields();
   return fields_need_tracing_.IsNeeded();
 }
@@ -178,6 +198,11 @@ CXXMethodDecl* RecordInfo::GetTraceDispatchMethod() {
   return trace_dispatch_method_;
 }
 
+CXXMethodDecl* RecordInfo::GetFinalizeDispatchMethod() {
+  DetermineTracingMethods();
+  return finalize_dispatch_method_;
+}
+
 RecordInfo::Bases& RecordInfo::GetBases() {
   if (!bases_)
     bases_ = CollectBases();
@@ -192,6 +217,34 @@ bool RecordInfo::InheritsNonPureTrace() {
       return true;
   }
   return false;
+}
+
+CXXMethodDecl* RecordInfo::InheritsNonVirtualTrace() {
+  if (CXXMethodDecl* trace = GetTraceMethod())
+    return trace->isVirtual() ? 0 : trace;
+  for (Bases::iterator it = GetBases().begin(); it != GetBases().end(); ++it) {
+    if (CXXMethodDecl* trace = it->second.info()->InheritsNonVirtualTrace())
+      return trace;
+  }
+  return 0;
+}
+
+// A (non-virtual) class is considered abstract in Blink if it has
+// no public constructors and no create methods.
+bool RecordInfo::IsConsideredAbstract() {
+  for (CXXRecordDecl::ctor_iterator it = record_->ctor_begin();
+       it != record_->ctor_end();
+       ++it) {
+    if (!it->isCopyOrMoveConstructor() && it->getAccess() == AS_public)
+      return false;
+  }
+  for (CXXRecordDecl::method_iterator it = record_->method_begin();
+       it != record_->method_end();
+       ++it) {
+    if (it->getNameAsString() == kCreateName)
+      return false;
+  }
+  return true;
 }
 
 RecordInfo::Bases* RecordInfo::CollectBases() {
@@ -247,6 +300,8 @@ void RecordInfo::DetermineTracingMethods() {
   if (determined_trace_methods_)
     return;
   determined_trace_methods_ = true;
+  if (Config::IsGCBase(name_))
+    return;
   CXXMethodDecl* trace = 0;
   CXXMethodDecl* traceAfterDispatch = 0;
   bool isTraceAfterDispatch;
@@ -254,12 +309,13 @@ void RecordInfo::DetermineTracingMethods() {
        it != record_->method_end();
        ++it) {
     if (Config::IsTraceMethod(*it, &isTraceAfterDispatch)) {
-      // TODO: Test that the formal parameter is of type Visitor*.
       if (isTraceAfterDispatch) {
         traceAfterDispatch = *it;
       } else {
         trace = *it;
       }
+    } else if (it->getNameAsString() == kFinalizeName) {
+        finalize_dispatch_method_ = *it;
     }
   }
   if (traceAfterDispatch) {
@@ -270,6 +326,22 @@ void RecordInfo::DetermineTracingMethods() {
     // class defining a traceAfterDispatch method?
     trace_method_ = trace;
     trace_dispatch_method_ = 0;
+  }
+  if (trace_dispatch_method_ && finalize_dispatch_method_)
+    return;
+  // If this class does not define dispatching methods inherit them.
+  for (Bases::iterator it = GetBases().begin(); it != GetBases().end(); ++it) {
+    // TODO: Does it make sense to inherit multiple dispatch methods?
+    if (CXXMethodDecl* dispatch = it->second.info()->GetTraceDispatchMethod()) {
+      assert(!trace_dispatch_method_ && "Multiple trace dispatching methods");
+      trace_dispatch_method_ = dispatch;
+    }
+    if (CXXMethodDecl* dispatch =
+        it->second.info()->GetFinalizeDispatchMethod()) {
+      assert(!finalize_dispatch_method_ &&
+             "Multiple finalize dispatching methods");
+      finalize_dispatch_method_ = dispatch;
+    }
   }
 }
 

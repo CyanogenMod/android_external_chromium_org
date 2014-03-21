@@ -187,6 +187,12 @@ bool IsFolderItem(AppListItem* item) {
   return (item->GetItemType() == AppListFolderItem::kItemType);
 }
 
+bool IsOEMFolderItem(AppListItem* item) {
+  return IsFolderItem(item) &&
+         (static_cast<AppListFolderItem*>(item))->folder_type() ==
+             AppListFolderItem::FOLDER_TYPE_OEM;
+}
+
 }  // namespace
 
 #if defined(OS_WIN)
@@ -1320,6 +1326,9 @@ void AppsGridView::OnFolderDroppingTimer() {
 void AppsGridView::UpdateDragStateInsideFolder(
     Pointer pointer,
     const ui::LocatedEvent& event) {
+  if (IsUnderOEMFolder())
+    return;
+
   if (IsDraggingForReprentInHiddenGridView()) {
     // Dispatch drag event to root level grid view for re-parenting folder
     // folder item purpose.
@@ -1369,6 +1378,13 @@ gfx::Rect AppsGridView::GetTargetIconRectInFolder(
       static_cast<AppListFolderItem*>(folder_item_view->item());
   return folder_item->GetTargetIconRectInFolderForItem(
       drag_item_view->item(), icon_ideal_bounds);
+}
+
+bool AppsGridView::IsUnderOEMFolder() {
+  if (is_root_level_)
+    return false;
+
+  return static_cast<AppListFolderView*>(parent())->IsOEMFolder();
 }
 
 void AppsGridView::DispatchDragEventForReparent(
@@ -1506,6 +1522,9 @@ void AppsGridView::DispatchDragEventToDragAndDropHost(
       drag_and_drop_host_->EndDrag(true);
     }
   } else {
+    if (IsFolderItem(drag_view_->item()))
+      return;
+
     // The event happened outside our app menu and we might need to dispatch.
     if (forward_events_to_drag_and_drop_host_) {
       // Dispatch since we have already started.
@@ -1596,11 +1615,13 @@ void AppsGridView::MoveItemToFolder(views::View* item_view,
 
   // Make change to data model.
   item_list_->RemoveObserver(this);
-
   std::string folder_item_id =
       model_->MergeItems(target_view_item_id, source_item_id);
   item_list_->AddObserver(this);
-
+  if (folder_item_id.empty()) {
+    LOG(ERROR) << "Unable to merge into item id: " << target_view_item_id;
+    return;
+  }
   if (folder_item_id != target_view_item_id) {
     // New folder was created, change the view model to replace the old target
     // view with the new folder item view.
@@ -1675,8 +1696,13 @@ void AppsGridView::ReparentItemToAnotherFolder(views::View* item_view,
   AppListItem* target_item = target_view->item();
 
   // Move item to the target folder.
-  const std::string& target_id_after_merge =
+  std::string target_id_after_merge =
       model_->MergeItems(target_item->id(), reparent_item->id());
+  if (target_id_after_merge.empty()) {
+    LOG(ERROR) << "Unable to reparent to item id: " << target_item->id();
+    item_list_->AddObserver(this);
+    return;
+  }
 
   if (target_id_after_merge != target_item->id()) {
     // New folder was created, change the view model to replace the old target
@@ -1847,7 +1873,8 @@ void AppsGridView::OnListItemRemoved(size_t index, AppListItem* item) {
   delete view;
 
   // If there is only one item left under the folder, remove the folder.
-  if (!is_root_level_ && item_list_->item_count() == 1) {
+  // We do allow OEM folder to contain only one item.
+  if (!is_root_level_ && item_list_->item_count() == 1 && !IsUnderOEMFolder()) {
     std::string folder_id = item_list_->item_at(0)->folder_id();
     // TODO(jennyz): Don't remove the folder if this is an OEM folder, this
     // depends on https://codereview.chromium.org/197403005/.
@@ -1941,7 +1968,9 @@ bool AppsGridView::CanDropIntoTarget(const Index& drop_target) {
       static_cast<AppListItemView*>(target_view)->item();
   // Items can be dropped into non-folders (which have no children) or folders
   // that have fewer than the max allowed items.
-  return target_item->ChildItemCount() < kMaxFolderItems;
+  // OEM folder does not allow to drag/drop other items in it.
+  return target_item->ChildItemCount() < kMaxFolderItems &&
+         !IsOEMFolderItem(target_item);
 }
 
 // TODO(jennyz): Optimize the calculation for finding nearest tile.

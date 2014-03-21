@@ -34,6 +34,7 @@
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/web/WebWidget.h"
 #include "ui/gl/gl_switches.h"
+#include "ui/native_theme/native_theme_switches.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 namespace base {
@@ -141,6 +142,8 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
     settings.rasterization_site = cc::LayerTreeSettings::HybridRasterization;
   else
     settings.rasterization_site = cc::LayerTreeSettings::CpuRasterization;
+  settings.create_low_res_tiling =
+      RenderThreadImpl::current()->is_low_res_tiling_enabled();
 
   settings.calculate_top_controls_position =
       cmd->HasSwitch(cc::switches::kEnableTopControlsPositionCalculation);
@@ -278,7 +281,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   }
 
 #elif !defined(OS_MACOSX)
-  if (IsOverlayScrollbarEnabled()) {
+  if (ui::IsOverlayScrollbarEnabled()) {
     settings.scrollbar_animator = cc::LayerTreeSettings::Thinning;
     settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
   } else if (cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport)) {

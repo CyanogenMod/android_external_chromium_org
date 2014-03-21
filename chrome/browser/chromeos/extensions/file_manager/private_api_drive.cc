@@ -4,15 +4,18 @@
 
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_drive.h"
 
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_util.h"
 #include "chrome/browser/chromeos/file_manager/file_tasks.h"
 #include "chrome/browser/chromeos/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/file_manager/url_util.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/drive/drive_app_registry.h"
 #include "chrome/browser/drive/event_logger.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/extensions/api/file_browser_private.h"
 #include "content/public/browser/browser_thread.h"
 #include "webkit/common/fileapi/file_system_info.h"
@@ -104,8 +107,9 @@ void ConvertSearchResultInfoListToEntryDefinitionList(
 }  // namespace
 
 FileBrowserPrivateGetDriveEntryPropertiesFunction::
-    FileBrowserPrivateGetDriveEntryPropertiesFunction() {
-}
+    FileBrowserPrivateGetDriveEntryPropertiesFunction()
+    : properties_(
+          new extensions::api::file_browser_private::DriveEntryProperties) {}
 
 FileBrowserPrivateGetDriveEntryPropertiesFunction::
     ~FileBrowserPrivateGetDriveEntryPropertiesFunction() {
@@ -119,16 +123,20 @@ bool FileBrowserPrivateGetDriveEntryPropertiesFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(params);
 
   const GURL file_url = GURL(params->file_url);
-  file_path_ =
-      drive::util::ExtractDrivePath(file_manager::util::GetLocalPathFromURL(
-          render_view_host(), GetProfile(), file_url));
+  const base::FilePath local_path = file_manager::util::GetLocalPathFromURL(
+      render_view_host(), GetProfile(), file_url);
+  file_path_ = drive::util::ExtractDrivePath(local_path);
+  file_owner_profile_ = drive::util::ExtractProfileFromPath(local_path);
 
-  properties_.reset(new extensions::api::file_browser_private::
-                    DriveEntryProperties);
+  // Owner not found.
+  if (!file_owner_profile_) {
+    CompleteGetFileProperties(drive::FILE_ERROR_FAILED);
+    return true;
+  }
 
   // Start getting the file info.
-  drive::FileSystemInterface* file_system =
-      drive::util::GetFileSystemByProfile(GetProfile());
+  drive::FileSystemInterface* const file_system =
+      drive::util::GetFileSystemByProfile(file_owner_profile_);
   if (!file_system) {
     // |file_system| is NULL if Drive is disabled or not mounted.
     CompleteGetFileProperties(drive::FILE_ERROR_FAILED);
@@ -145,20 +153,25 @@ bool FileBrowserPrivateGetDriveEntryPropertiesFunction::RunImpl() {
 void FileBrowserPrivateGetDriveEntryPropertiesFunction::OnGetFileInfo(
     drive::FileError error,
     scoped_ptr<drive::ResourceEntry> entry) {
-  DCHECK(properties_);
-
   if (error != drive::FILE_ERROR_OK) {
     CompleteGetFileProperties(error);
     return;
   }
+
   DCHECK(entry);
+
+  if (!g_browser_process->profile_manager()->IsValidProfile(
+          file_owner_profile_)) {
+    CompleteGetFileProperties(error);
+    return;
+  }
 
   FillDriveEntryPropertiesValue(*entry, properties_.get());
 
-  drive::FileSystemInterface* file_system =
-      drive::util::GetFileSystemByProfile(GetProfile());
-  drive::DriveAppRegistry* app_registry =
-      drive::util::GetDriveAppRegistryByProfile(GetProfile());
+  drive::FileSystemInterface* const file_system =
+      drive::util::GetFileSystemByProfile(file_owner_profile_);
+  drive::DriveAppRegistry* const app_registry =
+      drive::util::GetDriveAppRegistryByProfile(file_owner_profile_);
   if (!file_system || !app_registry) {
     // |file_system| or |app_registry| is NULL if Drive is disabled.
     CompleteGetFileProperties(drive::FILE_ERROR_FAILED);
@@ -172,6 +185,9 @@ void FileBrowserPrivateGetDriveEntryPropertiesFunction::OnGetFileInfo(
     return;
   }
 
+  // TODO(hirono): Update share_with_me property if the file and its properties
+  // come from non-running profile.
+
   const drive::FileSpecificInfo& file_specific_info =
       entry->file_specific_info();
 
@@ -184,7 +200,7 @@ void FileBrowserPrivateGetDriveEntryPropertiesFunction::OnGetFileInfo(
   if (!drive_apps.empty()) {
     std::string default_task_id =
         file_manager::file_tasks::GetDefaultTaskIdFromPrefs(
-            *GetProfile()->GetPrefs(),
+            *file_owner_profile_->GetPrefs(),
             file_specific_info.content_mime_type(),
             file_path_.Extension());
     file_manager::file_tasks::TaskDescriptor default_task;
@@ -676,6 +692,61 @@ void FileBrowserPrivateGetShareUrlFunction::OnGetShareUrl(
 
   SetResult(new base::StringValue(share_url.spec()));
   SendResponse(true);
+}
+
+bool FileBrowserPrivateRequestDriveShareFunction::RunImpl() {
+  using extensions::api::file_browser_private::RequestDriveShare::Params;
+  const scoped_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  const base::FilePath path = file_manager::util::GetLocalPathFromURL(
+      render_view_host(), GetProfile(), GURL(params->url));
+  const base::FilePath drive_path = drive::util::ExtractDrivePath(path);
+  Profile* const owner_profile = drive::util::ExtractProfileFromPath(path);
+
+  if (!owner_profile)
+    return false;
+
+  drive::FileSystemInterface* const owner_file_system =
+      drive::util::GetFileSystemByProfile(owner_profile);
+  if (!owner_file_system)
+    return false;
+
+  const chromeos::User* const user =
+      chromeos::UserManager::Get()->GetUserByProfile(GetProfile());
+  if (!user || !user->is_logged_in())
+    return false;
+
+  google_apis::drive::PermissionRole role =
+      google_apis::drive::PERMISSION_ROLE_READER;
+  switch (params->share_type) {
+    case api::file_browser_private::DRIVE_SHARE_TYPE_NONE:
+      NOTREACHED();
+      return false;
+    case api::file_browser_private::DRIVE_SHARE_TYPE_CAN_EDIT:
+      role = google_apis::drive::PERMISSION_ROLE_WRITER;
+      break;
+    case api::file_browser_private::DRIVE_SHARE_TYPE_CAN_COMMENT:
+      role = google_apis::drive::PERMISSION_ROLE_COMMENTER;
+      break;
+    case api::file_browser_private::DRIVE_SHARE_TYPE_CAN_VIEW:
+      role = google_apis::drive::PERMISSION_ROLE_READER;
+      break;
+  }
+
+  // Share |drive_path| in |owner_file_system| to |user->email()|.
+  owner_file_system->AddPermission(
+      drive_path,
+      user->email(),
+      role,
+      base::Bind(&FileBrowserPrivateRequestDriveShareFunction::OnAddPermission,
+                 this));
+  return true;
+}
+
+void FileBrowserPrivateRequestDriveShareFunction::OnAddPermission(
+    drive::FileError error) {
+  SendResponse(error == drive::FILE_ERROR_OK);
 }
 
 }  // namespace extensions

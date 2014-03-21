@@ -515,6 +515,13 @@ static FaviconURL::IconType ToFaviconType(blink::WebIconURL::Type type) {
   return FaviconURL::INVALID_ICON;
 }
 
+static void ConvertToFaviconSizes(
+    const blink::WebVector<blink::WebSize>& web_sizes,
+    std::vector<gfx::Size>* sizes) {
+  for (size_t i = 0; i < web_sizes.size(); ++i)
+    sizes->push_back(gfx::Size(web_sizes[i]));
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 struct RenderViewImpl::PendingFileChooser {
@@ -681,6 +688,7 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       focused_plugin_id_(-1),
 #endif
 #if defined(ENABLE_PLUGINS)
+      plugin_find_handler_(NULL),
       focused_pepper_plugin_(NULL),
       pepper_last_mouse_event_target_(NULL),
 #endif
@@ -2735,8 +2743,10 @@ void RenderViewImpl::didChangeIcon(WebFrame* frame,
   WebVector<WebIconURL> icon_urls = frame->iconURLs(icon_type);
   std::vector<FaviconURL> urls;
   for (size_t i = 0; i < icon_urls.size(); i++) {
-    urls.push_back(FaviconURL(icon_urls[i].iconURL(),
-                              ToFaviconType(icon_urls[i].iconType())));
+    std::vector<gfx::Size> sizes(icon_urls[i].sizes().size());
+    ConvertToFaviconSizes(icon_urls[i].sizes(), &sizes);
+    urls.push_back(FaviconURL(
+        icon_urls[i].iconURL(), ToFaviconType(icon_urls[i].iconType()), sizes));
   }
   SendUpdateFaviconURL(urls);
 }
@@ -3348,23 +3358,34 @@ GURL RenderViewImpl::GetLoadingUrl(blink::WebFrame* frame) const {
   return request.url();
 }
 
-blink::WebPlugin* RenderViewImpl::GetWebPluginFromPluginDocument() {
-  return webview()->mainFrame()->document().to<WebPluginDocument>().plugin();
+blink::WebPlugin* RenderViewImpl::GetWebPluginForFind() {
+  if (!webview())
+    return NULL;
+
+  WebFrame* main_frame = webview()->mainFrame();
+  if (main_frame->document().isPluginDocument())
+    return webview()->mainFrame()->document().to<WebPluginDocument>().plugin();
+
+#if defined(ENABLE_PLUGINS)
+  if (plugin_find_handler_)
+    return plugin_find_handler_->container()->plugin();
+#endif
+
+  return NULL;
 }
 
 void RenderViewImpl::OnFind(int request_id,
                             const base::string16& search_text,
                             const WebFindOptions& options) {
   WebFrame* main_frame = webview()->mainFrame();
-
+  blink::WebPlugin* plugin = GetWebPluginForFind();
   // Check if the plugin still exists in the document.
-  if (main_frame->document().isPluginDocument() &&
-      GetWebPluginFromPluginDocument()) {
+  if (plugin) {
     if (options.findNext) {
       // Just navigate back/forward.
-      GetWebPluginFromPluginDocument()->selectFindResult(options.forward);
+      plugin->selectFindResult(options.forward);
     } else {
-      if (!GetWebPluginFromPluginDocument()->startFind(
+      if (!plugin->startFind(
           search_text, options.matchCase, request_id)) {
         // Send "no results".
         SendFindReply(request_id, 0, 0, gfx::Rect(), true);
@@ -3477,9 +3498,9 @@ void RenderViewImpl::OnStopFinding(StopFindAction action) {
   if (!view)
     return;
 
-  WebDocument doc = view->mainFrame()->document();
-  if (doc.isPluginDocument() && GetWebPluginFromPluginDocument()) {
-    GetWebPluginFromPluginDocument()->stopFind();
+  blink::WebPlugin* plugin = GetWebPluginForFind();
+  if (plugin) {
+    plugin->stopFind();
     return;
   }
 
@@ -5103,9 +5124,11 @@ void RenderViewImpl::DidStopLoadingIcons() {
   std::vector<FaviconURL> urls;
   for (size_t i = 0; i < icon_urls.size(); i++) {
     WebURL url = icon_urls[i].iconURL();
+    std::vector<gfx::Size> sizes(icon_urls[i].sizes().size());
+    ConvertToFaviconSizes(icon_urls[i].sizes(), &sizes);
     if (!url.isEmpty())
-      urls.push_back(FaviconURL(url,
-                                ToFaviconType(icon_urls[i].iconType())));
+      urls.push_back(
+          FaviconURL(url, ToFaviconType(icon_urls[i].iconType()), sizes));
   }
   SendUpdateFaviconURL(urls);
 }

@@ -35,6 +35,7 @@
 #include "ui/events/keycodes/dom4/keycode_converter.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
 #include "ui/keyboard/keyboard_controller.h"
+#include "ui/keyboard/keyboard_util.h"
 
 namespace chromeos {
 const char* kErrorNotActive = "IME is not active";
@@ -61,7 +62,6 @@ InputMethodEngine::InputMethodEngine()
       active_(false),
       context_id_(0),
       next_context_id_(1),
-      observer_(NULL),
       composition_text_(new CompositionText()),
       composition_cursor_(0),
       candidate_window_(new ui::CandidateWindow()),
@@ -73,7 +73,7 @@ InputMethodEngine::~InputMethodEngine() {
 }
 
 void InputMethodEngine::Initialize(
-    InputMethodEngineInterface::Observer* observer,
+    scoped_ptr<InputMethodEngineInterface::Observer> observer,
     const char* engine_name,
     const char* extension_id,
     const char* engine_id,
@@ -84,7 +84,7 @@ void InputMethodEngine::Initialize(
   DCHECK(observer) << "Observer must not be null.";
 
   // TODO(komatsu): It is probably better to set observer out of Initialize.
-  observer_ = observer;
+  observer_ = observer.Pass();
   engine_id_ = engine_id;
   extension_id_ = extension_id;
 
@@ -490,23 +490,23 @@ void InputMethodEngine::Enable() {
                                                   ui::TEXT_INPUT_MODE_DEFAULT);
   FocusIn(context);
 
+  keyboard::SetOverrideContentUrl(input_view_url_);
   keyboard::KeyboardController* keyboard_controller =
       ash::Shell::GetInstance()->keyboard_controller();
-  if (keyboard_controller) {
-    keyboard_controller->SetOverrideContentUrl(input_view_url_);
-  }
+  if (keyboard_controller)
+    keyboard_controller->Reload();
 }
 
 void InputMethodEngine::Disable() {
   active_ = false;
   observer_->OnDeactivated(engine_id_);
 
+  GURL empty_url;
+  keyboard::SetOverrideContentUrl(empty_url);
   keyboard::KeyboardController* keyboard_controller =
       ash::Shell::GetInstance()->keyboard_controller();
-  if (keyboard_controller) {
-    GURL empty_url;
-    keyboard_controller->SetOverrideContentUrl(empty_url);
-  }
+  if (keyboard_controller)
+    keyboard_controller->Reload();
 }
 
 void InputMethodEngine::PropertyActivate(const std::string& property_name) {

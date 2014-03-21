@@ -79,7 +79,7 @@ GalleryWatchStateTracker::GalleryWatchStateTracker(Profile* profile)
   DCHECK(profile_);
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::Source<Profile>(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
   MediaGalleriesPreferences* preferences =
       g_browser_process->media_file_system_registry()->GetPreferences(profile);
@@ -103,9 +103,9 @@ GalleryWatchStateTracker* GalleryWatchStateTracker::GetForProfile(
   DCHECK(profile);
   MediaGalleriesPrivateAPI* private_api =
       MediaGalleriesPrivateAPI::Get(profile);
-  if (!private_api)
-    return NULL;  // In unit tests, we don't have a MediaGalleriesPrivateAPI.
-  return private_api->GetGalleryWatchStateTracker();
+  // In unit tests, we don't have a MediaGalleriesPrivateAPI.
+  if (private_api)
+    return private_api->GetGalleryWatchStateTracker();
 #endif
   return NULL;
 }
@@ -215,7 +215,7 @@ void GalleryWatchStateTracker::Observe(
                      extension->id()));
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
       Extension* extension = const_cast<Extension*>(
           content::Details<extensions::UnloadedExtensionInfo>(
               details)->extension);

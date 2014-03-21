@@ -12,11 +12,16 @@ per-file breakpad.gypi=thestig@chromium.org
 
 per-file cloud_devices*=gene@chromium.org
 per-file cloud_devices*=noamsml@chromium.org
-per-file cloud_devices*=vitalybuka@chromium.org 
+per-file cloud_devices*=vitalybuka@chromium.org
 
 per-file dom_distiller*=bengr@chromium.org
 per-file dom_distiller*=cjhopman@chromium.org
 per-file dom_distiller*=nyquist@chromium.org
+
+per-file domain_reliability.gypi=davidben@chromium.org
+per-file domain_reliability.gypi=mmenke@chromium.org
+per-file domain_reliability.gypi=szym@chromium.org
+per-file domain_reliability.gypi=ttuttle@chromium.org
 
 per-file json_schema.gypi=asargent@chromium.org
 per-file json_schema.gypi=calamity@chromium.org
@@ -30,12 +35,12 @@ per-file metrics*=jar@chromium.org
 per-file metrics*=isherman@chromium.org
 # OWNER-to-be: per-file metrics*=holte@chromium.org
 
-per-file nacl*=bradchen@chromium.org
 per-file nacl*=bradnelson@chromium.org
+per-file nacl*=dmichael@chromium.org
 per-file nacl*=jvoung@chromium.org
 per-file nacl*=mseaborn@chromium.org
 per-file nacl*=noelallen@chromium.org
-per-file nacl*=sehr@chromium.org
+per-file nacl*=teravest@chromium.org
 
 per-file navigation_interception.gypi=mkosiba@chromium.org
 
@@ -81,6 +86,7 @@ per-file sync_driver*=zea@chromium.org
 per-file tracing*=jbauman@chromium.org
 per-file tracing*=nduca@chromium.org
 
+per-file translate.gypi=droger@chromium.org
 per-file translate.gypi=hajimehoshi@chromium.org
 per-file translate.gypi=mad@chromium.org
 per-file translate.gypi=toyoshim@chromium.org

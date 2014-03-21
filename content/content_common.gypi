@@ -31,13 +31,19 @@
   'sources': [
     'public/common/assert_matching_enums.cc',
     'public/common/bindings_policy.h',
+    'public/common/browser_plugin_permission_type.h',
     'public/common/child_process_host.h',
     'public/common/child_process_host_delegate.cc',
     'public/common/child_process_host_delegate.h',
     'public/common/child_process_sandbox_support_linux.h',
     'public/common/color_suggestion.cc',
     'public/common/color_suggestion.h',
+    'public/common/common_param_traits.cc',
+    'public/common/common_param_traits.h',
+    'public/common/common_param_traits_macros.h',
     'public/common/console_message_level.h',
+    'public/common/content_client.cc',
+    'public/common/content_client.h',
     'public/common/content_constants.cc',
     'public/common/content_constants.h',
     'public/common/content_descriptors.h',
@@ -111,6 +117,8 @@
     'public/common/user_agent.h',
     'public/common/webplugininfo.cc',
     'public/common/webplugininfo.h',
+    'public/common/window_container_type.cc',
+    'public/common/window_container_type.h',
     'public/common/zygote_fork_delegate_linux.h',
     'common/accessibility_messages.h',
     'common/all_messages.h',
@@ -138,7 +146,7 @@
     'common/child_process_sandbox_support_impl_linux.cc',
     'common/child_process_sandbox_support_impl_linux.h',
     'common/child_process_sandbox_support_impl_shm_linux.cc',
-    'common/clipboard_messages.cc',
+    'common/clipboard_format.h',
     'common/clipboard_messages.h',
     'common/content_constants_internal.cc',
     'common/content_constants_internal.h',
@@ -154,6 +162,17 @@
     'common/content_switches_internal.h',
     'common/cookie_data.cc',
     'common/cookie_data.h',
+    'common/cursors/webcursor.cc',
+    'common/cursors/webcursor.h',
+    'common/cursors/webcursor_android.cc',
+    'common/cursors/webcursor_aura.cc',
+    'common/cursors/webcursor_aurawin.cc',
+    'common/cursors/webcursor_aurax11.cc',
+    'common/cursors/webcursor_gtk.cc',
+    'common/cursors/webcursor_gtk_data.h',
+    'common/cursors/webcursor_mac.mm',
+    'common/cursors/webcursor_null.cc',
+    'common/cursors/webcursor_win.cc',
     'common/database_messages.h',
     'common/date_time_suggestion.h',
     'common/desktop_notification_messages.h',
@@ -275,12 +294,12 @@
     'common/indexed_db/indexed_db_messages.h',
     'common/indexed_db/indexed_db_param_traits.cc',
     'common/indexed_db/indexed_db_param_traits.h',
-    'common/input/input_event_stream_validator.cc',
-    'common/input/input_event_stream_validator.h',
     'common/input/gesture_event_stream_validator.cc',
     'common/input/gesture_event_stream_validator.h',
     'common/input/input_event.cc',
     'common/input/input_event.h',
+    'common/input/input_event_stream_validator.cc',
+    'common/input/input_event_stream_validator.h',
     'common/input/input_param_traits.cc',
     'common/input/input_param_traits.h',
     'common/input/scoped_web_input_event.cc',
@@ -329,6 +348,9 @@
     'common/message_router.cc',
     'common/message_router.h',
     'common/mime_registry_messages.h',
+    'common/mojo/mojo_channel_init.cc',
+    'common/mojo/mojo_channel_init.h',
+    'common/mojo/mojo_messages.h',
     'common/navigation_gesture.h',
     'common/net/url_fetcher.cc',
     'common/net/url_request_user_data.cc',
@@ -407,10 +429,10 @@
     'common/swapped_out_messages.cc',
     'common/swapped_out_messages.h',
     'common/text_input_client_messages.h',
-    'common/user_agent.cc',
-    'common/user_agent_ios.mm',
     'common/url_schemes.cc',
     'common/url_schemes.h',
+    'common/user_agent.cc',
+    'common/user_agent_ios.mm',
     'common/utility_messages.h',
     'common/view_message_enums.h',
     'common/view_messages.h',
@@ -422,16 +444,19 @@
     'common/worker_messages.h',
     'common/zygote_commands_linux.h',
     'port/common/input_event_ack_state.h',
-    'public/common/browser_plugin_permission_type.h',
-    'public/common/common_param_traits.cc',
-    'public/common/common_param_traits.h',
-    'public/common/common_param_traits_macros.h',
-    'public/common/content_client.cc',
-    'public/common/content_client.h',
-    'public/common/window_container_type.cc',
-    'public/common/window_container_type.h',
   ],
   'conditions': [
+    ['use_aura==1', {
+      'sources!': [
+        'common/cursors/webcursor_mac.mm',
+        'common/cursors/webcursor_win.cc',
+      ],
+    }],
+    ['use_ozone==0', {
+      'sources!': [
+        'common/cursors/webcursor_null.cc',
+      ],
+    }],
     ['OS=="ios"', {
       # iOS has different user-agent construction utilities, since the
       # version strings is not derived from webkit_version, and follows
@@ -484,7 +509,31 @@
         'content.gyp:webkit_version',
       ],
     }],
+    # Work around for bug in linker used on ia32 machines (gold is not used on
+    # ia32 machines). See bug 353273.
+    ['use_mojo==1 and OS=="linux" and target_arch=="ia32" and component=="static_library"', {
+      'link_settings': {
+        'libraries': [
+          '<(PRODUCT_DIR)/lib/libmojo_system.so',
+        ],
+      },
+    }],
+    ['use_mojo==0', {
+      'sources!': [
+        'common/mojo/mojo_channel_init.cc',
+        'common/mojo/mojo_channel_init.h',
+      ],
+    }, {
+      'dependencies': [
+        '../mojo/mojo.gyp:mojo_environment_chromium',
+        '../mojo/mojo.gyp:mojo_system',
+        '../mojo/mojo.gyp:mojo_system_impl',
+      ],
+    }],
     ['OS=="mac"', {
+      'dependencies': [
+        '../webkit/webkit_resources.gyp:webkit_resources',
+      ],
       'sources': [
         'common/gpu/client/gpu_memory_buffer_impl_io_surface.cc',
         'common/gpu/client/gpu_memory_buffer_impl_io_surface.h',

@@ -21,8 +21,9 @@ from telemetry.page import page_measurement
 from telemetry.page import page_set
 from telemetry.util import statistics
 from telemetry.value import merge_values
+from telemetry.value import scalar
 
-class PeaceKeeperMeasurement(page_measurement.PageMeasurement):
+class _PeaceKeeperMeasurement(page_measurement.PageMeasurement):
 
   def WillNavigateToPage(self, page, tab):
     page.script_to_evaluate_on_commit = """
@@ -65,12 +66,13 @@ class PeaceKeeperMeasurement(page_measurement.PageMeasurement):
         group_by_name_suffix=True)
     combined_score = [x for x in combined if x.name == 'Score'][0]
     total = statistics.GeometricMean(combined_score.values)
-    results.AddSummary('Score', 'score', total, 'Total')
+    results.AddSummaryValue(
+        scalar.ScalarValue(None, 'Total.Score', 'score', total))
 
 
 class PeaceKeeperBenchmark(test.Test):
   """A base class for Peackeeper benchmarks."""
-  test = PeaceKeeperMeasurement
+  test = _PeaceKeeperMeasurement
 
   def CreatePageSet(self, options):
     """Makes a PageSet for PeaceKeeper benchmarks."""

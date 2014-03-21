@@ -40,6 +40,7 @@
 #include "cc/test/fake_video_frame_provider.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/layer_tree_test.h"
+#include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/layer_tree_impl.h"
@@ -1562,7 +1563,6 @@ class LayerTreeHostTestDirectRendererAtomicCommit : public LayerTreeHostTest {
         EXPECT_TRUE(context->UsedTexture(context->TextureAt(1)));
 
         context->ResetUsedTextures();
-        PostSetNeedsCommitToMainThread();
         break;
       case 1:
         // Number of textures should be one for scrollbar layer since it was
@@ -1578,7 +1578,6 @@ class LayerTreeHostTestDirectRendererAtomicCommit : public LayerTreeHostTest {
         // New textures should have been used.
         EXPECT_TRUE(context->UsedTexture(context->TextureAt(2)));
         context->ResetUsedTextures();
-        PostSetNeedsCommitToMainThread();
         break;
       case 2:
         EndTest();
@@ -1601,6 +1600,9 @@ class LayerTreeHostTestDirectRendererAtomicCommit : public LayerTreeHostTest {
     // We draw/ship one texture each frame for each layer.
     EXPECT_EQ(2u, context->NumUsedTextures());
     context->ResetUsedTextures();
+
+    if (!TestEnded())
+      PostSetNeedsCommitToMainThread();
   }
 
   virtual void Layout() OVERRIDE {
@@ -1638,7 +1640,6 @@ class LayerTreeHostTestDelegatingRendererAtomicCommit
         EXPECT_TRUE(context->UsedTexture(context->TextureAt(0)));
         EXPECT_TRUE(context->UsedTexture(context->TextureAt(1)));
         context->ResetUsedTextures();
-        PostSetNeedsCommitToMainThread();
         break;
       case 1:
         // Number of textures should be doubled as the first context layer
@@ -1657,7 +1658,6 @@ class LayerTreeHostTestDelegatingRendererAtomicCommit
         EXPECT_TRUE(context->UsedTexture(context->TextureAt(2)));
         EXPECT_TRUE(context->UsedTexture(context->TextureAt(3)));
         context->ResetUsedTextures();
-        PostSetNeedsCommitToMainThread();
         break;
       case 2:
         EndTest();
@@ -1669,9 +1669,8 @@ class LayerTreeHostTestDelegatingRendererAtomicCommit
   }
 };
 
-// Failing flakily http://crbug.com/352797
-// MULTI_THREAD_DELEGATING_RENDERER_NOIMPL_TEST_F(
-//     LayerTreeHostTestDelegatingRendererAtomicCommit);
+MULTI_THREAD_DELEGATING_RENDERER_NOIMPL_TEST_F(
+    LayerTreeHostTestDelegatingRendererAtomicCommit);
 
 static void SetLayerPropertiesForTesting(Layer* layer,
                                          Layer* parent,
@@ -2441,8 +2440,10 @@ TEST(LayerTreeHostTest, PartialUpdatesWithGLRenderer) {
   LayerTreeSettings settings;
   settings.max_partial_texture_updates = 4;
 
-  scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::CreateSingleThreaded(&client, &client, NULL, settings);
+  scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
+      new TestSharedBitmapManager());
+  scoped_ptr<LayerTreeHost> host = LayerTreeHost::CreateSingleThreaded(
+      &client, &client, shared_bitmap_manager.get(), settings);
   EXPECT_TRUE(host->InitializeOutputSurfaceIfNeeded());
   EXPECT_EQ(4u, host->settings().max_partial_texture_updates);
 }
@@ -2453,8 +2454,10 @@ TEST(LayerTreeHostTest, PartialUpdatesWithSoftwareRenderer) {
   LayerTreeSettings settings;
   settings.max_partial_texture_updates = 4;
 
-  scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::CreateSingleThreaded(&client, &client, NULL, settings);
+  scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
+      new TestSharedBitmapManager());
+  scoped_ptr<LayerTreeHost> host = LayerTreeHost::CreateSingleThreaded(
+      &client, &client, shared_bitmap_manager.get(), settings);
   EXPECT_TRUE(host->InitializeOutputSurfaceIfNeeded());
   EXPECT_EQ(4u, host->settings().max_partial_texture_updates);
 }
@@ -2465,8 +2468,10 @@ TEST(LayerTreeHostTest, PartialUpdatesWithDelegatingRendererAndGLContent) {
   LayerTreeSettings settings;
   settings.max_partial_texture_updates = 4;
 
-  scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::CreateSingleThreaded(&client, &client, NULL, settings);
+  scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
+      new TestSharedBitmapManager());
+  scoped_ptr<LayerTreeHost> host = LayerTreeHost::CreateSingleThreaded(
+      &client, &client, shared_bitmap_manager.get(), settings);
   EXPECT_TRUE(host->InitializeOutputSurfaceIfNeeded());
   EXPECT_EQ(0u, host->MaxPartialTextureUpdates());
 }
@@ -2478,8 +2483,10 @@ TEST(LayerTreeHostTest,
   LayerTreeSettings settings;
   settings.max_partial_texture_updates = 4;
 
-  scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::CreateSingleThreaded(&client, &client, NULL, settings);
+  scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
+      new TestSharedBitmapManager());
+  scoped_ptr<LayerTreeHost> host = LayerTreeHost::CreateSingleThreaded(
+      &client, &client, shared_bitmap_manager.get(), settings);
   EXPECT_TRUE(host->InitializeOutputSurfaceIfNeeded());
   EXPECT_EQ(0u, host->MaxPartialTextureUpdates());
 }

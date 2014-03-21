@@ -55,7 +55,7 @@ class Failure(Exception):
   pass
 
 
-class PageTest(command_line.ArgumentHandlerMixIn):
+class PageTest(command_line.Command):
   """A class styled on unittest.TestCase for creating page-specific tests."""
 
   def __init__(self,
@@ -75,6 +75,11 @@ class PageTest(command_line.ArgumentHandlerMixIn):
     except AttributeError:
       raise ValueError, 'No such method %s.%s' % (
         self.__class_, test_method_name)  # pylint: disable=E1101
+    if action_name_to_run:
+      assert action_name_to_run.startswith('Run') \
+          and '_' not in action_name_to_run, \
+          ('Wrong way of naming action_name_to_run. By new convention,'
+           'action_name_to_run must start with Run- prefix and in CamelCase.')
     self._action_name_to_run = action_name_to_run
     self._needs_browser_restart_after_each_page = (
         needs_browser_restart_after_each_page)
@@ -150,6 +155,11 @@ class PageTest(command_line.ArgumentHandlerMixIn):
   def max_errors(self, count):
     self._max_errors = count
 
+  def Run(self, args):
+    # Define this method to avoid pylint errors.
+    # TODO(dtu): Make this actually run the test with args.page_set.
+    pass
+
   def RestartBrowserBeforeEachPage(self):
     """ Should the browser be restarted for the page?
 
@@ -210,6 +220,8 @@ class PageTest(command_line.ArgumentHandlerMixIn):
 
   def CanRunForPage(self, page):  # pylint: disable=W0613
     """Override to customize if the test can be ran for the given page."""
+    if self._action_name_to_run:
+      return hasattr(page, self._action_name_to_run)
     return True
 
   def WillRunTest(self, options):
@@ -268,11 +280,6 @@ class PageTest(command_line.ArgumentHandlerMixIn):
     """Called after the test run method was run, even if it failed."""
     pass
 
-  def CreatePageSet(self, args, options):   # pylint: disable=W0613
-    """Override to make this test generate its own page set instead of
-    allowing arbitrary page sets entered from the command-line."""
-    return None
-
   def CreateExpectations(self, page_set):   # pylint: disable=W0613
     """Override to make this test generate its own expectations instead of
     any that may have been defined in the page set."""
@@ -288,7 +295,7 @@ class PageTest(command_line.ArgumentHandlerMixIn):
     example to validate that the pageset can be used with the test."""
     pass
 
-  def Run(self, page, tab, results):
+  def RunPage(self, page, tab, results):
     interactive = self.options and self.options.interactive
     compound_action = GetCompoundActionFromPage(
         page, self._action_name_to_run, interactive)
@@ -319,7 +326,7 @@ class PageTest(command_line.ArgumentHandlerMixIn):
 
     Runs the 'navigate_steps' page attribute as a compound action.
     """
-    navigate_actions = GetCompoundActionFromPage(page, 'navigate_steps')
+    navigate_actions = GetCompoundActionFromPage(page, 'RunNavigateSteps')
     if not any(isinstance(action, navigate.NavigateAction)
         for action in navigate_actions):
       raise page_action.PageActionFailed(

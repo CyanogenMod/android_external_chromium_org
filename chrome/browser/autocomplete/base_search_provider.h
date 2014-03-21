@@ -330,20 +330,31 @@ class BaseSearchProvider : public AutocompleteProvider,
   // otherwise.
   static scoped_ptr<base::Value> DeserializeJsonData(std::string json_data);
 
-  // Returns whether we can send the URL of the current page in any suggest
-  // requests.  Doing this requires that all the following hold:
+  // Returns whether the requirements for requesting zero suggest results
+  // are met. The requirements are
+  // * The user is enrolled in a zero suggest experiment.
+  // * The user is not on the NTP.
+  // * The suggest request is sent over HTTPS.  This avoids leaking the current
+  //   page URL or personal data in unencrypted network traffic.
   // * The user has suggest enabled in their settings and is not in incognito
   //   mode.  (Incognito disables suggest entirely.)
+  // * The user's suggest provider is Google.  We might want to allow other
+  //   providers to see this data someday, but for now this has only been
+  //   implemented for Google.
+  static bool ZeroSuggestEnabled(
+     const GURL& suggest_url,
+     const TemplateURL* template_url,
+     AutocompleteInput::PageClassification page_classification,
+     Profile* profile);
+
+  // Returns whether we can send the URL of the current page in any suggest
+  // requests.  Doing this requires that all the following hold:
+  // * ZeroSuggestEnabled() is true, so we meet the requirements above.
   // * The current URL is HTTP, or HTTPS with the same domain as the suggest
   //   server.  Non-HTTP[S] URLs (e.g. FTP/file URLs) may contain sensitive
   //   information.  HTTPS URLs may also contain sensitive information, but if
   //   they're on the same domain as the suggest server, then the relevant
   //   entity could have already seen/logged this data.
-  // * The suggest request is sent over HTTPS.  This avoids leaking the current
-  //   page URL in world-readable network traffic.
-  // * The user's suggest provider is Google.  We might want to allow other
-  //   providers to see this data someday, but for now this has only been
-  //   implemented for Google.  Also see next bullet.
   // * The user is OK in principle with sending URLs of current pages to their
   //   provider.  Today, there is no explicit setting that controls this, but if
   //   the user has tab sync enabled and tab sync is unencrypted, then they're
@@ -358,6 +369,9 @@ class BaseSearchProvider : public AutocompleteProvider,
       const TemplateURL* template_url,
       AutocompleteInput::PageClassification page_classification,
       Profile* profile);
+
+  // net::URLFetcherDelegate:
+  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
 
   // Creates an AutocompleteMatch from |result| to search for the query in
   // |result|. Adds the created match to |map|; if such a match
@@ -385,13 +399,16 @@ class BaseSearchProvider : public AutocompleteProvider,
                            const base::ListValue* relevances,
                            Results* results);
 
-  // Returns the TemplateURL for the given |result|.
-  virtual const TemplateURL* GetTemplateURL(
-      const SuggestResult& result) const = 0;
+  // Returns the TemplateURL corresponding to the keyword or default
+  // provider based on the value of |is_keyword|.
+  virtual const TemplateURL* GetTemplateURL(bool is_keyword) const = 0;
 
   // Returns the AutocompleteInput for keyword provider or default provider
   // based on the value of |is_keyword|.
   virtual const AutocompleteInput GetInput(bool is_keyword) const = 0;
+
+  // Returns a pointer to a Results object, which will hold suggest results.
+  virtual Results* GetResultsToFill(bool is_keyword) = 0;
 
   // Returns whether the destination URL corresponding to the given |result|
   // should contain command-line-specified query params.
@@ -410,6 +427,16 @@ class BaseSearchProvider : public AutocompleteProvider,
   // Records in UMA whether the deletion request resulted in success.
   virtual void RecordDeletionResult(bool success) = 0;
 
+  // Records UMA statistics about a suggest server response.
+  virtual void LogFetchComplete(bool succeeded, bool is_keyword) = 0;
+
+  // Returns whether the |fetcher| is for the keyword provider.
+  virtual bool IsKeywordFetcher(const net::URLFetcher* fetcher) const = 0;
+
+  // Updates |matches_| from the latest results; applies calculated relevances
+  // if suggested relevances cause undesriable behavior. Updates |done_|.
+  virtual void UpdateMatches() = 0;
+
   // Whether a field trial, if any, has triggered in the most recent
   // autocomplete query. This field is set to true only if the suggestion
   // provider has completed and the response contained
@@ -419,6 +446,10 @@ class BaseSearchProvider : public AutocompleteProvider,
   // Same as above except that it is maintained across the current Omnibox
   // session.
   bool field_trial_triggered_in_session_;
+
+  // The number of suggest results that haven't yet arrived. If it's greater
+  // than 0, it indicates that one of the URLFetchers is still running.
+  int suggest_results_pending_;
 
  private:
   friend class SearchProviderTest;

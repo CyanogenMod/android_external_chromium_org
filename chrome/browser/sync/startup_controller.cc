@@ -9,9 +9,9 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/managed_mode/managed_user_signin_manager_wrapper.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
-#include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/signin/core/profile_oauth2_token_service.h"
+#include "components/sync_driver/sync_prefs.h"
 
 namespace browser_sync {
 
@@ -37,7 +37,7 @@ enum DeferredInitTrigger {
 StartupController::StartupController(
     ProfileSyncServiceStartBehavior start_behavior,
     const ProfileOAuth2TokenService* token_service,
-    const browser_sync::SyncPrefs* sync_prefs,
+    const sync_driver::SyncPrefs* sync_prefs,
     const ManagedUserSigninManagerWrapper* signin,
     base::Closure start_backend)
     : received_start_request_(false),
@@ -47,8 +47,8 @@ StartupController::StartupController(
       token_service_(token_service),
       signin_(signin),
       start_backend_(start_backend),
-      fallback_timeout_(base::TimeDelta::FromSeconds(
-          kDeferredInitFallbackSeconds)),
+      fallback_timeout_(
+          base::TimeDelta::FromSeconds(kDeferredInitFallbackSeconds)),
       weak_factory_(this) {
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
@@ -165,6 +165,16 @@ bool StartupController::TryStart() {
   return false;
 }
 
+void StartupController::RecordTimeDeferred() {
+  DCHECK(!start_up_time_.is_null());
+  base::TimeDelta time_deferred = base::Time::Now() - start_up_time_;
+  UMA_HISTOGRAM_CUSTOM_TIMES("Sync.Startup.TimeDeferred2",
+      time_deferred,
+      base::TimeDelta::FromSeconds(0),
+      base::TimeDelta::FromMinutes(2),
+      60);
+}
+
 void StartupController::OnFallbackStartupTimerExpired() {
   DCHECK(!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kSyncDisableDeferredStartup));
@@ -173,9 +183,7 @@ void StartupController::OnFallbackStartupTimerExpired() {
     return;
 
   DVLOG(2) << "Sync deferred init fallback timer expired, starting backend.";
-  DCHECK(!start_up_time_.is_null());
-  base::TimeDelta time_deferred = base::Time::Now() - start_up_time_;
-  UMA_HISTOGRAM_TIMES("Sync.Startup.TimeDeferred", time_deferred);
+  RecordTimeDeferred();
   UMA_HISTOGRAM_ENUMERATION("Sync.Startup.DeferredInitTrigger",
                             TRIGGER_FALLBACK_TIMER,
                             MAX_TRIGGER_VALUE);
@@ -209,8 +217,7 @@ void StartupController::OnDataTypeRequestsSyncStartup(syncer::ModelType type) {
   // We could measure the time spent deferred on a per-datatype basis, but
   // for now this is probably sufficient.
   if (!start_up_time_.is_null()) {
-    base::TimeDelta time_deferred = base::Time::Now() - start_up_time_;
-    UMA_HISTOGRAM_TIMES("Sync.Startup.TimeDeferred", time_deferred);
+    RecordTimeDeferred();
     UMA_HISTOGRAM_ENUMERATION("Sync.Startup.TypeTriggeringInit",
                               ModelTypeToHistogramInt(type),
                               syncer::MODEL_TYPE_COUNT);

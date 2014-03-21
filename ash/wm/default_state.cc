@@ -108,6 +108,7 @@ void DefaultState::OnWMEvent(WindowState* window_state,
     case WM_EVENT_TOGGLE_VERTICAL_MAXIMIZE:
     case WM_EVENT_TOGGLE_HORIZONTAL_MAXIMIZE:
     case WM_EVENT_TOGGLE_FULLSCREEN:
+    case WM_EVENT_CENTER:
       NOTREACHED() << "Compound event should not reach here:" << event;
       return;
     case WM_EVENT_ADDED_TO_WORKSPACE:
@@ -134,7 +135,7 @@ void DefaultState::OnWMEvent(WindowState* window_state,
     // TODO(oshima): Make docked window a state.
     if (window_state->IsSnapped() ||
         (!window_state->IsDocked() && !IsPanel(window_state->window()))) {
-      UpdateBounds(window_state, current, event);
+      UpdateBounds(window_state, current);
     }
     window_state->NotifyPostStateTypeChange(current);
   }
@@ -142,6 +143,85 @@ void DefaultState::OnWMEvent(WindowState* window_state,
 
 WindowStateType DefaultState::GetType() const {
   return state_type_;
+}
+
+void DefaultState::AttachState(WindowState* window_state,
+                               WindowState::State* previous_state) {
+  DCHECK_EQ(stored_window_state_, window_state);
+  WindowStateType old_state_type = state_type_;
+  state_type_ = previous_state->GetType();
+
+  // Forget our restore sizes when the workspace size has changed.
+  bool workspace_unchanged = stored_workspace_size_ ==
+      window_state->window()->parent()->bounds().size();
+
+  // Set the restore bounds to be the previous bounds - this might be required
+  // for some state transitions like restore, so that the animations are sound.
+  if (!stored_bounds_.IsEmpty() && workspace_unchanged)
+    window_state->SetRestoreBoundsInParent(stored_bounds_);
+  else
+    window_state->ClearRestoreBounds();
+
+  if (old_state_type != state_type_) {
+    wm::WMEventType type = wm::WM_EVENT_NORMAL;
+    switch (old_state_type) {
+      case wm::WINDOW_STATE_TYPE_DEFAULT:
+      case wm::WINDOW_STATE_TYPE_AUTO_POSITIONED:
+      case wm::WINDOW_STATE_TYPE_NORMAL:
+      case wm::WINDOW_STATE_TYPE_DETACHED:
+      case wm::WINDOW_STATE_TYPE_END:
+        break;
+      case wm::WINDOW_STATE_TYPE_MINIMIZED:
+        type = wm::WM_EVENT_MINIMIZE;
+        break;
+      case wm::WINDOW_STATE_TYPE_MAXIMIZED:
+        type = wm::WM_EVENT_MAXIMIZE;
+        break;
+      case wm::WINDOW_STATE_TYPE_INACTIVE:
+        type = wm::WM_EVENT_SHOW_INACTIVE;
+        break;
+      case wm::WINDOW_STATE_TYPE_FULLSCREEN:
+        type = wm::WM_EVENT_TOGGLE_FULLSCREEN;
+        break;
+      case wm::WINDOW_STATE_TYPE_LEFT_SNAPPED:
+        type = wm::WM_EVENT_SNAP_LEFT;
+        break;
+      case wm::WINDOW_STATE_TYPE_RIGHT_SNAPPED:
+        type = wm::WM_EVENT_SNAP_RIGHT;
+        break;
+    }
+    wm::WMEvent event(type);
+    window_state->OnWMEvent(&event);
+  }
+
+  if (workspace_unchanged) {
+    // If the bounds are not yet set and valid we restore them.
+    if (!stored_bounds_.IsEmpty() &&
+        stored_bounds_ != window_state->window()->bounds()) {
+      if (state_type_ == wm::WINDOW_STATE_TYPE_MINIMIZED)
+        window_state->SetBoundsDirect(stored_bounds_);
+      else
+        window_state->SetBoundsDirectAnimated(stored_bounds_);
+    }
+
+    // Then restore the restore bounds to their previous value.
+    if (!stored_restore_bounds_.IsEmpty())
+      window_state->SetRestoreBoundsInParent(stored_restore_bounds_);
+    else
+      window_state->ClearRestoreBounds();
+  }
+}
+
+void DefaultState::DetachState(WindowState* window_state) {
+  stored_window_state_ = window_state;
+  aura::Window* window = window_state->window();
+  stored_bounds_ = window->bounds();
+  stored_restore_bounds_ = window_state->HasRestoreBounds() ?
+      window_state->GetRestoreBoundsInParent() : gfx::Rect();
+  // If the container size for this window has changed we need to restore the
+  // proper location of the window within the container. Note that this might
+  // not be the same as the screen resolution.
+  stored_workspace_size_ = window_state->window()->parent()->bounds().size();
 }
 
 // static
@@ -252,6 +332,9 @@ bool DefaultState::ProcessCompoundEvents(WindowState* window_state,
       }
       return true;
     }
+    case WM_EVENT_CENTER:
+      CenterWindow(window_state);
+      return true;
     case WM_EVENT_NORMAL:
     case WM_EVENT_MAXIMIZE:
     case WM_EVENT_MINIMIZE:
@@ -341,6 +424,7 @@ bool DefaultState::ProcessWorkspaceEvents(WindowState* window_state,
     case WM_EVENT_TOGGLE_VERTICAL_MAXIMIZE:
     case WM_EVENT_TOGGLE_HORIZONTAL_MAXIMIZE:
     case WM_EVENT_TOGGLE_FULLSCREEN:
+    case WM_EVENT_CENTER:
     case WM_EVENT_NORMAL:
     case WM_EVENT_MAXIMIZE:
     case WM_EVENT_MINIMIZE:
@@ -356,17 +440,17 @@ bool DefaultState::ProcessWorkspaceEvents(WindowState* window_state,
 
 // static
 void DefaultState::UpdateBounds(WindowState* window_state,
-                                WindowStateType old_state_type,
-                                const WMEvent* event) {
+                                WindowStateType old_state_type) {
   aura::Window* window = window_state->window();
   // Do nothing If this is not yet added to the container.
   if (!window->parent())
     return;
 
-  if (old_state_type != WINDOW_STATE_TYPE_MINIMIZED &&
-      !window_state->HasRestoreBounds() &&
-      window_state->IsMaximizedOrFullscreen() &&
-      !IsMaximizedOrFullscreenWindowStateType(old_state_type)) {
+  if (!window_state->HasRestoreBounds() &&
+      (old_state_type == WINDOW_STATE_TYPE_DEFAULT ||
+       old_state_type == WINDOW_STATE_TYPE_NORMAL) &&
+      !window_state->IsMinimized() &&
+      !window_state->IsNormalStateType()) {
     window_state->SaveCurrentBoundsForRestore();
   }
 
@@ -376,7 +460,7 @@ void DefaultState::UpdateBounds(WindowState* window_state,
   // clicking the window border for example).
   gfx::Rect restore_bounds_in_screen;
   if (old_state_type == WINDOW_STATE_TYPE_MINIMIZED &&
-      window_state->IsNormalOrSnapped() &&
+      window_state->IsNormalStateType() &&
       window_state->HasRestoreBounds() &&
       !window_state->unminimize_to_restore_bounds()) {
     restore_bounds_in_screen = window_state->GetRestoreBoundsInScreen();
@@ -391,11 +475,11 @@ void DefaultState::UpdateBounds(WindowState* window_state,
 
   switch (state_type) {
     case WINDOW_STATE_TYPE_LEFT_SNAPPED:
-    case WINDOW_STATE_TYPE_RIGHT_SNAPPED: {
-      // There is no transition from minimized to snapped state.
-      SnapWindow(window_state, event, old_state_type);
-      return;
-    }
+    case WINDOW_STATE_TYPE_RIGHT_SNAPPED:
+      bounds_in_parent = state_type == WINDOW_STATE_TYPE_LEFT_SNAPPED ?
+          GetDefaultLeftSnappedWindowBoundsInParent(window_state->window()) :
+          GetDefaultRightSnappedWindowBoundsInParent(window_state->window());
+      break;
     case WINDOW_STATE_TYPE_DEFAULT:
     case WINDOW_STATE_TYPE_NORMAL: {
       gfx::Rect work_area_in_parent =
@@ -430,9 +514,13 @@ void DefaultState::UpdateBounds(WindowState* window_state,
     if (old_state_type == WINDOW_STATE_TYPE_MINIMIZED ||
         window_state->IsFullscreen()) {
       window_state->SetBoundsDirect(bounds_in_parent);
-    } else if (window_state->IsMaximizedOrFullscreen() ||
+    } else if (window_state->IsMaximized() ||
                IsMaximizedOrFullscreenWindowStateType(old_state_type)) {
       window_state->SetBoundsDirectCrossFade(bounds_in_parent);
+    } else if (window_state->is_dragged()) {
+      // SetBoundsDirectAnimated does not work when the window gets reparented.
+      // TODO(oshima): Consider fixing it and reenable the animation.
+      window_state->SetBoundsDirect(bounds_in_parent);
     } else {
       window_state->SetBoundsDirectAnimated(bounds_in_parent);
     }
@@ -462,7 +550,7 @@ void DefaultState::UpdateBounds(WindowState* window_state,
     }
   }
 
-  if (window_state->IsNormalOrSnapped())
+  if (window_state->IsNormalStateType())
     window_state->ClearRestoreBounds();
 
   // Set the restore rectangle to the previously set restore rectangle.
@@ -487,32 +575,6 @@ bool DefaultState::SetMaximizedOrFullscreenBounds(WindowState* window_state) {
 }
 
 // static
-void DefaultState::SnapWindow(WindowState* window_state,
-                              const WMEvent* event,
-                              WindowStateType old_state_type) {
-  // Compute the bounds that the window will restore to. If the window does not
-  // already have restore bounds, it will be restored (when un-snapped) to the
-  // last bounds that it had before getting snapped.
-  gfx::Rect restore_bounds_in_screen = window_state->HasRestoreBounds() ?
-      window_state->GetRestoreBoundsInScreen() :
-      window_state->window()->GetBoundsInScreen();
-  gfx::Rect snapped_bounds = event->type() == WM_EVENT_SNAP_LEFT ?
-      GetDefaultLeftSnappedWindowBoundsInParent(window_state->window()) :
-      GetDefaultRightSnappedWindowBoundsInParent(window_state->window());
-
-  if (IsMaximizedOrFullscreenWindowStateType(old_state_type)) {
-    window_state->SetBoundsDirectCrossFade(snapped_bounds);
-  } else if (window_state->is_dragged()) {
-    // SetBoundsDirectAnimated does not work when the window gets reparented.
-    // TODO(oshima): Consider fixing it and reenable the animation.
-    window_state->SetBoundsDirect(snapped_bounds);
-  } else {
-    window_state->SetBoundsDirectAnimated(snapped_bounds);
-  }
-  window_state->SetRestoreBoundsInScreen(restore_bounds_in_screen);
-}
-
-// static
 void DefaultState::SetBounds(WindowState* window_state,
                              const SetBoundsEvent* event) {
 
@@ -527,6 +589,28 @@ void DefaultState::SetBounds(WindowState* window_state,
     window_state->SetBoundsDirect(child_bounds);
   } else if (!SetMaximizedOrFullscreenBounds(window_state)) {
     window_state->SetBoundsConstrained(event->requested_bounds());
+  }
+}
+
+// static
+void DefaultState::CenterWindow(WindowState* window_state) {
+  if (!window_state->IsNormalOrSnapped())
+    return;
+  aura::Window* window = window_state->window();
+  if (window_state->IsSnapped()) {
+    gfx::Rect center_in_screen =
+        Shell::GetScreen()->GetDisplayNearestWindow(window).work_area();
+    gfx::Size size = window_state->HasRestoreBounds() ?
+        window_state->GetRestoreBoundsInScreen().size() :
+        window->bounds().size();
+    center_in_screen.ClampToCenteredSize(size);
+    window_state->SetRestoreBoundsInScreen(center_in_screen);
+    window_state->Restore();
+  } else {
+    gfx::Rect center_in_parent =
+        ScreenUtil::GetDisplayWorkAreaBoundsInParent(window);
+    center_in_parent.ClampToCenteredSize(window->bounds().size());
+    window_state->SetBoundsDirectAnimated(center_in_parent);
   }
 }
 

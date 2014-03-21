@@ -1691,11 +1691,13 @@ TEST_F(FileUtilTest, CreateNewTemporaryDirInDirTest) {
   EXPECT_TRUE(DeleteFile(new_dir, false));
 }
 
+#if defined(OS_POSIX)
 TEST_F(FileUtilTest, GetShmemTempDirTest) {
   FilePath dir;
   EXPECT_TRUE(GetShmemTempDir(false, &dir));
   EXPECT_TRUE(DirectoryExists(dir));
 }
+#endif
 
 TEST_F(FileUtilTest, GetHomeDirTest) {
 #if !defined(OS_ANDROID)  // Not implemented on Android.
@@ -2449,9 +2451,9 @@ TEST_F(FileUtilTest, ValidContentUriTest) {
 
   // We should be able to read the file.
   char* buffer = new char[image_size];
-  int fd = OpenContentUriForRead(path);
-  EXPECT_LT(0, fd);
-  EXPECT_TRUE(ReadFromFD(fd, buffer, image_size));
+  File file = OpenContentUriForRead(path);
+  EXPECT_TRUE(file.IsValid());
+  EXPECT_TRUE(file.ReadAtCurrentPos(buffer, image_size));
   delete[] buffer;
 }
 
@@ -2464,8 +2466,8 @@ TEST_F(FileUtilTest, NonExistentContentUriTest) {
   EXPECT_FALSE(GetFileSize(path, &size));
 
   // We should not be able to read the file.
-  int fd = OpenContentUriForRead(path);
-  EXPECT_EQ(-1, fd);
+  File file = OpenContentUriForRead(path);
+  EXPECT_FALSE(file.IsValid());
 }
 #endif
 

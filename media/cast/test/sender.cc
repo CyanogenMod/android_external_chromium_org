@@ -326,7 +326,11 @@ class SendProcess {
   base::TimeTicks start_time_;
   base::TimeTicks send_time_;
   scoped_ptr<TestAudioBusFactory> audio_bus_factory_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<SendProcess> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(SendProcess);
 };
 
 }  // namespace cast
@@ -458,7 +462,6 @@ int main(int argc, char** argv) {
   media::cast::transport::CastTransportVideoConfig transport_video_config;
   net::IPEndPoint remote_endpoint =
       CreateUDPAddress(remote_ip_address, remote_port);
-  net::IPEndPoint local_endpoint = CreateUDPAddress("0.0.0.0", 0);
   transport_audio_config.base.ssrc = audio_config.sender_ssrc;
   transport_audio_config.base.rtp_config = audio_config.rtp_config;
   transport_video_config.base.ssrc = video_config.sender_ssrc;
@@ -481,7 +484,6 @@ int main(int argc, char** argv) {
       media::cast::transport::CastTransportSender::Create(
           NULL,  // net log.
           cast_environment->Clock(),
-          local_endpoint,
           remote_endpoint,
           logging_config,
           base::Bind(&UpdateCastTransportStatus),

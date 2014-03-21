@@ -73,6 +73,9 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   // Callback for DecryptorHost::RequestDecryptor().
   void SetDecryptor(Decryptor* decryptor);
 
+  // Initializes the audio decoder on the |decryptor_| with |config_|.
+  void InitializeDecoder();
+
   // Callback for Decryptor::InitializeAudioDecoder() during initialization.
   void FinishInitialization(bool success);
 
@@ -99,8 +102,6 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   void EnqueueFrames(const Decryptor::AudioBuffers& frames);
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
-  base::WeakPtrFactory<DecryptingAudioDecoder> weak_factory_;
-  base::WeakPtr<DecryptingAudioDecoder> weak_this_;
 
   State state_;
 
@@ -135,6 +136,10 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   int samples_per_second_;
 
   scoped_ptr<AudioTimestampHelper> timestamp_helper_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<DecryptingAudioDecoder> weak_factory_;
+  base::WeakPtr<DecryptingAudioDecoder> weak_this_;
 
   DISALLOW_COPY_AND_ASSIGN(DecryptingAudioDecoder);
 };

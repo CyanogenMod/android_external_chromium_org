@@ -5,8 +5,6 @@
 #ifndef MEDIA_FILTERS_DECODER_SELECTOR_H_
 #define MEDIA_FILTERS_DECODER_SELECTOR_H_
 
-#include "media/filters/decoder_selector.h"
-
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
@@ -88,6 +86,7 @@ class MEDIA_EXPORT DecoderSelector {
   scoped_ptr<Decoder> decoder_;
   scoped_ptr<DecryptingDemuxerStream> decrypted_stream_;
 
+  // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<DecoderSelector> weak_ptr_factory_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(DecoderSelector);

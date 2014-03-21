@@ -13,9 +13,11 @@
 class ManagedUserSigninManagerWrapper;
 class ProfileOAuth2TokenService;
 
-namespace browser_sync {
-
+namespace sync_driver {
 class SyncPrefs;
+}
+
+namespace browser_sync {
 
 // Defines the type of behavior the sync engine should use. If configured for
 // AUTO_START, the sync engine will automatically call SetSyncSetupCompleted()
@@ -35,7 +37,7 @@ class StartupController {
  public:
   StartupController(ProfileSyncServiceStartBehavior start_behavior,
                     const ProfileOAuth2TokenService* token_service,
-                    const browser_sync::SyncPrefs* sync_prefs,
+                    const sync_driver::SyncPrefs* sync_prefs,
                     const ManagedUserSigninManagerWrapper* signin,
                     base::Closure start_backend);
   ~StartupController();
@@ -72,6 +74,9 @@ class StartupController {
   bool StartUp(StartUpDeferredOption deferred_option);
   void OnFallbackStartupTimerExpired();
 
+  // Records time spent in deferred state with UMA histograms.
+  void RecordTimeDeferred();
+
   // True if we should start sync ASAP because either a SyncableService has
   // requested it, or we're done waiting for a sign and decided to go ahead.
   bool received_start_request_;
@@ -91,7 +96,7 @@ class StartupController {
   // distinct signin flow.
   const bool auto_start_enabled_;
 
-  const browser_sync::SyncPrefs* sync_prefs_;
+  const sync_driver::SyncPrefs* sync_prefs_;
 
   const ProfileOAuth2TokenService* token_service_;
 

@@ -16,6 +16,7 @@
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/window.h"
 #include "ui/keyboard/keyboard_constants.h"
+#include "ui/keyboard/keyboard_util.h"
 
 namespace {
 
@@ -117,27 +118,15 @@ KeyboardControllerProxy::KeyboardControllerProxy()
 KeyboardControllerProxy::~KeyboardControllerProxy() {
 }
 
-const GURL& KeyboardControllerProxy::GetValidUrl() {
-  return override_url_.is_valid() ? override_url_ : default_url_;
+const GURL& KeyboardControllerProxy::GetVirtualKeyboardUrl() {
+  const GURL& override_url = GetOverrideContentUrl();
+  return override_url.is_valid() ? override_url : default_url_;
 }
 
-void KeyboardControllerProxy::SetOverrideContentUrl(const GURL& url) {
-  if (override_url_ == url)
-    return;
-
-  override_url_ = url;
-  // Restores the keyboard window size to default.
-  aura::Window* container = GetKeyboardWindow()->parent();
-  if (container) {
-    container->layout_manager()->OnWindowResized();
-    ReloadContents();
-  }
-}
-
-void KeyboardControllerProxy::ReloadContents() {
+void KeyboardControllerProxy::LoadContents(const GURL& url) {
   if (keyboard_contents_) {
     content::OpenURLParams params(
-        GetValidUrl(),
+        url,
         content::Referrer(),
         SINGLETON_TAB,
         content::PAGE_TRANSITION_AUTO_TOPLEVEL,
@@ -151,10 +140,11 @@ aura::Window* KeyboardControllerProxy::GetKeyboardWindow() {
     content::BrowserContext* context = GetBrowserContext();
     keyboard_contents_.reset(content::WebContents::Create(
         content::WebContents::CreateParams(context,
-            content::SiteInstance::CreateForURL(context, GetValidUrl()))));
+            content::SiteInstance::CreateForURL(context,
+                                                GetVirtualKeyboardUrl()))));
     keyboard_contents_->SetDelegate(new KeyboardContentsDelegate(this));
     SetupWebContents(keyboard_contents_.get());
-    ReloadContents();
+    LoadContents(GetVirtualKeyboardUrl());
   }
 
   return keyboard_contents_->GetView()->GetNativeView();
@@ -189,6 +179,22 @@ void KeyboardControllerProxy::SetUpdateInputType(ui::TextInputType type) {
 }
 
 void KeyboardControllerProxy::EnsureCaretInWorkArea() {
+}
+
+void KeyboardControllerProxy::LoadSystemKeyboard() {
+  DCHECK(keyboard_contents_);
+  if (keyboard_contents_->GetURL() != default_url_) {
+    // TODO(bshe): The height of system virtual keyboard and IME virtual
+    // keyboard may different. The height needs to be restored too.
+    LoadContents(default_url_);
+  }
+}
+
+void KeyboardControllerProxy::ReloadKeyboardIfNeeded() {
+  DCHECK(keyboard_contents_);
+  if (keyboard_contents_->GetURL() != GetVirtualKeyboardUrl()) {
+    LoadContents(GetVirtualKeyboardUrl());
+  }
 }
 
 void KeyboardControllerProxy::SetupWebContents(content::WebContents* contents) {

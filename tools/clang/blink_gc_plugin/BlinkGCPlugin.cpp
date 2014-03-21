@@ -56,11 +56,36 @@ const char kRefPtrToGCManagedClassNote[] =
 const char kOwnPtrToGCManagedClassNote[] =
     "[blink-gc] OwnPtr field %0 to a GC managed class declared here:";
 
+const char kStackAllocatedFieldNote[] =
+    "[blink-gc] Stack-allocated field %0 declared here:";
+
 const char kPartObjectContainsGCRoot[] =
     "[blink-gc] Field %0 with embedded GC root in %1 declared here:";
 
 const char kFieldContainsGCRoot[] =
     "[blink-gc] Field %0 defining a GC root declared here:";
+
+const char kOverriddenNonVirtualTrace[] =
+    "[blink-gc] Class %0 overrides non-virtual trace of base class %1.";
+
+const char kOverriddenNonVirtualTraceNote[] =
+    "[blink-gc] Non-virtual trace method declared here:";
+
+const char kMissingTraceDispatchMethod[] =
+    "[blink-gc] Class %0 is missing manual trace dispatch.";
+
+const char kMissingFinalizeDispatchMethod[] =
+    "[blink-gc] Class %0 is missing manual finalize dispatch.";
+
+const char kVirtualAndManualDispatch[] =
+    "[blink-gc] Class %0 contains or inherits virtual methods"
+    " but implements manual dispatching.";
+
+const char kMissingTraceDispatch[] =
+    "[blink-gc] Missing dispatch to class %0 in manual trace dispatch.";
+
+const char kMissingFinalizeDispatch[] =
+    "[blink-gc] Missing dispatch to class %0 in manual finalize dispatch.";
 
 const char kFinalizedFieldNote[] =
     "[blink-gc] Potentially finalized field %0 declared here:";
@@ -68,11 +93,21 @@ const char kFinalizedFieldNote[] =
 const char kUserDeclaredDestructorNote[] =
     "[blink-gc] User-declared destructor declared here:";
 
+const char kUserDeclaredFinalizerNote[] =
+    "[blink-gc] User-declared finalizer declared here:";
+
 const char kBaseRequiresFinalizationNote[] =
     "[blink-gc] Base class %0 requiring finalization declared here:";
 
 const char kFieldRequiresFinalizationNote[] =
     "[blink-gc] Field %0 requiring finalization declared here:";
+
+const char kManualDispatchMethodNote[] =
+    "[blink-gc] Manual dispatch %0 declared here:";
+
+const char kDerivesNonStackAllocated[] =
+    "[blink-gc] Stack-allocated class %0 derives class %1"
+    " which is not stack allocated.";
 
 struct BlinkGCPluginOptions {
   BlinkGCPluginOptions() : enable_oilpan(false) {}
@@ -176,8 +211,9 @@ class CheckFinalizerVisitor
       case OO_Arrow:
       case OO_Subscript:
         this->WalkUpFromCallExpr(expr);
+      default:
+        return true;
     }
-    return true;
   }
 
   // We consider all non-operator calls to be blacklisted contexts.
@@ -218,6 +254,29 @@ class CheckFinalizerVisitor
   bool blacklist_context_;
   Errors finalized_fields_;
   RecordCache* cache_;
+};
+
+// This visitor checks that a method contains within its body, a call to a
+// method on the provided receiver class. This is used to check manual
+// dispatching for trace and finalize methods.
+class CheckDispatchVisitor : public RecursiveASTVisitor<CheckDispatchVisitor> {
+ public:
+  CheckDispatchVisitor(RecordInfo* receiver)
+      : receiver_(receiver), dispatched_to_receiver_(false) { }
+
+  bool dispatched_to_receiver() { return dispatched_to_receiver_; }
+
+  bool VisitMemberExpr(MemberExpr* member) {
+    if (CXXMethodDecl* fn = dyn_cast<CXXMethodDecl>(member->getMemberDecl())) {
+      if (fn->getParent() == receiver_->record())
+        dispatched_to_receiver_ = true;
+    }
+    return true;
+  }
+
+ private:
+  RecordInfo* receiver_;
+  bool dispatched_to_receiver_;
 };
 
 // This visitor checks a tracing method by traversing its body.
@@ -372,11 +431,12 @@ class CheckFieldsVisitor : public RecursiveEdgeVisitor {
   typedef std::vector<std::pair<FieldPoint*, Edge*> > Errors;
 
   CheckFieldsVisitor(const BlinkGCPluginOptions& options)
-      : options_(options), current_(0) {}
+      : options_(options), current_(0), stack_allocated_host_(false) {}
 
   Errors& invalid_fields() { return invalid_fields_; }
 
   bool ContainsInvalidFields(RecordInfo* info) {
+    stack_allocated_host_ = info->IsStackAllocated();
     for (RecordInfo::Fields::iterator it = info->GetFields().begin();
          it != info->GetFields().end();
          ++it) {
@@ -392,6 +452,9 @@ class CheckFieldsVisitor : public RecursiveEdgeVisitor {
     if (edge->value()->record()->isUnion())
       return;
 
+    if (!stack_allocated_host_ && edge->value()->IsStackAllocated())
+      invalid_fields_.push_back(std::make_pair(current_, edge));
+
     if (!Parent() || !edge->value()->IsGCAllocated())
       return;
 
@@ -402,13 +465,15 @@ class CheckFieldsVisitor : public RecursiveEdgeVisitor {
     if (options_.enable_oilpan)
       return;
 
-    if (Parent()->IsRawPtr() || Parent()->IsRefPtr())
+    if ((!stack_allocated_host_ && Parent()->IsRawPtr()) ||
+        Parent()->IsRefPtr())
       invalid_fields_.push_back(std::make_pair(current_, Parent()));
   }
 
  private:
   const BlinkGCPluginOptions& options_;
   FieldPoint* current_;
+  bool stack_allocated_host_;
   Errors invalid_fields_;
 };
 
@@ -446,6 +511,20 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         getErrorLevel(), kClassRequiresFinalization);
     diag_finalizer_accesses_finalized_field_ = diagnostic_.getCustomDiagID(
         getErrorLevel(), kFinalizerAccessesFinalizedField);
+    diag_overridden_non_virtual_trace_ = diagnostic_.getCustomDiagID(
+        getErrorLevel(), kOverriddenNonVirtualTrace);
+    diag_missing_trace_dispatch_method_ = diagnostic_.getCustomDiagID(
+        getErrorLevel(), kMissingTraceDispatchMethod);
+    diag_missing_finalize_dispatch_method_ = diagnostic_.getCustomDiagID(
+        getErrorLevel(), kMissingFinalizeDispatchMethod);
+    diag_virtual_and_manual_dispatch_ = diagnostic_.getCustomDiagID(
+        getErrorLevel(), kVirtualAndManualDispatch);
+    diag_missing_trace_dispatch_ = diagnostic_.getCustomDiagID(
+        getErrorLevel(), kMissingTraceDispatch);
+    diag_missing_finalize_dispatch_ = diagnostic_.getCustomDiagID(
+        getErrorLevel(), kMissingFinalizeDispatch);
+    diag_derives_non_stack_allocated_ = diagnostic_.getCustomDiagID(
+        getErrorLevel(), kDerivesNonStackAllocated);
 
     // Register note messages.
     diag_field_requires_tracing_note_ = diagnostic_.getCustomDiagID(
@@ -456,6 +535,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         DiagnosticsEngine::Note, kRefPtrToGCManagedClassNote);
     diag_own_ptr_to_gc_managed_class_note_ = diagnostic_.getCustomDiagID(
         DiagnosticsEngine::Note, kOwnPtrToGCManagedClassNote);
+    diag_stack_allocated_field_note_ = diagnostic_.getCustomDiagID(
+        DiagnosticsEngine::Note, kStackAllocatedFieldNote);
     diag_part_object_contains_gc_root_note_ = diagnostic_.getCustomDiagID(
         DiagnosticsEngine::Note, kPartObjectContainsGCRoot);
     diag_field_contains_gc_root_note_ = diagnostic_.getCustomDiagID(
@@ -464,10 +545,16 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         DiagnosticsEngine::Note, kFinalizedFieldNote);
     diag_user_declared_destructor_note_ = diagnostic_.getCustomDiagID(
         DiagnosticsEngine::Note, kUserDeclaredDestructorNote);
+    diag_user_declared_finalizer_note_ = diagnostic_.getCustomDiagID(
+        DiagnosticsEngine::Note, kUserDeclaredFinalizerNote);
     diag_base_requires_finalization_note_ = diagnostic_.getCustomDiagID(
         DiagnosticsEngine::Note, kBaseRequiresFinalizationNote);
     diag_field_requires_finalization_note_ = diagnostic_.getCustomDiagID(
         DiagnosticsEngine::Note, kFieldRequiresFinalizationNote);
+    diag_overridden_non_virtual_trace_note_ = diagnostic_.getCustomDiagID(
+        DiagnosticsEngine::Note, kOverriddenNonVirtualTraceNote);
+    diag_manual_dispatch_method_note_ = diagnostic_.getCustomDiagID(
+        DiagnosticsEngine::Note, kManualDispatchMethodNote);
   }
 
   virtual void HandleTranslationUnit(ASTContext& context) {
@@ -515,12 +602,23 @@ class BlinkGCPluginConsumer : public ASTConsumer {
 
   // Check a class-like object (eg, class, specialization, instantiation).
   void CheckClass(RecordInfo* info) {
-    // Don't enforce tracing of stack allocated objects.
-    if (!info || info->IsStackAllocated())
+    if (!info)
       return;
+
+    // Check consistency of stack-allocated hierarchies.
+    if (info->IsStackAllocated()) {
+      for (RecordInfo::Bases::iterator it = info->GetBases().begin();
+           it != info->GetBases().end();
+           ++it) {
+        if (!it->second.info()->IsStackAllocated())
+          ReportDerivesNonStackAllocated(info, &it->second);
+      }
+    }
 
     if (info->RequiresTraceMethod() && !info->GetTraceMethod())
       ReportClassRequiresTraceMethod(info);
+
+    CheckDispatch(info);
 
     {
       CheckFieldsVisitor visitor(options_);
@@ -538,9 +636,59 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     }
   }
 
+  void CheckDispatch(RecordInfo* info) {
+    bool finalized = info->IsGCFinalized();
+    CXXMethodDecl* trace_dispatch = info->GetTraceDispatchMethod();
+    CXXMethodDecl* finalize_dispatch = info->GetFinalizeDispatchMethod();
+    if (!trace_dispatch && !finalize_dispatch)
+      return;
+
+    CXXRecordDecl* base = trace_dispatch ?
+                          trace_dispatch->getParent() :
+                          finalize_dispatch->getParent();
+
+    // Check that dispatch methods are defined at the base.
+    if (base == info->record()) {
+      if (!trace_dispatch)
+        ReportMissingTraceDispatchMethod(info);
+      if (finalized && !finalize_dispatch)
+        ReportMissingFinalizeDispatchMethod(info);
+      if (!finalized && finalize_dispatch) {
+        ReportClassRequiresFinalization(info);
+        NoteUserDeclaredFinalizer(finalize_dispatch);
+      }
+    }
+
+    // Check that classes implementing manual dispatch do not have vtables.
+    if (info->record()->isPolymorphic())
+      ReportVirtualAndManualDispatch(
+          info, trace_dispatch ? trace_dispatch : finalize_dispatch);
+
+    // If this is a non-abstract class check that it is dispatched to.
+    // TODO: Create a global variant of this local check. We can only check if
+    // the dispatch body is known in this compilation unit.
+    if (info->IsConsideredAbstract())
+      return;
+
+    const FunctionDecl* defn;
+
+    if (trace_dispatch && trace_dispatch->isDefined(defn)) {
+      CheckDispatchVisitor visitor(info);
+      visitor.TraverseStmt(defn->getBody());
+      if (!visitor.dispatched_to_receiver())
+        ReportMissingTraceDispatch(defn, info);
+    }
+
+    if (finalized && finalize_dispatch && finalize_dispatch->isDefined(defn)) {
+      CheckDispatchVisitor visitor(info);
+      visitor.TraverseStmt(defn->getBody());
+      if (!visitor.dispatched_to_receiver())
+        ReportMissingFinalizeDispatch(defn, info);
+    }
+  }
+
+  // TODO: Should we collect destructors similar to trace methods?
   void CheckFinalization(RecordInfo* info) {
-    // TODO: Should we collect destructors similar to trace methods?
-    // TODO: Check overridden finalize().
     CXXDestructorDecl* dtor = info->record()->getDestructor();
 
     // For finalized classes, check the finalization method if possible.
@@ -557,7 +705,7 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     }
 
     // Don't require finalization of a mixin that has not yet been "mixed in".
-    if (info->IsUnmixedGCMixin())
+    if (info->IsGCMixin())
       return;
 
     // Report the finalization error, and proceed to print possible causes for
@@ -609,20 +757,32 @@ class BlinkGCPluginConsumer : public ASTConsumer {
   void CheckTraceOrDispatchMethod(RecordInfo* parent, CXXMethodDecl* method) {
     bool isTraceAfterDispatch;
     if (Config::IsTraceMethod(method, &isTraceAfterDispatch)) {
-      if (!isTraceAfterDispatch && parent->GetTraceDispatchMethod())
-        CheckTraceDispatchMethod(parent, method);
-      else
-        CheckTraceMethod(parent, method);
+      if (isTraceAfterDispatch || !parent->GetTraceDispatchMethod()) {
+        CheckTraceMethod(parent, method, isTraceAfterDispatch);
+      }
+      // Dispatch methods are checked when we identify subclasses.
     }
   }
 
-  // Check a tracing dispatch (ie, it dispatches to traceAfterDispatch)
-  void CheckTraceDispatchMethod(RecordInfo* parent, CXXMethodDecl* trace) {
-    // TODO: check correct dispatch.
-  }
-
   // Check an actual trace method.
-  void CheckTraceMethod(RecordInfo* parent, CXXMethodDecl* trace) {
+  void CheckTraceMethod(RecordInfo* parent,
+                        CXXMethodDecl* trace,
+                        bool isTraceAfterDispatch) {
+    // A non-virtual trace method must not override another trace.
+    if (!isTraceAfterDispatch && !trace->isVirtual()) {
+      for (RecordInfo::Bases::iterator it = parent->GetBases().begin();
+           it != parent->GetBases().end();
+           ++it) {
+        RecordInfo* base = it->second.info();
+        // We allow mixin bases to contain a non-virtual trace since it will
+        // never be used for dispatching.
+        if (base->IsGCMixin())
+          continue;
+        if (CXXMethodDecl* other = base->InheritsNonVirtualTrace())
+          ReportOverriddenNonVirtualTrace(parent, trace, other);
+      }
+    }
+
     CheckTraceVisitor visitor(trace, parent);
     visitor.TraverseCXXMethodDecl(trace);
 
@@ -760,6 +920,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         NoteField(it->first, diag_ref_ptr_to_gc_managed_class_note_);
       } else if (it->second->IsOwnPtr()) {
         NoteField(it->first, diag_own_ptr_to_gc_managed_class_note_);
+      } else if (it->second->IsValue()) {
+        NoteField(it->first, diag_stack_allocated_field_note_);
       }
     }
   }
@@ -807,6 +969,77 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         << info->record();
   }
 
+  void ReportOverriddenNonVirtualTrace(RecordInfo* info,
+                                       CXXMethodDecl* trace,
+                                       CXXMethodDecl* overridden) {
+    SourceLocation loc = trace->getLocStart();
+    SourceManager& manager = instance_.getSourceManager();
+    FullSourceLoc full_loc(loc, manager);
+    diagnostic_.Report(full_loc, diag_overridden_non_virtual_trace_)
+        << info->record()
+        << overridden->getParent();
+    NoteOverriddenNonVirtualTrace(overridden);
+  }
+
+  void ReportMissingTraceDispatchMethod(RecordInfo* info) {
+    ReportMissingDispatchMethod(info, diag_missing_trace_dispatch_method_);
+  }
+
+  void ReportMissingFinalizeDispatchMethod(RecordInfo* info) {
+    ReportMissingDispatchMethod(info, diag_missing_finalize_dispatch_method_);
+  }
+
+  void ReportMissingDispatchMethod(RecordInfo* info, unsigned error) {
+    SourceLocation loc = info->record()->getInnerLocStart();
+    SourceManager& manager = instance_.getSourceManager();
+    FullSourceLoc full_loc(loc, manager);
+    diagnostic_.Report(full_loc, error) << info->record();
+  }
+
+  void ReportVirtualAndManualDispatch(RecordInfo* info,
+                                      CXXMethodDecl* dispatch) {
+    SourceLocation loc = info->record()->getInnerLocStart();
+    SourceManager& manager = instance_.getSourceManager();
+    FullSourceLoc full_loc(loc, manager);
+    diagnostic_.Report(full_loc, diag_virtual_and_manual_dispatch_)
+        << info->record();
+    NoteManualDispatchMethod(dispatch);
+  }
+
+  void ReportMissingTraceDispatch(const FunctionDecl* dispatch,
+                                  RecordInfo* receiver) {
+    ReportMissingDispatch(dispatch, receiver, diag_missing_trace_dispatch_);
+  }
+
+  void ReportMissingFinalizeDispatch(const FunctionDecl* dispatch,
+                                     RecordInfo* receiver) {
+    ReportMissingDispatch(dispatch, receiver, diag_missing_finalize_dispatch_);
+  }
+
+  void ReportMissingDispatch(const FunctionDecl* dispatch,
+                               RecordInfo* receiver,
+                               unsigned error) {
+    SourceLocation loc = dispatch->getLocStart();
+    SourceManager& manager = instance_.getSourceManager();
+    FullSourceLoc full_loc(loc, manager);
+    diagnostic_.Report(full_loc, error) << receiver->record();
+  }
+
+  void ReportDerivesNonStackAllocated(RecordInfo* info, BasePoint* base) {
+    SourceLocation loc = base->spec().getLocStart();
+    SourceManager& manager = instance_.getSourceManager();
+    FullSourceLoc full_loc(loc, manager);
+    diagnostic_.Report(full_loc, diag_derives_non_stack_allocated_)
+        << info->record() << base->info()->record();
+  }
+
+  void NoteManualDispatchMethod(CXXMethodDecl* dispatch) {
+    SourceLocation loc = dispatch->getLocStart();
+    SourceManager& manager = instance_.getSourceManager();
+    FullSourceLoc full_loc(loc, manager);
+    diagnostic_.Report(full_loc, diag_manual_dispatch_method_note_) << dispatch;
+  }
+
   void NoteFieldRequiresTracing(RecordInfo* holder, FieldDecl* field) {
     NoteField(field, diag_field_requires_tracing_note_);
   }
@@ -831,6 +1064,13 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     diagnostic_.Report(full_loc, diag_user_declared_destructor_note_);
   }
 
+  void NoteUserDeclaredFinalizer(CXXMethodDecl* dtor) {
+    SourceLocation loc = dtor->getLocStart();
+    SourceManager& manager = instance_.getSourceManager();
+    FullSourceLoc full_loc(loc, manager);
+    diagnostic_.Report(full_loc, diag_user_declared_finalizer_note_);
+  }
+
   void NoteBaseRequiresFinalization(BasePoint* base) {
     SourceLocation loc = base->spec().getLocStart();
     SourceManager& manager = instance_.getSourceManager();
@@ -850,6 +1090,14 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     diagnostic_.Report(full_loc, note) << field;
   }
 
+  void NoteOverriddenNonVirtualTrace(CXXMethodDecl* overridden) {
+    SourceLocation loc = overridden->getLocStart();
+    SourceManager& manager = instance_.getSourceManager();
+    FullSourceLoc full_loc(loc, manager);
+    diagnostic_.Report(full_loc, diag_overridden_non_virtual_trace_note_)
+        << overridden;
+  }
+
   unsigned diag_class_requires_trace_method_;
   unsigned diag_base_requires_tracing_;
   unsigned diag_fields_require_tracing_;
@@ -857,17 +1105,28 @@ class BlinkGCPluginConsumer : public ASTConsumer {
   unsigned diag_class_contains_gc_root_;
   unsigned diag_class_requires_finalization_;
   unsigned diag_finalizer_accesses_finalized_field_;
+  unsigned diag_overridden_non_virtual_trace_;
+  unsigned diag_missing_trace_dispatch_method_;
+  unsigned diag_missing_finalize_dispatch_method_;
+  unsigned diag_virtual_and_manual_dispatch_;
+  unsigned diag_missing_trace_dispatch_;
+  unsigned diag_missing_finalize_dispatch_;
+  unsigned diag_derives_non_stack_allocated_;
 
   unsigned diag_field_requires_tracing_note_;
   unsigned diag_raw_ptr_to_gc_managed_class_note_;
   unsigned diag_ref_ptr_to_gc_managed_class_note_;
   unsigned diag_own_ptr_to_gc_managed_class_note_;
+  unsigned diag_stack_allocated_field_note_;
   unsigned diag_part_object_contains_gc_root_note_;
   unsigned diag_field_contains_gc_root_note_;
   unsigned diag_finalized_field_note_;
   unsigned diag_user_declared_destructor_note_;
+  unsigned diag_user_declared_finalizer_note_;
   unsigned diag_base_requires_finalization_note_;
   unsigned diag_field_requires_finalization_note_;
+  unsigned diag_overridden_non_virtual_trace_note_;
+  unsigned diag_manual_dispatch_method_note_;
 
   CompilerInstance& instance_;
   DiagnosticsEngine& diagnostic_;

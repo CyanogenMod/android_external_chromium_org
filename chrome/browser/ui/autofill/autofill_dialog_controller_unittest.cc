@@ -757,6 +757,21 @@ TEST_F(AutofillDialogControllerTest, PhoneNumberValidation) {
     outputs[phone] = ASCIIToUTF16("+112333 892 70 12 39");
     messages = controller()->InputsAreValid(section, outputs);
     EXPECT_TRUE(messages.HasSureError(phone));
+
+    // Input a valid Canadian number.
+    outputs[phone] = ASCIIToUTF16("+1 506 887 1234");
+    messages = controller()->InputsAreValid(section, outputs);
+    EXPECT_FALSE(HasAnyError(messages, phone));
+
+    // Input a valid Canadian number without the country code.
+    outputs[phone] = ASCIIToUTF16("506 887 1234");
+    messages = controller()->InputsAreValid(section, outputs);
+    EXPECT_TRUE(HasAnyError(messages, phone));
+
+    // Input a valid Canadian toll-free number.
+    outputs[phone] = ASCIIToUTF16("310 1234");
+    messages = controller()->InputsAreValid(section, outputs);
+    EXPECT_TRUE(HasAnyError(messages, phone));
   }
 }
 
@@ -3338,10 +3353,6 @@ TEST_F(AutofillDialogControllerTest, DontSuggestHiddenCountries) {
   cn_profile.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("CN"));
   controller()->GetTestingManager()->AddTestingProfile(&cn_profile);
 
-  AutofillProfile us_profile(test::GetVerifiedProfile());
-  us_profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("American User"));
-  controller()->GetTestingManager()->AddTestingProfile(&us_profile);
-
   controller()->UserEditedOrActivatedInput(
       SECTION_SHIPPING,
       NAME_FULL,
@@ -3351,12 +3362,36 @@ TEST_F(AutofillDialogControllerTest, DontSuggestHiddenCountries) {
       true);
   EXPECT_EQ(UNKNOWN_TYPE, controller()->popup_input_type());
 
+  AutofillProfile us_profile(test::GetVerifiedProfile());
+  us_profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("American User"));
+  ASSERT_NE(cn_profile.GetRawInfo(NAME_FULL)[0],
+            us_profile.GetRawInfo(NAME_FULL)[0]);
+  controller()->GetTestingManager()->AddTestingProfile(&us_profile);
+
   controller()->UserEditedOrActivatedInput(
       SECTION_SHIPPING,
       NAME_FULL,
       gfx::NativeView(),
       gfx::Rect(),
       us_profile.GetRawInfo(NAME_FULL).substr(0, 1),
+      true);
+  EXPECT_EQ(NAME_FULL, controller()->popup_input_type());
+}
+
+TEST_F(AutofillDialogControllerTest, SuggestCountrylessProfiles) {
+  SwitchToAutofill();
+
+  AutofillProfile profile(test::GetVerifiedProfile());
+  profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("The Man Without a Country"));
+  profile.SetRawInfo(ADDRESS_HOME_COUNTRY, base::string16());
+  controller()->GetTestingManager()->AddTestingProfile(&profile);
+
+  controller()->UserEditedOrActivatedInput(
+      SECTION_SHIPPING,
+      NAME_FULL,
+      gfx::NativeView(),
+      gfx::Rect(),
+      profile.GetRawInfo(NAME_FULL).substr(0, 1),
       true);
   EXPECT_EQ(NAME_FULL, controller()->popup_input_type());
 }

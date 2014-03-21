@@ -34,7 +34,6 @@
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_disabled_ui.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
@@ -71,6 +70,7 @@
 #include "content/public/browser/web_ui_data_source.h"
 #include "extensions/browser/blacklist_state.h"
 #include "extensions/browser/extension_error.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/lazy_background_task_queue.h"
@@ -607,7 +607,7 @@ void ExtensionSettingsHandler::Observe(
       break;
     }
     case chrome::NOTIFICATION_EXTENSION_LOADED:
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED:
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
     case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
     case chrome::NOTIFICATION_EXTENSION_UPDATE_DISABLED:
     case chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED:
@@ -1067,7 +1067,7 @@ void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
   // Register for notifications that we need to reload the page.
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::Source<Profile>(profile));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
                  content::Source<Profile>(profile));

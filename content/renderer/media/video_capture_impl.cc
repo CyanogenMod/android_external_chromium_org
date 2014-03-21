@@ -50,7 +50,7 @@ VideoCaptureImpl::VideoCaptureImpl(
       session_id_(session_id),
       suspended_(false),
       state_(VIDEO_CAPTURE_STATE_STOPPED),
-      weak_this_factory_(this) {
+      weak_factory_(this) {
   DCHECK(filter);
 }
 
@@ -185,7 +185,7 @@ void VideoCaptureImpl::StopCaptureOnIOThread(
     DVLOG(1) << "StopCapture: No more client, stopping ...";
     StopDevice();
     client_buffers_.clear();
-    weak_this_factory_.InvalidateWeakPtrs();
+    weak_factory_.InvalidateWeakPtrs();
   }
 }
 
@@ -262,6 +262,13 @@ void VideoCaptureImpl::OnBufferReceived(int buffer_id,
   if (first_frame_timestamp_.is_null())
     first_frame_timestamp_ = timestamp;
 
+  // Used by chrome/browser/extension/api/cast_streaming/performance_test.cc
+  TRACE_EVENT_INSTANT2(
+      "cast_perf_test", "OnBufferReceived",
+      TRACE_EVENT_SCOPE_THREAD,
+      "timestamp", timestamp.ToInternalValue(),
+      "time_delta", (timestamp - first_frame_timestamp_).ToInternalValue());
+
   ClientBufferMap::iterator iter = client_buffers_.find(buffer_id);
   DCHECK(iter != client_buffers_.end());
   scoped_refptr<ClientBuffer> buffer = iter->second;
@@ -277,7 +284,7 @@ void VideoCaptureImpl::OnBufferReceived(int buffer_id,
           timestamp - first_frame_timestamp_,
           media::BindToCurrentLoop(base::Bind(
               &VideoCaptureImpl::OnClientBufferFinished,
-              weak_this_factory_.GetWeakPtr(),
+              weak_factory_.GetWeakPtr(),
               buffer_id,
               buffer,
               base::Passed(scoped_ptr<gpu::MailboxHolder>().Pass()))));
@@ -309,7 +316,7 @@ void VideoCaptureImpl::OnMailboxBufferReceived(
       make_scoped_ptr(new gpu::MailboxHolder(mailbox_holder)),
       media::BindToCurrentLoop(
           base::Bind(&VideoCaptureImpl::OnClientBufferFinished,
-                     weak_this_factory_.GetWeakPtr(),
+                     weak_factory_.GetWeakPtr(),
                      buffer_id,
                      scoped_refptr<ClientBuffer>())),
       last_frame_format_.frame_size,
@@ -341,7 +348,7 @@ void VideoCaptureImpl::OnStateChanged(VideoCaptureState state) {
       state_ = VIDEO_CAPTURE_STATE_STOPPED;
       DVLOG(1) << "OnStateChanged: stopped!, device_id = " << device_id_;
       client_buffers_.clear();
-      weak_this_factory_.InvalidateWeakPtrs();
+      weak_factory_.InvalidateWeakPtrs();
       if (!clients_.empty() || !clients_pending_on_restart_.empty())
         RestartCapture();
       break;

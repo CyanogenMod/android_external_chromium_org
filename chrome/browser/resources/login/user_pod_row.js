@@ -41,6 +41,7 @@ cr.define('login', function() {
    * synced with computed CSS sizes of pods.
    */
   var POD_WIDTH = 180;
+  var PUBLIC_EXPANDED_WIDTH = 420;
   var CROS_POD_HEIGHT = 213;
   var DESKTOP_POD_HEIGHT = 216;
   var POD_ROW_PADDING = 10;
@@ -238,12 +239,34 @@ cr.define('login', function() {
     set top(top) {
       this.style.top = cr.ui.toCssPx(top);
     },
+
+    /**
+     * Top edge margin number of pixels.
+     */
+    get top() {
+      return parseInt(this.style.top);
+    },
+
     /**
      * Left edge margin number of pixels.
      * @type {?number}
      */
     set left(left) {
       this.style.left = cr.ui.toCssPx(left);
+    },
+
+    /**
+     * Left edge margin number of pixels.
+     */
+    get left() {
+      return parseInt(this.style.left);
+    },
+
+    /**
+     * Height number of pixels.
+     */
+    get height() {
+      return this.offsetHeight;
     },
 
     /**
@@ -906,12 +929,52 @@ cr.define('login', function() {
     get expanded() {
       return this.classList.contains('expanded');
     },
+
+    /**
+     * During transition final height of pod is not available because of
+     * flexbox layout. That's why we have to calculate
+     * the final height manually.
+     */
+    get expandedHeight_() {
+      function getTopAndBottomPadding(domElement) {
+        return parseInt(window.getComputedStyle(
+            domElement).getPropertyValue('padding-top')) +
+            parseInt(window.getComputedStyle(
+                domElement).getPropertyValue('padding-bottom'));
+      };
+      var height =
+        this.getElementsByClassName('side-pane-contents')[0].offsetHeight +
+        this.getElementsByClassName('enter-button')[0].offsetHeight +
+        getTopAndBottomPadding(
+            this.getElementsByClassName('enter-button')[0]) +
+        getTopAndBottomPadding(
+            this.getElementsByClassName('side-pane-container')[0]) +
+        getTopAndBottomPadding(this);
+      return height;
+    },
+
     set expanded(expanded) {
       if (this.expanded == expanded)
         return;
 
       this.resetTabOrder();
       this.classList.toggle('expanded', expanded);
+      if (expanded) {
+        this.usualLeft = this.left;
+        this.usualTop = this.top;
+        if (this.left + PUBLIC_EXPANDED_WIDTH >
+            $('pod-row').offsetWidth - POD_ROW_PADDING)
+          this.left = $('pod-row').offsetWidth - POD_ROW_PADDING -
+              PUBLIC_EXPANDED_WIDTH;
+        var expandedHeight = this.expandedHeight_;
+        if (this.top + expandedHeight > $('pod-row').offsetHeight)
+          this.top = $('pod-row').offsetHeight - expandedHeight;
+      } else {
+        if (typeof(this.usualLeft) != 'undefined')
+          this.left = this.usualLeft;
+        if (typeof(this.usualTop) != 'undefined')
+          this.top = this.usualTop;
+      }
 
       var self = this;
       this.classList.add('animating');
@@ -1446,7 +1509,8 @@ cr.define('login', function() {
         return;
       }
       this.removeChild(podToRemove);
-      this.placePods_();
+      if (this.pods.length > 0)
+        this.placePods_();
     },
 
     /**
@@ -1645,6 +1709,29 @@ cr.define('login', function() {
         return;
       }
       pod.setAuthType(authType, value);
+    },
+
+    /**
+     * Shows a tooltip bubble explaining Easy Unlock for the focused pod.
+     */
+    showEasyUnlockBubble: function() {
+      if (!this.focusedPod_) {
+        console.error('No focused pod to show Easy Unlock bubble.');
+        return;
+      }
+
+      var bubbleContent = document.createElement('div');
+      bubbleContent.classList.add('easy-unlock-button-content');
+      bubbleContent.textContent = loadTimeData.getString('easyUnlockTooltip');
+
+      var attachElement = this.focusedPod_.customButtonElement;
+      /** @const */ var BUBBLE_OFFSET = 20;
+      /** @const */ var BUBBLE_PADDING = 8;
+      $('bubble').showContentForElement(attachElement,
+                                        cr.ui.Bubble.Attachment.RIGHT,
+                                        bubbleContent,
+                                        BUBBLE_OFFSET,
+                                        BUBBLE_PADDING);
     },
 
     /**

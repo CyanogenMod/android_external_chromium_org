@@ -25,8 +25,8 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	third_party/harfbuzz-ng/src/hb-blob.cc \
-	third_party/harfbuzz-ng/src/hb-buffer-serialize.cc \
 	third_party/harfbuzz-ng/src/hb-buffer.cc \
+	third_party/harfbuzz-ng/src/hb-buffer-serialize.cc \
 	third_party/harfbuzz-ng/src/hb-common.cc \
 	third_party/harfbuzz-ng/src/hb-face.cc \
 	third_party/harfbuzz-ng/src/hb-fallback-shape.cc \
@@ -34,22 +34,24 @@ LOCAL_SRC_FILES := \
 	third_party/harfbuzz-ng/src/hb-icu.cc \
 	third_party/harfbuzz-ng/src/hb-ot-layout.cc \
 	third_party/harfbuzz-ng/src/hb-ot-map.cc \
+	third_party/harfbuzz-ng/src/hb-ot-shape.cc \
 	third_party/harfbuzz-ng/src/hb-ot-shape-complex-arabic.cc \
 	third_party/harfbuzz-ng/src/hb-ot-shape-complex-default.cc \
-	third_party/harfbuzz-ng/src/hb-ot-shape-complex-indic-table.cc \
+	third_party/harfbuzz-ng/src/hb-ot-shape-complex-hangul.cc \
+	third_party/harfbuzz-ng/src/hb-ot-shape-complex-hebrew.cc \
 	third_party/harfbuzz-ng/src/hb-ot-shape-complex-indic.cc \
+	third_party/harfbuzz-ng/src/hb-ot-shape-complex-indic-table.cc \
 	third_party/harfbuzz-ng/src/hb-ot-shape-complex-myanmar.cc \
 	third_party/harfbuzz-ng/src/hb-ot-shape-complex-sea.cc \
 	third_party/harfbuzz-ng/src/hb-ot-shape-complex-thai.cc \
+	third_party/harfbuzz-ng/src/hb-ot-shape-complex-tibetan.cc \
 	third_party/harfbuzz-ng/src/hb-ot-shape-fallback.cc \
 	third_party/harfbuzz-ng/src/hb-ot-shape-normalize.cc \
-	third_party/harfbuzz-ng/src/hb-ot-shape.cc \
 	third_party/harfbuzz-ng/src/hb-ot-tag.cc \
 	third_party/harfbuzz-ng/src/hb-set.cc \
-	third_party/harfbuzz-ng/src/hb-shape-plan.cc \
 	third_party/harfbuzz-ng/src/hb-shape.cc \
+	third_party/harfbuzz-ng/src/hb-shape-plan.cc \
 	third_party/harfbuzz-ng/src/hb-shaper.cc \
-	third_party/harfbuzz-ng/src/hb-tt-font.cc \
 	third_party/harfbuzz-ng/src/hb-unicode.cc \
 	third_party/harfbuzz-ng/src/hb-warning.cc
 
@@ -103,7 +105,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -112,6 +113,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DHAVE_OT' \
 	'-DHAVE_ICU' \
+	'-DHAVE_ICU_BUILTIN' \
 	'-DHB_NO_MT' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
@@ -196,7 +198,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -205,6 +206,7 @@ MY_DEFS_Release := \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DHAVE_OT' \
 	'-DHAVE_ICU' \
+	'-DHAVE_ICU_BUILTIN' \
 	'-DHB_NO_MT' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \

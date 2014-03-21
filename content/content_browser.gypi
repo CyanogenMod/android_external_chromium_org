@@ -309,6 +309,8 @@
     'browser/appcache/appcache_frontend_proxy.h',
     'browser/appcache/chrome_appcache_service.cc',
     'browser/appcache/chrome_appcache_service.h',
+    'browser/appcache/view_appcache_internals_job.h',
+    'browser/appcache/view_appcache_internals_job.cc',
     'browser/browser_child_process_host_impl.cc',
     'browser/browser_child_process_host_impl.h',
     'browser/browser_context.cc',
@@ -655,6 +657,8 @@
     'browser/indexed_db/indexed_db.h',
     'browser/indexed_db/indexed_db_backing_store.cc',
     'browser/indexed_db/indexed_db_backing_store.h',
+    'browser/indexed_db/indexed_db_blob_info.cc',
+    'browser/indexed_db/indexed_db_blob_info.h',
     'browser/indexed_db/indexed_db_callbacks.cc',
     'browser/indexed_db/indexed_db_callbacks.h',
     'browser/indexed_db/indexed_db_connection.cc',
@@ -688,6 +692,8 @@
     'browser/indexed_db/indexed_db_transaction.h',
     'browser/indexed_db/indexed_db_transaction_coordinator.cc',
     'browser/indexed_db/indexed_db_transaction_coordinator.h',
+    'browser/indexed_db/indexed_db_value.h',
+    'browser/indexed_db/indexed_db_value.cc',
     'browser/indexed_db/leveldb/leveldb_comparator.h',
     'browser/indexed_db/leveldb/leveldb_database.cc',
     'browser/indexed_db/leveldb/leveldb_database.h',
@@ -1369,6 +1375,11 @@
       'sources': [
         'browser/gamepad/gamepad_platform_data_fetcher.cc',
       ]
+    }],
+    ['use_mojo==1', {
+      'dependencies': [
+        '../mojo/mojo.gyp:mojo_system',
+      ],
     }],
     ['OS=="ios"', {
       'sources/': [

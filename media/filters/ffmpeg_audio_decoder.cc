@@ -4,9 +4,7 @@
 
 #include "media/filters/ffmpeg_audio_decoder.h"
 
-#include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "media/base/audio_buffer.h"
 #include "media/base/audio_bus.h"
@@ -14,9 +12,7 @@
 #include "media/base/audio_timestamp_helper.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
-#include "media/base/demuxer.h"
 #include "media/base/limits.h"
-#include "media/base/pipeline.h"
 #include "media/base/sample_format.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/filters/ffmpeg_glue.h"
@@ -64,7 +60,7 @@ static int GetAudioBuffer(struct AVCodecContext* s, AVFrame* frame, int flags) {
   AVSampleFormat format = static_cast<AVSampleFormat>(frame->format);
   SampleFormat sample_format = AVSampleFormatToSampleFormat(format);
   int channels = DetermineChannels(frame);
-  if ((channels <= 0) || (channels >= limits::kMaxChannels)) {
+  if (channels <= 0 || channels >= limits::kMaxChannels) {
     DLOG(ERROR) << "Requested number of channels (" << channels
                 << ") exceeds limit.";
     return AVERROR(EINVAL);
@@ -73,6 +69,11 @@ static int GetAudioBuffer(struct AVCodecContext* s, AVFrame* frame, int flags) {
   int bytes_per_channel = SampleFormatToBytesPerChannel(sample_format);
   if (frame->nb_samples <= 0)
     return AVERROR(EINVAL);
+
+  if (s->channels != channels) {
+    DLOG(ERROR) << "AVCodecContext and AVFrame disagree on channel count.";
+    return AVERROR(EINVAL);
+  }
 
   // Determine how big the buffer should be and allocate it. FFmpeg may adjust
   // how big each channel data is in order to meet the alignment policy, so
@@ -88,8 +89,11 @@ static int GetAudioBuffer(struct AVCodecContext* s, AVFrame* frame, int flags) {
     return buffer_size_in_bytes;
   int frames_required = buffer_size_in_bytes / bytes_per_channel / channels;
   DCHECK_GE(frames_required, frame->nb_samples);
-  scoped_refptr<AudioBuffer> buffer =
-      AudioBuffer::CreateBuffer(sample_format, channels, frames_required);
+  scoped_refptr<AudioBuffer> buffer = AudioBuffer::CreateBuffer(
+      sample_format,
+      ChannelLayoutToChromeChannelLayout(s->channel_layout, s->channels),
+      s->sample_rate,
+      frames_required);
 
   // Initialize the data[] and extended_data[] fields to point into the memory
   // allocated for AudioBuffer. |number_of_planes| will be 1 for interleaved
@@ -123,7 +127,6 @@ static int GetAudioBuffer(struct AVCodecContext* s, AVFrame* frame, int flags) {
 FFmpegAudioDecoder::FFmpegAudioDecoder(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner)
     : task_runner_(task_runner),
-      weak_factory_(this),
       state_(kUninitialized),
       bytes_per_channel_(0),
       channel_layout_(CHANNEL_LAYOUT_NONE),
@@ -145,7 +148,6 @@ void FFmpegAudioDecoder::Initialize(const AudioDecoderConfig& config,
   DCHECK(!config.is_encrypted());
 
   FFmpegGlue::InitializeFFmpeg();
-  weak_this_ = weak_factory_.GetWeakPtr();
 
   config_ = config;
   PipelineStatusCB initialize_cb = BindToCurrentLoop(status_cb);

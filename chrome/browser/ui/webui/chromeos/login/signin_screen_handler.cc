@@ -59,7 +59,7 @@
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/chromium_strings.h"
@@ -73,7 +73,6 @@
 #endif
 
 using content::BrowserThread;
-using content::RenderViewHost;
 
 namespace {
 
@@ -294,7 +293,6 @@ SigninScreenHandler::SigninScreenHandler(
       native_window_delegate_(NULL),
       show_on_init_(false),
       oobe_ui_(false),
-      focus_stolen_(false),
       gaia_silent_load_(false),
       is_account_picker_showing_first_time_(false),
       dns_cleared_(false),
@@ -433,6 +431,8 @@ void SigninScreenHandler::DeclareLocalizedValues(
   builder->Add("confirmPasswordText", IDS_LOGIN_CONFIRM_PASSWORD_TEXT);
   builder->Add("confirmPasswordErrorText",
                IDS_LOGIN_CONFIRM_PASSWORD_ERROR_TEXT);
+  builder->Add("easyUnlockTooltip",
+               IDS_LOGIN_EASY_UNLOCK_TOOLTIP);
 
   if (chromeos::KioskModeSettings::Get()->IsKioskModeEnabled())
     builder->Add("demoLoginMessage", IDS_KIOSK_MODE_LOGIN_MESSAGE);
@@ -825,6 +825,8 @@ void SigninScreenHandler::OnLoginSuccess(const std::string& username) {
 
 void SigninScreenHandler::OnUserRemoved(const std::string& username) {
   CallJS("login.AccountPickerScreen.removeUser", username);
+  if (delegate_->GetUsers().empty())
+    OnShowAddUser("");
 }
 
 void SigninScreenHandler::OnUserImageChanged(const User& user) {
@@ -864,6 +866,15 @@ void SigninScreenHandler::ShowUserPodButton(
     const base::Closure& click_callback) {
   user_pod_button_callback_map_[username] = click_callback;
   CallJS("login.AccountPickerScreen.showUserPodButton", username, iconURL);
+
+  // TODO(tengs): Move this code once we move unlocking to native code.
+  if (ScreenLocker::default_screen_locker()) {
+    PrefService* profile_prefs = Profile::FromWebUI(web_ui())->GetPrefs();
+    if (profile_prefs->GetBoolean(prefs::kEasyUnlockShowTutorial)) {
+      CallJS("login.AccountPickerScreen.showEasyUnlockBubble");
+      profile_prefs->SetBoolean(prefs::kEasyUnlockShowTutorial, false);
+    }
+  }
 }
 
 void SigninScreenHandler::HideUserPodButton(const std::string& username) {
@@ -1033,8 +1044,6 @@ void SigninScreenHandler::ShowSigninScreenIfReady() {
        gaia_silent_load_network_ != active_network_path)) {
     // Network has changed. Force Gaia reload.
     gaia_silent_load_ = false;
-    // Gaia page will be realoded, so focus isn't stolen anymore.
-    focus_stolen_ = false;
   }
 
   // Note that LoadAuthExtension clears |email_|.
@@ -1054,8 +1063,7 @@ void SigninScreenHandler::ShowSigninScreenIfReady() {
     // The variable is assigned to false because silently loaded Gaia page was
     // used.
     gaia_silent_load_ = false;
-    if (focus_stolen_)
-      HandleLoginWebuiReady();
+    HandleLoginWebuiReady();
   }
 
   UpdateState(ErrorScreenActor::ERROR_REASON_UPDATE);
@@ -1072,7 +1080,7 @@ void SigninScreenHandler::LoadAuthExtension(
     context.show_users = delegate_->IsShowUsers();
   context.use_offline = offline;
   if (delegate_)
-    context.has_users = delegate_->GetUsers().size() != 0;
+    context.has_users = !delegate_->GetUsers().empty();
   context.email = email_;
 
   email_.clear();
@@ -1085,7 +1093,7 @@ void SigninScreenHandler::UserSettingsChanged() {
   DCHECK(gaia_screen_handler_);
   GaiaContext context;
   if (delegate_)
-    context.has_users = delegate_->GetUsers().size() != 0;
+    context.has_users = !delegate_->GetUsers().empty();
   gaia_screen_handler_->UpdateGaia(context);
   UpdateAddButtonStatus();
 }
@@ -1245,7 +1253,8 @@ void SigninScreenHandler::HandleToggleKioskEnableScreen() {
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
   if (delegate_ &&
       !auto_enrollment_progress_subscription_ &&
-      !connector->IsEnterpriseManaged()) {
+      !connector->IsEnterpriseManaged() &&
+      LoginDisplayHostImpl::default_host()) {
     auto_enrollment_progress_subscription_ =
         LoginDisplayHostImpl::default_host()
             ->RegisterAutoEnrollmentProgressHandler(
@@ -1339,6 +1348,10 @@ void SigninScreenHandler::SendUserList(bool animated) {
   bool has_owner = owner.size() > 0;
   size_t max_non_owner_users = has_owner ? kMaxUsers - 1 : kMaxUsers;
   size_t non_owner_count = 0;
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->
+          browser_policy_connector_chromeos();
+  bool is_enterprise_managed = connector->IsEnterpriseManaged();
 
   for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
     const std::string& email = (*it)->email();
@@ -1346,8 +1359,9 @@ void SigninScreenHandler::SendUserList(bool animated) {
     bool is_public_account =
         ((*it)->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT);
 
-    if (is_public_account || non_owner_count < max_non_owner_users ||
-        is_owner) {
+    if ((is_public_account && !is_signin_to_add) ||
+        is_owner ||
+        (!is_public_account && non_owner_count < max_non_owner_users)) {
       LoginDisplay::AuthType initial_auth_type =
           ShouldForceOnlineSignIn(*it) ? LoginDisplay::ONLINE_SIGN_IN
                                        : LoginDisplay::OFFLINE_PASSWORD;
@@ -1360,14 +1374,17 @@ void SigninScreenHandler::SendUserList(bool animated) {
       // Single user check here is necessary because owner info might not be
       // available when running into login screen on first boot.
       // See http://crosbug.com/12723
-      bool can_remove_user = !single_user && !email.empty() && !is_owner &&
-          !is_public_account && !signed_in && !is_signin_to_add;
+      bool can_remove_user = ((!single_user || is_enterprise_managed) &&
+          !email.empty() && !is_owner && !is_public_account &&
+          !signed_in && !is_signin_to_add);
       user_dict->SetBoolean(kKeyCanRemove, can_remove_user);
 
-      if (!is_owner)
+      if (is_owner) {
+        users_list.Insert(0, user_dict);
+      } else {
         ++non_owner_count;
-
-      users_list.Append(user_dict);
+        users_list.Append(user_dict);
+      }
     }
   }
   while (users_list.GetSize() > kMaxUsers)
@@ -1413,34 +1430,12 @@ void SigninScreenHandler::HandleWallpaperReady() {
 }
 
 void SigninScreenHandler::HandleLoginWebuiReady() {
-  if (focus_stolen_) {
-    // Set focus to the Gaia page.
-    // TODO(altimofeev): temporary solution, until focus parameters are
-    // implemented on the Gaia side.
-    // Do this only once. Any subsequent call would relod GAIA frame.
-    focus_stolen_ = false;
-    const char code[] = "gWindowOnLoad();";
-    RenderViewHost* rvh = web_ui()->GetWebContents()->GetRenderViewHost();
-    rvh->ExecuteJavascriptInWebFrame(
-        base::ASCIIToUTF16("//iframe[@id='signin-frame']\n//iframe"),
-        base::ASCIIToUTF16(code));
-  }
   if (!gaia_silent_load_) {
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_LOGIN_WEBUI_LOADED,
         content::NotificationService::AllSources(),
         content::NotificationService::NoDetails());
   } else {
-    focus_stolen_ = true;
-    // Prevent focus stealing by the Gaia page.
-    // TODO(altimofeev): temporary solution, until focus parameters are
-    // implemented on the Gaia side.
-    const char code[] = "var gWindowOnLoad = window.onload; "
-                        "window.onload=function() {};";
-    RenderViewHost* rvh = web_ui()->GetWebContents()->GetRenderViewHost();
-    rvh->ExecuteJavascriptInWebFrame(
-        base::ASCIIToUTF16("//iframe[@id='signin-frame']\n//iframe"),
-        base::ASCIIToUTF16(code));
     // As we could miss and window.onload could already be called, restore
     // focus to current pod (see crbug/175243).
     RefocusCurrentPod();
@@ -1711,10 +1706,9 @@ void SigninScreenHandler::SubmitLoginFormForTest() {
   code += "document.getElementById('Passwd').value = '" + test_pass_ + "';";
   code += "document.getElementById('signIn').click();";
 
-  RenderViewHost* rvh = web_ui()->GetWebContents()->GetRenderViewHost();
-  rvh->ExecuteJavascriptInWebFrame(
-      base::ASCIIToUTF16("//iframe[@id='signin-frame']\n//iframe"),
-      base::ASCIIToUTF16(code));
+  content::RenderFrameHost* frame =
+      LoginDisplayHostImpl::GetGaiaAuthIframe(web_ui()->GetWebContents());
+  frame->ExecuteJavaScript(base::ASCIIToUTF16(code));
 
   // Test properties are cleared in HandleCompleteLogin because the form
   // submission might fail and login will not be attempted after reloading
@@ -1756,6 +1750,7 @@ void SigninScreenHandler::OnShowAddUser(const std::string& email) {
     cookies_cleared_ = true;
     ShowSigninScreenIfReady();
   } else {
+    LOG(ERROR) << "OnShowAddUser 2";
     StartClearingDnsCache();
     StartClearingCookies(base::Bind(
         &SigninScreenHandler::ShowSigninScreenIfReady,

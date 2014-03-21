@@ -13,9 +13,9 @@
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/test/aura_test_base.h"
+#include "ui/aura/test/env_test_helper.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_cursor_client.h"
-#include "ui/aura/test/test_event_handler.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
@@ -27,6 +27,7 @@
 #include "ui/events/event_utils.h"
 #include "ui/events/gestures/gesture_configuration.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/events/test/test_event_handler.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
@@ -34,6 +35,15 @@
 
 namespace aura {
 namespace {
+
+bool PlatformSupportsMultipleHosts() {
+#if defined(USE_OZONE)
+  // Creating multiple WindowTreeHostOzone instances is broken.
+  return false;
+#else
+  return true;
+#endif
+}
 
 // A delegate that always returns a non-client component for hit tests.
 class NonClientDelegate : public test::TestWindowDelegate {
@@ -75,14 +85,14 @@ class NonClientDelegate : public test::TestWindowDelegate {
 };
 
 // A simple event handler that consumes key events.
-class ConsumeKeyHandler : public test::TestEventHandler {
+class ConsumeKeyHandler : public ui::test::TestEventHandler {
  public:
   ConsumeKeyHandler() {}
   virtual ~ConsumeKeyHandler() {}
 
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE {
-    test::TestEventHandler::OnKeyEvent(event);
+    ui::test::TestEventHandler::OnKeyEvent(event);
     event->StopPropagation();
   }
 
@@ -288,8 +298,8 @@ TEST_F(WindowEventDispatcherTest, CanProcessEventsWithinSubtree) {
   TestEventClient client(root_window());
   test::TestWindowDelegate d;
 
-  test::TestEventHandler* nonlock_ef = new test::TestEventHandler;
-  test::TestEventHandler* lock_ef = new test::TestEventHandler;
+  ui::test::TestEventHandler* nonlock_ef = new ui::test::TestEventHandler;
+  ui::test::TestEventHandler* lock_ef = new ui::test::TestEventHandler;
   client.GetNonLockWindow()->SetEventFilter(nonlock_ef);
   client.GetLockWindow()->SetEventFilter(lock_ef);
 
@@ -341,7 +351,7 @@ TEST_F(WindowEventDispatcherTest, CanProcessEventsWithinSubtree) {
 }
 
 TEST_F(WindowEventDispatcherTest, IgnoreUnknownKeys) {
-  test::TestEventHandler* filter = new ConsumeKeyHandler;
+  ui::test::TestEventHandler* filter = new ConsumeKeyHandler;
   root_window()->SetEventFilter(filter);  // passes ownership
 
   ui::KeyEvent unknown_event(ui::ET_KEY_PRESSED, ui::VKEY_UNKNOWN, 0, false);
@@ -360,7 +370,7 @@ TEST_F(WindowEventDispatcherTest, NoDelegateWindowReceivesKeyEvents) {
   w1->Show();
   w1->Focus();
 
-  test::TestEventHandler handler;
+  ui::test::TestEventHandler handler;
   w1->AddPreTargetHandler(&handler);
   ui::KeyEvent key_press(ui::ET_KEY_PRESSED, ui::VKEY_A, 0, false);
   DispatchEventUsingWindowDispatcher(&key_press);
@@ -373,7 +383,7 @@ TEST_F(WindowEventDispatcherTest, NoDelegateWindowReceivesKeyEvents) {
 // Tests that touch-events that are beyond the bounds of the root-window do get
 // propagated to the event filters correctly with the root as the target.
 TEST_F(WindowEventDispatcherTest, TouchEventsOutsideBounds) {
-  test::TestEventHandler* filter = new test::TestEventHandler;
+  ui::test::TestEventHandler* filter = new ui::test::TestEventHandler;
   root_window()->SetEventFilter(filter);  // passes ownership
 
   gfx::Point position = root_window()->bounds().origin();
@@ -393,7 +403,7 @@ TEST_F(WindowEventDispatcherTest, TouchEventsOutsideBounds) {
 // Tests that scroll events are dispatched correctly.
 TEST_F(WindowEventDispatcherTest, ScrollEventDispatch) {
   base::TimeDelta now = ui::EventTimeForNow();
-  test::TestEventHandler* filter = new test::TestEventHandler;
+  ui::test::TestEventHandler* filter = new ui::test::TestEventHandler;
   root_window()->SetEventFilter(filter);
 
   test::TestWindowDelegate delegate;
@@ -743,7 +753,7 @@ TEST_F(WindowEventDispatcherTest, TouchMovesHeld) {
   EXPECT_TRUE(filter->events().empty());
 }
 
-class HoldPointerOnScrollHandler : public test::TestEventHandler {
+class HoldPointerOnScrollHandler : public ui::test::TestEventHandler {
  public:
   HoldPointerOnScrollHandler(WindowEventDispatcher* dispatcher,
                                   EventFilterRecorder* filter)
@@ -1307,15 +1317,10 @@ class ValidRootDuringDestructionWindowObserver : public aura::WindowObserver {
 
 }  // namespace
 
-#if defined(USE_OZONE)
-// Creating multiple WindowTreeHostOzone instances is broken.
-#define MAYBE_ValidRootDuringDestruction DISABLED_ValidRootDuringDestruction
-#else
-#define MAYBE_ValidRootDuringDestruction ValidRootDuringDestruction
-#endif
-
 // Verifies GetRootWindow() from ~Window returns a valid root.
-TEST_F(WindowEventDispatcherTest, MAYBE_ValidRootDuringDestruction) {
+TEST_F(WindowEventDispatcherTest, ValidRootDuringDestruction) {
+  if (!PlatformSupportsMultipleHosts())
+    return;
   bool got_destroying = false;
   bool has_valid_root = false;
   ValidRootDuringDestructionWindowObserver observer(&got_destroying,
@@ -1426,16 +1431,11 @@ class DeleteHostFromHeldMouseEventDelegate
 
 }  // namespace
 
-#if defined(USE_OZONE)
-// Creating multiple WindowTreeHostOzone instances is broken.
-#define MAYBE_DeleteHostFromHeldMouseEvent DISABLED_DeleteHostFromHeldMouseEvent
-#else
-#define MAYBE_DeleteHostFromHeldMouseEvent DeleteHostFromHeldMouseEvent
-#endif
-
 // Verifies if a WindowTreeHost is deleted from dispatching a held mouse event
 // we don't crash.
-TEST_F(WindowEventDispatcherTest, MAYBE_DeleteHostFromHeldMouseEvent) {
+TEST_F(WindowEventDispatcherTest, DeleteHostFromHeldMouseEvent) {
+  if (!PlatformSupportsMultipleHosts())
+    return;
   // Should be deleted by |delegate|.
   WindowTreeHost* h2 = WindowTreeHost::Create(gfx::Rect(0, 0, 100, 100));
   h2->InitHost();
@@ -1592,14 +1592,14 @@ TEST_F(WindowEventDispatcherTest, CaptureWindowDestroyed) {
   EXPECT_EQ(NULL, capture_window_tracker.capture_window());
 }
 
-class ExitMessageLoopOnMousePress : public test::TestEventHandler {
+class ExitMessageLoopOnMousePress : public ui::test::TestEventHandler {
  public:
   ExitMessageLoopOnMousePress() {}
   virtual ~ExitMessageLoopOnMousePress() {}
 
  protected:
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {
-    test::TestEventHandler::OnMouseEvent(event);
+    ui::test::TestEventHandler::OnMouseEvent(event);
     if (event->type() == ui::ET_MOUSE_PRESSED)
       base::MessageLoopForUI::current()->Quit();
   }
@@ -1622,14 +1622,17 @@ class WindowEventDispatcherTestWithMessageLoop
     // Start a nested message-loop, post an event to be dispatched, and then
     // terminate the message-loop. When the message-loop unwinds and gets back,
     // the reposted event should not have fired.
-    ui::MouseEvent mouse(ui::ET_MOUSE_PRESSED, gfx::Point(10, 10),
-                         gfx::Point(10, 10), ui::EF_NONE, ui::EF_NONE);
-    message_loop()->PostTask(FROM_HERE,
-                             base::Bind(&WindowEventDispatcher::RepostEvent,
-                                        base::Unretained(host()->dispatcher()),
-                                        mouse));
-    message_loop()->PostTask(FROM_HERE,
-                             message_loop()->QuitClosure());
+    scoped_ptr<ui::MouseEvent> mouse(new ui::MouseEvent(ui::ET_MOUSE_PRESSED,
+                                                        gfx::Point(10, 10),
+                                                        gfx::Point(10, 10),
+                                                        ui::EF_NONE,
+                                                        ui::EF_NONE));
+    message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&WindowEventDispatcherTestWithMessageLoop::RepostEventHelper,
+                   host()->dispatcher(),
+                   base::Passed(&mouse)));
+    message_loop()->PostTask(FROM_HERE, message_loop()->QuitClosure());
 
     base::MessageLoop::ScopedNestableTaskAllower allow(message_loop());
     base::RunLoop loop;
@@ -1657,6 +1660,12 @@ class WindowEventDispatcherTestWithMessageLoop
   }
 
  private:
+  // Used to avoid a copying |event| when binding to a closure.
+  static void RepostEventHelper(WindowEventDispatcher* dispatcher,
+                                scoped_ptr<ui::MouseEvent> event) {
+    dispatcher->RepostEvent(*event);
+  }
+
   scoped_ptr<Window> window_;
   ExitMessageLoopOnMousePress handler_;
 
@@ -1692,8 +1701,8 @@ TEST_F(WindowEventDispatcherTestInHighDPI, EventLocationTransform) {
       1234, gfx::Rect(20, 20, 100, 100), root_window()));
   child->Show();
 
-  test::TestEventHandler handler_child;
-  test::TestEventHandler handler_root;
+  ui::test::TestEventHandler handler_child;
+  ui::test::TestEventHandler handler_root;
   root_window()->AddPreTargetHandler(&handler_root);
   child->AddPreTargetHandler(&handler_child);
 
@@ -1891,16 +1900,12 @@ class MoveWindowHandler : public ui::EventHandler {
   DISALLOW_COPY_AND_ASSIGN(MoveWindowHandler);
 };
 
-#if defined(USE_OZONE)
-#define MAYBE_NestedEventDispatchTargetMoved \
-    DISABLED_NestedEventDispatchTargetMoved
-#else
-#define MAYBE_NestedEventDispatchTargetMoved NestedEventDispatchTargetMoved
-#endif
 // Tests that nested event dispatch works correctly if the target of the older
 // event being dispatched is moved to a different dispatcher in response to an
 // event in the inner loop.
-TEST_F(WindowEventDispatcherTest, MAYBE_NestedEventDispatchTargetMoved) {
+TEST_F(WindowEventDispatcherTest, NestedEventDispatchTargetMoved) {
+  if (!PlatformSupportsMultipleHosts())
+    return;
   scoped_ptr<WindowTreeHost> second_host(
       WindowTreeHost::Create(gfx::Rect(20, 30, 100, 50)));
   second_host->InitHost();
@@ -1941,6 +1946,64 @@ TEST_F(WindowEventDispatcherTest, MAYBE_NestedEventDispatchTargetMoved) {
 
   first->RemovePreTargetHandler(&dispatch_event);
   second->RemovePreTargetHandler(&move_window);
+}
+
+class AlwaysMouseDownInputStateLookup : public InputStateLookup {
+ public:
+  AlwaysMouseDownInputStateLookup() {}
+  virtual ~AlwaysMouseDownInputStateLookup() {}
+
+ private:
+  // InputStateLookup:
+  virtual bool IsMouseButtonDown() const OVERRIDE { return true; }
+
+  DISALLOW_COPY_AND_ASSIGN(AlwaysMouseDownInputStateLookup);
+};
+
+TEST_F(WindowEventDispatcherTest,
+       CursorVisibilityChangedWhileCaptureWindowInAnotherDispatcher) {
+  if (!PlatformSupportsMultipleHosts())
+    return;
+  test::EventCountDelegate delegate;
+  scoped_ptr<Window> window(CreateTestWindowWithDelegate(&delegate, 123,
+      gfx::Rect(20, 10, 10, 20), root_window()));
+  window->Show();
+
+  scoped_ptr<WindowTreeHost> second_host(
+      WindowTreeHost::Create(gfx::Rect(20, 30, 100, 50)));
+  second_host->InitHost();
+  WindowEventDispatcher* second_dispatcher = second_host->dispatcher();
+
+  // Install an InputStateLookup on the Env that always claims that a
+  // mouse-button is down.
+  test::EnvTestHelper(Env::GetInstance()).SetInputStateLookup(
+      scoped_ptr<InputStateLookup>(new AlwaysMouseDownInputStateLookup()));
+
+  window->SetCapture();
+
+  // Because the mouse button is down, setting the capture on |window| will set
+  // it as the mouse-move handler for |root_window()|.
+  EXPECT_EQ(window.get(), host()->dispatcher()->mouse_moved_handler());
+
+  // This does not set |window| as the mouse-move handler for the second
+  // dispatcher.
+  EXPECT_EQ(NULL, second_dispatcher->mouse_moved_handler());
+
+  // However, some capture-client updates the capture in each root-window on a
+  // capture. Emulate that here. Because of this, the second dispatcher also has
+  // |window| as the mouse-move handler.
+  client::CaptureDelegate* second_capture_delegate = second_dispatcher;
+  second_capture_delegate->UpdateCapture(NULL, window.get());
+  EXPECT_EQ(window.get(), second_dispatcher->mouse_moved_handler());
+
+  // Reset the mouse-event counts for |window|.
+  delegate.GetMouseMotionCountsAndReset();
+
+  // Notify both hosts that the cursor is now hidden. This should send a single
+  // mouse-exit event to |window|.
+  host()->OnCursorVisibilityChanged(false);
+  second_host->OnCursorVisibilityChanged(false);
+  EXPECT_EQ("0 0 1", delegate.GetMouseMotionCountsAndReset());
 }
 
 }  // namespace aura

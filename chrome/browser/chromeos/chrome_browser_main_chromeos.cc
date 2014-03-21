@@ -30,7 +30,6 @@
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_mode_idle_app_name_notification.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
-#include "chrome/browser/chromeos/contacts/contact_manager.h"
 #include "chrome/browser/chromeos/dbus/cros_dbus_service.h"
 #include "chrome/browser/chromeos/events/event_rewriter.h"
 #include "chrome/browser/chromeos/events/system_key_event_listener.h"
@@ -86,6 +85,7 @@
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/cryptohome/async_method_caller.h"
+#include "chromeos/cryptohome/homedir_methods.h"
 #include "chromeos/cryptohome/system_salt_getter.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_policy_controller.h"
@@ -287,6 +287,7 @@ class DBusServices {
             content::BrowserThread::FILE));
     disks::DiskMountManager::Initialize();
     cryptohome::AsyncMethodCaller::Initialize();
+    cryptohome::HomedirMethods::Initialize();
 
     NetworkHandler::Initialize();
     CertLibrary::Initialize();
@@ -489,11 +490,6 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
   // Allow access to file:// on ChromeOS for tests.
   if (parsed_command_line().HasSwitch(::switches::kAllowFileAccess))
     ChromeNetworkDelegate::AllowAccessToAllFiles();
-
-  if (parsed_command_line().HasSwitch(::switches::kEnableContacts)) {
-    contact_manager_.reset(new contacts::ContactManager());
-    contact_manager_->Init();
-  }
 
   // There are two use cases for kLoginUser:
   //   1) if passed in tandem with kLoginPassword, to drive a "StubLogin"
@@ -760,9 +756,6 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   // Destroy the application name notifier for Kiosk mode.
   KioskModeIdleAppNameNotification::Shutdown();
 
-  // Stops all in-flight OAuth2 token fetchers before the IO thread stops.
-  DeviceOAuth2TokenServiceFactory::Shutdown();
-
   // Shutdown the upgrade detector for Chrome OS. The upgrade detector
   // stops monitoring changes from the update engine.
   if (UpgradeDetectorChromeos::GetInstance())
@@ -814,9 +807,6 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   power_button_observer_.reset();
   idle_action_warning_observer_.reset();
 
-  // Delete ContactManager while |g_browser_process| is still alive.
-  contact_manager_.reset();
-
   MagnificationManager::Shutdown();
   AccessibilityManager::Shutdown();
 
@@ -841,6 +831,9 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   // We first call PostMainMessageLoopRun and then destroy UserManager, because
   // Ash needs to be closed before UserManager is destroyed.
   ChromeBrowserMainPartsLinux::PostMainMessageLoopRun();
+
+  // Stops all in-flight OAuth2 token fetchers before the IO thread stops.
+  DeviceOAuth2TokenServiceFactory::Shutdown();
 
   // Called after
   // ChromeBrowserMainPartsLinux::PostMainMessageLoopRun() to be

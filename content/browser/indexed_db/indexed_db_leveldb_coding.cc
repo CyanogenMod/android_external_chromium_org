@@ -310,14 +310,6 @@ void EncodeIDBKey(const IndexedDBKey& value, std::string* into) {
   size_t previous_size = into->size();
   DCHECK(value.IsValid());
   switch (value.type()) {
-    case WebIDBKeyTypeNull:
-    case WebIDBKeyTypeInvalid:
-    case WebIDBKeyTypeMin:
-    default: {
-      NOTREACHED();
-      EncodeByte(kIndexedDBKeyNullTypeByte, into);
-      return;
-    }
     case WebIDBKeyTypeArray: {
       EncodeByte(kIndexedDBKeyArrayTypeByte, into);
       size_t length = value.array().size();
@@ -327,33 +319,34 @@ void EncodeIDBKey(const IndexedDBKey& value, std::string* into) {
       DCHECK_GT(into->size(), previous_size);
       return;
     }
-    case WebIDBKeyTypeBinary: {
+    case WebIDBKeyTypeBinary:
       EncodeByte(kIndexedDBKeyBinaryTypeByte, into);
       EncodeBinary(value.binary(), into);
       DCHECK_GT(into->size(), previous_size);
       return;
-    }
-    case WebIDBKeyTypeString: {
+    case WebIDBKeyTypeString:
       EncodeByte(kIndexedDBKeyStringTypeByte, into);
       EncodeStringWithLength(value.string(), into);
       DCHECK_GT(into->size(), previous_size);
       return;
-    }
-    case WebIDBKeyTypeDate: {
+    case WebIDBKeyTypeDate:
       EncodeByte(kIndexedDBKeyDateTypeByte, into);
       EncodeDouble(value.date(), into);
       DCHECK_EQ(9u, static_cast<size_t>(into->size() - previous_size));
       return;
-    }
-    case WebIDBKeyTypeNumber: {
+    case WebIDBKeyTypeNumber:
       EncodeByte(kIndexedDBKeyNumberTypeByte, into);
       EncodeDouble(value.number(), into);
       DCHECK_EQ(9u, static_cast<size_t>(into->size() - previous_size));
       return;
-    }
+    case WebIDBKeyTypeNull:
+    case WebIDBKeyTypeInvalid:
+    case WebIDBKeyTypeMin:
+    default:
+      NOTREACHED();
+      EncodeByte(kIndexedDBKeyNullTypeByte, into);
+      return;
   }
-
-  NOTREACHED();
 }
 
 void EncodeIDBKeyPath(const IndexedDBKeyPath& value, std::string* into) {
@@ -1399,6 +1392,10 @@ int DatabaseNameKey::Compare(const DatabaseNameKey& other) {
 bool DatabaseMetaDataKey::IsValidBlobKey(int64 blob_key) {
   return blob_key >= kBlobKeyGeneratorInitialNumber;
 }
+
+const int64 DatabaseMetaDataKey::kAllBlobsKey = 1;
+const int64 DatabaseMetaDataKey::kBlobKeyGeneratorInitialNumber = 2;
+const int64 DatabaseMetaDataKey::kInvalidBlobKey = -1;
 
 std::string DatabaseMetaDataKey::Encode(int64 database_id,
                                         MetaDataType meta_data_type) {

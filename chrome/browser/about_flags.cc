@@ -36,6 +36,7 @@
 #include "ui/gl/gl_switches.h"
 #include "ui/keyboard/keyboard_switches.h"
 #include "ui/message_center/message_center_switches.h"
+#include "ui/native_theme/native_theme_switches.h"
 #include "ui/views/views_switches.h"
 
 #if defined(USE_ASH)
@@ -313,6 +314,8 @@ const Experiment::Choice kZeroSuggestExperimentsChoices[] = {
     switches::kEnableZeroSuggestEtherSerp, ""},
   { IDS_FLAGS_ZERO_SUGGEST_ETHER_NO_SERP,
     switches::kEnableZeroSuggestEtherNoSerp, ""},
+  { IDS_FLAGS_ZERO_SUGGEST_PERSONALIZED,
+    switches::kEnableZeroSuggestPersonalized, ""},
   { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
     switches::kDisableZeroSuggest, ""}
 };
@@ -515,13 +518,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_SHOW_FPS_COUNTER_DESCRIPTION,
     kOsAll,
     SINGLE_VALUE_TYPE(cc::switches::kShowFPSCounter)
-  },
-  {
-    "accelerated-filters",
-    IDS_FLAGS_ACCELERATED_FILTERS,
-    IDS_FLAGS_ACCELERATED_FILTERS_DESCRIPTION,
-    kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableAcceleratedFilters)
   },
   {
     "disable-webgl",
@@ -764,13 +760,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_SAVE_PAGE_AS_MHTML_DESCRIPTION,
     kOsMac | kOsWin | kOsLinux,
     SINGLE_VALUE_TYPE(switches::kSavePageAsMHTML)
-  },
-  {
-    "enable-autologin",
-    IDS_FLAGS_ENABLE_AUTOLOGIN_NAME,
-    IDS_FLAGS_ENABLE_AUTOLOGIN_DESCRIPTION,
-    kOsMac | kOsWin | kOsLinux,
-    SINGLE_VALUE_TYPE(switches::kEnableAutologin)
   },
   {
     "enable-quic",
@@ -1085,13 +1074,6 @@ const Experiment kExperiments[] = {
     kOsWin | kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kDisableAcceleratedVideoDecode),
   },
-  {
-    "enable-contacts",
-    IDS_FLAGS_ENABLE_CONTACTS_NAME,
-    IDS_FLAGS_ENABLE_CONTACTS_DESCRIPTION,
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableContacts)
-  },
 #if defined(USE_ASH)
   {
     "ash-debug-shortcuts",
@@ -1161,15 +1143,6 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kDisablePasswordManagerReauthentication)
   },
   {
-    "password-autofill-public-suffix-domain-matching",
-    IDS_FLAGS_PASSWORD_AUTOFILL_PUBLIC_SUFFIX_DOMAIN_MATCHING_NAME,
-    IDS_FLAGS_PASSWORD_AUTOFILL_PUBLIC_SUFFIX_DOMAIN_MATCHING_DESCRIPTION,
-    kOsAll,
-    ENABLE_DISABLE_VALUE_TYPE(
-        switches::kEnablePasswordAutofillPublicSuffixDomainMatching,
-        switches::kDisablePasswordAutofillPublicSuffixDomainMatching)
-  },
-  {
     "enable-deferred-image-decoding",
     IDS_FLAGS_ENABLE_DEFERRED_IMAGE_DECODING_NAME,
     IDS_FLAGS_ENABLE_DEFERRED_IMAGE_DECODING_DESCRIPTION,
@@ -1236,23 +1209,6 @@ const Experiment kExperiments[] = {
                               switches::kDisableTouchEditing)
   },
   {
-    "enable-rich-notifications",
-    IDS_FLAGS_ENABLE_RICH_NOTIFICATIONS_NAME,
-    IDS_FLAGS_ENABLE_RICH_NOTIFICATIONS_DESCRIPTION,
-    kOsWin | kOsMac,
-    ENABLE_DISABLE_VALUE_TYPE(
-        message_center::switches::kEnableRichNotifications,
-        message_center::switches::kDisableRichNotifications)
-  },
-  {
-    "enable-experimental-notification-ui",
-    IDS_FLAGS_ENABLE_EXPERIMENTAL_NOTIFICATION_UI_NAME,
-    IDS_FLAGS_ENABLE_EXPERIMENTAL_NOTIFICATION_UI_DESCRIPTION,
-    kOsDesktop,
-    SINGLE_VALUE_TYPE(
-        message_center::switches::kEnableExperimentalNotificationUI)
-  },
-  {
     "enable-sync-synced-notifications",
     IDS_FLAGS_ENABLE_SYNCED_NOTIFICATIONS_NAME,
     IDS_FLAGS_ENABLE_SYNCED_NOTIFICATIONS_DESCRIPTION,
@@ -1269,13 +1225,6 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kDisableSyncAppList)
   },
 #endif
-  {
-    "disable-full-history-sync",
-    IDS_FLAGS_FULL_HISTORY_SYNC_NAME,
-    IDS_FLAGS_FULL_HISTORY_SYNC_DESCRIPTION,
-    kOsAll,
-    SINGLE_VALUE_TYPE(switches::kHistoryDisableFullHistorySync)
-  },
   {
     "enable-usermedia-screen-capture",
     IDS_FLAGS_ENABLE_SCREEN_CAPTURE_NAME,
@@ -1422,7 +1371,7 @@ const Experiment kExperiments[] = {
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kSyncfsEnableDirectoryOperation),
   },
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
   {
     "disable-device-discovery",
     IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_NAME,
@@ -1445,7 +1394,7 @@ const Experiment kExperiments[] = {
     kOsWin | kOsLinux | kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kEnablePrintPreviewRegisterPromos)
   },
-#endif  // ENABLE_MDNS
+#endif  // ENABLE_SERVICE_DISCOVERY
 #if defined(OS_WIN)
   {
     "enable-cloud-print-xps",

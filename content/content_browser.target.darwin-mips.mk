@@ -118,6 +118,7 @@ LOCAL_SRC_FILES := \
 	content/browser/appcache/appcache_dispatcher_host.cc \
 	content/browser/appcache/appcache_frontend_proxy.cc \
 	content/browser/appcache/chrome_appcache_service.cc \
+	content/browser/appcache/view_appcache_internals_job.cc \
 	content/browser/browser_child_process_host_impl.cc \
 	content/browser/browser_context.cc \
 	content/browser/browser_main.cc \
@@ -249,6 +250,7 @@ LOCAL_SRC_FILES := \
 	content/browser/histogram_synchronizer.cc \
 	content/browser/host_zoom_map_impl.cc \
 	content/browser/indexed_db/indexed_db_backing_store.cc \
+	content/browser/indexed_db/indexed_db_blob_info.cc \
 	content/browser/indexed_db/indexed_db_callbacks.cc \
 	content/browser/indexed_db/indexed_db_connection.cc \
 	content/browser/indexed_db/indexed_db_context_impl.cc \
@@ -265,6 +267,7 @@ LOCAL_SRC_FILES := \
 	content/browser/indexed_db/indexed_db_quota_client.cc \
 	content/browser/indexed_db/indexed_db_transaction.cc \
 	content/browser/indexed_db/indexed_db_transaction_coordinator.cc \
+	content/browser/indexed_db/indexed_db_value.cc \
 	content/browser/indexed_db/leveldb/leveldb_database.cc \
 	content/browser/indexed_db/leveldb/leveldb_transaction.cc \
 	content/browser/indexed_db/leveldb/leveldb_write_batch.cc \
@@ -527,7 +530,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -546,6 +548,7 @@ MY_DEFS_Debug := \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
+	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -683,7 +686,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -702,6 +704,7 @@ MY_DEFS_Release := \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
+	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \

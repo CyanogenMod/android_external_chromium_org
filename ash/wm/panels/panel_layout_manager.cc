@@ -235,6 +235,7 @@ class PanelCalloutWidget : public views::Widget {
     params.bounds = ScreenUtil::ConvertRectToScreen(parent, gfx::Rect());
     params.bounds.set_width(kArrowWidth);
     params.bounds.set_height(kArrowHeight);
+    params.accept_events = false;
     // Why do we need this and can_activate = false?
     set_focus_on_creation(false);
     Init(params);
@@ -848,16 +849,13 @@ void PanelLayoutManager::UpdateCallouts() {
     SetChildBoundsDirect(callout_widget->GetNativeWindow(), callout_bounds);
     panel_container_->StackChildAbove(callout_widget->GetNativeWindow(),
                                       panel);
-    callout_widget->Show();
 
     ui::Layer* layer = callout_widget->GetNativeWindow()->layer();
     // If the panel is not over the callout position or has just become visible
     // then fade in the callout.
-    if ((distance_until_over_panel > 0 || layer->GetTargetOpacity() < 1) &&
-        panel->layer()->GetTargetTransform().IsIdentity()) {
+    if ((distance_until_over_panel > 0 || layer->GetTargetOpacity() < 1)) {
       if (distance_until_over_panel > 0 &&
           slide_distance >= distance_until_over_panel) {
-        layer->SetOpacity(0);
         // If the panel is not yet over the callout, then delay fading in
         // the callout until after the panel should be over it.
         int delay = kPanelSlideDurationMilliseconds *
@@ -868,16 +866,18 @@ void PanelLayoutManager::UpdateCallouts() {
             base::TimeDelta::FromMilliseconds(delay),
             ui::LayerAnimationElement::OPACITY);
       }
-      {
-        ui::ScopedLayerAnimationSettings callout_settings(layer->GetAnimator());
-        callout_settings.SetPreemptionStrategy(
-            ui::LayerAnimator::REPLACE_QUEUED_ANIMATIONS);
-        callout_settings.SetTransitionDuration(
-            base::TimeDelta::FromMilliseconds(
-                kCalloutFadeDurationMilliseconds));
-        layer->SetOpacity(1);
-      }
+      ui::ScopedLayerAnimationSettings callout_settings(layer->GetAnimator());
+      callout_settings.SetPreemptionStrategy(
+          ui::LayerAnimator::REPLACE_QUEUED_ANIMATIONS);
+      callout_settings.SetTransitionDuration(
+          base::TimeDelta::FromMilliseconds(
+              kCalloutFadeDurationMilliseconds));
+      layer->SetOpacity(1);
     }
+
+    // Show after changing the opacity animation. This way we don't have a
+    // state where the widget is visible but the opacity is 0.
+    callout_widget->Show();
   }
 }
 

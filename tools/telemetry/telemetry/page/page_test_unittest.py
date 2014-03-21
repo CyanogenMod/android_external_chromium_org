@@ -31,7 +31,7 @@ class PageTestUnitTest(unittest.TestCase):
     super(PageTestUnitTest, self).setUp()
     all_page_actions.RegisterClassForTest('append', AppendAction)
 
-    self._page_test = DoNothingPageTest('action_to_run')
+    self._page_test = DoNothingPageTest('RunActionToRun')
     self._page = _CreatePage('blank.html')
 
   def testRunActions(self):
@@ -39,44 +39,44 @@ class PageTestUnitTest(unittest.TestCase):
     action_to_run = [
       { 'action': 'append', 'var': action_called }
     ]
-    setattr(self._page, 'action_to_run', action_to_run)
+    setattr(self._page, 'RunActionToRun', action_to_run)
 
-    self._page_test.Run(self._page, None, None)
+    self._page_test.RunPage(self._page, None, None)
 
     self.assertTrue(action_called)
 
   def testReferenceAction(self):
     action_list = []
     action_to_run = [
-      { 'action': 'referenced_action' },
+      { 'action': 'RunReferencedAction' },
     ]
     referenced_action = { 'action': 'append', 'var': action_list }
-    setattr(self._page, 'action_to_run', action_to_run)
-    setattr(self._page, 'referenced_action', referenced_action)
+    setattr(self._page, 'RunActionToRun', action_to_run)
+    setattr(self._page, 'RunReferencedAction', referenced_action)
 
-    self._page_test.Run(self._page, None, None)
+    self._page_test.RunPage(self._page, None, None)
 
     self.assertEqual(action_list, [True])
 
   def testRepeatAction(self):
     action_list = []
     action_to_run = { 'action': 'append', 'var': action_list, 'repeat': 10 }
-    setattr(self._page, 'action_to_run', action_to_run)
+    setattr(self._page, 'RunActionToRun', action_to_run)
 
-    self._page_test.Run(self._page, None, None)
+    self._page_test.RunPage(self._page, None, None)
 
     self.assertEqual(len(action_list), 10)
 
   def testRepeatReferenceAction(self):
     action_list = []
-    action_to_run = { 'action': 'referenced_action', 'repeat': 3 }
+    action_to_run = { 'action': 'RunReferencedAction', 'repeat': 3 }
     referenced_action = [
       { 'action': 'append', 'var': action_list },
     ]
-    setattr(self._page, 'action_to_run', action_to_run)
-    setattr(self._page, 'referenced_action', referenced_action)
+    setattr(self._page, 'RunActionToRun', action_to_run)
+    setattr(self._page, 'RunReferencedAction', referenced_action)
 
-    self._page_test.Run(self._page, None, None)
+    self._page_test.RunPage(self._page, None, None)
 
     self.assertEqual(action_list,
                      [True, True, True])

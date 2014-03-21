@@ -760,6 +760,8 @@ enum HistogramValue {
   AUTOMATIONINTERNAL_ENABLECURRENTTAB,
   APP_CURRENTWINDOWINTERNAL_SETSIZECONSTRAINTS,
   BLUETOOTH_GETDEVICE,
+  GCM_UNREGISTER,
+  FILEBROWSERPRIVATE_REQUESTDRIVESHARE,
   // Last entry: Add new entries above and ensure to update
   // tools/metrics/histograms/histograms/histograms.xml.
   ENUM_BOUNDARY

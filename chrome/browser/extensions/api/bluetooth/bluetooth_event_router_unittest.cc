@@ -176,7 +176,7 @@ TEST_F(ExtensionBluetoothEventRouterTest, UnloadExtension) {
       content::NotificationService::current();
   UnloadedExtensionInfo details(
       extension, UnloadedExtensionInfo::REASON_DISABLE);
-  notifier->Notify(chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  notifier->Notify(chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                    content::Source<Profile>(test_profile_.get()),
                    content::Details<UnloadedExtensionInfo>(&details));
 
@@ -220,9 +220,9 @@ TEST_F(ExtensionBluetoothEventRouterTest, DispatchConnectionEvent) {
 
   base::DictionaryValue* profile_value = NULL;
   ASSERT_TRUE(socket_value->GetDictionary("profile", &profile_value));
-  std::string profile_uuid;
-  ASSERT_TRUE(profile_value->GetString("uuid", &profile_uuid));
-  EXPECT_STREQ(kAudioProfileUuid, profile_uuid.c_str());
+  std::string uuid;
+  ASSERT_TRUE(profile_value->GetString("uuid", &uuid));
+  EXPECT_STREQ(kAudioProfileUuid, uuid.c_str());
 
   EXPECT_CALL(*mock_adapter_, RemoveObserver(testing::_)).Times(1);
   router_.ReleaseSocket(socket_id);

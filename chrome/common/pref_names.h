@@ -35,8 +35,6 @@ extern const char kURLsToRestoreOnStartup[];
 extern const char kURLsToRestoreOnStartupOld[];
 extern const char kRestoreStartupURLsMigrationTime[];
 extern const char kForceEphemeralProfiles[];
-extern const char kEnhancedBookmarksExperimentEnabled[];
-extern const char kEnhancedBookmarksExtensionId[];
 
 // For OS_CHROMEOS we maintain kApplicationLocale property in both local state
 // and user's profile.  Global property determines locale of login screen,
@@ -378,6 +376,12 @@ extern const char kProfileName[];
 extern const char kProfileIsManaged[];
 extern const char kManagedUserId[];
 
+extern const char kProfileGAIAInfoUpdateTime[];
+extern const char kProfileGAIAInfoPictureURL[];
+
+extern const char kProfileAvatarTutorialShown[];
+extern const char kProfileUserManagerTutorialShown[];
+
 extern const char kInvertNotificationShown[];
 
 extern const char kPrintingEnabled[];
@@ -407,6 +411,10 @@ extern const char kProfileResetPromptMemento[];
 
 extern const char kGCMChannelEnabled[];
 extern const char kGCMRegisteredAppIDs[];
+
+extern const char kEasyUnlockEnabled[];
+extern const char kEasyUnlockShowTutorial[];
+extern const char kEasyUnlockPairing[];
 
 // Local state prefs. Please add Profile prefs above instead.
 extern const char kCertRevocationCheckingEnabled[];
@@ -594,51 +602,12 @@ extern const char kSpdyProxyAuthEnabled[];
 extern const char kSpdyProxyAuthWasEnabledBefore[];
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 extern const char kSigninAllowed[];
-extern const char kSyncLastSyncedTime[];
-extern const char kSyncHasAuthError[];
-extern const char kSyncHasSetupCompleted[];
-extern const char kSyncKeepEverythingSynced[];
 
-extern const char kSyncAppList[];
-extern const char kSyncAppNotifications[];
-extern const char kSyncAppSettings[];
-extern const char kSyncApps[];
-extern const char kSyncAutofillProfile[];
-extern const char kSyncAutofill[];
-extern const char kSyncBookmarks[];
-extern const char kSyncDictionary[];
-extern const char kSyncExtensionSettings[];
-extern const char kSyncExtensions[];
-extern const char kSyncFaviconImages[];
-extern const char kSyncFaviconTracking[];
-extern const char kSyncHistoryDeleteDirectives[];
-extern const char kSyncManagedUserSettings[];
-extern const char kSyncManagedUserSharedSettings[];
-extern const char kSyncManagedUsers[];
-extern const char kSyncArticles[];
-extern const char kSyncPasswords[];
-extern const char kSyncPreferences[];
-extern const char kSyncPriorityPreferences[];
-extern const char kSyncSearchEngines[];
-extern const char kSyncSessions[];
-extern const char kSyncSyncedNotificationAppInfo[];
-extern const char kSyncSyncedNotifications[];
-extern const char kSyncTabs[];
-extern const char kSyncThemes[];
-extern const char kSyncTypedUrls[];
-
-extern const char kSyncManaged[];
-extern const char kSyncSuppressStart[];
 extern const char kGoogleServicesLastUsername[];
 extern const char kGoogleServicesUserAccountId[];
 extern const char kGoogleServicesUsername[];
 extern const char kGoogleServicesUsernamePattern[];
 extern const char kGoogleServicesPasswordHash[];
-extern const char kSyncUsingSecondaryPassphrase[];
-extern const char kSyncEncryptionBootstrapToken[];
-extern const char kSyncKeystoreEncryptionBootstrapToken[];
-extern const char kSyncAcknowledgedSyncTypes[];
-extern const char kSyncSessionsGUID[];
 
 extern const char kInvalidatorClientId[];
 extern const char kInvalidatorInvalidationState[];
@@ -648,11 +617,6 @@ extern const char kSignInPromoStartupCount[];
 extern const char kSignInPromoUserSkipped[];
 extern const char kSignInPromoShowOnFirstRunAllowed[];
 extern const char kSignInPromoShowNTPBubble[];
-
-extern const char kProfileAvatarTutorialShown[];
-
-extern const char kProfileGAIAInfoUpdateTime[];
-extern const char kProfileGAIAInfoPictureURL[];
 
 extern const char kWebAppCreateOnDesktop[];
 extern const char kWebAppCreateInAppsMenu[];
@@ -750,7 +714,6 @@ extern const char kShouldAutoEnroll[];
 extern const char kAutoEnrollmentPowerLimit[];
 extern const char kDeviceActivityTimes[];
 extern const char kDeviceLocation[];
-extern const char kSyncSpareBootstrapToken[];
 extern const char kExternalStorageDisabled[];
 extern const char kUsersWallpaperInfo[];
 extern const char kAudioOutputAllowed[];

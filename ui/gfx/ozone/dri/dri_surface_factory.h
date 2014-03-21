@@ -44,9 +44,16 @@ class GFX_EXPORT DriSurfaceFactory : public SurfaceFactoryOzone {
   virtual scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider(
       gfx::AcceleratedWidget w) OVERRIDE;
 
+  void SetHardwareCursor(AcceleratedWidget window,
+                         const SkBitmap& image,
+                         const gfx::Point& location);
+
+  void MoveHardwareCursor(AcceleratedWidget window, const gfx::Point& location);
+
+  void UnsetHardwareCursor(AcceleratedWidget window);
+
  private:
-  virtual DriSurface* CreateSurface(
-    HardwareDisplayController* controller);
+  virtual DriSurface* CreateSurface(const gfx::Size& size);
 
   virtual DriWrapper* CreateWrapper();
 
@@ -66,6 +73,8 @@ class GFX_EXPORT DriSurfaceFactory : public SurfaceFactoryOzone {
 
   // Active output.
   scoped_ptr<HardwareDisplayController> controller_;
+
+  scoped_ptr<DriSurface> cursor_surface_;
 
   DISALLOW_COPY_AND_ASSIGN(DriSurfaceFactory);
 };

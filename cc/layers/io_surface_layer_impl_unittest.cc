@@ -4,11 +4,7 @@
 
 #include "cc/layers/io_surface_layer_impl.h"
 
-#include "cc/layers/append_quads_data.h"
-#include "cc/test/fake_layer_tree_host.h"
 #include "cc/test/layer_test_common.h"
-#include "cc/test/mock_quad_culler.h"
-#include "cc/trees/layer_tree_host_common.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
@@ -19,8 +15,6 @@ TEST(IOSurfaceLayerImplTest, Occlusion) {
   gfx::Size viewport_size(1000, 1000);
 
   LayerTestCommon::LayerImplTest impl;
-  MockQuadCuller quad_culler;
-  AppendQuadsData data;
 
   IOSurfaceLayerImpl* io_surface_layer_impl =
       impl.AddChildToRoot<IOSurfaceLayerImpl>();
@@ -31,45 +25,38 @@ TEST(IOSurfaceLayerImplTest, Occlusion) {
 
   impl.CalcDrawProps(viewport_size);
 
-  // No occlusion.
   {
+    SCOPED_TRACE("No occlusion");
     gfx::Rect occluded;
-    quad_culler.clear_lists();
-    quad_culler.set_occluded_content_rect(occluded);
-    io_surface_layer_impl->AppendQuads(&quad_culler, &data);
+    impl.AppendQuadsWithOcclusion(io_surface_layer_impl, occluded);
 
-    LayerTestCommon::VerifyQuadsExactlyCoverRect(quad_culler.quad_list(),
-                                                 gfx::Rect(viewport_size));
-    EXPECT_EQ(1u, quad_culler.quad_list().size());
+    LayerTestCommon::VerifyQuadsExactlyCoverRect(impl.quad_list(),
+                                                 gfx::Rect(layer_size));
+    EXPECT_EQ(1u, impl.quad_list().size());
   }
 
-  // Full occlusion.
   {
-    gfx::Rect occluded = io_surface_layer_impl->visible_content_rect();
-    quad_culler.clear_lists();
-    quad_culler.set_occluded_content_rect(occluded);
-    io_surface_layer_impl->AppendQuads(&quad_culler, &data);
+    SCOPED_TRACE("Full occlusion");
+    gfx::Rect occluded(io_surface_layer_impl->visible_content_rect());
+    impl.AppendQuadsWithOcclusion(io_surface_layer_impl, occluded);
 
-    LayerTestCommon::VerifyQuadsExactlyCoverRect(quad_culler.quad_list(),
-                                                 gfx::Rect());
-    EXPECT_EQ(quad_culler.quad_list().size(), 0u);
+    LayerTestCommon::VerifyQuadsExactlyCoverRect(impl.quad_list(), gfx::Rect());
+    EXPECT_EQ(impl.quad_list().size(), 0u);
   }
 
-  // Partial occlusion.
   {
+    SCOPED_TRACE("Partial occlusion");
     gfx::Rect occluded(200, 0, 800, 1000);
-    quad_culler.clear_lists();
-    quad_culler.set_occluded_content_rect(occluded);
-    io_surface_layer_impl->AppendQuads(&quad_culler, &data);
+    impl.AppendQuadsWithOcclusion(io_surface_layer_impl, occluded);
 
     size_t partially_occluded_count = 0;
     LayerTestCommon::VerifyQuadsCoverRectWithOcclusion(
-        quad_culler.quad_list(),
-        gfx::Rect(viewport_size),
+        impl.quad_list(),
+        gfx::Rect(layer_size),
         occluded,
         &partially_occluded_count);
     // The layer outputs one quad, which is partially occluded.
-    EXPECT_EQ(1u, quad_culler.quad_list().size());
+    EXPECT_EQ(1u, impl.quad_list().size());
     EXPECT_EQ(1u, partially_occluded_count);
   }
 }

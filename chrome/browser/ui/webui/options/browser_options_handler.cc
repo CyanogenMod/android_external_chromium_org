@@ -101,6 +101,7 @@
 #include "ash/ash_switches.h"
 #include "ash/magnifier/magnifier_constants.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
+#include "chrome/browser/chromeos/chromeos_utils.h"
 #include "chrome/browser/chromeos/extensions/wallpaper_manager_util.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
@@ -124,7 +125,7 @@
 #include "chrome/installer/util/auto_launch_util.h"
 #endif  // defined(OS_WIN)
 
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
 #include "chrome/browser/local_discovery/privet_notifications.h"
 #endif
 
@@ -161,10 +162,10 @@ BrowserOptionsHandler::BrowserOptionsHandler()
 #endif
 #endif  // defined(ENABLE_FULL_PRINTING)
 
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
   cloud_print_mdns_ui_enabled_ = !CommandLine::ForCurrentProcess()->HasSwitch(
         switches::kDisableDeviceDiscovery);
-#endif  // defined(ENABLE_MDNS)
+#endif  // defined(ENABLE_SERVICE_DISCOVERY)
 }
 
 BrowserOptionsHandler::~BrowserOptionsHandler() {
@@ -232,6 +233,12 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       IDS_OPTIONS_DOWNLOADLOCATION_CHANGE_BUTTON },
     { "downloadLocationGroupName", IDS_OPTIONS_DOWNLOADLOCATION_GROUP_NAME },
     { "enableLogging", IDS_OPTIONS_ENABLE_LOGGING },
+#if !defined(OS_CHROMEOS)
+    { "easyUnlockCheckboxLabel", IDS_OPTIONS_EASY_UNLOCK_CHECKBOX_LABEL },
+#endif
+    { "easyUnlockSectionTitle", IDS_OPTIONS_EASY_UNLOCK_SECTION_TITLE },
+    { "easyUnlockSetupButton", IDS_OPTIONS_EASY_UNLOCK_SETUP_BUTTON },
+    { "easyUnlockManagement", IDS_OPTIONS_EASY_UNLOCK_MANAGEMENT },
     { "fontSettingsCustomizeFontsButton",
       IDS_OPTIONS_FONTSETTINGS_CUSTOMIZE_FONTS_BUTTON },
     { "fontSizeLabelCustom", IDS_OPTIONS_FONT_SIZE_LABEL_CUSTOM },
@@ -431,7 +438,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
 #endif
     { "languageSectionLabel", IDS_OPTIONS_ADVANCED_LANGUAGE_LABEL,
       IDS_SHORT_PRODUCT_NAME },
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
     { "cloudPrintDevicesPageButton", IDS_LOCAL_DISCOVERY_DEVICES_PAGE_BUTTON },
     { "cloudPrintEnableNotificationsLabel",
       IDS_LOCAL_DISCOVERY_NOTIFICATIONS_ENABLE_CHECKBOX_LABEL },
@@ -555,7 +562,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       g_browser_process->gpu_mode_manager()->initial_gpu_mode_pref());
 #endif
 
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
   values->SetBoolean("cloudPrintHideNotificationsCheckbox",
                      !local_discovery::PrivetNotificationService::IsEnabled());
 #endif
@@ -567,6 +574,19 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
 
   values->SetString("languagesLearnMoreURL",
                     chrome::kLanguageSettingsLearnMoreUrl);
+
+  values->SetBoolean(
+      "easyUnlockEnabled",
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableEasyUnlock));
+  values->SetString("easyUnlockLearnMoreURL", chrome::kEasyUnlockLearnMoreUrl);
+  values->SetString("easyUnlockManagementURL",
+                    chrome::kEasyUnlockManagementUrl);
+#if defined(OS_CHROMEOS)
+  values->SetString("easyUnlockCheckboxLabel",
+      l10n_util::GetStringFUTF16(
+          IDS_OPTIONS_EASY_UNLOCK_CHECKBOX_LABEL_CHROMEOS,
+          chromeos::GetChromeDeviceType()));
+#endif
 }
 
 #if defined(ENABLE_FULL_PRINTING)
@@ -692,7 +712,7 @@ void BrowserOptionsHandler::RegisterMessages() {
                  base::Unretained(this)));
 #endif  // defined(OS_CHROMEOS)
 
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
   if (cloud_print_mdns_ui_enabled_) {
     web_ui()->RegisterMessageCallback(
         "showCloudPrintDevicesPage",
@@ -709,6 +729,11 @@ void BrowserOptionsHandler::RegisterMessages() {
       "requestHotwordSetupRetry",
       base::Bind(&BrowserOptionsHandler::HandleRequestHotwordSetupRetry,
                  base::Unretained(this)));
+
+  web_ui()->RegisterMessageCallback(
+      "launchEasyUnlockSetup",
+      base::Bind(&BrowserOptionsHandler::HandleLaunchEasyUnlockSetup,
+               base::Unretained(this)));
 }
 
 void BrowserOptionsHandler::Uninitialize() {
@@ -803,6 +828,10 @@ void BrowserOptionsHandler::InitializeHandler() {
       prefs::kSigninAllowed,
       base::Bind(&BrowserOptionsHandler::OnSigninAllowedPrefChange,
                  base::Unretained(this)));
+  profile_pref_registrar_.Add(
+      prefs::kEasyUnlockPairing,
+      base::Bind(&BrowserOptionsHandler::SetupEasyUnlock,
+                 base::Unretained(this)));
 
 #if defined(OS_CHROMEOS)
   if (!policy_registrar_) {
@@ -843,6 +872,7 @@ void BrowserOptionsHandler::InitializePage() {
   SetupProxySettingsSection();
   SetupManageCertificatesSection();
   SetupManagingSupervisedUsers();
+  SetupEasyUnlock();
 
 #if defined(ENABLE_FULL_PRINTING) && !defined(OS_CHROMEOS)
   if (!cloud_print_mdns_ui_enabled_) {
@@ -1321,11 +1351,6 @@ BrowserOptionsHandler::GetSyncStateDictionary() {
                           !signin->GetAuthenticatedUsername().empty());
   sync_status->SetBoolean("hasUnrecoverableError",
                           service && service->HasUnrecoverableError());
-  sync_status->SetBoolean(
-      "autoLoginVisible",
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAutologin) &&
-      service && service->IsSyncEnabledAndLoggedIn() &&
-      service->IsOAuthRefreshTokenAvailable());
 
   return sync_status.Pass();
 }
@@ -1465,7 +1490,7 @@ void BrowserOptionsHandler::ShowManageSSLCertificates(
 }
 #endif
 
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
 
 void BrowserOptionsHandler::ShowCloudPrintDevicesPage(
     const base::ListValue* args) {
@@ -1577,6 +1602,11 @@ void BrowserOptionsHandler::HandleRequestHotwordAvailable(
                                        error_message);
     }
   }
+}
+
+void BrowserOptionsHandler::HandleLaunchEasyUnlockSetup(
+    const base::ListValue* args) {
+  // TODO(tengs): launch Easy Unlock setup flow.
 }
 
 void BrowserOptionsHandler::HandleRequestHotwordSetupRetry(
@@ -1762,6 +1792,15 @@ void BrowserOptionsHandler::SetupManagingSupervisedUsers() {
   web_ui()->CallJavascriptFunction(
       "BrowserOptions.updateManagesSupervisedUsers",
       has_users_value);
+}
+
+void BrowserOptionsHandler::SetupEasyUnlock() {
+  bool has_pairing = !Profile::FromWebUI(web_ui())->GetPrefs()
+      ->GetDictionary(prefs::kEasyUnlockPairing)->empty();
+  base::FundamentalValue has_pairing_value(has_pairing);
+  web_ui()->CallJavascriptFunction(
+      "BrowserOptions.updateEasyUnlock",
+      has_pairing_value);
 }
 
 }  // namespace options

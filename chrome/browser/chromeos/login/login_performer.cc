@@ -17,6 +17,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/managed/locally_managed_user_constants.h"
 #include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/managed/supervised_user_login_flow.h"
 #include "chrome/browser/chromeos/login/supervised_user_manager.h"
@@ -61,6 +62,8 @@ LoginPerformer::~LoginPerformer() {
   DVLOG(1) << "Deleting LoginPerformer";
   if (authenticator_.get())
     authenticator_->SetConsumer(NULL);
+  if (extended_authenticator_.get())
+    extended_authenticator_->SetConsumer(NULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -235,30 +238,34 @@ void LoginPerformer::LoginAsLocallyManagedUser(
   SupervisedUserAuthentication* authentication = UserManager::Get()->
       GetSupervisedUserManager()->GetAuthentication();
 
-  if (authentication->PasswordNeedsMigration(user_context.username)) {
-    authentication->SchedulePasswordMigration(user_context.username,
-                                              user_context.password,
-                                              new_flow);
+  UserContext user_context_copy =
+      authentication->TransformPasswordInContext(user_context);
+
+  if (authentication->GetPasswordSchema(user_context.username) ==
+      SupervisedUserAuthentication::SCHEMA_SALT_HASHED) {
+    if (extended_authenticator_.get()) {
+      extended_authenticator_->SetConsumer(NULL);
+    }
+    extended_authenticator_ = new ExtendedAuthenticator(this);
+    // TODO(antrim) : Replace empty callback with explicit method.
+    // http://crbug.com/351268
+    BrowserThread::PostTask(
+        BrowserThread::UI,
+        FROM_HERE,
+        base::Bind(&ExtendedAuthenticator::AuthenticateToMount,
+                   extended_authenticator_.get(),
+                   user_context_copy,
+                   ExtendedAuthenticator::HashSuccessCallback()));
+
+  } else {
+    authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
+    BrowserThread::PostTask(
+        BrowserThread::UI,
+        FROM_HERE,
+        base::Bind(&Authenticator::LoginAsLocallyManagedUser,
+                   authenticator_.get(),
+                   user_context_copy));
   }
-
-  UserContext user_context_copy(
-     user_context.username,
-     user_context.password,
-     user_context.auth_code,
-     user_context.username_hash,
-     user_context.using_oauth,
-     user_context.auth_flow);
-
-  user_context_copy.password = authentication->TransformPassword(
-      user_context_copy.username,
-      user_context_copy.password);
-
-  authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&Authenticator::LoginAsLocallyManagedUser,
-                 authenticator_.get(),
-                 user_context_copy));
 }
 
 void LoginPerformer::LoginRetailMode() {

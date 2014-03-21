@@ -165,8 +165,10 @@ void SystemModalContainerLayoutManager::CreateModalBackground() {
 
   ui::ScopedLayerAnimationSettings settings(
       modal_background_->GetNativeView()->layer()->GetAnimator());
-  modal_background_->Show();
+  // Show should not be called with a target opacity of 0. We therefore start
+  // the fade to show animation before Show() is called.
   modal_background_->GetNativeView()->layer()->SetOpacity(0.5f);
+  modal_background_->Show();
   container_->StackChildAtTop(modal_background_->GetNativeView());
 }
 
@@ -174,11 +176,9 @@ void SystemModalContainerLayoutManager::DestroyModalBackground() {
   // modal_background_ can be NULL when a root window is shutting down
   // and OnWindowDestroying is called first.
   if (modal_background_) {
-    ui::ScopedLayerAnimationSettings settings(
-        modal_background_->GetNativeView()->layer()->GetAnimator());
+    ::wm::ScopedHidingAnimationSettings settings(
+        modal_background_->GetNativeView());
     modal_background_->Close();
-    settings.AddObserver(::wm::CreateHidingWindowAnimationObserver(
-        modal_background_->GetNativeView()));
     modal_background_->GetNativeView()->layer()->SetOpacity(0.0f);
     modal_background_ = NULL;
   }

@@ -7,7 +7,7 @@ from telemetry.page import page_measurement
 
 class ThreadTimes(page_measurement.PageMeasurement):
   def __init__(self):
-    super(ThreadTimes, self).__init__('smoothness')
+    super(ThreadTimes, self).__init__('RunSmoothness')
     self._metric = None
 
   @classmethod
@@ -16,9 +16,6 @@ class ThreadTimes(page_measurement.PageMeasurement):
                       help='Report results relevant to silk.')
     parser.add_option('--report-silk-details', action='store_true',
                       help='Report details relevant to silk.')
-
-  def CanRunForPage(self, page):
-    return hasattr(page, 'smoothness')
 
   @property
   def results_are_the_same_on_every_page(self):

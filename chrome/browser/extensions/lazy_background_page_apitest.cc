@@ -12,7 +12,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/browser_action_test_util.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/extensions/lazy_background_page_test_util.h"
@@ -27,6 +26,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/switches.h"
@@ -47,7 +47,7 @@ namespace {
 class LoadedIncognitoObserver : public content::NotificationObserver {
  public:
   explicit LoadedIncognitoObserver(Profile* profile) : profile_(profile) {
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                    content::Source<Profile>(profile));
   }
 
@@ -554,10 +554,13 @@ IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, UpdateExtensionsPage) {
 
   // Verify that extensions page shows that the lazy background page is
   // inactive.
-  bool is_inactive;
-  EXPECT_TRUE(content::ExecuteScriptInFrameAndExtractBool(
+  content::RenderFrameHost* frame = content::FrameMatchingPredicate(
       browser()->tab_strip_model()->GetActiveWebContents(),
-      "//iframe[starts-with(@src, 'chrome://extension')]",
+      base::Bind(&content::FrameHasSourceUrl,
+                 GURL(chrome::kChromeUIExtensionsFrameURL)));
+  bool is_inactive;
+  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+      frame,
       "var ele = document.querySelectorAll('div.active-views');"
       "window.domAutomationController.send("
       "    ele[0].innerHTML.search('(Inactive)') > 0);",

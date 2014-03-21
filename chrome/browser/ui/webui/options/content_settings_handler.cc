@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/webui/options/content_settings_handler.h"
 
+#include <algorithm>
 #include <map>
 #include <vector>
 
@@ -11,6 +12,7 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -39,6 +41,8 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/page_zoom.h"
+#include "content/public/common/url_constants.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/permissions/api_permission.h"
 #include "grit/generated_resources.h"
@@ -83,6 +87,7 @@ const char* kAppId = "appId";
 const char* kEmbeddingOrigin = "embeddingOrigin";
 const char* kPreferencesSource = "preference";
 const char* kVideoSetting = "video";
+const char* kZoom = "zoom";
 
 const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
   {CONTENT_SETTINGS_TYPE_COOKIES, "cookies"},
@@ -106,6 +111,10 @@ const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
   {CONTENT_SETTINGS_TYPE_PROTECTED_MEDIA_IDENTIFIER, "protectedContent"},
 #endif
 };
+
+// A pseudo content type. We use it to display data like a content setting even
+// though it is not a real content setting.
+const char* kZoomContentType = "zoomlevels";
 
 ContentSettingsType ContentSettingsTypeFromGroupName(const std::string& name) {
   for (size_t i = 0; i < arraysize(kContentSettingsTypeGroupNames); ++i) {
@@ -250,6 +259,13 @@ void AddExceptionsGrantedByHostedApps(
   }
 }
 
+// Sort ZoomLevelChanges by host and scheme
+// (a.com < http://a.com < https://a.com < b.com).
+bool HostZoomSort(const content::HostZoomMap::ZoomLevelChange& a,
+                  const content::HostZoomMap::ZoomLevelChange& b) {
+  return a.host == b.host ? a.scheme < b.scheme : a.host < b.host;
+}
+
 }  // namespace
 
 namespace options {
@@ -291,6 +307,7 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "manage_handlers", IDS_HANDLERS_MANAGE },
     { "exceptionPatternHeader", IDS_EXCEPTIONS_PATTERN_HEADER },
     { "exceptionBehaviorHeader", IDS_EXCEPTIONS_ACTION_HEADER },
+    { "exceptionZoomHeader", IDS_EXCEPTIONS_ZOOM_HEADER },
     { "embeddedOnHost", IDS_EXCEPTIONS_GEOLOCATION_EMBEDDED_ON_HOST },
     // Cookies filter.
     { "cookies_tab_label", IDS_COOKIES_TAB_LABEL },
@@ -400,6 +417,8 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "midiSysExAllow", IDS_MIDI_SYSEX_ALLOW_RADIO },
     { "midiSysExAsk", IDS_MIDI_SYSEX_ASK_RADIO },
     { "midiSysExBlock", IDS_MIDI_SYSEX_BLOCK_RADIO },
+    { "zoomlevels_header", IDS_ZOOMLEVELS_HEADER_AND_TAB_LABEL },
+    { "zoomLevelsManage", IDS_ZOOMLEVELS_MANAGE_BUTTON },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -438,6 +457,8 @@ void ContentSettingsHandler::GetLocalizedValues(
                 IDS_AUTOMATIC_DOWNLOADS_TAB_LABEL);
   RegisterTitle(localized_strings, "midi-sysex",
                 IDS_MIDI_SYSEX_TAB_LABEL);
+  RegisterTitle(localized_strings, "zoomlevels",
+                IDS_ZOOMLEVELS_HEADER_AND_TAB_LABEL);
 
   localized_strings->SetString(
       "exceptionsLearnMoreUrl",
@@ -483,6 +504,13 @@ void ContentSettingsHandler::InitializeHandler() {
       base::Bind(
           &ContentSettingsHandler::UpdateProtectedContentExceptionsButton,
           base::Unretained(this)));
+
+  content::HostZoomMap* host_zoom_map =
+      content::HostZoomMap::GetForBrowserContext(profile);
+  host_zoom_map_subscription_ =
+      host_zoom_map->AddZoomLevelChangedCallback(
+          base::Bind(&ContentSettingsHandler::OnZoomLevelChanged,
+                     base::Unretained(this)));
 
   flash_settings_manager_.reset(new PepperFlashSettingsManager(this, profile));
 }
@@ -675,6 +703,9 @@ void ContentSettingsHandler::UpdateAllExceptionsViewsFromModel() {
        type < CONTENT_SETTINGS_NUM_TYPES; ++type) {
     UpdateExceptionsViewFromModel(static_cast<ContentSettingsType>(type));
   }
+  // Zoom levels are not actually a content type so we need to handle them
+  // separately.
+  UpdateZoomLevelsExceptionsView();
 }
 
 void ContentSettingsHandler::UpdateAllOTRExceptionsViewsFromModel() {
@@ -956,6 +987,52 @@ void ContentSettingsHandler::UpdateMIDISysExExceptionsView() {
       CONTENT_SETTINGS_TYPE_MIDI_SYSEX);
 }
 
+void ContentSettingsHandler::UpdateZoomLevelsExceptionsView() {
+  base::ListValue zoom_levels_exceptions;
+
+  content::HostZoomMap* host_zoom_map =
+      content::HostZoomMap::GetForBrowserContext(Profile::FromWebUI(web_ui()));
+  content::HostZoomMap::ZoomLevelVector zoom_levels(
+      host_zoom_map->GetAllZoomLevels());
+  std::sort(zoom_levels.begin(), zoom_levels.end(), HostZoomSort);
+
+  for (content::HostZoomMap::ZoomLevelVector::const_iterator i =
+           zoom_levels.begin();
+       i != zoom_levels.end();
+       ++i) {
+    scoped_ptr<base::DictionaryValue> exception(new base::DictionaryValue);
+    switch (i->mode) {
+      case content::HostZoomMap::ZOOM_CHANGED_FOR_HOST:
+        exception->SetString(kOrigin, i->host);
+        break;
+      case content::HostZoomMap::ZOOM_CHANGED_FOR_SCHEME_AND_HOST:
+        exception->SetString(
+            kOrigin, i->scheme + content::kStandardSchemeSeparator + i->host);
+        break;
+      case content::HostZoomMap::ZOOM_CHANGED_TEMPORARY_ZOOM:
+        NOTREACHED();
+    }
+    exception->SetString(kSetting,
+                         ContentSettingToString(CONTENT_SETTING_DEFAULT));
+
+    // Calculate the zoom percent from the factor. Round up to the nearest whole
+    // number.
+    int zoom_percent = static_cast<int>(
+        content::ZoomLevelToZoomFactor(i->zoom_level) * 100 + 0.5);
+    exception->SetString(
+        kZoom,
+        l10n_util::GetStringFUTF16(IDS_ZOOM_PERCENT,
+                                   base::IntToString16(zoom_percent)));
+    exception->SetString(kSource, kPreferencesSource);
+    // Append the new entry to the list and map.
+    zoom_levels_exceptions.Append(exception.release());
+  }
+
+  base::StringValue type_string(kZoomContentType);
+  web_ui()->CallJavascriptFunction("ContentSettings.setExceptions",
+                                   type_string, zoom_levels_exceptions);
+}
+
 void ContentSettingsHandler::UpdateExceptionsViewFromHostContentSettingsMap(
     ContentSettingsType type) {
   base::ListValue exceptions;
@@ -1080,13 +1157,13 @@ void ContentSettingsHandler::GetExceptionsFromHostContentSettingsMap(
 }
 
 void ContentSettingsHandler::RemoveNotificationException(
-    const base::ListValue* args, size_t arg_index) {
+    const base::ListValue* args) {
   Profile* profile = Profile::FromWebUI(web_ui());
   std::string origin;
   std::string setting;
-  bool rv = args->GetString(arg_index++, &origin);
+  bool rv = args->GetString(1, &origin);
   DCHECK(rv);
-  rv = args->GetString(arg_index++, &setting);
+  rv = args->GetString(2, &setting);
   DCHECK(rv);
   ContentSetting content_setting = ContentSettingFromString(setting);
 
@@ -1096,14 +1173,13 @@ void ContentSettingsHandler::RemoveNotificationException(
       ClearSetting(ContentSettingsPattern::FromString(origin));
 }
 
-void ContentSettingsHandler::RemoveMediaException(
-    const base::ListValue* args, size_t arg_index) {
+void ContentSettingsHandler::RemoveMediaException(const base::ListValue* args) {
   std::string mode;
-  bool rv = args->GetString(arg_index++, &mode);
+  bool rv = args->GetString(1, &mode);
   DCHECK(rv);
 
   std::string pattern;
-  rv = args->GetString(arg_index++, &pattern);
+  rv = args->GetString(2, &pattern);
   DCHECK(rv);
 
   HostContentSettingsMap* settings_map =
@@ -1124,18 +1200,18 @@ void ContentSettingsHandler::RemoveMediaException(
 }
 
 void ContentSettingsHandler::RemoveExceptionFromHostContentSettingsMap(
-    const base::ListValue* args, size_t arg_index,
+    const base::ListValue* args,
     ContentSettingsType type) {
   std::string mode;
-  bool rv = args->GetString(arg_index++, &mode);
+  bool rv = args->GetString(1, &mode);
   DCHECK(rv);
 
   std::string pattern;
-  rv = args->GetString(arg_index++, &pattern);
+  rv = args->GetString(2, &pattern);
   DCHECK(rv);
 
   std::string secondary_pattern;
-  rv = args->GetString(arg_index++, &secondary_pattern);
+  rv = args->GetString(3, &secondary_pattern);
   DCHECK(rv);
 
   HostContentSettingsMap* settings_map =
@@ -1150,6 +1226,32 @@ void ContentSettingsHandler::RemoveExceptionFromHostContentSettingsMap(
         type,
         std::string(),
         NULL);
+  }
+}
+
+void ContentSettingsHandler::RemoveZoomLevelException(
+    const base::ListValue* args) {
+  std::string mode;
+  bool rv = args->GetString(1, &mode);
+  DCHECK(rv);
+
+  std::string pattern;
+  rv = args->GetString(2, &pattern);
+  DCHECK(rv);
+
+  content::HostZoomMap* host_zoom_map =
+      content::HostZoomMap::GetForBrowserContext(Profile::FromWebUI(web_ui()));
+  double default_level = host_zoom_map->GetDefaultZoomLevel();
+
+  std::string::size_type scheme_separator_position =
+      pattern.find(content::kStandardSchemeSeparator);
+  if (scheme_separator_position == std::string::npos) {
+    host_zoom_map->SetZoomLevelForHost(pattern, default_level);
+  } else {
+    std::string scheme = pattern.substr(0, scheme_separator_position);
+    std::string host = pattern.substr(
+        scheme_separator_position + strlen(content::kStandardSchemeSeparator));
+    host_zoom_map->SetZoomLevelForHostAndScheme(scheme, host, default_level);
   }
 }
 
@@ -1276,34 +1378,40 @@ void ContentSettingsHandler::SetContentFilter(const base::ListValue* args) {
 }
 
 void ContentSettingsHandler::RemoveException(const base::ListValue* args) {
-  size_t arg_i = 0;
   std::string type_string;
-  CHECK(args->GetString(arg_i++, &type_string));
+  CHECK(args->GetString(0, &type_string));
+
+  // Zoom levels are no actual content type so we need to handle them
+  // separately. They would not be recognized by
+  // ContentSettingsTypeFromGroupName.
+  if (type_string == kZoomContentType) {
+    RemoveZoomLevelException(args);
+    return;
+  }
 
   ContentSettingsType type = ContentSettingsTypeFromGroupName(type_string);
   switch (type) {
     case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
-      RemoveNotificationException(args, arg_i);
+      RemoveNotificationException(args);
       break;
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
-      RemoveMediaException(args, arg_i);
+      RemoveMediaException(args);
       break;
     default:
-      RemoveExceptionFromHostContentSettingsMap(args, arg_i, type);
+      RemoveExceptionFromHostContentSettingsMap(args, type);
       break;
   }
 }
 
 void ContentSettingsHandler::SetException(const base::ListValue* args) {
-  size_t arg_i = 0;
   std::string type_string;
-  CHECK(args->GetString(arg_i++, &type_string));
+  CHECK(args->GetString(0, &type_string));
   std::string mode;
-  CHECK(args->GetString(arg_i++, &mode));
+  CHECK(args->GetString(1, &mode));
   std::string pattern;
-  CHECK(args->GetString(arg_i++, &pattern));
+  CHECK(args->GetString(2, &pattern));
   std::string setting;
-  CHECK(args->GetString(arg_i++, &setting));
+  CHECK(args->GetString(3, &setting));
 
   ContentSettingsType type = ContentSettingsTypeFromGroupName(type_string);
   if (type == CONTENT_SETTINGS_TYPE_GEOLOCATION ||
@@ -1331,13 +1439,12 @@ void ContentSettingsHandler::SetException(const base::ListValue* args) {
 
 void ContentSettingsHandler::CheckExceptionPatternValidity(
     const base::ListValue* args) {
-  size_t arg_i = 0;
   std::string type_string;
-  CHECK(args->GetString(arg_i++, &type_string));
+  CHECK(args->GetString(0, &type_string));
   std::string mode_string;
-  CHECK(args->GetString(arg_i++, &mode_string));
+  CHECK(args->GetString(1, &mode_string));
   std::string pattern_string;
-  CHECK(args->GetString(arg_i++, &pattern_string));
+  CHECK(args->GetString(2, &pattern_string));
 
   ContentSettingsPattern pattern =
       ContentSettingsPattern::FromString(pattern_string);
@@ -1396,6 +1503,11 @@ void ContentSettingsHandler::OnPepperFlashPrefChanged() {
     RefreshFlashMediaSettings();
   else
     media_settings_.flash_settings_initialized = false;
+}
+
+void ContentSettingsHandler::OnZoomLevelChanged(
+    const content::HostZoomMap::ZoomLevelChange& change) {
+  UpdateZoomLevelsExceptionsView();
 }
 
 void ContentSettingsHandler::ShowFlashMediaLink(LinkType link_type, bool show) {

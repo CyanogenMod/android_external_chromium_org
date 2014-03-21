@@ -6,7 +6,6 @@ package org.chromium.chrome.shell;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.content.res.TypedArray;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Log;
@@ -49,26 +48,46 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
     /**
      * Factory used to set up a mock ActivityWindowAndroid for testing.
      */
-    public interface WindowAndroidFactoryForTest {
+    public interface ActivityWindowAndroidFactory {
         /**
          * @return ActivityWindowAndroid for the given activity.
          */
         public ActivityWindowAndroid getActivityWindowAndroid(Activity activity);
     }
 
-    private static WindowAndroidFactoryForTest sWindowAndroidFactory =
-            new WindowAndroidFactoryForTest() {
+    private static ActivityWindowAndroidFactory sWindowAndroidFactory =
+            new ActivityWindowAndroidFactory() {
                 @Override
                 public ActivityWindowAndroid getActivityWindowAndroid(Activity activity) {
                     return new ActivityWindowAndroid(activity);
                 }
             };
+
     private WindowAndroid mWindow;
     private TabManager mTabManager;
     private DevToolsServer mDevToolsServer;
     private SyncController mSyncController;
     private PrintingController mPrintingController;
 
+    /**
+     * Factory used to set up a mock AppMenuHandler for testing.
+     */
+    public interface AppMenuHandlerFactory {
+        /**
+         * @return AppMenuHandler for the given activity and menu resource id.
+         */
+        public AppMenuHandler getAppMenuHandler(Activity activity,
+                AppMenuPropertiesDelegate delegate, int menuResourceId);
+    }
+
+    private static AppMenuHandlerFactory sAppMenuHandlerFactory =
+            new AppMenuHandlerFactory() {
+                @Override
+                public AppMenuHandler getAppMenuHandler(Activity activity,
+                        AppMenuPropertiesDelegate delegate, int menuResourceId) {
+                    return new AppMenuHandler(activity, delegate, menuResourceId);
+                }
+            };
     private AppMenuHandler mAppMenuHandler;
 
     @Override
@@ -117,7 +136,7 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
             mTabManager.setStartupUrl(startupUrl);
         }
         ChromeShellToolbar mToolbar = (ChromeShellToolbar) findViewById(R.id.toolbar);
-        mAppMenuHandler = new AppMenuHandler(this, this, R.menu.main_menu);
+        mAppMenuHandler = sAppMenuHandlerFactory.getAppMenuHandler(this, this, R.menu.main_menu);
         mToolbar.setMenuHandler(mAppMenuHandler);
 
         mDevToolsServer = new DevToolsServer("chrome_shell");
@@ -149,8 +168,8 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
     public boolean onKeyUp(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
             ChromeShellTab tab = getActiveTab();
-            if (tab != null && tab.getContentView().canGoBack()) {
-                tab.getContentView().goBack();
+            if (tab != null && tab.canGoBack()) {
+                tab.goBack();
                 return true;
             }
         }
@@ -240,30 +259,37 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
+        ChromeShellTab activeTab = getActiveTab();
         switch (item.getItemId()) {
             case R.id.signin:
-                if (ChromeSigninController.get(this).isSignedIn())
+                if (ChromeSigninController.get(this).isSignedIn()) {
                     SyncController.openSignOutDialog(getFragmentManager());
-                else
+                } else {
                     SyncController.openSigninDialog(getFragmentManager());
+                }
                 return true;
             case R.id.print:
-                if (getActiveTab() != null) {
-                    mPrintingController.startPrint(new TabPrinter(getActiveTab()),
+                if (activeTab != null) {
+                    mPrintingController.startPrint(new TabPrinter(activeTab),
                             new PrintManagerDelegateImpl(this));
                 }
                 return true;
             case R.id.distill_page:
-                ChromeShellTab activeTab = getActiveTab();
-                String viewUrl = DomDistillerUrlUtils.getDistillerViewUrlFromUrl(
-                        CHROME_DISTILLER_SCHEME, getActiveTab().getUrl());
-                activeTab.loadUrlWithSanitization(viewUrl);
+                if (activeTab != null) {
+                    String viewUrl = DomDistillerUrlUtils.getDistillerViewUrlFromUrl(
+                            CHROME_DISTILLER_SCHEME, activeTab.getUrl());
+                    activeTab.loadUrlWithSanitization(viewUrl);
+                }
                 return true;
             case R.id.back_menu_id:
-                if (getActiveTab().canGoBack()) getActiveTab().goBack();
+                if (activeTab != null && activeTab.canGoBack()) {
+                    activeTab.goBack();
+                }
                 return true;
             case R.id.forward_menu_id:
-                if (getActiveTab().canGoForward()) getActiveTab().goForward();
+                if (activeTab != null && activeTab.canGoForward()) {
+                    activeTab.goForward();
+                }
                 return true;
             default:
                 return super.onOptionsItemSelected(item);
@@ -298,7 +324,7 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
         forwardMenuItem.setEnabled(getActiveTab().canGoForward());
 
         // ChromeShell does not know about bookmarks yet
-        menu.findItem(R.id.bookmark_this_page_id).setEnabled(false);
+        menu.findItem(R.id.bookmark_this_page_id).setEnabled(true);
 
         MenuItem signinItem = menu.findItem(R.id.signin);
         if (ChromeSigninController.get(this).isSignedIn()) {
@@ -315,9 +341,9 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
         menu.setGroupVisible(R.id.MAIN_MENU, true);
     }
 
-    @Override
-    public boolean shouldShowIconRow() {
-        return true;
+    @VisibleForTesting
+    public AppMenuHandler getAppMenuHandler() {
+        return mAppMenuHandler;
     }
 
     @Override
@@ -325,17 +351,13 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
         return android.R.style.Theme_Holo_Light;
     }
 
-    @Override
-    public int getItemRowHeight() {
-        TypedArray a = obtainStyledAttributes(
-                new int[] {android.R.attr.listPreferredItemHeightSmall});
-        int itemRowHeight = a.getDimensionPixelSize(0, 0);
-        a.recycle();
-        return itemRowHeight;
+    @VisibleForTesting
+    public static void setActivityWindowAndroidFactory(ActivityWindowAndroidFactory factory) {
+        sWindowAndroidFactory = factory;
     }
 
     @VisibleForTesting
-    public static void setActivityWindowAndroidFactory(WindowAndroidFactoryForTest factory) {
-        sWindowAndroidFactory = factory;
+    public static void setAppMenuHandlerFactory(AppMenuHandlerFactory factory) {
+        sAppMenuHandlerFactory = factory;
     }
 }

@@ -27,7 +27,7 @@
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
-#include "ui/aura/window_event_dispatcher.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/ime/input_method_initializer.h"
 #include "ui/events/gestures/gesture_configuration.h"
 #include "ui/gfx/display.h"
@@ -46,6 +46,10 @@
 #include "ui/aura/remote_window_tree_host_win.h"
 #include "ui/aura/window_tree_host_win.h"
 #include "win8/test/test_registrar_constants.h"
+#endif
+
+#if defined(USE_X11)
+#include <X11/Xlib.h>
 #endif
 
 namespace ash {
@@ -90,6 +94,14 @@ AshTestBase::AshTestBase()
     : setup_called_(false),
       teardown_called_(false),
       start_session_(true) {
+#if defined(USE_X11)
+  // This is needed for tests which use this base class but are run in browser
+  // test binaries so don't get the default initialization in the unit test
+  // suite.
+  XInitThreads();
+#endif
+
+  thread_bundle_.reset(new content::TestBrowserThreadBundle);
   // Must initialize |ash_test_helper_| here because some tests rely on
   // AshTestBase methods before they call AshTestBase::SetUp().
   ash_test_helper_.reset(new AshTestHelper(base::MessageLoopForUI::current()));

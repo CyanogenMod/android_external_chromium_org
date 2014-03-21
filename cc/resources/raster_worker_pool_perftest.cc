@@ -15,6 +15,7 @@
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/lap_timer.h"
 #include "cc/test/test_context_support.h"
+#include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/test_web_graphics_context_3d.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
@@ -23,9 +24,30 @@
 namespace cc {
 namespace {
 
+class PerfGLES2Interface : public gpu::gles2::GLES2InterfaceStub {
+  // Overridden from gpu::gles2::GLES2Interface:
+  virtual GLuint CreateImageCHROMIUM(GLsizei width,
+                                     GLsizei height,
+                                     GLenum internalformat) OVERRIDE {
+    return 1u;
+  }
+  virtual void GenBuffers(GLsizei n, GLuint* buffers) OVERRIDE {
+    for (GLsizei i = 0; i < n; ++i)
+      buffers[i] = 1u;
+  }
+  virtual void GenTextures(GLsizei n, GLuint* textures) OVERRIDE {
+    for (GLsizei i = 0; i < n; ++i)
+      textures[i] = 1u;
+  }
+  virtual void GetIntegerv(GLenum pname, GLint* params) OVERRIDE {
+    if (pname == GL_MAX_TEXTURE_SIZE)
+      *params = INT_MAX;
+  }
+};
+
 class PerfContextProvider : public ContextProvider {
  public:
-  PerfContextProvider() : context_gl_(new gpu::gles2::GLES2InterfaceStub) {}
+  PerfContextProvider() : context_gl_(new PerfGLES2Interface) {}
 
   virtual bool BindToCurrentThread() OVERRIDE { return true; }
   virtual Capabilities ContextCapabilities() OVERRIDE { return Capabilities(); }
@@ -44,7 +66,7 @@ class PerfContextProvider : public ContextProvider {
  private:
   virtual ~PerfContextProvider() {}
 
-  scoped_ptr<gpu::gles2::GLES2InterfaceStub> context_gl_;
+  scoped_ptr<PerfGLES2Interface> context_gl_;
   TestContextSupport support_;
 };
 
@@ -164,8 +186,11 @@ class RasterWorkerPoolPerfTestBase {
     output_surface_ = FakeOutputSurface::Create3d(context_provider_).Pass();
     CHECK(output_surface_->BindToClient(&output_surface_client_));
 
-    resource_provider_ = ResourceProvider::Create(
-                             output_surface_.get(), NULL, 0, false, 1).Pass();
+    shared_bitmap_manager_.reset(new TestSharedBitmapManager());
+    resource_provider_ =
+        ResourceProvider::Create(
+            output_surface_.get(), shared_bitmap_manager_.get(), 0, false, 1)
+            .Pass();
   }
   virtual ~RasterWorkerPoolPerfTestBase() { resource_provider_.reset(); }
 
@@ -207,6 +232,7 @@ class RasterWorkerPoolPerfTestBase {
   scoped_refptr<ContextProvider> context_provider_;
   FakeOutputSurfaceClient output_surface_client_;
   scoped_ptr<FakeOutputSurface> output_surface_;
+  scoped_ptr<SharedBitmapManager> shared_bitmap_manager_;
   scoped_ptr<ResourceProvider> resource_provider_;
   LapTimer timer_;
 };

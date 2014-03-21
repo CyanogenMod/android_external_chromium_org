@@ -31,8 +31,8 @@ include $(LOCAL_PATH)/components/autofill_core_browser.target.linux-x86.mk
 include $(LOCAL_PATH)/components/autofill_core_common.target.linux-x86.mk
 include $(LOCAL_PATH)/components/autofill_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/components/autofill_regexes.target.linux-x86.mk
-include $(LOCAL_PATH)/components/component_resources.target.linux-x86.mk
-include $(LOCAL_PATH)/components/component_strings.target.linux-x86.mk
+include $(LOCAL_PATH)/components/components_resources.target.linux-x86.mk
+include $(LOCAL_PATH)/components/components_strings.target.linux-x86.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.linux-x86.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/components/os_crypt.target.linux-x86.mk
@@ -93,11 +93,6 @@ include $(LOCAL_PATH)/media/player_android.target.linux-x86.mk
 include $(LOCAL_PATH)/media/shared_memory_support.target.linux-x86.mk
 include $(LOCAL_PATH)/media/shared_memory_support_sse.target.linux-x86.mk
 include $(LOCAL_PATH)/media/video_capture_android_jni_headers.target.linux-x86.mk
-include $(LOCAL_PATH)/mojo/mojo_common_lib.target.linux-x86.mk
-include $(LOCAL_PATH)/mojo/mojo_environment_chromium.target.linux-x86.mk
-include $(LOCAL_PATH)/mojo/mojo_environment_chromium_impl.target.linux-x86.mk
-include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.linux-x86.mk
-include $(LOCAL_PATH)/mojo/mojo_system.target.linux-x86.mk
 include $(LOCAL_PATH)/net/cert_verify_status_android_java.target.linux-x86.mk
 include $(LOCAL_PATH)/net/certificate_mime_types_java.target.linux-x86.mk
 include $(LOCAL_PATH)/net/http_server.target.linux-x86.mk

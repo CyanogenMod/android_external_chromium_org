@@ -2219,7 +2219,10 @@ Even if you have downloaded files from this website before, the website might ha
         </message>
         <message name="IDS_APPLICATION_INFO_MANAGE_TAB_TITLE" desc="Title of the third tab in the dialog, which displays the app's usage information and some tools for managing the app's status.">
           Manage
-      </message>
+        </message>
+        <message name="IDS_APPLICATION_INFO_WEB_STORE_LINK" desc="Text for the link that opens the app in the Web Store.">
+          View in Web Store
+        </message>
       </if>
       <if expr="use_titlecase">
         <message name="IDS_APPLICATION_INFO_CLOSE_BUTTON" desc="In Title Case: Button in the Application Information Dialog that closes the dialog">
@@ -2233,6 +2236,9 @@ Even if you have downloaded files from this website before, the website might ha
         </message>
         <message name="IDS_APPLICATION_INFO_MANAGE_TAB_TITLE" desc="In Title Case: Title of the third tab in the dialog, which displays the app's usage information and some tools for managing the app's status.">
           Manage
+        </message>
+        <message name="IDS_APPLICATION_INFO_WEB_STORE_LINK" desc="In Title Case: Text for the link that opens the app in the Web Store..">
+          View in Web Store
         </message>
       </if>
 
@@ -4651,6 +4657,9 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_NPAPI_NOT_SUPPORTED" desc="Error message when an extension has a requirement for plugins that the system does not support.">
         NPAPI plugins are not supported.
       </message>
+      <message name="IDS_EXTENSION_WINDOW_SHAPE_NOT_SUPPORTED" desc="Error message when an extension has a requirement for shaped windows that the system does not support.">
+        Shaped windows are not supported.
+      </message>
       <message name="IDS_EXTENSION_CANT_INSTALL_POLICY_BLOCKED" desc="Error message when a user tries to install an extension that is blocked by administrator policy.">
         <ph name="EXTENSION_NAME">$1<ex>Google Talk</ex></ph> (extension ID "<ph name="EXTENSION_ID">$2<ex>nckgahadagoaajjgafhacjanaoiihapd</ex></ph>") is blocked by the administrator.
       </message>
@@ -5719,12 +5728,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_SHOW_FPS_COUNTER_DESCRIPTION" desc="Description of the 'Show FPS counter' lab.">
         Shows a page's actual frame rate, in frames per second, when hardware acceleration is active.
       </message>
-      <message name="IDS_FLAGS_ACCELERATED_FILTERS" desc="Name of the 'Accelerated SVG Filters' lab.">
-        GPU Accelerated SVG Filters
-      </message>
-      <message name="IDS_FLAGS_ACCELERATED_FILTERS_DESCRIPTION" desc="Description of the 'Accelerated SVG Filters' lab.">
-        Use the GPU to accelerate rendering of SVG filters.
-      </message>
       <message name="IDS_FLAGS_DEBUG_SHORTCUTS_NAME" desc="Name of the 'Debugging keyboard shortcuts' lab.">
         Debugging keyboard shortcuts
       </message>
@@ -6424,12 +6427,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_PINCH_VIRTUAL_VIEWPORT_DESCRIPTION" desc="Description of the flag to turn on experimental pinch virtual viewport.">
         When zoomed in, fixed-position elements and scaled scrollbars attach to this viewport.
       </message>
-      <message name="IDS_FLAGS_ENABLE_CONTACTS_NAME" desc="Name of the 'Enable contacts' lab.">
-        Enable contacts integration.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_CONTACTS_DESCRIPTION" desc="Description of the 'Enable contacts' lab.">
-        Enables downloading Google contacts and displaying them in the App Launcher.
-      </message>
       <message name="IDS_FLAGS_ENABLE_VIEWPORT_META_NAME" desc="Name of the flag to turn on viewport meta tag support.">
         Enable viewport meta tag.
       </message>
@@ -6463,12 +6460,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
           This is an experimental mode to run several profiles/users simultaneously during a browsing session. Features may break or change significantly.
         </message>
       </if>
-      <message name="IDS_FLAGS_FULL_HISTORY_SYNC_NAME" desc="Name of the flag to disable full history sync.">
-        Disable full history sync
-      </message>
-      <message name="IDS_FLAGS_FULL_HISTORY_SYNC_DESCRIPTION" desc="Description for the flag to disable full history sync.">
-        Allows you to see and delete history entries from your signed-in devices at chrome://history.
-      </message>
       <message name="IDS_FLAGS_DISABLE_ACCELERATED_VIDEO_DECODE_NAME" desc="Name of the flag to disable accelerated video decode where available.">
         Disable hardware-accelerated video decode.
       </message>
@@ -8239,6 +8230,9 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_EXCEPTIONS_ACTION_HEADER" desc="A column header for the action column of the cookie/image/javascript/plugins exceptions dialog">
         Behavior
       </message>
+      <message name="IDS_EXCEPTIONS_ZOOM_HEADER" desc="A column header for the exceptions dialog indicating the zoom level of pages (e.g. 110% magnification)">
+        Zoom
+      </message>
       <message name="IDS_EXCEPTIONS_ALLOW_BUTTON" desc="A label to display in the exception page's action column when a site's content setting is allowed for a given domain">
         Allow
       </message>
@@ -8310,6 +8304,13 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
       <message name="IDS_HANDLERS_MANAGE" desc="The label on the button that launches the exceptions management page for a given content type">
         Manage handlers...
+      </message>
+
+      <message name="IDS_ZOOMLEVELS_HEADER_AND_TAB_LABEL" desc="Label for Zoom Level tab and a header the on Content Settings dialog (zoom levels indicate that a page should be shown for example at 110% magnification).">
+        Zoom Levels
+      </message>
+      <message name="IDS_ZOOMLEVELS_MANAGE_BUTTON" desc="Button on the Content Settings dialog that opens a dialog to manage your page zoom levels (zoom levels indicate that a page should be shown for example at 110% magnification).">
+        Manage...
       </message>
 
       <!-- Automatic updates -->
@@ -10075,6 +10076,18 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_OPTIONS_DOWNLOADLOCATION_ASKFORSAVELOCATION" desc="The 'Ask for save location before downloading' checkbox label">
           Ask where to save each file before downloading
         </message>
+        <message name="IDS_OPTIONS_EASY_UNLOCK_SECTION_TITLE" desc="The title of the Easy Unlock section on the settings page.">
+          Easy Unlock
+        </message>
+        <message name="IDS_OPTIONS_EASY_UNLOCK_SETUP_BUTTON" desc="The label of the button to setup Easy Unlock section on the settings page.">
+          Setup Easy Unlock
+        </message>
+        <message name="IDS_OPTIONS_EASY_UNLOCK_CHECKBOX_LABEL" desc="The label beside the checkbox to enable or disable easy unlock.">
+          Enable Easy Unlock for this device.
+        </message>
+        <message name="IDS_OPTIONS_EASY_UNLOCK_MANAGEMENT" desc="The text of the link to the Easy Unlock management webpage.">
+          Manage Easy Unlock devices on your account settings.
+        </message>
         <message name="IDS_OPTIONS_OPEN_FILE_TYPES_AUTOMATICALLY" desc="The information label for the 'Clear auto-opening settings' button">
           You have chosen to open certain file types automatically after downloading.
         </message>
@@ -11242,7 +11255,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
           &lt;/p&gt;
         </message>
       </if>
-      
+
       <!-- Strings used for non-Android builds -->
       <if expr="not is_android">
         <message name="IDS_NEW_TAB_TITLE"
@@ -11935,6 +11948,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
       <message name="IDS_PLUGIN_DISCONNECTED_PROMPT" desc="Info Bar message to notify that the channel connecting to a plugin has encountered an error.">
         <ph name="PLUGIN_NAME">$1<ex>Shockwave</ex> has encountered an error.</ph>
+      </message>
+      <message name="IDS_RELOAD_PAGE_WITH_PLUGIN" desc="Info Bar button to reload the page where a plugin crashed or disconnected.">
+        Reload
       </message>
       <message name="IDS_PLUGIN_INITIALIZATION_ERROR_PROMPT" desc="Info Bar message to notify that we couldn't load a plugin">
         Could not load <ph name="PLUGIN_NAME">$1<ex>Shockwave</ex>.</ph>
@@ -13995,6 +14011,9 @@ After you create a new supervised user, you can manage their settings at any tim
       <message name="IDS_LOGIN_POD_MENU_REMOVE_ITEM_ACCESSIBLE_NAME" desc="Text to be spoken when 'Remove user' item is selected on the pod menu.">
         Remove this user
       </message>
+      <message name="IDS_LOGIN_EASY_UNLOCK_TOOLTIP" desc="Tooltip text shown on lock screen when Easy Unlock is first setup.">
+        This icon appears when you and your phone are nearby and Easy Unlock is available. Just click to enter, no password needed.
+      </message>
       <if expr="chromeos">
         <message name="IDS_LOGIN_POD_USER_REMOVE_WARNING" desc="Text shown as a warning when attempting to remove supervised user.">
           All files and local data associated with the supervised user will be permanently deleted once this supervised user is removed. Visited websites and settings for this supervised user may still be visible by the manager at <ph name="MANAGEMENT_URL">$1<ex>www.example.com</ex></ph>.
@@ -14308,6 +14327,9 @@ Do you accept?
         <message name="IDS_MEDIA_GALLERIES_DIALOG_CONFIRM" desc="In title case: The text for the accept button on the media galleries configuration dialog.">
           Apply
         </message>
+        <message name="IDS_MEDIA_GALLERIES_SCAN_RESULT_DIALOG_CONFIRM" desc="In title case: The text for the accept button on the media galleries scan result dialog. The results of the dialog are added as new galleries.">
+          Add
+        </message>
       </if>
       <if expr="not use_titlecase">
         <message name="IDS_MEDIA_GALLERIES_DIALOG_ADD_GALLERY" desc="In sentence case: Button for adding a new gallery by choosing a folder."
@@ -14320,6 +14342,9 @@ Do you accept?
         <message name="IDS_MEDIA_GALLERIES_DIALOG_CONFIRM" desc="In sentence case: The text for the accept button on the media galleries configuration dialog."
                  meaning="In sentence case: The text for the accept button on the media galleries configuration dialog.">
           Apply
+        </message>
+        <message name="IDS_MEDIA_GALLERIES_SCAN_RESULT_DIALOG_CONFIRM" desc="In sentence case: The text for the accept button on the media galleries scan result dialog. The results of the dialog are added as new galleries.">
+          Add
         </message>
       </if>
       <message name="IDS_MEDIA_GALLERIES_DIALOG_ADD_GALLERY_TITLE" desc="The title of the folder selection dialog for adding a new media gallery.">
@@ -14338,18 +14363,6 @@ Do you accept?
 
     <!-- App List. -->
     <if expr="enable_app_list">
-      <message name="IDS_APP_LIST_CONTACT_CHAT_TOOLTIP" desc="Tooltip text for the 'chat' icon displayed next to a contact search result.">
-        Chat
-      </message>
-      <message name="IDS_APP_LIST_CONTACT_EMAIL_TOOLTIP" desc="Tooltip text for the 'email' icon displayed next to a contact search result.">
-        Send email
-      </message>
-      <message name="IDS_APP_LIST_CONTACT_PHONE_TOOLTIP" desc="Tooltip text for the 'phone' icon displayed next to a contact search result.">
-        Call phone
-      </message>
-      <message name="IDS_APP_LIST_CONTACT_VIDEO_TOOLTIP" desc="Tooltip text for the 'video' icon displayed next to a contact search result.">
-        Start Hangout
-      </message>
       <message name="IDS_APP_LIST_START_SPEECH_RECOGNITION" desc="Tooltip text for the button to start the speech recognition.">
         Click to start voice search
       </message>
@@ -14390,6 +14403,9 @@ Do you accept?
         <message name="IDS_APP_LIST_NEW_INCOGNITO_WINDOW" desc="The text label of the New incognito window menu item">
           New incognito window
         </message>
+        <message name="IDS_APP_LIST_OEM_DEFAULT_FOLDER_NAME" desc="The default name for OEM folders in the App Launcher">
+          OEM folder
+        </message>
       </if>
       <if expr="use_titlecase">
         <message name="IDS_APP_LIST_CONTEXT_MENU_NEW_TAB" desc="Title text for the 'open new' context menu item of an app list item configured to open in a tab">
@@ -14424,6 +14440,9 @@ Do you accept?
         </message>
         <message name="IDS_APP_LIST_NEW_INCOGNITO_WINDOW" desc="The text label of the New incognito window menu item">
           New Incognito Window
+        </message>
+        <message name="IDS_APP_LIST_OEM_DEFAULT_FOLDER_NAME" desc="The default name for OEM folders in the App Launcher">
+          OEM Folder
         </message>
       </if>
       <message name="IDS_APP_LIST_SIGNIN_LEARN_MORE_LINK" desc="App launcher sign-in learn more URL.">
@@ -14577,7 +14596,7 @@ Do you accept?
     </message>
 
     <!-- Local Device Discovery display strings -->
-    <if expr="enable_mdns">
+    <if expr="enable_service_discovery">
       <message name="IDS_LOCAL_DISCOVERY_SERVICE_REGISTER" desc="Table header for registering a service">
         Register
       </message>
@@ -14740,6 +14759,9 @@ Do you accept?
     </message>
     <message name="IDS_FLAGS_ZERO_SUGGEST_ETHER_NO_SERP" desc="A choice in dropdown dialog on about:flags page to show zero suggest on http pages only">
       Related URLs only
+    </message>
+    <message name="IDS_FLAGS_ZERO_SUGGEST_PERSONALIZED" desc="A choice in dropdown dialog on about:flags page to show personalized zero-prefix suggestions">
+      Personalized
     </message>
     <message name="IDS_FLAGS_DISABLE_IGNORE_AUTOCOMPLETE_OFF_NAME" desc="Name of the disable ignore autocomplete='off' lab">
       Disable ignore autocomplete='off'

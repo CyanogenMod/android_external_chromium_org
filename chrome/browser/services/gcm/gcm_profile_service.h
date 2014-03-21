@@ -14,6 +14,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/services/gcm/default_gcm_app_handler.h"
 #include "chrome/browser/signin/signin_manager_base.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
@@ -26,18 +27,14 @@ namespace base {
 class Value;
 }
 
-namespace extensions {
-class Extension;
-}
-
 namespace user_prefs {
 class PrefRegistrySyncable;
 }
 
 namespace gcm {
 
+class GCMAppHandler;
 class GCMClientFactory;
-class GCMEventRouter;
 class GCMProfileServiceTestConsumer;
 
 // Acts as a bridge between GCM API and GCMClient layer. It is profile based.
@@ -49,6 +46,7 @@ class GCMProfileService : public KeyedService,
                               GCMClient::Result result)> RegisterCallback;
   typedef base::Callback<void(const std::string& message_id,
                               GCMClient::Result result)> SendCallback;
+  typedef base::Callback<void(GCMClient::Result result)> UnregisterCallback;
   typedef base::Callback<void(const GCMClient::GCMStatistics& stats)>
       RequestGCMStatisticsCallback;
 
@@ -62,12 +60,6 @@ class GCMProfileService : public KeyedService,
     ENABLED_FOR_APPS,
     // GCM is always disabled. GCMClient will never load and connect with GCM.
     ALWAYS_DISABLED
-  };
-
-  // For testing purpose.
-  class TestingDelegate {
-   public:
-    virtual GCMEventRouter* GetEventRouter() const = 0;
   };
 
   // Returns the GCM enabled state.
@@ -91,6 +83,12 @@ class GCMProfileService : public KeyedService,
   // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
+  // Adds a handler for a given app.
+  virtual void AddAppHandler(const std::string& app_id, GCMAppHandler* handler);
+
+  // Remove the handler for a given app.
+  virtual void RemoveAppHandler(const std::string& app_id);
+
   // Registers |sender_id| for an app. A registration ID will be returned by
   // the GCM server.
   // |app_id|: application ID.
@@ -102,6 +100,12 @@ class GCMProfileService : public KeyedService,
                         const std::vector<std::string>& sender_ids,
                         RegisterCallback callback);
 
+  // Unregisters an app from using GCM.
+  // |app_id|: application ID.
+  // |callback|: to be called once the asynchronous operation is done.
+  virtual void Unregister(const std::string& app_id,
+                          UnregisterCallback callback);
+
   // Sends a message to a given receiver.
   // |app_id|: application ID.
   // |receiver_id|: registration ID of the receiver party.
@@ -112,18 +116,8 @@ class GCMProfileService : public KeyedService,
                     const GCMClient::OutgoingMessage& message,
                     SendCallback callback);
 
-  // Temporary functions for invalidations to listen to incoming messages from
-  // GCM.
-  void AddInvalidationEventRouter(const std::string& app_id,
-                                  GCMEventRouter* event_router);
-  void RemoveInvalidationEventRouter(const std::string& app_id);
-
   // For testing purpose.
   GCMClient* GetGCMClientForTesting() const;
-
-  void set_testing_delegate(TestingDelegate* testing_delegate) {
-    testing_delegate_ = testing_delegate;
-  }
 
   // Returns the user name if the profile is signed in.
   std::string SignedInUserName() const;
@@ -149,6 +143,8 @@ class GCMProfileService : public KeyedService,
     std::vector<std::string> sender_ids;
     std::string registration_id;
   };
+
+  typedef std::map<std::string, GCMAppHandler*> GCMAppHandlerMap;
 
   // Overridden from content::NotificationObserver:
   virtual void Observe(int type,
@@ -177,13 +173,15 @@ class GCMProfileService : public KeyedService,
   void ResetGCMClient();
 
   // Ensures that the app is ready for GCM functions and events.
-  void EnsureAppReady(const std::string& app_id);
+  GCMClient::Result EnsureAppReady(const std::string& app_id);
 
-  // Unregisters an app from using the GCM after it has been uninstalled.
-  void Unregister(const std::string& app_id);
+  // Should be called when an app with |app_id| is trying to un/register.
+  // Checks whether another un/registration is in progress.
+  bool IsAsyncOperationPending(const std::string& app_id) const;
 
   void DoRegister(const std::string& app_id,
                   const std::vector<std::string>& sender_ids);
+  void DoUnregister(const std::string& app_id);
   void DoSend(const std::string& app_id,
               const std::string& receiver_id,
               const GCMClient::OutgoingMessage& message);
@@ -192,6 +190,7 @@ class GCMProfileService : public KeyedService,
   void RegisterFinished(const std::string& app_id,
                         const std::string& registration_id,
                         GCMClient::Result result);
+  void UnregisterFinished(const std::string& app_id, GCMClient::Result result);
   void SendFinished(const std::string& app_id,
                     const std::string& message_id,
                     GCMClient::Result result);
@@ -202,8 +201,8 @@ class GCMProfileService : public KeyedService,
                         const GCMClient::SendErrorDetails& send_error_details);
   void GCMClientReady();
 
-  // Returns the event router to fire the event for the given app.
-  GCMEventRouter* GetEventRouter(const std::string& app_id) const;
+  // Returns the handler for the given app.
+  GCMAppHandler* GetAppHandler(const std::string& app_id);
 
   // Used to persist the IDs of registered apps.
   void ReadRegisteredAppIDs();
@@ -239,8 +238,18 @@ class GCMProfileService : public KeyedService,
   // For all the work occured in IO thread.
   scoped_refptr<IOWorker> io_worker_;
 
+  // App handler map (from app_id to handler pointer).
+  // The handler is not owned.
+  GCMAppHandlerMap app_handlers_;
+
+  // The default handler when no app handler can be found in the map.
+  DefaultGCMAppHandler default_app_handler_;
+
   // Callback map (from app_id to callback) for Register.
   std::map<std::string, RegisterCallback> register_callbacks_;
+
+  // Callback map (from app_id to callback) for Unregister.
+  std::map<std::string, UnregisterCallback> unregister_callbacks_;
 
   // Callback map (from <app_id, message_id> to callback) for Send.
   std::map<std::pair<std::string, std::string>, SendCallback> send_callbacks_;
@@ -251,20 +260,6 @@ class GCMProfileService : public KeyedService,
   // Map from app_id to registration info (sender ids & registration ID).
   typedef std::map<std::string, RegistrationInfo> RegistrationInfoMap;
   RegistrationInfoMap registration_info_map_;
-
-  // Event router to talk with JS API.
-#if !defined(OS_ANDROID)
-  scoped_ptr<GCMEventRouter> js_event_router_;
-#endif
-  // App_id and EventRouter that will handle messages for invalidations.
-  // invalidation_event_router_ lifetime is controlled by
-  // TiclInvalidationService.
-  // TODO(jianli): Should be replaced with map of event routers.
-  std::string invalidation_app_id_;
-  GCMEventRouter* invalidation_event_router_;
-
-  // For testing purpose.
-  TestingDelegate* testing_delegate_;
 
   // Used to pass a weak pointer to the IO worker.
   base::WeakPtrFactory<GCMProfileService> weak_ptr_factory_;

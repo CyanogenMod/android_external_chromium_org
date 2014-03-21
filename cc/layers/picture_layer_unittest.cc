@@ -12,6 +12,7 @@
 #include "cc/test/fake_proxy.h"
 #include "cc/test/impl_side_painting_settings.h"
 #include "cc/trees/occlusion_tracker.h"
+#include "cc/trees/single_thread_proxy.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
@@ -45,11 +46,12 @@ TEST(PictureLayerTest, NoTilesIfEmptyBounds) {
   // a layer with empty bounds.
 
   FakeProxy proxy;
-#ifndef NDEBUG
-  proxy.SetCurrentThreadIsImplThread(true);
-#endif
   {
-    FakeLayerTreeHostImpl host_impl(ImplSidePaintingSettings(), &proxy);
+    DebugScopedSetImplThread impl_thread(&proxy);
+
+    TestSharedBitmapManager shared_bitmap_manager;
+    FakeLayerTreeHostImpl host_impl(
+        ImplSidePaintingSettings(), &proxy, &shared_bitmap_manager);
     host_impl.CreatePendingTree();
     scoped_ptr<FakePictureLayerImpl> layer_impl =
         FakePictureLayerImpl::Create(host_impl.pending_tree(), 1);
@@ -58,11 +60,8 @@ TEST(PictureLayerTest, NoTilesIfEmptyBounds) {
     EXPECT_FALSE(layer_impl->CanHaveTilings());
     EXPECT_TRUE(layer_impl->bounds() == gfx::Size(0, 0));
     EXPECT_TRUE(layer_impl->pile()->size() == gfx::Size(0, 0));
-    EXPECT_TRUE(layer_impl->pile()->recorded_region().IsEmpty());
+    EXPECT_FALSE(layer_impl->pile()->HasRecordings());
   }
-#ifndef NDEBUG
-  proxy.SetCurrentThreadIsImplThread(false);
-#endif
 }
 
 }  // namespace

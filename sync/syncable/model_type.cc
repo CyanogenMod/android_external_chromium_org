@@ -135,59 +135,41 @@ ModelType GetModelTypeFromSpecificsFieldNumber(int field_number) {
 }
 
 int GetSpecificsFieldNumberFromModelType(ModelType model_type) {
-  if (!ProtocolTypes().Has(model_type)) {
-    NOTREACHED() << "Only protocol types have field values.";
-    return 0;
-  }
+  DCHECK(ProtocolTypes().Has(model_type))
+      << "Only protocol types have field values.";
   switch (model_type) {
     case BOOKMARKS:
       return sync_pb::EntitySpecifics::kBookmarkFieldNumber;
-      break;
     case PASSWORDS:
       return sync_pb::EntitySpecifics::kPasswordFieldNumber;
-      break;
     case PREFERENCES:
       return sync_pb::EntitySpecifics::kPreferenceFieldNumber;
-      break;
     case AUTOFILL:
       return sync_pb::EntitySpecifics::kAutofillFieldNumber;
-      break;
     case AUTOFILL_PROFILE:
       return sync_pb::EntitySpecifics::kAutofillProfileFieldNumber;
-      break;
     case THEMES:
       return sync_pb::EntitySpecifics::kThemeFieldNumber;
-      break;
     case TYPED_URLS:
       return sync_pb::EntitySpecifics::kTypedUrlFieldNumber;
-      break;
     case EXTENSIONS:
       return sync_pb::EntitySpecifics::kExtensionFieldNumber;
-      break;
     case NIGORI:
       return sync_pb::EntitySpecifics::kNigoriFieldNumber;
-      break;
     case SEARCH_ENGINES:
       return sync_pb::EntitySpecifics::kSearchEngineFieldNumber;
-      break;
     case SESSIONS:
       return sync_pb::EntitySpecifics::kSessionFieldNumber;
-      break;
     case APPS:
       return sync_pb::EntitySpecifics::kAppFieldNumber;
-      break;
     case APP_LIST:
       return sync_pb::EntitySpecifics::kAppListFieldNumber;
-      break;
     case APP_SETTINGS:
       return sync_pb::EntitySpecifics::kAppSettingFieldNumber;
-      break;
     case EXTENSION_SETTINGS:
       return sync_pb::EntitySpecifics::kExtensionSettingFieldNumber;
-      break;
     case APP_NOTIFICATIONS:
       return sync_pb::EntitySpecifics::kAppNotificationFieldNumber;
-      break;
     case HISTORY_DELETE_DIRECTIVES:
       return sync_pb::EntitySpecifics::kHistoryDeleteDirectiveFieldNumber;
     case SYNCED_NOTIFICATIONS:
@@ -196,16 +178,12 @@ int GetSpecificsFieldNumberFromModelType(ModelType model_type) {
       return sync_pb::EntitySpecifics::kSyncedNotificationAppInfoFieldNumber;
     case DEVICE_INFO:
       return sync_pb::EntitySpecifics::kDeviceInfoFieldNumber;
-      break;
     case EXPERIMENTS:
       return sync_pb::EntitySpecifics::kExperimentsFieldNumber;
-      break;
     case PRIORITY_PREFERENCES:
       return sync_pb::EntitySpecifics::kPriorityPreferenceFieldNumber;
-      break;
     case DICTIONARY:
       return sync_pb::EntitySpecifics::kDictionaryFieldNumber;
-      break;
     case FAVICON_IMAGES:
       return sync_pb::EntitySpecifics::kFaviconImageFieldNumber;
     case FAVICON_TRACKING:
@@ -222,9 +200,6 @@ int GetSpecificsFieldNumberFromModelType(ModelType model_type) {
       NOTREACHED() << "No known extension for model type.";
       return 0;
   }
-  NOTREACHED() << "Needed for linux_keep_shadow_stacks because of "
-               << "http://gcc.gnu.org/bugzilla/show_bug.cgi?id=20681";
-  return 0;
 }
 
 FullModelTypeSet ToFullModelTypeSet(ModelTypeSet in) {
@@ -719,6 +694,30 @@ std::string ModelTypeSetToString(ModelTypeSet model_types) {
     result += ModelTypeToString(it.Get());
   }
   return result;
+}
+
+ModelTypeSet ModelTypeSetFromString(const std::string& model_types_string) {
+  std::string working_copy = model_types_string;
+  ModelTypeSet model_types;
+  while (!working_copy.empty()) {
+    // Remove any leading spaces.
+    working_copy = working_copy.substr(working_copy.find_first_not_of(' '));
+    if (working_copy.empty())
+      break;
+    std::string type_str;
+    size_t end = working_copy.find(',');
+    if (end == std::string::npos) {
+      end = working_copy.length() - 1;
+      type_str = working_copy;
+    } else {
+      type_str = working_copy.substr(0, end);
+    }
+    syncer::ModelType type = ModelTypeFromString(type_str);
+    if (IsRealDataType(type))
+      model_types.Put(type);
+    working_copy = working_copy.substr(end + 1);
+  }
+  return model_types;
 }
 
 base::ListValue* ModelTypeSetToValue(ModelTypeSet model_types) {

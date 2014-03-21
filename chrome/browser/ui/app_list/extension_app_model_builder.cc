@@ -149,6 +149,8 @@ void ExtensionAppModelBuilder::OnExtensionLoaded(const Extension* extension) {
   ExtensionAppItem* existing_item = GetExtensionAppItem(extension->id());
   if (existing_item) {
     existing_item->Reload();
+    if (service_)
+      service_->UpdateItem(existing_item);
     return;
   }
 
@@ -175,6 +177,16 @@ void ExtensionAppModelBuilder::OnExtensionUninstalled(
     return;
   }
   model_->DeleteItem(extension->id());
+}
+
+void ExtensionAppModelBuilder::OnDisabledExtensionUpdated(
+    const Extension* extension) {
+  if (!extension->ShouldDisplayInAppLauncher())
+    return;
+
+  ExtensionAppItem* existing_item = GetExtensionAppItem(extension->id());
+  if (existing_item)
+    existing_item->Reload();
 }
 
 void ExtensionAppModelBuilder::OnAppInstalledToAppList(

@@ -8,13 +8,13 @@
 #include "apps/app_window_registry.h"
 #include "apps/launcher.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
@@ -36,7 +36,7 @@ AppLoadService::AppLoadService(Profile* profile)
       this, chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
       content::NotificationService::AllSources());
   registrar_.Add(
-      this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+      this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
       content::NotificationService::AllSources());
 }
 
@@ -109,7 +109,7 @@ void AppLoadService::Observe(int type,
       post_reload_actions_.erase(it);
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
       const extensions::UnloadedExtensionInfo* unload_info =
           content::Details<extensions::UnloadedExtensionInfo>(details).ptr();
       if (!unload_info->extension->is_platform_app())

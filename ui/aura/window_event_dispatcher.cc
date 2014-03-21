@@ -92,12 +92,6 @@ WindowEventDispatcher::~WindowEventDispatcher() {
   ui::GestureRecognizer::Get()->RemoveGestureEventHelper(this);
 }
 
-void WindowEventDispatcher::PrepareForShutdown() {
-  host_->PrepareForShutdown();
-  // discard synthesize event request as well.
-  synthesize_mouse_move_ = false;
-}
-
 void WindowEventDispatcher::RepostEvent(const ui::LocatedEvent& event) {
   DCHECK(event.type() == ui::ET_MOUSE_PRESSED ||
          event.type() == ui::ET_GESTURE_TAP_DOWN);
@@ -305,9 +299,17 @@ void WindowEventDispatcher::OnCursorMovedToRootLocation(
 ////////////////////////////////////////////////////////////////////////////////
 // WindowEventDispatcher, private:
 
+Window* WindowEventDispatcher::window() {
+  return host_->window();
+}
+
+const Window* WindowEventDispatcher::window() const {
+  return host_->window();
+}
+
 void WindowEventDispatcher::TransformEventForDeviceScaleFactor(
     ui::LocatedEvent* event) {
-  event->UpdateForRootTransform(host()->GetInverseRootTransform());
+  event->UpdateForRootTransform(host_->GetInverseRootTransform());
 }
 
 ui::EventDispatchDetails WindowEventDispatcher::DispatchMouseEnterOrExit(
@@ -318,7 +320,8 @@ ui::EventDispatchDetails WindowEventDispatcher::DispatchMouseEnterOrExit(
     SetLastMouseLocation(window(), event.root_location());
   }
 
-  if (!mouse_moved_handler_ || !mouse_moved_handler_->delegate())
+  if (!mouse_moved_handler_ || !mouse_moved_handler_->delegate() ||
+      !window()->Contains(mouse_moved_handler_))
     return DispatchDetails();
 
   // |event| may be an event in the process of being dispatched to a target (in
@@ -642,7 +645,7 @@ ui::EventDispatchDetails WindowEventDispatcher::SynthesizeMouseMoveEvent() {
   if (!window()->bounds().Contains(root_mouse_location))
     return details;
   gfx::Point host_mouse_location = root_mouse_location;
-  host()->ConvertPointToHost(&host_mouse_location);
+  host_->ConvertPointToHost(&host_mouse_location);
   ui::MouseEvent event(ui::ET_MOUSE_MOVED,
                        host_mouse_location,
                        host_mouse_location,

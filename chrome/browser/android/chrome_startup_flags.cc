@@ -35,9 +35,6 @@ void SetCommandLineSwitchASCII(const std::string& switch_string,
 }  // namespace
 
 void SetChromeSpecificCommandLineFlags() {
-  // Turn on autologin.
-  SetCommandLineSwitch(switches::kEnableAutologin);
-
   // Enable prerender for the omnibox.
   SetCommandLineSwitchASCII(switches::kPrerenderMode,
                             switches::kPrerenderModeSwitchValueEnabled);
@@ -46,7 +43,7 @@ void SetChromeSpecificCommandLineFlags() {
 
   // Disable syncing favicons on low end devices.
   if (base::android::SysUtils::IsLowEndDevice())
-    SetCommandLineSwitch(switches::kDisableSyncFavicons);
+    SetCommandLineSwitchASCII(switches::kDisableSyncTypes, "Favicon Images");
 
   // Enable DOM Distiller on local builds, canary and dev-channel.
   chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();

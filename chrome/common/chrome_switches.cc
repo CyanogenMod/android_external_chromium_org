@@ -34,7 +34,8 @@ const char kAllowCrossOriginAuthPrompt[]    = "allow-cross-origin-auth-prompt";
 // directories. This switch re-enables file:// for testing.
 const char kAllowFileAccess[]               = "allow-file-access";
 
-// Allow non-secure origins to use the screen capture API.
+// Allow non-secure origins to use the screen capture API and the desktopCapture
+// extension API.
 const char kAllowHttpScreenCapture[] = "allow-http-screen-capture";
 
 // Specifies comma-separated list of extension ids or hosts to grant
@@ -70,10 +71,6 @@ const char kApp[]                           = "app";
 
 // Specifies an URL to use for app list start page.
 const char kAppListStartPageURL[]           = "app-list-start-page-url";
-
-// Specifies the initial size for application windows launched with --app.
-// --app-window-size=w,h
-const char kAppWindowSize[]                 = "app-window-size";
 
 // Overrides the apps checkout URL, which is used to determine when to expose
 // some private APIs.
@@ -295,8 +292,8 @@ const char kDisableDeviceDiscovery[]        = "disable-device-discovery";
 const char kDisableDeviceDiscoveryNotifications[] =
     "disable-device-discovery-notifications";
 
-// Disables retrieval of PAC URLs from DHCP as per the WPAD standard.
-const char kDisableDhcpWpad[]               = "disable-dhcp-wpad";
+// Disables Domain Reliability Monitoring.
+const char kDisableDomainReliability[]      = "disable-domain-reliability";
 
 // Disable extensions.
 const char kDisableExtensions[]             = "disable-extensions";
@@ -419,58 +416,19 @@ const char kDisableSync[]                   = "disable-sync";
 // Disables syncing of the app list independent of extensions.
 const char kDisableSyncAppList[]            = "disable-sync-app-list";
 
-// Disables syncing of app settings.
-const char kDisableSyncAppSettings[]        = "disable-sync-app-settings";
-
-// Disables syncing of apps.
-const char kDisableSyncApps[]               = "disable-sync-apps";
-
-// Disables syncing of autofill.
-const char kDisableSyncAutofill[]           = "disable-sync-autofill";
-
-// Disables syncing of autofill Profile.
-const char kDisableSyncAutofillProfile[]    = "disable-sync-autofill-profile";
-
-// Disables syncing of bookmarks.
-const char kDisableSyncBookmarks[]          = "disable-sync-bookmarks";
-
-// Disables syncing of dictionary.
-const char kDisableSyncDictionary[]         = "disable-sync-dictionary";
-
-// Disables syncing extension settings.
-const char kDisableSyncExtensionSettings[]  = "disable-sync-extension-settings";
-
-// Disables syncing of extensions.
-const char kDisableSyncExtensions[]         = "disable-sync-extensions";
-
-// Disables syncing of favicons.
-const char kDisableSyncFavicons[]           = "disable-sync-favicons";
-
-// Disables syncing browser passwords.
-const char kDisableSyncPasswords[]          = "disable-sync-passwords";
-
-// Disables syncing of preferences.
-const char kDisableSyncPreferences[]        = "disable-sync-preferences";
-
-// Disables syncing of priority preferences.
-const char kDisableSyncPriorityPreferences[] =
-    "disable-sync-priority-preferences";
-
-// Disable syncing custom search engines.
-const char kDisableSyncSearchEngines[]      = "disable-sync-search-engines";
+// Disables sync/API based session sync implementation (back to legacy).
+const char kDisableSyncSessionsV2[] = "disable-sync-sessions-v2";
 
 // Disable synced notifications.
 const char kDisableSyncSyncedNotifications[] =
     "disable-sync-synced-notifications";
 
-// Disables syncing browser sessions. Will override kEnableSyncTabs.
-const char kDisableSyncTabs[]               = "disable-sync-tabs";
-
-// Disables syncing of themes.
-const char kDisableSyncThemes[]             = "disable-sync-themes";
-
-// Disables syncing browser typed urls.
-const char kDisableSyncTypedUrls[]          = "disable-sync-typed-urls";
+// Disables syncing one or more sync data types that are on by default.
+// See sync/internal_api/public/base/model_type.h for possible types. Types
+// should be comma separated, and follow the naming convention for string
+// representation of model types, e.g.:
+// --disable-synctypes='Typed URLs, Bookmarks, Autofill Profiles'
+const char kDisableSyncTypes[]              = "disable-sync-types";
 
 // Disables TLS Channel ID extension.
 const char kDisableTLSChannelID[]           = "disable-tls-channel-id";
@@ -528,15 +486,6 @@ const char kEnableAsyncDns[]                = "enable-async-dns";
 // HttpAuthHandlerNegotiate::CreateSPN for more background.
 const char kEnableAuthNegotiatePort[]       = "enable-auth-negotiate-port";
 
-// Enable using a public suffix based domain matching for autofill of passwords.
-const char kEnablePasswordAutofillPublicSuffixDomainMatching[] =
-    "enable-password-autofill-public-suffix-domain-matching";
-
-// Enables the pre- and auto-login features. When a user signs in to sync, the
-// browser's cookie jar is pre-filled with GAIA cookies. When the user visits a
-// GAIA login page, an info bar can help the user login.
-const char kEnableAutologin[]               = "enable-autologin";
-
 // Enables the Automation extension API.
 // TODO(dtseng): Remove once API enabled for stable channel.
 const char kEnableAutomationAPI[]           = "enable-automation-api";
@@ -554,10 +503,6 @@ const char kEnableBookmarkUndo[]            = "enable-bookmark-undo";
 // Print Proxy component within the service process.
 const char kEnableCloudPrintProxy[]         = "enable-cloud-print-proxy";
 
-// Enables fetching the user's contacts from Google and showing them in the
-// Chrome OS apps list.
-const char kEnableContacts[]                = "enable-contacts";
-
 // If true devtools experimental settings are enabled.
 const char kEnableDevToolsExperiments[]     = "enable-devtools-experiments";
 
@@ -568,8 +513,14 @@ const char kEnableDeviceDiscoveryNotifications[] =
 // Enables the DOM distiller.
 const char kEnableDomDistiller[]               = "enable-dom-distiller";
 
+// Enables Domain Reliability Monitoring.
+const char kEnableDomainReliability[]          = "enable-domain-reliability";
+
 // Enable Enhanced Bookmarks.
 const char kEnhancedBookmarksExperiment[] = "enhanced-bookmarks-experiment";
+
+// Enables Easy Unlock to be set up and used.
+extern const char kEnableEasyUnlock[] = "enable-easy-unlock";
 
 // Enables experimentation with ephemeral apps, which are launched without
 // installing in Chrome.
@@ -722,10 +673,6 @@ const char kEnableSearchButtonInOmniboxForStr[] =
 const char kEnableSearchButtonInOmniboxForStrOrIip[] =
     "enable-search-button-in-omnibox-for-str-or-iip";
 
-// Certificate Transparency: Enable showing the SCT viewer when an SSL
-// certificate is accompanied by, or contains, SCTs.
-const char kEnableSignedCertificateTimestampsViewer[] = "enable-sct-viewer";
-
 // Enable SPDY/4 alpha 2. This is a temporary testing flag.
 const char kEnableSpdy4a2[]                 = "enable-spdy4a2";
 
@@ -746,9 +693,6 @@ const char kEnableStreamlinedHostedApps[]   = "enable-streamlined-hosted-apps";
 // Enables synced notifications.
 const char kEnableSyncSyncedNotifications[] =
     "enable-sync-synced-notifications";
-
-// Disables sync/API based session sync implementation (back to legacy).
-const char kDisableSyncSessionsV2[] = "disable-sync-sessions-v2";
 
 // Enables synced articles.
 const char kEnableSyncArticles[]            = "enable-sync-articles";
@@ -862,9 +806,6 @@ const char kHelpShort[]                     = "h";
 // shows an error box because the only way to hide Chrome is by uninstalling
 // it.
 const char kHideIcons[]                     = "hide-icons";
-
-// Disables full history sync.
-const char kHistoryDisableFullHistorySync[] = "disable-full-history-sync";
 
 // Enables grouping websites by domain and filtering them by period.
 const char kHistoryEnableGroupByDomain[]    = "enable-grouped-history";
@@ -1488,6 +1429,11 @@ const char kEnableZeroSuggestEtherNoSerp[] =
 const char kEnableZeroSuggestMostVisited[] =
     "enable-zero-suggest-most-visited";
 
+// Enables zero suggest functionality on Dev channel, showing recently typed
+// queries as default suggestions.
+const char kEnableZeroSuggestPersonalized[] =
+    "enable-zero-suggest-personalized";
+
 #endif
 
 #if defined(USE_ASH)
@@ -1579,8 +1525,10 @@ const char kImageLoaderExtensionPath[]      = "image-loader-ext-path";
 // Disables print preview (For testing, and for users who don't like us. :[ )
 const char kDisablePrintPreview[]           = "disable-print-preview";
 #else
-// Enables print preview (Force enable on Chromium, which normally does not
-//                        have the PDF viewer required for print preview.)
+// Enables print preview. Chromium normally does not have the PDF viewer,
+// required for print preview.
+// pdf.dll or libpdf.so should be present in primary directory of
+// Chromium. For local builds it's usually out/Debug or out/Release.
 const char kEnablePrintPreview[]            = "enable-print-preview";
 #endif
 

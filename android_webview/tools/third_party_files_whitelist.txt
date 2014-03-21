@@ -138,6 +138,8 @@ ppapi/lib/gl/include/EGL/eglplatform.h
 ppapi/lib/gl/include/KHR/khrplatform.h
 # Copyright The Android Open Source Project; ASL v2 license.
 skia/config/SkUserConfig.h
+# Generates copyright headers for Chromium.
+tools/boilerplate.py
 # Contains word 'copyright' in comments.
 tools/gen_keyboard_overlay_data/gen_keyboard_overlay_data.py
 # This third-party code is taken from Mozilla, but is copyright Google and has
@@ -184,6 +186,6 @@ webkit/browser/appcache/manifest_parser.h
 webkit/child/multipart_response_delegate.h
 # Copyright Tim Copperfield and Christian Dywan; LGPL license. Not used on
 # Android.
-webkit/common/cursors/webcursor_gtk_data.h
+content/common/cursors/webcursor_gtk_data.h
 # False positive. This is a generated file which includes polymer code.
 chrome/browser/resources/pdf/index.js

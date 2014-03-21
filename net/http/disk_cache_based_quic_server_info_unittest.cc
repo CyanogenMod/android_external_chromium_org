@@ -118,9 +118,9 @@ TEST(DiskCacheBasedQuicServerInfo, Update) {
   quic_server_info->Start();
   rv = quic_server_info->WaitForDataReady(callback.callback());
   EXPECT_EQ(net::OK, callback.GetResult(rv));
+  EXPECT_TRUE(quic_server_info->IsDataReady());
 
   const net::QuicServerInfo::State& state1 = quic_server_info->state();
-  EXPECT_TRUE(quic_server_info->IsDataReady());
   EXPECT_EQ(server_config_a, state1.server_config);
   EXPECT_EQ(source_address_token_a, state1.source_address_token);
   EXPECT_EQ(server_config_sig_a, state1.server_config_sig);
@@ -192,9 +192,9 @@ TEST(DiskCacheBasedQuicServerInfo, UpdateDifferentPorts) {
   quic_server_info->Start();
   rv = quic_server_info->WaitForDataReady(callback.callback());
   EXPECT_EQ(net::OK, callback.GetResult(rv));
+  EXPECT_TRUE(quic_server_info->IsDataReady());
 
   const net::QuicServerInfo::State& state_a = quic_server_info->state();
-  EXPECT_TRUE(quic_server_info->IsDataReady());
   EXPECT_EQ(server_config_a, state_a.server_config);
   EXPECT_EQ(source_address_token_a, state_a.source_address_token);
   EXPECT_EQ(server_config_sig_a, state_a.server_config_sig);
@@ -207,9 +207,9 @@ TEST(DiskCacheBasedQuicServerInfo, UpdateDifferentPorts) {
   quic_server_info->Start();
   rv = quic_server_info->WaitForDataReady(callback.callback());
   EXPECT_EQ(net::OK, callback.GetResult(rv));
+  EXPECT_TRUE(quic_server_info->IsDataReady());
 
   const net::QuicServerInfo::State& state_b = quic_server_info->state();
-  EXPECT_TRUE(quic_server_info->IsDataReady());
   EXPECT_EQ(server_config_b, state_b.server_config);
   EXPECT_EQ(source_address_token_b, state_b.source_address_token);
   EXPECT_EQ(server_config_sig_b, state_b.server_config_sig);
@@ -217,6 +217,62 @@ TEST(DiskCacheBasedQuicServerInfo, UpdateDifferentPorts) {
   EXPECT_EQ(cert_b, state_b.certs[0]);
 
   RemoveMockTransaction(&kHostInfoTransaction2);
+  RemoveMockTransaction(&kHostInfoTransaction1);
+}
+
+// Test IsReadyToPersist when there is a pending write.
+TEST(DiskCacheBasedQuicServerInfo, IsReadyToPersist) {
+  MockHttpCache cache;
+  AddMockTransaction(&kHostInfoTransaction1);
+  net::TestCompletionCallback callback;
+
+  net::QuicSessionKey server_key("www.google.com", 443, true);
+  scoped_ptr<net::QuicServerInfo> quic_server_info(
+      new net::DiskCacheBasedQuicServerInfo(server_key, cache.http_cache()));
+  EXPECT_FALSE(quic_server_info->IsDataReady());
+  quic_server_info->Start();
+  int rv = quic_server_info->WaitForDataReady(callback.callback());
+  EXPECT_EQ(net::OK, callback.GetResult(rv));
+  EXPECT_TRUE(quic_server_info->IsDataReady());
+
+  net::QuicServerInfo::State* state = quic_server_info->mutable_state();
+  EXPECT_TRUE(state->certs.empty());
+  const string server_config_a = "server_config_a";
+  const string source_address_token_a = "source_address_token_a";
+  const string server_config_sig_a = "server_config_sig_a";
+  const string cert_a = "cert_a";
+
+  state->server_config = server_config_a;
+  state->source_address_token = source_address_token_a;
+  state->server_config_sig = server_config_sig_a;
+  state->certs.push_back(cert_a);
+  EXPECT_TRUE(quic_server_info->IsReadyToPersist());
+  quic_server_info->Persist();
+
+  // Once we call Persist, IsReadyToPersist should return false until Persist
+  // has completed.
+  EXPECT_FALSE(quic_server_info->IsReadyToPersist());
+
+  // Wait until Persist() does the work.
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_TRUE(quic_server_info->IsReadyToPersist());
+
+  // Verify that the state was updated.
+  quic_server_info.reset(
+      new net::DiskCacheBasedQuicServerInfo(server_key, cache.http_cache()));
+  quic_server_info->Start();
+  rv = quic_server_info->WaitForDataReady(callback.callback());
+  EXPECT_EQ(net::OK, callback.GetResult(rv));
+  EXPECT_TRUE(quic_server_info->IsDataReady());
+
+  const net::QuicServerInfo::State& state1 = quic_server_info->state();
+  EXPECT_EQ(server_config_a, state1.server_config);
+  EXPECT_EQ(source_address_token_a, state1.source_address_token);
+  EXPECT_EQ(server_config_sig_a, state1.server_config_sig);
+  EXPECT_EQ(1U, state1.certs.size());
+  EXPECT_EQ(cert_a, state1.certs[0]);
+
   RemoveMockTransaction(&kHostInfoTransaction1);
 }
 

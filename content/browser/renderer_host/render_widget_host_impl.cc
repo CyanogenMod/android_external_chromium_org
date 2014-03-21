@@ -45,6 +45,7 @@
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/common/accessibility_messages.h"
 #include "content/common/content_constants_internal.h"
+#include "content/common/cursors/webcursor.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
@@ -66,7 +67,6 @@
 #include "ui/gfx/skbitmap_operations.h"
 #include "ui/gfx/vector2d_conversions.h"
 #include "ui/snapshot/snapshot.h"
-#include "webkit/common/cursors/webcursor.h"
 #include "webkit/common/webpreferences.h"
 
 #if defined(TOOLKIT_GTK)
@@ -338,10 +338,8 @@ RenderWidgetHostImpl* RenderWidgetHostImpl::From(RenderWidgetHost* rwh) {
 void RenderWidgetHostImpl::SetView(RenderWidgetHostView* view) {
   view_ = RenderWidgetHostViewPort::FromRWHV(view);
 
-  if (!view_) {
-    GpuSurfaceTracker::Get()->SetSurfaceHandle(
-        surface_id_, gfx::GLSurfaceHandle());
-  }
+  GpuSurfaceTracker::Get()->SetSurfaceHandle(
+      surface_id_, GetCompositingSurface());
 
   synthetic_gesture_controller_.reset();
 }
@@ -742,6 +740,24 @@ void RenderWidgetHostImpl::CopyFromBackingStore(
   callback.Run(result, output.GetBitmap());
 }
 
+bool RenderWidgetHostImpl::CanCopyFromBackingStore() {
+  if (view_)
+    return view_->IsSurfaceAvailableForCopy();
+  return false;
+}
+
+#if defined(OS_ANDROID)
+void RenderWidgetHostImpl::LockBackingStore() {
+  if (view_)
+    view_->LockCompositingSurface();
+}
+
+void RenderWidgetHostImpl::UnlockBackingStore() {
+  if (view_)
+    view_->UnlockCompositingSurface();
+}
+#endif
+
 #if defined(TOOLKIT_GTK)
 bool RenderWidgetHostImpl::CopyFromBackingStoreToGtkWindow(
     const gfx::Rect& dest_rect, GdkWindow* target) {
@@ -768,6 +784,22 @@ bool RenderWidgetHostImpl::CopyFromBackingStoreToCGContext(
   return true;
 }
 #endif
+
+void RenderWidgetHostImpl::PauseForPendingResizeOrRepaints() {
+  TRACE_EVENT0("browser",
+      "RenderWidgetHostImpl::PauseForPendingResizeOrRepaints");
+
+  // Do not pause if the view is hidden.
+  if (is_hidden())
+    return;
+
+  // Do not pause if there is not a paint or resize already coming.
+  if (!repaint_ack_pending_ && !resize_ack_pending_ && !view_being_painted_)
+    return;
+
+  // Waiting for a backing store will do the wait for us.
+  (void)GetBackingStore(true);
+}
 
 bool RenderWidgetHostImpl::TryGetBackingStore(const gfx::Size& desired_size,
                                               BackingStore** backing_store) {

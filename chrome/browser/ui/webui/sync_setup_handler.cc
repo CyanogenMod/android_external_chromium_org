@@ -23,9 +23,7 @@
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_error_controller.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -39,6 +37,9 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/signin/core/profile_oauth2_token_service.h"
+#include "components/signin/core/signin_error_controller.h"
+#include "components/sync_driver/sync_prefs.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -352,7 +353,7 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
                     registered_types.Has(sync_type));
     args.SetBoolean(key_name + "Synced", preferred_types.Has(sync_type));
   }
-  browser_sync::SyncPrefs sync_prefs(GetProfile()->GetPrefs());
+  sync_driver::SyncPrefs sync_prefs(GetProfile()->GetPrefs());
   args.SetBoolean("passphraseFailed", passphrase_failed);
   args.SetBoolean("showSyncEverythingPage", !show_advanced);
   args.SetBoolean("syncAllDataTypes", sync_prefs.HasKeepEverythingSynced());

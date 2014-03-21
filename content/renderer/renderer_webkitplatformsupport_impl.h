@@ -119,10 +119,6 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual bool loadAudioResource(
       blink::WebAudioBus* destination_bus, const char* audio_file_data,
       size_t data_size);
-  // DEPRECATED
-  virtual bool loadAudioResource(
-      blink::WebAudioBus* destination_bus, const char* audio_file_data,
-      size_t data_size, double sample_rate);
 
   virtual blink::WebContentDecryptionModule* createContentDecryptionModule(
       const blink::WebString& key_system);
@@ -138,12 +134,10 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual bool processMemorySizesInBytes(
       size_t* private_bytes, size_t* shared_bytes);
   virtual blink::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
-#ifdef ENABLE_EXPLICIT_GL_SHARE_GROUPS
+      const blink::WebGraphicsContext3D::Attributes& attributes);
+  virtual blink::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
       const blink::WebGraphicsContext3D::Attributes& attributes,
       blink::WebGraphicsContext3D* share_context);
-#else
-      const blink::WebGraphicsContext3D::Attributes& attributes);
-#endif
   virtual blink::WebGraphicsContext3DProvider*
       createSharedOffscreenGraphicsContext3DProvider();
   virtual blink::WebCompositorSupport* compositorSupport();
@@ -182,6 +176,9 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   // is invoked.
   static void SetMockDeviceOrientationDataForTesting(
       const blink::WebDeviceOrientationData& data);
+  // Set WebScreenOrientation to return when setScreenOrientationListener is
+  // invoked.
+  static void SetMockScreenOrientationForTesting(blink::WebScreenOrientation);
 
   WebDatabaseObserverImpl* web_database_observer_impl() {
     return web_database_observer_impl_.get();

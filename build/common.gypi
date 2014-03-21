@@ -259,6 +259,9 @@
       'branding%': '<(branding)',
       'arm_version%': '<(arm_version)',
 
+      # Whether content/chrome is using mojo: see http://crbug.com/353602
+      'use_mojo%': 0,
+
       # Set to 1 to enable fast builds. Set to 2 for even faster builds
       # (it disables debug info for fastest compilation - only for use
       # on compile-only bots).
@@ -421,6 +424,14 @@
       #   2: Use only CLD2.
       'cld_version%': 2,
 
+      # For CLD2, the size of the tables that should be included in the build
+      # Only evaluated if cld_version == 2.
+      # See third_party/cld_2/cld_2.gyp for more information.
+      #   0: Small tables, lower accuracy
+      #   1: Medium tables, medium accuracy
+      #   2: Large tables, high accuracy
+      'cld2_table_size%': 2,
+
       # Enable spell checker.
       'enable_spellcheck%': 1,
 
@@ -515,8 +526,11 @@
       'spdy_proxy_auth_value%' : '',
       'data_reduction_proxy_probe_url%' : '',
       'enable_mdns%' : 0,
-      'enable_enhanced_bookmarks%': 0,
+      'enable_service_discovery%': 0,
       'enable_hangout_services_extension%': 0,
+
+       # Enable the Syzygy optimization step.
+      'syzygy_optimize%': 0,
 
       'conditions': [
         # A flag for POSIX platforms
@@ -796,10 +810,10 @@
           'test_isolation_mode%': 'noop',
         }],
         # Whether Android ARM or x86 build uses OpenMAX DL FFT.
-        ['OS=="android" and ((target_arch=="arm" and arm_version >= 7) or target_arch=="ia32") and android_webview_build==0', {
-          # Currently only supported on Android ARMv7+, or ia32
+        ['OS=="android" and ((target_arch=="arm" and arm_version >= 7) or target_arch=="ia32" or target_arch=="x64") and android_webview_build==0', {
+          # Currently only supported on Android ARMv7+, ia32 or x64
           # without webview.  When enabled, this will also enable
-          # WebAudio support on Android ARM and ia32.  Default is
+          # WebAudio support on Android ARM, ia32 and x64.  Default is
           # enabled.  Whether WebAudio is actually available depends
           # on runtime settings and flags.
           'use_openmax_dl_fft%': 1,
@@ -825,9 +839,13 @@
           'enable_printing%': 0,
         }],
 
-	# By default, use ICU data file (icudtl.dat) on all platforms
-	# except when building Android WebView.
-	# TODO(jshin): Handle 'use_system_icu' on Linux (Chromium).
+        ['OS=="win" or (OS=="linux" and chromeos==0)', {
+          'use_mojo%': 1,
+        }],
+
+        # By default, use ICU data file (icudtl.dat) on all platforms
+        # except when building Android WebView.
+        # TODO(jshin): Handle 'use_system_icu' on Linux (Chromium).
         ['android_webview_build==0', {
           'icu_use_data_file_flag%' : 1,
         }, {
@@ -896,6 +914,7 @@
     'use_aura%': '<(use_aura)',
     'use_ash%': '<(use_ash)',
     'use_cras%': '<(use_cras)',
+    'use_mojo%': '<(use_mojo)',
     'use_openssl%': '<(use_openssl)',
     'use_nss%': '<(use_nss)',
     'use_udev%': '<(use_udev)',
@@ -946,6 +965,7 @@
     'asan%': '<(asan)',
     'asan_coverage%': '<(asan_coverage)',
     'syzyasan%': '<(syzyasan)',
+    'syzygy_optimize%': '<(syzygy_optimize)',
     'lsan%': '<(lsan)',
     'msan%': '<(msan)',
     'msan_blacklist%': '<(msan_blacklist)',
@@ -974,6 +994,7 @@
     'enable_spellcheck%': '<(enable_spellcheck)',
     'enable_google_now%': '<(enable_google_now)',
     'cld_version%': '<(cld_version)',
+    'cld2_table_size%': '<(cld2_table_size)',
     'enable_captive_portal_detection%': '<(enable_captive_portal_detection)',
     'disable_ftp_support%': '<(disable_ftp_support)',
     'enable_task_manager%': '<(enable_task_manager)',
@@ -1001,7 +1022,7 @@
     'spdy_proxy_auth_value%': '<(spdy_proxy_auth_value)',
     'data_reduction_proxy_probe_url%': '<(data_reduction_proxy_probe_url)',
     'enable_mdns%' : '<(enable_mdns)',
-    'enable_enhanced_bookmarks%' : '<(enable_enhanced_bookmarks)',
+    'enable_service_discovery%' : '<(enable_service_discovery)',
     'enable_hangout_services_extension%' : '<(enable_hangout_services_extension)',
     'v8_optimized_debug%': '<(v8_optimized_debug)',
     'proprietary_codecs%': '<(proprietary_codecs)',
@@ -1293,11 +1314,14 @@
     # Set to 1 to compile with the hole punching for the protected video.
     'video_hole%': 0,
 
-    # Enable a new Gamepad interface. This is temporary and should go
-    # away once the chrome and blink interfaces are in sync
-    'enable_new_gamepad_api%': 1,
-
     'conditions': [
+      # Enable the Syzygy optimization step for the official builds.
+      ['OS=="win" and buildtype=="Official" and syzyasan!=1', {
+        'syzygy_optimize%': 1,
+      }, {
+        'syzygy_optimize%': 0,
+      }],
+
       # The version of GCC in use, set later in platforms that use GCC and have
       # not explicitly chosen to build with clang. Currently, this means all
       # platforms except Windows, Mac and iOS.
@@ -1307,7 +1331,13 @@
         'conditions': [
           ['OS=="android"', {
             # We directly set the gcc_version since we know what we use.
-            'gcc_version%': 46,
+            'conditions': [
+              ['target_arch=="x64" or target_arch=="arm64"', {
+                'gcc_version%': 48,
+              }, {
+                'gcc_version%': 46,
+              }],
+            ],
             'binutils_version%': 222,
           }, {
             'gcc_version%': '<!(python <(DEPTH)/build/compiler_version.py)',
@@ -1432,9 +1462,17 @@
           'conditions': [
             ['target_arch == "ia32"', {
               'android_app_abi%': 'x86',
+              'android_gdbserver_executable%': 'gdbserver',
               'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-x86/gdbserver/gdbserver',
               'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-14/arch-x86',
               'android_toolchain%': '<(android_ndk_root)/toolchains/x86-4.6/prebuilt/<(host_os)-<(android_host_arch)/bin',
+            }],
+            ['target_arch == "x64"', {
+              'android_app_abi%': 'x86_64',
+              'android_gdbserver_executable%': 'gdbserver64',
+              'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-x86_64/gdbserver/gdbserver64',
+              'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-19/arch-x86_64',
+              'android_toolchain%': '<(android_ndk_root)/toolchains/x86_64-4.8/prebuilt/<(host_os)-<(android_host_arch)/bin',
             }],
             ['target_arch=="arm"', {
               'conditions': [
@@ -1444,12 +1482,21 @@
                   'android_app_abi%': 'armeabi-v7a',
                 }],
               ],
+              'android_gdbserver_executable%': 'gdbserver',
               'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-arm/gdbserver/gdbserver',
               'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-14/arch-arm',
               'android_toolchain%': '<(android_ndk_root)/toolchains/arm-linux-androideabi-4.6/prebuilt/<(host_os)-<(android_host_arch)/bin',
             }],
+            ['target_arch == "arm64"', {
+              'android_app_abi%': 'arm64',
+              'android_gdbserver_executable%': 'gdbserver64',
+              'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-arm64/gdbserver64/gdbserver64',
+              'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-19/arch-arm64',
+              'android_toolchain%': '<(android_ndk_root)/toolchains/aarch64-linux-android-4.8/prebuilt/<(host_os)-<(android_host_arch)/bin',
+            }],
             ['target_arch == "mipsel"', {
               'android_app_abi%': 'mips',
+              'android_gdbserver_executable%': 'gdbserver',
               'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-mips/gdbserver/gdbserver',
               'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-14/arch-mips',
               'android_toolchain%': '<(android_ndk_root)/toolchains/mipsel-linux-android-4.6/prebuilt/<(host_os)-<(android_host_arch)/bin',
@@ -1458,6 +1505,7 @@
         },
         # Copy conditionally-set variables out one scope.
         'android_app_abi%': '<(android_app_abi)',
+        'android_gdbserver_executable': '<(android_gdbserver_executable)',
         'android_gdbserver%': '<(android_gdbserver)',
         'android_ndk_root%': '<(android_ndk_root)',
         'android_ndk_sysroot': '<(android_ndk_sysroot)',
@@ -1738,7 +1786,7 @@
       ['use_titlecase_in_grd_files==1', {
         'grit_defines': ['-D', 'use_titlecase'],
       }],
-      ['OS=="android" and target_arch=="ia32"', {
+      ['OS=="android" and (target_arch=="ia32" or target_arch=="x64")', {
         # WebAudio on Android/x86 is disabled by default, unlike
         # everywhere else, so use appropriate message.
         'grit_defines': ['-D', 'use_webaudio_enable_message'],
@@ -1807,12 +1855,6 @@
       ['enable_webrtc==1', {
         'grit_defines': ['-D', 'enable_webrtc'],
       }],
-      ['enable_mdns==1', {
-        'grit_defines': ['-D', 'enable_mdns'],
-      }],
-      ['enable_enhanced_bookmarks==1', {
-        'grit_defines': ['-D', 'enable_enhanced_bookmarks'],
-      }],
       ['enable_hangout_services_extension==1', {
         'grit_defines': ['-D', 'enable_hangout_services_extension'],
       }],
@@ -1824,6 +1866,10 @@
       }],
       ['enable_resource_whitelist_generation==1', {
         'grit_rc_header_format': ['-h', '#define {textual_id} _Pragma("{textual_id}") {numeric_id}'],
+      }],
+      ['enable_mdns==1 or OS=="mac"', {
+        'grit_defines': ['-D', 'enable_service_discovery'],
+        'enable_service_discovery%': 1
       }],
       ['clang_use_chrome_plugins==1 and OS!="win"', {
         'clang_chrome_plugins_flags': [
@@ -2212,6 +2258,9 @@
       ['use_libjpeg_turbo==1', {
         'defines': ['USE_LIBJPEG_TURBO=1'],
       }],
+      ['use_mojo==1', {
+        'defines': ['USE_MOJO=1'],
+      }],
       ['use_x11==1', {
         'defines': ['USE_X11=1'],
       }],
@@ -2264,9 +2313,6 @@
       }],
       ['enable_hidpi==1', {
         'defines': ['ENABLE_HIDPI=1'],
-      }],
-      ['enable_new_gamepad_api==1', {
-        'defines': ['ENABLE_NEW_GAMEPAD_API=1'],
       }],
       ['native_discardable_memory==1', {
         'defines': ['DISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY'],
@@ -2502,8 +2548,8 @@
       ['enable_mdns==1', {
         'defines': ['ENABLE_MDNS=1'],
       }],
-      ['enable_enhanced_bookmarks==1', {
-        'defines': ['ENABLE_ENHANCED_BOOKMARKS=1'],
+      ['enable_service_discovery==1', {
+        'defines' : [ 'ENABLE_SERVICE_DISCOVERY=1' ],
       }],
       ['enable_hangout_services_extension==1', {
         'defines': ['ENABLE_HANGOUT_SERVICES_EXTENSION=1'],
@@ -2979,7 +3025,7 @@
     },
   },
   'conditions': [
-    # TODO(jochen): Enable this on chromeos. http://crbug.com/353127 
+    # TODO(jochen): Enable this on chromeos. http://crbug.com/353127
     ['os_posix==1 and chromeos==0', {
       'target_defaults': {
         'ldflags': [
@@ -3096,8 +3142,8 @@
                 'cflags': ['-fno-unwind-tables', '-fno-asynchronous-unwind-tables'],
               }],
               # http://gcc.gnu.org/wiki/DebugFission
-              # Requires gold and gcc >= 4.7 or clang.
-              ['linux_use_gold_flags==1 and (clang==1 or gcc_version>=47) and binutils_version>=223', {
+              # Requires gold and gcc >= 4.8 or clang.
+              ['linux_use_gold_flags==1 and (clang==1 or gcc_version>=48) and binutils_version>=223', {
                 'cflags': ['-gsplit-dwarf'],
                 'ldflags': ['-Wl,--gdb-index'],
               }],
@@ -3252,6 +3298,30 @@
               }],
             ],
           }],
+          ['target_arch=="x64"', {
+            'target_conditions': [
+              ['_toolset=="target"', {
+                'conditions': [
+                  # Use gold linker for Android x64 target.
+                  ['OS=="android"', {
+                    'cflags': [
+                      '-fuse-ld=gold',
+                    ],
+                    'ldflags': [
+                      '-fuse-ld=gold',
+                    ],
+                  }],
+                ],
+                'cflags': [
+                  '-m64',
+                  '-march=x86-64',
+                ],
+                'ldflags': [
+                  '-m64',
+                ],
+              }],
+            ],
+          }],
           ['target_arch=="arm"', {
             'target_conditions': [
               ['_toolset=="target"', {
@@ -3352,6 +3422,19 @@
                           '-marm', # Required for frame pointer based stack traces.
                         ],
                       }],
+                    ],
+                  }],
+                ],
+              }],
+            ],
+          }],
+          ['target_arch=="arm64"', {
+            'target_conditions': [
+              ['_toolset=="target"', {
+                'conditions': [
+                  ['OS=="android"', {
+                    'cflags!': [
+                       '-fstack-protector',  # stack protector is always enabled on arm64.
                     ],
                   }],
                 ],
@@ -3903,6 +3986,16 @@
                       '-target x86-linux-androideabi',
                     ],
                   }],
+                  # Place holder for x64 support, not tested.
+                  # TODO: Enable clang support for Android x64. http://crbug.com/346626
+                  ['target_arch=="x64"', {
+                    'cflags': [
+                      '-target x86_64-linux-androideabi',
+                    ],
+                    'ldflags': [
+                      '-target x86_64-linux-androideabi',
+                    ],
+                  }],
                 ],
               }],
               ['asan==1', {
@@ -4016,7 +4109,6 @@
               ['_type=="executable"', {
                 'ldflags': [
                   '-Bdynamic',
-                  '-Wl,-dynamic-linker,/system/bin/linker',
                   '-Wl,--gc-sections',
                   '-Wl,-z,nocopyreloc',
                   # crtbegin_dynamic.o should be the last item in ldflags.
