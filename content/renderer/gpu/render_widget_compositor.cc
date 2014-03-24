@@ -271,6 +271,9 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       base::android::SysUtils::IsLowEndDevice() &&
       !widget->UsingSynchronousRendererCompositor() &&
       !cmd->HasSwitch(cc::switches::kDisable4444Textures);
+  // Webview does not own the surface so should not clear it.
+  settings.should_clear_root_render_pass =
+      !widget->UsingSynchronousRendererCompositor();
 #elif !defined(OS_MACOSX)
   if (cmd->HasSwitch(switches::kEnableOverlayScrollbars)) {
     settings.scrollbar_animator = cc::LayerTreeSettings::Thinning;
