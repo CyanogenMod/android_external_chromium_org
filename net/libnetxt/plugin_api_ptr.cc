@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2013, The Linux Foundation. All rights reserved.
+* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -39,17 +39,44 @@ void InitLibnetxtPluginApi(LibnetxtPluginApi* plugin_api) {
     // ================================ net::HttpRequestHeaders ====================================
     LIBNETXT_API_CPP_PTR_IMP_CON(plugin_api, LibNetXt, net, HttpRequestHeaders)
     LIBNETXT_API_CPP_PTR_IMP_DES(plugin_api, LibNetXt, net, HttpRequestHeaders)
-    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpRequestHeaders, AddHeadersFromString)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpRequestHeaders, AddHeaderFromString)
     LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpRequestHeaders, GetHeader)
     LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpRequestHeaders, SetHeader)
     LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpRequestHeaders, ToString)
 
-    // ================================ net::HttpResponseHeaders ====================================
+   // ================================ net::HttpRequestInfo  ====================================
     LIBNETXT_API_CPP_PTR_IMP_CON(plugin_api, LibNetXt, net, HttpRequestInfo)
+    LIBNETXT_API_CPP_PTR_IMP_DES(plugin_api, LibNetXt, net, HttpRequestInfo)
+
+   // ================================ net::HttpResponseInfo  ====================================
+    LIBNETXT_API_CPP_PTR_IMP_CON(plugin_api, LibNetXt, net, HttpResponseInfo)
+    LIBNETXT_API_CPP_PTR_IMP_DES(plugin_api, LibNetXt, net, HttpResponseInfo)
 
     // ================================ net::HttpResponseHeaders ====================================
+    LIBNETXT_API_CPP_PTR_IMP_CON(plugin_api, LibNetXt, net, HttpResponseHeaders)
     LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, GetContentLength)
     LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, IsRedirect)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api,LibNetXt, net, HttpResponseHeaders, ReplaceStatusLine)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, RemoveHeader)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, IsChunkEncoded)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, HasHeaderValue)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, HasHeader)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, GetStatusLine)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, GetContentRange)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, AddHeader)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, GetHttpVersion)
+    LIBNETXT_API_CPP_PTR_IMP_SP_CON(plugin_api, LibNetXt, net, HttpResponseHeaders)
+    LIBNETXT_API_CPP_PTR_IMP_SP_DES(plugin_api, LibNetXt, net, HttpResponseHeaders)
+
+    // ================================ net::HttpByteRange =================================
+    LIBNETXT_API_CPP_PTR_IMP_CON(plugin_api, LibNetXt, net, HttpByteRange)
+    LIBNETXT_API_CPP_PTR_IMP_DES(plugin_api,LibNetXt, net, HttpByteRange)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpByteRange, IsSuffixByteRange)
+
+    // ================================ net::HttpNetworkTransaction =================================
+    LIBNETXT_API_CPP_PTR_IMP_CON(plugin_api,LibNetXt, net, HttpNetworkTransaction)
+    LIBNETXT_API_CPP_PTR_IMP_DES(plugin_api,LibNetXt, net, HttpNetworkTransaction)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api,LibNetXt, net, HttpNetworkTransaction, SetUseStaPool)
 
     // ================================ net::HttpCache ====================================
     LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpCache, GetSession)
@@ -59,8 +86,24 @@ void InitLibnetxtPluginApi(LibnetxtPluginApi* plugin_api) {
     LIBNETXT_API_CPP_PTR_IMP_DES(plugin_api, LibNetXt, , GURL)
     LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, , GURL, GetOrigin)
     LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, , GURL, Resolve)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, , GURL, ExtractFileName)
+
+    // ================================ net::HostPortPair ====================================
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HostPortPair, ToString)
+
+    // ================================ base::IOBufferWithSize ====================================
+    LIBNETXT_API_CPP_PTR_IMP_CON(plugin_api, LibNetXt,net, IOBufferWithSize)
+
+    // ================================ base::SystemMemoryInfoKB ====================================
+    LIBNETXT_API_CPP_PTR_IMP_CON(plugin_api, LibNetXt, base, SystemMemoryInfoKB)
+    LIBNETXT_API_CPP_PTR_IMP_DES(plugin_api, LibNetXt, base, SystemMemoryInfoKB)
+
+    // ================================ logging::LogMessage ====================================
+    LIBNETXT_API_CPP_PTR_IMP_CON(plugin_api, LibNetXt, logging, LogMessage)
+    LIBNETXT_API_CPP_PTR_IMP_DES(plugin_api, LibNetXt, logging, LogMessage)
 
     // ================================ Common Interface ====================================
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, GetSystemMemoryInfo)
     LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, GetSystemTime)
     LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, GetTimeDeltaInMs)
     LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, GetHostFromUrl)
@@ -69,10 +112,22 @@ void InitLibnetxtPluginApi(LibnetxtPluginApi* plugin_api) {
     LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, GetMaxSocketsPerGroup)
     LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, DebugLog)
     LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, NetPreconnect)
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, ParseHostAndPort)
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, GetRequestRange)
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, ParseRangeHeader)
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, AssembleRawHeadersAndAssign)
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, HttpByteRangeToString)
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, GetResponseHeaderLines)
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, PathExists)
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, GetUrlOriginSpec)
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, AssignHttpResponseHeaders)
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, PostTask)
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, ConvertHeadersBackToHTTPResponse)
 
     //Additional APIs
     InitStatHubLibnetxtPluginApi(plugin_api);
     InitGetZipLibnetxtPluginApi(plugin_api);
+    InitStaLibnetxtPluginApi(plugin_api);
 
 }
 

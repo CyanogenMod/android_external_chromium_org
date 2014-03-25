@@ -1,4 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -121,10 +122,12 @@ class NET_EXPORT HttpNetworkSession
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory;
     QuicVersionVector quic_supported_versions;
     QuicTagVector quic_connection_options;
+    mutable bool is_cloned; // true iff this session is cloned from another
   };
 
   enum SocketPoolType {
     NORMAL_SOCKET_POOL,
+    NORMAL_SOCKET_STA_POOL,
     WEBSOCKET_SOCKET_POOL,
     NUM_SOCKET_POOL_TYPES
   };

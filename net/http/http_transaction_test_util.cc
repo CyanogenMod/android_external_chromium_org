@@ -1,4 +1,5 @@
 // Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,6 +24,28 @@
 namespace {
 typedef base::hash_map<std::string, const MockTransaction*> MockTransactionMap;
 static MockTransactionMap mock_transactions;
+
+typedef base::hash_map<std::string, unsigned int> ReadMockTransactionMap;
+static ReadMockTransactionMap read_mock_transactions;
+
+struct TransactionData{
+    TransactionData(std::string url, int return_code, const net::CompletionCallback& callback, MockNetworkTransaction* net_trans):
+        url_(url),
+        return_code_(return_code),
+        callback_(callback),
+        net_trans_(net_trans),
+        is_called(false){}
+
+    std::string url_;
+    int return_code_;
+    net::CompletionCallback callback_;
+    MockNetworkTransaction* net_trans_;
+    bool is_called;
+};
+
+typedef std::vector<TransactionData*> MockTransactionVector;
+static MockTransactionVector mock_transactions_data;
+
 }  // namespace
 
 //-----------------------------------------------------------------------------
@@ -139,6 +162,38 @@ void AddMockTransaction(const MockTransaction* trans) {
 void RemoveMockTransaction(const MockTransaction* trans) {
   mock_transactions.erase(GURL(trans->url).spec());
 }
+
+void sta::AddReadMockTransaction(const MockTransaction* trans, const  unsigned int read_call_num){
+    read_mock_transactions[GURL(trans->url).spec()] = read_call_num;
+}
+
+void sta::RemoveReadMockTransaction(const MockTransaction* trans) {
+    read_mock_transactions.erase(GURL(trans->url).spec());
+}
+
+void MockTransactionsDataClear(){
+    mock_transactions_data.clear();
+}
+
+void CallbackMockTransactions(std::vector<int> order_vector){
+    for (std::vector<int>::iterator it = order_vector.begin(); it != order_vector.end(); it++) {
+        int& index = *it;
+        TransactionData* td = mock_transactions_data[index];
+        td->net_trans_->CallbackLater(td->callback_, td->return_code_);
+        td->is_called = true;
+    }
+
+    for (std::vector<TransactionData*>::iterator it = mock_transactions_data.begin(); it != mock_transactions_data.end();) {
+        if ((*it)->is_called){
+            it = mock_transactions_data.erase(it);
+        }
+        else{
+            it++;
+        }
+    }
+}
+
+
 
 MockHttpRequest::MockHttpRequest(const MockTransaction& t) {
   url = GURL(t.url);
@@ -379,10 +434,17 @@ int MockNetworkTransaction::StartInternal(
   if (net::OK != t->return_code) {
     if (test_mode_ & TEST_MODE_SYNC_NET_START)
       return t->return_code;
-    CallbackLater(callback, t->return_code);
+    if (test_mode_ & TEST_MODE_DELAYED_NET_START){
+        mock_transactions_data.push_back(new TransactionData(request->url.spec(), t->return_code, callback, this));
+    }
+    else{
+        CallbackLater(callback, t->return_code);
+    }
+
     return net::ERR_IO_PENDING;
   }
 
+  return_code_ = t->return_code;// can be modified later during Read()
   std::string resp_status = t->status;
   std::string resp_headers = t->response_headers;
   std::string resp_data = t->data;
@@ -416,7 +478,12 @@ int MockNetworkTransaction::StartInternal(
   if (test_mode_ & TEST_MODE_SYNC_NET_START)
     return net::OK;
 
-  CallbackLater(callback, net::OK);
+  if (test_mode_ & TEST_MODE_DELAYED_NET_START){
+    mock_transactions_data.push_back(new TransactionData(request->url.spec(), net::OK, callback, this));
+  }
+  else{
+    CallbackLater(callback, net::OK);
+  }
   return net::ERR_IO_PENDING;
 }
 
@@ -449,12 +516,17 @@ MockNetworkLayer::MockNetworkLayer()
     : transaction_count_(0),
       done_reading_called_(false),
       stop_caching_called_(false),
-      last_create_transaction_priority_(net::DEFAULT_PRIORITY) {}
+      last_create_transaction_priority_(net::DEFAULT_PRIORITY),
+      use_sta_transaction_class_(false){}
 
 MockNetworkLayer::~MockNetworkLayer() {}
 
 void MockNetworkLayer::TransactionDoneReading() {
   done_reading_called_ = true;
+}
+
+void MockNetworkLayer::SetStaTransaction(){
+  use_sta_transaction_class_ = true;
 }
 
 void MockNetworkLayer::TransactionStopCaching() {
@@ -467,7 +539,8 @@ int MockNetworkLayer::CreateTransaction(
   transaction_count_++;
   last_create_transaction_priority_ = priority;
   scoped_ptr<MockNetworkTransaction> mock_transaction(
-      new MockNetworkTransaction(priority, this));
+          use_sta_transaction_class_ ? new sta::MockNetworkTransaction(priority, this)
+          : new MockNetworkTransaction(priority, this));
   last_transaction_ = mock_transaction->AsWeakPtr();
   *trans = mock_transaction.Pass();
   return net::OK;
@@ -479,6 +552,81 @@ net::HttpCache* MockNetworkLayer::GetCache() {
 
 net::HttpNetworkSession* MockNetworkLayer::GetSession() {
   return NULL;
+}
+
+//
+// ==== sta subclass impl ====
+//
+sta::MockNetworkTransaction::MockNetworkTransaction(
+        net::RequestPriority priority, MockNetworkLayer* factory) :
+        ::MockNetworkTransaction(priority, factory), max_read_return_bytes_(0), num_body_bytes_(
+                0) {
+}
+
+const int sta::MockNetworkTransaction::FindReadMockTransactions(const GURL& url){
+    ReadMockTransactionMap::iterator it = read_mock_transactions.find(url.spec());
+    if (it != read_mock_transactions.end()){
+        return it->second--;
+    }
+    return -1;
+}
+
+void sta::MockNetworkTransaction::SetAsyncRead(bool useAsyncRead) {
+    if (!useAsyncRead)
+        test_mode_ |= TEST_MODE_SYNC_NET_READ;  // set this bit
+    else
+        test_mode_ &= ~TEST_MODE_SYNC_NET_READ; // reset this bit
+}
+
+int sta::MockNetworkTransaction::SetReadSize(int numBytes){
+    int tmp = max_read_return_bytes_;
+    max_read_return_bytes_ = numBytes;
+    return tmp;
+}
+
+int sta::MockNetworkTransaction::Read(net::IOBuffer* buf, int buf_len,
+        const net::CompletionCallback& callback) {
+
+    // Return immediately if we're returning an error.
+    if (net::OK != return_code_) {
+        if (test_mode_ & TEST_MODE_SYNC_NET_START)
+            return return_code_;
+        if (test_mode_ & TEST_MODE_DELAYED_NET_READ){
+            if (FindReadMockTransactions(request_->url) > 0){
+                CallbackLater(callback, return_code_);
+            }
+        }
+        else{
+            CallbackLater(callback, return_code_);
+        }
+        return net::ERR_IO_PENDING;
+    }
+
+    int data_len = static_cast<int>(data_.size());
+    if(num_body_bytes_ >0) // enforce behavior suitable for byte-range response
+        data_len = num_body_bytes_;
+
+    int num = std::min(buf_len, data_len - data_cursor_);
+    if (max_read_return_bytes_ > 0)
+        num = std::min(num, max_read_return_bytes_);
+
+    if (num) {
+        memcpy(buf->data(), data_.data() + data_cursor_, num);
+        data_cursor_ += num;
+    }
+    if (test_mode_ & TEST_MODE_SYNC_NET_READ)
+        return num;
+
+    if (test_mode_ & TEST_MODE_DELAYED_NET_READ){
+        if (FindReadMockTransactions(request_->url) > 0){
+            CallbackLater(callback, num);
+        }
+    }
+    else{
+        CallbackLater(callback, num);
+    }
+
+    return net::ERR_IO_PENDING;
 }
 
 //-----------------------------------------------------------------------------

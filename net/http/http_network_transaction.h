@@ -1,5 +1,6 @@
 // Copyright (c) 2012, 2013 The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -105,6 +106,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
                                           const SSLConfig& used_ssl_config,
                                           const ProxyInfo& used_proxy_info,
                                           HttpStreamBase* stream) OVERRIDE;
+
+  /// if called, ask the socket pool manager for STA_TRANSPORT instead of TRANSAPORT
+  virtual void SetUseStaPool();
+  bool IsUsingStaPool() { return use_sta_pool_;}
 
  private:
   friend class HttpNetworkTransactionSSLTest;
@@ -348,6 +353,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // True when the tunnel is in the process of being established - we can't
   // read from the socket until the tunnel is done.
   bool establishing_tunnel_;
+
+  bool use_sta_pool_;
 
   // The helper object to use to create WebSocketHandshakeStreamBase
   // objects. Only relevant when establishing a WebSocket connection.

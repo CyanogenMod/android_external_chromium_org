@@ -1,4 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -70,6 +71,7 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManager {
   virtual void FlushSocketPoolsWithError(int error) = 0;
   virtual void CloseIdleSockets() = 0;
   virtual TransportClientSocketPool* GetTransportSocketPool() = 0;
+  virtual TransportClientSocketPool* GetTransportSocketStaPool() = 0;
   virtual SSLClientSocketPool* GetSSLSocketPool() = 0;
   virtual SOCKSClientSocketPool* GetSocketPoolForSOCKSProxy(
       const HostPortPair& socks_proxy) = 0;

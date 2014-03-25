@@ -17,9 +17,10 @@ class IPEndPoint;
 
 class NET_EXPORT HostPortPair {
  public:
-  HostPortPair();
-  // If |in_host| represents an IPv6 address, it should not bracket the address.
-  HostPortPair(const std::string& in_host, uint16 in_port);
+    HostPortPair() : port_(0) {}
+    // If |in_host| represents an IPv6 address, it should not bracket the address.
+    HostPortPair(const std::string& in_host, uint16 in_port)
+        : host_(in_host), port_(in_port) {}
 
   // Creates a HostPortPair for the origin of |url|.
   static HostPortPair FromURL(const GURL& url);

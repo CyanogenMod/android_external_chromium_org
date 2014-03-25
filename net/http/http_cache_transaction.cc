@@ -1,5 +1,6 @@
 // Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -351,7 +352,8 @@ HttpCache::Transaction::Transaction(
       transaction_pattern_(PATTERN_UNDEFINED),
       total_received_bytes_(0),
       websocket_handshake_stream_base_create_helper_(NULL),
-      report_to_stathub_(false) {
+      report_to_stathub_(false),
+      sta_request_meta_data_(NULL) {
   COMPILE_ASSERT(HttpCache::Transaction::kNumValidationHeaders ==
                  arraysize(kValidationHeaders),
                  Invalid_number_of_validation_headers);
@@ -704,6 +706,13 @@ void HttpCache::Transaction::SetWebSocketHandshakeStreamCreateHelper(
   websocket_handshake_stream_base_create_helper_ = create_helper;
   if (network_trans_)
     network_trans_->SetWebSocketHandshakeStreamCreateHelper(create_helper);
+}
+
+void HttpCache::Transaction::SetSTARequestMetaData(
+        net::STARequestMetaData* request_meta_data) {
+    sta_request_meta_data_ = request_meta_data;
+    if (network_trans_)
+        network_trans_->SetSTARequestMetaData(request_meta_data);
 }
 
 void HttpCache::Transaction::SetBeforeNetworkStartCallback(
@@ -1112,6 +1121,8 @@ int HttpCache::Transaction::DoSendRequest() {
     network_trans_->SetWebSocketHandshakeStreamCreateHelper(
         websocket_handshake_stream_base_create_helper_);
 
+  if (sta_request_meta_data_)
+      network_trans_->SetSTARequestMetaData(sta_request_meta_data_);
   next_state_ = STATE_SEND_REQUEST_COMPLETE;
   rv = network_trans_->Start(request_, io_callback_, net_log_);
   return rv;

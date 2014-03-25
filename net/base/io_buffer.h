@@ -1,4 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -72,8 +73,14 @@ namespace net {
 // it is not destroyed until after the synchronous operation has completed.
 class NET_EXPORT IOBuffer : public base::RefCountedThreadSafe<IOBuffer> {
  public:
-  IOBuffer();
-  explicit IOBuffer(int buffer_size);
+  IOBuffer()
+      : data_(NULL) {
+  }
+
+  explicit IOBuffer(int buffer_size) {
+      CHECK_GE(buffer_size, 0);
+      data_ = new char[buffer_size];
+  }
 
   char* data() { return data_; }
 
@@ -82,9 +89,15 @@ class NET_EXPORT IOBuffer : public base::RefCountedThreadSafe<IOBuffer> {
 
   // Only allow derived classes to specify data_.
   // In all other cases, we own data_, and must delete it at destruction time.
-  explicit IOBuffer(char* data);
+  explicit IOBuffer(char* data)
+      : data_(data) {
+  }
 
-  virtual ~IOBuffer();
+  virtual ~IOBuffer() {
+      if(data_)
+          delete[] data_;
+      data_ = NULL;
+  }
 
   char* data_;
 };
@@ -95,7 +108,10 @@ class NET_EXPORT IOBuffer : public base::RefCountedThreadSafe<IOBuffer> {
 // argument to IO functions. Please keep using IOBuffer* for API declarations.
 class NET_EXPORT IOBufferWithSize : public IOBuffer {
  public:
-  explicit IOBufferWithSize(int size);
+  explicit IOBufferWithSize(int size)
+      : IOBuffer(size),
+        size_(size) {
+  }
 
   int size() const { return size_; }
 
@@ -103,8 +119,12 @@ class NET_EXPORT IOBufferWithSize : public IOBuffer {
   // Purpose of this constructor is to give a subclass access to the base class
   // constructor IOBuffer(char*) thus allowing subclass to use underlying
   // memory it does not own.
-  IOBufferWithSize(char* data, int size);
-  virtual ~IOBufferWithSize();
+  IOBufferWithSize(char* data, int size)
+      : IOBuffer(data),
+        size_(size) {
+  }
+  virtual ~IOBufferWithSize() {
+  }
 
   int size_;
 };
@@ -233,10 +253,14 @@ class NET_EXPORT PickledIOBuffer : public IOBuffer {
 // of the buffer can be completely managed by its intended owner.
 class NET_EXPORT WrappedIOBuffer : public IOBuffer {
  public:
-  explicit WrappedIOBuffer(const char* data);
+  explicit WrappedIOBuffer(const char* data):
+      IOBuffer(const_cast<char*>(data)) {
+  }
 
  protected:
-  virtual ~WrappedIOBuffer();
+  virtual ~WrappedIOBuffer() {
+      data_ = NULL;
+  }
 };
 
 }  // namespace net

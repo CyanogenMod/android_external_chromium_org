@@ -68,7 +68,10 @@ int libnetxt_property_get(const char *key, char *value, const char *default_valu
         std::string switch_string(key);
 
         std::replace(switch_string.begin(), switch_string.end(), '.', '-');
-        std::string value_string = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(switch_string);
+        std::string value_string;
+        if (CommandLine::InitializedForCurrentProcess()) {
+            value_string = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(switch_string);
+        }
         if (!value_string.empty()) {
             ret = strlen(strncpy(value, value_string.c_str(), PROPERTY_VALUE_MAX));
             return ret;

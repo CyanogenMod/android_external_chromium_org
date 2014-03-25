@@ -1,4 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,6 +27,7 @@ namespace {
 // Limit of sockets of each socket pool.
 int g_max_sockets_per_pool[] = {
   256,  // NORMAL_SOCKET_POOL
+  256,  // NORMAL_SOCKET_STA_POOL
   256   // WEBSOCKET_SOCKET_POOL
 };
 
@@ -45,6 +47,7 @@ COMPILE_ASSERT(arraysize(g_max_sockets_per_pool) ==
 // WebSocket protocol stack starts to work.
 int g_max_sockets_per_group[] = {
   6,  // NORMAL_SOCKET_POOL
+  12, // NORMAL_SOCKET_STA_POOL
   30  // WEBSOCKET_SOCKET_POOL
 };
 
@@ -57,6 +60,7 @@ COMPILE_ASSERT(arraysize(g_max_sockets_per_group) ==
 // http://crbug.com/44501 for details about proxy server connection limits.
 int g_max_sockets_per_proxy_server[] = {
   kDefaultMaxSocketsPerProxyServer,  // NORMAL_SOCKET_POOL
+  kDefaultMaxSocketsPerProxyServer,  // NORMAL_SOCKET_STA_POOL
   kDefaultMaxSocketsPerProxyServer   // WEBSOCKET_SOCKET_POOL
 };
 
@@ -281,8 +285,13 @@ int InitSocketPoolHelper(const GURL& request_url,
 
   DCHECK(proxy_info.is_direct());
 
-  TransportClientSocketPool* pool =
-      session->GetTransportSocketPool(socket_pool_type);
+  TransportClientSocketPool* pool;
+  if (request_load_flags & LOAD_USE_STA_POOL){
+      pool = session->GetTransportSocketPool(HttpNetworkSession::NORMAL_SOCKET_STA_POOL);
+  } else {
+      pool = session->GetTransportSocketPool(socket_pool_type);
+  }
+
   if (num_preconnect_streams) {
     RequestSocketsForPool(pool, connection_group, tcp_params,
                           num_preconnect_streams, net_log);

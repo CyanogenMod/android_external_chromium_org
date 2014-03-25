@@ -1,4 +1,5 @@
 // Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,6 +42,8 @@ enum {
   TEST_MODE_SYNC_CACHE_START = 1 << 2,
   TEST_MODE_SYNC_CACHE_READ  = 1 << 3,
   TEST_MODE_SYNC_CACHE_WRITE  = 1 << 4,
+  TEST_MODE_DELAYED_NET_START = 1 << 5,
+  TEST_MODE_DELAYED_NET_READ = 1 << 6,
   TEST_MODE_SYNC_ALL = (TEST_MODE_SYNC_NET_START | TEST_MODE_SYNC_NET_READ |
                         TEST_MODE_SYNC_CACHE_START | TEST_MODE_SYNC_CACHE_READ |
                         TEST_MODE_SYNC_CACHE_WRITE),
@@ -80,6 +83,9 @@ extern const MockTransaction kRangeGET_Transaction;
 
 // returns the mock transaction for the given URL
 const MockTransaction* FindMockTransaction(const GURL& url);
+void MockTransactionsDataClear();
+void CallbackMockTransactions(std::vector<int> order_vector);
+
 
 // Add/Remove a mock transaction that can be accessed via FindMockTransaction.
 // There can be only one MockTransaction associated with a given URL.
@@ -164,6 +170,7 @@ class MockNetworkTransaction
     : public net::HttpTransaction,
       public base::SupportsWeakPtr<MockNetworkTransaction> {
   typedef net::WebSocketHandshakeStreamBase::CreateHelper CreateHelper;
+  friend void CallbackMockTransactions(std::vector<int> order_vector);
  public:
   MockNetworkTransaction(net::RequestPriority priority,
                          MockNetworkLayer* factory);
@@ -228,7 +235,9 @@ class MockNetworkTransaction
   }
   net::RequestPriority priority() const { return priority_; }
 
- private:
+  void SetReturnCode(int code){ return_code_ = code;}
+
+protected:
   int StartInternal(const net::HttpRequestInfo* request,
                     const net::CompletionCallback& callback,
                     const net::BoundNetLog& net_log);
@@ -250,7 +259,42 @@ class MockNetworkTransaction
   // connection. Requires Start() be passed a BoundNetLog with a real NetLog to
   // be initialized.
   unsigned int socket_log_id_;
-};
+    int return_code_;
+  };
+
+  namespace sta {
+  void AddReadMockTransaction(const MockTransaction* trans, const  unsigned int read_call_num);
+  void RemoveReadMockTransaction(const MockTransaction* trans);
+
+  class MockNetworkTransaction : public ::MockNetworkTransaction{
+   public:
+    MockNetworkTransaction(net::RequestPriority priority,
+                           MockNetworkLayer* factory);
+
+    const int FindReadMockTransactions(const GURL& url);
+
+    virtual int Read(net::IOBuffer* buf, int buf_len,
+                     const net::CompletionCallback& callback) OVERRIDE;
+
+    /// set the mode of the Read() from now on
+    void SetAsyncRead(bool useAsyncRead);
+
+    /// set the maximum number of bytes returned from Read() from now on
+    /// \return previous value
+    int SetReadSize(int numBytes);
+
+    void SetBodySize(int numBytes){ num_body_bytes_ = numBytes;}
+
+    virtual void SetUseStaPool() OVERRIDE {}
+
+    /// how many bytes can we return from a single call to Read()
+    int max_read_return_bytes_;
+     /// how many bytes in the body. This value is used if >0.
+    /// it is used to overide the real size of the MockTransaction.data
+    int num_body_bytes_;
+ };
+} /* namespace sta */
+
 
 class MockNetworkLayer : public net::HttpTransactionFactory,
                          public base::SupportsWeakPtr<MockNetworkLayer> {
@@ -263,6 +307,8 @@ class MockNetworkLayer : public net::HttpTransactionFactory,
   bool stop_caching_called() const { return stop_caching_called_; }
   void TransactionDoneReading();
   void TransactionStopCaching();
+
+  void SetStaTransaction();
 
   // Returns the last priority passed to CreateTransaction, or
   // DEFAULT_PRIORITY if it hasn't been called yet.
@@ -298,6 +344,7 @@ class MockNetworkLayer : public net::HttpTransactionFactory,
   bool stop_caching_called_;
   net::RequestPriority last_create_transaction_priority_;
   base::WeakPtr<MockNetworkTransaction> last_transaction_;
+  bool use_sta_transaction_class_;
 };
 
 //-----------------------------------------------------------------------------

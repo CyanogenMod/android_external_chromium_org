@@ -1,4 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -281,7 +282,10 @@ class NET_EXPORT HttpResponseHeaders
   // response code is not found in the raw headers.
   int response_code() const { return response_code_; }
 
-  // Returns the raw header string.
+  void set_response_code(int code) { response_code_ = code;}
+
+  void set_raw_headers(std::string new_headers) {raw_headers_ = new_headers;}
+
   const std::string& raw_headers() const { return raw_headers_; }
 
  private:
@@ -290,11 +294,21 @@ class NET_EXPORT HttpResponseHeaders
   typedef base::hash_set<std::string> HeaderSet;
 
   // The members of this structure point into raw_headers_.
-  struct ParsedHeader;
+  struct ParsedHeader {
+    // A header "continuation" contains only a subsequent value for the
+    // preceding header.  (Header values are comma separated.)
+    bool is_continuation() const { return name_begin == name_end; }
+
+    std::string::const_iterator name_begin;
+    std::string::const_iterator name_end;
+    std::string::const_iterator value_begin;
+    std::string::const_iterator value_end;
+  };
   typedef std::vector<ParsedHeader> HeaderList;
 
-  HttpResponseHeaders();
-  ~HttpResponseHeaders();
+  HttpResponseHeaders() : response_code_(-1) {}
+
+  ~HttpResponseHeaders() {}
 
   // Initializes from the given raw headers.
   void Parse(const std::string& raw_input);

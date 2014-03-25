@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2013, The Linux Foundation. All rights reserved.
+* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -40,6 +40,7 @@
     #define LIBNETXT_API_CPP_NAME(prefix, namesp, type, name) LibnetxtPluginApi::GetInstance()->prefix##namesp##type##name
     #define LIBNETXT_API_CPP_CON_NAME(prefix, namesp, type) LibnetxtPluginApi::GetInstance()->prefix##namesp##type##constructor
     #define LIBNETXT_API_CPP_DES_NAME(prefix, namesp, type) LibnetxtPluginApi::GetInstance()->prefix##namesp##type##destructor
+    #define LIBNETXT_API_CPP_DES_SP_NAME(prefix, namesp, type) LibnetxtPluginApi::GetInstance()->prefix##namesp##type##destructor
 #elif defined(LIBNETXT_API_BY_IPC)
     #define LIBNETXT_API_NAME(prefix, name) Ipc##prefix##name
     #define LIBNETXT_API_CPP_NAME(prefix, namesp, type, name) Ipc##prefix##namesp##type##name
@@ -61,10 +62,15 @@
     LIBNETXT_API_CPP_NAME(LibNetXt, namesp, type, name)
 #define LIBNETXT_API_CPP_CON(namesp, type) \
     LIBNETXT_API_CPP_CON_NAME(LibNetXt, namesp, type)
+#define LIBNETXT_API_CPP_SP_CON(namesp, type) \
+    LibnetxtPluginApi::GetInstance()->LibNetXtscoped_refptr_##namesp##type##constructor
+#define LIBNETXT_API_CPP_SP_DES(namesp, type) \
+    LibnetxtPluginApi::GetInstance()->LibNetXtscoped_refptr_##namesp##type##destructor
 #define LIBNETXT_API_CPP_DES(namesp, type) \
     LIBNETXT_API_CPP_DES_NAME(LibNetXt, namesp, type)
 
 // ================================ "C" interface ====================================
+#define LIBNETXT_API_DECL_0(prefix, name, ret)  LIBNETXT_API_DEF_0(prefix, name, ret)
 #define LIBNETXT_API_DEF_0(prefix, name, ret) \
     extern ret prefix##name() \
         __attribute__ ((visibility ("default"), used)); \
@@ -126,6 +132,9 @@
 #define LIBNETXT_API_CPP_DEF_3(prefix, namesp, type, name, ret, type1, type2, type3) \
     LIBNETXT_API_DEF_4(prefix, namesp##type##name, ret, namesp::type*, type1, type2, type3)
 
+#define LIBNETXT_API_CPP_DEF_4(prefix, namesp, type, name, ret, type1, type2, type3, type4) \
+    LIBNETXT_API_DEF_5(prefix, namesp##type##name, ret, namesp::type*, type1, type2, type3, type4)
+
 #define LIBNETXT_API_CPP_FORWARDER_0(prefix, namesp, type, name, ret) \
     ret prefix##namesp##type##name(namesp::type* this_ptr) {return this_ptr->name();}
 #define LIBNETXT_API_CPP_FORWARDER_0V(prefix, namesp, type, name, ret) \
@@ -145,17 +154,30 @@
     ret prefix##namesp##type##name(namesp::type* this_ptr, type1 param1, type2 param2) \
         {this_ptr->name(param1, param2);}
 
-#define LIBNETXT_API_CPP_FORWARDER_3(prefix, namesp, type, name, ret, type1) \
+#define LIBNETXT_API_CPP_FORWARDER_3(prefix, namesp, type, name, ret, type1, type2, type3) \
     ret prefix##namesp##type##name(namesp::type* this_ptr, type1 param1, type2 param2, type3 param3) \
         {return this_ptr->name(param1, param2, param3);}
-#define LIBNETXT_API_CPP_FORWARDER_3V(prefix, namesp, type, name, ret, type1) \
+#define LIBNETXT_API_CPP_FORWARDER_3V(prefix, namesp, type, name, ret, type1, type2, type3) \
     ret prefix##namesp##type##name(namesp::type* this_ptr, type1 param1, type2 param2, type3 param3) \
         {this_ptr->name(param1, param2, param3);}
+
+#define LIBNETXT_API_CPP_FORWARDER_4(prefix, namesp, type, name, ret, type1, type2, type3, type4) \
+    ret prefix##namesp##type##name(namesp::type* this_ptr, type1 param1, type2 param2, type3 param3, type4 param4) \
+        {return this_ptr->name(param1, param2, param3, param4);}
+
+#define LIBNETXT_API_CPP_FORWARDER_4V(prefix, namesp, type, name, ret, type1, type2, type3, type4) \
+    ret prefix##namesp##type##name(namesp::type* this_ptr, type1 param1, type2 param2, type3 param3, type4 param4) \
+        {this_ptr->name(param1, param2, param3, param4);}
 
 #define LIBNETXT_API_CPP_DEF_CON_0(prefix, namesp, type) \
     LIBNETXT_API_DEF_0(prefix, namesp##type##constructor, namesp::type*)
 #define LIBNETXT_API_CPP_DEF_CON_1(prefix, namesp, type, type1) \
     LIBNETXT_API_DEF_1(prefix, namesp##type##constructor, namesp::type*, type1)
+#define LIBNETXT_API_CPP_DEF_CON_2(prefix, namesp, type, type1, type2) \
+    LIBNETXT_API_DEF_2(prefix, namesp##type##constructor, namesp::type*, type1, type2)
+#define LIBNETXT_API_CPP_DEF_CON_3(prefix, namesp, type, type1, type2, type3) \
+    LIBNETXT_API_DEF_3(prefix, namesp##type##constructor, namesp::type*, type1, type2, type3)
+
 #define LIBNETXT_API_CPP_DEF_DES(prefix, namesp, type) \
     LIBNETXT_API_DEF_1(prefix, namesp##type##destructor, void, namesp::type*)
 
@@ -163,6 +185,11 @@
     namesp::type* prefix##namesp##type##constructor() {return new namesp::type;}
 #define LIBNETXT_API_CPP_FORWARDER_CON_1(prefix, namesp, type, type1) \
     namesp::type* prefix##namesp##type##constructor(type1 param1) {return new namesp::type(param1);}
+#define LIBNETXT_API_CPP_FORWARDER_CON_2(prefix, namesp, type, type1, type2) \
+    namesp::type* prefix##namesp##type##constructor(type1 param1, type2 param2) {return new namesp::type(param1, param2);}
+#define LIBNETXT_API_CPP_FORWARDER_CON_3(prefix, namesp, type, type1, type2, type3) \
+    namesp::type* prefix##namesp##type##constructor(type1 param1, type2 param2, type3 param3) {return new namesp::type(param1, param2, param3);}
+
 #define LIBNETXT_API_CPP_FORWARDER_DES(prefix, namesp, type) \
     void prefix##namesp##type##destructor(namesp::type* param1) {delete param1;}
 
@@ -264,13 +291,30 @@
 
 #define LIBNETXT_API_CPP_PTR_DEF_CON_0(prefix, namesp, type) \
     LIBNETXT_API_PTR_DEF_0(prefix, namesp##type##constructor, namesp::type*)
+#define LIBNETXT_API_CPP_PTR_DEF_SP_CON_0(prefix, namesp, type) \
+        LIBNETXT_API_PTR_DEF_0(prefix, scoped_refptr_##namesp##type##constructor, scoped_refptr< namesp :: type >*)
+#define LIBNETXT_API_CPP_PTR_DEF_SP_DES(prefix, namesp, type) \
+        LIBNETXT_API_PTR_DEF_1(prefix, scoped_refptr_##namesp##type##destructor, void, scoped_refptr< namesp :: type >*)
+
+
 #define LIBNETXT_API_CPP_PTR_DEF_CON_1(prefix, namesp, type, type1) \
     LIBNETXT_API_PTR_DEF_1(prefix, namesp##type##constructor, namesp::type*, type1)
+#define LIBNETXT_API_CPP_PTR_DEF_CON_2(prefix, namesp, type, type1, type2) \
+    LIBNETXT_API_PTR_DEF_2(prefix, namesp##type##constructor, namesp::type*, type1, type2)
+#define LIBNETXT_API_CPP_PTR_DEF_CON_3(prefix, namesp, type, type1, type2, type3) \
+    LIBNETXT_API_PTR_DEF_3(prefix, namesp##type##constructor, namesp::type*, type1, type2, type3)
+
 #define LIBNETXT_API_CPP_PTR_DEF_DES(prefix, namesp, type) \
     LIBNETXT_API_PTR_DEF_1(prefix, namesp##type##destructor, void, namesp::type*)
 
 #define LIBNETXT_API_CPP_PTR_IMP_CON(api, prefix, namesp, type) \
     LIBNETXT_API_CPP_PTR_IMP(api, prefix, namesp, type, constructor)
+
+#define LIBNETXT_API_CPP_PTR_IMP_SP_CON(api, prefix, namesp, type) \
+    LIBNETXT_API_CPP_PTR_IMP(api, prefix, scoped_refptr_##namesp, type, constructor)
+#define LIBNETXT_API_CPP_PTR_IMP_SP_DES(api, prefix, namesp, type) \
+    LIBNETXT_API_CPP_PTR_IMP(api, prefix, scoped_refptr_##namesp, type, destructor)
+
 #define LIBNETXT_API_CPP_PTR_IMP_DES(api, prefix, namesp, type) \
     LIBNETXT_API_CPP_PTR_IMP(api, prefix, namesp, type, destructor)
 
@@ -286,12 +330,17 @@
 #define LIBNETXT_API_CPP_PTR_DEF_1(prefix, namesp, type, name, ret, type1) \
     LIBNETXT_API_PTR_DEF_2(prefix, namesp##type##name, ret, namesp::type*, type1)
 
+#define LIBNETXT_API_CPP_PTR_DEF_Const_1(prefix, namesp, type, name, ret, type1) \
+    LIBNETXT_API_PTR_DEF_2(prefix, namesp##type##name, ret, const namesp::type*, type1)
+
 #define LIBNETXT_API_PTR_DEF_2(prefix, name, ret, type1, type2) \
     typedef ret (*prefix##name##FunPtr)(type1 param1, type2 param2); \
     prefix##name##FunPtr prefix##name;
 #define LIBNETXT_API_CPP_PTR_DEF_2(prefix, namesp, type, name, ret, type1, type2) \
     LIBNETXT_API_PTR_DEF_3(prefix, namesp##type##name, ret, namesp::type*, type1, type2)
 
+#define LIBNETXT_API_CPP_PTR_DEF_Const_2(prefix, namesp, type, name, ret, type1, type2) \
+    LIBNETXT_API_PTR_DEF_3(prefix, namesp##type##name, ret, const namesp::type*, type1, type2)
 #define LIBNETXT_API_PTR_DEF_3(prefix, name, ret, type1, type2, type3) \
     typedef ret (*prefix##name##FunPtr)(type1 param1, type2 param2, type3 param3); \
     prefix##name##FunPtr prefix##name;

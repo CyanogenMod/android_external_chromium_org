@@ -1,5 +1,6 @@
 // Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -80,8 +81,8 @@ class NET_EXPORT HttpRequestHeaders {
   static const char kUserAgent[];
   static const char kTransferEncoding[];
 
-  HttpRequestHeaders();
-  ~HttpRequestHeaders();
+  HttpRequestHeaders(){} // was moved from .cc file
+  ~HttpRequestHeaders(){}
 
   bool IsEmpty() const { return headers_.empty(); }
 

@@ -1,5 +1,6 @@
 // Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -80,6 +81,13 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
                                               socket_factory_,
                                               net_log,
                                               network_session)),
+      transport_sta_pool_histograms_("TCP_sta"),
+      transport_socket_sta_pool_(new TransportClientSocketPool(
+                max_sockets_per_pool(net::HttpNetworkSession::NORMAL_SOCKET_STA_POOL), max_sockets_per_group(net::HttpNetworkSession::NORMAL_SOCKET_STA_POOL),
+                &transport_sta_pool_histograms_,
+                host_resolver,
+                socket_factory_,
+                net_log)),
       ssl_pool_histograms_("SSL2"),
       ssl_socket_pool_(new SSLClientSocketPool(max_sockets_per_pool(pool_type),
                                                max_sockets_per_group(pool_type),
@@ -164,6 +172,7 @@ void ClientSocketPoolManagerImpl::FlushSocketPoolsWithError(int error) {
 
   ssl_socket_pool_->FlushWithError(error);
   transport_socket_pool_->FlushWithError(error);
+  transport_socket_sta_pool_->FlushWithError(error);
 }
 
 void ClientSocketPoolManagerImpl::CloseIdleSockets() {
@@ -213,11 +222,17 @@ void ClientSocketPoolManagerImpl::CloseIdleSockets() {
 
   ssl_socket_pool_->CloseIdleSockets();
   transport_socket_pool_->CloseIdleSockets();
+  transport_socket_sta_pool_->CloseIdleSockets();
 }
 
 TransportClientSocketPool*
 ClientSocketPoolManagerImpl::GetTransportSocketPool() {
   return transport_socket_pool_.get();
+}
+
+TransportClientSocketPool*
+ClientSocketPoolManagerImpl::GetTransportSocketStaPool() {
+  return transport_socket_sta_pool_.get();
 }
 
 SSLClientSocketPool* ClientSocketPoolManagerImpl::GetSSLSocketPool() {

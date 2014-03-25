@@ -1,5 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
-// Copyright (c) 2013 The Linux Foundation. All rights reserved.
+// Copyright (c) 2013-2014 The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -50,6 +50,7 @@
 #include "net/url_request/url_request_throttler_header_adapter.h"
 #include "net/url_request/url_request_throttler_manager.h"
 #include "net/websockets/websocket_handshake_stream_base.h"
+#include "net/libsta/common/interfaces/external_types.h"
 
 static const char kAvailDictionaryHeader[] = "Avail-Dictionary";
 
@@ -446,6 +447,23 @@ void URLRequestHttpJob::StartTransactionInternal() {
     rv = request_->context()->http_transaction_factory()->CreateTransaction(
         priority_, &transaction_);
 
+    if (rv == OK) {
+        if (NULL ==  request_->GetUserData(net::STARequestMetaData::USER_DATA_KEY)) {
+            net::STARequestMetaData * request_meta_data = new net::STARequestMetaData(request_->identifier(),
+                                                                                0,
+                                                                                static_cast<uint32>(request_->identifier()));
+
+            request_->SetUserData(net::STARequestMetaData::USER_DATA_KEY, request_meta_data);
+        }
+        base::SupportsUserData::Data* data = request_->GetUserData(net::STARequestMetaData::USER_DATA_KEY);
+            if (data) {
+              transaction_->SetSTARequestMetaData(
+                  static_cast<net::STARequestMetaData*>(data));
+            } else {
+              rv = ERR_DISALLOWED_URL_SCHEME;
+            }
+    }
+
     if (rv == OK && request_info_.url.SchemeIsWSOrWSS()) {
       base::SupportsUserData::Data* data = request_->GetUserData(
           WebSocketHandshakeStreamBase::CreateHelper::DataKey());
@@ -465,8 +483,8 @@ void URLRequestHttpJob::StartTransactionInternal() {
           base::Bind(&URLRequestHttpJob::NotifyBeforeSendProxyHeadersCallback,
                      base::Unretained(this)));
 
-      if (!throttling_entry_.get() ||
-          !throttling_entry_->ShouldRejectRequest(*request_)) {
+     if (!throttling_entry_.get() ||
+         !throttling_entry_->ShouldRejectRequest(*request_)) {
         updateUrlRequest(*request_, request_info_);
         rv = transaction_->Start(
             &request_info_, start_callback_, request_->net_log());

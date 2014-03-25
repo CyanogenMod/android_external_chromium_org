@@ -1,4 +1,5 @@
 // Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -125,3 +126,6 @@ LOAD_FLAG(DO_NOT_USE_EMBEDDED_IDENTITY, 1 << 27)
 // reduction proxy.
 // TODO(rcs): Remove this flag as soon as http://crbug.com/339237 is resolved.
 LOAD_FLAG(BYPASS_DATA_REDUCTION_PROXY, 1 << 28)
+
+// If set, use STA_POOL instead of NORMAL socket pool
+LOAD_FLAG(USE_STA_POOL, 1 << 29)

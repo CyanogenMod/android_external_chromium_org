@@ -1,5 +1,6 @@
 // Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +19,7 @@
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_session_pool.h"
+#include "net/libsta/instance_creation.h"
 
 namespace net {
 
@@ -65,7 +67,10 @@ int HttpNetworkLayer::CreateTransaction(RequestPriority priority,
   if (suspended_)
     return ERR_NETWORK_IO_SUSPENDED;
 
-  trans->reset(new HttpNetworkTransaction(priority, GetSession()));
+  HttpTransaction* pTransact;
+  std::string errString;
+  CreateInstance_TATransaction(&pTransact, priority, GetSession(), &errString);
+  trans->reset(pTransact);
   return OK;
 }
 

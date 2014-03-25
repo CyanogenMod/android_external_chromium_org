@@ -1,5 +1,6 @@
 // Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -67,10 +68,9 @@ bool HttpRequestHeaders::Iterator::GetNext() {
   ++curr_;
   return curr_ != end_;
 }
-
-HttpRequestHeaders::HttpRequestHeaders() {}
-HttpRequestHeaders::~HttpRequestHeaders() {}
-
+//was moved to .h file
+//HttpRequestHeaders::HttpRequestHeaders()
+//HttpRequestHeaders::~HttpRequestHeaders()
 bool HttpRequestHeaders::GetHeader(const base::StringPiece& key,
                                    std::string* out) const {
   HeaderVector::const_iterator it = FindHeader(key);

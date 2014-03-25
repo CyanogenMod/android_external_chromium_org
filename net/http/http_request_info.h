@@ -1,4 +1,5 @@
 // Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,8 +29,14 @@ struct NET_EXPORT HttpRequestInfo {
                            // do the URL request), and starts loading ASAP.
   };
 
-  HttpRequestInfo();
-  ~HttpRequestInfo();
+//was moved from .cc file
+  HttpRequestInfo()
+      : upload_data_stream(NULL),
+        load_flags(0),
+        motivation(NORMAL_MOTIVATION),
+        privacy_mode(PRIVACY_MODE_DISABLED) {}
+
+  ~HttpRequestInfo() {}
 
   // The requested URL.
   GURL url;

@@ -1,4 +1,5 @@
 // Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,6 +25,7 @@ struct LoadTimingInfo;
 class ProxyInfo;
 class QuicServerInfo;
 class X509Certificate;
+class STARequestMetaData;
 
 // Represents a single HTTP transaction (i.e., a single request/response pair).
 // HTTP redirects are not followed and authentication challenges are not
@@ -156,12 +158,15 @@ class NET_EXPORT_PRIVATE HttpTransaction {
 
   // Called when the priority of the parent job changes.
   virtual void SetPriority(RequestPriority priority) = 0;
-
+  virtual void SetUseStaPool(){};
   // Set the WebSocketHandshakeStreamBase::CreateHelper to be used for the
   // request.  Only relevant to WebSocket transactions. Must be called before
   // Start(). Ownership of |create_helper| remains with the caller.
   virtual void SetWebSocketHandshakeStreamCreateHelper(
       WebSocketHandshakeStreamBase::CreateHelper* create_helper) = 0;
+  // Set the RequestMetaData to be used for the request.Only relevant to STA transactions.
+  //Must be called before Start(). Ownership of |RequestMetaData| remains with the caller.
+  virtual void SetSTARequestMetaData(STARequestMetaData* request_meta_data) {}
 
   // Set the callback to receive notification just before network use.
   virtual void SetBeforeNetworkStartCallback(

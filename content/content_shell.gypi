@@ -17,6 +17,9 @@
       }],
     ],
   },
+  'includes': [
+    '../third_party/libsta/libsta_vars.gypi',
+  ],
   'targets': [
     {
       # GN version: //content/shell:content_shell_lib
@@ -465,15 +468,15 @@
               '<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
             ],
-            'conditions': [
-              ['OS!="android"', {
+          'conditions': [
+            ['OS!="android"', {
                 'pak_inputs': ['<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',],
                 'pak_output': '<(PRODUCT_DIR)/content_shell.pak',
-              }, {
+            }, {
                 'pak_output': '<(PRODUCT_DIR)/content_shell/assets/content_shell.pak',
-              }],
-            ],
-          },
+            }],
+          ],
+        },
           'includes': [ '../build/repack_action.gypi' ],
         },
       ],
@@ -491,6 +494,7 @@
         'content_shell_pak',
         '../third_party/mesa/mesa.gyp:osmesa',
         '../tools/imagediff/image_diff.gyp:image_diff',
+        '<@(libsta_dependencies)',
       ],
       'include_dirs': [
         '..',
@@ -1024,6 +1028,7 @@
             '../ui/android/ui_android.gyp:ui_java',
             '<@(libnetxt_dependencies)',
             '<@(libsweadrenoext_dependencies)',
+            '<@(libsta_dependencies)',
           ],
           'variables': {
             'apk_name': 'ContentShell',
@@ -1033,7 +1038,8 @@
             'native_lib_target': 'libcontent_shell_content_view',
             'additional_native_libs': [
               '<@(libnetxt_native_libs)',
-              '<@(libsweadrenoext_native_libs)'],
+              '<@(libsweadrenoext_native_libs)',
+              '<@(libsta_native_libs)'],
             'additional_input_paths': ['<(PRODUCT_DIR)/content_shell/assets/content_shell.pak'],
             'asset_location': '<(PRODUCT_DIR)/content_shell/assets',
             'extra_native_libs': ['<(SHARED_LIB_DIR)/libosmesa.so',

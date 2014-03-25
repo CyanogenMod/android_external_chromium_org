@@ -1,4 +1,5 @@
 // Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,38 +8,6 @@
 #include "base/logging.h"
 
 namespace net {
-
-IOBuffer::IOBuffer()
-    : data_(NULL) {
-}
-
-IOBuffer::IOBuffer(int buffer_size) {
-  CHECK_GE(buffer_size, 0);
-  data_ = new char[buffer_size];
-}
-
-IOBuffer::IOBuffer(char* data)
-    : data_(data) {
-}
-
-IOBuffer::~IOBuffer() {
-  delete[] data_;
-  data_ = NULL;
-}
-
-IOBufferWithSize::IOBufferWithSize(int size)
-    : IOBuffer(size),
-      size_(size) {
-}
-
-IOBufferWithSize::IOBufferWithSize(char* data, int size)
-    : IOBuffer(data),
-      size_(size) {
-}
-
-IOBufferWithSize::~IOBufferWithSize() {
-}
-
 StringIOBuffer::StringIOBuffer(const std::string& s)
     : IOBuffer(static_cast<char*>(NULL)),
       string_data_(s) {
@@ -127,13 +96,5 @@ void PickledIOBuffer::Done() {
 }
 
 PickledIOBuffer::~PickledIOBuffer() { data_ = NULL; }
-
-WrappedIOBuffer::WrappedIOBuffer(const char* data)
-    : IOBuffer(const_cast<char*>(data)) {
-}
-
-WrappedIOBuffer::~WrappedIOBuffer() {
-  data_ = NULL;
-}
 
 }  // namespace net

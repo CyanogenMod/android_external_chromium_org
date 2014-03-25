@@ -470,6 +470,18 @@ hooks = [
     'name':
          'sysroot'
 },
+
+ {
+  'action':
+    [
+    'python',
+        'src/build/libsta_init.py',
+    ],
+    'pattern':
+         '.'
+},
+
+
     {
     'action':
          [

@@ -1,5 +1,6 @@
 // Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -175,7 +176,8 @@ ClientSocketPoolBaseHelper::ClientSocketPoolBaseHelper(
       connect_backup_jobs_enabled_(false),
       pool_generation_number_(0),
       pool_(pool),
-      weak_factory_(this) {
+      weak_factory_(this),
+      was_changed_(false) {
   DCHECK_LE(0, max_sockets_per_group);
   DCHECK_LE(max_sockets_per_group, max_sockets);
 
@@ -242,6 +244,17 @@ bool ClientSocketPoolBaseHelper::IsStalled() const {
       return true;
   }
   return false;
+}
+
+void ClientSocketPoolBaseHelper::printGroups() const{
+    if(group_map_.empty()){
+        LOG(INFO) << "group  map is empty";
+    } else {
+        for (GroupMap::const_iterator it = group_map_.begin();it != group_map_.end(); ++it) {
+            LOG(INFO) << it->first <<" ,";
+        }
+        LOG(INFO) <<"\n";
+    }
 }
 
 void ClientSocketPoolBaseHelper::AddLowerLayeredPool(
@@ -429,6 +442,7 @@ int ClientSocketPoolBaseHelper::RequestSocketInternal(
     connecting_socket_count_++;
 
     group->AddJob(connect_job.Pass(), preconnecting);
+    was_changed_ = true;
   } else {
     LogBoundConnectJobToRequest(connect_job->net_log().source(), request);
     scoped_ptr<StreamSocket> error_socket;

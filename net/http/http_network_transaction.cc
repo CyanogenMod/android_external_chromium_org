@@ -1,5 +1,6 @@
 // Copyright (c) 2012, 2013 The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014 The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -161,6 +162,7 @@ HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
       total_received_bytes_(0),
       next_state_(STATE_NONE),
       establishing_tunnel_(false),
+      use_sta_pool_(false),
       websocket_handshake_stream_base_create_helper_(NULL),
       report_to_stathub_(false) {
   session->ssl_config_service()->GetSSLConfig(&server_ssl_config_);
@@ -207,6 +209,9 @@ int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
 
   net_log_ = net_log;
   request_ = request_info;
+  if(use_sta_pool_)
+      const_cast<HttpRequestInfo*>(request_)->load_flags |= LOAD_USE_STA_POOL;
+
   start_time_ = base::Time::Now();
 
   StatHubCmd* cmd = STAT_HUB_API(CmdCreate)(SH_CMD_CH_TRANS_NET, SH_ACTION_WILL_START, 0);
@@ -1696,5 +1701,10 @@ std::string HttpNetworkTransaction::DescribeState(State state) {
 }
 
 #undef STATE_CASE
+
+void HttpNetworkTransaction::SetUseStaPool(){
+    DCHECK(request_ == NULL) << "This call has to be done before calling Start()";
+    use_sta_pool_ = true;
+}
 
 }  // namespace net

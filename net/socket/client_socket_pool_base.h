@@ -1,5 +1,6 @@
 // Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -295,6 +296,8 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
 
   bool HasGroup(const std::string& group_name) const;
 
+  void printGroups() const;
+
   // Called to enable/disable cleaning up idle sockets. When enabled,
   // idle sockets that have been around for longer than a period defined
   // by kCleanupInterval are cleaned up using a timer. Otherwise they are
@@ -335,6 +338,19 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
 
   // NetworkChangeNotifier::IPAddressObserver methods:
   virtual void OnIPAddressChanged() OVERRIDE;
+
+  void SetMaxSockets(int n){ max_sockets_ = n;}
+  void SetMaxSocketsPerGroup(int n){ max_sockets_per_group_ = n;}
+
+  void set_was_changed(bool val){was_changed_ = val;}
+  bool was_changed(){return was_changed_;}
+
+  void get_group_map(std::vector<std::string>& group_list){
+      for (GroupMap::const_iterator it = group_map_.begin();it != group_map_.end(); ++it) {
+              std::string host_name = it->first;
+              group_list.push_back(host_name);
+      }
+  }
 
   void set_max_sockets_per_group(int max_socket_per_group) {
       max_sockets_per_group_ = max_socket_per_group;
@@ -634,7 +650,7 @@ private:
   int handed_out_socket_count_;
 
   // The maximum total number of sockets. See ReachedMaxSocketsLimit.
-  const int max_sockets_;
+  int max_sockets_;
 
   // The maximum number of sockets kept per group.
   int max_sockets_per_group_;
@@ -672,6 +688,7 @@ private:
   std::set<LowerLayeredPool*> lower_pools_;
 
   base::WeakPtrFactory<ClientSocketPoolBaseHelper> weak_factory_;
+  bool was_changed_;
 
   DISALLOW_COPY_AND_ASSIGN(ClientSocketPoolBaseHelper);
 };
@@ -832,8 +849,30 @@ class ClientSocketPoolBase {
     return helper_.NumActiveSocketsInGroup(group_name);
   }
 
+  void SetMaxSocketsPerGroup(int n){
+      helper_.SetMaxSocketsPerGroup(n);
+  }
+
+  void SetMaxSockets(int n){
+      helper_.SetMaxSockets(n);
+  }
+
   bool HasGroup(const std::string& group_name) const {
     return helper_.HasGroup(group_name);
+  }
+
+  void printGroups() const {
+      return helper_.printGroups();
+  }
+
+  void set_was_changed(bool val){
+      helper_.set_was_changed(val);
+  }
+  bool was_changed(){
+      return helper_.was_changed();
+  }
+  void get_group_map(std::vector<std::string>& group_list){
+      helper_.get_group_map(group_list);
   }
 
   void CleanupIdleSockets(bool force) {

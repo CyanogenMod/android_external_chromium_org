@@ -21,6 +21,9 @@
       }],
     ],
   },
+  'includes': [
+    '../third_party/libsta/libsta_vars.gypi',
+  ],
   'conditions': [
     ['OS != "ios"', {
       'includes': [

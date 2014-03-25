@@ -1,5 +1,6 @@
 // Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,6 +30,7 @@
 #include "net/spdy/hpack_huffman_aggregator.h"
 #include "net/spdy/spdy_session_pool.h"
 
+#include "net/libsta/instance_creation.h" // for OnSessionCreation
 namespace {
 
 net::ClientSocketPoolManager* CreateSocketPoolManager(
@@ -97,7 +99,8 @@ HttpNetworkSession::Params::Params()
       quic_random(NULL),
       quic_max_packet_length(kDefaultMaxPacketSize),
       enable_user_alternate_protocol_ports(false),
-      quic_crypto_client_stream_factory(NULL) {
+      quic_crypto_client_stream_factory(NULL),
+      is_cloned(false){
   quic_supported_versions.push_back(QUIC_VERSION_21);
 }
 
@@ -191,6 +194,8 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
 
   http_server_properties_->SetAlternateProtocolProbabilityThreshold(
       params.alternate_protocol_probability_threshold);
+
+  OnSessionCreation(params);
 }
 
 HttpNetworkSession::~HttpNetworkSession() {
@@ -211,6 +216,9 @@ void HttpNetworkSession::RemoveResponseDrainer(
 
 TransportClientSocketPool* HttpNetworkSession::GetTransportSocketPool(
     SocketPoolType pool_type) {
+  if(pool_type == NORMAL_SOCKET_STA_POOL){
+      return GetSocketPoolManager(pool_type)->GetTransportSocketStaPool();
+  }else
   return GetSocketPoolManager(pool_type)->GetTransportSocketPool();
 }
 
@@ -301,6 +309,7 @@ ClientSocketPoolManager* HttpNetworkSession::GetSocketPoolManager(
     SocketPoolType pool_type) {
   switch (pool_type) {
     case NORMAL_SOCKET_POOL:
+    case NORMAL_SOCKET_STA_POOL:
       return normal_socket_pool_manager_.get();
     case WEBSOCKET_SOCKET_POOL:
       return websocket_socket_pool_manager_.get();

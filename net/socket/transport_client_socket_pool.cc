@@ -1,5 +1,6 @@
 // Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -545,6 +546,31 @@ void TransportClientSocketPool::AddHigherLayeredPool(
 void TransportClientSocketPool::RemoveHigherLayeredPool(
     HigherLayeredPool* higher_pool) {
   base_.RemoveHigherLayeredPool(higher_pool);
+}
+
+void TransportClientSocketPool::SetMaxSockets(int n){
+    base_.SetMaxSockets(n);
+}
+
+void TransportClientSocketPool::SetMaxSocketsPerGroup(int n){
+    base_.SetMaxSocketsPerGroup(n);
+}
+
+bool TransportClientSocketPool::HasGroup(const std::string& group_name) const {
+   return base_.HasGroup(group_name);
+ }
+
+void TransportClientSocketPool::printGroups() const{
+    base_.printGroups();
+}
+void TransportClientSocketPool::set_was_changed(bool val){
+    base_.set_was_changed(val);
+}
+bool TransportClientSocketPool::was_changed(){
+    return base_.was_changed();
+}
+void TransportClientSocketPool::get_group_map(std::vector<std::string>& group_list){
+    base_.get_group_map(group_list);
 }
 
 }  // namespace net
