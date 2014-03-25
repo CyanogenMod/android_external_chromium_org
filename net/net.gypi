@@ -636,6 +636,8 @@
       'http/redirect_bridge.cc',
       'http/preconnect.h',
       'http/preconnect.cc',
+      'http/selective_caching.cc',
+      'http/selective_caching.h',
       'http/tcp_connections_bridge.cc',
       'http/tcp_connections_bridge.h',
       'http/http_getzip_bridge.cc',

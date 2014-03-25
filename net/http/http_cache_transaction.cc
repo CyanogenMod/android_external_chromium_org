@@ -1,4 +1,4 @@
-// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
+// Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -44,6 +44,7 @@
 #include "net/http/http_util.h"
 #include "net/http/partial_data.h"
 #include "net/http/redirect_bridge.h"
+#include "net/http/selective_caching.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/stat_hub/stat_hub_api.h"
@@ -1533,7 +1534,8 @@ int HttpCache::Transaction::DoUpdateCachedResponse() {
   response_.request_time = new_response_->request_time;
   response_.network_accessed = new_response_->network_accessed;
 
-  if (response_.headers->HasHeaderValue("cache-control", "no-store")) {
+  if (response_.headers->HasHeaderValue("cache-control", "no-store") ||
+     selective_caching::ShouldSelectivlyCache(response_.headers, cache_key_)) {
     if (!entry_->doomed) {
       int ret = cache_->DoomEntry(cache_key_, NULL);
       DCHECK_EQ(OK, ret);
@@ -2647,7 +2649,8 @@ int HttpCache::Transaction::WriteResponseInfoToEntry(bool truncated) {
   // errors) and no SSL blocking page is shown.  An alternative would be to
   // reverse-map the cert status to a net error and replay the net error.
   if ((cache_->mode() != RECORD &&
-       response_.headers->HasHeaderValue("cache-control", "no-store")) ||
+       (response_.headers->HasHeaderValue("cache-control", "no-store") ||
+      selective_caching::ShouldSelectivlyCache(response_.headers, cache_key_))) ||
       net::IsCertStatusError(response_.ssl_info.cert_status)) {
     DoneWritingToEntry(false);
     if (net_log_.IsLogging())
