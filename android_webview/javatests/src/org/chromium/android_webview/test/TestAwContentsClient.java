@@ -186,15 +186,18 @@ public class TestAwContentsClient extends NullContentsClient {
         }
     }
 
+// SWE-feature-download-referrer
     @Override
     public void onDownloadStart(String url,
             String userAgent,
             String contentDisposition,
             String mimeType,
+            String referer,
             long contentLength) {
         getOnDownloadStartHelper().notifyCalled(url, userAgent, contentDisposition, mimeType,
                 contentLength);
     }
+// SWE-feature-download-referrer
 
     /**
      * CallbackHelper for OnReceivedLoginRequest.

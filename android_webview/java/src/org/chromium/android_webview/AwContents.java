@@ -350,13 +350,18 @@ public class AwContents {
             return mSettings.getAcceptThirdPartyCookies();
         }
 
+// SWE-feature-download-referrer
         @Override
-        public void onDownloadStart(String url, String userAgent,
-                String contentDisposition, String mimeType, long contentLength) {
+        public void onDownloadStart(String url,
+                                    String userAgent,
+                                    String contentDisposition,
+                                    String mimeType,
+                                    String referer,
+                                    long contentLength) {
             mContentsClient.getCallbackHelper().postOnDownloadStart(url, userAgent,
-                    contentDisposition, mimeType, contentLength);
+                    contentDisposition, mimeType, referer, contentLength);
         }
-
+// SWE-feature-download-referrer
         @Override
         public void newLoginRequest(String realm, String account, String args) {
             mContentsClient.getCallbackHelper().postOnReceivedLoginRequest(realm, account, args);

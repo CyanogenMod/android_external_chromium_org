@@ -26,25 +26,30 @@ public class AwContentsClientCallbackHelper {
     // TODO(boliu): Consider removing DownloadInfo and LoginRequestInfo by using native
     // MessageLoop to post directly to AwContents.
 
+// SWE-feature-download-referrer
     private static class DownloadInfo {
         final String mUrl;
         final String mUserAgent;
         final String mContentDisposition;
         final String mMimeType;
+        final String mReferer;
         final long mContentLength;
 
         DownloadInfo(String url,
                      String userAgent,
                      String contentDisposition,
                      String mimeType,
+                     String referer,
                      long contentLength) {
             mUrl = url;
             mUserAgent = userAgent;
             mContentDisposition = contentDisposition;
             mMimeType = mimeType;
             mContentLength = contentLength;
+            mReferer = referer;
         }
     }
+// SWE-feature-download-referrer
 
     private static class LoginRequestInfo {
         final String mRealm;
@@ -109,8 +114,11 @@ public class AwContentsClientCallbackHelper {
                 }
                 case MSG_ON_DOWNLOAD_START: {
                     DownloadInfo info = (DownloadInfo) msg.obj;
+// SWE-feature-download-referrer
                     mContentsClient.onDownloadStart(info.mUrl, info.mUserAgent,
-                            info.mContentDisposition, info.mMimeType, info.mContentLength);
+                            info.mContentDisposition, info.mMimeType,
+                            info.mReferer, info.mContentLength);
+// SWE-feature-download-referrer
                     break;
                 }
                 case MSG_ON_RECEIVED_LOGIN_REQUEST: {
@@ -162,12 +170,14 @@ public class AwContentsClientCallbackHelper {
         mHandler.sendMessage(mHandler.obtainMessage(MSG_ON_PAGE_STARTED, url));
     }
 
+//SWE-feature-download-referrer
     public void postOnDownloadStart(String url, String userAgent, String contentDisposition,
-            String mimeType, long contentLength) {
+            String mimeType, String referer, long contentLength) {
         DownloadInfo info = new DownloadInfo(url, userAgent, contentDisposition, mimeType,
-                contentLength);
+                referer, contentLength);
         mHandler.sendMessage(mHandler.obtainMessage(MSG_ON_DOWNLOAD_START, info));
     }
+//SWE-feature-download-referrer
 
     public void postOnReceivedLoginRequest(String realm, String account, String args) {
         LoginRequestInfo info = new LoginRequestInfo(realm, account, args);

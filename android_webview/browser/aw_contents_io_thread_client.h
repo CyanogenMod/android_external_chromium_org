@@ -67,11 +67,11 @@ class AwContentsIoThreadClient {
                               int parent_render_frame_id,
                               int child_render_frame_id);
 
-//SWE-feature-custom-http-headers
+// SWE-feature-custom-http-headers
   // This method is called to add additional HTTP header
   // before the request is made.
   virtual std::string getHTTPRequestHeaders() = 0;
-//SWE-feature-custom-http-headers
+// SWE-feature-custom-http-headers
 
   // This method is called on the IO thread only.
   virtual scoped_ptr<AwWebResourceResponse> ShouldInterceptRequest(
@@ -100,6 +100,7 @@ class AwContentsIoThreadClient {
                            const std::string& user_agent,
                            const std::string& content_disposition,
                            const std::string& mime_type,
+                           const std::string& referer,
                            int64 content_length) = 0;
 
   // Called when a new login request is detected. See the documentation for

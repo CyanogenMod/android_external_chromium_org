@@ -34,6 +34,7 @@ import android.content.Context;
 import android.os.Bundle;
 import android.test.ActivityInstrumentationTestCase2;
 
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -94,6 +95,29 @@ public class SWETestBase extends ActivityInstrumentationTestCase2<SWETestMainAct
             @Override
             public void run() {
                 wv.loadUrl(url);
+             }
+        });
+    }
+
+
+    protected void loadUrlSync(final WebView wv,
+                                CallbackHelper onPageFinishedHelper,
+                                final String url,
+                                final Map<String, String> headers) throws Exception {
+        int currentCallCount = onPageFinishedHelper.getCallCount();
+        loadUrlAsync(wv, url, headers);
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1,
+                WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
+    }
+
+    protected void loadUrlAsync(final WebView wv,
+                                final String url,
+                                final Map<String, String> headers) throws Exception {
+        getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                wv.loadUrl(url, headers);
              }
         });
     }

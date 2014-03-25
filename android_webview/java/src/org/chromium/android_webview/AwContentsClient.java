@@ -145,8 +145,10 @@ public abstract class AwContentsClient {
 
     public abstract void onFormResubmission(Message dontResend, Message resend);
 
+// SWE-feature-download-referrer
     public abstract void onDownloadStart(String url, String userAgent, String contentDisposition,
-            String mimeType, long contentLength);
+            String mimeType, String referer, long contentLength);
+// SWE-feature-download-referrer
 
     // TODO(joth): Make abstract once this has rolled in downstream.
     public abstract void showFileChooser(ValueCallback<String[]> uploadFilePathsCallback,

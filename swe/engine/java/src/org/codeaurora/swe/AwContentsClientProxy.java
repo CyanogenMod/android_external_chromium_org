@@ -315,11 +315,12 @@ class AwContentsClientProxy extends AwContentsClient {
                                 String userAgent,
                                 String contentDisposition,
                                 String mimeType,
+                                String referer,
                                 long contentLength) {
         if (mDownloadListener != null) {
             if (mDownloadListener instanceof BrowserDownloadListener) {
                 ((BrowserDownloadListener) mDownloadListener).onDownloadStart(url,
-                    userAgent, contentDisposition, mimeType, null, contentLength);
+                    userAgent, contentDisposition, mimeType, referer, contentLength);
             } else {
                 mDownloadListener.onDownloadStart(url, userAgent,
                     contentDisposition, mimeType, contentLength);

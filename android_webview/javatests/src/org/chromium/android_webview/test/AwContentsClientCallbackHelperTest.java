@@ -119,8 +119,10 @@ public class AwContentsClientCallbackHelperTest extends AwTestBase {
         OnDownloadStartHelper downloadStartHelper = mContentsClient.getOnDownloadStartHelper();
 
         int onDownloadStartCount = downloadStartHelper.getCallCount();
+// SWE-feature-download-referrer
         mClientHelper.postOnDownloadStart(TEST_URL, USER_AGENT, CONTENT_DISPOSITION,
-                MIME_TYPE, CONTENT_LENGTH);
+                MIME_TYPE,null, CONTENT_LENGTH);
+// SWE-feature-download-referrer
         downloadStartHelper.waitForCallback(onDownloadStartCount);
         assertEquals(TEST_URL, downloadStartHelper.getUrl());
         assertEquals(USER_AGENT, downloadStartHelper.getUserAgent());

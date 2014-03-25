@@ -287,11 +287,15 @@ void AwResourceDispatcherHostDelegate::DownloadStarting(
   // POST request cannot be repeated in general, so prevent client from
   // retrying the same request, even if it is with a GET.
   if ("GET" == request->method() && io_client) {
+
+// SWE-feature-download-referrer
     io_client->NewDownload(url,
                            user_agent,
                            content_disposition,
                            mime_type,
+                           request->referrer(),
                            content_length);
+// SWE-feature-download-referrer
   }
 }
 

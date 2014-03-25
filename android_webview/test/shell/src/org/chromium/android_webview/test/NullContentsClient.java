@@ -181,21 +181,24 @@ public class NullContentsClient extends AwContentsClient {
         dontResend.sendToTarget();
     }
 
+// SWE-feature-download-referrer
     @Override
     public void onDownloadStart(String url,
                                 String userAgent,
                                 String contentDisposition,
                                 String mimeType,
+                                String referer,
                                 long contentLength) {
     }
+// SWE-feature-download-referrer
 
-//SWE-feature-showfilechooser
+// SWE-feature-showfilechooser
     @Override
     public void showFileChooser(ValueCallback<String[]> uploadFilePathsCallback,
             FileChooserParams fileChooserParams){
 
      }
-//SWE-feature-showfilechooser
+// SWE-feature-showfilechooser
 
     @Override
     public boolean onCreateWindow(boolean isDialog, boolean isUserGesture) {

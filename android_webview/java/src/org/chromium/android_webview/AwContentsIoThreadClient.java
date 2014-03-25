@@ -37,9 +37,11 @@ public abstract class AwContentsIoThreadClient {
     @CalledByNative
     public abstract boolean shouldAcceptThirdPartyCookies();
 
+// SWE-feature-download-referrer
     @CalledByNative
     public abstract void onDownloadStart(String url, String userAgent,
-        String contentDisposition, String mimeType, long contentLength);
+        String contentDisposition, String mimeType,  String referer, long contentLength);
+// SWE-feature-download-referrer
 
     @CalledByNative
     public abstract void newLoginRequest(String realm, String account, String args);

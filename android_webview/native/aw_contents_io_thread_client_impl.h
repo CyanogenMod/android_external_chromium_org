@@ -58,6 +58,7 @@ class AwContentsIoThreadClientImpl : public AwContentsIoThreadClient {
                            const std::string& user_agent,
                            const std::string& content_disposition,
                            const std::string& mime_type,
+                           const std::string& referer,
                            int64 content_length) OVERRIDE;
   virtual void NewLoginRequest(const std::string& realm,
                                const std::string& account,

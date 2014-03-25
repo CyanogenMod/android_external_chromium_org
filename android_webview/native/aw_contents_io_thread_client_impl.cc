@@ -344,11 +344,13 @@ bool AwContentsIoThreadClientImpl::ShouldBlockNetworkLoads() const {
       env, java_object_.obj());
 }
 
+// SWE-feature-download-referrer
 void AwContentsIoThreadClientImpl::NewDownload(
     const GURL& url,
     const string& user_agent,
     const string& content_disposition,
     const string& mime_type,
+    const string& referer,
     int64 content_length) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (java_object_.is_null())
@@ -363,6 +365,8 @@ void AwContentsIoThreadClientImpl::NewDownload(
       ConvertUTF8ToJavaString(env, content_disposition);
   ScopedJavaLocalRef<jstring> jstring_mime_type =
       ConvertUTF8ToJavaString(env, mime_type);
+  ScopedJavaLocalRef<jstring> jstring_referer =
+      ConvertUTF8ToJavaString(env, referer);
 
   Java_AwContentsIoThreadClient_onDownloadStart(
       env,
@@ -371,8 +375,10 @@ void AwContentsIoThreadClientImpl::NewDownload(
       jstring_user_agent.obj(),
       jstring_content_disposition.obj(),
       jstring_mime_type.obj(),
+      jstring_referer.obj(),
       content_length);
 }
+// SWE-feature-download-referrer
 
 void AwContentsIoThreadClientImpl::NewLoginRequest(const string& realm,
                                                    const string& account,
