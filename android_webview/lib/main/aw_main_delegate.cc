@@ -25,6 +25,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/client/gl_in_process_context.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/in_process_command_buffer.h"
 #include "media/base/media_switches.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
@@ -58,6 +59,9 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   CommandLine* cl = CommandLine::ForCurrentProcess();
   cl->AppendSwitch(switches::kEnableBeginFrameScheduling);
   cl->AppendSwitch(cc::switches::kEnableMapImage);
+
+  // Disable GLSL translator. Webview is single-process so has no benefit.
+  cl->AppendSwitch(switches::kDisableGLSLTranslator);
 
   // WebView uses the Android system's scrollbars and overscroll glow.
   cl->AppendSwitch(switches::kHideScrollbars);
