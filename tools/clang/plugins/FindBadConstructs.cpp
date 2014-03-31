@@ -83,11 +83,13 @@ const Type* UnwrapType(const Type* type) {
 struct FindBadConstructsOptions {
   FindBadConstructsOptions() : check_base_classes(false),
                                check_virtuals_in_implementations(true),
-                               check_weak_ptr_factory_order(false) {
+                               check_weak_ptr_factory_order(false),
+                               check_enum_last_value(false) {
   }
   bool check_base_classes;
   bool check_virtuals_in_implementations;
   bool check_weak_ptr_factory_order;
+  bool check_enum_last_value;
 };
 
 // Searches for constructs that we know we don't want in the Chromium code base.
@@ -150,16 +152,29 @@ class FindBadConstructsConsumer : public ChromeClassTester {
 
   virtual void CheckChromeEnum(SourceLocation enum_location,
                                EnumDecl* enum_decl) {
+    if (!options_.check_enum_last_value)
+      return;
+
     bool got_one = false;
+    bool is_signed = false;
     llvm::APSInt max_so_far;
     EnumDecl::enumerator_iterator iter;
     for (iter = enum_decl->enumerator_begin();
          iter != enum_decl->enumerator_end(); ++iter) {
+          llvm::APSInt current_value = iter->getInitVal();
       if (!got_one) {
-        max_so_far = iter->getInitVal();
+        max_so_far = current_value;
+        is_signed = current_value.isSigned();
         got_one = true;
-      } else if (iter->getInitVal() > max_so_far)
-        max_so_far = iter->getInitVal();
+      } else {
+        if (is_signed != current_value.isSigned()) {
+          // This only happens in some cases when compiling C (not C++) files,
+          // so it is OK to bail out here.
+          return;
+        }
+        if (current_value > max_so_far)
+          max_so_far = current_value;
+      }
     }
     for (iter = enum_decl->enumerator_begin();
          iter != enum_decl->enumerator_end(); ++iter) {
@@ -741,6 +756,10 @@ class FindBadConstructsAction : public PluginASTAction {
       } else if (args[i] == "check-weak-ptr-factory-order") {
         // TODO(dmichael): Remove this once http://crbug.com/303818 is fixed.
         options_.check_weak_ptr_factory_order = true;
+      } else if (args[i] == "check-enum-last-value") {
+        // TODO(tsepez): Enable this by default once http://crbug.com/356815
+        // and http://crbug.com/356816 are fixed.
+        options_.check_enum_last_value = true;
       } else {
         parsed = false;
         llvm::errs() << "Unknown clang plugin argument: " << args[i] << "\n";

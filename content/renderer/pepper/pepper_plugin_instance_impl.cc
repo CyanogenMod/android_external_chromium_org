@@ -51,9 +51,7 @@
 #include "content/renderer/render_widget_fullscreen_pepper.h"
 #include "content/renderer/sad_plugin.h"
 #include "media/base/audio_hardware_config.h"
-#include "ppapi/c/dev/ppb_find_dev.h"
 #include "ppapi/c/dev/ppb_zoom_dev.h"
-#include "ppapi/c/dev/ppp_find_dev.h"
 #include "ppapi/c/dev/ppp_selection_dev.h"
 #include "ppapi/c/dev/ppp_text_input_dev.h"
 #include "ppapi/c/dev/ppp_zoom_dev.h"
@@ -65,6 +63,8 @@
 #include "ppapi/c/ppp_instance.h"
 #include "ppapi/c/ppp_messaging.h"
 #include "ppapi/c/ppp_mouse_lock.h"
+#include "ppapi/c/private/ppb_find_private.h"
+#include "ppapi/c/private/ppp_find_private.h"
 #include "ppapi/c/private/ppp_instance_private.h"
 #include "ppapi/c/private/ppp_pdf.h"
 #include "ppapi/host/ppapi_host.h"
@@ -92,6 +92,7 @@
 #include "skia/ext/platform_device.h"
 #include "third_party/WebKit/public/platform/WebCursorInfo.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
@@ -1394,8 +1395,8 @@ bool PepperPluginInstanceImpl::LoadFindInterface() {
     return false;
   if (!plugin_find_interface_) {
     plugin_find_interface_ =
-        static_cast<const PPP_Find_Dev*>(module_->GetPluginInterface(
-            PPP_FIND_DEV_INTERFACE));
+        static_cast<const PPP_Find_Private*>(module_->GetPluginInterface(
+            PPP_FIND_PRIVATE_INTERFACE));
   }
 
   return !!plugin_find_interface_;
@@ -2418,6 +2419,24 @@ void PepperPluginInstanceImpl::SelectedFindResultChanged(PP_Instance instance,
     render_frame_->reportFindInPageSelection(
         find_identifier_, index + 1, blink::WebRect());
   }
+}
+
+void PepperPluginInstanceImpl::SetTickmarks(PP_Instance instance,
+                                            const PP_Rect* tickmarks,
+                                            uint32_t count) {
+  if (!render_frame_ || !render_frame_->GetWebFrame())
+    return;
+
+  blink::WebVector<blink::WebRect> tickmarks_converted(
+      static_cast<size_t>(count));
+  for (uint32 i = 0; i < count; ++i) {
+    tickmarks_converted[i] = blink::WebRect(tickmarks[i].point.x,
+                                            tickmarks[i].point.y,
+                                            tickmarks[i].size.width,
+                                            tickmarks[i].size.height);;
+  }
+  blink::WebFrame* frame = render_frame_->GetWebFrame();
+  frame->setTickmarks(tickmarks_converted);
 }
 
 PP_Bool PepperPluginInstanceImpl::IsFullscreen(PP_Instance instance) {

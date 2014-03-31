@@ -135,8 +135,6 @@
     'renderer/dom_storage/webstoragenamespace_impl.h',
     'renderer/drop_data_builder.cc',
     'renderer/drop_data_builder.h',
-    'renderer/external_popup_menu.cc',
-    'renderer/external_popup_menu.h',
     'renderer/fetchers/image_resource_fetcher.cc',
     'renderer/fetchers/image_resource_fetcher.h',
     'renderer/fetchers/multi_resolution_image_resource_fetcher.cc',
@@ -275,6 +273,8 @@
     'renderer/media/video_capture_impl_manager.h',
     'renderer/media/video_capture_message_filter.cc',
     'renderer/media/video_capture_message_filter.h',
+    'renderer/media/video_frame_compositor.cc',
+    'renderer/media/video_frame_compositor.h',
     'renderer/media/video_frame_provider.cc',
     'renderer/media/video_frame_provider.h',
     'renderer/media/webaudiosourceprovider_impl.cc',
@@ -565,6 +565,10 @@
         'renderer/webscrollbarbehavior_impl_gtkoraura.cc',
         'renderer/webscrollbarbehavior_impl_gtkoraura.h',
       ],
+      'sources': [
+        'renderer/external_popup_menu.cc',
+        'renderer/external_popup_menu.h',
+      ],
     }, {
       'sources!': [
         'renderer/webscrollbarbehavior_impl_mac.mm',
@@ -589,16 +593,21 @@
       ],
     }, {
       'dependencies': [
+        'content_common_mojo_bindings',
         '../mojo/mojo.gyp:mojo_environment_chromium',
         '../mojo/mojo.gyp:mojo_js_bindings_lib',
       ],
     }],
     ['OS=="android"', {
       'sources!': [
-        'renderer/accessibility/renderer_accessibility_focus_only.cc'
+        'renderer/accessibility/renderer_accessibility_focus_only.cc',
         'renderer/media/audio_decoder.cc',
         'renderer/media/filter_helpers.cc',
         'renderer/media/webmediaplayer_impl.cc',
+      ],
+      'sources': [
+        'renderer/external_popup_menu.cc',
+        'renderer/external_popup_menu.h',
       ],
       'dependencies': [
         '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
@@ -698,10 +707,14 @@
         'renderer/media/video_source_handler.h',
         'renderer/media/webaudio_capturer_source.cc',
         'renderer/media/webaudio_capturer_source.h',
+        'renderer/media/webrtc/media_stream_track_metrics.cc',
+        'renderer/media/webrtc/media_stream_track_metrics.h',
         'renderer/media/webrtc/webrtc_audio_sink_adapter.cc',
         'renderer/media/webrtc/webrtc_audio_sink_adapter.h',
         'renderer/media/webrtc/webrtc_local_audio_track_adapter.cc',
         'renderer/media/webrtc/webrtc_local_audio_track_adapter.h',
+        'renderer/media/webrtc/webrtc_video_capturer_adapter.cc',
+        'renderer/media/webrtc/webrtc_video_capturer_adapter.h',
         'renderer/media/webrtc/webrtc_video_sink_adapter.cc',
         'renderer/media/webrtc/webrtc_video_sink_adapter.h',
         'renderer/media/webrtc_audio_capturer.cc',
@@ -722,8 +735,8 @@
         'renderer/media/webrtc_local_audio_track.h',
         'renderer/media/webrtc_logging.cc',
         'renderer/media/webrtc_logging.h',
-        'renderer/media/webrtc/webrtc_video_capturer_adapter.cc',
-        'renderer/media/webrtc/webrtc_video_capturer_adapter.h',
+        'renderer/media/webrtc_uma_histograms.cc',
+        'renderer/media/webrtc_uma_histograms.h',
         'renderer/p2p/host_address_request.cc',
         'renderer/p2p/host_address_request.h',
         'renderer/p2p/ipc_network_manager.cc',

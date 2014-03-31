@@ -21,10 +21,10 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
@@ -380,7 +380,13 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 //  - interactively, when user does an overscroll gesture
 //  - interactively, when user navigates in history without the overscroll
 //    gesture.
-IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, OverscrollScreenshot) {
+#if defined(OS_WIN)
+// http://crbug.com/357311
+#define MAYBE_OverscrollScreenshot DISABLED_OverscrollScreenshot
+#else
+#define MAYBE_OverscrollScreenshot OverscrollScreenshot
+#endif
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_OverscrollScreenshot) {
   // Disable the test for WinXP.  See http://crbug/294116.
 #if defined(OS_WIN)
   if (base::win::GetVersion() < base::win::VERSION_VISTA) {
@@ -478,10 +484,18 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, OverscrollScreenshot) {
   }
 }
 
+// Crashes under ThreadSanitizer, http://crbug.com/356758.
+#if defined(THREAD_SANITIZER)
+#define MAYBE_ScreenshotForSwappedOutRenderViews \
+    DISABLED_ScreenshotForSwappedOutRenderViews
+#else
+#define MAYBE_ScreenshotForSwappedOutRenderViews \
+    ScreenshotForSwappedOutRenderViews
+#endif
 // Tests that screenshot is taken correctly when navigation causes a
 // RenderViewHost to be swapped out.
 IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
-                       ScreenshotForSwappedOutRenderViews) {
+                       MAYBE_ScreenshotForSwappedOutRenderViews) {
   ASSERT_NO_FATAL_FAILURE(
       StartTestWithPage("files/overscroll_navigation.html"));
   // Create a new server with a different site.

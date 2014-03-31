@@ -31,6 +31,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/ports/SkPurgeableMemoryBlock_none.cpp \
 	third_party/skia/src/ports/SkFontConfigInterface_android.cpp \
 	third_party/skia/src/ports/SkFontHost_fontconfig.cpp \
+	third_party/skia/src/fonts/SkFontMgr_indirect.cpp \
+	third_party/skia/src/fonts/SkRemotableFontMgr.cpp \
 	third_party/skia/src/ports/SkFontHost_FreeType.cpp \
 	third_party/skia/src/ports/SkFontHost_FreeType_common.cpp \
 	third_party/skia/src/ports/SkFontConfigParser_android.cpp \
@@ -277,6 +279,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkTableMaskFilter.cpp \
 	third_party/skia/src/effects/SkTestImageFilters.cpp \
 	third_party/skia/src/effects/SkTileImageFilter.cpp \
+	third_party/skia/src/effects/SkMatrixImageFilter.cpp \
 	third_party/skia/src/effects/SkTransparentShader.cpp \
 	third_party/skia/src/effects/SkXfermodeImageFilter.cpp \
 	third_party/skia/src/effects/gradients/SkBitmapCache.cpp \
@@ -341,6 +344,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrStencil.cpp \
 	third_party/skia/src/gpu/GrStencilAndCoverPathRenderer.cpp \
 	third_party/skia/src/gpu/GrStencilBuffer.cpp \
+	third_party/skia/src/gpu/GrTraceMarker.cpp \
 	third_party/skia/src/gpu/GrSWMaskHelper.cpp \
 	third_party/skia/src/gpu/GrSoftwarePathRenderer.cpp \
 	third_party/skia/src/gpu/GrSurface.cpp \
@@ -457,9 +461,7 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -481,6 +483,7 @@ MY_DEFS_Debug := \
 	'-D__ARM_HAVE_OPTIONAL_NEON_SUPPORT' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -597,9 +600,7 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -621,6 +622,7 @@ MY_DEFS_Release := \
 	'-D__ARM_HAVE_OPTIONAL_NEON_SUPPORT' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \

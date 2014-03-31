@@ -46,6 +46,8 @@
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/api/webrtc_audio_private/webrtc_audio_private_api.h"
+#include "chrome/browser/extensions/api/webstore/webstore_api.h"
+#include "chrome/browser/extensions/extension_gcm_app_handler.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/extension_toolbar_model_factory.h"
 #include "chrome/browser/extensions/extension_web_ui_override_registrar.h"
@@ -91,6 +93,7 @@ void EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::DialAPIFactory::GetInstance();
   extensions::ExtensionActionAPI::GetFactoryInstance();
   extensions::ExtensionSystemFactory::GetInstance();
+  extensions::ExtensionToolbarModelFactory::GetInstance();
   extensions::ExtensionWebUIOverrideRegistrar::GetFactoryInstance();
   extensions::FeedbackPrivateAPI::GetFactoryInstance();
   extensions::FontSettingsAPI::GetFactoryInstance();
@@ -142,11 +145,12 @@ void EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::WebNavigationAPI::GetFactoryInstance();
   extensions::WebRequestAPI::GetFactoryInstance();
   extensions::WebrtcAudioPrivateEventService::GetFactoryInstance();
-  ExtensionToolbarModelFactory::GetInstance();
+  extensions::WebstoreAPI::GetFactoryInstance();
 #if defined(OS_CHROMEOS)
   file_manager::FileBrowserPrivateAPIFactory::GetInstance();
 #endif
   TokenCacheServiceFactory::GetInstance();
+  extensions::ExtensionGCMAppHandler::GetFactoryInstance();
 }
 
 }  // namespace chrome_extensions

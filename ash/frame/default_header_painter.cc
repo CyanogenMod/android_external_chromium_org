@@ -31,10 +31,10 @@ namespace {
 // Color for the window title text.
 const SkColor kTitleTextColor = SkColorSetRGB(40, 40, 40);
 // Color of the active window header/content separator line.
-const SkColor kHeaderContentSeparatorColor = SkColorSetRGB(180, 180, 182);
+const SkColor kHeaderContentSeparatorColor = SkColorSetRGB(150, 150, 152);
 // Color of the inactive window header/content separator line.
 const SkColor kHeaderContentSeparatorInactiveColor =
-    SkColorSetRGB(150, 150, 152);
+    SkColorSetRGB(180, 180, 182);
 // Duration of crossfade animation for activating and deactivating frame.
 const int kActivationCrossfadeDurationMs = 200;
 
@@ -75,6 +75,7 @@ DefaultHeaderPainter::DefaultHeaderPainter()
     : frame_(NULL),
       view_(NULL),
       window_icon_(NULL),
+      window_icon_size_(HeaderPainterUtil::GetDefaultIconSize()),
       caption_button_container_(NULL),
       height_(0),
       mode_(MODE_INACTIVE),
@@ -168,23 +169,20 @@ void DefaultHeaderPainter::PaintHeader(gfx::Canvas* canvas, Mode mode) {
   int active_alpha = activation_animation_->CurrentValueBetween(0, 255);
   int inactive_alpha = 255 - active_alpha;
 
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   SkPaint paint;
   if (inactive_alpha > 0) {
     if (active_alpha > 0)
       paint.setXfermodeMode(SkXfermode::kPlus_Mode);
 
     paint.setAlpha(inactive_alpha);
-    gfx::ImageSkia inactive_frame =
-        *rb.GetImageSkiaNamed(IDR_AURA_WINDOW_HEADER_BASE_INACTIVE);
+    gfx::ImageSkia inactive_frame = *GetInactiveFrameImage();
     TileRoundRect(canvas, inactive_frame, paint, GetLocalBounds(),
         corner_radius);
   }
 
   if (active_alpha > 0) {
     paint.setAlpha(active_alpha);
-    gfx::ImageSkia active_frame =
-        *rb.GetImageSkiaNamed(IDR_AURA_WINDOW_HEADER_BASE_ACTIVE);
+    gfx::ImageSkia active_frame = *GetActiveFrameImage();
     TileRoundRect(canvas, active_frame, paint, GetLocalBounds(),
         corner_radius);
   }
@@ -215,11 +213,11 @@ void DefaultHeaderPainter::LayoutHeader() {
   if (window_icon_) {
     // Vertically center the window icon with respect to the caption button
     // container.
-    int icon_size = HeaderPainterUtil::GetIconSize();
     // Floor when computing the center of |caption_button_container_|.
-    int icon_offset_y = caption_button_container_->height() / 2 - icon_size / 2;
+    int icon_offset_y =
+        caption_button_container_->height() / 2 - window_icon_size_ / 2;
     window_icon_->SetBounds(HeaderPainterUtil::GetIconXOffset(), icon_offset_y,
-        icon_size, icon_size);
+                            window_icon_size_, window_icon_size_);
   }
 
   // The header/content separator line overlays the caption buttons.
@@ -236,6 +234,12 @@ void DefaultHeaderPainter::SetHeaderHeightForPainting(int height) {
 
 void DefaultHeaderPainter::SchedulePaintForTitle() {
   view_->SchedulePaintInRect(GetTitleBounds());
+}
+
+void DefaultHeaderPainter::UpdateWindowIcon(views::View* window_icon,
+                                            int window_icon_size) {
+  window_icon_ = window_icon;
+  window_icon_size_ = window_icon_size;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -316,6 +320,19 @@ gfx::Rect DefaultHeaderPainter::GetLocalBounds() const {
 gfx::Rect DefaultHeaderPainter::GetTitleBounds() const {
   return HeaderPainterUtil::GetTitleBounds(
       window_icon_, caption_button_container_, GetTitleFontList());
+}
+
+gfx::ImageSkia* DefaultHeaderPainter::GetActiveFrameImage() const {
+  return ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+      IDR_AURA_WINDOW_HEADER_BASE);
+}
+
+gfx::ImageSkia* DefaultHeaderPainter::GetInactiveFrameImage() const {
+  int frame_image_id = (frame_->IsMaximized() || frame_->IsFullscreen()) ?
+      IDR_AURA_WINDOW_HEADER_BASE :
+      IDR_AURA_WINDOW_HEADER_BASE_RESTORED_INACTIVE;
+  return ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+      frame_image_id);
 }
 
 }  // namespace ash

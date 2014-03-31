@@ -6,7 +6,6 @@
 #include "base/command_line.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
-#include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_service.h"
 #include "chrome/browser/sync_file_system/file_status_observer.h"
@@ -104,12 +103,6 @@ ACTION_P5(ReturnWithFakeFileAddedStatus,
 
 }  // namespace
 
-// deleteFileSystem is disabled for now. http://crbug.com/159804
-IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, DISABLED_DeleteFileSystem) {
-  ASSERT_TRUE(RunPlatformAppTest("sync_file_system/delete_file_system"))
-      << message_;
-}
-
 // Flaky on WinXP Tests(1): http://crbug.com/354425
 #if defined(OS_WIN) && defined(ARCH_CPU_X86)
 #define MAYBE_GetFileStatus DISABLED_GetFileStatus
@@ -122,7 +115,7 @@ IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, MAYBE_GetFileStatus) {
       << message_;
 }
 
-#if defined(ADDRESS_SANITIZER) || (defined(OS_WIN) && defined(ARCH_CPU_X86))
+#if defined(OS_WIN) && defined(ARCH_CPU_X86)
 // SyncFileSystemApiTest.GetFileStatuses fails under AddressSanitizer
 // on Precise. See http://crbug.com/230779.
 // Also fails on WinXP Tests(1). See crbug.com/354425 .

@@ -368,10 +368,8 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       !command_line.HasSwitch(switches::kDisableLocalStorage);
   prefs.databases_enabled =
       !command_line.HasSwitch(switches::kDisableDatabases);
-#if defined(OS_ANDROID) && defined(ARCH_CPU_X86)
-  prefs.webaudio_enabled =
-      command_line.HasSwitch(switches::kEnableWebAudio);
-#else
+#if defined(OS_ANDROID)
+  // WebAudio is enabled by default on x86 and ARM.
   prefs.webaudio_enabled =
       !command_line.HasSwitch(switches::kDisableWebAudio);
 #endif
@@ -414,9 +412,7 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
   prefs.accelerated_compositing_enabled =
       GpuProcessHost::gpu_enabled() &&
       !command_line.HasSwitch(switches::kDisableAcceleratedCompositing);
-  prefs.force_compositing_mode =
-      content::IsForceCompositingModeEnabled() &&
-      !command_line.HasSwitch(switches::kDisableForceCompositingMode);
+  prefs.force_compositing_mode = content::IsForceCompositingModeEnabled();
   prefs.accelerated_2d_canvas_enabled =
       GpuProcessHost::gpu_enabled() &&
       !command_line.HasSwitch(switches::kDisableAccelerated2dCanvas);
@@ -450,8 +446,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
 #if defined(OS_ANDROID)
   prefs.user_gesture_required_for_media_playback = !command_line.HasSwitch(
       switches::kDisableGestureRequirementForMediaPlayback);
-  prefs.user_gesture_required_for_media_fullscreen = !command_line.HasSwitch(
-      switches::kDisableGestureRequirementForMediaFullscreen);
 #endif
 
   prefs.touch_enabled = ui::AreTouchEventsEnabled();
@@ -574,21 +568,6 @@ void RenderViewHostImpl::CancelSuspendedNavigations() {
 
 void RenderViewHostImpl::SuppressDialogsUntilSwapOut() {
   Send(new ViewMsg_SuppressDialogsUntilSwapOut(GetRoutingID()));
-}
-
-void RenderViewHostImpl::SwapOut() {
-  SetState(STATE_WAITING_FOR_UNLOAD_ACK);
-  unload_event_monitor_timeout_->Start(
-      base::TimeDelta::FromMilliseconds(kUnloadTimeoutMS));
-
-  if (IsRenderViewLive()) {
-    Send(new ViewMsg_SwapOut(GetRoutingID()));
-  }
-  delegate_->SwappedOut(this);
-}
-
-void RenderViewHostImpl::OnSwapOutACK() {
-  OnSwappedOut(false);
 }
 
 void RenderViewHostImpl::OnSwappedOut(bool timed_out) {
@@ -735,6 +714,26 @@ void RenderViewHostImpl::DisableFullscreenEncryptedMediaPlayback() {
 }
 #endif
 
+#if defined(USE_MOJO)
+void RenderViewHostImpl::SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) {
+  // Never grant any bindings to browser plugin guests.
+  if (GetProcess()->IsGuest()) {
+    NOTREACHED() << "Never grant bindings to a guest process.";
+    return;
+  }
+
+  if ((enabled_bindings_ & BINDINGS_POLICY_WEB_UI) == 0) {
+    NOTREACHED() << "You must grant bindings before setting the handle";
+    return;
+  }
+
+  DCHECK(renderer_initialized_);
+  RenderProcessHostImpl* process =
+      static_cast<RenderProcessHostImpl*>(GetProcess());
+  process->SetWebUIHandle(GetRoutingID(), handle.Pass());
+}
+#endif
+
 void RenderViewHostImpl::DragTargetDragEnter(
     const DropData& drop_data,
     const gfx::Point& client_pt,
@@ -749,32 +748,34 @@ void RenderViewHostImpl::DragTargetDragEnter(
   // and can't be interpreted as a capability.
   DropData filtered_data(drop_data);
   GetProcess()->FilterURL(true, &filtered_data.url);
+  if (drop_data.did_originate_from_renderer) {
+    filtered_data.filenames.clear();
+  }
 
   // The filenames vector, on the other hand, does represent a capability to
   // access the given files.
   fileapi::IsolatedContext::FileInfoSet files;
-  for (std::vector<DropData::FileInfo>::iterator iter(
+  for (std::vector<ui::FileInfo>::iterator iter(
            filtered_data.filenames.begin());
-       iter != filtered_data.filenames.end(); ++iter) {
+       iter != filtered_data.filenames.end();
+       ++iter) {
     // A dragged file may wind up as the value of an input element, or it
     // may be used as the target of a navigation instead.  We don't know
     // which will happen at this point, so generously grant both access
     // and request permissions to the specific file to cover both cases.
     // We do not give it the permission to request all file:// URLs.
-    base::FilePath path =
-        base::FilePath::FromUTF8Unsafe(base::UTF16ToUTF8(iter->path));
 
     // Make sure we have the same display_name as the one we register.
     if (iter->display_name.empty()) {
       std::string name;
-      files.AddPath(path, &name);
-      iter->display_name = base::UTF8ToUTF16(name);
+      files.AddPath(iter->path, &name);
+      iter->display_name = base::FilePath::FromUTF8Unsafe(name);
     } else {
-      files.AddPathWithName(path, base::UTF16ToUTF8(iter->display_name));
+      files.AddPathWithName(iter->path, iter->display_name.AsUTF8Unsafe());
     }
 
     policy->GrantRequestSpecificFileURL(renderer_id,
-                                        net::FilePathToFileURL(path));
+                                        net::FilePathToFileURL(iter->path));
 
     // If the renderer already has permission to read these paths, we don't need
     // to re-grant them. This prevents problems with DnD for files in the CrOS
@@ -782,8 +783,8 @@ void RenderViewHostImpl::DragTargetDragEnter(
     // directories, but dragging a file would cause the read/write access to be
     // overwritten with read-only access, making them impossible to delete or
     // rename until the renderer was killed.
-    if (!policy->CanReadFile(renderer_id, path))
-      policy->GrantReadFile(renderer_id, path);
+    if (!policy->CanReadFile(renderer_id, iter->path))
+      policy->GrantReadFile(renderer_id, iter->path);
   }
 
   fileapi::IsolatedContext* isolated_context =
@@ -1121,10 +1122,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_FocusedNodeChanged, OnFocusedNodeChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_AddMessageToConsole, OnAddMessageToConsole)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ClosePage_ACK, OnClosePageACK)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_SwapOut_ACK, OnSwapOutACK)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionChanged, OnSelectionChanged)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionBoundsChanged,
-                        OnSelectionBoundsChanged)
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionRootBoundsChanged,
                         OnSelectionRootBoundsChanged)
@@ -1139,6 +1136,7 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
                         OnCancelDesktopNotification)
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowPopup, OnShowPopup)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_HidePopup, OnHidePopup)
 #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_RunFileChooser, OnRunFileChooser)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidAccessInitialDocument,
@@ -1355,7 +1353,7 @@ void RenderViewHostImpl::OnDocumentOnLoadCompletedInMainFrame(
 }
 
 void RenderViewHostImpl::OnToggleFullscreen(bool enter_fullscreen) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   delegate_->ToggleFullscreenMode(enter_fullscreen);
   // We need to notify the contents that its fullscreen state has changed. This
   // is done as part of the resize message.
@@ -1389,20 +1387,6 @@ void RenderViewHostImpl::OnDidChangeScrollOffsetPinningForMainFrame(
 }
 
 void RenderViewHostImpl::OnDidChangeNumWheelEvents(int count) {
-}
-
-void RenderViewHostImpl::OnSelectionChanged(const base::string16& text,
-                                            size_t offset,
-                                            const gfx::Range& range) {
-  if (view_)
-    view_->SelectionChanged(text, offset, range);
-}
-
-void RenderViewHostImpl::OnSelectionBoundsChanged(
-    const ViewHostMsg_SelectionBounds_Params& params) {
-  if (view_) {
-    view_->SelectionBoundsChanged(params);
-  }
 }
 
 #if defined(OS_ANDROID)
@@ -1479,12 +1463,11 @@ void RenderViewHostImpl::OnStartDragging(
   //    still fire though, which causes read permissions to be granted to the
   //    renderer for any file paths in the drop.
   filtered_data.filenames.clear();
-  for (std::vector<DropData::FileInfo>::const_iterator it =
+  for (std::vector<ui::FileInfo>::const_iterator it =
            drop_data.filenames.begin();
-       it != drop_data.filenames.end(); ++it) {
-    base::FilePath path(
-        base::FilePath::FromUTF8Unsafe(base::UTF16ToUTF8(it->path)));
-    if (policy->CanReadFile(GetProcess()->GetID(), path))
+       it != drop_data.filenames.end();
+       ++it) {
+    if (policy->CanReadFile(GetProcess()->GetID(), it->path))
       filtered_data.filenames.push_back(*it);
   }
   float scale = ui::GetImageScale(GetScaleFactorForView(GetView()));
@@ -1754,16 +1737,16 @@ void RenderViewHostImpl::NotifyMoveOrResizeStarted() {
 
 void RenderViewHostImpl::OnAccessibilityEvents(
     const std::vector<AccessibilityHostMsg_EventParams>& params) {
-  if ((accessibility_mode() & AccessibilityModeFlagPlatform) && view_ &&
+  if ((accessibility_mode() != AccessibilityModeOff) && view_ &&
       IsRVHStateActive(rvh_state_)) {
-    view_->CreateBrowserAccessibilityManagerIfNeeded();
-    BrowserAccessibilityManager* manager =
-        view_->GetBrowserAccessibilityManager();
-    if (manager)
-      manager->OnAccessibilityEvents(params);
+    if (accessibility_mode() & AccessibilityModeFlagPlatform) {
+      view_->CreateBrowserAccessibilityManagerIfNeeded();
+      BrowserAccessibilityManager* manager =
+          view_->GetBrowserAccessibilityManager();
+      if (manager)
+        manager->OnAccessibilityEvents(params);
+    }
 
-    // TODO(aboxhall, dtseng): Only send notification when accessibility mode
-    // extension enabled.
     std::vector<AXEventNotificationDetails> details;
     for (unsigned int i = 0; i < params.size(); ++i) {
       const AccessibilityHostMsg_EventParams& param = params[i];
@@ -1800,11 +1783,14 @@ void RenderViewHostImpl::OnAccessibilityEvents(
 void RenderViewHostImpl::OnAccessibilityLocationChanges(
     const std::vector<AccessibilityHostMsg_LocationChangeParams>& params) {
   if (view_ && IsRVHStateActive(rvh_state_)) {
-    view_->CreateBrowserAccessibilityManagerIfNeeded();
-    BrowserAccessibilityManager* manager =
-        view_->GetBrowserAccessibilityManager();
-    if (manager)
-      manager->OnLocationChanges(params);
+    if (accessibility_mode() & AccessibilityModeFlagPlatform) {
+      view_->CreateBrowserAccessibilityManagerIfNeeded();
+      BrowserAccessibilityManager* manager =
+          view_->GetBrowserAccessibilityManager();
+      if (manager)
+        manager->OnLocationChanges(params);
+    }
+    // TODO(aboxhall): send location change events to web contents observers too
   }
 }
 
@@ -1892,6 +1878,12 @@ void RenderViewHostImpl::OnShowPopup(
                         params.right_aligned,
                         params.allow_multiple_selection);
   }
+}
+
+void RenderViewHostImpl::OnHidePopup() {
+  RenderViewHostDelegateView* view = delegate_->GetDelegateView();
+  if (view)
+    view->HidePopupMenu();
 }
 #endif
 

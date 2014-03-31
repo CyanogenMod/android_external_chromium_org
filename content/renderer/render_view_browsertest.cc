@@ -28,6 +28,9 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/render_view_test.h"
 #include "content/public/test/test_utils.h"
+#include "content/renderer/accessibility/renderer_accessibility.h"
+#include "content/renderer/accessibility/renderer_accessibility_complete.h"
+#include "content/renderer/accessibility/renderer_accessibility_focus_only.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
@@ -519,22 +522,22 @@ TEST_F(RenderViewImplTest, SendSwapOutACK) {
   int initial_page_id = view()->GetPageId();
 
   // Respond to a swap out request.
-  view()->OnSwapOut();
+  view()->main_render_frame()->OnSwapOut();
 
   // Ensure the swap out commits synchronously.
   EXPECT_NE(initial_page_id, view()->GetPageId());
 
   // Check for a valid OnSwapOutACK.
   const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
-      ViewHostMsg_SwapOut_ACK::ID);
+      FrameHostMsg_SwapOut_ACK::ID);
   ASSERT_TRUE(msg);
 
   // It is possible to get another swap out request.  Ensure that we send
   // an ACK, even if we don't have to do anything else.
   render_thread_->sink().ClearMessages();
-  view()->OnSwapOut();
+  view()->main_render_frame()->OnSwapOut();
   const IPC::Message* msg2 = render_thread_->sink().GetUniqueMessageMatching(
-      ViewHostMsg_SwapOut_ACK::ID);
+      FrameHostMsg_SwapOut_ACK::ID);
   ASSERT_TRUE(msg2);
 
   // If we navigate back to this RenderView, ensure we don't send a state
@@ -587,11 +590,11 @@ TEST_F(RenderViewImplTest, ReloadWhileSwappedOut) {
   ProcessPendingMessages();
 
   // Respond to a swap out request.
-  view()->OnSwapOut();
+  view()->main_render_frame()->OnSwapOut();
 
   // Check for a OnSwapOutACK.
   const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
-      ViewHostMsg_SwapOut_ACK::ID);
+      FrameHostMsg_SwapOut_ACK::ID);
   ASSERT_TRUE(msg);
   render_thread_->sink().ClearMessages();
 
@@ -1949,15 +1952,15 @@ TEST_F(RenderViewImplTest, SetEditableSelectionAndComposition) {
            "</body>"
            "</html>");
   ExecuteJavaScript("document.getElementById('test1').focus();");
-  view()->OnSetEditableSelectionOffsets(4, 8);
+  frame()->OnSetEditableSelectionOffsets(4, 8);
   const std::vector<blink::WebCompositionUnderline> empty_underline;
-  view()->OnSetCompositionFromExistingText(7, 10, empty_underline);
+  frame()->OnSetCompositionFromExistingText(7, 10, empty_underline);
   blink::WebTextInputInfo info = view()->webview()->textInputInfo();
   EXPECT_EQ(4, info.selectionStart);
   EXPECT_EQ(8, info.selectionEnd);
   EXPECT_EQ(7, info.compositionStart);
   EXPECT_EQ(10, info.compositionEnd);
-  view()->OnUnselect();
+  frame()->OnUnselect();
   info = view()->webview()->textInputInfo();
   EXPECT_EQ(0, info.selectionStart);
   EXPECT_EQ(0, info.selectionEnd);
@@ -1974,14 +1977,14 @@ TEST_F(RenderViewImplTest, OnExtendSelectionAndDelete) {
            "</body>"
            "</html>");
   ExecuteJavaScript("document.getElementById('test1').focus();");
-  view()->OnSetEditableSelectionOffsets(10, 10);
-  view()->OnExtendSelectionAndDelete(3, 4);
+  frame()->OnSetEditableSelectionOffsets(10, 10);
+  frame()->OnExtendSelectionAndDelete(3, 4);
   blink::WebTextInputInfo info = view()->webview()->textInputInfo();
   EXPECT_EQ("abcdefgopqrstuvwxyz", info.value);
   EXPECT_EQ(7, info.selectionStart);
   EXPECT_EQ(7, info.selectionEnd);
-  view()->OnSetEditableSelectionOffsets(4, 8);
-  view()->OnExtendSelectionAndDelete(2, 5);
+  frame()->OnSetEditableSelectionOffsets(4, 8);
+  frame()->OnExtendSelectionAndDelete(2, 5);
   info = view()->webview()->textInputInfo();
   EXPECT_EQ("abuvwxyz", info.value);
   EXPECT_EQ(2, info.selectionStart);
@@ -2325,6 +2328,33 @@ TEST_F(RenderViewImplTest, ServiceWorkerNetworkProviderSetup) {
   ASSERT_TRUE(extra_data);
   EXPECT_EQ(extra_data->service_worker_provider_id(),
             provider->provider_id());
+}
+
+TEST_F(RenderViewImplTest, OnSetAccessibilityMode) {
+  ASSERT_EQ(AccessibilityModeOff, view()->accessibility_mode());
+  ASSERT_EQ((RendererAccessibility*) NULL, view()->renderer_accessibility());
+
+  view()->OnSetAccessibilityMode(AccessibilityModeTreeOnly);
+  ASSERT_EQ(AccessibilityModeTreeOnly, view()->accessibility_mode());
+  ASSERT_NE((RendererAccessibility*) NULL, view()->renderer_accessibility());
+  ASSERT_EQ(RendererAccessibilityTypeComplete,
+            view()->renderer_accessibility()->GetType());
+
+  view()->OnSetAccessibilityMode(AccessibilityModeOff);
+  ASSERT_EQ(AccessibilityModeOff, view()->accessibility_mode());
+  ASSERT_EQ((RendererAccessibility*) NULL, view()->renderer_accessibility());
+
+  view()->OnSetAccessibilityMode(AccessibilityModeComplete);
+  ASSERT_EQ(AccessibilityModeComplete, view()->accessibility_mode());
+  ASSERT_NE((RendererAccessibility*) NULL, view()->renderer_accessibility());
+  ASSERT_EQ(RendererAccessibilityTypeComplete,
+            view()->renderer_accessibility()->GetType());
+
+  view()->OnSetAccessibilityMode(AccessibilityModeEditableTextOnly);
+  ASSERT_EQ(AccessibilityModeEditableTextOnly, view()->accessibility_mode());
+  ASSERT_NE((RendererAccessibility*) NULL, view()->renderer_accessibility());
+  ASSERT_EQ(RendererAccessibilityTypeFocusOnly,
+            view()->renderer_accessibility()->GetType());
 }
 
 }  // namespace content

@@ -152,6 +152,13 @@ bool UIOverrides::RemovesBookmarkShortcut(const UIOverrides& ui_overrides) {
       *ui_overrides.bookmarks_ui->remove_bookmark_shortcut;
 }
 
+bool UIOverrides::RemovesBookmarkOpenPagesShortcut(
+    const UIOverrides& ui_overrides) {
+  return ui_overrides.bookmarks_ui &&
+      ui_overrides.bookmarks_ui->remove_bookmark_open_pages_shortcut &&
+      *ui_overrides.bookmarks_ui->remove_bookmark_open_pages_shortcut;
+}
+
 UIOverridesHandler::UIOverridesHandler() {}
 
 UIOverridesHandler::~UIOverridesHandler() {}
@@ -187,8 +194,9 @@ bool UIOverridesHandler::Validate(const Extension* extension,
     if (!FeatureSwitch::enable_override_bookmarks_ui()->IsEnabled()) {
       warnings->push_back(InstallWarning(
           ErrorUtils::FormatErrorMessage(
-              manifest_errors::kUnrecognizedManifestKey,
-              manifest_keys::kBookmarkUI)));
+              manifest_errors::kUnrecognizedManifestProperty,
+              manifest_keys::kBookmarkUI,
+              manifest_keys::kUIOverride)));
     }
   }
 

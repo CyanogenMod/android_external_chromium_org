@@ -14,6 +14,8 @@
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/render_frame_host_delegate.h"
+#include "content/browser/renderer_host/input/input_router.h"
+#include "content/browser/renderer_host/input/timeout_monitor.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
@@ -183,6 +185,16 @@ void RenderFrameHostImpl::ExecuteCustomContextMenuCommand(
   Send(new FrameMsg_CustomContextMenuAction(routing_id_, context, action));
 }
 
+void RenderFrameHostImpl::Undo() {
+  Send(new InputMsg_Undo(routing_id_));
+  RecordAction(base::UserMetricsAction("Undo"));
+}
+
+void RenderFrameHostImpl::Redo() {
+  Send(new InputMsg_Redo(routing_id_));
+  RecordAction(base::UserMetricsAction("Redo"));
+}
+
 void RenderFrameHostImpl::Cut() {
   Send(new InputMsg_Cut(routing_id_));
   RecordAction(base::UserMetricsAction("Cut"));
@@ -193,9 +205,37 @@ void RenderFrameHostImpl::Copy() {
   RecordAction(base::UserMetricsAction("Copy"));
 }
 
+void RenderFrameHostImpl::CopyToFindPboard() {
+#if defined(OS_MACOSX)
+  // Windows/Linux don't have the concept of a find pasteboard.
+  Send(new InputMsg_CopyToFindPboard(routing_id_));
+  RecordAction(base::UserMetricsAction("CopyToFindPboard"));
+#endif
+}
+
 void RenderFrameHostImpl::Paste() {
   Send(new InputMsg_Paste(routing_id_));
   RecordAction(base::UserMetricsAction("Paste"));
+}
+
+void RenderFrameHostImpl::PasteAndMatchStyle() {
+  Send(new InputMsg_PasteAndMatchStyle(routing_id_));
+  RecordAction(base::UserMetricsAction("PasteAndMatchStyle"));
+}
+
+void RenderFrameHostImpl::Delete() {
+  Send(new InputMsg_Delete(routing_id_));
+  RecordAction(base::UserMetricsAction("DeleteSelection"));
+}
+
+void RenderFrameHostImpl::SelectAll() {
+  Send(new InputMsg_SelectAll(routing_id_));
+  RecordAction(base::UserMetricsAction("SelectAll"));
+}
+
+void RenderFrameHostImpl::Unselect() {
+  Send(new InputMsg_Unselect(routing_id_));
+  RecordAction(base::UserMetricsAction("Unselect"));
 }
 
 void RenderFrameHostImpl::InsertCSS(const std::string& css) {
@@ -225,6 +265,11 @@ RenderViewHost* RenderFrameHostImpl::GetRenderViewHost() {
 }
 
 bool RenderFrameHostImpl::Send(IPC::Message* message) {
+  if (IPC_MESSAGE_ID_CLASS(message->type()) == InputMsgStart) {
+    return render_view_host_->input_router()->SendInput(
+        make_scoped_ptr(message));
+  }
+
   return GetProcess()->Send(message);
 }
 
@@ -323,10 +368,9 @@ void RenderFrameHostImpl::OnOpenURL(
 
 void RenderFrameHostImpl::OnDidStartProvisionalLoadForFrame(
     int parent_routing_id,
-    bool is_main_frame,
     const GURL& url) {
   frame_tree_node_->navigator()->DidStartProvisionalLoad(
-      this, parent_routing_id, is_main_frame, url);
+      this, parent_routing_id, url);
 }
 
 void RenderFrameHostImpl::OnDidFailProvisionalLoadWithError(
@@ -336,15 +380,13 @@ void RenderFrameHostImpl::OnDidFailProvisionalLoadWithError(
 
 void RenderFrameHostImpl::OnDidFailLoadWithError(
     const GURL& url,
-    bool is_main_frame,
     int error_code,
     const base::string16& error_description) {
   GURL validated_url(url);
   GetProcess()->FilterURL(false, &validated_url);
 
   frame_tree_node_->navigator()->DidFailLoadWithError(
-      this, validated_url, is_main_frame, error_code,
-      error_description);
+      this, validated_url, error_code, error_description);
 }
 
 void RenderFrameHostImpl::OnDidRedirectProvisionalLoad(
@@ -455,17 +497,33 @@ void RenderFrameHostImpl::OnCrossSiteResponse(
 }
 
 void RenderFrameHostImpl::SwapOut() {
-  if (render_view_host_->IsRenderViewLive()) {
-    Send(new FrameMsg_SwapOut(routing_id_));
-  } else {
-    // Our RenderViewHost doesn't have a live renderer, so just skip the unload
-    // event.
-    OnSwappedOut(true);
+  // TODO(creis): Move swapped out state to RFH.  Until then, only update it
+  // when swapping out the main frame.
+  if (!GetParent()) {
+    // If this RenderViewHost is not in the default state, it must have already
+    // gone through this, therefore just return.
+    if (render_view_host_->rvh_state_ != RenderViewHostImpl::STATE_DEFAULT)
+      return;
+
+    render_view_host_->SetState(
+        RenderViewHostImpl::STATE_WAITING_FOR_UNLOAD_ACK);
+    render_view_host_->unload_event_monitor_timeout_->Start(
+        base::TimeDelta::FromMilliseconds(
+            RenderViewHostImpl::kUnloadTimeoutMS));
   }
+
+  if (render_view_host_->IsRenderViewLive())
+    Send(new FrameMsg_SwapOut(routing_id_));
+
+  if (!GetParent())
+    delegate_->SwappedOut(this);
+
+  // Allow the navigation to proceed.
+  frame_tree_node_->render_manager()->SwappedOut(this);
 }
 
-void RenderFrameHostImpl::OnDidStartLoading() {
-  delegate_->DidStartLoading(this);
+void RenderFrameHostImpl::OnDidStartLoading(bool to_different_document) {
+  delegate_->DidStartLoading(this, to_different_document);
 }
 
 void RenderFrameHostImpl::OnDidStopLoading() {
@@ -526,7 +584,12 @@ void RenderFrameHostImpl::OnSwapOutACK() {
 }
 
 void RenderFrameHostImpl::OnSwappedOut(bool timed_out) {
-  frame_tree_node_->render_manager()->SwappedOutFrame(this);
+  // For now, we only need to update the RVH state machine for top-level swaps.
+  // Subframe swaps (in --site-per-process) can just continue via RFHM.
+  if (!GetParent())
+    render_view_host_->OnSwappedOut(timed_out);
+  else
+    frame_tree_node_->render_manager()->SwappedOut(this);
 }
 
 void RenderFrameHostImpl::OnContextMenu(const ContextMenuParams& params) {
@@ -623,7 +686,7 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
   // Blink doesn't send throb notifications for JavaScript URLs, so we
   // don't want to either.
   if (!params.url.SchemeIs(kJavaScriptScheme))
-    delegate_->DidStartLoading(this);
+    delegate_->DidStartLoading(this, true);
 }
 
 void RenderFrameHostImpl::NavigateToURL(const GURL& url) {
@@ -636,6 +699,16 @@ void RenderFrameHostImpl::NavigateToURL(const GURL& url) {
   params.transition = PAGE_TRANSITION_LINK;
   params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
   Navigate(params);
+}
+
+void RenderFrameHostImpl::SelectRange(const gfx::Point& start,
+                                      const gfx::Point& end) {
+  Send(new InputMsg_SelectRange(routing_id_, start, end));
+}
+
+void RenderFrameHostImpl::ExtendSelectionAndDelete(size_t before,
+                                                   size_t after) {
+  Send(new FrameMsg_ExtendSelectionAndDelete(routing_id_, before, after));
 }
 
 }  // namespace content

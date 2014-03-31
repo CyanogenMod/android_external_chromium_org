@@ -345,7 +345,7 @@ void RemoveEventListenerOnUI(
   const std::string& event_name,
   int process_id,
   const std::string& extension_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   Profile* profile = reinterpret_cast<Profile*>(profile_id);
   if (!g_browser_process->profile_manager()->IsValidProfile(profile))
@@ -371,7 +371,7 @@ void SendOnMessageEventOnUI(
     void* profile_id,
     const std::string& extension_id,
     scoped_ptr<base::DictionaryValue> event_argument) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   Profile* profile = reinterpret_cast<Profile*>(profile_id);
   if (!g_browser_process->profile_manager()->IsValidProfile(profile))
@@ -433,7 +433,7 @@ WebRequestAPI::GetFactoryInstance() {
 }
 
 void WebRequestAPI::OnListenerRemoved(const EventListenerInfo& details) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // Note that details.event_name includes the sub-event details (e.g. "/123").
   BrowserThread::PostTask(BrowserThread::IO,
                           FROM_HERE,
@@ -498,7 +498,7 @@ struct ExtensionWebRequestEventRouter::BlockedRequest {
   net::CompletionCallback callback;
 
   // If non-empty, this contains the new URL that the request will redirect to.
-  // Only valid for OnBeforeRequest.
+  // Only valid for OnBeforeRequest and OnHeadersReceived.
   GURL* new_url;
 
   // The request headers that will be issued along with this request. Only valid
@@ -831,7 +831,8 @@ int ExtensionWebRequestEventRouter::OnHeadersReceived(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     const net::HttpResponseHeaders* original_response_headers,
-    scoped_refptr<net::HttpResponseHeaders>* override_response_headers) {
+    scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url) {
   // We hide events from the system context as well as sensitive requests.
   if (!profile ||
       WebRequestPermissions::HideRequest(extension_info_map, request))
@@ -881,6 +882,8 @@ int ExtensionWebRequestEventRouter::OnHeadersReceived(
       override_response_headers;
   blocked_requests_[request->identifier()].original_response_headers =
       original_response_headers;
+  blocked_requests_[request->identifier()].new_url =
+      allowed_unsafe_redirect_url;
 
   if (blocked_requests_[request->identifier()].num_handlers_blocking == 0) {
     // If there are no blocking handlers, only the declarative rules tried
@@ -1557,8 +1560,12 @@ helpers::EventResponseDelta* CalculateDelta(
       helpers::ResponseHeaders* new_headers =
           response->response_headers.get();
       return helpers::CalculateOnHeadersReceivedDelta(
-          response->extension_id, response->extension_install_time,
-          response->cancel, old_headers, new_headers);
+          response->extension_id,
+          response->extension_install_time,
+          response->cancel,
+          response->new_url,
+          old_headers,
+          new_headers);
     }
     case ExtensionWebRequestEventRouter::kOnAuthRequired:
       return helpers::CalculateOnAuthRequiredDelta(
@@ -1848,6 +1855,7 @@ int ExtensionWebRequestEventRouter::ExecuteDeltas(
         blocked_request.response_deltas,
         blocked_request.original_response_headers.get(),
         blocked_request.override_response_headers,
+        blocked_request.new_url,
         &warnings,
         blocked_request.net_log);
   } else if (blocked_request.event == kOnAuthRequired) {
@@ -2221,14 +2229,13 @@ bool WebRequestAddEventListener::RunImpl() {
   return true;
 }
 
-void WebRequestEventHandled::CancelWithError(
+void WebRequestEventHandled::RespondWithError(
     const std::string& event_name,
     const std::string& sub_event_name,
     uint64 request_id,
     scoped_ptr<ExtensionWebRequestEventRouter::EventResponse> response,
     const std::string& error) {
   error_ = error;
-  response->cancel = true;
   ExtensionWebRequestEventRouter::GetInstance()->OnEventHandled(
       profile_id(),
       extension_id(),
@@ -2266,11 +2273,11 @@ bool WebRequestEventHandled::RunImpl() {
     if (value->HasKey("cancel")) {
       // Don't allow cancel mixed with other keys.
       if (value->size() != 1) {
-        CancelWithError(event_name,
-                        sub_event_name,
-                        request_id,
-                        response.Pass(),
-                        keys::kInvalidBlockingResponse);
+        RespondWithError(event_name,
+                         sub_event_name,
+                         request_id,
+                         response.Pass(),
+                         keys::kInvalidBlockingResponse);
         return false;
       }
 
@@ -2285,12 +2292,12 @@ bool WebRequestEventHandled::RunImpl() {
                                                    &new_url_str));
       response->new_url = GURL(new_url_str);
       if (!response->new_url.is_valid()) {
-        CancelWithError(event_name,
-                        sub_event_name,
-                        request_id,
-                        response.Pass(),
-                        ErrorUtils::FormatErrorMessage(
-                            keys::kInvalidRedirectUrl, new_url_str));
+        RespondWithError(event_name,
+                         sub_event_name,
+                         request_id,
+                         response.Pass(),
+                         ErrorUtils::FormatErrorMessage(
+                             keys::kInvalidRedirectUrl, new_url_str));
         return false;
       }
     }
@@ -2300,21 +2307,23 @@ bool WebRequestEventHandled::RunImpl() {
     if (hasRequestHeaders || hasResponseHeaders) {
       if (hasRequestHeaders && hasResponseHeaders) {
         // Allow only one of the keys, not both.
-        CancelWithError(event_name,
-                        sub_event_name,
-                        request_id,
-                        response.Pass(),
-                        keys::kInvalidHeaderKeyCombination);
+        RespondWithError(event_name,
+                         sub_event_name,
+                         request_id,
+                         response.Pass(),
+                         keys::kInvalidHeaderKeyCombination);
         return false;
       }
 
       base::ListValue* headers_value = NULL;
+      scoped_ptr<net::HttpRequestHeaders> request_headers;
+      scoped_ptr<helpers::ResponseHeaders> response_headers;
       if (hasRequestHeaders) {
-        response->request_headers.reset(new net::HttpRequestHeaders());
+        request_headers.reset(new net::HttpRequestHeaders());
         EXTENSION_FUNCTION_VALIDATE(value->GetList(keys::kRequestHeadersKey,
                                                    &headers_value));
       } else {
-        response->response_headers.reset(new helpers::ResponseHeaders());
+        response_headers.reset(new helpers::ResponseHeaders());
         EXTENSION_FUNCTION_VALIDATE(value->GetList(keys::kResponseHeadersKey,
                                                    &headers_value));
       }
@@ -2328,37 +2337,40 @@ bool WebRequestEventHandled::RunImpl() {
         if (!FromHeaderDictionary(header_value, &name, &value)) {
           std::string serialized_header;
           base::JSONWriter::Write(header_value, &serialized_header);
-          CancelWithError(event_name,
-                          sub_event_name,
-                          request_id,
-                          response.Pass(),
-                          ErrorUtils::FormatErrorMessage(keys::kInvalidHeader,
-                                                         serialized_header));
+          RespondWithError(event_name,
+                           sub_event_name,
+                           request_id,
+                           response.Pass(),
+                           ErrorUtils::FormatErrorMessage(keys::kInvalidHeader,
+                                                          serialized_header));
           return false;
         }
         if (!helpers::IsValidHeaderName(name)) {
-          CancelWithError(event_name,
-                          sub_event_name,
-                          request_id,
-                          response.Pass(),
-                          keys::kInvalidHeaderName);
+          RespondWithError(event_name,
+                           sub_event_name,
+                           request_id,
+                           response.Pass(),
+                           keys::kInvalidHeaderName);
           return false;
         }
         if (!helpers::IsValidHeaderValue(value)) {
-          CancelWithError(event_name,
-                          sub_event_name,
-                          request_id,
-                          response.Pass(),
-                          ErrorUtils::FormatErrorMessage(
-                              keys::kInvalidHeaderValue, name));
+          RespondWithError(event_name,
+                           sub_event_name,
+                           request_id,
+                           response.Pass(),
+                           ErrorUtils::FormatErrorMessage(
+                               keys::kInvalidHeaderValue, name));
           return false;
         }
         if (hasRequestHeaders)
-          response->request_headers->SetHeader(name, value);
+          request_headers->SetHeader(name, value);
         else
-          response->response_headers->push_back(helpers::ResponseHeader(name,
-                                                                        value));
+          response_headers->push_back(helpers::ResponseHeader(name, value));
       }
+      if (hasRequestHeaders)
+        response->request_headers.reset(request_headers.release());
+      else
+        response->response_headers.reset(response_headers.release());
     }
 
     if (value->HasKey(keys::kAuthCredentialsKey)) {

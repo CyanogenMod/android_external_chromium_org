@@ -11,12 +11,12 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/browser/shell_resource_dispatcher_host_delegate.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
 #include "net/base/escape.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/url_request/url_request.h"
@@ -234,10 +234,22 @@ class CrossSiteTransferTest : public ContentBrowserTest {
   ResourceDispatcherHostDelegate* old_delegate_;
 };
 
+// The following tests crash in the ThreadSanitizer runtime,
+// http://crbug.com/356758.
+#if defined(THREAD_SANITIZER)
+#define MAYBE_ReplaceEntryCrossProcessThenTransfer \
+    DISABLED_ReplaceEntryCrossProcessThenTransfer
+#define MAYBE_ReplaceEntryCrossProcessTwice \
+    DISABLED_ReplaceEntryCrossProcessTwice
+#else
+#define MAYBE_ReplaceEntryCrossProcessThenTransfer \
+    ReplaceEntryCrossProcessThenTransfer
+#define MAYBE_ReplaceEntryCrossProcessTwice ReplaceEntryCrossProcessTwice
+#endif
 // Tests that the |should_replace_current_entry| flag persists correctly across
 // request transfers that began with a cross-process navigation.
 IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest,
-                       ReplaceEntryCrossProcessThenTransfer) {
+                       MAYBE_ReplaceEntryCrossProcessThenTransfer) {
   const NavigationController& controller =
       shell()->web_contents()->GetController();
   host_resolver()->AddRule("*", "127.0.0.1");
@@ -347,7 +359,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest,
 // Tests that the |should_replace_current_entry| flag persists correctly across
 // request transfers that cross processes twice from renderer policy.
 IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest,
-                       ReplaceEntryCrossProcessTwice) {
+                       MAYBE_ReplaceEntryCrossProcessTwice) {
   const NavigationController& controller =
       shell()->web_contents()->GetController();
   host_resolver()->AddRule("*", "127.0.0.1");

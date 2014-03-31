@@ -22,6 +22,7 @@
 #include "media/cast/logging/logging_defines.h"
 #include "media/cast/logging/proto/raw_events.pb.h"
 #include "media/cast/test/utility/audio_utility.h"
+#include "media/cast/test/utility/default_config.h"
 #include "media/cast/test/utility/input_builder.h"
 #include "media/cast/test/utility/video_utility.h"
 #include "media/cast/transport/cast_transport_defines.h"
@@ -452,11 +453,7 @@ int main(int argc, char** argv) {
   media::cast::VideoSenderConfig video_config =
       media::cast::GetVideoSenderConfig();
 
-  // Enable main and send side threads only. Enable raw event logging.
   // Running transport on the main thread.
-  media::cast::CastLoggingConfig logging_config;
-  logging_config.enable_raw_data_collection = true;
-
   // Setting up transport config.
   media::cast::transport::CastTransportAudioConfig transport_audio_config;
   media::cast::transport::CastTransportVideoConfig transport_video_config;
@@ -467,25 +464,20 @@ int main(int argc, char** argv) {
   transport_video_config.base.ssrc = video_config.sender_ssrc;
   transport_video_config.base.rtp_config = video_config.rtp_config;
 
-  // Enable main and send side threads only. Enable raw event and stats logging.
+  // Enable raw event and stats logging.
   // Running transport on the main thread.
   scoped_refptr<media::cast::CastEnvironment> cast_environment(
       new media::cast::CastEnvironment(
           make_scoped_ptr<base::TickClock>(new base::DefaultTickClock()),
           io_message_loop.message_loop_proxy(),
           audio_thread.message_loop_proxy(),
-          NULL,
-          video_thread.message_loop_proxy(),
-          NULL,
-          io_message_loop.message_loop_proxy(),
-          media::cast::GetLoggingConfigWithRawEventsAndStatsEnabled()));
+          video_thread.message_loop_proxy()));
 
   scoped_ptr<media::cast::transport::CastTransportSender> transport_sender =
       media::cast::transport::CastTransportSender::Create(
           NULL,  // net log.
           cast_environment->Clock(),
           remote_endpoint,
-          logging_config,
           base::Bind(&UpdateCastTransportStatus),
           base::Bind(&LogRawEvents, cast_environment),
           base::TimeDelta::FromSeconds(1),
@@ -498,7 +490,11 @@ int main(int argc, char** argv) {
       media::cast::CastSender::Create(cast_environment, transport_sender.get());
 
   cast_sender->InitializeVideo(
-      video_config, base::Bind(&InitializationResult), NULL);
+      video_config,
+      base::Bind(&InitializationResult),
+      media::cast::CreateDefaultVideoEncodeAcceleratorCallback(),
+      media::cast::CreateDefaultVideoEncodeMemoryCallback());
+
   cast_sender->InitializeAudio(audio_config, base::Bind(&InitializationResult));
 
   transport_sender->SetPacketReceiver(cast_sender->packet_receiver());

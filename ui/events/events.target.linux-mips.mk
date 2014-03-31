@@ -38,8 +38,9 @@ LOCAL_SRC_FILES := \
 	ui/events/gestures/gesture_point.cc \
 	ui/events/gestures/gesture_recognizer_impl.cc \
 	ui/events/gestures/gesture_sequence.cc \
-	ui/events/gestures/gesture_types.cc \
-	ui/events/gestures/velocity_calculator.cc
+	ui/events/gestures/velocity_calculator.cc \
+	ui/events/platform/platform_event_source.cc \
+	ui/events/platform/scoped_event_dispatcher.cc
 
 
 # Flags passed to both C and C++ files.
@@ -101,9 +102,7 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -112,6 +111,7 @@ MY_DEFS_Debug := \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -219,9 +219,7 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -230,6 +228,7 @@ MY_DEFS_Release := \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \

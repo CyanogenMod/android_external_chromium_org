@@ -13,7 +13,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
-#include "base/timer/timer.h"
 #include "base/values.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "url/gurl.h"
@@ -170,6 +169,16 @@ class ServicesCustomizationDocument : public CustomizationDocument,
   // Cache of OEM default apps stored in profile preferences.
   extensions::ExternalLoader* CreateExternalLoader(Profile* profile);
 
+  // Returns the name of the folder for OEM apps for given |locale|.
+  std::string GetOemAppsFolderName(const std::string& locale) const;
+
+  // Initialize instance of ServicesCustomizationDocument for tests that will
+  // override singleton until ShutdownForTesting is called.
+  static void InitializeForTesting();
+
+  // Remove instance of ServicesCustomizationDocument for tests.
+  static void ShutdownForTesting();
+
  private:
   friend struct DefaultSingletonTraits<ServicesCustomizationDocument>;
 
@@ -193,11 +202,16 @@ class ServicesCustomizationDocument : public CustomizationDocument,
   // Overriden from net::URLFetcherDelegate:
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
 
-  // Initiate file fetching.
+  // Initiate file fetching. Wait for online status.
   void StartFileFetch();
 
+  // Initiate file fetching. Don't wait for online status.
+  void DoStartFileFetch();
+
   // Executes on FILE thread and reads file to string.
-  void ReadFileInBackground(const base::FilePath& file);
+  static void ReadFileInBackground(
+      base::WeakPtr<ServicesCustomizationDocument> self,
+      const base::FilePath& file);
 
   // Called on UI thread with results of ReadFileInBackground.
   void OnManifesteRead(const std::string& manifest);
@@ -212,14 +226,22 @@ class ServicesCustomizationDocument : public CustomizationDocument,
   // Update cached manifest for |profile|.
   void UpdateCachedManifest(Profile* profile);
 
+  // Customization document not found for give ID.
+  void OnCustomizationNotFound();
+
+  // Set OEM apps folder name for AppListSyncableService for |profile|.
+  void SetOemFolderName(Profile* profile, const base::DictionaryValue& root);
+
+  // Returns the name of the folder for OEM apps for given |locale|.
+  std::string GetOemAppsFolderNameImpl(
+      const std::string& locale,
+      const base::DictionaryValue& root) const;
+
   // Services customization manifest URL.
   GURL url_;
 
   // URLFetcher instance.
   scoped_ptr<net::URLFetcher> url_fetcher_;
-
-  // Timer to retry fetching file if network is not available.
-  base::OneShotTimer<ServicesCustomizationDocument> retry_timer_;
 
   // How many times we already tried to fetch customization manifest file.
   int num_retries_;
@@ -227,8 +249,14 @@ class ServicesCustomizationDocument : public CustomizationDocument,
   // Manifest fetch is already in progress.
   bool fetch_started_;
 
+  // Delay between checks for network online state.
+  base::TimeDelta network_delay_;
+
   // Known external loaders.
   ExternalLoaders external_loaders_;
+
+  // Weak factory for callbacks.
+  base::WeakPtrFactory<ServicesCustomizationDocument> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServicesCustomizationDocument);
 };

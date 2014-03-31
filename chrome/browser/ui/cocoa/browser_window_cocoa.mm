@@ -646,8 +646,8 @@ bool BrowserWindowCocoa::IsFullscreenWithoutChrome() {
 
 WindowOpenDisposition BrowserWindowCocoa::GetDispositionForPopupBounds(
     const gfx::Rect& bounds) {
-  // In Lion fullscreen mode, convert popups into tabs.
-  if (chrome::mac::SupportsSystemFullscreen() && IsFullscreen())
+  // When using Cocoa's System Fullscreen mode, convert popups into tabs.
+  if ([controller_ isInSystemFullscreen])
     return NEW_FOREGROUND_TAB;
   return NEW_POPUP;
 }
@@ -705,9 +705,10 @@ void BrowserWindowCocoa::ShowAvatarBubble(WebContents* web_contents,
   [menu showWindow:nil];
 }
 
-void BrowserWindowCocoa::ShowAvatarBubbleFromAvatarButton() {
+void BrowserWindowCocoa::ShowAvatarBubbleFromAvatarButton(
+    AvatarBubbleMode mode) {
   AvatarBaseController* controller = [controller_ avatarButtonController];
-  [controller showAvatarBubble:[controller buttonView]];
+  [controller showAvatarBubble:[controller buttonView] withMode:mode];
 }
 
 void BrowserWindowCocoa::ShowPasswordGenerationBubble(

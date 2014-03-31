@@ -14,6 +14,7 @@
 #include "ui/gfx/animation/animation_delegate.h"
 
 namespace gfx {
+class ImageSkia;
 class Rect;
 class SlideAnimation;
 }
@@ -46,6 +47,9 @@ class ASH_EXPORT DefaultHeaderPainter : public HeaderPainter,
   virtual void SetHeaderHeightForPainting(int height) OVERRIDE;
   virtual void SchedulePaintForTitle() OVERRIDE;
 
+  // Sets the window icon for the header. Passing NULL removes the window icon.
+  void UpdateWindowIcon(views::View* window_icon, int icon_size);
+
  private:
   FRIEND_TEST_ALL_PREFIXES(DefaultHeaderPainterTest, TitleIconAlignment);
 
@@ -70,9 +74,16 @@ class ASH_EXPORT DefaultHeaderPainter : public HeaderPainter,
   // Returns the bounds for the title.
   gfx::Rect GetTitleBounds() const;
 
+  // Returns the frame image to use when |frame_| is active.
+  gfx::ImageSkia* GetActiveFrameImage() const;
+
+  // Returns the frame image to use when |frame_| is inactive.
+  gfx::ImageSkia* GetInactiveFrameImage() const;
+
   views::Widget* frame_;
   views::View* view_;
   views::View* window_icon_;  // May be NULL.
+  int window_icon_size_;
   FrameCaptionButtonContainerView* caption_button_container_;
 
   // The height of the header including the header/content separator.

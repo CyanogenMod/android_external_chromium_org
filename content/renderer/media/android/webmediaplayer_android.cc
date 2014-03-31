@@ -29,7 +29,6 @@
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/mailbox_holder.h"
-#include "grit/content_resources.h"
 #include "media/base/android/media_player_android.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/media_switches.h"
@@ -45,6 +44,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkTypeface.h"
 #include "ui/gfx/image/image.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
@@ -430,28 +430,46 @@ bool WebMediaPlayerAndroid::copyVideoTextureToPlatformTexture(
     unsigned int type,
     bool premultiply_alpha,
     bool flip_y) {
-  if (is_remote_ || !texture_id_)
+  // Don't allow clients to copy an encrypted video frame.
+  if (needs_external_surface_)
     return false;
+
+  scoped_refptr<VideoFrame> video_frame;
+  {
+    base::AutoLock auto_lock(current_frame_lock_);
+    video_frame = current_frame_;
+  }
+
+  if (!video_frame ||
+      video_frame->format() != media::VideoFrame::NATIVE_TEXTURE)
+    return false;
+  DCHECK((!is_remote_ && texture_id_) ||
+         (is_remote_ && remote_playback_texture_id_));
+  gpu::MailboxHolder* mailbox_holder = video_frame->mailbox_holder();
+  DCHECK((texture_id_ &&
+          mailbox_holder->texture_target == GL_TEXTURE_EXTERNAL_OES) ||
+         (remote_playback_texture_id_ &&
+          mailbox_holder->texture_target == GL_TEXTURE_2D));
 
   // For hidden video element (with style "display:none"), ensure the texture
   // size is set.
-  if (cached_stream_texture_size_.width != natural_size_.width ||
-      cached_stream_texture_size_.height != natural_size_.height) {
+  if (!is_remote_ &&
+      (cached_stream_texture_size_.width != natural_size_.width ||
+       cached_stream_texture_size_.height != natural_size_.height)) {
     stream_texture_factory_->SetStreamTextureSize(
         stream_id_, gfx::Size(natural_size_.width, natural_size_.height));
     cached_stream_texture_size_ = natural_size_;
   }
 
   uint32 source_texture = web_graphics_context->createTexture();
-  // This is strictly not necessary, because we flush when we create the
-  // one and only stream texture.
-  web_graphics_context->waitSyncPoint(texture_mailbox_sync_point_);
+  web_graphics_context->waitSyncPoint(mailbox_holder->sync_point);
 
   // Ensure the target of texture is set before copyTextureCHROMIUM, otherwise
   // an invalid texture target may be used for copy texture.
-  web_graphics_context->bindTexture(GL_TEXTURE_EXTERNAL_OES, source_texture);
-  web_graphics_context->consumeTextureCHROMIUM(GL_TEXTURE_EXTERNAL_OES,
-                                               texture_mailbox_.name);
+  web_graphics_context->bindTexture(mailbox_holder->texture_target,
+                                    source_texture);
+  web_graphics_context->consumeTextureCHROMIUM(mailbox_holder->texture_target,
+                                               mailbox_holder->mailbox.name);
 
   // The video is stored in an unmultiplied format, so premultiply if
   // necessary.
@@ -470,8 +488,12 @@ bool WebMediaPlayerAndroid::copyVideoTextureToPlatformTexture(
   web_graphics_context->pixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
                                     false);
 
-  web_graphics_context->bindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+  if (mailbox_holder->texture_target == GL_TEXTURE_EXTERNAL_OES)
+    web_graphics_context->bindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+  else
+    web_graphics_context->bindTexture(GL_TEXTURE_2D, texture);
   web_graphics_context->deleteTexture(source_texture);
+  web_graphics_context->flush();
   return true;
 }
 
@@ -662,7 +684,14 @@ void WebMediaPlayerAndroid::OnVideoSizeChanged(int width, int height) {
   natural_size_.width = width;
   natural_size_.height = height;
   ReallocateVideoFrame();
-  CreateWebLayerIfNeeded();
+
+  // Lazily allocate compositing layer.
+  if (!video_weblayer_) {
+    video_weblayer_.reset(
+        new webkit::WebLayerImpl(cc::VideoLayer::Create(this)));
+    client_->setWebLayer(video_weblayer_.get());
+  }
+
   // TODO(qinmin): This is a hack. We need the media element to stop showing the
   // poster image by forcing it to call setDisplayMode(video). Should move the
   // logic into HTMLMediaElement.cpp.
@@ -674,10 +703,11 @@ void WebMediaPlayerAndroid::OnTimeUpdate(const base::TimeDelta& current_time) {
   current_time_ = current_time.InSecondsF();
 }
 
-void WebMediaPlayerAndroid::OnConnectedToRemoteDevice() {
+void WebMediaPlayerAndroid::OnConnectedToRemoteDevice(
+    const std::string& remote_playback_message) {
   DCHECK(main_thread_checker_.CalledOnValidThread());
   DCHECK(!media_source_delegate_);
-  DrawRemotePlaybackIcon();
+  DrawRemotePlaybackText(remote_playback_message);
   is_remote_ = true;
   SetNeedsEstablishPeer(false);
 }
@@ -832,7 +862,9 @@ void WebMediaPlayerAndroid::Pause(bool is_media_related_action) {
   UpdatePlayingState(false);
 }
 
-void WebMediaPlayerAndroid::DrawRemotePlaybackIcon() {
+void WebMediaPlayerAndroid::DrawRemotePlaybackText(
+    const std::string& remote_playback_message) {
+
   DCHECK(main_thread_checker_.CalledOnValidThread());
   if (!video_weblayer_)
     return;
@@ -853,34 +885,64 @@ void WebMediaPlayerAndroid::DrawRemotePlaybackIcon() {
       SkBitmap::kARGB_8888_Config, canvas_size.width(), canvas_size.height());
   bitmap.allocPixels();
 
+  // Create the canvas and draw the "Casting to <Chromecast>" text on it.
   SkCanvas canvas(bitmap);
   canvas.drawColor(SK_ColorBLACK);
+
+  const SkScalar kTextSize(40);
+  const SkScalar kMinPadding(40);
+
   SkPaint paint;
   paint.setAntiAlias(true);
   paint.setFilterLevel(SkPaint::kHigh_FilterLevel);
-  const SkBitmap* icon_bitmap =
-      GetContentClient()
-          ->GetNativeImageNamed(IDR_MEDIAPLAYER_REMOTE_PLAYBACK_ICON)
-          .ToSkBitmap();
-  // In order to get a reasonable margin around the icon:
-  // - the icon should be under half the frame width
-  // - the icon should be at most 3/5 of the frame height
-  // Additionally, on very large screens, the icon size should be capped. A max
-  // width of 320 was arbitrarily chosen; since this is half the resource's
-  // pixel width, it should look crisp even on 2x deviceScaleFactor displays.
-  int icon_width = 320;
-  icon_width = std::min(icon_width, canvas_size.width() / 2);
-  icon_width = std::min(icon_width,
-                        canvas_size.height() * icon_bitmap->width() /
-                            icon_bitmap->height() * 3 / 5);
-  int icon_height = icon_width * icon_bitmap->height() / icon_bitmap->width();
-  // Center the icon within the frame
-  SkRect icon_rect = SkRect::MakeXYWH((canvas_size.width() - icon_width) / 2,
-                                      (canvas_size.height() - icon_height) / 2,
-                                      icon_width,
-                                      icon_height);
-  canvas.drawBitmapRectToRect(
-      *icon_bitmap, NULL /* src */, icon_rect /* dest */, &paint);
+  paint.setColor(SK_ColorWHITE);
+  paint.setTypeface(SkTypeface::CreateFromName("sans", SkTypeface::kBold));
+  paint.setTextSize(kTextSize);
+
+  // Calculate the vertical margin from the top
+  SkPaint::FontMetrics font_metrics;
+  paint.getFontMetrics(&font_metrics);
+  SkScalar sk_vertical_margin = kMinPadding - font_metrics.fAscent;
+
+  // Measure the width of the entire text to display
+  size_t display_text_width = paint.measureText(
+      remote_playback_message.c_str(), remote_playback_message.size());
+  std::string display_text(remote_playback_message);
+
+  if (display_text_width + (kMinPadding * 2) > canvas_size.width()) {
+    // The text is too long to fit in one line, truncate it and append ellipsis
+    // to the end.
+
+    // First, figure out how much of the canvas the '...' will take up.
+    const std::string kTruncationEllipsis("\xE2\x80\xA6");
+    SkScalar sk_ellipse_width = paint.measureText(
+        kTruncationEllipsis.c_str(), kTruncationEllipsis.size());
+
+    // Then calculate how much of the text can be drawn with the '...' appended
+    // to the end of the string.
+    SkScalar sk_max_original_text_width(
+        canvas_size.width() - (kMinPadding * 2) - sk_ellipse_width);
+    size_t sk_max_original_text_length = paint.breakText(
+        remote_playback_message.c_str(),
+        remote_playback_message.size(),
+        sk_max_original_text_width);
+
+    // Remove the part of the string that doesn't fit and append '...'.
+    display_text.erase(sk_max_original_text_length,
+        remote_playback_message.size() - sk_max_original_text_length);
+    display_text.append(kTruncationEllipsis);
+    display_text_width = paint.measureText(
+        display_text.c_str(), display_text.size());
+  }
+
+  // Center the text horizontally.
+  SkScalar sk_horizontal_margin =
+      (canvas_size.width() - display_text_width) / 2.0;
+  canvas.drawText(display_text.c_str(),
+      display_text.size(),
+      sk_horizontal_margin,
+      sk_vertical_margin,
+      paint);
 
   GLES2Interface* gl = stream_texture_factory_->ContextGL();
 
@@ -953,13 +1015,6 @@ void WebMediaPlayerAndroid::ReallocateVideoFrame() {
         VideoFrame::ReadPixelsCB());
     SetCurrentFrameInternal(new_frame);
   }
-}
-
-void WebMediaPlayerAndroid::CreateWebLayerIfNeeded() {
-  if (!hasVideo() || video_weblayer_ || !client_->needsWebLayerForVideo())
-    return;
-  video_weblayer_.reset(new webkit::WebLayerImpl(cc::VideoLayer::Create(this)));
-  client_->setWebLayer(video_weblayer_.get());
 }
 
 void WebMediaPlayerAndroid::SetVideoFrameProviderClient(
@@ -1182,6 +1237,17 @@ WebMediaPlayer::MediaKeyException WebMediaPlayerAndroid::generateKeyRequest(
   return e;
 }
 
+// Guess the type of |init_data|. This is only used to handle some corner cases
+// so we keep it as simple as possible without breaking major use cases.
+static std::string GuessInitDataType(const unsigned char* init_data,
+                                     unsigned init_data_length) {
+  // Most WebM files use KeyId of 16 bytes. MP4 init data are always >16 bytes.
+  if (init_data_length == 16)
+    return "video/webm";
+
+  return "video/mp4";
+}
+
 // TODO(xhwang): Report an error when there is encrypted stream but EME is
 // not enabled. Currently the player just doesn't start and waits for
 // ever.
@@ -1228,11 +1294,15 @@ WebMediaPlayerAndroid::GenerateKeyRequestInternal(
     return WebMediaPlayer::MediaKeyExceptionInvalidPlayerState;
   }
 
+  std::string init_data_type = init_data_type_;
+  if (init_data_type.empty())
+    init_data_type = GuessInitDataType(init_data, init_data_length);
+
   // TODO(xhwang): We assume all streams are from the same container (thus have
   // the same "type") for now. In the future, the "type" should be passed down
   // from the application.
   if (!proxy_decryptor_->GenerateKeyRequest(
-           init_data_type_, init_data, init_data_length)) {
+           init_data_type, init_data, init_data_length)) {
     current_key_system_.clear();
     return WebMediaPlayer::MediaKeyExceptionKeySystemNotSupported;
   }

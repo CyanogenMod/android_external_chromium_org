@@ -17,7 +17,7 @@ namespace cast {
 class StandaloneCastEnvironment : public CastEnvironment,
                                   public base::ThreadChecker {
  public:
-  explicit StandaloneCastEnvironment(const CastLoggingConfig& logging_config);
+  explicit StandaloneCastEnvironment();
 
   // Stops all threads backing the task runners, blocking the caller until
   // complete.
@@ -27,11 +27,8 @@ class StandaloneCastEnvironment : public CastEnvironment,
   virtual ~StandaloneCastEnvironment();
 
   base::Thread main_thread_;
-  base::Thread audio_encode_thread_;
-  base::Thread audio_decode_thread_;
-  base::Thread video_encode_thread_;
-  base::Thread video_decode_thread_;
-  base::Thread transport_thread_;
+  base::Thread audio_thread_;
+  base::Thread video_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(StandaloneCastEnvironment);
 };

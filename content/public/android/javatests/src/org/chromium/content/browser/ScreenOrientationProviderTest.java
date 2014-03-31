@@ -5,8 +5,7 @@
 package org.chromium.content.browser;
 
 import android.os.Build;
-import android.test.suitebuilder.annotation.MediumTest;
-import android.test.suitebuilder.annotation.SmallTest;
+import android.test.FlakyTest;
 
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.UrlUtils;
@@ -112,7 +111,9 @@ public class ScreenOrientationProviderTest extends ContentShellTestBase {
         super.tearDown();
     }
 
-    @SmallTest
+    // @SmallTest
+    // crbug.com/353500
+    @FlakyTest
     @Feature({"ScreenOrientation"})
     public void testBasicValues() throws Exception {
         lockOrientationAndWait(ScreenOrientationValues.PORTRAIT_PRIMARY);
@@ -128,7 +129,9 @@ public class ScreenOrientationProviderTest extends ContentShellTestBase {
         assertTrue(checkOrientationForLock(ScreenOrientationValues.LANDSCAPE_SECONDARY));
     }
 
-    @MediumTest
+    // @MediumTest
+    // crbug.com/353500
+    @FlakyTest
     @Feature({"ScreenOrientation"})
     public void testPortrait() throws Exception {
         lockOrientationAndWait(ScreenOrientationValues.PORTRAIT_PRIMARY);
@@ -148,7 +151,9 @@ public class ScreenOrientationProviderTest extends ContentShellTestBase {
                 ScreenOrientationValues.PORTRAIT_SECONDARY));
     }
 
-    @MediumTest
+    // @MediumTest
+    // crbug.com/353500
+    @FlakyTest
     @Feature({"ScreenOrientation"})
     public void testLandscape() throws Exception {
         int initialOrientation = mObserver.mOrientation;

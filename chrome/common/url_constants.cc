@@ -93,6 +93,8 @@ const char kChromeUIVersionURL[] = "chrome://version/";
 
 #if defined(OS_ANDROID)
 const char kChromeUINativeNewTabURL[] = "chrome-native://newtab/";
+const char kChromeUINativeBookmarksURL[] = "chrome-native://bookmarks/";
+const char kChromeUINativeRecentTabsURL[] = "chrome-native://recent-tabs/";
 const char kChromeUIWelcomeURL[] = "chrome://welcome/";
 #endif
 
@@ -343,13 +345,15 @@ const char kSyncGoogleDashboardURL[] =
 const char kAutoPasswordGenerationLearnMoreURL[] =
     "https://support.google.com/chrome/?p=ui_generate_password";
 
-
 const char kPasswordManagerLearnMoreURL[] =
 #if defined(OS_CHROMEOS)
     "https://support.google.com/chromeos/?p=settings_password";
 #else
     "https://support.google.com/chrome/?p=settings_password";
 #endif
+
+const char kSettingsApiLearnMoreURL[] =
+    "https://support.google.com/chrome/?p=ui_settings_api_extension";
 
 const char kChromeHelpViaKeyboardURL[] =
 #if defined(OS_CHROMEOS)

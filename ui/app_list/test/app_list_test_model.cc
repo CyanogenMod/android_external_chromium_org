@@ -69,6 +69,27 @@ void AppListTestModel::PopulateApps(int n) {
     CreateAndAddItem(GetItemName(start_index + i));
 }
 
+AppListFolderItem* AppListTestModel::CreateAndPopulateFolderWithApps(int n) {
+  DCHECK_GT(n, 1);
+  int start_index = static_cast<int>(top_level_item_list()->item_count());
+  AppListTestItem* item = CreateAndAddItem(GetItemName(start_index));
+  std::string merged_item_id = item->id();
+  for (int i = 1; i < n; ++i) {
+    AppListTestItem* new_item = CreateAndAddItem(GetItemName(start_index + i));
+    merged_item_id = AppListModel::MergeItems(merged_item_id, new_item->id());
+  }
+  AppListItem* merged_item = FindItem(merged_item_id);
+  DCHECK(merged_item->GetItemType() == AppListFolderItem::kItemType);
+  return static_cast<AppListFolderItem*>(merged_item);
+}
+
+AppListFolderItem* AppListTestModel::CreateAndAddOemFolder(
+    const std::string& id) {
+  AppListFolderItem* folder =
+      new AppListFolderItem(id, AppListFolderItem::FOLDER_TYPE_OEM);
+  return static_cast<AppListFolderItem*>(AddItem(folder));
+}
+
 void AppListTestModel::PopulateAppWithId(int id) {
   CreateAndAddItem(GetItemName(id));
 }

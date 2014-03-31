@@ -6,8 +6,8 @@
 #include "mojo/public/bindings/remote_ptr.h"
 #include "mojo/public/bindings/tests/math_calculator.mojom.h"
 #include "mojo/public/bindings/tests/sample_service.mojom.h"
-#include "mojo/public/environment/environment.h"
-#include "mojo/public/utility/run_loop.h"
+#include "mojo/public/cpp/environment/environment.h"
+#include "mojo/public/cpp/utility/run_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace mojo {
@@ -222,7 +222,7 @@ TEST_F(RemotePtrTest, NoPeerAttribute) {
   // This is a test to ensure the following compiles. The sample::Port interface
   // does not have an explicit Peer attribute.
   InterfacePipe<sample::Port, NoInterface> pipe;
-  RemotePtr<sample::Port> port(pipe.handle_to_self.Pass());
+  RemotePtr<sample::Port> port(pipe.handle_to_self.Pass(), NULL);
 }
 
 }  // namespace

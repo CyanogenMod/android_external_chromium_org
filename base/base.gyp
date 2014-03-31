@@ -221,9 +221,6 @@
         }],
       ],
       'sources': [
-        'third_party/nspr/prcpucfg.h',
-        'third_party/nspr/prcpucfg_win.h',
-        'third_party/nspr/prtypes.h',
         'third_party/xdg_user_dirs/xdg_user_dir_lookup.cc',
         'third_party/xdg_user_dirs/xdg_user_dir_lookup.h',
         'async_socket_io_handler.h',
@@ -512,8 +509,8 @@
         'md5_unittest.cc',
         'memory/aligned_memory_unittest.cc',
         'memory/discardable_memory_allocator_android_unittest.cc',
+        'memory/discardable_memory_manager_unittest.cc',
         'memory/discardable_memory_unittest.cc',
-        'memory/discardable_memory_provider_unittest.cc',
         'memory/linked_ptr_unittest.cc',
         'memory/ref_counted_memory_unittest.cc',
         'memory/ref_counted_unittest.cc',
@@ -786,11 +783,6 @@
         }, {  # OS != "win"
           'dependencies': [
             '../third_party/libevent/libevent.gyp:libevent'
-          ],
-        }],
-        ['use_aura==1 and use_x11==1',  {
-          'sources': [
-            'x11/edid_parser_x11_unittest.cc',
           ],
         }],
       ],  # conditions
@@ -1091,9 +1083,6 @@
             4267,
           ],
           'sources': [
-            'third_party/nspr/prcpucfg.h',
-            'third_party/nspr/prcpucfg_win.h',
-            'third_party/nspr/prtypes.h',
             'third_party/xdg_user_dirs/xdg_user_dir_lookup.cc',
             'third_party/xdg_user_dirs/xdg_user_dir_lookup.h',
             'async_socket_io_handler.h',

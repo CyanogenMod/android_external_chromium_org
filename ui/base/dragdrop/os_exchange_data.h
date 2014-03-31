@@ -33,6 +33,8 @@ class Vector2d;
 
 namespace ui {
 
+struct FileInfo;
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 // OSExchangeData
@@ -82,17 +84,6 @@ class UI_BASE_EXPORT OSExchangeData {
     scoped_refptr<DownloadFileProvider> downloader;
   };
 
-  // Encapsulates the info about a file.
-  struct UI_BASE_EXPORT FileInfo {
-    FileInfo(const base::FilePath& path, const base::FilePath& display_name);
-    ~FileInfo();
-
-    // The path of the file.
-    base::FilePath path;
-    // The display name of the file. This field is optional.
-    base::FilePath display_name;
-  };
-
   // Provider defines the platform specific part of OSExchangeData that
   // interacts with the native system.
   class UI_BASE_EXPORT Provider {
@@ -101,6 +92,9 @@ class UI_BASE_EXPORT OSExchangeData {
     virtual ~Provider() {}
 
     virtual Provider* Clone() const = 0;
+
+    virtual void MarkOriginatedFromRenderer() = 0;
+    virtual bool DidOriginateFromRenderer() const = 0;
 
     virtual void SetString(const base::string16& data) = 0;
     virtual void SetURL(const GURL& url, const base::string16& title) = 0;
@@ -125,14 +119,15 @@ class UI_BASE_EXPORT OSExchangeData {
     virtual bool HasFile() const = 0;
     virtual bool HasCustomFormat(const CustomFormat& format) const = 0;
 
-#if defined(OS_WIN)
+#if (!defined(OS_CHROMEOS) && defined(USE_X11)) || defined(OS_WIN)
     virtual void SetFileContents(const base::FilePath& filename,
                                  const std::string& file_contents) = 0;
+#endif
+#if defined(OS_WIN)
     virtual bool GetFileContents(base::FilePath* filename,
                                  std::string* file_contents) const = 0;
     virtual bool HasFileContents() const = 0;
     virtual void SetDownloadFileInfo(const DownloadFileInfo& download) = 0;
-    virtual void SetInDragLoop(bool in_drag_loop) = 0;
 #endif
 
 #if defined(OS_WIN) || defined(USE_AURA)
@@ -162,6 +157,12 @@ class UI_BASE_EXPORT OSExchangeData {
   // Returns the Provider, which actually stores and manages the data.
   const Provider& provider() const { return *provider_; }
   Provider& provider() { return *provider_; }
+
+  // Marks drag data as tainted if it originates from the renderer. This is used
+  // to avoid granting privileges to a renderer when dragging in tainted data,
+  // since it could allow potential escalation of privileges.
+  void MarkOriginatedFromRenderer();
+  bool DidOriginateFromRenderer() const;
 
   // These functions add data to the OSExchangeData object of various Chrome
   // types. The OSExchangeData object takes care of translating the data into
@@ -211,7 +212,8 @@ class UI_BASE_EXPORT OSExchangeData {
                      const std::set<CustomFormat>& custom_formats) const;
 
 #if defined(OS_WIN)
-  // Adds the bytes of a file (CFSTR_FILECONTENTS and CFSTR_FILEDESCRIPTOR).
+  // Adds the bytes of a file (CFSTR_FILECONTENTS and CFSTR_FILEDESCRIPTOR on
+  // Windows).
   void SetFileContents(const base::FilePath& filename,
                        const std::string& file_contents);
   bool GetFileContents(base::FilePath* filename,
@@ -219,8 +221,6 @@ class UI_BASE_EXPORT OSExchangeData {
 
   // Adds a download file with full path (CF_HDROP).
   void SetDownloadFileInfo(const DownloadFileInfo& download);
-
-  void SetInDragLoop(bool in_drag_loop);
 #endif
 
 #if defined(OS_WIN) || defined(USE_AURA)

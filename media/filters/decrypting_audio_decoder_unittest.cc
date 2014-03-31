@@ -94,7 +94,14 @@ class DecryptingAudioDecoderTest : public testing::Test {
 
   void InitializeAndExpectStatus(const AudioDecoderConfig& config,
                                  PipelineStatus status) {
+    // Initialize data now that the config is known. Since the code uses
+    // invalid values (that CreateEmptyBuffer() doesn't support), tweak them
+    // just for CreateEmptyBuffer().
+    int channels = ChannelLayoutToChannelCount(config.channel_layout());
+    if (channels < 0)
+      channels = 0;
     decoded_frame_ = AudioBuffer::CreateEmptyBuffer(config.channel_layout(),
+                                                    channels,
                                                     kSampleRate,
                                                     kFakeAudioFrameSize,
                                                     kNoTimestamp(),
@@ -118,11 +125,6 @@ class DecryptingAudioDecoderTest : public testing::Test {
                        CHANNEL_LAYOUT_STEREO, kSampleRate, NULL, 0, true, true,
                        base::TimeDelta(), base::TimeDelta());
     InitializeAndExpectStatus(config_, PIPELINE_OK);
-
-    EXPECT_EQ(DecryptingAudioDecoder::kSupportedBitsPerChannel,
-              decoder_->bits_per_channel());
-    EXPECT_EQ(config_.channel_layout(), decoder_->channel_layout());
-    EXPECT_EQ(config_.samples_per_second(), decoder_->samples_per_second());
   }
 
   void Reinitialize() {
@@ -358,12 +360,14 @@ TEST_F(DecryptingAudioDecoderTest, DecryptAndDecode_MultipleFrames) {
 
   scoped_refptr<AudioBuffer> frame_a = AudioBuffer::CreateEmptyBuffer(
       config_.channel_layout(),
+      ChannelLayoutToChannelCount(config_.channel_layout()),
       kSampleRate,
       kFakeAudioFrameSize,
       kNoTimestamp(),
       kNoTimestamp());
   scoped_refptr<AudioBuffer> frame_b = AudioBuffer::CreateEmptyBuffer(
       config_.channel_layout(),
+      ChannelLayoutToChannelCount(config_.channel_layout()),
       kSampleRate,
       kFakeAudioFrameSize,
       kNoTimestamp(),
@@ -405,10 +409,6 @@ TEST_F(DecryptingAudioDecoderTest, Reinitialize_ConfigChange) {
 
   ReinitializeConfigChange(new_config);
   message_loop_.RunUntilIdle();
-
-  EXPECT_EQ(new_config.bits_per_channel(), decoder_->bits_per_channel());
-  EXPECT_EQ(new_config.channel_layout(), decoder_->channel_layout());
-  EXPECT_EQ(new_config.samples_per_second(), decoder_->samples_per_second());
 }
 
 // Test the case where the a key is added when the decryptor is in

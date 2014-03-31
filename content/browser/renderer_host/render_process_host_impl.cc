@@ -161,9 +161,7 @@
 #endif
 
 #if defined(USE_MOJO)
-#include "content/common/mojo/mojo_channel_init.h"
-#include "content/common/mojo/mojo_messages.h"
-#include "mojo/embedder/platform_channel_pair.h"
+#include "content/browser/renderer_host/render_process_host_mojo_impl.h"
 #endif
 
 extern bool g_exited_main_message_loop;
@@ -212,7 +210,7 @@ void GetContexts(
 IPC::PlatformFileForTransit CreateAecDumpFileForProcess(
     base::FilePath file_path,
     base::ProcessHandle process) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   base::PlatformFile aec_dump_file = base::CreatePlatformFile(
       file_path,
@@ -228,7 +226,7 @@ IPC::PlatformFileForTransit CreateAecDumpFileForProcess(
 
 // Does nothing. Just to avoid races between enable and disable.
 void DisableAecDumpOnFileThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 }
 #endif
 
@@ -330,17 +328,6 @@ class RendererSandboxedProcessLauncherDelegate
   int ipc_fd_;
 #endif  // OS_POSIX
 };
-
-#if defined(USE_MOJO)
-base::PlatformFile PlatformFileFromScopedPlatformHandle(
-    mojo::embedder::ScopedPlatformHandle handle) {
-#if defined(OS_POSIX)
-  return handle.release().fd;
-#elif defined(OS_WIN)
-  return handle.release().handle;
-#endif
-}
-#endif
 
 }  // namespace
 
@@ -627,7 +614,7 @@ bool RenderProcessHostImpl::Init() {
 }
 
 void RenderProcessHostImpl::CreateMessageFilters() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   AddFilter(new ResourceSchedulerFilter(GetID()));
   MediaInternals* media_internals = MediaInternals::GetInstance();
   media::AudioManager* audio_manager =
@@ -709,12 +696,6 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(new IndexedDBDispatcherHost(
       storage_partition_impl_->GetIndexedDBContext()));
 
-  scoped_refptr<ServiceWorkerDispatcherHost> service_worker_filter =
-      new ServiceWorkerDispatcherHost(GetID());
-  service_worker_filter->Init(
-      storage_partition_impl_->GetServiceWorkerContext());
-  AddFilter(service_worker_filter);
-
   if (IsGuest()) {
     if (!g_browser_plugin_geolocation_context.Get().get()) {
       g_browser_plugin_geolocation_context.Get() =
@@ -738,8 +719,8 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       GetID(),
       browser_context->GetResourceContext()->GetMediaDeviceIDSalt(),
       media_stream_manager));
-  AddFilter(
-      new DeviceRequestMessageFilter(resource_context, media_stream_manager));
+  AddFilter(new DeviceRequestMessageFilter(
+      resource_context, media_stream_manager, GetID()));
   AddFilter(new MediaStreamTrackMetricsHost());
 #endif
 #if defined(ENABLE_PLUGINS)
@@ -764,7 +745,9 @@ void RenderProcessHostImpl::CreateMessageFilters() {
 #if defined(OS_MACOSX)
   AddFilter(new TextInputClientMessageFilter(GetID()));
 #elif defined(OS_WIN)
-  channel_->AddFilter(new FontCacheDispatcher());
+  // The FontCacheDispatcher is required only when we're using GDI rendering.
+  if (!ShouldUseDirectWrite())
+    channel_->AddFilter(new FontCacheDispatcher());
 #elif defined(OS_ANDROID)
   browser_demuxer_android_ = new BrowserDemuxerAndroid();
   AddFilter(browser_demuxer_android_);
@@ -785,12 +768,19 @@ void RenderProcessHostImpl::CreateMessageFilters() {
           base::Bind(&GetRequestContext, request_context,
                      media_request_context, ResourceType::SUB_RESOURCE));
 
-  AddFilter(new WebSocketDispatcherHost(websocket_request_context_callback));
+  AddFilter(
+      new WebSocketDispatcherHost(GetID(), websocket_request_context_callback));
 
   message_port_message_filter_ = new MessagePortMessageFilter(
       base::Bind(&RenderWidgetHelper::GetNextRoutingID,
                  base::Unretained(widget_helper_.get())));
   AddFilter(message_port_message_filter_);
+
+  scoped_refptr<ServiceWorkerDispatcherHost> service_worker_filter =
+      new ServiceWorkerDispatcherHost(GetID(), message_port_message_filter_);
+  service_worker_filter->Init(
+      storage_partition_impl_->GetServiceWorkerContext());
+  AddFilter(service_worker_filter);
 
   // If "--enable-embedded-shared-worker" is set, we use
   // SharedWorkerMessageFilter in stead of WorkerMessageFilter.
@@ -966,13 +956,16 @@ StoragePartition* RenderProcessHostImpl::GetStoragePartition() const {
 }
 
 static void AppendGpuCommandLineFlags(CommandLine* command_line) {
-  if (content::IsThreadedCompositingEnabled())
+  if (IsThreadedCompositingEnabled())
     command_line->AppendSwitch(switches::kEnableThreadedCompositing);
 
-  if (content::IsDelegatedRendererEnabled())
+  if (IsForceCompositingModeEnabled())
+    command_line->AppendSwitch(switches::kForceCompositingMode);
+
+  if (IsDelegatedRendererEnabled())
     command_line->AppendSwitch(switches::kEnableDelegatedRenderer);
 
-  if (content::IsImplSidePaintingEnabled())
+  if (IsImplSidePaintingEnabled())
     command_line->AppendSwitch(switches::kEnableImplSidePainting);
 
   // Appending disable-gpu-feature switches due to software rendering list.
@@ -1038,9 +1031,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableCompositingForFixedPosition,
     switches::kDisableCompositingForTransition,
     switches::kDisableDatabases,
-    switches::kDisableDelegatedRenderer,
     switches::kDisableDesktopNotifications,
     switches::kDisableDirectNPAPIRequests,
+    switches::kDisableFastTextAutosizing,
     switches::kDisableFileSystem,
     switches::kDisableFiltersOverIPC,
     switches::kDisableGpu,
@@ -1049,7 +1042,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableGpuVsync,
     switches::kDisableLowResTiling,
     switches::kDisableHistogramCustomizer,
-    switches::kDisableImplSidePainting,
     switches::kDisableLCDText,
     switches::kDisableLayerSquashing,
     switches::kDisableLocalStorage,
@@ -1063,7 +1055,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableSessionStorage,
     switches::kDisableSharedWorkers,
     switches::kDisableSpeechInput,
-    switches::kDisableThreadedCompositing,
     switches::kDisableTouchAdjustment,
     switches::kDisableTouchDragDrop,
     switches::kDisableTouchEditing,
@@ -1081,7 +1072,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableCompositingForFixedPosition,
     switches::kEnableCompositingForTransition,
     switches::kEnableDeferredImageDecoding,
-    switches::kEnableDelegatedRenderer,
     switches::kEnableEncryptedMedia,
     switches::kEnableExperimentalCanvasFeatures,
     switches::kEnableExperimentalWebPlatformFeatures,
@@ -1094,12 +1084,10 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableHighDpiCompositingForFixedPosition,
     switches::kEnableHTMLImports,
     switches::kEnableLowResTiling,
-    switches::kEnableImplSidePainting,
     switches::kEnableInbandTextTracks,
     switches::kEnableLCDText,
     switches::kEnableLayerSquashing,
     switches::kEnableLogging,
-    switches::kEnableMP3StreamParser,
     switches::kEnableMapImage,
     switches::kEnableMemoryBenchmarking,
     switches::kEnableOverlayFullscreenVideo,
@@ -1115,7 +1103,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableStatsTable,
     switches::kEnableStrictSiteIsolation,
     switches::kEnableTargetedStyleRecalc,
-    switches::kEnableThreadedCompositing,
     switches::kEnableUniversalAcceleratedOverflowScroll,
     switches::kEnableTouchDragDrop,
     switches::kEnableTouchEditing,
@@ -1207,20 +1194,11 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableSpeechRecognition,
     switches::kMediaDrmEnableNonCompositing,
     switches::kNetworkCountryIso,
-#endif
-#if defined(OS_ANDROID) && defined(ARCH_CPU_X86)
-    switches::kEnableWebAudio,
-#else
-    // Need to be able to disable webaudio on other platforms where it
-    // is enabled by default.
     switches::kDisableWebAudio,
 #endif
 #if defined(OS_MACOSX)
     // Allow this to be set when invoking the browser and relayed along.
     switches::kEnableSandboxLogging,
-#endif
-#if defined(OS_POSIX)
-    switches::kChildCleanExit,
 #endif
 #if defined(OS_WIN)
     switches::kEnableDirectWrite,
@@ -1285,8 +1263,11 @@ bool RenderProcessHostImpl::FastShutdownIfPossible() {
   if (!SuddenTerminationAllowed())
     return false;
 
-  if (worker_ref_count_ != 0)
+  if (worker_ref_count_ != 0) {
+    if (survive_for_worker_start_time_.is_null())
+      survive_for_worker_start_time_ = base::TimeTicks::Now();
     return false;
+  }
 
   // Set this before ProcessDied() so observers can tell if the render process
   // died due to fast shutdown versus another cause.
@@ -1511,8 +1492,19 @@ void RenderProcessHostImpl::Cleanup() {
   }
   delayed_cleanup_needed_ = false;
 
+  // Records the time when the process starts surviving for workers for UMA.
+  if (listeners_.IsEmpty() && worker_ref_count_ > 0 &&
+      survive_for_worker_start_time_.is_null()) {
+    survive_for_worker_start_time_ = base::TimeTicks::Now();
+  }
+
   // When there are no other owners of this object, we can delete ourselves.
   if (listeners_.IsEmpty() && worker_ref_count_ == 0) {
+    if (!survive_for_worker_start_time_.is_null()) {
+      UMA_HISTOGRAM_LONG_TIMES(
+          "SharedWorker.RendererSurviveForWorkerTime",
+          base::TimeTicks::Now() - survive_for_worker_start_time_);
+    }
     // We cannot clean up twice; if this fails, there is an issue with our
     // control flow.
     DCHECK(!deleting_soon_);
@@ -1579,7 +1571,7 @@ void RenderProcessHostImpl::FilterURL(bool empty_allowed, GURL* url) {
 
 #if defined(ENABLE_WEBRTC)
 void RenderProcessHostImpl::EnableAecDump(const base::FilePath& file) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::FILE, FROM_HERE,
       base::Bind(&CreateAecDumpFileForProcess, file, GetHandle()),
@@ -1588,7 +1580,7 @@ void RenderProcessHostImpl::EnableAecDump(const base::FilePath& file) {
 }
 
 void RenderProcessHostImpl::DisableAecDump() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // Posting on the FILE thread and then replying back on the UI thread is only
   // for avoiding races between enable and disable. Nothing is done on the FILE
   // thread.
@@ -1754,13 +1746,13 @@ void RenderProcessHost::SetRunRendererInProcess(bool value) {
 
 // static
 RenderProcessHost::iterator RenderProcessHost::AllHostsIterator() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return iterator(g_all_hosts.Pointer());
 }
 
 // static
 RenderProcessHost* RenderProcessHost::FromID(int render_process_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return g_all_hosts.Get().Lookup(render_process_id);
 }
 
@@ -1941,6 +1933,10 @@ void RenderProcessHostImpl::ProcessDied(bool already_dead) {
 
   ClearTransportDIBCache();
 
+#if defined(USE_MOJO)
+  render_process_host_mojo_.reset();
+#endif
+
   // It's possible that one of the calls out to the observers might have caused
   // this object to be no longer needed.
   if (delayed_cleanup_needed_)
@@ -1986,7 +1982,7 @@ void RenderProcessHostImpl::EndFrameSubscription(int route_id) {
 
 #if defined(ENABLE_WEBRTC)
 void RenderProcessHostImpl::WebRtcLogMessage(const std::string& message) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!webrtc_log_message_callback_.is_null())
     webrtc_log_message_callback_.Run(message);
 }
@@ -2083,6 +2079,11 @@ void RenderProcessHostImpl::OnProcessLaunched() {
   if (WebRTCInternals::GetInstance()->aec_dump_enabled())
     EnableAecDump(WebRTCInternals::GetInstance()->aec_dump_file_path());
 #endif
+
+#if defined(USE_MOJO)
+  if (render_process_host_mojo_.get())
+    render_process_host_mojo_->OnProcessLaunched();
+#endif
 }
 
 scoped_refptr<AudioRendererHost>
@@ -2144,12 +2145,12 @@ void RenderProcessHostImpl::SendDisableAecDumpToRenderer() {
 #endif
 
 void RenderProcessHostImpl::IncrementWorkerRefCount() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   ++worker_ref_count_;
 }
 
 void RenderProcessHostImpl::DecrementWorkerRefCount() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK_GT(worker_ref_count_, 0);
   --worker_ref_count_;
   if (worker_ref_count_ == 0)
@@ -2157,24 +2158,12 @@ void RenderProcessHostImpl::DecrementWorkerRefCount() {
 }
 
 #if defined(USE_MOJO)
-void RenderProcessHostImpl::CreateMojoChannel() {
-  if (mojo_channel_init_.get())
-    return;
-
-  mojo::embedder::PlatformChannelPair channel_pair;
-  mojo_channel_init_.reset(new MojoChannelInit);
-  mojo_channel_init_->Init(
-      PlatformFileFromScopedPlatformHandle(channel_pair.PassServerHandle()),
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
-  if (mojo_channel_init_->is_handle_valid()) {
-    base::ProcessHandle process_handle = run_renderer_in_process() ?
-        base::Process::Current().handle() :
-        child_process_launcher_->GetHandle();
-    base::PlatformFile client_file =
-        PlatformFileFromScopedPlatformHandle(channel_pair.PassClientHandle());
-    Send(new MojoMsg_ChannelCreated(
-             IPC::GetFileHandleForProcess(client_file, process_handle, true)));
-  }
+void RenderProcessHostImpl::SetWebUIHandle(
+    int32 view_routing_id,
+    mojo::ScopedMessagePipeHandle handle) {
+  if (!render_process_host_mojo_)
+    render_process_host_mojo_.reset(new RenderProcessHostMojoImpl(this));
+  render_process_host_mojo_->SetWebUIHandle(view_routing_id, handle.Pass());
 }
 #endif
 

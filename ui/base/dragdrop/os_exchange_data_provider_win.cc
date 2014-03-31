@@ -18,10 +18,19 @@
 #include "net/base/net_util.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/clipboard_util_win.h"
+#include "ui/base/dragdrop/file_info.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
 namespace ui {
+
+static const OSExchangeData::CustomFormat& GetRendererTaintCustomType() {
+  CR_DEFINE_STATIC_LOCAL(
+      ui::OSExchangeData::CustomFormat,
+      format,
+      (ui::Clipboard::GetFormatType("chromium/x-renderer-taint")));
+  return format;
+}
 
 // Creates a new STGMEDIUM object to hold the specified text. The caller
 // owns the resulting object. The "Bytes" version does not NULL terminate, the
@@ -269,6 +278,16 @@ OSExchangeData::Provider* OSExchangeDataProviderWin::Clone() const {
   return new OSExchangeDataProviderWin(data_object());
 }
 
+void OSExchangeDataProviderWin::MarkOriginatedFromRenderer() {
+  STGMEDIUM* storage = GetStorageForString(std::string());
+  data_->contents_.push_back(new DataObjectImpl::StoredDataInfo(
+      GetRendererTaintCustomType().ToFormatEtc(), storage));
+}
+
+bool OSExchangeDataProviderWin::DidOriginateFromRenderer() const {
+  return HasCustomFormat(GetRendererTaintCustomType());
+}
+
 void OSExchangeDataProviderWin::SetString(const base::string16& data) {
   STGMEDIUM* storage = GetStorageForString(data);
   data_->contents_.push_back(new DataObjectImpl::StoredDataInfo(
@@ -334,7 +353,7 @@ void OSExchangeDataProviderWin::SetFilename(const base::FilePath& path) {
 }
 
 void OSExchangeDataProviderWin::SetFilenames(
-    const std::vector<OSExchangeData::FileInfo>& filenames) {
+    const std::vector<FileInfo>& filenames) {
   for (size_t i = 0; i < filenames.size(); ++i) {
     STGMEDIUM* storage = GetStorageForFileName(filenames[i].path);
     DataObjectImpl::StoredDataInfo* info = new DataObjectImpl::StoredDataInfo(
@@ -421,14 +440,13 @@ bool OSExchangeDataProviderWin::GetFilename(base::FilePath* path) const {
 }
 
 bool OSExchangeDataProviderWin::GetFilenames(
-    std::vector<OSExchangeData::FileInfo>* filenames) const {
+    std::vector<FileInfo>* filenames) const {
   std::vector<base::string16> filenames_local;
   bool success = ClipboardUtil::GetFilenames(source_object_, &filenames_local);
   if (success) {
     for (size_t i = 0; i < filenames_local.size(); ++i)
       filenames->push_back(
-          OSExchangeData::FileInfo(base::FilePath(filenames_local[i]),
-                                   base::FilePath()));
+          FileInfo(base::FilePath(filenames_local[i]), base::FilePath()));
   }
   return success;
 }
@@ -519,11 +537,6 @@ void OSExchangeDataProviderWin::SetDownloadFileInfo(
   info->downloader = download.downloader;
   data_->contents_.push_back(info);
 }
-
-void OSExchangeDataProviderWin::SetInDragLoop(bool in_drag_loop) {
-  data_->set_in_drag_loop(in_drag_loop);
-}
-
 #if defined(USE_AURA)
 
 void OSExchangeDataProviderWin::SetDragImage(

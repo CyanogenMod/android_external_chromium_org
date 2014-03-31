@@ -68,7 +68,8 @@ class CONTENT_EXPORT MediaStreamDispatcherHost : public BrowserMessageFilter,
   void OnGenerateStream(int render_view_id,
                         int page_request_id,
                         const StreamOptions& components,
-                        const GURL& security_origin);
+                        const GURL& security_origin,
+                        bool user_gesture);
   void OnCancelGenerateStream(int render_view_id,
                               int page_request_id);
   void OnStopStreamDevice(int render_view_id,
@@ -94,6 +95,8 @@ class CONTENT_EXPORT MediaStreamDispatcherHost : public BrowserMessageFilter,
   void StoreRequest(int render_view_id,
                     int page_request_id,
                     const std::string& label);;
+
+  bool IsURLAllowed(const GURL& url);
 
   int render_process_id_;
   ResourceContext::SaltCallback salt_callback_;

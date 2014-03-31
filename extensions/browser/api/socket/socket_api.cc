@@ -8,16 +8,16 @@
 
 #include "base/bind.h"
 #include "base/containers/hash_tables.h"
-#include "chrome/browser/extensions/api/dns/host_resolver_wrapper.h"
-#include "chrome/common/extensions/permissions/socket_permission.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/resource_context.h"
+#include "extensions/browser/api/dns/host_resolver_wrapper.h"
 #include "extensions/browser/api/socket/socket.h"
 #include "extensions/browser/api/socket/tcp_socket.h"
 #include "extensions/browser/api/socket/udp_socket.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "extensions/common/permissions/socket_permission.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
@@ -668,14 +668,14 @@ void SocketGetNetworkListFunction::GetNetworkListOnFileThread() {
 }
 
 void SocketGetNetworkListFunction::HandleGetNetworkListError() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   error_ = kNetworkListError;
   SendResponse(false);
 }
 
 void SocketGetNetworkListFunction::SendResponseOnUIThread(
     const net::NetworkInterfaceList& interface_list) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   std::vector<linked_ptr<core_api::socket::NetworkInterface> > create_arg;
   create_arg.reserve(interface_list.size());

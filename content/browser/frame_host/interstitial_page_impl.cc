@@ -77,6 +77,7 @@ class InterstitialPageImpl::InterstitialPageRVHDelegateView
   explicit InterstitialPageRVHDelegateView(InterstitialPageImpl* page);
 
   // RenderViewHostDelegateView implementation:
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
   virtual void ShowPopupMenu(const gfx::Rect& bounds,
                              int item_height,
                              double item_font_size,
@@ -84,6 +85,8 @@ class InterstitialPageImpl::InterstitialPageRVHDelegateView
                              const std::vector<MenuItem>& items,
                              bool right_aligned,
                              bool allow_multiple_selection) OVERRIDE;
+  virtual void HidePopupMenu() OVERRIDE;
+#endif
   virtual void StartDragging(const DropData& drop_data,
                              WebDragOperationsMask operations_allowed,
                              const gfx::ImageSkia& image,
@@ -455,7 +458,7 @@ void InterstitialPageImpl::DidNavigate(
   // an interstitial would hang.
   web_contents_was_loading_ = controller_->delegate()->IsLoading();
   controller_->delegate()->SetIsLoading(
-      controller_->delegate()->GetRenderViewHost(), false, NULL);
+      controller_->delegate()->GetRenderViewHost(), false, true, NULL);
 }
 
 void InterstitialPageImpl::UpdateTitle(
@@ -600,7 +603,7 @@ void InterstitialPageImpl::Proceed() {
   // Resumes the throbber, if applicable.
   if (web_contents_was_loading_)
     controller_->delegate()->SetIsLoading(
-        controller_->delegate()->GetRenderViewHost(), true, NULL);
+        controller_->delegate()->GetRenderViewHost(), true, true, NULL);
 
   // If this is a new navigation, the old page is going away, so we cancel any
   // blocked requests for it.  If it is not a new navigation, then it means the
@@ -846,6 +849,7 @@ InterstitialPageImpl::InterstitialPageRVHDelegateView::
     : interstitial_page_(page) {
 }
 
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
 void InterstitialPageImpl::InterstitialPageRVHDelegateView::ShowPopupMenu(
     const gfx::Rect& bounds,
     int item_height,
@@ -856,6 +860,11 @@ void InterstitialPageImpl::InterstitialPageRVHDelegateView::ShowPopupMenu(
     bool allow_multiple_selection) {
   NOTREACHED() << "InterstitialPage does not support showing popup menus.";
 }
+
+void InterstitialPageImpl::InterstitialPageRVHDelegateView::HidePopupMenu() {
+  NOTREACHED() << "InterstitialPage does not support showing popup menus.";
+}
+#endif
 
 void InterstitialPageImpl::InterstitialPageRVHDelegateView::StartDragging(
     const DropData& drop_data,

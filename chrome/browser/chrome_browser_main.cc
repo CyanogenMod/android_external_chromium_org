@@ -173,7 +173,6 @@
 #include "chrome/installer/util/install_util.h"
 #include "chrome/installer/util/shell_util.h"
 #include "net/base/net_util.h"
-#include "printing/printed_document.h"
 #include "ui/base/l10n/l10n_util_win.h"
 #include "ui/gfx/win/dpi.h"
 #endif  // defined(OS_WIN)
@@ -185,8 +184,16 @@
 #include "chrome/browser/mac/keystone_glue.h"
 #endif
 
+#if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
+#include "printing/printed_document.h"
+#endif
+
 #if defined(ENABLE_RLZ)
 #include "chrome/browser/rlz/rlz.h"
+#endif
+
+#if defined(ENABLE_WEBRTC)
+#include "chrome/browser/media/webrtc_log_util.h"
 #endif
 
 #if defined(USE_AURA)
@@ -645,6 +652,8 @@ void ChromeBrowserMainParts::StartMetricsRecording() {
     return;
   }
 
+  metrics->CheckForClonedInstall();
+
   if (IsMetricsReportingEnabled())
     metrics->Start();
 }
@@ -763,13 +772,13 @@ void ChromeBrowserMainParts::PostMainMessageLoopStart() {
 int ChromeBrowserMainParts::PreCreateThreads() {
   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PreCreateThreads");
   result_code_ = PreCreateThreadsImpl();
-  // These members must be initialized before returning from this function.
-#if !defined(OS_ANDROID)
-  DCHECK(master_prefs_.get());
-  DCHECK(browser_creator_.get());
-#endif
 
-  if (result_code_ == 0) {
+  if (result_code_ == content::RESULT_CODE_NORMAL_EXIT) {
+#if !defined(OS_ANDROID)
+    // These members must be initialized before exiting this function normally.
+    DCHECK(master_prefs_.get());
+    DCHECK(browser_creator_.get());
+#endif
     for (size_t i = 0; i < chrome_extra_parts_.size(); ++i)
       chrome_extra_parts_[i]->PreCreateThreads();
   }
@@ -1085,6 +1094,15 @@ void ChromeBrowserMainParts::PostBrowserStart() {
   // Allow ProcessSingleton to process messages.
   process_singleton_->Unlock();
 #endif
+#if defined(ENABLE_WEBRTC)
+  // Set up a task to delete old WebRTC log files for all profiles. Use a delay
+  // to reduce the impact on startup time.
+  BrowserThread::PostDelayedTask(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&WebRtcLogUtil::DeleteOldWebRtcLogFilesForAllProfiles),
+      base::TimeDelta::FromMinutes(1));
+#endif
 }
 
 int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
@@ -1397,7 +1415,7 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   if (parsed_command_line().HasSwitch(switches::kEnableWatchdog))
     InstallJankometer(parsed_command_line());
 
-#if defined(OS_WIN) && !defined(GOOGLE_CHROME_BUILD)
+#if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
   if (parsed_command_line().HasSwitch(switches::kDebugPrint)) {
     base::FilePath path =
         parsed_command_line().GetSwitchValuePath(switches::kDebugPrint);

@@ -128,6 +128,11 @@ void EventRouter::DispatchExtensionMessage(IPC::Sender* ipc_sender,
 }
 
 // static
+EventRouter* EventRouter::Get(content::BrowserContext* browser_context) {
+  return ExtensionSystem::Get(browser_context)->event_router();
+}
+
+// static
 std::string EventRouter::GetBaseEventName(const std::string& full_event_name) {
   size_t slash_sep = full_event_name.find('/');
   return full_event_name.substr(0, slash_sep);
@@ -605,7 +610,7 @@ bool EventRouter::MaybeLoadLazyBackgroundPageToDispatchEvent(
 void EventRouter::IncrementInFlightEventsOnUI(
     void* browser_context_id,
     const std::string& extension_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BrowserContext* browser_context =
       reinterpret_cast<BrowserContext*>(browser_context_id);
   if (!ExtensionsBrowserClient::Get()->IsValidContext(browser_context))

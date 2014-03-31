@@ -84,8 +84,12 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
     """Parse output of powermetrics command line utility.
 
     Returns:
-        Dictionary in the format returned by StopMonitoringPowerAsync().
+        Dictionary in the format returned by StopMonitoringPowerAsync() or None
+        if |powermetrics_output| is empty - crbug.com/353250 .
     """
+    if len(powermetrics_output) == 0:
+      logging.warning("powermetrics produced zero length output")
+      return None
 
     # Container to collect samples for running averages.
     # out_path - list containing the key path in the output dictionary.
@@ -239,13 +243,16 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
     try:
       self._powermetrics_process.send_signal(signal.SIGINFO)
       self._powermetrics_process.send_signal(signal.SIGTERM)
-      returncode = self._powermetrics_process.wait()
+      (power_stdout, power_stderr) = self._powermetrics_process.communicate()
+      returncode = self._powermetrics_process.returncode
       assert returncode in [0, -15], (
-          "powermetrics return code: %d" % returncode)
+          """powermetrics error
+          return code=%d
+          stdout=(%s)
+          stderr=(%s)""" % (returncode, power_stdout, power_stderr))
 
       with open(self._output_filename, 'rb') as output_file:
         powermetrics_output = output_file.read()
-      assert len(powermetrics_output) > 0
       return PowerMetricsPowerMonitor.ParsePowerMetricsOutput(
           powermetrics_output)
 

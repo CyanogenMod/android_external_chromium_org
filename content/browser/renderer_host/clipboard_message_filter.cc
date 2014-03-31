@@ -142,7 +142,7 @@ void ClipboardMessageFilter::OnWriteObjectsSync(
 // ui::Clipboard::WriteObjects().
 void ClipboardMessageFilter::WriteObjectsOnUIThread(
     const ui::Clipboard::ObjectMap* objects) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   static ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
   clipboard->WriteObjects(ui::CLIPBOARD_TYPE_COPY_PASTE, *objects);
 }
@@ -195,9 +195,11 @@ void ClipboardMessageFilter::OnIsFormatAvailable(ClipboardFormat format,
     case CLIPBOARD_FORMAT_HTML:
       *result = GetClipboard()->IsFormatAvailable(
           ui::Clipboard::GetHtmlFormatType(), type);
+      break;
     case CLIPBOARD_FORMAT_SMART_PASTE:
       *result = GetClipboard()->IsFormatAvailable(
           ui::Clipboard::GetWebKitSmartPasteFormatType(), type);
+      break;
     case CLIPBOARD_FORMAT_BOOKMARK:
 #if defined(OS_WIN) || defined(OS_MACOSX)
       *result = GetClipboard()->IsFormatAvailable(
@@ -205,6 +207,7 @@ void ClipboardMessageFilter::OnIsFormatAvailable(ClipboardFormat format,
 #else
       *result = false;
 #endif
+      break;
   }
 }
 

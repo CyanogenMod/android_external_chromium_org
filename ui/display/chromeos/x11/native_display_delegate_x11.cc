@@ -16,12 +16,12 @@
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_pump_x11.h"
 #include "base/stl_util.h"
-#include "base/x11/edid_parser_x11.h"
 #include "ui/display/chromeos/native_display_observer.h"
 #include "ui/display/chromeos/x11/display_mode_x11.h"
 #include "ui/display/chromeos/x11/display_snapshot_x11.h"
-#include "ui/display/chromeos/x11/display_util.h"
+#include "ui/display/chromeos/x11/display_util_x11.h"
 #include "ui/display/chromeos/x11/native_display_event_dispatcher_x11.h"
+#include "ui/display/x11/edid_parser_x11.h"
 #include "ui/gfx/x/x11_error_tracker.h"
 
 namespace ui {
@@ -195,7 +195,7 @@ void NativeDisplayDelegateX11::UngrabServer() {
 
 void NativeDisplayDelegateX11::SyncWithServer() { XSync(display_, 0); }
 
-void NativeDisplayDelegateX11::SetBackgroundColor(uint32 color_argb) {
+void NativeDisplayDelegateX11::SetBackgroundColor(uint32_t color_argb) {
   // Configuring CRTCs/Framebuffer clears the boot screen image.  Set the
   // same background color while configuring the display to minimize the
   // duration of black screen at boot time. The background is filled with
@@ -343,7 +343,8 @@ DisplaySnapshotX11* NativeDisplayDelegateX11::InitDisplaySnapshot(
     RRCrtc* last_used_crtc,
     int index) {
   int64_t display_id = 0;
-  bool has_display_id = base::GetDisplayId(id, index, &display_id);
+  bool has_display_id = GetDisplayId(
+      id, static_cast<uint8_t>(index), &display_id);
 
   OutputType type = GetOutputTypeFromName(info->name);
   if (type == OUTPUT_TYPE_UNKNOWN)
@@ -383,9 +384,6 @@ DisplaySnapshotX11* NativeDisplayDelegateX11::InitDisplaySnapshot(
   const DisplayMode* current_mode = NULL;
   const DisplayMode* native_mode = NULL;
   std::vector<const DisplayMode*> display_modes;
-
-  // TODO(mukai|marcheu): check the system status and fill the correct list of
-  // available color profiles.
 
   for (int i = 0; i < info->nmode; ++i) {
     const RRMode mode = info->modes[i];
@@ -605,6 +603,15 @@ bool NativeDisplayDelegateX11::IsOutputAspectPreservingScaling(RROutput id) {
     XFree(props);
 
   return ret;
+}
+
+
+std::vector<ColorCalibrationProfile>
+NativeDisplayDelegateX11::GetAvailableColorCalibrationProfiles(
+    const DisplaySnapshot& output) {
+  // TODO(mukai|marcheu): Checks the system data and fills the result.
+  // Note that the order would be Dynamic -> Standard -> Movie -> Reading.
+  return std::vector<ColorCalibrationProfile>();
 }
 
 bool NativeDisplayDelegateX11::SetColorCalibrationProfile(

@@ -38,11 +38,21 @@ enum KeyboardControlEvent {
   KEYBOARD_CONTROL_MAX,
 };
 
+// Gets the default keyboard bounds from |window_bounds|.
+KEYBOARD_EXPORT gfx::Rect DefaultKeyboardBoundsFromWindowBounds(
+    const gfx::Rect& window_bounds);
+
 // Sets the state of the a11y onscreen keyboard.
 KEYBOARD_EXPORT void SetAccessibilityKeyboardEnabled(bool enabled);
 
 // Gets the state of the a11y onscreen keyboard.
 KEYBOARD_EXPORT bool GetAccessibilityKeyboardEnabled();
+
+// Sets the state of the touch onscreen keyboard.
+KEYBOARD_EXPORT void SetTouchKeyboardEnabled(bool enabled);
+
+// Gets the state of the touch onscreen keyboard.
+KEYBOARD_EXPORT bool GetTouchKeyboardEnabled();
 
 // Gets the default keyboard layout.
 KEYBOARD_EXPORT std::string GetKeyboardLayout();
@@ -52,6 +62,10 @@ KEYBOARD_EXPORT bool IsKeyboardEnabled();
 
 // Returns true if the keyboard usability test is enabled.
 KEYBOARD_EXPORT bool IsKeyboardUsabilityExperimentEnabled();
+
+// Returns true if an IME extension can specify a custom input view for the
+// virtual keyboard window.
+KEYBOARD_EXPORT bool IsInputViewEnabled();
 
 // Insert |text| into the active TextInputClient associated with |root_window|,
 // if there is one. Returns true if |text| was successfully inserted. Note

@@ -24,7 +24,7 @@
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/extensions/api/push_messaging.h"
-#include "components/signin/core/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -167,7 +167,7 @@ void PushMessagingGetChannelIdFunction::OnGetTokenFailure(
 void PushMessagingGetChannelIdFunction::StartGaiaIdFetch(
     const std::string& access_token) {
   // Start the async fetch of the Gaia Id.
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   net::URLRequestContextGetter* context = GetProfile()->GetRequestContext();
   fetcher_.reset(new ObfuscatedGaiaIdFetcher(context, this, access_token));
 
@@ -197,7 +197,7 @@ bool PushMessagingGetChannelIdFunction::IsUserLoggedIn() {
 
 void PushMessagingGetChannelIdFunction::ReportResult(
     const std::string& gaia_id, const std::string& error_string) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   BuildAndSendResult(gaia_id, error_string);
 

@@ -1309,9 +1309,6 @@ const char kProfileResetPromptMemento[] = "profile.reset_prompt_memento";
 // The GCM channel's enabled state.
 const char kGCMChannelEnabled[] = "gcm.channel_enabled";
 
-// Registered GCM application ids.
-const char kGCMRegisteredAppIDs[] = "gcm.register_app_ids";
-
 // Whether Easy Unlock is enabled.
 extern const char kEasyUnlockEnabled[] = "easy_unlock.enabled";
 
@@ -1360,29 +1357,45 @@ const char kSSLVersionMax[] = "ssl.version_max";
 const char kCipherSuiteBlacklist[] = "ssl.cipher_suites.blacklist";
 const char kEnableOriginBoundCerts[] = "ssl.origin_bound_certs.enabled";
 const char kDisableSSLRecordSplitting[] = "ssl.ssl_record_splitting.disabled";
-const char kEnableUnrestrictedSSL3Fallback[] =
-    "ssl.unrestricted_ssl3_fallback.enabled";
 
 // A boolean pref of the EULA accepted flag.
 const char kEulaAccepted[] = "EulaAccepted";
 
 // The metrics client GUID, entropy source and session ID.
-const char kMetricsClientID[] = "user_experience_metrics.client_id";
+// Note: The names client_id2 and low_entropy_source2 are a result of creating
+// new prefs to do a one-time reset of the previous values.
+const char kMetricsClientID[] = "user_experience_metrics.client_id2";
 const char kMetricsSessionID[] = "user_experience_metrics.session_id";
 const char kMetricsLowEntropySource[] =
-    "user_experience_metrics.low_entropy_source";
+    "user_experience_metrics.low_entropy_source2";
 const char kMetricsPermutedEntropyCache[] =
     "user_experience_metrics.permuted_entropy_cache";
 
-// Date/time when the current metrics profile ID was created
-// (which hopefully corresponds to first run).
-const char kMetricsClientIDTimestamp[] =
-    "user_experience_metrics.client_id_timestamp";
+// Old client id and low entropy source values, cleared the first time this
+// version is launched.
+// TODO(asvitkine): Delete these after a few releases have gone by and old
+// values have been cleaned up. http://crbug.com/357704
+const char kMetricsOldClientID[] = "user_experience_metrics.client_id";
+const char kMetricsOldLowEntropySource[] =
+    "user_experience_metrics.low_entropy_source";
 
 // Boolean that specifies whether or not crash reporting and metrics reporting
 // are sent over the network for analysis.
 const char kMetricsReportingEnabled[] =
     "user_experience_metrics.reporting_enabled";
+// Date/time when the user opted in to UMA and generated the client id for the
+// very first time (local machine time, stored as a 64-bit time_t value).
+const char kMetricsReportingEnabledTimestamp[] =
+    "user_experience_metrics.client_id_timestamp";
+
+// A machine ID used to detect when underlying hardware changes. It is only
+// stored locally and never transmitted in metrics reports.
+const char kMetricsMachineId[] = "user_experience_metrics.machine_id";
+
+// Boolean that indicates a cloned install has been detected and the metrics
+// client id and low entropy source should be reset.
+const char kMetricsResetIds[] =
+    "user_experience_metrics.reset_metrics_ids";
 
 // Boolean that specifies whether or not crash reports are sent
 // over the network for analysis.
@@ -1821,9 +1834,6 @@ const char kSpdyProxyAuthEnabled[] = "spdy_proxy.enabled";
 const char kSpdyProxyAuthWasEnabledBefore[] = "spdy_proxy.was_enabled_before";
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
-// Boolean which stores if the user is allowed to signin to chrome.
-const char kSigninAllowed[] = "signin.allowed";
-
 // An ID to uniquely identify this client to the invalidator service.
 const char kInvalidatorClientId[] = "invalidator.client_id";
 
@@ -1835,25 +1845,10 @@ const char kInvalidatorInvalidationState[] = "invalidator.invalidation_state";
 // yet.  Used to keep invalidation clients in sync in case of a restart.
 const char kInvalidatorSavedInvalidations[] = "invalidator.saved_invalidations";
 
-// String the identifies the last user that logged into sync and other
-// google services. As opposed to kGoogleServicesUsername, this value is not
-// cleared on signout, but while the user is signed in the two values will
-// be the same.
-const char kGoogleServicesLastUsername[] = "google.services.last_username";
-
-// Obfuscated account ID that identifies the current user logged into sync and
-// other google services.
-const char kGoogleServicesUserAccountId[] = "google.services.user_account_id";
-
-// String that identifies the current user logged into sync and other google
-// services.
-const char kGoogleServicesUsername[] = "google.services.username";
-
-// Local state pref containing a string regex that restricts which accounts
-// can be used to log in to chrome (e.g. "*@google.com"). If missing or blank,
-// all accounts are allowed (no restrictions).
-const char kGoogleServicesUsernamePattern[] =
-    "google.services.username_pattern";
+// Boolean indicating that TiclInvalidationService should use GCM channel.
+// False or lack of settings means XMPPPushClient channel.
+const char kInvalidationServiceUseGCMChannel[] =
+    "invalidation_service.use_gcm_channel";
 
 // Local hash of authentication password, used for off-line authentication
 // when on-line authentication is not available.
@@ -2070,6 +2065,10 @@ const char kHotwordSearchEnabled[] = "hotword.search_enabled";
 // longer shown.
 const char kHotwordOptInPopupTimesShown[] = "hotword.opt_in_popup_times_shown";
 
+// A boolean pref that controls whether the sound of "Ok, Google" plus a few
+// seconds of audio data before is sent back to improve voice search.
+const char kHotwordAudioLoggingEnabled[] = "hotword.audio_logging_enabled";
+
 #if defined(OS_ANDROID)
 // Boolean that controls the global enabled-state of protected media identifier.
 const char kProtectedMediaIdentifierEnabled[] =
@@ -2210,8 +2209,12 @@ const char kPerformanceTracingEnabled[] =
 // Value of the enums in TabStrip::LayoutType as an int.
 const char kTabStripLayoutType[] = "tab_strip_layout_type";
 
-// Indicates that factory reset was requested from options page.
+// Indicates that factory reset was requested from options page or reset screen.
 const char kFactoryResetRequested[] = "FactoryResetRequested";
+
+// Indicates that rollback was requested alongside with factory reset.
+// Makes sense only if kFactoryResetRequested is true.
+const char kRollbackRequested[] = "RollbackRequested";
 
 // Boolean recording whether we have showed a balloon that calls out the message
 // center for desktop notifications.
@@ -2361,6 +2364,13 @@ const char kRecoveryComponentVersion[] = "recovery_component.version";
 // String that stores the component updater last known state. This is used for
 // troubleshooting.
 const char kComponentUpdaterState[] = "component_updater.state";
+
+// A boolean where true means that the browser has previously attempted to
+// enable autoupdate and failed, so the next out-of-date browser start should
+// not prompt the user to enable autoupdate, it should offer to reinstall Chrome
+// instead.
+const char kAttemptedToEnableAutoupdate[] =
+    "browser.attempted_to_enable_autoupdate";
 
 // The next media gallery ID to assign.
 const char kMediaGalleriesUniqueId[] = "media_galleries.gallery_id";

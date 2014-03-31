@@ -23,14 +23,14 @@
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/accessibility_browser_test_utils.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-// TODO(dmazzoni): Disabled accessibility tests on Win64. crbug.com/179717
-#if defined(OS_WIN) && defined(ARCH_CPU_X86_64)
+// TODO(aboxhall): Create expectations on Android for these
+#if defined(OS_ANDROID)
 #define MAYBE(x) DISABLED_##x
 #else
 #define MAYBE(x) x
@@ -275,6 +275,11 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
   RunTest(FILE_PATH_LITERAL("aria-combobox.html"));
 }
 
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       MAYBE(AccessibilityAriaFlowto)) {
+  RunTest(FILE_PATH_LITERAL("aria-flowto.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAriaInvalid) {
   RunTest(FILE_PATH_LITERAL("aria-invalid.html"));
 }
@@ -450,8 +455,10 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
   RunTest(FILE_PATH_LITERAL("modal-dialog-in-iframe-closed.html"));
 }
 
+// TODO(dmazzoni): fix this test after Blink change that broke it lands.
+// http://crbug.com/353067
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
-                       AccessibilityModalDialogInIframeOpened) {
+                       DISABLED_AccessibilityModalDialogInIframeOpened) {
   RunTest(FILE_PATH_LITERAL("modal-dialog-in-iframe-opened.html"));
 }
 

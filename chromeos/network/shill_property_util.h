@@ -31,7 +31,12 @@ CHROMEOS_EXPORT std::string GetSSIDFromProperties(
     const base::DictionaryValue& properties,
     bool* unknown_encoding);
 
-// Returns the name for the network represented by the Shill |properties|. For
+// Returns the GUID (if available), SSID, or Name from |properties|. Only used
+// for logging and debugging.
+CHROMEOS_EXPORT std::string GetNetworkIdFromProperties(
+    const base::DictionaryValue& properties);
+
+  // Returns the name for the network represented by the Shill |properties|. For
 // WiFi it refers to the HexSSID.
 CHROMEOS_EXPORT std::string GetNameFromProperties(
     const std::string& service_path,
@@ -65,6 +70,9 @@ bool CopyIdentifyingProperties(const base::DictionaryValue& service_properties,
 // supported. WiMax and Cellular are not supported.
 bool DoIdentifyingPropertiesMatch(const base::DictionaryValue& properties_a,
                                   const base::DictionaryValue& properties_b);
+
+// Returns true if |key| corresponds to a passphrase property.
+bool IsPassphraseKey(const std::string& key);
 
 }  // namespace shill_property_util
 

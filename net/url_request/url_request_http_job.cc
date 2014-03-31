@@ -24,7 +24,8 @@
 #include "net/base/network_delegate.h"
 #include "net/base/sdch_manager.h"
 #include "net/cert/cert_status_flags.h"
-#include "net/cookies/cookie_monster.h"
+#include "net/cookies/cookie_store.h"
+#include "net/http/http_content_disposition.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
@@ -58,6 +59,7 @@ class URLRequestHttpJob::HttpFilterContext : public FilterContext {
   // FilterContext implementation.
   virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
   virtual bool GetURL(GURL* gurl) const OVERRIDE;
+  virtual bool GetContentDisposition(std::string* disposition) const OVERRIDE;
   virtual base::Time GetRequestTime() const OVERRIDE;
   virtual bool IsCachedContent() const OVERRIDE;
   virtual bool IsDownload() const OVERRIDE;
@@ -94,6 +96,13 @@ bool URLRequestHttpJob::HttpFilterContext::GetURL(GURL* gurl) const {
     return false;
   *gurl = job_->request()->url();
   return true;
+}
+
+bool URLRequestHttpJob::HttpFilterContext::GetContentDisposition(
+    std::string* disposition) const {
+  HttpResponseHeaders* headers = job_->GetResponseHeaders();
+  void *iter = NULL;
+  return headers->EnumerateHeader(&iter, "Content-Disposition", disposition);
 }
 
 base::Time URLRequestHttpJob::HttpFilterContext::GetRequestTime() const {
@@ -541,15 +550,10 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
 
   CookieStore* cookie_store = GetCookieStore();
   if (cookie_store && !(request_info_.load_flags & LOAD_DO_NOT_SEND_COOKIES)) {
-    net::CookieMonster* cookie_monster = cookie_store->GetCookieMonster();
-    if (cookie_monster) {
-      cookie_monster->GetAllCookiesForURLAsync(
-          request_->url(),
-          base::Bind(&URLRequestHttpJob::CheckCookiePolicyAndLoad,
-                     weak_factory_.GetWeakPtr()));
-    } else {
-      CheckCookiePolicyAndLoad(CookieList());
-    }
+    cookie_store->GetAllCookiesForURLAsync(
+        request_->url(),
+        base::Bind(&URLRequestHttpJob::CheckCookiePolicyAndLoad,
+                   weak_factory_.GetWeakPtr()));
   } else {
     DoStartTransaction();
   }
@@ -803,11 +807,13 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
       // |on_headers_received_callback_| or
       // |NetworkDelegate::URLRequestDestroyed()| has been called.
       OnCallToDelegate();
+      allowed_unsafe_redirect_url_ = GURL();
       int error = network_delegate()->NotifyHeadersReceived(
           request_,
           on_headers_received_callback_,
           headers.get(),
-          &override_response_headers_);
+          &override_response_headers_,
+          &allowed_unsafe_redirect_url_);
       if (error != net::OK) {
         if (error == net::ERR_IO_PENDING) {
           awaiting_callback_ = true;
@@ -1035,6 +1041,15 @@ bool URLRequestHttpJob::IsSafeRedirect(const GURL& location) {
       (location.scheme() == "http" || location.scheme() == "https")) {
     return true;
   }
+  // Delegates may mark an URL as safe for redirection.
+  if (allowed_unsafe_redirect_url_.is_valid()) {
+    GURL::Replacements replacements;
+    replacements.ClearRef();
+    if (allowed_unsafe_redirect_url_.ReplaceComponents(replacements) ==
+        location.ReplaceComponents(replacements)) {
+      return true;
+    }
+  }
   // Query URLRequestJobFactory as to whether |location| would be safe to
   // redirect to.
   return request_->context()->job_factory() &&
@@ -1252,8 +1267,27 @@ int64 URLRequestHttpJob::GetTotalReceivedBytes() const {
 }
 
 void URLRequestHttpJob::DoneReading() {
-  if (transaction_.get())
+  if (transaction_) {
     transaction_->DoneReading();
+  }
+  DoneWithRequest(FINISHED);
+}
+
+void URLRequestHttpJob::DoneReadingRedirectResponse() {
+  if (transaction_) {
+    if (transaction_->GetResponseInfo()->headers->IsRedirect(NULL)) {
+      // If the original headers indicate a redirect, go ahead and cache the
+      // response, even if the |override_response_headers_| are a redirect to
+      // another location.
+      transaction_->DoneReading();
+    } else {
+      // Otherwise, |override_response_headers_| must be non-NULL and contain
+      // bogus headers indicating a redirect.
+      DCHECK(override_response_headers_);
+      DCHECK(override_response_headers_->IsRedirect(NULL));
+      transaction_->StopCaching();
+    }
+  }
   DoneWithRequest(FINISHED);
 }
 

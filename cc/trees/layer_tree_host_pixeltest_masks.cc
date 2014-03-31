@@ -24,6 +24,8 @@ class MaskContentLayerClient : public ContentLayerClient {
 
   virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
 
+  virtual bool FillsBoundsCompletely() const OVERRIDE { return false; }
+
   virtual void PaintContents(SkCanvas* canvas,
                              const gfx::Rect& rect,
                              gfx::RectF* opaque_rect) OVERRIDE {
@@ -76,8 +78,7 @@ TEST_F(LayerTreeHostMasksPixelTest, ImageMaskOfLayer) {
   mask->SetBounds(gfx::Size(100, 100));
 
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 400, 400);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(400, 400);
   SkCanvas canvas(bitmap);
   canvas.scale(SkIntToScalar(4), SkIntToScalar(4));
   MaskContentLayerClient client;

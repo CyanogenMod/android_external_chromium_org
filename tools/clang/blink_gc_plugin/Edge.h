@@ -38,14 +38,14 @@ class EdgeVisitor {
 class RecursiveEdgeVisitor : public EdgeVisitor {
  public:
   // Overrides that recursively walk the edges and record the path.
-  virtual void VisitValue(Value*);
-  virtual void VisitRawPtr(RawPtr*);
-  virtual void VisitRefPtr(RefPtr*);
-  virtual void VisitOwnPtr(OwnPtr*);
-  virtual void VisitMember(Member*);
-  virtual void VisitWeakMember(WeakMember*);
-  virtual void VisitPersistent(Persistent*);
-  virtual void VisitCollection(Collection*);
+  virtual void VisitValue(Value*) override;
+  virtual void VisitRawPtr(RawPtr*) override;
+  virtual void VisitRefPtr(RefPtr*) override;
+  virtual void VisitOwnPtr(OwnPtr*) override;
+  virtual void VisitMember(Member*) override;
+  virtual void VisitWeakMember(WeakMember*) override;
+  virtual void VisitPersistent(Persistent*) override;
+  virtual void VisitCollection(Collection*) override;
 
  protected:
   typedef std::deque<Edge*> Context;
@@ -72,8 +72,10 @@ class RecursiveEdgeVisitor : public EdgeVisitor {
 class Edge {
  public:
   enum NeedsTracingOption { kRecursive, kNonRecursive };
+  enum LivenessKind { kWeak, kStrong, kRoot };
 
-  virtual ~Edge() { }
+  virtual ~Edge() {}
+  virtual LivenessKind Kind() = 0;
   virtual void Accept(EdgeVisitor*) = 0;
   virtual bool NeedsFinalization() = 0;
   virtual TracingStatus NeedsTracing(NeedsTracingOption) {
@@ -94,11 +96,13 @@ class Edge {
 class Value : public Edge {
  public:
   explicit Value(RecordInfo* value) : value_(value) {};
-  bool IsValue() { return true; }
-  bool NeedsFinalization();
-  TracingStatus NeedsTracing(NeedsTracingOption);
-  void Accept(EdgeVisitor* visitor) { visitor->VisitValue(this); }
+  bool IsValue() override { return true; }
+  LivenessKind Kind() override { return kStrong; }
+  bool NeedsFinalization() override;
+  TracingStatus NeedsTracing(NeedsTracingOption) override;
+  void Accept(EdgeVisitor* visitor) override { visitor->VisitValue(this); }
   RecordInfo* value() { return value_; }
+
  private:
   RecordInfo* value_;
 };
@@ -120,6 +124,7 @@ class RawPtr : public PtrEdge {
  public:
   explicit RawPtr(Edge* ptr) : PtrEdge(ptr) { }
   bool IsRawPtr() { return true; }
+  LivenessKind Kind() { return kWeak; }
   bool NeedsFinalization() { return false; }
   TracingStatus NeedsTracing(NeedsTracingOption) {
     return TracingStatus::Unneeded();
@@ -131,6 +136,7 @@ class RefPtr : public PtrEdge {
  public:
   explicit RefPtr(Edge* ptr) : PtrEdge(ptr) { }
   bool IsRefPtr() { return true; }
+  LivenessKind Kind() { return kStrong; }
   bool NeedsFinalization() { return true; }
   TracingStatus NeedsTracing(NeedsTracingOption) {
     return TracingStatus::Unneeded();
@@ -142,6 +148,7 @@ class OwnPtr : public PtrEdge {
  public:
   explicit OwnPtr(Edge* ptr) : PtrEdge(ptr) { }
   bool IsOwnPtr() { return true; }
+  LivenessKind Kind() { return kStrong; }
   bool NeedsFinalization() { return true; }
   TracingStatus NeedsTracing(NeedsTracingOption) {
     return TracingStatus::Unneeded();
@@ -153,6 +160,7 @@ class Member : public PtrEdge {
  public:
   explicit Member(Edge* ptr) : PtrEdge(ptr) { }
   bool IsMember() { return true; }
+  LivenessKind Kind() { return kStrong; }
   bool NeedsFinalization() { return false; }
   TracingStatus NeedsTracing(NeedsTracingOption) {
     return TracingStatus::Needed();
@@ -164,6 +172,7 @@ class WeakMember : public PtrEdge {
  public:
   explicit WeakMember(Edge* ptr) : PtrEdge(ptr) { }
   bool IsWeakMember() { return true; }
+  LivenessKind Kind() { return kWeak; }
   bool NeedsFinalization() { return false; }
   TracingStatus NeedsTracing(NeedsTracingOption) {
     return TracingStatus::Needed();
@@ -175,6 +184,7 @@ class Persistent : public PtrEdge {
  public:
   explicit Persistent(Edge* ptr) : PtrEdge(ptr) { }
   bool IsPersistent() { return true; }
+  LivenessKind Kind() { return kRoot; }
   bool NeedsFinalization() { return true; }
   TracingStatus NeedsTracing(NeedsTracingOption) {
     return TracingStatus::Unneeded();
@@ -196,6 +206,7 @@ class Collection : public Edge {
     }
   }
   bool IsCollection() { return true; }
+  LivenessKind Kind() { return is_root_ ? kRoot : kStrong; }
   bool on_heap() { return on_heap_; }
   bool is_root() { return is_root_; }
   Members& members() { return members_; }
@@ -218,6 +229,7 @@ class Collection : public Edge {
     }
     return status;
   }
+
  private:
   RecordInfo* info_;
   Members members_;
@@ -225,4 +237,4 @@ class Collection : public Edge {
   bool is_root_;
 };
 
-#endif // TOOLS_BLINK_GC_PLUGIN_EDGE_H_
+#endif  // TOOLS_BLINK_GC_PLUGIN_EDGE_H_

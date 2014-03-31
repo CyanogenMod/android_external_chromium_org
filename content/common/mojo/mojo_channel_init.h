@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/platform_file.h"
 #include "content/common/content_export.h"
-#include "mojo/public/system/core_cpp.h"
+#include "mojo/public/cpp/system/core.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -36,6 +36,10 @@ class CONTENT_EXPORT MojoChannelInit {
             scoped_refptr<base::TaskRunner> io_thread_task_runner);
 
   bool is_handle_valid() const { return bootstrap_message_pipe_.is_valid(); }
+
+  mojo::ScopedMessagePipeHandle bootstrap_message_pipe() {
+    return bootstrap_message_pipe_.Pass();
+  }
 
  private:
   // Invoked on the main thread once the channel has been established.

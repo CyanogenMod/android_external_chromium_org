@@ -56,13 +56,18 @@ class UI_BASE_EXPORT OSExchangeDataProviderAuraX11
   // Makes a copy of the format map currently being offered.
   SelectionFormatMap GetFormatMap() const;
 
+  const base::FilePath& file_contents_name() const {
+    return file_contents_name_;
+  }
+
   // Overridden from OSExchangeData::Provider:
   virtual Provider* Clone() const OVERRIDE;
+  virtual void MarkOriginatedFromRenderer() OVERRIDE;
+  virtual bool DidOriginateFromRenderer() const OVERRIDE;
   virtual void SetString(const base::string16& data) OVERRIDE;
   virtual void SetURL(const GURL& url, const base::string16& title) OVERRIDE;
   virtual void SetFilename(const base::FilePath& path) OVERRIDE;
-  virtual void SetFilenames(
-      const std::vector<OSExchangeData::FileInfo>& filenames) OVERRIDE;
+  virtual void SetFilenames(const std::vector<FileInfo>& filenames) OVERRIDE;
   virtual void SetPickledData(const OSExchangeData::CustomFormat& format,
                               const Pickle& pickle) OVERRIDE;
   virtual bool GetString(base::string16* data) const OVERRIDE;
@@ -70,8 +75,7 @@ class UI_BASE_EXPORT OSExchangeDataProviderAuraX11
                               GURL* url,
                               base::string16* title) const OVERRIDE;
   virtual bool GetFilename(base::FilePath* path) const OVERRIDE;
-  virtual bool GetFilenames(
-      std::vector<OSExchangeData::FileInfo>* filenames) const OVERRIDE;
+  virtual bool GetFilenames(std::vector<FileInfo>* filenames) const OVERRIDE;
   virtual bool GetPickledData(const OSExchangeData::CustomFormat& format,
                               Pickle* pickle) const OVERRIDE;
   virtual bool HasString() const OVERRIDE;
@@ -80,6 +84,9 @@ class UI_BASE_EXPORT OSExchangeDataProviderAuraX11
   virtual bool HasFile() const OVERRIDE;
   virtual bool HasCustomFormat(const OSExchangeData::CustomFormat& format) const
       OVERRIDE;
+
+  virtual void SetFileContents(const base::FilePath& filename,
+                               const std::string& file_contents) OVERRIDE;
 
   virtual void SetHtml(const base::string16& html,
                        const GURL& base_url) OVERRIDE;
@@ -128,6 +135,9 @@ class UI_BASE_EXPORT OSExchangeDataProviderAuraX11
   // process, or built up through a sequence of Set*() calls. It can be passed
   // to |selection_owner_| when we take the selection.
   SelectionFormatMap format_map_;
+
+  // Auxilary data for the X Direct Save protocol.
+  base::FilePath file_contents_name_;
 
   // Takes a snapshot of |format_map_| and offers it to other windows.
   mutable SelectionOwner selection_owner_;

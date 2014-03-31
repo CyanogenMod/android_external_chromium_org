@@ -4,9 +4,11 @@
 
 #include "base/base64.h"
 #include "base/i18n/time_formatting.h"
+#include "base/metrics/histogram.h"
 #include "base/sha1.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#if !defined(ANDROID)
+#if !defined(OS_ANDROID)
 // channel_common.proto defines ANDROID constant that conflicts with Android
 // build. At the same time TiclInvalidationService is not used on Android so it
 // is safe to exclude these protos from Android build.
@@ -55,53 +57,48 @@ const net::BackoffEntry::Policy kRegisterBackoffPolicy = {
   false,
 };
 
+// Incoming message status values for UMA_HISTOGRAM.
+enum IncomingMessageStatus {
+  INCOMING_MESSAGE_SUCCESS,
+  MESSAGE_EMPTY,     // GCM message's content is missing or empty.
+  INVALID_ENCODING,  // Base64Decode failed.
+  INVALID_PROTO,     // Parsing protobuf failed.
+
+  // This enum is used in UMA_HISTOGRAM_ENUMERATION. Insert new values above
+  // this line.
+  INCOMING_MESSAGE_STATUS_COUNT
+};
+
+// Outgoing message status values for UMA_HISTOGRAM.
+enum OutgoingMessageStatus {
+  OUTGOING_MESSAGE_SUCCESS,
+  MESSAGE_DISCARDED,     // New message started before old one was sent.
+  ACCESS_TOKEN_FAILURE,  // Requeting access token failed.
+  POST_FAILURE,          // HTTP Post failed.
+
+  // This enum is used in UMA_HISTOGRAM_ENUMERATION. Insert new values above
+  // this line.
+  OUTGOING_MESSAGE_STATUS_COUNT
+};
+
+const char kIncomingMessageStatusHistogram[] =
+    "GCMInvalidations.IncomingMessageStatus";
+const char kOutgoingMessageStatusHistogram[] =
+    "GCMInvalidations.OutgoingMessageStatus";
+
+void RecordIncomingMessageStatus(IncomingMessageStatus status) {
+  UMA_HISTOGRAM_ENUMERATION(kIncomingMessageStatusHistogram,
+                            status,
+                            INCOMING_MESSAGE_STATUS_COUNT);
+}
+
+void RecordOutgoingMessageStatus(OutgoingMessageStatus status) {
+  UMA_HISTOGRAM_ENUMERATION(kOutgoingMessageStatusHistogram,
+                            MESSAGE_DISCARDED,
+                            OUTGOING_MESSAGE_STATUS_COUNT);
+}
+
 }  // namespace
-
-GCMNetworkChannelDiagnostic::GCMNetworkChannelDiagnostic(
-    GCMNetworkChannel* parent)
-    : parent_(parent),
-      last_message_empty_echo_token_(false),
-      last_post_response_code_(0),
-      registration_result_(gcm::GCMClient::UNKNOWN_ERROR),
-      sent_messages_count_(0) {}
-
-scoped_ptr<base::DictionaryValue>
-GCMNetworkChannelDiagnostic::CollectDebugData() const {
-  scoped_ptr<base::DictionaryValue> status(new base::DictionaryValue);
-  status->SetString("GCMNetworkChannel.Channel", "GCM");
-  status->SetString("GCMNetworkChannel.HashedRegistrationID",
-                    base::SHA1HashString(registration_id_));
-  status->SetString("GCMNetworkChannel.RegistrationResult",
-                    GCMClientResultToString(registration_result_));
-  status->SetBoolean("GCMNetworkChannel.HadLastMessageEmptyEchoToken",
-                     last_message_empty_echo_token_);
-  status->SetString(
-      "GCMNetworkChannel.LastMessageReceivedTime",
-      base::TimeFormatShortDateAndTime(last_message_received_time_));
-  status->SetInteger("GCMNetworkChannel.LastPostResponseCode",
-                     last_post_response_code_);
-  status->SetInteger("GCMNetworkChannel.SentMessages", sent_messages_count_);
-  status->SetInteger("GCMNetworkChannel.ReceivedMessages",
-                     parent_->GetReceivedMessagesCount());
-  return status.Pass();
-}
-
-std::string GCMNetworkChannelDiagnostic::GCMClientResultToString(
-    const gcm::GCMClient::Result result) const {
-#define ENUM_CASE(x) case x: return #x; break;
-  switch (result) {
-    ENUM_CASE(gcm::GCMClient::SUCCESS);
-    ENUM_CASE(gcm::GCMClient::NETWORK_ERROR);
-    ENUM_CASE(gcm::GCMClient::SERVER_ERROR);
-    ENUM_CASE(gcm::GCMClient::TTL_EXCEEDED);
-    ENUM_CASE(gcm::GCMClient::UNKNOWN_ERROR);
-    ENUM_CASE(gcm::GCMClient::NOT_SIGNED_IN);
-    ENUM_CASE(gcm::GCMClient::INVALID_PARAMETER);
-    ENUM_CASE(gcm::GCMClient::ASYNC_OPERATION_PENDING);
-  }
-  NOTREACHED();
-  return "";
-}
 
 GCMNetworkChannel::GCMNetworkChannel(
     scoped_refptr<net::URLRequestContextGetter> request_context_getter,
@@ -111,27 +108,13 @@ GCMNetworkChannel::GCMNetworkChannel(
       register_backoff_entry_(new net::BackoffEntry(&kRegisterBackoffPolicy)),
       diagnostic_info_(this),
       weak_factory_(this) {
+  net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
   delegate_->Initialize();
   Register();
 }
 
 GCMNetworkChannel::~GCMNetworkChannel() {
-}
-
-void GCMNetworkChannel::UpdateCredentials(
-    const std::string& email,
-    const std::string& token) {
-  // Do nothing. We get access token by requesting it for every message.
-}
-
-void GCMNetworkChannel::RequestDetailedStatus(
-    base::Callback<void(const base::DictionaryValue&)> callback) {
-  callback.Run(*diagnostic_info_.CollectDebugData());
-}
-
-void GCMNetworkChannel::ResetRegisterBackoffEntryForTest(
-    const net::BackoffEntry::Policy* policy) {
-  register_backoff_entry_.reset(new net::BackoffEntry(policy));
+  net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
 }
 
 void GCMNetworkChannel::Register() {
@@ -179,18 +162,14 @@ void GCMNetworkChannel::SendMessage(const std::string& message) {
   DCHECK(!message.empty());
   DVLOG(2) << "SendMessage";
   diagnostic_info_.sent_messages_count_++;
+  if (!cached_message_.empty()) {
+    RecordOutgoingMessageStatus(MESSAGE_DISCARDED);
+  }
   cached_message_ = message;
 
   if (!registration_id_.empty()) {
     RequestAccessToken();
   }
-}
-
-void GCMNetworkChannel::SetMessageReceiver(
-    invalidation::MessageCallback* incoming_receiver) {
-  delegate_->SetMessageReceiver(base::Bind(
-      &GCMNetworkChannel::OnIncomingMessage, weak_factory_.GetWeakPtr()));
-  SyncNetworkChannel::SetMessageReceiver(incoming_receiver);
 }
 
 void GCMNetworkChannel::RequestAccessToken() {
@@ -213,6 +192,12 @@ void GCMNetworkChannel::OnGetTokenComplete(
     // token service. Just drop this request, cacheinvalidations will retry
     // sending message and at that time we'll retry requesting access token.
     DVLOG(1) << "RequestAccessToken failed: " << error.ToString();
+    RecordOutgoingMessageStatus(ACCESS_TOKEN_FAILURE);
+    // Message won't get sent because of connection failure. Let's retry once
+    // connection is restored.
+    if (error.state() == GoogleServiceAuthError::CONNECTION_FAILED)
+      NotifyStateChange(TRANSIENT_INVALIDATION_ERROR);
+    cached_message_.clear();
     return;
   }
   DCHECK(!token.empty());
@@ -235,30 +220,6 @@ void GCMNetworkChannel::OnGetTokenComplete(
   cached_message_.clear();
 }
 
-void GCMNetworkChannel::OnIncomingMessage(const std::string& message,
-                                          const std::string& echo_token) {
-#if !defined(ANDROID)
-  DCHECK(!message.empty());
-  if (!echo_token.empty())
-    echo_token_ = echo_token;
-  diagnostic_info_.last_message_empty_echo_token_ = echo_token.empty();
-  std::string data;
-  if (!Base64DecodeURLSafe(message, &data))
-    return;
-  ipc::invalidation::AddressedAndroidMessage android_message;
-  if (!android_message.ParseFromString(data))
-    return;
-  if (!android_message.has_message())
-    return;
-  diagnostic_info_.last_message_received_time_ = base::Time::Now();
-  DVLOG(2) << "Deliver incoming message";
-  DeliverIncomingMessage(android_message.message());
-#else
-  // This code shouldn't be invoked on Android.
-  NOTREACHED();
-#endif
-}
-
 void GCMNetworkChannel::OnURLFetchComplete(const net::URLFetcher* source) {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(fetcher_, source);
@@ -268,23 +229,71 @@ void GCMNetworkChannel::OnURLFetchComplete(const net::URLFetcher* source) {
   net::URLRequestStatus status = fetcher->GetStatus();
   diagnostic_info_.last_post_response_code_ =
       status.is_success() ? source->GetResponseCode() : status.error();
-  if (!status.is_success()) {
+
+  if (status.is_success() &&
+      fetcher->GetResponseCode() == net::HTTP_UNAUTHORIZED) {
+    DVLOG(1) << "URLFetcher failure: HTTP_UNAUTHORIZED";
+    delegate_->InvalidateToken(access_token_);
+  }
+
+  if (!status.is_success() ||
+      (fetcher->GetResponseCode() != net::HTTP_OK &&
+       fetcher->GetResponseCode() != net::HTTP_NO_CONTENT)) {
     DVLOG(1) << "URLFetcher failure";
+    RecordOutgoingMessageStatus(POST_FAILURE);
+    NotifyStateChange(TRANSIENT_INVALIDATION_ERROR);
     return;
   }
 
-  if (fetcher->GetResponseCode() == net::HTTP_UNAUTHORIZED) {
-    DVLOG(1) << "URLFetcher failure: HTTP_UNAUTHORIZED";
-    delegate_->InvalidateToken(access_token_);
+  RecordOutgoingMessageStatus(OUTGOING_MESSAGE_SUCCESS);
+  NotifyStateChange(INVALIDATIONS_ENABLED);
+  DVLOG(2) << "URLFetcher success";
+}
+
+void GCMNetworkChannel::OnIncomingMessage(const std::string& message,
+                                          const std::string& echo_token) {
+#if !defined(OS_ANDROID)
+  if (!echo_token.empty())
+    echo_token_ = echo_token;
+  diagnostic_info_.last_message_empty_echo_token_ = echo_token.empty();
+  diagnostic_info_.last_message_received_time_ = base::Time::Now();
+
+  if (message.empty()) {
+    RecordIncomingMessageStatus(MESSAGE_EMPTY);
     return;
   }
-  DVLOG(2) << "URLFetcher success";
+  std::string data;
+  if (!Base64DecodeURLSafe(message, &data)) {
+    RecordIncomingMessageStatus(INVALID_ENCODING);
+    return;
+  }
+  ipc::invalidation::AddressedAndroidMessage android_message;
+  if (!android_message.ParseFromString(data) ||
+      !android_message.has_message()) {
+    RecordIncomingMessageStatus(INVALID_PROTO);
+    return;
+  }
+  DVLOG(2) << "Deliver incoming message";
+  RecordIncomingMessageStatus(INCOMING_MESSAGE_SUCCESS);
+  DeliverIncomingMessage(android_message.message());
+#else
+  // This code shouldn't be invoked on Android.
+  NOTREACHED();
+#endif
+}
+
+void GCMNetworkChannel::OnNetworkChanged(
+    net::NetworkChangeNotifier::ConnectionType connection_type) {
+  // Network connection is restored. Let's notify cacheinvalidations so it has
+  // chance to retry.
+  if (connection_type != net::NetworkChangeNotifier::CONNECTION_NONE)
+    NotifyStateChange(INVALIDATIONS_ENABLED);
 }
 
 GURL GCMNetworkChannel::BuildUrl(const std::string& registration_id) {
   DCHECK(!registration_id.empty());
 
-#if !defined(ANDROID)
+#if !defined(OS_ANDROID)
   ipc::invalidation::EndpointId endpoint_id;
   endpoint_id.set_c2dm_registration_id(registration_id);
   endpoint_id.set_client_key(std::string());
@@ -337,6 +346,75 @@ bool GCMNetworkChannel::Base64DecodeURLSafe(const std::string& input,
   base::ReplaceChars(padded_input, "-", "+", &padded_input);
   base::ReplaceChars(padded_input, "_", "/", &padded_input);
   return base::Base64Decode(padded_input, output);
+}
+
+void GCMNetworkChannel::SetMessageReceiver(
+    invalidation::MessageCallback* incoming_receiver) {
+  delegate_->SetMessageReceiver(base::Bind(
+      &GCMNetworkChannel::OnIncomingMessage, weak_factory_.GetWeakPtr()));
+  SyncNetworkChannel::SetMessageReceiver(incoming_receiver);
+}
+
+void GCMNetworkChannel::RequestDetailedStatus(
+    base::Callback<void(const base::DictionaryValue&)> callback) {
+  callback.Run(*diagnostic_info_.CollectDebugData());
+}
+
+void GCMNetworkChannel::UpdateCredentials(const std::string& email,
+                                          const std::string& token) {
+  // Do nothing. We get access token by requesting it for every message.
+}
+
+void GCMNetworkChannel::ResetRegisterBackoffEntryForTest(
+    const net::BackoffEntry::Policy* policy) {
+  register_backoff_entry_.reset(new net::BackoffEntry(policy));
+}
+
+GCMNetworkChannelDiagnostic::GCMNetworkChannelDiagnostic(
+    GCMNetworkChannel* parent)
+    : parent_(parent),
+      last_message_empty_echo_token_(false),
+      last_post_response_code_(0),
+      registration_result_(gcm::GCMClient::UNKNOWN_ERROR),
+      sent_messages_count_(0) {}
+
+scoped_ptr<base::DictionaryValue>
+GCMNetworkChannelDiagnostic::CollectDebugData() const {
+  scoped_ptr<base::DictionaryValue> status(new base::DictionaryValue);
+  status->SetString("GCMNetworkChannel.Channel", "GCM");
+  std::string reg_id_hash = base::SHA1HashString(registration_id_);
+  status->SetString("GCMNetworkChannel.HashedRegistrationID",
+                    base::HexEncode(reg_id_hash.c_str(), reg_id_hash.size()));
+  status->SetString("GCMNetworkChannel.RegistrationResult",
+                    GCMClientResultToString(registration_result_));
+  status->SetBoolean("GCMNetworkChannel.HadLastMessageEmptyEchoToken",
+                     last_message_empty_echo_token_);
+  status->SetString(
+      "GCMNetworkChannel.LastMessageReceivedTime",
+      base::TimeFormatShortDateAndTime(last_message_received_time_));
+  status->SetInteger("GCMNetworkChannel.LastPostResponseCode",
+                     last_post_response_code_);
+  status->SetInteger("GCMNetworkChannel.SentMessages", sent_messages_count_);
+  status->SetInteger("GCMNetworkChannel.ReceivedMessages",
+                     parent_->GetReceivedMessagesCount());
+  return status.Pass();
+}
+
+std::string GCMNetworkChannelDiagnostic::GCMClientResultToString(
+    const gcm::GCMClient::Result result) const {
+#define ENUM_CASE(x) case x: return #x; break;
+  switch (result) {
+    ENUM_CASE(gcm::GCMClient::SUCCESS);
+    ENUM_CASE(gcm::GCMClient::NETWORK_ERROR);
+    ENUM_CASE(gcm::GCMClient::SERVER_ERROR);
+    ENUM_CASE(gcm::GCMClient::TTL_EXCEEDED);
+    ENUM_CASE(gcm::GCMClient::UNKNOWN_ERROR);
+    ENUM_CASE(gcm::GCMClient::NOT_SIGNED_IN);
+    ENUM_CASE(gcm::GCMClient::INVALID_PARAMETER);
+    ENUM_CASE(gcm::GCMClient::ASYNC_OPERATION_PENDING);
+  }
+  NOTREACHED();
+  return "";
 }
 
 }  // namespace syncer

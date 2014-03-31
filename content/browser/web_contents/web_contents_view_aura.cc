@@ -44,8 +44,6 @@
 #include "net/base/net_util.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/client/drag_drop_client.h"
-#include "ui/aura/client/drag_drop_delegate.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
@@ -68,6 +66,8 @@
 #include "ui/gfx/image/image_png_rep.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
+#include "ui/wm/public/drag_drop_client.h"
+#include "ui/wm/public/drag_drop_delegate.h"
 
 namespace content {
 WebContentsViewPort* CreateWebContentsView(
@@ -246,23 +246,26 @@ class WebDragSourceAura : public base::MessageLoopForUI::Observer,
   DISALLOW_COPY_AND_ASSIGN(WebDragSourceAura);
 };
 
-#if defined(OS_WIN)
+#if (!defined(OS_CHROMEOS) && defined(USE_X11)) || defined(OS_WIN)
 // Fill out the OSExchangeData with a file contents, synthesizing a name if
 // necessary.
 void PrepareDragForFileContents(const DropData& drop_data,
                                 ui::OSExchangeData::Provider* provider) {
-  base::FilePath file_name(drop_data.file_description_filename);
+  base::FilePath file_name =
+      base::FilePath::FromUTF16Unsafe(drop_data.file_description_filename);
   // Images without ALT text will only have a file extension so we need to
   // synthesize one from the provided extension and URL.
   if (file_name.BaseName().RemoveExtension().empty()) {
-    const base::string16 extension = file_name.Extension();
+    const base::FilePath::StringType extension = file_name.Extension();
     // Retrieve the name from the URL.
-    file_name = base::FilePath(net::GetSuggestedFilename(
-        drop_data.url, "", "", "", "", "")).ReplaceExtension(extension);
+    file_name = net::GenerateFileName(drop_data.url, "", "", "", "", "")
+                    .ReplaceExtension(extension);
   }
   provider->SetFileContents(file_name, drop_data.file_contents);
 }
+#endif
 
+#if defined(OS_WIN)
 void PrepareDragForDownload(
     const DropData& drop_data,
     ui::OSExchangeData::Provider* provider,
@@ -321,17 +324,20 @@ void PrepareDragForDownload(
                                                      download_file.get());
   provider->SetDownloadFileInfo(file_download);
 }
-#endif
+#endif  // defined(OS_WIN)
 
 // Utility to fill a ui::OSExchangeDataProvider object from DropData.
 void PrepareDragData(const DropData& drop_data,
                      ui::OSExchangeData::Provider* provider,
                      WebContentsImpl* web_contents) {
+  provider->MarkOriginatedFromRenderer();
 #if defined(OS_WIN)
   // Put download before file contents to prefer the download of a image over
   // its thumbnail link.
   if (!drop_data.download_metadata.empty())
     PrepareDragForDownload(drop_data, provider, web_contents);
+#endif
+#if (!defined(OS_CHROMEOS) && defined(USE_X11)) || defined(OS_WIN)
   // We set the file contents before the URL because the URL also sets file
   // contents (to a .URL shortcut).  We want to prefer file content data over
   // a shortcut so we add it first.
@@ -344,19 +350,8 @@ void PrepareDragData(const DropData& drop_data,
     provider->SetURL(drop_data.url, drop_data.url_title);
   if (!drop_data.html.string().empty())
     provider->SetHtml(drop_data.html.string(), drop_data.html_base_url);
-  if (!drop_data.filenames.empty()) {
-    std::vector<ui::OSExchangeData::FileInfo> filenames;
-    for (std::vector<DropData::FileInfo>::const_iterator it =
-             drop_data.filenames.begin();
-         it != drop_data.filenames.end(); ++it) {
-      filenames.push_back(
-          ui::OSExchangeData::FileInfo(
-              base::FilePath::FromUTF8Unsafe(base::UTF16ToUTF8(it->path)),
-              base::FilePath::FromUTF8Unsafe(
-                  base::UTF16ToUTF8(it->display_name))));
-    }
-    provider->SetFilenames(filenames);
-  }
+  if (!drop_data.filenames.empty())
+    provider->SetFilenames(drop_data.filenames);
   if (!drop_data.custom_data.empty()) {
     Pickle pickle;
     ui::WriteCustomDataToPickle(drop_data.custom_data, &pickle);
@@ -367,6 +362,8 @@ void PrepareDragData(const DropData& drop_data,
 
 // Utility to fill a DropData object from ui::OSExchangeData.
 void PrepareDropData(DropData* drop_data, const ui::OSExchangeData& data) {
+  drop_data->did_originate_from_renderer = data.DidOriginateFromRenderer();
+
   base::string16 plain_text;
   data.GetString(&plain_text);
   if (!plain_text.empty())
@@ -389,16 +386,7 @@ void PrepareDropData(DropData* drop_data, const ui::OSExchangeData& data) {
   if (html_base_url.is_valid())
     drop_data->html_base_url = html_base_url;
 
-  std::vector<ui::OSExchangeData::FileInfo> files;
-  if (data.GetFilenames(&files) && !files.empty()) {
-    for (std::vector<ui::OSExchangeData::FileInfo>::const_iterator
-             it = files.begin(); it != files.end(); ++it) {
-      drop_data->filenames.push_back(
-          DropData::FileInfo(
-              base::UTF8ToUTF16(it->path.AsUTF8Unsafe()),
-              base::UTF8ToUTF16(it->display_name.AsUTF8Unsafe())));
-    }
-  }
+  data.GetFilenames(&drop_data->filenames);
 
   Pickle pickle;
   if (data.GetPickledData(ui::Clipboard::GetWebCustomDataFormatType(), &pickle))
@@ -601,7 +589,8 @@ class WebContentsViewAura::WindowObserver
     }
   }
 
-  virtual void OnWindowRemovingFromRootWindow(aura::Window* window) OVERRIDE {
+  virtual void OnWindowRemovingFromRootWindow(aura::Window* window,
+                                              aura::Window* new_root) OVERRIDE {
     if (window == view_->window_) {
       window->GetHost()->RemoveObserver(this);
 #if defined(OS_WIN)
@@ -1154,17 +1143,6 @@ void WebContentsViewAura::ShowContextMenu(RenderFrameHost* render_frame_host,
   }
 }
 
-void WebContentsViewAura::ShowPopupMenu(const gfx::Rect& bounds,
-                                        int item_height,
-                                        double item_font_size,
-                                        int selected_item,
-                                        const std::vector<MenuItem>& items,
-                                        bool right_aligned,
-                                        bool allow_multiple_selection) {
-  // External popup menus are only used on Mac and Android.
-  NOTIMPLEMENTED();
-}
-
 void WebContentsViewAura::StartDragging(
     const DropData& drop_data,
     blink::WebDragOperationsMask operations,
@@ -1439,10 +1417,6 @@ bool WebContentsViewAura::HasHitTestMask() const {
 }
 
 void WebContentsViewAura::GetHitTestMask(gfx::Path* mask) const {
-}
-
-void WebContentsViewAura::DidRecreateLayer(ui::Layer *old_layer,
-                                           ui::Layer *new_layer) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////

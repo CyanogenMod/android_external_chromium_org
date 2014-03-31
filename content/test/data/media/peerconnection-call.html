@@ -63,6 +63,23 @@
     waitForVideo('remote-view-2');
   }
 
+  // Test that we can setup call with an audio and video track and check that 
+  // the video resolution is as expected.
+  function callAndExpectResolution(constraints,
+                                   expected_width,
+                                   expected_height) {
+    createConnections(null);
+    navigator.webkitGetUserMedia(constraints,
+      addStreamToBothConnectionsAndNegotiate, printGetUserMediaError);
+    waitForVideoWithResolution('remote-view-1',
+                               expected_width,
+                               expected_height);
+    waitForVideoWithResolution('remote-view-2',
+                               expected_width,
+                               expected_height);
+  }
+
+
   // First calls without streams on any connections, and then adds a stream
   // to peer connection 1 which gets sent to peer connection 2. We must wait
   // for the first negotiation to complete before starting the second one, which
@@ -304,7 +321,7 @@
     detectVideoPlaying('remote-view-2', onCallEstablished);
   }
 
-  function callAndEnsureAudioMutingWorks() {
+  function callAndEnsureAudioTrackMutingWorks() {
     callAndEnsureAudioIsPlaying();
     setAllEventsOccuredHandler(function() {
       // Call is up, now mute the track and check everything goes silent (give
@@ -320,7 +337,26 @@
     });
   }
 
-  function callAndEnsureVideoMutingWorks() {
+  function callAndEnsureAudioTrackUnmutingWorks() {
+    callAndEnsureAudioIsPlaying();
+    setAllEventsOccuredHandler(function() {
+      // Mute, wait a while, unmute, verify audio gets back up.
+      enableRemoteAudio(gSecondConnection, false);
+
+      setTimeout(function() {
+        enableRemoteAudio(gSecondConnection, true);
+      }, 500);
+
+      setTimeout(function() {
+        gatherAudioLevelSamples(gSecondConnection, 200, 100, function(samples) {
+          verifyAudioIsPlaying(samples);
+          reportTestSuccess();
+        });
+      }, 1000);
+    });
+  }
+
+  function callAndEnsureVideoTrackMutingWorks() {
     createConnections(null);
     navigator.webkitGetUserMedia({audio: true, video: true},
       addStreamToBothConnectionsAndNegotiate, printGetUserMediaError);
@@ -775,7 +811,6 @@
 
   function onIceCandidate(event, target) {
     if (event.candidate) {
-      console.log("onIceCandidate, candidate is:" + event.candidate.candidate);
       var candidate = new RTCIceCandidate(event.candidate);
       candidate.candidate = transformCandidate(candidate.candidate);
       target.addIceCandidate(candidate);

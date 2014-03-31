@@ -5,9 +5,9 @@
 import posixpath
 
 from compiled_file_system import SingleFile, Unicode
-from extensions_paths import API, CHROME_API
+from extensions_paths import API_PATHS
 from file_system import FileNotFoundError
-from future import Gettable, Future
+from future import Future
 from schema_util import ProcessSchema
 from third_party.json_schema_compiler.model import Namespace, UnixName
 
@@ -44,7 +44,7 @@ class APIModels(object):
     # By default |api_name| is assumed to be given without a path or extension,
     # so combinations of known paths and extension types will be searched.
     api_extensions = ('.json', '.idl')
-    api_paths = (API, CHROME_API)
+    api_paths = API_PATHS
 
     # Callers sometimes include a file extension and/or prefix path with the
     # |api_name| argument. We believe them and narrow the search space
@@ -81,7 +81,7 @@ class APIModels(object):
         except FileNotFoundError: pass
       # Propagate the first FileNotFoundError if neither were found.
       futures[0].Get()
-    return Future(delegate=Gettable(resolve))
+    return Future(callback=resolve)
 
   def IterModels(self):
     future_models = [(name, self.GetModel(name)) for name in self.GetNames()]

@@ -13,9 +13,9 @@
 #include "content/common/content_export.h"
 #include "content/port/browser/render_view_host_delegate_view.h"
 #include "content/port/browser/web_contents_view_port.h"
-#include "ui/aura/client/drag_drop_delegate.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/compositor/layer_animation_observer.h"
+#include "ui/wm/public/drag_drop_delegate.h"
 
 namespace aura {
 class Window;
@@ -130,13 +130,6 @@ class CONTENT_EXPORT WebContentsViewAura
   // Overridden from RenderViewHostDelegateView:
   virtual void ShowContextMenu(RenderFrameHost* render_frame_host,
                                const ContextMenuParams& params) OVERRIDE;
-  virtual void ShowPopupMenu(const gfx::Rect& bounds,
-                             int item_height,
-                             double item_font_size,
-                             int selected_item,
-                             const std::vector<MenuItem>& items,
-                             bool right_aligned,
-                             bool allow_multiple_selection) OVERRIDE;
   virtual void StartDragging(const DropData& drop_data,
                              blink::WebDragOperationsMask operations,
                              const gfx::ImageSkia& image,
@@ -175,8 +168,6 @@ class CONTENT_EXPORT WebContentsViewAura
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
-  virtual void DidRecreateLayer(ui::Layer* old_layer,
-                                ui::Layer* new_layer) OVERRIDE;
 
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;

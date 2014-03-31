@@ -30,6 +30,7 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/l10n/l10n_util.h"
 
+namespace chromeos {
 namespace {
 
 const char kJsScreenPath[] = "login.OAuthEnrollmentScreen";
@@ -41,6 +42,25 @@ const char kGaiaExtStartPage[] =
 // Enrollment step names.
 const char kEnrollmentStepSignin[] = "signin";
 const char kEnrollmentStepSuccess[] = "success";
+
+// Enrollment mode strings.
+const char kEnrollmentModeManual[] = "manual";
+const char kEnrollmentModeForced[] = "forced";
+const char kEnrollmentModeAuto[] = "auto";
+
+std::string EnrollmentModeToString(EnrollmentScreenActor::EnrollmentMode mode) {
+  switch (mode) {
+    case EnrollmentScreenActor::ENROLLMENT_MODE_MANUAL:
+      return kEnrollmentModeManual;
+    case EnrollmentScreenActor::ENROLLMENT_MODE_FORCED:
+      return kEnrollmentModeForced;
+    case EnrollmentScreenActor::ENROLLMENT_MODE_AUTO:
+      return kEnrollmentModeAuto;
+  }
+
+  NOTREACHED() << "Bad enrollment mode " << mode;
+  return kEnrollmentModeManual;
+}
 
 // A helper class that takes care of asynchronously revoking a given token.
 class TokenRevoker : public GaiaAuthConsumer {
@@ -68,16 +88,13 @@ class TokenRevoker : public GaiaAuthConsumer {
 
 }  // namespace
 
-namespace chromeos {
-
 // EnrollmentScreenHandler, public ------------------------------
 
 EnrollmentScreenHandler::EnrollmentScreenHandler()
     : BaseScreenHandler(kJsScreenPath),
       controller_(NULL),
       show_on_init_(false),
-      is_auto_enrollment_(false),
-      can_exit_enrollment_(true),
+      enrollment_mode_(ENROLLMENT_MODE_MANUAL),
       browsing_data_remover_(NULL) {
   set_async_assets_load_id(OobeUI::kScreenOobeEnrollment);
 }
@@ -103,15 +120,13 @@ void EnrollmentScreenHandler::RegisterMessages() {
 // EnrollmentScreenHandler
 //      EnrollmentScreenActor implementation -----------------------------------
 
-void EnrollmentScreenHandler::SetParameters(Controller* controller,
-                                            bool is_auto_enrollment,
-                                            bool can_exit_enrollment,
-                                            const std::string& user) {
+void EnrollmentScreenHandler::SetParameters(
+    Controller* controller,
+    EnrollmentMode enrollment_mode,
+    const std::string& management_domain) {
   controller_ = controller;
-  is_auto_enrollment_ = is_auto_enrollment;
-  can_exit_enrollment_ = can_exit_enrollment;
-  if (is_auto_enrollment_)
-    user_ = user;
+  enrollment_mode_ = enrollment_mode;
+  management_domain_ = management_domain;
 }
 
 void EnrollmentScreenHandler::PrepareToShow() {
@@ -224,14 +239,17 @@ void EnrollmentScreenHandler::ShowEnrollmentStatus(
     case policy::EnrollmentStatus::STATUS_REGISTRATION_FAILED:
       // Some special cases for generating a nicer message that's more helpful.
       switch (status.client_status()) {
+        case policy::DM_STATUS_SERVICE_MANAGEMENT_NOT_SUPPORTED:
+          ShowError(IDS_ENTERPRISE_ENROLLMENT_ACCOUNT_ERROR, true);
+          break;
         case policy::DM_STATUS_SERVICE_MISSING_LICENSES:
           ShowError(IDS_ENTERPRISE_ENROLLMENT_MISSING_LICENSES_ERROR, true);
           break;
         case policy::DM_STATUS_SERVICE_DEPROVISIONED:
           ShowError(IDS_ENTERPRISE_ENROLLMENT_DEPROVISIONED_ERROR, true);
           break;
-        case policy::DM_STATUS_SERVICE_MANAGEMENT_NOT_SUPPORTED:
-          ShowError(IDS_ENTERPRISE_ENROLLMENT_ACCOUNT_ERROR, true);
+        case policy::DM_STATUS_SERVICE_DOMAIN_MISMATCH:
+          ShowError(IDS_ENTERPRISE_ENROLLMENT_DOMAIN_MISMATCH_ERROR, true);
           break;
         default:
           ShowErrorMessage(
@@ -301,6 +319,9 @@ void EnrollmentScreenHandler::DeclareLocalizedValues(
     LocalizedValuesBuilder* builder) {
   builder->Add("oauthEnrollScreenTitle",
                IDS_ENTERPRISE_ENROLLMENT_SCREEN_TITLE);
+  builder->Add("oauthEnrollDescription", IDS_ENTERPRISE_ENROLLMENT_DESCRIPTION);
+  builder->Add("oauthEnrollReEnrollmentText",
+               IDS_ENTERPRISE_ENROLLMENT_RE_ENROLLMENT_TEXT);
   builder->Add("oauthEnrollRetry", IDS_ENTERPRISE_ENROLLMENT_RETRY);
   builder->Add("oauthEnrollCancel", IDS_ENTERPRISE_ENROLLMENT_CANCEL);
   builder->Add("oauthEnrollDone", IDS_ENTERPRISE_ENROLLMENT_DONE);
@@ -405,8 +426,9 @@ void EnrollmentScreenHandler::DoShow() {
   base::DictionaryValue screen_data;
   screen_data.SetString("signin_url", kGaiaExtStartPage);
   screen_data.SetString("gaiaUrl", GaiaUrls::GetInstance()->gaia_url().spec());
-  screen_data.SetBoolean("is_auto_enrollment", is_auto_enrollment_);
-  screen_data.SetBoolean("prevent_cancellation", !can_exit_enrollment_);
+  screen_data.SetString("enrollment_mode",
+                        EnrollmentModeToString(enrollment_mode_));
+  screen_data.SetString("management_domain", management_domain_);
 
   ShowScreen(OobeUI::kScreenOobeEnrollment, &screen_data);
 }

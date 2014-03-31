@@ -23,6 +23,7 @@ using std::max;
 using std::min;
 using std::string;
 using testing::_;
+using testing::AnyNumber;
 
 namespace net {
 namespace test {
@@ -361,6 +362,23 @@ void TestSession::SetCryptoStream(QuicCryptoStream* stream) {
 }
 
 QuicCryptoStream* TestSession::GetCryptoStream() {
+  return crypto_stream_;
+}
+
+TestClientSession::TestClientSession(QuicConnection* connection,
+                                     const QuicConfig& config)
+    : QuicClientSessionBase(connection, config),
+      crypto_stream_(NULL) {
+    EXPECT_CALL(*this, OnProofValid(_)).Times(AnyNumber());
+}
+
+TestClientSession::~TestClientSession() {}
+
+void TestClientSession::SetCryptoStream(QuicCryptoStream* stream) {
+  crypto_stream_ = stream;
+}
+
+QuicCryptoStream* TestClientSession::GetCryptoStream() {
   return crypto_stream_;
 }
 

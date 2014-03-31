@@ -10,27 +10,31 @@
 #include "base/message_loop/message_loop.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
+#include "media/cast/logging/logging_defines.h"
 #include "third_party/libvpx/source/libvpx/vpx/vp8dx.h"
 #include "ui/gfx/size.h"
 
+namespace {
+
+void LogFrameDecodedEvent(
+    const scoped_refptr<media::cast::CastEnvironment>& cast_environment,
+    base::TimeTicks event_time,
+    media::cast::RtpTimestamp rtp_timestamp,
+    uint32 frame_id) {
+  cast_environment->Logging()->InsertFrameEvent(
+      event_time, media::cast::kVideoFrameDecoded, rtp_timestamp, frame_id);
+}
+
+}  // namespace
+
 namespace media {
 namespace cast {
-
-void LogFrameDecodedEvent(CastEnvironment* const cast_environment,
-                          uint32 rtp_timestamp,
-                          uint32 frame_id) {
-  cast_environment->Logging()->InsertFrameEvent(
-      cast_environment->Clock()->NowTicks(),
-      kVideoFrameDecoded,
-      rtp_timestamp,
-      frame_id);
-}
 
 Vp8Decoder::Vp8Decoder(scoped_refptr<CastEnvironment> cast_environment)
     : cast_environment_(cast_environment) {
   // Make sure that we initialize the decoder from the correct thread.
   cast_environment_->PostTask(
-      CastEnvironment::VIDEO_DECODER,
+      CastEnvironment::VIDEO,
       FROM_HERE,
       base::Bind(&Vp8Decoder::InitDecoder, base::Unretained(this)));
 }
@@ -61,7 +65,7 @@ void Vp8Decoder::InitDecoder() {
 bool Vp8Decoder::Decode(const transport::EncodedVideoFrame* encoded_frame,
                         const base::TimeTicks render_time,
                         const VideoFrameDecodedCallback& frame_decoded_cb) {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::VIDEO_DECODER));
+  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::VIDEO));
   const int frame_id_int = static_cast<int>(encoded_frame->frame_id);
   VLOG(2) << "VP8 decode frame:" << frame_id_int
           << " sized:" << encoded_frame->data.size();
@@ -123,8 +127,9 @@ bool Vp8Decoder::Decode(const transport::EncodedVideoFrame* encoded_frame,
   // Update logging from the main thread.
   cast_environment_->PostTask(CastEnvironment::MAIN,
                               FROM_HERE,
-                              base::Bind(LogFrameDecodedEvent,
+                              base::Bind(&LogFrameDecodedEvent,
                                          cast_environment_,
+                                         cast_environment_->Clock()->NowTicks(),
                                          encoded_frame->rtp_timestamp,
                                          encoded_frame->frame_id));
 

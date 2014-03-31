@@ -34,9 +34,13 @@
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/sync/test/integration/p2p_invalidation_forwarder.h"
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/single_client_status_change_checker.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
+#include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/host_desktop.h"
@@ -79,6 +83,8 @@ const char kSyncPasswordForTest[] = "sync-password-for-test";
 const char kSyncServerCommandLine[] = "sync-server-command-line";
 }
 
+namespace {
+
 // Helper class that checks whether a sync test server is running or not.
 class SyncServerStatusChecker : public net::URLFetcherDelegate {
  public:
@@ -97,6 +103,25 @@ class SyncServerStatusChecker : public net::URLFetcherDelegate {
 
  private:
   bool running_;
+};
+
+bool IsEncryptionComplete(const ProfileSyncService* service) {
+  return service->EncryptEverythingEnabled() && !service->encryption_pending();
+}
+
+// Helper class to wait for encryption to complete.
+class EncryptionChecker : public SingleClientStatusChangeChecker {
+ public:
+  explicit EncryptionChecker(ProfileSyncService* service)
+      : SingleClientStatusChangeChecker(service) {}
+
+  virtual bool IsExitConditionSatisfied() OVERRIDE {
+    return IsEncryptionComplete(service());
+  }
+
+  virtual std::string GetDebugMessage() const OVERRIDE {
+    return "Encryption";
+  }
 };
 
 void SetProxyConfigCallback(
@@ -121,6 +146,8 @@ KeyedService* BuildP2PInvalidationService(content::BrowserContext* context) {
               LoginUIServiceFactory::GetForProfile(profile))));
 }
 
+}  // namespace
+
 SyncTest::SyncTest(TestType test_type)
     : test_type_(test_type),
       server_type_(SERVER_TYPE_UNDECIDED),
@@ -130,7 +157,8 @@ SyncTest::SyncTest(TestType test_type)
       test_server_handle_(base::kNullProcessHandle) {
   sync_datatype_helper::AssociateWithTest(this);
   switch (test_type_) {
-    case SINGLE_CLIENT: {
+    case SINGLE_CLIENT:
+    case SINGLE_CLIENT_LEGACY: {
       num_clients_ = 1;
       break;
     }
@@ -160,38 +188,11 @@ void SyncTest::SetUp() {
     password_ = "password";
   }
 
-  // Only set |server_type_| if it hasn't already been set. This allows for
-  // IN_PROCESS_FAKE_SERVER tests to set this value in each test class.
-  if (server_type_ == SERVER_TYPE_UNDECIDED) {
-    if (!cl->HasSwitch(switches::kSyncServiceURL) &&
-        !cl->HasSwitch(switches::kSyncServerCommandLine)) {
-      // If neither a sync server URL nor a sync server command line is
-      // provided, start up a local python sync test server and point Chrome
-      // to its URL.  This is the most common configuration, and the only
-      // one that makes sense for most developers.
-      server_type_ = LOCAL_PYTHON_SERVER;
-    } else if (cl->HasSwitch(switches::kSyncServiceURL) &&
-               cl->HasSwitch(switches::kSyncServerCommandLine)) {
-      // If a sync server URL and a sync server command line are provided,
-      // start up a local sync server by running the command line. Chrome
-      // will connect to the server at the URL that was provided.
-      server_type_ = LOCAL_LIVE_SERVER;
-    } else if (cl->HasSwitch(switches::kSyncServiceURL) &&
-               !cl->HasSwitch(switches::kSyncServerCommandLine)) {
-      // If a sync server URL is provided, but not a server command line,
-      // it is assumed that the server is already running. Chrome will
-      // automatically connect to it at the URL provided. There is nothing
-      // to do here.
-      server_type_ = EXTERNAL_LIVE_SERVER;
-    } else {
-      // If a sync server command line is provided, but not a server URL,
-      // we flag an error.
-      LOG(FATAL) << "Can't figure out how to run a server.";
-    }
-  }
-
   if (username_.empty() || password_.empty())
     LOG(FATAL) << "Cannot run sync tests without GAIA credentials.";
+
+  // Sets |server_type_| if it wasn't specified by the test.
+  DecideServerType();
 
   // Mock the Mac Keychain service.  The real Keychain can block on user input.
 #if defined(OS_MACOSX)
@@ -298,6 +299,7 @@ bool SyncTest::SetupClients() {
   profiles_.resize(num_clients_);
   browsers_.resize(num_clients_);
   clients_.resize(num_clients_);
+  invalidation_forwarders_.resize(num_clients_);
   for (int i = 0; i < num_clients_; ++i) {
     InitializeInstance(i);
   }
@@ -344,13 +346,17 @@ void SyncTest::InitializeInstance(int index) {
   }
 
   clients_[index] =
-      ProfileSyncServiceHarness::CreateForIntegrationTest(
+      ProfileSyncServiceHarness::Create(
           GetProfile(index),
           username_,
-          password_,
-          p2p_invalidation_service);
+          password_);
   EXPECT_FALSE(GetClient(index) == NULL) << "Could not create Client "
                                          << index << ".";
+
+  // Start listening for and emitting notificaitons of commits.
+  invalidation_forwarders_[index] =
+      new P2PInvalidationForwarder(clients_[index]->service(),
+                                   p2p_invalidation_service);
 
   test::WaitForBookmarkModelToLoad(
       BookmarkModelFactory::GetForProfile(GetProfile(index)));
@@ -396,6 +402,7 @@ void SyncTest::CleanUpOnMainThread() {
   // All browsers should be closed at this point, or else we could see memory
   // corruption in QuitBrowser().
   CHECK_EQ(0U, chrome::GetTotalBrowserCount());
+  invalidation_forwarders_.clear();
   clients_.clear();
 }
 
@@ -510,6 +517,44 @@ void SyncTest::ClearMockGaiaResponses() {
   // created.
   net::URLFetcher::CancelAll();
   factory_.reset();
+}
+
+void SyncTest::DecideServerType() {
+  // Only set |server_type_| if it hasn't already been set. This allows for
+  // tests to explicitly set this value in each test class if needed.
+  if (server_type_ == SERVER_TYPE_UNDECIDED) {
+    base::CommandLine* cl = base::CommandLine::ForCurrentProcess();
+    if (!cl->HasSwitch(switches::kSyncServiceURL) &&
+        !cl->HasSwitch(switches::kSyncServerCommandLine)) {
+      // If neither a sync server URL nor a sync server command line is
+      // provided, start up a local sync test server and point Chrome
+      // to its URL.  This is the most common configuration, and the only
+      // one that makes sense for most developers. FakeServer is the
+      // current solution but some scenarios are only supported by the
+      // legacy python server.
+      // TODO(pvalenzuela): Make FAKE_SERVER the default and LOCAL_PYTHON
+      // the exception once more scenarios are supported.
+        server_type_ = test_type_ == SINGLE_CLIENT ?
+              IN_PROCESS_FAKE_SERVER : LOCAL_PYTHON_SERVER;
+    } else if (cl->HasSwitch(switches::kSyncServiceURL) &&
+               cl->HasSwitch(switches::kSyncServerCommandLine)) {
+      // If a sync server URL and a sync server command line are provided,
+      // start up a local sync server by running the command line. Chrome
+      // will connect to the server at the URL that was provided.
+      server_type_ = LOCAL_LIVE_SERVER;
+    } else if (cl->HasSwitch(switches::kSyncServiceURL) &&
+               !cl->HasSwitch(switches::kSyncServerCommandLine)) {
+      // If a sync server URL is provided, but not a server command line,
+      // it is assumed that the server is already running. Chrome will
+      // automatically connect to it at the URL provided. There is nothing
+      // to do here.
+      server_type_ = EXTERNAL_LIVE_SERVER;
+    } else {
+      // If a sync server command line is provided, but not a server URL,
+      // we flag an error.
+      LOG(FATAL) << "Can't figure out how to run a server.";
+    }
+  }
 }
 
 // Start up a local sync server based on the value of server_type_, which
@@ -668,11 +713,29 @@ void SyncTest::DisableNetwork(Profile* profile) {
 }
 
 bool SyncTest::EnableEncryption(int index) {
-  return GetClient(index)->EnableEncryption();
+  ProfileSyncService* service = GetClient(index)->service();
+
+  if (::IsEncryptionComplete(service))
+    return true;
+
+  service->EnableEncryptEverything();
+
+  // In order to kick off the encryption we have to reconfigure. Just grab the
+  // currently synced types and use them.
+  const syncer::ModelTypeSet synced_datatypes =
+      service->GetPreferredDataTypes();
+  bool sync_everything = synced_datatypes.Equals(syncer::ModelTypeSet::All());
+  service->OnUserChoseDatatypes(sync_everything, synced_datatypes);
+
+  // Wait some time to let the enryption finish.
+  EncryptionChecker checker(service);
+  checker.Await();
+
+  return !checker.TimedOut();
 }
 
 bool SyncTest::IsEncryptionComplete(int index) {
-  return GetClient(index)->IsEncryptionComplete();
+  return ::IsEncryptionComplete(GetClient(index)->service());
 }
 
 bool SyncTest::AwaitQuiescence() {
@@ -885,9 +948,4 @@ void SyncTest::SetProxyConfig(net::URLRequestContextGetter* context_getter,
       base::Bind(&SetProxyConfigCallback, &done,
                  make_scoped_refptr(context_getter), proxy_config));
   done.Wait();
-}
-
-void SyncTest::UseFakeServer() {
-  DCHECK_EQ(SERVER_TYPE_UNDECIDED, server_type_);
-  server_type_ = IN_PROCESS_FAKE_SERVER;
 }

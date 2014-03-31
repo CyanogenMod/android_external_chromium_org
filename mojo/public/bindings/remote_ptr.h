@@ -9,7 +9,7 @@
 
 #include "mojo/public/bindings/interface.h"
 #include "mojo/public/bindings/lib/router.h"
-#include "mojo/public/system/macros.h"
+#include "mojo/public/cpp/system/macros.h"
 
 namespace mojo {
 
@@ -76,7 +76,7 @@ class RemotePtr {
  public:
   RemotePtr() : state_(NULL) {}
   explicit RemotePtr(typename Interface<S>::ScopedHandle interface_handle,
-                     typename S::_Peer* peer = NULL,
+                     typename S::_Peer* peer,
                      ErrorHandler* error_handler = NULL,
                      MojoAsyncWaiter* waiter = GetDefaultAsyncWaiter())
       : state_(new State(ScopedMessagePipeHandle(interface_handle.Pass()), peer,
@@ -113,7 +113,7 @@ class RemotePtr {
   }
 
   void reset(typename Interface<S>::ScopedHandle interface_handle,
-             typename S::_Peer* peer = NULL,
+             typename S::_Peer* peer,
              ErrorHandler* error_handler = NULL,
              MojoAsyncWaiter* waiter = GetDefaultAsyncWaiter()) {
     delete state_;

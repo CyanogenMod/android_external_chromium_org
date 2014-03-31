@@ -20,8 +20,7 @@ class CrOSTest(unittest.TestCase):
     self._cri = cros_interface.CrOSInterface(options.cros_remote,
                                              options.cros_ssh_identity)
     self._is_guest = options.browser_type == 'cros-chrome-guest'
-    self._username = ('$guest' if self._is_guest
-                                else options.browser_options.username)
+    self._username = options.browser_options.username
     self._password = options.browser_options.password
     self._load_extension = None
 
@@ -51,20 +50,11 @@ class CrOSTest(unittest.TestCase):
     self.assertTrue(extension)
     return extension
 
-  def _CryptohomePath(self, user):
-    """Returns the cryptohome mount point for |user|."""
-    return self._cri.RunCmdOnDevice(
-        ['cryptohome-path', 'user', "'%s'" % user])[0].strip()
-
   def _IsCryptohomeMounted(self):
-    """Returns True iff |user|'s cryptohome is mounted."""
-    profile_path = self._CryptohomePath(self._username)
-    mount = self._cri.FilesystemMountedAt(profile_path)
-    if not mount:
-      return False
-    if self._is_guest:
-      return mount == 'guestfs'
-    return mount.startswith('/home/.shadow/')
+    """Returns True if cryptohome is mounted. as determined by the cmd
+    cryptohome --action=is_mounted"""
+    return self._cri.RunCmdOnDevice(
+        ['/usr/sbin/cryptohome', '--action=is_mounted'])[0].strip() == 'true'
 
   @test.Enabled('chromeos')
   def testCryptohome(self):
@@ -82,7 +72,7 @@ class CrOSTest(unittest.TestCase):
         self.assertEquals(chronos_fs, 'guestfs')
       else:
         crypto_fs = self._cri.FilesystemMountedAt(
-            self._CryptohomePath(self._username))
+            self._cri.CryptohomePath(self._username))
         self.assertEquals(crypto_fs, chronos_fs)
 
     self.assertFalse(self._IsCryptohomeMounted())

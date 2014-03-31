@@ -10,16 +10,16 @@
 
 #include "base/memory/shared_memory.h"
 #include "base/values.h"
-#include "chrome/common/extensions/api/messaging/message.h"
-#include "chrome/common/extensions/permissions/media_galleries_permission_data.h"
-#include "chrome/common/extensions/permissions/socket_permission_data.h"
-#include "chrome/common/extensions/permissions/usb_device_permission_data.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/socket_permission_request.h"
+#include "extensions/common/api/messaging/message.h"
 #include "extensions/common/draggable_region.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extensions_client.h"
+#include "extensions/common/permissions/media_galleries_permission_data.h"
 #include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/socket_permission_data.h"
+#include "extensions/common/permissions/usb_device_permission_data.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "extensions/common/view_type.h"
@@ -407,13 +407,6 @@ IPC_MESSAGE_CONTROL1(ExtensionMsg_Suspend,
 IPC_MESSAGE_CONTROL1(ExtensionMsg_CancelSuspend,
                      std::string /* extension_id */)
 
-// Send to renderer once the installation mentioned on
-// ExtensionHostMsg_InlineWebstoreInstall is complete.
-IPC_MESSAGE_ROUTED3(ExtensionMsg_InlineWebstoreInstallResponse,
-                    int32 /* install id */,
-                    bool /* whether the install was successful */,
-                    std::string /* error */)
-
 // Response to the renderer for ExtensionHostMsg_GetAppInstallState.
 IPC_MESSAGE_ROUTED2(ExtensionMsg_GetAppInstallStateResponse,
                     std::string /* state */,
@@ -572,13 +565,6 @@ IPC_MESSAGE_ROUTED3(ExtensionHostMsg_ContentScriptsExecuting,
                     ExecutingScriptsMap,
                     int32 /* page_id of the _topmost_ frame */,
                     GURL /* url of the _topmost_ frame */)
-
-// Sent by the renderer to implement chrome.webstore.install().
-IPC_MESSAGE_ROUTED4(ExtensionHostMsg_InlineWebstoreInstall,
-                    int32 /* install id */,
-                    int32 /* return route id */,
-                    std::string /* Web Store item ID */,
-                    GURL /* requestor URL */)
 
 // Sent by the renderer when a web page is checking if its app is installed.
 IPC_MESSAGE_ROUTED3(ExtensionHostMsg_GetAppInstallState,

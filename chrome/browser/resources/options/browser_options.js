@@ -171,9 +171,6 @@ cr.define('options', function() {
       };
 
       chrome.send('requestHotwordAvailable');
-      var hotwordIndicator = $('hotword-search-setting-indicator');
-      HotwordSearchSettingIndicator.decorate(hotwordIndicator);
-      hotwordIndicator.disabledOnErrorSection = $('hotword-search-enable');
 
       if ($('set-wallpaper')) {
         $('set-wallpaper').onclick = function(event) {
@@ -532,6 +529,7 @@ cr.define('options', function() {
       if (cr.isChromeOS) {
         $('factory-reset-restart').onclick = function(event) {
           OptionsPage.navigateToPage('factoryResetData');
+          chrome.send('onPowerwashDialogShow');
         };
       }
 
@@ -858,7 +856,8 @@ cr.define('options', function() {
       // Disable the "sign in" button if we're currently signing in, or if we're
       // already signed in and signout is not allowed.
       var signInButton = $('start-stop-sync');
-      signInButton.disabled = syncData.setupInProgress;
+      signInButton.disabled = syncData.setupInProgress ||
+                              !syncData.signoutAllowed;
       this.signoutAllowed_ = syncData.signoutAllowed;
       if (!syncData.signoutAllowed)
         $('start-stop-sync-indicator').setAttribute('controlled-by', 'policy');
@@ -915,6 +914,7 @@ cr.define('options', function() {
         $('sync-general').insertBefore($('sync-status').nextSibling,
                                        $('enable-auto-login-checkbox'));
       }
+      $('enable-auto-login-checkbox').hidden = !syncData.autoLoginVisible;
     },
 
     /**
@@ -973,7 +973,6 @@ cr.define('options', function() {
      */
     showHotwordSection_: function(opt_error) {
       $('hotword-search').hidden = false;
-      $('hotword-search-setting-indicator').errorText = opt_error;
     },
 
     /**

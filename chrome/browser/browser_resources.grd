@@ -337,6 +337,7 @@
       </if>
       <if expr="chromeos">
         <include name="IDR_FILEMANAGER_MANIFEST" file="resources\file_manager\manifest.json" type="BINDATA" />
+        <include name="IDR_VIDEOPLAYER_MANIFEST" file="resources\video_player\manifest.json" type="BINDATA" />
       </if>
       <if expr="image_loader_extension">
         <include name="IDR_IMAGE_LOADER_MANIFEST" file="resources\image_loader\manifest.json" type="BINDATA" />
@@ -397,6 +398,7 @@
       </if>
       <if expr="chromeos">
         <include name="IDR_SOUND_STARTUP_WAV" file="resources\chromeos\sounds\startup.wav" type="BINDATA" />
+        <include name="IDR_SOUND_STARTUP2_WAV" file="resources\chromeos\sounds\startup2.wav" type="BINDATA" />
         <include name="IDR_SOUND_LOCK_WAV" file="resources\chromeos\sounds\lock.wav" type="BINDATA" />
         <include name="IDR_SOUND_UNLOCK_WAV" file="resources\chromeos\sounds\unlock.wav" type="BINDATA" />
         <include name="IDR_SOUND_SHUTDOWN_WAV" file="resources\chromeos\sounds\shutdown.wav" type="BINDATA" />

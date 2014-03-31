@@ -109,14 +109,10 @@ unsigned GetMapImageTextureTarget(cc::ContextProvider* context_provider) {
   if (!context_provider)
     return GL_TEXTURE_2D;
 
-  // TODO(reveman): Determine if GL_TEXTURE_EXTERNAL_OES works well on
-  // Android before we enable this. crbug.com/322780
-#if !defined(OS_ANDROID)
   if (context_provider->ContextCapabilities().gpu.egl_image_external)
     return GL_TEXTURE_EXTERNAL_OES;
   if (context_provider->ContextCapabilities().gpu.texture_rectangle)
     return GL_TEXTURE_RECTANGLE_ARB;
-#endif
 
   return GL_TEXTURE_2D;
 }
@@ -942,8 +938,7 @@ void LayerTreeHostImpl::UpdateBackgroundAnimateTicking(
   if (should_background_tick)
     DCHECK(active_tree_->root_layer());
 
-  bool enabled = should_background_tick &&
-                 !animation_registrar_->active_animation_controllers().empty();
+  bool enabled = should_background_tick && needs_animate_layers();
 
   // Lazily create the time_source adapter so that we can vary the interval for
   // testing.
@@ -2272,8 +2267,14 @@ bool LayerTreeHostImpl::ScrollBy(const gfx::Point& viewport_point,
         break;
     }
 
-    if (layer_impl == InnerViewportScrollLayer())
+    if (layer_impl == InnerViewportScrollLayer()) {
       unused_root_delta.Subtract(applied_delta);
+      const float kOverscrollEpsilon = 0.01f;
+      if (std::abs(unused_root_delta.x()) < kOverscrollEpsilon)
+        unused_root_delta.set_x(0.0f);
+      if (std::abs(unused_root_delta.y()) < kOverscrollEpsilon)
+        unused_root_delta.set_y(0.0f);
+    }
 
     did_lock_scrolling_layer_ = true;
     if (!should_bubble_scrolls_) {
@@ -2314,7 +2315,7 @@ bool LayerTreeHostImpl::ScrollBy(const gfx::Point& viewport_point,
     accumulated_root_overscroll_.set_y(0);
 
   accumulated_root_overscroll_ += unused_root_delta;
-  bool did_overscroll = !gfx::ToRoundedVector2d(unused_root_delta).IsZero();
+  bool did_overscroll = !unused_root_delta.IsZero();
   if (did_overscroll && input_handler_client_) {
     DidOverscrollParams params;
     params.accumulated_overscroll = accumulated_root_overscroll_;
@@ -2460,8 +2461,7 @@ void LayerTreeHostImpl::MouseMoveAt(const gfx::Point& viewport_point) {
         scroll_layer_impl ? scroll_layer_impl->scrollbar_animation_controller()
                           : NULL;
     if (animation_controller) {
-      animation_controller->DidMouseMoveOffScrollbar(
-          CurrentPhysicalTimeTicks());
+      animation_controller->DidMouseMoveOffScrollbar(CurrentFrameTimeTicks());
       StartScrollbarAnimation();
     }
     scroll_layer_id_when_mouse_over_scrollbar_ = 0;
@@ -2490,7 +2490,7 @@ void LayerTreeHostImpl::MouseMoveAt(const gfx::Point& viewport_point) {
                  DeviceSpaceDistanceToLayer(device_viewport_point, *it));
 
   bool should_animate = animation_controller->DidMouseMoveNear(
-      CurrentPhysicalTimeTicks(), distance_to_scrollbar / device_scale_factor_);
+      CurrentFrameTimeTicks(), distance_to_scrollbar / device_scale_factor_);
   if (should_animate)
     StartScrollbarAnimation();
 }
@@ -2504,7 +2504,7 @@ bool LayerTreeHostImpl::HandleMouseOverScrollbar(LayerImpl* layer_impl,
       scroll_layer_id_when_mouse_over_scrollbar_ = scroll_layer_id;
       bool should_animate =
           layer_impl->scrollbar_animation_controller()->DidMouseMoveNear(
-              CurrentPhysicalTimeTicks(), 0);
+              CurrentFrameTimeTicks(), 0);
       if (should_animate)
         StartScrollbarAnimation();
     } else {
@@ -2682,7 +2682,7 @@ void LayerTreeHostImpl::AnimateTopControls(base::TimeTicks time) {
 
 void LayerTreeHostImpl::AnimateLayers(base::TimeTicks monotonic_time) {
   if (!settings_.accelerated_animation_enabled ||
-      animation_registrar_->active_animation_controllers().empty() ||
+      !needs_animate_layers() ||
       !active_tree_->root_layer())
     return;
 
@@ -2704,7 +2704,7 @@ void LayerTreeHostImpl::AnimateLayers(base::TimeTicks monotonic_time) {
 
 void LayerTreeHostImpl::UpdateAnimationState(bool start_ready_animations) {
   if (!settings_.accelerated_animation_enabled ||
-      animation_registrar_->active_animation_controllers().empty() ||
+      !needs_animate_layers() ||
       !active_tree_->root_layer())
     return;
 
@@ -2820,7 +2820,7 @@ void LayerTreeHostImpl::AnimateScrollbarsRecursive(LayerImpl* layer,
 
 void LayerTreeHostImpl::StartScrollbarAnimation() {
   TRACE_EVENT0("cc", "LayerTreeHostImpl::StartScrollbarAnimation");
-  StartScrollbarAnimationRecursive(RootLayer(), CurrentPhysicalTimeTicks());
+  StartScrollbarAnimationRecursive(RootLayer(), CurrentFrameTimeTicks());
 }
 
 void LayerTreeHostImpl::StartScrollbarAnimationRecursive(LayerImpl* layer,
@@ -2852,22 +2852,21 @@ void LayerTreeHostImpl::SetTreePriority(TreePriority priority) {
   DidModifyTilePriorities();
 }
 
+void LayerTreeHostImpl::UpdateCurrentFrameTime() {
+  DCHECK(current_frame_timeticks_.is_null());
+  current_frame_timeticks_ = gfx::FrameTime::Now();
+}
+
 void LayerTreeHostImpl::ResetCurrentFrameTimeForNextFrame() {
   current_frame_timeticks_ = base::TimeTicks();
 }
 
-void LayerTreeHostImpl::UpdateCurrentFrameTime(base::TimeTicks* ticks) const {
-  if (ticks->is_null()) {
-    *ticks = CurrentPhysicalTimeTicks();
-  }
-}
-
 base::TimeTicks LayerTreeHostImpl::CurrentFrameTimeTicks() {
-  UpdateCurrentFrameTime(&current_frame_timeticks_);
-  return current_frame_timeticks_;
-}
-
-base::TimeTicks LayerTreeHostImpl::CurrentPhysicalTimeTicks() const {
+  // Try to use the current frame time to keep animations non-jittery.  But if
+  // we're not in a frame (because this is during an input event or a delayed
+  // task), fall back to physical time.  This should still be monotonic.
+  if (!current_frame_timeticks_.is_null())
+    return current_frame_timeticks_;
   return gfx::FrameTime::Now();
 }
 

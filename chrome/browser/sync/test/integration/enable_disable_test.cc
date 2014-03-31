@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "sync/internal_api/public/base/model_type.h"
@@ -13,17 +14,11 @@
 
 namespace {
 
-class EnableDisableTest : public SyncTest {
+class EnableDisableSingleClientTest : public SyncTest {
  public:
-  explicit EnableDisableTest(TestType test_type) : SyncTest(test_type) {}
-  virtual ~EnableDisableTest() {}
- private:
-  DISALLOW_COPY_AND_ASSIGN(EnableDisableTest);
-};
-
-class EnableDisableSingleClientTest : public EnableDisableTest {
- public:
-  EnableDisableSingleClientTest() : EnableDisableTest(SINGLE_CLIENT) {}
+  // TODO(pvalenzuela): Switch to SINGLE_CLIENT once FakeServer
+  // supports this scenario.
+  EnableDisableSingleClientTest() : SyncTest(SINGLE_CLIENT_LEGACY) {}
   virtual ~EnableDisableSingleClientTest() {}
  private:
   DISALLOW_COPY_AND_ASSIGN(EnableDisableSingleClientTest);

@@ -14,22 +14,38 @@ try:
   from ply.lex import TOKEN
 except ImportError:
   module_path, module_name = os.path.split(__file__)
-  third_party = os.path.join(
-      module_path, os.pardir, os.pardir, os.pardir, os.pardir, 'third_party')
+  third_party = os.path.join(module_path, os.pardir, os.pardir, os.pardir,
+                             os.pardir, os.pardir, 'third_party')
   sys.path.append(third_party)
   # pylint: disable=F0401
   from ply.lex import TOKEN
 
 
+class LexError(Exception):
+  def __init__(self, filename, lineno, msg):
+    self.filename = filename
+    self.lineno = lineno
+    self.msg = msg
+
+  def __str__(self):
+    return "%s:%d: Error: %s" % (self.filename, self.lineno, self.msg)
+
+  def __repr__(self):
+    return str(self)
+
+
 class Lexer(object):
+
+  def __init__(self, filename):
+    self.filename = filename
+
   ######################--   PRIVATE   --######################
 
   ##
   ## Internal auxiliary methods
   ##
   def _error(self, msg, token):
-    print('%s at line %d' % (msg, token.lineno))
-    self.lexer.skip(1)
+    raise LexError(self.filename, token.lineno, msg)
 
   ##
   ## Reserved keywords
@@ -58,43 +74,36 @@ class Lexer(object):
     # Identifiers
     'NAME',
 
-    # constants
+    # Constants
     'ORDINAL',
     'INT_CONST_DEC', 'INT_CONST_OCT', 'INT_CONST_HEX',
     'FLOAT_CONST', 'HEX_FLOAT_CONST',
     'CHAR_CONST',
-    'WCHAR_CONST',
 
     # String literals
     'STRING_LITERAL',
-    'WSTRING_LITERAL',
 
     # Operators
     'PLUS', 'MINUS', 'TIMES', 'DIVIDE', 'MOD',
     'OR', 'AND', 'NOT', 'XOR', 'LSHIFT', 'RSHIFT',
-    'LOR', 'LAND', 'LNOT',
-    'LT', 'LE', 'GT', 'GE', 'EQ', 'NE',
 
     # Assignment
     'EQUALS',
 
-    # Conditional operator (?)
-    'CONDOP',
-
     # Request / response
     'RESPONSE',
 
-    # Delimeters
+    # Delimiters
     'LPAREN', 'RPAREN',         # ( )
     'LBRACKET', 'RBRACKET',     # [ ]
     'LBRACE', 'RBRACE',         # { }
-    'SEMI', 'COLON',            # ; :
+    'LANGLE', 'RANGLE',         # < >
+    'SEMI',                     # ;
     'COMMA', 'DOT'              # , .
   )
 
   ##
   ## Regexes for use in tokens
-  ##
   ##
 
   # valid C identifiers (K&R2: A.2.3), plus '$' (supported by some compilers)
@@ -129,7 +138,6 @@ class Lexer(object):
       r"""(\\("""+simple_escape+'|'+decimal_escape+'|'+hex_escape+'))'
   cconst_char = r"""([^'\\\n]|"""+escape_sequence+')'
   char_const = "'"+cconst_char+"'"
-  wchar_const = 'L'+char_const
   unmatched_quote = "('"+cconst_char+"*\\n)|('"+cconst_char+"*$)"
   bad_char_const = \
       r"""('"""+cconst_char+"""[^'\n]+')|('')|('"""+ \
@@ -138,7 +146,6 @@ class Lexer(object):
   # string literals (K&R2: A.2.6)
   string_char = r"""([^"\\\n]|"""+escape_sequence+')'
   string_literal = '"'+string_char+'*"'
-  wstring_literal = 'L'+string_literal
   bad_string_literal = '"'+string_char+'*'+bad_escape+string_char+'*"'
 
   # floating constants (K&R2: A.2.5.3)
@@ -154,10 +161,17 @@ class Lexer(object):
       '('+hex_prefix+'('+hex_digits+'|'+hex_fractional_constant+')'+ \
       binary_exponent_part+'[FfLl]?)'
 
+  # Ordinals
+  ordinal = r'@[0-9]+'
+  missing_ordinal_value = r'@'
+  # Don't allow ordinal values in octal (even invalid octal, like 09) or
+  # hexadecimal.
+  octal_or_hex_ordinal_disallowed = r'@((0[0-9]+)|('+hex_prefix+hex_digits+'))'
+
   ##
   ## Rules for the normal state
   ##
-  t_ignore = ' \t'
+  t_ignore = ' \t\r'
 
   # Newlines
   def t_NEWLINE(self, t):
@@ -176,39 +190,27 @@ class Lexer(object):
   t_XOR               = r'\^'
   t_LSHIFT            = r'<<'
   t_RSHIFT            = r'>>'
-  t_LOR               = r'\|\|'
-  t_LAND              = r'&&'
-  t_LNOT              = r'!'
-  t_LT                = r'<'
-  t_GT                = r'>'
-  t_LE                = r'<='
-  t_GE                = r'>='
-  t_EQ                = r'=='
-  t_NE                = r'!='
 
   # =
   t_EQUALS            = r'='
 
-  # ?
-  t_CONDOP            = r'\?'
-
   # =>
   t_RESPONSE          = r'=>'
 
-  # Delimeters
+  # Delimiters
   t_LPAREN            = r'\('
   t_RPAREN            = r'\)'
   t_LBRACKET          = r'\['
   t_RBRACKET          = r'\]'
   t_LBRACE            = r'\{'
   t_RBRACE            = r'\}'
+  t_LANGLE            = r'<'
+  t_RANGLE            = r'>'
   t_COMMA             = r','
-  t_DOT               = r'.'
+  t_DOT               = r'\.'
   t_SEMI              = r';'
-  t_COLON             = r':'
 
   t_STRING_LITERAL    = string_literal
-  t_ORDINAL           = r'@[0-9]*'
 
   # The following floating and integer constants are defined as
   # functions to impose a strict order (otherwise, decimal
@@ -247,10 +249,6 @@ class Lexer(object):
   def t_CHAR_CONST(self, t):
     return t
 
-  @TOKEN(wchar_const)
-  def t_WCHAR_CONST(self, t):
-    return t
-
   @TOKEN(unmatched_quote)
   def t_UNMATCHED_QUOTE(self, t):
     msg = "Unmatched '"
@@ -261,15 +259,26 @@ class Lexer(object):
     msg = "Invalid char constant %s" % t.value
     self._error(msg, t)
 
-  @TOKEN(wstring_literal)
-  def t_WSTRING_LITERAL(self, t):
-    return t
-
   # unmatched string literals are caught by the preprocessor
 
   @TOKEN(bad_string_literal)
   def t_BAD_STRING_LITERAL(self, t):
     msg = "String contains invalid escape code"
+    self._error(msg, t)
+
+  # Handle ordinal-related tokens in the right order:
+  @TOKEN(octal_or_hex_ordinal_disallowed)
+  def t_OCTAL_OR_HEX_ORDINAL_DISALLOWED(self, t):
+    msg = "Octal and hexadecimal ordinal values not allowed"
+    self._error(msg, t)
+
+  @TOKEN(ordinal)
+  def t_ORDINAL(self, t):
+    return t
+
+  @TOKEN(missing_ordinal_value)
+  def t_BAD_ORDINAL(self, t):
+    msg = "Missing ordinal value"
     self._error(msg, t)
 
   @TOKEN(identifier)

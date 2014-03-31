@@ -35,6 +35,7 @@
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/browser_permissions_policy_delegate.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/extensions/extension_webkit_preferences.h"
 #include "chrome/browser/extensions/suggest_permission_util.h"
@@ -90,7 +91,6 @@
 #include "chrome/common/env_vars.h"
 #include "chrome/common/extensions/extension_process_policy.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
-#include "chrome/common/extensions/permissions/socket_permission.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pepper_permission_util.h"
 #include "chrome/common/pref_names.h"
@@ -138,6 +138,7 @@
 #include "extensions/common/manifest_handlers/shared_module_info.h"
 #include "extensions/common/manifest_handlers/web_accessible_resources_info.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "extensions/common/permissions/socket_permission.h"
 #include "extensions/common/switches.h"
 #include "grit/generated_resources.h"
 #include "grit/ui_resources.h"
@@ -172,6 +173,7 @@
 #elif defined(OS_LINUX)
 #include "chrome/browser/chrome_browser_main_linux.h"
 #elif defined(OS_ANDROID)
+#include "chrome/browser/android/new_tab_page_url_handler.h"
 #include "chrome/browser/android/webapps/single_tab_mode_tab_helper.h"
 #include "chrome/browser/chrome_browser_main_android.h"
 #include "chrome/browser/media/encrypted_media_message_filter_android.h"
@@ -198,6 +200,8 @@
 #endif
 
 #if !defined(OS_CHROMEOS)
+#include "chrome/browser/signin/chrome_signin_client.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #endif
@@ -785,18 +789,8 @@ void ChromeContentBrowserClient::GetStoragePartitionConfigForSite(
     // ExtensionService.
     bool is_isolated = !can_be_default;
     if (can_be_default) {
-      const Extension* extension = NULL;
-      Profile* profile = Profile::FromBrowserContext(browser_context);
-      ExtensionService* extension_service =
-          extensions::ExtensionSystem::Get(profile)->extension_service();
-      if (extension_service) {
-        extension =
-            extension_service->extensions()->GetExtensionOrAppByURL(site);
-        if (extension &&
-            extensions::AppIsolationInfo::HasIsolatedStorage(extension)) {
-          is_isolated = true;
-        }
-      }
+      if (extensions::util::SiteHasIsolatedStorage(site, browser_context))
+        is_isolated = true;
     }
 
     if (is_isolated) {
@@ -1189,8 +1183,9 @@ bool ChromeContentBrowserClient::IsSuitableHost(
   }
 
 #if !defined(OS_CHROMEOS)
-  SigninManager* signin_manager = SigninManagerFactory::GetForProfile(profile);
-  if (signin_manager && signin_manager->IsSigninProcess(process_host->GetID()))
+  ChromeSigninClient* signin_client =
+      ChromeSigninClientFactory::GetForProfile(profile);
+  if (signin_client && signin_client->IsSigninProcess(process_host->GetID()))
     return SigninManager::IsWebBasedSigninFlowURL(site_url);
 #endif
 
@@ -1295,10 +1290,10 @@ void ChromeContentBrowserClient::SiteInstanceGotProcess(
   // for signin URLs. The signin process will be cleared from SigninManager
   // when the renderer is destroyed.
   if (SigninManager::IsWebBasedSigninFlowURL(site_instance->GetSiteURL())) {
-    SigninManager* signin_manager =
-        SigninManagerFactory::GetForProfile(profile);
-    if (signin_manager)
-      signin_manager->SetSigninProcess(site_instance->GetProcess()->GetID());
+    ChromeSigninClient* signin_client =
+        ChromeSigninClientFactory::GetForProfile(profile);
+    if (signin_client)
+      signin_client->SetSigninProcess(site_instance->GetProcess()->GetID());
     BrowserThread::PostTask(
         BrowserThread::IO,
         FROM_HERE,
@@ -1550,11 +1545,22 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
         command_line->AppendSwitch(switches::kInstantProcess);
 
 #if !defined(OS_CHROMEOS)
-      SigninManager* signin_manager =
-          SigninManagerFactory::GetForProfile(profile);
-      if (signin_manager && signin_manager->IsSigninProcess(process->GetID()))
+      ChromeSigninClient* signin_client =
+          ChromeSigninClientFactory::GetForProfile(profile);
+      if (signin_client && signin_client->IsSigninProcess(process->GetID()))
         command_line->AppendSwitch(switches::kSigninProcess);
 #endif
+    }
+
+    {
+      // Enable auto-reload if this session is in the field trial or the user
+      // explicitly enabled it.
+      std::string group =
+          base::FieldTrialList::FindFullName("AutoReloadExperiment");
+      if (group == "Enabled" ||
+          browser_command_line.HasSwitch(switches::kEnableOfflineAutoReload)) {
+        command_line->AppendSwitch(switches::kEnableOfflineAutoReload);
+      }
     }
 
     // Please keep this in alphabetical order.
@@ -1567,7 +1573,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       autofill::switches::kLocalHeuristicsOnlyForPasswordGeneration,
       extensions::switches::kAllowHTTPBackgroundPage,
       extensions::switches::kAllowLegacyExtensionManifests,
-      extensions::switches::kAllowScriptingGallery,
       extensions::switches::kEnableExperimentalExtensionApis,
       extensions::switches::kExtensionsOnChromeURLs,
       // TODO(victorhsieh): remove the following flag once we move PPAPI FileIO
@@ -1587,7 +1592,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kEnableNaClDebug,
       switches::kEnableNaClNonSfiMode,
       switches::kEnableNetBenchmarking,
-      switches::kEnableOfflineAutoReload,
       switches::kEnableStreamlinedHostedApps,
       switches::kEnableWatchdog,
       switches::kMemoryProfiling,
@@ -2404,9 +2408,15 @@ void ChromeContentBrowserClient::BrowserURLHandlerCreated(
   handler->AddHandlerPair(&WillHandleBrowserAboutURL,
                           BrowserURLHandler::null_handler());
 
+#if defined(OS_ANDROID)
+  // Handler to rewrite chrome://newtab on Android.
+  handler->AddHandlerPair(&chrome::android::HandleAndroidNewTabURL,
+                          BrowserURLHandler::null_handler());
+#else
   // Handler to rewrite chrome://newtab for InstantExtended.
   handler->AddHandlerPair(&chrome::HandleNewTabURLRewrite,
                           &chrome::HandleNewTabURLReverseRewrite);
+#endif
 
   // chrome: & friends.
   handler->AddHandlerPair(&HandleWebUI, &HandleWebUIReverse);
@@ -2557,6 +2567,10 @@ void ChromeContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
 
 void ChromeContentBrowserClient::GetURLRequestAutoMountHandlers(
     std::vector<fileapi::URLRequestAutoMountHandler>* handlers) {
+#if !defined(OS_ANDROID)
+  handlers->push_back(
+      base::Bind(MediaFileSystemBackend::AttemptAutoMountForURLRequest));
+#endif  // OS_ANDROID
 }
 
 void ChromeContentBrowserClient::GetAdditionalFileSystemBackends(

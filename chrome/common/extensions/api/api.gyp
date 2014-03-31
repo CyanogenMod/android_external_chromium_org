@@ -59,7 +59,6 @@
               'desktop_capture.json',
               'developer_private.idl',
               'dial.idl',
-              'dns.idl',
               'downloads.idl',
               'downloads_internal.idl',
               'echo_private.json',
@@ -157,6 +156,7 @@
           }],
           ['chromeos==1', {
             'schema_files': [
+              'accessibility_features.json',
               'diagnostics.idl',
               'file_browser_handler_internal.json',
               'first_run_private.json',

@@ -26,6 +26,9 @@ class MockQuadCuller : public QuadSink {
   virtual gfx::Rect UnoccludedContentRect(const gfx::Rect& content_rect,
                                           const gfx::Transform& draw_transform)
       OVERRIDE;
+  virtual gfx::Rect UnoccludedContributingSurfaceContentRect(
+      const gfx::Rect& content_rect,
+      const gfx::Transform& draw_transform) OVERRIDE;
   virtual bool MaybeAppend(scoped_ptr<DrawQuad> draw_quad) OVERRIDE;
   virtual void Append(scoped_ptr<DrawQuad> draw_quad) OVERRIDE;
 
@@ -34,8 +37,13 @@ class MockQuadCuller : public QuadSink {
     return *active_shared_quad_state_list_;
   }
 
-  void set_occluded_content_rect(const gfx::Rect& occluded) {
-    occluded_content_rect_ = occluded;
+  void set_occluded_target_rect(const gfx::Rect& occluded) {
+    occluded_target_rect_ = occluded;
+  }
+
+  void set_occluded_target_rect_for_contributing_surface(
+      const gfx::Rect& occluded) {
+    occluded_target_rect_for_contributing_surface_ = occluded;
   }
 
   void clear_lists() {
@@ -48,7 +56,8 @@ class MockQuadCuller : public QuadSink {
   QuadList quad_list_storage_;
   SharedQuadStateList* active_shared_quad_state_list_;
   SharedQuadStateList shared_quad_state_storage_;
-  gfx::Rect occluded_content_rect_;
+  gfx::Rect occluded_target_rect_;
+  gfx::Rect occluded_target_rect_for_contributing_surface_;
 };
 
 }  // namespace cc

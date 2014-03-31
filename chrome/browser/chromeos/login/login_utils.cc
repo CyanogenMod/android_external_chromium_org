@@ -47,6 +47,7 @@
 #include "chrome/browser/chromeos/login/saml/saml_offline_signin_limiter.h"
 #include "chrome/browser/chromeos/login/saml/saml_offline_signin_limiter_factory.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
+#include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
@@ -415,10 +416,9 @@ void LoginUtilsImpl::PrepareProfile(
   delegate_ = delegate;
   InitSessionRestoreStrategy();
 
-  base::FilePath profile_dir;
   if (DemoAppLauncher::IsDemoAppSession(user_context.username)) {
     g_browser_process->profile_manager()->CreateProfileAsync(
-        ProfileManager::GetGuestProfilePath(),
+        user_manager->GetUserProfileDir(user_context.username),
         base::Bind(&LoginUtilsImpl::OnOTRProfileCreated, AsWeakPtr(),
                    user_context.username),
         base::string16(), base::string16(), std::string());
@@ -712,9 +712,11 @@ void LoginUtilsImpl::CompleteOffTheRecordLogin(const GURL& start_url) {
   // flag. We keep only some of the arguments of this process.
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
   CommandLine command_line(browser_command_line.GetProgram());
-  std::string cmd_line_str = GetOffTheRecordCommandLine(start_url,
-                                                        browser_command_line,
-                                                        &command_line);
+  std::string cmd_line_str =
+      GetOffTheRecordCommandLine(start_url,
+                                 StartupUtils::IsOobeCompleted(),
+                                 browser_command_line,
+                                 &command_line);
 
   RestartChrome(cmd_line_str);
 }
@@ -919,6 +921,7 @@ void LoginUtilsImpl::AttemptRestart(Profile* profile) {
 // static
 void LoginUtils::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kFactoryResetRequested, false);
+  registry->RegisterBooleanPref(prefs::kRollbackRequested, false);
   registry->RegisterStringPref(prefs::kRLZBrand, std::string());
   registry->RegisterBooleanPref(prefs::kRLZDisabled, false);
 }

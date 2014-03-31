@@ -7,7 +7,7 @@
 #include "cc/output/software_frame_data.h"
 #include "content/browser/compositor/software_output_device_ozone.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/skia/include/core/SkBitmapDevice.h"
+#include "third_party/skia/include/core/SkSurface.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/gfx/ozone/surface_factory_ozone.h"
@@ -38,23 +38,19 @@ class MockSurfaceFactoryOzone : public gfx::SurfaceFactoryOzone {
   }
   virtual bool AttemptToResizeAcceleratedWidget(
       gfx::AcceleratedWidget w, const gfx::Rect& bounds) OVERRIDE {
-    device_ = skia::AdoptRef(new SkBitmapDevice(SkBitmap::kARGB_8888_Config,
-                                                bounds.width(),
-                                                bounds.height(),
-                                                true));
-    canvas_ = skia::AdoptRef(new SkCanvas(device_.get()));
+    surface_ = skia::AdoptRef(SkSurface::NewRaster(
+        SkImageInfo::MakeN32Premul(bounds.width(), bounds.height())));
     return true;
   }
   virtual SkCanvas* GetCanvasForWidget(gfx::AcceleratedWidget w) OVERRIDE {
-    return canvas_.get();
+    return surface_->getCanvas();
   }
   virtual scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider(
       gfx::AcceleratedWidget w) OVERRIDE {
     return scoped_ptr<gfx::VSyncProvider>();
   }
  private:
-  skia::RefPtr<SkBitmapDevice> device_;
-  skia::RefPtr<SkCanvas> canvas_;
+  skia::RefPtr<SkSurface> surface_;
 
   DISALLOW_COPY_AND_ASSIGN(MockSurfaceFactoryOzone);
 };
@@ -173,7 +169,9 @@ TEST_F(SoftwareOutputDeviceOzoneTest, CheckCorrectResizeBehavior) {
 }
 
 TEST_F(SoftwareOutputDeviceOzonePixelTest, CheckCopyToBitmap) {
-  const gfx::Rect area(6, 4);
+  const int width = 6;
+  const int height = 4;
+  const gfx::Rect area(width, height);
   output_device_->Resize(area.size());
   SkCanvas* canvas = output_device_->BeginPaint(area);
 
@@ -191,18 +189,19 @@ TEST_F(SoftwareOutputDeviceOzonePixelTest, CheckCopyToBitmap) {
 
   output_device_->EndPaint(&frame);
 
-  SkBitmap bitmap;
-  output_device_->CopyToBitmap(area, &bitmap);
+  SkPMColor pixels[width * height];
+  output_device_->CopyToPixels(area, pixels);
 
-  SkAutoLockPixels pixel_lock(bitmap);
   // Check that the copied bitmap contains the same pixel values as what we
   // painted.
+  const SkPMColor white = SkPreMultiplyColor(SK_ColorWHITE);
+  const SkPMColor black = SkPreMultiplyColor(SK_ColorBLACK);
   for (int i = 0; i < area.height(); ++i) {
     for (int j = 0; j < area.width(); ++j) {
       if (j < damage.width() && i < damage.height())
-        EXPECT_EQ(SK_ColorWHITE, bitmap.getColor(j, i));
+        EXPECT_EQ(white, pixels[i * area.width() + j]);
       else
-        EXPECT_EQ(SK_ColorBLACK, bitmap.getColor(j, i));
+        EXPECT_EQ(black, pixels[i * area.width() + j]);
     }
   }
 }

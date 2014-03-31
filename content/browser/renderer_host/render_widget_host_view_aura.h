@@ -29,8 +29,6 @@
 #include "content/common/cursors/webcursor.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "third_party/skia/include/core/SkRegion.h"
-#include "ui/aura/client/activation_change_observer.h"
-#include "ui/aura/client/activation_delegate.h"
 #include "ui/aura/client/cursor_client_observer.h"
 #include "ui/aura/client/focus_change_observer.h"
 #include "ui/aura/window_delegate.h"
@@ -39,8 +37,11 @@
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_observer.h"
 #include "ui/compositor/compositor_vsync_manager.h"
+#include "ui/compositor/layer_owner_delegate.h"
 #include "ui/gfx/display_observer.h"
 #include "ui/gfx/rect.h"
+#include "ui/wm/public/activation_change_observer.h"
+#include "ui/wm/public/activation_delegate.h"
 
 namespace aura {
 class WindowTracker;
@@ -77,6 +78,7 @@ namespace content {
 class LegacyRenderWidgetHostHWND;
 #endif
 
+class RenderFrameHostImpl;
 class RenderWidgetHostImpl;
 class RenderWidgetHostView;
 class ResizeLock;
@@ -86,6 +88,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
     : public RenderWidgetHostViewBase,
       public ui::CompositorObserver,
       public ui::CompositorVSyncManager::Observer,
+      public ui::LayerOwnerDelegate,
       public ui::TextInputClient,
       public gfx::DisplayObserver,
       public aura::WindowTreeHostObserver,
@@ -300,8 +303,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
-  virtual void DidRecreateLayer(ui::Layer *old_layer,
-                                ui::Layer *new_layer) OVERRIDE;
 
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
@@ -342,6 +343,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // windowed NPAPI plugins shouldn't paint in. Overwrites any previous cutout
   // rects.
   void UpdateConstrainedWindowRects(const std::vector<gfx::Rect>& rects);
+
+  // Updates the cursor clip region. Used for mouse locking.
+  void UpdateMouseLockRegion();
 #endif
 
   // Method to indicate if this instance is shutting down or closing.
@@ -380,11 +384,14 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnCompositingLockStateChanged(
       ui::Compositor* compositor) OVERRIDE;
 
-  // Overridden from ui::CompositorVSyncManager::Observer
+  // Overridden from ui::CompositorVSyncManager::Observer:
   virtual void OnUpdateVSyncParameters(base::TimeTicks timebase,
                                        base::TimeDelta interval) OVERRIDE;
-
   virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+
+  // Overridden from ui::LayerOwnerObserver:
+  virtual void OnLayerRecreated(ui::Layer* old_layer,
+                                ui::Layer* new_layer) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SetCompositionText);
@@ -577,6 +584,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Helper function to set keyboard focus to the main window.
   void SetKeyboardFocus();
+
+  RenderFrameHostImpl* GetFocusedFrame();
 
   // The model object.
   RenderWidgetHostImpl* host_;

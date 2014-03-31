@@ -1313,6 +1313,7 @@ class TestOpacityChangeLayerDelegate : public ContentLayerClient {
       test_layer_->SetOpacity(0.f);
   }
   virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
+  virtual bool FillsBoundsCompletely() const OVERRIDE { return false; }
 
  private:
   Layer* test_layer_;
@@ -2042,8 +2043,7 @@ class EvictionTestLayer : public Layer {
     texture_ = PrioritizedResource::Create(
         layer_tree_host()->contents_texture_manager());
     texture_->SetDimensions(gfx::Size(10, 10), RGBA_8888);
-    bitmap_.setConfig(SkBitmap::kARGB_8888_Config, 10, 10);
-    bitmap_.allocPixels();
+    bitmap_.allocN32Pixels(10, 10);
   }
 
   scoped_ptr<PrioritizedResource> texture_;
@@ -2595,6 +2595,7 @@ class LayerTreeHostTestLCDNotification : public LayerTreeHostTest {
       ++lcd_notification_count_;
       layer_->SetNeedsDisplay();
     }
+    virtual bool FillsBoundsCompletely() const OVERRIDE { return false; }
 
    private:
     Layer* layer_;
@@ -2834,6 +2835,8 @@ class LayerTreeHostTestChangeLayerPropertiesInPaintContents
 
     virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
 
+    virtual bool FillsBoundsCompletely() const OVERRIDE { return false; }
+
    private:
     Layer* layer_;
   };
@@ -3061,11 +3064,12 @@ class LayerTreeHostTestNumFramesPending : public LayerTreeHostTest {
   int frame_;
 };
 
-TEST_F(LayerTreeHostTestNumFramesPending, DelegatingRenderer) {
+// Flaky on all platforms: http://crbug.com/327498
+TEST_F(LayerTreeHostTestNumFramesPending, DISABLED_DelegatingRenderer) {
   RunTest(true, true, true);
 }
 
-TEST_F(LayerTreeHostTestNumFramesPending, GLRenderer) {
+TEST_F(LayerTreeHostTestNumFramesPending, DISABLED_GLRenderer) {
   RunTest(true, false, true);
 }
 

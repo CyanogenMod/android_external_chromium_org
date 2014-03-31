@@ -9,14 +9,14 @@
 #include "base/values.h"
 #include "chrome/browser/invalidation/fake_invalidation_service.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
-#include "chrome/browser/managed_mode/managed_user_signin_manager_wrapper.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
-#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/glue/data_type_manager_impl.h"
 #include "chrome/browser/sync/glue/sync_backend_host_mock.h"
+#include "chrome/browser/sync/managed_user_signin_manager_wrapper.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
@@ -96,9 +96,8 @@ class ProfileSyncServiceTest : public ::testing::Test {
   virtual void SetUp() OVERRIDE {
     TestingProfile::Builder builder;
 
-    builder.AddTestingFactory(
-        ProfileOAuth2TokenServiceFactory::GetInstance(),
-        FakeProfileOAuth2TokenServiceWrapper::BuildAutoIssuingTokenService);
+    builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
+                              BuildAutoIssuingFakeProfileOAuth2TokenService);
     invalidation::InvalidationServiceFactory::GetInstance()->
         RegisterTestingFactory(invalidation::FakeInvalidationService::Build);
 
@@ -129,7 +128,7 @@ class ProfileSyncServiceTest : public ::testing::Test {
     service_.reset(new ProfileSyncService(
         components_factory_,
         profile_.get(),
-        new ManagedUserSigninManagerWrapper(signin),
+        new ManagedUserSigninManagerWrapper(profile_.get(), signin),
         oauth2_token_service,
         behavior));
   }

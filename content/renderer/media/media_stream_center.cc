@@ -10,11 +10,15 @@
 #include "base/logging.h"
 #include "content/common/media/media_stream_messages.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/renderer/media_stream_audio_sink.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/media/media_stream.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_source.h"
+#include "content/renderer/media/media_stream_video_source.h"
 #include "content/renderer/media/media_stream_video_track.h"
+#include "content/renderer/media/webrtc_local_audio_source_provider.h"
+#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
 #include "third_party/WebKit/public/platform/WebMediaStream.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenterClient.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
@@ -46,17 +50,19 @@ void CreateNativeVideoMediaStreamTrack(
   DCHECK(track.extraData() == NULL);
   blink::WebMediaStreamSource source = track.source();
   DCHECK_EQ(source.type(), blink::WebMediaStreamSource::TypeVideo);
-
-  if (!source.extraData()) {
+  MediaStreamVideoSource* native_source =
+      MediaStreamVideoSource::GetVideoSource(source);
+  if (!native_source) {
     // TODO(perkj): Implement support for sources from
     // remote MediaStreams.
     NOTIMPLEMENTED();
     return;
   }
-  MediaStreamTrack* native_track = new MediaStreamVideoTrack(factory);
-  native_track->SetEnabled(track.isEnabled());
   blink::WebMediaStreamTrack writable_track(track);
-  writable_track.setExtraData(native_track);
+  writable_track.setExtraData(
+      new MediaStreamVideoTrack(native_source, source.constraints(),
+                                MediaStreamVideoSource::ConstraintsCallback(),
+                                track.isEnabled(), factory));
 }
 
 void CreateNativeMediaStreamTrack(const blink::WebMediaStreamTrack& track,
@@ -130,6 +136,27 @@ bool MediaStreamCenter::didStopMediaStreamTrack(
 
   extra_data->StopSource();
   return true;
+}
+
+blink::WebAudioSourceProvider*
+MediaStreamCenter::createWebAudioSourceFromMediaStreamTrack(
+    const blink::WebMediaStreamTrack& track) {
+  DVLOG(1) << "MediaStreamCenter::createWebAudioSourceFromMediaStreamTrack";
+  MediaStreamTrack* media_stream_track =
+      static_cast<MediaStreamTrack*>(track.extraData());
+  // Only local audio track is supported now.
+  // TODO(xians): Support remote audio track.
+  if (!media_stream_track || !media_stream_track->is_local_track ()) {
+    NOTIMPLEMENTED();
+    return NULL;
+  }
+
+  blink::WebMediaStreamSource source = track.source();
+  DCHECK_EQ(source.type(), blink::WebMediaStreamSource::TypeAudio);
+  WebRtcLocalAudioSourceProvider* source_provider =
+      new WebRtcLocalAudioSourceProvider();
+  MediaStreamAudioSink::AddToAudioTrack(source_provider, track);
+  return source_provider;
 }
 
 void MediaStreamCenter::didStopLocalMediaStream(

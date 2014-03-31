@@ -220,6 +220,13 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   virtual void EnsureBackbuffer() OVERRIDE;
   void EnforceMemoryPolicy();
 
+  void ScheduleOverlays(DrawingFrame* frame);
+
+  typedef ScopedPtrVector<ResourceProvider::ScopedReadLockGL>
+      OverlayResourceLockList;
+  OverlayResourceLockList pending_overlay_resources_;
+  OverlayResourceLockList in_use_overlay_resources_;
+
   RendererCapabilitiesImpl capabilities_;
 
   unsigned offscreen_framebuffer_id_;
@@ -286,10 +293,10 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   // Video shaders.
   typedef ProgramBinding<VertexShaderVideoTransform, FragmentShaderRGBATex>
       VideoStreamTextureProgram;
-  typedef ProgramBinding<VertexShaderPosTexYUVStretch, FragmentShaderYUVVideo>
-      VideoYUVProgram;
-  typedef ProgramBinding<VertexShaderPosTexYUVStretch, FragmentShaderYUVAVideo>
-      VideoYUVAProgram;
+  typedef ProgramBinding<VertexShaderPosTexYUVStretchOffset,
+                         FragmentShaderYUVVideo> VideoYUVProgram;
+  typedef ProgramBinding<VertexShaderPosTexYUVStretchOffset,
+                         FragmentShaderYUVAVideo> VideoYUVAProgram;
 
   // Special purpose / effects shaders.
   typedef ProgramBinding<VertexShaderPos, FragmentShaderColor>

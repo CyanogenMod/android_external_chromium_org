@@ -40,6 +40,7 @@
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/common/mailbox_holder.h"
 #include "media/audio/null_audio_sink.h"
+#include "media/base/audio_hardware_config.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/filter_collection.h"
 #include "media/base/limits.h"
@@ -165,10 +166,11 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       supports_save_(true),
       starting_(false),
       chunk_demuxer_(NULL),
-      painter_(
-          BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::InvalidateOnMainThread),
+      compositor_(  // Threaded compositing isn't enabled universally yet.
+          (RenderThreadImpl::current()->compositor_message_loop_proxy()
+               ? RenderThreadImpl::current()->compositor_message_loop_proxy()
+               : base::MessageLoopProxy::current()),
           BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnNaturalSizeChange)),
-      video_frame_provider_client_(NULL),
       text_track_index_(0),
       web_cdm_(NULL) {
   media_log_->AddEvent(
@@ -198,7 +200,6 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
 }
 
 WebMediaPlayerImpl::~WebMediaPlayerImpl() {
-  SetVideoFrameProviderClient(NULL);
   client_->setWebLayer(NULL);
 
   DCHECK(main_loop_->BelongsToCurrentThread());
@@ -436,19 +437,19 @@ void WebMediaPlayerImpl::setPreload(WebMediaPlayer::Preload preload) {
 bool WebMediaPlayerImpl::hasVideo() const {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
-  return pipeline_.HasVideo();
+  return pipeline_metadata_.has_video;
 }
 
 bool WebMediaPlayerImpl::hasAudio() const {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
-  return pipeline_.HasAudio();
+  return pipeline_metadata_.has_audio;
 }
 
 blink::WebSize WebMediaPlayerImpl::naturalSize() const {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
-  return blink::WebSize(natural_size_);
+  return blink::WebSize(pipeline_metadata_.natural_size);
 }
 
 bool WebMediaPlayerImpl::paused() const {
@@ -533,9 +534,14 @@ void WebMediaPlayerImpl::paint(WebCanvas* canvas,
         frame_->view()->isAcceleratedCompositingActive());
   }
 
+  // TODO(scherkus): Clarify paint() API contract to better understand when and
+  // why it's being called. For example, today paint() is called when:
+  //   - We haven't reached HAVE_CURRENT_DATA and need to paint black
+  //   - We're painting to a canvas
+  // See http://crbug.com/341225 http://crbug.com/342621 for details.
+  scoped_refptr<media::VideoFrame> video_frame = compositor_.GetCurrentFrame();
 
   TRACE_EVENT0("media", "WebMediaPlayerImpl:paint");
-  scoped_refptr<media::VideoFrame> video_frame = painter_.GetCurrentFrame(true);
   gfx::Rect gfx_rect(rect);
   skcanvas_video_renderer_.Paint(video_frame.get(), canvas, gfx_rect, alpha);
 }
@@ -568,9 +574,11 @@ unsigned WebMediaPlayerImpl::droppedFrameCount() const {
 
   media::PipelineStatistics stats = pipeline_.GetStatistics();
 
-  unsigned frames_dropped = stats.video_frames_dropped +
-      const_cast<media::VideoFramePainter*>(&painter_)
-          ->GetFramesDroppedBeforePaint();
+  unsigned frames_dropped = stats.video_frames_dropped;
+
+  frames_dropped += const_cast<VideoFrameCompositor&>(compositor_)
+                        .GetFramesDroppedBeforeCompositorWasNotified();
+
   DCHECK_LE(frames_dropped, stats.video_frames_decoded);
   return frames_dropped;
 }
@@ -589,33 +597,6 @@ unsigned WebMediaPlayerImpl::videoDecodedByteCount() const {
   return stats.video_bytes_decoded;
 }
 
-void WebMediaPlayerImpl::SetVideoFrameProviderClient(
-    cc::VideoFrameProvider::Client* client) {
-  // This is called from both the main renderer thread and the compositor
-  // thread (when the main thread is blocked).
-  if (video_frame_provider_client_)
-    video_frame_provider_client_->StopUsingProvider();
-  video_frame_provider_client_ = client;
-}
-
-scoped_refptr<media::VideoFrame> WebMediaPlayerImpl::GetCurrentFrame() {
-  scoped_refptr<media::VideoFrame> current_frame =
-      painter_.GetCurrentFrame(true);
-  TRACE_EVENT_ASYNC_BEGIN0(
-      "media", "WebMediaPlayerImpl:compositing", this);
-  return current_frame;
-}
-
-void WebMediaPlayerImpl::PutCurrentFrame(
-    const scoped_refptr<media::VideoFrame>& frame) {
-  if (!accelerated_compositing_reported_) {
-    accelerated_compositing_reported_ = true;
-    DCHECK(frame_->view()->isAcceleratedCompositingActive());
-    UMA_HISTOGRAM_BOOLEAN("Media.AcceleratedCompositingActive", true);
-  }
-  TRACE_EVENT_ASYNC_END0("media", "WebMediaPlayerImpl:compositing", this);
-}
-
 bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
     blink::WebGraphicsContext3D* web_graphics_context,
     unsigned int texture,
@@ -624,8 +605,7 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
     unsigned int type,
     bool premultiply_alpha,
     bool flip_y) {
-  scoped_refptr<media::VideoFrame> video_frame =
-      painter_.GetCurrentFrame(false);
+  scoped_refptr<media::VideoFrame> video_frame = compositor_.GetCurrentFrame();
 
   TRACE_EVENT0("media", "WebMediaPlayerImpl:copyVideoTextureToPlatformTexture");
 
@@ -680,9 +660,6 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
   web_graphics_context->bindTexture(GL_TEXTURE_2D, texture);
 
   web_graphics_context->deleteTexture(source_texture);
-
-  // The flush() operation is not necessary here. It is kept since the
-  // performance will be better when it is added than not.
   web_graphics_context->flush();
   return true;
 }
@@ -768,6 +745,17 @@ WebMediaPlayerImpl::generateKeyRequest(const WebString& key_system,
   return e;
 }
 
+// Guess the type of |init_data|. This is only used to handle some corner cases
+// so we keep it as simple as possible without breaking major use cases.
+static std::string GuessInitDataType(const unsigned char* init_data,
+                                     unsigned init_data_length) {
+  // Most WebM files use KeyId of 16 bytes. MP4 init data are always >16 bytes.
+  if (init_data_length == 16)
+    return "video/webm";
+
+  return "video/mp4";
+}
+
 WebMediaPlayer::MediaKeyException
 WebMediaPlayerImpl::GenerateKeyRequestInternal(const std::string& key_system,
                                                const unsigned char* init_data,
@@ -804,11 +792,15 @@ WebMediaPlayerImpl::GenerateKeyRequestInternal(const std::string& key_system,
     return WebMediaPlayer::MediaKeyExceptionInvalidPlayerState;
   }
 
+  std::string init_data_type = init_data_type_;
+  if (init_data_type.empty())
+    init_data_type = GuessInitDataType(init_data, init_data_length);
+
   // TODO(xhwang): We assume all streams are from the same container (thus have
   // the same "type") for now. In the future, the "type" should be passed down
   // from the application.
   if (!proxy_decryptor_->GenerateKeyRequest(
-           init_data_type_, init_data, init_data_length)) {
+           init_data_type, init_data, init_data_length)) {
     current_key_system_.clear();
     return WebMediaPlayer::MediaKeyExceptionKeySystemNotSupported;
   }
@@ -912,7 +904,6 @@ void WebMediaPlayerImpl::InvalidateOnMainThread() {
   DCHECK(main_loop_->BelongsToCurrentThread());
   TRACE_EVENT0("media", "WebMediaPlayerImpl::InvalidateOnMainThread");
 
-  painter_.DidFinishInvalidating();
   client_->repaint();
 }
 
@@ -968,38 +959,39 @@ void WebMediaPlayerImpl::OnPipelineError(PipelineStatus error) {
   InvalidateOnMainThread();
 }
 
-void WebMediaPlayerImpl::OnPipelineBufferingState(
-    media::Pipeline::BufferingState buffering_state) {
-  DVLOG(1) << "OnPipelineBufferingState(" << buffering_state << ")";
+void WebMediaPlayerImpl::OnPipelineMetadata(
+    media::PipelineMetadata metadata) {
+  DVLOG(1) << "OnPipelineMetadata";
 
-  switch (buffering_state) {
-    case media::Pipeline::kHaveMetadata:
-      // TODO(scherkus): Would be better to have a metadata changed callback
-      // that contained the size information as well whether audio/video is
-      // present. Doing so would let us remove more methods off Pipeline.
-      natural_size_ = pipeline_.GetInitialNaturalSize();
+  pipeline_metadata_ = metadata;
 
-      SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
+  SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
 
-      if (hasVideo() && client_->needsWebLayerForVideo()) {
-        DCHECK(!video_weblayer_);
-        video_weblayer_.reset(
-            new webkit::WebLayerImpl(cc::VideoLayer::Create(this)));
-        client_->setWebLayer(video_weblayer_.get());
-      }
-      break;
-    case media::Pipeline::kPrerollCompleted:
-      // Only transition to ReadyStateHaveEnoughData if we don't have
-      // any pending seeks because the transition can cause Blink to
-      // report that the most recent seek has completed.
-      if (!pending_seek_)
-        SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
-      break;
+  if (hasVideo()) {
+    DCHECK(!video_weblayer_);
+    video_weblayer_.reset(new webkit::WebLayerImpl(
+        cc::VideoLayer::Create(compositor_.GetVideoFrameProvider())));
+    client_->setWebLayer(video_weblayer_.get());
   }
 
   // TODO(scherkus): This should be handled by HTMLMediaElement and controls
   // should know when to invalidate themselves http://crbug.com/337015
   InvalidateOnMainThread();
+}
+
+void WebMediaPlayerImpl::OnPipelinePrerollCompleted() {
+  DVLOG(1) << "OnPipelinePrerollCompleted";
+
+  // Only transition to ReadyStateHaveEnoughData if we don't have
+  // any pending seeks because the transition can cause Blink to
+  // report that the most recent seek has completed.
+  if (!pending_seek_) {
+    SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
+
+    // TODO(scherkus): This should be handled by HTMLMediaElement and controls
+    // should know when to invalidate themselves http://crbug.com/337015
+    InvalidateOnMainThread();
+  }
 }
 
 void WebMediaPlayerImpl::OnDemuxerOpened() {
@@ -1157,7 +1149,8 @@ void WebMediaPlayerImpl::StartPipeline() {
     chunk_demuxer_ = new media::ChunkDemuxer(
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnDemuxerOpened),
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnNeedKey),
-        base::Bind(&LogMediaSourceError, media_log_));
+        base::Bind(&LogMediaSourceError, media_log_),
+        false);
     demuxer_.reset(chunk_demuxer_);
   }
 
@@ -1173,11 +1166,12 @@ void WebMediaPlayerImpl::StartPipeline() {
   audio_decoders.push_back(new media::FFmpegAudioDecoder(media_loop_));
   audio_decoders.push_back(new media::OpusAudioDecoder(media_loop_));
 
-  scoped_ptr<media::AudioRenderer> audio_renderer(
-      new media::AudioRendererImpl(media_loop_,
-                                   audio_source_provider_.get(),
-                                   audio_decoders.Pass(),
-                                   set_decryptor_ready_cb));
+  scoped_ptr<media::AudioRenderer> audio_renderer(new media::AudioRendererImpl(
+      media_loop_,
+      audio_source_provider_.get(),
+      audio_decoders.Pass(),
+      set_decryptor_ready_cb,
+      RenderThreadImpl::current()->GetAudioHardwareConfig()));
   filter_collection->SetAudioRenderer(audio_renderer.Pass());
 
   // Create our video decoders and renderer.
@@ -1220,7 +1214,8 @@ void WebMediaPlayerImpl::StartPipeline() {
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineEnded),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineError),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineSeek),
-      BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineBufferingState),
+      BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineMetadata),
+      BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelinePrerollCompleted),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnDurationChange));
 }
 
@@ -1282,17 +1277,14 @@ void WebMediaPlayerImpl::OnNaturalSizeChange(gfx::Size size) {
 
   media_log_->AddEvent(
       media_log_->CreateVideoSizeSetEvent(size.width(), size.height()));
-  natural_size_ = size;
+  pipeline_metadata_.natural_size = size;
 
   client_->sizeChanged();
 }
 
 void WebMediaPlayerImpl::FrameReady(
     const scoped_refptr<media::VideoFrame>& frame) {
-  // TODO(scherkus): Today we always invalidate on the main thread even when
-  // compositing is available, which is less efficient and involves more
-  // thread hops. Refer to http://crbug.com/335345 for details.
-  painter_.UpdateCurrentFrame(frame);
+  compositor_.UpdateCurrentFrame(frame);
 }
 
 void WebMediaPlayerImpl::SetDecryptorReadyCB(

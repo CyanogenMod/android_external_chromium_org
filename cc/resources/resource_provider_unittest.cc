@@ -825,6 +825,56 @@ TEST_P(ResourceProviderTest, TransferGLResources) {
   EXPECT_FALSE(returned_to_child[3].lost);
 }
 
+TEST_P(ResourceProviderTest, ReadLockCountStopsReturnToChildOrDelete) {
+  if (GetParam() != ResourceProvider::GLTexture)
+    return;
+  gfx::Size size(1, 1);
+  ResourceFormat format = RGBA_8888;
+
+  ResourceProvider::ResourceId id1 = child_resource_provider_->CreateResource(
+      size, GL_CLAMP_TO_EDGE, ResourceProvider::TextureUsageAny, format);
+  uint8_t data1[4] = {1, 2, 3, 4};
+  gfx::Rect rect(size);
+  child_resource_provider_->SetPixels(id1, data1, rect, rect, gfx::Vector2d());
+
+  ReturnedResourceArray returned_to_child;
+  int child_id =
+      resource_provider_->CreateChild(GetReturnCallback(&returned_to_child));
+  {
+    // Transfer some resources to the parent.
+    ResourceProvider::ResourceIdArray resource_ids_to_transfer;
+    resource_ids_to_transfer.push_back(id1);
+    TransferableResourceArray list;
+    child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
+                                                  &list);
+    ASSERT_EQ(1u, list.size());
+    EXPECT_TRUE(child_resource_provider_->InUseByConsumer(id1));
+
+    resource_provider_->ReceiveFromChild(child_id, list);
+
+    ResourceProvider::ScopedReadLockGL lock(resource_provider_.get(),
+                                            list[0].id);
+
+    resource_provider_->DeclareUsedResourcesFromChild(
+        child_id, ResourceProvider::ResourceIdArray());
+    EXPECT_EQ(0u, returned_to_child.size());
+  }
+
+  EXPECT_EQ(1u, returned_to_child.size());
+  child_resource_provider_->ReceiveReturnsFromParent(returned_to_child);
+
+  {
+    ResourceProvider::ScopedReadLockGL lock(child_resource_provider_.get(),
+                                            id1);
+    child_resource_provider_->DeleteResource(id1);
+    EXPECT_EQ(1u, child_resource_provider_->num_resources());
+    EXPECT_TRUE(child_resource_provider_->InUseByConsumer(id1));
+  }
+
+  EXPECT_EQ(0u, child_resource_provider_->num_resources());
+  resource_provider_->DestroyChild(child_id);
+}
+
 TEST_P(ResourceProviderTest, TransferSoftwareResources) {
   if (GetParam() != ResourceProvider::Bitmap)
     return;
@@ -848,11 +898,9 @@ TEST_P(ResourceProviderTest, TransferSoftwareResources) {
   ResourceProvider::ResourceId id3 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TextureUsageAny, format);
   uint8_t data3[4] = { 6, 7, 8, 9 };
-  SkBitmap bitmap3;
-  bitmap3.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height());
-  bitmap3.setPixels(data3);
+  SkImageInfo info = SkImageInfo::MakeN32Premul(size.width(), size.height());
   SkCanvas* raster_canvas = child_resource_provider_->MapImageRasterBuffer(id3);
-  raster_canvas->writePixels(bitmap3, 0, 0);
+  raster_canvas->writePixels(info, data3, info.minRowBytes(), 0, 0);
   child_resource_provider_->UnmapImageRasterBuffer(id3);
 
   scoped_ptr<base::SharedMemory> shared_memory(new base::SharedMemory());
@@ -962,7 +1010,7 @@ TEST_P(ResourceProviderTest, TransferSoftwareResources) {
     expected_ids.insert(id3);
     expected_ids.insert(id4);
     std::set<ResourceProvider::ResourceId> returned_ids;
-    for(unsigned i = 0; i < 4; i++)
+    for (unsigned i = 0; i < 4; i++)
       returned_ids.insert(returned_to_child[i].id);
     EXPECT_EQ(expected_ids, returned_ids);
     EXPECT_FALSE(returned_to_child[0].lost);
@@ -1042,7 +1090,7 @@ TEST_P(ResourceProviderTest, TransferSoftwareResources) {
   expected_ids.insert(id3);
   expected_ids.insert(id4);
   std::set<ResourceProvider::ResourceId> returned_ids;
-  for(unsigned i = 0; i < 4; i++)
+  for (unsigned i = 0; i < 4; i++)
     returned_ids.insert(returned_to_child[i].id);
   EXPECT_EQ(expected_ids, returned_ids);
   EXPECT_FALSE(returned_to_child[0].lost);
@@ -2844,8 +2892,7 @@ TEST_P(ResourceProviderTest, PixelBuffer_Bitmap) {
   resource_provider->AcquirePixelRasterBuffer(id);
 
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height());
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(size.width(), size.height());
   *(bitmap.getAddr32(0, 0)) = kBadBeef;
   SkCanvas* canvas = resource_provider->MapPixelRasterBuffer(id);
   canvas->writePixels(bitmap, 0, 0);
@@ -3064,8 +3111,7 @@ TEST_P(ResourceProviderTest, Image_Bitmap) {
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TextureUsageAny, format);
 
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height());
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(size.width(), size.height());
   *(bitmap.getAddr32(0, 0)) = kBadBeef;
   SkCanvas* canvas = resource_provider->MapImageRasterBuffer(id);
   ASSERT_TRUE(!!canvas);

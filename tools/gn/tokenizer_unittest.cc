@@ -99,8 +99,10 @@ TEST(Tokenizer, Operator) {
     { Token::BANG, "!" },
     { Token::BOOLEAN_OR, "||" },
     { Token::BOOLEAN_AND, "&&" },
+    { Token::DOT, "." },
+    { Token::COMMA, "," },
   };
-  EXPECT_TRUE(CheckTokenizer("- + = += -= != ==  < > <= >= ! || &&",
+  EXPECT_TRUE(CheckTokenizer("- + = += -= != ==  < > <= >= ! || && . ,",
               operators));
 }
 
@@ -129,17 +131,6 @@ TEST(Tokenizer, FunctionCall) {
     { Token::RIGHT_BRACE, "}" },
   };
   EXPECT_TRUE(CheckTokenizer("fun(\"foo\") {\nfoo = 12}", fn));
-}
-
-TEST(Tokenizer, StringUnescaping) {
-  InputFile input(SourceFile("/test"));
-  input.SetContents("\"asd\\\"f\" \"\"");
-  Err err;
-  std::vector<Token> results = Tokenizer::Tokenize(&input, &err);
-
-  ASSERT_EQ(2u, results.size());
-  EXPECT_EQ("asd\"f", results[0].StringValue());
-  EXPECT_EQ("", results[1].StringValue());
 }
 
 TEST(Tokenizer, Locations) {

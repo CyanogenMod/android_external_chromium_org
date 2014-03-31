@@ -71,6 +71,7 @@ LOCAL_SRC_FILES := \
 	content/child/quota_dispatcher.cc \
 	content/child/quota_message_filter.cc \
 	content/child/request_extra_data.cc \
+	content/child/request_info.cc \
 	content/child/resource_dispatcher.cc \
 	content/child/runtime_features.cc \
 	content/child/scoped_child_process_reference.cc \
@@ -83,6 +84,7 @@ LOCAL_SRC_FILES := \
 	content/child/simple_webmimeregistry_impl.cc \
 	content/child/site_isolation_policy.cc \
 	content/child/socket_stream_dispatcher.cc \
+	content/child/touch_fling_gesture_curve.cc \
 	content/child/thread_safe_sender.cc \
 	content/child/web_database_observer_impl.cc \
 	content/child/web_discardable_memory_impl.cc \
@@ -98,8 +100,6 @@ LOCAL_SRC_FILES := \
 	content/child/webcrypto/webcrypto_util.cc \
 	content/child/webfallbackthemeengine_impl.cc \
 	content/child/webfileutilities_impl.cc \
-	content/child/webkitplatformsupport_child_impl.cc \
-	content/child/webkitplatformsupport_impl.cc \
 	content/child/webmessageportchannel_impl.cc \
 	content/child/websocket_bridge.cc \
 	content/child/websocket_dispatcher.cc \
@@ -168,9 +168,7 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -184,6 +182,7 @@ MY_DEFS_Debug := \
 	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -309,9 +308,7 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -325,6 +322,7 @@ MY_DEFS_Release := \
 	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \

@@ -108,19 +108,6 @@ class PreferenceAPI : public PreferenceAPIBase,
   // EventRouter::Observer implementation.
   virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;
 
-  // Loads the preferences controlled by the specified extension from their
-  // dictionary and sets them in the |value_map|.
-  static void LoadExtensionControlledPrefs(ExtensionPrefs* prefs,
-                                           ExtensionPrefValueMap* value_map,
-                                           const std::string& extension_id,
-                                           ExtensionPrefsScope scope);
-
-  // Store extension controlled preference values in the |value_map|,
-  // which then informs the subscribers (ExtensionPrefStores) about the winning
-  // values.
-  static void InitExtensionControlledPrefs(ExtensionPrefs* prefs,
-                                           ExtensionPrefValueMap* value_map);
-
  private:
   friend class BrowserContextKeyedAPIFactory<PreferenceAPI>;
 
@@ -177,6 +164,8 @@ class PrefTransformerInterface {
 // classes.
 class PreferenceFunction : public ChromeSyncExtensionFunction {
  protected:
+  enum PermissionType { PERMISSION_TYPE_READ, PERMISSION_TYPE_WRITE };
+
   virtual ~PreferenceFunction();
 
   // Given an |extension_pref_key|, provides its |browser_pref_key| from the
@@ -185,6 +174,7 @@ class PreferenceFunction : public ChromeSyncExtensionFunction {
   // modify that pref. Sets |error_| if the extension doesn't have the needed
   // permission.
   bool ValidateBrowserPref(const std::string& extension_pref_key,
+                           PermissionType permission_type,
                            std::string* browser_pref_key);
 };
 

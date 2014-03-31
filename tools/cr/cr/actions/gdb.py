@@ -17,17 +17,17 @@ class GdbDebugger(cr.Debugger):
     return (cr.LinuxPlatform.GetInstance().is_active and
             self.DETECTED.Find('CR_GDB'))
 
-  def Invoke(self, context, targets, arguments):
+  def Invoke(self, targets, arguments):
     for target in targets:
-      cr.Host.Execute(
-          target,
-          '{CR_GDB}', '--eval-command=run', '--args',
-          '{CR_BINARY}',
-          '{CR_RUN_ARGUMENTS}',
-          *arguments
+      with target:
+        cr.Host.Execute(
+            '{CR_GDB}', '--eval-command=run', '--args',
+            '{CR_BINARY}',
+            '{CR_RUN_ARGUMENTS}',
+            *arguments
       )
 
-  def Attach(self, context, targets, arguments):
+  def Attach(self, targets, arguments):
     raise NotImplementedError('Attach not currently supported for gdb.')
 
   @classmethod

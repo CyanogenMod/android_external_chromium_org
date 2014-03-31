@@ -6,9 +6,9 @@
 #include "mojo/public/bindings/remote_ptr.h"
 #include "mojo/public/bindings/tests/sample_import.mojom.h"
 #include "mojo/public/bindings/tests/sample_interfaces.mojom.h"
-#include "mojo/public/environment/environment.h"
+#include "mojo/public/cpp/environment/environment.h"
+#include "mojo/public/cpp/utility/run_loop.h"
 #include "mojo/public/tests/test_utils.h"
-#include "mojo/public/utility/run_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace mojo {
@@ -86,7 +86,7 @@ class RequestResponseTest : public testing::Test {
 TEST_F(RequestResponseTest, EchoString) {
   InterfacePipe<sample::Provider> pipe;
   ProviderImpl provider_impl(pipe.handle_to_peer.Pass());
-  RemotePtr<sample::Provider> provider(pipe.handle_to_self.Pass());
+  RemotePtr<sample::Provider> provider(pipe.handle_to_self.Pass(), NULL);
 
   std::string buf;
   {
@@ -102,7 +102,7 @@ TEST_F(RequestResponseTest, EchoString) {
 TEST_F(RequestResponseTest, EchoStrings) {
   InterfacePipe<sample::Provider> pipe;
   ProviderImpl provider_impl(pipe.handle_to_peer.Pass());
-  RemotePtr<sample::Provider> provider(pipe.handle_to_self.Pass());
+  RemotePtr<sample::Provider> provider(pipe.handle_to_self.Pass(), NULL);
 
   std::string buf;
   {
@@ -118,7 +118,7 @@ TEST_F(RequestResponseTest, EchoStrings) {
 TEST_F(RequestResponseTest, EchoMessagePipeHandle) {
   InterfacePipe<sample::Provider> pipe;
   ProviderImpl provider_impl(pipe.handle_to_peer.Pass());
-  RemotePtr<sample::Provider> provider(pipe.handle_to_self.Pass());
+  RemotePtr<sample::Provider> provider(pipe.handle_to_self.Pass(), NULL);
 
   MessagePipe pipe2;
   {

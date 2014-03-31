@@ -43,9 +43,41 @@ bool g_accessibility_keyboard_enabled = false;
 
 base::LazyInstance<GURL> g_override_content_url = LAZY_INSTANCE_INITIALIZER;
 
+// The ratio between the height of the keyboard and the screen when using the
+// usability keyboard.
+const float kUsabilityKeyboardHeightRatio = 1.0f;
+
+// The default ratio between the height of the keyboard and the screen.
+const float kDefaultKeyboardHeightRatio = 0.41f;
+
+// The ratio between the height of the keyboard and the screen when using the
+// accessibility keyboard.
+const float kAccessibilityKeyboardHeightRatio = 0.3f;
+
+float GetKeyboardHeightRatio(){
+  if (keyboard::IsKeyboardUsabilityExperimentEnabled()) {
+    return kUsabilityKeyboardHeightRatio;
+  } else if (keyboard::GetAccessibilityKeyboardEnabled()) {
+    return kAccessibilityKeyboardHeightRatio;
+  }
+  return kDefaultKeyboardHeightRatio;
+}
+
+bool g_touch_keyboard_enabled = false;
+
 }  // namespace
 
 namespace keyboard {
+
+gfx::Rect DefaultKeyboardBoundsFromWindowBounds(
+    const gfx::Rect& window_bounds) {
+  const float kKeyboardHeightRatio = GetKeyboardHeightRatio();
+  return gfx::Rect(
+      window_bounds.x(),
+      window_bounds.y() + window_bounds.height() * (1 - kKeyboardHeightRatio),
+      window_bounds.width(),
+      window_bounds.height() * kKeyboardHeightRatio);
+}
 
 void SetAccessibilityKeyboardEnabled(bool enabled) {
   g_accessibility_keyboard_enabled = enabled;
@@ -53,6 +85,14 @@ void SetAccessibilityKeyboardEnabled(bool enabled) {
 
 bool GetAccessibilityKeyboardEnabled() {
   return g_accessibility_keyboard_enabled;
+}
+
+void SetTouchKeyboardEnabled(bool enabled) {
+  g_touch_keyboard_enabled = enabled;
+}
+
+bool GetTouchKeyboardEnabled() {
+  return g_touch_keyboard_enabled;
 }
 
 std::string GetKeyboardLayout() {
@@ -65,12 +105,22 @@ bool IsKeyboardEnabled() {
   return g_accessibility_keyboard_enabled ||
       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableVirtualKeyboard) ||
-      IsKeyboardUsabilityExperimentEnabled();
+      IsKeyboardUsabilityExperimentEnabled() ||
+      g_touch_keyboard_enabled;
 }
 
 bool IsKeyboardUsabilityExperimentEnabled() {
   return CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kKeyboardUsabilityExperiment);
+}
+
+bool IsInputViewEnabled() {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableInputView))
+    return true;
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableInputView))
+    return false;
+  // Default value if no command line flags specified.
+  return false;
 }
 
 bool InsertText(const base::string16& text, aura::Window* root_window) {
@@ -221,29 +271,6 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
   // necessary to have a custom path for the extension path, so the resource
   // map cannot be used directly.
   static const GritResourceMap kKeyboardResources[] = {
-    {"keyboard/api_adapter.js", IDR_KEYBOARD_API_ADAPTER_JS},
-    {"keyboard/constants.js", IDR_KEYBOARD_CONSTANTS_JS},
-    {"keyboard/elements/kb-altkey.html", IDR_KEYBOARD_ELEMENTS_ALTKEY},
-    {"keyboard/elements/kb-altkey-container.html",
-        IDR_KEYBOARD_ELEMENTS_ALTKEY_CONTAINER},
-    {"keyboard/elements/kb-altkey-data.html",
-        IDR_KEYBOARD_ELEMENTS_ALTKEY_DATA},
-    {"keyboard/elements/kb-altkey-set.html", IDR_KEYBOARD_ELEMENTS_ALTKEY_SET},
-    {"keyboard/elements/kb-key.html", IDR_KEYBOARD_ELEMENTS_KEY},
-    {"keyboard/elements/kb-key-base.html", IDR_KEYBOARD_ELEMENTS_KEY_BASE},
-    {"keyboard/elements/kb-key-codes.html", IDR_KEYBOARD_ELEMENTS_KEY_CODES},
-    {"keyboard/elements/kb-key-import.html",
-        IDR_KEYBOARD_ELEMENTS_KEY_IMPORT},
-    {"keyboard/elements/kb-key-sequence.html",
-        IDR_KEYBOARD_ELEMENTS_KEY_SEQUENCE},
-    {"keyboard/elements/kb-keyboard.html", IDR_KEYBOARD_ELEMENTS_KEYBOARD},
-    {"keyboard/elements/kb-keyset.html", IDR_KEYBOARD_ELEMENTS_KEYSET},
-    {"keyboard/elements/kb-modifier-key.html",
-        IDR_KEYBOARD_ELEMENTS_MODIFIER_KEY},
-    {"keyboard/elements/kb-options-menu.html",
-        IDR_KEYBOARD_ELEMENTS_OPTIONS_MENU},
-    {"keyboard/elements/kb-row.html", IDR_KEYBOARD_ELEMENTS_ROW},
-    {"keyboard/elements/kb-shift-key.html", IDR_KEYBOARD_ELEMENTS_SHIFT_KEY},
     {"keyboard/layouts/function-key-row.html", IDR_KEYBOARD_FUNCTION_KEY_ROW},
     {"keyboard/images/back.svg", IDR_KEYBOARD_IMAGES_BACK},
     {"keyboard/images/backspace.svg", IDR_KEYBOARD_IMAGES_BACKSPACE},
@@ -273,15 +300,11 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
     {"keyboard/images/volume-down.svg", IDR_KEYBOARD_IMAGES_VOLUME_DOWN},
     {"keyboard/images/volume-up.svg", IDR_KEYBOARD_IMAGES_VOLUME_UP},
     {"keyboard/index.html", IDR_KEYBOARD_INDEX},
-    {"keyboard/layouts/dvorak.html", IDR_KEYBOARD_LAYOUTS_DVORAK},
-    {"keyboard/layouts/latin-accents.js", IDR_KEYBOARD_LAYOUTS_LATIN_ACCENTS},
+    {"keyboard/keyboard.js", IDR_KEYBOARD_JS},
     {"keyboard/layouts/numeric.html", IDR_KEYBOARD_LAYOUTS_NUMERIC},
     {"keyboard/layouts/qwerty.html", IDR_KEYBOARD_LAYOUTS_QWERTY},
-    {"keyboard/layouts/symbol-altkeys.js",
-        IDR_KEYBOARD_LAYOUTS_SYMBOL_ALTKEYS},
     {"keyboard/layouts/system-qwerty.html", IDR_KEYBOARD_LAYOUTS_SYSTEM_QWERTY},
     {"keyboard/layouts/spacebar-row.html", IDR_KEYBOARD_SPACEBAR_ROW},
-    {"keyboard/main.js", IDR_KEYBOARD_MAIN_JS},
     {"keyboard/manifest.json", IDR_KEYBOARD_MANIFEST},
     {"keyboard/main.css", IDR_KEYBOARD_MAIN_CSS},
     {"keyboard/polymer_loader.js", IDR_KEYBOARD_POLYMER_LOADER},
@@ -294,8 +317,6 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
         IDR_KEYBOARD_SOUNDS_KEYPRESS_SPACEBAR},
     {"keyboard/sounds/keypress-standard.wav",
         IDR_KEYBOARD_SOUNDS_KEYPRESS_STANDARD},
-    {"keyboard/touch_fuzzing.js", IDR_KEYBOARD_TOUCH_FUZZING_JS},
-    {"keyboard/voice_input.js", IDR_KEYBOARD_VOICE_INPUT_JS},
   };
   static const size_t kKeyboardResourcesSize = arraysize(kKeyboardResources);
   *size = kKeyboardResourcesSize;

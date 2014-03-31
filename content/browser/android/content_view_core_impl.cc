@@ -682,6 +682,20 @@ void ContentViewCoreImpl::OnSelectionBoundsChanged(
                                                 params.is_anchor_first);
 }
 
+void ContentViewCoreImpl::OnSelectionRootBoundsChanged(
+    const gfx::Rect& bounds) {
+  JNIEnv* env = AttachCurrentThread();
+
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+
+  ScopedJavaLocalRef<jobject> rect_object(CreateJavaRect(env, bounds));
+  Java_ContentViewCore_setSelectionRootBounds(env,
+                                              obj.obj(),
+                                              rect_object.obj());
+}
+
 void ContentViewCoreImpl::ShowPastePopup(int x_dip, int y_dip) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
@@ -960,11 +974,6 @@ void ContentViewCoreImpl::LoadUrl(
   LoadUrl(params);
 }
 
-jint ContentViewCoreImpl::GetCurrentRenderProcessId(JNIEnv* env, jobject obj) {
-  return GetRenderProcessIdFromRenderViewHost(
-      web_contents_->GetRenderViewHost());
-}
-
 ScopedJavaLocalRef<jstring> ContentViewCoreImpl::GetURL(
     JNIEnv* env, jobject) const {
   return ConvertUTF8ToJavaString(env, GetWebContents()->GetURL().spec());
@@ -1019,11 +1028,7 @@ void ContentViewCoreImpl::CancelActiveTouchSequenceIfNecessary() {
 
   scoped_ptr<ui::MotionEvent> cancel_event = current_down_event->Cancel();
   DCHECK(cancel_event);
-  if (!gesture_provider_.OnTouchEvent(*cancel_event))
-    return;
-
-  rwhv->SendTouchEvent(
-      CreateWebTouchEventFromMotionEvent(*cancel_event, 1.f / dpi_scale()));
+  OnMotionEvent(*cancel_event);
 }
 
 jboolean ContentViewCoreImpl::OnTouchEvent(JNIEnv* env,
@@ -1043,6 +1048,7 @@ jboolean ContentViewCoreImpl::OnTouchEvent(JNIEnv* env,
                                            jfloat touch_major_0,
                                            jfloat touch_major_1) {
   RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
+  // Avoid synthesizing a touch event if it cannot be forwarded.
   if (!rwhv)
     return false;
 
@@ -1062,11 +1068,7 @@ jboolean ContentViewCoreImpl::OnTouchEvent(JNIEnv* env,
                            touch_major_0,
                            touch_major_1);
 
-  if (!gesture_provider_.OnTouchEvent(event))
-    return false;
-
-  rwhv->SendTouchEvent(WebTouchEventBuilder::Build(event, 1.f / dpi_scale()));
-  return true;
+  return OnMotionEvent(event);
 }
 
 float ContentViewCoreImpl::GetDpiScale() const {
@@ -1120,6 +1122,26 @@ WebGestureEvent ContentViewCoreImpl::MakeGestureEvent(
     WebInputEvent::Type type, int64 time_ms, float x, float y) const {
   return WebGestureEventBuilder::Build(
       type, time_ms / 1000.0, x / dpi_scale(), y / dpi_scale());
+}
+
+bool ContentViewCoreImpl::OnMotionEvent(const ui::MotionEvent& event) {
+  RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
+  if (!rwhv)
+    return false;
+
+  if (!gesture_provider_.OnTouchEvent(event))
+    return false;
+
+  RenderWidgetHostImpl* host = RenderWidgetHostImpl::From(
+      rwhv->GetRenderWidgetHost());
+  if (!host->ShouldForwardTouchEvent()) {
+    ConfirmTouchEvent(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS);
+    return true;
+  }
+
+  rwhv->SendTouchEvent(
+      CreateWebTouchEventFromMotionEvent(event, 1.f / dpi_scale()));
+  return true;
 }
 
 void ContentViewCoreImpl::SendGestureEvent(
@@ -1230,11 +1252,13 @@ void ContentViewCoreImpl::PinchBy(JNIEnv* env, jobject obj, jlong time_ms,
 void ContentViewCoreImpl::SelectBetweenCoordinates(JNIEnv* env, jobject obj,
                                                    jfloat x1, jfloat y1,
                                                    jfloat x2, jfloat y2) {
-  if (GetRenderWidgetHostViewAndroid()) {
-    GetRenderWidgetHostViewAndroid()->SelectRange(
-        gfx::Point(x1 / dpi_scale(), y1 / dpi_scale()),
-        gfx::Point(x2 / dpi_scale(), y2 / dpi_scale()));
-  }
+  if (!web_contents_ || !web_contents_->GetFocusedFrame())
+    return;
+
+  RenderFrameHostImpl* frame =
+      static_cast<RenderFrameHostImpl*>(web_contents_->GetFocusedFrame());
+  frame->SelectRange(gfx::Point(x1 / dpi_scale(), y1 / dpi_scale()),
+                     gfx::Point(x2 / dpi_scale(), y2 / dpi_scale()));
 }
 
 void ContentViewCoreImpl::MoveCaret(JNIEnv* env, jobject obj,
@@ -1680,7 +1704,7 @@ void ContentViewCoreImpl::SetAccessibilityEnabled(JNIEnv* env, jobject obj,
 void ContentViewCoreImpl::SendOrientationChangeEventInternal() {
   RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
   if (rwhv)
-    rwhv->UpdateScreenInfo(rwhv->GetNativeView());
+    rwhv->UpdateScreenInfo(GetViewAndroid());
 
   RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost());
@@ -1734,6 +1758,11 @@ void ContentViewCoreImpl::ExtractSmartClipData(JNIEnv* env,
           1 : (int)(height / dpi_scale())));
   GetWebContents()->Send(new ViewMsg_ExtractSmartClipData(
       GetWebContents()->GetRoutingID(), rect));
+}
+
+jint ContentViewCoreImpl::GetCurrentRenderProcessId(JNIEnv* env, jobject obj) {
+  return GetRenderProcessIdFromRenderViewHost(
+      web_contents_->GetRenderViewHost());
 }
 
 void ContentViewCoreImpl::OnSmartClipDataExtracted(

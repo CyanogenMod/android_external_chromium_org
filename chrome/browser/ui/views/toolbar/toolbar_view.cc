@@ -86,6 +86,7 @@
 
 #if !defined(OS_CHROMEOS)
 #include "chrome/browser/signin/signin_global_error_factory.h"
+#include "chrome/browser/sync/sync_global_error_factory.h"
 #endif
 
 #if defined(USE_ASH)
@@ -145,7 +146,10 @@ ToolbarView::ToolbarView(Browser* browser)
       origin_chip_view_(NULL),
       browser_actions_(NULL),
       app_menu_(NULL),
-      browser_(browser) {
+      browser_(browser),
+      extension_message_bubble_factory_(
+          new extensions::ExtensionMessageBubbleFactory(browser->profile(),
+                                                        this)) {
   set_id(VIEW_ID_TOOLBAR);
 
   chrome::AddCommandObserver(browser_, IDC_BACK, this);
@@ -163,6 +167,8 @@ ToolbarView::ToolbarView(Browser* browser)
                  content::NotificationService::AllSources());
   if (OutdatedUpgradeBubbleView::IsAvailable()) {
     registrar_.Add(this, chrome::NOTIFICATION_OUTDATED_INSTALL,
+                   content::NotificationService::AllSources());
+    registrar_.Add(this, chrome::NOTIFICATION_OUTDATED_INSTALL_NO_AU,
                    content::NotificationService::AllSources());
   }
 #if defined(OS_WIN)
@@ -263,11 +269,14 @@ void ToolbarView::Init() {
 
   LoadImages();
 
-  // Start signin global error service now so we badge the menu correctly
-  // in non-Ash.
+  // Start global error services now so we badge the menu correctly in non-Ash.
 #if !defined(OS_CHROMEOS)
-  if (!HasAshShell())
+  if (!HasAshShell()) {
     SigninGlobalErrorFactory::GetForProfile(browser_->profile());
+#if !defined(OS_ANDROID)
+    SyncGlobalErrorFactory::GetForProfile(browser_->profile());
+#endif
+  }
 #endif  // OS_CHROMEOS
 
   // Add any necessary badges to the menu item based on the system state.
@@ -300,11 +309,9 @@ void ToolbarView::Init() {
 
 void ToolbarView::OnWidgetVisibilityChanged(views::Widget* widget,
                                             bool visible) {
-  if (visible) {
-    extensions::ExtensionMessageBubbleView::MaybeShow(
-        browser_, this, app_menu_);
-    GetWidget()->RemoveObserver(this);
-  }
+  // Safe to call multiple times; the bubble will only appear once.
+  if (visible)
+    extension_message_bubble_factory_->MaybeShow(app_menu_);
 }
 
 void ToolbarView::Update(WebContents* tab) {
@@ -513,7 +520,10 @@ void ToolbarView::Observe(int type,
       UpdateAppMenuState();
       break;
     case chrome::NOTIFICATION_OUTDATED_INSTALL:
-      ShowOutdatedInstallNotification();
+      ShowOutdatedInstallNotification(true);
+      break;
+    case chrome::NOTIFICATION_OUTDATED_INSTALL_NO_AU:
+      ShowOutdatedInstallNotification(false);
       break;
 #if defined(OS_WIN)
     case chrome::NOTIFICATION_CRITICAL_UPGRADE_INSTALLED:
@@ -657,8 +667,8 @@ void ToolbarView::Layout() {
     next_element_x = origin_chip_view_->bounds().right();
   }
 
-  browser_actions_->SetBounds(next_element_x, 0,
-                              browser_actions_width, height());
+  browser_actions_->SetBounds(
+      next_element_x, child_y, browser_actions_width, child_height);
   next_element_x = browser_actions_->bounds().right();
 
   // The browser actions need to do a layout explicitly, because when an
@@ -812,9 +822,11 @@ void ToolbarView::ShowCriticalNotification() {
 #endif
 }
 
-void ToolbarView::ShowOutdatedInstallNotification() {
-  if (OutdatedUpgradeBubbleView::IsAvailable())
-    OutdatedUpgradeBubbleView::ShowBubble(app_menu_, browser_);
+void ToolbarView::ShowOutdatedInstallNotification(bool auto_update_enabled) {
+  if (OutdatedUpgradeBubbleView::IsAvailable()) {
+    OutdatedUpgradeBubbleView::ShowBubble(
+        app_menu_, browser_, auto_update_enabled);
+  }
 }
 
 void ToolbarView::UpdateAppMenuState() {

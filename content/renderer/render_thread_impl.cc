@@ -411,8 +411,7 @@ void RenderThreadImpl::Init() {
       RegisterExtension(GpuBenchmarkingExtension::Get());
 
   is_impl_side_painting_enabled_ =
-      command_line.HasSwitch(switches::kEnableImplSidePainting) &&
-      !command_line.HasSwitch(switches::kDisableImplSidePainting);
+      command_line.HasSwitch(switches::kEnableImplSidePainting);
   webkit::WebLayerImpl::SetImplSidePaintingEnabled(
       is_impl_side_painting_enabled_);
 
@@ -445,7 +444,7 @@ void RenderThreadImpl::Init() {
     }
   }
 
-  is_low_res_tiling_enabled_ = !is_gpu_rasterization_enabled_;
+  is_low_res_tiling_enabled_ = true;
   if (command_line.HasSwitch(switches::kDisableLowResTiling) &&
       !command_line.HasSwitch(switches::kEnableLowResTiling)) {
     is_low_res_tiling_enabled_ = false;

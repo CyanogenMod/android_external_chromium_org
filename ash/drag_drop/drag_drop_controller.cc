@@ -12,7 +12,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "ui/aura/client/capture_client.h"
-#include "ui/aura/client/drag_drop_delegate.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
@@ -29,6 +28,7 @@
 #include "ui/gfx/rect_conversions.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/native_widget_aura.h"
+#include "ui/wm/public/drag_drop_delegate.h"
 
 namespace ash {
 namespace internal {
@@ -123,8 +123,6 @@ class DragDropTrackerDelegate : public aura::WindowDelegate {
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {
     DCHECK(mask->isEmpty());
   }
-  virtual void DidRecreateLayer(ui::Layer* old_layer,
-                                ui::Layer* new_layer) OVERRIDE {}
 
  private:
   DragDropController* drag_drop_controller_;

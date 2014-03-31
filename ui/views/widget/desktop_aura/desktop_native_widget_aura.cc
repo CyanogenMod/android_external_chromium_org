@@ -6,10 +6,8 @@
 
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
-#include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
-#include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/window.h"
@@ -55,6 +53,8 @@
 #include "ui/wm/core/shadow_types.h"
 #include "ui/wm/core/visibility_controller.h"
 #include "ui/wm/core/window_modality_controller.h"
+#include "ui/wm/public/activation_client.h"
+#include "ui/wm/public/drag_drop_client.h"
 
 #if defined(OS_WIN)
 #include "ui/base/win/shell.h"
@@ -983,9 +983,6 @@ void DesktopNativeWidgetAura::GetHitTestMask(gfx::Path* mask) const {
   native_widget_delegate_->GetHitTestMask(mask);
 }
 
-void DesktopNativeWidgetAura::DidRecreateLayer(ui::Layer* old_layer,
-                                               ui::Layer* new_layer) {}
-
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopNativeWidgetAura, ui::EventHandler implementation:
 
@@ -1136,7 +1133,7 @@ int DesktopNativeWidgetAura::OnPerformDrop(const ui::DropTargetEvent& event) {
 
 void DesktopNativeWidgetAura::OnHostCloseRequested(
     const aura::WindowTreeHost* host) {
-  Close();
+  GetWidget()->Close();
 }
 
 void DesktopNativeWidgetAura::OnHostResized(const aura::WindowTreeHost* host) {
@@ -1182,6 +1179,10 @@ void DesktopNativeWidgetAura::InstallInputMethodEventFilter() {
 void DesktopNativeWidgetAura::UpdateWindowTransparency() {
   content_window_->SetTransparent(
       desktop_window_tree_host_->ShouldWindowContentsBeTransparent());
+  // Regardless of transparency or not, this root content window will always
+  // fill its bounds completely, so set this flag to true to avoid an
+  // unecessary clear before update.
+  content_window_->SetFillsBoundsCompletely(true);
 }
 
 void DesktopNativeWidgetAura::RootWindowDestroyed() {

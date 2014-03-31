@@ -10,7 +10,8 @@ gyp_intermediate_dir := $(call local-intermediates-dir)
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 
 # Make sure our deps are built first.
-GYP_TARGET_DEPENDENCIES :=
+GYP_TARGET_DEPENDENCIES := \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -24,6 +25,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	ui/events/event_switches.cc \
+	ui/events/gesture_event_details.cc \
 	ui/events/keycodes/keyboard_code_conversion.cc \
 	ui/events/keycodes/keyboard_code_conversion_android.cc \
 	ui/events/latency_info.cc
@@ -82,7 +84,24 @@ MY_DEFS_Debug := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DEVENTS_BASE_IMPLEMENTATION' \
+	'-DSK_ENABLE_INST_COUNT=0' \
+	'-DSK_SUPPORT_GPU=1' \
+	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
+	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
+	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
+	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
+	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_BUILD_FOR_ANDROID' \
+	'-DSK_USE_POSIX_THREADS' \
+	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
+	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -97,8 +116,24 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
+	$(LOCAL_PATH)/third_party/skia/src/core \
+	$(LOCAL_PATH)/third_party/skia/include/core \
+	$(LOCAL_PATH)/third_party/skia/include/effects \
+	$(LOCAL_PATH)/third_party/skia/include/pdf \
+	$(LOCAL_PATH)/third_party/skia/include/gpu \
+	$(LOCAL_PATH)/third_party/skia/include/lazy \
+	$(LOCAL_PATH)/third_party/skia/include/pathops \
+	$(LOCAL_PATH)/third_party/skia/include/pipe \
+	$(LOCAL_PATH)/third_party/skia/include/ports \
+	$(LOCAL_PATH)/third_party/skia/include/utils \
+	$(LOCAL_PATH)/skia/ext \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -167,7 +202,24 @@ MY_DEFS_Release := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DEVENTS_BASE_IMPLEMENTATION' \
+	'-DSK_ENABLE_INST_COUNT=0' \
+	'-DSK_SUPPORT_GPU=1' \
+	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
+	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
+	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
+	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
+	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
+	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_BUILD_FOR_ANDROID' \
+	'-DSK_USE_POSIX_THREADS' \
+	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
+	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -183,8 +235,24 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
+	$(LOCAL_PATH)/third_party/skia/src/core \
+	$(LOCAL_PATH)/third_party/skia/include/core \
+	$(LOCAL_PATH)/third_party/skia/include/effects \
+	$(LOCAL_PATH)/third_party/skia/include/pdf \
+	$(LOCAL_PATH)/third_party/skia/include/gpu \
+	$(LOCAL_PATH)/third_party/skia/include/lazy \
+	$(LOCAL_PATH)/third_party/skia/include/pathops \
+	$(LOCAL_PATH)/third_party/skia/include/pipe \
+	$(LOCAL_PATH)/third_party/skia/include/ports \
+	$(LOCAL_PATH)/third_party/skia/include/utils \
+	$(LOCAL_PATH)/skia/ext \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -242,7 +310,8 @@ LOCAL_LDFLAGS_Release := \
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
-LOCAL_STATIC_LIBRARIES :=
+LOCAL_STATIC_LIBRARIES := \
+	skia_skia_library_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

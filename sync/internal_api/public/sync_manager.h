@@ -20,6 +20,7 @@
 #include "sync/internal_api/public/configure_reason.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 #include "sync/internal_api/public/engine/sync_status.h"
+#include "sync/internal_api/public/events/protocol_event.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/internal_api/public/util/report_unrecoverable_error_function.h"
 #include "sync/internal_api/public/util/unrecoverable_error_handler.h"
@@ -34,18 +35,20 @@ class EncryptedData;
 namespace syncer {
 
 class BaseTransaction;
+class CancelationSignal;
 class DataTypeDebugInfoListener;
 class Encryptor;
-struct Experiments;
 class ExtensionsActivity;
 class HttpPostProviderFactory;
 class InternalComponentsFactory;
 class JsBackend;
 class JsEventHandler;
+class SyncCore;
 class SyncEncryptionHandler;
+class ProtocolEvent;
 class SyncScheduler;
+struct Experiments;
 struct UserShare;
-class CancelationSignal;
 
 namespace sessions {
 class SyncSessionSnapshot;
@@ -196,6 +199,8 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
 
     virtual void OnMigrationRequested(ModelTypeSet types) = 0;
 
+    virtual void OnProtocolEvent(const ProtocolEvent& event) = 0;
+
    protected:
     virtual ~Observer();
   };
@@ -326,6 +331,9 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
 
   // May be called from any thread.
   virtual UserShare* GetUserShare() = 0;
+
+  // Returns an instance of the main interface for non-blocking sync types.
+  virtual syncer::SyncCore* GetSyncCore() = 0;
 
   // Returns the cache_guid of the currently open database.
   // Requires that the SyncManager be initialized.

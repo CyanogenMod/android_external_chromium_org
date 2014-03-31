@@ -4,6 +4,7 @@
 
 #import "chrome/browser/ui/cocoa/browser/profile_chooser_controller.h"
 
+#include "base/command_line.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/sys_string_conversions.h"
@@ -12,13 +13,14 @@
 #include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
-#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
-#include "components/signin/core/profile_oauth2_token_service.h"
+#include "chrome/common/chrome_switches.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
 
 const std::string kEmail = "user@gmail.com";
 const std::string kSecondaryEmail = "user2@gmail.com";
@@ -36,7 +38,7 @@ class ProfileChooserControllerTest : public CocoaProfileTest {
     TestingProfile::TestingFactories factories;
     factories.push_back(
         std::make_pair(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                       FakeProfileOAuth2TokenServiceWrapper::Build));
+                       BuildFakeProfileOAuth2TokenService));
     testing_profile_manager()->
         CreateTestingProfile("test1", scoped_ptr<PrefServiceSyncable>(),
                              base::ASCIIToUTF16("Test 1"), 0, std::string(),
@@ -63,9 +65,10 @@ class ProfileChooserControllerTest : public CocoaProfileTest {
   void StartProfileChooserController() {
     NSRect frame = [test_window() frame];
     NSPoint point = NSMakePoint(NSMidX(frame), NSMidY(frame));
-    controller_.reset(
-        [[ProfileChooserController alloc] initWithBrowser:browser()
-                                               anchoredAt:point]);
+    controller_.reset([[ProfileChooserController alloc]
+        initWithBrowser:browser()
+             anchoredAt:point
+               withMode:PROFILE_CHOOSER_VIEW]);
     [controller_ showWindow:nil];
   }
 
@@ -85,21 +88,53 @@ TEST_F(ProfileChooserControllerTest, InitialLayout) {
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
 
+  // Three profiles means we should have one active card, one separator and
+  // one option buttons view.
+  EXPECT_EQ(3U, [subviews count]);
+
+  // For a local profile, there should be one button in the option buttons view.
+  NSArray* buttonSubviews = [[subviews objectAtIndex:0] subviews];
+  EXPECT_EQ(1U, [buttonSubviews count]);
+  NSButton* button = static_cast<NSButton*>([buttonSubviews objectAtIndex:0]);
+  EXPECT_EQ(@selector(showUserManager:), [button action]);
+  EXPECT_EQ(controller(), [button target]);
+
+  // There should be a separator.
+  EXPECT_TRUE([[subviews objectAtIndex:1] isKindOfClass:[NSBox class]]);
+
+  // There should be the profile avatar, name and links container in the active
+  // card view. The links displayed in the container are checked separately.
+  NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
+  EXPECT_EQ(3U, [activeCardSubviews count]);
+
+  NSView* activeProfileImage = [activeCardSubviews objectAtIndex:0];
+  EXPECT_TRUE([activeProfileImage isKindOfClass:[NSImageView class]]);
+
+  // There are some links in between. The profile name is added last.
+  CGFloat index = [activeCardSubviews count] - 1;
+  NSView* activeProfileName = [activeCardSubviews objectAtIndex:index];
+  EXPECT_TRUE([activeProfileName isKindOfClass:[NSButton class]]);
+  EXPECT_EQ(menu()->GetItemAt(0).name, base::SysNSStringToUTF16(
+      [static_cast<NSButton*>(activeProfileName) title]));
+}
+
+TEST_F(ProfileChooserControllerTest, InitialLayoutWithFastUserSwitcher) {
+  // The fast user switcher is only availbale behind a flag.
+  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kFastUserSwitching);
+
+  StartProfileChooserController();
+  NSArray* subviews = [[[controller() window] contentView] subviews];
+
   // Three profiles means we should have one active card, two "other" profiles,
   // one separator and one option buttons view.
   EXPECT_EQ(5U, [subviews count]);
 
-  // There should be three buttons in the option buttons view.
+  // For a local profile, there should be one button in the option buttons view.
   NSArray* buttonSubviews = [[subviews objectAtIndex:0] subviews];
-  const SEL buttonSelectors[] = { @selector(showUserManager:),
-                                  @selector(addNewProfile:),
-                                  @selector(switchToGuestProfile:) };
-  EXPECT_EQ(3U, [buttonSubviews count]);
-  for (NSUInteger i = 0; i < [buttonSubviews count]; ++i) {
-    NSButton* button = static_cast<NSButton*>([buttonSubviews objectAtIndex:i]);
-    EXPECT_EQ(buttonSelectors[i], [button action]);
-    EXPECT_EQ(controller(), [button target]);
-  }
+  EXPECT_EQ(1U, [buttonSubviews count]);
+  NSButton* button = static_cast<NSButton*>([buttonSubviews objectAtIndex:0]);
+  EXPECT_EQ(@selector(showUserManager:), [button action]);
+  EXPECT_EQ(controller(), [button target]);
 
   // There should be a separator.
   EXPECT_TRUE([[subviews objectAtIndex:1] isKindOfClass:[NSBox class]]);
@@ -134,6 +169,9 @@ TEST_F(ProfileChooserControllerTest, InitialLayout) {
 }
 
 TEST_F(ProfileChooserControllerTest, OtherProfilesSortedAlphabetically) {
+  // The fast user switcher is only availbale behind a flag.
+  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kFastUserSwitching);
+
   // Add two extra profiles, to make sure sorting is alphabetical and not
   // by order of creation.
   testing_profile_manager()->
@@ -166,7 +204,7 @@ TEST_F(ProfileChooserControllerTest, OtherProfilesSortedAlphabetically) {
 TEST_F(ProfileChooserControllerTest, LocalProfileActiveCardLinks) {
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  NSArray* activeCardSubviews = [[subviews objectAtIndex:4] subviews];
+  NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
   NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:1] subviews];
 
   // There should be one "sign in" link.
@@ -184,20 +222,15 @@ TEST_F(ProfileChooserControllerTest, SignedInProfileActiveCardLinks) {
 
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  NSArray* activeCardSubviews = [[subviews objectAtIndex:4] subviews];
+  NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
   NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:1] subviews];
 
-  // There are two links: lock and manage accounts.
-  EXPECT_EQ(2U, [activeCardLinks count]);
+  // There is one link: manage accounts.
+  EXPECT_EQ(1U, [activeCardLinks count]);
   NSButton* manageAccountsLink =
       static_cast<NSButton*>([activeCardLinks objectAtIndex:0]);
   EXPECT_EQ(@selector(showAccountManagement:), [manageAccountsLink action]);
   EXPECT_EQ(controller(), [manageAccountsLink target]);
-
-  NSButton* lockLink =
-      static_cast<NSButton*>([activeCardLinks objectAtIndex:1]);
-  EXPECT_EQ(@selector(lockProfile:), [lockLink action]);
-  EXPECT_EQ(controller(), [lockLink target]);
 }
 
 TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
@@ -223,12 +256,11 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
   // and one option buttons view.
   EXPECT_EQ(5U, [subviews count]);
 
-  // There should be three buttons in the option buttons view.
+  // There should be two buttons in the option buttons view.
   NSArray* buttonSubviews = [[subviews objectAtIndex:0] subviews];
   const SEL buttonSelectors[] = { @selector(showUserManager:),
-                                  @selector(addNewProfile:),
-                                  @selector(switchToGuestProfile:) };
-  EXPECT_EQ(3U, [buttonSubviews count]);
+                                  @selector(lockProfile:) };
+  EXPECT_EQ(2U, [buttonSubviews count]);
   for (NSUInteger i = 0; i < [buttonSubviews count]; ++i) {
     NSButton* button = static_cast<NSButton*>([buttonSubviews objectAtIndex:i]);
     EXPECT_EQ(buttonSelectors[i], [button action]);

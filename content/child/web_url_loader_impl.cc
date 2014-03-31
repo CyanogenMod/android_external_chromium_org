@@ -12,8 +12,10 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
-#include "content/child/blink_platform_impl.h"
+#include "content/child/child_thread.h"
 #include "content/child/ftp_directory_listing_response_delegate.h"
+#include "content/child/request_extra_data.h"
+#include "content/child/request_info.h"
 #include "content/common/resource_request_body.h"
 #include "net/base/data_url.h"
 #include "net/base/load_flags.h"
@@ -34,7 +36,6 @@
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
 #include "webkit/child/multipart_response_delegate.h"
 #include "webkit/child/resource_loader_bridge.h"
-#include "webkit/child/weburlrequest_extradata_impl.h"
 #include "webkit/child/weburlresponse_extradata_impl.h"
 
 using base::Time;
@@ -230,8 +231,7 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context>,
   void SetDefersLoading(bool value);
   void DidChangePriority(WebURLRequest::Priority new_priority);
   void Start(const WebURLRequest& request,
-             ResourceLoaderBridge::SyncLoadResponse* sync_load_response,
-             BlinkPlatformImpl* platform);
+             ResourceLoaderBridge::SyncLoadResponse* sync_load_response);
 
   // ResourceLoaderBridge::Peer methods:
   virtual void OnUploadProgress(uint64 position, uint64 size) OVERRIDE;
@@ -308,8 +308,7 @@ void WebURLLoaderImpl::Context::DidChangePriority(
 
 void WebURLLoaderImpl::Context::Start(
     const WebURLRequest& request,
-    ResourceLoaderBridge::SyncLoadResponse* sync_load_response,
-    BlinkPlatformImpl* platform) {
+    ResourceLoaderBridge::SyncLoadResponse* sync_load_response) {
   DCHECK(!bridge_.get());
 
   request_ = request;  // Save the request.
@@ -377,7 +376,7 @@ void WebURLLoaderImpl::Context::Start(
   // TODO(brettw) this should take parameter encoding into account when
   // creating the GURLs.
 
-  ResourceLoaderBridge::RequestInfo request_info;
+  RequestInfo request_info;
   request_info.method = method;
   request_info.url = url;
   request_info.first_party_for_cookies = request.firstPartyForCookies();
@@ -399,7 +398,7 @@ void WebURLLoaderImpl::Context::Start(
   request_info.extra_data = request.extraData();
   referrer_policy_ = request.referrerPolicy();
   request_info.referrer_policy = request.referrerPolicy();
-  bridge_.reset(platform->CreateResourceLoader(request_info));
+  bridge_.reset(ChildThread::current()->CreateBridge(request_info));
 
   if (!request.httpBody().isNull()) {
     // GET and HEAD requests shouldn't have http bodies.
@@ -689,9 +688,8 @@ void WebURLLoaderImpl::Context::HandleDataURL() {
 
 // WebURLLoaderImpl -----------------------------------------------------------
 
-WebURLLoaderImpl::WebURLLoaderImpl(BlinkPlatformImpl* platform)
-    : context_(new Context(this)),
-      platform_(platform) {
+WebURLLoaderImpl::WebURLLoaderImpl()
+    : context_(new Context(this)) {
 }
 
 WebURLLoaderImpl::~WebURLLoaderImpl() {
@@ -831,7 +829,7 @@ void WebURLLoaderImpl::loadSynchronously(const WebURLRequest& request,
                                          WebURLError& error,
                                          WebData& data) {
   ResourceLoaderBridge::SyncLoadResponse sync_load_response;
-  context_->Start(request, &sync_load_response, platform_);
+  context_->Start(request, &sync_load_response);
 
   const GURL& final_url = sync_load_response.url;
 
@@ -857,7 +855,7 @@ void WebURLLoaderImpl::loadAsynchronously(const WebURLRequest& request,
   DCHECK(!context_->client());
 
   context_->set_client(client);
-  context_->Start(request, NULL, platform_);
+  context_->Start(request, NULL);
 }
 
 void WebURLLoaderImpl::cancel() {

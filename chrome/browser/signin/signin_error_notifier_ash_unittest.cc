@@ -9,7 +9,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
-#include "chrome/browser/signin/fake_auth_status_provider.h"
 #include "chrome/browser/signin/fake_signin_manager.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_error_notifier_factory_ash.h"
@@ -19,8 +18,9 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
-#include "components/signin/core/profile_oauth2_token_service.h"
-#include "components/signin/core/signin_error_controller.h"
+#include "components/signin/core/browser/fake_auth_status_provider.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_error_controller.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/message_center/notification.h"
@@ -66,11 +66,11 @@ class SigninErrorNotifierTest : public AshTestBase {
     views::ViewsDelegate::views_delegate = &views_delegate_;
 
     // Create a signed-in profile.
-    profile_.reset(new TestingProfile());
+    TestingProfile::Builder builder;
+    builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
+                              FakeSigninManagerBase::Build);
+    profile_ = builder.Build();
     profile_->set_profile_name(kTestAccountId);
-
-    SigninManagerFactory::GetInstance()->SetTestingFactoryAndUse(
-            profile_.get(), FakeSigninManagerBase::Build);
 
     profile_manager_.reset(
         new TestingProfileManager(TestingBrowserProcess::GetGlobal()));
@@ -130,7 +130,6 @@ TEST_F(SigninErrorNotifierTest, ErrorAuthStatusProvider) {
     ASSERT_FALSE(notification_ui_manager_->FindById(kNotificationId));
     {
       FakeAuthStatusProvider error_provider(error_controller_);
-      LOG(ERROR) << "Setting auth error";
       error_provider.SetAuthError(kTestAccountId, GoogleServiceAuthError(
           GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
       ASSERT_TRUE(notification_ui_manager_->FindById(kNotificationId));

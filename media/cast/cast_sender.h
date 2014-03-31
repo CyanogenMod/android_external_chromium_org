@@ -20,10 +20,8 @@
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
 #include "media/cast/transport/cast_transport_sender.h"
-#include "media/filters/gpu_video_accelerator_factories.h"
 
 namespace media {
-class GpuVideoAcceleratorFactories;
 class VideoFrame;
 
 namespace cast {
@@ -59,8 +57,8 @@ class AudioFrameInput : public base::RefCountedThreadSafe<AudioFrameInput> {
   friend class base::RefCountedThreadSafe<AudioFrameInput>;
 };
 
-// The provided CastTransportSender and the CastSender should be called from the
-// main thread.
+// All methods of CastSender must be called on the main thread.
+// Provided CastTransportSender will also be called on the main thread.
 class CastSender {
  public:
   static scoped_ptr<CastSender> Create(
@@ -90,7 +88,8 @@ class CastSender {
   virtual void InitializeVideo(
       const VideoSenderConfig& video_config,
       const CastInitializationCallback& cast_initialization_cb,
-      const scoped_refptr<GpuVideoAcceleratorFactories>& gpu_factories) = 0;
+      const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
+      const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb) = 0;
 };
 
 }  // namespace cast

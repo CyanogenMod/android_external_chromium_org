@@ -447,9 +447,7 @@ Browser::Browser(const CreateParams& params)
 
 Browser::~Browser() {
   // The tab strip should not have any tabs at this point.
-  if (!browser_shutdown::ShuttingDownWithoutClosingBrowsers())
-    DCHECK(tab_strip_model_->empty());
-
+  DCHECK(tab_strip_model_->empty());
   tab_strip_model_->RemoveObserver(this);
 
   // Destroy the BrowserCommandController before removing the browser, so that
@@ -916,7 +914,7 @@ void Browser::TabInsertedAt(WebContents* contents,
 
   // Make sure the loading state is updated correctly, otherwise the throbber
   // won't start if the page is loading.
-  LoadingStateChanged(contents);
+  LoadingStateChanged(contents, true);
 
   interstitial_observers_.push_back(new InterstitialObserver(this, contents));
 
@@ -1341,13 +1339,14 @@ void Browser::DeactivateContents(WebContents* contents) {
   window_->Deactivate();
 }
 
-void Browser::LoadingStateChanged(WebContents* source) {
+void Browser::LoadingStateChanged(WebContents* source,
+    bool to_different_document) {
   window_->UpdateLoadingAnimations(tab_strip_model_->TabsAreLoading());
   window_->UpdateTitleBar();
 
   WebContents* selected_contents = tab_strip_model_->GetActiveWebContents();
   if (source == selected_contents) {
-    bool is_loading = source->IsLoading();
+    bool is_loading = source->IsLoading() && to_different_document;
     command_controller_->LoadingStateChanged(is_loading, false);
     if (GetStatusBubble()) {
       GetStatusBubble()->SetStatus(CoreTabHelper::FromWebContents(
@@ -1510,7 +1509,7 @@ bool Browser::ShouldCreateWebContents(
 }
 
 void Browser::WebContentsCreated(WebContents* source_contents,
-                                 int64 source_frame_id,
+                                 int opener_render_frame_id,
                                  const base::string16& frame_name,
                                  const GURL& target_url,
                                  WebContents* new_contents) {
@@ -1523,7 +1522,7 @@ void Browser::WebContentsCreated(WebContents* source_contents,
   // Notify.
   RetargetingDetails details;
   details.source_web_contents = source_contents;
-  details.source_frame_id = source_frame_id;
+  details.source_render_frame_id = opener_render_frame_id;
   details.target_url = target_url;
   details.target_web_contents = new_contents;
   details.not_yet_in_tabstrip = true;
@@ -1834,6 +1833,10 @@ void Browser::Observe(int type,
           this,
           IDC_BOOKMARK_PAGE,
           !chrome::ShouldRemoveBookmarkThisPageUI(profile_));
+      chrome::UpdateCommandEnabled(
+          this,
+          IDC_BOOKMARK_ALL_TABS,
+          !chrome::ShouldRemoveBookmarkOpenPagesUI(profile_));
 
       if (window()->GetLocationBar())
         window()->GetLocationBar()->UpdatePageActions();
@@ -1878,6 +1881,10 @@ void Browser::Observe(int type,
           this,
           IDC_BOOKMARK_PAGE,
           !chrome::ShouldRemoveBookmarkThisPageUI(profile_));
+      chrome::UpdateCommandEnabled(
+          this,
+          IDC_BOOKMARK_ALL_TABS,
+          !chrome::ShouldRemoveBookmarkOpenPagesUI(profile_));
     // fallthrough
     case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
       // During window creation on Windows we may end up calling into
@@ -2179,6 +2186,35 @@ void Browser::TabDetachedAtImpl(content::WebContents* contents,
   }
 }
 
+bool Browser::ShouldShowLocationBar() const {
+  if (!is_app()) {
+    // Hide the URL for singleton settings windows.
+    // TODO(stevenjb): We could avoid this check by setting a Browser
+    // property for "system" windows, possibly shared with hosted app windows.
+    // crbug.com/350128.
+    if (chrome::IsSettingsWindow(this))
+      return false;
+    return true;
+  }
+
+  // Normally apps do not show a location bar.
+  if (app_type() != APP_TYPE_HOST ||
+      app_name() == DevToolsWindow::kDevToolsApp ||
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableStreamlinedHostedApps))
+    return false;
+
+  // If kEnableStreamlinedHostedApps is true, show the locaiton bar for non
+  // legacy packaged apps.
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile_)->extension_service();
+  const extensions::Extension* extension =
+      service ? service->GetInstalledExtension(
+                    web_app::GetExtensionIdFromApplicationName(app_name()))
+              : NULL;
+  return (!extension || !extension->is_legacy_packaged_app());
+}
+
 bool Browser::SupportsWindowFeatureImpl(WindowFeature feature,
                                         bool check_fullscreen) const {
   bool hide_ui_for_fullscreen = check_fullscreen && ShouldHideUIForFullscreen();
@@ -2198,20 +2234,8 @@ bool Browser::SupportsWindowFeatureImpl(WindowFeature feature,
     if (is_type_tabbed())
       features |= FEATURE_TOOLBAR;
 
-    ExtensionService* service =
-        extensions::ExtensionSystem::Get(profile_)->extension_service();
-    const extensions::Extension* extension =
-        service ? service->GetInstalledExtension(
-                      web_app::GetExtensionIdFromApplicationName(app_name()))
-                : NULL;
-
-    if (!is_app() || (app_type() == APP_TYPE_HOST &&
-                      app_name() != DevToolsWindow::kDevToolsApp &&
-                      (!extension || !extension->is_legacy_packaged_app()) &&
-                      CommandLine::ForCurrentProcess()->HasSwitch(
-                          switches::kEnableStreamlinedHostedApps))) {
+    if (ShouldShowLocationBar())
       features |= FEATURE_LOCATIONBAR;
-    }
   }
   return !!(features & feature);
 }

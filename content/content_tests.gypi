@@ -517,6 +517,7 @@
         'child/power_monitor_broadcast_source_unittest.cc',
         'child/resource_dispatcher_unittest.cc',
         'child/site_isolation_policy_unittest.cc',
+        'child/touch_fling_gesture_curve_unittest.cc',
         'child/webcrypto/shared_crypto_unittest.cc',
         'child/worker_task_runner_unittest.cc',
         'common/android/address_parser_unittest.cc',
@@ -561,14 +562,17 @@
         'renderer/media/crypto/key_systems_unittest.cc',
         'renderer/media/media_stream_video_capture_source_unittest.cc',
         'renderer/media/media_stream_video_source_unittest.cc',
+        'renderer/media/media_stream_video_track_unittest.cc',
         'renderer/media/mock_media_stream_video_source.cc',
         'renderer/media/mock_media_stream_video_source.h',
+        'renderer/media/render_media_log_unittest.cc',
         'renderer/media/test_response_generator.cc',
         'renderer/media/test_response_generator.h',
         'renderer/media/video_capture_impl_manager_unittest.cc',
         'renderer/media/video_capture_impl_unittest.cc',
         'renderer/media/video_capture_message_filter_unittest.cc',
         'renderer/media/video_destination_handler_unittest.cc',
+        'renderer/media/video_frame_compositor_unittest.cc',
         'renderer/media/webaudiosourceprovider_impl_unittest.cc',
         'renderer/npapi/webplugin_impl_unittest.cc',
         'renderer/paint_aggregator_unittest.cc',
@@ -630,7 +634,6 @@
         '../webkit/browser/fileapi/sandbox_prioritized_origin_database_unittest.cc',
         '../webkit/browser/fileapi/timed_task_helper_unittest.cc',
         '../webkit/child/multipart_response_delegate_unittest.cc',
-        '../webkit/child/touch_fling_gesture_curve_unittest.cc',
         '../webkit/common/blob/shareable_file_reference_unittest.cc',
         '../webkit/common/database/database_connections_unittest.cc',
         '../webkit/common/database/database_identifier_unittest.cc',
@@ -720,6 +723,7 @@
             'renderer/media/rtc_peer_connection_handler_unittest.cc',
             'renderer/media/rtc_video_decoder_unittest.cc',
             'renderer/media/video_source_handler_unittest.cc',
+            'renderer/media/webrtc/media_stream_track_metrics_unittest.cc',
             'renderer/media/webrtc/webrtc_local_audio_track_adapter_unittest.cc',
             'renderer/media/webrtc/webrtc_video_capturer_adapter_unittest.cc',
             'renderer/media/webrtc_audio_capturer_unittest.cc',
@@ -727,6 +731,7 @@
             'renderer/media/webrtc_identity_service_unittest.cc',
             'renderer/media/webrtc_local_audio_source_provider_unittest.cc',
             'renderer/media/webrtc_local_audio_track_unittest.cc',
+            'renderer/media/webrtc_uma_histograms_unittest.cc',
           ],
           'dependencies': [
             '../third_party/libjingle/libjingle.gyp:libjingle_webrtc',
@@ -907,16 +912,35 @@
             'content.gyp:content_browser',
             '../skia/skia.gyp:skia',
             '../testing/gtest.gyp:gtest',
-            '../ui/accessibility/accessibility.gyp:ax_gen',
           ],
           'sources': [
-            'test/accessibility_browser_test_utils.cc',
-            'test/accessibility_browser_test_utils.h',
-            'test/content_browser_test.cc',
-            'test/content_browser_test.h',
-            'test/content_browser_test_utils.cc',
-            'test/content_browser_test_utils.h',
-            'test/content_browser_test_utils_mac.mm',
+            'test/content_test_launcher.cc',
+            'public/test/content_browser_test.cc',
+            'public/test/content_browser_test.h',
+            'public/test/content_browser_test_utils.cc',
+            'public/test/content_browser_test_utils.h',
+            'public/test/content_browser_test_utils_mac.mm',
+          ],
+        },
+        {
+          'target_name': 'web_ui_test_mojo_bindings',
+          'type': 'static_library',
+          'dependencies': [
+            '../mojo/mojo.gyp:mojo_bindings',
+            '../mojo/mojo.gyp:mojo_system',
+          ],
+          'sources': [
+            'test/data/web_ui_test_mojo_bindings.mojom',
+          ],
+          # TODO(sky): this shouldn't be necessary. It's working around a bug in
+          # gyp.
+          'variables': {
+            'mojom_base_output_dir': 'content',
+          },
+          'includes': [ '../mojo/public/bindings/mojom_bindings_generator.gypi' ],
+          'export_dependent_settings': [
+            '../mojo/mojo.gyp:mojo_bindings',
+            '../mojo/mojo.gyp:mojo_system',
           ],
         },
         {
@@ -970,6 +994,8 @@
             'HAS_OUT_OF_PROC_TEST_RUNNER',
           ],
           'sources': [
+            'app/mojo/mojo_browsertest.cc',
+            'browser/accessibility/accessibility_mode_browsertest.cc',
             'browser/accessibility/accessibility_win_browsertest.cc',
             'browser/accessibility/cross_platform_accessibility_browsertest.cc',
             'browser/accessibility/dump_accessibility_tree_browsertest.cc',
@@ -1002,6 +1028,7 @@
             'browser/media/encrypted_media_browsertest.cc',
             'browser/media/media_browsertest.cc',
             'browser/media/media_browsertest.h',
+            'browser/media/media_canplaytype_browsertest.cc',
             'browser/media/media_source_browsertest.cc',
             'browser/media/webrtc_internals_browsertest.cc',
             'browser/plugin_data_remover_impl_browsertest.cc',
@@ -1024,6 +1051,7 @@
             'browser/web_contents/web_contents_impl_browsertest.cc',
             'browser/web_contents/web_contents_view_aura_browsertest.cc',
             'browser/webkit_browsertest.cc',
+            'browser/webui/web_ui_mojo_browsertest.cc',
             'browser/worker_host/test/worker_browsertest.cc',
             'child/site_isolation_policy_browsertest.cc',
             'common/gpu/client/context_provider_command_buffer_browsertest.cc',
@@ -1050,14 +1078,28 @@
             'renderer/render_widget_browsertest.cc',
             'renderer/resource_fetcher_browsertest.cc',
             'renderer/savable_resources_browsertest.cc',
+            'test/accessibility_browser_test_utils.cc',
+            'test/accessibility_browser_test_utils.h',
             'test/content_browser_test_test.cc',
-            'test/content_test_launcher.cc',
             'test/webui_resource_browsertest.cc',
           ],
           'conditions': [
             ['chromeos==0', {
               'sources!': [
                 'browser/web_contents/touch_editable_impl_aura_browsertest.cc',
+              ],
+            }],
+            ['use_mojo==0', {
+              'sources!': [
+                'browser/webui/web_ui_mojo_browsertest.cc',
+              ],
+            }, {  # use_mojo==1
+              'dependencies': [
+                'web_ui_test_mojo_bindings',
+                '../mojo/mojo.gyp:mojo_bindings',
+                '../mojo/mojo.gyp:mojo_environment_chromium',
+                '../mojo/mojo.gyp:mojo_system',
+                '../mojo/mojo.gyp:mojo_system_impl',
               ],
             }],
             ['OS=="win"', {
@@ -1145,6 +1187,16 @@
             ['use_aura!=1 and OS!="mac"', {
               'sources/': [
                 ['exclude', '^browser/compositor/'],
+              ],
+            }],
+            ['use_mojo==1', {
+              'dependencies': [
+                '../mojo/mojo.gyp:mojo_environment_chromium',
+                '../mojo/mojo.gyp:mojo_service_manager',
+              ],
+            },{
+              'sources!': [
+                'app/mojo/mojo_browsertest.cc',
               ],
             }],
             ['OS!="android" and OS!="ios"', {
@@ -1369,6 +1421,7 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../media/media.gyp:media',
+            '../media/media.gyp:media_test_support',
             '../testing/gtest.gyp:gtest',
             '../ui/base/ui_base.gyp:ui_base',
             '../ui/gfx/gfx.gyp:gfx',

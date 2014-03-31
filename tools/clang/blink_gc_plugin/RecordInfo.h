@@ -26,6 +26,7 @@ class GraphPoint {
   void MarkTraced() { traced_ = true; }
   bool IsProperlyTraced() { return traced_ || !NeedsTracing().IsNeeded(); }
   virtual const TracingStatus NeedsTracing() = 0;
+
  private:
   bool traced_;
 };
@@ -41,6 +42,7 @@ class BasePoint : public GraphPoint {
   void MarkUnneeded() { status_ = TracingStatus::Unneeded(); }
   const clang::CXXBaseSpecifier& spec() { return spec_; }
   RecordInfo* info() { return info_; }
+
  private:
   const clang::CXXBaseSpecifier& spec_;
   RecordInfo* info_;
@@ -49,17 +51,18 @@ class BasePoint : public GraphPoint {
 
 class FieldPoint : public GraphPoint {
  public:
-  FieldPoint(clang::FieldDecl* field, Edge* edge) : field_(field), edge_(edge) {
-    assert(edge && "FieldPoint edge must be non-null");
-  }
+  FieldPoint(clang::FieldDecl* field, Edge* edge)
+      : field_(field), edge_(edge) {}
   const TracingStatus NeedsTracing() {
     return edge_->NeedsTracing(Edge::kRecursive);
   }
   clang::FieldDecl* field() { return field_; }
   Edge* edge() { return edge_; }
+
  private:
   clang::FieldDecl* field_;
   Edge* edge_;
+
   friend class RecordCache;
   void deleteEdge() { delete edge_; }
 };
@@ -88,8 +91,10 @@ class RecordInfo {
   bool IsGCAllocated();
   bool IsGCFinalized();
   bool IsGCMixin();
-
   bool IsStackAllocated();
+  bool IsNonNewable();
+  bool IsOnlyPlacementNewable();
+
   bool RequiresTraceMethod();
   bool NeedsFinalization();
   TracingStatus NeedsTracing(Edge::NeedsTracingOption);
@@ -115,6 +120,8 @@ class RecordInfo {
 
   enum CachedBool { kFalse = 0, kTrue = 1, kNotComputed = 2 };
   CachedBool is_stack_allocated_;
+  CachedBool is_non_newable_;
+  CachedBool is_only_placement_newable_;
 
   bool determined_trace_methods_;
   clang::CXXMethodDecl* trace_method_;
@@ -135,7 +142,7 @@ class RecordCache {
     return Lookup(const_cast<clang::CXXRecordDecl*>(record));
   }
 
-  RecordInfo* Lookup(clang::Decl* decl) {
+  RecordInfo* Lookup(clang::DeclContext* decl) {
     return Lookup(clang::dyn_cast<clang::CXXRecordDecl>(decl));
   }
 

@@ -37,7 +37,8 @@ class ChromeWebContentsDelegateAndroid
   ChromeWebContentsDelegateAndroid(JNIEnv* env, jobject obj);
   virtual ~ChromeWebContentsDelegateAndroid();
 
-  virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
+  virtual void LoadingStateChanged(content::WebContents* source,
+                                   bool to_different_document) OVERRIDE;
   virtual void RunFileChooser(content::WebContents* web_contents,
                               const content::FileChooserParams& params)
                               OVERRIDE;
@@ -73,7 +74,7 @@ class ChromeWebContentsDelegateAndroid
                               bool user_gesture,
                               bool* was_blocked) OVERRIDE;
   virtual void WebContentsCreated(content::WebContents* source_contents,
-                                  int64 source_frame_id,
+                                  int opener_render_frame_id,
                                   const base::string16& frame_name,
                                   const GURL& target_url,
                                   content::WebContents* new_contents) OVERRIDE;

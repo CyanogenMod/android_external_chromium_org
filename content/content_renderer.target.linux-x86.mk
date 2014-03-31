@@ -52,7 +52,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/accessibility/blink_ax_enum_conversion.cc \
 	content/renderer/accessibility/renderer_accessibility.cc \
 	content/renderer/accessibility/renderer_accessibility_complete.cc \
-	content/renderer/accessibility/renderer_accessibility_focus_only.cc \
 	content/renderer/android/address_detector.cc \
 	content/renderer/android/content_detector.cc \
 	content/renderer/android/email_detector.cc \
@@ -81,7 +80,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/dom_storage/webstoragearea_impl.cc \
 	content/renderer/dom_storage/webstoragenamespace_impl.cc \
 	content/renderer/drop_data_builder.cc \
-	content/renderer/external_popup_menu.cc \
 	content/renderer/fetchers/image_resource_fetcher.cc \
 	content/renderer/fetchers/multi_resolution_image_resource_fetcher.cc \
 	content/renderer/fetchers/resource_fetcher_impl.cc \
@@ -116,7 +114,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/android/stream_texture_factory_android_impl.cc \
 	content/renderer/media/android/stream_texture_factory_android_synchronous_impl.cc \
 	content/renderer/media/android/webmediaplayer_android.cc \
-	content/renderer/media/audio_decoder.cc \
 	content/renderer/media/audio_device_factory.cc \
 	content/renderer/media/audio_input_message_filter.cc \
 	content/renderer/media/audio_message_filter.cc \
@@ -140,6 +137,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/video_capture_impl.cc \
 	content/renderer/media/video_capture_impl_manager.cc \
 	content/renderer/media/video_capture_message_filter.cc \
+	content/renderer/media/video_frame_compositor.cc \
 	content/renderer/media/video_frame_provider.cc \
 	content/renderer/media/webaudiosourceprovider_impl.cc \
 	content/renderer/media/webcontentdecryptionmodule_impl.cc \
@@ -199,6 +197,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/webpublicsuffixlist_impl.cc \
 	content/renderer/webscrollbarbehavior_impl_gtkoraura.cc \
 	content/renderer/websharedworker_proxy.cc \
+	content/renderer/external_popup_menu.cc \
 	content/renderer/media/webrtc_logging_noop.cc
 
 
@@ -264,9 +263,7 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -291,6 +288,7 @@ MY_DEFS_Debug := \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-D__GNU_SOURCE=1' \
@@ -427,9 +425,7 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -454,6 +450,7 @@ MY_DEFS_Release := \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-D__GNU_SOURCE=1' \

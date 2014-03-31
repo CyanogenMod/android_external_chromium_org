@@ -84,6 +84,12 @@ const char kAppsGalleryDownloadURL[]        = "apps-gallery-download-url";
 // confirmation dialog. A value of 'accept' means to always act as if the dialog
 // was accepted, and 'cancel' means to always act as if the dialog was
 // cancelled.
+//
+// TODO (rdevlin.cronin): Remove this.
+// This is not a good use of a command-line flag, as it would be equally
+// effective as a global boolean. Additionally, this opens up a dangerous way
+// for attackers to append a commandline flag and circumvent all user action for
+// installing an extension.
 const char kAppsGalleryInstallAutoConfirmForTests[] =
     "apps-gallery-install-auto-confirm-for-tests";
 
@@ -155,10 +161,6 @@ const char kCheckCloudPrintConnectorPolicy[] =
 
 // Comma-separated list of SSL cipher suites to disable.
 const char kCipherSuiteBlacklist[]          = "cipher-suite-blacklist";
-
-// Clears the token service before using it. This allows simulating the
-// expiration of credentials during testing.
-const char kClearTokenService[]             = "clear-token-service";
 
 // Tells chrome to display the cloud print dialog and upload the specified file
 // for printing.
@@ -486,6 +488,11 @@ const char kEnableAsyncDns[]                = "enable-async-dns";
 // HttpAuthHandlerNegotiate::CreateSPN for more background.
 const char kEnableAuthNegotiatePort[]       = "enable-auth-negotiate-port";
 
+// Enables the pre- and auto-login features. When a user signs in to sync, the
+// browser's cookie jar is pre-filled with GAIA cookies. When the user visits a
+// GAIA login page, an info bar can help the user login.
+const char kEnableAutologin[]               = "enable-autologin";
+
 // Enables the Automation extension API.
 // TODO(dtseng): Remove once API enabled for stable channel.
 const char kEnableAutomationAPI[]           = "enable-automation-api";
@@ -673,6 +680,9 @@ const char kEnableSearchButtonInOmniboxForStr[] =
 const char kEnableSearchButtonInOmniboxForStrOrIip[] =
     "enable-search-button-in-omnibox-for-str-or-iip";
 
+// Enable settings in a separate browser window per profile.
+const char kEnableSettingsWindow[]          = "enable-settings-window";
+
 // Enable SPDY/4 alpha 2. This is a temporary testing flag.
 const char kEnableSpdy4a2[]                 = "enable-spdy4a2";
 
@@ -703,13 +713,6 @@ const char kEnableThumbnailRetargeting[]   = "enable-thumbnail-retargeting";
 
 // Enables Translate experimental new UX which replaces the infobar.
 const char kEnableTranslateNewUX[]         = "enable-translate-new-ux";
-
-// Enables unrestricted SSL 3.0 fallback.
-// With this switch, SSL 3.0 fallback will be enabled for all sites.
-// Without this switch, SSL 3.0 fallback will be disabled for a site
-// pinned to the Google pin list (indicating that it is a Google site).
-const char kEnableUnrestrictedSSL3Fallback[] =
-    "enable-unrestricted-ssl3-fallback";
 
 // Enables Alternate-Protocol when the port is user controlled (> 1024).
 const char kEnableUserAlternateProtocolPorts[] =
@@ -755,6 +758,10 @@ const char kFakeVariationsChannel[]         = "fake-variations-channel";
 // already running chrome process via the fast path, ie: before chrome.dll is
 // loaded. It is useful to tell the difference for tracking purposes.
 const char kFastStart[]            = "fast-start";
+
+// Allows displaying the list of existing profiles in the avatar bubble for
+// fast switching between profiles.
+const char kFastUserSwitching[]             = "fast-user-switching";
 
 // These two flags are added around the switches about:flags adds to the
 // command line. This is useful to see which switches were added by about:flags
@@ -851,6 +858,10 @@ const char kIgnoreUrlFetcherCertRequests[]  =
 // Causes the browser to launch directly in incognito mode.
 const char kIncognito[]                     = "incognito";
 
+// Invalidation service should use GCM network channel even if experiment is not
+// enabled.
+const char kInvalidationUseGCMChannel[]     = "invalidation-use-gcm-channel";
+
 // Causes Chrome to attempt to get metadata from the webstore for the
 // app/extension ID given, and then prompt the user to download and install it.
 const char kInstallFromWebstore[]           = "install-from-webstore";
@@ -919,11 +930,6 @@ const char kMetricsRecordingOnly[]          = "metrics-recording-only";
 
 // Enables multiprofile Chrome.
 const char kMultiProfiles[]                 = "multi-profiles";
-
-// List of native messaging hosts outside of the default location. Used for
-// tests. The value must be comma-separate lists of key-value pairs separated
-// equal sign. E.g. "host1=/path/to/host1/manifest.json,host2=/path/host2.json".
-const char kNativeMessagingHosts[]          = "native-messaging-hosts";
 
 // Sets the base logging level for the net log. Log 0 logs the most data.
 // Intended primarily for use with --log-net-log.
@@ -1190,9 +1196,6 @@ const char kSetToken[]                      = "set-token";
 // If true the app list will be shown.
 const char kShowAppList[]                   = "show-app-list";
 
-// If true the app list will show the start page webui.
-const char kShowAppListStartPage[]          = "show-app-list-start-page";
-
 // See kHideIcons.
 const char kShowIcons[]                     = "show-icons";
 
@@ -1219,6 +1222,9 @@ const char kSimulateCriticalUpdate[]        = "simulate-critical-update";
 
 // Simulates that current version is outdated.
 const char kSimulateOutdated[]               = "simulate-outdated";
+
+// Simulates that current version is outdated and auto-update is off.
+const char kSimulateOutdatedNoAU[]           = "simulate-outdated-no-au";
 
 // Replaces the buffered data source for <audio> and <video> with a simplified
 // resource loader that downloads the entire resource into memory.
@@ -1434,6 +1440,9 @@ const char kEnableZeroSuggestMostVisited[] =
 const char kEnableZeroSuggestPersonalized[] =
     "enable-zero-suggest-personalized";
 
+// Enables instant search clicks feature.
+const char kEnableInstantSearchClicks[] = "enable-instant-search-clicks";
+
 #endif
 
 #if defined(USE_ASH)
@@ -1451,6 +1460,11 @@ const char kPasswordStore[]                 = "password-store";
 // and sanity checks are made to avoid corrupting the profile.
 // The browser exits after migration is complete.
 const char kMigrateDataDirForSxS[]          = "migrate-data-dir-for-sxs";
+
+// Allows sending text-to-speech requests to speech-dispatcher, a common
+// Linux speech service. Because it's buggy, the user must explicitly
+// enable it so that visiting a random webpage can't cause instability.
+const char kEnableSpeechDispatcher[] = "enable-speech-dispatcher";
 #endif  // defined(OS_LINUX) && !defined(OS_CHROMEOS)
 
 #if defined(OS_MACOSX)
@@ -1475,9 +1489,6 @@ const char kRelauncherProcess[]             = "relauncher";
 const char kEnablePermissionsBubbles[]      = "enable-permissions-bubbles";
 
 #if defined(OS_WIN)
-// Enables support to debug printing subsystem.
-const char kDebugPrint[]                    = "debug-print";
-
 // Fallback to XPS. By default connector uses CDD.
 const char kEnableCloudPrintXps[]           = "enable-cloud-print-xps";
 
@@ -1510,6 +1521,11 @@ const char kWaitForMutex[]                  = "wait-for-mutex";
 
 // Indicates that chrome was launched to service a search request in Windows 8.
 const char kWindows8Search[]           = "windows8-search";
+#endif
+
+#if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
+// Enables support to debug printing subsystem.
+const char kDebugPrint[] = "debug-print";
 #endif
 
 #ifndef NDEBUG

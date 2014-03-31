@@ -15,7 +15,7 @@
 
 namespace net {
 
-class QuicSession;
+class QuicClientSessionBase;
 
 namespace test {
 class CryptoTestUtils;
@@ -23,28 +23,9 @@ class CryptoTestUtils;
 
 class NET_EXPORT_PRIVATE QuicCryptoClientStream : public QuicCryptoStream {
  public:
-  class NET_EXPORT_PRIVATE Visitor {
-   public:
-    ~Visitor() {}
-
-    // Called when the proof in |cached| is marked valid.  If this is a secure
-    // QUIC session, then this will happen only after the proof verifier
-    // completes.  If this is an insecure QUIC connection, this will happen
-    // as soon as a valid config is discovered (either from the cache or
-    // from the server).
-    virtual void OnProofValid(
-        const QuicCryptoClientConfig::CachedState& cached) = 0;
-
-    // Called when proof verification details become available, either because
-    // proof verification is complete, or when cached details are used. This
-    // will only be called for secure QUIC connections.
-    virtual void OnProofVerifyDetailsAvailable(
-        const ProofVerifyDetails& verify_details) = 0;
-  };
-
   QuicCryptoClientStream(const QuicSessionKey& server_key,
-                         QuicSession* session,
-                         Visitor* visitor,
+                         QuicClientSessionBase* session,
+                         ProofVerifyContext* verify_context,
                          QuicCryptoClientConfig* crypto_config);
   virtual ~QuicCryptoClientStream();
 
@@ -61,8 +42,6 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream : public QuicCryptoStream {
   // have been sent. If the handshake has completed then this is one greater
   // than the number of round-trips needed for the handshake.
   int num_sent_client_hellos() const;
-
-  Visitor* visitor() { return visitor_; }
 
  private:
   // ProofVerifierCallbackImpl is passed as the callback method to VerifyProof.
@@ -103,11 +82,11 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream : public QuicCryptoStream {
   // |in| may be NULL if the call did not result from a received message.
   void DoHandshakeLoop(const CryptoHandshakeMessage* in);
 
-  // Called to set the proof of |cache| valid.  Also invokes the visitor's
+  // Called to set the proof of |cached| valid.  Also invokes the session's
   // OnProofValid() method.
-  void SetProofValid(QuicCryptoClientConfig::CachedState* cached);
+  void SetCachedProofValid(QuicCryptoClientConfig::CachedState* cached);
 
-  Visitor* visitor_;
+  QuicClientSessionBase* client_session();
 
   State next_state_;
   // num_client_hellos_ contains the number of client hello messages that this
@@ -134,6 +113,7 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream : public QuicCryptoStream {
   bool verify_ok_;
   string verify_error_details_;
   scoped_ptr<ProofVerifyDetails> verify_details_;
+  scoped_ptr<ProofVerifyContext> verify_context_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicCryptoClientStream);
 };

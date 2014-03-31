@@ -22,6 +22,9 @@
 #include "cc/trees/layer_tree_settings.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
+#include "content/browser/frame_host/frame_tree.h"
+#include "content/browser/frame_host/frame_tree_node.h"
+#include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/backing_store_aura.h"
 #include "content/browser/renderer_host/compositor_resize_lock_aura.h"
@@ -29,6 +32,7 @@
 #include "content/browser/renderer_host/input/synthetic_gesture_target_aura.h"
 #include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
+#include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/ui_events_helper.h"
 #include "content/browser/renderer_host/web_input_event_aura.h"
@@ -47,15 +51,11 @@
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/cursor_client_observer.h"
 #include "ui/aura/client/focus_client.h"
-#include "ui/aura/client/scoped_tooltip_disabler.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/client/tooltip_client.h"
-#include "ui/aura/client/transient_window_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
@@ -78,6 +78,10 @@
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/wm/public/activation_client.h"
+#include "ui/wm/public/scoped_tooltip_disabler.h"
+#include "ui/wm/public/tooltip_client.h"
+#include "ui/wm/public/transient_window_client.h"
 #include "ui/wm/public/window_types.h"
 
 #if defined(OS_WIN)
@@ -448,7 +452,8 @@ class RenderWidgetHostViewAura::WindowObserver : public aura::WindowObserver {
       view_->AddedToRootWindow();
   }
 
-  virtual void OnWindowRemovingFromRootWindow(aura::Window* window) OVERRIDE {
+  virtual void OnWindowRemovingFromRootWindow(aura::Window* window,
+                                              aura::Window* new_root) OVERRIDE {
     if (window == view_->window_)
       view_->RemovingFromRootWindow();
   }
@@ -494,6 +499,7 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(RenderWidgetHost* host)
   aura::client::SetActivationDelegate(window_, this);
   aura::client::SetActivationChangeObserver(window_, this);
   aura::client::SetFocusChangeObserver(window_, this);
+  window_->set_layer_owner_delegate(this);
   gfx::Screen::GetScreenFor(window_)->AddObserver(this);
   software_frame_manager_.reset(new SoftwareFrameManager(
       weak_ptr_factory_.GetWeakPtr()));
@@ -798,6 +804,18 @@ void RenderWidgetHostViewAura::SetKeyboardFocus() {
       ::SetFocus(host->GetAcceleratedWidget());
   }
 #endif
+}
+
+RenderFrameHostImpl* RenderWidgetHostViewAura::GetFocusedFrame() {
+  if (!host_->IsRenderView())
+    return NULL;
+  RenderViewHost* rvh = RenderViewHost::From(host_);
+  FrameTreeNode* focused_frame =
+      rvh->GetDelegate()->GetFrameTree()->GetFocusedFrame();
+  if (!focused_frame)
+    return NULL;
+
+  return focused_frame->current_frame_host();
 }
 
 void RenderWidgetHostViewAura::MovePluginWindows(
@@ -1260,6 +1278,9 @@ void RenderWidgetHostViewAura::InternalSetBounds(const gfx::Rect& rect) {
           window_->GetBoundsInRootWindow());
     }
   }
+
+  if (mouse_locked_)
+    UpdateMouseLockRegion();
 #endif
 }
 
@@ -1399,6 +1420,14 @@ void RenderWidgetHostViewAura::UpdateConstrainedWindowRects(
   params.geometry = &plugin_window_moves_;
   LPARAM lparam = reinterpret_cast<LPARAM>(&params);
   EnumChildWindows(parent, SetCutoutRectsCallback, lparam);
+}
+
+void RenderWidgetHostViewAura::UpdateMouseLockRegion() {
+  // Clip the cursor if chrome is running on regular desktop.
+  if (gfx::Screen::GetScreenFor(window_) == gfx::Screen::GetNativeScreen()) {
+    RECT window_rect = window_->GetBoundsInScreen().ToRECT();
+    ::ClipCursor(&window_rect);
+  }
 }
 #endif
 
@@ -2269,6 +2298,8 @@ bool RenderWidgetHostViewAura::LockMouse() {
   mouse_locked_ = true;
 #if !defined(OS_WIN)
   window_->SetCapture();
+#else
+  UpdateMouseLockRegion();
 #endif
   aura::client::CursorClient* cursor_client =
       aura::client::GetCursorClient(root_window);
@@ -2282,8 +2313,6 @@ bool RenderWidgetHostViewAura::LockMouse() {
     window_->MoveCursorTo(gfx::Rect(window_->bounds().size()).CenterPoint());
   }
   tooltip_disabler_.reset(new aura::client::ScopedTooltipDisabler(root_window));
-
-  root_window->GetHost()->ConfineCursorToRootWindow();
   return true;
 }
 
@@ -2298,6 +2327,8 @@ void RenderWidgetHostViewAura::UnlockMouse() {
 
 #if !defined(OS_WIN)
   window_->ReleaseCapture();
+#else
+  ::ClipCursor(NULL);
 #endif
   window_->MoveCursorTo(unlocked_mouse_position_);
   aura::client::CursorClient* cursor_client =
@@ -2308,7 +2339,6 @@ void RenderWidgetHostViewAura::UnlockMouse() {
   }
 
   host_->LostMouseLock();
-  root_window->GetHost()->UnConfineCursor();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2532,8 +2562,9 @@ bool RenderWidgetHostViewAura::ChangeTextDirectionAndLayoutAlignment(
 
 void RenderWidgetHostViewAura::ExtendSelectionAndDelete(
     size_t before, size_t after) {
-  if (host_)
-    host_->ExtendSelectionAndDelete(before, after);
+  RenderFrameHostImpl* rfh = GetFocusedFrame();
+  if (rfh)
+    rfh->ExtendSelectionAndDelete(before, after);
 }
 
 void RenderWidgetHostViewAura::EnsureCaretInRect(const gfx::Rect& rect) {
@@ -2706,60 +2737,6 @@ bool RenderWidgetHostViewAura::HasHitTestMask() const {
 }
 
 void RenderWidgetHostViewAura::GetHitTestMask(gfx::Path* mask) const {
-}
-
-void RenderWidgetHostViewAura::DidRecreateLayer(ui::Layer *old_layer,
-                                                ui::Layer *new_layer) {
-  float mailbox_scale_factor;
-  cc::TextureMailbox old_mailbox =
-      old_layer->GetTextureMailbox(&mailbox_scale_factor);
-  scoped_refptr<ui::Texture> old_texture = old_layer->external_texture();
-  // The new_layer is the one that will be used by our Window, so that's the one
-  // that should keep our texture. old_layer will be returned to the
-  // RecreateLayer caller, and should have a copy.
-  if (old_texture.get()) {
-    ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
-    GLHelper* gl_helper = factory->GetGLHelper();
-    scoped_refptr<ui::Texture> new_texture;
-    if (host_->is_accelerated_compositing_active() &&
-        gl_helper && current_surface_.get()) {
-      GLuint texture_id =
-          gl_helper->CopyTexture(current_surface_->PrepareTexture(),
-                                 current_surface_->size());
-      if (texture_id) {
-        new_texture = factory->CreateOwnedTexture(
-          current_surface_->size(),
-          current_surface_->device_scale_factor(), texture_id);
-      }
-    }
-    if (new_texture.get())
-      old_layer->SetExternalTexture(new_texture.get());
-    else
-      old_layer->SetShowPaintedContent();
-    new_layer->SetExternalTexture(old_texture.get());
-  } else if (old_mailbox.IsSharedMemory()) {
-    base::SharedMemory* old_buffer = old_mailbox.shared_memory();
-    const size_t size = old_mailbox.shared_memory_size_in_bytes();
-
-    scoped_ptr<base::SharedMemory> new_buffer(new base::SharedMemory);
-    new_buffer->CreateAndMapAnonymous(size);
-
-    if (old_buffer->memory() && new_buffer->memory()) {
-      memcpy(new_buffer->memory(), old_buffer->memory(), size);
-      base::SharedMemory* new_buffer_raw_ptr = new_buffer.get();
-      scoped_ptr<cc::SingleReleaseCallback> callback =
-          cc::SingleReleaseCallback::Create(base::Bind(MailboxReleaseCallback,
-                                                       Passed(&new_buffer)));
-      cc::TextureMailbox new_mailbox(new_buffer_raw_ptr,
-                                     old_mailbox.shared_memory_size());
-      new_layer->SetTextureMailbox(new_mailbox,
-                                   callback.Pass(),
-                                   mailbox_scale_factor);
-    }
-  } else if (frame_provider_.get()) {
-    new_layer->SetShowDelegatedContent(frame_provider_.get(),
-                                       current_frame_size_);
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3604,6 +3581,63 @@ void RenderWidgetHostViewAura::UnlockResources() {
 
 SkBitmap::Config RenderWidgetHostViewAura::PreferredReadbackFormat() {
   return SkBitmap::kARGB_8888_Config;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// RenderWidgetHostViewAura, ui::LayerOwnerDelegate implementation:
+
+void RenderWidgetHostViewAura::OnLayerRecreated(ui::Layer* old_layer,
+                                                ui::Layer* new_layer) {
+  float mailbox_scale_factor;
+  cc::TextureMailbox old_mailbox =
+      old_layer->GetTextureMailbox(&mailbox_scale_factor);
+  scoped_refptr<ui::Texture> old_texture = old_layer->external_texture();
+  // The new_layer is the one that will be used by our Window, so that's the one
+  // that should keep our texture. old_layer will be returned to the
+  // RecreateLayer caller, and should have a copy.
+  if (old_texture.get()) {
+    ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
+    GLHelper* gl_helper = factory->GetGLHelper();
+    scoped_refptr<ui::Texture> new_texture;
+    if (host_->is_accelerated_compositing_active() &&
+        gl_helper && current_surface_.get()) {
+      GLuint texture_id =
+          gl_helper->CopyTexture(current_surface_->PrepareTexture(),
+                                 current_surface_->size());
+      if (texture_id) {
+        new_texture = factory->CreateOwnedTexture(
+          current_surface_->size(),
+          current_surface_->device_scale_factor(), texture_id);
+      }
+    }
+    if (new_texture.get())
+      old_layer->SetExternalTexture(new_texture.get());
+    else
+      old_layer->SetShowPaintedContent();
+    new_layer->SetExternalTexture(old_texture.get());
+  } else if (old_mailbox.IsSharedMemory()) {
+    base::SharedMemory* old_buffer = old_mailbox.shared_memory();
+    const size_t size = old_mailbox.shared_memory_size_in_bytes();
+
+    scoped_ptr<base::SharedMemory> new_buffer(new base::SharedMemory);
+    new_buffer->CreateAndMapAnonymous(size);
+
+    if (old_buffer->memory() && new_buffer->memory()) {
+      memcpy(new_buffer->memory(), old_buffer->memory(), size);
+      base::SharedMemory* new_buffer_raw_ptr = new_buffer.get();
+      scoped_ptr<cc::SingleReleaseCallback> callback =
+          cc::SingleReleaseCallback::Create(base::Bind(MailboxReleaseCallback,
+                                                       Passed(&new_buffer)));
+      cc::TextureMailbox new_mailbox(new_buffer_raw_ptr,
+                                     old_mailbox.shared_memory_size());
+      new_layer->SetTextureMailbox(new_mailbox,
+                                   callback.Pass(),
+                                   mailbox_scale_factor);
+    }
+  } else if (frame_provider_.get()) {
+    new_layer->SetShowDelegatedContent(frame_provider_.get(),
+                                       current_frame_size_);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

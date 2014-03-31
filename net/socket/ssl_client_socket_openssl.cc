@@ -389,7 +389,7 @@ SSLClientSocketOpenSSL::PeerCertificateChain::operator=(
   return *this;
 }
 
-#if defined(USE_OPENSSL)
+#if defined(USE_OPENSSL_CERTS)
 // When OSCertHandle is typedef'ed to X509, this implementation does a short cut
 // to avoid converting back and forth between der and X509 struct.
 void SSLClientSocketOpenSSL::PeerCertificateChain::Reset(
@@ -417,7 +417,7 @@ void SSLClientSocketOpenSSL::PeerCertificateChain::Reset(
     CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509);
   }
 }
-#else  // !defined(USE_OPENSSL)
+#else  // !defined(USE_OPENSSL_CERTS)
 void SSLClientSocketOpenSSL::PeerCertificateChain::Reset(
     STACK_OF(X509)* chain) {
   openssl_chain_.reset(NULL);
@@ -455,7 +455,7 @@ void SSLClientSocketOpenSSL::PeerCertificateChain::Reset(
     os_chain_ = NULL;
   }
 }
-#endif  // USE_OPENSSL
+#endif  // defined(USE_OPENSSL_CERTS)
 
 // static
 SSLSessionCacheOpenSSL::Config
@@ -471,7 +471,9 @@ void SSLClientSocket::ClearSessionCache() {
   SSLClientSocketOpenSSL::SSLContext* context =
       SSLClientSocketOpenSSL::SSLContext::GetInstance();
   context->session_cache()->Flush();
+#if defined(USE_OPENSSL_CERTS)
   OpenSSLClientKeyStore::GetInstance()->Flush();
+#endif
 }
 
 SSLClientSocketOpenSSL::SSLClientSocketOpenSSL(
@@ -487,6 +489,7 @@ SSLClientSocketOpenSSL::SSLClientSocketOpenSSL(
       transport_write_error_(OK),
       server_cert_chain_(new PeerCertificateChain(NULL)),
       completed_handshake_(false),
+      was_ever_used_(false),
       client_auth_cert_needed_(false),
       cert_verifier_(context.cert_verifier),
       server_bound_cert_service_(context.server_bound_cert_service),
@@ -675,11 +678,7 @@ void SSLClientSocketOpenSSL::SetOmniboxSpeculation() {
 }
 
 bool SSLClientSocketOpenSSL::WasEverUsed() const {
-  if (transport_.get() && transport_->socket())
-    return transport_->socket()->WasEverUsed();
-
-  NOTREACHED();
-  return false;
+  return was_ever_used_;
 }
 
 bool SSLClientSocketOpenSSL::UsingTCPFastOpen() const {
@@ -750,6 +749,8 @@ int SSLClientSocketOpenSSL::Read(IOBuffer* buf,
   if (rv == ERR_IO_PENDING) {
     user_read_callback_ = callback;
   } else {
+    if (rv > 0)
+      was_ever_used_ = true;
     user_read_buf_ = NULL;
     user_read_buf_len_ = 0;
   }
@@ -768,6 +769,8 @@ int SSLClientSocketOpenSSL::Write(IOBuffer* buf,
   if (rv == ERR_IO_PENDING) {
     user_write_callback_ = callback;
   } else {
+    if (rv > 0)
+      was_ever_used_ = true;
     user_write_buf_ = NULL;
     user_write_buf_len_ = 0;
   }
@@ -907,6 +910,8 @@ bool SSLClientSocketOpenSSL::Init() {
 void SSLClientSocketOpenSSL::DoReadCallback(int rv) {
   // Since Run may result in Read being called, clear |user_read_callback_|
   // up front.
+  if (rv > 0)
+    was_ever_used_ = true;
   user_read_buf_ = NULL;
   user_read_buf_len_ = 0;
   base::ResetAndReturn(&user_read_callback_).Run(rv);
@@ -915,6 +920,8 @@ void SSLClientSocketOpenSSL::DoReadCallback(int rv) {
 void SSLClientSocketOpenSSL::DoWriteCallback(int rv) {
   // Since Run may result in Write being called, clear |user_write_callback_|
   // up front.
+  if (rv > 0)
+    was_ever_used_ = true;
   user_write_buf_ = NULL;
   user_write_buf_len_ = 0;
   base::ResetAndReturn(&user_write_callback_).Run(rv);
@@ -1414,7 +1421,7 @@ int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl,
   DCHECK(ssl == ssl_);
   DCHECK(*x509 == NULL);
   DCHECK(*pkey == NULL);
-
+#if defined(USE_OPENSSL_CERTS)
   if (!ssl_config_.send_client_cert) {
     // First pass: we know that a client certificate is needed, but we do not
     // have one at hand.
@@ -1451,6 +1458,10 @@ int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl,
     }
     LOG(WARNING) << "Client cert found without private key";
   }
+#else  // !defined(USE_OPENSSL_CERTS)
+  // OS handling of client certificates is not yet implemented.
+  NOTIMPLEMENTED();
+#endif  // defined(USE_OPENSSL_CERTS)
 
   // Send no client certificate.
   return 0;

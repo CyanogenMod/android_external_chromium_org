@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(vtl): Enable this on non-POSIX once we have a non-POSIX implementation.
-#include "build/build_config.h"
-#if defined(OS_POSIX)
-
 #include <stdint.h>
 
 #include <string>
@@ -14,6 +10,7 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/threading/platform_thread.h"  // For |Sleep()|.
 #include "mojo/common/test/multiprocess_test_helper.h"
 #include "mojo/embedder/scoped_platform_handle.h"
 #include "mojo/system/channel.h"
@@ -47,6 +44,12 @@ class ChannelThread {
 
   void Stop() {
     if (channel_) {
+      // Hack to flush write buffers before quitting.
+      // TODO(vtl): Remove this once |Channel| has a
+      // |FlushWriteBufferAndShutdown()| (or whatever).
+      while (!channel_->IsWriteBufferEmpty())
+        base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(20));
+
       test_io_thread_.PostTaskAndWait(
           FROM_HERE,
           base::Bind(&ChannelThread::ShutdownChannelOnIOThread,
@@ -215,13 +218,7 @@ TEST_F(MultiprocessMessagePipeTest, Basic) {
 
 // Sends a bunch of messages to the child. Expects them "repeated" back. Waits
 // for the child to close its end before quitting.
-// TODO(yzshen): The test hangs on Mac. http://crbug.com/350575
-#if defined(OS_MACOSX)
-#define MAYBE_QueueMessages DISABLED_QueueMessages
-#else
-#define MAYBE_QueueMessages QueueMessages
-#endif
-TEST_F(MultiprocessMessagePipeTest, MAYBE_QueueMessages) {
+TEST_F(MultiprocessMessagePipeTest, QueueMessages) {
   helper()->StartChild("EchoEcho");
 
   scoped_refptr<MessagePipe> mp(new MessagePipe(
@@ -277,5 +274,3 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_QueueMessages) {
 }  // namespace
 }  // namespace system
 }  // namespace mojo
-
-#endif  // defined(OS_POSIX)

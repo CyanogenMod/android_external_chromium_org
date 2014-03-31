@@ -1462,7 +1462,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest,
 }
 #endif  // defined(TOOLKIT_GTK) || defined(TOOLKIT_VIEWS)
 
-IN_PROC_BROWSER_TEST_F(OmniboxViewTest, DoesNotUpdateAutocompleteOnBlur) {
+// Flaky test. crbug.com/356850
+IN_PROC_BROWSER_TEST_F(OmniboxViewTest,
+                       DISABLED_DoesNotUpdateAutocompleteOnBlur) {
   OmniboxView* omnibox_view = NULL;
   ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
   OmniboxPopupModel* popup_model = omnibox_view->model()->popup_model();
@@ -1830,9 +1832,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest,
   EXPECT_EQ(url_c, omnibox_view->GetText());
 }
 
-IN_PROC_BROWSER_TEST_F(OmniboxViewTest, InputResetsSearchTermReplacement) {
-  browser()->toolbar_model()->set_url_replacement_enabled(false);
+IN_PROC_BROWSER_TEST_F(OmniboxViewTest, EscDisablesSearchTermReplacement) {
+  browser()->toolbar_model()->set_url_replacement_enabled(true);
   chrome::FocusLocationBar(browser());
-  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_A, 0));
-  EXPECT_TRUE(browser()->toolbar_model()->url_replacement_enabled());
+  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_ESCAPE, 0));
+  EXPECT_FALSE(browser()->toolbar_model()->url_replacement_enabled());
 }

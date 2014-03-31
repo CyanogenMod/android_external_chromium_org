@@ -1,7 +1,9 @@
 <h2 id="manifest">Manifest</h2>
 <p>
-You must set manifest_version to (at least) 2 to use this API.
+You must have a <code>"manifest_version"</code> of at least <code>2</code> to use this API.
 </p>
+
+{{?is_apps +partials.warning_dev /}}
 
 <h2 id="usage">Usage</h2>
 <p>The commands API allows you to define specific commands, and bind them to a
@@ -74,3 +76,35 @@ generate events that you can handle. If you need to take action based on your
 popup opening, consider listening for an 'onDomReady' event inside your popup's
 code.
 </p>
+
+<h2 id="usage">Scope</h2>
+<p>By default, Commands are scoped to the Chrome browser, which means that while
+the browser does not have focus, the shortcut will be inactive. On desktop
+Chrome, Commands can instead have global scope and will then also work while
+Chrome does *not* have focus. NOTE: The exception here is ChromeOS, where global
+commands are not allowed at the moment.</p>
+
+<p>The user is free to designate any shortcut as global using the UI in
+chrome://extensions \ Keyboard Shortcuts, but the extension developer is limited
+to specifying only Ctrl+Shift+[0..9] as global shortcuts. This is to minimize
+the risk of overriding shortcuts in other applications since if, for example,
+Alt+P were to be allowed as global, the printing shortcut might not work in
+other applications.</p>
+
+<p>Example:</p>
+
+<pre data-filename="manifest.json">
+{
+  "name": "My extension",
+  ...
+  "commands": {
+    "toggle-feature-foo": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+5"
+      },
+      "description": "Toggle feature foo",
+      <b>"global": true</b>
+    }
+  },
+  ...
+}</pre>

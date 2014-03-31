@@ -67,6 +67,7 @@ LOCAL_SRC_FILES := \
 	media/base/android/media_resource_getter.cc \
 	media/base/audio_buffer.cc \
 	media/base/audio_buffer_queue.cc \
+	media/base/audio_buffer_converter.cc \
 	media/base/audio_converter.cc \
 	media/base/audio_decoder.cc \
 	media/base/audio_decoder_config.cc \
@@ -147,7 +148,6 @@ LOCAL_SRC_FILES := \
 	media/filters/skcanvas_video_renderer.cc \
 	media/filters/source_buffer_stream.cc \
 	media/filters/stream_parser_factory.cc \
-	media/filters/video_frame_painter.cc \
 	media/filters/video_renderer_impl.cc \
 	media/filters/wsola_internals.cc \
 	media/midi/midi_manager.cc \
@@ -267,9 +267,7 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -278,6 +276,7 @@ MY_DEFS_Debug := \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -391,9 +390,7 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -402,6 +399,7 @@ MY_DEFS_Release := \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \

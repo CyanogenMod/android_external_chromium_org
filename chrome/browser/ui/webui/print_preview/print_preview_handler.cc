@@ -37,7 +37,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/signin_manager_base.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -51,7 +50,8 @@
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/print_messages.h"
-#include "components/signin/core/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager_base.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
@@ -62,6 +62,7 @@
 #include "content/public/browser/web_ui.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 #include "printing/backend/print_backend.h"
+#include "printing/backend/print_backend_consts.h"
 #include "printing/metafile.h"
 #include "printing/metafile_impl.h"
 #include "printing/pdf_render_settings.h"
@@ -286,19 +287,36 @@ void EnumeratePrintersOnFileThread(
   for (printing::PrinterList::iterator it = printer_list.begin();
        it != printer_list.end(); ++it) {
     base::DictionaryValue* printer_info = new base::DictionaryValue;
+    printers->Append(printer_info);
     std::string printer_name;
+    std::string printer_description;
 #if defined(OS_MACOSX)
     // On Mac, |it->printer_description| specifies the printer name and
     // |it->printer_name| specifies the device name / printer queue name.
     printer_name = it->printer_description;
+    if (!it->options[kDriverNameTagName].empty())
+      printer_description = it->options[kDriverNameTagName];
 #else
     printer_name = it->printer_name;
+    printer_description = it->printer_description;
 #endif
-    printer_info->SetString(printing::kSettingPrinterName, printer_name);
     printer_info->SetString(printing::kSettingDeviceName, it->printer_name);
+    printer_info->SetString(printing::kSettingPrinterDescription,
+                            printer_description);
+    printer_info->SetString(printing::kSettingPrinterName, printer_name);
     VLOG(1) << "Found printer " << printer_name
             << " with device name " << it->printer_name;
-    printers->Append(printer_info);
+
+    base::DictionaryValue* options = new base::DictionaryValue;
+    printer_info->Set(printing::kSettingPrinterOptions, options);
+    for (std::map<std::string, std::string>::iterator opt = it->options.begin();
+         opt != it->options.end();
+         ++opt) {
+      options->SetString(opt->first, opt->second);
+    }
+
+    VLOG(1) << "Found printer " << printer_name << " with device name "
+            << it->printer_name;
   }
   VLOG(1) << "Enumerate printers finished, found " << printers->GetSize()
           << " printers";
@@ -722,6 +740,7 @@ void PrintPreviewHandler::HandlePrint(const base::ListValue* args) {
   if (print_with_privet && PrivetPrintingEnabled()) {
     std::string printer_name;
     std::string print_ticket;
+    std::string capabilities;
     UMA_HISTOGRAM_COUNTS("PrintPreview.PageCount.PrintWithPrivet", page_count);
     ReportUserActionHistogram(PRINT_WITH_PRIVET);
 
@@ -729,16 +748,18 @@ void PrintPreviewHandler::HandlePrint(const base::ListValue* args) {
     int height = 0;
     if (!settings->GetString(printing::kSettingDeviceName, &printer_name) ||
         !settings->GetString(printing::kSettingTicket, &print_ticket) ||
+        !settings->GetString(printing::kSettingCapabilities, &capabilities) ||
         !settings->GetInteger(printing::kSettingPageWidth, &width) ||
         !settings->GetInteger(printing::kSettingPageHeight, &height) ||
-        width <= 0 || height <=0) {
+        width <= 0 || height <= 0) {
       NOTREACHED();
       base::FundamentalValue http_code_value(-1);
       web_ui()->CallJavascriptFunction("onPrivetPrintFailed", http_code_value);
       return;
     }
 
-    PrintToPrivetPrinter(printer_name, print_ticket, gfx::Size(width, height));
+    PrintToPrivetPrinter(
+        printer_name, print_ticket, capabilities, gfx::Size(width, height));
     return;
   }
 #endif
@@ -1402,21 +1423,23 @@ bool PrintPreviewHandler::PrivetUpdateClient(
 
 void PrintPreviewHandler::PrivetLocalPrintUpdateClient(
     std::string print_ticket,
+    std::string capabilities,
     gfx::Size page_size,
     scoped_ptr<local_discovery::PrivetHTTPClient> http_client) {
   if (!PrivetUpdateClient(http_client.Pass()))
     return;
 
-  StartPrivetLocalPrint(print_ticket, page_size);
+  StartPrivetLocalPrint(print_ticket, capabilities, page_size);
 }
 
-void PrintPreviewHandler::StartPrivetLocalPrint(
-    const std::string& print_ticket,
-    const gfx::Size& page_size) {
+void PrintPreviewHandler::StartPrivetLocalPrint(const std::string& print_ticket,
+                                                const std::string& capabilities,
+                                                const gfx::Size& page_size) {
   privet_local_print_operation_ =
       privet_http_client_->CreateLocalPrintOperation(this);
 
   privet_local_print_operation_->SetTicket(print_ticket);
+  privet_local_print_operation_->SetCapabilities(capabilities);
 
   scoped_refptr<base::RefCountedBytes> data;
   base::string16 title;
@@ -1480,14 +1503,17 @@ void PrintPreviewHandler::SendPrivetCapabilitiesError(
       name_value);
 }
 
-void PrintPreviewHandler::PrintToPrivetPrinter(
-    const std::string& device_name,
-    const std::string& ticket,
-    const gfx::Size& page_size) {
+void PrintPreviewHandler::PrintToPrivetPrinter(const std::string& device_name,
+                                               const std::string& ticket,
+                                               const std::string& capabilities,
+                                               const gfx::Size& page_size) {
   CreatePrivetHTTP(
       device_name,
       base::Bind(&PrintPreviewHandler::PrivetLocalPrintUpdateClient,
-                 base::Unretained(this), ticket, page_size));
+                 base::Unretained(this),
+                 ticket,
+                 capabilities,
+                 page_size));
 }
 
 bool PrintPreviewHandler::CreatePrivetHTTP(

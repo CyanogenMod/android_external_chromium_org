@@ -11,6 +11,7 @@
 #include "base/debug/crash_logging.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -52,6 +53,11 @@
 #endif
 
 #if defined(OS_WIN)
+
+// TODO(xhwang): Remove after http://crbug.com/345852 is fixed.
+const char kWidevineCdmFileName[] = "widevinecdm.dll";
+const char kWidevineCdmAdapterFileName[] = "widevinecdmadapter.dll";
+
 extern sandbox::TargetServices* g_target_services;
 
 // Used by EnumSystemLocales for warming up.
@@ -269,12 +275,26 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
   base::ScopedNativeLibrary library;
   if (plugin_entry_points_.initialize_module == NULL) {
     // Load the plugin from the specified library.
-    std::string error;
+    base::NativeLibraryLoadError error;
     library.Reset(base::LoadNativeLibrary(path, &error));
     if (!library.is_valid()) {
-      LOG(ERROR) << "Failed to load Pepper module from "
-        << path.value() << " (error: " << error << ")";
+      LOG(ERROR) << "Failed to load Pepper module from " << path.value()
+                 << " (error: " << error.ToString() << ")";
       ReportLoadResult(path, LOAD_FAILED);
+      // Report detailed reason for load failure.
+      ReportLoadErrorCode(path, error);
+#if defined(OW_WIN)
+      // Extra check to help investigate http://crbug.com/345852. This should
+      // never fail because the paths are checked before registering the
+      // adapter.
+      // TODO(xhwang): Remove this after the issue is fixed. See
+      // http://crbug.com/356331
+      if (path.BaseName().MaybeAsASCII() == kWidevineCdmAdapterFileName) {
+        CHECK(base::PathExists(path));
+        CHECK(
+            base::PathExists(path.DirName().AppendASCII(kWidevineCdmFileName)));
+      }
+#endif
       return;
     }
 
@@ -502,21 +522,36 @@ void PpapiThread::SavePluginName(const base::FilePath& path) {
 void PpapiThread::ReportLoadResult(const base::FilePath& path,
                                    LoadResult result) {
   DCHECK_LT(result, LOAD_RESULT_MAX);
-
-  std::ostringstream histogram_name;
-  histogram_name << "Plugin.Ppapi" << (is_broker_ ? "Broker" : "Plugin")
-                 << "LoadResult_" << path.BaseName().MaybeAsASCII();
+  std::string histogram_name = std::string("Plugin.Ppapi") +
+                               (is_broker_ ? "Broker" : "Plugin") +
+                               "LoadResult_" + path.BaseName().MaybeAsASCII();
 
   // Note: This leaks memory, which is expected behavior.
   base::HistogramBase* histogram =
       base::LinearHistogram::FactoryGet(
-          histogram_name.str(),
+          histogram_name,
           1,
           LOAD_RESULT_MAX,
           LOAD_RESULT_MAX + 1,
           base::HistogramBase::kUmaTargetedHistogramFlag);
 
   histogram->Add(result);
+}
+
+void PpapiThread::ReportLoadErrorCode(
+    const base::FilePath& path,
+    const base::NativeLibraryLoadError& error) {
+#if defined(OS_WIN)
+  // Only report load error code on Windows because that's the only platform
+  // that has a numerical error value.
+  std::string histogram_name =
+      std::string("Plugin.Ppapi") + (is_broker_ ? "Broker" : "Plugin") +
+      "LoadErrorCode_" + path.BaseName().MaybeAsASCII();
+
+  // For sparse histograms, we can use the macro, as it does not incorporate a
+  // static.
+  UMA_HISTOGRAM_SPARSE_SLOWLY(histogram_name, error.code);
+#endif
 }
 
 }  // namespace content

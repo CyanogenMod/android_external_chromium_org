@@ -26,7 +26,6 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import org.chromium.chromoting.jni.JniInterface;
@@ -39,8 +38,8 @@ import java.util.Arrays;
  * also requests and renews authentication tokens using the system account manager.
  */
 public class Chromoting extends Activity implements JniInterface.ConnectionListener,
-        AccountManagerCallback<Bundle>, ActionBar.OnNavigationListener,
-        HostListLoader.Callback {
+        AccountManagerCallback<Bundle>, ActionBar.OnNavigationListener, HostListLoader.Callback,
+        View.OnClickListener {
     /** Only accounts of this type will be selectable for authentication. */
     private static final String ACCOUNT_TYPE = "com.google";
 
@@ -52,11 +51,18 @@ public class Chromoting extends Activity implements JniInterface.ConnectionListe
     private static final String HELP_URL =
             "http://support.google.com/chrome/?p=mobile_crd_hostslist";
 
+    /** Web page to be displayed when user triggers the hyperlink for setting up hosts. */
+    private static final String HOST_SETUP_URL =
+            "https://support.google.com/chrome/answer/1649523";
+
     /** User's account details. */
     private Account mAccount;
 
     /** List of accounts on the system. */
     private Account[] mAccounts;
+
+    /** SpinnerAdapter used in the action bar for selecting accounts. */
+    private AccountsAdapter mAccountsAdapter;
 
     /** Account auth token. */
     private String mToken;
@@ -70,17 +76,11 @@ public class Chromoting extends Activity implements JniInterface.ConnectionListe
     /** Refresh button. */
     private MenuItem mRefreshButton;
 
-    /** Main view of this activity */
-    private View mMainView;
-
-    /** Progress view shown instead of the main view when the host list is loading. */
-    private View mProgressView;
-
-    /** Greeting at the top of the displayed list. */
-    private TextView mGreeting;
-
     /** Host list as it appears to the user. */
-    private ListView mList;
+    private ListView mHostListView;
+
+    /** Progress view shown instead of the host list when the host list is loading. */
+    private View mProgressView;
 
     /** Dialog for reporting connection progress. */
     private ProgressDialog mProgressIndicator;
@@ -128,8 +128,13 @@ public class Chromoting extends Activity implements JniInterface.ConnectionListe
 
     /** Shows or hides the progress indicator for loading the host list. */
     private void setHostListProgressVisible(boolean visible) {
-        mMainView.setVisibility(visible ? View.GONE : View.VISIBLE);
+        mHostListView.setVisibility(visible ? View.GONE : View.VISIBLE);
         mProgressView.setVisibility(visible ? View.VISIBLE : View.GONE);
+
+        // Hiding the host-list does not automatically hide the empty view, so do that here.
+        if (visible) {
+            mHostListView.getEmptyView().setVisibility(View.GONE);
+        }
     }
 
     /**
@@ -145,13 +150,24 @@ public class Chromoting extends Activity implements JniInterface.ConnectionListe
         mHostListLoader = new HostListLoader();
 
         // Get ahold of our view widgets.
-        mMainView = findViewById(R.id.hostList_main);
+        mHostListView = (ListView)findViewById(R.id.hostList_chooser);
+        mHostListView.setEmptyView(findViewById(R.id.hostList_empty));
         mProgressView = findViewById(R.id.hostList_progress);
-        mGreeting = (TextView)findViewById(R.id.hostList_greeting);
-        mList = (ListView)findViewById(R.id.hostList_chooser);
+
+        findViewById(R.id.host_setup_link_android).setOnClickListener(this);
 
         // Bring native components online.
         JniInterface.loadLibrary(this);
+    }
+
+    /**
+     * Called when the activity becomes visible. This happens on initial launch and whenever the
+     * user switches to the activity, for example, by using the window-switcher or when coming from
+     * the device's lock screen.
+     */
+    @Override
+    public void onStart() {
+        super.onStart();
 
         mAccounts = AccountManager.get(this).getAccountsByType(ACCOUNT_TYPE);
         if (mAccounts.length == 0) {
@@ -175,11 +191,14 @@ public class Chromoting extends Activity implements JniInterface.ConnectionListe
 
         if (mAccounts.length == 1) {
             getActionBar().setDisplayShowTitleEnabled(true);
+            getActionBar().setNavigationMode(ActionBar.NAVIGATION_MODE_STANDARD);
+            getActionBar().setTitle(R.string.mode_me2me);
             getActionBar().setSubtitle(mAccount.name);
         } else {
-            AccountsAdapter adapter = new AccountsAdapter(this, mAccounts);
+            mAccountsAdapter = new AccountsAdapter(this, mAccounts);
+            getActionBar().setDisplayShowTitleEnabled(false);
             getActionBar().setNavigationMode(ActionBar.NAVIGATION_MODE_LIST);
-            getActionBar().setListNavigationCallbacks(adapter, this);
+            getActionBar().setListNavigationCallbacks(mAccountsAdapter, this);
             getActionBar().setSelectedNavigationItem(index);
         }
 
@@ -201,8 +220,7 @@ public class Chromoting extends Activity implements JniInterface.ConnectionListe
         // Reload the spinner resources, since the font sizes are dependent on the screen
         // orientation.
         if (mAccounts.length != 1) {
-            AccountsAdapter adapter = new AccountsAdapter(this, mAccounts);
-            getActionBar().setListNavigationCallbacks(adapter, this);
+            mAccountsAdapter.notifyDataSetChanged();
         }
     }
 
@@ -235,6 +253,12 @@ public class Chromoting extends Activity implements JniInterface.ConnectionListe
             default:
                 return super.onOptionsItemSelected(item);
         }
+    }
+
+    /** Called when the user touches hyperlinked text. */
+    @Override
+    public void onClick(View view) {
+        HelpActivity.launch(this, HOST_SETUP_URL);
     }
 
     /** Called when the user taps on a host entry. */
@@ -374,17 +398,9 @@ public class Chromoting extends Activity implements JniInterface.ConnectionListe
     private void updateUi() {
         mRefreshButton.setEnabled(mAccount != null);
 
-        if (mHosts.length == 0) {
-            mGreeting.setText(getString(R.string.host_list_empty_android));
-            mList.setAdapter(null);
-            return;
-        }
-
-        mGreeting.setText(getString(R.string.mode_me2me));
-
         ArrayAdapter<HostInfo> displayer = new HostListAdapter(this, R.layout.host, mHosts);
         Log.i("hostlist", "About to populate host list display");
-        mList.setAdapter(displayer);
+        mHostListView.setAdapter(displayer);
     }
 
     @Override

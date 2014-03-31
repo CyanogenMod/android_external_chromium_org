@@ -27,6 +27,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/signin_error_notifier_factory_ash.h"
 #include "chrome/browser/speech/tts_controller.h"
+#include "chrome/browser/sync/sync_error_notifier_factory_ash.h"
 #include "chrome/browser/ui/ash/chrome_new_window_delegate_chromeos.h"
 #include "chrome/browser/ui/ash/session_state_delegate_chromeos.h"
 #include "chrome/browser/ui/ash/system_tray_delegate_chromeos.h"
@@ -35,8 +36,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
@@ -148,6 +147,11 @@ class AccessibilityDelegateImpl : public ash::AccessibilityDelegate {
         ShouldShowAccessibilityMenu();
   }
 
+  virtual bool IsBrailleDisplayConnected() const OVERRIDE {
+    DCHECK(chromeos::AccessibilityManager::Get());
+    return chromeos::AccessibilityManager::Get()->IsBrailleDisplayConnected();
+  }
+
   virtual void SilenceSpokenFeedback() const OVERRIDE {
     TtsController::GetInstance()->Stop();
   }
@@ -237,10 +241,8 @@ void ChromeShellDelegate::PreInit() {
       new chromeos::DisplayConfigurationObserver());
 }
 
-void ChromeShellDelegate::Shutdown() {
-  content::RecordAction(base::UserMetricsAction("Shutdown"));
-  chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->
-      RequestShutdown();
+void ChromeShellDelegate::PreShutdown() {
+  display_configuration_observer_.reset();
 }
 
 ash::SessionStateDelegate* ChromeShellDelegate::CreateSessionStateDelegate() {
@@ -275,8 +277,9 @@ void ChromeShellDelegate::Observe(int type,
       Profile* profile = content::Details<Profile>(details).ptr();
       if (!chromeos::ProfileHelper::IsSigninProfile(profile) &&
           !profile->IsGuestSession() && !profile->IsManaged()) {
-        // Start the error notifier service to show auth notifications.
+        // Start the error notifier services to show auth/sync notifications.
         SigninErrorNotifierFactory::GetForProfile(profile);
+        SyncErrorNotifierFactory::GetForProfile(profile);
       }
       ash::Shell::GetInstance()->OnLoginUserProfilePrepared();
       break;
@@ -284,11 +287,6 @@ void ChromeShellDelegate::Observe(int type,
     case chrome::NOTIFICATION_SESSION_STARTED:
       InitAfterSessionStart();
       ash::Shell::GetInstance()->ShowShelf();
-      break;
-    case chrome::NOTIFICATION_APP_TERMINATING:
-      // Let classes unregister themselves as observers of the
-      // ash::Shell singleton before the shell is destroyed.
-      display_configuration_observer_.reset();
       break;
     default:
       NOTREACHED() << "Unexpected notification " << type;
@@ -301,8 +299,5 @@ void ChromeShellDelegate::PlatformInit() {
                  content::NotificationService::AllSources());
   registrar_.Add(this,
                  chrome::NOTIFICATION_SESSION_STARTED,
-                 content::NotificationService::AllSources());
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_APP_TERMINATING,
                  content::NotificationService::AllSources());
 }

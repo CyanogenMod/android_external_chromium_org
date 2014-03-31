@@ -51,6 +51,7 @@ class AppsGridViewTestApi;
 class ApplicationDragAndDropHost;
 class AppListItemView;
 class AppsGridViewDelegate;
+class AppsGridViewFolderDelegate;
 class PageSwitcher;
 class PaginationModel;
 
@@ -70,12 +71,9 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
 
   // Constructs the app icon grid view. |delegate| is the delegate of this
   // view, which usually is the hosting AppListView. |pagination_model| is
-  // the paging info shared within the launcher UI. |start_page_contents| is
-  // the contents for the launcher start page. It could be NULL if the start
-  // page is not available.
+  // the paging info shared within the launcher UI.
   AppsGridView(AppsGridViewDelegate* delegate,
-               PaginationModel* pagination_model,
-               content::WebContents* start_page_contents);
+               PaginationModel* pagination_model);
   virtual ~AppsGridView();
 
   // Sets fixed layout parameters. After setting this, CalculateLayout below
@@ -199,7 +197,9 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
     return forward_events_to_drag_and_drop_host_;
   }
 
-  void set_is_root_level(bool value) { is_root_level_ = value; }
+  void set_folder_delegate(AppsGridViewFolderDelegate* folder_delegate) {
+    folder_delegate_ = folder_delegate;
+  }
 
   AppListItemView* activated_item_view() const {
     return activated_item_view_;
@@ -343,9 +343,6 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // buffer area surrounding it.
   bool IsPointWithinDragBuffer(const gfx::Point& point) const;
 
-  // Handles start page layout and transition animation.
-  void LayoutStartPage();
-
   // Overridden from views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
@@ -433,7 +430,7 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
 
   // Returns true if drag event is happening in the hidden AppsGridView of the
   // folder during reparenting a folder item.
-  bool IsDraggingForReprentInHiddenGridView() const;
+  bool IsDraggingForReparentInHiddenGridView() const;
 
   // Returns the target icon bounds for |drag_item_view| to fly back
   // to its parent |folder_item_view| in animation.
@@ -446,9 +443,12 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   AppListModel* model_;  // Owned by AppListView.
   AppListItemList* item_list_;  // Not owned.
   AppsGridViewDelegate* delegate_;
+
+  // This can be NULL. Only grid views inside folders have a folder delegate.
+  AppsGridViewFolderDelegate* folder_delegate_;
+
   PaginationModel* pagination_model_;  // Owned by AppListController.
   PageSwitcher* page_switcher_view_;  // Owned by views hierarchy.
-  views::WebView* start_page_view_;  // Owned by views hierarchy.
 
   gfx::Size icon_size_;
   int cols_;
@@ -520,9 +520,6 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   int page_flip_delay_in_ms_;
 
   views::BoundsAnimator bounds_animator_;
-
-  // If true, AppsGridView is rending items at the root level of the app list.
-  bool is_root_level_;
 
   // The most recent activated item view.
   AppListItemView* activated_item_view_;

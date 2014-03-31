@@ -155,6 +155,9 @@ extern const char kDisableDomainBlockingFor3DAPIs[] =
 // Disable experimental WebGL support.
 const char kDisableExperimentalWebGL[]      = "disable-webgl";
 
+// Disable the fast text autosizing implementation.
+const char kDisableFastTextAutosizing[]     = "disable-fast-text-autosizing";
+
 // Disable FileSystem API.
 const char kDisableFileSystem[]             = "disable-file-system";
 
@@ -193,10 +196,6 @@ const char kDisableGpuCompositing[]         = "disable-gpu-compositing";
 // This switch is intended only for tests.
 extern const char kDisableGpuProcessCrashLimit[] =
     "disable-gpu-process-crash-limit";
-
-// Do not launch the GPU process shortly after browser process launch. Instead
-// launch it when it is first needed.
-const char kDisableGpuProcessPrelaunch[]    = "disable-gpu-process-prelaunch";
 
 // Disable GPU rasterization, i.e. rasterize on the CPU only.
 // Overrides the kEnableGpuRasterization and kForceGpuRasterization flags.
@@ -655,6 +654,10 @@ const char kGpuSandboxAllowSysVShm[]        = "gpu-sandbox-allow-sysv-shm";
 // Makes GPU sandbox failures fatal.
 const char kGpuSandboxFailuresFatal[]       = "gpu-sandbox-failures-fatal";
 
+// Allow GPU sandbox to start later
+const char kGpuSandboxStartAfterInitialization[] =
+    "gpu-sandbox-start-after-initialization";
+
 // Causes the GPU process to display a dialog on launch.
 const char kGpuStartupDialog[]              = "gpu-startup-dialog";
 
@@ -672,10 +675,6 @@ const char kIgnoreGpuBlacklist[]            = "ignore-gpu-blacklist";
 
 // Run the GPU process as a thread in the browser process.
 const char kInProcessGPU[]                  = "in-process-gpu";
-
-// These mappings only apply to the host resolver, and can insert additional
-// resolutions in front of resolutions that match a pattern.
-const char kIpResolverRules[]               = "ip-resolver-rules";
 
 // Specifies the flags passed to JS engine
 const char kJavaScriptFlags[]               = "js-flags";
@@ -1027,12 +1026,8 @@ const char kNetworkCountryIso[] = "network-country-iso";
 const char kRemoteDebuggingSocketName[]     = "remote-debugging-socket-name";
 #endif
 
-#if defined(OS_ANDROID) && defined(ARCH_CPU_X86)
-const char kEnableWebAudio[]                = "enable-webaudio";
-#else
 // Disable web audio API.
 const char kDisableWebAudio[]               = "disable-webaudio";
-#endif
 
 #if defined(OS_CHROMEOS)
 // Disables panel fitting (used for mirror mode).
@@ -1046,11 +1041,6 @@ const char kEnableCarbonInterposing[]       = "enable-carbon-interposing";
 // accelerated compositing is disabled. See http://crbug.com/122430 .
 const char kDisableCoreAnimationPlugins[] =
     "disable-core-animation-plugins";
-#endif
-
-#if defined(OS_POSIX)
-// Causes the child processes to cleanly exit via calling exit().
-const char kChildCleanExit[]                = "child-clean-exit";
 #endif
 
 // Don't dump stuff here, follow the same order as the header.

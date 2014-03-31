@@ -143,10 +143,14 @@ void VideoLayerImpl::AppendQuads(QuadSink* quad_sink,
     return;
 
   // Pixels for macroblocked formats.
-  float tex_width_scale =
+  const float tex_width_scale =
       static_cast<float>(visible_rect.width()) / coded_size.width();
-  float tex_height_scale =
+  const float tex_height_scale =
       static_cast<float>(visible_rect.height()) / coded_size.height();
+  const float tex_x_offset =
+      static_cast<float>(visible_rect.x()) / coded_size.width();
+  const float tex_y_offset =
+      static_cast<float>(visible_rect.y()) / coded_size.height();
 
   switch (frame_resource_type_) {
     // TODO(danakj): Remove this, hide it in the hardware path.
@@ -179,14 +183,15 @@ void VideoLayerImpl::AppendQuads(QuadSink* quad_sink,
       DCHECK_GE(frame_resources_.size(), 3u);
       if (frame_resources_.size() < 3u)
         break;
-      gfx::SizeF tex_scale(tex_width_scale, tex_height_scale);
+      gfx::RectF tex_coord_rect(
+          tex_x_offset, tex_y_offset, tex_width_scale, tex_height_scale);
       scoped_ptr<YUVVideoDrawQuad> yuv_video_quad = YUVVideoDrawQuad::Create();
       yuv_video_quad->SetNew(
           shared_quad_state,
           quad_rect,
           opaque_rect,
           visible_quad_rect,
-          tex_scale,
+          tex_coord_rect,
           frame_resources_[0],
           frame_resources_[1],
           frame_resources_[2],
@@ -240,14 +245,13 @@ void VideoLayerImpl::AppendQuads(QuadSink* quad_sink,
       DCHECK_EQ(frame_resources_.size(), 1u);
       if (frame_resources_.size() < 1u)
         break;
-      gfx::Size visible_size(visible_rect.width(), visible_rect.height());
       scoped_ptr<IOSurfaceDrawQuad> io_surface_quad =
           IOSurfaceDrawQuad::Create();
       io_surface_quad->SetNew(shared_quad_state,
                               quad_rect,
                               opaque_rect,
                               visible_quad_rect,
-                              visible_size,
+                              visible_rect.size(),
                               frame_resources_[0],
                               IOSurfaceDrawQuad::UNFLIPPED);
       quad_sink->Append(io_surface_quad.PassAs<DrawQuad>());
@@ -275,8 +279,7 @@ void VideoLayerImpl::AppendQuads(QuadSink* quad_sink,
                                     false,
                                     SK_ColorTRANSPARENT,
                                     true);
-      quad_sink->Append(solid_color_draw_quad.PassAs<DrawQuad>(),
-                        append_quads_data);
+      quad_sink->Append(solid_color_draw_quad.PassAs<DrawQuad>());
       break;
     }
 #endif  // defined(VIDEO_HOLE)

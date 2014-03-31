@@ -19,9 +19,9 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
 #include "media/base/video_frame.h"
 #include "media/filters/skcanvas_video_renderer.h"
 #include "net/base/net_util.h"
@@ -57,7 +57,7 @@ namespace {
 // Convenience macro: Short-circuit a pass for platforms where setting up
 // high-DPI fails.
 #define PASS_TEST_IF_SCALE_FACTOR_NOT_SUPPORTED(factor) \
-  if (ui::GetImageScale( \
+  if (ui::GetScaleForScaleFactor( \
           GetScaleFactorForView(GetRenderWidgetHostViewPort())) != factor) {  \
     LOG(WARNING) << "Blindly passing this test: failed to set up "  \
                     "scale factor: " << factor;  \

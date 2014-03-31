@@ -61,7 +61,6 @@ LOCAL_SRC_FILES := \
 	net/base/host_port_pair.cc \
 	net/base/io_buffer.cc \
 	net/base/ip_endpoint.cc \
-	net/base/ip_mapping_rules.cc \
 	net/base/ip_pattern.cc \
 	net/base/keygen_handler.cc \
 	net/base/keygen_handler_openssl.cc \
@@ -134,6 +133,7 @@ LOCAL_SRC_FILES := \
 	net/disk_cache/blockfile/addr.cc \
 	net/disk_cache/blockfile/backend_impl.cc \
 	net/disk_cache/blockfile/backend_impl_v3.cc \
+	net/disk_cache/blockfile/backend_worker_v3.cc \
 	net/disk_cache/blockfile/bitmap.cc \
 	net/disk_cache/blockfile/block_bitmaps_v3.cc \
 	net/disk_cache/blockfile/block_files.cc \
@@ -189,7 +189,6 @@ LOCAL_SRC_FILES := \
 	net/dns/host_resolver_impl.cc \
 	net/dns/host_resolver_proc.cc \
 	net/dns/mapped_host_resolver.cc \
-	net/dns/mapped_ip_resolver.cc \
 	net/dns/serial_worker.cc \
 	net/dns/single_request_host_resolver.cc \
 	net/filter/filter.cc \
@@ -332,7 +331,6 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/null_encrypter.cc \
 	net/quic/crypto/p256_key_exchange_openssl.cc \
 	net/quic/crypto/proof_source_chromium.cc \
-	net/quic/crypto/proof_verifier.cc \
 	net/quic/crypto/proof_verifier_chromium.cc \
 	net/quic/crypto/quic_crypto_client_config.cc \
 	net/quic/crypto/quic_crypto_server_config.cc \
@@ -351,6 +349,7 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_alarm.cc \
 	net/quic/quic_bandwidth.cc \
 	net/quic/quic_client_session.cc \
+	net/quic/quic_client_session_base.cc \
 	net/quic/quic_clock.cc \
 	net/quic/quic_config.cc \
 	net/quic/quic_connection.cc \
@@ -458,6 +457,7 @@ LOCAL_SRC_FILES := \
 	net/ssl/ssl_cert_request_info.cc \
 	net/ssl/ssl_cipher_suite_names.cc \
 	net/ssl/ssl_client_auth_cache.cc \
+	net/ssl/ssl_config.cc \
 	net/ssl/ssl_config_service.cc \
 	net/ssl/ssl_config_service_defaults.cc \
 	net/ssl/ssl_info.cc \
@@ -581,6 +581,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_BUILT_IN_DNS' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -677,6 +678,7 @@ MY_DEFS_Release := \
 	'-DENABLE_BUILT_IN_DNS' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \

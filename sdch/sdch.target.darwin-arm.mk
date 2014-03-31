@@ -50,6 +50,7 @@ MY_CFLAGS_Debug := \
 	-fPIC \
 	-include \
 	./sdch/logging_forward.h \
+	-Wno-deprecated-declarations \
 	-fno-tree-sra \
 	-fuse-ld=gold \
 	-Wno-psabi \
@@ -89,6 +90,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -139,6 +141,7 @@ MY_CFLAGS_Release := \
 	-fPIC \
 	-include \
 	./sdch/logging_forward.h \
+	-Wno-deprecated-declarations \
 	-fno-tree-sra \
 	-fuse-ld=gold \
 	-Wno-psabi \
@@ -178,6 +181,7 @@ MY_DEFS_Release := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \

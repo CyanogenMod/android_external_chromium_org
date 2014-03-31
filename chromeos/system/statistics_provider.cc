@@ -72,6 +72,7 @@ const char kHardwareClassKey[] = "hardware_class";
 const char kOffersCouponCodeKey[] = "ubind_attribute";
 const char kOffersGroupCodeKey[] = "gbind_attribute";
 const char kRlzBrandCodeKey[] = "rlz_brand_code";
+const char kDiskSerialNumber[] = "root_disk_serial_number";
 
 // OEM specific statistics. Must be prefixed with "oem_".
 const char kOemCanExitEnterpriseEnrollmentKey[] = "oem_can_exit_enrollment";
@@ -226,9 +227,9 @@ void StatisticsProviderImpl::LoadMachineStatistics(bool load_oem_manifest) {
   if (cancellation_flag_.IsSet())
     return;
 
+  NameValuePairsParser parser(&machine_info_);
   if (base::SysInfo::IsRunningOnChromeOS()) {
     // Parse all of the key/value pairs from the crossystem tool.
-    NameValuePairsParser parser(&machine_info_);
     if (!parser.ParseNameValuePairsFromTool(arraysize(kCrosSystemTool),
                                             kCrosSystemTool,
                                             kCrosSystemEq,
@@ -236,17 +237,17 @@ void StatisticsProviderImpl::LoadMachineStatistics(bool load_oem_manifest) {
                                             kCrosSystemCommentDelim)) {
       LOG(ERROR) << "Errors parsing output from: " << kCrosSystemTool;
     }
-
-    parser.GetNameValuePairsFromFile(base::FilePath(kMachineHardwareInfoFile),
-                                     kMachineHardwareInfoEq,
-                                     kMachineHardwareInfoDelim);
-    parser.GetNameValuePairsFromFile(base::FilePath(kEchoCouponFile),
-                                     kEchoCouponEq,
-                                     kEchoCouponDelim);
-    parser.GetNameValuePairsFromFile(base::FilePath(kVpdFile),
-                                     kVpdEq,
-                                     kVpdDelim);
   }
+
+  parser.GetNameValuePairsFromFile(base::FilePath(kMachineHardwareInfoFile),
+                                   kMachineHardwareInfoEq,
+                                   kMachineHardwareInfoDelim);
+  parser.GetNameValuePairsFromFile(base::FilePath(kEchoCouponFile),
+                                   kEchoCouponEq,
+                                   kEchoCouponDelim);
+  parser.GetNameValuePairsFromFile(base::FilePath(kVpdFile),
+                                   kVpdEq,
+                                   kVpdDelim);
 
   // Ensure that the hardware class key is present with the expected
   // key name, and if it couldn't be retrieved, that the value is "unknown".

@@ -220,6 +220,11 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   virtual void SetSwapBuffersCompleteCallback(
       const base::Closure& swap_buffers_complete_callback)
           OVERRIDE;
+  virtual void ScheduleOverlayPlane(int plane_z_order,
+                                    unsigned plane_transform,
+                                    unsigned overlay_texture_id,
+                                    const gfx::Rect& display_bounds,
+                                    const gfx::RectF& uv_rect) OVERRIDE;
 
   void GetProgramInfoCHROMIUMHelper(GLuint program, std::vector<int8>* result);
   GLint GetAttribLocationHelper(GLuint program, const char* name);
@@ -494,12 +499,14 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   bool IsRenderbufferReservedId(GLuint id) { return false; }
   bool IsTextureReservedId(GLuint id) { return false; }
   bool IsVertexArrayReservedId(GLuint id) { return false; }
+  bool IsProgramReservedId(GLuint id) { return false; }
 
   bool BindBufferHelper(GLenum target, GLuint texture);
   bool BindFramebufferHelper(GLenum target, GLuint texture);
   bool BindRenderbufferHelper(GLenum target, GLuint texture);
   bool BindTextureHelper(GLenum target, GLuint texture);
-  bool BindVertexArrayHelper(GLuint array);
+  bool BindVertexArrayOESHelper(GLuint array);
+  bool UseProgramHelper(GLuint program);
 
   void GenBuffersHelper(GLsizei n, const GLuint* buffers);
   void GenFramebuffersHelper(GLsizei n, const GLuint* framebuffers);

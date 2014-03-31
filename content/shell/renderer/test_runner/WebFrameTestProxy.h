@@ -92,6 +92,10 @@ public:
     {
         Base::didFinishLoad(frame);
     }
+    virtual void didChangeSelection(bool is_selection_empty) {
+        m_baseProxy->didChangeSelection(is_selection_empty);
+        Base::didChangeSelection(is_selection_empty);
+    }
     virtual void showContextMenu(const blink::WebContextMenuData& contextMenuData) {
         m_baseProxy->showContextMenu(Base::GetWebFrame(), contextMenuData);
         Base::showContextMenu(contextMenuData);
@@ -155,6 +159,11 @@ public:
         if (m_baseProxy->willCheckAndDispatchMessageEvent(sourceFrame, targetFrame, target, event))
             return true;
         return Base::willCheckAndDispatchMessageEvent(sourceFrame, targetFrame, target, event);
+    }
+    virtual void didStopLoading()
+    {
+        m_baseProxy->didStopLoading();
+        Base::didStopLoading();
     }
 
 private:

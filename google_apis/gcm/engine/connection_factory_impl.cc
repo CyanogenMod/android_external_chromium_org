@@ -41,19 +41,23 @@ bool ShouldRestorePreviousBackoff(const base::TimeTicks& login_time,
 }  // namespace
 
 ConnectionFactoryImpl::ConnectionFactoryImpl(
-    const GURL& mcs_endpoint,
+    const std::vector<GURL>& mcs_endpoints,
     const net::BackoffEntry::Policy& backoff_policy,
     scoped_refptr<net::HttpNetworkSession> network_session,
     net::NetLog* net_log)
-  : mcs_endpoint_(mcs_endpoint),
+  : mcs_endpoints_(mcs_endpoints),
+    next_endpoint_(0),
+    last_successful_endpoint_(0),
     backoff_policy_(backoff_policy),
     network_session_(network_session),
     bound_net_log_(
         net::BoundNetLog::Make(net_log, net::NetLog::SOURCE_SOCKET)),
     pac_request_(NULL),
     connecting_(false),
+    waiting_for_backoff_(false),
     logging_in_(false),
     weak_ptr_factory_(this) {
+  DCHECK_GE(mcs_endpoints_.size(), 1U);
 }
 
 ConnectionFactoryImpl::~ConnectionFactoryImpl() {
@@ -75,13 +79,12 @@ void ConnectionFactoryImpl::Initialize(
 
   net::NetworkChangeNotifier::AddIPAddressObserver(this);
   net::NetworkChangeNotifier::AddConnectionTypeObserver(this);
-  connection_handler_.reset(
-      new ConnectionHandlerImpl(
-          base::TimeDelta::FromMilliseconds(kReadTimeoutMs),
-          read_callback,
-          write_callback,
-          base::Bind(&ConnectionFactoryImpl::ConnectionHandlerCallback,
-                     weak_ptr_factory_.GetWeakPtr())));
+  connection_handler_ = CreateConnectionHandler(
+      base::TimeDelta::FromMilliseconds(kReadTimeoutMs),
+      read_callback,
+      write_callback,
+      base::Bind(&ConnectionFactoryImpl::ConnectionHandlerCallback,
+                 weak_ptr_factory_.GetWeakPtr())).Pass();
 }
 
 ConnectionHandler* ConnectionFactoryImpl::GetConnectionHandler() const {
@@ -91,35 +94,53 @@ ConnectionHandler* ConnectionFactoryImpl::GetConnectionHandler() const {
 void ConnectionFactoryImpl::Connect() {
   DCHECK(connection_handler_);
 
-  connecting_ = true;
+  if (connecting_ || waiting_for_backoff_)
+    return;  // Connection attempt already in progress or pending.
+
+  if (IsEndpointReachable())
+    return;  // Already connected.
+
+  ConnectWithBackoff();
+}
+
+void ConnectionFactoryImpl::ConnectWithBackoff() {
+  // If a canary managed to connect while a backoff expiration was pending,
+  // just cleanup the internal state.
+  if (connecting_ || IsEndpointReachable()) {
+    waiting_for_backoff_ = false;
+    return;
+  }
+
   if (backoff_entry_->ShouldRejectRequest()) {
     DVLOG(1) << "Delaying MCS endpoint connection for "
              << backoff_entry_->GetTimeUntilRelease().InMilliseconds()
              << " milliseconds.";
+    waiting_for_backoff_ = true;
     base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
-        base::Bind(&ConnectionFactoryImpl::Connect,
+        base::Bind(&ConnectionFactoryImpl::ConnectWithBackoff,
                    weak_ptr_factory_.GetWeakPtr()),
         backoff_entry_->GetTimeUntilRelease());
     return;
   }
 
   DVLOG(1) << "Attempting connection to MCS endpoint.";
+  waiting_for_backoff_ = false;
   ConnectImpl();
 }
 
 bool ConnectionFactoryImpl::IsEndpointReachable() const {
-  return connection_handler_ &&
-      connection_handler_->CanSendMessage() &&
-      !connecting_;
+  return connection_handler_ && connection_handler_->CanSendMessage();
 }
 
 void ConnectionFactoryImpl::SignalConnectionReset(
     ConnectionResetReason reason) {
   // A failure can trigger multiple resets, so no need to do anything if a
   // connection is already in progress.
-  if (connecting_)
+  if (connecting_) {
+    DVLOG(1) << "Connection in progress, ignoring reset.";
     return;
+  }
 
   UMA_HISTOGRAM_ENUMERATION("GCM.ConnectionResetReason",
                             reason,
@@ -135,6 +156,16 @@ void ConnectionFactoryImpl::SignalConnectionReset(
   }
 
   CloseSocket();
+  DCHECK(!IsEndpointReachable());
+
+  // Network changes get special treatment as they can trigger a one-off canary
+  // request that bypasses backoff (but does nothing if a connection is in
+  // progress). Other connection reset events can be ignored as a connection
+  // is already awaiting backoff expiration.
+  if (waiting_for_backoff_ && reason != NETWORK_CHANGE) {
+    DVLOG(1) << "Backoff expiration pending, ignoring reset.";
+    return;
+  }
 
   if (logging_in_) {
     // Failures prior to login completion just reuse the existing backoff entry.
@@ -146,10 +177,15 @@ void ConnectionFactoryImpl::SignalConnectionReset(
     // the backoff entry that was saved off at login completion time.
     backoff_entry_.swap(previous_backoff_);
     backoff_entry_->InformOfRequest(false);
+  } else if (reason == NETWORK_CHANGE) {
+    ConnectImpl();  // Canary attempts bypass backoff without resetting it.
+    return;
   } else {
     // We shouldn't be in backoff in thise case.
     DCHECK_EQ(0, backoff_entry_->failure_count());
   }
+  DCHECK(!connecting_);
+  DCHECK(!waiting_for_backoff_);
 
   // At this point the last login time has been consumed or deemed irrelevant,
   // reset it.
@@ -169,27 +205,34 @@ void ConnectionFactoryImpl::OnConnectionTypeChanged(
   if (type == net::NetworkChangeNotifier::CONNECTION_NONE)
     return;
 
-  // TODO(zea): implement different backoff/retry policies based on connection
-  // type.
-  DVLOG(1) << "Connection type changed to " << type << ", resetting backoff.";
-  backoff_entry_->Reset();
-  // Connect(..) should be retrying with backoff already if a connection is
-  // necessary, so no need to call again.
+  DVLOG(1) << "Connection type changed to " << type << ", reconnecting.";
+
+  // The connection may have been silently dropped, attempt to reconnect.
+  SignalConnectionReset(NETWORK_CHANGE);
 }
 
 void ConnectionFactoryImpl::OnIPAddressChanged() {
-  DVLOG(1) << "IP Address changed, resetting backoff.";
-  backoff_entry_->Reset();
-  // Connect(..) should be retrying with backoff already if a connection is
-  // necessary, so no need to call again.
+  DVLOG(1) << "IP Address changed, reconnecting.";
+
+  // The connection may have been silently dropped, attempt to reconnect.
+  SignalConnectionReset(NETWORK_CHANGE);
+}
+
+GURL ConnectionFactoryImpl::GetCurrentEndpoint() const {
+  // Note that IsEndpointReachable() returns false anytime connecting_ is true,
+  // so while connecting this always uses |next_endpoint_|.
+  if (IsEndpointReachable())
+    return mcs_endpoints_[last_successful_endpoint_];
+  return mcs_endpoints_[next_endpoint_];
 }
 
 void ConnectionFactoryImpl::ConnectImpl() {
-  DCHECK(connecting_);
+  DCHECK(!IsEndpointReachable());
   DCHECK(!socket_handle_.socket());
 
+  connecting_ = true;
   int status = network_session_->proxy_service()->ResolveProxy(
-      mcs_endpoint_,
+      GetCurrentEndpoint(),
       &proxy_info_,
       base::Bind(&ConnectionFactoryImpl::OnProxyResolveDone,
                  weak_ptr_factory_.GetWeakPtr()),
@@ -215,6 +258,18 @@ scoped_ptr<net::BackoffEntry> ConnectionFactoryImpl::CreateBackoffEntry(
   return scoped_ptr<net::BackoffEntry>(new net::BackoffEntry(policy));
 }
 
+scoped_ptr<ConnectionHandler> ConnectionFactoryImpl::CreateConnectionHandler(
+    base::TimeDelta read_timeout,
+    const ConnectionHandler::ProtoReceivedCallback& read_callback,
+    const ConnectionHandler::ProtoSentCallback& write_callback,
+    const ConnectionHandler::ConnectionChangedCallback& connection_callback) {
+  return make_scoped_ptr<ConnectionHandler>(
+      new ConnectionHandlerImpl(read_timeout,
+                                read_callback,
+                                write_callback,
+                                connection_callback));
+}
+
 base::TimeTicks ConnectionFactoryImpl::NowTicks() {
   return base::TimeTicks::Now();
 }
@@ -234,13 +289,29 @@ void ConnectionFactoryImpl::OnConnectDone(int result) {
     CloseSocket();
     backoff_entry_->InformOfRequest(false);
     UMA_HISTOGRAM_SPARSE_SLOWLY("GCM.ConnectionFailureErrorCode", result);
+
+    // If there are other endpoints available, use the next endpoint on the
+    // subsequent retry.
+    next_endpoint_++;
+    if (next_endpoint_ >= mcs_endpoints_.size())
+      next_endpoint_ = 0;
+    connecting_ = false;
     Connect();
     return;
   }
 
   UMA_HISTOGRAM_BOOLEAN("GCM.ConnectionSuccessRate", true);
+  UMA_HISTOGRAM_COUNTS("GCM.ConnectionEndpoint", next_endpoint_);
+  UMA_HISTOGRAM_BOOLEAN("GCM.ConnectedViaProxy",
+                        !(proxy_info_.is_empty() || proxy_info_.is_direct()));
   ReportSuccessfulProxyConnection();
 
+  // Reset the endpoint back to the default.
+  // TODO(zea): consider prioritizing endpoints more intelligently based on
+  // which ones succeed most for this client? Although that will affect
+  // measuring the success rate of the default endpoint vs fallback.
+  last_successful_endpoint_ = next_endpoint_;
+  next_endpoint_ = 0;
   connecting_ = false;
   logging_in_ = true;
   DVLOG(1) << "MCS endpoint socket connection success, starting login.";
@@ -300,7 +371,7 @@ void ConnectionFactoryImpl::OnProxyResolveDone(int status) {
   net::SSLConfig ssl_config;
   network_session_->ssl_config_service()->GetSSLConfig(&ssl_config);
   status = net::InitSocketHandleForTlsConnect(
-      net::HostPortPair::FromURL(mcs_endpoint_),
+      net::HostPortPair::FromURL(GetCurrentEndpoint()),
       network_session_.get(),
       proxy_info_,
       ssl_config,
@@ -374,7 +445,7 @@ int ConnectionFactoryImpl::ReconsiderProxyAfterError(int error) {
   }
 
   int status = network_session_->proxy_service()->ReconsiderProxyAfterError(
-      mcs_endpoint_, &proxy_info_,
+      GetCurrentEndpoint(), &proxy_info_,
       base::Bind(&ConnectionFactoryImpl::OnProxyResolveDone,
                  weak_ptr_factory_.GetWeakPtr()),
       &pac_request_,

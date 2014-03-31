@@ -9,6 +9,7 @@
 // http://www.chromium.org/developers/blink-gc-plugin-errors
 
 #include "Config.h"
+#include "JsonWriter.h"
 #include "RecordInfo.h"
 
 #include "clang/AST/AST.h"
@@ -58,6 +59,9 @@ const char kOwnPtrToGCManagedClassNote[] =
 
 const char kStackAllocatedFieldNote[] =
     "[blink-gc] Stack-allocated field %0 declared here:";
+
+const char kMemberInUnmanagedClassNote[] =
+    "[blink-gc] Member field %0 in unmanaged class declared here:";
 
 const char kPartObjectContainsGCRoot[] =
     "[blink-gc] Field %0 with embedded GC root in %1 declared here:";
@@ -110,8 +114,9 @@ const char kDerivesNonStackAllocated[] =
     " which is not stack allocated.";
 
 struct BlinkGCPluginOptions {
-  BlinkGCPluginOptions() : enable_oilpan(false) {}
+  BlinkGCPluginOptions() : enable_oilpan(false), dump_graph(false) {}
   bool enable_oilpan;
+  bool dump_graph;
   std::set<std::string> ignored_classes;
   std::set<std::string> checked_namespaces;
   std::vector<std::string> ignored_directories;
@@ -136,9 +141,8 @@ static bool IsTemplateInstantiation(CXXRecordDecl* record) {
     // TODO: unsupported cases.
     case TSK_ExplicitInstantiationDeclaration:
       return false;
-    default:
-      assert(false && "Unknown template specialization kind");
   }
+  assert(false && "Unknown template specialization kind");
 }
 
 // This visitor collects the entry points for the checker.
@@ -184,8 +188,8 @@ class CheckFinalizerVisitor
    public:
     MightBeCollectedVisitor() : might_be_collected_(false) {}
     bool might_be_collected() { return might_be_collected_; }
-    void VisitMember(Member* edge) { might_be_collected_ = true; }
-    void VisitCollection(Collection* edge) {
+    void VisitMember(Member* edge) override { might_be_collected_ = true; }
+    void VisitCollection(Collection* edge) override {
       if (edge->on_heap()) {
         might_be_collected_ = !edge->is_root();
       } else {
@@ -262,7 +266,7 @@ class CheckFinalizerVisitor
 class CheckDispatchVisitor : public RecursiveASTVisitor<CheckDispatchVisitor> {
  public:
   CheckDispatchVisitor(RecordInfo* receiver)
-      : receiver_(receiver), dispatched_to_receiver_(false) { }
+      : receiver_(receiver), dispatched_to_receiver_(false) {}
 
   bool dispatched_to_receiver() { return dispatched_to_receiver_; }
 
@@ -394,7 +398,7 @@ class CheckGCRootsVisitor : public RecursiveEdgeVisitor {
     return !gc_roots_.empty();
   }
 
-  void VisitValue(Value* edge) {
+  void VisitValue(Value* edge) override {
     // TODO: what should we do to check unions?
     if (edge->value()->record()->isUnion())
       return;
@@ -409,11 +413,11 @@ class CheckGCRootsVisitor : public RecursiveEdgeVisitor {
     ContainsGCRoots(edge->value());
   }
 
-  void VisitPersistent(Persistent* edge) {
+  void VisitPersistent(Persistent* edge) override {
     gc_roots_.push_back(current_);
   }
 
-  void AtCollection(Collection* edge) {
+  void AtCollection(Collection* edge) override {
     if (edge->is_root())
       gc_roots_.push_back(current_);
   }
@@ -437,6 +441,10 @@ class CheckFieldsVisitor : public RecursiveEdgeVisitor {
 
   bool ContainsInvalidFields(RecordInfo* info) {
     stack_allocated_host_ = info->IsStackAllocated();
+    managed_host_ = stack_allocated_host_ ||
+                    info->IsGCAllocated() ||
+                    info->IsNonNewable() ||
+                    info->IsOnlyPlacementNewable();
     for (RecordInfo::Fields::iterator it = info->GetFields().begin();
          it != info->GetFields().end();
          ++it) {
@@ -447,26 +455,43 @@ class CheckFieldsVisitor : public RecursiveEdgeVisitor {
     return !invalid_fields_.empty();
   }
 
-  void VisitValue(Value* edge) {
+  void VisitMember(Member* edge) override {
+    if (managed_host_)
+      return;
+    // A member is allowed to appear in the context of a root.
+    for (Context::iterator it = context().begin();
+         it != context().end();
+         ++it) {
+      if ((*it)->Kind() == Edge::kRoot)
+        return;
+    }
+    invalid_fields_.push_back(std::make_pair(current_, edge));
+  }
+
+  void VisitValue(Value* edge) override {
     // TODO: what should we do to check unions?
     if (edge->value()->record()->isUnion())
       return;
 
-    if (!stack_allocated_host_ && edge->value()->IsStackAllocated())
+    if (!stack_allocated_host_ && edge->value()->IsStackAllocated()) {
       invalid_fields_.push_back(std::make_pair(current_, edge));
+      return;
+    }
 
     if (!Parent() || !edge->value()->IsGCAllocated())
       return;
 
-    if (Parent()->IsOwnPtr())
+    if (Parent()->IsOwnPtr() ||
+        (stack_allocated_host_ && Parent()->IsRawPtr())) {
       invalid_fields_.push_back(std::make_pair(current_, Parent()));
+      return;
+    }
 
     // Don't check raw and ref pointers in transition mode.
     if (options_.enable_oilpan)
       return;
 
-    if ((!stack_allocated_host_ && Parent()->IsRawPtr()) ||
-        Parent()->IsRefPtr())
+    if (Parent()->IsRawPtr() || Parent()->IsRefPtr())
       invalid_fields_.push_back(std::make_pair(current_, Parent()));
   }
 
@@ -474,6 +499,7 @@ class CheckFieldsVisitor : public RecursiveEdgeVisitor {
   const BlinkGCPluginOptions& options_;
   FieldPoint* current_;
   bool stack_allocated_host_;
+  bool managed_host_;
   Errors invalid_fields_;
 };
 
@@ -485,7 +511,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
                         const BlinkGCPluginOptions& options)
       : instance_(instance),
         diagnostic_(instance.getDiagnostics()),
-        options_(options) {
+        options_(options),
+        json_(0) {
 
     // Only check structures in the blink, WebCore and WebKit namespaces.
     options_.checked_namespaces.insert("blink");
@@ -502,9 +529,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         diagnostic_.getCustomDiagID(getErrorLevel(), kBaseRequiresTracing);
     diag_fields_require_tracing_ =
         diagnostic_.getCustomDiagID(getErrorLevel(), kFieldsRequireTracing);
-    diag_class_contains_invalid_fields_ =
-        diagnostic_.getCustomDiagID(getErrorLevel(),
-                                    kClassContainsInvalidFields);
+    diag_class_contains_invalid_fields_ = diagnostic_.getCustomDiagID(
+        getErrorLevel(), kClassContainsInvalidFields);
     diag_class_contains_gc_root_ =
         diagnostic_.getCustomDiagID(getErrorLevel(), kClassContainsGCRoot);
     diag_class_requires_finalization_ = diagnostic_.getCustomDiagID(
@@ -517,14 +543,14 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         getErrorLevel(), kMissingTraceDispatchMethod);
     diag_missing_finalize_dispatch_method_ = diagnostic_.getCustomDiagID(
         getErrorLevel(), kMissingFinalizeDispatchMethod);
-    diag_virtual_and_manual_dispatch_ = diagnostic_.getCustomDiagID(
-        getErrorLevel(), kVirtualAndManualDispatch);
-    diag_missing_trace_dispatch_ = diagnostic_.getCustomDiagID(
-        getErrorLevel(), kMissingTraceDispatch);
-    diag_missing_finalize_dispatch_ = diagnostic_.getCustomDiagID(
-        getErrorLevel(), kMissingFinalizeDispatch);
-    diag_derives_non_stack_allocated_ = diagnostic_.getCustomDiagID(
-        getErrorLevel(), kDerivesNonStackAllocated);
+    diag_virtual_and_manual_dispatch_ =
+        diagnostic_.getCustomDiagID(getErrorLevel(), kVirtualAndManualDispatch);
+    diag_missing_trace_dispatch_ =
+        diagnostic_.getCustomDiagID(getErrorLevel(), kMissingTraceDispatch);
+    diag_missing_finalize_dispatch_ =
+        diagnostic_.getCustomDiagID(getErrorLevel(), kMissingFinalizeDispatch);
+    diag_derives_non_stack_allocated_ =
+        diagnostic_.getCustomDiagID(getErrorLevel(), kDerivesNonStackAllocated);
 
     // Register note messages.
     diag_field_requires_tracing_note_ = diagnostic_.getCustomDiagID(
@@ -537,6 +563,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         DiagnosticsEngine::Note, kOwnPtrToGCManagedClassNote);
     diag_stack_allocated_field_note_ = diagnostic_.getCustomDiagID(
         DiagnosticsEngine::Note, kStackAllocatedFieldNote);
+    diag_member_in_unmanaged_class_note_ = diagnostic_.getCustomDiagID(
+        DiagnosticsEngine::Note, kMemberInUnmanagedClassNote);
     diag_part_object_contains_gc_root_note_ = diagnostic_.getCustomDiagID(
         DiagnosticsEngine::Note, kPartObjectContainsGCRoot);
     diag_field_contains_gc_root_note_ = diagnostic_.getCustomDiagID(
@@ -557,9 +585,33 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         DiagnosticsEngine::Note, kManualDispatchMethodNote);
   }
 
-  virtual void HandleTranslationUnit(ASTContext& context) {
+  void HandleTranslationUnit(ASTContext& context) override {
     CollectVisitor visitor;
     visitor.TraverseDecl(context.getTranslationUnitDecl());
+
+    if (options_.dump_graph) {
+      string err;
+      // TODO: Make createDefaultOutputFile or a shorter createOutputFile work.
+      json_ = JsonWriter::from(instance_.createOutputFile(
+          "",                                      // OutputPath
+          err,                                     // Errors
+          true,                                    // Binary
+          true,                                    // RemoveFileOnSignal
+          instance_.getFrontendOpts().OutputFile,  // BaseInput
+          "graph.json",                            // Extension
+          false,                                   // UseTemporary
+          false,                                   // CreateMissingDirectories
+          0,                                       // ResultPathName
+          0));                                     // TempPathName
+      if (err.empty() && json_) {
+        json_->OpenList();
+      } else {
+        json_ = 0;
+        llvm::errs()
+            << "[blink-gc] "
+            << "Failed to create an output file for the object graph.\n";
+      }
+    }
 
     for (RecordVector::iterator it = visitor.record_decls().begin();
          it != visitor.record_decls().end();
@@ -571,6 +623,12 @@ class BlinkGCPluginConsumer : public ASTConsumer {
          it != visitor.trace_decls().end();
          ++it) {
       CheckTracingMethod(*it);
+    }
+
+    if (json_) {
+      json_->CloseList();
+      delete json_;
+      json_ = 0;
     }
   }
 
@@ -618,8 +676,6 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     if (info->RequiresTraceMethod() && !info->GetTraceMethod())
       ReportClassRequiresTraceMethod(info);
 
-    CheckDispatch(info);
-
     {
       CheckFieldsVisitor visitor(options_);
       if (visitor.ContainsInvalidFields(info))
@@ -627,6 +683,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     }
 
     if (info->IsGCDerived()) {
+      CheckDispatch(info);
+
       CheckGCRootsVisitor visitor;
       if (visitor.ContainsGCRoots(info))
         ReportClassContainsGCRoots(info, &visitor.gc_roots());
@@ -634,6 +692,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
       if (info->NeedsFinalization())
         CheckFinalization(info);
     }
+
+    DumpClass(info);
   }
 
   void CheckDispatch(RecordInfo* info) {
@@ -643,9 +703,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     if (!trace_dispatch && !finalize_dispatch)
       return;
 
-    CXXRecordDecl* base = trace_dispatch ?
-                          trace_dispatch->getParent() :
-                          finalize_dispatch->getParent();
+    CXXRecordDecl* base = trace_dispatch ? trace_dispatch->getParent()
+                                         : finalize_dispatch->getParent();
 
     // Check that dispatch methods are defined at the base.
     if (base == info->record()) {
@@ -804,10 +863,107 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     }
   }
 
+  void DumpClass(RecordInfo* info) {
+    if (!json_)
+      return;
+
+    json_->OpenObject();
+    json_->Write("name", info->record()->getQualifiedNameAsString());
+    json_->Write("loc", GetLocString(info->record()->getLocStart()));
+    json_->CloseObject();
+
+    class DumpEdgeVisitor : public RecursiveEdgeVisitor {
+     public:
+      DumpEdgeVisitor(JsonWriter* json) : json_(json) {}
+      void DumpEdge(RecordInfo* src,
+                    RecordInfo* dst,
+                    const string& lbl,
+                    const Edge::LivenessKind& kind,
+                    const string& loc) {
+        json_->OpenObject();
+        json_->Write("src", src->record()->getQualifiedNameAsString());
+        json_->Write("dst", dst->record()->getQualifiedNameAsString());
+        json_->Write("lbl", lbl);
+        json_->Write("kind", kind);
+        json_->Write("loc", loc);
+        json_->CloseObject();
+      }
+
+      void DumpField(RecordInfo* src, FieldPoint* point, const string& loc) {
+        src_ = src;
+        point_ = point;
+        loc_ = loc;
+        point_->edge()->Accept(this);
+      }
+
+      void AtValue(Value* e) override {
+        // The liveness kind of a path from the point to this value
+        // is given by the innermost place that is non-strong.
+        Edge::LivenessKind kind = Edge::kStrong;
+        if (Config::IsIgnoreCycleAnnotated(point_->field())) {
+          kind = Edge::kWeak;
+        } else {
+          for (Context::iterator it = context().begin();
+               it != context().end();
+               ++it) {
+            Edge::LivenessKind pointer_kind = (*it)->Kind();
+            if (pointer_kind != Edge::kStrong) {
+              kind = pointer_kind;
+              break;
+            }
+          }
+        }
+        DumpEdge(
+            src_, e->value(), point_->field()->getNameAsString(), kind, loc_);
+      }
+
+     private:
+      JsonWriter* json_;
+      RecordInfo* src_;
+      FieldPoint* point_;
+      string loc_;
+    };
+
+    DumpEdgeVisitor visitor(json_);
+
+    RecordInfo::Bases& bases = info->GetBases();
+    for (RecordInfo::Bases::iterator it = bases.begin();
+         it != bases.end();
+         ++it) {
+      visitor.DumpEdge(info,
+                       it->second.info(),
+                       "<super>",
+                       Edge::kStrong,
+                       GetLocString(it->second.spec().getLocStart()));
+    }
+
+    RecordInfo::Fields& fields = info->GetFields();
+    for (RecordInfo::Fields::iterator it = fields.begin();
+         it != fields.end();
+         ++it) {
+      visitor.DumpField(info,
+                        &it->second,
+                        GetLocString(it->second.field()->getLocStart()));
+    }
+  }
+
   // Adds either a warning or error, based on the current handling of -Werror.
   DiagnosticsEngine::Level getErrorLevel() {
     return diagnostic_.getWarningsAsErrors() ? DiagnosticsEngine::Error
                                              : DiagnosticsEngine::Warning;
+  }
+
+  const string GetLocString(SourceLocation loc) {
+    const SourceManager& source_manager = instance_.getSourceManager();
+    PresumedLoc ploc = source_manager.getPresumedLoc(loc);
+    if (ploc.isInvalid())
+      return "";
+    string loc_str;
+    llvm::raw_string_ostream OS(loc_str);
+    OS << ploc.getFilename()
+       << ":" << ploc.getLine()
+       << ":" << ploc.getColumn();
+    return OS.str();
   }
 
   bool IsIgnored(RecordInfo* record) {
@@ -839,18 +995,19 @@ class BlinkGCPluginConsumer : public ASTConsumer {
   }
 
   bool InCheckedNamespace(RecordInfo* info) {
+    if (!info)
+      return false;
     DeclContext* context = info->record()->getDeclContext();
-    switch (context->getDeclKind()) {
-      case Decl::Namespace: {
-        const NamespaceDecl* decl = dyn_cast<NamespaceDecl>(context);
-        if (decl->isAnonymousNamespace())
-          return false;
-        return options_.checked_namespaces.find(decl->getNameAsString()) !=
-               options_.checked_namespaces.end();
-      }
-      default:
+    if (context->isRecord())
+      return InCheckedNamespace(cache_.Lookup(context));
+    if (context->isNamespace()) {
+      const NamespaceDecl* decl = dyn_cast<NamespaceDecl>(context);
+      if (decl->isAnonymousNamespace())
         return false;
+      return options_.checked_namespaces.find(decl->getNameAsString()) !=
+          options_.checked_namespaces.end();
     }
+    return false;
   }
 
   bool GetFilename(SourceLocation loc, string* filename) {
@@ -920,6 +1077,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         NoteField(it->first, diag_ref_ptr_to_gc_managed_class_note_);
       } else if (it->second->IsOwnPtr()) {
         NoteField(it->first, diag_own_ptr_to_gc_managed_class_note_);
+      } else if (it->second->IsMember()) {
+        NoteField(it->first, diag_member_in_unmanaged_class_note_);
       } else if (it->second->IsValue()) {
         NoteField(it->first, diag_stack_allocated_field_note_);
       }
@@ -976,8 +1135,7 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     SourceManager& manager = instance_.getSourceManager();
     FullSourceLoc full_loc(loc, manager);
     diagnostic_.Report(full_loc, diag_overridden_non_virtual_trace_)
-        << info->record()
-        << overridden->getParent();
+        << info->record() << overridden->getParent();
     NoteOverriddenNonVirtualTrace(overridden);
   }
 
@@ -1017,8 +1175,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
   }
 
   void ReportMissingDispatch(const FunctionDecl* dispatch,
-                               RecordInfo* receiver,
-                               unsigned error) {
+                             RecordInfo* receiver,
+                             unsigned error) {
     SourceLocation loc = dispatch->getLocStart();
     SourceManager& manager = instance_.getSourceManager();
     FullSourceLoc full_loc(loc, manager);
@@ -1118,6 +1276,7 @@ class BlinkGCPluginConsumer : public ASTConsumer {
   unsigned diag_ref_ptr_to_gc_managed_class_note_;
   unsigned diag_own_ptr_to_gc_managed_class_note_;
   unsigned diag_stack_allocated_field_note_;
+  unsigned diag_member_in_unmanaged_class_note_;
   unsigned diag_part_object_contains_gc_root_note_;
   unsigned diag_field_contains_gc_root_note_;
   unsigned diag_finalized_field_note_;
@@ -1132,6 +1291,7 @@ class BlinkGCPluginConsumer : public ASTConsumer {
   DiagnosticsEngine& diagnostic_;
   BlinkGCPluginOptions options_;
   RecordCache cache_;
+  JsonWriter* json_;
 };
 
 class BlinkGCPluginAction : public PluginASTAction {
@@ -1152,6 +1312,8 @@ class BlinkGCPluginAction : public PluginASTAction {
     for (size_t i = 0; i < args.size() && parsed; ++i) {
       if (args[i] == "enable-oilpan") {
         options_.enable_oilpan = true;
+      } else if (args[i] == "dump-graph") {
+        options_.dump_graph = true;
       } else {
         parsed = false;
         llvm::errs() << "Unknown blink-gc-plugin argument: " << args[i] << "\n";

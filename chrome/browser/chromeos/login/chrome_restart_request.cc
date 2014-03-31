@@ -72,6 +72,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kDisableAcceleratedVideoDecode,
     ::switches::kDisableBrowserPluginCompositing,
     ::switches::kDisableDelegatedRenderer,
+    ::switches::kDisableFastTextAutosizing,
     ::switches::kDisableFiltersOverIPC,
     ::switches::kDisableForceCompositingMode,
     ::switches::kDisableGpuShaderDiskCache,
@@ -99,6 +100,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kEnableCompositingForFixedPosition,
     ::switches::kEnableDelegatedRenderer,
     ::switches::kEnableEncryptedMedia,
+    ::switches::kEnableFastTextAutosizing,
     ::switches::kEnableGestureTapHighlight,
     ::switches::kDisableGestureTapHighlight,
     ::switches::kDisableGpuSandbox,
@@ -122,6 +124,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kGpuStartupDialog,
     ::switches::kGpuSandboxAllowSysVShm,
     ::switches::kGpuSandboxFailuresFatal,
+    ::switches::kGpuSandboxStartAfterInitialization,
     ::switches::kMultiProfiles,
     ::switches::kNoSandbox,
     ::switches::kNumRasterThreads,
@@ -326,6 +329,7 @@ void ChromeRestartRequest::RestartJob() {
 
 std::string GetOffTheRecordCommandLine(
     const GURL& start_url,
+    bool is_oobe_completed,
     const CommandLine& base_command_line,
     CommandLine* command_line) {
   base::DictionaryValue otr_switches;
@@ -337,6 +341,12 @@ std::string GetOffTheRecordCommandLine(
   // Override the home page.
   otr_switches.SetString(::switches::kHomePage,
                          GURL(chrome::kChromeUINewTabURL).spec());
+
+  // If OOBE is not finished yet, lock down the guest session to not allow
+  // surfing the web. Guest mode is still useful to inspect logs and run network
+  // diagnostics.
+  if (!is_oobe_completed)
+    otr_switches.SetString(switches::kOobeGuestSession, std::string());
 
   return DeriveCommandLine(start_url,
                            base_command_line,

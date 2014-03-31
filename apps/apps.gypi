@@ -117,9 +117,6 @@
             '../ui/base/strings/ui_strings.gyp:ui_strings',
             '../ui/resources/ui_resources.gyp:ui_resources',
           ],
-          'variables': {
-            'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
-          },
           'actions': [
             {
               'action_name': 'repack_app_shell_pack',
@@ -139,22 +136,15 @@
                   '<(SHARED_INTERMEDIATE_DIR)/ui/ui_strings/ui_strings_en-US.pak',
                   '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
                 ],
+                'pak_output': '<(PRODUCT_DIR)/app_shell.pak',
               },
-              'inputs': [
-                '<(repack_path)',
-                '<@(pak_inputs)',
-              ],
-              'outputs': [
-                '<(PRODUCT_DIR)/app_shell.pak',
-              ],
-              'action': ['python', '<(repack_path)', '<@(_outputs)',
-                         '<@(pak_inputs)'],
+             'includes': [ '../build/repack_action.gypi' ],
             },
           ],
         },
         {
-          'target_name': 'app_shell',
-          'type': 'executable',
+          'target_name': 'app_shell_lib',
+          'type': 'static_library',
           'defines!': ['CONTENT_IMPLEMENTATION'],
           'variables': {
             'chromium_code': 1,
@@ -162,11 +152,13 @@
           'dependencies': [
             'app_shell_pak',
             'apps',
+            'common/extensions/api/api.gyp:chrome_api',
             'test_support_common',
             '../base/base.gyp:base',
             '../base/base.gyp:base_prefs_test_support',
             '../content/content.gyp:content',
             '../content/content_shell_and_tests.gyp:content_shell_lib',
+            '../extensions/common/api/api.gyp:extensions_api',
             '../skia/skia.gyp:skia',
             '../ui/views/views.gyp:views',
             '../ui/wm/wm.gyp:wm_test_support',
@@ -177,7 +169,6 @@
           'sources': [
             'shell/app/shell_main_delegate.cc',
             'shell/app/shell_main_delegate.h',
-            'shell/app/shell_main.cc',
             'shell/browser/shell_app_sorting.cc',
             'shell/browser/shell_app_sorting.h',
             'shell/browser/shell_app_window_delegate.cc',
@@ -190,6 +181,8 @@
             'shell/browser/shell_browser_main_parts.h',
             'shell/browser/shell_content_browser_client.cc',
             'shell/browser/shell_content_browser_client.h',
+            'shell/browser/shell_desktop_controller.cc',
+            'shell/browser/shell_desktop_controller.h',
             'shell/browser/shell_extension_system.cc',
             'shell/browser/shell_extension_system.h',
             'shell/browser/shell_extension_system_factory.cc',
@@ -198,14 +191,30 @@
             'shell/browser/shell_extension_web_contents_observer.h',
             'shell/browser/shell_extensions_browser_client.cc',
             'shell/browser/shell_extensions_browser_client.h',
-            'shell/browser/web_view_window.cc',
-            'shell/browser/web_view_window.cc',
             'shell/common/shell_content_client.cc',
             'shell/common/shell_content_client.h',
             'shell/common/shell_extensions_client.cc',
             'shell/common/shell_extensions_client.h',
             'shell/renderer/shell_content_renderer_client.cc',
             'shell/renderer/shell_content_renderer_client.h',
+          ],
+        },
+        {
+          'target_name': 'app_shell',
+          'type': 'executable',
+          'defines!': ['CONTENT_IMPLEMENTATION'],
+          'variables': {
+            'chromium_code': 1,
+          },
+          'dependencies': [
+            'app_shell_lib',
+            'app_shell_pak',
+          ],
+          'include_dirs': [
+            '..',
+          ],
+          'sources': [
+            'shell/app/shell_main.cc',
           ],
           'conditions': [
             ['OS=="win"', {
@@ -221,7 +230,34 @@
             }],
           ],
         },
+        {
+          'target_name': 'apps_browsertests',
+          'type': '<(gtest_target_type)',
+          'variables': {
+            'chromium_code': 1,
+          },
+          'dependencies': [
+            'app_shell_lib',
+            # TODO(yoz): find the right deps
+            '../base/base.gyp:test_support_base',
+            '../content/content.gyp:content_app_both',
+            '../content/content_shell_and_tests.gyp:content_browser_test_support',
+            '../content/content_shell_and_tests.gyp:test_support_content',
+            '../testing/gtest.gyp:gtest',
+          ],
+          'defines': [
+            'HAS_OUT_OF_PROC_TEST_RUNNER',
+          ],
+          'sources': [
+            # TODO(yoz): Refactor once we have a second test target.
+            'test/app_shell_test.h',
+            'test/app_shell_test.cc',
+            'test/apps_test_launcher_delegate.cc',
+            'test/apps_test_launcher_delegate.h',
+            'test/apps_tests_main.cc',
+          ],
+        },
       ],  # targets
-    }],  # chromeos==1
+    }],  # chromeos==1 or linux aura or win aura
   ],  # conditions
 }

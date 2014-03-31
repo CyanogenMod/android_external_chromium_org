@@ -10,6 +10,7 @@
 #include "base/version.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/common/extension.h"
 #include "url/gurl.h"
 
@@ -31,9 +32,9 @@ std::string GetVersionString(const Version& version) {
 namespace extensions {
 
 PendingExtensionManager::PendingExtensionManager(
-    const ExtensionServiceInterface& service)
-    : service_(service) {
-}
+    const ExtensionServiceInterface& service,
+    content::BrowserContext* context)
+    : service_(service), context_(context) {}
 
 PendingExtensionManager::~PendingExtensionManager() {}
 
@@ -109,9 +110,16 @@ bool PendingExtensionManager::AddFromSync(
   const Manifest::Location kSyncLocation = Manifest::INTERNAL;
   const bool kMarkAcknowledged = false;
 
-  return AddExtensionImpl(id, update_url, Version(), should_allow_install,
-                          kIsFromSync, install_silently, kSyncLocation,
-                          Extension::NO_FLAGS, kMarkAcknowledged);
+  return AddExtensionImpl(id,
+                          std::string(),
+                          update_url,
+                          Version(),
+                          should_allow_install,
+                          kIsFromSync,
+                          install_silently,
+                          kSyncLocation,
+                          Extension::NO_FLAGS,
+                          kMarkAcknowledged);
 }
 
 bool PendingExtensionManager::AddFromExtensionImport(
@@ -131,13 +139,21 @@ bool PendingExtensionManager::AddFromExtensionImport(
   const Manifest::Location kManifestLocation = Manifest::INTERNAL;
   const bool kMarkAcknowledged = false;
 
-  return AddExtensionImpl(id, update_url, Version(), should_allow_install,
-                          kIsFromSync, kInstallSilently, kManifestLocation,
-                          Extension::NO_FLAGS, kMarkAcknowledged);
+  return AddExtensionImpl(id,
+                          std::string(),
+                          update_url,
+                          Version(),
+                          should_allow_install,
+                          kIsFromSync,
+                          kInstallSilently,
+                          kManifestLocation,
+                          Extension::NO_FLAGS,
+                          kMarkAcknowledged);
 }
 
 bool PendingExtensionManager::AddFromExternalUpdateUrl(
     const std::string& id,
+    const std::string& install_parameter,
     const GURL& update_url,
     Manifest::Location location,
     int creation_flags,
@@ -148,13 +164,12 @@ bool PendingExtensionManager::AddFromExternalUpdateUrl(
   const bool kInstallSilently = true;
 
   const Extension* extension = service_.GetInstalledExtension(id);
-  if (extension &&
-      location == Manifest::GetHigherPriorityLocation(location,
-                                                       extension->location())) {
+  if (extension && location == Manifest::GetHigherPriorityLocation(
+                                   location, extension->location())) {
     // If the new location has higher priority than the location of an existing
     // extension, let the update process overwrite the existing extension.
   } else {
-    if (service_.IsExternalExtensionUninstalled(id))
+    if (ExtensionPrefs::Get(context_)->IsExternalExtensionUninstalled(id))
       return false;
 
     if (extension) {
@@ -164,9 +179,16 @@ bool PendingExtensionManager::AddFromExternalUpdateUrl(
     }
   }
 
-  return AddExtensionImpl(id, update_url, Version(), &AlwaysInstall,
-                          kIsFromSync, kInstallSilently,
-                          location, creation_flags, mark_acknowledged);
+  return AddExtensionImpl(id,
+                          install_parameter,
+                          update_url,
+                          Version(),
+                          &AlwaysInstall,
+                          kIsFromSync,
+                          kInstallSilently,
+                          location,
+                          creation_flags,
+                          mark_acknowledged);
 }
 
 
@@ -184,16 +206,16 @@ bool PendingExtensionManager::AddFromExternalFile(
   bool kIsFromSync = false;
   bool kInstallSilently = true;
 
-  return AddExtensionImpl(
-      id,
-      kUpdateUrl,
-      version,
-      &AlwaysInstall,
-      kIsFromSync,
-      kInstallSilently,
-      install_source,
-      creation_flags,
-      mark_acknowledged);
+  return AddExtensionImpl(id,
+                          std::string(),
+                          kUpdateUrl,
+                          version,
+                          &AlwaysInstall,
+                          kIsFromSync,
+                          kInstallSilently,
+                          install_source,
+                          creation_flags,
+                          mark_acknowledged);
 }
 
 void PendingExtensionManager::GetPendingIdsForUpdateCheck(
@@ -217,6 +239,7 @@ void PendingExtensionManager::GetPendingIdsForUpdateCheck(
 
 bool PendingExtensionManager::AddExtensionImpl(
     const std::string& id,
+    const std::string& install_parameter,
     const GURL& update_url,
     const Version& version,
     PendingExtensionInfo::ShouldAllowInstallPredicate should_allow_install,
@@ -228,6 +251,7 @@ bool PendingExtensionManager::AddExtensionImpl(
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   PendingExtensionInfo info(id,
+                            install_parameter,
                             update_url,
                             version,
                             should_allow_install,

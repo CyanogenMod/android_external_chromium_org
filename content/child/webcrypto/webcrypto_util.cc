@@ -67,6 +67,12 @@ std::string Base64EncodeUrlSafe(const base::StringPiece& input) {
   return output;
 }
 
+std::string Base64EncodeUrlSafe(const std::vector<uint8>& input) {
+  const base::StringPiece string_piece(
+      reinterpret_cast<const char*>(Uint8VectorStart(input)), input.size());
+  return Base64EncodeUrlSafe(string_piece);
+}
+
 struct JwkToWebCryptoUsage {
   const char* const jwk_key_op;
   const blink::WebCryptoKeyUsage webcrypto_usage;
@@ -169,32 +175,6 @@ blink::WebCryptoAlgorithm CreateRsaHashedImportAlgorithm(
       id, new blink::WebCryptoRsaHashedImportParams(CreateAlgorithm(hash_id)));
 }
 
-blink::WebCryptoAlgorithm CreateRsaSsaImportAlgorithm(
-    blink::WebCryptoAlgorithmId hash_id) {
-  return CreateRsaHashedImportAlgorithm(
-      blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5, hash_id);
-}
-
-blink::WebCryptoAlgorithm CreateRsaOaepImportAlgorithm(
-    blink::WebCryptoAlgorithmId hash_id) {
-  return CreateRsaHashedImportAlgorithm(blink::WebCryptoAlgorithmIdRsaOaep,
-                                        hash_id);
-}
-
-unsigned int ShaBlockSizeBytes(blink::WebCryptoAlgorithmId hash_id) {
-  switch (hash_id) {
-    case blink::WebCryptoAlgorithmIdSha1:
-    case blink::WebCryptoAlgorithmIdSha256:
-      return 64;
-    case blink::WebCryptoAlgorithmIdSha384:
-    case blink::WebCryptoAlgorithmIdSha512:
-      return 128;
-    default:
-      NOTREACHED();
-      return 0;
-  }
-}
-
 bool CreateSecretKeyAlgorithm(const blink::WebCryptoAlgorithm& algorithm,
                               unsigned int keylen_bytes,
                               blink::WebCryptoKeyAlgorithm* key_algorithm) {
@@ -205,18 +185,16 @@ bool CreateSecretKeyAlgorithm(const blink::WebCryptoAlgorithm& algorithm,
         return false;
       if (keylen_bytes > UINT_MAX / 8)
         return false;
-      *key_algorithm = blink::WebCryptoKeyAlgorithm::adoptParamsAndCreate(
-          algorithm.id(),
-          new blink::WebCryptoHmacKeyAlgorithmParams(hash, keylen_bytes * 8));
+      *key_algorithm =
+          blink::WebCryptoKeyAlgorithm::createHmac(hash.id(), keylen_bytes * 8);
       return true;
     }
     case blink::WebCryptoAlgorithmIdAesKw:
     case blink::WebCryptoAlgorithmIdAesCbc:
     case blink::WebCryptoAlgorithmIdAesCtr:
     case blink::WebCryptoAlgorithmIdAesGcm:
-      *key_algorithm = blink::WebCryptoKeyAlgorithm::adoptParamsAndCreate(
-          algorithm.id(),
-          new blink::WebCryptoAesKeyAlgorithmParams(keylen_bytes * 8));
+      *key_algorithm = blink::WebCryptoKeyAlgorithm::createAes(
+          algorithm.id(), keylen_bytes * 8);
       return true;
     default:
       return false;

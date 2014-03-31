@@ -21,6 +21,7 @@
 #include "chrome/browser/sync_file_system/drive_backend/remote_to_local_syncer.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_initializer.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task_manager.h"
 #include "chrome/browser/sync_file_system/fake_remote_change_processor.h"
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
@@ -43,8 +44,7 @@ fileapi::FileSystemURL URL(const GURL& origin,
 
 }  // namespace
 
-class ConflictResolverTest : public testing::Test,
-                             public SyncEngineContext {
+class ConflictResolverTest : public testing::Test {
  public:
   typedef FakeRemoteChangeProcessor::URLToFileChangesMap URLToFileChangesMap;
 
@@ -56,72 +56,76 @@ class ConflictResolverTest : public testing::Test,
     ASSERT_TRUE(database_dir_.CreateUniqueTempDir());
     in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
-    fake_drive_service_.reset(new FakeDriveServiceWrapper);
-    ASSERT_TRUE(fake_drive_service_->LoadAccountMetadataForWapi(
+    scoped_ptr<FakeDriveServiceWrapper>
+        fake_drive_service(new FakeDriveServiceWrapper);
+    ASSERT_TRUE(fake_drive_service->LoadAccountMetadataForWapi(
         "sync_file_system/account_metadata.json"));
-    ASSERT_TRUE(fake_drive_service_->LoadResourceListForWapi(
+    ASSERT_TRUE(fake_drive_service->LoadResourceListForWapi(
         "gdata/empty_feed.json"));
 
-    drive_uploader_.reset(new FakeDriveUploader(fake_drive_service_.get()));
+    scoped_ptr<drive::DriveUploaderInterface>
+        drive_uploader(new FakeDriveUploader(fake_drive_service.get()));
     fake_drive_helper_.reset(new FakeDriveServiceHelper(
-        fake_drive_service_.get(), drive_uploader_.get(),
-        kSyncRootFolderTitle));
+        fake_drive_service.get(), drive_uploader.get(), kSyncRootFolderTitle));
     fake_remote_change_processor_.reset(new FakeRemoteChangeProcessor);
 
+    context_.reset(new SyncEngineContext(
+        fake_drive_service.PassAs<drive::DriveServiceInterface>(),
+        drive_uploader.Pass(), base::MessageLoopProxy::current()));
+    context_->SetRemoteChangeProcessor(fake_remote_change_processor_.get());
+
     RegisterSyncableFileSystem();
+
+    sync_task_manager_.reset(new SyncTaskManager(
+        base::WeakPtr<SyncTaskManager::Client>(),
+        10 /* maximum_background_task */));
+    sync_task_manager_->Initialize(SYNC_STATUS_OK);
   }
 
   virtual void TearDown() OVERRIDE {
+    sync_task_manager_.reset();
+
     RevokeSyncableFileSystem();
 
     fake_remote_change_processor_.reset();
-    metadata_database_.reset();
     fake_drive_helper_.reset();
-    drive_uploader_.reset();
-    fake_drive_service_.reset();
+    context_.reset();
     base::RunLoop().RunUntilIdle();
   }
 
   void InitializeMetadataDatabase() {
-    SyncEngineInitializer initializer(this,
-                                      base::MessageLoopProxy::current(),
-                                      fake_drive_service_.get(),
-                                      database_dir_.path(),
-                                      in_memory_env_.get());
+    SyncEngineInitializer* initializer =
+        new SyncEngineInitializer(context_.get(),
+                                  base::MessageLoopProxy::current(),
+                                  context_->GetDriveService(),
+                                  database_dir_.path(),
+                                  in_memory_env_.get());
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    initializer.RunSequential(CreateResultReceiver(&status));
+    sync_task_manager_->ScheduleSyncTask(
+        FROM_HERE,
+        scoped_ptr<SyncTask>(initializer),
+        SyncTaskManager::PRIORITY_MED,
+        base::Bind(&ConflictResolverTest::DidInitializeMetadataDatabase,
+                   base::Unretained(this), initializer, &status));
+
     base::RunLoop().RunUntilIdle();
     EXPECT_EQ(SYNC_STATUS_OK, status);
-    metadata_database_ = initializer.PassMetadataDatabase();
+  }
+
+  void DidInitializeMetadataDatabase(SyncEngineInitializer* initializer,
+                                     SyncStatusCode* status_out,
+                                     SyncStatusCode status) {
+    context_->SetMetadataDatabase(initializer->PassMetadataDatabase());
+    *status_out = status;
   }
 
   void RegisterApp(const std::string& app_id,
                    const std::string& app_root_folder_id) {
     SyncStatusCode status = SYNC_STATUS_FAILED;
-    metadata_database_->RegisterApp(app_id, app_root_folder_id,
-                                    CreateResultReceiver(&status));
+    context_->GetMetadataDatabase()->RegisterApp(app_id, app_root_folder_id,
+                                                 CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     EXPECT_EQ(SYNC_STATUS_OK, status);
-  }
-
-  virtual drive::DriveServiceInterface* GetDriveService() OVERRIDE {
-    return fake_drive_service_.get();
-  }
-
-  virtual drive::DriveUploaderInterface* GetDriveUploader() OVERRIDE {
-    return drive_uploader_.get();
-  }
-
-  virtual MetadataDatabase* GetMetadataDatabase() OVERRIDE {
-    return metadata_database_.get();
-  }
-
-  virtual RemoteChangeProcessor* GetRemoteChangeProcessor() OVERRIDE {
-    return fake_remote_change_processor_.get();
-  }
-
-  virtual base::SequencedTaskRunner* GetBlockingTaskRunner() OVERRIDE {
-    return base::MessageLoopProxy::current().get();
   }
 
  protected:
@@ -162,7 +166,7 @@ class ConflictResolverTest : public testing::Test,
       const std::string& parent_folder_id,
       const std::string& file_id) {
     google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-    fake_drive_service_->AddResourceToDirectory(
+    context_->GetDriveService()->AddResourceToDirectory(
         parent_folder_id, file_id,
         CreateResultReceiver(&error));
     base::RunLoop().RunUntilIdle();
@@ -185,7 +189,8 @@ class ConflictResolverTest : public testing::Test,
 
   SyncStatusCode RunRemoteToLocalSyncer() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    scoped_ptr<RemoteToLocalSyncer> syncer(new RemoteToLocalSyncer(this));
+    scoped_ptr<RemoteToLocalSyncer> syncer(
+        new RemoteToLocalSyncer(context_.get()));
     syncer->RunSequential(CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     return status;
@@ -199,7 +204,8 @@ class ConflictResolverTest : public testing::Test,
     if (file_change.IsAddOrUpdate())
       CreateTemporaryFileInDir(database_dir_.path(), &local_path);
     scoped_ptr<LocalToRemoteSyncer> syncer(new LocalToRemoteSyncer(
-        this, SyncFileMetadata(file_change.file_type(), 0, base::Time()),
+        context_.get(),
+        SyncFileMetadata(file_change.file_type(), 0, base::Time()),
         file_change, local_path, url));
     syncer->RunSequential(CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
@@ -216,16 +222,19 @@ class ConflictResolverTest : public testing::Test,
 
   SyncStatusCode RunConflictResolver() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    ConflictResolver resolver(this);
+    ConflictResolver resolver(context_.get());
     resolver.RunSequential(CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     return status;
   }
 
   SyncStatusCode ListChanges() {
-    ListChangesTask list_changes(this);
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    list_changes.RunSequential(CreateResultReceiver(&status));
+    sync_task_manager_->ScheduleSyncTask(
+        FROM_HERE,
+        scoped_ptr<SyncTask>(new ListChangesTask(context_.get())),
+        SyncTaskManager::PRIORITY_MED,
+        CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     return status;
   }
@@ -263,11 +272,11 @@ class ConflictResolverTest : public testing::Test,
   base::ScopedTempDir database_dir_;
   scoped_ptr<leveldb::Env> in_memory_env_;
 
-  scoped_ptr<FakeDriveServiceWrapper> fake_drive_service_;
-  scoped_ptr<FakeDriveUploader> drive_uploader_;
+  scoped_ptr<SyncEngineContext> context_;
   scoped_ptr<FakeDriveServiceHelper> fake_drive_helper_;
-  scoped_ptr<MetadataDatabase> metadata_database_;
   scoped_ptr<FakeRemoteChangeProcessor> fake_remote_change_processor_;
+
+  scoped_ptr<SyncTaskManager> sync_task_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(ConflictResolverTest);
 };

@@ -8,14 +8,12 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/tick_clock.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
-#include "components/policy/core/common/policy_switches.h"
 
 namespace policy {
 
@@ -306,6 +304,7 @@ void CloudPolicyRefreshScheduler::ScheduleRefresh() {
     case DM_STATUS_SERVICE_DEVICE_ID_CONFLICT:
     case DM_STATUS_SERVICE_MISSING_LICENSES:
     case DM_STATUS_SERVICE_DEPROVISIONED:
+    case DM_STATUS_SERVICE_DOMAIN_MISMATCH:
       // Need a re-registration, no use in retrying.
       refresh_callback_.Cancel();
       return;
@@ -353,11 +352,6 @@ void CloudPolicyRefreshScheduler::WaitForInvalidationService() {
           base::Unretained(this)));
   base::TimeDelta delay =
       base::TimeDelta::FromSeconds(kWaitForInvalidationsTimeoutSeconds);
-  // Do not wait for the invalidation service if the feature is disabled.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableCloudPolicyPush)) {
-    delay = base::TimeDelta();
-  }
   task_runner_->PostDelayedTask(
       FROM_HERE,
       wait_for_invalidations_timeout_callback_.callback(),

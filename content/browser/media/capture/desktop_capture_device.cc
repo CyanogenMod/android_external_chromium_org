@@ -57,6 +57,8 @@ class DesktopCaptureDevice::Core
                         scoped_ptr<Client> client);
   void StopAndDeAllocate();
 
+  void SetNotificationWindowId(gfx::NativeViewId window_id);
+
  private:
   friend class base::RefCountedThreadSafe<Core>;
   virtual ~Core();
@@ -85,6 +87,8 @@ class DesktopCaptureDevice::Core
 
   // Captures a single frame.
   void DoCapture();
+
+  void DoSetNotificationWindowId(gfx::NativeViewId window_id);
 
   // Task runner used for capturing operations.
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
@@ -150,6 +154,12 @@ void DesktopCaptureDevice::Core::AllocateAndStart(
 void DesktopCaptureDevice::Core::StopAndDeAllocate() {
   task_runner_->PostTask(FROM_HERE,
                          base::Bind(&Core::DoStopAndDeAllocate, this));
+}
+
+void DesktopCaptureDevice::Core::SetNotificationWindowId(
+    gfx::NativeViewId window_id) {
+  task_runner_->PostTask(
+      FROM_HERE, base::Bind(&Core::DoSetNotificationWindowId, this, window_id));
 }
 
 webrtc::SharedMemory*
@@ -348,6 +358,13 @@ void DesktopCaptureDevice::Core::DoCapture() {
   DCHECK(!capture_in_progress_);
 }
 
+void DesktopCaptureDevice::Core::DoSetNotificationWindowId(
+    gfx::NativeViewId window_id) {
+  DCHECK(task_runner_->RunsTasksOnCurrentThread());
+  DCHECK(window_id);
+  desktop_capturer_->SetExcludedWindow(window_id);
+}
+
 // static
 scoped_ptr<media::VideoCaptureDevice> DesktopCaptureDevice::Create(
     const DesktopMediaID& source) {
@@ -380,6 +397,7 @@ scoped_ptr<media::VideoCaptureDevice> DesktopCaptureDevice::Create(
       scoped_ptr<webrtc::WindowCapturer> window_capturer(
           webrtc::WindowCapturer::Create(options));
       if (window_capturer && window_capturer->SelectWindow(source.id)) {
+        window_capturer->BringSelectedWindowToFront();
         capturer.reset(new webrtc::DesktopAndCursorComposer(
             window_capturer.release(),
             webrtc::MouseCursorMonitor::CreateForWindow(options, source.id)));
@@ -416,6 +434,11 @@ void DesktopCaptureDevice::AllocateAndStart(
 
 void DesktopCaptureDevice::StopAndDeAllocate() {
   core_->StopAndDeAllocate();
+}
+
+void DesktopCaptureDevice::SetNotificationWindowId(
+    gfx::NativeViewId window_id) {
+  core_->SetNotificationWindowId(window_id);
 }
 
 }  // namespace content

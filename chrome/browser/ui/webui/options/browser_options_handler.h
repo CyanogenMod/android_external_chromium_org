@@ -14,12 +14,14 @@
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_member.h"
+#include "base/scoped_observer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "components/signin/core/browser/signin_manager_base.h"
 #include "content/public/browser/notification_observer.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "ui/base/models/table_model_observer.h"
@@ -48,6 +50,7 @@ namespace options {
 class BrowserOptionsHandler
     : public OptionsPageUIHandler,
       public ProfileSyncServiceObserver,
+      public SigninManagerBase::Observer,
       public ui::SelectFileDialog::Listener,
       public ShellIntegration::DefaultWebClientObserver,
 #if defined(OS_CHROMEOS)
@@ -69,6 +72,11 @@ class BrowserOptionsHandler
 
   // ProfileSyncServiceObserver implementation.
   virtual void OnStateChanged() OVERRIDE;
+
+  // SigninManagerBase::Observer implementation.
+  virtual void GoogleSigninSucceeded(const std::string& username,
+                                     const std::string& password) OVERRIDE;
+  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
 
   // ShellIntegration::DefaultWebClientObserver implementation.
   virtual void SetDefaultWebClientUIState(
@@ -105,6 +113,9 @@ class BrowserOptionsHandler
   // Will be called when the policy::key::kWallpaperImage policy changes.
   void OnWallpaperPolicyChanged(const base::Value* previous_policy,
                                 const base::Value* current_policy);
+
+  // Will be called when powerwash dialog is shown.
+  void OnPowerwashDialogShow(const base::ListValue* args);
 #endif
 
   void UpdateSyncState();
@@ -354,6 +365,9 @@ class BrowserOptionsHandler
 #if defined(OS_CHROMEOS)
   scoped_ptr<policy::PolicyChangeRegistrar> policy_registrar_;
 #endif
+
+  ScopedObserver<SigninManagerBase, SigninManagerBase::Observer>
+      signin_observer_;
 
   // Used to get WeakPtr to self for use on the UI thread.
   base::WeakPtrFactory<BrowserOptionsHandler> weak_ptr_factory_;

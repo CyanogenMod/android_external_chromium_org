@@ -12,7 +12,7 @@
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "components/signin/core/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "google_apis/gaia/gaia_constants.h"
 
 namespace invalidation {
@@ -153,6 +153,7 @@ GCMInvalidationBridge::GCMInvalidationBridge(
     : OAuth2TokenService::Consumer("gcm_network_channel"),
       gcm_profile_service_(gcm_profile_service),
       auth_provider_(auth_provider),
+      subscribed_for_incoming_messages_(false),
       weak_factory_(this) {}
 
 GCMInvalidationBridge::~GCMInvalidationBridge() {
@@ -296,8 +297,6 @@ void GCMInvalidationBridge::OnMessage(
   it = message.data.find(kEchoTokenKey);
   if (it != message.data.end())
     echo_token = it->second;
-  if (content.empty())
-    return;
 
   core_thread_task_runner_->PostTask(
       FROM_HERE,

@@ -65,6 +65,7 @@ include $(LOCAL_PATH)/content/result_codes_java.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/screen_orientation_values_java.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/speech_recognition_error_java.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/webkit_version.target.darwin-x86.mk
+include $(LOCAL_PATH)/courgette/courgette_lib.target.darwin-x86.mk
 include $(LOCAL_PATH)/crypto/crypto.target.darwin-x86.mk
 include $(LOCAL_PATH)/gin/gin.target.darwin-x86.mk
 include $(LOCAL_PATH)/google_apis/google_apis.target.darwin-x86.mk
@@ -212,6 +213,7 @@ include $(LOCAL_PATH)/third_party/libwebp/libwebp_enc.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/libwebp/libwebp_utils.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/libxml/libxml.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/libxslt/libxslt.target.darwin-x86.mk
+include $(LOCAL_PATH)/third_party/lzma_sdk/lzma_sdk.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/mesa/mesa_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/modp_b64/modp_b64.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/npapi/npapi.target.darwin-x86.mk

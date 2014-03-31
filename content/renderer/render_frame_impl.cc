@@ -24,6 +24,7 @@
 #include "content/child/service_worker/service_worker_network_provider.h"
 #include "content/child/service_worker/web_service_worker_provider_impl.h"
 #include "content/child/web_socket_stream_handle_impl.h"
+#include "content/common/clipboard_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/service_worker/service_worker_types.h"
@@ -48,8 +49,10 @@
 #include "content/renderer/child_frame_compositing_helper.h"
 #include "content/renderer/context_menu_params_builder.h"
 #include "content/renderer/dom_automation_controller.h"
+#include "content/renderer/ime_event_guard.h"
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/java/java_bridge_dispatcher.h"
+#include "content/renderer/media/webcontentdecryptionmodule_impl.h"
 #include "content/renderer/npapi/plugin_channel_host.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
@@ -75,6 +78,7 @@
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebPlugin.h"
 #include "third_party/WebKit/public/web/WebPluginParams.h"
+#include "third_party/WebKit/public/web/WebRange.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "third_party/WebKit/public/web/WebSearchableFormData.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
@@ -107,6 +111,7 @@ using blink::WebNavigationPolicy;
 using blink::WebNavigationType;
 using blink::WebNode;
 using blink::WebPluginParams;
+using blink::WebRange;
 using blink::WebReferrerPolicy;
 using blink::WebScriptSource;
 using blink::WebSearchableFormData;
@@ -130,6 +135,8 @@ namespace content {
 
 namespace {
 
+const size_t kExtraCharsBeforeAndAfterSelection = 100;
+
 typedef std::map<blink::WebFrame*, RenderFrameImpl*> FrameMap;
 base::LazyInstance<FrameMap> g_frame_map = LAZY_INSTANCE_INITIALIZER;
 
@@ -145,8 +152,7 @@ int64 ExtractPostId(const WebHistoryItem& item) {
 
 WebURLResponseExtraDataImpl* GetExtraDataFromResponse(
     const WebURLResponse& response) {
-  return static_cast<WebURLResponseExtraDataImpl*>(
-      response.extraData());
+  return static_cast<WebURLResponseExtraDataImpl*>(response.extraData());
 }
 
 void GetRedirectChain(WebDataSource* ds, std::vector<GURL>* result) {
@@ -170,7 +176,7 @@ NOINLINE static void CrashIntentionally() {
   *zero = 0;
 }
 
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
 NOINLINE static void MaybeTriggerAsanError(const GURL& url) {
   // NOTE(rogerm): We intentionally perform an invalid heap access here in
   //     order to trigger an Address Sanitizer (ASAN) error report.
@@ -202,7 +208,7 @@ NOINLINE static void MaybeTriggerAsanError(const GURL& url) {
   // Make sure the assignments to the dummy value aren't optimized away.
   base::debug::Alias(&dummy);
 }
-#endif  // ADDRESS_SANITIZER
+#endif  // ADDRESS_SANITIZER || SYZYASAN
 
 static void MaybeHandleDebugURL(const GURL& url) {
   if (!url.SchemeIs(kChromeUIScheme))
@@ -219,9 +225,9 @@ static void MaybeHandleDebugURL(const GURL& url) {
     base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(20));
   }
 
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
   MaybeTriggerAsanError(url);
-#endif  // ADDRESS_SANITIZER
+#endif  // ADDRESS_SANITIZER || SYZYASAN
 }
 
 // Returns false unless this is a top-level navigation.
@@ -305,7 +311,10 @@ RenderFrameImpl::RenderFrameImpl(RenderViewImpl* render_view, int routing_id)
       is_loading_(false),
       is_swapped_out_(false),
       is_detaching_(false),
-      cookie_jar_(this) {
+      cookie_jar_(this),
+      selection_text_offset_(0),
+      selection_range_(gfx::Range::InvalidRange()),
+      handling_select_range_(false) {
   RenderThread::Get()->AddRoute(routing_id_, this);
 
 #if defined(OS_ANDROID)
@@ -396,7 +405,7 @@ void RenderFrameImpl::PepperSelectionChanged(
     PepperPluginInstanceImpl* instance) {
   if (instance != render_view_->focused_pepper_plugin())
     return;
-  render_view_->SyncSelectionIfRequired();
+  SyncSelectionIfRequired();
 }
 
 RenderWidgetFullscreenPepper* RenderFrameImpl::CreatePepperFullscreenContainer(
@@ -554,12 +563,28 @@ bool RenderFrameImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameMsg_ContextMenuClosed, OnContextMenuClosed)
     IPC_MESSAGE_HANDLER(FrameMsg_CustomContextMenuAction,
                         OnCustomContextMenuAction)
+    IPC_MESSAGE_HANDLER(InputMsg_Undo, OnUndo)
+    IPC_MESSAGE_HANDLER(InputMsg_Redo, OnRedo)
     IPC_MESSAGE_HANDLER(InputMsg_Cut, OnCut)
     IPC_MESSAGE_HANDLER(InputMsg_Copy, OnCopy)
     IPC_MESSAGE_HANDLER(InputMsg_Paste, OnPaste)
+    IPC_MESSAGE_HANDLER(InputMsg_PasteAndMatchStyle, OnPasteAndMatchStyle)
+    IPC_MESSAGE_HANDLER(InputMsg_Delete, OnDelete)
+    IPC_MESSAGE_HANDLER(InputMsg_SelectAll, OnSelectAll)
+    IPC_MESSAGE_HANDLER(InputMsg_SelectRange, OnSelectRange)
+    IPC_MESSAGE_HANDLER(InputMsg_Unselect, OnUnselect)
     IPC_MESSAGE_HANDLER(FrameMsg_CSSInsertRequest, OnCSSInsertRequest)
     IPC_MESSAGE_HANDLER(FrameMsg_JavaScriptExecuteRequest,
                         OnJavaScriptExecuteRequest)
+    IPC_MESSAGE_HANDLER(FrameMsg_SetEditableSelectionOffsets,
+                        OnSetEditableSelectionOffsets)
+    IPC_MESSAGE_HANDLER(FrameMsg_SetCompositionFromExistingText,
+                        OnSetCompositionFromExistingText)
+    IPC_MESSAGE_HANDLER(FrameMsg_ExtendSelectionAndDelete,
+                        OnExtendSelectionAndDelete)
+#if defined(OS_MACOSX)
+    IPC_MESSAGE_HANDLER(InputMsg_CopyToFindPboard, OnCopyToFindPboard)
+#endif
   IPC_END_MESSAGE_MAP_EX()
 
   if (!msg_is_ok) {
@@ -769,19 +794,24 @@ void RenderFrameImpl::OnBeforeUnload() {
 
 void RenderFrameImpl::OnSwapOut() {
   // Only run unload if we're not swapped out yet, but send the ack either way.
-  if (!is_swapped_out_) {
-    // Swap this RenderView out so the tab can navigate to a page rendered by a
-    // different process.  This involves running the unload handler and clearing
-    // the page.  Once WasSwappedOut is called, we also allow this process to
-    // exit if there are no other active RenderViews in it.
+  if (!is_swapped_out_ || !render_view_->is_swapped_out_) {
+    // Swap this RenderFrame out so the frame can navigate to a page rendered by
+    // a different process.  This involves running the unload handler and
+    // clearing the page.  Once WasSwappedOut is called, we also allow this
+    // process to exit if there are no other active RenderFrames in it.
 
     // Send an UpdateState message before we get swapped out.
     render_view_->SyncNavigationState();
 
     // Synchronously run the unload handler before sending the ACK.
-    // TODO(creis): Add a WebFrame::dispatchUnloadEvent and call it here.
+    // TODO(creis): Move WebView::dispatchUnloadEvent to WebFrame and call it
+    // here to support unload on subframes as well.
+    if (!frame_->parent())
+      render_view_->webview()->dispatchUnloadEvent();
 
     // Swap out and stop sending any IPC messages that are not ACKs.
+    if (!frame_->parent())
+      render_view_->SetSwappedOut(true);
     is_swapped_out_ = true;
 
     // Now that we're swapped out and filtering IPC messages, stop loading to
@@ -790,9 +820,15 @@ void RenderFrameImpl::OnSwapOut() {
     // TODO(creis): Should we be stopping all frames here and using
     // StopAltErrorPageFetcher with RenderView::OnStop, or just stopping this
     // frame?
-    frame_->stopLoading();
+    if (!frame_->parent())
+      render_view_->OnStop();
+    else
+      frame_->stopLoading();
 
-    frame_->setIsRemote(true);
+    // Let subframes know that the frame is now rendered remotely, for the
+    // purposes of compositing and input events.
+    if (frame_->parent())
+      frame_->setIsRemote(true);
 
     // Replace the page with a blank dummy URL. The unload handler will not be
     // run a second time, thanks to a check in FrameLoader::stopLoading.
@@ -800,8 +836,22 @@ void RenderFrameImpl::OnSwapOut() {
     // beforeunload handler. For now, we just run it a second time silently.
     render_view_->NavigateToSwappedOutURL(frame_);
 
-    render_view_->RegisterSwappedOutChildFrame(this);
+    if (frame_->parent())
+      render_view_->RegisterSwappedOutChildFrame(this);
+
+    // Let WebKit know that this view is hidden so it can drop resources and
+    // stop compositing.
+    // TODO(creis): Support this for subframes as well.
+    if (!frame_->parent()) {
+      render_view_->webview()->setVisibilityState(
+          blink::WebPageVisibilityStateHidden, false);
+    }
   }
+
+  // It is now safe to show modal dialogs again.
+  // TODO(creis): Deal with modal dialogs from subframes.
+  if (!frame_->parent())
+    render_view_->suppress_dialogs_until_swap_out_ = false;
 
   Send(new FrameHostMsg_SwapOut_ACK(routing_id_));
 }
@@ -872,24 +922,70 @@ void RenderFrameImpl::OnCustomContextMenuAction(
   }
 }
 
+void RenderFrameImpl::OnUndo() {
+  frame_->executeCommand(WebString::fromUTF8("Undo"), GetFocusedElement());
+}
+
+void RenderFrameImpl::OnRedo() {
+  frame_->executeCommand(WebString::fromUTF8("Redo"), GetFocusedElement());
+}
+
 void RenderFrameImpl::OnCut() {
-  base::AutoReset<bool> handling_select_range(
-      &render_view_->handling_select_range_, true);
+  base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
   frame_->executeCommand(WebString::fromUTF8("Cut"), GetFocusedElement());
 }
 
 void RenderFrameImpl::OnCopy() {
-  base::AutoReset<bool> handling_select_range(
-      &render_view_->handling_select_range_, true);
+  base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
   WebNode current_node = context_menu_node_.isNull() ?
       GetFocusedElement() : context_menu_node_;
   frame_->executeCommand(WebString::fromUTF8("Copy"), current_node);
 }
 
 void RenderFrameImpl::OnPaste() {
-  base::AutoReset<bool> handling_select_range(
-      &render_view_->handling_select_range_, true);
+  base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
   frame_->executeCommand(WebString::fromUTF8("Paste"), GetFocusedElement());
+}
+
+void RenderFrameImpl::OnPasteAndMatchStyle() {
+  base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
+  frame_->executeCommand(
+      WebString::fromUTF8("PasteAndMatchStyle"), GetFocusedElement());
+}
+
+#if defined(OS_MACOSX)
+void RenderFrameImpl::OnCopyToFindPboard() {
+  // Since the find pasteboard supports only plain text, this can be simpler
+  // than the |OnCopy()| case.
+  if (frame_->hasSelection()) {
+    base::string16 selection = frame_->selectionAsText();
+    RenderThread::Get()->Send(
+        new ClipboardHostMsg_FindPboardWriteStringAsync(selection));
+  }
+}
+#endif
+
+void RenderFrameImpl::OnDelete() {
+  frame_->executeCommand(WebString::fromUTF8("Delete"), GetFocusedElement());
+}
+
+void RenderFrameImpl::OnSelectAll() {
+  base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
+  frame_->executeCommand(WebString::fromUTF8("SelectAll"), GetFocusedElement());
+}
+
+void RenderFrameImpl::OnSelectRange(const gfx::Point& start,
+                                    const gfx::Point& end) {
+  // This IPC is dispatched by RenderWidgetHost, so use its routing id.
+  Send(new ViewHostMsg_SelectRange_ACK(GetRenderWidget()->routing_id()));
+
+  base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
+  frame_->selectRange(start, end);
+}
+
+void RenderFrameImpl::OnUnselect() {
+  base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
+  frame_->executeCommand(WebString::fromUTF8("Unselect"), GetFocusedElement());
 }
 
 void RenderFrameImpl::OnCSSInsertRequest(const std::string& css) {
@@ -922,6 +1018,31 @@ void RenderFrameImpl::OnJavaScriptExecuteRequest(
     Send(new FrameHostMsg_JavaScriptExecuteResponse(routing_id_, id, list));
   }
 }
+
+void RenderFrameImpl::OnSetEditableSelectionOffsets(int start, int end) {
+  base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
+  if (!GetRenderWidget()->ShouldHandleImeEvent())
+    return;
+  ImeEventGuard guard(GetRenderWidget());
+  frame_->setEditableSelectionOffsets(start, end);
+}
+
+void RenderFrameImpl::OnSetCompositionFromExistingText(
+    int start, int end,
+    const std::vector<blink::WebCompositionUnderline>& underlines) {
+  if (!GetRenderWidget()->ShouldHandleImeEvent())
+    return;
+  ImeEventGuard guard(GetRenderWidget());
+  frame_->setCompositionFromExistingText(start, end, underlines);
+}
+
+void RenderFrameImpl::OnExtendSelectionAndDelete(int before, int after) {
+  if (!GetRenderWidget()->ShouldHandleImeEvent())
+    return;
+  ImeEventGuard guard(GetRenderWidget());
+  frame_->extendSelectionAndDelete(before, after);
+}
+
 
 bool RenderFrameImpl::ShouldUpdateSelectionTextFromContextMenuParams(
     const base::string16& selection_text,
@@ -1017,6 +1138,10 @@ void RenderFrameImpl::LoadURLExternally(
   loadURLExternally(frame, request, policy);
 }
 
+void RenderFrameImpl::ExecuteJavaScript(const base::string16& javascript) {
+  OnJavaScriptExecuteRequest(javascript, 0, false);
+}
+
 void RenderFrameImpl::OnChildFrameProcessGone() {
   if (compositing_helper_)
     compositing_helper_->ChildFrameGone();
@@ -1066,6 +1191,16 @@ blink::WebMediaPlayer* RenderFrameImpl::createMediaPlayer(
   // related client objects here or referencing them in the RenderView. Needs
   // more work to understand where the proper place for those objects is.
   return render_view_->CreateMediaPlayer(this, frame, url, client);
+}
+
+blink::WebContentDecryptionModule*
+RenderFrameImpl::createContentDecryptionModule(
+    blink::WebFrame* frame,
+    const blink::WebSecurityOrigin& security_origin,
+    const blink::WebString& key_system) {
+  DCHECK(!frame_ || frame_ == frame);
+  return WebContentDecryptionModuleImpl::Create(
+      frame, security_origin, key_system);
 }
 
 blink::WebApplicationCacheHost* RenderFrameImpl::createApplicationCacheHost(
@@ -1379,8 +1514,7 @@ void RenderFrameImpl::didStartProvisionalLoad(blink::WebFrame* frame) {
   int parent_routing_id = frame->parent() ?
       FromWebFrame(frame->parent())->GetRoutingID() : -1;
   Send(new FrameHostMsg_DidStartProvisionalLoadForFrame(
-       routing_id_, parent_routing_id,
-       is_top_most, ds->request().url()));
+       routing_id_, parent_routing_id, ds->request().url()));
 }
 
 void RenderFrameImpl::didReceiveServerRedirectForProvisionalLoad(
@@ -1427,7 +1561,6 @@ void RenderFrameImpl::didFailProvisionalLoad(
 
   FrameHostMsg_DidFailProvisionalLoadWithError_Params params;
   params.frame_unique_name = frame->uniqueName();
-  params.is_main_frame = !frame->parent();
   params.error_code = error.reason;
   GetContentClient()->renderer()->GetNavigationErrorStrings(
       render_view_.get(),
@@ -1668,6 +1801,8 @@ void RenderFrameImpl::didFinishDocumentLoad(blink::WebFrame* frame) {
   // TODO(nasko): Remove once we have RenderFrameObserver for this method.
   render_view_->didFinishDocumentLoad(frame);
 
+  FOR_EACH_OBSERVER(RenderFrameObserver, observers_, DidFinishDocumentLoad());
+
   // Check whether we have new encoding name.
   render_view_->UpdateEncoding(frame, frame->view()->pageEncoding().utf8());
 }
@@ -1699,7 +1834,6 @@ void RenderFrameImpl::didFailLoad(blink::WebFrame* frame,
       &error_description);
   Send(new FrameHostMsg_DidFailLoadWithError(routing_id_,
                                              failed_request.url(),
-                                             !frame->parent(),
                                              error.reason,
                                              error_description));
 }
@@ -1724,8 +1858,7 @@ void RenderFrameImpl::didFinishLoad(blink::WebFrame* frame) {
     return;
 
   Send(new FrameHostMsg_DidFinishLoad(routing_id_,
-                                      ds->request().url(),
-                                      !frame->parent()));
+                                      ds->request().url()));
 }
 
 void RenderFrameImpl::didNavigateWithinPage(blink::WebFrame* frame,
@@ -1756,7 +1889,22 @@ void RenderFrameImpl::didUpdateCurrentHistoryItem(blink::WebFrame* frame) {
 }
 
 void RenderFrameImpl::didChangeSelection(bool is_empty_selection) {
-  render_view_->didChangeSelection(is_empty_selection);
+  if (!GetRenderWidget()->handling_input_event() && !handling_select_range_)
+    return;
+
+  if (is_empty_selection)
+    selection_text_.clear();
+
+  // UpdateTextInputType should be called before SyncSelectionIfRequired.
+  // UpdateTextInputType may send TextInputTypeChanged to notify the focus
+  // was changed, and SyncSelectionIfRequired may send SelectionChanged
+  // to notify the selection was changed.  Focus change should be notified
+  // before selection change.
+  GetRenderWidget()->UpdateTextInputType();
+  SyncSelectionIfRequired();
+#if defined(OS_ANDROID)
+  GetRenderWidget()->UpdateTextInputState(false, true);
+#endif
 }
 
 void RenderFrameImpl::showContextMenu(const blink::WebContextMenuData& data) {
@@ -1774,23 +1922,16 @@ void RenderFrameImpl::showContextMenu(const blink::WebContextMenuData& data) {
   // to showing the context menu.
   // TODO(asvitkine): http://crbug.com/152432
   if (ShouldUpdateSelectionTextFromContextMenuParams(
-          render_view_->selection_text_,
-          render_view_->selection_text_offset_,
-          render_view_->selection_range_,
-          params)) {
-    render_view_->selection_text_ = params.selection_text;
+          selection_text_, selection_text_offset_, selection_range_, params)) {
+    selection_text_ = params.selection_text;
     // TODO(asvitkine): Text offset and range is not available in this case.
-    render_view_->selection_text_offset_ = 0;
-    render_view_->selection_range_ =
-        gfx::Range(0, render_view_->selection_text_.length());
+    selection_text_offset_ = 0;
+    selection_range_ = gfx::Range(0, selection_text_.length());
+    // This IPC is dispatched by RenderWidetHost, so use its routing ID.
     Send(new ViewHostMsg_SelectionChanged(
-        routing_id_,
-        render_view_->selection_text_,
-        render_view_->selection_text_offset_,
-        render_view_->selection_range_));
+        GetRenderWidget()->routing_id(), selection_text_,
+        selection_text_offset_, selection_range_));
   }
-
-  params.frame_id = routing_id_;
 
   // Serializing a GURL longer than kMaxURLChars will fail, so don't do
   // it.  We replace it with an empty GURL so the appropriate items are disabled
@@ -1804,7 +1945,7 @@ void RenderFrameImpl::showContextMenu(const blink::WebContextMenuData& data) {
 #if defined(OS_ANDROID)
   gfx::Rect start_rect;
   gfx::Rect end_rect;
-  render_view_->GetSelectionBounds(&start_rect, &end_rect);
+  GetRenderWidget()->GetSelectionBounds(&start_rect, &end_rect);
   params.selection_start = gfx::Point(start_rect.x(), start_rect.bottom());
   params.selection_end = gfx::Point(end_rect.right(), end_rect.bottom());
 #endif
@@ -1828,8 +1969,10 @@ void RenderFrameImpl::willRequestAfterPreconnect(
   bool was_after_preconnect_request = true;
   // The args after |was_after_preconnect_request| are not used, and set to
   // correct values at |willSendRequest|.
-  request.setExtraData(new webkit_glue::WebURLRequestExtraDataImpl(
-      custom_user_agent, was_after_preconnect_request));
+  RequestExtraData* extra_data = new RequestExtraData();
+  extra_data->set_custom_user_agent(custom_user_agent);
+  extra_data->set_was_after_preconnect_request(was_after_preconnect_request);
+  request.setExtraData(extra_data);
 }
 
 void RenderFrameImpl::willSendRequest(
@@ -1878,8 +2021,8 @@ void RenderFrameImpl::willSendRequest(
   WebString custom_user_agent;
   bool was_after_preconnect_request = false;
   if (request.extraData()) {
-    webkit_glue::WebURLRequestExtraDataImpl* old_extra_data =
-        static_cast<webkit_glue::WebURLRequestExtraDataImpl*>(
+    RequestExtraData* old_extra_data =
+        static_cast<RequestExtraData*>(
             request.extraData());
     custom_user_agent = old_extra_data->custom_user_agent();
     was_after_preconnect_request =
@@ -1929,21 +2072,25 @@ void RenderFrameImpl::willSendRequest(
 
   int parent_routing_id = frame->parent() ?
       FromWebFrame(frame->parent())->GetRoutingID() : -1;
-  request.setExtraData(
-      new RequestExtraData(render_view_->visibilityState(),
-                           custom_user_agent,
-                           was_after_preconnect_request,
-                           routing_id_,
-                           (frame == top_frame),
-                           GURL(frame->document().securityOrigin().toString()),
-                           frame->parent() == top_frame,
-                           parent_routing_id,
-                           navigation_state->allow_download(),
-                           transition_type,
-                           should_replace_current_entry,
-                           navigation_state->transferred_request_child_id(),
-                           navigation_state->transferred_request_request_id(),
-                           provider_id));
+  RequestExtraData* extra_data = new RequestExtraData();
+  extra_data->set_visibility_state(render_view_->visibilityState());
+  extra_data->set_custom_user_agent(custom_user_agent);
+  extra_data->set_was_after_preconnect_request(was_after_preconnect_request);
+  extra_data->set_render_frame_id(routing_id_);
+  extra_data->set_is_main_frame(frame == top_frame);
+  extra_data->set_frame_origin(
+      GURL(frame->document().securityOrigin().toString()));
+  extra_data->set_parent_is_main_frame(frame->parent() == top_frame);
+  extra_data->set_parent_render_frame_id(parent_routing_id);
+  extra_data->set_allow_download(navigation_state->allow_download());
+  extra_data->set_transition_type(transition_type);
+  extra_data->set_should_replace_current_entry(should_replace_current_entry);
+  extra_data->set_transferred_request_child_id(
+      navigation_state->transferred_request_child_id());
+  extra_data->set_transferred_request_request_id(
+      navigation_state->transferred_request_request_id());
+  extra_data->set_service_worker_provider_id(provider_id);
+  request.setExtraData(extra_data);
 
   DocumentState* top_document_state =
       DocumentState::FromDataSource(top_data_source);
@@ -2008,7 +2155,8 @@ void RenderFrameImpl::didReceiveResponse(
   int http_status_code = response.httpStatusCode();
 
   // Record page load flags.
-  WebURLResponseExtraDataImpl* extra_data = GetExtraDataFromResponse(response);
+  WebURLResponseExtraDataImpl* extra_data =
+      GetExtraDataFromResponse(response);
   if (extra_data) {
     document_state->set_was_fetched_via_spdy(
         extra_data->was_fetched_via_spdy());
@@ -2476,9 +2624,11 @@ void RenderFrameImpl::didStartLoading(bool to_different_document) {
 
   is_loading_ = true;
 
-  render_view_->didStartLoading(frame_);
+  bool view_was_loading = render_view_->is_loading();
+  render_view_->FrameDidStartLoading(frame_);
 
-  Send(new FrameHostMsg_DidStartLoading(routing_id_));
+  if (!view_was_loading)
+    Send(new FrameHostMsg_DidStartLoading(routing_id_, to_different_document));
 }
 
 void RenderFrameImpl::didStopLoading() {
@@ -2487,9 +2637,10 @@ void RenderFrameImpl::didStopLoading() {
     return;
   }
 
+  DCHECK(render_view_->is_loading());
   is_loading_ = false;
 
-  render_view_->didStopLoading(frame_);
+  render_view_->FrameDidStopLoading(frame_);
 
   // NOTE: For now we're doing the safest thing, and sending out notification
   // when done loading. This currently isn't an issue as the favicon is only
@@ -2497,7 +2648,12 @@ void RenderFrameImpl::didStopLoading() {
   // finished parsing the head, but webkit doesn't support that yet.
   // The feed discovery code would also benefit from access to the head.
   // NOTE: Sending of the IPC message happens through the top-level frame.
-  Send(new FrameHostMsg_DidStopLoading(routing_id_));
+  if (!render_view_->is_loading())
+    Send(new FrameHostMsg_DidStopLoading(routing_id_));
+}
+
+void RenderFrameImpl::didChangeLoadProgress(double load_progress) {
+  render_view_->FrameDidChangeLoadProgress(frame_, load_progress);
 }
 
 WebNavigationPolicy RenderFrameImpl::DecidePolicyForNavigation(
@@ -2757,8 +2913,65 @@ void RenderFrameImpl::OpenURL(WebFrame* frame,
   Send(new FrameHostMsg_OpenURL(routing_id_, params));
 }
 
-void RenderFrameImpl::didChangeLoadProgress(double load_progress) {
-  render_view_->didChangeLoadProgress(frame_, load_progress);
+void RenderFrameImpl::SyncSelectionIfRequired() {
+  base::string16 text;
+  size_t offset;
+  gfx::Range range;
+#if defined(ENABLE_PLUGINS)
+  if (render_view_->focused_pepper_plugin_) {
+    render_view_->focused_pepper_plugin_->GetSurroundingText(&text, &range);
+    offset = 0;  // Pepper API does not support offset reporting.
+    // TODO(kinaba): cut as needed.
+  } else
+#endif
+  {
+    size_t location, length;
+    if (!GetRenderWidget()->webwidget()->caretOrSelectionRange(
+            &location, &length)) {
+      return;
+    }
+
+    range = gfx::Range(location, location + length);
+
+    if (GetRenderWidget()->webwidget()->textInputInfo().type !=
+            blink::WebTextInputTypeNone) {
+      // If current focused element is editable, we will send 100 more chars
+      // before and after selection. It is for input method surrounding text
+      // feature.
+      if (location > kExtraCharsBeforeAndAfterSelection)
+        offset = location - kExtraCharsBeforeAndAfterSelection;
+      else
+        offset = 0;
+      length = location + length - offset + kExtraCharsBeforeAndAfterSelection;
+      WebRange webrange = WebRange::fromDocumentRange(frame_, offset, length);
+      if (!webrange.isNull())
+        text = WebRange::fromDocumentRange(
+            frame_, offset, length).toPlainText();
+    } else {
+      offset = location;
+      text = frame_->selectionAsText();
+      // http://crbug.com/101435
+      // In some case, frame->selectionAsText() returned text's length is not
+      // equal to the length returned from webwidget()->caretOrSelectionRange().
+      // So we have to set the range according to text.length().
+      range.set_end(range.start() + text.length());
+    }
+  }
+
+  // Sometimes we get repeated didChangeSelection calls from webkit when
+  // the selection hasn't actually changed. We don't want to report these
+  // because it will cause us to continually claim the X clipboard.
+  if (selection_text_offset_ != offset ||
+      selection_range_ != range ||
+      selection_text_ != text) {
+    selection_text_ = text;
+    selection_text_offset_ = offset;
+    selection_range_ = range;
+    // This IPC is dispatched by RenderWidetHost, so use its routing ID.
+    Send(new ViewHostMsg_SelectionChanged(
+        GetRenderWidget()->routing_id(), text, offset, range));
+  }
+  GetRenderWidget()->UpdateSelectionBounds();
 }
 
 }  // namespace content

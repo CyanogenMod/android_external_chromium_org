@@ -56,6 +56,27 @@ ACTION(QuitUIMessageLoop) {
   base::MessageLoop::current()->Quit();
 }
 
+class TestPasswordStoreMac : public PasswordStoreMac {
+ public:
+  TestPasswordStoreMac(
+      scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
+      crypto::AppleKeychain* keychain,
+      LoginDatabase* login_db)
+      : PasswordStoreMac(main_thread_runner,
+                         db_thread_runner,
+                         keychain,
+                         login_db) {
+  }
+
+  using PasswordStoreMac::GetBackgroundTaskRunner;
+
+ private:
+  virtual ~TestPasswordStoreMac() {}
+
+  DISALLOW_COPY_AND_ASSIGN(TestPasswordStoreMac);
+};
+
 }  // namespace
 
 #pragma mark -
@@ -1038,7 +1059,7 @@ class PasswordStoreMacTest : public testing::Test {
 
     keychain_ = new MockAppleKeychain();
 
-    store_ = new PasswordStoreMac(
+    store_ = new TestPasswordStoreMac(
         base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current(),
         keychain_,
@@ -1048,16 +1069,12 @@ class PasswordStoreMacTest : public testing::Test {
 
   virtual void TearDown() {
     store_->Shutdown();
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::MessageLoop::QuitClosure());
-    base::MessageLoop::current()->Run();
+    EXPECT_FALSE(store_->GetBackgroundTaskRunner());
   }
 
   void WaitForStoreUpdate() {
     // Do a store-level query to wait for all the operations above to be done.
     MockPasswordStoreConsumer consumer;
-    ON_CALL(consumer, OnGetPasswordStoreResults(_))
-        .WillByDefault(QuitUIMessageLoop());
     EXPECT_CALL(consumer, OnGetPasswordStoreResults(_))
         .WillOnce(DoAll(WithArg<0>(STLDeleteElements0()), QuitUIMessageLoop()));
     store_->GetLogins(PasswordForm(), PasswordStore::ALLOW_PROMPT, &consumer);
@@ -1070,7 +1087,7 @@ class PasswordStoreMacTest : public testing::Test {
 
   MockAppleKeychain* keychain_;  // Owned by store_.
   LoginDatabase* login_db_;  // Owned by store_.
-  scoped_refptr<PasswordStoreMac> store_;
+  scoped_refptr<TestPasswordStoreMac> store_;
   base::ScopedTempDir db_dir_;
 };
 
@@ -1199,8 +1216,6 @@ TEST_F(PasswordStoreMacTest, TestDBKeychainAssociation) {
   m_form.signon_realm = "http://m.facebook.com";
   m_form.origin = GURL("http://m.facebook.com/index.html");
   MockPasswordStoreConsumer consumer;
-  ON_CALL(consumer, OnGetPasswordStoreResults(_))
-      .WillByDefault(QuitUIMessageLoop());
   EXPECT_CALL(consumer, OnGetPasswordStoreResults(_)).WillOnce(DoAll(
       WithArg<0>(Invoke(&consumer, &MockPasswordStoreConsumer::CopyElements)),
       WithArg<0>(STLDeleteElements0()),

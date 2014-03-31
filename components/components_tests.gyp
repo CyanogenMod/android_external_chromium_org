@@ -18,6 +18,8 @@
           'type': '<(gtest_target_type)',
           'sources': [
             'auto_login_parser/auto_login_parser_unittest.cc',
+            'autofill/content/browser/content_autofill_driver_unittest.cc',
+            'autofill/content/browser/request_autocomplete_manager_unittest.cc',
             'autofill/content/browser/wallet/full_wallet_unittest.cc',
             'autofill/content/browser/wallet/instrument_unittest.cc',
             'autofill/content/browser/wallet/wallet_address_unittest.cc',
@@ -72,9 +74,12 @@
             'dom_distiller/core/task_tracker_unittest.cc',
             'dom_distiller/core/url_utils_unittest.cc',
             'domain_reliability/context_unittest.cc',
+            'domain_reliability/dispatcher_unittest.cc',
             'domain_reliability/monitor_unittest.cc',
+            'domain_reliability/scheduler_unittest.cc',
             'domain_reliability/test_util.cc',
             'domain_reliability/test_util.h',
+            'domain_reliability/uploader_unittest.cc',
             'domain_reliability/util_unittest.cc',
             'json_schema/json_schema_validator_unittest.cc',
             'json_schema/json_schema_validator_unittest_base.cc',
@@ -105,7 +110,8 @@
             'rappor/rappor_metric_unittest.cc',
             'rappor/rappor_service_unittest.cc',
             'sessions/serialized_navigation_entry_unittest.cc',
-            'signin/core/webdata/token_service_table_unittest.cc',
+            'signin/core/browser/signin_error_controller_unittest.cc',
+            'signin/core/browser/webdata/token_service_table_unittest.cc',
             'storage_monitor/image_capture_device_manager_unittest.mm',
             'storage_monitor/media_storage_util_unittest.cc',
             'storage_monitor/media_transfer_protocol_device_observer_linux_unittest.cc',
@@ -205,7 +211,8 @@
             'components.gyp:rappor',
 
             # Dependencies of signin
-            'components.gyp:signin_core',
+            'components.gyp:signin_core_browser',
+            'components.gyp:signin_core_browser_test_support',
 
             # Dependencies of sync_driver
             'components.gyp:sync_driver_test_support',
@@ -544,7 +551,6 @@
             'HAS_OUT_OF_PROC_TEST_RUNNER',
           ],
           'sources': [
-            '../content/test/content_test_launcher.cc',
             'dom_distiller/content/distiller_page_web_contents_browsertest.cc',
 
             # content_extractor is a standalone content extraction tool built as
@@ -555,21 +561,13 @@
             {
               'action_name': 'repack_components_pack',
               'variables': {
-                'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
                 'pak_inputs': [
                   '<(SHARED_INTERMEDIATE_DIR)/components/component_resources.pak',
                   '<(SHARED_INTERMEDIATE_DIR)/components/strings/component_strings_en-US.pak',
                 ],
+                'pak_output': '<(PRODUCT_DIR)/components_resources.pak',
               },
-              'inputs': [
-                '<(repack_path)',
-                '<@(pak_inputs)',
-              ],
-              'outputs': [
-                '<(PRODUCT_DIR)/components_resources.pak',
-              ],
-              'action': ['python', '<(repack_path)', '<@(_outputs)',
-                         '<@(pak_inputs)'],
+              'includes': [ '../build/repack_action.gypi' ],
             },
           ],
           'conditions': [

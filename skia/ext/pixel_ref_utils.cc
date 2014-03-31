@@ -14,6 +14,7 @@
 #include "third_party/skia/include/core/SkRRect.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "third_party/skia/include/core/SkShader.h"
+#include "third_party/skia/include/utils/SkNoSaveLayerCanvas.h"
 #include "third_party/skia/src/core/SkRasterClip.h"
 
 namespace skia {
@@ -313,12 +314,23 @@ class GatherPixelRefDevice : public SkBitmapDevice {
                           const SkPaint&) SK_OVERRIDE {}
 
  protected:
+#ifdef SK_SUPPORT_LEGACY_READPIXELSCONFIG
   virtual bool onReadPixels(const SkBitmap& bitmap,
                             int x,
                             int y,
                             SkCanvas::Config8888 config8888) SK_OVERRIDE {
     return false;
   }
+#endif
+
+  virtual bool onReadPixels(const SkImageInfo& info,
+                            void* pixels,
+                            size_t rowBytes,
+                            int x,
+                            int y) SK_OVERRIDE {
+    return false;
+  }
+
   virtual bool onWritePixels(const SkImageInfo& info,
                              const void* pixels,
                              size_t rowBytes,
@@ -349,42 +361,6 @@ class GatherPixelRefDevice : public SkBitmapDevice {
   }
 };
 
-class NoSaveLayerCanvas : public SkCanvas {
- public:
-  NoSaveLayerCanvas(SkBaseDevice* device) : INHERITED(device) {}
-
- protected:
-  // Turn saveLayer() into save() for speed, should not affect correctness.
-  virtual SaveLayerStrategy willSaveLayer(const SkRect* bounds,
-                                          const SkPaint* paint,
-                                          SaveFlags flags) SK_OVERRIDE {
-      this->INHERITED::willSaveLayer(bounds, paint, flags);
-      return kNoLayer_SaveLayerStrategy;
-  }
-
-  // Disable aa for speed.
-  virtual void onClipRect(const SkRect& rect, 
-                          SkRegion::Op op,
-                          ClipEdgeStyle edge_style) SK_OVERRIDE {
-    this->INHERITED::onClipRect(rect, op, kHard_ClipEdgeStyle);
-  }
-
-  virtual void onClipPath(const SkPath& path, 
-                          SkRegion::Op op,
-                          ClipEdgeStyle edge_style) SK_OVERRIDE {
-    this->updateClipConservativelyUsingBounds(path.getBounds(), op, 
-                                              path.isInverseFillType());
-  }
-  virtual void onClipRRect(const SkRRect& rrect, 
-                           SkRegion::Op op,
-                           ClipEdgeStyle edge_style) SK_OVERRIDE {
-    this->updateClipConservativelyUsingBounds(rrect.getBounds(), op, false);
-  }
-
- private:
-  typedef SkCanvas INHERITED;
-};
-
 }  // namespace
 
 void PixelRefUtils::GatherDiscardablePixelRefs(
@@ -398,7 +374,7 @@ void PixelRefUtils::GatherDiscardablePixelRefs(
       SkBitmap::kNo_Config, picture->width(), picture->height());
 
   GatherPixelRefDevice device(empty_bitmap, &pixel_ref_set);
-  NoSaveLayerCanvas canvas(&device);
+  SkNoSaveLayerCanvas canvas(&device);
 
   canvas.clipRect(SkRect::MakeWH(picture->width(), picture->height()),
                   SkRegion::kIntersect_Op,

@@ -564,7 +564,7 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
     }
 
     ExtensionTestMessageListener done_listener("TEST_PASSED", false);
-    done_listener.AlsoListenForFailureMessage("TEST_FAILED");
+    done_listener.set_failure_message("TEST_FAILED");
     if (!content::ExecuteScript(
             embedder_web_contents,
             base::StringPrintf("runTest('%s')", test_name.c_str()))) {
@@ -618,7 +618,7 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
     ASSERT_TRUE(embedder_web_contents);
 
     ExtensionTestMessageListener test_run_listener("PASSED", false);
-    test_run_listener.AlsoListenForFailureMessage("FAILED");
+    test_run_listener.set_failure_message("FAILED");
     EXPECT_TRUE(
         content::ExecuteScript(
             embedder_web_contents,
@@ -1577,11 +1577,11 @@ void WebViewTest::MediaAccessAPIAllowTestHelper(const std::string& test_name) {
 
   content::WebContents* embedder_web_contents = GetFirstAppWindowWebContents();
   ASSERT_TRUE(embedder_web_contents);
-  MockWebContentsDelegate* mock = new MockWebContentsDelegate;
-  embedder_web_contents->SetDelegate(mock);
+  scoped_ptr<MockWebContentsDelegate> mock(new MockWebContentsDelegate());
+  embedder_web_contents->SetDelegate(mock.get());
 
   ExtensionTestMessageListener done_listener("TEST_PASSED", false);
-  done_listener.AlsoListenForFailureMessage("TEST_FAILED");
+  done_listener.set_failure_message("TEST_FAILED");
   EXPECT_TRUE(
       content::ExecuteScript(
           embedder_web_contents,
@@ -1598,7 +1598,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, ContextMenusAPI_Basic) {
       SetBrowserClientForTesting(&new_client);
 
   ExtensionTestMessageListener launched_listener("Launched", false);
-  launched_listener.AlsoListenForFailureMessage("TEST_FAILED");
+  launched_listener.set_failure_message("TEST_FAILED");
   LoadAndLaunchPlatformApp("web_view/context_menus/basic");
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 
@@ -1839,9 +1839,9 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, DownloadPermission) {
   // Replace WebContentsDelegate with mock version so we can intercept download
   // requests.
   content::WebContentsDelegate* delegate = guest_web_contents->GetDelegate();
-  MockDownloadWebContentsDelegate* mock_delegate =
-      new MockDownloadWebContentsDelegate(delegate);
-  guest_web_contents->SetDelegate(mock_delegate);
+  scoped_ptr<MockDownloadWebContentsDelegate>
+      mock_delegate(new MockDownloadWebContentsDelegate(delegate));
+  guest_web_contents->SetDelegate(mock_delegate.get());
 
   // Start test.
   // 1. Guest requests a download that its embedder denies.

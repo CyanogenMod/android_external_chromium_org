@@ -13,10 +13,11 @@ from api_data_source import (_JSCModel,
                              _GetEventByNameFromEvents)
 from branch_utility import ChannelInfo
 from extensions_paths import CHROME_EXTENSIONS
+from fake_host_file_system_provider import FakeHostFileSystemProvider
+from features_bundle import FeaturesBundle
 from file_system import FileNotFoundError
 from future import Future
 from object_store_creator import ObjectStoreCreator
-from reference_resolver import ReferenceResolver
 from server_instance import ServerInstance
 from test_data.canned_data import (CANNED_API_FILE_SYSTEM_DATA, CANNED_BRANCHES)
 from test_data.api_data_source.canned_trunk_fs import CANNED_TRUNK_FS_DATA
@@ -41,19 +42,6 @@ class _FakeAvailabilityFinder(object):
     return ChannelInfo('stable', '396', 5)
 
 
-class _FakeHostFileSystemProvider(object):
-
-  def __init__(self, file_system_data):
-    self._file_system_data = file_system_data
-
-  def GetTrunk(self):
-    return self.GetBranch('trunk')
-
-  @memoize
-  def GetBranch(self, branch):
-    return TestFileSystem(self._file_system_data[str(branch)])
-
-
 class _FakeSamplesDataSource(object):
 
   def Create(self, request):
@@ -75,6 +63,12 @@ class _FakeAPIDataSource(object):
     return self._json[key]
 
 
+class _FakeNamespace(object):
+
+  def __init__(self):
+    self.documentation_options = {}
+
+
 class _FakeAPIModels(object):
 
   def __init__(self, names):
@@ -82,6 +76,9 @@ class _FakeAPIModels(object):
 
   def GetNames(self):
     return self._names
+
+  def GetModel(self, name):
+    return Future(value=_FakeNamespace())
 
 
 class _FakeTemplateCache(object):
@@ -97,13 +94,16 @@ class APIDataSourceTest(unittest.TestCase):
 
     server_instance = ServerInstance.ForTest(
         TestFileSystem(CANNED_TRUNK_FS_DATA, relative_to=CHROME_EXTENSIONS))
-    self._json_cache = server_instance.compiled_fs_factory.ForJson(
-        server_instance.host_file_system_provider.GetTrunk())
+    file_system = server_instance.host_file_system_provider.GetTrunk()
+    self._json_cache = server_instance.compiled_fs_factory.ForJson(file_system)
+    self._features_bundle = FeaturesBundle(file_system,
+                                           server_instance.compiled_fs_factory,
+                                           server_instance.object_store_creator)
     self._api_models = server_instance.api_models
 
     # Used for testGetApiAvailability() so that valid-ish data is processed.
     server_instance = ServerInstance.ForTest(
-        file_system_provider=_FakeHostFileSystemProvider(
+        file_system_provider=FakeHostFileSystemProvider(
             CANNED_API_FILE_SYSTEM_DATA))
     self._avail_api_models = server_instance.api_models
     self._avail_json_cache = server_instance.compiled_fs_factory.ForJson(
@@ -114,23 +114,17 @@ class APIDataSourceTest(unittest.TestCase):
     with open(os.path.join(self._base_path, filename), 'r') as f:
       return f.read()
 
-  def _CreateRefResolver(self, filename):
-    test_data = self._LoadJSON(filename)
-    return ReferenceResolver.Factory(_FakeAPIDataSource(test_data),
-                                     _FakeAPIModels(test_data),
-                                     ObjectStoreCreator.ForTest()).Create()
-
   def _LoadJSON(self, filename):
     return json.loads(self._ReadLocalFile(filename))
 
   def testCreateId(self):
     dict_ = _JSCModel('tester',
                       self._api_models,
-                      self._CreateRefResolver('test_file_data_source.json'),
                       False,
                       _FakeAvailabilityFinder(),
                       self._json_cache,
                       _FakeTemplateCache(),
+                      self._features_bundle,
                       None).ToDict()
     self.assertEquals('type-TypeA', dict_['types'][0]['id'])
     self.assertEquals('property-TypeA-b',
@@ -144,10 +138,10 @@ class APIDataSourceTest(unittest.TestCase):
     dict_ = _JSCModel('tester',
                       self._api_models,
                       False,
-                      self._CreateRefResolver('test_file_data_source.json'),
                       _FakeAvailabilityFinder(),
                       self._json_cache,
                       _FakeTemplateCache(),
+                      self._features_bundle,
                       None).ToDict()
     self.assertEquals(expected_json, dict_)
 
@@ -155,27 +149,6 @@ class APIDataSourceTest(unittest.TestCase):
     self.assertEquals('1,234,567', _FormatValue(1234567))
     self.assertEquals('67', _FormatValue(67))
     self.assertEquals('234,567', _FormatValue(234567))
-
-  def testFormatDescription(self):
-    dict_ = _JSCModel('ref_test',
-                      self._api_models,
-                      self._CreateRefResolver('ref_test_data_source.json'),
-                      False,
-                      _FakeAvailabilityFinder(),
-                      self._json_cache,
-                      _FakeTemplateCache(),
-                      None).ToDict()
-    self.assertEquals(_MakeLink('ref_test.html#type-type2', 'type2'),
-                      _GetType(dict_, 'type1')['description'])
-    self.assertEquals(
-        'A %s, or %s' % (_MakeLink('ref_test.html#type-type3', 'type3'),
-                         _MakeLink('ref_test.html#type-type2', 'type2')),
-        _GetType(dict_, 'type2')['description'])
-    self.assertEquals(
-        '%s != %s' % (_MakeLink('other.html#type-type2', 'other.type2'),
-                      _MakeLink('ref_test.html#type-type2', 'type2')),
-        _GetType(dict_, 'type3')['description'])
-
 
   def testGetApiAvailability(self):
     api_availabilities = {
@@ -189,22 +162,22 @@ class APIDataSourceTest(unittest.TestCase):
     for api_name, availability in api_availabilities.iteritems():
       model = _JSCModel(api_name,
                         self._avail_api_models,
-                        None,
                         True,
                         self._avail_finder,
                         self._avail_json_cache,
                         _FakeTemplateCache(),
+                        self._features_bundle,
                         None)
       self.assertEquals(availability, model._GetApiAvailability())
 
   def testGetIntroList(self):
     model = _JSCModel('tester',
                       self._api_models,
-                      self._CreateRefResolver('test_file_data_source.json'),
                       False,
                       _FakeAvailabilityFinder(),
                       self._json_cache,
                       _FakeTemplateCache(),
+                      self._features_bundle,
                       None)
     expected_list = [
       { 'title': 'Description',
@@ -272,11 +245,11 @@ class APIDataSourceTest(unittest.TestCase):
   def testAddRules(self):
     dict_ = _JSCModel('add_rules_tester',
                       self._api_models,
-                      self._CreateRefResolver('test_file_data_source.json'),
                       False,
                       _FakeAvailabilityFinder(),
                       self._json_cache,
                       _FakeTemplateCache(),
+                      self._features_bundle,
                       self._FakeLoadAddRulesSchema).ToDict()
 
     # Check that the first event has the addRulesFunction defined.

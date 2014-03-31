@@ -5,23 +5,126 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_EXTENSIONS_EXTENSION_MESSAGE_BUBBLE_VIEW_H_
 #define CHROME_BROWSER_UI_VIEWS_EXTENSIONS_EXTENSION_MESSAGE_BUBBLE_VIEW_H_
 
+#include "base/compiler_specific.h"
+#include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/extension_message_bubble.h"
-#include "chrome/browser/extensions/extension_message_bubble_controller.h"
+#include "chrome/browser/ui/views/toolbar/browser_actions_container_observer.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/link_listener.h"
 
-class Browser;
+class Profile;
+class BrowserActionsContainer;
 class ToolbarView;
 
 namespace views {
 class Label;
 class LabelButton;
-class Link;
-class Widget;
+class View;
 }
 
 namespace extensions {
+
+class DevModeBubbleController;
+class ExtensionMessageBubbleController;
+
+// Create and show ExtensionMessageBubbles for either extensions that look
+// suspicious and have therefore been disabled, or for extensions that are
+// running in developer mode that we want to warn the user about.
+// Calling MaybeShow() will show one of the bubbles, if there is cause to (we
+// don't show both in order to avoid spamminess). The suspicious extensions
+// bubble takes priority over the developer mode extensions bubble.
+class ExtensionMessageBubbleFactory : public BrowserActionsContainerObserver {
+ public:
+  ExtensionMessageBubbleFactory(Profile* profile, ToolbarView* toolbar_view);
+  virtual ~ExtensionMessageBubbleFactory();
+
+  void MaybeShow(views::View* anchor_view);
+
+ private:
+  // The stage of showing the developer mode extensions bubble. STAGE_START
+  // corresponds to the beginning of the process, when nothing has been done.
+  // STAGE_HIGHLIGHTED indicates that the toolbar should be highlighting
+  // dangerous extensions. STAGE_COMPLETE means that the process should be
+  // ended.
+  enum Stage { STAGE_START, STAGE_HIGHLIGHTED, STAGE_COMPLETE };
+
+  // Shows the suspicious extensions bubble, if there are suspicious extensions
+  // and we have not done so already.
+  // Returns true if we have show the view.
+  bool MaybeShowSuspiciousExtensionsBubble(views::View* anchor_view);
+
+  // Shows the settings API extensions bubble, if there are extensions
+  // overriding the startup pages and we have not done so already.
+  // Returns true if we show the view (or start the process).
+  bool MaybeShowStartupOverrideExtensionsBubble(views::View* anchor_view);
+
+  // Shows the developer mode extensions bubble, if there are extensions running
+  // in developer mode and we have not done so already.
+  // Returns true if we show the view (or start the process).
+  bool MaybeShowDevModeExtensionsBubble(views::View* anchor_view);
+
+  // Starts or stops observing the BrowserActionsContainer, if necessary.
+  void MaybeObserve();
+  void MaybeStopObserving();
+
+  // Adds |profile| to the list of profiles that have been evaluated for showing
+  // a bubble. Handy for things that only want to check once per profile.
+  void RecordProfileCheck(Profile* profile);
+  // Returns false if this profile has been evaluated before.
+  bool IsInitialProfileCheck(Profile* profile);
+
+  // BrowserActionsContainer::Observer implementation.
+  virtual void OnBrowserActionsContainerAnimationEnded() OVERRIDE;
+  virtual void OnBrowserActionsContainerDestroyed() OVERRIDE;
+
+  // Inform the ExtensionToolbarModel to highlight the appropriate extensions.
+  void HighlightDevModeExtensions();
+
+  // Shows the developer mode bubble, after highlighting the extensions.
+  void ShowDevModeBubble();
+
+  // Finishes the process of showing the developer mode bubble.
+  void Finish();
+
+  // The associated profile.
+  Profile* profile_;
+
+  // The toolbar view that the ExtensionMessageBubbleViews will attach to.
+  ToolbarView* toolbar_view_;
+
+  // Whether or not we have shown the suspicious extensions bubble.
+  bool shown_suspicious_extensions_bubble_;
+
+  // Whether or not we have shown the Settings API extensions bubble notifying
+  // the user about the startup pages being overridden.
+  bool shown_startup_override_extensions_bubble_;
+
+  // Whether or not we have shown the developer mode extensions bubble.
+  bool shown_dev_mode_extensions_bubble_;
+
+  // Whether or not we are already observing the BrowserActionsContainer (so
+  // we don't add ourselves twice).
+  bool is_observing_;
+
+  // The current stage of showing the bubble.
+  Stage stage_;
+
+  // The BrowserActionsContainer for the profile. This will be NULL if the
+  // factory is not currently in the process of showing a bubble.
+  BrowserActionsContainer* container_;
+
+  // The default view to anchor the bubble to. This will be NULL if the factory
+  // is not currently in the process of showing a bubble.
+  views::View* anchor_view_;
+
+  // The DevModeBubbleController to use. This will be NULL if the factory is not
+  // currently in the process of showing a bubble.
+  scoped_ptr<DevModeBubbleController> controller_;
+
+  DISALLOW_COPY_AND_ASSIGN(ExtensionMessageBubbleFactory);
+};
 
 // This is a class that implements the UI for the bubble showing which
 // extensions look suspicious and have therefore been automatically disabled.
@@ -30,9 +133,10 @@ class ExtensionMessageBubbleView : public ExtensionMessageBubble,
                                    public views::ButtonListener,
                                    public views::LinkListener {
  public:
-  // Show the Disabled Extension bubble, if needed.
-  static void MaybeShow(
-      Browser* browser, ToolbarView* toolbar_view, views::View* anchor_view);
+  ExtensionMessageBubbleView(
+      views::View* anchor_view,
+      views::BubbleBorder::Arrow arrow_location,
+      scoped_ptr<ExtensionMessageBubbleController> controller);
 
   // ExtensionMessageBubble methods.
   virtual void OnActionButtonClicked(const base::Closure& callback) OVERRIDE;
@@ -44,12 +148,8 @@ class ExtensionMessageBubbleView : public ExtensionMessageBubble,
   virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
 
  private:
-  ExtensionMessageBubbleView(
-      views::View* anchor_view,
-      scoped_ptr<ExtensionMessageBubbleController> controller);
   virtual ~ExtensionMessageBubbleView();
 
-  // Shows the bubble and updates the counter for how often it has been shown.
   void ShowBubble();
 
   // views::BubbleDelegateView overrides:
@@ -64,8 +164,8 @@ class ExtensionMessageBubbleView : public ExtensionMessageBubble,
 
   // views::View implementation.
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
+  virtual void ViewHierarchyChanged(const ViewHierarchyChangedDetails& details)
+      OVERRIDE;
 
   base::WeakPtrFactory<ExtensionMessageBubbleView> weak_factory_;
 

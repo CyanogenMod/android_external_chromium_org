@@ -85,6 +85,7 @@ const char* kAtomsToCache[] = {
   "_NET_WM_STATE_MAXIMIZED_VERT",
   "_NET_WM_STATE_SKIP_TASKBAR",
   "_NET_WM_STATE_STICKY",
+  "_NET_WM_USER_TIME",
   "_NET_WM_WINDOW_OPACITY",
   "_NET_WM_WINDOW_TYPE",
   "_NET_WM_WINDOW_TYPE_DND",
@@ -134,7 +135,8 @@ DesktopWindowTreeHostX11::DesktopWindowTreeHostX11(
       desktop_native_widget_aura_(desktop_native_widget_aura),
       content_window_(NULL),
       window_parent_(NULL),
-      custom_window_shape_(NULL) {
+      custom_window_shape_(NULL),
+      urgency_hint_set_(false) {
 }
 
 DesktopWindowTreeHostX11::~DesktopWindowTreeHostX11() {
@@ -177,6 +179,7 @@ gfx::Rect DesktopWindowTreeHostX11::GetX11RootWindowBounds() const {
 void DesktopWindowTreeHostX11::HandleNativeWidgetActivationChanged(
     bool active) {
   if (active) {
+    FlashFrame(false);
     OnHostActivated();
     open_windows().remove(xwindow_);
     open_windows().insert(open_windows().begin(), xwindow_);
@@ -672,8 +675,24 @@ void DesktopWindowTreeHostX11::InitModalType(ui::ModalType modal_type) {
 }
 
 void DesktopWindowTreeHostX11::FlashFrame(bool flash_frame) {
-  // TODO(erg):
-  NOTIMPLEMENTED();
+  if (urgency_hint_set_ == flash_frame)
+    return;
+
+  XWMHints* hints = XGetWMHints(xdisplay_, xwindow_);
+  if (!hints) {
+    // The window hasn't had its hints set yet.
+    hints = XAllocWMHints();
+  }
+
+  if (flash_frame)
+    hints->flags |= XUrgencyHint;
+  else
+    hints->flags &= ~XUrgencyHint;
+
+  XSetWMHints(xdisplay_, xwindow_, hints);
+  XFree(hints);
+
+  urgency_hint_set_ = flash_frame;
 }
 
 void DesktopWindowTreeHostX11::OnRootViewLayout() const {
@@ -1145,6 +1164,11 @@ void DesktopWindowTreeHostX11::DispatchMouseEvent(ui::MouseEvent* event) {
     event->set_flags(flags);
   }
 
+  // While we unset the urgency hint when we gain focus, we also must remove it
+  // on mouse clicks because we can call FlashFrame() on an active window.
+  if (event->IsAnyButton() || event->IsMouseWheelEvent())
+    FlashFrame(false);
+
   if (!g_current_capture || g_current_capture == this) {
     SendEventToProcessor(event);
   } else {
@@ -1250,13 +1274,26 @@ void DesktopWindowTreeHostX11::MapWindow(ui::WindowShowState show_state) {
   size_hints.y = bounds_.y();
   XSetWMNormalHints(xdisplay_, xwindow_, &size_hints);
 
-  XWMHints wm_hints;
-  wm_hints.flags = InputHint | StateHint;
-  // If SHOW_STATE_INACTIVE, tell the window manager that the window is not
-  // focusable. This will make the window inactive upon creation.
-  wm_hints.input = show_state != ui::SHOW_STATE_INACTIVE;
-  wm_hints.initial_state = NormalState;
-  XSetWMHints(xdisplay_, xwindow_, &wm_hints);
+  // If SHOW_STATE_INACTIVE, tell the window manager not to focus the window
+  // when mapping. This is done by setting the _NET_WM_USER_TIME to 0. See e.g.
+  // http://standards.freedesktop.org/wm-spec/latest/ar01s05.html
+  if (show_state == ui::SHOW_STATE_INACTIVE) {
+    unsigned long value = 0;
+    XChangeProperty(xdisplay_,
+                    xwindow_,
+                    atom_cache_.GetAtom("_NET_WM_USER_TIME"),
+                    XA_CARDINAL,
+                    32,
+                    PropModeReplace,
+                    reinterpret_cast<const unsigned char *>(&value),
+                    1);
+  } else {
+    // TODO(piman): if this window was created in response to an X event, we
+    // should set the time to the server time of the event that caused this.
+    // https://crbug.com/355667
+    XDeleteProperty(
+        xdisplay_, xwindow_, atom_cache_.GetAtom("_NET_WM_USER_TIME"));
+  }
 
   XMapWindow(xdisplay_, xwindow_);
 
@@ -1265,15 +1302,6 @@ void DesktopWindowTreeHostX11::MapWindow(ui::WindowShowState show_state) {
   // asynchronous.
   base::MessagePumpX11::Current()->BlockUntilWindowMapped(xwindow_);
   window_mapped_ = true;
-
-  // The window has been created and mapped. It should now accept input.
-  if (show_state == ui::SHOW_STATE_INACTIVE) {
-    XWMHints wm_hints;
-    wm_hints.flags = InputHint;
-    wm_hints.input = true;
-    // Tell the window manager that the window is now focusable.
-    XSetWMHints(xdisplay_, xwindow_, &wm_hints);
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

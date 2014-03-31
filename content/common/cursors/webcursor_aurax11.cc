@@ -12,6 +12,7 @@
 #include "third_party/WebKit/public/platform/WebCursorInfo.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/cursor/cursor_loader_x11.h"
+#include "ui/base/cursor/cursor_util.h"
 #include "ui/base/x/x11_util.h"
 
 namespace content {

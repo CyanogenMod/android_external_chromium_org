@@ -12,6 +12,7 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
 import android.widget.Toast;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -26,12 +27,14 @@ import org.chromium.chrome.browser.appmenu.AppMenuHandler;
 import org.chromium.chrome.browser.appmenu.AppMenuPropertiesDelegate;
 import org.chromium.chrome.browser.printing.PrintingControllerFactory;
 import org.chromium.chrome.browser.printing.TabPrinter;
+import org.chromium.chrome.browser.share.ShareHelper;
 import org.chromium.chrome.shell.sync.SyncController;
 import org.chromium.components.dom_distiller.core.DomDistillerUrlUtils;
 import org.chromium.content.browser.ActivityContentVideoViewClient;
 import org.chromium.content.browser.BrowserStartupController;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.DeviceUtils;
+import org.chromium.content.common.ContentSwitches;
 import org.chromium.printing.PrintManagerDelegateImpl;
 import org.chromium.printing.PrintingController;
 import org.chromium.sync.signin.ChromeSigninController;
@@ -129,7 +132,25 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
 
         mWindow = sWindowAndroidFactory.getActivityWindowAndroid(this);
         mWindow.restoreInstanceState(savedInstanceState);
-        mTabManager.initialize(mWindow, new ActivityContentVideoViewClient(this));
+        mTabManager.initialize(mWindow, new ActivityContentVideoViewClient(this) {
+            @Override
+            public void onShowCustomView(View view) {
+                super.onShowCustomView(view);
+                if (!CommandLine.getInstance().hasSwitch(
+                        ContentSwitches.DISABLE_OVERLAY_FULLSCREEN_VIDEO_SUBTITLE)) {
+                    mTabManager.setOverlayVideoMode(true);
+                }
+            }
+
+            @Override
+            public void onDestroyContentVideoView() {
+                super.onDestroyContentVideoView();
+                if (!CommandLine.getInstance().hasSwitch(
+                        ContentSwitches.DISABLE_OVERLAY_FULLSCREEN_VIDEO_SUBTITLE)) {
+                    mTabManager.setOverlayVideoMode(false);
+                }
+            }
+        });
 
         String startupUrl = getUrlFromIntent(getIntent());
         if (!TextUtils.isEmpty(startupUrl)) {
@@ -291,6 +312,11 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
                     activeTab.goForward();
                 }
                 return true;
+            case R.id.share_menu_id:
+            case R.id.direct_share_menu_id:
+                ShareHelper.share(item.getItemId() == R.id.direct_share_menu_id, this,
+                        activeTab.getTitle(), activeTab.getUrl(), null);
+                return true;
             default:
                 return super.onOptionsItemSelected(item);
         }
@@ -315,13 +341,16 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
 
     @Override
     public void prepareMenu(Menu menu) {
+        menu.setGroupVisible(R.id.MAIN_MENU, true);
+        ChromeShellTab activeTab = getActiveTab();
+
         // Disable the "Back" menu item if there is no page to go to.
         MenuItem backMenuItem = menu.findItem(R.id.back_menu_id);
-        backMenuItem.setEnabled(getActiveTab().canGoBack());
+        backMenuItem.setEnabled(activeTab != null ? activeTab.canGoBack() : false);
 
         // Disable the "Forward" menu item if there is no page to go to.
         MenuItem forwardMenuItem = menu.findItem(R.id.forward_menu_id);
-        forwardMenuItem.setEnabled(getActiveTab().canGoForward());
+        forwardMenuItem.setEnabled(activeTab != null ? activeTab.canGoForward() : false);
 
         // ChromeShell does not know about bookmarks yet
         menu.findItem(R.id.bookmark_this_page_id).setEnabled(true);
@@ -335,10 +364,16 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
 
         menu.findItem(R.id.print).setVisible(ApiCompatibilityUtils.isPrintingSupported());
 
-        menu.findItem(R.id.distill_page).setVisible(
-                CommandLine.getInstance().hasSwitch(ChromeShellSwitches.ENABLE_DOM_DISTILLER));
-
-        menu.setGroupVisible(R.id.MAIN_MENU, true);
+        MenuItem distillPageItem = menu.findItem(R.id.distill_page);
+        if (CommandLine.getInstance().hasSwitch(ChromeShellSwitches.ENABLE_DOM_DISTILLER)) {
+            String url = activeTab != null ? activeTab.getUrl() : null;
+            distillPageItem.setEnabled(!TextUtils.isEmpty(url) &&
+                    !url.startsWith(CHROME_DISTILLER_SCHEME));
+            distillPageItem.setVisible(true);
+        } else {
+            distillPageItem.setVisible(false);
+        }
+        ShareHelper.configureDirectShareMenuItem(this, menu.findItem(R.id.direct_share_menu_id));
     }
 
     @VisibleForTesting

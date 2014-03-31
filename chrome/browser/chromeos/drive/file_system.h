@@ -127,7 +127,7 @@ class FileSystem : public FileSystemInterface,
                              const GetFileCallback& callback) OVERRIDE;
   virtual void GetFileForSaving(const base::FilePath& file_path,
                                       const GetFileCallback& callback) OVERRIDE;
-  virtual void GetFileContent(
+  virtual base::Closure GetFileContent(
       const base::FilePath& file_path,
       const GetFileContentInitializedCallback& initialized_callback,
       const google_apis::GetContentCallback& get_content_callback,
@@ -160,6 +160,9 @@ class FileSystem : public FileSystemInterface,
                              google_apis::drive::PermissionRole role,
                              const FileOperationCallback& callback) OVERRIDE;
   virtual void Reset(const FileOperationCallback& callback) OVERRIDE;
+  virtual void GetPathFromResourceId(const std::string& resource_id,
+                                     const GetFilePathCallback& callback)
+      OVERRIDE;
 
   // file_system::OperationObserver overrides.
   virtual void OnDirectoryChangedByOperation(

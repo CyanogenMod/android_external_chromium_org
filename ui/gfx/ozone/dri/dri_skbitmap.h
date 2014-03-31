@@ -20,7 +20,9 @@ class GFX_EXPORT DriSkBitmap : public SkBitmap {
 
   // Allocates the backing pixels using DRI.
   // Return true on success, false otherwise.
-  virtual bool Initialize();
+  virtual bool Initialize(const SkImageInfo& info);
+
+  void set_handle(uint32_t handle) { handle_ = handle; };
 
   uint32_t get_handle() const { return handle_; };
 
@@ -32,10 +34,8 @@ class GFX_EXPORT DriSkBitmap : public SkBitmap {
   uint8_t GetColorDepth() const;
 
  private:
-  friend class DriAllocator;
   friend class HardwareDisplayController;
 
-  void set_handle(uint32_t handle) { handle_ = handle; };
   void set_framebuffer(uint32_t framebuffer) { framebuffer_ = framebuffer; };
 
   // File descriptor used by the DRI allocator to request buffers from the DRI

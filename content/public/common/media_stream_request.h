@@ -13,6 +13,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
+#include "ui/gfx/native_widget_types.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -180,6 +181,7 @@ struct CONTENT_EXPORT MediaStreamRequest {
       int render_view_id,
       int page_request_id,
       const GURL& security_origin,
+      bool user_gesture,
       MediaStreamRequestType request_type,
       const std::string& requested_audio_device_id,
       const std::string& requested_video_device_id,
@@ -208,6 +210,9 @@ struct CONTENT_EXPORT MediaStreamRequest {
   // The WebKit security origin for the current request (e.g. "html5rocks.com").
   GURL security_origin;
 
+  // Set to true if the call was made in the context of a user gesture.
+  bool user_gesture;
+
   // Stores the type of request that was made to the media controller. Right now
   // this is only used to distinguish between WebRTC and Pepper requests, as the
   // latter should not be subject to user approval but only to policy check.
@@ -233,8 +238,9 @@ class MediaStreamUI {
   virtual ~MediaStreamUI() {}
 
   // Called when MediaStream capturing is started. Chrome layer can call |stop|
-  // to stop the stream.
-  virtual void OnStarted(const base::Closure& stop) = 0;
+  // to stop the stream. Returns the platform-dependent window ID for the UI, or
+  // 0 if not applicable.
+  virtual gfx::NativeViewId OnStarted(const base::Closure& stop) = 0;
 };
 
 // Callback used return results of media access requests.

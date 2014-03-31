@@ -65,6 +65,7 @@ include $(LOCAL_PATH)/content/result_codes_java.target.linux-arm.mk
 include $(LOCAL_PATH)/content/screen_orientation_values_java.target.linux-arm.mk
 include $(LOCAL_PATH)/content/speech_recognition_error_java.target.linux-arm.mk
 include $(LOCAL_PATH)/content/webkit_version.target.linux-arm.mk
+include $(LOCAL_PATH)/courgette/courgette_lib.target.linux-arm.mk
 include $(LOCAL_PATH)/crypto/crypto.target.linux-arm.mk
 include $(LOCAL_PATH)/gin/gin.target.linux-arm.mk
 include $(LOCAL_PATH)/google_apis/google_apis.target.linux-arm.mk
@@ -208,6 +209,7 @@ include $(LOCAL_PATH)/third_party/libwebp/libwebp_enc.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/libwebp/libwebp_utils.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/libxml/libxml.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/libxslt/libxslt.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/lzma_sdk/lzma_sdk.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/mesa/mesa_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/modp_b64/modp_b64.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/npapi/npapi.target.linux-arm.mk

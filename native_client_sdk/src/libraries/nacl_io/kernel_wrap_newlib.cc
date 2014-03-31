@@ -47,6 +47,7 @@ EXTERN_C_BEGIN
 
 extern void __libnacl_irt_dev_filename_init(void);
 
+extern struct nacl_irt_basic __libnacl_irt_basic;
 extern struct nacl_irt_fdio __libnacl_irt_fdio;
 extern struct nacl_irt_dev_fdio __libnacl_irt_dev_fdio;
 extern struct nacl_irt_dev_filename __libnacl_irt_dev_filename;
@@ -54,6 +55,7 @@ extern struct nacl_irt_memory __libnacl_irt_memory;
 
 // Create function pointers to the REAL implementation
 #define EXPAND_SYMBOL_LIST_OPERATION(OP) \
+  OP(basic, exit); \
   OP(fdio, close); \
   OP(fdio, dup); \
   OP(fdio, dup2); \
@@ -67,6 +69,7 @@ extern struct nacl_irt_memory __libnacl_irt_memory;
   OP(dev_fdio, fsync); \
   OP(dev_fdio, fdatasync); \
   OP(dev_fdio, ftruncate); \
+  OP(dev_fdio, isatty); \
   OP(dev_filename, open); \
   OP(dev_filename, stat); \
   OP(dev_filename, mkdir); \
@@ -101,6 +104,10 @@ int WRAP(dup)(int fd, int* newfd) {
 int WRAP(dup2)(int fd, int newfd) {
   newfd = ki_dup2(fd, newfd);
   return (newfd < 0) ? errno : 0;
+}
+
+void WRAP(exit)(int status) {
+  ki_exit(status);
 }
 
 int WRAP(read)(int fd, void* buf, size_t count, size_t* nread) {
@@ -150,6 +157,13 @@ int WRAP(fdatasync)(int fd) {
 
 int WRAP(ftruncate)(int fd, off_t length) {
   return (ki_ftruncate(fd, length) < 0) ? errno : 0;
+}
+
+int WRAP(isatty)(int fd, int* result) {
+  *result = ki_isatty(fd);
+  if (*result == 1)
+    return errno;
+  return 0;
 }
 
 int WRAP(mmap)(void** addr, size_t length, int prot, int flags, int fd,
@@ -261,9 +275,19 @@ int _real_close(int fd) {
   return REAL(close)(fd);
 }
 
+void _real_exit(int status) {
+  CHECK_REAL(exit);
+  REAL(exit)(status);
+}
+
 int _real_fstat(int fd, struct stat* buf) {
   CHECK_REAL(fstat);
   return REAL(fstat)(fd, buf);
+}
+
+int _real_isatty(int fd, int* result) {
+  CHECK_REAL(isatty);
+  return REAL(isatty)(fd, result);
 }
 
 int _real_getdents(int fd, void* nacl_buf, size_t nacl_count, size_t* nread) {

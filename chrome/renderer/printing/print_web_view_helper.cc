@@ -412,7 +412,7 @@ bool IsPrintThrottlingDisabled() {
 
 }  // namespace
 
-FrameReference::FrameReference(const blink::WebFrame* frame) {
+FrameReference::FrameReference(blink::WebFrame* frame) {
   Reset(frame);
 }
 
@@ -423,18 +423,25 @@ FrameReference::FrameReference() {
 FrameReference::~FrameReference() {
 }
 
-void FrameReference::Reset(const blink::WebFrame* frame) {
+void FrameReference::Reset(blink::WebFrame* frame) {
   if (frame) {
     view_ = frame->view();
-    frame_name_ = frame->uniqueName();
+    frame_ = frame;
   } else {
     view_ = NULL;
-    frame_name_.reset();
+    frame_ = NULL;
   }
 }
 
 blink::WebFrame* FrameReference::GetFrame() {
-  return view_ ? view_->findFrameByName(frame_name_) : NULL;
+  if (view_ == NULL || frame_ == NULL)
+    return NULL;
+  for (blink::WebFrame* frame = view_->mainFrame(); frame != NULL;
+           frame = frame->traverseNext(false)) {
+    if (frame == frame_)
+      return frame;
+  }
+  return NULL;
 }
 
 blink::WebView* FrameReference::view() {
@@ -971,12 +978,20 @@ void PrintWebViewHelper::OnPrintPreview(const base::DictionaryValue& settings) {
 
   UMA_HISTOGRAM_ENUMERATION("PrintPreview.PreviewEvent",
                             PREVIEW_EVENT_REQUESTED, PREVIEW_EVENT_MAX);
-  if (!print_preview_context_.source_frame() ||
-      !UpdatePrintSettings(print_preview_context_.source_frame(),
+
+  if (!print_preview_context_.source_frame()) {
+    DidFinishPrinting(FAIL_PREVIEW);
+    return;
+  }
+
+  if (!UpdatePrintSettings(print_preview_context_.source_frame(),
                            print_preview_context_.source_node(), settings)) {
     if (print_preview_context_.last_error() != PREVIEW_ERROR_BAD_SETTING) {
       Send(new PrintHostMsg_PrintPreviewInvalidPrinterSettings(
-          routing_id(), print_pages_params_->params.document_cookie));
+          routing_id(),
+          print_pages_params_.get()
+              ? print_pages_params_->params.document_cookie
+              : 0));
       notify_browser_of_print_failure_ = false;  // Already sent.
     }
     DidFinishPrinting(FAIL_PREVIEW);

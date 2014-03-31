@@ -14,12 +14,15 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/timer/timer.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/app_list/app_list_constants.h"
+#include "ui/app_list/app_list_folder_item.h"
 #include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/pagination_model.h"
 #include "ui/app_list/test/app_list_test_model.h"
 #include "ui/app_list/views/app_list_item_view.h"
+#include "ui/app_list/views/apps_grid_view_folder_delegate.h"
 #include "ui/app_list/views/test/apps_grid_view_test_api.h"
 #include "ui/views/test/views_test_base.h"
 
@@ -105,8 +108,7 @@ class AppsGridViewTest : public views::ViewsTestBase {
     model_.reset(new AppListTestModel);
     pagination_model_.reset(new PaginationModel);
 
-    apps_grid_view_.reset(
-        new AppsGridView(NULL, pagination_model_.get(), NULL));
+    apps_grid_view_.reset(new AppsGridView(NULL, pagination_model_.get()));
     apps_grid_view_->SetLayout(kIconDimension, kCols, kRows);
     apps_grid_view_->SetBoundsRect(gfx::Rect(gfx::Size(kWidth, kHeight)));
     apps_grid_view_->SetModel(model_.get());
@@ -177,6 +179,42 @@ class AppsGridViewTest : public views::ViewsTestBase {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AppsGridViewTest);
+};
+
+class TestAppsGridViewFolderDelegate : public AppsGridViewFolderDelegate {
+ public:
+  TestAppsGridViewFolderDelegate() : show_bubble_(false) {}
+  virtual ~TestAppsGridViewFolderDelegate() {}
+
+  // Overridden from AppsGridViewFolderDelegate:
+  virtual void UpdateFolderViewBackground(bool show_bubble) OVERRIDE {
+    show_bubble_ = show_bubble;
+  }
+
+  virtual void ReparentItem(AppListItemView* original_drag_view,
+                            const gfx::Point& drag_point_in_folder_grid)
+      OVERRIDE {}
+
+  virtual void DispatchDragEventForReparent(AppsGridView::Pointer pointer,
+                                            const ui::LocatedEvent& event)
+      OVERRIDE {}
+
+  virtual void DispatchEndDragEventForReparent(
+      bool events_forwarded_to_drag_drop_host) OVERRIDE {}
+
+  virtual bool IsPointOutsideOfFolderBoundary(const gfx::Point& point)
+      OVERRIDE {
+    return false;
+  }
+
+  virtual bool IsOEMFolder() const OVERRIDE { return false; }
+
+  bool show_bubble() { return show_bubble_; }
+
+ private:
+  bool show_bubble_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestAppsGridViewFolderDelegate);
 };
 
 TEST_F(AppsGridViewTest, CreatePage) {
@@ -271,6 +309,178 @@ TEST_F(AppsGridViewTest, MouseDragWithFolderDisabled) {
   test_api_->LayoutToIdealBounds();
 }
 
+TEST_F(AppsGridViewTest, MouseDragItemIntoFolder) {
+  size_t kTotalItems = 3;
+  model_->PopulateApps(kTotalItems);
+  EXPECT_EQ(model_->top_level_item_list()->item_count(), kTotalItems);
+  EXPECT_EQ(std::string("Item 0,Item 1,Item 2"), model_->GetModelContent());
+
+  gfx::Point from = GetItemTileRectAt(0, 1).CenterPoint();
+  gfx::Point to = GetItemTileRectAt(0, 0).CenterPoint();
+
+  // Dragging item_1 over item_0 creates a folder.
+  SimulateDrag(AppsGridView::MOUSE, from, to);
+  apps_grid_view_->EndDrag(false);
+  EXPECT_EQ(kTotalItems - 1, model_->top_level_item_list()->item_count());
+  EXPECT_EQ(AppListFolderItem::kItemType,
+            model_->top_level_item_list()->item_at(0)->GetItemType());
+  AppListFolderItem* folder_item = static_cast<AppListFolderItem*>(
+      model_->top_level_item_list()->item_at(0));
+  EXPECT_EQ(2u, folder_item->ChildItemCount());
+  AppListItem* item_0 = model_->FindItem("Item 0");
+  EXPECT_TRUE(item_0->IsInFolder());
+  EXPECT_EQ(folder_item->id(), item_0->folder_id());
+  AppListItem* item_1 = model_->FindItem("Item 1");
+  EXPECT_TRUE(item_1->IsInFolder());
+  EXPECT_EQ(folder_item->id(), item_1->folder_id());
+  std::string expected_items = folder_item->id() + ",Item 2";
+  EXPECT_EQ(expected_items, model_->GetModelContent());
+  test_api_->LayoutToIdealBounds();
+
+  // Dragging item_2 to the folder adds item_2 to the folder.
+  SimulateDrag(AppsGridView::MOUSE, from, to);
+  apps_grid_view_->EndDrag(false);
+
+  EXPECT_EQ(kTotalItems - 2, model_->top_level_item_list()->item_count());
+  EXPECT_EQ(folder_item->id(), model_->GetModelContent());
+  EXPECT_EQ(3u, folder_item->ChildItemCount());
+  item_0 = model_->FindItem("Item 0");
+  EXPECT_TRUE(item_0->IsInFolder());
+  EXPECT_EQ(folder_item->id(), item_0->folder_id());
+  item_1 = model_->FindItem("Item 1");
+  EXPECT_TRUE(item_1->IsInFolder());
+  EXPECT_EQ(folder_item->id(), item_1->folder_id());
+  AppListItem* item_2 = model_->FindItem("Item 2");
+  EXPECT_TRUE(item_2->IsInFolder());
+  EXPECT_EQ(folder_item->id(), item_2->folder_id());
+  test_api_->LayoutToIdealBounds();
+}
+
+TEST_F(AppsGridViewTest, MouseDragMaxItemsInFolder) {
+  // Create and add a folder with 15 items in it.
+  size_t kTotalItems = kMaxFolderItems - 1;
+  model_->CreateAndPopulateFolderWithApps(kTotalItems);
+  EXPECT_EQ(1u, model_->top_level_item_list()->item_count());
+  EXPECT_EQ(AppListFolderItem::kItemType,
+            model_->top_level_item_list()->item_at(0)->GetItemType());
+  AppListFolderItem* folder_item = static_cast<AppListFolderItem*>(
+      model_->top_level_item_list()->item_at(0));
+  EXPECT_EQ(kTotalItems, folder_item->ChildItemCount());
+
+  // Create and add another 2 items.
+  model_->PopulateAppWithId(kTotalItems);
+  model_->PopulateAppWithId(kTotalItems + 1);
+  EXPECT_EQ(3u, model_->top_level_item_list()->item_count());
+  EXPECT_EQ(folder_item->id(), model_->top_level_item_list()->item_at(0)->id());
+  EXPECT_EQ(model_->GetItemName(kMaxFolderItems - 1),
+            model_->top_level_item_list()->item_at(1)->id());
+  EXPECT_EQ(model_->GetItemName(kMaxFolderItems),
+            model_->top_level_item_list()->item_at(2)->id());
+
+  gfx::Point from = GetItemTileRectAt(0, 1).CenterPoint();
+  gfx::Point to = GetItemTileRectAt(0, 0).CenterPoint();
+
+  // Dragging one item into the folder, the folder should accept the item.
+  SimulateDrag(AppsGridView::MOUSE, from, to);
+  apps_grid_view_->EndDrag(false);
+  EXPECT_EQ(2u, model_->top_level_item_list()->item_count());
+  EXPECT_EQ(folder_item->id(), model_->top_level_item_list()->item_at(0)->id());
+  EXPECT_EQ(kMaxFolderItems, folder_item->ChildItemCount());
+  EXPECT_EQ(model_->GetItemName(kMaxFolderItems),
+            model_->top_level_item_list()->item_at(1)->id());
+  test_api_->LayoutToIdealBounds();
+
+  // Dragging the last item over the folder, the folder won't accept the new
+  // item, instead, it will re-order the items.
+  SimulateDrag(AppsGridView::MOUSE, from, to);
+  apps_grid_view_->EndDrag(false);
+  EXPECT_EQ(2u, model_->top_level_item_list()->item_count());
+  EXPECT_EQ(model_->GetItemName(kMaxFolderItems),
+            model_->top_level_item_list()->item_at(0)->id());
+  EXPECT_EQ(folder_item->id(), model_->top_level_item_list()->item_at(1)->id());
+  EXPECT_EQ(kMaxFolderItems, folder_item->ChildItemCount());
+  test_api_->LayoutToIdealBounds();
+}
+
+TEST_F(AppsGridViewTest, MouseDragItemReorder) {
+  size_t kTotalItems = 2;
+  model_->PopulateApps(kTotalItems);
+  EXPECT_EQ(2u, model_->top_level_item_list()->item_count());
+  EXPECT_EQ(std::string("Item 0,Item 1"), model_->GetModelContent());
+
+  gfx::Point from = GetItemTileRectAt(0, 1).CenterPoint();
+  int reorder_offset = (GetItemTileRectAt(0, 1).CenterPoint() -
+                        GetItemTileRectAt(0, 0).CenterPoint()).Length() -
+                       kReorderDroppingCircleRadius -
+                       kPreferredIconDimension / 2 + 5;
+  gfx::Point to = gfx::Point(from.x() - reorder_offset, from.y());
+
+  // Dragging item_1 closing to item_0 should leads to re-ordering these two
+  // items.
+  SimulateDrag(AppsGridView::MOUSE, from, to);
+  apps_grid_view_->EndDrag(false);
+  EXPECT_EQ(2u, model_->top_level_item_list()->item_count());
+  EXPECT_EQ(std::string("Item 1,Item 0"), model_->GetModelContent());
+  test_api_->LayoutToIdealBounds();
+}
+
+TEST_F(AppsGridViewTest, MouseDragFolderReorder) {
+  size_t kTotalItems = 2;
+  model_->CreateAndPopulateFolderWithApps(kTotalItems);
+  model_->PopulateAppWithId(kTotalItems);
+  EXPECT_EQ(2u, model_->top_level_item_list()->item_count());
+  EXPECT_EQ(AppListFolderItem::kItemType,
+            model_->top_level_item_list()->item_at(0)->GetItemType());
+  AppListFolderItem* folder_item = static_cast<AppListFolderItem*>(
+      model_->top_level_item_list()->item_at(0));
+  EXPECT_EQ("Item 2", model_->top_level_item_list()->item_at(1)->id());
+
+  gfx::Point from = GetItemTileRectAt(0, 0).CenterPoint();
+  gfx::Point to = GetItemTileRectAt(0, 1).CenterPoint();
+
+  // Dragging folder over item_1 should leads to re-ordering these two
+  // items.
+  SimulateDrag(AppsGridView::MOUSE, from, to);
+  apps_grid_view_->EndDrag(false);
+  EXPECT_EQ(2u, model_->top_level_item_list()->item_count());
+  EXPECT_EQ("Item 2", model_->top_level_item_list()->item_at(0)->id());
+  EXPECT_EQ(folder_item->id(), model_->top_level_item_list()->item_at(1)->id());
+  test_api_->LayoutToIdealBounds();
+}
+
+TEST_F(AppsGridViewTest, MouseDragWithCancelDeleteAddItem) {
+  size_t kTotalItems = 4;
+  model_->PopulateApps(kTotalItems);
+  EXPECT_EQ(model_->top_level_item_list()->item_count(), kTotalItems);
+  EXPECT_EQ(std::string("Item 0,Item 1,Item 2,Item 3"),
+            model_->GetModelContent());
+
+  gfx::Point from = GetItemTileRectAt(0, 0).CenterPoint();
+  gfx::Point to = GetItemTileRectAt(0, 1).CenterPoint();
+
+  // Canceling drag should keep existing order.
+  SimulateDrag(AppsGridView::MOUSE, from, to);
+  apps_grid_view_->EndDrag(true);
+  EXPECT_EQ(std::string("Item 0,Item 1,Item 2,Item 3"),
+            model_->GetModelContent());
+  test_api_->LayoutToIdealBounds();
+
+  // Deleting an item keeps remaining intact.
+  SimulateDrag(AppsGridView::MOUSE, from, to);
+  model_->DeleteItem(model_->GetItemName(2));
+  apps_grid_view_->EndDrag(false);
+  EXPECT_EQ(std::string("Item 0,Item 1,Item 3"), model_->GetModelContent());
+  test_api_->LayoutToIdealBounds();
+
+  // Adding a launcher item cancels the drag and respects the order.
+  SimulateDrag(AppsGridView::MOUSE, from, to);
+  model_->CreateAndAddItem("Extra");
+  apps_grid_view_->EndDrag(false);
+  EXPECT_EQ(std::string("Item 0,Item 1,Item 3,Extra"),
+            model_->GetModelContent());
+  test_api_->LayoutToIdealBounds();
+}
+
 TEST_F(AppsGridViewTest, MouseDragFlipPage) {
   test_api_->SetPageFlipDelay(10);
   pagination_model_->SetTransitionDurations(10, 10);
@@ -350,6 +560,26 @@ TEST_F(AppsGridViewTest, SimultaneousDragWithFolderDisabled) {
   EXPECT_EQ(std::string("Item 1,Item 0,Item 3,Item 2"),
             model_->GetModelContent());
   test_api_->LayoutToIdealBounds();
+}
+
+TEST_F(AppsGridViewTest, UpdateFolderBackgroundOnCancelDrag) {
+  const int kTotalItems = 4;
+  TestAppsGridViewFolderDelegate folder_delegate;
+  apps_grid_view_->set_folder_delegate(&folder_delegate);
+  model_->PopulateApps(kTotalItems);
+  EXPECT_EQ(std::string("Item 0,Item 1,Item 2,Item 3"),
+            model_->GetModelContent());
+
+  gfx::Point mouse_from = GetItemTileRectAt(0, 0).CenterPoint();
+  gfx::Point mouse_to = GetItemTileRectAt(0, 1).CenterPoint();
+
+  // Starts a mouse drag and then cancels it.
+  SimulateDrag(AppsGridView::MOUSE, mouse_from, mouse_to);
+  EXPECT_TRUE(folder_delegate.show_bubble());
+  apps_grid_view_->EndDrag(true);
+  EXPECT_FALSE(folder_delegate.show_bubble());
+  EXPECT_EQ(std::string("Item 0,Item 1,Item 2,Item 3"),
+            model_->GetModelContent());
 }
 
 TEST_F(AppsGridViewTest, HighlightWithKeyboard) {

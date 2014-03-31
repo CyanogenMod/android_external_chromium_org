@@ -129,6 +129,8 @@
         'cursor/cursor_loader_x11.h',
         'cursor/cursor_ozone.cc',
         'cursor/cursor_mac.mm',
+        'cursor/cursor_util.cc',
+        'cursor/cursor_util.h',
         'cursor/cursor_win.cc',
         'cursor/cursor_x11.cc',
         'cursor/cursors_aura.cc',
@@ -158,6 +160,8 @@
         'dragdrop/drop_target_event.h',
         'dragdrop/drop_target_win.cc',
         'dragdrop/drop_target_win.h',
+        'dragdrop/file_info.cc',
+        'dragdrop/file_info.h',
         'dragdrop/gtk_dnd_util.cc',
         'dragdrop/gtk_dnd_util.h',
         'dragdrop/os_exchange_data.cc',
@@ -326,6 +330,8 @@
         'x/selection_utils.h',
         'x/work_area_watcher_x.cc',
         'x/work_area_watcher_x.h',
+        'x/x11_menu_list.cc',
+        'x/x11_menu_list.h',
         'x/x11_util.cc',
         'x/x11_util.h',
         'x/x11_util_internal.h',
@@ -600,15 +606,6 @@
           'hard_dependency': 1,
         }],
       ],
-    },
-    {
-      'target_name': 'webui_test_support',
-      'type': 'none',
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources',
-        ]
-      }
     },
   ],
   'conditions': [

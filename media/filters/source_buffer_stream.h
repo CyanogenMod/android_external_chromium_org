@@ -32,7 +32,7 @@ class SourceBufferRange;
 // See file-level comment for complete description.
 class MEDIA_EXPORT SourceBufferStream {
  public:
-  typedef std::deque<scoped_refptr<StreamParserBuffer> > BufferQueue;
+  typedef StreamParser::BufferQueue BufferQueue;
 
   // Status returned by GetNextBuffer().
   // kSuccess: Indicates that the next buffer was returned.
@@ -53,11 +53,14 @@ class MEDIA_EXPORT SourceBufferStream {
   };
 
   SourceBufferStream(const AudioDecoderConfig& audio_config,
-                     const LogCB& log_cb);
+                     const LogCB& log_cb,
+                     bool splice_frames_enabled);
   SourceBufferStream(const VideoDecoderConfig& video_config,
-                     const LogCB& log_cb);
+                     const LogCB& log_cb,
+                     bool splice_frames_enabled);
   SourceBufferStream(const TextTrackConfig& text_config,
-                     const LogCB& log_cb);
+                     const LogCB& log_cb,
+                     bool splice_frames_enabled);
 
   ~SourceBufferStream();
 
@@ -304,6 +307,12 @@ class MEDIA_EXPORT SourceBufferStream {
   // processing for splice frame buffers; which is handled by GetNextBuffer().
   Status GetNextBufferInternal(scoped_refptr<StreamParserBuffer>* out_buffer);
 
+  // Called by PrepareRangesForNextAppend() before pruning overlapped buffers to
+  // generate a splice frame with a small portion of the overlapped buffers.  If
+  // a splice frame is generated, the first buffer in |new_buffers| will have
+  // its timestamps, duration, and fade out preroll updated.
+  void GenerateSpliceFrame(const BufferQueue& new_buffers);
+
   // Callback used to report error strings that can help the web developer
   // figure out what is wrong with the content.
   LogCB log_cb_;
@@ -382,12 +391,15 @@ class MEDIA_EXPORT SourceBufferStream {
 
   // Used by GetNextBuffer() when a buffer with fade out is returned from
   // GetNextBufferInternal().  Will be set to the returned buffer and will be
-  // consumed after the fade out section has been exhausted.
-  scoped_refptr<StreamParserBuffer> fade_in_buffer_;
+  // destroyed after the splice_buffers() section has been exhausted.
+  scoped_refptr<StreamParserBuffer> splice_buffer_;
 
-  // Indicates which of the fade out preroll buffers in |fade_in_buffer_| should
-  // be handled out next.
-  size_t fade_out_preroll_index_;
+  // Indicates which of the splice buffers in |splice_buffer_| should be
+  // handled out next.
+  size_t splice_buffers_index_;
+
+  // Indicates that splice frame generation is enabled.
+  const bool splice_frames_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(SourceBufferStream);
 };

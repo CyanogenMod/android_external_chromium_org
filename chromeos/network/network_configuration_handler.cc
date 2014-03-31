@@ -53,13 +53,6 @@ void GetPropertiesCallback(
     const std::string& service_path,
     DBusMethodCallStatus call_status,
     const base::DictionaryValue& properties) {
-  // Get the correct name from WifiHex if necessary.
-  scoped_ptr<base::DictionaryValue> properties_copy(properties.DeepCopy());
-  std::string name =
-      shill_property_util::GetNameFromProperties(service_path, properties);
-  if (!name.empty()) {
-    properties_copy->SetStringWithoutPathExpansion(shill::kNameProperty, name);
-  }
   if (call_status != DBUS_METHOD_CALL_SUCCESS) {
     // Because network services are added and removed frequently, we will see
     // failures regularly, so don't log these.
@@ -67,9 +60,18 @@ void GetPropertiesCallback(
                                       service_path,
                                       network_handler::kDBusFailedError,
                                       network_handler::kDBusFailedErrorMessage);
-  } else if (!callback.is_null()) {
-    callback.Run(service_path, *properties_copy.get());
+    return;
   }
+  if (callback.is_null())
+    return;
+
+  // Get the correct name from WifiHex if necessary.
+  scoped_ptr<base::DictionaryValue> properties_copy(properties.DeepCopy());
+  std::string name =
+      shill_property_util::GetNameFromProperties(service_path, properties);
+  if (!name.empty())
+    properties_copy->SetStringWithoutPathExpansion(shill::kNameProperty, name);
+  callback.Run(service_path, *properties_copy.get());
 }
 
 void SetNetworkProfileErrorCallback(
@@ -84,25 +86,13 @@ void SetNetworkProfileErrorCallback(
       dbus_error_name, dbus_error_message);
 }
 
-bool IsPassphrase(const std::string& key) {
-  return key == shill::kEapPrivateKeyPasswordProperty ||
-      key == shill::kEapPasswordProperty ||
-      key == shill::kL2tpIpsecPasswordProperty ||
-      key == shill::kOpenVPNPasswordProperty ||
-      key == shill::kPassphraseProperty ||
-      key == shill::kOpenVPNOTPProperty ||
-      key == shill::kEapPrivateKeyProperty ||
-      key == shill::kEapPinProperty ||
-      key == shill::kApnPasswordProperty;
-}
-
 void LogConfigProperties(const std::string& desc,
                          const std::string& path,
                          const base::DictionaryValue& properties) {
   for (base::DictionaryValue::Iterator iter(properties);
        !iter.IsAtEnd(); iter.Advance()) {
     std::string v = "******";
-    if (!IsPassphrase(iter.key()))
+    if (!shill_property_util::IsPassphraseKey(iter.key()))
       base::JSONWriter::Write(&iter.value(), &v);
     NET_LOG_DEBUG(desc,  path + "." + iter.key() + "=" + v);
   }
@@ -279,15 +269,17 @@ void NetworkConfigurationHandler::CreateConfiguration(
       DBusThreadManager::Get()->GetShillManagerClient();
   std::string type;
   properties.GetStringWithoutPathExpansion(shill::kTypeProperty, &type);
+  DCHECK(!type.empty());
   if (NetworkTypePattern::Ethernet().MatchesType(type)) {
     InvokeErrorCallback(
-        "" /* no service path */,
+        shill_property_util::GetNetworkIdFromProperties(properties),
         error_callback,
-        "ConfigureServiceForProfile is not implemented for Ethernet");
+        "ConfigureServiceForProfile: Invalid type: " + type);
     return;
   }
 
-  NET_LOG_USER("CreateConfiguration", type);
+  NET_LOG_USER("CreateConfiguration: " + type,
+               shill_property_util::GetNetworkIdFromProperties(properties));
   LogConfigProperties("Configure", type, properties);
 
   std::string profile;

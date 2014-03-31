@@ -10,6 +10,7 @@
 #include "sync/engine/get_updates_delegate.h"
 #include "sync/engine/syncer_proto_util.h"
 #include "sync/engine/update_handler.h"
+#include "sync/internal_api/public/events/get_updates_response_event.h"
 #include "sync/protocol/sync.pb.h"
 #include "sync/sessions/status_controller.h"
 #include "sync/sessions/sync_session.h"
@@ -171,7 +172,8 @@ void GetUpdatesProcessor::PrepareGetUpdates(
 
   for (ModelTypeSet::Iterator it = gu_types.First(); it.Good(); it.Inc()) {
     UpdateHandlerMap::iterator handler_it = update_handler_map_->find(it.Get());
-    DCHECK(handler_it != update_handler_map_->end());
+    DCHECK(handler_it != update_handler_map_->end())
+        << "Failed to look up handler for " << ModelTypeToString(it.Get());
     sync_pb::DataTypeProgressMarker* progress_marker =
         get_updates->add_from_progress_marker();
     handler_it->second->GetDownloadProgress(progress_marker);
@@ -193,6 +195,9 @@ SyncerError GetUpdatesProcessor::ExecuteDownloadUpdates(
     CopyClientDebugInfo(session->context()->debug_info_getter(), debug_info);
   }
 
+  session->SendProtocolEvent(
+      *(delegate_.GetNetworkRequestEvent(base::Time::Now(), *msg)));
+
   SyncerError result = SyncerProtoUtil::PostClientToServerMessage(
       msg,
       &update_response,
@@ -202,6 +207,10 @@ SyncerError GetUpdatesProcessor::ExecuteDownloadUpdates(
       update_response);
 
   if (result != SYNCER_OK) {
+    GetUpdatesResponseEvent response_event(
+        base::Time::Now(), update_response, result);
+    session->SendProtocolEvent(response_event);
+
     LOG(ERROR) << "PostClientToServerMessage() failed during GetUpdates";
     return result;
   }
@@ -225,9 +234,15 @@ SyncerError GetUpdatesProcessor::ExecuteDownloadUpdates(
         HandleGetEncryptionKeyResponse(update_response, dir));
   }
 
-  return ProcessResponse(update_response.get_updates(),
-                         request_types,
-                         status);
+  SyncerError process_result = ProcessResponse(update_response.get_updates(),
+                                              request_types,
+                                              status);
+
+  GetUpdatesResponseEvent response_event(
+      base::Time::Now(), update_response, process_result);
+  session->SendProtocolEvent(response_event);
+
+  return process_result;
 }
 
 SyncerError GetUpdatesProcessor::ProcessResponse(
@@ -303,8 +318,9 @@ bool GetUpdatesProcessor::ProcessGetUpdatesResponse(
 }
 
 void GetUpdatesProcessor::ApplyUpdates(
+    ModelTypeSet gu_types,
     sessions::StatusController* status_controller) {
-  delegate_.ApplyUpdates(status_controller, update_handler_map_);
+  delegate_.ApplyUpdates(gu_types, status_controller, update_handler_map_);
 }
 
 void GetUpdatesProcessor::CopyClientDebugInfo(

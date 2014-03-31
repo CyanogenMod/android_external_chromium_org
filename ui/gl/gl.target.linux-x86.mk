@@ -105,6 +105,7 @@ LOCAL_SRC_FILES := \
 	ui/gl/gl_share_group.cc \
 	ui/gl/gl_state_restorer.cc \
 	ui/gl/gl_surface.cc \
+	ui/gl/gl_surface_android.cc \
 	ui/gl/gl_surface_stub.cc \
 	ui/gl/gl_surface_osmesa.cc \
 	ui/gl/gl_switches.cc \
@@ -115,10 +116,11 @@ LOCAL_SRC_FILES := \
 	ui/gl/sync_control_vsync_provider.cc \
 	ui/gl/egl_util.cc \
 	ui/gl/gl_context_egl.cc \
+	ui/gl/gl_image_egl.cc \
 	ui/gl/gl_surface_egl.cc \
 	ui/gl/gl_egl_api_implementation.cc \
 	ui/gl/gl_implementation_osmesa.cc \
-	ui/gl/gl_image_egl.cc
+	ui/gl/gl_image_android_native_buffer.cc
 
 
 # Flags passed to both C and C++ files.
@@ -185,9 +187,7 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -197,6 +197,7 @@ MY_DEFS_Debug := \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -313,9 +314,7 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -325,6 +324,7 @@ MY_DEFS_Release := \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \

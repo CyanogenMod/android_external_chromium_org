@@ -11,6 +11,7 @@
 #include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/app_list_view_delegate.h"
 #include "ui/app_list/pagination_model.h"
+#include "ui/app_list/views/app_list_folder_view.h"
 #include "ui/app_list/views/app_list_main_view.h"
 #include "ui/app_list/views/apps_container_view.h"
 #include "ui/app_list/views/apps_grid_view.h"
@@ -58,10 +59,8 @@ ContentsView::ContentsView(AppListMainView* app_list_main_view,
       kPageTransitionDurationInMs,
       kOverscrollPageTransitionDurationMs);
 
-  content::WebContents* start_page_contents =
-      view_delegate ? view_delegate->GetStartPageContents() : NULL;
-  apps_container_view_ = new AppsContainerView(
-      app_list_main_view, pagination_model, model, start_page_contents);
+  apps_container_view_ =
+      new AppsContainerView(app_list_main_view, pagination_model, model);
   AddChildView(apps_container_view_);
   view_model_->Add(apps_container_view_, kIndexAppsContainer);
 
@@ -79,6 +78,12 @@ ContentsView::~ContentsView() {
 void ContentsView::CancelDrag() {
   if (apps_container_view_->apps_grid_view()->has_dragged_view())
     apps_container_view_->apps_grid_view()->EndDrag(true);
+  if (apps_container_view_->app_list_folder_view()
+          ->items_grid_view()
+          ->has_dragged_view()) {
+    apps_container_view_->app_list_folder_view()->items_grid_view()->EndDrag(
+        true);
+  }
 }
 
 void ContentsView::SetDragAndDropHostOfCurrentAppList(

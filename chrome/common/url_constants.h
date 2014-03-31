@@ -88,6 +88,8 @@ extern const char kChromeUIVersionURL[];
 
 #if defined(OS_ANDROID)
 extern const char kChromeUINativeNewTabURL[];
+extern const char kChromeUINativeBookmarksURL[];
+extern const char kChromeUINativeRecentTabsURL[];
 extern const char kChromeUIWelcomeURL[];
 #endif
 
@@ -332,6 +334,9 @@ extern const char kSyncGoogleDashboardURL[];
 extern const char kAutoPasswordGenerationLearnMoreURL[];
 
 extern const char kPasswordManagerLearnMoreURL[];
+
+// "Learn more" URL for the Settings API bubble.
+extern const char kSettingsApiLearnMoreURL[];
 
 // General help links for Chrome, opened using various actions.
 extern const char kChromeHelpViaKeyboardURL[];

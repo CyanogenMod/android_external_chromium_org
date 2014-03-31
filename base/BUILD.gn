@@ -5,7 +5,6 @@
 import("//build/config/ui.gni")
 
 component("base") {
-  external = true
   sources = [
     "../build/build_config.h",
     "third_party/dmg_fp/dmg_fp.h",
@@ -272,15 +271,14 @@ component("base") {
     "memory/discardable_memory_allocator_android.cc",
     "memory/discardable_memory_allocator_android.h",
     "memory/discardable_memory_android.cc",
-    "memory/discardable_memory_android.h",
     "memory/discardable_memory_emulated.cc",
     "memory/discardable_memory_emulated.h",
     "memory/discardable_memory_linux.cc",
     "memory/discardable_memory_mac.cc",
     "memory/discardable_memory_malloc.cc",
     "memory/discardable_memory_malloc.h",
-    "memory/discardable_memory_provider.cc",
-    "memory/discardable_memory_provider.h",
+    "memory/discardable_memory_manager.cc",
+    "memory/discardable_memory_manager.h",
     "memory/discardable_memory_win.cc",
     "memory/linked_ptr.h",
     "memory/manual_constructor.h",
@@ -843,7 +841,6 @@ component("base") {
 # library. Note that this library cannot depend on base because base depends on
 # base_static.
 static_library("base_static") {
-  external = true
   sources = [
     "base_switches.cc",
     "base_switches.h",
@@ -853,7 +850,6 @@ static_library("base_static") {
 }
 
 component("base_i18n") {
-  external = true
   sources = [
     "i18n/base_i18n_export.h",
     "i18n/bidi_line_iterator.cc",

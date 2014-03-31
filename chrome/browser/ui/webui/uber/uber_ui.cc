@@ -131,23 +131,35 @@ UberUI::UberUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   Profile* profile = Profile::FromWebUI(web_ui);
   content::WebUIDataSource::Add(profile, CreateUberHTMLSource());
 
-  RegisterSubpage(chrome::kChromeUIExtensionsFrameURL);
-  RegisterSubpage(chrome::kChromeUIHelpFrameURL);
-  RegisterSubpage(chrome::kChromeUIHistoryFrameURL);
-  RegisterSubpage(chrome::kChromeUISettingsFrameURL);
-  RegisterSubpage(chrome::kChromeUIUberFrameURL);
+  RegisterSubpage(chrome::kChromeUIExtensionsFrameURL,
+                  chrome::kChromeUIExtensionsHost);
+  RegisterSubpage(chrome::kChromeUIHelpFrameURL,
+                  chrome::kChromeUIHelpHost);
+  RegisterSubpage(chrome::kChromeUIHistoryFrameURL,
+                  chrome::kChromeUIHistoryHost);
+  RegisterSubpage(chrome::kChromeUISettingsFrameURL,
+                  chrome::kChromeUISettingsHost);
+  RegisterSubpage(chrome::kChromeUIUberFrameURL,
+                  chrome::kChromeUIUberHost);
 }
 
 UberUI::~UberUI() {
   STLDeleteValues(&sub_uis_);
 }
 
-void UberUI::RegisterSubpage(const std::string& page_url) {
-  content::WebUI* webui =
-      web_ui()->GetWebContents()->CreateWebUI(GURL(page_url));
+void UberUI::RegisterSubpage(const std::string& page_url,
+                             const std::string& page_host) {
+  GURL page_gurl(page_url);
+  content::WebUI* webui = web_ui()->GetWebContents()->CreateWebUI(page_gurl);
 
-  webui->SetFrameXPath("//iframe[starts-with(@src,'" + page_url + "')]");
+  webui->OverrideJavaScriptFrame(page_host);
   sub_uis_[page_url] = webui;
+}
+
+content::WebUI* UberUI::GetSubpage(const std::string& page_url) {
+  if (!sub_uis_.count(page_url))
+    return NULL;
+  return sub_uis_[page_url];
 }
 
 void UberUI::RenderViewCreated(RenderViewHost* render_view_host) {

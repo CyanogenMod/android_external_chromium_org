@@ -310,7 +310,7 @@ void LayerImpl::AppendDebugBorderQuad(QuadSink* quad_sink,
       DebugBorderDrawQuad::Create();
   debug_border_quad->SetNew(
       shared_quad_state, quad_rect, visible_quad_rect, color, width);
-  quad_sink->MaybeAppend(debug_border_quad.PassAs<DrawQuad>());
+  quad_sink->Append(debug_border_quad.PassAs<DrawQuad>());
 }
 
 bool LayerImpl::HasDelegatedContent() const {
@@ -1156,7 +1156,7 @@ gfx::Vector2d LayerImpl::MaxScrollOffset() const {
   DCHECK(this != layer_tree_impl()->InnerViewportScrollLayer() ||
          IsContainerForFixedPositionLayers());
 
-  gfx::Size scaled_scroll_bounds(bounds());
+  gfx::SizeF scaled_scroll_bounds(bounds());
 
   float scale_factor = 1.f;
   for (LayerImpl const* current_layer = this;
@@ -1285,7 +1285,7 @@ void LayerImpl::SetScrollbarPosition(ScrollbarLayerImplBase* scrollbar_layer,
   // viewport).
   if (scrollbar_animation_controller_) {
     bool should_animate = scrollbar_animation_controller_->DidScrollUpdate(
-        layer_tree_impl_->CurrentPhysicalTimeTicks());
+        layer_tree_impl_->CurrentFrameTimeTicks());
     if (should_animate)
       layer_tree_impl_->StartScrollbarAnimation();
   }

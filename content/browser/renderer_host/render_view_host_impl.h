@@ -36,7 +36,6 @@ struct AccessibilityHostMsg_EventParams;
 struct AccessibilityHostMsg_LocationChangeParams;
 struct MediaPlayerAction;
 struct ViewHostMsg_CreateWindow_Params;
-struct ViewHostMsg_SelectionBounds_Params;
 struct ViewHostMsg_ShowPopup_Params;
 struct FrameMsg_Navigate_Params;
 struct ViewMsg_PostMessage_Params;
@@ -240,6 +239,10 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual void DisableFullscreenEncryptedMediaPlayback() OVERRIDE;
 #endif
 
+#if defined(USE_MOJO)
+  virtual void SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) OVERRIDE;
+#endif
+
   void set_delegate(RenderViewHostDelegate* d) {
     CHECK(d);  // http://crbug.com/82827
     delegate_ = d;
@@ -321,14 +324,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // separately so that the PageGroupLoadDeferrers of any current dialogs are no
   // longer on the stack when we attempt to swap it out.
   void SuppressDialogsUntilSwapOut();
-
-  // Tells the renderer that this RenderView is being swapped out for one in a
-  // different renderer process.  It should run its unload handler and move to
-  // a blank document.  The renderer should preserve the Frame object until it
-  // exits, in case we come back.  The renderer can exit if it has no other
-  // active RenderViews, but not until WasSwappedOut is called (when it is no
-  // longer visible).
-  void SwapOut();
 
   // Called when either the SwapOut request has been acknowledged or has timed
   // out.
@@ -543,11 +538,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnDidChangeScrollOffsetPinningForMainFrame(bool is_pinned_to_left,
                                                   bool is_pinned_to_right);
   void OnDidChangeNumWheelEvents(int count);
-  void OnSelectionChanged(const base::string16& text,
-                          size_t offset,
-                          const gfx::Range& range);
-  void OnSelectionBoundsChanged(
-      const ViewHostMsg_SelectionBounds_Params& params);
 #if defined(OS_ANDROID)
   void OnSelectionRootBoundsChanged(const gfx::Rect& bounds);
 #endif
@@ -579,7 +569,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnUpdateInspectorSetting(const std::string& key,
                                 const std::string& value);
   void OnClosePageACK();
-  void OnSwapOutACK();
   void OnAccessibilityEvents(
       const std::vector<AccessibilityHostMsg_EventParams>& params);
   void OnAccessibilityLocationChanges(
@@ -597,6 +586,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
   void OnShowPopup(const ViewHostMsg_ShowPopup_Params& params);
+  void OnHidePopup();
 #endif
 
  private:

@@ -209,8 +209,15 @@ public class AppMenuTest extends ChromeShellTestBase {
         assertTrue(mAppMenu.isShowing());
     }
 
-    private void pressKey(int keycode) {
-        getInstrumentation().sendKeyDownUpSync(keycode);
+    private void pressKey(final int keycode) {
+        final View view = mAppMenu.getPopup().getListView();
+        ThreadUtils.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                view.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, keycode));
+                view.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, keycode));
+            }
+        });
         getInstrumentation().waitForIdleSync();
     }
 

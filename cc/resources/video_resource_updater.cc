@@ -58,12 +58,6 @@ VideoFrameExternalResources VideoResourceUpdater::
 
 bool VideoResourceUpdater::VerifyFrame(
     const scoped_refptr<media::VideoFrame>& video_frame) {
-  // If these fail, we'll have to add logic that handles offset bitmap/texture
-  // UVs. For now, just expect (0, 0) offset, since all our decoders so far
-  // don't offset.
-  DCHECK_EQ(video_frame->visible_rect().x(), 0);
-  DCHECK_EQ(video_frame->visible_rect().y(), 0);
-
   switch (video_frame->format()) {
     // Acceptable inputs.
     case media::VideoFrame::YV12:
@@ -87,35 +81,16 @@ bool VideoResourceUpdater::VerifyFrame(
 // For frames that we receive in software format, determine the dimensions of
 // each plane in the frame.
 static gfx::Size SoftwarePlaneDimension(
-    media::VideoFrame::Format input_frame_format,
-    const gfx::Size& coded_size,
+    const scoped_refptr<media::VideoFrame>& input_frame,
     ResourceFormat output_resource_format,
-    int plane_index) {
+    size_t plane_index) {
   if (output_resource_format == kYUVResourceFormat) {
-    if (plane_index == media::VideoFrame::kYPlane ||
-        plane_index == media::VideoFrame::kAPlane)
-      return coded_size;
-
-    switch (input_frame_format) {
-      case media::VideoFrame::YV12:
-      case media::VideoFrame::YV12A:
-      case media::VideoFrame::YV12J:
-        return gfx::ToFlooredSize(gfx::ScaleSize(coded_size, 0.5f, 0.5f));
-      case media::VideoFrame::YV16:
-        return gfx::ToFlooredSize(gfx::ScaleSize(coded_size, 0.5f, 1.f));
-
-      case media::VideoFrame::UNKNOWN:
-      case media::VideoFrame::I420:
-      case media::VideoFrame::NATIVE_TEXTURE:
-#if defined(VIDEO_HOLE)
-      case media::VideoFrame::HOLE:
-#endif  // defined(VIDEO_HOLE)
-        NOTREACHED();
-    }
+    return media::VideoFrame::PlaneSize(
+        input_frame->format(), plane_index, input_frame->coded_size());
   }
 
   DCHECK_EQ(output_resource_format, kRGBResourceFormat);
-  return coded_size;
+  return input_frame->coded_size();
 }
 
 VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
@@ -144,8 +119,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
   bool software_compositor = context_provider_ == NULL;
 
   ResourceFormat output_resource_format = kYUVResourceFormat;
-  size_t output_plane_count =
-      (input_frame_format == media::VideoFrame::YV12A) ? 4 : 3;
+  size_t output_plane_count = media::VideoFrame::NumPlanes(input_frame_format);
 
   // TODO(skaslev): If we're in software compositing mode, we do the YUV -> RGB
   // conversion here. That involves an extra copy of each frame to a bitmap.
@@ -157,17 +131,12 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
   }
 
   int max_resource_size = resource_provider_->max_texture_size();
-  gfx::Size coded_frame_size = video_frame->coded_size();
-
   std::vector<PlaneResource> plane_resources;
   bool allocation_success = true;
 
   for (size_t i = 0; i < output_plane_count; ++i) {
     gfx::Size output_plane_resource_size =
-        SoftwarePlaneDimension(input_frame_format,
-                               coded_frame_size,
-                               output_resource_format,
-                               i);
+        SoftwarePlaneDimension(video_frame, output_resource_format, i);
     if (output_plane_resource_size.IsEmpty() ||
         output_plane_resource_size.width() > max_resource_size ||
         output_plane_resource_size.height() > max_resource_size) {

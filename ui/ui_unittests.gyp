@@ -179,9 +179,9 @@
           ],
           # The ResourceBundle unittest expects a locale.pak file to exist in
           # the bundle for English-US. Copy it in from where it was generated
-          # by ui_strings.gyp:ui_unittest_strings.
+          # by ui_resources.gyp:ui_test_pak.
           'mac_bundle_resources': [
-            '<(PRODUCT_DIR)/ui_unittests_strings/en.lproj/locale.pak',
+            '<(PRODUCT_DIR)/ui/en.lproj/locale.pak',
           ],
         }],
         ['OS == "win"', {
@@ -234,11 +234,6 @@
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
-        ['desktop_linux == 1 or chromeos == 1 or OS == "ios"', {
-          'dependencies': [
-            'base/strings/ui_strings.gyp:ui_unittest_strings',
-          ],
-        }],
         ['use_pango == 1', {
           'dependencies': [
             '../build/linux/system.gyp:fontconfig',
@@ -289,10 +284,6 @@
             'events/events.gyp:events_test_support',
             'gfx/gfx.gyp:gfx_test_support',
             'ui_unittests_bundle',
-          ],
-        }, { # OS!="mac"
-          'dependencies': [
-            'base/strings/ui_strings.gyp:ui_unittest_strings',
           ],
         }],
         ['use_aura==1 or toolkit_views==1',  {

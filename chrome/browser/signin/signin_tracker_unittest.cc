@@ -9,9 +9,8 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/fake_auth_status_provider.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
-#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/fake_signin_manager.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
@@ -19,7 +18,8 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/signin/core/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/fake_auth_status_provider.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/google_service_auth_error.h"
@@ -53,8 +53,9 @@ class SigninTrackerTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     TestingProfile::Builder builder;
     builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                              FakeProfileOAuth2TokenServiceWrapper::Build);
-
+                              BuildFakeProfileOAuth2TokenService);
+    builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
+                              FakeSigninManagerBase::Build);
     profile_ = builder.Build();
 
     fake_oauth2_token_service_ =
@@ -62,8 +63,7 @@ class SigninTrackerTest : public testing::Test {
             ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get()));
 
     mock_signin_manager_ = static_cast<FakeSigninManagerForTesting*>(
-        SigninManagerFactory::GetInstance()->SetTestingFactoryAndUse(
-            profile_.get(), FakeSigninManagerBase::Build));
+        SigninManagerFactory::GetForProfile(profile_.get()));
 
     tracker_.reset(new SigninTracker(profile_.get(), &observer_));
   }

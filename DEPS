@@ -23,19 +23,19 @@ vars = {
   "libcxxabi_revision": "197063",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "169622",
+  "webkit_revision": "170423",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",
   "swig_revision": "230490",
-  "nacl_revision": "12892",
+  "nacl_revision": "12952",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "12760",  # native_client/DEPS: tools_rev
   "google_toolbox_for_mac_revision": "662",
   "libaddressinput_revision": "176",
   "libphonenumber_revision": "621",
-  "libvpx_revision": "257501",
+  "libvpx_revision": "259953",
   "lss_revision": "24",
 
   # These two FFmpeg variables must be updated together.  One is used for SVN
@@ -45,19 +45,19 @@ vars = {
 
   "sfntly_revision": "228",
   "lighttpd_revision": "33737",
-  "skia_revision": "13854",
-  "skia_hash": "36048534886f9dd626e0e2bc112c8716c7be2ad8",
+  "skia_revision": "13966",
+  "skia_hash": "c94a028ff836f8f0af41ec33ceb1f4bc140841bf",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
   "v8_branch": "trunk",
-  "v8_revision": "20094",
+  "v8_revision": "20290",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "5721",
+  "webrtc_revision": "5807",
   "jsoncpp_revision": "248",
-  "nss_revision": "257452",
+  "nss_revision": "259440",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarming_client
   # and whatever else without interference from each other.
@@ -69,7 +69,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling ANGLE
   # and whatever else without interference from each other.
-  "angle_revision": "28b4790916c70dff3cee85ba351ab46299a1af97",
+  "angle_revision": "740a2f8daa9cc45c53ecf7333c3ae5aa64c821f8",
 }
 
 deps = {
@@ -89,7 +89,7 @@ deps = {
     Var("chromium_git") + "/angle/angle.git@" + Var("angle_revision"),
 
   "src/third_party/trace-viewer":
-    (Var("googlecode_url") % "trace-viewer") + "/trunk@1203",
+    (Var("googlecode_url") % "trace-viewer") + "/trunk@1221",
 
   "src/third_party/WebKit":
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
@@ -103,7 +103,7 @@ deps = {
     "/external/w3c/csswg-test.git@8c415e3215a203fa3a22dbdd1799279fdf44c81e",
 
   "src/third_party/icu":
-    "/trunk/deps/third_party/icu46@258359",
+    "/trunk/deps/third_party/icu46@259309",
 
   "src/third_party/libexif/sources":
     "/trunk/deps/third_party/libexif/sources@146817",
@@ -134,10 +134,10 @@ deps = {
     (Var("googlecode_url") % "snappy") + "/trunk@80",
 
   "src/tools/grit":
-    (Var("googlecode_url") % "grit-i18n") + "/trunk@156",
+    (Var("googlecode_url") % "grit-i18n") + "/trunk@157",
 
   "src/tools/gyp":
-    (Var("googlecode_url") % "gyp") + "/trunk@1879",
+    (Var("googlecode_url") % "gyp") + "/trunk@1880",
 
   "src/tools/swarming_client":
     Var("chromium_git") + "/external/swarming.client.git@" +
@@ -168,11 +168,11 @@ deps = {
     (Var("googlecode_url") % "skia") + "/trunk/include@" + Var("skia_revision"),
 
   "src/third_party/ots":
-    (Var("googlecode_url") % "ots") + "/trunk@110",
+    (Var("googlecode_url") % "ots") + "/trunk@112",
 
   "src/third_party/brotli/src":
     Var("chromium_git") +
-    "/external/font-compression-reference.git@7f848593bd2ec83f4537b6d494a5bf55b9bd4456",
+    "/external/font-compression-reference.git@0829e37293abc2523a1d2b0f4d68ff7b5fcd8e01",
 
   "src/tools/page_cycler/acid3":
     "/trunk/deps/page_cycler/acid3@171600",
@@ -226,7 +226,7 @@ deps = {
     "/trunk/deps/third_party/yasm/patched-yasm@167605",
 
   "src/third_party/libjpeg_turbo":
-    "/trunk/deps/third_party/libjpeg_turbo@251747",
+    "/trunk/deps/third_party/libjpeg_turbo@259851",
 
   "src/third_party/flac":
     "/trunk/deps/third_party/flac@222897",
@@ -253,7 +253,7 @@ deps = {
         "/trunk/jsoncpp/src/lib_json@" + Var("jsoncpp_revision"),
 
   "src/third_party/libyuv":
-    (Var("googlecode_url") % "libyuv") + "/trunk@985",
+    (Var("googlecode_url") % "libyuv") + "/trunk@986",
 
   "src/third_party/smhasher/src":
     (Var("googlecode_url") % "smhasher") + "/trunk@151",
@@ -285,10 +285,10 @@ deps = {
     (Var("googlecode_url") % "web-page-replay") + "/trunk@544",
 
   "src/third_party/pywebsocket/src":
-    (Var("googlecode_url") % "pywebsocket") + "/trunk/src@662",
+    (Var("googlecode_url") % "pywebsocket") + "/trunk/src@790",
 
   "src/third_party/opus/src":
-    "/trunk/deps/third_party/opus@237544",
+    "/trunk/deps/third_party/opus@256783",
 
   "src/media/cdm/ppapi/api":
     "/trunk/deps/cdm@249141",
@@ -480,12 +480,12 @@ deps_os = {
     # Used on Linux only. CrOS already has a copy.
     "src/third_party/cros_dbus_cplusplus/source":
       Var("chromiumos_git") + "/third_party/dbus-cplusplus.git" +
-      "@e4120532bbf3ca9f743b0be1f539381a54d16867",
+      "@f78453e0ba9f3d1584e8873aa3c7437cec861ce0",
 
     # For Linux and Chromium OS.
     "src/third_party/cros_system_api":
       Var("chromiumos_git") + "/platform/system_api.git" +
-      "@26a32fcb2afed4a3ec12070388d752dd795dac8e",
+      "@844a42e5f5c7a106807b09b6c2ac6b00b166c1cc",
 
     # Note that this is different from Android's freetype repo.
     "src/third_party/freetype2/src":
@@ -517,7 +517,7 @@ deps_os = {
   "android": {
     "src/third_party/android_tools":
       Var("chromium_git") + "/android_tools.git" +
-      "@0582bdc17b4829beb522975441546a4eb99b11b5",
+      "@ca35676f4f652fa97964c488313720f55efd4405",
 
     "src/third_party/aosp":
       "/trunk/deps/third_party/aosp@148330",
@@ -642,12 +642,10 @@ hooks = [
         "--arch=i386"],
   },
   {
-    # Pull clang on mac. If nothing changed, or on non-mac platforms, this takes
-    # zero seconds to run. If something changed, it downloads a prebuilt clang,
-    # which takes ~20s, but clang speeds up builds by more than 20s.
+    # Pull clang if on Mac or clang is requested via GYP_DEFINES.
     "name": "clang",
     "pattern": ".",
-    "action": ["python", "src/tools/clang/scripts/update.py", "--mac-only"],
+    "action": ["python", "src/tools/clang/scripts/update.py", "--if-needed"],
   },
   {
     # Update LASTCHANGE. This is also run by export_tarball.py in
@@ -669,7 +667,7 @@ hooks = [
   # Pull GN binaries. This needs to be before running GYP below.
   {
     "name": "gn_win",
-    "pattern": "src/tools/gn/bin/win/gn.exe.sha1",
+    "pattern": ".",
     "action": [ "download_from_google_storage",
                 "--no_resume",
                 "--platform=win32",
@@ -680,7 +678,7 @@ hooks = [
   },
   {
     "name": "gn_mac",
-    "pattern": "src/tools/gn/bin/mac/gn.sha1",
+    "pattern": ".",
     "action": [ "download_from_google_storage",
                 "--no_resume",
                 "--platform=darwin",
@@ -691,7 +689,7 @@ hooks = [
   },
   {
     "name": "gn_linux",
-    "pattern": "src/tools/gn/bin/linux/gn.sha1",
+    "pattern": ".",
     "action": [ "download_from_google_storage",
                 "--no_resume",
                 "--platform=linux*",
@@ -702,7 +700,7 @@ hooks = [
   },
   {
     "name": "gn_linux32",
-    "pattern": "src/tools/gn/bin/linux/gn32.sha1",
+    "pattern": ".",
     "action": [ "download_from_google_storage",
                 "--no_resume",
                 "--platform=linux*",
@@ -714,7 +712,7 @@ hooks = [
   # Pull clang-format binaries using checked-in hashes.
   {
     "name": "clang_format_win",
-    "pattern": "src/third_party/clang_format/bin/win/clang-format.exe.sha1",
+    "pattern": ".",
     "action": [ "download_from_google_storage",
                 "--no_resume",
                 "--platform=win32",
@@ -725,7 +723,7 @@ hooks = [
   },
   {
     "name": "clang_format_mac",
-    "pattern": "src/third_party/clang_format/bin/mac/clang-format.sha1",
+    "pattern": ".",
     "action": [ "download_from_google_storage",
                 "--no_resume",
                 "--platform=darwin",
@@ -736,7 +734,7 @@ hooks = [
   },
   {
     "name": "clang_format_linux",
-    "pattern": "src/third_party/clang_format/bin/linux/clang-format.sha1",
+    "pattern": ".",
     "action": [ "download_from_google_storage",
                 "--no_resume",
                 "--platform=linux*",
@@ -748,7 +746,7 @@ hooks = [
   # Pull eu-strip binaries using checked-in hashes.
   {
     "name": "eu-strip",
-    "pattern": "src/build/linux/bin/eu-strip.sha1",
+    "pattern": ".",
     "action": [ "download_from_google_storage",
                 "--no_resume",
                 "--platform=linux*",

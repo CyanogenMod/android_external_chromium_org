@@ -12,7 +12,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager_base.h"
 #include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -23,8 +22,9 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/signin/core/profile_oauth2_token_service.h"
-#include "components/signin/core/signin_error_controller.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_error_controller.h"
+#include "components/signin/core/browser/signin_manager_base.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
@@ -341,8 +341,8 @@ MessageType GetStatusLabelsForNewTabPage(ProfileSyncService* service,
       service, signin, status_label, link_label);
 }
 
-void GetStatusLabelsForSyncGlobalError(ProfileSyncService* service,
-                                       const SigninManagerBase& signin,
+#if !defined(OS_CHROMEOS)
+void GetStatusLabelsForSyncGlobalError(const ProfileSyncService* service,
                                        base::string16* menu_label,
                                        base::string16* bubble_message,
                                        base::string16* bubble_accept_label) {
@@ -370,6 +370,7 @@ void GetStatusLabelsForSyncGlobalError(ProfileSyncService* service,
     return;
   }
 }
+#endif
 
 MessageType GetStatus(
     ProfileSyncService* service, const SigninManagerBase& signin) {

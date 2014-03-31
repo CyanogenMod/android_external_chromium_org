@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "content/child/webcrypto/crypto_data.h"
+#include "content/child/webcrypto/jwk.h"
 #include "content/child/webcrypto/platform_crypto.h"
 #include "content/child/webcrypto/status.h"
 #include "content/child/webcrypto/webcrypto_util.h"
@@ -483,6 +484,21 @@ Status WrapKeyExportAndEncrypt(
       wrapping_algorithm, wrapping_key, CryptoData(exported_data), buffer);
 }
 
+// Returns the internal block size for SHA-*
+unsigned int ShaBlockSizeBytes(blink::WebCryptoAlgorithmId hash_id) {
+  switch (hash_id) {
+    case blink::WebCryptoAlgorithmIdSha1:
+    case blink::WebCryptoAlgorithmIdSha256:
+      return 64;
+    case blink::WebCryptoAlgorithmIdSha384:
+    case blink::WebCryptoAlgorithmIdSha512:
+      return 128;
+    default:
+      NOTREACHED();
+      return 0;
+  }
+}
+
 }  // namespace
 
 void Init() { platform::Init(); }
@@ -646,11 +662,15 @@ Status ExportKeyDontCheckExtractability(blink::WebCryptoKeyFormat format,
         return status;
       return platform::ExportKeySpki(public_key, buffer);
     }
+    case blink::WebCryptoKeyFormatPkcs8: {
+      platform::PrivateKey* private_key;
+      Status status = ToPlatformPrivateKey(key, &private_key);
+      if (status.IsError())
+        return status;
+      return platform::ExportKeyPkcs8(private_key, key.algorithm(), buffer);
+    }
     case blink::WebCryptoKeyFormatJwk:
       return ExportKeyJwk(key, buffer);
-    case blink::WebCryptoKeyFormatPkcs8:
-      // TODO(eroman):
-      return Status::ErrorUnsupported();
     default:
       return Status::ErrorUnsupported();
   }

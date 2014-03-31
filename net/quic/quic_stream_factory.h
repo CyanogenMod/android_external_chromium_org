@@ -54,8 +54,8 @@ class NET_EXPORT_PRIVATE QuicStreamRequest {
   // For http, |is_https| is false and |cert_verifier| can be null.
   int Request(const HostPortPair& host_port_pair,
               bool is_https,
+              PrivacyMode privacy_mode,
               base::StringPiece method,
-              CertVerifier* cert_verifier,
               const BoundNetLog& net_log,
               const CompletionCallback& callback);
 
@@ -73,7 +73,6 @@ class NET_EXPORT_PRIVATE QuicStreamRequest {
   QuicStreamFactory* factory_;
   HostPortPair host_port_pair_;
   bool is_https_;
-  CertVerifier* cert_verifier_;
   BoundNetLog net_log_;
   CompletionCallback callback_;
   scoped_ptr<QuicHttpStream> stream_;
@@ -91,6 +90,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       HostResolver* host_resolver,
       ClientSocketFactory* client_socket_factory,
       base::WeakPtr<HttpServerProperties> http_server_properties,
+      CertVerifier* cert_verifier,
       QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
       QuicRandom* random_generator,
       QuicClock* clock,
@@ -109,8 +109,8 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // asynchronously.
   int Create(const HostPortPair& host_port_pair,
              bool is_https,
+             PrivacyMode privacy_mode,
              base::StringPiece method,
-             CertVerifier* cert_verifier,
              const BoundNetLog& net_log,
              QuicStreamRequest* request);
 
@@ -166,7 +166,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   class Job;
   friend class test::QuicStreamFactoryPeer;
 
-  // The key used to find session by hostname. Includes
+  // The key used to find session by ip. Includes
   // the ip address, port, and scheme.
   struct NET_EXPORT_PRIVATE IpAliasKey {
     IpAliasKey();
@@ -187,7 +187,6 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   typedef std::set<QuicClientSession*> SessionSet;
   typedef std::map<IpAliasKey, SessionSet> IPAliasMap;
   typedef std::map<QuicSessionKey, QuicCryptoClientConfig*> CryptoConfigMap;
-  typedef std::map<QuicSessionKey, QuicSessionKey> CanonicalHostMap;
   typedef std::map<QuicSessionKey, Job*> JobMap;
   typedef std::map<QuicStreamRequest*, Job*> RequestMap;
   typedef std::set<QuicStreamRequest*> RequestSet;
@@ -203,9 +202,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   void OnJobComplete(Job* job, int rv);
   bool HasActiveSession(const QuicSessionKey& session_key) const;
   bool HasActiveJob(const QuicSessionKey& session_key) const;
-  int CreateSession(const HostPortPair& host_port_pair,
-                    bool is_https,
-                    CertVerifier* cert_verifier,
+  int CreateSession(const QuicSessionKey& session_key,
                     scoped_ptr<QuicServerInfo> quic_server_info,
                     const AddressList& address_list,
                     const BoundNetLog& net_log,
@@ -213,20 +210,9 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   void ActivateSession(const QuicSessionKey& key,
                        QuicClientSession* session);
 
-  QuicCryptoClientConfig* GetOrCreateCryptoConfig(
-      const QuicSessionKey& session_key);
-
-  // If the suffix of the hostname in |session_key| is in |canoncial_suffixes_|,
-  // then populate |crypto_config| with a canonical server config data from
-  // |canonical_hostname_to_origin_map_| for that suffix.
-  void PopulateFromCanonicalConfig(
-      const QuicSessionKey& session_key,
-      QuicCryptoClientConfig* crypto_config);
-
   // Initializes the cached state associated with |session_key| in
-  // |crypto_config| with the information in |server_info|.
+  // |crypto_config_| with the information in |server_info|.
   void InitializeCachedState(const QuicSessionKey& session_key,
-                             QuicCryptoClientConfig* crypto_config,
                              const scoped_ptr<QuicServerInfo>& server_info);
 
   void ExpireBrokenAlternateProtocolMappings();
@@ -236,6 +222,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   HostResolver* host_resolver_;
   ClientSocketFactory* client_socket_factory_;
   base::WeakPtr<HttpServerProperties> http_server_properties_;
+  CertVerifier* cert_verifier_;
   QuicServerInfoFactory* quic_server_info_factory_;
   QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory_;
   QuicRandom* random_generator_;
@@ -258,23 +245,6 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // Origins which have gone away recently.
   AliasSet gone_away_aliases_;
 
-  // Contains owning pointers to QuicCryptoClientConfig. QuicCryptoClientConfig
-  // contains configuration and cached state about servers.
-  // TODO(rtenneti): Persist all_crypto_configs_ to disk and decide when to
-  // clear the data in the map.
-  CryptoConfigMap all_crypto_configs_;
-
-  // Contains a map of servers which could share the same server config. Map
-  // from a Canonical host/port/scheme (host is some postfix of host names) to
-  // an actual origin, which has a plausible set of initial certificates (or at
-  // least server public key).
-  CanonicalHostMap canonical_hostname_to_origin_map_;
-
-  // Contains list of suffixes (for exmaple ".c.youtube.com",
-  // ".googlevideo.com") of canoncial hostnames.
-  std::vector<std::string> canoncial_suffixes_;
-
-
   // List of broken host:ports and the times when they can be expired.
   struct BrokenAlternateProtocolEntry {
     HostPortPair origin;
@@ -290,6 +260,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   BrokenAlternateProtocolMap broken_alternate_protocol_map_;
 
   QuicConfig config_;
+  QuicCryptoClientConfig crypto_config_;
 
   JobMap active_jobs_;
   JobRequestsMap job_requests_map_;

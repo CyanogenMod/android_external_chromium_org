@@ -17,7 +17,7 @@ const char kBackgroundPageLegacy[] = "background_page";
 const char kBackgroundPersistent[] = "background.persistent";
 const char kBackgroundScripts[] = "background.scripts";
 const char kBluetooth[] = "bluetooth";
-const char kBookmarkUI[] = "chrome_ui_overrides.bookmarks_ui";
+const char kBookmarkUI[] = "bookmarks_ui";
 const char kBrowserAction[] = "browser_action";
 const char kChromeURLOverrides[] = "chrome_url_overrides";
 const char kCommands[] = "commands";
@@ -92,6 +92,10 @@ const char kOmnibox[] = "omnibox";
 const char kOmniboxKeyword[] = "omnibox.keyword";
 const char kOptionalPermissions[] = "optional_permissions";
 const char kOptionsPage[] = "options_page";
+const char kOverrideHomepage[] = "chrome_settings_overrides.homepage";
+const char kOverrideSearchProvider[] =
+    "chrome_settings_overrides.search_provider";
+const char kOverrideStartupPage[] = "chrome_settings_overrides.startup_pages";
 const char kPageAction[] = "page_action";
 const char kPageActionDefaultIcon[] = "default_icon";
 const char kPageActionDefaultPopup[] = "default_popup";
@@ -119,7 +123,6 @@ const char kRunAt[] = "run_at";
 const char kSandboxedPages[] = "sandbox.pages";
 const char kSandboxedPagesCSP[] = "sandbox.content_security_policy";
 const char kScriptBadge[] = "script_badge";
-const char kSearchProvider[] = "chrome_settings_overrides.search_provider";
 const char kSettingsOverride[] = "chrome_settings_overrides";
 const char kSettingsOverrideAlternateUrls[] =
     "chrome_settings_overrides.search_provider.alternate_urls";

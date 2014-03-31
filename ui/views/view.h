@@ -323,9 +323,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Compositor.
   void SetPaintToLayer(bool paint_to_layer);
 
-  // Overriden from ui:LayerOwner:
-  virtual scoped_ptr<ui::Layer> RecreateLayer() OVERRIDE;
-
   // RTL positioning -----------------------------------------------------------
 
   // Methods for accessing the bounds and position of the view, relative to its
@@ -404,6 +401,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Returns the first ancestor, starting at this, whose class name is |name|.
   // Returns null if no ancestor has the class name |name|.
+  const View* GetAncestorWithClassName(const std::string& name) const;
   View* GetAncestorWithClassName(const std::string& name);
 
   // Recursively descends the view tree starting at this view, and returns
@@ -1023,6 +1021,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Override to be notified when the enabled state of this View has
   // changed. The default implementation calls SchedulePaint() on this View.
   virtual void OnEnabledChanged();
+
+  bool needs_layout() const { return needs_layout_; }
 
   // Tree operations -----------------------------------------------------------
 

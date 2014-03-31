@@ -10,6 +10,7 @@
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_param_traits.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerError.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerEventResult.h"
 #include "url/gurl.h"
 
 #undef IPC_MESSAGE_EXPORT
@@ -19,6 +20,9 @@
 
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebServiceWorkerError::ErrorType,
                           blink::WebServiceWorkerError::ErrorTypeLast)
+
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebServiceWorkerEventResult,
+                          blink::WebServiceWorkerEventResultLast)
 
 IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerFetchRequest)
   IPC_STRUCT_TRAITS_MEMBER(url)
@@ -49,6 +53,12 @@ IPC_MESSAGE_CONTROL3(ServiceWorkerHostMsg_UnregisterServiceWorker,
                      int32 /* request_id */,
                      GURL /* scope (url pattern) */)
 
+// Sends a 'message' event to a service worker (renderer->browser).
+IPC_MESSAGE_CONTROL3(ServiceWorkerHostMsg_PostMessage,
+                     int64 /* registration_id */,
+                     base::string16 /* message */,
+                     std::vector<int> /* sent_message_port_ids */)
+
 // Messages sent from the browser to the child process.
 
 // Response to ServiceWorkerMsg_RegisterServiceWorker
@@ -71,12 +81,17 @@ IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_ServiceWorkerRegistrationError,
                      base::string16 /* message */)
 
 // Sent via EmbeddedWorker to dispatch install event.
-IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_InstallEvent,
-                     int /* active_version_embedded_worker_id */)
+IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_InstallEvent, int /* active_version_id */)
 
 // Sent via EmbeddedWorker to dispatch fetch event.
 IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_FetchEvent,
                      content::ServiceWorkerFetchRequest)
+
+// Sends a 'message' event to a service worker (browser->EmbeddedWorker).
+IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_Message,
+                     base::string16 /* message */,
+                     std::vector<int> /* sent_message_port_ids */,
+                     std::vector<int> /* new_routing_ids */)
 
 // Informs the browser of a new ServiceWorkerProvider in the child process,
 // |provider_id| is unique within its child process.
@@ -98,12 +113,12 @@ IPC_MESSAGE_CONTROL2(ServiceWorkerHostMsg_RemoveScriptClient,
                      int /* provider_id */)
 
 // Informs the browser that install event handling has finished.
-// Sent via EmbeddedWorker. If there was an exception during the
-// event handling it'll be reported back separately (to be propagated
-// to the documents).
-IPC_MESSAGE_CONTROL0(ServiceWorkerHostMsg_InstallEventFinished)
+// Sent via EmbeddedWorker.
+IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_InstallEventFinished,
+                     blink::WebServiceWorkerEventResult)
 
 // Informs the browser that fetch event handling has finished.
+// Sent via EmbeddedWorker.
 IPC_MESSAGE_CONTROL2(ServiceWorkerHostMsg_FetchEventFinished,
                      content::ServiceWorkerFetchEventResult,
                      content::ServiceWorkerResponse)

@@ -581,6 +581,10 @@ class GLES2DecoderImpl : public GLES2Decoder,
       const ContextState* prev_state) const OVERRIDE {
     state_.RestoreAllTextureUnitBindings(prev_state);
   }
+  virtual void RestoreActiveTextureUnitBinding(
+      unsigned int target) const OVERRIDE {
+    state_.RestoreActiveTextureUnitBinding(target);
+  }
   virtual void RestoreAttribute(unsigned index) const OVERRIDE {
     state_.RestoreAttribute(index);
   }
@@ -1702,6 +1706,7 @@ class GLES2DecoderImpl : public GLES2Decoder,
   bool has_robustness_extension_;
   GLenum reset_status_;
   bool reset_by_robustness_extension_;
+  bool supports_post_sub_buffer_;
 
   // These flags are used to override the state of the shared feature_info_
   // member.  Because the same FeatureInfo instance may be shared among many
@@ -2207,6 +2212,7 @@ GLES2DecoderImpl::GLES2DecoderImpl(ContextGroup* group)
       has_robustness_extension_(false),
       reset_status_(GL_NO_ERROR),
       reset_by_robustness_extension_(false),
+      supports_post_sub_buffer_(false),
       force_webgl_glsl_validation_(false),
       derivatives_explicitly_enabled_(false),
       frag_depth_explicitly_enabled_(false),
@@ -2567,6 +2573,12 @@ bool GLES2DecoderImpl::Initialize(
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
   }
 
+  supports_post_sub_buffer_ = surface->SupportsPostSubBuffer();
+  if (feature_info_->workarounds()
+          .disable_post_sub_buffers_for_onscreen_surfaces &&
+      !surface->IsOffscreen())
+    supports_post_sub_buffer_ = false;
+
   if (feature_info_->workarounds().reverse_point_sprite_coord_origin) {
     glPointParameteri(GL_POINT_SPRITE_COORD_ORIGIN, GL_LOWER_LEFT);
   }
@@ -2619,7 +2631,7 @@ Capabilities GLES2DecoderImpl::GetCapabilities() {
   caps.iosurface = true;
 #endif
 
-  caps.post_sub_buffer = surface_->HasExtension("GL_CHROMIUM_post_sub_buffer");
+  caps.post_sub_buffer = supports_post_sub_buffer_;
 
   return caps;
 }
@@ -4165,7 +4177,25 @@ bool GLES2DecoderImpl::GetHelper(
     switch (pname) {
       case GL_IMPLEMENTATION_COLOR_READ_FORMAT:
         *num_written = 1;
+        // Return the GL implementation's preferred format and (see below type)
+        // if we have the GL extension that exposes this. This allows the GPU
+        // client to use the implementation's preferred format for glReadPixels
+        // for optimisation.
+        //
+        // A conflicting extension (GL_ARB_ES2_compatibility) specifies an error
+        // case when requested on integer/floating point buffers but which is
+        // acceptable on GLES2 and with the GL_OES_read_format extension.
+        //
+        // Therefore if an error occurs we swallow the error and use the
+        // internal implementation.
         if (params) {
+          if (context_->HasExtension("GL_OES_read_format")) {
+            ScopedGLErrorSuppressor suppressor("GLES2DecoderImpl::GetHelper",
+                                               GetErrorState());
+            glGetIntegerv(pname, params);
+            if (glGetError() == GL_NO_ERROR)
+              return true;
+          }
           *params = GLES2Util::GetPreferredGLReadPixelsFormat(
               GetBoundReadFrameBufferInternalFormat());
         }
@@ -4173,6 +4203,13 @@ bool GLES2DecoderImpl::GetHelper(
       case GL_IMPLEMENTATION_COLOR_READ_TYPE:
         *num_written = 1;
         if (params) {
+          if (context_->HasExtension("GL_OES_read_format")) {
+            ScopedGLErrorSuppressor suppressor("GLES2DecoderImpl::GetHelper",
+                                               GetErrorState());
+            glGetIntegerv(pname, params);
+            if (glGetError() == GL_NO_ERROR)
+              return true;
+          }
           *params = GLES2Util::GetPreferredGLReadPixelsType(
               GetBoundReadFrameBufferInternalFormat(),
               GetBoundReadFrameBufferTextureType());
@@ -7222,6 +7259,7 @@ void GLES2DecoderImpl::FinishReadPixels(
 
 error::Error GLES2DecoderImpl::HandleReadPixels(
     uint32 immediate_data_size, const cmds::ReadPixels& c) {
+  TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandleReadPixels");
   error::Error fbo_error = WillAccessBoundFramebufferForRead();
   if (fbo_error != error::kNoError)
     return fbo_error;
@@ -7433,7 +7471,7 @@ error::Error GLES2DecoderImpl::HandlePixelStorei(
 error::Error GLES2DecoderImpl::HandlePostSubBufferCHROMIUM(
     uint32 immediate_data_size, const cmds::PostSubBufferCHROMIUM& c) {
   TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandlePostSubBufferCHROMIUM");
-  if (!surface_->HasExtension("GL_CHROMIUM_post_sub_buffer")) {
+  if (!supports_post_sub_buffer_) {
     LOCAL_SET_GL_ERROR(
         GL_INVALID_OPERATION,
         "glPostSubBufferCHROMIUM", "command not supported by surface");
@@ -7627,9 +7665,8 @@ error::Error GLES2DecoderImpl::HandleGetString(
         } else {
           extensions = feature_info_->extensions().c_str();
         }
-        std::string surface_extensions = surface_->GetExtensions();
-        if (!surface_extensions.empty())
-          extensions += " " + surface_extensions;
+        if (supports_post_sub_buffer_)
+          extensions += " GL_CHROMIUM_post_sub_buffer";
         str = extensions.c_str();
       }
       break;
@@ -10381,20 +10418,12 @@ error::Error GLES2DecoderImpl::HandleAsyncTexImage2DCHROMIUM(
     return error::kNoError;
   }
 
-  // We know the memory/size is safe, so get the real shared memory since
-  // it might need to be duped to prevent use-after-free of the memory.
-  gpu::Buffer buffer = GetSharedMemoryBuffer(c.pixels_shm_id);
-  base::SharedMemory* shared_memory = buffer.shared_memory;
-  uint32 shm_size = buffer.size;
-  uint32 shm_data_offset = c.pixels_shm_offset;
-  uint32 shm_data_size = pixels_size;
-
   // Setup the parameters.
   AsyncTexImage2DParams tex_params = {
       target, level, static_cast<GLenum>(internal_format),
       width, height, border, format, type};
-  AsyncMemoryParams mem_params = {
-      shared_memory, shm_size, shm_data_offset, shm_data_size};
+  AsyncMemoryParams mem_params(
+      GetSharedMemoryBuffer(c.pixels_shm_id), c.pixels_shm_offset, pixels_size);
 
   // Set up the async state if needed, and make the texture
   // immutable so the async state stays valid. The level info
@@ -10471,19 +10500,11 @@ error::Error GLES2DecoderImpl::HandleAsyncTexSubImage2DCHROMIUM(
     }
   }
 
-  // We know the memory/size is safe, so get the real shared memory since
-  // it might need to be duped to prevent use-after-free of the memory.
-  gpu::Buffer buffer = GetSharedMemoryBuffer(c.data_shm_id);
-  base::SharedMemory* shared_memory = buffer.shared_memory;
-  uint32 shm_size = buffer.size;
-  uint32 shm_data_offset = c.data_shm_offset;
-  uint32 shm_data_size = data_size;
-
   // Setup the parameters.
   AsyncTexSubImage2DParams tex_params = {target, level, xoffset, yoffset,
                                               width, height, format, type};
-  AsyncMemoryParams mem_params = {shared_memory, shm_size,
-                                       shm_data_offset, shm_data_size};
+  AsyncMemoryParams mem_params(
+      GetSharedMemoryBuffer(c.data_shm_id), c.data_shm_offset, data_size);
   AsyncPixelTransferDelegate* delegate =
       async_pixel_transfer_manager_->GetPixelTransferDelegate(texture_ref);
   if (!delegate) {

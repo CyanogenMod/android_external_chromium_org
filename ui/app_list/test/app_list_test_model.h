@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "ui/app_list/app_list_folder_item.h"
 #include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_model.h"
 
@@ -46,6 +47,11 @@ class AppListTestModel : public AppListModel {
 
   // Populate the model with |n| items titled "Item #".
   void PopulateApps(int n);
+
+  // Creates and populate a folder with |n| test apps in it.
+  AppListFolderItem* CreateAndPopulateFolderWithApps(int n);
+
+  AppListFolderItem* CreateAndAddOemFolder(const std::string& id);
 
   // Populate the model with an item titled "Item |id|".
   void PopulateAppWithId(int id);

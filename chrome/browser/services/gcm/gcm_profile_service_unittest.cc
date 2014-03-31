@@ -21,13 +21,15 @@
 #include "chrome/browser/services/gcm/gcm_client_mock.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
-#include "chrome/browser/signin/signin_manager_base.h"
+#include "chrome/browser/signin/chrome_signin_client.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/os_crypt/os_crypt.h"
+#include "components/signin/core/browser/signin_manager_base.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/browser/event_router.h"
@@ -40,6 +42,8 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
+#else
+#include "chrome/browser/signin/signin_manager.h"
 #endif
 
 using namespace extensions;
@@ -129,7 +133,10 @@ class Waiter {
 
 class FakeSigninManager : public SigninManagerBase {
  public:
-  explicit FakeSigninManager(Profile* profile) {
+  explicit FakeSigninManager(Profile* profile)
+      : SigninManagerBase(
+            ChromeSigninClientFactory::GetInstance()->GetForProfile(profile)),
+        profile_(profile) {
     Initialize(profile, NULL);
   }
 
@@ -146,9 +153,12 @@ class FakeSigninManager : public SigninManagerBase {
   void SignOut() {
     std::string username = GetAuthenticatedUsername();
     clear_authenticated_username();
-    profile()->GetPrefs()->ClearPref(prefs::kGoogleServicesUsername);
+    profile_->GetPrefs()->ClearPref(prefs::kGoogleServicesUsername);
     FOR_EACH_OBSERVER(Observer, observer_list_, GoogleSignedOut(username));
   }
+
+ private:
+  Profile* profile_;
 };
 
 }  // namespace
@@ -280,12 +290,15 @@ class GCMProfileServiceTestConsumer {
         has_persisted_registration_info_(false),
         send_result_(GCMClient::SUCCESS) {
     // Create a new profile.
-    profile_.reset(new TestingProfile);
+    TestingProfile::Builder builder;
+    builder.AddTestingFactory(
+        SigninManagerFactory::GetInstance(),
+        GCMProfileServiceTestConsumer::BuildFakeSigninManager);
+    profile_ = builder.Build();
 
-    // Use a fake version of SigninManager.
-    signin_manager_ = static_cast<FakeSigninManager*>(
-        SigninManagerFactory::GetInstance()->SetTestingFactoryAndUse(
-            profile(), &GCMProfileServiceTestConsumer::BuildFakeSigninManager));
+    SigninManagerBase* signin_manager =
+        SigninManagerFactory::GetInstance()->GetForProfile(profile_.get());
+    signin_manager_ = static_cast<FakeSigninManager*>(signin_manager);
 
     // Create extension service in order to uninstall the extension.
     extensions::TestExtensionSystem* extension_system(
@@ -395,26 +408,6 @@ class GCMProfileServiceTestConsumer {
     waiter_->SignalCompleted();
   }
 
-  bool HasPersistedRegistrationInfo(const std::string& app_id) {
-    StateStore* storage = ExtensionSystem::Get(profile())->state_store();
-    if (!storage)
-      return false;
-    has_persisted_registration_info_ = false;
-    storage->GetExtensionValue(
-        app_id,
-        GCMProfileService::GetPersistentRegisterKeyForTesting(),
-        base::Bind(
-            &GCMProfileServiceTestConsumer::ReadRegistrationInfoFinished,
-            base::Unretained(this)));
-    waiter_->WaitUntilCompleted();
-    return has_persisted_registration_info_;
-  }
-
-  void ReadRegistrationInfoFinished(scoped_ptr<base::Value> value) {
-    has_persisted_registration_info_ = value.get() != NULL;
-    waiter_->SignalCompleted();
-  }
-
   void Send(const std::string& app_id,
             const std::string& receiver_id,
             const GCMClient::OutgoingMessage& message) {
@@ -459,10 +452,6 @@ class GCMProfileServiceTestConsumer {
 
   bool IsGCMClientReady() const {
     return GetGCMProfileService()->gcm_client_ready_;
-  }
-
-  bool ExistsCachedRegistrationInfo() const {
-    return !GetGCMProfileService()->registration_info_map_.empty();
   }
 
   bool HasAppHandlers() const {
@@ -872,12 +861,13 @@ TEST_F(GCMProfileServiceSingleProfileTest, RegisterAgainWithSameSenderIDs) {
   consumer()->clear_registration_result();
 
   // Calling register 2nd time with the same set of sender IDs but different
-  // ordering will get back the same registration ID. There is no need to wait
-  // since register simply returns the cached registration ID.
+  // ordering will get back the same registration ID.
   std::vector<std::string> another_sender_ids;
   another_sender_ids.push_back("sender2");
   another_sender_ids.push_back("sender1");
   consumer()->Register(kTestingAppId, another_sender_ids);
+
+  WaitUntilCompleted();
   EXPECT_EQ(expected_registration_id, consumer()->registration_id());
   EXPECT_EQ(GCMClient::SUCCESS, consumer()->registration_result());
 }
@@ -904,40 +894,6 @@ TEST_F(GCMProfileServiceSingleProfileTest,
   consumer()->Register(kTestingAppId, sender_ids);
   WaitUntilCompleted();
   EXPECT_EQ(expected_registration_id2, consumer()->registration_id());
-  EXPECT_EQ(GCMClient::SUCCESS, consumer()->registration_result());
-}
-
-TEST_F(GCMProfileServiceSingleProfileTest, ReadRegistrationFromStateStore) {
-  scoped_refptr<Extension> extension(consumer()->CreateExtension());
-
-  std::vector<std::string> sender_ids;
-  sender_ids.push_back("sender1");
-  consumer()->Register(extension->id(), sender_ids);
-
-  WaitUntilCompleted();
-  EXPECT_FALSE(consumer()->registration_id().empty());
-  EXPECT_EQ(GCMClient::SUCCESS, consumer()->registration_result());
-  std::string old_registration_id = consumer()->registration_id();
-
-  // Clears the results that would be set by the Register callback in
-  // preparation to call register 2nd time.
-  consumer()->clear_registration_result();
-
-  // Register should not reach the server. Forcing GCMClient server error should
-  // help catch this.
-  consumer()->set_gcm_client_error_simulation(GCMClientMock::FORCE_ERROR);
-
-  // Simulate start-up by recreating GCMProfileService.
-  consumer()->CreateGCMProfileServiceInstance();
-
-  // Simulate start-up by reloading extension.
-  consumer()->ReloadExtension(extension);
-
-  // This should read the registration info from the extension's state store.
-  consumer()->Register(extension->id(), sender_ids);
-  PumpIOLoop();
-  PumpUILoop();
-  EXPECT_EQ(old_registration_id, consumer()->registration_id());
   EXPECT_EQ(GCMClient::SUCCESS, consumer()->registration_result());
 }
 
@@ -979,25 +935,6 @@ TEST_F(GCMProfileServiceSingleProfileTest,
   EXPECT_EQ(GCMClient::SUCCESS, consumer()->registration_result());
 }
 
-TEST_F(GCMProfileServiceSingleProfileTest,
-       PersistedRegistrationInfoRemoveAfterSignOut) {
-  std::vector<std::string> sender_ids;
-  sender_ids.push_back("sender1");
-  consumer()->Register(kTestingAppId, sender_ids);
-  WaitUntilCompleted();
-
-  // The app id and registration info should be persisted.
-  EXPECT_TRUE(profile()->GetPrefs()->HasPrefPath(prefs::kGCMRegisteredAppIDs));
-  EXPECT_TRUE(consumer()->HasPersistedRegistrationInfo(kTestingAppId));
-
-  consumer()->SignOut();
-  PumpUILoop();
-
-  // The app id and persisted registration info should be removed.
-  EXPECT_FALSE(profile()->GetPrefs()->HasPrefPath(prefs::kGCMRegisteredAppIDs));
-  EXPECT_FALSE(consumer()->HasPersistedRegistrationInfo(kTestingAppId));
-}
-
 TEST_F(GCMProfileServiceSingleProfileTest, RegisterAfterSignOut) {
   // This will trigger check-out.
   consumer()->SignOut();
@@ -1021,21 +958,9 @@ TEST_F(GCMProfileServiceSingleProfileTest, UnregisterImplicitly) {
   EXPECT_FALSE(consumer()->registration_id().empty());
   EXPECT_EQ(GCMClient::SUCCESS, consumer()->registration_result());
 
-  // The registration info should be cached.
-  EXPECT_TRUE(consumer()->ExistsCachedRegistrationInfo());
-
-  // The registration info should be persisted.
-  EXPECT_TRUE(consumer()->HasPersistedRegistrationInfo(extension->id()));
-
   // Uninstall the extension.
   consumer()->UninstallExtension(extension);
   base::MessageLoop::current()->RunUntilIdle();
-
-  // The cached registration info should be removed.
-  EXPECT_FALSE(consumer()->ExistsCachedRegistrationInfo());
-
-  // The persisted registration info should be removed.
-  EXPECT_FALSE(consumer()->HasPersistedRegistrationInfo(extension->id()));
 }
 
 TEST_F(GCMProfileServiceSingleProfileTest, UnregisterExplicitly) {
@@ -1047,22 +972,10 @@ TEST_F(GCMProfileServiceSingleProfileTest, UnregisterExplicitly) {
   EXPECT_FALSE(consumer()->registration_id().empty());
   EXPECT_EQ(GCMClient::SUCCESS, consumer()->registration_result());
 
-  // The registration info should be cached.
-  EXPECT_TRUE(consumer()->ExistsCachedRegistrationInfo());
-
-  // The registration info should be persisted.
-  EXPECT_TRUE(consumer()->HasPersistedRegistrationInfo(kTestingAppId));
-
   consumer()->Unregister(kTestingAppId);
 
   WaitUntilCompleted();
   EXPECT_EQ(GCMClient::SUCCESS, consumer()->unregistration_result());
-
-  // The cached registration info should be removed.
-  EXPECT_FALSE(consumer()->ExistsCachedRegistrationInfo());
-
-  // The persisted registration info should be removed.
-  EXPECT_FALSE(consumer()->HasPersistedRegistrationInfo(kTestingAppId));
 }
 
 TEST_F(GCMProfileServiceSingleProfileTest,
@@ -1204,50 +1117,6 @@ TEST_F(GCMProfileServiceSingleProfileTest, MessageReceived) {
   EXPECT_TRUE(consumer()->gcm_app_handler()->message().collapse_key.empty());
   EXPECT_EQ(message.sender_id,
             consumer()->gcm_app_handler()->message().sender_id);
-}
-
-// Flaky on all platforms: http://crbug.com/354803
-TEST_F(GCMProfileServiceSingleProfileTest,
-       DISABLED_MessageNotReceivedFromNotRegisteredSender) {
-  // Explicitly not registering the sender2 here, so that message gets dropped.
-  consumer()->Register(kTestingAppId, ToSenderList("sender1"));
-  WaitUntilCompleted();
-  GCMClient::IncomingMessage message;
-  message.data["key1"] = "value1";
-  message.data["key2"] = "value2";
-  message.sender_id = "sender2";
-  consumer()->GetGCMClient()->ReceiveMessage(kTestingAppId, message);
-  PumpUILoop();
-  EXPECT_EQ(FakeGCMAppHandler::NO_EVENT,
-            consumer()->gcm_app_handler()->received_event());
-  consumer()->gcm_app_handler()->clear_results();
-
-  // Register for sender2 and try to receive the message again, which should
-  // work with no problems.
-  consumer()->Register(kTestingAppId, ToSenderList("sender1,sender2"));
-  WaitUntilCompleted();
-  consumer()->GetGCMClient()->ReceiveMessage(kTestingAppId, message);
-  WaitUntilCompleted();
-  EXPECT_EQ(FakeGCMAppHandler::MESSAGE_EVENT,
-            consumer()->gcm_app_handler()->received_event());
-  consumer()->gcm_app_handler()->clear_results();
-
-  // Making sure that sender1 can receive the message as well.
-  message.sender_id = "sender1";
-  consumer()->GetGCMClient()->ReceiveMessage(kTestingAppId, message);
-  WaitUntilCompleted();
-  EXPECT_EQ(FakeGCMAppHandler::MESSAGE_EVENT,
-            consumer()->gcm_app_handler()->received_event());
-  consumer()->gcm_app_handler()->clear_results();
-
-  // Register for sender1 only and make sure it is not possible  to receive the
-  // message again from from sender1.
-  consumer()->Register(kTestingAppId, ToSenderList("sender2"));
-  WaitUntilCompleted();
-  consumer()->GetGCMClient()->ReceiveMessage(kTestingAppId, message);
-  PumpUILoop();
-  EXPECT_EQ(FakeGCMAppHandler::NO_EVENT,
-            consumer()->gcm_app_handler()->received_event());
 }
 
 TEST_F(GCMProfileServiceSingleProfileTest, MessageWithCollapseKeyReceived) {

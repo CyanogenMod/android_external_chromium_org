@@ -8,7 +8,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
-#include "content/child/webkitplatformsupport_impl.h"
+#include "content/child/blink_platform_impl.h"
 #include "content/common/content_export.h"
 #include "content/renderer/webpublicsuffixlist_impl.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
@@ -46,7 +46,7 @@ class WebDatabaseObserverImpl;
 class WebFileSystemImpl;
 
 class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
-    : public WebKitPlatformSupportImpl {
+    : public BlinkPlatformImpl {
  public:
   RendererWebKitPlatformSupportImpl();
   virtual ~RendererWebKitPlatformSupportImpl();
@@ -120,13 +120,12 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       blink::WebAudioBus* destination_bus, const char* audio_file_data,
       size_t data_size);
 
-  virtual blink::WebContentDecryptionModule* createContentDecryptionModule(
-      const blink::WebString& key_system);
   virtual blink::WebMIDIAccessor*
       createMIDIAccessor(blink::WebMIDIAccessorClient* client);
 
   virtual blink::WebBlobRegistry* blobRegistry();
-  virtual void sampleGamepads(blink::WebGamepads&);
+  virtual void sampleGamepads(blink::WebGamepads&) OVERRIDE;
+  virtual void setGamepadListener(blink::WebGamepadListener*) OVERRIDE;
   virtual blink::WebRTCPeerConnectionHandler* createRTCPeerConnectionHandler(
       blink::WebRTCPeerConnectionHandlerClient* client);
   virtual blink::WebMediaStreamCenter* createMediaStreamCenter(
@@ -169,6 +168,15 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
 
   // Set WebGamepads to return when sampleGamepads() is invoked.
   static void SetMockGamepadsForTesting(const blink::WebGamepads& pads);
+
+  // Notifies blink::WebGamepadListener about a new gamepad if a listener
+  // has been set via setGamepadListener.
+  static void MockGamepadConnected(int index, const blink::WebGamepad& pad);
+
+  // Notifies blink::WebGamepadListener that a gamepad has been disconnected if
+  // a listener has been set via setGamepadListener.
+  static void MockGamepadDisconnected(int index, const blink::WebGamepad& pad);
+
   // Set WebDeviceMotionData to return when setDeviceMotionListener is invoked.
   static void SetMockDeviceMotionDataForTesting(
       const blink::WebDeviceMotionData& data);

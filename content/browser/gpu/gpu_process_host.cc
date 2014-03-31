@@ -297,9 +297,6 @@ class GpuSandboxedProcessLauncherDelegate
 
 // static
 bool GpuProcessHost::ValidateHost(GpuProcessHost* host) {
-  if (!host)
-    return false;
-
   // The Gpu process is invalid if it's not using SwiftShader, the card is
   // blacklisted, and we can kill it and start over.
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) ||
@@ -770,6 +767,8 @@ void GpuProcessHost::OnInitialized(bool result, const gpu::GPUInfo& gpu_info) {
 
   if (!initialized_)
     GpuDataManagerImpl::GetInstance()->OnGpuProcessInitFailure();
+  else if (!in_process_)
+    GpuDataManagerImpl::GetInstance()->UpdateGpuInfo(gpu_info);
 }
 
 void GpuProcessHost::OnChannelEstablished(
@@ -1110,6 +1109,7 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kGpuStartupDialog,
     switches::kGpuSandboxAllowSysVShm,
     switches::kGpuSandboxFailuresFatal,
+    switches::kGpuSandboxStartAfterInitialization,
     switches::kLoggingLevel,
     switches::kNoSandbox,
     switches::kTestGLLib,

@@ -12,6 +12,7 @@
 #include "net/base/net_util.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
+#include "ui/base/dragdrop/file_info.h"
 #include "ui/base/x/selection_utils.h"
 #include "ui/base/x/x11_util.h"
 
@@ -25,6 +26,9 @@ namespace ui {
 namespace {
 
 const char kDndSelection[] = "XdndSelection";
+const char kRendererTaint[] = "chromium/x-renderer-taint";
+
+const char kNetscapeURL[] = "_NETSCAPE_URL";
 
 const char* kAtomsToCache[] = {
   kString,
@@ -33,7 +37,9 @@ const char* kAtomsToCache[] = {
   kDndSelection,
   Clipboard::kMimeTypeURIList,
   kMimeTypeMozillaURL,
+  kNetscapeURL,
   Clipboard::kMimeTypeText,
+  kRendererTaint,
   NULL
 };
 
@@ -108,6 +114,18 @@ OSExchangeData::Provider* OSExchangeDataProviderAuraX11::Clone() const {
   return ret;
 }
 
+void OSExchangeDataProviderAuraX11::MarkOriginatedFromRenderer() {
+  std::string empty;
+  format_map_.Insert(atom_cache_.GetAtom(kRendererTaint),
+                     scoped_refptr<base::RefCountedMemory>(
+                         base::RefCountedString::TakeString(&empty)));
+}
+
+bool OSExchangeDataProviderAuraX11::DidOriginateFromRenderer() const {
+  return format_map_.find(atom_cache_.GetAtom(kRendererTaint)) !=
+         format_map_.end();
+}
+
 void OSExchangeDataProviderAuraX11::SetString(const base::string16& text_data) {
   std::string utf8 = base::UTF16ToUTF8(text_data);
   scoped_refptr<base::RefCountedMemory> mem(
@@ -121,8 +139,10 @@ void OSExchangeDataProviderAuraX11::SetString(const base::string16& text_data) {
 
 void OSExchangeDataProviderAuraX11::SetURL(const GURL& url,
                                            const base::string16& title) {
-  // Mozilla's URL format: (UTF16: URL, newline, title)
+  // TODO(dcheng): The original GTK code tries very hard to avoid writing out an
+  // empty title. Is this necessary?
   if (url.is_valid()) {
+    // Mozilla's URL format: (UTF16: URL, newline, title)
     base::string16 spec = base::UTF8ToUTF16(url.spec());
 
     std::vector<unsigned char> data;
@@ -134,21 +154,34 @@ void OSExchangeDataProviderAuraX11::SetURL(const GURL& url,
 
     format_map_.Insert(atom_cache_.GetAtom(kMimeTypeMozillaURL), mem);
 
+    // Set _NETSCAPE_URL as well, since some file managers like Nautilus use it
+    // to create a link to the URL. Setting text/uri-list doesn't work as well,
+    // because Nautilus tries to fetch the contents of the URL instead.
+    // Format is UTF8: URL + "\n" + title.
+    std::string netscape_url = url.spec();
+    netscape_url += "\n";
+    netscape_url += base::UTF16ToUTF8(title);
+    format_map_.Insert(atom_cache_.GetAtom(kNetscapeURL),
+                       scoped_refptr<base::RefCountedMemory>(
+                           base::RefCountedString::TakeString(&netscape_url)));
+
+    // And finally a string fallback as well.
     SetString(spec);
   }
 }
 
 void OSExchangeDataProviderAuraX11::SetFilename(const base::FilePath& path) {
-  std::vector<OSExchangeData::FileInfo> data;
-  data.push_back(OSExchangeData::FileInfo(path, base::FilePath()));
+  std::vector<FileInfo> data;
+  data.push_back(FileInfo(path, base::FilePath()));
   SetFilenames(data);
 }
 
 void OSExchangeDataProviderAuraX11::SetFilenames(
-    const std::vector<OSExchangeData::FileInfo>& filenames) {
+    const std::vector<FileInfo>& filenames) {
   std::vector<std::string> paths;
-  for (std::vector<OSExchangeData::FileInfo>::const_iterator it =
-           filenames.begin(); it != filenames.end(); ++it) {
+  for (std::vector<FileInfo>::const_iterator it = filenames.begin();
+       it != filenames.end();
+       ++it) {
     std::string url_spec = net::FilePathToFileURL(it->path).spec();
     if (!url_spec.empty())
       paths.push_back(url_spec);
@@ -246,7 +279,7 @@ bool OSExchangeDataProviderAuraX11::GetURLAndTitle(
 }
 
 bool OSExchangeDataProviderAuraX11::GetFilename(base::FilePath* path) const {
-  std::vector<OSExchangeData::FileInfo> filenames;
+  std::vector<FileInfo> filenames;
   if (GetFilenames(&filenames)) {
     *path = filenames.front().path;
     return true;
@@ -256,7 +289,7 @@ bool OSExchangeDataProviderAuraX11::GetFilename(base::FilePath* path) const {
 }
 
 bool OSExchangeDataProviderAuraX11::GetFilenames(
-    std::vector<OSExchangeData::FileInfo>* filenames) const {
+    std::vector<FileInfo>* filenames) const {
   std::vector< ::Atom> url_atoms = ui::GetURIListAtomsFrom(&atom_cache_);
   std::vector< ::Atom> requested_types;
   ui::GetAtomIntersection(url_atoms, GetTargets(), &requested_types);
@@ -270,8 +303,7 @@ bool OSExchangeDataProviderAuraX11::GetFilenames(
       GURL url(*it);
       base::FilePath file_path;
       if (url.SchemeIsFile() && net::FileURLToFilePath(url, &file_path)) {
-        filenames->push_back(OSExchangeData::FileInfo(file_path,
-                                                      base::FilePath()));
+        filenames->push_back(FileInfo(file_path, base::FilePath()));
       }
     }
   }
@@ -371,6 +403,40 @@ bool OSExchangeDataProviderAuraX11::HasCustomFormat(
   ui::GetAtomIntersection(url_atoms, GetTargets(), &requested_types);
 
   return !requested_types.empty();
+}
+
+void OSExchangeDataProviderAuraX11::SetFileContents(
+    const base::FilePath& filename,
+    const std::string& file_contents) {
+  DCHECK(!filename.empty());
+
+  file_contents_name_ = filename;
+
+  // Direct save handling is a complicated juggling affair between this class,
+  // SelectionFormat, and DesktopDragDropClientAuraX11. The general idea behind
+  // the protocol is this:
+  // - The source window sets its XdndDirectSave0 window property to the
+  //   proposed filename.
+  // - When a target window receives the drop, it updates the XdndDirectSave0
+  //   property on the source window to the filename it would like the contents
+  //   to be saved to and then requests the XdndDirectSave0 type from the
+  //   source.
+  // - The source is supposed to copy the file here and return success (S),
+  //   failure (F), or error (E).
+  // - In this case, failure means the destination should try to populate the
+  //   file itself by copying the data from application/octet-stream. To make
+  //   things simpler for Chrome, we always 'fail' and let the destination do
+  //   the work.
+  std::string failure("F");
+  format_map_.Insert(
+      atom_cache_.GetAtom("XdndDirectSave0"),
+                          scoped_refptr<base::RefCountedMemory>(
+                              base::RefCountedString::TakeString(&failure)));
+  std::string file_contents_copy = file_contents;
+  format_map_.Insert(
+      atom_cache_.GetAtom("application/octet-stream"),
+      scoped_refptr<base::RefCountedMemory>(
+          base::RefCountedString::TakeString(&file_contents_copy)));
 }
 
 void OSExchangeDataProviderAuraX11::SetHtml(const base::string16& html,

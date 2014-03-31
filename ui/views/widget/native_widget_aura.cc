@@ -7,13 +7,10 @@
 #include "base/bind.h"
 #include "base/strings/string_util.h"
 #include "third_party/skia/include/core/SkRegion.h"
-#include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
-#include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/client/window_move_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
@@ -30,7 +27,6 @@
 #include "ui/views/drag_utils.h"
 #include "ui/views/ime/input_method_bridge.h"
 #include "ui/views/views_delegate.h"
-#include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #include "ui/views/widget/drop_helper.h"
 #include "ui/views/widget/native_widget_delegate.h"
 #include "ui/views/widget/root_view.h"
@@ -39,6 +35,9 @@
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/window_reorderer.h"
 #include "ui/wm/core/window_util.h"
+#include "ui/wm/public/activation_client.h"
+#include "ui/wm/public/drag_drop_client.h"
+#include "ui/wm/public/window_move_client.h"
 #include "ui/wm/public/window_types.h"
 
 #if defined(OS_WIN)
@@ -53,6 +52,7 @@
 #endif
 
 #if !defined(OS_CHROMEOS)
+#include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host.h"
 #endif
 
@@ -809,10 +809,6 @@ bool NativeWidgetAura::HasHitTestMask() const {
 void NativeWidgetAura::GetHitTestMask(gfx::Path* mask) const {
   DCHECK(mask);
   delegate_->GetHitTestMask(mask);
-}
-
-void NativeWidgetAura::DidRecreateLayer(ui::Layer *old_layer,
-                                        ui::Layer *new_layer) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////

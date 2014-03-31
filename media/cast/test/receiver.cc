@@ -83,7 +83,7 @@ void GetSsrcs(AudioReceiverConfig* audio_config) {
 
   test::InputBuilder input_rx(
       "Choose audio receiver SSRC.", DEFAULT_AUDIO_INCOMING_SSRC, 1, INT_MAX);
-  audio_config->incoming_ssrc = input_tx.GetIntInput();
+  audio_config->incoming_ssrc = input_rx.GetIntInput();
 }
 
 void GetSsrcs(VideoReceiverConfig* video_config) {
@@ -190,12 +190,8 @@ int main(int argc, char** argv) {
   CommandLine::Init(argc, argv);
   InitLogging(logging::LoggingSettings());
 
-  // Enable raw event logging only.
-  media::cast::CastLoggingConfig logging_config;
-  logging_config.enable_raw_data_collection = true;
-
   scoped_refptr<media::cast::CastEnvironment> cast_environment(
-      new media::cast::StandaloneCastEnvironment(logging_config));
+      new media::cast::StandaloneCastEnvironment);
 
   media::cast::AudioReceiverConfig audio_config =
       media::cast::GetAudioReceiverConfig();

@@ -12,7 +12,12 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/local_discovery/privet_http.h"
+#include "components/cloud_devices/cloud_device_description.h"
 #include "printing/pdf_render_settings.h"
+
+namespace printing {
+struct PwgRasterSettings;
+};
 
 namespace local_discovery {
 
@@ -93,7 +98,6 @@ class PrivetRegisterOperationImpl
 
   void StartInfoOperation();
   void OnPrivetInfoDone(const base::DictionaryValue* value);
-
 
   void StartResponse(const base::DictionaryValue& value);
   void GetClaimTokenResponse(const base::DictionaryValue& value);
@@ -204,6 +208,8 @@ class PrivetLocalPrintOperationImpl
 
   virtual void SetData(base::RefCountedBytes* data) OVERRIDE;
 
+  virtual void SetCapabilities(const std::string& capabilities) OVERRIDE;
+
   virtual void SetTicket(const std::string& ticket) OVERRIDE;
 
   virtual void SetUsername(const std::string& user) OVERRIDE;
@@ -233,7 +239,6 @@ class PrivetLocalPrintOperationImpl
       ResponseCallback;
 
   void StartInitialRequest();
-  void GetCapabilities();
   void DoCreatejob();
   void DoSubmitdoc();
 
@@ -241,25 +246,25 @@ class PrivetLocalPrintOperationImpl
   void StartPrinting();
 
   void OnPrivetInfoDone(const base::DictionaryValue* value);
-  void OnCapabilitiesResponse(bool has_error,
-                              const base::DictionaryValue* value);
   void OnSubmitdocResponse(bool has_error,
                            const base::DictionaryValue* value);
   void OnCreatejobResponse(bool has_error,
                            const base::DictionaryValue* value);
   void OnPWGRasterConverted(bool success, const base::FilePath& pwg_file_path);
+  void FillPwgRasterSettings(printing::PwgRasterSettings* transfrom_settings);
 
   PrivetHTTPClientImpl* privet_client_;
   PrivetLocalPrintOperation::Delegate* delegate_;
 
   ResponseCallback current_response_;
 
-  std::string ticket_;
+  cloud_devices::CloudDeviceDescription ticket_;
+  cloud_devices::CloudDeviceDescription capabilities_;
+
   scoped_refptr<base::RefCountedBytes> data_;
   base::FilePath pwg_file_path_;
 
   bool use_pdf_;
-  bool has_capabilities_;
   bool has_extended_workflow_;
   bool started_;
   bool offline_;

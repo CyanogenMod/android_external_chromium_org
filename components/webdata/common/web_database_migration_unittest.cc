@@ -26,7 +26,7 @@
 #include "components/autofill/core/browser/webdata/autofill_change.h"
 #include "components/autofill/core/browser/webdata/autofill_entry.h"
 #include "components/autofill/core/browser/webdata/autofill_table.h"
-#include "components/signin/core/webdata/token_service_table.h"
+#include "components/signin/core/browser/webdata/token_service_table.h"
 #include "components/webdata/common/web_database.h"
 #include "sql/statement.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -289,6 +289,40 @@ TEST_F(WebDatabaseMigrationTest, MigrateEmptyToCurrent) {
     EXPECT_TRUE(connection.DoesTableExist("web_apps"));
     EXPECT_TRUE(connection.DoesTableExist("web_intents"));
     EXPECT_TRUE(connection.DoesTableExist("web_intents_defaults"));
+  }
+}
+
+// Tests that absent Autofill tables do not create any problems when migrating
+// from a DB written by the earliest publicly released version of Chrome.
+TEST_F(WebDatabaseMigrationTest, MigrateVersion20ToCurrent) {
+  ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_20.sql")));
+
+  // Verify pre-conditions.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+
+    EXPECT_FALSE(connection.DoesTableExist("autofill"));
+    EXPECT_FALSE(connection.DoesTableExist("autofill_profiles"));
+    EXPECT_FALSE(connection.DoesTableExist("credit_cards"));
+  }
+
+  DoMigration();
+
+  // Verify post-conditions.  These are expectations for current version of the
+  // database.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+
+    // Check version.
+    EXPECT_EQ(kCurrentTestedVersionNumber, VersionFromConnection(&connection));
+
+    // Mostly this test just verifies that no SQL errors occur during migration;
+    // but might as well verify that the tables were created as well.
+    EXPECT_TRUE(connection.DoesTableExist("autofill"));
+    EXPECT_TRUE(connection.DoesTableExist("autofill_profiles"));
+    EXPECT_TRUE(connection.DoesTableExist("credit_cards"));
   }
 }
 

@@ -8,13 +8,13 @@
 #include "chrome/browser/signin/account_reconcilor.h"
 #include "chrome/browser/signin/account_reconcilor_factory.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
-#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/fake_signin_manager.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/signin/core/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/url_request/test_url_fetcher_factory.h"
@@ -104,7 +104,7 @@ AccountReconcilorTest::AccountReconcilorTest()
 void AccountReconcilorTest::SetUp() {
   TestingProfile::Builder builder;
   builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                            FakeProfileOAuth2TokenServiceWrapper::Build);
+                            BuildFakeProfileOAuth2TokenService);
   builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
                             FakeSigninManagerBase::Build);
   builder.AddTestingFactory(AccountReconcilorFactory::GetInstance(),

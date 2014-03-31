@@ -31,6 +31,8 @@
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/utility/utility_thread.h"
+#include "courgette/courgette.h"
+#include "courgette/third_party/bsdiff.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
 #include "media/base/media.h"
@@ -371,6 +373,10 @@ bool ChromeContentUtilityClient::OnMessageReceived(
                         OnGetPrinterCapsAndDefaults)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_GetPrinterSemanticCapsAndDefaults,
                         OnGetPrinterSemanticCapsAndDefaults)
+    IPC_MESSAGE_HANDLER(ChromeUtilityMsg_PatchFileBsdiff,
+                        OnPatchFileBsdiff)
+    IPC_MESSAGE_HANDLER(ChromeUtilityMsg_PatchFileCourgette,
+                        OnPatchFileCourgette)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_StartupPing, OnStartupPing)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_AnalyzeZipFileForDownloadProtection,
                         OnAnalyzeZipFileForDownloadProtection)
@@ -581,12 +587,13 @@ void ChromeContentUtilityClient::OnRenderPDFPagesToMetafile(
 void ChromeContentUtilityClient::OnRenderPDFPagesToPWGRaster(
     IPC::PlatformFileForTransit pdf_transit,
     const printing::PdfRenderSettings& settings,
+    const printing::PwgRasterSettings& bitmap_settings,
     IPC::PlatformFileForTransit bitmap_transit) {
   base::PlatformFile pdf =
       IPC::PlatformFileForTransitToPlatformFile(pdf_transit);
   base::PlatformFile bitmap =
       IPC::PlatformFileForTransitToPlatformFile(bitmap_transit);
-  if (RenderPDFPagesToPWGRaster(pdf, settings, bitmap)) {
+  if (RenderPDFPagesToPWGRaster(pdf, settings, bitmap_settings, bitmap)) {
     Send(new ChromeUtilityHostMsg_RenderPDFPagesToPWGRaster_Succeeded());
   } else {
     Send(new ChromeUtilityHostMsg_RenderPDFPagesToPWGRaster_Failed());
@@ -674,6 +681,7 @@ bool ChromeContentUtilityClient::RenderPDFToWinMetafile(
 bool ChromeContentUtilityClient::RenderPDFPagesToPWGRaster(
     base::PlatformFile pdf_file,
     const printing::PdfRenderSettings& settings,
+    const printing::PwgRasterSettings& bitmap_settings,
     base::PlatformFile bitmap_file) {
   bool autoupdate = true;
   if (!g_pdf_lib.Get().IsValid())
@@ -706,10 +714,21 @@ bool ChromeContentUtilityClient::RenderPDFPagesToPWGRaster(
   cloud_print::BitmapImage image(settings.area().size(),
                                  cloud_print::BitmapImage::BGRA);
   for (int i = 0; i < total_page_count; ++i) {
-    if (!g_pdf_lib.Get().RenderPDFPageToBitmap(
-             data.data(), data.size(), i, image.pixel_data(),
-             image.size().width(), image.size().height(), settings.dpi(),
-             settings.dpi(), autoupdate)) {
+    int page_number = i;
+
+    if (bitmap_settings.reverse_page_order) {
+      page_number = total_page_count - 1 - page_number;
+    }
+
+    if (!g_pdf_lib.Get().RenderPDFPageToBitmap(data.data(),
+                                               data.size(),
+                                               page_number,
+                                               image.pixel_data(),
+                                               image.size().width(),
+                                               image.size().height(),
+                                               settings.dpi(),
+                                               settings.dpi(),
+                                               autoupdate)) {
       return false;
     }
     std::string pwg_page;
@@ -797,6 +816,43 @@ void ChromeContentUtilityClient::OnGetPrinterSemanticCapsAndDefaults(
   {
     Send(new ChromeUtilityHostMsg_GetPrinterSemanticCapsAndDefaults_Failed(
         printer_name));
+  }
+  ReleaseProcessIfNeeded();
+}
+
+void ChromeContentUtilityClient::OnPatchFileBsdiff(
+    const base::FilePath& input_file,
+    const base::FilePath& patch_file,
+    const base::FilePath& output_file) {
+  if (input_file.empty() || patch_file.empty() || output_file.empty()) {
+    Send(new ChromeUtilityHostMsg_PatchFile_Failed(-1));
+  } else {
+    const int patch_status = courgette::ApplyBinaryPatch(input_file,
+                                                         patch_file,
+                                                         output_file);
+    if (patch_status != courgette::OK)
+      Send(new ChromeUtilityHostMsg_PatchFile_Failed(patch_status));
+    else
+      Send(new ChromeUtilityHostMsg_PatchFile_Succeeded());
+  }
+  ReleaseProcessIfNeeded();
+}
+
+void ChromeContentUtilityClient::OnPatchFileCourgette(
+    const base::FilePath& input_file,
+    const base::FilePath& patch_file,
+    const base::FilePath& output_file) {
+  if (input_file.empty() || patch_file.empty() || output_file.empty()) {
+    Send(new ChromeUtilityHostMsg_PatchFile_Failed(-1));
+  } else {
+    const int patch_status = courgette::ApplyEnsemblePatch(
+        input_file.value().c_str(),
+        patch_file.value().c_str(),
+        output_file.value().c_str());
+    if (patch_status != courgette::C_OK)
+      Send(new ChromeUtilityHostMsg_PatchFile_Failed(patch_status));
+    else
+      Send(new ChromeUtilityHostMsg_PatchFile_Succeeded());
   }
   ReleaseProcessIfNeeded();
 }

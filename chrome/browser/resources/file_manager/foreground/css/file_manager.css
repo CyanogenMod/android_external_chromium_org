@@ -353,11 +353,9 @@ div.splitter {
 }
 
 #navigation-list .root-item > div.root-eject {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/eject.png') 1x,
-    url('../images/files/ui/2x/eject.png') 2x);
-  background-position: center center;
-  background-repeat: no-repeat;
+  background: -webkit-image-set(
+      url('../images/files/ui/eject.png') 1x,
+      url('../images/files/ui/2x/eject.png') 2x) no-repeat center;
   cursor: pointer;
   height: 20px;
   margin-right: 6px;
@@ -368,7 +366,9 @@ div.splitter {
 }
 
 #navigation-list:focus .root-item[selected] > div.root-eject {
-  -webkit-filter: brightness(0) invert();
+  background: -webkit-image-set(
+      url('../images/files/ui/eject_white.png') 1x,
+      url('../images/files/ui/2x/eject_white.png') 2x) no-repeat center;
   opacity: 1;
 }
 
@@ -1633,15 +1633,15 @@ list.autocomplete-suggestions > li > div.detail-text em {
 
 list.autocomplete-suggestions > li > div[search-icon] {
   background: -webkit-image-set(
-    url('../images/files/ui/search_icon_active.png') 1x,
-    url('../images/files/ui/2x/search_icon_active.png') 2x);
-  background-position: center;
-  background-repeat: no-repeat;
+      url('../images/files/ui/search_icon_active.png') 1x,
+      url('../images/files/ui/2x/search_icon_active.png') 2x) center no-repeat;
 }
 
 list.autocomplete-suggestions > li[selected] > div[search-icon],
 list.autocomplete-suggestions > li[lead] > div[search-icon] {
-  -webkit-filter: brightness(0) invert();
+  background: -webkit-image-set(
+      url('../images/files/ui/search_icon_white.png') 1x,
+      url('../images/files/ui/2x/search_icon_white.png') 2x) center no-repeat;
 }
 
 list.autocomplete-suggestions > [selected],
@@ -1696,7 +1696,7 @@ menuitem#thumbnail-view[lead]:not([disabled]) {
   height: 48px;
   left: 64px;
   position: absolute;
-  right: 92px;
+  right: 134px;
   top: 0;
   width: auto;
   z-index: 101;

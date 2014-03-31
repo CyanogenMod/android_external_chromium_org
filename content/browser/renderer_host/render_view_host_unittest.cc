@@ -116,13 +116,6 @@ class MockDraggingRenderViewHostDelegateView
     : public RenderViewHostDelegateView {
  public:
   virtual ~MockDraggingRenderViewHostDelegateView() {}
-  virtual void ShowPopupMenu(const gfx::Rect& bounds,
-                             int item_height,
-                             double item_font_size,
-                             int selected_item,
-                             const std::vector<MenuItem>& items,
-                             bool right_aligned,
-                             bool allow_multiple_selection) OVERRIDE {}
   virtual void StartDragging(const DropData& drop_data,
                              blink::WebDragOperationsMask allowed_ops,
                              const gfx::ImageSkia& image,
@@ -197,8 +190,8 @@ TEST_F(RenderViewHostTest, DragEnteredFileURLsStillBlocked) {
   GURL dragged_file_url = net::FilePathToFileURL(dragged_file_path);
   GURL sensitive_file_url = net::FilePathToFileURL(sensitive_file_path);
   dropped_data.url = highlighted_file_url;
-  dropped_data.filenames.push_back(DropData::FileInfo(
-      base::UTF8ToUTF16(dragged_file_path.AsUTF8Unsafe()), base::string16()));
+  dropped_data.filenames.push_back(
+      ui::FileInfo(dragged_file_path, base::FilePath()));
 
   rvh()->DragTargetDragEnter(dropped_data, client_point, screen_point,
                               blink::WebDragOperationNone, 0);

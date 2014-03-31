@@ -8,13 +8,13 @@
 #include "mojo/examples/sample_app/gles2_client_impl.h"
 #include "mojo/public/bindings/allocation_scope.h"
 #include "mojo/public/bindings/remote_ptr.h"
-#include "mojo/public/environment/environment.h"
+#include "mojo/public/cpp/environment/environment.h"
+#include "mojo/public/cpp/system/core.h"
+#include "mojo/public/cpp/system/macros.h"
+#include "mojo/public/cpp/utility/run_loop.h"
 #include "mojo/public/gles2/gles2_cpp.h"
 #include "mojo/public/shell/application.h"
 #include "mojo/public/shell/shell.mojom.h"
-#include "mojo/public/system/core.h"
-#include "mojo/public/system/macros.h"
-#include "mojo/public/utility/run_loop.h"
 #include "mojo/services/native_viewport/native_viewport.mojom.h"
 
 #if defined(WIN32)

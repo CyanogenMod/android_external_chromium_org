@@ -402,7 +402,7 @@ void MediaStreamDependencyFactory::CreatePeerConnectionFactory() {
   signaling_thread_ = jingle_glue::JingleThreadWrapper::current();
   CHECK(signaling_thread_);
 
-  chrome_worker_thread_.Start();
+  CHECK(chrome_worker_thread_.Start());
 
   base::WaitableEvent start_worker_event(true, false);
   chrome_worker_thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
@@ -725,7 +725,7 @@ void MediaStreamDependencyFactory::AddNativeTrackToBlinkTrack(
 
   if (track.source().type() == blink::WebMediaStreamSource::TypeVideo) {
     DVLOG(1) << "AddNativeTrackToBlinkTrack() video";
-    track.setExtraData(new MediaStreamVideoTrack(
+    track.setExtraData(new WebRtcMediaStreamVideoTrack(
         static_cast<webrtc::VideoTrackInterface*>(native_track)));
   } else {
     DVLOG(1) << "AddNativeTrackToBlinkTrack() audio";

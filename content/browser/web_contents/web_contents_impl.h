@@ -304,8 +304,10 @@ class CONTENT_EXPORT WebContentsImpl
                                  const IPC::Message& message) OVERRIDE;
   virtual void RenderFrameCreated(RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void RenderFrameDeleted(RenderFrameHost* render_frame_host) OVERRIDE;
-  virtual void DidStartLoading(RenderFrameHost* render_frame_host) OVERRIDE;
+  virtual void DidStartLoading(RenderFrameHost* render_frame_host,
+                               bool to_different_document) OVERRIDE;
   virtual void DidStopLoading(RenderFrameHost* render_frame_host) OVERRIDE;
+  virtual void SwappedOut(RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void WorkerCrashed(RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void ShowContextMenu(RenderFrameHost* render_frame_host,
                                const ContextMenuParams& params) OVERRIDE;
@@ -340,7 +342,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void UpdateTargetURL(int32 page_id, const GURL& url) OVERRIDE;
   virtual void Close(RenderViewHost* render_view_host) OVERRIDE;
   virtual void RequestMove(const gfx::Rect& new_bounds) OVERRIDE;
-  virtual void SwappedOut(RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidCancelLoading() OVERRIDE;
   virtual void DidChangeLoadProgress(double progress) OVERRIDE;
   virtual void DidDisownOpener(RenderViewHost* rvh) OVERRIDE;
@@ -432,7 +433,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void DidStartProvisionalLoad(
       RenderFrameHostImpl* render_frame_host,
       int parent_routing_id,
-      bool is_main_frame,
       const GURL& validated_url,
       bool is_error_page,
       bool is_iframe_srcdoc) OVERRIDE;
@@ -443,7 +443,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void DidFailLoadWithError(
       RenderFrameHostImpl* render_frame_host,
       const GURL& url,
-      bool is_main_frame,
       int error_code,
       const base::string16& error_description) OVERRIDE;
   virtual void DidRedirectProvisionalLoad(
@@ -487,6 +486,8 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool HandleWheelEvent(
       const blink::WebMouseWheelEvent& event) OVERRIDE;
   virtual bool PreHandleGestureEvent(
+      const blink::WebGestureEvent& event) OVERRIDE;
+  virtual bool HandleGestureEvent(
       const blink::WebGestureEvent& event) OVERRIDE;
   virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) OVERRIDE;
 #if defined(OS_WIN)
@@ -591,6 +592,7 @@ class CONTENT_EXPORT WebContentsImpl
   // (but can be null if not applicable).
   virtual void SetIsLoading(RenderViewHost* render_view_host,
                             bool is_loading,
+                            bool to_different_document,
                             LoadNotificationDetails* details) OVERRIDE;
 
   typedef base::Callback<void(WebContents*)> CreatedCallback;
@@ -666,8 +668,7 @@ class CONTENT_EXPORT WebContentsImpl
   void OnDidRunInsecureContent(const std::string& security_origin,
                                const GURL& target_url);
   void OnDocumentLoadedInFrame();
-  void OnDidFinishLoad(const GURL& url,
-                       bool is_main_frame);
+  void OnDidFinishLoad(const GURL& url);
   void OnGoToEntryAtOffset(int offset);
   void OnUpdateZoomLimits(int minimum_percent,
                           int maximum_percent,
@@ -986,6 +987,11 @@ class CONTENT_EXPORT WebContentsImpl
   // case we don't want saved settings to apply to it and we don't want to
   // remember it.
   bool temporary_zoom_settings_;
+
+  // The raw accumulated zoom value and the actual zoom increments made for an
+  // an in-progress pinch gesture.
+  float totalPinchGestureAmount_;
+  int currentPinchZoomStepDelta_;
 
   // The intrinsic size of the page.
   gfx::Size preferred_size_;

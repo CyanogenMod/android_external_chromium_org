@@ -1178,7 +1178,7 @@ class LayerTreeHostImplOverridePhysicalTime : public LayerTreeHostImpl {
                           manager,
                           0) {}
 
-  virtual base::TimeTicks CurrentPhysicalTimeTicks() const OVERRIDE {
+  virtual base::TimeTicks CurrentFrameTimeTicks() OVERRIDE {
     return fake_current_physical_time_;
   }
 
@@ -3162,6 +3162,42 @@ TEST_F(LayerTreeHostImplTest, OverscrollAlways) {
   EXPECT_EQ(gfx::Vector2dF(), host_impl_->current_fling_velocity());
 }
 
+TEST_F(LayerTreeHostImplTest, UnnecessaryGlowEffectCallsWhileScrollingUp) {
+  // Edge glow effect should be applicable only upon reaching Edges
+  // of the content. unnecessary glow effect calls shouldn't be
+  // called while scrolling up without reaching the edge of the content.
+  gfx::Size surface_size(100, 100);
+  gfx::Size content_size(200, 200);
+  scoped_ptr<LayerImpl> root_clip =
+      LayerImpl::Create(host_impl_->active_tree(), 3);
+  scoped_ptr<LayerImpl> root =
+      CreateScrollableLayer(1, content_size, root_clip.get());
+  root->SetIsContainerForFixedPositionLayers(true);
+  scoped_ptr<LayerImpl> child =
+      CreateScrollableLayer(2, content_size, root_clip.get());
+
+  child->SetScrollClipLayer(Layer::INVALID_ID);
+  root->AddChild(child.Pass());
+  root_clip->AddChild(root.Pass());
+
+  host_impl_->SetViewportSize(surface_size);
+  host_impl_->active_tree()->SetRootLayer(root_clip.Pass());
+  host_impl_->active_tree()->SetViewportLayersFromIds(3, 1, Layer::INVALID_ID);
+  host_impl_->active_tree()->DidBecomeActive();
+  DrawFrame();
+  {
+    EXPECT_EQ(InputHandler::ScrollStarted,
+              host_impl_->ScrollBegin(gfx::Point(0, 0), InputHandler::Wheel));
+    host_impl_->ScrollBy(gfx::Point(), gfx::Vector2dF(0, 100));
+    EXPECT_EQ(gfx::Vector2dF().ToString(),
+              host_impl_->accumulated_root_overscroll().ToString());
+    host_impl_->ScrollBy(gfx::Point(), gfx::Vector2dF(0, -2.30f));
+    EXPECT_EQ(gfx::Vector2dF().ToString(),
+              host_impl_->accumulated_root_overscroll().ToString());
+    host_impl_->ScrollEnd();
+  }
+}
+
 class BlendStateCheckLayer : public LayerImpl {
  public:
   static scoped_ptr<LayerImpl> Create(LayerTreeImpl* tree_impl,
@@ -3696,13 +3732,9 @@ TEST_F(LayerTreeHostImplViewportCoveredTest, ViewportCoveredOverhangBitmap) {
   host_impl_->SetViewportSize(DipSizeToPixelSize(viewport_size_));
   SetupActiveTreeLayers();
 
-  SkBitmap skbitmap;
-  skbitmap.setConfig(SkBitmap::kARGB_8888_Config, 2, 2);
-  skbitmap.allocPixels();
-  skbitmap.setImmutable();
-
   // Specify an overhang bitmap to use.
-  UIResourceBitmap ui_resource_bitmap(skbitmap);
+  bool is_opaque = false;
+  UIResourceBitmap ui_resource_bitmap(gfx::Size(2, 2), is_opaque);
   ui_resource_bitmap.SetWrapMode(UIResourceBitmap::REPEAT);
   UIResourceId ui_resource_id = 12345;
   host_impl_->CreateUIResource(ui_resource_id, ui_resource_bitmap);
@@ -5632,13 +5664,9 @@ TEST_F(LayerTreeHostImplTest, UIResourceManagement) {
 
   EXPECT_EQ(0u, context3d->NumTextures());
 
-  SkBitmap skbitmap;
-  skbitmap.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
-  skbitmap.allocPixels();
-  skbitmap.setImmutable();
-
   UIResourceId ui_resource_id = 1;
-  UIResourceBitmap bitmap(skbitmap);
+  bool is_opaque = false;
+  UIResourceBitmap bitmap(gfx::Size(1, 1), is_opaque);
   host_impl_->CreateUIResource(ui_resource_id, bitmap);
   EXPECT_EQ(1u, context3d->NumTextures());
   ResourceProvider::ResourceId id1 =

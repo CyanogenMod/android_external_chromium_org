@@ -30,7 +30,7 @@ class DocumentRenderer(object):
     '''
     START_REF = '$(ref:'
     END_REF = ')'
-    MAX_REF_LENGTH = 100
+    MAX_REF_LENGTH = 256
 
     new_document = []
 
@@ -52,7 +52,7 @@ class DocumentRenderer(object):
         new_document.append(document[cursor_index:end_ref_index + 1])
       else:
         ref = document[start_ref_index:end_ref_index]
-        ref_parts = ref[len(START_REF):].split(' ', 1)
+        ref_parts = ref[len(START_REF):].split(None, 1)
 
         # Guess the api name from the html name, replacing '_' with '.' (e.g.
         # if the page is app_window.html, guess the api name is app.window)

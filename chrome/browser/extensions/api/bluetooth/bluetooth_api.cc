@@ -10,7 +10,6 @@
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/extensions/api/bluetooth/bluetooth_api_utils.h"
 #include "chrome/browser/extensions/api/bluetooth/bluetooth_event_router.h"
-#include "chrome/browser/extensions/event_names.h"
 #include "chrome/common/extensions/api/bluetooth.h"
 #include "chrome/common/extensions/api/bluetooth/bluetooth_manifest_data.h"
 #include "content/public/browser/browser_thread.h"
@@ -247,7 +246,7 @@ bool BluetoothGetAdapterStateFunction::DoWork(
 
 bool BluetoothGetDevicesFunction::DoWork(
     scoped_refptr<BluetoothAdapter> adapter) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   base::ListValue* device_list = new base::ListValue;
   SetResult(device_list);
@@ -272,7 +271,7 @@ bool BluetoothGetDevicesFunction::DoWork(
 
 bool BluetoothGetDeviceFunction::DoWork(
     scoped_refptr<BluetoothAdapter> adapter) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   scoped_ptr<GetDevice::Params> params(GetDevice::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get() != NULL);
@@ -364,7 +363,7 @@ bool BluetoothReadFunction::Prepare() {
 }
 
 void BluetoothReadFunction::Work() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
 
   if (!socket_.get())
     return;
@@ -416,7 +415,7 @@ bool BluetoothWriteFunction::Prepare() {
 }
 
 void BluetoothWriteFunction::Work() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
 
   if (socket_.get() == NULL)
     return;

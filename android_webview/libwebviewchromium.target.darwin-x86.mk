@@ -189,6 +189,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,webkit_child_overscroller_jni_headers_gyp)/overscroller_jni_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_gpu_gyp)/content_content_gpu_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_utility_gyp)/content_content_utility_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,courgette_courgette_lib_gyp)/courgette_courgette_lib_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_lzma_sdk_lzma_sdk_gyp)/third_party_lzma_sdk_lzma_sdk_gyp.a \
 	$(call intermediates-dir-for,GYP,content_browser_devtools_devtools_resources_gyp)/devtools_resources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_generate_devtools_grd_gyp)/blink_generate_devtools_grd.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_generate_devtools_grd_gyp)/generate_devtools_grd.stamp \
@@ -322,6 +324,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -412,6 +415,7 @@ MY_DEFS_Release := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -610,6 +614,8 @@ LOCAL_STATIC_LIBRARIES := \
 	ui_native_theme_native_theme_gyp \
 	content_content_gpu_gyp \
 	content_content_utility_gyp \
+	courgette_courgette_lib_gyp \
+	third_party_lzma_sdk_lzma_sdk_gyp \
 	net_http_server_gyp \
 	ui_surface_surface_gyp \
 	printing_printing_gyp \

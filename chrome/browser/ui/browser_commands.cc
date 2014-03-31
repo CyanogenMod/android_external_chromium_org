@@ -769,6 +769,7 @@ void BookmarkAllTabs(Browser* browser) {
 
 bool CanBookmarkAllTabs(const Browser* browser) {
   return browser->tab_strip_model()->count() > 1 &&
+             !chrome::ShouldRemoveBookmarkOpenPagesUI(browser->profile()) &&
              CanBookmarkCurrentPageInternal(browser, false);
 }
 
@@ -1013,17 +1014,25 @@ void ToggleDevToolsWindow(Browser* browser, DevToolsToggleAction action) {
 }
 
 bool CanOpenTaskManager() {
+#if defined(ENABLE_TASK_MANAGER)
 #if defined(OS_WIN)
   // In metro we can't display the task manager, as it is a native window.
   return !win8::IsSingleWindowMetroMode();
 #else
   return true;
 #endif
+#else
+  return false;
+#endif
 }
 
 void OpenTaskManager(Browser* browser) {
+#if defined(ENABLE_TASK_MANAGER)
   content::RecordAction(UserMetricsAction("TaskManager"));
   chrome::ShowTaskManager(browser);
+#else
+  NOTREACHED();
+#endif
 }
 
 void OpenFeedbackDialog(Browser* browser) {
@@ -1042,13 +1051,19 @@ void ShowAppMenu(Browser* browser) {
 }
 
 void ShowAvatarMenu(Browser* browser) {
-  browser->window()->ShowAvatarBubbleFromAvatarButton();
+  browser->window()->ShowAvatarBubbleFromAvatarButton(
+      BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT);
 }
 
 void OpenUpdateChromeDialog(Browser* browser) {
   if (UpgradeDetector::GetInstance()->is_outdated_install()) {
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_OUTDATED_INSTALL,
+        content::NotificationService::AllSources(),
+        content::NotificationService::NoDetails());
+  } else if (UpgradeDetector::GetInstance()->is_outdated_install_no_au()) {
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_OUTDATED_INSTALL_NO_AU,
         content::NotificationService::AllSources(),
         content::NotificationService::NoDetails());
   } else {

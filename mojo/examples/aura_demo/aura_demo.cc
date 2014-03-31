@@ -11,11 +11,10 @@
 #include "mojo/examples/aura_demo/demo_screen.h"
 #include "mojo/examples/aura_demo/window_tree_host_mojo.h"
 #include "mojo/public/bindings/allocation_scope.h"
+#include "mojo/public/cpp/system/core.h"
 #include "mojo/public/gles2/gles2_cpp.h"
 #include "mojo/public/shell/application.h"
 #include "mojo/public/shell/shell.mojom.h"
-#include "mojo/public/system/core.h"
-#include "mojo/public/system/macros.h"
 #include "mojo/services/native_viewport/native_viewport.mojom.h"
 #include "ui/aura/client/default_capture_client.h"
 #include "ui/aura/client/window_tree_client.h"
@@ -76,8 +75,6 @@ class DemoWindowDelegate : public aura::WindowDelegate {
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE {}
   virtual bool HasHitTestMask() const OVERRIDE { return false; }
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {}
-  virtual void DidRecreateLayer(ui::Layer* old_layer,
-                                ui::Layer* new_layer) OVERRIDE {}
 
  private:
   SkColor color_;

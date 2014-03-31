@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -245,15 +245,13 @@ bool ExtensionProcessResourceProvider::
     IsHandledByThisProvider(content::RenderViewHost* render_view_host) {
   WebContents* web_contents = WebContents::FromRenderViewHost(render_view_host);
   // Don't add WebContents that belong to a guest (those are handled by
-  // GuestResourceProvider). Otherwise they will be added twice, and
-  // in this case they will have the app's name as a title (due to the
-  // ExtensionProcessResource constructor).
+  // GuestInformation). Otherwise they will be added twice.
   if (web_contents->GetRenderProcessHost()->IsGuest())
     return false;
   extensions::ViewType view_type = extensions::GetViewType(web_contents);
   // Don't add tab contents (those are handled by TabContentsResourceProvider)
-  // or background contents (handled by BackgroundResourceProvider) or panels
-  // (handled by PanelResourceProvider)
+  // or background contents (handled by BackgroundInformation) or panels
+  // (handled by PanelInformation)
   return (view_type != extensions::VIEW_TYPE_TAB_CONTENTS &&
           view_type != extensions::VIEW_TYPE_BACKGROUND_CONTENTS &&
           view_type != extensions::VIEW_TYPE_PANEL);

@@ -12,12 +12,25 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES :=
 
-GYP_GENERATED_OUTPUTS :=
+### Rules for action "convert_assembler":
+$(gyp_intermediate_dir)/celt_pitch_xcorr_arm_gnu.S: gyp_local_path := $(LOCAL_PATH)
+$(gyp_intermediate_dir)/celt_pitch_xcorr_arm_gnu.S: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_intermediate_dir)/celt_pitch_xcorr_arm_gnu.S: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_intermediate_dir)/celt_pitch_xcorr_arm_gnu.S: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_intermediate_dir)/celt_pitch_xcorr_arm_gnu.S: $(LOCAL_PATH)/third_party/opus/src/celt/arm/arm2gnu.pl $(LOCAL_PATH)/third_party/opus/src/celt/arm/celt_pitch_xcorr_arm.s $(GYP_TARGET_DEPENDENCIES)
+	@echo "Gyp action: Convert Opus assembler for ARM. ($@)"
+	$(hide)cd $(gyp_local_path)/third_party/opus; mkdir -p $(gyp_intermediate_dir); bash -c "perl src/celt/arm/arm2gnu.pl src/celt/arm/celt_pitch_xcorr_arm.s | sed \"s/OPUS_ARM_MAY_HAVE_[A-Z]*/1/g\" | sed \"/.include/d\" > $(gyp_intermediate_dir)/celt_pitch_xcorr_arm_gnu.S"
+
+
+
+GYP_GENERATED_OUTPUTS := \
+	$(gyp_intermediate_dir)/celt_pitch_xcorr_arm_gnu.S
 
 # Make sure our deps and generated files are built first.
 LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTPUTS)
 
-LOCAL_GENERATED_SOURCES :=
+LOCAL_GENERATED_SOURCES := \
+	$(gyp_intermediate_dir)/celt_pitch_xcorr_arm_gnu.S
 
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
@@ -150,7 +163,9 @@ LOCAL_SRC_FILES := \
 	third_party/opus/src/src/opus_multistream.c \
 	third_party/opus/src/src/opus_multistream_decoder.c \
 	third_party/opus/src/src/opus_multistream_encoder.c \
-	third_party/opus/src/src/repacketizer.c
+	third_party/opus/src/src/repacketizer.c \
+	third_party/opus/src/celt/arm/arm_celt_map.c \
+	third_party/opus/src/celt/arm/armcpu.c
 
 
 # Flags passed to both C and C++ files.
@@ -213,7 +228,15 @@ MY_DEFS_Debug := \
 	'-DHAVE_LRINTF' \
 	'-DVAR_ARRAYS' \
 	'-DFIXED_POINT' \
+	'-DOPUS_ARM_ASM' \
+	'-DOPUS_ARM_INLINE_ASM' \
+	'-DOPUS_ARM_INLINE_EDSP' \
+	'-DOPUS_ARM_MAY_HAVE_EDSP' \
+	'-DOPUS_ARM_MAY_HAVE_MEDIA' \
+	'-DOPUS_ARM_MAY_HAVE_NEON' \
+	'-DOPUS_HAVE_RTCD' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -307,7 +330,15 @@ MY_DEFS_Release := \
 	'-DHAVE_LRINTF' \
 	'-DVAR_ARRAYS' \
 	'-DFIXED_POINT' \
+	'-DOPUS_ARM_ASM' \
+	'-DOPUS_ARM_INLINE_ASM' \
+	'-DOPUS_ARM_INLINE_EDSP' \
+	'-DOPUS_ARM_MAY_HAVE_EDSP' \
+	'-DOPUS_ARM_MAY_HAVE_MEDIA' \
+	'-DOPUS_ARM_MAY_HAVE_NEON' \
+	'-DOPUS_HAVE_RTCD' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \

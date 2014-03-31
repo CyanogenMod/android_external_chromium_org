@@ -116,6 +116,12 @@
         'dbus/fake_bluetooth_agent_service_provider.h',
         'dbus/fake_bluetooth_device_client.cc',
         'dbus/fake_bluetooth_device_client.h',
+        'dbus/fake_bluetooth_gatt_characteristic_client.cc',
+        'dbus/fake_bluetooth_gatt_characteristic_client.h',
+        'dbus/fake_bluetooth_gatt_descriptor_client.cc',
+        'dbus/fake_bluetooth_gatt_descriptor_client.h',
+        'dbus/fake_bluetooth_gatt_service_client.cc',
+        'dbus/fake_bluetooth_gatt_service_client.h',
         'dbus/fake_bluetooth_input_client.cc',
         'dbus/fake_bluetooth_input_client.h',
         'dbus/fake_bluetooth_profile_manager_client.cc',
@@ -553,5 +559,19 @@
       },
       'includes': ['../build/protoc.gypi'],
     },
+    {
+      # Protobuf compiler/generator for cryptohome key signing protocol buffer.
+      'target_name': 'cryptohome_signkey_proto',
+      'type': 'static_library',
+      'sources': [
+        '../third_party/cros_system_api/dbus/cryptohome/signed_secret.proto',
+      ],
+      'variables': {
+        'proto_in_dir': '../third_party/cros_system_api/dbus/cryptohome',
+        'proto_out_dir': 'chromeos/cryptohome',
+      },
+      'includes': ['../build/protoc.gypi'],
+    },
+
   ],
 }

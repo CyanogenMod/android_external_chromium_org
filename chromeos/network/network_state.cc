@@ -85,11 +85,10 @@ bool NetworkState::PropertyChanged(const std::string& key,
   } else if (key == shill::kErrorProperty) {
     if (!GetStringValue(key, value, &error_))
       return false;
-    // Shill uses "Unknown" to indicate an unset error state.
-    if (error_ == kErrorUnknown)
-      error_.clear();
-    if (!error_.empty())
+    if (ErrorIsValid(error_))
       last_error_ = error_;
+    else
+      error_.clear();
     return true;
   } else if (key == IPConfigProperty(shill::kAddressProperty)) {
     return GetStringValue(key, value, &ip_address_);
@@ -158,7 +157,13 @@ bool NetworkState::PropertyChanged(const std::string& key,
 bool NetworkState::InitialPropertiesReceived(
     const base::DictionaryValue& properties) {
   NET_LOG_DEBUG("InitialPropertiesReceived", path());
-  bool changed = UpdateName(properties);
+  bool changed = false;
+  if (!properties.HasKey(shill::kTypeProperty)) {
+    NET_LOG_ERROR("NetworkState has no type",
+                  shill_property_util::GetNetworkIdFromProperties(properties));
+  } else {
+    changed |= UpdateName(properties);
+  }
   bool had_ca_cert_nss = has_ca_cert_nss_;
   has_ca_cert_nss_ = IsCaCertNssSet(properties);
   changed |= had_ca_cert_nss != has_ca_cert_nss_;
@@ -275,6 +280,12 @@ bool NetworkState::StateIsConnecting(const std::string& connection_state) {
   return (connection_state == shill::kStateAssociation ||
           connection_state == shill::kStateConfiguration ||
           connection_state == shill::kStateCarrier);
+}
+
+// static
+bool NetworkState::ErrorIsValid(const std::string& error) {
+  // Shill uses "Unknown" to indicate an unset or cleared error state.
+  return !error.empty() && error != kErrorUnknown;
 }
 
 // static

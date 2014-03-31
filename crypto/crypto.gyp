@@ -54,17 +54,6 @@
           ],
         }],
         [ 'OS == "android"', {
-            'dependencies': [
-              '../third_party/openssl/openssl.gyp:openssl',
-            ],
-            'sources/': [
-              ['exclude', 'ec_private_key_nss\.cc$'],
-              ['exclude', 'ec_signature_creator_nss\.cc$'],
-              ['exclude', 'encryptor_nss\.cc$'],
-              ['exclude', 'hmac_nss\.cc$'],
-              ['exclude', 'signature_verifier_nss\.cc$'],
-              ['exclude', 'symmetric_key_nss\.cc$'],
-            ],
             'includes': [
               '../build/android/cpufeatures.gypi',
             ],
@@ -91,7 +80,7 @@
             'mac_security_services_lock.h',
           ],
         }],
-        [ 'OS == "mac" or OS == "ios" or OS == "win"', {
+        [ 'use_openssl == 0 and (OS == "mac" or OS == "ios" or OS == "win")', {
           'dependencies': [
             '../third_party/nss/nss.gyp:nspr',
             '../third_party/nss/nss.gyp:nss',
@@ -112,6 +101,9 @@
           'msvs_disabled_warnings': [4267, ],
         }],
         [ 'use_openssl==1', {
+            'dependencies': [
+              '../third_party/openssl/openssl.gyp:openssl',
+            ],
             # TODO(joth): Use a glob to match exclude patterns once the
             #             OpenSSL file set is complete.
             'sources!': [
@@ -130,6 +122,7 @@
               'third_party/nss/chromium-blapi.h',
               'third_party/nss/chromium-blapit.h',
               'third_party/nss/chromium-nss.h',
+              'third_party/nss/chromium-prtypes.h',
               'third_party/nss/chromium-sha256.h',
               'third_party/nss/pk11akey.cc',
               'third_party/nss/rsawrapr.c',
@@ -208,12 +201,7 @@
             'openpgp_symmetric_encryption_unittest.cc',
           ]
         }],
-        [ 'OS == "mac" or OS == "ios" or OS == "win"', {
-          'dependencies': [
-            '../third_party/nss/nss.gyp:nss',
-          ],
-        }],
-        [ 'OS == "mac"', {
+        [ 'use_openssl == 0 and (OS == "mac" or OS == "ios" or OS == "win")', {
           'dependencies': [
             '../third_party/nss/nss.gyp:nspr',
           ],

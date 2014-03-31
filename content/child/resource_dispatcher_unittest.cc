@@ -10,6 +10,7 @@
 #include "base/process/process.h"
 #include "base/process/process_handle.h"
 #include "content/child/request_extra_data.h"
+#include "content/child/request_info.h"
 #include "content/child/resource_dispatcher.h"
 #include "content/common/resource_messages.h"
 #include "content/common/service_worker/service_worker_types.h"
@@ -162,7 +163,7 @@ class ResourceDispatcherTest : public testing::Test, public IPC::Sender {
   }
 
   ResourceLoaderBridge* CreateBridge() {
-    webkit_glue::ResourceLoaderBridge::RequestInfo request_info;
+    RequestInfo request_info;
     request_info.method = "GET";
     request_info.url = GURL(test_page_url);
     request_info.first_party_for_cookies = GURL(test_page_url);
@@ -173,12 +174,7 @@ class ResourceDispatcherTest : public testing::Test, public IPC::Sender {
     request_info.request_type = ResourceType::SUB_RESOURCE;
     request_info.appcache_host_id = appcache::kNoHostId;
     request_info.routing_id = 0;
-    RequestExtraData extra_data(blink::WebPageVisibilityStateVisible,
-                                blink::WebString(),
-                                false, MSG_ROUTING_NONE, true, GURL(),
-                                false, -1, true,
-                                PAGE_TRANSITION_LINK, false, -1, -1,
-                                kInvalidServiceWorkerProviderId);
+    RequestExtraData extra_data;
     request_info.extra_data = &extra_data;
 
     return dispatcher_->CreateBridge(request_info);

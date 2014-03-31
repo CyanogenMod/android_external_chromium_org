@@ -121,16 +121,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   virtual ~RenderWidgetHost() {}
 
-  // Edit operations.
-  // TODO(jam): move the rest of these to RenderFrameHost
-  virtual void Undo() = 0;
-  virtual void Redo() = 0;
-  virtual void CopyToFindPboard() = 0;
-  virtual void PasteAndMatchStyle() = 0;
-  virtual void Delete() = 0;
-  virtual void SelectAll() = 0;
-  virtual void Unselect() = 0;
-
   // Update the text direction of the focused input element and notify it to a
   // renderer process.
   // These functions have two usage scenarios: changing the text direction
@@ -215,6 +205,15 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   // Send a command to the renderer to turn on full accessibility.
   virtual void EnableFullAccessibilityMode() = 0;
+
+  // Check whether this RenderWidget has full accessibility mode.
+  virtual bool IsFullAccessibilityModeForTesting() = 0;
+
+  // Send a command to the renderer to turn on tree only accessibility.
+  virtual void EnableTreeOnlyAccessibilityMode() = 0;
+
+  // Check whether this RenderWidget has tree-only accessibility mode.
+  virtual bool IsTreeOnlyAccessibilityModeForTesting() = 0;
 
   // Forwards the given message to the renderer. These are called by
   // the view when it has received a message.

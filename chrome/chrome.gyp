@@ -22,7 +22,6 @@
     'allocator_target': '../base/allocator/allocator.gyp:allocator',
     'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/chrome',
     'protoc_out_dir': '<(SHARED_INTERMEDIATE_DIR)/protoc_out',
-    'repack_locales_cmd': ['python', 'tools/build/repack_locales.py'],
     'conditions': [
       ['OS!="ios"', {
         'chromium_browser_dependencies': [
@@ -312,6 +311,9 @@
           'include_dirs': [
             '..',
             '<(grit_out_dir)',
+          ],
+          'export_dependent_settings': [
+            'common/extensions/api/api.gyp:chrome_api',
           ],
           'conditions': [
             ['toolkit_uses_gtk == 1', {
@@ -913,8 +915,10 @@
             'safe_browsing_proto',
           ],
           'sources': [
-            'browser/safe_browsing/signature_util.h',
-            'browser/safe_browsing/signature_util_win.cc',
+            'browser/safe_browsing/binary_feature_extractor.h',
+            'browser/safe_browsing/binary_feature_extractor_win.cc',
+            'browser/safe_browsing/pe_image_reader_win.cc',
+            'browser/safe_browsing/pe_image_reader_win.h',
             'tools/safe_browsing/sb_sigutil.cc',
           ],
         },

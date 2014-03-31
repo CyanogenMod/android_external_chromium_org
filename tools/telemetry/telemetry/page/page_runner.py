@@ -14,7 +14,6 @@ import time
 import traceback
 
 from telemetry import decorators
-from telemetry import exception_formatter
 from telemetry.core import browser_finder
 from telemetry.core import exceptions
 from telemetry.core import util
@@ -26,6 +25,7 @@ from telemetry.page import page_test
 from telemetry.page import results_options
 from telemetry.page.actions import navigate
 from telemetry.page.actions import page_action
+from telemetry.util import exception_formatter
 
 
 class _RunState(object):
@@ -326,8 +326,6 @@ def Run(test, page_set, expectations, finder_options):
   if page_set.user_agent_type:
     browser_options.browser_user_agent_type = page_set.user_agent_type
 
-  test.CustomizeBrowserOptionsForPageSet(page_set,
-                                         possible_browser.finder_options)
   if finder_options.profiler:
     profiler_class = profiler_finder.FindProfiler(finder_options.profiler)
     profiler_class.CustomizeBrowserOptions(possible_browser.browser_type,

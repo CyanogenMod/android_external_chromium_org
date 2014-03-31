@@ -31,24 +31,6 @@ DecodedAudioCallbackData::DecodedAudioCallbackData()
 
 DecodedAudioCallbackData::~DecodedAudioCallbackData() {}
 
-// Local implementation of RtpData (defined in rtp_rtcp_defines.h).
-// Used to pass payload data into the audio receiver.
-class LocalRtpAudioData : public RtpData {
- public:
-  explicit LocalRtpAudioData(AudioReceiver* audio_receiver)
-      : audio_receiver_(audio_receiver) {}
-
-  virtual void OnReceivedPayloadData(const uint8* payload_data,
-                                     size_t payload_size,
-                                     const RtpCastHeader* rtp_header) OVERRIDE {
-    audio_receiver_->IncomingParsedRtpPacket(payload_data, payload_size,
-                                             *rtp_header);
-  }
-
- private:
-  AudioReceiver* audio_receiver_;
-};
-
 // Local implementation of RtpPayloadFeedback (defined in rtp_defines.h)
 // Used to convey cast-specific feedback from receiver to sender.
 class LocalRtpAudioFeedback : public RtpPayloadFeedback {
@@ -64,27 +46,11 @@ class LocalRtpAudioFeedback : public RtpPayloadFeedback {
   AudioReceiver* audio_receiver_;
 };
 
-class LocalRtpReceiverStatistics : public RtpReceiverStatistics {
- public:
-  explicit LocalRtpReceiverStatistics(RtpReceiver* rtp_receiver)
-      : rtp_receiver_(rtp_receiver) {}
-
-  virtual void GetStatistics(uint8* fraction_lost,
-                             uint32* cumulative_lost,  // 24 bits valid.
-                             uint32* extended_high_sequence_number,
-                             uint32* jitter) OVERRIDE {
-    rtp_receiver_->GetStatistics(fraction_lost, cumulative_lost,
-                                 extended_high_sequence_number, jitter);
-  }
-
- private:
-  RtpReceiver* rtp_receiver_;
-};
-
 AudioReceiver::AudioReceiver(scoped_refptr<CastEnvironment> cast_environment,
                              const AudioReceiverConfig& audio_config,
                              transport::PacedPacketSender* const packet_sender)
-    : cast_environment_(cast_environment),
+    : RtpReceiver(cast_environment->Clock(), &audio_config, NULL),
+      cast_environment_(cast_environment),
       event_subscriber_(kReceiverRtcpEventHistorySize,
                         ReceiverRtcpEventSubscriber::kAudioEventSubscriber),
       codec_(audio_config.codec),
@@ -95,7 +61,6 @@ AudioReceiver::AudioReceiver(scoped_refptr<CastEnvironment> cast_environment,
       weak_factory_(this) {
   target_delay_delta_ =
       base::TimeDelta::FromMilliseconds(audio_config.rtp_max_delay_ms);
-  incoming_payload_callback_.reset(new LocalRtpAudioData(this));
   incoming_payload_feedback_.reset(new LocalRtpAudioFeedback(this));
   if (audio_config.use_external_decoder) {
     audio_buffer_.reset(new Framer(cast_environment->Clock(),
@@ -106,16 +71,10 @@ AudioReceiver::AudioReceiver(scoped_refptr<CastEnvironment> cast_environment,
                                           incoming_payload_feedback_.get()));
   }
   decryptor_.Initialize(audio_config.aes_key, audio_config.aes_iv_mask);
-  rtp_receiver_.reset(new RtpReceiver(cast_environment->Clock(),
-                                      &audio_config,
-                                      NULL,
-                                      incoming_payload_callback_.get()));
-  rtp_audio_receiver_statistics_.reset(
-      new LocalRtpReceiverStatistics(rtp_receiver_.get()));
   base::TimeDelta rtcp_interval_delta =
       base::TimeDelta::FromMilliseconds(audio_config.rtcp_interval);
   rtcp_.reset(new Rtcp(cast_environment, NULL, NULL, packet_sender,
-                       rtp_audio_receiver_statistics_.get(),
+                       GetStatistics(),
                        audio_config.rtcp_mode, rtcp_interval_delta,
                        audio_config.feedback_ssrc, audio_config.incoming_ssrc,
                        audio_config.rtcp_c_name));
@@ -135,9 +94,9 @@ void AudioReceiver::InitializeTimers() {
   ScheduleNextCastMessage();
 }
 
-void AudioReceiver::IncomingParsedRtpPacket(const uint8* payload_data,
-                                            size_t payload_size,
-                                            const RtpCastHeader& rtp_header) {
+void AudioReceiver::OnReceivedPayloadData(const uint8* payload_data,
+                                          size_t payload_size,
+                                          const RtpCastHeader& rtp_header) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   base::TimeTicks now = cast_environment_->Clock()->NowTicks();
 
@@ -149,7 +108,6 @@ void AudioReceiver::IncomingParsedRtpPacket(const uint8* payload_data,
       payload_size);
 
   // TODO(pwestin): update this as video to refresh over time.
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   if (time_first_incoming_packet_.is_null()) {
     InitializeTimers();
     first_incoming_rtp_timestamp_ = rtp_header.webrtc.header.timestamp;
@@ -177,7 +135,7 @@ void AudioReceiver::IncomingParsedRtpPacket(const uint8* payload_data,
       DecodedAudioCallbackData decoded_data = queued_decoded_callbacks_.front();
       queued_decoded_callbacks_.pop_front();
       cast_environment_->PostTask(
-          CastEnvironment::AUDIO_DECODER, FROM_HERE,
+          CastEnvironment::AUDIO, FROM_HERE,
           base::Bind(&AudioReceiver::DecodeAudioFrameThread,
                      base::Unretained(this), decoded_data.number_of_10ms_blocks,
                      decoded_data.desired_frequency, decoded_data.callback));
@@ -215,7 +173,7 @@ void AudioReceiver::GetRawAudioFrame(
   DCHECK(audio_decoder_) << "Invalid function call in this configuration";
   // TODO(pwestin): we can skip this function by posting direct to the decoder.
   cast_environment_->PostTask(
-      CastEnvironment::AUDIO_DECODER, FROM_HERE,
+      CastEnvironment::AUDIO, FROM_HERE,
       base::Bind(&AudioReceiver::DecodeAudioFrameThread, base::Unretained(this),
                  number_of_10ms_blocks, desired_frequency, callback));
 }
@@ -223,7 +181,7 @@ void AudioReceiver::GetRawAudioFrame(
 void AudioReceiver::DecodeAudioFrameThread(
     int number_of_10ms_blocks, int desired_frequency,
     const AudioFrameDecodedCallback callback) {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::AUDIO_DECODER));
+  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::AUDIO));
   // TODO(mikhal): Allow the application to allocate this memory.
   scoped_ptr<PcmAudioFrame> audio_frame(new PcmAudioFrame());
 
@@ -363,7 +321,7 @@ void AudioReceiver::IncomingPacket(scoped_ptr<Packet> packet) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   bool rtcp_packet = Rtcp::IsRtcpPacket(&packet->front(), packet->size());
   if (!rtcp_packet) {
-    rtp_receiver_->ReceivedPacket(&packet->front(), packet->size());
+    ReceivedPacket(&packet->front(), packet->size());
   } else {
     rtcp_->IncomingRtcpPacket(&packet->front(), packet->size());
   }

@@ -9,17 +9,18 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/extensions/permissions/settings_override_permission.h"
 #include "extensions/common/error_utils.h"
-#include "extensions/common/extension_messages.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/api_permission_set.h"
 #include "extensions/common/permissions/manifest_permission.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/permissions/permissions_info.h"
+#include "extensions/common/permissions/settings_override_permission.h"
 #include "grit/generated_resources.h"
 #include "ipc/ipc_message.h"
+#include "ipc/ipc_message_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
@@ -214,12 +215,14 @@ SettingsOverrides::SettingsOverrides() {}
 
 SettingsOverrides::~SettingsOverrides() {}
 
+// static
 const SettingsOverrides* SettingsOverrides::Get(
     const Extension* extension) {
   return static_cast<SettingsOverrides*>(
       extension->GetManifestData(manifest_keys::kSettingsOverride));
 }
 
+// static
 bool SettingsOverrides::RemovesBookmarkButton(
     const SettingsOverrides& settings_overrides) {
   return settings_overrides.bookmarks_ui &&
@@ -227,11 +230,19 @@ bool SettingsOverrides::RemovesBookmarkButton(
       *settings_overrides.bookmarks_ui->remove_button;
 }
 
+// static
 bool SettingsOverrides::RemovesBookmarkShortcut(
     const SettingsOverrides& settings_overrides) {
   return settings_overrides.bookmarks_ui &&
       settings_overrides.bookmarks_ui->remove_bookmark_shortcut &&
       *settings_overrides.bookmarks_ui->remove_bookmark_shortcut;
+}
+
+bool SettingsOverrides::RemovesBookmarkOpenPagesShortcut(
+    const SettingsOverrides& settings_overrides) {
+  return settings_overrides.bookmarks_ui &&
+      settings_overrides.bookmarks_ui->remove_bookmark_open_pages_shortcut &&
+      *settings_overrides.bookmarks_ui->remove_bookmark_open_pages_shortcut;
 }
 
 SettingsOverridesHandler::SettingsOverridesHandler() {}
@@ -306,8 +317,9 @@ bool SettingsOverridesHandler::Validate(
     if (!FeatureSwitch::enable_override_bookmarks_ui()->IsEnabled()) {
       warnings->push_back(InstallWarning(
           ErrorUtils::FormatErrorMessage(
-              manifest_errors::kUnrecognizedManifestKey,
-              manifest_keys::kBookmarkUI)));
+              manifest_errors::kUnrecognizedManifestProperty,
+              manifest_keys::kBookmarkUI,
+              manifest_keys::kSettingsOverride)));
     } else if (settings_overrides->bookmarks_ui->hide_bookmark_button) {
       warnings->push_back(InstallWarning(
             ErrorUtils::FormatErrorMessage(

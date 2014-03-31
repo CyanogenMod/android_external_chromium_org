@@ -65,6 +65,7 @@ include $(LOCAL_PATH)/content/result_codes_java.target.linux-mips.mk
 include $(LOCAL_PATH)/content/screen_orientation_values_java.target.linux-mips.mk
 include $(LOCAL_PATH)/content/speech_recognition_error_java.target.linux-mips.mk
 include $(LOCAL_PATH)/content/webkit_version.target.linux-mips.mk
+include $(LOCAL_PATH)/courgette/courgette_lib.target.linux-mips.mk
 include $(LOCAL_PATH)/crypto/crypto.target.linux-mips.mk
 include $(LOCAL_PATH)/gin/gin.target.linux-mips.mk
 include $(LOCAL_PATH)/google_apis/google_apis.target.linux-mips.mk
@@ -203,6 +204,7 @@ include $(LOCAL_PATH)/third_party/libwebp/libwebp_enc.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/libwebp/libwebp_utils.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/libxml/libxml.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/libxslt/libxslt.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/lzma_sdk/lzma_sdk.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/mesa/mesa_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/modp_b64/modp_b64.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/npapi/npapi.target.linux-mips.mk

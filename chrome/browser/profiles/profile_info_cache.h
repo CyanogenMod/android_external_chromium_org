@@ -77,7 +77,6 @@ class ProfileInfoCache : public ProfileInfoInterface,
       size_t index) const OVERRIDE;
   virtual base::string16 GetGAIAGivenNameOfProfileAtIndex(
       size_t index) const OVERRIDE;
-  virtual bool IsUsingGAIANameOfProfileAtIndex(size_t index) const OVERRIDE;
   // Returns the GAIA picture for the given profile. This may return NULL
   // if the profile does not have a GAIA picture or if the picture must be
   // loaded from disk.
@@ -111,7 +110,6 @@ class ProfileInfoCache : public ProfileInfoInterface,
   void SetGAIANameOfProfileAtIndex(size_t index, const base::string16& name);
   void SetGAIAGivenNameOfProfileAtIndex(size_t index,
                                         const base::string16& name);
-  void SetIsUsingGAIANameOfProfileAtIndex(size_t index, bool value);
   void SetGAIAPictureOfProfileAtIndex(size_t index, const gfx::Image* image);
   void SetIsUsingGAIAPictureOfProfileAtIndex(size_t index, bool value);
   void SetProfileSigninRequiredAtIndex(size_t index, bool value);
@@ -120,16 +118,6 @@ class ProfileInfoCache : public ProfileInfoInterface,
 
   // Returns unique name that can be assigned to a newly created profile.
   base::string16 ChooseNameForNewProfile(size_t icon_index) const;
-
-  // Checks if the given profile has switched to using GAIA information
-  // for the profile name and picture. This pref is used to switch over
-  // to GAIA info the first time it is available. Afterwards this pref is
-  // checked to prevent clobbering the user's custom settings.
-  bool GetHasMigratedToGAIAInfoOfProfileAtIndex(size_t index) const;
-
-  // Marks the given profile as having switched to using GAIA information
-  // for the profile name and picture.
-  void SetHasMigratedToGAIAInfoOfProfileAtIndex(size_t index, bool value);
 
   // Returns an avatar icon index that can be assigned to a newly created
   // profile. Note that the icon may not be unique since there are a limited
@@ -189,8 +177,15 @@ class ProfileInfoCache : public ProfileInfoInterface,
   // of profiles is still sorted.
   void UpdateSortForProfileIndex(size_t index);
 
-  void OnGAIAPictureLoaded(const base::FilePath& path,
-                           gfx::Image** image) const;
+  // Loads or uses an already loaded high resolution image of the
+  // generic profile avatar.
+  const gfx::Image* GetHighResAvatarOfProfileAtIndex(size_t index) const;
+
+  const gfx::Image* LoadAvatarPictureFromPath(
+      const std::string& key,
+      const base::FilePath& image_path) const;
+  void OnAvatarPictureLoaded(const std::string& key,
+                             gfx::Image** image) const;
   void OnGAIAPictureSaved(const base::FilePath& path, bool* success) const;
 
   PrefService* prefs_;
@@ -199,12 +194,12 @@ class ProfileInfoCache : public ProfileInfoInterface,
 
   ObserverList<ProfileInfoCacheObserver> observer_list_;
 
-  // A cache of gaia profile pictures. This cache is updated lazily so it needs
-  // to be mutable.
-  mutable std::map<std::string, gfx::Image*> gaia_pictures_;
-  // Marks a gaia profile picture as loading. This prevents a picture from
+  // A cache of gaia/high res avatar profile pictures. This cache is updated
+  // lazily so it needs to be mutable.
+  mutable std::map<std::string, gfx::Image*> cached_avatar_images_;
+  // Marks a profile picture as loading. This prevents a picture from
   // loading multiple times.
-  mutable std::map<std::string, bool> gaia_pictures_loading_;
+  mutable std::map<std::string, bool> cached_avatar_images_loading_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileInfoCache);
 };

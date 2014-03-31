@@ -323,7 +323,6 @@ LOCAL_SRC_FILES := \
 	content/browser/net/view_http_cache_job_factory.cc \
 	content/browser/notification_service_impl.cc \
 	content/browser/power_monitor_message_broadcaster.cc \
-	content/browser/power_profiler/power_data_provider_dummy.cc \
 	content/browser/power_profiler/power_event.cc \
 	content/browser/power_profiler/power_profiler_service.cc \
 	content/browser/power_save_blocker_android.cc \
@@ -482,6 +481,7 @@ LOCAL_SRC_FILES := \
 	content/browser/worker_host/worker_process_host.cc \
 	content/browser/worker_host/worker_service_impl.cc \
 	content/browser/worker_host/worker_storage_partition.cc \
+	content/browser/power_profiler/power_data_provider_dummy.cc \
 	content/browser/gamepad/gamepad_platform_data_fetcher.cc
 
 
@@ -546,9 +546,7 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -566,6 +564,7 @@ MY_DEFS_Debug := \
 	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -702,9 +701,7 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_READPIXELSCONFIG' \
 	'-DSK_SUPPORT_LEGACY_GETCLIPTYPE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
@@ -722,6 +719,7 @@ MY_DEFS_Release := \
 	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \

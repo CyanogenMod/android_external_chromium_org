@@ -18,6 +18,7 @@
         '../base/strings/ui_strings.gyp:ui_strings',
         '../base/ui_base.gyp:ui_base',
         '../compositor/compositor.gyp:compositor',
+        '../events/events.gyp:events_base',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
@@ -103,6 +104,7 @@
         'views/apps_grid_view.cc',
         'views/apps_grid_view.h',
         'views/apps_grid_view_delegate.h',
+        'views/apps_grid_view_folder_delegate.h',
         'views/cached_label.cc',
         'views/cached_label.h',
         'views/contents_switcher_view.cc',
@@ -220,6 +222,7 @@
         'test/run_all_unittests.cc',
         'views/app_list_main_view_unittest.cc',
         'views/apps_grid_view_unittest.cc',
+        'views/folder_header_view_unittest.cc',
         'views/search_box_view_unittest.cc',
         'views/search_result_list_view_unittest.cc',
         'views/test/apps_grid_view_test_api.cc',
@@ -252,11 +255,6 @@
         }, {  # OS!="mac"
           'sources/': [
             ['exclude', 'cocoa/'],
-          ],
-        }],
-        ['desktop_linux == 1 or chromeos == 1 or OS == "ios"', {
-          'dependencies': [
-            '../base/strings/ui_strings.gyp:ui_unittest_strings',
           ],
         }],
         # See http://crbug.com/162998#c4 for why this is needed.

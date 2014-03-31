@@ -9,34 +9,23 @@
 namespace media {
 namespace cast {
 
-StandaloneCastEnvironment::StandaloneCastEnvironment(
-    const CastLoggingConfig& logging_config)
+StandaloneCastEnvironment::StandaloneCastEnvironment()
     : CastEnvironment(
           make_scoped_ptr<base::TickClock>(new base::DefaultTickClock()),
           NULL,
           NULL,
-          NULL,
-          NULL,
-          NULL,
-          NULL,
-          logging_config),
+          NULL),
       main_thread_("StandaloneCastEnvironment Main"),
-      audio_encode_thread_("StandaloneCastEnvironment Audio Encode"),
-      audio_decode_thread_("StandaloneCastEnvironment Audio Decode"),
-      video_encode_thread_("StandaloneCastEnvironment Video Encode"),
-      video_decode_thread_("StandaloneCastEnvironment Video Decode"),
-      transport_thread_("StandaloneCastEnvironment Transport") {
+      audio_thread_("StandaloneCastEnvironment Audio"),
+      video_thread_("StandaloneCastEnvironment Video") {
 #define CREATE_TASK_RUNNER(name, options)   \
   name##_thread_.StartWithOptions(options); \
   CastEnvironment::name##_thread_proxy_ = name##_thread_.message_loop_proxy()
 
   CREATE_TASK_RUNNER(main,
                      base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
-  CREATE_TASK_RUNNER(audio_encode, base::Thread::Options());
-  CREATE_TASK_RUNNER(audio_decode, base::Thread::Options());
-  CREATE_TASK_RUNNER(video_encode, base::Thread::Options());
-  CREATE_TASK_RUNNER(video_decode, base::Thread::Options());
-  CREATE_TASK_RUNNER(transport, base::Thread::Options());
+  CREATE_TASK_RUNNER(audio, base::Thread::Options());
+  CREATE_TASK_RUNNER(video, base::Thread::Options());
 
 #undef CREATE_TASK_RUNNER
 }
@@ -48,11 +37,8 @@ StandaloneCastEnvironment::~StandaloneCastEnvironment() {
 void StandaloneCastEnvironment::Shutdown() {
   DCHECK(CalledOnValidThread());
   main_thread_.Stop();
-  audio_encode_thread_.Stop();
-  audio_decode_thread_.Stop();
-  video_encode_thread_.Stop();
-  video_decode_thread_.Stop();
-  transport_thread_.Stop();
+  audio_thread_.Stop();
+  video_thread_.Stop();
 }
 
 }  // namespace cast

@@ -28,6 +28,8 @@
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/install_tracker.h"
+#include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/profiles/profile.h"
@@ -175,6 +177,9 @@ void CrxInstaller::InstallCrx(const base::FilePath& source_file) {
   ExtensionService* service = service_weak_.get();
   if (!service || service->browser_terminating())
     return;
+
+  InstallTrackerFactory::GetForProfile(profile())
+      ->OnBeginCrxInstall(expected_id_);
 
   source_file_ = source_file;
 
@@ -472,7 +477,7 @@ void CrxInstaller::OnUnpackSuccess(
 }
 
 void CrxInstaller::CheckImportsAndRequirements() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   ExtensionService* service = service_weak_.get();
   if (!service || service->browser_terminating())
     return;
@@ -501,7 +506,7 @@ void CrxInstaller::CheckImportsAndRequirements() {
 
 void CrxInstaller::OnRequirementsChecked(
     std::vector<std::string> requirement_errors) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!service_weak_)
     return;
 
@@ -521,7 +526,7 @@ void CrxInstaller::OnRequirementsChecked(
 
 void CrxInstaller::OnBlacklistChecked(
     extensions::BlacklistState blacklist_state) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!service_weak_)
     return;
 
@@ -548,7 +553,7 @@ void CrxInstaller::OnBlacklistChecked(
 }
 
 void CrxInstaller::ConfirmInstall() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   ExtensionService* service = service_weak_.get();
   if (!service || service->browser_terminating())
     return;
@@ -613,7 +618,7 @@ void CrxInstaller::ConfirmInstall() {
 }
 
 void CrxInstaller::InstallUIProceed() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   ExtensionService* service = service_weak_.get();
   if (!service || service->browser_terminating())
@@ -725,7 +730,7 @@ void CrxInstaller::ReportFailureFromFileThread(const CrxInstallerError& error) {
 }
 
 void CrxInstaller::ReportFailureFromUIThread(const CrxInstallerError& error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   content::NotificationService* service =
       content::NotificationService::current();
@@ -739,7 +744,9 @@ void CrxInstaller::ReportFailureFromUIThread(const CrxInstallerError& error) {
   // TODO(aa): Need to go through unit tests and clean them up too, probably get
   // rid of this line.
   ExtensionErrorReporter::GetInstance()->ReportError(
-      error.message(), false);  // quiet
+      error.message(),
+      false,  // Be quiet.
+      NULL);  // Caller expects no response.
 
   if (client_)
     client_->OnInstallFailure(error);
@@ -767,7 +774,7 @@ void CrxInstaller::ReportSuccessFromFileThread() {
 }
 
 void CrxInstaller::ReportSuccessFromUIThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (!service_weak_.get() || service_weak_->browser_terminating())
     return;
@@ -833,7 +840,7 @@ void CrxInstaller::CleanupTempFiles() {
 }
 
 void CrxInstaller::CheckUpdateFromSettingsPage() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   ExtensionService* service = service_weak_.get();
   if (!service || service->browser_terminating())
@@ -854,7 +861,7 @@ void CrxInstaller::CheckUpdateFromSettingsPage() {
 }
 
 void CrxInstaller::ConfirmReEnable() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   ExtensionService* service = service_weak_.get();
   if (!service || service->browser_terminating())

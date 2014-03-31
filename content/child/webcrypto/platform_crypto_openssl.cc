@@ -387,6 +387,20 @@ Status ExportKeySpki(PublicKey* key, blink::WebArrayBuffer* buffer) {
   return Status::ErrorUnsupported();
 }
 
+Status ExportKeyPkcs8(PrivateKey* key,
+                      const blink::WebCryptoKeyAlgorithm& key_algorithm,
+                      blink::WebArrayBuffer* buffer) {
+  // TODO(eroman): http://crbug.com/267888
+  return Status::ErrorUnsupported();
+}
+
+Status ExportRsaPublicKey(PublicKey* key,
+                          std::vector<uint8>* modulus,
+                          std::vector<uint8>* public_exponent) {
+  // TODO(eroman): http://crbug.com/267888
+  return Status::ErrorUnsupported();
+}
+
 Status WrapSymKeyAesKw(SymKey* wrapping_key,
                        SymKey* key,
                        blink::WebArrayBuffer* buffer) {

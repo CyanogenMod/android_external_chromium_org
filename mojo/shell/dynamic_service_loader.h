@@ -7,9 +7,9 @@
 
 #include <map>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
+#include "mojo/public/cpp/system/core.h"
 #include "mojo/public/shell/shell.mojom.h"
-#include "mojo/public/system/core_cpp.h"
 #include "mojo/service_manager/service_loader.h"
 #include "mojo/shell/dynamic_service_runner.h"
 #include "mojo/shell/keep_alive.h"
@@ -21,21 +21,24 @@ namespace shell {
 class Context;
 class DynamicServiceRunnerFactory;
 
-// A subclass of ServiceManager::Loader that loads a dynamic library containing
-// the implementation of the service.
+// An implementation of ServiceLoader that retrieves a dynamic library
+// containing the implementation of the service and loads/runs it (via a
+// DynamicServiceRunner).
 class DynamicServiceLoader : public ServiceLoader {
  public:
   DynamicServiceLoader(Context* context,
                        scoped_ptr<DynamicServiceRunnerFactory> runner_factory);
   virtual ~DynamicServiceLoader();
 
-  // Initiates the dynamic load. If the url is a mojo: scheme then the name
-  // specified will be modified to the platform's naming scheme. Also the
+  // Initiates the dynamic load. If the URL has a mojo: scheme, then the name
+  // specified will be modified to the platform's naming scheme. Also, the
   // value specified to the --origin command line argument will be used as the
-  // host / port.
+  // host/port.
   virtual void LoadService(ServiceManager* manager,
                            const GURL& url,
                            ScopedShellHandle service_handle) OVERRIDE;
+  virtual void OnServiceError(ServiceManager* manager, const GURL& url)
+      OVERRIDE;
 
  private:
   class LoadContext;

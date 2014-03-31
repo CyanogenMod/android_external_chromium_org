@@ -5,19 +5,21 @@
 #include "chrome/browser/ui/webui/options/options_ui_browsertest.h"
 
 #include "base/prefs/pref_service.h"
+#include "base/scoped_observer.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/webui/options/options_ui.h"
+#include "chrome/browser/ui/webui/uber/uber_ui.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/test_utils.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -38,9 +40,45 @@
 #include "url/gurl.h"
 #endif
 
+using content::MessageLoopRunner;
+
 namespace options {
 
 namespace {
+
+class SignOutWaiter : public SigninManagerBase::Observer {
+ public:
+  SignOutWaiter(SigninManagerBase* signin_manager)
+      : seen_(false), running_(false), scoped_observer_(this) {
+    scoped_observer_.Add(signin_manager);
+  }
+  virtual ~SignOutWaiter() {}
+
+  void Wait() {
+    if (seen_)
+      return;
+
+    running_ = true;
+    message_loop_runner_ = new MessageLoopRunner;
+    message_loop_runner_->Run();
+    EXPECT_TRUE(seen_);
+  }
+
+  virtual void GoogleSignedOut(const std::string& username) OVERRIDE {
+    seen_ = true;
+    if (!running_)
+      return;
+
+    message_loop_runner_->Quit();
+    running_ = false;
+  }
+
+ private:
+  bool seen_;
+  bool running_;
+  ScopedObserver<SigninManagerBase, SignOutWaiter> scoped_observer_;
+  scoped_refptr<MessageLoopRunner> message_loop_runner_;
+};
 
 #if !defined(OS_CHROMEOS)
 void RunClosureWhenProfileInitialized(const base::Closure& closure,
@@ -58,6 +96,30 @@ OptionsUIBrowserTest::OptionsUIBrowserTest() {
 
 void OptionsUIBrowserTest::NavigateToSettings() {
   const GURL& url = GURL(chrome::kChromeUISettingsURL);
+  ui_test_utils::NavigateToURLWithDisposition(browser(), url, CURRENT_TAB, 0);
+
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_TRUE(web_contents);
+  ASSERT_TRUE(web_contents->GetWebUI());
+  UberUI* uber_ui = static_cast<UberUI*>(
+      web_contents->GetWebUI()->GetController());
+  OptionsUI* options_ui = static_cast<OptionsUI*>(
+      uber_ui->GetSubpage(chrome::kChromeUISettingsFrameURL)->GetController());
+
+  // It is not possible to subscribe to the OnFinishedLoading event before the
+  // call to NavigateToURL(), because the WebUI does not yet exist at that time.
+  // However, it is safe to subscribe afterwards, because the event will always
+  // be posted asynchronously to the message loop.
+  scoped_refptr<MessageLoopRunner> message_loop_runner(new MessageLoopRunner);
+  scoped_ptr<OptionsUI::OnFinishedLoadingCallbackList::Subscription>
+      subscription = options_ui->RegisterOnFinishedLoadingCallback(
+          message_loop_runner->QuitClosure());
+  message_loop_runner->Run();
+}
+
+void OptionsUIBrowserTest::NavigateToSettingsFrame() {
+  const GURL& url = GURL(chrome::kChromeUISettingsFrameURL);
   ui_test_utils::NavigateToURL(browser(), url);
 }
 
@@ -78,88 +140,20 @@ void OptionsUIBrowserTest::VerifyTitle() {
   EXPECT_NE(title.find(expected_title), base::string16::npos);
 }
 
-// Flaky, see http://crbug.com/119671.
-IN_PROC_BROWSER_TEST_F(OptionsUIBrowserTest, DISABLED_LoadOptionsByURL) {
+IN_PROC_BROWSER_TEST_F(OptionsUIBrowserTest, LoadOptionsByURL) {
   NavigateToSettings();
   VerifyTitle();
   VerifyNavbar();
 }
 
-// Flaky on win_rel http://crbug.com/352546
-#if defined(OS_WIN)
-#define MAYBE_VerifyManagedSignout DISABLED_VerifyManagedSignout
-#else
-#define MAYBE_VerifyManagedSignout VerifyManagedSignout
-#endif
-
 #if !defined(OS_CHROMEOS)
-IN_PROC_BROWSER_TEST_F(OptionsUIBrowserTest, MAYBE_VerifyManagedSignout) {
-  SigninManager* signin =
-      SigninManagerFactory::GetForProfile(browser()->profile());
-  signin->OnExternalSigninCompleted("test@example.com");
-  signin->ProhibitSignout(true);
-
-  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
-      browser(), GURL(chrome::kChromeUISettingsFrameURL), 1);
-
-  // This script simulates a click on the "Disconnect your Google Account"
-  // button and returns true if the hidden flag of the appropriate dialog gets
-  // flipped.
-  bool result = false;
-  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
-      browser()->tab_strip_model()->GetActiveWebContents(),
-      "var dialog = $('manage-profile-overlay-disconnect-managed');"
-      "var original_status = dialog.hidden;"
-      "$('start-stop-sync').click();"
-      "domAutomationController.send(original_status && !dialog.hidden);",
-      &result));
-
-  EXPECT_TRUE(result);
-
-  base::FilePath profile_dir = browser()->profile()->GetPath();
-  ProfileInfoCache& profile_info_cache =
-      g_browser_process->profile_manager()->GetProfileInfoCache();
-
-  EXPECT_TRUE(DirectoryExists(profile_dir));
-  EXPECT_TRUE(profile_info_cache.GetIndexOfProfileWithPath(profile_dir) !=
-              std::string::npos);
-
-  content::WindowedNotificationObserver wait_for_profile_deletion(
-      chrome::NOTIFICATION_PROFILE_CACHED_INFO_CHANGED,
-      content::NotificationService::AllSources());
-
-#if defined(OS_MACOSX)
-  // TODO(kaliamoorthi): Get the macos problem fixed and remove this code.
-  // Deleting the Profile also destroys all browser windows of that Profile.
-  // Wait for the current browser to close before resuming, otherwise
-  // the browser_tests shutdown code will be confused on the Mac.
-  content::WindowedNotificationObserver wait_for_browser_closed(
-      chrome::NOTIFICATION_BROWSER_CLOSED,
-      content::NotificationService::AllSources());
-#endif
-
-  ASSERT_TRUE(content::ExecuteScript(
-      browser()->tab_strip_model()->GetActiveWebContents(),
-      "$('disconnect-managed-profile-ok').click();"));
-
-  wait_for_profile_deletion.Wait();
-
-  EXPECT_TRUE(profile_info_cache.GetIndexOfProfileWithPath(profile_dir) ==
-              std::string::npos);
-
-#if defined(OS_MACOSX)
-  wait_for_browser_closed.Wait();
-#endif
-}
-
 IN_PROC_BROWSER_TEST_F(OptionsUIBrowserTest, VerifyUnmanagedSignout) {
   SigninManager* signin =
       SigninManagerFactory::GetForProfile(browser()->profile());
   const std::string user = "test@example.com";
   signin->OnExternalSigninCompleted(user);
 
-  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
-      browser(), GURL(chrome::kChromeUISettingsFrameURL), 1);
+  NavigateToSettingsFrame();
 
   // This script simulates a click on the "Disconnect your Google Account"
   // button and returns true if the hidden flag of the appropriate dialog gets
@@ -175,15 +169,13 @@ IN_PROC_BROWSER_TEST_F(OptionsUIBrowserTest, VerifyUnmanagedSignout) {
 
   EXPECT_TRUE(result);
 
-  content::WindowedNotificationObserver wait_for_signout(
-      chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
-      content::NotificationService::AllSources());
+  SignOutWaiter sign_out_waiter(signin);
 
   ASSERT_TRUE(content::ExecuteScript(
       browser()->tab_strip_model()->GetActiveWebContents(),
       "$('stop-syncing-ok').click();"));
 
-  wait_for_signout.Wait();
+  sign_out_waiter.Wait();
 
   EXPECT_TRUE(browser()->profile()->GetProfileName() != user);
   EXPECT_TRUE(signin->GetAuthenticatedUsername().empty());
@@ -192,8 +184,7 @@ IN_PROC_BROWSER_TEST_F(OptionsUIBrowserTest, VerifyUnmanagedSignout) {
 // Regression test for http://crbug.com/301436, excluded on Chrome OS because
 // profile management in the settings UI exists on desktop platforms only.
 IN_PROC_BROWSER_TEST_F(OptionsUIBrowserTest, NavigateBackFromOverlayDialog) {
-  // Navigate to the settings page.
-  ui_test_utils::NavigateToURL(browser(), GURL("chrome://settings-frame"));
+  NavigateToSettingsFrame();
 
   // Click a button that opens an overlay dialog.
   content::WebContents* contents =

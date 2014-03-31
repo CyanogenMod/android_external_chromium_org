@@ -288,11 +288,6 @@ public:
         WebTestProxyBase::startDragging(frame, data, mask, image, point);
         // Don't forward this call to Base because we don't want to do a real drag-and-drop.
     }
-    virtual void didChangeSelection(bool isEmptySelection)
-    {
-        WebTestProxyBase::didChangeSelection(isEmptySelection);
-        Base::didChangeSelection(isEmptySelection);
-    }
     virtual void didChangeContents()
     {
         WebTestProxyBase::didChangeContents();
@@ -308,11 +303,6 @@ public:
     {
         WebTestProxyBase::setStatusText(text);
         Base::setStatusText(text);
-    }
-    virtual void didStopLoading(blink::WebFrame* frame)
-    {
-        WebTestProxyBase::didStopLoading();
-        Base::didStopLoading(frame);
     }
     virtual blink::WebUserMediaClient* userMediaClient()
     {

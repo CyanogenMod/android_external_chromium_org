@@ -23,6 +23,10 @@ namespace base {
 class Time;
 }  // namespace base
 
+const char kACMatchPropertyInputText[] = "input text";
+const char kACMatchPropertyContentsPrefix[] = "match contents prefix";
+const char kACMatchPropertyContentsStartIndex[] = "match contents start index";
+
 // AutocompleteMatch ----------------------------------------------------------
 
 // A single result line with classified spans.  The autocomplete popup displays
@@ -161,6 +165,10 @@ struct AutocompleteMatch {
   // Convenience function to check if |type| is a search (as opposed to a URL or
   // an extension).
   static bool IsSearchType(Type type);
+
+  // Convenience function to check if |type| is a special search suggest type -
+  // like entity, personalized, profile or postfix.
+  static bool IsSpecializedSearchType(Type type);
 
   // Copies the destination_url with "www." stripped off to
   // |stripped_destination_url| and also converts https protocol to

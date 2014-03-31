@@ -23,7 +23,6 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPath.h"
-#include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/window.h"
@@ -35,6 +34,7 @@
 #include "ui/gfx/vector2d.h"
 #include "ui/views/background.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/public/activation_client.h"
 
 namespace ash {
 namespace internal {
@@ -371,7 +371,6 @@ void PanelLayoutManager::OnWindowAddedToLayout(aura::Window* child) {
     panel_info.slide_in = true;
   }
   panel_windows_.push_back(panel_info);
-  child->AddObserver(this);
   wm::GetWindowState(child)->AddObserver(this);
   Relayout();
 }
@@ -388,7 +387,6 @@ void PanelLayoutManager::OnWindowRemovedFromLayout(aura::Window* child) {
     delete found->callout_widget;
     panel_windows_.erase(found);
   }
-  child->RemoveObserver(this);
   wm::GetWindowState(child)->RemoveObserver(this);
 
   if (dragged_panel_ == child)
@@ -402,6 +400,8 @@ void PanelLayoutManager::OnWindowRemovedFromLayout(aura::Window* child) {
 
 void PanelLayoutManager::OnChildWindowVisibilityChanged(aura::Window* child,
                                                         bool visible) {
+  if (visible)
+    wm::GetWindowState(child)->Restore();
   Relayout();
 }
 
@@ -479,12 +479,6 @@ void PanelLayoutManager::OnPostWindowStateTypeChange(
     MinimizePanel(window_state->window());
   else
     RestorePanel(window_state->window());
-}
-
-void PanelLayoutManager::OnWindowVisibilityChanged(
-    aura::Window* window, bool visible) {
-  if (visible)
-    wm::GetWindowState(window)->Restore();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

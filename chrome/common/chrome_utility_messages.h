@@ -23,6 +23,7 @@
 #include "printing/backend/print_backend.h"
 #include "printing/page_range.h"
 #include "printing/pdf_render_settings.h"
+#include "printing/pwg_raster_settings.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 #define IPC_MESSAGE_START ChromeUtilityMsgStart
@@ -73,6 +74,14 @@ IPC_STRUCT_TRAITS_BEGIN(printing::PrinterSemanticCapsAndDefaults)
 #endif
   IPC_STRUCT_TRAITS_MEMBER(duplex_capable)
   IPC_STRUCT_TRAITS_MEMBER(duplex_default)
+IPC_STRUCT_TRAITS_END()
+
+IPC_ENUM_TRAITS(printing::PwgRasterTransformType);
+
+IPC_STRUCT_TRAITS_BEGIN(printing::PwgRasterSettings)
+  IPC_STRUCT_TRAITS_MEMBER(odd_page_transform)
+  IPC_STRUCT_TRAITS_MEMBER(rotate_all_pages)
+  IPC_STRUCT_TRAITS_MEMBER(reverse_page_order)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(UpdateManifest::Result)
@@ -142,7 +151,7 @@ IPC_STRUCT_TRAITS_END()
 // Utility process messages:
 // These are messages from the browser to the utility process.
 
-// Tell the utility process to unpack the given extension file in its
+// Tells the utility process to unpack the given extension file in its
 // directory and verify that it is valid.
 IPC_MESSAGE_CONTROL4(ChromeUtilityMsg_UnpackExtension,
                      base::FilePath /* extension_filename */,
@@ -177,10 +186,12 @@ IPC_MESSAGE_CONTROL4(ChromeUtilityMsg_RenderPDFPagesToMetafile,
                      std::vector<printing::PageRange>)
 
 // Tell the utility process to render the given PDF into a PWGRaster.
-IPC_MESSAGE_CONTROL3(ChromeUtilityMsg_RenderPDFPagesToPWGRaster,
-                     IPC::PlatformFileForTransit,  /* Input PDF file */
-                     printing::PdfRenderSettings,  /* PDF render settings */
-                     IPC::PlatformFileForTransit   /* Output PWG file */)
+IPC_MESSAGE_CONTROL4(ChromeUtilityMsg_RenderPDFPagesToPWGRaster,
+                     IPC::PlatformFileForTransit, /* Input PDF file */
+                     printing::PdfRenderSettings, /* PDF render settings */
+                     // PWG transform settings.
+                     printing::PwgRasterSettings,
+                     IPC::PlatformFileForTransit /* Output PWG file */)
 
 // Tell the utility process to decode the given JPEG image data with a robust
 // libjpeg codec.
@@ -204,6 +215,22 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_GetPrinterCapsAndDefaults,
 // sandbox. Returns result as printing::PrinterSemanticCapsAndDefaults.
 IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_GetPrinterSemanticCapsAndDefaults,
                      std::string /* printer name */)
+
+// Tell the utility process to patch the given |input_file| using |patch_file|
+// and place the output in |output_file|. The patch should use the bsdiff
+// algorithm (Courgette's version).
+IPC_MESSAGE_CONTROL3(ChromeUtilityMsg_PatchFileBsdiff,
+                     base::FilePath /* input_file */,
+                     base::FilePath /* patch_file */,
+                     base::FilePath /* output_file */)
+
+// Tell the utility process to patch the given |input_file| using |patch_file|
+// and place the output in |output_file|. The patch should use the Courgette
+// algorithm.
+IPC_MESSAGE_CONTROL3(ChromeUtilityMsg_PatchFileCourgette,
+                     base::FilePath /* input_file */,
+                     base::FilePath /* patch_file */,
+                     base::FilePath /* output_file */)
 
 #if defined(OS_CHROMEOS)
 // Tell the utility process to create a zip file on the given list of files.
@@ -378,6 +405,13 @@ IPC_MESSAGE_CONTROL2(
     std::string /* printer name */,
     printing::PrinterSemanticCapsAndDefaults)
 #endif
+
+// Reply when a file has been patched successfully.
+IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_PatchFile_Succeeded)
+
+// Reply when patching a file failed.
+IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_PatchFile_Failed,
+                     int /* error code */)
 
 // Reply when the utility process has failed to obtain the printer
 // capabilities and defaults.

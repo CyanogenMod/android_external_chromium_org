@@ -254,8 +254,7 @@ class NotificationsObserver : public content::NotificationObserver {
 class MockService : public TestExtensionService {
  public:
   explicit MockService(TestExtensionPrefs* prefs)
-      : prefs_(prefs), pending_extension_manager_(*this) {
-  }
+      : prefs_(prefs), pending_extension_manager_(*this, &profile_) {}
 
   virtual ~MockService() {}
 
@@ -300,8 +299,8 @@ class MockService : public TestExtensionService {
 
  protected:
   TestExtensionPrefs* const prefs_;
-  PendingExtensionManager pending_extension_manager_;
   TestingProfile profile_;
+  PendingExtensionManager pending_extension_manager_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockService);
@@ -335,6 +334,7 @@ void SetupPendingExtensionManagerForTest(
 
     pending_extension_manager->AddForTesting(
         PendingExtensionInfo(id,
+                             std::string(),
                              update_url,
                              Version(),
                              should_allow_install,
@@ -1022,8 +1022,12 @@ class ExtensionUpdaterTest : public testing::Test {
       PendingExtensionManager* pending_extension_manager =
           service->pending_extension_manager();
       pending_extension_manager->AddForTesting(
-          PendingExtensionInfo(id, test_url, version,
-                               &ShouldAlwaysInstall, kIsFromSync,
+          PendingExtensionInfo(id,
+                               std::string(),
+                               test_url,
+                               version,
+                               &ShouldAlwaysInstall,
+                               kIsFromSync,
                                kInstallSilently,
                                Manifest::INTERNAL,
                                Extension::NO_FLAGS,

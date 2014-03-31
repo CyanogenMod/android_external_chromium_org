@@ -17,7 +17,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/policy/login_screen_power_management_policy.h"
 #include "chrome/browser/ui/ash/chrome_launcher_prefs.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/dbus/power_policy_controller.h"
@@ -302,7 +301,7 @@ base::Value* NetworkConfigurationPolicyHandler::SanitizeNetworkConfig(
   base::JSONWriter::WriteWithOptions(toplevel_dict.get(),
                                      base::JSONWriter::OPTIONS_PRETTY_PRINT,
                                      &json_string);
-  return base::Value::CreateStringValue(json_string);
+  return new base::StringValue(json_string);
 }
 
 PinnedLauncherAppsPolicyHandler::PinnedLauncherAppsPolicyHandler()
@@ -348,35 +347,22 @@ void ScreenMagnifierPolicyHandler::ApplyPolicySettings(
   int value_in_range;
   if (value && EnsureInRange(value, &value_in_range, NULL)) {
     prefs->SetValue(prefs::kScreenMagnifierEnabled,
-                    base::Value::CreateBooleanValue(value_in_range != 0));
+                    new base::FundamentalValue(value_in_range != 0));
     prefs->SetValue(prefs::kScreenMagnifierType,
-                    base::Value::CreateIntegerValue(value_in_range));
+                    new base::FundamentalValue(value_in_range));
   }
 }
 
 LoginScreenPowerManagementPolicyHandler::
-    LoginScreenPowerManagementPolicyHandler()
-    : TypeCheckingPolicyHandler(key::kDeviceLoginScreenPowerManagement,
-                                base::Value::TYPE_STRING) {
+    LoginScreenPowerManagementPolicyHandler(const Schema& chrome_schema)
+    : SchemaValidatingPolicyHandler(key::kDeviceLoginScreenPowerManagement,
+                                    chrome_schema.GetKnownProperty(
+                                        key::kDeviceLoginScreenPowerManagement),
+                                    SCHEMA_ALLOW_UNKNOWN) {
 }
 
 LoginScreenPowerManagementPolicyHandler::
     ~LoginScreenPowerManagementPolicyHandler() {
-}
-
-bool LoginScreenPowerManagementPolicyHandler::CheckPolicySettings(
-    const PolicyMap& policies,
-    PolicyErrorMap* errors) {
-  const base::Value* value;
-  if (!CheckAndGetValue(policies, errors, &value))
-    return false;
-
-  if (!value)
-    return true;
-
-  std::string json;
-  value->GetAsString(&json);
-  return LoginScreenPowerManagementPolicy().Init(json, errors);
 }
 
 void LoginScreenPowerManagementPolicyHandler::ApplyPolicySettings(

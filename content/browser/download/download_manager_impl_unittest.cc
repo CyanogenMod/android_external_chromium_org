@@ -132,6 +132,8 @@ class MockDownloadItemImpl : public DownloadItemImpl {
   MOCK_CONST_METHOD0(GetURL, const GURL&());
   MOCK_CONST_METHOD0(GetOriginalUrl, const GURL&());
   MOCK_CONST_METHOD0(GetReferrerUrl, const GURL&());
+  MOCK_CONST_METHOD0(GetTabUrl, const GURL&());
+  MOCK_CONST_METHOD0(GetTabReferrerUrl, const GURL&());
   MOCK_CONST_METHOD0(GetSuggestedFilename, std::string());
   MOCK_CONST_METHOD0(GetContentDisposition, std::string());
   MOCK_CONST_METHOD0(GetMimeType, std::string());
@@ -404,11 +406,12 @@ class MockBrowserContext : public BrowserContext {
   MOCK_METHOD2(GetMediaRequestContextForStoragePartition,
                net::URLRequestContextGetter*(
                    const base::FilePath& partition_path, bool in_memory));
-  MOCK_METHOD5(RequestMidiSysExPermission,
+  MOCK_METHOD6(RequestMidiSysExPermission,
                void(int render_process_id,
                     int render_view_id,
                     int bridge_id,
                     const GURL& requesting_frame,
+                    bool user_gesture,
                     const MidiSysExPermissionCallback& callback));
   MOCK_METHOD4(CancelMidiSysExPermissionRequest,
                void(int render_process_id,

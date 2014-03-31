@@ -324,6 +324,7 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
 
 - (void)update {
   [self updateAndClobber:YES];
+  [view_ updateHoverState];
 }
 
 - (void)fillForType:(const autofill::ServerFieldType)type {
@@ -437,12 +438,14 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
                                                              type,
                                                              fieldValue);
     [textfield setValidityMessage:base::SysUTF16ToNSString(message)];
-    [validationDelegate_ updateMessageForField:textfield];
 
     // If the field transitioned from invalid to valid, re-validate the group,
     // since inter-field checks become meaningful with valid fields.
     if (![textfield invalid])
       [self validateFor:autofill::VALIDATE_EDIT];
+
+    // The validity message has potentially changed - notify the error bubble.
+    [validationDelegate_ updateMessageForField:textfield];
   }
 
   // Update the icon if necessary.
@@ -639,9 +642,12 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
       base::scoped_nsobject<AutofillPopUpButton> popup(
           [[AutofillPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO]);
       for (int i = 0; i < inputModel->GetItemCount(); ++i) {
-        if (inputModel->IsItemSeparatorAt(i)) {
-          [[popup menu] addItem:[NSMenuItem separatorItem]];
-        } else {
+        if (!inputModel->IsItemSeparatorAt(i)) {
+          // Currently, the first item in |inputModel| is duplicated later in
+          // the list. The second item is a separator. Because NSPopUpButton
+          // de-duplicates, the menu's just left with a separator on the top of
+          // the list (with nothing it's separating). For that reason,
+          // separators are ignored on Mac for now. http://crbug.com/347653
           [popup addItemWithTitle:
               base::SysUTF16ToNSString(inputModel->GetItemAt(i))];
         }
@@ -656,6 +662,12 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
           l10n_util::FixUpWindowsStyleLabel(input.placeholder_text)];
       NSString* tooltipText =
           base::SysUTF16ToNSString(delegate_->TooltipForField(input.type));
+      // VoiceOver onlys seems to pick up the help message on [field cell]
+      // (rather than just field).
+      BOOL success = [[field cell]
+          accessibilitySetOverrideValue:tooltipText
+                           forAttribute:NSAccessibilityHelpAttribute];
+      DCHECK(success);
       if ([tooltipText length] > 0) {
         if (!tooltipController_) {
           tooltipController_.reset(

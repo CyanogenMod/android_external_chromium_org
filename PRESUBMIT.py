@@ -61,8 +61,7 @@ _TEST_ONLY_WARNING = (
     'You might be calling functions intended only for testing from\n'
     'production code.  It is OK to ignore this warning if you know what\n'
     'you are doing, as the heuristics used to detect the situation are\n'
-    'not perfect.  The commit queue will not block on this warning.\n'
-    'Email joi@chromium.org if you have questions.')
+    'not perfect.  The commit queue will not block on this warning.')
 
 
 _INCLUDE_ORDER_WARNING = (
@@ -170,6 +169,7 @@ _BANNED_CPP_FUNCTIONS = (
         r"^components[\\\/]breakpad[\\\/]app[\\\/]breakpad_mac\.mm$",
         r"^content[\\\/]shell[\\\/]browser[\\\/]shell_browser_main\.cc$",
         r"^content[\\\/]shell[\\\/]browser[\\\/]shell_message_filter\.cc$",
+        r"^mojo[\\\/]system[\\\/]raw_shared_buffer_posix\.cc$",
         r"^net[\\\/]disk_cache[\\\/]cache_util\.cc$",
       ),
     ),
@@ -759,7 +759,7 @@ def _CheckHardcodedGoogleHostsInLowerLayers(input_api, output_api):
   if problems:
     return [output_api.PresubmitPromptOrNotify(
         'Most layers below src/chrome/ should not hardcode service URLs.\n'
-        'Are you sure this is correct? (Contact: joi@chromium.org)',
+        'Are you sure this is correct?',
         ['  %s:%d:  %s' % (
             problem[0], problem[1], problem[2]) for problem in problems])]
   else:
@@ -905,6 +905,7 @@ def _CheckSpamLogging(input_api, output_api):
                      r"logging_native_handler\.cc$",
                  r"^content[\\\/]common[\\\/]gpu[\\\/]client[\\\/]"
                      r"gl_helper_benchmark\.cc$",
+                 r"^native_client_sdk[\\\/]",
                  r"^remoting[\\\/]base[\\\/]logging\.h$",
                  r"^remoting[\\\/]host[\\\/].*",
                  r"^sandbox[\\\/]linux[\\\/].*",

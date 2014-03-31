@@ -181,6 +181,7 @@
     'public/browser/resource_request_info.h',
     'public/browser/resource_throttle.h',
     'public/browser/save_page_type.h',
+    'public/browser/service_worker_context.h',
     'public/browser/session_storage_namespace.h',
     'public/browser/session_storage_usage_info.h',
     'public/browser/signed_certificate_timestamp_store.h',
@@ -823,7 +824,6 @@
     'browser/power_monitor_message_broadcaster.cc',
     'browser/power_monitor_message_broadcaster.h',
     'browser/power_profiler/power_data_provider.h',
-    'browser/power_profiler/power_data_provider_dummy.cc',
     'browser/power_profiler/power_event.cc',
     'browser/power_profiler/power_event.h',
     'browser/power_profiler/power_profiler_observer.h',
@@ -1085,8 +1085,10 @@
     'browser/renderer_host/render_message_filter.h',
     'browser/renderer_host/render_process_host_impl.cc',
     'browser/renderer_host/render_process_host_impl.h',
+    'browser/renderer_host/render_process_host_mojo_impl.cc',
+    'browser/renderer_host/render_process_host_mojo_impl.h',
     'browser/renderer_host/render_sandbox_host_linux.cc',
-    'browser/renderer_host/render_sandbox_host_linux.h',
+    'browser/renderer_host/render_process_host_impl.h',
     'browser/renderer_host/render_view_host_delegate.cc',
     'browser/renderer_host/render_view_host_delegate.h',
     'browser/renderer_host/render_view_host_factory.cc',
@@ -1152,7 +1154,6 @@
     'browser/service_worker/embedded_worker_instance.h',
     'browser/service_worker/embedded_worker_registry.cc',
     'browser/service_worker/embedded_worker_registry.h',
-    'browser/service_worker/service_worker_context.h',
     'browser/service_worker/service_worker_context_core.cc',
     'browser/service_worker/service_worker_context_core.h',
     'browser/service_worker/service_worker_context_wrapper.cc',
@@ -1371,6 +1372,19 @@
         '../ui/events/events.gyp:events',
       ],
     }],
+    ['OS == "win"', {
+      'dependencies': [
+        '../third_party/power_gadget/power_gadget.gyp:power_gadget',
+      ],
+      'sources': [
+        'browser/power_profiler/power_data_provider_ia_win.cc',
+        'browser/power_profiler/power_data_provider_ia_win.h',
+      ]
+    }, { # os != "win"
+      'sources': [
+        'browser/power_profiler/power_data_provider_dummy.cc'
+      ]
+    }],
     ['OS!="win" and OS!="mac" and (OS!="linux" or use_udev==0)', {
       'sources': [
         'browser/gamepad/gamepad_platform_data_fetcher.cc',
@@ -1378,7 +1392,14 @@
     }],
     ['use_mojo==1', {
       'dependencies': [
+        '../mojo/mojo.gyp:mojo_bindings',
         '../mojo/mojo.gyp:mojo_system',
+        'content_common_mojo_bindings',
+      ],
+    }, {  # use_mojo==0
+      'sources!': [
+        'browser/renderer_host/render_process_host_mojo_impl.cc',
+        'browser/renderer_host/render_process_host_mojo_impl.h',
       ],
     }],
     ['OS=="ios"', {
@@ -1622,6 +1643,7 @@
     ['chromeos==1', {
       'dependencies': [
         '../build/linux/system.gyp:dbus',
+        '../chromeos/chromeos.gyp:power_manager_proto',
       ],
       'sources!': [
         'browser/geolocation/wifi_data_provider_linux.cc',

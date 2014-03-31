@@ -53,6 +53,8 @@ const char kInvalidSessionIdError[] = "Invalid session id: \"*\".";
 const char kNoBrowserToRestoreSession[] =
     "There are no browser windows to restore the session.";
 const char kSessionSyncError[] = "Synced sessions are not available.";
+const char kRestoreInIncognitoError[] =
+    "Can not restore sessions in incognito mode.";
 
 // Comparator function for use with std::sort that will sort sessions by
 // descending modified_time (i.e., most recent first).
@@ -205,7 +207,16 @@ bool SessionsGetRecentlyClosedFunction::RunImpl() {
   std::vector<linked_ptr<api::sessions::Session> > result;
   TabRestoreService* tab_restore_service =
       TabRestoreServiceFactory::GetForProfile(GetProfile());
-  DCHECK(tab_restore_service);
+
+  // TabRestoreServiceFactory::GetForProfile() can return NULL (i.e., when in
+  // incognito mode)
+  if (!tab_restore_service) {
+    DCHECK_NE(GetProfile(), GetProfile()->GetOriginalProfile())
+        << "TabRestoreService expected for normal profiles";
+    results_ = GetRecentlyClosed::Results::Create(
+        std::vector<linked_ptr<api::sessions::Session> >());
+    return true;
+  }
 
   // List of entries. They are ordered from most to least recent.
   // We prune the list to contain max 25 entries at any time and removes
@@ -560,6 +571,11 @@ bool SessionsRestoreFunction::RunImpl() {
       GetProfile(), chrome::HOST_DESKTOP_TYPE_NATIVE);
   if (!browser) {
     SetError(kNoBrowserToRestoreSession);
+    return false;
+  }
+
+  if (GetProfile() != GetProfile()->GetOriginalProfile()) {
+    SetError(kRestoreInIncognitoError);
     return false;
   }
 

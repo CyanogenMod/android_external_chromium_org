@@ -89,21 +89,26 @@ class Run(command_line.OptparseCommand):
 
   @classmethod
   def AddCommandLineArgs(cls, parser):
+    test.AddCommandLineArgs(parser)
+
     # Allow tests to add their own command line options.
     matching_tests = []
     for arg in sys.argv[1:]:
       matching_tests += _MatchTestName(arg)
-    # TODO(dtu): After move to argparse, add command-line args for all tests
-    # to subparser. Using subparsers will avoid duplicate arguments.
+
     if matching_tests:
-      matching_tests.pop().AddCommandLineArgs(parser)
-    test.AddCommandLineArgs(parser)
+      # TODO(dtu): After move to argparse, add command-line args for all tests
+      # to subparser. Using subparsers will avoid duplicate arguments.
+      matching_test = matching_tests.pop()
+      matching_test.AddCommandLineArgs(parser)
+      # The test's options override the defaults!
+      matching_test.SetArgumentDefaults(parser)
 
   @classmethod
   def ProcessCommandLineArgs(cls, parser, args):
     if not args.positional_args:
       _PrintTestList(_Tests())
-      sys.exit(1)
+      sys.exit(-1)
 
     input_test_name = args.positional_args[0]
     matching_tests = _MatchTestName(input_test_name)
@@ -111,22 +116,22 @@ class Run(command_line.OptparseCommand):
       print >> sys.stderr, 'No test named "%s".' % input_test_name
       print >> sys.stderr
       _PrintTestList(_Tests())
-      sys.exit(1)
+      sys.exit(-1)
 
     if len(matching_tests) > 1:
       print >> sys.stderr, 'Multiple tests named "%s".' % input_test_name
       print >> sys.stderr, 'Did you mean one of these?'
       print >> sys.stderr
       _PrintTestList(matching_tests)
-      sys.exit(1)
+      sys.exit(-1)
 
     test_class = matching_tests.pop()
     if issubclass(test_class, page_test.PageTest):
-      if len(args.tests) < 2:
+      if len(args.positional_args) < 2:
         parser.error('Need to specify a page set for "%s".' % test_class.Name())
-      if len(args.tests) > 2:
+      if len(args.positional_args) > 2:
         parser.error('Too many arguments.')
-      page_set_path = args.tests[1]
+      page_set_path = args.positional_args[1]
       if not os.path.exists(page_set_path):
         parser.error('Page set not found.')
       if not (os.path.isfile(page_set_path) and
@@ -138,7 +143,7 @@ class Run(command_line.OptparseCommand):
         page_set = page_set_path
       test_class = TestWrapper
     else:
-      if len(args.tests) > 1:
+      if len(args.positional_args) > 1:
         parser.error('Too many arguments.')
 
     assert issubclass(test_class, test.Test), 'Trying to run a non-Test?!'

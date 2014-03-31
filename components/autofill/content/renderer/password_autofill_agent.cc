@@ -542,7 +542,7 @@ blink::WebFrame* PasswordAutofillAgent::CurrentOrChildFrameWithSavedForms(
     // keep just the first frame found, it might be a good idea to add a UMA
     // statistic or a similar check on how many frames are here to choose from.
     if (current_frame == form_frame ||
-        current_frame->findChildByName(form_frame->uniqueName())) {
+        current_frame->findChildByName(form_frame->assignedName())) {
       return form_frame;
     }
   }
@@ -637,7 +637,7 @@ void PasswordAutofillAgent::OnFillPasswordForm(
 
     FormData form;
     FormFieldData field;
-    FindFormAndFieldForInputElement(
+    FindFormAndFieldForFormControlElement(
         username_element, &form, &field, REQUIRE_NONE);
     Send(new AutofillHostMsg_AddPasswordFormMapping(
         routing_id(),
@@ -699,7 +699,7 @@ bool PasswordAutofillAgent::ShowSuggestionPopup(
 
   FormData form;
   FormFieldData field;
-  FindFormAndFieldForInputElement(
+  FindFormAndFieldForFormControlElement(
       user_input, &form, &field, REQUIRE_NONE);
 
   blink::WebInputElement selected_element = user_input;

@@ -15,13 +15,10 @@ const char kAppOemManifestFile[]            = "app-mode-oem-manifest";
 // Possible values: parallel|postpone. Default: parallel.
 const char kAshWebUIInit[]                  = "ash-webui-init";
 
-// Enables overriding the path for the default authentication extension.
-const char kAuthExtensionPath[]             = "auth-ext-path";
-
 // Forces the stub implementation of dbus clients.
 const char kDbusStub[] = "dbus-stub";
 
-// Time before a machine at OOBE is considered derelict
+// Time before a machine at OOBE is considered derelict.
 const char kDerelictDetectionTimeout[] = "derelict-detection-timeout";
 
 // Time before a derelict machines starts demo mode.
@@ -61,11 +58,6 @@ const char kDisableVolumeAdjustSound[] = "disable-volume-adjust-sound";
 const char kDisableNetworkPortalNotification[] =
     "disable-network-portal-notification";
 
-// Disables portal detection and network error handling before auto
-// update.
-const char kDisableOOBEBlockingUpdate[] =
-    "disable-oobe-blocking-update";
-
 // Enables overriding the path for the default echo component extension.
 // Useful for testing.
 const char kEchoExtensionPath[]             = "echo-ext-path";
@@ -84,6 +76,9 @@ const char kEnableTouchpadThreeFingerClick[]
 // Enable Kiosk mode for ChromeOS. Note this switch refers to retail mode rather
 // than the kiosk app mode.
 const char kEnableKioskMode[]               = "enable-kiosk-mode";
+
+// Enables rollback option for resetting ChromeOS.
+const char kEnableRollbackOption[]          = "enable-rollback-option";
 
 // Enables request of tablet site (via user agent override).
 const char kEnableRequestTabletSite[]       = "enable-request-tablet-site";
@@ -156,6 +151,9 @@ const char kOobeSkipPostLogin[]             = "oobe-skip-postlogin";
 
 // Interval at which we check for total time on OOBE.
 const char kOobeTimerInterval[]             = "oobe-timer-interval";
+
+// Indicates that a guest session has been started before OOBE completion.
+const char kOobeGuestSession[]              = "oobe-guest-session";
 
 // Specifies power stub behavior:
 //  'cycle=2' - Cycles power states every 2 seconds.

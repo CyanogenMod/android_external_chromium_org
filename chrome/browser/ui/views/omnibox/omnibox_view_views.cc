@@ -21,6 +21,8 @@
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_contents_view.h"
+#include "chrome/browser/ui/views/settings_api_bubble_helper_views.h"
+#include "chrome/browser/ui/views/website_settings/website_settings_popup_view.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/constants.h"
@@ -39,6 +41,7 @@
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/selection_model.h"
@@ -178,6 +181,14 @@ void OmniboxViewViews::Init() {
   chromeos::input_method::InputMethodManager::Get()->
       AddCandidateWindowObserver(this);
 #endif
+
+  fade_in_animation_.reset(new gfx::SlideAnimation(this));
+  fade_in_animation_->SetTweenType(gfx::Tween::LINEAR);
+  fade_in_animation_->SetSlideDuration(300);
+}
+
+void OmniboxViewViews::FadeIn() {
+  fade_in_animation_->Show();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -185,6 +196,17 @@ void OmniboxViewViews::Init() {
 
 const char* OmniboxViewViews::GetClassName() const {
   return kViewClassName;
+}
+
+void OmniboxViewViews::OnPaint(gfx::Canvas* canvas) {
+  if (fade_in_animation_->is_animating()) {
+    canvas->SaveLayerAlpha(static_cast<uint8>(
+        fade_in_animation_->CurrentValueBetween(0, 255)));
+    views::Textfield::OnPaint(canvas);
+    canvas->Restore();
+  } else {
+    views::Textfield::OnPaint(canvas);
+  }
 }
 
 bool OmniboxViewViews::OnMousePressed(const ui::MouseEvent& event) {
@@ -406,7 +428,10 @@ void OmniboxViewViews::OnBlur() {
   // Tell the model to reset itself.
   model()->OnKillFocus();
 
-  OnDidKillFocus();
+  // Ignore loss of focus if we lost focus because the website settings popup
+  // is open. When the popup is destroyed, focus will return to the Omnibox.
+  if (!WebsiteSettingsPopupView::IsPopupShowing())
+    OnDidKillFocus();
 
   // Make sure the beginning of the text is visible.
   SelectRange(gfx::Range(0));
@@ -716,6 +741,13 @@ void OmniboxViewViews::ShowImeIfNeeded() {
   GetInputMethod()->ShowImeIfNeeded();
 }
 
+void OmniboxViewViews::OnMatchOpened(const AutocompleteMatch& match,
+                                     Profile* profile,
+                                     content::WebContents* web_contents) const {
+  extensions::MaybeShowExtensionControlledSearchNotification(
+      profile, web_contents, match);
+}
+
 bool OmniboxViewViews::IsCommandIdEnabled(int command_id) const {
   if (command_id == IDS_APP_PASTE)
     return !read_only() && !GetClipboardText().empty();
@@ -745,7 +777,7 @@ void OmniboxViewViews::ExecuteCommand(int command_id, int event_flags) {
       model()->PasteAndGo(GetClipboardText());
       break;
     case IDS_SHOW_URL:
-      ShowURL();
+      controller()->ShowURL();
       break;
     case IDC_EDIT_SEARCH_ENGINES:
       command_updater()->ExecuteCommand(command_id);
@@ -762,6 +794,17 @@ void OmniboxViewViews::ExecuteCommand(int command_id, int event_flags) {
       OnAfterPossibleChange();
       break;
   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// OmniboxViewViews, gfx::AnimationDelegate implementation:
+
+void OmniboxViewViews::AnimationProgressed(const gfx::Animation* animation) {
+  SchedulePaint();
+}
+
+void OmniboxViewViews::AnimationEnded(const gfx::Animation* animation) {
+  fade_in_animation_->Reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

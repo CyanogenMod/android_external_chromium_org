@@ -12,7 +12,6 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
-#include "chrome/browser/managed_mode/managed_user_signin_manager_wrapper.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -23,6 +22,7 @@
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/sync/managed_user_signin_manager_wrapper.h"
 #include "chrome/browser/sync/profile_sync_components_factory_impl.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/startup_controller.h"
@@ -31,7 +31,7 @@
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
-#include "components/signin/core/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "extensions/browser/extension_system_provider.h"
 #include "extensions/browser/extensions_browser_client.h"
 
@@ -114,7 +114,7 @@ KeyedService* ProfileSyncServiceFactory::BuildServiceInstanceFor(
       new ProfileSyncComponentsFactoryImpl(profile,
                                            CommandLine::ForCurrentProcess()),
       profile,
-      new ManagedUserSigninManagerWrapper(signin),
+      new ManagedUserSigninManagerWrapper(profile, signin),
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
       behavior);
 

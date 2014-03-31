@@ -61,6 +61,12 @@ leak:WebCore::V8WindowShell::initializeIfNeeded
 leak:WebCore::*::*GetterCallback
 leak:WebCore::CSSComputedStyleDeclaration::create
 
+# crbug.com/358014
+leak:WebCore::V8PerIsolateData::ensureDomInJSContext
+
+# http://crbug.com/356785
+leak:content::RenderViewImplTest_DecideNavigationPolicyForWebUI_Test::TestBody
+
 #### Actual bugs in Chromium code ####
 # PLEASE DO NOT ADD SUPPRESSIONS FOR NEW LEAKS.
 # Instead, commits that introduce memory leaks should be reverted. Suppressing
@@ -93,5 +99,8 @@ leak:base::EnsureProcessTerminated
 
 # http://crbug.com/322671
 leak:content::SpeechRecognitionBrowserTest::SetUpOnMainThread
+
+# http://crbug.com/355641
+leak:TrayAccessibilityTest
 
 # PLEASE READ ABOVE BEFORE ADDING NEW SUPPRESSIONS.

@@ -1,7 +1,6 @@
 include_rules = [
   "+content/port/browser",
   "+content/public/browser",
-  "+content/child/webkitplatformsupport_impl.h",  # For in-process webkit
   "+media/audio",  # For audio input for speech input feature.
   "+media/base",  # For Android JNI registration.
   "+media/midi",  # For Web MIDI API
@@ -19,6 +18,7 @@ include_rules = [
   "+third_party/iaccessible2",
   "+third_party/isimpledom",
   "+third_party/khronos",   # For enum definitions only
+  "+third_party/power_gadget",
   "+third_party/speex",
   "+third_party/re2",
 

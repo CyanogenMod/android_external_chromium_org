@@ -176,7 +176,6 @@ class SSLConfigServiceManagerPref
   StringPrefMember ssl_version_max_;
   BooleanPrefMember channel_id_enabled_;
   BooleanPrefMember ssl_record_splitting_disabled_;
-  BooleanPrefMember unrestricted_ssl3_fallback_enabled_;
 
   // The cached list of disabled SSL cipher suites.
   std::vector<uint16> disabled_cipher_suites_;
@@ -210,10 +209,6 @@ SSLConfigServiceManagerPref::SSLConfigServiceManagerPref(
       prefs::kEnableOriginBoundCerts, local_state, local_state_callback);
   ssl_record_splitting_disabled_.Init(
       prefs::kDisableSSLRecordSplitting, local_state, local_state_callback);
-  unrestricted_ssl3_fallback_enabled_.Init(
-      prefs::kEnableUnrestrictedSSL3Fallback,
-      local_state,
-      local_state_callback);
 
   local_state_change_registrar_.Init(local_state);
   local_state_change_registrar_.Add(
@@ -244,8 +239,6 @@ void SSLConfigServiceManagerPref::RegisterPrefs(PrefRegistrySimple* registry) {
                                 default_config.channel_id_enabled);
   registry->RegisterBooleanPref(prefs::kDisableSSLRecordSplitting,
                                 !default_config.false_start_enabled);
-  registry->RegisterBooleanPref(prefs::kEnableUnrestrictedSSL3Fallback,
-      default_config.unrestricted_ssl3_fallback_enabled);
   registry->RegisterListPref(prefs::kCipherSuiteBlacklist);
 }
 
@@ -282,8 +275,8 @@ void SSLConfigServiceManagerPref::GetSSLConfigFromPrefs(
       rev_checking_required_local_anchors_.GetValue();
   std::string version_min_str = ssl_version_min_.GetValue();
   std::string version_max_str = ssl_version_max_.GetValue();
-  config->version_min = net::SSLConfigService::default_version_min();
-  config->version_max = net::SSLConfigService::default_version_max();
+  config->version_min = net::kDefaultSSLVersionMin;
+  config->version_max = net::kDefaultSSLVersionMax;
   uint16 version_min = SSLProtocolVersionFromString(version_min_str);
   uint16 version_max = SSLProtocolVersionFromString(version_max_str);
   if (version_min) {
@@ -304,8 +297,6 @@ void SSLConfigServiceManagerPref::GetSSLConfigFromPrefs(
   config->channel_id_enabled = channel_id_enabled_.GetValue();
   // disabling False Start also happens to disable record splitting.
   config->false_start_enabled = !ssl_record_splitting_disabled_.GetValue();
-  config->unrestricted_ssl3_fallback_enabled =
-      unrestricted_ssl3_fallback_enabled_.GetValue();
 }
 
 void SSLConfigServiceManagerPref::OnDisabledCipherSuitesChange(

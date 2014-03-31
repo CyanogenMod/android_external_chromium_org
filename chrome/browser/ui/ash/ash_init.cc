@@ -12,8 +12,6 @@
 #include "ash/shell.h"
 #include "base/command_line.h"
 #include "chrome/browser/browser_shutdown.h"
-#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
-#include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 #include "chrome/browser/ui/ash/screenshot_taker.h"
@@ -23,6 +21,8 @@
 
 #if defined(OS_CHROMEOS)
 #include "base/sys_info.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
+#include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/ui/ash/ime_controller_chromeos.h"
 #include "chrome/browser/ui/ash/volume_controller_chromeos.h"
 #include "chromeos/chromeos_switches.h"
@@ -83,12 +83,8 @@ void OpenAsh() {
 }
 
 void CloseAsh() {
-  // If shutdown is initiated by |BrowserX11IOErrorHandler|, don't
-  // try to cleanup resources.
-  if (!browser_shutdown::ShuttingDownWithoutClosingBrowsers() &&
-      ash::Shell::HasInstance()) {
+  if (ash::Shell::HasInstance())
     ash::Shell::DeleteInstance();
-  }
 }
 
 }  // namespace chrome

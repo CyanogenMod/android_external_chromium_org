@@ -79,7 +79,10 @@ class AppListSyncableService : public syncer::SyncableService,
 
   Profile* profile() { return profile_; }
   AppListModel* model() { return model_.get(); }
-  size_t GetNumSyncItemsForTest() { return sync_items_.size(); }
+  size_t GetNumSyncItemsForTest() const { return sync_items_.size(); }
+  const std::string& GetOemFolderNameForTest() const {
+    return oem_folder_name_;
+  }
 
   // syncer::SyncableService
   virtual syncer::SyncMergeResult MergeDataAndStartSyncing(
@@ -175,6 +178,10 @@ class AppListSyncableService : public syncer::SyncableService,
   // Creates the OEM folder and sets its name if necessary. Returns the OEM
   // folder id.
   std::string FindOrCreateOemFolder();
+
+  // Returns true if an extension matching |id| exists and was installed by
+  // an OEM (extension->was_installed_by_oem() is true).
+  bool AppIsOem(const std::string& id);
 
   Profile* profile_;
   extensions::ExtensionSystem* extension_system_;

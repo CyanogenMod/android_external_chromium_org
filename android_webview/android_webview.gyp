@@ -26,13 +26,6 @@
         [ 'android_webview_build==0', {
           'product_prefix': 'libstandalone',
         }],
-        # The general approach is to allow the executable target to choose
-        # the allocator, but as in the WebView case we are building a library
-        # only, put the dependency on the allocator here
-        [ 'android_webview_build==1 and android_use_tcmalloc==1', {
-          'dependencies': [
-            '../base/allocator/allocator.gyp:allocator', ],
-        }],
         [ 'android_webview_build==1 and use_system_skia==0', {
           # When not using the system skia there are linker warnings about
           # overriden hidden symbols which there's no easy way to eliminate;
@@ -58,9 +51,6 @@
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
       ],
-      'variables': {
-        'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
-      },
       'actions': [
         {
           'action_name': 'repack_android_webview_pack',
@@ -72,16 +62,9 @@
               '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
             ],
+            'pak_output': '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak',
           },
-          'inputs': [
-            '<(repack_path)',
-            '<@(pak_inputs)',
-          ],
-          'outputs': [
-            '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak',
-          ],
-          'action': ['python', '<(repack_path)', '<@(_outputs)',
-                     '<@(pak_inputs)'],
+         'includes': [ '../build/repack_action.gypi' ],
         }
       ],
     },
@@ -197,8 +180,6 @@
         'common/aw_hit_test_data.cc',
         'common/aw_hit_test_data.h',
         'common/aw_resource.h',
-        'common/aw_switches.cc',
-        'common/aw_switches.h',
         'common/devtools_instrumentation.h',
         'common/print_messages.cc',
         'common/print_messages.h',

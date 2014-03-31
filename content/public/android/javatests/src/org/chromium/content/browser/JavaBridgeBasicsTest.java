@@ -6,6 +6,7 @@ package org.chromium.content.browser;
 
 import android.test.suitebuilder.annotation.SmallTest;
 
+import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content_shell_apk.ContentShellActivity;
@@ -119,6 +120,19 @@ public class JavaBridgeBasicsTest extends JavaBridgeTestBase {
         onPageFinishedHelper.waitForCallback(currentCallCount);
     }
 
+    protected void synchronousPageReload() throws Throwable {
+        TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
+                mTestCallbackHelperContainer.getOnPageFinishedHelper();
+        int currentCallCount = onPageFinishedHelper.getCallCount();
+        runTestOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                getContentView().getContentViewCore().reload(true);
+            }
+        });
+        onPageFinishedHelper.waitForCallback(currentCallCount);
+    }
+
     // Note that this requires that we can pass a JavaScript boolean to Java.
     private void assertRaisesException(String script) throws Throwable {
         executeJavaScript("try {" +
@@ -148,16 +162,7 @@ public class JavaBridgeBasicsTest extends JavaBridgeTestBase {
             }
         });
         assertEquals("undefined", executeJavaScriptAndGetStringResult("typeof testObject"));
-        TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
-                mTestCallbackHelperContainer.getOnPageFinishedHelper();
-        int currentCallCount = onPageFinishedHelper.getCallCount();
-        runTestOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                getContentView().getContentViewCore().reload(true);
-            }
-        });
-        onPageFinishedHelper.waitForCallback(currentCallCount);
+        synchronousPageReload();
         assertEquals("object", executeJavaScriptAndGetStringResult("typeof testObject"));
     }
 
@@ -173,16 +178,7 @@ public class JavaBridgeBasicsTest extends JavaBridgeTestBase {
             }
         });
         assertEquals("object", executeJavaScriptAndGetStringResult("typeof testObject"));
-        TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
-                mTestCallbackHelperContainer.getOnPageFinishedHelper();
-        int currentCallCount = onPageFinishedHelper.getCallCount();
-        runTestOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                getContentView().getContentViewCore().reload(true);
-            }
-        });
-        onPageFinishedHelper.waitForCallback(currentCallCount);
+        synchronousPageReload();
         assertEquals("undefined", executeJavaScriptAndGetStringResult("typeof testObject"));
     }
 
@@ -325,17 +321,18 @@ public class JavaBridgeBasicsTest extends JavaBridgeTestBase {
     @Feature({"AndroidWebView", "Android-JavaBridge"})
     public void testObjectPersistsAcrossPageLoads() throws Throwable {
         assertEquals("object", executeJavaScriptAndGetStringResult("typeof testController"));
-        TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
-                mTestCallbackHelperContainer.getOnPageFinishedHelper();
-        int currentCallCount = onPageFinishedHelper.getCallCount();
-        runTestOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                getContentView().getContentViewCore().reload(true);
-            }
-        });
-        onPageFinishedHelper.waitForCallback(currentCallCount);
+        synchronousPageReload();
         assertEquals("object", executeJavaScriptAndGetStringResult("typeof testController"));
+    }
+
+    @SmallTest
+    @Feature({"AndroidWebView", "Android-JavaBridge"})
+    public void testClientPropertiesPersistAcrossPageLoads() throws Throwable {
+        assertEquals("object", executeJavaScriptAndGetStringResult("typeof testController"));
+        executeJavaScript("testController.myProperty = 42;");
+        assertEquals("42", executeJavaScriptAndGetStringResult("testController.myProperty"));
+        synchronousPageReload();
+        assertEquals("42", executeJavaScriptAndGetStringResult("testController.myProperty"));
     }
 
     @SmallTest
@@ -456,6 +453,36 @@ public class JavaBridgeBasicsTest extends JavaBridgeTestBase {
         // be collected this time.
         Runtime.getRuntime().gc();
         assertEquals(null, object.weakRefForInner.get());
+    }
+
+    /*
+     * The current Java bridge implementation doesn't reuse JS wrappers when returning
+     * the same object from a method. That looks wrong. For example, in the case of DOM,
+     * wrappers are reused, which allows JS code to attach custom properties to interface
+     * objects and use them regardless of the way the reference has been obtained:
+     * via copying a JS reference or by calling the method one more time (assuming that
+     * the method is supposed to return a reference to the same object each time).
+     * TODO(mnaganov): Fix this in the new implementation.
+     *
+     * @SmallTest
+     * @Feature({"AndroidWebView", "Android-JavaBridge"})
+     */
+    @DisabledTest
+    public void testSameReturnedObjectUsesSameWrapper() throws Throwable {
+        class InnerObject {
+        }
+        final InnerObject innerObject = new InnerObject();
+        final Object injectedTestObject = new Object() {
+            public InnerObject getInnerObject() {
+                return innerObject;
+            }
+        };
+        injectObjectAndReload(injectedTestObject, "injectedTestObject");
+        executeJavaScript("inner1 = injectedTestObject.getInnerObject()");
+        executeJavaScript("inner2 = injectedTestObject.getInnerObject()");
+        assertEquals("object", executeJavaScriptAndGetStringResult("typeof inner1"));
+        assertEquals("object", executeJavaScriptAndGetStringResult("typeof inner2"));
+        assertEquals("true", executeJavaScriptAndGetStringResult("inner1 === inner2"));
     }
 
     @SmallTest

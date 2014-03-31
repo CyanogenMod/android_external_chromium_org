@@ -37,6 +37,7 @@ class ExtendedAuthenticator
   };
 
   typedef base::Callback<void(const std::string& hash)> HashSuccessCallback;
+  typedef base::Callback<void(const UserContext& context)> ContextCallback;
 
   class AuthStatusConsumer {
    public:
@@ -79,7 +80,7 @@ class ExtendedAuthenticator
   void HashPasswordWithSalt(const std::string& password,
                             const HashSuccessCallback& success_callback);
 
-  // Attempts to add new |key| for user identified/authorized by |auth|.
+  // Attempts to add new |key| for user identified/authorized by |context|.
   // If if key with same label already exist, behavior depends on
   // |replace_existing| flag. If flag is set, old key will be replaced. If it
   // is not set, attempt will lead to error.
@@ -89,6 +90,27 @@ class ExtendedAuthenticator
               bool replace_existing,
               const base::Closure& success_callback);
 
+  // Attempts to perform an authorized update of the key specified in |context|
+  // with new |key|. Update is authorized by providing |signature| of the key.
+  // Original key should have |PRIV_AUTHORIZED_UPDATE| privilege to perform this
+  // operation. Key label in |context| and in |key| should be the same.
+  void UpdateKeyAuthorized(const UserContext& context,
+                           const cryptohome::KeyDefinition& key,
+                           const std::string& signature,
+                           const base::Closure& success_callback);
+
+  // Attempts to  remove |key_to_remove|-labelled key for user
+  // identified/authorized by |context|. It is possible to remove the key used
+  // for authorization, although it should be done with extreme care.
+  void RemoveKey(const UserContext& context,
+                 const std::string& key_to_remove,
+                 const base::Closure& success_callback);
+
+  // Transforms |user_context| so that it can be used by DoNNN methods.
+  // Currently it consists of hashing password with system salt if needed.
+  void TransformContext(const UserContext& user_context,
+                        const ContextCallback& callback);
+
  private:
   friend class base::RefCountedThreadSafe<ExtendedAuthenticator>;
 
@@ -96,7 +118,6 @@ class ExtendedAuthenticator
 
   typedef base::Callback<void(const std::string& system_salt)>
       PendingHashCallback;
-  typedef base::Callback<void(const UserContext& context)> ContextCallback;
 
   // Callback for system salt getter.
   void OnSaltObtained(const std::string& system_salt);
@@ -116,6 +137,13 @@ class ExtendedAuthenticator
                 bool replace_existing,
                 const base::Closure& success_callback,
                 const UserContext& context);
+  void DoUpdateKeyAuthorized(const cryptohome::KeyDefinition& key,
+                             const std::string& signature,
+                             const base::Closure& success_callback,
+                             const UserContext& context);
+  void DoRemoveKey(const std::string& key_to_remove,
+                   const base::Closure& success_callback,
+                   const UserContext& context);
 
   // Inner operation callbacks.
   void OnMountComplete(const std::string& time_marker,
@@ -124,16 +152,11 @@ class ExtendedAuthenticator
                        bool success,
                        cryptohome::MountError return_code,
                        const std::string& mount_hash);
-  void OnCheckKeyComplete(const std::string& time_marker,
-                          const UserContext& context,
-                          const base::Closure& success_callback,
-                          bool success,
-                          cryptohome::MountError return_code);
-  void OnAddKeyComplete(const std::string& time_marker,
-                        const UserContext& user_context,
-                        const base::Closure& success_callback,
-                        bool success,
-                        cryptohome::MountError return_code);
+  void OnOperationComplete(const std::string& time_marker,
+                           const UserContext& context,
+                           const base::Closure& success_callback,
+                           bool success,
+                           cryptohome::MountError return_code);
 
   // Inner implementation for hashing |password| with system salt. Will queue
   // requests if |system_salt| is not known yet.
@@ -141,11 +164,6 @@ class ExtendedAuthenticator
   void DoHashWithSalt(const std::string& password,
                       const HashSuccessCallback& callback,
                       const std::string& system_salt);
-
-  // Transforms |user_context| so that it can be used by DoNNN methods.
-  // Currently it consists of hashing password with system salt if needed.
-  void TransformContext(const UserContext& user_context,
-                        const ContextCallback& callback);
 
   // Callback from previous method.
   void DidTransformContext(const UserContext& user_context,

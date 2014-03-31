@@ -38,7 +38,6 @@
 #include "content/child/npapi/webplugin_delegate_impl.h"
 #include "content/child/request_extra_data.h"
 #include "content/child/webmessageportchannel_impl.h"
-#include "content/common/clipboard_messages.h"
 #include "content/common/database_messages.h"
 #include "content/common/dom_storage/dom_storage_types.h"
 #include "content/common/drag_messages.h"
@@ -188,6 +187,7 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/web/WebWindowFeatures.h"
 #include "third_party/WebKit/public/web/default/WebRenderTheme.h"
+#include "ui/base/clipboard/clipboard.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/events/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
@@ -236,6 +236,10 @@
 
 #if defined(ENABLE_WEBRTC)
 #include "content/renderer/media/rtc_peer_connection_handler.h"
+#endif
+
+#if defined(USE_MOJO)
+#include "content/renderer/web_ui_mojo.h"
 #endif
 
 using blink::WebAXObject;
@@ -345,8 +349,6 @@ static base::LazyInstance<RoutingIDViewMap> g_routing_id_view_map =
 // better than having to wake up all renderers during shutdown.
 const int kDelaySecondsForContentStateSyncHidden = 5;
 const int kDelaySecondsForContentStateSync = 1;
-
-const size_t kExtraCharsBeforeAndAfterSelection = 100;
 
 #if defined(OS_ANDROID)
 // Delay between tapping in content and launching the associated android intent.
@@ -606,14 +608,14 @@ WebDragData DropDataToWebDragData(const DropData& drop_data) {
     item_list.push_back(item);
   }
 
-  for (std::vector<DropData::FileInfo>::const_iterator it =
+  for (std::vector<ui::FileInfo>::const_iterator it =
            drop_data.filenames.begin();
        it != drop_data.filenames.end();
        ++it) {
     WebDragData::Item item;
     item.storageType = WebDragData::Item::StorageTypeFilename;
-    item.filenameData = it->path;
-    item.displayNameData = it->display_name;
+    item.filenameData = it->path.AsUTF16Unsafe();
+    item.displayNameData = it->display_name.AsUTF16Unsafe();
     item_list.push_back(item);
   }
 
@@ -655,9 +657,8 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       next_page_id_(params->next_page_id),
       history_list_offset_(-1),
       history_list_length_(0),
+      frames_in_progress_(0),
       target_url_status_(TARGET_NONE),
-      selection_text_offset_(0),
-      selection_range_(gfx::Range::InvalidRange()),
 #if defined(OS_ANDROID)
       top_controls_constraints_(cc::BOTH),
 #endif
@@ -695,7 +696,6 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       enumeration_completion_id_(0),
       load_progress_tracker_(new LoadProgressTracker(this)),
       session_storage_namespace_id_(params->session_storage_namespace_id),
-      handling_select_range_(false),
       next_snapshot_id_(0) {
 }
 
@@ -929,7 +929,7 @@ RenderViewImpl* RenderViewImpl::Create(
     bool hidden,
     int32 next_page_id,
     const blink::WebScreenInfo& screen_info,
-    unsigned int accessibility_mode) {
+    AccessibilityMode accessibility_mode) {
   DCHECK(routing_id != MSG_ROUTING_NONE);
   RenderViewImplParams params(opener_id,
                               renderer_prefs,
@@ -1071,31 +1071,18 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   bool msg_is_ok = true;
   IPC_BEGIN_MESSAGE_MAP_EX(RenderViewImpl, message, msg_is_ok)
-    IPC_MESSAGE_HANDLER(InputMsg_Delete, OnDelete)
     IPC_MESSAGE_HANDLER(InputMsg_ExecuteEditCommand, OnExecuteEditCommand)
     IPC_MESSAGE_HANDLER(InputMsg_MoveCaret, OnMoveCaret)
-    IPC_MESSAGE_HANDLER(InputMsg_PasteAndMatchStyle, OnPasteAndMatchStyle)
-    IPC_MESSAGE_HANDLER(InputMsg_Redo, OnRedo)
     IPC_MESSAGE_HANDLER(InputMsg_Replace, OnReplace)
     IPC_MESSAGE_HANDLER(InputMsg_ReplaceMisspelling, OnReplaceMisspelling)
     IPC_MESSAGE_HANDLER(InputMsg_ScrollFocusedEditableNodeIntoRect,
                         OnScrollFocusedEditableNodeIntoRect)
-    IPC_MESSAGE_HANDLER(InputMsg_SelectAll, OnSelectAll)
-    IPC_MESSAGE_HANDLER(InputMsg_SelectRange, OnSelectRange)
     IPC_MESSAGE_HANDLER(InputMsg_SetEditCommandsForNextKeyEvent,
                         OnSetEditCommandsForNextKeyEvent)
-    IPC_MESSAGE_HANDLER(InputMsg_Undo, OnUndo)
-    IPC_MESSAGE_HANDLER(InputMsg_Unselect, OnUnselect)
     IPC_MESSAGE_HANDLER(FrameMsg_Navigate, OnNavigate)
     IPC_MESSAGE_HANDLER(ViewMsg_Stop, OnStop)
     IPC_MESSAGE_HANDLER(ViewMsg_ReloadFrame, OnReloadFrame)
     IPC_MESSAGE_HANDLER(ViewMsg_SetName, OnSetName)
-    IPC_MESSAGE_HANDLER(ViewMsg_SetEditableSelectionOffsets,
-                        OnSetEditableSelectionOffsets)
-    IPC_MESSAGE_HANDLER(ViewMsg_SetCompositionFromExistingText,
-                        OnSetCompositionFromExistingText)
-    IPC_MESSAGE_HANDLER(ViewMsg_ExtendSelectionAndDelete,
-                        OnExtendSelectionAndDelete)
     IPC_MESSAGE_HANDLER(ViewMsg_CopyImageAt, OnCopyImageAt)
     IPC_MESSAGE_HANDLER(ViewMsg_Find, OnFind)
     IPC_MESSAGE_HANDLER(ViewMsg_StopFinding, OnStopFinding)
@@ -1124,7 +1111,6 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_RunFileChooserResponse, OnFileChooserResponse)
     IPC_MESSAGE_HANDLER(ViewMsg_SuppressDialogsUntilSwapOut,
                         OnSuppressDialogsUntilSwapOut)
-    IPC_MESSAGE_HANDLER(ViewMsg_SwapOut, OnSwapOut)
     IPC_MESSAGE_HANDLER(ViewMsg_ClosePage, OnClosePage)
     IPC_MESSAGE_HANDLER(ViewMsg_ThemeChanged, OnThemeChanged)
     IPC_MESSAGE_HANDLER(ViewMsg_MoveOrResizeStarted, OnMoveOrResizeStarted)
@@ -1168,7 +1154,6 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_PauseVideo, OnPauseVideo)
     IPC_MESSAGE_HANDLER(ViewMsg_ExtractSmartClipData, OnExtractSmartClipData)
 #elif defined(OS_MACOSX)
-    IPC_MESSAGE_HANDLER(InputMsg_CopyToFindPboard, OnCopyToFindPboard)
     IPC_MESSAGE_HANDLER(ViewMsg_PluginImeCompositionCompleted,
                         OnPluginImeCompositionCompleted)
     IPC_MESSAGE_HANDLER(ViewMsg_SelectPopupMenuItem, OnSelectPopupMenuItem)
@@ -1266,14 +1251,6 @@ void RenderViewImpl::OnUpdateTargetURLAck() {
   target_url_status_ = TARGET_NONE;
 }
 
-void RenderViewImpl::OnDelete() {
-  if (!webview())
-    return;
-
-  webview()->focusedFrame()->executeCommand(WebString::fromUTF8("Delete"),
-                                            GetFocusedElement());
-}
-
 void RenderViewImpl::OnExecuteEditCommand(const std::string& name,
     const std::string& value) {
   if (!webview() || !webview()->focusedFrame())
@@ -1290,23 +1267,6 @@ void RenderViewImpl::OnMoveCaret(const gfx::Point& point) {
   Send(new ViewHostMsg_MoveCaret_ACK(routing_id_));
 
   webview()->focusedFrame()->moveCaretSelection(point);
-}
-
-void RenderViewImpl::OnPasteAndMatchStyle() {
-  if (!webview())
-    return;
-
-  base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
-  webview()->focusedFrame()->executeCommand(
-      WebString::fromUTF8("PasteAndMatchStyle"), GetFocusedElement());
-}
-
-void RenderViewImpl::OnRedo() {
-  if (!webview())
-    return;
-
-  webview()->focusedFrame()->executeCommand(WebString::fromUTF8("Redo"),
-                                            GetFocusedElement());
 }
 
 void RenderViewImpl::OnReplace(const base::string16& text) {
@@ -1346,93 +1306,16 @@ void RenderViewImpl::OnScrollFocusedEditableNodeIntoRect(
   }
 }
 
-void RenderViewImpl::OnSelectAll() {
-  if (!webview())
-    return;
-
-  base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
-  webview()->focusedFrame()->executeCommand(
-      WebString::fromUTF8("SelectAll"), GetFocusedElement());
-}
-
-void RenderViewImpl::OnSelectRange(const gfx::Point& start,
-                                   const gfx::Point& end) {
-  if (!webview())
-    return;
-
-  Send(new ViewHostMsg_SelectRange_ACK(routing_id_));
-
-  base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
-  webview()->focusedFrame()->selectRange(start, end);
-}
-
 void RenderViewImpl::OnSetEditCommandsForNextKeyEvent(
     const EditCommands& edit_commands) {
   edit_commands_ = edit_commands;
 }
-
-void RenderViewImpl::OnUndo() {
-  if (!webview())
-    return;
-
-  webview()->focusedFrame()->executeCommand(WebString::fromUTF8("Undo"),
-                                            GetFocusedElement());
-}
-
-void RenderViewImpl::OnUnselect() {
-  if (!webview())
-    return;
-
-  base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
-  webview()->focusedFrame()->executeCommand(WebString::fromUTF8("Unselect"),
-                                            GetFocusedElement());
-}
-
-#if defined(OS_MACOSX)
-void RenderViewImpl::OnCopyToFindPboard() {
-  if (!webview())
-    return;
-
-  // Since the find pasteboard supports only plain text, this can be simpler
-  // than the |OnCopy()| case.
-  WebFrame* frame = webview()->focusedFrame();
-  if (frame->hasSelection()) {
-    base::string16 selection = frame->selectionAsText();
-    RenderThread::Get()->Send(
-        new ClipboardHostMsg_FindPboardWriteStringAsync(selection));
-  }
-}
-#endif
 
 void RenderViewImpl::OnSetName(const std::string& name) {
   if (!webview())
     return;
 
   webview()->mainFrame()->setName(WebString::fromUTF8(name));
-}
-
-void RenderViewImpl::OnSetEditableSelectionOffsets(int start, int end) {
-  base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
-  if (!ShouldHandleImeEvent())
-    return;
-  ImeEventGuard guard(this);
-  webview()->setEditableSelectionOffsets(start, end);
-}
-
-void RenderViewImpl::OnSetCompositionFromExistingText(
-    int start, int end,
-    const std::vector<blink::WebCompositionUnderline>& underlines) {
-  if (!ShouldHandleImeEvent())
-    return;
-  ImeEventGuard guard(this);
-  webview()->setCompositionFromExistingText(start, end, underlines);
-}
-
-void RenderViewImpl::OnExtendSelectionAndDelete(int before, int after) {
-  if (!ShouldHandleImeEvent())
-    return;
-  ImeEventGuard guard(this);
-  webview()->extendSelectionAndDelete(before, after);
 }
 
 void RenderViewImpl::OnSetHistoryLengthAndPrune(int history_length,
@@ -1640,7 +1523,7 @@ WebView* RenderViewImpl::createView(
   params.session_storage_namespace_id = session_storage_namespace_id_;
   if (frame_name != "_blank")
     params.frame_name = frame_name;
-  params.opener_frame_id =
+  params.opener_render_frame_id =
       RenderFrameImpl::FromWebFrame(creator)->GetRoutingID();
   params.opener_url = creator->document().url();
   params.opener_top_level_frame_url = creator->top()->document().url();
@@ -1732,6 +1615,7 @@ WebWidget* RenderViewImpl::createPopupMenu(blink::WebPopupType popup_type) {
 WebExternalPopupMenu* RenderViewImpl::createExternalPopupMenu(
     const WebPopupMenuInfo& popup_menu_info,
     WebExternalPopupMenuClient* popup_menu_client) {
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
   // An IPC message is sent to the browser to build and display the actual
   // popup.  The user could have time to click a different select by the time
   // the popup is shown.  In that case external_popup_menu_ is non NULL.
@@ -1747,6 +1631,9 @@ WebExternalPopupMenu* RenderViewImpl::createExternalPopupMenu(
         external_popup_menu_.get(), screen_metrics_emulator_.get());
   }
   return external_popup_menu_.get();
+#else
+  return NULL;
+#endif
 }
 
 WebStorageNamespace* RenderViewImpl::createSessionStorageNamespace() {
@@ -1828,27 +1715,32 @@ void RenderViewImpl::didStopLoading() {
   main_render_frame_->didStopLoading();
 }
 
-void RenderViewImpl::didStartLoading(WebFrame* frame) {
+void RenderViewImpl::FrameDidStartLoading(WebFrame* frame) {
   if (load_progress_tracker_ != NULL) {
     load_progress_tracker_->DidStartLoading(
         RenderFrameImpl::FromWebFrame(frame)->GetRoutingID());
   }
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidStartLoading());
+  DCHECK_GE(frames_in_progress_, 0);
+  if (frames_in_progress_ == 0)
+    FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidStartLoading());
+  frames_in_progress_++;
 }
 
-void RenderViewImpl::didStopLoading(WebFrame* frame) {
+void RenderViewImpl::FrameDidStopLoading(WebFrame* frame) {
   if (load_progress_tracker_ != NULL) {
     load_progress_tracker_->DidStopLoading(
         RenderFrameImpl::FromWebFrame(frame)->GetRoutingID());
   }
-
-  DidStopLoadingIcons();
-
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidStopLoading());
+  frames_in_progress_--;
+  DCHECK_GE(frames_in_progress_, 0);
+  if (frames_in_progress_ == 0) {
+    DidStopLoadingIcons();
+    FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidStopLoading());
+  }
 }
 
-void RenderViewImpl::didChangeLoadProgress(WebFrame* frame,
-                                           double load_progress) {
+void RenderViewImpl::FrameDidChangeLoadProgress(WebFrame* frame,
+                                                double load_progress) {
   if (load_progress_tracker_ != NULL) {
     load_progress_tracker_->DidChangeLoadProgress(
         RenderFrameImpl::FromWebFrame(frame)->GetRoutingID(), load_progress);
@@ -1857,25 +1749,6 @@ void RenderViewImpl::didChangeLoadProgress(WebFrame* frame,
 
 void RenderViewImpl::didCancelCompositionOnSelectionChange() {
   Send(new ViewHostMsg_ImeCancelComposition(routing_id()));
-}
-
-void RenderViewImpl::didChangeSelection(bool is_empty_selection) {
-  if (!handling_input_event_ && !handling_select_range_)
-    return;
-
-  if (is_empty_selection)
-    selection_text_.clear();
-
-  // UpdateTextInputType should be called before SyncSelectionIfRequired.
-  // UpdateTextInputType may send TextInputTypeChanged to notify the focus
-  // was changed, and SyncSelectionIfRequired may send SelectionChanged
-  // to notify the selection was changed.  Focus change should be notified
-  // before selection change.
-  UpdateTextInputType();
-  SyncSelectionIfRequired();
-#if defined(OS_ANDROID)
-  UpdateTextInputState(false, true);
-#endif
 }
 
 void RenderViewImpl::didExecuteCommand(const WebString& command_name) {
@@ -3290,65 +3163,6 @@ void RenderViewImpl::SyncNavigationState() {
   SendUpdateState(item);
 }
 
-void RenderViewImpl::SyncSelectionIfRequired() {
-  WebFrame* frame = webview()->focusedFrame();
-  if (!frame)
-    return;
-
-  base::string16 text;
-  size_t offset;
-  gfx::Range range;
-#if defined(ENABLE_PLUGINS)
-  if (focused_pepper_plugin_) {
-    focused_pepper_plugin_->GetSurroundingText(&text, &range);
-    offset = 0;  // Pepper API does not support offset reporting.
-    // TODO(kinaba): cut as needed.
-  } else
-#endif
-  {
-    size_t location, length;
-    if (!webview()->caretOrSelectionRange(&location, &length))
-      return;
-
-    range = gfx::Range(location, location + length);
-
-    if (webview()->textInputInfo().type != blink::WebTextInputTypeNone) {
-      // If current focused element is editable, we will send 100 more chars
-      // before and after selection. It is for input method surrounding text
-      // feature.
-      if (location > kExtraCharsBeforeAndAfterSelection)
-        offset = location - kExtraCharsBeforeAndAfterSelection;
-      else
-        offset = 0;
-      length = location + length - offset + kExtraCharsBeforeAndAfterSelection;
-      WebRange webrange = WebRange::fromDocumentRange(frame, offset, length);
-      if (!webrange.isNull())
-        text = WebRange::fromDocumentRange(frame, offset, length).toPlainText();
-    } else {
-      offset = location;
-      text = frame->selectionAsText();
-      // http://crbug.com/101435
-      // In some case, frame->selectionAsText() returned text's length is not
-      // equal to the length returned from webview()->caretOrSelectionRange().
-      // So we have to set the range according to text.length().
-      range.set_end(range.start() + text.length());
-    }
-  }
-
-  // Sometimes we get repeated didChangeSelection calls from webkit when
-  // the selection hasn't actually changed. We don't want to report these
-  // because it will cause us to continually claim the X clipboard.
-  if (selection_text_offset_ != offset ||
-      selection_range_ != range ||
-      selection_text_ != text) {
-    selection_text_ = text;
-    selection_text_offset_ = offset;
-    selection_range_ = range;
-    Send(new ViewHostMsg_SelectionChanged(routing_id_, text, offset, range));
-  }
-  UpdateSelectionBounds();
-}
-
 GURL RenderViewImpl::GetLoadingUrl(blink::WebFrame* frame) const {
   WebDataSource* ds = frame->dataSource();
   if (ds->hasUnreachableURL())
@@ -3690,7 +3504,12 @@ void RenderViewImpl::OnPostMessageEvent(
 void RenderViewImpl::OnAllowBindings(int enabled_bindings_flags) {
   if ((enabled_bindings_flags & BINDINGS_POLICY_WEB_UI) &&
       !(enabled_bindings_ & BINDINGS_POLICY_WEB_UI)) {
+    // WebUIExtensionData deletes itself when we're destroyed.
     new WebUIExtensionData(this);
+#if defined(USE_MOJO)
+    // WebUIMojo deletes itself when we're destroyed.
+    new WebUIMojo(this);
+#endif
   }
 
   enabled_bindings_ |= enabled_bindings_flags;
@@ -3972,45 +3791,6 @@ void RenderViewImpl::OnSuppressDialogsUntilSwapOut() {
   suppress_dialogs_until_swap_out_ = true;
 }
 
-void RenderViewImpl::OnSwapOut() {
-  // Only run unload if we're not swapped out yet, but send the ack either way.
-  if (!is_swapped_out_) {
-    // Swap this RenderView out so the tab can navigate to a page rendered by a
-    // different process.  This involves running the unload handler and clearing
-    // the page.  Once WasSwappedOut is called, we also allow this process to
-    // exit if there are no other active RenderViews in it.
-
-    // Send an UpdateState message before we get swapped out.
-    SyncNavigationState();
-
-    // Synchronously run the unload handler before sending the ACK.
-    webview()->dispatchUnloadEvent();
-
-    // Swap out and stop sending any IPC messages that are not ACKs.
-    SetSwappedOut(true);
-
-    // Now that we're swapped out and filtering IPC messages, stop loading to
-    // ensure that no other in-progress navigation continues.  We do this here
-    // to avoid sending a DidStopLoading message to the browser process.
-    OnStop();
-
-    // Replace the page with a blank dummy URL. The unload handler will not be
-    // run a second time, thanks to a check in FrameLoader::stopLoading.
-    // TODO(creis): Need to add a better way to do this that avoids running the
-    // beforeunload handler. For now, we just run it a second time silently.
-    NavigateToSwappedOutURL(webview()->mainFrame());
-
-    // Let WebKit know that this view is hidden so it can drop resources and
-    // stop compositing.
-    webview()->setVisibilityState(blink::WebPageVisibilityStateHidden, false);
-  }
-
-  // It is now safe to show modal dialogs again.
-  suppress_dialogs_until_swap_out_ = false;
-
-  Send(new ViewHostMsg_SwapOut_ACK(routing_id_));
-}
-
 void RenderViewImpl::NavigateToSwappedOutURL(blink::WebFrame* frame) {
   // We use loadRequest instead of loadHTMLString because the former commits
   // synchronously.  Otherwise a new navigation can interrupt the navigation
@@ -4187,7 +3967,7 @@ void RenderViewImpl::OnSetBackground(const SkBitmap& background) {
   SetBackground(background);
 }
 
-void RenderViewImpl::OnSetAccessibilityMode(unsigned int new_mode) {
+void RenderViewImpl::OnSetAccessibilityMode(AccessibilityMode new_mode) {
   if (accessibility_mode_ == new_mode)
     return;
   accessibility_mode_ = new_mode;
@@ -4198,7 +3978,7 @@ void RenderViewImpl::OnSetAccessibilityMode(unsigned int new_mode) {
   if (accessibility_mode_ == AccessibilityModeOff)
     return;
 
-  if (accessibility_mode_ & AccessibilityModeFlagPlatformFullTree)
+  if (accessibility_mode_ & AccessibilityModeFlagFullTree)
     renderer_accessibility_ = new RendererAccessibilityComplete(this);
 #if !defined(OS_ANDROID)
   else
@@ -4909,14 +4689,8 @@ WebMediaPlayer* RenderViewImpl::CreateAndroidWebMediaPlayer(
 
 #if defined(OS_MACOSX)
 void RenderViewImpl::OnSelectPopupMenuItem(int selected_index) {
-  if (external_popup_menu_ == NULL) {
-    // Crash reports from the field indicate that we can be notified with a
-    // NULL external popup menu (we probably get notified twice).
-    // If you hit this please file a bug against jcivelli and include the page
-    // and steps to repro.
-    NOTREACHED();
+  if (external_popup_menu_ == NULL)
     return;
-  }
   external_popup_menu_->DidSelectItem(selected_index);
   external_popup_menu_.reset();
 }
@@ -4934,6 +4708,14 @@ void RenderViewImpl::OnSelectPopupMenuItems(
     return;
 
   external_popup_menu_->DidSelectItems(canceled, selected_indices);
+  external_popup_menu_.reset();
+}
+#endif
+
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+void RenderViewImpl::DidHideExternalPopupMenu() {
+  // We need to clear external_popup_menu_ as soon as ExternalPopupMenu::close
+  // is called. Otherwise, createExternalPopupMenu() for new popup will fail.
   external_popup_menu_.reset();
 }
 #endif

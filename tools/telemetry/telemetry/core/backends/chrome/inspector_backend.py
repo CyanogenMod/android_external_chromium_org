@@ -53,14 +53,18 @@ class InspectorBackend(object):
 
   def _Connect(self, timeout=10):
     assert not self._socket
+    logging.debug('InspectorBackend._Connect() to %s' % self.debugger_url)
     try:
       self._socket = websocket.create_connection(self.debugger_url,
           timeout=timeout)
-    except (websocket.WebSocketException):
-      if self._browser_backend.IsBrowserRunning():
-        raise exceptions.TabCrashException(sys.exc_info()[1])
+    except (websocket.WebSocketException, util.TimeoutException):
+      err_msg = sys.exc_info()[1]
+      if not self._browser_backend.IsBrowserRunning():
+        raise exceptions.BrowserGoneException(err_msg)
+      elif not self._browser_backend.HasBrowserFinishedLaunching():
+        raise exceptions.BrowserConnectionGoneException(err_msg)
       else:
-        raise exceptions.BrowserGoneException()
+        raise exceptions.TabCrashException(err_msg)
 
     self._cur_socket_timeout = 0
     self._next_request_id = 0
@@ -92,15 +96,6 @@ class InspectorBackend(object):
   @property
   def debugger_url(self):
     return self._context['webSocketDebuggerUrl']
-
-  # TODO(tonyg): TabListBackend should ask InspectorBackend to
-  # Activate and Close, not the other way around (crbug.com/233001).
-
-  def Activate(self):
-    self._browser_backend.tab_list_backend.ActivateTab(self.debugger_url)
-
-  def Close(self):
-    self._browser_backend.tab_list_backend.CloseTab(self.debugger_url)
 
   # Public methods implemented in JavaScript.
 

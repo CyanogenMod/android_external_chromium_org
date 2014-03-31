@@ -205,6 +205,30 @@ FileError ResetOnBlockingPool(internal::ResourceMetadata* resource_metadata,
  return cache->ClearAll() ? FILE_ERROR_OK : FILE_ERROR_FAILED;
 }
 
+// Part of GetPathFromResourceId().
+// Obtains |file_path| from |resource_id|. The function should be run on the
+// blocking pool.
+FileError GetPathFromResourceIdOnBlockingPool(
+    internal::ResourceMetadata* resource_metadata,
+    const std::string& resource_id,
+    base::FilePath* file_path) {
+  std::string local_id;
+  const FileError error =
+      resource_metadata->GetIdByResourceId(resource_id, &local_id);
+  *file_path = error == FILE_ERROR_OK ?
+      resource_metadata->GetFilePath(local_id) : base::FilePath();
+  return error;
+}
+
+// Part of GetPathFromResourceId().
+// Called when GetPathFromResourceIdInBlockingPool is complete.
+void GetPathFromResourceIdAfterGetPath(base::FilePath* file_path,
+                                       const GetFilePathCallback& callback,
+                                       FileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  callback.Run(error, *file_path);
+}
+
 // Excludes hosted documents from the given entries.
 // Used to implement ReadDirectory().
 void FilterHostedDocuments(const ReadDirectoryCallback& callback,
@@ -225,7 +249,6 @@ void FilterHostedDocuments(const ReadDirectoryCallback& callback,
     }
     entries.swap(filtered);
   }
-  // TODO(hashimoto): Correctly handle empty entries when has_more==true.
   callback.Run(error, entries.Pass(), has_more);
 }
 
@@ -497,8 +520,6 @@ void FileSystem::TouchFile(const base::FilePath& file_path,
                            const base::Time& last_modified_time,
                            const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!last_access_time.is_null());
-  DCHECK(!last_modified_time.is_null());
   DCHECK(!callback.is_null());
   touch_operation_->TouchFile(
       file_path, last_access_time, last_modified_time, callback);
@@ -591,7 +612,7 @@ void FileSystem::GetFileForSaving(const base::FilePath& file_path,
   get_file_for_saving_operation_->GetFileForSaving(file_path, callback);
 }
 
-void FileSystem::GetFileContent(
+base::Closure FileSystem::GetFileContent(
     const base::FilePath& file_path,
     const GetFileContentInitializedCallback& initialized_callback,
     const google_apis::GetContentCallback& get_content_callback,
@@ -601,7 +622,7 @@ void FileSystem::GetFileContent(
   DCHECK(!get_content_callback.is_null());
   DCHECK(!completion_callback.is_null());
 
-  download_operation_->EnsureFileDownloadedByPath(
+  return download_operation_->EnsureFileDownloadedByPath(
       file_path,
       ClientContext(USER_INITIATED),
       initialized_callback,
@@ -987,4 +1008,21 @@ void FileSystem::OpenFile(const base::FilePath& file_path,
   open_file_operation_->OpenFile(file_path, open_mode, mime_type, callback);
 }
 
+void FileSystem::GetPathFromResourceId(const std::string& resource_id,
+                                       const GetFilePathCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  base::FilePath* const file_path = new base::FilePath();
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&GetPathFromResourceIdOnBlockingPool,
+                 resource_metadata_,
+                 resource_id,
+                 file_path),
+      base::Bind(&GetPathFromResourceIdAfterGetPath,
+                 base::Owned(file_path),
+                 callback));
+}
 }  // namespace drive

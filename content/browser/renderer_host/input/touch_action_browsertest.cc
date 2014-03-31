@@ -22,10 +22,10 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/event_switches.h"
 #include "ui/events/latency_info.h"
@@ -189,9 +189,16 @@ IN_PROC_BROWSER_TEST_F(TouchActionBrowserTest, DISABLED_DefaultAuto) {
   }
 }
 
+// TouchActionBrowserTest.TouchActionNone fails under ThreadSanitizer v2,
+// see http://crbug.com/357505.
+#if defined(THREAD_SANITIZER)
+#define MAYBE_TouchActionNone DISABLED_TouchActionNone
+#else
+#define MAYBE_TouchActionNone TouchActionNone
+#endif
 // Verify that touching a touch-action: none region disables scrolling and
 // enables all touch events to be sent.
-IN_PROC_BROWSER_TEST_F(TouchActionBrowserTest, TouchActionNone) {
+IN_PROC_BROWSER_TEST_F(TouchActionBrowserTest, MAYBE_TouchActionNone) {
   LoadURL();
 
   bool scrolled = DoTouchScroll(gfx::Point(50, 150), gfx::Vector2d(0, 45));

@@ -107,6 +107,7 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wallpaper_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/reset/metrics.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/system/timezone_util.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
@@ -142,6 +143,7 @@ BrowserOptionsHandler::BrowserOptionsHandler()
     : page_initialized_(false),
       template_url_service_(NULL),
       cloud_print_mdns_ui_enabled_(false),
+      signin_observer_(this),
       weak_ptr_factory_(this) {
 #if !defined(OS_MACOSX)
   default_browser_worker_ = new ShellIntegration::DefaultBrowserWorker(this);
@@ -257,6 +259,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "hotwordConfirmDisable", IDS_HOTWORD_CONFIRM_BUBBLE_DISABLE },
     { "hotwordConfirmMessage", IDS_HOTWORD_SEARCH_PREF_DESCRIPTION },
     { "hotwordRetryDownloadButton", IDS_HOTWORD_RETRY_DOWNLOAD_BUTTON },
+    { "hotwordAudioLoggingEnable", IDS_HOTWORD_AUDIO_LOGGING_ENABLE },
     { "importData", IDS_OPTIONS_IMPORT_DATA_BUTTON },
     { "improveBrowsingExperience", IDS_OPTIONS_IMPROVE_BROWSING_EXPERIENCE },
     { "languageAndSpellCheckSettingsButton",
@@ -478,7 +481,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       l10n_util::GetStringFUTF16(IDS_SEARCH_PREF_EXPLANATION, omnibox_url));
   values->SetString("hotwordLearnMoreURL", chrome::kHotwordLearnMoreURL);
   RegisterTitle(values, "hotwordConfirmOverlay",
-                IDS_HOTWORD_SEARCH_PREF_CHKBOX);
+                IDS_HOTWORD_CONFIRM_BUBBLE_TITLE);
 
 #if defined(OS_CHROMEOS)
   Profile* profile = Profile::FromWebUI(web_ui());
@@ -686,6 +689,10 @@ void BrowserOptionsHandler::RegisterMessages() {
       base::Bind(&BrowserOptionsHandler::VirtualKeyboardChangeCallback,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
+       "onPowerwashDialogShow",
+       base::Bind(&BrowserOptionsHandler::OnPowerwashDialogShow,
+                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
       "performFactoryResetRestart",
       base::Bind(&BrowserOptionsHandler::PerformFactoryResetRestart,
                  base::Unretained(this)));
@@ -744,6 +751,15 @@ void BrowserOptionsHandler::OnStateChanged() {
   UpdateSyncState();
 }
 
+void BrowserOptionsHandler::GoogleSigninSucceeded(const std::string& username,
+                                                  const std::string& password) {
+  OnStateChanged();
+}
+
+void BrowserOptionsHandler::GoogleSignedOut(const std::string& username) {
+  OnStateChanged();
+}
+
 void BrowserOptionsHandler::PageLoadStarted() {
   page_initialized_ = false;
 }
@@ -754,8 +770,15 @@ void BrowserOptionsHandler::InitializeHandler() {
 
   ProfileSyncService* sync_service(
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile));
+  // TODO(blundell): Use a ScopedObserver to observe the PSS so that cleanup on
+  // destruction is automatic.
   if (sync_service)
     sync_service->AddObserver(this);
+
+  SigninManagerBase* signin_manager(
+      SigninManagerFactory::GetInstance()->GetForProfile(profile));
+  if (signin_manager)
+    signin_observer_.Add(signin_manager);
 
   // Create our favicon data source.
   content::URLDataSource::Add(
@@ -777,10 +800,6 @@ void BrowserOptionsHandler::InitializeHandler() {
                  content::Source<ThemeService>(
                      ThemeServiceFactory::GetForProfile(profile)));
   registrar_.Add(this, chrome::NOTIFICATION_GLOBAL_ERRORS_CHANGED,
-                 content::Source<Profile>(profile));
-  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-                 content::Source<Profile>(profile));
-  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
                  content::Source<Profile>(profile));
   AddTemplateUrlServiceObserver();
 
@@ -1152,8 +1171,6 @@ void BrowserOptionsHandler::Observe(
     SendProfilesInfo();
       break;
     case chrome::NOTIFICATION_GLOBAL_ERRORS_CHANGED:
-    case chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL:
-    case chrome::NOTIFICATION_GOOGLE_SIGNED_OUT:
       // Update our sync/signin status display.
       OnStateChanged();
       break;
@@ -1351,6 +1368,11 @@ BrowserOptionsHandler::GetSyncStateDictionary() {
                           !signin->GetAuthenticatedUsername().empty());
   sync_status->SetBoolean("hasUnrecoverableError",
                           service && service->HasUnrecoverableError());
+  sync_status->SetBoolean(
+      "autoLoginVisible",
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAutologin) &&
+      service && service->IsSyncEnabledAndLoggedIn() &&
+      service->IsOAuthRefreshTokenAvailable());
 
   return sync_status.Pass();
 }
@@ -1408,6 +1430,14 @@ void BrowserOptionsHandler::OnWallpaperPolicyChanged(
   const bool has_policy = current_policy;
   if (had_policy != has_policy)
     OnWallpaperManagedChanged(has_policy);
+}
+
+void BrowserOptionsHandler::OnPowerwashDialogShow(
+     const base::ListValue* args) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Reset.ChromeOS.PowerwashDialogShown",
+      chromeos::reset::DIALOG_FROM_OPTIONS,
+      chromeos::reset::DIALOG_VIEW_TYPE_SIZE);
 }
 
 #endif  // defined(OS_CHROMEOS)
@@ -1593,14 +1623,8 @@ void BrowserOptionsHandler::HandleRequestHotwordAvailable(
   Profile* profile = Profile::FromWebUI(web_ui());
   std::string group = base::FieldTrialList::FindFullName("VoiceTrigger");
   if (group != "" && group != "Disabled") {
-    if (HotwordServiceFactory::IsServiceAvailable(profile)) {
+    if (HotwordServiceFactory::IsServiceAvailable(profile))
       web_ui()->CallJavascriptFunction("BrowserOptions.showHotwordSection");
-    } else if (HotwordServiceFactory::IsHotwordAllowed(profile)) {
-      base::StringValue error_message(l10n_util::GetStringUTF16(
-          IDS_HOTWORD_GENERIC_ERROR_MESSAGE));
-      web_ui()->CallJavascriptFunction("BrowserOptions.showHotwordSection",
-                                       error_message);
-    }
   }
 }
 

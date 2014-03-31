@@ -69,6 +69,7 @@
 #include "ui/surface/transport_dib.h"
 
 #if defined(OS_ANDROID)
+#include <android/keycodes.h>
 #include "base/android/sys_utils.h"
 #include "content/renderer/android/synchronous_compositor_factory.h"
 #endif
@@ -185,6 +186,7 @@ class RenderWidget::ScreenMetricsEmulator {
   void OnShowContextMenu(ContextMenuParams* params);
 
  private:
+  void CalculateScaleAndOffset();
   void Apply(float overdraw_bottom_height,
       gfx::Rect resizer_rect, bool is_fullscreen);
 
@@ -254,8 +256,7 @@ void RenderWidget::ScreenMetricsEmulator::ChangeEmulationParams(
         widget_->resizer_rect_, widget_->is_fullscreen_);
 }
 
-void RenderWidget::ScreenMetricsEmulator::Apply(
-    float overdraw_bottom_height, gfx::Rect resizer_rect, bool is_fullscreen) {
+void RenderWidget::ScreenMetricsEmulator::CalculateScaleAndOffset() {
   if (fit_to_view_) {
     DCHECK(!original_size_.IsEmpty());
 
@@ -269,17 +270,42 @@ void RenderWidget::ScreenMetricsEmulator::Apply(
         static_cast<float>(widget_rect_.height()) / height_with_gutter;
     float ratio = std::max(1.0f, std::max(width_ratio, height_ratio));
     scale_ = 1.f / ratio;
+
+    // Center emulated view inside available view space.
+    offset_.set_x((original_size_.width() - scale_ * widget_rect_.width()) / 2);
+    offset_.set_y(
+        (original_size_.height() - scale_ * widget_rect_.height()) / 2);
   } else {
     scale_ = 1.f;
+    offset_.SetPoint(0, 0);
+  }
+}
+
+void RenderWidget::ScreenMetricsEmulator::Apply(
+    float overdraw_bottom_height, gfx::Rect resizer_rect, bool is_fullscreen) {
+  gfx::Rect applied_widget_rect = widget_rect_;
+  if (widget_rect_.size().IsEmpty()) {
+    scale_ = 1.f;
+    offset_.SetPoint(0, 0);
+    applied_widget_rect =
+        gfx::Rect(original_view_screen_rect_.origin(), original_size_);
+  } else {
+    CalculateScaleAndOffset();
   }
 
-  // Center emulated view inside available view space.
-  offset_.set_x((original_size_.width() - scale_ * widget_rect_.width()) / 2);
-  offset_.set_y((original_size_.height() - scale_ * widget_rect_.height()) / 2);
+  if (device_rect_.size().IsEmpty()) {
+    widget_->screen_info_.rect = original_screen_info_.rect;
+    widget_->screen_info_.availableRect = original_screen_info_.availableRect;
+    widget_->window_screen_rect_ = original_window_screen_rect_;
+  } else {
+    widget_->screen_info_.rect = gfx::Rect(device_rect_.size());
+    widget_->screen_info_.availableRect = gfx::Rect(device_rect_.size());
+    widget_->window_screen_rect_ = widget_->screen_info_.availableRect;
+  }
 
-  widget_->screen_info_.rect = gfx::Rect(device_rect_.size());
-  widget_->screen_info_.availableRect = gfx::Rect(device_rect_.size());
-  widget_->screen_info_.deviceScaleFactor = device_scale_factor_;
+  float applied_device_scale_factor = device_scale_factor_ ?
+      device_scale_factor_ : original_screen_info_.deviceScaleFactor;
+  widget_->screen_info_.deviceScaleFactor = applied_device_scale_factor;
 
   // Pass three emulation parameters to the blink side:
   // - we keep the real device scale factor in compositor to produce sharp image
@@ -289,13 +315,12 @@ void RenderWidget::ScreenMetricsEmulator::Apply(
   widget_->SetScreenMetricsEmulationParameters(
       original_screen_info_.deviceScaleFactor, offset_, scale_);
 
-  widget_->SetDeviceScaleFactor(device_scale_factor_);
-  widget_->view_screen_rect_ = widget_rect_;
-  widget_->window_screen_rect_ = widget_->screen_info_.availableRect;
+  widget_->SetDeviceScaleFactor(applied_device_scale_factor);
+  widget_->view_screen_rect_ = applied_widget_rect;
 
   gfx::Size physical_backing_size = gfx::ToCeiledSize(gfx::ScaleSize(
       original_size_, original_screen_info_.deviceScaleFactor));
-  widget_->Resize(widget_rect_.size(), physical_backing_size,
+  widget_->Resize(applied_widget_rect.size(), physical_backing_size,
       overdraw_bottom_height, resizer_rect, is_fullscreen, NO_RESIZE_ACK);
 }
 
@@ -321,6 +346,10 @@ void RenderWidget::ScreenMetricsEmulator::OnUpdateScreenRectsMessage(
     const gfx::Rect& window_screen_rect) {
   original_view_screen_rect_ = view_screen_rect;
   original_window_screen_rect_ = window_screen_rect;
+  if (device_rect_.size().IsEmpty())
+    widget_->window_screen_rect_ = window_screen_rect;
+  if (widget_rect_.size().IsEmpty())
+    widget_->view_screen_rect_ = view_screen_rect;
 }
 
 void RenderWidget::ScreenMetricsEmulator::OnShowContextMenu(
@@ -552,11 +581,13 @@ void RenderWidget::SetScreenMetricsEmulationParameters(
   NOTREACHED();
 }
 
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
 void RenderWidget::SetExternalPopupOriginAdjustmentsForEmulation(
     ExternalPopupMenu* popup, ScreenMetricsEmulator* emulator) {
   popup->SetOriginScaleAndOffsetForEmulation(
       emulator->scale(), emulator->offset());
 }
+#endif
 
 void RenderWidget::OnShowHostContextMenu(ContextMenuParams* params) {
   if (screen_metrics_emulator_)
@@ -878,32 +909,47 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
   }
 #endif
 
-  // Explicitly disable antialiasing for the compositor. As of the time of
-  // this writing, the only platform that supported antialiasing for the
-  // compositor was Mac OS X, because the on-screen OpenGL context creation
-  // code paths on Windows and Linux didn't yet have multisampling support.
-  // Mac OS X essentially always behaves as though it's rendering offscreen.
-  // Multisampling has a heavy cost especially on devices with relatively low
-  // fill rate like most notebooks, and the Mac implementation would need to
-  // be optimized to resolve directly into the IOSurface shared between the
-  // GPU and browser processes. For these reasons and to avoid platform
-  // disparities we explicitly disable antialiasing.
-  blink::WebGraphicsContext3D::Attributes attributes;
-  attributes.antialias = false;
-  attributes.shareResources = true;
-  attributes.noAutomaticFlushes = true;
-  attributes.depth = false;
-  attributes.stencil = false;
-
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  bool use_software = fallback;
+  if (command_line.HasSwitch(switches::kDisableGpuCompositing))
+    use_software = true;
+
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
-  if (!fallback) {
+  if (!use_software) {
+    // Explicitly disable antialiasing for the compositor. As of the time of
+    // this writing, the only platform that supported antialiasing for the
+    // compositor was Mac OS X, because the on-screen OpenGL context creation
+    // code paths on Windows and Linux didn't yet have multisampling support.
+    // Mac OS X essentially always behaves as though it's rendering offscreen.
+    // Multisampling has a heavy cost especially on devices with relatively low
+    // fill rate like most notebooks, and the Mac implementation would need to
+    // be optimized to resolve directly into the IOSurface shared between the
+    // GPU and browser processes. For these reasons and to avoid platform
+    // disparities we explicitly disable antialiasing.
+    blink::WebGraphicsContext3D::Attributes attributes;
+    attributes.antialias = false;
+    attributes.shareResources = true;
+    attributes.noAutomaticFlushes = true;
+    attributes.depth = false;
+    attributes.stencil = false;
     context_provider = ContextProviderCommandBuffer::Create(
         CreateGraphicsContext3D(attributes),
         "RenderCompositor");
+    if (!context_provider.get()) {
+      // Cause the compositor to wait and try again.
+      return scoped_ptr<cc::OutputSurface>();
+    }
   }
 
   uint32 output_surface_id = next_output_surface_id_++;
+  if (command_line.HasSwitch(switches::kEnableDelegatedRenderer)) {
+    DCHECK(is_threaded_compositing_enabled_);
+    return scoped_ptr<cc::OutputSurface>(
+        new DelegatedCompositorOutputSurface(
+            routing_id(),
+            output_surface_id,
+            context_provider));
+  }
   if (!context_provider.get()) {
     if (!command_line.HasSwitch(switches::kEnableSoftwareCompositing))
       return scoped_ptr<cc::OutputSurface>();
@@ -919,16 +965,6 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
         true));
   }
 
-  if (command_line.HasSwitch(switches::kEnableDelegatedRenderer) &&
-      !command_line.HasSwitch(switches::kDisableDelegatedRenderer)) {
-    DCHECK(is_threaded_compositing_enabled_);
-    return scoped_ptr<cc::OutputSurface>(
-        new DelegatedCompositorOutputSurface(
-            routing_id(),
-            output_surface_id,
-            context_provider,
-            scoped_ptr<cc::SoftwareOutputDevice>()));
-  }
   if (command_line.HasSwitch(cc::switches::kCompositeToMailbox)) {
     DCHECK(is_threaded_compositing_enabled_);
     cc::ResourceFormat format = cc::RGBA_8888;
@@ -1096,8 +1132,27 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
     prevent_default = WillHandleMouseEvent(mouse_event);
   }
 
-  if (WebInputEvent::isKeyboardEventType(input_event->type))
+  if (WebInputEvent::isKeyboardEventType(input_event->type)) {
     context_menu_source_type_ = ui::MENU_SOURCE_KEYBOARD;
+#if defined(OS_ANDROID)
+    // The DPAD_CENTER key on Android has a dual semantic: (1) in the general
+    // case it should behave like a select key (i.e. causing a click if a button
+    // is focused). However, if a text field is focused (2), its intended
+    // behavior is to just show the IME and don't propagate the key.
+    // A typical use case is a web form: the DPAD_CENTER should bring up the IME
+    // when clicked on an input text field and cause the form submit if clicked
+    // when the submit button is focused, but not vice-versa.
+    // The UI layer takes care of translating DPAD_CENTER into a RETURN key,
+    // but at this point we have to swallow the event for the scenario (2).
+    const WebKeyboardEvent& key_event =
+        *static_cast<const WebKeyboardEvent*>(input_event);
+    if (key_event.nativeKeyCode == AKEYCODE_DPAD_CENTER &&
+        GetTextInputType() != ui::TEXT_INPUT_TYPE_NONE) {
+      OnShowImeIfNeeded();
+      prevent_default = true;
+    }
+#endif
+  }
 
   if (WebInputEvent::isGestureEventType(input_event->type)) {
     const WebGestureEvent& gesture_event =

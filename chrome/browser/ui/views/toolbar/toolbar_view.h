@@ -34,6 +34,7 @@ class WrenchToolbarButton;
 namespace extensions {
 class Command;
 class Extension;
+class ExtensionMessageBubbleFactory;
 }
 
 namespace views {
@@ -104,6 +105,7 @@ class ToolbarView : public views::AccessiblePaneView,
   LocationBarView* location_bar() const { return location_bar_; }
   ToolbarOriginChipView* origin_chip() const { return origin_chip_view_; }
   views::MenuButton* app_menu() const;
+  HomeButton* home_button() const { return home_; }
 
   // Overridden from AccessiblePaneView
   virtual bool SetPaneFocus(View* initial_focus) OVERRIDE;
@@ -210,7 +212,8 @@ class ToolbarView : public views::AccessiblePaneView,
   void ShowCriticalNotification();
 
   // Shows the outdated install notification bubble against the wrench menu.
-  void ShowOutdatedInstallNotification();
+  // |auto_update_enabled| is set to true when auto-upate is on.
+  void ShowOutdatedInstallNotification(bool auto_update_enabled);
 
   // Updates the badge and the accessible name of the app menu (Wrench).
   void UpdateAppMenuState();
@@ -244,6 +247,11 @@ class ToolbarView : public views::AccessiblePaneView,
   // menu should be listed later.
   scoped_ptr<WrenchMenuModel> wrench_menu_model_;
   scoped_ptr<WrenchMenu> wrench_menu_;
+
+  // The factory to create bubbles to warn about dangerous/suspicious
+  // extensions.
+  scoped_ptr<extensions::ExtensionMessageBubbleFactory>
+      extension_message_bubble_factory_;
 
   // A list of listeners to call when the menu opens.
   ObserverList<views::MenuListener> menu_listeners_;

@@ -399,10 +399,10 @@ class PageRunnerTests(unittest.TestCase):
         super(Measurement, self).__init__()
         self.browser_restarted = False
 
-      def CustomizeBrowserOptionsForPageSet(self, ps, options):
+      def CustomizeBrowserOptionsForSinglePage(self, ps, options):
         self.browser_restarted = True
-        super(Measurement, self).CustomizeBrowserOptionsForPageSet(ps,
-                                                                   options)
+        super(Measurement, self).CustomizeBrowserOptionsForSinglePage(ps,
+                                                                      options)
       def MeasurePage(self, page, tab, results):
         pass
 
@@ -412,6 +412,7 @@ class PageRunnerTests(unittest.TestCase):
     if not browser_finder.FindBrowser(options):
       return
     test = Measurement()
+    SetUpPageRunnerArguments(options)
     page_runner.Run(test, ps, expectations, options)
     self.assertEquals('about:blank', options.browser_options.startup_url)
     self.assertTrue(test.browser_restarted)

@@ -50,12 +50,12 @@ class Test(command_line.Command):
       parser.add_option_group(group)
 
   @classmethod
-  def ProcessCommandLineArgs(cls, parser, args):
-    # TODO: This overrides the arguments the user specifies at the command-line.
-    # That's not right. http://crbug.com/330058
-    for key, value in cls.options.iteritems():
-      setattr(args, key, value)
+  def SetArgumentDefaults(cls, parser):
+    cls.PageTestClass().SetArgumentDefaults(parser)
+    parser.set_defaults(**cls.options)
 
+  @classmethod
+  def ProcessCommandLineArgs(cls, parser, args):
     cls.PageTestClass().ProcessCommandLineArgs(parser, args)
 
   def CustomizeBrowserOptions(self, options):
@@ -122,7 +122,7 @@ class Test(command_line.Command):
                       'instructions below.',
                       generated_profile_archive_path)
         logging.error(e)
-        sys.exit(1)
+        sys.exit(-1)
 
     # Unzip profile directory.
     extracted_profile_dir_path = (
@@ -138,7 +138,7 @@ class Test(command_line.Command):
         if os.path.exists(extracted_profile_dir_path):
           shutil.rmtree(extracted_profile_dir_path)
         logging.error("Error extracting profile directory zip file: %s", e)
-        sys.exit(1)
+        sys.exit(-1)
 
     # Run with freshly extracted profile directory.
     logging.info("Using profile archive directory: %s",

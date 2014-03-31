@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/values.h"
+#include "chrome/browser/chromeos/camera_presence_notifier.h"
 #include "chrome/browser/chromeos/login/default_user_images.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/user.h"
@@ -46,8 +47,10 @@ UserImageScreenHandler::UserImageScreenHandler()
 }
 
 UserImageScreenHandler::~UserImageScreenHandler() {
-  if (screen_)
+  if (screen_) {
+    CameraPresenceNotifier::GetInstance()->RemoveObserver(screen_);
     screen_->OnActorDestroyed(this);
+  }
 }
 
 void UserImageScreenHandler::Initialize() {
@@ -73,12 +76,13 @@ void UserImageScreenHandler::Show() {
   // When shown, query camera presence.
   if (!screen_)
     return;
-  screen_->CheckCameraPresence();
+  CameraPresenceNotifier::GetInstance()->AddObserver(screen_);
   if (is_ready_)
     screen_->OnScreenReady();
 }
 
 void UserImageScreenHandler::Hide() {
+  CameraPresenceNotifier::GetInstance()->RemoveObserver(screen_);
 }
 
 void UserImageScreenHandler::PrepareToShow() {
@@ -86,9 +90,7 @@ void UserImageScreenHandler::PrepareToShow() {
 
 void UserImageScreenHandler::DeclareLocalizedValues(
     LocalizedValuesBuilder* builder) {
-  // TODO(ivankr): string should be renamed to something like
-  // IDS_USER_IMAGE_SCREEN_TITLE (currently used for Take Photo dialog).
-  builder->Add("userImageScreenTitle", IDS_OOBE_PICTURE);
+  builder->Add("userImageScreenTitle", IDS_USER_IMAGE_SCREEN_TITLE);
   builder->Add("userImageScreenDescription",
                IDS_OPTIONS_CHANGE_PICTURE_DIALOG_TEXT);
   builder->Add("takePhoto", IDS_OPTIONS_CHANGE_PICTURE_TAKE_PHOTO);
@@ -118,8 +120,6 @@ void UserImageScreenHandler::RegisterMessages() {
   AddCallback("discardPhoto", &UserImageScreenHandler::HandleDiscardPhoto);
   AddCallback("photoTaken", &UserImageScreenHandler::HandlePhotoTaken);
   AddCallback("selectImage", &UserImageScreenHandler::HandleSelectImage);
-  AddCallback("checkCameraPresence",
-              &UserImageScreenHandler::HandleCheckCameraPresence);
   AddCallback("onUserImageAccepted",
               &UserImageScreenHandler::HandleImageAccepted);
   AddCallback("onUserImageScreenShown",
@@ -190,12 +190,6 @@ void UserImageScreenHandler::HandleTakePhoto() {
 
 void UserImageScreenHandler::HandleDiscardPhoto() {
   ash::PlaySystemSoundIfSpokenFeedback(SOUND_OBJECT_DELETE);
-}
-
-void UserImageScreenHandler::HandleCheckCameraPresence() {
-  if (!screen_)
-    return;
-  screen_->CheckCameraPresence();
 }
 
 void UserImageScreenHandler::HandleSelectImage(const std::string& image_url,

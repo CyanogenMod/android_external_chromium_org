@@ -362,7 +362,7 @@
             'chromium_swarm_tests',
           ],
         }],
-        ['OS!="android" and OS!="ios"', {
+        ['OS!="android"', {
           'dependencies': [
             '../google_apis/gcm/gcm.gyp:gcm_unit_tests',
           ],
@@ -446,15 +446,6 @@
             }],
           ],
         }, # target_name: blink_tests
-        {
-          # TODO(jochen): Eventually remove this target after everybody and
-          # the bots started to use blink_tests only.
-          'target_name': 'all_webkit',
-          'type': 'none',
-          'dependencies': [
-            'blink_tests',
-          ],
-        }, # target_name: all_webkit
       ],
     }], # OS!=ios
     ['OS!="ios" and OS!="android"', {
@@ -1176,8 +1167,8 @@
             '../ui/message_center/message_center.gyp:*',
             '../ui/snapshot/snapshot.gyp:snapshot_unittests',
             '../ui/ui_unittests.gyp:ui_unittests',
+            '../ui/views/examples/examples.gyp:views_examples_with_content_exe',
             '../ui/views/views.gyp:views',
-            '../ui/views/views.gyp:views_examples_with_content_exe',
             '../ui/views/views.gyp:views_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
             'blink_tests',

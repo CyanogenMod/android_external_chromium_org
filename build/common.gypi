@@ -35,6 +35,15 @@
 
             # Configure the build for small devices. See crbug.com/318413
             'embedded%': 0,
+
+            'conditions': [
+              # Compute the architecture that we're building on.
+              ['OS=="win" or OS=="mac" or OS=="ios"', {
+                'host_arch%': 'ia32',
+              }, {
+                'host_arch%': '<!(python <(DEPTH)/build/linux/detect_host_arch.py)',
+              }],
+            ],
           },
           # Copy conditionally-set variables out one scope.
           'chromeos%': '<(chromeos)',
@@ -43,12 +52,19 @@
           'use_cras%': '<(use_cras)',
           'use_ozone%': '<(use_ozone)',
           'embedded%': '<(embedded)',
+          'host_arch%': '<(host_arch)',
 
           # Whether we are using Views Toolkit
           'toolkit_views%': 0,
 
-          # Use OpenSSL instead of NSS. Under development: see http://crbug.com/62803
+          # Use OpenSSL instead of NSS as the underlying SSL and crypto
+          # implementation. Certificate verification will in most cases be
+          # handled by the OS. If OpenSSL's struct X509 is used to represent
+          # certificates, use_openssl_certs must be set.
           'use_openssl%': 0,
+
+          # Typedef X509Certificate::OSCertHandle to OpenSSL's struct X509*.
+          'use_openssl_certs%': 0,
 
           # Disable viewport meta tag by default.
           'enable_viewport%': 0,
@@ -96,13 +112,6 @@
               'desktop_linux%': 0,
             }],
 
-            # Compute the architecture that we're building on.
-            ['OS=="win" or OS=="mac" or OS=="ios"', {
-              'host_arch%': 'ia32',
-            }, {
-              'host_arch%': '<!(python <(DEPTH)/build/linux/detect_host_arch.py)',
-            }],
-
             # Embedded implies ozone.
             ['embedded==1', {
               'use_ozone%': 1,
@@ -112,6 +121,14 @@
               'use_system_fontconfig%': 0,
             }, {
               'use_system_fontconfig%': 1,
+            }],
+
+            ['OS=="android"', {
+              'target_arch%': 'arm',
+            }, {
+              # Default architecture we're building for is the architecture we're
+              # building on, and possibly sub-architecture (for iOS builds).
+              'target_arch%': '<(host_arch)',
             }],
           ],
         },
@@ -124,12 +141,14 @@
         'use_ozone%': '<(use_ozone)',
         'embedded%': '<(embedded)',
         'use_openssl%': '<(use_openssl)',
+        'use_openssl_certs%': '<(use_openssl_certs)',
         'use_system_fontconfig%': '<(use_system_fontconfig)',
         'enable_viewport%': '<(enable_viewport)',
         'enable_hidpi%': '<(enable_hidpi)',
         'buildtype%': '<(buildtype)',
         'branding%': '<(branding)',
         'host_arch%': '<(host_arch)',
+        'target_arch%': '<(target_arch)',
 
         'target_subarch%': '',
 
@@ -150,6 +169,10 @@
         # If no gomadir is set, it uses the default gomadir.
         'use_goma%': 0,
         'gomadir%': '',
+
+        # The system root for cross-compiles. Default: none.
+        'sysroot%': '',
+        'chroot_cmd%': '',
 
         'conditions': [
           # Ash needs Aura.
@@ -221,13 +244,6 @@
           ['OS=="ios"', {
             'target_subarch%': 'arm32',
           }],
-          ['OS=="android"', {
-            'target_arch%': 'arm',
-          }, {
-            # Default architecture we're building for is the architecture we're
-            # building on, and possibly sub-architecture (for iOS builds).
-            'target_arch%': '<(host_arch)',
-          }],
         ],
       },
 
@@ -247,6 +263,7 @@
       'use_clipboard_aurax11%': '<(use_clipboard_aurax11)',
       'embedded%': '<(embedded)',
       'use_openssl%': '<(use_openssl)',
+      'use_openssl_certs%': '<(use_openssl_certs)',
       'use_system_fontconfig%': '<(use_system_fontconfig)',
       'enable_viewport%': '<(enable_viewport)',
       'enable_hidpi%': '<(enable_hidpi)',
@@ -258,6 +275,8 @@
       'buildtype%': '<(buildtype)',
       'branding%': '<(branding)',
       'arm_version%': '<(arm_version)',
+      'sysroot%': '<(sysroot)',
+      'chroot_cmd%': '<(chroot_cmd)',
 
       # Whether content/chrome is using mojo: see http://crbug.com/353602
       'use_mojo%': 0,
@@ -285,10 +304,6 @@
 
       # Detect NEON support at run-time.
       'arm_neon_optional%': 0,
-
-      # The system root for cross-compiles. Default: none.
-      'sysroot%': '',
-      'chroot_cmd%': '',
 
       # The system libdir used for this ABI.
       'system_libdir%': 'lib',
@@ -425,12 +440,19 @@
       'cld_version%': 2,
 
       # For CLD2, the size of the tables that should be included in the build
-      # Only evaluated if cld_version == 2.
+      # Only evaluated if cld_version == 2 or if building the CLD2 dynamic data
+      # tool explicitly.
       # See third_party/cld_2/cld_2.gyp for more information.
       #   0: Small tables, lower accuracy
       #   1: Medium tables, medium accuracy
       #   2: Large tables, high accuracy
       'cld2_table_size%': 2,
+
+      # Set the way CLD is compiled. Only evaluated if cld_version == 2.
+      #   0: static, language scoring tables compiled into the binary
+      #   1: dynamic, language scoring tables live in a data file that must
+      #      be loaded at runtime.
+      'cld2_dynamic%': 0,
 
       # Enable spell checker.
       'enable_spellcheck%': 1,
@@ -554,6 +576,14 @@
           'use_nss%': 0,
         }],
 
+        # When OpenSSL is used for SSL and crypto on Unix-like systems, use
+        # OpenSSL's certificate definition.
+        ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris") and use_openssl==1', {
+          'use_openssl_certs%': 1,
+        }, {
+          'use_openssl_certs%': 0,
+        }],
+
         # libudev usage.  This currently only affects the content layer.
         ['OS=="linux" and embedded==0', {
           'use_udev%': 1,
@@ -629,6 +659,7 @@
           'enable_extensions%': 0,
           'enable_google_now%': 0,
           'cld_version%': 1,
+          'cld2_dynamic%': 0,
           'enable_spellcheck%': 0,
           'enable_themes%': 0,
           'remoting%': 0,
@@ -679,6 +710,7 @@
           'enable_extensions%': 0,
           'enable_google_now%': 0,
           'cld_version%': 1,
+          'cld2_dynamic%': 0,
           'enable_printing%': 0,
           'enable_session_service%': 0,
           'enable_themes%': 0,
@@ -916,6 +948,7 @@
     'use_cras%': '<(use_cras)',
     'use_mojo%': '<(use_mojo)',
     'use_openssl%': '<(use_openssl)',
+    'use_openssl_certs%': '<(use_openssl_certs)',
     'use_nss%': '<(use_nss)',
     'use_udev%': '<(use_udev)',
     'os_bsd%': '<(os_bsd)',
@@ -995,6 +1028,7 @@
     'enable_google_now%': '<(enable_google_now)',
     'cld_version%': '<(cld_version)',
     'cld2_table_size%': '<(cld2_table_size)',
+    'cld2_dynamic%': '<(cld2_dynamic)',
     'enable_captive_portal_detection%': '<(enable_captive_portal_detection)',
     'disable_ftp_support%': '<(disable_ftp_support)',
     'enable_task_manager%': '<(enable_task_manager)',
@@ -1170,11 +1204,12 @@
     'release_unwind_tables%': 1,
 
     # Enable TCMalloc.
-    # TODO(dmikurube): Change the default of use_allocator to "tcmalloc".
-    # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+    # TODO(dmikurube): Change Linux default of use_allocator to "tcmalloc".
+    # TODO(dmikurube): Change Android default of use_allocator to "none".
+    # TODO(dmikurube): Kill {linux|android}_use_tcmalloc. http://crbug.com/345554
     # {linux|android}_use_tcmalloc are to be replaced with use_allocator.
     # They are now used only if use_allocator=="see_use_tcmalloc" (default).
-    # TODO(dmikurube): Assert when linux_use_tcmalloc is explicitly specified.
+    # TODO(dmikurube): Assert when {linux|android}_use_tcmalloc is explicitly specified.
     'linux_use_tcmalloc%': 1,
     'android_use_tcmalloc%': 0,
     'use_allocator%': 'see_use_tcmalloc',
@@ -1488,7 +1523,7 @@
               'android_toolchain%': '<(android_ndk_root)/toolchains/arm-linux-androideabi-4.6/prebuilt/<(host_os)-<(android_host_arch)/bin',
             }],
             ['target_arch == "arm64"', {
-              'android_app_abi%': 'arm64',
+              'android_app_abi%': 'arm64-v8a',
               'android_gdbserver_executable%': 'gdbserver64',
               'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-arm64/gdbserver64/gdbserver64',
               'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-19/arch-arm64',
@@ -1508,7 +1543,7 @@
         'android_gdbserver_executable': '<(android_gdbserver_executable)',
         'android_gdbserver%': '<(android_gdbserver)',
         'android_ndk_root%': '<(android_ndk_root)',
-        'android_ndk_sysroot': '<(android_ndk_sysroot)',
+        'android_ndk_sysroot%': '<(android_ndk_sysroot)',
         'android_sdk_root%': '<(android_sdk_root)',
         'android_sdk_version%': '<(android_sdk_version)',
         'android_toolchain%': '<(android_toolchain)',
@@ -1538,6 +1573,7 @@
 
         # Always uses openssl.
         'use_openssl%': 1,
+        'use_openssl_certs%': 1,
 
         'proprietary_codecs%': '<(proprietary_codecs)',
         'safe_browsing%': 2,
@@ -1762,6 +1798,9 @@
       ['toolkit_views==1', {
         'grit_defines': ['-D', 'toolkit_views'],
       }],
+      ['use_mojo==1', {
+        'grit_defines': ['-D', 'use_mojo'],
+      }],
       ['toolkit_uses_gtk==1', {
         'grit_defines': ['-D', 'toolkit_uses_gtk'],
       }],
@@ -1785,11 +1824,6 @@
       }],
       ['use_titlecase_in_grd_files==1', {
         'grit_defines': ['-D', 'use_titlecase'],
-      }],
-      ['OS=="android" and (target_arch=="ia32" or target_arch=="x64")', {
-        # WebAudio on Android/x86 is disabled by default, unlike
-        # everywhere else, so use appropriate message.
-        'grit_defines': ['-D', 'use_webaudio_enable_message'],
       }],
       ['use_third_party_translations==1', {
         'grit_defines': ['-D', 'use_third_party_translations'],
@@ -2091,6 +2125,8 @@
       # That's enough to make it available during target conditional
       # processing.
       'chromium_code%': '<(chromium_code)',
+
+      'component%': '<(component)',
 
       # See http://msdn.microsoft.com/en-us/library/aa652360(VS.71).aspx
       'win_release_Optimization%': '2', # 2 = /Os
@@ -2424,7 +2460,7 @@
           },
         },
         'defines': [
-            'ADDRESS_SANITIZER',
+            'SYZYASAN',
             'MEMORY_TOOL_REPLACES_ALLOCATOR',
         ],
       }],
@@ -2500,6 +2536,9 @@
       ['cld_version!=0', {
         'defines': ['CLD_VERSION=<(cld_version)'],
       }],
+      ['cld2_dynamic!=0', {
+        'defines': ['CLD2_DYNAMIC_MODE=1'],
+      }],
       ['enable_printing==1', {
         'defines': ['ENABLE_FULL_PRINTING=1', 'ENABLE_PRINTING=1'],
       }],
@@ -2562,8 +2601,17 @@
       }],
     ],  # conditions for 'target_defaults'
     'target_conditions': [
-      ['<(use_openssl)==1 or >(nacl_untrusted_build)==1', {
+      ['<(use_openssl)==1', {
         'defines': ['USE_OPENSSL=1'],
+      }],
+      ['<(use_openssl_certs)==1', {
+        'defines': ['USE_OPENSSL_CERTS=1'],
+      }],
+      ['>(nacl_untrusted_build)==1', {
+        'defines': [
+          'USE_OPENSSL=1',
+          'USE_OPENSSL_CERTS=1',
+        ],
       }],
       ['<(use_nss)==1 and >(nacl_untrusted_build)==0', {
         'defines': ['USE_NSS=1'],
@@ -3025,8 +3073,8 @@
     },
   },
   'conditions': [
-    # TODO(jochen): Enable this on chromeos. http://crbug.com/353127
-    ['os_posix==1 and chromeos==0', {
+    # TODO(jochen): Enable this on chromeos on arm. http://crbug.com/356580
+    ['os_posix==1 and (chromeos==0 or target_arch!="arm")', {
       'target_defaults': {
         'ldflags': [
           '-Wl,--fatal-warnings',
@@ -3520,6 +3568,9 @@
               # code generated by flex (used in angle) contains that keyword.
               # http://crbug.com/255186
               '-Wno-deprecated-register',
+
+              # TODO(thakis): Remove, http://crbug.com/341352
+              '-Wno-absolute-value',
             ],
             'cflags!': [
               # Clang doesn't seem to know know this flag.
@@ -3608,19 +3659,19 @@
                 ],
               }],
             ],
+            'conditions': [
+              ['OS=="mac"', {
+                'cflags': [
+                  '-mllvm -asan-globals=0',  # http://crbug.com/352073
+                ],
+              }],
+            ],
           }],
           ['asan_coverage!=0', {
             'target_conditions': [
               ['_toolset=="target"', {
                 'cflags': [
                   '-mllvm -asan-coverage=<(asan_coverage)',
-                ],
-              }],
-            ],
-            'conditions': [
-              ['OS=="mac"', {
-                'cflags': [
-                  '-mllvm -asan-globals=0',  # http://crbug.com/352073
                 ],
               }],
             ],
@@ -3771,8 +3822,8 @@
               }],
             ],
           }],
-          # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-          ['(use_allocator!="tcmalloc" and (use_allocator!="see_use_tcmalloc" or linux_use_tcmalloc==0)) and android_use_tcmalloc==0', {
+          # TODO(dmikurube): Kill {linux|android}_use_tcmalloc. http://crbug.com/345554
+          ['use_allocator!="tcmalloc" and (use_allocator!="see_use_tcmalloc" or ((OS=="linux" and linux_use_tcmalloc==0) or (OS=="android" and android_use_tcmalloc==0)))', {
             'defines': ['NO_TCMALLOC'],
           }],
           ['linux_use_gold_flags==1', {
@@ -3972,7 +4023,6 @@
                   ['target_arch=="arm"', {
                     'cflags': [
                       '-target arm-linux-androideabi',
-                      '-mllvm -arm-enable-ehabi',
                     ],
                     'ldflags': [
                       '-target arm-linux-androideabi',
@@ -4261,6 +4311,9 @@
                 # e.g. code generated by flex (used in angle) contains that
                 # keyword. http://crbug.com/255186
                 '-Wno-deprecated-register',
+
+                # TODO(thakis): Remove, http://crbug.com/341352
+                '-Wno-absolute-value',
               ],
 
               'conditions': [
@@ -4900,6 +4953,7 @@
                   '-Wno-missing-braces',
                   '-Wno-missing-declarations',
                   '-Wno-msvc-include',
+                  '-Wno-absolute-value',
                   '-Wno-null-dereference',
                   '-Wno-overloaded-virtual',
                   '-Wno-parentheses',

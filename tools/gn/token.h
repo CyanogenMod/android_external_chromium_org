@@ -32,6 +32,7 @@ class Token {
     BOOLEAN_AND,
     BOOLEAN_OR,
     BANG,
+    DOT,
 
     LEFT_PAREN,
     RIGHT_PAREN,
@@ -67,10 +68,6 @@ class Token {
   // Helper functions for comparing this token to something.
   bool IsIdentifierEqualTo(const char* v) const;
   bool IsStringEqualTo(const char* v) const;
-
-  // For STRING tokens, returns the string value (no quotes at end, does
-  // unescaping).
-  std::string StringValue() const;
 
  private:
   Type type_;

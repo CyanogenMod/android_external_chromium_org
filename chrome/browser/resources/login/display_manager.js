@@ -36,6 +36,8 @@
 /** @const */ var ACCELERATOR_DEVICE_REQUISITION_REMORA =
     'device_requisition_remora';
 /** @const */ var ACCELERATOR_APP_LAUNCH_BAILOUT = 'app_launch_bailout';
+/** @const */ var ACCELERATOR_APP_LAUNCH_NETWORK_CONFIG =
+    'app_launch_network_config';
 
 /* Signin UI state constants. Used to control header bar UI. */
 /** @const */ var SIGNIN_UI_STATE = {
@@ -255,6 +257,10 @@ cr.define('cr.ui.login', function() {
         var currentStepId = this.screens_[this.currentStep_];
         if (currentStepId == SCREEN_APP_LAUNCH_SPLASH)
           chrome.send('cancelAppLaunch');
+      } else if (name == ACCELERATOR_APP_LAUNCH_NETWORK_CONFIG) {
+        var currentStepId = this.screens_[this.currentStep_];
+        if (currentStepId == SCREEN_APP_LAUNCH_SPLASH)
+          chrome.send('networkConfigRequest');
       }
 
       if (!this.forceKeyboardFlow_)
@@ -363,6 +369,20 @@ cr.define('cr.ui.login', function() {
 
       if (newStep.onAfterShow)
         newStep.onAfterShow(screenData);
+
+      // Workaround for gaia and network screens.
+      // Due to other origin iframe and long ChromeVox focusing correspondingly
+      // passive aria-label title is not pronounced.
+      // Gaia hack can be removed on fixed crbug.com/316726.
+      if (nextStepId == SCREEN_GAIA_SIGNIN) {
+        newStep.setAttribute(
+            'aria-label',
+            loadTimeData.getString('signinScreenTitle'));
+      } else if (nextStepId == SCREEN_OOBE_NETWORK) {
+        newStep.setAttribute(
+            'aria-label',
+            loadTimeData.getString('networkScreenAccessibleTitle'));
+      }
 
       // Default control to be focused (if specified).
       var defaultControl = newStep.defaultControl;

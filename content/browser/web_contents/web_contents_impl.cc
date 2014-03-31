@@ -332,6 +332,8 @@ WebContentsImpl::WebContentsImpl(
       minimum_zoom_percent_(static_cast<int>(kMinimumZoomFactor * 100)),
       maximum_zoom_percent_(static_cast<int>(kMaximumZoomFactor * 100)),
       temporary_zoom_settings_(false),
+      totalPinchGestureAmount_(0),
+      currentPinchZoomStepDelta_(0),
       color_chooser_identifier_(0),
       render_view_message_source_(NULL),
       fullscreen_widget_routing_id_(MSG_ROUTING_NONE),
@@ -1215,6 +1217,44 @@ bool WebContentsImpl::PreHandleGestureEvent(
   return delegate_ && delegate_->PreHandleGestureEvent(this, event);
 }
 
+bool WebContentsImpl::HandleGestureEvent(
+    const blink::WebGestureEvent& event) {
+  // Some platforms (eg. Mac) send GesturePinch events for trackpad pinch-zoom.
+  // Use them to implement browser zoom, as for HandleWheelEvent above.
+  if (event.type == blink::WebInputEvent::GesturePinchUpdate &&
+      event.sourceDevice == blink::WebGestureEvent::Touchpad) {
+    // The scale difference necessary to trigger a zoom action. Derived from
+    // experimentation to find a value that feels reasonable.
+    const float kZoomStepValue = 0.6f;
+
+    // Find the (absolute) thresholds on either side of the current zoom factor,
+    // then convert those to actual numbers to trigger a zoom in or out.
+    // This logic deliberately makes the range around the starting zoom value
+    // for the gesture twice as large as the other ranges (i.e., the notches are
+    // at ..., -3*step, -2*step, -step, step, 2*step, 3*step, ... but not at 0)
+    // so that it's easier to get back to your starting point than it is to
+    // overshoot.
+    float nextStep = (abs(currentPinchZoomStepDelta_) + 1) * kZoomStepValue;
+    float backStep = abs(currentPinchZoomStepDelta_) * kZoomStepValue;
+    float zoomInThreshold = (currentPinchZoomStepDelta_ >= 0) ? nextStep
+        : -backStep;
+    float zoomOutThreshold = (currentPinchZoomStepDelta_ <= 0) ? -nextStep
+        : backStep;
+
+    totalPinchGestureAmount_ += event.data.pinchUpdate.scale;
+    if (totalPinchGestureAmount_ > zoomInThreshold) {
+      currentPinchZoomStepDelta_++;
+      delegate_->ContentsZoomChange(true);
+    } else if (totalPinchGestureAmount_ < zoomOutThreshold) {
+      currentPinchZoomStepDelta_--;
+      delegate_->ContentsZoomChange(false);
+    }
+    return true;
+  }
+
+  return false;
+}
+
 #if defined(OS_WIN)
 gfx::NativeViewAccessible WebContentsImpl::GetParentNativeViewAccessible() {
   return accessible_parent_;
@@ -1400,7 +1440,7 @@ void WebContentsImpl::CreateNewWindow(
 
   if (delegate_) {
     delegate_->WebContentsCreated(
-        this, params.opener_frame_id, params.frame_name,
+        this, params.opener_render_frame_id, params.frame_name,
         params.target_url, new_contents);
   }
 
@@ -1668,8 +1708,19 @@ bool WebContentsImpl::Send(IPC::Message* message) {
 
 bool WebContentsImpl::NavigateToPendingEntry(
     NavigationController::ReloadType reload_type) {
-  return frame_tree_.root()->navigator()->NavigateToPendingEntry(
-      frame_tree_.GetMainFrame(), reload_type);
+  FrameTreeNode* node = frame_tree_.root();
+
+  // If we are using --site-per-process, we should navigate in the FrameTreeNode
+  // specified in the pending entry.
+  NavigationEntryImpl* pending_entry =
+      NavigationEntryImpl::FromNavigationEntry(controller_.GetPendingEntry());
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess) &&
+      pending_entry->frame_tree_node_id() != -1) {
+    node = frame_tree_.FindByID(pending_entry->frame_tree_node_id());
+  }
+
+  return node->navigator()->NavigateToPendingEntry(
+      node->current_frame_host(), reload_type);
 }
 
 void WebContentsImpl::RenderFrameForInterstitialPageCreated(
@@ -2052,20 +2103,12 @@ void WebContentsImpl::SetFocusToLocationBar(bool select_all) {
 void WebContentsImpl::DidStartProvisionalLoad(
     RenderFrameHostImpl* render_frame_host,
     int parent_routing_id,
-    bool is_main_frame,
     const GURL& validated_url,
     bool is_error_page,
     bool is_iframe_srcdoc) {
+  bool is_main_frame = render_frame_host->frame_tree_node()->IsMainFrame();
   if (is_main_frame)
     DidChangeLoadProgress(0);
-
-  // --site-per-process mode has a short-term hack allowing cross-process
-  // subframe pages to commit thinking they are top-level.  Correct it here to
-  // avoid confusing the observers.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess) &&
-      render_frame_host != GetMainFrame()) {
-    is_main_frame = false;
-  }
 
   // Notify observers about the start of the provisional load.
   int render_frame_id = render_frame_host->GetRoutingID();
@@ -2090,13 +2133,14 @@ void WebContentsImpl::DidFailProvisionalLoadWithError(
     const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params) {
   GURL validated_url(params.url);
   int render_frame_id = render_frame_host->GetRoutingID();
+  bool is_main_frame = render_frame_host->frame_tree_node()->IsMainFrame();
   RenderViewHost* render_view_host = render_frame_host->render_view_host();
   FOR_EACH_OBSERVER(
       WebContentsObserver,
       observers_,
       DidFailProvisionalLoad(render_frame_id,
                              params.frame_unique_name,
-                             params.is_main_frame,
+                             is_main_frame,
                              validated_url,
                              params.error_code,
                              params.error_description,
@@ -2106,14 +2150,14 @@ void WebContentsImpl::DidFailProvisionalLoadWithError(
 void WebContentsImpl::DidFailLoadWithError(
     RenderFrameHostImpl* render_frame_host,
     const GURL& url,
-    bool is_main_frame,
     int error_code,
     const base::string16& error_description) {
   int render_frame_id = render_frame_host->GetRoutingID();
+  bool is_main_frame = render_frame_host->frame_tree_node()->IsMainFrame();
   RenderViewHost* render_view_host = render_frame_host->render_view_host();
   FOR_EACH_OBSERVER(WebContentsObserver, observers_,
                     DidFailLoad(render_frame_id, url, is_main_frame, error_code,
-                                error_description, render_view_host));;
+                                error_description, render_view_host));
 }
 
 void WebContentsImpl::NotifyChangedNavigationState(
@@ -2321,23 +2365,11 @@ void WebContentsImpl::OnDocumentLoadedInFrame() {
 }
 
 void WebContentsImpl::OnDidFinishLoad(
-    const GURL& url,
-    bool is_main_frame) {
+    const GURL& url) {
   if (!render_frame_message_source_) {
     RecordAction(base::UserMetricsAction("BadMessageTerminate_RVD2"));
     GetRenderProcessHost()->ReceivedBadMessage();
     return;
-  }
-
-  RenderFrameHostImpl* rfh =
-      static_cast<RenderFrameHostImpl*>(render_frame_message_source_);
-
-  // --site-per-process mode has a short-term hack allowing cross-process
-  // subframe pages to commit thinking they are top-level.  Correct it here to
-  // avoid confusing the observers.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess) &&
-      rfh != GetMainFrame()) {
-    is_main_frame = false;
   }
 
   GURL validated_url(url);
@@ -2345,8 +2377,11 @@ void WebContentsImpl::OnDidFinishLoad(
       render_frame_message_source_->GetProcess();
   render_process_host->FilterURL(false, &validated_url);
 
+  RenderFrameHostImpl* rfh =
+      static_cast<RenderFrameHostImpl*>(render_frame_message_source_);
   int render_frame_id = rfh->GetRoutingID();
   RenderViewHost* render_view_host = rfh->render_view_host();
+  bool is_main_frame = rfh->frame_tree_node()->IsMainFrame();
   FOR_EACH_OBSERVER(WebContentsObserver, observers_,
                     DidFinishLoad(render_frame_id, validated_url,
                                   is_main_frame, render_view_host));
@@ -2619,6 +2654,7 @@ void WebContentsImpl::ActivateAndShowRepostFormWarningDialog() {
 // loading, or done loading.
 void WebContentsImpl::SetIsLoading(RenderViewHost* render_view_host,
                                    bool is_loading,
+                                   bool to_different_document,
                                    LoadNotificationDetails* details) {
   if (is_loading == is_loading_)
     return;
@@ -2637,7 +2673,7 @@ void WebContentsImpl::SetIsLoading(RenderViewHost* render_view_host,
   waiting_for_response_ = is_loading;
 
   if (delegate_)
-    delegate_->LoadingStateChanged(this);
+    delegate_->LoadingStateChanged(this, to_different_document);
   NotifyNavigationStateChanged(INVALIDATE_TYPE_LOAD);
 
   std::string url = (details ? details->url.possibly_invalid_spec() : "NULL");
@@ -2907,7 +2943,7 @@ void WebContentsImpl::RenderViewTerminated(RenderViewHost* rvh,
     dialog_manager_->CancelActiveAndPendingDialogs(this);
 
   ClearPowerSaveBlockers(rvh);
-  SetIsLoading(rvh, false, NULL);
+  SetIsLoading(rvh, false, true, NULL);
   NotifyDisconnected();
   SetIsCrashed(status, error_code);
   GetView()->OnTabCrashed(GetCrashedStatus(), crashed_error_code_);
@@ -3012,23 +3048,20 @@ void WebContentsImpl::Close(RenderViewHost* rvh) {
     delegate_->CloseContents(this);
 }
 
-void WebContentsImpl::SwappedOut(RenderViewHost* rvh) {
-  if (rvh == GetRenderViewHost()) {
+void WebContentsImpl::SwappedOut(RenderFrameHost* rfh) {
+  // TODO(creis): Handle subframes that go fullscreen.
+  if (rfh->GetRenderViewHost() == GetRenderViewHost()) {
     // Exit fullscreen mode before the current RVH is swapped out.  For numerous
     // cases, there is no guarantee the renderer would/could initiate an exit.
     // Example: http://crbug.com/347232
     if (IsFullscreenForCurrentTab()) {
-      if (rvh)
-        rvh->ExitFullscreen();
+      rfh->GetRenderViewHost()->ExitFullscreen();
       DCHECK(!IsFullscreenForCurrentTab());
     }
 
     if (delegate_)
       delegate_->SwappedOut(this);
   }
-
-  // Allow the navigation to proceed.
-  GetRenderManager()->SwappedOut(rvh);
 }
 
 void WebContentsImpl::RequestMove(const gfx::Rect& new_bounds) {
@@ -3036,8 +3069,10 @@ void WebContentsImpl::RequestMove(const gfx::Rect& new_bounds) {
     delegate_->MoveContents(this, new_bounds);
 }
 
-void WebContentsImpl::DidStartLoading(RenderFrameHost* render_frame_host) {
-  SetIsLoading(render_frame_host->GetRenderViewHost(), true, NULL);
+void WebContentsImpl::DidStartLoading(RenderFrameHost* render_frame_host,
+                                      bool to_different_document) {
+  SetIsLoading(render_frame_host->GetRenderViewHost(), true,
+               to_different_document, NULL);
 }
 
 void WebContentsImpl::DidStopLoading(RenderFrameHost* render_frame_host) {
@@ -3062,7 +3097,8 @@ void WebContentsImpl::DidStopLoading(RenderFrameHost* render_frame_host) {
         controller_.GetCurrentEntryIndex()));
   }
 
-  SetIsLoading(render_frame_host->GetRenderViewHost(), false, details.get());
+  SetIsLoading(render_frame_host->GetRenderViewHost(), false, true,
+               details.get());
 }
 
 void WebContentsImpl::DidCancelLoading() {

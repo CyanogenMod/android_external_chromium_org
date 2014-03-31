@@ -516,6 +516,19 @@ Status AesGcmDecrypt(const blink::WebCryptoKey& key,
   return Decrypt(algorithm, key, CryptoData(cipher_text_with_tag), plain_text);
 }
 
+Status ImportKeyJwk(const CryptoData& key_data,
+                    const blink::WebCryptoAlgorithm& algorithm,
+                    bool extractable,
+                    blink::WebCryptoKeyUsageMask usage_mask,
+                    blink::WebCryptoKey* key) {
+  return ImportKey(blink::WebCryptoKeyFormatJwk,
+                   key_data,
+                   algorithm,
+                   extractable,
+                   usage_mask,
+                   key);
+}
+
 Status ImportKeyJwkFromDict(const base::DictionaryValue& dict,
                             const blink::WebCryptoAlgorithm& algorithm,
                             bool extractable,
@@ -540,25 +553,22 @@ scoped_ptr<base::DictionaryValue> GetJwkDictionary(
   return scoped_ptr<base::DictionaryValue>(dict_value);
 }
 
-// Verifies that the JSON in the input ArrayBuffer contains the provided
-// expected values. Exact matches are required on the fields examined.
-::testing::AssertionResult VerifySymmetricJwk(
-    const blink::WebArrayBuffer& json,
+// Verifies the input dictionary contains the expected values. Exact matches are
+// required on the fields examined.
+::testing::AssertionResult VerifyJwk(
+    const scoped_ptr<base::DictionaryValue>& dict,
+    const std::string& kty_expected,
     const std::string& alg_expected,
-    const std::string& k_expected_hex,
     blink::WebCryptoKeyUsageMask use_mask_expected) {
-
-  scoped_ptr<base::DictionaryValue> dict = GetJwkDictionary(json);
-  if (!dict.get() || dict->empty())
-    return ::testing::AssertionFailure() << "JSON parsing failed";
 
   // ---- kty
   std::string value_string;
   if (!dict->GetString("kty", &value_string))
     return ::testing::AssertionFailure() << "Missing 'kty'";
-  if (value_string != "oct")
-    return ::testing::AssertionFailure()
-           << "Expected 'kty' to be 'oct' but found " << value_string;
+  if (value_string != kty_expected)
+    return ::testing::AssertionFailure() << "Expected 'kty' to be "
+                                         << kty_expected << "but found "
+                                         << value_string;
 
   // ---- alg
   if (!dict->GetString("alg", &value_string))
@@ -568,18 +578,6 @@ scoped_ptr<base::DictionaryValue> GetJwkDictionary(
                                          << alg_expected << " but found "
                                          << value_string;
 
-  // ---- k
-  if (!dict->GetString("k", &value_string))
-    return ::testing::AssertionFailure() << "Missing 'k'";
-  std::string k_value;
-  if (!webcrypto::Base64DecodeUrlSafe(value_string, &k_value))
-    return ::testing::AssertionFailure() << "Base64DecodeUrlSafe(k) failed";
-  if (!LowerCaseEqualsASCII(base::HexEncode(k_value.data(), k_value.size()),
-                            k_expected_hex.c_str())) {
-    return ::testing::AssertionFailure() << "Expected 'k' to be "
-                                         << k_expected_hex
-                                         << " but found something different";
-  }
   // ---- ext
   // always expect ext == true in this case
   bool ext_value;
@@ -603,6 +601,75 @@ scoped_ptr<base::DictionaryValue> GetJwkDictionary(
            << " but found " << key_ops_mask << " (" << value_string << ")";
 
   return ::testing::AssertionSuccess();
+}
+
+// Verifies that the JSON in the input ArrayBuffer contains the provided
+// expected values. Exact matches are required on the fields examined.
+::testing::AssertionResult VerifySecretJwk(
+    const blink::WebArrayBuffer& json,
+    const std::string& alg_expected,
+    const std::string& k_expected_hex,
+    blink::WebCryptoKeyUsageMask use_mask_expected) {
+  scoped_ptr<base::DictionaryValue> dict = GetJwkDictionary(json);
+  if (!dict.get() || dict->empty())
+    return ::testing::AssertionFailure() << "JSON parsing failed";
+
+  // ---- k
+  std::string value_string;
+  if (!dict->GetString("k", &value_string))
+    return ::testing::AssertionFailure() << "Missing 'k'";
+  std::string k_value;
+  if (!webcrypto::Base64DecodeUrlSafe(value_string, &k_value))
+    return ::testing::AssertionFailure() << "Base64DecodeUrlSafe(k) failed";
+  if (!LowerCaseEqualsASCII(base::HexEncode(k_value.data(), k_value.size()),
+                            k_expected_hex.c_str())) {
+    return ::testing::AssertionFailure() << "Expected 'k' to be "
+                                         << k_expected_hex
+                                         << " but found something different";
+  }
+
+  return VerifyJwk(dict, "oct", alg_expected, use_mask_expected);
+}
+
+// Verifies that the JSON in the input ArrayBuffer contains the provided
+// expected values. Exact matches are required on the fields examined.
+::testing::AssertionResult VerifyPublicJwk(
+    const blink::WebArrayBuffer& json,
+    const std::string& alg_expected,
+    const std::string& n_expected_hex,
+    const std::string& e_expected_hex,
+    blink::WebCryptoKeyUsageMask use_mask_expected) {
+  scoped_ptr<base::DictionaryValue> dict = GetJwkDictionary(json);
+  if (!dict.get() || dict->empty())
+    return ::testing::AssertionFailure() << "JSON parsing failed";
+
+  // ---- n
+  std::string value_string;
+  if (!dict->GetString("n", &value_string))
+    return ::testing::AssertionFailure() << "Missing 'n'";
+  std::string n_value;
+  if (!webcrypto::Base64DecodeUrlSafe(value_string, &n_value))
+    return ::testing::AssertionFailure() << "Base64DecodeUrlSafe(n) failed";
+  if (base::HexEncode(n_value.data(), n_value.size()) != n_expected_hex) {
+    return ::testing::AssertionFailure() << "'n' does not match the expected "
+                                            "value";
+  }
+  // TODO(padolph): LowerCaseEqualsASCII() does not work for above!
+
+  // ---- e
+  if (!dict->GetString("e", &value_string))
+    return ::testing::AssertionFailure() << "Missing 'e'";
+  std::string e_value;
+  if (!webcrypto::Base64DecodeUrlSafe(value_string, &e_value))
+    return ::testing::AssertionFailure() << "Base64DecodeUrlSafe(e) failed";
+  if (!LowerCaseEqualsASCII(base::HexEncode(e_value.data(), e_value.size()),
+                            e_expected_hex.c_str())) {
+    return ::testing::AssertionFailure() << "Expected 'e' to be "
+                                         << e_expected_hex
+                                         << " but found something different";
+  }
+
+  return VerifyJwk(dict, "RSA", alg_expected, use_mask_expected);
 }
 
 }  // namespace
@@ -810,7 +877,7 @@ TEST_F(SharedCryptoTest, AesCbcFailures) {
   // keys).
   EXPECT_STATUS(Status::ErrorUnexpectedKeyType(),
                 ExportKey(blink::WebCryptoKeyFormatSpki, key, &output));
-  EXPECT_STATUS(Status::ErrorUnsupported(),
+  EXPECT_STATUS(Status::ErrorUnexpectedKeyType(),
                 ExportKey(blink::WebCryptoKeyFormatPkcs8, key, &output));
 }
 
@@ -1270,6 +1337,85 @@ TEST_F(SharedCryptoTest, ImportJwkOctFailures) {
   RestoreJwkOctDictionary(&dict);
 }
 
+TEST_F(SharedCryptoTest, MAYBE(ImportExportJwkRsaPublicKey)) {
+  // This test uses kPublicKeySpkiDerHex as the RSA key. The data below
+  // represents the modulus and public exponent extracted from this SPKI blob.
+  // These values appear explicitly in the JWK rendering of the key.
+  const std::string n_hex =
+      "A56E4A0E701017589A5187DC7EA841D156F2EC0E36AD52A44DFEB1E61F7AD991D8C51056"
+      "FFEDB162B4C0F283A12A88A394DFF526AB7291CBB307CEABFCE0B1DFD5CD9508096D5B2B"
+      "8B6DF5D671EF6377C0921CB23C270A70E2598E6FF89D19F105ACC2D3F0CB35F29280E138"
+      "6B6F64C4EF22E1E1F20D0CE8CFFB2249BD9A2137";
+  const std::string e_hex = "010001";
+
+  struct TestCase {
+    const blink::WebCryptoAlgorithm algorithm;
+    const blink::WebCryptoKeyUsageMask usage;
+    const char* const jwk_alg;
+  };
+  const TestCase kTests[] = {
+      // RSAES-PKCS1-v1_5
+      {CreateAlgorithm(blink::WebCryptoAlgorithmIdRsaEsPkcs1v1_5),
+       blink::WebCryptoKeyUsageEncrypt, "RSA1_5"},
+      // RSASSA-PKCS1-v1_5 SHA-1
+      {CreateRsaHashedImportAlgorithm(
+           blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5,
+           blink::WebCryptoAlgorithmIdSha1),
+       blink::WebCryptoKeyUsageSign, "RS1"},
+      // RSASSA-PKCS1-v1_5 SHA-256
+      {CreateRsaHashedImportAlgorithm(
+           blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5,
+           blink::WebCryptoAlgorithmIdSha256),
+       blink::WebCryptoKeyUsageSign, "RS256"},
+      // RSASSA-PKCS1-v1_5 SHA-384
+      {CreateRsaHashedImportAlgorithm(
+           blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5,
+           blink::WebCryptoAlgorithmIdSha384),
+       blink::WebCryptoKeyUsageSign, "RS384"},
+      // RSASSA-PKCS1-v1_5 SHA-512
+      {CreateRsaHashedImportAlgorithm(
+           blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5,
+           blink::WebCryptoAlgorithmIdSha512),
+       blink::WebCryptoKeyUsageSign, "RS512"}};
+
+  for (size_t test_index = 0; test_index < ARRAYSIZE_UNSAFE(kTests);
+       ++test_index) {
+    SCOPED_TRACE(test_index);
+    const TestCase& test = kTests[test_index];
+
+    // Import the spki to create a public key
+    blink::WebCryptoKey public_key = blink::WebCryptoKey::createNull();
+    ASSERT_STATUS_SUCCESS(
+        ImportKey(blink::WebCryptoKeyFormatSpki,
+                  CryptoData(HexStringToBytes(kPublicKeySpkiDerHex)),
+                  test.algorithm,
+                  true,
+                  test.usage,
+                  &public_key));
+
+    // Export the public key as JWK and verify its contents
+    blink::WebArrayBuffer jwk;
+    ASSERT_STATUS_SUCCESS(
+        ExportKey(blink::WebCryptoKeyFormatJwk, public_key, &jwk));
+    EXPECT_TRUE(VerifyPublicJwk(jwk, test.jwk_alg, n_hex, e_hex, test.usage));
+
+    // Import the JWK back in to create a new key
+    blink::WebCryptoKey public_key2 = blink::WebCryptoKey::createNull();
+    EXPECT_STATUS_SUCCESS(ImportKeyJwk(
+        CryptoData(jwk), test.algorithm, true, test.usage, &public_key2));
+    EXPECT_TRUE(public_key2.handle());
+    EXPECT_EQ(blink::WebCryptoKeyTypePublic, public_key2.type());
+    EXPECT_EQ(true, public_key2.extractable());
+    EXPECT_EQ(test.algorithm.id(), public_key2.algorithm().id());
+
+    // Export the new key as spki and compare to the original.
+    blink::WebArrayBuffer spki;
+    ASSERT_STATUS_SUCCESS(
+        ExportKey(blink::WebCryptoKeyFormatSpki, public_key2, &spki));
+    ExpectCryptoDataMatchesHex(kPublicKeySpkiDerHex, CryptoData(spki));
+  }
+}
+
 TEST_F(SharedCryptoTest, MAYBE(ImportJwkRsaFailures)) {
   base::DictionaryValue dict;
   RestoreJwkRsaDictionary(&dict);
@@ -1587,9 +1733,8 @@ TEST_F(SharedCryptoTest, MAYBE(ImportExportJwkSymmetricKey)) {
         HexStringToBytes(test.key_hex), test.algorithm, test.usage);
 
     // Export the key in JWK format and validate.
-    ASSERT_STATUS_SUCCESS(ExportKeyJwk(key, &json));
-    EXPECT_TRUE(
-        VerifySymmetricJwk(json, test.jwk_alg, test.key_hex, test.usage));
+    ASSERT_STATUS_SUCCESS(ExportKey(blink::WebCryptoKeyFormatJwk, key, &json));
+    EXPECT_TRUE(VerifySecretJwk(json, test.jwk_alg, test.key_hex, test.usage));
 
     // Import the JWK-formatted key.
     ASSERT_STATUS_SUCCESS(
@@ -1681,7 +1826,7 @@ TEST_F(SharedCryptoTest, MAYBE(ImportExportSpki)) {
                 ExportKey(blink::WebCryptoKeyFormatSpki, key, &output));
 }
 
-TEST_F(SharedCryptoTest, MAYBE(ImportPkcs8)) {
+TEST_F(SharedCryptoTest, MAYBE(ImportExportPkcs8)) {
   // Passing case: Import a valid RSA key in PKCS#8 format.
   blink::WebCryptoKey key = blink::WebCryptoKey::createNull();
   ASSERT_STATUS_SUCCESS(ImportKey(
@@ -1703,6 +1848,11 @@ TEST_F(SharedCryptoTest, MAYBE(ImportPkcs8)) {
   ExpectCryptoDataMatchesHex(
       "010001",
       CryptoData(key.algorithm().rsaHashedParams()->publicExponent()));
+
+  blink::WebArrayBuffer exported_key;
+  ASSERT_STATUS_SUCCESS(
+      ExportKey(blink::WebCryptoKeyFormatPkcs8, key, &exported_key));
+  ExpectArrayBufferMatchesHex(kPrivateKeyPkcs8DerHex, exported_key);
 
   // Failing case: Empty PKCS#8 data
   EXPECT_STATUS(Status::ErrorImportEmptyKeyData(),
@@ -1745,7 +1895,7 @@ TEST_F(SharedCryptoTest, MAYBE(GenerateKeyPairRsa)) {
       CreateRsaKeyGenAlgorithm(blink::WebCryptoAlgorithmIdRsaEsPkcs1v1_5,
                                modulus_length,
                                public_exponent);
-  bool extractable = false;
+  bool extractable = true;
   const blink::WebCryptoKeyUsageMask usage_mask = 0;
   blink::WebCryptoKey public_key = blink::WebCryptoKey::createNull();
   blink::WebCryptoKey private_key = blink::WebCryptoKey::createNull();
@@ -1759,6 +1909,36 @@ TEST_F(SharedCryptoTest, MAYBE(GenerateKeyPairRsa)) {
   EXPECT_EQ(extractable, private_key.extractable());
   EXPECT_EQ(usage_mask, public_key.usages());
   EXPECT_EQ(usage_mask, private_key.usages());
+
+  // Try exporting the generated key pair, and then re-importing to verify that
+  // the exported data was valid.
+  blink::WebArrayBuffer public_key_spki;
+  EXPECT_STATUS_SUCCESS(
+      ExportKey(blink::WebCryptoKeyFormatSpki, public_key, &public_key_spki));
+  public_key = blink::WebCryptoKey::createNull();
+  EXPECT_STATUS_SUCCESS(
+      ImportKey(blink::WebCryptoKeyFormatSpki,
+                CryptoData(public_key_spki),
+                CreateAlgorithm(blink::WebCryptoAlgorithmIdRsaEsPkcs1v1_5),
+                true,
+                usage_mask,
+                &public_key));
+  EXPECT_EQ(modulus_length,
+            public_key.algorithm().rsaParams()->modulusLengthBits());
+
+  blink::WebArrayBuffer private_key_pkcs8;
+  EXPECT_STATUS_SUCCESS(ExportKey(
+      blink::WebCryptoKeyFormatPkcs8, private_key, &private_key_pkcs8));
+  private_key = blink::WebCryptoKey::createNull();
+  EXPECT_STATUS_SUCCESS(
+      ImportKey(blink::WebCryptoKeyFormatPkcs8,
+                CryptoData(private_key_pkcs8),
+                CreateAlgorithm(blink::WebCryptoAlgorithmIdRsaEsPkcs1v1_5),
+                true,
+                usage_mask,
+                &private_key));
+  EXPECT_EQ(modulus_length,
+            private_key.algorithm().rsaParams()->modulusLengthBits());
 
   // Fail with bad modulus.
   algorithm = CreateRsaKeyGenAlgorithm(

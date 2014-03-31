@@ -24,13 +24,18 @@
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/wm/core/shadow_types.h"
 
+#if defined(OS_WIN)
+#include "ui/views/win/hwnd_util.h"
+#endif
+
 namespace {
 
 const int kMinimumWidth = 460;
 const int kMaximumWidth = 1000;
 const int kHorizontalMargin = 10;
-const int kPadding = 5;
-const int kPaddingLeft = 10;
+const float kWindowAlphaValue = 0.85f;
+const int kPaddingVertical = 5;
+const int kPaddingHorizontal = 10;
 
 namespace {
 
@@ -79,7 +84,8 @@ class ScreenCaptureNotificationUIViews
   virtual ~ScreenCaptureNotificationUIViews();
 
   // ScreenCaptureNotificationUI interface.
-  virtual void OnStarted(const base::Closure& stop_callback) OVERRIDE;
+  virtual gfx::NativeViewId OnStarted(const base::Closure& stop_callback)
+      OVERRIDE;
 
   // views::View overrides.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
@@ -150,6 +156,7 @@ ScreenCaptureNotificationUIViews::ScreenCaptureNotificationUIViews(
   hide_link_ = new views::Link(
       l10n_util::GetStringUTF16(IDS_PASSWORDS_PAGE_VIEW_HIDE_BUTTON));
   hide_link_->set_listener(this);
+  hide_link_->SetUnderline(false);
   AddChildView(hide_link_);
 }
 
@@ -158,7 +165,7 @@ ScreenCaptureNotificationUIViews::~ScreenCaptureNotificationUIViews() {
   delete GetWidget();
 }
 
-void ScreenCaptureNotificationUIViews::OnStarted(
+gfx::NativeViewId ScreenCaptureNotificationUIViews::OnStarted(
     const base::Closure& stop_callback) {
   stop_callback_ = stop_callback;
 
@@ -202,8 +209,14 @@ void ScreenCaptureNotificationUIViews::OnStarted(
       work_area.y() + work_area.height() - size.height(),
       size.width(), size.height());
   widget->SetBounds(bounds);
-
+  widget->SetOpacity(0xFF * kWindowAlphaValue);
   widget->Show();
+
+#if defined(OS_WIN)
+  return gfx::NativeViewId(views::HWNDForWidget(widget));
+#else
+  return 0;
+#endif
 }
 
 gfx::Size ScreenCaptureNotificationUIViews::GetPreferredSize() {
@@ -268,7 +281,10 @@ views::NonClientFrameView*
 ScreenCaptureNotificationUIViews::CreateNonClientFrameView(
     views::Widget* widget) {
   views::BubbleFrameView* frame = new views::BubbleFrameView(
-      gfx::Insets(kPadding, kPaddingLeft, kPadding, kPadding));
+      gfx::Insets(kPaddingVertical,
+                  kPaddingHorizontal,
+                  kPaddingVertical,
+                  kPaddingHorizontal));
   SkColor color = widget->GetNativeTheme()->GetSystemColor(
       ui::NativeTheme::kColorId_DialogBackground);
   frame->SetBubbleBorder(scoped_ptr<views::BubbleBorder>(

@@ -403,13 +403,15 @@ bool ProcessDebugFlags(CommandLine* command_line, bool is_in_sandbox) {
 #ifndef OFFICIAL_BUILD
 base::win::IATPatchFunction g_iat_patch_duplicate_handle;
 
-BOOL (WINAPI *g_iat_orig_duplicate_handle)(HANDLE source_process_handle,
-                                           HANDLE source_handle,
-                                           HANDLE target_process_handle,
-                                           LPHANDLE target_handle,
-                                           DWORD desired_access,
-                                           BOOL inherit_handle,
-                                           DWORD options);
+typedef BOOL (WINAPI *DuplicateHandleFunctionPtr)(HANDLE source_process_handle,
+                                                  HANDLE source_handle,
+                                                  HANDLE target_process_handle,
+                                                  LPHANDLE target_handle,
+                                                  DWORD desired_access,
+                                                  BOOL inherit_handle,
+                                                  DWORD options);
+
+DuplicateHandleFunctionPtr g_iat_orig_duplicate_handle;
 
 NtQueryObject g_QueryObject = NULL;
 
@@ -547,10 +549,13 @@ bool InitBrokerServices(sandbox::BrokerServices* broker_services) {
     DWORD result = ::GetModuleFileNameW(module, module_name, MAX_PATH);
     if (result && (result != MAX_PATH)) {
       ResolveNTFunctionPtr("NtQueryObject", &g_QueryObject);
-      g_iat_orig_duplicate_handle = ::DuplicateHandle;
-      g_iat_patch_duplicate_handle.Patch(
+      result = g_iat_patch_duplicate_handle.Patch(
           module_name, "kernel32.dll", "DuplicateHandle",
           DuplicateHandlePatch);
+      CHECK(result == 0);
+      g_iat_orig_duplicate_handle =
+          reinterpret_cast<DuplicateHandleFunctionPtr>(
+              g_iat_patch_duplicate_handle.original_function());
     }
   }
 #endif
@@ -564,6 +569,16 @@ bool InitTargetServices(sandbox::TargetServices* target_services) {
   sandbox::ResultCode result = target_services->Init();
   g_target_services = target_services;
   return sandbox::SBOX_ALL_OK == result;
+}
+
+bool ShouldUseDirectWrite() {
+  // If the flag is currently on, and we're on Win7 or above, we enable
+  // DirectWrite. Skia does not require the additions to DirectWrite in QFE
+  // 2670838, so a Win7 check is sufficient. We do not currently attempt to
+  // support Vista, where SP2 and the Platform Update are required.
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  return command_line.HasSwitch(switches::kEnableDirectWrite) &&
+         base::win::GetVersion() >= base::win::VERSION_WIN7;
 }
 
 base::ProcessHandle StartSandboxedProcess(
@@ -632,7 +647,15 @@ base::ProcessHandle StartSandboxedProcess(
   if (!disable_default_policy && !AddPolicyForSandboxedProcess(policy))
     return 0;
 
-  if (type_str != switches::kRendererProcess) {
+  if (type_str == switches::kRendererProcess) {
+    if (ShouldUseDirectWrite()) {
+      AddDirectory(base::DIR_WINDOWS_FONTS,
+                  NULL,
+                  true,
+                  sandbox::TargetPolicy::FILES_ALLOW_READONLY,
+                  policy);
+    }
+  } else {
     // Hack for Google Desktop crash. Trick GD into not injecting its DLL into
     // this subprocess. See
     // http://code.google.com/p/chromium/issues/detail?id=25580

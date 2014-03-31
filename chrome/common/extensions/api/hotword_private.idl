@@ -22,6 +22,10 @@
 
     // Whether the hotword extension is available to be enabled
     boolean available;
+
+    // Whether the sound of "Ok, Google" plus a few seconds before is sent
+    // back to Google.
+    boolean audioLoggingEnabled;
   };
 
   callback GenericDoneCallback = void ();
@@ -35,6 +39,10 @@
     // Retrieves the current state of hotword search.
     // The result is put into a StatusDetails object.
     static void getStatus(StatusDetailsCallback callback);
+
+    // Sets the current enabled state of audio logging in the extension.
+    // True: logging enabled. False: no logging.
+    static void setAudioLoggingEnabled(boolean state, optional GenericDoneCallback callback);
   };
 
   interface Events {

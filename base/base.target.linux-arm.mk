@@ -130,7 +130,7 @@ LOCAL_SRC_FILES := \
 	base/memory/discardable_memory_android.cc \
 	base/memory/discardable_memory_emulated.cc \
 	base/memory/discardable_memory_malloc.cc \
-	base/memory/discardable_memory_provider.cc \
+	base/memory/discardable_memory_manager.cc \
 	base/memory/memory_pressure_listener.cc \
 	base/memory/ref_counted.cc \
 	base/memory/ref_counted_memory.cc \
@@ -175,6 +175,7 @@ LOCAL_SRC_FILES := \
 	base/process/kill_posix.cc \
 	base/process/launch.cc \
 	base/process/launch_posix.cc \
+	base/process/memory.cc \
 	base/process/memory_linux.cc \
 	base/process/process_handle_linux.cc \
 	base/process/process_handle_posix.cc \
@@ -311,6 +312,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DBASE_IMPLEMENTATION' \
@@ -398,6 +400,7 @@ MY_DEFS_Release := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DUSE_OPENSSL=1' \
+	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DBASE_IMPLEMENTATION' \

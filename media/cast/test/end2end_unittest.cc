@@ -28,6 +28,7 @@
 #include "media/cast/logging/simple_event_subscriber.h"
 #include "media/cast/test/fake_single_thread_task_runner.h"
 #include "media/cast/test/utility/audio_utility.h"
+#include "media/cast/test/utility/default_config.h"
 #include "media/cast/test/utility/video_utility.h"
 #include "media/cast/transport/cast_transport_config.h"
 #include "media/cast/transport/cast_transport_defines.h"
@@ -368,8 +369,9 @@ class TestReceiverVideoCallback
         << "time_since_capture - upper_bound == "
         << (time_since_capture - upper_bound).InMilliseconds() << " mS";
     EXPECT_LE(expected_video_frame.capture_time, render_time);
-    EXPECT_EQ(expected_video_frame.width, video_frame->coded_size().width());
-    EXPECT_EQ(expected_video_frame.height, video_frame->coded_size().height());
+    EXPECT_EQ(expected_video_frame.width, video_frame->visible_rect().width());
+    EXPECT_EQ(expected_video_frame.height,
+              video_frame->visible_rect().height());
 
     gfx::Size size(expected_video_frame.width, expected_video_frame.height);
     scoped_refptr<media::VideoFrame> expected_I420_frame =
@@ -402,25 +404,16 @@ class End2EndTest : public ::testing::Test {
         testing_clock_receiver_(new base::SimpleTestTickClock()),
         task_runner_(
             new test::FakeSingleThreadTaskRunner(testing_clock_sender_)),
-        logging_config_(GetLoggingConfigWithRawEventsAndStatsEnabled()),
         cast_environment_sender_(new CastEnvironment(
             scoped_ptr<base::TickClock>(testing_clock_sender_).Pass(),
             task_runner_,
             task_runner_,
-            task_runner_,
-            task_runner_,
-            task_runner_,
-            task_runner_,
-            logging_config_)),
+            task_runner_)),
         cast_environment_receiver_(new CastEnvironment(
             scoped_ptr<base::TickClock>(testing_clock_receiver_).Pass(),
             task_runner_,
             task_runner_,
-            task_runner_,
-            task_runner_,
-            task_runner_,
-            task_runner_,
-            logging_config_)),
+            task_runner_)),
         receiver_to_sender_(cast_environment_receiver_),
         sender_to_receiver_(cast_environment_sender_),
         test_receiver_audio_callback_(new TestReceiverAudioCallback()),
@@ -505,7 +498,6 @@ class End2EndTest : public ::testing::Test {
         NULL,
         testing_clock_sender_,
         dummy_endpoint,
-        logging_config_,
         base::Bind(&UpdateCastTransportStatus),
         base::Bind(&End2EndTest::LogRawEvents, base::Unretained(this)),
         base::TimeDelta::FromSeconds(1),
@@ -520,8 +512,10 @@ class End2EndTest : public ::testing::Test {
     // Initializing audio and video senders.
     cast_sender_->InitializeAudio(audio_sender_config_,
                                   base::Bind(&AudioInitializationStatus));
-    cast_sender_->InitializeVideo(
-        video_sender_config_, base::Bind(&VideoInitializationStatus), NULL);
+    cast_sender_->InitializeVideo(video_sender_config_,
+                                  base::Bind(&VideoInitializationStatus),
+                                  CreateDefaultVideoEncodeAcceleratorCallback(),
+                                  CreateDefaultVideoEncodeMemoryCallback());
 
     receiver_to_sender_.SetPacketReceiver(cast_sender_->packet_receiver());
     sender_to_receiver_.SetPacketReceiver(cast_receiver_->packet_receiver());
@@ -599,7 +593,6 @@ class End2EndTest : public ::testing::Test {
   base::SimpleTestTickClock* testing_clock_sender_;
   base::SimpleTestTickClock* testing_clock_receiver_;
   scoped_refptr<test::FakeSingleThreadTaskRunner> task_runner_;
-  CastLoggingConfig logging_config_;
   scoped_refptr<CastEnvironment> cast_environment_sender_;
   scoped_refptr<CastEnvironment> cast_environment_receiver_;
 

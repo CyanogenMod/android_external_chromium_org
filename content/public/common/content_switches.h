@@ -53,6 +53,7 @@ extern const char kDisableDesktopNotifications[];
 extern const char kDisableDirectNPAPIRequests[];
 extern const char kDisableDomainBlockingFor3DAPIs[];
 CONTENT_EXPORT extern const char kDisableExperimentalWebGL[];
+CONTENT_EXPORT extern const char kDisableFastTextAutosizing[];
 CONTENT_EXPORT extern const char kDisableFileSystem[];
 CONTENT_EXPORT extern const char kDisableFiltersOverIPC[];
 CONTENT_EXPORT extern const char kDisableFixedPositionCreatesStackingContext[];
@@ -65,7 +66,6 @@ CONTENT_EXPORT extern const char kDisableGLMultisampling[];
 CONTENT_EXPORT extern const char kDisableGpu[];
 CONTENT_EXPORT extern const char kDisableGpuCompositing[];
 extern const char kDisableGpuProcessCrashLimit[];
-CONTENT_EXPORT extern const char kDisableGpuProcessPrelaunch[];
 CONTENT_EXPORT extern const char kDisableGpuRasterization[];
 CONTENT_EXPORT extern const char kDisableGpuSandbox[];
 CONTENT_EXPORT extern const char kDisableGpuWatchdog[];
@@ -189,13 +189,13 @@ extern const char kGpuLauncher[];
 CONTENT_EXPORT extern const char kGpuProcess[];
 CONTENT_EXPORT extern const char kGpuSandboxAllowSysVShm[];
 CONTENT_EXPORT extern const char kGpuSandboxFailuresFatal[];
+CONTENT_EXPORT extern const char kGpuSandboxStartAfterInitialization[];
 CONTENT_EXPORT extern const char kGpuStartupDialog[];
 extern const char kGpuVendorID[];
 CONTENT_EXPORT extern const char kHostResolverRules[];
 CONTENT_EXPORT extern const char kIgnoreCertificateErrors[];
 CONTENT_EXPORT extern const char kIgnoreGpuBlacklist[];
 extern const char kInProcessGPU[];
-CONTENT_EXPORT extern const char kIpResolverRules[];
 CONTENT_EXPORT extern const char kJavaScriptFlags[];
 extern const char kLoadPlugin[];
 CONTENT_EXPORT extern const char kLogGpuControlListDecisions[];
@@ -297,11 +297,7 @@ extern const char kNetworkCountryIso[];
 CONTENT_EXPORT extern const char kRemoteDebuggingSocketName[];
 #endif
 
-#if defined(OS_ANDROID) && defined(ARCH_CPU_X86)
-CONTENT_EXPORT extern const char kEnableWebAudio[];
-#else
 CONTENT_EXPORT extern const char kDisableWebAudio[];
-#endif
 
 #if defined(OS_CHROMEOS)
 CONTENT_EXPORT extern const char kDisablePanelFitting[];
@@ -310,10 +306,6 @@ CONTENT_EXPORT extern const char kDisablePanelFitting[];
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 extern const char kEnableCarbonInterposing[];
 extern const char kDisableCoreAnimationPlugins[];
-#endif
-
-#if defined(OS_POSIX)
-extern const char kChildCleanExit[];
 #endif
 
 // DON'T ADD RANDOM STUFF HERE. Put it in the main section above in

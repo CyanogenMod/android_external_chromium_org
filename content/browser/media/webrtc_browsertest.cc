@@ -9,9 +9,9 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test_utils.h"
 #include "content/test/webrtc_content_browsertest_base.h"
 #include "media/audio/audio_manager.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -64,15 +64,23 @@ INSTANTIATE_TEST_CASE_P(WebRtcBrowserTests,
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
 // Timing out on ARM linux bot: http://crbug.com/238490
-#define MAYBE_CanSetupVideoCall DISABLED_CanSetupVideoCall
+#define MAYBE_CanSetupDefaultVideoCall DISABLED_CanSetupDefaultVideoCall
 #else
-#define MAYBE_CanSetupVideoCall CanSetupVideoCall
+#define MAYBE_CanSetupDefaultVideoCall CanSetupDefaultVideoCall
 #endif
 
 // These tests will make a complete PeerConnection-based call and verify that
 // video is playing for the call.
-IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CanSetupVideoCall) {
-  MakeTypicalPeerConnectionCall("call({video: true});");
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CanSetupDefaultVideoCall) {
+  MakeTypicalPeerConnectionCall(
+      "callAndExpectResolution({video: true}, 640, 480);");
+}
+
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, CanSetupVideoCallWith1To1AspecRatio) {
+  const std::string javascript =
+      "callAndExpectResolution({video: {mandatory: {minWidth: 320,"
+      " maxWidth: 320, minHeight: 320, maxHeight: 320}}}, 320, 320);";
+  MakeTypicalPeerConnectionCall(javascript);
 }
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
@@ -302,11 +310,27 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
           << "Must run with fake devices since the test will explicitly look "
           << "for the fake device signal.";
 
-  MakeTypicalPeerConnectionCall("callAndEnsureAudioMutingWorks();");
+  MakeTypicalPeerConnectionCall("callAndEnsureAudioTrackMutingWorks();");
+}
+
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
+                       EstablishAudioVideoCallAndVerifyUnmutingWorks) {
+  if (!media::AudioManager::Get()->HasAudioOutputDevices()) {
+    // See comment on EstablishAudioVideoCallAndVerifyMutingWorks.
+    LOG(INFO) << "Missing output devices: skipping test...";
+    return;
+  }
+
+  ASSERT_TRUE(CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kUseFakeDeviceForMediaStream))
+          << "Must run with fake devices since the test will explicitly look "
+          << "for the fake device signal.";
+
+  MakeTypicalPeerConnectionCall("callAndEnsureAudioTrackUnmutingWorks();");
 }
 
 IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, CallAndVerifyVideoMutingWorks) {
-  MakeTypicalPeerConnectionCall("callAndEnsureVideoMutingWorks();");
+  MakeTypicalPeerConnectionCall("callAndEnsureVideoTrackMutingWorks();");
 }
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)

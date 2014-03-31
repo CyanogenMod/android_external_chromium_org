@@ -57,6 +57,7 @@
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
+#include "net/http/http_util.h"
 #include "net/ocsp/nss_ocsp.h"
 #include "net/proxy/proxy_service.h"
 #include "net/socket/ssl_client_socket.h"
@@ -367,7 +368,8 @@ class BlockingNetworkDelegate : public TestNetworkDelegate {
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
-      scoped_refptr<HttpResponseHeaders>* override_response_headers) OVERRIDE;
+      scoped_refptr<HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url) OVERRIDE;
 
   virtual NetworkDelegate::AuthRequiredResponse OnAuthRequired(
       URLRequest* request,
@@ -390,7 +392,7 @@ class BlockingNetworkDelegate : public TestNetworkDelegate {
   int retval_;  // To be returned in non-auth stages.
   AuthRequiredResponse auth_retval_;
 
-  GURL redirect_url_;  // Used if non-empty.
+  GURL redirect_url_;  // Used if non-empty during OnBeforeURLRequest.
   int block_on_;  // Bit mask: in which stages to block.
 
   // |auth_credentials_| will be copied to |*target_auth_credential_| on
@@ -482,10 +484,13 @@ int BlockingNetworkDelegate::OnHeadersReceived(
     URLRequest* request,
     const CompletionCallback& callback,
     const HttpResponseHeaders* original_response_headers,
-    scoped_refptr<HttpResponseHeaders>* override_response_headers) {
-  TestNetworkDelegate::OnHeadersReceived(
-      request, callback, original_response_headers,
-      override_response_headers);
+    scoped_refptr<HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url) {
+  TestNetworkDelegate::OnHeadersReceived(request,
+                                         callback,
+                                         original_response_headers,
+                                         override_response_headers,
+                                         allowed_unsafe_redirect_url);
 
   return MaybeBlockStage(ON_HEADERS_RECEIVED, callback);
 }
@@ -2416,8 +2421,8 @@ class FixedDateNetworkDelegate : public TestNetworkDelegate {
       net::URLRequest* request,
       const net::CompletionCallback& callback,
       const net::HttpResponseHeaders* original_response_headers,
-      scoped_refptr<net::HttpResponseHeaders>* override_response_headers)
-      OVERRIDE;
+      scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url) OVERRIDE;
 
  private:
   std::string fixed_date_;
@@ -2429,7 +2434,8 @@ int FixedDateNetworkDelegate::OnHeadersReceived(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     const net::HttpResponseHeaders* original_response_headers,
-    scoped_refptr<net::HttpResponseHeaders>* override_response_headers) {
+    scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url) {
   net::HttpResponseHeaders* new_response_headers =
       new net::HttpResponseHeaders(original_response_headers->raw_headers());
 
@@ -2440,7 +2446,8 @@ int FixedDateNetworkDelegate::OnHeadersReceived(
   return TestNetworkDelegate::OnHeadersReceived(request,
                                                 callback,
                                                 original_response_headers,
-                                                override_response_headers);
+                                                override_response_headers,
+                                                allowed_unsafe_redirect_url);
 }
 
 // Test that cookie expiration times are adjusted for server/client clock
@@ -3003,6 +3010,39 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequestPost) {
     EXPECT_EQ(0, network_delegate.destroyed_requests());
     EXPECT_EQ("POST", r.method());
     EXPECT_EQ(kData, d.data_received());
+  }
+  EXPECT_EQ(1, network_delegate.destroyed_requests());
+}
+
+// Tests that the network delegate can block and redirect a request to a new
+// URL during OnHeadersReceived.
+TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequestOnHeadersReceived) {
+  ASSERT_TRUE(test_server_.Start());
+
+  TestDelegate d;
+  BlockingNetworkDelegate network_delegate(
+      BlockingNetworkDelegate::AUTO_CALLBACK);
+  network_delegate.set_block_on(BlockingNetworkDelegate::ON_HEADERS_RECEIVED);
+  GURL redirect_url(test_server_.GetURL("simple.html"));
+  network_delegate.set_redirect_on_headers_received_url(redirect_url);
+
+  TestURLRequestContextWithProxy context(
+      test_server_.host_port_pair().ToString(), &network_delegate);
+
+  {
+    GURL original_url(test_server_.GetURL("empty.html"));
+    URLRequest r(original_url, DEFAULT_PRIORITY, &d, &context);
+
+    r.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_EQ(net::OK, r.status().error());
+    EXPECT_EQ(redirect_url, r.url());
+    EXPECT_EQ(original_url, r.original_url());
+    EXPECT_EQ(2U, r.url_chain().size());
+    EXPECT_EQ(2, network_delegate.created_requests());
+    EXPECT_EQ(0, network_delegate.destroyed_requests());
   }
   EXPECT_EQ(1, network_delegate.destroyed_requests());
 }
@@ -3919,10 +3959,13 @@ class AsyncLoggingNetworkDelegate : public TestNetworkDelegate {
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
-      scoped_refptr<HttpResponseHeaders>* override_response_headers) OVERRIDE {
-    TestNetworkDelegate::OnHeadersReceived(request, callback,
+      scoped_refptr<HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url) OVERRIDE {
+    TestNetworkDelegate::OnHeadersReceived(request,
+                                           callback,
                                            original_response_headers,
-                                           override_response_headers);
+                                           override_response_headers,
+                                           allowed_unsafe_redirect_url);
     return RunCallbackAsynchronously(request, callback);
   }
 
@@ -5163,6 +5206,213 @@ TEST_F(URLRequestTestHTTP, RedirectToInvalidURL) {
   EXPECT_EQ(ERR_INVALID_URL, req.status().error());
 }
 
+// Make sure redirects are cached, despite not reading their bodies.
+TEST_F(URLRequestTestHTTP, CacheRedirect) {
+  ASSERT_TRUE(test_server_.Start());
+  GURL redirect_url =
+      test_server_.GetURL("files/redirect302-to-echo-cacheable");
+
+  {
+    TestDelegate d;
+    URLRequest req(redirect_url, DEFAULT_PRIORITY, &d, &default_context_);
+    req.Start();
+    base::RunLoop().Run();
+    EXPECT_EQ(URLRequestStatus::SUCCESS, req.status().status());
+    EXPECT_EQ(1, d.received_redirect_count());
+    EXPECT_EQ(test_server_.GetURL("echo"), req.url());
+  }
+
+  {
+    TestDelegate d;
+    d.set_quit_on_redirect(true);
+    URLRequest req(redirect_url, DEFAULT_PRIORITY, &d, &default_context_);
+    req.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(1, d.received_redirect_count());
+    EXPECT_EQ(0, d.response_started_count());
+    EXPECT_TRUE(req.was_cached());
+
+    req.FollowDeferredRedirect();
+    base::RunLoop().Run();
+    EXPECT_EQ(1, d.received_redirect_count());
+    EXPECT_EQ(1, d.response_started_count());
+    EXPECT_EQ(URLRequestStatus::SUCCESS, req.status().status());
+    EXPECT_EQ(test_server_.GetURL("echo"), req.url());
+  }
+}
+
+// Make sure a request isn't cached when a NetworkDelegate forces a redirect
+// when the headers are read, since the body won't have been read.
+TEST_F(URLRequestTestHTTP, NoCacheOnNetworkDelegateRedirect) {
+  ASSERT_TRUE(test_server_.Start());
+  // URL that is normally cached.
+  GURL initial_url = test_server_.GetURL("cachetime");
+
+  {
+    // Set up the TestNetworkDelegate tp force a redirect.
+    GURL redirect_to_url = test_server_.GetURL("echo");
+    default_network_delegate_.set_redirect_on_headers_received_url(
+        redirect_to_url);
+
+    TestDelegate d;
+    URLRequest req(initial_url, DEFAULT_PRIORITY, &d, &default_context_);
+    req.Start();
+    base::RunLoop().Run();
+    EXPECT_EQ(URLRequestStatus::SUCCESS, req.status().status());
+    EXPECT_EQ(1, d.received_redirect_count());
+    EXPECT_EQ(redirect_to_url, req.url());
+  }
+
+  {
+    TestDelegate d;
+    URLRequest req(initial_url, DEFAULT_PRIORITY, &d, &default_context_);
+    req.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(URLRequestStatus::SUCCESS, req.status().status());
+    EXPECT_FALSE(req.was_cached());
+    EXPECT_EQ(0, d.received_redirect_count());
+    EXPECT_EQ(initial_url, req.url());
+  }
+}
+
+// Tests that redirection to an unsafe URL is allowed when it has been marked as
+// safe.
+TEST_F(URLRequestTestHTTP, UnsafeRedirectToWhitelistedUnsafeURL) {
+  ASSERT_TRUE(test_server_.Start());
+
+  GURL unsafe_url("data:text/html,this-is-considered-an-unsafe-url");
+  default_network_delegate_.set_redirect_on_headers_received_url(unsafe_url);
+  default_network_delegate_.set_allowed_unsafe_redirect_url(unsafe_url);
+
+  TestDelegate d;
+  {
+    URLRequest r(test_server_.GetURL("whatever"),
+                 DEFAULT_PRIORITY,
+                 &d,
+                 &default_context_);
+
+    r.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+
+    EXPECT_EQ(2U, r.url_chain().size());
+    EXPECT_EQ(net::OK, r.status().error());
+    EXPECT_EQ(unsafe_url, r.url());
+    EXPECT_EQ("this-is-considered-an-unsafe-url", d.data_received());
+  }
+}
+
+// Tests that a redirect to a different unsafe URL is blocked, even after adding
+// some other URL to the whitelist.
+TEST_F(URLRequestTestHTTP, UnsafeRedirectToDifferentUnsafeURL) {
+  ASSERT_TRUE(test_server_.Start());
+
+  GURL unsafe_url("data:text/html,something");
+  GURL different_unsafe_url("data:text/html,something-else");
+  default_network_delegate_.set_redirect_on_headers_received_url(unsafe_url);
+  default_network_delegate_.set_allowed_unsafe_redirect_url(
+      different_unsafe_url);
+
+  TestDelegate d;
+  {
+    URLRequest r(test_server_.GetURL("whatever"),
+                 DEFAULT_PRIORITY,
+                 &d,
+                 &default_context_);
+
+    r.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(URLRequestStatus::FAILED, r.status().status());
+    EXPECT_EQ(ERR_UNSAFE_REDIRECT, r.status().error());
+  }
+}
+
+// Redirects from an URL with fragment to an unsafe URL without fragment should
+// be allowed.
+TEST_F(URLRequestTestHTTP, UnsafeRedirectWithReferenceFragment) {
+  ASSERT_TRUE(test_server_.Start());
+
+  GURL original_url(test_server_.GetURL("original#fragment"));
+  GURL unsafe_url("data:,url-marked-safe-and-used-in-redirect");
+  GURL expected_url("data:,url-marked-safe-and-used-in-redirect#fragment");
+
+  default_network_delegate_.set_redirect_on_headers_received_url(unsafe_url);
+  default_network_delegate_.set_allowed_unsafe_redirect_url(unsafe_url);
+
+  TestDelegate d;
+  {
+    URLRequest r(original_url, DEFAULT_PRIORITY, &d, &default_context_);
+
+    r.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(2U, r.url_chain().size());
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_EQ(net::OK, r.status().error());
+    EXPECT_EQ(original_url, r.original_url());
+    EXPECT_EQ(expected_url, r.url());
+  }
+}
+
+// Redirects from an URL with fragment to an unsafe URL with fragment should
+// be allowed, and the reference fragment of the target URL should be preserved.
+TEST_F(URLRequestTestHTTP, UnsafeRedirectWithDifferentReferenceFragment) {
+  ASSERT_TRUE(test_server_.Start());
+
+  GURL original_url(test_server_.GetURL("original#fragment1"));
+  GURL unsafe_url("data:,url-marked-safe-and-used-in-redirect#fragment2");
+  GURL expected_url("data:,url-marked-safe-and-used-in-redirect#fragment2");
+
+  default_network_delegate_.set_redirect_on_headers_received_url(unsafe_url);
+  default_network_delegate_.set_allowed_unsafe_redirect_url(unsafe_url);
+
+  TestDelegate d;
+  {
+    URLRequest r(original_url, DEFAULT_PRIORITY, &d, &default_context_);
+
+    r.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(2U, r.url_chain().size());
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_EQ(net::OK, r.status().error());
+    EXPECT_EQ(original_url, r.original_url());
+    EXPECT_EQ(expected_url, r.url());
+  }
+}
+
+// When a delegate has specified a safe redirect URL, but it does not match the
+// redirect target, then do not prevent the reference fragment from being added.
+TEST_F(URLRequestTestHTTP, RedirectWithReferenceFragment) {
+  ASSERT_TRUE(test_server_.Start());
+
+  GURL original_url(test_server_.GetURL("original#expected-fragment"));
+  GURL unsafe_url("data:text/html,this-url-does-not-match-redirect-url");
+  GURL redirect_url(test_server_.GetURL("target"));
+  GURL expected_redirect_url(test_server_.GetURL("target#expected-fragment"));
+
+  default_network_delegate_.set_redirect_on_headers_received_url(redirect_url);
+  default_network_delegate_.set_allowed_unsafe_redirect_url(unsafe_url);
+
+  TestDelegate d;
+  {
+    URLRequest r(original_url, DEFAULT_PRIORITY, &d, &default_context_);
+
+    r.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(2U, r.url_chain().size());
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_EQ(net::OK, r.status().error());
+    EXPECT_EQ(original_url, r.original_url());
+    EXPECT_EQ(expected_redirect_url, r.url());
+  }
+}
+
 TEST_F(URLRequestTestHTTP, NoUserPassInReferrer) {
   ASSERT_TRUE(test_server_.Start());
 
@@ -6204,12 +6454,11 @@ TEST_F(HTTPSRequestTest, HTTPSExpiredTest) {
 // Tests TLSv1.1 -> TLSv1 fallback. Verifies that we don't fall back more
 // than necessary.
 TEST_F(HTTPSRequestTest, TLSv1Fallback) {
-  uint16 default_version_max = SSLConfigService::default_version_max();
   // The OpenSSL library in use may not support TLS 1.1.
 #if !defined(USE_OPENSSL)
-  EXPECT_GT(default_version_max, SSL_PROTOCOL_VERSION_TLS1);
+  EXPECT_GT(kDefaultSSLVersionMax, SSL_PROTOCOL_VERSION_TLS1);
 #endif
-  if (default_version_max <= SSL_PROTOCOL_VERSION_TLS1)
+  if (kDefaultSSLVersionMax <= SSL_PROTOCOL_VERSION_TLS1)
     return;
 
   SpawnedTestServer::SSLOptions ssl_options(
@@ -6944,12 +7193,12 @@ static bool SystemSupportsHardFailRevocationChecking() {
 // several tests are effected because our testing EV certificate won't be
 // recognised as EV.
 static bool SystemUsesChromiumEVMetadata() {
-#if defined(USE_OPENSSL)
+#if defined(USE_OPENSSL_CERTS) && !defined(OS_ANDROID)
   // http://crbug.com/117478 - OpenSSL does not support EV validation.
   return false;
-#elif defined(OS_MACOSX) && !defined(OS_IOS)
-  // On OS X, we use the system to tell us whether a certificate is EV or not
-  // and the system won't recognise our testing root.
+#elif (defined(OS_MACOSX) && !defined(OS_IOS)) || defined(OS_ANDROID)
+  // On OS X and Android, we use the system to tell us whether a certificate is
+  // EV or not and the system won't recognise our testing root.
   return false;
 #else
   return true;

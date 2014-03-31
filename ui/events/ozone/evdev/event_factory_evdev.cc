@@ -20,6 +20,10 @@
 #include "ui/events/ozone/evdev/device_manager_udev.h"
 #endif
 
+#ifndef EVIOCSCLOCKID
+#define EVIOCSCLOCKID  _IOW('E', 0xa0, int)
+#endif
+
 namespace ui {
 
 namespace {
@@ -55,6 +59,13 @@ void OpenInputDevice(
     PLOG(ERROR) << "Cannot open '" << path.value();
     return;
   }
+
+  // Use monotonic timestamps for events. The touch code in particular
+  // expects event timestamps to correlate to the monotonic clock
+  // (base::TimeTicks).
+  unsigned int clk = CLOCK_MONOTONIC;
+  if (ioctl(fd, EVIOCSCLOCKID, &clk))
+    PLOG(ERROR) << "failed to set CLOCK_MONOTONIC";
 
   EventDeviceInfo devinfo;
   if (!devinfo.Initialize(fd)) {

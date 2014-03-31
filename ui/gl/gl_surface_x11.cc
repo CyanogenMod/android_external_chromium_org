@@ -9,6 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "third_party/mesa/src/include/GL/osmesa.h"
+#include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface_egl.h"
@@ -32,7 +33,7 @@ class NativeViewGLSurfaceOSMesa : public GLSurfaceOSMesa {
   virtual bool Resize(const gfx::Size& new_size) OVERRIDE;
   virtual bool IsOffscreen() OVERRIDE;
   virtual bool SwapBuffers() OVERRIDE;
-  virtual std::string GetExtensions() OVERRIDE;
+  virtual bool SupportsPostSubBuffer() OVERRIDE;
   virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
 
  protected:
@@ -218,11 +219,8 @@ bool NativeViewGLSurfaceOSMesa::SwapBuffers() {
   return true;
 }
 
-std::string NativeViewGLSurfaceOSMesa::GetExtensions() {
-  std::string extensions = gfx::GLSurfaceOSMesa::GetExtensions();
-  extensions += extensions.empty() ? "" : " ";
-  extensions += "GL_CHROMIUM_post_sub_buffer";
-  return extensions;
+bool NativeViewGLSurfaceOSMesa::SupportsPostSubBuffer() {
+  return true;
 }
 
 bool NativeViewGLSurfaceOSMesa::PostSubBuffer(
@@ -293,6 +291,7 @@ scoped_refptr<GLSurface> GLSurface::CreateViewGLSurface(
       return surface;
     }
     case kGLImplementationEGLGLES2: {
+      DCHECK(window != gfx::kNullAcceleratedWidget);
       scoped_refptr<GLSurface> surface(new NativeViewGLSurfaceEGL(window));
       if (!surface->Initialize())
         return NULL;
@@ -339,6 +338,10 @@ scoped_refptr<GLSurface> GLSurface::CreateOffscreenGLSurface(
       NOTREACHED();
       return NULL;
   }
+}
+
+EGLNativeDisplayType GetPlatformDefaultEGLNativeDisplay() {
+  return base::MessagePumpForUI::GetDefaultXDisplay();
 }
 
 }  // namespace gfx

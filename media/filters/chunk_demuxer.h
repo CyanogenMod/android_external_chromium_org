@@ -27,7 +27,7 @@ class ChunkDemuxerStream : public DemuxerStream {
  public:
   typedef std::deque<scoped_refptr<StreamParserBuffer> > BufferQueue;
 
-  explicit ChunkDemuxerStream(Type type);
+  explicit ChunkDemuxerStream(Type type, bool splice_frames_enabled);
   virtual ~ChunkDemuxerStream();
 
   // ChunkDemuxerStream control methods.
@@ -85,6 +85,7 @@ class ChunkDemuxerStream : public DemuxerStream {
   virtual void EnableBitstreamConverter() OVERRIDE;
   virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
   virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
+  virtual bool SupportsConfigChanges() OVERRIDE;
 
   // Returns the text track configuration.  It is an error to call this method
   // if type() != TEXT.
@@ -116,6 +117,7 @@ class ChunkDemuxerStream : public DemuxerStream {
   mutable base::Lock lock_;
   State state_;
   ReadCB read_cb_;
+  const bool splice_frames_enabled_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ChunkDemuxerStream);
 };
@@ -138,9 +140,13 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   //   otherwise ignore them.
   // |log_cb| Run when parsing error messages need to be logged to the error
   //   console.
+  // |splice_frames_enabled| Indicates that it's okay to generate splice frames
+  //   per the MSE specification.  Renderers must understand DecoderBuffer's
+  //   splice_timestamp() field.
   ChunkDemuxer(const base::Closure& open_cb,
                const NeedKeyCB& need_key_cb,
-               const LogCB& log_cb);
+               const LogCB& log_cb,
+               bool splice_frames_enabled);
   virtual ~ChunkDemuxer();
 
   // Demuxer implementation.
@@ -365,6 +371,9 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // removed with RemoveID() but can not be re-added (yet).
   std::string source_id_audio_;
   std::string source_id_video_;
+
+  // Indicates that splice frame generation is enabled.
+  const bool splice_frames_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(ChunkDemuxer);
 };

@@ -1151,8 +1151,14 @@ Press any key to continue exploring.
   <message name="IDS_WELCOME_SCREEN_TITLE" desc="Title of the OOBE welcome screen">
     Connect
   </message>
+  <message name="IDS_NETWORK_SCREEN_ACCESSIBLE_TITLE" desc="Text to be spoken on opening the OOBE network screen">
+    Welcome! Set your language and network
+  </message>
   <message name="IDS_EULA_SCREEN_TITLE" desc="Title of the OOBE EULA screen">
     The small print
+  </message>
+  <message name="IDS_EULA_SCREEN_ACCESSIBLE_TITLE" desc="Title to be spoken on opening the OOBE EULA screen">
+    <ph name="PRODUCT_OS_NAME">$1<ex>Chrome OS</ex></ph> terms
   </message>
   <message name="IDS_AUTOSTART_WARNING_TITLE" desc="Title of the kiosk autostart screen">
     Auto-launch permission requested
@@ -1183,6 +1189,9 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_UPDATE_SCREEN_TITLE" desc="Title of the OOBE update screen">
     Update
+  </message>
+  <message name="IDS_UPDATE_SCREEN_ACCESSIBLE_TITLE" desc="Title to be spoken on opening the OOBE update screen">
+    Chrome updates automatically so you always have the freshest version
   </message>
   <message name="IDS_SIGNIN_SCREEN_TITLE" desc="Title of OOBE/Add User sign-in screen">
     Sign in
@@ -1341,7 +1350,7 @@ Press any key to continue exploring.
   <message name="IDS_LOGIN_PREVIOUS_PASSWORD" desc="Password field text on the password changed dialog">
     Previous password
   </message>
-  <message name="IDS_LOGIN_SAML_NOTICE" desc="Text message displayed above SAML portal to learly indicate that the user is being redirected to another sign-in provider.">
+  <message name="IDS_LOGIN_SAML_NOTICE" desc="Text message displayed above SAML portal to early indicate that the user is being redirected to another sign-in provider.">
     The sign-in service below is hosted by <ph name="SAML_DOMAIN">$1<ex>saml.com</ex></ph>. Sign in to continue.
   </message>
   <message name="IDS_LOGIN_CONFIRM_PASSWORD_TITLE" desc="Title for the confirm password dialog.">
@@ -1444,11 +1453,17 @@ Press any key to continue exploring.
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_MANAGER_PASSWORD_HINT" desc="Supervised user dialog, manager selection page, text shown as a hint in the user password field.">
     Enter password
   </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_SETUP_ACCESSIBLE_TITLE" desc="Text to be spoken on opening supervised user creation username and password set-up dialog.">
+    Set up new supervised user
+  </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ACCOUNT_NAME_TITLE" desc="Supervised user dialog, new user page, title for name of new user">
     Create a name -
   </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ACCOUNT_NAME_EXPLANATION" desc="Supervised user dialog, new user page, explanation for name of new user">
     This supervised user will be managed by <ph name="MANAGER_EMAIL">$1<ex>john.doe@example.com</ex></ph>.
+  </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ACCOUNT_NAME_HINT" desc="Text shown as a hint in the new user name field in supervised user creation dialog.">
+    Enter new name
   </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_TITLE" desc="Supervised user dialog, new user page, title for password for new user.">
     Create a password -
@@ -1788,6 +1803,9 @@ Press any key to continue exploring.
   <message name="IDS_OPTIONS_SETTINGS_BLUETOOTH_SCANNING">
     Searching for devices...
   </message>
+  <message name="IDS_OPTIONS_SETTINGS_BLUETOOTH_SCAN_STOPPED">
+    Device scan stopped.
+  </message>
   <message name="IDS_OPTIONS_SETTINGS_BLUETOOTH_NO_DEVICES">
     No devices
   </message>
@@ -1959,6 +1977,9 @@ Press any key to continue exploring.
   <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_OVERSCAN" desc="The section title for TV alignment (calibration of display overscan) option for a selected display.">
     TV alignment:
   </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_COLOR_PROFILE" desc="The section title for color calibration profile selection.">
+    Color profile:
+  </message>
   <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_START_MIRRORING" desc="Button label to start display mirroring.">
     Start mirroring
   </message>
@@ -1979,6 +2000,18 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_START_CALIBRATING_OVERSCAN" desc="Button label to start calibrating the overscan preference.">
     Adjust...
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_COLOR_PROFILE_STANDARD" desc="The color profile name for 'standard'.">
+    Standard
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_COLOR_PROFILE_DYNAMIC" desc="The color profile name for 'dynamic'.">
+    Dynamic
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_COLOR_PROFILE_MOVIE" desc="The color profile name for 'movie'.">
+    Movie
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_COLOR_PROFILE_READING" desc="The color profile name for 'reading'.">
+    Reading
   </message>
   <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OVERSCAN_TAB_TITLE" desc="Title for the display overscan calibration tab.">
     TV alignment
@@ -2031,8 +2064,11 @@ Press any key to continue exploring.
   <message name="IDS_OPTIONS_SETTINGS_OTHER_CELLULAR_NETWORKS" desc="In the settings tab, the text on the button to display other cellular networks.">
     Other mobile network...
   </message>
-  <message name="IDS_OPTIONS_SETTINGS_JOIN_WIFI_NETWORKS" desc="The title for the dialog to join a wifi network.">
+  <message name="IDS_OPTIONS_SETTINGS_JOIN_WIFI_NETWORKS" desc="The title for the dialog to configure and connect to a wifi network.">
     Join Wi-Fi network
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_CONFIGURE_ETHERNET" desc="The title for the dialog to configure an ethernet network.">
+    Configure Ethernet network
   </message>
   <message name="IDS_OPTIONS_SETTINGS_JOIN_WIMAX_NETWORKS" desc="The title for the dialog to join a wimax network.">
     Join WiMAX network
@@ -2134,10 +2170,10 @@ Press any key to continue exploring.
     Discard photo
   </message>
   <message name="IDS_OPTIONS_PHOTO_CAPTURE_ACCESSIBLE_TEXT" desc="The accessible message to speak to announce that a photo was captured.">
-    Captured photo
+    Photo was captured
   </message>
   <message name="IDS_OPTIONS_PHOTO_DISCARD_ACCESSIBLE_TEXT" desc="The accessible message to speak to announce that a photo was discarded.">
-    Discarded photo
+    Photo was discarded
   </message>
   <message name="IDS_OPTIONS_CHANGE_PICTURE_FLIP_PHOTO" desc="The text on the button to flip the camera image horizontally.">
     Flip camera image horizontally
@@ -2675,15 +2711,36 @@ Press any key to continue exploring.
   </message>
 
   <message name="IDS_RESET_SCREEN_WARNING_MSG" desc="Warning text shown on reset screen above the exclamation icon.">
+    Reset this <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device
+  </message>
+  <message name="IDS_RESET_SCREEN_CONFIRMATION_WARNING_POWERWASH_MSG" desc="Warning text shown on confirmation-form of reset screen above the exclamation icon.">
     Powerwash your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device
   </message>
+  <message name="IDS_RESET_SCREEN_CONFIRMATION_WARNING_POWERWASH_AND_ROLLBACK_MSG" desc="Warning text shown on confirmation-form of reset screen above the exclamation icon.">
+    Powerwash your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device and revert to a previous update
+  </message>
   <message name="IDS_RESET_SCREEN_WARNING_DETAILS" desc="Warning text shown on reset screen below the exclamation icon.">
-    A Powerwash resets your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device to be just like new. All files and media stored locally on your computer will be erased.
+    Powerwash to reset your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device to be just like new.
   </message>
-  <message name="IDS_RESET_SCREEN_WARNING_DETAILS_RESTART" desc="Warning text shown on reset screen below the exclamation icon if device needs extra restart before powerwash.">
-    A restart is required before your device can be reset with Powerwash. A Powerwash resets your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device to be just like new.
+  <message name="IDS_RESET_SCREEN_CONFIRMATION_WARNING_DETAILS" desc="Warning text shown on confirmation-form of reset screen below the exclamation icon.">
+    A Powerwash resets your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device to be just like new.
   </message>
-  <message name="IDS_RESET_SCREEN_RESET" desc="Reset button text">
+  <message name="IDS_RESET_SCREEN_CONFIRMATION_WARNING_ROLLBACK_DETAILS" desc="Warning text shown on confirmation-form of reset screen below the exclamation icon.">
+    A Powerwash resets your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device to be just like new. Additionally, your device will revert to a previous update of <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>.
+  </message>
+  <message name="IDS_RESET_SCREEN_WARNING_DETAILS_DATA" desc="Additional warning text shown on reset screen below the main warning.">
+    All user accounts and local data will be removed.
+  </message>
+  <message name="IDS_RESET_SCREEN_RESTART_MSG" desc="Text shown on reset screen below warning messages if device needs extra restart before powerwash.">
+    A restart is required before your device can be reset.
+  </message>
+  <message name="IDS_RESET_SCREEN_ROLLBACK_OPTION" desc="Checkbox label for rollback option of powerwash process. Is shown on reset screen.">
+    Also revert to a previous <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> update.
+  </message>
+  <message name="IDS_RESET_SCREEN_POWERWASH" desc="Powerwash button text">
+    Powerwash
+  </message>
+  <message name="IDS_RESET_SCREEN_RESET" desc="Reset button text. Button launches powerwash.">
     Reset
   </message>
 
@@ -4699,6 +4756,12 @@ Battery full
   <message name="IDS_KIOSK_OFFLINE_MESSAGE" desc="An offline message that shows up when a kiosk app can't launch without network connectivity.">
     Please connect to the Internet to launch your app in kiosk mode.
   </message>
+  <message name="IDS_LOGIN_NETWORK_RESTORED_TITLE" desc="An message title shown when network connectivity is restored during kiosk app launch.">
+    Network connectivity restored
+  </message>
+  <message name="IDS_KIOSK_ONLINE_MESSAGE" desc="An message that shows up when a kiosk app is ready to launch after established network connectivity.">
+    Your network connectivity is restored. Please select a different network or press 'Continue' button below to launch your kiosk app.
+  </message>
   <message name="IDS_UPDATE_OFFLINE_MESSAGE" desc="An offline message that shows up in the OOBE update screen.">
     Please connect to the Internet to update your Chromebook.
   </message>
@@ -4740,6 +4803,9 @@ Battery full
   </message>
   <message name="IDS_LOGIN_CONFIRM_KIOSK_DIAGNOSTIC_FORMAT" desc="Text to be shown on a dialog to confirm launching kiosk app in diagnostic mode.">
     Are you sure you want to launch "<ph name="APP_NAME">$1<ex>Kiosk App</ex></ph>" in diagnostic mode?
+  </message>
+  <message name="IDS_LOGIN_GUEST_SIGNIN_FIX_NETWORK">
+    You may also try to <ph name="GUEST_SIGNIN_LINK_START">$1<ex>&gt;a&lt;</ex></ph>browse as guest<ph name="GUEST_SIGNIN_LINK_END">$2<ex>&gt;/a&lt;</ex></ph> to fix this network error.
   </message>
   <message name="IDS_LOGIN_CONNECTING_INDICATOR_TEXT" desc="A message to show telling the user that the device is attempting to re-connect to the network.">
     Connecting and verifying<ph name="ANIMATED_ELLIPSIS">$1<ex>...</ex></ph>
@@ -4827,10 +4893,10 @@ All users must sign out to continue.
     Howdy.
   </message>
   <message name="IDS_FIRST_RUN_GREETING_STEP_TEXT_1" desc="First part of message shown on the first dialog of firsr-run tutorial.">
-    Welcome to the Chromebook family. This is no ordinary computer.
+    Welcome to the <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> family. This is no ordinary computer.
   </message>
   <message name="IDS_FIRST_RUN_GREETING_STEP_TEXT_2" desc="Second part of message shown on the first dialog of firsr-run tutorial.">
-    This Chromebook was designed to deliver the best experience of the web to you.
+    This <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device was designed to deliver the best experience of the web to you.
   </message>
   <message name="IDS_FIRST_RUN_GREETING_STEP_BUTTON" desc="Text on the button located on the first dialog of first-run tutorial.">
     Take a tour
@@ -4854,7 +4920,7 @@ All users must sign out to continue.
     Have fun! We're here for you.
   </message>
   <message name="IDS_FIRST_RUN_HELP_STEP_TEXT_1" desc="First part of text shown on the first-run tutorial bubble pointing to help button in system tray.">
-    Enjoy your Chromebook. Questions? You can always get help by clicking the "?" in the status tray.
+    Enjoy your <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device. Questions? You can always get help by clicking the "?" in the status tray.
   </message>
   <message name="IDS_FIRST_RUN_HELP_STEP_TEXT_2" desc="Second part of text shown on the first-run tutorial bubble pointing to help button in system tray.">
     Want to discover more awesome features?
@@ -5178,8 +5244,17 @@ All users must sign out to continue.
   <message name="IDS_ENTERPRISE_ENROLLMENT_DEPROVISIONED_ERROR" desc="Error message to show when enrollment fails because the administrator has deprovisioned the device on the server side.">
     This device has been placed into a deprovisioned state by the administrator. To enable it for enrollment, please have your administrator place the device into a pending state.
   </message>
+  <message name="IDS_ENTERPRISE_ENROLLMENT_DOMAIN_MISMATCH_ERROR" desc="Error message shown when the device doesn't belong to the domain the user tried to enroll it to.">
+    This device cannot be enrolled to the domain your account belongs to because the device is marked for management by a different domain.
+  </message>
   <message name="IDS_ENTERPRISE_ENROLLMENT_SCREEN_TITLE" desc="The title on the enterprise enrollment dialog.">
     Enterprise enrollment
+  </message>
+  <message name="IDS_ENTERPRISE_ENROLLMENT_DESCRIPTION" desc="Short description of enterprise enrollment.">
+    Sign in with the username given to you by your organization to enroll your device for enterprise management.
+  </message>
+  <message name="IDS_ENTERPRISE_ENROLLMENT_RE_ENROLLMENT_TEXT" desc="Paragraph explaining previous association of the device with a domain.">
+    This device has been marked for enterprise management by <ph name="MANAGEMENT_DOMAIN">$1<ex>example.com</ex></ph>.
   </message>
   <message name="IDS_ENTERPRISE_ENROLLMENT_RETRY" desc="Label for the retry button on the error step in the enterprise enrollment dialog.">
     Try again

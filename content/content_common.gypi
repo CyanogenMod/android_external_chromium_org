@@ -171,7 +171,7 @@
     'common/cursors/webcursor_gtk.cc',
     'common/cursors/webcursor_gtk_data.h',
     'common/cursors/webcursor_mac.mm',
-    'common/cursors/webcursor_null.cc',
+    'common/cursors/webcursor_ozone.cc',
     'common/cursors/webcursor_win.cc',
     'common/database_messages.h',
     'common/date_time_suggestion.h',
@@ -452,11 +452,6 @@
         'common/cursors/webcursor_win.cc',
       ],
     }],
-    ['use_ozone==0', {
-      'sources!': [
-        'common/cursors/webcursor_null.cc',
-      ],
-    }],
     ['OS=="ios"', {
       # iOS has different user-agent construction utilities, since the
       # version strings is not derived from webkit_version, and follows
@@ -509,9 +504,9 @@
         'content.gyp:webkit_version',
       ],
     }],
-    # Work around for bug in linker used on ia32 machines (gold is not used on
-    # ia32 machines). See bug 353273.
-    ['use_mojo==1 and OS=="linux" and target_arch=="ia32" and component=="static_library"', {
+    # Work around for bug in linker used on ia32 and mipsel machines (gold is
+    # not used on ia32 and mipsel machines). See bug 353273.
+    ['use_mojo==1 and OS=="linux" and (target_arch=="ia32" or target_arch=="mipsel") and component=="static_library"', {
       'link_settings': {
         'libraries': [
           '<(PRODUCT_DIR)/lib/libmojo_system.so',
@@ -528,7 +523,7 @@
         '../mojo/mojo.gyp:mojo_environment_chromium',
         '../mojo/mojo.gyp:mojo_system',
         '../mojo/mojo.gyp:mojo_system_impl',
-      ],
+     ],
     }],
     ['OS=="mac"', {
       'dependencies': [

@@ -438,7 +438,7 @@ class CryptohomeClientImpl : public CryptohomeClient {
       const AsyncMethodCallback& callback) OVERRIDE {
     dbus::MethodCall method_call(
         cryptohome::kCryptohomeInterface,
-        cryptohome::kCryptohomeAsyncTpmAttestationCreateEnrollRequestNew);
+        cryptohome::kCryptohomeAsyncTpmAttestationCreateEnrollRequest);
     dbus::MessageWriter writer(&method_call);
     writer.AppendInt32(pca_type);
     proxy_->CallMethod(&method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
@@ -454,7 +454,7 @@ class CryptohomeClientImpl : public CryptohomeClient {
       const AsyncMethodCallback& callback) OVERRIDE {
     dbus::MethodCall method_call(
         cryptohome::kCryptohomeInterface,
-        cryptohome::kCryptohomeAsyncTpmAttestationEnrollNew);
+        cryptohome::kCryptohomeAsyncTpmAttestationEnroll);
     dbus::MessageWriter writer(&method_call);
     writer.AppendInt32(pca_type);
     writer.AppendArrayOfBytes(
@@ -774,7 +774,27 @@ class CryptohomeClientImpl : public CryptohomeClient {
     writer.AppendProtoAsArrayOfBytes(auth);
     writer.AppendProtoAsArrayOfBytes(request);
 
-    proxy_->CallMethod(&method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+    proxy_->CallMethod(&method_call,
+                       dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+                       base::Bind(&CryptohomeClientImpl::OnBaseReplyMethod,
+                                  weak_ptr_factory_.GetWeakPtr(),
+                                  callback));
+  }
+
+  virtual void RemoveKeyEx(const cryptohome::AccountIdentifier& id,
+                           const cryptohome::AuthorizationRequest& auth,
+                           const cryptohome::RemoveKeyRequest& request,
+                           const ProtobufMethodCallback& callback) OVERRIDE {
+    const char* method_name = cryptohome::kCryptohomeRemoveKeyEx;
+    dbus::MethodCall method_call(cryptohome::kCryptohomeInterface, method_name);
+
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendProtoAsArrayOfBytes(id);
+    writer.AppendProtoAsArrayOfBytes(auth);
+    writer.AppendProtoAsArrayOfBytes(request);
+
+    proxy_->CallMethod(&method_call,
+                       dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
                        base::Bind(&CryptohomeClientImpl::OnBaseReplyMethod,
                                   weak_ptr_factory_.GetWeakPtr(),
                                   callback));

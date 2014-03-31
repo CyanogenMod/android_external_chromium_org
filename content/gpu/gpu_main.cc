@@ -208,11 +208,14 @@ int GpuMain(const MainFunctionParams& parameters) {
     bool initialized_gl_context = false;
     bool should_initialize_gl_context = false;
 #if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
-    // On Chrome OS ARM, GPU driver userspace creates threads when initializing
-    // a GL context, so start the sandbox early.
-    gpu_info.sandboxed = StartSandboxLinux(gpu_info, watchdog_thread.get(),
-                                           should_initialize_gl_context);
-    initialized_sandbox = true;
+    // On Chrome OS ARM Mali, GPU driver userspace creates threads when
+    // initializing a GL context, so start the sandbox early.
+    if (!command_line.HasSwitch(
+             switches::kGpuSandboxStartAfterInitialization)) {
+      gpu_info.sandboxed = StartSandboxLinux(gpu_info, watchdog_thread.get(),
+                                             should_initialize_gl_context);
+      initialized_sandbox = true;
+    }
 #endif
 #endif  // defined(OS_LINUX)
 
@@ -250,8 +253,19 @@ int GpuMain(const MainFunctionParams& parameters) {
       base::TimeTicks before_collect_context_graphics_info =
           base::TimeTicks::Now();
 #if !defined(OS_MACOSX)
-      if (!gpu::CollectContextGraphicsInfo(&gpu_info))
-        VLOG(1) << "gpu::CollectGraphicsInfo failed";
+      gpu::CollectInfoResult result =
+          gpu::CollectContextGraphicsInfo(&gpu_info);
+      switch (result) {
+        case gpu::kCollectInfoFatalFailure:
+          LOG(ERROR) << "gpu::CollectGraphicsInfo failed (fatal).";
+          dead_on_arrival = true;
+          break;
+        case gpu::kCollectInfoNonFatalFailure:
+          VLOG(1) << "gpu::CollectGraphicsInfo failed (non-fatal).";
+          break;
+        case gpu::kCollectInfoSuccess:
+          break;
+      }
       GetContentClient()->SetGpuInfo(gpu_info);
 
 #if defined(OS_CHROMEOS) || defined(OS_ANDROID)

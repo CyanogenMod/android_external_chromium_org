@@ -10,6 +10,7 @@
 
 #include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/avatar_menu_observer.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/controls/button/button.h"
@@ -27,6 +28,7 @@ class Image;
 
 namespace views {
 class GridLayout;
+class ImageButton;
 class Link;
 class LabelButton;
 }
@@ -43,12 +45,27 @@ class ProfileChooserView : public views::BubbleDelegateView,
                            public AvatarMenuObserver,
                            public OAuth2TokenService::Observer {
  public:
+  // Different views that can be displayed in the bubble.
+  enum BubbleViewMode {
+    // Shows a "fast profile switcher" view.
+    BUBBLE_VIEW_MODE_PROFILE_CHOOSER,
+    // Shows a list of accounts for the active user.
+    BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT,
+    // Shows a web view for primary sign in.
+    BUBBLE_VIEW_MODE_GAIA_SIGNIN,
+    // Shows a web view for adding secondary accounts.
+    BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT,
+    // Shows a view for confirming account removal.
+    BUBBLE_VIEW_MODE_ACCOUNT_REMOVAL
+  };
+
   // Shows the bubble if one is not already showing.  This allows us to easily
   // make a button toggle the bubble on and off when clicked: we unconditionally
   // call this function when the button is clicked and if the bubble isn't
   // showing it will appear while if it is showing, nothing will happen here and
   // the existing bubble will auto-close due to focus loss.
-  static void ShowBubble(views::View* anchor_view,
+  static void ShowBubble(BubbleViewMode view_mode,
+                         views::View* anchor_view,
                          views::BubbleBorder::Arrow arrow,
                          views::BubbleBorder::BubbleAlignment border_alignment,
                          const gfx::Rect& anchor_rect,
@@ -70,14 +87,6 @@ class ProfileChooserView : public views::BubbleDelegateView,
   typedef std::vector<size_t> Indexes;
   typedef std::map<views::Button*, int> ButtonIndexes;
   typedef std::map<views::View*, std::string> AccountButtonIndexes;
-
-  // Different views that can be displayed in the bubble.
-  enum BubbleViewMode {
-    PROFILE_CHOOSER_VIEW,     // Shows a "fast profile switcher" view.
-    ACCOUNT_MANAGEMENT_VIEW,  // Shows a list of accounts for the active user.
-    GAIA_SIGNIN_VIEW,         // Shows a web view for primary sign in.
-    GAIA_ADD_ACCOUNT_VIEW     // Shows a web view for adding secondary accounts.
-  };
 
   ProfileChooserView(views::View* anchor_view,
                      views::BubbleBorder::Arrow arrow,
@@ -132,7 +141,7 @@ class ProfileChooserView : public views::BubbleDelegateView,
       bool is_guest);
   views::View* CreateGuestProfileView();
   views::View* CreateOtherProfilesView(const Indexes& avatars_to_show);
-  views::View* CreateOptionsView(bool is_guest_view);
+  views::View* CreateOptionsView(bool enable_lock);
 
   // Account Management view for the profile |avatar_item|.
   views::View* CreateCurrentProfileEditableView(
@@ -143,6 +152,14 @@ class ProfileChooserView : public views::BubbleDelegateView,
                            const std::string& account,
                            bool is_primary_account,
                            int width);
+
+  // Creates a webview showing the gaia signin page.
+  views::View* CreateGaiaSigninView(bool add_secondary_account);
+
+  // Creates a view to confirm account removal for |account_id_to_remove_|.
+  views::View* CreateAccountRemovalView();
+
+  void RemoveAccount();
 
   scoped_ptr<AvatarMenu> avatar_menu_;
   Browser* browser_;
@@ -159,7 +176,6 @@ class ProfileChooserView : public views::BubbleDelegateView,
 
   // Links displayed in the active profile card.
   views::Link* manage_accounts_link_;
-  views::Link* signout_current_profile_link_;
   views::Link* signin_current_profile_link_;
 
   // The profile name and photo in the active profile card. Owned by the
@@ -168,11 +184,19 @@ class ProfileChooserView : public views::BubbleDelegateView,
   EditableProfileName* current_profile_name_;
 
   // Action buttons.
-  views::LabelButton* guest_button_;
-  views::LabelButton* end_guest_button_;
-  views::LabelButton* add_user_button_;
   views::LabelButton* users_button_;
+  views::LabelButton* lock_button_;
   views::LabelButton* add_account_button_;
+
+  // Buttons displayed in the gaia signin view.
+  views::ImageButton* gaia_signin_cancel_button_;
+
+  // Links and buttons displayed in the account removal view.
+  views::LabelButton* remove_account_and_relaunch_button_;
+  views::ImageButton* account_removal_cancel_button_;
+
+  // Records the account id to remove.
+  std::string account_id_to_remove_;
 
   // Active view mode.
   BubbleViewMode view_mode_;

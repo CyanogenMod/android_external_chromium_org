@@ -1801,7 +1801,11 @@ TEST_F(AutofillDialogControllerTest, SaveInstrumentSameAsBilling) {
   CreditCard full_card(test::GetCreditCard());
   for (size_t i = 0; i < inputs.size(); ++i) {
     const ServerFieldType type = inputs[i].type;
+#if defined(OS_MACOSX)
     if (type == ADDRESS_BILLING_LINE1)
+#else
+    if (type == ADDRESS_BILLING_STREET_ADDRESS)
+#endif
       outputs[type] = ASCIIToUTF16(kEditedBillingAddress);
     else
       outputs[type] = full_profile.GetInfo(AutofillType(type), "en-US");
@@ -3348,6 +3352,10 @@ TEST_F(AutofillDialogControllerTest, CountriesWithDependentLocalityHidden) {
 TEST_F(AutofillDialogControllerTest, DontSuggestHiddenCountries) {
   SwitchToAutofill();
 
+  FieldValueMap outputs;
+  outputs[ADDRESS_HOME_COUNTRY] = ASCIIToUTF16("US");
+  controller()->GetView()->SetUserInput(SECTION_SHIPPING, outputs);
+
   AutofillProfile cn_profile(test::GetVerifiedProfile());
   cn_profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("Chinese User"));
   cn_profile.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("CN"));
@@ -3380,6 +3388,10 @@ TEST_F(AutofillDialogControllerTest, DontSuggestHiddenCountries) {
 
 TEST_F(AutofillDialogControllerTest, SuggestCountrylessProfiles) {
   SwitchToAutofill();
+
+  FieldValueMap outputs;
+  outputs[ADDRESS_HOME_COUNTRY] = ASCIIToUTF16("US");
+  controller()->GetView()->SetUserInput(SECTION_SHIPPING, outputs);
 
   AutofillProfile profile(test::GetVerifiedProfile());
   profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("The Man Without a Country"));

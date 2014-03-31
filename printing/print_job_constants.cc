@@ -15,6 +15,9 @@ const char kPreviewRequestID[] = "requestID";
 // Unique ID to identify a print preview UI.
 const char kPreviewUIID[] = "previewUIID";
 
+// Capabilities option. Contains the capabilities in CDD format.
+const char kSettingCapabilities[] = "capabilities";
+
 // Print using cloud print: true if selected, false if not.
 const char kSettingCloudPrintId[] = "cloudPrintID";
 
@@ -119,6 +122,12 @@ const char kSettingPrintableAreaHeight[] = "printableAreaHeight";
 
 // Printer name.
 const char kSettingPrinterName[] = "printerName";
+
+// Printer description.
+const char kSettingPrinterDescription[] = "printerDescription";
+
+// Additional printer options.
+const char kSettingPrinterOptions[] = "printerOptions";
 
 // Print to PDF option: true if selected, false if not.
 const char kSettingPrintToPDF[] = "printToPDF";

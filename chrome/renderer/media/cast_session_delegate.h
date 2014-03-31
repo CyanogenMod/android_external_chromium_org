@@ -32,6 +32,7 @@ namespace cast {
 class CastEnvironment;
 class EncodingEventSubscriber;
 class FrameInput;
+class StatsEventSubscriber;
 
 namespace transport {
 class CastTransportSender;
@@ -73,7 +74,11 @@ class CastSessionDelegate {
 
   void StartVideo(const media::cast::VideoSenderConfig& config,
                   const VideoFrameInputAvailableCallback& callback,
-                  const ErrorCallback& error_callback);
+                  const ErrorCallback& error_callback,
+                  const media::cast::CreateVideoEncodeAcceleratorCallback&
+                      create_vea_cb,
+                  const media::cast::CreateVideoEncodeMemoryCallback&
+                      create_video_encode_mem_cb);
 
   void ToggleLogging(bool is_audio, bool enable);
   void GetEventLogsAndReset(bool is_audio, const EventLogsCallback& callback);
@@ -103,6 +108,9 @@ class CastSessionDelegate {
 
   scoped_ptr<media::cast::EncodingEventSubscriber> audio_event_subscriber_;
   scoped_ptr<media::cast::EncodingEventSubscriber> video_event_subscriber_;
+
+  scoped_ptr<media::cast::StatsEventSubscriber> audio_stats_subscriber_;
+  scoped_ptr<media::cast::StatsEventSubscriber> video_stats_subscriber_;
 
   // Proxy to the IO message loop.
   scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;

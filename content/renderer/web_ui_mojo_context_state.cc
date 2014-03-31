@@ -35,7 +35,7 @@ namespace {
 const char kModulePrefix[] = "chrome://mojo/";
 
 void RunMain(base::WeakPtr<gin::Runner> runner,
-             mojo::ScopedHandle* handle,
+             mojo::ScopedMessagePipeHandle* handle,
              v8::Handle<v8::Value> module) {
   v8::Isolate* isolate = runner->GetContextHolder()->isolate();
   v8::Handle<v8::Function> start;
@@ -70,9 +70,10 @@ WebUIMojoContextState::~WebUIMojoContextState() {
       runner_->GetContextHolder()->context())->RemoveObserver(this);
 }
 
-void WebUIMojoContextState::SetHandle(mojo::ScopedHandle handle) {
+void WebUIMojoContextState::SetHandle(mojo::ScopedMessagePipeHandle handle) {
   gin::ContextHolder* context_holder = runner_->GetContextHolder();
-  mojo::ScopedHandle* passed_handle = new mojo::ScopedHandle(handle.Pass());
+  mojo::ScopedMessagePipeHandle* passed_handle =
+      new mojo::ScopedMessagePipeHandle(handle.Pass());
   gin::ModuleRegistry::From(context_holder->context())->LoadModule(
       context_holder->isolate(),
       "main",
@@ -112,7 +113,7 @@ void WebUIMojoContextState::OnFetchModuleComplete(
   DCHECK_EQ(kModulePrefix,
       response.url().string().utf8().substr(0, arraysize(kModulePrefix) - 1));
   const std::string module =
-      response.url().string().utf8().substr(arraysize(kModulePrefix));
+      response.url().string().utf8().substr(arraysize(kModulePrefix) - 1);
   // We can't delete fetch right now as the arguments to this function come from
   // it and are used below. Instead use a scope_ptr to cleanup.
   scoped_ptr<ResourceFetcher> deleter(fetcher);

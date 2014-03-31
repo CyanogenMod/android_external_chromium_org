@@ -863,6 +863,14 @@ For Chromium, processes used to display diagnostics information (such as this "a
 • Manage your Google Accounts
       </message>
 
+      <!-- Account removal view in the avatar menu bubble -->
+      <message name="IDS_PROFILES_ACCOUNT_REMOVAL_TEXT" desc="Main text of the account removal view when removing a secondary account.">
+        To remove your account, Chromium needs to restart. Make sure you've saved any open work before continuing.
+      </message>
+      <message name="IDS_PROFILES_PRIMARY_ACCOUNT_REMOVAL_TEXT" desc="Main text of the account removal view when removing a primary account.">
+        You're using <ph name="PROFILE_EMAIL">$1<ex>jessica@gmail.com</ex></ph> to sync your Chromium stuff. To update your sync preference or to use Chromium without a Google account, visit settings.
+      </message>
+
       <!-- Sync Promo New Tab Page bubble strings -->
       <message name="IDS_SYNC_PROMO_NTP_BUBBLE_MESSAGE_NEW" desc="The body of the sync promo NTP bubble.">
         Now that you're signed in, you can get your tabs, bookmarks and other Chromium stuff across your laptop, phone and tablet. You will also receive more relevant suggestions and features on Google services.
@@ -942,7 +950,7 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
         </message>
       </if>
       <if expr="chromeos">
-        <message name="IDS_SYNC_PASSPHRASE_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sync error bubble view when the user needs to update their sync passphrase.">
+        <message name="IDS_SYNC_PASSPHRASE_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sync error notification when the user needs to update their sync passphrase.">
           Chromium OS could not sync your data. Please update your Sync passphrase.
         </message>
         <message name="IDS_SYNC_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error notification when the user's sign-in credentials are out of date.">
@@ -960,6 +968,9 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
         On Mac, passwords are saved to your Keychain and may be accessed or synced by other Chromium users sharing this OS X account.
       </message>
 
+      <message name="IDS_AUTOFILL_ADDRESS_BOOK_PROMPT_DESCRIPTION" desc="Text to show in dialog requesting permission to access the user's Address Book contents.">
+        Details from your contacts can help you fill out forms more quickly in Chromium.
+      </message>
       <message name="IDS_AUTOFILL_CC_INFOBAR_TEXT" desc="Text to show in the Autofill credit card request infobar.">
         Do you want Chromium to save this credit card information for completing web forms?
       </message>
@@ -1159,6 +1170,44 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
           Add yourself to Chromium
         </message>
       </if>
+
+      <!-- Settings API bubble -->
+      <message name="IDS_EXTENSIONS_SETTINGS_API_FIRST_LINE_START_PAGES" desc="Text displayed in the Settings API bubble as first line when an extension has changed the start pages.">
+        An extension has changed what page is shown when you start Chromium.
+      </message>
+      <message name="IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_START_PAGES" desc="Second line in the Settings API bubble. Only shown if the secondary change by the extension was just the start pages. The triple single quotes are needed to preserve the space before and after the sentence which is needed when the language (Chrome is being translated to) uses space as word separator. Please preserve them, unless the language being translated to does not use space as word separator.">
+        ''' It also controls what page is shown when you start Chromium. '''
+      </message>
+      <message name="IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_START_AND_HOME" desc="Second line in the Settings API bubble. Only shown if the secondary change by the extension was both the start page and the home page. See IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_START_PAGES for reason for triple quotes.">
+        ''' It also controls what page is shown when you start Chromium or click the Home button. '''
+      </message>
+      <message name="IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_START_AND_SEARCH" desc="Second line in the Settings API bubble. Only shown if the secondary change by the extension was both the start page and the search engine. See IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_START_PAGES for reason for triple quotes.">
+        ''' It also controls what page is shown when you start Chromium or search from the Omnibox. '''
+      </message>
+      
+      <!-- Update bubble -->
+      <message name="IDS_REINSTALL_APP" desc="Text for the button the user clicks to reinstall the app.">
+        Reinstall Chromium
+      </message>
+      <if expr="use_titlecase">
+        <message name="IDS_UPGRADE_BUBBLE_MENU_ITEM" desc="In Title Case: Text for the Chrome menu option replacing Update required.">
+          Chromium is Out of Date
+        </message>
+      </if>
+      <if expr="not use_titlecase">
+        <message name="IDS_UPGRADE_BUBBLE_MENU_ITEM" desc="Text for the Chrome menu option replacing Update required.">
+          Chromium is out of date
+        </message>
+      </if>
+      <message name="IDS_UPGRADE_BUBBLE_TITLE" desc="Text for the title of the upgrade bubble view.">
+        Chromium is out of date
+      </message>
+      <message name="IDS_UPGRADE_BUBBLE_TEXT" desc="Text for the upgrade bubble view full description.">
+        Chromium could not update itself to the latest version, so you are missing out on awesome new features and security fixes. You need to manually reinstall Chromium.
+      </message>
+      <message name="IDS_UPGRADE_BUBBLE_REENABLE_TEXT" desc="Text for the upgrade bubble view full description.">
+        Chromium could not update itself to the latest version, so you are missing out on awesome new features and security fixes. You need to update Chromium.
+      </message>
 
       <!-- chrome://ntp -->
       <if expr="not is_android">

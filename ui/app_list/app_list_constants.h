@@ -49,7 +49,11 @@ APP_LIST_EXPORT extern const int kPreferredIconDimension;
 APP_LIST_EXPORT extern const int kExperimentalPreferredCols;
 APP_LIST_EXPORT extern const int kExperimentalPreferredRows;
 
+APP_LIST_EXPORT extern const int kReorderDroppingCircleRadius;
+
+APP_LIST_EXPORT extern size_t kMaxFolderItems;
 APP_LIST_EXPORT extern const size_t kNumFolderTopItems;
+APP_LIST_EXPORT extern const size_t kMaxFolderNameChars;
 
 APP_LIST_EXPORT extern const ui::ResourceBundle::FontStyle kItemTextFontStyle;
 

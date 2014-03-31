@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_nacl_private.idl modified Thu Mar 20 14:02:02 2014. */
+/* From private/ppb_nacl_private.idl modified Thu Mar 27 14:44:04 2014. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
 #define PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
@@ -136,6 +136,18 @@ typedef enum {
   PP_SCHEME_DATA,
   PP_SCHEME_OTHER
 } PP_UrlSchemeType;
+
+typedef enum {
+  /* The trusted plugin begins in this ready state. */
+  PP_NACL_READY_STATE_UNSENT = 0,
+  /* The manifest file has been requested, but not yet received. */
+  PP_NACL_READY_STATE_OPENED = 1,
+  /* The manifest file has been received and the nexe successfully requested. */
+  PP_NACL_READY_STATE_LOADING = 3,
+  /* The nexe has been loaded and the proxy started, so it is ready for
+   */
+  PP_NACL_READY_STATE_DONE = 4
+} PP_NaClReadyState;
 /**
  * @}
  */
@@ -282,14 +294,15 @@ struct PPB_NaCl_Private_1_0 {
   void (*ReportLoadError)(PP_Instance instance,
                           PP_NaClError error,
                           const char* error_message,
-                          const char* console_message,
-                          PP_Bool is_installed);
+                          const char* console_message);
+  /* Performs internal setup when an instance is created. */
+  void (*InstanceCreated)(PP_Instance instance);
   /* Performs internal cleanup when an instance is destroyed. */
   void (*InstanceDestroyed)(PP_Instance instance);
-  /* Return true if the NaCl debug stub is enabled and the loaded app
-   * will be attached to a debugger.
+  /* Return true if the NaCl debug stub is enabled and the app loaded from
+   * alleged_nmf_url will be attached to a debugger.
    */
-  PP_Bool (*NaClDebugStubEnabled)(void);
+  PP_Bool (*NaClDebugEnabledForURL)(const char* alleged_nmf_url);
   /* Returns the kind of SFI sandbox implemented by NaCl on this
    * platform.
    */
@@ -298,6 +311,19 @@ struct PPB_NaCl_Private_1_0 {
   PP_UrlSchemeType (*GetUrlScheme)(struct PP_Var url);
   /* Logs the message to the console. */
   void (*LogToConsole)(PP_Instance instance, const char* message);
+  /* Returns PP_TRUE if an error has been reported loading the nexe. */
+  PP_Bool (*GetNexeErrorReported)(PP_Instance instance);
+  /* Sets the nexe error reported state for this instance. */
+  void (*SetNexeErrorReported)(PP_Instance instance, PP_Bool error_reported);
+  /* Returns the NaCl readiness status for this instance. */
+  PP_NaClReadyState (*GetNaClReadyState)(PP_Instance instance);
+  /* Sets the NaCl readiness status for this instance. */
+  void (*SetNaClReadyState)(PP_Instance instance,
+                            PP_NaClReadyState ready_state);
+  /* Returns true if the plugin is an installed app. */
+  PP_Bool (*GetIsInstalled)(PP_Instance instance);
+  /* Sets whether the plugin is an installed app. */
+  void (*SetIsInstalled)(PP_Instance instance, PP_Bool is_installed);
 };
 
 typedef struct PPB_NaCl_Private_1_0 PPB_NaCl_Private;

@@ -55,6 +55,7 @@ class MockDemuxerStream : public DemuxerStream {
   virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
   virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
   MOCK_METHOD0(EnableBitstreamConverter, void());
+  MOCK_METHOD0(SupportsConfigChanges, bool());
 
   void set_audio_decoder_config(const AudioDecoderConfig& config);
   void set_video_decoder_config(const VideoDecoderConfig& config);
@@ -96,9 +97,6 @@ class MockAudioDecoder : public AudioDecoder {
   MOCK_METHOD2(Decode,
                void(const scoped_refptr<DecoderBuffer>& buffer,
                     const DecodeCB&));
-  MOCK_METHOD0(bits_per_channel, int(void));
-  MOCK_METHOD0(channel_layout, ChannelLayout(void));
-  MOCK_METHOD0(samples_per_second, int(void));
   MOCK_METHOD1(Reset, void(const base::Closure&));
   MOCK_METHOD1(Stop, void(const base::Closure&));
 

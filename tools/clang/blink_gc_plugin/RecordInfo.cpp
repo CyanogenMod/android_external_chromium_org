@@ -5,8 +5,6 @@
 #include "Config.h"
 #include "RecordInfo.h"
 
-#include "clang/AST/Attr.h"
-
 using namespace clang;
 using std::string;
 
@@ -18,6 +16,8 @@ RecordInfo::RecordInfo(CXXRecordDecl* record, RecordCache* cache)
       bases_(0),
       fields_(0),
       is_stack_allocated_(kNotComputed),
+      is_non_newable_(kNotComputed),
+      is_only_placement_newable_(kNotComputed),
       determined_trace_methods_(false),
       trace_method_(0),
       trace_dispatch_method_(0),
@@ -136,20 +136,15 @@ bool RecordInfo::IsGCAllocated() {
   return IsGCDerived() || IsHeapAllocatedCollection();
 }
 
-static bool IsAnnotated(Decl* decl, const string& anno) {
-  AnnotateAttr* attr = decl->getAttr<AnnotateAttr>();
-  return attr && (attr->getAnnotation() == anno);
-}
-
 RecordInfo* RecordCache::Lookup(CXXRecordDecl* record) {
   // Ignore classes annotated with the GC_PLUGIN_IGNORE macro.
-  if (!record || IsAnnotated(record, "blink_gc_plugin_ignore"))
+  if (!record || Config::IsIgnoreAnnotated(record))
     return 0;
   Cache::iterator it = cache_.find(record);
   if (it != cache_.end())
     return &it->second;
   return &cache_.insert(std::make_pair(record, RecordInfo(record, this)))
-      .first->second;
+              .first->second;
 }
 
 bool RecordInfo::IsStackAllocated() {
@@ -160,21 +155,58 @@ bool RecordInfo::IsStackAllocated() {
          ++it) {
       if (it->second.info()->IsStackAllocated()) {
         is_stack_allocated_ = kTrue;
-        break;
+        return is_stack_allocated_;
       }
     }
     for (CXXRecordDecl::method_iterator it = record_->method_begin();
          it != record_->method_end();
          ++it) {
-      if (it->getNameAsString() == kNewOperatorName) {
-        if (it->isDeleted() && IsAnnotated(*it, "blink_stack_allocated")) {
-          is_stack_allocated_ = kTrue;
-          break;
-        }
+      if (it->getNameAsString() == kNewOperatorName &&
+          it->isDeleted() &&
+          Config::IsStackAnnotated(*it)) {
+        is_stack_allocated_ = kTrue;
+        return is_stack_allocated_;
       }
     }
   }
   return is_stack_allocated_;
+}
+
+bool RecordInfo::IsNonNewable() {
+  if (is_non_newable_ == kNotComputed) {
+    bool deleted = false;
+    bool all_deleted = true;
+    for (CXXRecordDecl::method_iterator it = record_->method_begin();
+         it != record_->method_end();
+         ++it) {
+      if (it->getNameAsString() == kNewOperatorName) {
+        deleted = it->isDeleted();
+        all_deleted = all_deleted && deleted;
+      }
+    }
+    is_non_newable_ = (deleted && all_deleted) ? kTrue : kFalse;
+  }
+  return is_non_newable_;
+}
+
+bool RecordInfo::IsOnlyPlacementNewable() {
+  if (is_only_placement_newable_ == kNotComputed) {
+    bool placement = false;
+    bool new_deleted = false;
+    for (CXXRecordDecl::method_iterator it = record_->method_begin();
+         it != record_->method_end();
+         ++it) {
+      if (it->getNameAsString() == kNewOperatorName) {
+        if (it->getNumParams() == 1) {
+          new_deleted = it->isDeleted();
+        } else if (it->getNumParams() == 2) {
+          placement = !it->isDeleted();
+        }
+      }
+    }
+    is_only_placement_newable_ = (placement && new_deleted) ? kTrue : kFalse;
+  }
+  return is_only_placement_newable_;
 }
 
 // An object requires a tracing method if it has any fields that need tracing.
@@ -285,11 +317,11 @@ RecordInfo::Fields* RecordInfo::CollectFields() {
        ++it) {
     FieldDecl* field = *it;
     // Ignore fields annotated with the GC_PLUGIN_IGNORE macro.
-    if (IsAnnotated(field, "blink_gc_plugin_ignore"))
+    if (Config::IsIgnoreAnnotated(field))
       continue;
     if (Edge* edge = CreateEdge(field->getType().getTypePtrOrNull())) {
-      fields->insert(std::make_pair(field, FieldPoint(field, edge)));
       fields_status = fields_status.LUB(edge->NeedsTracing(Edge::kRecursive));
+      fields->insert(std::make_pair(field, FieldPoint(field, edge)));
     }
   }
   fields_need_tracing_ = fields_status;
@@ -315,7 +347,7 @@ void RecordInfo::DetermineTracingMethods() {
         trace = *it;
       }
     } else if (it->getNameAsString() == kFinalizeName) {
-        finalize_dispatch_method_ = *it;
+      finalize_dispatch_method_ = *it;
     }
   }
   if (traceAfterDispatch) {
@@ -337,7 +369,7 @@ void RecordInfo::DetermineTracingMethods() {
       trace_dispatch_method_ = dispatch;
     }
     if (CXXMethodDecl* dispatch =
-        it->second.info()->GetFinalizeDispatchMethod()) {
+            it->second.info()->GetFinalizeDispatchMethod()) {
       assert(!finalize_dispatch_method_ &&
              "Multiple finalize dispatching methods");
       finalize_dispatch_method_ = dispatch;
@@ -361,6 +393,9 @@ bool RecordInfo::NeedsFinalization() {
 TracingStatus RecordInfo::NeedsTracing(Edge::NeedsTracingOption option) {
   if (IsGCAllocated())
     return TracingStatus::Needed();
+
+  if (IsStackAllocated())
+    return TracingStatus::Unneeded();
 
   for (Bases::iterator it = GetBases().begin(); it != GetBases().end(); ++it) {
     if (it->second.info()->NeedsTracing(option).IsNeeded())

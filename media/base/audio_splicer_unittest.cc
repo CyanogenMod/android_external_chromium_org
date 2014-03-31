@@ -38,6 +38,7 @@ class AudioSplicerTest : public ::testing::Test {
     scoped_refptr<AudioBuffer> buffer = MakeAudioBuffer<float>(
         kSampleFormat,
         kChannelLayout,
+        kChannels,
         kDefaultSampleRate,
         value,
         0.0f,
@@ -130,6 +131,7 @@ class AudioSplicerTest : public ::testing::Test {
             ? AudioBuffer::CreateEOSBuffer()
             : AudioBuffer::CopyFrom(kSampleFormat,
                                     input->channel_layout(),
+                                    input->channel_count(),
                                     input->sample_rate(),
                                     input->frame_count(),
                                     &input->channel_data()[0],
@@ -587,6 +589,43 @@ TEST_F(AudioSplicerTest, PartialOverlapCrossfadeShortPreSplice) {
 
   EXPECT_TRUE(VerifyData(post_splice_output, GetValue(overlapping_buffer)));
 
+  EXPECT_FALSE(splicer_.HasNextBuffer());
+}
+
+// Test behavior when a splice frame is incorrectly marked and does not actually
+// overlap.
+// +----------+
+// |1111111111|
+// +----------+
+//            +--------------+
+//            |22222222222222|
+//            +--------------+
+// Results in:
+// +----------+--------------+
+// |1111111111|22222222222222|
+// +----------+--------------+
+TEST_F(AudioSplicerTest, IncorrectlyMarkedSplice) {
+  const int kBufferSize =
+      input_timestamp_helper_.GetFramesToTarget(max_crossfade_duration()) * 2;
+
+  scoped_refptr<AudioBuffer> first_buffer =
+      GetNextInputBuffer(1.0f, kBufferSize);
+  splicer_.SetSpliceTimestamp(input_timestamp_helper_.GetTimestamp());
+  scoped_refptr<AudioBuffer> second_buffer =
+      GetNextInputBuffer(0.0f, kBufferSize);
+
+  // The splicer should be internally queuing input since |first_buffer| is part
+  // of the supposed splice.
+  EXPECT_TRUE(AddInput(first_buffer));
+  EXPECT_FALSE(splicer_.HasNextBuffer());
+
+  // |second_buffer| should complete the supposed splice, so ensure output is
+  // now available.
+  EXPECT_TRUE(AddInput(second_buffer));
+  ASSERT_TRUE(splicer_.HasNextBuffer());
+
+  VerifyNextBuffer(first_buffer);
+  VerifyNextBuffer(second_buffer);
   EXPECT_FALSE(splicer_.HasNextBuffer());
 }
 

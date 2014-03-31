@@ -122,6 +122,8 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
       HttpRequestHeaders* headers) const OVERRIDE;
   virtual int64 GetTotalReceivedBytes() const OVERRIDE;
   virtual void DoneReading() OVERRIDE;
+  virtual void DoneReadingRedirectResponse() OVERRIDE;
+
   virtual HostPortPair GetSocketAddress() const OVERRIDE;
   virtual void NotifyURLRequestDestroyed() OVERRIDE;
 
@@ -253,6 +255,9 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   // This prevents modifications of headers that are shared with the underlying
   // layers of the network stack.
   scoped_refptr<HttpResponseHeaders> override_response_headers_;
+
+  // The network delegate can mark a URL as safe for redirection.
+  GURL allowed_unsafe_redirect_url_;
 
   // Flag used to verify that |this| is not deleted while we are awaiting
   // a callback from the NetworkDelegate. Used as a fail-fast mechanism.

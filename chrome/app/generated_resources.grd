@@ -3546,10 +3546,6 @@ Make sure you do not expose any sensitive information.
       </message>
       <!-- User Image Selection Dialog -->
       <message name="IDS_USER_IMAGE_SCREEN_TITLE" desc="String to be displayed in the title bar of the user image selection dialog">
-        Smile! Take a picture of yourself and set it as your account picture.
-      </message>
-      <!-- OOBE progress bar labels -->
-      <message name="IDS_OOBE_PICTURE" desc="The label of OOBE progress bar step, must be short">
         Choose your account picture
       </message>
 
@@ -4571,6 +4567,12 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_WARNING_NETWORK_STATE" desc="Permission string for network list access.">
         Access list of network connections
       </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_ACCESSIBILITY_FEATURES_MODIFY" desc="Permission string for modifying acccessibility settings via extension API shown when an extension utilizing the API is installed.">
+        Modify your accessibility settings
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_ACCESSIBILITY_FEATURES_READ" desc="Permission string for modifying acccessibility settings via extension API shown when a extension utilizing the API is installed.">
+        Read your accessibility settings
+      </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_SEARCH_SETTINGS_OVERRIDE" desc="Permission string for search settings override.">
         Change your search settings to: <ph name="SEARCH_HOST">$1<ex>url.search.com</ex></ph>
       </message>
@@ -5397,6 +5399,69 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </if>
       <message name="IDS_EXTENSIONS_DISABLE_DEVELOPER_MODE_BODY" desc="Body of a dialog warning users they have development mode extensions running">
         Extensions running in developer mode can harm your computer. If you're not a developer, you should disable these extensions running in developer mode to stay safe.
+      </message>
+
+      <!-- Settings API bubble -->
+      <message name="IDS_EXTENSIONS_DISABLE_EXTENSIONS" desc="Text for the Disable Extensions (note: plural) button">
+        Disable Extensions
+      </message>
+      <if expr="use_titlecase">
+        <message name="IDS_EXTENSIONS_SETTINGS_API_TITLE_HOME_PAGE_BUBBLE" desc="In Title Case: Title of a bubble warning users that an extension has overridden their home page setting">
+         Is This the Home Page You Were Expecting?
+        </message>
+      </if>
+      <if expr="not use_titlecase">
+        <message name="IDS_EXTENSIONS_SETTINGS_API_TITLE_HOME_PAGE_BUBBLE" desc="Title of a bubble warning users that an extension has overridden their home page setting">
+          Is this the home page you were expecting?
+        </message>
+      </if>
+      <if expr="use_titlecase">
+        <message name="IDS_EXTENSIONS_SETTINGS_API_TITLE_STARTUP_PAGES_BUBBLE" desc="In Title Case: Title of a bubble warning users that an extension has overridden their startup pages setting">
+          Is This the Startup Page You Were Expecting?
+        </message>
+      </if>
+      <if expr="not use_titlecase">
+        <message name="IDS_EXTENSIONS_SETTINGS_API_TITLE_STARTUP_PAGES_BUBBLE" desc="Title of a bubble warning users that an extension has overridden their startup pages setting">
+          Is this the startup page you were expecting?
+        </message>
+      </if>
+      <if expr="use_titlecase">
+        <message name="IDS_EXTENSIONS_SETTINGS_API_TITLE_SEARCH_ENGINE_BUBBLE" desc="In Title Case: Title of a bubble warning users that an extension has overridden their default search engine setting">
+          Is This the Search Page You Were Expecting?
+        </message>
+      </if>
+      <if expr="not use_titlecase">
+        <message name="IDS_EXTENSIONS_SETTINGS_API_TITLE_SEARCH_ENGINE_BUBBLE" desc="Title of a bubble warning users that an extension has overridden their default search engine setting">
+          Is this the search page you were expecting?
+        </message>
+      </if>
+
+      <message name="IDS_EXTENSIONS_SETTINGS_API_FIRST_LINE_SEARCH_ENGINE" desc="Text displayed in the Settings API bubble as first line when an extension has changed the search engine.">
+        An extension has changed what page is shown when you search from the Omnibox.
+      </message>
+      <message name="IDS_EXTENSIONS_SETTINGS_API_FIRST_LINE_HOME_PAGE" desc="Text displayed in the Settings API bubble as first line when an extension has changed the home page.">
+        An extension has changed what page is shown when you click the Home button.
+      </message>
+
+      <message name="IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_SEARCH_ENGINE" desc="Second line in the Settings API bubble. Only shown if the secondary change by the extension was just the search engine. The triple single quotes are needed to preserve the space before and after the sentence which is needed when the language (Chrome is being translated to) uses space as word separator. Please preserve them, unless the language being translated to does not use space as word separator.">
+        ''' It also controls what page is shown when you search from the Omnibox.'''
+      </message>
+      <message name="IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_HOME_PAGE" desc="Second line in the Settings API bubble. Only shown if the secondary change by the extension was the just home page. See IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_SEARCH_ENGINE for reason for triple quotes.">
+        ''' It also controls what page is shown when you click the Home button. '''
+      </message>
+      <message name="IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_HOME_AND_SEARCH" desc="Second line in the Settings API bubble. Only shown if the secondary change by the extension was both the home page and the search engine. See IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_SEARCH_ENGINE for reason for triple quotes.">
+        ''' It also controls what page is shown when you click the Home button or search from the Omnibox. '''
+      </message>
+
+      <message name="IDS_EXTENSIONS_SETTINGS_API_THIRD_LINE_CONFIRMATION" desc="Third line in the Settings API bubble, always appended after the first (and optional second) line to make one paragraph. See IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_SEARCH_ENGINE for reason for triple quotes.">
+        ''' If you didn't want these changes, you can restore your previous settings.'''
+      </message>
+
+      <message name="IDS_EXTENSIONS_SETTINGS_API_RESTORE_SETTINGS" desc="The button in the Settings API bubble that reverts the settings changes made by the extension and restores what the user had before.">
+        Restore settings
+      </message>
+      <message name="IDS_EXTENSIONS_SETTINGS_API_KEEP_CHANGES" desc="The button in the Settings API bubble that cancels the bubble without action.">
+        Keep changes
       </message>
 
       <!-- chrome://settings-frame/options_settings_app.html for the App Launcher Settings App -->
@@ -6272,12 +6337,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ASH_ENABLE_TOUCH_VIEW_TESTING_DESCRIPTION" desc="Description for the flag to enable the TouchView testing mode.">
         Enable Ctrl+Alt+Shift+D to toggle the TouchView maximizing mode.
       </message>
-      <message name="IDS_FLAGS_ASH_ENABLE_BRIGHTNESS_CONTROL_NAME" desc="Title for the flag which can be used to enable brightness control of external displays.">
-        Enable brightness control of external displays
-      </message>
-      <message name="IDS_FLAGS_ASH_ENABLE_BRIGHTNESS_CONTROL_DESCRIPTION" desc="Description for the flag to enable brightness control of external displays.">
-        Make the brightness keys adjust external displays' brightness levels on devices that don't have internal displays.
-      </message>
       <message name="IDS_FLAGS_ENABLE_FULL_MULTI_PROFILE_MODE" desc="Title for the full multi profile mode flag.">
         Enable side-by-side multi profile mode
       </message>
@@ -6741,12 +6800,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_ENABLE_APP_LIST_DESCRIPTION" desc="Description of the flag to enable app launcher.">
           Enable the App Launcher. Upon enabling, creates operating system shortcuts to the App Launcher.
         </message>
-        <message name="IDS_FLAGS_ENABLE_APP_LIST_START_PAGE_NAME" desc="Name of the flag to enable the start page of app launcher.">
-          Enable the App Launcher start page.
-        </message>
-        <message name="IDS_FLAGS_ENABLE_APP_LIST_START_PAGE_DESCRIPTION" desc="Description of the flag to enable the start page of app launcher.">
-          Enable the App Launcher start page. If enabled, App Launcher will show a start page in addition to the apps grid.
-        </message>
         <message name="IDS_FLAGS_DISABLE_APP_LIST_FOLDER" desc="Name of the flag to disable app list folder.">
           Disable App Launcher folders.
         </message>
@@ -6948,9 +7001,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
         sync-touchmove
       </message>
       <message name="IDS_FLAGS_BLEEDING_RENDERER_NAME" desc="Name of the 'Stacked Tabs' lab.">
-        Bleeding Edge Renderer Paths
+        Bleeding Edge Renderer Paths - LIKELY TO CRASH YOUR BROWSER
       </message>
-      <message name="IDS_FLAGS_BLEEDING_RENDERER_DESCRIPTION" desc="Description of the 'Stacked Tabs' lab.">
+      <message name="IDS_FLAGS_BLEEDING_RENDERER_DESCRIPTION" desc="Description of the 'Bleeding edge' lab.">
         Use bleeding-edge code to make Chrome draw content faster. The changes
         behind this path are very likely to break lots of content.
       </message>
@@ -6980,22 +7033,37 @@ Keep your key file in a safe place. You will need it to create new versions of y
 
       <!-- WebRTC logs -->
       <message name="IDS_WEBRTC_LOGS_TITLE" desc="Title for the chrome://webrtc-logs page.">
-        Uploaded WebRTC logs
+        WebRTC logs
       </message>
       <message name="IDS_WEBRTC_LOGS_LOG_COUNT_BANNER_FORMAT" desc="Format for WebRTC log count banner on chrome://webrtc-logs">
-        Uploaded WebRTC logs (<ph name="WEBRTC_LOG_COUNT">$1<ex>3</ex></ph>)
+        WebRTC logs (<ph name="WEBRTC_LOG_COUNT">$1<ex>3</ex></ph>)
       </message>
       <message name="IDS_WEBRTC_LOGS_LOG_HEADER_FORMAT" desc="Format for uploaded log entry headings on chrome://webrtc-logs">
-        WebRTC log ID <ph name="WEBRTC_LOG_ID">$1<ex>8fa95dbb6f2ec862</ex></ph>
+        WebRTC log captured <ph name="WEBRTC_LOG_CAPTURE_TIME">$1<ex>Tuesday, January 25, 2011 2:58:02 PM</ex></ph>
       </message>
-      <message name="IDS_WEBRTC_LOGS_LOG_TIME_FORMAT" desc="Format for uploaded log entry upload time on chrome://webrtc-logs">
-        Uploaded <ph name="WEBRTC_LOG_TIME">$1<ex>Tuesday, January 25, 2011 2:58:02 PM</ex></ph>
+      <message name="IDS_WEBRTC_LOGS_LOG_LOCAL_FILE_LABEL_FORMAT" desc="Format for local log entry label on chrome://webrtc-logs">
+        Local file:
+      </message>
+      <message name="IDS_WEBRTC_LOGS_LOG_LOCAL_FILE_FORMAT" desc="Format for file in local log entry on chrome://webrtc-logs">
+        <ph name="WEBRTC_LOG_LOCAL_FILE">$1<ex>/path/to/file</ex></ph>
+      </message>
+      <message name="IDS_WEBRTC_LOGS_NO_LOCAL_LOG_FILE_MESSAGE" desc="The explanatory message for chrome://webrtc-logs when there is no local log file">
+        No local log file.
+      </message>
+      <message name="IDS_WEBRTC_LOGS_LOG_UPLOAD_TIME_FORMAT" desc="Format for uploaded log entry upload time on chrome://webrtc-logs">
+        Uploaded <ph name="WEBRTC_LOG_UPLOAD_TIME">$1<ex>Tuesday, January 25, 2011 2:58:02 PM</ex></ph>
+      </message>
+      <message name="IDS_WEBRTC_LOGS_LOG_REPORT_ID_FORMAT" desc="Format for uploaded log entry report ID on chrome://webrtc-logs">
+        Report ID <ph name="WEBRTC_LOG_REPORT_ID">$1<ex>8fa95dbb6f2ec862</ex></ph>
       </message>
       <message name="IDS_WEBRTC_LOGS_BUG_LINK_LABEL" desc="Link text for filing a bug on chrome://webrtc-logs">
         File bug
       </message>
-      <message name="IDS_WEBRTC_LOGS_NO_LOGS_MESSAGE" desc="The explanatory message for chrome://webrtc-logs when there are no uploaded logs">
-        You have no recently uploaded WebRTC logs.
+      <message name="IDS_WEBRTC_LOGS_LOG_NOT_UPLOADED_MESSAGE" desc="The explanatory message for chrome://webrtc-logs when the log has not been uploaded">
+        Log not uploaded.
+      </message>
+      <message name="IDS_WEBRTC_LOGS_NO_LOGS_MESSAGE" desc="The explanatory message for chrome://webrtc-logs when there are no captured logs">
+        You have no recently captured WebRTC logs.
       </message>
 
       <!-- Custom dictionary page -->
@@ -7021,10 +7089,13 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Enable "Ok Google" to start a voice search
       </message>
       <message name="IDS_HOTWORD_SEARCH_PREF_DESCRIPTION" desc="Description of the hotword  search preference">
-        Important: When you say "Ok Google," Chrome will send the sound of the next thing you say to Google.
+        When you say "Ok Google," Chrome will search for what you say next.
+      </message>
+      <message name="IDS_HOTWORD_CONFIRM_BUBBLE_TITLE" desc="The title text for the bubble to enable the hotword voice search trigger.">
+        Ok Google
       </message>
       <message name="IDS_HOTWORD_CONFIRM_BUBBLE_ENABLE" desc="The button text that allows the hotword voice search trigger.">
-        Enable "Ok Google"
+        OK
       </message>
       <message name="IDS_HOTWORD_CONFIRM_BUBBLE_DISABLE" desc="The button text that disallows the hotword voice search trigger.">
         Cancel
@@ -7034,6 +7105,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_HOTWORD_RETRY_DOWNLOAD_BUTTON" desc="The button text that retries a failed hotword setup in the settings page.">
         Retry
+      </message>
+      <message name="IDS_HOTWORD_AUDIO_LOGGING_ENABLE" desc="A checkbox in the hotword confirm dialog that allows for sending audio of 'Ok, Google' plus a few seconds before back to Google to improve voice search.">
+        Improve voice search by sending the sound of "Ok Google," and a few seconds before, to Google.
       </message>
 
       <!-- Conflicts page -->
@@ -8379,27 +8453,11 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
 
       <!-- Upgrade bubble messages -->
-      <message name="IDS_REINSTALL_APP" desc="Text for the button the user clicks to reinstall the app.">
-        Reinstall <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>
+      <message name="IDS_REENABLE_UPDATES" desc="Text for the button the user clicks to re-enable automatic updates.">
+        Enable autoupdate
       </message>
       <message name="IDS_LATER" desc="Text for the button the user clicks to be reminded of reinstalling the app later.">
         Later
-      </message>
-      <if expr="use_titlecase">
-        <message name="IDS_UPGRADE_BUBBLE_MENU_ITEM" desc="In Title Case: Text for the Chrome menu option replacing Update required.">
-          <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> is Out of Date
-        </message>
-      </if>
-      <if expr="not use_titlecase">
-        <message name="IDS_UPGRADE_BUBBLE_MENU_ITEM" desc="Text for the Chrome menu option replacing Update required.">
-          <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> is out of date
-        </message>
-      </if>
-      <message name="IDS_UPGRADE_BUBBLE_TITLE" desc="Text for the title of the upgrade bubble view.">
-        <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> is out of date
-      </message>
-      <message name="IDS_UPGRADE_BUBBLE_TEXT" desc="Text for the upgrade bubble view full description.">
-        <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> could not update itself to the latest version, so you are missing out on awesome new features and security fixes. You need to manually reinstall <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>.
       </message>
 
       <!-- Print -->
@@ -11552,50 +11610,41 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_PROFILES_EDIT_PROFILE_LINK" desc="Link in the avatar menu bubble to edit a profile.">
         edit
       </message>
+      <message name="IDS_PROFILES_GAIA_SIGNIN_TITLE" desc="Title of the account removal view in the avatar menu bubble.">
+        Sign in
+      </message>
+      <message name="IDS_PROFILES_GAIA_ADD_ACCOUNT_TITLE" desc="Title of the account removal view in the avatar menu bubble.">
+        Add account
+      </message>
+      <message name="IDS_PROFILES_ACCOUNT_REMOVAL_TITLE" desc="Title of the account removal view in the avatar menu bubble.">
+        Remove account
+      </message>
+      <message name="IDS_PROFILES_ACCOUNT_REMOVAL_BUTTON" desc="Text of the ok button on the account removal view in the avatar menu bubble.">
+        Remove account and relaunch
+      </message>
       <message name="IDS_PROFILES_SIGNIN_TUTORIAL_TITLE" desc="Title of the tutorial card in the avatar menu bubble view for a signed-in user.">
         Hey, <ph name="PROFILE_DISPLAY_NAME">$1<ex>Jessica</ex></ph>!
       </message>
       <message name="IDS_PROFILES_SIGNIN_TUTORIAL_OK_BUTTON" desc="Text of the ok button on the tutorial card in the avatar menu bubble view">
         Ok, Got it!
       </message>
+      <message name="IDS_PROFILES_NOT_YOU_BUTTON" desc="Button in the avatar menu bubble view for launching the user manager.">
+        Not <ph name="PROFILE_DISPLAY_NAME">$1<ex>Jessica</ex></ph>?
+      </message>
       <if expr="not use_titlecase">
-        <message name="IDS_PROFILES_ADD_PERSON_BUTTON" desc="Button in the avatar menu bubble view for creating a new user.">
-          Add person
-        </message>
-        <message name="IDS_PROFILES_GUEST_BUTTON" desc="Button in the avatar menu bubble view for guest browsing.">
-          Browse as guest
-        </message>
-        <message name="IDS_PROFILES_EXIT_GUEST_BUTTON" desc="Button in the avatar menu bubble view to end guest browsing.">
-          End guest session
-        </message>
-        <message name="IDS_PROFILES_ALL_PEOPLE_BUTTON" desc="Button in the avatar menu bubble view for launching the user manager.">
-          View all people
-        </message>
         <message name="IDS_PROFILES_PROFILE_ADD_ACCOUNT_BUTTON" desc="Button in the avatar menu bubble view used to add an account to a profile.">
           Add account for <ph name="PROFILE_NAME">$1<ex>John</ex></ph>
         </message>
         <message name="IDS_PROFILES_PROFILE_MANAGE_ACCOUNTS_BUTTON" desc="Button in the avatar menu bubble view used to manage accounts for a profile.">
-          Manage accounts
+          Your accounts
         </message>
       </if>
       <if expr="use_titlecase">
-        <message name="IDS_PROFILES_ADD_PERSON_BUTTON" desc="Button in the avatar menu bubble view for creating a new user.">
-          Add Person
-        </message>
-        <message name="IDS_PROFILES_GUEST_BUTTON" desc="Button in the avatar menu bubble view for guest browsing.">
-          Browse as Guest
-        </message>
-        <message name="IDS_PROFILES_EXIT_GUEST_BUTTON" desc="Button in the avatar menu bubble view to end guest browsing.">
-          End Guest Session
-        </message>
-        <message name="IDS_PROFILES_ALL_PEOPLE_BUTTON" desc="Button in the avatar menu bubble view for launching the user manager.">
-          View All People
-        </message>
         <message name="IDS_PROFILES_PROFILE_ADD_ACCOUNT_BUTTON" desc="Button in the avatar menu bubble view used to add an account to a profile.">
           Add Account for <ph name="PROFILE_NAME">$1<ex>John</ex></ph>
         </message>
         <message name="IDS_PROFILES_PROFILE_MANAGE_ACCOUNTS_BUTTON" desc="Button in the avatar menu bubble view used to manage accounts for a profile.">
-          Manage Accounts
+          Your Accounts
         </message>
       </if>
       <message name="IDS_PROFILES_PROFILE_CHANGE_PHOTO_BUTTON" desc="Button in the avatar menu bubble view used to change the photo for a profile.">
@@ -12257,11 +12306,11 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_SIGNIN_ERROR_BUBBLE_VIEW_TITLE" desc="Title in the sign-in error bubble view/notification.">
         Sign-in Error
       </message>
-      <message name="IDS_SYNC_ERROR_BUBBLE_VIEW_TITLE" desc="Title in the sync error bubble view.">
+      <message name="IDS_SYNC_ERROR_BUBBLE_VIEW_TITLE" desc="Title in the sync error bubble view/notification.">
         Sync Error
       </message>
-      <message name="IDS_SIGNIN_ERROR_NOTIFICATION_TITLE_MULTIPROFILE" desc="Title in the sign-in error notification when multiple users are logged in.">
-        Sign-in Error: <ph name="USER_NAME">$1<ex>foo@example.com</ex></ph>
+      <message name="IDS_SYNC_NOTIFICATION_ACCEPT" desc="A button label shown in the sync error notification when the passphrase needs to be updated.">
+        Update sync passphrase
       </message>
 
       <if expr="not use_titlecase">
@@ -12275,7 +12324,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
           Sync Error: Update Sync passphrase...
         </message>
         <if expr="chromeos">
-          <message name="IDS_SYNC_SIGN_IN_ERROR_BUBBLE_VIEW_ACCEPT" desc="The accept button in the sync error bubble view when the user needs to sign out and sign in again to Chrome OS.">
+          <message name="IDS_SYNC_SIGN_IN_ERROR_BUBBLE_VIEW_ACCEPT" desc="The accept button in the sync error bubble view/notification when the user needs to sign out and sign in again to Chrome OS.">
             Sign out then sign in again...
           </message>
           <message name="IDS_SYNC_SIGN_IN_ERROR_WRENCH_MENU_ITEM" desc="The sync error wrench menu item when the user needs to sign out and sign in again to Chrome OS.">
@@ -14144,6 +14193,12 @@ Do you accept?
     <message name="IDS_FLAGS_ENABLE_NEW_PROFILE_MANAGEMENT_DESCRIPTION" desc="Description for the flag to enable the new profile management">
       Enables the new profile management system, including profile sign-out and the new avatar menu UI.
     </message>
+    <message name="IDS_FLAGS_ENABLE_FAST_USER_SWITCHING_NAME" desc="Title for the flag to enable fast user switching.">
+      Enable fast user switching in the avatar menu
+    </message>
+    <message name="IDS_FLAGS_ENABLE_FAST_USER_SWITCHING_DESCRIPTION" desc="Description for the flag to enable fast user switching">
+      Enables fast switching between users in the avatar menu.
+    </message>
     <message name="IDS_FLAGS_ENABLE_WEB_BASED_SIGNIN_NAME" desc="Title for the flag to enable web-based sign-in flows.">
       Enable pure web-based sign-in flows
     </message>
@@ -14187,6 +14242,13 @@ Do you accept?
     </message>
     <message name="IDS_FLAGS_ENABLE_SWIPE_SELECTION_DESCRIPTION" desc="Description of about:flags option to turn on swipe selection for the virtual keyboard">
       Enable Swipe Selection support for the virtual keyboard. Unless the virtual keyboard is also enabled, this will do nothing.
+    </message>
+
+    <message name="IDS_FLAGS_ENABLE_INPUT_VIEW_NAME" desc="Name of about::flags option to enable IME extensions to override the virtual keyboard view">
+      Enable input views.
+    </message>
+    <message name="IDS_FLAGS_ENABLE_INPUT_VIEW_DESCRIPTION" desc="Description of about::flags option to enable IME extensions to override the virtual keyboard view">
+      Enable IME extensions to supply custom views for user input such as  virtual keyboards.
     </message>
 
     <!-- Simple Cache Backend experiment. -->
@@ -14776,6 +14838,22 @@ Do you accept?
     </message>
     <message name="IDS_FLAGS_PREFETCH_SEARCH_RESULTS_DESCRIPTION" desc="Describes an about:flags experiment for prefetching search results">
       If enabled, prefetch search results for the typed omnibox query and reuse prerendered search base page to commit any search query (not just prefetch query).
+    </message>
+
+    <!-- Settings window flags -->
+    <message name="IDS_FLAGS_ENABLE_SETTINGS_WINDOW_NAME" desc="An about::flags experiment title to show settings in a separate window">
+      Show settings in a window
+    </message>
+    <message name="IDS_FLAGS_ENABLE_SETTINGS_WINDOW_DESCRIPTION" desc="Describes an about:flags experiment to show settings in a separate window">
+      If enabled, Settings will be shown in a dedicated window instead of as a browser tab.
+    </message>
+
+    <!-- Instant search clicks experiment flags -->
+    <message name="IDS_FLAGS_ENABLE_INSTANT_SEARCH_CLICKS_NAME" desc="Title for the flag to enable instant search clicks">
+      Prefetch search results
+    </message>
+    <message name="IDS_FLAGS_ENABLE_INSTANT_SEARCH_CLICKS_DESCRIPTION" desc="Description to enable instant search clicks">
+      If enabled, prefetch previews for search results and swap them with original page when is downloaded and rendered.
     </message>
   </messages>
   </release>

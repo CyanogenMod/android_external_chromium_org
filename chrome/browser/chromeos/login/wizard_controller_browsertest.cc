@@ -36,11 +36,13 @@
 #include "chrome/browser/chromeos/login/webui_login_view.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/login/wizard_in_process_browser_test.h"
+#include "chrome/browser/chromeos/policy/server_backed_device_state.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/chromeos_switches.h"
@@ -49,6 +51,8 @@
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/system/mock_statistics_provider.h"
+#include "chromeos/system/statistics_provider.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "grit/generated_resources.h"
@@ -60,6 +64,7 @@
 #include "ui/base/l10n/l10n_util.h"
 
 using ::testing::Exactly;
+using ::testing::Invoke;
 using ::testing::Return;
 
 namespace chromeos {
@@ -137,6 +142,25 @@ void SetUpCrasAndEnableChromeVox(int volume_percent, bool mute_on) {
   base::RunLoop().RunUntilIdle();
 }
 
+void QuitLoopOnAutoEnrollmentProgress(
+    policy::AutoEnrollmentState expected_state,
+    base::RunLoop* loop,
+    policy::AutoEnrollmentState actual_state) {
+  if (expected_state == actual_state)
+    loop->Quit();
+}
+
+void WaitForAutoEnrollmentState(policy::AutoEnrollmentState state) {
+  base::RunLoop loop;
+  AutoEnrollmentController* auto_enrollment_controller =
+      LoginDisplayHostImpl::default_host()->GetAutoEnrollmentController();
+  scoped_ptr<AutoEnrollmentController::ProgressCallbackList::Subscription>
+      progress_subscription(
+          auto_enrollment_controller->RegisterProgressCallback(
+              base::Bind(&QuitLoopOnAutoEnrollmentProgress, state, &loop)));
+  loop.Run();
+}
+
 }  // namespace
 
 using ::testing::_;
@@ -174,6 +198,11 @@ class WizardControllerTest : public WizardInProcessBrowserTest {
     AccessibilityManager::Get()->
         SetProfileForTest(ProfileHelper::GetSigninProfile());
     WizardInProcessBrowserTest::SetUpOnMainThread();
+  }
+
+  ErrorScreen* GetErrorScreen() {
+    return static_cast<ScreenObserver*>(WizardController::default_controller())
+        ->GetErrorScreen();
   }
 
  private:
@@ -358,8 +387,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest, ControlFlowSkipUpdateEnroll) {
   WizardController::default_controller()->SkipUpdateEnrollAfterEula();
   EXPECT_CALL(*mock_enrollment_screen_->actor(),
               SetParameters(mock_enrollment_screen_,
-                            false,  // is_auto_enrollment
-                            true,   // can_exit_enrollment
+                            EnrollmentScreenActor::ENROLLMENT_MODE_MANUAL,
                             ""))
       .Times(1);
   EXPECT_CALL(*mock_enrollment_screen_, Show()).Times(1);
@@ -401,8 +429,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
   EXPECT_CALL(*mock_update_screen_, StartNetworkCheck()).Times(0);
   EXPECT_CALL(*mock_enrollment_screen_->actor(),
               SetParameters(mock_enrollment_screen_,
-                            false,  // is_auto_enrollment
-                            true,   // can_exit_enrollment
+                            EnrollmentScreenActor::ENROLLMENT_MODE_MANUAL,
                             ""))
       .Times(1);
   EXPECT_CALL(*mock_enrollment_screen_, Show()).Times(1);
@@ -490,6 +517,104 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
   EXPECT_FALSE(ExistingUserController::current_controller() == NULL);
 }
 
+class WizardControllerEnrollmentFlowTest : public WizardControllerFlowTest {
+ protected:
+  WizardControllerEnrollmentFlowTest() {}
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    WizardControllerFlowTest::SetUpCommandLine(command_line);
+
+    command_line->AppendSwitch(
+        switches::kEnterpriseEnableForcedReEnrollment);
+    command_line->AppendSwitchASCII(
+        switches::kEnterpriseEnrollmentInitialModulus, "1");
+    command_line->AppendSwitchASCII(
+        switches::kEnterpriseEnrollmentModulusLimit, "2");
+  }
+
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+    WizardControllerFlowTest::SetUpInProcessBrowserTestFixture();
+    system::StatisticsProvider::SetTestProvider(&statistics_provider_);
+    EXPECT_CALL(statistics_provider_, StartLoadingMachineStatistics(_, _));
+    EXPECT_CALL(statistics_provider_, GetMachineStatistic(_, _)).WillRepeatedly(
+        Invoke(this, &WizardControllerEnrollmentFlowTest::GetMachineStatistic));
+    EXPECT_CALL(statistics_provider_, GetMachineFlag(_, _)).WillRepeatedly(
+        Return(false));
+    EXPECT_CALL(statistics_provider_, Shutdown());
+  }
+
+  virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
+    system::StatisticsProvider::SetTestProvider(NULL);
+    WizardControllerFlowTest::TearDownInProcessBrowserTestFixture();
+  }
+
+  bool GetMachineStatistic(const std::string& name, std::string* result) {
+    if (name == system::kDiskSerialNumber) {
+      *result = "fake-disk-serial-number";
+      return true;
+    } else if (name == "serial_number") {
+      *result = "fake-machine-serial-number";
+      return true;
+    }
+
+    return false;
+  }
+
+ private:
+  system::MockStatisticsProvider statistics_provider_;
+
+  DISALLOW_COPY_AND_ASSIGN(WizardControllerEnrollmentFlowTest);
+};
+
+IN_PROC_BROWSER_TEST_F(WizardControllerEnrollmentFlowTest,
+                       ControlFlowForcedReEnrollment) {
+  EXPECT_EQ(WizardController::default_controller()->GetNetworkScreen(),
+            WizardController::default_controller()->current_screen());
+  EXPECT_CALL(*mock_network_screen_, Hide()).Times(1);
+  EXPECT_CALL(*mock_eula_screen_, Show()).Times(1);
+  OnExit(ScreenObserver::NETWORK_CONNECTED);
+
+  EXPECT_EQ(WizardController::default_controller()->GetEulaScreen(),
+            WizardController::default_controller()->current_screen());
+  EXPECT_CALL(*mock_eula_screen_, Hide()).Times(1);
+  EXPECT_CALL(*mock_update_screen_, StartNetworkCheck()).Times(1);
+  EXPECT_CALL(*mock_update_screen_, Show()).Times(1);
+  OnExit(ScreenObserver::EULA_ACCEPTED);
+  // Let update screen smooth time process (time = 0ms).
+  content::RunAllPendingInMessageLoop();
+
+  EXPECT_EQ(WizardController::default_controller()->GetUpdateScreen(),
+            WizardController::default_controller()->current_screen());
+  EXPECT_CALL(*mock_update_screen_, Hide()).Times(1);
+  OnExit(ScreenObserver::UPDATE_INSTALLED);
+
+  // Wait for auto-enrollment controller to encounter the connection error.
+  WaitForAutoEnrollmentState(policy::AUTO_ENROLLMENT_STATE_CONNECTION_ERROR);
+
+  // The error screen shows up if there's no auto-enrollment decision.
+  EXPECT_FALSE(StartupUtils::IsOobeCompleted());
+  EXPECT_EQ(GetErrorScreen(),
+            WizardController::default_controller()->current_screen());
+  base::DictionaryValue device_state;
+  device_state.SetString(policy::kDeviceStateRestoreMode,
+                         policy::kDeviceStateRestoreModeReEnrollmentEnforced);
+  g_browser_process->local_state()->Set(prefs::kServerBackedDeviceState,
+                                        device_state);
+  EXPECT_CALL(*mock_enrollment_screen_, Show()).Times(1);
+  EXPECT_CALL(*mock_enrollment_screen_->actor(),
+              SetParameters(mock_enrollment_screen_,
+                            EnrollmentScreenActor::ENROLLMENT_MODE_FORCED,
+                            "")).Times(1);
+  OnExit(ScreenObserver::ENTERPRISE_AUTO_ENROLLMENT_CHECK_COMPLETED);
+
+  // Make sure enterprise enrollment page shows up.
+  EXPECT_EQ(WizardController::default_controller()->GetEnrollmentScreen(),
+            WizardController::default_controller()->current_screen());
+  OnExit(ScreenObserver::ENTERPRISE_ENROLLMENT_COMPLETED);
+
+  EXPECT_TRUE(StartupUtils::IsOobeCompleted());
+}
+
 class WizardControllerBrokenLocalStateTest : public WizardControllerTest {
  protected:
   WizardControllerBrokenLocalStateTest()
@@ -524,11 +649,6 @@ class WizardControllerBrokenLocalStateTest : public WizardControllerTest {
 
   virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
     WizardControllerTest::TearDownInProcessBrowserTestFixture();
-  }
-
-  ErrorScreen* GetErrorScreen() {
-    return ((ScreenObserver*) WizardController::default_controller())->
-        GetErrorScreen();
   }
 
   content::WebContents* GetWebContents() {
@@ -671,8 +791,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerKioskFlowTest,
                        ControlFlowKioskForcedEnrollment) {
   EXPECT_CALL(*mock_enrollment_screen_->actor(),
               SetParameters(mock_enrollment_screen_,
-                            false,  // is_auto_enrollment
-                            false,  // can_exit_enrollment
+                            EnrollmentScreenActor::ENROLLMENT_MODE_FORCED,
                             ""))
       .Times(1);
 
@@ -715,8 +834,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerKioskFlowTest,
 
   EXPECT_CALL(*mock_enrollment_screen_->actor(),
               SetParameters(mock_enrollment_screen_,
-                            false,  // is_auto_enrollment
-                            false,  // can_exit_enrollment
+                            EnrollmentScreenActor::ENROLLMENT_MODE_FORCED,
                             ""))
       .Times(1);
 
@@ -761,7 +879,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerKioskFlowTest,
 
 // TODO(nkostylev): Add test for WebUI accelerators http://crosbug.com/22571
 
-COMPILE_ASSERT(ScreenObserver::EXIT_CODES_COUNT == 19,
+COMPILE_ASSERT(ScreenObserver::EXIT_CODES_COUNT == 20,
                add_tests_for_new_control_flow_you_just_introduced);
 
 }  // namespace chromeos

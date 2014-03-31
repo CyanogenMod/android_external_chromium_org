@@ -136,8 +136,6 @@
         'base/iovec.h',
         'base/ip_endpoint.cc',
         'base/ip_endpoint.h',
-        'base/ip_mapping_rules.cc',
-        'base/ip_mapping_rules.h',
         'base/ip_pattern.cc',
         'base/ip_pattern.h',
         'base/keygen_handler.cc',
@@ -355,6 +353,8 @@
         'disk_cache/blockfile/backend_impl.h',
         'disk_cache/blockfile/backend_impl_v3.cc',
         'disk_cache/blockfile/backend_impl_v3.h',
+        'disk_cache/blockfile/backend_worker_v3.cc',
+        'disk_cache/blockfile/backend_worker_v3.h',
         'disk_cache/blockfile/bitmap.cc',
         'disk_cache/blockfile/bitmap.h',
         'disk_cache/blockfile/block_bitmaps_v3.cc',
@@ -488,8 +488,6 @@
         'dns/host_resolver_proc.h',
         'dns/mapped_host_resolver.cc',
         'dns/mapped_host_resolver.h',
-        'dns/mapped_ip_resolver.cc',
-        'dns/mapped_ip_resolver.h',
         'dns/mdns_cache.cc',
         'dns/mdns_cache.h',
         'dns/mdns_client.cc',
@@ -843,7 +841,7 @@
         'quic/crypto/proof_source.h',
         'quic/crypto/proof_source_chromium.cc',
         'quic/crypto/proof_source_chromium.h',
-        'quic/crypto/proof_verifier.cc',
+        'quic/crypto/proof_verifier.h',
         'quic/crypto/proof_verifier_chromium.cc',
         'quic/crypto/proof_verifier_chromium.h',
         'quic/crypto/quic_crypto_client_config.cc',
@@ -882,6 +880,8 @@
         'quic/quic_blocked_writer_interface.h',
         'quic/quic_client_session.cc',
         'quic/quic_client_session.h',
+        'quic/quic_client_session_base.cc',
+        'quic/quic_client_session_base.h',
         'quic/quic_clock.cc',
         'quic/quic_clock.h',
         'quic/quic_config.cc',
@@ -1124,6 +1124,8 @@
         'ssl/ssl_client_auth_cache.cc',
         'ssl/ssl_client_auth_cache.h',
         'ssl/ssl_client_cert_type.h',
+        'ssl/ssl_config.cc',
+        'ssl/ssl_config.h',
         'ssl/ssl_config_service.cc',
         'ssl/ssl_config_service.h',
         'ssl/ssl_config_service_defaults.cc',
@@ -1409,22 +1411,17 @@
               'third_party/mozilla_security_manager/nsPKCS12Blob.cpp',
               'third_party/mozilla_security_manager/nsPKCS12Blob.h',
             ],
+            'dependencies': [
+              '../third_party/openssl/openssl.gyp:openssl',
+            ],
           },
           {  # else !use_openssl: remove the unneeded files
             'sources!': [
               'base/crypto_module_openssl.cc',
               'base/keygen_handler_openssl.cc',
-              'base/openssl_private_key_store.h',
-              'base/openssl_private_key_store_android.cc',
-              'base/openssl_private_key_store_memory.cc',
-              'cert/cert_database_openssl.cc',
-              'cert/cert_verify_proc_openssl.cc',
-              'cert/cert_verify_proc_openssl.h',
               'cert/ct_log_verifier_openssl.cc',
               'cert/ct_objects_extractor_openssl.cc',
               'cert/jwk_serializer_openssl.cc',
-              'cert/test_root_certs_openssl.cc',
-              'cert/x509_certificate_openssl.cc',
               'cert/x509_util_openssl.cc',
               'cert/x509_util_openssl.h',
               'quic/crypto/aead_base_decrypter_openssl.cc',
@@ -1442,11 +1439,23 @@
               'socket/ssl_server_socket_openssl.cc',
               'socket/ssl_session_cache_openssl.cc',
               'socket/ssl_session_cache_openssl.h',
-              'ssl/openssl_client_key_store.cc',
-              'ssl/openssl_client_key_store.h',
             ],
           },
         ],
+        [ 'use_openssl_certs == 0', {
+            'sources!': [
+              'base/openssl_private_key_store.h',
+              'base/openssl_private_key_store_android.cc',
+              'base/openssl_private_key_store_memory.cc',
+              'cert/cert_database_openssl.cc',
+              'cert/cert_verify_proc_openssl.cc',
+              'cert/cert_verify_proc_openssl.h',
+              'cert/test_root_certs_openssl.cc',
+              'cert/x509_certificate_openssl.cc',
+              'ssl/openssl_client_key_store.cc',
+              'ssl/openssl_client_key_store.h',
+            ],
+        }],
         [ 'use_glib == 1', {
             'dependencies': [
               '../build/linux/system.gyp:gconf',
@@ -1455,12 +1464,8 @@
         }],
         [ 'desktop_linux == 1 or chromeos == 1', {
             'conditions': [
-              ['use_openssl==1', {
-                'dependencies': [
-                  '../third_party/openssl/openssl.gyp:openssl',
-                ],
-              },
-              {  # else use_openssl==0, use NSS
+              ['use_openssl == 0', {
+                 # use NSS
                 'dependencies': [
                   '../build/linux/system.gyp:ssl',
                 ],
@@ -1569,10 +1574,15 @@
           },
         ],
         [ 'OS == "mac"', {
-            'dependencies': [
-              '../third_party/nss/nss.gyp:nspr',
-              '../third_party/nss/nss.gyp:nss',
-              'third_party/nss/ssl.gyp:libssl',
+            'conditions': [
+              [ 'use_openssl == 0', {
+                'dependencies': [
+                  # defaults to nss
+                  '../third_party/nss/nss.gyp:nspr',
+                  '../third_party/nss/nss.gyp:nss',
+                  'third_party/nss/ssl.gyp:libssl',
+                ],
+              }],
             ],
             'link_settings': {
               'libraries': [
@@ -1692,7 +1702,6 @@
         'base/host_mapping_rules_unittest.cc',
         'base/host_port_pair_unittest.cc',
         'base/ip_endpoint_unittest.cc',
-        'base/ip_mapping_rules_unittest.cc',
         'base/ip_pattern_unittest.cc',
         'base/keygen_handler_unittest.cc',
         'base/mime_sniffer_unittest.cc',
@@ -2175,8 +2184,8 @@
         }],
         [ 'OS == "android"', {
           'sources!': [
-            # See bug 344533.
-            'disk_cache/blockfile/index_table_v3unittest.cc',
+            # See bug http://crbug.com/344533.
+            'disk_cache/blockfile/index_table_v3_unittest.cc',
             # No res_ninit() et al on Android, so this doesn't make a lot of
             # sense.
             'dns/dns_config_service_posix_unittest.cc',
@@ -2262,10 +2271,14 @@
               'quic/test_tools/crypto_test_utils_openssl.cc',
               'socket/ssl_client_socket_openssl_unittest.cc',
               'socket/ssl_session_cache_openssl_unittest.cc',
-              'ssl/openssl_client_key_store_unittest.cc',
             ],
           },
         ],
+        [ 'use_openssl_certs == 0', {
+            'sources!': [
+              'ssl/openssl_client_key_store_unittest.cc',
+            ],
+        }],
         [ 'enable_websockets != 1', {
             'sources/': [
               ['exclude', '^socket_stream/'],
@@ -2333,7 +2346,7 @@
             'msvs_disabled_warnings': [4267, ],
           },
         ],
-        [ 'OS == "mac"', {
+        [ 'OS == "mac" and use_openssl == 0', {
             'dependencies': [
               '../third_party/nss/nss.gyp:nspr',
               '../third_party/nss/nss.gyp:nss',
@@ -2382,8 +2395,8 @@
               # OS is not "linux" or "freebsd" or "openbsd".
               'socket/unix_domain_socket_posix_unittest.cc',
 
-              # See bug 344533.
-              'disk_cache/v3/index_table_unittest.cc',
+              # See bug http://crbug.com/344533.
+              'disk_cache/blockfile/index_table_v3_unittest.cc',
             ],
         }],
         [ 'OS == "android"', {
@@ -2737,49 +2750,6 @@
           ],
           'sources': [
             'tools/dns_fuzz_stub/dns_fuzz_stub.cc',
-          ],
-          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-          'msvs_disabled_warnings': [4267, ],
-        },
-        {
-          'target_name': 'fetch_client',
-          'type': 'executable',
-          'variables': { 'enable_wexit_time_destructors': 1, },
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-            '../testing/gtest.gyp:gtest',
-            '../url/url.gyp:url_lib',
-            'net',
-            'net_with_v8',
-          ],
-          'sources': [
-            'tools/fetch/fetch_client.cc',
-          ],
-          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-          'msvs_disabled_warnings': [4267, ],
-        },
-        {
-          'target_name': 'fetch_server',
-          'type': 'executable',
-          'variables': { 'enable_wexit_time_destructors': 1, },
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../url/url.gyp:url_lib',
-            'net',
-          ],
-          'sources': [
-            'tools/fetch/fetch_server.cc',
-            'tools/fetch/http_listen_socket.cc',
-            'tools/fetch/http_listen_socket.h',
-            'tools/fetch/http_server.cc',
-            'tools/fetch/http_server.h',
-            'tools/fetch/http_server_request_info.cc',
-            'tools/fetch/http_server_request_info.h',
-            'tools/fetch/http_server_response_info.cc',
-            'tools/fetch/http_server_response_info.h',
-            'tools/fetch/http_session.cc',
-            'tools/fetch/http_session.h',
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],

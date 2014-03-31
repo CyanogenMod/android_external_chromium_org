@@ -173,12 +173,6 @@
         'shell/renderer/shell_render_process_observer.h',
         'shell/renderer/shell_render_view_observer.cc',
         'shell/renderer/shell_render_view_observer.h',
-        'shell/renderer/test_runner/CppBoundClass.cpp',
-        'shell/renderer/test_runner/CppBoundClass.h',
-        'shell/renderer/test_runner/CppVariant.cpp',
-        'shell/renderer/test_runner/CppVariant.h',
-        'shell/renderer/test_runner/EventSender.cpp',
-        'shell/renderer/test_runner/EventSender.h',
         'shell/renderer/test_runner/KeyCodeMapping.cpp',
         'shell/renderer/test_runner/KeyCodeMapping.h',
         'shell/renderer/test_runner/MockColorChooser.cpp',
@@ -232,6 +226,8 @@
         'shell/renderer/test_runner/WebUserMediaClientMock.h',
         'shell/renderer/test_runner/accessibility_controller.cc',
         'shell/renderer/test_runner/accessibility_controller.h',
+        'shell/renderer/test_runner/event_sender.cc',
+        'shell/renderer/test_runner/event_sender.h',
         'shell/renderer/test_runner/gamepad_controller.cc',
         'shell/renderer/test_runner/gamepad_controller.h',
         'shell/renderer/test_runner/notification_presenter.cc',
@@ -315,8 +311,8 @@
             '../components/components.gyp:breakpad_host',
           ],
         }],
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['(os_posix==1 and use_aura==1 and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))) or (android_use_tcmalloc==1)', {
+        # TODO(dmikurube): Kill {linux|android}_use_tcmalloc. http://crbug.com/345554
+        ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and ((OS=="linux" and os_posix==1 and use_aura==1 and linux_use_tcmalloc==1) or (OS=="android" and android_use_tcmalloc==1)))', {
           'dependencies': [
             # This is needed by content/app/content_main_runner.cc
             '../base/allocator/allocator.gyp:allocator',
@@ -477,9 +473,6 @@
           ],
         }],
       ],
-      'variables': {
-        'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
-      },
       'actions': [
         {
           'action_name': 'repack_content_shell_pack',
@@ -497,29 +490,20 @@
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.pak',
             ],
+            'conditions': [
+              ['OS!="android"', {
+                'variables': {
+                  'pak_inputs': [
+                    '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
+                  ],
+                },
+                'pak_output': '<(PRODUCT_DIR)/content_shell.pak',
+              }, {
+                'pak_output': '<(PRODUCT_DIR)/content_shell/assets/content_shell.pak',
+              }],
+            ],
           },
-          'inputs': [
-            '<(repack_path)',
-            '<@(pak_inputs)',
-          ],
-          'action': ['python', '<(repack_path)', '<@(_outputs)',
-                     '<@(pak_inputs)'],
-          'conditions': [
-            ['OS!="android"', {
-              'variables': {
-                'pak_inputs': [
-                  '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
-                ],
-              },
-              'outputs': [
-                '<(PRODUCT_DIR)/content_shell.pak',
-              ],
-            }, {
-              'outputs': [
-                '<(PRODUCT_DIR)/content_shell/assets/content_shell.pak',
-              ],
-            }],
-          ],
+          'includes': [ '../build/repack_action.gypi' ],
         },
       ],
     },

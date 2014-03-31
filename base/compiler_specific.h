@@ -196,19 +196,6 @@
 // If available, it would look like:
 //   __attribute__((format(wprintf, format_param, dots_param)))
 
-#if defined(__OBJC__)
-// Tell the compiler a function is using a +[NSString stringWithFormat:]
-// style format string. |format_param| is the one-based index of the format
-// string parameter; |dots_param| is the one-based index of the "..."
-// parameter. This should only be used when building Objective-C code.
-#if defined(COMPILER_GCC)
-#define NSSTRING_FORMAT(format_param, dots_param) \
-    __attribute__((format(__NSString__, format_param, dots_param)))
-#else
-#define NSSTRING_FORMAT(format_param, dots_param)
-#endif  // defined(COMPILER_GCC)
-#endif  // defined(__OBJC__)
-
 // MemorySanitizer annotations.
 #if defined(MEMORY_SANITIZER) && !defined(OS_NACL)
 #include <sanitizer/msan_interface.h>
@@ -229,15 +216,6 @@
 #define CDECL
 #endif  // defined(OS_WIN)
 #endif  // !defined(CDECL)
-
-// Macro for hinting that an expression is likely to be true.
-#if !defined(LIKELY)
-#if defined(COMPILER_GCC)
-#define LIKELY(x) __builtin_expect(!!(x), 1)
-#else
-#define LIKELY(x) (x)
-#endif  // defined(COMPILER_GCC)
-#endif  // !defined(LIKELY)
 
 // Macro for hinting that an expression is likely to be false.
 #if !defined(UNLIKELY)

@@ -27,7 +27,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
-#include "components/signin/core/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/extension_system.h"
@@ -146,6 +146,18 @@ void StartupAppLauncher::OnOAuthFileLoaded(KioskOAuthParams* auth_params) {
   // If we are restarting chrome (i.e. on crash), we need to initialize
   // OAuth2TokenService as well.
   InitializeTokenService();
+}
+
+void StartupAppLauncher::RestartLauncher() {
+  // If the installer is still running in the background, we don't need to
+  // restart the launch process. We will just wait until it completes and
+  // lunches the kiosk app.
+  if (installer_ != NULL) {
+    LOG(WARNING) << "Installer still running";
+    return;
+  }
+
+  MaybeInitializeNetwork();
 }
 
 void StartupAppLauncher::MaybeInitializeNetwork() {
@@ -295,6 +307,11 @@ void StartupAppLauncher::BeginInstall() {
 void StartupAppLauncher::InstallCallback(bool success,
                                          const std::string& error) {
   installer_ = NULL;
+  if (delegate_->IsShowingNetworkConfigScreen()) {
+    LOG(WARNING) << "Showing network config screen";
+    return;
+  }
+
   if (success) {
     // Finish initialization after the callback returns.
     // So that the app finishes its installation.

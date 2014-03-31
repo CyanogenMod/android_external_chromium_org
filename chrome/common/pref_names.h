@@ -12,6 +12,7 @@
 #include "build/build_config.h"
 
 #include "components/autofill/core/common/autofill_pref_names.h"
+#include "components/signin/core/common/signin_pref_names.h"
 
 namespace prefs {
 
@@ -410,7 +411,6 @@ extern const char kPreferenceResetTime[];
 extern const char kProfileResetPromptMemento[];
 
 extern const char kGCMChannelEnabled[];
-extern const char kGCMRegisteredAppIDs[];
 
 extern const char kEasyUnlockEnabled[];
 extern const char kEasyUnlockShowTutorial[];
@@ -424,7 +424,6 @@ extern const char kSSLVersionMax[];
 extern const char kCipherSuiteBlacklist[];
 extern const char kEnableOriginBoundCerts[];
 extern const char kDisableSSLRecordSplitting[];
-extern const char kEnableUnrestrictedSSL3Fallback[];
 
 extern const char kGLVendorString[];
 extern const char kGLRendererString[];
@@ -436,8 +435,12 @@ extern const char kMetricsClientID[];
 extern const char kMetricsSessionID[];
 extern const char kMetricsLowEntropySource[];
 extern const char kMetricsPermutedEntropyCache[];
-extern const char kMetricsClientIDTimestamp[];
+extern const char kMetricsOldClientID[];
+extern const char kMetricsOldLowEntropySource[];
 extern const char kMetricsReportingEnabled[];
+extern const char kMetricsReportingEnabledTimestamp[];
+extern const char kMetricsMachineId[];
+extern const char kMetricsResetIds[];
 // Android has it's own metric / crash reporting implemented in Android
 // Java code so kMetricsReportingEnabled doesn't make sense. We use this
 // to inform crashes_ui that we have enabled crash reporting.
@@ -601,17 +604,13 @@ extern const char kDevToolsRemoteEnabled[];
 extern const char kSpdyProxyAuthEnabled[];
 extern const char kSpdyProxyAuthWasEnabledBefore[];
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
-extern const char kSigninAllowed[];
 
-extern const char kGoogleServicesLastUsername[];
-extern const char kGoogleServicesUserAccountId[];
-extern const char kGoogleServicesUsername[];
-extern const char kGoogleServicesUsernamePattern[];
 extern const char kGoogleServicesPasswordHash[];
 
 extern const char kInvalidatorClientId[];
 extern const char kInvalidatorInvalidationState[];
 extern const char kInvalidatorSavedInvalidations[];
+extern const char kInvalidationServiceUseGCMChannel[];
 
 extern const char kSignInPromoStartupCount[];
 extern const char kSignInPromoUserSkipped[];
@@ -701,6 +700,7 @@ extern const char kVideoCaptureAllowedUrls[];
 
 extern const char kHotwordSearchEnabled[];
 extern const char kHotwordOptInPopupTimesShown[];
+extern const char kHotwordAudioLoggingEnabled[];
 
 #if defined(OS_ANDROID)
 extern const char kProtectedMediaIdentifierEnabled[];
@@ -795,11 +795,13 @@ extern const char kHardwareAccelerationModePrevious[];
 extern const char kDevicePolicyRefreshRate[];
 
 extern const char kFactoryResetRequested[];
+extern const char kRollbackRequested[];
 
 extern const char kMessageCenterShowedFirstRunBalloon[];
 
 extern const char kRecoveryComponentVersion[];
 extern const char kComponentUpdaterState[];
+extern const char kAttemptedToEnableAutoupdate[];
 
 extern const char kMediaGalleriesUniqueId[];
 extern const char kMediaGalleriesRememberedGalleries[];

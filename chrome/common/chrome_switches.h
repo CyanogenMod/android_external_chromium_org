@@ -12,6 +12,7 @@
 #include "base/base_switches.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/password_manager/core/common/password_manager_switches.h"
+#include "components/signin/core/common/signin_switches.h"
 #include "content/public/common/content_switches.h"
 
 namespace switches {
@@ -57,7 +58,6 @@ extern const char kCertificateTransparencyLog[];
 extern const char kCheckForUpdateIntervalSec[];
 extern const char kCheckCloudPrintConnectorPolicy[];
 extern const char kCipherSuiteBlacklist[];
-extern const char kClearTokenService[];
 extern const char kCloudPrintFile[];
 extern const char kCloudPrintJobTitle[];
 extern const char kCloudPrintFileType[];
@@ -141,6 +141,7 @@ extern const char kEnableAppWindowControls[];
 extern const char kEnableAppsShowOnFirstPaint[];
 extern const char kEnableAsyncDns[];
 extern const char kEnableAuthNegotiatePort[];
+extern const char kEnableAutologin[];
 extern const char kEnableAutomationAPI[];
 extern const char kEnableBenchmarking[];
 extern const char kEnableClientHints[];
@@ -193,6 +194,7 @@ extern const char kEnableSdchOverHttps[];
 extern const char kEnableSearchButtonInOmniboxAlways[];
 extern const char kEnableSearchButtonInOmniboxForStr[];
 extern const char kEnableSearchButtonInOmniboxForStrOrIip[];
+extern const char kEnableSettingsWindow[];
 extern const char kEnableSpdy4a2[];
 extern const char kEnableSpellingAutoCorrect[];
 extern const char kEnableSpellingFeedbackFieldTrial[];
@@ -202,7 +204,6 @@ extern const char kEnableSyncArticles[];
 extern const char kEnableSyncSyncedNotifications[];
 extern const char kEnableThumbnailRetargeting[];
 extern const char kEnableTranslateNewUX[];
-extern const char kEnableUnrestrictedSSL3Fallback[];
 extern const char kEnableUserAlternateProtocolPorts[];
 extern const char kEnableWatchdog[];
 extern const char kEnableWebSocketOverSpdy[];
@@ -214,6 +215,7 @@ extern const char kExtensionsUpdateFrequency[];
 extern const char kExtraSearchQueryParams[];
 extern const char kFakeVariationsChannel[];
 extern const char kFastStart[];
+extern const char kFastUserSwitching[];
 extern const char kFlagSwitchesBegin[];
 extern const char kFlagSwitchesEnd[];
 extern const char kFeedbackServer[];
@@ -236,6 +238,7 @@ extern const char kHostResolverParallelism[];
 extern const char kHostResolverRetryAttempts[];
 extern const char kIgnoreUrlFetcherCertRequests[];
 extern const char kIncognito[];
+extern const char kInvalidationUseGCMChannel[];
 extern const char kInstallFromWebstore[];
 extern const char kInstantProcess[];
 extern const char kIpcFuzzerTestcase[];
@@ -255,7 +258,6 @@ extern const char kMemoryProfiling[];
 extern const char kMessageLoopHistogrammer[];
 extern const char kMetricsRecordingOnly[];
 extern const char kMultiProfiles[];
-extern const char kNativeMessagingHosts[];
 extern const char kNetLogLevel[];
 extern const char kNewProfileManagement[];
 extern const char kNoDefaultBrowserCheck[];
@@ -324,13 +326,13 @@ extern const char kSilentDebuggerExtensionAPI[];
 extern const char kSilentLaunch[];
 extern const char kSetToken[];
 extern const char kShowAppList[];
-extern const char kShowAppListStartPage[];
 extern const char kShowIcons[];
 extern const char kSigninProcess[];
 extern const char kSilentDumpOnDCHECK[];
 extern const char kSimulateUpgrade[];
 extern const char kSimulateCriticalUpdate[];
 extern const char kSimulateOutdated[];
+extern const char kSimulateOutdatedNoAU[];
 extern const char kSpdyProxyAuthFallback[];
 extern const char kSpdyProxyAuthOrigin[];
 extern const char kSpdyProxyAuthValue[];
@@ -395,6 +397,7 @@ extern const char kEnableZeroSuggestEtherSerp[];
 extern const char kEnableZeroSuggestEtherNoSerp[];
 extern const char kEnableZeroSuggestMostVisited[];
 extern const char kEnableZeroSuggestPersonalized[];
+extern const char kEnableInstantSearchClicks[];
 #endif
 
 #if defined(USE_ASH)
@@ -406,6 +409,7 @@ extern const char kPasswordStore[];
 #endif
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+extern const char kEnableSpeechDispatcher[];
 extern const char kMigrateDataDirForSxS[];
 #endif
 
@@ -417,7 +421,6 @@ extern const char kRelauncherProcess[];
 #endif
 
 #if defined(OS_WIN)
-extern const char kDebugPrint[];
 extern const char kEnableCloudPrintXps[];
 extern const char kEnableProfileShortcutManager[];
 extern const char kForceDesktop[];
@@ -427,6 +430,10 @@ extern const char kViewerConnect[];
 extern const char kViewerLaunchViaAppId[];
 extern const char kWaitForMutex[];
 extern const char kWindows8Search[];
+#endif
+
+#if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
+extern const char kDebugPrint[];
 #endif
 
 #ifndef NDEBUG

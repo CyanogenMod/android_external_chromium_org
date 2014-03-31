@@ -15,8 +15,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/services/gcm/default_gcm_app_handler.h"
-#include "chrome/browser/signin/signin_manager_base.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "components/signin/core/browser/signin_manager_base.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "google_apis/gcm/gcm_client.h"
@@ -135,15 +135,6 @@ class GCMProfileService : public KeyedService,
   class DelayedTaskController;
   class IOWorker;
 
-  struct RegistrationInfo {
-    RegistrationInfo();
-    ~RegistrationInfo();
-    bool IsValid() const;
-
-    std::vector<std::string> sender_ids;
-    std::string registration_id;
-  };
-
   typedef std::map<std::string, GCMAppHandler*> GCMAppHandlerMap;
 
   // Overridden from content::NotificationObserver:
@@ -160,9 +151,8 @@ class GCMProfileService : public KeyedService,
   // the profile was signed in.
   void EnsureLoaded();
 
-  // Remove cached or persisted data when GCM service is stopped.
+  // Remove cached data when GCM service is stopped.
   void RemoveCachedData();
-  void RemovePersistedData();
 
   // Checks out of GCM when the profile has been signed out. This will erase
   // all the cached and persisted data.
@@ -204,23 +194,7 @@ class GCMProfileService : public KeyedService,
   // Returns the handler for the given app.
   GCMAppHandler* GetAppHandler(const std::string& app_id);
 
-  // Used to persist the IDs of registered apps.
-  void ReadRegisteredAppIDs();
-  void WriteRegisteredAppIDs();
-
-  // Used to persist registration info into the app's state store.
-  void DeleteRegistrationInfo(const std::string& app_id);
-  void WriteRegistrationInfo(const std::string& app_id);
-  void ReadRegistrationInfo(const std::string& app_id);
-  void ReadRegistrationInfoFinished(const std::string& app_id,
-                                    scoped_ptr<base::Value> value);
-  bool ParsePersistedRegistrationInfo(scoped_ptr<base::Value> value,
-                                      RegistrationInfo* registration_info);
   void RequestGCMStatisticsFinished(GCMClient::GCMStatistics stats);
-
-  // Returns the key used to identify the registration info saved into the
-  // app's state store. Used for testing purpose.
-  static const char* GetPersistentRegisterKeyForTesting();
 
   // The profile which owns this object.
   Profile* profile_;
@@ -256,10 +230,6 @@ class GCMProfileService : public KeyedService,
 
   // Callback for RequestGCMStatistics.
   RequestGCMStatisticsCallback request_gcm_statistics_callback_;
-
-  // Map from app_id to registration info (sender ids & registration ID).
-  typedef std::map<std::string, RegistrationInfo> RegistrationInfoMap;
-  RegistrationInfoMap registration_info_map_;
 
   // Used to pass a weak pointer to the IO worker.
   base::WeakPtrFactory<GCMProfileService> weak_ptr_factory_;

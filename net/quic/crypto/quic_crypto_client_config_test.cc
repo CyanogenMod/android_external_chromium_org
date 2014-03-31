@@ -56,12 +56,51 @@ TEST(QuicCryptoClientConfigTest, InchoateChlo) {
   QuicCryptoClientConfig config;
   QuicCryptoNegotiatedParameters params;
   CryptoHandshakeMessage msg;
-  config.FillInchoateClientHello("www.google.com", QuicVersionMax(), &state,
+  QuicSessionKey server_key("www.google.com", 80, false, kPrivacyModeDisabled);
+  config.FillInchoateClientHello(server_key, QuicVersionMax(), &state,
                                  &params, &msg);
 
   QuicTag cver;
   EXPECT_EQ(QUIC_NO_ERROR, msg.GetUint32(kVER, &cver));
   EXPECT_EQ(QuicVersionToQuicTag(QuicVersionMax()), cver);
+}
+
+TEST(QuicCryptoClientConfigTest, PreferAesGcm) {
+  QuicCryptoClientConfig config;
+  config.SetDefaults();
+  if (config.aead.size() > 1)
+    EXPECT_NE(kAESG, config.aead[0]);
+  config.PreferAesGcm();
+  EXPECT_EQ(kAESG, config.aead[0]);
+}
+
+TEST(QuicCryptoClientConfigTest, InchoateChloSecure) {
+  QuicCryptoClientConfig::CachedState state;
+  QuicCryptoClientConfig config;
+  QuicCryptoNegotiatedParameters params;
+  CryptoHandshakeMessage msg;
+  QuicSessionKey server_key("www.google.com", 443, true, kPrivacyModeDisabled);
+  config.FillInchoateClientHello(server_key, QuicVersionMax(), &state,
+                                 &params, &msg);
+
+  QuicTag pdmd;
+  EXPECT_EQ(QUIC_NO_ERROR, msg.GetUint32(kPDMD, &pdmd));
+  EXPECT_EQ(kX509, pdmd);
+}
+
+TEST(QuicCryptoClientConfigTest, InchoateChloSecureNoEcdsa) {
+  QuicCryptoClientConfig::CachedState state;
+  QuicCryptoClientConfig config;
+  config.DisableEcdsa();
+  QuicCryptoNegotiatedParameters params;
+  CryptoHandshakeMessage msg;
+  QuicSessionKey server_key("www.google.com", 443, true, kPrivacyModeDisabled);
+  config.FillInchoateClientHello(server_key, QuicVersionMax(), &state,
+                                 &params, &msg);
+
+  QuicTag pdmd;
+  EXPECT_EQ(QUIC_NO_ERROR, msg.GetUint32(kPDMD, &pdmd));
+  EXPECT_EQ(kX59R, pdmd);
 }
 
 TEST(QuicCryptoClientConfigTest, ProcessServerDowngradeAttack) {
@@ -91,14 +130,15 @@ TEST(QuicCryptoClientConfigTest, ProcessServerDowngradeAttack) {
 
 TEST(QuicCryptoClientConfigTest, InitializeFrom) {
   QuicCryptoClientConfig config;
-  QuicSessionKey canonical_key1("www.google.com", 80, false);
+  QuicSessionKey canonical_key1("www.google.com", 80, false,
+                                kPrivacyModeDisabled);
   QuicCryptoClientConfig::CachedState* state =
       config.LookupOrCreate(canonical_key1);
   // TODO(rch): Populate other fields of |state|.
   state->set_source_address_token("TOKEN");
   state->SetProofValid();
 
-  QuicSessionKey other_key("mail.google.com", 80, false);
+  QuicSessionKey other_key("mail.google.com", 80, false, kPrivacyModeDisabled);
   config.InitializeFrom(other_key, canonical_key1, &config);
   QuicCryptoClientConfig::CachedState* other = config.LookupOrCreate(other_key);
 

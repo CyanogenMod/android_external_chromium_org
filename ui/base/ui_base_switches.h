@@ -13,7 +13,7 @@
 namespace switches {
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
-UI_BASE_EXPORT extern const char kEnableCoreAnimation[];
+UI_BASE_EXPORT extern const char kDisableCoreAnimation[];
 #endif
 
 UI_BASE_EXPORT extern const char kDisableDwmComposition[];
@@ -33,10 +33,6 @@ UI_BASE_EXPORT extern const char kTouchOptimizedUIEnabled[];
 
 #if defined(OS_ANDROID)
 UI_BASE_EXPORT extern const char kTabletUI[];
-#endif
-
-#if defined(USE_XI2_MT)
-UI_BASE_EXPORT extern const char kTouchCalibration[];
 #endif
 
 }  // namespace switches

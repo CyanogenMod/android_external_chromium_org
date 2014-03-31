@@ -20,6 +20,7 @@ this.PAGE_SIZE = 4096;
 this.mapsData_ = null;
 this.mapsTable_ = null;
 this.mapsFilter_ = null;
+this.shouldUpdateProfileAfterDump_ = false;
 
 this.onDomReady_ = function() {
   $('#mm-lookup-addr').on('change', this.lookupAddress.bind(this));
@@ -34,22 +35,32 @@ this.onDomReady_ = function() {
   $('#mm-table').on('dblclick', this.onMmapTableDblClick_.bind(this));
 };
 
-this.dumpMmaps = function(targetProcUri) {
+this.dumpMmaps = function(targetProcUri, updateProfile) {
   if (!targetProcUri)
     return;
+  this.shouldUpdateProfileAfterDump_ = !!updateProfile;
   webservice.ajaxRequest('/dump/mmap/' + targetProcUri,
                          this.onDumpAjaxResponse_.bind(this));
   rootUi.showDialog('Dumping memory maps for ' + targetProcUri + '...');
 };
 
+this.dumpMmapsFromStorage = function(archiveName, snapshot) {
+  webservice.ajaxRequest('/storage/' + archiveName + '/' + snapshot + '/mmaps',
+                         this.onDumpAjaxResponse_.bind(this));
+  rootUi.showDialog('Loading memory maps from archive ...');
+};
+
 this.onDumpAjaxResponse_ = function(data) {
   $('#mm-filter-file').val('');
   $('#mm-filter-prot').val('');
-  this.mapsData_ = new google.visualization.DataTable(data);
+  this.mapsData_ = new google.visualization.DataTable(data.table);
   this.mapsFilter_ = new google.visualization.DataView(this.mapsData_);
   this.mapsFilter_.setColumns(this.SHOW_COLUMNS);
   this.applyMapsTableFilters_();
   rootUi.hideDialog();
+  if (this.shouldUpdateProfileAfterDump_)
+    profiler.profileCachedMmapDump(data.id);
+  shouldUpdateProfileAfterDump_ = false;
 };
 
 this.applyMapsTableFilters_ = function() {

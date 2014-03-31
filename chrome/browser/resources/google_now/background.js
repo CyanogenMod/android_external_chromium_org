@@ -52,6 +52,19 @@ var MINIMUM_POLLING_PERIOD_SECONDS = 5 * 60;  // 5 minutes
 var MAXIMUM_POLLING_PERIOD_SECONDS = 60 * 60;  // 1 hour
 
 /**
+ * Initial period for polling for Google Now optin notification after push
+ * messaging indicates Google Now is enabled.
+ */
+var INITIAL_OPTIN_POLLING_PERIOD_SECONDS = 60;  // 1 minute
+
+/**
+ * Maximum period for polling for Google Now optin notification after push
+ * messaging indicates Google Now is enabled. It is expected that the alarm
+ * will be stopped after this.
+ */
+var MAXIMUM_OPTIN_POLLING_PERIOD_SECONDS = 16 * 60;  // 16 minutes
+
+/**
  * Initial period for retrying the server request for dismissing cards.
  */
 var INITIAL_RETRY_DISMISS_PERIOD_SECONDS = 60;  // 1 minute
@@ -202,6 +215,11 @@ var updateCardsAttempts = buildAttemptManager(
     requestCards,
     INITIAL_POLLING_PERIOD_SECONDS,
     MAXIMUM_POLLING_PERIOD_SECONDS);
+var optInCheckAttempts = buildAttemptManager(
+    'optin',
+    pollOptedIn,
+    INITIAL_OPTIN_POLLING_PERIOD_SECONDS,
+    MAXIMUM_OPTIN_POLLING_PERIOD_SECONDS);
 var dismissalAttempts = buildAttemptManager(
     'dismiss',
     retryPendingDismissals,
@@ -227,7 +245,10 @@ var GoogleNowEvent = {
   DELETED_SHOW_WELCOME_TOAST: 8,
   STOPPED: 9,
   DELETED_USER_SUPPRESSED: 10,
-  EVENTS_TOTAL: 11  // EVENTS_TOTAL is not an event; all new events need to be
+  SIGNED_OUT: 11,
+  NOTIFICATION_DISABLED: 12,
+  GOOGLE_NOW_DISABLED: 13,
+  EVENTS_TOTAL: 14  // EVENTS_TOTAL is not an event; all new events need to be
                     // added before it.
 };
 
@@ -245,6 +266,29 @@ function recordEvent(event) {
   };
 
   chrome.metricsPrivate.recordValue(metricDescription, event);
+}
+
+/**
+ * Records a notification clicked event.
+ * @param {number|undefined} cardTypeId Card type ID.
+ */
+function recordNotificationClick(cardTypeId) {
+  if (cardTypeId !== undefined) {
+    chrome.metricsPrivate.recordSparseValue(
+        'GoogleNow.Card.Clicked', cardTypeId);
+  }
+}
+
+/**
+ * Records a button clicked event.
+ * @param {number|undefined} cardTypeId Card type ID.
+ * @param {number} buttonIndex Button Index
+ */
+function recordButtonClick(cardTypeId, buttonIndex) {
+  if (cardTypeId !== undefined) {
+    chrome.metricsPrivate.recordSparseValue(
+        'GoogleNow.Card.Button.Clicked' + buttonIndex, cardTypeId);
+  }
 }
 
 /**
@@ -800,9 +844,9 @@ function openUrl(url) {
  * Opens URL corresponding to the clicked part of the notification.
  * @param {ChromeNotificationId} chromeNotificationId chrome.notifications ID of
  *     the card.
- * @param {function((ActionUrls|undefined)): (string|undefined)} selector
- *     Function that extracts the url for the clicked area from the button
- *     action URLs info.
+ * @param {function(NotificationDataEntry): (string|undefined)} selector
+ *     Function that extracts the url for the clicked area from the
+ *     notification data entry.
  */
 function onNotificationClicked(chromeNotificationId, selector) {
   fillFromChromeLocalStorage({
@@ -810,11 +854,11 @@ function onNotificationClicked(chromeNotificationId, selector) {
     notificationsData: {}
   }).then(function(items) {
     /** @type {(NotificationDataEntry|undefined)} */
-    var notificationData = items.notificationsData[chromeNotificationId];
-    if (!notificationData)
+    var notificationDataEntry = items.notificationsData[chromeNotificationId];
+    if (!notificationDataEntry)
       return;
 
-    var url = selector(notificationData.actionUrls);
+    var url = selector(notificationDataEntry);
     if (!url)
       return;
 
@@ -953,6 +997,24 @@ function setBackgroundEnable(backgroundEnable) {
 }
 
 /**
+ * Record why this extension would not poll for cards.
+ * @param {boolean} signedIn true if the user is signed in.
+ * @param {boolean} notificationEnabled true if
+ *     Google Now for Chrome is allowed to show notifications.
+ * @param {boolean} googleNowEnabled true if
+ *     the Google Now is enabled for the user.
+ */
+function recordEventIfNoCards(signedIn, notificationEnabled, googleNowEnabled) {
+  if (!signedIn) {
+    recordEvent(GoogleNowEvent.SIGNED_OUT);
+  } else if (!notificationEnabled) {
+    recordEvent(GoogleNowEvent.NOTIFICATION_DISABLED);
+  } else if (!googleNowEnabled) {
+    recordEvent(GoogleNowEvent.GOOGLE_NOW_DISABLED);
+  }
+}
+
+/**
  * Does the actual work of deciding what Google Now should do
  * based off of the current state of Chrome.
  * @param {boolean} signedIn true if the user is signed in.
@@ -985,6 +1047,8 @@ function updateRunningState(
   } else {
     recordEvent(GoogleNowEvent.STOPPED);
   }
+
+  recordEventIfNoCards(signedIn, notificationEnabled, googleNowEnabled);
 
   console.log(
       'Requested Actions shouldSetBackground=' + shouldSetBackground + ' ' +
@@ -1050,6 +1114,48 @@ function isGoogleNowEnabled() {
       });
 }
 
+/**
+ * Polls the optin state.
+ * Sometimes we get the response to the opted in result too soon during
+ * push messaging. We'll recheck the optin state a few times before giving up.
+ */
+function pollOptedIn() {
+  /**
+   * Cleans up any state used to recheck the opt-in poll.
+   */
+  function clearPollingState() {
+    localStorage.removeItem('optedInCheckCount');
+    optInCheckAttempts.stop();
+  }
+
+  /**
+   * Performs the actual work for checking the opt-in state and requesting cards
+   * on opted-in.
+   */
+  function checkOptedIn() {
+    // Limit retries to 5.
+    if (localStorage.optedInCheckCount < 5) {
+      console.log(new Date() +
+          ' checkOptedIn Attempt ' + localStorage.optedInCheckCount);
+      localStorage.optedInCheckCount++;
+      requestOptedIn(function() {
+        clearPollingState();
+        requestCards();
+      });
+    } else {
+      clearPollingState();
+    }
+  }
+
+  if (localStorage.optedInCheckCount === undefined) {
+    localStorage.optedInCheckCount = 0;
+    optInCheckAttempts.start();
+    checkOptedIn();
+  } else {
+    optInCheckAttempts.planForNext(checkOptedIn);
+  }
+}
+
 instrumented.runtime.onInstalled.addListener(function(details) {
   console.log('onInstalled ' + JSON.stringify(details));
   if (details.reason != 'chrome_update') {
@@ -1087,21 +1193,33 @@ authenticationManager.addListener(function() {
 instrumented.notifications.onClicked.addListener(
     function(chromeNotificationId) {
       chrome.metricsPrivate.recordUserAction('GoogleNow.MessageClicked');
-      onNotificationClicked(chromeNotificationId, function(actionUrls) {
-        return actionUrls && actionUrls.messageUrl;
-      });
-    });
+      onNotificationClicked(chromeNotificationId,
+          function(notificationDataEntry) {
+            var actionUrls = notificationDataEntry.actionUrls;
+            var url = actionUrls && actionUrls.messageUrl;
+            if (url) {
+              recordNotificationClick(notificationDataEntry.cardTypeId);
+            }
+            return url;
+          });
+        });
 
 instrumented.notifications.onButtonClicked.addListener(
     function(chromeNotificationId, buttonIndex) {
       chrome.metricsPrivate.recordUserAction(
           'GoogleNow.ButtonClicked' + buttonIndex);
-      onNotificationClicked(chromeNotificationId, function(actionUrls) {
-        var url = actionUrls.buttonUrls[buttonIndex];
-        verify(url !== undefined, 'onButtonClicked: no url for a button');
-        return url;
-      });
-    });
+      onNotificationClicked(chromeNotificationId,
+          function(notificationDataEntry) {
+            var actionUrls = notificationDataEntry.actionUrls;
+            var url = actionUrls.buttonUrls[buttonIndex];
+            if (url) {
+              recordButtonClick(notificationDataEntry.cardTypeId, buttonIndex);
+            } else {
+              verify(false, 'onButtonClicked: no url for a button');
+            }
+            return url;
+          });
+        });
 
 instrumented.notifications.onClosed.addListener(onNotificationClosed);
 
@@ -1144,7 +1262,7 @@ instrumented.pushMessaging.onMessage.addListener(function(message) {
             notificationGroups: items.notificationGroups
           });
 
-          requestCards();
+          pollOptedIn();
         }
       });
     });

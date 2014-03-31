@@ -24,14 +24,14 @@
 #include "chrome/browser/printing/cloud_print/cloud_print_url.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager_base.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "components/signin/core/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager_base.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui.h"
@@ -42,8 +42,7 @@
 #include "net/http/http_status_code.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if defined(ENABLE_FULL_PRINTING) && !defined(OS_CHROMEOS) && \
-  !defined(OS_MACOSX)
+#if defined(ENABLE_FULL_PRINTING) && !defined(OS_CHROMEOS)
 #define CLOUD_PRINT_CONNECTOR_UI_AVAILABLE
 #endif
 
@@ -64,12 +63,12 @@ LocalDiscoveryUIHandler::LocalDiscoveryUIHandler() : is_visible_(false) {
   cloud_print_connector_ui_enabled_ =
       CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableCloudPrintProxy);
-#elif !defined(OS_CHROMEOS)
+#else
   // Always enabled for Linux and Google Chrome Windows builds.
   // Never enabled for Chrome OS, we don't even need to indicate it.
   cloud_print_connector_ui_enabled_ = true;
 #endif
-#endif  // !defined(OS_MACOSX)
+#endif  // defined(CLOUD_PRINT_CONNECTOR_UI_AVAILABLE)
 }
 
 LocalDiscoveryUIHandler::~LocalDiscoveryUIHandler() {

@@ -54,6 +54,16 @@ class BaseSearchProvider : public AutocompleteProvider,
   // Returns whether |match| is flagged as a query that should be prefetched.
   static bool ShouldPrefetch(const AutocompleteMatch& match);
 
+  // Returns a simpler AutocompleteMatch suitable for persistence like in
+  // ShortcutsDatabase.
+  // NOTE: Use with care. Most likely you want the other CreateSearchSuggestion
+  // with protected access.
+  static AutocompleteMatch CreateSearchSuggestion(
+      const base::string16& suggestion,
+      AutocompleteMatchType::Type type,
+      bool from_keyword_provider,
+      const TemplateURL* template_url);
+
   // AutocompleteProvider:
   virtual void Stop(bool clear_cached_results) OVERRIDE;
   virtual void DeleteMatch(const AutocompleteMatch& match) OVERRIDE;
@@ -196,6 +206,7 @@ class BaseSearchProvider : public AutocompleteProvider,
     // The contents to be displayed as prefix of match contents.
     // Used for postfix suggestions to display a leading ellipsis (or some
     // equivalent character) to indicate omitted text.
+    // Only used to pass this information to about:omnibox's "Additional Info".
     base::string16 match_contents_prefix_;
 
     // Optional annotation for the |match_contents_| for disambiguation.

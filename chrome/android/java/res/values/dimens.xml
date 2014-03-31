@@ -9,9 +9,8 @@
     <dimen name="certificate_viewer_padding">20dp</dimen>
 
     <!-- Custom Menu dimensions -->
-    <dimen name="menu_item_divider_width">1px</dimen>
     <dimen name="menu_width">257dp</dimen>
-    <dimen name="menu_vertical_offset">0px</dimen>
+    <dimen name="menu_vertical_offset">0dp</dimen>
     <!-- The amount to fade the edges of the menu to indicate more content is available
          via scrolling. -->
     <dimen name="menu_vertical_fade_distance">15dp</dimen>
@@ -51,6 +50,8 @@
     <dimen name="app_banner_button_margin_start">8dp</dimen>
     <dimen name="app_banner_button_padding_sides">12dp</dimen>
     <dimen name="app_banner_button_padding_above_below">0dp</dimen>
+
+    <dimen name="app_banner_close_button_padding">12dp</dimen>
 
     <dimen name="app_banner_icon_size">80dp</dimen>
     <dimen name="app_banner_icon_margin_end">8dp</dimen>

@@ -37,7 +37,6 @@
 #include "extensions/common/one_shot_event.h"
 
 class ExtensionErrorUI;
-class ExtensionToolbarModel;
 class GURL;
 class Profile;
 
@@ -54,6 +53,7 @@ class CrxInstaller;
 class ExtensionActionStorageManager;
 class ExtensionRegistry;
 class ExtensionSystem;
+class ExtensionToolbarModel;
 class ExtensionUpdater;
 class PendingExtensionManager;
 class RendererStartupHelper;
@@ -98,8 +98,6 @@ class ExtensionServiceInterface
   virtual void FinishDelayedInstallation(const std::string& extension_id) = 0;
 
   virtual bool IsExtensionEnabled(const std::string& extension_id) const = 0;
-  virtual bool IsExternalExtensionUninstalled(
-      const std::string& extension_id) const = 0;
 
   virtual void CheckManagementPolicy() = 0;
 
@@ -182,19 +180,6 @@ class ExtensionService
   // Initialize and start all installed extensions.
   void Init();
 
-  // See if we need to bootstrap the install verifier.
-  void MaybeBootstrapVerifier();
-
-  // Attempts to verify all extensions using the InstallVerifier. The
-  // |bootstrap| parameter indicates whether we're doing this because the
-  // InstallVerifier needed to be bootstrapped (otherwise it's for another
-  // reason, e.g. extension install/uninstall).
-  void VerifyAllExtensions(bool bootstrap);
-
-  // Once the verifier work is finished, we may want to re-check management
-  // policy if |success| indicates the verifier got a new signature back.
-  void FinishVerifyAllExtensions(bool bootstrap, bool success);
-
   // Called when the associated Profile is going to be destroyed.
   void Shutdown();
 
@@ -202,12 +187,6 @@ class ExtensionService
   // extensions.
   virtual const extensions::Extension* GetExtensionById(
       const std::string& id, bool include_disabled) const OVERRIDE;
-
-  // Looks up a terminated (crashed) extension by ID.
-  // DEPRECATED: Replace with:
-  // ExtensionRegistry::GetExtensionById(id, ExtensionRegistry::TERMINATED).
-  const extensions::Extension*
-      GetTerminatedExtension(const std::string& id) const;
 
   // Looks up an extension by ID, regardless of whether it's enabled,
   // disabled, blacklisted, or terminated.
@@ -247,8 +226,6 @@ class ExtensionService
                                   base::string16* error);
 
   virtual bool IsExtensionEnabled(
-      const std::string& extension_id) const OVERRIDE;
-  virtual bool IsExternalExtensionUninstalled(
       const std::string& extension_id) const OVERRIDE;
 
   // Enables the extension.  If the extension is already enabled, does
@@ -452,6 +429,7 @@ class ExtensionService
 
   virtual bool OnExternalExtensionUpdateUrlFound(
       const std::string& id,
+      const std::string& install_parameter,
       const GURL& update_url,
       extensions::Manifest::Location location,
       int creation_flags,
@@ -507,12 +485,6 @@ class ExtensionService
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
-
-  // Whether there are any apps installed. Component apps are not included.
-  bool HasApps() const;
-
-  // Gets the set of loaded app ids. Component apps are not included.
-  extensions::ExtensionIdSet GetAppIds() const;
 
   // Record a histogram using the PermissionMessage enum values for each
   // permission in |e|.
@@ -589,11 +561,11 @@ class ExtensionService
   // the extension is installed, e.g., to update event handlers on background
   // pages; and perform other extension install tasks before calling
   // AddExtension.
-  void AddNewOrUpdatedExtension(
-      const extensions::Extension* extension,
-      extensions::Extension::State initial_state,
-      extensions::BlacklistState blacklist_state,
-      const syncer::StringOrdinal& page_ordinal);
+  void AddNewOrUpdatedExtension(const extensions::Extension* extension,
+                                extensions::Extension::State initial_state,
+                                extensions::BlacklistState blacklist_state,
+                                const syncer::StringOrdinal& page_ordinal,
+                                const std::string& install_parameter);
 
   // Handles sending notification that |extension| was loaded.
   void NotifyExtensionLoaded(const extensions::Extension* extension);

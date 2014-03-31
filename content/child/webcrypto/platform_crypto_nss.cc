@@ -6,6 +6,7 @@
 
 #include <cryptohi.h>
 #include <pk11pub.h>
+#include <secerr.h>
 #include <sechash.h>
 
 #include <vector>
@@ -24,6 +25,7 @@
 
 #if defined(USE_NSS)
 #include <dlfcn.h>
+#include <secoid.h>
 #endif
 
 // At the time of this writing:
@@ -413,22 +415,20 @@ bool CreatePublicKeyAlgorithm(const blink::WebCryptoAlgorithm& algorithm,
   switch (algorithm.paramsType()) {
     case blink::WebCryptoAlgorithmParamsTypeRsaHashedImportParams:
     case blink::WebCryptoAlgorithmParamsTypeRsaHashedKeyGenParams:
-      *key_algorithm = blink::WebCryptoKeyAlgorithm::adoptParamsAndCreate(
+      *key_algorithm = blink::WebCryptoKeyAlgorithm::createRsaHashed(
           algorithm.id(),
-          new blink::WebCryptoRsaHashedKeyAlgorithmParams(
-              modulus_length_bits,
-              public_exponent.bytes(),
-              public_exponent.byte_length(),
-              GetInnerHashAlgorithm(algorithm)));
+          modulus_length_bits,
+          public_exponent.bytes(),
+          public_exponent.byte_length(),
+          GetInnerHashAlgorithm(algorithm).id());
       return true;
     case blink::WebCryptoAlgorithmParamsTypeRsaKeyGenParams:
     case blink::WebCryptoAlgorithmParamsTypeNone:
-      *key_algorithm = blink::WebCryptoKeyAlgorithm::adoptParamsAndCreate(
+      *key_algorithm = blink::WebCryptoKeyAlgorithm::createRsa(
           algorithm.id(),
-          new blink::WebCryptoRsaKeyAlgorithmParams(
-              modulus_length_bits,
-              public_exponent.bytes(),
-              public_exponent.byte_length()));
+          modulus_length_bits,
+          public_exponent.bytes(),
+          public_exponent.byte_length());
       return true;
     default:
       return false;
@@ -506,6 +506,13 @@ Status DoUnwrapSymKeyAesKw(const CryptoData& wrapped_key_data,
   // The plaintext length is always 64 bits less than the data size.
   const unsigned int plaintext_length = wrapped_key_data.byte_length() - 8;
 
+#if defined(USE_NSS)
+  // Part of workaround for
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=981170. See the explanation
+  // later in this function.
+  PORT_SetError(0);
+#endif
+
   crypto::ScopedPK11SymKey new_key(PK11_UnwrapSymKey(wrapping_key->key(),
                                                      CKM_NSS_AES_KEY_WRAP,
                                                      param_item.get(),
@@ -519,38 +526,140 @@ Status DoUnwrapSymKeyAesKw(const CryptoData& wrapped_key_data,
   if (!new_key)
     return Status::Error();
 
-// TODO(padolph): Change to "defined(USE_NSS)" once the NSS fix for
-// https://bugzilla.mozilla.org/show_bug.cgi?id=981170 rolls into chromium.
-#if 1
-  // ------- Start NSS bug workaround
-  // Workaround for https://code.google.com/p/chromium/issues/detail?id=349939
-  // If unwrap fails, NSS nevertheless returns a valid-looking PK11SymKey, with
-  // a reasonable length but with key data pointing to uninitialized memory.
-  // This workaround re-wraps the key and compares the result with the incoming
-  // data, and fails if there is a difference. This prevents returning a bad key
-  // to the caller.
-  const unsigned int output_length = wrapped_key_data.byte_length();
-  std::vector<unsigned char> buffer(output_length, 0);
-  SECItem wrapped_key_item = MakeSECItemForBuffer(CryptoData(buffer));
-  if (SECSuccess != PK11_WrapSymKey(CKM_NSS_AES_KEY_WRAP,
-                                    param_item.get(),
-                                    wrapping_key->key(),
-                                    new_key.get(),
-                                    &wrapped_key_item)) {
+#if defined(USE_NSS)
+  // Workaround for https://bugzilla.mozilla.org/show_bug.cgi?id=981170
+  // which was fixed in NSS 3.16.0.
+  // If unwrap fails, NSS nevertheless returns a valid-looking PK11SymKey,
+  // with a reasonable length but with key data pointing to uninitialized
+  // memory.
+  // To understand this workaround see the fix for 981170:
+  // https://hg.mozilla.org/projects/nss/rev/753bb69e543c
+  if (!NSS_VersionCheck("3.16") && PORT_GetError() == SEC_ERROR_BAD_DATA)
     return Status::Error();
-  }
-  if (wrapped_key_item.len != wrapped_key_data.byte_length() ||
-      memcmp(wrapped_key_item.data,
-             wrapped_key_data.bytes(),
-             wrapped_key_item.len) != 0) {
-    return Status::Error();
-  }
-// ------- End NSS bug workaround
 #endif
 
   *unwrapped_key = new_key.Pass();
   return Status::Success();
 }
+
+void CopySECItemToVector(const SECItem& item, std::vector<uint8>* out) {
+  out->assign(item.data, item.data + item.len);
+}
+
+// The system NSS library doesn't have the new PK11_ExportDERPrivateKeyInfo
+// function yet (https://bugzilla.mozilla.org/show_bug.cgi?id=519255). So we
+// provide a fallback implementation.
+#if defined(USE_NSS)
+// From PKCS#1 [http://tools.ietf.org/html/rfc3447]:
+//
+//    RSAPrivateKey ::= SEQUENCE {
+//      version           Version,
+//      modulus           INTEGER,  -- n
+//      publicExponent    INTEGER,  -- e
+//      privateExponent   INTEGER,  -- d
+//      prime1            INTEGER,  -- p
+//      prime2            INTEGER,  -- q
+//      exponent1         INTEGER,  -- d mod (p-1)
+//      exponent2         INTEGER,  -- d mod (q-1)
+//      coefficient       INTEGER,  -- (inverse of q) mod p
+//      otherPrimeInfos   OtherPrimeInfos OPTIONAL
+//    }
+//
+// Note that otherPrimeInfos is only applicable for version=1. Since NSS
+// doesn't use multi-prime can safely use version=0.
+struct RSAPrivateKey {
+  SECItem version;
+  SECItem modulus;
+  SECItem public_exponent;
+  SECItem private_exponent;
+  SECItem prime1;
+  SECItem prime2;
+  SECItem exponent1;
+  SECItem exponent2;
+  SECItem coefficient;
+};
+
+const SEC_ASN1Template RSAPrivateKeyTemplate[] = {
+    {SEC_ASN1_SEQUENCE, 0, NULL, sizeof(RSAPrivateKey)},
+    {SEC_ASN1_INTEGER, offsetof(RSAPrivateKey, version)},
+    {SEC_ASN1_INTEGER, offsetof(RSAPrivateKey, modulus)},
+    {SEC_ASN1_INTEGER, offsetof(RSAPrivateKey, public_exponent)},
+    {SEC_ASN1_INTEGER, offsetof(RSAPrivateKey, private_exponent)},
+    {SEC_ASN1_INTEGER, offsetof(RSAPrivateKey, prime1)},
+    {SEC_ASN1_INTEGER, offsetof(RSAPrivateKey, prime2)},
+    {SEC_ASN1_INTEGER, offsetof(RSAPrivateKey, exponent1)},
+    {SEC_ASN1_INTEGER, offsetof(RSAPrivateKey, exponent2)},
+    {SEC_ASN1_INTEGER, offsetof(RSAPrivateKey, coefficient)},
+    {0}};
+
+// On success |value| will be filled with data which must be freed by
+// SECITEM_FreeItem(value, PR_FALSE);
+bool ReadUint(SECKEYPrivateKey* key,
+              CK_ATTRIBUTE_TYPE attribute,
+              SECItem* value) {
+  SECStatus rv = PK11_ReadRawAttribute(PK11_TypePrivKey, key, attribute, value);
+
+  // PK11_ReadRawAttribute() returns items of type siBuffer. However in order
+  // for the ASN.1 encoding to be correct, the items must be of type
+  // siUnsignedInteger.
+  value->type = siUnsignedInteger;
+
+  return rv == SECSuccess;
+}
+
+// Fills |out| with the RSA private key properties. Returns true on success.
+// Regardless of the return value, the caller must invoke FreeRSAPrivateKey()
+// to free up any allocated memory.
+//
+// The passed in RSAPrivateKey must be zero-initialized.
+bool InitRSAPrivateKey(SECKEYPrivateKey* key, RSAPrivateKey* out) {
+  if (key->keyType != rsaKey)
+    return false;
+
+  // Everything should be zero-ed out. These are just some spot checks.
+  DCHECK(!out->version.data);
+  DCHECK(!out->version.len);
+  DCHECK(!out->modulus.data);
+  DCHECK(!out->modulus.len);
+
+  // Always use version=0 since not using multi-prime.
+  if (!SEC_ASN1EncodeInteger(NULL, &out->version, 0))
+    return false;
+
+  if (!ReadUint(key, CKA_MODULUS, &out->modulus))
+    return false;
+  if (!ReadUint(key, CKA_PUBLIC_EXPONENT, &out->public_exponent))
+    return false;
+  if (!ReadUint(key, CKA_PRIVATE_EXPONENT, &out->private_exponent))
+    return false;
+  if (!ReadUint(key, CKA_PRIME_1, &out->prime1))
+    return false;
+  if (!ReadUint(key, CKA_PRIME_2, &out->prime2))
+    return false;
+  if (!ReadUint(key, CKA_EXPONENT_1, &out->exponent1))
+    return false;
+  if (!ReadUint(key, CKA_EXPONENT_2, &out->exponent2))
+    return false;
+  if (!ReadUint(key, CKA_COEFFICIENT, &out->coefficient))
+    return false;
+
+  return true;
+}
+
+struct FreeRsaPrivateKey {
+  void operator()(RSAPrivateKey* out) {
+    SECITEM_FreeItem(&out->version, PR_FALSE);
+    SECITEM_FreeItem(&out->modulus, PR_FALSE);
+    SECITEM_FreeItem(&out->public_exponent, PR_FALSE);
+    SECITEM_FreeItem(&out->private_exponent, PR_FALSE);
+    SECITEM_FreeItem(&out->prime1, PR_FALSE);
+    SECITEM_FreeItem(&out->prime2, PR_FALSE);
+    SECITEM_FreeItem(&out->exponent1, PR_FALSE);
+    SECITEM_FreeItem(&out->exponent2, PR_FALSE);
+    SECITEM_FreeItem(&out->coefficient, PR_FALSE);
+  }
+};
+#endif  // defined(USE_NSS)
 
 }  // namespace
 
@@ -692,6 +801,77 @@ Status ExportKeySpki(PublicKey* key, blink::WebArrayBuffer* buffer) {
 
   *buffer = CreateArrayBuffer(spki_der->data, spki_der->len);
 
+  return Status::Success();
+}
+
+Status ExportRsaPublicKey(PublicKey* key,
+                          std::vector<uint8>* modulus,
+                          std::vector<uint8>* public_exponent) {
+  DCHECK(key);
+  DCHECK(key->key());
+  if (key->key()->keyType != rsaKey)
+    return Status::ErrorUnsupported();
+  CopySECItemToVector(key->key()->u.rsa.modulus, modulus);
+  CopySECItemToVector(key->key()->u.rsa.publicExponent, public_exponent);
+  if (modulus->empty() || public_exponent->empty())
+    return Status::ErrorUnexpected();
+  return Status::Success();
+}
+
+Status ExportKeyPkcs8(PrivateKey* key,
+                      const blink::WebCryptoKeyAlgorithm& key_algorithm,
+                      blink::WebArrayBuffer* buffer) {
+  // TODO(eroman): Support other RSA key types as they are added to Blink.
+  if (key_algorithm.id() != blink::WebCryptoAlgorithmIdRsaEsPkcs1v1_5 &&
+      key_algorithm.id() != blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5)
+    return Status::ErrorUnsupported();
+
+#if defined(USE_NSS)
+  // PK11_ExportDERPrivateKeyInfo isn't available. Use our fallback code.
+  const SECOidTag algorithm = SEC_OID_PKCS1_RSA_ENCRYPTION;
+  const int kPrivateKeyInfoVersion = 0;
+
+  SECKEYPrivateKeyInfo private_key_info = {};
+  RSAPrivateKey rsa_private_key = {};
+  scoped_ptr<RSAPrivateKey, FreeRsaPrivateKey> free_private_key(
+      &rsa_private_key);
+
+  if (!InitRSAPrivateKey(key->key(), &rsa_private_key))
+    return Status::Error();
+
+  crypto::ScopedPLArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
+  if (!arena.get())
+    return Status::Error();
+
+  if (!SEC_ASN1EncodeItem(arena.get(),
+                          &private_key_info.privateKey,
+                          &rsa_private_key,
+                          RSAPrivateKeyTemplate))
+    return Status::Error();
+
+  if (SECSuccess !=
+      SECOID_SetAlgorithmID(
+          arena.get(), &private_key_info.algorithm, algorithm, NULL))
+    return Status::Error();
+
+  if (!SEC_ASN1EncodeInteger(
+          arena.get(), &private_key_info.version, kPrivateKeyInfoVersion))
+    return Status::Error();
+
+  crypto::ScopedSECItem encoded_key(
+      SEC_ASN1EncodeItem(NULL,
+                         NULL,
+                         &private_key_info,
+                         SEC_ASN1_GET(SECKEY_PrivateKeyInfoTemplate)));
+#else  // defined(USE_NSS)
+  crypto::ScopedSECItem encoded_key(
+      PK11_ExportDERPrivateKeyInfo(key->key(), NULL));
+#endif  // defined(USE_NSS)
+
+  if (!encoded_key.get())
+    return Status::Error();
+
+  *buffer = CreateArrayBuffer(encoded_key->data, encoded_key->len);
   return Status::Success();
 }
 
@@ -984,7 +1164,11 @@ Status GenerateRsaKeyPair(const blink::WebCryptoAlgorithm& algorithm,
   }
   const CK_FLAGS operation_flags_mask =
       CKF_ENCRYPT | CKF_DECRYPT | CKF_SIGN | CKF_VERIFY | CKF_WRAP | CKF_UNWRAP;
-  const PK11AttrFlags attribute_flags = 0;  // Default all PK11_ATTR_ flags.
+
+  // The private key must be marked as insensitive and extractable, otherwise it
+  // cannot later be exported in unencrypted form or structured-cloned.
+  const PK11AttrFlags attribute_flags =
+      PK11_ATTR_INSENSITIVE | PK11_ATTR_EXTRACTABLE;
 
   // Note: NSS does not generate an sec_public_key if the call below fails,
   // so there is no danger of a leaked sec_public_key.

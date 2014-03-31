@@ -6,9 +6,7 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/logging.h"
-#include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/cursor_client.h"
-#include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
@@ -16,6 +14,8 @@
 #include "ui/aura/window_tracker.h"
 #include "ui/base/hit_test.h"
 #include "ui/events/event.h"
+#include "ui/wm/public/activation_client.h"
+#include "ui/wm/public/drag_drop_client.h"
 
 #if defined(OS_CHROMEOS) && defined(USE_X11)
 #include "ui/events/x/touch_factory_x11.h"
@@ -291,17 +291,6 @@ void CompoundEventFilter::OnGestureEvent(ui::GestureEvent* event) {
     while (!event->stopped_propagation() && (handler = it.GetNext()) != NULL)
       handler->OnGestureEvent(event);
   }
-
-#if defined(OS_WIN)
-  // A Win8 edge swipe event is a special event that does not have location
-  // information associated with it, and is not preceeded by an ET_TOUCH_PRESSED
-  // event.  So we treat it specially here.
-  if (!event->handled() && event->type() == ui::ET_GESTURE_WIN8_EDGE_SWIPE &&
-      !aura::Env::GetInstance()->IsMouseButtonDown()) {
-    SetMouseEventsEnableStateOnEvent(
-        static_cast<aura::Window*>(event->target()), event, false);
-  }
-#endif
 }
 
 }  // namespace wm

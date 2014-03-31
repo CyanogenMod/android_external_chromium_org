@@ -40,7 +40,7 @@
 #include "rule.h"
 #include "ruleset.h"
 #include "util/stl_util.h"
-#include "util/string_compare.h"
+#include "util/string_util.h"
 
 namespace i18n {
 namespace addressinput {
@@ -271,9 +271,16 @@ class AddressValidatorImpl : public AddressValidator {
 
     assert(ruleset_it->second != NULL);
 
-    // Initialize the prefix search index lazily.
-    if (!ruleset_it->second->prefix_search_index_ready()) {
-      ruleset_it->second->BuildPrefixSearchIndex();
+    // Do not suggest anything if the user is typing in the field for which
+    // there's no validation data.
+    if (focused_field != POSTAL_CODE &&
+        (focused_field < ADMIN_AREA || focused_field > DEPENDENT_LOCALITY)) {
+      return SUCCESS;
+    }
+
+    // Do not suggest anything if the user input is empty.
+    if (user_input.GetFieldValue(focused_field).empty()) {
+      return SUCCESS;
     }
 
     const Ruleset& country_ruleset = *ruleset_it->second;
@@ -287,6 +294,16 @@ class AddressValidatorImpl : public AddressValidator {
         !country_rule.GetPostalCodeFormat().empty() &&
         !ValueMatchesPrefixRegex(
             user_input.postal_code, country_rule.GetPostalCodeFormat())) {
+      return SUCCESS;
+    }
+
+    // Initialize the prefix search index lazily.
+    if (!ruleset_it->second->prefix_search_index_ready()) {
+      ruleset_it->second->BuildPrefixSearchIndex();
+    }
+
+    if (focused_field != POSTAL_CODE &&
+        focused_field > country_ruleset.deepest_ruleset_level()) {
       return SUCCESS;
     }
 
@@ -394,6 +411,7 @@ class AddressValidatorImpl : public AddressValidator {
       }
 
       AddressData suggestion;
+      suggestion.country_code = user_input.country_code;
       suggestion.postal_code = user_input.postal_code;
 
       // Traverse the tree of rulesets from the most specific |ruleset| to the

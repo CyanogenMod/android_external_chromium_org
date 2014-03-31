@@ -1147,6 +1147,17 @@ enum {
           [menuItem setHidden:shouldHide];
           break;
         }
+        case IDC_BOOKMARK_ALL_TABS: {
+          // Extensions have the ability to hide the bookmark all tabs menu
+          // item.  This only affects the bookmark page menu item under the main
+          // menu.  The bookmark page menu item under the wrench menu has its
+          // visibility controlled by WrenchMenuModel.
+          bool shouldHide =
+              chrome::ShouldRemoveBookmarkOpenPagesUI(browser_->profile());
+          NSMenuItem* menuItem = base::mac::ObjCCast<NSMenuItem>(item);
+          [menuItem setHidden:shouldHide];
+          break;
+        }
         default:
           // Special handling for the contents of the Text Encoding submenu. On
           // Mac OS, instead of enabling/disabling the top-level menu item, we
@@ -1857,41 +1868,6 @@ enum {
   }
 }
 
-// Called repeatedly during a pinch gesture, with incremental change values.
-- (void)magnifyWithEvent:(NSEvent*)event {
-  // The deltaZ difference necessary to trigger a zoom action. Derived from
-  // experimentation to find a value that feels reasonable.
-  const float kZoomStepValue = 0.6;
-
-  // Find the (absolute) thresholds on either side of the current zoom factor,
-  // then convert those to actual numbers to trigger a zoom in or out.
-  // This logic deliberately makes the range around the starting zoom value for
-  // the gesture twice as large as the other ranges (i.e., the notches are at
-  // ..., -3*step, -2*step, -step, step, 2*step, 3*step, ... but not at 0)
-  // so that it's easier to get back to your starting point than it is to
-  // overshoot.
-  float nextStep = (abs(currentZoomStepDelta_) + 1) * kZoomStepValue;
-  float backStep = abs(currentZoomStepDelta_) * kZoomStepValue;
-  float zoomInThreshold = (currentZoomStepDelta_ >= 0) ? nextStep : -backStep;
-  float zoomOutThreshold = (currentZoomStepDelta_ <= 0) ? -nextStep : backStep;
-
-  unsigned int command = 0;
-  totalMagnifyGestureAmount_ += [event magnification];
-  if (totalMagnifyGestureAmount_ > zoomInThreshold) {
-    command = IDC_ZOOM_PLUS;
-  } else if (totalMagnifyGestureAmount_ < zoomOutThreshold) {
-    command = IDC_ZOOM_MINUS;
-  }
-
-  if (command && chrome::IsCommandEnabled(browser_.get(), command)) {
-    currentZoomStepDelta_ += (command == IDC_ZOOM_PLUS) ? 1 : -1;
-    chrome::ExecuteCommandWithDisposition(
-        browser_.get(),
-        command,
-        ui::WindowOpenDispositionFromNSEvent(event));
-  }
-}
-
 // Delegate method called when window is resized.
 - (void)windowDidResize:(NSNotification*)notification {
   [self saveWindowPositionIfNeeded];
@@ -2095,10 +2071,10 @@ willAnimateFromState:(BookmarkBar::State)oldState
   chrome::ExecuteCommand(browser_.get(), IDC_FULLSCREEN);
 }
 
-// On Lion, this method is called by either the Lion fullscreen button or the
-// "Enter Full Screen" menu item.  On Snow Leopard, this function is never
-// called by the UI directly, but it provides the implementation for
-// |-setPresentationMode:|.
+// Called to transition into or out of fullscreen mode. Only use System
+// Fullscreen mode if the system supports it and we aren't trying to go
+// fullscreen for the renderer-initiated use cases.
+// Discussion: http://crbug.com/179181 and http:/crbug.com/351252
 - (void)setFullscreen:(BOOL)fullscreen {
   if (fullscreen == [self isFullscreen])
     return;
@@ -2106,17 +2082,28 @@ willAnimateFromState:(BookmarkBar::State)oldState
   if (!chrome::IsCommandEnabled(browser_.get(), IDC_FULLSCREEN))
     return;
 
-  if (chrome::mac::SupportsSystemFullscreen() && !fullscreenWindow_) {
-    enteredPresentationModeFromFullscreen_ = YES;
-    if (FramedBrowserWindow* framedBrowserWindow =
-            base::mac::ObjCCast<FramedBrowserWindow>([self window])) {
-      [framedBrowserWindow toggleSystemFullScreen];
+  if (fullscreen) {
+    const BOOL shouldUseSystemFullscreen =
+        chrome::mac::SupportsSystemFullscreen() && !fullscreenWindow_ &&
+        !browser_->fullscreen_controller()->IsWindowFullscreenForTabOrPending();
+    if (shouldUseSystemFullscreen) {
+      if (FramedBrowserWindow* framedBrowserWindow =
+          base::mac::ObjCCast<FramedBrowserWindow>([self window])) {
+        [framedBrowserWindow toggleSystemFullScreen];
+      }
+    } else {
+      [self enterImmersiveFullscreen];
     }
   } else {
-    if (fullscreen)
-      [self enterFullscreenForSnowLeopard];
-    else
-      [self exitFullscreenForSnowLeopard];
+    if ([self isInSystemFullscreen]) {
+      if (FramedBrowserWindow* framedBrowserWindow =
+          base::mac::ObjCCast<FramedBrowserWindow>([self window])) {
+        [framedBrowserWindow toggleSystemFullScreen];
+      }
+    } else {
+      DCHECK(fullscreenWindow_.get());
+      [self exitImmersiveFullscreen];
+    }
   }
 }
 
@@ -2137,9 +2124,18 @@ willAnimateFromState:(BookmarkBar::State)oldState
 }
 
 - (BOOL)isFullscreen {
-  return (fullscreenWindow_.get() != nil) ||
-         ([[self window] styleMask] & NSFullScreenWindowMask) ||
+  return [self isInImmersiveFullscreen] ||
+         [self isInSystemFullscreen] ||
          enteringFullscreen_;
+}
+
+- (BOOL)isInImmersiveFullscreen {
+  return fullscreenWindow_.get() != nil;
+}
+
+- (BOOL)isInSystemFullscreen {
+  return ([[self window] styleMask] & NSFullScreenWindowMask) ==
+      NSFullScreenWindowMask;
 }
 
 // On Lion, this function is called by either the presentation mode toggle
@@ -2163,7 +2159,6 @@ willAnimateFromState:(BookmarkBar::State)oldState
 
   if (presentationMode) {
     BOOL fullscreen = [self isFullscreen];
-    enteredPresentationModeFromFullscreen_ = fullscreen;
     enteringPresentationMode_ = YES;
 
     if (fullscreen) {
@@ -2183,13 +2178,9 @@ willAnimateFromState:(BookmarkBar::State)oldState
       [self showFullscreenExitBubbleIfNecessary];
       browser_->WindowFullscreenStateChanged();
     } else {
-      // If not in fullscreen mode, trigger the Lion fullscreen mode machinery.
-      // Presentation mode will automatically be enabled in
-      // |-windowWillEnterFullScreen:|.
-      if (FramedBrowserWindow* window =
-              base::mac::ObjCCast<FramedBrowserWindow>([self window])) {
-        [window toggleSystemFullScreen];
-      }
+      // Need to transition into fullscreen mode.  Presentation mode will
+      // automatically be enabled in |-windowWillEnterFullScreen:|.
+      [self setFullscreen:YES];
     }
   } else {
     // Exiting presentation mode does not exit system fullscreen; it merely
@@ -2221,7 +2212,7 @@ willAnimateFromState:(BookmarkBar::State)oldState
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
   DCHECK(command_line->HasSwitch(switches::kEnableSimplifiedFullscreen));
 
-  [self enterFullscreenForSnowLeopard];
+  [self enterImmersiveFullscreen];
   [self updateFullscreenExitBubbleURL:url bubbleType:bubbleType];
 }
 

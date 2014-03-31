@@ -18,6 +18,10 @@ namespace base {
 class Version;
 }
 
+namespace content {
+class BrowserContext;
+}
+
 FORWARD_DECLARE_TEST(ExtensionServiceTest,
                      UpdatePendingExtensionAlreadyInstalled);
 
@@ -43,7 +47,8 @@ class PendingExtensionManager {
   // extensions we are managing. The service creates an instance of
   // this class on construction, and destroys it on destruction.
   // The service remains valid over the entire lifetime of this class.
-  explicit PendingExtensionManager(const ExtensionServiceInterface& service);
+  explicit PendingExtensionManager(const ExtensionServiceInterface& service,
+                                   content::BrowserContext* context);
   ~PendingExtensionManager();
 
   // TODO(skerner): Many of these methods can be private once code in
@@ -90,6 +95,7 @@ class PendingExtensionManager {
   // Given an extension id and an update URL, schedule the extension
   // to be fetched, installed, and activated.
   bool AddFromExternalUpdateUrl(const std::string& id,
+                                const std::string& install_parameter,
                                 const GURL& update_url,
                                 Manifest::Location location,
                                 int creation_flags,
@@ -118,6 +124,7 @@ class PendingExtensionManager {
   // Return true if the extension was added.
   bool AddExtensionImpl(
       const std::string& id,
+      const std::string& install_parameter,
       const GURL& update_url,
       const base::Version& version,
       PendingExtensionInfo::ShouldAllowInstallPredicate should_allow_install,
@@ -137,6 +144,9 @@ class PendingExtensionManager {
   // and destroyed with |service_|. We only use methods from the interface
   // ExtensionServiceInterface.
   const ExtensionServiceInterface& service_;
+
+  // The BrowserContext with which the manager is associated.
+  content::BrowserContext* context_;
 
   PendingExtensionList pending_extension_list_;
 

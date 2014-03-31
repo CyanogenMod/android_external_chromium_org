@@ -11,6 +11,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "content/browser/frame_host/cross_site_transferring_request.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/frame_host/navigation_entry_screenshot_manager.h"
@@ -956,7 +957,6 @@ TEST_F(NavigationControllerTest, LoadURL_AbortDoesntCancelPending) {
   // It may abort before committing, if it's a download or due to a stop or
   // a new navigation from the user.
   FrameHostMsg_DidFailProvisionalLoadWithError_Params params;
-  params.is_main_frame = true;
   params.error_code = net::ERR_ABORTED;
   params.error_description = base::string16();
   params.url = kNewURL;
@@ -1033,7 +1033,6 @@ TEST_F(NavigationControllerTest, LoadURL_RedirectAbortDoesntShowPendingURL) {
   // It may abort before committing, if it's a download or due to a stop or
   // a new navigation from the user.
   FrameHostMsg_DidFailProvisionalLoadWithError_Params params;
-  params.is_main_frame = true;
   params.error_code = net::ERR_ABORTED;
   params.error_description = base::string16();
   params.url = kRedirectURL;
@@ -1062,6 +1061,7 @@ TEST_F(NavigationControllerTest, LoadURL_WithBindings) {
   NavigationControllerImpl& controller = controller_impl();
   TestNotificationTracker notifications;
   RegisterForAllNavNotifications(&notifications, &controller);
+  std::vector<GURL> url_chain;
 
   const GURL url1("http://foo1");
   const GURL url2("http://foo2");
@@ -1088,14 +1088,18 @@ TEST_F(NavigationControllerTest, LoadURL_WithBindings) {
       increment_active_view_count();
 
   // Navigate to a second URL, simulate the beforeunload ack for the cross-site
-  // transition, and set bindings on the pending RenderViewHost to simulate a
-  // privileged url.
+  // transition, run the unload handler, and set bindings on the pending
+  // RenderViewHost to simulate a privileged url.
   controller.LoadURL(url2, Referrer(), PAGE_TRANSITION_TYPED, std::string());
   orig_rvh->SendBeforeUnloadACK(true);
-  contents()->GetPendingRenderViewHost()->AllowBindings(1);
-  static_cast<TestRenderViewHost*>(
-      contents()->GetPendingRenderViewHost())->SendNavigate(1, url2);
-  orig_rvh->OnSwappedOut(false);
+  contents()->GetRenderManagerForTesting()->OnCrossSiteResponse(
+      contents()->GetRenderManagerForTesting()->pending_frame_host(),
+      GlobalRequestID(0, 0), scoped_ptr<CrossSiteTransferringRequest>(),
+      url_chain, Referrer(), PAGE_TRANSITION_TYPED, false);
+  TestRenderViewHost* new_rvh =
+      static_cast<TestRenderViewHost*>(contents()->GetPendingRenderViewHost());
+  new_rvh->AllowBindings(1);
+  new_rvh->SendNavigate(1, url2);
 
   // The second load should be committed, and bindings should be remembered.
   EXPECT_EQ(controller.GetEntryCount(), 2);
@@ -1106,6 +1110,11 @@ TEST_F(NavigationControllerTest, LoadURL_WithBindings) {
 
   // Going back, the first entry should still appear unprivileged.
   controller.GoBack();
+  new_rvh->SendBeforeUnloadACK(true);
+  contents()->GetRenderManagerForTesting()->OnCrossSiteResponse(
+      contents()->GetRenderManagerForTesting()->pending_frame_host(),
+      GlobalRequestID(0, 0), scoped_ptr<CrossSiteTransferringRequest>(),
+      url_chain, Referrer(), PAGE_TRANSITION_TYPED, false);
   orig_rvh->SendNavigate(0, url1);
   EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
   EXPECT_EQ(0, NavigationEntryImpl::FromNavigationEntry(
@@ -2427,7 +2436,6 @@ TEST_F(NavigationControllerTest, RestoreNavigateAfterFailure) {
   // This pending navigation may have caused a different navigation to fail,
   // which causes the pending entry to be cleared.
   FrameHostMsg_DidFailProvisionalLoadWithError_Params fail_load_params;
-  fail_load_params.is_main_frame = true;
   fail_load_params.error_code = net::ERR_ABORTED;
   fail_load_params.error_description = base::string16();
   fail_load_params.url = url;
@@ -2745,7 +2753,7 @@ TEST_F(NavigationControllerTest, RendererInitiatedPendingEntries) {
 
   // We create pending entries for renderer-initiated navigations so that we
   // can show them in new tabs when it is safe.
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, true, url1);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url1);
 
   // Simulate what happens if a BrowserURLHandler rewrites the URL, causing
   // the virtual URL to differ from the URL.
@@ -2759,7 +2767,7 @@ TEST_F(NavigationControllerTest, RendererInitiatedPendingEntries) {
           is_renderer_initiated());
 
   // If the user clicks another link, we should replace the pending entry.
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, true, url2);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url2);
   EXPECT_EQ(url2, controller.GetPendingEntry()->GetURL());
   EXPECT_EQ(url2, controller.GetPendingEntry()->GetVirtualURL());
 
@@ -2769,18 +2777,18 @@ TEST_F(NavigationControllerTest, RendererInitiatedPendingEntries) {
   EXPECT_EQ(url2, controller.GetLastCommittedEntry()->GetVirtualURL());
 
   // We should not replace the pending entry for an error URL.
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, true, url1);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url1);
   EXPECT_EQ(url1, controller.GetPendingEntry()->GetURL());
   navigator->DidStartProvisionalLoad(
-      main_test_rfh(), -1, true, GURL(kUnreachableWebDataURL));
+      main_test_rfh(), -1, GURL(kUnreachableWebDataURL));
   EXPECT_EQ(url1, controller.GetPendingEntry()->GetURL());
 
   // We should remember if the pending entry will replace the current one.
   // http://crbug.com/308444.
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, true, url1);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url1);
   NavigationEntryImpl::FromNavigationEntry(controller.GetPendingEntry())->
       set_should_replace_entry(true);
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, true, url2);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url2);
   EXPECT_TRUE(
       NavigationEntryImpl::FromNavigationEntry(controller.GetPendingEntry())->
           should_replace_entry());

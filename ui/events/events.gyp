@@ -25,16 +25,20 @@
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../gfx/gfx.gyp:gfx',
+        '../gfx/gfx.gyp:gfx_geometry',
         'dom4_keycode_converter',
       ],
       'defines': [
         'EVENTS_BASE_IMPLEMENTATION',
       ],
       'sources': [
-        'events_base_export.h',
         'event_constants.h',
         'event_switches.cc',
         'event_switches.h',
+        'events_base_export.h',
+        'gesture_event_details.cc',
+        'gesture_event_details.h',
         'keycodes/keyboard_code_conversion.cc',
         'keycodes/keyboard_code_conversion.h',
         'keycodes/keyboard_code_conversion_android.cc',
@@ -90,6 +94,7 @@
         'event_handler.h',
         'event_processor.cc',
         'event_processor.h',
+        'event_rewriter.h',
         'event_source.cc',
         'event_source.h',
         'event_target.cc',
@@ -110,7 +115,6 @@
         'gestures/gesture_recognizer_impl.h',
         'gestures/gesture_sequence.cc',
         'gestures/gesture_sequence.h',
-        'gestures/gesture_types.cc',
         'gestures/gesture_types.h',
         'gestures/velocity_calculator.cc',
         'gestures/velocity_calculator.h',
@@ -133,6 +137,15 @@
         'ozone/event_factory_ozone.cc',
         'ozone/event_factory_ozone.h',
         'ozone/events_ozone.cc',
+        'platform/platform_event_dispatcher.h',
+        'platform/platform_event_observer.h',
+        'platform/platform_event_source.cc',
+        'platform/platform_event_source.h',
+        'platform/platform_event_types.h',
+        'platform/scoped_event_dispatcher.cc',
+        'platform/scoped_event_dispatcher.h',
+        'platform/x11/x11_event_source.cc',
+        'platform/x11/x11_event_source.h',
         'win/events_win.cc',
         'x/events_x.cc',
       ],
@@ -147,6 +160,11 @@
         ['use_x11==1', {
           'dependencies': [
             '<(DEPTH)/build/linux/system.gyp:x11',
+          ],
+        }],
+        ['use_glib==1', {
+          'dependencies': [
+            '../../build/linux/system.gyp:glib',
           ],
         }],
         ['use_ozone_evdev==1', {
@@ -272,6 +290,7 @@
         'cocoa/cocoa_event_utils_unittest.mm',
         'event_dispatcher_unittest.cc',
         'event_processor_unittest.cc',
+        'event_rewriter_unittest.cc',
         'event_unittest.cc',
         'gestures/velocity_calculator_unittest.cc',
         'gesture_detection/bitset_32_unittest.cc',
@@ -284,6 +303,7 @@
         'latency_info_unittest.cc',
         'ozone/evdev/key_event_converter_evdev_unittest.cc',
         'ozone/evdev/touch_event_converter_evdev_unittest.cc',
+        'platform/platform_event_source_unittest.cc',
         'x/events_x_unittest.cc',
       ],
       'conditions': [

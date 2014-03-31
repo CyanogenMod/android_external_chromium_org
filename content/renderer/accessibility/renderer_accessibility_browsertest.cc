@@ -4,6 +4,7 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "content/common/frame_messages.h"
+#include "content/common/view_message_enums.h"
 #include "content/public/test/render_view_test.h"
 #include "content/renderer/accessibility/renderer_accessibility_complete.h"
 #include "content/renderer/render_view_impl.h"
@@ -71,7 +72,7 @@ class RendererAccessibilityTest : public RenderViewTest {
     sink_ = &render_thread_->sink();
   }
 
-  void SetMode(unsigned int mode) {
+  void SetMode(AccessibilityMode mode) {
     view()->OnSetAccessibilityMode(mode);
   }
 
@@ -349,7 +350,7 @@ TEST_F(RendererAccessibilityTest,
   accessibility->HandleAXEvent(
       root_obj,
       ui::AX_EVENT_VALUE_CHANGED);
-  view()->OnSwapOut();
+  view()->main_render_frame()->OnSwapOut();
   accessibility->SendPendingAccessibilityEvents();
   EXPECT_FALSE(sink_->GetUniqueMessageMatching(
       AccessibilityHostMsg_Events::ID));

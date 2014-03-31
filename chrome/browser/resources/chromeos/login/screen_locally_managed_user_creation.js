@@ -1451,8 +1451,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
       imageGrid.flipPhoto = !imageGrid.flipPhoto;
       var flipMessageId = imageGrid.flipPhoto ?
          'photoFlippedAccessibleText' : 'photoFlippedBackAccessibleText';
-      this.announceAccessibleMessage_(
-          loadTimeData.getString(flipMessageId));
+      announceAccessibleMessage(loadTimeData.getString(flipMessageId));
     },
 
     /**
@@ -1460,11 +1459,13 @@ login.createScreen('LocallyManagedUserCreationScreen',
      */
     handleTakePhoto_: function(e) {
       this.getScreenElement('image-grid').takePhoto();
-      chrome.send('takePhoto');
+      chrome.send('supervisedUserTakePhoto');
     },
 
     handlePhotoTaken_: function(e) {
       chrome.send('supervisedUserPhotoTaken', [e.dataURL]);
+      announceAccessibleMessage(
+          loadTimeData.getString('photoCaptureAccessibleText'));
     },
 
     /**
@@ -1481,27 +1482,10 @@ login.createScreen('LocallyManagedUserCreationScreen',
     handleDiscardPhoto_: function(e) {
       var imageGrid = this.getScreenElement('image-grid');
       imageGrid.discardPhoto();
-      chrome.send('discardPhoto');
+      chrome.send('supervisedUserDiscardPhoto');
+      announceAccessibleMessage(
+          loadTimeData.getString('photoDiscardAccessibleText'));
     },
-
-    /**
-     * Add an accessible message to the page that will be announced to
-     * users who have spoken feedback on, but will be invisible to all
-     * other users. It's removed right away so it doesn't clutter the DOM.
-     */
-    announceAccessibleMessage_: function(msg) {
-      var element = document.createElement('div');
-      element.setAttribute('aria-live', 'polite');
-      element.style.position = 'relative';
-      element.style.left = '-9999px';
-      element.style.height = '0px';
-      element.innerText = msg;
-      document.body.appendChild(element);
-      window.setTimeout(function() {
-        document.body.removeChild(element);
-      }, 0);
-    },
-
 
     setCameraPresent: function(present) {
       this.getScreenElement('image-grid').cameraPresent = present;

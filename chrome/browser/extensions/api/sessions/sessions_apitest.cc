@@ -111,11 +111,11 @@ void ExtensionSessionsTest::CreateTestProfileSyncService() {
   Profile* profile =
       Profile::CreateProfile(path, NULL, Profile::CREATE_MODE_SYNCHRONOUS);
   profile_manager->RegisterTestingProfile(profile, true, false);
-  browser_ = new Browser(Browser::CreateParams(
-      profile, chrome::HOST_DESKTOP_TYPE_NATIVE));
   ProfileSyncServiceMock* service = static_cast<ProfileSyncServiceMock*>(
       ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
       profile, &ProfileSyncServiceMock::BuildMockProfileSyncService));
+  browser_ = new Browser(Browser::CreateParams(
+      profile, chrome::HOST_DESKTOP_TYPE_NATIVE));
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableSyncSessionsV2)) {
@@ -309,6 +309,27 @@ IN_PROC_BROWSER_TEST_F(ExtensionSessionsTest, RestoreForeignSessionInvalidId) {
       CreateFunction<SessionsRestoreFunction>(true).get(),
       "[\"tag3.0\"]",
       browser_), "Invalid session id: \"tag3.0\"."));
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionSessionsTest, RestoreInIncognito) {
+  CreateSessionModels();
+
+  EXPECT_TRUE(MatchPattern(utils::RunFunctionAndReturnError(
+      CreateFunction<SessionsRestoreFunction>(true).get(),
+      "[\"1\"]",
+      CreateIncognitoBrowser()),
+      "Can not restore sessions in incognito mode."));
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionSessionsTest, GetRecentlyClosedIncognito) {
+  scoped_ptr<base::ListValue> result(utils::ToList(
+      utils::RunFunctionAndReturnSingleResult(
+          CreateFunction<SessionsGetRecentlyClosedFunction>(true).get(),
+          "[]",
+          CreateIncognitoBrowser())));
+  ASSERT_TRUE(result);
+  base::ListValue* sessions = result.get();
+  EXPECT_EQ(0u, sessions->GetSize());
 }
 
 // Flaky on ChromeOS, times out on OSX Debug http://crbug.com/251199
