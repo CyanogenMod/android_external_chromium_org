@@ -4,7 +4,6 @@
 LOCAL_PATH := $(call my-dir)
 GYP_CONFIGURATION ?= Debug
 
-include $(LOCAL_PATH)/android_webview/All.target.linux-mips.mk
 include $(LOCAL_PATH)/android_webview/android_webview_common.target.linux-mips.mk
 include $(LOCAL_PATH)/android_webview/android_webview_pak.target.linux-mips.mk
 include $(LOCAL_PATH)/android_webview/libwebviewchromium.target.linux-mips.mk

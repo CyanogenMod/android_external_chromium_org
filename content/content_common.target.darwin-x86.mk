@@ -70,6 +70,7 @@ LOCAL_SRC_FILES := \
 	content/common/android/common_jni_registrar.cc \
 	content/common/android/device_telephony_info.cc \
 	content/common/android/hash_set.cc \
+	content/common/android/surface_texture_lookup.cc \
 	content/common/android/surface_texture_peer.cc \
 	content/common/browser_plugin/browser_plugin_constants.cc \
 	content/common/cc_messages.cc \
@@ -159,6 +160,7 @@ LOCAL_SRC_FILES := \
 	content/common/user_agent.cc \
 	content/common/webplugin_geometry.cc \
 	content/common/websocket.cc \
+	content/common/gpu/client/gpu_memory_buffer_impl_surface_texture.cc \
 	content/common/gpu/media/android_video_decode_accelerator.cc
 
 

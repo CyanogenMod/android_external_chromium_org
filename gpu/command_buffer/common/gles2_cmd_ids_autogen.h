@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -237,14 +237,15 @@
   OP(AsyncTexSubImage2DCHROMIUM)             /* 478 */             \
   OP(AsyncTexImage2DCHROMIUM)                /* 479 */                \
   OP(WaitAsyncTexImage2DCHROMIUM)            /* 480 */            \
-  OP(DiscardFramebufferEXT)                  /* 481 */                  \
-  OP(DiscardFramebufferEXTImmediate)         /* 482 */         \
-  OP(LoseContextCHROMIUM)                    /* 483 */                    \
-  OP(InsertSyncPointCHROMIUM)                /* 484 */                \
-  OP(WaitSyncPointCHROMIUM)                  /* 485 */                  \
-  OP(DrawBuffersEXT)                         /* 486 */                         \
-  OP(DrawBuffersEXTImmediate)                /* 487 */                \
-  OP(DiscardBackbufferCHROMIUM)              /* 488 */
+  OP(WaitAllAsyncTexImage2DCHROMIUM)         /* 481 */         \
+  OP(DiscardFramebufferEXT)                  /* 482 */                  \
+  OP(DiscardFramebufferEXTImmediate)         /* 483 */         \
+  OP(LoseContextCHROMIUM)                    /* 484 */                    \
+  OP(InsertSyncPointCHROMIUM)                /* 485 */                \
+  OP(WaitSyncPointCHROMIUM)                  /* 486 */                  \
+  OP(DrawBuffersEXT)                         /* 487 */                         \
+  OP(DrawBuffersEXTImmediate)                /* 488 */                \
+  OP(DiscardBackbufferCHROMIUM)              /* 489 */
 
 enum CommandId {
   kStartPoint = cmd::kLastCommonId,  // All GLES2 commands start after this.

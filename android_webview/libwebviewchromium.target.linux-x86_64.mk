@@ -12,6 +12,21 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,android_webview_android_webview_common_gyp)/android_webview_android_webview_common_gyp.a \
+	$(call intermediates-dir-for,GYP,base_base_java_application_state_gyp)/base_java_application_state.stamp \
+	$(call intermediates-dir-for,GYP,base_base_java_memory_pressure_level_list_gyp)/base_java_memory_pressure_level_list.stamp \
+	$(call intermediates-dir-for,GYP,content_gesture_event_type_java_gyp)/gesture_event_type_java.stamp \
+	$(call intermediates-dir-for,GYP,content_page_transition_types_java_gyp)/page_transition_types_java.stamp \
+	$(call intermediates-dir-for,GYP,content_popup_item_type_java_gyp)/popup_item_type_java.stamp \
+	$(call intermediates-dir-for,GYP,content_result_codes_java_gyp)/result_codes_java.stamp \
+	$(call intermediates-dir-for,GYP,content_screen_orientation_values_java_gyp)/screen_orientation_values_java.stamp \
+	$(call intermediates-dir-for,GYP,content_speech_recognition_error_java_gyp)/speech_recognition_error_java.stamp \
+	$(call intermediates-dir-for,GYP,media_media_android_imageformat_list_gyp)/media_android_imageformat_list.stamp \
+	$(call intermediates-dir-for,GYP,net_certificate_mime_types_java_gyp)/certificate_mime_types_java.stamp \
+	$(call intermediates-dir-for,GYP,net_cert_verify_status_android_java_gyp)/cert_verify_status_android_java.stamp \
+	$(call intermediates-dir-for,GYP,net_net_errors_java_gyp)/net_errors_java.stamp \
+	$(call intermediates-dir-for,GYP,net_private_key_types_java_gyp)/private_key_types_java.stamp \
+	$(call intermediates-dir-for,GYP,ui_android_window_open_disposition_java_gyp)/window_open_disposition_java.stamp \
+	$(call intermediates-dir-for,GYP,ui_android_bitmap_format_java_gyp)/bitmap_format_java.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,android_webview_native_webview_native_gyp)/android_webview_native_webview_native_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,base_base_static_gyp)/base_base_static_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,base_third_party_dynamic_annotations_dynamic_annotations_gyp)/base_third_party_dynamic_annotations_dynamic_annotations_gyp.a \

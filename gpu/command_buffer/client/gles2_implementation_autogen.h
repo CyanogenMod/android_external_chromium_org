@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -695,6 +695,8 @@ virtual void AsyncTexImage2DCHROMIUM(GLenum target,
                                      const void* pixels) OVERRIDE;
 
 virtual void WaitAsyncTexImage2DCHROMIUM(GLenum target) OVERRIDE;
+
+virtual void WaitAllAsyncTexImage2DCHROMIUM() OVERRIDE;
 
 virtual void DiscardFramebufferEXT(GLenum target,
                                    GLsizei count,

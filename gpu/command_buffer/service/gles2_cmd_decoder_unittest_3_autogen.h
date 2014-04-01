@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -53,6 +53,8 @@
 // TODO(gman): AsyncTexImage2DCHROMIUM
 
 // TODO(gman): WaitAsyncTexImage2DCHROMIUM
+
+// TODO(gman): WaitAllAsyncTexImage2DCHROMIUM
 
 // TODO(gman): DiscardFramebufferEXT
 // TODO(gman): DiscardFramebufferEXTImmediate

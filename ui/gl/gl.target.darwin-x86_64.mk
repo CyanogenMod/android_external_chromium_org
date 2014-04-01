@@ -87,6 +87,7 @@ LOCAL_SRC_FILES := \
 	ui/gl/android/scoped_java_surface.cc \
 	ui/gl/android/surface_texture.cc \
 	ui/gl/android/surface_texture_listener.cc \
+	ui/gl/android/surface_texture_tracker.cc \
 	ui/gl/gl_bindings_skia_in_process.cc \
 	ui/gl/gl_context.cc \
 	ui/gl/gl_context_android.cc \
@@ -120,7 +121,8 @@ LOCAL_SRC_FILES := \
 	ui/gl/gl_surface_egl.cc \
 	ui/gl/gl_egl_api_implementation.cc \
 	ui/gl/gl_implementation_osmesa.cc \
-	ui/gl/gl_image_android_native_buffer.cc
+	ui/gl/gl_image_android_native_buffer.cc \
+	ui/gl/gl_image_surface_texture.cc
 
 
 # Flags passed to both C and C++ files.

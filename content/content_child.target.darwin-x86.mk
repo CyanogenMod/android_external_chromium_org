@@ -84,8 +84,9 @@ LOCAL_SRC_FILES := \
 	content/child/simple_webmimeregistry_impl.cc \
 	content/child/site_isolation_policy.cc \
 	content/child/socket_stream_dispatcher.cc \
-	content/child/touch_fling_gesture_curve.cc \
+	content/child/sync_load_response.cc \
 	content/child/thread_safe_sender.cc \
+	content/child/touch_fling_gesture_curve.cc \
 	content/child/web_database_observer_impl.cc \
 	content/child/web_discardable_memory_impl.cc \
 	content/child/web_socket_stream_handle_impl.cc \

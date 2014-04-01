@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -620,6 +620,7 @@ void GLES2InterfaceStub::AsyncTexImage2DCHROMIUM(GLenum /* target */,
                                                  GLenum /* type */,
                                                  const void* /* pixels */) {}
 void GLES2InterfaceStub::WaitAsyncTexImage2DCHROMIUM(GLenum /* target */) {}
+void GLES2InterfaceStub::WaitAllAsyncTexImage2DCHROMIUM() {}
 void GLES2InterfaceStub::DiscardFramebufferEXT(
     GLenum /* target */,
     GLsizei /* count */,

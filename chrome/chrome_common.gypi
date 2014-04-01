@@ -145,12 +145,6 @@
         'common/extensions/api/omnibox/omnibox_handler.h',
         'common/extensions/api/plugins/plugins_handler.cc',
         'common/extensions/api/plugins/plugins_handler.h',
-        'common/extensions/api/sockets/sockets_manifest_handler.cc',
-        'common/extensions/api/sockets/sockets_manifest_handler.h',
-        'common/extensions/api/sockets/sockets_manifest_data.cc',
-        'common/extensions/api/sockets/sockets_manifest_data.h',
-        'common/extensions/api/sockets/sockets_manifest_permission.cc',
-        'common/extensions/api/sockets/sockets_manifest_permission.h',
         'common/extensions/api/speech/tts_engine_manifest_handler.cc',
         'common/extensions/api/speech/tts_engine_manifest_handler.h',
         'common/extensions/api/spellcheck/spellcheck_handler.cc',
@@ -398,7 +392,7 @@
         }],
         ['OS != "ios"', {
           'dependencies': [
-            '<(DEPTH)/third_party/re2/re2.gyp:re2',
+            '<(DEPTH)/apps/common/api/api.gyp:apps_api',
             '<(DEPTH)/chrome/common/extensions/api/api.gyp:chrome_api',
             '<(DEPTH)/components/components.gyp:autofill_core_common',
             '<(DEPTH)/components/components.gyp:autofill_content_common',
@@ -410,6 +404,7 @@
             '<(DEPTH)/extensions/extensions.gyp:extensions_common',
             '<(DEPTH)/ipc/ipc.gyp:ipc',
             '<(DEPTH)/third_party/adobe/flash/flash_player.gyp:flapper_version_h',
+            '<(DEPTH)/third_party/re2/re2.gyp:re2',
             '<(DEPTH)/third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
           ],
           'export_dependent_settings': [

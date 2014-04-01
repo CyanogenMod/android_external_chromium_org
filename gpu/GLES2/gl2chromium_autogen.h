@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -225,6 +225,8 @@
 #define glAsyncTexSubImage2DCHROMIUM GLES2_GET_FUN(AsyncTexSubImage2DCHROMIUM)
 #define glAsyncTexImage2DCHROMIUM GLES2_GET_FUN(AsyncTexImage2DCHROMIUM)
 #define glWaitAsyncTexImage2DCHROMIUM GLES2_GET_FUN(WaitAsyncTexImage2DCHROMIUM)
+#define glWaitAllAsyncTexImage2DCHROMIUM \
+  GLES2_GET_FUN(WaitAllAsyncTexImage2DCHROMIUM)
 #define glDiscardFramebufferEXT GLES2_GET_FUN(DiscardFramebufferEXT)
 #define glLoseContextCHROMIUM GLES2_GET_FUN(LoseContextCHROMIUM)
 #define glInsertSyncPointCHROMIUM GLES2_GET_FUN(InsertSyncPointCHROMIUM)

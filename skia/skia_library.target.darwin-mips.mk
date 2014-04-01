@@ -359,6 +359,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/effects/GrBicubicEffect.cpp \
 	third_party/skia/src/gpu/effects/GrCustomCoordsTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrDistanceFieldTextureEffect.cpp \
+	third_party/skia/src/gpu/effects/GrOvalEffect.cpp \
 	third_party/skia/src/gpu/effects/GrRRectEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSimpleTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSingleTextureEffect.cpp \
