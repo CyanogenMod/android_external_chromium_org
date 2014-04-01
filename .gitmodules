@@ -106,6 +106,10 @@
 	path = third_party/chromite
 	url = https://chromium.googlesource.com/chromiumos/chromite.git
 	os = unix
+[submodule "third_party/clang_format/script"]
+	path = third_party/clang_format/script
+	url = https://chromium.googlesource.com/chromium/llvm-project/cfe/tools/clang-format.git
+	os = all
 [submodule "third_party/cld_2/src"]
 	path = third_party/cld_2/src
 	url = https://chromium.googlesource.com/external/cld2.git
@@ -216,11 +220,11 @@
 	os = all
 [submodule "third_party/libc++/trunk"]
 	path = third_party/libc++/trunk
-	url = https://llvm.googlesource.com/libcxx.git
+	url = https://chromium.googlesource.com/chromium/llvm-project/libcxx.git
 	os = all
 [submodule "third_party/libc++abi/trunk"]
 	path = third_party/libc++abi/trunk
-	url = https://llvm.googlesource.com/libcxxabi.git
+	url = https://chromium.googlesource.com/chromium/llvm-project/libcxxabi.git
 	os = all
 [submodule "third_party/libexif/sources"]
 	path = third_party/libexif/sources
@@ -305,7 +309,7 @@
 [submodule "third_party/openssl"]
 	path = third_party/openssl
 	url = https://chromium.googlesource.com/chromium/deps/openssl.git
-	os = android,unix
+	os = all
 [submodule "third_party/opus/src"]
 	path = third_party/opus/src
 	url = https://chromium.googlesource.com/chromium/deps/opus.git
@@ -409,7 +413,7 @@
 [submodule "third_party/undoview"]
 	path = third_party/undoview
 	url = https://chromium.googlesource.com/chromium/deps/undoview.git
-	os = unix,ios
+	os = unix
 [submodule "third_party/usrsctp/usrsctplib"]
 	path = third_party/usrsctp/usrsctplib
 	url = https://chromium.googlesource.com/external/usrsctplib.git
