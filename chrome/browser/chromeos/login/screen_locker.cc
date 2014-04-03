@@ -38,7 +38,6 @@
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -48,6 +47,7 @@
 #include "chromeos/audio/chromeos_sounds.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/url_data_source.h"
@@ -309,11 +309,6 @@ const User* ScreenLocker::FindUnlockUser(const std::string& user_id) {
     }
   }
   return unlock_user;
-}
-
-void ScreenLocker::AuthenticateByPassword(const std::string& password) {
-  LOG_ASSERT(users_.size() == 1);
-  Authenticate(UserContext(users_[0]->email(), password, ""));
 }
 
 void ScreenLocker::ClearErrors() {

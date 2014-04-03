@@ -693,15 +693,8 @@
           'enable_autofill_dialog%': 1
         }],
 
-        ['OS=="android" and android_webview_build==0', {
+        ['OS=="android"', {
           'enable_webrtc%': 1,
-        }],
-
-        # Disable WebRTC for building WebView as part of Android system.
-        # TODO(boliu): Decide if we want WebRTC, and if so, also merge
-        # the necessary third_party repositories.
-        ['OS=="android" and android_webview_build==1', {
-          'enable_webrtc%': 0,
         }],
 
         ['OS=="ios"', {
@@ -871,7 +864,7 @@
           'enable_printing%': 0,
         }],
 
-        ['OS=="win" or (OS=="linux" and chromeos==0)', {
+        ['OS=="win" or OS=="linux" or OS=="mac"', {
           'use_mojo%': 1,
         }],
 
@@ -1348,6 +1341,9 @@
 
     # Set to 1 to compile with the hole punching for the protected video.
     'video_hole%': 0,
+
+    # Set to 1 to compile with MSE support for MPEG2 TS
+    'enable_mpeg2ts_stream_parser%': 0,
 
     'conditions': [
       # Enable the Syzygy optimization step for the official builds.
@@ -4314,6 +4310,12 @@
 
                 # TODO(thakis): Remove, http://crbug.com/341352
                 '-Wno-absolute-value',
+
+                # This warns on selectors from Cocoa headers (-length, -set).
+                # cfe-dev is currently discussing the merits of this warning.
+                # TODO(thakis): Reevaluate what to do with this, based one
+                # cfe-dev discussion.
+                '-Wno-selector-type-mismatch',
               ],
 
               'conditions': [
@@ -4342,6 +4344,16 @@
               'OTHER_CFLAGS': [
                 # See http://crbug.com/110262
                 '-fcolor-diagnostics',
+              ],
+            }],
+            ['OS=="ios" and target_subarch!="arm32" and \
+              "<(GENERATOR)"=="ninja"', {
+              'OTHER_CFLAGS': [
+                # TODO(ios): when building Chrome for iOS on 64-bit platform
+                # with Xcode, the -Wshorted-64-to-32 warning is automatically
+                # enabled. This cause failures when compiling protobuf code,
+                # so disable the warning. http://crbug.com/359107
+                '-Wno-shorten-64-to-32',
               ],
             }],
           ],

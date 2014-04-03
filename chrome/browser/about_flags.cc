@@ -31,6 +31,7 @@
 #include "media/base/media_switches.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/display/display_switches.h"
 #include "ui/events/event_switches.h"
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
@@ -527,13 +528,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_DISABLE_WEBGL_DESCRIPTION,
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kDisableExperimentalWebGL)
-  },
-  {
-    "enable-d3d11",
-    IDS_FLAGS_ENABLE_D3D11_NAME,
-    IDS_FLAGS_ENABLE_D3D11_DESCRIPTION,
-    kOsWin,
-    SINGLE_VALUE_TYPE(switches::kEnableD3D11)
   },
   {
     "disable-webrtc",
@@ -1066,6 +1060,13 @@ const Experiment kExperiments[] = {
     kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kMultiProfiles),
   },
+  {
+    "disable-display-color-calibration",
+    IDS_FLAGS_DISABLE_DISPLAY_COLOR_CALIBRATION_NAME,
+    IDS_FLAGS_DISABLE_DISPLAY_COLOR_CALIBRATION_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(ui::switches::kDisableDisplayColorCalibration),
+  },
 #endif  // defined(OS_CHROMEOS)
   { "disable-accelerated-video-decode",
     IDS_FLAGS_DISABLE_ACCELERATED_VIDEO_DECODE_NAME,
@@ -1306,17 +1307,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_DISABLE_GESTURE_REQUIREMENT_FOR_MEDIA_PLAYBACK_DESCRIPTION,
     kOsAndroid,
     SINGLE_VALUE_TYPE(switches::kDisableGestureRequirementForMediaPlayback)
-  },
-#endif
-#if defined(ENABLE_GOOGLE_NOW)
-  {
-    "enable-google-now",
-    IDS_FLAGS_ENABLE_GOOGLE_NOW_INTEGRATION_NAME,
-    IDS_FLAGS_ENABLE_GOOGLE_NOW_INTEGRATION_DESCRIPTION,
-    kOsDesktop,
-    ENABLE_DISABLE_VALUE_TYPE(
-        switches::kEnableGoogleNowIntegration,
-        switches::kDisableGoogleNowIntegration)
   },
 #endif
 #if defined(OS_CHROMEOS)
@@ -1569,12 +1559,14 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnableAccessibilityTabSwitcher)
   },
   {
-    "disable-accessibility-script-injection",
-    IDS_FLAGS_DISABLE_ACCESSIBILITY_SCRIPT_INJECTION_NAME,
-    IDS_FLAGS_DISABLE_ACCESSIBILITY_SCRIPT_INJECTION_DESCRIPTION,
+    // TODO(dmazzoni): remove this flag when native android accessibility
+    // ships in the stable channel. http://crbug.com/356775
+    "enable-accessibility-script-injection",
+    IDS_FLAGS_ENABLE_ACCESSIBILITY_SCRIPT_INJECTION_NAME,
+    IDS_FLAGS_ENABLE_ACCESSIBILITY_SCRIPT_INJECTION_DESCRIPTION,
     kOsAndroid,
-    // Java-only switch: ContentSwitches.DISABLE_ACCESSIBILITY_SCRIPT_INJECTION.
-    SINGLE_VALUE_TYPE("disable-accessibility-script-injection")
+    // Java-only switch: ContentSwitches.ENABLE_ACCESSIBILITY_SCRIPT_INJECTION.
+    SINGLE_VALUE_TYPE("enable-accessibility-script-injection")
   },
 #endif
   {
@@ -1836,7 +1828,16 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_SAVE_PASSWORD_BUBBLE_DESCRIPTION,
     kOsWin | kOsLinux | kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kEnableSavePasswordBubble)
+  },
+#if defined(GOOGLE_CHROME_BUILD)
+  {
+    "enable-easy-unlock",
+    IDS_FLAGS_ENABLE_EASY_UNLOCK_NAME,
+    IDS_FLAGS_ENABLE_EASY_UNLOCK_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kEnableEasyUnlock)
   }
+#endif
 };
 
 const Experiment* experiments = kExperiments;

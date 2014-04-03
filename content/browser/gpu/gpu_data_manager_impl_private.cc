@@ -304,21 +304,6 @@ void ApplyAndroidWorkarounds(const gpu::GPUInfo& gpu_info,
 }
 #endif  // OS_ANDROID
 
-// Overwrite force gpu workaround if a commandline switch exists.
-void AdjustGpuSwitchingOption(std::set<int>* workarounds) {
-  DCHECK(workarounds);
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  std::string option = command_line.GetSwitchValueASCII(
-      switches::kGpuSwitching);
-  if (option == switches::kGpuSwitchingOptionNameForceDiscrete) {
-    workarounds->erase(gpu::FORCE_INTEGRATED_GPU);
-    workarounds->insert(gpu::FORCE_DISCRETE_GPU);
-  } else if (option == switches::kGpuSwitchingOptionNameForceIntegrated) {
-    workarounds->erase(gpu::FORCE_DISCRETE_GPU);
-    workarounds->insert(gpu::FORCE_INTEGRATED_GPU);
-  }
-}
-
 // Block all domains' use of 3D APIs for this many milliseconds if
 // approaching a threshold where system stability might be compromised.
 const int64 kBlockAllDomainsMs = 10000;
@@ -603,15 +588,7 @@ void GpuDataManagerImplPrivate::Initialize() {
                  gpu_info);
 }
 
-void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
-  // No further update of gpu_info if falling back to SwiftShader.
-  if (use_swiftshader_)
-    return;
-
-  gpu::MergeGPUInfo(&gpu_info_, gpu_info);
-  complete_gpu_info_already_requested_ =
-      complete_gpu_info_already_requested_ || gpu_info_.finalized;
-
+void GpuDataManagerImplPrivate::UpdateGpuInfoHelper() {
   GetContentClient()->SetGpuInfo(gpu_info_);
 
   if (gpu_blacklist_) {
@@ -622,16 +599,27 @@ void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
 
     UpdateBlacklistedFeatures(features);
   }
-  gpu_driver_bugs_ =
-      gpu::WorkaroundsFromCommandLine(CommandLine::ForCurrentProcess());
-  if (gpu_driver_bugs_.empty() && gpu_driver_bug_list_) {
+  if (gpu_driver_bug_list_) {
     gpu_driver_bugs_ = gpu_driver_bug_list_->MakeDecision(
         gpu::GpuControlList::kOsAny, std::string(), gpu_info_);
   }
-  AdjustGpuSwitchingOption(&gpu_driver_bugs_);
+  gpu::GpuDriverBugList::AppendWorkaroundsFromCommandLine(
+      &gpu_driver_bugs_, *CommandLine::ForCurrentProcess());
 
   // We have to update GpuFeatureType before notify all the observers.
   NotifyGpuInfoUpdate();
+}
+
+void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
+  // No further update of gpu_info if falling back to SwiftShader.
+  if (use_swiftshader_)
+    return;
+
+  gpu::MergeGPUInfo(&gpu_info_, gpu_info);
+  complete_gpu_info_already_requested_ =
+      complete_gpu_info_already_requested_ || gpu_info_.finalized;
+
+  UpdateGpuInfoHelper();
 }
 
 void GpuDataManagerImplPrivate::UpdateVideoMemoryUsageStats(
@@ -894,8 +882,34 @@ base::ListValue* GpuDataManagerImplPrivate::GetLogMessages() const {
 }
 
 void GpuDataManagerImplPrivate::HandleGpuSwitch() {
-  GpuDataManagerImpl::UnlockedSession session(owner_);
-  observer_list_->Notify(&GpuDataManagerObserver::OnGpuSwitching);
+  // Check if the active gpu has changed.
+  uint32 vendor_id, device_id;
+  gpu::GPUInfo::GPUDevice* active = NULL;
+  gpu::GPUInfo::GPUDevice* old_active = NULL;
+  if (gpu::CollectGpuID(&vendor_id, &device_id) == gpu::kGpuIDSuccess) {
+    if (gpu_info_.gpu.active)
+      old_active = &gpu_info_.gpu;
+    if (gpu_info_.gpu.vendor_id == vendor_id &&
+        gpu_info_.gpu.device_id == device_id)
+      active = &gpu_info_.gpu;
+    for (size_t ii = 0; ii < gpu_info_.secondary_gpus.size(); ++ii) {
+      gpu::GPUInfo::GPUDevice& gpu = gpu_info_.secondary_gpus[ii];
+      if (gpu.active)
+        old_active = &gpu;
+      if (gpu.vendor_id == vendor_id && gpu.device_id == device_id)
+        active = &gpu;
+    }
+    DCHECK(active && old_active);
+    if (active != old_active) {  // A different GPU is used.
+      old_active->active = false;
+      active->active = true;
+      UpdateGpuInfoHelper();
+    }
+  }
+  {
+    GpuDataManagerImpl::UnlockedSession session(owner_);
+    observer_list_->Notify(&GpuDataManagerObserver::OnGpuSwitching);
+  }
 }
 
 bool GpuDataManagerImplPrivate::CanUseGpuBrowserCompositor() const {
@@ -962,8 +976,7 @@ GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(
     DisableHardwareAcceleration();
   if (command_line->HasSwitch(switches::kEnableSoftwareCompositing))
     use_software_compositor_ = true;
-  // TODO(jbauman): enable for Chrome OS
-#if (defined(USE_AURA) && !defined(OS_CHROMEOS)) || defined(OS_MACOSX)
+#if defined(USE_AURA) || defined(OS_MACOSX)
   use_software_compositor_ = true;
 #endif
 

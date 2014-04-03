@@ -171,6 +171,7 @@ class RenderWidget::ScreenMetricsEmulator {
   gfx::Point offset() { return offset_; }
   gfx::Rect widget_rect() const { return widget_rect_; }
   gfx::Rect original_screen_rect() const { return original_view_screen_rect_; }
+  const WebScreenInfo& original_screen_info() { return original_screen_info_; }
 
   void ChangeEmulationParams(
       const gfx::Rect& device_rect,
@@ -571,6 +572,8 @@ void RenderWidget::SetPopupOriginAdjustmentsForEmulation(
   popup_screen_origin_for_emulation_ = gfx::Point(
       emulator->original_screen_rect().origin().x() + emulator->offset().x(),
       emulator->original_screen_rect().origin().y() + emulator->offset().y());
+  screen_info_ = emulator->original_screen_info();
+  device_scale_factor_ = screen_info_.deviceScaleFactor;
 }
 
 void RenderWidget::SetScreenMetricsEmulationParameters(
@@ -916,25 +919,8 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
 
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
   if (!use_software) {
-    // Explicitly disable antialiasing for the compositor. As of the time of
-    // this writing, the only platform that supported antialiasing for the
-    // compositor was Mac OS X, because the on-screen OpenGL context creation
-    // code paths on Windows and Linux didn't yet have multisampling support.
-    // Mac OS X essentially always behaves as though it's rendering offscreen.
-    // Multisampling has a heavy cost especially on devices with relatively low
-    // fill rate like most notebooks, and the Mac implementation would need to
-    // be optimized to resolve directly into the IOSurface shared between the
-    // GPU and browser processes. For these reasons and to avoid platform
-    // disparities we explicitly disable antialiasing.
-    blink::WebGraphicsContext3D::Attributes attributes;
-    attributes.antialias = false;
-    attributes.shareResources = true;
-    attributes.noAutomaticFlushes = true;
-    attributes.depth = false;
-    attributes.stencil = false;
     context_provider = ContextProviderCommandBuffer::Create(
-        CreateGraphicsContext3D(attributes),
-        "RenderCompositor");
+        CreateGraphicsContext3D(), "RenderCompositor");
     if (!context_provider.get()) {
       // Cause the compositor to wait and try again.
       return scoped_ptr<cc::OutputSurface>();
@@ -1091,6 +1077,11 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   TRACE_EVENT1("renderer", "RenderWidget::OnHandleInputEvent",
                "event", event_name);
   TRACE_EVENT_SYNTHETIC_DELAY_BEGIN("blink.HandleInputEvent");
+  TRACE_EVENT_FLOW_STEP0(
+      "input",
+      "LatencyInfo.Flow",
+      TRACE_ID_DONT_MANGLE(latency_info.trace_id),
+      "HanldeInputEventMain");
 
   scoped_ptr<cc::SwapPromiseMonitor> latency_info_swap_promise_monitor;
   ui::LatencyInfo swap_latency_info(latency_info);
@@ -2834,8 +2825,7 @@ bool RenderWidget::HasTouchEventHandlersAt(const gfx::Point& point) const {
 }
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
-RenderWidget::CreateGraphicsContext3D(
-    const blink::WebGraphicsContext3D::Attributes& attributes) {
+RenderWidget::CreateGraphicsContext3D() {
   if (!webwidget_)
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
   if (CommandLine::ForCurrentProcess()->HasSwitch(
@@ -2850,6 +2840,24 @@ RenderWidget::CreateGraphicsContext3D(
   if (!gpu_channel_host)
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
 
+  // Explicitly disable antialiasing for the compositor. As of the time of
+  // this writing, the only platform that supported antialiasing for the
+  // compositor was Mac OS X, because the on-screen OpenGL context creation
+  // code paths on Windows and Linux didn't yet have multisampling support.
+  // Mac OS X essentially always behaves as though it's rendering offscreen.
+  // Multisampling has a heavy cost especially on devices with relatively low
+  // fill rate like most notebooks, and the Mac implementation would need to
+  // be optimized to resolve directly into the IOSurface shared between the
+  // GPU and browser processes. For these reasons and to avoid platform
+  // disparities we explicitly disable antialiasing.
+  blink::WebGraphicsContext3D::Attributes attributes;
+  attributes.antialias = false;
+  attributes.shareResources = true;
+  attributes.noAutomaticFlushes = true;
+  attributes.depth = false;
+  attributes.stencil = false;
+  bool bind_generates_resources = false;
+  bool lose_context_when_out_of_memory = true;
   WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
 #if defined(OS_ANDROID)
   // If we raster too fast we become upload bound, and pending
@@ -2875,14 +2883,14 @@ RenderWidget::CreateGraphicsContext3D(
 #endif
 
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
-      new WebGraphicsContext3DCommandBufferImpl(
-          surface_id(),
-          GetURLForGraphicsContext3D(),
-          gpu_channel_host.get(),
-          attributes,
-          false /* bind generates resources */,
-          limits,
-          NULL));
+      new WebGraphicsContext3DCommandBufferImpl(surface_id(),
+                                                GetURLForGraphicsContext3D(),
+                                                gpu_channel_host.get(),
+                                                attributes,
+                                                bind_generates_resources,
+                                                lose_context_when_out_of_memory,
+                                                limits,
+                                                NULL));
   return context.Pass();
 }
 

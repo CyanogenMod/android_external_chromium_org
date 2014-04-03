@@ -12,7 +12,6 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
-	$(call intermediates-dir-for,GYP,jingle_jingle_glue_gyp)/jingle_glue.stamp \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
@@ -111,8 +110,8 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/android/proxy_media_keys.cc \
 	content/renderer/media/android/renderer_demuxer_android.cc \
 	content/renderer/media/android/renderer_media_player_manager.cc \
-	content/renderer/media/android/stream_texture_factory_android_impl.cc \
-	content/renderer/media/android/stream_texture_factory_android_synchronous_impl.cc \
+	content/renderer/media/android/stream_texture_factory_impl.cc \
+	content/renderer/media/android/stream_texture_factory_synchronous_impl.cc \
 	content/renderer/media/android/webmediaplayer_android.cc \
 	content/renderer/media/audio_device_factory.cc \
 	content/renderer/media/audio_input_message_filter.cc \
@@ -127,6 +126,9 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/crypto/key_systems_support_uma.cc \
 	content/renderer/media/crypto/pepper_cdm_wrapper_impl.cc \
 	content/renderer/media/crypto/proxy_decryptor.cc \
+	content/renderer/media/media_stream_audio_level_calculator.cc \
+	content/renderer/media/media_stream_audio_renderer.cc \
+	content/renderer/media/media_stream_track.cc \
 	content/renderer/media/midi_dispatcher.cc \
 	content/renderer/media/midi_message_filter.cc \
 	content/renderer/media/render_media_log.cc \
@@ -198,7 +200,59 @@ LOCAL_SRC_FILES := \
 	content/renderer/webscrollbarbehavior_impl_gtkoraura.cc \
 	content/renderer/websharedworker_proxy.cc \
 	content/renderer/external_popup_menu.cc \
-	content/renderer/media/webrtc_logging_noop.cc
+	content/public/renderer/media_stream_audio_sink.cc \
+	content/public/renderer/media_stream_video_sink.cc \
+	content/renderer/media/media_stream.cc \
+	content/renderer/media/media_stream_audio_processor.cc \
+	content/renderer/media/media_stream_audio_processor_options.cc \
+	content/renderer/media/media_stream_audio_sink_owner.cc \
+	content/renderer/media/media_stream_center.cc \
+	content/renderer/media/media_stream_dependency_factory.cc \
+	content/renderer/media/media_stream_dispatcher.cc \
+	content/renderer/media/media_stream_impl.cc \
+	content/renderer/media/media_stream_audio_source.cc \
+	content/renderer/media/media_stream_source.cc \
+	content/renderer/media/media_stream_video_capturer_source.cc \
+	content/renderer/media/media_stream_video_source.cc \
+	content/renderer/media/media_stream_video_track.cc \
+	content/renderer/media/native_handle_impl.cc \
+	content/renderer/media/peer_connection_audio_sink_owner.cc \
+	content/renderer/media/peer_connection_handler_base.cc \
+	content/renderer/media/peer_connection_identity_service.cc \
+	content/renderer/media/peer_connection_tracker.cc \
+	content/renderer/media/remote_media_stream_impl.cc \
+	content/renderer/media/rtc_data_channel_handler.cc \
+	content/renderer/media/rtc_dtmf_sender_handler.cc \
+	content/renderer/media/rtc_media_constraints.cc \
+	content/renderer/media/rtc_peer_connection_handler.cc \
+	content/renderer/media/rtc_video_decoder.cc \
+	content/renderer/media/rtc_video_decoder_factory.cc \
+	content/renderer/media/rtc_video_encoder.cc \
+	content/renderer/media/rtc_video_encoder_factory.cc \
+	content/renderer/media/rtc_video_renderer.cc \
+	content/renderer/media/video_source_handler.cc \
+	content/renderer/media/webaudio_capturer_source.cc \
+	content/renderer/media/webrtc/media_stream_track_metrics.cc \
+	content/renderer/media/webrtc/webrtc_audio_sink_adapter.cc \
+	content/renderer/media/webrtc/webrtc_local_audio_track_adapter.cc \
+	content/renderer/media/webrtc/webrtc_video_capturer_adapter.cc \
+	content/renderer/media/webrtc/webrtc_video_sink_adapter.cc \
+	content/renderer/media/webrtc_audio_capturer.cc \
+	content/renderer/media/webrtc_audio_device_impl.cc \
+	content/renderer/media/webrtc_audio_device_not_impl.cc \
+	content/renderer/media/webrtc_audio_renderer.cc \
+	content/renderer/media/webrtc_identity_service.cc \
+	content/renderer/media/webrtc_local_audio_renderer.cc \
+	content/renderer/media/webrtc_local_audio_source_provider.cc \
+	content/renderer/media/webrtc_local_audio_track.cc \
+	content/renderer/media/webrtc_logging.cc \
+	content/renderer/media/webrtc_uma_histograms.cc \
+	content/renderer/p2p/host_address_request.cc \
+	content/renderer/p2p/ipc_network_manager.cc \
+	content/renderer/p2p/ipc_socket_factory.cc \
+	content/renderer/p2p/port_allocator.cc \
+	content/renderer/p2p/socket_client_impl.cc \
+	content/renderer/p2p/socket_dispatcher.cc
 
 
 # Flags passed to both C and C++ files.
@@ -244,6 +298,7 @@ MY_DEFS_Debug := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -252,6 +307,7 @@ MY_DEFS_Debug := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DLIBPEERCONNECTION_LIB=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -286,6 +342,10 @@ MY_DEFS_Debug := \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
+	'-DWEBRTC_CHROMIUM_BUILD' \
+	'-DWEBRTC_LINUX' \
+	'-DWEBRTC_ANDROID' \
+	'-DWEBRTC_ANDROID_OPENSLES' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -347,6 +407,10 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
+	$(LOCAL_PATH)/third_party/libyuv/include \
+	$(LOCAL_PATH)/third_party/libyuv \
+	$(LOCAL_PATH)/third_party/webrtc/modules/interface \
+	$(LOCAL_PATH)/third_party/webrtc/modules/audio_device/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -406,6 +470,7 @@ MY_DEFS_Release := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -414,6 +479,7 @@ MY_DEFS_Release := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DLIBPEERCONNECTION_LIB=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -448,6 +514,10 @@ MY_DEFS_Release := \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
+	'-DWEBRTC_CHROMIUM_BUILD' \
+	'-DWEBRTC_LINUX' \
+	'-DWEBRTC_ANDROID' \
+	'-DWEBRTC_ANDROID_OPENSLES' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -510,6 +580,10 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
+	$(LOCAL_PATH)/third_party/libyuv/include \
+	$(LOCAL_PATH)/third_party/libyuv \
+	$(LOCAL_PATH)/third_party/webrtc/modules/interface \
+	$(LOCAL_PATH)/third_party/webrtc/modules/audio_device/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

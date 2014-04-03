@@ -53,6 +53,26 @@ scoped_ptr<PcmAudioFrame> ToPcmAudioFrame(const AudioBus& audio_bus,
   return audio_frame.Pass();
 }
 
+int CountZeroCrossings(const float* samples, int len) {
+  // The sample values must pass beyond |kAmplitudeThreshold| on the opposite
+  // side of zero before a crossing will be counted.
+  const float kAmplitudeThreshold = 0.03f;  // 3% of max amplitude.
+
+  int count = 0;
+  int i = 0;
+  float last = 0.0f;
+  for (; i < len && fabsf(last) < kAmplitudeThreshold; ++i)
+    last = samples[i];
+  for (; i < len; ++i) {
+    if (fabsf(samples[i]) >= kAmplitudeThreshold &&
+        (last < 0) != (samples[i] < 0)) {
+      ++count;
+      last = samples[i];
+    }
+  }
+  return count;
+}
+
 int CountZeroCrossings(const std::vector<int16>& samples) {
   // The sample values must pass beyond |kAmplitudeThreshold| on the opposite
   // side of zero before a crossing will be counted.
@@ -113,7 +133,7 @@ bool EncodeTimestamp(uint16 timestamp,
   // gray-code the number
   timestamp = (timestamp >> 1) ^ timestamp;
   std::vector<double> frequencies;
-  for (int i = 0; i < kNumBits; i++) {
+  for (size_t i = 0; i < kNumBits; i++) {
     if ((timestamp >> i) & 1) {
       frequencies.push_back(kBaseFrequency * (i+1));
     }
@@ -165,7 +185,7 @@ bool DecodeTimestamp(const std::vector<int16>& samples, uint16* timestamp) {
     if (sense < kMinSense) continue;
     bool success = true;
     uint16 gray_coded = 0;
-    for (int bit = 0; success && bit < kNumBits; bit++) {
+    for (size_t bit = 0; success && bit < kNumBits; bit++) {
       double signal_strength = DecodeOneFrequency(
           &samples[start],
           kSamplesToAnalyze,

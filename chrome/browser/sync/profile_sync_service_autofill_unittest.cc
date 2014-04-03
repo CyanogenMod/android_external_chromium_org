@@ -24,7 +24,6 @@
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
 #include "chrome/browser/sync/glue/autofill_data_type_controller.h"
@@ -46,11 +45,13 @@
 #include "components/autofill/core/browser/webdata/autofill_profile_syncable_service.h"
 #include "components/autofill/core/browser/webdata/autofill_table.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/data_type_controller.h"
 #include "components/webdata/common/web_data_service_test_util.h"
 #include "components/webdata/common/web_database.h"
 #include "content/public/test/test_browser_thread.h"
 #include "google_apis/gaia/gaia_constants.h"
+#include "sync/api/attachments/fake_attachment_service.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/data_type_debug_info_listener.h"
 #include "sync/internal_api/public/read_node.h"
@@ -368,7 +369,8 @@ ACTION(MakeGenericChangeProcessor) {
       arg1,
       arg2,
       arg3,
-      user_share);
+      user_share,
+      syncer::FakeAttachmentService::CreateForTest());
 }
 
 ACTION(MakeSharedChangeProcessor) {

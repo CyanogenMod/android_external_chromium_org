@@ -146,6 +146,17 @@ void HandleFetchResponse(const ServiceWorkerVersion::FetchCallback& callback,
   callback.Run(SERVICE_WORKER_OK, result, response);
 }
 
+void HandleSyncEventFinished(const StatusCallback& callback,
+                             ServiceWorkerStatusCode status,
+                             const IPC::Message& message) {
+  if (message.type() != ServiceWorkerHostMsg_SyncEventFinished::ID) {
+    NOTREACHED() << "Got unexpected response for SyncEvent: " << message.type();
+    callback.Run(SERVICE_WORKER_ERROR_FAILED);
+    return;
+  }
+  callback.Run(status);
+}
+
 }  // namespace
 
 ServiceWorkerVersion::ServiceWorkerVersion(
@@ -306,20 +317,19 @@ void ServiceWorkerVersion::DispatchActivateEvent(
     const StatusCallback& callback) {
   DCHECK_EQ(INSTALLED, status()) << status();
   SetStatus(ACTIVATING);
-  // TODO(kinuko): Implement.
-  NOTIMPLEMENTED();
+  // TODO(dominicc): Also dispatch activate callbacks to the document,
+  // and activate end callbacks to the service worker and the document.
   HandleInstallPhaseEventFinishedParameters params(
       weak_factory_.GetWeakPtr(),
-      -1 /* dummy message_id */,
-      InstallPhaseEventFinishedMessageReader(),
+      ServiceWorkerHostMsg_ActivateEventFinished::ID,
+      base::Bind(&ServiceWorkerHostMsg_ActivateEventFinished::Read),
       callback,
       ACTIVE,
       INSTALLED,
       SERVICE_WORKER_ERROR_ACTIVATE_WORKER_FAILED);
-  RunSoon(base::Bind(&HandleInstallPhaseEventFinished,
-                     params,
-                     SERVICE_WORKER_OK,
-                     IPC::Message(-1, -1, IPC::Message::PRIORITY_NORMAL)));
+  SendMessageAndRegisterCallback(
+      ServiceWorkerMsg_ActivateEvent(),
+      base::Bind(&HandleInstallPhaseEventFinished, params));
 }
 
 void ServiceWorkerVersion::DispatchFetchEvent(
@@ -329,6 +339,13 @@ void ServiceWorkerVersion::DispatchFetchEvent(
   SendMessageAndRegisterCallback(
       ServiceWorkerMsg_FetchEvent(request),
       base::Bind(&HandleFetchResponse, callback));
+}
+
+void ServiceWorkerVersion::DispatchSyncEvent(const StatusCallback& callback) {
+  DCHECK_EQ(ACTIVE, status()) << status();
+  SendMessageAndRegisterCallback(
+      ServiceWorkerMsg_SyncEvent(),
+      base::Bind(&HandleSyncEventFinished, callback));
 }
 
 void ServiceWorkerVersion::AddProcessToWorker(int process_id) {

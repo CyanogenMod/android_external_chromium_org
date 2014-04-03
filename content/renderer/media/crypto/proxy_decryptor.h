@@ -59,7 +59,6 @@ class ProxyDecryptor {
       const CreatePepperCdmCB& create_pepper_cdm_cb,
 #elif defined(OS_ANDROID)
       RendererMediaPlayerManager* manager,
-      int cdm_id,
 #endif  // defined(ENABLE_PEPPER_CDMS)
       const KeyAddedCB& key_added_cb,
       const KeyErrorCB& key_error_cb,
@@ -70,8 +69,15 @@ class ProxyDecryptor {
   // Decryptor is associated.
   media::Decryptor* GetDecryptor();
 
+#if defined(OS_ANDROID)
+  // Returns the CDM ID associated with this object. May be kInvalidCdmId if no
+  // CDM ID is associated, such as when Clear Key is used.
+  int GetCdmId();
+#endif
+
   // Only call this once.
-  bool InitializeCDM(const std::string& key_system, const GURL& frame_url);
+  bool InitializeCDM(const std::string& key_system,
+                     const GURL& security_origin);
 
   // May only be called after InitializeCDM() succeeds.
   bool GenerateKeyRequest(const std::string& type,
@@ -88,7 +94,7 @@ class ProxyDecryptor {
 
   // Helper function to create MediaKeys to handle the given |key_system|.
   scoped_ptr<media::MediaKeys> CreateMediaKeys(const std::string& key_system,
-                                               const GURL& frame_url);
+                                               const GURL& security_origin);
 
   // Callbacks for firing session events.
   void OnSessionCreated(uint32 session_id, const std::string& web_session_id);

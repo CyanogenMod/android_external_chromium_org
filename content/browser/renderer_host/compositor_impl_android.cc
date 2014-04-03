@@ -36,6 +36,7 @@
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
+#include "content/common/host_shared_bitmap_manager.h"
 #include "content/public/browser/android/compositor_client.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -384,14 +385,14 @@ void CompositorImpl::SetVisible(bool visible) {
     settings.allow_antialiasing = false;
     settings.calculate_top_controls_position = false;
     settings.top_controls_height = 0.f;
-    settings.use_memory_management = false;
     settings.highp_threshold_min = 2048;
 
     CommandLine* command_line = CommandLine::ForCurrentProcess();
     settings.initial_debug_state.SetRecordRenderingStats(
         command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking));
 
-    host_ = cc::LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings);
+    host_ = cc::LayerTreeHost::CreateSingleThreaded(
+        this, this, HostSharedBitmapManager::current(), settings);
     host_->SetRootLayer(root_layer_);
 
     host_->SetVisible(true);
@@ -517,12 +518,15 @@ CreateGpuProcessViewContext(
   limits.max_transfer_buffer_size = std::min(
       3 * full_screen_texture_size_in_bytes, kDefaultMaxTransferBufferSize);
   limits.mapped_memory_reclaim_limit = 2 * 1024 * 1024;
+  bool bind_generates_resource = false;
+  bool lose_context_when_out_of_memory = true;
   return make_scoped_ptr(
       new WebGraphicsContext3DCommandBufferImpl(surface_id,
                                                 url,
                                                 gpu_channel_host.get(),
                                                 attributes,
-                                                false,
+                                                bind_generates_resource,
+                                                lose_context_when_out_of_memory,
                                                 limits,
                                                 NULL));
 }

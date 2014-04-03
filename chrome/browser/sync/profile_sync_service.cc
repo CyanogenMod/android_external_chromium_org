@@ -31,10 +31,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
-#include "chrome/browser/signin/about_signin_internals.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/backend_migrator.h"
 #include "chrome/browser/sync/glue/change_processor.h"
@@ -62,7 +60,9 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/signin/core/browser/about_signin_internals.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/data_type_controller.h"
 #include "components/sync_driver/pref_names.h"
 #include "components/sync_driver/system_encryptor.h"
@@ -936,7 +936,7 @@ void ProfileSyncService::OnBackendInitialized(
   debug_info_listener_ = debug_info_listener;
 
   if (protocol_event_observers_.might_have_observers()) {
-    backend_->SetForwardProtocolEvents(true);
+    backend_->RequestBufferedProtocolEventsAndEnableForwarding();
   }
 
   // If we have a cached passphrase use it to decrypt/encrypt data now that the
@@ -2067,17 +2067,15 @@ void ProfileSyncService::AddProtocolEventObserver(
     browser_sync::ProtocolEventObserver* observer) {
   protocol_event_observers_.AddObserver(observer);
   if (backend_) {
-    backend_->SetForwardProtocolEvents(
-        protocol_event_observers_.might_have_observers());
+    backend_->RequestBufferedProtocolEventsAndEnableForwarding();
   }
 }
 
 void ProfileSyncService::RemoveProtocolEventObserver(
     browser_sync::ProtocolEventObserver* observer) {
   protocol_event_observers_.RemoveObserver(observer);
-  if (backend_) {
-    backend_->SetForwardProtocolEvents(
-        protocol_event_observers_.might_have_observers());
+  if (backend_ && !protocol_event_observers_.might_have_observers()) {
+    backend_->DisableProtocolEventForwarding();
   }
 }
 

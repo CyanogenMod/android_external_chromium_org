@@ -68,11 +68,10 @@ class SyncEngineInitializer : public SyncTask {
  public:
   SyncEngineInitializer(SyncEngineContext* sync_context,
                         base::SequencedTaskRunner* task_runner,
-                        drive::DriveServiceInterface* drive_service,
                         const base::FilePath& database_path,
                         leveldb::Env* env_override);
   virtual ~SyncEngineInitializer();
-  virtual void Run(scoped_ptr<SyncTaskToken> token) OVERRIDE;
+  virtual void RunPreflight(scoped_ptr<SyncTaskToken> token) OVERRIDE;
 
   scoped_ptr<MetadataDatabase> PassMetadataDatabase();
 
@@ -112,7 +111,6 @@ class SyncEngineInitializer : public SyncTask {
   leveldb::Env* env_override_;
 
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
-  drive::DriveServiceInterface* drive_service_;
   google_apis::CancelCallback cancel_callback_;
   base::FilePath database_path_;
 

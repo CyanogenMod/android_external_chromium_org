@@ -203,7 +203,8 @@ class ErrorConsoleBrowserTest : public ExtensionBrowserTest {
     ExtensionBrowserTest::SetUpInProcessBrowserTestFixture();
 
     // We need to enable the ErrorConsole FeatureSwitch in order to collect
-    // errors.
+    // errors. This should be enabled on any channel <= Dev, but let's make
+    // sure (in case a test is running on, e.g., a beta channel).
     FeatureSwitch::error_console()->SetOverrideValue(
         FeatureSwitch::OVERRIDE_ENABLED);
   }
@@ -363,7 +364,7 @@ IN_PROC_BROWSER_TEST_F(ErrorConsoleBrowserTest,
 // Load an extension which, upon visiting any page, first sends out a console
 // log, and then crashes with a JS TypeError.
 IN_PROC_BROWSER_TEST_F(ErrorConsoleBrowserTest,
-                       ContentScriptLogAndRuntimeError) {
+                       DISABLED_ContentScriptLogAndRuntimeError) {
   const Extension* extension = NULL;
   LoadExtensionAndCheckErrors(
       "content_script_log_and_runtime_error",

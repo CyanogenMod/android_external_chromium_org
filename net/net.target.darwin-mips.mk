@@ -364,6 +364,7 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_data_writer.cc \
 	net/quic/quic_default_packet_writer.cc \
 	net/quic/quic_fec_group.cc \
+	net/quic/quic_flags.cc \
 	net/quic/quic_framer.cc \
 	net/quic/quic_headers_stream.cc \
 	net/quic/quic_http_stream.cc \
@@ -375,8 +376,8 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_reliable_client_stream.cc \
 	net/quic/quic_sent_entropy_manager.cc \
 	net/quic/quic_sent_packet_manager.cc \
+	net/quic/quic_server_id.cc \
 	net/quic/quic_session.cc \
-	net/quic/quic_session_key.cc \
 	net/quic/quic_socket_address_coder.cc \
 	net/quic/quic_stream_factory.cc \
 	net/quic/quic_stream_sequencer.cc \
@@ -567,6 +568,7 @@ MY_DEFS_Debug := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -664,6 +666,7 @@ MY_DEFS_Release := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

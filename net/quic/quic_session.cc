@@ -280,7 +280,7 @@ void QuicSession::OnCanWrite() {
       has_pending_handshake_ = false;  // We just popped it.
     }
     ReliableQuicStream* stream = GetStream(stream_id);
-    if (stream != NULL) {
+    if (stream != NULL && !stream->IsFlowControlBlocked()) {
       // If the stream can't write all bytes, it'll re-add itself to the blocked
       // list.
       stream->OnCanWrite();
@@ -364,6 +364,26 @@ bool QuicSession::IsCryptoHandshakeConfirmed() {
 
 void QuicSession::OnConfigNegotiated() {
   connection_->SetFromConfig(config_);
+  // Tell all streams about the newly received peer receive window.
+  if (connection()->version() >= QUIC_VERSION_17) {
+    // Streams which were created before the SHLO was received (0RTT requests)
+    // are now informed of the peer's initial flow control window.
+    uint32 new_flow_control_send_window =
+        config_.peer_initial_flow_control_window_bytes();
+    if (new_flow_control_send_window < kDefaultFlowControlSendWindow) {
+      LOG(DFATAL)
+          << "Peer sent us an invalid flow control send window: "
+          << new_flow_control_send_window
+          << ", below default: " << kDefaultFlowControlSendWindow;
+      connection_->SendConnectionClose(QUIC_FLOW_CONTROL_ERROR);
+      return;
+    }
+    DataStreamMap::iterator it = stream_map_.begin();
+    while (it != stream_map_.end()) {
+      it->second->UpdateFlowControlSendLimit(new_flow_control_send_window);
+      it++;
+    }
+  }
 }
 
 void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
@@ -464,9 +484,16 @@ QuicDataStream* QuicSession::GetIncomingDataStream(QuicStreamId stream_id) {
 
   implicitly_created_streams_.erase(stream_id);
   if (stream_id > largest_peer_created_stream_id_) {
-    // TODO(rch) add unit test for this
     if (stream_id - largest_peer_created_stream_id_ > kMaxStreamIdDelta) {
-      connection()->SendConnectionClose(QUIC_INVALID_STREAM_ID);
+      // We may already have sent a connection close due to multiple reset
+      // streams in the same packet.
+      if (connection()->connected()) {
+        LOG(ERROR) << "Trying to get stream: " << stream_id
+                   << ", largest peer created stream: "
+                   << largest_peer_created_stream_id_
+                   << ", max delta: " << kMaxStreamIdDelta;
+        connection()->SendConnectionClose(QUIC_INVALID_STREAM_ID);
+      }
       return NULL;
     }
     if (largest_peer_created_stream_id_ == 0) {
@@ -522,6 +549,9 @@ void QuicSession::MarkWriteBlocked(QuicStreamId id, QuicPriority priority) {
 #ifndef NDEBUG
   ReliableQuicStream* stream = GetStream(id);
   if (stream != NULL) {
+    if (stream->IsFlowControlBlocked()) {
+      LOG(DFATAL) << "Stream " << id << " is flow control blocked.";
+    }
     LOG_IF(DFATAL, priority != stream->EffectivePriority())
         << "Priorities do not match.  Got: " << priority
         << " Expected: " << stream->EffectivePriority();

@@ -117,6 +117,7 @@ LOCAL_SRC_FILES := \
 	content/browser/android/web_contents_observer_android.cc \
 	content/browser/appcache/appcache_dispatcher_host.cc \
 	content/browser/appcache/appcache_frontend_proxy.cc \
+	content/browser/appcache/appcache_interceptor.cc \
 	content/browser/appcache/chrome_appcache_service.cc \
 	content/browser/appcache/view_appcache_internals_job.cc \
 	content/browser/browser_child_process_host_impl.cc \
@@ -427,6 +428,7 @@ LOCAL_SRC_FILES := \
 	content/browser/service_worker/service_worker_registration_status.cc \
 	content/browser/service_worker/service_worker_request_handler.cc \
 	content/browser/service_worker/service_worker_storage.cc \
+	content/browser/service_worker/service_worker_unregister_job.cc \
 	content/browser/service_worker/service_worker_url_request_job.cc \
 	content/browser/service_worker/service_worker_utils.cc \
 	content/browser/service_worker/service_worker_version.cc \
@@ -482,7 +484,15 @@ LOCAL_SRC_FILES := \
 	content/browser/worker_host/worker_service_impl.cc \
 	content/browser/worker_host/worker_storage_partition.cc \
 	content/browser/power_profiler/power_data_provider_dummy.cc \
-	content/browser/gamepad/gamepad_platform_data_fetcher.cc
+	content/browser/gamepad/gamepad_platform_data_fetcher.cc \
+	content/browser/renderer_host/media/peer_connection_tracker_host.cc \
+	content/browser/renderer_host/media/webrtc_identity_service_host.cc \
+	content/browser/renderer_host/p2p/socket_host.cc \
+	content/browser/renderer_host/p2p/socket_host_tcp.cc \
+	content/browser/renderer_host/p2p/socket_host_tcp_server.cc \
+	content/browser/renderer_host/p2p/socket_host_throttler.cc \
+	content/browser/renderer_host/p2p/socket_host_udp.cc \
+	content/browser/renderer_host/p2p/socket_dispatcher_host.cc
 
 
 # Flags passed to both C and C++ files.
@@ -529,6 +539,7 @@ MY_DEFS_Debug := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -563,12 +574,19 @@ MY_DEFS_Debug := \
 	'-DPNG_USER_CONFIG' \
 	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
+	'-DFEATURE_ENABLE_SSL' \
+	'-DFEATURE_ENABLE_VOICEMAIL' \
+	'-DEXPAT_RELATIVE_PATH' \
+	'-DGTEST_RELATIVE_PATH' \
+	'-DNO_MAIN_THREAD_WRAPPING' \
+	'-DNO_SOUND_SYSTEM' \
+	'-DANDROID' \
+	'-DPOSIX' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
-	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
 	'-D_STLP_USE_PTR_SPECIALIZATIONS=1' \
@@ -625,6 +643,12 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/qcms/src \
 	$(LOCAL_PATH)/third_party/iccjpeg \
 	$(PWD)/external/jpeg \
+	$(LOCAL_PATH)/third_party/libjingle/overrides \
+	$(LOCAL_PATH)/third_party/libjingle/source \
+	$(LOCAL_PATH)/testing/gtest/include \
+	$(LOCAL_PATH)/third_party \
+	$(LOCAL_PATH)/third_party/webrtc \
+	$(PWD)/external/expat/lib \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -685,6 +709,7 @@ MY_DEFS_Release := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -719,12 +744,19 @@ MY_DEFS_Release := \
 	'-DPNG_USER_CONFIG' \
 	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
+	'-DFEATURE_ENABLE_SSL' \
+	'-DFEATURE_ENABLE_VOICEMAIL' \
+	'-DEXPAT_RELATIVE_PATH' \
+	'-DGTEST_RELATIVE_PATH' \
+	'-DNO_MAIN_THREAD_WRAPPING' \
+	'-DNO_SOUND_SYSTEM' \
+	'-DANDROID' \
+	'-DPOSIX' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
-	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
 	'-D_STLP_USE_PTR_SPECIALIZATIONS=1' \
@@ -782,6 +814,12 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/qcms/src \
 	$(LOCAL_PATH)/third_party/iccjpeg \
 	$(PWD)/external/jpeg \
+	$(LOCAL_PATH)/third_party/libjingle/overrides \
+	$(LOCAL_PATH)/third_party/libjingle/source \
+	$(LOCAL_PATH)/testing/gtest/include \
+	$(LOCAL_PATH)/third_party \
+	$(LOCAL_PATH)/third_party/webrtc \
+	$(PWD)/external/expat/lib \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

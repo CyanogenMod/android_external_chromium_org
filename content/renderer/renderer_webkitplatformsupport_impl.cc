@@ -689,29 +689,6 @@ WebDatabaseObserver* RendererWebKitPlatformSupportImpl::databaseObserver() {
   return web_database_observer_impl_.get();
 }
 
-// TODO(crogers): remove deprecated API as soon as WebKit calls new API.
-WebAudioDevice*
-RendererWebKitPlatformSupportImpl::createAudioDevice(
-    size_t buffer_size,
-    unsigned channels,
-    double sample_rate,
-    WebAudioDevice::RenderCallback* callback) {
-  return createAudioDevice(
-      buffer_size, 0, channels, sample_rate, callback, "default");
-}
-
-// TODO(crogers): remove deprecated API as soon as WebKit calls new API.
-WebAudioDevice*
-RendererWebKitPlatformSupportImpl::createAudioDevice(
-    size_t buffer_size,
-    unsigned input_channels,
-    unsigned channels,
-    double sample_rate,
-    WebAudioDevice::RenderCallback* callback) {
-  return createAudioDevice(
-      buffer_size, input_channels, channels, sample_rate, callback, "default");
-}
-
 WebAudioDevice*
 RendererWebKitPlatformSupportImpl::createAudioDevice(
     size_t buffer_size,
@@ -1028,10 +1005,11 @@ RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
       limits.command_buffer_size = buffer_size_kb * 1024;
     }
   }
-
+  bool lose_context_when_out_of_memory = false;
   return WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
       gpu_channel_host.get(),
       attributes,
+      lose_context_when_out_of_memory,
       GURL(attributes.topDocumentURL),
       limits,
       static_cast<WebGraphicsContext3DCommandBufferImpl*>(share_context));

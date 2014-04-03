@@ -8,11 +8,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "media/base/audio_bus.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/transport/cast_transport_config.h"
 
 namespace base {
 class TimeTicks;
+class WaitableEvent;
 }  // namespace base
 
 namespace net {
@@ -59,7 +61,13 @@ class InProcessReceiver {
 
   // Schedules destruction on the cast MAIN thread.  Any external references to
   // the InProcessReceiver instance become invalid.
+  // Deprecated: Use Stop instead.
+  // TODO(hubbe): Remove this function and change callers to use Stop.
   void DestroySoon();
+
+  // Destroy the sub-compontents of this class.
+  // After this call, it is safe to destroy this object on any thread.
+  void Stop();
 
  protected:
   // To be implemented by subclasses.  These are called on the Cast MAIN thread
@@ -74,6 +82,10 @@ class InProcessReceiver {
   // Subclasses may override to provide additional start-up functionality.
   virtual void StartOnMainThread();
 
+  // Helper method that destroys |transport_| and |cast_receiver_|.
+  // Subclasses may override to provide additional start-up functionality.
+  virtual void StopOnMainThread(base::WaitableEvent* event);
+
   // Callback for the transport to notify of status changes.  A default
   // implementation is provided here that simply logs socket errors.
   virtual void UpdateCastTransportStatus(transport::CastTransportStatus status);
@@ -82,8 +94,9 @@ class InProcessReceiver {
   friend class base::RefCountedThreadSafe<InProcessReceiver>;
 
   // CastReceiver callbacks that receive a frame and then request another.
-  void GotAudioFrame(scoped_ptr<PcmAudioFrame> audio_frame,
-                     const base::TimeTicks& playout_time);
+  void GotAudioFrame(scoped_ptr<AudioBus> audio_frame,
+                     const base::TimeTicks& playout_time,
+                     bool is_continuous);
   void GotVideoFrame(const scoped_refptr<VideoFrame>& video_frame,
                      const base::TimeTicks& render_time);
   void PullNextAudioFrame();

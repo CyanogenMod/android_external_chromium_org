@@ -19,6 +19,10 @@ class MessageLoopProxy;
 class TaskRunner;
 }
 
+namespace blink {
+class WebDataSource;
+}
+
 namespace content {
 
 class ServiceWorkerScriptContext;
@@ -26,6 +30,7 @@ class ThreadSafeSender;
 
 // This class provides access to/from an embedded worker's WorkerGlobalScope.
 // All methods other than the constructor (it's created on the main thread)
+// and createServiceWorkerNetworkProvider (also called on the main thread)
 // are called on the worker thread.
 //
 // TODO(kinuko): Currently EW/SW separation is made a little hazily.
@@ -56,12 +61,17 @@ class EmbeddedWorkerContextClient
   virtual void workerContextFailedToStart();
   virtual void workerContextStarted(blink::WebServiceWorkerContextProxy* proxy);
   virtual void workerContextDestroyed();
+  virtual void didHandleActivateEvent(int request_id,
+                                      blink::WebServiceWorkerEventResult);
   virtual void didHandleInstallEvent(int request_id,
                                      blink::WebServiceWorkerEventResult result);
   virtual void didHandleFetchEvent(int request_id);
   virtual void didHandleFetchEvent(
       int request_id,
       const blink::WebServiceWorkerResponse& response);
+  virtual blink::WebServiceWorkerNetworkProvider*
+      createServiceWorkerNetworkProvider(blink::WebDataSource* data_source);
+  virtual void didHandleSyncEvent(int request_id);
 
   // TODO: Implement DevTools related method overrides.
 

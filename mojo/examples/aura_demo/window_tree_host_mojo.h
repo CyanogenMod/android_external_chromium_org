@@ -6,7 +6,7 @@
 #define MOJO_EXAMPLES_AURA_DEMO_WINDOW_TREE_HOST_MOJO_H_
 
 #include "base/bind.h"
-#include "mojo/public/bindings/remote_ptr.h"
+#include "mojo/public/cpp/bindings/remote_ptr.h"
 #include "mojo/services/native_viewport/native_viewport.mojom.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/events/event_source.h"
@@ -60,7 +60,8 @@ class WindowTreeHostMojo : public aura::WindowTreeHost,
   virtual void OnCreated() OVERRIDE;
   virtual void OnDestroyed() OVERRIDE;
   virtual void OnBoundsChanged(const Rect& bounds) OVERRIDE;
-  virtual void OnEvent(const Event& event) OVERRIDE;
+  virtual void OnEvent(const Event& event,
+                       const mojo::Callback<void()>& callback) OVERRIDE;
 
   static ui::ContextFactory* context_factory_;
 

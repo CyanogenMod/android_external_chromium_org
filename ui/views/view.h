@@ -70,6 +70,7 @@ class ScrollView;
 class Widget;
 
 namespace internal {
+class PreEventDispatchHandler;
 class PostEventDispatchHandler;
 class RootView;
 }
@@ -711,7 +712,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
   virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
+  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE FINAL;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // Accelerators --------------------------------------------------------------
@@ -1210,6 +1211,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 #endif
 
  private:
+  friend class internal::PreEventDispatchHandler;
   friend class internal::PostEventDispatchHandler;
   friend class internal::RootView;
   friend class FocusManager;

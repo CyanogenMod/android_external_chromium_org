@@ -23,9 +23,6 @@
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_unacked_packet_map.h"
 
-NET_EXPORT_PRIVATE extern bool FLAGS_track_retransmission_history;
-NET_EXPORT_PRIVATE extern bool FLAGS_enable_quic_pacing;
-
 namespace net {
 
 namespace test {
@@ -65,7 +62,8 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   QuicSentPacketManager(bool is_server,
                         const QuicClock* clock,
                         QuicConnectionStats* stats,
-                        CongestionFeedbackType congestion_type);
+                        CongestionFeedbackType congestion_type,
+                        LossDetectionType loss_type);
   virtual ~QuicSentPacketManager();
 
   virtual void SetFromConfig(const QuicConfig& config);
@@ -80,9 +78,8 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   void OnRetransmittedPacket(QuicPacketSequenceNumber old_sequence_number,
                              QuicPacketSequenceNumber new_sequence_number);
 
-  // Processes the incoming ack and returns true if the retransmission or ack
-  // alarm should be reset.
-  bool OnIncomingAck(const ReceivedPacketInfo& received_info,
+  // Processes the incoming ack.
+  void OnIncomingAck(const ReceivedPacketInfo& received_info,
                      QuicTime ack_receive_time);
 
   // Discards any information for the packet corresponding to |sequence_number|.
@@ -139,8 +136,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // calculations.
   virtual QuicTime::Delta TimeUntilSend(QuicTime now,
                                         TransmissionType transmission_type,
-                                        HasRetransmittableData retransmittable,
-                                        IsHandshake handshake);
+                                        HasRetransmittableData retransmittable);
 
   // Returns amount of time for delayed ack timer.
   const QuicTime::Delta DelayedAckTime() const;

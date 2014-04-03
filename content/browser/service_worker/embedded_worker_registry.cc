@@ -78,8 +78,10 @@ void EmbeddedWorkerRegistry::OnSendMessageToBrowser(
   }
   // Perform security check to filter out any unexpected (and non-test)
   // messages. This must list up all message types that can go through here.
-  if (message.type() == ServiceWorkerHostMsg_InstallEventFinished::ID ||
+  if (message.type() == ServiceWorkerHostMsg_ActivateEventFinished::ID ||
+      message.type() == ServiceWorkerHostMsg_InstallEventFinished::ID ||
       message.type() == ServiceWorkerHostMsg_FetchEventFinished::ID ||
+      message.type() == ServiceWorkerHostMsg_SyncEventFinished::ID ||
       IPC_MESSAGE_CLASS(message) == TestMsgStart) {
     found->second->OnMessageReceived(request_id, message);
     return;

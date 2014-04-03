@@ -170,12 +170,12 @@ const char kWebContentsAndroidKey[] = "web_contents_android";
 base::LazyInstance<std::vector<WebContentsImpl::CreatedCallback> >
 g_created_callbacks = LAZY_INSTANCE_INITIALIZER;
 
-static int StartDownload(content::RenderViewHost* rvh,
+static int StartDownload(content::RenderFrameHost* rfh,
                          const GURL& url,
                          bool is_favicon,
                          uint32_t max_bitmap_size) {
   static int g_next_image_download_id = 0;
-  rvh->Send(new ImageMsg_DownloadImage(rvh->GetRoutingID(),
+  rfh->Send(new ImageMsg_DownloadImage(rfh->GetRoutingID(),
                                        ++g_next_image_download_id,
                                        url,
                                        is_favicon,
@@ -1774,6 +1774,10 @@ void WebContentsImpl::SetHistoryLengthAndPrune(
                                             minimum_page_id));
 }
 
+void WebContentsImpl::ReloadFocusedFrame(bool ignore_cache) {
+  Send(new FrameMsg_Reload(GetFocusedFrame()->GetRoutingID(), ignore_cache));
+}
+
 void WebContentsImpl::FocusThroughTabTraversal(bool reverse) {
   if (ShowingInterstitialPage()) {
     GetRenderManager()->interstitial_page()->FocusThroughTabTraversal(reverse);
@@ -2061,8 +2065,7 @@ int WebContentsImpl::DownloadImage(const GURL& url,
                                    bool is_favicon,
                                    uint32_t max_bitmap_size,
                                    const ImageDownloadCallback& callback) {
-  RenderViewHost* host = GetRenderViewHost();
-  int id = StartDownload(host, url, is_favicon, max_bitmap_size);
+  int id = StartDownload(GetMainFrame(), url, is_favicon, max_bitmap_size);
   image_download_map_[id] = callback;
   return id;
 }
@@ -2232,6 +2235,21 @@ void WebContentsImpl::DidCommitProvisionalLoad(
                                        url,
                                        transition_type,
                                        render_view_host));
+}
+
+void WebContentsImpl::DidNavigateMainFramePreCommit(
+    const FrameHostMsg_DidCommitProvisionalLoad_Params& params) {
+  // Ensure fullscreen mode is exited before committing the navigation to a
+  // different page.  The next page will not start out assuming it is in
+  // fullscreen mode.
+  if (params.was_within_same_page) {
+    // No document change?  Then, the renderer shall decide whether to exit
+    // fullscreen.
+    return;
+  }
+  if (IsFullscreenForCurrentTab())
+    GetRenderViewHost()->ExitFullscreen();
+  DCHECK(!IsFullscreenForCurrentTab());
 }
 
 void WebContentsImpl::DidNavigateMainFramePostCommit(
@@ -3049,19 +3067,8 @@ void WebContentsImpl::Close(RenderViewHost* rvh) {
 }
 
 void WebContentsImpl::SwappedOut(RenderFrameHost* rfh) {
-  // TODO(creis): Handle subframes that go fullscreen.
-  if (rfh->GetRenderViewHost() == GetRenderViewHost()) {
-    // Exit fullscreen mode before the current RVH is swapped out.  For numerous
-    // cases, there is no guarantee the renderer would/could initiate an exit.
-    // Example: http://crbug.com/347232
-    if (IsFullscreenForCurrentTab()) {
-      rfh->GetRenderViewHost()->ExitFullscreen();
-      DCHECK(!IsFullscreenForCurrentTab());
-    }
-
-    if (delegate_)
-      delegate_->SwappedOut(this);
-  }
+  if (delegate_ && rfh->GetRenderViewHost() == GetRenderViewHost())
+    delegate_->SwappedOut(this);
 }
 
 void WebContentsImpl::RequestMove(const gfx::Rect& new_bounds) {

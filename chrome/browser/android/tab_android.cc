@@ -118,12 +118,12 @@ GURL TabAndroid::GetURL() const {
       Java_Tab_getUrl(env, obj.obj())));
 }
 
-bool TabAndroid::RestoreIfNeeded() {
+bool TabAndroid::LoadIfNeeded() {
   JNIEnv* env = base::android::AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = weak_java_tab_.get(env);
   if (obj.is_null())
     return false;
-  return Java_Tab_restoreIfNeeded(env, obj.obj());
+  return Java_Tab_loadIfNeeded(env, obj.obj());
 }
 
 content::ContentViewCore* TabAndroid::GetContentViewCore() const {
@@ -229,9 +229,9 @@ void TabAndroid::SwapTabContents(content::WebContents* old_contents,
           Java_Tab_getNativeInfoBarContainer(
               env,
               weak_java_tab_.get(env).obj()));
-  InfoBarService* new_infobar_service = new_contents ?
-      InfoBarService::FromWebContents(new_contents) : NULL;
-  infobar_container->ChangeInfoBarService(new_infobar_service);
+  InfoBarManager* new_infobar_manager = new_contents ?
+      InfoBarService::InfoBarManagerFromWebContents(new_contents) : NULL;
+  infobar_container->ChangeInfoBarManager(new_infobar_manager);
 
   Java_Tab_swapWebContents(
       env,

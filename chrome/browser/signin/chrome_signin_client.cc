@@ -4,10 +4,15 @@
 
 #include "chrome/browser/signin/chrome_signin_client.h"
 
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
+#include "chrome/browser/net/chrome_cookie_notification_details.h"
 #include "chrome/browser/signin/local_auth.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome/common/profile_management_switches.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/child_process_host.h"
 #include "url/gurl.h"
@@ -33,6 +38,8 @@ ChromeSigninClient::ChromeSigninClient(Profile* profile)
     : profile_(profile), signin_host_id_(ChildProcessHost::kInvalidUniqueID) {}
 
 ChromeSigninClient::~ChromeSigninClient() {
+  UnregisterForCookieChangedNotification();
+
   std::set<RenderProcessHost*>::iterator i;
   for (i = signin_hosts_observed_.begin(); i != signin_hosts_observed_.end();
        ++i) {
@@ -123,6 +130,34 @@ net::URLRequestContextGetter* ChromeSigninClient::GetURLRequestContext() {
   return profile_->GetRequestContext();
 }
 
+bool ChromeSigninClient::ShouldMergeSigninCredentialsIntoCookieJar() {
+  // If inline sign in is enabled, but new profile management is not, the user's
+  // credentials should be merge into the cookie jar.
+  return !switches::IsEnableWebBasedSignin() &&
+         !switches::IsNewProfileManagement();
+}
+
+std::string ChromeSigninClient::GetProductVersion() {
+  chrome::VersionInfo chrome_version;
+  if (!chrome_version.is_valid())
+    return "invalid";
+  return chrome_version.CreateVersionString();
+}
+
+void ChromeSigninClient::SetCookieChangedCallback(
+    const CookieChangedCallback& callback) {
+  if (callback_.Equals(callback))
+    return;
+
+  // There should be only one callback active at a time.
+  DCHECK(callback.is_null() || callback_.is_null());
+  callback_ = callback;
+  if (!callback_.is_null())
+    RegisterForCookieChangedNotification();
+  else
+    UnregisterForCookieChangedNotification();
+}
+
 void ChromeSigninClient::GoogleSigninSucceeded(const std::string& username,
                                                const std::string& password) {
 #if !defined(OS_ANDROID)
@@ -130,4 +165,38 @@ void ChromeSigninClient::GoogleSigninSucceeded(const std::string& username,
   if (switches::IsNewProfileManagement())
     chrome::SetLocalAuthCredentials(profile_, password);
 #endif
+}
+
+void ChromeSigninClient::Observe(int type,
+                                 const content::NotificationSource& source,
+                                 const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_COOKIE_CHANGED: {
+      DCHECK(!callback_.is_null());
+      const net::CanonicalCookie* cookie =
+          content::Details<ChromeCookieDetails>(details).ptr()->cookie;
+      callback_.Run(cookie);
+      break;
+    }
+    default:
+      NOTREACHED();
+      break;
+  }
+}
+
+void ChromeSigninClient::RegisterForCookieChangedNotification() {
+  content::Source<Profile> source(profile_);
+  DCHECK(!registrar_.IsRegistered(
+      this, chrome::NOTIFICATION_COOKIE_CHANGED, source));
+  registrar_.Add(this, chrome::NOTIFICATION_COOKIE_CHANGED, source);
+}
+
+void ChromeSigninClient::UnregisterForCookieChangedNotification() {
+  // Note that it's allowed to call this method multiple times without an
+  // intervening call to |RegisterForCookieChangedNotification()|.
+  content::Source<Profile> source(profile_);
+  if (!registrar_.IsRegistered(
+      this, chrome::NOTIFICATION_COOKIE_CHANGED, source))
+    return;
+  registrar_.Remove(this, chrome::NOTIFICATION_COOKIE_CHANGED, source);
 }

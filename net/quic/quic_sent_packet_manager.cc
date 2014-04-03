@@ -12,26 +12,12 @@
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_ack_notifier_manager.h"
 #include "net/quic/quic_connection_stats.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_utils_chromium.h"
 
 using std::make_pair;
 using std::max;
 using std::min;
-
-// TODO(rtenneti): Remove this.
-// Do not flip this flag until the flakiness of the
-// net/tools/quic/end_to_end_test is fixed.
-// If true, then QUIC connections will track the retransmission history of a
-// packet so that an ack of a previous transmission will ack the data of all
-// other transmissions.
-bool FLAGS_track_retransmission_history = false;
-
-// Do not remove this flag until the Finch-trials described in b/11706275
-// are complete.
-// If true, QUIC connections will support the use of a pacing algorithm when
-// sending packets, in an attempt to reduce packet loss.  The client must also
-// request pacing for the server to enable it.
-bool FLAGS_enable_quic_pacing = true;
 
 namespace net {
 namespace {
@@ -68,14 +54,15 @@ bool HasCryptoHandshake(
 QuicSentPacketManager::QuicSentPacketManager(bool is_server,
                                              const QuicClock* clock,
                                              QuicConnectionStats* stats,
-                                             CongestionFeedbackType type)
+                                             CongestionFeedbackType type,
+                                             LossDetectionType loss_type)
     : unacked_packets_(),
       is_server_(is_server),
       clock_(clock),
       stats_(stats),
       send_algorithm_(
           SendAlgorithmInterface::Create(clock, &rtt_stats_, type, stats)),
-      loss_algorithm_(LossDetectionInterface::Create()),
+      loss_algorithm_(LossDetectionInterface::Create(loss_type)),
       largest_observed_(0),
       consecutive_rto_count_(0),
       consecutive_tlp_count_(0),
@@ -96,6 +83,9 @@ void QuicSentPacketManager::SetFromConfig(const QuicConfig& config) {
   }
   if (config.congestion_control() == kPACE) {
     MaybeEnablePacing();
+  }
+  if (config.loss_detection() == kTIME) {
+    loss_algorithm_.reset(LossDetectionInterface::Create(kTime));
   }
   send_algorithm_->SetFromConfig(config, is_server_);
 }
@@ -127,7 +117,7 @@ void QuicSentPacketManager::OnRetransmittedPacket(
                                          new_sequence_number);
 }
 
-bool QuicSentPacketManager::OnIncomingAck(
+void QuicSentPacketManager::OnIncomingAck(
     const ReceivedPacketInfo& received_info, QuicTime ack_receive_time) {
   // We rely on delta_time_largest_observed to compute an RTT estimate, so
   // we only update rtt when the largest observed gets acked.
@@ -146,10 +136,6 @@ bool QuicSentPacketManager::OnIncomingAck(
     consecutive_tlp_count_ = 0;
     consecutive_crypto_retransmission_count_ = 0;
   }
-
-  // Always reset the retransmission alarm when an ack comes in, since we now
-  // have a better estimate of the current rtt than when it was set.
-  return true;
 }
 
 void QuicSentPacketManager::DiscardUnackedPacket(
@@ -165,12 +151,18 @@ void QuicSentPacketManager::HandleAckForSentPackets(
   while (it != unacked_packets_.end()) {
     QuicPacketSequenceNumber sequence_number = it->first;
     if (sequence_number > received_info.largest_observed) {
-      // These are very new sequence_numbers.
+      // These packets are still in flight.
       break;
     }
 
     if (IsAwaitingPacket(received_info, sequence_number)) {
-      ++it;
+      // Remove any packets not being tracked by the send algorithm, allowing
+      // the high water mark to be raised if necessary.
+      if (QuicUnackedPacketMap::IsSentAndNotPending(it->second)) {
+        it = MarkPacketHandled(sequence_number, NOT_RECEIVED_BY_PEER);
+      } else {
+        ++it;
+      }
       continue;
     }
 
@@ -242,7 +234,6 @@ void QuicSentPacketManager::MarkForRetransmission(
   const QuicUnackedPacketMap::TransmissionInfo& transmission_info =
       unacked_packets_.GetTransmissionInfo(sequence_number);
   LOG_IF(DFATAL, transmission_info.retransmittable_frames == NULL);
-  LOG_IF(DFATAL, transmission_info.sent_time == QuicTime::Zero());
   // TODO(ianswett): Currently the RTO can fire while there are pending NACK
   // retransmissions for the same data, which is not ideal.
   if (ContainsKey(pending_retransmissions_, sequence_number)) {
@@ -261,13 +252,28 @@ QuicSentPacketManager::PendingRetransmission
   DCHECK(!pending_retransmissions_.empty());
   QuicPacketSequenceNumber sequence_number =
       pending_retransmissions_.begin()->first;
+  TransmissionType transmission_type = pending_retransmissions_.begin()->second;
+  if (unacked_packets_.HasPendingCryptoPackets()) {
+    // Ensure crypto packets are retransmitted before other packets.
+    PendingRetransmissionMap::const_iterator it =
+        pending_retransmissions_.begin();
+    do {
+      if (HasCryptoHandshake(
+              unacked_packets_.GetTransmissionInfo(it->first))) {
+        sequence_number = it->first;
+        transmission_type = it->second;
+        break;
+      }
+      ++it;
+    } while (it != pending_retransmissions_.end());
+  }
   DCHECK(unacked_packets_.IsUnacked(sequence_number));
   const QuicUnackedPacketMap::TransmissionInfo& transmission_info =
       unacked_packets_.GetTransmissionInfo(sequence_number);
   DCHECK(transmission_info.retransmittable_frames);
 
   return PendingRetransmission(sequence_number,
-                               pending_retransmissions_.begin()->second,
+                               transmission_type,
                                *transmission_info.retransmittable_frames,
                                transmission_info.sequence_number_length);
 }
@@ -370,18 +376,17 @@ bool QuicSentPacketManager::OnPacketSent(
     return false;
   }
 
-  // Only track packets the send algorithm wants us to track.
+  // Only track packets as pending that the send algorithm wants us to track.
   if (!send_algorithm_->OnPacketSent(sent_time, sequence_number, bytes,
-                                     transmission_type,
                                      has_retransmittable_data)) {
-    unacked_packets_.RemovePacket(sequence_number);
+    unacked_packets_.SetSent(sequence_number, sent_time, bytes, false);
     // Do not reset the retransmission timer, since the packet isn't tracked.
     return false;
   }
 
   const bool set_retransmission_timer = !unacked_packets_.HasPendingPackets();
 
-  unacked_packets_.SetPending(sequence_number, sent_time, bytes);
+  unacked_packets_.SetSent(sequence_number, sent_time, bytes, true);
 
   // Reset the retransmission timer anytime a packet is sent in tail loss probe
   // mode or before the crypto handshake has completed.
@@ -605,10 +610,13 @@ void QuicSentPacketManager::MaybeUpdateRTT(
 QuicTime::Delta QuicSentPacketManager::TimeUntilSend(
     QuicTime now,
     TransmissionType transmission_type,
-    HasRetransmittableData retransmittable,
-    IsHandshake handshake) {
-  return send_algorithm_->TimeUntilSend(now, transmission_type, retransmittable,
-                                        handshake);
+    HasRetransmittableData retransmittable) {
+  // The TLP logic is entirely contained within QuicSentPacketManager, so the
+  // send algorithm does not need to be consulted.
+  if (transmission_type == TLP_RETRANSMISSION) {
+    return QuicTime::Delta::Zero();
+  }
+  return send_algorithm_->TimeUntilSend(now, retransmittable);
 }
 
 // Ensures that the Delayed Ack timer is always set to a value lesser

@@ -12,23 +12,7 @@ if [[ -n "$BASH_VERSION" && "${BASH_SOURCE:-$0}" == "$0" ]]; then
   exit 1
 fi
 
-# Source functions script.  The file is in the same directory as this script.
 SCRIPT_DIR="$(dirname "${BASH_SOURCE:-$0}")"
-
-# Get host architecture, and abort if it is 32-bit.
-host_arch=$(uname -m)
-case "${host_arch}" in
-  x86_64)  # pass
-    ;;
-  i?86)
-    echo "ERROR: Android build requires a 64-bit host build machine."
-    return 1
-    ;;
-  *)
-    echo "ERROR: Unsupported host architecture (${host_arch})."
-    echo "Try running this script on a Linux/x86_64 machine instead."
-    return 1
-esac
 
 CURRENT_DIR="$(readlink -f "${SCRIPT_DIR}/../../")"
 if [[ -z "${CHROME_SRC}" ]]; then
@@ -64,9 +48,6 @@ export PATH=$PATH:${ANDROID_SDK_ROOT}/platform-tools
 # Must be after CHROME_SRC is set.
 export PATH=$PATH:${CHROME_SRC}/build/android
 
-# The set of GYP_DEFINES to pass to gyp.
-DEFINES="OS=android"
-
 if [[ -n "$CHROME_ANDROID_OFFICIAL_BUILD" ]]; then
   # These defines are used by various chrome build scripts to tag the binary's
   # version string as 'official' in linux builds (e.g. in
@@ -76,20 +57,7 @@ if [[ -n "$CHROME_ANDROID_OFFICIAL_BUILD" ]]; then
   export CHROME_BUILD_TYPE="_official"
 fi
 
-# TODO(thakis), Jan 18 2014: Remove this after two weeks or so, after telling
-# everyone to set use_goma in GYP_DEFINES instead of a GOMA_DIR env var.
-if [[ -d $GOMA_DIR ]]; then
-  DEFINES+=" use_goma=1 gomadir=$GOMA_DIR"
-fi
-
-export GYP_DEFINES="${DEFINES}"
-
-# Source a bunch of helper functions
-. ${CHROME_SRC}/build/android/adb_device_functions.sh
-
-# Performs a gyp_chromium run to convert gyp->Makefile for android code.
 android_gyp() {
-  # This is just a simple wrapper of gyp_chromium, please don't add anything
-  # in this function.
+  echo "Please call build/gyp_chromium instead. android_gyp is going away."
   "${CHROME_SRC}/build/gyp_chromium" --depth="${CHROME_SRC}" --check "$@"
 }

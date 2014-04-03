@@ -348,7 +348,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncTest, DisableApps) {
   ASSERT_TRUE(GetClient(1)->DisableSyncForDatatype(syncer::APP_LIST));
   InstallApp(GetProfile(0), 0);
   InstallApp(verifier(), 0);
-  ASSERT_TRUE(AwaitCommitActivityCompletion(GetClient(0)->service()));
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
   ASSERT_TRUE(HasSameAppsAsVerifier(0));
   ASSERT_FALSE(HasSameAppsAsVerifier(1));
 
@@ -370,7 +370,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncTest, DisableSync) {
   ASSERT_TRUE(GetClient(1)->DisableSyncForAllDatatypes());
   InstallApp(GetProfile(0), 0);
   InstallApp(verifier(), 0);
-  ASSERT_TRUE(AwaitCommitActivityCompletion(GetClient(0)->service()));
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
   ASSERT_TRUE(HasSameAppsAsVerifier(0));
   ASSERT_FALSE(HasSameAppsAsVerifier(1));
 
@@ -470,6 +470,8 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncTest, RemoveDefault) {
   EXPECT_EQ(sync_pb::AppListSpecifics::TYPE_APP, sync_item->item_type);
 }
 
+#if !defined(OS_MACOSX)
+
 class TwoClientAppListSyncFolderTest : public TwoClientAppListSyncTest {
  public:
   TwoClientAppListSyncFolderTest() {}
@@ -568,3 +570,5 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncFolderTest, FolderAddRemove) {
   ASSERT_TRUE(AwaitQuiescence());
   ASSERT_TRUE(AllProfilesHaveSameAppListAsVerifier());
 }
+
+#endif  // !defined(OS_MACOSX)

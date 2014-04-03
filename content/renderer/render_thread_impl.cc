@@ -431,18 +431,10 @@ void RenderThreadImpl::Init() {
 #endif
   }
 
-  is_gpu_rasterization_enabled_ = false;
-  is_gpu_rasterization_forced_ = false;
-  if (is_impl_side_painting_enabled_ &&
-      !command_line.HasSwitch(switches::kDisableGpuRasterization)) {
-    if (command_line.HasSwitch(switches::kForceGpuRasterization)) {
-      is_gpu_rasterization_forced_ = true;
-    } else if (command_line.HasSwitch(switches::kEnableGpuRasterization) ||
-               command_line.HasSwitch(
-                   switches::kEnableBleedingEdgeRenderingFastPaths)) {
-      is_gpu_rasterization_enabled_ = true;
-    }
-  }
+  is_gpu_rasterization_enabled_ =
+      command_line.HasSwitch(switches::kEnableGpuRasterization);
+  is_gpu_rasterization_forced_ =
+      command_line.HasSwitch(switches::kForceGpuRasterization);
 
   is_low_res_tiling_enabled_ = true;
   if (command_line.HasSwitch(switches::kDisableLowResTiling) &&
@@ -992,11 +984,14 @@ RenderThreadImpl::GetGpuFactories() {
         gpu_channel_host = EstablishGpuChannelSync(
             CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE);
       }
+      blink::WebGraphicsContext3D::Attributes attributes;
+      bool lose_context_when_out_of_memory = false;
       gpu_va_context_provider_ = ContextProviderCommandBuffer::Create(
           make_scoped_ptr(
               WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
                   gpu_channel_host.get(),
-                  blink::WebGraphicsContext3D::Attributes(),
+                  attributes,
+                  lose_context_when_out_of_memory,
                   GURL("chrome://gpu/RenderThreadImpl::GetGpuVDAContext3D"),
                   WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits(),
                   NULL)),
@@ -1018,6 +1013,7 @@ RenderThreadImpl::CreateOffscreenContext3d() {
   attributes.stencil = false;
   attributes.antialias = false;
   attributes.noAutomaticFlushes = true;
+  bool lose_context_when_out_of_memory = true;
 
   scoped_refptr<GpuChannelHost> gpu_channel_host(EstablishGpuChannelSync(
       CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
@@ -1025,6 +1021,7 @@ RenderThreadImpl::CreateOffscreenContext3d() {
       WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
           gpu_channel_host.get(),
           attributes,
+          lose_context_when_out_of_memory,
           GURL("chrome://gpu/RenderThreadImpl::CreateOffscreenContext3d"),
           WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits(),
           NULL));

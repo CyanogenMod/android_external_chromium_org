@@ -161,7 +161,8 @@ LOCAL_SRC_FILES := \
 	content/common/webplugin_geometry.cc \
 	content/common/websocket.cc \
 	content/common/gpu/client/gpu_memory_buffer_impl_surface_texture.cc \
-	content/common/gpu/media/android_video_decode_accelerator.cc
+	content/common/gpu/media/android_video_decode_accelerator.cc \
+	content/common/gpu/media/android_video_encode_accelerator.cc
 
 
 # Flags passed to both C and C++ files.
@@ -210,6 +211,7 @@ MY_DEFS_Debug := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -309,6 +311,8 @@ LOCAL_C_INCLUDES_Debug := \
 	$(PWD)/external/jpeg \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
+	$(LOCAL_PATH)/third_party/libyuv/include \
+	$(LOCAL_PATH)/third_party/libyuv \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -370,6 +374,7 @@ MY_DEFS_Release := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -470,6 +475,8 @@ LOCAL_C_INCLUDES_Release := \
 	$(PWD)/external/jpeg \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
+	$(LOCAL_PATH)/third_party/libyuv/include \
+	$(LOCAL_PATH)/third_party/libyuv \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

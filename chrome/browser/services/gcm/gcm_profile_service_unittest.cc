@@ -25,7 +25,6 @@
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/os_crypt/os_crypt.h"
@@ -43,7 +42,7 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #else
-#include "chrome/browser/signin/signin_manager.h"
+#include "components/signin/core/browser/signin_manager.h"
 #endif
 
 using namespace extensions;
@@ -137,7 +136,7 @@ class FakeSigninManager : public SigninManagerBase {
       : SigninManagerBase(
             ChromeSigninClientFactory::GetInstance()->GetForProfile(profile)),
         profile_(profile) {
-    Initialize(profile, NULL);
+    Initialize(NULL);
   }
 
   virtual ~FakeSigninManager() {
@@ -338,8 +337,6 @@ class GCMProfileServiceTestConsumer {
     permission_list->Append(base::Value::CreateStringValue("gcm"));
     manifest.Set(manifest_keys::kPermissions, permission_list);
 
-    // TODO(jianli): Once the GCM API enters stable, remove |channel|.
-    ScopedCurrentChannel channel(chrome::VersionInfo::CHANNEL_UNKNOWN);
     std::string error;
     scoped_refptr<Extension> extension =
         Extension::Create(path.AppendASCII(kTestExtensionName),

@@ -1003,6 +1003,11 @@ bool PictureLayerImpl::ShouldAdjustRasterScale(
   if (raster_source_scale_was_animating_ && !animating_transform_to_screen)
     return true;
 
+  if (animating_transform_to_screen &&
+      raster_contents_scale_ != ideal_contents_scale_ &&
+      ShouldUseGpuRasterization())
+    return true;
+
   bool is_pinching = layer_tree_impl()->PinchGestureActive();
   if (is_pinching && raster_page_scale_) {
     // We change our raster scale when it is:
@@ -1067,10 +1072,9 @@ void PictureLayerImpl::RecalculateRasterScales(
   raster_contents_scale_ =
       std::max(raster_contents_scale_, MinimumContentsScale());
 
-  // Don't allow animating CSS scales to drop below 1.  This is needed because
-  // changes in raster source scale aren't handled.  See the comment in
-  // ShouldAdjustRasterScale.
-  if (animating_transform_to_screen) {
+  // Don't allow animating CSS scales to drop below 1 if we're not
+  // re-rasterizing during the animation.
+  if (animating_transform_to_screen && !ShouldUseGpuRasterization()) {
     raster_contents_scale_ = std::max(
         raster_contents_scale_, 1.f * ideal_page_scale_ * ideal_device_scale_);
   }
@@ -1301,32 +1305,26 @@ PictureLayerImpl::LayerRasterTileIterator::LayerRasterTileIterator(
 
   if (prioritize_low_res) {
     stages_[0].iterator_type = LOW_RES;
-    stages_[0].tile_type =
-        PictureLayerTiling::TilingRasterTileIterator::VISIBLE;
+    stages_[0].tile_type = TilePriority::NOW;
 
     stages_[1].iterator_type = HIGH_RES;
-    stages_[1].tile_type =
-        PictureLayerTiling::TilingRasterTileIterator::VISIBLE;
+    stages_[1].tile_type = TilePriority::NOW;
   } else {
     stages_[0].iterator_type = HIGH_RES;
-    stages_[0].tile_type =
-        PictureLayerTiling::TilingRasterTileIterator::VISIBLE;
+    stages_[0].tile_type = TilePriority::NOW;
 
     stages_[1].iterator_type = LOW_RES;
-    stages_[1].tile_type =
-        PictureLayerTiling::TilingRasterTileIterator::VISIBLE;
+    stages_[1].tile_type = TilePriority::NOW;
   }
 
   stages_[2].iterator_type = HIGH_RES;
-  stages_[2].tile_type = PictureLayerTiling::TilingRasterTileIterator::SKEWPORT;
+  stages_[2].tile_type = TilePriority::SOON;
 
   stages_[3].iterator_type = HIGH_RES;
-  stages_[3].tile_type =
-      PictureLayerTiling::TilingRasterTileIterator::EVENTUALLY;
+  stages_[3].tile_type = TilePriority::EVENTUALLY;
 
   IteratorType index = stages_[current_stage_].iterator_type;
-  PictureLayerTiling::TilingRasterTileIterator::Type tile_type =
-      stages_[current_stage_].tile_type;
+  TilePriority::PriorityBin tile_type = stages_[current_stage_].tile_type;
   if (!iterators_[index] || iterators_[index].get_type() != tile_type)
     ++(*this);
 }
@@ -1341,8 +1339,7 @@ PictureLayerImpl::LayerRasterTileIterator&
 PictureLayerImpl::LayerRasterTileIterator::
 operator++() {
   IteratorType index = stages_[current_stage_].iterator_type;
-  PictureLayerTiling::TilingRasterTileIterator::Type tile_type =
-      stages_[current_stage_].tile_type;
+  TilePriority::PriorityBin tile_type = stages_[current_stage_].tile_type;
 
   // First advance the iterator.
   if (iterators_[index])

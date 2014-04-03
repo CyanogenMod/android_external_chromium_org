@@ -52,7 +52,6 @@
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/easy_unlock.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -72,6 +71,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_switches.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/navigation_controller.h"
@@ -622,6 +622,7 @@ void BrowserOptionsHandler::RegisterCloudPrintValues(
 #endif
 
   values->SetBoolean("showSetDefault", ShouldShowSetDefaultBrowser());
+  values->SetBoolean("allowAdvancedSettings", ShouldAllowAdvancedSettings());
 }
 #endif  // defined(ENABLE_FULL_PRINTING)
 
@@ -935,7 +936,7 @@ void BrowserOptionsHandler::CheckAutoLaunch(
     base::WeakPtr<BrowserOptionsHandler> weak_this,
     const base::FilePath& profile_path) {
 #if defined(OS_WIN)
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 
   // Auto-launch is not supported for secondary profiles yet.
   if (profile_path.BaseName().value() !=
@@ -960,7 +961,7 @@ void BrowserOptionsHandler::CheckAutoLaunchCallback(
     bool is_in_auto_launch_group,
     bool will_launch_at_login) {
 #if defined(OS_WIN)
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (is_in_auto_launch_group) {
     web_ui()->RegisterMessageCallback("toggleAutoLaunch",
@@ -995,6 +996,15 @@ bool BrowserOptionsHandler::ShouldShowMultiProfilesUserList() {
   if (profile->IsGuestSession())
     return false;
   return profiles::IsMultipleProfilesEnabled();
+#endif
+}
+
+bool BrowserOptionsHandler::ShouldAllowAdvancedSettings() {
+#if defined(OS_CHROMEOS)
+  // ChromeOS handles guest-mode restrictions in a different manner.
+  return true;
+#else
+  return !Profile::FromWebUI(web_ui())->IsGuestSession();
 #endif
 }
 

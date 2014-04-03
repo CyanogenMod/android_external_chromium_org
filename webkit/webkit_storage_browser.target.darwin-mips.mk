@@ -32,7 +32,6 @@ LOCAL_SRC_FILES := \
 	webkit/browser/appcache/appcache_group.cc \
 	webkit/browser/appcache/appcache_histograms.cc \
 	webkit/browser/appcache/appcache_host.cc \
-	webkit/browser/appcache/appcache_interceptor.cc \
 	webkit/browser/appcache/appcache_quota_client.cc \
 	webkit/browser/appcache/appcache_request_handler.cc \
 	webkit/browser/appcache/appcache_response.cc \
@@ -152,6 +151,7 @@ MY_DEFS_Debug := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -294,6 +294,7 @@ MY_DEFS_Release := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

@@ -32,6 +32,7 @@
 #include "content/public/common/content_switches.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/features/feature.h"
+#include "extensions/common/switches.h"
 #include "media/base/video_frame.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
@@ -40,6 +41,7 @@
 #include "media/cast/test/utility/default_config.h"
 #include "media/cast/test/utility/in_process_receiver.h"
 #include "media/cast/test/utility/standalone_cast_environment.h"
+#include "media/cast/test/utility/udp_proxy.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
@@ -67,6 +69,8 @@ enum TestFlags {
   k24fps               = 1 << 3, // use 24 fps video
   k30fps               = 1 << 4, // use 30 fps video
   k60fps               = 1 << 5, // use 60 fps video
+  kProxyWifi           = 1 << 6, // Run UDP through UDPProxy wifi profile
+  kProxyEvil           = 1 << 7, // Run UDP through UDPProxy evil profile
 };
 
 // We log one of these for each call to OnAudioFrame/OnVideoFrame.
@@ -284,6 +288,10 @@ class CastV2PerformanceTest
       suffix += "_30fps";
     if (HasFlag(k60fps))
       suffix += "_60fps";
+    if (HasFlag(kProxyWifi))
+      suffix += "_wifi";
+    if (HasFlag(kProxyEvil))
+      suffix += "_evil";
     return suffix;
   }
 
@@ -346,8 +354,9 @@ class CastV2PerformanceTest
     if (HasFlag(kDisableVsync))
       command_line->AppendSwitch(switches::kDisableGpuVsync);
 
-    command_line->AppendSwitchASCII(switches::kWhitelistedExtensionID,
-                                    kExtensionId);
+    command_line->AppendSwitchASCII(
+        extensions::switches::kWhitelistedExtensionID,
+        kExtensionId);
     ExtensionApiTest::SetUpCommandLine(command_line);
   }
 
@@ -552,6 +561,27 @@ class CastV2PerformanceTest
         new TestPatternReceiver(cast_environment, receiver_end_point);
     receiver->Start();
 
+    scoped_ptr<media::cast::test::UDPProxy> udp_proxy;
+    if (HasFlag(kProxyWifi) || HasFlag(kProxyEvil)) {
+      net::IPEndPoint proxy_end_point = GetFreeLocalPort();
+      if (HasFlag(kProxyWifi)) {
+        udp_proxy = media::cast::test::UDPProxy::Create(
+            proxy_end_point,
+            receiver_end_point,
+            media::cast::test::WifiNetwork().Pass(),
+            media::cast::test::WifiNetwork().Pass(),
+            NULL);
+      } else if (HasFlag(kProxyEvil)) {
+        udp_proxy = media::cast::test::UDPProxy::Create(
+            proxy_end_point,
+            receiver_end_point,
+            media::cast::test::EvilNetwork().Pass(),
+            media::cast::test::EvilNetwork().Pass(),
+            NULL);
+      }
+      receiver_end_point = proxy_end_point;
+    }
+
     std::string json_events;
     ASSERT_TRUE(tracing::BeginTracing("test_fps,mirroring,cast_perf_test"));
     const std::string page_url = base::StringPrintf(
@@ -560,6 +590,8 @@ class CastV2PerformanceTest
         receiver_end_point.port());
     ASSERT_TRUE(RunExtensionSubtest("cast_streaming", page_url)) << message_;
     ASSERT_TRUE(tracing::EndTracing(&json_events));
+    receiver->Stop();
+
     // Stop all threads, removes the need for synchronization when analyzing
     // the data.
     cast_environment->Shutdown();
@@ -597,8 +629,6 @@ class CastV2PerformanceTest
     receiver->Analyze(test_name, GetSuffixForTestFlags());
 
     AnalyzeLatency(test_name, analyzer.get());
-
-    receiver->DestroySoon();
   }
 };
 
@@ -617,4 +647,6 @@ INSTANTIATE_TEST_CASE_P(
         kUseGpu | k24fps,
         kUseGpu | k30fps,
         kUseGpu | k60fps,
-        kDisableVsync | k24fps | kUseGpu));
+        kUseGpu | k24fps | kDisableVsync,
+        kUseGpu | k30fps | kProxyWifi,
+        kUseGpu | k30fps | kProxyEvil));

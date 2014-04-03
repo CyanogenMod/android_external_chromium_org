@@ -13,12 +13,12 @@
 #include "sync/engine/all_status.h"
 #include "sync/engine/net/server_connection_manager.h"
 #include "sync/engine/sync_engine_event_listener.h"
-#include "sync/engine/traffic_recorder.h"
 #include "sync/internal_api/change_reorder_buffer.h"
 #include "sync/internal_api/debug_info_event_listener.h"
 #include "sync/internal_api/js_mutation_event_observer.h"
 #include "sync/internal_api/js_sync_encryption_handler_observer.h"
 #include "sync/internal_api/js_sync_manager_observer.h"
+#include "sync/internal_api/protocol_event_buffer.h"
 #include "sync/internal_api/public/sync_manager.h"
 #include "sync/internal_api/public/user_share.h"
 #include "sync/internal_api/sync_encryption_handler_impl.h"
@@ -115,6 +115,8 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   virtual bool ReceivedExperiment(Experiments* experiments) OVERRIDE;
   virtual bool HasUnsyncedItems() OVERRIDE;
   virtual SyncEncryptionHandler* GetEncryptionHandler() OVERRIDE;
+  virtual ScopedVector<syncer::ProtocolEvent>
+      GetBufferedProtocolEvents() OVERRIDE;
 
   // SyncEncryptionHandler::Observer implementation.
   virtual void OnPassphraseRequired(
@@ -273,7 +275,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   JsArgList GetNodeSummariesById(const JsArgList& args);
   JsArgList GetNodeDetailsById(const JsArgList& args);
   JsArgList GetChildNodeIds(const JsArgList& args);
-  JsArgList GetClientServerTraffic(const JsArgList& args);
 
   syncable::Directory* directory();
 
@@ -358,7 +359,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   // This is for keeping track of client events to send to the server.
   DebugInfoEventListener debug_info_event_listener_;
 
-  TrafficRecorder traffic_recorder_;
+  ProtocolEventBuffer protocol_event_buffer_;
 
   Encryptor* encryptor_;
   scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler_;

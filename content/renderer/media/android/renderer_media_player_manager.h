@@ -35,6 +35,8 @@ class WebMediaPlayerAndroid;
 // RenderView.
 class RendererMediaPlayerManager : public RenderViewObserver {
  public:
+  static const int kInvalidCdmId = 0;
+
   // Constructs a RendererMediaPlayerManager object for the |render_view|.
   RendererMediaPlayerManager(RenderView* render_view);
   virtual ~RendererMediaPlayerManager();
@@ -80,6 +82,11 @@ class RendererMediaPlayerManager : public RenderViewObserver {
   // Requests the player to exit fullscreen.
   void ExitFullscreen(int player_id);
 
+  // Requests the player with |player_id| to use the CDM with |cdm_id|.
+  // Does nothing if |cdm_id| is kInvalidCdmId.
+  // TODO(xhwang): Update this when we implement setCdm(0).
+  void SetCdm(int player_id, int cdm_id);
+
 #if defined(VIDEO_HOLE)
   // Requests an external surface for out-of-band compositing.
   void RequestExternalSurface(int player_id, const gfx::RectF& geometry);
@@ -92,7 +99,7 @@ class RendererMediaPlayerManager : public RenderViewObserver {
   void InitializeCdm(int cdm_id,
                      ProxyMediaKeys* media_keys,
                      const std::string& key_system,
-                     const GURL& frame_url);
+                     const GURL& security_origin);
   void CreateSession(int cdm_id,
                      uint32 session_id,
                      CdmHostMsg_CreateSession_ContentType conent_type,

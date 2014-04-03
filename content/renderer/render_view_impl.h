@@ -437,11 +437,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool enumerateChosenDirectory(
       const blink::WebString& path,
       blink::WebFileChooserCompletion* chooser_completion);
-  // DEPRECATED
-  virtual void didStartLoading(bool to_different_document);
-  // DEPRECATED
-  virtual void didStopLoading();
-
   virtual void didCancelCompositionOnSelectionChange();
   virtual void didExecuteCommand(const blink::WebString& command_name);
   virtual bool handleCurrentKeyboardEvent();
@@ -855,11 +850,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Called when the "pinned to left/right edge" state needs to be updated.
   void UpdateScrollState(blink::WebFrame* frame);
 
-  void EvaluateScript(const base::string16& frame_xpath,
-                      const base::string16& jscript,
-                      int id,
-                      bool notify_result);
-
   // IPC message handlers ------------------------------------------------------
   //
   // The documentation for these functions should be in
@@ -922,12 +912,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnMoveOrResizeStarted();
   void OnPostMessageEvent(const ViewMsg_PostMessage_Params& params);
   void OnReleaseDisambiguationPopupDIB(TransportDIB::Handle dib_handle);
-  void OnReloadFrame();
   void OnResetPageEncodingToDefault();
-  void OnScriptEvalRequest(const base::string16& frame_xpath,
-                           const base::string16& jscript,
-                           int id,
-                           bool notify_result);
   void OnSetAccessibilityMode(AccessibilityMode new_mode);
   void OnSetActive(bool active);
   void OnSetBackground(const SkBitmap& background);

@@ -11,8 +11,9 @@
 #include "base/run_loop.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "mojo/common/time_helper.h"
+#include "mojo/public/cpp/environment/environment.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/public/tests/test_utils.h"
+#include "mojo/public/cpp/test_support/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace mojo {
@@ -100,6 +101,14 @@ class HandleWatcherTest : public testing::Test {
     test::SetTickClockForTest(NULL);
   }
 
+  virtual void SetUp() OVERRIDE {
+    environment_.reset(new Environment);
+  }
+
+  virtual void TearDown() OVERRIDE {
+    environment_.reset();
+  }
+
  protected:
   void InstallTickClock() {
     test::SetTickClockForTest(&tick_clock_);
@@ -109,6 +118,7 @@ class HandleWatcherTest : public testing::Test {
 
  private:
   base::MessageLoop message_loop_;
+  scoped_ptr<Environment> environment_;
 
   DISALLOW_COPY_AND_ASSIGN(HandleWatcherTest);
 };

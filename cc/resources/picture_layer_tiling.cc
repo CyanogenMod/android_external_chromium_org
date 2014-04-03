@@ -18,6 +18,24 @@
 #include "ui/gfx/size_conversions.h"
 
 namespace cc {
+namespace {
+
+class TileEvictionOrder {
+ public:
+  explicit TileEvictionOrder(WhichTree tree) : tree_(tree) {}
+  ~TileEvictionOrder() {}
+
+  bool operator()(const Tile* a, const Tile* b) {
+    const TilePriority& a_priority = a->priority(tree_);
+    const TilePriority& b_priority = b->priority(tree_);
+
+    return a_priority.IsHigherPriorityThan(b_priority);
+  }
+
+ private:
+  WhichTree tree_;
+};
+}  // namespace
 
 scoped_ptr<PictureLayerTiling> PictureLayerTiling::Create(
     float contents_scale,
@@ -36,7 +54,8 @@ PictureLayerTiling::PictureLayerTiling(float contents_scale,
       resolution_(NON_IDEAL_RESOLUTION),
       client_(client),
       tiling_data_(gfx::Size(), gfx::Size(), true),
-      last_impl_frame_time_in_seconds_(0.0) {
+      last_impl_frame_time_in_seconds_(0.0),
+      eviction_tiles_cache_valid_(false) {
   gfx::Size content_bounds =
       gfx::ToCeiledSize(gfx::ScaleSize(layer_bounds, contents_scale));
   gfx::Size tile_size = client_->CalculateTileSize(content_bounds);
@@ -436,6 +455,7 @@ void PictureLayerTiling::UpdateTilePriorities(
   current_visible_rect_in_content_space_ = visible_rect_in_content_space;
   current_skewport_ = skewport;
   current_eventually_rect_ = eventually_rect;
+  eviction_tiles_cache_valid_ = false;
 
   TilePriority now_priority(resolution_, TilePriority::NOW, 0);
   float content_to_screen_scale =
@@ -732,6 +752,24 @@ gfx::Rect PictureLayerTiling::ExpandRectEquallyToAreaBoundedBy(
   return result;
 }
 
+void PictureLayerTiling::UpdateEvictionCacheIfNeeded(WhichTree tree) {
+  if (eviction_tiles_cache_valid_)
+    return;
+
+  eviction_tiles_cache_.clear();
+  eviction_tiles_cache_.reserve(tiles_.size());
+  for (TileMap::iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
+    // TODO(vmpstr): This should update the priority if UpdateTilePriorities
+    // changes not to do this.
+    eviction_tiles_cache_.push_back(it->second);
+  }
+
+  std::sort(eviction_tiles_cache_.begin(),
+            eviction_tiles_cache_.end(),
+            TileEvictionOrder(tree));
+  eviction_tiles_cache_valid_ = true;
+}
+
 PictureLayerTiling::TilingRasterTileIterator::TilingRasterTileIterator()
     : tiling_(NULL), current_tile_(NULL) {}
 
@@ -739,7 +777,7 @@ PictureLayerTiling::TilingRasterTileIterator::TilingRasterTileIterator(
     PictureLayerTiling* tiling,
     WhichTree tree)
     : tiling_(tiling),
-      type_(VISIBLE),
+      type_(TilePriority::NOW),
       visible_rect_in_content_space_(
           tiling_->current_visible_rect_in_content_space_),
       skewport_in_content_space_(tiling_->current_skewport_),
@@ -767,11 +805,11 @@ PictureLayerTiling::TilingRasterTileIterator::TilingRasterTileIterator(
 PictureLayerTiling::TilingRasterTileIterator::~TilingRasterTileIterator() {}
 
 void PictureLayerTiling::TilingRasterTileIterator::AdvancePhase() {
-  DCHECK_LT(type_, EVENTUALLY);
+  DCHECK_LT(type_, TilePriority::EVENTUALLY);
 
   do {
-    type_ = static_cast<Type>(type_ + 1);
-    if (type_ == EVENTUALLY) {
+    type_ = static_cast<TilePriority::PriorityBin>(type_ + 1);
+    if (type_ == TilePriority::EVENTUALLY) {
       spiral_iterator_ = TilingData::SpiralDifferenceIterator(
           &tiling_->tiling_data_,
           eventually_rect_in_content_space_,
@@ -787,7 +825,7 @@ void PictureLayerTiling::TilingRasterTileIterator::AdvancePhase() {
       ++spiral_iterator_;
     }
 
-    if (!spiral_iterator_ && type_ == EVENTUALLY)
+    if (!spiral_iterator_ && type_ == TilePriority::EVENTUALLY)
       break;
   } while (!spiral_iterator_);
 }
@@ -799,7 +837,7 @@ operator++() {
   while (!current_tile_ || !TileNeedsRaster(current_tile_)) {
     std::pair<int, int> next_index;
     switch (type_) {
-      case VISIBLE:
+      case TilePriority::NOW:
         ++visible_iterator_;
         if (!visible_iterator_) {
           AdvancePhase();
@@ -807,7 +845,7 @@ operator++() {
         }
         next_index = visible_iterator_.index();
         break;
-      case SKEWPORT:
+      case TilePriority::SOON:
         ++spiral_iterator_;
         if (!spiral_iterator_) {
           AdvancePhase();
@@ -815,7 +853,7 @@ operator++() {
         }
         next_index = spiral_iterator_.index();
         break;
-      case EVENTUALLY:
+      case TilePriority::EVENTUALLY:
         ++spiral_iterator_;
         if (!spiral_iterator_)
           return *this;
@@ -825,6 +863,56 @@ operator++() {
     current_tile_ = tiling_->TileAt(next_index.first, next_index.second);
   }
   return *this;
+}
+
+PictureLayerTiling::TilingEvictionTileIterator::TilingEvictionTileIterator()
+    : is_valid_(false), tiling_(NULL) {}
+
+PictureLayerTiling::TilingEvictionTileIterator::TilingEvictionTileIterator(
+    PictureLayerTiling* tiling,
+    WhichTree tree)
+    : is_valid_(false), tiling_(tiling), tree_(tree) {}
+
+PictureLayerTiling::TilingEvictionTileIterator::~TilingEvictionTileIterator() {}
+
+PictureLayerTiling::TilingEvictionTileIterator::operator bool() {
+  if (!IsValid())
+    Initialize();
+
+  return IsValid() && tile_iterator_ != tiling_->eviction_tiles_cache_.end();
+}
+
+Tile* PictureLayerTiling::TilingEvictionTileIterator::operator*() {
+  if (!IsValid())
+    Initialize();
+
+  DCHECK(*this);
+  return *tile_iterator_;
+}
+
+PictureLayerTiling::TilingEvictionTileIterator&
+PictureLayerTiling::TilingEvictionTileIterator::
+operator++() {
+  DCHECK(*this);
+  do {
+    ++tile_iterator_;
+  } while (tile_iterator_ != tiling_->eviction_tiles_cache_.end() &&
+           (!(*tile_iterator_)->HasResources()));
+
+  return *this;
+}
+
+void PictureLayerTiling::TilingEvictionTileIterator::Initialize() {
+  if (!tiling_)
+    return;
+
+  tiling_->UpdateEvictionCacheIfNeeded(tree_);
+  tile_iterator_ = tiling_->eviction_tiles_cache_.begin();
+  is_valid_ = true;
+  if (tile_iterator_ != tiling_->eviction_tiles_cache_.end() &&
+      !(*tile_iterator_)->HasResources()) {
+    ++(*this);
+  }
 }
 
 }  // namespace cc

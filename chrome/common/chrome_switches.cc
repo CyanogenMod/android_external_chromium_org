@@ -133,10 +133,6 @@ const char kAuthServerWhitelist[]           = "auth-server-whitelist";
 // computer startup and not by some user action.
 const char kAutoLaunchAtStartup[]           = "auto-launch-at-startup";
 
-// The value of this switch tells the app to listen for and broadcast
-// automation-related messages on IPC channel with the given ID.
-const char kAutomationClientChannelID[]     = "automation-channel";
-
 // Certificate Transparency: Uses the provided log(s) for checking Signed
 // Certificate Timestamps provided with certificates.
 // The switch's value is:
@@ -280,9 +276,6 @@ const char kDisableCRLSets[]                = "disable-crl-sets";
 const char kDisableCreateExistingManagedUsers[] =
     "disable-create-exsting-managed-users";
 
-// Disables the custom JumpList on Windows 7.
-const char kDisableCustomJumpList[]         = "disable-custom-jumplist";
-
 // Disables installation of default apps on first run. This is used during
 // automated testing.
 const char kDisableDefaultApps[]            = "disable-default-apps";
@@ -320,9 +313,6 @@ const char kDisableExtensionsResourceWhitelist[] =
 // which would prevent fullscreening the browser window during screen-capture of
 // a tab.  http://crbug.com/256870 and http://crbug.com/290403
 const char kDisableFullscreenWithinTab[] = "disable-fullscreen-within-tab";
-
-// Disables Google Now integration.
-const char kDisableGoogleNowIntegration[] = "disable-google-now-integration";
 
 // Disables improved SafeBrowsing download protection.
 const char kDisableImprovedDownloadProtection[] =
@@ -466,6 +456,9 @@ const char kDnsPrefetchDisable[]            = "dns-prefetch-disable";
 // given file. The file is overwritten if it exists.
 const char kDumpBrowserHistograms[]         = "dump-browser-histograms";
 
+// Overrides the path of Easy Unlock component app.
+extern const char kEasyUnlockAppPath[]      = "easy-unlock-app-path";
+
 // Enables the <adview> tag in packaged apps.
 const char kEnableAdview[]                  = "enable-adview";
 
@@ -544,9 +537,6 @@ const char kEnableExtensionActivityLogTesting[] =
 // running a tab's onunload js handler independently of the GUI -
 // crbug.com/142458 .
 const char kEnableFastUnload[]         = "enable-fast-unload";
-
-// Enables Google Now integration.
-const char kEnableGoogleNowIntegration[]    = "enable-google-now-integration";
 
 // Enable HTTP/2 draft 04. This is a temporary testing flag.
 const char kEnableHttp2Draft04[]            = "enable-http2-draft-04";
@@ -795,10 +785,6 @@ const char kGoogleBaseURL[]                 = "google-base-url";
 
 // Enables using GAIA information to populate profile name and icon.
 const char kGoogleProfileInfo[]             = "google-profile-info";
-
-// Specifies an alternate URL to use for retrieving the search domain for
-// Google. Useful for testing.
-const char kGoogleSearchDomainCheckURL[]    = "google-search-domain-check-url";
 
 // Specifies a custom name for the GSSAPI library to load.
 const char kGSSAPILibraryName[]             = "gssapi-library-name";
@@ -1373,9 +1359,6 @@ const char kVariationsServerURL[]           = "variations-server-url";
 
 // Prints version information and quits.
 const char kVersion[]                       = "version";
-
-// Adds the given extension ID to all the permission whitelists.
-const char kWhitelistedExtensionID[]        = "whitelisted-extension-id";
 
 // Specify the initial window position: --window-position=x,y
 const char kWindowPosition[]                = "window-position";

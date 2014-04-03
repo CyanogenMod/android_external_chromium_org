@@ -44,6 +44,7 @@ Layer::Layer()
       scroll_clip_layer_id_(INVALID_ID),
       should_scroll_on_main_thread_(false),
       have_wheel_event_handlers_(false),
+      have_scroll_event_handlers_(false),
       user_scrollable_horizontal_(true),
       user_scrollable_vertical_(true),
       is_root_for_isolated_group_(false),
@@ -695,40 +696,6 @@ void Layer::SetScrollOffsetFromImplSide(const gfx::Vector2d& scroll_offset) {
   // "this" may have been destroyed during the process.
 }
 
-// TODO(wjmaclean) We should template this and put it into LayerTreeHostCommon
-// so that both Layer and LayerImpl are using the same code. In order
-// to template it we should avoid calling layer_tree_host() by giving
-// Layer/LayerImpl local accessors for page_scale_layer() and
-// page_scale_factor().
-gfx::Vector2d Layer::MaxScrollOffset() const {
-  if (scroll_clip_layer_id_ == INVALID_ID)
-    return gfx::Vector2d();
-
-  gfx::Size scaled_scroll_bounds(bounds());
-  Layer const* current_layer = this;
-  Layer const* page_scale_layer = layer_tree_host()->page_scale_layer();
-  float scale_factor = 1.f;
-  do {
-    if (current_layer == page_scale_layer) {
-      scale_factor = layer_tree_host()->page_scale_factor();
-      scaled_scroll_bounds.SetSize(
-          scale_factor * scaled_scroll_bounds.width(),
-          scale_factor * scaled_scroll_bounds.height());
-    }
-    current_layer = current_layer->parent();
-  } while (current_layer && current_layer->id() != scroll_clip_layer_id_);
-  DCHECK(current_layer);
-  DCHECK(current_layer->id() == scroll_clip_layer_id_);
-
-  gfx::Vector2dF max_offset(
-      scaled_scroll_bounds.width() - current_layer->bounds().width(),
-      scaled_scroll_bounds.height() - current_layer->bounds().height());
-  // We need the final scroll offset to be in CSS coords.
-  max_offset.Scale(1.f / scale_factor);
-  max_offset.SetToMax(gfx::Vector2dF());
-  return gfx::ToFlooredVector2d(max_offset);
-}
-
 void Layer::SetScrollClipLayerId(int clip_layer_id) {
   DCHECK(IsPropertyChangeAllowed());
   if (scroll_clip_layer_id_ == clip_layer_id)
@@ -760,6 +727,14 @@ void Layer::SetHaveWheelEventHandlers(bool have_wheel_event_handlers) {
   if (have_wheel_event_handlers_ == have_wheel_event_handlers)
     return;
   have_wheel_event_handlers_ = have_wheel_event_handlers;
+  SetNeedsCommit();
+}
+
+void Layer::SetHaveScrollEventHandlers(bool have_scroll_event_handlers) {
+  DCHECK(IsPropertyChangeAllowed());
+  if (have_scroll_event_handlers_ == have_scroll_event_handlers)
+    return;
+  have_scroll_event_handlers_ = have_scroll_event_handlers;
   SetNeedsCommit();
 }
 
@@ -928,6 +903,7 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetMasksToBounds(masks_to_bounds_);
   layer->SetShouldScrollOnMainThread(should_scroll_on_main_thread_);
   layer->SetHaveWheelEventHandlers(have_wheel_event_handlers_);
+  layer->SetHaveScrollEventHandlers(have_scroll_event_handlers_);
   layer->SetNonFastScrollableRegion(non_fast_scrollable_region_);
   layer->SetTouchEventHandlerRegion(touch_event_handler_region_);
   layer->SetContentsOpaque(contents_opaque_);

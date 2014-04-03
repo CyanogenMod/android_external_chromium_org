@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 #include "base/message_loop/message_loop.h"
-#include "mojo/public/bindings/allocation_scope.h"
-#include "mojo/public/bindings/remote_ptr.h"
+#include "mojo/public/cpp/bindings/allocation_scope.h"
+#include "mojo/public/cpp/bindings/remote_ptr.h"
 #include "mojo/public/cpp/environment/environment.h"
-#include "mojo/public/shell/application.h"
-#include "mojo/public/shell/shell.mojom.h"
+#include "mojo/public/cpp/shell/application.h"
+#include "mojo/public/interfaces/shell/shell.mojom.h"
 #include "mojo/service_manager/service_loader.h"
 #include "mojo/service_manager/service_manager.h"
 #include "mojo/service_manager/test.mojom.h"

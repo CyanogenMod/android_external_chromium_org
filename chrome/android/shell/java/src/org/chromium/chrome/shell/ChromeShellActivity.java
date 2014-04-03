@@ -37,6 +37,7 @@ import org.chromium.content.browser.DeviceUtils;
 import org.chromium.content.common.ContentSwitches;
 import org.chromium.printing.PrintManagerDelegateImpl;
 import org.chromium.printing.PrintingController;
+import org.chromium.sync.signin.AccountManagerHelper;
 import org.chromium.sync.signin.ChromeSigninController;
 import org.chromium.ui.base.ActivityWindowAndroid;
 import org.chromium.ui.base.WindowAndroid;
@@ -285,8 +286,10 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
             case R.id.signin:
                 if (ChromeSigninController.get(this).isSignedIn()) {
                     SyncController.openSignOutDialog(getFragmentManager());
-                } else {
+                } else if (AccountManagerHelper.get(this).hasGoogleAccounts()) {
                     SyncController.openSigninDialog(getFragmentManager());
+                } else {
+                    Toast.makeText(this, R.string.signin_no_account, Toast.LENGTH_SHORT).show();
                 }
                 return true;
             case R.id.print:
@@ -367,8 +370,8 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
         MenuItem distillPageItem = menu.findItem(R.id.distill_page);
         if (CommandLine.getInstance().hasSwitch(ChromeShellSwitches.ENABLE_DOM_DISTILLER)) {
             String url = activeTab != null ? activeTab.getUrl() : null;
-            distillPageItem.setEnabled(!TextUtils.isEmpty(url) &&
-                    !url.startsWith(CHROME_DISTILLER_SCHEME));
+            distillPageItem.setEnabled(!DomDistillerUrlUtils.isUrlReportable(
+                    CHROME_DISTILLER_SCHEME, url));
             distillPageItem.setVisible(true);
         } else {
             distillPageItem.setVisible(false);

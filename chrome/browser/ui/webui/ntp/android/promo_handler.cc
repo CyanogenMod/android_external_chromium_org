@@ -15,7 +15,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/sync/glue/synced_session.h"
 #include "chrome/browser/sync/open_tabs_ui_delegate.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -24,6 +23,7 @@
 #include "chrome/browser/web_resource/notification_promo_mobile_ntp.h"
 #include "chrome/browser/web_resource/promo_resource_service.h"
 #include "chrome/common/pref_names.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -146,7 +146,7 @@ void PromoHandler::Observe(int type,
 }
 
 void PromoHandler::HandlePromoSendEmail(const base::ListValue* args) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   Profile* profile = Profile::FromBrowserContext(
       web_ui()->GetWebContents()->GetBrowserContext());
   if (!profile)
@@ -209,7 +209,7 @@ void PromoHandler::HandleGetPromotions(const base::ListValue* /*args*/) {
 }
 
 void PromoHandler::HandleRecordImpression(const base::ListValue* args) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(args && !args->empty());
   RecordPromotionImpression(base::UTF16ToASCII(ExtractStringValue(args)));
 }

@@ -47,8 +47,6 @@ class CC_EXPORT PictureLayerTiling {
  public:
   class CC_EXPORT TilingRasterTileIterator {
    public:
-    enum Type { VISIBLE, SKEWPORT, EVENTUALLY };
-
     TilingRasterTileIterator();
     TilingRasterTileIterator(PictureLayerTiling* tiling, WhichTree tree);
     ~TilingRasterTileIterator();
@@ -57,13 +55,13 @@ class CC_EXPORT PictureLayerTiling {
       return current_tile_ && TileNeedsRaster(current_tile_);
     }
     Tile* operator*() { return current_tile_; }
-    Type get_type() const { return type_; }
+    TilePriority::PriorityBin get_type() const { return type_; }
 
     TilingRasterTileIterator& operator++();
 
     gfx::Rect TileBounds() const {
       DCHECK(*this);
-      if (type_ == VISIBLE) {
+      if (type_ == TilePriority::NOW) {
         return tiling_->tiling_data_.TileBounds(visible_iterator_.index_x(),
                                                 visible_iterator_.index_y());
       }
@@ -80,7 +78,7 @@ class CC_EXPORT PictureLayerTiling {
 
     PictureLayerTiling* tiling_;
 
-    Type type_;
+    TilePriority::PriorityBin type_;
     gfx::Rect visible_rect_in_content_space_;
     gfx::Rect skewport_in_content_space_;
     gfx::Rect eventually_rect_in_content_space_;
@@ -89,6 +87,30 @@ class CC_EXPORT PictureLayerTiling {
     Tile* current_tile_;
     TilingData::Iterator visible_iterator_;
     TilingData::SpiralDifferenceIterator spiral_iterator_;
+  };
+
+  class CC_EXPORT TilingEvictionTileIterator {
+   public:
+    TilingEvictionTileIterator();
+    TilingEvictionTileIterator(PictureLayerTiling* tiling, WhichTree tree);
+    ~TilingEvictionTileIterator();
+
+    operator bool();
+    Tile* operator*();
+    TilingEvictionTileIterator& operator++();
+    TilePriority::PriorityBin get_type() {
+      DCHECK(*this);
+      return (*tile_iterator_)->priority(tree_).priority_bin;
+    }
+
+   private:
+    void Initialize();
+    bool IsValid() const { return is_valid_; }
+
+    bool is_valid_;
+    PictureLayerTiling* tiling_;
+    WhichTree tree_;
+    std::vector<Tile*>::iterator tile_iterator_;
   };
 
   ~PictureLayerTiling();
@@ -232,7 +254,9 @@ class CC_EXPORT PictureLayerTiling {
   }
 
  protected:
+  friend class CoverageIterator;
   friend class TilingRasterTileIterator;
+  friend class TilingEvictionTileIterator;
 
   typedef std::pair<int, int> TileMapKey;
   typedef base::hash_map<TileMapKey, scoped_refptr<Tile> > TileMap;
@@ -250,6 +274,8 @@ class CC_EXPORT PictureLayerTiling {
   gfx::Rect ComputeSkewport(double current_frame_time_in_seconds,
                             const gfx::Rect& visible_rect_in_content_space)
       const;
+
+  void UpdateEvictionCacheIfNeeded(WhichTree tree);
 
   // Given properties.
   float contents_scale_;
@@ -270,7 +296,8 @@ class CC_EXPORT PictureLayerTiling {
   gfx::Rect current_skewport_;
   gfx::Rect current_eventually_rect_;
 
-  friend class CoverageIterator;
+  std::vector<Tile*> eviction_tiles_cache_;
+  bool eviction_tiles_cache_valid_;
 
  private:
   DISALLOW_ASSIGN(PictureLayerTiling);

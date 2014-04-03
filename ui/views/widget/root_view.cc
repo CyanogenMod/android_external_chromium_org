@@ -49,6 +49,48 @@ class MouseEnterExitEvent : public ui::MouseEvent {
 
 }  // namespace
 
+// This event handler receives events in the pre-target phase and takes care of
+// the following:
+//   - Shows keyboard-triggered context menus.
+class PreEventDispatchHandler : public ui::EventHandler {
+ public:
+  explicit PreEventDispatchHandler(View* owner)
+      : owner_(owner) {
+  }
+  virtual ~PreEventDispatchHandler() {}
+
+ private:
+  // ui::EventHandler:
+  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE {
+    CHECK_EQ(ui::EP_PRETARGET, event->phase());
+    if (event->handled())
+      return;
+
+    View* v = NULL;
+    if (owner_->GetFocusManager())  // Can be NULL in unittests.
+      v = owner_->GetFocusManager()->GetFocusedView();
+
+    // Special case to handle keyboard-triggered context menus.
+    if (v && v->enabled() && ((event->key_code() == ui::VKEY_APPS) ||
+       (event->key_code() == ui::VKEY_F10 && event->IsShiftDown()))) {
+      // Clamp the menu location within the visible bounds of each ancestor view
+      // to avoid showing the menu over a completely different view or window.
+      gfx::Point location = v->GetKeyboardContextMenuLocation();
+      for (View* parent = v->parent(); parent; parent = parent->parent()) {
+        const gfx::Rect& parent_bounds = parent->GetBoundsInScreen();
+        location.SetToMax(parent_bounds.origin());
+        location.SetToMin(parent_bounds.bottom_right());
+      }
+      v->ShowContextMenu(location, ui::MENU_SOURCE_KEYBOARD);
+      event->StopPropagation();
+    }
+  }
+
+  View* owner_;
+
+  DISALLOW_COPY_AND_ASSIGN(PreEventDispatchHandler);
+};
+
 // static
 const char RootView::kViewClassName[] = "RootView";
 
@@ -66,14 +108,15 @@ RootView::RootView(Widget* widget)
       last_mouse_event_flags_(0),
       last_mouse_event_x_(-1),
       last_mouse_event_y_(-1),
-      touch_pressed_handler_(NULL),
       gesture_handler_(NULL),
       scroll_gesture_handler_(NULL),
+      pre_dispatch_handler_(new internal::PreEventDispatchHandler(this)),
       focus_search_(this, false, false),
       focus_traversable_parent_(NULL),
       focus_traversable_parent_view_(NULL),
       event_dispatch_target_(NULL),
       old_dispatch_target_(NULL) {
+  AddPreTargetHandler(pre_dispatch_handler_.get());
 }
 
 RootView::~RootView() {
@@ -164,7 +207,7 @@ ui::EventDispatchDetails RootView::OnEventFromSource(ui::Event* event) {
   else if (event->IsScrollEvent())
     DispatchScrollEvent(static_cast<ui::ScrollEvent*>(event));
   else if (event->IsTouchEvent())
-    DispatchTouchEvent(static_cast<ui::TouchEvent*>(event));
+    NOTREACHED() << "Touch events should not be sent to RootView.";
   else if (event->IsGestureEvent())
     DispatchGestureEvent(static_cast<ui::GestureEvent*>(event));
   else if (event->IsMouseEvent())
@@ -605,8 +648,6 @@ void RootView::ViewHierarchyChanged(
       mouse_pressed_handler_ = NULL;
     if (mouse_move_handler_ == details.child)
       mouse_move_handler_ = NULL;
-    if (touch_pressed_handler_ == details.child)
-      touch_pressed_handler_ = NULL;
     if (gesture_handler_ == details.child)
       gesture_handler_ = NULL;
     if (scroll_gesture_handler_ == details.child)
@@ -626,7 +667,6 @@ void RootView::VisibilityChanged(View* /*starting_from*/, bool is_visible) {
     explicit_mouse_handler_ = false;
     mouse_pressed_handler_ = NULL;
     mouse_move_handler_ = NULL;
-    touch_pressed_handler_ = NULL;
     gesture_handler_ = NULL;
     scroll_gesture_handler_ = NULL;
     event_dispatch_target_ = NULL;
@@ -660,23 +700,8 @@ View::DragInfo* RootView::GetDragInfo() {
 
 void RootView::DispatchKeyEvent(ui::KeyEvent* event) {
   View* v = NULL;
-  if (GetFocusManager())  // NULL in unittests.
+  if (GetFocusManager())  // Can be NULL in unittests.
     v = GetFocusManager()->GetFocusedView();
-  // Special case to handle keyboard-triggered context menus.
-  if (v && v->enabled() && ((event->key_code() == ui::VKEY_APPS) ||
-     (event->key_code() == ui::VKEY_F10 && event->IsShiftDown()))) {
-    // Clamp the menu location within the visible bounds of each ancestor view
-    // to avoid showing the menu over a completely different view or window.
-    gfx::Point location = v->GetKeyboardContextMenuLocation();
-    for (View* parent = v->parent(); parent; parent = parent->parent()) {
-      const gfx::Rect& parent_bounds = parent->GetBoundsInScreen();
-      location.SetToMax(parent_bounds.origin());
-      location.SetToMin(parent_bounds.bottom_right());
-    }
-    v->ShowContextMenu(location, ui::MENU_SOURCE_KEYBOARD);
-    event->StopPropagation();
-    return;
-  }
 
   DispatchKeyEventStartAt(v, event);
 }
@@ -698,75 +723,6 @@ void RootView::DispatchScrollEvent(ui::ScrollEvent* event) {
   ui::MouseWheelEvent wheel(*event);
   if (OnMouseWheel(wheel))
     event->SetHandled();
-}
-
-void RootView::DispatchTouchEvent(ui::TouchEvent* event) {
-  // TODO: this looks all wrong. On a TOUCH_PRESSED we should figure out the
-  // view and target that view with all touches with the same id until the
-  // release (or keep it if captured).
-
-  // If touch_pressed_handler_ is non null, we are currently processing
-  // a touch down on the screen situation. In that case we send the
-  // event to touch_pressed_handler_
-
-  if (touch_pressed_handler_) {
-    ui::TouchEvent touch_event(*event, static_cast<View*>(this),
-                               touch_pressed_handler_);
-    ui::EventDispatchDetails dispatch_details =
-        DispatchEvent(touch_pressed_handler_, &touch_event);
-    if (touch_event.handled())
-      event->SetHandled();
-    if (touch_event.stopped_propagation())
-      event->StopPropagation();
-    if (dispatch_details.dispatcher_destroyed)
-      return;
-    return;
-  }
-
-  // Walk up the tree until we find a view that wants the touch event.
-  for (touch_pressed_handler_ = GetEventHandlerForPoint(event->location());
-       touch_pressed_handler_ && (touch_pressed_handler_ != this);
-       touch_pressed_handler_ = touch_pressed_handler_->parent()) {
-    if (!touch_pressed_handler_->enabled()) {
-      // Disabled views eat events but are treated as not handled.
-      break;
-    }
-
-    // See if this view wants to handle the touch
-    ui::TouchEvent touch_event(*event, static_cast<View*>(this),
-                               touch_pressed_handler_);
-    ui::EventDispatchDetails dispatch_details =
-        DispatchEvent(touch_pressed_handler_, &touch_event);
-    if (touch_event.handled())
-      event->SetHandled();
-    if (touch_event.stopped_propagation())
-      event->StopPropagation();
-    if (dispatch_details.dispatcher_destroyed)
-      return;
-
-    // The view could have removed itself from the tree when handling
-    // OnTouchEvent(). So handle as per OnMousePressed. NB: we
-    // assume that the RootView itself cannot be so removed.
-    if (!touch_pressed_handler_)
-      break;
-
-    // The touch event wasn't processed. Go up the view hierarchy and dispatch
-    // the touch event.
-    if (!event->handled())
-      continue;
-
-    // If a View consumed the event, that means future touch-events should go to
-    // that View. If the event wasn't consumed, then reset the handler.
-    if (!event->stopped_propagation())
-      touch_pressed_handler_ = NULL;
-
-    return;
-  }
-
-  // Reset touch_pressed_handler_ to indicate that no processing is occurring.
-  touch_pressed_handler_ = NULL;
-
-  return;
 }
 
 void RootView::UpdateCursor(const ui::MouseEvent& event) {

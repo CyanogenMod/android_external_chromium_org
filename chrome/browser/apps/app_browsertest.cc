@@ -16,7 +16,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
-#include "chrome/browser/automation/automation_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/permissions/permissions_api.h"
@@ -396,7 +395,13 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_DisallowNavigation) {
             observer.tabs()[1]->GetURL().spec());
 }
 
-IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, Iframes) {
+// Failing on some Win and Linux buildbots.  See crbug.com/354425.
+#if (defined(OS_WIN) || defined(OS_LINUX)) && defined(ARCH_CPU_X86)
+#define MAYBE_Iframes DISABLED_Iframes
+#else
+#define MAYBE_Iframes Iframes
+#endif
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_Iframes) {
   ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/iframes")) << message_;
 }
@@ -435,7 +440,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, Isolation) {
   // Make sure the cookie is set.
   int cookie_size;
   std::string cookie_value;
-  automation_util::GetCookies(
+  ui_test_utils::GetCookies(
       set_cookie_url,
       browser()->tab_strip_model()->GetWebContentsAt(0),
       &cookie_size,

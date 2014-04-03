@@ -154,14 +154,14 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_inspector_instrumentation_sources_gyp)/inspector_instrumentation_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_generated_bindings_gyp)/generated_bindings.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_aggregate_generated_bindings_gyp)/aggregate_generated_bindings.stamp \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_event_interfaces_gyp)/event_interfaces.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_individual_generated_bindings_gyp)/individual_generated_bindings.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_interfaces_info_gyp)/interfaces_info.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_global_constructors_idls_gyp)/global_constructors_idls.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_generated_testing_idls_gyp)/generated_testing_idls.stamp \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_individual_generated_bindings_gyp)/individual_generated_bindings.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_cached_yacc_tables_gyp)/cached_yacc_tables.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_cached_jinja_templates_gyp)/cached_jinja_templates.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_make_core_generated_gyp)/make_core_generated.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_core_bindings_generated_gyp)/core_bindings_generated.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_heap_blink_heap_gyp)/third_party_WebKit_Source_heap_blink_heap_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_heap_blink_heap_asm_stubs_gyp)/third_party_WebKit_Source_heap_blink_heap_asm_stubs_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libxml_libxml_gyp)/third_party_libxml_libxml_gyp.a \
@@ -188,6 +188,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_java_set_jni_headers_gyp)/java_set_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,content_motionevent_jni_headers_gyp)/motionevent_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,content_common_aidl_gyp)/common_aidl.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libyuv_libyuv_gyp)/third_party_libyuv_libyuv_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libyuv_libyuv_neon_gyp)/third_party_libyuv_libyuv_neon_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,google_apis_google_apis_gyp)/google_apis_google_apis_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_google_zip_gyp)/third_party_zlib_google_zip_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_minizip_gyp)/third_party_zlib_minizip_gyp.a \
@@ -236,6 +238,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_seccomp_bpf_gyp)/sandbox_seccomp_bpf_gyp.a \
 	$(call intermediates-dir-for,GYP,sandbox_sandbox_services_headers_gyp)/sandbox_services_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_seccomp_bpf_helpers_gyp)/sandbox_seccomp_bpf_helpers_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,jingle_jingle_glue_gyp)/jingle_jingle_glue_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_gyp)/third_party_libphonenumber_libphonenumber_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_without_metadata_gyp)/third_party_libphonenumber_libphonenumber_without_metadata_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_content_common_gyp)/components_autofill_content_common_gyp.a \
@@ -257,9 +260,61 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_auto_login_parser_gyp)/components_auto_login_parser_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_content_renderer_gyp)/components_autofill_content_renderer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_renderer_gyp)/content_content_renderer_gyp.a \
-	$(call intermediates-dir-for,GYP,jingle_jingle_glue_gyp)/jingle_glue.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_renderer_compositor_bindings_webkit_compositor_bindings_gyp)/webkit_renderer_compositor_bindings_webkit_compositor_bindings_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_renderer_compositor_bindings_webkit_compositor_support_gyp)/webkit_renderer_compositor_bindings_webkit_compositor_support_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_webrtc_gyp)/third_party_libjingle_libjingle_webrtc_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_webrtc_common_gyp)/third_party_libjingle_libjingle_webrtc_common_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libsrtp_libsrtp_gyp)/third_party_libsrtp_libsrtp_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_media_file_gyp)/third_party_webrtc_modules_media_file_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_system_wrappers_source_system_wrappers_gyp)/third_party_webrtc_system_wrappers_source_system_wrappers_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_system_wrappers_source_cpu_features_android_gyp)/third_party_webrtc_system_wrappers_source_cpu_features_android_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_video_capture_module_gyp)/third_party_webrtc_modules_video_capture_module_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_webrtc_utility_gyp)/third_party_webrtc_modules_webrtc_utility_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audio_coding_module_gyp)/third_party_webrtc_modules_audio_coding_module_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_CNG_gyp)/third_party_webrtc_modules_CNG_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_common_audio_common_audio_gyp)/third_party_webrtc_common_audio_common_audio_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_common_audio_common_audio_neon_gyp)/third_party_webrtc_common_audio_common_audio_neon_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_G711_gyp)/third_party_webrtc_modules_G711_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_G722_gyp)/third_party_webrtc_modules_G722_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_iLBC_gyp)/third_party_webrtc_modules_iLBC_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_iSAC_gyp)/third_party_webrtc_modules_iSAC_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_iSACFix_gyp)/third_party_webrtc_modules_iSACFix_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_isac_neon_gyp)/third_party_webrtc_modules_isac_neon_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_PCM16B_gyp)/third_party_webrtc_modules_PCM16B_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_NetEq_gyp)/third_party_webrtc_modules_NetEq_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_webrtc_opus_gyp)/third_party_webrtc_modules_webrtc_opus_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_acm2_gyp)/third_party_webrtc_modules_acm2_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_NetEq4_gyp)/third_party_webrtc_modules_NetEq4_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_webrtc_video_coding_gyp)/third_party_webrtc_modules_webrtc_video_coding_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_webrtc_i420_gyp)/third_party_webrtc_modules_webrtc_i420_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_common_video_common_video_gyp)/third_party_webrtc_common_video_common_video_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_video_coding_utility_video_coding_utility_gyp)/third_party_webrtc_modules_video_coding_utility_video_coding_utility_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_video_coding_codecs_vp8_webrtc_vp8_gyp)/third_party_webrtc_modules_video_coding_codecs_vp8_webrtc_vp8_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libvpx_libvpx_gyp)/third_party_libvpx_libvpx_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_libvpx_gen_asm_offsets_vp8_gyp)/gen_asm_offsets_vp8.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,libvpx_asm_offsets_vp8)/libvpx_asm_offsets_vp8.a \
+	$(call intermediates-dir-for,GYP,third_party_libvpx_gen_asm_offsets_vpx_scale_gyp)/gen_asm_offsets_vpx_scale.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,libvpx_asm_offsets_vpx_scale)/libvpx_asm_offsets_vpx_scale.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libvpx_libvpx_intrinsics_neon_gyp)/third_party_libvpx_libvpx_intrinsics_neon_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_video_render_module_gyp)/third_party_webrtc_modules_video_render_module_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_usrsctp_usrsctplib_gyp)/third_party_usrsctp_usrsctplib_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libpeerconnection_gyp)/third_party_libjingle_libpeerconnection_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_video_engine_video_engine_core_gyp)/third_party_webrtc_video_engine_video_engine_core_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_rtp_rtcp_gyp)/third_party_webrtc_modules_rtp_rtcp_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_paced_sender_gyp)/third_party_webrtc_modules_paced_sender_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_remote_bitrate_estimator_gyp)/third_party_webrtc_modules_remote_bitrate_estimator_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_remote_bitrate_estimator_rbe_components_gyp)/third_party_webrtc_modules_remote_bitrate_estimator_rbe_components_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_bitrate_controller_gyp)/third_party_webrtc_modules_bitrate_controller_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_video_processing_gyp)/third_party_webrtc_modules_video_processing_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_voice_engine_voice_engine_gyp)/third_party_webrtc_voice_engine_voice_engine_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audio_conference_mixer_gyp)/third_party_webrtc_modules_audio_conference_mixer_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audio_processing_gyp)/third_party_webrtc_modules_audio_processing_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audioproc_debug_proto_gyp)/third_party_webrtc_modules_audioproc_debug_proto_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audio_processing_neon_gyp)/third_party_webrtc_modules_audio_processing_neon_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_webrtc_modules_audio_processing_gen_nsx_core_neon_offsets_h_gyp)/gen_nsx_core_neon_offsets_h.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,lib_core_neon_offsets)/lib_core_neon_offsets.a \
+	$(call intermediates-dir-for,GYP,third_party_webrtc_modules_audio_processing_gen_aecm_core_neon_offsets_h_gyp)/gen_aecm_core_neon_offsets_h.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audio_device_gyp)/third_party_webrtc_modules_audio_device_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_navigation_interception_gyp)/components_navigation_interception_gyp.a \
 	$(call intermediates-dir-for,GYP,components_navigation_interception_jni_headers_gyp)/navigation_interception_jni_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_visitedlink_browser_gyp)/components_visitedlink_browser_gyp.a \
@@ -325,6 +380,7 @@ MY_DEFS_Debug := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -333,6 +389,7 @@ MY_DEFS_Debug := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DLIBPEERCONNECTION_LIB=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -416,6 +473,7 @@ MY_DEFS_Release := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -424,6 +482,7 @@ MY_DEFS_Release := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DLIBPEERCONNECTION_LIB=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -615,6 +674,8 @@ LOCAL_STATIC_LIBRARIES := \
 	sql_sql_gyp \
 	third_party_leveldatabase_leveldatabase_gyp \
 	webkit_webkit_storage_common_gyp \
+	third_party_libyuv_libyuv_gyp \
+	third_party_libyuv_libyuv_neon_gyp \
 	google_apis_google_apis_gyp \
 	third_party_zlib_google_zip_gyp \
 	third_party_zlib_minizip_gyp \
@@ -634,6 +695,7 @@ LOCAL_STATIC_LIBRARIES := \
 	sandbox_sandbox_services_gyp \
 	sandbox_seccomp_bpf_gyp \
 	sandbox_seccomp_bpf_helpers_gyp \
+	jingle_jingle_glue_gyp \
 	third_party_libphonenumber_libphonenumber_gyp \
 	third_party_libphonenumber_libphonenumber_without_metadata_gyp \
 	components_autofill_content_common_gyp \
@@ -649,6 +711,55 @@ LOCAL_STATIC_LIBRARIES := \
 	content_content_renderer_gyp \
 	webkit_renderer_compositor_bindings_webkit_compositor_bindings_gyp \
 	webkit_renderer_compositor_bindings_webkit_compositor_support_gyp \
+	third_party_libjingle_libjingle_webrtc_gyp \
+	third_party_libjingle_libjingle_webrtc_common_gyp \
+	third_party_libsrtp_libsrtp_gyp \
+	third_party_webrtc_modules_media_file_gyp \
+	third_party_webrtc_system_wrappers_source_system_wrappers_gyp \
+	third_party_webrtc_system_wrappers_source_cpu_features_android_gyp \
+	third_party_webrtc_modules_video_capture_module_gyp \
+	third_party_webrtc_modules_webrtc_utility_gyp \
+	third_party_webrtc_modules_audio_coding_module_gyp \
+	third_party_webrtc_modules_CNG_gyp \
+	third_party_webrtc_common_audio_common_audio_gyp \
+	third_party_webrtc_common_audio_common_audio_neon_gyp \
+	third_party_webrtc_modules_G711_gyp \
+	third_party_webrtc_modules_G722_gyp \
+	third_party_webrtc_modules_iLBC_gyp \
+	third_party_webrtc_modules_iSAC_gyp \
+	third_party_webrtc_modules_iSACFix_gyp \
+	third_party_webrtc_modules_isac_neon_gyp \
+	third_party_webrtc_modules_PCM16B_gyp \
+	third_party_webrtc_modules_NetEq_gyp \
+	third_party_webrtc_modules_webrtc_opus_gyp \
+	third_party_webrtc_modules_acm2_gyp \
+	third_party_webrtc_modules_NetEq4_gyp \
+	third_party_webrtc_modules_webrtc_video_coding_gyp \
+	third_party_webrtc_modules_webrtc_i420_gyp \
+	third_party_webrtc_common_video_common_video_gyp \
+	third_party_webrtc_modules_video_coding_utility_video_coding_utility_gyp \
+	third_party_webrtc_modules_video_coding_codecs_vp8_webrtc_vp8_gyp \
+	third_party_libvpx_libvpx_gyp \
+	libvpx_asm_offsets_vp8 \
+	libvpx_asm_offsets_vpx_scale \
+	third_party_libvpx_libvpx_intrinsics_neon_gyp \
+	third_party_webrtc_modules_video_render_module_gyp \
+	third_party_usrsctp_usrsctplib_gyp \
+	third_party_libjingle_libpeerconnection_gyp \
+	third_party_webrtc_video_engine_video_engine_core_gyp \
+	third_party_webrtc_modules_rtp_rtcp_gyp \
+	third_party_webrtc_modules_paced_sender_gyp \
+	third_party_webrtc_modules_remote_bitrate_estimator_gyp \
+	third_party_webrtc_modules_remote_bitrate_estimator_rbe_components_gyp \
+	third_party_webrtc_modules_bitrate_controller_gyp \
+	third_party_webrtc_modules_video_processing_gyp \
+	third_party_webrtc_voice_engine_voice_engine_gyp \
+	third_party_webrtc_modules_audio_conference_mixer_gyp \
+	third_party_webrtc_modules_audio_processing_gyp \
+	third_party_webrtc_modules_audioproc_debug_proto_gyp \
+	third_party_webrtc_modules_audio_processing_neon_gyp \
+	lib_core_neon_offsets \
+	third_party_webrtc_modules_audio_device_gyp \
 	components_navigation_interception_gyp \
 	components_visitedlink_browser_gyp \
 	components_visitedlink_common_gyp \

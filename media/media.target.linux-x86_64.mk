@@ -162,6 +162,7 @@ LOCAL_SRC_FILES := \
 	media/midi/usb_midi_input_stream.cc \
 	media/midi/usb_midi_output_stream.cc \
 	media/video/capture/android/video_capture_device_android.cc \
+	media/video/capture/android/video_capture_device_factory_android.cc \
 	media/video/capture/fake_video_capture_device.cc \
 	media/video/capture/file_video_capture_device.cc \
 	media/video/capture/video_capture_device.cc \
@@ -251,6 +252,7 @@ MY_DEFS_Debug := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -374,6 +376,7 @@ MY_DEFS_Release := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

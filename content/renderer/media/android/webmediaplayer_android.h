@@ -19,7 +19,7 @@
 #include "content/public/renderer/render_frame_observer.h"
 #include "content/renderer/media/android/media_info_loader.h"
 #include "content/renderer/media/android/media_source_delegate.h"
-#include "content/renderer/media/android/stream_texture_factory_android.h"
+#include "content/renderer/media/android/stream_texture_factory.h"
 #include "content/renderer/media/crypto/proxy_decryptor.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "media/base/android/media_player_android.h"
@@ -36,6 +36,7 @@ class MessageLoopProxy;
 }
 
 namespace blink {
+class WebContentDecryptionModule;
 class WebFrame;
 class WebURL;
 }
@@ -53,8 +54,9 @@ class WebLayerImpl;
 }
 
 namespace content {
-class WebMediaPlayerDelegate;
 class RendererMediaPlayerManager;
+class WebContentDecryptionModuleImpl;
+class WebMediaPlayerDelegate;
 
 // This class implements blink::WebMediaPlayer by keeping the android
 // media player in the browser process. It listens to all the status changes
@@ -74,7 +76,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
                         blink::WebMediaPlayerClient* client,
                         base::WeakPtr<WebMediaPlayerDelegate> delegate,
                         RendererMediaPlayerManager* manager,
-                        StreamTextureFactory* factory,
+                        scoped_refptr<StreamTextureFactory> factory,
                         const scoped_refptr<base::MessageLoopProxy>& media_loop,
                         media::MediaLog* media_log);
   virtual ~WebMediaPlayerAndroid();
@@ -214,6 +216,8 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   virtual MediaKeyException cancelKeyRequest(
       const blink::WebString& key_system,
       const blink::WebString& session_id);
+  virtual void setContentDecryptionModule(
+      blink::WebContentDecryptionModule* cdm);
 
   void OnKeyAdded(const std::string& session_id);
   void OnKeyError(const std::string& session_id,
@@ -254,9 +258,6 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   void ReallocateVideoFrame();
   void SetCurrentFrameInternal(scoped_refptr<media::VideoFrame>& frame);
   void DidLoadMediaInfo(MediaInfoLoader::Status status);
-  void DoReleaseRemotePlaybackTexture(
-      scoped_ptr<gpu::MailboxHolder> mailbox_holder);
-
   bool IsKeySystemSupported(const std::string& key_system);
 
   // Actually do the work for generateKeyRequest/addKey so they can easily
@@ -342,16 +343,12 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   blink::WebMediaPlayer::NetworkState network_state_;
   blink::WebMediaPlayer::ReadyState ready_state_;
 
-  // GL texture ID used to show the remote playback icon.
-  unsigned int remote_playback_texture_id_;
-
   // GL texture ID allocated to the video.
   unsigned int texture_id_;
 
   // GL texture mailbox for texture_id_ to provide in the VideoFrame, and sync
   // point for when the mailbox was produced.
   gpu::Mailbox texture_mailbox_;
-  unsigned int texture_mailbox_sync_point_;
 
   // Stream texture ID allocated to the video.
   unsigned int stream_id_;
@@ -376,7 +373,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   bool has_media_info_;
 
   // Object for allocating stream textures.
-  scoped_ptr<StreamTextureFactory> stream_texture_factory_;
+  scoped_refptr<StreamTextureFactory> stream_texture_factory_;
 
   // Object for calling back the compositor thread to repaint the video when a
   // frame available. It should be initialized on the compositor thread.
@@ -427,10 +424,18 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // through GenerateKeyRequest() directly from WebKit.
   std::string init_data_type_;
 
-  media::DecryptorReadyCB decryptor_ready_cb_;
-
   // Manages decryption keys and decrypts encrypted frames.
   scoped_ptr<ProxyDecryptor> proxy_decryptor_;
+
+  // Non-owned pointer to the CDM. Updated via calls to
+  // setContentDecryptionModule().
+  WebContentDecryptionModuleImpl* web_cdm_;
+
+  // This is only Used by Clear Key key system implementation, where a renderer
+  // side CDM will be used. This is similar to WebMediaPlayerImpl. For other key
+  // systems, a browser side CDM will be used and we set CDM by calling
+  // manager_->SetCdm() directly.
+  media::DecryptorReadyCB decryptor_ready_cb_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<WebMediaPlayerAndroid> weak_factory_;

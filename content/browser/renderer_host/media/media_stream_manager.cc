@@ -796,6 +796,12 @@ void MediaStreamManager::StopRemovedDevice(const MediaStreamDevice& device) {
        it != session_ids.end(); ++it) {
     StopDevice(device.type, *it);
   }
+
+  std::ostringstream oss;
+  oss << "Media input device removed: type = " <<
+    (device.type == MEDIA_DEVICE_AUDIO_CAPTURE ? "audio" : "video") <<
+    ", id = " << device.id << ", name = " << device.name;
+  AddLogMessageOnIOThread(oss.str());
 }
 
 void MediaStreamManager::StartMonitoring() {
@@ -1683,6 +1689,7 @@ void MediaStreamManager::HandleAccessRequestResponse(
     FinalizeRequestFailed(label, request, result);
     return;
   }
+  DCHECK(!devices.empty());
 
   // Process all newly-accepted devices for this request.
   bool found_audio = false;

@@ -545,29 +545,16 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   std::string field_trial_result =
       base::FieldTrialList::FindFullName(kFieldTrialName);
 
-  bool enabled_via_field_trial = field_trial_result.compare(
-      0,
-      enable_prefix.length(),
-      enable_prefix) == 0;
+  bool enabled_via_field_trial =
+      field_trial_result.compare(0, enable_prefix.length(), enable_prefix) == 0;
 
-  // Enable the feature on trybots.
-  bool enabled_via_trunk_build = chrome::VersionInfo::GetChannel() ==
-      chrome::VersionInfo::CHANNEL_UNKNOWN;
+  // Enable the feature on trybots and trunk builds.
+  bool enabled_via_trunk_build =
+      chrome::VersionInfo::GetChannel() == chrome::VersionInfo::CHANNEL_UNKNOWN;
 
-  bool enabled_via_flag =
-      chrome::VersionInfo::GetChannel() !=
-          chrome::VersionInfo::CHANNEL_STABLE &&
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableGoogleNowIntegration);
+  bool enabled = enabled_via_field_trial || enabled_via_trunk_build;
 
-  bool enabled =
-      enabled_via_field_trial || enabled_via_trunk_build || enabled_via_flag;
-
-  bool disabled_via_flag =
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableGoogleNowIntegration);
-
-  if (!skip_session_components && enabled && !disabled_via_flag) {
+  if (!skip_session_components && enabled) {
     Add(IDR_GOOGLE_NOW_MANIFEST,
         base::FilePath(FILE_PATH_LITERAL("google_now")));
   }
@@ -577,6 +564,20 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
 #if !defined(OS_CHROMEOS)  // http://crbug.com/314799
   AddNetworkSpeechSynthesisExtension();
 #endif
+
+  if (command_line->HasSwitch(switches::kEnableEasyUnlock)) {
+    if (command_line->HasSwitch(switches::kEasyUnlockAppPath)) {
+      base::FilePath easy_unlock_path(
+          command_line->GetSwitchValuePath(switches::kEasyUnlockAppPath));
+      Add(IDR_EASY_UNLOCK_MANIFEST, easy_unlock_path);
+    } else {
+#if defined(OS_CHROMEOS)
+      Add(IDR_EASY_UNLOCK_MANIFEST,
+          base::FilePath(
+              FILE_PATH_LITERAL("/usr/share/chromeos-assets/easy_unlock")));
+#endif
+    }
+  }
 #endif  // defined(GOOGLE_CHROME_BUILD)
 
 #if defined(ENABLE_PLUGINS)

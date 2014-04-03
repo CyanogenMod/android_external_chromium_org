@@ -123,9 +123,7 @@ class Plugin : public pp::Instance {
     LENGTH_IS_COMPUTABLE = 1
   };
   // Report successful loading of a module.
-  void ReportLoadSuccess(LengthComputable length_computable,
-                         uint64_t loaded_bytes,
-                         uint64_t total_bytes);
+  void ReportLoadSuccess(uint64_t loaded_bytes, uint64_t total_bytes);
   // Report an error that was encountered while loading a module.
   void ReportLoadError(const ErrorInfo& error_info);
   // Report loading a module was aborted, typically due to user action.
@@ -190,8 +188,6 @@ class Plugin : public pp::Instance {
   // under the same-origin policy. Strictly speaking, it may be possible for the
   // document to request the URL using CORS even if this function returns false.
   bool DocumentCanRequest(const std::string& url);
-
-  void set_last_error_string(const nacl::string& error);
 
   // The MIME type used to instantiate this instance of the NaCl plugin.
   // Typically, the MIME type will be application/x-nacl.  However, if the NEXE
@@ -414,7 +410,6 @@ class Plugin : public pp::Instance {
   int64_t load_start_;
 
   int64_t init_time_;
-  int64_t ready_time_;
   size_t nexe_size_;
 
   // Callback to receive .nexe and .dso download progress notifications.

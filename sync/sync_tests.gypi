@@ -291,7 +291,6 @@
           'engine/sync_scheduler_unittest.cc',
           'engine/syncer_proto_util_unittest.cc',
           'engine/syncer_unittest.cc',
-          'engine/traffic_recorder_unittest.cc',
           'js/js_arg_list_unittest.cc',
           'js/js_event_details_unittest.cc',
           'js/sync_js_controller_unittest.cc',
@@ -417,6 +416,7 @@
           'internal_api/js_mutation_event_observer_unittest.cc',
           'internal_api/js_sync_encryption_handler_observer_unittest.cc',
           'internal_api/js_sync_manager_observer_unittest.cc',
+          'internal_api/protocol_event_buffer_unittest.cc',
           'internal_api/public/change_record_unittest.cc',
           'internal_api/public/sessions/sync_session_snapshot_unittest.cc',
           'internal_api/sync_core_proxy_unittest.cc',
@@ -464,6 +464,7 @@
         'sources': [
           'api/attachments/attachment_unittest.cc',
           'api/attachments/attachment_id_unittest.cc',
+          'api/attachments/attachment_service_proxy_unittest.cc',
           'api/attachments/fake_attachment_store_unittest.cc',
           'api/sync_change_unittest.cc',
           'api/sync_data_unittest.cc',

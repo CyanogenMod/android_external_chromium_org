@@ -17,7 +17,6 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync_file_system/drive_backend/conflict_resolver.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
@@ -34,6 +33,7 @@
 #include "chrome/browser/sync_file_system/logger.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_system_provider.h"
@@ -55,6 +55,23 @@ namespace {
 void EmptyStatusCallback(SyncStatusCode status) {}
 
 }  // namespace
+
+SyncEngine::TaskManagerClient::TaskManagerClient(
+    const base::WeakPtr<SyncEngine>& sync_engine,
+    base::SequencedTaskRunner* task_runner)
+    : sync_engine_(sync_engine),
+      task_runner_(task_runner) {}
+
+SyncEngine::TaskManagerClient::~TaskManagerClient() {}
+
+void SyncEngine::TaskManagerClient::MaybeScheduleNextTask() {
+  sync_engine_->MaybeScheduleNextTask();
+}
+
+void SyncEngine::TaskManagerClient::NotifyLastOperationStatus(
+    SyncStatusCode sync_status, bool used_network) {
+  sync_engine_->NotifyLastOperationStatus(sync_status, used_network);
+}
 
 scoped_ptr<SyncEngine> SyncEngine::CreateForBrowserContext(
     content::BrowserContext* context) {
@@ -132,8 +149,9 @@ SyncEngine::~SyncEngine() {
 
 void SyncEngine::Initialize() {
   DCHECK(!task_manager_);
+
   task_manager_.reset(new SyncTaskManager(
-      weak_ptr_factory_.GetWeakPtr(),
+      task_manager_client_->AsWeakPtr(),
       0 /* maximum_background_task */));
   task_manager_->Initialize(SYNC_STATUS_OK);
 
@@ -445,14 +463,6 @@ MetadataDatabase* SyncEngine::GetMetadataDatabase() {
   return context_->GetMetadataDatabase();
 }
 
-RemoteChangeProcessor* SyncEngine::GetRemoteChangeProcessor() {
-  return context_->GetRemoteChangeProcessor();
-}
-
-base::SequencedTaskRunner* SyncEngine::GetBlockingTaskRunner() {
-  return context_->GetBlockingTaskRunner();
-}
-
 SyncEngine::SyncEngine(const base::FilePath& base_dir,
                        base::SequencedTaskRunner* task_runner,
                        scoped_ptr<drive::DriveServiceInterface> drive_service,
@@ -478,6 +488,8 @@ SyncEngine::SyncEngine(const base::FilePath& base_dir,
                                      drive_uploader.Pass(),
                                      task_runner)),
       weak_ptr_factory_(this) {
+  task_manager_client_.reset(new TaskManagerClient(
+      weak_ptr_factory_.GetWeakPtr(), task_runner));
 }
 
 void SyncEngine::DoDisableApp(const std::string& app_id,
@@ -504,7 +516,6 @@ void SyncEngine::PostInitializeTask() {
   SyncEngineInitializer* initializer =
       new SyncEngineInitializer(context_.get(),
                                 context_->GetBlockingTaskRunner(),
-                                context_->GetDriveService(),
                                 base_dir_.Append(kDatabaseName),
                                 env_override_);
   task_manager_->ScheduleSyncTask(

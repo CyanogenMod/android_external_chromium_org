@@ -33,8 +33,18 @@ class TestSigninClient : public SigninClient {
   // Returns true.
   virtual bool CanRevokeCredentials() OVERRIDE;
 
+  // Returns the empty string.
+  virtual std::string GetProductVersion() OVERRIDE;
+
   // Returns a TestURLRequestContextGetter.
   virtual net::URLRequestContextGetter* GetURLRequestContext() OVERRIDE;
+
+  // Returns true.
+  virtual bool ShouldMergeSigninCredentialsIntoCookieJar() OVERRIDE;
+
+  // Does nothing.
+  virtual void SetCookieChangedCallback(const CookieChangedCallback& callback)
+      OVERRIDE;
 
  private:
   // Loads the token database.

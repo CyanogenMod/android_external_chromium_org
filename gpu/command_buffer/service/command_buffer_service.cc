@@ -88,10 +88,12 @@ void CommandBufferService::Flush(int32 put_offset) {
 void CommandBufferService::SetGetBuffer(int32 transfer_buffer_id) {
   DCHECK_EQ(-1, ring_buffer_id_);
   DCHECK_EQ(put_offset_, get_offset_);  // Only if it's empty.
+  // If the buffer is invalid we handle it gracefully.
+  // This means ring_buffer_ can be NULL.
   ring_buffer_ = GetTransferBuffer(transfer_buffer_id);
-  DCHECK(ring_buffer_);
   ring_buffer_id_ = transfer_buffer_id;
-  num_entries_ = ring_buffer_->size() / sizeof(CommandBufferEntry);
+  int32 size = ring_buffer_ ? ring_buffer_->size() : 0;
+  num_entries_ = size / sizeof(CommandBufferEntry);
   put_offset_ = 0;
   SetGetOffset(0);
   if (!get_buffer_change_callback_.is_null()) {
@@ -101,17 +103,15 @@ void CommandBufferService::SetGetBuffer(int32 transfer_buffer_id) {
   UpdateState();
 }
 
-bool CommandBufferService::SetSharedStateBuffer(
-    scoped_ptr<base::SharedMemory> shared_state_shm) {
-  shared_state_shm_.reset(shared_state_shm.release());
-  if (!shared_state_shm_->Map(sizeof(*shared_state_)))
-    return false;
+void CommandBufferService::SetSharedStateBuffer(
+    scoped_ptr<BufferBacking> shared_state_buffer) {
+  shared_state_buffer_ = shared_state_buffer.Pass();
+  DCHECK(shared_state_buffer_->GetSize() >= sizeof(*shared_state_));
 
   shared_state_ =
-      static_cast<CommandBufferSharedState*>(shared_state_shm_->memory());
+      static_cast<CommandBufferSharedState*>(shared_state_buffer_->GetMemory());
 
   UpdateState();
-  return true;
 }
 
 void CommandBufferService::SetGetOffset(int32 get_offset) {
@@ -130,7 +130,8 @@ scoped_refptr<Buffer> CommandBufferService::CreateTransferBuffer(size_t size,
   static int32 next_id = 1;
   *id = next_id++;
 
-  if (!RegisterTransferBuffer(*id, shared_memory.Pass(), size)) {
+  if (!RegisterTransferBuffer(
+          *id, MakeBackingFromSharedMemory(shared_memory.Pass(), size))) {
     *id = -1;
     return NULL;
   }
@@ -155,10 +156,8 @@ scoped_refptr<Buffer> CommandBufferService::GetTransferBuffer(int32 id) {
 
 bool CommandBufferService::RegisterTransferBuffer(
     int32 id,
-    scoped_ptr<base::SharedMemory> shared_memory,
-    size_t size) {
-  return transfer_buffer_manager_->RegisterTransferBuffer(
-      id, shared_memory.Pass(), size);
+    scoped_ptr<BufferBacking> buffer) {
+  return transfer_buffer_manager_->RegisterTransferBuffer(id, buffer.Pass());
 }
 
 void CommandBufferService::SetToken(int32 token) {

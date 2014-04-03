@@ -100,7 +100,6 @@ class RemoteToLocalSyncerTest : public testing::Test {
         new SyncEngineInitializer(
             context_.get(),
             base::MessageLoopProxy::current(),
-            context_->GetDriveService(),
             database_dir_.path(),
             in_memory_env_.get());
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
@@ -186,7 +185,7 @@ class RemoteToLocalSyncerTest : public testing::Test {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     scoped_ptr<RemoteToLocalSyncer>
         syncer(new RemoteToLocalSyncer(context_.get()));
-    syncer->RunSequential(CreateResultReceiver(&status));
+    syncer->RunExclusive(CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     return status;
   }

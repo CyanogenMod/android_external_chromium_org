@@ -162,20 +162,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
       const gfx::Point& location,
       const blink::WebMediaPlayerAction& action) = 0;
 
-  // Runs some javascript within the context of a frame in the page.
-  // OBSOLETE; DO NOT USE! Use RenderFrameHost::ExecuteJavaScript instead.
-  virtual void ExecuteJavascriptInWebFrame(const base::string16& frame_xpath,
-                                           const base::string16& jscript) = 0;
-
-  // Runs some javascript within the context of a frame in the page. The result
-  // is sent back via the provided callback.
-  // OBSOLETE; DO NOT USE! Use RenderFrameHost::ExecuteJavaScript instead.
-  typedef base::Callback<void(const base::Value*)> JavascriptResultCallback;
-  virtual void ExecuteJavascriptInWebFrameCallbackResult(
-      const base::string16& frame_xpath,
-      const base::string16& jscript,
-      const JavascriptResultCallback& callback) = 0;
-
   // Tells the renderer to perform the given action on the plugin located at
   // the given point.
   virtual void ExecutePluginActionAtLocation(
@@ -206,9 +192,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Notification that a move or resize renderer's containing window has
   // started.
   virtual void NotifyMoveOrResizeStarted() = 0;
-
-  // Reloads the current focused frame.
-  virtual void ReloadFrame() = 0;
 
   // Sets a property with the given name and value on the Web UI binding object.
   // Must call AllowWebUIBindings() on this renderer first.

@@ -108,7 +108,7 @@ const char kSourceAccountPicker[] = "account-picker";
 // The Task posted to PostTaskAndReply in StartClearingDnsCache on the IO
 // thread.
 void ClearDnsCache(IOThread* io_thread) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (browser_shutdown::IsTryingToQuit())
     return;
 
@@ -963,7 +963,7 @@ void SigninScreenHandler::ShowSigninScreenForCreds(
 }
 
 void SigninScreenHandler::OnCookiesCleared(base::Closure on_clear_callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   cookies_cleared_ = true;
   on_clear_callback.Run();
 }
@@ -1007,7 +1007,7 @@ void SigninScreenHandler::Observe(int type,
 }
 
 void SigninScreenHandler::OnDnsCleared() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   dns_clear_task_running_ = false;
   dns_cleared_ = true;
   ShowSigninScreenIfReady();
@@ -1438,12 +1438,7 @@ void SigninScreenHandler::HandleWallpaperReady() {
 }
 
 void SigninScreenHandler::HandleLoginWebuiReady() {
-  if (!gaia_silent_load_) {
-    content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_LOGIN_WEBUI_LOADED,
-        content::NotificationService::AllSources(),
-        content::NotificationService::NoDetails());
-  } else {
+  if (gaia_silent_load_) {
     // As we could miss and window.onload could already be called, restore
     // focus to current pod (see crbug/175243).
     RefocusCurrentPod();
@@ -1759,7 +1754,6 @@ void SigninScreenHandler::OnShowAddUser(const std::string& email) {
     cookies_cleared_ = true;
     ShowSigninScreenIfReady();
   } else {
-    LOG(ERROR) << "OnShowAddUser 2";
     StartClearingDnsCache();
     StartClearingCookies(base::Bind(
         &SigninScreenHandler::ShowSigninScreenIfReady,

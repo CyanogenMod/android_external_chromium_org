@@ -16,7 +16,7 @@
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
-#include "mojo/public/bindings/allocation_scope.h"
+#include "mojo/public/cpp/bindings/allocation_scope.h"
 #include "mojo/services/gles2/command_buffer_type_conversions.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface.h"
@@ -118,11 +118,14 @@ bool CommandBufferImpl::DoInitialize(const ShmHandle& shared_state) {
 
   // TODO(piman): other callbacks
 
+  const size_t kSize = sizeof(gpu::CommandBufferSharedState);
   scoped_ptr<base::SharedMemory> shared_state_shm(
       new base::SharedMemory(shared_state, false));
-  if (!command_buffer_->SetSharedStateBuffer(shared_state_shm.Pass()))
+  if (!shared_state_shm->Map(kSize))
     return false;
 
+  command_buffer_->SetSharedStateBuffer(
+      gpu::MakeBackingFromSharedMemory(shared_state_shm.Pass(), kSize));
   return true;
 }
 
@@ -152,7 +155,8 @@ void CommandBufferImpl::RegisterTransferBuffer(int32_t id,
     return;
   }
 
-  command_buffer_->RegisterTransferBuffer(id, shared_memory.Pass(), size);
+  command_buffer_->RegisterTransferBuffer(
+      id, gpu::MakeBackingFromSharedMemory(shared_memory.Pass(), size));
 }
 
 void CommandBufferImpl::DestroyTransferBuffer(int32_t id) {

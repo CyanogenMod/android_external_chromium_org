@@ -39,16 +39,12 @@ SyncInternalsMessageHandler::~SyncInternalsMessageHandler() {
 }
 
 void SyncInternalsMessageHandler::RegisterMessages() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  // Register for ProfileSyncService events.
-  ProfileSyncService* service = GetProfileSyncService();
-  if (service) {
-    service->AddObserver(this);
-    service->AddProtocolEventObserver(this);
-    js_controller_ = service->GetJsController();
-    js_controller_->AddJsEventHandler(this);
-  }
+  web_ui()->RegisterMessageCallback(
+      "registerForEvents",
+      base::Bind(&SyncInternalsMessageHandler::HandleRegisterForEvents,
+                 base::Unretained(this)));
 
   web_ui()->RegisterMessageCallback(
       "requestUpdatedAboutInfo",
@@ -61,7 +57,19 @@ void SyncInternalsMessageHandler::RegisterMessages() {
                  base::Unretained(this)));
 
   RegisterJsControllerCallback("getAllNodes");
-  RegisterJsControllerCallback("getClientServerTraffic");
+}
+
+void SyncInternalsMessageHandler::HandleRegisterForEvents(
+    const base::ListValue* args) {
+  DCHECK(args->empty());
+
+  ProfileSyncService* service = GetProfileSyncService();
+  if (service) {
+    service->AddObserver(this);
+    service->AddProtocolEventObserver(this);
+    js_controller_ = service->GetJsController();
+    js_controller_->AddJsEventHandler(this);
+  }
 }
 
 void SyncInternalsMessageHandler::HandleRequestUpdatedAboutInfo(

@@ -1,6 +1,0 @@
-include_rules = [
-  "-mojo",
-  "+mojo/public/bindings",
-  "+mojo/public/cpp/environment",
-  "+mojo/public/cpp/system",
-]

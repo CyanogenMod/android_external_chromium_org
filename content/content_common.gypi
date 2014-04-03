@@ -296,6 +296,7 @@
     'common/indexed_db/indexed_db_messages.h',
     'common/indexed_db/indexed_db_param_traits.cc',
     'common/indexed_db/indexed_db_param_traits.h',
+    'common/input/did_overscroll_params.h',
     'common/input/gesture_event_stream_validator.cc',
     'common/input/gesture_event_stream_validator.h',
     'common/input/input_event.cc',
@@ -506,15 +507,6 @@
         'content.gyp:webkit_version',
       ],
     }],
-    # Work around for bug in linker used on ia32 and mipsel machines (gold is
-    # not used on ia32 and mipsel machines). See bug 353273.
-    ['use_mojo==1 and OS=="linux" and (target_arch=="ia32" or target_arch=="mipsel") and component=="static_library"', {
-      'link_settings': {
-        'libraries': [
-          '<(PRODUCT_DIR)/lib/libmojo_system.so',
-        ],
-      },
-    }],
     ['use_mojo==0', {
       'sources!': [
         'common/mojo/mojo_channel_init.cc',
@@ -624,6 +616,8 @@
         'common/gpu/media/exynos_v4l2_video_device.h',
         'common/gpu/media/exynos_video_encode_accelerator.cc',
         'common/gpu/media/exynos_video_encode_accelerator.h',
+        'common/gpu/media/tegra_v4l2_video_device.cc',
+        'common/gpu/media/tegra_v4l2_video_device.h',
         'common/gpu/media/v4l2_video_decode_accelerator.cc',
         'common/gpu/media/v4l2_video_decode_accelerator.h',
         'common/gpu/media/v4l2_video_device.cc',

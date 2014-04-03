@@ -10,11 +10,11 @@
 #include "base/message_loop/message_loop.h"
 #include "mojo/examples/launcher/launcher.mojom.h"
 #include "mojo/examples/view_manager/view_manager.mojom.h"
-#include "mojo/public/bindings/allocation_scope.h"
-#include "mojo/public/bindings/remote_ptr.h"
+#include "mojo/public/cpp/bindings/allocation_scope.h"
+#include "mojo/public/cpp/bindings/remote_ptr.h"
+#include "mojo/public/cpp/shell/application.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/public/shell/application.h"
-#include "mojo/public/shell/shell.mojom.h"
+#include "mojo/public/interfaces/shell/shell.mojom.h"
 #include "mojo/services/native_viewport/geometry_conversions.h"
 #include "mojo/services/native_viewport/native_viewport.mojom.h"
 #include "ui/events/event_constants.h"
@@ -82,9 +82,8 @@ class ViewManagerImpl : public Service<ViewManager, ViewManagerImpl>,
   virtual void OnBoundsChanged(const Rect& bounds) OVERRIDE {
     // TODO(beng):
   }
-  virtual void OnEvent(const Event& event) OVERRIDE {
-    if (!event.location().is_null())
-      native_viewport_->AckEvent(event);
+  virtual void OnEvent(const Event& event,
+                       const mojo::Callback<void()>& callback) OVERRIDE {
     if (event.action() == ui::ET_KEY_RELEASED) {
       if (event.key_data().key_code() == ui::VKEY_L &&
           (event.flags() & ui::EF_CONTROL_DOWN)) {
@@ -92,6 +91,7 @@ class ViewManagerImpl : public Service<ViewManager, ViewManagerImpl>,
         launcher_->Show();
       }
     }
+    callback.Run();
   }
 
   // Overridden from LauncherClient:

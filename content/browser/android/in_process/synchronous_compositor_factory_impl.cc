@@ -44,12 +44,10 @@ scoped_ptr<gpu::GLInProcessContext> CreateContext(
   gpu::GLInProcessContextAttribs in_process_attribs;
   WebGraphicsContext3DInProcessCommandBufferImpl::ConvertAttributes(
       GetDefaultAttribs(), &in_process_attribs);
+  in_process_attribs.lose_context_when_out_of_memory = 1;
   scoped_ptr<gpu::GLInProcessContext> context(
-      gpu::GLInProcessContext::CreateWithSurface(surface,
-                                                 service,
-                                                 share_context,
-                                                 in_process_attribs,
-                                                 gpu_preference));
+      gpu::GLInProcessContext::CreateWithSurface(
+          surface, service, share_context, in_process_attribs, gpu_preference));
   return context.Pass();
 }
 
@@ -188,15 +186,15 @@ scoped_refptr<cc::ContextProvider> SynchronousCompositorFactoryImpl::
       "Compositor-Onscreen");
 }
 
-scoped_ptr<StreamTextureFactory>
+scoped_refptr<StreamTextureFactory>
 SynchronousCompositorFactoryImpl::CreateStreamTextureFactory(int view_id) {
-  scoped_ptr<StreamTextureFactorySynchronousImpl> factory(
-      new StreamTextureFactorySynchronousImpl(
-          base::Bind(&SynchronousCompositorFactoryImpl::
-                          TryCreateStreamTextureFactory,
-                     base::Unretained(this)),
+  scoped_refptr<StreamTextureFactorySynchronousImpl> factory(
+      StreamTextureFactorySynchronousImpl::Create(
+          base::Bind(
+              &SynchronousCompositorFactoryImpl::TryCreateStreamTextureFactory,
+              base::Unretained(this)),
           view_id));
-  return factory.PassAs<StreamTextureFactory>();
+  return factory;
 }
 
 void SynchronousCompositorFactoryImpl::CompositorInitializedHardwareDraw() {

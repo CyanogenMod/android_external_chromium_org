@@ -23,7 +23,11 @@ Packet::~Packet() {}
 
 PacketPipe::PacketPipe() {}
 PacketPipe::~PacketPipe() {}
-void PacketPipe::InitOnIOThread() {}
+void PacketPipe::InitOnIOThread() {
+  if (pipe_) {
+    pipe_->InitOnIOThread();
+  }
+}
 void PacketPipe::AppendToPipe(scoped_ptr<PacketPipe> pipe) {
   if (pipe_) {
     pipe_->AppendToPipe(pipe.Pass());
@@ -188,6 +192,7 @@ class RandomSortedDelay : public PacketPipe {
     }
   }
   virtual void InitOnIOThread() OVERRIDE {
+    PacketPipe::InitOnIOThread();
     // As we start the stream, assume that we are in a random
     // place between two extra delays, thus multiplier = 1.0;
     ScheduleExtraDelay(1.0);
@@ -269,6 +274,7 @@ class NetworkGlitchPipe : public PacketPipe {
   }
 
   virtual void InitOnIOThread() OVERRIDE {
+    PacketPipe::InitOnIOThread();
     Flip();
   }
 
@@ -326,6 +332,7 @@ class PacketSender : public PacketPipe {
     int result;
     if (destination_->address().empty()) {
       VLOG(1) << "Destination has not been set yet.";
+      result = net::ERR_INVALID_ARGUMENT;
     } else {
       VLOG(1) << "Destination:" << destination_->ToString();
       result = udp_socket_->SendTo(buf,
@@ -410,12 +417,12 @@ class UDPProxyImpl : public UDPProxy {
                scoped_ptr<PacketPipe> to_dest_pipe,
                scoped_ptr<PacketPipe> from_dest_pipe,
                net::NetLog* net_log) :
-      proxy_thread_("media::cast::test::UdpProxy Thread"),
       local_port_(local_port),
       destination_(destination),
-      start_event_(false, false),
+      proxy_thread_("media::cast::test::UdpProxy Thread"),
       to_dest_pipe_(to_dest_pipe.Pass()),
-      from_dest_pipe_(to_dest_pipe.Pass()) {
+      from_dest_pipe_(to_dest_pipe.Pass()),
+      start_event_(false, false) {
     proxy_thread_.StartWithOptions(
         base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
     proxy_thread_.message_loop_proxy()->PostTask(

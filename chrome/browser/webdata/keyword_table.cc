@@ -241,24 +241,32 @@ bool KeywordTable::MigrateToVersion(int version,
   return true;
 }
 
-bool KeywordTable::AddKeyword(const TemplateURLData& data) {
-  DCHECK(data.id);
-  std::string query("INSERT INTO keywords (" + GetKeywordColumns() + ") "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
-                    "        ?)");
-  sql::Statement s(db_->GetUniqueStatement(query.c_str()));
-  BindURLToStatement(data, &s, 0, 1);
+bool KeywordTable::PerformOperations(const Operations& operations) {
+  sql::Transaction transaction(db_);
+  if (!transaction.Begin())
+    return false;
 
-  return s.Run();
-}
+  for (Operations::const_iterator i(operations.begin()); i != operations.end();
+       ++i) {
+    switch (i->first) {
+      case ADD:
+        if (!AddKeyword(i->second))
+          return false;
+        break;
 
-bool KeywordTable::RemoveKeyword(TemplateURLID id) {
-  DCHECK(id);
-  sql::Statement s(
-      db_->GetUniqueStatement("DELETE FROM keywords WHERE id = ?"));
-  s.BindInt64(0, id);
+      case REMOVE:
+        if (!RemoveKeyword(i->second.id))
+          return false;
+        break;
 
-  return s.Run();
+      case UPDATE:
+        if (!UpdateKeyword(i->second))
+          return false;
+        break;
+    }
+  }
+
+  return transaction.Commit();
 }
 
 bool KeywordTable::GetKeywords(Keywords* keywords) {
@@ -279,22 +287,6 @@ bool KeywordTable::GetKeywords(Keywords* keywords) {
        i != bad_entries.end(); ++i)
     succeeded &= RemoveKeyword(*i);
   return succeeded;
-}
-
-bool KeywordTable::UpdateKeyword(const TemplateURLData& data) {
-  DCHECK(data.id);
-  sql::Statement s(db_->GetUniqueStatement("UPDATE keywords SET short_name=?, "
-      "keyword=?, favicon_url=?, url=?, safe_for_autoreplace=?, "
-      "originating_url=?, date_created=?, usage_count=?, input_encodings=?, "
-      "show_in_default_list=?, suggest_url=?, prepopulate_id=?, "
-      "created_by_policy=?, instant_url=?, last_modified=?, sync_guid=?, "
-      "alternate_urls=?, search_terms_replacement_key=?, image_url=?,"
-      "search_url_post_params=?, suggest_url_post_params=?, "
-      "instant_url_post_params=?, image_url_post_params=?, new_tab_url=? "
-      "WHERE id=?"));
-  BindURLToStatement(data, &s, 24, 0);  // "24" binds id() as the last item.
-
-  return s.Run();
 }
 
 bool KeywordTable::SetDefaultSearchProviderID(int64 id) {
@@ -384,26 +376,16 @@ bool KeywordTable::MigrateToVersion39AddSyncGUIDColumn() {
 }
 
 bool KeywordTable::MigrateToVersion44AddDefaultSearchProviderBackup() {
-  sql::Transaction transaction(db_);
-  if (!transaction.Begin())
-    return false;
-
-  int64 default_search_id = GetDefaultSearchProviderID();
-  if (!meta_table_->SetValue("Default Search Provider ID Backup",
-                             default_search_id))
-    return false;
-
-  // Backup of all keywords.
-  if (db_->DoesTableExist("keywords_backup") &&
-      !db_->Execute("DROP TABLE keywords_backup"))
-    return false;
-
   std::string query("CREATE TABLE keywords_backup AS SELECT " +
       ColumnsForVersion(44, false) + " FROM keywords ORDER BY id ASC");
-  if (!db_->Execute(query.c_str()))
-    return false;
-
-  return transaction.Commit();
+  sql::Transaction transaction(db_);
+  return transaction.Begin() &&
+      meta_table_->SetValue("Default Search Provider ID Backup",
+                            GetDefaultSearchProviderID()) &&
+      (!db_->DoesTableExist("keywords_backup") ||
+       db_->Execute("DROP TABLE keywords_backup")) &&
+      db_->Execute(query.c_str()) &&
+      transaction.Commit();
 }
 
 bool KeywordTable::MigrateToVersion45RemoveLogoIDAndAutogenerateColumns() {
@@ -416,71 +398,41 @@ bool KeywordTable::MigrateToVersion45RemoveLogoIDAndAutogenerateColumns() {
   // some users, so we can't be sure this will succeed (so don't bail on error).
   meta_table_->DeleteKey("Default Search Provider Backup");
 
-  if (!MigrateKeywordsTableForVersion45("keywords"))
-    return false;
-
-  // Migrate the keywords backup table as well.
-  if (!MigrateKeywordsTableForVersion45("keywords_backup") ||
-      !meta_table_->SetValue("Default Search Provider ID Backup Signature",
-                             std::string()))
-    return false;
-
-  return transaction.Commit();
+  return MigrateKeywordsTableForVersion45("keywords") &&
+      MigrateKeywordsTableForVersion45("keywords_backup") &&
+      meta_table_->SetValue("Default Search Provider ID Backup Signature",
+                            std::string()) &&
+      transaction.Commit();
 }
 
 bool KeywordTable::MigrateToVersion47AddAlternateURLsColumn() {
   sql::Transaction transaction(db_);
-
-  // Fill the |alternate_urls| column with empty strings, otherwise it breaks
-  // code relying on GetTableContents that concatenates the strings from all
-  // the columns.
-  if (!transaction.Begin() ||
-      !db_->Execute("ALTER TABLE keywords ADD COLUMN "
-                    "alternate_urls VARCHAR DEFAULT ''"))
-    return false;
-
-  // Migrate the keywords backup table as well.
-  if (!db_->Execute("ALTER TABLE keywords_backup ADD COLUMN "
-                    "alternate_urls VARCHAR DEFAULT ''") ||
-      !meta_table_->SetValue("Default Search Provider ID Backup Signature",
-                             std::string()))
-    return false;
-
-  return transaction.Commit();
+  return transaction.Begin() &&
+      db_->Execute("ALTER TABLE keywords ADD COLUMN "
+                   "alternate_urls VARCHAR DEFAULT ''") &&
+      db_->Execute("ALTER TABLE keywords_backup ADD COLUMN "
+                   "alternate_urls VARCHAR DEFAULT ''") &&
+      meta_table_->SetValue("Default Search Provider ID Backup Signature",
+                            std::string()) &&
+      transaction.Commit();
 }
 
 bool KeywordTable::MigrateToVersion48RemoveKeywordsBackup() {
   sql::Transaction transaction(db_);
-  if (!transaction.Begin())
-    return false;
-
-  if (!meta_table_->DeleteKey("Default Search Provider ID Backup") ||
-      !meta_table_->DeleteKey("Default Search Provider ID Backup Signature"))
-    return false;
-
-  if (!db_->Execute("DROP TABLE keywords_backup"))
-    return false;
-
-  return transaction.Commit();
+  return transaction.Begin() &&
+      meta_table_->DeleteKey("Default Search Provider ID Backup") &&
+      meta_table_->DeleteKey("Default Search Provider ID Backup Signature") &&
+      db_->Execute("DROP TABLE keywords_backup") &&
+      transaction.Commit();
 }
 
 bool KeywordTable::MigrateToVersion49AddSearchTermsReplacementKeyColumn() {
-  sql::Transaction transaction(db_);
-
-  // Fill the |search_terms_replacement_key| column with empty strings;
-  // See comments in MigrateToVersion47AddAlternateURLsColumn().
-  if (!transaction.Begin() ||
-      !db_->Execute("ALTER TABLE keywords ADD COLUMN "
-                    "search_terms_replacement_key VARCHAR DEFAULT ''"))
-    return false;
-
-  return transaction.Commit();
+  return db_->Execute("ALTER TABLE keywords ADD COLUMN "
+                      "search_terms_replacement_key VARCHAR DEFAULT ''");
 }
 
 bool KeywordTable::MigrateToVersion52AddImageSearchAndPOSTSupport() {
   sql::Transaction transaction(db_);
-
-  // Fill the |image_url| and other four post params columns with empty strings;
   return transaction.Begin() &&
       db_->Execute("ALTER TABLE keywords ADD COLUMN image_url "
                    "VARCHAR DEFAULT ''") &&
@@ -496,12 +448,8 @@ bool KeywordTable::MigrateToVersion52AddImageSearchAndPOSTSupport() {
 }
 
 bool KeywordTable::MigrateToVersion53AddNewTabURLColumn() {
-  sql::Transaction transaction(db_);
-
-  return transaction.Begin() &&
-      db_->Execute("ALTER TABLE keywords ADD COLUMN new_tab_url "
-                   "VARCHAR DEFAULT ''") &&
-      transaction.Commit();
+  return db_->Execute("ALTER TABLE keywords ADD COLUMN new_tab_url "
+                      "VARCHAR DEFAULT ''");
 }
 
 // static
@@ -556,23 +504,41 @@ bool KeywordTable::GetKeywordDataFromStatement(const sql::Statement& s,
   return true;
 }
 
-bool KeywordTable::GetTableContents(const char* table_name,
-                                    int table_version,
-                                    std::string* contents) {
-  DCHECK(contents);
+bool KeywordTable::AddKeyword(const TemplateURLData& data) {
+  DCHECK(data.id);
+  std::string query("INSERT INTO keywords (" + GetKeywordColumns() + ") "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
+                    "        ?)");
+  sql::Statement s(db_->GetCachedStatement(SQL_FROM_HERE, query.c_str()));
+  BindURLToStatement(data, &s, 0, 1);
 
-  if (!db_->DoesTableExist(table_name))
-    return false;
+  return s.Run();
+}
 
-  contents->clear();
-  std::string query("SELECT " + ColumnsForVersion(table_version, true) +
-      " FROM " + std::string(table_name) + " ORDER BY id ASC");
-  sql::Statement s((table_version == WebDatabase::kCurrentVersionNumber) ?
-      db_->GetCachedStatement(sql::StatementID(table_name), query.c_str()) :
-      db_->GetUniqueStatement(query.c_str()));
-  while (s.Step())
-    *contents += s.ColumnString(0);
-  return s.Succeeded();
+bool KeywordTable::RemoveKeyword(TemplateURLID id) {
+  DCHECK(id);
+  sql::Statement s(db_->GetCachedStatement(
+      SQL_FROM_HERE, "DELETE FROM keywords WHERE id = ?"));
+  s.BindInt64(0, id);
+
+  return s.Run();
+}
+
+bool KeywordTable::UpdateKeyword(const TemplateURLData& data) {
+  DCHECK(data.id);
+  sql::Statement s(db_->GetCachedStatement(
+      SQL_FROM_HERE,
+      "UPDATE keywords SET short_name=?, keyword=?, favicon_url=?, url=?, "
+      "safe_for_autoreplace=?, originating_url=?, date_created=?, "
+      "usage_count=?, input_encodings=?, show_in_default_list=?, "
+      "suggest_url=?, prepopulate_id=?, created_by_policy=?, instant_url=?, "
+      "last_modified=?, sync_guid=?, alternate_urls=?, "
+      "search_terms_replacement_key=?, image_url=?, search_url_post_params=?, "
+      "suggest_url_post_params=?, instant_url_post_params=?, "
+      "image_url_post_params=?, new_tab_url=? WHERE id=?"));
+  BindURLToStatement(data, &s, 24, 0);  // "24" binds id() as the last item.
+
+  return s.Run();
 }
 
 bool KeywordTable::GetKeywordAsString(TemplateURLID id,

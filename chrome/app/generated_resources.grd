@@ -262,7 +262,7 @@ are declared in build/common.gypi.
       <part file="bookmarks_strings.grdp" />
 
       <!-- ChromeOS-specific strings -->
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <part file="chromeos_strings.grdp" />
       </if>
 
@@ -416,13 +416,13 @@ are declared in build/common.gypi.
       </message>
 
       <message name="IDS_PERMISSIONS_BUBBLE_PROMPT" desc="The label that is used to introduce permission request details to the user in a papup.">
-        This site would like to:
+        <ph name="SITE_NAME">$1<ex>google.com</ex></ph> would like to use your:
       </message>
       <message name="IDS_PERMISSION_ALLOW" desc="Label on button to allow a permissions request.">
         Allow
       </message>
       <message name="IDS_PERMISSION_DENY" desc="Label on button to deny a permissions request.">
-        Deny
+        Block
       </message>
       <message name="IDS_PERMISSION_CUSTOMIZE" desc="Label on text button to allow the user to customize a permissions request.">
         Customize
@@ -3789,6 +3789,9 @@ Make sure you do not expose any sensitive information.
         <message name="IDS_TASK_MANAGER_WEBVIEW_TAG_PREFIX" desc="The prefix for a guest page loaded in webview tag in the Task Manager">
           Webview: <ph name="WEBVIEW_TAG_NAME">$1<ex>Google</ex></ph>
         </message>
+        <message name="IDS_TASK_MANAGER_PRINT_PREFIX" desc="The prefix for a print preview process row in the Task Manager">
+          Print: <ph name="PRINT_NAME">$1<ex>Google Maps</ex></ph>
+        </message>
       </if>
 
       <if expr="not is_android">
@@ -4563,6 +4566,9 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_DECLARATIVE_WEB_REQUEST" desc="Permission string for Declarative Web Request API.">
         Block parts of web pages
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_BLUETOOTH_PRIVATE" desc="Permission string for Bluetooth Private API.">
+        Control Bluetooth adapter state and pairing.
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_NETWORK_STATE" desc="Permission string for network list access.">
         Access list of network connections
@@ -5744,11 +5750,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_ENABLE_ACCESSIBILITY_TAB_SWITCHER_DESCRIPTION" desc="Description of the flag to enable the accessibility tab switcher.">
           Enable the accessibility tab switcher for Android.
         </message>
-        <message name="IDS_FLAGS_DISABLE_ACCESSIBILITY_SCRIPT_INJECTION_NAME" desc="Name of the flag to disable script injection for accessibility.">
-          Disable Script Injection For Accessibility.
+        <message name="IDS_FLAGS_ENABLE_ACCESSIBILITY_SCRIPT_INJECTION_NAME" desc="Name of the flag to enable script injection for accessibility.">
+          Enable Script Injection For Accessibility.
         </message>
-        <message name="IDS_FLAGS_DISABLE_ACCESSIBILITY_SCRIPT_INJECTION_DESCRIPTION" desc="Description of the flag to disable script injection for accessibility.">
-          Disable script injection, enabling native Android accessibility instead.
+        <message name="IDS_FLAGS_ENABLE_ACCESSIBILITY_SCRIPT_INJECTION_DESCRIPTION" desc="Description of the flag to enable script injection for accessibility.">
+          Enable script injection instead of native Android accessibility.
         </message>
         <message name="IDS_FLAGS_ENABLE_FAST_TEXT_AUTOSIZING_NAME" desc="Name of the flag to enable fast text autosizing.">
           Enable fast text autosizing
@@ -6153,12 +6159,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_WEBGL_DESCRIPTION" desc="Description for the flag to enable WebGL.">
         Enabling this option allows web applications to access the WebGL API.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_D3D11_NAME" desc="Name of the 'Enable D3D11' lab.">
-        Enable D3D11
-      </message>
-      <message name="IDS_FLAGS_ENABLE_D3D11_DESCRIPTION" desc="Description for the flag to enable D3D11.">
-        Enabling this option allows the use of Direct3D 11 on configurations that support it.
       </message>
       <message name="IDS_FLAGS_ENABLE_WEBGL_DRAFT_EXTENSIONS_NAME" desc="Name of the 'Enable WebGL Draft Extensions' flag.">
         Enable WebGL Draft Extensions
@@ -7013,6 +7013,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Use bleeding-edge code to make Chrome draw content faster. The changes
         behind this path are very likely to break lots of content.
       </message>
+      <message name="IDS_FLAGS_ENABLE_EASY_UNLOCK_NAME" desc="Name for Enable Easy Unlock flag.">
+        Enable Easy Unlock.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_EASY_UNLOCK_DESCRIPTION" desc="Description for flag to Enable Easy Unlock.">
+        Easy Unlock allows you to unlock your Chromebook when in proximity to your phone.
+      </message>
 
       <!-- Crashes -->
       <message name="IDS_CRASHES_TITLE" desc="Title for the chrome://crashes page.">
@@ -7035,6 +7041,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_CRASHES_DISABLED_HEADER" desc="The header for chrome://crashes when crash reporting is disabled">
         Crash reporting is disabled.
+      </message>
+      <message name="IDS_CRASHES_UPLOAD_MESSAGE" desc="Link text for triggering crash uploading on chrome://crashes">
+        Start uploading crashes
       </message>
 
       <!-- WebRTC logs -->
@@ -8687,6 +8696,12 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         <message name="IDS_PRINT_PREVIEW_USER_INFO" desc="Message describing which user's destinations are being shown.">
           Showing destinations for <ph name="EMAIL">$1<ex>testing@gmail.com</ex></ph>
         </message>
+        <message name="IDS_PRINT_PREVIEW_ACCOUNT_SELECT_TITLE" desc="Title of the user's account selection control, to choose the account destinations are being shown for.">
+          Showing destinations for
+        </message>
+        <message name="IDS_PRINT_PREVIEW_ADD_ACCOUNT_TITLE" desc="Title of the selection control item to let user to sign into another account.">
+          Add account...
+        </message>
         <message name="IDS_PRINT_PREVIEW_CLOUD_PRINT_PROMOTION" desc="Message describing features of Google Cloud Print.">
           Print to Google Docs and other cloud destinations. <ph name="BEGIN_LINK">$1<ex>&lt;span&gt;</ex></ph>Sign in<ph name="END_LINK">$2<ex>&lt;/span&gt;</ex></ph> to print to Google Cloud Print.
         </message>
@@ -10047,6 +10062,12 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
             Proxy
           </message>
         </if>
+        <message name="IDS_OPTIONS_TAB_EXTENSION_CONTROLLED" desc="The label in the bubble showing which extension is controlling a particular setting.">
+          An extension, <ph name="EXTENSION_NAME">$1<ex>MyFirstExtension</ex></ph>, is controlling this setting.
+        </message>
+        <message name="IDS_OPTIONS_TAB_EXTENSION_CONTROLLED_DISABLE" desc="The 'Disable Extension' button label in the bubble showing which extension is controlling a particular setting.">
+          Disable extension
+        </message>
         <message name="IDS_OPTIONS_TAB_TITLE" desc="The format of the title on the browser tab for an options subpage, e.g. Settings - Basics">
           <ph name="OPTIONS_TITLE">$1<ex>Settings</ex></ph> - <ph name="SUBPAGE_TITLE">$2<ex>Under the Hood</ex></ph>
         </message>
@@ -12867,7 +12888,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
           Allow <ph name="site">$1<ex>mail.google.com</ex></ph> to show desktop notifications?
         </message>
         <message name="IDS_NOTIFICATION_PERMISSIONS_FRAGMENT" desc="Permission sentence fragment to show following the prompt 'This site would like to:' in a permissions request">
-          show desktop notifications
+          Desktop notifications
         </message>
         <message name="IDS_NOTIFICATION_PERMISSION_YES" desc="The label of the 'allow' button on the notification permission infobar.">
           Allow
@@ -13341,7 +13362,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
     </if>
     <message name="IDS_GEOLOCATION_INFOBAR_PERMISSION_FRAGMENT" desc="Permission fragment used in the permission bubble, after 'This site would like to:' asking for permission to access the user's physical location.">
-      use your device's location.
+      Location
     </message>
     <message name="IDS_GEOLOCATION_ALLOW_BUTTON" desc="A button in geolocation infobar for allowing access to geolocation for a given domain.">
       Allow
@@ -13390,7 +13411,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </ph> wants to get full control of your MIDI devices.
     </message>
     <message name="IDS_MIDI_SYSEX_PERMISSION_FRAGMENT" desc="Permission asked in the permission bubble when a URL wants to access MIDI devices with system exclusive messages, along with other permissions requests. Preceded by the prompt 'This site would like to:'">
-      fully control your MIDI devices.
+      MIDI (sound) devices
     </message>
     <message name="IDS_MIDI_SYSEX_ALLOW_BUTTON" desc="A button in MIDI access infobar for allowing full access to MIDI devices for a given domain.">
       Allow
@@ -13721,10 +13742,10 @@ Some features may be unavailable.  Please check that the profile exists and you 
       Allow <ph name="HANDLER_TITLE">$1<ex>Google Search</ex></ph> (<ph name="HANDLER_HOSTNAME">$2<ex>google.com</ex></ph>) to open all <ph name="PROTOCOL">$3<ex>search</ex></ph> links instead of <ph name="REPLACED_HANDLER_TITLE">$4<ex>Elgoog Search</ex></ph>?
     </message>
     <message name="IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM_FRAGMENT" desc="The permission fragment to display when asking a user to confirm the registration of a protocol handler in a permission bubble. Follows a prompt 'This site would like to:'.">
-      open all <ph name="PROTOCOL">$3<ex>search</ex></ph> links?
+      <ph name="PROTOCOL">$3<ex>search</ex></ph> links
     </message>
     <message name="IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM_REPLACE_FRAGMENT" desc="The permission fragment to display when asking a user to confirm the registration of a protocol handler. Follows a prompt 'This site would like to:'.">
-      open all <ph name="PROTOCOL">$3<ex>search</ex></ph> links instead of <ph name="REPLACED_HANDLER_TITLE">$4<ex>Elgoog Search</ex></ph>?
+      <ph name="PROTOCOL">$3<ex>search</ex></ph> links instead of <ph name="REPLACED_HANDLER_TITLE">$4<ex>Elgoog Search</ex></ph>
     </message>
     <message name="IDS_REGISTER_PROTOCOL_HANDLER_ACCEPT" desc="Text to show for the accept button for the register protocol handler request infobar.">
       Use <ph name="HANDLER_TITLE">$1<ex>Google Search</ex></ph>
@@ -13793,13 +13814,13 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <ph name="HOST">$1<ex>html5rocks.com</ex></ph> wants to use your camera.
     </message>
     <message name="IDS_MEDIA_CAPTURE_AUDIO_AND_VIDEO_PERMISSION_FRAGMENT" desc="Permission fragment shown in the permissions bubble when a web page requests access to the computer's microphone and camera.">
-      use your camera and microphone.
+      Camera and Microphone
     </message>
     <message name="IDS_MEDIA_CAPTURE_AUDIO_ONLY_PERMISSION_FRAGMENT" desc="Permission fragment shown in the permissions bubble when a web page requests access to the computer's microphone.">
-      use your microphone.
+      Microphone
     </message>
     <message name="IDS_MEDIA_CAPTURE_VIDEO_ONLY_PERMISSION_FRAGMENT" desc="Permission fragment shown in the permissions bubble when a web page requests access to the computer's camera.">
-      use your camera.
+      Camera
     </message>
     <message name="IDS_MEDIA_CAPTURE_ALLOW" desc="Label for a button that grants access to a web page, so they can use a camera and/or a microphone.">
       Allow
@@ -13834,7 +13855,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
     </if>
     <message name="IDS_REQUEST_QUOTA_PERMISSION_FRAGMENT" desc="Permission fragment presented in the permission bubble when the webapp requests new larger quota to persistently store data on the device. Follows a 'This site would like to:' prompt.">
-      permanently store data on your device.
+      Local data storage
     </message>
 
     <!-- Android does not support multiple profiles and managed users -->
@@ -14216,12 +14237,6 @@ Do you accept?
     </message>
     <message name="IDS_FLAGS_ENABLE_GOOGLE_PROFILE_INFO_DESCRIPTION" desc="Description for the flag to enable the google profile information">
       Enables using Google information to populate the profile name and icon in the avatar menu.
-    </message>
-    <message name="IDS_FLAGS_ENABLE_GOOGLE_NOW_INTEGRATION_NAME" desc="Name of about:flags option to turn on Google Now integration">
-      Google Now
-    </message>
-    <message name="IDS_FLAGS_ENABLE_GOOGLE_NOW_INTEGRATION_DESCRIPTION" desc="Description of about:flags option to turn on Google Now integration">
-      Enable Google Now notifications support.
     </message>
     <message name="IDS_FLAGS_ENABLE_OFFLINE_MODE_NAME" desc="Name of the flag to make reads in offline mode come from the cache even if it's stale">
       Enable Offline Cache Mode

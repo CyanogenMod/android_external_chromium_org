@@ -18,11 +18,11 @@ class CryptoHandshakeMessage;
 // Describes whether or not a given QuicTag is required or optional in the
 // handshake message.
 enum QuicConfigPresence {
-  // This value can be absent from the handshake message. Default value is
-  // selected as the negotiated value in such a case.
+  // This negotiable value can be absent from the handshake message. Default
+  // value is selected as the negotiated value in such a case.
   PRESENCE_OPTIONAL,
-  // This value is required in the handshake message otherwise the Process*Hello
-  // function returns an error.
+  // This negotiable value is required in the handshake message otherwise the
+  // Process*Hello function returns an error.
   PRESENCE_REQUIRED,
 };
 
@@ -168,7 +168,7 @@ class NET_EXPORT_PRIVATE QuicFixedUint32 : public QuicConfigValue {
 
   void set_value(uint32 value) { value_ = value; }
 
-  // Serialises |name_| and |value_| to |out|.
+  // Serialises |tag_| and |value_| to |out|.
   virtual void ToHandshakeMessage(CryptoHandshakeMessage* out) const OVERRIDE;
 
   // Sets |value_| to the corresponding value from |client_hello_| if it exists.
@@ -196,6 +196,11 @@ class NET_EXPORT_PRIVATE QuicConfig {
                               QuicTag default_congestion_control);
 
   QuicTag congestion_control() const;
+
+  void set_loss_detection(const QuicTagVector& loss_detection,
+                          QuicTag default_loss_detection);
+
+  QuicTag loss_detection() const;
 
   void set_idle_connection_state_lifetime(
       QuicTime::Delta max_idle_connection_state_lifetime,
@@ -256,6 +261,8 @@ class NET_EXPORT_PRIVATE QuicConfig {
  private:
   // Congestion control feedback type.
   QuicNegotiableTag congestion_control_;
+  // Loss detection feedback type.
+  QuicNegotiableTag loss_detection_;
   // Idle connection state lifetime
   QuicNegotiableUint32 idle_connection_state_lifetime_seconds_;
   // Keepalive timeout, or 0 to turn off keepalive probes

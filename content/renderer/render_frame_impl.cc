@@ -49,6 +49,7 @@
 #include "content/renderer/child_frame_compositing_helper.h"
 #include "content/renderer/context_menu_params_builder.h"
 #include "content/renderer/dom_automation_controller.h"
+#include "content/renderer/image_loading_helper.h"
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/java/java_bridge_dispatcher.h"
@@ -342,6 +343,9 @@ void RenderFrameImpl::SetWebFrame(blink::WebFrame* web_frame) {
 #endif
   new SharedWorkerRepository(this);
 
+  if (!frame_->parent())
+    new ImageLoadingHelper(this);
+
   // We delay calling this until we have the WebFrame so that any observer or
   // embedder can call GetWebFrame on any RenderFrame.
   GetContentClient()->renderer()->RenderFrameCreated(this);
@@ -585,6 +589,7 @@ bool RenderFrameImpl::OnMessageReceived(const IPC::Message& msg) {
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(InputMsg_CopyToFindPboard, OnCopyToFindPboard)
 #endif
+    IPC_MESSAGE_HANDLER(FrameMsg_Reload, OnReload)
   IPC_END_MESSAGE_MAP_EX()
 
   if (!msg_is_ok) {
@@ -804,10 +809,10 @@ void RenderFrameImpl::OnSwapOut() {
     render_view_->SyncNavigationState();
 
     // Synchronously run the unload handler before sending the ACK.
-    // TODO(creis): Move WebView::dispatchUnloadEvent to WebFrame and call it
-    // here to support unload on subframes as well.
+    // TODO(creis): Call dispatchUnloadEvent unconditionally here to support
+    // unload on subframes as well.
     if (!frame_->parent())
-      render_view_->webview()->dispatchUnloadEvent();
+      frame_->dispatchUnloadEvent();
 
     // Swap out and stop sending any IPC messages that are not ACKs.
     if (!frame_->parent())
@@ -1043,6 +1048,10 @@ void RenderFrameImpl::OnExtendSelectionAndDelete(int before, int after) {
   frame_->extendSelectionAndDelete(before, after);
 }
 
+
+void RenderFrameImpl::OnReload(bool ignore_cache) {
+  frame_->reload(ignore_cache);
+}
 
 bool RenderFrameImpl::ShouldUpdateSelectionTextFromContextMenuParams(
     const base::string16& selection_text,
@@ -1396,18 +1405,6 @@ blink::WebNavigationPolicy RenderFrameImpl::decidePolicyForNavigation(
   DCHECK(!frame_ || frame_ == frame);
   return DecidePolicyForNavigation(
       this, frame, extra_data, request, type, default_policy, is_redirect);
-}
-
-blink::WebNavigationPolicy RenderFrameImpl::decidePolicyForNavigation(
-    blink::WebFrame* frame,
-    const blink::WebURLRequest& request,
-    blink::WebNavigationType type,
-    blink::WebNavigationPolicy default_policy,
-    bool is_redirect) {
-  DCHECK(!frame_ || frame_ == frame);
-  return decidePolicyForNavigation(frame,
-                                   frame->provisionalDataSource()->extraData(),
-                                   request, type, default_policy, is_redirect);
 }
 
 void RenderFrameImpl::willSendSubmitEvent(blink::WebFrame* frame,

@@ -146,6 +146,7 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo::GPUDevice)
   IPC_STRUCT_TRAITS_MEMBER(vendor_id)
   IPC_STRUCT_TRAITS_MEMBER(device_id)
+  IPC_STRUCT_TRAITS_MEMBER(active)
   IPC_STRUCT_TRAITS_MEMBER(vendor_string)
   IPC_STRUCT_TRAITS_MEMBER(device_string)
 IPC_STRUCT_TRAITS_END()
@@ -559,13 +560,6 @@ IPC_MESSAGE_ROUTED3(GpuCommandBufferMsg_RegisterTransferBuffer,
 // Destroy a previously created transfer buffer.
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_DestroyTransferBuffer,
                     int32 /* id */)
-
-// Get the shared memory handle for a transfer buffer mapped to the callers
-// process.
-IPC_SYNC_MESSAGE_ROUTED1_2(GpuCommandBufferMsg_GetTransferBuffer,
-                           int32 /* id */,
-                           base::SharedMemoryHandle /* transfer_buffer */,
-                           uint32 /* size */)
 
 // Create and initialize a hardware video decoder, returning its new route_id.
 // Created decoders should be freed with AcceleratedVideoDecoderMsg_Destroy when

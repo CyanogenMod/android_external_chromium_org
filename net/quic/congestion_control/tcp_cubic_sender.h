@@ -40,6 +40,8 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
                  QuicConnectionStats* stats);
   virtual ~TcpCubicSender();
 
+  bool InSlowStart() const;
+
   // Start implementation of SendAlgorithmInterface.
   virtual void SetFromConfig(const QuicConfig& config, bool is_server) OVERRIDE;
   virtual void OnIncomingQuicCongestionFeedbackFrame(
@@ -52,16 +54,13 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
   virtual bool OnPacketSent(QuicTime sent_time,
                             QuicPacketSequenceNumber sequence_number,
                             QuicByteCount bytes,
-                            TransmissionType transmission_type,
                             HasRetransmittableData is_retransmittable) OVERRIDE;
   virtual void OnRetransmissionTimeout(bool packets_retransmitted) OVERRIDE;
   virtual void OnPacketAbandoned(QuicPacketSequenceNumber sequence_number,
                                  QuicByteCount abandoned_bytes) OVERRIDE;
   virtual QuicTime::Delta TimeUntilSend(
       QuicTime now,
-      TransmissionType transmission_type,
-      HasRetransmittableData has_retransmittable_data,
-      IsHandshake handshake) OVERRIDE;
+      HasRetransmittableData has_retransmittable_data) OVERRIDE;
   virtual QuicBandwidth BandwidthEstimate() const OVERRIDE;
   virtual void UpdateRtt(QuicTime::Delta rtt_sample) OVERRIDE;
   virtual QuicTime::Delta RetransmissionDelay() const OVERRIDE;
@@ -100,10 +99,6 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
 
   // The congestion window before the last loss event.
   QuicByteCount bytes_in_flight_before_loss_;
-
-  // We need to keep track of the end sequence number of each RTT "burst".
-  bool update_end_sequence_number_;
-  QuicPacketSequenceNumber end_sequence_number_;
 
   // Track the largest packet that has been sent.
   QuicPacketSequenceNumber largest_sent_sequence_number_;

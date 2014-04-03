@@ -23,7 +23,7 @@ class LocalVideoEncodeAcceleratorClient;
 }  // namespace media
 
 namespace {
-static const int kOutputBufferCount = 3;
+static const size_t kOutputBufferCount = 3;
 
 void LogFrameEncodedEvent(
     const scoped_refptr<media::cast::CastEnvironment>& cast_environment,
@@ -181,7 +181,7 @@ class LocalVideoEncodeAcceleratorClient
     DCHECK(encoder_task_runner_->RunsTasksOnCurrentThread());
     DCHECK(video_encode_accelerator_);
 
-    for (int j = 0; j < kOutputBufferCount; ++j) {
+    for (size_t j = 0; j < kOutputBufferCount; ++j) {
       create_video_encode_memory_cb_.Run(
           output_buffer_size,
           base::Bind(&LocalVideoEncodeAcceleratorClient::OnCreateSharedMemory,
@@ -212,46 +212,45 @@ class LocalVideoEncodeAcceleratorClient
       NotifyError(media::VideoEncodeAccelerator::kPlatformFailureError);
       return;
     }
-    if (encoded_frame_data_storage_.empty()) {
-      NOTREACHED();
-      NotifyError(media::VideoEncodeAccelerator::kPlatformFailureError);
-      return;
+    if (!encoded_frame_data_storage_.empty()) {
+      scoped_ptr<transport::EncodedVideoFrame> encoded_frame(
+          new transport::EncodedVideoFrame());
+
+      encoded_frame->codec = codec_;
+      encoded_frame->key_frame = key_frame;
+      encoded_frame->last_referenced_frame_id = last_encoded_frame_id_;
+      last_encoded_frame_id_++;
+      encoded_frame->frame_id = last_encoded_frame_id_;
+      encoded_frame->rtp_timestamp = GetVideoRtpTimestamp(
+          encoded_frame_data_storage_.front().capture_time);
+      if (key_frame) {
+        // Self referenced.
+        encoded_frame->last_referenced_frame_id = encoded_frame->frame_id;
+      }
+
+      encoded_frame->data.insert(
+          0, static_cast<const char*>(output_buffer->memory()), payload_size);
+
+      cast_environment_->PostTask(
+          CastEnvironment::MAIN,
+          FROM_HERE,
+          base::Bind(&LogFrameEncodedEvent,
+                     cast_environment_,
+                     cast_environment_->Clock()->NowTicks(),
+                     encoded_frame->rtp_timestamp,
+                     encoded_frame->frame_id));
+
+      cast_environment_->PostTask(
+          CastEnvironment::MAIN,
+          FROM_HERE,
+          base::Bind(encoded_frame_data_storage_.front().frame_encoded_callback,
+                     base::Passed(&encoded_frame),
+                     encoded_frame_data_storage_.front().capture_time));
+
+      encoded_frame_data_storage_.pop_front();
+    } else {
+      VLOG(1) << "BitstreamBufferReady(): no encoded frame data available";
     }
-    scoped_ptr<transport::EncodedVideoFrame> encoded_frame(
-        new transport::EncodedVideoFrame());
-
-    encoded_frame->codec = codec_;
-    encoded_frame->key_frame = key_frame;
-    encoded_frame->last_referenced_frame_id = last_encoded_frame_id_;
-    last_encoded_frame_id_++;
-    encoded_frame->frame_id = last_encoded_frame_id_;
-    encoded_frame->rtp_timestamp =
-        GetVideoRtpTimestamp(encoded_frame_data_storage_.front().capture_time);
-    if (key_frame) {
-      // Self referenced.
-      encoded_frame->last_referenced_frame_id = encoded_frame->frame_id;
-    }
-
-    encoded_frame->data.insert(
-        0, static_cast<const char*>(output_buffer->memory()), payload_size);
-
-    cast_environment_->PostTask(
-        CastEnvironment::MAIN,
-        FROM_HERE,
-        base::Bind(&LogFrameEncodedEvent,
-                   cast_environment_,
-                   cast_environment_->Clock()->NowTicks(),
-                   encoded_frame->rtp_timestamp,
-                   encoded_frame->frame_id));
-
-    cast_environment_->PostTask(
-        CastEnvironment::MAIN,
-        FROM_HERE,
-        base::Bind(encoded_frame_data_storage_.front().frame_encoded_callback,
-                   base::Passed(&encoded_frame),
-                   encoded_frame_data_storage_.front().capture_time));
-
-    encoded_frame_data_storage_.pop_front();
 
     // We need to re-add the output buffer to the encoder after we are done
     // with it.

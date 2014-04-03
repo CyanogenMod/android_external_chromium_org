@@ -41,10 +41,24 @@ WDKeywordsResult::WDKeywordsResult()
 
 WDKeywordsResult::~WDKeywordsResult() {}
 
+WebDataService::KeywordBatchModeScoper::KeywordBatchModeScoper(
+    WebDataService* service)
+    : service_(service) {
+  if (service_)
+    service_->AdjustKeywordBatchModeLevel(true);
+}
+
+WebDataService::KeywordBatchModeScoper::~KeywordBatchModeScoper() {
+  if (service_)
+    service_->AdjustKeywordBatchModeLevel(false);
+}
+
 WebDataService::WebDataService(scoped_refptr<WebDatabaseService> wdbs,
                                const ProfileErrorCallback& callback)
-    : WebDataServiceBase(wdbs, callback,
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI)) {
+    : WebDataServiceBase(
+          wdbs, callback,
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI)),
+      keyword_batch_mode_level_(0) {
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -54,34 +68,55 @@ WebDataService::WebDataService(scoped_refptr<WebDatabaseService> wdbs,
 //////////////////////////////////////////////////////////////////////////////
 
 void WebDataService::AddKeyword(const TemplateURLData& data) {
-  wdbs_->ScheduleDBTask(
-      FROM_HERE, Bind(&WebDataService::AddKeywordImpl, this, data));
+  if (keyword_batch_mode_level_) {
+    queued_keyword_operations_.push_back(
+        KeywordTable::Operation(KeywordTable::ADD, data));
+  } else {
+    AdjustKeywordBatchModeLevel(true);
+    AddKeyword(data);
+    AdjustKeywordBatchModeLevel(false);
+  }
 }
 
 void WebDataService::RemoveKeyword(TemplateURLID id) {
-  wdbs_->ScheduleDBTask(
-      FROM_HERE, Bind(&WebDataService::RemoveKeywordImpl, this, id));
+  if (keyword_batch_mode_level_) {
+    TemplateURLData data;
+    data.id = id;
+    queued_keyword_operations_.push_back(
+        KeywordTable::Operation(KeywordTable::REMOVE, data));
+  } else {
+    AdjustKeywordBatchModeLevel(true);
+    RemoveKeyword(id);
+    AdjustKeywordBatchModeLevel(false);
+  }
 }
 
 void WebDataService::UpdateKeyword(const TemplateURLData& data) {
-  wdbs_->ScheduleDBTask(
-      FROM_HERE, Bind(&WebDataService::UpdateKeywordImpl, this, data));
+  if (keyword_batch_mode_level_) {
+    queued_keyword_operations_.push_back(
+        KeywordTable::Operation(KeywordTable::UPDATE, data));
+  } else {
+    AdjustKeywordBatchModeLevel(true);
+    UpdateKeyword(data);
+    AdjustKeywordBatchModeLevel(false);
+  }
 }
 
 WebDataServiceBase::Handle WebDataService::GetKeywords(
     WebDataServiceConsumer* consumer) {
-  return wdbs_->ScheduleDBTaskWithResult(FROM_HERE,
-      Bind(&WebDataService::GetKeywordsImpl, this), consumer);
+  return wdbs_->ScheduleDBTaskWithResult(
+      FROM_HERE, Bind(&WebDataService::GetKeywordsImpl, this), consumer);
 }
 
-void WebDataService::SetDefaultSearchProvider(const TemplateURL* url) {
-  wdbs_->ScheduleDBTask(FROM_HERE,
-      Bind(&WebDataService::SetDefaultSearchProviderImpl, this,
-           url ? url->id() : 0));
+void WebDataService::SetDefaultSearchProviderID(TemplateURLID id) {
+  wdbs_->ScheduleDBTask(
+      FROM_HERE,
+      Bind(&WebDataService::SetDefaultSearchProviderIDImpl, this, id));
 }
 
 void WebDataService::SetBuiltinKeywordVersion(int version) {
-  wdbs_->ScheduleDBTask(FROM_HERE,
+  wdbs_->ScheduleDBTask(
+      FROM_HERE,
       Bind(&WebDataService::SetBuiltinKeywordVersionImpl, this, version));
 }
 
@@ -118,11 +153,30 @@ WebDataServiceBase::Handle WebDataService::GetWebAppImages(
 ////////////////////////////////////////////////////////////////////////////////
 
 WebDataService::WebDataService()
-    : WebDataServiceBase(NULL, ProfileErrorCallback(),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI)) {
+    : WebDataServiceBase(
+          NULL, ProfileErrorCallback(),
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI)),
+      keyword_batch_mode_level_(0) {
 }
 
 WebDataService::~WebDataService() {
+  DCHECK(!keyword_batch_mode_level_);
+}
+
+void WebDataService::AdjustKeywordBatchModeLevel(bool entering_batch_mode) {
+  if (entering_batch_mode) {
+    ++keyword_batch_mode_level_;
+  } else {
+    DCHECK(keyword_batch_mode_level_);
+    --keyword_batch_mode_level_;
+    if (!keyword_batch_mode_level_ && !queued_keyword_operations_.empty()) {
+      wdbs_->ScheduleDBTask(
+          FROM_HERE,
+          Bind(&WebDataService::PerformKeywordOperationsImpl, this,
+               queued_keyword_operations_));
+      queued_keyword_operations_.clear();
+    }
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -131,55 +185,38 @@ WebDataService::~WebDataService() {
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-WebDatabase::State WebDataService::AddKeywordImpl(
-    const TemplateURLData& data, WebDatabase* db) {
-  KeywordTable::FromWebDatabase(db)->AddKeyword(data);
-  return WebDatabase::COMMIT_NEEDED;
-}
-
-WebDatabase::State WebDataService::RemoveKeywordImpl(
-    TemplateURLID id, WebDatabase* db) {
-  DCHECK(id);
-  KeywordTable::FromWebDatabase(db)->RemoveKeyword(id);
-  return WebDatabase::COMMIT_NEEDED;
-}
-
-WebDatabase::State WebDataService::UpdateKeywordImpl(
-    const TemplateURLData& data, WebDatabase* db) {
-  if (!KeywordTable::FromWebDatabase(db)->UpdateKeyword(data)) {
-    NOTREACHED();
-    return WebDatabase::COMMIT_NOT_NEEDED;
-  }
- return WebDatabase::COMMIT_NEEDED;
+WebDatabase::State WebDataService::PerformKeywordOperationsImpl(
+    const KeywordTable::Operations& operations,
+    WebDatabase* db) {
+  return KeywordTable::FromWebDatabase(db)->PerformOperations(operations) ?
+      WebDatabase::COMMIT_NEEDED : WebDatabase::COMMIT_NOT_NEEDED;
 }
 
 scoped_ptr<WDTypedResult> WebDataService::GetKeywordsImpl(WebDatabase* db) {
+  scoped_ptr<WDTypedResult> result_ptr;
   WDKeywordsResult result;
-  KeywordTable::FromWebDatabase(db)->GetKeywords(&result.keywords);
-  result.default_search_provider_id =
-      KeywordTable::FromWebDatabase(db)->GetDefaultSearchProviderID();
-  result.builtin_keyword_version =
-      KeywordTable::FromWebDatabase(db)->GetBuiltinKeywordVersion();
-  return scoped_ptr<WDTypedResult>(
-      new WDResult<WDKeywordsResult>(KEYWORDS_RESULT, result));
+  if (KeywordTable::FromWebDatabase(db)->GetKeywords(&result.keywords)) {
+    result.default_search_provider_id =
+        KeywordTable::FromWebDatabase(db)->GetDefaultSearchProviderID();
+    result.builtin_keyword_version =
+        KeywordTable::FromWebDatabase(db)->GetBuiltinKeywordVersion();
+    result_ptr.reset(new WDResult<WDKeywordsResult>(KEYWORDS_RESULT, result));
+  }
+  return result_ptr.Pass();
 }
 
-WebDatabase::State WebDataService::SetDefaultSearchProviderImpl(
-    TemplateURLID id, WebDatabase* db) {
-  if (!KeywordTable::FromWebDatabase(db)->SetDefaultSearchProviderID(id)) {
-    NOTREACHED();
-    return WebDatabase::COMMIT_NOT_NEEDED;
-  }
-  return WebDatabase::COMMIT_NEEDED;
+WebDatabase::State WebDataService::SetDefaultSearchProviderIDImpl(
+    TemplateURLID id,
+    WebDatabase* db) {
+  return KeywordTable::FromWebDatabase(db)->SetDefaultSearchProviderID(id) ?
+      WebDatabase::COMMIT_NEEDED : WebDatabase::COMMIT_NOT_NEEDED;
 }
 
 WebDatabase::State WebDataService::SetBuiltinKeywordVersionImpl(
-    int version, WebDatabase* db) {
-  if (!KeywordTable::FromWebDatabase(db)->SetBuiltinKeywordVersion(version)) {
-    NOTREACHED();
-    return WebDatabase::COMMIT_NOT_NEEDED;
-  }
-  return WebDatabase::COMMIT_NEEDED;
+    int version,
+    WebDatabase* db) {
+  return KeywordTable::FromWebDatabase(db)->SetBuiltinKeywordVersion(version) ?
+      WebDatabase::COMMIT_NEEDED : WebDatabase::COMMIT_NOT_NEEDED;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -24,7 +24,6 @@
 #include "chrome/browser/profiles/profile_shortcut_manager.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -33,6 +32,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
@@ -392,7 +392,7 @@ void ManageProfileHandler::ProfileIconSelectionChanged(
 
 void ManageProfileHandler::RequestHasProfileShortcuts(
     const base::ListValue* args) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(ProfileShortcutManager::IsFeatureEnabled());
 
   base::FilePath profile_file_path;
@@ -443,7 +443,7 @@ void ManageProfileHandler::OnCreateManagedUserPrefChange() {
 }
 
 void ManageProfileHandler::OnHasProfileShortcuts(bool has_shortcuts) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   const base::FundamentalValue has_shortcuts_value(has_shortcuts);
   web_ui()->CallJavascriptFunction(

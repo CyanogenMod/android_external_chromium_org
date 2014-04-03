@@ -15,7 +15,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 
 ### Generated for rule "media_media_gyp_video_capture_android_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/media/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['base/android/java/src/org/chromium/media/VideoCapture.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/media/jni', '--includes', 'base/android/jni_generator/jni_generator_helper.h', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/media/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['base/android/java/src/org/chromium/media/VideoCapture.java', 'base/android/java/src/org/chromium/media/VideoCaptureFactory.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/media/jni', '--includes', 'base/android/jni_generator/jni_generator_helper.h', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/media/jni/VideoCapture_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/jni/VideoCapture_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/jni/VideoCapture_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -26,16 +26,28 @@ $(gyp_shared_intermediate_dir)/media/jni/VideoCapture_jni.h: $(LOCAL_PATH)/media
 .PHONY: media_video_capture_android_jni_headers_gyp_rule_trigger
 media_video_capture_android_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/jni/VideoCapture_jni.h
 
+$(gyp_shared_intermediate_dir)/media/jni/VideoCaptureFactory_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/jni/VideoCaptureFactory_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/media/jni/VideoCaptureFactory_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/media/jni/VideoCaptureFactory_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/media/jni/VideoCaptureFactory_jni.h: $(LOCAL_PATH)/media/base/android/java/src/org/chromium/media/VideoCaptureFactory.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/media/jni; cd $(gyp_local_path)/media; ../base/android/jni_generator/jni_generator.py --input_file base/android/java/src/org/chromium/media/VideoCaptureFactory.java --output_dir "$(gyp_shared_intermediate_dir)/media/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+
+.PHONY: media_video_capture_android_jni_headers_gyp_rule_trigger
+media_video_capture_android_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/jni/VideoCaptureFactory_jni.h
+
 ### Finished generating for all rules
 
 GYP_GENERATED_OUTPUTS := \
-	$(gyp_shared_intermediate_dir)/media/jni/VideoCapture_jni.h
+	$(gyp_shared_intermediate_dir)/media/jni/VideoCapture_jni.h \
+	$(gyp_shared_intermediate_dir)/media/jni/VideoCaptureFactory_jni.h
 
 # Make sure our deps and generated files are built first.
 LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTPUTS)
 
 LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/media/jni/VideoCapture_jni.h \
+	$(gyp_shared_intermediate_dir)/media/jni/VideoCaptureFactory_jni.h \
 	media_video_capture_android_jni_headers_gyp_rule_trigger
 
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
@@ -85,6 +97,7 @@ MY_DEFS_Debug := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -167,6 +180,7 @@ MY_DEFS_Release := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

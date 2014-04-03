@@ -4,6 +4,8 @@
 
 #include "media/cast/rtcp/rtcp_sender.h"
 
+#include <stdint.h>
+
 #include <algorithm>
 #include <vector>
 
@@ -21,7 +23,7 @@ namespace {
 
 // Max delta is 4095 milliseconds because we need to be able to encode it in
 // 12 bits.
-const int64 kMaxWireFormatTimeDeltaMs = GG_INT64_C(0xfff);
+const int64 kMaxWireFormatTimeDeltaMs = INT64_C(0xfff);
 
 // Converts a log event type to an integer value.
 // NOTE: We have only allocated 4 bits to represent the type of event over the
@@ -129,7 +131,7 @@ bool BuildRtcpReceiverLogMessage(
     std::vector<RtcpReceiverEventLogMessage>::reverse_iterator sorted_rit =
         sorted_log_messages.rbegin();
     base::TimeTicks first_event_timestamp = sorted_rit->event_timestamp;
-    int events_in_frame = 0;
+    size_t events_in_frame = 0;
     while (sorted_rit != sorted_log_messages.rend() &&
            events_in_frame < kRtcpMaxReceiverLogMessages &&
            remaining_space >= kRtcpReceiverEventLogSize) {
@@ -803,7 +805,7 @@ void RtcpSender::BuildReceiverLog(
       receiver_log_message.pop_front();
     }
   }
-  DCHECK_EQ(total_number_of_messages_to_send, 0);
+  DCHECK_EQ(total_number_of_messages_to_send, 0u);
 }
 
 }  // namespace cast

@@ -30,9 +30,10 @@ class QuicSpdyClientStreamTest : public TestWithParam<QuicVersion> {
   QuicSpdyClientStreamTest()
       : connection_(new StrictMock<MockConnection>(
             false, SupportedVersions(GetParam()))),
-        session_(QuicSessionKey("example.com", 80, false, kPrivacyModeDisabled),
+        session_(QuicServerId("example.com", 80, false, PRIVACY_MODE_DISABLED),
                  DefaultQuicConfig(),
-                 connection_, &crypto_config_),
+                 connection_,
+                 &crypto_config_),
         body_("hello world") {
     crypto_config_.SetDefaults();
 
@@ -40,6 +41,11 @@ class QuicSpdyClientStreamTest : public TestWithParam<QuicVersion> {
     headers_.ReplaceOrAppendHeader("content-length", "11");
 
     headers_string_ = SpdyUtils::SerializeResponseHeaders(headers_);
+
+    // New streams rely on having the peer's flow control receive window
+    // negotiated in the config.
+    session_.config()->set_peer_initial_flow_control_window_bytes(
+        kInitialFlowControlWindowForTest);
     stream_.reset(new QuicSpdyClientStream(3, &session_));
   }
 

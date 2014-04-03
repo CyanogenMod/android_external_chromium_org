@@ -2,31 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 {
-  'variables' : {
-    'pyautolib_sources': [
-      'app/chrome_command_ids.h',
-      'app/chrome_dll_resource.h',
-      'common/automation_constants.h',
-      'common/pref_names.cc',
-      'common/pref_names.h',
-      'test/automation/browser_proxy.cc',
-      'test/automation/browser_proxy.h',
-      'test/automation/tab_proxy.cc',
-      'test/automation/tab_proxy.h',
-      '../content/public/common/page_type.h',
-      '../content/public/common/security_style.h',
-      # Must come before cert_status_flags.h
-      '../net/base/net_export.h',
-      '../net/cert/cert_status_flags.h',
-    ],
-    'conditions': [
-      ['asan==1', {
-        'pyautolib_sources': [
-          'test/pyautolib/asan_stub.c',
-        ]
-      }],
-    ],
-  },
   'includes': [
     'js_unittest_vars.gypi',
   ],
@@ -959,7 +934,6 @@
         'browser/autofill/autofill_browsertest.cc',
         'browser/autofill/content_autofill_driver_browsertest.cc',
         'browser/autofill/form_structure_browsertest.cc',
-        'browser/autofill/risk/fingerprint_browsertest.cc',
         'browser/bitmap_fetcher_browsertest.cc',
         'browser/browser_encoding_browsertest.cc',
         'browser/browsing_data/browsing_data_database_helper_browsertest.cc',
@@ -1404,6 +1378,7 @@
         'browser/ui/ash/accelerator_commands_browsertest.cc',
         'browser/ui/ash/launcher/chrome_launcher_controller_browsertest.cc',
         'browser/ui/ash/launcher/launcher_favicon_loader_browsertest.cc',
+        'browser/ui/ash/keyboard_controller_browsertest.cc',
         'browser/ui/ash/shelf_browsertest.cc',
         'browser/ui/ash/volume_controller_browsertest_chromeos.cc',
         'browser/ui/autofill/autofill_dialog_controller_browsertest.cc',
@@ -1678,11 +1653,6 @@
             'browser/ui/sync/one_click_signin_bubble_links_delegate_browsertest.cc',
           ]
         }],
-        [ 'OS == "android"', {
-          'sources!': [
-            'browser/autofill/risk/fingerprint_browsertest.cc',
-          ]
-        }],
         ['enable_autofill_dialog==0', {
           'sources!': [
             'browser/ui/autofill/autofill_dialog_controller_browsertest.cc',
@@ -1782,6 +1752,7 @@
             'browser/extensions/api/terminal/terminal_private_apitest.cc',
             'browser/net/nss_context_chromeos_browsertest.cc',
             'browser/notifications/login_state_notification_blocker_chromeos_browsertest.cc',
+            'browser/ui/ash/keyboard_controller_browsertest.cc',
             'browser/ui/views/select_file_dialog_extension_browsertest.cc',
             'test/data/webui/certificate_viewer_dialog_test.js',
             'test/data/webui/certificate_viewer_ui_test-inl.h',
@@ -2303,11 +2274,6 @@
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
         }],
-        ['OS=="mac"', {
-          'sources': [
-            'test/perf/mach_ports_test.cc',
-          ],
-        }],
         ['use_x11==1', {
           'dependencies': [
             '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
@@ -2380,6 +2346,8 @@
         'browser/sync/test/integration/extension_settings_helper.h',
         'browser/sync/test/integration/extensions_helper.cc',
         'browser/sync/test/integration/extensions_helper.h',
+        'browser/sync/test/integration/multi_client_status_change_checker.cc',
+        'browser/sync/test/integration/multi_client_status_change_checker.h',
         'browser/sync/test/integration/passwords_helper.cc',
         'browser/sync/test/integration/passwords_helper.h',
         'browser/sync/test/integration/p2p_invalidation_forwarder.cc',
@@ -2691,131 +2659,6 @@
       ],
     },
     {
-      # Documentation: http://dev.chromium.org/developers/testing/pyauto
-      # Deprecated. Do not add additional dependencies.
-      'target_name': 'pyautolib',
-      'variables': {
-        'conditions': [
-          ['enable_automation==1 and OS=="linux"', {
-            'python_arch': '<!(<(DEPTH)/build/linux/python_arch.sh <(sysroot)/usr/<(system_libdir)/libpython<(python_ver).so.1.0)',
-          }],
-        ],
-      },
-      'conditions': [
-        ['enable_automation==1 and OS=="linux" and target_arch==python_arch', {
-          'type': 'loadable_module',
-          'product_prefix': '_',
-          'dependencies': [
-            'chrome',
-            'chrome_resources.gyp:chrome_resources',
-            'chrome_resources.gyp:chrome_strings',
-            'chrome_resources.gyp:theme_resources',
-            'debugger',
-            'test_support_common',
-            '../skia/skia.gyp:skia',
-            '../sync/sync.gyp:sync',
-            '../testing/gtest.gyp:gtest',
-          ],
-          'export_dependent_settings': [
-            'test_support_common',
-          ],
-          'include_dirs': [
-            '..',
-            '<(sysroot)/usr/include/python<(python_ver)',
-          ],
-          'link_settings': {
-            'libraries': [
-              '-lpython<(python_ver)',
-            ],
-          },
-          'cflags': [
-             '-Wno-uninitialized',
-             '-Wno-self-assign',  # to keep clang happy for generated code.
-          ],
-          'sources': [
-            'test/automation/proxy_launcher.cc',
-            'test/automation/proxy_launcher.h',
-            'test/pyautolib/pyautolib.cc',
-            'test/pyautolib/pyautolib.h',
-            'test/ui/ui_test.cc',
-            'test/ui/ui_test.h',
-            'test/ui/ui_test_suite.cc',
-            'test/ui/ui_test_suite.h',
-            '<(INTERMEDIATE_DIR)/pyautolib_wrap.cc',
-            '<@(pyautolib_sources)',
-          ],
-          'conditions': [
-            # Disable the type profiler. _POSIX_C_SOURCE and _XOPEN_SOURCE
-            # conflict between <Python.h> and <typeinfo>.
-            ['clang_type_profiler==1', {
-              'cflags_cc!': [
-                '-fintercept-allocation-functions',
-              ],
-            }],
-            ['toolkit_uses_gtk == 1', {
-              'dependencies': [
-                '../build/linux/system.gyp:gtk',
-              ],
-            }],
-            ['asan==1', {
-              'cflags!': [ '-fsanitize=address' ],
-            }],
-          ],
-          'actions': [
-            {
-              'variables' : {
-                'swig_args': [ '-I..',
-                               '-python',
-                               '-c++',
-                               '-threads',
-                               '-outdir',
-                               '<(PRODUCT_DIR)',
-                               '-o',
-                               '<(INTERMEDIATE_DIR)/pyautolib_wrap.cc',
-                ],
-                'conditions': [
-                  ['chromeos==1', {
-                    'swig_args': [
-                      '-DOS_CHROMEOS',
-                    ]
-                  }],
-                ],
-              },
-              'action_name': 'pyautolib_swig',
-              'inputs': [
-                'test/pyautolib/argc_argv.i',
-                'test/pyautolib/pyautolib.i',
-                '<@(pyautolib_sources)',
-              ],
-              'outputs': [
-                '<(INTERMEDIATE_DIR)/pyautolib_wrap.cc',
-                '<(PRODUCT_DIR)/pyautolib.py',
-              ],
-              'action': [ 'python',
-                          '../tools/swig/swig.py',
-                          '<@(swig_args)',
-                          'test/pyautolib/pyautolib.i',
-              ],
-              'message': 'Generating swig wrappers for pyautolib',
-            },
-          ],  # actions
-        }, {
-          'type': 'none',
-        }],
-      ], # conditions
-    },  # target 'pyautolib'
-    {
-      # Required for WebRTC PyAuto tests.
-      'target_name': 'webrtc_test_tools',
-      'type': 'none',
-      'dependencies': [
-        'pyautolib',
-        '../third_party/libjingle/libjingle.gyp:peerconnection_server',
-        '../third_party/webrtc/tools/tools.gyp:frame_analyzer',
-        '../third_party/webrtc/tools/tools.gyp:rgba_to_i420_converter',
-      ],
-    },  # target 'webrtc_test_tools'
-    {
       # Executable to measure time to load libraries.
       'target_name': 'load_library_perf_tests',
       'type': '<(gtest_target_type)',
@@ -2842,6 +2685,19 @@
         }],
       ],
     },  # target 'load_library_perf_tests'
+    # temporary target to keep cros compiling until it removes references to pyauto
+    {
+      'target_name': 'pyautolib',
+      'type': 'none',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:run_all_unittests',
+        '../testing/gtest.gyp:gtest',
+      ],
+      'include_dirs': [
+        '..,'
+      ],
+    },
   ],
   'conditions': [
     ['OS=="mac"', {

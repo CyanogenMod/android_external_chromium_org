@@ -16,7 +16,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/glue/autofill_data_type_controller.h"
 #include "chrome/browser/sync/glue/autofill_profile_data_type_controller.h"
@@ -59,10 +58,14 @@
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/dom_distiller/core/dom_distiller_service.h"
 #include "components/password_manager/core/browser/password_store.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/data_type_manager_observer.h"
 #include "components/sync_driver/proxy_data_type_controller.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
+#include "sync/api/attachments/attachment_service.h"
+#include "sync/api/attachments/fake_attachment_service.h"
+#include "sync/api/attachments/fake_attachment_store.h"
 #include "sync/api/syncable_service.h"
 
 #if defined(ENABLE_EXTENSIONS)
@@ -444,10 +447,19 @@ browser_sync::GenericChangeProcessor*
         const base::WeakPtr<syncer::SyncableService>& local_service,
         const base::WeakPtr<syncer::SyncMergeResult>& merge_result) {
   syncer::UserShare* user_share = profile_sync_service->GetUserShare();
-  return new GenericChangeProcessor(error_handler,
-                                    local_service,
-                                    merge_result,
-                                    user_share);
+  // TODO(maniscalco): Replace FakeAttachmentService with a real
+  // AttachmentService implementation once it has been implemented (bug 356359).
+  scoped_ptr<syncer::AttachmentStore> attachment_store(
+      new syncer::FakeAttachmentStore(
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
+  scoped_ptr<syncer::AttachmentService> attachment_service(
+      new syncer::FakeAttachmentService(attachment_store.Pass()));
+  return new GenericChangeProcessor(
+      error_handler,
+      local_service,
+      merge_result,
+      user_share,
+      attachment_service.Pass());
 }
 
 browser_sync::SharedChangeProcessor* ProfileSyncComponentsFactoryImpl::

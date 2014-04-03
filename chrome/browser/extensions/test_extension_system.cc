@@ -39,7 +39,7 @@ TestExtensionSystem::TestExtensionSystem(Profile* profile)
     : profile_(profile),
       value_store_(NULL),
       info_map_(new InfoMap()),
-      error_console_(new ErrorConsole(profile, NULL)),
+      error_console_(new ErrorConsole(profile)),
       quota_service_(new QuotaService()) {}
 
 TestExtensionSystem::~TestExtensionSystem() {
@@ -73,7 +73,8 @@ ExtensionPrefs* TestExtensionSystem::CreateExtensionPrefs(
       install_directory,
       ExtensionPrefValueMapFactory::GetForBrowserContext(profile_),
       ExtensionsBrowserClient::Get()->CreateAppSorting().Pass(),
-      extensions_disabled);
+      extensions_disabled,
+      std::vector<ExtensionPrefsObserver*>());
     ExtensionPrefsFactory::GetInstance()->SetInstanceForTesting(
         profile_,
         extension_prefs);

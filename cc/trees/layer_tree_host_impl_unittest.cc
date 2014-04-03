@@ -701,6 +701,32 @@ TEST_F(LayerTreeHostImplTest, NonFastScrollableRegionWithOffset) {
                                     InputHandler::Wheel));
 }
 
+TEST_F(LayerTreeHostImplTest, ScrollHandlerNotPresent) {
+  LayerImpl* scroll_layer = SetupScrollAndContentsLayers(gfx::Size(200, 200));
+  EXPECT_FALSE(scroll_layer->have_scroll_event_handlers());
+  host_impl_->SetViewportSize(gfx::Size(50, 50));
+  DrawFrame();
+
+  EXPECT_FALSE(host_impl_->scroll_affects_scroll_handler());
+  host_impl_->ScrollBegin(gfx::Point(), InputHandler::Gesture);
+  EXPECT_FALSE(host_impl_->scroll_affects_scroll_handler());
+  host_impl_->ScrollEnd();
+  EXPECT_FALSE(host_impl_->scroll_affects_scroll_handler());
+}
+
+TEST_F(LayerTreeHostImplTest, ScrollHandlerPresent) {
+  LayerImpl* scroll_layer = SetupScrollAndContentsLayers(gfx::Size(200, 200));
+  scroll_layer->SetHaveScrollEventHandlers(true);
+  host_impl_->SetViewportSize(gfx::Size(50, 50));
+  DrawFrame();
+
+  EXPECT_FALSE(host_impl_->scroll_affects_scroll_handler());
+  host_impl_->ScrollBegin(gfx::Point(), InputHandler::Gesture);
+  EXPECT_TRUE(host_impl_->scroll_affects_scroll_handler());
+  host_impl_->ScrollEnd();
+  EXPECT_FALSE(host_impl_->scroll_affects_scroll_handler());
+}
+
 TEST_F(LayerTreeHostImplTest, ScrollByReturnsCorrectValue) {
   SetupScrollAndContentsLayers(gfx::Size(200, 200));
   host_impl_->SetViewportSize(gfx::Size(100, 100));
@@ -2986,19 +3012,16 @@ TEST_F(LayerTreeHostImplTest, OverscrollRoot) {
   host_impl_->active_tree()->SetPageScaleFactorAndLimits(1.f, 0.5f, 4.f);
   DrawFrame();
   EXPECT_EQ(gfx::Vector2dF(), host_impl_->accumulated_root_overscroll());
-  EXPECT_EQ(gfx::Vector2dF(), host_impl_->current_fling_velocity());
 
   // In-bounds scrolling does not affect overscroll.
   EXPECT_EQ(InputHandler::ScrollStarted,
             host_impl_->ScrollBegin(gfx::Point(), InputHandler::Wheel));
   host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, 10));
   EXPECT_EQ(gfx::Vector2dF(), host_impl_->accumulated_root_overscroll());
-  EXPECT_EQ(gfx::Vector2dF(), host_impl_->current_fling_velocity());
 
   // Overscroll events are reflected immediately.
   host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, 50));
   EXPECT_EQ(gfx::Vector2dF(0, 10), host_impl_->accumulated_root_overscroll());
-  EXPECT_EQ(gfx::Vector2dF(), host_impl_->current_fling_velocity());
 
   // In-bounds scrolling resets accumulated overscroll for the scrolled axes.
   host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, -50));
@@ -3026,15 +3049,6 @@ TEST_F(LayerTreeHostImplTest, OverscrollRoot) {
   host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, -20));
   EXPECT_EQ(gfx::Vector2dF(0, -10), host_impl_->accumulated_root_overscroll());
   host_impl_->ScrollEnd();
-
-  EXPECT_EQ(InputHandler::ScrollStarted,
-            host_impl_->ScrollBegin(gfx::Point(), InputHandler::Wheel));
-  // Fling velocity is reflected immediately.
-  host_impl_->NotifyCurrentFlingVelocity(gfx::Vector2dF(10, 0));
-  EXPECT_EQ(gfx::Vector2dF(10, 0), host_impl_->current_fling_velocity());
-  host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, -20));
-  EXPECT_EQ(gfx::Vector2dF(0, -20), host_impl_->accumulated_root_overscroll());
-  EXPECT_EQ(gfx::Vector2dF(10, 0), host_impl_->current_fling_velocity());
 }
 
 
@@ -3087,10 +3101,8 @@ TEST_F(LayerTreeHostImplTest, OverscrollChildWithoutBubbling) {
     host_impl_->ScrollEnd();
 
     // After scrolling the parent, another scroll on the opposite direction
-    // should scroll the child, resetting the fling velocity.
+    // should scroll the child.
     scroll_delta = gfx::Vector2d(0, 70);
-    host_impl_->NotifyCurrentFlingVelocity(gfx::Vector2dF(10, 0));
-    EXPECT_EQ(gfx::Vector2dF(10, 0), host_impl_->current_fling_velocity());
     EXPECT_EQ(InputHandler::ScrollStarted,
               host_impl_->ScrollBegin(gfx::Point(5, 5),
                                       InputHandler::NonBubblingGesture));
@@ -3098,7 +3110,6 @@ TEST_F(LayerTreeHostImplTest, OverscrollChildWithoutBubbling) {
     host_impl_->ScrollBy(gfx::Point(), scroll_delta);
     EXPECT_EQ(host_impl_->CurrentlyScrollingLayer(), grand_child_layer);
     EXPECT_EQ(gfx::Vector2dF(), host_impl_->accumulated_root_overscroll());
-    EXPECT_EQ(gfx::Vector2dF(), host_impl_->current_fling_velocity());
     host_impl_->ScrollEnd();
   }
 }
@@ -3152,20 +3163,15 @@ TEST_F(LayerTreeHostImplTest, OverscrollAlways) {
   host_impl_->active_tree()->SetPageScaleFactorAndLimits(1.f, 0.5f, 4.f);
   DrawFrame();
   EXPECT_EQ(gfx::Vector2dF(), host_impl_->accumulated_root_overscroll());
-  EXPECT_EQ(gfx::Vector2dF(), host_impl_->current_fling_velocity());
 
   // Even though the layer can't scroll the overscroll still happens.
   EXPECT_EQ(InputHandler::ScrollStarted,
             host_impl_->ScrollBegin(gfx::Point(), InputHandler::Wheel));
   host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, 10));
   EXPECT_EQ(gfx::Vector2dF(0, 10), host_impl_->accumulated_root_overscroll());
-  EXPECT_EQ(gfx::Vector2dF(), host_impl_->current_fling_velocity());
 }
 
-TEST_F(LayerTreeHostImplTest, UnnecessaryGlowEffectCallsWhileScrollingUp) {
-  // Edge glow effect should be applicable only upon reaching Edges
-  // of the content. unnecessary glow effect calls shouldn't be
-  // called while scrolling up without reaching the edge of the content.
+TEST_F(LayerTreeHostImplTest, NoOverscrollWhenNotAtEdge) {
   gfx::Size surface_size(100, 100);
   gfx::Size content_size(200, 200);
   scoped_ptr<LayerImpl> root_clip =
@@ -3186,6 +3192,9 @@ TEST_F(LayerTreeHostImplTest, UnnecessaryGlowEffectCallsWhileScrollingUp) {
   host_impl_->active_tree()->DidBecomeActive();
   DrawFrame();
   {
+    // Edge glow effect should be applicable only upon reaching Edges
+    // of the content. unnecessary glow effect calls shouldn't be
+    // called while scrolling up without reaching the edge of the content.
     EXPECT_EQ(InputHandler::ScrollStarted,
               host_impl_->ScrollBegin(gfx::Point(0, 0), InputHandler::Wheel));
     host_impl_->ScrollBy(gfx::Point(), gfx::Vector2dF(0, 100));
@@ -3193,6 +3202,20 @@ TEST_F(LayerTreeHostImplTest, UnnecessaryGlowEffectCallsWhileScrollingUp) {
               host_impl_->accumulated_root_overscroll().ToString());
     host_impl_->ScrollBy(gfx::Point(), gfx::Vector2dF(0, -2.30f));
     EXPECT_EQ(gfx::Vector2dF().ToString(),
+              host_impl_->accumulated_root_overscroll().ToString());
+    host_impl_->ScrollEnd();
+    // unusedrootDelta should be subtracted from applied delta so that
+    // unwanted glow effect calls are not called.
+    EXPECT_EQ(InputHandler::ScrollStarted,
+              host_impl_->ScrollBegin(gfx::Point(0, 0),
+                                      InputHandler::NonBubblingGesture));
+    EXPECT_EQ(InputHandler::ScrollStarted, host_impl_->FlingScrollBegin());
+    host_impl_->ScrollBy(gfx::Point(), gfx::Vector2dF(0, 20));
+    EXPECT_EQ(gfx::Vector2dF(0.000000f, 17.699997f).ToString(),
+              host_impl_->accumulated_root_overscroll().ToString());
+
+    host_impl_->ScrollBy(gfx::Point(), gfx::Vector2dF(0.02f, -0.01f));
+    EXPECT_EQ(gfx::Vector2dF(0.000000f, 17.699997f).ToString(),
               host_impl_->accumulated_root_overscroll().ToString());
     host_impl_->ScrollEnd();
   }

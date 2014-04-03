@@ -38,7 +38,6 @@
 #include "chrome/browser/signin/chrome_signin_client.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_names_io_thread.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -65,6 +64,7 @@
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_client.h"
 #include "components/signin/core/browser/signin_error_controller.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/browser/signin_manager_cookie_helper.h"
 #include "components/sync_driver/sync_prefs.h"
 #include "content/public/browser/browser_thread.h"
@@ -783,7 +783,7 @@ bool OneClickSigninHelper::CanOffer(content::WebContents* web_contents,
                                     CanOfferFor can_offer_for,
                                     const std::string& email,
                                     std::string* error_message) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     VLOG(1) << "OneClickSigninHelper::CanOffer";
 
   if (error_message)
@@ -1058,7 +1058,7 @@ void OneClickSigninHelper::ShowInfoBarUIThread(
     const GURL& continue_url,
     int child_id,
     int route_id) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   content::WebContents* web_contents = tab_util::GetWebContentsByID(child_id,
                                                                     route_id);
@@ -1200,6 +1200,12 @@ bool OneClickSigninHelper::HandleCrossAccountError(
 // static
 void OneClickSigninHelper::RedirectToNtpOrAppsPage(
     content::WebContents* contents, signin::Source source) {
+  // Do nothing if a navigation is pending, since this call can be triggered
+  // from DidStartLoading. This avoids deleting the pending entry while we are
+  // still navigating to it. See crbug/346632.
+  if (contents->GetController().GetPendingEntry())
+    return;
+
   VLOG(1) << "RedirectToNtpOrAppsPage";
   // Redirect to NTP/Apps page and display a confirmation bubble
   GURL url(source == signin::SOURCE_APPS_PAGE_LINK ?

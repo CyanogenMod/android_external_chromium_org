@@ -94,6 +94,12 @@
 #include "ui/gfx/win/dpi.h"
 #endif
 
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+#include "content/common/input_messages.h"
+#include "ui/events/x/text_edit_command_x11.h"
+#include "ui/events/x/text_edit_key_bindings_delegate_x11.h"
+#endif
+
 using gfx::RectToSkIRect;
 using gfx::SkIRectToRect;
 
@@ -2405,7 +2411,7 @@ void RenderWidgetHostViewAura::InsertChar(base::char16 ch, int flags) {
                                         ch,
                                         flags,
                                         now);
-    host_->ForwardKeyboardEvent(webkit_event);
+    ForwardKeyboardEvent(webkit_event);
   }
 }
 
@@ -2793,10 +2799,10 @@ void RenderWidgetHostViewAura::OnKeyEvent(ui::KeyEvent* event) {
           event->is_char() ? event->GetCharacter() : event->key_code(),
           event->flags(),
           ui::EventTimeForNow().InSecondsF());
-      host_->ForwardKeyboardEvent(webkit_event);
+      ForwardKeyboardEvent(webkit_event);
     } else {
       NativeWebKeyboardEvent webkit_event(event);
-      host_->ForwardKeyboardEvent(webkit_event);
+      ForwardKeyboardEvent(webkit_event);
     }
   }
   event->SetHandled();
@@ -3569,6 +3575,35 @@ void RenderWidgetHostViewAura::DetachFromInputMethod() {
     input_method->SetFocusedTextInputClient(NULL);
 }
 
+void RenderWidgetHostViewAura::ForwardKeyboardEvent(
+    const NativeWebKeyboardEvent& event) {
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+  ui::TextEditKeyBindingsDelegateX11* keybinding_delegate =
+      ui::GetTextEditKeyBindingsDelegate();
+  std::vector<ui::TextEditCommandX11> commands;
+  if (!event.skip_in_browser &&
+      keybinding_delegate &&
+      event.os_event &&
+      keybinding_delegate->MatchEvent(*event.os_event, &commands)) {
+    // Transform from ui/ types to content/ types.
+    EditCommands edit_commands;
+    for (std::vector<ui::TextEditCommandX11>::const_iterator it =
+             commands.begin(); it != commands.end(); ++it) {
+      edit_commands.push_back(EditCommand(it->GetCommandString(),
+                                          it->argument()));
+    }
+    host_->Send(new InputMsg_SetEditCommandsForNextKeyEvent(
+        host_->GetRoutingID(), edit_commands));
+    NativeWebKeyboardEvent copy_event(event);
+    copy_event.match_edit_command = true;
+    host_->ForwardKeyboardEvent(copy_event);
+    return;
+  }
+#endif
+
+  host_->ForwardKeyboardEvent(event);
+}
+
 void RenderWidgetHostViewAura::LockResources() {
   DCHECK(frame_provider_);
   delegated_frame_evictor_->LockFrame();
@@ -3617,7 +3652,7 @@ void RenderWidgetHostViewAura::OnLayerRecreated(ui::Layer* old_layer,
     new_layer->SetExternalTexture(old_texture.get());
   } else if (old_mailbox.IsSharedMemory()) {
     base::SharedMemory* old_buffer = old_mailbox.shared_memory();
-    const size_t size = old_mailbox.shared_memory_size_in_bytes();
+    const size_t size = old_mailbox.SharedMemorySizeInBytes();
 
     scoped_ptr<base::SharedMemory> new_buffer(new base::SharedMemory);
     new_buffer->CreateAndMapAnonymous(size);

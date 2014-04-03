@@ -18,19 +18,26 @@ class ExynosV4L2Device : public V4L2Device {
   virtual ~ExynosV4L2Device();
 
   // V4L2Device implementation.
-  int Ioctl(int request, void* arg) OVERRIDE;
-  bool Poll(bool poll_device, bool* event_pending) OVERRIDE;
-  bool SetDevicePollInterrupt() OVERRIDE;
-  bool ClearDevicePollInterrupt() OVERRIDE;
-  void* Mmap(void* addr,
-             unsigned int len,
-             int prot,
-             int flags,
-             unsigned int offset) OVERRIDE;
-  void Munmap(void* addr, unsigned int len) OVERRIDE;
-
-  // Does all the initialization of device fds, returns true on success.
-  bool Initialize();
+  virtual int Ioctl(int request, void* arg) OVERRIDE;
+  virtual bool Poll(bool poll_device, bool* event_pending) OVERRIDE;
+  virtual bool SetDevicePollInterrupt() OVERRIDE;
+  virtual bool ClearDevicePollInterrupt() OVERRIDE;
+  virtual void* Mmap(void* addr,
+                     unsigned int len,
+                     int prot,
+                     int flags,
+                     unsigned int offset) OVERRIDE;
+  virtual void Munmap(void* addr, unsigned int len) OVERRIDE;
+  virtual bool Initialize() OVERRIDE;
+  virtual EGLImageKHR CreateEGLImage(EGLDisplay egl_display,
+                                     GLuint texture_id,
+                                     gfx::Size frame_buffer_size,
+                                     unsigned int buffer_index,
+                                     size_t planes_count) OVERRIDE;
+  virtual EGLBoolean DestroyEGLImage(EGLDisplay egl_display,
+                                     EGLImageKHR egl_image) OVERRIDE;
+  virtual GLenum GetTextureTarget() OVERRIDE;
+  virtual uint32 PreferredOutputFormat() OVERRIDE;
 
  private:
   // The actual device fd.

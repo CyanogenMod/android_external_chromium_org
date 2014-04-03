@@ -36,7 +36,6 @@
 #include "chrome/browser/printing/printer_manager_dialog.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -51,6 +50,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/print_messages.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/browser/signin_manager_base.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -260,7 +260,7 @@ void ReportPrintSettingsStats(const base::DictionaryValue& settings) {
 // Callback that stores a PDF file on disk.
 void PrintToPdfCallback(printing::Metafile* metafile,
                         const base::FilePath& path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   metafile->SaveTo(path);
   // |metafile| must be deleted on the UI thread.
   BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, metafile);
@@ -268,7 +268,7 @@ void PrintToPdfCallback(printing::Metafile* metafile,
 
 std::string GetDefaultPrinterOnFileThread(
     scoped_refptr<printing::PrintBackend> print_backend) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 
   std::string default_printer = print_backend->GetDefaultPrinterName();
   VLOG(1) << "Default Printer: " << default_printer;
@@ -278,7 +278,7 @@ std::string GetDefaultPrinterOnFileThread(
 void EnumeratePrintersOnFileThread(
     scoped_refptr<printing::PrintBackend> print_backend,
     base::ListValue* printers) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 
   VLOG(1) << "Enumerate printers start";
   printing::PrinterList printer_list;
@@ -332,7 +332,7 @@ void GetPrinterCapabilitiesOnFileThread(
     const std::string& printer_name,
     const GetPrinterCapabilitiesSuccessCallback& success_cb,
     const GetPrinterCapabilitiesFailureCallback& failure_cb) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   DCHECK(!printer_name.empty());
 
   VLOG(1) << "Get printer capabilities start for " << printer_name;
@@ -898,13 +898,18 @@ void PrintPreviewHandler::OnSigninComplete() {
     print_preview_ui->OnReloadPrintersList();
 }
 
-void PrintPreviewHandler::HandleSignin(const base::ListValue* /*args*/) {
+void PrintPreviewHandler::HandleSignin(const base::ListValue* args) {
+  bool add_account = false;
+  bool success = args->GetBoolean(0, &add_account);
+  DCHECK(success);
+
   Profile* profile = Profile::FromBrowserContext(
       preview_web_contents()->GetBrowserContext());
   chrome::ScopedTabbedBrowserDisplayer displayer(
       profile, chrome::GetActiveDesktop());
   print_dialog_cloud::CreateCloudPrintSigninTab(
       displayer.browser(),
+      add_account,
       base::Bind(&PrintPreviewHandler::OnSigninComplete,
                  weak_factory_.GetWeakPtr()));
 }

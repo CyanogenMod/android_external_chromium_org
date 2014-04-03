@@ -13,6 +13,7 @@
 #include "net/quic/crypto/quic_encrypter.h"
 #include "net/quic/quic_data_reader.h"
 #include "net/quic/quic_data_writer.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_socket_address_coder.h"
 
 using base::StringPiece;
@@ -22,8 +23,6 @@ using std::max;
 using std::min;
 using std::numeric_limits;
 using std::string;
-
-bool FLAGS_quic_allow_oversized_packets_for_test = false;
 
 namespace net {
 
@@ -168,6 +167,7 @@ QuicFramer::QuicFramer(const QuicVersionVector& supported_versions,
       supported_versions_(supported_versions),
       alternative_decrypter_latch_(false),
       is_server_(is_server),
+      validate_flags_(true),
       creation_time_(creation_time) {
   DCHECK(!supported_versions.empty());
   quic_version_ = supported_versions_[0];
@@ -886,7 +886,8 @@ bool QuicFramer::ProcessPublicHeader(
   public_header->version_flag =
       (public_flags & PACKET_PUBLIC_FLAGS_VERSION) != 0;
 
-  if (!public_header->version_flag && public_flags > PACKET_PUBLIC_FLAGS_MAX) {
+  if (validate_flags_ &&
+      !public_header->version_flag && public_flags > PACKET_PUBLIC_FLAGS_MAX) {
     set_detailed_error("Illegal public flags value.");
     return false;
   }
@@ -1828,6 +1829,7 @@ bool QuicFramer::DecryptPayload(const QuicPacketHeader& header,
   }
 
   if  (decrypted_.get() == NULL) {
+    DLOG(WARNING) << "DecryptPacket failed";
     return false;
   }
 

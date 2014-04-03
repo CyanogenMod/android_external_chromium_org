@@ -1846,6 +1846,15 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="CaptivePortal.OOBE.PortalToOnlineTransition"
+    units="milliseconds">
+  <owner>ygorshenin@chromium.org</owner>
+  <summary>
+    Number of milliseconds passed between consecutive reports for the same
+    network about portal and online states.
+  </summary>
+</histogram>
+
 <histogram name="CaptivePortal.Session.DetectionDuration" units="milliseconds">
   <owner>ygorshenin@chromium.org</owner>
   <summary>
@@ -1873,6 +1882,15 @@ other types of suffix sets.
     The result of captive portal detection attempts in session if it diverges
     from network manager results. Detection result is recorded each time portal
     detection is completed for an active network.
+  </summary>
+</histogram>
+
+<histogram name="CaptivePortal.Session.PortalToOnlineTransition"
+    units="milliseconds">
+  <owner>ygorshenin@chromium.org</owner>
+  <summary>
+    Number of milliseconds passed between consecutive reports for the same
+    network about portal and online states.
   </summary>
 </histogram>
 
@@ -11624,6 +11642,51 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.HttpAuthCacheAddEvicted">
+  <owner>ttuttle@chromium.org</owner>
+  <summary>
+    Whether adding an entry to the HTTP auth cache evicted another entry.
+  </summary>
+</histogram>
+
+<histogram name="Net.HttpAuthCacheAddEvictedCreation">
+  <owner>ttuttle@chromium.org</owner>
+  <summary>
+    When an HTTP auth cache entry is evicted, the time since it was created.
+  </summary>
+</histogram>
+
+<histogram name="Net.HttpAuthCacheAddEvictedLastUse">
+  <owner>ttuttle@chromium.org</owner>
+  <summary>
+    When an HTTP auth cache entry is evicted, the time since it was last used.
+  </summary>
+</histogram>
+
+<histogram name="Net.HttpAuthCacheAddPathEvicted">
+  <owner>ttuttle@chromium.org</owner>
+  <summary>
+    Whether adding a path to an entry in the HTTP auth cache evicted another
+    path.
+  </summary>
+</histogram>
+
+<histogram name="Net.HttpAuthCacheLookupByPathPosition">
+  <owner>ttuttle@chromium.org</owner>
+  <summary>
+    When looking up an HTTP auth cache entry by path, the position (1-indexed)
+    of the entry on a hit, or 0 on a miss.
+  </summary>
+</histogram>
+
+<histogram name="Net.HttpAuthCacheLookupPosition">
+  <owner>ttuttle@chromium.org</owner>
+  <summary>
+    When looking up an HTTP auth cache entry by realm, the position (1-indexed)
+    of the entry on a hit, or 0 on a miss.
+  </summary>
+</histogram>
+
 <histogram name="Net.HttpAuthCount" enum="HttpAuthCount">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
@@ -11842,6 +11905,15 @@ other types of suffix sets.
   <summary>
     The count of handleable socket errors (connection abort/close/reset) per
     socket reuse type.  Socket late binding is enabled.
+  </summary>
+</histogram>
+
+<histogram name="Net.IOThreadCreationToHttpRequestStart" units="milliseconds">
+  <owner>bengr@chromium.org</owner>
+  <summary>
+    Time from when the IOThread is created to when the first URL request is
+    started. Only requests that are created for a profile while Chrome is
+    starting up are considered.
   </summary>
 </histogram>
 
@@ -21944,6 +22016,9 @@ other types of suffix sets.
 
 <histogram name="SBClientMalware.UnexpectedPageId" enum="BooleanHit">
   <owner>noelutz@chromium.org</owner>
+  <obsolete>
+    Deprecated 03/2014.  That part of the code got deleted.
+  </obsolete>
   <summary>
     Counts the number of times the page ID that completed the page load does not
     match the browse info page ID.  We expect that number to be zero.
@@ -32527,6 +32602,11 @@ other types of suffix sets.
   <int value="702" label="GCM_UNREGISTER"/>
   <int value="703" label="FILEBROWSERPRIVATE_REQUESTDRIVESHARE"/>
   <int value="704" label="METRICSPRIVATE_RECORDSPARSEVALUE"/>
+  <int value="705" label="HOTWORDPRIVATE_SETAUDIOLOGGINGENABLED"/>
+  <int value="706" label="BLUETOOTHPRIVATE_SETADAPTERSTATE"/>
+  <int value="707" label="BLUETOOTHPRIVATE_ENABLEPAIRING"/>
+  <int value="708" label="BLUETOOTHPRIVATE_DISABLEPAIRING"/>
+  <int value="709" label="BLUETOOTHPRIVATE_SETPAIRINGRESPONSE"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -33106,6 +33186,35 @@ other types of suffix sets.
   <int value="283" label="PrefixedWindowURL"/>
   <int value="284" label="PrefixedWorkerURL"/>
   <int value="285" label="WindowOrientation"/>
+  <int value="286" label="DOMStringListContains"/>
+  <int value="287" label="DocumentCaptureEvents"/>
+  <int value="288" label="DocumentReleaseEvents"/>
+  <int value="289" label="WindowCaptureEvents"/>
+  <int value="290" label="WindowReleaseEvents"/>
+  <int value="291" label="PrefixedGamepad"/>
+  <int value="292" label="ElementAnimateKeyframeListEffectObjectTiming"/>
+  <int value="293" label="ElementAnimateKeyframeListEffectDoubleTiming"/>
+  <int value="294" label="ElementAnimateKeyframeListEffectNoTiming"/>
+  <int value="295" label="DocumentXPathCreateExpression"/>
+  <int value="296" label="DocumentXPathCreateNSResolver"/>
+  <int value="297" label="DocumentXPathEvaluate"/>
+  <int value="298" label="AttrGetValue"/>
+  <int value="299" label="AttrSetValue"/>
+  <int value="300" label="AnimationConstructorKeyframeListEffectObjectTiming"/>
+  <int value="301" label="AnimationConstructorKeyframeListEffectDoubleTiming"/>
+  <int value="302" label="AnimationConstructorKeyframeListEffectNoTiming"/>
+  <int value="303" label="AttrSetValueWithElement"/>
+  <int value="304" label="PrefixedCancelAnimationFrame"/>
+  <int value="305" label="PrefixedCancelRequestAnimationFrame"/>
+  <int value="306" label="NamedNodeMapGetNamedItem"/>
+  <int value="307" label="NamedNodeMapSetNamedItem"/>
+  <int value="308" label="NamedNodeMapRemoveNamedItem"/>
+  <int value="309" label="NamedNodeMapItem"/>
+  <int value="310" label="NamedNodeMapGetNamedItemNS"/>
+  <int value="311" label="NamedNodeMapSetNamedItemNS"/>
+  <int value="312" label="NamedNodeMapRemoveNamedItemNS"/>
+  <int value="313" label="OpenWebDatabaseInWorker"/>
+  <int value="314" label="OpenWebDatabaseSyncInWorker"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">
@@ -34133,6 +34242,9 @@ other types of suffix sets.
   <int value="13" label="OpenAttemptNoRecovery">
     An open attempt failed with an I/O error that doesn't necessitate a recovery
     attempt.
+  </int>
+  <int value="14" label="OpenAttemptPriorCorruption">
+    The corrupted open database was deleted.
   </int>
 </enum>
 
@@ -40575,6 +40687,9 @@ other types of suffix sets.
   <int value="40" label="kErrorCodeOmahaUpdateDeferredForBackoff"/>
   <int value="41" label="kErrorCodePostinstallPowerwashError"/>
   <int value="42" label="kErrorCodeUpdateCanceledByChannelChange"/>
+  <int value="43" label="kErrorCodePostinstallFirmwareRONotUpdatable"/>
+  <int value="44" label="kErrorCodeUnsupportedMajorPayloadVersion"/>
+  <int value="45" label="kErrorCodeUnsupportedMinorPayloadVersion"/>
 </enum>
 
 <enum name="UpdateEngineInstallDateProvisioningSource" type="int">

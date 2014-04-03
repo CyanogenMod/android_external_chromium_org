@@ -29,7 +29,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/ports/SkImageDecoder_empty.cpp \
 	third_party/skia/src/images/SkScaledBitmapSampler.cpp \
 	third_party/skia/src/opts/opts_check_SSE2.cpp \
-	third_party/skia/src/ports/SkPurgeableMemoryBlock_none.cpp \
 	third_party/skia/src/ports/SkFontConfigInterface_android.cpp \
 	third_party/skia/src/ports/SkFontHost_fontconfig.cpp \
 	third_party/skia/src/fonts/SkFontMgr_indirect.cpp \
@@ -336,6 +335,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrPathRendererChain.cpp \
 	third_party/skia/src/gpu/GrPathRenderer.cpp \
 	third_party/skia/src/gpu/GrPathUtils.cpp \
+	third_party/skia/src/gpu/GrPictureUtils.cpp \
 	third_party/skia/src/gpu/GrRectanizer.cpp \
 	third_party/skia/src/gpu/GrRectanizer_skyline.cpp \
 	third_party/skia/src/gpu/GrRenderTarget.cpp \
@@ -447,6 +447,7 @@ MY_DEFS_Debug := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -585,6 +586,7 @@ MY_DEFS_Release := \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

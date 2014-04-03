@@ -38,21 +38,26 @@ class ServiceWorkerScriptContext {
 
   void OnMessageReceived(int request_id, const IPC::Message& message);
 
+  void DidHandleActivateEvent(int request_id,
+                              blink::WebServiceWorkerEventResult);
   void DidHandleInstallEvent(int request_id,
                              blink::WebServiceWorkerEventResult result);
   void DidHandleFetchEvent(int request_id,
                            ServiceWorkerFetchEventResult result,
                            const ServiceWorkerResponse& response);
+  void DidHandleSyncEvent(int request_id);
 
  private:
   // Send message back to the browser.
   void Send(int request_id, const IPC::Message& message);
 
+  void OnActivateEvent();
   void OnInstallEvent(int active_version_id);
   void OnFetchEvent(const ServiceWorkerFetchRequest& request);
   void OnPostMessage(const base::string16& message,
                      const std::vector<int>& sent_message_port_ids,
                      const std::vector<int>& new_routing_ids);
+  void OnSyncEvent();
 
   // Not owned; embedded_context_ owns this.
   EmbeddedWorkerContextClient* embedded_context_;

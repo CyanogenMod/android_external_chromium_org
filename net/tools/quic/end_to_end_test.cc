@@ -16,11 +16,12 @@
 #include "net/quic/congestion_control/tcp_cubic_sender.h"
 #include "net/quic/crypto/aes_128_gcm_12_encrypter.h"
 #include "net/quic/crypto/null_encrypter.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_packet_creator.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_sent_packet_manager.h"
-#include "net/quic/quic_session_key.h"
+#include "net/quic/quic_server_id.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/quic/test_tools/quic_session_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
@@ -44,6 +45,7 @@
 
 using base::StringPiece;
 using base::WaitableEvent;
+using net::test::GenerateBody;
 using net::test::QuicConnectionPeer;
 using net::test::QuicSessionPeer;
 using net::test::ReliableQuicStreamPeer;
@@ -61,14 +63,6 @@ namespace {
 
 const char* kFooResponseBody = "Artichoke hearts make me happy.";
 const char* kBarResponseBody = "Palm hearts are pretty delicious, also.";
-
-void GenerateBody(string* body, int length) {
-  body->clear();
-  body->reserve(length);
-  for (int i = 0; i < length; ++i) {
-    body->append(1, static_cast<char>(32 + i % (126 - 32)));
-  }
-}
 
 // Run all tests with the cross products of all versions.
 struct TestParams {
@@ -150,25 +144,33 @@ class ClientDelegate : public PacketDroppingTestWriter::Delegate {
 class EndToEndTest : public ::testing::TestWithParam<TestParams> {
  protected:
   EndToEndTest()
-      : server_started_(false),
+      : server_hostname_("example.com"),
+        server_started_(false),
         strike_register_no_startup_period_(false) {
     net::IPAddressNumber ip;
     CHECK(net::ParseIPLiteralToNumber("127.0.0.1", &ip));
-    uint port = 0;
-    server_address_ = IPEndPoint(ip, port);
-    server_key_ = QuicSessionKey("example.com", port, false,
-                                 kPrivacyModeDisabled);
+    server_address_ = IPEndPoint(ip, 0);
 
     client_supported_versions_ = GetParam().client_supported_versions;
     server_supported_versions_ = GetParam().server_supported_versions;
     negotiated_version_ = GetParam().negotiated_version;
     FLAGS_enable_quic_pacing = GetParam().use_pacing;
+
+    if (negotiated_version_ >= QUIC_VERSION_17) {
+      FLAGS_enable_quic_stream_flow_control = true;
+    }
     VLOG(1) << "Using Configuration: " << GetParam();
 
     client_config_.SetDefaults();
     server_config_.SetDefaults();
     server_config_.set_initial_round_trip_time_us(kMaxInitialRoundTripTimeUs,
                                                   0);
+
+    // Use different flow control windows for client/server.
+    client_initial_flow_control_receive_window_ =
+        2 * kInitialFlowControlWindowForTest;
+    server_initial_flow_control_receive_window_ =
+        3 * kInitialFlowControlWindowForTest;
 
     QuicInMemoryCachePeer::ResetForTests();
     AddToCache("GET", "https://www.google.com/foo",
@@ -184,14 +186,28 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
   }
 
   QuicTestClient* CreateQuicClient(QuicPacketWriterWrapper* writer) {
-    QuicTestClient* client = new QuicTestClient(server_address_,
-                                                server_key_,
-                                                false,  // not secure
-                                                client_config_,
-                                                client_supported_versions_);
+    QuicTestClient* client = new QuicTestClient(
+        server_address_,
+        server_hostname_,
+        false,  // not secure
+        client_config_,
+        client_supported_versions_,
+        client_initial_flow_control_receive_window_);
     client->UseWriter(writer);
     client->Connect();
     return client;
+  }
+
+  void set_client_initial_flow_control_receive_window(uint32 window) {
+    CHECK(client_.get() == NULL);
+    DVLOG(1) << "Setting client initial flow control window: " << window;
+    client_initial_flow_control_receive_window_ = window;
+  }
+
+  void set_server_initial_flow_control_receive_window(uint32 window) {
+    CHECK(server_thread_.get() == NULL);
+    DVLOG(1) << "Setting server initial flow control window: " << window;
+    server_initial_flow_control_receive_window_ = window;
   }
 
   bool Initialize() {
@@ -220,15 +236,15 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
   }
 
   void StartServer() {
-    server_thread_.reset(new ServerThread(server_address_, server_config_,
-                                          server_supported_versions_,
-                                          strike_register_no_startup_period_));
+    server_thread_.reset(
+        new ServerThread(server_address_,
+                         server_config_,
+                         server_supported_versions_,
+                         strike_register_no_startup_period_,
+                         server_initial_flow_control_receive_window_));
     server_thread_->Initialize();
     server_address_ = IPEndPoint(server_address_.address(),
                                  server_thread_->GetPort());
-    server_key_ = QuicSessionKey(server_key_.host(), server_thread_->GetPort(),
-                                 false, kPrivacyModeDisabled);
-
     QuicDispatcher* dispatcher =
         QuicServerPeer::GetDispatcher(server_thread_->server());
     QuicDispatcherPeer::UseWriter(dispatcher, server_writer_);
@@ -282,7 +298,7 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
   }
 
   IPEndPoint server_address_;
-  QuicSessionKey server_key_;
+  string server_hostname_;
   scoped_ptr<ServerThread> server_thread_;
   scoped_ptr<QuicTestClient> client_;
   PacketDroppingTestWriter* client_writer_;
@@ -294,6 +310,8 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
   QuicVersionVector server_supported_versions_;
   QuicVersion negotiated_version_;
   bool strike_register_no_startup_period_;
+  uint32 client_initial_flow_control_receive_window_;
+  uint32 server_initial_flow_control_receive_window_;
 };
 
 // Run all end to end tests with all supported versions.
@@ -545,6 +563,14 @@ TEST_P(EndToEndTest, DISABLED_LargePostZeroRTTFailure) {
 
   // The 0-RTT handshake should succeed.
   client_->Connect();
+  if (client_supported_versions_[0] >= QUIC_VERSION_17 &&
+      negotiated_version_ < QUIC_VERSION_17) {
+    // If the version negotiation has resulted in a downgrade, then the client
+    // must wait for the handshake to complete before sending any data.
+    // Otherwise it may have queued QUIC_VERSION_17 frames which will trigger a
+    // DFATAL when they are serialized after the downgrade.
+    client_->client()->WaitForCryptoHandshakeConfirmed();
+  }
   client_->WaitForResponseForMs(-1);
   ASSERT_TRUE(client_->client()->connected());
   EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
@@ -558,6 +584,14 @@ TEST_P(EndToEndTest, DISABLED_LargePostZeroRTTFailure) {
   StartServer();
 
   client_->Connect();
+  if (client_supported_versions_[0] >= QUIC_VERSION_17 &&
+      negotiated_version_ < QUIC_VERSION_17) {
+    // If the version negotiation has resulted in a downgrade, then the client
+    // must wait for the handshake to complete before sending any data.
+    // Otherwise it may have queued QUIC_VERSION_17 frames which will trigger a
+    // DFATAL when they are serialized after the downgrade.
+    client_->client()->WaitForCryptoHandshakeConfirmed();
+  }
   ASSERT_TRUE(client_->client()->connected());
   EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
   EXPECT_EQ(2, client_->client()->session()->GetNumSentClientHellos());
@@ -869,6 +903,39 @@ TEST_P(EndToEndTest, ConnectionMigration) {
 
   EXPECT_EQ(QUIC_STREAM_CONNECTION_ERROR, client_->stream_error());
   EXPECT_EQ(QUIC_ERROR_MIGRATING_ADDRESS, client_->connection_error());
+}
+
+TEST_P(EndToEndTest, DifferentFlowControlWindows) {
+  // Client and server can set different initial flow control receive windows.
+  // These are sent in CHLO/SHLO. Tests that these values are exchanged properly
+  // in the crypto handshake.
+
+  const uint32 kClientIFCW = 123456;
+  set_client_initial_flow_control_receive_window(kClientIFCW);
+
+  const uint32 kServerIFCW = 654321;
+  set_server_initial_flow_control_receive_window(kServerIFCW);
+
+  ASSERT_TRUE(Initialize());
+
+  // Values are exchanged during crypto handshake, so wait for that to finish.
+  client_->client()->WaitForCryptoHandshakeConfirmed();
+  server_thread_->WaitForCryptoHandshakeConfirmed();
+
+  // Client should have the right value for server's receive window.
+  EXPECT_EQ(kServerIFCW, client_->client()
+                             ->session()
+                             ->config()
+                             ->peer_initial_flow_control_window_bytes());
+
+  // Server should have the right value for client's receive window.
+  server_thread_->Pause();
+  QuicDispatcher* dispatcher =
+      QuicServerPeer::GetDispatcher(server_thread_->server());
+  QuicSession* session = dispatcher->session_map().begin()->second;
+  EXPECT_EQ(kClientIFCW,
+            session->config()->peer_initial_flow_control_window_bytes());
+  server_thread_->Resume();
 }
 
 }  // namespace

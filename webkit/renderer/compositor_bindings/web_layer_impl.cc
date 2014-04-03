@@ -253,10 +253,6 @@ blink::WebPoint WebLayerImpl::scrollPosition() const {
   return gfx::PointAtOffsetFromOrigin(layer_->scroll_offset());
 }
 
-WebSize WebLayerImpl::maxScrollPosition() const {
-  return layer_->MaxScrollOffset();
-}
-
 void WebLayerImpl::setScrollClipLayer(WebLayer* clip_layer) {
   if (!clip_layer) {
     layer_->SetScrollClipLayerId(Layer::INVALID_ID);
@@ -285,6 +281,14 @@ void WebLayerImpl::setHaveWheelEventHandlers(bool have_wheel_event_handlers) {
 
 bool WebLayerImpl::haveWheelEventHandlers() const {
   return layer_->have_wheel_event_handlers();
+}
+
+void WebLayerImpl::setHaveScrollEventHandlers(bool have_scroll_event_handlers) {
+  layer_->SetHaveScrollEventHandlers(have_scroll_event_handlers);
+}
+
+bool WebLayerImpl::haveScrollEventHandlers() const {
+  return layer_->have_scroll_event_handlers();
 }
 
 void WebLayerImpl::setShouldScrollOnMainThread(

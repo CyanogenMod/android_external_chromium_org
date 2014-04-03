@@ -19,33 +19,36 @@ uint32 CdmSessionAdapter::next_session_id_ = kStartingSessionId;
 COMPILE_ASSERT(kStartingSessionId > media::MediaKeys::kInvalidSessionId,
                invalid_starting_value);
 
-CdmSessionAdapter::CdmSessionAdapter() : weak_ptr_factory_(this) {}
+CdmSessionAdapter::CdmSessionAdapter() :
+#if defined(OS_ANDROID)
+    cdm_id_(0),
+#endif
+    weak_ptr_factory_(this) {}
 
 CdmSessionAdapter::~CdmSessionAdapter() {}
 
 bool CdmSessionAdapter::Initialize(
 #if defined(ENABLE_PEPPER_CDMS)
     const CreatePepperCdmCB& create_pepper_cdm_cb,
-#endif
-    const std::string& key_system) {
-  base::WeakPtr<CdmSessionAdapter> weak_this = weak_ptr_factory_.GetWeakPtr();
-  media_keys_ =
-      ContentDecryptionModuleFactory::Create(
-          key_system,
-#if defined(ENABLE_PEPPER_CDMS)
-          create_pepper_cdm_cb,
-#elif defined(OS_ANDROID)
-          // TODO(xhwang): Support Android.
-          NULL,
-          0,
-          // TODO(ddorwin): Get the URL for the frame containing the MediaKeys.
-          GURL(),
 #endif  // defined(ENABLE_PEPPER_CDMS)
-          base::Bind(&CdmSessionAdapter::OnSessionCreated, weak_this),
-          base::Bind(&CdmSessionAdapter::OnSessionMessage, weak_this),
-          base::Bind(&CdmSessionAdapter::OnSessionReady, weak_this),
-          base::Bind(&CdmSessionAdapter::OnSessionClosed, weak_this),
-          base::Bind(&CdmSessionAdapter::OnSessionError, weak_this));
+    const std::string& key_system,
+    const GURL& security_origin) {
+  base::WeakPtr<CdmSessionAdapter> weak_this = weak_ptr_factory_.GetWeakPtr();
+  media_keys_ = ContentDecryptionModuleFactory::Create(
+      key_system,
+      security_origin,
+#if defined(ENABLE_PEPPER_CDMS)
+      create_pepper_cdm_cb,
+#elif defined(OS_ANDROID)
+      // TODO(xhwang): Support Android.
+      NULL,
+      &cdm_id_,
+#endif  // defined(ENABLE_PEPPER_CDMS)
+      base::Bind(&CdmSessionAdapter::OnSessionCreated, weak_this),
+      base::Bind(&CdmSessionAdapter::OnSessionMessage, weak_this),
+      base::Bind(&CdmSessionAdapter::OnSessionReady, weak_this),
+      base::Bind(&CdmSessionAdapter::OnSessionClosed, weak_this),
+      base::Bind(&CdmSessionAdapter::OnSessionError, weak_this));
 
   // Success if |media_keys_| created.
   return media_keys_;
@@ -91,6 +94,12 @@ void CdmSessionAdapter::ReleaseSession(uint32 session_id) {
 media::Decryptor* CdmSessionAdapter::GetDecryptor() {
   return media_keys_->GetDecryptor();
 }
+
+#if defined(OS_ANDROID)
+int CdmSessionAdapter::GetCdmId() const {
+  return cdm_id_;
+}
+#endif  // defined(OS_ANDROID)
 
 void CdmSessionAdapter::OnSessionCreated(uint32 session_id,
                                          const std::string& web_session_id) {

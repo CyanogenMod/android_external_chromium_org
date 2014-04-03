@@ -6,6 +6,7 @@
 
 #include "net/quic/crypto/crypto_handshake_message.h"
 #include "net/quic/crypto/crypto_protocol.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_sent_packet_manager.h"
 #include "net/quic/quic_time.h"
@@ -30,12 +31,11 @@ class QuicConfigTest : public ::testing::Test {
 };
 
 TEST_F(QuicConfigTest, ToHandshakeMessage) {
-  FLAGS_enable_quic_pacing = false;
+  ValueRestore<bool> old_flag(&FLAGS_enable_quic_pacing, false);
   config_.SetDefaults();
   config_.set_idle_connection_state_lifetime(QuicTime::Delta::FromSeconds(5),
                                              QuicTime::Delta::FromSeconds(2));
   config_.set_max_streams_per_connection(4, 2);
-  config_.set_peer_initial_flow_control_window_bytes(6);
   CryptoHandshakeMessage msg;
   config_.ToHandshakeMessage(&msg);
 
@@ -47,10 +47,6 @@ TEST_F(QuicConfigTest, ToHandshakeMessage) {
   error = msg.GetUint32(kMSPC, &value);
   EXPECT_EQ(QUIC_NO_ERROR, error);
   EXPECT_EQ(4u, value);
-
-  error = msg.GetUint32(kIFCW, &value);
-  EXPECT_EQ(QUIC_NO_ERROR, error);
-  EXPECT_EQ(6u, value);
 
   const QuicTag* out;
   size_t out_len;
@@ -88,9 +84,9 @@ TEST_F(QuicConfigTest, ProcessClientHello) {
   client_config.set_initial_round_trip_time_us(
       10 * base::Time::kMicrosecondsPerMillisecond,
       10 * base::Time::kMicrosecondsPerMillisecond);
-  const uint32 kFlowControlWindow = 1234;
-  client_config.set_peer_initial_flow_control_window_bytes(kFlowControlWindow);
-
+  QuicTagVector loss_detection;
+  loss_detection.push_back(kNACK);
+  client_config.set_loss_detection(loss_detection, kNACK);
   CryptoHandshakeMessage msg;
   client_config.ToHandshakeMessage(&msg);
   string error_details;
@@ -105,8 +101,7 @@ TEST_F(QuicConfigTest, ProcessClientHello) {
   EXPECT_EQ(QuicTime::Delta::FromSeconds(0), config_.keepalive_timeout());
   EXPECT_EQ(10 * base::Time::kMicrosecondsPerMillisecond,
             config_.initial_round_trip_time_us());
-  EXPECT_EQ(kFlowControlWindow,
-            config_.peer_initial_flow_control_window_bytes());
+  EXPECT_EQ(kNACK, config_.loss_detection());
 }
 
 TEST_F(QuicConfigTest, ProcessServerHello) {
@@ -125,9 +120,9 @@ TEST_F(QuicConfigTest, ProcessServerHello) {
   server_config.set_initial_round_trip_time_us(
       10 * base::Time::kMicrosecondsPerMillisecond,
       10 * base::Time::kMicrosecondsPerMillisecond);
-  const uint32 kFlowControlWindow = 1234;
-  server_config.set_peer_initial_flow_control_window_bytes(kFlowControlWindow);
-
+  QuicTagVector loss_detection;
+  loss_detection.push_back(kNACK);
+  server_config.set_loss_detection(loss_detection, kNACK);
   CryptoHandshakeMessage msg;
   server_config.ToHandshakeMessage(&msg);
   string error_details;
@@ -144,8 +139,7 @@ TEST_F(QuicConfigTest, ProcessServerHello) {
   EXPECT_EQ(QuicTime::Delta::FromSeconds(0), config_.keepalive_timeout());
   EXPECT_EQ(10 * base::Time::kMicrosecondsPerMillisecond,
             config_.initial_round_trip_time_us());
-  EXPECT_EQ(kFlowControlWindow,
-            config_.peer_initial_flow_control_window_bytes());
+  EXPECT_EQ(kNACK, config_.loss_detection());
 }
 
 TEST_F(QuicConfigTest, MissingOptionalValuesInCHLO) {
@@ -163,7 +157,8 @@ TEST_F(QuicConfigTest, MissingOptionalValuesInCHLO) {
   const QuicErrorCode error = config_.ProcessClientHello(msg, &error_details);
   EXPECT_EQ(QUIC_NO_ERROR, error);
 
-  EXPECT_EQ(0u, config_.peer_initial_flow_control_window_bytes());
+  EXPECT_EQ(kDefaultFlowControlSendWindow,
+            config_.peer_initial_flow_control_window_bytes());
 }
 
 TEST_F(QuicConfigTest, MissingOptionalValuesInSHLO) {
@@ -179,7 +174,8 @@ TEST_F(QuicConfigTest, MissingOptionalValuesInSHLO) {
   const QuicErrorCode error = config_.ProcessServerHello(msg, &error_details);
   EXPECT_EQ(QUIC_NO_ERROR, error);
 
-  EXPECT_EQ(0u, config_.peer_initial_flow_control_window_bytes());
+  EXPECT_EQ(kDefaultFlowControlSendWindow,
+            config_.peer_initial_flow_control_window_bytes());
 }
 
 TEST_F(QuicConfigTest, MissingValueInCHLO) {

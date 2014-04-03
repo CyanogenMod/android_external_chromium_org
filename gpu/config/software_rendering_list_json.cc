@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "7.3",
+  "version": "7.5",
   "entries": [
     {
       "id": 1,
@@ -68,8 +68,8 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 5,
-      "description": "ATI/AMD cards with older or third-party drivers in Linux are crash-prone",
-      "cr_bugs": [71381, 76428, 73910, 101225, 136240],
+      "description": "ATI/AMD cards with older drivers in Linux are crash-prone",
+      "cr_bugs": [71381, 76428, 73910, 101225, 136240, 357314],
       "os": {
         "type": "linux"
       },
@@ -84,6 +84,16 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
             "op": ">=",
             "style": "lexical",
             "value": "8.98"
+          }
+        },
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.4"
           }
         }
       ],
@@ -153,7 +163,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     {
       "id": 17,
       "description": "Intel mesa drivers are crash-prone",
-      "cr_bugs": [76703, 164555, 225200],
+      "cr_bugs": [76703, 164555, 225200, 340886],
       "os": {
         "type": "linux"
       },
@@ -185,6 +195,13 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
           "driver_version": {
             "op": ">=",
             "value": "9.1"
+          }
+        },
+        {
+          "device_id": ["0x0a16"],
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.1"
           }
         }
       ],
@@ -244,7 +261,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     {
       "id": 27,
       "description": "ATI/AMD cards with older drivers in Linux are crash-prone",
-      "cr_bugs": [95934, 94973, 136240],
+      "cr_bugs": [95934, 94973, 136240, 357314],
       "os": {
         "type": "linux"
       },
@@ -263,6 +280,16 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
             "style": "lexical",
             "value": "8.98"
           }
+        },
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.4"
+          }
         }
       ],
       "features": [
@@ -272,7 +299,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     {
       "id": 28,
       "description": "ATI/AMD cards with third-party drivers in Linux are crash-prone",
-      "cr_bugs": [95934, 94973],
+      "cr_bugs": [95934, 94973, 357314],
       "os": {
         "type": "linux"
       },
@@ -284,6 +311,18 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "op": "contains",
         "value": "AMD"
       },
+      "exceptions": [
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.4"
+          }
+        }
+      ],
       "features": [
         "all"
       ]
@@ -291,7 +330,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     {
       "id": 29,
       "description": "ATI/AMD cards with third-party drivers in Linux are crash-prone",
-      "cr_bugs": [95934, 94973],
+      "cr_bugs": [95934, 94973, 357314],
       "os": {
         "type": "linux"
       },
@@ -303,6 +342,18 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "op": "contains",
         "value": "ATI"
       },
+      "exceptions": [
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.4"
+          }
+        }
+      ],
       "features": [
         "all"
       ]

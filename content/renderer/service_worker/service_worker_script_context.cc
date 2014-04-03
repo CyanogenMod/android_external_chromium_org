@@ -30,13 +30,21 @@ void ServiceWorkerScriptContext::OnMessageReceived(
   current_request_id_ = request_id;
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ServiceWorkerScriptContext, message)
-    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_InstallEvent, OnInstallEvent)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_ActivateEvent, OnActivateEvent)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_FetchEvent, OnFetchEvent)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_InstallEvent, OnInstallEvent)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_Message, OnPostMessage)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SyncEvent, OnSyncEvent)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   DCHECK(handled);
   current_request_id_ = kInvalidServiceWorkerRequestId;
+}
+
+void ServiceWorkerScriptContext::DidHandleActivateEvent(
+    int request_id,
+    blink::WebServiceWorkerEventResult result) {
+  Send(request_id, ServiceWorkerHostMsg_ActivateEventFinished(result));
 }
 
 void ServiceWorkerScriptContext::DidHandleInstallEvent(
@@ -52,9 +60,17 @@ void ServiceWorkerScriptContext::DidHandleFetchEvent(
   Send(request_id, ServiceWorkerHostMsg_FetchEventFinished(result, response));
 }
 
+void ServiceWorkerScriptContext::DidHandleSyncEvent(int request_id) {
+  Send(request_id, ServiceWorkerHostMsg_SyncEventFinished());
+}
+
 void ServiceWorkerScriptContext::Send(int request_id,
                                       const IPC::Message& message) {
   embedded_context_->SendMessageToBrowser(request_id, message);
+}
+
+void ServiceWorkerScriptContext::OnActivateEvent() {
+  proxy_->dispatchActivateEvent(current_request_id_);
 }
 
 void ServiceWorkerScriptContext::OnInstallEvent(int active_version_id) {
@@ -82,6 +98,10 @@ void ServiceWorkerScriptContext::OnPostMessage(
   }
 
   proxy_->dispatchMessageEvent(message, ports);
+}
+
+void ServiceWorkerScriptContext::OnSyncEvent() {
+  proxy_->dispatchSyncEvent(current_request_id_);
 }
 
 }  // namespace content

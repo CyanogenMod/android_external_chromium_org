@@ -140,13 +140,6 @@
                 '../chrome/chrome.gyp:linux_packages_<(channel)',
               ],
             }],
-            ['chromeos==0', {
-              'dependencies': [
-                '../third_party/cros_dbus_cplusplus/cros_dbus_cplusplus.gyp:*',
-                '../third_party/libmtp/libmtp.gyp:*',
-                '../third_party/mtpd/mtpd.gyp:*',
-              ],
-            }],
             ['enable_ipc_fuzzer==1', {
               'dependencies': [
                 '../tools/ipc_fuzzer/ipc_fuzzer.gyp:*',
@@ -574,7 +567,6 @@
             '../chrome/chrome.gyp:chrome',
             # Dependencies of pyauto_functional tests.
             '../remoting/remoting.gyp:remoting_webapp',
-            '../chrome/chrome.gyp:pyautolib',
           ],
           'conditions': [
             ['OS=="mac"', {
@@ -610,7 +602,7 @@
         {
           # This target contains everything we need to run tests on the special
           # device-equipped WebRTC bots. We have device-requiring tests in
-          # PyAuto, browser_tests and content_browsertests.
+          # browser_tests and content_browsertests.
           'target_name': 'chromium_builder_webrtc',
           'type': 'none',
           'dependencies': [
@@ -1064,6 +1056,8 @@
             '../chrome/chrome.gyp:browser_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
             '../components/components_tests.gyp:components_unittests',
+            '../content/content_shell_and_tests.gyp:content_browsertests',
+            '../content/content_shell_and_tests.gyp:content_shell',
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../crypto/crypto.gyp:crypto_unittests',
             '../device/device_tests.gyp:device_unittests',
@@ -1075,6 +1069,7 @@
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../sql/sql.gyp:sql_unittests',
+            '../sync/sync.gyp:sync_unit_tests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',

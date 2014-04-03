@@ -63,14 +63,14 @@ const int64 QuotaManager::kPerHostPersistentQuotaLimit = 10 * 1024 * kMBytes;
 
 const char QuotaManager::kDatabaseName[] = "QuotaManager";
 
+const int QuotaManager::kThresholdOfErrorsToBeBlacklisted = 3;
+
 // Preserve kMinimumPreserveForSystem disk space for system book-keeping
 // when returning the quota to unlimited apps/extensions.
 // TODO(kinuko): This should be like 10% of the actual disk space.
 // For now we simply use a constant as getting the disk size needs
 // platform-dependent code. (http://crbug.com/178976)
-const int64 QuotaManager::kMinimumPreserveForSystem = 1024 * kMBytes;
-
-const int QuotaManager::kThresholdOfErrorsToBeBlacklisted = 3;
+int64 QuotaManager::kMinimumPreserveForSystem = 1024 * kMBytes;
 
 const int QuotaManager::kEvictionIntervalInMilliSeconds =
     30 * kMinutesInMilliSeconds;
@@ -227,8 +227,14 @@ void DispatchTemporaryGlobalQuotaCallback(
 
 int64 CalculateQuotaWithDiskSpace(
     int64 available_disk_space, int64 usage, int64 quota) {
-  if (available_disk_space < QuotaManager::kMinimumPreserveForSystem ||
-      quota < usage) {
+  if (available_disk_space < QuotaManager::kMinimumPreserveForSystem) {
+    LOG(WARNING)
+        << "Running out of disk space for profile."
+        << " QuotaManager starts forbidding further quota consumption.";
+    return usage;
+  }
+
+  if (quota < usage) {
     // No more space; cap the quota to the current usage.
     return usage;
   }

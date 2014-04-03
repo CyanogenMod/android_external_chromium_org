@@ -82,8 +82,8 @@ ChromeRenderMessageFilter::ChromeRenderMessageFilter(
     int render_process_id,
     Profile* profile,
     net::URLRequestContextGetter* request_context)
-    : BrowserMessageFilter(
-          kFilteredMessageClasses, arraysize(kFilteredMessageClasses)),
+    : BrowserMessageFilter(kFilteredMessageClasses,
+                           arraysize(kFilteredMessageClasses)),
       render_process_id_(render_process_id),
       profile_(profile),
       off_the_record_(profile_->IsOffTheRecord()),
@@ -91,9 +91,7 @@ ChromeRenderMessageFilter::ChromeRenderMessageFilter(
       request_context_(request_context),
       extension_info_map_(
           extensions::ExtensionSystem::Get(profile)->info_map()),
-      cookie_settings_(CookieSettings::Factory::GetForProfile(profile)),
-      weak_ptr_factory_(this) {
-}
+      cookie_settings_(CookieSettings::Factory::GetForProfile(profile)) {}
 
 ChromeRenderMessageFilter::~ChromeRenderMessageFilter() {
 }
@@ -118,8 +116,6 @@ bool ChromeRenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ExtensionHostMsg_GetMessageBundle,
                                     OnGetExtensionMessageBundle)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_CloseChannel, OnExtensionCloseChannel)
-    IPC_MESSAGE_HANDLER(ExtensionHostMsg_RequestForIOThread,
-                        OnExtensionRequestForIOThread)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_AddAPIActionToActivityLog,
                         OnAddAPIActionToExtensionActivityLog);
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_AddDOMActionToActivityLog,
@@ -206,18 +202,10 @@ void ChromeRenderMessageFilter::OnFPS(int routing_id, float fps) {
     return;
   }
 
-  base::ProcessId renderer_id = peer_pid();
-
 #if defined(ENABLE_TASK_MANAGER)
   TaskManager::GetInstance()->model()->NotifyFPS(
-      renderer_id, routing_id, fps);
+      peer_pid(), routing_id, fps);
 #endif  // defined(ENABLE_TASK_MANAGER)
-
-  FPSDetails details(routing_id, fps);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_RENDERER_FPS_COMPUTED,
-      content::Source<const base::ProcessId>(&renderer_id),
-      content::Details<const FPSDetails>(&details));
 }
 
 void ChromeRenderMessageFilter::OnV8HeapStats(int v8_memory_allocated,
@@ -370,16 +358,6 @@ void ChromeRenderMessageFilter::OnExtensionCloseChannel(
       extensions::MessageService::Get(profile_);
   if (message_service)
     message_service->CloseChannel(port_id, error_message);
-}
-
-void ChromeRenderMessageFilter::OnExtensionRequestForIOThread(
-    int routing_id,
-    const ExtensionHostMsg_Request_Params& params) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  ExtensionFunctionDispatcher::DispatchOnIOThread(
-      extension_info_map_.get(), profile_, render_process_id_,
-      weak_ptr_factory_.GetWeakPtr(), routing_id, params);
 }
 
 void ChromeRenderMessageFilter::OnAddAPIActionToExtensionActivityLog(

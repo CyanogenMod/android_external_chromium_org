@@ -106,11 +106,6 @@ void PpapiCommandBufferProxy::SetGetBuffer(int32 transfer_buffer_id) {
   }
 }
 
-void PpapiCommandBufferProxy::SetGetOffset(int32 get_offset) {
-  // Not implemented in proxy.
-  NOTREACHED();
-}
-
 scoped_refptr<gpu::Buffer> PpapiCommandBufferProxy::CreateTransferBuffer(
     size_t size,
     int32* id) {
@@ -119,28 +114,34 @@ scoped_refptr<gpu::Buffer> PpapiCommandBufferProxy::CreateTransferBuffer(
   if (last_state_.error != gpu::error::kNoError)
     return NULL;
 
+  // Assuming we are in the renderer process, the service is responsible for
+  // duplicating the handle. This might not be true for NaCl.
+  ppapi::proxy::SerializedHandle handle(
+      ppapi::proxy::SerializedHandle::SHARED_MEMORY);
   if (!Send(new PpapiHostMsg_PPBGraphics3D_CreateTransferBuffer(
-            ppapi::API_ID_PPB_GRAPHICS_3D, resource_, size, id))) {
+            ppapi::API_ID_PPB_GRAPHICS_3D, resource_, size, id, &handle))) {
     return NULL;
   }
 
-  if ((*id) <= 0)
+  if (*id <= 0 || !handle.is_shmem())
     return NULL;
 
-  return GetTransferBuffer(*id);
+  scoped_ptr<base::SharedMemory> shared_memory(
+      new base::SharedMemory(handle.shmem(), false));
+
+  // Map the shared memory on demand.
+  if (!shared_memory->memory()) {
+    if (!shared_memory->Map(handle.size())) {
+      return NULL;
+    }
+  }
+
+  return gpu::MakeBufferFromSharedMemory(shared_memory.Pass(), handle.size());
 }
 
 void PpapiCommandBufferProxy::DestroyTransferBuffer(int32 id) {
   if (last_state_.error != gpu::error::kNoError)
     return;
-
-  // Remove the transfer buffer from the client side4 cache.
-  TransferBufferMap::iterator it = transfer_buffers_.find(id);
-
-  // Remove reference to buffer, allowing the shared memory object to be
-  // deleted, closing the handle in the process.
-  if (it != transfer_buffers_.end())
-    transfer_buffers_.erase(it);
 
   Send(new PpapiHostMsg_PPBGraphics3D_DestroyTransferBuffer(
       ppapi::API_ID_PPB_GRAPHICS_3D, resource_, id));
@@ -153,59 +154,6 @@ void PpapiCommandBufferProxy::Echo(const base::Closure& callback) {
 uint32 PpapiCommandBufferProxy::CreateStreamTexture(uint32 texture_id) {
   NOTREACHED();
   return 0;
-}
-
-scoped_refptr<gpu::Buffer> PpapiCommandBufferProxy::GetTransferBuffer(
-    int32 id) {
-  if (last_state_.error != gpu::error::kNoError)
-    return NULL;
-
-  // Check local cache to see if there is already a client side shared memory
-  // object for this id.
-  TransferBufferMap::iterator it = transfer_buffers_.find(id);
-  if (it != transfer_buffers_.end()) {
-    return it->second;
-  }
-
-  // Assuming we are in the renderer process, the service is responsible for
-  // duplicating the handle. This might not be true for NaCl.
-  ppapi::proxy::SerializedHandle handle(
-      ppapi::proxy::SerializedHandle::SHARED_MEMORY);
-  if (!Send(new PpapiHostMsg_PPBGraphics3D_GetTransferBuffer(
-            ppapi::API_ID_PPB_GRAPHICS_3D, resource_, id, &handle))) {
-    return NULL;
-  }
-  if (!handle.is_shmem())
-    return NULL;
-
-  // Cache the transfer buffer shared memory object client side.
-  scoped_ptr<base::SharedMemory> shared_memory(
-      new base::SharedMemory(handle.shmem(), false));
-
-  // Map the shared memory on demand.
-  if (!shared_memory->memory()) {
-    if (!shared_memory->Map(handle.size())) {
-      return NULL;
-    }
-  }
-
-  scoped_refptr<gpu::Buffer> buffer =
-      new gpu::Buffer(shared_memory.Pass(), handle.size());
-  transfer_buffers_[id] = buffer;
-  return buffer;
-}
-
-void PpapiCommandBufferProxy::SetToken(int32 token) {
-  NOTREACHED();
-}
-
-void PpapiCommandBufferProxy::SetParseError(gpu::error::Error error) {
-  NOTREACHED();
-}
-
-void PpapiCommandBufferProxy::SetContextLostReason(
-    gpu::error::ContextLostReason reason) {
-  NOTREACHED();
 }
 
 uint32 PpapiCommandBufferProxy::InsertSyncPoint() {

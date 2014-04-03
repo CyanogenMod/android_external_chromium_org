@@ -25,6 +25,7 @@ class Widget;
 // This is a views-internal API and should not be used externally.
 // Widget exposes this object as a View*.
 namespace internal {
+class PreEventDispatchHandler;
 
 ////////////////////////////////////////////////////////////////////////////////
 // RootView class
@@ -138,7 +139,6 @@ class VIEWS_EXPORT RootView : public View,
   // it. Returns whether anyone consumed the event.
   void DispatchKeyEvent(ui::KeyEvent* event);
   void DispatchScrollEvent(ui::ScrollEvent* event);
-  void DispatchTouchEvent(ui::TouchEvent* event);
 
   // Update the cursor given a mouse event. This is called by non mouse_move
   // event handlers to honor the cursor desired by views located under the
@@ -199,9 +199,6 @@ class VIEWS_EXPORT RootView : public View,
   int last_mouse_event_x_;
   int last_mouse_event_y_;
 
-  // The view currently handling touch events.
-  View* touch_pressed_handler_;
-
   // The view currently handling gesture events. When set, this handler receives
   // all gesture events, except when there is an event handler for the specific
   // gesture (e.g. scroll).
@@ -209,6 +206,8 @@ class VIEWS_EXPORT RootView : public View,
 
   // The view currently handling scroll gesture events.
   View* scroll_gesture_handler_;
+
+  scoped_ptr<internal::PreEventDispatchHandler> pre_dispatch_handler_;
 
   // Focus ---------------------------------------------------------------------
 
