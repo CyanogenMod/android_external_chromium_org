@@ -332,8 +332,6 @@ class DriveFileSystemExtensionApiTest : public FileSystemExtensionApiTestBase {
       Profile* profile) {
     fake_drive_service_ = new drive::FakeDriveService;
     fake_drive_service_->LoadResourceListForWapi(kTestRootFeed);
-    fake_drive_service_->LoadAccountMetadataForWapi(
-        "gdata/account_metadata.json");
     fake_drive_service_->LoadAppListForDriveApi("drive/applist.json");
 
     return new drive::DriveIntegrationService(
@@ -393,8 +391,6 @@ class MultiProfileDriveFileSystemExtensionApiTest :
     drive::FakeDriveService* const fake_drive_service =
         new drive::FakeDriveService;
     fake_drive_service->LoadResourceListForWapi(kTestRootFeed);
-    fake_drive_service->LoadAccountMetadataForWapi(
-        "gdata/account_metadata.json");
     fake_drive_service->LoadAppListForDriveApi("drive/applist.json");
 
     return new drive::DriveIntegrationService(
@@ -537,7 +533,6 @@ IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest, Search) {
 }
 
 IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest, AppFileHandler) {
-  fake_drive_service_->set_default_max_results(1);
   EXPECT_TRUE(RunFileSystemExtensionApiTest(
       "file_browser/handler_test_runner",
       FILE_PATH_LITERAL("manifest.json"),

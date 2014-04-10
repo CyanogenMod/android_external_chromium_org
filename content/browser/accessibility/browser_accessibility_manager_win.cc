@@ -97,6 +97,20 @@ void BrowserAccessibilityManagerWin::RemoveNode(BrowserAccessibility* node) {
   }
 }
 
+void BrowserAccessibilityManagerWin::OnWindowFocused() {
+  // Fire a focus event on the root first and then the focused node.
+  if (focus_ != root_)
+    NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, root_);
+  BrowserAccessibilityManager::OnWindowFocused();
+}
+
+void BrowserAccessibilityManagerWin::OnWindowBlurred() {
+  // Fire a blur event on the focused node first and then the root.
+  BrowserAccessibilityManager::OnWindowBlurred();
+  if (focus_ != root_)
+    NotifyAccessibilityEvent(ui::AX_EVENT_BLUR, root_);
+}
+
 void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
     ui::AXEvent event_type,
     BrowserAccessibility* node) {
@@ -206,6 +220,11 @@ void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
     tracked_scroll_object_->Release();
     tracked_scroll_object_ = NULL;
   }
+}
+
+void BrowserAccessibilityManagerWin::OnRootChanged() {
+  if (delegate_ && delegate_->HasFocus())
+    NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, root_);
 }
 
 void BrowserAccessibilityManagerWin::TrackScrollingObject(

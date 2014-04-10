@@ -9,7 +9,6 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
 #include "ui/app_list/app_list_export.h"
 #include "ui/app_list/app_list_model.h"
@@ -326,21 +325,22 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // to anther folder target.
   void ReparentItemToAnotherFolder(views::View* item_view, const Index& target);
 
-  // Updates both data model and view_model_ for removing last item from
-  // |source_folder| which is the parent folder of the re-parenting item.
-  void RemoveLastItemFromReparentItemFolder(AppListFolderItem* source_folder);
+  // If there is only 1 item left in the source folder after reparenting an item
+  // from it, updates both data model and view_model_ for removing last item
+  // from the source folder and removes the source folder.
+  void RemoveLastItemFromReparentItemFolderIfNecessary(
+      const std::string& source_folder_id);
 
   // If user does not drop the re-parenting folder item to any valid target,
   // cancel the re-parenting action, let the item go back to its original
   // parent folder with UI animation.
   void CancelFolderItemReparent(AppListItemView* drag_item_view);
 
-  // Removes the folder matching |folder_id| if there is only one item left
-  // in it.
-  void RemoveFolderIfOnlyOneItemLeft(const std::string& folder_id);
-
   // Cancels any context menus showing for app items on the current page.
   void CancelContextMenusOnCurrentPage();
+
+  // Removes the AppListItemView at |index| in |view_model_| and deletes it.
+  void DeleteItemViewAtIndex(int index);
 
   // Returns true if |point| lies within the bounds of this grid view plus a
   // buffer area surrounding it.
@@ -533,8 +533,6 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
 
   // True if the drag_view_ item is a folder item being dragged for reparenting.
   bool dragging_for_reparent_item_;
-
-  base::WeakPtrFactory<AppsGridView> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AppsGridView);
 };

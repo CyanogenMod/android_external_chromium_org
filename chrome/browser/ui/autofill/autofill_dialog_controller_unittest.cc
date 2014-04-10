@@ -204,10 +204,6 @@ class TestAutofillDialogView : public AutofillDialogView {
   }
 
   virtual base::string16 GetCvc() OVERRIDE { return base::string16(); }
-  virtual bool HitTestInput(ServerFieldType type,
-                            const gfx::Point& screen_point) OVERRIDE {
-    return false;
-  }
 
   virtual bool SaveDetailsLocally() OVERRIDE {
     return save_details_locally_checked_;
@@ -3406,6 +3402,16 @@ TEST_F(AutofillDialogControllerTest, SuggestCountrylessProfiles) {
       profile.GetRawInfo(NAME_FULL).substr(0, 1),
       true);
   EXPECT_EQ(NAME_FULL, controller()->popup_input_type());
+}
+
+TEST_F(AutofillDialogControllerTest, SwitchFromWalletWithFirstName) {
+  controller()->MenuModelForSection(SECTION_CC_BILLING)->ActivatedAt(2);
+
+  FieldValueMap outputs;
+  outputs[NAME_FULL] = ASCIIToUTF16("madonna");
+  controller()->GetView()->SetUserInput(SECTION_CC_BILLING, outputs);
+
+  ASSERT_NO_FATAL_FAILURE(SwitchToAutofill());
 }
 
 }  // namespace autofill

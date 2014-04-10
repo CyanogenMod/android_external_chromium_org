@@ -12,11 +12,12 @@
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
+#include "extensions/common/url_pattern.h"
 #include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -289,6 +290,12 @@ void CreateOrUpdateBookmarkApp(ExtensionService* service,
       extensions::CrxInstaller::CreateSilent(service));
   installer->set_error_on_unsupported_requirements(true);
   installer->InstallWebApp(web_app_info);
+}
+
+bool IsValidBookmarkAppUrl(const GURL& url) {
+  URLPattern origin_only_pattern(Extension::kValidWebExtentSchemes);
+  origin_only_pattern.SetMatchAllURLs(true);
+  return url.is_valid() && origin_only_pattern.MatchesURL(url);
 }
 
 }  // namespace extensions

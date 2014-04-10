@@ -32,7 +32,18 @@ class GESTURE_DETECTION_EXPORT GestureProvider {
     GestureDetector::Config gesture_detector_config;
     ScaleGestureDetector::Config scale_gesture_detector_config;
     SnapScrollController::Config snap_scroll_controller_config;
+
+    // If |disable_click_delay| is true and double-tap support is disabled,
+    // there will be no delay before tap events. When double-tap support is
+    // enabled, there will always be a delay before a tap event is fired, in
+    // order to allow the double tap gesture to occur without firing any tap
+    // events.
     bool disable_click_delay;
+
+    // If |gesture_begin_end_types_enabled| is true, fire an ET_GESTURE_BEGIN
+    // event for every added touch point, and an ET_GESTURE_END event for every
+    // removed touch point.
+    bool gesture_begin_end_types_enabled;
   };
 
   GestureProvider(const Config& config, GestureProviderClient* client);
@@ -66,8 +77,12 @@ class GESTURE_DETECTION_EXPORT GestureProvider {
   // forwarded and detection is still active).
   bool IsPinchInProgress() const;
 
-  // Whether a double tap-gesture is in-progress.
+  // Whether a double-tap gesture is in-progress (either double-tap or
+  // double-tap drag zoom).
   bool IsDoubleTapInProgress() const;
+
+  // Whether double-tap gesture detection is supported.
+  bool IsDoubleTapSupported() const;
 
   // Whether the tap gesture delay is explicitly disabled (independent of
   // whether double-tap is supported), see |Config.disable_click_delay|.
@@ -83,16 +98,14 @@ class GESTURE_DETECTION_EXPORT GestureProvider {
 
   bool CanHandle(const MotionEvent& event) const;
 
-  void Fling(base::TimeTicks time,
-             float x,
-             float y,
-             float velocity_x,
-             float velocity_y);
+  void Fling(const MotionEvent& e, float velocity_x, float velocity_y);
   void Send(const GestureEventData& gesture);
-  void SendTapCancelIfNecessary(const MotionEvent& event);
   bool SendLongTapIfNecessary(const MotionEvent& event);
-  void EndTouchScrollIfNecessary(base::TimeTicks time,
+  void EndTouchScrollIfNecessary(const MotionEvent& event,
                                  bool send_scroll_end_event);
+  void OnTouchEventHandlingBegin(const MotionEvent& event);
+  void OnTouchEventHandlingEnd(const MotionEvent& event);
+  void UpdateDoubleTapDetectionSupport();
 
   GestureProviderClient* const client_;
 
@@ -106,24 +119,21 @@ class GESTURE_DETECTION_EXPORT GestureProvider {
 
   scoped_ptr<MotionEvent> current_down_event_;
 
-  // Whether a GESTURE_SHOW_PRESS was sent for the current touch sequence.
-  // Sending a GESTURE_TAP event will forward a GESTURE_SHOW_PRESS if one has
-  // not yet been sent.
-  bool needs_show_press_event_;
-
-  // Whether a sent GESTURE_TAP_DOWN event has yet to be accompanied by a
-  // corresponding GESTURE_TAP, GESTURE_TAP_CANCEL or GESTURE_DOUBLE_TAP.
-  bool needs_tap_ending_event_;
-
   // Whether the respective {SCROLL,PINCH}_BEGIN gestures have been terminated
   // with a {SCROLL,PINCH}_END.
   bool touch_scroll_in_progress_;
   bool pinch_in_progress_;
 
+  // Whether double-tap gesture detection is currently supported.
+  bool double_tap_support_for_page_;
+  bool double_tap_support_for_platform_;
+
   // Keeps track of the current GESTURE_LONG_PRESS event. If a context menu is
   // opened after a GESTURE_LONG_PRESS, this is used to insert a
   // GESTURE_TAP_CANCEL for removing any ::active styling.
   base::TimeTicks current_longpress_time_;
+
+  bool gesture_begin_end_types_enabled_;
 };
 
 }  //  namespace ui

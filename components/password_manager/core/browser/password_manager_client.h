@@ -9,10 +9,13 @@
 #include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 
+class PrefService;
+
+namespace password_manager {
+
 class PasswordFormManager;
 class PasswordManagerDriver;
 class PasswordStore;
-class PrefService;
 class PasswordManagerLogger;
 
 // An abstraction of operations that depend on the embedders (e.g. Chrome)
@@ -30,6 +33,10 @@ class PasswordManagerClient {
   // Called when a password is autofilled. Default implementation is a no-op.
   virtual void PasswordWasAutofilled(
       const autofill::PasswordFormMap& best_matches) const {}
+
+  // Called when password autofill is blocked by the blacklist. Default
+  // implementation is a no-op.
+  virtual void PasswordAutofillWasBlocked() const {}
 
   // Called to authenticate the autofill password data.  If authentication is
   // successful, this should continue filling the form.
@@ -63,5 +70,7 @@ class PasswordManagerClient {
  private:
   DISALLOW_COPY_AND_ASSIGN(PasswordManagerClient);
 };
+
+}  // namespace password_manager
 
 #endif  // COMPONENTS_PASSWORD_MANAGER_CORE_BROWSER_PASSWORD_MANAGER_CLIENT_H_

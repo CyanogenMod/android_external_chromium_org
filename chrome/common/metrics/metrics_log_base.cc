@@ -50,10 +50,14 @@ SystemProfileProto::Channel AsProtobufChannel(
 
 }  // namespace
 
-MetricsLogBase::MetricsLogBase(const std::string& client_id, int session_id,
+MetricsLogBase::MetricsLogBase(const std::string& client_id,
+                               int session_id,
+                               LogType log_type,
                                const std::string& version_string)
     : num_events_(0),
-      locked_(false) {
+      locked_(false),
+      log_type_(log_type) {
+  DCHECK_NE(NO_LOG, log_type);
   if (IsTestingID(client_id))
     uma_proto_.set_client_id(0);
   else
@@ -111,7 +115,7 @@ void MetricsLogBase::GetEncodedLog(std::string* encoded_log) {
   uma_proto_.SerializeToString(encoded_log);
 }
 
-void MetricsLogBase::RecordUserAction(const char* key) {
+void MetricsLogBase::RecordUserAction(const std::string& key) {
   DCHECK(!locked_);
 
   UserActionEventProto* user_action = uma_proto_.add_user_action_event();

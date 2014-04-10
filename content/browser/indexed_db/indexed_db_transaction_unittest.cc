@@ -14,8 +14,6 @@
 
 namespace content {
 
-namespace {
-
 class IndexedDBTransactionTest : public testing::Test {
  public:
   IndexedDBTransactionTest() {
@@ -40,6 +38,14 @@ class IndexedDBTransactionTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(IndexedDBTransactionTest);
 };
 
+class IndexedDBTransactionTestMode : public IndexedDBTransactionTest,
+  public testing::WithParamInterface<indexed_db::TransactionMode> {
+ public:
+  IndexedDBTransactionTestMode() {}
+ private:
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBTransactionTestMode);
+};
+
 TEST_F(IndexedDBTransactionTest, Timeout) {
   const int64 id = 0;
   const std::set<int64> scope;
@@ -56,25 +62,32 @@ TEST_F(IndexedDBTransactionTest, Timeout) {
   // No conflicting transactions, so coordinator will start it immediately:
   EXPECT_EQ(IndexedDBTransaction::STARTED, transaction->state());
   EXPECT_FALSE(transaction->IsTimeoutTimerRunning());
+  EXPECT_EQ(0, transaction->diagnostics().tasks_scheduled);
+  EXPECT_EQ(0, transaction->diagnostics().tasks_completed);
 
   // Schedule a task - timer won't be started until it's processed.
   transaction->ScheduleTask(base::Bind(
       &IndexedDBTransactionTest::DummyOperation, base::Unretained(this)));
   EXPECT_FALSE(transaction->IsTimeoutTimerRunning());
+  EXPECT_EQ(1, transaction->diagnostics().tasks_scheduled);
+  EXPECT_EQ(0, transaction->diagnostics().tasks_completed);
 
   RunPostedTasks();
   EXPECT_TRUE(transaction->IsTimeoutTimerRunning());
 
-  // Abort should cancel the timer.
-  transaction->Abort();
+  transaction->Timeout();
   EXPECT_EQ(IndexedDBTransaction::FINISHED, transaction->state());
   EXPECT_FALSE(transaction->IsTimeoutTimerRunning());
+  EXPECT_EQ(1, transaction->diagnostics().tasks_scheduled);
+  EXPECT_EQ(1, transaction->diagnostics().tasks_completed);
 
   // This task will be ignored.
   transaction->ScheduleTask(base::Bind(
       &IndexedDBTransactionTest::DummyOperation, base::Unretained(this)));
   EXPECT_EQ(IndexedDBTransaction::FINISHED, transaction->state());
   EXPECT_FALSE(transaction->IsTimeoutTimerRunning());
+  EXPECT_EQ(1, transaction->diagnostics().tasks_scheduled);
+  EXPECT_EQ(1, transaction->diagnostics().tasks_completed);
 }
 
 TEST_F(IndexedDBTransactionTest, NoTimeoutReadOnly) {
@@ -124,7 +137,7 @@ class AbortObserver {
   DISALLOW_COPY_AND_ASSIGN(AbortObserver);
 };
 
-TEST_F(IndexedDBTransactionTest, AbortTasks) {
+TEST_P(IndexedDBTransactionTestMode, AbortTasks) {
   const int64 id = 0;
   const std::set<int64> scope;
   const bool commit_failure = false;
@@ -132,7 +145,7 @@ TEST_F(IndexedDBTransactionTest, AbortTasks) {
       id,
       new MockIndexedDBDatabaseCallbacks(),
       scope,
-      indexed_db::TRANSACTION_READ_ONLY,
+      GetParam(),
       db_,
       new IndexedDBFakeBackingStore::FakeTransaction(commit_failure));
   db_->TransactionCreated(transaction);
@@ -150,8 +163,69 @@ TEST_F(IndexedDBTransactionTest, AbortTasks) {
   EXPECT_FALSE(observer.abort_task_called());
   transaction->Commit();
   EXPECT_TRUE(observer.abort_task_called());
+  EXPECT_EQ(IndexedDBTransaction::FINISHED, transaction->state());
+  EXPECT_FALSE(transaction->IsTimeoutTimerRunning());
 }
 
-}  // namespace
+TEST_P(IndexedDBTransactionTestMode, AbortPreemptive) {
+  const int64 id = 0;
+  const std::set<int64> scope;
+  const bool commit_success = true;
+  scoped_refptr<IndexedDBTransaction> transaction = new IndexedDBTransaction(
+      id,
+      new MockIndexedDBDatabaseCallbacks(),
+      scope,
+      GetParam(),
+      db_,
+      new IndexedDBFakeBackingStore::FakeTransaction(commit_success));
+  db_->TransactionCreated(transaction);
+
+  // No conflicting transactions, so coordinator will start it immediately:
+  EXPECT_EQ(IndexedDBTransaction::STARTED, transaction->state());
+  EXPECT_FALSE(transaction->IsTimeoutTimerRunning());
+
+  transaction->ScheduleTask(
+      IndexedDBDatabase::PREEMPTIVE_TASK,
+      base::Bind(&IndexedDBTransactionTest::DummyOperation,
+                 base::Unretained(this)));
+  EXPECT_EQ(0, transaction->pending_preemptive_events_);
+  transaction->AddPreemptiveEvent();
+  EXPECT_EQ(1, transaction->pending_preemptive_events_);
+
+  RunPostedTasks();
+
+  transaction->Abort();
+  EXPECT_EQ(IndexedDBTransaction::FINISHED, transaction->state());
+  EXPECT_FALSE(transaction->IsTimeoutTimerRunning());
+  EXPECT_EQ(0, transaction->pending_preemptive_events_);
+  EXPECT_TRUE(transaction->preemptive_task_queue_.empty());
+  EXPECT_TRUE(transaction->task_queue_.empty());
+  EXPECT_FALSE(transaction->HasPendingTasks());
+  EXPECT_EQ(transaction->diagnostics().tasks_completed,
+            transaction->diagnostics().tasks_scheduled);
+  EXPECT_FALSE(transaction->should_process_queue_);
+  EXPECT_TRUE(transaction->backing_store_transaction_begun_);
+  EXPECT_TRUE(transaction->used_);
+  EXPECT_FALSE(transaction->commit_pending_);
+
+  // This task will be ignored.
+  transaction->ScheduleTask(base::Bind(
+      &IndexedDBTransactionTest::DummyOperation, base::Unretained(this)));
+  EXPECT_EQ(IndexedDBTransaction::FINISHED, transaction->state());
+  EXPECT_FALSE(transaction->IsTimeoutTimerRunning());
+  EXPECT_FALSE(transaction->HasPendingTasks());
+  EXPECT_EQ(transaction->diagnostics().tasks_completed,
+            transaction->diagnostics().tasks_scheduled);
+}
+
+static const indexed_db::TransactionMode kTestModes[] = {
+  indexed_db::TRANSACTION_READ_ONLY,
+  indexed_db::TRANSACTION_READ_WRITE,
+  indexed_db::TRANSACTION_VERSION_CHANGE
+};
+
+INSTANTIATE_TEST_CASE_P(IndexedDBTransactions,
+                        IndexedDBTransactionTestMode,
+                        ::testing::ValuesIn(kTestModes));
 
 }  // namespace content

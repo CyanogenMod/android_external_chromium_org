@@ -33,7 +33,6 @@ class NetLog;
 
 namespace apps {
 
-class ShellAppsClient;
 class ShellBrowserContext;
 class ShellDesktopController;
 class ShellExtensionsClient;
@@ -75,7 +74,6 @@ class ShellBrowserMainParts : public content::BrowserMainParts,
   scoped_ptr<ShellExtensionsClient> extensions_client_;
   scoped_ptr<extensions::ShellExtensionsBrowserClient>
       extensions_browser_client_;
-  scoped_ptr<ShellAppsClient> apps_client_;
   scoped_ptr<net::NetLog> net_log_;
 
   scoped_ptr<content::ShellDevToolsDelegate> devtools_delegate_;
@@ -85,6 +83,10 @@ class ShellBrowserMainParts : public content::BrowserMainParts,
 
   // For running app browsertests.
   const content::MainFunctionParams parameters_;
+
+  // If true, indicates the main message loop should be run
+  // in MainMessageLoopRun. If false, it has already been run.
+  bool run_message_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellBrowserMainParts);
 };

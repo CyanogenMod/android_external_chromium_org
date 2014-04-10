@@ -76,24 +76,20 @@ cr.define('appList.startPage', function() {
   }
 
   /**
-   * Invoked when the hotword recognition should start.
+   * Sets the architecture of NaCl module to be loaded for hotword.
+   * @param {string} arch The architecture.
    */
-  function startHotwordRecognition() {
-    speechManager.startHotwordRecognition();
-  }
-
-  /**
-   * Invoked when the hotword recognition should stop.
-   */
-  function stopHotwordRecognition() {
-    speechManager.stopHotwordRecognition();
+  function setNaclArch(arch) {
+    speechManager.setNaclArch(arch);
   }
 
   /**
    * Invoked when the app-list bubble is shown.
+   *
+   * @param {boolean} hotwordEnabled Whether the hotword is enabled or not.
    */
-  function onAppListShown() {
-    speechManager.onShown();
+  function onAppListShown(hotwordEnabled) {
+    speechManager.onShown(hotwordEnabled);
   }
 
   /**
@@ -115,8 +111,7 @@ cr.define('appList.startPage', function() {
     initialize: initialize,
     setRecommendedApps: setRecommendedApps,
     setHotwordEnabled: setHotwordEnabled,
-    startHotwordRecognition: startHotwordRecognition,
-    stopHotwordRecognition: stopHotwordRecognition,
+    setNaclArch: setNaclArch,
     onAppListShown: onAppListShown,
     onAppListHidden: onAppListHidden,
     toggleSpeechRecognition: toggleSpeechRecognition

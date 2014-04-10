@@ -12,12 +12,14 @@
 #include "base/strings/string_util.h"
 #include "chromeos/dbus/bluetooth_adapter_client.h"
 #include "chromeos/dbus/bluetooth_device_client.h"
+#include "chromeos/dbus/bluetooth_gatt_service_client.h"
 #include "chromeos/dbus/bluetooth_input_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "dbus/bus.h"
 #include "device/bluetooth/bluetooth_adapter_chromeos.h"
 #include "device/bluetooth/bluetooth_pairing_chromeos.h"
 #include "device/bluetooth/bluetooth_profile_chromeos.h"
+#include "device/bluetooth/bluetooth_remote_gatt_service_chromeos.h"
 #include "device/bluetooth/bluetooth_socket.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
@@ -119,9 +121,43 @@ BluetoothDeviceChromeOS::BluetoothDeviceChromeOS(
       object_path_(object_path),
       num_connecting_calls_(0),
       weak_ptr_factory_(this) {
+  DBusThreadManager::Get()->GetBluetoothGattServiceClient()->AddObserver(this);
+
+  // Add all known GATT services.
+  const std::vector<dbus::ObjectPath> gatt_services =
+      DBusThreadManager::Get()->GetBluetoothGattServiceClient()->GetServices();
+  for (std::vector<dbus::ObjectPath>::const_iterator it = gatt_services.begin();
+       it != gatt_services.end(); ++it) {
+    GattServiceAdded(*it);
+  }
 }
 
 BluetoothDeviceChromeOS::~BluetoothDeviceChromeOS() {
+  DBusThreadManager::Get()->GetBluetoothGattServiceClient()->
+      RemoveObserver(this);
+
+  // Copy the GATT services list here and clear the original so that when we
+  // send GattServiceRemoved(), GetGattServices() returns no services.
+  GattServiceMap gatt_services = gatt_services_;
+  gatt_services_.clear();
+  for (GattServiceMap::iterator iter = gatt_services.begin();
+       iter != gatt_services.end(); ++iter) {
+    FOR_EACH_OBSERVER(BluetoothDevice::Observer, observers_,
+                      GattServiceRemoved(this, iter->second));
+    delete iter->second;
+  }
+}
+
+void BluetoothDeviceChromeOS::AddObserver(
+    device::BluetoothDevice::Observer* observer) {
+  DCHECK(observer);
+  observers_.AddObserver(observer);
+}
+
+void BluetoothDeviceChromeOS::RemoveObserver(
+    device::BluetoothDevice::Observer* observer) {
+  DCHECK(observer);
+  observers_.RemoveObserver(observer);
 }
 
 uint32 BluetoothDeviceChromeOS::GetBluetoothClass() const {
@@ -219,7 +255,15 @@ BluetoothDeviceChromeOS::UUIDList BluetoothDeviceChromeOS::GetUUIDs() const {
           GetProperties(object_path_);
   DCHECK(properties);
 
-  return properties->uuids.value();
+  std::vector<device::BluetoothUUID> uuids;
+  const std::vector<std::string> &dbus_uuids = properties->uuids.value();
+  for (std::vector<std::string>::const_iterator iter = dbus_uuids.begin();
+       iter != dbus_uuids.end(); ++iter) {
+    device::BluetoothUUID uuid(*iter);
+    DCHECK(uuid.IsValid());
+    uuids.push_back(uuid);
+  }
+  return uuids;
 }
 
 bool BluetoothDeviceChromeOS::ExpectingPinCode() const {
@@ -344,7 +388,7 @@ void BluetoothDeviceChromeOS::Forget(const ErrorCallback& error_callback) {
 }
 
 void BluetoothDeviceChromeOS::ConnectToService(
-    const std::string& service_uuid,
+    const device::BluetoothUUID& service_uuid,
     const SocketCallback& callback) {
   // TODO(keybuk): implement
   callback.Run(scoped_refptr<device::BluetoothSocket>());
@@ -353,15 +397,15 @@ void BluetoothDeviceChromeOS::ConnectToService(
 void BluetoothDeviceChromeOS::ConnectToProfile(
     device::BluetoothProfile* profile,
     const base::Closure& callback,
-    const ErrorCallback& error_callback) {
+    const ConnectToProfileErrorCallback& error_callback) {
   BluetoothProfileChromeOS* profile_chromeos =
       static_cast<BluetoothProfileChromeOS*>(profile);
   VLOG(1) << object_path_.value() << ": Connecting profile: "
-          << profile_chromeos->uuid();
+          << profile_chromeos->uuid().canonical_value();
   DBusThreadManager::Get()->GetBluetoothDeviceClient()->
       ConnectProfile(
           object_path_,
-          profile_chromeos->uuid(),
+          profile_chromeos->uuid().canonical_value(),
           base::Bind(
               &BluetoothDeviceChromeOS::OnConnectProfile,
               weak_ptr_factory_.GetWeakPtr(),
@@ -401,6 +445,53 @@ void BluetoothDeviceChromeOS::EndPairing() {
 
 BluetoothPairingChromeOS* BluetoothDeviceChromeOS::GetPairing() const {
   return pairing_.get();
+}
+
+void BluetoothDeviceChromeOS::GattServiceAdded(
+    const dbus::ObjectPath& object_path) {
+  if (GetGattService(object_path.value())) {
+    VLOG(1) << "Remote GATT service already exists: " << object_path.value();
+    return;
+  }
+
+  BluetoothGattServiceClient::Properties* properties =
+      DBusThreadManager::Get()->GetBluetoothGattServiceClient()->
+          GetProperties(object_path);
+  DCHECK(properties);
+  if (properties->device.value() != object_path_) {
+    VLOG(2) << "Remote GATT service does not belong to this device.";
+    return;
+  }
+
+  VLOG(1) << "Adding new remote GATT service for device: " << GetAddress();
+
+  BluetoothRemoteGattServiceChromeOS* service =
+      new BluetoothRemoteGattServiceChromeOS(this, object_path);
+  gatt_services_[service->GetIdentifier()] = service;
+  DCHECK(service->object_path() == object_path);
+  DCHECK(service->GetUUID().IsValid());
+
+  FOR_EACH_OBSERVER(device::BluetoothDevice::Observer, observers_,
+                    GattServiceAdded(this, service));
+}
+
+void BluetoothDeviceChromeOS::GattServiceRemoved(
+    const dbus::ObjectPath& object_path) {
+  GattServiceMap::iterator iter = gatt_services_.find(object_path.value());
+  if (iter == gatt_services_.end()) {
+    VLOG(2) << "Unknown GATT service removed: " << object_path.value();
+    return;
+  }
+
+  VLOG(1) << "Removing remote GATT service from device: " << GetAddress();
+
+  BluetoothRemoteGattServiceChromeOS* service =
+      static_cast<BluetoothRemoteGattServiceChromeOS*>(iter->second);
+  DCHECK(service->object_path() == object_path);
+  gatt_services_.erase(iter);
+  FOR_EACH_OBSERVER(device::BluetoothDevice::Observer, observers_,
+                    GattServiceRemoved(this, service));
+  delete service;
 }
 
 void BluetoothDeviceChromeOS::ConnectInternal(
@@ -567,21 +658,21 @@ void BluetoothDeviceChromeOS::OnConnectProfile(
   BluetoothProfileChromeOS* profile_chromeos =
       static_cast<BluetoothProfileChromeOS*>(profile);
   VLOG(1) << object_path_.value() << ": Profile connected: "
-          << profile_chromeos->uuid();
+          << profile_chromeos->uuid().canonical_value();
   callback.Run();
 }
 
 void BluetoothDeviceChromeOS::OnConnectProfileError(
     device::BluetoothProfile* profile,
-    const ErrorCallback& error_callback,
+    const ConnectToProfileErrorCallback& error_callback,
     const std::string& error_name,
     const std::string& error_message) {
   BluetoothProfileChromeOS* profile_chromeos =
       static_cast<BluetoothProfileChromeOS*>(profile);
   VLOG(1) << object_path_.value() << ": Profile connection failed: "
-          << profile_chromeos->uuid() << ": "
+          << profile_chromeos->uuid().canonical_value() << ": "
           << error_name << ": " << error_message;
-  error_callback.Run();
+  error_callback.Run(error_message);
 }
 
 }  // namespace chromeos

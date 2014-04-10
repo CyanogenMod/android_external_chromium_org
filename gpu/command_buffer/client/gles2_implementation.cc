@@ -67,8 +67,8 @@ GLES2Implementation::GLStaticState::IntState::IntState()
       max_vertex_texture_image_units(0),
       max_vertex_uniform_vectors(0),
       num_compressed_texture_formats(0),
-      num_shader_binary_formats(0) {
-}
+      num_shader_binary_formats(0),
+      bind_generates_resource_chromium(0) {}
 
 GLES2Implementation::SingleThreadChecker::SingleThreadChecker(
     GLES2Implementation* gles2_implementation)
@@ -201,6 +201,16 @@ bool GLES2Implementation::Initialize(
       reserved_ids_[0],
       reserved_ids_[1]));
 
+  // GL_BIND_GENERATES_RESOURCE_CHROMIUM state must be the same
+  // on Client & Service.
+  if (static_state_.int_state.bind_generates_resource_chromium !=
+      (share_group_->bind_generates_resource() ? 1 : 0)) {
+    SetGLError(GL_INVALID_OPERATION,
+               "Initialize",
+               "Service bind_generates_resource mismatch.");
+    return false;
+  }
+
   return true;
 }
 
@@ -219,6 +229,7 @@ bool GLES2Implementation::QueryAndCacheStaticState() {
     GL_MAX_VERTEX_UNIFORM_VECTORS,
     GL_NUM_COMPRESSED_TEXTURE_FORMATS,
     GL_NUM_SHADER_BINARY_FORMATS,
+    GL_BIND_GENERATES_RESOURCE_CHROMIUM,
   };
 
   GetMultipleIntegervState integerv_state(
@@ -2826,12 +2837,44 @@ void GLES2Implementation::SetSwapBuffersCompleteCallback(
   swap_buffers_complete_callback_ = swap_buffers_complete_callback;
 }
 
-void GLES2Implementation::ScheduleOverlayPlane(int plane_z_order,
-                                               unsigned plane_transform,
-                                               unsigned overlay_texture_id,
-                                               const gfx::Rect& display_bounds,
-                                               const gfx::RectF& uv_rect) {
-  NOTREACHED() << "Overlay supported isn't finished.";
+static GLenum GetGLESOverlayTransform(gfx::OverlayTransform plane_transform) {
+  switch (plane_transform) {
+    case gfx::OVERLAY_TRANSFORM_INVALID:
+      break;
+    case gfx::OVERLAY_TRANSFORM_NONE:
+      return GL_OVERLAY_TRANSFORM_NONE_CHROMIUM;
+    case gfx::OVERLAY_TRANSFORM_FLIP_HORIZONTAL:
+      return GL_OVERLAY_TRANSFORM_FLIP_HORIZONTAL_CHROMIUM;
+    case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL:
+      return GL_OVERLAY_TRANSFORM_FLIP_VERTICAL_CHROMIUM;
+    case gfx::OVERLAY_TRANSFORM_ROTATE_90:
+      return GL_OVERLAY_TRANSFORM_ROTATE_90_CHROMIUM;
+    case gfx::OVERLAY_TRANSFORM_ROTATE_180:
+      return GL_OVERLAY_TRANSFORM_ROTATE_180_CHROMIUM;
+    case gfx::OVERLAY_TRANSFORM_ROTATE_270:
+      return GL_OVERLAY_TRANSFORM_ROTATE_270_CHROMIUM;
+  }
+  NOTREACHED();
+  return GL_OVERLAY_TRANSFORM_NONE_CHROMIUM;
+}
+
+void GLES2Implementation::ScheduleOverlayPlane(
+    int plane_z_order,
+    gfx::OverlayTransform plane_transform,
+    unsigned overlay_texture_id,
+    const gfx::Rect& display_bounds,
+    const gfx::RectF& uv_rect) {
+  ScheduleOverlayPlaneCHROMIUM(plane_z_order,
+                               GetGLESOverlayTransform(plane_transform),
+                               overlay_texture_id,
+                               display_bounds.x(),
+                               display_bounds.y(),
+                               display_bounds.width(),
+                               display_bounds.height(),
+                               uv_rect.x(),
+                               uv_rect.y(),
+                               uv_rect.width(),
+                               uv_rect.height());
 }
 
 void GLES2Implementation::OnSwapBuffersComplete() {

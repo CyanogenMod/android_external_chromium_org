@@ -18,13 +18,13 @@
 #include "base/memory/weak_ptr.h"
 #include "cc/layers/delegated_frame_provider.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
+#include "cc/resources/single_release_callback.h"
 #include "cc/resources/texture_mailbox.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/compositor/image_transport_factory.h"
 #include "content/browser/compositor/owned_mailbox.h"
 #include "content/browser/renderer_host/delegated_frame_evictor.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
-#include "content/browser/renderer_host/software_frame_manager.h"
 #include "content/common/content_export.h"
 #include "content/common/cursors/webcursor.h"
 #include "content/common/gpu/client/gl_helper.h"
@@ -99,7 +99,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       public aura::client::CursorClientObserver,
       public ImageTransportFactoryObserver,
       public BrowserAccessibilityDelegate,
-      public SoftwareFrameManagerClient,
       public DelegatedFrameEvictorClient,
       public base::SupportsWeakPtr<RenderWidgetHostViewAura>,
       public cc::DelegatedFrameResourceCollectionClient {
@@ -329,11 +328,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnHostMoved(const aura::WindowTreeHost* host,
                            const gfx::Point& new_origin) OVERRIDE;
 
-  // SoftwareFrameManagerClient implementation:
-  virtual void SoftwareFrameWasFreed(
-      uint32 output_surface_id, unsigned frame_id) OVERRIDE;
-  virtual void ReleaseReferencesToSoftwareFrame() OVERRIDE;
-
   bool CanCopyToBitmap() const;
 
   void OnTextInputStateChanged(const ViewHostMsg_TextInputState_Params& params);
@@ -371,7 +365,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Exposed for tests.
   aura::Window* window() { return window_; }
-  gfx::Size current_frame_size() const { return current_frame_size_; }
+  gfx::Size current_frame_size_in_dip() const {
+    return current_frame_size_in_dip_;
+  }
   void LockResources();
   void UnlockResources();
 
@@ -444,7 +440,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Checks if the resize lock can be released because we received an new frame.
   void CheckResizeLock();
 
-  void UpdateExternalTexture();
   ui::InputMethod* GetInputMethod() const;
 
   // Returns whether the widget needs an input grab to work properly.
@@ -481,10 +476,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Called prior to removing |window_| from a WindowEventDispatcher.
   void RemovingFromRootWindow();
-
-  // Called after commit for the last reference to the texture going away
-  // after it was released as the frontbuffer.
-  void SetSurfaceNotInUseByCompositor(scoped_refptr<ui::Texture>);
 
   // Called after async thumbnailer task completes.  Scales and crops the result
   // of the copy.
@@ -540,28 +531,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Converts |rect| from screen coordinate to window coordinate.
   gfx::Rect ConvertRectFromScreen(const gfx::Rect& rect) const;
 
-  typedef base::Callback<void(bool, const scoped_refptr<ui::Texture>&)>
-      BufferPresentedCallback;
-
-  // The common entry point for buffer updates from renderer
-  // and GPU process.
-  void BuffersSwapped(const gfx::Size& surface_size,
-                      const gfx::Rect& damage_rect,
-                      float surface_scale_factor,
-                      const gpu::Mailbox& mailbox,
-                      const std::vector<ui::LatencyInfo>& latency_info,
-                      const BufferPresentedCallback& ack_callback);
-
-  bool SwapBuffersPrepare(const gfx::Rect& surface_rect,
-                          float surface_scale_factor,
-                          const gfx::Rect& damage_rect,
-                          const gpu::Mailbox& mailbox,
-                          const BufferPresentedCallback& ack_callback);
-
-  void SwapBuffersCompleted(
-      const BufferPresentedCallback& ack_callback,
-      const scoped_refptr<ui::Texture>& texture_to_return);
-
   void SwapDelegatedFrame(
       uint32 output_surface_id,
       scoped_ptr<cc::DelegatedFrameData> frame_data,
@@ -575,15 +544,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // cc::DelegatedFrameProviderClient implementation.
   virtual void UnusedResourcesAreAvailable() OVERRIDE;
-
-  void SwapSoftwareFrame(uint32 output_surface_id,
-                         scoped_ptr<cc::SoftwareFrameData> frame_data,
-                         float frame_device_scale_factor,
-                         const std::vector<ui::LatencyInfo>& latency_info);
-  void SendSoftwareFrameAck(uint32 output_surface_id);
-  void SendReclaimSoftwareFrames();
-  void ReleaseSoftwareFrame(uint32 output_surface_id,
-                            unsigned software_frame_id);
 
   void DidReceiveFrameFromRenderer();
 
@@ -655,12 +615,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   std::vector<base::Closure> on_compositing_did_commit_callbacks_;
 
-  // The current frontbuffer texture.
-  scoped_refptr<ui::Texture> current_surface_;
-
-  // This holds the current software framebuffer, if any.
-  scoped_ptr<SoftwareFrameManager> software_frame_manager_;
-
   // The vsync manager we are observing for changes, if any.
   scoped_refptr<ui::CompositorVSyncManager> vsync_manager_;
 
@@ -672,12 +626,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // The number of delegated frame acks that are pending, to delay resource
   // returns until the acks are sent.
   int pending_delegated_ack_count_;
-
-  // The damage in the previously presented buffer.
-  SkRegion previous_damage_;
-
-  // Pending damage from previous frames that we skipped.
-  SkRegion skipped_damage_;
 
   // True after a delegated frame has been skipped, until a frame is not
   // skipped.
@@ -691,11 +639,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Provides delegated frame updates to the cc::DelegatedRendererLayer.
   scoped_refptr<cc::DelegatedFrameProvider> frame_provider_;
 
-  // The size of the last frame that was swapped (even if we skipped it).
-  // Used to determine when the skipped_damage_ needs to be reset due to
-  // size changes between front- and backbuffer.
-  gfx::Size last_swapped_surface_size_;
-  float last_swapped_surface_scale_factor_;
+  // The size and scale of the last software compositing frame that was swapped.
+  gfx::Size last_swapped_software_frame_size_;
+  float last_swapped_software_frame_scale_factor_;
 
   // If non-NULL we're in OnPaint() and this is the supplied canvas.
   gfx::Canvas* paint_canvas_;
@@ -715,11 +661,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // events vs. normal mouse move events.
   bool synthetic_move_sent_;
 
-  // Signals that the accelerated compositing has been turned on or off.
-  // This is used to signal to turn off the external texture as soon as the
-  // software backing store is updated.
-  bool accelerated_compositing_state_changed_;
-
   // This lock is the one waiting for a frame of the right size to come back
   // from the renderer/GPU process. It is set from the moment the aura window
   // got resized, to the moment we committed the renderer frame of the same
@@ -729,7 +670,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   scoped_ptr<ResizeLock> resize_lock_;
 
   // Keeps track of the current frame size.
-  gfx::Size current_frame_size_;
+  gfx::Size current_frame_size_in_dip_;
 
   // This lock is for waiting for a front surface to become available to draw.
   scoped_refptr<ui::CompositorLock> released_front_lock_;
@@ -786,13 +727,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   std::vector<ui::LatencyInfo> software_latency_info_;
 
-  struct ReleasedFrameInfo {
-    ReleasedFrameInfo(uint32 output_id, unsigned software_frame_id)
-        : output_surface_id(output_id), frame_id(software_frame_id) {}
-    uint32 output_surface_id;
-    unsigned frame_id;
-  };
-  scoped_ptr<ReleasedFrameInfo> released_software_frame_;
   scoped_ptr<DelegatedFrameEvictor> delegated_frame_evictor_;
 
   scoped_ptr<aura::client::ScopedTooltipDisabler> tooltip_disabler_;

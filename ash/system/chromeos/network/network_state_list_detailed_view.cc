@@ -51,9 +51,7 @@ using chromeos::NetworkStateHandler;
 using chromeos::NetworkTypePattern;
 
 namespace ash {
-namespace internal {
 namespace tray {
-
 namespace {
 
 // Delay between scan requests.
@@ -126,7 +124,7 @@ class NetworkStateListDetailedView::InfoBubble
     set_use_focusless(true);
     set_parent_window(ash::Shell::GetContainer(
         anchor->GetWidget()->GetNativeWindow()->GetRootWindow(),
-        ash::internal::kShellWindowId_SettingBubbleContainer));
+        ash::kShellWindowId_SettingBubbleContainer));
     SetLayoutManager(new views::FillLayout());
     AddChildView(content);
   }
@@ -407,8 +405,15 @@ void NetworkStateListDetailedView::CreateNetworkExtra() {
   }
 
   CreateSettingsEntry();
-  DCHECK(settings_ || proxy_settings_);
-  bottom_row->AddChildView(settings_ ? settings_ : proxy_settings_);
+
+  // Both settings_ and proxy_settings_ can be NULL. This happens when
+  // we're logged in but showing settings page is not enabled.
+  // Example: supervised user creation flow where user session is active
+  // but all action happens on the login window.
+  // Allowing opening proxy settigns dialog will break assumption in
+  //  SystemTrayDelegateChromeOS::ChangeProxySettings(), see CHECK.
+  if (settings_ || proxy_settings_)
+    bottom_row->AddChildView(settings_ ? settings_ : proxy_settings_);
 
   AddChildView(bottom_row);
 }
@@ -731,11 +736,19 @@ void NetworkStateListDetailedView::UpdateNetworkExtra() {
 
 void NetworkStateListDetailedView::CreateSettingsEntry() {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  bool show_settings = ash::Shell::GetInstance()->
+      system_tray_delegate()->ShouldShowSettings();
   if (login_ != user::LOGGED_IN_NONE) {
-    // Settings, only if logged in.
-    settings_ = new TrayPopupLabelButton(
-        this, rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_NETWORK_SETTINGS));
-  } else {
+    // Allow user access settings only if user is logged in
+    // and showing settings is allowed. There're situations (supervised user
+    // creation flow) when session is started but UI flow continues within
+    // login UI i.e. no browser window is yet avaialable.
+    if (show_settings) {
+      settings_ = new TrayPopupLabelButton(
+          this, rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_NETWORK_SETTINGS));
+    }
+  } else  {
+    // Allow users to change proxy settings only when not logged in.
     proxy_settings_ = new TrayPopupLabelButton(
         this,
         rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_NETWORK_PROXY_SETTINGS));
@@ -834,5 +847,4 @@ void NetworkStateListDetailedView::ToggleMobile() {
 }
 
 }  // namespace tray
-}  // namespace internal
 }  // namespace ash

@@ -35,6 +35,7 @@
         'mojo_common_unittests',
         'mojo_js',
         'mojo_js_unittests',
+        'mojo_message_generator',
         'mojo_pepper_container_app',
         'mojo_public_test_utils',
         'mojo_public_bindings_unittests',
@@ -110,6 +111,8 @@
         'embedder/platform_channel_pair.h',
         'embedder/platform_channel_pair_posix.cc',
         'embedder/platform_channel_pair_win.cc',
+        'embedder/platform_channel_utils_posix.cc',
+        'embedder/platform_channel_utils_posix.h',
         'embedder/platform_handle.cc',
         'embedder/platform_handle.h',
         'embedder/scoped_platform_handle.h',
@@ -315,6 +318,7 @@
       'target_name': 'mojo_environment_chromium',
       'type': 'static_library',
       'dependencies': [
+        'mojo_common_lib',
         'mojo_environment_chromium_impl',
       ],
       'sources': [
@@ -377,6 +381,20 @@
       ],
     },
     {
+      'target_name': 'mojo_spy',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:base_static',
+        '../url/url.gyp:url_lib',
+        'mojo_service_manager',
+      ],
+      'sources': [
+        'spy/spy.cc',
+        'spy/spy.h',
+      ],
+    },
+    {
       'target_name': 'mojo_shell_lib',
       'type': 'static_library',
       'dependencies': [
@@ -390,11 +408,12 @@
         'mojo_system',
         'mojo_system_impl',
         'mojo_native_viewport_service',
+        'mojo_spy',
       ],
       'variables': {
         'mojom_base_output_dir': 'mojo',
       },
-      'includes': [ 'public/bindings/mojom_bindings_generator.gypi' ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'sources': [
         'shell/app_child_process.cc',
         'shell/app_child_process.h',
@@ -472,7 +491,7 @@
       'variables': {
         'mojom_base_output_dir': 'mojo',
       },
-      'includes': [ 'public/bindings/mojom_bindings_generator.gypi' ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'sources': [
         'service_manager/service_manager_unittest.cc',
         'service_manager/test.mojom',
@@ -516,6 +535,22 @@
       ],
       'sources': [
         'bindings/js/run_js_tests.cc',
+      ],
+    },
+    {
+      'target_name': 'mojo_message_generator',
+      'type': 'executable',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../testing/gtest.gyp:gtest',
+        'mojo_bindings',
+        'mojo_common_lib',
+        'mojo_environment_chromium',
+        'mojo_system',
+        'mojo_system_impl',
+      ],
+      'sources': [
+        'tools/message_generator.cc',
       ],
     },
   ],

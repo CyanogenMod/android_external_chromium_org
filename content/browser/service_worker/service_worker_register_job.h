@@ -34,12 +34,11 @@ class ServiceWorkerStorage;
 class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
  public:
   typedef base::Callback<void(ServiceWorkerStatusCode status,
-                              const scoped_refptr<ServiceWorkerRegistration>&
-                                  registration)> RegistrationCallback;
+                              ServiceWorkerRegistration* registration,
+                              ServiceWorkerVersion* version)>
+      RegistrationCallback;
 
-  ServiceWorkerRegisterJob(ServiceWorkerStorage* storage,
-                           EmbeddedWorkerRegistry* worker_registry,
-                           ServiceWorkerJobCoordinator* coordinator,
+  ServiceWorkerRegisterJob(base::WeakPtr<ServiceWorkerContextCore> context,
                            const GURL& pattern,
                            const GURL& script_url);
   virtual ~ServiceWorkerRegisterJob();
@@ -56,23 +55,56 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
   virtual RegistrationJobType GetType() OVERRIDE;
 
  private:
+  enum Phase {
+     INITIAL,
+     START,
+     REGISTER,
+     UPDATE,
+     INSTALL,
+     ACTIVATE,
+     COMPLETE
+  };
+
+  // Holds internal state of ServiceWorkerRegistrationJob, to compel use of the
+  // getter/setter functions.
+  struct Internal {
+    Internal();
+    ~Internal();
+    scoped_refptr<ServiceWorkerRegistration> registration;
+    scoped_refptr<ServiceWorkerVersion> pending_version;
+  };
+
+  void set_registration(ServiceWorkerRegistration* registration);
+  ServiceWorkerRegistration* registration();
+  void set_pending_version(ServiceWorkerVersion* version);
+  ServiceWorkerVersion* pending_version();
+
+  void SetPhase(Phase phase);
+
   void HandleExistingRegistrationAndContinue(
       ServiceWorkerStatusCode status,
       const scoped_refptr<ServiceWorkerRegistration>& registration);
   void RegisterAndContinue(ServiceWorkerStatusCode status);
-  void StartWorkerAndContinue(ServiceWorkerStatusCode status);
+  void UpdateAndContinue(ServiceWorkerStatusCode status);
+  void OnStartWorkerFinished(ServiceWorkerStatusCode status);
+  void InstallAndContinue();
+  void OnInstallFinished(ServiceWorkerStatusCode status);
+  void ActivateAndContinue();
   void Complete(ServiceWorkerStatusCode status);
 
-  // The ServiceWorkerStorage object should always outlive this.
-  ServiceWorkerStorage* storage_;
-  EmbeddedWorkerRegistry* worker_registry_;
-  ServiceWorkerJobCoordinator* coordinator_;
-  scoped_refptr<ServiceWorkerRegistration> registration_;
-  scoped_refptr<ServiceWorkerVersion> pending_version_;
+  void RunCallbacks(ServiceWorkerStatusCode status,
+                    ServiceWorkerRegistration* registration,
+                    ServiceWorkerVersion* version);
+
+  // The ServiceWorkerContextCore object should always outlive this.
+  base::WeakPtr<ServiceWorkerContextCore> context_;
+
   const GURL pattern_;
   const GURL script_url_;
   std::vector<RegistrationCallback> callbacks_;
   std::vector<int> pending_process_ids_;
+  Phase phase_;
+  Internal internal_;
   base::WeakPtrFactory<ServiceWorkerRegisterJob> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRegisterJob);

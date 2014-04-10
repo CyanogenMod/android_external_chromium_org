@@ -334,7 +334,7 @@ class BrowserView : public BrowserWindow,
       const std::string& extension_id) OVERRIDE;
   virtual void ShowBookmarkPrompt() OVERRIDE;
   virtual void ShowTranslateBubble(content::WebContents* contents,
-                                   TranslateTabHelper::TranslateStep step,
+                                   translate::TranslateStep step,
                                    TranslateErrors::Type error_type) OVERRIDE;
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   virtual void ShowOneClickSigninBubble(
@@ -573,17 +573,17 @@ class BrowserView : public BrowserWindow,
   void UpdateAcceleratorMetrics(const ui::Accelerator& accelerator,
                                 int command_id);
 
-  // Calls |method| which is either RenderFrameHost::Cut, ::Copy, or ::Paste,
+  // Calls |method| which is either WebContents::Cut, ::Copy, or ::Paste,
   // first trying the content WebContents, then the devtools WebContents, and
   // lastly the Views::Textfield if one is focused.
-  void DoCutCopyPaste(void (content::RenderFrameHost::*method)(),
+  void DoCutCopyPaste(void (content::WebContents::*method)(),
                       int command_id);
 
-  // Calls |method| which is either RenderFrameHost::Cut, ::Copy, or ::Paste on
+  // Calls |method| which is either WebContents::Cut, ::Copy, or ::Paste on
   // the given WebContents, returning true if it consumed the event.
   bool DoCutCopyPasteForWebContents(
       content::WebContents* contents,
-      void (content::RenderFrameHost::*method)());
+      void (content::WebContents::*method)());
 
   // Shows the next app-modal dialog box, if there is one to be shown, or moves
   // an existing showing one to the front.

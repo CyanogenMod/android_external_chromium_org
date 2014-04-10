@@ -22,8 +22,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
 
 const int kButtonHoverAlpha = 150;
@@ -39,8 +37,8 @@ const int kBackgroundOffset = (48 - kButtonHoverSize) / 2;
 OverflowButton::OverflowButton(views::ButtonListener* listener)
     : CustomButton(listener),
       bottom_image_(NULL) {
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  bottom_image_ = rb.GetImageNamed(IDR_AURA_LAUNCHER_OVERFLOW).ToImageSkia();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  bottom_image_ = rb.GetImageNamed(IDR_ASH_SHELF_OVERFLOW).ToImageSkia();
 
 
   SetAccessibilityFocusable(true);
@@ -171,5 +169,4 @@ void OverflowButton::OnPaint(gfx::Canvas* canvas) {
                        bounds.y() + ((bounds.height() - image->height()) / 2));
 }
 
-}  // namespace internal
 }  // namespace ash

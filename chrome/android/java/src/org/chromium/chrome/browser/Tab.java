@@ -21,7 +21,7 @@ import org.chromium.chrome.browser.contextmenu.ContextMenuParams;
 import org.chromium.chrome.browser.contextmenu.ContextMenuPopulator;
 import org.chromium.chrome.browser.contextmenu.ContextMenuPopulatorWrapper;
 import org.chromium.chrome.browser.contextmenu.EmptyChromeContextMenuItemDelegate;
-import org.chromium.chrome.browser.dom_distiller.FeedbackReporter;
+import org.chromium.chrome.browser.dom_distiller.DomDistillerFeedbackReporter;
 import org.chromium.chrome.browser.infobar.AutoLoginProcessor;
 import org.chromium.chrome.browser.infobar.InfoBarContainer;
 import org.chromium.chrome.browser.profiles.Profile;
@@ -129,7 +129,7 @@ public class Tab implements NavigationClient {
     private WebContentsObserverAndroid mWebContentsObserver;
     private VoiceSearchTabHelper mVoiceSearchTabHelper;
     private TabChromeWebContentsDelegateAndroid mWebContentsDelegate;
-    private FeedbackReporter mFeedbackReporter;
+    private DomDistillerFeedbackReporter mDomDistillerFeedbackReporter;
 
     /**
      * If this tab was opened from another tab, store the id of the tab that
@@ -142,6 +142,8 @@ public class Tab implements NavigationClient {
      * Whether the tab should be grouped with its parent tab.
      */
     private boolean mGroupedWithParent = true;
+
+    private boolean mIsClosing = false;
 
     /**
      * A default {@link ChromeContextMenuItemDelegate} that supports some of the context menu
@@ -810,8 +812,8 @@ public class Tab implements NavigationClient {
             mAppBannerManager = new AppBannerManager(this);
         }
 
-        if (FeedbackReporter.isEnabled() && mFeedbackReporter == null) {
-            mFeedbackReporter = new FeedbackReporter(this);
+        if (DomDistillerFeedbackReporter.isEnabled() && mDomDistillerFeedbackReporter == null) {
+            mDomDistillerFeedbackReporter = new DomDistillerFeedbackReporter(this);
         }
 
         for (TabObserver observer : mObservers) observer.onContentChanged(this);
@@ -885,6 +887,20 @@ public class Tab implements NavigationClient {
     @CalledByNative
     public boolean loadIfNeeded() {
         return false;
+    }
+
+    /**
+     * @return Whether or not the tab is in the closing process.
+     */
+    public boolean isClosing() {
+        return mIsClosing;
+    }
+
+    /**
+     * @param closing Whether or not the tab is in the closing process.
+     */
+    public void setClosing(boolean closing) {
+        mIsClosing = closing;
     }
 
     /**
@@ -1010,18 +1026,19 @@ public class Tab implements NavigationClient {
     private void swapWebContents(
             final long newWebContents, boolean didStartLoad, boolean didFinishLoad) {
         swapContentView(ContentView.newInstance(mContext, newWebContents, getWindowAndroid()),
-                false);
-        for (TabObserver observer : mObservers) {
-            observer.onWebContentsSwapped(this, didStartLoad, didFinishLoad);
-        }
+                false, didStartLoad, didFinishLoad);
     }
 
     /**
      * Called to swap out the current view with the one passed in.
      * @param view The content view that should be swapped into the tab.
      * @param deleteOldNativeWebContents Whether to delete the native web contents of old view.
+     * @param didStartLoad Whether WebContentsObserver::DidStartProvisionalLoadForFrame() has
+     *     already been called.
+     * @param didFinishLoad Whether WebContentsObserver::DidFinishLoad() has already been called.
      */
-    protected void swapContentView(ContentView view, boolean deleteOldNativeWebContents) {
+    protected void swapContentView(ContentView view, boolean deleteOldNativeWebContents,
+            boolean didStartLoad, boolean didFinishLoad) {
         int originalWidth = 0;
         int originalHeight = 0;
         if (mContentViewCore != null) {
@@ -1043,6 +1060,9 @@ public class Tab implements NavigationClient {
         mContentViewCore.attachImeAdapter();
         for (TabObserver observer : mObservers) observer.onContentChanged(this);
         destroyNativePageInternal(previousNativePage);
+        for (TabObserver observer : mObservers) {
+            observer.onWebContentsSwapped(this, didStartLoad, didFinishLoad);
+        }
     }
 
     @CalledByNative

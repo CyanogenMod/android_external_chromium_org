@@ -17,6 +17,7 @@
 #include "dbus/object_path.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_profile.h"
+#include "device/bluetooth/bluetooth_uuid.h"
 
 namespace dbus {
 
@@ -30,8 +31,8 @@ namespace chromeos {
 // Chrome OS platform.
 class CHROMEOS_EXPORT BluetoothProfileChromeOS
     : public device::BluetoothProfile,
-      private device::BluetoothAdapter::Observer,
-      private BluetoothProfileServiceProvider::Delegate {
+      public device::BluetoothAdapter::Observer,
+      public BluetoothProfileServiceProvider::Delegate {
  public:
   // BluetoothProfile override.
   virtual void Unregister() OVERRIDE;
@@ -39,7 +40,7 @@ class CHROMEOS_EXPORT BluetoothProfileChromeOS
       const ConnectionCallback& callback) OVERRIDE;
 
   // Return the UUID of the profile.
-  const std::string& uuid() const { return uuid_; }
+  const device::BluetoothUUID& uuid() const { return uuid_; }
 
  private:
   friend class BluetoothProfile;
@@ -50,7 +51,7 @@ class CHROMEOS_EXPORT BluetoothProfileChromeOS
   // Called by BluetoothProfile::Register to initialize the profile object
   // asynchronously. |uuid|, |options| and |callback| are the arguments to
   // BluetoothProfile::Register.
-  void Init(const std::string& uuid,
+  void Init(const device::BluetoothUUID& uuid,
             const device::BluetoothProfile::Options& options,
             const ProfileCallback& callback);
 
@@ -105,7 +106,7 @@ class CHROMEOS_EXPORT BluetoothProfileChromeOS
       scoped_ptr<dbus::FileDescriptor> fd);
 
   // UUID of the profile passed during initialization.
-  std::string uuid_;
+  device::BluetoothUUID uuid_;
 
   // Copy of the profile options passed during initialization.
   BluetoothProfileManagerClient::Options options_;

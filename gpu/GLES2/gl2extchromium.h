@@ -351,6 +351,10 @@ typedef void (GL_APIENTRYP PFNGLBLITFRAMEBUFFERCHROMIUMPROC) (GLint srcX0, GLint
 #endif
 #endif  /* GL_CHROMIUM_async_pixel_transfers */
 
+#ifndef GL_BIND_GENERATES_RESOURCE_CHROMIUM
+#define GL_BIND_GENERATES_RESOURCE_CHROMIUM 0x9244
+#endif
+
 /* GL_CHROMIUM_copy_texture */
 #ifndef GL_CHROMIUM_copy_texture
 #define GL_CHROMIUM_copy_texture 1
@@ -631,6 +635,62 @@ typedef void (GL_APIENTRYP PFNGLWAITSYNCPOINTCHROMIUMPROC) (GLuint sync_point);
 #define GL_RGB32F 0x8815
 #endif
 #endif /* GL_CHROMIUM_color_buffer_float_rgb */
+
+/* GL_CHROMIUM_schedule_overlay_plane */
+#ifndef GL_CHROMIUM_schedule_overlay_plane
+#define GL_CHROMIUM_schedule_overlay_plane 1
+
+#ifndef GL_OVERLAY_TRANSFORM_NONE_CHROMIUM
+#define GL_OVERLAY_TRANSFORM_NONE_CHROMIUM 0x9245
+#endif
+
+#ifndef GL_OVERLAY_TRANSFORM_FLIP_HORIZONTAL_CHROMIUM
+#define GL_OVERLAY_TRANSFORM_FLIP_HORIZONTAL_CHROMIUM 0x9246
+#endif
+
+#ifndef GL_OVERLAY_TRANSFORM_FLIP_VERTICAL_CHROMIUM
+#define GL_OVERLAY_TRANSFORM_FLIP_VERTICAL_CHROMIUM 0x9247
+#endif
+
+#ifndef GL_OVERLAY_TRANSFORM_ROTATE_90_CHROMIUM
+#define GL_OVERLAY_TRANSFORM_ROTATE_90_CHROMIUM 0x9248
+#endif
+
+#ifndef GL_OVERLAY_TRANSFORM_ROTATE_180_CHROMIUM
+#define GL_OVERLAY_TRANSFORM_ROTATE_180_CHROMIUM 0x9249
+#endif
+
+#ifndef GL_OVERLAY_TRANSFORM_ROTATE_270_CHROMIUM
+#define GL_OVERLAY_TRANSFORM_ROTATE_270_CHROMIUM 0x924A
+#endif
+
+#ifdef GL_GLEXT_PROTOTYPES
+GL_APICALL void GL_APIENTRY
+    glScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
+                                   GLenum plane_transform,
+                                   GLuint overlay_texture_id,
+                                   GLint bounds_x,
+                                   GLint bounds_y,
+                                   GLint bounds_width,
+                                   GLint bounds_height,
+                                   GLfloat uv_x,
+                                   GLfloat uv_y,
+                                   GLfloat uv_width,
+                                   GLfloat uv_height);
+#endif
+typedef void(GL_APIENTRYP PFNGLSCHEDULEOVERLAYPLANECHROMIUMPROC)(
+    GLint plane_z_order,
+    GLenum plane_transform,
+    GLuint overlay_texture_id,
+    GLint bounds_x,
+    GLint bounds_y,
+    GLint bounds_width,
+    GLint bounds_height,
+    GLfloat uv_x,
+    GLfloat uv_y,
+    GLfloat uv_width,
+    GLfloat uv_height);
+#endif /* GL_CHROMIUM_schedule_overlay_plane */
 
 #ifdef __cplusplus
 }

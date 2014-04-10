@@ -4,8 +4,8 @@
 
 #include "apps/shell/browser/shell_extensions_browser_client.h"
 
-#include "apps/common/api/generated_api.h"
 #include "apps/shell/browser/shell_app_sorting.h"
+#include "apps/shell/browser/shell_app_window_api.h"
 #include "apps/shell/browser/shell_extension_system_factory.h"
 #include "apps/shell/browser/shell_extension_web_contents_observer.h"
 #include "base/prefs/pref_service.h"
@@ -16,6 +16,7 @@
 #include "components/user_prefs/user_prefs.h"
 #include "extensions/browser/api/extensions_api_client.h"
 #include "extensions/browser/app_sorting.h"
+#include "extensions/browser/extension_function_registry.h"
 #include "extensions/browser/extension_host_delegate.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/common/api/generated_api.h"
@@ -178,9 +179,6 @@ bool ShellExtensionsBrowserClient::DidVersionUpdate(BrowserContext* context) {
   return false;
 }
 
-void ShellExtensionsBrowserClient::PermitExternalProtocolHandler() {
-}
-
 scoped_ptr<AppSorting> ShellExtensionsBrowserClient::CreateAppSorting() {
   return scoped_ptr<AppSorting>(new apps::ShellAppSorting);
 }
@@ -202,13 +200,15 @@ ShellExtensionsBrowserClient::GetExtensionSystemFactory() {
 
 void ShellExtensionsBrowserClient::RegisterExtensionFunctions(
     ExtensionFunctionRegistry* registry) const {
-  // Generated APIs from lower-level modules.
+  // Register core extension-system APIs.
   extensions::core_api::GeneratedFunctionRegistry::RegisterAll(registry);
-  apps::api::GeneratedFunctionRegistry::RegisterAll(registry);
 
   // TODO(rockot): Remove dependency on src/chrome once we have some core APIs
-  // moved out. See http://crbug.com/349042.
+  // moved out. Also clean up the comment below. See http://crbug.com/349042.
   extensions::api::GeneratedFunctionRegistry::RegisterAll(registry);
+
+  // Register our simplified implementation for chrome.app.window.create().
+  registry->RegisterFunction<ShellAppWindowCreateFunction>();
 }
 
 }  // namespace extensions

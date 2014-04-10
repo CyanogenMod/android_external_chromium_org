@@ -112,6 +112,7 @@ class SyncBackendHostImpl
       ChangeProcessor* change_processor) OVERRIDE;
   virtual void DeactivateDataType(syncer::ModelType type) OVERRIDE;
   virtual syncer::UserShare* GetUserShare() const OVERRIDE;
+  virtual syncer::SyncCoreProxy GetSyncCoreProxy() OVERRIDE;
   virtual Status GetDetailedStatus() OVERRIDE;
   virtual syncer::sessions::SyncSessionSnapshot
       GetLastSessionSnapshot() const OVERRIDE;
@@ -126,6 +127,10 @@ class SyncBackendHostImpl
   virtual SyncedDeviceTracker* GetSyncedDeviceTracker() const OVERRIDE;
   virtual void RequestBufferedProtocolEventsAndEnableForwarding() OVERRIDE;
   virtual void DisableProtocolEventForwarding() OVERRIDE;
+  virtual void GetAllNodesForTypes(
+      syncer::ModelTypeSet types,
+      base::Callback<void(const std::vector<syncer::ModelType>&,
+                          ScopedVector<base::ListValue>)> type) OVERRIDE;
   virtual base::MessageLoop* GetSyncLoopForTesting() OVERRIDE;
 
  protected:
@@ -162,7 +167,8 @@ class SyncBackendHostImpl
   virtual void HandleInitializationSuccessOnFrontendLoop(
     const syncer::WeakHandle<syncer::JsBackend> js_backend,
     const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>
-        debug_info_listener);
+        debug_info_listener,
+    syncer::SyncCoreProxy sync_core_proxy);
 
   // Downloading of control types failed and will be retried. Invokes the
   // frontend's sync configure retry method.
@@ -286,6 +292,9 @@ class SyncBackendHostImpl
   // of WeakHandle because |core_| is created on UI loop but released on
   // sync loop.
   scoped_refptr<SyncBackendHostCore> core_;
+
+  // A handle referencing the main interface for non-blocking sync types.
+  scoped_ptr<syncer::SyncCoreProxy> sync_core_proxy_;
 
   bool initialized_;
 

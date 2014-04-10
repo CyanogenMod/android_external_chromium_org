@@ -156,6 +156,19 @@ ContentSettingsObserver::ContentSettingsObserver(
       npapi_plugins_blocked_(false) {
   ClearBlockedContentSettings();
   render_frame->GetWebFrame()->setPermissionClient(this);
+
+  if (render_frame->GetRenderView()->GetMainRenderFrame() != render_frame) {
+    // Copy all the settings from the main render frame to avoid race conditions
+    // when initializing this data. See http://crbug.com/333308.
+    ContentSettingsObserver* parent = ContentSettingsObserver::Get(
+        render_frame->GetRenderView()->GetMainRenderFrame());
+    allow_displaying_insecure_content_ =
+        parent->allow_displaying_insecure_content_;
+    allow_running_insecure_content_ = parent->allow_running_insecure_content_;
+    temporarily_allowed_plugins_ = parent->temporarily_allowed_plugins_;
+    is_interstitial_page_ = parent->is_interstitial_page_;
+    npapi_plugins_blocked_ = parent->npapi_plugins_blocked_;
+  }
 }
 
 ContentSettingsObserver::~ContentSettingsObserver() {
@@ -231,100 +244,6 @@ void ContentSettingsObserver::DidCommitProvisionalLoad(bool is_new_navigation) {
   // this bug: http://code.google.com/p/chromium/issues/detail?id=79304
   DCHECK(frame->document().securityOrigin().toString() == "null" ||
          !url.SchemeIs(content::kDataScheme));
-}
-
-bool ContentSettingsObserver::allowDatabase(
-    blink::WebFrame* frame,
-    const blink::WebString& name,
-    const blink::WebString& display_name,
-    unsigned long estimated_size) {
-  return allowDatabase(name, display_name, estimated_size);
-}
-
-bool ContentSettingsObserver::allowFileSystem(blink::WebFrame* frame) {
-  return allowFileSystem();
-}
-
-bool ContentSettingsObserver::allowImage(blink::WebFrame* frame,
-                                         bool enabled_per_settings,
-                                         const blink::WebURL& image_url) {
-  return allowImage(enabled_per_settings, image_url);
-}
-
-bool ContentSettingsObserver::allowIndexedDB(
-    blink::WebFrame* frame,
-    const blink::WebString& name,
-    const blink::WebSecurityOrigin& origin) {
-  return allowIndexedDB(name, origin);
-}
-
-bool ContentSettingsObserver::allowPlugins(blink::WebFrame* frame,
-                                           bool enabled_per_settings) {
-  return allowPlugins(enabled_per_settings);
-}
-
-bool ContentSettingsObserver::allowScript(blink::WebFrame* frame,
-                                          bool enabled_per_settings) {
-  return allowScript(enabled_per_settings);
-}
-
-bool ContentSettingsObserver::allowScriptFromSource(
-    blink::WebFrame* frame,
-    bool enabled_per_settings,
-    const blink::WebURL& script_url) {
-  return allowScriptFromSource(enabled_per_settings, script_url);
-}
-
-bool ContentSettingsObserver::allowStorage(blink::WebFrame* frame, bool local) {
-  return allowStorage(local);
-}
-
-bool ContentSettingsObserver::allowReadFromClipboard(blink::WebFrame* frame,
-                                                     bool default_value) {
-  return allowReadFromClipboard(default_value);
-}
-
-bool ContentSettingsObserver::allowWriteToClipboard(blink::WebFrame* frame,
-                                                    bool default_value) {
-  return allowWriteToClipboard(default_value);
-}
-
-bool ContentSettingsObserver::allowWebComponents(blink::WebFrame* frame,
-                                                 bool default_value) {
-  return allowWebComponents(default_value);
-}
-
-bool ContentSettingsObserver::allowMutationEvents(blink::WebFrame* frame,
-                                                  bool default_value) {
-  return allowMutationEvents(default_value);
-}
-
-bool ContentSettingsObserver::allowPushState(blink::WebFrame* frame) {
-  return allowPushState();
-}
-
-void ContentSettingsObserver::didNotAllowPlugins(blink::WebFrame* frame) {
-  return didNotAllowPlugins();
-}
-
-void ContentSettingsObserver::didNotAllowScript(blink::WebFrame* frame) {
-  return didNotAllowScript();
-}
-
-bool ContentSettingsObserver::allowDisplayingInsecureContent(
-    blink::WebFrame* frame,
-    bool allowed_per_settings,
-    const blink::WebSecurityOrigin& context,
-    const blink::WebURL& url) {
-  return allowDisplayingInsecureContent(allowed_per_settings, context, url);
-}
-
-bool ContentSettingsObserver::allowRunningInsecureContent(
-    blink::WebFrame* frame,
-    bool allowed_per_settings,
-    const blink::WebSecurityOrigin& context,
-    const blink::WebURL& url) {
-  return allowRunningInsecureContent(allowed_per_settings, context, url);
 }
 
 bool ContentSettingsObserver::allowDatabase(const WebString& name,

@@ -15,6 +15,7 @@
 #include "content/child/worker_task_runner.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_sync_message_filter.h"
+#include "third_party/WebKit/public/platform/WebBlobInfo.h"
 #include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
 #include "third_party/WebKit/public/platform/WebIDBCursor.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabase.h"
@@ -24,6 +25,8 @@ struct IndexedDBDatabaseMetadata;
 struct IndexedDBMsg_CallbacksSuccessCursorContinue_Params;
 struct IndexedDBMsg_CallbacksSuccessCursorPrefetch_Params;
 struct IndexedDBMsg_CallbacksSuccessIDBCursor_Params;
+struct IndexedDBMsg_CallbacksSuccessValue_Params;
+struct IndexedDBMsg_CallbacksSuccessValueWithKey_Params;
 struct IndexedDBMsg_CallbacksUpgradeNeeded_Params;
 
 namespace blink {
@@ -129,6 +132,7 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
       int64 transaction_id,
       int64 object_store_id,
       const blink::WebData& value,
+      const blink::WebVector<blink::WebBlobInfo>& web_blob_info,
       const IndexedDBKey& key,
       blink::WebIDBDatabase::PutMode put_mode,
       blink::WebIDBCallbacks* callbacks,
@@ -204,14 +208,9 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
   void OnSuccessStringList(int32 ipc_thread_id,
                            int32 ipc_callbacks_id,
                            const std::vector<base::string16>& value);
-  void OnSuccessValue(int32 ipc_thread_id,
-                      int32 ipc_callbacks_id,
-                      const std::string& value);
-  void OnSuccessValueWithKey(int32 ipc_thread_id,
-                             int32 ipc_callbacks_id,
-                             const std::string& value,
-                             const IndexedDBKey& primary_key,
-                             const IndexedDBKeyPath& key_path);
+  void OnSuccessValue(const IndexedDBMsg_CallbacksSuccessValue_Params& p);
+  void OnSuccessValueWithKey(
+      const IndexedDBMsg_CallbacksSuccessValueWithKey_Params& p);
   void OnSuccessInteger(int32 ipc_thread_id,
                         int32 ipc_callbacks_id,
                         int64 value);

@@ -6,7 +6,8 @@
 
 #include <limits>
 
-#include "content/shell/common/test_runner/WebPreferences.h"
+#include "base/logging.h"
+#include "content/shell/common/test_runner/test_preferences.h"
 #include "content/shell/renderer/test_runner/MockWebSpeechInputController.h"
 #include "content/shell/renderer/test_runner/MockWebSpeechRecognizer.h"
 #include "content/shell/renderer/test_runner/TestInterfaces.h"
@@ -249,7 +250,8 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void AddWebPageOverlay();
   void RemoveWebPageOverlay();
   void Display();
-  void DisplayInvalidatedRegion();
+  void DisplayAsync();
+  void DisplayAsyncThen(v8::Handle<v8::Function> callback);
 
   bool GlobalFlag();
   void SetGlobalFlag(bool value);
@@ -480,8 +482,8 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
       .SetMethod("removeWebPageOverlay",
                  &TestRunnerBindings::RemoveWebPageOverlay)
       .SetMethod("display", &TestRunnerBindings::Display)
-      .SetMethod("displayInvalidatedRegion",
-                 &TestRunnerBindings::DisplayInvalidatedRegion)
+      .SetMethod("displayAsync", &TestRunnerBindings::DisplayAsync)
+      .SetMethod("displayAsyncThen", &TestRunnerBindings::DisplayAsyncThen)
 
       // Properties.
       .SetProperty("globalFlag", &TestRunnerBindings::GlobalFlag,
@@ -1236,9 +1238,14 @@ void TestRunnerBindings::Display() {
     runner_->Display();
 }
 
-void TestRunnerBindings::DisplayInvalidatedRegion() {
+void TestRunnerBindings::DisplayAsync() {
   if (runner_)
-    runner_->DisplayInvalidatedRegion();
+    runner_->DisplayAsync();
+}
+
+void TestRunnerBindings::DisplayAsyncThen(v8::Handle<v8::Function> callback) {
+  if (runner_)
+    runner_->DisplayAsyncThen(callback);
 }
 
 bool TestRunnerBindings::GlobalFlag() {
@@ -1499,6 +1506,10 @@ void TestRunner::SetTestIsRunning(bool running) {
   test_is_running_ = running;
 }
 
+void TestRunner::InvokeCallback(scoped_ptr<InvokeCallbackTask> task) {
+  delegate_->postTask(task.release());
+}
+
 bool TestRunner::shouldDumpEditingCallbacks() const {
   return dump_editting_callbacks_;
 }
@@ -1659,7 +1670,7 @@ WebFrame* TestRunner::topLoadingFrame() const {
 }
 
 void TestRunner::policyDelegateDone() {
-  BLINK_ASSERT(wait_until_done_);
+  DCHECK(wait_until_done_);
   delegate_->testFinished();
   wait_until_done_ = false;
 }
@@ -1696,13 +1707,13 @@ bool TestRunner::RequestPointerLock() {
           0);
       return true;
     case PointerLockWillRespondAsync:
-      BLINK_ASSERT(!pointer_locked_);
+      DCHECK(!pointer_locked_);
       return true;
     case PointerLockWillFailSync:
-      BLINK_ASSERT(!pointer_locked_);
+      DCHECK(!pointer_locked_);
       return false;
     default:
-      BLINK_ASSERT_NOT_REACHED();
+      NOTREACHED();
       return false;
   }
 }
@@ -2234,72 +2245,72 @@ void TestRunner::SetPointerLockWillRespondAsynchronously() {
 }
 
 void TestRunner::SetPopupBlockingEnabled(bool block_popups) {
-  delegate_->preferences()->javaScriptCanOpenWindowsAutomatically =
+  delegate_->preferences()->java_script_can_open_windows_automatically =
       !block_popups;
   delegate_->applyPreferences();
 }
 
 void TestRunner::SetJavaScriptCanAccessClipboard(bool can_access) {
-  delegate_->preferences()->javaScriptCanAccessClipboard = can_access;
+  delegate_->preferences()->java_script_can_access_clipboard = can_access;
   delegate_->applyPreferences();
 }
 
 void TestRunner::SetXSSAuditorEnabled(bool enabled) {
-  delegate_->preferences()->XSSAuditorEnabled = enabled;
+  delegate_->preferences()->xss_auditor_enabled = enabled;
   delegate_->applyPreferences();
 }
 
 void TestRunner::SetAllowUniversalAccessFromFileURLs(bool allow) {
-  delegate_->preferences()->allowUniversalAccessFromFileURLs = allow;
+  delegate_->preferences()->allow_universal_access_from_file_urls = allow;
   delegate_->applyPreferences();
 }
 
 void TestRunner::SetAllowFileAccessFromFileURLs(bool allow) {
-  delegate_->preferences()->allowFileAccessFromFileURLs = allow;
+  delegate_->preferences()->allow_file_access_from_file_urls = allow;
   delegate_->applyPreferences();
 }
 
 void TestRunner::OverridePreference(const std::string key,
                                     v8::Handle<v8::Value> value) {
-  WebPreferences* prefs = delegate_->preferences();
+  TestPreferences* prefs = delegate_->preferences();
   if (key == "WebKitDefaultFontSize") {
-    prefs->defaultFontSize = value->Int32Value();
+    prefs->default_font_size = value->Int32Value();
   } else if (key == "WebKitMinimumFontSize") {
-    prefs->minimumFontSize = value->Int32Value();
+    prefs->minimum_font_size = value->Int32Value();
   } else if (key == "WebKitDefaultTextEncodingName") {
-    prefs->defaultTextEncodingName = V8StringToWebString(value->ToString());
+    prefs->default_text_encoding_name = V8StringToWebString(value->ToString());
   } else if (key == "WebKitJavaScriptEnabled") {
-    prefs->javaScriptEnabled = value->BooleanValue();
+    prefs->java_script_enabled = value->BooleanValue();
   } else if (key == "WebKitSupportsMultipleWindows") {
-    prefs->supportsMultipleWindows = value->BooleanValue();
+    prefs->supports_multiple_windows = value->BooleanValue();
   } else if (key == "WebKitDisplayImagesKey") {
-    prefs->loadsImagesAutomatically = value->BooleanValue();
+    prefs->loads_images_automatically = value->BooleanValue();
   } else if (key == "WebKitPluginsEnabled") {
-    prefs->pluginsEnabled = value->BooleanValue();
+    prefs->plugins_enabled = value->BooleanValue();
   } else if (key == "WebKitJavaEnabled") {
-    prefs->javaEnabled = value->BooleanValue();
+    prefs->java_enabled = value->BooleanValue();
   } else if (key == "WebKitOfflineWebApplicationCacheEnabled") {
-    prefs->offlineWebApplicationCacheEnabled = value->BooleanValue();
+    prefs->offline_web_application_cache_enabled = value->BooleanValue();
   } else if (key == "WebKitTabToLinksPreferenceKey") {
-    prefs->tabsToLinks = value->BooleanValue();
+    prefs->tabs_to_links = value->BooleanValue();
   } else if (key == "WebKitWebGLEnabled") {
-    prefs->experimentalWebGLEnabled = value->BooleanValue();
+    prefs->experimental_webgl_enabled = value->BooleanValue();
   } else if (key == "WebKitCSSRegionsEnabled") {
-    prefs->experimentalCSSRegionsEnabled = value->BooleanValue();
+    prefs->experimental_css_regions_enabled = value->BooleanValue();
   } else if (key == "WebKitCSSGridLayoutEnabled") {
-    prefs->experimentalCSSGridLayoutEnabled = value->BooleanValue();
+    prefs->experimental_css_grid_layout_enabled = value->BooleanValue();
   } else if (key == "WebKitHyperlinkAuditingEnabled") {
-    prefs->hyperlinkAuditingEnabled = value->BooleanValue();
+    prefs->hyperlink_auditing_enabled = value->BooleanValue();
   } else if (key == "WebKitEnableCaretBrowsing") {
-    prefs->caretBrowsingEnabled = value->BooleanValue();
+    prefs->caret_browsing_enabled = value->BooleanValue();
   } else if (key == "WebKitAllowDisplayingInsecureContent") {
-    prefs->allowDisplayOfInsecureContent = value->BooleanValue();
+    prefs->allow_display_of_insecure_content = value->BooleanValue();
   } else if (key == "WebKitAllowRunningInsecureContent") {
-    prefs->allowRunningOfInsecureContent = value->BooleanValue();
+    prefs->allow_running_of_insecure_content = value->BooleanValue();
   } else if (key == "WebKitShouldRespectImageOrientation") {
-    prefs->shouldRespectImageOrientation = value->BooleanValue();
+    prefs->should_respect_image_orientation = value->BooleanValue();
   } else if (key == "WebKitWebAudioEnabled") {
-    BLINK_ASSERT(value->BooleanValue());
+    DCHECK(value->BooleanValue());
   } else {
     std::string message("Invalid name for preference: ");
     message.append(key);
@@ -2309,7 +2320,7 @@ void TestRunner::OverridePreference(const std::string key,
 }
 
 void TestRunner::SetPluginsEnabled(bool enabled) {
-  delegate_->preferences()->pluginsEnabled = enabled;
+  delegate_->preferences()->plugins_enabled = enabled;
   delegate_->applyPreferences();
 }
 
@@ -2574,11 +2585,19 @@ void TestRunner::RemoveWebPageOverlay() {
 }
 
 void TestRunner::Display() {
-  proxy_->display();
+  proxy_->display(base::Closure());
 }
 
-void TestRunner::DisplayInvalidatedRegion() {
-  proxy_->displayInvalidatedRegion();
+void TestRunner::DisplayAsync() {
+  proxy_->displayAsyncThen(base::Closure());
+}
+
+void TestRunner::DisplayAsyncThen(v8::Handle<v8::Function> callback) {
+  scoped_ptr<InvokeCallbackTask> task(
+      new InvokeCallbackTask(this, callback));
+  proxy_->displayAsyncThen(base::Bind(&TestRunner::InvokeCallback,
+                                      base::Unretained(this),
+                                      base::Passed(&task)));
 }
 
 void TestRunner::LocationChangeDone() {
@@ -2619,7 +2638,7 @@ void TestRunner::DidAcquirePointerLockInternal() {
 }
 
 void TestRunner::DidNotAcquirePointerLockInternal() {
-  BLINK_ASSERT(!pointer_locked_);
+  DCHECK(!pointer_locked_);
   pointer_locked_ = false;
   web_view_->didNotAcquirePointerLock();
 

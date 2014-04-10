@@ -21,6 +21,7 @@
 
 #if defined(OS_ANDROID)
 #include "base/message_loop/message_loop.h"
+#include "content/app/mojo/mojo_init.h"
 #include "content/common/url_schemes.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/test/nested_message_pump_android.h"
@@ -67,13 +68,23 @@ class ContentBrowserTestSuite : public ContentTestSuiteBase {
     RegisterPathProvider();
     ui::RegisterPathProvider();
     RegisterInProcessThreads();
+
+    InitializeMojo();
 #endif
 
     ContentTestSuiteBase::Initialize();
   }
 
+  virtual void Shutdown() OVERRIDE {
+    ContentTestSuiteBase::Shutdown();
+
 #if defined(OS_ANDROID)
-  scoped_ptr<ShellContentClient> content_client_;	
+    ShutdownMojo();
+#endif
+  }
+
+#if defined(OS_ANDROID)
+  scoped_ptr<ShellContentClient> content_client_;
   scoped_ptr<ShellContentBrowserClient> browser_content_client_;
 #endif
 

@@ -22,7 +22,7 @@ TouchscreenDelegateX11::TouchscreenDelegateX11()
 TouchscreenDelegateX11::~TouchscreenDelegateX11() {}
 
 void TouchscreenDelegateX11::AssociateTouchscreens(
-    OutputConfigurator::DisplayStateList* outputs) {
+    DisplayConfigurator::DisplayStateList* outputs) {
   int ndevices = 0;
   Atom valuator_x = XInternAtom(display_, "Abs MT Position X", False);
   Atom valuator_y = XInternAtom(display_, "Abs MT Position Y", False);
@@ -74,7 +74,7 @@ void TouchscreenDelegateX11::AssociateTouchscreens(
     if (width > 0.0 && height > 0.0 && is_direct_touch) {
       size_t k = 0;
       for (; k < outputs->size(); k++) {
-        OutputConfigurator::DisplayState* output = &(*outputs)[k];
+        DisplayConfigurator::DisplayState* output = &(*outputs)[k];
         if (output->touch_device_id != None)
           continue;
 
@@ -115,7 +115,7 @@ void TouchscreenDelegateX11::AssociateTouchscreens(
        it != no_match_touchscreen.end();
        it++) {
     for (size_t i = 0; i < outputs->size(); i++) {
-      if ((*outputs)[i].display->type() != OUTPUT_TYPE_INTERNAL &&
+      if ((*outputs)[i].display->type() != DISPLAY_CONNECTION_TYPE_INTERNAL &&
           (*outputs)[i].display->native_mode() != NULL &&
           (*outputs)[i].touch_device_id == None) {
         (*outputs)[i].touch_device_id = *it;
@@ -131,7 +131,7 @@ void TouchscreenDelegateX11::AssociateTouchscreens(
 
 void TouchscreenDelegateX11::ConfigureCTM(
     int touch_device_id,
-    const OutputConfigurator::CoordinateTransformation& ctm) {
+    const DisplayConfigurator::CoordinateTransformation& ctm) {
   VLOG(1) << "ConfigureCTM: id=" << touch_device_id << " scale=" << ctm.x_scale
           << "x" << ctm.y_scale << " offset=(" << ctm.x_offset << ", "
           << ctm.y_offset << ")";

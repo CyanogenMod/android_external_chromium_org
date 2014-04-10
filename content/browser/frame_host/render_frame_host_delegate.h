@@ -5,7 +5,11 @@
 #ifndef CONTENT_BROWSER_FRAME_HOST_RENDER_FRAME_HOST_DELEGATE_H_
 #define CONTENT_BROWSER_FRAME_HOST_RENDER_FRAME_HOST_DELEGATE_H_
 
+#include "base/basictypes.h"
 #include "content/common/content_export.h"
+#include "content/public/common/javascript_message_type.h"
+
+class GURL;
 
 namespace IPC {
 class Message;
@@ -23,6 +27,16 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // This is used to give the delegate a chance to filter IPC messages.
   virtual bool OnMessageReceived(RenderFrameHost* render_frame_host,
                                  const IPC::Message& message);
+
+  // Gets the last committed URL. See WebContents::GetLastCommittedURL for a
+  // description of the semantics.
+  virtual const GURL& GetMainFrameLastCommittedURL() const;
+
+  // A message was added to to the console.
+  virtual bool AddMessageToConsole(int32 level,
+                                   const base::string16& message,
+                                   int32 line_no,
+                                   const base::string16& source_id);
 
   // Informs the delegate whenever a RenderFrameHost is created.
   virtual void RenderFrameCreated(RenderFrameHost* render_frame_host) {}
@@ -51,6 +65,19 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // provided in the supplied params.
   virtual void ShowContextMenu(RenderFrameHost* render_frame_host,
                                const ContextMenuParams& params) {}
+
+  // A JavaScript message, confirmation or prompt should be shown.
+  virtual void RunJavaScriptMessage(RenderFrameHost* rfh,
+                                    const base::string16& message,
+                                    const base::string16& default_prompt,
+                                    const GURL& frame_url,
+                                    JavaScriptMessageType type,
+                                    IPC::Message* reply_msg) {}
+
+  virtual void RunBeforeUnloadConfirm(RenderFrameHost* rfh,
+                                      const base::string16& message,
+                                      bool is_reload,
+                                      IPC::Message* reply_msg) {}
 
   // Return this object cast to a WebContents, if it is one. If the object is
   // not a WebContents, returns NULL.

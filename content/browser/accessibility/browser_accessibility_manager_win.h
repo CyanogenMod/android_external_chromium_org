@@ -46,6 +46,8 @@ class CONTENT_EXPORT BrowserAccessibilityManagerWin
   // BrowserAccessibilityManager methods
   virtual void AddNodeToMap(BrowserAccessibility* node);
   virtual void RemoveNode(BrowserAccessibility* node) OVERRIDE;
+  virtual void OnWindowFocused() OVERRIDE;
+  virtual void OnWindowBlurred() OVERRIDE;
   virtual void NotifyAccessibilityEvent(
       ui::AXEvent event_type, BrowserAccessibility* node) OVERRIDE;
 
@@ -60,6 +62,10 @@ class CONTENT_EXPORT BrowserAccessibilityManagerWin
 
   // Called when |accessible_hwnd_| is deleted by its parent.
   void OnAccessibleHwndDeleted();
+
+ protected:
+  // BrowserAccessibilityManager methods
+  virtual void OnRootChanged() OVERRIDE;
 
  private:
   // The closest ancestor HWND.

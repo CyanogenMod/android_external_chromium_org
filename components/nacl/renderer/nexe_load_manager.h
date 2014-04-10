@@ -32,10 +32,12 @@ class NexeLoadManager {
                          uint64_t loaded_bytes,
                          uint64_t total_bytes);
   void ReportLoadError(PP_NaClError error,
+                       const std::string& error_message);
+  void ReportLoadError(PP_NaClError error,
                        const std::string& error_message,
                        const std::string& console_message);
   void ReportLoadAbort();
-  void ReportDeadNexe(int64_t crash_time);
+  void NexeDidCrash(const char* crash_log);
 
   // TODO(dmichael): Everything below this comment should eventually be made
   // private, when ppb_nacl_private_impl.cc is no longer using them directly.
@@ -69,8 +71,6 @@ class NexeLoadManager {
   void DispatchEvent(const ProgressEvent &event);
   void set_trusted_plugin_channel(scoped_ptr<TrustedPluginChannel> channel);
 
-  bool nexe_error_reported();
-
   PP_NaClReadyState nacl_ready_state();
   void set_nacl_ready_state(PP_NaClReadyState ready_state);
 
@@ -81,11 +81,25 @@ class NexeLoadManager {
   bool is_installed() const { return is_installed_; }
   void set_is_installed(bool installed) { is_installed_ = installed; }
 
-  int64_t ready_time() const { return ready_time_; }
-  void set_ready_time(int64_t ready_time) { ready_time_ = ready_time; }
+  void set_ready_time() { ready_time_ = base::Time::Now(); }
+
+  int32_t exit_status() const { return exit_status_; }
+  void set_exit_status(int32_t exit_status);
+
+  void set_init_time() { init_time_ = base::Time::Now(); }
+
+  void ReportStartupOverhead() const;
+
+  int64_t nexe_size() const { return nexe_size_; }
+  void set_nexe_size(int64_t nexe_size) { nexe_size_ = nexe_size; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NexeLoadManager);
+
+  void ReportDeadNexe();
+
+  // Copies a crash log to the console, one line at a time.
+  void CopyCrashLogToJsConsole(const std::string& crash_log);
 
   PP_Instance pp_instance_;
   PP_NaClReadyState nacl_ready_state_;
@@ -102,8 +116,19 @@ class NexeLoadManager {
   // for NaCl resources that we have seen so far".
   bool is_installed_;
 
-  // Time of a successful nexe load, in microseconds since the epoch.
-  int64_t ready_time_;
+  // Time of a successful nexe load.
+  base::Time ready_time_;
+
+  // Time of plugin initialization.
+  base::Time init_time_;
+
+  // The exit status of the plugin process.
+  // This will have a value in the range (0x00-0xff) if the exit status is set,
+  // or -1 if set_exit_status() has never been called.
+  int32_t exit_status_;
+
+  // Size of the downloaded nexe, in bytes.
+  int64_t nexe_size_;
 
   // Non-owning.
   content::PepperPluginInstance* plugin_instance_;

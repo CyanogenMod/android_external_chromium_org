@@ -173,18 +173,6 @@ Chrome supports. -->
         <message name="IDS_PRODUCT_APP_LAUNCHER_NAME" desc="The Chrome App Launcher application name">
           Google Chrome App Launcher
         </message>
-        <message name="IDS_WIN8_INFOBAR_DESKTOP_RESTART_FOR_APP_LIST"
-                 desc="Infobar message to restart chrome in desktop mode to display the App Launcher. Aplies to Windows 8 only">
-          To use the app launcher, you must relaunch Google Chrome on the desktop.
-        </message>
-        <message name="IDS_WIN8_INFOBAR_DESKTOP_RESTART_FOR_PACKAGED_APP"
-                 desc="Infobar message to restart chrome in desktop mode to launch a Chrome Packaged App. Aplies to Windows 8 only">
-          To use Chrome apps, you must relaunch Google Chrome on the desktop.
-        </message>
-        <message name="IDS_WIN8_INFOBAR_DESKTOP_RESTART_TO_LAUNCH_APPS_YES_BUTTON"
-             desc="Infobar button 'yes' text to confirm that the user does wish to switch to desktop mode to use Chrome Apps">
-          Relaunch Chrome
-        </message>
         <message name="IDS_PRODUCT_BINARIES_NAME" desc="The Chrome Binaries application name">
           Google Chrome Binaries
         </message>
@@ -778,13 +766,8 @@ For Google Chrome, processes used to display diagnostics information (such as th
       </message>
 
       <!-- Tutorial card in the avatar menu bubble -->
-      <message name="IDS_PROFILES_SIGNIN_TUTORIAL_CONTENT_HEADER" desc="Header line of the tutorial card in the avatar menu bubble view for a signed-in user.">
-        Welcome to your Chrome. Check back here to:
-      </message>
-      <message name="IDS_PROFILES_SIGNIN_TUTORIAL_CONTENT_TEXT" desc="The bulleted content of the tutorial card in the avatar menu bubble view for a signed-in user.">
-        • Switch between people
-• Lock your Chrome stuff
-• Manage your Google Accounts
+      <message name="IDS_PROFILES_SIGNIN_TUTORIAL_CONTENT_TEXT" desc="The main content of the tutorial card in the avatar menu bubble view for a signed-in user.">
+        You can add your other Google Accounts and lock your Chrome below.
       </message>
 
       <!-- Account removal view in the avatar menu bubble -->
@@ -792,7 +775,7 @@ For Google Chrome, processes used to display diagnostics information (such as th
         To remove your account, Chrome needs to restart. Make sure you've saved any open work before continuing.
       </message>
       <message name="IDS_PROFILES_PRIMARY_ACCOUNT_REMOVAL_TEXT" desc="Main text of the account removal view when removing a primary account.">
-        You're using <ph name="PROFILE_EMAIL">$1<ex>jessica@gmail.com</ex></ph> to sync your Chrome stuff. To update your sync preference or to use Chrome without a Google account, visit settings.
+        You're using <ph name="PROFILE_EMAIL">$1<ex>jessica@gmail.com</ex></ph> to sync your Chrome stuff. To update your sync preference or to use Chrome without a Google account, visit <ph name="SETTINGS_LINK">$2<ex>settings</ex></ph>.
       </message>
 
       <!-- Sync Promo New Tab Page bubble strings -->

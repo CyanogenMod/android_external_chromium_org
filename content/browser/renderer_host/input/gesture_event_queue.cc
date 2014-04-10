@@ -133,17 +133,16 @@ bool GestureEventQueue::ShouldForwardForTapSuppression(
         touchpad_tap_suppression_controller_->GestureFlingCancel();
       return true;
     case WebInputEvent::GestureTapDown:
-      return !touchscreen_tap_suppression_controller_->
-          ShouldDeferGestureTapDown(gesture_event);
     case WebInputEvent::GestureShowPress:
-      return !touchscreen_tap_suppression_controller_->
-          ShouldDeferGestureShowPress(gesture_event);
+    case WebInputEvent::GestureTapUnconfirmed:
     case WebInputEvent::GestureTapCancel:
     case WebInputEvent::GestureTap:
-    case WebInputEvent::GestureTapUnconfirmed:
     case WebInputEvent::GestureDoubleTap:
-      return !touchscreen_tap_suppression_controller_->
-          ShouldSuppressGestureTapEnd();
+      if (gesture_event.event.sourceDevice == WebGestureEvent::Touchscreen) {
+        return !touchscreen_tap_suppression_controller_->
+            FilterTapEvent(gesture_event);
+      }
+      return true;
     default:
       return true;
   }
@@ -243,7 +242,7 @@ TouchpadTapSuppressionController*
   return touchpad_tap_suppression_controller_.get();
 }
 
-bool GestureEventQueue::HasQueuedGestureEvents() const {
+bool GestureEventQueue::ExpectingGestureAck() const {
   return !coalesced_gesture_events_.empty();
 }
 
@@ -285,7 +284,7 @@ void GestureEventQueue::MergeOrInsertScrollAndPinchEvent(
   }
   GestureEventWithLatencyInfo* last_event = &coalesced_gesture_events_.back();
   if (last_event->CanCoalesceWith(gesture_event)) {
-      last_event->CoalesceWith(gesture_event);
+    last_event->CoalesceWith(gesture_event);
     if (!combined_scroll_pinch_.IsIdentity()) {
       combined_scroll_pinch_.ConcatTransform(
           GetTransformForEvent(gesture_event));

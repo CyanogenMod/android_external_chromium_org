@@ -28,6 +28,7 @@
 #include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "components/metrics/metrics_hashes.h"
 #include "components/variations/metrics_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/process_type.h"
@@ -45,6 +46,9 @@
 #include "chromeos/dbus/fake_bluetooth_adapter_client.h"
 #include "chromeos/dbus/fake_bluetooth_agent_manager_client.h"
 #include "chromeos/dbus/fake_bluetooth_device_client.h"
+#include "chromeos/dbus/fake_bluetooth_gatt_characteristic_client.h"
+#include "chromeos/dbus/fake_bluetooth_gatt_descriptor_client.h"
+#include "chromeos/dbus/fake_bluetooth_gatt_service_client.h"
 #include "chromeos/dbus/fake_bluetooth_input_client.h"
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
 
@@ -52,10 +56,16 @@ using chromeos::DBusThreadManager;
 using chromeos::BluetoothAdapterClient;
 using chromeos::BluetoothAgentManagerClient;
 using chromeos::BluetoothDeviceClient;
+using chromeos::BluetoothGattCharacteristicClient;
+using chromeos::BluetoothGattDescriptorClient;
+using chromeos::BluetoothGattServiceClient;
 using chromeos::BluetoothInputClient;
 using chromeos::FakeBluetoothAdapterClient;
 using chromeos::FakeBluetoothAgentManagerClient;
 using chromeos::FakeBluetoothDeviceClient;
+using chromeos::FakeBluetoothGattCharacteristicClient;
+using chromeos::FakeBluetoothGattDescriptorClient;
+using chromeos::FakeBluetoothGattServiceClient;
 using chromeos::FakeBluetoothInputClient;
 using chromeos::FakeDBusThreadManager;
 #endif  // OS_CHROMEOS
@@ -118,8 +128,8 @@ class TestMetricsLogChromeOS : public MetricsLogChromeOS {
 
 class TestMetricsLog : public MetricsLog {
  public:
-  TestMetricsLog(const std::string& client_id, int session_id)
-      : MetricsLog(client_id, session_id),
+  TestMetricsLog(const std::string& client_id, int session_id, LogType log_type)
+      : MetricsLog(client_id, session_id, log_type),
         prefs_(&scoped_prefs_),
         brand_for_testing_(kBrandForTesting) {
 #if defined(OS_CHROMEOS)
@@ -133,8 +143,9 @@ class TestMetricsLog : public MetricsLog {
   // Useful for tests that need to re-use the local state prefs between logs.
   TestMetricsLog(const std::string& client_id,
                  int session_id,
+                 LogType log_type,
                  TestingPrefServiceSimple* prefs)
-      : MetricsLog(client_id, session_id),
+      : MetricsLog(client_id, session_id, log_type),
         prefs_(prefs),
         brand_for_testing_(kBrandForTesting) {
 #if defined(OS_CHROMEOS)
@@ -221,6 +232,15 @@ class MetricsLogTest : public testing::Test {
         scoped_ptr<BluetoothAdapterClient>(new FakeBluetoothAdapterClient));
     fake_dbus_thread_manager->SetBluetoothDeviceClient(
         scoped_ptr<BluetoothDeviceClient>(new FakeBluetoothDeviceClient));
+    fake_dbus_thread_manager->SetBluetoothGattCharacteristicClient(
+        scoped_ptr<BluetoothGattCharacteristicClient>(
+            new FakeBluetoothGattCharacteristicClient));
+    fake_dbus_thread_manager->SetBluetoothGattDescriptorClient(
+        scoped_ptr<BluetoothGattDescriptorClient>(
+            new FakeBluetoothGattDescriptorClient));
+    fake_dbus_thread_manager->SetBluetoothGattServiceClient(
+        scoped_ptr<BluetoothGattServiceClient>(
+            new FakeBluetoothGattServiceClient));
     fake_dbus_thread_manager->SetBluetoothInputClient(
         scoped_ptr<BluetoothInputClient>(new FakeBluetoothInputClient));
     fake_dbus_thread_manager->SetBluetoothAgentManagerClient(
@@ -283,8 +303,8 @@ class MetricsLogTest : public testing::Test {
 
  protected:
 #if defined(OS_CHROMEOS)
-   FakeBluetoothAdapterClient* fake_bluetooth_adapter_client_;
-   FakeBluetoothDeviceClient* fake_bluetooth_device_client_;
+  FakeBluetoothAdapterClient* fake_bluetooth_adapter_client_;
+  FakeBluetoothDeviceClient* fake_bluetooth_device_client_;
 #endif  // OS_CHROMEOS
 
  private:
@@ -294,7 +314,7 @@ class MetricsLogTest : public testing::Test {
 };
 
 TEST_F(MetricsLogTest, RecordEnvironment) {
-  TestMetricsLog log(kClientId, kSessionId);
+  TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG);
 
   std::vector<content::WebPluginInfo> plugins;
   GoogleUpdateMetrics google_update_metrics;
@@ -329,13 +349,13 @@ TEST_F(MetricsLogTest, LoadSavedEnvironmentFromPrefs) {
 
   // The pref value is empty, so loading it from prefs should fail.
   {
-    TestMetricsLog log(kClientId, kSessionId, &prefs);
+    TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG, &prefs);
     EXPECT_FALSE(log.LoadSavedEnvironmentFromPrefs());
   }
 
   // Do a RecordEnvironment() call and check whether the pref is recorded.
   {
-    TestMetricsLog log(kClientId, kSessionId, &prefs);
+    TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG, &prefs);
     log.RecordEnvironment(std::vector<content::WebPluginInfo>(),
                           GoogleUpdateMetrics(),
                           std::vector<chrome_variations::ActiveGroupId>());
@@ -344,7 +364,7 @@ TEST_F(MetricsLogTest, LoadSavedEnvironmentFromPrefs) {
   }
 
   {
-    TestMetricsLog log(kClientId, kSessionId, &prefs);
+    TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG, &prefs);
     EXPECT_TRUE(log.LoadSavedEnvironmentFromPrefs());
     // Check some values in the system profile.
     EXPECT_EQ(kInstallDateExpected, log.system_profile().install_date());
@@ -356,7 +376,7 @@ TEST_F(MetricsLogTest, LoadSavedEnvironmentFromPrefs) {
 
   // Ensure that a non-matching hash results in the pref being invalid.
   {
-    TestMetricsLog log(kClientId, kSessionId, &prefs);
+    TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG, &prefs);
     // Call RecordEnvironment() to record the pref again.
     log.RecordEnvironment(std::vector<content::WebPluginInfo>(),
                           GoogleUpdateMetrics(),
@@ -366,7 +386,7 @@ TEST_F(MetricsLogTest, LoadSavedEnvironmentFromPrefs) {
   {
     // Set the hash to a bad value.
     prefs.SetString(kSystemProfileHashPref, "deadbeef");
-    TestMetricsLog log(kClientId, kSessionId, &prefs);
+    TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG, &prefs);
     EXPECT_FALSE(log.LoadSavedEnvironmentFromPrefs());
     // Ensure that the prefs are cleared, even if the call failed.
     EXPECT_TRUE(prefs.GetString(kSystemProfilePref).empty());
@@ -375,12 +395,11 @@ TEST_F(MetricsLogTest, LoadSavedEnvironmentFromPrefs) {
 }
 
 TEST_F(MetricsLogTest, InitialLogStabilityMetrics) {
-  TestMetricsLog log(kClientId, kSessionId);
+  TestMetricsLog log(kClientId, kSessionId, MetricsLog::INITIAL_STABILITY_LOG);
   log.RecordEnvironment(std::vector<content::WebPluginInfo>(),
                         GoogleUpdateMetrics(),
                         std::vector<chrome_variations::ActiveGroupId>());
-  log.RecordStabilityMetrics(
-      base::TimeDelta(), base::TimeDelta(), MetricsLog::INITIAL_LOG);
+  log.RecordStabilityMetrics(base::TimeDelta(), base::TimeDelta());
   const metrics::SystemProfileProto_Stability& stability =
       log.system_profile().stability();
   // Required metrics:
@@ -395,12 +414,11 @@ TEST_F(MetricsLogTest, InitialLogStabilityMetrics) {
 }
 
 TEST_F(MetricsLogTest, OngoingLogStabilityMetrics) {
-  TestMetricsLog log(kClientId, kSessionId);
+  TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG);
   log.RecordEnvironment(std::vector<content::WebPluginInfo>(),
                         GoogleUpdateMetrics(),
                         std::vector<chrome_variations::ActiveGroupId>());
-  log.RecordStabilityMetrics(
-      base::TimeDelta(), base::TimeDelta(), MetricsLog::ONGOING_LOG);
+  log.RecordStabilityMetrics(base::TimeDelta(), base::TimeDelta());
   const metrics::SystemProfileProto_Stability& stability =
       log.system_profile().stability();
   // Required metrics:
@@ -416,7 +434,7 @@ TEST_F(MetricsLogTest, OngoingLogStabilityMetrics) {
 
 #if defined(ENABLE_PLUGINS)
 TEST_F(MetricsLogTest, Plugins) {
-  TestMetricsLog log(kClientId, kSessionId);
+  TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG);
 
   std::vector<content::WebPluginInfo> plugins;
   plugins.push_back(CreateFakePluginInfo("p1", FILE_PATH_LITERAL("p1.plugin"),
@@ -449,8 +467,7 @@ TEST_F(MetricsLogTest, Plugins) {
     update.Get()->Append(plugin_dict.release());
   }
 
-  log.RecordStabilityMetrics(
-      base::TimeDelta(), base::TimeDelta(), MetricsLog::ONGOING_LOG);
+  log.RecordStabilityMetrics(base::TimeDelta(), base::TimeDelta());
   const metrics::SystemProfileProto_Stability& stability =
       log.system_profile().stability();
   ASSERT_EQ(1, stability.plugin_stability_size());
@@ -467,14 +484,20 @@ TEST_F(MetricsLogTest, Plugins) {
 
 // Test that we properly write profiler data to the log.
 TEST_F(MetricsLogTest, RecordProfilerData) {
-  TestMetricsLog log(kClientId, kSessionId);
+  // WARNING: If you broke the below check, you've modified how
+  // metrics::HashMetricName works. Please also modify all server-side code that
+  // relies on the existing way of hashing.
+  EXPECT_EQ(GG_UINT64_C(1518842999910132863),
+            metrics::HashMetricName("birth_thread*"));
+
+  TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG);
   EXPECT_EQ(0, log.uma_proto().profiler_event_size());
 
   {
     ProcessDataSnapshot process_data;
     process_data.process_id = 177;
     process_data.tasks.push_back(TaskSnapshot());
-    process_data.tasks.back().birth.location.file_name = "file";
+    process_data.tasks.back().birth.location.file_name = "a/b/file.h";
     process_data.tasks.back().birth.location.function_name = "function";
     process_data.tasks.back().birth.location.line_number = 1337;
     process_data.tasks.back().birth.thread_name = "birth_thread";
@@ -487,7 +510,7 @@ TEST_F(MetricsLogTest, RecordProfilerData) {
     process_data.tasks.back().death_data.queue_duration_sample = 3;
     process_data.tasks.back().death_thread_name = "Still_Alive";
     process_data.tasks.push_back(TaskSnapshot());
-    process_data.tasks.back().birth.location.file_name = "file2";
+    process_data.tasks.back().birth.location.file_name = "c\\d\\file2";
     process_data.tasks.back().birth.location.function_name = "function2";
     process_data.tasks.back().birth.location.line_number = 1773;
     process_data.tasks.back().birth.thread_name = "birth_thread2";
@@ -511,38 +534,38 @@ TEST_F(MetricsLogTest, RecordProfilerData) {
 
     const ProfilerEventProto::TrackedObject* tracked_object =
         &log.uma_proto().profiler_event(0).tracked_object(0);
-    EXPECT_EQ(GG_UINT64_C(10123486280357988687),
+    EXPECT_EQ(metrics::HashMetricName("file.h"),
               tracked_object->source_file_name_hash());
-    EXPECT_EQ(GG_UINT64_C(13962325592283560029),
+    EXPECT_EQ(metrics::HashMetricName("function"),
               tracked_object->source_function_name_hash());
     EXPECT_EQ(1337, tracked_object->source_line_number());
-    EXPECT_EQ(GG_UINT64_C(3400908935414830400),
+    EXPECT_EQ(metrics::HashMetricName("birth_thread"),
               tracked_object->birth_thread_name_hash());
     EXPECT_EQ(37, tracked_object->exec_count());
     EXPECT_EQ(31, tracked_object->exec_time_total());
     EXPECT_EQ(13, tracked_object->exec_time_sampled());
     EXPECT_EQ(8, tracked_object->queue_time_total());
     EXPECT_EQ(3, tracked_object->queue_time_sampled());
-    EXPECT_EQ(GG_UINT64_C(10151977472163283085),
+    EXPECT_EQ(metrics::HashMetricName("Still_Alive"),
               tracked_object->exec_thread_name_hash());
     EXPECT_EQ(177U, tracked_object->process_id());
     EXPECT_EQ(ProfilerEventProto::TrackedObject::BROWSER,
               tracked_object->process_type());
 
     tracked_object = &log.uma_proto().profiler_event(0).tracked_object(1);
-    EXPECT_EQ(GG_UINT64_C(2025659946535236365),
+    EXPECT_EQ(metrics::HashMetricName("file2"),
               tracked_object->source_file_name_hash());
-    EXPECT_EQ(GG_UINT64_C(55232426147951219),
+    EXPECT_EQ(metrics::HashMetricName("function2"),
               tracked_object->source_function_name_hash());
     EXPECT_EQ(1773, tracked_object->source_line_number());
-    EXPECT_EQ(GG_UINT64_C(1518842999910132863),
+    EXPECT_EQ(metrics::HashMetricName("birth_thread*"),
               tracked_object->birth_thread_name_hash());
     EXPECT_EQ(19, tracked_object->exec_count());
     EXPECT_EQ(23, tracked_object->exec_time_total());
     EXPECT_EQ(7, tracked_object->exec_time_sampled());
     EXPECT_EQ(0, tracked_object->queue_time_total());
     EXPECT_EQ(0, tracked_object->queue_time_sampled());
-    EXPECT_EQ(GG_UINT64_C(14275151213201158253),
+    EXPECT_EQ(metrics::HashMetricName("death_thread"),
               tracked_object->exec_thread_name_hash());
     EXPECT_EQ(177U, tracked_object->process_id());
     EXPECT_EQ(ProfilerEventProto::TrackedObject::BROWSER,
@@ -565,6 +588,19 @@ TEST_F(MetricsLogTest, RecordProfilerData) {
     process_data.tasks.back().death_data.queue_duration_max = 105;
     process_data.tasks.back().death_data.queue_duration_sample = 103;
     process_data.tasks.back().death_thread_name = "death_thread3";
+    process_data.tasks.push_back(TaskSnapshot());
+    process_data.tasks.back().birth.location.file_name = "";
+    process_data.tasks.back().birth.location.function_name = "";
+    process_data.tasks.back().birth.location.line_number = 7332;
+    process_data.tasks.back().birth.thread_name = "";
+    process_data.tasks.back().death_data.count = 138;
+    process_data.tasks.back().death_data.run_duration_sum = 132;
+    process_data.tasks.back().death_data.run_duration_max = 118;
+    process_data.tasks.back().death_data.run_duration_sample = 114;
+    process_data.tasks.back().death_data.queue_duration_sum = 109;
+    process_data.tasks.back().death_data.queue_duration_max = 106;
+    process_data.tasks.back().death_data.queue_duration_sample = 104;
+    process_data.tasks.back().death_thread_name = "";
 
     log.RecordProfilerData(process_data, content::PROCESS_TYPE_RENDERER);
     ASSERT_EQ(1, log.uma_proto().profiler_event_size());
@@ -572,25 +608,43 @@ TEST_F(MetricsLogTest, RecordProfilerData) {
               log.uma_proto().profiler_event(0).profile_type());
     EXPECT_EQ(ProfilerEventProto::WALL_CLOCK_TIME,
               log.uma_proto().profiler_event(0).time_source());
-    ASSERT_EQ(3, log.uma_proto().profiler_event(0).tracked_object_size());
+    ASSERT_EQ(4, log.uma_proto().profiler_event(0).tracked_object_size());
 
     const ProfilerEventProto::TrackedObject* tracked_object =
         &log.uma_proto().profiler_event(0).tracked_object(2);
-    EXPECT_EQ(GG_UINT64_C(2686523203278102732),
+    EXPECT_EQ(metrics::HashMetricName("file3"),
               tracked_object->source_file_name_hash());
-    EXPECT_EQ(GG_UINT64_C(5081672290546182009),
+    EXPECT_EQ(metrics::HashMetricName("function3"),
               tracked_object->source_function_name_hash());
     EXPECT_EQ(7331, tracked_object->source_line_number());
-    EXPECT_EQ(GG_UINT64_C(1518842999910132863),
+    EXPECT_EQ(metrics::HashMetricName("birth_thread*"),
               tracked_object->birth_thread_name_hash());
     EXPECT_EQ(137, tracked_object->exec_count());
     EXPECT_EQ(131, tracked_object->exec_time_total());
     EXPECT_EQ(113, tracked_object->exec_time_sampled());
     EXPECT_EQ(108, tracked_object->queue_time_total());
     EXPECT_EQ(103, tracked_object->queue_time_sampled());
-    EXPECT_EQ(GG_UINT64_C(2203893603452504755),
+    EXPECT_EQ(metrics::HashMetricName("death_thread*"),
               tracked_object->exec_thread_name_hash());
     EXPECT_EQ(1177U, tracked_object->process_id());
+    EXPECT_EQ(ProfilerEventProto::TrackedObject::RENDERER,
+              tracked_object->process_type());
+
+    tracked_object = &log.uma_proto().profiler_event(0).tracked_object(3);
+    EXPECT_EQ(metrics::HashMetricName(""),
+              tracked_object->source_file_name_hash());
+    EXPECT_EQ(metrics::HashMetricName(""),
+              tracked_object->source_function_name_hash());
+    EXPECT_EQ(7332, tracked_object->source_line_number());
+    EXPECT_EQ(metrics::HashMetricName(""),
+              tracked_object->birth_thread_name_hash());
+    EXPECT_EQ(138, tracked_object->exec_count());
+    EXPECT_EQ(132, tracked_object->exec_time_total());
+    EXPECT_EQ(114, tracked_object->exec_time_sampled());
+    EXPECT_EQ(109, tracked_object->queue_time_total());
+    EXPECT_EQ(104, tracked_object->queue_time_sampled());
+    EXPECT_EQ(metrics::HashMetricName(""),
+              tracked_object->exec_thread_name_hash());
     EXPECT_EQ(ProfilerEventProto::TrackedObject::RENDERER,
               tracked_object->process_type());
   }
@@ -612,7 +666,7 @@ TEST_F(MetricsLogTest, MultiProfileUserCount) {
   user_manager->LoginUser(user1);
   user_manager->LoginUser(user3);
 
-  TestMetricsLog log(kClientId, kSessionId);
+  TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG);
   std::vector<content::WebPluginInfo> plugins;
   GoogleUpdateMetrics google_update_metrics;
   std::vector<chrome_variations::ActiveGroupId> synthetic_trials;
@@ -634,7 +688,7 @@ TEST_F(MetricsLogTest, MultiProfileCountInvalidated) {
 
   user_manager->LoginUser(user1);
 
-  TestMetricsLog log(kClientId, kSessionId);
+  TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG);
   EXPECT_EQ(1u, log.system_profile().multi_profile_user_count());
 
   user_manager->LoginUser(user2);
@@ -645,7 +699,7 @@ TEST_F(MetricsLogTest, MultiProfileCountInvalidated) {
 }
 
 TEST_F(MetricsLogTest, BluetoothHardwareDisabled) {
-  TestMetricsLog log(kClientId, kSessionId);
+  TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG);
   log.RecordEnvironment(std::vector<content::WebPluginInfo>(),
                         GoogleUpdateMetrics(),
                         std::vector<chrome_variations::ActiveGroupId>());
@@ -663,7 +717,7 @@ TEST_F(MetricsLogTest, BluetoothHardwareEnabled) {
           dbus::ObjectPath(FakeBluetoothAdapterClient::kAdapterPath));
   properties->powered.ReplaceValue(true);
 
-  TestMetricsLog log(kClientId, kSessionId);
+  TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG);
   log.RecordEnvironment(std::vector<content::WebPluginInfo>(),
                         GoogleUpdateMetrics(),
                         std::vector<chrome_variations::ActiveGroupId>());
@@ -693,7 +747,7 @@ TEST_F(MetricsLogTest, BluetoothPairedDevices) {
           dbus::ObjectPath(FakeBluetoothDeviceClient::kConfirmPasskeyPath));
   properties->paired.ReplaceValue(true);
 
-  TestMetricsLog log(kClientId, kSessionId);
+  TestMetricsLog log(kClientId, kSessionId, MetricsLog::ONGOING_LOG);
   log.RecordEnvironment(std::vector<content::WebPluginInfo>(),
                         GoogleUpdateMetrics(),
                         std::vector<chrome_variations::ActiveGroupId>());

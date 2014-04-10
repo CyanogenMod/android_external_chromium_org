@@ -330,7 +330,7 @@ void RenderWidgetHostViewAndroid::Hide() {
     return;
 
   is_showing_ = false;
-  if (layer_)
+  if (layer_ && locks_on_frame_count_ == 0)
     layer_->SetHideLayerAndSubtree(true);
 
   frame_evictor_->SetVisible(false);
@@ -360,10 +360,15 @@ void RenderWidgetHostViewAndroid::UnlockCompositingSurface() {
   frame_evictor_->UnlockFrame();
   locks_on_frame_count_--;
 
-  if (locks_on_frame_count_ == 0 && last_frame_info_) {
-    InternalSwapCompositorFrame(last_frame_info_->output_surface_id,
-                                last_frame_info_->frame.Pass());
-    last_frame_info_.reset();
+  if (locks_on_frame_count_ == 0) {
+    if (last_frame_info_) {
+      InternalSwapCompositorFrame(last_frame_info_->output_surface_id,
+                                  last_frame_info_->frame.Pass());
+      last_frame_info_.reset();
+    }
+
+    if (!is_showing_ && layer_)
+      layer_->SetHideLayerAndSubtree(true);
   }
 }
 
@@ -425,11 +430,11 @@ long RenderWidgetHostViewAndroid::GetNativeImeAdapter() {
 
 void RenderWidgetHostViewAndroid::OnTextInputStateChanged(
     const ViewHostMsg_TextInputState_Params& params) {
-  // If an acknowledgement is required for this event, regardless of how we exit
-  // from this method, we must acknowledge that we processed the input state
-  // change.
+  // If the change is not originated from IME (e.g. Javascript, autofill),
+  // send back the renderer an acknowledgement, regardless of how we exit from
+  // this method.
   base::ScopedClosureRunner ack_caller;
-  if (params.require_ack)
+  if (params.is_non_ime_change)
     ack_caller.Reset(base::Bind(&SendImeEventAck, host_));
 
   if (!IsShowing())
@@ -440,7 +445,7 @@ void RenderWidgetHostViewAndroid::OnTextInputStateChanged(
       static_cast<int>(params.type),
       params.value, params.selection_start, params.selection_end,
       params.composition_start, params.composition_end,
-      params.show_ime_if_needed, params.require_ack);
+      params.show_ime_if_needed, params.is_non_ime_change);
 }
 
 void RenderWidgetHostViewAndroid::OnDidChangeBodyBackgroundColor(
@@ -1030,11 +1035,6 @@ void RenderWidgetHostViewAndroid::SetScrollOffsetPinning(
   // intentionally empty, like RenderWidgetHostViewViews
 }
 
-void RenderWidgetHostViewAndroid::UnhandledWheelEvent(
-    const blink::WebMouseWheelEvent& event) {
-  // intentionally empty, like RenderWidgetHostViewViews
-}
-
 void RenderWidgetHostViewAndroid::GestureEventAck(
     const blink::WebGestureEvent& event,
     InputEventAckState ack_result) {
@@ -1263,8 +1263,11 @@ void RenderWidgetHostViewAndroid::OnCompositingDidCommit() {
 void RenderWidgetHostViewAndroid::OnDetachCompositor() {
   DCHECK(content_view_core_);
   DCHECK(!using_synchronous_compositor_);
-  root_window_destroyed_ = true;
   RunAckCallbacks();
+}
+
+void RenderWidgetHostViewAndroid::OnWillDestroyWindow() {
+  root_window_destroyed_ = true;
 }
 
 void RenderWidgetHostViewAndroid::OnLostResources() {

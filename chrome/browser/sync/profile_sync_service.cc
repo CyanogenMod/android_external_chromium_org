@@ -79,10 +79,10 @@
 #include "sync/internal_api/public/configure_reason.h"
 #include "sync/internal_api/public/http_bridge_network_resources.h"
 #include "sync/internal_api/public/network_resources.h"
+#include "sync/internal_api/public/sync_core_proxy.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/internal_api/public/util/experiments.h"
 #include "sync/internal_api/public/util/sync_string_conversions.h"
-#include "sync/js/js_arg_list.h"
 #include "sync/js/js_event_details.h"
 #include "sync/util/cryptographer.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -345,8 +345,16 @@ void ProfileSyncService::UnregisterAuthNotifications() {
 void ProfileSyncService::RegisterDataTypeController(
     DataTypeController* data_type_controller) {
   DCHECK_EQ(data_type_controllers_.count(data_type_controller->type()), 0U);
+  DCHECK(!GetRegisteredNonBlockingDataTypes().Has(
+      data_type_controller->type()));
   data_type_controllers_[data_type_controller->type()] =
       data_type_controller;
+}
+
+void ProfileSyncService::RegisterNonBlockingType(syncer::ModelType type) {
+  DCHECK_EQ(data_type_controllers_.count(type), 0U);
+  DCHECK(!GetRegisteredNonBlockingDataTypes().Has(type));
+  non_blocking_types_.Put(type);
 }
 
 browser_sync::SessionModelAssociator*
@@ -939,6 +947,8 @@ void ProfileSyncService::OnBackendInitialized(
     backend_->RequestBufferedProtocolEventsAndEnableForwarding();
   }
 
+  syncer::SyncCoreProxy sync_core_proxy_ = backend_->GetSyncCoreProxy();
+
   // If we have a cached passphrase use it to decrypt/encrypt data now that the
   // backend is initialized. We want to call this before notifying observers in
   // case this operation affects the "passphrase required" status.
@@ -1213,13 +1223,15 @@ void ProfileSyncService::OnPassphraseRequired(
            << syncer::PassphraseRequiredReasonToString(reason);
   passphrase_required_reason_ = reason;
 
-  const syncer::ModelTypeSet types = GetPreferredDataTypes();
+  const syncer::ModelTypeSet types = GetPreferredDirectoryDataTypes();
   if (data_type_manager_) {
     // Reconfigure without the encrypted types (excluded implicitly via the
     // failed datatypes handler).
     data_type_manager_->Configure(types,
                                   syncer::CONFIGURE_REASON_CRYPTO);
   }
+
+  // TODO(rlarocque): Support non-blocking types.  http://crbug.com/351005.
 
   // Notify observers that the passphrase status may have changed.
   NotifyObservers();
@@ -1241,12 +1253,14 @@ void ProfileSyncService::OnPassphraseAccepted() {
 
   // Make sure the data types that depend on the passphrase are started at
   // this time.
-  const syncer::ModelTypeSet types = GetPreferredDataTypes();
+  const syncer::ModelTypeSet types = GetPreferredDirectoryDataTypes();
   if (data_type_manager_) {
     // Re-enable any encrypted types if necessary.
     data_type_manager_->Configure(types,
                                   syncer::CONFIGURE_REASON_CRYPTO);
   }
+
+  // TODO(rlarocque): Support non-blocking types.  http://crbug.com/351005.
 
   NotifyObservers();
 }
@@ -1674,7 +1688,27 @@ syncer::ModelTypeSet ProfileSyncService::GetPreferredDataTypes() const {
   return preferred_types;
 }
 
+syncer::ModelTypeSet
+ProfileSyncService::GetPreferredDirectoryDataTypes() const {
+  const syncer::ModelTypeSet registered_directory_types =
+      GetRegisteredDirectoryDataTypes();
+  const syncer::ModelTypeSet preferred_types =
+      sync_prefs_.GetPreferredDataTypes(registered_directory_types);
+  return preferred_types;
+}
+
+syncer::ModelTypeSet
+ProfileSyncService::GetPreferredNonBlockingDataTypes() const {
+  return sync_prefs_.GetPreferredDataTypes(GetRegisteredNonBlockingDataTypes());
+}
+
 syncer::ModelTypeSet ProfileSyncService::GetRegisteredDataTypes() const {
+  return Union(GetRegisteredDirectoryDataTypes(),
+               GetRegisteredNonBlockingDataTypes());
+}
+
+syncer::ModelTypeSet
+ProfileSyncService::GetRegisteredDirectoryDataTypes() const {
   syncer::ModelTypeSet registered_types;
   // The data_type_controllers_ are determined by command-line flags; that's
   // effectively what controls the values returned here.
@@ -1684,6 +1718,11 @@ syncer::ModelTypeSet ProfileSyncService::GetRegisteredDataTypes() const {
     registered_types.Put(it->first);
   }
   return registered_types;
+}
+
+syncer::ModelTypeSet
+ProfileSyncService::GetRegisteredNonBlockingDataTypes() const {
+  return non_blocking_types_;
 }
 
 bool ProfileSyncService::IsUsingSecondaryPassphrase() const {
@@ -1707,7 +1746,8 @@ bool ProfileSyncService::IsCryptographerReady(
 
 void ProfileSyncService::ConfigurePriorityDataTypes() {
   const syncer::ModelTypeSet priority_types =
-      Intersection(GetPreferredDataTypes(), syncer::PriorityUserTypes());
+      Intersection(GetPreferredDirectoryDataTypes(),
+                   syncer::PriorityUserTypes());
   if (!priority_types.Empty()) {
     const syncer::ConfigureReason reason = HasSyncSetupCompleted() ?
         syncer::CONFIGURE_REASON_RECONFIGURATION :
@@ -1745,7 +1785,7 @@ void ProfileSyncService::ConfigureDataTypeManager() {
                        base::Unretained(this))));
   }
 
-  const syncer::ModelTypeSet types = GetPreferredDataTypes();
+  const syncer::ModelTypeSet types = GetPreferredDirectoryDataTypes();
   syncer::ConfigureReason reason = syncer::CONFIGURE_REASON_UNKNOWN;
   if (!HasSyncSetupCompleted()) {
     reason = syncer::CONFIGURE_REASON_NEW_CLIENT;
@@ -1862,6 +1902,9 @@ base::Value* ProfileSyncService::GetTypeStatusMap() const {
     } else if (throttled_types.Has(type)) {
       type_status->SetString("status", "warning");
       type_status->SetString("value", "Throttled");
+    } else if (GetRegisteredNonBlockingDataTypes().Has(type)) {
+      type_status->SetString("status", "ok");
+      type_status->SetString("value", "Non-Blocking");
     } else if (active_types.Has(type)) {
       type_status->SetString("status", "ok");
       type_status->SetString("value", "Active: " +
@@ -2076,6 +2119,104 @@ void ProfileSyncService::RemoveProtocolEventObserver(
   protocol_event_observers_.RemoveObserver(observer);
   if (backend_ && !protocol_event_observers_.might_have_observers()) {
     backend_->DisableProtocolEventForwarding();
+  }
+}
+
+namespace {
+
+class GetAllNodesRequestHelper
+    : public base::RefCountedThreadSafe<GetAllNodesRequestHelper> {
+ public:
+  GetAllNodesRequestHelper(
+      syncer::ModelTypeSet requested_types,
+      const base::Callback<void(scoped_ptr<base::ListValue>)>& callback);
+
+  void OnReceivedNodesForTypes(
+      const std::vector<syncer::ModelType>& types,
+      ScopedVector<base::ListValue> scoped_node_lists);
+
+ private:
+  friend class base::RefCountedThreadSafe<GetAllNodesRequestHelper>;
+  virtual ~GetAllNodesRequestHelper();
+
+  scoped_ptr<base::ListValue> result_accumulator_;
+
+  syncer::ModelTypeSet awaiting_types_;
+  base::Callback<void(scoped_ptr<base::ListValue>)> callback_;
+};
+
+GetAllNodesRequestHelper::GetAllNodesRequestHelper(
+    syncer::ModelTypeSet requested_types,
+    const base::Callback<void(scoped_ptr<base::ListValue>)>& callback)
+    : result_accumulator_(new base::ListValue()),
+      awaiting_types_(requested_types),
+      callback_(callback) {}
+
+GetAllNodesRequestHelper::~GetAllNodesRequestHelper() {
+  if (!awaiting_types_.Empty()) {
+    DLOG(WARNING)
+        << "GetAllNodesRequest deleted before request was fulfilled.  "
+        << "Missing types are: " << ModelTypeSetToString(awaiting_types_);
+  }
+}
+
+// Called when the set of nodes for a type or set of types has been returned.
+//
+// The nodes for several types can be returned at the same time by specifying
+// their types in the |types| array, and putting their results at the
+// correspnding indices in the |scoped_node_lists|.
+void GetAllNodesRequestHelper::OnReceivedNodesForTypes(
+    const std::vector<syncer::ModelType>& types,
+    ScopedVector<base::ListValue> scoped_node_lists) {
+  DCHECK_EQ(types.size(), scoped_node_lists.size());
+
+  // Take unsafe ownership of the node list.
+  std::vector<base::ListValue*> node_lists;
+  scoped_node_lists.release(&node_lists);
+
+  for (size_t i = 0; i < node_lists.size() && i < types.size(); ++i) {
+    const ModelType type = types[i];
+    base::ListValue* node_list = node_lists[i];
+
+    // Add these results to our list.
+    scoped_ptr<base::DictionaryValue> type_dict(new base::DictionaryValue());
+    type_dict->SetString("type", ModelTypeToString(type));
+    type_dict->Set("nodes", node_list);
+    result_accumulator_->Append(type_dict.release());
+
+    // Remember that this part of the request is satisfied.
+    awaiting_types_.Remove(type);
+  }
+
+  if (awaiting_types_.Empty()) {
+    callback_.Run(result_accumulator_.Pass());
+    callback_.Reset();
+  }
+}
+
+}  // namespace
+
+void ProfileSyncService::GetAllNodes(
+    const base::Callback<void(scoped_ptr<base::ListValue>)>& callback) {
+  // TODO(rlarocque): Should be GetRegisteredDirectoryTypes.
+  const ModelTypeSet directory_types = GetRegisteredDataTypes();
+  scoped_refptr<GetAllNodesRequestHelper> helper =
+      new GetAllNodesRequestHelper(directory_types, callback);
+
+  if (!backend_initialized_) {
+    // If there's no backend available to fulfill the request, handle it here.
+    ScopedVector<base::ListValue> empty_results;
+    std::vector<ModelType> type_vector;
+    for (ModelTypeSet::Iterator it = directory_types.First();
+         it.Good(); it.Inc()) {
+      type_vector.push_back(it.Get());
+      empty_results.push_back(new base::ListValue());
+    }
+    helper->OnReceivedNodesForTypes(type_vector, empty_results.Pass());
+  } else {
+    backend_->GetAllNodesForTypes(
+        directory_types,
+        base::Bind(&GetAllNodesRequestHelper::OnReceivedNodesForTypes, helper));
   }
 }
 

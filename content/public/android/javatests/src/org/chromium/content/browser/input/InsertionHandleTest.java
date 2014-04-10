@@ -21,7 +21,6 @@ import org.chromium.content.browser.RenderCoordinates;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.DOMUtils;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content.browser.test.util.TestInputMethodManagerWrapper;
 import org.chromium.content.browser.test.util.TestTouchUtils;
 import org.chromium.content.browser.test.util.TouchCommon;
@@ -250,12 +249,11 @@ public class InsertionHandleTest extends ContentShellTestBase {
         // click (only if it changes the selection), the insertion handle is displayed. So that the
         // second click changes the selection, the two clicks should be in sufficiently different
         // locations.
-        Rect nodeBounds = DOMUtils.getNodeBounds(getContentView(),
-                new TestCallbackHelperContainer(getContentView()), nodeId);
+        Rect nodeBounds = DOMUtils.getNodeBounds(getContentViewCore(), nodeId);
 
-        RenderCoordinates renderCoordinates = getContentView().getRenderCoordinates();
-        int offsetX = getContentView().getContentViewCore().getViewportSizeOffsetWidthPix();
-        int offsetY = getContentView().getContentViewCore().getViewportSizeOffsetHeightPix();
+        RenderCoordinates renderCoordinates = getContentViewCore().getRenderCoordinates();
+        int offsetX = getContentViewCore().getViewportSizeOffsetWidthPix();
+        int offsetY = getContentViewCore().getViewportSizeOffsetHeightPix();
         float left = renderCoordinates.fromLocalCssToPix(nodeBounds.left) + offsetX;
         float right = renderCoordinates.fromLocalCssToPix(nodeBounds.right) + offsetX;
         float top = renderCoordinates.fromLocalCssToPix(nodeBounds.top) + offsetY;

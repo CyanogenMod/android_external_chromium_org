@@ -6,11 +6,11 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_service_unittest.h"
-#include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/test/base/testing_profile.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/common/extension_icon_set.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
@@ -249,6 +249,13 @@ TEST_F(BookmarkAppHelperTest, GenerateIcons) {
     BookmarkAppHelper::GenerateContainerIcon(&bitmaps, 32);
     EXPECT_EQ(0u, bitmaps.count(32));
   }
+}
+
+TEST_F(BookmarkAppHelperTest, IsValidBookmarkAppUrl) {
+  EXPECT_TRUE(IsValidBookmarkAppUrl(GURL("https://www.chromium.org")));
+  EXPECT_TRUE(IsValidBookmarkAppUrl(GURL("http://www.chromium.org/path")));
+  EXPECT_FALSE(IsValidBookmarkAppUrl(GURL("ftp://www.chromium.org")));
+  EXPECT_FALSE(IsValidBookmarkAppUrl(GURL("chrome://flags")));
 }
 
 }  // namespace extensions

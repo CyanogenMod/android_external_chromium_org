@@ -159,6 +159,9 @@
     'cast': {
       'filepath': 'media/cast/',
     },
+    'chromecast': {
+      'filepath': 'chromecast/',
+    },
     'cc': {
       'filepath': 'cc/|'\
                   'webkit/renderer/compositor_bindings/|'\
@@ -306,6 +309,9 @@
                   'ui/gfx/size|'\
                   'ui/gfx/transform|'\
                   'ui/gfx/vector2d',
+    },
+    'gn': {
+      'filepath': 'tools/gn',
     },
     'gpu': {
       'filepath': 'gpu/',
@@ -727,6 +733,7 @@
              'mikhal+watch@chromium.org',
              'miu+watch@chromium.org',
              'pwestin+watch@google.com'],
+    'chromecast': ['ozone-reviews@chromium.org'],
     'cc': ['cc-bugs@chromium.org'],
     'chrome_elf': ['caitkp+watch@chromium.org',],
     'chrome_views': ['tfarina@chromium.org'],
@@ -773,6 +780,7 @@
     'geolocation': ['mvanouwerkerk@chromium.org'],
     'gfx_geometry': ['cc-bugs@chromium.org'],
     'gfx_image': ['rsesek+watch@chromium.org'],
+    'gn': ['tfarina@chromium.org'],
     'gpu': ['piman+watch@chromium.org'],
     'history_ui': ['dubroy@chromium.org', 'pam+watch@chromium.org'],
     'i18n': ['jshin+watch@chromium.org'],

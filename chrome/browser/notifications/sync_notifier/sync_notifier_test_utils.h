@@ -18,6 +18,7 @@
 extern const char kSendingService1Name[];
 extern const char kSendingService2Name[];
 extern const char kSendingService3Name[];
+extern const char kTestInfoUrl[];
 extern const char kTestIconUrl[];
 
 // Fake data for creating a SyncedNotification.
@@ -82,7 +83,7 @@ extern const char kContainedMessage2[];
 extern const char kContainedMessage3[];
 const uint64 kFakeCreationTime = 42;
 const int kProtobufPriority = static_cast<int>(
-    sync_pb::CoalescedSyncedNotification_Priority_LOW);
+    sync_pb::CoalescedSyncedNotification_Priority_INVISIBLE);
 
 const sync_pb::CoalescedSyncedNotification_ReadState kRead =
     sync_pb::CoalescedSyncedNotification_ReadState_READ;

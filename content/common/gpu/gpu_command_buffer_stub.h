@@ -44,7 +44,9 @@ namespace content {
 
 class GpuChannel;
 class GpuVideoDecodeAccelerator;
+class GpuVideoEncodeAccelerator;
 class GpuWatchdog;
+struct WaitForCommandState;
 
 class GpuCommandBufferStub
     : public GpuMemoryManagerClient,
@@ -159,7 +161,12 @@ class GpuCommandBufferStub
   void OnSetGetBuffer(int32 shm_id, IPC::Message* reply_message);
   void OnProduceFrontBuffer(const gpu::Mailbox& mailbox);
   void OnGetState(IPC::Message* reply_message);
-  void OnGetStateFast(IPC::Message* reply_message);
+  void OnWaitForTokenInRange(int32 start,
+                             int32 end,
+                             IPC::Message* reply_message);
+  void OnWaitForGetOffsetInRange(int32 start,
+                                 int32 end,
+                                 IPC::Message* reply_message);
   void OnAsyncFlush(int32 put_offset, uint32 flush_count);
   void OnEcho(const IPC::Message& message);
   void OnRescheduled();
@@ -169,9 +176,15 @@ class GpuCommandBufferStub
   void OnDestroyTransferBuffer(int32 id);
   void OnGetTransferBuffer(int32 id, IPC::Message* reply_message);
 
-  void OnCreateVideoDecoder(
-      media::VideoCodecProfile profile,
-      IPC::Message* reply_message);
+  void OnCreateVideoDecoder(media::VideoCodecProfile profile,
+                            int32 route_id,
+                            IPC::Message* reply_message);
+  void OnCreateVideoEncoder(media::VideoFrame::Format input_format,
+                            const gfx::Size& input_visible_size,
+                            media::VideoCodecProfile output_profile,
+                            uint32 initial_bitrate,
+                            int32 route_id,
+                            IPC::Message* reply_message);
 
   void OnSetSurfaceVisible(bool visible);
 
@@ -197,7 +210,8 @@ class GpuCommandBufferStub
   void OnCommandProcessed();
   void OnParseError();
   void OnSetLatencyInfo(const std::vector<ui::LatencyInfo>& latency_info);
-  void OnCreateStreamTexture(uint32 texture_id, int32* stream_id);
+  void OnCreateStreamTexture(
+      uint32 texture_id, int32 stream_id, bool* succeeded);
 
   void ReportState();
 
@@ -213,6 +227,7 @@ class GpuCommandBufferStub
   void ScheduleDelayedWork(int64 delay);
 
   bool CheckContextLost();
+  void CheckCompleteWaits();
 
   // The lifetime of objects of this class is managed by a GpuChannel. The
   // GpuChannels destroy all the GpuCommandBufferStubs that they own when they
@@ -265,6 +280,8 @@ class GpuCommandBufferStub
   size_t active_url_hash_;
 
   size_t total_gpu_memory_;
+  scoped_ptr<WaitForCommandState> wait_for_token_;
+  scoped_ptr<WaitForCommandState> wait_for_get_offset_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuCommandBufferStub);
 };

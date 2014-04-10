@@ -16,6 +16,7 @@
       <div id="shared-proxies" class="checkbox">
         <label>
           <input id="use-shared-proxies" type="checkbox"
+              metric="Options_NetworkUseSharedProxies"
               pref="settings.use_shared_proxies">
           <span i18n-content="useSharedProxies"></span>
         </label>
@@ -70,6 +71,7 @@
         <span id="home-page-url" class="home-page-label"></span>
         <button id="change-home-page" class="link-button"
             i18n-content="changeHomePage"></button>
+        <div id="extension-controlled-container"></div>
       </div>
     </div>
     <div class="checkbox" guest-visibility="disabled">
@@ -130,7 +132,7 @@
 </if>
   <section>
     <h3 i18n-content="sectionTitleSearch"></h3>
-      <div>
+      <div id="search-section-content">
         <label for="default-search-engine" class="settings-row"
             i18n-values=".innerHTML:defaultSearchGroupLabel">
         </label>
@@ -376,14 +378,14 @@
       <div id="hotword-search" hidden>
         <div class="checkbox">
           <span class="controlled-setting-with-label">
-            <input id="hotword-search-enable" pref="hotword.search_enabled"
+            <input id="hotword-search-enable" pref="hotword.search_enabled_2"
                 metric="Options_HotwordCheckbox" type="checkbox" dialog-pref>
             <span>
               <label for="hotword-search-enable"
                   i18n-values=".innerHTML:hotwordSearchEnable">
               </label>
               <span id="controlled-setting-indicator"
-                  pref="hotword.search_enabled" dialog-pref>
+                  pref="hotword.search_enabled_2" dialog-pref>
               </span>
             </span>
           </span>
@@ -618,16 +620,16 @@
         </span>
       </div>
 </if>
-<if expr="not chromeos">
       <div id="auto-open-file-types-section" hidden>
         <div id="auto-open-file-types-container">
-          <div id="auto-open-file-types-label"
+          <div id="auto-open-file-types-label" class="settings-row"
               i18n-content="autoOpenFileTypesInfo"></div>
-          <button id="autoOpenFileTypesResetToDefault"
-              i18n-content="autoOpenFileTypesResetToDefault"></button>
+          <div class="settings-row">
+            <button id="autoOpenFileTypesResetToDefault"
+                i18n-content="autoOpenFileTypesResetToDefault"></button>
+            </div>
         </div>
       </div>
-</if>
     </div>
   </section>
   <section>
@@ -648,10 +650,9 @@
         </div>
       </div>
   </section>
-  <section id="cloud-print-connector-section">
-    <h3 i18n-content="advancedSectionTitleCloudPrint"></h3>
 <if expr="enable_service_discovery">
-    <div id="cloudprint-options-mdns" hidden>
+    <section id="cloudprint-options-mdns">
+      <h3 i18n-content="advancedSectionTitleCloudPrint"></h3>
       <div class="settings-row">
         <span i18n-content="cloudPrintOptionLabel"></span>
         <a target="_blank" i18n-content="learnMore"
@@ -676,36 +677,10 @@
                   pref="local_discovery.notifications_enabled">
             </span>
           </span>
+        </span>
       </div>
-    </div>
+    </section>
 </if>
-
-    <div id="cloudprint-options-nomdns">
-<if expr="chromeos">
-      <div>
-        <span i18n-content="cloudPrintOptionLabel"></span>
-        <a target="_blank" i18n-content="learnMore"
-           i18n-values="href:cloudPrintLearnMoreURL"></a>
-      </div>
-</if>
-
-<if expr="not chromeos">
-      <p id="cloudPrintConnectorLabel" class="settings-row"
-         i18n-content="cloudPrintConnectorDisabledLabel"></p>
-</if>
-
-      <div class="settings-row">
-<if expr="not chromeos">
-        <button id="cloudPrintConnectorSetupButton"
-                i18n-content="cloudPrintConnectorDisabledButton"></button>
-</if>
-
-        <button id="cloudPrintManageButton"
-                i18n-content="cloudPrintManageButton">
-        </button>
-      </div>
-    </div>
-  </section>
 
 <if expr="chromeos">
   <include src="startup_section.html">

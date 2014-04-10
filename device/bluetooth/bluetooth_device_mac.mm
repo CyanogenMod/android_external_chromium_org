@@ -36,6 +36,8 @@
 
 namespace {
 
+const char kFailedToConnect[] = "Connection failed";
+
 // Converts |uuid| to a IOBluetoothSDPUUID instance.
 //
 // |uuid| must be in the format of XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX.
@@ -68,6 +70,18 @@ BluetoothDeviceMac::BluetoothDeviceMac(IOBluetoothDevice* device)
 
 BluetoothDeviceMac::~BluetoothDeviceMac() {
   [device_ release];
+}
+
+void BluetoothDeviceMac::AddObserver(
+    device::BluetoothDevice::Observer* observer) {
+  DCHECK(observer);
+  observers_.AddObserver(observer);
+}
+
+void BluetoothDeviceMac::RemoveObserver(
+    device::BluetoothDevice::Observer* observer) {
+  DCHECK(observer);
+  observers_.RemoveObserver(observer);
 }
 
 uint32 BluetoothDeviceMac::GetBluetoothClass() const {
@@ -179,10 +193,11 @@ void BluetoothDeviceMac::Forget(const ErrorCallback& error_callback) {
 }
 
 void BluetoothDeviceMac::ConnectToService(
-    const std::string& service_uuid,
+    const device::BluetoothUUID& service_uuid,
     const SocketCallback& callback) {
   IOBluetoothSDPServiceRecord* record =
-      [device_ getServiceRecordForUUID:GetIOBluetoothSDPUUID(service_uuid)];
+      [device_ getServiceRecordForUUID:GetIOBluetoothSDPUUID(
+          service_uuid.canonical_value())];
   if (record != nil) {
     BluetoothServiceRecordMac service_record(record);
     scoped_refptr<BluetoothSocket> socket(
@@ -193,13 +208,13 @@ void BluetoothDeviceMac::ConnectToService(
 }
 
 void BluetoothDeviceMac::ConnectToProfile(
-    device::BluetoothProfile* profile,
+    BluetoothProfile* profile,
     const base::Closure& callback,
-    const ErrorCallback& error_callback) {
+    const ConnectToProfileErrorCallback& error_callback) {
   if (static_cast<BluetoothProfileMac*>(profile)->Connect(device_))
     callback.Run();
   else
-    error_callback.Run();
+    error_callback.Run(kFailedToConnect);
 }
 
 void BluetoothDeviceMac::SetOutOfBandPairingData(

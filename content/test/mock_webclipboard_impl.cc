@@ -102,7 +102,7 @@ blink::WebData MockWebClipboardImpl::readImage(
                         gfx::PNGCodec::FORMAT_BGRA,
 #endif
                         gfx::Size(bitmap.width(), bitmap.height()),
-                        bitmap.rowBytes(),
+                        static_cast<int>(bitmap.rowBytes()),
                         false /* discard_transparency */,
                         std::vector<gfx::PNGCodec::Comment>(),
                         &encoded_image);
@@ -177,9 +177,9 @@ void MockWebClipboardImpl::writeDataObject(const WebDragData& data) {
         m_customData.insert(std::make_pair(item.stringType, item.stringData));
         continue;
       }
-      case WebDragData::Item::StorageTypeFilename:
-      case WebDragData::Item::StorageTypeBinaryData:
-        NOTREACHED();  // Currently unused by the clipboard implementation.
+      default:
+        // Currently other types are unused by the clipboard implementation.
+        NOTREACHED();
     }
   }
 }

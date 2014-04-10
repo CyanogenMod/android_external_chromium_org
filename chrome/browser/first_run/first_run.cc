@@ -12,10 +12,10 @@
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
+#include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -38,7 +38,6 @@
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
-#include "chrome/browser/signin/signin_tracker.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
@@ -55,6 +54,7 @@
 #include "chrome/installer/util/master_preferences_constants.h"
 #include "chrome/installer/util/util_constants.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/browser/signin_tracker.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -84,8 +84,7 @@ bool g_should_do_autofill_personal_data_manager_first_run = false;
 // ImportEnded() is called asynchronously. Thus we have to handle both cases.
 class ImportEndedObserver : public importer::ImporterProgressObserver {
  public:
-  ImportEndedObserver() : ended_(false),
-                          should_quit_message_loop_(false) {}
+  ImportEndedObserver() : ended_(false) {}
   virtual ~ImportEndedObserver() {}
 
   // importer::ImporterProgressObserver:
@@ -94,12 +93,12 @@ class ImportEndedObserver : public importer::ImporterProgressObserver {
   virtual void ImportItemEnded(importer::ImportItem item) OVERRIDE {}
   virtual void ImportEnded() OVERRIDE {
     ended_ = true;
-    if (should_quit_message_loop_)
-      base::MessageLoop::current()->Quit();
+    if (!callback_for_import_end_.is_null())
+      callback_for_import_end_.Run();
   }
 
-  void set_should_quit_message_loop() {
-    should_quit_message_loop_ = true;
+  void set_callback_for_import_end(const base::Closure& callback) {
+    callback_for_import_end_ = callback;
   }
 
   bool ended() const {
@@ -110,7 +109,9 @@ class ImportEndedObserver : public importer::ImporterProgressObserver {
   // Set if the import has ended.
   bool ended_;
 
-  bool should_quit_message_loop_;
+  base::Closure callback_for_import_end_;
+
+  DISALLOW_COPY_AND_ASSIGN(ImportEndedObserver);
 };
 
 // Helper class that performs delayed first-run tasks that need more of the
@@ -237,8 +238,10 @@ void ImportFromSourceProfile(ExternalProcessImporterHost* importer_host,
                                      new ProfileWriter(target_profile));
   // If the import process has not errored out, block on it.
   if (!observer.ended()) {
-    observer.set_should_quit_message_loop();
-    base::MessageLoop::current()->Run();
+    base::RunLoop loop;
+    observer.set_callback_for_import_end(loop.QuitClosure());
+    loop.Run();
+    observer.set_callback_for_import_end(base::Closure());
   }
 }
 

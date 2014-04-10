@@ -24,25 +24,6 @@ WebRtcVideoCapturerAdapter::~WebRtcVideoCapturerAdapter() {
   base::AlignedFree(buffer_);
 }
 
-void WebRtcVideoCapturerAdapter::SetRequestedFormat(
-    const media::VideoCaptureFormat& format) {
-  DCHECK_EQ(media::PIXEL_FORMAT_I420, format.pixel_format);
-  DVLOG(3) << "WebRtcVideoCapturerAdapter::SetRequestedFormat"
-           << " w = " << format.frame_size.width()
-           << " h = " << format.frame_size.height();
-  cricket::VideoFormat supported_format(format.frame_size.width(),
-                                        format.frame_size.height(),
-                                        cricket::VideoFormat::FpsToInterval(
-                                            format.frame_rate),
-                                        cricket::FOURCC_I420);
-  SetCaptureFormat(&supported_format);
-
-  // Update the desired aspect ratio so that later the video frame can be
-  // cropped to meet the requirement if the camera returns a different
-  // resolution than the |request|.
-  UpdateAspectRatio(format.frame_size.width(), format.frame_size.height());
-}
-
 cricket::CaptureState WebRtcVideoCapturerAdapter::Start(
     const cricket::VideoFormat& capture_format) {
   DCHECK(!running_);
@@ -99,16 +80,16 @@ void WebRtcVideoCapturerAdapter::OnFrameCaptured(
   DCHECK(media::VideoFrame::I420 == frame->format() ||
          media::VideoFrame::YV12 == frame->format());
   if (first_frame_timestamp_ == media::kNoTimestamp())
-    first_frame_timestamp_ = frame->GetTimestamp();
+    first_frame_timestamp_ = frame->timestamp();
 
   cricket::CapturedFrame captured_frame;
   captured_frame.width = frame->visible_rect().width();
   captured_frame.height = frame->visible_rect().height();
   // cricket::CapturedFrame time is in nanoseconds.
   captured_frame.elapsed_time =
-      (frame->GetTimestamp() - first_frame_timestamp_).InMicroseconds() *
+      (frame->timestamp() - first_frame_timestamp_).InMicroseconds() *
       base::Time::kNanosecondsPerMicrosecond;
-  captured_frame.time_stamp = frame->GetTimestamp().InMicroseconds() *
+  captured_frame.time_stamp = frame->timestamp().InMicroseconds() *
                               base::Time::kNanosecondsPerMicrosecond;
   captured_frame.pixel_height = 1;
   captured_frame.pixel_width = 1;

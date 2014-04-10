@@ -8,7 +8,6 @@
 #include "ash/wm/window_state.h"
 
 namespace ash {
-namespace internal {
 class MaximizeModeWindowManager;
 
 // The MaximizeModeWindowState implementation which reduces all possible window
@@ -46,6 +45,9 @@ class MaximizeModeWindowState : public wm::WindowState::State {
   // set to true, a bounds change will be animated - otherwise immediate.
   void MaximizeOrCenterWindow(wm::WindowState* window_state, bool animate);
 
+  // Minimize the window.
+  void Minimize(wm::WindowState* window_state);
+
   // The original state object of the window.
   scoped_ptr<wm::WindowState::State> old_state_;
 
@@ -62,7 +64,6 @@ class MaximizeModeWindowState : public wm::WindowState::State {
   DISALLOW_COPY_AND_ASSIGN(MaximizeModeWindowState);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_MAXIMIZE_MODE_MAXIMIZE_MODE_WINDOW_STATE_H_

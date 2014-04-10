@@ -91,7 +91,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/skia_util.h"
@@ -1812,9 +1811,8 @@ base::string16 AutofillDialogControllerImpl::InputValidityMessage(
 
     case NAME_FULL:
       // Wallet requires a first and last billing name.
-      if (section == SECTION_CC_BILLING && !value.empty() &&
+      if (IsPayingWithWallet() && !value.empty() &&
           !IsCardHolderNameValidForWallet(value)) {
-        DCHECK(IsPayingWithWallet());
         return l10n_util::GetStringUTF16(
             IDS_AUTOFILL_DIALOG_VALIDATION_WALLET_REQUIRES_TWO_NAMES);
       }
@@ -2036,7 +2034,6 @@ void AutofillDialogControllerImpl::UserEditedOrActivatedInput(
       content_bounds,
       base::i18n::IsRTL() ?
           base::i18n::RIGHT_TO_LEFT : base::i18n::LEFT_TO_RIGHT);
-  popup_controller_->set_hide_on_outside_click(true);
   popup_controller_->Show(popup_values,
                           popup_labels,
                           popup_icons,
@@ -2250,14 +2247,6 @@ void AutofillDialogControllerImpl::OnPopupShown() {
 }
 
 void AutofillDialogControllerImpl::OnPopupHidden() {}
-
-bool AutofillDialogControllerImpl::ShouldRepostEvent(
-    const ui::MouseEvent& event) {
-  DCHECK_NE(UNKNOWN_TYPE, popup_input_type_);
-  // If the event would be reposted inside the input showing an Autofill popup,
-  // just ignore.
-  return !view_->HitTestInput(popup_input_type_, event.location());
-}
 
 void AutofillDialogControllerImpl::DidSelectSuggestion(
     const base::string16& value,
@@ -3346,7 +3335,7 @@ bool AutofillDialogControllerImpl::RebuildInputsForCountry(
 }
 
 void AutofillDialogControllerImpl::HidePopup() {
-  if (popup_controller_.get())
+  if (popup_controller_)
     popup_controller_->Hide();
   popup_input_type_ = UNKNOWN_TYPE;
 }

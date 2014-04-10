@@ -113,6 +113,17 @@ keyboard::KeyboardControllerProxy*
   return new KeyboardControllerProxyStub();
 }
 
+void ShellDelegateImpl::VirtualKeyboardActivated(bool activated) {
+}
+
+void ShellDelegateImpl::AddVirtualKeyboardStateObserver(
+    VirtualKeyboardStateObserver* observer) {
+}
+
+void ShellDelegateImpl::RemoveVirtualKeyboardStateObserver(
+    VirtualKeyboardStateObserver* observer) {
+}
+
 content::BrowserContext* ShellDelegateImpl::GetActiveBrowserContext() {
   return browser_context_;
 }
@@ -139,7 +150,7 @@ ash::SessionStateDelegate* ShellDelegateImpl::CreateSessionStateDelegate() {
 }
 
 ash::AccessibilityDelegate* ShellDelegateImpl::CreateAccessibilityDelegate() {
-  return new internal::DefaultAccessibilityDelegate;
+  return new DefaultAccessibilityDelegate;
 }
 
 ash::NewWindowDelegate* ShellDelegateImpl::CreateNewWindowDelegate() {

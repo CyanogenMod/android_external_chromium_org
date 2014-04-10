@@ -5,6 +5,8 @@
 // The <code>chrome.cast.streaming.rtpStream</code> API allows configuration
 // of encoding parameters and RTP parameters used in a Cast streaming
 // session.
+//
+// Valid stream IDs are positive and non-zero.
 namespace cast.streaming.rtpStream {
   // Params for audio and video codec.
   dictionary CodecSpecificParams {
@@ -16,12 +18,18 @@ namespace cast.streaming.rtpStream {
   dictionary RtpPayloadParams {
     long payloadType;
 
+    // Maximum latency in milliseconds. This parameter controls the logic
+    // of flow control. Implementation can adjust latency adaptively and
+    // tries to keep it under this threshold. A larger value allows smoother
+    // playback at the cost of higher latency.
+    long maxLatency;
+
     DOMString codecName;
 
     // Synchronization source identifier.
-    long? ssrc;
+    long ssrc;
 
-    long? feedbackSsrc;
+    long feedbackSsrc;
 
     long? clockRate;
 

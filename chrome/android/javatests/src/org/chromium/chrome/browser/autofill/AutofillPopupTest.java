@@ -15,10 +15,10 @@ import org.chromium.chrome.R;
 import org.chromium.chrome.browser.autofill.PersonalDataManager.AutofillProfile;
 import org.chromium.chrome.shell.ChromeShellTestBase;
 import org.chromium.content.browser.ContentView;
+import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.DOMUtils;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content.browser.test.util.TestInputMethodManagerWrapper;
 import org.chromium.content.browser.test.util.TouchCommon;
 import org.chromium.ui.autofill.AutofillPopup;
@@ -126,7 +126,7 @@ public class AutofillPopupTest extends ChromeShellTestBase {
         );
     }
 
-    private TestCallbackHelperContainer loadAndFillForm(
+    private void loadAndFillForm(
             final String formDataUrl, final String inputText)
             throws InterruptedException, ExecutionException, TimeoutException {
         launchChromeShellWithUrl(formDataUrl);
@@ -135,10 +135,11 @@ public class AutofillPopupTest extends ChromeShellTestBase {
 
         // The TestInputMethodManagerWrapper intercepts showSoftInput so that a keyboard is never
         // brought up.
-        final ContentView view = getActivity().getActiveContentView();
+        ContentView view = getActivity().getActiveContentView();
+        final ContentViewCore viewCore = view.getContentViewCore();
         final TestInputMethodManagerWrapper immw =
-                new TestInputMethodManagerWrapper(view.getContentViewCore());
-        view.getContentViewCore().getImeAdapterForTest().setInputMethodManagerWrapper(immw);
+                new TestInputMethodManagerWrapper(viewCore);
+        viewCore.getImeAdapterForTest().setInputMethodManagerWrapper(immw);
 
         // Add an Autofill profile.
         AutofillProfile profile = new AutofillProfile(
@@ -148,16 +149,15 @@ public class AutofillPopupTest extends ChromeShellTestBase {
         assertEquals(1, mHelper.getNumberOfProfiles());
 
         // Click the input field for the first name.
-        final TestCallbackHelperContainer viewClient = new TestCallbackHelperContainer(view);
-        assertTrue(DOMUtils.waitForNonZeroNodeBounds(view, viewClient, "fn"));
-        DOMUtils.clickNode(this, view, viewClient, "fn");
+        assertTrue(DOMUtils.waitForNonZeroNodeBounds(viewCore, "fn"));
+        DOMUtils.clickNode(this, view, "fn");
 
         waitForKeyboardShowRequest(immw, 1);
 
         ThreadUtils.runOnUiThreadBlocking(new Runnable() {
             @Override
             public void run() {
-                view.getContentViewCore().getInputConnectionForTest().setComposingText(
+                viewCore.getInputConnectionForTest().setComposingText(
                         inputText, 1);
             }
         });
@@ -173,9 +173,7 @@ public class AutofillPopupTest extends ChromeShellTestBase {
         TouchCommon touchCommon = new TouchCommon(this);
         touchCommon.singleClickViewRelative(popup.getListView(), 10, 10);
 
-        waitForInputFieldFill(view, viewClient);
-
-        return viewClient;
+        waitForInputFieldFill(viewCore);
     }
 
     /**
@@ -186,27 +184,27 @@ public class AutofillPopupTest extends ChromeShellTestBase {
     @Feature({"autofill"})
     public void testClickAutofillPopupSuggestion()
             throws InterruptedException, ExecutionException, TimeoutException {
-        TestCallbackHelperContainer viewClient = loadAndFillForm(BASIC_PAGE_DATA, "J");
-        final ContentView view = getActivity().getActiveContentView();
+        loadAndFillForm(BASIC_PAGE_DATA, "J");
+        final ContentViewCore viewCore = getActivity().getActiveContentView().getContentViewCore();
 
         assertEquals("First name did not match",
-                FIRST_NAME, DOMUtils.getNodeValue(view, viewClient, "fn"));
+                FIRST_NAME, DOMUtils.getNodeValue(viewCore, "fn"));
         assertEquals("Last name did not match",
-                LAST_NAME, DOMUtils.getNodeValue(view, viewClient, "ln"));
+                LAST_NAME, DOMUtils.getNodeValue(viewCore, "ln"));
         assertEquals("Address line 1 did not match",
-                ADDRESS_LINE1, DOMUtils.getNodeValue(view, viewClient, "a1"));
+                ADDRESS_LINE1, DOMUtils.getNodeValue(viewCore, "a1"));
         assertEquals("Address line 2 did not match",
-                ADDRESS_LINE2, DOMUtils.getNodeValue(view, viewClient, "a2"));
+                ADDRESS_LINE2, DOMUtils.getNodeValue(viewCore, "a2"));
         assertEquals("City did not match",
-                CITY, DOMUtils.getNodeValue(view, viewClient, "ct"));
+                CITY, DOMUtils.getNodeValue(viewCore, "ct"));
         assertEquals("Zip code did not match",
-                ZIP_CODE, DOMUtils.getNodeValue(view, viewClient, "zc"));
+                ZIP_CODE, DOMUtils.getNodeValue(viewCore, "zc"));
         assertEquals("Country did not match",
-                COUNTRY, DOMUtils.getNodeValue(view, viewClient, "co"));
+                COUNTRY, DOMUtils.getNodeValue(viewCore, "co"));
         assertEquals("Email did not match",
-                EMAIL, DOMUtils.getNodeValue(view, viewClient, "em"));
+                EMAIL, DOMUtils.getNodeValue(viewCore, "em"));
         assertEquals("Phone number did not match",
-                PHONE_NUMBER, DOMUtils.getNodeValue(view, viewClient, "ph"));
+                PHONE_NUMBER, DOMUtils.getNodeValue(viewCore, "ph"));
 
         final String profileFullName = FIRST_NAME + " " + LAST_NAME;
         final int loggedEntries = 9;
@@ -312,15 +310,14 @@ public class AutofillPopupTest extends ChromeShellTestBase {
                 }));
     }
 
-    private void waitForInputFieldFill(final ContentView view,
-            final TestCallbackHelperContainer viewClient) throws InterruptedException {
+    private void waitForInputFieldFill(final ContentViewCore viewCore) throws InterruptedException {
         assertTrue("First name field was never filled.",
                 CriteriaHelper.pollForCriteria(new Criteria() {
                     @Override
                     public boolean isSatisfied() {
                         try {
                             return TextUtils.equals(FIRST_NAME,
-                                    DOMUtils.getNodeValue(view, viewClient, "fn"));
+                                    DOMUtils.getNodeValue(viewCore, "fn"));
                         } catch (InterruptedException e) {
                             return false;
                         } catch (TimeoutException e) {

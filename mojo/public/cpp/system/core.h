@@ -16,6 +16,70 @@
 
 namespace mojo {
 
+// OVERVIEW
+//
+// |Handle| and |...Handle|:
+//
+// |Handle| is a simple, copyable wrapper for the C type |MojoHandle| (which is
+// just an integer). Its purpose is to increase type-safety, not provide
+// lifetime management. For the same purpose, we have trivial *subclasses* of
+// |Handle|, e.g., |MessagePipeHandle| and |DataPipeProducerHandle|. |Handle|
+// and its subclasses impose *no* extra overhead over using |MojoHandle|s
+// directly.
+//
+// Note that though we provide constructors for |Handle|/|...Handle| from a
+// |MojoHandle|, we do not provide, e.g., a constructor for |MessagePipeHandle|
+// from a |Handle|. This is for type safety: If we did, you'd then be able to
+// construct a |MessagePipeHandle| from, e.g., a |DataPipeProducerHandle| (since
+// it's a |Handle|).
+//
+// |ScopedHandleBase| and |Scoped...Handle|:
+//
+// |ScopedHandleBase<HandleType>| is a templated scoped wrapper, for the handle
+// types above (in the same sense that a C++11 |unique_ptr<T>| is a scoped
+// wrapper for a |T*|). It provides lifetime management, closing its owned
+// handle on destruction. It also provides (emulated) move semantics, again
+// along the lines of C++11's |unique_ptr| (and exactly like Chromium's
+// |scoped_ptr|).
+//
+// |ScopedHandle| is just (a typedef of) a |ScopedHandleBase<Handle>|.
+// Similarly, |ScopedMessagePipeHandle| is just a
+// |ScopedHandleBase<MessagePipeHandle>|. Etc. Note that a
+// |ScopedMessagePipeHandle| is *not* a (subclass of) |ScopedHandle|.
+//
+// Wrapper functions:
+//
+// We provide simple wrappers for the |Mojo...()| functions (in
+// mojo/public/c/system/core.h -- see that file for details on individual
+// functions).
+//
+// The general guideline is functions that imply ownership transfer of a handle
+// should take (or produce) an appropriate |Scoped...Handle|, while those that
+// don't take a |...Handle|. For example, |CreateMessagePipe()| has two
+// |ScopedMessagePipe| "out" parameters, whereas |Wait()| and |WaitMany()| take
+// |Handle| parameters. Some, have both: e.g., |DuplicatedBuffer()| takes a
+// suitable (unscoped) handle (e.g., |SharedBufferHandle|) "in" parameter and
+// produces a suitable scoped handle (e.g., |ScopedSharedBufferHandle| a.k.a.
+// |ScopedHandleBase<SharedBufferHandle>|) as an "out" parameter.
+//
+// An exception are some of the |...Raw()| functions. E.g., |CloseRaw()| takes a
+// |Handle|, leaving the user to discard the handle.
+//
+// More significantly, |WriteMessageRaw()| exposes the full API complexity of
+// |MojoWriteMessage()| (but doesn't require any extra overhead). It takes a raw
+// array of |Handle|s as input, and takes ownership of them (i.e., invalidates
+// them) on *success* (but not on failure). There are a number of reasons for
+// this. First, C++03 |std::vector|s cannot contain the move-only
+// |Scoped...Handle|s. Second, |std::vector|s impose extra overhead
+// (necessitating heap-allocation of the buffer). Third, |std::vector|s wouldn't
+// provide the desired level of flexibility/safety: a vector of handles would
+// have to be all of the same type (probably |Handle|/|ScopedHandle|). Fourth,
+// it's expected to not be used directly, but instead be used by generated
+// bindings.
+//
+// Other |...Raw()| functions expose similar rough edges, e.g., dealing with raw
+// pointers (and lengths) instead of taking |std::vector|s or similar.
+
 // Standalone functions --------------------------------------------------------
 
 inline MojoTimeTicks GetTimeTicksNow() {
@@ -48,6 +112,16 @@ class ScopedHandleBase {
   }
 
   const HandleType& get() const { return handle_; }
+
+  template <typename PassedHandleType>
+  static ScopedHandleBase<HandleType> From(
+      ScopedHandleBase<PassedHandleType> other) {
+    MOJO_COMPILE_ASSERT(
+        sizeof(static_cast<PassedHandleType*>(static_cast<HandleType*>(0))),
+        HandleType_is_not_a_subtype_of_PassedHandleType);
+    return ScopedHandleBase<HandleType>(
+        static_cast<HandleType>(other.release().value()));
+  }
 
   void swap(ScopedHandleBase& other) {
     handle_.swap(other.handle_);
@@ -91,7 +165,7 @@ const MojoHandle kInvalidHandleValue = MOJO_HANDLE_INVALID;
 // Wrapper base class for |MojoHandle|.
 class Handle {
  public:
-  Handle() : value_(MOJO_HANDLE_INVALID) {}
+  Handle() : value_(kInvalidHandleValue) {}
   explicit Handle(MojoHandle value) : value_(value) {}
   ~Handle() {}
 
@@ -102,7 +176,7 @@ class Handle {
   }
 
   bool is_valid() const {
-    return value_ != MOJO_HANDLE_INVALID;
+    return value_ != kInvalidHandleValue;
   }
 
   MojoHandle value() const { return value_; }
@@ -404,14 +478,14 @@ inline MojoResult CreateSharedBuffer(
 // manually. (The template enforces that the in and out handles to be of the
 // same type.)
 template <class BufferHandleType>
-inline MojoResult DuplicatedBuffer(
+inline MojoResult DuplicateBuffer(
     BufferHandleType buffer,
     const MojoDuplicateBufferHandleOptions* options,
     ScopedHandleBase<BufferHandleType>* new_buffer) {
   assert(new_buffer);
   BufferHandleType handle;
-  MojoResult rv = MojoDuplicateSharedBuffer(buffer.value(), options,
-                                            handle.mutable_value());
+  MojoResult rv = MojoDuplicateBufferHandle(
+      buffer.value(), options, handle.mutable_value());
   // Reset even on failure (reduces the chances that a "stale"/incorrect handle
   // will be used).
   new_buffer->reset(handle);
@@ -424,7 +498,7 @@ inline MojoResult MapBuffer(BufferHandleType buffer,
                             uint64_t num_bytes,
                             void** pointer,
                             MojoMapBufferFlags flags) {
-  assert(buffer);
+  assert(buffer.is_valid());
   return MojoMapBuffer(buffer.value(), offset, num_bytes, pointer, flags);
 }
 

@@ -11,6 +11,7 @@
 #include "content/public/browser/notification_service.h"
 
 using autofill::PasswordFormMap;
+using password_manager::PasswordFormManager;
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(ManagePasswordsBubbleUIController);
 
@@ -20,7 +21,8 @@ ManagePasswordsBubbleUIController::ManagePasswordsBubbleUIController(
       manage_passwords_icon_to_be_shown_(false),
       password_to_be_saved_(false),
       manage_passwords_bubble_needs_showing_(false),
-      password_submitted_(false) {}
+      password_submitted_(false),
+      autofill_blocked_(false) {}
 
 ManagePasswordsBubbleUIController::~ManagePasswordsBubbleUIController() {}
 
@@ -43,6 +45,7 @@ void ManagePasswordsBubbleUIController::OnPasswordSubmitted(
   password_to_be_saved_ = true;
   manage_passwords_bubble_needs_showing_ = true;
   password_submitted_ = true;
+  autofill_blocked_ = false;
   UpdateBubbleAndIconVisibility();
 }
 
@@ -53,6 +56,16 @@ void ManagePasswordsBubbleUIController::OnPasswordAutofilled(
   password_to_be_saved_ = false;
   manage_passwords_bubble_needs_showing_ = false;
   password_submitted_ = false;
+  autofill_blocked_ = false;
+  UpdateBubbleAndIconVisibility();
+}
+
+void ManagePasswordsBubbleUIController::OnBlacklistBlockedAutofill() {
+  manage_passwords_icon_to_be_shown_ = true;
+  password_to_be_saved_ = false;
+  manage_passwords_bubble_needs_showing_ = false;
+  password_submitted_ = false;
+  autofill_blocked_ = true;
   UpdateBubbleAndIconVisibility();
 }
 
@@ -68,6 +81,11 @@ void ManagePasswordsBubbleUIController::OnBubbleShown() {
 void ManagePasswordsBubbleUIController::SavePassword() {
   DCHECK(form_manager_.get());
   form_manager_->Save();
+}
+
+void ManagePasswordsBubbleUIController::NeverSavePassword() {
+  DCHECK(form_manager_.get());
+  form_manager_->PermanentlyBlacklist();
 }
 
 void ManagePasswordsBubbleUIController::DidNavigateMainFrame(

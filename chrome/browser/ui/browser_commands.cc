@@ -448,7 +448,7 @@ void Home(Browser* browser, WindowOpenDisposition disposition) {
   content::RecordAction(UserMetricsAction("Home"));
 
   std::string extra_headers;
-#if defined(ENABLE_RLZ)
+#if defined(ENABLE_RLZ) && !defined(OS_IOS)
   // If the home page is a Google home page, add the RLZ header to the request.
   PrefService* pref_service = browser->profile()->GetPrefs();
   if (pref_service) {
@@ -458,7 +458,7 @@ void Home(Browser* browser, WindowOpenDisposition disposition) {
           RLZTracker::CHROME_HOME_PAGE);
     }
   }
-#endif
+#endif  // defined(ENABLE_RLZ) && !defined(OS_IOS)
 
   GURL url = browser->profile()->GetHomePage();
 
@@ -782,12 +782,12 @@ void Translate(Browser* browser) {
   TranslateTabHelper* translate_tab_helper =
       TranslateTabHelper::FromWebContents(web_contents);
 
-  TranslateTabHelper::TranslateStep step = TranslateTabHelper::BEFORE_TRANSLATE;
+  translate::TranslateStep step = translate::TRANSLATE_STEP_BEFORE_TRANSLATE;
   if (translate_tab_helper) {
     if (translate_tab_helper->GetLanguageState().translation_pending())
-      step = TranslateTabHelper::TRANSLATING;
+      step = translate::TRANSLATE_STEP_TRANSLATING;
     else if (translate_tab_helper->GetLanguageState().IsPageTranslated())
-      step = TranslateTabHelper::AFTER_TRANSLATE;
+      step = translate::TRANSLATE_STEP_AFTER_TRANSLATE;
   }
   browser->window()->ShowTranslateBubble(
       web_contents, step, TranslateErrors::NONE);
@@ -1236,7 +1236,7 @@ void CreateApplicationShortcuts(Browser* browser) {
           CreateApplicationShortcuts();
 }
 
-void CreateHostedAppFromCurrentWebContents(Browser* browser) {
+void CreateBookmarkAppFromCurrentWebContents(Browser* browser) {
   content::RecordAction(UserMetricsAction("CreateHostedApp"));
   extensions::TabHelper::FromWebContents(
       browser->tab_strip_model()->GetActiveWebContents())->
@@ -1247,6 +1247,12 @@ bool CanCreateApplicationShortcuts(const Browser* browser) {
   return extensions::TabHelper::FromWebContents(
       browser->tab_strip_model()->GetActiveWebContents())->
           CanCreateApplicationShortcuts();
+}
+
+bool CanCreateBookmarkApp(const Browser* browser) {
+  return extensions::TabHelper::FromWebContents(
+             browser->tab_strip_model()->GetActiveWebContents())
+      ->CanCreateBookmarkApp();
 }
 
 void ConvertTabToAppWindow(Browser* browser,

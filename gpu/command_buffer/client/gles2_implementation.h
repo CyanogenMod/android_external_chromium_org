@@ -148,6 +148,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
       GLint max_vertex_uniform_vectors;
       GLint num_compressed_texture_formats;
       GLint num_shader_binary_formats;
+      GLint bind_generates_resource_chromium;
     };
     IntState int_state;
 
@@ -221,7 +222,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
       const base::Closure& swap_buffers_complete_callback)
           OVERRIDE;
   virtual void ScheduleOverlayPlane(int plane_z_order,
-                                    unsigned plane_transform,
+                                    gfx::OverlayTransform plane_transform,
                                     unsigned overlay_texture_id,
                                     const gfx::Rect& display_bounds,
                                     const gfx::RectF& uv_rect) OVERRIDE;

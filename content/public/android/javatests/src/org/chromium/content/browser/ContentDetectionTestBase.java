@@ -4,9 +4,9 @@
 
 package org.chromium.content.browser;
 
-import android.net.Uri;
-
 import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
+
+import android.net.Uri;
 
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.test.util.DOMUtils;
@@ -66,8 +66,8 @@ public class ContentDetectionTestBase extends ContentShellTestBase {
                 callbackHelperContainer.getOnStartContentIntentHelper();
         int currentCallCount = onStartContentIntentHelper.getCallCount();
 
-        DOMUtils.scrollNodeIntoView(getContentView(), callbackHelperContainer, id);
-        DOMUtils.clickNode(this, getContentView(), callbackHelperContainer, id);
+        DOMUtils.scrollNodeIntoView(getContentViewCore(), id);
+        DOMUtils.clickNode(this, getContentView(), id);
 
         onStartContentIntentHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
                 TimeUnit.SECONDS);
@@ -87,8 +87,8 @@ public class ContentDetectionTestBase extends ContentShellTestBase {
                 callbackHelperContainer.getOnPageFinishedHelper();
         int currentCallCount = onPageFinishedHelper.getCallCount();
 
-        DOMUtils.scrollNodeIntoView(getContentView(), callbackHelperContainer, id);
-        DOMUtils.clickNode(this, getContentView(), callbackHelperContainer, id);
+        DOMUtils.scrollNodeIntoView(getContentViewCore(), id);
+        DOMUtils.clickNode(this, getContentView(), id);
 
         onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
                 TimeUnit.SECONDS);

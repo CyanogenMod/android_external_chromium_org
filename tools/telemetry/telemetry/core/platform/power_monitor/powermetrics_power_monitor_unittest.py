@@ -20,7 +20,7 @@ class PowerMetricsPowerMonitorTest(unittest.TestCase):
     mavericks_or_later = (
         backend.GetOSVersionName() >= mac_platform_backend.MAVERICKS)
     # Should always be able to monitor power usage on OS Version >= 10.9 .
-    self.assertEqual(power_monitor.CanMonitorPowerAsync(), mavericks_or_later,
+    self.assertEqual(power_monitor.CanMonitorPower(), mavericks_or_later,
         "Error checking powermetrics availability: '%s'" % '|'.join(os.uname()))
 
   @test.Enabled('mac')
@@ -40,7 +40,7 @@ class PowerMetricsPowerMonitorTest(unittest.TestCase):
 
     power_monitor = powermetrics_power_monitor.PowerMetricsPowerMonitor(
         mac_platform_backend.MacPlatformBackend())
-    if not power_monitor.CanMonitorPowerAsync():
+    if not power_monitor.CanMonitorPower():
       logging.warning('Test not supported on this platform.')
       return
 
@@ -53,7 +53,7 @@ class PowerMetricsPowerMonitorTest(unittest.TestCase):
     # Verify that all component entries exist in output.
     component_utilization = result['component_utilization']
     for k in ['whole_package', 'gpu'] + ['cpu%d' % x for x in range(8)]:
-      self.assertTrue(component_utilization[k]['average_frequency_mhz'] > 0)
+      self.assertTrue(component_utilization[k]['average_frequency_hz'] > 0)
       self.assertTrue(component_utilization[k]['idle_percent'] > 0)
 
     # Unsupported hardware doesn't.

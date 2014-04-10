@@ -17,7 +17,6 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_utility_messages.h"
 #include "chrome/common/extensions/chrome_extensions_client.h"
-#include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/extensions/update_manifest.h"
 #include "chrome/common/safe_browsing/zip_analyzer.h"
 #include "chrome/utility/chrome_content_utility_ipc_whitelist.h"
@@ -34,6 +33,7 @@
 #include "courgette/courgette.h"
 #include "courgette/third_party/bsdiff.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_l10n_util.h"
 #include "extensions/common/manifest.h"
 #include "media/base/media.h"
 #include "media/base/media_file_checker.h"
@@ -942,22 +942,22 @@ void ChromeContentUtilityClient::OnParseITunesLibraryXmlFile(
 void ChromeContentUtilityClient::OnParsePicasaPMPDatabase(
     const picasa::AlbumTableFilesForTransit& album_table_files) {
   picasa::AlbumTableFiles files;
-  files.indicator_file = IPC::PlatformFileForTransitToPlatformFile(
-      album_table_files.indicator_file);
-  files.category_file = IPC::PlatformFileForTransitToPlatformFile(
-      album_table_files.category_file);
-  files.date_file = IPC::PlatformFileForTransitToPlatformFile(
-      album_table_files.date_file);
-  files.filename_file = IPC::PlatformFileForTransitToPlatformFile(
-      album_table_files.filename_file);
-  files.name_file = IPC::PlatformFileForTransitToPlatformFile(
-      album_table_files.name_file);
-  files.token_file = IPC::PlatformFileForTransitToPlatformFile(
-      album_table_files.token_file);
-  files.uid_file = IPC::PlatformFileForTransitToPlatformFile(
-      album_table_files.uid_file);
+  files.indicator_file =
+      IPC::PlatformFileForTransitToFile(album_table_files.indicator_file);
+  files.category_file =
+      IPC::PlatformFileForTransitToFile(album_table_files.category_file);
+  files.date_file =
+      IPC::PlatformFileForTransitToFile(album_table_files.date_file);
+  files.filename_file =
+      IPC::PlatformFileForTransitToFile(album_table_files.filename_file);
+  files.name_file =
+      IPC::PlatformFileForTransitToFile(album_table_files.name_file);
+  files.token_file =
+      IPC::PlatformFileForTransitToFile(album_table_files.token_file);
+  files.uid_file =
+      IPC::PlatformFileForTransitToFile(album_table_files.uid_file);
 
-  picasa::PicasaAlbumTableReader reader(files);
+  picasa::PicasaAlbumTableReader reader(files.Pass());
   bool parse_success = reader.Init();
   Send(new ChromeUtilityHostMsg_ParsePicasaPMPDatabase_Finished(
       parse_success,

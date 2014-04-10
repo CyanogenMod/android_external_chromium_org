@@ -18,6 +18,7 @@
 #include "chrome/browser/ui/libgtk2ui/app_indicator_icon.h"
 #include "chrome/browser/ui/libgtk2ui/chrome_gtk_frame.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_border.h"
+#include "chrome/browser/ui/libgtk2ui/gtk2_event_loop.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_key_bindings_handler.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_signal_registrar.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_util.h"
@@ -45,7 +46,7 @@
 #include "ui/views/linux_ui/window_button_order_observer.h"
 
 #if defined(USE_GCONF)
-#include "chrome/browser/ui/libgtk2ui/gconf_titlebar_listener.h"
+#include "chrome/browser/ui/libgtk2ui/gconf_listener.h"
 #endif
 
 // A minimized port of GtkThemeService into something that can provide colors
@@ -317,7 +318,7 @@ color_utils::HSL GetDefaultTint(int id) {
 
 namespace libgtk2ui {
 
-Gtk2UI::Gtk2UI() {
+Gtk2UI::Gtk2UI() : middle_click_action_(MIDDLE_CLICK_ACTION_LOWER) {
   GtkInitFromCommandLine(*CommandLine::ForCurrentProcess());
 }
 
@@ -349,10 +350,13 @@ void Gtk2UI::Initialize() {
 
 #if defined(USE_GCONF)
   // We must build this after GTK gets initialized.
-  titlebar_listener_.reset(new GConfTitlebarListener(this));
+  gconf_listener_.reset(new GConfListener(this));
 #endif  // defined(USE_GCONF)
 
   indicators_count = 0;
+
+  // Instantiate the singleton instance of Gtk2EventLoop.
+  Gtk2EventLoop::GetInstance();
 }
 
 Gtk2UI::~Gtk2UI() {
@@ -561,6 +565,10 @@ void Gtk2UI::SetWindowButtonOrdering(
                                                  trailing_buttons_));
 }
 
+void Gtk2UI::SetNonClientMiddleClickAction(NonClientMiddleClickAction action) {
+  middle_click_action_ = action;
+}
+
 scoped_ptr<ui::LinuxInputMethodContext> Gtk2UI::CreateInputMethodContext(
     ui::LinuxInputMethodContextDelegate* delegate) const {
   return scoped_ptr<ui::LinuxInputMethodContext>(
@@ -670,6 +678,11 @@ bool Gtk2UI::UnityIsRunning() {
   return unity::IsRunning();
 }
 
+views::LinuxUI::NonClientMiddleClickAction
+Gtk2UI::GetNonClientMiddleClickAction() {
+  return middle_click_action_;
+}
+
 void Gtk2UI::NotifyWindowManagerStartupComplete() {
   // TODO(port) Implement this using _NET_STARTUP_INFO_BEGIN/_NET_STARTUP_INFO
   // from http://standards.freedesktop.org/startup-notification-spec/ instead.
@@ -677,7 +690,7 @@ void Gtk2UI::NotifyWindowManagerStartupComplete() {
 }
 
 bool Gtk2UI::MatchEvent(const ui::Event& event,
-                        std::vector<ui::TextEditCommandX11>* commands) {
+                        std::vector<ui::TextEditCommandAuraLinux>* commands) {
   // Ensure that we have a keyboard handler.
   if (!key_bindings_handler_)
     key_bindings_handler_.reset(new Gtk2KeyBindingsHandler);

@@ -75,7 +75,6 @@
           '../third_party/safe_browsing/',
           '../third_party/simplejson/',
           '../third_party/tlslite/',
-          '../tools/swarming_client/',
           '<(PRODUCT_DIR)/nacl_test_data/',
           '<(PRODUCT_DIR)/pnacl/',
           '<(PRODUCT_DIR)/pseudo_locales/',
@@ -110,6 +109,7 @@
         'isolate_dependency_tracked': [
           '<(PRODUCT_DIR)/clearkeycdmadapter.plugin',
           '<(PRODUCT_DIR)/libclearkeycdm.dylib',
+          '<(PRODUCT_DIR)/osmesa.so',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_glibc_x32.nexe',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_newlib_x32.nexe',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_pnacl_newlib_x32.nexe',

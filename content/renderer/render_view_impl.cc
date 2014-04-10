@@ -100,6 +100,7 @@
 #include "content/renderer/memory_benchmarking_extension.h"
 #include "content/renderer/mhtml_generator.h"
 #include "content/renderer/notification_provider.h"
+#include "content/renderer/push_messaging_dispatcher.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
@@ -118,6 +119,7 @@
 #include "content/renderer/v8_value_converter_impl.h"
 #include "content/renderer/web_ui_extension.h"
 #include "content/renderer/web_ui_extension_data.h"
+#include "content/renderer/web_ui_mojo.h"
 #include "content/renderer/websharedworker_proxy.h"
 #include "media/audio/audio_output_device.h"
 #include "media/base/audio_renderer_mixer_input.h"
@@ -166,6 +168,7 @@
 #include "third_party/WebKit/public/web/WebHistoryItem.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebMediaPlayerAction.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebNodeList.h"
@@ -237,10 +240,6 @@
 #include "content/renderer/media/rtc_peer_connection_handler.h"
 #endif
 
-#if defined(USE_MOJO)
-#include "content/renderer/web_ui_mojo.h"
-#endif
-
 using blink::WebAXObject;
 using blink::WebApplicationCacheHost;
 using blink::WebApplicationCacheHostClient;
@@ -271,6 +270,7 @@ using blink::WebIconURL;
 using blink::WebImage;
 using blink::WebInputElement;
 using blink::WebInputEvent;
+using blink::WebLocalFrame;
 using blink::WebMediaPlayer;
 using blink::WebMediaPlayerAction;
 using blink::WebMediaPlayerClient;
@@ -667,6 +667,7 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       cached_has_main_frame_vertical_scrollbar_(false),
       has_scrolled_focused_editable_node_into_rect_(false),
       notification_provider_(NULL),
+      push_messaging_dispatcher_(NULL),
       geolocation_dispatcher_(NULL),
       input_tag_speech_dispatcher_(NULL),
       speech_recognition_dispatcher_(NULL),
@@ -778,10 +779,10 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
 
   main_render_frame_.reset(
       RenderFrameImpl::Create(this, params->main_frame_routing_id));
-  // The main frame WebFrame object is closed by
+  // The main frame WebLocalFrame object is closed by
   // RenderFrameImpl::frameDetached().
-  webview()->setMainFrame(WebFrame::create(main_render_frame_.get()));
-  main_render_frame_->SetWebFrame(webview()->mainFrame());
+  webview()->setMainFrame(WebLocalFrame::create(main_render_frame_.get()));
+  main_render_frame_->SetWebFrame(webview()->mainFrame()->toWebLocalFrame());
 
   if (switches::IsTouchDragDropEnabled())
     webview()->settings()->setTouchDragDropEnabled(true);
@@ -1071,8 +1072,6 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP_EX(RenderViewImpl, message, msg_is_ok)
     IPC_MESSAGE_HANDLER(InputMsg_ExecuteEditCommand, OnExecuteEditCommand)
     IPC_MESSAGE_HANDLER(InputMsg_MoveCaret, OnMoveCaret)
-    IPC_MESSAGE_HANDLER(InputMsg_Replace, OnReplace)
-    IPC_MESSAGE_HANDLER(InputMsg_ReplaceMisspelling, OnReplaceMisspelling)
     IPC_MESSAGE_HANDLER(InputMsg_ScrollFocusedEditableNodeIntoRect,
                         OnScrollFocusedEditableNodeIntoRect)
     IPC_MESSAGE_HANDLER(InputMsg_SetEditCommandsForNextKeyEvent,
@@ -1095,7 +1094,7 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(DragMsg_TargetDragOver, OnDragTargetDragOver)
     IPC_MESSAGE_HANDLER(DragMsg_TargetDragLeave, OnDragTargetDragLeave)
     IPC_MESSAGE_HANDLER(DragMsg_TargetDrop, OnDragTargetDrop)
-    IPC_MESSAGE_HANDLER(DragMsg_SourceEndedOrMoved, OnDragSourceEndedOrMoved)
+    IPC_MESSAGE_HANDLER(DragMsg_SourceEnded, OnDragSourceEnded)
     IPC_MESSAGE_HANDLER(DragMsg_SourceSystemDragEnded,
                         OnDragSourceSystemDragEnded)
     IPC_MESSAGE_HANDLER(ViewMsg_AllowBindings, OnAllowBindings)
@@ -1254,28 +1253,6 @@ void RenderViewImpl::OnMoveCaret(const gfx::Point& point) {
   webview()->focusedFrame()->moveCaretSelection(point);
 }
 
-void RenderViewImpl::OnReplace(const base::string16& text) {
-  if (!webview())
-    return;
-
-  WebFrame* frame = webview()->focusedFrame();
-  if (!frame->hasSelection())
-    frame->selectWordAroundCaret();
-
-  frame->replaceSelection(text);
-}
-
-void RenderViewImpl::OnReplaceMisspelling(const base::string16& text) {
-  if (!webview())
-    return;
-
-  WebFrame* frame = webview()->focusedFrame();
-  if (!frame->hasSelection())
-    return;
-
-  frame->replaceMisspelledRange(text);
-}
-
 void RenderViewImpl::OnScrollFocusedEditableNodeIntoRect(
     const gfx::Rect& rect) {
   if (has_scrolled_focused_editable_node_into_rect_ &&
@@ -1425,26 +1402,6 @@ void RenderViewImpl::LoadNavigationErrorPage(
                         replace);
 }
 
-bool RenderViewImpl::RunJavaScriptMessage(JavaScriptMessageType type,
-                                          const base::string16& message,
-                                          const base::string16& default_value,
-                                          const GURL& frame_url,
-                                          base::string16* result) {
-  // Don't allow further dialogs if we are waiting to swap out, since the
-  // PageGroupLoadDeferrer in our stack prevents it.
-  if (suppress_dialogs_until_swap_out_)
-    return false;
-
-  bool success = false;
-  base::string16 result_temp;
-  if (!result)
-    result = &result_temp;
-
-  SendAndRunNestedMessageLoop(new ViewHostMsg_RunJavaScriptMessage(
-      routing_id_, message, default_value, frame_url, type, &success, result));
-  return success;
-}
-
 bool RenderViewImpl::SendAndRunNestedMessageLoop(IPC::SyncMessage* message) {
   // Before WebKit asks us to show an alert (etc.), it takes care of doing the
   // equivalent of WebView::willEnterModalLoop.  In the case of showModalDialog
@@ -1492,13 +1449,12 @@ void RenderViewImpl::OnWindowSnapshotCompleted(const int snapshot_id,
 
 // blink::WebViewClient ------------------------------------------------------
 
-WebView* RenderViewImpl::createView(
-    WebFrame* creator,
-    const WebURLRequest& request,
-    const WebWindowFeatures& features,
-    const WebString& frame_name,
-    WebNavigationPolicy policy,
-    bool suppress_opener) {
+WebView* RenderViewImpl::createView(WebLocalFrame* creator,
+                                    const WebURLRequest& request,
+                                    const WebWindowFeatures& features,
+                                    const WebString& frame_name,
+                                    WebNavigationPolicy policy,
+                                    bool suppress_opener) {
   ViewHostMsg_CreateWindow_Params params;
   params.opener_id = routing_id_;
   params.user_gesture = WebUserGestureIndicator::isProcessingUserGesture();
@@ -1626,53 +1582,7 @@ WebStorageNamespace* RenderViewImpl::createSessionStorageNamespace() {
   return new WebStorageNamespaceImpl(session_storage_namespace_id_);
 }
 
-bool RenderViewImpl::shouldReportDetailedMessageForSource(
-    const WebString& source) {
-  return GetContentClient()->renderer()->ShouldReportDetailedMessageForSource(
-      source);
-}
-
-void RenderViewImpl::didAddMessageToConsole(
-    const WebConsoleMessage& message, const WebString& source_name,
-    unsigned source_line, const WebString& stack_trace) {
-  logging::LogSeverity log_severity = logging::LOG_VERBOSE;
-  switch (message.level) {
-    case WebConsoleMessage::LevelDebug:
-      log_severity = logging::LOG_VERBOSE;
-      break;
-    case WebConsoleMessage::LevelLog:
-    case WebConsoleMessage::LevelInfo:
-      log_severity = logging::LOG_INFO;
-      break;
-    case WebConsoleMessage::LevelWarning:
-      log_severity = logging::LOG_WARNING;
-      break;
-    case WebConsoleMessage::LevelError:
-      log_severity = logging::LOG_ERROR;
-      break;
-    default:
-      NOTREACHED();
-  }
-
-  if (shouldReportDetailedMessageForSource(source_name)) {
-    FOR_EACH_OBSERVER(
-        RenderViewObserver,
-        observers_,
-        DetailedConsoleMessageAdded(message.text,
-                                    source_name,
-                                    stack_trace,
-                                    source_line,
-                                    static_cast<int32>(log_severity)));
-  }
-
-  Send(new ViewHostMsg_AddMessageToConsole(routing_id_,
-                                           static_cast<int32>(log_severity),
-                                           message.text,
-                                           static_cast<int32>(source_line),
-                                           source_name));
-}
-
-void RenderViewImpl::printPage(WebFrame* frame) {
+void RenderViewImpl::printPage(WebLocalFrame* frame) {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_,
                     PrintPage(frame, handling_input_event_));
 }
@@ -1805,69 +1715,58 @@ bool RenderViewImpl::runFileChooser(
   return ScheduleFileChooser(ipc_params, chooser_completion);
 }
 
-void RenderViewImpl::runModalAlertDialog(WebFrame* frame,
+void RenderViewImpl::runModalAlertDialog(WebLocalFrame* frame,
                                          const WebString& message) {
-  RunJavaScriptMessage(JAVASCRIPT_MESSAGE_TYPE_ALERT,
-                       message,
-                       base::string16(),
-                       frame->document().url(),
-                       NULL);
+  RenderFrameImpl::FromWebFrame(frame)->runModalAlertDialog(message);
 }
 
-bool RenderViewImpl::runModalConfirmDialog(WebFrame* frame,
+bool RenderViewImpl::runModalConfirmDialog(WebLocalFrame* frame,
                                            const WebString& message) {
-  return RunJavaScriptMessage(JAVASCRIPT_MESSAGE_TYPE_CONFIRM,
-                              message,
-                              base::string16(),
-                              frame->document().url(),
-                              NULL);
+  return RenderFrameImpl::FromWebFrame(frame)->runModalConfirmDialog(message);
 }
 
-bool RenderViewImpl::runModalPromptDialog(WebFrame* frame,
+bool RenderViewImpl::runModalPromptDialog(WebLocalFrame* frame,
                                           const WebString& message,
                                           const WebString& default_value,
                                           WebString* actual_value) {
-  base::string16 result;
-  bool ok = RunJavaScriptMessage(JAVASCRIPT_MESSAGE_TYPE_PROMPT,
-                                 message,
-                                 default_value,
-                                 frame->document().url(),
-                                 &result);
-  if (ok)
-    actual_value->assign(result);
-  return ok;
+  return RenderFrameImpl::FromWebFrame(frame)->
+      runModalPromptDialog(message, default_value, actual_value);
 }
 
-bool RenderViewImpl::runModalBeforeUnloadDialog(
-    WebFrame* frame, const WebString& message) {
+bool RenderViewImpl::runModalBeforeUnloadDialog(WebLocalFrame* frame,
+                                                const WebString& message) {
   bool is_reload = false;
   WebDataSource* ds = frame->provisionalDataSource();
   if (ds)
     is_reload = (ds->navigationType() == blink::WebNavigationTypeReload);
-  return runModalBeforeUnloadDialog(frame, is_reload, message);
+  return RenderFrameImpl::FromWebFrame(frame)->
+      runModalBeforeUnloadDialog(is_reload, message);
 }
 
-bool RenderViewImpl::runModalBeforeUnloadDialog(
-    WebFrame* frame, bool is_reload, const WebString& message) {
-  // If we are swapping out, we have already run the beforeunload handler.
-  // TODO(creis): Fix OnSwapOut to clear the frame without running beforeunload
-  // at all, to avoid running it twice.
-  if (is_swapped_out_)
-    return true;
+void RenderViewImpl::runModalAlertDialog(const WebString& message) {
+  /* bogus version of the function to avoid errors */
+  NOTIMPLEMENTED();
+}
 
-  // Don't allow further dialogs if we are waiting to swap out, since the
-  // PageGroupLoadDeferrer in our stack prevents it.
-  if (suppress_dialogs_until_swap_out_)
-    return false;
+bool RenderViewImpl::runModalConfirmDialog(const WebString& message) {
+  /* bogus version of the function to avoid errors */
+  NOTIMPLEMENTED();
+  return false;
+}
 
-  bool success = false;
-  // This is an ignored return value, but is included so we can accept the same
-  // response as RunJavaScriptMessage.
-  base::string16 ignored_result;
-  SendAndRunNestedMessageLoop(new ViewHostMsg_RunBeforeUnloadConfirm(
-      routing_id_, frame->document().url(), message, is_reload,
-      &success, &ignored_result));
-  return success;
+bool RenderViewImpl::runModalPromptDialog(const WebString& message,
+                                          const WebString& default_value,
+                                          WebString* actual_value) {
+  /* bogus version of the function to avoid errors */
+  NOTIMPLEMENTED();
+  return false;
+}
+
+bool RenderViewImpl::runModalBeforeUnloadDialog(bool is_reload,
+                                                const WebString& message) {
+  /* bogus version of the function to avoid errors */
+  NOTIMPLEMENTED();
+  return false;
 }
 
 void RenderViewImpl::showValidationMessage(
@@ -1976,7 +1875,7 @@ void RenderViewImpl::setKeyboardFocusURL(const WebURL& url) {
   UpdateTargetURL(focus_url_, mouse_over_url_);
 }
 
-void RenderViewImpl::startDragging(WebFrame* frame,
+void RenderViewImpl::startDragging(WebLocalFrame* frame,
                                    const WebDragData& data,
                                    WebDragOperationsMask mask,
                                    const WebImage& image,
@@ -2218,15 +2117,9 @@ void RenderViewImpl::initializeLayerTreeView() {
 
 // blink::WebFrameClient -----------------------------------------------------
 
-WebMediaPlayer* RenderViewImpl::createMediaPlayer(
-    WebFrame* frame, const blink::WebURL& url, WebMediaPlayerClient* client) {
-  NOTREACHED();
-  return NULL;
-}
-
 blink::WebMediaPlayer* RenderViewImpl::CreateMediaPlayer(
     RenderFrame* render_frame,
-    blink::WebFrame* frame,
+    blink::WebLocalFrame* frame,
     const blink::WebURL& url,
     blink::WebMediaPlayerClient* client) {
   FOR_EACH_OBSERVER(
@@ -2250,14 +2143,14 @@ blink::WebMediaPlayer* RenderViewImpl::CreateMediaPlayer(
 #endif  // defined(OS_ANDROID)
 }
 
-void RenderViewImpl::didAccessInitialDocument(WebFrame* frame) {
+void RenderViewImpl::didAccessInitialDocument(WebLocalFrame* frame) {
   // Notify the browser process that it is no longer safe to show the pending
   // URL of the main frame, since a URL spoof is now possible.
   if (!frame->parent() && page_id_ == -1)
     Send(new ViewHostMsg_DidAccessInitialDocument(routing_id_));
 }
 
-void RenderViewImpl::didDisownOpener(blink::WebFrame* frame) {
+void RenderViewImpl::didDisownOpener(blink::WebLocalFrame* frame) {
   // We only need to notify the browser if the active, top-level frame clears
   // its opener.  We can ignore cases where a swapped out frame clears its
   // opener after hearing about it from the browser, and the browser does not
@@ -2282,7 +2175,7 @@ void RenderViewImpl::willClose(WebFrame* frame) {
 }
 
 void RenderViewImpl::didMatchCSS(
-    WebFrame* frame,
+    WebLocalFrame* frame,
     const WebVector<WebString>& newly_matching_selectors,
     const WebVector<WebString>& stopped_matching_selectors) {
   FOR_EACH_OBSERVER(
@@ -2324,19 +2217,20 @@ const std::string& RenderViewImpl::GetAcceptLanguages() const {
   return renderer_preferences_.accept_languages;
 }
 
-void RenderViewImpl::willSendSubmitEvent(blink::WebFrame* frame,
-    const blink::WebFormElement& form) {
+void RenderViewImpl::willSendSubmitEvent(blink::WebLocalFrame* frame,
+                                         const blink::WebFormElement& form) {
   FOR_EACH_OBSERVER(
       RenderViewObserver, observers_, WillSendSubmitEvent(frame, form));
 }
 
-void RenderViewImpl::willSubmitForm(WebFrame* frame,
+void RenderViewImpl::willSubmitForm(WebLocalFrame* frame,
                                     const WebFormElement& form) {
   FOR_EACH_OBSERVER(
       RenderViewObserver, observers_, WillSubmitForm(frame, form));
 }
 
-void RenderViewImpl::didCreateDataSource(WebFrame* frame, WebDataSource* ds) {
+void RenderViewImpl::didCreateDataSource(WebLocalFrame* frame,
+                                         WebDataSource* ds) {
   bool content_initiated = !pending_navigation_params_.get();
 
   // Make sure any previous redirect URLs end up in our new data source.
@@ -2514,10 +2408,9 @@ void RenderViewImpl::ProcessViewLayoutFlags(const CommandLine& command_line) {
 }
 
 // TODO(nasko): Remove this method once WebTestProxy in Blink is fixed.
-void RenderViewImpl::didStartProvisionalLoad(WebFrame* frame) {
-}
+void RenderViewImpl::didStartProvisionalLoad(WebLocalFrame* frame) {}
 
-void RenderViewImpl::didFailProvisionalLoad(WebFrame* frame,
+void RenderViewImpl::didFailProvisionalLoad(WebLocalFrame* frame,
                                             const WebURLError& error) {
   // Notify the browser that we failed a provisional load with an error.
   //
@@ -2529,8 +2422,8 @@ void RenderViewImpl::didFailProvisionalLoad(WebFrame* frame,
       RenderViewObserver, observers_, DidFailProvisionalLoad(frame, error));
 }
 
-void RenderViewImpl::didCommitProvisionalLoad(WebFrame* frame,
-                                              bool is_new_navigation) {
+void RenderViewImpl::FrameDidCommitProvisionalLoad(WebLocalFrame* frame,
+                                                   bool is_new_navigation) {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_,
                     DidCommitProvisionalLoad(frame, is_new_navigation));
 
@@ -2546,7 +2439,7 @@ void RenderViewImpl::didCommitProvisionalLoad(WebFrame* frame,
   }
 }
 
-void RenderViewImpl::didClearWindowObject(WebFrame* frame, int world_id) {
+void RenderViewImpl::didClearWindowObject(WebLocalFrame* frame, int world_id) {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_,
                     DidClearWindowObject(frame, world_id));
 
@@ -2569,12 +2462,13 @@ void RenderViewImpl::didClearWindowObject(WebFrame* frame, int world_id) {
     MemoryBenchmarkingExtension::Install(frame);
 }
 
-void RenderViewImpl::didCreateDocumentElement(WebFrame* frame) {
+void RenderViewImpl::didCreateDocumentElement(WebLocalFrame* frame) {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_,
                     DidCreateDocumentElement(frame));
 }
 
-void RenderViewImpl::didReceiveTitle(WebFrame* frame, const WebString& title,
+void RenderViewImpl::didReceiveTitle(WebLocalFrame* frame,
+                                     const WebString& title,
                                      WebTextDirection direction) {
   UpdateTitle(frame, title, direction);
 
@@ -2582,7 +2476,7 @@ void RenderViewImpl::didReceiveTitle(WebFrame* frame, const WebString& title,
   UpdateEncoding(frame, frame->view()->pageEncoding().utf8());
 }
 
-void RenderViewImpl::didChangeIcon(WebFrame* frame,
+void RenderViewImpl::didChangeIcon(WebLocalFrame* frame,
                                    WebIconURL::Type icon_type) {
   if (frame->parent())
     return;
@@ -2601,52 +2495,33 @@ void RenderViewImpl::didChangeIcon(WebFrame* frame,
   SendUpdateFaviconURL(urls);
 }
 
-void RenderViewImpl::didFinishDocumentLoad(WebFrame* frame) {
+void RenderViewImpl::didFinishDocumentLoad(WebLocalFrame* frame) {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_,
                     DidFinishDocumentLoad(frame));
 }
 
-void RenderViewImpl::didHandleOnloadEvents(WebFrame* frame) {
+void RenderViewImpl::didHandleOnloadEvents(WebLocalFrame* frame) {
   if (webview()->mainFrame() == frame) {
     Send(new ViewHostMsg_DocumentOnLoadCompletedInMainFrame(routing_id_,
                                                             page_id_));
   }
 }
 
-void RenderViewImpl::didFailLoad(WebFrame* frame, const WebURLError& error) {
+void RenderViewImpl::didFailLoad(WebLocalFrame* frame,
+                                 const WebURLError& error) {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidFailLoad(frame, error));
 }
 
-void RenderViewImpl::didFinishLoad(WebFrame* frame) {
+void RenderViewImpl::didFinishLoad(WebLocalFrame* frame) {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidFinishLoad(frame));
 }
 
-void RenderViewImpl::didNavigateWithinPage(
-    WebFrame* frame,
-    bool is_new_navigation) {
-  // TODO(nasko): Forward calls to the main RenderFrameImpl until all
-  // callers of this method on RenderView are removed.
-  main_render_frame_->didNavigateWithinPage(frame, is_new_navigation);
-}
-
-void RenderViewImpl::didUpdateCurrentHistoryItem(WebFrame* frame) {
+void RenderViewImpl::didUpdateCurrentHistoryItem(WebLocalFrame* frame) {
   StartNavStateSyncTimerIfNecessary();
 }
 
-void RenderViewImpl::willSendRequest(WebFrame* frame,
-                                     unsigned identifier,
-                                     WebURLRequest& request,
-                                     const WebURLResponse& redirect_response) {
-  NOTREACHED();
-}
-
-void RenderViewImpl::didReceiveResponse(
-    WebFrame* frame, unsigned identifier, const WebURLResponse& response) {
-  NOTREACHED();
-}
-
-void RenderViewImpl::didFinishResourceLoad(
-    WebFrame* frame, unsigned identifier) {
+void RenderViewImpl::didFinishResourceLoad(WebLocalFrame* frame,
+                                           unsigned identifier) {
   InternalDocumentStateData* internal_data =
       InternalDocumentStateData::FromDataSource(frame->dataSource());
   if (!internal_data->use_error_page())
@@ -2667,34 +2542,6 @@ void RenderViewImpl::didFinishResourceLoad(
     error.reason = http_status_code;
     LoadNavigationErrorPage(frame, frame->dataSource()->request(), error, true);
   }
-}
-
-void RenderViewImpl::didLoadResourceFromMemoryCache(
-    WebFrame* frame, const WebURLRequest& request,
-    const WebURLResponse& response) {
-  NOTREACHED();
-}
-
-void RenderViewImpl::didDisplayInsecureContent(WebFrame* frame) {
-  NOTREACHED();
-}
-
-void RenderViewImpl::didRunInsecureContent(
-    WebFrame* frame, const WebSecurityOrigin& origin, const WebURL& target) {
-  NOTREACHED();
-}
-
-void RenderViewImpl::didCreateScriptContext(WebFrame* frame,
-                                            v8::Handle<v8::Context> context,
-                                            int extension_group,
-                                            int world_id) {
-  NOTREACHED();
-}
-
-void RenderViewImpl::willReleaseScriptContext(WebFrame* frame,
-                                              v8::Handle<v8::Context> context,
-                                              int world_id) {
-  NOTREACHED();
 }
 
 void RenderViewImpl::CheckPreferredSize() {
@@ -2754,7 +2601,7 @@ bool RenderViewImpl::InitializeMediaStreamClient() {
 #endif
 }
 
-void RenderViewImpl::didChangeContentsSize(WebFrame* frame,
+void RenderViewImpl::didChangeContentsSize(WebLocalFrame* frame,
                                            const WebSize& size) {
   if (webview()->mainFrame() != frame)
     return;
@@ -2795,7 +2642,7 @@ void RenderViewImpl::UpdateScrollState(WebFrame* frame) {
   Send(new ViewHostMsg_DidChangeScrollOffset(routing_id_));
 }
 
-void RenderViewImpl::didChangeScrollOffset(WebFrame* frame) {
+void RenderViewImpl::didChangeScrollOffset(WebLocalFrame* frame) {
   StartNavStateSyncTimerIfNecessary();
 
   if (webview()->mainFrame() == frame)
@@ -2805,11 +2652,7 @@ void RenderViewImpl::didChangeScrollOffset(WebFrame* frame) {
       RenderViewObserver, observers_, DidChangeScrollOffset(frame));
 }
 
-void RenderViewImpl::willInsertBody(blink::WebFrame* frame) {
-  NOTREACHED();
-}
-
-void RenderViewImpl::didFirstVisuallyNonEmptyLayout(WebFrame* frame) {
+void RenderViewImpl::didFirstVisuallyNonEmptyLayout(WebLocalFrame* frame) {
   if (frame != webview()->mainFrame())
     return;
 
@@ -2847,28 +2690,8 @@ void RenderViewImpl::SendFindReply(int request_id,
                                   final_status_update));
 }
 
-void RenderViewImpl::reportFindInPageMatchCount(int request_id,
-                                                int count,
-                                                bool final_update) {
-  NOTREACHED();
-}
-
-void RenderViewImpl::reportFindInPageSelection(int request_id,
-                                               int active_match_ordinal,
-                                               const WebRect& selection_rect) {
-  NOTREACHED();
-}
-
-void RenderViewImpl::requestStorageQuota(
-    WebFrame* frame,
-    WebStorageQuotaType type,
-    unsigned long long requested_size,
-    blink::WebStorageQuotaCallbacks callbacks) {
-  NOTREACHED();
-}
-
 bool RenderViewImpl::willCheckAndDispatchMessageEvent(
-    blink::WebFrame* sourceFrame,
+    blink::WebLocalFrame* sourceFrame,
     blink::WebFrame* targetFrame,
     blink::WebSecurityOrigin target_origin,
     blink::WebDOMMessageEvent event) {
@@ -2909,41 +2732,8 @@ bool RenderViewImpl::willCheckAndDispatchMessageEvent(
   return true;
 }
 
-void RenderViewImpl::willOpenSocketStream(
-    WebSocketStreamHandle* handle) {
-  NOTREACHED();
-}
-
-void RenderViewImpl::willStartUsingPeerConnectionHandler(
-    blink::WebFrame* frame, blink::WebRTCPeerConnectionHandler* handler) {
-  NOTREACHED();
-}
-
 blink::WebString RenderViewImpl::acceptLanguages() {
   return WebString::fromUTF8(renderer_preferences_.accept_languages);
-}
-
-blink::WebString RenderViewImpl::userAgentOverride(
-    blink::WebFrame* frame,
-    const blink::WebURL& url) {
-  NOTREACHED();
-  return blink::WebString();
-}
-
-WebString RenderViewImpl::doNotTrackValue(WebFrame* frame) {
-  NOTREACHED();
-  return blink::WebString();
-}
-
-bool RenderViewImpl::allowWebGL(WebFrame* frame, bool default_value) {
-  NOTREACHED();
-  return false;
-}
-
-void RenderViewImpl::didLoseWebGLContext(
-    blink::WebFrame* frame,
-    int arb_robustness_status_code) {
-  NOTREACHED();
 }
 
 // blink::WebPageSerializerClient implementation ------------------------------
@@ -3051,11 +2841,6 @@ float RenderViewImpl::GetFilteredTimePerFrame() const {
 
 blink::WebPageVisibilityState RenderViewImpl::GetVisibilityState() const {
   return visibilityState();
-}
-
-void RenderViewImpl::RunModalAlertDialog(blink::WebFrame* frame,
-                                         const blink::WebString& message) {
-  return runModalAlertDialog(frame, message);
 }
 
 void RenderViewImpl::DidStartLoading() {
@@ -3424,10 +3209,8 @@ void RenderViewImpl::OnAllowBindings(int enabled_bindings_flags) {
       !(enabled_bindings_ & BINDINGS_POLICY_WEB_UI)) {
     // WebUIExtensionData deletes itself when we're destroyed.
     new WebUIExtensionData(this);
-#if defined(USE_MOJO)
     // WebUIMojo deletes itself when we're destroyed.
     new WebUIMojo(this);
-#endif
   }
 
   enabled_bindings_ |= enabled_bindings_flags;
@@ -3476,15 +3259,10 @@ void RenderViewImpl::OnDragTargetDrop(const gfx::Point& client_point,
   Send(new DragHostMsg_TargetDrop_ACK(routing_id_));
 }
 
-void RenderViewImpl::OnDragSourceEndedOrMoved(const gfx::Point& client_point,
-                                              const gfx::Point& screen_point,
-                                              bool ended,
-                                              WebDragOperation op) {
-  if (ended) {
-    webview()->dragSourceEndedAt(client_point, screen_point, op);
-  } else {
-    webview()->dragSourceMovedTo(client_point, screen_point, op);
-  }
+void RenderViewImpl::OnDragSourceEnded(const gfx::Point& client_point,
+                                       const gfx::Point& screen_point,
+                                       WebDragOperation op) {
+  webview()->dragSourceEndedAt(client_point, screen_point, op);
 }
 
 void RenderViewImpl::OnDragSourceSystemDragEnded() {
@@ -3699,7 +3477,10 @@ void RenderViewImpl::OnGetSerializedHtmlDataForCurrentPageWithLocalLinks(
   for (size_t i = 0; i < local_paths.size(); i++)
     webstring_paths[i] = local_paths[i].AsUTF16Unsafe();
 
-  WebPageSerializer::serialize(webview()->mainFrame(), true, this, weburl_links,
+  WebPageSerializer::serialize(webview()->mainFrame()->toWebLocalFrame(),
+                               true,
+                               this,
+                               weburl_links,
                                webstring_paths,
                                local_directory_name.AsUTF16Unsafe());
 }
@@ -3843,27 +3624,6 @@ void RenderViewImpl::DidFlushPaint() {
       document_state->set_first_paint_after_load_time(now);
     }
   }
-}
-
-PepperPluginInstanceImpl* RenderViewImpl::GetBitmapForOptimizedPluginPaint(
-    const gfx::Rect& paint_bounds,
-    TransportDIB** dib,
-    gfx::Rect* location,
-    gfx::Rect* clip,
-    float* scale_factor) {
-#if defined(ENABLE_PLUGINS)
-  for (PepperPluginSet::iterator i = active_pepper_instances_.begin();
-       i != active_pepper_instances_.end(); ++i) {
-    PepperPluginInstanceImpl* instance = *i;
-    // In Flash fullscreen , the plugin contents should be painted onto the
-    // fullscreen widget instead of the web page.
-    if (!instance->FlashIsFullscreenOrPending() &&
-        instance->GetBitmapForOptimizedPluginPaint(paint_bounds, dib, location,
-                                                   clip, scale_factor))
-      return *i;
-  }
-#endif
-  return NULL;
 }
 
 gfx::Vector2d RenderViewImpl::GetScrollOffset() {
@@ -4181,7 +3941,7 @@ void RenderViewImpl::OnImeConfirmComposition(
   if (replacement_range.IsValid() && webview()) {
     // Select the text in |replacement_range|, it will then be replaced by
     // text added by the call to RenderWidget::OnImeConfirmComposition().
-    if (WebFrame* frame = webview()->focusedFrame()) {
+    if (WebLocalFrame* frame = webview()->focusedFrame()->toWebLocalFrame()) {
       WebRange webrange = WebRange::fromDocumentRange(
           frame, replacement_range.start(), replacement_range.length());
       if (!webrange.isNull())
@@ -4469,6 +4229,12 @@ blink::WebMIDIClient* RenderViewImpl::webMIDIClient() {
   if (!midi_dispatcher_)
     midi_dispatcher_ = new MidiDispatcher(this);
   return midi_dispatcher_;
+}
+
+blink::WebPushClient* RenderViewImpl::webPushClient() {
+  if (!push_messaging_dispatcher_)
+    push_messaging_dispatcher_ = new PushMessagingDispatcher(this);
+  return push_messaging_dispatcher_;
 }
 
 void RenderViewImpl::draggableRegionsChanged() {

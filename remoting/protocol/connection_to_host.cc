@@ -22,7 +22,6 @@
 #include "remoting/protocol/transport.h"
 #include "remoting/protocol/video_reader.h"
 #include "remoting/protocol/video_stub.h"
-#include "remoting/protocol/util.h"
 
 namespace remoting {
 namespace protocol {
@@ -152,6 +151,7 @@ void ConnectionToHost::OnSessionStateChange(
     case Session::CONNECTING:
     case Session::ACCEPTING:
     case Session::CONNECTED:
+    case Session::AUTHENTICATING:
       // Don't care about these events.
       break;
 

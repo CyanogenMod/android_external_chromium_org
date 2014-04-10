@@ -72,6 +72,7 @@
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
+#include "net/base/filename_util.h"
 #include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -210,7 +211,6 @@ RenderViewHostImpl::RenderViewHostImpl(
       run_modal_opener_id_(MSG_ROUTING_NONE),
       is_waiting_for_beforeunload_ack_(false),
       unload_ack_is_for_cross_site_transition_(false),
-      are_javascript_messages_suppressed_(false),
       sudden_termination_allowed_(false),
       render_view_termination_status_(base::TERMINATION_STATUS_STILL_RUNNING),
       virtual_keyboard_requested_(false),
@@ -435,8 +435,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       command_line.HasSwitch(switches::kEnableRegionBasedColumns);
   prefs.threaded_html_parser =
       !command_line.HasSwitch(switches::kDisableThreadedHTMLParser);
-  prefs.experimental_websocket_enabled =
-      command_line.HasSwitch(switches::kEnableExperimentalWebSocket);
   if (command_line.HasSwitch(cc::switches::kEnablePinchVirtualViewport)) {
     prefs.pinch_virtual_viewport_enabled = true;
     prefs.pinch_overlay_scrollbar_thickness = 10;
@@ -460,10 +458,7 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
   prefs.touch_adjustment_enabled =
       !command_line.HasSwitch(switches::kDisableTouchAdjustment);
   prefs.compositor_touch_hit_testing =
-      !command_line.HasSwitch(
-           cc::switches::kDisableCompositorTouchHitTesting) &&
-      !command_line.HasSwitch(switches::kEnableBleedingEdgeRenderingFastPaths);
-
+      !command_line.HasSwitch(cc::switches::kDisableCompositorTouchHitTesting);
 
 #if defined(OS_MACOSX) || defined(OS_CHROMEOS)
   bool default_enable_scroll_animator = true;
@@ -697,24 +692,6 @@ void RenderViewHostImpl::SetHasPendingCrossSiteRequest(
       GetProcess()->GetID(), GetRoutingID(), has_pending_request);
 }
 
-#if defined(OS_ANDROID)
-void RenderViewHostImpl::ActivateNearestFindResult(int request_id,
-                                                   float x,
-                                                   float y) {
-  Send(new InputMsg_ActivateNearestFindResult(GetRoutingID(),
-                                              request_id, x, y));
-}
-
-void RenderViewHostImpl::RequestFindMatchRects(int current_version) {
-  Send(new ViewMsg_FindMatchRects(GetRoutingID(), current_version));
-}
-
-void RenderViewHostImpl::DisableFullscreenEncryptedMediaPlayback() {
-  media_player_manager_->DisableFullscreenEncryptedMediaPlayback();
-}
-#endif
-
-#if defined(USE_MOJO)
 void RenderViewHostImpl::SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) {
   // Never grant any bindings to browser plugin guests.
   if (GetProcess()->IsGuest()) {
@@ -731,6 +708,22 @@ void RenderViewHostImpl::SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) {
   RenderProcessHostImpl* process =
       static_cast<RenderProcessHostImpl*>(GetProcess());
   process->SetWebUIHandle(GetRoutingID(), handle.Pass());
+}
+
+#if defined(OS_ANDROID)
+void RenderViewHostImpl::ActivateNearestFindResult(int request_id,
+                                                   float x,
+                                                   float y) {
+  Send(new InputMsg_ActivateNearestFindResult(GetRoutingID(),
+                                              request_id, x, y));
+}
+
+void RenderViewHostImpl::RequestFindMatchRects(int current_version) {
+  Send(new ViewMsg_FindMatchRects(GetRoutingID(), current_version));
+}
+
+void RenderViewHostImpl::DisableFullscreenEncryptedMediaPlayback() {
+  media_player_manager_->DisableFullscreenEncryptedMediaPlayback();
 }
 #endif
 
@@ -852,54 +845,13 @@ void RenderViewHostImpl::DesktopNotificationPostClick(int notification_id) {
   Send(new DesktopNotificationMsg_PostClick(GetRoutingID(), notification_id));
 }
 
-void RenderViewHostImpl::JavaScriptDialogClosed(
-    IPC::Message* reply_msg,
-    bool success,
-    const base::string16& user_input) {
-  GetProcess()->SetIgnoreInputEvents(false);
-  bool is_waiting = is_waiting_for_beforeunload_ack_ || IsWaitingForUnloadACK();
-
-  // If we are executing as part of (before)unload event handling, we don't
-  // want to use the regular hung_renderer_delay_ms_ if the user has agreed to
-  // leave the current page. In this case, use the regular timeout value used
-  // during the (before)unload handling.
-  if (is_waiting) {
-    StartHangMonitorTimeout(TimeDelta::FromMilliseconds(
-        success ? kUnloadTimeoutMS : hung_renderer_delay_ms_));
-  }
-
-  ViewHostMsg_RunJavaScriptMessage::WriteReplyParams(reply_msg,
-                                                     success, user_input);
-  Send(reply_msg);
-
-  // If we are waiting for an unload or beforeunload ack and the user has
-  // suppressed messages, kill the tab immediately; a page that's spamming
-  // alerts in onbeforeunload is presumably malicious, so there's no point in
-  // continuing to run its script and dragging out the process.
-  // This must be done after sending the reply since RenderView can't close
-  // correctly while waiting for a response.
-  if (is_waiting && are_javascript_messages_suppressed_)
-    delegate_->RendererUnresponsive(
-        this, is_waiting_for_beforeunload_ack_, IsWaitingForUnloadACK());
-}
-
 void RenderViewHostImpl::DragSourceEndedAt(
     int client_x, int client_y, int screen_x, int screen_y,
     WebDragOperation operation) {
-  Send(new DragMsg_SourceEndedOrMoved(
-      GetRoutingID(),
-      gfx::Point(client_x, client_y),
-      gfx::Point(screen_x, screen_y),
-      true, operation));
-}
-
-void RenderViewHostImpl::DragSourceMovedTo(
-    int client_x, int client_y, int screen_x, int screen_y) {
-  Send(new DragMsg_SourceEndedOrMoved(
-      GetRoutingID(),
-      gfx::Point(client_x, client_y),
-      gfx::Point(screen_x, screen_y),
-      false, WebDragOperationNone));
+  Send(new DragMsg_SourceEnded(GetRoutingID(),
+                               gfx::Point(client_x, client_y),
+                               gfx::Point(screen_x, screen_y),
+                               operation));
 }
 
 void RenderViewHostImpl::DragSourceSystemDragEnded() {
@@ -927,7 +879,9 @@ void RenderViewHostImpl::AllowBindings(int bindings_flags) {
     // than this single active view.
     RenderProcessHostImpl* process =
         static_cast<RenderProcessHostImpl*>(GetProcess());
-    if (process->GetActiveViewCount() > 1)
+    // --single-process only has one renderer.
+    if (process->GetActiveViewCount() > 1 &&
+        !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
       return;
   }
 
@@ -1093,16 +1047,11 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_RouteCloseEvent,
                         OnRouteCloseEvent)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RouteMessageEvent, OnRouteMessageEvent)
-    IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_RunJavaScriptMessage,
-                                    OnRunJavaScriptMessage)
-    IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_RunBeforeUnloadConfirm,
-                                    OnRunBeforeUnloadConfirm)
     IPC_MESSAGE_HANDLER(DragHostMsg_StartDragging, OnStartDragging)
     IPC_MESSAGE_HANDLER(DragHostMsg_UpdateDragCursor, OnUpdateDragCursor)
     IPC_MESSAGE_HANDLER(DragHostMsg_TargetDrop_ACK, OnTargetDropACK)
     IPC_MESSAGE_HANDLER(ViewHostMsg_TakeFocus, OnTakeFocus)
     IPC_MESSAGE_HANDLER(ViewHostMsg_FocusedNodeChanged, OnFocusedNodeChanged)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_AddMessageToConsole, OnAddMessageToConsole)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ClosePage_ACK, OnClosePageACK)
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionRootBoundsChanged,
@@ -1390,32 +1339,6 @@ void RenderViewHostImpl::OnRouteMessageEvent(
   delegate_->RouteMessageEvent(this, params);
 }
 
-void RenderViewHostImpl::OnRunJavaScriptMessage(
-    const base::string16& message,
-    const base::string16& default_prompt,
-    const GURL& frame_url,
-    JavaScriptMessageType type,
-    IPC::Message* reply_msg) {
-  // While a JS message dialog is showing, tabs in the same process shouldn't
-  // process input events.
-  GetProcess()->SetIgnoreInputEvents(true);
-  StopHangMonitorTimeout();
-  delegate_->RunJavaScriptMessage(this, message, default_prompt, frame_url,
-                                  type, reply_msg,
-                                  &are_javascript_messages_suppressed_);
-}
-
-void RenderViewHostImpl::OnRunBeforeUnloadConfirm(const GURL& frame_url,
-                                                  const base::string16& message,
-                                                  bool is_reload,
-                                                  IPC::Message* reply_msg) {
-  // While a JS before unload dialog is showing, tabs in the same process
-  // shouldn't process input events.
-  GetProcess()->SetIgnoreInputEvents(true);
-  StopHangMonitorTimeout();
-  delegate_->RunBeforeUnloadConfirm(this, message, is_reload, reply_msg);
-}
-
 void RenderViewHostImpl::OnStartDragging(
     const DropData& drop_data,
     WebDragOperationsMask drag_operations_mask,
@@ -1492,23 +1415,6 @@ void RenderViewHostImpl::OnFocusedNodeChanged(bool is_editable_node) {
       NOTIFICATION_FOCUS_CHANGED_IN_PAGE,
       Source<RenderViewHost>(this),
       Details<const bool>(&is_editable_node));
-}
-
-void RenderViewHostImpl::OnAddMessageToConsole(
-    int32 level,
-    const base::string16& message,
-    int32 line_no,
-    const base::string16& source_id) {
-  if (delegate_->AddMessageToConsole(level, message, line_no, source_id))
-    return;
-
-  // Pass through log level only on WebUI pages to limit console spew.
-  int32 resolved_level = HasWebUIScheme(delegate_->GetURL()) ? level : 0;
-
-  if (resolved_level >= ::logging::GetMinLogLevel()) {
-    logging::LogMessage("CONSOLE", line_no, resolved_level).stream() << "\"" <<
-        message << "\", source: " << source_id << " (" << line_no << ")";
-  }
 }
 
 void RenderViewHostImpl::OnUserGesture() {
@@ -1727,8 +1633,11 @@ void RenderViewHostImpl::OnAccessibilityEvents(
     std::vector<AXEventNotificationDetails> details;
     for (unsigned int i = 0; i < params.size(); ++i) {
       const AccessibilityHostMsg_EventParams& param = params[i];
-      AXEventNotificationDetails detail(
-          param.nodes, param.event_type, param.id, GetRoutingID());
+      AXEventNotificationDetails detail(param.update.nodes,
+                                        param.event_type,
+                                        param.id,
+                                        GetProcess()->GetID(),
+                                        GetRoutingID());
       details.push_back(detail);
     }
 
@@ -1747,12 +1656,10 @@ void RenderViewHostImpl::OnAccessibilityEvents(
     const AccessibilityHostMsg_EventParams& param = params[i];
     if (static_cast<int>(param.event_type) < 0)
       continue;
-    ui::AXTreeUpdate update;
-    update.nodes = param.nodes;
     if (!ax_tree_)
-      ax_tree_.reset(new ui::AXTree(update));
+      ax_tree_.reset(new ui::AXTree(param.update));
     else
-      CHECK(ax_tree_->Unserialize(update)) << ax_tree_->error();
+      CHECK(ax_tree_->Unserialize(param.update)) << ax_tree_->error();
     accessibility_testing_callback_.Run(param.event_type);
   }
 }

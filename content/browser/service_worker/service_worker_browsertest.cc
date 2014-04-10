@@ -223,14 +223,8 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
   virtual ~ServiceWorkerVersionBrowserTest() {}
 
   virtual void TearDownOnIOThread() OVERRIDE {
-    if (registration_) {
-      registration_->Shutdown();
-      registration_ = NULL;
-    }
-    if (version_) {
-      version_->Shutdown();
-      version_ = NULL;
-    }
+    registration_ = NULL;
+    version_ = NULL;
   }
 
   void InstallTestHelper(const std::string& worker_url,
@@ -307,11 +301,12 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
     registration_ = new ServiceWorkerRegistration(
         embedded_test_server()->GetURL("/*"),
         embedded_test_server()->GetURL(worker_url),
-        next_registration_id_++);
+        next_registration_id_++,
+        wrapper()->context()->AsWeakPtr());
     version_ = new ServiceWorkerVersion(
         registration_,
-        wrapper()->context()->embedded_worker_registry(),
-        version_id);
+        version_id,
+        wrapper()->context()->AsWeakPtr());
     AssociateRendererProcessToWorker(version_->embedded_worker());
   }
 

@@ -13,9 +13,10 @@
   ],
   'sources': [
     'edid_parser_unittest.cc',
-    'chromeos/output_configurator_unittest.cc',
+    'chromeos/display_configurator_unittest.cc',
     'chromeos/x11/display_util_x11_unittest.cc',
     'chromeos/x11/native_display_event_dispatcher_x11_unittest.cc',
+    'display_util_unittest.cc',
   ],
   'conditions': [
     # TODO(dnicoara) When we add non-chromeos display code this dependency can

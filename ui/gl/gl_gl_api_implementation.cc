@@ -19,14 +19,14 @@
 namespace gfx {
 
 // The GL Api being used. This could be g_real_gl or gl_trace_gl
-static GLApi* g_gl;
+static GLApi* g_gl = NULL;
 // A GL Api that calls directly into the driver.
-static RealGLApi* g_real_gl;
+static RealGLApi* g_real_gl = NULL;
 // A GL Api that does nothing but warn about illegal GL calls without a context
 // current.
-static NoContextGLApi* g_no_context_gl;
+static NoContextGLApi* g_no_context_gl = NULL;
 // A GL Api that calls TRACE and then calls another GL api.
-static TraceGLApi* g_trace_gl;
+static TraceGLApi* g_trace_gl = NULL;
 // GL version used when initializing dynamic bindings.
 static GLVersionInfo* g_version_info = NULL;
 
@@ -355,6 +355,11 @@ void GLApiBase::InitializeBase(DriverGL* driver) {
   driver_ = driver;
 }
 
+void GLApiBase::SignalFlush() {
+  DCHECK(GLContext::GetCurrent());
+  GLContext::GetCurrent()->OnFlush();
+}
+
 RealGLApi::RealGLApi() {
 }
 
@@ -363,6 +368,16 @@ RealGLApi::~RealGLApi() {
 
 void RealGLApi::Initialize(DriverGL* driver) {
   InitializeBase(driver);
+}
+
+void RealGLApi::glFlushFn() {
+  GLApiBase::glFlushFn();
+  GLApiBase::SignalFlush();
+}
+
+void RealGLApi::glFinishFn() {
+  GLApiBase::glFinishFn();
+  GLApiBase::SignalFlush();
 }
 
 TraceGLApi::~TraceGLApi() {
@@ -461,6 +476,16 @@ const GLubyte* VirtualGLApi::glGetStringFn(GLenum name) {
     default:
       return driver_->fn.glGetStringFn(name);
   }
+}
+
+void VirtualGLApi::glFlushFn() {
+  GLApiBase::glFlushFn();
+  GLApiBase::SignalFlush();
+}
+
+void VirtualGLApi::glFinishFn() {
+  GLApiBase::glFinishFn();
+  GLApiBase::SignalFlush();
 }
 
 }  // namespace gfx

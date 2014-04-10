@@ -41,7 +41,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/drop_data.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/window_tree_client.h"
@@ -174,52 +174,20 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
 
 // Listens to all mouse drag events during a drag and drop and sends them to
 // the renderer.
-class WebDragSourceAura : public base::MessageLoopForUI::Observer,
-                          public NotificationObserver {
+class WebDragSourceAura : public NotificationObserver {
  public:
   WebDragSourceAura(aura::Window* window, WebContentsImpl* contents)
       : window_(window),
         contents_(contents) {
-    base::MessageLoopForUI::current()->AddObserver(this);
     registrar_.Add(this,
                    NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
                    Source<WebContents>(contents));
   }
 
   virtual ~WebDragSourceAura() {
-    base::MessageLoopForUI::current()->RemoveObserver(this);
   }
 
-  // MessageLoop::Observer implementation:
-  virtual base::EventStatus WillProcessEvent(
-      const base::NativeEvent& event) OVERRIDE {
-    return base::EVENT_CONTINUE;
-  }
-  virtual void DidProcessEvent(const base::NativeEvent& event) OVERRIDE {
-    if (!contents_)
-      return;
-    ui::EventType type = ui::EventTypeFromNative(event);
-    RenderViewHost* rvh = NULL;
-    switch (type) {
-      case ui::ET_MOUSE_DRAGGED:
-        rvh = contents_->GetRenderViewHost();
-        if (rvh) {
-          gfx::Point screen_loc_in_pixel = ui::EventLocationFromNative(event);
-          gfx::Point screen_loc = ConvertViewPointToDIP(rvh->GetView(),
-              screen_loc_in_pixel);
-          gfx::Point client_loc = screen_loc;
-          aura::Window* window = rvh->GetView()->GetNativeView();
-          aura::Window::ConvertPointToTarget(window->GetRootWindow(),
-              window, &client_loc);
-          contents_->DragSourceMovedTo(client_loc.x(), client_loc.y(),
-              screen_loc.x(), screen_loc.y());
-        }
-        break;
-      default:
-        break;
-    }
-  }
-
+  // NotificationObserver:
   virtual void Observe(int type,
       const NotificationSource& source,
       const NotificationDetails& details) OVERRIDE {
@@ -315,7 +283,7 @@ void PrepareDragForDownload(
   scoped_refptr<DragDownloadFile> download_file =
       new DragDownloadFile(
           download_path,
-          scoped_ptr<net::FileStream>(),
+          base::File(),
           download_url,
           Referrer(page_url, drop_data.referrer_policy),
           page_encoding,
@@ -1305,12 +1273,12 @@ void WebContentsViewAura::OnImplicitAnimationsCompleted() {
 
   if (ShouldNavigateForward(web_contents_->GetController(),
                             completed_overscroll_gesture_)) {
-    PrepareOverscrollNavigationOverlay();
     web_contents_->GetController().GoForward();
+    PrepareOverscrollNavigationOverlay();
   } else if (ShouldNavigateBack(web_contents_->GetController(),
                                 completed_overscroll_gesture_)) {
-    PrepareOverscrollNavigationOverlay();
     web_contents_->GetController().GoBack();
+    PrepareOverscrollNavigationOverlay();
   } else {
     if (touch_editable_)
       touch_editable_->OverscrollCompleted();

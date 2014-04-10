@@ -18,11 +18,12 @@
 #include "content/child/request_info.h"
 #include "content/child/sync_load_response.h"
 #include "content/common/resource_request_body.h"
+#include "content/public/child/request_peer.h"
 #include "net/base/data_url.h"
+#include "net/base/filename_util.h"
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
 #include "net/url_request/url_request.h"
@@ -221,7 +222,7 @@ net::RequestPriority ConvertWebKitPriorityToNetPriority(
 // call to WebURLLoaderClient.  The bridge requires its Peer to stay alive
 // until it receives OnCompletedRequest.
 class WebURLLoaderImpl::Context : public base::RefCounted<Context>,
-                                  public ResourceLoaderBridge::Peer {
+                                  public RequestPeer {
  public:
   explicit Context(WebURLLoaderImpl* loader);
 
@@ -230,11 +231,12 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context>,
 
   void Cancel();
   void SetDefersLoading(bool value);
-  void DidChangePriority(WebURLRequest::Priority new_priority);
+  void DidChangePriority(WebURLRequest::Priority new_priority,
+                         int intra_priority_value);
   void Start(const WebURLRequest& request,
              SyncLoadResponse* sync_load_response);
 
-  // ResourceLoaderBridge::Peer methods:
+  // RequestPeer methods:
   virtual void OnUploadProgress(uint64 position, uint64 size) OVERRIDE;
   virtual bool OnReceivedRedirect(
       const GURL& new_url,
@@ -301,10 +303,10 @@ void WebURLLoaderImpl::Context::SetDefersLoading(bool value) {
 }
 
 void WebURLLoaderImpl::Context::DidChangePriority(
-    WebURLRequest::Priority new_priority) {
+    WebURLRequest::Priority new_priority, int intra_priority_value) {
   if (bridge_)
     bridge_->DidChangePriority(
-        ConvertWebKitPriorityToNetPriority(new_priority));
+        ConvertWebKitPriorityToNetPriority(new_priority), intra_priority_value);
 }
 
 void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
@@ -866,8 +868,9 @@ void WebURLLoaderImpl::setDefersLoading(bool value) {
   context_->SetDefersLoading(value);
 }
 
-void WebURLLoaderImpl::didChangePriority(WebURLRequest::Priority new_priority) {
-  context_->DidChangePriority(new_priority);
+void WebURLLoaderImpl::didChangePriority(WebURLRequest::Priority new_priority,
+                                         int intra_priority_value) {
+  context_->DidChangePriority(new_priority, intra_priority_value);
 }
 
 }  // namespace content

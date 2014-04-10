@@ -24,7 +24,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "chrome/test/ui/ui_test.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/test/browser_test_utils.h"
@@ -58,7 +57,7 @@ class WebRtcBrowserTest : public WebRtcTestBase,
     EXPECT_FALSE(command_line->HasSwitch(switches::kUseFakeUIForMediaStream));
 
     // Play a suitable, somewhat realistic video file.
-    base::FilePath input_video = test::GetReferenceVideosDir()
+    base::FilePath input_video = test::GetReferenceFilesDir()
         .Append(test::kReferenceFileName360p)
         .AddExtension(test::kY4mFileExtension);
     command_line->AppendSwitchPath(switches::kUseFileForFakeVideoCapture,

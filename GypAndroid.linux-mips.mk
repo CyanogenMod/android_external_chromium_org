@@ -3,6 +3,7 @@
 
 LOCAL_PATH := $(call my-dir)
 GYP_CONFIGURATION ?= Debug
+GYP_VAR_PREFIX ?=
 
 include $(LOCAL_PATH)/android_webview/android_webview_common.target.linux-mips.mk
 include $(LOCAL_PATH)/android_webview/android_webview_pak.target.linux-mips.mk
@@ -50,6 +51,7 @@ include $(LOCAL_PATH)/content/content_app_both.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_browser.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_child.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_common.target.linux-mips.mk
+include $(LOCAL_PATH)/content/content_common_mojo_bindings.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_gpu.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_renderer.target.linux-mips.mk
@@ -88,6 +90,15 @@ include $(LOCAL_PATH)/media/media_android_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/media/player_android.target.linux-mips.mk
 include $(LOCAL_PATH)/media/shared_memory_support.target.linux-mips.mk
 include $(LOCAL_PATH)/media/video_capture_android_jni_headers.target.linux-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_bindings.target.linux-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_common_lib.target.linux-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_environment_chromium.target.linux-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_environment_chromium_impl.target.linux-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.linux-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_service_manager.target.linux-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_shell_bindings.target.linux-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_system.target.linux-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_system_impl.target.linux-mips.mk
 include $(LOCAL_PATH)/net/cert_verify_status_android_java.target.linux-mips.mk
 include $(LOCAL_PATH)/net/certificate_mime_types_java.target.linux-mips.mk
 include $(LOCAL_PATH)/net/http_server.target.linux-mips.mk
@@ -146,6 +157,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_n
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_profiles_js.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_resources_js.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_scripts_js.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_search_js.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_timeline_js.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_heap_snapshot_worker_js.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_script_formatter_worker_js.target.linux-mips.mk
@@ -155,10 +167,9 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.li
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/frontend_protocol_sources.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/supported_css_properties.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/heap/blink_heap.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/heap/blink_heap_asm_stubs.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_common.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_heap_asm_stubs.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_platform.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_prerequisites.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/make_platform_generated.target.linux-mips.mk

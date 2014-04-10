@@ -171,39 +171,42 @@ void UserScriptScheduler::ExecuteCodeImpl(
   if (params.user_gesture)
     gesture.reset(new blink::WebScopedUserGesture);
 
+  GURL top_url = frame_->document().url();
+
   for (std::vector<WebFrame*>::iterator frame_it = frame_vector.begin();
        frame_it != frame_vector.end(); ++frame_it) {
     WebFrame* child_frame = *frame_it;
-    if (params.is_javascript) {
-      // We recheck access here in the renderer for extra safety against races
-      // with navigation.
-      //
-      // But different frames can have different URLs, and the extension might
-      // only have access to a subset of them. For the top frame, we can
-      // immediately send an error and stop because the browser process
-      // considers that an error too.
-      //
-      // For child frames, we just skip ones the extension doesn't have access
-      // to and carry on.
-      if (!params.is_web_view &&
-          !PermissionsData::CanExecuteScriptOnPage(
-              extension,
-              child_frame->document().url(),
-              frame_->document().url(),
-              extension_helper->tab_id(),
-              NULL,
-              -1,
-              NULL)) {
-        if (child_frame->parent()) {
-          continue;
-        } else {
-          error = ErrorUtils::FormatErrorMessage(
-              manifest_errors::kCannotAccessPage,
-              child_frame->document().url().spec());
-          break;
-        }
-      }
+    CHECK(child_frame) << top_url;
 
+    // We recheck access here in the renderer for extra safety against races
+    // with navigation.
+    //
+    // But different frames can have different URLs, and the extension might
+    // only have access to a subset of them. For the top frame, we can
+    // immediately send an error and stop because the browser process
+    // considers that an error too.
+    //
+    // For child frames, we just skip ones the extension doesn't have access
+    // to and carry on.
+    if (!params.is_web_view &&
+        !PermissionsData::CanExecuteScriptOnPage(extension,
+                                                 child_frame->document().url(),
+                                                 top_url,
+                                                 extension_helper->tab_id(),
+                                                 NULL,
+                                                 -1,
+                                                 NULL)) {
+      if (child_frame->parent()) {
+        continue;
+      } else {
+        error = ErrorUtils::FormatErrorMessage(
+            manifest_errors::kCannotAccessPage,
+            child_frame->document().url().spec());
+        break;
+      }
+    }
+
+    if (params.is_javascript) {
       WebScriptSource source(WebString::fromUTF8(params.code), params.file_url);
       v8::HandleScope scope(v8::Isolate::GetCurrent());
 

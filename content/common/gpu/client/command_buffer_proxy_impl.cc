@@ -12,6 +12,7 @@
 #include "content/common/child_process_messages.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/client/gpu_video_decode_accelerator_host.h"
+#include "content/common/gpu/client/gpu_video_encode_accelerator_host.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
@@ -217,13 +218,15 @@ void CommandBufferProxyImpl::WaitForTokenInRange(int32 start, int32 end) {
                "end",
                end);
   TryUpdateState();
-  while (!InRange(start, end, last_state_.token) &&
-         last_state_.error == gpu::error::kNoError) {
+  if (!InRange(start, end, last_state_.token) &&
+      last_state_.error == gpu::error::kNoError) {
     gpu::CommandBuffer::State state;
-    if (Send(new GpuCommandBufferMsg_GetStateFast(route_id_, &state)))
+    if (Send(new GpuCommandBufferMsg_WaitForTokenInRange(
+            route_id_, start, end, &state)))
       OnUpdateState(state);
-    TryUpdateState();
   }
+  DCHECK(InRange(start, end, last_state_.token) ||
+         last_state_.error != gpu::error::kNoError);
 }
 
 void CommandBufferProxyImpl::WaitForGetOffsetInRange(int32 start, int32 end) {
@@ -234,13 +237,15 @@ void CommandBufferProxyImpl::WaitForGetOffsetInRange(int32 start, int32 end) {
                "end",
                end);
   TryUpdateState();
-  while (!InRange(start, end, last_state_.get_offset) &&
-         last_state_.error == gpu::error::kNoError) {
+  if (!InRange(start, end, last_state_.get_offset) &&
+      last_state_.error == gpu::error::kNoError) {
     gpu::CommandBuffer::State state;
-    if (Send(new GpuCommandBufferMsg_GetStateFast(route_id_, &state)))
+    if (Send(new GpuCommandBufferMsg_WaitForGetOffsetInRange(
+            route_id_, start, end, &state)))
       OnUpdateState(state);
-    TryUpdateState();
   }
+  DCHECK(InRange(start, end, last_state_.get_offset) ||
+         last_state_.error != gpu::error::kNoError);
 }
 
 void CommandBufferProxyImpl::SetGetBuffer(int32 shm_id) {
@@ -382,9 +387,14 @@ uint32 CommandBufferProxyImpl::CreateStreamTexture(uint32 texture_id) {
   if (last_state_.error != gpu::error::kNoError)
     return 0;
 
-  int32 stream_id = 0;
+  int32 stream_id = channel_->GenerateRouteID();
+  bool succeeded;
   Send(new GpuCommandBufferMsg_CreateStreamTexture(
-      route_id_, texture_id, &stream_id));
+      route_id_, texture_id, stream_id, &succeeded));
+  if (!succeeded) {
+    DLOG(ERROR) << "GpuCommandBufferMsg_CreateStreamTexture returned failure";
+    return 0;
+  }
   return stream_id;
 }
 
@@ -459,24 +469,15 @@ bool CommandBufferProxyImpl::ProduceFrontBuffer(const gpu::Mailbox& mailbox) {
 }
 
 scoped_ptr<media::VideoDecodeAccelerator>
-CommandBufferProxyImpl::CreateVideoDecoder(media::VideoCodecProfile profile) {
-  int decoder_route_id;
-  scoped_ptr<media::VideoDecodeAccelerator> vda;
-  if (!Send(new GpuCommandBufferMsg_CreateVideoDecoder(route_id_, profile,
-                                                       &decoder_route_id))) {
-    LOG(ERROR) << "Send(GpuCommandBufferMsg_CreateVideoDecoder) failed";
-    return vda.Pass();
-  }
+CommandBufferProxyImpl::CreateVideoDecoder() {
+  return scoped_ptr<media::VideoDecodeAccelerator>(
+      new GpuVideoDecodeAcceleratorHost(channel_, this));
+}
 
-  if (decoder_route_id < 0) {
-    DLOG(ERROR) << "Failed to Initialize GPU decoder on profile: " << profile;
-    return vda.Pass();
-  }
-
-  GpuVideoDecodeAcceleratorHost* decoder_host =
-      new GpuVideoDecodeAcceleratorHost(channel_, decoder_route_id, this);
-  vda.reset(decoder_host);
-  return vda.Pass();
+scoped_ptr<media::VideoEncodeAccelerator>
+CommandBufferProxyImpl::CreateVideoEncoder() {
+  return scoped_ptr<media::VideoEncodeAccelerator>(
+      new GpuVideoEncodeAcceleratorHost(channel_, this));
 }
 
 gpu::error::Error CommandBufferProxyImpl::GetLastError() {
@@ -522,6 +523,11 @@ void CommandBufferProxyImpl::SetOnConsoleMessageCallback(
 void CommandBufferProxyImpl::TryUpdateState() {
   if (last_state_.error == gpu::error::kNoError)
     shared_state()->Read(&last_state_);
+}
+
+gpu::CommandBufferSharedState* CommandBufferProxyImpl::shared_state() const {
+  return reinterpret_cast<gpu::CommandBufferSharedState*>(
+      shared_state_shm_->memory());
 }
 
 }  // namespace content

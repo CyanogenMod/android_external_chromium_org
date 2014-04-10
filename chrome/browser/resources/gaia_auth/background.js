@@ -37,6 +37,14 @@ BackgroundBridgeManager.prototype = {
   run: function() {
     chrome.runtime.onConnect.addListener(this.onConnect_.bind(this));
 
+    chrome.webRequest.onBeforeRequest.addListener(
+        function(details) {
+          if (this.bridges_[details.tabId])
+            return this.bridges_[details.tabId].onInsecureRequest();
+        }.bind(this),
+        {urls: ['http://*/*', 'file://*/*', 'ftp://*/*']},
+        ['blocking']);
+
     chrome.webRequest.onBeforeSendHeaders.addListener(
         function(details) {
           if (this.bridges_[details.tabId])
@@ -119,6 +127,10 @@ BackgroundBridge.prototype = {
   // Gaia URL base that is set from main auth script.
   gaiaUrl_: null,
 
+  // Whether to abort the authentication flow and show an error messagen when
+  // content served over an unencrypted connection is detected.
+  blockInsecureContent_: false,
+
   // Whether auth flow has started. It is used as a signal of whether the
   // injected script should scrape passwords.
   authStarted_: false,
@@ -142,6 +154,8 @@ BackgroundBridge.prototype = {
     // Registers for SAML related messages.
     this.channelMain_.registerMessage(
         'setGaiaUrl', this.onSetGaiaUrl_.bind(this));
+    this.channelMain_.registerMessage(
+        'setBlockInsecureContent', this.onSetBlockInsecureContent_.bind(this));
     this.channelMain_.registerMessage(
         'resetAuth', this.onResetAuth_.bind(this));
     this.channelMain_.registerMessage(
@@ -188,7 +202,9 @@ BackgroundBridge.prototype = {
    * script of switching to full tab if necessary.
    */
   onCompleted: function(details) {
-    if (!this.isDesktopFlow_)
+    // Only monitors requests in the gaia frame whose parent frame ID must be
+    // positive.
+    if (!this.isDesktopFlow_ || details.parentFrameId <= 0)
       return;
 
     var msg = null;
@@ -223,6 +239,19 @@ BackgroundBridge.prototype = {
       };
       this.channelMain_.send(msg);
     }
+  },
+
+  /**
+   * Handler for webRequest.onBeforeRequest, invoked when content served over an
+   * unencrypted connection is detected. Determines whether the request should
+   * be blocked and if so, signals that an error message needs to be shown.
+   * @return {!Object} Decision whether to block the request.
+   */
+  onInsecureRequest: function() {
+    if (!this.blockInsecureContent_)
+      return {};
+    this.channelMain_.send({name: 'onInsecureContentBlocked'});
+    return {cancel: true};
   },
 
   /**
@@ -275,6 +304,13 @@ BackgroundBridge.prototype = {
    */
   onSetGaiaUrl_: function(msg) {
     this.gaiaUrl_ = msg.gaiaUrl;
+  },
+
+  /**
+   * Handler for 'setBlockInsecureContent' signal sent from the main script.
+   */
+  onSetBlockInsecureContent_: function(msg) {
+    this.blockInsecureContent_ = msg.blockInsecureContent;
   },
 
   /**

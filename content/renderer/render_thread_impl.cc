@@ -82,6 +82,7 @@
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/video_capture_message_filter.h"
 #include "content/renderer/media/webrtc_identity_service.h"
+#include "content/renderer/mojo/mojo_render_process_observer.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -144,10 +145,6 @@
 
 #if defined(ENABLE_PLUGINS)
 #include "content/renderer/npapi/plugin_channel_host.h"
-#endif
-
-#if defined(USE_MOJO)
-#include "content/renderer/mojo/mojo_render_process_observer.h"
 #endif
 
 using base::ThreadRestrictions;
@@ -397,10 +394,8 @@ void RenderThreadImpl::Init() {
 
   AddFilter((new EmbeddedWorkerContextMessageFilter())->GetFilter());
 
-#if defined(USE_MOJO)
   // MojoRenderProcessObserver deletes itself as necessary.
   new MojoRenderProcessObserver(this);
-#endif
 
   GetContentClient()->renderer()->RenderThreadStarted();
 
@@ -1036,7 +1031,7 @@ RenderThreadImpl::OffscreenCompositorContextProvider() {
       SynchronousCompositorFactory::GetInstance()) {
     if (compositor_message_loop_proxy_)
       return factory->GetOffscreenContextProviderForCompositorThread();
-    return factory->GetOffscreenContextProviderForMainThread();
+    return factory->GetSharedOffscreenContextProviderForMainThread();
   }
 #endif
 
@@ -1055,7 +1050,7 @@ RenderThreadImpl::SharedMainThreadContextProvider() {
 #if defined(OS_ANDROID)
   if (SynchronousCompositorFactory* factory =
       SynchronousCompositorFactory::GetInstance())
-    return factory->GetOffscreenContextProviderForMainThread();
+    return factory->GetSharedOffscreenContextProviderForMainThread();
 #endif
 
   if (!shared_main_thread_contexts_ ||
@@ -1142,23 +1137,26 @@ scoped_ptr<base::SharedMemory> RenderThreadImpl::AllocateSharedMemory(
       HostAllocateSharedMemoryBuffer(size));
 }
 
-int32 RenderThreadImpl::CreateViewCommandBuffer(
-      int32 surface_id, const GPUCreateCommandBufferConfig& init_params) {
+bool RenderThreadImpl::CreateViewCommandBuffer(
+      int32 surface_id,
+      const GPUCreateCommandBufferConfig& init_params,
+      int32 route_id) {
   TRACE_EVENT1("gpu",
                "RenderThreadImpl::CreateViewCommandBuffer",
                "surface_id",
                surface_id);
 
-  int32 route_id = MSG_ROUTING_NONE;
+  bool succeeded = false;
   IPC::Message* message = new GpuHostMsg_CreateViewCommandBuffer(
       surface_id,
       init_params,
-      &route_id);
+      route_id,
+      &succeeded);
 
   // Allow calling this from the compositor thread.
   thread_safe_sender()->Send(message);
 
-  return route_id;
+  return succeeded;
 }
 
 void RenderThreadImpl::CreateImage(
@@ -1426,6 +1424,7 @@ void RenderThreadImpl::OnCreateNewSharedWorker(
                                params.name,
                                params.content_security_policy,
                                params.security_policy_type,
+                               params.pause_on_start,
                                params.route_id);
 }
 

@@ -80,21 +80,9 @@ const int64_t kTimeMediumMin = 10;         // in ms
 const int64_t kTimeMediumMax = 200000;     // in ms
 const uint32_t kTimeMediumBuckets = 100;
 
-// Up to 33 minutes.
-const int64_t kTimeLargeMin = 100;         // in ms
-const int64_t kTimeLargeMax = 2000000;     // in ms
-const uint32_t kTimeLargeBuckets = 100;
-
 const int64_t kSizeKBMin = 1;
 const int64_t kSizeKBMax = 512*1024;     // very large .nexe
 const uint32_t kSizeKBBuckets = 100;
-
-const PPB_NaCl_Private* GetNaClInterface() {
-  pp::Module *module = pp::Module::Get();
-  CHECK(module);
-  return static_cast<const PPB_NaCl_Private*>(
-      module->GetBrowserInterface(PPB_NACL_PRIVATE_INTERFACE));
-}
 
 }  // namespace
 
@@ -163,15 +151,6 @@ void Plugin::HistogramTimeMedium(const std::string& name,
                                       kTimeMediumBuckets);
 }
 
-void Plugin::HistogramTimeLarge(const std::string& name,
-                                int64_t ms) {
-  if (ms < 0) return;
-  uma_interface_.HistogramCustomTimes(name,
-                                      ms,
-                                      kTimeLargeMin, kTimeLargeMax,
-                                      kTimeLargeBuckets);
-}
-
 void Plugin::HistogramSizeKB(const std::string& name,
                              int32_t sample) {
   if (sample < 0) return;
@@ -194,40 +173,6 @@ void Plugin::HistogramEnumerate(const std::string& name,
       sample = out_of_range_replacement;
   }
   uma_interface_.HistogramEnumeration(name, sample, maximum);
-}
-
-void Plugin::HistogramEnumerateOsArch(const std::string& sandbox_isa) {
-  enum NaClOSArch {
-    kNaClLinux32 = 0,
-    kNaClLinux64,
-    kNaClLinuxArm,
-    kNaClMac32,
-    kNaClMac64,
-    kNaClMacArm,
-    kNaClWin32,
-    kNaClWin64,
-    kNaClWinArm,
-    kNaClLinuxMips,
-    kNaClOSArchMax
-  };
-
-  NaClOSArch os_arch = kNaClOSArchMax;
-#if NACL_LINUX
-  os_arch = kNaClLinux32;
-#elif NACL_OSX
-  os_arch = kNaClMac32;
-#elif NACL_WINDOWS
-  os_arch = kNaClWin32;
-#endif
-
-  if (sandbox_isa == "x86-64")
-    os_arch = static_cast<NaClOSArch>(os_arch + 1);
-  if (sandbox_isa == "arm")
-    os_arch = static_cast<NaClOSArch>(os_arch + 2);
-  if (sandbox_isa == "mips32")
-    os_arch = kNaClLinuxMips;
-
-  HistogramEnumerate("NaCl.Client.OSArch", os_arch, kNaClOSArchMax, -1);
 }
 
 void Plugin::HistogramEnumerateSelLdrLoadStatus(NaClErrorCode error_code) {
@@ -382,7 +327,8 @@ void Plugin::LoadNexeAndStart(int32_t pp_error,
   }
 }
 
-bool Plugin::LoadNaClModuleContinuationIntern(ErrorInfo* error_info) {
+bool Plugin::LoadNaClModuleContinuationIntern() {
+  ErrorInfo error_info;
   if (!uses_nonsfi_mode_) {
     if (!main_subprocess_.StartSrpcServices()) {
       // The NaCl process probably crashed. On Linux, a crash causes this
@@ -391,35 +337,19 @@ bool Plugin::LoadNaClModuleContinuationIntern(ErrorInfo* error_info) {
       // to make it less confusing for developers.
       NaClLog(LOG_ERROR, "LoadNaClModuleContinuationIntern: "
               "StartSrpcServices failed\n");
-      error_info->SetReport(PP_NACL_ERROR_START_PROXY_MODULE,
-                            "could not initialize module.");
+      error_info.SetReport(PP_NACL_ERROR_START_PROXY_MODULE,
+                           "could not initialize module.");
+      ReportLoadError(error_info);
       return false;
     }
   }
-  PP_ExternalPluginResult ipc_result =
-      nacl_interface_->StartPpapiProxy(pp_instance());
-  if (ipc_result == PP_EXTERNAL_PLUGIN_OK) {
-    // Log the amound of time that has passed between the trusted plugin being
-    // initialized and the untrusted plugin being initialized.  This is
-    // (roughly) the cost of using NaCl, in terms of startup time.
-    HistogramStartupTimeMedium(
-        "NaCl.Perf.StartupTime.NaClOverhead",
-        static_cast<float>(NaClGetTimeOfDayMicroseconds() - init_time_)
-            / NACL_MICROS_PER_MILLI);
-  } else if (ipc_result == PP_EXTERNAL_PLUGIN_ERROR_MODULE) {
-    NaClLog(LOG_ERROR, "LoadNaClModuleContinuationIntern: "
-            "Got PP_EXTERNAL_PLUGIN_ERROR_MODULE\n");
-    error_info->SetReport(PP_NACL_ERROR_START_PROXY_MODULE,
-                          "could not initialize module.");
-    return false;
-  } else if (ipc_result == PP_EXTERNAL_PLUGIN_ERROR_INSTANCE) {
-    error_info->SetReport(PP_NACL_ERROR_START_PROXY_INSTANCE,
-                          "could not create instance.");
-    return false;
+
+  bool result = PP_ToBool(nacl_interface_->StartPpapiProxy(pp_instance()));
+  if (result) {
+    PLUGIN_PRINTF(("Plugin::LoadNaClModule (%s)\n",
+                   main_subprocess_.detailed_description().c_str()));
   }
-  PLUGIN_PRINTF(("Plugin::LoadNaClModule (%s)\n",
-                 main_subprocess_.detailed_description().c_str()));
-  return true;
+  return result;
 }
 
 NaClSubprocess* Plugin::LoadHelperNaClModule(const nacl::string& helper_url,
@@ -512,8 +442,9 @@ Plugin* Plugin::New(PP_Instance pp_instance) {
 // failure. Note that module loading functions will log their own errors.
 bool Plugin::Init(uint32_t argc, const char* argn[], const char* argv[]) {
   PLUGIN_PRINTF(("Plugin::Init (argc=%" NACL_PRIu32 ")\n", argc));
-  HistogramEnumerateOsArch(nacl_interface_->GetSandboxArch());
   init_time_ = NaClGetTimeOfDayMicroseconds();
+  nacl_interface_->SetInitTime(pp_instance());
+
   url_util_ = pp::URLUtil_Dev::Get();
   if (url_util_ == NULL)
     return false;
@@ -580,9 +511,8 @@ Plugin::Plugin(PP_Instance pp_instance)
       wrapper_factory_(NULL),
       enable_dev_interfaces_(false),
       init_time_(0),
-      nexe_size_(0),
+      ready_time_(0),
       time_of_last_progress_event_(0),
-      exit_status_(-1),
       nacl_interface_(NULL),
       uma_interface_(this) {
   PLUGIN_PRINTF(("Plugin::Plugin (this=%p, pp_instance=%"
@@ -608,13 +538,6 @@ Plugin::~Plugin() {
                  static_cast<void*>(this)));
   // Destroy the coordinator while the rest of the data is still there
   pnacl_coordinator_.reset(NULL);
-
-  int64_t ready_time = nacl_interface_->GetReadyTime(pp_instance());
-  if (!nacl_interface_->GetNexeErrorReported(pp_instance())) {
-    HistogramTimeLarge(
-        "NaCl.ModuleUptime.Normal",
-        (shutdown_start - ready_time) / NACL_MICROS_PER_MILLI);
-  }
 
   for (std::map<nacl::string, NaClFileInfoAutoCloser*>::iterator it =
            url_file_info_map_.begin();
@@ -673,16 +596,18 @@ bool Plugin::HandleDocumentLoad(const pp::URLLoader& url_loader) {
 }
 
 void Plugin::HistogramStartupTimeSmall(const std::string& name, float dt) {
-  if (nexe_size_ > 0) {
-    float size_in_MB = static_cast<float>(nexe_size_) / (1024.f * 1024.f);
+  int64_t nexe_size = nacl_interface_->GetNexeSize(pp_instance());
+  if (nexe_size > 0) {
+    float size_in_MB = static_cast<float>(nexe_size) / (1024.f * 1024.f);
     HistogramTimeSmall(name, static_cast<int64_t>(dt));
     HistogramTimeSmall(name + "PerMB", static_cast<int64_t>(dt / size_in_MB));
   }
 }
 
 void Plugin::HistogramStartupTimeMedium(const std::string& name, float dt) {
-  if (nexe_size_ > 0) {
-    float size_in_MB = static_cast<float>(nexe_size_) / (1024.f * 1024.f);
+  int64_t nexe_size = nacl_interface_->GetNexeSize(pp_instance());
+  if (nexe_size > 0) {
+    float size_in_MB = static_cast<float>(nexe_size) / (1024.f * 1024.f);
     HistogramTimeMedium(name, static_cast<int64_t>(dt));
     HistogramTimeMedium(name + "PerMB", static_cast<int64_t>(dt / size_in_MB));
   }
@@ -723,9 +648,9 @@ void Plugin::NexeFileDidOpen(int32_t pp_error) {
   }
   size_t nexe_bytes_read = static_cast<size_t>(stat_buf.st_size);
 
-  nexe_size_ = nexe_bytes_read;
+  nacl_interface_->SetNexeSize(pp_instance(), nexe_bytes_read);
   HistogramSizeKB("NaCl.Perf.Size.Nexe",
-                  static_cast<int32_t>(nexe_size_ / 1024));
+                  static_cast<int32_t>(nexe_bytes_read / 1024));
   HistogramStartupTimeMedium(
       "NaCl.Perf.StartupTime.NexeDownload",
       static_cast<float>(nexe_downloader_.TimeSinceOpenMilliseconds()));
@@ -752,55 +677,31 @@ void Plugin::NexeFileDidOpen(int32_t pp_error) {
 }
 
 void Plugin::NexeFileDidOpenContinuation(int32_t pp_error) {
-  ErrorInfo error_info;
   bool was_successful;
 
   UNREFERENCED_PARAMETER(pp_error);
   NaClLog(4, "Entered NexeFileDidOpenContinuation\n");
   NaClLog(4, "NexeFileDidOpenContinuation: invoking"
           " LoadNaClModuleContinuationIntern\n");
-  was_successful = LoadNaClModuleContinuationIntern(&error_info);
+  was_successful = LoadNaClModuleContinuationIntern();
   if (was_successful) {
     NaClLog(4, "NexeFileDidOpenContinuation: success;"
             " setting histograms\n");
-    int64_t ready_time = NaClGetTimeOfDayMicroseconds();
-    nacl_interface_->SetReadyTime(pp_instance(), ready_time);
+    ready_time_ = NaClGetTimeOfDayMicroseconds();
+    nacl_interface_->SetReadyTime(pp_instance());
     HistogramStartupTimeSmall(
         "NaCl.Perf.StartupTime.LoadModule",
-        static_cast<float>(ready_time - load_start_) / NACL_MICROS_PER_MILLI);
+        static_cast<float>(ready_time_ - load_start_) / NACL_MICROS_PER_MILLI);
     HistogramStartupTimeMedium(
         "NaCl.Perf.StartupTime.Total",
-        static_cast<float>(ready_time - init_time_) / NACL_MICROS_PER_MILLI);
+        static_cast<float>(ready_time_ - init_time_) / NACL_MICROS_PER_MILLI);
 
-    ReportLoadSuccess(nexe_size_, nexe_size_);
+    int64_t nexe_size = nacl_interface_->GetNexeSize(pp_instance());
+    ReportLoadSuccess(nexe_size, nexe_size);
   } else {
     NaClLog(4, "NexeFileDidOpenContinuation: failed.");
-    ReportLoadError(error_info);
   }
   NaClLog(4, "Leaving NexeFileDidOpenContinuation\n");
-}
-
-static void LogLineToConsole(Plugin* plugin, const nacl::string& one_line) {
-  PLUGIN_PRINTF(("LogLineToConsole: %s\n",
-                 one_line.c_str()));
-  plugin->nacl_interface()->LogToConsole(plugin->pp_instance(),
-                                         one_line.c_str());
-}
-
-void Plugin::CopyCrashLogToJsConsole() {
-  nacl::string fatal_msg(main_service_runtime()->GetCrashLogOutput());
-  size_t ix_start = 0;
-  size_t ix_end;
-
-  PLUGIN_PRINTF(("Plugin::CopyCrashLogToJsConsole: got %" NACL_PRIuS " bytes\n",
-                 fatal_msg.size()));
-  while (nacl::string::npos != (ix_end = fatal_msg.find('\n', ix_start))) {
-    LogLineToConsole(this, fatal_msg.substr(ix_start, ix_end - ix_start));
-    ix_start = ix_end + 1;
-  }
-  if (ix_start != fatal_msg.size()) {
-    LogLineToConsole(this, fatal_msg.substr(ix_start));
-  }
 }
 
 void Plugin::NexeDidCrash(int32_t pp_error) {
@@ -810,44 +711,9 @@ void Plugin::NexeDidCrash(int32_t pp_error) {
     PLUGIN_PRINTF(("Plugin::NexeDidCrash: CallOnMainThread callback with"
                    " non-PP_OK arg -- SHOULD NOT HAPPEN\n"));
   }
-  PLUGIN_PRINTF(("Plugin::NexeDidCrash: crash event!\n"));
-  if (-1 != exit_status()) {
-    // The NaCl module voluntarily exited.  However, this is still a
-    // crash from the point of view of Pepper, since PPAPI plugins are
-    // event handlers and should never exit.
-    PLUGIN_PRINTF((("Plugin::NexeDidCrash: nexe exited with status %d"
-                    " so this is a \"controlled crash\".\n"),
-                   exit_status()));
-  }
-  // If the crash occurs during load, we just want to report an error
-  // that fits into our load progress event grammar.  If the crash
-  // occurs after loaded/loadend, then we use ReportDeadNexe to send a
-  // "crash" event.
-  if (nacl_interface_->GetNexeErrorReported(pp_instance())) {
-    PLUGIN_PRINTF(("Plugin::NexeDidCrash: error already reported;"
-                   " suppressing\n"));
-  } else {
-    if (nacl_interface_->GetNaClReadyState(pp_instance()) ==
-        PP_NACL_READY_STATE_DONE) {
-      ReportDeadNexe();
-    } else {
-      ErrorInfo error_info;
-      // The error is not quite right.  In particular, the crash
-      // reported by this path could be due to NaCl application
-      // crashes that occur after the PPAPI proxy has started.
-      error_info.SetReport(PP_NACL_ERROR_START_PROXY_CRASH,
-                           "Nexe crashed during startup");
-      ReportLoadError(error_info);
-    }
-  }
 
-  // In all cases, try to grab the crash log.  The first error
-  // reported may have come from the start_module RPC reply indicating
-  // a validation error or something similar, which wouldn't grab the
-  // crash log.  In the event that this is called twice, the second
-  // invocation will just be a no-op, since all the crash log will
-  // have been received and we'll just get an EOF indication.
-  CopyCrashLogToJsConsole();
+  std::string crash_log = main_service_runtime()->GetCrashLogOutput();
+  nacl_interface_->NexeDidCrash(pp_instance(), crash_log.c_str());
 }
 
 void Plugin::BitcodeDidTranslate(int32_t pp_error) {
@@ -873,8 +739,7 @@ void Plugin::BitcodeDidTranslate(int32_t pp_error) {
 }
 
 void Plugin::BitcodeDidTranslateContinuation(int32_t pp_error) {
-  ErrorInfo error_info;
-  bool was_successful = LoadNaClModuleContinuationIntern(&error_info);
+  bool was_successful = LoadNaClModuleContinuationIntern();
 
   NaClLog(4, "Entered BitcodeDidTranslateContinuation\n");
   UNREFERENCED_PARAMETER(pp_error);
@@ -883,14 +748,7 @@ void Plugin::BitcodeDidTranslateContinuation(int32_t pp_error) {
     int64_t total;
     pnacl_coordinator_->GetCurrentProgress(&loaded, &total);
     ReportLoadSuccess(loaded, total);
-  } else {
-    ReportLoadError(error_info);
   }
-}
-
-void Plugin::ReportDeadNexe() {
-  nacl_interface_->ReportDeadNexe(
-      pp_instance(), NaClGetTimeOfDayMicroseconds());
 }
 
 void Plugin::NaClManifestBufferReady(int32_t pp_error) {
@@ -958,12 +816,10 @@ void Plugin::NaClManifestFileDidOpen(int32_t pp_error) {
     }
     return;
   }
-  // SlurpFile closes the file descriptor after reading (or on error).
-  // Duplicate our file descriptor since it will be handled by the browser.
-  int dup_file_desc = DUP(info.get_desc());
   nacl::string json_buffer;
+  // SlurpFile closes the file descriptor after reading (or on error).
   file_utils::StatusCode status = file_utils::SlurpFile(
-      dup_file_desc, json_buffer, kNaClManifestMaxFileBytes);
+      info.Release().desc, json_buffer, kNaClManifestMaxFileBytes);
 
   if (status != file_utils::PLUGIN_FILE_SUCCESS) {
     switch (status) {
@@ -1372,10 +1228,7 @@ void Plugin::SetExitStatusOnMainThread(int32_t pp_error,
                                        int exit_status) {
   DCHECK(pp::Module::Get()->core()->IsMainThread());
   DCHECK(nacl_interface_);
-  exit_status_ = exit_status;
-  nacl_interface_->SetReadOnlyProperty(pp_instance(),
-                                       pp::Var("exitStatus").pp_var(),
-                                       pp::Var(exit_status_).pp_var());
+  nacl_interface_->SetExitStatus(pp_instance(), exit_status);
 }
 
 

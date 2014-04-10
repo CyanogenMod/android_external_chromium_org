@@ -80,7 +80,7 @@ class RecordPage(page_test.PageTest):
       if interactive:
         action_runner.RunAction(interact.InteractAction())
       else:
-        self._RunMethod(page, self._action_name_to_run, action_runner)
+        self._RunMethod(page, action_name, action_runner)
       should_reload = True
 
 
@@ -127,7 +127,7 @@ def Main(base_dir):
     parser.parse_args()
     recorder.test.ProcessCommandLineArgs(parser, options)
     ps = tests[target]().CreatePageSet(options)
-  elif target.endswith('.json') or target.endswith('.py'):
+  elif discover.IsPageSetFile(target):
     parser.parse_args()
     ps = page_set.PageSet.FromFile(target)
   elif target.startswith('http'):

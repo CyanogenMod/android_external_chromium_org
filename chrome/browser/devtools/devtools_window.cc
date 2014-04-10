@@ -26,6 +26,7 @@
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
@@ -54,6 +55,7 @@
 #include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/load_notification_details.h"
+#include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_source.h"
@@ -75,8 +77,10 @@
 #include "grit/generated_resources.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
 using base::DictionaryValue;
+using blink::WebInputEvent;
 using content::BrowserThread;
 using content::DevToolsAgentHost;
 
@@ -158,6 +162,123 @@ bool DevToolsConfirmInfoBarDelegate::Cancel() {
   return true;
 }
 
+// DevToolsEventForwarder -----------------------------------------------------
+
+namespace {
+
+static const char kKeyUpEventName[] = "keyup";
+static const char kKeyDownEventName[] = "keydown";
+
+}  // namespace
+
+class DevToolsEventForwarder {
+ public:
+  explicit DevToolsEventForwarder(DevToolsWindow* window)
+     : devtools_window_(window) {}
+
+  // Registers whitelisted shortcuts with the forwarder.
+  // Only registered keys will be forwarded to the DevTools frontend.
+  void SetWhitelistedShortcuts(const std::string& message);
+
+  // Forwards a keyboard event to the DevTools frontend if it is whitelisted.
+  // Returns |true| if the event has been forwarded, |false| otherwise.
+  bool ForwardEvent(const content::NativeWebKeyboardEvent& event);
+
+ private:
+  static int VirtualKeyCodeWithoutLocation(int key_code);
+  static bool KeyWhitelistingAllowed(int key_code, int modifiers);
+  static int CombineKeyCodeAndModifiers(int key_code, int modifiers);
+
+  DevToolsWindow* devtools_window_;
+  std::set<int> whitelisted_keys_;
+
+  DISALLOW_COPY_AND_ASSIGN(DevToolsEventForwarder);
+};
+
+void DevToolsEventForwarder::SetWhitelistedShortcuts(
+    const std::string& message) {
+  scoped_ptr<base::Value> parsed_message(base::JSONReader::Read(message));
+  base::ListValue* shortcut_list;
+  if (!parsed_message->GetAsList(&shortcut_list))
+      return;
+  base::ListValue::iterator it = shortcut_list->begin();
+  for (; it != shortcut_list->end(); ++it) {
+    base::DictionaryValue* dictionary;
+    if (!(*it)->GetAsDictionary(&dictionary))
+      continue;
+    int key_code = 0;
+    dictionary->GetInteger("keyCode", &key_code);
+    if (key_code == 0)
+      continue;
+    int modifiers = 0;
+    dictionary->GetInteger("modifiers", &modifiers);
+    if (!KeyWhitelistingAllowed(key_code, modifiers)) {
+      LOG(WARNING) << "Key whitelisting forbidden: "
+                   << "(" << key_code << "," << modifiers << ")";
+      continue;
+    }
+    whitelisted_keys_.insert(CombineKeyCodeAndModifiers(key_code, modifiers));
+  }
+}
+
+bool DevToolsEventForwarder::ForwardEvent(
+    const content::NativeWebKeyboardEvent& event) {
+  std::string event_type;
+  switch (event.type) {
+    case WebInputEvent::KeyDown:
+    case WebInputEvent::RawKeyDown:
+      event_type = kKeyDownEventName;
+      break;
+    case WebInputEvent::KeyUp:
+      event_type = kKeyUpEventName;
+      break;
+    default:
+      return false;
+  }
+
+  int key_code = VirtualKeyCodeWithoutLocation(event.windowsKeyCode);
+  int key = CombineKeyCodeAndModifiers(key_code, event.modifiers);
+  if (whitelisted_keys_.find(key) == whitelisted_keys_.end())
+    return false;
+
+  base::DictionaryValue event_data;
+  event_data.SetString("type", event_type);
+  event_data.SetString("keyIdentifier", event.keyIdentifier);
+  event_data.SetInteger("keyCode", key_code);
+  event_data.SetInteger("modifiers", event.modifiers);
+  devtools_window_->CallClientFunction(
+      "InspectorFrontendAPI.keyEventUnhandled", &event_data, NULL, NULL);
+  return true;
+}
+
+int DevToolsEventForwarder::CombineKeyCodeAndModifiers(int key_code,
+                                                       int modifiers) {
+  return key_code | (modifiers << 16);
+}
+
+bool DevToolsEventForwarder::KeyWhitelistingAllowed(int key_code,
+                                                    int modifiers) {
+  return (ui::VKEY_F1 <= key_code && key_code <= ui::VKEY_F12) ||
+      modifiers != 0;
+}
+
+// Mapping copied from Blink's KeyboardEvent.cpp.
+int DevToolsEventForwarder::VirtualKeyCodeWithoutLocation(int key_code)
+{
+  switch (key_code) {
+    case ui::VKEY_LCONTROL:
+    case ui::VKEY_RCONTROL:
+        return ui::VKEY_CONTROL;
+    case ui::VKEY_LSHIFT:
+    case ui::VKEY_RSHIFT:
+        return ui::VKEY_SHIFT;
+    case ui::VKEY_LMENU:
+    case ui::VKEY_RMENU:
+        return ui::VKEY_MENU;
+    default:
+        return key_code;
+  }
+}
 
 // DevToolsWindow::InspectedWebContentsObserver -------------------------------
 
@@ -342,6 +463,15 @@ DevToolsWindow* DevToolsWindow::GetInstanceForInspectedRenderViewHost(
   scoped_refptr<DevToolsAgentHost> agent(DevToolsAgentHost::GetOrCreateFor(
       inspected_rvh));
   return FindDevToolsWindow(agent.get());
+}
+
+// static
+DevToolsWindow* DevToolsWindow::GetInstanceForInspectedWebContents(
+    content::WebContents* inspected_web_contents) {
+  if (!inspected_web_contents)
+    return NULL;
+  return GetInstanceForInspectedRenderViewHost(
+      inspected_web_contents->GetRenderViewHost());
 }
 
 // static
@@ -604,7 +734,7 @@ bool DevToolsWindow::InterceptPageBeforeUnload(content::WebContents* contents) {
   // Handle case of devtools inspecting another devtools instance by passing
   // the call up to the inspecting devtools instance.
   if (!DevToolsWindow::InterceptPageBeforeUnload(window->web_contents())) {
-    window->web_contents()->GetMainFrame()->DispatchBeforeUnload(false);
+    window->web_contents()->DispatchBeforeUnload(false);
   }
   return true;
 }
@@ -703,6 +833,7 @@ DevToolsWindow::DevToolsWindow(Profile* profile,
 
   embedder_message_dispatcher_.reset(
       DevToolsEmbedderMessageDispatcher::createForDevToolsFrontend(this));
+  event_forwarder_.reset(new DevToolsEventForwarder(this));
 }
 
 // static
@@ -877,7 +1008,7 @@ void DevToolsWindow::BeforeUnloadFired(content::WebContents* tab,
     // Inspected page is attempting to close.
     content::WebContents* inspected_web_contents = GetInspectedWebContents();
     if (proceed) {
-      inspected_web_contents->GetMainFrame()->DispatchBeforeUnload(false);
+      inspected_web_contents->DispatchBeforeUnload(false);
     } else {
       bool should_proceed;
       inspected_web_contents->GetDelegate()->BeforeUnloadFired(
@@ -1003,7 +1134,7 @@ void DevToolsWindow::CloseWindow() {
   // This will prevent any activity after frontend is loaded.
   action_on_load_ = DevToolsToggleAction::NoOp();
   ignore_set_is_docked_ = true;
-  web_contents_->GetMainFrame()->DispatchBeforeUnload(false);
+  web_contents_->DispatchBeforeUnload(false);
 }
 
 void DevToolsWindow::SetContentsInsets(
@@ -1541,4 +1672,14 @@ void DevToolsWindow::SetLoadCompletedCallback(const base::Closure& closure) {
     return;
   }
   load_completed_callback_ = closure;
+}
+
+void DevToolsWindow::SetWhitelistedShortcuts(
+    const std::string& message) {
+  event_forwarder_->SetWhitelistedShortcuts(message);
+}
+
+bool DevToolsWindow::ForwardKeyboardEvent(
+    const content::NativeWebKeyboardEvent& event) {
+  return event_forwarder_->ForwardEvent(event);
 }

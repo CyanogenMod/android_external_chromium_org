@@ -347,11 +347,10 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
       prefs.report_screen_size_in_physical_pixels_quirk);
   settings->setMainFrameClipsContent(false);
   settings->setShrinksStandaloneImagesToFit(false);
+  settings->setShrinksViewportContentToFit(true);
 #endif
 
   WebNetworkStateNotifier::setOnLine(prefs.is_online);
-  settings->setExperimentalWebSocketEnabled(
-      prefs.experimental_websocket_enabled);
   settings->setPinchVirtualViewportEnabled(
       prefs.pinch_virtual_viewport_enabled);
 

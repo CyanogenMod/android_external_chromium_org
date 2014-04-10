@@ -792,16 +792,23 @@ void RenderWidgetHostImpl::PauseForPendingResizeOrRepaints() {
   TRACE_EVENT0("browser",
       "RenderWidgetHostImpl::PauseForPendingResizeOrRepaints");
 
-  // Do not pause if the view is hidden.
-  if (is_hidden())
-    return;
-
-  // Do not pause if there is not a paint or resize already coming.
-  if (!repaint_ack_pending_ && !resize_ack_pending_ && !view_being_painted_)
+  if (!CanPauseForPendingResizeOrRepaints())
     return;
 
   // Waiting for a backing store will do the wait for us.
   ignore_result(GetBackingStore(true));
+}
+
+bool RenderWidgetHostImpl::CanPauseForPendingResizeOrRepaints() {
+  // Do not pause if the view is hidden.
+  if (is_hidden())
+    return false;
+
+  // Do not pause if there is not a paint or resize already coming.
+  if (!repaint_ack_pending_ && !resize_ack_pending_ && !view_being_painted_)
+    return false;
+
+  return true;
 }
 
 bool RenderWidgetHostImpl::TryGetBackingStore(const gfx::Size& desired_size,
@@ -1537,8 +1544,14 @@ void RenderWidgetHostImpl::OnRequestMove(const gfx::Rect& pos) {
 #if defined(OS_MACOSX)
 void RenderWidgetHostImpl::OnCompositorSurfaceBuffersSwapped(
       const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params) {
+  // This trace event is used in
+  // chrome/browser/extensions/api/cast_streaming/performance_test.cc
   TRACE_EVENT0("renderer_host",
                "RenderWidgetHostImpl::OnCompositorSurfaceBuffersSwapped");
+  // This trace event is used in
+  // chrome/browser/extensions/api/cast_streaming/performance_test.cc
+  UNSHIPPED_TRACE_EVENT0("test_fps",
+                         TRACE_DISABLED_BY_DEFAULT("OnSwapCompositorFrame"));
   if (!ui::LatencyInfo::Verify(params.latency_info,
                                "ViewHostMsg_CompositorSurfaceBuffersSwapped"))
     return;
@@ -1567,6 +1580,10 @@ void RenderWidgetHostImpl::OnCompositorSurfaceBuffersSwapped(
 
 bool RenderWidgetHostImpl::OnSwapCompositorFrame(
     const IPC::Message& message) {
+  // This trace event is used in
+  // chrome/browser/extensions/api/cast_streaming/performance_test.cc
+  UNSHIPPED_TRACE_EVENT0("test_fps",
+                         TRACE_DISABLED_BY_DEFAULT("OnSwapCompositorFrame"));
   ViewHostMsg_SwapCompositorFrame::Param param;
   if (!ViewHostMsg_SwapCompositorFrame::Read(&message, &param))
     return false;
@@ -2004,14 +2021,6 @@ void RenderWidgetHostImpl::ScrollBackingStoreRect(const gfx::Vector2d& delta,
   backing_store->ScrollBackingStore(delta, clip_rect, view_size);
 }
 
-void RenderWidgetHostImpl::Replace(const base::string16& word) {
-  Send(new InputMsg_Replace(routing_id_, word));
-}
-
-void RenderWidgetHostImpl::ReplaceMisspelling(const base::string16& word) {
-  Send(new InputMsg_ReplaceMisspelling(routing_id_, word));
-}
-
 void RenderWidgetHostImpl::SetIgnoreInputEvents(bool ignore_input_events) {
   ignore_input_events_ = ignore_input_events;
 }
@@ -2078,6 +2087,8 @@ OverscrollController* RenderWidgetHostImpl::GetOverscrollController() const {
 }
 
 void RenderWidgetHostImpl::DidFlush() {
+  if (synthetic_gesture_controller_)
+    synthetic_gesture_controller_->OnDidFlushInput();
   if (view_)
     view_->OnDidFlushInput();
 }
@@ -2115,10 +2126,13 @@ void RenderWidgetHostImpl::OnWheelEventAck(
         ui::INPUT_EVENT_LATENCY_TERMINATED_MOUSE_COMPONENT, 0, 0);
   }
 
-  const bool processed = (INPUT_EVENT_ACK_STATE_CONSUMED == ack_result);
-  if (!processed && !is_hidden() && view_) {
-    if (!delegate_->HandleWheelEvent(wheel_event.event))
-      view_->UnhandledWheelEvent(wheel_event.event);
+  bool consumed = (INPUT_EVENT_ACK_STATE_CONSUMED == ack_result);
+  if (!is_hidden() && view_) {
+    // If the renderer did not consume the event, give the delegate a chance
+    // to consume it.
+    if (!consumed)
+      consumed = delegate_->HandleWheelEvent(wheel_event.event);
+    view_->HandledWheelEvent(wheel_event.event, consumed);
   }
 }
 

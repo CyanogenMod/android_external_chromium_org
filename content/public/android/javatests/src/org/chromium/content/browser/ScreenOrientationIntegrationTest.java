@@ -9,7 +9,6 @@ import android.test.suitebuilder.annotation.SmallTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.test.util.JavaScriptUtils;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content_shell_apk.ContentShellActivity;
 import org.chromium.content_shell_apk.ContentShellTestBase;
 
@@ -34,8 +33,7 @@ public class ScreenOrientationIntegrationTest extends ContentShellTestBase {
             throws InterruptedException, TimeoutException {
         return Integer.parseInt(
             JavaScriptUtils.executeJavaScriptAndWaitForResult(
-                    mContentView,
-                    new TestCallbackHelperContainer(mContentView),
+                    mContentView.getContentViewCore(),
                     "window.orientation"));
     }
 
@@ -47,8 +45,7 @@ public class ScreenOrientationIntegrationTest extends ContentShellTestBase {
             throws InterruptedException, TimeoutException {
         return Integer.parseInt(
             JavaScriptUtils.executeJavaScriptAndWaitForResult(
-                    mContentView,
-                    new TestCallbackHelperContainer(mContentView),
+                    mContentView.getContentViewCore(),
                     "changes"));
     }
 

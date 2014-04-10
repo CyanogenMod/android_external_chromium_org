@@ -30,9 +30,9 @@
 namespace content {
 class CompositingIOSurfaceMac;
 class CompositingIOSurfaceContext;
-class RenderFrameHost;
 class RenderWidgetHostViewMac;
 class RenderWidgetHostViewMacEditCommandHelper;
+class WebContents;
 }
 
 @class CompositingIOSurfaceLayer;
@@ -334,8 +334,8 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
-  virtual void UnhandledWheelEvent(
-      const blink::WebMouseWheelEvent& event) OVERRIDE;
+  virtual void HandledWheelEvent(const blink::WebMouseWheelEvent& event,
+                                 bool consumed) OVERRIDE;
 
   // IPC::Sender implementation.
   virtual bool Send(IPC::Message* message) OVERRIDE;
@@ -406,8 +406,7 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   gfx::Range ConvertCharacterRangeToCompositionRange(
       const gfx::Range& request_range);
 
-  // Returns the focused frame. May return NULL.
-  RenderFrameHost* GetFocusedFrame();
+  WebContents* GetWebContents();
 
   // These member variables should be private, but the associated ObjC class
   // needs access to them and can't be made a friend.
@@ -547,13 +546,18 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
 
   bool EnsureCompositedIOSurface() WARN_UNUSED_RESULT;
   void EnsureCompositedIOSurfaceLayer();
+  enum DestroyCompositedIOSurfaceLayerBehavior {
+    kLeaveLayerInHierarchy,
+    kRemoveLayerFromHierarchy,
+  };
+  void DestroyCompositedIOSurfaceLayer(
+      DestroyCompositedIOSurfaceLayerBehavior destroy_layer_behavior);
   enum DestroyContextBehavior {
     kLeaveContextBoundToView,
     kDestroyContext,
   };
-  void DestroyCompositedIOSurfaceLayer();
-  void DestroyCompositedIOSurfaceAndLayer(DestroyContextBehavior
-      destroy_context_behavior);
+  void DestroyCompositedIOSurfaceAndLayer(
+      DestroyContextBehavior destroy_context_behavior);
 
   void DestroyCompositingStateOnError();
 

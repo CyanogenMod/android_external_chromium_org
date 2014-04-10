@@ -20,6 +20,7 @@
 #include "ui/base/x/x11_util.h"
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
+#include "ui/events/platform/x11/x11_event_source.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/image_view.h"
@@ -59,14 +60,12 @@ X11WholeScreenMoveLoop::X11WholeScreenMoveLoop(
       in_move_loop_(false),
       should_reset_mouse_flags_(false),
       grab_input_window_(None),
+      canceled_(false),
       weak_factory_(this) {
   last_xmotion_.type = LASTEvent;
 }
 
 X11WholeScreenMoveLoop::~X11WholeScreenMoveLoop() {}
-
-////////////////////////////////////////////////////////////////////////////////
-// DesktopWindowTreeHostLinux, MessagePumpDispatcher implementation:
 
 void X11WholeScreenMoveLoop::DispatchMouseMovement() {
   if (!weak_factory_.HasWeakPtrs())
@@ -77,7 +76,14 @@ void X11WholeScreenMoveLoop::DispatchMouseMovement() {
   last_xmotion_.type = LASTEvent;
 }
 
-uint32_t X11WholeScreenMoveLoop::Dispatch(const base::NativeEvent& event) {
+////////////////////////////////////////////////////////////////////////////////
+// DesktopWindowTreeHostLinux, ui::PlatformEventDispatcher implementation:
+
+bool X11WholeScreenMoveLoop::CanDispatchEvent(const ui::PlatformEvent& event) {
+  return event->xany.window == grab_input_window_;
+}
+
+uint32_t X11WholeScreenMoveLoop::DispatchEvent(const ui::PlatformEvent& event) {
   XEvent* xev = event;
 
   // Note: the escape key is handled in the tab drag controller, which has
@@ -113,17 +119,16 @@ uint32_t X11WholeScreenMoveLoop::Dispatch(const base::NativeEvent& event) {
       break;
     }
     case KeyPress: {
-      if (ui::KeyboardCodeFromXKeyEvent(xev) == ui::VKEY_ESCAPE)
+      if (ui::KeyboardCodeFromXKeyEvent(xev) == ui::VKEY_ESCAPE) {
+        canceled_ = true;
         EndMoveLoop();
+      }
       break;
     }
   }
 
-  return POST_DISPATCH_NONE;
+  return ui::POST_DISPATCH_STOP_PROPAGATION;
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// DesktopWindowTreeHostLinux, aura::client::WindowMoveClient implementation:
 
 bool X11WholeScreenMoveLoop::RunMoveLoop(aura::Window* source,
                                          gfx::NativeCursor cursor) {
@@ -144,8 +149,7 @@ bool X11WholeScreenMoveLoop::RunMoveLoop(aura::Window* source,
     grab_input_window_ = CreateDragInputWindow(display);
     if (!drag_image_.isNull() && CheckIfIconValid())
       CreateDragImageWindow();
-    base::MessagePumpX11::Current()->AddDispatcherForWindow(
-        this, grab_input_window_);
+    ui::PlatformEventSource::GetInstance()->AddPlatformEventDispatcher(this);
     // Releasing ScopedCapturer ensures that any other instance of
     // X11ScopedCapture will not prematurely release grab that will be acquired
     // below.
@@ -164,12 +168,13 @@ bool X11WholeScreenMoveLoop::RunMoveLoop(aura::Window* source,
     should_reset_mouse_flags_ = true;
   }
 
+  canceled_ = false;
   base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
   base::MessageLoop::ScopedNestableTaskAllower allow_nested(loop);
   base::RunLoop run_loop;
   quit_closure_ = run_loop.QuitClosure();
   run_loop.Run();
-  return true;
+  return !canceled_;
 }
 
 void X11WholeScreenMoveLoop::UpdateCursor(gfx::NativeCursor cursor) {
@@ -204,8 +209,7 @@ void X11WholeScreenMoveLoop::EndMoveLoop() {
   XUngrabPointer(display, CurrentTime);
   XUngrabKeyboard(display, CurrentTime);
 
-  base::MessagePumpX11::Current()->RemoveDispatcherForWindow(
-      grab_input_window_);
+  ui::PlatformEventSource::GetInstance()->RemovePlatformEventDispatcher(this);
   drag_widget_.reset();
   delegate_->OnMoveLoopEnded();
   XDestroyWindow(display, grab_input_window_);
@@ -278,7 +282,7 @@ Window X11WholeScreenMoveLoop::CreateDragInputWindow(XDisplay* display) {
                                 0, CopyFromParent, InputOnly, CopyFromParent,
                                 attribute_mask, &swa);
   XMapRaised(display, window);
-  base::MessagePumpX11::Current()->BlockUntilWindowMapped(window);
+  ui::X11EventSource::GetInstance()->BlockUntilWindowMapped(window);
   return window;
 }
 

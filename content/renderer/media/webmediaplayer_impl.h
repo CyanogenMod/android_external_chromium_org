@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
+#include "content/renderer/media/buffered_data_source_host_impl.h"
 #include "content/renderer/media/crypto/proxy_decryptor.h"
 #include "content/renderer/media/video_frame_compositor.h"
 #include "media/base/audio_renderer_sink.h"
@@ -27,13 +28,14 @@
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayer.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
+// TODO(dcheng): Convert back to forward declare.
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "url/gurl.h"
 
 class RenderAudioSourceProvider;
 
 namespace blink {
 class WebContentDecryptionModule;
-class WebFrame;
 }
 
 namespace base {
@@ -68,11 +70,10 @@ class WebMediaPlayerImpl
  public:
   // Constructs a WebMediaPlayer implementation using Chromium's media stack.
   // |delegate| may be null.
-  WebMediaPlayerImpl(
-      blink::WebFrame* frame,
-      blink::WebMediaPlayerClient* client,
-      base::WeakPtr<WebMediaPlayerDelegate> delegate,
-      const WebMediaPlayerParams& params);
+  WebMediaPlayerImpl(blink::WebLocalFrame* frame,
+                     blink::WebMediaPlayerClient* client,
+                     base::WeakPtr<WebMediaPlayerDelegate> delegate,
+                     const WebMediaPlayerParams& params);
   virtual ~WebMediaPlayerImpl();
 
   virtual void load(LoadType load_type,
@@ -114,6 +115,8 @@ class WebMediaPlayerImpl
   virtual blink::WebMediaPlayer::NetworkState networkState() const;
   virtual blink::WebMediaPlayer::ReadyState readyState() const;
 
+  // TODO(sandersd): Change this to non-const in blink::WebMediaPlayer.
+  // http://crbug.com/360251
   virtual bool didLoadingProgress() const;
 
   virtual bool hasSingleSecurityOrigin() const;
@@ -238,14 +241,11 @@ class WebMediaPlayerImpl
   // NULL immediately and reset.
   void SetDecryptorReadyCB(const media::DecryptorReadyCB& decryptor_ready_cb);
 
-  blink::WebFrame* frame_;
+  blink::WebLocalFrame* frame_;
 
   // TODO(hclam): get rid of these members and read from the pipeline directly.
   blink::WebMediaPlayer::NetworkState network_state_;
   blink::WebMediaPlayer::ReadyState ready_state_;
-
-  // Keep a list of buffered time ranges.
-  blink::WebTimeRanges buffered_;
 
   // Message loops for posting tasks on Chrome's main thread. Also used
   // for DCHECKs so methods calls won't execute in the wrong thread.
@@ -319,6 +319,10 @@ class WebMediaPlayerImpl
   scoped_ptr<BufferedDataSource> data_source_;
   scoped_ptr<media::Demuxer> demuxer_;
   media::ChunkDemuxer* chunk_demuxer_;
+
+  BufferedDataSourceHostImpl buffered_data_source_host_;
+  // TODO(sandersd): Remove this cache. http://crbug.com/360254
+  blink::WebTimeRanges buffered_web_time_ranges_;
 
   // Temporary for EME v0.1. In the future the init data type should be passed
   // through GenerateKeyRequest() directly from WebKit.

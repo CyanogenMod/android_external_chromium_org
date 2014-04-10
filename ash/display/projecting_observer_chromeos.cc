@@ -10,8 +10,6 @@
 
 namespace ash {
 
-namespace internal {
-
 ProjectingObserver::ProjectingObserver()
     : has_internal_output_(false),
       output_count_(0),
@@ -20,12 +18,13 @@ ProjectingObserver::ProjectingObserver()
 ProjectingObserver::~ProjectingObserver() {}
 
 void ProjectingObserver::OnDisplayModeChanged(
-    const ui::OutputConfigurator::DisplayStateList& outputs) {
+    const ui::DisplayConfigurator::DisplayStateList& display_states) {
   has_internal_output_ = false;
-  output_count_ = outputs.size();
+  output_count_ = display_states.size();
 
-  for (size_t i = 0; i < outputs.size(); ++i) {
-    if (outputs[i].display->type() == ui::OUTPUT_TYPE_INTERNAL) {
+  for (size_t i = 0; i < display_states.size(); ++i) {
+    if (display_states[i].display->type() ==
+        ui::DISPLAY_CONNECTION_TYPE_INTERNAL) {
       has_internal_output_ = true;
       break;
     }
@@ -56,7 +55,5 @@ void ProjectingObserver::SetIsProjecting() {
   chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->SetIsProjecting(
       projecting);
 }
-
-}  // namespace internal
 
 }  // namespace ash

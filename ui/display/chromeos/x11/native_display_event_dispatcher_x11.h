@@ -5,34 +5,33 @@
 #ifndef UI_DISPLAY_CHROMEOS_X11_NATIVE_DISPLAY_EVENT_DISPATCHER_X11_H_
 #define UI_DISPLAY_CHROMEOS_X11_NATIVE_DISPLAY_EVENT_DISPATCHER_X11_H_
 
-#include "base/message_loop/message_pump_dispatcher.h"
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "ui/display/chromeos/x11/native_display_delegate_x11.h"
+#include "ui/events/platform/platform_event_dispatcher.h"
 
 namespace ui {
 
+// The implementation is interested in the cases of RRNotify events which
+// correspond to output add/remove events. Note that Output add/remove events
+// are sent in response to our own reconfiguration operations so spurious events
+// are common. Spurious events will have no effect.
 class DISPLAY_EXPORT NativeDisplayEventDispatcherX11
-    : public base::MessagePumpDispatcher {
+    : public ui::PlatformEventDispatcher {
  public:
   NativeDisplayEventDispatcherX11(
       NativeDisplayDelegateX11::HelperDelegate* delegate,
       int xrandr_event_base);
   virtual ~NativeDisplayEventDispatcherX11();
 
-  // base::MessagePumpDispatcher overrides:
-  //
-  // Called when an RRNotify event is received.  The implementation is
-  // interested in the cases of RRNotify events which correspond to output
-  // add/remove events.  Note that Output add/remove events are sent in response
-  // to our own reconfiguration operations so spurious events are common.
-  // Spurious events will have no effect.
-  virtual uint32_t Dispatch(const base::NativeEvent& event) OVERRIDE;
+  // ui::PlatformEventDispatcher:
+  virtual bool CanDispatchEvent(const PlatformEvent& event) OVERRIDE;
+  virtual uint32_t DispatchEvent(const PlatformEvent& event) OVERRIDE;
 
   void SetTickClockForTest(scoped_ptr<base::TickClock> tick_clock);
 
-  // How long the cached output is valid.
-  static const int kCachedOutputsExpirationMs;
+  // How long the cached output is valid after startup.
+  static const int kUseCacheAfterStartupMs;
 
  private:
   NativeDisplayDelegateX11::HelperDelegate* delegate_;  // Not owned.
@@ -41,8 +40,7 @@ class DISPLAY_EXPORT NativeDisplayEventDispatcherX11
   // decoding events regarding output add/remove.
   int xrandr_event_base_;
 
-  // The last time display observers were notified.
-  base::TimeTicks last_notified_time_;
+  base::TimeTicks startup_time_;
 
   scoped_ptr<base::TickClock> tick_clock_;
 

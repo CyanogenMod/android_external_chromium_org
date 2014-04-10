@@ -20,6 +20,7 @@
 #include "ui/base/x/selection_utils.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/events/event.h"
+#include "ui/events/platform/platform_event_source.h"
 #include "ui/views/widget/desktop_aura/desktop_native_cursor_manager.h"
 #include "ui/wm/public/drag_drop_client.h"
 #include "ui/wm/public/drag_drop_delegate.h"
@@ -70,7 +71,7 @@ const char* kAtomsToCache[] = {
 
 // The time to wait for the target to respond after the user has released the
 // mouse button before ending the move loop.
-const int kEndMoveLoopTimeoutMs = 30000;
+const int kEndMoveLoopTimeoutMs = 1000;
 
 static base::LazyInstance<
     std::map< ::Window, views::DesktopDragDropClientAuraX11*> >::Leaky
@@ -159,8 +160,8 @@ namespace views {
 DesktopDragDropClientAuraX11*
 DesktopDragDropClientAuraX11::g_current_drag_drop_client = NULL;
 
-class DesktopDragDropClientAuraX11::X11DragContext :
-    public base::MessagePumpDispatcher {
+class DesktopDragDropClientAuraX11::X11DragContext
+    : public ui::PlatformEventDispatcher {
  public:
   X11DragContext(ui::X11AtomCache* atom_cache,
                  ::Window local_window,
@@ -200,8 +201,9 @@ class DesktopDragDropClientAuraX11::X11DragContext :
   // |drag_operation|.
   void MaskOpeartion(::Atom xdnd_operation, int* drag_operation) const;
 
-  // Overridden from MessagePumpDispatcher:
-  virtual uint32_t Dispatch(const base::NativeEvent& event) OVERRIDE;
+  // ui::PlatformEventDispatcher:
+  virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
+  virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
 
   // The atom cache owned by our parent.
   ui::X11AtomCache* atom_cache_;
@@ -271,8 +273,7 @@ DesktopDragDropClientAuraX11::X11DragContext::X11DragContext(
   if (!client) {
     // The window doesn't have a DesktopDragDropClientAuraX11, that means it's
     // created by some other process. Listen for messages on it.
-    base::MessagePumpX11::Current()->AddDispatcherForWindow(
-        this, source_window_);
+    ui::PlatformEventSource::GetInstance()->AddPlatformEventDispatcher(this);
     XSelectInput(gfx::GetXDisplay(), source_window_, PropertyChangeMask);
 
     // We must perform a full sync here because we could be racing
@@ -290,13 +291,8 @@ DesktopDragDropClientAuraX11::X11DragContext::X11DragContext(
 }
 
 DesktopDragDropClientAuraX11::X11DragContext::~X11DragContext() {
-  DesktopDragDropClientAuraX11* client =
-      DesktopDragDropClientAuraX11::GetForWindow(source_window_);
-  if (!client) {
-    // Unsubscribe from message events.
-    base::MessagePumpX11::Current()->RemoveDispatcherForWindow(
-        source_window_);
-  }
+  // Unsubscribe from message events.
+  ui::PlatformEventSource::GetInstance()->RemovePlatformEventDispatcher(this);
 }
 
 void DesktopDragDropClientAuraX11::X11DragContext::OnStartXdndPositionMessage(
@@ -335,7 +331,11 @@ void DesktopDragDropClientAuraX11::X11DragContext::RequestNextTarget() {
 
 void DesktopDragDropClientAuraX11::X11DragContext::OnSelectionNotify(
     const XSelectionEvent& event) {
-  DCHECK(waiting_to_handle_position_);
+  if (!waiting_to_handle_position_) {
+    // A misbehaved window may send SelectionNotify without us requesting data
+    // via XConvertSelection().
+    return;
+  }
   DCHECK(drag_drop_client_);
   DCHECK_EQ(event.property, atom_cache_->GetAtom(kChromiumDragReciever));
 
@@ -398,13 +398,19 @@ void DesktopDragDropClientAuraX11::X11DragContext::MaskOpeartion(
     *drag_operation |= ui::DragDropTypes::DRAG_LINK;
 }
 
-uint32_t DesktopDragDropClientAuraX11::X11DragContext::Dispatch(
-    const base::NativeEvent& event) {
+bool DesktopDragDropClientAuraX11::X11DragContext::CanDispatchEvent(
+    const ui::PlatformEvent& event) {
+  return event->xany.window == source_window_;
+}
+
+uint32_t DesktopDragDropClientAuraX11::X11DragContext::DispatchEvent(
+    const ui::PlatformEvent& event) {
   if (event->type == PropertyNotify &&
       event->xproperty.atom == atom_cache_->GetAtom("XdndActionList")) {
     ReadActions();
+    return ui::POST_DISPATCH_STOP_PROPAGATION;
   }
-  return POST_DISPATCH_NONE;
+  return ui::POST_DISPATCH_NONE;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -522,6 +528,19 @@ void DesktopDragDropClientAuraX11::OnXdndStatus(
     ::Atom atom_operation = event.data.l[4];
     negotiated_operation_[source_window] = atom_operation;
     drag_operation = AtomToDragOperation(atom_operation);
+  } else {
+    negotiated_operation_[source_window] = None;
+  }
+
+  if (source_state_ == SOURCE_STATE_PENDING_DROP) {
+    // We were waiting on the status message so we could send the XdndDrop.
+    if (drag_operation == ui::DragDropTypes::DRAG_NONE) {
+      move_loop_.EndMoveLoop();
+      return;
+    }
+    source_state_ = SOURCE_STATE_DROPPED;
+    SendXdndDrop(source_window);
+    return;
   }
 
   switch (drag_operation) {
@@ -541,13 +560,6 @@ void DesktopDragDropClientAuraX11::OnXdndStatus(
   // within it. However, it is considered advisory and (at least according to
   // the spec) the other side must handle further position messages within
   // it. GTK+ doesn't bother with this, so neither should we.
-
-  if (source_state_ == SOURCE_STATE_PENDING_DROP) {
-    // We were waiting on the status message so we could send the XdndDrop.
-    source_state_ = SOURCE_STATE_DROPPED;
-    SendXdndDrop(source_window);
-    return;
-  }
 
   NextPositionMap::iterator it = next_position_message_.find(source_window);
   if (source_state_ == SOURCE_STATE_OTHER &&
@@ -734,6 +746,13 @@ void DesktopDragDropClientAuraX11::OnMouseMovement(XMotionEvent* event) {
 }
 
 void DesktopDragDropClientAuraX11::OnMouseReleased() {
+  if (source_state_ != SOURCE_STATE_OTHER) {
+    // The user has previously released the mouse and is clicking in
+    // frustration.
+    move_loop_.EndMoveLoop();
+    return;
+  }
+
   if (source_current_window_ != None) {
     if (ContainsKey(waiting_on_status_, source_current_window_)) {
       // If we are waiting for an XdndStatus message, we need to wait for it to

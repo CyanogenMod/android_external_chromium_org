@@ -563,6 +563,13 @@ void ContentViewCoreImpl::ShowSelectPopupMenu(
                                        multiple, selected_array.obj());
 }
 
+void ContentViewCoreImpl::HideSelectPopupMenu() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
+  if (!j_obj.is_null())
+    Java_ContentViewCore_hideSelectPopup(env, j_obj.obj());
+}
+
 void ContentViewCoreImpl::ConfirmTouchEvent(InputEventAckState ack_result) {
   const bool event_consumed = ack_result == INPUT_EVENT_ACK_STATE_CONSUMED;
   gesture_provider_.OnTouchEventAck(event_consumed);
@@ -1252,13 +1259,12 @@ void ContentViewCoreImpl::PinchBy(JNIEnv* env, jobject obj, jlong time_ms,
 void ContentViewCoreImpl::SelectBetweenCoordinates(JNIEnv* env, jobject obj,
                                                    jfloat x1, jfloat y1,
                                                    jfloat x2, jfloat y2) {
-  if (!web_contents_ || !web_contents_->GetFocusedFrame())
+  if (!web_contents_)
     return;
 
-  RenderFrameHostImpl* frame =
-      static_cast<RenderFrameHostImpl*>(web_contents_->GetFocusedFrame());
-  frame->SelectRange(gfx::Point(x1 / dpi_scale(), y1 / dpi_scale()),
-                     gfx::Point(x2 / dpi_scale(), y2 / dpi_scale()));
+  web_contents_->SelectRange(
+      gfx::Point(x1 / dpi_scale(), y1 / dpi_scale()),
+      gfx::Point(x2 / dpi_scale(), y2 / dpi_scale()));
 }
 
 void ContentViewCoreImpl::MoveCaret(JNIEnv* env, jobject obj,
@@ -1631,7 +1637,7 @@ void ContentViewCoreImpl::UpdateImeAdapter(long native_ime_adapter,
                                            int composition_start,
                                            int composition_end,
                                            bool show_ime_if_needed,
-                                           bool require_ack) {
+                                           bool is_non_ime_change) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
@@ -1643,7 +1649,7 @@ void ContentViewCoreImpl::UpdateImeAdapter(long native_ime_adapter,
                                         jstring_text.obj(),
                                         selection_start, selection_end,
                                         composition_start, composition_end,
-                                        show_ime_if_needed, require_ack);
+                                        show_ime_if_needed, is_non_ime_change);
 }
 
 void ContentViewCoreImpl::ClearSslPreferences(JNIEnv* env, jobject obj) {

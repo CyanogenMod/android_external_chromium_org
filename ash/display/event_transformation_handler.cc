@@ -17,11 +17,10 @@
 #include "ui/gfx/screen.h"
 
 #if defined(OS_CHROMEOS)
-#include "ui/display/chromeos/output_configurator.h"
+#include "ui/display/chromeos/display_configurator.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace ash {
-namespace internal {
 namespace {
 
 // Boost factor for non-integrated displays.
@@ -60,18 +59,19 @@ void EventTransformationHandler::OnScrollEvent(ui::ScrollEvent* event) {
 // the sqrt of
 // (mirror_width * mirror_height) / (native_width * native_height)
 void EventTransformationHandler::OnTouchEvent(ui::TouchEvent* event) {
-  using ui::OutputConfigurator;
-  OutputConfigurator* output_configurator =
-      ash::Shell::GetInstance()->output_configurator();
+  using ui::DisplayConfigurator;
+  DisplayConfigurator* display_configurator =
+      ash::Shell::GetInstance()->display_configurator();
 
-  // Check output_configurator's output_state instead of checking
+  // Check display_configurator's output_state instead of checking
   // DisplayManager::IsMirrored() because the compositor based mirroring
   // won't cause the scaling issue.
-  if (output_configurator->output_state() != ui::OUTPUT_STATE_DUAL_MIRROR)
+  if (display_configurator->display_state() !=
+      ui::MULTIPLE_DISPLAY_STATE_DUAL_MIRROR)
     return;
 
   const std::map<int, float>& area_ratio_map =
-      output_configurator->GetMirroredDisplayAreaRatioMap();
+      display_configurator->GetMirroredDisplayAreaRatioMap();
 
   // TODO(miletus): When there are more than 1 touchscreen (e.g. Link connected
   // to an external touchscreen), the correct way to do is to have a way
@@ -90,5 +90,4 @@ void EventTransformationHandler::OnTouchEvent(ui::TouchEvent* event) {
 }
 #endif  // defined(OS_CHROMEOS)
 
-}  // namespace internal
 }  // namespace ash

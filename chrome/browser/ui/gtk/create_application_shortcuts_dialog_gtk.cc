@@ -17,14 +17,13 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
-#include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -357,9 +356,10 @@ void CreateChromeApplicationShortcutsDialogGtk::CreateDesktopShortcut(
     const ShellIntegration::ShortcutLocations& creation_locations) {
   DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 
-  if (web_app::CreateShortcutsOnFileThread(
-          shortcut_info, creation_locations,
-          web_app::SHORTCUT_CREATION_BY_USER)) {
+  if (web_app::internals::CreateShortcutsOnFileThread(
+          web_app::SHORTCUT_CREATION_BY_USER,
+          creation_locations,
+          shortcut_info)) {
     Release();
   } else {
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,

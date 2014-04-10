@@ -77,6 +77,7 @@ extern const base::FilePath::CharType kMediaCacheDirname[];
 extern const base::FilePath::CharType kNewTabThumbnailsFilename[];
 extern const base::FilePath::CharType kOBCertFilename[];
 extern const base::FilePath::CharType kPreferencesFilename[];
+extern const base::FilePath::CharType kProtectedPreferencesFilename[];
 extern const base::FilePath::CharType kReadmeFilename[];
 extern const base::FilePath::CharType kResetPromptMementoFilename[];
 extern const base::FilePath::CharType kSafeBrowsingBaseFilename[];
@@ -125,8 +126,6 @@ extern const int kHighestRendererOomScore;
 #endif
 
 #if defined(OS_WIN)
-// Used by Metro Chrome to create the profile under a custom subdirectory.
-extern const wchar_t kMetroChromeUserDataSubDir[];
 // Used by Metro Chrome to initiate navigation and search requests.
 extern const wchar_t kMetroNavigationAndSearchMessage[];
 // Used by Metro Chrome to get information about the current tab.

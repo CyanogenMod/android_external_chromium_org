@@ -11,16 +11,28 @@
       'target_name': 'extensions_common',
       'type': 'static_library',
       'dependencies': [
-        '../third_party/re2/re2.gyp:re2',
+        'common/api/api.gyp:extensions_api',
         # TODO(benwells): figure out what to do with the api target and
         # api resources compiled into the chrome resource bundle.
         # http://crbug.com/162530
         '../chrome/chrome_resources.gyp:chrome_resources',
         # TODO(jamescook|derat): Pull strings into extensions module.
         '../chrome/chrome_resources.gyp:chrome_strings',
-        '../chrome/common/extensions/api/api.gyp:chrome_api',
+        # Need default icons in theme_resources.grd
+        '../chrome/chrome_resources.gyp:theme_resources',
+        
+        # TODO(tfarina): This dep here is for extensions/common/constants.*
+        # We should find a way to compile this module within extensions_common.
+        '../chrome/common_constants.gyp:common_constants',
         '../components/components.gyp:url_matcher',
         '../content/content.gyp:content_common',
+        '../crypto/crypto.gyp:crypto',
+        '../ipc/ipc.gyp:ipc',
+        '../net/net.gyp:net',
+        '../third_party/re2/re2.gyp:re2',
+        '../ui/base/ui_base.gyp:ui_base',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
+        '../url/url.gyp:url_lib',
       ],
       'include_dirs': [
         '..',
@@ -28,10 +40,10 @@
       ],
       'sources': [
         'common/api/messaging/message.h',
-        'common/api/sockets/sockets_manifest_handler.cc',
-        'common/api/sockets/sockets_manifest_handler.h',
         'common/api/sockets/sockets_manifest_data.cc',
         'common/api/sockets/sockets_manifest_data.h',
+        'common/api/sockets/sockets_manifest_handler.cc',
+        'common/api/sockets/sockets_manifest_handler.h',
         'common/api/sockets/sockets_manifest_permission.cc',
         'common/api/sockets/sockets_manifest_permission.h',
         'common/common_manifest_handlers.cc',
@@ -55,6 +67,10 @@
         'common/extension_api.cc',
         'common/extension_api.h',
         'common/extension_api_stub.cc',
+        'common/extension_icon_set.cc',
+        'common/extension_icon_set.h',
+        'common/extension_l10n_util.cc',
+        'common/extension_l10n_util.h',
         'common/extension_message_generator.cc',
         'common/extension_message_generator.h',
         'common/extension_messages.cc',
@@ -71,10 +87,24 @@
         'common/extensions_client.h',
         'common/feature_switch.cc',
         'common/feature_switch.h',
+        'common/features/api_feature.cc',
+        'common/features/api_feature.h',
+        'common/features/base_feature_provider.cc',
+        'common/features/base_feature_provider.h',
+        'common/features/complex_feature.cc',
+        'common/features/complex_feature.h',
         'common/features/feature.cc',
         'common/features/feature.h',
         'common/features/feature_provider.cc',
         'common/features/feature_provider.h',
+        'common/features/manifest_feature.cc',
+        'common/features/manifest_feature.h',
+        'common/features/permission_feature.cc',
+        'common/features/permission_feature.h',
+        'common/features/simple_feature.cc',
+        'common/features/simple_feature.h',
+        'common/features/simple_feature_filter.cc',
+        'common/features/simple_feature_filter.h',
         'common/file_util.cc',
         'common/file_util.h',
         'common/id_util.cc',
@@ -87,18 +117,22 @@
         'common/manifest_constants.h',
         'common/manifest_handler.cc',
         'common/manifest_handler.h',
+        'common/manifest_handler_helpers.cc',
+        'common/manifest_handler_helpers.h',
         'common/manifest_handlers/background_info.cc',
         'common/manifest_handlers/background_info.h',
         'common/manifest_handlers/csp_info.cc',
         'common/manifest_handlers/csp_info.h',
+        'common/manifest_handlers/icons_handler.cc',
+        'common/manifest_handlers/icons_handler.h',
         'common/manifest_handlers/incognito_info.cc',
         'common/manifest_handlers/incognito_info.h',
         'common/manifest_handlers/kiosk_mode_info.cc',
         'common/manifest_handlers/kiosk_mode_info.h',
         'common/manifest_handlers/offline_enabled_info.cc',
         'common/manifest_handlers/offline_enabled_info.h',
-        'common/manifest_handlers/requirements_info.h',
         'common/manifest_handlers/requirements_info.cc',
+        'common/manifest_handlers/requirements_info.h',
         'common/manifest_handlers/sandboxed_page_info.cc',
         'common/manifest_handlers/sandboxed_page_info.h',
         'common/manifest_handlers/shared_module_info.cc',
@@ -107,6 +141,8 @@
         'common/manifest_handlers/web_accessible_resources_info.h',
         'common/manifest_handlers/webview_info.cc',
         'common/manifest_handlers/webview_info.h',
+        'common/message_bundle.cc',
+        'common/message_bundle.h',
         'common/one_shot_event.cc',
         'common/one_shot_event.h',
         'common/permissions/api_permission.cc',
@@ -183,7 +219,7 @@
         'common/api/api.gyp:extensions_api',
         # TODO(jamescook|derat): Pull strings into extensions module.
         '../chrome/chrome_resources.gyp:chrome_strings',
-        '../chrome/common/extensions/api/api.gyp:chrome_api',
+        '../components/components.gyp:keyed_service_content',
         '../content/content.gyp:content_browser',
         '../skia/skia.gyp:skia',
         '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
@@ -250,6 +286,8 @@
         'browser/api/storage/value_store_cache.h',
         'browser/api/storage/weak_unlimited_settings_storage.cc',
         'browser/api/storage/weak_unlimited_settings_storage.h',
+        'browser/api/test/test_api.cc',
+        'browser/api/test/test_api.h',
         'browser/api_activity_monitor.h',
         'browser/app_sorting.h',
         'browser/blacklist_state.h',
@@ -304,6 +342,8 @@
         'browser/extensions_browser_client.cc',
         'browser/extensions_browser_client.h',
         'browser/external_provider_interface.h',
+        'browser/image_util.cc',
+        'browser/image_util.h',
         'browser/info_map.cc',
         'browser/info_map.h',
         'browser/file_highlighter.cc',
@@ -365,6 +405,23 @@
       'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      'target_name': 'extensions_renderer',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+      ],
+      'sources': [
+        'renderer/native_handler.cc',
+        'renderer/native_handler.h',
+        'renderer/scoped_persistent.h',
+      ],
+      'dependencies': [
+        '../third_party/WebKit/public/blink.gyp:blink',
+      ],
+      # Disable c4267 warnings until we fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
+    },
+    {
       'target_name': 'extensions_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -390,6 +447,39 @@
       ],
       # Disable c4267 warnings until we fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
+    },
+    {
+      # TODO(tfarina): Our plan is to build and run this target on Chromium bots
+      # (TS, CQ, Waterfall). First we will get this target passing all tests,
+      # after that we will start the work on buildbot to get this running there.
+      # When we consider this stable in the bots, we can go to unit_tests target
+      # and remove the duplicated entries from there, otherwise if we just
+      # remove them right now we would be losing coverage.
+      # http://crbug.com/348066
+      'target_name': 'extensions_unittests',
+      'type': 'executable',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:test_support_base',
+        '../testing/gtest.gyp:gtest',
+        'extensions_common',
+        'extensions_test_support',
+      ],
+      'sources': [
+        'common/api/sockets/sockets_manifest_permission_unittest.cc',
+        'common/csp_validator_unittest.cc',
+        'common/event_filter_unittest.cc',
+        'common/file_util_unittest.cc',
+        'common/id_util_unittest.cc',
+        'common/manifest_handler_unittest.cc',
+        'common/one_shot_event_unittest.cc',
+        'common/permissions/api_permission_set_unittest.cc',
+        'common/permissions/manifest_permission_set_unittest.cc',
+        'common/url_pattern_set_unittest.cc',
+        'common/url_pattern_unittest.cc',
+        'common/user_script_unittest.cc',
+        'test/extensions_unittests_main.cc',
+      ],
     },
   ]
 }

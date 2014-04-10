@@ -5,9 +5,14 @@
 #include "components/translate/content/browser/content_translate_driver.h"
 
 #include "base/logging.h"
+#include "components/translate/content/common/translate_messages.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/web_contents.h"
+#include "url/gurl.h"
 
 ContentTranslateDriver::ContentTranslateDriver(
     content::NavigationController* nav_controller)
@@ -54,4 +59,67 @@ void ContentTranslateDriver::OnIsPageTranslatedChanged() {
 
 LanguageState& ContentTranslateDriver::GetLanguageState() {
   return language_state_;
+}
+
+void ContentTranslateDriver::TranslatePage(const std::string& translate_script,
+                                           const std::string& source_lang,
+                                           const std::string& target_lang) {
+  content::NavigationEntry* entry = navigation_controller_->GetActiveEntry();
+  if (!entry) {
+    NOTREACHED();
+    return;
+  }
+
+  content::WebContents* web_contents = navigation_controller_->GetWebContents();
+  web_contents->GetRenderViewHost()->Send(new ChromeViewMsg_TranslatePage(
+      web_contents->GetRenderViewHost()->GetRoutingID(),
+      entry->GetPageID(),
+      translate_script,
+      source_lang,
+      target_lang));
+}
+
+void ContentTranslateDriver::RevertTranslation() {
+  content::NavigationEntry* entry = navigation_controller_->GetActiveEntry();
+  if (!entry) {
+    NOTREACHED();
+    return;
+  }
+
+  content::WebContents* web_contents = navigation_controller_->GetWebContents();
+  web_contents->GetRenderViewHost()->Send(new ChromeViewMsg_RevertTranslation(
+      web_contents->GetRenderViewHost()->GetRoutingID(), entry->GetPageID()));
+}
+
+bool ContentTranslateDriver::IsOffTheRecord() {
+  return navigation_controller_->GetBrowserContext()->IsOffTheRecord();
+}
+
+const std::string& ContentTranslateDriver::GetContentsMimeType() {
+  return navigation_controller_->GetWebContents()->GetContentsMimeType();
+}
+
+const GURL& ContentTranslateDriver::GetLastCommittedURL() {
+  return navigation_controller_->GetWebContents()->GetLastCommittedURL();
+}
+
+const GURL& ContentTranslateDriver::GetActiveURL() {
+  content::NavigationEntry* entry = navigation_controller_->GetActiveEntry();
+  if (!entry)
+    return GURL::EmptyGURL();
+  return entry->GetURL();
+}
+
+const GURL& ContentTranslateDriver::GetVisibleURL() {
+  return navigation_controller_->GetWebContents()->GetVisibleURL();
+}
+
+bool ContentTranslateDriver::HasCurrentPage() {
+  return (navigation_controller_->GetActiveEntry() != NULL);
+}
+
+int ContentTranslateDriver::GetCurrentPageID() {
+  DCHECK(HasCurrentPage());
+  content::NavigationEntry* entry = navigation_controller_->GetActiveEntry();
+  return entry->GetPageID();
 }

@@ -78,6 +78,7 @@
 #include "webkit/common/quota/quota_types.h"
 
 #if defined(OS_ANDROID)
+#include "content/renderer/android/synchronous_compositor_factory.h"
 #include "content/renderer/media/android/audio_decoder_android.h"
 #endif
 
@@ -314,9 +315,11 @@ bool RendererWebKitPlatformSupportImpl::isLinkVisited(
   return GetContentClient()->renderer()->IsLinkVisited(link_hash);
 }
 
-blink::WebMessagePortChannel*
-RendererWebKitPlatformSupportImpl::createMessagePortChannel() {
-  return new WebMessagePortChannelImpl(child_thread_loop_.get());
+void RendererWebKitPlatformSupportImpl::createMessageChannel(
+    blink::WebMessagePortChannel** channel1,
+    blink::WebMessagePortChannel** channel2) {
+  WebMessagePortChannelImpl::CreatePair(
+      child_thread_loop_.get(), channel1, channel2);
 }
 
 blink::WebPrescientNetworking*
@@ -989,6 +992,13 @@ RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
     blink::WebGraphicsContext3D* share_context) {
   if (!RenderThreadImpl::current())
     return NULL;
+
+#if defined(OS_ANDROID)
+  if (SynchronousCompositorFactory* factory =
+          SynchronousCompositorFactory::GetInstance()) {
+    return factory->CreateOffscreenGraphicsContext3D(attributes);
+  }
+#endif
 
   scoped_refptr<GpuChannelHost> gpu_channel_host(
       RenderThreadImpl::current()->EstablishGpuChannelSync(

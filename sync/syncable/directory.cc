@@ -725,6 +725,40 @@ bool Directory::PurgeEntriesWithTypeIn(ModelTypeSet disabled_types,
   return true;
 }
 
+bool Directory::ResetVersionsForType(BaseWriteTransaction* trans,
+                                     ModelType type) {
+  if (!ProtocolTypes().Has(type))
+    return false;
+  DCHECK_NE(type, BOOKMARKS) << "Only non-hierarchical types are supported";
+
+  EntryKernel* type_root = GetEntryByServerTag(ModelTypeToRootTag(type));
+  if (!type_root)
+    return false;
+
+  ScopedKernelLock lock(this);
+  const Id& type_root_id = type_root->ref(ID);
+  Directory::Metahandles children;
+  AppendChildHandles(lock, type_root_id, &children);
+
+  for (Metahandles::iterator it = children.begin(); it != children.end();
+       ++it) {
+    EntryKernel* entry = GetEntryByHandle(*it, &lock);
+    if (!entry)
+      continue;
+    if (entry->ref(BASE_VERSION) > 1)
+      entry->put(BASE_VERSION, 1);
+    if (entry->ref(SERVER_VERSION) > 1)
+      entry->put(SERVER_VERSION, 1);
+
+    // Note that we do not unset IS_UNSYNCED or IS_UNAPPLIED_UPDATE in order
+    // to ensure no in-transit data is lost.
+
+    entry->mark_dirty(&kernel_->dirty_metahandles);
+  }
+
+  return true;
+}
+
 void Directory::HandleSaveChangesFailure(const SaveChangesSnapshot& snapshot) {
   WriteTransaction trans(FROM_HERE, HANDLE_SAVE_FAILURE, this);
   ScopedKernelLock lock(this);
@@ -790,6 +824,22 @@ int64 Directory::GetTransactionVersion(ModelType type) const {
 void Directory::IncrementTransactionVersion(ModelType type) {
   kernel_->transaction_mutex.AssertAcquired();
   kernel_->persisted_info.transaction_version[type]++;
+}
+
+void Directory::GetDataTypeContext(BaseTransaction* trans,
+                                   ModelType type,
+                                   sync_pb::DataTypeContext* context) const {
+  ScopedKernelLock lock(this);
+  context->CopyFrom(kernel_->persisted_info.datatype_context[type]);
+}
+
+void Directory::SetDataTypeContext(
+    BaseWriteTransaction* trans,
+    ModelType type,
+    const sync_pb::DataTypeContext& context) {
+  ScopedKernelLock lock(this);
+  kernel_->persisted_info.datatype_context[type].CopyFrom(context);
+  kernel_->info_status = KERNEL_SHARE_INFO_DIRTY;
 }
 
 ModelTypeSet Directory::InitialSyncEndedTypes() {
@@ -934,13 +984,18 @@ void Directory::CollectMetaHandleCounts(
   }
 }
 
-scoped_ptr<base::ListValue> Directory::GetAllNodeDetails(
-    BaseTransaction* trans) {
+scoped_ptr<base::ListValue> Directory::GetNodeDetailsForType(
+    BaseTransaction* trans,
+    ModelType type) {
   scoped_ptr<base::ListValue> nodes(new base::ListValue());
 
   ScopedKernelLock lock(this);
   for (MetahandlesMap::iterator it = kernel_->metahandles_map.begin();
        it != kernel_->metahandles_map.end(); ++it) {
+    if (GetModelTypeFromSpecifics(it->second->ref(SPECIFICS)) != type) {
+      continue;
+    }
+
     EntryKernel* kernel = it->second;
     scoped_ptr<base::DictionaryValue> node(
         kernel->ToValue(GetCryptographer(trans)));

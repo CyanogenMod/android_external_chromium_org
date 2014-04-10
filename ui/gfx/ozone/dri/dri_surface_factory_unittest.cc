@@ -7,13 +7,15 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/ozone/dri/dri_skbitmap.h"
+#include "ui/gfx/ozone/dri/dri_buffer.h"
 #include "ui/gfx/ozone/dri/dri_surface.h"
 #include "ui/gfx/ozone/dri/dri_surface_factory.h"
 #include "ui/gfx/ozone/dri/dri_wrapper.h"
 #include "ui/gfx/ozone/dri/hardware_display_controller.h"
 #include "ui/gfx/ozone/surface_factory_ozone.h"
+#include "ui/gfx/ozone/surface_ozone_canvas.h"
 
 namespace {
 
@@ -110,38 +112,41 @@ class MockDriWrapper : public gfx::DriWrapper {
   DISALLOW_COPY_AND_ASSIGN(MockDriWrapper);
 };
 
-class MockDriSkBitmap : public gfx::DriSkBitmap {
+class MockDriBuffer : public gfx::DriBuffer {
  public:
-  MockDriSkBitmap() : DriSkBitmap(kFd) {}
-  virtual ~MockDriSkBitmap() {}
+  MockDriBuffer(gfx::DriWrapper* dri) : DriBuffer(dri) {}
+  virtual ~MockDriBuffer() {}
 
   virtual bool Initialize(const SkImageInfo& info) OVERRIDE {
-    allocPixels(info);
-    eraseColor(SK_ColorBLACK);
+    surface_ = skia::AdoptRef(SkSurface::NewRaster(info));
+    surface_->getCanvas()->clear(SK_ColorBLACK);
+
     return true;
   }
+  virtual void Destroy() OVERRIDE {}
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(MockDriSkBitmap);
+  DISALLOW_COPY_AND_ASSIGN(MockDriBuffer);
 };
 
 class MockDriSurface : public gfx::DriSurface {
  public:
   MockDriSurface(gfx::DriWrapper* dri, const gfx::Size& size)
-      : DriSurface(dri, size) {}
+      : DriSurface(dri, size), dri_(dri) {}
   virtual ~MockDriSurface() {}
 
-  const std::vector<MockDriSkBitmap*>& bitmaps() const { return bitmaps_; }
+  const std::vector<MockDriBuffer*>& bitmaps() const { return bitmaps_; }
 
  private:
-  virtual gfx::DriSkBitmap* CreateBuffer() OVERRIDE {
-     MockDriSkBitmap* bitmap = new MockDriSkBitmap();
-     bitmaps_.push_back(bitmap);
+  virtual gfx::DriBuffer* CreateBuffer() OVERRIDE {
+    MockDriBuffer* bitmap = new MockDriBuffer(dri_);
+    bitmaps_.push_back(bitmap);
 
-     return bitmap;
+    return bitmap;
   }
 
-  std::vector<MockDriSkBitmap*> bitmaps_;  // Not owned.
+  gfx::DriWrapper* dri_;                 // Not owned.
+  std::vector<MockDriBuffer*> bitmaps_;  // Not owned.
 
   DISALLOW_COPY_AND_ASSIGN(MockDriSurface);
 };
@@ -263,7 +268,7 @@ TEST_F(DriSurfaceFactoryTest, FailSurfaceInitialization) {
   gfx::AcceleratedWidget w = factory_->GetAcceleratedWidget();
   EXPECT_EQ(kDefaultWidgetHandle, w);
 
-  EXPECT_FALSE(factory_->CreateSurfaceForWidget(w));
+  EXPECT_FALSE(factory_->CreateCanvasForWidget(w));
 }
 
 TEST_F(DriSurfaceFactoryTest, FailBindingSurfaceToController) {
@@ -275,7 +280,7 @@ TEST_F(DriSurfaceFactoryTest, FailBindingSurfaceToController) {
   gfx::AcceleratedWidget w = factory_->GetAcceleratedWidget();
   EXPECT_EQ(kDefaultWidgetHandle, w);
 
-  EXPECT_FALSE(factory_->CreateSurfaceForWidget(w));
+  EXPECT_FALSE(factory_->CreateCanvasForWidget(w));
 }
 
 TEST_F(DriSurfaceFactoryTest, SuccessfulWidgetRealization) {
@@ -285,7 +290,7 @@ TEST_F(DriSurfaceFactoryTest, SuccessfulWidgetRealization) {
   gfx::AcceleratedWidget w = factory_->GetAcceleratedWidget();
   EXPECT_EQ(kDefaultWidgetHandle, w);
 
-  EXPECT_TRUE(factory_->CreateSurfaceForWidget(w));
+  EXPECT_TRUE(factory_->CreateCanvasForWidget(w));
 }
 
 TEST_F(DriSurfaceFactoryTest, FailSchedulePageFlip) {
@@ -297,7 +302,7 @@ TEST_F(DriSurfaceFactoryTest, FailSchedulePageFlip) {
   gfx::AcceleratedWidget w = factory_->GetAcceleratedWidget();
   EXPECT_EQ(kDefaultWidgetHandle, w);
 
-  scoped_ptr<gfx::SurfaceOzone> surf = factory_->CreateSurfaceForWidget(w);
+  scoped_ptr<gfx::SurfaceOzoneCanvas> surf = factory_->CreateCanvasForWidget(w);
   EXPECT_TRUE(surf);
 
   EXPECT_FALSE(factory_->SchedulePageFlip(w));
@@ -310,7 +315,7 @@ TEST_F(DriSurfaceFactoryTest, SuccessfulSchedulePageFlip) {
   gfx::AcceleratedWidget w = factory_->GetAcceleratedWidget();
   EXPECT_EQ(kDefaultWidgetHandle, w);
 
-  scoped_ptr<gfx::SurfaceOzone> surf = factory_->CreateSurfaceForWidget(w);
+  scoped_ptr<gfx::SurfaceOzoneCanvas> surf = factory_->CreateCanvasForWidget(w);
   EXPECT_TRUE(surf);
 
   EXPECT_TRUE(factory_->SchedulePageFlip(w));
@@ -323,7 +328,7 @@ TEST_F(DriSurfaceFactoryTest, SetCursorImage) {
   gfx::AcceleratedWidget w = factory_->GetAcceleratedWidget();
   EXPECT_EQ(kDefaultWidgetHandle, w);
 
-  scoped_ptr<gfx::SurfaceOzone> surf = factory_->CreateSurfaceForWidget(w);
+  scoped_ptr<gfx::SurfaceOzoneCanvas> surf = factory_->CreateCanvasForWidget(w);
   EXPECT_TRUE(surf);
 
   SkBitmap image;
@@ -337,18 +342,22 @@ TEST_F(DriSurfaceFactoryTest, SetCursorImage) {
 
   // The first surface is the cursor surface since it is allocated early in the
   // initialization process.
-  const std::vector<MockDriSkBitmap*>& bitmaps = surfaces[0]->bitmaps();
+  const std::vector<MockDriBuffer*>& bitmaps = surfaces[0]->bitmaps();
 
   // The surface should have been initialized to a double-buffered surface.
   EXPECT_EQ(2u, bitmaps.size());
+
+  SkBitmap cursor;
+  bitmaps[1]->canvas()->readPixels(&cursor, 0, 0);
+
   // Check that the frontbuffer is displaying the right image as set above.
-  for (int i = 0; i < bitmaps[1]->height(); ++i) {
-    for (int j = 0; j < bitmaps[1]->width(); ++j) {
+  for (int i = 0; i < cursor.height(); ++i) {
+    for (int j = 0; j < cursor.width(); ++j) {
       if (j < info.width() && i < info.height())
-        EXPECT_EQ(SK_ColorWHITE, bitmaps[1]->getColor(j, i));
+        EXPECT_EQ(SK_ColorWHITE, cursor.getColor(j, i));
       else
         EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT),
-                  bitmaps[1]->getColor(j, i));
+                  cursor.getColor(j, i));
     }
   }
 }

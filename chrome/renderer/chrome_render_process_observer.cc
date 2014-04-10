@@ -65,8 +65,8 @@ class RendererResourceDelegate : public content::ResourceDispatcherDelegate {
       : weak_factory_(this) {
   }
 
-  virtual webkit_glue::ResourceLoaderBridge::Peer* OnRequestComplete(
-      webkit_glue::ResourceLoaderBridge::Peer* current_peer,
+  virtual content::RequestPeer* OnRequestComplete(
+      content::RequestPeer* current_peer,
       ResourceType::Type resource_type,
       int error_code) OVERRIDE {
     // Update the browser about our cache.
@@ -88,8 +88,8 @@ class RendererResourceDelegate : public content::ResourceDispatcherDelegate {
         resource_type, current_peer, error_code);
   }
 
-  virtual webkit_glue::ResourceLoaderBridge::Peer* OnReceivedResponse(
-      webkit_glue::ResourceLoaderBridge::Peer* current_peer,
+  virtual content::RequestPeer* OnReceivedResponse(
+      content::RequestPeer* current_peer,
       const std::string& mime_type,
       const GURL& url) OVERRIDE {
     return ExtensionLocalizationPeer::CreateExtensionLocalizationPeer(
@@ -259,11 +259,7 @@ ChromeRenderProcessObserver::ChromeRenderProcessObserver(
   }
 
 #if defined(ENABLE_AUTOFILL_DIALOG)
-  bool enable_autofill = !command_line.HasSwitch(
-      autofill::switches::kDisableInteractiveAutocomplete);
-  WebRuntimeFeatures::enableRequestAutocomplete(
-      enable_autofill ||
-      command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures));
+  WebRuntimeFeatures::enableRequestAutocomplete(true);
 #endif
 
   RenderThread* thread = RenderThread::Get();
@@ -392,6 +388,8 @@ void ChromeRenderProcessObserver::OnSetFieldTrialGroup(
     const std::string& group_name) {
   base::FieldTrial* trial =
       base::FieldTrialList::CreateFieldTrial(field_trial_name, group_name);
+  // TODO(mef): Remove this check after the investigation of 359406 is complete.
+  CHECK(trial) << field_trial_name << ":" << group_name;
   // Ensure the trial is marked as "used" by calling group() on it. This is
   // needed to ensure the trial is properly reported in renderer crash reports.
   trial->group();

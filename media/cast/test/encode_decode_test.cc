@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -84,7 +84,6 @@ class EncodeDecodeTest : public ::testing::Test {
     testing_clock_->Advance(
         base::TimeDelta::FromMilliseconds(kStartMillisecond));
     encoder_config_.max_number_of_video_buffers_used = 1;
-    encoder_config_.number_of_cores = 1;
     encoder_config_.width = kWidth;
     encoder_config_.height = kHeight;
     encoder_config_.start_bitrate = kStartbitrate;

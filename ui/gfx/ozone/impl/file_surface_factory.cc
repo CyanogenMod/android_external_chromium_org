@@ -9,10 +9,10 @@
 #include "base/location.h"
 #include "base/stl_util.h"
 #include "base/threading/worker_pool.h"
-#include "third_party/skia/include/core/SkBitmapDevice.h"
-#include "third_party/skia/include/core/SkDevice.h"
+#include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkSurface.h"
 #include "ui/gfx/codec/png_codec.h"
-#include "ui/gfx/ozone/surface_ozone_base.h"
+#include "ui/gfx/ozone/surface_ozone_canvas.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/vsync_provider.h"
 
@@ -29,39 +29,40 @@ void WriteDataToFile(const base::FilePath& location,
                   png_data.size());
 }
 
-class FileSurface : public SurfaceOzoneBase {
+class FileSurface : public SurfaceOzoneCanvas {
  public:
   FileSurface(const base::FilePath& location) : location_(location) {}
   virtual ~FileSurface() {}
 
-  virtual bool InitializeCanvas() OVERRIDE { return true; }
-
+  // SurfaceOzoneCanvas overrides:
   virtual bool ResizeCanvas(const Size& viewport_size) OVERRIDE {
-    SkImageInfo info = SkImageInfo::MakeN32Premul(viewport_size.width(),
-                                                  viewport_size.height());
-    device_ = skia::AdoptRef(SkBitmapDevice::Create(info));
-    canvas_ = skia::AdoptRef(new SkCanvas(device_.get()));
+    surface_ = skia::AdoptRef(SkSurface::NewRaster(
+        SkImageInfo::MakeN32Premul(viewport_size.width(),
+                                   viewport_size.height())));
     return true;
   }
-
-  virtual skia::RefPtr<SkCanvas> GetCanvas() OVERRIDE { return canvas_; }
-
+  virtual skia::RefPtr<SkCanvas> GetCanvas() OVERRIDE {
+    return skia::SharePtr(surface_->getCanvas());
+  }
   virtual bool PresentCanvas() OVERRIDE {
     SkBitmap bitmap;
-    bitmap.setConfig(
-        SkBitmap::kARGB_8888_Config, device_->width(), device_->height());
+    bitmap.setConfig(surface_->getCanvas()->imageInfo());
 
-    if (canvas_->readPixels(&bitmap, 0, 0)) {
+    // TODO(dnicoara) Use SkImage instead to potentially avoid a copy.
+    // See crbug.com/361605 for details.
+    if (surface_->getCanvas()->readPixels(&bitmap, 0, 0)) {
       base::WorkerPool::PostTask(
           FROM_HERE, base::Bind(&WriteDataToFile, location_, bitmap), true);
     }
     return true;
   }
+  virtual scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider() OVERRIDE {
+    return scoped_ptr<gfx::VSyncProvider>();
+  }
 
  private:
   base::FilePath location_;
-  skia::RefPtr<SkBitmapDevice> device_;
-  skia::RefPtr<SkCanvas> canvas_;
+  skia::RefPtr<SkSurface> surface_;
 };
 
 }  // namespace
@@ -88,9 +89,9 @@ AcceleratedWidget FileSurfaceFactory::GetAcceleratedWidget() {
   return 1;
 }
 
-scoped_ptr<SurfaceOzone> FileSurfaceFactory::CreateSurfaceForWidget(
-    AcceleratedWidget widget) {
-  return make_scoped_ptr<SurfaceOzone>(new FileSurface(location_));
+scoped_ptr<SurfaceOzoneCanvas> FileSurfaceFactory::CreateCanvasForWidget(
+      gfx::AcceleratedWidget w) {
+  return make_scoped_ptr<SurfaceOzoneCanvas>(new FileSurface(location_));
 }
 
 bool FileSurfaceFactory::LoadEGLGLES2Bindings(

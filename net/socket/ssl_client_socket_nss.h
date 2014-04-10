@@ -102,8 +102,8 @@ class SSLClientSocketNSS : public SSLClientSocket {
   virtual int Write(IOBuffer* buf,
                     int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
   virtual ServerBoundCertService* GetServerBoundCertService() const OVERRIDE;
 
  protected:
@@ -200,6 +200,11 @@ class SSLClientSocketNSS : public SSLClientSocket {
   base::TimeTicks start_cert_verification_time_;
 
   TransportSecurityState* transport_security_state_;
+
+  // pinning_failure_log contains a message produced by
+  // TransportSecurityState::DomainState::CheckPublicKeyPins in the event of a
+  // pinning failure. It is a (somewhat) human-readable string.
+  std::string pinning_failure_log_;
 
   // The following two variables are added for debugging bug 65948. Will
   // remove this code after fixing bug 65948.

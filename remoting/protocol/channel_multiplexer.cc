@@ -14,7 +14,7 @@
 #include "base/thread_task_runner_handle.h"
 #include "net/base/net_errors.h"
 #include "net/socket/stream_socket.h"
-#include "remoting/protocol/util.h"
+#include "remoting/protocol/message_serialization.h"
 
 namespace remoting {
 namespace protocol {
@@ -116,18 +116,18 @@ class ChannelMultiplexer::MuxSocket : public net::StreamSocket,
   virtual int Write(net::IOBuffer* buffer, int buffer_len,
                     const net::CompletionCallback& callback) OVERRIDE;
 
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE {
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE {
     NOTIMPLEMENTED();
-    return false;
+    return net::ERR_NOT_IMPLEMENTED;
   }
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE {
+  virtual int SetSendBufferSize(int32 size) OVERRIDE {
     NOTIMPLEMENTED();
-    return false;
+    return net::ERR_NOT_IMPLEMENTED;
   }
 
   virtual int Connect(const net::CompletionCallback& callback) OVERRIDE {
     NOTIMPLEMENTED();
-    return net::ERR_FAILED;
+    return net::ERR_NOT_IMPLEMENTED;
   }
   virtual void Disconnect() OVERRIDE {
     NOTIMPLEMENTED();
@@ -142,11 +142,11 @@ class ChannelMultiplexer::MuxSocket : public net::StreamSocket,
   }
   virtual int GetPeerAddress(net::IPEndPoint* address) const OVERRIDE {
     NOTIMPLEMENTED();
-    return net::ERR_FAILED;
+    return net::ERR_NOT_IMPLEMENTED;
   }
   virtual int GetLocalAddress(net::IPEndPoint* address) const OVERRIDE {
     NOTIMPLEMENTED();
-    return net::ERR_FAILED;
+    return net::ERR_NOT_IMPLEMENTED;
   }
   virtual const net::BoundNetLog& NetLog() const OVERRIDE {
     NOTIMPLEMENTED();

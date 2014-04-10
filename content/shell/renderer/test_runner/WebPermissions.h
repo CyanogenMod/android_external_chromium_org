@@ -6,6 +6,7 @@
 #define CONTENT_SHELL_RENDERER_TEST_RUNNER_WEBPERMISSIONS_H_
 
 #include "base/basictypes.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebPermissionClient.h"
 
 namespace WebTestRunner {
@@ -18,14 +19,6 @@ public:
     virtual ~WebPermissions();
 
     // Override WebPermissionClient methods.
-    // TODO(jam): remove all these methods after Blink rolls.
-    virtual bool allowImage(blink::WebFrame*, bool enabledPerSettings, const blink::WebURL& imageURL);
-    virtual bool allowScriptFromSource(blink::WebFrame*, bool enabledPerSettings, const blink::WebURL& scriptURL);
-    virtual bool allowStorage(blink::WebFrame*, bool local);
-    virtual bool allowPlugins(blink::WebFrame*, bool enabledPerSettings);
-    virtual bool allowDisplayingInsecureContent(blink::WebFrame*, bool enabledPerSettings, const blink::WebSecurityOrigin&, const blink::WebURL&);
-    virtual bool allowRunningInsecureContent(blink::WebFrame*, bool enabledPerSettings, const blink::WebSecurityOrigin&, const blink::WebURL&);
-
     virtual bool allowImage(bool enabledPerSettings, const blink::WebURL& imageURL);
     virtual bool allowScriptFromSource(bool enabledPerSettings, const blink::WebURL& scriptURL);
     virtual bool allowStorage(bool local);

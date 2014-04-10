@@ -12,8 +12,14 @@
 #include "content/common/content_export.h"
 #include "webkit/common/resource_type.h"
 
+namespace ipc {
+class Sender;
+}
+
 namespace content {
 
+class ServiceWorkerContextCore;
+class ServiceWorkerDispatcherHost;
 class ServiceWorkerVersion;
 
 // This class is the browser-process representation of a serice worker
@@ -25,11 +31,31 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
     : public base::SupportsWeakPtr<ServiceWorkerProviderHost> {
  public:
   ServiceWorkerProviderHost(int process_id,
-                            int provider_id);
+                            int provider_id,
+                            base::WeakPtr<ServiceWorkerContextCore> context,
+                            ServiceWorkerDispatcherHost* dispatcher_host);
   ~ServiceWorkerProviderHost();
 
   int process_id() const { return process_id_; }
   int provider_id() const { return provider_id_; }
+  const std::set<int>& script_client_thread_ids() const {
+    return script_client_thread_ids_;
+  }
+
+  // The service worker version that corresponds with
+  // navigator.serviceWorker.active for our document.
+  ServiceWorkerVersion* active_version() const {
+    return active_version_.get();
+  }
+
+  // The version, if any, that this provider is providing resource loads for.
+  // This host observes resource loads made by the serviceworker itself.
+  ServiceWorkerVersion* hosted_version() const {
+    return hosted_version_.get();
+  }
+
+  void set_document_url(const GURL& url) { document_url_ = url; }
+  const GURL& document_url() const { return document_url_; }
 
   // Adds and removes script client thread ID, who is listening events
   // dispatched from ServiceWorker to the document (and any of its dedicated
@@ -37,19 +63,15 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   void AddScriptClient(int thread_id);
   void RemoveScriptClient(int thread_id);
 
-  // The service worker version that corresponds with navigator.serviceWorker
-  // for our document.
-  ServiceWorkerVersion* associated_version() const {
-    return  associated_version_.get();
-  }
+  // Associate |version| to this provider as its '.active' or '.pending'
+  // version.
+  // Giving NULL to this method will unset the corresponding field.
+  void SetActiveVersion(ServiceWorkerVersion* version);
+  void SetPendingVersion(ServiceWorkerVersion* version);
 
-  const std::set<int>& script_client_thread_ids() const {
-    return script_client_thread_ids_;
-  }
-
-  // Associate |version| to this provider host. Giving NULL to this method
-  // will unset the associated version.
-  void AssociateVersion(ServiceWorkerVersion* version);
+  // Returns false if the version is not in the expected STARTING in our
+  // our process state. That would be indicative of a bad IPC message.
+  bool SetHostedVersionId(int64 versions_id);
 
   // Returns true if this provider host should handle requests for
   // |resource_type|.
@@ -58,8 +80,15 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
  private:
   const int process_id_;
   const int provider_id_;
+  GURL document_url_;
   std::set<int> script_client_thread_ids_;
-  scoped_refptr<ServiceWorkerVersion> associated_version_;
+  scoped_refptr<ServiceWorkerVersion> active_version_;
+  scoped_refptr<ServiceWorkerVersion> pending_version_;
+  scoped_refptr<ServiceWorkerVersion> hosted_version_;
+  base::WeakPtr<ServiceWorkerContextCore> context_;
+  ServiceWorkerDispatcherHost* dispatcher_host_;
+
+  DISALLOW_COPY_AND_ASSIGN(ServiceWorkerProviderHost);
 };
 
 }  // namespace content

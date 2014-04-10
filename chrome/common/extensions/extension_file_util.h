@@ -10,10 +10,7 @@
 
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/common/extensions/message_bundle.h"
 #include "extensions/common/manifest.h"
-
-class ExtensionIconSet;
 
 namespace base {
 class DictionaryValue;
@@ -22,7 +19,6 @@ class FilePath;
 
 namespace extensions {
 class Extension;
-class MessageBundle;
 struct InstallWarning;
 }
 
@@ -64,16 +60,6 @@ scoped_refptr<extensions::Extension> LoadExtension(
 base::DictionaryValue* LoadManifest(const base::FilePath& extension_root,
                                     std::string* error);
 
-// Returns true if the given file path exists and is not zero-length.
-bool ValidateFilePath(const base::FilePath& path);
-
-// Returns true if the icons in the icon set exist. Oherwise, populates
-// |error| with the |error_message_id| for an invalid file.
-bool ValidateExtensionIconSet(const ExtensionIconSet& icon_set,
-                              const extensions::Extension* extension,
-                              int error_message_id,
-                              std::string* error);
-
 // Returns true if the given extension object is valid and consistent.
 // May also append a series of warning messages to |warnings|, but they
 // should not prevent the extension from running.
@@ -93,20 +79,6 @@ std::set<base::FilePath> GetBrowserImagePaths(
 // Returns a list of files that contain private keys inside |extension_dir|.
 std::vector<base::FilePath> FindPrivateKeyFiles(
     const base::FilePath& extension_dir);
-
-// Loads extension message catalogs and returns message bundle.
-// Returns NULL on error, or if extension is not localized.
-extensions::MessageBundle* LoadMessageBundle(
-    const base::FilePath& extension_path,
-    const std::string& default_locale,
-    std::string* error);
-
-// Loads the extension message bundle substitution map. Contains at least
-// extension_id item.
-extensions::MessageBundle::SubstitutionMap* LoadMessageBundleSubstitutionMap(
-    const base::FilePath& extension_path,
-    const std::string& extension_id,
-    const std::string& default_locale);
 
 // We need to reserve the namespace of entries that start with "_" for future
 // use by Chrome.

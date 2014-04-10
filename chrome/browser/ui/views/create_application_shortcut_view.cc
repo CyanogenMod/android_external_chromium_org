@@ -19,8 +19,8 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
-#include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
+#include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/render_view_host.h"
@@ -389,8 +389,10 @@ bool CreateApplicationShortcutView::Accept() {
   creation_locations.in_quick_launch_bar = false;
 #endif
 
-  web_app::CreateShortcuts(shortcut_info_, creation_locations,
-                           web_app::SHORTCUT_CREATION_BY_USER);
+  web_app::CreateShortcutsForShortcutInfo(
+      web_app::SHORTCUT_CREATION_BY_USER,
+      creation_locations,
+      shortcut_info_);
   return true;
 }
 

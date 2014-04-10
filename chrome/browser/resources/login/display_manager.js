@@ -95,6 +95,11 @@ cr.define('cr.ui.login', function() {
                       ];
 
   /**
+   * OOBE screens group index.
+   */
+  var SCREEN_GROUP_OOBE = 0;
+
+  /**
    * Constructor a display manager that manages initialization of screens,
    * transitions, error messages display.
    *
@@ -213,12 +218,12 @@ cr.define('cr.ui.login', function() {
      * @param {string} name Accelerator name.
      */
     handleAccelerator: function(name) {
+      var currentStepId = this.screens_[this.currentStep_];
       if (name == ACCELERATOR_CANCEL) {
         if (this.currentScreen.cancel) {
           this.currentScreen.cancel();
         }
       } else if (name == ACCELERATOR_ENROLLMENT) {
-        var currentStepId = this.screens_[this.currentStep_];
         if (currentStepId == SCREEN_GAIA_SIGNIN ||
             currentStepId == SCREEN_ACCOUNT_PICKER) {
           chrome.send('toggleEnrollmentScreen');
@@ -233,7 +238,6 @@ cr.define('cr.ui.login', function() {
             this.currentScreen.cancelAutoEnrollment();
         }
       } else if (name == ACCELERATOR_KIOSK_ENABLE) {
-        var currentStepId = this.screens_[this.currentStep_];
         if (currentStepId == SCREEN_GAIA_SIGNIN ||
             currentStepId == SCREEN_ACCOUNT_PICKER) {
           chrome.send('toggleKioskEnableScreen');
@@ -242,7 +246,6 @@ cr.define('cr.ui.login', function() {
         if (this.allowToggleVersion_)
           $('version-labels').hidden = !$('version-labels').hidden;
       } else if (name == ACCELERATOR_RESET) {
-        var currentStepId = this.screens_[this.currentStep_];
         if (currentStepId == SCREEN_GAIA_SIGNIN ||
             currentStepId == SCREEN_ACCOUNT_PICKER) {
           chrome.send('toggleResetScreen');
@@ -254,11 +257,9 @@ cr.define('cr.ui.login', function() {
         if (this.isOobeUI())
           this.showDeviceRequisitionRemoraPrompt_();
       } else if (name == ACCELERATOR_APP_LAUNCH_BAILOUT) {
-        var currentStepId = this.screens_[this.currentStep_];
         if (currentStepId == SCREEN_APP_LAUNCH_SPLASH)
           chrome.send('cancelAppLaunch');
       } else if (name == ACCELERATOR_APP_LAUNCH_NETWORK_CONFIG) {
-        var currentStepId = this.screens_[this.currentStep_];
         if (currentStepId == SCREEN_APP_LAUNCH_SPLASH)
           chrome.send('networkConfigRequest');
       }
@@ -340,6 +341,10 @@ cr.define('cr.ui.login', function() {
 
       $('oobe').className = nextStepId;
 
+      // Need to do this before calling newStep.onBeforeShow() so that new step
+      // is back in DOM tree and has correct offsetHeight / offsetWidth.
+      newStep.hidden = false;
+
       if (newStep.onBeforeShow)
         newStep.onBeforeShow(screenData);
 
@@ -387,7 +392,9 @@ cr.define('cr.ui.login', function() {
       // Default control to be focused (if specified).
       var defaultControl = newStep.defaultControl;
 
+      var outerContainer = $('outer-container');
       var innerContainer = $('inner-container');
+      var isOOBE = this.isOobeUI();
       if (this.currentStep_ != nextStepIndex &&
           !oldStep.classList.contains('hidden')) {
         if (oldStep.classList.contains('animated')) {
@@ -399,6 +406,8 @@ cr.define('cr.ui.login', function() {
                 oldStep.classList.contains('right')) {
               innerContainer.classList.remove('animation');
               oldStep.classList.add('hidden');
+              if (!isOOBE)
+                oldStep.hidden = true;
             }
             // Refresh defaultControl. It could have changed.
             var defaultControl = newStep.defaultControl;
@@ -408,6 +417,7 @@ cr.define('cr.ui.login', function() {
           ensureTransitionEndEvent(oldStep, MAX_SCREEN_TRANSITION_DURATION);
         } else {
           oldStep.classList.add('hidden');
+          oldStep.hidden = true;
           if (defaultControl)
             defaultControl.focus();
         }
@@ -418,6 +428,7 @@ cr.define('cr.ui.login', function() {
           innerContainer.addEventListener(
               'webkitTransitionEnd', function f(e) {
                 innerContainer.removeEventListener('webkitTransitionEnd', f);
+                outerContainer.classList.remove('down');
                 $('progress-dots').classList.remove('down');
                 chrome.send('loginVisible', ['oobe']);
                 // Refresh defaultControl. It could have changed.
@@ -581,6 +592,18 @@ cr.define('cr.ui.login', function() {
     },
 
     /**
+     * Initialized first group of OOBE screens.
+     */
+    initializeOOBEScreens: function() {
+      if (this.isOobeUI() && $('inner-container').classList.contains('down')) {
+        for (var i = 0, screen;
+             screen = $(SCREEN_GROUPS[SCREEN_GROUP_OOBE][i]); i++) {
+          screen.hidden = false;
+        }
+      }
+    },
+
+    /**
      * Prepares screens to use in login display.
      */
     prepareForLoginDisplay_: function() {
@@ -711,6 +734,8 @@ cr.define('cr.ui.login', function() {
           "'. Setting default.");
       instance.displayType = DISPLAY_TYPE.LOGIN;
     }
+
+    instance.initializeOOBEScreens();
 
     window.addEventListener('resize', instance.onWindowResize_.bind(instance));
   };

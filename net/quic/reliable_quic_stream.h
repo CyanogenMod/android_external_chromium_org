@@ -26,9 +26,7 @@ namespace test {
 class ReliableQuicStreamPeer;
 }  // namespace test
 
-class IPEndPoint;
 class QuicSession;
-class SSLInfo;
 
 class NET_EXPORT_PRIVATE ReliableQuicStream {
  public:
@@ -105,6 +103,10 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   // WINDOW_UPDATE frame. This is called whenever bytes are consumed from the
   // sequencer's buffer.
   void MaybeSendWindowUpdate();
+
+  int num_frames_received();
+
+  int num_duplicate_frames_received();
 
  protected:
   // Sends as much of 'data' to the connection as the connection will consume,

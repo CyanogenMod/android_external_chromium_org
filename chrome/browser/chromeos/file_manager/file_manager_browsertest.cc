@@ -39,7 +39,6 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/extensions/api/test/test_api.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
@@ -53,6 +52,7 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/api/test/test_api.h"
 #include "extensions/common/extension.h"
 #include "google_apis/drive/gdata_wapi_parser.h"
 #include "google_apis/drive/test_util.h"
@@ -448,9 +448,6 @@ class DriveTestVolume : public TestVolume {
       Profile* profile) {
     profile_ = profile;
     fake_drive_service_ = new drive::FakeDriveService;
-    fake_drive_service_->LoadResourceListForWapi("gdata/empty_feed.json");
-    fake_drive_service_->LoadAccountMetadataForWapi(
-        "gdata/account_metadata.json");
     fake_drive_service_->LoadAppListForDriveApi("drive/applist.json");
 
     if (!CreateRootDirectory(profile))
@@ -749,7 +746,11 @@ INSTANTIATE_TEST_CASE_P(
         TestParameter(IN_GUEST_MODE, "audioOpenDownloads"),
         TestParameter(NOT_IN_GUEST_MODE, "audioOpenDownloads"),
         TestParameter(NOT_IN_GUEST_MODE, "audioOpenDrive"),
-        TestParameter(NOT_IN_GUEST_MODE, "audioAutoAdvanceDrive")));
+        TestParameter(NOT_IN_GUEST_MODE, "audioAutoAdvanceDrive"),
+        TestParameter(NOT_IN_GUEST_MODE, "audioRepeatSingleFileDrive"),
+        TestParameter(NOT_IN_GUEST_MODE, "audioNoRepeatSingleFileDrive"),
+        TestParameter(NOT_IN_GUEST_MODE, "audioRepeatMultipleFileDrive"),
+        TestParameter(NOT_IN_GUEST_MODE, "audioNoRepeatMultipleFileDrive")));
 
 INSTANTIATE_TEST_CASE_P(
     KeyboardOperations,
@@ -766,7 +767,13 @@ INSTANTIATE_TEST_CASE_P(
                       TestParameter(NOT_IN_GUEST_MODE,
                                     "createNewFolderDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE,
-                                    "createNewFolderDrive")));
+                                    "createNewFolderDrive"),
+                      TestParameter(IN_GUEST_MODE,
+                                    "renameFileDownloads"),
+                      TestParameter(NOT_IN_GUEST_MODE,
+                                    "renameFileDownloads"),
+                      TestParameter(NOT_IN_GUEST_MODE,
+                                    "renameFileDrive")));
 
 INSTANTIATE_TEST_CASE_P(
     DriveSpecific,

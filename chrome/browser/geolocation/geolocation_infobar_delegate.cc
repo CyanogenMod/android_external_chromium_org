@@ -70,6 +70,7 @@ InfoBar* GeolocationInfoBarDelegate::Create(
     const std::string& display_languages,
     const std::string& accept_button_label) {
   RecordUmaEvent(GEOLOCATION_INFO_BAR_DELEGATE_EVENT_CREATE);
+  CHECK(infobar_service->web_contents());
   const content::NavigationEntry* committed_entry =
       infobar_service->web_contents()->GetController().GetLastCommittedEntry();
   GeolocationInfoBarDelegate* const delegate = new DelegateType(
@@ -133,14 +134,11 @@ InfoBarDelegate::Type GeolocationInfoBarDelegate::GetInfoBarType() const {
 }
 
 bool GeolocationInfoBarDelegate::ShouldExpireInternal(
-    const content::LoadCommittedDetails& details) const {
+    const NavigationDetails& details) const {
   // This implementation matches InfoBarDelegate::ShouldExpireInternal(), but
   // uses the unique ID we set in the constructor instead of that stored in the
   // base class.
-  return (contents_unique_id_ != details.entry->GetUniqueID()) ||
-      (content::PageTransitionStripQualifier(
-          details.entry->GetTransitionType()) ==
-              content::PAGE_TRANSITION_RELOAD);
+  return (contents_unique_id_ != details.entry_id) || details.is_reload;
 }
 
 base::string16 GeolocationInfoBarDelegate::GetMessageText() const {

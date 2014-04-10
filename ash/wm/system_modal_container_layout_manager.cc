@@ -21,13 +21,13 @@
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event.h"
 #include "ui/gfx/screen.h"
+#include "ui/keyboard/keyboard_controller.h"
 #include "ui/views/background.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/compound_event_filter.h"
 
 namespace ash {
-namespace internal {
 
 ////////////////////////////////////////////////////////////////////////////////
 // SystemModalContainerLayoutManager, public:
@@ -50,14 +50,7 @@ void SystemModalContainerLayoutManager::OnWindowResized() {
     modal_background_->SetBounds(
         Shell::GetScreen()->GetDisplayNearestWindow(container_).bounds());
   }
-  if (!modal_windows_.empty()) {
-    aura::Window::Windows::iterator it = modal_windows_.begin();
-    for (it = modal_windows_.begin(); it != modal_windows_.end(); ++it) {
-      gfx::Rect bounds = (*it)->bounds();
-      bounds.AdjustToFit(container_->bounds());
-      (*it)->SetBounds(bounds);
-    }
-  }
+  PositionDialogsAfterWorkAreaResize();
 }
 
 void SystemModalContainerLayoutManager::OnWindowAddedToLayout(
@@ -66,7 +59,7 @@ void SystemModalContainerLayoutManager::OnWindowAddedToLayout(
          child->type() == ui::wm::WINDOW_TYPE_NORMAL ||
          child->type() == ui::wm::WINDOW_TYPE_POPUP);
   DCHECK(
-      container_->id() != internal::kShellWindowId_LockSystemModalContainer ||
+      container_->id() != kShellWindowId_LockSystemModalContainer ||
       Shell::GetInstance()->session_state_delegate()->IsUserSessionBlocked());
 
   child->AddObserver(this);
@@ -120,6 +113,15 @@ void SystemModalContainerLayoutManager::OnWindowDestroying(
     modal_background_ = NULL;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// SystemModalContainerLayoutManager, Keyboard::KeybaordControllerObserver
+// implementation:
+
+void SystemModalContainerLayoutManager::OnKeyboardBoundsChanging(
+    const gfx::Rect& new_bounds) {
+  PositionDialogsAfterWorkAreaResize();
+}
+
 bool SystemModalContainerLayoutManager::CanWindowReceiveEvents(
     aura::Window* window) {
   // We could get when we're at lock screen and there is modal window at
@@ -133,7 +135,7 @@ bool SystemModalContainerLayoutManager::CanWindowReceiveEvents(
   // This container can not handle events if the screen is locked and it is not
   // above the lock screen layer (crbug.com/110920).
   if (Shell::GetInstance()->session_state_delegate()->IsUserSessionBlocked() &&
-      container_->id() < ash::internal::kShellWindowId_LockScreenContainer)
+      container_->id() < ash::kShellWindowId_LockScreenContainer)
     return true;
   return wm::GetActivatableWindow(window) == modal_window();
 }
@@ -161,6 +163,9 @@ void SystemModalContainerLayoutManager::CreateModalBackground() {
         views::Background::CreateSolidBackground(SK_ColorBLACK));
     modal_background_->SetContentsView(contents_view);
     modal_background_->GetNativeView()->layer()->SetOpacity(0.0f);
+    // There isn't always a keyboard controller.
+    if (keyboard::KeyboardController::GetInstance())
+      keyboard::KeyboardController::GetInstance()->AddObserver(this);
   }
 
   ui::ScopedLayerAnimationSettings settings(
@@ -176,6 +181,8 @@ void SystemModalContainerLayoutManager::DestroyModalBackground() {
   // modal_background_ can be NULL when a root window is shutting down
   // and OnWindowDestroying is called first.
   if (modal_background_) {
+    if (keyboard::KeyboardController::GetInstance())
+      keyboard::KeyboardController::GetInstance()->RemoveObserver(this);
     ::wm::ScopedHidingAnimationSettings settings(
         modal_background_->GetNativeView());
     modal_background_->Close();
@@ -188,8 +195,8 @@ void SystemModalContainerLayoutManager::DestroyModalBackground() {
 bool SystemModalContainerLayoutManager::IsModalBackground(
     aura::Window* window) {
   int id = window->parent()->id();
-  if (id != internal::kShellWindowId_SystemModalContainer &&
-      id != internal::kShellWindowId_LockSystemModalContainer)
+  if (id != kShellWindowId_SystemModalContainer &&
+      id != kShellWindowId_LockSystemModalContainer)
     return false;
   SystemModalContainerLayoutManager* layout_manager =
       static_cast<SystemModalContainerLayoutManager*>(
@@ -210,6 +217,10 @@ void SystemModalContainerLayoutManager::AddModalWindow(aura::Window* window) {
   modal_windows_.push_back(window);
   Shell::GetInstance()->CreateModalBackground(window);
   window->parent()->StackChildAtTop(window);
+
+  gfx::Rect target_bounds = window->bounds();
+  target_bounds.AdjustToFit(GetUsableDialogArea());
+  window->SetBounds(target_bounds);
 }
 
 void SystemModalContainerLayoutManager::RemoveModalWindow(
@@ -220,5 +231,36 @@ void SystemModalContainerLayoutManager::RemoveModalWindow(
     modal_windows_.erase(it);
 }
 
-}  // namespace internal
+void SystemModalContainerLayoutManager::PositionDialogsAfterWorkAreaResize() {
+  gfx::Rect valid_bounds = GetUsableDialogArea();
+
+  if (!modal_windows_.empty()) {
+    for (aura::Window::Windows::iterator it = modal_windows_.begin();
+         it != modal_windows_.end(); ++it) {
+      gfx::Rect bounds = (*it)->bounds();
+      bounds.AdjustToFit(valid_bounds);
+      (*it)->SetBounds(bounds);
+    }
+  }
+}
+
+gfx::Rect SystemModalContainerLayoutManager::GetUsableDialogArea() {
+  // Instead of resizing the system modal container, we move only the modal
+  // windows. This way we avoid flashing lines upon resize animation and if the
+  // keyboard will not fill left to right, the background is still covered.
+  gfx::Rect valid_bounds = container_->bounds();
+  keyboard::KeyboardController* keyboard_controller =
+      keyboard::KeyboardController::GetInstance();
+  if (keyboard_controller) {
+    gfx::Rect bounds = keyboard_controller->current_keyboard_bounds();
+    if (!bounds.IsEmpty()) {
+      DCHECK_EQ(valid_bounds.x(), bounds.x());
+      DCHECK_EQ(valid_bounds.right(), bounds.right());
+      DCHECK_LT(valid_bounds.y(), bounds.y());
+      valid_bounds.set_height(bounds.y() - valid_bounds.y());
+    }
+  }
+  return valid_bounds;
+}
+
 }  // namespace ash

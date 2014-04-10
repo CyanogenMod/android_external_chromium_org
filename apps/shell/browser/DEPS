@@ -14,4 +14,7 @@ include_rules = [
   "+content/shell/browser/shell_net_log.h",
 
   "+sync/api",
+
+  # Disallow views to keep the binary size down.
+  "-ui/views",
 ]

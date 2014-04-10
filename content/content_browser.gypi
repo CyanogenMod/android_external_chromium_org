@@ -364,6 +364,8 @@
     'browser/compositor/image_transport_factory.h',
     'browser/compositor/no_transport_image_transport_factory.cc',
     'browser/compositor/no_transport_image_transport_factory.h',
+    'browser/compositor/overlay_candidate_validator_ozone.cc',
+    'browser/compositor/overlay_candidate_validator_ozone.h',
     'browser/compositor/owned_mailbox.h',
     'browser/compositor/owned_mailbox.cc',
     'browser/compositor/reflector_impl.cc',
@@ -410,6 +412,8 @@
     'browser/devtools/render_view_devtools_agent_host.h',
     'browser/devtools/renderer_overrides_handler.cc',
     'browser/devtools/renderer_overrides_handler.h',
+    'browser/devtools/shared_worker_devtools_manager.cc',
+    'browser/devtools/shared_worker_devtools_manager.h',
     'browser/devtools/tethering_handler.h',
     'browser/devtools/tethering_handler.cc',
     'browser/devtools/worker_devtools_manager.cc',
@@ -658,6 +662,8 @@
     'browser/host_zoom_map_impl.cc',
     'browser/host_zoom_map_impl.h',
     'browser/indexed_db/indexed_db.h',
+    'browser/indexed_db/indexed_db_active_blob_registry.cc',
+    'browser/indexed_db/indexed_db_active_blob_registry.h',
     'browser/indexed_db/indexed_db_backing_store.cc',
     'browser/indexed_db/indexed_db_backing_store.h',
     'browser/indexed_db/indexed_db_blob_info.cc',
@@ -846,6 +852,8 @@
     'browser/profiler_controller_impl.h',
     'browser/profiler_message_filter.cc',
     'browser/profiler_message_filter.h',
+    'browser/push_messaging_message_filter.cc',
+    'browser/push_messaging_message_filter.h',
     'browser/quota_dispatcher_host.cc',
     'browser/quota_dispatcher_host.h',
     'browser/renderer_data_memoizing_store.h',
@@ -1162,15 +1170,17 @@
     'browser/service_worker/service_worker_context_wrapper.h',
     'browser/service_worker/service_worker_dispatcher_host.cc',
     'browser/service_worker/service_worker_dispatcher_host.h',
-    'browser/service_worker/service_worker_info.h',
+    'browser/service_worker/service_worker_fetch_dispatcher.cc',
+    'browser/service_worker/service_worker_fetch_dispatcher.h',
+    'browser/service_worker/service_worker_handle.cc',
+    'browser/service_worker/service_worker_handle.h',
     'browser/service_worker/service_worker_info.cc',
+    'browser/service_worker/service_worker_info.h',
     'browser/service_worker/service_worker_internals_ui.cc',
     'browser/service_worker/service_worker_internals_ui.h',
     'browser/service_worker/service_worker_job_coordinator.cc',
     'browser/service_worker/service_worker_job_coordinator.h',
     'browser/service_worker/service_worker_provider_host.cc',
-    'browser/service_worker/service_worker_fetch_dispatcher.cc',
-    'browser/service_worker/service_worker_fetch_dispatcher.h',
     'browser/service_worker/service_worker_provider_host.h',
     'browser/service_worker/service_worker_register_job_base.h',
     'browser/service_worker/service_worker_register_job.cc',
@@ -1395,18 +1405,6 @@
         'browser/gamepad/gamepad_platform_data_fetcher.cc',
       ]
     }],
-    ['use_mojo==1', {
-      'dependencies': [
-        '../mojo/mojo.gyp:mojo_bindings',
-        '../mojo/mojo.gyp:mojo_system',
-        'content_common_mojo_bindings',
-      ],
-    }, {  # use_mojo==0
-      'sources!': [
-        'browser/renderer_host/render_process_host_mojo_impl.cc',
-        'browser/renderer_host/render_process_host_mojo_impl.h',
-      ],
-    }],
     ['OS=="ios"', {
       'sources/': [
         # iOS only needs a small portion of content; exclude all the
@@ -1436,7 +1434,10 @@
     }, {  # OS!="ios"
       'dependencies': [
         'browser/devtools/devtools_resources.gyp:devtools_resources',
+        'content_common_mojo_bindings',
         '../cc/cc.gyp:cc',
+        '../mojo/mojo.gyp:mojo_bindings',
+        '../mojo/mojo.gyp:mojo_system',
         '../net/net.gyp:http_server',
         '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
         '../ui/surface/surface.gyp:surface',

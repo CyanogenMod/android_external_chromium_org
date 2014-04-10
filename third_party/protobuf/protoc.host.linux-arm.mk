@@ -3,17 +3,18 @@
 include $(CLEAR_VARS)
 
 LOCAL_MODULE_CLASS := EXECUTABLES
-LOCAL_MODULE := third_party_protobuf_protoc_host_gyp
+LOCAL_MODULE := third_party_protobuf_protoc_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 LOCAL_MODULE_STEM := protoc
 LOCAL_MODULE_SUFFIX := 
 LOCAL_MODULE_TAGS := optional
 LOCAL_IS_HOST_MODULE := true
-gyp_intermediate_dir := $(call local-intermediates-dir)
-gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
+LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
+gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
+gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_protobuf_protobuf_full_do_not_use_host_gyp,true)/third_party_protobuf_protobuf_full_do_not_use_host_gyp.a
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_protobuf_protobuf_full_do_not_use_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true)/third_party_protobuf_protobuf_full_do_not_use_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -207,7 +208,7 @@ LOCAL_LDFLAGS_Release := \
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
-	third_party_protobuf_protobuf_full_do_not_use_host_gyp
+	third_party_protobuf_protobuf_full_do_not_use_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true
@@ -216,11 +217,11 @@ LOCAL_SHARED_LIBRARIES :=
 
 # Add target alias to "gyp_all_modules" target.
 .PHONY: gyp_all_modules
-gyp_all_modules: third_party_protobuf_protoc_host_gyp
+gyp_all_modules: third_party_protobuf_protoc_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 
 # Alias gyp target name.
 .PHONY: protoc
-protoc: third_party_protobuf_protoc_host_gyp
+protoc: third_party_protobuf_protoc_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 
 LOCAL_MODULE_PATH := $(gyp_shared_intermediate_dir)
 include $(BUILD_HOST_EXECUTABLE)

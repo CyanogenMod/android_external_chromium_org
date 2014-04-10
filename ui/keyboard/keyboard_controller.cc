@@ -178,6 +178,9 @@ void CallbackAnimationObserver::OnLayerAnimationAborted(
   animator_->RemoveObserver(this);
 }
 
+// static
+KeyboardController* KeyboardController::instance_ = NULL;
+
 KeyboardController::KeyboardController(KeyboardControllerProxy* proxy)
     : proxy_(proxy),
       input_method_(NULL),
@@ -197,6 +200,18 @@ KeyboardController::~KeyboardController() {
     input_method_->RemoveObserver(this);
 }
 
+// static
+void KeyboardController::ResetInstance(KeyboardController* controller) {
+  if (instance_ && instance_ != controller)
+    delete instance_;
+  instance_ = controller;
+}
+
+// static
+KeyboardController* KeyboardController::GetInstance() {
+  return instance_;
+}
+
 aura::Window* KeyboardController::GetContainerWindow() {
   if (!container_.get()) {
     container_.reset(new aura::Window(
@@ -214,6 +229,7 @@ aura::Window* KeyboardController::GetContainerWindow() {
 
 void KeyboardController::NotifyKeyboardBoundsChanging(
     const gfx::Rect& new_bounds) {
+  current_keyboard_bounds_ = new_bounds;
   if (proxy_->HasKeyboardWindow() && proxy_->GetKeyboardWindow()->IsVisible()) {
     FOR_EACH_OBSERVER(KeyboardControllerObserver,
                       observer_list_,
@@ -332,13 +348,7 @@ void KeyboardController::OnShowImeIfNeeded() {
     keyboard->set_owned_by_parent(false);
   }
 
-  // Must be called after keyboard window is created. LoadSystemKeyboard and
-  // ReloadKeyboardIfNeeded depend on a keyboard web content which created when
-  // creating keyboard window.
-  if (type_ == ui::TEXT_INPUT_TYPE_PASSWORD)
-    proxy_->LoadSystemKeyboard();
-  else
-    proxy_->ReloadKeyboardIfNeeded();
+  proxy_->ReloadKeyboardIfNeeded();
 
   if (keyboard_visible_)
     return;

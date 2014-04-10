@@ -37,7 +37,7 @@ PasswordGenerationPopupControllerImpl::GetOrCreate(
     const gfx::RectF& bounds,
     const PasswordForm& form,
     int max_length,
-    PasswordManager* password_manager,
+    password_manager::PasswordManager* password_manager,
     PasswordGenerationPopupObserver* observer,
     content::WebContents* web_contents,
     gfx::NativeView container_view) {
@@ -67,7 +67,7 @@ PasswordGenerationPopupControllerImpl::PasswordGenerationPopupControllerImpl(
     const gfx::RectF& bounds,
     const PasswordForm& form,
     int max_length,
-    PasswordManager* password_manager,
+    password_manager::PasswordManager* password_manager,
     PasswordGenerationPopupObserver* observer,
     content::WebContents* web_contents,
     gfx::NativeView container_view)
@@ -301,16 +301,6 @@ bool PasswordGenerationPopupControllerImpl::AcceptSelectedLine() {
 
 void PasswordGenerationPopupControllerImpl::SelectionCleared() {
   PasswordSelected(false);
-}
-
-bool PasswordGenerationPopupControllerImpl::ShouldRepostEvent(
-    const ui::MouseEvent& event) {
-  return false;
-}
-
-bool PasswordGenerationPopupControllerImpl::ShouldHideOnOutsideClick() const {
-  // Will be hidden when focus changes anyway.
-  return false;
 }
 
 gfx::NativeView PasswordGenerationPopupControllerImpl::container_view() {

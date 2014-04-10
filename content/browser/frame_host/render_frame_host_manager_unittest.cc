@@ -371,7 +371,7 @@ TEST_F(RenderFrameHostManagerTest, FilterMessagesWhileSwappedOut) {
                         rvh()->GetRoutingID(), 0, icons)));
     EXPECT_TRUE(observer.favicon_received());
   }
-  // Create one more view in the same SiteInstance where dest_rvh2
+  // Create one more view in the same SiteInstance where ntp_rvh
   // exists so that it doesn't get deleted on navigation to another
   // site.
   static_cast<SiteInstanceImpl*>(ntp_rvh->GetSiteInstance())->
@@ -426,23 +426,24 @@ TEST_F(RenderFrameHostManagerTest, FilterMessagesWhileSwappedOut) {
   MockRenderProcessHost* ntp_process_host =
       static_cast<MockRenderProcessHost*>(ntp_rvh->GetProcess());
   ntp_process_host->sink().ClearMessages();
+  RenderFrameHost* ntp_rfh = ntp_rvh->GetMainFrame();
   const base::string16 msg = base::ASCIIToUTF16("Message");
   bool result = false;
   base::string16 unused;
-  ViewHostMsg_RunBeforeUnloadConfirm before_unload_msg(
-      rvh()->GetRoutingID(), kChromeURL, msg, false, &result, &unused);
+  FrameHostMsg_RunBeforeUnloadConfirm before_unload_msg(
+      ntp_rfh->GetRoutingID(), kChromeURL, msg, false, &result, &unused);
   // Enable pumping for check in BrowserMessageFilter::CheckCanDispatchOnUI.
   before_unload_msg.EnableMessagePumping();
-  EXPECT_TRUE(ntp_rvh->OnMessageReceived(before_unload_msg));
+  EXPECT_TRUE(ntp_rfh->OnMessageReceived(before_unload_msg));
   EXPECT_TRUE(ntp_process_host->sink().GetUniqueMessageMatching(IPC_REPLY_ID));
 
   // Also test RunJavaScriptMessage.
   ntp_process_host->sink().ClearMessages();
-  ViewHostMsg_RunJavaScriptMessage js_msg(
-      rvh()->GetRoutingID(), msg, msg, kChromeURL,
+  FrameHostMsg_RunJavaScriptMessage js_msg(
+      ntp_rfh->GetRoutingID(), msg, msg, kChromeURL,
       JAVASCRIPT_MESSAGE_TYPE_CONFIRM, &result, &unused);
   js_msg.EnableMessagePumping();
-  EXPECT_TRUE(ntp_rvh->OnMessageReceived(js_msg));
+  EXPECT_TRUE(ntp_rfh->OnMessageReceived(js_msg));
   EXPECT_TRUE(ntp_process_host->sink().GetUniqueMessageMatching(IPC_REPLY_ID));
 }
 
@@ -948,6 +949,50 @@ TEST_F(RenderFrameHostManagerTest, NavigateWithEarlyReNavigation) {
   // We should observe a notification.
   EXPECT_TRUE(
       notifications.Check1AndReset(NOTIFICATION_RENDER_VIEW_HOST_CHANGED));
+}
+
+// Test that navigation is not blocked when we make new navigation before
+// previous one has been committed. This is also a regression test for
+// http://crbug.com/104600.
+TEST_F(RenderFrameHostManagerTest, NewCrossNavigationBetweenSwapOutAndCommit) {
+  const GURL kUrl1("http://www.google.com/");
+  const GURL kUrl2("http://www.chromium.org/");
+  const GURL kUrl3("http://www.youtube.com/");
+
+  contents()->NavigateAndCommit(kUrl1);
+  TestRenderViewHost* rvh1 = test_rvh();
+
+  // Keep active_view_count nonzero so that no swapped out views in
+  // this SiteInstance get forcefully deleted.
+  static_cast<SiteInstanceImpl*>(rvh1->GetSiteInstance())->
+      increment_active_view_count();
+
+  // Navigate but don't commit.
+  contents()->GetController().LoadURL(
+      kUrl2, Referrer(), PAGE_TRANSITION_LINK, std::string());
+  EXPECT_TRUE(rvh1->is_waiting_for_beforeunload_ack());
+  contents()->ProceedWithCrossSiteNavigation();
+  EXPECT_FALSE(rvh1->is_waiting_for_beforeunload_ack());
+  StartCrossSiteTransition(contents());
+  EXPECT_TRUE(rvh1->IsWaitingForUnloadACK());
+
+  rvh1->OnSwappedOut(false);
+  EXPECT_EQ(RenderViewHostImpl::STATE_WAITING_FOR_COMMIT, rvh1->rvh_state());
+
+  TestRenderViewHost* rvh2 = pending_test_rvh();
+  EXPECT_TRUE(rvh2);
+  static_cast<SiteInstanceImpl*>(rvh2->GetSiteInstance())->
+      increment_active_view_count();
+
+  contents()->GetController().LoadURL(
+      kUrl3, Referrer(), PAGE_TRANSITION_LINK, std::string());
+  // Pending rvh2 is already deleted.
+  contents()->ProceedWithCrossSiteNavigation();
+
+  TestRenderViewHost* rvh3 = pending_test_rvh();
+  EXPECT_TRUE(rvh3);
+  // Navigation should be already unblocked by rvh1.
+  EXPECT_FALSE(rvh3->are_navigations_suspended());
 }
 
 // Tests WebUI creation.

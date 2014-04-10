@@ -6,6 +6,7 @@
 
 #include <cctype>
 
+#include "base/logging.h"
 #include "content/shell/renderer/test_runner/event_sender.h"
 #include "content/shell/renderer/test_runner/MockColorChooser.h"
 #include "content/shell/renderer/test_runner/MockWebSpeechInputController.h"
@@ -62,6 +63,20 @@ public:
 
 private:
     CallbackMethodType m_callback;
+};
+
+class ClosureTask : public WebMethodTask<WebTestProxyBase> {
+ public:
+  ClosureTask(WebTestProxyBase* object, base::Closure callback)
+      : WebMethodTask<WebTestProxyBase>(object), m_callback(callback) {}
+
+  virtual void runIfValid() OVERRIDE {
+    if (!m_callback.is_null())
+      m_callback.Run();
+  }
+
+ private:
+  base::Closure m_callback;
 };
 
 void printFrameDescription(WebTestDelegate* delegate, WebFrame* frame)
@@ -405,7 +420,7 @@ WebWidget* WebTestProxyBase::webWidget()
 
 WebView* WebTestProxyBase::webView()
 {
-    BLINK_ASSERT(m_webWidget);
+    DCHECK(m_webWidget);
     // TestRunner does not support popup widgets. So m_webWidget is always a WebView.
     return static_cast<WebView*>(m_webWidget);
 }
@@ -435,12 +450,6 @@ void WebTestProxyBase::reset()
 WebSpellCheckClient* WebTestProxyBase::spellCheckClient() const
 {
     return m_spellcheck.get();
-}
-
-WebColorChooser* WebTestProxyBase::createColorChooser(WebColorChooserClient* client, const blink::WebColor& color)
-{
-    // This instance is deleted by WebCore::ColorInputType
-    return new MockColorChooser(client, m_delegate, this);
 }
 
 WebColorChooser* WebTestProxyBase::createColorChooser(WebColorChooserClient* client, const blink::WebColor& color, const blink::WebVector<blink::WebColorSuggestion>& suggestions)
@@ -547,8 +556,8 @@ void WebTestProxyBase::setLogConsoleOutput(bool enabled)
 
 void WebTestProxyBase::paintRect(const WebRect& rect)
 {
-    BLINK_ASSERT(!m_isPainting);
-    BLINK_ASSERT(canvas());
+    DCHECK(!m_isPainting);
+    DCHECK(canvas());
     m_isPainting = true;
     float deviceScaleFactor = webView()->deviceScaleFactor();
     int scaledX = static_cast<int>(static_cast<float>(rect.x) * deviceScaleFactor);
@@ -588,13 +597,13 @@ void WebTestProxyBase::paintInvalidatedRegion()
             continue;
         paintRect(rect);
     }
-    BLINK_ASSERT(m_paintRect.isEmpty());
+    DCHECK(m_paintRect.isEmpty());
 }
 
 void WebTestProxyBase::paintPagesWithBoundaries()
 {
-    BLINK_ASSERT(!m_isPainting);
-    BLINK_ASSERT(canvas());
+    DCHECK(!m_isPainting);
+    DCHECK(canvas());
     m_isPainting = true;
 
     WebSize pageSizeInPixels = webWidget()->size();
@@ -633,26 +642,26 @@ SkCanvas* WebTestProxyBase::canvas()
     return m_canvas.get();
 }
 
-// Paints the entire canvas a semi-transparent black (grayish). This is used
-// by the layout tests in fast/repaint. The alpha value matches upstream.
-void WebTestProxyBase::displayRepaintMask()
-{
-    canvas()->drawARGB(167, 0, 0, 0);
-}
-
-void WebTestProxyBase::display()
+void WebTestProxyBase::display(base::Closure callback)
 {
     const blink::WebSize& size = webWidget()->size();
     WebRect rect(0, 0, size.width, size.height);
     m_paintRect = rect;
     paintInvalidatedRegion();
-    displayRepaintMask();
+
+    if (!callback.is_null())
+        callback.Run();
 }
 
-void WebTestProxyBase::displayInvalidatedRegion()
+void WebTestProxyBase::displayAsyncThen(base::Closure callback)
 {
-    paintInvalidatedRegion();
-    displayRepaintMask();
+  // TODO(enne): When compositing, this should invoke a real rAF, paint,
+  // and commit.  For now, just make sure that displayAsync is actually
+  // async so that callers can't depend on synchronous behavior.
+  m_delegate->postTask(new ClosureTask(
+      this,
+      base::Bind(
+          &WebTestProxyBase::display, base::Unretained(this), callback)));
 }
 
 void WebTestProxyBase::discardBackingStore()
@@ -670,7 +679,7 @@ WebMIDIClientMock* WebTestProxyBase::midiClientMock()
 #if ENABLE_INPUT_SPEECH
 MockWebSpeechInputController* WebTestProxyBase::speechInputControllerMock()
 {
-    BLINK_ASSERT(m_speechInputController.get());
+    DCHECK(m_speechInputController.get());
     return m_speechInputController.get();
 }
 #endif
@@ -871,7 +880,7 @@ void WebTestProxyBase::postAccessibilityEvent(const blink::WebAXObject& obj, bli
     }
 }
 
-void WebTestProxyBase::startDragging(WebFrame*, const WebDragData& data, WebDragOperationsMask mask, const WebImage&, const WebPoint&)
+void WebTestProxyBase::startDragging(WebLocalFrame*, const WebDragData& data, WebDragOperationsMask mask, const WebImage&, const WebPoint&)
 {
     // When running a test, we need to fake a drag drop operation otherwise
     // Windows waits for real mouse events to know when the drag is over.
@@ -893,7 +902,7 @@ void WebTestProxyBase::didChangeContents()
         m_delegate->printMessage("EDITING DELEGATE: webViewDidChange:WebViewDidChangeNotification\n");
 }
 
-bool WebTestProxyBase::createView(WebFrame*, const WebURLRequest& request, const WebWindowFeatures&, const WebString&, WebNavigationPolicy, bool)
+bool WebTestProxyBase::createView(WebLocalFrame*, const WebURLRequest& request, const WebWindowFeatures&, const WebString&, WebNavigationPolicy, bool)
 {
     if (!m_testInterfaces->testRunner()->canOpenWindows())
         return false;
@@ -902,7 +911,7 @@ bool WebTestProxyBase::createView(WebFrame*, const WebURLRequest& request, const
     return true;
 }
 
-WebPlugin* WebTestProxyBase::createPlugin(WebFrame* frame, const WebPluginParams& params)
+WebPlugin* WebTestProxyBase::createPlugin(WebLocalFrame* frame, const WebPluginParams& params)
 {
     if (TestPlugin::isSupportedMimeType(params.mimeType))
         return TestPlugin::create(frame, params, m_delegate);
@@ -922,7 +931,7 @@ void WebTestProxyBase::didStopLoading()
         m_delegate->printMessage("postProgressFinishedNotification\n");
 }
 
-void WebTestProxyBase::showContextMenu(WebFrame*, const WebContextMenuData& contextMenuData)
+void WebTestProxyBase::showContextMenu(WebLocalFrame*, const WebContextMenuData& contextMenuData)
 {
     m_testInterfaces->eventSender()->SetContextMenuData(contextMenuData);
 }
@@ -935,7 +944,7 @@ WebUserMediaClient* WebTestProxyBase::userMediaClient()
 }
 
 // Simulate a print by going into print mode and then exit straight away.
-void WebTestProxyBase::printPage(WebFrame* frame)
+void WebTestProxyBase::printPage(WebLocalFrame* frame)
 {
     WebSize pageSizeInPixels = webWidget()->size();
     if (pageSizeInPixels.isEmpty())
@@ -964,7 +973,7 @@ WebSpeechInputController* WebTestProxyBase::speechInputController(WebSpeechInput
     }
     return m_speechInputController.get();
 #else
-    BLINK_ASSERT(listener);
+    DCHECK(listener);
     return 0;
 #endif
 }
@@ -1019,7 +1028,7 @@ bool WebTestProxyBase::isChooserShown()
     return 0 < m_chooserCount;
 }
 
-void WebTestProxyBase::didStartProvisionalLoad(WebFrame* frame)
+void WebTestProxyBase::didStartProvisionalLoad(WebLocalFrame* frame)
 {
     if (!m_testInterfaces->testRunner()->topLoadingFrame())
         m_testInterfaces->testRunner()->setTopLoadingFrame(frame, false);
@@ -1033,7 +1042,7 @@ void WebTestProxyBase::didStartProvisionalLoad(WebFrame* frame)
         printFrameUserGestureStatus(m_delegate, frame, " - in didStartProvisionalLoadForFrame\n");
 }
 
-void WebTestProxyBase::didReceiveServerRedirectForProvisionalLoad(WebFrame* frame)
+void WebTestProxyBase::didReceiveServerRedirectForProvisionalLoad(WebLocalFrame* frame)
 {
     if (m_testInterfaces->testRunner()->shouldDumpFrameLoadCallbacks()) {
         printFrameDescription(m_delegate, frame);
@@ -1041,7 +1050,7 @@ void WebTestProxyBase::didReceiveServerRedirectForProvisionalLoad(WebFrame* fram
     }
 }
 
-bool WebTestProxyBase::didFailProvisionalLoad(WebFrame* frame, const WebURLError&)
+bool WebTestProxyBase::didFailProvisionalLoad(WebLocalFrame* frame, const WebURLError&)
 {
     if (m_testInterfaces->testRunner()->shouldDumpFrameLoadCallbacks()) {
         printFrameDescription(m_delegate, frame);
@@ -1051,7 +1060,7 @@ bool WebTestProxyBase::didFailProvisionalLoad(WebFrame* frame, const WebURLError
     return !frame->provisionalDataSource();
 }
 
-void WebTestProxyBase::didCommitProvisionalLoad(WebFrame* frame, bool)
+void WebTestProxyBase::didCommitProvisionalLoad(WebLocalFrame* frame, bool)
 {
     if (m_testInterfaces->testRunner()->shouldDumpFrameLoadCallbacks()) {
         printFrameDescription(m_delegate, frame);
@@ -1059,7 +1068,7 @@ void WebTestProxyBase::didCommitProvisionalLoad(WebFrame* frame, bool)
     }
 }
 
-void WebTestProxyBase::didReceiveTitle(WebFrame* frame, const WebString& title, WebTextDirection direction)
+void WebTestProxyBase::didReceiveTitle(WebLocalFrame* frame, const WebString& title, WebTextDirection direction)
 {
     WebCString title8 = title.utf8();
 
@@ -1072,7 +1081,7 @@ void WebTestProxyBase::didReceiveTitle(WebFrame* frame, const WebString& title, 
         m_delegate->printMessage(string("TITLE CHANGED: '") + title8.data() + "'\n");
 }
 
-void WebTestProxyBase::didChangeIcon(WebFrame* frame, WebIconURL::Type)
+void WebTestProxyBase::didChangeIcon(WebLocalFrame* frame, WebIconURL::Type)
 {
     if (m_testInterfaces->testRunner()->shouldDumpIconChanges()) {
         printFrameDescription(m_delegate, frame);
@@ -1080,7 +1089,7 @@ void WebTestProxyBase::didChangeIcon(WebFrame* frame, WebIconURL::Type)
     }
 }
 
-void WebTestProxyBase::didFinishDocumentLoad(WebFrame* frame)
+void WebTestProxyBase::didFinishDocumentLoad(WebLocalFrame* frame)
 {
     if (m_testInterfaces->testRunner()->shouldDumpFrameLoadCallbacks()) {
         printFrameDescription(m_delegate, frame);
@@ -1096,7 +1105,7 @@ void WebTestProxyBase::didFinishDocumentLoad(WebFrame* frame)
     }
 }
 
-void WebTestProxyBase::didHandleOnloadEvents(WebFrame* frame)
+void WebTestProxyBase::didHandleOnloadEvents(WebLocalFrame* frame)
 {
     if (m_testInterfaces->testRunner()->shouldDumpFrameLoadCallbacks()) {
         printFrameDescription(m_delegate, frame);
@@ -1104,7 +1113,7 @@ void WebTestProxyBase::didHandleOnloadEvents(WebFrame* frame)
     }
 }
 
-void WebTestProxyBase::didFailLoad(WebFrame* frame, const WebURLError&)
+void WebTestProxyBase::didFailLoad(WebLocalFrame* frame, const WebURLError&)
 {
     if (m_testInterfaces->testRunner()->shouldDumpFrameLoadCallbacks()) {
         printFrameDescription(m_delegate, frame);
@@ -1113,7 +1122,7 @@ void WebTestProxyBase::didFailLoad(WebFrame* frame, const WebURLError&)
     locationChangeDone(frame);
 }
 
-void WebTestProxyBase::didFinishLoad(WebFrame* frame)
+void WebTestProxyBase::didFinishLoad(WebLocalFrame* frame)
 {
     if (m_testInterfaces->testRunner()->shouldDumpFrameLoadCallbacks()) {
         printFrameDescription(m_delegate, frame);
@@ -1122,19 +1131,19 @@ void WebTestProxyBase::didFinishLoad(WebFrame* frame)
     locationChangeDone(frame);
 }
 
-void WebTestProxyBase::didDetectXSS(WebFrame*, const WebURL&, bool)
+void WebTestProxyBase::didDetectXSS(WebLocalFrame*, const WebURL&, bool)
 {
     if (m_testInterfaces->testRunner()->shouldDumpFrameLoadCallbacks())
         m_delegate->printMessage("didDetectXSS\n");
 }
 
-void WebTestProxyBase::didDispatchPingLoader(WebFrame*, const WebURL& url)
+void WebTestProxyBase::didDispatchPingLoader(WebLocalFrame*, const WebURL& url)
 {
     if (m_testInterfaces->testRunner()->shouldDumpPingLoaderCallbacks())
         m_delegate->printMessage(string("PingLoader dispatched to '") + URLDescription(url).c_str() + "'.\n");
 }
 
-void WebTestProxyBase::willRequestResource(WebFrame* frame, const blink::WebCachedURLRequest& request)
+void WebTestProxyBase::willRequestResource(WebLocalFrame* frame, const blink::WebCachedURLRequest& request)
 {
     if (m_testInterfaces->testRunner()->shouldDumpResourceRequestCallbacks()) {
         printFrameDescription(m_delegate, frame);
@@ -1143,7 +1152,7 @@ void WebTestProxyBase::willRequestResource(WebFrame* frame, const blink::WebCach
     }
 }
 
-void WebTestProxyBase::willSendRequest(WebFrame*, unsigned identifier, blink::WebURLRequest& request, const blink::WebURLResponse& redirectResponse)
+void WebTestProxyBase::willSendRequest(WebLocalFrame*, unsigned identifier, blink::WebURLRequest& request, const blink::WebURLResponse& redirectResponse)
 {
     // Need to use GURL for host() and SchemeIs()
     GURL url = request.url();
@@ -1152,7 +1161,7 @@ void WebTestProxyBase::willSendRequest(WebFrame*, unsigned identifier, blink::We
     GURL mainDocumentURL = request.firstPartyForCookies();
 
     if (redirectResponse.isNull() && (m_testInterfaces->testRunner()->shouldDumpResourceLoadCallbacks() || m_testInterfaces->testRunner()->shouldDumpResourcePriorities())) {
-        BLINK_ASSERT(m_resourceIdentifierMap.find(identifier) == m_resourceIdentifierMap.end());
+        DCHECK(m_resourceIdentifierMap.find(identifier) == m_resourceIdentifierMap.end());
         m_resourceIdentifierMap[identifier] = descriptionSuitableForTestResult(requestURL);
     }
 
@@ -1200,7 +1209,7 @@ void WebTestProxyBase::willSendRequest(WebFrame*, unsigned identifier, blink::We
     request.setURL(m_delegate->rewriteLayoutTestsURL(request.url().spec()));
 }
 
-void WebTestProxyBase::didReceiveResponse(WebFrame*, unsigned identifier, const blink::WebURLResponse& response)
+void WebTestProxyBase::didReceiveResponse(WebLocalFrame*, unsigned identifier, const blink::WebURLResponse& response)
 {
     if (m_testInterfaces->testRunner()->shouldDumpResourceLoadCallbacks()) {
         if (m_resourceIdentifierMap.find(identifier) == m_resourceIdentifierMap.end())
@@ -1222,7 +1231,7 @@ void WebTestProxyBase::didReceiveResponse(WebFrame*, unsigned identifier, const 
     }
 }
 
-void WebTestProxyBase::didChangeResourcePriority(WebFrame*, unsigned identifier, const blink::WebURLRequest::Priority& priority)
+void WebTestProxyBase::didChangeResourcePriority(WebLocalFrame*, unsigned identifier, const blink::WebURLRequest::Priority& priority, int intra_priority_value)
 {
     if (m_testInterfaces->testRunner()->shouldDumpResourcePriorities()) {
         if (m_resourceIdentifierMap.find(identifier) == m_resourceIdentifierMap.end())
@@ -1231,11 +1240,14 @@ void WebTestProxyBase::didChangeResourcePriority(WebFrame*, unsigned identifier,
             m_delegate->printMessage(m_resourceIdentifierMap[identifier]);
         m_delegate->printMessage(" changed priority to ");
         m_delegate->printMessage(PriorityDescription(priority));
+        char buffer[64];
+        snprintf(buffer, sizeof(buffer), ", intra_priority %d", intra_priority_value);
+        m_delegate->printMessage(buffer);
         m_delegate->printMessage("\n");
     }
 }
 
-void WebTestProxyBase::didFinishResourceLoad(WebFrame*, unsigned identifier)
+void WebTestProxyBase::didFinishResourceLoad(WebLocalFrame*, unsigned identifier)
 {
     if (m_testInterfaces->testRunner()->shouldDumpResourceLoadCallbacks()) {
         if (m_resourceIdentifierMap.find(identifier) == m_resourceIdentifierMap.end())
@@ -1289,29 +1301,6 @@ void WebTestProxyBase::didAddMessageToConsole(const WebConsoleMessage& message, 
     m_delegate->printMessage(string("\n"));
 }
 
-void WebTestProxyBase::runModalAlertDialog(WebFrame*, const WebString& message)
-{
-    m_delegate->printMessage(string("ALERT: ") + message.utf8().data() + "\n");
-}
-
-bool WebTestProxyBase::runModalConfirmDialog(WebFrame*, const WebString& message)
-{
-    m_delegate->printMessage(string("CONFIRM: ") + message.utf8().data() + "\n");
-    return true;
-}
-
-bool WebTestProxyBase::runModalPromptDialog(WebFrame* frame, const WebString& message, const WebString& defaultValue, WebString*)
-{
-    m_delegate->printMessage(string("PROMPT: ") + message.utf8().data() + ", default text: " + defaultValue.utf8().data() + "\n");
-    return true;
-}
-
-bool WebTestProxyBase::runModalBeforeUnloadDialog(WebFrame*, const WebString& message)
-{
-    m_delegate->printMessage(string("CONFIRM NAVIGATION: ") + message.utf8().data() + "\n");
-    return !m_testInterfaces->testRunner()->shouldStayOnPageAfterHandlingBeforeUnload();
-}
-
 void WebTestProxyBase::locationChangeDone(WebFrame* frame)
 {
     if (frame != m_testInterfaces->testRunner()->topLoadingFrame())
@@ -1319,7 +1308,7 @@ void WebTestProxyBase::locationChangeDone(WebFrame* frame)
     m_testInterfaces->testRunner()->setTopLoadingFrame(frame, true);
 }
 
-WebNavigationPolicy WebTestProxyBase::decidePolicyForNavigation(WebFrame*, WebDataSource::ExtraData*, const WebURLRequest& request, WebNavigationType type, WebNavigationPolicy defaultPolicy, bool isRedirect)
+WebNavigationPolicy WebTestProxyBase::decidePolicyForNavigation(WebLocalFrame*, WebDataSource::ExtraData*, const WebURLRequest& request, WebNavigationType type, WebNavigationPolicy defaultPolicy, bool isRedirect)
 {
     WebNavigationPolicy result;
     if (!m_testInterfaces->testRunner()->policyDelegateEnabled())
@@ -1336,7 +1325,7 @@ WebNavigationPolicy WebTestProxyBase::decidePolicyForNavigation(WebFrame*, WebDa
     return result;
 }
 
-bool WebTestProxyBase::willCheckAndDispatchMessageEvent(WebFrame*, WebFrame*, WebSecurityOrigin, WebDOMMessageEvent)
+bool WebTestProxyBase::willCheckAndDispatchMessageEvent(WebLocalFrame*, WebFrame*, WebSecurityOrigin, WebDOMMessageEvent)
 {
     if (m_testInterfaces->testRunner()->shouldInterceptPostMessage()) {
         m_delegate->printMessage("intercepted postMessage\n");

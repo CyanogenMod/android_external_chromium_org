@@ -14,6 +14,7 @@
 #include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_transition_types.h"
 
 class GURL;
@@ -24,10 +25,6 @@ struct FrameMsg_Navigate_Params;
 namespace base {
 class FilePath;
 class ListValue;
-}
-
-namespace gfx {
-class Point;
 }
 
 namespace content {
@@ -58,22 +55,6 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   virtual bool IsCrossProcessSubframe() OVERRIDE;
   virtual GURL GetLastCommittedURL() OVERRIDE;
   virtual gfx::NativeView GetNativeView() OVERRIDE;
-  virtual void DispatchBeforeUnload(bool for_cross_site_transition) OVERRIDE;
-  virtual void NotifyContextMenuClosed(
-      const CustomContextMenuContext& context) OVERRIDE;
-  virtual void ExecuteCustomContextMenuCommand(
-      int action, const CustomContextMenuContext& context) OVERRIDE;
-  virtual void Undo() OVERRIDE;
-  virtual void Redo() OVERRIDE;
-  virtual void Cut() OVERRIDE;
-  virtual void Copy() OVERRIDE;
-  virtual void CopyToFindPboard() OVERRIDE;
-  virtual void Paste() OVERRIDE;
-  virtual void PasteAndMatchStyle() OVERRIDE;
-  virtual void Delete() OVERRIDE;
-  virtual void SelectAll() OVERRIDE;
-  virtual void Unselect() OVERRIDE;
-  virtual void InsertCSS(const std::string& css) OVERRIDE;
   virtual void ExecuteJavaScript(
       const base::string16& javascript) OVERRIDE;
   virtual void ExecuteJavaScript(
@@ -161,12 +142,21 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   // Load the specified URL; this is a shortcut for Navigate().
   void NavigateToURL(const GURL& url);
 
-  // Requests the renderer to select the region between two points.
-  void SelectRange(const gfx::Point& start, const gfx::Point& end);
+  // Runs the beforeunload handler for this frame. |for_cross_site_transition|
+  // indicates whether this call is for the current frame during a cross-process
+  // navigation. False means we're closing the entire tab.
+  void DispatchBeforeUnload(bool for_cross_site_transition);
 
   // Deletes the current selection plus the specified number of characters
   // before and after the selection or caret.
   void ExtendSelectionAndDelete(size_t before, size_t after);
+
+  // Notifies the RenderFrame that the JavaScript message that was shown was
+  // closed by the user.
+  void JavaScriptDialogClosed(IPC::Message* reply_msg,
+                              bool success,
+                              const base::string16& user_input,
+                              bool dialog_was_suppressed);
 
  protected:
   friend class RenderFrameHostFactory;
@@ -186,6 +176,10 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   friend class TestRenderViewHost;
 
   // IPC Message handlers.
+  void OnAddMessageToConsole(int32 level,
+                             const base::string16& message,
+                             int32 line_no,
+                             const base::string16& source_id);
   void OnDetach();
   void OnFrameFocused();
   void OnOpenURL(const FrameHostMsg_OpenURL_Params& params);
@@ -209,6 +203,15 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   void OnSwapOutACK();
   void OnContextMenu(const ContextMenuParams& params);
   void OnJavaScriptExecuteResponse(int id, const base::ListValue& result);
+  void OnRunJavaScriptMessage(const base::string16& message,
+                              const base::string16& default_prompt,
+                              const GURL& frame_url,
+                              JavaScriptMessageType type,
+                              IPC::Message* reply_msg);
+  void OnRunBeforeUnloadConfirm(const GURL& frame_url,
+                                const base::string16& message,
+                                bool is_reload,
+                                IPC::Message* reply_msg);
 
   // Returns whether the given URL is allowed to commit in the current process.
   // This is a more conservative check than RenderProcessHost::FilterURL, since

@@ -39,9 +39,7 @@ blink::WebLayer* WebExternalTextureLayerImpl::layer() { return layer_.get(); }
 
 void WebExternalTextureLayerImpl::clearTexture() {
   TextureLayer *layer = static_cast<TextureLayer*>(layer_->layer());
-  layer->WillModifyTexture();
-  layer->SetTextureMailbox(cc::TextureMailbox(),
-                           scoped_ptr<cc::SingleReleaseCallback>());
+  layer->ClearTexture();
 }
 
 void WebExternalTextureLayerImpl::setOpaque(bool opaque) {
@@ -60,11 +58,6 @@ void WebExternalTextureLayerImpl::setBlendBackgroundColor(bool blend) {
 
 void WebExternalTextureLayerImpl::setRateLimitContext(bool rate_limit) {
   static_cast<TextureLayer*>(layer_->layer())->SetRateLimitContext(rate_limit);
-}
-
-unsigned WebExternalTextureLayerImpl::PrepareTexture() {
-  NOTREACHED();
-  return 0;
 }
 
 bool WebExternalTextureLayerImpl::PrepareTextureMailbox(

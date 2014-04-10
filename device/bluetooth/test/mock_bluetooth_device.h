@@ -10,6 +10,7 @@
 #include "base/strings/string16.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_out_of_band_pairing_data.h"
+#include "device/bluetooth/bluetooth_uuid.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace device {
@@ -26,6 +27,8 @@ class MockBluetoothDevice : public BluetoothDevice {
                       bool connected);
   virtual ~MockBluetoothDevice();
 
+  MOCK_METHOD1(AddObserver, void(BluetoothDevice::Observer*));
+  MOCK_METHOD1(RemoveObserver, void(BluetoothDevice::Observer*));
   MOCK_CONST_METHOD0(GetBluetoothClass, uint32());
   MOCK_CONST_METHOD0(GetDeviceName, std::string());
   MOCK_CONST_METHOD0(GetAddress, std::string());
@@ -58,12 +61,12 @@ class MockBluetoothDevice : public BluetoothDevice {
                     const BluetoothDevice::ErrorCallback& error_callback));
   MOCK_METHOD1(Forget, void(const BluetoothDevice::ErrorCallback&));
   MOCK_METHOD2(ConnectToService,
-               void(const std::string&,
+               void(const BluetoothUUID&,
                     const BluetoothDevice::SocketCallback&));
   MOCK_METHOD3(ConnectToProfile,
-               void(BluetoothProfile*,
-                    const base::Closure&,
-                    const BluetoothDevice::ErrorCallback&));
+               void(BluetoothProfile* profile,
+                    const base::Closure& callback,
+                    const ConnectToProfileErrorCallback& error_callback));
 
   MOCK_METHOD3(SetOutOfBandPairingData,
       void(const BluetoothOutOfBandPairingData& data,

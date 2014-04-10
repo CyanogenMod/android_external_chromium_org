@@ -72,6 +72,8 @@ class SyncBackendHostMock : public SyncBackendHost {
 
   virtual syncer::UserShare* GetUserShare() const OVERRIDE;
 
+  virtual syncer::SyncCoreProxy GetSyncCoreProxy() OVERRIDE;
+
   virtual Status GetDetailedStatus() OVERRIDE;
 
   virtual syncer::sessions::SyncSessionSnapshot
@@ -95,6 +97,11 @@ class SyncBackendHostMock : public SyncBackendHost {
 
   virtual void RequestBufferedProtocolEventsAndEnableForwarding() OVERRIDE;
   virtual void DisableProtocolEventForwarding() OVERRIDE;
+
+  virtual void GetAllNodesForTypes(
+      syncer::ModelTypeSet types,
+      base::Callback<void(const std::vector<syncer::ModelType>& type,
+                          ScopedVector<base::ListValue>) > callback) OVERRIDE;
 
   virtual base::MessageLoop* GetSyncLoopForTesting() OVERRIDE;
 

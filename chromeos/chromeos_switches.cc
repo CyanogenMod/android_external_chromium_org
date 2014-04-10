@@ -183,14 +183,8 @@ const char kSmsTestMessages[]               = "sms-test-messages";
 // This option is for testing the chromeos build of chrome on the desktop only.
 const char kStubCrosSettings[]              = "stub-cros-settings";
 
-// Disables user image sync.
-const char kDisableUserImageSync[]          = "disable-user-image-sync";
-
 // Disables SAML sigin support.
 const char kDisableSamlSignin[]             = "disable-saml-signin";
-
-// Overrides the manifest of the GAIA auth extension with the given file.
-const char kGAIAAuthExtensionManifest[]     = "gaia-auth-extension-manifest";
 
 // Disables new first-run overlay UI.
 const char kDisableFirstRunUI[] = "disable-first-run-ui";
@@ -203,9 +197,6 @@ const char kForceFirstRunUI[] = "force-first-run-ui";
 
 // Enables testing for auto update UI.
 const char kTestAutoUpdateUI[] = "test-auto-update-ui";
-
-// Enables features required for supervised user sync,
-const char kEnableSupervisedPasswordSync[] = "enable-supervised-password-sync";
 
 }  // namespace switches
 }  // namespace chromeos

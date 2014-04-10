@@ -120,6 +120,8 @@ class SYNC_EXPORT Directory {
     // opaque to the client. This is the serialization of a message of type
     // ChipBag defined in sync.proto. It can contains NULL characters.
     std::string bag_of_chips;
+    // The per-datatype context.
+    sync_pb::DataTypeContext datatype_context[MODEL_TYPE_COUNT];
   };
 
   // What the Directory needs on initialization to create itself and its Kernel.
@@ -195,6 +197,14 @@ class SYNC_EXPORT Directory {
   // holding kernel mutex.
   int64 GetTransactionVersion(ModelType type) const;
   void IncrementTransactionVersion(ModelType type);
+
+  // Getter/setters for the per datatype context.
+  void GetDataTypeContext(BaseTransaction* trans,
+                          ModelType type,
+                          sync_pb::DataTypeContext* context) const;
+  void SetDataTypeContext(BaseWriteTransaction* trans,
+                          ModelType type,
+                          const sync_pb::DataTypeContext& context);
 
   ModelTypeSet InitialSyncEndedTypes();
   bool InitialSyncEndedForType(ModelType type);
@@ -327,7 +337,10 @@ class SYNC_EXPORT Directory {
   void CollectMetaHandleCounts(std::vector<int>* num_entries_by_type,
                                std::vector<int>* num_to_delete_entries_by_type);
 
-  scoped_ptr<base::ListValue> GetAllNodeDetails(BaseTransaction* trans);
+  // Returns a ListValue serialization of all nodes for the given type.
+  scoped_ptr<base::ListValue> GetNodeDetailsForType(
+      BaseTransaction* trans,
+      ModelType type);
 
   // Sets the level of invariant checking performed after transactions.
   void SetInvariantCheckLevel(InvariantCheckLevel check_level);
@@ -364,6 +377,11 @@ class SYNC_EXPORT Directory {
   virtual bool PurgeEntriesWithTypeIn(ModelTypeSet disabled_types,
                                       ModelTypeSet types_to_journal,
                                       ModelTypeSet types_to_unapply);
+
+  // Resets the base_versions and server_versions of all synced entities
+  // associated with |type| to 1.
+  // WARNING! This can be slow, as it iterates over all entries for a type.
+  bool ResetVersionsForType(BaseWriteTransaction* trans, ModelType type);
 
  protected:  // for friends, mainly used by Entry constructors
   virtual EntryKernel* GetEntryByHandle(int64 handle);

@@ -35,6 +35,13 @@
     'public/app/startup_helper_win.h',
   ],
   'conditions': [
+    # TODO(dmikurube): Kill {linux|android}_use_tcmalloc. http://crbug.com/345554
+    ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and ((OS=="linux" and os_posix==1 and use_aura==1 and linux_use_tcmalloc==1) or (OS=="android" and android_use_tcmalloc==1)))', {
+      'dependencies': [
+        # This is needed by app/content_main_runner.cc
+        '../base/allocator/allocator.gyp:allocator',
+      ],
+    }],
     ['OS=="win"', {
       'dependencies': [
         '../sandbox/sandbox.gyp:sandbox',
@@ -55,14 +62,10 @@
     ['OS=="ios"', {
       'sources!': [
         'app/content_main.cc',
-      ],
-    }],
-    ['use_mojo==0', {
-      'sources!': [
         'app/mojo/mojo_init.cc',
         'app/mojo/mojo_init.h',
       ],
-    }, {
+    }, {  # OS!="ios"
       'dependencies': [
         '../mojo/mojo.gyp:mojo_environment_chromium',
         '../mojo/mojo.gyp:mojo_service_manager',

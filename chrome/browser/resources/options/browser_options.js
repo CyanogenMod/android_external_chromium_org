@@ -204,9 +204,13 @@ cr.define('options', function() {
       if (cr.isChromeOS) {
         $('keyboard-settings-button').onclick = function(evt) {
           OptionsPage.navigateToPage('keyboard-overlay');
+          chrome.send('coreOptionsUserMetricsAction',
+                      ['Options_ShowKeyboardSettings']);
         };
         $('pointer-settings-button').onclick = function(evt) {
           OptionsPage.navigateToPage('pointer-overlay');
+          chrome.send('coreOptionsUserMetricsAction',
+                      ['Options_ShowTouchpadSettings']);
         };
       }
 
@@ -218,11 +222,6 @@ cr.define('options', function() {
       };
       $('default-search-engine').addEventListener('change',
           this.setDefaultSearchEngine_);
-      // Without this, the bubble would overlap the uber frame navigation pane
-      // and would not get mouse event as explained in crbug.com/311421.
-      document.querySelector(
-          '#default-search-engine + .controlled-setting-indicator').location =
-              cr.ui.ArrowLocation.TOP_START;
 
       // Users section.
       if (loadTimeData.valueExists('profilesInfo')) {
@@ -438,14 +437,13 @@ cr.define('options', function() {
       $('downloadLocationChangeButton').onclick = function(event) {
         chrome.send('selectDownloadLocation');
       };
-      if (!cr.isChromeOS) {
-        $('autoOpenFileTypesResetToDefault').onclick = function(event) {
-          chrome.send('autoOpenFileTypesAction');
-        };
-      } else {
+      if (cr.isChromeOS) {
         $('disable-drive-row').hidden =
             UIAccountTweaks.loggedInAsLocallyManagedUser();
       }
+      $('autoOpenFileTypesResetToDefault').onclick = function(event) {
+        chrome.send('autoOpenFileTypesAction');
+      };
 
       // HTTPS/SSL section.
       if (cr.isWindows || cr.isMac) {
@@ -460,29 +458,8 @@ cr.define('options', function() {
         };
       }
 
-      // Cloud Print section.
-      // 'cloudPrintProxyEnabled' is true for Chrome branded builds on
-      // certain platforms, or could be enabled by a lab.
-      if (!cr.isChromeOS) {
-        $('cloudPrintConnectorSetupButton').onclick = function(event) {
-          if ($('cloudPrintManageButton').style.display == 'none') {
-            // Disable the button, set its text to the intermediate state.
-            $('cloudPrintConnectorSetupButton').textContent =
-              loadTimeData.getString('cloudPrintConnectorEnablingButton');
-            $('cloudPrintConnectorSetupButton').disabled = true;
-            chrome.send('showCloudPrintSetupDialog');
-          } else {
-            chrome.send('disableCloudPrintConnector');
-          }
-        };
-      }
-      $('cloudPrintManageButton').onclick = function(event) {
-        chrome.send('showCloudPrintManagePage');
-      };
-
       if (loadTimeData.getBoolean('cloudPrintShowMDnsOptions')) {
         $('cloudprint-options-mdns').hidden = false;
-        $('cloudprint-options-nomdns').hidden = true;
         $('cloudPrintDevicesPageButton').onclick = function() {
           chrome.send('showCloudPrintDevicesPage');
         };
@@ -560,6 +537,24 @@ cr.define('options', function() {
       };
       $('reset-profile-settings-section').hidden =
           !loadTimeData.getBoolean('enableResetProfileSettings');
+
+      // Extension controlled UI.
+      this.addExtensionControlledBox_('search-section-content',
+                                      'search-engine-controlled');
+      this.addExtensionControlledBox_('extension-controlled-container',
+                                      'homepage-controlled');
+      this.addExtensionControlledBox_('startup-section-content',
+                                      'startpage-controlled');
+
+      document.body.addEventListener('click', function(e) {
+        var button = findAncestor(e.target, function(el) {
+          return el.tagName == 'BUTTON' &&
+                 el.dataset.extensionId !== undefined &&
+                 el.dataset.extensionId.length;
+        });
+        if (button)
+          chrome.send('disableExtension', [button.dataset.extensionId]);
+      });
     },
 
     /** @override */
@@ -1199,7 +1194,8 @@ cr.define('options', function() {
      *         name: "Profile Name",
      *         iconURL: "chrome://path/to/icon/image",
      *         filePath: "/path/to/profile/data/on/disk",
-     *         isCurrentProfile: false
+     *         isCurrentProfile: false,
+     *         isManaged: false
      *       };
      * @private
      */
@@ -1334,7 +1330,7 @@ cr.define('options', function() {
 
       // Create a synthetic pref change event decorated as
       // CoreOptionsHandler::CreateValueForPref() does.
-      var event = new Event('account-picture');
+      var event = new Event('wallpaper');
       if (managed)
         event.value = { controlledBy: 'policy' };
       else
@@ -1461,9 +1457,6 @@ cr.define('options', function() {
      * @private
      */
     setAutoOpenFileTypesDisplayed_: function(display) {
-      if (cr.isChromeOS)
-        return;
-
       if ($('advanced-settings').hidden) {
         // If the Advanced section is hidden, don't animate the transition.
         $('auto-open-file-types-section').hidden = !display;
@@ -1490,37 +1483,6 @@ cr.define('options', function() {
         $('proxiesLabel').textContent =
             loadTimeData.getString(extensionControlled ?
                 'proxiesLabelExtension' : 'proxiesLabelSystem');
-      }
-    },
-
-    /**
-     * Set the Cloud Print proxy UI to enabled, disabled, or processing.
-     * @private
-     */
-    setupCloudPrintConnectorSection_: function(disabled, label, allowed) {
-      if (!cr.isChromeOS) {
-        $('cloudPrintConnectorLabel').textContent = label;
-        if (disabled || !allowed) {
-          $('cloudPrintConnectorSetupButton').textContent =
-            loadTimeData.getString('cloudPrintConnectorDisabledButton');
-          $('cloudPrintManageButton').style.display = 'none';
-        } else {
-          $('cloudPrintConnectorSetupButton').textContent =
-            loadTimeData.getString('cloudPrintConnectorEnabledButton');
-          $('cloudPrintManageButton').style.display = 'inline';
-        }
-        $('cloudPrintConnectorSetupButton').disabled = !allowed;
-      }
-    },
-
-    /**
-     * @private
-     */
-    removeCloudPrintConnectorSection_: function() {
-     if (!cr.isChromeOS) {
-        var connectorSectionElm = $('cloud-print-connector-section');
-        if (connectorSectionElm)
-          connectorSectionElm.parentNode.removeChild(connectorSectionElm);
       }
     },
 
@@ -1554,6 +1516,97 @@ cr.define('options', function() {
      */
     showMouseControls_: function(show) {
       $('mouse-settings').hidden = !show;
+    },
+
+    /**
+     * Adds hidden warning boxes for settings potentially controlled by
+     * extensions.
+     * @param {string} parentDiv The div name to append the bubble to.
+     * @param {string} bubbleId The ID to use for the bubble.
+     * @private
+     */
+    addExtensionControlledBox_: function(parentDiv, bubbleId) {
+      var bubble = $('extension-controlled-warning-template').cloneNode(true);
+      bubble.id = bubbleId;
+      var parent = $(parentDiv);
+      parent.insertBefore(bubble, parent.firstChild);
+    },
+
+    /**
+     * Adds a bubble showing that an extension is controlling a particular
+     * setting.
+     * @param {string} parentDiv The div name to append the bubble to.
+     * @param {string} bubbleId The ID to use for the bubble.
+     * @param {string} extensionId The ID of the controlling extension.
+     * @param {string} extensionName The name of the controlling extension.
+     * @private
+     */
+    toggleExtensionControlledBox_: function(
+        parentDiv, bubbleId, extensionId, extensionName) {
+      var bubble = $(bubbleId);
+      assert(bubble);
+      bubble.hidden = extensionId.length == 0;
+      if (bubble.hidden)
+        return;
+
+      // Set the extension image.
+      var div = bubble.firstElementChild;
+      div.style.backgroundImage =
+          'url(chrome://extension-icon/' + extensionId + '/24/1)';
+
+      // Set the bubble label.
+      var label = loadTimeData.getStringF('extensionControlled', extensionName);
+      var docFrag = parseHtmlSubset('<div>' + label + '</div>', ['B', 'DIV']);
+      div.innerHTML = docFrag.firstChild.innerHTML;
+
+      // Wire up the button to disable the right extension.
+      var button = div.nextElementSibling;
+      button.dataset.extensionId = extensionId;
+    },
+
+    /**
+     * Toggles the bubble that shows which extension is controlling the search
+     * engine.
+     * @param {string} extensionId The ID of the extension controlling the
+     *     default search engine setting.
+     * @param {string} extensionName The name of the extension.
+     * @private
+     */
+    toggleSearchEngineControlled_: function(extensionId, extensionName) {
+      this.toggleExtensionControlledBox_('search-section-content',
+                                         'search-engine-controlled',
+                                         extensionId,
+                                         extensionName);
+    },
+
+    /**
+     * Toggles the bubble that shows which extension is controlling the home
+     * page.
+     * @param {string} extensionId The ID of the extension controlling the
+     *     home page setting.
+     * @param {string} extensionName The name of the extension.
+     * @private
+     */
+    toggleHomepageControlled_: function(extensionId, extensionName) {
+      this.toggleExtensionControlledBox_('extension-controlled-container',
+                                         'homepage-controlled',
+                                         extensionId,
+                                         extensionName);
+    },
+
+    /**
+     * Toggles the bubble that shows which extension is controlling the startup
+     * pages.
+     * @param {string} extensionId The ID of the extension controlling the
+     *     startup pages setting.
+     * @param {string} extensionName The name of the extension.
+     * @private
+     */
+    toggleStartupPagesControlled_: function(extensionId, extensionName) {
+      this.toggleExtensionControlledBox_('startup-section-content',
+                                         'startpage-controlled',
+                                         extensionId,
+                                         extensionName);
     },
 
     /**
@@ -1685,7 +1738,6 @@ cr.define('options', function() {
     'hideBluetoothSettings',
     'notifyInitializationComplete',
     'removeBluetoothDevice',
-    'removeCloudPrintConnectorSection',
     'scrollToSection',
     'setAccountPictureManaged',
     'setWallpaperManaged',
@@ -1700,7 +1752,6 @@ cr.define('options', function() {
     'setSpokenFeedbackCheckboxState',
     'setThemesResetButtonEnabled',
     'setVirtualKeyboardCheckboxState',
-    'setupCloudPrintConnectorSection',
     'setupPageZoomSelector',
     'setupProxySettingsSection',
     'showBluetoothSettings',
@@ -1712,6 +1763,9 @@ cr.define('options', function() {
     'showManagedUserImportSuccess',
     'showMouseControls',
     'showTouchpadControls',
+    'toggleHomepageControlled',
+    'toggleSearchEngineControlled',
+    'toggleStartupPagesControlled',
     'updateAccountPicture',
     'updateAutoLaunchState',
     'updateDefaultBrowserState',

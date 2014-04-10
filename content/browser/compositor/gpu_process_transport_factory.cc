@@ -40,7 +40,9 @@
 #if defined(OS_WIN)
 #include "content/browser/compositor/software_output_device_win.h"
 #elif defined(USE_OZONE)
+#include "content/browser/compositor/overlay_candidate_validator_ozone.h"
 #include "content/browser/compositor/software_output_device_ozone.h"
+#include "ui/gfx/ozone/surface_factory_ozone.h"
 #elif defined(USE_X11)
 #include "content/browser/compositor/software_output_device_x11.h"
 #endif
@@ -53,89 +55,6 @@ namespace content {
 struct GpuProcessTransportFactory::PerCompositorData {
   int surface_id;
   scoped_refptr<ReflectorImpl> reflector;
-};
-
-class OwnedTexture : public ui::Texture, ImageTransportFactoryObserver {
- public:
-  OwnedTexture(const scoped_refptr<ContextProvider>& provider,
-               const gfx::Size& size,
-               float device_scale_factor,
-               GLuint texture_id)
-      : ui::Texture(true, size, device_scale_factor),
-        provider_(provider),
-        texture_id_(texture_id) {
-    ImageTransportFactory::GetInstance()->AddObserver(this);
-  }
-
-  // ui::Texture overrides:
-  virtual unsigned int PrepareTexture() OVERRIDE {
-    // It's possible that we may have lost the context owning our
-    // texture but not yet fired the OnLostResources callback, so poll to see if
-    // it's still valid.
-    if (provider_ && provider_->IsContextLost())
-      texture_id_ = 0u;
-    return texture_id_;
-  }
-
-  // ImageTransportFactory overrides:
-  virtual void OnLostResources() OVERRIDE {
-    DeleteTexture();
-    provider_ = NULL;
-  }
-
- protected:
-  virtual ~OwnedTexture() {
-    ImageTransportFactory::GetInstance()->RemoveObserver(this);
-    DeleteTexture();
-  }
-
- protected:
-  void DeleteTexture() {
-    if (texture_id_) {
-      provider_->ContextGL()->DeleteTextures(1, &texture_id_);
-      texture_id_ = 0;
-    }
-  }
-
-  scoped_refptr<cc::ContextProvider> provider_;
-  GLuint texture_id_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(OwnedTexture);
-};
-
-class ImageTransportClientTexture : public OwnedTexture {
- public:
-  ImageTransportClientTexture(const scoped_refptr<ContextProvider>& provider,
-                              float device_scale_factor,
-                              GLuint texture_id)
-      : OwnedTexture(provider,
-                     gfx::Size(0, 0),
-                     device_scale_factor,
-                     texture_id) {}
-
-  virtual void Consume(const gpu::Mailbox& mailbox,
-                       const gfx::Size& new_size) OVERRIDE {
-    mailbox_ = mailbox;
-    if (mailbox.IsZero())
-      return;
-
-    DCHECK(provider_ && texture_id_);
-    GLES2Interface* gl = provider_->ContextGL();
-    gl->BindTexture(GL_TEXTURE_2D, texture_id_);
-    gl->ConsumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
-    size_ = new_size;
-    gl->ShallowFlushCHROMIUM();
-  }
-
-  virtual gpu::Mailbox Produce() OVERRIDE { return mailbox_; }
-
- protected:
-  virtual ~ImageTransportClientTexture() {}
-
- private:
-  gpu::Mailbox mailbox_;
-  DISALLOW_COPY_AND_ASSIGN(ImageTransportClientTexture);
 };
 
 GpuProcessTransportFactory::GpuProcessTransportFactory()
@@ -178,6 +97,20 @@ scoped_ptr<cc::SoftwareOutputDevice> CreateSoftwareOutputDevice(
   NOTREACHED();
   return scoped_ptr<cc::SoftwareOutputDevice>();
 #endif
+}
+
+scoped_ptr<cc::OverlayCandidateValidator> CreateOverlayCandidateValidator(
+    gfx::AcceleratedWidget widget) {
+#if defined(USE_OZONE)
+  gfx::OverlayCandidatesOzone* overlay_candidates =
+      gfx::SurfaceFactoryOzone::GetInstance()->GetOverlayCandidates(widget);
+  if (overlay_candidates && CommandLine::ForCurrentProcess()->HasSwitch(
+                                switches::kEnableHardwareOverlays)) {
+    return scoped_ptr<cc::OverlayCandidateValidator>(
+        new OverlayCandidateValidatorOzone(widget, overlay_candidates));
+  }
+#endif
+  return scoped_ptr<cc::OverlayCandidateValidator>();
 }
 
 scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
@@ -237,7 +170,8 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
           context_provider,
           per_compositor_data_[compositor]->surface_id,
           &output_surface_map_,
-          compositor->vsync_manager()));
+          compositor->vsync_manager(),
+          CreateOverlayCandidateValidator(compositor->widget())));
   if (data->reflector.get())
     data->reflector->ReattachToOutputSurfaceFromMainThread(surface.get());
 
@@ -250,12 +184,8 @@ scoped_refptr<ui::Reflector> GpuProcessTransportFactory::CreateReflector(
   PerCompositorData* data = per_compositor_data_[source];
   DCHECK(data);
 
-  if (data->reflector.get())
-    RemoveObserver(data->reflector.get());
-
   data->reflector = new ReflectorImpl(
       source, target, &output_surface_map_, data->surface_id);
-  AddObserver(data->reflector.get());
   return data->reflector;
 }
 
@@ -266,7 +196,6 @@ void GpuProcessTransportFactory::RemoveReflector(
   PerCompositorData* data =
       per_compositor_data_[reflector_impl->mirrored_compositor()];
   DCHECK(data);
-  RemoveObserver(reflector_impl);
   data->reflector->Shutdown();
   data->reflector = NULL;
 }
@@ -305,33 +234,6 @@ gfx::GLSurfaceHandle GpuProcessTransportFactory::GetSharedSurfaceHandle() {
   handle.parent_client_id =
       BrowserGpuChannelHostFactory::instance()->GetGpuChannelId();
   return handle;
-}
-
-scoped_refptr<ui::Texture> GpuProcessTransportFactory::CreateTransportClient(
-    float device_scale_factor) {
-  scoped_refptr<cc::ContextProvider> provider =
-      SharedMainThreadContextProvider();
-  if (!provider.get())
-    return NULL;
-  GLuint texture_id = 0;
-  provider->ContextGL()->GenTextures(1, &texture_id);
-  scoped_refptr<ImageTransportClientTexture> image(
-      new ImageTransportClientTexture(
-          provider, device_scale_factor, texture_id));
-  return image;
-}
-
-scoped_refptr<ui::Texture> GpuProcessTransportFactory::CreateOwnedTexture(
-    const gfx::Size& size,
-    float device_scale_factor,
-    unsigned int texture_id) {
-  scoped_refptr<cc::ContextProvider> provider =
-      SharedMainThreadContextProvider();
-  if (!provider.get())
-    return NULL;
-  scoped_refptr<OwnedTexture> image(new OwnedTexture(
-      provider, size, device_scale_factor, texture_id));
-  return image;
 }
 
 GLHelper* GpuProcessTransportFactory::GetGLHelper() {
@@ -428,7 +330,6 @@ GpuProcessTransportFactory::CreateContextCommon(int surface_id) {
   attrs.stencil = false;
   attrs.antialias = false;
   attrs.noAutomaticFlushes = true;
-  bool bind_generates_resources = false;
   bool lose_context_when_out_of_memory = true;
   CauseForGpuLaunch cause =
       CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
@@ -445,7 +346,6 @@ GpuProcessTransportFactory::CreateContextCommon(int surface_id) {
           url,
           gpu_channel_host.get(),
           attrs,
-          bind_generates_resources,
           lose_context_when_out_of_memory,
           WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits(),
           NULL));

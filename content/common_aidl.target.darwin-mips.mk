@@ -7,8 +7,9 @@ LOCAL_MODULE := content_common_aidl_gyp
 LOCAL_MODULE_STEM := common_aidl
 LOCAL_MODULE_SUFFIX := .stamp
 LOCAL_MODULE_TAGS := optional
-gyp_intermediate_dir := $(call local-intermediates-dir)
-gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
+LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
+gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
+gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES :=
@@ -23,8 +24,6 @@ $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: expo
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl $(PWD)/prebuilts/sdk/18/framework.aidl $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/common.aidl $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/common_aidl/aidl; cd $(gyp_local_path)/content; "$(PWD)/prebuilts/sdk/tools/darwin/aidl" "-p$(PWD)/prebuilts/sdk/18/framework.aidl" -ppublic/android/java/src/org/chromium/content/common/common.aidl public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl "$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java"
 
-.PHONY: content_common_aidl_gyp_rule_trigger
-content_common_aidl_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java
 
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -33,10 +32,7 @@ $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: expor
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/IChildProcessService.aidl $(PWD)/prebuilts/sdk/18/framework.aidl $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/common.aidl $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/common_aidl/aidl; cd $(gyp_local_path)/content; "$(PWD)/prebuilts/sdk/tools/darwin/aidl" "-p$(PWD)/prebuilts/sdk/18/framework.aidl" -ppublic/android/java/src/org/chromium/content/common/common.aidl public/android/java/src/org/chromium/content/common/IChildProcessService.aidl "$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java"
 
-.PHONY: content_common_aidl_gyp_rule_trigger
-content_common_aidl_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java
 
-### Finished generating for all rules
 
 GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java \
@@ -45,8 +41,7 @@ GYP_GENERATED_OUTPUTS := \
 # Make sure our deps and generated files are built first.
 LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTPUTS)
 
-LOCAL_GENERATED_SOURCES := \
-	content_common_aidl_gyp_rule_trigger
+LOCAL_GENERATED_SOURCES :=
 
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
@@ -237,6 +232,7 @@ common_aidl: content_common_aidl_gyp
 
 LOCAL_MODULE_PATH := $(PRODUCT_OUT)/gyp_stamp
 LOCAL_UNINSTALLABLE_MODULE := true
+LOCAL_2ND_ARCH_VAR_PREFIX := $(GYP_VAR_PREFIX)
 
 include $(BUILD_SYSTEM)/base_rules.mk
 
@@ -244,3 +240,5 @@ $(LOCAL_BUILT_MODULE): $(LOCAL_ADDITIONAL_DEPENDENCIES)
 	$(hide) echo "Gyp timestamp: $@"
 	$(hide) mkdir -p $(dir $@)
 	$(hide) touch $@
+
+LOCAL_2ND_ARCH_VAR_PREFIX :=

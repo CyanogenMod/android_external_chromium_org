@@ -34,8 +34,8 @@ class PowerMetric(Metric):
     if not self._running:
       return
     self._running = False
-    self._results = self._browser.platform.StopMonitoringPowerAsync()
-    if self._results: # StopMonitoringPowerAsync() can return None.
+    self._results = self._browser.platform.StopMonitoringPower()
+    if self._results: # StopMonitoringPower() can return None.
       self._results['cpu_stats'] = (
           _SubtractCpuStats(self._browser.cpu_stats, self._starting_cpu_stats))
 
@@ -45,7 +45,7 @@ class PowerMetric(Metric):
 
     # Friendly informational messages if measurement won't run.
     system_supports_power_monitoring = (
-        factory.GetPlatformBackendForCurrentOS().CanMonitorPowerAsync())
+        factory.GetPlatformBackendForCurrentOS().CanMonitorPower())
     if system_supports_power_monitoring:
       if not PowerMetric.enabled:
         logging.warning(
@@ -58,7 +58,7 @@ class PowerMetric(Metric):
     if not PowerMetric.enabled:
       return
 
-    if not tab.browser.platform.CanMonitorPowerAsync():
+    if not tab.browser.platform.CanMonitorPower():
       return
 
     self._results = None
@@ -67,14 +67,14 @@ class PowerMetric(Metric):
 
     # This line invokes top a few times, call before starting power measurement.
     self._starting_cpu_stats = self._browser.cpu_stats
-    self._browser.platform.StartMonitoringPowerAsync()
+    self._browser.platform.StartMonitoringPower(self._browser)
     self._running = True
 
   def Stop(self, _, tab):
     if not PowerMetric.enabled:
       return
 
-    if not tab.browser.platform.CanMonitorPowerAsync():
+    if not tab.browser.platform.CanMonitorPower():
       return
 
     self._StopInternal()
@@ -83,14 +83,23 @@ class PowerMetric(Metric):
     if not self._results:
       return
 
-    energy_consumption_mwh = self._results['energy_consumption_mwh']
-    results.Add('energy_consumption_mwh', 'mWh', energy_consumption_mwh)
+    energy_consumption_mwh = self._results.get('energy_consumption_mwh')
+    # Testing for None, as 0 is a valid value.
+    if energy_consumption_mwh is not None:
+      results.Add('energy_consumption_mwh', 'mWh', energy_consumption_mwh)
+
+    component_utilization = self._results.get('component_utilization', {})
+    # GPU Frequency.
+    gpu_power = component_utilization.get('gpu', {})
+    gpu_freq_hz = gpu_power.get('average_frequency_hz')
+    # Testing for None, as 0 is a valid value.
+    if gpu_freq_hz is not None:
+      results.Add('gpu_average_frequency_hz', 'hz', gpu_freq_hz)
 
     # Add idle wakeup numbers for all processes.
-    for process_type in self._results['cpu_stats']:
+    for (process_type, stats) in self._results.get('cpu_stats', {}).items():
       trace_name_for_process = 'idle_wakeups_%s' % (process_type.lower())
-      results.Add(trace_name_for_process, 'count',
-                  self._results['cpu_stats'][process_type])
+      results.Add(trace_name_for_process, 'count', stats)
 
     self._results = None
 
@@ -109,6 +118,10 @@ def _SubtractCpuStats(cpu_stats, start_cpu_stats):
     assert process_type in start_cpu_stats, 'Mismatching process types'
     # Skip any process_types that are empty.
     if (not cpu_stats[process_type]) or (not start_cpu_stats[process_type]):
+      continue
+    # Skip if IdleWakeupCount is not present.
+    if (('IdleWakeupCount' not in cpu_stats[process_type]) or
+        ('IdleWakeupCount' not in start_cpu_stats[process_type])):
       continue
     idle_wakeup_delta = (cpu_stats[process_type]['IdleWakeupCount'] -
                         start_cpu_stats[process_type]['IdleWakeupCount'])

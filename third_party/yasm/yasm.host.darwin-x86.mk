@@ -3,22 +3,23 @@
 include $(CLEAR_VARS)
 
 LOCAL_MODULE_CLASS := EXECUTABLES
-LOCAL_MODULE := third_party_yasm_yasm_host_gyp
+LOCAL_MODULE := third_party_yasm_yasm_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 LOCAL_MODULE_STEM := yasm
 LOCAL_MODULE_SUFFIX := 
 LOCAL_MODULE_TAGS := optional
 LOCAL_IS_HOST_MODULE := true
-gyp_intermediate_dir := $(call local-intermediates-dir)
-gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
+LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
+gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
+gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,GYP,third_party_yasm_config_sources_host_gyp,true)/config_sources.stamp \
+	$(call intermediates-dir-for,GYP,third_party_yasm_config_sources_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true)/config_sources.stamp \
 	$(gyp_shared_intermediate_dir)/genmacro \
 	$(gyp_shared_intermediate_dir)/genmodule \
 	$(gyp_shared_intermediate_dir)/genperf \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_yasm_genperf_libs_host_gyp,true)/third_party_yasm_genperf_libs_host_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_yasm_generate_files_host_gyp,true)/generate_files.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_yasm_genperf_libs_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true)/third_party_yasm_genperf_libs_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_yasm_generate_files_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true)/generate_files.stamp \
 	$(gyp_shared_intermediate_dir)/genstring \
 	$(gyp_shared_intermediate_dir)/re2c
 
@@ -103,8 +104,6 @@ $(gyp_intermediate_dir)/third_party/yasm/x86insn_nasm.c: export PATH := $(subst 
 $(gyp_intermediate_dir)/third_party/yasm/x86insn_nasm.c: $(gyp_shared_intermediate_dir)/third_party/yasm/x86insn_nasm.gperf $(gyp_shared_intermediate_dir)/genperf $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_intermediate_dir)/third_party/yasm; cd $(gyp_local_path)/third_party/yasm; "$(gyp_shared_intermediate_dir)/genperf" "$(gyp_shared_intermediate_dir)/third_party/yasm/x86insn_nasm.gperf" "$(gyp_intermediate_dir)/third_party/yasm/x86insn_nasm.c"
 
-.PHONY: third_party_yasm_yasm_host_gyp_rule_trigger
-third_party_yasm_yasm_host_gyp_rule_trigger: $(gyp_intermediate_dir)/third_party/yasm/x86insn_nasm.c
 
 $(gyp_intermediate_dir)/third_party/yasm/x86insn_gas.c: gyp_local_path := $(LOCAL_PATH)
 $(gyp_intermediate_dir)/third_party/yasm/x86insn_gas.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -113,8 +112,6 @@ $(gyp_intermediate_dir)/third_party/yasm/x86insn_gas.c: export PATH := $(subst $
 $(gyp_intermediate_dir)/third_party/yasm/x86insn_gas.c: $(gyp_shared_intermediate_dir)/third_party/yasm/x86insn_gas.gperf $(gyp_shared_intermediate_dir)/genperf $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_intermediate_dir)/third_party/yasm; cd $(gyp_local_path)/third_party/yasm; "$(gyp_shared_intermediate_dir)/genperf" "$(gyp_shared_intermediate_dir)/third_party/yasm/x86insn_gas.gperf" "$(gyp_intermediate_dir)/third_party/yasm/x86insn_gas.c"
 
-.PHONY: third_party_yasm_yasm_host_gyp_rule_trigger
-third_party_yasm_yasm_host_gyp_rule_trigger: $(gyp_intermediate_dir)/third_party/yasm/x86insn_gas.c
 
 
 ### Generated for rule "third_party_yasm_yasm_gyp_yasm_host_generate_re2c":
@@ -126,8 +123,6 @@ $(gyp_intermediate_dir)/third_party/yasm/gas-token.c: export PATH := $(subst $(A
 $(gyp_intermediate_dir)/third_party/yasm/gas-token.c: $(LOCAL_PATH)/third_party/yasm/source/patched-yasm/modules/parsers/gas/gas-token.re $(gyp_shared_intermediate_dir)/re2c $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_intermediate_dir)/third_party/yasm; cd $(gyp_local_path)/third_party/yasm; "$(gyp_shared_intermediate_dir)/re2c" -b -o "$(gyp_intermediate_dir)/third_party/yasm/gas-token.c" source/patched-yasm/modules/parsers/gas/gas-token.re
 
-.PHONY: third_party_yasm_yasm_host_gyp_rule_trigger
-third_party_yasm_yasm_host_gyp_rule_trigger: $(gyp_intermediate_dir)/third_party/yasm/gas-token.c
 
 $(gyp_intermediate_dir)/third_party/yasm/nasm-token.c: gyp_local_path := $(LOCAL_PATH)
 $(gyp_intermediate_dir)/third_party/yasm/nasm-token.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -136,10 +131,7 @@ $(gyp_intermediate_dir)/third_party/yasm/nasm-token.c: export PATH := $(subst $(
 $(gyp_intermediate_dir)/third_party/yasm/nasm-token.c: $(LOCAL_PATH)/third_party/yasm/source/patched-yasm/modules/parsers/nasm/nasm-token.re $(gyp_shared_intermediate_dir)/re2c $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_intermediate_dir)/third_party/yasm; cd $(gyp_local_path)/third_party/yasm; "$(gyp_shared_intermediate_dir)/re2c" -b -o "$(gyp_intermediate_dir)/third_party/yasm/nasm-token.c" source/patched-yasm/modules/parsers/nasm/nasm-token.re
 
-.PHONY: third_party_yasm_yasm_host_gyp_rule_trigger
-third_party_yasm_yasm_host_gyp_rule_trigger: $(gyp_intermediate_dir)/third_party/yasm/nasm-token.c
 
-### Finished generating for all rules
 
 GYP_GENERATED_OUTPUTS := \
 	$(gyp_intermediate_dir)/third_party/yasm/nasm-macros.c \
@@ -168,8 +160,7 @@ LOCAL_GENERATED_SOURCES := \
 	$(gyp_intermediate_dir)/third_party/yasm/gas-token.c \
 	$(gyp_intermediate_dir)/third_party/yasm/nasm-token.c \
 	$(gyp_intermediate_dir)/x86cpu.c \
-	$(gyp_intermediate_dir)/x86regtmod.c \
-	third_party_yasm_yasm_host_gyp_rule_trigger
+	$(gyp_intermediate_dir)/x86regtmod.c
 
 GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 	$(gyp_shared_intermediate_dir)/third_party/yasm
@@ -391,7 +382,7 @@ LOCAL_LDFLAGS_Release := \
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
-	third_party_yasm_genperf_libs_host_gyp
+	third_party_yasm_genperf_libs_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true
@@ -400,11 +391,11 @@ LOCAL_SHARED_LIBRARIES :=
 
 # Add target alias to "gyp_all_modules" target.
 .PHONY: gyp_all_modules
-gyp_all_modules: third_party_yasm_yasm_host_gyp
+gyp_all_modules: third_party_yasm_yasm_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 
 # Alias gyp target name.
 .PHONY: yasm
-yasm: third_party_yasm_yasm_host_gyp
+yasm: third_party_yasm_yasm_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 
 LOCAL_MODULE_PATH := $(gyp_shared_intermediate_dir)
 include $(BUILD_HOST_EXECUTABLE)

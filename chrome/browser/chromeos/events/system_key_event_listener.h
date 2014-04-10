@@ -6,13 +6,13 @@
 #define CHROME_BROWSER_CHROMEOS_EVENTS_SYSTEM_KEY_EVENT_LISTENER_H_
 
 #include "base/memory/singleton.h"
-#include "base/message_loop/message_loop.h"
+#include "ui/events/platform/platform_event_observer.h"
 
 typedef union _XEvent XEvent;
 
 namespace chromeos {
 
-class SystemKeyEventListener : public base::MessageLoopForUI::Observer {
+class SystemKeyEventListener : public ui::PlatformEventObserver {
  public:
   static void Initialize();
   static void Shutdown();
@@ -30,13 +30,11 @@ class SystemKeyEventListener : public base::MessageLoopForUI::Observer {
   SystemKeyEventListener();
   virtual ~SystemKeyEventListener();
 
-  // MessageLoopForUI::Observer overrides.
-  virtual base::EventStatus WillProcessEvent(
-      const base::NativeEvent& event) OVERRIDE;
-  virtual void DidProcessEvent(const base::NativeEvent& event) OVERRIDE;
+  // ui::PlatformEventObserver:
+  virtual void WillProcessEvent(const ui::PlatformEvent& event) OVERRIDE;
+  virtual void DidProcessEvent(const ui::PlatformEvent& event) OVERRIDE;
 
-  // Returns true if the event was processed, false otherwise.
-  virtual bool ProcessedXEvent(XEvent* xevent);
+  void ProcessedXEvent(XEvent* xevent);
 
   bool stopped_;
 

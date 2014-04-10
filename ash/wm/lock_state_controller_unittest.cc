@@ -26,7 +26,7 @@
 #include "ui/gfx/size.h"
 
 #if defined(OS_CHROMEOS)
-#include "ui/display/chromeos/output_configurator.h"
+#include "ui/display/chromeos/display_configurator.h"
 #include "ui/display/chromeos/test/test_display_snapshot.h"
 #include "ui/display/display_constants.h"
 #endif
@@ -36,11 +36,7 @@
 #endif
 
 namespace ash {
-
-using internal::SessionStateAnimator;
-
 namespace test {
-
 namespace {
 
 bool cursor_visible() {
@@ -58,16 +54,16 @@ aura::Window* GetContainer(int container ) {
 }
 
 bool IsBackgroundHidden() {
-  return !GetContainer(internal::kShellWindowId_DesktopBackgroundContainer)->
-              IsVisible();
+  return !GetContainer(kShellWindowId_DesktopBackgroundContainer)->IsVisible();
 }
 
 void HideBackground() {
   ui::ScopedLayerAnimationSettings settings(
-      GetContainer(internal::kShellWindowId_DesktopBackgroundContainer)->
-          layer()->GetAnimator());
+      GetContainer(kShellWindowId_DesktopBackgroundContainer)
+          ->layer()
+          ->GetAnimator());
   settings.SetTransitionDuration(base::TimeDelta());
-  GetContainer(internal::kShellWindowId_DesktopBackgroundContainer)->Hide();
+  GetContainer(kShellWindowId_DesktopBackgroundContainer)->Hide();
 }
 
 } // namespace
@@ -396,8 +392,8 @@ class LockStateControllerTest : public AshTestBase {
     window_->SetType(ui::wm::WINDOW_TYPE_NORMAL);
     window_->Init(aura::WINDOW_LAYER_TEXTURED);
     window_->SetName("WINDOW");
-    aura::Window* container = Shell::GetContainer(Shell::GetPrimaryRootWindow(),
-        internal::kShellWindowId_LockScreenContainer);
+    aura::Window* container = Shell::GetContainer(
+        Shell::GetPrimaryRootWindow(), kShellWindowId_LockScreenContainer);
     ASSERT_TRUE(container);
     container->AddChild(window_.get());
     window_->Show();
@@ -617,8 +613,7 @@ TEST_F(LockStateControllerTest, DISABLED_LockAndCancel) {
   AdvancePartially(SessionStateAnimator::ANIMATION_SPEED_UNDOABLE, 0.5f);
 
   gfx::Transform transform_before_button_released =
-      GetContainer(internal::kShellWindowId_DefaultContainer)->
-          layer()->transform();
+      GetContainer(kShellWindowId_DefaultContainer)->layer()->transform();
 
   // Release the button before the lock timer fires.
   ReleasePowerButton();
@@ -626,8 +621,7 @@ TEST_F(LockStateControllerTest, DISABLED_LockAndCancel) {
   ExpectPreLockAnimationCancel();
 
   gfx::Transform transform_after_button_released =
-      GetContainer(internal::kShellWindowId_DefaultContainer)->
-          layer()->transform();
+      GetContainer(kShellWindowId_DefaultContainer)->layer()->transform();
   // Expect no flickering, animation should proceed from mid-state.
   EXPECT_EQ(transform_before_button_released, transform_after_button_released);
 
@@ -1003,17 +997,17 @@ TEST_F(LockStateControllerTest, HonorPowerButtonInDockedMode) {
   modes.push_back(new ui::DisplayMode(gfx::Size(1, 1), false, 60.0f));
 
   // Create two outputs, the first internal and the second external.
-  ui::OutputConfigurator::DisplayStateList outputs;
-  ui::OutputConfigurator::DisplayState internal_output;
+  ui::DisplayConfigurator::DisplayStateList outputs;
+  ui::DisplayConfigurator::DisplayState internal_output;
   ui::TestDisplaySnapshot internal_display;
-  internal_display.set_type(ui::OUTPUT_TYPE_INTERNAL);
+  internal_display.set_type(ui::DISPLAY_CONNECTION_TYPE_INTERNAL);
   internal_display.set_modes(modes.get());
   internal_output.display = &internal_display;
   outputs.push_back(internal_output);
 
-  ui::OutputConfigurator::DisplayState external_output;
+  ui::DisplayConfigurator::DisplayState external_output;
   ui::TestDisplaySnapshot external_display;
-  external_display.set_type(ui::OUTPUT_TYPE_HDMI);
+  external_display.set_type(ui::DISPLAY_CONNECTION_TYPE_HDMI);
   external_display.set_modes(modes.get());
   external_output.display = &external_display;
   outputs.push_back(external_output);

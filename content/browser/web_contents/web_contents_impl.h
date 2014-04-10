@@ -166,11 +166,6 @@ class CONTENT_EXPORT WebContentsImpl
   void DragSourceEndedAt(int client_x, int client_y, int screen_x,
       int screen_y, blink::WebDragOperation operation);
 
-  // Informs the render view host and the BrowserPluginEmbedder, if present, of
-  // a Drag Source Move.
-  void DragSourceMovedTo(int client_x, int client_y,
-                         int screen_x, int screen_y);
-
   // A response has been received for a resource request.
   void DidGetResourceResponseStart(
       const ResourceRequestDetails& details);
@@ -186,6 +181,9 @@ class CONTENT_EXPORT WebContentsImpl
   virtual NavigationControllerImpl& GetController() OVERRIDE;
   virtual const NavigationControllerImpl& GetController() const OVERRIDE;
   virtual BrowserContext* GetBrowserContext() const OVERRIDE;
+  virtual const GURL& GetURL() const OVERRIDE;
+  virtual const GURL& GetVisibleURL() const OVERRIDE;
+  virtual const GURL& GetLastCommittedURL() const OVERRIDE;
   virtual RenderProcessHost* GetRenderProcessHost() const OVERRIDE;
   virtual RenderFrameHost* GetMainFrame() OVERRIDE;
   virtual RenderFrameHost* GetFocusedFrame() OVERRIDE;
@@ -237,9 +235,26 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void WasShown() OVERRIDE;
   virtual void WasHidden() OVERRIDE;
   virtual bool NeedToFireBeforeUnload() OVERRIDE;
+  virtual void DispatchBeforeUnload(bool for_cross_site_transition) OVERRIDE;
   virtual void Stop() OVERRIDE;
   virtual WebContents* Clone() OVERRIDE;
   virtual void ReloadFocusedFrame(bool ignore_cache) OVERRIDE;
+  virtual void Undo() OVERRIDE;
+  virtual void Redo() OVERRIDE;
+  virtual void Cut() OVERRIDE;
+  virtual void Copy() OVERRIDE;
+  virtual void CopyToFindPboard() OVERRIDE;
+  virtual void Paste() OVERRIDE;
+  virtual void PasteAndMatchStyle() OVERRIDE;
+  virtual void Delete() OVERRIDE;
+  virtual void SelectAll() OVERRIDE;
+  virtual void Unselect() OVERRIDE;
+  virtual void Replace(const base::string16& word) OVERRIDE;
+  virtual void ReplaceMisspelling(const base::string16& word) OVERRIDE;
+  virtual void NotifyContextMenuClosed(
+      const CustomContextMenuContext& context) OVERRIDE;
+  virtual void ExecuteCustomContextMenuCommand(
+      int action, const CustomContextMenuContext& context) OVERRIDE;
   virtual void FocusThroughTabTraversal(bool reverse) OVERRIDE;
   virtual bool ShowingInterstitialPage() const OVERRIDE;
   virtual InterstitialPage* GetInterstitialPage() const OVERRIDE;
@@ -289,6 +304,7 @@ class CONTENT_EXPORT WebContentsImpl
                     const blink::WebFindOptions& options) OVERRIDE;
   virtual void SetZoomLevel(double level) OVERRIDE;
   virtual void StopFinding(StopFindAction action) OVERRIDE;
+  virtual void InsertCSS(const std::string& css) OVERRIDE;
 #if defined(OS_ANDROID)
   virtual base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents()
       OVERRIDE;
@@ -303,6 +319,7 @@ class CONTENT_EXPORT WebContentsImpl
   // RenderFrameHostDelegate ---------------------------------------------------
   virtual bool OnMessageReceived(RenderFrameHost* render_frame_host,
                                  const IPC::Message& message) OVERRIDE;
+  virtual const GURL& GetMainFrameLastCommittedURL() const OVERRIDE;
   virtual void RenderFrameCreated(RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void RenderFrameDeleted(RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void DidStartLoading(RenderFrameHost* render_frame_host,
@@ -312,15 +329,22 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void WorkerCrashed(RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void ShowContextMenu(RenderFrameHost* render_frame_host,
                                const ContextMenuParams& params) OVERRIDE;
+  virtual void RunJavaScriptMessage(RenderFrameHost* rfh,
+                                    const base::string16& message,
+                                    const base::string16& default_prompt,
+                                    const GURL& frame_url,
+                                    JavaScriptMessageType type,
+                                    IPC::Message* reply_msg) OVERRIDE;
+  virtual void RunBeforeUnloadConfirm(RenderFrameHost* rfh,
+                                      const base::string16& message,
+                                      bool is_reload,
+                                      IPC::Message* reply_msg) OVERRIDE;
   virtual WebContents* GetAsWebContents() OVERRIDE;
 
   // RenderViewHostDelegate ----------------------------------------------------
   virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
   virtual bool OnMessageReceived(RenderViewHost* render_view_host,
                                  const IPC::Message& message) OVERRIDE;
-  virtual const GURL& GetURL() const OVERRIDE;
-  virtual const GURL& GetVisibleURL() const OVERRIDE;
-  virtual const GURL& GetLastCommittedURL() const OVERRIDE;
   // RenderFrameHostDelegate has the same method, so list it there because this
   // interface is going away.
   // virtual WebContents* GetAsWebContents() OVERRIDE;
@@ -356,17 +380,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void RouteMessageEvent(
       RenderViewHost* rvh,
       const ViewMsg_PostMessage_Params& params) OVERRIDE;
-  virtual void RunJavaScriptMessage(RenderViewHost* rvh,
-                                    const base::string16& message,
-                                    const base::string16& default_prompt,
-                                    const GURL& frame_url,
-                                    JavaScriptMessageType type,
-                                    IPC::Message* reply_msg,
-                                    bool* did_suppress_message) OVERRIDE;
-  virtual void RunBeforeUnloadConfirm(RenderViewHost* rvh,
-                                      const base::string16& message,
-                                      bool is_reload,
-                                      IPC::Message* reply_msg) OVERRIDE;
   virtual bool AddMessageToConsole(int32 level,
                                    const base::string16& message,
                                    int32 line_no,
@@ -600,6 +613,10 @@ class CONTENT_EXPORT WebContentsImpl
 
   typedef base::Callback<void(WebContents*)> CreatedCallback;
 
+  // Requests the renderer to select the region between two points in the
+  // currently focused frame.
+  void SelectRange(const gfx::Point& start, const gfx::Point& end);
+
  private:
   friend class NavigationControllerImpl;
   friend class TestNavigationObserver;
@@ -647,9 +664,10 @@ class CONTENT_EXPORT WebContentsImpl
   // watching |web_contents|. No-op if there is no such observer.
   void RemoveDestructionObserver(WebContentsImpl* web_contents);
 
-  // Callback function when showing JS dialogs.
-  void OnDialogClosed(RenderViewHost* rvh,
+  // Callback function when showing JavaScript dialogs.
+  void OnDialogClosed(RenderFrameHost* rfh,
                       IPC::Message* reply_msg,
+                      bool dialog_was_suppressed,
                       bool success,
                       const base::string16& user_input);
 
@@ -1052,6 +1070,9 @@ class CONTENT_EXPORT WebContentsImpl
   // Whether this WebContents is responsible for displaying a subframe in a
   // different process from its parent page.
   bool is_subframe_;
+
+  // Whether the last JavaScript dialog shown was suppressed. Used for testing.
+  bool last_dialog_suppressed_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsImpl);
 };

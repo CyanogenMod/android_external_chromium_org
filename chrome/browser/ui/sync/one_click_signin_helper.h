@@ -9,10 +9,10 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/signin/signin_oauth_helper.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
+#include "components/signin/core/browser/signin_oauth_helper.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
@@ -20,7 +20,6 @@
 
 class Browser;
 class GURL;
-class PasswordManager;
 class ProfileIOData;
 
 namespace autofill {
@@ -37,6 +36,10 @@ namespace net {
 class URLRequest;
 }
 
+namespace password_manager {
+class PasswordManager;
+}
+
 // Per-tab one-click signin helper.  When a user signs in to a Google service
 // and the profile is not yet connected to a Google account, will start the
 // process of helping the user connect his profile with one click.  The process
@@ -44,8 +47,7 @@ class URLRequest;
 // more about what this means.
 class OneClickSigninHelper
     : public content::WebContentsObserver,
-      public content::WebContentsUserData<OneClickSigninHelper>,
-      public ProfileSyncServiceObserver {
+      public content::WebContentsUserData<OneClickSigninHelper> {
  public:
   // Represents user's decision about sign in process.
   enum AutoAccept {
@@ -171,7 +173,7 @@ class OneClickSigninHelper
 
   static void CreateForWebContentsWithPasswordManager(
       content::WebContents* contents,
-      PasswordManager* password_manager);
+      password_manager::PasswordManager* password_manager);
 
   // Returns true if the one-click signin feature can be offered at this time.
   // If |email| is not empty, then the profile is checked to see if it's
@@ -253,8 +255,6 @@ class OneClickSigninHelper
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperTest, SigninFailed);
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperTest,
                            CleanTransientStateOnNavigate);
-  FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperTest,
-                           RemoveObserverFromProfileSyncService);
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperIOTest, CanOfferOnIOThread);
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperIOTest,
                            CanOfferOnIOThreadIncognito);
@@ -285,7 +285,7 @@ class OneClickSigninHelper
   static const int kMaxNavigationsSince;
 
   OneClickSigninHelper(content::WebContents* web_contents,
-                       PasswordManager* password_manager);
+                       password_manager::PasswordManager* password_manager);
 
   virtual ~OneClickSigninHelper();
 
@@ -342,10 +342,6 @@ class OneClickSigninHelper
       const content::FrameNavigateParams& params) OVERRIDE;
   virtual void DidStopLoading(
       content::RenderViewHost* render_view_host) OVERRIDE;
-  virtual void WebContentsDestroyed(content::WebContents* contents) OVERRIDE;
-
-  // ProfileSyncServiceObserver.
-  virtual void OnStateChanged() OVERRIDE;
 
   OneClickSigninSyncStarter::Callback CreateSyncStarterCallback();
 

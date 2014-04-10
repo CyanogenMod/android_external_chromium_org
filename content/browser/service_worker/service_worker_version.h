@@ -23,6 +23,8 @@ class GURL;
 namespace content {
 
 class EmbeddedWorkerRegistry;
+class ServiceWorkerContextCore;
+class ServiceWorkerProviderHost;
 class ServiceWorkerRegistration;
 class ServiceWorkerVersionInfo;
 
@@ -66,15 +68,18 @@ class CONTENT_EXPORT ServiceWorkerVersion
                  // different states for different termination sequences)
   };
 
+  class Listener {
+   public:
+    virtual void OnVersionStateChanged(ServiceWorkerVersion* version) = 0;
+  };
+
   ServiceWorkerVersion(
       ServiceWorkerRegistration* registration,
-      EmbeddedWorkerRegistry* worker_registry,
-      int64 version_id);
+      int64 version_id,
+      base::WeakPtr<ServiceWorkerContextCore> context);
 
   int64 version_id() const { return version_id_; }
-
-  void Shutdown();
-  bool is_shutdown() const { return is_shutdown_; }
+  int64 registration_id() const { return registration_id_; }
 
   RunningStatus running_status() const {
     return static_cast<RunningStatus>(embedded_worker_->status());
@@ -161,7 +166,11 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // same-origin as for this ServiceWorkerVersion is created.  The added
   // processes are used to run an in-renderer embedded worker.
   void AddProcessToWorker(int process_id);
-  void RemoveProcessToWorker(int process_id);
+  void RemoveProcessFromWorker(int process_id);
+
+  // Adds and removes a controllee's |provider_host|.
+  void AddControllee(ServiceWorkerProviderHost* provider_host);
+  void RemoveControllee(ServiceWorkerProviderHost* provider_host);
 
   EmbeddedWorkerInstance* embedded_worker() { return embedded_worker_.get(); }
 
@@ -173,27 +182,25 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
  private:
   typedef ServiceWorkerVersion self;
+  typedef std::set<ServiceWorkerProviderHost*> ProviderHostSet;
   friend class base::RefCounted<ServiceWorkerVersion>;
 
   virtual ~ServiceWorkerVersion();
 
   const int64 version_id_;
-
+  int64 registration_id_;
+  GURL script_url_;
   Status status_;
-
-  bool is_shutdown_;
-  scoped_refptr<ServiceWorkerRegistration> registration_;
   scoped_ptr<EmbeddedWorkerInstance> embedded_worker_;
-
-  // Pending callbacks.
   std::vector<StatusCallback> start_callbacks_;
   std::vector<StatusCallback> stop_callbacks_;
-
   std::vector<base::Closure> status_change_callbacks_;
-
   IDMap<MessageCallback, IDMapOwnPointer> message_callbacks_;
 
+  ProviderHostSet controllee_providers_;
+
   base::WeakPtrFactory<ServiceWorkerVersion> weak_factory_;
+  base::WeakPtr<ServiceWorkerContextCore> context_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerVersion);
 };

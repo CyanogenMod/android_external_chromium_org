@@ -41,7 +41,6 @@
 #include "ui/wm/public/activation_client.h"
 
 namespace ash {
-namespace internal {
 
 // Minimum, maximum width of the dock area and a width of the gap
 // static
@@ -58,7 +57,7 @@ const int kFadeDurationMs = 60;
 const int kMinimizeDurationMs = 720;
 
 class DockedBackgroundWidget : public views::Widget,
-                               public internal::BackgroundAnimatorDelegate {
+                               public BackgroundAnimatorDelegate {
  public:
   explicit DockedBackgroundWidget(aura::Window* container)
       : alignment_(DOCKED_ALIGNMENT_NONE),
@@ -147,16 +146,16 @@ class DockedBackgroundWidget : public views::Widget,
     set_focus_on_creation(false);
     Init(params);
     SetVisibilityChangedAnimationsEnabled(false);
-    GetNativeWindow()->SetProperty(internal::kStayInSameRootWindowKey, true);
+    GetNativeWindow()->SetProperty(kStayInSameRootWindowKey, true);
     opaque_background_.SetColor(SK_ColorBLACK);
     opaque_background_.SetBounds(gfx::Rect(GetWindowBoundsInScreen().size()));
     opaque_background_.SetOpacity(0.0f);
     GetNativeWindow()->layer()->Add(&opaque_background_);
     Hide();
 
-    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     gfx::ImageSkia shelf_background =
-        *rb.GetImageSkiaNamed(IDR_AURA_LAUNCHER_BACKGROUND);
+        *rb.GetImageSkiaNamed(IDR_ASH_SHELF_BACKGROUND);
     shelf_background_left_ = gfx::ImageSkiaOperations::CreateRotatedImage(
         shelf_background, SkBitmapOperations::ROTATION_90_CW);
     shelf_background_right_ = gfx::ImageSkiaOperations::CreateRotatedImage(
@@ -194,7 +193,7 @@ class DockedBackgroundWidget : public views::Widget,
   DockedAlignment alignment_;
 
   // The animator for the background transitions.
-  internal::BackgroundAnimator background_animator_;
+  BackgroundAnimator background_animator_;
 
   // The alpha to use for drawing image assets covering the docked background.
   int alpha_;
@@ -712,8 +711,8 @@ void DockedWindowLayoutManager::SetChildBounds(
   SetChildBoundsDirect(child, requested_bounds);
   if (IsPopupOrTransient(child))
     return;
-  ShelfLayoutManager* shelf_layout = internal::ShelfLayoutManager::ForShelf(
-      dock_container_);
+  ShelfLayoutManager* shelf_layout =
+      ShelfLayoutManager::ForShelf(dock_container_);
   if (shelf_layout)
     shelf_layout->UpdateVisibilityState();
 }
@@ -1316,5 +1315,4 @@ void DockedWindowLayoutManager::OnKeyboardBoundsChanging(
   UpdateDockBounds(DockedWindowLayoutManagerObserver::KEYBOARD_BOUNDS_CHANGING);
 }
 
-}  // namespace internal
 }  // namespace ash

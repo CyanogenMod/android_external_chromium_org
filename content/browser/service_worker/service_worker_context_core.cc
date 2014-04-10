@@ -24,10 +24,14 @@ ServiceWorkerContextCore::ServiceWorkerContextCore(
     : storage_(new ServiceWorkerStorage(path, quota_manager_proxy)),
       embedded_worker_registry_(new EmbeddedWorkerRegistry(AsWeakPtr())),
       job_coordinator_(
-          new ServiceWorkerJobCoordinator(storage_.get(),
-                                          embedded_worker_registry_)) {}
+          new ServiceWorkerJobCoordinator(AsWeakPtr())) {}
 
-ServiceWorkerContextCore::~ServiceWorkerContextCore() {}
+ServiceWorkerContextCore::~ServiceWorkerContextCore() {
+  providers_.Clear();
+  storage_.reset();
+  job_coordinator_.reset();
+  embedded_worker_registry_ = NULL;
+}
 
 ServiceWorkerProviderHost* ServiceWorkerContextCore::GetProviderHost(
     int process_id, int provider_id) {
@@ -89,13 +93,52 @@ void ServiceWorkerContextCore::UnregisterServiceWorker(
 void ServiceWorkerContextCore::RegistrationComplete(
     const ServiceWorkerContextCore::RegistrationCallback& callback,
     ServiceWorkerStatusCode status,
-    const scoped_refptr<ServiceWorkerRegistration>& registration) {
+    ServiceWorkerRegistration* registration,
+    ServiceWorkerVersion* version) {
   if (status != SERVICE_WORKER_OK) {
-    DCHECK(!registration);
-    callback.Run(status, -1L);
+    DCHECK(!version);
+    callback.Run(status,
+                 kInvalidServiceWorkerRegistrationId,
+                 kInvalidServiceWorkerVersionId);
+    return;
   }
 
-  callback.Run(status, registration->id());
+  DCHECK(version);
+  DCHECK_EQ(version->registration_id(), registration->id());
+  callback.Run(status,
+               registration->id(),
+               version->version_id());
+}
+
+ServiceWorkerRegistration* ServiceWorkerContextCore::GetLiveRegistration(
+    int64 id) {
+  RegistrationsMap::iterator it = live_registrations_.find(id);
+  return (it != live_registrations_.end()) ? it->second : NULL;
+}
+
+void ServiceWorkerContextCore::AddLiveRegistration(
+    ServiceWorkerRegistration* registration) {
+  DCHECK(!GetLiveRegistration(registration->id()));
+  live_registrations_[registration->id()] = registration;
+}
+
+void ServiceWorkerContextCore::RemoveLiveRegistration(int64 id) {
+  live_registrations_.erase(id);
+}
+
+ServiceWorkerVersion* ServiceWorkerContextCore::GetLiveVersion(
+    int64 id) {
+  VersionMap::iterator it = live_versions_.find(id);
+  return (it != live_versions_.end()) ? it->second : NULL;
+}
+
+void ServiceWorkerContextCore::AddLiveVersion(ServiceWorkerVersion* version) {
+  DCHECK(!GetLiveVersion(version->version_id()));
+  live_versions_[version->version_id()] = version;
+}
+
+void ServiceWorkerContextCore::RemoveLiveVersion(int64 id) {
+  live_versions_.erase(id);
 }
 
 }  // namespace content

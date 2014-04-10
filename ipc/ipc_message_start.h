@@ -100,6 +100,8 @@ enum IPCMessageStart {
   MediaStreamTrackMetricsHostMsgStart,
   ChromeExtensionMsgStart,
   MojoMsgStart,
+  TranslateMsgStart,
+  PushMessagingMsgStart,
   LastIPCMsgStart  // Must come last.
 };
 

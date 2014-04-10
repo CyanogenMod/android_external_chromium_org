@@ -6,6 +6,7 @@
   'dependencies': [
     '../base/base.gyp:base',
     '../components/tracing.gyp:tracing',
+    '../gpu/command_buffer/command_buffer.gyp:gles2_utils',
     '../net/net.gyp:net',
     '../skia/skia.gyp:skia',
     '../third_party/WebKit/public/blink_headers.gyp:blink_headers',
@@ -106,6 +107,7 @@
     'public/common/ssl_status.cc',
     'public/common/ssl_status.h',
     'public/common/stop_find_action.h',
+    'public/common/storage_quota_params.h',
     'public/common/three_d_api_types.h',
     'public/common/top_controls_state.h',
     'public/common/top_controls_state_list.h',
@@ -381,6 +383,7 @@
     'common/plugin_process_messages.h',
     'common/power_monitor_messages.h',
     'common/process_type.cc',
+    'common/push_messaging_messages.h',
     'common/quota_messages.h',
     'common/resource_messages.cc',
     'common/resource_messages.h',
@@ -498,6 +501,9 @@
         '../ipc/ipc.gyp:ipc',
         '../media/media.gyp:media',
         '../media/media.gyp:shared_memory_support',
+        '../mojo/mojo.gyp:mojo_environment_chromium',
+        '../mojo/mojo.gyp:mojo_system',
+        '../mojo/mojo.gyp:mojo_system_impl',
         '../third_party/WebKit/public/blink.gyp:blink',
         '../ui/gl/gl.gyp:gl',
         '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
@@ -506,18 +512,6 @@
         '../webkit/storage_common.gyp:webkit_storage_common',
         'content.gyp:webkit_version',
       ],
-    }],
-    ['use_mojo==0', {
-      'sources!': [
-        'common/mojo/mojo_channel_init.cc',
-        'common/mojo/mojo_channel_init.h',
-      ],
-    }, {
-      'dependencies': [
-        '../mojo/mojo.gyp:mojo_environment_chromium',
-        '../mojo/mojo.gyp:mojo_system',
-        '../mojo/mojo.gyp:mojo_system_impl',
-     ],
     }],
     ['OS=="mac"', {
       'dependencies': [

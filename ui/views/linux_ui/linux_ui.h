@@ -9,7 +9,7 @@
 
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/ime/linux/linux_input_method_context_factory.h"
-#include "ui/events/x/text_edit_key_bindings_delegate_x11.h"
+#include "ui/events/linux/text_edit_key_bindings_delegate_auralinux.h"
 #include "ui/gfx/linux_font_delegate.h"
 #include "ui/shell_dialogs/linux_shell_dialog.h"
 #include "ui/views/controls/button/button.h"
@@ -44,8 +44,17 @@ class WindowButtonOrderObserver;
 class VIEWS_EXPORT LinuxUI : public ui::LinuxInputMethodContextFactory,
                              public gfx::LinuxFontDelegate,
                              public ui::LinuxShellDialog,
-                             public ui::TextEditKeyBindingsDelegateX11 {
+                             public ui::TextEditKeyBindingsDelegateAuraLinux {
  public:
+  // Describes the window management actions that could be taken in response to
+  // a middle click in the non client area.
+  enum NonClientMiddleClickAction {
+    MIDDLE_CLICK_ACTION_NONE,
+    MIDDLE_CLICK_ACTION_LOWER,
+    MIDDLE_CLICK_ACTION_MINIMIZE,
+    MIDDLE_CLICK_ACTION_TOGGLE_MAXIMIZE
+  };
+
   virtual ~LinuxUI() {}
 
   // Sets the dynamically loaded singleton that draws the desktop native UI.
@@ -126,6 +135,10 @@ class VIEWS_EXPORT LinuxUI : public ui::LinuxInputMethodContextFactory,
 
   // Determines whether the user's window manager is Unity.
   virtual bool UnityIsRunning() = 0;
+
+  // What action we should take when the user middle clicks on non-client
+  // area. The default is lowering the window.
+  virtual NonClientMiddleClickAction GetNonClientMiddleClickAction() = 0;
 
   // Notifies the window manager that start up has completed.
   // Normally Chromium opens a new window on startup and GTK does this

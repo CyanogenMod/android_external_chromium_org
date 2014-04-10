@@ -16,7 +16,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
 
 TouchObserverHUD::TouchObserverHUD(aura::Window* initial_root)
     : display_id_(GetRootWindowSettings(initial_root)->display_id),
@@ -37,9 +36,8 @@ TouchObserverHUD::TouchObserverHUD(aura::Window* initial_root)
   params.can_activate = false;
   params.accept_events = false;
   params.bounds = display.bounds();
-  params.parent = Shell::GetContainer(
-      root_window_,
-      internal::kShellWindowId_OverlayContainer);
+  params.parent =
+      Shell::GetContainer(root_window_, kShellWindowId_OverlayContainer);
   widget_->Init(params);
   widget_->SetContentsView(content);
   widget_->StackAtTop();
@@ -50,7 +48,7 @@ TouchObserverHUD::TouchObserverHUD(aura::Window* initial_root)
   // Observe changes in display size and mode to update touch HUD.
   Shell::GetScreen()->AddObserver(this);
 #if defined(OS_CHROMEOS)
-  Shell::GetInstance()->output_configurator()->AddObserver(this);
+  Shell::GetInstance()->display_configurator()->AddObserver(this);
 #endif  // defined(OS_CHROMEOS)
 
   Shell::GetInstance()->display_controller()->AddObserver(this);
@@ -61,7 +59,7 @@ TouchObserverHUD::~TouchObserverHUD() {
   Shell::GetInstance()->display_controller()->RemoveObserver(this);
 
 #if defined(OS_CHROMEOS)
-  Shell::GetInstance()->output_configurator()->RemoveObserver(this);
+  Shell::GetInstance()->display_configurator()->RemoveObserver(this);
 #endif  // defined(OS_CHROMEOS)
   Shell::GetScreen()->RemoveObserver(this);
 
@@ -104,7 +102,7 @@ void TouchObserverHUD::OnDisplayRemoved(const gfx::Display& old_display) {
 
 #if defined(OS_CHROMEOS)
 void TouchObserverHUD::OnDisplayModeChanged(
-    const ui::OutputConfigurator::DisplayStateList& outputs) {
+    const ui::DisplayConfigurator::DisplayStateList& outputs) {
   // Clear touch HUD for any change in display mode (single, dual extended, dual
   // mirrored, ...).
   Clear();
@@ -127,7 +125,7 @@ void TouchObserverHUD::OnDisplayConfigurationChanging() {
   views::Widget::ReparentNativeView(
       widget_->GetNativeView(),
       Shell::GetContainer(root_window_,
-                          internal::kShellWindowId_UnparentedControlContainer));
+                          kShellWindowId_UnparentedControlContainer));
 
   root_window_ = NULL;
 }
@@ -141,8 +139,7 @@ void TouchObserverHUD::OnDisplayConfigurationChanged() {
 
   views::Widget::ReparentNativeView(
       widget_->GetNativeView(),
-      Shell::GetContainer(root_window_,
-                          internal::kShellWindowId_OverlayContainer));
+      Shell::GetContainer(root_window_, kShellWindowId_OverlayContainer));
 
   RootWindowController* controller = GetRootWindowController(root_window_);
   SetHudForRootWindowController(controller);
@@ -150,5 +147,4 @@ void TouchObserverHUD::OnDisplayConfigurationChanged() {
   root_window_->AddPreTargetHandler(this);
 }
 
-}  // namespace internal
 }  // namespace ash

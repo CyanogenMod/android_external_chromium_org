@@ -19,8 +19,6 @@
 #include "ui/views/controls/button/image_button.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
 
 class VirtualKeyboardButton : public views::ImageButton {
@@ -100,7 +98,7 @@ bool VirtualKeyboardTray::ClickedOutsideBubble() {
 }
 
 bool VirtualKeyboardTray::PerformAction(const ui::Event& event) {
-  Shell::GetInstance()->keyboard_controller()->ShowAndLockKeyboard();
+  keyboard::KeyboardController::GetInstance()->ShowAndLockKeyboard();
   return true;
 }
 
@@ -116,5 +114,4 @@ void VirtualKeyboardTray::OnAccessibilityModeChanged(
       IsVirtualKeyboardEnabled());
 }
 
-}  // namespace internal
 }  // namespace ash

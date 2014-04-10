@@ -70,7 +70,6 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/plugins/plugins_handler.h"
-#include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
@@ -98,6 +97,7 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
+#include "extensions/common/extension_l10n_util.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/background_info.h"
@@ -5090,6 +5090,19 @@ TEST_F(ExtensionServiceTest, ExternalPrefProvider) {
       "  }"
       "}";
   EXPECT_EQ(1, from_webstore_visitor.Visit(json_data));
+
+  // Test was_installed_by_eom.
+  MockProviderVisitor was_installed_by_eom_visitor(
+      base_path, Extension::WAS_INSTALLED_BY_OEM);
+  json_data =
+      "{"
+      "  \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\": {"
+      "    \"external_crx\": \"RandomExtension.crx\","
+      "    \"external_version\": \"1.0\","
+      "    \"was_installed_by_oem\": true"
+      "  }"
+      "}";
+  EXPECT_EQ(1, was_installed_by_eom_visitor.Visit(json_data));
 }
 
 // Test loading good extensions from the profile directory.

@@ -80,7 +80,7 @@
     "extension_types": ["extension"]
   },
   "chrome_settings_overrides": [{
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["extension"],
     "platforms": ["win"]
   }, {  // TODO(wittman): remove this section for M37.

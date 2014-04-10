@@ -27,6 +27,7 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/url_utils.h"
 #include "url/gurl.h"
 
 using base::TimeDelta;
@@ -132,116 +133,6 @@ gfx::NativeView RenderFrameHostImpl::GetNativeView() {
   return view->GetNativeView();
 }
 
-void RenderFrameHostImpl::DispatchBeforeUnload(bool for_cross_site_transition) {
-  // TODO(creis): Support subframes.
-  DCHECK(!GetParent());
-
-  if (!render_view_host_->IsRenderViewLive()) {
-    // We don't have a live renderer, so just skip running beforeunload.
-    render_view_host_->is_waiting_for_beforeunload_ack_ = true;
-    render_view_host_->unload_ack_is_for_cross_site_transition_ =
-        for_cross_site_transition;
-    base::TimeTicks now = base::TimeTicks::Now();
-    OnBeforeUnloadACK(true, now, now);
-    return;
-  }
-
-  // This may be called more than once (if the user clicks the tab close button
-  // several times, or if she clicks the tab close button then the browser close
-  // button), and we only send the message once.
-  if (render_view_host_->is_waiting_for_beforeunload_ack_) {
-    // Some of our close messages could be for the tab, others for cross-site
-    // transitions. We always want to think it's for closing the tab if any
-    // of the messages were, since otherwise it might be impossible to close
-    // (if there was a cross-site "close" request pending when the user clicked
-    // the close button). We want to keep the "for cross site" flag only if
-    // both the old and the new ones are also for cross site.
-    render_view_host_->unload_ack_is_for_cross_site_transition_ =
-        render_view_host_->unload_ack_is_for_cross_site_transition_ &&
-        for_cross_site_transition;
-  } else {
-    // Start the hang monitor in case the renderer hangs in the beforeunload
-    // handler.
-    render_view_host_->is_waiting_for_beforeunload_ack_ = true;
-    render_view_host_->unload_ack_is_for_cross_site_transition_ =
-        for_cross_site_transition;
-    // Increment the in-flight event count, to ensure that input events won't
-    // cancel the timeout timer.
-    render_view_host_->increment_in_flight_event_count();
-    render_view_host_->StartHangMonitorTimeout(
-        TimeDelta::FromMilliseconds(RenderViewHostImpl::kUnloadTimeoutMS));
-    send_before_unload_start_time_ = base::TimeTicks::Now();
-    Send(new FrameMsg_BeforeUnload(routing_id_));
-  }
-}
-
-void RenderFrameHostImpl::NotifyContextMenuClosed(
-    const CustomContextMenuContext& context) {
-  Send(new FrameMsg_ContextMenuClosed(routing_id_, context));
-}
-
-void RenderFrameHostImpl::ExecuteCustomContextMenuCommand(
-    int action, const CustomContextMenuContext& context) {
-  Send(new FrameMsg_CustomContextMenuAction(routing_id_, context, action));
-}
-
-void RenderFrameHostImpl::Undo() {
-  Send(new InputMsg_Undo(routing_id_));
-  RecordAction(base::UserMetricsAction("Undo"));
-}
-
-void RenderFrameHostImpl::Redo() {
-  Send(new InputMsg_Redo(routing_id_));
-  RecordAction(base::UserMetricsAction("Redo"));
-}
-
-void RenderFrameHostImpl::Cut() {
-  Send(new InputMsg_Cut(routing_id_));
-  RecordAction(base::UserMetricsAction("Cut"));
-}
-
-void RenderFrameHostImpl::Copy() {
-  Send(new InputMsg_Copy(routing_id_));
-  RecordAction(base::UserMetricsAction("Copy"));
-}
-
-void RenderFrameHostImpl::CopyToFindPboard() {
-#if defined(OS_MACOSX)
-  // Windows/Linux don't have the concept of a find pasteboard.
-  Send(new InputMsg_CopyToFindPboard(routing_id_));
-  RecordAction(base::UserMetricsAction("CopyToFindPboard"));
-#endif
-}
-
-void RenderFrameHostImpl::Paste() {
-  Send(new InputMsg_Paste(routing_id_));
-  RecordAction(base::UserMetricsAction("Paste"));
-}
-
-void RenderFrameHostImpl::PasteAndMatchStyle() {
-  Send(new InputMsg_PasteAndMatchStyle(routing_id_));
-  RecordAction(base::UserMetricsAction("PasteAndMatchStyle"));
-}
-
-void RenderFrameHostImpl::Delete() {
-  Send(new InputMsg_Delete(routing_id_));
-  RecordAction(base::UserMetricsAction("DeleteSelection"));
-}
-
-void RenderFrameHostImpl::SelectAll() {
-  Send(new InputMsg_SelectAll(routing_id_));
-  RecordAction(base::UserMetricsAction("SelectAll"));
-}
-
-void RenderFrameHostImpl::Unselect() {
-  Send(new InputMsg_Unselect(routing_id_));
-  RecordAction(base::UserMetricsAction("Unselect"));
-}
-
-void RenderFrameHostImpl::InsertCSS(const std::string& css) {
-  Send(new FrameMsg_CSSInsertRequest(routing_id_, css));
-}
-
 void RenderFrameHostImpl::ExecuteJavaScript(
     const base::string16& javascript) {
   Send(new FrameMsg_JavaScriptExecuteRequest(routing_id_,
@@ -304,6 +195,7 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
   bool handled = true;
   bool msg_is_ok = true;
   IPC_BEGIN_MESSAGE_MAP_EX(RenderFrameHostImpl, msg, msg_is_ok)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_AddMessageToConsole, OnAddMessageToConsole)
     IPC_MESSAGE_HANDLER(FrameHostMsg_Detach, OnDetach)
     IPC_MESSAGE_HANDLER(FrameHostMsg_FrameFocused, OnFrameFocused)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidStartProvisionalLoadForFrame,
@@ -324,6 +216,10 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_ContextMenu, OnContextMenu)
     IPC_MESSAGE_HANDLER(FrameHostMsg_JavaScriptExecuteResponse,
                         OnJavaScriptExecuteResponse)
+    IPC_MESSAGE_HANDLER_DELAY_REPLY(FrameHostMsg_RunJavaScriptMessage,
+                                    OnRunJavaScriptMessage)
+    IPC_MESSAGE_HANDLER_DELAY_REPLY(FrameHostMsg_RunBeforeUnloadConfirm,
+                                    OnRunBeforeUnloadConfirm)
   IPC_END_MESSAGE_MAP_EX()
 
   if (!msg_is_ok) {
@@ -338,6 +234,24 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
 
 void RenderFrameHostImpl::Init() {
   GetProcess()->ResumeRequestsForView(routing_id_);
+}
+
+void RenderFrameHostImpl::OnAddMessageToConsole(
+    int32 level,
+    const base::string16& message,
+    int32 line_no,
+    const base::string16& source_id) {
+  if (delegate_->AddMessageToConsole(level, message, line_no, source_id))
+    return;
+
+  // Pass through log level only on WebUI pages to limit console spew.
+  int32 resolved_level =
+      HasWebUIScheme(delegate_->GetMainFrameLastCommittedURL()) ? level : 0;
+
+  if (resolved_level >= ::logging::GetMinLogLevel()) {
+    logging::LogMessage("CONSOLE", line_no, resolved_level).stream() << "\"" <<
+        message << "\", source: " << source_id << " (" << line_no << ")";
+  }
 }
 
 void RenderFrameHostImpl::OnCreateChildFrame(int new_routing_id,
@@ -545,8 +459,12 @@ void RenderFrameHostImpl::OnBeforeUnloadACK(
   // If this renderer navigated while the beforeunload request was in flight, we
   // may have cleared this state in OnNavigate, in which case we can ignore
   // this message.
-  if (!render_view_host_->is_waiting_for_beforeunload_ack_ ||
-      render_view_host_->rvh_state_ != RenderViewHostImpl::STATE_DEFAULT) {
+  // However renderer might also be swapped out but we still want to proceed
+  // with navigation, otherwise it would block future navigations. This can
+  // happen when pending cross-site navigation is canceled by a second one just
+  // before OnNavigate while current RVH is waiting for commit but second
+  // navigation is started from the beginning.
+  if (!render_view_host_->is_waiting_for_beforeunload_ack_) {
     return;
   }
 
@@ -627,6 +545,32 @@ void RenderFrameHostImpl::OnJavaScriptExecuteResponse(
   }
 }
 
+void RenderFrameHostImpl::OnRunJavaScriptMessage(
+    const base::string16& message,
+    const base::string16& default_prompt,
+    const GURL& frame_url,
+    JavaScriptMessageType type,
+    IPC::Message* reply_msg) {
+  // While a JS message dialog is showing, tabs in the same process shouldn't
+  // process input events.
+  GetProcess()->SetIgnoreInputEvents(true);
+  render_view_host_->StopHangMonitorTimeout();
+  delegate_->RunJavaScriptMessage(this, message, default_prompt,
+                                  frame_url, type, reply_msg);
+}
+
+void RenderFrameHostImpl::OnRunBeforeUnloadConfirm(
+    const GURL& frame_url,
+    const base::string16& message,
+    bool is_reload,
+    IPC::Message* reply_msg) {
+  // While a JS before unload dialog is showing, tabs in the same process
+  // shouldn't process input events.
+  GetProcess()->SetIgnoreInputEvents(true);
+  render_view_host_->StopHangMonitorTimeout();
+  delegate_->RunBeforeUnloadConfirm(this, message, is_reload, reply_msg);
+}
+
 void RenderFrameHostImpl::SetPendingShutdown(const base::Closure& on_swap_out) {
   render_view_host_->SetPendingShutdown(on_swap_out);
 }
@@ -701,14 +645,88 @@ void RenderFrameHostImpl::NavigateToURL(const GURL& url) {
   Navigate(params);
 }
 
-void RenderFrameHostImpl::SelectRange(const gfx::Point& start,
-                                      const gfx::Point& end) {
-  Send(new InputMsg_SelectRange(routing_id_, start, end));
+void RenderFrameHostImpl::DispatchBeforeUnload(bool for_cross_site_transition) {
+  // TODO(creis): Support subframes.
+  DCHECK(!GetParent());
+
+  if (!render_view_host_->IsRenderViewLive()) {
+    // We don't have a live renderer, so just skip running beforeunload.
+    render_view_host_->is_waiting_for_beforeunload_ack_ = true;
+    render_view_host_->unload_ack_is_for_cross_site_transition_ =
+        for_cross_site_transition;
+    base::TimeTicks now = base::TimeTicks::Now();
+    OnBeforeUnloadACK(true, now, now);
+    return;
+  }
+
+  // This may be called more than once (if the user clicks the tab close button
+  // several times, or if she clicks the tab close button then the browser close
+  // button), and we only send the message once.
+  if (render_view_host_->is_waiting_for_beforeunload_ack_) {
+    // Some of our close messages could be for the tab, others for cross-site
+    // transitions. We always want to think it's for closing the tab if any
+    // of the messages were, since otherwise it might be impossible to close
+    // (if there was a cross-site "close" request pending when the user clicked
+    // the close button). We want to keep the "for cross site" flag only if
+    // both the old and the new ones are also for cross site.
+    render_view_host_->unload_ack_is_for_cross_site_transition_ =
+        render_view_host_->unload_ack_is_for_cross_site_transition_ &&
+        for_cross_site_transition;
+  } else {
+    // Start the hang monitor in case the renderer hangs in the beforeunload
+    // handler.
+    render_view_host_->is_waiting_for_beforeunload_ack_ = true;
+    render_view_host_->unload_ack_is_for_cross_site_transition_ =
+        for_cross_site_transition;
+    // Increment the in-flight event count, to ensure that input events won't
+    // cancel the timeout timer.
+    render_view_host_->increment_in_flight_event_count();
+    render_view_host_->StartHangMonitorTimeout(
+        TimeDelta::FromMilliseconds(RenderViewHostImpl::kUnloadTimeoutMS));
+    send_before_unload_start_time_ = base::TimeTicks::Now();
+    Send(new FrameMsg_BeforeUnload(routing_id_));
+  }
 }
 
 void RenderFrameHostImpl::ExtendSelectionAndDelete(size_t before,
                                                    size_t after) {
   Send(new FrameMsg_ExtendSelectionAndDelete(routing_id_, before, after));
+}
+
+void RenderFrameHostImpl::JavaScriptDialogClosed(
+    IPC::Message* reply_msg,
+    bool success,
+    const base::string16& user_input,
+    bool dialog_was_suppressed) {
+  GetProcess()->SetIgnoreInputEvents(false);
+  bool is_waiting = render_view_host_->is_waiting_for_beforeunload_ack() ||
+                    render_view_host_->IsWaitingForUnloadACK();
+
+  // If we are executing as part of (before)unload event handling, we don't
+  // want to use the regular hung_renderer_delay_ms_ if the user has agreed to
+  // leave the current page. In this case, use the regular timeout value used
+  // during the (before)unload handling.
+  if (is_waiting) {
+    render_view_host_->StartHangMonitorTimeout(TimeDelta::FromMilliseconds(
+        success ? RenderViewHostImpl::kUnloadTimeoutMS
+                : render_view_host_->hung_renderer_delay_ms_));
+  }
+
+  FrameHostMsg_RunJavaScriptMessage::WriteReplyParams(reply_msg,
+                                                      success, user_input);
+  Send(reply_msg);
+
+  // If we are waiting for an unload or beforeunload ack and the user has
+  // suppressed messages, kill the tab immediately; a page that's spamming
+  // alerts in onbeforeunload is presumably malicious, so there's no point in
+  // continuing to run its script and dragging out the process.
+  // This must be done after sending the reply since RenderView can't close
+  // correctly while waiting for a response.
+  if (is_waiting && dialog_was_suppressed)
+    render_view_host_->delegate_->RendererUnresponsive(
+        render_view_host_,
+        render_view_host_->is_waiting_for_beforeunload_ack(),
+        render_view_host_->IsWaitingForUnloadACK());
 }
 
 }  // namespace content

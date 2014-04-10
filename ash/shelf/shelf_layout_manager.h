@@ -38,18 +38,15 @@ class ImplicitAnimationObserver;
 }
 
 namespace ash {
-class ScreenAsh;
-class ShelfLayoutManagerObserver;
-class ShelfWidget;
-FORWARD_DECLARE_TEST(WebNotificationTrayTest, PopupAndFullscreen);
-
-namespace internal {
-
 class PanelLayoutManagerTest;
+class ScreenAsh;
 class ShelfBezelEventFilter;
+class ShelfLayoutManagerObserver;
 class ShelfLayoutManagerTest;
+class ShelfWidget;
 class StatusAreaWidget;
 class WorkspaceController;
+FORWARD_DECLARE_TEST(WebNotificationTrayTest, PopupAndFullscreen);
 
 // ShelfLayoutManager is the layout manager responsible for the shelf and
 // status widgets. The shelf is given the total available width and told the
@@ -331,8 +328,7 @@ class ASH_EXPORT ShelfLayoutManager :
   gfx::Rect GetAvailableBounds() const;
 
   // Overridden from keyboard::KeyboardControllerObserver:
-  virtual void OnKeyboardBoundsChanging(
-      const gfx::Rect& keyboard_bounds) OVERRIDE;
+  virtual void OnKeyboardBoundsChanging(const gfx::Rect& new_bounds) OVERRIDE;
 
   // Overridden from DockedWindowLayoutManagerObserver:
   virtual void OnDockBoundsChanging(
@@ -417,7 +413,6 @@ class ASH_EXPORT ShelfLayoutManager :
   DISALLOW_COPY_AND_ASSIGN(ShelfLayoutManager);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SHELF_SHELF_LAYOUT_MANAGER_H_

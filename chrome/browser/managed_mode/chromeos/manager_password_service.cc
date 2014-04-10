@@ -47,14 +47,14 @@ void ManagerPasswordService::Init(
       continue;
     OnSharedSettingsChange(
         supervised_user_manager->GetUserSyncId((*it)->email()),
-        managed_users::kUserPasswordRecord);
+        managed_users::kChromeOSPasswordData);
   }
 }
 
 void ManagerPasswordService::OnSharedSettingsChange(
     const std::string& mu_id,
     const std::string& key) {
-  if (key != managed_users::kUserPasswordRecord)
+  if (key != managed_users::kChromeOSPasswordData)
     return;
 
   SupervisedUserManager* supervised_user_manager =
@@ -192,6 +192,12 @@ void ManagerPasswordService::OnAddKeySuccess(
       UserManager::Get()->GetSupervisedUserManager()->GetAuthentication();
   int old_schema = auth->GetPasswordSchema(user_id);
   auth->StorePasswordData(user_id, *password_data.get());
+
+  if (auth->HasIncompleteKey(user_id))
+    auth->MarkKeyIncomplete(user_id, false /* key is complete now */);
+
+  // Check if we have legacy labels for keys.
+  // TODO(antrim): Migrate it to GetLabels call once wad@ implement it.
   if (old_schema == SupervisedUserAuthentication::SCHEMA_PLAIN) {
     // 1) Add new manager key (using old key).
     // 2) Remove old supervised user key.
@@ -209,13 +215,17 @@ void ManagerPasswordService::OnContextTransformed(
   cryptohome::KeyDefinition new_master_key(master_key_context.password,
                                            kCryptohomeMasterKeyLabel,
                                            cryptohome::PRIV_DEFAULT);
+  // Use new master key for further actions.
+  UserContext new_master_key_context;
+  new_master_key_context.CopyFrom(master_key_context);
+  new_master_key_context.key_label = kCryptohomeMasterKeyLabel;
   authenticator_->AddKey(
       master_key_context,
       new_master_key,
       true /* replace existing */,
       base::Bind(&ManagerPasswordService::OnNewManagerKeySuccess,
                  weak_ptr_factory_.GetWeakPtr(),
-                 master_key_context));
+                 new_master_key_context));
 }
 
 void ManagerPasswordService::OnNewManagerKeySuccess(

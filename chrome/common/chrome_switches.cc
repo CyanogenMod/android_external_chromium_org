@@ -335,10 +335,6 @@ const char kDisableMinimizeOnSecondLauncherItemClick[] =
 // Disables the menu on the NTP for accessing sessions from other devices.
 const char kDisableNTPOtherSessionsMenu[]   = "disable-ntp-other-sessions-menu";
 
-// Disables omnibox auto-completion when IME is active.
-const char kDisableOmniboxAutoCompletionForIme[] =
-    "disable-omnibox-auto-completion-for-ime";
-
 // Disable the origin chip.
 const char kDisableOriginChip[]             = "disable-origin-chip";
 
@@ -391,6 +387,9 @@ const char kDisableQuicPortSelection[]      = "disable-quic-port-selection";
 const char kDisableRestoreBackgroundContents[] =
     "disable-restore-background-contents";
 
+// Prevents the save password bubble from being enabled.
+const char kDisableSavePasswordBubble[] = "disable-save-password-bubble";
+
 // Disables throttling prints initiated by scripts.
 const char kDisableScriptedPrintThrottling[] =
     "disable-scripted-print-throttling";
@@ -404,9 +403,6 @@ const char kDisableSpdy31[]                 = "disable-spdy31";
 
 // Disables syncing browser data to a Google Account.
 const char kDisableSync[]                   = "disable-sync";
-
-// Disables syncing of the app list independent of extensions.
-const char kDisableSyncAppList[]            = "disable-sync-app-list";
 
 // Disables sync/API based session sync implementation (back to legacy).
 const char kDisableSyncSessionsV2[] = "disable-sync-sessions-v2";
@@ -576,11 +572,6 @@ const char kEnableNpnHttpOnly[]             = "enable-npn-http";
 
 // Enable auto-reload of error pages if offline.
 const char kEnableOfflineAutoReload[]       = "enable-offline-auto-reload";
-
-// Enables omnibox auto-completion when IME is active.  The auto-completion for
-// IME is shown in the same style as the normal(non-IME) auto-completion.
-const char kEnableOmniboxAutoCompletionForIme[] =
-    "enable-omnibox-auto-completion-for-ime";
 
 // Controls which branch of the origin chip experiment is enabled. The first
 // flag (enable-origin-chip) is equivalent to the third
@@ -775,9 +766,9 @@ const char kForceAppMode[]                  = "force-app-mode";
 // whether or not it's actually the First Run (this overrides kNoFirstRun).
 const char kForceFirstRun[]                 = "force-first-run";
 
-// Forces additional Chrome Variation Ids that will be sent in
-// X-Client-Data header, specified as a 64-bit encoded list of numeric
-// experiment ids.
+// Forces additional Chrome Variation Ids that will be sent in X-Client-Data
+// header, specified as a 64-bit encoded list of numeric experiment ids. Ids
+// prefixed with the character "t" will be treated as Trigger Variation Ids.
 const char kForceVariationIds[]             = "force-variation-ids";
 
 // Specifies an alternate URL to use for speaking to Google. Useful for testing.
@@ -844,9 +835,8 @@ const char kIgnoreUrlFetcherCertRequests[]  =
 // Causes the browser to launch directly in incognito mode.
 const char kIncognito[]                     = "incognito";
 
-// Invalidation service should use GCM network channel even if experiment is not
-// enabled.
-const char kInvalidationUseGCMChannel[]     = "invalidation-use-gcm-channel";
+// Causes Chrome to initiate an installation flow for the given app.
+const char kInstallChromeApp[]              = "install-chrome-app";
 
 // Causes Chrome to attempt to get metadata from the webstore for the
 // app/extension ID given, and then prompt the user to download and install it.
@@ -854,6 +844,10 @@ const char kInstallFromWebstore[]           = "install-from-webstore";
 
 // Marks a renderer as an Instant process.
 const char kInstantProcess[]                = "instant-process";
+
+// Invalidation service should use GCM network channel even if experiment is not
+// enabled.
+const char kInvalidationUseGCMChannel[]     = "invalidation-use-gcm-channel";
 
 // Specifies the testcase used by the IPC fuzzer.
 const char kIpcFuzzerTestcase[]             = "ipc-fuzzer-testcase";
@@ -1308,10 +1302,6 @@ const char kSyncfsEnableDirectoryOperation[] =
 
 // Passes the name of the current running automated test to Chrome.
 const char kTestName[]                      = "test-name";
-
-// Tells the app to listen for and broadcast testing-related messages on IPC
-// channel with the given ID.
-const char kTestingChannelID[]              = "testing-channel";
 
 // Disables same-origin check on HTTP resources pushed via a SPDY proxy.
 // The value is the host:port of the trusted proxy.

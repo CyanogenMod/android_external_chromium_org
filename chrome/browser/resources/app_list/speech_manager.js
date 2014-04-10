@@ -27,14 +27,28 @@ cr.define('speech', function() {
   };
 
   /**
+   * Checks the prefix for the hotword module based on the language. This is
+   * fragile if the file structure has changed.
+   */
+  function getHotwordPrefix() {
+    var prefix = navigator.language.toLowerCase();
+    if (prefix == 'en-gb')
+      return prefix;
+    var hyphen = prefix.indexOf('-');
+    if (hyphen >= 0)
+      prefix = prefix.substr(0, hyphen);
+    if (prefix == 'en')
+      prefix = '';
+    return prefix;
+  }
+
+  /**
    * @constructor
    */
   function SpeechManager() {
     this.audioManager_ = new speech.AudioManager();
     this.audioManager_.addEventListener('audio', this.onAudioLevel_.bind(this));
-    this.shown_ = false;
     this.speechRecognitionManager_ = new speech.SpeechRecognitionManager(this);
-    this.setState_(SpeechState.READY);
   }
 
   /**
@@ -77,15 +91,9 @@ cr.define('speech', function() {
     this.pluginManager_ = pluginManager;
     this.audioManager_.addEventListener(
         'audio', pluginManager.sendAudioData.bind(pluginManager));
-    if (this.shown_) {
-      this.pluginManager_.startRecognizer();
-      this.audioManager_.start();
-      this.setState_(SpeechState.HOTWORD_RECOGNIZING);
-    } else {
-      this.pluginManager_.stopRecognizer();
-      this.setState_(SpeechState.READY);
-    }
-    chrome.send('setHotwordRecognizerState', [true]);
+    this.pluginManager_.startRecognizer();
+    this.audioManager_.start();
+    this.setState_(SpeechState.HOTWORD_RECOGNIZING);
   };
 
   /**
@@ -170,69 +178,57 @@ cr.define('speech', function() {
     if (enabled) {
       if (recognizer)
         return;
+      if (!this.naclArch)
+        return;
 
+      var prefix = getHotwordPrefix();
       var pluginManager = new speech.PluginManager(
+          prefix,
           this.onHotwordRecognizerReady_.bind(this),
           this.onHotwordRecognized_.bind(this));
-      pluginManager.scheduleInitialize(
-          this.audioManager_.sampleRate, 'chrome://app-list/hotword.data');
+      var modelUrl = 'chrome://app-list/_platform_specific/' + this.naclArch +
+          '_' + prefix + '/hotword.data';
+      pluginManager.scheduleInitialize(this.audioManager_.sampleRate, modelUrl);
     } else {
       if (!recognizer)
         return;
       document.body.removeChild(recognizer);
       this.pluginManager_ = null;
-      chrome.send('setHotwordRecognizerState', [false]);
-      if (this.state == SpeechState.HOTWORD_RECOGNIZING)
-        this.setState(SpeechState.READY);
+      if (this.state == SpeechState.HOTWORD_RECOGNIZING) {
+        this.audioManager_.stop();
+        this.setState_(SpeechState.READY);
+      }
     }
   };
 
   /**
-   * Starts the hotword recognizer.
+   * Sets the NaCl architecture for the hotword module.
+   *
+   * @param {string} arch The architecture.
    */
-  SpeechManager.prototype.startHotwordRecognition = function() {
-    if (!this.pluginManager_)
-      return;
-
-    if (this.state == SpeechState.HOTWORD_RECOGNIZING)
-      return;
-
-    this.pluginManager_.startRecognizer();
-    this.audioManager_.start();
-    this.setState_(SpeechState.HOTWORD_RECOGNIZING);
-  };
-
-  /**
-   * Stops the hotword recognizer.
-   */
-  SpeechManager.prototype.stopHotwordRecognition = function() {
-    if (!this.pluginManager_)
-      return;
-
-    if (this.state != SpeechState.HOTWORD_RECOGNIZING)
-      return;
-
-    this.pluginManager_.stopRecognizer();
-    this.audioManager_.stop();
-    this.setState_(SpeechState.READY);
+  SpeechManager.prototype.setNaclArch = function(arch) {
+    this.naclArch = arch;
   };
 
   /**
    * Called when the app-list bubble is shown.
+   *
+   * @param {boolean} hotwordEnabled Whether the hotword is enabled or not.
    */
-  SpeechManager.prototype.onShown = function() {
-    this.shown_ = true;
-    if (this.state == SpeechState.READY)
-      this.startHotwordRecognition();
+  SpeechManager.prototype.onShown = function(hotwordEnabled) {
+    this.setHotwordEnabled(hotwordEnabled);
+
+    // No one sets the state if the content is initialized on shown but hotword
+    // is not enabled. Sets the state in such case.
+    if (!this.state && !hotwordEnabled)
+      this.setState_(SpeechState.READY);
   };
 
   /**
    * Called when the app-list bubble is hidden.
    */
   SpeechManager.prototype.onHidden = function() {
-    this.shown_ = false;
-    if (this.pluginManager_)
-      this.pluginManager_.stopRecognizer();
+    this.setHotwordEnabled(false);
 
     // SpeechRecognition is asynchronous.
     this.audioManager_.stop();

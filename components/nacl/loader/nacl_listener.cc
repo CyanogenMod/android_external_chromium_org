@@ -33,9 +33,10 @@
 #endif
 
 #if defined(OS_LINUX)
+#include "components/nacl/loader/nonsfi/irt_random.h"
 #include "components/nacl/loader/nonsfi/nonsfi_main.h"
 #include "content/public/common/child_process_sandbox_support_linux.h"
-#include "ppapi/proxy/plugin_main_irt.h"
+#include "ppapi/nacl_irt/plugin_startup.h"
 #endif
 
 #if defined(OS_WIN)
@@ -261,26 +262,32 @@ void NaClListener::OnStart(const nacl::NaClStartParams& params) {
 #if !defined(OS_LINUX)
   CHECK(!uses_nonsfi_mode_) << "Non-SFI NaCl is only supported on Linux";
 #endif
-#if defined(OS_LINUX) || defined(OS_MACOSX)
-  int urandom_fd = dup(base::GetUrandomFD());
-  if (urandom_fd < 0) {
-    LOG(ERROR) << "Failed to dup() the urandom FD";
-    return;
+
+  // Random number source initialization.
+#if defined(OS_LINUX)
+  if (uses_nonsfi_mode_) {
+    nacl::nonsfi::SetUrandomFd(base::GetUrandomFD());
   }
-  NaClChromeMainSetUrandomFd(urandom_fd);
+#endif
+#if defined(OS_LINUX) || defined(OS_MACOSX)
+  if (!uses_nonsfi_mode_) {
+    int urandom_fd = dup(base::GetUrandomFD());
+    if (urandom_fd < 0) {
+      LOG(ERROR) << "Failed to dup() the urandom FD";
+      return;
+    }
+    NaClChromeMainSetUrandomFd(urandom_fd);
+  }
 #endif
 
-  NaClChromeMainInit();
-  struct NaClChromeMainArgs *args = NaClChromeMainArgsCreate();
-  if (args == NULL) {
-    LOG(ERROR) << "NaClChromeMainArgsCreate() failed";
-    return;
-  }
-
-  struct NaClApp *nap = NaClAppCreate();
-  if (nap == NULL) {
-    LOG(ERROR) << "NaClAppCreate() failed";
-    return;
+  struct NaClApp* nap = NULL;
+  if (!uses_nonsfi_mode_) {
+    NaClChromeMainInit();
+    nap = NaClAppCreate();
+    if (nap == NULL) {
+      LOG(ERROR) << "NaClAppCreate() failed";
+      return;
+    }
   }
 
   IPC::ChannelHandle browser_handle;
@@ -313,7 +320,7 @@ void NaClListener::OnStart(const nacl::NaClStartParams& params) {
       }
 
       // Set the plugin IPC channel FDs.
-      SetIPCFileDescriptors(
+      ppapi::SetIPCFileDescriptors(
           browser_server_ppapi_fd, renderer_server_ppapi_fd);
 
       // Send back to the client side IPC channel FD to the host.
@@ -352,6 +359,25 @@ void NaClListener::OnStart(const nacl::NaClStartParams& params) {
     LOG(ERROR) << "Failed to send IPC channel handle to NaClProcessHost.";
 
   std::vector<nacl::FileDescriptor> handles = params.handles;
+
+#if defined(OS_LINUX)
+  if (uses_nonsfi_mode_) {
+    if (params.uses_irt) {
+      LOG(ERROR) << "IRT must not be used for non-SFI NaCl.";
+      return;
+    }
+    CHECK(handles.size() == 1);
+    int imc_bootstrap_handle = nacl::ToNativeHandle(handles[0]);
+    nacl::nonsfi::MainStart(imc_bootstrap_handle);
+    return;
+  }
+#endif
+
+  struct NaClChromeMainArgs* args = NaClChromeMainArgsCreate();
+  if (args == NULL) {
+    LOG(ERROR) << "NaClChromeMainArgsCreate() failed";
+    return;
+  }
 
 #if defined(OS_LINUX) || defined(OS_MACOSX)
   args->number_of_cores = number_of_cores_;
@@ -424,12 +450,6 @@ void NaClListener::OnStart(const nacl::NaClStartParams& params) {
   args->prereserved_sandbox_size = prereserved_sandbox_size_;
 #endif
 
-#if defined(OS_LINUX)
-  if (uses_nonsfi_mode_) {
-    nacl::nonsfi::MainStart(args->imc_bootstrap_handle);
-    return;
-  }
-#endif
   NaClChromeMainStartApp(nap, args);
   NOTREACHED();
 }

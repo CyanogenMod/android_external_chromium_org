@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 // Mock out the support module to avoid depending on the message loop.
-define("mojo/bindings/js/support", function() {
+define("mojo/bindings/js/support", ["timer"], function(timer) {
   var waitingCallbacks = [];
 
   function WaitCookie(id) {
@@ -38,11 +38,18 @@ define("mojo/bindings/js/support", function() {
     }
   }
 
+  // Queue up a pumpOnce call to execute after the stack unwinds. Use
+  // this to trigger a pump after all Promises are executed.
+  function queuePump(result) {
+    timer.createOneShot(0, pumpOnce.bind(undefined, result));
+  }
+
   var exports = {};
   exports.asyncWait = asyncWait;
   exports.cancelWait = cancelWait;
   exports.numberOfWaitingCallbacks = numberOfWaitingCallbacks;
   exports.pumpOnce = pumpOnce;
+  exports.queuePump = queuePump;
   return exports;
 });
 
@@ -50,19 +57,29 @@ define([
     "gin/test/expect",
     "mojo/bindings/js/support",
     "mojo/bindings/js/core",
-    "mojo/public/bindings/js/connection",
+    "mojo/public/js/bindings/connection",
     "mojo/public/interfaces/bindings/tests/sample_interfaces.mojom",
     "mojo/public/interfaces/bindings/tests/sample_service.mojom",
+    "mojo/apps/js/bindings/threading",
+    "gc",
 ], function(expect,
             mockSupport,
             core,
             connection,
             sample_interfaces,
-            sample_service) {
+            sample_service,
+            threading,
+            gc) {
   testClientServer();
   testWriteToClosedPipe();
-  testRequestResponse();
-  this.result = "PASS";
+  testRequestResponse().then(function() {
+    this.result = "PASS";
+    gc.collectGarbage();  // should not crash
+    threading.quit();
+  }.bind(this)).catch(function(e) {
+    this.result = "FAIL: " + (e.stack || e);
+    threading.quit();
+  }.bind(this));
 
   function testClientServer() {
     var receivedFrobinate = false;
@@ -181,12 +198,14 @@ define([
     ProviderImpl.prototype =
         Object.create(sample_interfaces.ProviderStub.prototype);
 
-    ProviderImpl.prototype.echoString = function(a, callback) {
-      callback(a);
+    ProviderImpl.prototype.echoString = function(a) {
+      mockSupport.queuePump(core.RESULT_OK);
+      return Promise.resolve({a: a});
     };
 
-    ProviderImpl.prototype.echoStrings = function(a, b, callback) {
-      callback(a, b);
+    ProviderImpl.prototype.echoStrings = function(a, b) {
+      mockSupport.queuePump(core.RESULT_OK);
+      return Promise.resolve({a: a, b: b});
     };
 
     // ProviderClientImpl ------------------------------------------------------
@@ -198,12 +217,6 @@ define([
     ProviderClientImpl.prototype =
         Object.create(sample_interfaces.ProviderClientStub.prototype);
 
-    ProviderClientImpl.prototype.didFrobinate = function(result) {
-      receivedDidFrobinate = true;
-
-      expect(result).toBe(42);
-    };
-
     var pipe = core.createMessagePipe();
 
     var connection0 = new connection.Connection(
@@ -212,26 +225,32 @@ define([
     var connection1 = new connection.Connection(
         pipe.handle1, ProviderClientImpl, sample_interfaces.ProviderProxy);
 
-    var echoedString;
-
+    var origReadMessage = core.readMessage;
     // echoString
+    mockSupport.queuePump(core.RESULT_OK);
+    return connection1.remote.echoString("hello").then(function(response) {
+      expect(response.a).toBe("hello");
+    }).then(function() {
+      // echoStrings
+      mockSupport.queuePump(core.RESULT_OK);
+      return connection1.remote.echoStrings("hello", "world");
+    }).then(function(response) {
+      expect(response.a).toBe("hello");
+      expect(response.b).toBe("world");
+    }).then(function() {
+      // Mock a read failure, expect it to fail.
+      core.readMessage = function() {
+        return { result: core.RESULT_UNKNOWN };
+      };
+      mockSupport.queuePump(core.RESULT_OK);
+      return connection1.remote.echoString("goodbye");
+    }).then(function() {
+      throw Error("Expected echoString to fail.");
+    }, function(error) {
+      expect(error.message).toBe("Connection error: " + core.RESULT_UNKNOWN);
 
-    connection1.remote.echoString("hello", function(a) {
-      echoedString = a;
+      // Clean up.
+      core.readMessage = origReadMessage;
     });
-
-    mockSupport.pumpOnce(core.RESULT_OK);
-
-    expect(echoedString).toBe("hello");
-
-    // echoStrings
-
-    connection1.remote.echoStrings("hello", "world", function(a, b) {
-      echoedString = a + " " + b;
-    });
-
-    mockSupport.pumpOnce(core.RESULT_OK);
-
-    expect(echoedString).toBe("hello world");
   }
 });

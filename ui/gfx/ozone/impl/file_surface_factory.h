@@ -10,9 +10,6 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/ozone/surface_factory_ozone.h"
 
-class SkBitmapDevice;
-class SkCanvas;
-
 namespace gfx {
 
 class GFX_EXPORT FileSurfaceFactory : public SurfaceFactoryOzone {
@@ -25,8 +22,8 @@ class GFX_EXPORT FileSurfaceFactory : public SurfaceFactoryOzone {
   virtual HardwareState InitializeHardware() OVERRIDE;
   virtual void ShutdownHardware() OVERRIDE;
   virtual AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
-  virtual scoped_ptr<SurfaceOzone> CreateSurfaceForWidget(
-      AcceleratedWidget widget) OVERRIDE;
+  virtual scoped_ptr<SurfaceOzoneCanvas> CreateCanvasForWidget(
+      gfx::AcceleratedWidget w) OVERRIDE;
   virtual bool LoadEGLGLES2Bindings(
       AddGLLibraryCallback add_gl_library,
       SetGLGetProcAddressProcCallback set_gl_get_proc_address) OVERRIDE;

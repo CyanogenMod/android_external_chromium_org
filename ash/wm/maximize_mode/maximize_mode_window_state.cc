@@ -23,7 +23,6 @@
 #include "ui/gfx/rect.h"
 
 namespace ash {
-namespace internal {
 namespace {
 
 // Returns the biggest possible size for a window which is about to be
@@ -132,7 +131,7 @@ void MaximizeModeWindowState::OnWMEvent(wm::WindowState* window_state,
     case wm::WM_EVENT_MINIMIZE:
       if (current_state_type_ != wm::WINDOW_STATE_TYPE_MINIMIZED) {
         current_state_type_ = wm::WINDOW_STATE_TYPE_MINIMIZED;
-        window_state->Minimize();
+        Minimize(window_state);
       }
       return;
     case wm::WM_EVENT_SHOW_INACTIVE:
@@ -223,5 +222,15 @@ void MaximizeModeWindowState::MaximizeOrCenterWindow(
   }
 }
 
-}  // namespace internal
+void MaximizeModeWindowState::Minimize(wm::WindowState* window_state) {
+  ::wm::SetWindowVisibilityAnimationType(
+      window_state->window(), WINDOW_VISIBILITY_ANIMATION_TYPE_MINIMIZE);
+
+  // Hide the window.
+  window_state->window()->Hide();
+  // Activate another window.
+  if (window_state->IsActive())
+    window_state->Deactivate();
+}
+
 }  // namespace ash

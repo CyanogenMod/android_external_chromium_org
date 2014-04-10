@@ -256,6 +256,13 @@ void AddScrollStylesToWindow(HWND window) {
 
 const int kTouchDownContextResetTimeout = 500;
 
+// Windows does not flag synthesized mouse messages from touch in all cases.
+// This causes us grief as we don't want to process touch and mouse messages
+// concurrently. Hack as per msdn is to check if the time difference between
+// the touch message and the mouse move is within 500 ms and at the same
+// location as the cursor.
+const int kSynthesizedMouseTouchMessagesTimeDifference = 500;
+
 }  // namespace
 
 // A scoping class that prevents a window from being able to redraw in response
@@ -324,6 +331,8 @@ class HWNDMessageHandler::ScopedRedrawLock {
 
 ////////////////////////////////////////////////////////////////////////////////
 // HWNDMessageHandler, public:
+
+long HWNDMessageHandler::last_touch_message_time_ = 0;
 
 HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
     : delegate_(delegate),
@@ -2116,6 +2125,8 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
 
       ScreenToClient(hwnd(), &point);
 
+      last_touch_message_time_ = ::GetMessageTime();
+
       ui::EventType touch_event_type = ui::ET_UNKNOWN;
 
       if (input[i].dwFlags & TOUCHEVENTF_DOWN) {
@@ -2134,12 +2145,27 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
         touch_event_type = ui::ET_TOUCH_MOVED;
       }
       if (touch_event_type != ui::ET_UNKNOWN) {
-        ui::TouchEvent event(
-            touch_event_type,
-            gfx::Point(point.x, point.y),
-            id_generator_.GetGeneratedID(input[i].dwID),
-            base::TimeDelta::FromMilliseconds(input[i].dwTime));
+        base::TimeTicks now;
+        // input[i].dwTime doesn't necessarily relate to the system time at all,
+        // so use base::TimeTicks::HighResNow() if possible, or
+        // base::TimeTicks::Now() otherwise.
+        if (base::TimeTicks::IsHighResNowFastAndReliable())
+          now = base::TimeTicks::HighResNow();
+        else
+          now = base::TimeTicks::Now();
+        ui::TouchEvent event(touch_event_type,
+                             gfx::Point(point.x, point.y),
+                             id_generator_.GetGeneratedID(input[i].dwID),
+                             now - base::TimeTicks());
         event.set_flags(flags);
+        event.latency()->AddLatencyNumberWithTimestamp(
+            ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
+            0,
+            0,
+            base::TimeTicks::FromInternalValue(
+                event.time_stamp().ToInternalValue()),
+            1);
+
         touch_events.push_back(event);
         if (touch_event_type == ui::ET_TOUCH_RELEASED)
           id_generator_.ReleaseNumber(input[i].dwID);
@@ -2332,10 +2358,11 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
     // be WM_RBUTTONUP instead of WM_NCRBUTTONUP.
     SetCapture();
   }
-  MSG msg = { hwnd(), message, w_param, l_param, GetMessageTime(),
+  long message_time = GetMessageTime();
+  MSG msg = { hwnd(), message, w_param, l_param, message_time,
               { CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param) } };
   ui::MouseEvent event(msg);
-  if (!touch_ids_.empty() || ui::IsMouseEventFromTouch(message))
+  if (IsSynthesizedMouseMessage(message, message_time, l_param))
     event.set_flags(event.flags() | ui::EF_FROM_TOUCH);
 
   if (!(event.flags() & ui::EF_IS_NON_CLIENT))
@@ -2377,6 +2404,28 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
   if (ref.get())
     SetMsgHandled(handled);
   return 0;
+}
+
+bool HWNDMessageHandler::IsSynthesizedMouseMessage(unsigned int message,
+                                                   int message_time,
+                                                   LPARAM l_param) {
+  if (ui::IsMouseEventFromTouch(message))
+    return true;
+  // Ignore mouse messages which occur at the same location as the current
+  // cursor position and within a time difference of 500 ms from the last
+  // touch message.
+  if (last_touch_message_time_ && message_time >= last_touch_message_time_ &&
+      ((message_time - last_touch_message_time_) <=
+          kSynthesizedMouseTouchMessagesTimeDifference)) {
+    POINT mouse_location = CR_POINT_INITIALIZER_FROM_LPARAM(l_param);
+    ::ClientToScreen(hwnd(), &mouse_location);
+    POINT cursor_pos = {0};
+    ::GetCursorPos(&cursor_pos);
+    if (memcmp(&cursor_pos, &mouse_location, sizeof(POINT)))
+      return false;
+    return true;
+  }
+  return false;
 }
 
 }  // namespace views

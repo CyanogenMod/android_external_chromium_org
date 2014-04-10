@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_nacl_private.idl modified Mon Mar 31 13:29:26 2014. */
+/* From private/ppb_nacl_private.idl modified Mon Apr  7 13:43:24 2014. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
 #define PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
@@ -14,7 +14,6 @@
 #include "ppapi/c/pp_macros.h"
 #include "ppapi/c/pp_stdint.h"
 #include "ppapi/c/pp_var.h"
-#include "ppapi/c/private/ppb_instance_private.h"
 
 #define PPB_NACL_PRIVATE_INTERFACE_1_0 "PPB_NaCl_Private;1.0"
 #define PPB_NACL_PRIVATE_INTERFACE PPB_NACL_PRIVATE_INTERFACE_1_0
@@ -190,14 +189,9 @@ struct PPB_NaCl_Private_1_0 {
                        struct PP_Var* error_message,
                        struct PP_CompletionCallback callback);
   /* This function starts the IPC proxy so the nexe can communicate with the
-   * browser. Returns PP_EXTERNAL_PLUGIN_OK on success, otherwise a result code
-   * indicating the failure. PP_EXTERNAL_PLUGIN_FAILED is returned if
-   * LaunchSelLdr wasn't called with the instance.
-   * PP_EXTERNAL_PLUGIN_ERROR_MODULE is returned if the module can't be
-   * initialized. PP_EXTERNAL_PLUGIN_ERROR_INSTANCE is returned if the instance
-   * can't be initialized.
+   * browser.
    */
-  PP_ExternalPluginResult (*StartPpapiProxy)(PP_Instance instance);
+  PP_Bool (*StartPpapiProxy)(PP_Instance instance);
   /* On POSIX systems, this function returns the file descriptor of
    * /dev/urandom.  On non-POSIX systems, this function returns 0.
    */
@@ -284,12 +278,6 @@ struct PPB_NaCl_Private_1_0 {
                         PP_Bool length_is_computable,
                         uint64_t loaded_bytes,
                         uint64_t total_bytes);
-  /* Sets a read-only property on the <embed> DOM element that corresponds to
-   * the given instance.
-   */
-  void (*SetReadOnlyProperty)(PP_Instance instance,
-                              struct PP_Var key,
-                              struct PP_Var value);
   /* Report that the nexe loaded successfully. */
   void (*ReportLoadSuccess)(PP_Instance instance,
                             const char* url,
@@ -302,8 +290,8 @@ struct PPB_NaCl_Private_1_0 {
                           const char* console_message);
   /* Reports that loading a nexe was aborted. */
   void (*ReportLoadAbort)(PP_Instance instance);
-  /* Reports that the nexe has crashed or is otherwise dead. */
-  void (*ReportDeadNexe)(PP_Instance instance, int64_t crash_time);
+  /* Reports that the nexe has crashed. */
+  void (*NexeDidCrash)(PP_Instance instance, const char* crash_log);
   /* Performs internal setup when an instance is created. */
   void (*InstanceCreated)(PP_Instance instance);
   /* Performs internal cleanup when an instance is destroyed. */
@@ -320,8 +308,6 @@ struct PPB_NaCl_Private_1_0 {
   PP_UrlSchemeType (*GetUrlScheme)(struct PP_Var url);
   /* Logs the message to the console. */
   void (*LogToConsole)(PP_Instance instance, const char* message);
-  /* Returns PP_TRUE if an error has been reported loading the nexe. */
-  PP_Bool (*GetNexeErrorReported)(PP_Instance instance);
   /* Returns the NaCl readiness status for this instance. */
   PP_NaClReadyState (*GetNaClReadyState)(PP_Instance instance);
   /* Sets the NaCl readiness status for this instance. */
@@ -331,10 +317,20 @@ struct PPB_NaCl_Private_1_0 {
   PP_Bool (*GetIsInstalled)(PP_Instance instance);
   /* Sets whether the plugin is an installed app. */
   void (*SetIsInstalled)(PP_Instance instance, PP_Bool is_installed);
-  /* Returns the time the nexe became ready. */
-  int64_t (*GetReadyTime)(PP_Instance instance);
   /* Sets the time the nexe became ready. */
-  void (*SetReadyTime)(PP_Instance instance, int64_t ready_time);
+  void (*SetReadyTime)(PP_Instance instance);
+  /* Returns the exit status of the plugin process. */
+  int32_t (*GetExitStatus)(PP_Instance instance);
+  /* Sets the exit status of the plugin process. */
+  void (*SetExitStatus)(PP_Instance instance, int32_t exit_status);
+  /* Logs the message via VLOG. */
+  void (*Vlog)(const char* message);
+  /* Sets the time the plugin was initialized. */
+  void (*SetInitTime)(PP_Instance instance);
+  /* Returns the size of the nexe. */
+  int64_t (*GetNexeSize)(PP_Instance instance);
+  /* Sets the size of the nexe. */
+  void (*SetNexeSize)(PP_Instance instance, int64_t nexe_size);
 };
 
 typedef struct PPB_NaCl_Private_1_0 PPB_NaCl_Private;

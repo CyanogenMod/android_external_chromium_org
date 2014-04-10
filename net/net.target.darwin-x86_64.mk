@@ -6,15 +6,16 @@ LOCAL_MODULE_CLASS := STATIC_LIBRARIES
 LOCAL_MODULE := net_net_gyp
 LOCAL_MODULE_SUFFIX := .a
 LOCAL_MODULE_TAGS := optional
-gyp_intermediate_dir := $(call local-intermediates-dir)
-gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
+LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
+gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
+gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,GYP,third_party_icu_icui18n_gyp)/icui18n.stamp \
-	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
-	$(call intermediates-dir-for,GYP,net_net_resources_gyp)/net_resources.stamp \
-	$(call intermediates-dir-for,GYP,net_net_jni_headers_gyp)/net_jni_headers.stamp
+	$(call intermediates-dir-for,GYP,third_party_icu_icui18n_gyp,,,$(GYP_VAR_PREFIX))/icui18n.stamp \
+	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp,,,$(GYP_VAR_PREFIX))/icuuc.stamp \
+	$(call intermediates-dir-for,GYP,net_net_resources_gyp,,,$(GYP_VAR_PREFIX))/net_resources.stamp \
+	$(call intermediates-dir-for,GYP,net_net_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/net_jni_headers.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -52,13 +53,11 @@ LOCAL_SRC_FILES := \
 	net/base/file_stream.cc \
 	net/base/file_stream_context.cc \
 	net/base/file_stream_context_posix.cc \
-	net/base/file_stream_metrics.cc \
-	net/base/file_stream_metrics_posix.cc \
-	net/base/file_stream_net_log_parameters.cc \
-	net/base/int128.cc \
+	net/base/filename_util.cc \
 	net/base/hash_value.cc \
 	net/base/host_mapping_rules.cc \
 	net/base/host_port_pair.cc \
+	net/base/int128.cc \
 	net/base/io_buffer.cc \
 	net/base/ip_endpoint.cc \
 	net/base/ip_pattern.cc \
@@ -734,9 +733,9 @@ LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
-	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
+	-Wl,--fatal-warnings \
 	-Wl,-z,noexecstack \
 	-fPIC \
 	-m64 \
@@ -751,9 +750,9 @@ LOCAL_LDFLAGS_Debug := \
 
 
 LOCAL_LDFLAGS_Release := \
-	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
+	-Wl,--fatal-warnings \
 	-Wl,-z,noexecstack \
 	-fPIC \
 	-m64 \

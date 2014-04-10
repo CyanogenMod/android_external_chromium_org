@@ -56,7 +56,7 @@ public class ContentShellActivity extends Activity {
 
         DeviceUtils.addDeviceSpecificUserAgentSwitch(this);
         try {
-            LibraryLoader.ensureInitialized(null);
+            LibraryLoader.ensureInitialized();
         } catch (ProcessInitException e) {
             Log.e(TAG, "ContentView initialization failed.", e);
             // Since the library failed to initialize nothing in the application
@@ -143,12 +143,12 @@ public class ContentShellActivity extends Activity {
 
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
-        if (keyCode != KeyEvent.KEYCODE_BACK) return super.onKeyUp(keyCode, event);
-
-        Shell activeView = getActiveShell();
-        if (activeView != null && activeView.getContentView().canGoBack()) {
-            activeView.getContentView().goBack();
-            return true;
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            ContentView contentView = getActiveContentView();
+            if (contentView != null && contentView.canGoBack()) {
+                contentView.goBack();
+                return true;
+            }
         }
 
         return super.onKeyUp(keyCode, event);

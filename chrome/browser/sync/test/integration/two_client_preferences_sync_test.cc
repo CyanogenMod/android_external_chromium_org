@@ -37,6 +37,15 @@ class TwoClientPreferencesSyncTest : public SyncTest {
   DISALLOW_COPY_AND_ASSIGN(TwoClientPreferencesSyncTest);
 };
 
+class LegacyTwoClientPreferencesSyncTest : public SyncTest {
+ public:
+  LegacyTwoClientPreferencesSyncTest() : SyncTest(TWO_CLIENT_LEGACY) {}
+  virtual ~LegacyTwoClientPreferencesSyncTest() {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(LegacyTwoClientPreferencesSyncTest);
+};
+
 // TCM ID - 7306186.
 IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest,
                        kHomePageIsNewTabPage) {
@@ -65,11 +74,13 @@ IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest, Race) {
 IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest,
                        kPasswordManagerEnabled) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
-  ASSERT_TRUE(BooleanPrefMatches(prefs::kPasswordManagerEnabled));
+  ASSERT_TRUE(
+      BooleanPrefMatches(password_manager::prefs::kPasswordManagerEnabled));
 
-  ChangeBooleanPref(0, prefs::kPasswordManagerEnabled);
+  ChangeBooleanPref(0, password_manager::prefs::kPasswordManagerEnabled);
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-  ASSERT_TRUE(BooleanPrefMatches(prefs::kPasswordManagerEnabled));
+  ASSERT_TRUE(
+      BooleanPrefMatches(password_manager::prefs::kPasswordManagerEnabled));
 }
 
 // TCM ID - 3699293.
@@ -88,21 +99,24 @@ IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest,
 }
 
 // TCM ID - 3661290.
-IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest, DisablePreferences) {
+IN_PROC_BROWSER_TEST_F(LegacyTwoClientPreferencesSyncTest, DisablePreferences) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
   DisableVerifier();
 
   ASSERT_TRUE(BooleanPrefMatches(sync_driver::prefs::kSyncPreferences));
-  ASSERT_TRUE(BooleanPrefMatches(prefs::kPasswordManagerEnabled));
+  ASSERT_TRUE(
+      BooleanPrefMatches(password_manager::prefs::kPasswordManagerEnabled));
 
   GetClient(1)->DisableSyncForDatatype(syncer::PREFERENCES);
-  ChangeBooleanPref(0, prefs::kPasswordManagerEnabled);
+  ChangeBooleanPref(0, password_manager::prefs::kPasswordManagerEnabled);
   ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
-  ASSERT_FALSE(BooleanPrefMatches(prefs::kPasswordManagerEnabled));
+  ASSERT_FALSE(
+      BooleanPrefMatches(password_manager::prefs::kPasswordManagerEnabled));
 
   GetClient(1)->EnableSyncForDatatype(syncer::PREFERENCES);
   ASSERT_TRUE(AwaitQuiescence());
-  ASSERT_TRUE(BooleanPrefMatches(prefs::kPasswordManagerEnabled));
+  ASSERT_TRUE(
+      BooleanPrefMatches(password_manager::prefs::kPasswordManagerEnabled));
 }
 
 // TCM ID - 3664292.
@@ -111,20 +125,23 @@ IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest, DisableSync) {
   DisableVerifier();
 
   ASSERT_TRUE(BooleanPrefMatches(sync_driver::prefs::kSyncPreferences));
-  ASSERT_TRUE(BooleanPrefMatches(prefs::kPasswordManagerEnabled));
+  ASSERT_TRUE(
+      BooleanPrefMatches(password_manager::prefs::kPasswordManagerEnabled));
   ASSERT_TRUE(BooleanPrefMatches(prefs::kShowHomeButton));
 
   GetClient(1)->DisableSyncForAllDatatypes();
-  ChangeBooleanPref(0, prefs::kPasswordManagerEnabled);
+  ChangeBooleanPref(0, password_manager::prefs::kPasswordManagerEnabled);
   ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
-  ASSERT_FALSE(BooleanPrefMatches(prefs::kPasswordManagerEnabled));
+  ASSERT_FALSE(
+      BooleanPrefMatches(password_manager::prefs::kPasswordManagerEnabled));
 
   ChangeBooleanPref(1, prefs::kShowHomeButton);
   ASSERT_FALSE(BooleanPrefMatches(prefs::kShowHomeButton));
 
   GetClient(1)->EnableSyncForAllDatatypes();
   ASSERT_TRUE(AwaitQuiescence());
-  ASSERT_TRUE(BooleanPrefMatches(prefs::kPasswordManagerEnabled));
+  ASSERT_TRUE(
+      BooleanPrefMatches(password_manager::prefs::kPasswordManagerEnabled));
   ASSERT_TRUE(BooleanPrefMatches(prefs::kShowHomeButton));
 }
 

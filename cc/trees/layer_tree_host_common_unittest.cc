@@ -7,6 +7,7 @@
 #include <set>
 
 #include "cc/animation/layer_animation_controller.h"
+#include "cc/animation/transform_operations.h"
 #include "cc/base/math_util.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/content_layer_client.h"
@@ -181,15 +182,48 @@ class LayerTreeHostCommonTest : public LayerTreeHostCommonTestBase,
 
 class LayerWithForcedDrawsContent : public Layer {
  public:
-  LayerWithForcedDrawsContent() : Layer() {}
+  LayerWithForcedDrawsContent() : Layer(), last_device_scale_factor_(0.f) {}
 
   virtual bool DrawsContent() const OVERRIDE;
+  virtual void CalculateContentsScale(float ideal_contents_scale,
+                                      float device_scale_factor,
+                                      float page_scale_factor,
+                                      float maximum_animation_contents_scale,
+                                      bool animating_transform_to_screen,
+                                      float* contents_scale_x,
+                                      float* contents_scale_y,
+                                      gfx::Size* content_bounds) OVERRIDE;
+
+  float last_device_scale_factor() const { return last_device_scale_factor_; }
 
  private:
   virtual ~LayerWithForcedDrawsContent() {}
+
+  // Parameters from last CalculateContentsScale.
+  float last_device_scale_factor_;
 };
 
 bool LayerWithForcedDrawsContent::DrawsContent() const { return true; }
+
+void LayerWithForcedDrawsContent::CalculateContentsScale(
+    float ideal_contents_scale,
+    float device_scale_factor,
+    float page_scale_factor,
+    float maximum_animation_contents_scale,
+    bool animating_transform_to_screen,
+    float* contents_scale_x,
+    float* contents_scale_y,
+    gfx::Size* content_bounds) {
+  last_device_scale_factor_ = device_scale_factor;
+  Layer::CalculateContentsScale(ideal_contents_scale,
+                                device_scale_factor,
+                                page_scale_factor,
+                                maximum_animation_contents_scale,
+                                animating_transform_to_screen,
+                                contents_scale_x,
+                                contents_scale_y,
+                                content_bounds);
+}
 
 class MockContentLayerClient : public ContentLayerClient {
  public:
@@ -1224,8 +1258,10 @@ TEST_F(LayerTreeHostCommonTest, TransformAboveRootLayer) {
   // Transformations applied at the root of the tree should be forwarded
   // to child layers instead of applied to the root RenderSurface.
   const gfx::Transform identity_matrix;
-  scoped_refptr<Layer> root = Layer::Create();
-  scoped_refptr<Layer> child = Layer::Create();
+  scoped_refptr<LayerWithForcedDrawsContent> root =
+      new LayerWithForcedDrawsContent;
+  scoped_refptr<LayerWithForcedDrawsContent> child =
+      new LayerWithForcedDrawsContent;
   child->SetScrollClipLayerId(root->id());
   root->AddChild(child);
 
@@ -1258,6 +1294,8 @@ TEST_F(LayerTreeHostCommonTest, TransformAboveRootLayer) {
     EXPECT_EQ(translate, root->draw_properties().target_space_transform);
     EXPECT_EQ(translate, child->draw_properties().target_space_transform);
     EXPECT_EQ(identity_matrix, root->render_surface()->draw_transform());
+    EXPECT_EQ(1.f, root->last_device_scale_factor());
+    EXPECT_EQ(1.f, child->last_device_scale_factor());
   }
 
   gfx::Transform scale;
@@ -1271,6 +1309,8 @@ TEST_F(LayerTreeHostCommonTest, TransformAboveRootLayer) {
     EXPECT_EQ(scale, root->draw_properties().target_space_transform);
     EXPECT_EQ(scale, child->draw_properties().target_space_transform);
     EXPECT_EQ(identity_matrix, root->render_surface()->draw_transform());
+    EXPECT_EQ(2.f, root->last_device_scale_factor());
+    EXPECT_EQ(2.f, child->last_device_scale_factor());
   }
 
   gfx::Transform rotate;
@@ -1284,6 +1324,8 @@ TEST_F(LayerTreeHostCommonTest, TransformAboveRootLayer) {
     EXPECT_EQ(rotate, root->draw_properties().target_space_transform);
     EXPECT_EQ(rotate, child->draw_properties().target_space_transform);
     EXPECT_EQ(identity_matrix, root->render_surface()->draw_transform());
+    EXPECT_EQ(1.f, root->last_device_scale_factor());
+    EXPECT_EQ(1.f, child->last_device_scale_factor());
   }
 
   gfx::Transform composite;
@@ -1318,6 +1360,8 @@ TEST_F(LayerTreeHostCommonTest, TransformAboveRootLayer) {
     EXPECT_EQ(device_scaled_translate,
               child->draw_properties().target_space_transform);
     EXPECT_EQ(identity_matrix, root->render_surface()->draw_transform());
+    EXPECT_EQ(device_scale_factor, root->last_device_scale_factor());
+    EXPECT_EQ(device_scale_factor, child->last_device_scale_factor());
   }
 
   // Verify it composes correctly with page scale.
@@ -1337,6 +1381,8 @@ TEST_F(LayerTreeHostCommonTest, TransformAboveRootLayer) {
     EXPECT_EQ(page_scaled_translate,
               child->draw_properties().target_space_transform);
     EXPECT_EQ(identity_matrix, root->render_surface()->draw_transform());
+    EXPECT_EQ(1.f, root->last_device_scale_factor());
+    EXPECT_EQ(1.f, child->last_device_scale_factor());
   }
 
   // Verify that it composes correctly with transforms directly on root layer.
@@ -5999,6 +6045,7 @@ class NoScaleContentLayer : public ContentLayer {
   virtual void CalculateContentsScale(float ideal_contents_scale,
                                       float device_scale_factor,
                                       float page_scale_factor,
+                                      float maximum_animation_contents_scale,
                                       bool animating_transform_to_screen,
                                       float* contents_scale_x,
                                       float* contents_scale_y,
@@ -6007,6 +6054,7 @@ class NoScaleContentLayer : public ContentLayer {
     Layer::CalculateContentsScale(ideal_contents_scale,
                                   device_scale_factor,
                                   page_scale_factor,
+                                  maximum_animation_contents_scale,
                                   animating_transform_to_screen,
                                   contents_scale_x,
                                   contents_scale_y,
@@ -9735,6 +9783,226 @@ TEST_F(LayerTreeHostCommonTest, ScrollCompensationWithRounding) {
 
     scroll_layer->SetTransform(identity_transform);
   }
+}
+
+class AnimationScaleFactorTrackingLayerImpl : public LayerImpl {
+ public:
+  static scoped_ptr<AnimationScaleFactorTrackingLayerImpl> Create(
+      LayerTreeImpl* tree_impl,
+      int id) {
+    return make_scoped_ptr(
+        new AnimationScaleFactorTrackingLayerImpl(tree_impl, id));
+  }
+
+  virtual ~AnimationScaleFactorTrackingLayerImpl() {}
+
+  virtual void CalculateContentsScale(float ideal_contents_scale,
+                                      float device_scale_factor,
+                                      float page_scale_factor,
+                                      float maximum_animation_contents_scale,
+                                      bool animating_transform_to_screen,
+                                      float* contents_scale_x,
+                                      float* contents_scale_y,
+                                      gfx::Size* content_bounds) OVERRIDE {
+    last_maximum_animation_contents_scale_ = maximum_animation_contents_scale;
+    LayerImpl::CalculateContentsScale(ideal_contents_scale,
+                                      device_scale_factor,
+                                      page_scale_factor,
+                                      maximum_animation_contents_scale,
+                                      animating_transform_to_screen,
+                                      contents_scale_x,
+                                      contents_scale_y,
+                                      content_bounds);
+  }
+
+  float last_maximum_animation_contents_scale() {
+    return last_maximum_animation_contents_scale_;
+  }
+
+ private:
+  explicit AnimationScaleFactorTrackingLayerImpl(LayerTreeImpl* tree_impl,
+                                                 int id)
+      : LayerImpl(tree_impl, id), last_maximum_animation_contents_scale_(0.f) {
+    SetDrawsContent(true);
+  }
+
+  float last_maximum_animation_contents_scale_;
+};
+
+TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
+  FakeImplProxy proxy;
+  TestSharedBitmapManager shared_bitmap_manager;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+  gfx::Transform identity_matrix;
+  scoped_ptr<AnimationScaleFactorTrackingLayerImpl> grand_parent =
+      AnimationScaleFactorTrackingLayerImpl::Create(host_impl.active_tree(), 1);
+  scoped_ptr<AnimationScaleFactorTrackingLayerImpl> parent =
+      AnimationScaleFactorTrackingLayerImpl::Create(host_impl.active_tree(), 2);
+  scoped_ptr<AnimationScaleFactorTrackingLayerImpl> child =
+      AnimationScaleFactorTrackingLayerImpl::Create(host_impl.active_tree(), 3);
+  scoped_ptr<AnimationScaleFactorTrackingLayerImpl> grand_child =
+      AnimationScaleFactorTrackingLayerImpl::Create(host_impl.active_tree(), 4);
+
+  AnimationScaleFactorTrackingLayerImpl* parent_raw = parent.get();
+  AnimationScaleFactorTrackingLayerImpl* child_raw = child.get();
+  AnimationScaleFactorTrackingLayerImpl* grand_child_raw = grand_child.get();
+
+  child->AddChild(grand_child.PassAs<LayerImpl>());
+  parent->AddChild(child.PassAs<LayerImpl>());
+  grand_parent->AddChild(parent.PassAs<LayerImpl>());
+
+  SetLayerPropertiesForTesting(grand_parent.get(),
+                               identity_matrix,
+                               gfx::PointF(),
+                               gfx::PointF(),
+                               gfx::Size(1, 2),
+                               true,
+                               false);
+  SetLayerPropertiesForTesting(parent_raw,
+                               identity_matrix,
+                               gfx::PointF(),
+                               gfx::PointF(),
+                               gfx::Size(1, 2),
+                               true,
+                               false);
+  SetLayerPropertiesForTesting(child_raw,
+                               identity_matrix,
+                               gfx::PointF(),
+                               gfx::PointF(),
+                               gfx::Size(1, 2),
+                               true,
+                               false);
+  SetLayerPropertiesForTesting(grand_child_raw,
+                               identity_matrix,
+                               gfx::PointF(),
+                               gfx::PointF(),
+                               gfx::Size(1, 2),
+                               true,
+                               false);
+
+  ExecuteCalculateDrawProperties(grand_parent.get());
+
+  // No layers have animations.
+  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+
+  TransformOperations translation;
+  translation.AppendTranslate(1.f, 2.f, 3.f);
+
+  AddAnimatedTransformToLayer(
+      parent_raw, 1.0, TransformOperations(), translation);
+
+  // No layers have scale-affecting animations.
+  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+
+  TransformOperations scale;
+  scale.AppendScale(5.f, 4.f, 3.f);
+
+  AddAnimatedTransformToLayer(child_raw, 1.0, TransformOperations(), scale);
+  ExecuteCalculateDrawProperties(grand_parent.get());
+
+  // Only |child| has a scale-affecting animation.
+  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(5.f, child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(5.f, grand_child_raw->last_maximum_animation_contents_scale());
+
+  AddAnimatedTransformToLayer(
+      grand_parent.get(), 1.0, TransformOperations(), scale);
+  ExecuteCalculateDrawProperties(grand_parent.get());
+
+  // |grand_parent| and |child| have scale-affecting animations.
+  EXPECT_EQ(5.f, grand_parent->last_maximum_animation_contents_scale());
+  EXPECT_EQ(5.f, parent_raw->last_maximum_animation_contents_scale());
+  // We don't support combining animated scales from two nodes; 0.f means
+  // that the maximum scale could not be computed.
+  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+
+  AddAnimatedTransformToLayer(parent_raw, 1.0, TransformOperations(), scale);
+  ExecuteCalculateDrawProperties(grand_parent.get());
+
+  // |grand_parent|, |parent|, and |child| have scale-affecting animations.
+  EXPECT_EQ(5.f, grand_parent->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+
+  grand_parent->layer_animation_controller()->AbortAnimations(
+      Animation::Transform);
+  parent_raw->layer_animation_controller()->AbortAnimations(
+      Animation::Transform);
+  child_raw->layer_animation_controller()->AbortAnimations(
+      Animation::Transform);
+
+  TransformOperations perspective;
+  perspective.AppendPerspective(10.f);
+
+  AddAnimatedTransformToLayer(
+      child_raw, 1.0, TransformOperations(), perspective);
+  ExecuteCalculateDrawProperties(grand_parent.get());
+
+  // |child| has a scale-affecting animation but computing the maximum of this
+  // animation is not supported.
+  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+
+  child_raw->layer_animation_controller()->AbortAnimations(
+      Animation::Transform);
+
+  gfx::Transform scale_matrix;
+  scale_matrix.Scale(1.f, 2.f);
+  grand_parent->SetTransform(scale_matrix);
+  parent_raw->SetTransform(scale_matrix);
+  AddAnimatedTransformToLayer(parent_raw, 1.0, TransformOperations(), scale);
+  ExecuteCalculateDrawProperties(grand_parent.get());
+
+  // |grand_parent| and |parent| each have scale 2.f. |parent| has a  scale
+  // animation with maximum scale 5.f.
+  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
+  EXPECT_EQ(10.f, parent_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(10.f, child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(10.f, grand_child_raw->last_maximum_animation_contents_scale());
+
+  gfx::Transform perspective_matrix;
+  perspective_matrix.ApplyPerspectiveDepth(2.f);
+  child_raw->SetTransform(perspective_matrix);
+  ExecuteCalculateDrawProperties(grand_parent.get());
+
+  // |child| has a transform that's neither a translation nor a scale.
+  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
+  EXPECT_EQ(10.f, parent_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+
+  parent_raw->SetTransform(perspective_matrix);
+  ExecuteCalculateDrawProperties(grand_parent.get());
+
+  // |parent| and |child| have transforms that are neither translations nor
+  // scales.
+  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+
+  parent_raw->SetTransform(identity_matrix);
+  child_raw->SetTransform(identity_matrix);
+  grand_parent->SetTransform(perspective_matrix);
+
+  ExecuteCalculateDrawProperties(grand_parent.get());
+
+  // |grand_parent| has a transform that's neither a translation nor a scale.
+  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
 }
 
 }  // namespace

@@ -10,8 +10,8 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "chrome/common/badge_util.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/icon_with_badge_image_source.h"
+#include "extensions/common/constants.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -58,6 +58,7 @@ bool HasValue(const std::map<int, T>& map, int tab_id) {
 }  // namespace
 
 const int ExtensionAction::kDefaultTabId = -1;
+const int ExtensionAction::kPageActionIconMaxSize = 19;
 
 ExtensionAction::ExtensionAction(const std::string& extension_id,
                                  extensions::ActionInfo::Type action_type,

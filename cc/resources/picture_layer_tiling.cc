@@ -29,7 +29,11 @@ class TileEvictionOrder {
     const TilePriority& a_priority = a->priority(tree_);
     const TilePriority& b_priority = b->priority(tree_);
 
-    return a_priority.IsHigherPriorityThan(b_priority);
+    if (a_priority.priority_bin == b_priority.priority_bin &&
+        a->required_for_activation() != b->required_for_activation()) {
+      return b->required_for_activation();
+    }
+    return b_priority.IsHigherPriorityThan(a_priority);
   }
 
  private:
@@ -175,7 +179,16 @@ void PictureLayerTiling::SetLayerBounds(const gfx::Size& layer_bounds) {
   Invalidate(layer_region);
 }
 
+void PictureLayerTiling::RemoveTilesInRegion(const Region& layer_region) {
+  DoInvalidate(layer_region, false /* recreate_tiles */);
+}
+
 void PictureLayerTiling::Invalidate(const Region& layer_region) {
+  DoInvalidate(layer_region, true /* recreate_tiles */);
+}
+
+void PictureLayerTiling::DoInvalidate(const Region& layer_region,
+                                      bool recreate_tiles) {
   std::vector<TileMapKey> new_tile_keys;
   for (Region::Iterator iter(layer_region); iter.has_rect(); iter.next()) {
     gfx::Rect layer_rect = iter.rect();
@@ -194,13 +207,16 @@ void PictureLayerTiling::Invalidate(const Region& layer_region) {
       if (find == tiles_.end())
         continue;
       tiles_.erase(find);
-      new_tile_keys.push_back(key);
+      if (recreate_tiles)
+        new_tile_keys.push_back(key);
     }
   }
 
-  const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
-  for (size_t i = 0; i < new_tile_keys.size(); ++i)
-    CreateTile(new_tile_keys[i].first, new_tile_keys[i].second, twin_tiling);
+  if (recreate_tiles) {
+    const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
+    for (size_t i = 0; i < new_tile_keys.size(); ++i)
+      CreateTile(new_tile_keys[i].first, new_tile_keys[i].second, twin_tiling);
+  }
 }
 
 PictureLayerTiling::CoverageIterator::CoverageIterator()

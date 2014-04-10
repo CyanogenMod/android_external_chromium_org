@@ -27,8 +27,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
 
 enum AccessibilityState {
@@ -82,6 +80,7 @@ class DefaultAccessibilityView : public TrayItemMore {
         IDS_ASH_STATUS_TRAY_ACCESSIBILITY);
     SetLabel(label);
     SetAccessibleName(label);
+    set_id(test::kAccessibilityTrayItemViewId);
   }
 
   virtual ~DefaultAccessibilityView() {
@@ -92,7 +91,7 @@ class DefaultAccessibilityView : public TrayItemMore {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// ash::internal::tray::AccessibilityPopupView
+// ash::tray::AccessibilityPopupView
 
 AccessibilityPopupView::AccessibilityPopupView(SystemTrayItem* owner,
                                                uint32 enabled_state_bits)
@@ -122,7 +121,7 @@ views::Label* AccessibilityPopupView::CreateLabel(uint32 enabled_state_bits) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// ash::internal::tray::AccessibilityDetailedView
+// ash::tray::AccessibilityDetailedView
 
 AccessibilityDetailedView::AccessibilityDetailedView(
     SystemTrayItem* owner, user::LoginStatus login) :
@@ -308,7 +307,7 @@ void AccessibilityDetailedView::ButtonPressed(views::Button* sender,
 }  // namespace tray
 
 ////////////////////////////////////////////////////////////////////////////////
-// ash::internal::TrayAccessibility
+// ash::TrayAccessibility
 
 TrayAccessibility::TrayAccessibility(SystemTray* system_tray)
     : TrayImageItem(system_tray, IDR_AURA_UBER_TRAY_ACCESSIBILITY),
@@ -434,5 +433,4 @@ void TrayAccessibility::OnAccessibilityModeChanged(
   previous_accessibility_state_ = accessibility_state;
 }
 
-}  // namespace internal
 }  // namespace ash

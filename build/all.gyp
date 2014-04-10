@@ -223,6 +223,11 @@
             '../google_apis/gcm/gcm.gyp:*',
           ],
         }],
+        ['chromeos==1 or (OS=="linux" and use_aura==1)', {
+          'dependencies': [
+            '../apps/shell/app_shell.gyp:*',
+          ],
+        }],
       ],
     }, # target_name: All
     {
@@ -459,7 +464,6 @@
             '../chrome/chrome.gyp:chrome',
             '../chrome/chrome.gyp:load_library_perf_tests',
             '../chrome/chrome.gyp:performance_browser_tests',
-            '../chrome/chrome.gyp:performance_ui_tests',
             '../chrome/chrome.gyp:sync_performance_tests',
             '../media/media.gyp:media_perftests',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
@@ -494,7 +498,6 @@
           'dependencies': [
             '../chrome/chrome.gyp:chrome',
             '../chrome/chrome.gyp:performance_browser_tests',
-            '../chrome/chrome.gyp:performance_ui_tests',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_gl_tests',
             '../gpu/gles2_conform_support/gles2_conform_test.gyp:gles2_conform_test',
@@ -772,6 +775,7 @@
                 '../sql/sql.gyp:sql_unittests_apk',
                 '../sync/sync.gyp:sync_unit_tests_apk',
                 '../ui/events/events.gyp:events_unittests_apk',
+                '../ui/gfx/gfx.gyp:gfx_unittests_apk',
                 '../ui/ui_unittests.gyp:ui_unittests_apk',
                 '../android_webview/android_webview.gyp:android_webview_test_apk',
                 '../chrome/chrome.gyp:chrome_shell_test_apk',
@@ -884,7 +888,6 @@
             '../cc/cc_tests.gyp:cc_unittests',
             '../chrome/chrome.gyp:browser_tests',
             '../chrome/chrome.gyp:performance_browser_tests',
-            '../chrome/chrome.gyp:performance_ui_tests',
             '../chrome/chrome.gyp:sync_integration_tests',
             '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
@@ -985,7 +988,6 @@
             '../chrome/chrome.gyp:interactive_ui_tests',
             '../chrome/chrome.gyp:mini_installer_test',
             '../chrome/chrome.gyp:performance_browser_tests',
-            '../chrome/chrome.gyp:performance_ui_tests',
             '../chrome/chrome.gyp:sync_integration_tests',
             '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',

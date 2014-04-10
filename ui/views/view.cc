@@ -1068,6 +1068,13 @@ const InputMethod* View::GetInputMethod() const {
   return widget ? widget->GetInputMethod() : NULL;
 }
 
+scoped_ptr<ui::EventTargeter>
+View::SetEventTargeter(scoped_ptr<ui::EventTargeter> targeter) {
+  scoped_ptr<ui::EventTargeter> old_targeter = targeter_.Pass();
+  targeter_ = targeter.Pass();
+  return old_targeter.Pass();
+}
+
 bool View::CanAcceptEvent(const ui::Event& event) {
   return IsDrawn();
 }
@@ -1082,7 +1089,7 @@ scoped_ptr<ui::EventTargetIterator> View::GetChildIterator() const {
 }
 
 ui::EventTargeter* View::GetEventTargeter() {
-  return NULL;
+  return targeter_.get();
 }
 
 // Accelerators ----------------------------------------------------------------
@@ -1683,7 +1690,7 @@ std::string View::DoPrintViewGraph(bool first, View* view_with_children) {
   if (!parent_)
     result.append(", shape=box");
   if (layer()) {
-    if (layer()->texture())
+    if (layer()->has_external_content())
       result.append(", color=green");
     else
       result.append(", color=red");

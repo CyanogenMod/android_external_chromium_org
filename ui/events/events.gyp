@@ -25,7 +25,6 @@
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         'dom4_keycode_converter',
       ],
@@ -141,6 +140,7 @@
         'platform/platform_event_observer.h',
         'platform/platform_event_source.cc',
         'platform/platform_event_source.h',
+        'platform/platform_event_source_stub.cc',
         'platform/platform_event_types.h',
         'platform/scoped_event_dispatcher.cc',
         'platform/scoped_event_dispatcher.h',
@@ -148,10 +148,10 @@
         'platform/x11/x11_event_source.h',
         'win/events_win.cc',
         'x/events_x.cc',
-        'x/text_edit_command_x11.cc',
-        'x/text_edit_command_x11.h',
-        'x/text_edit_key_bindings_delegate_x11.cc',
-        'x/text_edit_key_bindings_delegate_x11.h',
+        'linux/text_edit_command_auralinux.cc',
+        'linux/text_edit_command_auralinux.h',
+        'linux/text_edit_key_bindings_delegate_auralinux.cc',
+        'linux/text_edit_key_bindings_delegate_auralinux.h',
       ],
       'conditions': [
         # We explicitly enumerate the platforms we _do_ provide native cracking
@@ -163,13 +163,16 @@
         }],
         ['chromeos==1', {
           'sources!': [
-            'x/text_edit_command_x11.cc',
-            'x/text_edit_command_x11.h',
-            'x/text_edit_key_bindings_delegate_x11.cc',
-            'x/text_edit_key_bindings_delegate_x11.h',
+            'linux/text_edit_command_auralinux.cc',
+            'linux/text_edit_command_auralinux.h',
+            'linux/text_edit_key_bindings_delegate_auralinux.cc',
+            'linux/text_edit_key_bindings_delegate_auralinux.h',
           ],
         }],
         ['use_x11==1', {
+          'sources!': [
+            'platform/platform_event_source_stub.cc',
+          ],
           'dependencies': [
             '<(DEPTH)/build/linux/system.gyp:x11',
           ],
@@ -263,6 +266,8 @@
         'test/events_test_utils.h',
         'test/events_test_utils_x11.cc',
         'test/events_test_utils_x11.h',
+        'test/platform_event_waiter.cc',
+        'test/platform_event_waiter.h',
         'test/test_event_handler.cc',
         'test/test_event_handler.h',
         'test/test_event_processor.cc',

@@ -3,6 +3,7 @@
 
 LOCAL_PATH := $(call my-dir)
 GYP_CONFIGURATION ?= Debug
+GYP_VAR_PREFIX ?=
 
 include $(LOCAL_PATH)/android_webview/android_webview_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/android_webview/android_webview_pak.target.darwin-mips.mk
@@ -50,6 +51,7 @@ include $(LOCAL_PATH)/content/content_app_both.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/content_browser.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/content_child.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/content_common.target.darwin-mips.mk
+include $(LOCAL_PATH)/content/content_common_mojo_bindings.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/content_gpu.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/content_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/content_renderer.target.darwin-mips.mk
@@ -88,6 +90,15 @@ include $(LOCAL_PATH)/media/media_android_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/media/player_android.target.darwin-mips.mk
 include $(LOCAL_PATH)/media/shared_memory_support.target.darwin-mips.mk
 include $(LOCAL_PATH)/media/video_capture_android_jni_headers.target.darwin-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_bindings.target.darwin-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_common_lib.target.darwin-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_environment_chromium.target.darwin-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_environment_chromium_impl.target.darwin-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.darwin-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_service_manager.target.darwin-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_shell_bindings.target.darwin-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_system.target.darwin-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_system_impl.target.darwin-mips.mk
 include $(LOCAL_PATH)/net/cert_verify_status_android_java.target.darwin-mips.mk
 include $(LOCAL_PATH)/net/certificate_mime_types_java.target.darwin-mips.mk
 include $(LOCAL_PATH)/net/http_server.target.darwin-mips.mk
@@ -146,6 +157,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_n
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_profiles_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_resources_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_scripts_js.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_search_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_timeline_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_heap_snapshot_worker_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_script_formatter_worker_js.target.darwin-mips.mk
@@ -155,10 +167,9 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.da
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/frontend_protocol_sources.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/supported_css_properties.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/heap/blink_heap.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/heap/blink_heap_asm_stubs.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_common.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_heap_asm_stubs.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_platform.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_prerequisites.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/make_platform_generated.target.darwin-mips.mk

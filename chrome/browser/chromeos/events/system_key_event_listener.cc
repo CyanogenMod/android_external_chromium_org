@@ -10,10 +10,10 @@
 #include <X11/XKBlib.h>
 #undef Status
 
-#include "base/message_loop/message_loop.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/ime/xkeyboard.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/events/platform/platform_event_source.h"
 
 namespace chromeos {
 
@@ -62,7 +62,7 @@ SystemKeyEventListener::SystemKeyEventListener()
     LOG(WARNING) << "Could not install Xkb Indicator observer";
   }
 
-  base::MessageLoopForUI::current()->AddObserver(this);
+  ui::PlatformEventSource::GetInstance()->AddPlatformEventObserver(this);
 }
 
 SystemKeyEventListener::~SystemKeyEventListener() {
@@ -72,19 +72,18 @@ SystemKeyEventListener::~SystemKeyEventListener() {
 void SystemKeyEventListener::Stop() {
   if (stopped_)
     return;
-  base::MessageLoopForUI::current()->RemoveObserver(this);
+  ui::PlatformEventSource::GetInstance()->RemovePlatformEventObserver(this);
   stopped_ = true;
 }
 
-base::EventStatus SystemKeyEventListener::WillProcessEvent(
-    const base::NativeEvent& event) {
-  return ProcessedXEvent(event) ? base::EVENT_HANDLED : base::EVENT_CONTINUE;
+void SystemKeyEventListener::WillProcessEvent(const base::NativeEvent& event) {
+  ProcessedXEvent(event);
 }
 
 void SystemKeyEventListener::DidProcessEvent(const base::NativeEvent& event) {
 }
 
-bool SystemKeyEventListener::ProcessedXEvent(XEvent* xevent) {
+void SystemKeyEventListener::ProcessedXEvent(XEvent* xevent) {
   input_method::InputMethodManager* input_method_manager =
       input_method::InputMethodManager::Get();
 
@@ -97,10 +96,8 @@ bool SystemKeyEventListener::ProcessedXEvent(XEvent* xevent) {
         // Force turning off Num Lock (crosbug.com/29169)
         input_method_manager->GetXKeyboard()->DisableNumLock();
       }
-      return true;
     }
   }
-  return false;
 }
 
 }  // namespace chromeos

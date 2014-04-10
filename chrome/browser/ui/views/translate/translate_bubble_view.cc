@@ -15,7 +15,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/translate/translate_manager.h"
 #include "chrome/browser/translate/translate_service.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/translate/translate_ui_delegate.h"
@@ -23,6 +22,7 @@
 #include "chrome/browser/ui/translate/translate_bubble_model_impl.h"
 #include "chrome/common/url_constants.h"
 #include "components/translate/core/browser/translate_download_manager.h"
+#include "components/translate/core/browser/translate_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -57,32 +57,6 @@ views::Link* CreateLink(views::LinkListener* listener,
   link->set_listener(listener);
   link->set_id(id);
   return link;
-}
-
-void GetTranslateLanguages(content::WebContents* web_contents,
-                           std::string* source,
-                           std::string* target) {
-  DCHECK(source != NULL);
-  DCHECK(target != NULL);
-
-  TranslateTabHelper* translate_tab_helper =
-      TranslateTabHelper::FromWebContents(web_contents);
-  *source = translate_tab_helper->GetLanguageState().original_language();
-  *source = TranslateDownloadManager::GetLanguageCode(*source);
-
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  Profile* original_profile = profile->GetOriginalProfile();
-  PrefService* prefs = original_profile->GetPrefs();
-  if (!web_contents->GetBrowserContext()->IsOffTheRecord()) {
-    std::string auto_translate_language =
-        TranslateManager::GetAutoTargetLanguage(*source, prefs);
-    if (!auto_translate_language.empty()) {
-      *target = auto_translate_language;
-      return;
-    }
-  }
-  *target = TranslateService::GetTargetLanguage(prefs);
 }
 
 class TranslateDenialComboboxModel : public ui::ComboboxModel {
@@ -142,7 +116,7 @@ TranslateBubbleView::~TranslateBubbleView() {
 // static
 void TranslateBubbleView::ShowBubble(views::View* anchor_view,
                                      content::WebContents* web_contents,
-                                     TranslateTabHelper::TranslateStep step,
+                                     translate::TranslateStep step,
                                      TranslateErrors::Type error_type) {
   if (IsShowing()) {
     // When the user reads the advanced setting panel, the bubble should not be
@@ -152,7 +126,7 @@ void TranslateBubbleView::ShowBubble(views::View* anchor_view,
         TranslateBubbleModel::VIEW_STATE_ADVANCED) {
       return;
     }
-    if (step != TranslateTabHelper::TRANSLATE_ERROR) {
+    if (step != translate::TRANSLATE_STEP_TRANSLATE_ERROR) {
       TranslateBubbleModel::ViewState state =
           TranslateBubbleModelImpl::TranslateStepToViewState(step);
       translate_bubble_view_->SwitchView(state);
@@ -164,7 +138,8 @@ void TranslateBubbleView::ShowBubble(views::View* anchor_view,
 
   std::string source_language;
   std::string target_language;
-  GetTranslateLanguages(web_contents, &source_language, &target_language);
+  TranslateTabHelper::GetTranslateLanguages(web_contents,
+                                            &source_language, &target_language);
 
   scoped_ptr<TranslateUIDelegate> ui_delegate(
       new TranslateUIDelegate(web_contents, source_language, target_language));

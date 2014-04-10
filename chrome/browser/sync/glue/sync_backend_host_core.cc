@@ -474,16 +474,26 @@ void SyncBackendHostCore::DoInitialProcessControlTypes() {
 }
 
 void SyncBackendHostCore::DoFinishInitialProcessControlTypes() {
+  DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
+
   registrar_->ActivateDataType(syncer::DEVICE_INFO,
                                syncer::GROUP_PASSIVE,
                                synced_device_tracker_.get(),
                                sync_manager_->GetUserShare());
 
+  base::WeakPtr<syncer::SyncCore> sync_core = sync_manager_->GetSyncCore();
+
+  // De-reference the WeakPtr while we're here to signal to the debugging
+  // mechanisms that it belongs to the sync thread.  This helps us DCHECK
+  // earlier if the pointer is misused.
+  sync_core.get();
+
   host_.Call(
       FROM_HERE,
       &SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop,
       js_backend_,
-      debug_info_listener_);
+      debug_info_listener_,
+      syncer::SyncCoreProxy(base::MessageLoopProxy::current(), sync_core));
 
   js_backend_.Reset();
   debug_info_listener_.Reset();
@@ -638,6 +648,33 @@ void SyncBackendHostCore::DeleteSyncDataFolder() {
     if (!base::DeleteFile(sync_data_folder_path_, true))
       SLOG(DFATAL) << "Could not delete the Sync Data folder.";
   }
+}
+
+void SyncBackendHostCore::GetAllNodesForTypes(
+    syncer::ModelTypeSet types,
+    scoped_refptr<base::SequencedTaskRunner> task_runner,
+    base::Callback<void(const std::vector<syncer::ModelType>& type,
+                        ScopedVector<base::ListValue>)> callback) {
+  std::vector<syncer::ModelType> types_vector;
+  ScopedVector<base::ListValue> node_lists;
+
+  syncer::ModelSafeRoutingInfo routes;
+  registrar_->GetModelSafeRoutingInfo(&routes);
+  syncer::ModelTypeSet enabled_types = GetRoutingInfoTypes(routes);
+
+  for (syncer::ModelTypeSet::Iterator it = types.First(); it.Good(); it.Inc()) {
+    types_vector.push_back(it.Get());
+    if (!enabled_types.Has(it.Get())) {
+      node_lists.push_back(new base::ListValue());
+    } else {
+      node_lists.push_back(
+          sync_manager_->GetAllNodesForType(it.Get()).release());
+    }
+  }
+
+  task_runner->PostTask(
+      FROM_HERE,
+      base::Bind(callback, types_vector, base::Passed(&node_lists)));
 }
 
 void SyncBackendHostCore::StartSavingChanges() {

@@ -273,6 +273,15 @@ std::string MapThreadName(const std::string& thread_name) {
   return thread_name.substr(0, i) + '*';
 }
 
+// Normalizes a source filename (which is platform- and build-method-dependent)
+// by extracting the last component of the full file name.
+// Example: "c:\b\build\slave\win\build\src\chrome\app\chrome_main.cc" =>
+// "chrome_main.cc".
+std::string NormalizeFileName(const std::string& file_name) {
+  const size_t offset = file_name.find_last_of("\\/");
+  return offset != std::string::npos ? file_name.substr(offset + 1) : file_name;
+}
+
 void WriteProfilerData(const ProcessDataSnapshot& profiler_data,
                        int process_type,
                        ProfilerEventProto* performance_profile) {
@@ -287,7 +296,7 @@ void WriteProfilerData(const ProcessDataSnapshot& profiler_data,
     tracked_object->set_exec_thread_name_hash(
         MetricsLogBase::Hash(MapThreadName(it->death_thread_name)));
     tracked_object->set_source_file_name_hash(
-        MetricsLogBase::Hash(it->birth.location.file_name));
+        MetricsLogBase::Hash(NormalizeFileName(it->birth.location.file_name)));
     tracked_object->set_source_function_name_hash(
         MetricsLogBase::Hash(it->birth.location.function_name));
     tracked_object->set_source_line_number(it->birth.location.line_number);
@@ -370,8 +379,11 @@ GoogleUpdateMetrics::~GoogleUpdateMetrics() {}
 static base::LazyInstance<std::string>::Leaky
     g_version_extension = LAZY_INSTANCE_INITIALIZER;
 
-MetricsLog::MetricsLog(const std::string& client_id, int session_id)
-    : MetricsLogBase(client_id, session_id, MetricsLog::GetVersionString()),
+MetricsLog::MetricsLog(const std::string& client_id,
+                       int session_id,
+                       LogType log_type)
+    : MetricsLogBase(client_id, session_id, log_type,
+                     MetricsLog::GetVersionString()),
       creation_time_(base::TimeTicks::Now()),
       extension_metrics_(uma_proto()->client_id()) {
 #if defined(OS_CHROMEOS)
@@ -413,9 +425,7 @@ const std::string& MetricsLog::version_extension() {
 }
 
 void MetricsLog::RecordStabilityMetrics(base::TimeDelta incremental_uptime,
-                                        base::TimeDelta uptime,
-                                        LogType log_type) {
-  DCHECK_NE(NO_LOG, log_type);
+                                        base::TimeDelta uptime) {
   DCHECK(!locked());
   DCHECK(HasEnvironment());
   DCHECK(!HasStabilityMetrics());
@@ -437,7 +447,7 @@ void MetricsLog::RecordStabilityMetrics(base::TimeDelta incremental_uptime,
   WriteRealtimeStabilityAttributes(pref, incremental_uptime, uptime);
 
   // Omit some stats unless this is the initial stability log.
-  if (log_type != INITIAL_LOG)
+  if (log_type() != INITIAL_STABILITY_LOG)
     return;
 
   int incomplete_shutdown_count =

@@ -69,7 +69,7 @@ ChromeMetroViewerProcessHost::ChromeMetroViewerProcessHost()
     : MetroViewerProcessHost(
           content::BrowserThread::GetMessageLoopProxyForThread(
               content::BrowserThread::IO)) {
-  g_browser_process->AddRefModule();
+  chrome::IncrementKeepAliveCount();
 }
 
 void ChromeMetroViewerProcessHost::OnChannelError() {
@@ -82,7 +82,7 @@ void ChromeMetroViewerProcessHost::OnChannelError() {
   ::SetEnvironmentVariableA(env_vars::kMetroConnected, NULL);
 
   aura::RemoteWindowTreeHostWin::Instance()->Disconnected();
-  g_browser_process->ReleaseModule();
+  chrome::DecrementKeepAliveCount();
 
   // If browser is trying to quit, we shouldn't reenter the process.
   // TODO(shrikant): In general there seem to be issues with how AttemptExit
@@ -153,8 +153,8 @@ void ChromeMetroViewerProcessHost::OnHandleSearchRequest(
 
 void ChromeMetroViewerProcessHost::OnWindowSizeChanged(uint32 width,
                                                        uint32 height) {
-  std::vector<ash::internal::DisplayInfo> info_list;
-  info_list.push_back(ash::internal::DisplayInfo::CreateFromSpec(
+  std::vector<ash::DisplayInfo> info_list;
+  info_list.push_back(ash::DisplayInfo::CreateFromSpec(
       base::StringPrintf("%dx%d*%f", width, height, gfx::GetModernUIScale())));
   ash::Shell::GetInstance()->display_manager()->OnNativeDisplaysChanged(
       info_list);

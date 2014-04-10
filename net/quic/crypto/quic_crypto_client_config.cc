@@ -17,7 +17,6 @@
 #include "net/quic/crypto/p256_key_exchange.h"
 #include "net/quic/crypto/proof_verifier.h"
 #include "net/quic/crypto/quic_encrypter.h"
-#include "net/quic/quic_server_id.h"
 #include "net/quic/quic_utils.h"
 
 using base::StringPiece;
@@ -711,7 +710,7 @@ void QuicCryptoClientConfig::PopulateFromCanonicalConfig(
     const QuicServerId& server_id,
     CachedState* server_state) {
   DCHECK(server_state->IsEmpty());
-  unsigned i = 0;
+  size_t i = 0;
   for (; i < canoncial_suffixes_.size(); ++i) {
     if (EndsWith(server_id.host(), canoncial_suffixes_[i], false)) {
       break;

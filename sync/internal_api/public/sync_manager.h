@@ -334,7 +334,7 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
   virtual UserShare* GetUserShare() = 0;
 
   // Returns an instance of the main interface for non-blocking sync types.
-  virtual syncer::SyncCore* GetSyncCore() = 0;
+  virtual base::WeakPtr<syncer::SyncCore> GetSyncCore() = 0;
 
   // Returns the cache_guid of the currently open database.
   // Requires that the SyncManager be initialized.
@@ -351,6 +351,9 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
 
   // Returns the SyncManager's encryption handler.
   virtual SyncEncryptionHandler* GetEncryptionHandler() = 0;
+
+  virtual scoped_ptr<base::ListValue> GetAllNodesForType(
+      syncer::ModelType type) = 0;
 
   // Ask the SyncManager to fetch updates for the given types.
   virtual void RefreshTypes(ModelTypeSet types) = 0;

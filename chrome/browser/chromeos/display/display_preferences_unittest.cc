@@ -21,10 +21,10 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "ui/display/chromeos/output_configurator.h"
+#include "ui/display/chromeos/display_configurator.h"
 #include "ui/message_center/message_center.h"
 
-using ash::internal::ResolutionNotificationController;
+using ash::ResolutionNotificationController;
 
 namespace chromeos {
 namespace {
@@ -175,7 +175,7 @@ TEST_F(DisplayPreferencesTest, PairedLayoutOverrides) {
   LoadDisplayPreferences(true);
   // DisplayPowerState should be ignored at boot.
   EXPECT_EQ(chromeos::DISPLAY_POWER_ALL_ON,
-            shell->output_configurator()->power_state());
+            shell->display_configurator()->power_state());
 
   shell->display_manager()->UpdateDisplays();
   // Check if the layout settings are notified to the system properly.
@@ -191,7 +191,7 @@ TEST_F(DisplayPreferencesTest, PairedLayoutOverrides) {
 TEST_F(DisplayPreferencesTest, BasicStores) {
   ash::DisplayController* display_controller =
       ash::Shell::GetInstance()->display_controller();
-  ash::internal::DisplayManager* display_manager =
+  ash::DisplayManager* display_manager =
       ash::Shell::GetInstance()->display_manager();
 
   UpdateDisplay("200x200*2, 400x300#400x400|300x200");
@@ -489,7 +489,7 @@ TEST_F(DisplayPreferencesTest, StoreForSwappedDisplay) {
 }
 
 TEST_F(DisplayPreferencesTest, RestoreColorProfiles) {
-  ash::internal::DisplayManager* display_manager =
+  ash::DisplayManager* display_manager =
       ash::Shell::GetInstance()->display_manager();
 
   int64 id1 = gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().id();
@@ -521,7 +521,7 @@ TEST_F(DisplayPreferencesTest, RestoreColorProfiles) {
 TEST_F(DisplayPreferencesTest, DontStoreInGuestMode) {
   ash::DisplayController* display_controller =
       ash::Shell::GetInstance()->display_controller();
-  ash::internal::DisplayManager* display_manager =
+  ash::DisplayManager* display_manager =
       ash::Shell::GetInstance()->display_manager();
 
   UpdateDisplay("200x200*2,200x200");
@@ -556,11 +556,10 @@ TEST_F(DisplayPreferencesTest, DontStoreInGuestMode) {
   EXPECT_EQ("178x176", primary_display.bounds().size().ToString());
   EXPECT_EQ(gfx::Display::ROTATE_90, primary_display.rotation());
 
-  const ash::internal::DisplayInfo& info1 =
-      display_manager->GetDisplayInfo(id1);
+  const ash::DisplayInfo& info1 = display_manager->GetDisplayInfo(id1);
   EXPECT_EQ(1.25f, info1.configured_ui_scale());
 
-  const ash::internal::DisplayInfo& info_primary =
+  const ash::DisplayInfo& info_primary =
       display_manager->GetDisplayInfo(new_primary);
   EXPECT_EQ(gfx::Display::ROTATE_90, info_primary.rotation());
   EXPECT_EQ(1.0f, info_primary.configured_ui_scale());
@@ -594,9 +593,8 @@ TEST_F(DisplayPreferencesTest, DisplayPowerStateAfterRestart) {
   StoreDisplayPowerStateForTest(
       chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON);
   LoadDisplayPreferences(false);
-  EXPECT_EQ(
-      chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-      ash::Shell::GetInstance()->output_configurator()->power_state());
+  EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
+            ash::Shell::GetInstance()->display_configurator()->power_state());
 }
 
 TEST_F(DisplayPreferencesTest, DontSaveAndRestoreAllOff) {
@@ -606,12 +604,12 @@ TEST_F(DisplayPreferencesTest, DontSaveAndRestoreAllOff) {
   LoadDisplayPreferences(false);
   // DisplayPowerState should be ignored at boot.
   EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-            shell->output_configurator()->power_state());
+            shell->display_configurator()->power_state());
 
   StoreDisplayPowerStateForTest(
       chromeos::DISPLAY_POWER_ALL_OFF);
   EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-            shell->output_configurator()->power_state());
+            shell->display_configurator()->power_state());
   EXPECT_EQ("internal_off_external_on",
             local_state()->GetString(prefs::kDisplayPowerState));
 
@@ -619,7 +617,7 @@ TEST_F(DisplayPreferencesTest, DontSaveAndRestoreAllOff) {
   local_state()->SetString(prefs::kDisplayPowerState, "all_off");
   LoadDisplayPreferences(false);
   EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-            shell->output_configurator()->power_state());
+            shell->display_configurator()->power_state());
 }
 
 }  // namespace chromeos

@@ -25,6 +25,7 @@ class WebWorkerPermissionClientProxy;
 
 namespace content {
 class SharedWorkerDevToolsAgent;
+class WebApplicationCacheHostImpl;
 class WebMessagePortChannelImpl;
 
 class EmbeddedSharedWorkerStub : public IPC::Listener,
@@ -35,6 +36,7 @@ class EmbeddedSharedWorkerStub : public IPC::Listener,
       const base::string16& name,
       const base::string16& content_security_policy,
       blink::WebContentSecurityPolicyType security_policy_type,
+      bool pause_on_start,
       int route_id);
 
   // IPC::Listener implementation.
@@ -80,6 +82,7 @@ class EmbeddedSharedWorkerStub : public IPC::Listener,
   PendingChannelList pending_channels_;
 
   ScopedChildProcessReference process_ref_;
+  WebApplicationCacheHostImpl* app_cache_host_;
   DISALLOW_COPY_AND_ASSIGN(EmbeddedSharedWorkerStub);
 };
 

@@ -8,6 +8,7 @@
 #include "chromeos/dbus/fake_bluetooth_adapter_client.h"
 #include "chromeos/dbus/fake_bluetooth_agent_manager_client.h"
 #include "chromeos/dbus/fake_bluetooth_device_client.h"
+#include "chromeos/dbus/fake_bluetooth_gatt_service_client.h"
 #include "chromeos/dbus/fake_bluetooth_input_client.h"
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "dbus/object_path.h"
@@ -25,8 +26,11 @@ using device::BluetoothAdapter;
 using device::BluetoothAdapterFactory;
 using device::BluetoothDevice;
 using device::BluetoothDiscoverySession;
+using device::BluetoothUUID;
 
 namespace chromeos {
+
+namespace {
 
 class TestObserver : public BluetoothAdapter::Observer {
  public:
@@ -139,6 +143,8 @@ class TestObserver : public BluetoothAdapter::Observer {
   scoped_refptr<BluetoothAdapter> adapter_;
 };
 
+}  // namespace
+
 class TestPairingDelegate : public BluetoothDevice::PairingDelegate {
  public:
   TestPairingDelegate()
@@ -240,6 +246,9 @@ class BluetoothChromeOSTest : public testing::Test {
     fake_dbus_thread_manager->SetBluetoothAgentManagerClient(
         scoped_ptr<BluetoothAgentManagerClient>(
             new FakeBluetoothAgentManagerClient));
+    fake_dbus_thread_manager->SetBluetoothGattServiceClient(
+        scoped_ptr<BluetoothGattServiceClient>(
+            new FakeBluetoothGattServiceClient));
     DBusThreadManager::InitializeForTesting(fake_dbus_thread_manager);
 
     fake_bluetooth_adapter_client_->SetSimulationIntervalMs(10);
@@ -1448,8 +1457,8 @@ TEST_F(BluetoothChromeOSTest, DeviceProperties) {
 
   BluetoothDevice::UUIDList uuids = devices[0]->GetUUIDs();
   ASSERT_EQ(2U, uuids.size());
-  EXPECT_EQ(uuids[0], "00001800-0000-1000-8000-00805f9b34fb");
-  EXPECT_EQ(uuids[1], "00001801-0000-1000-8000-00805f9b34fb");
+  EXPECT_EQ(uuids[0], BluetoothUUID("1800"));
+  EXPECT_EQ(uuids[1], BluetoothUUID("1801"));
 
   EXPECT_EQ(BluetoothDevice::VENDOR_ID_USB, devices[0]->GetVendorIDSource());
   EXPECT_EQ(0x05ac, devices[0]->GetVendorID());
@@ -1523,8 +1532,8 @@ TEST_F(BluetoothChromeOSTest, DeviceUuidsChanged) {
 
   BluetoothDevice::UUIDList uuids = devices[0]->GetUUIDs();
   ASSERT_EQ(2U, uuids.size());
-  ASSERT_EQ(uuids[0], "00001800-0000-1000-8000-00805f9b34fb");
-  ASSERT_EQ(uuids[1], "00001801-0000-1000-8000-00805f9b34fb");
+  ASSERT_EQ(uuids[0], BluetoothUUID("1800"));
+  ASSERT_EQ(uuids[1], BluetoothUUID("1801"));
 
   // Install an observer; expect the DeviceChanged method to be called when
   // we change the class of the device.
@@ -1534,11 +1543,14 @@ TEST_F(BluetoothChromeOSTest, DeviceUuidsChanged) {
       fake_bluetooth_device_client_->GetProperties(
           dbus::ObjectPath(FakeBluetoothDeviceClient::kPairedDevicePath));
 
-  uuids.push_back("0000110c-0000-1000-8000-00805f9b34fb");
-  uuids.push_back("0000110e-0000-1000-8000-00805f9b34fb");
-  uuids.push_back("0000110a-0000-1000-8000-00805f9b34fb");
+  std::vector<std::string> new_uuids;
+  new_uuids.push_back(uuids[0].canonical_value());
+  new_uuids.push_back(uuids[1].canonical_value());
+  new_uuids.push_back("0000110c-0000-1000-8000-00805f9b34fb");
+  new_uuids.push_back("0000110e-0000-1000-8000-00805f9b34fb");
+  new_uuids.push_back("0000110a-0000-1000-8000-00805f9b34fb");
 
-  properties->uuids.ReplaceValue(uuids);
+  properties->uuids.ReplaceValue(new_uuids);
 
   EXPECT_EQ(1, observer.device_changed_count_);
   EXPECT_EQ(devices[0], observer.last_device_);
@@ -1546,11 +1558,11 @@ TEST_F(BluetoothChromeOSTest, DeviceUuidsChanged) {
   // Fetching the value should give the new one.
   uuids = devices[0]->GetUUIDs();
   ASSERT_EQ(5U, uuids.size());
-  EXPECT_EQ(uuids[0], "00001800-0000-1000-8000-00805f9b34fb");
-  EXPECT_EQ(uuids[1], "00001801-0000-1000-8000-00805f9b34fb");
-  EXPECT_EQ(uuids[2], "0000110c-0000-1000-8000-00805f9b34fb");
-  EXPECT_EQ(uuids[3], "0000110e-0000-1000-8000-00805f9b34fb");
-  EXPECT_EQ(uuids[4], "0000110a-0000-1000-8000-00805f9b34fb");
+  EXPECT_EQ(uuids[0], BluetoothUUID("1800"));
+  EXPECT_EQ(uuids[1], BluetoothUUID("1801"));
+  EXPECT_EQ(uuids[2], BluetoothUUID("110c"));
+  EXPECT_EQ(uuids[3], BluetoothUUID("110e"));
+  EXPECT_EQ(uuids[4], BluetoothUUID("110a"));
 }
 
 TEST_F(BluetoothChromeOSTest, ForgetDevice) {
@@ -1700,7 +1712,7 @@ TEST_F(BluetoothChromeOSTest, ConnectUnpairableDevice) {
   // Verify is a HID device and is not connectable.
   BluetoothDevice::UUIDList uuids = device->GetUUIDs();
   ASSERT_EQ(1U, uuids.size());
-  EXPECT_EQ(uuids[0], "00001124-0000-1000-8000-00805f9b34fb");
+  EXPECT_EQ(uuids[0], BluetoothUUID("1124"));
   EXPECT_FALSE(device->IsConnectable());
 }
 
@@ -1890,7 +1902,7 @@ TEST_F(BluetoothChromeOSTest, PairLegacyAutopair) {
   // Verify is a HID device and is connectable.
   BluetoothDevice::UUIDList uuids = device->GetUUIDs();
   ASSERT_EQ(1U, uuids.size());
-  EXPECT_EQ(uuids[0], "00001124-0000-1000-8000-00805f9b34fb");
+  EXPECT_EQ(uuids[0], BluetoothUUID("1124"));
   EXPECT_TRUE(device->IsConnectable());
 
   // Make sure the trusted property has been set to true.
@@ -1946,7 +1958,7 @@ TEST_F(BluetoothChromeOSTest, PairDisplayPinCode) {
   // Verify is a HID device and is connectable.
   BluetoothDevice::UUIDList uuids = device->GetUUIDs();
   ASSERT_EQ(1U, uuids.size());
-  EXPECT_EQ(uuids[0], "00001124-0000-1000-8000-00805f9b34fb");
+  EXPECT_EQ(uuids[0], BluetoothUUID("1124"));
   EXPECT_TRUE(device->IsConnectable());
 
   // Make sure the trusted property has been set to true.
@@ -2022,7 +2034,7 @@ TEST_F(BluetoothChromeOSTest, PairDisplayPasskey) {
   // Verify is a HID device.
   BluetoothDevice::UUIDList uuids = device->GetUUIDs();
   ASSERT_EQ(1U, uuids.size());
-  EXPECT_EQ(uuids[0], "00001124-0000-1000-8000-00805f9b34fb");
+  EXPECT_EQ(uuids[0], BluetoothUUID("1124"));
 
   // And usually not connectable.
   EXPECT_FALSE(device->IsConnectable());

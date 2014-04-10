@@ -154,8 +154,7 @@ MediaStreamCenter::createWebAudioSourceFromMediaStreamTrack(
   blink::WebMediaStreamSource source = track.source();
   DCHECK_EQ(source.type(), blink::WebMediaStreamSource::TypeAudio);
   WebRtcLocalAudioSourceProvider* source_provider =
-      new WebRtcLocalAudioSourceProvider();
-  MediaStreamAudioSink::AddToAudioTrack(source_provider, track);
+      new WebRtcLocalAudioSourceProvider(track);
   return source_provider;
 }
 
@@ -196,15 +195,6 @@ void MediaStreamCenter::didCreateMediaStream(blink::WebMediaStream& stream) {
                       stream));
   writable_stream.setExtraData(native_stream);
 
-  // TODO(perkj): Remove track creation once crbug/294145 is fixed. A track
-  // should already have been created before reaching here.
-  blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
-  stream.audioTracks(audio_tracks);
-  for (size_t i = 0; i < audio_tracks.size(); ++i) {
-    if (!MediaStreamTrack::GetTrack(audio_tracks[i]))
-      CreateNativeMediaStreamTrack(audio_tracks[i], rtc_factory_);
-  }
-
   blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
   stream.videoTracks(video_tracks);
   for (size_t i = 0; i < video_tracks.size(); ++i) {
@@ -218,10 +208,6 @@ bool MediaStreamCenter::didAddMediaStreamTrack(
     const blink::WebMediaStream& stream,
     const blink::WebMediaStreamTrack& track) {
   DVLOG(1) << "MediaStreamCenter::didAddMediaStreamTrack";
-  // TODO(perkj): Remove track creation once crbug/294145 is fixed. A track
-  // should already have been created before reaching here.
-  if (!MediaStreamTrack::GetTrack(track))
-    CreateNativeMediaStreamTrack(track, rtc_factory_);
   MediaStream* native_stream = MediaStream::GetMediaStream(stream);
   return native_stream->AddTrack(stream, track);
 }

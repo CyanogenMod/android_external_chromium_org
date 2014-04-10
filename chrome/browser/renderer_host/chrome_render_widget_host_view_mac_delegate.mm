@@ -106,19 +106,8 @@ class SpellCheckObserver : public content::WebContentsObserver {
   return [historySwiper_ handleEvent:event];
 }
 
-// Notification that a wheel event was unhandled.
-- (void)gotUnhandledWheelEvent {
-  [historySwiper_ gotUnhandledWheelEvent];
-}
-
-// Notification of scroll offset pinning.
-- (void)scrollOffsetPinnedToLeft:(BOOL)left toRight:(BOOL)right {
-  [historySwiper_ scrollOffsetPinnedToLeft:left toRight:right];
-}
-
-// Notification of whether the view has a horizontal scrollbar.
-- (void)setHasHorizontalScrollbar:(BOOL)has_horizontal_scrollbar {
-  [historySwiper_ setHasHorizontalScrollbar:has_horizontal_scrollbar];
+- (void)gotWheelEventConsumed:(BOOL)consumed {
+  [historySwiper_ gotWheelEventConsumed:consumed];
 }
 
 // NSWindow events.
@@ -218,7 +207,10 @@ class SpellCheckObserver : public content::WebContentsObserver {
   // that we want to replace the selected word in the text with.
   NSString* newWord = [[sender selectedCell] stringValue];
   if (newWord != nil) {
-    renderWidgetHost_->Replace(base::SysNSStringToUTF16(newWord));
+    content::WebContents* webContents =
+        content::WebContents::FromRenderViewHost(
+            RenderViewHost::From(renderWidgetHost_));
+    webContents->Replace(base::SysNSStringToUTF16(newWord));
   }
 }
 

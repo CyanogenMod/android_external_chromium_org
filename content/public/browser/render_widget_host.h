@@ -215,6 +215,30 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // Check whether this RenderWidget has tree-only accessibility mode.
   virtual bool IsTreeOnlyAccessibilityModeForTesting() = 0;
 
+  // Relay a request from assistive technology to perform the default action
+  // on a given node.
+  virtual void AccessibilityDoDefaultAction(int object_id) = 0;
+
+  // Relay a request from assistive technology to set focus to a given node.
+  virtual void AccessibilitySetFocus(int object_id) = 0;
+
+  // Relay a request from assistive technology to make a given object
+  // visible by scrolling as many scrollable containers as necessary.
+  // In addition, if it's not possible to make the entire object visible,
+  // scroll so that the |subfocus| rect is visible at least. The subfocus
+  // rect is in local coordinates of the object itself.
+  virtual void AccessibilityScrollToMakeVisible(
+      int acc_obj_id, gfx::Rect subfocus) = 0;
+
+  // Relay a request from assistive technology to move a given object
+  // to a specific location, in the WebContents area coordinate space, i.e.
+  // (0, 0) is the top-left corner of the WebContents.
+  virtual void AccessibilityScrollToPoint(int acc_obj_id, gfx::Point point) = 0;
+
+  // Relay a request from assistive technology to set text selection.
+  virtual void AccessibilitySetTextSelection(
+      int acc_obj_id, int start_offset, int end_offset) = 0;
+
   // Forwards the given message to the renderer. These are called by
   // the view when it has received a message.
   virtual void ForwardMouseEvent(
@@ -241,14 +265,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   // Returns true if this is a RenderViewHost, false if not.
   virtual bool IsRenderView() const = 0;
-
-  // Makes an IPC call to tell webkit to replace the currently selected word
-  // or a word around the cursor.
-  virtual void Replace(const base::string16& word) = 0;
-
-  // Makes an IPC call to tell webkit to replace the misspelling in the current
-  // selection.
-  virtual void ReplaceMisspelling(const base::string16& word) = 0;
 
   // Called to notify the RenderWidget that the resize rect has changed without
   // the size of the RenderWidget itself changing.

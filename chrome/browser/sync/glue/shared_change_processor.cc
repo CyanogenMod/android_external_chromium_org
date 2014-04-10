@@ -142,6 +142,24 @@ syncer::SyncError SharedChangeProcessor::GetAllSyncDataReturnError(
   return generic_change_processor_->GetAllSyncDataReturnError(type, data);
 }
 
+syncer::SyncError SharedChangeProcessor::UpdateDataTypeContext(
+    syncer::ModelType type,
+    syncer::SyncChangeProcessor::ContextRefreshStatus refresh_status,
+    const std::string& context) {
+  DCHECK(backend_loop_.get());
+  DCHECK(backend_loop_->BelongsToCurrentThread());
+  AutoLock lock(monitor_lock_);
+  if (disconnected_) {
+    syncer::SyncError error(FROM_HERE,
+                            syncer::SyncError::DATATYPE_ERROR,
+                            "Change processor disconnected.",
+                            type_);
+    return error;
+  }
+  return generic_change_processor_->UpdateDataTypeContext(
+      type, refresh_status, context);
+}
+
 bool SharedChangeProcessor::SyncModelHasUserCreatedNodes(bool* has_nodes) {
   DCHECK(backend_loop_.get());
   DCHECK(backend_loop_->BelongsToCurrentThread());

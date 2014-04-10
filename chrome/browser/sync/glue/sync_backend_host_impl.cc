@@ -5,6 +5,7 @@
 #include "chrome/browser/sync/glue/sync_backend_host_impl.h"
 
 #include "base/command_line.h"
+#include "base/logging.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/invalidation/invalidation_service.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
@@ -59,6 +60,7 @@ SyncBackendHostImpl::SyncBackendHostImpl(
           invalidation::InvalidationServiceFactory::GetForProfile(profile)),
       invalidation_handler_registered_(false),
       weak_ptr_factory_(this) {
+  CHECK(invalidator_);
   core_ = new SyncBackendHostCore(
       name_,
       profile_->GetPath().Append(kSyncDataFolderName),
@@ -233,6 +235,9 @@ void SyncBackendHostImpl::StopSyncingForShutdown() {
 
   // Stop listening for and forwarding locally-triggered sync refresh requests.
   notification_registrar_.RemoveAll();
+
+  // Stop non-blocking sync types from sending any more requests to the syncer.
+  sync_core_proxy_.reset();
 
   DCHECK(registrar_->sync_thread()->IsRunning());
 
@@ -427,6 +432,10 @@ syncer::UserShare* SyncBackendHostImpl::GetUserShare() const {
   return core_->sync_manager()->GetUserShare();
 }
 
+syncer::SyncCoreProxy SyncBackendHostImpl::GetSyncCoreProxy() {
+  return *sync_core_proxy_.get();
+}
+
 SyncBackendHostImpl::Status SyncBackendHostImpl::GetDetailedStatus() {
   DCHECK(initialized());
   return core_->sync_manager()->GetDetailedStatus();
@@ -491,6 +500,20 @@ void SyncBackendHostImpl::DisableProtocolEventForwarding() {
       base::Bind(
           &SyncBackendHostCore::DisableProtocolEventForwarding,
           core_));
+}
+
+void SyncBackendHostImpl::GetAllNodesForTypes(
+    syncer::ModelTypeSet types,
+    base::Callback<void(const std::vector<syncer::ModelType>&,
+                        ScopedVector<base::ListValue>)> callback) {
+  DCHECK(initialized());
+  registrar_->sync_thread()->message_loop()->PostTask(FROM_HERE,
+       base::Bind(
+           &SyncBackendHostCore::GetAllNodesForTypes,
+           core_,
+           types,
+           frontend_loop_->message_loop_proxy(),
+           callback));
 }
 
 void SyncBackendHostImpl::InitCore(scoped_ptr<DoInitializeOptions> options) {
@@ -573,12 +596,15 @@ void SyncBackendHostImpl::HandleControlTypesDownloadRetry() {
 void SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop(
     const syncer::WeakHandle<syncer::JsBackend> js_backend,
     const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>
-        debug_info_listener) {
+        debug_info_listener,
+    syncer::SyncCoreProxy sync_core_proxy) {
   DCHECK_EQ(base::MessageLoop::current(), frontend_loop_);
   if (!frontend_)
     return;
 
   initialized_ = true;
+
+  sync_core_proxy_.reset(new syncer::SyncCoreProxy(sync_core_proxy));
 
   invalidator_->RegisterInvalidationHandler(this);
   invalidation_handler_registered_ = true;

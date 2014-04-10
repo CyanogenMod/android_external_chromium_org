@@ -93,16 +93,7 @@ class ServerInstance(object):
         host_fs_at_trunk,
         compiled_fs_factory)
 
-    self.api_data_source_factory = APIDataSource.Factory(
-        self.compiled_fs_factory,
-        host_fs_at_trunk,
-        self.availability_finder,
-        self.api_models,
-        self.features_bundle,
-        self.object_store_creator)
-
     self.ref_resolver = ReferenceResolver(
-        self.api_data_source_factory.Create(None),
         self.api_models,
         self.object_store_creator.Create(ReferenceResolver))
 
@@ -123,9 +114,6 @@ class ServerInstance(object):
         CompiledFileSystem.Factory(object_store_creator),
         self.ref_resolver,
         base_path)
-
-    self.api_data_source_factory.SetSamplesDataSourceFactory(
-        self.samples_data_source_factory)
 
     self.content_providers = ContentProviders(
         object_store_creator,

@@ -4,14 +4,14 @@
 
 #include "apps/shell/common/shell_extensions_client.h"
 
-#include "apps/common/api/generated_schemas.h"
+#include "apps/shell/browser/shell_app_runtime_api.h"
 #include "base/logging.h"
 #include "chrome/common/extensions/api/generated_schemas.h"
-#include "chrome/common/extensions/features/base_feature_provider.h"
 #include "chrome/common/extensions/permissions/chrome_api_permissions.h"
 #include "extensions/common/api/generated_schemas.h"
 #include "extensions/common/api/sockets/sockets_manifest_handler.h"
 #include "extensions/common/common_manifest_handlers.h"
+#include "extensions/common/features/base_feature_provider.h"
 #include "extensions/common/manifest_handler.h"
 #include "extensions/common/permissions/permission_message_provider.h"
 #include "extensions/common/permissions/permissions_provider.h"
@@ -155,9 +155,11 @@ bool ShellExtensionsClient::IsAPISchemaGenerated(
     const std::string& name) const {
   // TODO(rockot): Remove dependency on src/chrome once we have some core APIs
   // moved out. See http://crbug.com/349042.
+  // Special-case our simplified app.runtime implementation because we don't
+  // have the Chrome app APIs available.
   return extensions::api::GeneratedSchemas::IsGenerated(name) ||
          extensions::core_api::GeneratedSchemas::IsGenerated(name) ||
-         apps::api::GeneratedSchemas::IsGenerated(name);
+         name == extensions::ShellAppRuntimeAPI::GetName();
 }
 
 base::StringPiece ShellExtensionsClient::GetAPISchema(
@@ -167,10 +169,11 @@ base::StringPiece ShellExtensionsClient::GetAPISchema(
   if (extensions::api::GeneratedSchemas::IsGenerated(name))
     return extensions::api::GeneratedSchemas::Get(name);
 
-  if (extensions::core_api::GeneratedSchemas::IsGenerated(name))
-    return extensions::core_api::GeneratedSchemas::Get(name);
+  // Special-case our simplified app.runtime implementation.
+  if (name == extensions::ShellAppRuntimeAPI::GetName())
+    return extensions::ShellAppRuntimeAPI::GetSchema();
 
-  return apps::api::GeneratedSchemas::Get(name);
+  return extensions::core_api::GeneratedSchemas::Get(name);
 }
 
 void ShellExtensionsClient::AddExtraFeatureFilters(

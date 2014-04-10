@@ -34,6 +34,7 @@ namespace gpu {
 namespace gles2 {
 class MailboxManager;
 class ProgramCache;
+class ShaderTranslatorCache;
 }
 }
 
@@ -82,6 +83,7 @@ class GpuChannelManager : public IPC::Listener,
   void RemoveRoute(int32 routing_id);
 
   gpu::gles2::ProgramCache* program_cache();
+  gpu::gles2::ShaderTranslatorCache* shader_translator_cache();
 
   GpuMemoryManager* gpu_memory_manager() { return &gpu_memory_manager_; }
 
@@ -115,7 +117,8 @@ class GpuChannelManager : public IPC::Listener,
       const gfx::GLSurfaceHandle& window,
       int32 render_view_id,
       int32 client_id,
-      const GPUCreateCommandBufferConfig& init_params);
+      const GPUCreateCommandBufferConfig& init_params,
+      int32 route_id);
   void CreateImage(
       gfx::PluginWindowHandle window, int32 client_id, int32 image_id);
   void OnCreateImage(
@@ -144,6 +147,7 @@ class GpuChannelManager : public IPC::Listener,
   GpuWatchdog* watchdog_;
   scoped_refptr<SyncPointManager> sync_point_manager_;
   scoped_ptr<gpu::gles2::ProgramCache> program_cache_;
+  scoped_refptr<gpu::gles2::ShaderTranslatorCache> shader_translator_cache_;
   scoped_refptr<gfx::GLSurface> default_offscreen_surface_;
   ImageOperationQueue image_operations_;
 

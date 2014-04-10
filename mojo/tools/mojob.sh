@@ -18,7 +18,8 @@ Usage: $(basename "$0") [command|option ...]
 command should be one of:
   build - Build.
   test - Run unit tests (does not build).
-  perftest - Run Release and Debug perf tests (does not build).
+  perftest - Run perf tests (does not build).
+  pytest - Run Python unit tests.
   gyp - Run gyp for mojo (does not sync), with clang.
   sync - Sync using gclient (does not run gyp).
   show-bash-alias - Outputs an appropriate bash alias for mojob. In bash do:
@@ -59,6 +60,12 @@ do_perftests() {
   "out/$1/mojo_public_system_perftests" || exit 1
 }
 
+do_pytests() {
+  echo "Running Python unit tests under mojo/public/tools/bindings/pylib ..."
+  python -m unittest \
+      discover -s mojo/public/tools/bindings/pylib -p "*_unittest.py"
+}
+
 do_gyp() {
   local gyp_defines="$(make_gyp_defines)"
   echo "Running gyp with GYP_DEFINES=$gyp_defines ..."
@@ -83,9 +90,6 @@ should_do_Release() {
 COMPILER=clang
 # Valid values: shared or static.
 COMPONENT=shared
-# TODO(vtl): Remove this. crbug.com/353602
-# Valid values: enabled or disabled.
-USE_MOJO=enabled
 make_gyp_defines() {
   local options=()
   # Always include these options.
@@ -104,14 +108,6 @@ make_gyp_defines() {
       ;;
     static)
       options+=("component=static_library")
-      ;;
-  esac
-  case "$USE_MOJO" in
-    enabled)
-      options+=("use_mojo=1")
-      ;;
-    disabled)
-      options+=("use_mojo=0")
       ;;
   esac
   echo ${options[*]}
@@ -143,6 +139,9 @@ for arg in "$@"; do
     perftest)
       should_do_Debug && do_perftests Debug
       should_do_Release && do_perftests Release
+      ;;
+    pytest)
+      do_pytests
       ;;
     gyp)
       do_gyp
@@ -180,12 +179,6 @@ for arg in "$@"; do
       ;;
     --static)
       COMPONENT=static
-      ;;
-    --use-mojo)
-      USE_MOJO=enabled
-      ;;
-    --no-use-mojo)
-      USE_MOJO=disabled
       ;;
     *)
       echo "Unknown command \"${arg}\". Try \"$(basename "$0") help\"."

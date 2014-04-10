@@ -66,14 +66,11 @@ CHROMEOS_EXPORT extern const char kShillStub[];
 CHROMEOS_EXPORT extern const char kSkipHWIDCheck[];
 CHROMEOS_EXPORT extern const char kSmsTestMessages[];
 CHROMEOS_EXPORT extern const char kStubCrosSettings[];
-CHROMEOS_EXPORT extern const char kDisableUserImageSync[];
 CHROMEOS_EXPORT extern const char kDisableFirstRunUI[];
 CHROMEOS_EXPORT extern const char kForceFirstRunUI[];
 CHROMEOS_EXPORT extern const char kEnableFirstRunUITransitions[];
 CHROMEOS_EXPORT extern const char kDisableSamlSignin[];
-CHROMEOS_EXPORT extern const char kGAIAAuthExtensionManifest[];
 CHROMEOS_EXPORT extern const char kTestAutoUpdateUI[];
-CHROMEOS_EXPORT extern const char kEnableSupervisedPasswordSync[];
 
 }  // namespace switches
 }  // namespace chromeos

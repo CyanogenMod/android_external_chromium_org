@@ -26,8 +26,6 @@
 #include "chrome/browser/ui/browser_commands_mac.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window_state.h"
-#import "chrome/browser/ui/cocoa/browser/avatar_base_controller.h"
-#import "chrome/browser/ui/cocoa/browser/avatar_menu_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/browser/edit_search_engine_cocoa_controller.h"
 #import "chrome/browser/ui/cocoa/browser/password_generation_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
@@ -38,6 +36,8 @@
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #import "chrome/browser/ui/cocoa/nsmenuitem_additions.h"
+#import "chrome/browser/ui/cocoa/profiles/avatar_base_controller.h"
+#import "chrome/browser/ui/cocoa/profiles/avatar_menu_bubble_controller.h"
 #include "chrome/browser/ui/cocoa/restart_browser.h"
 #include "chrome/browser/ui/cocoa/status_bubble_mac.h"
 #include "chrome/browser/ui/cocoa/task_manager_mac.h"
@@ -491,10 +491,9 @@ void BrowserWindowCocoa::ShowBookmarkAppBubble(
   NOTIMPLEMENTED();
 }
 
-void BrowserWindowCocoa::ShowTranslateBubble(
-    content::WebContents* contents,
-    TranslateTabHelper::TranslateStep step,
-    TranslateErrors::Type error_type) {
+void BrowserWindowCocoa::ShowTranslateBubble(content::WebContents* contents,
+                                             translate::TranslateStep step,
+                                             TranslateErrors::Type error_type) {
   TranslateTabHelper* translate_tab_helper =
       TranslateTabHelper::FromWebContents(contents);
   LanguageState& language_state = translate_tab_helper->GetLanguageState();

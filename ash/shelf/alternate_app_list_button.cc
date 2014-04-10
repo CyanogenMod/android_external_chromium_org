@@ -27,8 +27,6 @@
 #include "ui/views/painter.h"
 
 namespace ash {
-namespace internal {
-
 // static
 const int AlternateAppListButton::kImageBoundsSize = 7;
 
@@ -124,7 +122,7 @@ void AlternateAppListButton::OnPaint(gfx::Canvas* canvas) {
   const gfx::ImageSkia* background_image =
       rb.GetImageNamed(background_image_id).ToImageSkia();
   const gfx::ImageSkia* forground_image =
-      rb.GetImageNamed(IDR_AURA_LAUNCHER_ICON_APPLIST_ALTERNATE).ToImageSkia();
+      rb.GetImageNamed(IDR_ASH_SHELF_ICON_APPLIST_ALTERNATE).ToImageSkia();
 
   gfx::Rect contents_bounds = GetContentsBounds();
   gfx::Rect background_bounds, forground_bounds;
@@ -170,5 +168,4 @@ void AlternateAppListButton::GetAccessibleState(
   state->name = host_->GetAccessibleName(this);
 }
 
-}  // namespace internal
 }  // namespace ash

@@ -29,9 +29,9 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
   def binary_path(self):
     return '/usr/bin/powermetrics'
 
-  def StartMonitoringPowerAsync(self):
+  def StartMonitoringPower(self, browser):
     assert not self._powermetrics_process, (
-        "Must call StopMonitoringPowerAsync().")
+        "Must call StopMonitoringPower().")
     SAMPLE_INTERVAL_MS = 1000 / 20 # 20 Hz, arbitrary.
     # Empirically powermetrics creates an empty output file immediately upon
     # starting.  We detect file creation as a signal that measurement has
@@ -56,7 +56,7 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
     util.WaitFor(_OutputFileExists, timeout_sec)
 
   @decorators.Cache
-  def CanMonitorPowerAsync(self):
+  def CanMonitorPower(self):
     mavericks_or_later = (self._backend.GetOSVersionName() >=
                           platform.mac_platform_backend.MAVERICKS)
     binary_path = self.binary_path
@@ -84,7 +84,7 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
     """Parse output of powermetrics command line utility.
 
     Returns:
-        Dictionary in the format returned by StopMonitoringPowerAsync() or None
+        Dictionary in the format returned by StopMonitoringPower() or None
         if |powermetrics_output| is empty - crbug.com/353250 .
     """
     if len(powermetrics_output) == 0:
@@ -103,7 +103,7 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
     # List of RunningAverage objects specifying metrics we want to aggregate.
     metrics = [
         ConstructMetric(
-            ['component_utilization', 'whole_package', 'average_frequency_mhz'],
+            ['component_utilization', 'whole_package', 'average_frequency_hz'],
             ['processor','freq_hz']),
         ConstructMetric(
             ['component_utilization', 'whole_package', 'idle_percent'],
@@ -144,7 +144,7 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
     if 'GPU' in plist:
       metrics.extend([
           ConstructMetric(
-              ['component_utilization', 'gpu', 'average_frequency_mhz'],
+              ['component_utilization', 'gpu', 'average_frequency_hz'],
               ['GPU', 0, 'freq_hz']),
           ConstructMetric(
               ['component_utilization', 'gpu', 'idle_percent'],
@@ -166,7 +166,7 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
           # C State ratio is per-package, component CPUs of that package may
           # have different frequencies.
           metrics.append(ConstructMetric(
-              base_out_path + ['average_frequency_mhz'],
+              base_out_path + ['average_frequency_hz'],
               base_src_path + ['cpus', cpu_idx, 'freq_hz']))
           metrics.append(ConstructMetric(
               base_out_path + ['idle_percent'],
@@ -236,9 +236,9 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
       StoreMetricAverage(m, sample_durations, out_dict)
     return out_dict
 
-  def StopMonitoringPowerAsync(self):
+  def StopMonitoringPower(self):
     assert self._powermetrics_process, (
-        "StartMonitoringPowerAsync() not called.")
+        "StartMonitoringPower() not called.")
     # Tell powermetrics to take an immediate sample.
     try:
       self._powermetrics_process.send_signal(signal.SIGINFO)

@@ -7,23 +7,26 @@
 
 #include <string>
 
-#if defined(CLD2_DYNAMIC_MODE)
-#include "base/basictypes.h"
-#include "base/lazy_instance.h"
-#endif
 #include "base/memory/scoped_ptr.h"
-#if defined(CLD2_DYNAMIC_MODE)
 #include "base/memory/weak_ptr.h"
-#include "base/platform_file.h"
-#include "base/synchronization/lock.h"
-#include "base/task_runner.h"
-#endif
 #include "chrome/browser/ui/translate/translate_bubble_model.h"
 #include "components/translate/content/browser/content_translate_driver.h"
 #include "components/translate/core/browser/translate_client.h"
+#include "components/translate/core/browser/translate_step.h"
 #include "components/translate/core/common/translate_errors.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+
+#if defined(CLD2_DYNAMIC_MODE)
+#include "base/basictypes.h"
+#include "base/lazy_instance.h"
+#include "base/synchronization/lock.h"
+#include "base/task_runner.h"
+#endif
+
+namespace base {
+class File;
+}
 
 namespace content {
 class BrowserContext;
@@ -63,6 +66,11 @@ class TranslateTabHelper
   static TranslateManager* GetManagerFromWebContents(
       content::WebContents* web_contents);
 
+  // Gets |source| and |target| language for translation.
+  static void GetTranslateLanguages(content::WebContents* web_contents,
+                                    std::string* source,
+                                    std::string* target);
+
   // Gets the associated TranslateManager.
   TranslateManager* GetTranslateManager();
 
@@ -70,33 +78,32 @@ class TranslateTabHelper
   // destroyed.
   content::WebContents* GetWebContents();
 
-  // Denotes which state the user is in with respect to translate.
-  enum TranslateStep {
-    BEFORE_TRANSLATE,
-    TRANSLATING,
-    AFTER_TRANSLATE,
-    TRANSLATE_ERROR
-  };
-
-  // Called when the embedder should present UI to the user corresponding to the
-  // user's current |step|.
-  void ShowTranslateUI(TranslateStep step,
-                       const std::string source_language,
-                       const std::string target_language,
-                       TranslateErrors::Type error_type,
-                       bool triggered_from_menu);
+  // Number of attempts before waiting for a page to be fully reloaded.
+  void set_translate_max_reload_attempts(int attempts) {
+    max_reload_check_attempts_ = attempts;
+  }
 
   // TranslateClient implementation.
   virtual TranslateDriver* GetTranslateDriver() OVERRIDE;
   virtual PrefService* GetPrefs() OVERRIDE;
   virtual scoped_ptr<TranslatePrefs> GetTranslatePrefs() OVERRIDE;
   virtual TranslateAcceptLanguages* GetTranslateAcceptLanguages() OVERRIDE;
+  virtual void ShowTranslateUI(translate::TranslateStep step,
+                               const std::string source_language,
+                               const std::string target_language,
+                               TranslateErrors::Type error_type,
+                               bool triggered_from_menu) OVERRIDE;
+  virtual bool IsTranslatableURL(const GURL& url) OVERRIDE;
+  virtual void ShowReportLanguageDetectionErrorUI(
+      const GURL& report_url) OVERRIDE;
 
  private:
   explicit TranslateTabHelper(content::WebContents* web_contents);
   friend class content::WebContentsUserData<TranslateTabHelper>;
 
   // content::WebContentsObserver implementation.
+  virtual void NavigationEntryCommitted(
+      const content::LoadCommittedDetails& load_details) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void DidNavigateAnyFrame(
       const content::LoadCommittedDetails& details,
@@ -104,6 +111,8 @@ class TranslateTabHelper
   virtual void WebContentsDestroyed(
       content::WebContents* web_contents) OVERRIDE;
 
+  // Initiates translation once the page is finished loading.
+  void InitiateTranslation(const std::string& page_lang, int attempt);
   void OnLanguageDetermined(const LanguageDetectionDetails& details,
                             bool page_needs_translation);
   void OnPageTranslated(int32 page_id,
@@ -131,30 +140,35 @@ class TranslateTabHelper
   void MaybeSendCLDDataAvailable();
 
   // Sends the renderer a response containing the data file handle. No locking.
-  void SendCLDDataAvailable(const base::PlatformFile handle,
+  void SendCLDDataAvailable(const base::File* handle,
                             const uint64 data_offset,
                             const uint64 data_length);
 
-  // Necessary for binding the callback to HandleCLDDataRequest on the blocking
-  // pool.
-  base::WeakPtrFactory<TranslateTabHelper> weak_pointer_factory_;
-
   // The data file,  cached as long as the process stays alive.
   // We also track the offset at which the data starts, and its length.
-  static base::PlatformFile s_cached_platform_file_; // guarded by file_lock_
+  static base::File* s_cached_file_; // guarded by file_lock_
   static uint64 s_cached_data_offset_; // guarded by file_lock_
   static uint64 s_cached_data_length_; // guarded by file_lock_
 
-  // Guards s_cached_platform_file_
+  // Guards s_cached_file_
   static base::LazyInstance<base::Lock> s_file_lock_;
 
 #endif
 
   // Shows the translate bubble.
-  void ShowBubble(TranslateStep step, TranslateErrors::Type error_type);
+  void ShowBubble(translate::TranslateStep step,
+                  TranslateErrors::Type error_type);
+
+  // Max number of attempts before checking if a page has been reloaded.
+  int max_reload_check_attempts_;
 
   ContentTranslateDriver translate_driver_;
   scoped_ptr<TranslateManager> translate_manager_;
+
+  // Necessary for binding the callback to HandleCLDDataRequest on the blocking
+  // pool and for delaying translation initialization until the page has
+  // finished loading on a reload.
+  base::WeakPtrFactory<TranslateTabHelper> weak_pointer_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(TranslateTabHelper);
 };

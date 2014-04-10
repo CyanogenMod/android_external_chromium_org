@@ -162,6 +162,8 @@ void ShortcutsProvider::GetMatches(const AutocompleteInput& input) {
   AutocompleteInput fixed_up_input(input);
   if (FixupUserInput(&fixed_up_input))
     fixed_up_term_string = fixed_up_input.text();
+  const GURL& term_string_as_gurl = URLFixerUpper::FixupURL(
+      base::UTF16ToUTF8(term_string), std::string());
 
   int max_relevance;
   if (!OmniboxFieldTrial::ShortcutsScoringMaxRelevance(
@@ -177,16 +179,15 @@ void ShortcutsProvider::GetMatches(const AutocompleteInput& input) {
     if (relevance) {
       matches_.push_back(ShortcutToACMatch(
           it->second, relevance, term_string, fixed_up_term_string,
-          input.prevent_inline_autocomplete()));
+          term_string_as_gurl, input.prevent_inline_autocomplete()));
       matches_.back().ComputeStrippedDestinationURL(profile_);
     }
   }
   // Remove duplicates.
-  std::sort(matches_.begin(), matches_.end(),
-            &AutocompleteMatch::DestinationSortFunc);
-  matches_.erase(std::unique(matches_.begin(), matches_.end(),
-                             &AutocompleteMatch::DestinationsEqual),
-                 matches_.end());
+  // TODO(hfung): Check whether the false below, which does not store duplicates
+  // in the matches, is correct.
+  AutocompleteResult::DedupMatchesByDestination(
+      input.current_page_classification(), false, &matches_);
   // Find best matches.
   std::partial_sort(matches_.begin(),
       matches_.begin() +
@@ -221,6 +222,7 @@ AutocompleteMatch ShortcutsProvider::ShortcutToACMatch(
     int relevance,
     const base::string16& term_string,
     const base::string16& fixed_up_term_string,
+    const GURL& term_string_as_gurl,
     const bool prevent_inline_autocomplete) {
   DCHECK(!term_string.empty());
   AutocompleteMatch match;
@@ -279,6 +281,13 @@ AutocompleteMatch ShortcutsProvider::ShortcutToACMatch(
           best_prefix->prefix.length() + matching_string->length());
       match.allowed_to_be_default_match =
           !prevent_inline_autocomplete || match.inline_autocompletion.empty();
+    } else {
+      // Also allow a user's input to be marked as default if it would be fixed
+      // up to the same thing as the fill_into_edit.  This handles cases like
+      // the user input containing a trailing slash absent in fill_into_edit.
+      match.allowed_to_be_default_match = (term_string_as_gurl ==
+          URLFixerUpper::FixupURL(base::UTF16ToUTF8(match.fill_into_edit),
+                                  std::string()));
     }
   }
 

@@ -15,8 +15,11 @@
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "ui/events/event_utils.h"
-#include "ui/events/x/touch_factory_x11.h"
 #include "ui/gfx/screen.h"
+
+#if defined(USE_X11)
+#include "ui/events/x/touch_factory_x11.h"
+#endif  // defined(USE_X11)
 
 using metrics::ChromeUserMetricsExtension;
 using metrics::PerfDataProto;
@@ -63,6 +66,7 @@ PairedDevice::Type AsBluetoothDeviceType(
 }
 
 void WriteExternalTouchscreensProto(SystemProfileProto::Hardware* hardware) {
+#if defined(USE_X11)
   std::set<std::pair<int, int> > touchscreen_ids =
       ui::TouchFactory::GetInstance()->GetTouchscreenIds();
   for (std::set<std::pair<int, int> >::iterator it = touchscreen_ids.begin();
@@ -73,6 +77,7 @@ void WriteExternalTouchscreensProto(SystemProfileProto::Hardware* hardware) {
     touchscreen->set_vendor_id(it->first);
     touchscreen->set_product_id(it->second);
   }
+#endif  // defined(USE_X11)
 }
 
 }  // namespace
@@ -86,9 +91,14 @@ MetricsLogChromeOS::MetricsLogChromeOS(ChromeUserMetricsExtension* uma_proto)
 }
 
 void MetricsLogChromeOS::LogChromeOSMetrics() {
-  PerfDataProto perf_data_proto;
-  if (perf_provider_.GetPerfData(&perf_data_proto))
-    uma_proto_->add_perf_data()->Swap(&perf_data_proto);
+  std::vector<PerfDataProto> perf_data;
+  if (perf_provider_.GetPerfData(&perf_data)) {
+    for (std::vector<PerfDataProto>::iterator iter = perf_data.begin();
+         iter != perf_data.end();
+         ++iter) {
+      uma_proto_->add_perf_data()->Swap(&(*iter));
+    }
+  }
 
   WriteBluetoothProto();
   UpdateMultiProfileUserCount();

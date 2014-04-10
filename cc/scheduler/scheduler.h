@@ -33,7 +33,6 @@ class SchedulerClient {
   virtual void ScheduledActionUpdateVisibleTiles() = 0;
   virtual void ScheduledActionActivatePendingTree() = 0;
   virtual void ScheduledActionBeginOutputSurfaceCreation() = 0;
-  virtual void ScheduledActionAcquireLayerTexturesForMainThread() = 0;
   virtual void ScheduledActionManageTiles() = 0;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) = 0;
   virtual base::TimeDelta DrawDurationEstimate() = 0;
@@ -74,8 +73,6 @@ class CC_EXPORT Scheduler {
 
   void SetNeedsManageTiles();
 
-  void SetMainThreadNeedsLayerTextures();
-
   void SetSwapUsedIncompleteTile(bool used_incomplete_tile);
 
   void SetSmoothnessTakesPriority(bool smoothness_takes_priority);
@@ -99,7 +96,7 @@ class CC_EXPORT Scheduler {
     return state_machine_.MainThreadIsInHighLatencyMode();
   }
   bool BeginImplFrameDeadlinePending() const {
-    return !begin_impl_frame_deadline_closure_.IsCancelled();
+    return !begin_impl_frame_deadline_task_.IsCancelled();
   }
 
   bool WillDrawIfNeeded() const;
@@ -113,6 +110,7 @@ class CC_EXPORT Scheduler {
   void BeginImplFrame(const BeginFrameArgs& args);
   void OnBeginImplFrameDeadline();
   void PollForAnticipatedDrawTriggers();
+  void PollToAdvanceCommitState();
 
   scoped_ptr<base::Value> StateAsValue() const;
 
@@ -121,6 +119,9 @@ class CC_EXPORT Scheduler {
   }
 
   bool IsBeginMainFrameSent() const;
+  void SetContinuousPainting(bool continuous_painting) {
+    state_machine_.SetContinuousPainting(continuous_painting);
+  }
 
  private:
   Scheduler(SchedulerClient* client,
@@ -149,9 +150,13 @@ class CC_EXPORT Scheduler {
 
   bool last_set_needs_begin_impl_frame_;
   BeginFrameArgs last_begin_impl_frame_args_;
-  base::CancelableClosure begin_impl_frame_deadline_closure_;
-  base::CancelableClosure poll_for_draw_triggers_closure_;
-  base::RepeatingTimer<Scheduler> advance_commit_state_timer_;
+
+  base::Closure begin_impl_frame_deadline_closure_;
+  base::Closure poll_for_draw_triggers_closure_;
+  base::Closure advance_commit_state_closure_;
+  base::CancelableClosure begin_impl_frame_deadline_task_;
+  base::CancelableClosure poll_for_draw_triggers_task_;
+  base::CancelableClosure advance_commit_state_task_;
 
   SchedulerStateMachine state_machine_;
   bool inside_process_scheduled_actions_;

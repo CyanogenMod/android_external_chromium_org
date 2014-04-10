@@ -52,9 +52,9 @@ const uint32 kDefaultFPS = 30;
 //   Output stream is saved for the simple encode test only.
 // - |requested_bitrate| requested bitrate in bits per second (optional).
 //   Bitrate is only forced for tests that test bitrate.
-base::FilePath::StringType test_stream_data =
-    media::GetTestDataFilePath("sync_192p20_frames.yuv").value() +
-    ":320:192:1:out.h264:200000";
+const char* g_default_in_filename = "sync_192p20_frames.yuv";
+const char* g_default_in_parameters = ":320:192:1:out.h264:200000";
+base::FilePath::StringType* g_test_stream_data;
 
 struct TestStream {
   TestStream() : requested_bitrate(0) {}
@@ -67,7 +67,7 @@ struct TestStream {
   unsigned int requested_bitrate;
 };
 
-static void ParseAndReadTestStreamData(base::FilePath::StringType data,
+static void ParseAndReadTestStreamData(const base::FilePath::StringType& data,
                                        TestStream* test_stream) {
   std::vector<base::FilePath::StringType> fields;
   base::SplitString(data, ':', &fields);
@@ -249,7 +249,6 @@ class VEAClient : public VideoEncodeAccelerator::Client {
   void DestroyEncoder();
 
   // VideoDecodeAccelerator::Client implementation.
-  void NotifyInitializeDone() OVERRIDE;
   void RequireBitstreamBuffers(unsigned int input_count,
                                const gfx::Size& input_coded_size,
                                size_t output_buffer_size) OVERRIDE;
@@ -393,15 +392,21 @@ void VEAClient::CreateEncoder() {
   CHECK(!has_encoder());
 
   encoder_.reset(new ExynosVideoEncodeAccelerator());
-
   SetState(CS_ENCODER_SET);
+
   DVLOG(1) << "Profile: " << test_stream_.requested_profile
            << ", requested bitrate: " << test_stream_.requested_bitrate;
-  encoder_->Initialize(kInputFormat,
-                       test_stream_.size,
-                       test_stream_.requested_profile,
-                       test_stream_.requested_bitrate,
-                       this);
+  if (!encoder_->Initialize(kInputFormat,
+                            test_stream_.size,
+                            test_stream_.requested_profile,
+                            test_stream_.requested_bitrate,
+                            this)) {
+    DLOG(ERROR) << "VideoEncodeAccelerator::Initialize() failed";
+    SetState(CS_ERROR);
+    return;
+  }
+  SetInitialConfiguration();
+  SetState(CS_INITIALIZED);
 }
 
 void VEAClient::DestroyEncoder() {
@@ -409,12 +414,6 @@ void VEAClient::DestroyEncoder() {
   if (!has_encoder())
     return;
   encoder_.release()->Destroy();
-}
-
-void VEAClient::NotifyInitializeDone() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  SetInitialConfiguration();
-  SetState(CS_INITIALIZED);
 }
 
 void VEAClient::RequireBitstreamBuffers(unsigned int input_count,
@@ -682,7 +681,7 @@ TEST_P(VideoEncodeAcceleratorTest, TestSimpleEncode) {
   const bool force_bitrate = GetParam().c;
 
   TestStream test_stream;
-  ParseAndReadTestStreamData(test_stream_data, &test_stream);
+  ParseAndReadTestStreamData(*g_test_stream_data, &test_stream);
 
   // Disregard save_to_file if we didn't get an output filename.
   const bool save_to_file = GetParam().a && !test_stream.out_filename.empty();
@@ -744,6 +743,13 @@ int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);  // Removes gtest-specific args.
   CommandLine::Init(argc, argv);
 
+  base::ShadowingAtExitManager at_exit_manager;
+  scoped_ptr<base::FilePath::StringType> test_stream_data(
+      new base::FilePath::StringType(
+          media::GetTestDataFilePath(content::g_default_in_filename).value() +
+          content::g_default_in_parameters));
+  content::g_test_stream_data = test_stream_data.get();
+
   // Needed to enable DVLOG through --vmodule.
   logging::LoggingSettings settings;
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
@@ -757,15 +763,13 @@ int main(int argc, char** argv) {
        it != switches.end();
        ++it) {
     if (it->first == "test_stream_data") {
-      content::test_stream_data = it->second.c_str();
+      test_stream_data->assign(it->second.c_str());
       continue;
     }
     if (it->first == "v" || it->first == "vmodule")
       continue;
     LOG(FATAL) << "Unexpected switch: " << it->first << ":" << it->second;
   }
-
-  base::ShadowingAtExitManager at_exit_manager;
 
   return RUN_ALL_TESTS();
 }

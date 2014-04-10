@@ -618,7 +618,7 @@ class GLES2DecoderImpl : public GLES2Decoder,
     state_.RestoreBufferBindings();
   }
   virtual void RestoreGlobalState() const OVERRIDE {
-    state_.RestoreGlobalState();
+    state_.RestoreGlobalState(NULL);
   }
   virtual void RestoreProgramBindings() const OVERRIDE {
     state_.RestoreProgramBindings();
@@ -772,6 +772,10 @@ class GLES2DecoderImpl : public GLES2Decoder,
 
   ShaderManager* shader_manager() {
     return group_->shader_manager();
+  }
+
+  ShaderTranslatorCache* shader_translator_cache() {
+    return group_->shader_translator_cache();
   }
 
   const TextureManager* texture_manager() const {
@@ -2390,20 +2394,20 @@ bool GLES2DecoderImpl::Initialize(
       ref = texture_manager()->GetDefaultTextureInfo(
           GL_TEXTURE_EXTERNAL_OES);
       state_.texture_units[tt].bound_texture_external_oes = ref;
-      glBindTexture(GL_TEXTURE_EXTERNAL_OES, ref->service_id());
+      glBindTexture(GL_TEXTURE_EXTERNAL_OES, ref ? ref->service_id() : 0);
     }
     if (features().arb_texture_rectangle) {
       ref = texture_manager()->GetDefaultTextureInfo(
           GL_TEXTURE_RECTANGLE_ARB);
       state_.texture_units[tt].bound_texture_rectangle_arb = ref;
-      glBindTexture(GL_TEXTURE_RECTANGLE_ARB, ref->service_id());
+      glBindTexture(GL_TEXTURE_RECTANGLE_ARB, ref ? ref->service_id() : 0);
     }
     ref = texture_manager()->GetDefaultTextureInfo(GL_TEXTURE_CUBE_MAP);
     state_.texture_units[tt].bound_texture_cube_map = ref;
-    glBindTexture(GL_TEXTURE_CUBE_MAP, ref->service_id());
+    glBindTexture(GL_TEXTURE_CUBE_MAP, ref ? ref->service_id() : 0);
     ref = texture_manager()->GetDefaultTextureInfo(GL_TEXTURE_2D);
     state_.texture_units[tt].bound_texture_2d = ref;
-    glBindTexture(GL_TEXTURE_2D, ref->service_id());
+    glBindTexture(GL_TEXTURE_2D, ref ? ref->service_id() : 0);
   }
   glActiveTexture(GL_TEXTURE0);
   CHECK_GL_ERROR();
@@ -2594,8 +2598,8 @@ bool GLES2DecoderImpl::Initialize(
   state_.scissor_height = state_.viewport_height;
 
   // Set all the default state because some GL drivers get it wrong.
-  state_.InitCapabilities();
-  state_.InitState();
+  state_.InitCapabilities(NULL);
+  state_.InitState(NULL);
   glActiveTexture(GL_TEXTURE0 + state_.active_texture_unit);
 
   DoBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -2762,9 +2766,10 @@ bool GLES2DecoderImpl::InitializeShaderTranslator() {
   if (workarounds().unroll_for_loop_with_sampler_array_index)
     driver_bug_workarounds |= SH_UNROLL_FOR_LOOP_WITH_SAMPLER_ARRAY_INDEX;
 
-  ShaderTranslatorCache* cache = ShaderTranslatorCache::GetInstance();
-  vertex_translator_ = cache->GetTranslator(
-      SH_VERTEX_SHADER, shader_spec, &resources,
+  vertex_translator_ = shader_translator_cache()->GetTranslator(
+      SH_VERTEX_SHADER,
+      shader_spec,
+      &resources,
       implementation_type,
       static_cast<ShCompileOptions>(driver_bug_workarounds));
   if (!vertex_translator_.get()) {
@@ -2773,8 +2778,10 @@ bool GLES2DecoderImpl::InitializeShaderTranslator() {
     return false;
   }
 
-  fragment_translator_ = cache->GetTranslator(
-      SH_FRAGMENT_SHADER, shader_spec, &resources,
+  fragment_translator_ = shader_translator_cache()->GetTranslator(
+      SH_FRAGMENT_SHADER,
+      shader_spec,
+      &resources,
       implementation_type,
       static_cast<ShCompileOptions>(driver_bug_workarounds));
   if (!fragment_translator_.get()) {
@@ -3409,6 +3416,11 @@ void GLES2DecoderImpl::Destroy(bool have_context) {
   offscreen_resolved_frame_buffer_.reset();
   offscreen_resolved_color_texture_.reset();
 
+  // Need to release these before releasing |group_| which may own the
+  // ShaderTranslatorCache.
+  fragment_translator_ = NULL;
+  vertex_translator_ = NULL;
+
   // Should destroy the transfer manager before the texture manager held
   // by the context group.
   async_pixel_transfer_manager_.reset();
@@ -4029,21 +4041,25 @@ void GLES2DecoderImpl::DoBindTexture(GLenum target, GLuint client_id) {
   } else {
     texture_ref = texture_manager()->GetDefaultTextureInfo(target);
   }
-  Texture* texture = texture_ref->texture();
 
   // Check the texture exists
-  // Check that we are not trying to bind it to a different target.
-  if (texture->target() != 0 && texture->target() != target) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION,
-        "glBindTexture", "texture bound to more than 1 target.");
-    return;
+  if (texture_ref) {
+    Texture* texture = texture_ref->texture();
+    // Check that we are not trying to bind it to a different target.
+    if (texture->target() != 0 && texture->target() != target) {
+      LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
+                         "glBindTexture",
+                         "texture bound to more than 1 target.");
+      return;
+    }
+    LogClientServiceForInfo(texture, client_id, "glBindTexture");
+    if (texture->target() == 0) {
+      texture_manager()->SetTarget(texture_ref, target);
+    }
+    glBindTexture(target, texture->service_id());
+  } else {
+    glBindTexture(target, 0);
   }
-  LogClientServiceForInfo(texture, client_id, "glBindTexture");
-  if (texture->target() == 0) {
-    texture_manager()->SetTarget(texture_ref, target);
-  }
-  glBindTexture(target, texture->service_id());
 
   TextureUnit& unit = state_.texture_units[state_.active_texture_unit];
   unit.bind_target = target;
@@ -4541,6 +4557,12 @@ bool GLES2DecoderImpl::GetHelper(
       *num_written = 1;
       if (params) {
         params[0] = unpack_unpremultiply_alpha_;
+      }
+      return true;
+    case GL_BIND_GENERATES_RESOURCE_CHROMIUM:
+      *num_written = 1;
+      if (params) {
+        params[0] = group_->bind_generates_resource() ? 1 : 0;
       }
       return true;
     default:
@@ -7536,6 +7558,16 @@ error::Error GLES2DecoderImpl::HandlePostSubBufferCHROMIUM(
     LOG(ERROR) << "Context lost because PostSubBuffer failed.";
     return error::kLostContext;
   }
+}
+
+error::Error GLES2DecoderImpl::HandleScheduleOverlayPlaneCHROMIUM(
+    uint32 immediate_data_size,
+    const cmds::ScheduleOverlayPlaneCHROMIUM& c) {
+  NOTIMPLEMENTED() << "Overlay supported isn't finished.";
+  LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
+                     "glScheduleOverlayPlaneCHROMIUM",
+                     "function not implemented");
+  return error::kNoError;
 }
 
 error::Error GLES2DecoderImpl::GetAttribLocationHelper(

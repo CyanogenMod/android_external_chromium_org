@@ -4,53 +4,57 @@
 
 #include "chrome/browser/translate/translate_tab_helper.h"
 
-#if defined(CLD2_DYNAMIC_MODE)
-#include "base/basictypes.h"
-#include "base/lazy_instance.h"
-#endif
 #include "base/logging.h"
-#if defined(CLD2_DYNAMIC_MODE)
-#include "base/path_service.h"
-#include "base/platform_file.h"
-#include "base/synchronization/lock.h"
-#include "base/task_runner.h"
-#endif
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_split.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/translate/translate_accept_languages_factory.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
-#include "chrome/browser/translate/translate_manager.h"
 #include "chrome/browser/translate/translate_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/translate/translate_bubble_factory.h"
-#if defined(CLD2_DYNAMIC_MODE)
-#include "chrome/common/chrome_paths.h"
-#endif
 #include "chrome/common/pref_names.h"
-#include "chrome/common/render_messages.h"
+#include "components/translate/content/common/translate_messages.h"
 #include "components/translate/core/browser/page_translated_details.h"
 #include "components/translate/core/browser/translate_accept_languages.h"
+#include "components/translate/core/browser/translate_download_manager.h"
+#include "components/translate/core/browser/translate_manager.h"
 #include "components/translate/core/browser/translate_prefs.h"
 #include "components/translate/core/common/language_detection_details.h"
-#if defined(CLD2_DYNAMIC_MODE)
-#include "content/public/browser/browser_thread.h"
-#endif
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/web_contents.h"
+#include "net/http/http_status_code.h"
+#include "url/gurl.h"
+
 #if defined(CLD2_DYNAMIC_MODE)
+#include "base/files/file.h"
+#include "base/path_service.h"
+#include "chrome/common/chrome_paths.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #endif
-#include "content/public/browser/web_contents.h"
+
+namespace {
+
+// The maximum number of attempts we'll do to see if the page has finshed
+// loading before giving up the translation
+const int kMaxTranslateLoadCheckAttempts = 20;
+
+}  // namespace
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(TranslateTabHelper);
 
 #if defined(CLD2_DYNAMIC_MODE)
 // Statics defined in the .h file:
-base::PlatformFile TranslateTabHelper::s_cached_platform_file_ =
-    base::kInvalidPlatformFileValue;
+base::File* TranslateTabHelper::s_cached_file_ = NULL;
 uint64 TranslateTabHelper::s_cached_data_offset_ = 0;
 uint64 TranslateTabHelper::s_cached_data_length_ = 0;
 base::LazyInstance<base::Lock> TranslateTabHelper::s_file_lock_ =
@@ -59,11 +63,10 @@ base::LazyInstance<base::Lock> TranslateTabHelper::s_file_lock_ =
 
 TranslateTabHelper::TranslateTabHelper(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
-#if defined(CLD2_DYNAMIC_MODE)
-      weak_pointer_factory_(this),
-#endif
+      max_reload_check_attempts_(kMaxTranslateLoadCheckAttempts),
       translate_driver_(&web_contents->GetController()),
-      translate_manager_(new TranslateManager(this, prefs::kAcceptLanguages)) {}
+      translate_manager_(new TranslateManager(this, prefs::kAcceptLanguages)),
+      weak_pointer_factory_(this) {}
 
 TranslateTabHelper::~TranslateTabHelper() {
 }
@@ -99,6 +102,40 @@ TranslateManager* TranslateTabHelper::GetManagerFromWebContents(
   return translate_tab_helper->GetTranslateManager();
 }
 
+// static
+void TranslateTabHelper::GetTranslateLanguages(
+    content::WebContents* web_contents,
+    std::string* source,
+    std::string* target) {
+  DCHECK(source != NULL);
+  DCHECK(target != NULL);
+
+  TranslateTabHelper* translate_tab_helper = FromWebContents(web_contents);
+  if (!translate_tab_helper)
+    return;
+
+  *source = translate_tab_helper->GetLanguageState().original_language();
+
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+  Profile* original_profile = profile->GetOriginalProfile();
+  PrefService* prefs = original_profile->GetPrefs();
+  scoped_ptr<TranslatePrefs> translate_prefs = CreateTranslatePrefs(prefs);
+  if (!web_contents->GetBrowserContext()->IsOffTheRecord()) {
+    std::string auto_translate_language =
+        TranslateManager::GetAutoTargetLanguage(*source, translate_prefs.get());
+    if (!auto_translate_language.empty()) {
+      *target = auto_translate_language;
+      return;
+    }
+  }
+
+  std::string accept_languages_str = prefs->GetString(prefs::kAcceptLanguages);
+  std::vector<std::string> accept_languages_list;
+  base::SplitString(accept_languages_str, ',', &accept_languages_list);
+  *target = TranslateManager::GetTargetLanguage(accept_languages_list);
+}
+
 TranslateManager* TranslateTabHelper::GetTranslateManager() {
   return translate_manager_.get();
 }
@@ -107,18 +144,18 @@ content::WebContents* TranslateTabHelper::GetWebContents() {
   return web_contents();
 }
 
-void TranslateTabHelper::ShowTranslateUI(TranslateTabHelper::TranslateStep step,
+void TranslateTabHelper::ShowTranslateUI(translate::TranslateStep step,
                                          const std::string source_language,
                                          const std::string target_language,
                                          TranslateErrors::Type error_type,
                                          bool triggered_from_menu) {
   DCHECK(web_contents());
   if (error_type != TranslateErrors::NONE)
-    step = TranslateTabHelper::TRANSLATE_ERROR;
+    step = translate::TRANSLATE_STEP_TRANSLATE_ERROR;
 
   if (TranslateService::IsTranslateBubbleEnabled()) {
     // Bubble UI.
-    if (step == BEFORE_TRANSLATE) {
+    if (step == translate::TRANSLATE_STEP_BEFORE_TRANSLATE) {
       // TODO: Move this logic out of UI code.
       GetLanguageState().SetTranslateEnabled(true);
       if (!GetLanguageState().HasLanguageChanged())
@@ -132,14 +169,15 @@ void TranslateTabHelper::ShowTranslateUI(TranslateTabHelper::TranslateStep step,
   Profile* profile =
       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
   Profile* original_profile = profile->GetOriginalProfile();
-  TranslateInfoBarDelegate::Create(step != BEFORE_TRANSLATE,
-                                   web_contents(),
-                                   step,
-                                   source_language,
-                                   target_language,
-                                   error_type,
-                                   original_profile->GetPrefs(),
-                                   triggered_from_menu);
+  TranslateInfoBarDelegate::Create(
+      step != translate::TRANSLATE_STEP_BEFORE_TRANSLATE,
+      web_contents(),
+      step,
+      source_language,
+      target_language,
+      error_type,
+      original_profile->GetPrefs(),
+      triggered_from_menu);
 }
 
 TranslateDriver* TranslateTabHelper::GetTranslateDriver() {
@@ -165,6 +203,28 @@ TranslateAcceptLanguages* TranslateTabHelper::GetTranslateAcceptLanguages() {
   return GetTranslateAcceptLanguages(web_contents()->GetBrowserContext());
 }
 
+bool TranslateTabHelper::IsTranslatableURL(const GURL& url) {
+  return TranslateService::IsTranslatableURL(url);
+}
+
+void TranslateTabHelper::ShowReportLanguageDetectionErrorUI(
+    const GURL& report_url) {
+#if defined(OS_ANDROID)
+  // Android does not support reporting language detection errors.
+  NOTREACHED();
+#else
+  // We'll open the URL in a new tab so that the user can tell us more.
+  Browser* browser = chrome::FindBrowserWithWebContents(web_contents());
+  if (!browser) {
+    NOTREACHED();
+    return;
+  }
+
+  chrome::AddSelectedTabWithURL(
+      browser, report_url, content::PAGE_TRANSITION_AUTO_BOOKMARK);
+#endif  // defined(OS_ANDROID)
+}
+
 bool TranslateTabHelper::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(TranslateTabHelper, message)
@@ -178,6 +238,55 @@ bool TranslateTabHelper::OnMessageReceived(const IPC::Message& message) {
   IPC_END_MESSAGE_MAP()
 
   return handled;
+}
+
+void TranslateTabHelper::NavigationEntryCommitted(
+    const content::LoadCommittedDetails& load_details) {
+  // Check whether this is a reload: When doing a page reload, the
+  // TranslateLanguageDetermined IPC is not sent so the translation needs to be
+  // explicitly initiated.
+
+  content::NavigationEntry* entry =
+      web_contents()->GetController().GetActiveEntry();
+  if (!entry) {
+    NOTREACHED();
+    return;
+  }
+
+  // If the navigation happened while offline don't show the translate
+  // bar since there will be nothing to translate.
+  if (load_details.http_status_code == 0 ||
+      load_details.http_status_code == net::HTTP_INTERNAL_SERVER_ERROR) {
+    return;
+  }
+
+  if (!load_details.is_main_frame &&
+      translate_driver_.GetLanguageState().translation_declined()) {
+    // Some sites (such as Google map) may trigger sub-frame navigations
+    // when the user interacts with the page.  We don't want to show a new
+    // infobar if the user already dismissed one in that case.
+    return;
+  }
+
+  // If not a reload, return.
+  if (entry->GetTransitionType() != content::PAGE_TRANSITION_RELOAD &&
+      load_details.type != content::NAVIGATION_TYPE_SAME_PAGE) {
+    return;
+  }
+
+  if (!translate_driver_.GetLanguageState().page_needs_translation())
+    return;
+
+  // Note that we delay it as the ordering of the processing of this callback
+  // by WebContentsObservers is undefined and might result in the current
+  // infobars being removed. Since the translation initiation process might add
+  // an infobar, it must be done after that.
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&TranslateTabHelper::InitiateTranslation,
+                 weak_pointer_factory_.GetWeakPtr(),
+                 translate_driver_.GetLanguageState().original_language(),
+                 0));
 }
 
 void TranslateTabHelper::DidNavigateAnyFrame(
@@ -197,20 +306,20 @@ void TranslateTabHelper::WebContentsDestroyed(
 
 #if defined(CLD2_DYNAMIC_MODE)
 void TranslateTabHelper::OnCLDDataRequested() {
-  // Quickly try to read s_cached_platform_file_. If valid, the file handle is
+  // Quickly try to read s_cached_file_. If valid, the file handle is
   // cached and can be used immediately. Else, queue the caching task to the
   // blocking pool.
-  base::PlatformFile handle = base::kInvalidPlatformFileValue;
+  base::File* handle = NULL;
   uint64 data_offset = 0;
   uint64 data_length = 0;
   {
     base::AutoLock lock(s_file_lock_.Get());
-    handle = s_cached_platform_file_;
+    handle = s_cached_file_;
     data_offset = s_cached_data_offset_;
     data_length = s_cached_data_length_;
   }
 
-  if (handle != base::kInvalidPlatformFileValue) {
+  if (handle && handle->IsValid()) {
     // Cached data available. Respond to the request.
     SendCLDDataAvailable(handle, data_offset, data_length);
     return;
@@ -230,27 +339,27 @@ void TranslateTabHelper::OnCLDDataRequested() {
 }
 
 void TranslateTabHelper::MaybeSendCLDDataAvailable() {
-  base::PlatformFile handle = base::kInvalidPlatformFileValue;
+  base::File* handle = NULL;
   uint64 data_offset = 0;
   uint64 data_length = 0;
   {
     base::AutoLock lock(s_file_lock_.Get());
-    handle = s_cached_platform_file_;
+    handle = s_cached_file_;
     data_offset = s_cached_data_offset_;
     data_length = s_cached_data_length_;
   }
 
-  if (handle != base::kInvalidPlatformFileValue)
+  if (handle && handle->IsValid())
     SendCLDDataAvailable(handle, data_offset, data_length);
 }
 
-void TranslateTabHelper::SendCLDDataAvailable(const base::PlatformFile handle,
+void TranslateTabHelper::SendCLDDataAvailable(const base::File* handle,
                                               const uint64 data_offset,
                                               const uint64 data_length) {
   // Data available, respond to the request.
   IPC::PlatformFileForTransit ipc_platform_file =
       IPC::GetFileHandleForProcess(
-          handle,
+          handle->GetPlatformFile(),
           GetWebContents()->GetRenderViewHost()->GetProcess()->GetHandle(),
           false);
   // In general, sending a response from within the code path that is processing
@@ -272,7 +381,7 @@ void TranslateTabHelper::HandleCLDDataRequest() {
 
   {
     base::AutoLock lock(s_file_lock_.Get());
-    if (s_cached_platform_file_ != base::kInvalidPlatformFileValue)
+    if (s_cached_file_)
       return; // Already done, duplicate request
   }
 
@@ -289,20 +398,15 @@ void TranslateTabHelper::HandleCLDDataRequest() {
     return;
 
   // Attempt to open the file for reading.
-  bool created = false;
-  base::PlatformFileError error;
-  const base::PlatformFile file = base::CreatePlatformFile(
-      path,
-      base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ,
-      &created, &error);
-  DCHECK(!created);
-  if (error != base::PLATFORM_FILE_OK) {
+  scoped_ptr<base::File> file(
+      new base::File(path, base::File::FLAG_OPEN | base::File::FLAG_READ));
+  if (!file->IsValid()) {
     LOG(WARNING) << "CLD data file exists but cannot be opened";
     return;
   }
 
-  base::PlatformFileInfo file_info;
-  if (!base::GetPlatformFileInfo(file, &file_info)) {
+  base::File::Info file_info;
+  if (!file->GetInfo(&file_info)) {
     LOG(WARNING) << "CLD data file exists but cannot be inspected";
     return;
   }
@@ -313,32 +417,53 @@ void TranslateTabHelper::HandleCLDDataRequest() {
   const uint64 data_offset = 0;
   const uint64 data_length = file_info.size;
 
-  bool racing = false;
   {
     base::AutoLock lock(s_file_lock_.Get());
-    if (s_cached_platform_file_ != base::kInvalidPlatformFileValue) {
+    if (s_cached_file_) {
       // Idempotence: Racing another request on the blocking pool, abort.
-      racing = true;
     } else {
       // Else, this request has taken care of it all. Cache all info.
-      s_cached_platform_file_ = file;
+      s_cached_file_ = file.release();
       s_cached_data_offset_ = data_offset;
       s_cached_data_length_ = data_length;
     }
   }
-
-  if (racing) {
-    // Other thread wins, give up the redundant file handle.
-    base::ClosePlatformFile(file);
-  }
 }
 #endif // defined(CLD2_DYNAMIC_MODE)
+
+void TranslateTabHelper::InitiateTranslation(const std::string& page_lang,
+                                             int attempt) {
+  if (translate_driver_.GetLanguageState().translation_pending())
+    return;
+
+  // During a reload we need web content to be available before the
+  // translate script is executed. Otherwise we will run the translate script on
+  // an empty DOM which will fail. Therefore we wait a bit to see if the page
+  // has finished.
+  if (web_contents()->IsLoading() && attempt < max_reload_check_attempts_) {
+    int backoff = attempt * kMaxTranslateLoadCheckAttempts;
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&TranslateTabHelper::InitiateTranslation,
+                   weak_pointer_factory_.GetWeakPtr(),
+                   page_lang,
+                   ++attempt),
+        base::TimeDelta::FromMilliseconds(backoff));
+    return;
+  }
+
+  translate_manager_->InitiateTranslation(
+      TranslateDownloadManager::GetLanguageCode(page_lang));
+}
 
 void TranslateTabHelper::OnLanguageDetermined(
     const LanguageDetectionDetails& details,
     bool page_needs_translation) {
   translate_driver_.GetLanguageState().LanguageDetermined(
       details.adopted_language, page_needs_translation);
+
+  if (web_contents())
+    translate_manager_->InitiateTranslation(details.adopted_language);
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED,
@@ -351,8 +476,9 @@ void TranslateTabHelper::OnPageTranslated(int32 page_id,
                                           const std::string& translated_lang,
                                           TranslateErrors::Type error_type) {
   DCHECK(web_contents());
-  translate_driver_.GetLanguageState().SetCurrentLanguage(translated_lang);
-  translate_driver_.GetLanguageState().set_translation_pending(false);
+  translate_manager_->PageTranslated(
+      original_lang, translated_lang, error_type);
+
   PageTranslatedDetails details;
   details.source_language = original_lang;
   details.target_language = translated_lang;
@@ -363,7 +489,7 @@ void TranslateTabHelper::OnPageTranslated(int32 page_id,
       content::Details<PageTranslatedDetails>(&details));
 }
 
-void TranslateTabHelper::ShowBubble(TranslateTabHelper::TranslateStep step,
+void TranslateTabHelper::ShowBubble(translate::TranslateStep step,
                                     TranslateErrors::Type error_type) {
 // The bubble is implemented only on the desktop platforms.
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
@@ -390,8 +516,8 @@ void TranslateTabHelper::ShowBubble(TranslateTabHelper::TranslateStep step,
   }
 
   // During auto-translating, the bubble should not be shown.
-  if (step == TranslateTabHelper::TRANSLATING ||
-      step == TranslateTabHelper::AFTER_TRANSLATE) {
+  if (step == translate::TRANSLATE_STEP_TRANSLATING ||
+      step == translate::TRANSLATE_STEP_AFTER_TRANSLATE) {
     if (GetLanguageState().InTranslateNavigation())
       return;
   }

@@ -383,6 +383,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual void CalculateContentsScale(float ideal_contents_scale,
                                       float device_scale_factor,
                                       float page_scale_factor,
+                                      float maximum_animation_contents_scale,
                                       bool animating_transform_to_screen,
                                       float* contents_scale_x,
                                       float* contents_scale_y,
@@ -573,7 +574,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // transformed relative to this layer, defines the maximum scroll offset for
   // this layer.
   int scroll_clip_layer_id_;
-  bool scrollable_ : 1;
   bool should_scroll_on_main_thread_ : 1;
   bool have_wheel_event_handlers_ : 1;
   bool have_scroll_event_handlers_ : 1;

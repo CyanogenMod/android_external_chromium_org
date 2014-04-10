@@ -36,12 +36,6 @@ ServiceWorkerStorage::ServiceWorkerStorage(
 }
 
 ServiceWorkerStorage::~ServiceWorkerStorage() {
-  for (PatternToRegistrationMap::const_iterator iter =
-           registration_by_pattern_.begin();
-       iter != registration_by_pattern_.end();
-       ++iter) {
-    iter->second->Shutdown();
-  }
   registration_by_pattern_.clear();
 }
 

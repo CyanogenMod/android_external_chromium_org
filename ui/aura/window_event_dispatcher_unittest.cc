@@ -36,15 +36,6 @@
 namespace aura {
 namespace {
 
-bool PlatformSupportsMultipleHosts() {
-#if defined(USE_OZONE)
-  // Creating multiple WindowTreeHostOzone instances is broken.
-  return false;
-#else
-  return true;
-#endif
-}
-
 // A delegate that always returns a non-client component for hit tests.
 class NonClientDelegate : public test::TestWindowDelegate {
  public:
@@ -883,6 +874,50 @@ TEST_F(WindowEventDispatcherTest, DispatchMouseExitWhenCursorHidden) {
   EXPECT_EQ(filter->mouse_location(0).ToString(), translated_point.ToString());
 }
 
+// Tests that a synthetic mouse exit is dispatched to the last known cursor
+// location after mouse events are disabled on the cursor client.
+TEST_F(WindowEventDispatcherTest,
+       DispatchSyntheticMouseExitAfterMouseEventsDisabled) {
+  EventFilterRecorder* filter = new EventFilterRecorder;
+  root_window()->SetEventFilter(filter);  // passes ownership
+
+  test::TestWindowDelegate delegate;
+  gfx::Point window_origin(7, 18);
+  scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
+      &delegate, 1234, gfx::Rect(window_origin, gfx::Size(100, 100)),
+      root_window()));
+  window->Show();
+
+  // Dispatch a mouse move event into the window.
+  gfx::Point mouse_location(gfx::Point(15, 25));
+  ui::MouseEvent mouse1(ui::ET_MOUSE_MOVED, mouse_location,
+                        mouse_location, 0, 0);
+  EXPECT_TRUE(filter->events().empty());
+  DispatchEventUsingWindowDispatcher(&mouse1);
+  EXPECT_FALSE(filter->events().empty());
+  filter->Reset();
+
+  test::TestCursorClient cursor_client(root_window());
+  cursor_client.DisableMouseEvents();
+
+  gfx::Point mouse_exit_location(gfx::Point(150, 150));
+  ui::MouseEvent mouse2(ui::ET_MOUSE_EXITED, gfx::Point(150, 150),
+                        gfx::Point(150, 150), ui::EF_IS_SYNTHESIZED, 0);
+  DispatchEventUsingWindowDispatcher(&mouse2);
+
+  EXPECT_FALSE(filter->events().empty());
+  // We get the mouse exited event twice in our filter. Once during the
+  // predispatch phase and during the actual dispatch.
+  EXPECT_EQ("MOUSE_EXITED MOUSE_EXITED", EventTypesToString(filter->events()));
+
+  // Verify the mouse exit was dispatched at the correct location
+  // (in the correct coordinate space).
+  int translated_x = mouse_exit_location.x() - window_origin.x();
+  int translated_y = mouse_exit_location.y() - window_origin.y();
+  gfx::Point translated_point(translated_x, translated_y);
+  EXPECT_EQ(filter->mouse_location(0).ToString(), translated_point.ToString());
+}
+
 class DeletingEventFilter : public ui::EventHandler {
  public:
   DeletingEventFilter()
@@ -1319,8 +1354,6 @@ class ValidRootDuringDestructionWindowObserver : public aura::WindowObserver {
 
 // Verifies GetRootWindow() from ~Window returns a valid root.
 TEST_F(WindowEventDispatcherTest, ValidRootDuringDestruction) {
-  if (!PlatformSupportsMultipleHosts())
-    return;
   bool got_destroying = false;
   bool has_valid_root = false;
   ValidRootDuringDestructionWindowObserver observer(&got_destroying,
@@ -1434,8 +1467,6 @@ class DeleteHostFromHeldMouseEventDelegate
 // Verifies if a WindowTreeHost is deleted from dispatching a held mouse event
 // we don't crash.
 TEST_F(WindowEventDispatcherTest, DeleteHostFromHeldMouseEvent) {
-  if (!PlatformSupportsMultipleHosts())
-    return;
   // Should be deleted by |delegate|.
   WindowTreeHost* h2 = WindowTreeHost::Create(gfx::Rect(0, 0, 100, 100));
   h2->InitHost();
@@ -1904,8 +1935,6 @@ class MoveWindowHandler : public ui::EventHandler {
 // event being dispatched is moved to a different dispatcher in response to an
 // event in the inner loop.
 TEST_F(WindowEventDispatcherTest, NestedEventDispatchTargetMoved) {
-  if (!PlatformSupportsMultipleHosts())
-    return;
   scoped_ptr<WindowTreeHost> second_host(
       WindowTreeHost::Create(gfx::Rect(20, 30, 100, 50)));
   second_host->InitHost();
@@ -1962,8 +1991,6 @@ class AlwaysMouseDownInputStateLookup : public InputStateLookup {
 
 TEST_F(WindowEventDispatcherTest,
        CursorVisibilityChangedWhileCaptureWindowInAnotherDispatcher) {
-  if (!PlatformSupportsMultipleHosts())
-    return;
   test::EventCountDelegate delegate;
   scoped_ptr<Window> window(CreateTestWindowWithDelegate(&delegate, 123,
       gfx::Rect(20, 10, 10, 20), root_window()));

@@ -211,7 +211,7 @@ TEST(JsonSchemaCompilerErrorTest, BadEnumValue) {
   {
     scoped_ptr<base::DictionaryValue> value = Dictionary(
         "enumeration", new base::StringValue("bad sauce"));
-    EXPECT_TRUE(EqualsUtf16("'enumeration': expected \"one\" or \"two\" "
+    EXPECT_TRUE(EqualsUtf16("'Enumeration': expected \"one\" or \"two\" "
               "or \"three\", got \"bad sauce\"",
         GetPopulateError<HasEnumeration>(*value)));
   }
@@ -314,5 +314,20 @@ TEST(JsonSchemaCompilerErrorTest, MultiplePopulationErrors) {
         "'TheArray': expected list, got integer",
         error));
     EXPECT_EQ(NULL, out.the_array.get());
+  }
+}
+
+TEST(JsonSchemaCompilerErrorTest, TooManyKeys) {
+  {
+    scoped_ptr<base::DictionaryValue> value = Dictionary(
+      "string", new base::StringValue("yes"));
+    EXPECT_TRUE(EqualsUtf16("", GetPopulateError<TestType>(*value)));
+  }
+  {
+    scoped_ptr<base::DictionaryValue> value = Dictionary(
+        "string", new base::StringValue("yes"),
+        "ohno", new base::StringValue("many values"));
+    EXPECT_TRUE(EqualsUtf16("found unexpected key 'ohno'",
+        GetPopulateError<TestType>(*value)));
   }
 }

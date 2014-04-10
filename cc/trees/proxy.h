@@ -24,6 +24,7 @@ class Vector2d;
 
 namespace cc {
 
+class LayerTreeDebugState;
 class OutputSurface;
 struct RendererCapabilities;
 
@@ -94,9 +95,9 @@ class CC_EXPORT Proxy {
   // Maximum number of sub-region texture updates supported for each commit.
   virtual size_t MaxPartialTextureUpdates() const = 0;
 
-  virtual void AcquireLayerTextures() = 0;
-
   virtual scoped_ptr<base::Value> AsValue() const = 0;
+
+  virtual void SetDebugState(const LayerTreeDebugState& debug_state) = 0;
 
   // Testing hooks
   virtual bool CommitPendingForTesting() = 0;

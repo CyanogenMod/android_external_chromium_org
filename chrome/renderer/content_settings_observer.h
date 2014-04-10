@@ -49,47 +49,6 @@ class ContentSettingsObserver
   void DidBlockContentType(ContentSettingsType settings_type);
 
   // blink::WebPermissionClient implementation.
-  // TODO(jam): remove all these methods after Blink rolls.
-  virtual bool allowDatabase(blink::WebFrame* frame,
-                             const blink::WebString& name,
-                             const blink::WebString& display_name,
-                             unsigned long estimated_size);
-  virtual bool allowFileSystem(blink::WebFrame* frame);
-  virtual bool allowImage(blink::WebFrame* frame,
-                          bool enabled_per_settings,
-                          const blink::WebURL& image_url);
-  virtual bool allowIndexedDB(blink::WebFrame* frame,
-                              const blink::WebString& name,
-                              const blink::WebSecurityOrigin& origin);
-  virtual bool allowPlugins(blink::WebFrame* frame,
-                            bool enabled_per_settings);
-  virtual bool allowScript(blink::WebFrame* frame,
-                           bool enabled_per_settings);
-  virtual bool allowScriptFromSource(blink::WebFrame* frame,
-                                     bool enabled_per_settings,
-                                     const blink::WebURL& script_url);
-  virtual bool allowStorage(blink::WebFrame* frame, bool local);
-  virtual bool allowReadFromClipboard(blink::WebFrame* frame,
-                                      bool default_value);
-  virtual bool allowWriteToClipboard(blink::WebFrame* frame,
-                                     bool default_value);
-  virtual bool allowWebComponents(blink::WebFrame* frame, bool);
-  virtual bool allowMutationEvents(blink::WebFrame* frame,
-                                   bool default_value);
-  virtual bool allowPushState(blink::WebFrame* frame);
-  virtual void didNotAllowPlugins(blink::WebFrame* frame);
-  virtual void didNotAllowScript(blink::WebFrame* frame);
-  virtual bool allowDisplayingInsecureContent(
-      blink::WebFrame* frame,
-      bool allowed_per_settings,
-      const blink::WebSecurityOrigin& context,
-      const blink::WebURL& url);
-  virtual bool allowRunningInsecureContent(
-      blink::WebFrame* frame,
-      bool allowed_per_settings,
-      const blink::WebSecurityOrigin& context,
-      const blink::WebURL& url);
-
   virtual bool allowDatabase(const blink::WebString& name,
                              const blink::WebString& display_name,
                              unsigned long estimated_size);

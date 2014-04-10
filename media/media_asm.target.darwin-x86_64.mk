@@ -6,8 +6,9 @@ LOCAL_MODULE_CLASS := STATIC_LIBRARIES
 LOCAL_MODULE := media_media_asm_gyp
 LOCAL_MODULE_SUFFIX := .a
 LOCAL_MODULE_TAGS := optional
-gyp_intermediate_dir := $(call local-intermediates-dir)
-gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
+LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
+gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
+gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
@@ -23,8 +24,6 @@ $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: export PATH := 
 $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -DPIC -felf64 -m amd64 -DARCH_X86_64 -DARCH_X86_64 -DELF -DPIC -o "$(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o" base/simd/convert_rgb_to_yuv_ssse3.asm
 
-.PHONY: media_media_asm_gyp_rule_trigger
-media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o
 
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -33,8 +32,6 @@ $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: export PATH := $(
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -DPIC -felf64 -m amd64 -DARCH_X86_64 -DARCH_X86_64 -DELF -DPIC -o "$(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o" base/simd/convert_yuv_to_rgb_mmx.asm
 
-.PHONY: media_media_asm_gyp_rule_trigger
-media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o
 
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -43,8 +40,6 @@ $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: export PATH := $(
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_sse.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -DPIC -felf64 -m amd64 -DARCH_X86_64 -DARCH_X86_64 -DELF -DPIC -o "$(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o" base/simd/convert_yuv_to_rgb_sse.asm
 
-.PHONY: media_media_asm_gyp_rule_trigger
-media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o
 
 $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -53,8 +48,6 @@ $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: export PATH := 
 $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -DPIC -felf64 -m amd64 -DARCH_X86_64 -DARCH_X86_64 -DELF -DPIC -o "$(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o" base/simd/convert_yuva_to_argb_mmx.asm
 
-.PHONY: media_media_asm_gyp_rule_trigger
-media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o
 
 $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -63,8 +56,6 @@ $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: export PATH := 
 $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: $(LOCAL_PATH)/media/base/simd/empty_register_state_mmx.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -DPIC -felf64 -m amd64 -DARCH_X86_64 -DARCH_X86_64 -DELF -DPIC -o "$(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o" base/simd/empty_register_state_mmx.asm
 
-.PHONY: media_media_asm_gyp_rule_trigger
-media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o
 
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -73,8 +64,6 @@ $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: export PATH 
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -DPIC -felf64 -m amd64 -DARCH_X86_64 -DARCH_X86_64 -DELF -DPIC -o "$(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o" base/simd/linear_scale_yuv_to_rgb_mmx.asm
 
-.PHONY: media_media_asm_gyp_rule_trigger
-media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o
 
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -83,8 +72,6 @@ $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: export PATH 
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_sse.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -DPIC -felf64 -m amd64 -DARCH_X86_64 -DARCH_X86_64 -DELF -DPIC -o "$(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o" base/simd/linear_scale_yuv_to_rgb_sse.asm
 
-.PHONY: media_media_asm_gyp_rule_trigger
-media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o
 
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -93,8 +80,6 @@ $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: export PATH := $(su
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -DPIC -felf64 -m amd64 -DARCH_X86_64 -DARCH_X86_64 -DELF -DPIC -o "$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o" base/simd/scale_yuv_to_rgb_mmx.asm
 
-.PHONY: media_media_asm_gyp_rule_trigger
-media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o
 
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -103,8 +88,6 @@ $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: export PATH := $(su
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_sse.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -DPIC -felf64 -m amd64 -DARCH_X86_64 -DARCH_X86_64 -DELF -DPIC -o "$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o" base/simd/scale_yuv_to_rgb_sse.asm
 
-.PHONY: media_media_asm_gyp_rule_trigger
-media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o
 
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx_x64.o: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx_x64.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -113,8 +96,6 @@ $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx_x64.o: export P
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx_x64.o: $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx_x64.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -DPIC -felf64 -m amd64 -DARCH_X86_64 -DARCH_X86_64 -DELF -DPIC -o "$(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx_x64.o" base/simd/linear_scale_yuv_to_rgb_mmx_x64.asm
 
-.PHONY: media_media_asm_gyp_rule_trigger
-media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx_x64.o
 
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse2_x64.o: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse2_x64.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -123,10 +104,7 @@ $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse2_x64.o: export PATH :=
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse2_x64.o: $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_sse2_x64.asm $(gyp_shared_intermediate_dir)/yasm $(LOCAL_PATH)/third_party/x86inc/x86inc.asm $(LOCAL_PATH)/media/base/simd/convert_rgb_to_yuv_ssse3.inc $(LOCAL_PATH)/media/base/simd/convert_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/convert_yuva_to_argb_mmx.inc $(LOCAL_PATH)/media/base/simd/linear_scale_yuv_to_rgb_mmx.inc $(LOCAL_PATH)/media/base/simd/media_export.asm $(LOCAL_PATH)/media/base/simd/scale_yuv_to_rgb_mmx.inc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/media; cd $(gyp_local_path)/media; "$(gyp_shared_intermediate_dir)/yasm" -DCHROMIUM -I.. -DPIC -felf64 -m amd64 -DARCH_X86_64 -DARCH_X86_64 -DELF -DPIC -o "$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse2_x64.o" base/simd/scale_yuv_to_rgb_sse2_x64.asm
 
-.PHONY: media_media_asm_gyp_rule_trigger
-media_media_asm_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse2_x64.o
 
-### Finished generating for all rules
 
 GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o \
@@ -155,8 +133,7 @@ LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o \
 	$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o \
 	$(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx_x64.o \
-	$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse2_x64.o \
-	media_media_asm_gyp_rule_trigger
+	$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse2_x64.o
 
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
@@ -339,9 +316,9 @@ LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
-	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
+	-Wl,--fatal-warnings \
 	-Wl,-z,noexecstack \
 	-fPIC \
 	-m64 \
@@ -356,9 +333,9 @@ LOCAL_LDFLAGS_Debug := \
 
 
 LOCAL_LDFLAGS_Release := \
-	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
+	-Wl,--fatal-warnings \
 	-Wl,-z,noexecstack \
 	-fPIC \
 	-m64 \

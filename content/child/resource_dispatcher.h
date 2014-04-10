@@ -18,12 +18,18 @@
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-#include "webkit/child/resource_loader_bridge.h"
+#include "net/base/request_priority.h"
 #include "webkit/common/resource_type.h"
 
 struct ResourceMsg_RequestCompleteData;
 
+namespace webkit_glue {
+class ResourceLoaderBridge;
+struct ResourceResponseInfo;
+}
+
 namespace content {
+class RequestPeer;
 class ResourceDispatcherDelegate;
 struct RequestInfo;
 struct ResourceResponseHead;
@@ -48,7 +54,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
 
   // Adds a request from the pending_requests_ list, returning the new
   // requests' ID
-  int AddPendingRequest(webkit_glue::ResourceLoaderBridge::Peer* callback,
+  int AddPendingRequest(RequestPeer* callback,
                         ResourceType::Type resource_type,
                         int origin_pid,
                         const GURL& frame_origin,
@@ -70,7 +76,8 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
 
   // Indicates the priority of the specified request changed.
   void DidChangePriority(int routing_id, int request_id,
-                         net::RequestPriority new_priority);
+                         net::RequestPriority new_priority,
+                         int intra_priority_value);
 
   // This does not take ownership of the delegate. It is expected that the
   // delegate have a longer lifetime than the ResourceDispatcher.
@@ -90,7 +97,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
   struct PendingRequestInfo {
     PendingRequestInfo();
 
-    PendingRequestInfo(webkit_glue::ResourceLoaderBridge::Peer* peer,
+    PendingRequestInfo(RequestPeer* peer,
                        ResourceType::Type resource_type,
                        int origin_pid,
                        const GURL& frame_origin,
@@ -98,7 +105,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
 
     ~PendingRequestInfo();
 
-    webkit_glue::ResourceLoaderBridge::Peer* peer;
+    RequestPeer* peer;
     ResourceType::Type resource_type;
     // The PID of the original process which issued this request. This gets
     // non-zero only for a request proxied by another renderer, particularly

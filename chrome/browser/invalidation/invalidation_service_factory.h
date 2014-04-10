@@ -32,6 +32,9 @@ class P2PInvalidationService;
 // on invalidations.
 class InvalidationServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
+  // Returns the InvalidationService for the given |profile|, lazily creating
+  // one first if required. If |profile| does not support invalidation
+  // (Chrome OS login profile, Chrome OS guest), returns NULL instead.
   static InvalidationService* GetForProfile(Profile* profile);
 
   static InvalidationServiceFactory* GetInstance();
@@ -41,6 +44,7 @@ class InvalidationServiceFactory : public BrowserContextKeyedServiceFactory {
   void RegisterTestingFactory(TestingFactoryFunction testing_factory);
 
  private:
+  friend class InvalidationServiceFactoryTestBase;
   friend struct DefaultSingletonTraits<InvalidationServiceFactory>;
 
   InvalidationServiceFactory();

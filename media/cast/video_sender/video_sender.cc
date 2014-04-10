@@ -133,11 +133,13 @@ void VideoSender::InsertRawVideoFrame(
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   DCHECK(video_encoder_.get()) << "Invalid state";
 
-  base::TimeTicks now = cast_environment_->Clock()->NowTicks();
+  RtpTimestamp rtp_timestamp = GetVideoRtpTimestamp(capture_time);
   cast_environment_->Logging()->InsertFrameEvent(
-      now,
+      capture_time, kVideoFrameCaptured, rtp_timestamp, kFrameIdUnknown);
+  cast_environment_->Logging()->InsertFrameEvent(
+      cast_environment_->Clock()->NowTicks(),
       kVideoFrameReceived,
-      GetVideoRtpTimestamp(capture_time),
+      rtp_timestamp,
       kFrameIdUnknown);
 
   // Used by chrome/browser/extension/api/cast_streaming/performance_test.cc
@@ -405,6 +407,11 @@ void VideoSender::OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback) {
 
 void VideoSender::ReceivedAck(uint32 acked_frame_id) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
+  if (acked_frame_id == UINT32_C(0xFFFFFFFF)) {
+    // Receiver is sending a status message before any frames are ready to
+    // be acked. Ignore.
+    return;
+  }
   // Start sending RTCP packets only after receiving the first ACK, i.e. only
   // after establishing that the receiver is active.
   if (last_acked_frame_id_ == -1) {
@@ -419,8 +426,8 @@ void VideoSender::ReceivedAck(uint32 acked_frame_id) {
       now, kVideoAckReceived, rtp_timestamp, acked_frame_id);
 
   VLOG(2) << "ReceivedAck:" << static_cast<int>(acked_frame_id);
-  last_acked_frame_id_ = acked_frame_id;
   active_session_ = true;
+  DCHECK_NE(-1, last_acked_frame_id_);
   UpdateFramesInFlight();
 }
 

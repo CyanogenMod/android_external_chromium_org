@@ -20,7 +20,6 @@
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/extensions/manifest_handlers/externally_connectable.h"
-#include "chrome/common/extensions/message_bundle.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
 #include "chrome/renderer/extensions/api_activity_logger.h"
@@ -81,6 +80,7 @@
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/manifest_handlers/sandboxed_page_info.h"
+#include "extensions/common/message_bundle.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/switches.h"
@@ -1291,10 +1291,7 @@ void Dispatcher::WillReleaseScriptContext(
   if (!context)
     return;
 
-  // If the V8 context has an OOM exception, javascript execution has been
-  // stopped, so dispatching an onUnload event is pointless.
-  if (!v8_context->HasOutOfMemoryException())
-    context->DispatchOnUnloadEvent();
+  context->DispatchOnUnloadEvent();
   // TODO(kalman): add an invalidation observer interface to ChromeV8Context.
   request_sender_->InvalidateSource(context);
 

@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "chrome/browser/favicon/favicon_handler_delegate.h"
+#include "components/favicon/core/favicon_handler_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "content/public/common/favicon_url.h"
@@ -70,6 +70,7 @@ class FaviconTabHelper : public content::WebContentsObserver,
   virtual content::NavigationEntry* GetActiveEntry() OVERRIDE;
   virtual int StartDownload(const GURL& url, int max_bitmap_size) OVERRIDE;
   virtual void NotifyFaviconUpdated(bool icon_url_changed) OVERRIDE;
+  virtual bool IsOffTheRecord() OVERRIDE;
 
   // Favicon download callback.
   void DidDownloadFavicon(

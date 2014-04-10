@@ -25,13 +25,16 @@ class ManagePasswordsBubbleUIController
   // can handle later requests to save or blacklist that login information.
   // This stores the provided object in form_manager_ and triggers the UI to
   // prompt the user about whether they would like to save the password.
-  void OnPasswordSubmitted(PasswordFormManager* form_manager);
+  void OnPasswordSubmitted(password_manager::PasswordFormManager* form_manager);
 
   // Called when a form is autofilled with login information, so we can manage
   // password credentials for the current site which are stored in
   // |password_form_map|. This stores a copy of |password_form_map| and shows
   // the manage password icon.
   void OnPasswordAutofilled(const autofill::PasswordFormMap& password_form_map);
+
+  // Called when a form is _not_ autofilled due to user blacklisting.
+  void OnBlacklistBlockedAutofill();
 
   // TODO(npentrel) This ought to be changed. Best matches should be newly
   // made when opening the ManagePasswordsBubble because there may have been
@@ -41,6 +44,8 @@ class ManagePasswordsBubbleUIController
   void RemoveFromBestMatches(autofill::PasswordForm password_form);
 
   void SavePassword();
+
+  void NeverSavePassword();
 
   // Called when the bubble is opened after the icon gets displayed. We change
   // the state to know that we do not need to pop up the bubble again.
@@ -82,6 +87,11 @@ class ManagePasswordsBubbleUIController
     password_submitted_ = password_submitted;
   }
 
+  bool autofill_blocked() const { return autofill_blocked_; }
+  void set_autofill_blocked(bool autofill_blocked) {
+    autofill_blocked_ = autofill_blocked;
+  }
+
  private:
   friend class content::WebContentsUserData<ManagePasswordsBubbleUIController>;
 
@@ -102,7 +112,7 @@ class ManagePasswordsBubbleUIController
   // information.  If the user responds to a subsequent "Do you want to save
   // this password?" prompt, we ask this object to save or blacklist the
   // associated login information in Chrome's password store.
-  scoped_ptr<PasswordFormManager> form_manager_;
+  scoped_ptr<password_manager::PasswordFormManager> form_manager_;
 
   // All previously stored credentials for a specific site.  Set by
   // OnPasswordSubmitted() or OnPasswordAutofilled().
@@ -114,6 +124,10 @@ class ManagePasswordsBubbleUIController
   // Stores whether a new password has been submitted, if so we have
   // |pending_credentials|.
   bool password_submitted_;
+
+  // Stores whether autofill was blocked due to a user's decision to blacklist
+  // the current site ("Never save passwords for this site").
+  bool autofill_blocked_;
 
   DISALLOW_COPY_AND_ASSIGN(ManagePasswordsBubbleUIController);
 };

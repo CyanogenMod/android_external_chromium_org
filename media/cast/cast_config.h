@@ -71,7 +71,7 @@ struct VideoSenderConfig {
   int max_frame_rate;
   int max_number_of_video_buffers_used;  // Max value depend on codec.
   transport::VideoCodec codec;
-  int number_of_cores;
+  int number_of_encode_threads;
 };
 
 struct AudioReceiverConfig {
@@ -121,17 +121,6 @@ struct VideoReceiverConfig {
 
   std::string aes_key;      // Binary string of size kAesKeySize.
   std::string aes_iv_mask;  // Binary string of size kAesKeySize.
-};
-
-// DEPRECATED: Do not use in new code.  Please migrate existing code to use
-// media::AudioBus.
-struct PcmAudioFrame {
-  PcmAudioFrame();
-  ~PcmAudioFrame();
-
-  int channels;  // Samples in interleaved stereo format. L0, R0, L1 ,R1 ,...
-  int frequency;
-  std::vector<int16> samples;
 };
 
 // import from media::cast::transport

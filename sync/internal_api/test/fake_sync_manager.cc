@@ -218,8 +218,8 @@ UserShare* FakeSyncManager::GetUserShare() {
   return test_user_share_.user_share();
 }
 
-syncer::SyncCore* FakeSyncManager::GetSyncCore() {
-  return NULL;
+base::WeakPtr<syncer::SyncCore> FakeSyncManager::GetSyncCore() {
+  return base::WeakPtr<syncer::SyncCore>();
 }
 
 const std::string FakeSyncManager::cache_guid() {
@@ -242,6 +242,11 @@ SyncEncryptionHandler* FakeSyncManager::GetEncryptionHandler() {
 ScopedVector<syncer::ProtocolEvent>
 FakeSyncManager::GetBufferedProtocolEvents() {
   return ScopedVector<syncer::ProtocolEvent>();
+}
+
+scoped_ptr<base::ListValue> FakeSyncManager::GetAllNodesForType(
+    syncer::ModelType type) {
+  return scoped_ptr<base::ListValue>(new base::ListValue());
 }
 
 void FakeSyncManager::RefreshTypes(ModelTypeSet types) {

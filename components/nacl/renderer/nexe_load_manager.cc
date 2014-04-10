@@ -7,9 +7,11 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/string_tokenizer.h"
 #include "components/nacl/common/nacl_host_messages.h"
 #include "components/nacl/common/nacl_types.h"
 #include "components/nacl/renderer/pnacl_translation_resource_host.h"
+#include "components/nacl/renderer/sandbox_arch.h"
 #include "components/nacl/renderer/trusted_plugin_channel.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
@@ -62,6 +64,40 @@ void HistogramEnumerateLoadStatus(PP_NaClError error_code,
   HistogramEnumerate(name, error_code, PP_NACL_ERROR_MAX);
 }
 
+void HistogramEnumerateOsArch(const std::string& sandbox_isa) {
+  enum NaClOSArch {
+    kNaClLinux32 = 0,
+    kNaClLinux64,
+    kNaClLinuxArm,
+    kNaClMac32,
+    kNaClMac64,
+    kNaClMacArm,
+    kNaClWin32,
+    kNaClWin64,
+    kNaClWinArm,
+    kNaClLinuxMips,
+    kNaClOSArchMax
+  };
+
+  NaClOSArch os_arch = kNaClOSArchMax;
+#if OS_LINUX
+  os_arch = kNaClLinux32;
+#elif OS_MACOSX
+  os_arch = kNaClMac32;
+#elif OS_WIN
+  os_arch = kNaClWin32;
+#endif
+
+  if (sandbox_isa == "x86-64")
+    os_arch = static_cast<NaClOSArch>(os_arch + 1);
+  if (sandbox_isa == "arm")
+    os_arch = static_cast<NaClOSArch>(os_arch + 2);
+  if (sandbox_isa == "mips32")
+    os_arch = kNaClLinuxMips;
+
+  HistogramEnumerate("NaCl.Client.OSArch", os_arch, kNaClOSArchMax);
+}
+
 // Records values up to 3 minutes, 20 seconds.
 // These constants MUST match those in
 // ppapi/native_client/src/trusted/plugin/plugin.cc
@@ -74,6 +110,29 @@ void HistogramTimeMedium(const std::string& name, int64_t sample) {
       base::HistogramBase::kUmaTargetedHistogramFlag);
   if (counter)
     counter->AddTime(base::TimeDelta::FromMilliseconds(sample));
+}
+
+// Records values up to 33 minutes.
+void HistogramTimeLarge(const std::string& name, int64_t sample) {
+  base::HistogramBase* counter = base::Histogram::FactoryTimeGet(
+      name,
+      base::TimeDelta::FromMilliseconds(100),
+      base::TimeDelta::FromMilliseconds(2000000),
+      100,
+      base::HistogramBase::kUmaTargetedHistogramFlag);
+  if (counter)
+    counter->AddTime(base::TimeDelta::FromMilliseconds(sample));
+}
+
+void HistogramStartupTimeMedium(const std::string& name,
+                                base::TimeDelta td,
+                                int64_t nexe_size) {
+  HistogramTimeMedium(name, static_cast<int64_t>(td.InMilliseconds()));
+  if (nexe_size > 0) {
+    float size_in_MB = static_cast<float>(nexe_size) / (1024.f * 1024.f);
+    HistogramTimeMedium(name + "PerMB",
+                        static_cast<int64_t>(td.InMilliseconds() / size_in_MB));
+  }
 }
 
 blink::WebString EventTypeToString(PP_NaClEventType event_type) {
@@ -116,12 +175,20 @@ NexeLoadManager::NexeLoadManager(
     : pp_instance_(pp_instance),
       nacl_ready_state_(PP_NACL_READY_STATE_UNSENT),
       nexe_error_reported_(false),
+      is_installed_(false),
+      exit_status_(-1),
+      nexe_size_(0),
       plugin_instance_(content::PepperPluginInstance::Get(pp_instance)),
       weak_factory_(this) {
   SetLastError("");
+  HistogramEnumerateOsArch(GetSandboxArch());
 }
 
 NexeLoadManager::~NexeLoadManager() {
+  if (!nexe_error_reported_) {
+    base::TimeDelta uptime = base::Time::Now() - ready_time_;
+    HistogramTimeLarge("NaCl.ModuleUptime.Normal", uptime.InMilliseconds());
+  }
 }
 
 void NexeLoadManager::ReportLoadSuccess(const std::string& url,
@@ -150,6 +217,11 @@ void NexeLoadManager::ReportLoadSuccess(const std::string& url,
 
   // UMA
   HistogramEnumerateLoadStatus(PP_NACL_ERROR_LOAD_SUCCESS, is_installed_);
+}
+
+void NexeLoadManager::ReportLoadError(PP_NaClError error,
+                                      const std::string& error_message) {
+  ReportLoadError(error, error_message, error_message);
 }
 
 void NexeLoadManager::ReportLoadError(PP_NaClError error,
@@ -220,27 +292,35 @@ void NexeLoadManager::ReportLoadAbort() {
   LogToConsole(error_string);
 }
 
-void NexeLoadManager::ReportDeadNexe(int64_t crash_time) {
-  if (nacl_ready_state_ == PP_NACL_READY_STATE_DONE &&  // After loadEnd
-      !nexe_error_reported_) {
-    // Crashes will be more likely near startup, so use a medium histogram
-    // instead of a large one.
-    HistogramTimeMedium(
-        "NaCl.ModuleUptime.Crash", (crash_time - ready_time_) / 1000);
-
-    std::string message("NaCl module crashed");
-    SetLastError(message);
-    LogToConsole(message);
-
-    ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
-        FROM_HERE,
-        base::Bind(&NexeLoadManager::DispatchEvent,
-                   weak_factory_.GetWeakPtr(),
-                   ProgressEvent(PP_NACL_EVENT_CRASH)));
-    nexe_error_reported_ = true;
+void NexeLoadManager::NexeDidCrash(const char* crash_log) {
+  VLOG(1) << "Plugin::NexeDidCrash: crash event!";
+    // The NaCl module voluntarily exited.  However, this is still a
+    // crash from the point of view of Pepper, since PPAPI plugins are
+    // event handlers and should never exit.
+  VLOG_IF(1, exit_status_ != -1)
+      << "Plugin::NexeDidCrash: nexe exited with status " << exit_status_
+      << " so this is a \"controlled crash\".";
+  // If the crash occurs during load, we just want to report an error
+  // that fits into our load progress event grammar.  If the crash
+  // occurs after loaded/loadend, then we use ReportDeadNexe to send a
+  // "crash" event.
+  if (nexe_error_reported_) {
+    VLOG(1) << "Plugin::NexeDidCrash: error already reported; suppressing";
+  } else {
+    if (nacl_ready_state_ == PP_NACL_READY_STATE_DONE) {
+      ReportDeadNexe();
+    } else {
+      ReportLoadError(PP_NACL_ERROR_START_PROXY_CRASH,
+                      "Nexe crashed during startup");
+    }
   }
-  // else ReportLoadError() and ReportLoadAbort() will be used by loading code
-  // to provide error handling.
+  // In all cases, try to grab the crash log.  The first error
+  // reported may have come from the start_module RPC reply indicating
+  // a validation error or something similar, which wouldn't grab the
+  // crash log.  In the event that this is called twice, the second
+  // invocation will just be a no-op, since the entire crash log will
+  // have been received and we'll just get an EOF indication.
+  CopyCrashLogToJsConsole(crash_log);
 }
 
 void NexeLoadManager::DispatchEvent(const ProgressEvent &event) {
@@ -285,10 +365,6 @@ void NexeLoadManager::set_trusted_plugin_channel(
   trusted_plugin_channel_ = channel.Pass();
 }
 
-bool NexeLoadManager::nexe_error_reported() {
-  return nexe_error_reported_;
-}
-
 PP_NaClReadyState NexeLoadManager::nacl_ready_state() {
   return nacl_ready_state_;
 }
@@ -318,6 +394,49 @@ void NexeLoadManager::SetReadOnlyProperty(PP_Var key, PP_Var value) {
 void NexeLoadManager::LogToConsole(const std::string& message) {
   ppapi::PpapiGlobals::Get()->LogWithSource(
       pp_instance_, PP_LOGLEVEL_LOG, std::string("NativeClient"), message);
+}
+
+void NexeLoadManager::set_exit_status(int exit_status) {
+  exit_status_ = exit_status;
+  ppapi::ScopedPPVar exit_status_name_var(
+      ppapi::ScopedPPVar::PassRef(),
+      ppapi::StringVar::StringToPPVar("exitStatus"));
+  SetReadOnlyProperty(exit_status_name_var.get(), PP_MakeInt32(exit_status));
+}
+
+void NexeLoadManager::ReportStartupOverhead() const {
+  base::TimeDelta overhead = base::Time::Now() - init_time_;
+  HistogramStartupTimeMedium(
+      "NaCl.Perf.StartupTime.NaClOverhead", overhead, nexe_size_);
+}
+
+void NexeLoadManager::ReportDeadNexe() {
+  if (nacl_ready_state_ == PP_NACL_READY_STATE_DONE &&  // After loadEnd
+      !nexe_error_reported_) {
+    // Crashes will be more likely near startup, so use a medium histogram
+    // instead of a large one.
+    base::TimeDelta uptime = base::Time::Now() - ready_time_;
+    HistogramTimeMedium("NaCl.ModuleUptime.Crash", uptime.InMilliseconds());
+
+    std::string message("NaCl module crashed");
+    SetLastError(message);
+    LogToConsole(message);
+
+    ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
+        FROM_HERE,
+        base::Bind(&NexeLoadManager::DispatchEvent,
+                   weak_factory_.GetWeakPtr(),
+                   ProgressEvent(PP_NACL_EVENT_CRASH)));
+    nexe_error_reported_ = true;
+  }
+  // else ReportLoadError() and ReportLoadAbort() will be used by loading code
+  // to provide error handling.
+}
+
+void NexeLoadManager::CopyCrashLogToJsConsole(const std::string& crash_log) {
+  base::StringTokenizer t(crash_log, "\n");
+  while (t.GetNext())
+    LogToConsole(t.token());
 }
 
 }  // namespace nacl

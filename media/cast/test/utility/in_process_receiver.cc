@@ -66,13 +66,6 @@ void InProcessReceiver::StopOnMainThread(base::WaitableEvent* event) {
   event->Signal();
 }
 
-void InProcessReceiver::DestroySoon() {
-  cast_environment_->PostTask(
-      CastEnvironment::MAIN,
-      FROM_HERE,
-      base::Bind(&InProcessReceiver::WillDestroyReceiver, base::Owned(this)));
-}
-
 void InProcessReceiver::UpdateCastTransportStatus(CastTransportStatus status) {
   LOG_IF(ERROR, status == media::cast::transport::TRANSPORT_SOCKET_ERROR)
       << "Transport socket error occurred.  InProcessReceiver is likely dead.";
@@ -104,25 +97,18 @@ void InProcessReceiver::GotAudioFrame(scoped_ptr<AudioBus> audio_frame,
                                       const base::TimeTicks& playout_time,
                                       bool is_continuous) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  if (audio_frame.get()) {
-    // TODO(miu): Remove use of deprecated PcmAudioFrame and also pass
-    // |is_continuous| flag.
-    scoped_ptr<PcmAudioFrame> pcm_frame(new PcmAudioFrame());
-    pcm_frame->channels = audio_frame->channels();
-    pcm_frame->frequency = audio_config_.frequency;
-    pcm_frame->samples.resize(audio_frame->channels() * audio_frame->frames());
-    audio_frame->ToInterleaved(
-        audio_frame->frames(), sizeof(int16), &pcm_frame->samples.front());
-    OnAudioFrame(pcm_frame.Pass(), playout_time);
-  }
+  if (audio_frame.get())
+    OnAudioFrame(audio_frame.Pass(), playout_time, is_continuous);
   PullNextAudioFrame();
 }
 
 void InProcessReceiver::GotVideoFrame(
     const scoped_refptr<VideoFrame>& video_frame,
-    const base::TimeTicks& render_time) {
+    const base::TimeTicks& playout_time,
+    bool is_continuous) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  OnVideoFrame(video_frame, render_time);
+  if (video_frame)
+    OnVideoFrame(video_frame, playout_time, is_continuous);
   PullNextVideoFrame();
 }
 
@@ -137,11 +123,6 @@ void InProcessReceiver::PullNextVideoFrame() {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   cast_receiver_->frame_receiver()->GetRawVideoFrame(base::Bind(
       &InProcessReceiver::GotVideoFrame, weak_factory_.GetWeakPtr()));
-}
-
-// static
-void InProcessReceiver::WillDestroyReceiver(InProcessReceiver* receiver) {
-  DCHECK(receiver->cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
 }
 
 }  // namespace cast

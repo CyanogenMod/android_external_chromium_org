@@ -80,10 +80,17 @@ var KEY_PADDING_TOP = 1;
 var KEY_PADDING_BOTTOM = 1;
 
 /**
+ * The greatest distance between a key and a touch point for a PointerEvent
+ * to be processed.
+ * @type {number}
+ */
+var MAX_TOUCH_FUZZ_DISTANCE = 20;
+
+/**
  * The maximum number of extra pixels before a resize is triggered.
  * @type {number}
  */
-var RESIZE_THRESHOLD = 50;
+var RESIZE_THRESHOLD = 20;
 
 /**
  * The size of the pool to use for playing audio sounds on key press. This is to

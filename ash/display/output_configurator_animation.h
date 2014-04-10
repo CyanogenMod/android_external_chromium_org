@@ -10,7 +10,7 @@
 #include "ash/ash_export.h"
 #include "base/callback.h"
 #include "base/timer/timer.h"
-#include "ui/display/chromeos/output_configurator.h"
+#include "ui/display/chromeos/display_configurator.h"
 
 namespace aura {
 class RootWindow;
@@ -22,13 +22,12 @@ class Layer;
 }  // namespace ui
 
 namespace ash {
-namespace internal {
 
 // OutputConfiguratorAnimation provides the visual effects for
-// ui::OutputConfigurator, such like fade-out/in during changing
+// ui::DisplayConfigurator, such like fade-out/in during changing
 // the display mode.
 class ASH_EXPORT OutputConfiguratorAnimation
-    : public ui::OutputConfigurator::Observer {
+    : public ui::DisplayConfigurator::Observer {
  public:
   OutputConfiguratorAnimation();
   virtual ~OutputConfiguratorAnimation();
@@ -42,11 +41,11 @@ class ASH_EXPORT OutputConfiguratorAnimation
   void StartFadeInAnimation();
 
  protected:
-  // ui::OutputConfigurator::Observer overrides:
+  // ui::DisplayConfigurator::Observer overrides:
   virtual void OnDisplayModeChanged(
-      const ui::OutputConfigurator::DisplayStateList& outputs) OVERRIDE;
-  virtual void OnDisplayModeChangeFailed(ui::OutputState failed_new_state)
-      OVERRIDE;
+      const ui::DisplayConfigurator::DisplayStateList& outputs) OVERRIDE;
+  virtual void OnDisplayModeChangeFailed(
+      ui::MultipleDisplayState failed_new_state) OVERRIDE;
 
  private:
   // Clears all hiding layers.  Note that in case that this method is called
@@ -60,7 +59,6 @@ class ASH_EXPORT OutputConfiguratorAnimation
   DISALLOW_COPY_AND_ASSIGN(OutputConfiguratorAnimation);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_DISPLAY_OUTPUT_CONFIGURATION_CONTROLLER_H_

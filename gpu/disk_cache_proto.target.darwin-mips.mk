@@ -6,8 +6,9 @@ LOCAL_MODULE_CLASS := STATIC_LIBRARIES
 LOCAL_MODULE := gpu_disk_cache_proto_gyp
 LOCAL_MODULE_SUFFIX := .a
 LOCAL_MODULE_TAGS := optional
-gyp_intermediate_dir := $(call local-intermediates-dir)
-gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
+LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
+gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
+gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
@@ -25,10 +26,7 @@ $(gyp_shared_intermediate_dir)/pyproto/gpu/command_buffer/service/disk_cache_pro
 
 $(gyp_shared_intermediate_dir)/protoc_out/gpu/command_buffer/service/disk_cache_proto.pb.cc: $(gyp_shared_intermediate_dir)/pyproto/gpu/command_buffer/service/disk_cache_proto_pb2.py ;
 $(gyp_shared_intermediate_dir)/protoc_out/gpu/command_buffer/service/disk_cache_proto.pb.h: $(gyp_shared_intermediate_dir)/pyproto/gpu/command_buffer/service/disk_cache_proto_pb2.py ;
-.PHONY: gpu_disk_cache_proto_gyp_rule_trigger
-gpu_disk_cache_proto_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/pyproto/gpu/command_buffer/service/disk_cache_proto_pb2.py
 
-### Finished generating for all rules
 
 GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/pyproto/gpu/command_buffer/service/disk_cache_proto_pb2.py \
@@ -44,8 +42,7 @@ $(gyp_intermediate_dir)/disk_cache_proto.pb.cc: $(gyp_shared_intermediate_dir)/p
 LOCAL_GENERATED_SOURCES := \
 	$(gyp_intermediate_dir)/disk_cache_proto.pb.cc \
 	$(gyp_shared_intermediate_dir)/pyproto/gpu/command_buffer/service/disk_cache_proto_pb2.py \
-	$(gyp_shared_intermediate_dir)/protoc_out/gpu/command_buffer/service/disk_cache_proto.pb.h \
-	gpu_disk_cache_proto_gyp_rule_trigger
+	$(gyp_shared_intermediate_dir)/protoc_out/gpu/command_buffer/service/disk_cache_proto.pb.h
 
 GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 	$(gyp_shared_intermediate_dir)/protoc_out/gpu/command_buffer/service
@@ -241,9 +238,9 @@ LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
-	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
+	-Wl,--fatal-warnings \
 	-Wl,-z,noexecstack \
 	-fPIC \
 	-EL \
@@ -258,9 +255,9 @@ LOCAL_LDFLAGS_Debug := \
 
 
 LOCAL_LDFLAGS_Release := \
-	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
+	-Wl,--fatal-warnings \
 	-Wl,-z,noexecstack \
 	-fPIC \
 	-EL \

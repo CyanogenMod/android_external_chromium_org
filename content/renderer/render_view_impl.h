@@ -28,7 +28,6 @@
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/view_message_enums.h"
-#include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/renderer_preferences.h"
@@ -150,6 +149,7 @@ class MouseLockDispatcher;
 class NavigationState;
 class NotificationProvider;
 class PepperPluginInstanceImpl;
+class PushMessagingDispatcher;
 class RenderViewObserver;
 class RenderViewTest;
 class RendererAccessibility;
@@ -285,6 +285,8 @@ class CONTENT_EXPORT RenderViewImpl
 
   void FrameDidChangeLoadProgress(blink::WebFrame* frame,
                                   double load_progress);
+  void FrameDidCommitProvisionalLoad(blink::WebLocalFrame* frame,
+                                     bool is_new_navigation);
 
   // Plugin-related functions --------------------------------------------------
 
@@ -353,11 +355,10 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Temporary call until all this media code moves to RenderFrame.
   // TODO(jam): remove me
-  blink::WebMediaPlayer* CreateMediaPlayer(
-      RenderFrame* render_frame,
-      blink::WebFrame* frame,
-      const blink::WebURL& url,
-      blink::WebMediaPlayerClient* client);
+  blink::WebMediaPlayer* CreateMediaPlayer(RenderFrame* render_frame,
+                                           blink::WebLocalFrame* frame,
+                                           const blink::WebURL& url,
+                                           blink::WebMediaPlayerClient* client);
   // Returns the length of the session history of this RenderView. Note that
   // this only coincides with the actual length of the session history if this
   // RenderView is the currently active RenderView of a WebContents.
@@ -413,26 +414,18 @@ class CONTENT_EXPORT RenderViewImpl
 
   // blink::WebViewClient implementation --------------------------------------
 
-  virtual blink::WebView* createView(
-      blink::WebFrame* creator,
-      const blink::WebURLRequest& request,
-      const blink::WebWindowFeatures& features,
-      const blink::WebString& frame_name,
-      blink::WebNavigationPolicy policy,
-      bool suppress_opener);
+  virtual blink::WebView* createView(blink::WebLocalFrame* creator,
+                                     const blink::WebURLRequest& request,
+                                     const blink::WebWindowFeatures& features,
+                                     const blink::WebString& frame_name,
+                                     blink::WebNavigationPolicy policy,
+                                     bool suppress_opener);
   virtual blink::WebWidget* createPopupMenu(blink::WebPopupType popup_type);
   virtual blink::WebExternalPopupMenu* createExternalPopupMenu(
       const blink::WebPopupMenuInfo& popup_menu_info,
       blink::WebExternalPopupMenuClient* popup_menu_client);
   virtual blink::WebStorageNamespace* createSessionStorageNamespace();
-  virtual bool shouldReportDetailedMessageForSource(
-      const blink::WebString& source);
-  virtual void didAddMessageToConsole(
-      const blink::WebConsoleMessage& message,
-      const blink::WebString& source_name,
-      unsigned source_line,
-      const blink::WebString& stack_trace);
-  virtual void printPage(blink::WebFrame* frame);
+  virtual void printPage(blink::WebLocalFrame* frame);
   virtual blink::WebNotificationPresenter* notificationPresenter();
   virtual bool enumerateChosenDirectory(
       const blink::WebString& path,
@@ -447,17 +440,25 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool runFileChooser(
       const blink::WebFileChooserParams& params,
       blink::WebFileChooserCompletion* chooser_completion);
-  virtual void runModalAlertDialog(blink::WebFrame* frame,
+  virtual void runModalAlertDialog(blink::WebLocalFrame* frame,
                                    const blink::WebString& message);
-  virtual bool runModalConfirmDialog(blink::WebFrame* frame,
+  virtual bool runModalConfirmDialog(blink::WebLocalFrame* frame,
                                      const blink::WebString& message);
-  virtual bool runModalPromptDialog(blink::WebFrame* frame,
+  virtual bool runModalPromptDialog(blink::WebLocalFrame* frame,
                                     const blink::WebString& message,
                                     const blink::WebString& default_value,
                                     blink::WebString* actual_value);
-  virtual bool runModalBeforeUnloadDialog(blink::WebFrame* frame,
-                                          bool is_reload,
+  virtual bool runModalBeforeUnloadDialog(blink::WebLocalFrame* frame,
                                           const blink::WebString& message);
+  // -- begin stub implementations --
+  virtual void runModalAlertDialog(const blink::WebString& message);
+  virtual bool runModalConfirmDialog(const blink::WebString& message);
+  virtual bool runModalPromptDialog(const blink::WebString& message,
+                                    const blink::WebString& default_value,
+                                    blink::WebString* actual_value);
+  virtual bool runModalBeforeUnloadDialog(bool is_reload,
+                                          const blink::WebString& message);
+  // -- end stub implementations --
   virtual void showValidationMessage(const blink::WebRect& anchor_in_root_view,
                                      const blink::WebString& main_text,
                                      const blink::WebString& sub_text,
@@ -465,14 +466,10 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void hideValidationMessage() OVERRIDE;
   virtual void moveValidationMessage(
       const blink::WebRect& anchor_in_root_view) OVERRIDE;
-
-  // DEPRECATED
-  virtual bool runModalBeforeUnloadDialog(blink::WebFrame* frame,
-                                          const blink::WebString& message);
   virtual void setStatusText(const blink::WebString& text);
   virtual void setMouseOverURL(const blink::WebURL& url);
   virtual void setKeyboardFocusURL(const blink::WebURL& url);
-  virtual void startDragging(blink::WebFrame* frame,
+  virtual void startDragging(blink::WebLocalFrame* frame,
                              const blink::WebDragData& data,
                              blink::WebDragOperationsMask mask,
                              const blink::WebImage& image,
@@ -510,6 +507,7 @@ class CONTENT_EXPORT RenderViewImpl
   virtual blink::WebPageVisibilityState visibilityState() const;
   virtual blink::WebUserMediaClient* userMediaClient();
   virtual blink::WebMIDIClient* webMIDIClient();
+  virtual blink::WebPushClient* webPushClient();
   virtual void draggableRegionsChanged();
 
 #if defined(OS_ANDROID)
@@ -527,103 +525,47 @@ class CONTENT_EXPORT RenderViewImpl
 
   // blink::WebFrameClient implementation -------------------------------------
 
-  virtual blink::WebMediaPlayer* createMediaPlayer(
-      blink::WebFrame* frame,
-      const blink::WebURL& url,
-      blink::WebMediaPlayerClient* client);
-  virtual void didAccessInitialDocument(blink::WebFrame* frame);
-  virtual void didDisownOpener(blink::WebFrame* frame);
+  virtual void didAccessInitialDocument(blink::WebLocalFrame* frame);
+  virtual void didDisownOpener(blink::WebLocalFrame* frame);
   virtual void frameDetached(blink::WebFrame* frame);
   virtual void willClose(blink::WebFrame* frame);
   virtual void didMatchCSS(
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       const blink::WebVector<blink::WebString>& newly_matching_selectors,
       const blink::WebVector<blink::WebString>& stopped_matching_selectors);
-  virtual void willSendSubmitEvent(blink::WebFrame* frame,
+  virtual void willSendSubmitEvent(blink::WebLocalFrame* frame,
                                    const blink::WebFormElement& form);
-  virtual void willSubmitForm(blink::WebFrame* frame,
+  virtual void willSubmitForm(blink::WebLocalFrame* frame,
                               const blink::WebFormElement& form);
-  virtual void didCreateDataSource(blink::WebFrame* frame,
+  virtual void didCreateDataSource(blink::WebLocalFrame* frame,
                                    blink::WebDataSource* datasource);
-  virtual void didStartProvisionalLoad(blink::WebFrame* frame);
-  virtual void didFailProvisionalLoad(blink::WebFrame* frame,
+  virtual void didStartProvisionalLoad(blink::WebLocalFrame* frame);
+  virtual void didFailProvisionalLoad(blink::WebLocalFrame* frame,
                                       const blink::WebURLError& error);
-  virtual void didCommitProvisionalLoad(blink::WebFrame* frame,
-                                        bool is_new_navigation);
-  virtual void didClearWindowObject(blink::WebFrame* frame, int world_id);
-  virtual void didCreateDocumentElement(blink::WebFrame* frame);
-  virtual void didReceiveTitle(blink::WebFrame* frame,
+  virtual void didClearWindowObject(blink::WebLocalFrame* frame, int world_id);
+  virtual void didCreateDocumentElement(blink::WebLocalFrame* frame);
+  virtual void didReceiveTitle(blink::WebLocalFrame* frame,
                                const blink::WebString& title,
                                blink::WebTextDirection direction);
-  virtual void didChangeIcon(blink::WebFrame*,
-                             blink::WebIconURL::Type);
-  virtual void didFinishDocumentLoad(blink::WebFrame* frame);
-  virtual void didHandleOnloadEvents(blink::WebFrame* frame);
-  virtual void didFailLoad(blink::WebFrame* frame,
+  virtual void didChangeIcon(blink::WebLocalFrame*, blink::WebIconURL::Type);
+  virtual void didFinishDocumentLoad(blink::WebLocalFrame* frame);
+  virtual void didHandleOnloadEvents(blink::WebLocalFrame* frame);
+  virtual void didFailLoad(blink::WebLocalFrame* frame,
                            const blink::WebURLError& error);
-  virtual void didFinishLoad(blink::WebFrame* frame);
-  virtual void didNavigateWithinPage(blink::WebFrame* frame,
-                                     bool is_new_navigation);
-  virtual void didUpdateCurrentHistoryItem(blink::WebFrame* frame);
-  virtual void willSendRequest(blink::WebFrame* frame,
-                               unsigned identifier,
-                               blink::WebURLRequest& request,
-                               const blink::WebURLResponse& redirect_response);
-  virtual void didReceiveResponse(blink::WebFrame* frame,
-                                  unsigned identifier,
-                                  const blink::WebURLResponse& response);
-  virtual void didFinishResourceLoad(blink::WebFrame* frame,
+  virtual void didFinishLoad(blink::WebLocalFrame* frame);
+  virtual void didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame);
+  virtual void didFinishResourceLoad(blink::WebLocalFrame* frame,
                                      unsigned identifier);
-  virtual void didLoadResourceFromMemoryCache(
-      blink::WebFrame* frame,
-      const blink::WebURLRequest& request,
-      const blink::WebURLResponse&);
-  virtual void didDisplayInsecureContent(blink::WebFrame* frame);
-  virtual void didRunInsecureContent(
-      blink::WebFrame* frame,
-      const blink::WebSecurityOrigin& origin,
-      const blink::WebURL& target);
-  virtual void didCreateScriptContext(blink::WebFrame* frame,
-                                      v8::Handle<v8::Context>,
-                                      int extension_group,
-                                      int world_id);
-  virtual void willReleaseScriptContext(blink::WebFrame* frame,
-                                        v8::Handle<v8::Context>,
-                                        int world_id);
-  virtual void didChangeScrollOffset(blink::WebFrame* frame);
-  virtual void willInsertBody(blink::WebFrame* frame);
-  virtual void didFirstVisuallyNonEmptyLayout(blink::WebFrame*);
-  virtual void didChangeContentsSize(blink::WebFrame* frame,
+  virtual void didChangeScrollOffset(blink::WebLocalFrame* frame);
+  virtual void didFirstVisuallyNonEmptyLayout(blink::WebLocalFrame*);
+  virtual void didChangeContentsSize(blink::WebLocalFrame* frame,
                                      const blink::WebSize& size);
-  virtual void reportFindInPageMatchCount(int request_id,
-                                          int count,
-                                          bool final_update);
-  virtual void reportFindInPageSelection(int request_id,
-                                         int active_match_ordinal,
-                                         const blink::WebRect& sel);
-  virtual void requestStorageQuota(
-      blink::WebFrame* frame,
-      blink::WebStorageQuotaType type,
-      unsigned long long requested_size,
-      blink::WebStorageQuotaCallbacks callbacks);
-  virtual void willOpenSocketStream(
-      blink::WebSocketStreamHandle* handle);
-  virtual void willStartUsingPeerConnectionHandler(blink::WebFrame* frame,
-      blink::WebRTCPeerConnectionHandler* handler);
   virtual bool willCheckAndDispatchMessageEvent(
-      blink::WebFrame* sourceFrame,
+      blink::WebLocalFrame* sourceFrame,
       blink::WebFrame* targetFrame,
       blink::WebSecurityOrigin targetOrigin,
       blink::WebDOMMessageEvent event);
   virtual blink::WebString acceptLanguages();
-  virtual blink::WebString userAgentOverride(
-      blink::WebFrame* frame,
-      const blink::WebURL& url);
-  virtual blink::WebString doNotTrackValue(blink::WebFrame* frame);
-  virtual bool allowWebGL(blink::WebFrame* frame, bool default_value);
-  virtual void didLoseWebGLContext(
-      blink::WebFrame* frame,
-      int arb_robustness_status_code);
 
   // blink::WebPageSerializerClient implementation ----------------------------
 
@@ -649,8 +591,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool GetContentStateImmediately() const OVERRIDE;
   virtual float GetFilteredTimePerFrame() const OVERRIDE;
   virtual blink::WebPageVisibilityState GetVisibilityState() const OVERRIDE;
-  virtual void RunModalAlertDialog(blink::WebFrame* frame,
-                                   const blink::WebString& message) OVERRIDE;
   virtual void DidStartLoading() OVERRIDE;
   virtual void DidStopLoading() OVERRIDE;
   virtual void Repaint(const gfx::Size& size) OVERRIDE;
@@ -686,12 +626,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void OnResize(const ViewMsg_Resize_Params& params) OVERRIDE;
   virtual void DidInitiatePaint() OVERRIDE;
   virtual void DidFlushPaint() OVERRIDE;
-  virtual PepperPluginInstanceImpl* GetBitmapForOptimizedPluginPaint(
-      const gfx::Rect& paint_bounds,
-      TransportDIB** dib,
-      gfx::Rect* location,
-      gfx::Rect* clip,
-      float* scale_factor) OVERRIDE;
   virtual gfx::Vector2d GetScrollOffset() OVERRIDE;
   virtual void DidHandleKeyEvent() OVERRIDE;
   virtual void WillProcessUserGesture() OVERRIDE;
@@ -838,12 +772,6 @@ class CONTENT_EXPORT RenderViewImpl
   void UpdateEncoding(blink::WebFrame* frame,
                       const std::string& encoding_name);
 
-  bool RunJavaScriptMessage(JavaScriptMessageType type,
-                            const base::string16& message,
-                            const base::string16& default_value,
-                            const GURL& frame_url,
-                            base::string16* result);
-
   // Sends a message and runs a nested message loop.
   bool SendAndRunNestedMessageLoop(IPC::SyncMessage* message);
 
@@ -856,8 +784,6 @@ class CONTENT_EXPORT RenderViewImpl
   // content/common/*_messages.h for the message that the function is handling.
   void OnExecuteEditCommand(const std::string& name, const std::string& value);
   void OnMoveCaret(const gfx::Point& point);
-  void OnReplace(const base::string16& text);
-  void OnReplaceMisspelling(const base::string16& text);
   void OnScrollFocusedEditableNodeIntoRect(const gfx::Rect& rect);
   void OnSetEditCommandsForNextKeyEvent(const EditCommands& edit_commands);
   void OnAllowBindings(int enabled_bindings_flags);
@@ -871,10 +797,9 @@ class CONTENT_EXPORT RenderViewImpl
   void OnDeterminePageLanguage();
   void OnDisableScrollbarsForSmallWindows(
       const gfx::Size& disable_scrollbars_size_limit);
-  void OnDragSourceEndedOrMoved(const gfx::Point& client_point,
-                                const gfx::Point& screen_point,
-                                bool ended,
-                                blink::WebDragOperation drag_operation);
+  void OnDragSourceEnded(const gfx::Point& client_point,
+                         const gfx::Point& screen_point,
+                         blink::WebDragOperation drag_operation);
   void OnDragSourceSystemDragEnded();
   void OnDragTargetDrop(const gfx::Point& client_pt,
                         const gfx::Point& screen_pt,
@@ -1261,6 +1186,9 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Holds a reference to the service which provides desktop notifications.
   NotificationProvider* notification_provider_;
+
+  // The push messaging dispatcher attached to this view, lazily initialized.
+  PushMessagingDispatcher* push_messaging_dispatcher_;
 
   // The geolocation dispatcher attached to this view, lazily initialized.
   GeolocationDispatcher* geolocation_dispatcher_;

@@ -59,6 +59,7 @@
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/google/google_url_tracker.h"
+#include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/infobars/simple_alert_infobar_delegate.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -131,6 +132,7 @@
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
 #include "chrome/browser/ui/tabs/tab_menu_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/tabs/tab_strip_model_utils.h"
 #include "chrome/browser/ui/toolbar/toolbar_model_impl.h"
 #include "chrome/browser/ui/unload_controller.h"
 #include "chrome/browser/ui/validation_message_bubble.h"
@@ -181,7 +183,7 @@
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context.h"
@@ -773,12 +775,6 @@ void Browser::VisibleSSLStateChanged(content::WebContents* web_contents) {
     UpdateToolbar(false);
 }
 
-void Browser::OnWebContentsInstantSupportDisabled(
-    const content::WebContents* web_contents) {
-  DCHECK(web_contents);
-  if (tab_strip_model_->GetActiveWebContents() == web_contents)
-    UpdateToolbar(false);
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Browser, Assorted browser commands:
@@ -1149,7 +1145,14 @@ bool Browser::PreHandleKeyboardEvent(content::WebContents* source,
 
 void Browser::HandleKeyboardEvent(content::WebContents* source,
                                   const NativeWebKeyboardEvent& event) {
-  window()->HandleKeyboardEvent(event);
+  DevToolsWindow* devtools_window =
+      DevToolsWindow::GetInstanceForInspectedWebContents(source);
+  bool handled = false;
+  if (devtools_window)
+    handled = devtools_window->ForwardKeyboardEvent(event);
+
+  if (!handled)
+    window()->HandleKeyboardEvent(event);
 }
 
 bool Browser::TabsNeedBeforeUnloadFired() {
@@ -1754,6 +1757,51 @@ void Browser::ConfirmAddSearchProvider(TemplateURL* template_url,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Browser, SearchTabHelperDelegate implementation:
+
+void Browser::NavigateOnThumbnailClick(const GURL& url,
+                                       WindowOpenDisposition disposition,
+                                       content::WebContents* source_contents) {
+  DCHECK(source_contents);
+  // We're guaranteed that AUTO_BOOKMARK is the right transition since this only
+  // gets called to handle clicks in the new tab page (to navigate to most
+  // visited item URLs) and in the search results page (to navigate to
+  // privileged destinations (e.g. chrome://URLs)).
+  //
+  // TODO(kmadhusu): Page transitions to privileged destinations should be
+  // marked as "LINK" instead of "AUTO_BOOKMARK"?
+  chrome::NavigateParams params(this, url,
+                                content::PAGE_TRANSITION_AUTO_BOOKMARK);
+  params.referrer = content::Referrer();
+  params.source_contents = source_contents;
+  params.disposition = disposition;
+  params.is_renderer_initiated = false;
+  params.initiating_profile = profile_;
+  chrome::Navigate(&params);
+}
+
+void Browser::OnWebContentsInstantSupportDisabled(
+    const content::WebContents* web_contents) {
+  DCHECK(web_contents);
+  if (tab_strip_model_->GetActiveWebContents() == web_contents)
+    UpdateToolbar(false);
+}
+
+OmniboxView* Browser::GetOmniboxView() {
+  return window_->GetLocationBar()->GetOmniboxView();
+}
+
+std::set<std::string> Browser::GetOpenUrls() {
+  history::TopSites* top_sites = profile_->GetTopSites();
+  if (!top_sites)  // NULL for Incognito profiles.
+    return std::set<std::string>();
+
+  std::set<std::string> open_urls;
+  chrome::GetOpenUrls(*tab_strip_model_, *top_sites, &open_urls);
+  return open_urls;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Browser, web_modal::WebContentsModalDialogManagerDelegate implementation:
 
 void Browser::SetWebContentsBlocked(content::WebContents* web_contents,
@@ -2136,6 +2184,7 @@ void Browser::SetAsDelegate(WebContents* web_contents, Browser* delegate) {
       SetDelegate(delegate);
   CoreTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   SearchEngineTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
+  SearchTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   ZoomController::FromWebContents(web_contents)->set_observer(delegate);
   TranslateTabHelper* translate_tab_helper =
       TranslateTabHelper::FromWebContents(web_contents);
@@ -2241,8 +2290,11 @@ bool Browser::SupportsWindowFeatureImpl(WindowFeature feature,
 
 void Browser::UpdateBookmarkBarState(BookmarkBarStateChangeReason reason) {
   BookmarkBar::State state;
-  // The bookmark bar is hidden in fullscreen mode, unless on the new tab page.
-  if (browser_defaults::bookmarks_enabled &&
+  // The bookmark bar is always hidden for Guest Sessions and in fullscreen
+  // mode, unless on the new tab page.
+  if (profile_->IsGuestSession()) {
+    state = BookmarkBar::HIDDEN;
+  } else if (browser_defaults::bookmarks_enabled &&
       profile_->GetPrefs()->GetBoolean(prefs::kShowBookmarkBar) &&
       !ShouldHideUIForFullscreen()) {
     state = BookmarkBar::SHOW;

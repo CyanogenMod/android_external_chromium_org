@@ -12,6 +12,8 @@
 #include "content/browser/service_worker/embedded_worker_test_helper.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_registration.h"
+#include "content/browser/service_worker/service_worker_storage.h"
+#include "content/common/service_worker/service_worker_messages.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -21,17 +23,23 @@ namespace content {
 namespace {
 
 void SaveResponseCallback(bool* called,
-                          int64* store_result,
+                          int64* store_registration_id,
+                          int64* store_version_id,
                           ServiceWorkerStatusCode status,
-                          int64 result) {
+                          int64 registration_id,
+                          int64 version_id) {
   *called = true;
-  *store_result = result;
+  *store_registration_id = registration_id;
+  *store_version_id = version_id;
 }
 
 ServiceWorkerContextCore::RegistrationCallback MakeRegisteredCallback(
     bool* called,
-    int64* store_result) {
-  return base::Bind(&SaveResponseCallback, called, store_result);
+    int64* store_registration_id,
+    int64* store_version_id) {
+  return base::Bind(&SaveResponseCallback, called,
+                    store_registration_id,
+                    store_version_id);
 }
 
 void CallCompletedCallback(bool* called, ServiceWorkerStatusCode) {
@@ -41,6 +49,36 @@ void CallCompletedCallback(bool* called, ServiceWorkerStatusCode) {
 ServiceWorkerContextCore::UnregistrationCallback MakeUnregisteredCallback(
     bool* called) {
   return base::Bind(&CallCompletedCallback, called);
+}
+
+void ExpectRegisteredWorkers(
+    ServiceWorkerStatusCode expect_status,
+    int64 expect_version_id,
+    bool expect_pending,
+    bool expect_active,
+    ServiceWorkerStatusCode status,
+    const scoped_refptr<ServiceWorkerRegistration>& registration) {
+  ASSERT_EQ(expect_status, status);
+  if (status != SERVICE_WORKER_OK) {
+    EXPECT_FALSE(registration);
+    return;
+  }
+
+  if (expect_pending) {
+    EXPECT_TRUE(registration->pending_version());
+    EXPECT_EQ(expect_version_id,
+              registration->pending_version()->version_id());
+  } else {
+    EXPECT_FALSE(registration->pending_version());
+  }
+
+  if (expect_active) {
+    EXPECT_TRUE(registration->active_version());
+    EXPECT_EQ(expect_version_id,
+              registration->active_version()->version_id());
+  } else {
+    EXPECT_FALSE(registration->active_version());
+  }
 }
 
 }  // namespace
@@ -69,28 +107,128 @@ class ServiceWorkerContextTest : public testing::Test {
   const int render_process_id_;
 };
 
-void RegistrationCallback(
-    scoped_refptr<ServiceWorkerRegistration>* registration,
-    const scoped_refptr<ServiceWorkerRegistration>& result) {
-  *registration = result;
-}
-
 // Make sure basic registration is working.
 TEST_F(ServiceWorkerContextTest, Register) {
-  int64 registration_id = -1L;
+  int64 registration_id = kInvalidServiceWorkerRegistrationId;
+  int64 version_id = kInvalidServiceWorkerVersionId;
   bool called = false;
   context_->RegisterServiceWorker(
       GURL("http://www.example.com/*"),
       GURL("http://www.example.com/service_worker.js"),
       render_process_id_,
-      MakeRegisteredCallback(&called, &registration_id));
+      MakeRegisteredCallback(&called, &registration_id, &version_id));
 
   ASSERT_FALSE(called);
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called);
 
-  EXPECT_EQ(1UL, helper_->ipc_sink()->message_count());
-  EXPECT_NE(-1L, registration_id);
+  EXPECT_EQ(2UL, helper_->ipc_sink()->message_count());
+  EXPECT_TRUE(helper_->inner_ipc_sink()->GetUniqueMessageMatching(
+      ServiceWorkerMsg_InstallEvent::ID));
+  EXPECT_NE(kInvalidServiceWorkerRegistrationId, registration_id);
+  EXPECT_NE(kInvalidServiceWorkerVersionId, version_id);
+
+  context_->storage()->FindRegistrationForId(
+      registration_id,
+      base::Bind(&ExpectRegisteredWorkers,
+                 SERVICE_WORKER_OK,
+                 version_id,
+                 false /* expect_pending */,
+                 true /* expect_active */));
+  base::RunLoop().RunUntilIdle();
+}
+
+class RejectInstallTestHelper : public EmbeddedWorkerTestHelper {
+ public:
+  RejectInstallTestHelper(ServiceWorkerContextCore* context,
+                          int mock_render_process_id)
+      : EmbeddedWorkerTestHelper(context, mock_render_process_id) {}
+
+  virtual void OnInstallEvent(int embedded_worker_id,
+                              int request_id,
+                              int active_version_id) OVERRIDE {
+    SimulateSendMessageToBrowser(
+        embedded_worker_id,
+        request_id,
+        ServiceWorkerHostMsg_InstallEventFinished(
+            blink::WebServiceWorkerEventResultRejected));
+  }
+};
+
+// Test registration when the service worker rejects the install event. The
+// registration callback should indicate success, but there should be no pending
+// or active worker in the registration.
+TEST_F(ServiceWorkerContextTest, Register_RejectInstall) {
+  helper_.reset(
+      new RejectInstallTestHelper(context_.get(), render_process_id_));
+  int64 registration_id = kInvalidServiceWorkerRegistrationId;
+  int64 version_id = kInvalidServiceWorkerVersionId;
+  bool called = false;
+  context_->RegisterServiceWorker(
+      GURL("http://www.example.com/*"),
+      GURL("http://www.example.com/service_worker.js"),
+      render_process_id_,
+      MakeRegisteredCallback(&called, &registration_id, &version_id));
+
+  ASSERT_FALSE(called);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(called);
+
+  EXPECT_EQ(2UL, helper_->ipc_sink()->message_count());
+  EXPECT_TRUE(helper_->inner_ipc_sink()->GetUniqueMessageMatching(
+      ServiceWorkerMsg_InstallEvent::ID));
+  EXPECT_NE(kInvalidServiceWorkerRegistrationId, registration_id);
+  EXPECT_NE(kInvalidServiceWorkerVersionId, version_id);
+
+  context_->storage()->FindRegistrationForId(
+      registration_id,
+      base::Bind(&ExpectRegisteredWorkers,
+                 SERVICE_WORKER_OK,
+                 kInvalidServiceWorkerVersionId,
+                 false /* expect_pending */,
+                 false /* expect_active */));
+  base::RunLoop().RunUntilIdle();
+}
+
+// Test registration when there is an existing registration with no pending or
+// active worker.
+TEST_F(ServiceWorkerContextTest, Register_DuplicateScriptNoActiveWorker) {
+  helper_.reset(
+      new RejectInstallTestHelper(context_.get(), render_process_id_));
+  int64 old_registration_id = kInvalidServiceWorkerRegistrationId;
+  int64 old_version_id = kInvalidServiceWorkerVersionId;
+  bool called = false;
+  context_->RegisterServiceWorker(
+      GURL("http://www.example.com/*"),
+      GURL("http://www.example.com/service_worker.js"),
+      render_process_id_,
+      MakeRegisteredCallback(&called, &old_registration_id, &old_version_id));
+
+  ASSERT_FALSE(called);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(called);
+  EXPECT_NE(kInvalidServiceWorkerRegistrationId, old_registration_id);
+  EXPECT_NE(kInvalidServiceWorkerVersionId, old_version_id);
+
+  EXPECT_EQ(2UL, helper_->ipc_sink()->message_count());
+
+  int64 new_registration_id = kInvalidServiceWorkerRegistrationId;
+  int64 new_version_id = kInvalidServiceWorkerVersionId;
+  called = false;
+  context_->RegisterServiceWorker(
+      GURL("http://www.example.com/*"),
+      GURL("http://www.example.com/service_worker.js"),
+      render_process_id_,
+      MakeRegisteredCallback(&called, &new_registration_id, &new_version_id));
+
+  ASSERT_FALSE(called);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(called);
+
+  EXPECT_EQ(old_registration_id, new_registration_id);
+  // Our current implementation does the full registration flow on re-register,
+  // so the worker receives another start message and install message.
+  EXPECT_EQ(4UL, helper_->ipc_sink()->message_count());
 }
 
 // Make sure registrations are cleaned up when they are unregistered.
@@ -98,16 +236,19 @@ TEST_F(ServiceWorkerContextTest, Unregister) {
   GURL pattern("http://www.example.com/*");
 
   bool called = false;
-  int64 registration_id = -1L;
+  int64 registration_id = kInvalidServiceWorkerRegistrationId;
+  int64 version_id = kInvalidServiceWorkerVersionId;
   context_->RegisterServiceWorker(
       pattern,
       GURL("http://www.example.com/service_worker.js"),
       render_process_id_,
-      MakeRegisteredCallback(&called, &registration_id));
+      MakeRegisteredCallback(&called, &registration_id, &version_id));
 
   ASSERT_FALSE(called);
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
+  EXPECT_NE(kInvalidServiceWorkerRegistrationId, registration_id);
+  EXPECT_NE(kInvalidServiceWorkerVersionId, version_id);
 
   called = false;
   context_->UnregisterServiceWorker(
@@ -116,6 +257,15 @@ TEST_F(ServiceWorkerContextTest, Unregister) {
   ASSERT_FALSE(called);
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
+
+  context_->storage()->FindRegistrationForId(
+      registration_id,
+      base::Bind(&ExpectRegisteredWorkers,
+                 SERVICE_WORKER_ERROR_NOT_FOUND,
+                 kInvalidServiceWorkerVersionId,
+                 false /* expect_pending */,
+                 false /* expect_active */));
+  base::RunLoop().RunUntilIdle();
 }
 
 // Make sure that when a new registration replaces an existing
@@ -124,30 +274,39 @@ TEST_F(ServiceWorkerContextTest, RegisterNewScript) {
   GURL pattern("http://www.example.com/*");
 
   bool called = false;
-  int64 old_registration_id = -1L;
+  int64 old_registration_id = kInvalidServiceWorkerRegistrationId;
+  int64 old_version_id = kInvalidServiceWorkerVersionId;
   context_->RegisterServiceWorker(
       pattern,
       GURL("http://www.example.com/service_worker.js"),
       render_process_id_,
-      MakeRegisteredCallback(&called, &old_registration_id));
+      MakeRegisteredCallback(&called, &old_registration_id, &old_version_id));
 
   ASSERT_FALSE(called);
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
+  EXPECT_NE(kInvalidServiceWorkerRegistrationId, old_registration_id);
+  EXPECT_NE(kInvalidServiceWorkerVersionId, old_version_id);
 
   called = false;
-  int64 new_registration_id = -1L;
+  int64 new_registration_id = kInvalidServiceWorkerRegistrationId;
+  int64 new_version_id = kInvalidServiceWorkerVersionId;
   context_->RegisterServiceWorker(
       pattern,
       GURL("http://www.example.com/service_worker_new.js"),
       render_process_id_,
-      MakeRegisteredCallback(&called, &new_registration_id));
+      MakeRegisteredCallback(&called, &new_registration_id, &new_version_id));
 
   ASSERT_FALSE(called);
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
 
-  ASSERT_NE(old_registration_id, new_registration_id);
+  // Returned IDs should be valid, and should differ from the values
+  // returned for the previous registration.
+  EXPECT_NE(kInvalidServiceWorkerRegistrationId, new_registration_id);
+  EXPECT_NE(kInvalidServiceWorkerVersionId, new_version_id);
+  EXPECT_NE(old_registration_id, new_registration_id);
+  EXPECT_NE(old_version_id, new_version_id);
 }
 
 // Make sure that when registering a duplicate pattern+script_url
@@ -157,30 +316,34 @@ TEST_F(ServiceWorkerContextTest, RegisterDuplicateScript) {
   GURL script_url("http://www.example.com/service_worker.js");
 
   bool called = false;
-  int64 old_registration_id = -1L;
+  int64 old_registration_id = kInvalidServiceWorkerRegistrationId;
+  int64 old_version_id = kInvalidServiceWorkerVersionId;
   context_->RegisterServiceWorker(
       pattern,
       script_url,
       render_process_id_,
-      MakeRegisteredCallback(&called, &old_registration_id));
+      MakeRegisteredCallback(&called, &old_registration_id, &old_version_id));
 
   ASSERT_FALSE(called);
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
+  EXPECT_NE(kInvalidServiceWorkerRegistrationId, old_registration_id);
+  EXPECT_NE(kInvalidServiceWorkerVersionId, old_version_id);
 
   called = false;
-  int64 new_registration_id = -1L;
+  int64 new_registration_id = kInvalidServiceWorkerRegistrationId;
+  int64 new_version_id = kInvalidServiceWorkerVersionId;
   context_->RegisterServiceWorker(
       pattern,
       script_url,
       render_process_id_,
-      MakeRegisteredCallback(&called, &new_registration_id));
+      MakeRegisteredCallback(&called, &new_registration_id, &new_version_id));
 
   ASSERT_FALSE(called);
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
-
-  ASSERT_EQ(old_registration_id, new_registration_id);
+  EXPECT_EQ(old_registration_id, new_registration_id);
+  EXPECT_EQ(old_version_id, new_version_id);
 }
 
 }  // namespace content

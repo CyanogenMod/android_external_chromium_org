@@ -72,6 +72,10 @@ void ManagedUserCreationControllerNew::SetManagerProfile(
   creation_context_->manager_profile = manager_profile;
 }
 
+Profile* ManagedUserCreationControllerNew::GetManagerProfile() {
+  return creation_context_->manager_profile;
+}
+
 void ManagedUserCreationControllerNew::StartCreation(
     const base::string16& display_name,
     const std::string& password,
@@ -105,7 +109,6 @@ void ManagedUserCreationControllerNew::StartImport(
 
 void ManagedUserCreationControllerNew::StartImport(
     const base::string16& display_name,
-    const std::string& password,
     int avatar_index,
     const std::string& sync_id,
     const std::string& master_key,
@@ -113,10 +116,10 @@ void ManagedUserCreationControllerNew::StartImport(
     const std::string& encryption_key,
     const std::string& signature_key) {
   DCHECK(creation_context_);
-  creation_context_->creation_type = USER_IMPORT_OLD;
+  creation_context_->creation_type = USER_IMPORT_NEW;
 
   creation_context_->display_name = display_name;
-  creation_context_->password = password;
+
   creation_context_->avatar_index = avatar_index;
 
   creation_context_->sync_user_id = sync_id;
@@ -136,7 +139,7 @@ void ManagedUserCreationControllerNew::StartImport(
 
 void ManagedUserCreationControllerNew::StartCreationImpl() {
   DCHECK(creation_context_);
-  DCHECK(stage_ == STAGE_INITIAL);
+  DCHECK_EQ(STAGE_INITIAL, stage_);
   VLOG(1) << "Starting supervised user creation";
   VLOG(1) << " Phase 1 : Prepare keys";
 
@@ -176,6 +179,8 @@ void ManagedUserCreationControllerNew::StartCreationImpl() {
                                        creation_context_->password,
                                        &creation_context_->password_data,
                                        &extra);
+    creation_context_->password_data.GetStringWithoutPathExpansion(
+        kEncryptedPassword, &creation_context_->salted_password);
     extra.GetStringWithoutPathExpansion(kPasswordEncryptionKey,
                                         &creation_context_->encryption_key);
     extra.GetStringWithoutPathExpansion(kPasswordSignatureKey,
@@ -208,23 +213,12 @@ void ManagedUserCreationControllerNew::OnPasswordHashingSuccess(
   // Create home dir with two keys.
   std::vector<cryptohome::KeyDefinition> keys;
 
-  // First is plain text password, hashed and salted with individual salt.
-  // It can be used for mounting homedir, and can be replaced only when signed.
-  cryptohome::KeyDefinition password_key(creation_context_->salted_password,
-                                         kCryptohomeManagedUserKeyLabel,
-                                         kCryptohomeManagedUserKeyPrivileges);
-  base::Base64Decode(creation_context_->encryption_key,
-                     &password_key.encryption_key);
-  base::Base64Decode(creation_context_->signature_key,
-                     &password_key.signature_key);
-
-  // Second is the master key. Just as keys for plain GAIA users, it is salted
+  // Main key is the master key. Just as keys for plain GAIA users, it is salted
   // with system salt. It has all usual privileges.
   cryptohome::KeyDefinition master_key(creation_context_->salted_master_key,
                                        kCryptohomeMasterKeyLabel,
                                        cryptohome::PRIV_DEFAULT);
 
-  keys.push_back(password_key);
   keys.push_back(master_key);
   authenticator_->CreateMount(
       creation_context_->local_user_id,
@@ -258,10 +252,41 @@ void ManagedUserCreationControllerNew::OnAuthenticationFailure(
 void ManagedUserCreationControllerNew::OnMountSuccess(
     const std::string& mount_hash) {
   DCHECK(creation_context_);
-  DCHECK(stage_ == KEYS_GENERATED);
-  stage_ = CRYPTOHOME_CREATED;
+  DCHECK_EQ(KEYS_GENERATED, stage_);
+  VLOG(1) << " Phase 2.2 : Created home dir with master key";
 
   creation_context_->mount_hash = mount_hash;
+
+  // Plain text password, hashed and salted with individual salt.
+  // It can be used for mounting homedir, and can be replaced only when signed.
+  cryptohome::KeyDefinition password_key(creation_context_->salted_password,
+                                         kCryptohomeManagedUserKeyLabel,
+                                         kCryptohomeManagedUserKeyPrivileges);
+  base::Base64Decode(creation_context_->encryption_key,
+                     &password_key.encryption_key);
+  base::Base64Decode(creation_context_->signature_key,
+                     &password_key.signature_key);
+
+  UserContext context(creation_context_->local_user_id,
+                      creation_context_->salted_master_key,
+                      std::string());
+  context.using_oauth = false;
+  context.need_password_hashing = false;
+  context.key_label = kCryptohomeMasterKeyLabel;
+
+  authenticator_->AddKey(
+      context,
+      password_key,
+      true,
+      base::Bind(&ManagedUserCreationControllerNew::OnAddKeySuccess,
+                 weak_factory_.GetWeakPtr()));
+}
+
+void ManagedUserCreationControllerNew::OnAddKeySuccess() {
+  DCHECK(creation_context_);
+  DCHECK_EQ(KEYS_GENERATED, stage_);
+  stage_ = CRYPTOHOME_CREATED;
+
   VLOG(1) << " Phase 3 : Create/update user on chrome.com/manage";
 
   ProfileSyncService* sync_service =
@@ -297,7 +322,7 @@ void ManagedUserCreationControllerNew::RegistrationCallback(
     const GoogleServiceAuthError& error,
     const std::string& token) {
   DCHECK(creation_context_);
-  DCHECK(stage_ == CRYPTOHOME_CREATED);
+  DCHECK_EQ(CRYPTOHOME_CREATED, stage_);
 
   stage_ = DASHBOARD_CREATED;
 
@@ -322,7 +347,7 @@ void ManagedUserCreationControllerNew::RegistrationCallback(
 
 void ManagedUserCreationControllerNew::OnManagedUserFilesStored(bool success) {
   DCHECK(creation_context_);
-  DCHECK(stage_ == DASHBOARD_CREATED);
+  DCHECK_EQ(DASHBOARD_CREATED, stage_);
 
   if (!success) {
     stage_ = STAGE_ERROR;

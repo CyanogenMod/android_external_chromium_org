@@ -6,6 +6,9 @@ leak:base::ToolsSanityTest_MemoryLeak_Test::TestBody
 # False positives in libfontconfig. http://crbug.com/39050
 leak:libfontconfig
 
+# Leaks in Nvidia's libGL.
+leak:libGL.so
+
 # False positive in Blink due to bit twiddling on pointers. http://crbug.com/242672
 # TODO(earthdok): Annotate.
 leak:WTF::BitVector::resizeOutOfLine
@@ -100,5 +103,16 @@ leak:content::SpeechRecognitionBrowserTest::SetUpOnMainThread
 
 # http://crbug.com/355641
 leak:TrayAccessibilityTest
+
+# http://crbug.com/354644
+leak:CertificateViewerUITest::ShowModalCertificateViewer
+
+# http://crbug.com/356306
+leak:content::SetProcessTitleFromCommandLine
+
+# http://crbug.com/354881
+leak:LoginUtilsBlockingLoginTest_EnterpriseLoginBlocksForEnterpriseUser
+leak:LoginUtilsParamTest
+leak:LoginUtilsTest::SetUp
 
 # PLEASE READ ABOVE BEFORE ADDING NEW SUPPRESSIONS.

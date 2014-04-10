@@ -27,6 +27,20 @@ class MediaLog;
 
 namespace content {
 
+class CONTENT_EXPORT BufferedDataSourceHost {
+ public:
+  // Notify the host of the total size of the media file.
+  virtual void SetTotalBytes(int64 total_bytes) = 0;
+
+  // Notify the host that byte range [start,end] has been buffered.
+  // TODO(fischman): remove this method when demuxing is push-based instead of
+  // pull-based.  http://crbug.com/131444
+  virtual void AddBufferedByteRange(int64 start, int64 end) = 0;
+
+ protected:
+  virtual ~BufferedDataSourceHost() {};
+};
+
 // A data source capable of loading URLs and buffering the data using an
 // in-memory sliding window.
 //
@@ -36,11 +50,12 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
  public:
   typedef base::Callback<void(bool)> DownloadingCB;
 
-  // |downloading_cb| will be called whenever the downloading/paused state of
-  // the source changes.
+  // Buffered byte range changes will be reported to |host|. |downloading_cb|
+  // will be called whenever the downloading/paused state of the source changes.
   BufferedDataSource(const scoped_refptr<base::MessageLoopProxy>& render_loop,
                      blink::WebFrame* frame,
                      media::MediaLog* media_log,
+                     BufferedDataSourceHost* host,
                      const DownloadingCB& downloading_cb);
   virtual ~BufferedDataSource();
 
@@ -81,7 +96,6 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
 
   // media::DataSource implementation.
   // Called from demuxer thread.
-  virtual void set_host(media::DataSourceHost* host) OVERRIDE;
   virtual void Stop(const base::Closure& closure) OVERRIDE;
 
   virtual void Read(int64 position, int size, uint8* data,
@@ -128,12 +142,6 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
   void ReadCallback(BufferedResourceLoader::Status status, int bytes_read);
   void LoadingStateChangedCallback(BufferedResourceLoader::LoadingState state);
   void ProgressCallback(int64 position);
-
-  // Report a buffered byte range [start,end] or queue it for later
-  // reporting if set_host() hasn't been called yet.
-  void ReportOrQueueBufferedBytes(int64 start, int64 end);
-
-  void UpdateHostState_Locked();
 
   // Update |loader_|'s deferring strategy in response to a play/pause, or
   // change in playback rate.
@@ -207,10 +215,10 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
   // Current playback rate.
   float playback_rate_;
 
-  // Buffered byte ranges awaiting set_host() being called to report to host().
-  media::Ranges<int64> queued_buffered_byte_ranges_;
-
   scoped_refptr<media::MediaLog> media_log_;
+
+  // Host object to report buffered byte range changes to.
+  BufferedDataSourceHost* host_;
 
   DownloadingCB downloading_cb_;
 

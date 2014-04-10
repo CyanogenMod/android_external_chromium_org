@@ -12,10 +12,11 @@ import os
 import shutil
 import sys
 
-from pylib import android_commands
 from pylib import cmd_helper
 from pylib import constants
 
+from pylib.base import base_test_result
+from pylib.base import test_dispatcher
 from pylib.gtest import test_package_apk
 from pylib.gtest import test_package_exe
 from pylib.gtest import test_runner
@@ -29,7 +30,7 @@ import unittest_util # pylint: disable=F0401
 _ISOLATE_FILE_PATHS = {
     'base_unittests': 'base/base_unittests.isolate',
     'blink_heap_unittests':
-      'third_party/WebKit/Source/heap/BlinkHeapUnitTests.isolate',
+      'third_party/WebKit/Source/platform/heap/BlinkHeapUnitTests.isolate',
     'breakpad_unittests': 'breakpad/breakpad_unittests.isolate',
     'cc_perftests': 'cc/cc_perftests.isolate',
     'components_unittests': 'components/components_unittests.isolate',
@@ -163,19 +164,22 @@ def _GenerateDepsDirUsingIsolate(suite_name):
   # On Android, all pak files need to be in the top-level 'paks' directory.
   paks_dir = os.path.join(constants.ISOLATE_DEPS_DIR, 'paks')
   os.mkdir(paks_dir)
-  for root, _, filenames in os.walk(os.path.join(constants.ISOLATE_DEPS_DIR,
-                                                 'out')):
+
+  deps_out_dir = os.path.join(
+      constants.ISOLATE_DEPS_DIR,
+      os.path.relpath(os.path.join(constants.GetOutDirectory(), os.pardir),
+                      constants.DIR_SOURCE_ROOT))
+  for root, _, filenames in os.walk(deps_out_dir):
     for filename in fnmatch.filter(filenames, '*.pak'):
       shutil.move(os.path.join(root, filename), paks_dir)
 
   # Move everything in PRODUCT_DIR to top level.
-  deps_product_dir = os.path.join(constants.ISOLATE_DEPS_DIR, 'out',
-      constants.GetBuildType())
+  deps_product_dir = os.path.join(deps_out_dir, constants.GetBuildType())
   if os.path.isdir(deps_product_dir):
     for p in os.listdir(deps_product_dir):
       shutil.move(os.path.join(deps_product_dir, p), constants.ISOLATE_DEPS_DIR)
     os.rmdir(deps_product_dir)
-    os.rmdir(os.path.join(constants.ISOLATE_DEPS_DIR, 'out'))
+    os.rmdir(deps_out_dir)
 
 
 def _GetDisabledTestsFilterFromFile(suite_name):
@@ -204,26 +208,35 @@ def _GetDisabledTestsFilterFromFile(suite_name):
   return disabled_filter
 
 
-def _GetTestsFromDevice(runner_factory, devices):
-  """Get a list of tests from a device.
+def _GetTests(test_options, test_package, devices):
+  """Get a list of tests.
 
   Args:
-    runner_factory: Callable that takes device and shard_index and returns
-        a TestRunner.
-    devices: A list of device ids.
+    test_options: A GTestOptions object.
+    test_package: A TestPackageApk object.
+    devices: A list of attached devices.
 
   Returns:
-    All the tests in the test suite.
+    A list of all the tests in the test suite.
   """
-  for device in devices:
-    try:
-      logging.info('Obtaining tests from %s', device)
-      return runner_factory(device, 0).GetAllTests()
-    except (android_commands.errors.WaitForResponseTimedOutError,
-            android_commands.errors.DeviceUnresponsiveError), e:
-      logging.warning('Failed obtaining test list from %s with exception: %s',
-                      device, e)
-  raise Exception('Failed to obtain test list from devices.')
+  def TestListerRunnerFactory(device, _shard_index):
+    class TestListerRunner(test_runner.TestRunner):
+      def RunTest(self, _test):
+        result = base_test_result.BaseTestResult(
+            'gtest_list_tests', base_test_result.ResultType.PASS)
+        self.test_package.Install(self.adb)
+        result.test_list = self.test_package.GetAllTests(self.adb)
+        results = base_test_result.TestRunResults()
+        results.AddResult(result)
+        return results, None
+    return TestListerRunner(test_options, device, test_package)
+
+  results, _no_retry = test_dispatcher.RunTests(
+      ['gtest_list_tests'], TestListerRunnerFactory, devices)
+  tests = []
+  for r in results.GetAll():
+    tests.extend(r.test_list)
+  return tests
 
 
 def _FilterTestsUsingPrefixes(all_tests, pre=False, manual=False):
@@ -299,6 +312,8 @@ def Setup(test_options, devices):
 
   _GenerateDepsDirUsingIsolate(test_options.suite_name)
 
+  tests = _GetTests(test_options, test_package, devices)
+
   # Constructs a new TestRunner with the current options.
   def TestRunnerFactory(device, _shard_index):
     return test_runner.TestRunner(
@@ -306,7 +321,6 @@ def Setup(test_options, devices):
         device,
         test_package)
 
-  tests = _GetTestsFromDevice(TestRunnerFactory, devices)
   if test_options.run_disabled:
     test_options = test_options._replace(
         test_arguments=('%s --gtest_also_run_disabled_tests' %

@@ -34,7 +34,6 @@ ScaleGestureDetector::Config DefaultScaleGestureDetectorConfig() {
   ScaleGestureDetector::Config config;
 
   config.gesture_detector_config = DefaultGestureDetectorConfig();
-  config.quick_scale_enabled = false;
   config.min_scaling_touch_major = GestureConfiguration::default_radius() / 2;
   config.min_scaling_span =
       GestureConfiguration::min_distance_for_pinch_scroll_in_pixels();
@@ -59,6 +58,7 @@ GestureProvider::Config DefaultGestureProviderConfig() {
   config.gesture_detector_config = DefaultGestureDetectorConfig();
   config.scale_gesture_detector_config = DefaultScaleGestureDetectorConfig();
   config.snap_scroll_controller_config = DefaultSnapScrollControllerConfig();
+  config.gesture_begin_end_types_enabled = true;
   return config;
 }
 

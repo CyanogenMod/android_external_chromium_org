@@ -237,16 +237,16 @@ int SpdyProxyClientSocket::Write(IOBuffer* buf, int buf_len,
   return ERR_IO_PENDING;
 }
 
-bool SpdyProxyClientSocket::SetReceiveBufferSize(int32 size) {
+int SpdyProxyClientSocket::SetReceiveBufferSize(int32 size) {
   // Since this StreamSocket sits on top of a shared SpdySession, it
-  // is not safe for callers to set change this underlying socket.
-  return false;
+  // is not safe for callers to change this underlying socket.
+  return ERR_NOT_IMPLEMENTED;
 }
 
-bool SpdyProxyClientSocket::SetSendBufferSize(int32 size) {
+int SpdyProxyClientSocket::SetSendBufferSize(int32 size) {
   // Since this StreamSocket sits on top of a shared SpdySession, it
-  // is not safe for callers to set change this underlying socket.
-  return false;
+  // is not safe for callers to change this underlying socket.
+  return ERR_NOT_IMPLEMENTED;
 }
 
 int SpdyProxyClientSocket::GetPeerAddress(IPEndPoint* address) const {
@@ -482,7 +482,12 @@ void SpdyProxyClientSocket::OnDataSent()  {
 
   int rv = write_buffer_len_;
   write_buffer_len_ = 0;
-  ResetAndReturn(&write_callback_).Run(rv);
+
+  // Proxy write callbacks result in deep callback chains. Post to allow the
+  // stream's write callback chain to unwind (see crbug.com/355511).
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(ResetAndReturn(&write_callback_), rv));
 }
 
 void SpdyProxyClientSocket::OnClose(int status)  {

@@ -66,13 +66,7 @@ bool FindDownloadsMountPointPath(Profile* profile, base::FilePath* path) {
   return mount_points->GetRegisteredPath(mount_point_name, path);
 }
 
-// Called on completion of MarkCacheFileAsUnmounted.
-void OnMarkCacheFileAsUnmounted(drive::FileError error) {
-  // Do nothing.
-}
-
-VolumeType MountTypeToVolumeType(
-    chromeos::MountType type) {
+VolumeType MountTypeToVolumeType(chromeos::MountType type) {
   switch (type) {
     case chromeos::MOUNT_TYPE_INVALID:
       // We don't expect this value, but list here, so that when any value
@@ -213,13 +207,18 @@ VolumeInfo CreateProvidedFileSystemVolumeInfo(
   volume_info.is_parent = true;
   volume_info.is_read_only = true;
   volume_info.volume_id = GenerateVolumeId(volume_info);
+  volume_info.file_system_id = file_system.file_system_id();
   return volume_info;
 }
 
 }  // namespace
 
-VolumeInfo::VolumeInfo() {
-}
+VolumeInfo::VolumeInfo()
+    : file_system_id(0),
+      type(VOLUME_TYPE_GOOGLE_DRIVE),
+      mount_condition(chromeos::disks::MOUNT_CONDITION_NONE),
+      is_parent(false),
+      is_read_only(false) {}
 
 VolumeInfo::~VolumeInfo() {
 }
@@ -298,7 +297,7 @@ void VolumeManager::Initialize() {
     file_system_provider_service_->AddObserver(this);
 
     std::vector<ProvidedFileSystem> provided_file_systems =
-        file_system_provider_service_->GetRegisteredFileSystems();
+        file_system_provider_service_->GetMountedFileSystems();
     for (size_t i = 0; i < provided_file_systems.size(); ++i) {
       VolumeInfo volume_info =
           CreateProvidedFileSystemVolumeInfo(provided_file_systems[i]);
@@ -561,7 +560,7 @@ void VolumeManager::OnMountEvent(
       if (file_system) {
         file_system->MarkCacheFileAsUnmounted(
             base::FilePath(mount_info.source_path),
-            base::Bind(&OnMarkCacheFileAsUnmounted));
+            base::Bind(&drive::util::EmptyFileOperationCallback));
       }
     }
   }
@@ -621,16 +620,28 @@ void VolumeManager::OnFormatEvent(
   NOTREACHED();
 }
 
-void VolumeManager::OnProvidedFileSystemRegistered(
-    const chromeos::file_system_provider::ProvidedFileSystem& file_system) {
+void VolumeManager::OnProvidedFileSystemMount(
+    const chromeos::file_system_provider::ProvidedFileSystem& file_system,
+    base::File::Error error) {
   VolumeInfo volume_info = CreateProvidedFileSystemVolumeInfo(file_system);
-  DoMountEvent(chromeos::MOUNT_ERROR_NONE, volume_info, false /* remounting */);
+  // TODO(mtomasz): Introduce own type, and avoid using MountError internally,
+  // since it is related to cros disks only.
+  const chromeos::MountError mount_error = error == base::File::FILE_OK
+                                               ? chromeos::MOUNT_ERROR_NONE
+                                               : chromeos::MOUNT_ERROR_UNKNOWN;
+  DoMountEvent(mount_error, volume_info, false /* remounting */);
 }
 
-void VolumeManager::OnProvidedFileSystemUnregistered(
-    const chromeos::file_system_provider::ProvidedFileSystem& file_system) {
+void VolumeManager::OnProvidedFileSystemUnmount(
+    const chromeos::file_system_provider::ProvidedFileSystem& file_system,
+    base::File::Error error) {
+  // TODO(mtomasz): Introduce own type, and avoid using MountError internally,
+  // since it is related to cros disks only.
+  const chromeos::MountError mount_error = error == base::File::FILE_OK
+                                               ? chromeos::MOUNT_ERROR_NONE
+                                               : chromeos::MOUNT_ERROR_UNKNOWN;
   VolumeInfo volume_info = CreateProvidedFileSystemVolumeInfo(file_system);
-  DoUnmountEvent(chromeos::MOUNT_ERROR_NONE, volume_info);
+  DoUnmountEvent(mount_error, volume_info);
 }
 
 void VolumeManager::OnExternalStorageDisabledChanged() {

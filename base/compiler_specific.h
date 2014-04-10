@@ -137,9 +137,7 @@
 // method in the parent class.
 // Use like:
 //   virtual void foo() OVERRIDE;
-#if defined(COMPILER_MSVC)
-#define OVERRIDE override
-#elif defined(__clang__)
+#if defined(__clang__) || defined(COMPILER_MSVC)
 #define OVERRIDE override
 #elif defined(COMPILER_GCC) && __cplusplus >= 201103 && \
       (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40700
@@ -154,11 +152,8 @@
 // Use like:
 //   virtual void foo() FINAL;
 //   class B FINAL : public A {};
-#if defined(__clang__)
+#if defined(__clang__) || defined(COMPILER_MSVC)
 #define FINAL final
-#elif defined(COMPILER_MSVC)
-// TODO(jered): Change this to "final" when chromium no longer uses MSVC 2010.
-#define FINAL sealed
 #elif defined(COMPILER_GCC) && __cplusplus >= 201103 && \
       (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40700
 // GCC 4.7 supports explicit virtual overrides when C++11 support is enabled.

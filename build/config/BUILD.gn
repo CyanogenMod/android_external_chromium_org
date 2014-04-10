@@ -39,13 +39,16 @@ config("feature_flags") {
       "ENABLE_THEMES=1",
       "ENABLE_AUTOFILL_DIALOG=1",
       "ENABLE_BACKGROUND=1",
-      "ENABLE_AUTOMATION=1",
       "ENABLE_GOOGLE_NOW=1",
       "ENABLE_CAPTIVE_PORTAL_DETECTION=1",
       "ENABLE_APP_LIST=1",
       "ENABLE_SETTINGS_APP=1",
       "ENABLE_MANAGED_USERS=1",
+      "ENABLE_SERVICE_DISCOVERY=1",
+      "USE_MOJO=1",
       "V8_DEPRECATION_WARNINGS",  # Don't use deprecated V8 APIs anywhere.
+      # Temporary suppression until Blink code can be removed.
+      "BLINK_SCALE_FILTERS_AT_RECORD_TIME",
   ]
 
   if (cld_version > 0) {
@@ -175,6 +178,10 @@ config("default_libs") {
       "winmm.lib",
       "winspool.lib",
       "ws2_32.lib",
+      # Please don't add more stuff here. We should actually be making this
+      # list smaller, since all common things should be covered. If you need
+      # some extra libraries, please just add a libs = [ "foo.lib" ] to your
+      # target that needs it.
     ]
   } else if (is_android) {
     # Android uses -nostdlib so we need to add even libc here.

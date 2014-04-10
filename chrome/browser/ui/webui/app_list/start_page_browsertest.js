@@ -130,10 +130,9 @@ AppListStartPageWebUITest.prototype = {
       appList.startPage.setRecommendedApps(this.recommendedApps_);
     }.bind(this)));
     this.mockHandler.stubs().launchApp(ANYTHING);
-    this.mockHandler.expects(once()).setSpeechRecognitionState('READY');
 
     this.registerMockSpeechRecognition_();
-    window.webkitAudioContext = mockAudioContext;
+    window.AudioContext = mockAudioContext;
     navigator.webkitGetUserMedia = this.mockGetUserMedia_.bind(this);
     this.audioTrackMocks = [mock(MediaStreamTrack), mock(MediaStreamTrack)];
   }
@@ -160,6 +159,7 @@ TEST_F('AppListStartPageWebUITest', 'ClickToLaunch', function() {
 });
 
 TEST_F('AppListStartPageWebUITest', 'SpeechRecognitionState', function() {
+  this.mockHandler.expects(once()).setSpeechRecognitionState('READY');
   appList.startPage.onAppListShown();
   this.mockHandler.expects(once()).setSpeechRecognitionState('RECOGNIZING');
   appList.startPage.toggleSpeechRecognition();
@@ -188,6 +188,7 @@ TEST_F('AppListStartPageWebUITest', 'SpeechRecognitionState', function() {
 });
 
 TEST_F('AppListStartPageWebUITest', 'SpeechRecognition', function() {
+  this.mockHandler.expects(once()).setSpeechRecognitionState('READY');
   appList.startPage.onAppListShown();
   this.mockHandler.expects(once()).setSpeechRecognitionState('RECOGNIZING');
   appList.startPage.toggleSpeechRecognition();

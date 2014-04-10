@@ -86,18 +86,14 @@ BrowserAccessibility* BrowserAccessibilityManager::GetFromRendererID(
   return NULL;
 }
 
-void BrowserAccessibilityManager::GotFocus(bool touch_event_context) {
-  if (!touch_event_context)
-    osk_state_ = OSK_DISALLOWED_BECAUSE_TAB_JUST_APPEARED;
-
-  if (!focus_)
-    return;
-
-  NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, focus_);
+void BrowserAccessibilityManager::OnWindowFocused() {
+  if (focus_)
+    NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, focus_);
 }
 
-void BrowserAccessibilityManager::WasHidden() {
-  osk_state_ = OSK_DISALLOWED_BECAUSE_TAB_HIDDEN;
+void BrowserAccessibilityManager::OnWindowBlurred() {
+  if (focus_)
+    NotifyAccessibilityEvent(ui::AX_EVENT_BLUR, focus_);
 }
 
 void BrowserAccessibilityManager::GotMouseDown() {
@@ -131,7 +127,7 @@ void BrowserAccessibilityManager::OnAccessibilityEvents(
   // Process all changes to the accessibility tree first.
   for (uint32 index = 0; index < params.size(); index++) {
     const AccessibilityHostMsg_EventParams& param = params[index];
-    if (!UpdateNodes(param.nodes))
+    if (!UpdateNodes(param.update.nodes))
       return;
 
     // Set initial focus when a page is loaded.
@@ -207,7 +203,7 @@ void BrowserAccessibilityManager::SetFocus(
 
 void BrowserAccessibilityManager::SetRoot(BrowserAccessibility* node) {
   root_ = node;
-  NotifyRootChanged();
+  OnRootChanged();
 }
 
 void BrowserAccessibilityManager::DoDefaultAction(

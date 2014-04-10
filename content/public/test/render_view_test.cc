@@ -35,8 +35,8 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #endif
 
-using blink::WebFrame;
 using blink::WebInputEvent;
+using blink::WebLocalFrame;
 using blink::WebMouseEvent;
 using blink::WebScriptSource;
 using blink::WebString;
@@ -89,8 +89,8 @@ void RenderViewTest::ProcessPendingMessages() {
   msg_loop_.Run();
 }
 
-WebFrame* RenderViewTest::GetMainFrame() {
-  return view_->GetWebView()->mainFrame();
+WebLocalFrame* RenderViewTest::GetMainFrame() {
+  return view_->GetWebView()->mainFrame()->toWebLocalFrame();
 }
 
 void RenderViewTest::ExecuteJavaScript(const char* js) {
@@ -357,10 +357,14 @@ bool RenderViewTest::OnMessageReceived(const IPC::Message& msg) {
   return impl->OnMessageReceived(msg);
 }
 
-void RenderViewTest::DidNavigateWithinPage(blink::WebFrame* frame,
+void RenderViewTest::DidNavigateWithinPage(blink::WebLocalFrame* frame,
                                            bool is_new_navigation) {
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(view_);
-  impl->didNavigateWithinPage(frame, is_new_navigation);
+  impl->main_render_frame()->didNavigateWithinPage(
+      frame,
+      blink::WebHistoryItem(),
+      is_new_navigation ? blink::WebStandardCommit
+                        : blink::WebHistoryInertCommit);
 }
 
 void RenderViewTest::SendContentStateImmediately() {

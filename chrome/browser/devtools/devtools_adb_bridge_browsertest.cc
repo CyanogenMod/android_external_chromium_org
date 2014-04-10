@@ -124,11 +124,11 @@ char kSampleWebViewPages[] = "[ {\n"
     "44681551-ADFD-2411-076B-3AB14C1C60E2\"\n"
     "}]";
 
-class MockDeviceImpl : public AndroidDevice {
+class MockDeviceImpl : public AndroidDeviceManager::Device {
  public:
   MockDeviceImpl(const std::string& serial, int index,
                  bool connected, const char* device_model)
-      : AndroidDevice(serial, connected),
+      : Device(serial, connected),
         device_model_(device_model)
   {}
 
@@ -235,12 +235,12 @@ class MockDeviceImpl : public AndroidDevice {
   const char* device_model_;
 };
 
-class MockDeviceProvider : public AndroidDeviceProvider {
+class MockDeviceProvider : public AndroidDeviceManager::DeviceProvider {
   virtual ~MockDeviceProvider()
   {}
 
   virtual void QueryDevices(const QueryDevicesCallback& callback) OVERRIDE {
-    AndroidDeviceProvider::AndroidDevices devices;
+    AndroidDeviceManager::Devices devices;
     devices.push_back(new MockDeviceImpl("FirstDevice", 0, true, "Nexus 6"));
     devices.push_back(new MockDeviceImpl("SecondDevice", 1, false, "Nexus 8"));
     callback.Run(devices);
@@ -248,8 +248,8 @@ class MockDeviceProvider : public AndroidDeviceProvider {
 };
 
 // static
-scoped_refptr<AndroidDeviceProvider>
-AndroidDeviceProvider::GetMockDeviceProviderForTest() {
+scoped_refptr<AndroidDeviceManager::DeviceProvider>
+AndroidDeviceManager::GetMockDeviceProviderForTest() {
   return new MockDeviceProvider();
 }
 
@@ -278,22 +278,22 @@ public:
     ASSERT_EQ(2U, devices_.size());
 
     scoped_refptr<DevToolsAdbBridge::RemoteDevice> connected =
-        devices_[0]->IsConnected() ? devices_[0] : devices_[1];
+        devices_[0]->is_connected() ? devices_[0] : devices_[1];
 
     scoped_refptr<DevToolsAdbBridge::RemoteDevice> not_connected =
-        devices_[0]->IsConnected() ? devices_[1] : devices_[0];
+        devices_[0]->is_connected() ? devices_[1] : devices_[0];
 
-    ASSERT_TRUE(connected->IsConnected());
-    ASSERT_FALSE(not_connected->IsConnected());
+    ASSERT_TRUE(connected->is_connected());
+    ASSERT_FALSE(not_connected->is_connected());
 
     ASSERT_EQ(720, connected->screen_size().width());
     ASSERT_EQ(1184, connected->screen_size().height());
 
-    ASSERT_EQ("FirstDevice", connected->GetSerial());
-    ASSERT_EQ("Nexus 6", connected->GetModel());
+    ASSERT_EQ("FirstDevice", connected->serial());
+    ASSERT_EQ("Nexus 6", connected->model());
 
-    ASSERT_EQ("SecondDevice", not_connected->GetSerial());
-    ASSERT_EQ("Offline", not_connected->GetModel());
+    ASSERT_EQ("SecondDevice", not_connected->serial());
+    ASSERT_EQ("Offline", not_connected->model());
 
     const DevToolsAdbBridge::RemoteBrowsers& browsers = connected->browsers();
     ASSERT_EQ(4U, browsers.size());
@@ -360,10 +360,10 @@ IN_PROC_BROWSER_TEST_F(DevToolsAdbBridgeTest, DiscoverAndroidBrowsers) {
   scoped_refptr<DevToolsAdbBridge> adb_bridge =
       DevToolsAdbBridge::Factory::GetForProfile(browser()->profile());
 
-  DevToolsAdbBridge::DeviceProviders providers;
-  providers.push_back(AndroidDeviceProvider::GetMockDeviceProviderForTest());
+  AndroidDeviceManager::DeviceProviders providers;
+  providers.push_back(AndroidDeviceManager::GetMockDeviceProviderForTest());
 
-  adb_bridge->set_device_providers(providers);
+  adb_bridge->set_device_providers_for_test(providers);
 
   if (!adb_bridge) {
     FAIL() << "Failed to get DevToolsAdbBridge.";

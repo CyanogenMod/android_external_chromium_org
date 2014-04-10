@@ -13,6 +13,9 @@ per-file cloud_devices*=gene@chromium.org
 per-file cloud_devices*=noamsml@chromium.org
 per-file cloud_devices*=vitalybuka@chromium.org
 
+per-file cronet*=mef@chromium.org
+per-file cronet*=mmenke@chromium.org
+
 per-file dom_distiller*=bengr@chromium.org
 per-file dom_distiller*=cjhopman@chromium.org
 per-file dom_distiller*=nyquist@chromium.org
@@ -21,6 +24,9 @@ per-file domain_reliability.gypi=davidben@chromium.org
 per-file domain_reliability.gypi=mmenke@chromium.org
 per-file domain_reliability.gypi=szym@chromium.org
 per-file domain_reliability.gypi=ttuttle@chromium.org
+
+per-file favicon*=sky@chromium.org
+per-file favicon*=stevenjb@chromium.org
 
 per-file json_schema.gypi=asargent@chromium.org
 per-file json_schema.gypi=calamity@chromium.org

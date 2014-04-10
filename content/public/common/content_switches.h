@@ -124,7 +124,6 @@ CONTENT_EXPORT extern const char kEnableEmbeddedSharedWorker[];
 CONTENT_EXPORT extern const char kEnableEncryptedMedia[];
 CONTENT_EXPORT extern const char kEnableExperimentalCanvasFeatures[];
 CONTENT_EXPORT extern const char kEnableExperimentalWebPlatformFeatures[];
-CONTENT_EXPORT extern const char kEnableExperimentalWebSocket[];
 CONTENT_EXPORT extern const char kEnableFastTextAutosizing[];
 CONTENT_EXPORT extern const char kEnableFileCookies[];
 CONTENT_EXPORT extern const char kEnableFixedPositionCreatesStackingContext[];
@@ -138,7 +137,6 @@ CONTENT_EXPORT extern const char kDisableLegacyIntermediateWindow[];
 CONTENT_EXPORT extern const char kEnableDirectWrite[];
 CONTENT_EXPORT extern const char kEnableHighResolutionTime[];
 #endif
-CONTENT_EXPORT extern const char kEnableHTMLImports[];
 CONTENT_EXPORT extern const char kEnableImplSidePainting[];
 CONTENT_EXPORT extern const char kEnableInbandTextTracks[];
 CONTENT_EXPORT extern const char kEnableLCDText[];
@@ -279,7 +277,6 @@ CONTENT_EXPORT extern const char kDisableDeviceEnumeration[];
 CONTENT_EXPORT extern const char kDisableWebRtcHWDecoding[];
 CONTENT_EXPORT extern const char kDisableWebRtcEncryption[];
 CONTENT_EXPORT extern const char kDisableWebRtcHWEncoding[];
-CONTENT_EXPORT extern const char kEnableWebRtcAecRecordings[];
 extern const char kEnableWebRtcTcpServerSocket[];
 CONTENT_EXPORT extern const char kEnableWebRtcHWVp8Encoding[];
 #endif

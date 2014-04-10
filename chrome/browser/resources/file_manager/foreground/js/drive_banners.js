@@ -191,7 +191,7 @@ FileListBannerController.prototype.prepareAndShowWelcomeBanner_ =
     more.textContent = str('DRIVE_LEARN_MORE');
     more.href = str('GOOGLE_DRIVE_OVERVIEW_URL');
   }
-  more.tabIndex = '13';  // See: go/filesapp-tabindex.
+  more.tabIndex = '14';  // See: go/filesapp-tabindex.
   more.target = '_blank';
 
   var dismiss;
@@ -521,7 +521,7 @@ FileListBannerController.prototype.maybeShowLowSpaceWarning_ = function(
     return;
 
   chrome.fileBrowserPrivate.getSizeStats(
-      volume.fileSystem.root.toURL(),
+      volume.volumeId,
       function(sizeStats) {
         var currentVolume = this.volumeManager_.getVolumeInfo(
             this.directoryModel_.getCurrentDirEntry());

@@ -94,7 +94,7 @@ void ObserveStatusChanges(ServiceWorkerVersion* version,
                           std::vector<ServiceWorkerVersion::Status>* statuses) {
   statuses->push_back(version->status());
   version->RegisterStatusChangeCallback(
-      base::Bind(&ObserveStatusChanges, make_scoped_refptr(version), statuses));
+      base::Bind(&ObserveStatusChanges, base::Unretained(version), statuses));
 }
 
 }  // namespace
@@ -111,11 +111,10 @@ class ServiceWorkerVersionTest : public testing::Test {
     registration_ = new ServiceWorkerRegistration(
         GURL("http://www.example.com/*"),
         GURL("http://www.example.com/service_worker.js"),
-        1L);
+        1L, context_->AsWeakPtr());
     version_ = new ServiceWorkerVersion(
         registration_,
-        embedded_worker_registry(),
-        1L);
+        1L, context_->AsWeakPtr());
 
     // Simulate adding one process to the worker.
     int embedded_worker_id = version_->embedded_worker()->embedded_worker_id();
@@ -123,16 +122,10 @@ class ServiceWorkerVersionTest : public testing::Test {
   }
 
   virtual void TearDown() OVERRIDE {
-    version_->Shutdown();
     version_ = 0;
-    registration_->Shutdown();
     registration_ = 0;
     helper_.reset();
     context_.reset();
-  }
-
-  EmbeddedWorkerRegistry* embedded_worker_registry() {
-    return context_->embedded_worker_registry();
   }
 
   TestBrowserThreadBundle thread_bundle_;

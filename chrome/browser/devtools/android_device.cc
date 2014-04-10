@@ -29,15 +29,18 @@ const int kBufferSize = 16 * 1024;
 #if defined(DEBUG_DEVTOOLS)
 const char kDeviceModelCommand[] = "shell:getprop ro.product.model";
 const char kOpenedUnixSocketsCommand[] = "shell:cat /proc/net/unix";
+const char kOpenedUnixSocketsResponse[] =
+    "Num       RefCount Protocol Flags    Type St Inode Path\n"
+    "00000000: 00000002 00000000 00010000 0001 01 20894 @%s\n";
+const char kRemoteDebuggingSocket[] = "chrome_devtools_remote";
 const char kLocalChrome[] = "Local Chrome";
 const char kLocalhost[] = "127.0.0.1";
-const int kTcpPort = 9222;
+const int kLocalDebuggingPort = 9222;
 #endif
-
 
 // AdbDeviceImpl --------------------------------------------------------------
 
-class AdbDeviceImpl : public AndroidDevice {
+class AdbDeviceImpl : public AndroidDeviceManager::Device {
  public:
   AdbDeviceImpl(const std::string& serial, bool is_connected);
   virtual void RunCommand(const std::string& command,
@@ -49,11 +52,12 @@ class AdbDeviceImpl : public AndroidDevice {
 };
 
 AdbDeviceImpl::AdbDeviceImpl(const std::string& serial, bool is_connected)
-    : AndroidDevice(serial, is_connected) {
+    : Device(serial, is_connected) {
 }
 
 void AdbDeviceImpl::RunCommand(const std::string& command,
                                const CommandCallback& callback) {
+  DCHECK(CalledOnValidThread());
   std::string query = base::StringPrintf(kHostTransportCommand,
                                          serial().c_str(), command.c_str());
   AdbClientSocket::AdbQuery(kAdbPort, query, callback);
@@ -61,6 +65,7 @@ void AdbDeviceImpl::RunCommand(const std::string& command,
 
 void AdbDeviceImpl::OpenSocket(const std::string& name,
                                const SocketCallback& callback) {
+  DCHECK(CalledOnValidThread());
   std::string socket_name =
       base::StringPrintf(kLocalAbstractCommand, name.c_str());
   AdbClientSocket::TransportQuery(kAdbPort, serial(), socket_name, callback);
@@ -68,7 +73,7 @@ void AdbDeviceImpl::OpenSocket(const std::string& name,
 
 // UsbDeviceImpl --------------------------------------------------------------
 
-class UsbDeviceImpl : public AndroidDevice {
+class UsbDeviceImpl : public AndroidDeviceManager::Device {
  public:
   explicit UsbDeviceImpl(AndroidUsbDevice* device);
   virtual void RunCommand(const std::string& command,
@@ -94,13 +99,14 @@ class UsbDeviceImpl : public AndroidDevice {
 
 
 UsbDeviceImpl::UsbDeviceImpl(AndroidUsbDevice* device)
-    : AndroidDevice(device->serial(), device->is_connected()),
+    : Device(device->serial(), device->is_connected()),
       device_(device) {
   device_->InitOnCallerThread();
 }
 
 void UsbDeviceImpl::RunCommand(const std::string& command,
                                const CommandCallback& callback) {
+  DCHECK(CalledOnValidThread());
   net::StreamSocket* socket = device_->CreateSocket(command);
   int result = socket->Connect(base::Bind(&UsbDeviceImpl::OpenedForCommand,
                                           this, callback, socket));
@@ -110,6 +116,7 @@ void UsbDeviceImpl::RunCommand(const std::string& command,
 
 void UsbDeviceImpl::OpenSocket(const std::string& name,
                                const SocketCallback& callback) {
+  DCHECK(CalledOnValidThread());
   std::string socket_name =
       base::StringPrintf(kLocalAbstractCommand, name.c_str());
   net::StreamSocket* socket = device_->CreateSocket(socket_name);
@@ -161,11 +168,10 @@ void UsbDeviceImpl::OnRead(net::StreamSocket* socket,
 
 // AdbDeviceProvider -------------------------------------------
 
-class AdbDeviceProvider : public AndroidDeviceProvider {
+class AdbDeviceProvider : public AndroidDeviceManager::DeviceProvider {
  public:
   virtual void QueryDevices(const QueryDevicesCallback& callback) OVERRIDE;
  private:
-  void QueryDevicesOnAdbThread(const QueryDevicesCallback& callback);
   void ReceivedAdbDevices(const QueryDevicesCallback& callback, int result,
                           const std::string& response);
 
@@ -176,17 +182,6 @@ AdbDeviceProvider::~AdbDeviceProvider() {
 }
 
 void AdbDeviceProvider::QueryDevices(const QueryDevicesCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  adb_thread_->message_loop()->PostTask(
-        FROM_HERE, base::Bind(&AdbDeviceProvider::QueryDevicesOnAdbThread,
-        this, callback));
-}
-
-void AdbDeviceProvider::QueryDevicesOnAdbThread(
-    const QueryDevicesCallback& callback) {
-  DCHECK_EQ(adb_thread_->message_loop(), base::MessageLoop::current());
-
   AdbClientSocket::AdbQuery(
       kAdbPort, kHostDevicesCommand,
       base::Bind(&AdbDeviceProvider::ReceivedAdbDevices, this, callback));
@@ -195,10 +190,7 @@ void AdbDeviceProvider::QueryDevicesOnAdbThread(
 void AdbDeviceProvider::ReceivedAdbDevices(const QueryDevicesCallback& callback,
                                            int result_code,
                                            const std::string& response) {
-  DCHECK_EQ(adb_thread_->message_loop(), base::MessageLoop::current());
-
-  AndroidDevices result;
-
+  AndroidDeviceManager::Devices result;
   std::vector<std::string> serials;
   Tokenize(response, "\n", &serials);
   for (size_t i = 0; i < serials.size(); ++i) {
@@ -207,23 +199,18 @@ void AdbDeviceProvider::ReceivedAdbDevices(const QueryDevicesCallback& callback,
     bool offline = tokens.size() > 1 && tokens[1] == "offline";
     result.push_back(new AdbDeviceImpl(tokens[0], !offline));
   }
-
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                          base::Bind(&AdbDeviceProvider::RunCallbackOnUIThread,
-                          callback, result));
+  callback.Run(result);
 }
 
 // UsbDeviceProvider -------------------------------------------
 
-class UsbDeviceProvider : public AndroidDeviceProvider {
+class UsbDeviceProvider : public AndroidDeviceManager::DeviceProvider {
  public:
   explicit UsbDeviceProvider(Profile* profile);
 
   virtual void QueryDevices(const QueryDevicesCallback& callback) OVERRIDE;
  private:
   virtual ~UsbDeviceProvider();
-  void WrapDevicesOnAdbThread(const QueryDevicesCallback& callback,
-                              const AndroidUsbDevices& devices);
   void EnumeratedDevices(const QueryDevicesCallback& callback,
                          const AndroidUsbDevices& devices);
 
@@ -238,62 +225,49 @@ UsbDeviceProvider::~UsbDeviceProvider() {
 }
 
 void UsbDeviceProvider::QueryDevices(const QueryDevicesCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   AndroidUsbDevice::Enumerate(rsa_key_.get(),
-                              base::Bind(&UsbDeviceProvider::EnumeratedDevices,
-                              this, callback));
+      base::Bind(&UsbDeviceProvider::EnumeratedDevices, this, callback));
 }
 
 void UsbDeviceProvider::EnumeratedDevices(const QueryDevicesCallback& callback,
                                           const AndroidUsbDevices& devices) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  adb_thread_->message_loop()->PostTask(FROM_HERE,
-                          base::Bind(&UsbDeviceProvider::WrapDevicesOnAdbThread,
-                          this, callback, devices));
-}
-
-void UsbDeviceProvider::WrapDevicesOnAdbThread(
-    const QueryDevicesCallback& callback,const AndroidUsbDevices& devices) {
-  DCHECK_EQ(adb_thread_->message_loop(), base::MessageLoop::current());
-  AndroidDevices result;
+  AndroidDeviceManager::Devices result;
   for (AndroidUsbDevices::const_iterator it = devices.begin();
       it != devices.end(); ++it)
     result.push_back(new UsbDeviceImpl(*it));
-
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                          base::Bind(&UsbDeviceProvider::RunCallbackOnUIThread,
-                          callback, result));
+  callback.Run(result);
 }
 
 } // namespace
 
-// AndroidDevice -------------------------------------------
-
-AndroidDevice::AndroidDevice(const std::string& serial, bool is_connected)
+AndroidDeviceManager::Device::Device(const std::string& serial,
+                                     bool is_connected)
     : serial_(serial),
       is_connected_(is_connected) {
 }
 
-void AndroidDevice::HttpQuery(
+void AndroidDeviceManager::Device::HttpQuery(
     const std::string& la_name,
     const std::string& request,
     const CommandCallback& callback) {
-  OpenSocket(la_name, base::Bind(&AndroidDevice::OnHttpSocketOpened, this,
-                                 request, callback));
+  DCHECK(CalledOnValidThread());
+  OpenSocket(la_name, base::Bind(
+      &Device::OnHttpSocketOpened, this, request, callback));
 }
 
-void AndroidDevice::HttpUpgrade(
+void AndroidDeviceManager::Device::HttpUpgrade(
     const std::string& la_name,
     const std::string& request,
     const SocketCallback& callback) {
-  OpenSocket(la_name, base::Bind(&AndroidDevice::OnHttpSocketOpened2, this,
-                                 request, callback));
+  DCHECK(CalledOnValidThread());
+  OpenSocket(la_name, base::Bind(
+      &Device::OnHttpSocketOpened2, this, request, callback));
 }
 
-AndroidDevice::~AndroidDevice() {
+AndroidDeviceManager::Device::~Device() {
 }
 
-void AndroidDevice::OnHttpSocketOpened(
+void AndroidDeviceManager::Device::OnHttpSocketOpened(
     const std::string& request,
     const CommandCallback& callback,
     int result,
@@ -305,7 +279,7 @@ void AndroidDevice::OnHttpSocketOpened(
   AdbClientSocket::HttpQuery(socket, request, callback);
 }
 
-void AndroidDevice::OnHttpSocketOpened2(
+void AndroidDeviceManager::Device::OnHttpSocketOpened2(
     const std::string& request,
     const SocketCallback& callback,
     int result,
@@ -317,109 +291,27 @@ void AndroidDevice::OnHttpSocketOpened2(
   AdbClientSocket::HttpQuery(socket, request, callback);
 }
 
-// AdbCountDevicesCommand -----------------------------------------------------
-class AdbCountDevicesCommand : public base::RefCountedThreadSafe<
-    AdbCountDevicesCommand, BrowserThread::DeleteOnUIThread> {
- public:
-  typedef base::Callback<void(int)> Callback;
-
-  AdbCountDevicesCommand(
-      scoped_refptr<RefCountedAdbThread> adb_thread,
-      const Callback& callback);
-
- private:
-  friend struct BrowserThread::DeleteOnThread<
-      BrowserThread::UI>;
-  friend class base::DeleteHelper<AdbCountDevicesCommand>;
-
-  virtual ~AdbCountDevicesCommand();
-  void RequestAdbDeviceCount();
-  void ReceivedAdbDeviceCount(int result, const std::string& response);
-  void Respond(int count);
-
-  scoped_refptr<RefCountedAdbThread> adb_thread_;
-  Callback callback_;
-};
-
-AdbCountDevicesCommand::AdbCountDevicesCommand(
-    scoped_refptr<RefCountedAdbThread> adb_thread,
-    const Callback& callback)
-    : adb_thread_(adb_thread),
-      callback_(callback) {
-  adb_thread_->message_loop()->PostTask(
-      FROM_HERE, base::Bind(&AdbCountDevicesCommand::RequestAdbDeviceCount,
-                            this));
+AndroidDeviceManager::DeviceProvider::DeviceProvider() {
 }
 
-AdbCountDevicesCommand::~AdbCountDevicesCommand() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-}
-
-void AdbCountDevicesCommand::RequestAdbDeviceCount() {
-  DCHECK_EQ(adb_thread_->message_loop(), base::MessageLoop::current());
-  AdbClientSocket::AdbQuery(
-      kAdbPort, kHostDevicesCommand,
-      base::Bind(&AdbCountDevicesCommand::ReceivedAdbDeviceCount, this));
-}
-
-void AdbCountDevicesCommand::ReceivedAdbDeviceCount(
-    int result,
-    const std::string& response) {
-  DCHECK_EQ(adb_thread_->message_loop(), base::MessageLoop::current());
-  std::vector<std::string> serials;
-  Tokenize(response, "\n", &serials);
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&AdbCountDevicesCommand::Respond, this, serials.size()));
-}
-
-void AdbCountDevicesCommand::Respond(int count) {
-  callback_.Run(count);
-}
-
-// AndroidDeviceProvider ---------------------------------------------------
-
-AndroidDeviceProvider::AndroidDeviceProvider()
-  : adb_thread_(RefCountedAdbThread::GetInstance()) {
-
-}
-
-AndroidDeviceProvider::~AndroidDeviceProvider() {
+AndroidDeviceManager::DeviceProvider::~DeviceProvider() {
 }
 
 // static
-void AndroidDeviceProvider::RunCallbackOnUIThread(
-    const QueryDevicesCallback& callback,
-    const AndroidDevices& result) {
-  callback.Run(result);
-}
-
-// static
-void AndroidDeviceProvider::CountDevices(bool discover_usb_devices,
-    const base::Callback<void(int)>& callback) {
-  if (discover_usb_devices) {
-    AndroidUsbDevice::CountDevices(callback);
-    return;
-  }
-
-  new AdbCountDevicesCommand(RefCountedAdbThread::GetInstance(), callback);
-}
-
-// static
-scoped_refptr<AndroidDeviceProvider>
-    AndroidDeviceProvider::GetUsbDeviceProvider(Profile* profile) {
+scoped_refptr<AndroidDeviceManager::DeviceProvider>
+    AndroidDeviceManager::GetUsbDeviceProvider(Profile* profile) {
   return new UsbDeviceProvider(profile);
 }
 
 // static
-scoped_refptr<AndroidDeviceProvider>
-    AndroidDeviceProvider::GetAdbDeviceProvider() {
+scoped_refptr<AndroidDeviceManager::DeviceProvider>
+    AndroidDeviceManager::GetAdbDeviceProvider() {
   return new AdbDeviceProvider();
 }
 
 
 #if defined(DEBUG_DEVTOOLS)
-class SelfAsDevice : public AndroidDevice {
+class SelfAsDevice : public AndroidDeviceManager::Device {
  public:
   SelfAsDevice();
   virtual void RunCommand(const std::string& command,
@@ -438,7 +330,7 @@ class SelfAsDevice : public AndroidDevice {
 };
 
 SelfAsDevice::SelfAsDevice()
-    : AndroidDevice("local", true)
+    : Device("local", true)
 {}
 
 void SelfAsDevice::RunCommandCallback(const CommandCallback& callback,
@@ -455,13 +347,13 @@ void SelfAsDevice::RunSocketCallback(const SocketCallback& callback,
 
 void SelfAsDevice::RunCommand(const std::string& command,
                               const CommandCallback& callback) {
+  DCHECK(CalledOnValidThread());
   std::string response;
   if (command == kDeviceModelCommand) {
     response = kLocalChrome;
   } else if (command == kOpenedUnixSocketsCommand) {
-    response = "Num       RefCount Protocol Flags    Type St Inode Path\n"
-        "00000000: 00000002 00000000"
-        " 00010000 0001 01 20894 @chrome_devtools_remote\n";
+    response = base::StringPrintf(kOpenedUnixSocketsResponse,
+                                  kRemoteDebuggingSocket);
   }
 
   base::MessageLoop::current()->PostTask(FROM_HERE,
@@ -471,19 +363,27 @@ void SelfAsDevice::RunCommand(const std::string& command,
 
 void SelfAsDevice::OpenSocket(const std::string& socket_name,
                               const SocketCallback& callback) {
-  // Use plain socket for remote debugging on Desktop (debugging purposes).
+  DCHECK(CalledOnValidThread());
+  // Use plain socket for remote debugging and port forwarding on Desktop
+  // (debugging purposes).
   net::IPAddressNumber ip_number;
   net::ParseIPLiteralToNumber(kLocalhost, &ip_number);
 
+  int port = 0;
+  if (socket_name == kRemoteDebuggingSocket)
+    port = kLocalDebuggingPort;
+  else
+    base::StringToInt(socket_name, &port);
+
   net::AddressList address_list =
-      net::AddressList::CreateFromIPAddress(ip_number, kTcpPort);
+      net::AddressList::CreateFromIPAddress(ip_number, port);
   net::TCPClientSocket* socket = new net::TCPClientSocket(
       address_list, NULL, net::NetLog::Source());
   socket->Connect(base::Bind(&SelfAsDevice::RunSocketCallback, this, callback,
                              socket));
 }
 
-class SelfAsDeviceProvider : public AndroidDeviceProvider {
+class SelfAsDeviceProvider : public AndroidDeviceManager::DeviceProvider {
  public:
   virtual void QueryDevices(const QueryDevicesCallback& callback) OVERRIDE;
  private:
@@ -491,18 +391,140 @@ class SelfAsDeviceProvider : public AndroidDeviceProvider {
 };
 
 void SelfAsDeviceProvider::QueryDevices(const QueryDevicesCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  AndroidDevices result;
+  AndroidDeviceManager::Devices result;
   result.push_back(new SelfAsDevice());
-
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      base::Bind(&SelfAsDeviceProvider::RunCallbackOnUIThread,
-                 callback, result));
+  callback.Run(result);
 }
 
 // static
-scoped_refptr<AndroidDeviceProvider>
-AndroidDeviceProvider::GetSelfAsDeviceProvider() {
+scoped_refptr<AndroidDeviceManager::DeviceProvider>
+AndroidDeviceManager::GetSelfAsDeviceProvider() {
   return new SelfAsDeviceProvider();
 }
 #endif
+
+// static
+scoped_refptr<AndroidDeviceManager> AndroidDeviceManager::Create() {
+  return new AndroidDeviceManager();
+}
+
+void AndroidDeviceManager::QueryDevices(
+    const DeviceProviders& providers,
+    const QueryDevicesCallback& callback) {
+  DCHECK(CalledOnValidThread());
+  stopped_ = false;
+  Devices empty;
+  QueryNextProvider(callback, providers, empty, empty);
+}
+
+void AndroidDeviceManager::Stop() {
+  DCHECK(CalledOnValidThread());
+  stopped_ = true;
+  devices_.clear();
+}
+
+bool AndroidDeviceManager::IsConnected(const std::string& serial) {
+  DCHECK(CalledOnValidThread());
+  Device* device = FindDevice(serial);
+  return device && device->is_connected();
+}
+
+void AndroidDeviceManager::RunCommand(
+    const std::string& serial,
+    const std::string& command,
+    const CommandCallback& callback) {
+  DCHECK(CalledOnValidThread());
+  Device* device = FindDevice(serial);
+  if (device)
+    device->RunCommand(command, callback);
+  else
+    callback.Run(net::ERR_CONNECTION_FAILED, std::string());
+}
+
+void AndroidDeviceManager::OpenSocket(
+    const std::string& serial,
+    const std::string& socket_name,
+    const SocketCallback& callback) {
+  DCHECK(CalledOnValidThread());
+  Device* device = FindDevice(serial);
+  if (device)
+    device->OpenSocket(socket_name, callback);
+  else
+    callback.Run(net::ERR_CONNECTION_FAILED, NULL);
+}
+
+void AndroidDeviceManager::HttpQuery(
+    const std::string& serial,
+    const std::string& la_name,
+    const std::string& request,
+    const CommandCallback& callback) {
+  DCHECK(CalledOnValidThread());
+  Device* device = FindDevice(serial);
+  if (device)
+    device->HttpQuery(la_name, request, callback);
+  else
+    callback.Run(net::ERR_CONNECTION_FAILED, std::string());
+}
+
+void AndroidDeviceManager::HttpUpgrade(
+    const std::string& serial,
+    const std::string& la_name,
+    const std::string& request,
+    const SocketCallback& callback) {
+  DCHECK(CalledOnValidThread());
+  Device* device = FindDevice(serial);
+  if (device)
+    device->HttpUpgrade(la_name, request, callback);
+  else
+    callback.Run(net::ERR_CONNECTION_FAILED, NULL);
+}
+
+AndroidDeviceManager::AndroidDeviceManager()
+    : stopped_(false) {
+}
+
+AndroidDeviceManager::~AndroidDeviceManager() {
+}
+
+void AndroidDeviceManager::QueryNextProvider(
+    const QueryDevicesCallback& callback,
+    const DeviceProviders& providers,
+    const Devices& total_devices,
+    const Devices& new_devices) {
+  DCHECK(CalledOnValidThread());
+
+  if (stopped_)
+    return;
+
+  Devices more_devices(total_devices);
+  more_devices.insert(
+      more_devices.end(), new_devices.begin(), new_devices.end());
+
+  if (providers.empty()) {
+    std::vector<std::string> serials;
+    devices_.clear();
+    for (Devices::const_iterator it = more_devices.begin();
+        it != more_devices.end(); ++it) {
+      devices_[(*it)->serial()] = *it;
+      serials.push_back((*it)->serial());
+    }
+    callback.Run(serials);
+    return;
+  }
+
+  scoped_refptr<DeviceProvider> current_provider = providers.back();
+  DeviceProviders less_providers = providers;
+  less_providers.pop_back();
+  current_provider->QueryDevices(
+      base::Bind(&AndroidDeviceManager::QueryNextProvider,
+                 this, callback, less_providers, more_devices));
+}
+
+AndroidDeviceManager::Device*
+AndroidDeviceManager::FindDevice(const std::string& serial) {
+  DCHECK(CalledOnValidThread());
+  DeviceMap::const_iterator it = devices_.find(serial);
+  if (it == devices_.end())
+    return NULL;
+  return (*it).second.get();
+}

@@ -6,8 +6,9 @@ LOCAL_MODULE_CLASS := STATIC_LIBRARIES
 LOCAL_MODULE := ui_accessibility_ax_gen_gyp
 LOCAL_MODULE_SUFFIX := .a
 LOCAL_MODULE_TAGS := optional
-gyp_intermediate_dir := $(call local-intermediates-dir)
-gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
+LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
+gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
+gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES :=
@@ -37,10 +38,7 @@ $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: $(LOCAL_PATH)/ui/ac
 	mkdir -p $(gyp_shared_intermediate_dir)/ui/accessibility; cd $(gyp_local_path)/ui/accessibility; python ../../tools/json_schema_compiler/compiler.py ax_enums.idl "--root=../.." "--destdir=$(gyp_shared_intermediate_dir)" "--namespace=" "--generator=cpp" "--impl-dir=chrome/browser/extensions/api"
 
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.h: $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc ;
-.PHONY: ui_accessibility_ax_gen_gyp_rule_trigger
-ui_accessibility_ax_gen_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc
 
-### Finished generating for all rules
 
 GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h \
@@ -66,8 +64,7 @@ LOCAL_GENERATED_SOURCES := \
 	$(gyp_intermediate_dir)/ax_enums.cc \
 	$(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h \
 	$(gyp_shared_intermediate_dir)/ui/accessibility/generated_schemas.h \
-	$(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.h \
-	ui_accessibility_ax_gen_gyp_rule_trigger
+	$(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.h
 
 GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 	$(gyp_shared_intermediate_dir)/ui/accessibility
@@ -257,9 +254,9 @@ LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
-	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
+	-Wl,--fatal-warnings \
 	-Wl,-z,noexecstack \
 	-fPIC \
 	-m64 \
@@ -274,9 +271,9 @@ LOCAL_LDFLAGS_Debug := \
 
 
 LOCAL_LDFLAGS_Release := \
-	-Wl,--fatal-warnings \
 	-Wl,-z,now \
 	-Wl,-z,relro \
+	-Wl,--fatal-warnings \
 	-Wl,-z,noexecstack \
 	-fPIC \
 	-m64 \

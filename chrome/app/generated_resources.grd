@@ -2223,6 +2223,9 @@ Even if you have downloaded files from this website before, the website might ha
         <message name="IDS_APPLICATION_INFO_WEB_STORE_LINK" desc="Text for the link that opens the app in the Web Store.">
           View in Web Store
         </message>
+        <message name="IDS_APPLICATION_INFO_UNINSTALL_BUTTON_TEXT" desc="Text for the button that uninstalls the app.">
+          Uninstall
+        </message>
       </if>
       <if expr="use_titlecase">
         <message name="IDS_APPLICATION_INFO_CLOSE_BUTTON" desc="In Title Case: Button in the Application Information Dialog that closes the dialog">
@@ -2239,6 +2242,9 @@ Even if you have downloaded files from this website before, the website might ha
         </message>
         <message name="IDS_APPLICATION_INFO_WEB_STORE_LINK" desc="In Title Case: Text for the link that opens the app in the Web Store..">
           View in Web Store
+        </message>
+        <message name="IDS_APPLICATION_INFO_UNINSTALL_BUTTON_TEXT" desc="In Title Case: Text for the button that uninstalls the app.">
+          Uninstall
         </message>
       </if>
 
@@ -6057,12 +6063,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_FORM_FILLING_DESCRIPTION" desc="Description for the flag to enable experimantal form filling feature">
         Enable experimental form filling. Enables a collection of experimental features that make form filling easier.
       </message>
-      <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_WEBSOCKET_NAME" desc="Name of the flag that enables experimental WebSocket implementation in chrome/net">
-        Enable experimental WebSocket implementation
-      </message>
-      <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_WEBSOCKET_DESCRIPTION" desc="Description for the flag to enable experimental WebSocket implementation in chrome/net">
-        Use the explemental WebSocket implementation.
-      </message>
       <message name="IDS_FLAGS_WALLET_SERVICE_USE_SANDBOX_NAME" desc="Title for the flag to use the Online Wallet sandbox servers (instead of production).">
         Use Wallet sandbox servers
       </message>
@@ -6147,12 +6147,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_PANELS_DESCRIPTION" desc="Description for the flag to enable Panel windows.">
         Enable Panel windows that open outside of the browser frame. Attempts to open a Panel will open a popup instead if not enabled. Panels are always enabled on the dev and canary channels.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_HTML_IMPORTS_NAME" desc="Enable HTML Imports.">
-        Enable HTML Imports
-      </message>
-      <message name="IDS_FLAGS_ENABLE_HTML_IMPORTS_DESCRIPTION" desc="Description of 'Enable HTML Imports' flag.">
-        Enabling this option allows web applications to load HTML Imports.
       </message>
       <message name="IDS_FLAGS_ENABLE_WEBGL_NAME" desc="Name of the 'Enable WebGL' lab.">
         Enable WebGL
@@ -6360,12 +6354,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_NATIVE_FRAMES_FOR_APPS_DESCRIPTION" desc="Description for the flag to enable native style frames for apps.">
         Use native-style window decorations for packaged app windows.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_OMNIBOX_AUTO_COMPLETION_FOR_IME_NAME" desc="Title for the flag to enable omnibox auto-completion for IMEs.">
-        Enable omnibox auto-completion when IME is active
-      </message>
-      <message name="IDS_FLAGS_ENABLE_OMNIBOX_AUTO_COMPLETION_FOR_IME_DESCRIPTION" desc="Description for the flag to enable auto-completion for IMEs.">
-        Enables omnibox auto-completion when IME is active.  The auto-completion for IME is shown in the same style as the normal(non-IME) auto-completion.
       </message>
 
       <message name="IDS_GENERIC_EXPERIMENT_CHOICE_AUTOMATIC" desc="Generic 'Automatic' experiment choice option name.">
@@ -6606,11 +6594,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_SYNCED_NOTIFICATIONS_DESCRIPTION" desc="Description for the flag to enable synced notifications.">
         Enable experimental Synchronized Notifications.
       </message>
-      <message name="IDS_FLAGS_DISABLE_SYNC_APP_LIST_NAME" desc="Name of the flag to disable syncing the app list.">
-        Disable App Launcher sync
+      <message name="IDS_FLAGS_ENABLE_SYNC_APP_LIST_NAME" desc="Name of the flag to enable syncing the app list.">
+        Enable App Launcher sync
       </message>
-      <message name="IDS_FLAGS_DISABLE_SYNC_APP_LIST_DESCRIPTION" desc="Description for the flag to disable syncing the app list.">
-        Disable App Launcher sync.
+      <message name="IDS_FLAGS_ENABLE_SYNC_APP_LIST_DESCRIPTION" desc="Description for the flag to enable syncing the app list.">
+        Enable App Launcher sync. This also enables Folders where available (non OSX).
       </message>
       <message name="IDS_FLAGS_ENABLE_SCREEN_CAPTURE_NAME" desc="Name of the flag to enable screen capture support.">
         Enable screen capture support in getUserMedia().
@@ -6806,23 +6794,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_ENABLE_APP_LIST_DESCRIPTION" desc="Description of the flag to enable app launcher.">
           Enable the App Launcher. Upon enabling, creates operating system shortcuts to the App Launcher.
         </message>
-        <message name="IDS_FLAGS_DISABLE_APP_LIST_FOLDER" desc="Name of the flag to disable app list folder.">
-          Disable App Launcher folders.
-        </message>
-        <message name="IDS_FLAGS_DISABLE_APP_LIST_FOLDER_DESCRIPTION" desc="Description of the flag to disable the app list folder.">
-          Enabling this option prevents the user to create and manage folders in App Launcher.
-        </message>
         <message name="IDS_FLAGS_DISABLE_APP_LIST_VOICE_SEARCH" desc="Name of the flag to disable voice search in the app list.">
           Disable voice search in the App Launcher.
         </message>
         <message name="IDS_FLAGS_DISABLE_APP_LIST_VOICE_SEARCH_DESCRIPTION" desc="Description of the flag to disable voice search in the app list.">
           Disable voice search in the App Launcher. If disabled, the user won't be able to search by speech.
-        </message>
-        <message name="IDS_FLAGS_ENABLE_APP_LIST_HOTWORD_ALWAYS_ON" desc="Name of the flag to enable running the hotword recognizer always.">
-          Always run the hotword recognizer for the App Launcher.
-        </message>
-        <message name="IDS_FLAGS_ENABLE_APP_LIST_HOTWORD_ALWAYS_ON_DESCRIPTION" desc="Description of the flag to enable running the hotword recognizer always.">
-          Experimental implementation to run the hotword recognizer always for the App Launcher. You should not enable this flag unless you understand what this means.
         </message>
         <message name="IDS_FLAGS_ENABLE_APP_INFO_IN_APP_LIST" desc="Name of the flag to enable the app info context menu option in the app list.">
           Enable the app info dialog.
@@ -6843,12 +6819,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
           Positions the app launcher in the center of the screen with a landscape aspect. This will not enable other app launcher experiments.
         </message>
       </if>
-      <message name="IDS_FLAGS_DISABLE_USER_IMAGE_SYNC_NAME" desc="Name of the flag to disable sync of user account image.">
-        Disable avatar sync.
-      </message>
-      <message name="IDS_FLAGS_DISABLE_USER_IMAGE_SYNC_DESCRIPTION" desc="Description for the flag to disable sync of user account image.">
-        Disables sync of user account image between different ChromeOS devices.
-      </message>
       <if expr="chromeos">
         <message name="IDS_FLAGS_DISABLE_FIRST_RUN_UI_NAME" desc="Name of the flag to disable new first-run UI.">
           Disable new first-run UI.
@@ -7019,6 +6989,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_EASY_UNLOCK_DESCRIPTION" desc="Description for flag to Enable Easy Unlock.">
         Easy Unlock allows you to unlock your Chromebook when in proximity to your phone.
       </message>
+      <message name="IDS_FLAGS_ENABLE_EMBEDDED_SHARED_WORKER_NAME" desc="Name for In-renderer Shared Worker.">
+        In-renderer Shared Worker.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_EMBEDDED_SHARED_WORKER_DESCRIPTION" desc="Description for flag to In-renderer Shared Worker.">
+        Run Shared Worker in a renderer process.
+      </message>
 
       <!-- Crashes -->
       <message name="IDS_CRASHES_TITLE" desc="Title for the chrome://crashes page.">
@@ -7028,7 +7004,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Crashes (<ph name="CRASH_COUNT">$1<ex>3</ex></ph>)
       </message>
       <message name="IDS_CRASHES_CRASH_HEADER_FORMAT" desc="Format for crash entry headings on chrome://crashes">
-        Crash ID <ph name="CRASH_ID">$1<ex>8fa95dbb6f2ec862</ex></ph>
+        Crash ID <ph name="CRASH_ID">$1<ex>8fa95dbb6f2ec862</ex></ph> (<ph name="CRASH_LOCAL_ID">$2<ex>Chrome</ex></ph>)
       </message>
       <message name="IDS_CRASHES_CRASH_TIME_FORMAT" desc="Format for crash entry occurence time on chrome://crashes">
         Occurred <ph name="CRASH_TIME">$1<ex>Tuesday, January 25, 2011 2:58:02 PM</ex></ph>
@@ -7771,7 +7747,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
           Never for this site
         </message>
         <message name="IDS_PASSWORD_MANAGER_CANCEL_BUTTON" desc="Text for the 'Manage Passwords' bubble's 'Not now' option">
-          Not now
+          Nope
         </message>
         <message name="IDS_PASSWORD_MANAGER_TOOLTIP_SAVE" desc="Text for the 'Manage Passwords' icon's 'password to be saved' state">
           Save your password
@@ -10062,8 +10038,8 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
             Proxy
           </message>
         </if>
-        <message name="IDS_OPTIONS_TAB_EXTENSION_CONTROLLED" desc="The label in the bubble showing which extension is controlling a particular setting.">
-          An extension, <ph name="EXTENSION_NAME">$1<ex>MyFirstExtension</ex></ph>, is controlling this setting.
+        <message name="IDS_OPTIONS_TAB_EXTENSION_CONTROLLED" desc="The label in the bubble showing which extension is controlling a particular setting. Please preserve the embedded HTML (&lt;b&gt; and &lt;/b&gt;) during translation. They serve to make the name bold.">
+          An extension, &lt;b&gt;<ph name="EXTENSION_NAME">$1<ex>MyFirstExtension</ex></ph>&lt;/b&gt;, is controlling this setting.
         </message>
         <message name="IDS_OPTIONS_TAB_EXTENSION_CONTROLLED_DISABLE" desc="The 'Disable Extension' button label in the bubble showing which extension is controlling a particular setting.">
           Disable extension
@@ -10433,16 +10409,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_OPTIONS_CURRENT_USER_ONLY" desc="In the multi profiles user list, the tooltip text noticing that only the current user can modify these settings.">
           You can only edit settings for the current user. Switch to this user to edit settings for it.
         </message>
-        <if expr="is_android">
-          <message name="IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_DISABLED_LABEL" desc="Mobile: The label of the cloud print setup button when it hasn't been set up yet.">
-            <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph> lets you access this device's printers from anywhere. Click to enable.
-          </message>
-        </if>
-        <if expr="not is_android">
-          <message name="IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_DISABLED_LABEL" desc="The label of the cloud print setup button when it hasn't been set up yet.">
-            <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph> lets you access this computer's printers from anywhere.
-          </message>
-        </if>
         <message name="IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_DISABLED_BUTTON" desc="The label of the cloud connector configure button when it hasn't been set up yet.">
           Add printers
         </message>
@@ -10451,9 +10417,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         </message>
         <message name="IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_ENABLED_BUTTON" desc="The label of the cloud print connector configure button when it has been set up.">
           Disconnect printers
-        </message>
-        <message name="IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_ENABLED_MANAGE_BUTTON" desc="The label of the link item for the cloud print management URL.">
-          Manage print settings...
         </message>
         <message name="IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_ENABLING_BUTTON" desc="The label of the cloud connector configure button while it is being set up.">
           Enabling...
@@ -11646,11 +11609,14 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_PROFILES_ACCOUNT_REMOVAL_TITLE" desc="Title of the account removal view in the avatar menu bubble.">
         Remove account
       </message>
+      <message name="IDS_PROFILES_SETTINGS_LINK" desc="The link text to the Chrome settings page in the account removal view.">
+        settings
+      </message>
       <message name="IDS_PROFILES_ACCOUNT_REMOVAL_BUTTON" desc="Text of the ok button on the account removal view in the avatar menu bubble.">
         Remove account and relaunch
       </message>
       <message name="IDS_PROFILES_SIGNIN_TUTORIAL_TITLE" desc="Title of the tutorial card in the avatar menu bubble view for a signed-in user.">
-        Hey, <ph name="PROFILE_DISPLAY_NAME">$1<ex>Jessica</ex></ph>!
+        You're all set
       </message>
       <message name="IDS_PROFILES_SIGNIN_TUTORIAL_OK_BUTTON" desc="Text of the ok button on the tutorial card in the avatar menu bubble view">
         Ok, Got it!
@@ -11665,6 +11631,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_PROFILES_PROFILE_MANAGE_ACCOUNTS_BUTTON" desc="Button in the avatar menu bubble view used to manage accounts for a profile.">
           Your accounts
         </message>
+        <message name="IDS_PROFILES_PROFILE_TUTORIAL_LEARN_MORE" desc="The Learn More button in the avatar tutorial bubble.">
+          Learn more
+        </message>
       </if>
       <if expr="use_titlecase">
         <message name="IDS_PROFILES_PROFILE_ADD_ACCOUNT_BUTTON" desc="Button in the avatar menu bubble view used to add an account to a profile.">
@@ -11672,6 +11641,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         </message>
         <message name="IDS_PROFILES_PROFILE_MANAGE_ACCOUNTS_BUTTON" desc="Button in the avatar menu bubble view used to manage accounts for a profile.">
           Your Accounts
+        </message>
+        <message name="IDS_PROFILES_PROFILE_TUTORIAL_LEARN_MORE" desc="The Learn More button in the avatar tutorial bubble.">
+            Learn More
         </message>
       </if>
       <message name="IDS_PROFILES_PROFILE_CHANGE_PHOTO_BUTTON" desc="Button in the avatar menu bubble view used to change the photo for a profile.">
@@ -12828,7 +12800,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </if>
 
       <!-- Translate Bubble -->
-      <if expr="toolkit_views">
+      <if expr="toolkit_views or is_macosx">
         <message name="IDS_TRANSLATE_BUBBLE_BEFORE_TRANSLATE" desc="Text to show for the translate bubble label when that page is in specified language and ask if should translate.">
           Would you like to translate this page?
         </message>
@@ -14348,10 +14320,6 @@ Do you accept?
                desc="Text for the menu item to restart chrome in metro. Aplies to Windows 8 only">
         Relaunch Chrome in Windows 8 mode
       </message>
-      <message name="IDS_WIN8_INFOBAR_DESKTOP_RESTART_TO_LAUNCH_APPS_NO_BUTTON"
-               desc="Infobar button 'no' text to cancel prompt to relaunch in deskop mode to use Chrome Apps">
-        Not now
-      </message>
       <message name="IDS_WIN8_PROMPT_TO_CLOSE_APPS_FOR_METRO"
                desc="Modal message box prompt shown to the user after requesting to relaunch in Windows 8 mode while packaged apps are running, which will require all packaged apps to be closed and then restarted. Dialog is shown with choices: OK, Cancel.">
         Relaunching in Windows 8 mode will close and relaunch your Chrome apps.
@@ -14659,6 +14627,20 @@ Do you accept?
     <!-- Synced Notification display strings -->
     <message name="IDS_FIRST_SYNCED_NOTIFICATION_SERVICE_NAME" desc="The name of the first service source for synced notifications.">
       Google+
+    </message>
+
+    <!-- Extension Storage Monitor notification strings -->
+    <message name="IDS_EXTENSION_STORAGE_MONITOR_TITLE" desc="The title of the notification when high disk usage is detected for an app or extension.">
+      High disk usage detected
+    </message>
+    <message name="IDS_EXTENSION_STORAGE_MONITOR_TEXT" desc="The message of the notification when high disk usage is detected for an app or extension.">
+      <ph name="NAME">$1<ex>Google Docs</ex></ph> is using <ph name="USAGE">$2<ex>500</ex></ph> MB of disk space.
+    </message>
+    <message name="IDS_EXTENSION_STORAGE_MONITOR_BUTTON_DISMISS_APP" desc="Caption for the button to suppress high disk usage notifications for an app.">
+      Don't warn again for this app
+    </message>
+    <message name="IDS_EXTENSION_STORAGE_MONITOR_BUTTON_DISMISS_EXTENSION" desc="Caption for the button to suppress high disk usage notifications for an extension.">
+      Don't warn again for this extension
     </message>
 
     <!-- Desktop media picker UI for Desktop Capture API -->

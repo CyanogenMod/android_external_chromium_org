@@ -22,7 +22,6 @@ import org.chromium.content.browser.RenderCoordinates;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.DOMUtils;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content.browser.test.util.TestInputMethodManagerWrapper;
 import org.chromium.content.browser.test.util.TestTouchUtils;
 import org.chromium.content.browser.test.util.TouchCommon;
@@ -449,12 +448,11 @@ public class SelectionHandleTest extends ContentShellTestBase {
     }
 
     private Rect getNodeBoundsPix(String nodeId) throws Throwable {
-        Rect nodeBounds = DOMUtils.getNodeBounds(getContentView(),
-                new TestCallbackHelperContainer(getContentView()), nodeId);
+        Rect nodeBounds = DOMUtils.getNodeBounds(getContentViewCore(), nodeId);
 
-        RenderCoordinates renderCoordinates = getContentView().getRenderCoordinates();
-        int offsetX = getContentView().getContentViewCore().getViewportSizeOffsetWidthPix();
-        int offsetY = getContentView().getContentViewCore().getViewportSizeOffsetHeightPix();
+        RenderCoordinates renderCoordinates = getContentViewCore().getRenderCoordinates();
+        int offsetX = getContentViewCore().getViewportSizeOffsetWidthPix();
+        int offsetY = getContentViewCore().getViewportSizeOffsetHeightPix();
 
         int left = (int) renderCoordinates.fromLocalCssToPix(nodeBounds.left) + offsetX;
         int right = (int) renderCoordinates.fromLocalCssToPix(nodeBounds.right) + offsetX;

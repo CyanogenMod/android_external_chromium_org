@@ -6,11 +6,13 @@ import os
 import re
 import urlparse
 
+from telemetry.page.actions.navigate import NavigateAction
+
 
 class Page(object):
   def __init__(self, url, page_set=None, base_dir=None):
     self.url = url
-    self.page_set = page_set
+    self._page_set = page_set
     self._base_dir = base_dir
 
     # These attributes can be set dynamically by the page.
@@ -36,12 +38,16 @@ class Page(object):
   # share property through a common ancestor class.
   # TODO(nednguyen): remove this when crbug.com/239179 is marked fixed
   def __getattr__(self, name):
-    # Inherit attributes from the page set.
-    if self.page_set and hasattr(self.page_set, name):
+    # Disable this property on python page_set
+    if (self.page_set and hasattr(self.page_set, name) and
+        not self.page_set.file_path.endswith('.py')):
       return getattr(self.page_set, name)
     raise AttributeError(
         '%r object has no attribute %r' % (self.__class__, name))
 
+  @property
+  def page_set(self):
+    return self._page_set
 
   def GetSyntheticDelayCategories(self):
     if not hasattr(self, 'synthetic_delays'):
@@ -131,3 +137,13 @@ class Page(object):
   @property
   def archive_path(self):
     return self.page_set.WprFilePathForPage(self)
+
+
+# TODO(nednguyen): remove this and move RunNavigateSteps to page when
+# crbug.com/239179 is marked fixed
+class PageWithDefaultRunNavigate(Page):
+  def __init__(self, *args, **kwargs):
+    super(PageWithDefaultRunNavigate, self).__init__(*args, **kwargs)
+
+  def RunNavigateSteps(self, action_runner):
+    action_runner.RunAction(NavigateAction())

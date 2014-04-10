@@ -22,7 +22,6 @@ namespace content {
 class RenderProcessHost;
 class RenderViewHost;
 class SiteInstance;
-struct CustomContextMenuContext;
 
 // The interface provides a communication conduit with a frame in the renderer.
 class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
@@ -64,45 +63,6 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
 
   // Returns the associated widget's native view.
   virtual gfx::NativeView GetNativeView() = 0;
-
-  // Runs the beforeunload handler for this frame.  The result will be returned
-  // via FrameMsg_BeforeUnload_ACK.  Currently only used for the main frame.
-  // See also ClosePage and SwapOut in RenderViewHost, which run the unload
-  // handler.
-  //
-  // |for_cross_site_transition| indicates whether this call is for the current
-  // frame during a cross-process navigation.  False means we're closing the
-  // entire tab.
-  //
-  // TODO(creis): We should run the beforeunload handler for every frame that
-  // has one.
-  // TODO(creis): This should be public on the Navigator interface instead of
-  // RenderFrameHost, since callers outside content shouldn't need to call this
-  // directly on subframes.
-  virtual void DispatchBeforeUnload(bool for_cross_site_transition) = 0;
-
-  // Let the renderer know that the menu has been closed.
-  virtual void NotifyContextMenuClosed(
-      const CustomContextMenuContext& context) = 0;
-
-  // Executes custom context menu action that was provided from Blink.
-  virtual void ExecuteCustomContextMenuCommand(
-      int action, const CustomContextMenuContext& context) = 0;
-
-  // Edit operations.
-  virtual void Undo() = 0;
-  virtual void Redo() = 0;
-  virtual void Cut() = 0;
-  virtual void Copy() = 0;
-  virtual void CopyToFindPboard() = 0;
-  virtual void Paste() = 0;
-  virtual void PasteAndMatchStyle() = 0;
-  virtual void Delete() = 0;
-  virtual void SelectAll() = 0;
-  virtual void Unselect() = 0;
-
-  // Requests the renderer to insert CSS into the frame's document.
-  virtual void InsertCSS(const std::string& css) = 0;
 
   // Runs some JavaScript in this frame's context. If a callback is provided, it
   // will be used to return the result, when the result is available.

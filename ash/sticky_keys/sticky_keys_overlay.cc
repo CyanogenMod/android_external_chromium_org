@@ -131,6 +131,7 @@ class StickyKeysOverlayView : public views::WidgetDelegateView {
   StickyKeyState GetKeyState(ui::EventFlags modifier);
 
   void SetModifierVisible(ui::EventFlags modifier, bool visible);
+  bool GetModifierVisible(ui::EventFlags modifier);
 
  private:
   void AddKeyLabel(ui::EventFlags modifier, const std::string& key_label);
@@ -165,6 +166,8 @@ StickyKeysOverlayView::StickyKeysOverlayView() {
               l10n_util::GetStringUTF8(IDS_ASH_SHIFT_KEY));
   AddKeyLabel(ui::EF_ALTGR_DOWN,
               l10n_util::GetStringUTF8(IDS_ASH_ALTGR_KEY));
+  AddKeyLabel(ui::EF_MOD3_DOWN,
+              l10n_util::GetStringUTF8(IDS_ASH_MOD3_KEY));
 }
 
 StickyKeysOverlayView::~StickyKeysOverlayView() {}
@@ -200,6 +203,12 @@ void StickyKeysOverlayView::SetModifierVisible(ui::EventFlags modifier,
   it->second->SetVisible(visible);
 }
 
+bool StickyKeysOverlayView::GetModifierVisible(ui::EventFlags modifier) {
+  ModifierLabelMap::iterator it = modifier_label_map_.find(modifier);
+  DCHECK(it != modifier_label_map_.end());
+  return it->second->visible();
+}
+
 void StickyKeysOverlayView::AddKeyLabel(ui::EventFlags modifier,
                                         const std::string& key_label) {
   StickyKeyOverlayLabel* label = new StickyKeyOverlayLabel(key_label);
@@ -223,9 +232,8 @@ StickyKeysOverlay::StickyKeysOverlay()
   params.remove_standard_frame = true;
   params.delegate = overlay_view_;
   params.bounds = CalculateOverlayBounds();
-  params.parent = Shell::GetContainer(
-      Shell::GetTargetRootWindow(),
-      internal::kShellWindowId_OverlayContainer);
+  params.parent = Shell::GetContainer(Shell::GetTargetRootWindow(),
+                                      kShellWindowId_OverlayContainer);
   overlay_widget_.reset(new views::Widget);
   overlay_widget_->Init(params);
   overlay_widget_->SetVisibilityChangedAnimationsEnabled(false);
@@ -270,6 +278,10 @@ void StickyKeysOverlay::SetModifierVisible(ui::EventFlags modifier,
                                            bool visible) {
   overlay_view_->SetModifierVisible(modifier, visible);
   widget_size_ = overlay_view_->GetPreferredSize();
+}
+
+bool StickyKeysOverlay::GetModifierVisible(ui::EventFlags modifier) {
+  return overlay_view_->GetModifierVisible(modifier);
 }
 
 void StickyKeysOverlay::SetModifierKeyState(ui::EventFlags modifier,

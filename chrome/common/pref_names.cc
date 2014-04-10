@@ -2048,7 +2048,7 @@ const char kVideoCaptureAllowedUrls[] = "hardware.video_capture_allowed_urls";
 
 // A boolean pref that controls the enabled-state of hotword search voice
 // trigger.
-const char kHotwordSearchEnabled[] = "hotword.search_enabled";
+const char kHotwordSearchEnabled[] = "hotword.search_enabled_2";
 
 // An integer pref that keeps track of how many times the opt in popup for
 // hotword void search has been shown to the user. After this pref has reached
@@ -2510,10 +2510,6 @@ const char kRLZDisabled[] = "rlz.disabled";
 // The directory in user data dir that contains the profile to be used with the
 // app launcher.
 const char kAppListProfile[] = "app_list.profile";
-
-// Whether to show the app list on a browser relaunch. Used when switching out
-// of metro mode after a user gesture requests showing the app list.
-const char kRestartWithAppList[] = "app_list.show_on_relaunch";
 
 // The number of times the app launcher was launched since last ping and
 // the time of the last ping.

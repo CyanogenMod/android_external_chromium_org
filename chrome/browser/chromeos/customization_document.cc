@@ -4,6 +4,8 @@
 
 #include "chrome/browser/chromeos/customization_document.h"
 
+#include <algorithm>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
@@ -20,6 +22,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/extensions/default_app_order.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/net/delay_network_call.h"
 #include "chrome/browser/extensions/external_loader.h"
@@ -37,6 +40,7 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/url_fetcher.h"
+#include "ui/base/l10n/l10n_util.h"
 
 using content::BrowserThread;
 
@@ -304,6 +308,12 @@ void StartupCustomizationDocument::Init(
                                            &keyboard_layout_);
   configured_locales_.resize(0);
   base::SplitString(initial_locale_, ',', &configured_locales_);
+
+  // Convert ICU locale to chrome ("en_US" to "en-US", etc.).
+  std::for_each(configured_locales_.begin(),
+                configured_locales_.end(),
+                l10n_util::GetCanonicalLocale);
+
   // Let's always have configured_locales_.front() a valid entry.
   if (configured_locales_.size() == 0)
     configured_locales_.push_back(std::string());
@@ -632,6 +642,8 @@ void ServicesCustomizationDocument::SetOemFolderName(
     const base::DictionaryValue& root) {
   std::string locale = g_browser_process->GetApplicationLocale();
   std::string name = GetOemAppsFolderNameImpl(locale, root);
+  if (name.empty())
+    name = default_app_order::GetOemAppsFolderName();
   if (!name.empty()) {
     app_list::AppListSyncableService* service =
         app_list::AppListSyncableServiceFactory::GetForProfile(profile);

@@ -9,7 +9,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
 #include "chromeos/dbus/bluetooth_device_client.h"
+#include "chromeos/dbus/bluetooth_gatt_service_client.h"
 #include "dbus/object_path.h"
 #include "device/bluetooth/bluetooth_device.h"
 
@@ -21,9 +23,14 @@ class BluetoothPairingChromeOS;
 // The BluetoothDeviceChromeOS class implements BluetoothDevice for the
 // Chrome OS platform.
 class BluetoothDeviceChromeOS
-    : public device::BluetoothDevice {
+    : public device::BluetoothDevice,
+      public BluetoothGattServiceClient::Observer {
  public:
   // BluetoothDevice override
+  virtual void AddObserver(
+      device::BluetoothDevice::Observer* observer) OVERRIDE;
+  virtual void RemoveObserver(
+      device::BluetoothDevice::Observer* observer) OVERRIDE;
   virtual uint32 GetBluetoothClass() const OVERRIDE;
   virtual std::string GetAddress() const OVERRIDE;
   virtual VendorIDSource GetVendorIDSource() const OVERRIDE;
@@ -52,12 +59,12 @@ class BluetoothDeviceChromeOS
       const ErrorCallback& error_callback) OVERRIDE;
   virtual void Forget(const ErrorCallback& error_callback) OVERRIDE;
   virtual void ConnectToService(
-      const std::string& service_uuid,
+      const device::BluetoothUUID& service_uuid,
       const SocketCallback& callback) OVERRIDE;
   virtual void ConnectToProfile(
       device::BluetoothProfile* profile,
       const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
+      const ConnectToProfileErrorCallback& error_callback) OVERRIDE;
   virtual void SetOutOfBandPairingData(
       const device::BluetoothOutOfBandPairingData& data,
       const base::Closure& callback,
@@ -89,6 +96,10 @@ class BluetoothDeviceChromeOS
   BluetoothDeviceChromeOS(BluetoothAdapterChromeOS* adapter,
                           const dbus::ObjectPath& object_path);
   virtual ~BluetoothDeviceChromeOS();
+
+  // BluetoothGattServiceClient::Observer overrides.
+  virtual void GattServiceAdded(const dbus::ObjectPath& object_path) OVERRIDE;
+  virtual void GattServiceRemoved(const dbus::ObjectPath& object_path) OVERRIDE;
 
   // Internal method to initiate a connection to this device, and methods called
   // by dbus:: on completion of the D-Bus method call.
@@ -140,10 +151,11 @@ class BluetoothDeviceChromeOS
   // connect a peofile.
   void OnConnectProfile(device::BluetoothProfile* profile,
                         const base::Closure& callback);
-  void OnConnectProfileError(device::BluetoothProfile* profile,
-                             const ErrorCallback& error_callback,
-                             const std::string& error_name,
-                             const std::string& error_message);
+  void OnConnectProfileError(
+      device::BluetoothProfile* profile,
+      const ConnectToProfileErrorCallback& error_callback,
+      const std::string& error_name,
+      const std::string& error_message);
 
   // Returns the object path of the device; used by BluetoothAdapterChromeOS
   const dbus::ObjectPath& object_path() const { return object_path_; }
@@ -153,6 +165,9 @@ class BluetoothDeviceChromeOS
 
   // The dbus object path of the device object.
   dbus::ObjectPath object_path_;
+
+  // List of observers interested in event notifications from us.
+  ObserverList<device::BluetoothDevice::Observer> observers_;
 
   // Number of ongoing calls to Connect().
   int num_connecting_calls_;

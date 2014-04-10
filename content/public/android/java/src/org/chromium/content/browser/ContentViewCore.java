@@ -731,6 +731,7 @@ public class ContentViewCore
             @Override
             public void didStartLoading(String url) {
                 hidePopupDialog();
+                resetScrollInProgress();
                 resetGestureDetectors();
             }
         };
@@ -1269,6 +1270,7 @@ public class ContentViewCore
     @SuppressWarnings("unused")
     @CalledByNative
     private void onScrollEndEventAck() {
+        if (!mTouchScrollInProgress) return;
         mTouchScrollInProgress = false;
         updateGestureStateListener(GestureEventType.SCROLL_END);
     }
@@ -2298,11 +2300,11 @@ public class ContentViewCore
         TraceEvent.instant("ContentViewCore:updateFrameInfo");
         // Adjust contentWidth/Height to be always at least as big as
         // the actual viewport (as set by onSizeChanged).
+        final float deviceScale = mRenderCoordinates.getDeviceScaleFactor();
         contentWidth = Math.max(contentWidth,
-                mRenderCoordinates.fromPixToLocalCss(mViewportWidthPix));
+                mViewportWidthPix / (deviceScale * pageScaleFactor));
         contentHeight = Math.max(contentHeight,
-                mRenderCoordinates.fromPixToLocalCss(mViewportHeightPix));
-
+                mViewportHeightPix / (deviceScale * pageScaleFactor));
         final float contentOffsetYPix = mRenderCoordinates.fromDipToPix(contentOffsetYCss);
 
         final boolean contentSizeChanged =
@@ -2356,7 +2358,6 @@ public class ContentViewCore
         if (contentOffsetChanged) updateHandleScreenPositions();
 
         // Update offsets for fullscreen.
-        final float deviceScale = mRenderCoordinates.getDeviceScaleFactor();
         final float controlsOffsetPix = controlsOffsetYCss * deviceScale;
         final float overdrawBottomHeightPix = overdrawBottomHeightCss * deviceScale;
         getContentViewClient().onOffsetsForFullscreenChanged(
@@ -2371,7 +2372,8 @@ public class ContentViewCore
     @CalledByNative
     private void updateImeAdapter(long nativeImeAdapterAndroid, int textInputType,
             String text, int selectionStart, int selectionEnd,
-            int compositionStart, int compositionEnd, boolean showImeIfNeeded, boolean requireAck) {
+            int compositionStart, int compositionEnd, boolean showImeIfNeeded,
+            boolean isNonImeChange) {
         TraceEvent.begin();
         mSelectionEditable = (textInputType != ImeAdapter.getTextInputTypeNone());
 
@@ -2381,7 +2383,7 @@ public class ContentViewCore
 
         if (mInputConnection != null) {
             mInputConnection.updateState(text, selectionStart, selectionEnd, compositionStart,
-                    compositionEnd, requireAck);
+                    compositionEnd, isNonImeChange);
         }
         TraceEvent.end();
     }
@@ -2408,16 +2410,24 @@ public class ContentViewCore
             return;
         }
 
-        if (mSelectPopupDialog != null) {
-            mSelectPopupDialog.hide();
-            mSelectPopupDialog = null;
-        }
+        hideSelectPopup();
         assert items.length == enabled.length;
         List<SelectPopupItem> popupItems = new ArrayList<SelectPopupItem>();
         for (int i = 0; i < items.length; i++) {
             popupItems.add(new SelectPopupItem(items[i], enabled[i]));
         }
         mSelectPopupDialog = SelectPopupDialog.show(this, popupItems, multiple, selectedIndices);
+    }
+
+    /**
+     * Called when the <select> popup needs to be hidden.
+     */
+    @CalledByNative
+    private void hideSelectPopup() {
+        if (mSelectPopupDialog != null) {
+            mSelectPopupDialog.hide();
+            mSelectPopupDialog = null;
+        }
     }
 
     /**
@@ -3129,6 +3139,23 @@ public class ContentViewCore
         return mContainerView.performLongClick();
     }
 
+    /**
+     * Reset scroll and fling accounting, notifying listeners as appropriate.
+     * This is useful as a failsafe when the input stream may have been interruped.
+     */
+    private void resetScrollInProgress() {
+        if (!isScrollInProgress()) return;
+
+        final boolean touchScrollInProgress = mTouchScrollInProgress;
+        final int potentiallyActiveFlingCount = mPotentiallyActiveFlingCount;
+
+        mTouchScrollInProgress = false;
+        mPotentiallyActiveFlingCount = 0;
+
+        if (touchScrollInProgress) updateGestureStateListener(GestureEventType.SCROLL_END);
+        if (potentiallyActiveFlingCount > 0) updateGestureStateListener(GestureEventType.FLING_END);
+    }
+
     private native long nativeInit(long webContentsPtr,
             long viewAndroidPtr, long windowAndroidPtr);
 
@@ -3147,7 +3174,8 @@ public class ContentViewCore
         // Note that mTouchScrollInProgress should normally be false at this
         // point, but we reset it anyway as another failsafe.
         mTouchScrollInProgress = false;
-        if (mPotentiallyActiveFlingCount > 0) mPotentiallyActiveFlingCount--;
+        if (mPotentiallyActiveFlingCount <= 0) return;
+        mPotentiallyActiveFlingCount--;
         updateGestureStateListener(GestureEventType.FLING_END);
     }
 

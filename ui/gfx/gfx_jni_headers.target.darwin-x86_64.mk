@@ -7,8 +7,9 @@ LOCAL_MODULE := ui_gfx_gfx_jni_headers_gyp
 LOCAL_MODULE_STEM := gfx_jni_headers
 LOCAL_MODULE_SUFFIX := .stamp
 LOCAL_MODULE_TAGS := optional
-gyp_intermediate_dir := $(call local-intermediates-dir)
-gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
+LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
+gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
+gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES :=
@@ -23,8 +24,6 @@ $(gyp_shared_intermediate_dir)/ui/gfx/jni/BitmapHelper_jni.h: export PATH := $(s
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/BitmapHelper_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/gfx/BitmapHelper.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/ui/gfx/jni; cd $(gyp_local_path)/ui/gfx; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gfx/BitmapHelper.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gfx/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt --ptr_type long
 
-.PHONY: ui_gfx_gfx_jni_headers_gyp_rule_trigger
-ui_gfx_gfx_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/gfx/jni/BitmapHelper_jni.h
 
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/DeviceDisplayInfo_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/DeviceDisplayInfo_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -33,8 +32,6 @@ $(gyp_shared_intermediate_dir)/ui/gfx/jni/DeviceDisplayInfo_jni.h: export PATH :
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/DeviceDisplayInfo_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/ui/gfx/jni; cd $(gyp_local_path)/ui/gfx; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gfx/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt --ptr_type long
 
-.PHONY: ui_gfx_gfx_jni_headers_gyp_rule_trigger
-ui_gfx_gfx_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/gfx/jni/DeviceDisplayInfo_jni.h
 
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/ViewConfigurationHelper_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/ViewConfigurationHelper_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -43,10 +40,7 @@ $(gyp_shared_intermediate_dir)/ui/gfx/jni/ViewConfigurationHelper_jni.h: export 
 $(gyp_shared_intermediate_dir)/ui/gfx/jni/ViewConfigurationHelper_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/gfx/ViewConfigurationHelper.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/ui/gfx/jni; cd $(gyp_local_path)/ui/gfx; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gfx/ViewConfigurationHelper.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gfx/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt --ptr_type long
 
-.PHONY: ui_gfx_gfx_jni_headers_gyp_rule_trigger
-ui_gfx_gfx_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/gfx/jni/ViewConfigurationHelper_jni.h
 
-### Finished generating for all rules
 
 GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/ui/gfx/jni/BitmapHelper_jni.h \
@@ -59,8 +53,7 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTP
 LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/ui/gfx/jni/BitmapHelper_jni.h \
 	$(gyp_shared_intermediate_dir)/ui/gfx/jni/DeviceDisplayInfo_jni.h \
-	$(gyp_shared_intermediate_dir)/ui/gfx/jni/ViewConfigurationHelper_jni.h \
-	ui_gfx_gfx_jni_headers_gyp_rule_trigger
+	$(gyp_shared_intermediate_dir)/ui/gfx/jni/ViewConfigurationHelper_jni.h
 
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
@@ -251,6 +244,7 @@ gfx_jni_headers: ui_gfx_gfx_jni_headers_gyp
 
 LOCAL_MODULE_PATH := $(PRODUCT_OUT)/gyp_stamp
 LOCAL_UNINSTALLABLE_MODULE := true
+LOCAL_2ND_ARCH_VAR_PREFIX := $(GYP_VAR_PREFIX)
 
 include $(BUILD_SYSTEM)/base_rules.mk
 
@@ -258,3 +252,5 @@ $(LOCAL_BUILT_MODULE): $(LOCAL_ADDITIONAL_DEPENDENCIES)
 	$(hide) echo "Gyp timestamp: $@"
 	$(hide) mkdir -p $(dir $@)
 	$(hide) touch $@
+
+LOCAL_2ND_ARCH_VAR_PREFIX :=

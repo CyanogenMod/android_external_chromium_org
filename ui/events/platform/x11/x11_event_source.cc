@@ -12,7 +12,9 @@
 
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "ui/events/event_utils.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
+#include "ui/gfx/x/x11_types.h"
 
 namespace ui {
 
@@ -192,10 +194,26 @@ uint32_t X11EventSource::DispatchEvent(XEvent* xevent) {
       XGetEventData(xevent->xgeneric.display, &xevent->xcookie)) {
     have_cookie = true;
   }
-  int action = PlatformEventSource::DispatchEvent(xevent);
+
+  // TODO(sad): Remove this once all MessagePumpObservers are turned into
+  // PlatformEventObservers.
+  base::MessagePumpX11::Current()->WillProcessXEvent(xevent);
+  uint32_t action = PlatformEventSource::DispatchEvent(xevent);
+  base::MessagePumpX11::Current()->DidProcessXEvent(xevent);
+
+  if (xevent->type == GenericEvent &&
+      xevent->xgeneric.evtype == XI_HierarchyChanged) {
+    ui::UpdateDeviceList();
+  }
+
   if (have_cookie)
     XFreeEventData(xevent->xgeneric.display, &xevent->xcookie);
   return action;
+}
+
+scoped_ptr<PlatformEventSource> PlatformEventSource::CreateDefault() {
+  return scoped_ptr<PlatformEventSource>(
+      new X11EventSource(gfx::GetXDisplay()));
 }
 
 }  // namespace ui

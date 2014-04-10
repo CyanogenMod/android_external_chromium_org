@@ -18,6 +18,7 @@
 #include "components/sync_driver/data_type_controller.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/app_list/app_list_switches.h"
 
 using browser_sync::DataTypeController;
 using content::BrowserThread;
@@ -38,7 +39,8 @@ class ProfileSyncComponentsFactoryImplTest : public testing::Test {
     std::vector<syncer::ModelType> datatypes;
     datatypes.push_back(syncer::APPS);
 #if defined(ENABLE_APP_LIST)
-    datatypes.push_back(syncer::APP_LIST);
+    if (app_list::switches::IsAppListSyncEnabled())
+      datatypes.push_back(syncer::APP_LIST);
 #endif
     datatypes.push_back(syncer::APP_SETTINGS);
     datatypes.push_back(syncer::AUTOFILL);
@@ -61,13 +63,6 @@ class ProfileSyncComponentsFactoryImplTest : public testing::Test {
     datatypes.push_back(syncer::FAVICON_TRACKING);
     datatypes.push_back(syncer::FAVICON_IMAGES);
     datatypes.push_back(syncer::SYNCED_NOTIFICATIONS);
-    // TODO(petewil): Enable on stable once we have tested on stable.
-    chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-    if (channel == chrome::VersionInfo::CHANNEL_UNKNOWN ||
-        channel == chrome::VersionInfo::CHANNEL_DEV ||
-        channel == chrome::VersionInfo::CHANNEL_CANARY) {
-      datatypes.push_back(syncer::SYNCED_NOTIFICATION_APP_INFO);
-    }
     datatypes.push_back(syncer::MANAGED_USERS);
     datatypes.push_back(syncer::MANAGED_USER_SHARED_SETTINGS);
 

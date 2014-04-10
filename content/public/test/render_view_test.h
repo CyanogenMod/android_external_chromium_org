@@ -59,7 +59,7 @@ class RenderViewTest : public testing::Test {
   void ProcessPendingMessages();
 
   // Returns a pointer to the main frame.
-  blink::WebFrame* GetMainFrame();
+  blink::WebLocalFrame* GetMainFrame();
 
   // Executes the given JavaScript in the context of the main frame. The input
   // is a NULL-terminated UTF-8 string.
@@ -119,7 +119,8 @@ class RenderViewTest : public testing::Test {
 
   // These are all methods from RenderViewImpl that we expose to testing code.
   bool OnMessageReceived(const IPC::Message& msg);
-  void DidNavigateWithinPage(blink::WebFrame* frame, bool is_new_navigation);
+  void DidNavigateWithinPage(blink::WebLocalFrame* frame,
+                             bool is_new_navigation);
   void SendContentStateImmediately();
   blink::WebWidget* GetWebWidget();
 

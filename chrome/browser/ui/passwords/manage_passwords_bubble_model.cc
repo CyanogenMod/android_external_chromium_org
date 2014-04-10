@@ -49,8 +49,16 @@ ManagePasswordsBubbleModel::ManagePasswordsBubbleModel(
 
 ManagePasswordsBubbleModel::~ManagePasswordsBubbleModel() {}
 
-void ManagePasswordsBubbleModel::OnCancelClicked() {
+void ManagePasswordsBubbleModel::OnNopeClicked() {
   manage_passwords_bubble_state_ = PASSWORD_TO_BE_SAVED;
+}
+
+void ManagePasswordsBubbleModel::OnNeverForThisSiteClicked() {
+  ManagePasswordsBubbleUIController* manage_passwords_bubble_ui_controller =
+      ManagePasswordsBubbleUIController::FromWebContents(web_contents_);
+  manage_passwords_bubble_ui_controller->NeverSavePassword();
+  manage_passwords_bubble_ui_controller->unset_password_to_be_saved();
+  manage_passwords_bubble_state_ = NEVER_SAVE_PASSWORDS;
 }
 
 void ManagePasswordsBubbleModel::OnSaveClicked() {
@@ -67,14 +75,15 @@ void ManagePasswordsBubbleModel::OnManageLinkClicked() {
 }
 
 void ManagePasswordsBubbleModel::OnPasswordAction(
-    autofill::PasswordForm password_form,
+    const autofill::PasswordForm& password_form,
     PasswordAction action) {
   if (!web_contents_)
     return;
   Profile* profile =
       Profile::FromBrowserContext(web_contents_->GetBrowserContext());
-  PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-      profile, Profile::EXPLICIT_ACCESS).get();
+  password_manager::PasswordStore* password_store =
+      PasswordStoreFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS)
+          .get();
   DCHECK(password_store);
   if (action == REMOVE_PASSWORD)
     password_store->RemoveLogin(password_form);

@@ -12,7 +12,7 @@
 #include "ui/views/widget/widget_observer.h"
 
 #if defined(OS_CHROMEOS)
-#include "ui/display/chromeos/output_configurator.h"
+#include "ui/display/chromeos/display_configurator.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace views {
@@ -20,7 +20,6 @@ class Widget;
 }
 
 namespace ash {
-namespace internal {
 
 // An event filter which handles system level gesture events. Objects of this
 // class manage their own lifetime.
@@ -28,7 +27,7 @@ class ASH_EXPORT TouchObserverHUD : public ui::EventHandler,
                                     public views::WidgetObserver,
                                     public gfx::DisplayObserver,
 #if defined(OS_CHROMEOS)
-                                    public ui::OutputConfigurator::Observer,
+                                    public ui::DisplayConfigurator::Observer,
 #endif  // defined(OS_CHROMEOS)
                                     public DisplayController::Observer {
  public:
@@ -65,9 +64,9 @@ class ASH_EXPORT TouchObserverHUD : public ui::EventHandler,
   virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE;
 
 #if defined(OS_CHROMEOS)
-  // Overriden from ui::OutputConfigurator::Observer.
+  // Overriden from ui::DisplayConfigurator::Observer.
   virtual void OnDisplayModeChanged(
-      const ui::OutputConfigurator::DisplayStateList& outputs) OVERRIDE;
+      const ui::DisplayConfigurator::DisplayStateList& outputs) OVERRIDE;
 #endif  // defined(OS_CHROMEOS)
 
   // Overriden form DisplayController::Observer.
@@ -86,7 +85,6 @@ class ASH_EXPORT TouchObserverHUD : public ui::EventHandler,
   DISALLOW_COPY_AND_ASSIGN(TouchObserverHUD);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_TOUCH_TOUCH_OBSERVER_HUD_H_

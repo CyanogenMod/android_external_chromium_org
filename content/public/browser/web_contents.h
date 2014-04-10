@@ -58,6 +58,7 @@ class RenderWidgetHostView;
 class SiteInstance;
 class WebContentsDelegate;
 class WebContentsView;
+struct CustomContextMenuContext;
 struct RendererPreferences;
 
 // WebContents is the core class in content/. A WebContents renders web content
@@ -319,6 +320,17 @@ class WebContents : public PageNavigator,
   // returns false.
   virtual bool NeedToFireBeforeUnload() = 0;
 
+  // Runs the beforeunload handler for the main frame. See also ClosePage and
+  // SwapOut in RenderViewHost, which run the unload handler.
+  //
+  // |for_cross_site_transition| indicates whether this call is for the current
+  // frame during a cross-process navigation. False means we're closing the
+  // entire tab.
+  //
+  // TODO(creis): We should run the beforeunload handler for every frame that
+  // has one.
+  virtual void DispatchBeforeUnload(bool for_cross_site_transition) = 0;
+
   // Commands ------------------------------------------------------------------
 
   // Stop any pending navigation.
@@ -328,9 +340,35 @@ class WebContents : public PageNavigator,
   // heap-allocated pointer is owned by the caller.
   virtual WebContents* Clone() = 0;
 
-  // Actions on the focused frame ----------------------------------------------
-
+  // Reloads the focused frame.
   virtual void ReloadFocusedFrame(bool ignore_cache) = 0;
+
+  // Editing commands ----------------------------------------------------------
+
+  virtual void Undo() = 0;
+  virtual void Redo() = 0;
+  virtual void Cut() = 0;
+  virtual void Copy() = 0;
+  virtual void CopyToFindPboard() = 0;
+  virtual void Paste() = 0;
+  virtual void PasteAndMatchStyle() = 0;
+  virtual void Delete() = 0;
+  virtual void SelectAll() = 0;
+  virtual void Unselect() = 0;
+
+  // Replaces the currently selected word or a word around the cursor.
+  virtual void Replace(const base::string16& word) = 0;
+
+  // Replaces the misspelling in the current selection.
+  virtual void ReplaceMisspelling(const base::string16& word) = 0;
+
+  // Let the renderer know that the menu has been closed.
+  virtual void NotifyContextMenuClosed(
+      const CustomContextMenuContext& context) = 0;
+
+  // Executes custom context menu action that was provided from Blink.
+  virtual void ExecuteCustomContextMenuCommand(
+      int action, const CustomContextMenuContext& context) = 0;
 
   // Views and focus -----------------------------------------------------------
 
@@ -499,6 +537,9 @@ class WebContents : public PageNavigator,
   // Notifies the renderer that the user has closed the FindInPage window
   // (and what action to take regarding the selection).
   virtual void StopFinding(StopFindAction action) = 0;
+
+  // Requests the renderer to insert CSS into the main frame's document.
+  virtual void InsertCSS(const std::string& css) = 0;
 
 #if defined(OS_ANDROID)
   CONTENT_EXPORT static WebContents* FromJavaWebContents(

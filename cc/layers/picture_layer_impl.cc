@@ -98,9 +98,13 @@ void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
   layer_impl->pile_ = pile_;
   layer_impl->SetHasGpuRasterizationHint(has_gpu_rasterization_hint_);
 
-  // Tilings would be expensive to push, so we swap.  This optimization requires
-  // an extra invalidation in SyncFromActiveLayer.
+  // Tilings would be expensive to push, so we swap.
   layer_impl->tilings_.swap(tilings_);
+
+  // Ensure that we don't have any tiles that are out of date.
+  if (tilings_)
+    tilings_->RemoveTilesInRegion(invalidation_);
+
   layer_impl->tilings_->SetClient(layer_impl);
   if (tilings_)
     tilings_->SetClient(this);
@@ -407,12 +411,18 @@ void PictureLayerImpl::ReleaseResources() {
     RemoveAllTilings();
 
   ResetRasterScale();
+
+  // To avoid an edge case after lost context where the tree is up to date but
+  // the tilings have not been managed, request an update draw properties
+  // to force tilings to get managed.
+  layer_tree_impl()->set_needs_update_draw_properties();
 }
 
 void PictureLayerImpl::CalculateContentsScale(
     float ideal_contents_scale,
     float device_scale_factor,
     float page_scale_factor,
+    float maximum_animation_contents_scale,
     bool animating_transform_to_screen,
     float* contents_scale_x,
     float* contents_scale_y,
@@ -455,7 +465,8 @@ void PictureLayerImpl::CalculateContentsScale(
   ideal_device_scale_ = ideal_device_scale;
   ideal_source_scale_ = std::max(ideal_source_scale, min_source_scale);
 
-  ManageTilings(animating_transform_to_screen);
+  ManageTilings(animating_transform_to_screen,
+                maximum_animation_contents_scale);
 
   // The content scale and bounds for a PictureLayerImpl is somewhat fictitious.
   // There are (usually) several tilings at different scales.  However, the
@@ -647,15 +658,8 @@ void PictureLayerImpl::SyncFromActiveLayer(const PictureLayerImpl* other) {
   invalidation_.Union(difference_region);
 
   if (CanHaveTilings()) {
-    // The recycle tree's tiling set is two frames out of date, so it needs to
-    // have both this frame's invalidation and the previous frame's invalidation
-    // (stored on the active layer).
-    Region tiling_invalidation = other->invalidation_;
-    tiling_invalidation.Union(invalidation_);
-    tilings_->SyncTilings(*other->tilings_,
-                          bounds(),
-                          tiling_invalidation,
-                          MinimumContentsScale());
+    tilings_->SyncTilings(
+        *other->tilings_, bounds(), invalidation_, MinimumContentsScale());
   } else {
     RemoveAllTilings();
   }
@@ -668,6 +672,16 @@ void PictureLayerImpl::SyncTiling(
   if (!CanHaveTilingWithScale(tiling->contents_scale()))
     return;
   tilings_->AddTiling(tiling->contents_scale());
+
+  if (!layer_tree_impl()->needs_update_draw_properties()) {
+    // When the tree is up to date, the set of tilings must either be empty or
+    // contain at least one high resolution tiling.  (If it is up to date,
+    // then it would be invalid to sync a tiling if it is the first tiling
+    // on the layer, since there would be no high resolution tiling.)
+    SanityCheckTilingState();
+    // TODO(enne): temporary sanity CHECK for http://crbug.com/358350
+    CHECK_GT(tilings_->num_tilings(), 1u);
+  }
 
   // If this tree needs update draw properties, then the tiling will
   // get updated prior to drawing or activation.  If this tree does not
@@ -917,7 +931,8 @@ inline float PositiveRatio(float float1, float float2) {
 
 }  // namespace
 
-void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen) {
+void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen,
+                                     float maximum_animation_contents_scale) {
   DCHECK(ideal_contents_scale_);
   DCHECK(ideal_page_scale_);
   DCHECK(ideal_device_scale_);
@@ -947,7 +962,8 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen) {
   if (!layer_tree_impl()->device_viewport_valid_for_tile_management())
     return;
 
-  RecalculateRasterScales(animating_transform_to_screen);
+  RecalculateRasterScales(animating_transform_to_screen,
+                          maximum_animation_contents_scale);
 
   PictureLayerTiling* high_res = NULL;
   PictureLayerTiling* low_res = NULL;
@@ -1000,7 +1016,7 @@ bool PictureLayerImpl::ShouldAdjustRasterScale(
   // tree. This will allow CSS scale changes to get re-rastered at an
   // appropriate rate.
 
-  if (raster_source_scale_was_animating_ && !animating_transform_to_screen)
+  if (raster_source_scale_was_animating_ != animating_transform_to_screen)
     return true;
 
   if (animating_transform_to_screen &&
@@ -1048,7 +1064,8 @@ float PictureLayerImpl::SnappedContentsScale(float scale) {
 }
 
 void PictureLayerImpl::RecalculateRasterScales(
-    bool animating_transform_to_screen) {
+    bool animating_transform_to_screen,
+    float maximum_animation_contents_scale) {
   raster_device_scale_ = ideal_device_scale_;
   raster_source_scale_ = ideal_source_scale_;
 
@@ -1072,11 +1089,18 @@ void PictureLayerImpl::RecalculateRasterScales(
   raster_contents_scale_ =
       std::max(raster_contents_scale_, MinimumContentsScale());
 
-  // Don't allow animating CSS scales to drop below 1 if we're not
-  // re-rasterizing during the animation.
+  // If we're not re-rasterizing during animation, rasterize at the maximum
+  // scale that will occur during the animation, if the maximum scale is
+  // known.
   if (animating_transform_to_screen && !ShouldUseGpuRasterization()) {
-    raster_contents_scale_ = std::max(
-        raster_contents_scale_, 1.f * ideal_page_scale_ * ideal_device_scale_);
+    if (maximum_animation_contents_scale > 0.f) {
+      raster_contents_scale_ =
+          std::max(raster_contents_scale_, maximum_animation_contents_scale);
+    } else {
+      raster_contents_scale_ =
+          std::max(raster_contents_scale_,
+                   1.f * ideal_page_scale_ * ideal_device_scale_);
+    }
   }
 
   // If this layer would only create one tile at this content scale,
@@ -1146,6 +1170,8 @@ void PictureLayerImpl::CleanUpTilingsOnActiveLayer(
     // NON_IDEAL_RESOLUTION.
     if (twin_tiling && twin_tiling->resolution() == NON_IDEAL_RESOLUTION)
       twin->RemoveTiling(to_remove[i]->contents_scale());
+    // TODO(enne): temporary sanity CHECK for http://crbug.com/358350
+    CHECK_NE(HIGH_RESOLUTION, to_remove[i]->resolution());
     tilings_->Remove(to_remove[i]);
   }
   DCHECK_GT(tilings_->num_tilings(), 0u);
@@ -1370,6 +1396,131 @@ Tile* PictureLayerImpl::LayerRasterTileIterator::operator*() {
   DCHECK(iterators_[index].get_type() == stages_[current_stage_].tile_type);
 
   return *iterators_[index];
+}
+
+PictureLayerImpl::LayerEvictionTileIterator::LayerEvictionTileIterator()
+    : iterator_index_(0),
+      iteration_stage_(TilePriority::EVENTUALLY),
+      required_for_activation_(false),
+      layer_(NULL) {}
+
+PictureLayerImpl::LayerEvictionTileIterator::LayerEvictionTileIterator(
+    PictureLayerImpl* layer)
+    : iterator_index_(0),
+      iteration_stage_(TilePriority::EVENTUALLY),
+      required_for_activation_(false),
+      layer_(layer) {
+  if (!layer_->tilings_ || !layer_->tilings_->num_tilings())
+    return;
+
+  WhichTree tree =
+      layer_->layer_tree_impl()->IsActiveTree() ? ACTIVE_TREE : PENDING_TREE;
+
+  size_t high_res_tiling_index = layer_->tilings_->num_tilings();
+  size_t low_res_tiling_index = layer_->tilings_->num_tilings();
+  for (size_t i = 0; i < layer_->tilings_->num_tilings(); ++i) {
+    PictureLayerTiling* tiling = layer_->tilings_->tiling_at(i);
+    if (tiling->resolution() == HIGH_RESOLUTION)
+      high_res_tiling_index = i;
+    else if (tiling->resolution() == LOW_RESOLUTION)
+      low_res_tiling_index = i;
+  }
+
+  iterators_.reserve(layer_->tilings_->num_tilings());
+
+  // Higher resolution non-ideal goes first.
+  for (size_t i = 0; i < high_res_tiling_index; ++i) {
+    iterators_.push_back(PictureLayerTiling::TilingEvictionTileIterator(
+        layer_->tilings_->tiling_at(i), tree));
+  }
+
+  // Lower resolution non-ideal goes next.
+  for (size_t i = layer_->tilings_->num_tilings() - 1;
+       i > high_res_tiling_index;
+       --i) {
+    PictureLayerTiling* tiling = layer_->tilings_->tiling_at(i);
+    if (tiling->resolution() == LOW_RESOLUTION)
+      continue;
+
+    iterators_.push_back(
+        PictureLayerTiling::TilingEvictionTileIterator(tiling, tree));
+  }
+
+  // Now, put the low res tiling if we have one.
+  if (low_res_tiling_index < layer_->tilings_->num_tilings()) {
+    iterators_.push_back(PictureLayerTiling::TilingEvictionTileIterator(
+        layer_->tilings_->tiling_at(low_res_tiling_index), tree));
+  }
+
+  // Finally, put the high res tiling if we have one.
+  if (high_res_tiling_index < layer_->tilings_->num_tilings()) {
+    iterators_.push_back(PictureLayerTiling::TilingEvictionTileIterator(
+        layer_->tilings_->tiling_at(high_res_tiling_index), tree));
+  }
+
+  DCHECK_GT(iterators_.size(), 0u);
+
+  if (!iterators_[iterator_index_] ||
+      !IsCorrectType(&iterators_[iterator_index_])) {
+    AdvanceToNextIterator();
+  }
+}
+
+PictureLayerImpl::LayerEvictionTileIterator::~LayerEvictionTileIterator() {}
+
+Tile* PictureLayerImpl::LayerEvictionTileIterator::operator*() {
+  DCHECK(*this);
+  return *iterators_[iterator_index_];
+}
+
+PictureLayerImpl::LayerEvictionTileIterator&
+PictureLayerImpl::LayerEvictionTileIterator::
+operator++() {
+  DCHECK(*this);
+  ++iterators_[iterator_index_];
+  if (!iterators_[iterator_index_] ||
+      !IsCorrectType(&iterators_[iterator_index_])) {
+    AdvanceToNextIterator();
+  }
+  return *this;
+}
+
+void PictureLayerImpl::LayerEvictionTileIterator::AdvanceToNextIterator() {
+  ++iterator_index_;
+
+  while (true) {
+    while (iterator_index_ < iterators_.size()) {
+      if (iterators_[iterator_index_] &&
+          IsCorrectType(&iterators_[iterator_index_])) {
+        return;
+      }
+      ++iterator_index_;
+    }
+
+    // If we're NOW and required_for_activation, then this was the last pass
+    // through the iterators.
+    if (iteration_stage_ == TilePriority::NOW && required_for_activation_)
+      break;
+
+    if (!required_for_activation_) {
+      required_for_activation_ = true;
+    } else {
+      required_for_activation_ = false;
+      iteration_stage_ =
+          static_cast<TilePriority::PriorityBin>(iteration_stage_ - 1);
+    }
+    iterator_index_ = 0;
+  }
+}
+
+PictureLayerImpl::LayerEvictionTileIterator::operator bool() const {
+  return iterator_index_ < iterators_.size();
+}
+
+bool PictureLayerImpl::LayerEvictionTileIterator::IsCorrectType(
+    PictureLayerTiling::TilingEvictionTileIterator* it) const {
+  return it->get_type() == iteration_stage_ &&
+         (**it)->required_for_activation() == required_for_activation_;
 }
 
 }  // namespace cc

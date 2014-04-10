@@ -51,6 +51,7 @@ class SyncMessage;
 }
 
 namespace blink {
+struct WebDeviceEmulationParams;
 class WebGestureEvent;
 class WebInputEvent;
 class WebKeyboardEvent;
@@ -208,10 +209,7 @@ class CONTENT_EXPORT RenderWidget
   // Emulates screen and widget metrics. Supplied values override everything
   // coming from host.
   void EnableScreenMetricsEmulation(
-      const gfx::Rect& device_rect,
-      const gfx::Rect& widget_rect,
-      float device_scale_factor,
-      bool fit_to_view);
+      const blink::WebDeviceEmulationParams& params);
   void DisableScreenMetricsEmulation();
   void SetPopupOriginAdjustmentsForEmulation(ScreenMetricsEmulator* emulator);
 
@@ -236,13 +234,23 @@ class CONTENT_EXPORT RenderWidget
   void OnShowHostContextMenu(ContextMenuParams* params);
 
 #if defined(OS_ANDROID) || defined(USE_AURA)
-  // |show_ime_if_needed| should be true iff the update may cause the ime to be
-  // displayed, e.g. after a tap on an input field on mobile.
-  // |send_ime_ack| should be true iff the browser side is required to
-  // acknowledge the change before the renderer handles any more IME events.
-  // This is when the event did not originate from the browser side IME, such as
-  // changes from JavaScript or autofill.
-  void UpdateTextInputState(bool show_ime_if_needed, bool send_ime_ack);
+  enum ShowIme {
+    SHOW_IME_IF_NEEDED,
+    NO_SHOW_IME,
+  };
+
+  enum ChangeSource {
+    FROM_NON_IME,
+    FROM_IME,
+  };
+
+  // |show_ime| should be SHOW_IME_IF_NEEDED iff the update may cause the ime to
+  // be displayed, e.g. after a tap on an input field on mobile.
+  // |change_source| should be FROM_NON_IME when the renderer has to wait for
+  // the browser to acknowledge the change before the renderer handles any more
+  // IME events. This is when the text change did not originate from the IME in
+  // the browser side, such as changes by JavaScript or autofill.
+  void UpdateTextInputState(ShowIme show_ime, ChangeSource change_source);
 #endif
 
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
@@ -409,23 +417,6 @@ class CONTENT_EXPORT RenderWidget
 
   virtual bool ForceCompositingModeEnabled();
 
-  // Detects if a suitable opaque plugin covers the given paint bounds with no
-  // compositing necessary.
-  //
-  // Returns the plugin instance that's the source of the paint if the paint
-  // can be handled by just blitting the plugin bitmap. In this case, the
-  // location, clipping, and ID of the backing store will be filled into the
-  // given output parameters.
-  //
-  // A return value of null means optimized painting can not be used and we
-  // should continue with the normal painting code path.
-  virtual PepperPluginInstanceImpl* GetBitmapForOptimizedPluginPaint(
-      const gfx::Rect& paint_bounds,
-      TransportDIB** dib,
-      gfx::Rect* location,
-      gfx::Rect* clip,
-      float* scale_factor);
-
   // Gets the scroll offset of this widget, if this widget has a notion of
   // scroll offset.
   virtual gfx::Vector2d GetScrollOffset();
@@ -522,6 +513,10 @@ class CONTENT_EXPORT RenderWidget
 
   // Tell the browser about the actions permitted for a new touch point.
   virtual void setTouchAction(blink::WebTouchAction touch_action);
+
+  // Called when value of focused text field gets dirty, e.g. value is modified
+  // by script, not by user input.
+  virtual void didUpdateTextOfFocusedElementByNonUserInput();
 
 #if defined(OS_ANDROID)
   // Checks if the selection root bounds have changed. If they have changed, the
@@ -764,6 +759,10 @@ class CONTENT_EXPORT RenderWidget
   uint32 next_output_surface_id_;
 
 #if defined(OS_ANDROID)
+  // Indicates value in the focused text field is in dirty state, i.e. modified
+  // by script etc., not by user input.
+  bool text_field_is_dirty_;
+
   // A counter for number of outstanding messages from the renderer to the
   // browser regarding IME-type events that have not been acknowledged by the
   // browser. If this value is not 0 IME events will be dropped.

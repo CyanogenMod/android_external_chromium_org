@@ -52,6 +52,7 @@
 #include "content/public/browser/notification_types.h"
 #import "content/public/browser/render_widget_host_view_mac_delegate.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -143,9 +144,7 @@ static float ScaleFactorForView(NSView* view) {
 
 + (BOOL)shouldAutohideCursorForEvent:(NSEvent*)event;
 - (id)initWithRenderWidgetHostViewMac:(RenderWidgetHostViewMac*)r;
-- (void)gotUnhandledWheelEvent;
-- (void)scrollOffsetPinnedToLeft:(BOOL)left toRight:(BOOL)right;
-- (void)setHasHorizontalScrollbar:(BOOL)has_horizontal_scrollbar;
+- (void)gotWheelEventConsumed:(BOOL)consumed;
 - (void)keyEvent:(NSEvent*)theEvent wasKeyEquivalent:(BOOL)equiv;
 - (void)windowDidChangeBackingProperties:(NSNotification*)notification;
 - (void)windowChangedGlobalFrame:(NSNotification*)notification;
@@ -381,6 +380,13 @@ blink::WebScreenInfo GetWebScreenInfo(NSView* view) {
   return results;
 }
 
+void RemoveLayerFromSuperlayer(
+    base::scoped_nsobject<CompositingIOSurfaceLayer> layer) {
+  // Disable the fade-out animation as the layer is removed.
+  ScopedCAActionDisabler disabler;
+  [layer removeFromSuperlayer];
+}
+
 }  // namespace
 
 namespace content {
@@ -574,13 +580,16 @@ void RenderWidgetHostViewMac::EnsureCompositedIOSurfaceLayer() {
   [background_layer_ addSublayer:compositing_iosurface_layer_];
 }
 
-void RenderWidgetHostViewMac::DestroyCompositedIOSurfaceLayer() {
+void RenderWidgetHostViewMac::DestroyCompositedIOSurfaceLayer(
+    DestroyCompositedIOSurfaceLayerBehavior destroy_layer_behavior) {
   if (!compositing_iosurface_layer_)
     return;
 
-  // Disable the fade-out animation as the layer is removed.
-  ScopedCAActionDisabler disabler;
-  [compositing_iosurface_layer_ removeFromSuperlayer];
+  if (destroy_layer_behavior == kRemoveLayerFromHierarchy) {
+    // Disable the fade-out animation as the layer is removed.
+    ScopedCAActionDisabler disabler;
+    [compositing_iosurface_layer_ removeFromSuperlayer];
+  }
   [compositing_iosurface_layer_ disableCompositing];
   compositing_iosurface_layer_.reset();
 }
@@ -590,7 +599,7 @@ void RenderWidgetHostViewMac::DestroyCompositedIOSurfaceAndLayer(
   // Any pending frames will not be displayed, so ack them now.
   SendPendingSwapAck();
 
-  DestroyCompositedIOSurfaceLayer();
+  DestroyCompositedIOSurfaceLayer(kRemoveLayerFromHierarchy);
   compositing_iosurface_.reset();
 
   switch (destroy_context_behavior) {
@@ -1355,6 +1364,19 @@ void RenderWidgetHostViewMac::CompositorSwapBuffers(
 
   AddPendingLatencyInfo(latency_info);
 
+  // If compositing_iosurface_ exists and has been poisoned, destroy it
+  // and allow EnsureCompositedIOSurface to recreate it below. Keep a
+  // reference to the destroyed layer around until after the below call
+  // to LayoutLayers, to avoid flickers.
+  base::ScopedClosureRunner scoped_layer_remover;
+  if (compositing_iosurface_context_ &&
+      compositing_iosurface_context_->HasBeenPoisoned()) {
+    scoped_layer_remover.Reset(
+        base::Bind(RemoveLayerFromSuperlayer, compositing_iosurface_layer_));
+    DestroyCompositedIOSurfaceLayer(kLeaveLayerInHierarchy);
+    DestroyCompositedIOSurfaceAndLayer(kDestroyContext);
+  }
+
   // Ensure compositing_iosurface_ and compositing_iosurface_context_ be
   // allocated.
   if (!EnsureCompositedIOSurface()) {
@@ -1456,6 +1478,10 @@ void RenderWidgetHostViewMac::CompositorSwapBuffers(
         compositing_iosurface_context_->cgl_context());
     DrawIOSurfaceWithoutCoreAnimation();
   }
+
+  // Try to finish previous copy requests after draw to get better pipelining.
+  if (compositing_iosurface_)
+    compositing_iosurface_->CheckIfAllCopiesAreFinished(false);
 
   // The IOSurface's size may have changed, so re-layout the layers to take
   // this into account. This may force an immediate draw.
@@ -1564,15 +1590,15 @@ void RenderWidgetHostViewMac::DestroyCompositingStateOnError() {
 
 void RenderWidgetHostViewMac::SetOverlayView(
     RenderWidgetHostViewMac* overlay, const gfx::Point& offset) {
-  if (use_core_animation_)
-    return;
-
   if (overlay_view_)
     overlay_view_->underlay_view_.reset();
 
   overlay_view_ = overlay->overlay_view_weak_factory_.GetWeakPtr();
-  overlay_view_offset_ = offset;
   overlay_view_->underlay_view_ = overlay_view_weak_factory_.GetWeakPtr();
+  if (use_core_animation_)
+    return;
+
+  overlay_view_offset_ = offset;
   overlay_view_->underlay_view_has_drawn_ = false;
 
   [cocoa_view_ setNeedsDisplay:YES];
@@ -1580,13 +1606,13 @@ void RenderWidgetHostViewMac::SetOverlayView(
 }
 
 void RenderWidgetHostViewMac::RemoveOverlayView() {
-  if (use_core_animation_)
-    return;
-
   if (overlay_view_) {
     overlay_view_->underlay_view_.reset();
     overlay_view_.reset();
   }
+  if (use_core_animation_)
+    return;
+
   [cocoa_view_ setNeedsDisplay:YES];
   [[cocoa_view_ window] disableScreenUpdatesUntilFlush];
 }
@@ -1676,19 +1702,12 @@ gfx::Range RenderWidgetHostViewMac::ConvertCharacterRangeToCompositionRange(
       request_range.end() - composition_range_.start());
 }
 
-RenderFrameHost* RenderWidgetHostViewMac::GetFocusedFrame() {
+WebContents* RenderWidgetHostViewMac::GetWebContents() {
   if (!render_widget_host_->IsRenderView())
     return NULL;
 
-  RenderViewHost* rvh = RenderViewHost::From(render_widget_host_);
-  RenderFrameHostImpl* rfh =
-      static_cast<RenderFrameHostImpl*>(rvh->GetMainFrame());
-  FrameTreeNode* focused_frame =
-      rfh->frame_tree_node()->frame_tree()->GetFocusedFrame();
-  if (!focused_frame)
-    return NULL;
-
-  return focused_frame->current_frame_host();
+  return WebContents::FromRenderViewHost(
+      RenderViewHost::From(render_widget_host_));
 }
 
 bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
@@ -1862,13 +1881,10 @@ gfx::GLSurfaceHandle RenderWidgetHostViewMac::GetCompositingSurface() {
 
 void RenderWidgetHostViewMac::SetHasHorizontalScrollbar(
     bool has_horizontal_scrollbar) {
-  [cocoa_view_ setHasHorizontalScrollbar:has_horizontal_scrollbar];
 }
 
 void RenderWidgetHostViewMac::SetScrollOffsetPinning(
     bool is_pinned_to_left, bool is_pinned_to_right) {
-  [cocoa_view_ scrollOffsetPinnedToLeft:is_pinned_to_left
-                                toRight:is_pinned_to_right];
 }
 
 bool RenderWidgetHostViewMac::LockMouse() {
@@ -1900,12 +1916,11 @@ void RenderWidgetHostViewMac::UnlockMouse() {
     render_widget_host_->LostMouseLock();
 }
 
-void RenderWidgetHostViewMac::UnhandledWheelEvent(
-    const blink::WebMouseWheelEvent& event) {
-  // Only record a wheel event as unhandled if JavaScript handlers got a chance
-  // to see it (no-op wheel events are ignored by the event dispatcher)
+void RenderWidgetHostViewMac::HandledWheelEvent(
+    const blink::WebMouseWheelEvent& event,
+    bool consumed) {
   if (event.deltaX || event.deltaY)
-    [cocoa_view_ gotUnhandledWheelEvent];
+    [cocoa_view_ gotWheelEventConsumed:consumed];
 }
 
 bool RenderWidgetHostViewMac::Send(IPC::Message* message) {
@@ -2035,7 +2050,7 @@ void RenderWidgetHostViewMac::WindowFrameChanged() {
         GetViewBounds()));
   }
 
-  if (compositing_iosurface_) {
+  if (compositing_iosurface_ && !use_core_animation_) {
     // This will migrate the context to the appropriate window.
     if (!EnsureCompositedIOSurface())
       GotAcceleratedCompositingError();
@@ -2195,6 +2210,16 @@ void RenderWidgetHostViewMac::PauseForPendingResizeOrRepaintsAndDraw() {
   if (!render_widget_host_ || render_widget_host_->is_hidden())
     return;
 
+  // Pausing for the overlay view prevents the underlay from receiving
+  // frames. This may lead to large delays, causing overlaps. If both
+  // overlay and underlay resize at the same time, let them both to have
+  // some time waiting. See crbug.com/352020.
+  if (underlay_view_ &&
+      underlay_view_->render_widget_host_ &&
+      !underlay_view_->render_widget_host_->
+          CanPauseForPendingResizeOrRepaints())
+    return;
+
   // Ensure that all frames are acked before waiting for a frame to come in.
   // Note that we will draw a frame at the end of this function, so it is safe
   // to ack a never-drawn frame here.
@@ -2228,7 +2253,7 @@ void RenderWidgetHostViewMac::LayoutLayers() {
           respondsToSelector:(@selector(contentsScale))]) {
     if (compositing_iosurface_->scale_factor() !=
         [compositing_iosurface_layer_ contentsScale]) {
-      DestroyCompositedIOSurfaceLayer();
+      DestroyCompositedIOSurfaceLayer(kRemoveLayerFromHierarchy);
       EnsureCompositedIOSurfaceLayer();
     }
   }
@@ -2274,7 +2299,12 @@ void RenderWidgetHostViewMac::LayoutLayers() {
   // in the layer being anchored to the top-left. Set the layer's frame
   // explicitly, since this is more reliable in practice.
   if (software_layer_) {
-    [software_layer_ setFrame:new_background_frame];
+    bool frame_changed = !CGRectEqualToRect(
+        new_background_frame, [software_layer_ frame]);
+    if (frame_changed) {
+      [software_layer_ setFrame:new_background_frame];
+      [software_layer_ setNeedsDisplay];
+    }
   }
 }
 
@@ -2359,28 +2389,8 @@ SkBitmap::Config RenderWidgetHostViewMac::PreferredReadbackFormat() {
   }
 }
 
-- (void)gotUnhandledWheelEvent {
-  if (responderDelegate_ &&
-      [responderDelegate_
-          respondsToSelector:@selector(gotUnhandledWheelEvent)]) {
-    [responderDelegate_ gotUnhandledWheelEvent];
-  }
-}
-
-- (void)scrollOffsetPinnedToLeft:(BOOL)left toRight:(BOOL)right {
-  if (responderDelegate_ &&
-      [responderDelegate_
-          respondsToSelector:@selector(scrollOffsetPinnedToLeft:toRight:)]) {
-    [responderDelegate_ scrollOffsetPinnedToLeft:left toRight:right];
-  }
-}
-
-- (void)setHasHorizontalScrollbar:(BOOL)has_horizontal_scrollbar {
-  if (responderDelegate_ &&
-      [responderDelegate_
-          respondsToSelector:@selector(setHasHorizontalScrollbar:)]) {
-    [responderDelegate_ setHasHorizontalScrollbar:has_horizontal_scrollbar];
-  }
+- (void)gotWheelEventConsumed:(BOOL)consumed {
+  [responderDelegate_ gotWheelEventConsumed:consumed];
 }
 
 - (BOOL)respondsToSelector:(SEL)selector {
@@ -4043,45 +4053,31 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
 }
 
 - (void)undo:(id)sender {
-  RenderFrameHost* host = renderWidgetHostView_->GetFocusedFrame();
-  if (host)
-    host->Undo();
+  renderWidgetHostView_->GetWebContents()->Undo();
 }
 
 - (void)redo:(id)sender {
-  RenderFrameHost* host = renderWidgetHostView_->GetFocusedFrame();
-  if (host)
-    host->Redo();
+  renderWidgetHostView_->GetWebContents()->Redo();
 }
 
 - (void)cut:(id)sender {
-  RenderFrameHost* host = renderWidgetHostView_->GetFocusedFrame();
-  if (host)
-    host->Cut();
+  renderWidgetHostView_->GetWebContents()->Cut();
 }
 
 - (void)copy:(id)sender {
-  RenderFrameHost* host = renderWidgetHostView_->GetFocusedFrame();
-  if (host)
-    host->Copy();
+  renderWidgetHostView_->GetWebContents()->Copy();
 }
 
 - (void)copyToFindPboard:(id)sender {
-  RenderFrameHost* host = renderWidgetHostView_->GetFocusedFrame();
-  if (host)
-    host->CopyToFindPboard();
+  renderWidgetHostView_->GetWebContents()->CopyToFindPboard();
 }
 
 - (void)paste:(id)sender {
-  RenderFrameHost* host = renderWidgetHostView_->GetFocusedFrame();
-  if (host)
-    host->Paste();
+  renderWidgetHostView_->GetWebContents()->Paste();
 }
 
 - (void)pasteAndMatchStyle:(id)sender {
-  RenderFrameHost* host = renderWidgetHostView_->GetFocusedFrame();
-  if (host)
-    host->PasteAndMatchStyle();
+  renderWidgetHostView_->GetWebContents()->PasteAndMatchStyle();
 }
 
 - (void)selectAll:(id)sender {
@@ -4092,9 +4088,7 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   // menu handler, neither is true.
   // Explicitly call SelectAll() here to make sure the renderer returns
   // selection results.
-  RenderFrameHost* host = renderWidgetHostView_->GetFocusedFrame();
-  if (host)
-    host->SelectAll();
+  renderWidgetHostView_->GetWebContents()->SelectAll();
 }
 
 - (void)startSpeaking:(id)sender {

@@ -27,7 +27,7 @@ const char kReadFile_Help[] =
     "  Whitespace will be trimmed from the end of the file. Throws an error\n"
     "  if the file can not be opened.\n"
     "\n"
-    "Arguments\n"
+    "Arguments:\n"
     "\n"
     "  filename\n"
     "      Filename to read, relative to the build file.\n"
@@ -68,7 +68,8 @@ Value RunReadFile(Scope* scope,
     return Value();
   }
 
-  return ConvertInputToValue(file_contents, function, args[1], err);
+  return ConvertInputToValue(scope->settings(), file_contents, function,
+                             args[1], err);
 }
 
 }  // namespace functions

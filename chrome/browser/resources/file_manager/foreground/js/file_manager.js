@@ -24,12 +24,13 @@ function FileManager() {
   this.listType_ = null;
 
   /**
-   * Whether to suppress the focus moving or not.
-   * This is used to filter out focusing by mouse.
+   * True while a user is pressing <Tab>.
+   * This is used for identifying the trigger causing the filelist to
+   * be focused.
    * @type {boolean}
    * @private
    */
-  this.suppressFocus_ = false;
+  this.pressingTab_ = false;
 
   /**
    * SelectionHandler.
@@ -115,7 +116,9 @@ DialogType.isModal = function(type) {
  */
 DialogType.isOpenDialog = function(type) {
   return type == DialogType.SELECT_OPEN_FILE ||
-         type == DialogType.SELECT_OPEN_MULTI_FILE;
+         type == DialogType.SELECT_OPEN_MULTI_FILE ||
+         type == DialogType.SELECT_FOLDER ||
+         type == DialogType.SELECT_UPLOAD_FOLDER;
 };
 
 /**
@@ -778,12 +781,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         this.progressCenterPanel_);
 
     this.document_.addEventListener('keydown', this.onKeyDown_.bind(this));
-
-    // This capturing event is only used to distinguish focusing using
-    // keyboard from focusing using mouse.
-    this.document_.addEventListener('mousedown', function() {
-      this.suppressFocus_ = true;
-    }.bind(this), true);
+    this.document_.addEventListener('keyup', this.onKeyUp_.bind(this));
 
     this.renameInput_ = this.document_.createElement('input');
     this.renameInput_.className = 'rename';
@@ -966,13 +964,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.initList_(this.table_.list);
 
     var fileListFocusBound = this.onFileListFocus_.bind(this);
-    var fileListBlurBound = this.onFileListBlur_.bind(this);
-
     this.table_.list.addEventListener('focus', fileListFocusBound);
     this.grid_.addEventListener('focus', fileListFocusBound);
-
-    this.table_.list.addEventListener('blur', fileListBlurBound);
-    this.grid_.addEventListener('blur', fileListBlurBound);
 
     var dragStartBound = this.onDragStart_.bind(this);
     this.table_.list.addEventListener('dragstart', dragStartBound);
@@ -1107,24 +1100,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.onFileListFocus_ = function() {
-    // Do not select default item if focused using mouse.
-    if (this.suppressFocus_)
-      return;
-
-    var selection = this.getSelection();
-    if (!selection || selection.totalCount != 0)
-      return;
-
-    this.directoryModel_.selectIndex(0);
-  };
-
-  /**
-   * File list blur handler.
-   *
-   * @private
-   */
-  FileManager.prototype.onFileListBlur_ = function() {
-    this.suppressFocus_ = false;
+    // If the file list is focused by <Tab>, select the first item if no item
+    // is selected.
+    if (this.pressingTab_) {
+      if (this.getSelection() && this.getSelection().totalCount == 0)
+        this.directoryModel_.selectIndex(0);
+    }
   };
 
   /**
@@ -2435,7 +2416,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var input = this.renameInput_;
 
     input.value = label.textContent;
-    label.parentNode.setAttribute('renaming', '');
+    item.setAttribute('renaming', '');
     label.parentNode.appendChild(input);
     input.focus();
     var selectionEnd = input.value.lastIndexOf('.');
@@ -2449,6 +2430,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     // This has to be set late in the process so we don't handle spurious
     // blur events.
     input.currentEntry = this.currentList_.dataModel.item(item.listIndex);
+    this.table_.startBatchUpdates();
+    this.grid_.startBatchUpdates();
   };
 
   /**
@@ -2499,21 +2482,27 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return;
     }
 
-    var nameNode = this.findListItemForNode_(this.renameInput_).
-                   querySelector('.filename-label');
+    var renamedItemElement = this.findListItemForNode_(this.renameInput_);
+    var nameNode = renamedItemElement.querySelector('.filename-label');
 
     input.validation_ = true;
     var validationDone = function(valid) {
       input.validation_ = false;
-      // Alert dialog restores focus unless the item removed from DOM.
-      if (this.document_.activeElement != input)
-        this.cancelRename_();
-      if (!valid)
+
+      if (!valid) {
+        // Cancel rename if it fails to restore focus from alert dialog.
+        // Otherwise, just cancel the commitment and continue to rename.
+        if (this.document_.activeElement != input)
+          this.cancelRename_();
         return;
+      }
 
       // Validation succeeded. Do renaming.
+      this.renameInput_.currentEntry = null;
+      if (this.renameInput_.parentNode)
+        this.renameInput_.parentNode.removeChild(this.renameInput_);
+      renamedItemElement.setAttribute('renaming', 'provisional');
 
-      this.cancelRename_();
       // Optimistically apply new name immediately to avoid flickering in
       // case of success.
       nameNode.textContent = newName;
@@ -2522,10 +2511,16 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
           entry, newName,
           function(newEntry) {
             this.directoryModel_.onRenameEntry(entry, newEntry);
+            renamedItemElement.removeAttribute('renaming');
+            this.table_.endBatchUpdates();
+            this.grid_.endBatchUpdates();
           }.bind(this),
           function(error) {
             // Write back to the old name.
             nameNode.textContent = entry.name;
+            renamedItemElement.removeAttribute('renaming');
+            this.table_.endBatchUpdates();
+            this.grid_.endBatchUpdates();
 
             // Show error dialog.
             var message;
@@ -2569,11 +2564,16 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   FileManager.prototype.cancelRename_ = function() {
     this.renameInput_.currentEntry = null;
 
+    var item = this.findListItemForNode_(this.renameInput_);
+    if (item)
+      item.removeAttribute('renaming');
+
     var parent = this.renameInput_.parentNode;
-    if (parent) {
-      parent.removeAttribute('renaming');
+    if (parent)
       parent.removeChild(this.renameInput_);
-    }
+
+    this.table_.endBatchUpdates();
+    this.grid_.endBatchUpdates();
   };
 
   /**
@@ -2873,6 +2873,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.onKeyDown_ = function(event) {
+    if (event.keyCode === 9)  // Tab
+      this.pressingTab_ = true;
+
     if (event.srcElement === this.renameInput_) {
       // Ignore keydown handler in the rename input box.
       return;
@@ -2893,6 +2896,16 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         }
         break;
     }
+  };
+
+  /**
+   * KeyUp event handler for the document.
+   * @param {Event} event Key event.
+   * @private
+   */
+  FileManager.prototype.onKeyUp_ = function(event) {
+    if (event.keyCode === 9)  // Tab
+      this.pressingTab_ = false;
   };
 
   /**

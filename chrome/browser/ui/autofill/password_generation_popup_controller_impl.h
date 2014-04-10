@@ -23,7 +23,9 @@ struct NativeWebKeyboardEvent;
 class WebContents;
 }
 
+namespace password_manager {
 class PasswordManager;
+}
 
 namespace autofill {
 
@@ -50,7 +52,7 @@ class PasswordGenerationPopupControllerImpl
       const gfx::RectF& bounds,
       const PasswordForm& form,
       int max_length,
-      PasswordManager* password_manager,
+      password_manager::PasswordManager* password_manager,
       PasswordGenerationPopupObserver* observer,
       content::WebContents* web_contents,
       gfx::NativeView container_view);
@@ -78,7 +80,7 @@ class PasswordGenerationPopupControllerImpl
       const gfx::RectF& bounds,
       const PasswordForm& form,
       int max_length,
-      PasswordManager* password_manager,
+      password_manager::PasswordManager* password_manager,
       PasswordGenerationPopupObserver* observer,
       content::WebContents* web_contents,
       gfx::NativeView container_view);
@@ -89,8 +91,6 @@ class PasswordGenerationPopupControllerImpl
   virtual void SetSelectionAtPoint(const gfx::Point& point) OVERRIDE;
   virtual bool AcceptSelectedLine() OVERRIDE;
   virtual void SelectionCleared() OVERRIDE;
-  virtual bool ShouldRepostEvent(const ui::MouseEvent& event) OVERRIDE;
-  virtual bool ShouldHideOnOutsideClick() const OVERRIDE;
   virtual void OnSavedPasswordsLinkClicked() OVERRIDE;
   virtual gfx::NativeView container_view() OVERRIDE;
   virtual const gfx::FontList& font_list() const OVERRIDE;
@@ -126,7 +126,7 @@ class PasswordGenerationPopupControllerImpl
   void CalculateBounds();
 
   PasswordForm form_;
-  PasswordManager* password_manager_;
+  password_manager::PasswordManager* password_manager_;
 
   // May be NULL.
   PasswordGenerationPopupObserver* observer_;

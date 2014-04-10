@@ -8,6 +8,7 @@
 #include <map>
 #include <string>
 
+#include "apps/ui/web_contents_sizer.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -243,7 +244,8 @@ TabStripModel::TabStripModel(TabStripModelDelegate* delegate, Profile* profile)
     : delegate_(delegate),
       profile_(profile),
       closing_all_(false),
-      in_notify_(false) {
+      in_notify_(false),
+      weak_factory_(this) {
   DCHECK(delegate_);
   order_controller_.reset(new TabStripModelOrderController(this));
 }
@@ -837,8 +839,8 @@ void TabStripModel::AddWebContents(WebContents* contents,
   // new background tab.
   if (WebContents* old_contents = GetActiveWebContents()) {
     if ((add_types & ADD_ACTIVE) == 0) {
-      contents->GetView()->SizeContents(
-          old_contents->GetView()->GetContainerSize());
+      apps::ResizeWebContents(contents,
+                              old_contents->GetView()->GetContainerSize());
     }
   }
 }
@@ -1190,6 +1192,11 @@ bool TabStripModel::InternalCloseTabs(const std::vector<int>& indices,
 
   CloseTracker close_tracker(GetWebContentsFromIndices(indices));
 
+  base::WeakPtr<TabStripModel> ref(weak_factory_.GetWeakPtr());
+  const bool closing_all = indices.size() == contents_data_.size();
+  if (closing_all)
+    FOR_EACH_OBSERVER(TabStripModelObserver, observers_, WillCloseAllTabs());
+
   // We only try the fast shutdown path if the whole browser process is *not*
   // shutting down. Fast shutdown during browser termination is handled in
   // BrowserShutdown.
@@ -1242,6 +1249,11 @@ bool TabStripModel::InternalCloseTabs(const std::vector<int>& indices,
 
     InternalCloseTab(closing_contents, index,
                      (close_types & CLOSE_CREATE_HISTORICAL_TAB) != 0);
+  }
+
+  if (ref && closing_all && !retval) {
+    FOR_EACH_OBSERVER(TabStripModelObserver, observers_,
+                      CloseAllTabsCanceled());
   }
 
   return retval;

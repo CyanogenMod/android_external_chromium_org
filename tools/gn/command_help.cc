@@ -35,6 +35,10 @@ void PrintToplevelHelp() {
       "--args: Specifies build arguments overrides. "
       "See \"gn help buildargs\".");
   PrintShortHelp(
+      "--[no]color: Forces colored output on or off (rather than autodetect).");
+  PrintShortHelp(
+      "--dotfile: Specifies an alternate .gn file. See \"gn help dotfile\".");
+  PrintShortHelp(
       "--no-exec: Skips exec_script calls (for performance testing).");
   PrintShortHelp(
       "-q: Quiet mode, don't print anything on success.");
@@ -42,8 +46,6 @@ void PrintToplevelHelp() {
       "--output: Directory for build output (relative to source root).");
   PrintShortHelp(
       "--root: Specifies source root (overrides .gn file).");
-  PrintShortHelp(
-      "--secondary: Specifies secondary source root (overrides .gn file).");
   PrintShortHelp(
       "--time: Outputs a summary of how long everything took.");
   PrintShortHelp(

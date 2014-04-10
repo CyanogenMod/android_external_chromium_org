@@ -10,13 +10,13 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/dispatcher.h"
-#include "chrome/renderer/extensions/scoped_persistent.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/public/renderer/render_view_visitor.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/extension_messages.h"
+#include "extensions/renderer/scoped_persistent.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -32,7 +32,7 @@ class DidCreateDocumentElementObserver : public content::RenderViewObserver {
       : content::RenderViewObserver(view), dispatcher_(dispatcher) {
   }
 
-  virtual void DidCreateDocumentElement(blink::WebFrame* frame) OVERRIDE {
+  virtual void DidCreateDocumentElement(blink::WebLocalFrame* frame) OVERRIDE {
     DCHECK(frame);
     DCHECK(dispatcher_);
     // Don't attempt to inject the titlebar into iframes.

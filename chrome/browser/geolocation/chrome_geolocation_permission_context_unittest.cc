@@ -624,7 +624,14 @@ TEST_F(GeolocationPermissionContextTests, QueuedOriginMultipleTabs) {
   EXPECT_TRUE(closed_infobar_tracker_.Contains(infobar_1));
 }
 
-TEST_F(GeolocationPermissionContextTests, TabDestroyed) {
+#if defined(THREAD_SANITIZER)
+// This test crashes under ThreadSanitizer v2, which builds with libc++.
+// See http://crbug.com/358707.
+#define MAYBE_TabDestroyed DISABLED_TabDestroyed
+#else
+#define MAYBE_TabDestroyed TabDestroyed
+#endif
+TEST_F(GeolocationPermissionContextTests, MAYBE_TabDestroyed) {
   GURL requesting_frame_0("http://www.example.com/geolocation");
   GURL requesting_frame_1("http://www.example-2.com/geolocation");
   EXPECT_EQ(CONTENT_SETTING_ASK,
@@ -674,10 +681,12 @@ TEST_F(GeolocationPermissionContextTests, InfoBarUsesCommittedEntry) {
   // Ensure the infobar wouldn't expire for a navigation to the committed entry.
   content::LoadCommittedDetails details;
   details.entry = web_contents()->GetController().GetLastCommittedEntry();
-  EXPECT_FALSE(infobar_delegate->ShouldExpire(details));
+  EXPECT_FALSE(infobar_delegate->ShouldExpire(
+      InfoBarService::NavigationDetailsFromLoadCommittedDetails(details)));
   // Ensure the infobar will expire when we commit the pending navigation.
   details.entry = web_contents()->GetController().GetActiveEntry();
-  EXPECT_TRUE(infobar_delegate->ShouldExpire(details));
+  EXPECT_TRUE(infobar_delegate->ShouldExpire(
+      InfoBarService::NavigationDetailsFromLoadCommittedDetails(details)));
 
   // Delete the tab contents.
   DeleteContents();

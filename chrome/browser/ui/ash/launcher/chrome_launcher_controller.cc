@@ -63,7 +63,6 @@
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/navigation_entry.h"
@@ -74,6 +73,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/url_pattern.h"
 #include "grit/ash_resources.h"
 #include "grit/chromium_strings.h"
@@ -1282,9 +1282,9 @@ bool ChromeLauncherController::ContentCanBeHandledByGmailApp(
 
 gfx::Image ChromeLauncherController::GetAppListIcon(
     content::WebContents* web_contents) const {
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   if (IsIncognito(web_contents))
-    return rb.GetImageNamed(IDR_AURA_LAUNCHER_LIST_INCOGNITO_BROWSER);
+    return rb.GetImageNamed(IDR_ASH_SHELF_LIST_INCOGNITO_BROWSER);
   FaviconTabHelper* favicon_tab_helper =
       FaviconTabHelper::FromWebContents(web_contents);
   gfx::Image result = favicon_tab_helper->GetFavicon();
@@ -1687,10 +1687,11 @@ ash::ShelfItemStatus ChromeLauncherController::GetAppState(
        ++it) {
     if (it->second == app_id) {
       Browser* browser = chrome::FindBrowserWithWebContents(it->first);
-      // There should never be an item in our |web_contents_to_app_id_| list
-      // which got deleted already. If it is, it is likely that
-      // BrowserStatusMonitor forgot to inform us of that change.
-      DCHECK(browser);
+      // Usually there should never be an item in our |web_contents_to_app_id_|
+      // list which got deleted already. However - in some situations e.g.
+      // Browser::SwapTabContent there is temporarily no associated browser.
+      if (!browser)
+        continue;
       if (browser->window()->IsActive()) {
         return browser->tab_strip_model()->GetActiveWebContents() == it->first ?
             ash::STATUS_ACTIVE : ash::STATUS_RUNNING;

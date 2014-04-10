@@ -615,18 +615,22 @@ std::string WebAXObjectProxy::StringValue() {
 }
 
 int WebAXObjectProxy::X() {
+  accessibility_object_.updateBackingStoreAndCheckValidity();
   return accessibility_object().boundingBoxRect().x;
 }
 
 int WebAXObjectProxy::Y() {
+  accessibility_object_.updateBackingStoreAndCheckValidity();
   return accessibility_object().boundingBoxRect().y;
 }
 
 int WebAXObjectProxy::Width() {
+  accessibility_object_.updateBackingStoreAndCheckValidity();
   return accessibility_object().boundingBoxRect().width;
 }
 
 int WebAXObjectProxy::Height() {
+  accessibility_object_.updateBackingStoreAndCheckValidity();
   return accessibility_object().boundingBoxRect().height;
 }
 
@@ -783,6 +787,9 @@ int WebAXObjectProxy::LineForIndex(int index) {
 
 std::string WebAXObjectProxy::BoundsForRange(int start, int end) {
   if (accessibility_object().role() != blink::WebAXRoleStaticText)
+    return std::string();
+
+  if (!accessibility_object_.updateBackingStoreAndCheckValidity())
     return std::string();
 
   int len = end - start;
@@ -973,7 +980,8 @@ bool RootWebAXObjectProxy::IsRoot() const {
   return true;
 }
 
-WebAXObjectProxyList::WebAXObjectProxyList() {
+WebAXObjectProxyList::WebAXObjectProxyList()
+    : elements_(blink::mainThreadIsolate()) {
 }
 
 WebAXObjectProxyList::~WebAXObjectProxyList() {
@@ -981,9 +989,7 @@ WebAXObjectProxyList::~WebAXObjectProxyList() {
 }
 
 void WebAXObjectProxyList::Clear() {
-  for (ElementList::iterator i = elements_.begin(); i != elements_.end(); ++i)
-    i->Dispose();
-  elements_.clear();
+  elements_.Clear();
 }
 
 v8::Handle<v8::Object> WebAXObjectProxyList::GetOrCreate(
@@ -993,15 +999,15 @@ v8::Handle<v8::Object> WebAXObjectProxyList::GetOrCreate(
 
   v8::Isolate* isolate = blink::mainThreadIsolate();
 
-  size_t elementCount = elements_.size();
+  size_t elementCount = elements_.Size();
   for (size_t i = 0; i < elementCount; i++) {
     WebAXObjectProxy* unwrapped_object = NULL;
-    bool result = gin::ConvertFromV8(isolate, elements_[i].NewLocal(isolate),
+    bool result = gin::ConvertFromV8(isolate, elements_.Get(i),
                                      &unwrapped_object);
     DCHECK(result);
     DCHECK(unwrapped_object);
     if (unwrapped_object->IsEqualToObject(object))
-      return elements_[i].NewLocal(isolate);
+      return elements_.Get(i);
   }
 
   v8::Handle<v8::Value> value_handle = gin::CreateHandle(
@@ -1009,9 +1015,8 @@ v8::Handle<v8::Object> WebAXObjectProxyList::GetOrCreate(
   if (value_handle.IsEmpty())
     return v8::Handle<v8::Object>();
   v8::Handle<v8::Object> handle = value_handle->ToObject();
-  UnsafePersistent<v8::Object> unsafe_handle(isolate, handle);
-  elements_.push_back(unsafe_handle);
-  return unsafe_handle.NewLocal(isolate);
+  elements_.Append(handle);
+  return handle;
 }
 
 v8::Handle<v8::Object> WebAXObjectProxyList::CreateRoot(
@@ -1022,9 +1027,8 @@ v8::Handle<v8::Object> WebAXObjectProxyList::CreateRoot(
   if (value_handle.IsEmpty())
     return v8::Handle<v8::Object>();
   v8::Handle<v8::Object> handle = value_handle->ToObject();
-  UnsafePersistent<v8::Object> unsafe_handle(isolate, handle);
-  elements_.push_back(unsafe_handle);
-  return unsafe_handle.NewLocal(isolate);
+  elements_.Append(handle);
+  return handle;
 }
 
 }  // namespace content

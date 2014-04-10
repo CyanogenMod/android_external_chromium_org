@@ -68,6 +68,32 @@
         <structure type="chrome_scaled_image" name="IDR_APP_WINDOW_MINIMIZE_H" file="win/app_window_minimize_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_APP_WINDOW_MINIMIZE_P" file="win/app_window_minimize_active.png" />
       </if>
+      <if expr="use_ash">
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_BACKGROUND_MAXIMIZED_H" file="common/ash/browser_window_control_background_maximized_hover.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_BACKGROUND_MAXIMIZED_P" file="common/ash/browser_window_control_background_maximized_pressed.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_BACKGROUND_RESTORED_H" file="common/ash/browser_window_control_background_restored_hover.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_BACKGROUND_RESTORED_P" file="common/ash/browser_window_control_background_restored_pressed.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_MAXIMIZED_CLOSE" file="common/ash/browser_window_control_icon_maximized_close.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_MAXIMIZED_LEFT_SNAPPED" file="common/ash/browser_window_control_icon_maximized_left_snapped.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_MAXIMIZED_MINIMIZE" file="common/ash/browser_window_control_icon_maximized_minimize.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_MAXIMIZED_RIGHT_SNAPPED" file="common/ash/browser_window_control_icon_maximized_right_snapped.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_MAXIMIZED_SIZE" file="common/ash/browser_window_control_icon_maximized_size.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_RESTORED_CLOSE" file="common/ash/browser_window_control_icon_restored_close.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_RESTORED_LEFT_SNAPPED" file="common/ash/browser_window_control_icon_restored_left_snapped.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_RESTORED_MINIMIZE" file="common/ash/browser_window_control_icon_restored_minimize.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_RESTORED_RIGHT_SNAPPED" file="common/ash/browser_window_control_icon_restored_right_snapped.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_RESTORED_SIZE" file="common/ash/browser_window_control_icon_restored_size.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_BASE_MAXIMIZED" file="common/ash/browser_window_header_base_maximized.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_BASE_RESTORED_ACTIVE" file="common/ash/browser_window_header_base_active.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_BASE_RESTORED_INACTIVE" file="common/ash/browser_window_header_base_inactive.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_BASE_RESTORED_INCOGNITO_ACTIVE" file="common/ash/browser_window_header_base_incognito_active.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_BASE_RESTORED_INCOGNITO_INACTIVE" file="common/ash/browser_window_header_base_incognito_inactive.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_SHADE_LEFT" file="common/ash/browser_window_header_shade_left.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_SHADE_RIGHT" file="common/ash/browser_window_header_shade_right.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_SHADE_TOP" file="common/ash/browser_window_header_shade_top.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_SHADE_TOP_LEFT" file="common/ash/browser_window_header_shade_top_left.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_SHADE_TOP_RIGHT" file="common/ash/browser_window_header_shade_top_right.png" />
+      </if>
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_DIALOG_MENU_BUTTON" file="common/autofill_dialog_menu_button_normal.png" />
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_DIALOG_MENU_BUTTON_P" file="common/autofill_dialog_menu_button_pressed.png" />
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_DIALOG_MENU_BUTTON_H" file="common/autofill_dialog_menu_button_hover.png" />
@@ -98,6 +124,7 @@
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_LOCATION" file="common/blocked_location.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_MEDIA" file="common/blocked_media.png" />
       <structure type="chrome_scaled_image" name="IDR_SAVE_PASSWORD" file="common/save_password.png" />
+      <structure type="chrome_scaled_image" name="IDR_SAVE_PASSWORD_BLACKLISTED" file="common/blocked_images.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_MIDI_SYSEX" file="common/blocked_midi.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_MOUSE_CURSOR" file="common/blocked_mouse_cursor.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_MIXED_CONTENT" file="common/blocked_mixed_content.png" />
@@ -141,7 +168,7 @@
         <structure type="chrome_scaled_image" name="IDR_CONTENT_TOP_CENTER" file="content_top_center.png" />
       </if>
       <if expr="use_ash">
-        <structure type="chrome_scaled_image" name="IDR_CONTENT_TOP_CENTER" file="cros/content_top_center.png" />
+        <structure type="chrome_scaled_image" name="IDR_CONTENT_TOP_CENTER" file="common/ash/content_top_center.png" />
         <if expr="is_win">
           <structure type="chrome_scaled_image" name="IDR_CONTENT_TOP_CENTER_WIN" file="content_top_center.png" />
         </if>
@@ -247,30 +274,50 @@
 
       <structure type="chrome_scaled_image" name="IDR_FILE_FOLDER" file="common/folder.png" />
       <if expr="chromeos">
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_ARCHIVE" file="cros/file_types/archive.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_AUDIO" file="cros/file_types/audio.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_DRIVE" file="cros/file_types/drive.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_EXCEL" file="cros/file_types/excel.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_FORM" file="cros/file_types/form.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_GDOC" file="cros/file_types/gdoc.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_GDRAW" file="cros/file_types/gdraw.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_GENERIC" file="cros/file_types/generic.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_GLINK" file="cros/file_types/glink.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_GSHEET" file="cros/file_types/gsheet.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_GSLIDES" file="cros/file_types/gslides.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_GTABLE" file="cros/file_types/gtable.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_IMAGE" file="cros/file_types/image.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_PDF" file="cros/file_types/pdf.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_PPT" file="cros/file_types/ppt.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_SCRIPT" file="cros/file_types/script.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_SITES" file="cros/file_types/sites.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_VIDEO" file="cros/file_types/video.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_WORD" file="cros/file_types/word.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_AUDIO" file="cros/file_types/thumbnails/audio.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_FOLDER" file="cros/file_types/thumbnails/folder.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_GENERIC" file="cros/file_types/thumbnails/generic.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_IMAGE" file="cros/file_types/thumbnails/image.png" />
-        <structure type="chrome_scaled_image" name="IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_VIDEO" file="cros/file_types/thumbnails/video.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_ARCHIVE" file="cros/file_types/archive.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_ARCHIVE_WHITE" file="cros/file_types/archive_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_AUDIO" file="cros/file_types/audio.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_AUDIO_WHITE" file="cros/file_types/audio_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_DRIVE" file="cros/file_types/drive.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_EXCEL" file="cros/file_types/excel.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_EXCEL_WHITE" file="cros/file_types/excel_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_FOLDER" file="cros/file_types/folder.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_FOLDER_WHITE" file="cros/file_types/folder_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_FORM" file="cros/file_types/form.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_FORM_WHITE" file="cros/file_types/form_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GDOC" file="cros/file_types/gdoc.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GDOC_WHITE" file="cros/file_types/gdoc_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GDRAW" file="cros/file_types/gdraw.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GDRAW_WHITE" file="cros/file_types/gdraw_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GENERIC" file="cros/file_types/generic.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GENERIC_WHITE" file="cros/file_types/generic_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GLINK" file="cros/file_types/glink.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GLINK_WHITE" file="cros/file_types/glink_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GSHEET" file="cros/file_types/gsheet.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GSHEET_WHITE" file="cros/file_types/gsheet_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GSLIDES" file="cros/file_types/gslides.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GSLIDES_WHITE" file="cros/file_types/gslides_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GTABLE" file="cros/file_types/gtable.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_GTABLE_WHITE" file="cros/file_types/gtable_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_IMAGE" file="cros/file_types/image.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_IMAGE_WHITE" file="cros/file_types/image_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_PDF" file="cros/file_types/pdf.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_PDF_WHITE" file="cros/file_types/pdf_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_PPT" file="cros/file_types/ppt.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_PPT_WHITE" file="cros/file_types/ppt_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_SCRIPT" file="cros/file_types/script.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_SCRIPT_WHITE" file="cros/file_types/script_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_SITES" file="cros/file_types/sites.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_SITES_WHITE" file="cros/file_types/sites_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_VIDEO" file="cros/file_types/video.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_VIDEO_WHITE" file="cros/file_types/video_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_WORD" file="cros/file_types/word.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_WORD_WHITE" file="cros/file_types/word_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_LARGE_AUDIO" file="cros/file_types/thumbnails/audio.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_LARGE_FOLDER" file="cros/file_types/thumbnails/folder.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_LARGE_GENERIC" file="cros/file_types/thumbnails/generic.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_LARGE_IMAGE" file="cros/file_types/thumbnails/image.png" />
+        <structure type="chrome_scaled_image" name="IDR_FILETYPE_LARGE_VIDEO" file="cros/file_types/thumbnails/video.png" />
       </if>
 
       <if expr="chromeos">
@@ -338,6 +385,7 @@
         <structure type="chrome_scaled_image"
         name="IDR_ICON_PROFILES_EDIT_HOVER" file="common/edit_button_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_ICON_PROFILES_EDIT_PRESSED" file="common/edit_button_pressed.png" />
+        <structure type="chrome_scaled_image" name="IDR_ICON_PROFILES_MENU_CARET" file="common/carrot_blue.png" />
       </if>
       <if expr="not is_android and not is_ios and not chromeos">
         <!-- TODO(noms): Remove this once local profile avatars are migrated -->
@@ -636,7 +684,7 @@
           <structure type="chrome_scaled_image" name="IDR_OTR_ICON" file="common/otr_icon.png" />
         </if>
         <if expr="use_ash">
-          <structure type="chrome_scaled_image" name="IDR_OTR_ICON" file="cros/otr_icon.png" />
+          <structure type="chrome_scaled_image" name="IDR_OTR_ICON" file="common/ash/otr_icon.png" />
           <if expr="is_win">
             <structure type="chrome_scaled_image" name="IDR_OTR_ICON_WIN" file="common/otr_icon.png" />
           </if>
@@ -1171,10 +1219,10 @@
       </if>
       <if expr="use_ash">
         <!-- Ash has a gray frame, Windows uses blue. -->
-        <structure type="chrome_scaled_image" name="IDR_THEME_FRAME" file="cros/theme_frame_active.png" />
-        <structure type="chrome_scaled_image" name="IDR_THEME_FRAME_INACTIVE" file="cros/theme_frame_inactive.png" />
-        <structure type="chrome_scaled_image" name="IDR_THEME_FRAME_INCOGNITO" file="cros/theme_frame_incognito_active.png" />
-        <structure type="chrome_scaled_image" name="IDR_THEME_FRAME_INCOGNITO_INACTIVE" file="cros/theme_frame_incognito_inactive.png" />
+        <structure type="chrome_scaled_image" name="IDR_THEME_FRAME" file="common/ash/theme_frame_active.png" />
+        <structure type="chrome_scaled_image" name="IDR_THEME_FRAME_INACTIVE" file="common/ash/theme_frame_inactive.png" />
+        <structure type="chrome_scaled_image" name="IDR_THEME_FRAME_INCOGNITO" file="common/ash/theme_frame_incognito_active.png" />
+        <structure type="chrome_scaled_image" name="IDR_THEME_FRAME_INCOGNITO_INACTIVE" file="common/ash/theme_frame_incognito_inactive.png" />
         <if expr="is_win">
           <structure type="chrome_scaled_image" name="IDR_THEME_FRAME_WIN" file="theme_frame.png" />
           <structure type="chrome_scaled_image" name="IDR_THEME_FRAME_INACTIVE_WIN" file="theme_frame_inactive.png" />
@@ -1192,8 +1240,8 @@
       </if>
       <if expr="use_ash">
         <!-- Ash has gray tab backgrounds, Windows uses blue. -->
-        <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND" file="cros/theme_default_inactive.png" />
-        <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND_INCOGNITO" file="cros/theme_default_inactive.png" />
+        <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND" file="common/ash/theme_default_inactive.png" />
+        <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND_INCOGNITO" file="common/ash/theme_default_inactive.png" />
         <if expr="is_win">
           <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND_WIN" file="theme_tab_background.png" />
           <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND_INCOGNITO_WIN" file="theme_tab_background_incognito.png" />
@@ -1209,7 +1257,7 @@
       </if>
       <if expr="use_ash">
         <!-- Ash has a dark gray toolbar background, Windows has light gray. -->
-        <structure type="chrome_scaled_image" name="IDR_THEME_TOOLBAR" file="cros/theme_default_active.png" />
+        <structure type="chrome_scaled_image" name="IDR_THEME_TOOLBAR" file="common/ash/theme_default_active.png" />
         <if expr="is_win">
           <structure type="chrome_scaled_image" name="IDR_THEME_TOOLBAR_WIN" file="theme_toolbar_default.png" />
         </if>

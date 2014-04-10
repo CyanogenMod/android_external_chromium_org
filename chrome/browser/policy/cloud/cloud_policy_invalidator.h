@@ -20,6 +20,7 @@
 #include "sync/notifier/invalidation_handler.h"
 
 namespace base {
+class Clock;
 class SequencedTaskRunner;
 }
 
@@ -43,13 +44,27 @@ class CloudPolicyInvalidator : public syncer::InvalidationHandler,
   static const int kMaxFetchDelayMin;
   static const int kMaxFetchDelayMax;
 
+  // The grace period, in seconds, to allow for invalidations to be received
+  // once the invalidation service starts up.
+  static const int kInvalidationGracePeriod;
+
+  // Time, in seconds, for which unknown version invalidations are ignored after
+  // fetching a policy.
+  static const int kUnknownVersionIgnorePeriod;
+
+  // The max tolerated discrepancy, in seconds, between policy timestamps and
+  // invalidation timestamps when determining if an invalidation is expired.
+  static const int kMaxInvalidationTimeDelta;
+
   // |core| is the cloud policy core which connects the various policy objects.
   // It must remain valid until Shutdown is called.
   // |task_runner| is used for scheduling delayed tasks. It must post tasks to
   // the main policy thread.
+  // |clock| is used to get the current time.
   CloudPolicyInvalidator(
       CloudPolicyCore* core,
-      const scoped_refptr<base::SequencedTaskRunner>& task_runner);
+      const scoped_refptr<base::SequencedTaskRunner>& task_runner,
+      scoped_ptr<base::Clock> clock);
   virtual ~CloudPolicyInvalidator();
 
   // Initializes the invalidator. No invalidations will be generated before this
@@ -92,7 +107,7 @@ class CloudPolicyInvalidator : public syncer::InvalidationHandler,
   void UpdateRegistration(const enterprise_management::PolicyData* policy);
 
   // Registers the given object with the invalidation service.
-  void Register(int64 timestamp, const invalidation::ObjectId& object_id);
+  void Register(const invalidation::ObjectId& object_id);
 
   // Unregisters the current object with the invalidation service.
   void Unregister();
@@ -117,9 +132,20 @@ class CloudPolicyInvalidator : public syncer::InvalidationHandler,
   // previous call.
   bool IsPolicyChanged(const enterprise_management::PolicyData* policy);
 
+  // Determine if an invalidation has expired.
+  // |version| is the version of the invalidation, or zero for unknown.
+  bool IsInvalidationExpired(int64 version);
+
   // Get the kMetricPolicyRefresh histogram metric which should be incremented
   // when a policy is stored.
   int GetPolicyRefreshMetric(bool policy_changed);
+
+  // Get the kMetricPolicyInvalidations histogram metric which should be
+  // incremented when an invalidation is received.
+  int GetInvalidationMetric(bool is_missing_payload, bool is_expired);
+
+  // Determine if invalidations have been enabled longer than the grace period.
+  bool GetInvalidationsEnabled();
 
   // The state of the object.
   enum State {
@@ -136,6 +162,9 @@ class CloudPolicyInvalidator : public syncer::InvalidationHandler,
   // Schedules delayed tasks.
   const scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
+  // The clock.
+  scoped_ptr<base::Clock> clock_;
+
   // The invalidation service.
   invalidation::InvalidationService* invalidation_service_;
 
@@ -144,12 +173,14 @@ class CloudPolicyInvalidator : public syncer::InvalidationHandler,
   // has registered for a policy object.
   bool invalidations_enabled_;
 
+  // The time that invalidations became enabled.
+  base::Time invalidations_enabled_time_;
+
   // Whether the invalidation service is currently enabled.
   bool invalidation_service_enabled_;
 
-  // The timestamp of the PolicyData at which this object registered for policy
-  // invalidations. Set to zero if the object has not registered yet.
-  int64 registered_timestamp_;
+  // Whether this object has registered for policy invalidations.
+  bool is_registered_;
 
   // The object id representing the policy in the invalidation service.
   invalidation::ObjectId object_id_;

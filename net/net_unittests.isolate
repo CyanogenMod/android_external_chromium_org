@@ -32,22 +32,14 @@
           '../third_party/pyftpdlib/',
           '../third_party/pywebsocket/',
           '../third_party/tlslite/',
-          '../tools/swarming_client/',
           '<(PRODUCT_DIR)/pyproto/',
           'tools/testserver/',
         ],
         'read_only': 1,
       },
     }],
-    ['OS=="linux" and component=="shared_library"', {
-      'variables': {
-        'isolate_dependency_tracked': [
-          '<(PRODUCT_DIR)/lib/libopenssl.so',
-        ],
-      },
-    }],
   ],
   'includes': [
-    'net.isolate',
+    '../base/base.isolate',
   ],
 }

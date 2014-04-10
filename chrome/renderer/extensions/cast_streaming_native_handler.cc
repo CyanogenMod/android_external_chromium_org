@@ -59,10 +59,10 @@ bool ToCastRtpPayloadParamsOrThrow(v8::Isolate* isolate,
                                    const RtpPayloadParams& ext_params,
                                    CastRtpPayloadParams* cast_params) {
   cast_params->payload_type = ext_params.payload_type;
+  cast_params->max_latency_ms = ext_params.max_latency;
   cast_params->codec_name = ext_params.codec_name;
-  cast_params->ssrc = ext_params.ssrc ? *ext_params.ssrc : 0;
-  cast_params->feedback_ssrc =
-      ext_params.feedback_ssrc ? *ext_params.feedback_ssrc : 0;
+  cast_params->ssrc = ext_params.ssrc;
+  cast_params->feedback_ssrc = ext_params.feedback_ssrc;
   cast_params->clock_rate = ext_params.clock_rate ? *ext_params.clock_rate : 0;
   cast_params->min_bitrate =
       ext_params.min_bitrate ? *ext_params.min_bitrate : 0;
@@ -96,11 +96,10 @@ bool ToCastRtpPayloadParamsOrThrow(v8::Isolate* isolate,
 void FromCastRtpPayloadParams(const CastRtpPayloadParams& cast_params,
                               RtpPayloadParams* ext_params) {
   ext_params->payload_type = cast_params.payload_type;
+  ext_params->max_latency = cast_params.max_latency_ms;
   ext_params->codec_name = cast_params.codec_name;
-  if (cast_params.ssrc)
-    ext_params->ssrc.reset(new int(cast_params.ssrc));
-  if (cast_params.feedback_ssrc)
-    ext_params->feedback_ssrc.reset(new int(cast_params.feedback_ssrc));
+  ext_params->ssrc = cast_params.ssrc;
+  ext_params->feedback_ssrc = cast_params.feedback_ssrc;
   if (cast_params.clock_rate)
     ext_params->clock_rate.reset(new int(cast_params.clock_rate));
   if (cast_params.min_bitrate)
@@ -148,7 +147,7 @@ bool ToCastRtpParamsOrThrow(v8::Isolate* isolate,
 
 CastStreamingNativeHandler::CastStreamingNativeHandler(ChromeV8Context* context)
     : ObjectBackedNativeHandler(context),
-      last_transport_id_(0),
+      last_transport_id_(1),
       weak_factory_(this) {
   RouteFunction("CreateSession",
       base::Bind(&CastStreamingNativeHandler::CreateCastSession,

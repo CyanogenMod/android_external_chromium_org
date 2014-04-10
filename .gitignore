@@ -50,6 +50,7 @@ v8.log
 /build/ipch/
 /build/Release
 /build/Release_x64
+/build/win_toolchain.json
 /build/util/LASTCHANGE*
 /build/util/support
 /build/x64/
@@ -121,6 +122,7 @@ v8.log
 /chrome/test/data/perf/third_party/
 /chrome/test/data/plugin/
 /chrome/test/data/pyauto_private
+/chrome/test/data/webrtc/resources
 /chrome/tools/memory
 /chrome/tools/test/reference_build
 /chrome/unit_tests_run.xml
@@ -357,6 +359,7 @@ v8.log
 /tools/metrics/histograms/histograms.before.pretty-print.xml
 /tools/page_cycler/acid3
 /tools/perf/data
+/tools/perf/internal
 /tools/perf/results.html
 /tools/swarming_client
 /tools/tryserver

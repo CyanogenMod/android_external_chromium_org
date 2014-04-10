@@ -16,7 +16,9 @@
 #include <utility>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "sandbox/linux/sandbox_export.h"
 #include "sandbox/linux/seccomp-bpf/die.h"
 #include "sandbox/linux/seccomp-bpf/errorcode.h"
 #include "sandbox/linux/seccomp-bpf/linux_seccomp.h"
@@ -41,7 +43,7 @@ class SandboxBPFPolicy;
 class SandboxUnittestHelper;
 struct Instruction;
 
-class SandboxBPF {
+class SANDBOX_EXPORT SandboxBPF {
  public:
   enum SandboxStatus {
     STATUS_UNKNOWN,      // Status prior to calling supportsSeccompSandbox()
@@ -49,6 +51,18 @@ class SandboxBPF {
     STATUS_UNAVAILABLE,  // Currently unavailable but might work again later
     STATUS_AVAILABLE,    // Sandboxing is available but not currently active
     STATUS_ENABLED       // The sandbox is now active
+  };
+
+  // Depending on the level of kernel support, seccomp-bpf may require the
+  // process to be single-threaded in order to enable it. When calling
+  // StartSandbox(), the program should indicate whether or not the sandbox
+  // should try and engage with multi-thread support.
+  enum SandboxThreadState {
+    PROCESS_INVALID,
+    PROCESS_SINGLE_THREADED,  // The program is currently single-threaded.
+    // Note: PROCESS_MULTI_THREADED requires experimental kernel support that
+    // has not been contributed to upstream Linux.
+    PROCESS_MULTI_THREADED,   // The program may be multi-threaded.
   };
 
   // When calling setSandboxPolicy(), the caller can provide an arbitrary
@@ -167,6 +181,8 @@ class SandboxBPF {
   // This is the main public entry point. It finds all system calls that
   // need rewriting, sets up the resources needed by the sandbox, and
   // enters Seccomp mode.
+  // The calling process must specify its current SandboxThreadState, as a way
+  // to tell the sandbox which type of kernel support it should engage.
   // It is possible to stack multiple sandboxes by creating separate "Sandbox"
   // objects and calling "StartSandbox()" on each of them. Please note, that
   // this requires special care, though, as newly stacked sandboxes can never
@@ -175,7 +191,7 @@ class SandboxBPF {
   // disallowed.
   // Finally, stacking does add more kernel overhead than having a single
   // combined policy. So, it should only be used if there are no alternatives.
-  void StartSandbox();
+  bool StartSandbox(SandboxThreadState thread_state) WARN_UNUSED_RESULT;
 
   // Assembles a BPF filter program from the current policy. After calling this
   // function, you must not call any other sandboxing function.
@@ -228,7 +244,7 @@ class SandboxBPF {
 
   // Assembles and installs a filter based on the policy that has previously
   // been configured with SetSandboxPolicy().
-  void InstallFilter();
+  void InstallFilter(SandboxThreadState thread_state);
 
   // Verify the correctness of a compiled program by comparing it against the
   // current policy. This function should only ever be called by unit tests and

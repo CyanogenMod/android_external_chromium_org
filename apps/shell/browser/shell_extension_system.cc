@@ -6,9 +6,7 @@
 
 #include <string>
 
-#include "apps/app_window_registry.h"
-#include "apps/browser/api/app_runtime/app_runtime_api.h"
-#include "base/command_line.h"
+#include "apps/shell/browser/shell_app_runtime_api.h"
 #include "base/files/file_path.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/common/extensions/extension_file_util.h"
@@ -75,15 +73,11 @@ bool ShellExtensionSystem::LoadAndLaunchApp(const base::FilePath& app_dir) {
       content::Source<BrowserContext>(browser_context_),
       content::NotificationService::NoDetails());
 
-  // Launch the app.
-  apps::AppEventRouter::DispatchOnLaunchedEvent(browser_context_, extension);
+  // Send the onLaunched event.
+  ShellAppRuntimeAPI::DispatchOnLaunchedEvent(event_router_.get(),
+                                              extension.get());
 
   return true;
-}
-
-void ShellExtensionSystem::CloseApp() {
-  apps::AppWindowRegistry::Get(browser_context_)
-      ->CloseAllAppWindowsForApp(app_id_);
 }
 
 void ShellExtensionSystem::Shutdown() {

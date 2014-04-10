@@ -8,6 +8,7 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
+#include "base/sys_info.h"
 #include "chrome/renderer/media/cast_session.h"
 #include "chrome/renderer/media/cast_udp_transport.h"
 #include "content/public/renderer/media_stream_audio_sink.h"
@@ -51,6 +52,7 @@ CastRtpPayloadParams DefaultOpusPayload() {
   payload.ssrc = 1;
   payload.feedback_ssrc = 2;
   payload.payload_type = 127;
+  payload.max_latency_ms = media::cast::kDefaultRtpMaxDelayMs;
   payload.codec_name = kCodecNameOpus;
   payload.clock_rate = 48000;
   payload.channels = 2;
@@ -65,6 +67,7 @@ CastRtpPayloadParams DefaultVp8Payload() {
   payload.ssrc = 11;
   payload.feedback_ssrc = 12;
   payload.payload_type = 96;
+  payload.max_latency_ms = media::cast::kDefaultRtpMaxDelayMs;
   payload.codec_name = kCodecNameVp8;
   payload.clock_rate = 90000;
   payload.width = 1280;
@@ -81,6 +84,7 @@ CastRtpPayloadParams DefaultH264Payload() {
   payload.ssrc = 11;
   payload.feedback_ssrc = 12;
   payload.payload_type = 96;
+  payload.max_latency_ms = media::cast::kDefaultRtpMaxDelayMs;
   payload.codec_name = kCodecNameH264;
   payload.clock_rate = 90000;
   payload.width = 1280;
@@ -116,6 +120,19 @@ bool IsHardwareH264EncodingSupported() {
   return false;
 }
 
+int NumberOfEncodeThreads() {
+  // We want to give CPU cycles for capturing and not to saturate the system
+  // just for encoding. So on a lower end system with only 1 or 2 cores we
+  // use only one thread for encoding.
+  if (base::SysInfo::NumberOfProcessors() <= 2)
+    return 1;
+
+  // On higher end we want to use 2 threads for encoding to reduce latency.
+  // In theory a physical CPU core has maximum 2 hyperthreads. Having 3 or
+  // more logical processors means the system has at least 2 physical cores.
+  return 2;
+}
+
 std::vector<CastRtpParams> SupportedAudioParams() {
   // TODO(hclam): Fill in more codecs here.
   std::vector<CastRtpParams> supported_params;
@@ -136,6 +153,7 @@ bool ToAudioSenderConfig(const CastRtpParams& params,
   config->sender_ssrc = params.payload.ssrc;
   config->incoming_feedback_ssrc = params.payload.feedback_ssrc;
   config->rtp_config.payload_type = params.payload.payload_type;
+  config->rtp_config.max_delay_ms = params.payload.max_latency_ms;
   config->use_external_encoder = false;
   config->frequency = params.payload.clock_rate;
   config->channels = params.payload.channels;
@@ -153,6 +171,7 @@ bool ToVideoSenderConfig(const CastRtpParams& params,
   config->sender_ssrc = params.payload.ssrc;
   config->incoming_feedback_ssrc = params.payload.feedback_ssrc;
   config->rtp_config.payload_type = params.payload.payload_type;
+  config->rtp_config.max_delay_ms = params.payload.max_latency_ms;
   config->use_external_encoder = false;
   config->width = params.payload.width;
   config->height = params.payload.height;
@@ -167,6 +186,9 @@ bool ToVideoSenderConfig(const CastRtpParams& params,
     config->codec = media::cast::transport::kH264;
   } else {
     return false;
+  }
+  if (!config->use_external_encoder) {
+    config->number_of_encode_threads = NumberOfEncodeThreads();
   }
   return true;
 }
@@ -210,18 +232,18 @@ class CastVideoSink : public base::SupportsWeakPtr<CastVideoSink>,
     // capture and delivery here for the first frame. We do not account
     // for this delay.
     if (first_frame_timestamp_.is_null())
-      first_frame_timestamp_ = base::TimeTicks::Now() - frame->GetTimestamp();;
+      first_frame_timestamp_ = base::TimeTicks::Now() - frame->timestamp();
 
     // Used by chrome/browser/extension/api/cast_streaming/performance_test.cc
     TRACE_EVENT_INSTANT2(
         "mirroring", "MediaStreamVideoSink::OnVideoFrame",
         TRACE_EVENT_SCOPE_THREAD,
         "timestamp",
-        (first_frame_timestamp_ + frame->GetTimestamp()).ToInternalValue(),
-        "time_delta", frame->GetTimestamp().ToInternalValue());
+        (first_frame_timestamp_ + frame->timestamp()).ToInternalValue(),
+        "time_delta", frame->timestamp().ToInternalValue());
 
     frame_input_->InsertRawVideoFrame(
-        frame, first_frame_timestamp_ + frame->GetTimestamp());
+        frame, first_frame_timestamp_ + frame->timestamp());
   }
 
   // Attach this sink to a video track represented by |track_|.
@@ -395,6 +417,7 @@ CastCodecSpecificParams::~CastCodecSpecificParams() {}
 
 CastRtpPayloadParams::CastRtpPayloadParams()
     : payload_type(0),
+      max_latency_ms(0),
       ssrc(0),
       feedback_ssrc(0),
       clock_rate(0),
@@ -429,6 +452,7 @@ void CastRtpStream::Start(const CastRtpParams& params,
                           const base::Closure& start_callback,
                           const base::Closure& stop_callback,
                           const ErrorCallback& error_callback) {
+  VLOG(1) << "CastRtpStream::Start =  " << (IsAudio() ? "audio" : "video");
   stop_callback_ = stop_callback;
   error_callback_ = error_callback;
 
@@ -475,6 +499,7 @@ void CastRtpStream::Start(const CastRtpParams& params,
 }
 
 void CastRtpStream::Stop() {
+  VLOG(1) << "CastRtpStream::Stop =  " << (IsAudio() ? "audio" : "video");
   audio_sink_.reset();
   video_sink_.reset();
   stop_callback_.Run();

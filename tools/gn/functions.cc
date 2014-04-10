@@ -298,7 +298,7 @@ Value RunDeclareArgs(Scope* scope,
 
 const char kDefined[] = "defined";
 const char kDefined_HelpShort[] =
-    "defines: Returns whether an identifier is defined.";
+    "defined: Returns whether an identifier is defined.";
 const char kDefined_Help[] =
     "defined: Returns whether an identifier is defined.\n"
     "\n"
@@ -532,12 +532,21 @@ Value RunPrint(Scope* scope,
                const FunctionCallNode* function,
                const std::vector<Value>& args,
                Err* err) {
+  std::string output;
   for (size_t i = 0; i < args.size(); i++) {
     if (i != 0)
-      std::cout << " ";
-    std::cout << args[i].ToString(false);
+      output.push_back(' ');
+    output.append(args[i].ToString(false));
   }
-  std::cout << std::endl;
+  output.push_back('\n');
+
+  const BuildSettings::PrintCallback& cb =
+      scope->settings()->build_settings()->print_callback();
+  if (cb.is_null())
+    printf("%s", output.c_str());
+  else
+    cb.Run(output);
+
   return Value();
 }
 

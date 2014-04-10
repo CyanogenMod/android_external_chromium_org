@@ -32,7 +32,6 @@ _EXCLUDED_PATHS = (
 # checks until it's transitioned to chromium coding style.
 _TESTRUNNER_PATHS = (
     r"^content[\\\/]shell[\\\/]renderer[\\\/]test_runner[\\\/].*",
-    r"^content[\\\/]shell[\\\/]common[\\\/]test_runner[\\\/].*",
     r"^content[\\\/]shell[\\\/]tools[\\\/]plugin[\\\/].*",
 )
 
@@ -233,6 +232,15 @@ _BANNED_CPP_FUNCTIONS = (
         r'^base[\\\/]posix[\\\/]eintr_wrapper\.h$',
         r'^ppapi[\\\/]tests[\\\/]test_broker\.cc$',
       ),
+    ),
+    (
+      r'/v8::Extension\(',
+      (
+        'Do not introduce new v8::Extensions into the code base, use',
+        'gin::Wrappable instead. See http://crbug.com/334679',
+      ),
+      True,
+      (),
     ),
 )
 

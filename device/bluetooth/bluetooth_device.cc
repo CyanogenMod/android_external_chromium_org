@@ -7,21 +7,17 @@
 #include <string>
 
 #include "base/strings/utf_string_conversions.h"
-#include "device/bluetooth/bluetooth_utils.h"
+#include "device/bluetooth/bluetooth_gatt_service.h"
 #include "grit/device_bluetooth_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace device {
 
-// static
-bool BluetoothDevice::IsUUIDValid(const std::string& uuid) {
-  return !bluetooth_utils::CanonicalUuid(uuid).empty();
-}
-
 BluetoothDevice::BluetoothDevice() {
 }
 
 BluetoothDevice::~BluetoothDevice() {
+  STLDeleteValues(&gatt_services_);
 }
 
 base::string16 BluetoothDevice::GetName() const {
@@ -172,6 +168,23 @@ bool BluetoothDevice::IsPairable() const {
   // TODO: Move this database into a config file.
 
   return true;
+}
+
+std::vector<BluetoothGattService*>
+    BluetoothDevice::GetGattServices() const {
+  std::vector<BluetoothGattService*> services;
+  for (GattServiceMap::const_iterator iter = gatt_services_.begin();
+       iter != gatt_services_.end(); ++iter)
+    services.push_back(iter->second);
+  return services;
+}
+
+BluetoothGattService* BluetoothDevice::GetGattService(
+    const std::string& identifier) const {
+  GattServiceMap::const_iterator iter = gatt_services_.find(identifier);
+  if (iter != gatt_services_.end())
+    return iter->second;
+  return NULL;
 }
 
 }  // namespace device

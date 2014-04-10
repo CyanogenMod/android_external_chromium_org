@@ -18,6 +18,7 @@
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
 #include "chrome/browser/chromeos/system/fake_input_device_settings.h"
 #include "chrome/browser/feedback/tracing_manager.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_chromeos.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
@@ -89,8 +90,6 @@ class PreferencesTest : public LoginManagerTest {
     EXPECT_EQ(prefs->GetBoolean(prefs::kEnableTouchpadThreeFingerClick),
               input_settings_->current_touchpad_settings()
                   .GetThreeFingerClick());
-    EXPECT_EQ(prefs->GetBoolean(prefs::kNaturalScroll),
-              ui::IsNaturalScrollEnabled());
     EXPECT_EQ(prefs->GetInteger(prefs::kMouseSensitivity),
               input_settings_->current_mouse_settings().GetSensitivity());
     EXPECT_EQ(prefs->GetInteger(prefs::kTouchpadSensitivity),
@@ -115,6 +114,14 @@ class PreferencesTest : public LoginManagerTest {
               prefs->GetBoolean(prefs::kTapToClickEnabled));
     EXPECT_EQ(local_state->GetBoolean(prefs::kOwnerPrimaryMouseButtonRight),
               prefs->GetBoolean(prefs::kPrimaryMouseButtonRight));
+  }
+
+  void DisableAnimations() {
+    // Disable animations for user transitions.
+    chrome::MultiUserWindowManagerChromeOS* manager =
+        static_cast<chrome::MultiUserWindowManagerChromeOS*>(
+            chrome::MultiUserWindowManager::GetInstance());
+    manager->SetAnimationsForTest(true);
   }
 
  private:
@@ -156,6 +163,7 @@ IN_PROC_BROWSER_TEST_F(PreferencesTest, MultiProfiles) {
   CheckSettingsCorrespondToPrefs(prefs1);
 
   // Switch user and check that settings was changed accordingly.
+  DisableAnimations();
   user_manager->SwitchActiveUser(kTestUsers[1]);
   EXPECT_TRUE(user2->is_active());
   CheckSettingsCorrespondToPrefs(prefs2);

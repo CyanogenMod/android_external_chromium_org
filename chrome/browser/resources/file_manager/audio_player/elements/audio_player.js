@@ -12,11 +12,12 @@ Polymer('audio-player', {
   audioElement: null,
   trackList: null,
 
-  // Attributes of the element (little charactor only).
-  // These value must be used only to data binding and shouldn't be assignred
-  // anu value nowhere except in the handler.
+  // Attributes of the element (lower characters only).
+  // These values must be used only to data binding and shouldn't be assigned
+  // any value nowhere except in the handler.
   playing: false,
   currenttrackurl: '',
+  playcount: 0,
 
   /**
    * Model object of the Audio Player.
@@ -33,7 +34,9 @@ Polymer('audio-player', {
     this.audioElement = this.$.audio;
     this.trackList = this.$.trackList;
 
-    this.audioElement.volume = 0;  // Temporaly initial volume.
+    this.addEventListener('keydown', this.onKeyDown_.bind(this));
+
+    this.audioElement.volume = 0;  // Temporary initial volume.
     this.audioElement.addEventListener('ended', this.onAudioEnded.bind(this));
     this.audioElement.addEventListener('error', this.onAudioError.bind(this));
 
@@ -123,7 +126,7 @@ Polymer('audio-player', {
   /**
    * Invoked when the model changed.
    * @param {AudioPlayerModel} oldValue Old Value.
-   * @param {AudioPlayerModel} newValue Nld Value.
+   * @param {AudioPlayerModel} newValue New Value.
    */
   modelChanged: function(oldValue, newValue) {
     this.trackList.model = newValue;
@@ -168,6 +171,7 @@ Polymer('audio-player', {
    * This handler is registered in this.ready().
    */
   onAudioEnded: function() {
+    this.playcount++;
     this.advance_(true /* forward */, this.model.repeat);
   },
 
@@ -192,6 +196,17 @@ Polymer('audio-player', {
   },
 
   /**
+   * Invoked when receiving a request to replay the current music from the track
+   * list element.
+   */
+  onReplayCurrentTrack: function() {
+    // Changes the current time back to the beggining, regardless of the current
+    // status (playing or paused).
+    this.audioElement.currentTime = 0;
+    this.audioController.time = 0;
+  },
+
+  /**
    * Goes to the previous or the next track.
    * @param {boolean} forward True if next, false if previous.
    * @param {boolean} repeat True if repeat-mode is enabled. False otherwise.
@@ -205,6 +220,15 @@ Polymer('audio-player', {
         (this.trackList.getNextTrackIndex(forward, repeat) !== -1);
 
     this.audioController.playing = isNextTrackAvailable;
+
+    // If there is only a single file in the list, 'currentTrackInde' is not
+    // changed and the handler is not invoked. Instead, plays here.
+    // TODO(yoshiki): clean up the code around here.
+    if (isNextTrackAvailable &&
+        this.trackList.currentTrackIndex == nextTrackIndex) {
+      this.audioElement.play();
+    }
+
     this.trackList.currentTrackIndex = nextTrackIndex;
 
     Platform.performMicrotaskCheckpoint();
@@ -291,5 +315,30 @@ Polymer('audio-player', {
    */
   onPageUnload: function() {
     this.audioElement.src = '';  // Hack to prevent crashing.
+  },
+
+  /**
+   * Invoked the 'keydown' event is fired.
+   * @param {Event} event The event object.
+   */
+  onKeyDown_: function(event) {
+    switch (event.keyIdentifier) {
+      case 'Up':
+        if (this.audioController.volumeSliderShown && this.model.volume < 100)
+          this.model.volume += 1;
+        break;
+      case 'Down':
+        if (this.audioController.volumeSliderShown && this.model.volume > 0)
+          this.model.volume -= 1;
+        break;
+      case 'PageUp':
+        if (this.audioController.volumeSliderShown && this.model.volume < 91)
+          this.model.volume += 10;
+        break;
+      case 'PageDown':
+        if (this.audioController.volumeSliderShown && this.model.volume > 9)
+          this.model.volume -= 10;
+        break;
+    }
   },
 });

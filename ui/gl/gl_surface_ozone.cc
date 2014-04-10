@@ -8,7 +8,7 @@
 #include "base/memory/ref_counted.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/ozone/surface_factory_ozone.h"
-#include "ui/gfx/ozone/surface_ozone.h"
+#include "ui/gfx/ozone/surface_ozone_egl.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface_egl.h"
 #include "ui/gl/gl_surface_osmesa.h"
@@ -21,9 +21,16 @@ namespace {
 // A thin wrapper around GLSurfaceEGL that owns the EGLNativeWindow
 class GL_EXPORT GLSurfaceOzoneEGL : public NativeViewGLSurfaceEGL {
  public:
-  GLSurfaceOzoneEGL(scoped_ptr<SurfaceOzone> ozone_surface)
-      : NativeViewGLSurfaceEGL(ozone_surface->GetEGLNativeWindow()),
+  GLSurfaceOzoneEGL(scoped_ptr<SurfaceOzoneEGL> ozone_surface)
+      : NativeViewGLSurfaceEGL(ozone_surface->GetNativeWindow()),
         ozone_surface_(ozone_surface.Pass()) {}
+
+  virtual bool Resize(const gfx::Size& size) OVERRIDE {
+    if (!ozone_surface_->ResizeNativeWindow(size))
+      return false;
+
+    return NativeViewGLSurfaceEGL::Resize(size);
+  }
 
  private:
   virtual ~GLSurfaceOzoneEGL() {
@@ -31,7 +38,7 @@ class GL_EXPORT GLSurfaceOzoneEGL : public NativeViewGLSurfaceEGL {
   }
 
   // The native surface. Deleting this is allowed to free the EGLNativeWindow.
-  scoped_ptr<SurfaceOzone> ozone_surface_;
+  scoped_ptr<SurfaceOzoneEGL> ozone_surface_;
 
   DISALLOW_COPY_AND_ASSIGN(GLSurfaceOzoneEGL);
 };
@@ -73,13 +80,16 @@ scoped_refptr<GLSurface> GLSurface::CreateViewGLSurface(
   }
   DCHECK(GetGLImplementation() == kGLImplementationEGLGLES2);
   if (window != kNullAcceleratedWidget) {
-    scoped_ptr<SurfaceOzone> surface_ozone =
-        SurfaceFactoryOzone::GetInstance()->CreateSurfaceForWidget(window);
-    if (!surface_ozone->InitializeEGL())
+    scoped_ptr<SurfaceOzoneEGL> surface_ozone =
+        SurfaceFactoryOzone::GetInstance()->CreateEGLSurfaceForWidget(window);
+    if (!surface_ozone)
       return NULL;
+
+    scoped_ptr<VSyncProvider> vsync_provider =
+        surface_ozone->CreateVSyncProvider();
     scoped_refptr<GLSurfaceOzoneEGL> surface =
         new GLSurfaceOzoneEGL(surface_ozone.Pass());
-    if (!surface->Initialize(surface_ozone->CreateVSyncProvider()))
+    if (!surface->Initialize(vsync_provider.Pass()))
       return NULL;
     return surface;
   } else {

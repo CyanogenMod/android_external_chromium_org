@@ -8,22 +8,21 @@
 #include "ash/ash_export.h"
 #include "base/compiler_specific.h"
 #include "base/strings/string16.h"
-#include "ui/display/chromeos/output_configurator.h"
+#include "ui/display/chromeos/display_configurator.h"
 
 namespace ash {
-namespace internal {
 
 // The class to observe the output failures and shows the error dialog when
 // necessary.
 class ASH_EXPORT DisplayErrorObserver
-    : public ui::OutputConfigurator::Observer {
+    : public ui::DisplayConfigurator::Observer {
  public:
   DisplayErrorObserver();
   virtual ~DisplayErrorObserver();
 
-  // ui::OutputConfigurator::Observer overrides:
-  virtual void OnDisplayModeChangeFailed(ui::OutputState failed_new_state)
-      OVERRIDE;
+  // ui::DisplayConfigurator::Observer overrides:
+  virtual void OnDisplayModeChangeFailed(
+      ui::MultipleDisplayState failed_new_state) OVERRIDE;
 
  private:
   friend class DisplayErrorObserverTest;
@@ -33,7 +32,6 @@ class ASH_EXPORT DisplayErrorObserver
   DISALLOW_COPY_AND_ASSIGN(DisplayErrorObserver);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_DISPLAY_DISPLAY_ERROR_OBSERVER_CHROMEOS_H_

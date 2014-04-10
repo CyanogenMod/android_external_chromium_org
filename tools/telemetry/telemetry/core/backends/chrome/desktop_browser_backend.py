@@ -77,34 +77,10 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         shutil.rmtree(self._tmp_profile_dir)
         shutil.copytree(profile_dir, self._tmp_profile_dir)
 
-  def _LaunchBrowser(self):
-    args = [self._executable]
-    args.extend(self.GetBrowserStartupArgs())
-    if self.browser_options.startup_url:
-      args.append(self.browser_options.startup_url)
-    env = os.environ.copy()
-    env['CHROME_HEADLESS'] = '1'  # Don't upload minidumps.
-    env['BREAKPAD_DUMP_LOCATION'] = self._tmp_minidump_dir
-    logging.debug('Starting Chrome %s', args)
-    if not self.browser_options.show_stdout:
-      self._tmp_output_file = tempfile.NamedTemporaryFile('w', 0)
-      self._proc = subprocess.Popen(
-          args, stdout=self._tmp_output_file, stderr=subprocess.STDOUT, env=env)
-    else:
-      self._proc = subprocess.Popen(args, env=env)
-
-    try:
-      self._WaitForBrowserToComeUp()
-      self._PostBrowserStartupInitialization()
-    except:
-      self.Close()
-      raise
-
   def HasBrowserFinishedLaunching(self):
     # In addition to the functional check performed by the base class, quickly
     # check if the browser process is still alive.
-    self._proc.poll()
-    if self._proc.returncode:
+    if not self.IsBrowserRunning():
       raise exceptions.ProcessGoneException(
           "Return code: %d" % self._proc.returncode)
     return super(DesktopBrowserBackend, self).HasBrowserFinishedLaunching()
@@ -134,7 +110,29 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     self._profile_dir = profile_dir
 
   def Start(self):
-    self._LaunchBrowser()
+    assert not self._proc, 'Must call Close() before Start()'
+
+    args = [self._executable]
+    args.extend(self.GetBrowserStartupArgs())
+    if self.browser_options.startup_url:
+      args.append(self.browser_options.startup_url)
+    env = os.environ.copy()
+    env['CHROME_HEADLESS'] = '1'  # Don't upload minidumps.
+    env['BREAKPAD_DUMP_LOCATION'] = self._tmp_minidump_dir
+    logging.debug('Starting Chrome %s', args)
+    if not self.browser_options.show_stdout:
+      self._tmp_output_file = tempfile.NamedTemporaryFile('w', 0)
+      self._proc = subprocess.Popen(
+          args, stdout=self._tmp_output_file, stderr=subprocess.STDOUT, env=env)
+    else:
+      self._proc = subprocess.Popen(args, env=env)
+
+    try:
+      self._WaitForBrowserToComeUp()
+      self._PostBrowserStartupInitialization()
+    except:
+      self.Close()
+      raise
 
   @property
   def pid(self):
@@ -151,7 +149,7 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     return self._tmp_profile_dir
 
   def IsBrowserRunning(self):
-    return self._proc.poll() == None
+    return self._proc and self._proc.poll() == None
 
   def GetStandardOutput(self):
     if not self._tmp_output_file:
@@ -220,31 +218,25 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def Close(self):
     super(DesktopBrowserBackend, self).Close()
 
-    if self._proc:
+    # First, try to politely shutdown.
+    if self.IsBrowserRunning():
+      self._proc.terminate()
+      try:
+        util.WaitFor(lambda: not self.IsBrowserRunning(), timeout=5)
+        self._proc = None
+      except util.TimeoutException:
+        logging.warning('Failed to gracefully shutdown. Proceeding to kill.')
 
-      def IsClosed():
-        if not self._proc:
-          return True
-        return self._proc.poll() != None
+    # If it didn't comply, get more aggressive.
+    if self.IsBrowserRunning():
+      self._proc.kill()
 
-      # Try to politely shutdown, first.
-      if not IsClosed():
-        self._proc.terminate()
-        try:
-          util.WaitFor(IsClosed, timeout=5)
-          self._proc = None
-        except util.TimeoutException:
-          logging.warning('Failed to gracefully shutdown. Proceeding to kill.')
-
-      # Kill it.
-      if not IsClosed():
-        self._proc.kill()
-        try:
-          util.WaitFor(IsClosed, timeout=10)
-        except util.TimeoutException:
-          raise Exception('Could not shutdown the browser.')
-        finally:
-          self._proc = None
+    try:
+      util.WaitFor(lambda: not self.IsBrowserRunning(), timeout=10)
+    except util.TimeoutException:
+      raise Exception('Could not shutdown the browser.')
+    finally:
+      self._proc = None
 
     if self._output_profile_path:
       # If we need the output then double check that it exists.

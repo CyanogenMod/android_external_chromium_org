@@ -51,6 +51,7 @@
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/image_messages.h"
+#include "content/common/input_messages.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_view_host_delegate_view.h"
@@ -337,7 +338,8 @@ WebContentsImpl::WebContentsImpl(
       color_chooser_identifier_(0),
       render_view_message_source_(NULL),
       fullscreen_widget_routing_id_(MSG_ROUTING_NONE),
-      is_subframe_(false) {
+      is_subframe_(false),
+      last_dialog_suppressed_(false) {
   for (size_t i = 0; i < g_created_callbacks.Get().size(); i++)
     g_created_callbacks.Get().at(i).Run(this);
   frame_tree_.SetFrameRemoveListener(
@@ -995,6 +997,11 @@ bool WebContentsImpl::NeedToFireBeforeUnload() {
       !ShowingInterstitialPage() &&
       !static_cast<RenderViewHostImpl*>(
           GetRenderViewHost())->SuddenTerminationAllowed();
+}
+
+void WebContentsImpl::DispatchBeforeUnload(bool for_cross_site_transition) {
+  static_cast<RenderFrameHostImpl*>(GetMainFrame())->DispatchBeforeUnload(
+      for_cross_site_transition);
 }
 
 void WebContentsImpl::Stop() {
@@ -1775,7 +1782,144 @@ void WebContentsImpl::SetHistoryLengthAndPrune(
 }
 
 void WebContentsImpl::ReloadFocusedFrame(bool ignore_cache) {
-  Send(new FrameMsg_Reload(GetFocusedFrame()->GetRoutingID(), ignore_cache));
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(new FrameMsg_Reload(
+      focused_frame->GetRoutingID(), ignore_cache));
+}
+
+void WebContentsImpl::Undo() {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(new InputMsg_Undo(focused_frame->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("Undo"));
+}
+
+void WebContentsImpl::Redo() {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+  focused_frame->Send(new InputMsg_Redo(focused_frame->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("Redo"));
+}
+
+void WebContentsImpl::Cut() {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(new InputMsg_Cut(focused_frame->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("Cut"));
+}
+
+void WebContentsImpl::Copy() {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(new InputMsg_Copy(focused_frame->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("Copy"));
+}
+
+void WebContentsImpl::CopyToFindPboard() {
+#if defined(OS_MACOSX)
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  // Windows/Linux don't have the concept of a find pasteboard.
+  focused_frame->Send(
+      new InputMsg_CopyToFindPboard(focused_frame->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("CopyToFindPboard"));
+#endif
+}
+
+void WebContentsImpl::Paste() {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(new InputMsg_Paste(focused_frame->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("Paste"));
+}
+
+void WebContentsImpl::PasteAndMatchStyle() {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(new InputMsg_PasteAndMatchStyle(
+      focused_frame->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("PasteAndMatchStyle"));
+}
+
+void WebContentsImpl::Delete() {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(new InputMsg_Delete(focused_frame->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("DeleteSelection"));
+}
+
+void WebContentsImpl::SelectAll() {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(new InputMsg_SelectAll(focused_frame->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("SelectAll"));
+}
+
+void WebContentsImpl::Unselect() {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(new InputMsg_Unselect(focused_frame->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("Unselect"));
+}
+
+void WebContentsImpl::Replace(const base::string16& word) {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(new InputMsg_Replace(
+      focused_frame->GetRoutingID(), word));
+}
+
+void WebContentsImpl::ReplaceMisspelling(const base::string16& word) {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(new InputMsg_ReplaceMisspelling(
+      focused_frame->GetRoutingID(), word));
+}
+
+void WebContentsImpl::NotifyContextMenuClosed(
+    const CustomContextMenuContext& context) {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(new FrameMsg_ContextMenuClosed(
+      focused_frame->GetRoutingID(), context));
+}
+
+void WebContentsImpl::ExecuteCustomContextMenuCommand(
+    int action, const CustomContextMenuContext& context) {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(new FrameMsg_CustomContextMenuAction(
+      focused_frame->GetRoutingID(), context, action));
 }
 
 void WebContentsImpl::FocusThroughTabTraversal(bool reverse) {
@@ -1911,16 +2055,6 @@ void WebContentsImpl::DragSourceEndedAt(int client_x, int client_y,
   if (GetRenderViewHost())
     GetRenderViewHostImpl()->DragSourceEndedAt(client_x, client_y,
         screen_x, screen_y, operation);
-}
-
-void WebContentsImpl::DragSourceMovedTo(int client_x, int client_y,
-                                        int screen_x, int screen_y) {
-  if (browser_plugin_embedder_.get())
-    browser_plugin_embedder_->DragSourceMovedTo(client_x, client_y,
-                                                screen_x, screen_y);
-  if (GetRenderViewHost())
-    GetRenderViewHostImpl()->DragSourceMovedTo(client_x, client_y,
-                                               screen_x, screen_y);
 }
 
 void WebContentsImpl::DidGetResourceResponseStart(
@@ -2091,6 +2225,11 @@ void WebContentsImpl::StopFinding(StopFindAction action) {
   Send(new ViewMsg_StopFinding(GetRoutingID(), action));
 }
 
+void WebContentsImpl::InsertCSS(const std::string& css) {
+  GetMainFrame()->Send(new FrameMsg_CSSInsertRequest(
+      GetMainFrame()->GetRoutingID(), css));
+}
+
 bool WebContentsImpl::FocusLocationBarByDefault() {
   NavigationEntry* entry = controller_.GetVisibleEntry();
   if (entry && entry->GetURL() == GURL(kAboutBlankURL))
@@ -2242,9 +2381,10 @@ void WebContentsImpl::DidNavigateMainFramePreCommit(
   // Ensure fullscreen mode is exited before committing the navigation to a
   // different page.  The next page will not start out assuming it is in
   // fullscreen mode.
-  if (params.was_within_same_page) {
-    // No document change?  Then, the renderer shall decide whether to exit
-    // fullscreen.
+  if (controller_.IsURLInPageNavigation(params.url,
+                                        params.was_within_same_page,
+                                        NAVIGATION_TYPE_UNKNOWN)) {
+    // No page change?  Then, the renderer and browser can remain in fullscreen.
     return;
   }
   if (IsFullscreenForCurrentTab())
@@ -2716,6 +2856,16 @@ void WebContentsImpl::SetIsLoading(RenderViewHost* render_view_host,
       type, Source<NavigationController>(&controller_), det);
 }
 
+void WebContentsImpl::SelectRange(const gfx::Point& start,
+                                  const gfx::Point& end) {
+  RenderFrameHost* focused_frame = GetFocusedFrame();
+  if (!focused_frame)
+    return;
+
+  focused_frame->Send(
+      new InputMsg_SelectRange(focused_frame->GetRoutingID(), start, end));
+}
+
 void WebContentsImpl::UpdateMaxPageIDIfNecessary(RenderViewHost* rvh) {
   // If we are creating a RVH for a restored controller, then we need to make
   // sure the RenderView starts with a next_page_id_ larger than the number
@@ -2824,6 +2974,10 @@ bool WebContentsImpl::OnMessageReceived(RenderFrameHost* render_frame_host,
   return OnMessageReceived(NULL, render_frame_host, message);
 }
 
+const GURL& WebContentsImpl::GetMainFrameLastCommittedURL() const {
+  return GetLastCommittedURL();
+}
+
 void WebContentsImpl::RenderFrameCreated(RenderFrameHost* render_frame_host) {
   // Note this is only for subframes, the notification for the main frame
   // happens in RenderViewCreated.
@@ -2850,6 +3004,82 @@ void WebContentsImpl::ShowContextMenu(RenderFrameHost* render_frame_host,
     return;
 
   render_view_host_delegate_view_->ShowContextMenu(render_frame_host, params);
+}
+
+void WebContentsImpl::RunJavaScriptMessage(
+    RenderFrameHost* rfh,
+    const base::string16& message,
+    const base::string16& default_prompt,
+    const GURL& frame_url,
+    JavaScriptMessageType javascript_message_type,
+    IPC::Message* reply_msg) {
+  // Suppress JavaScript dialogs when requested. Also suppress messages when
+  // showing an interstitial as it's shown over the previous page and we don't
+  // want the hidden page's dialogs to interfere with the interstitial.
+  bool suppress_this_message =
+      static_cast<RenderViewHostImpl*>(rfh->GetRenderViewHost())->
+          IsSwappedOut() ||
+      ShowingInterstitialPage() ||
+      !delegate_ ||
+      delegate_->ShouldSuppressDialogs() ||
+      !delegate_->GetJavaScriptDialogManager();
+
+  if (!suppress_this_message) {
+    std::string accept_lang = GetContentClient()->browser()->
+      GetAcceptLangs(GetBrowserContext());
+    dialog_manager_ = delegate_->GetJavaScriptDialogManager();
+    dialog_manager_->RunJavaScriptDialog(
+        this,
+        frame_url.GetOrigin(),
+        accept_lang,
+        javascript_message_type,
+        message,
+        default_prompt,
+        base::Bind(&WebContentsImpl::OnDialogClosed,
+                   base::Unretained(this),
+                   rfh,
+                   reply_msg,
+                   false),
+        &suppress_this_message);
+  }
+
+  if (suppress_this_message) {
+    // If we are suppressing messages, just reply as if the user immediately
+    // pressed "Cancel", passing true to |dialog_was_suppressed|.
+    OnDialogClosed(rfh, reply_msg, true, false, base::string16());
+  }
+
+  // OnDialogClosed (two lines up) may have caused deletion of this object (see
+  // http://crbug.com/288961 ). The only safe thing to do here is return.
+}
+
+void WebContentsImpl::RunBeforeUnloadConfirm(
+    RenderFrameHost* rfh,
+    const base::string16& message,
+    bool is_reload,
+    IPC::Message* reply_msg) {
+  RenderFrameHostImpl* rfhi = static_cast<RenderFrameHostImpl*>(rfh);
+  RenderViewHostImpl* rvhi =
+      static_cast<RenderViewHostImpl*>(rfh->GetRenderViewHost());
+  if (delegate_)
+    delegate_->WillRunBeforeUnloadConfirm();
+
+  bool suppress_this_message =
+      rvhi->rvh_state() != RenderViewHostImpl::STATE_DEFAULT ||
+      !delegate_ ||
+      delegate_->ShouldSuppressDialogs() ||
+      !delegate_->GetJavaScriptDialogManager();
+  if (suppress_this_message) {
+    rfhi->JavaScriptDialogClosed(reply_msg, true, base::string16(), true);
+    return;
+  }
+
+  is_showing_before_unload_dialog_ = true;
+  dialog_manager_ = delegate_->GetJavaScriptDialogManager();
+  dialog_manager_->RunBeforeUnloadDialog(
+      this, message, is_reload,
+      base::Bind(&WebContentsImpl::OnDialogClosed, base::Unretained(this),
+                 rfh, reply_msg, false));
 }
 
 WebContents* WebContentsImpl::GetAsWebContents() {
@@ -3236,81 +3466,6 @@ void WebContentsImpl::RouteMessageEvent(
   Send(new ViewMsg_PostMessageEvent(GetRoutingID(), new_params));
 }
 
-void WebContentsImpl::RunJavaScriptMessage(
-    RenderViewHost* rvh,
-    const base::string16& message,
-    const base::string16& default_prompt,
-    const GURL& frame_url,
-    JavaScriptMessageType javascript_message_type,
-    IPC::Message* reply_msg,
-    bool* did_suppress_message) {
-  // Suppress JavaScript dialogs when requested. Also suppress messages when
-  // showing an interstitial as it's shown over the previous page and we don't
-  // want the hidden page's dialogs to interfere with the interstitial.
-  bool suppress_this_message =
-      static_cast<RenderViewHostImpl*>(rvh)->IsSwappedOut() ||
-      ShowingInterstitialPage() ||
-      !delegate_ ||
-      delegate_->ShouldSuppressDialogs() ||
-      !delegate_->GetJavaScriptDialogManager();
-
-  if (!suppress_this_message) {
-    std::string accept_lang = GetContentClient()->browser()->
-      GetAcceptLangs(GetBrowserContext());
-    dialog_manager_ = delegate_->GetJavaScriptDialogManager();
-    dialog_manager_->RunJavaScriptDialog(
-        this,
-        frame_url.GetOrigin(),
-        accept_lang,
-        javascript_message_type,
-        message,
-        default_prompt,
-        base::Bind(&WebContentsImpl::OnDialogClosed,
-                   base::Unretained(this),
-                   rvh,
-                   reply_msg),
-        &suppress_this_message);
-  }
-
-  *did_suppress_message = suppress_this_message;
-
-  if (suppress_this_message) {
-    // If we are suppressing messages, just reply as if the user immediately
-    // pressed "Cancel".
-    OnDialogClosed(rvh, reply_msg, false, base::string16());
-  }
-
-  // OnDialogClosed (two lines up) may have caused deletion of this object (see
-  // http://crbug.com/288961 ). The only safe thing to do here is return.
-}
-
-void WebContentsImpl::RunBeforeUnloadConfirm(RenderViewHost* rvh,
-                                             const base::string16& message,
-                                             bool is_reload,
-                                             IPC::Message* reply_msg) {
-  RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(rvh);
-  if (delegate_)
-    delegate_->WillRunBeforeUnloadConfirm();
-
-  bool suppress_this_message =
-      rvhi->rvh_state() != RenderViewHostImpl::STATE_DEFAULT ||
-      !delegate_ ||
-      delegate_->ShouldSuppressDialogs() ||
-      !delegate_->GetJavaScriptDialogManager();
-  if (suppress_this_message) {
-    // The reply must be sent to the RVH that sent the request.
-    rvhi->JavaScriptDialogClosed(reply_msg, true, base::string16());
-    return;
-  }
-
-  is_showing_before_unload_dialog_ = true;
-  dialog_manager_ = delegate_->GetJavaScriptDialogManager();
-  dialog_manager_->RunBeforeUnloadDialog(
-      this, message, is_reload,
-      base::Bind(&WebContentsImpl::OnDialogClosed, base::Unretained(this), rvh,
-                 reply_msg));
-}
-
 bool WebContentsImpl::AddMessageToConsole(int32 level,
                                           const base::string16& message,
                                           int32 line_no,
@@ -3585,22 +3740,26 @@ bool WebContentsImpl::CreateRenderViewForInitialEmptyDocument() {
 }
 #endif
 
-void WebContentsImpl::OnDialogClosed(RenderViewHost* rvh,
+void WebContentsImpl::OnDialogClosed(RenderFrameHost* rfh,
                                      IPC::Message* reply_msg,
+                                     bool dialog_was_suppressed,
                                      bool success,
                                      const base::string16& user_input) {
+  last_dialog_suppressed_ = dialog_was_suppressed;
+
   if (is_showing_before_unload_dialog_ && !success) {
     // If a beforeunload dialog is canceled, we need to stop the throbber from
     // spinning, since we forced it to start spinning in Navigate.
-    DidStopLoading(rvh->GetMainFrame());
+    DidStopLoading(rfh);
     controller_.DiscardNonCommittedEntries();
 
     FOR_EACH_OBSERVER(WebContentsObserver, observers_,
                       BeforeUnloadDialogCancelled());
   }
+
   is_showing_before_unload_dialog_ = false;
-  static_cast<RenderViewHostImpl*>(
-      rvh)->JavaScriptDialogClosed(reply_msg, success, user_input);
+  static_cast<RenderFrameHostImpl*>(rfh)->JavaScriptDialogClosed(
+      reply_msg, success, user_input, dialog_was_suppressed);
 }
 
 void WebContentsImpl::SetEncoding(const std::string& encoding) {

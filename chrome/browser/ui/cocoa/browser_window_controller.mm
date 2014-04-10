@@ -27,6 +27,7 @@
 #include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/translate/translate_ui_delegate.h"
 #include "chrome/browser/ui/bookmarks/bookmark_editor.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
@@ -39,9 +40,6 @@
 #import "chrome/browser/ui/cocoa/background_gradient_view.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_editor_controller.h"
-#import "chrome/browser/ui/cocoa/browser/avatar_base_controller.h"
-#import "chrome/browser/ui/cocoa/browser/avatar_button_controller.h"
-#import "chrome/browser/ui/cocoa/browser/avatar_icon_controller.h"
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller_private.h"
 #import "chrome/browser/ui/cocoa/browser_window_utils.h"
@@ -57,6 +55,9 @@
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/presentation_mode_controller.h"
+#import "chrome/browser/ui/cocoa/profiles/avatar_base_controller.h"
+#import "chrome/browser/ui/cocoa/profiles/avatar_button_controller.h"
+#import "chrome/browser/ui/cocoa/profiles/avatar_icon_controller.h"
 #import "chrome/browser/ui/cocoa/status_bubble_mac.h"
 #import "chrome/browser/ui/cocoa/tab_contents/overlayable_contents_controller.h"
 #import "chrome/browser/ui/cocoa/tab_contents/sad_tab_controller.h"
@@ -1762,8 +1763,7 @@ enum {
 }
 
 - (void)showTranslateBubbleForWebContents:(content::WebContents*)contents
-                                     step:
-                                    (TranslateTabHelper::TranslateStep)step
+                                     step:(translate::TranslateStep)step
                                 errorType:(TranslateErrors::Type)errorType {
   // TODO(hajimehoshi): The similar logic exists at TranslateBubbleView::
   // ShowBubble. This should be unified.
@@ -1775,7 +1775,7 @@ enum {
         TranslateBubbleModel::VIEW_STATE_ADVANCED) {
       return;
     }
-    if (step != TranslateTabHelper::TRANSLATE_ERROR) {
+    if (step != translate::TRANSLATE_STEP_TRANSLATE_ERROR) {
       TranslateBubbleModel::ViewState viewState =
           TranslateBubbleModelImpl::TranslateStepToViewState(step);
       [translateBubbleController_ switchView:viewState];
@@ -1785,9 +1785,10 @@ enum {
     return;
   }
 
-  // TODO(hajimehoshi): Set the initial languages correctly.
-  std::string sourceLanguage = "xx";
-  std::string targetLanguage = "yy";
+  std::string sourceLanguage;
+  std::string targetLanguage;
+  TranslateTabHelper::GetTranslateLanguages(contents,
+                                            &sourceLanguage, &targetLanguage);
 
   scoped_ptr<TranslateUIDelegate> uiDelegate(
       new TranslateUIDelegate(contents, sourceLanguage, targetLanguage));

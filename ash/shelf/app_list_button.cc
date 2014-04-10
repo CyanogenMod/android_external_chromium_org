@@ -21,7 +21,6 @@
 #include "ui/views/painter.h"
 
 namespace ash {
-namespace internal {
 
 const int kAnimationDurationInMs = 600;
 const float kAnimationOpacity[] = { 1.0f, 0.4f, 1.0f };
@@ -30,18 +29,13 @@ AppListButton::AppListButton(views::ButtonListener* listener,
                              ShelfButtonHost* host)
     : views::ImageButton(listener),
       host_(host) {
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  SetImage(
-      views::CustomButton::STATE_NORMAL,
-      rb.GetImageNamed(IDR_AURA_LAUNCHER_ICON_APPLIST).ToImageSkia());
-  SetImage(
-      views::CustomButton::STATE_HOVERED,
-      rb.GetImageNamed(IDR_AURA_LAUNCHER_ICON_APPLIST_HOT).
-          ToImageSkia());
-  SetImage(
-      views::CustomButton::STATE_PRESSED,
-      rb.GetImageNamed(IDR_AURA_LAUNCHER_ICON_APPLIST_PUSHED).
-          ToImageSkia());
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  SetImage(views::CustomButton::STATE_NORMAL,
+           rb.GetImageNamed(IDR_ASH_SHELF_ICON_APPLIST).ToImageSkia());
+  SetImage(views::CustomButton::STATE_HOVERED,
+           rb.GetImageNamed(IDR_ASH_SHELF_ICON_APPLIST_HOT).ToImageSkia());
+  SetImage(views::CustomButton::STATE_PRESSED,
+           rb.GetImageNamed(IDR_ASH_SHELF_ICON_APPLIST_PUSHED).ToImageSkia());
   SetAccessibleName(l10n_util::GetStringUTF16(IDS_AURA_APP_LIST_TITLE));
   SetSize(gfx::Size(kShelfPreferredSize, kShelfPreferredSize));
   SetImageAlignment(ImageButton::ALIGN_CENTER, ImageButton::ALIGN_TOP);
@@ -128,5 +122,4 @@ void AppListButton::GetAccessibleState(ui::AXViewState* state) {
   state->name = host_->GetAccessibleName(this);
 }
 
-}  // namespace internal
 }  // namespace ash

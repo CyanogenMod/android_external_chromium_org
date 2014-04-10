@@ -10,8 +10,10 @@ TestDisplaySnapshot::TestDisplaySnapshot()
                       false,
                       gfx::Point(0, 0),
                       gfx::Size(0, 0),
-                      OUTPUT_TYPE_UNKNOWN,
+                      DISPLAY_CONNECTION_TYPE_UNKNOWN,
                       false,
+                      false,
+                      std::string(),
                       std::vector<const DisplayMode*>(),
                       NULL,
                       NULL) {}
@@ -21,7 +23,7 @@ TestDisplaySnapshot::TestDisplaySnapshot(
     bool has_proper_display_id,
     const gfx::Point& origin,
     const gfx::Size& physical_size,
-    OutputType type,
+    DisplayConnectionType type,
     bool is_aspect_preserving_scaling,
     const std::vector<const DisplayMode*>& modes,
     const DisplayMode* current_mode,
@@ -32,15 +34,13 @@ TestDisplaySnapshot::TestDisplaySnapshot(
                       physical_size,
                       type,
                       is_aspect_preserving_scaling,
+                      false,
+                      std::string(),
                       modes,
                       current_mode,
                       native_mode) {}
 
 TestDisplaySnapshot::~TestDisplaySnapshot() {}
-
-std::string TestDisplaySnapshot::GetDisplayName() { return ""; }
-
-bool TestDisplaySnapshot::GetOverscanFlag() { return false; }
 
 std::string TestDisplaySnapshot::ToString() const { return ""; }
 

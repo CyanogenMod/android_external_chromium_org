@@ -940,67 +940,6 @@ class LayerTreeHostTestCanDrawBlocksDrawing : public LayerTreeHostTest {
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestCanDrawBlocksDrawing);
 
-// beginLayerWrite should prevent draws from executing until a commit occurs
-class LayerTreeHostTestWriteLayersRedraw : public LayerTreeHostTest {
- public:
-  LayerTreeHostTestWriteLayersRedraw() : num_commits_(0), num_draws_(0) {}
-
-  virtual void BeginTest() OVERRIDE {
-    PostAcquireLayerTextures();
-    PostSetNeedsRedrawToMainThread();  // should be inhibited without blocking
-    PostSetNeedsCommitToMainThread();
-  }
-
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* impl) OVERRIDE {
-    num_draws_++;
-    EXPECT_EQ(num_draws_, num_commits_);
-  }
-
-  virtual void CommitCompleteOnThread(LayerTreeHostImpl* impl) OVERRIDE {
-    num_commits_++;
-    EndTest();
-  }
-
-  virtual void AfterTest() OVERRIDE { EXPECT_EQ(1, num_commits_); }
-
- private:
-  int num_commits_;
-  int num_draws_;
-};
-
-MULTI_THREAD_TEST_F(LayerTreeHostTestWriteLayersRedraw);
-
-// Verify that when resuming visibility, Requesting layer write permission
-// will not deadlock the main thread even though there are not yet any
-// scheduled redraws. This behavior is critical for reliably surviving tab
-// switching. There are no failure conditions to this test, it just passes
-// by not timing out.
-class LayerTreeHostTestWriteLayersAfterVisible : public LayerTreeHostTest {
- public:
-  LayerTreeHostTestWriteLayersAfterVisible() : num_commits_(0) {}
-
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
-
-  virtual void CommitCompleteOnThread(LayerTreeHostImpl* impl) OVERRIDE {
-    num_commits_++;
-    if (num_commits_ == 2)
-      EndTest();
-    else if (num_commits_ < 2) {
-      PostSetVisibleToMainThread(false);
-      PostSetVisibleToMainThread(true);
-      PostAcquireLayerTextures();
-      PostSetNeedsCommitToMainThread();
-    }
-  }
-
-  virtual void AfterTest() OVERRIDE {}
-
- private:
-  int num_commits_;
-};
-
-MULTI_THREAD_TEST_F(LayerTreeHostTestWriteLayersAfterVisible);
-
 // A compositeAndReadback while invisible should force a normal commit without
 // assertion.
 class LayerTreeHostTestCompositeAndReadbackWhileInvisible
@@ -1391,6 +1330,7 @@ class NoScaleContentLayer : public ContentLayer {
   virtual void CalculateContentsScale(float ideal_contents_scale,
                                       float device_scale_factor,
                                       float page_scale_factor,
+                                      float maximum_animation_contents_scale,
                                       bool animating_transform_to_screen,
                                       float* contents_scale_x,
                                       float* contents_scale_y,
@@ -1399,6 +1339,7 @@ class NoScaleContentLayer : public ContentLayer {
     Layer::CalculateContentsScale(ideal_contents_scale,
                                   device_scale_factor,
                                   page_scale_factor,
+                                  maximum_animation_contents_scale,
                                   animating_transform_to_screen,
                                   contents_scale_x,
                                   contents_scale_y,
@@ -1877,7 +1818,6 @@ class LayerTreeHostTestFinishAllRendering : public LayerTreeHostTest {
       return;
     once_ = true;
     layer_tree_host()->SetNeedsRedraw();
-    layer_tree_host()->AcquireLayerTextures();
     {
       base::AutoLock lock(lock_);
       draw_count_ = 0;
@@ -5208,5 +5148,84 @@ class LayerTreeHostTestGpuRasterizationSetting : public LayerTreeHostTest {
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestGpuRasterizationSetting);
+
+class LayerTreeHostTestContinuousPainting : public LayerTreeHostTest {
+ public:
+  LayerTreeHostTestContinuousPainting()
+      : num_commits_(0), num_draws_(0), bounds_(20, 20), child_layer_(NULL) {}
+
+ protected:
+  enum { kExpectedNumCommits = 10 };
+
+  virtual void SetupTree() OVERRIDE {
+    scoped_refptr<Layer> root_layer = Layer::Create();
+    root_layer->SetBounds(bounds_);
+
+    if (layer_tree_host()->settings().impl_side_painting) {
+      picture_layer_ = FakePictureLayer::Create(&client_);
+      child_layer_ = picture_layer_.get();
+    } else {
+      content_layer_ = ContentLayerWithUpdateTracking::Create(&client_);
+      child_layer_ = content_layer_.get();
+    }
+    child_layer_->SetBounds(bounds_);
+    child_layer_->SetIsDrawable(true);
+    root_layer->AddChild(child_layer_);
+
+    layer_tree_host()->SetRootLayer(root_layer);
+    layer_tree_host()->SetViewportSize(bounds_);
+    LayerTreeHostTest::SetupTree();
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    // Wait 50x longer than expected.
+    double milliseconds_per_frame =
+        1000 / layer_tree_host()->settings().refresh_rate;
+    EndTestAfterDelay(50 * kExpectedNumCommits * milliseconds_per_frame);
+    MainThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(
+            &LayerTreeHostTestContinuousPainting::EnableContinuousPainting,
+            base::Unretained(this)));
+  }
+
+  virtual void Animate(base::TimeTicks monotonic_time) OVERRIDE {
+    child_layer_->SetNeedsDisplay();
+  }
+
+  virtual void AfterTest() OVERRIDE {
+    EXPECT_LE(kExpectedNumCommits, num_commits_);
+    EXPECT_LE(kExpectedNumCommits, num_draws_);
+    int update_count = content_layer_ ? content_layer_->PaintContentsCount()
+                                      : picture_layer_->update_count();
+    EXPECT_LE(kExpectedNumCommits, update_count);
+  }
+
+  virtual void DrawLayersOnThread(LayerTreeHostImpl* impl) OVERRIDE {
+    if (++num_draws_ == kExpectedNumCommits)
+      EndTest();
+  }
+
+  virtual void CommitCompleteOnThread(LayerTreeHostImpl* impl) OVERRIDE {
+    ++num_commits_;
+  }
+
+ private:
+  void EnableContinuousPainting() {
+    LayerTreeDebugState debug_state = layer_tree_host()->debug_state();
+    debug_state.continuous_painting = true;
+    layer_tree_host()->SetDebugState(debug_state);
+  }
+
+  int num_commits_;
+  int num_draws_;
+  const gfx::Size bounds_;
+  FakeContentLayerClient client_;
+  scoped_refptr<ContentLayerWithUpdateTracking> content_layer_;
+  scoped_refptr<FakePictureLayer> picture_layer_;
+  Layer* child_layer_;
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestContinuousPainting);
 
 }  // namespace cc

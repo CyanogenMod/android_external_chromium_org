@@ -28,35 +28,28 @@ class DS2784PowerMonitor(power_monitor.PowerMonitor):
         'file_poller')
 
 
-  def _IsDeviceCharging(self):
-    for line in self._adb.RunShellCommand('dumpsys battery'):
-      if 'powered: ' in line:
-        if 'true' == line.split('powered: ')[1]:
-          return True
-    return False
-
   @decorators.Cache
   def _HasFuelGauge(self):
     return self._adb.FileExistsOnDevice(CHARGE_COUNTER)
 
-  def CanMonitorPowerAsync(self):
+  def CanMonitorPower(self):
     if not self._HasFuelGauge():
       return False
-    if self._IsDeviceCharging():
+    if self._adb.IsDeviceCharging():
       logging.warning('Can\'t monitor power usage since device is charging.')
       return False
     return True
 
-  def StartMonitoringPowerAsync(self):
+  def StartMonitoringPower(self, browser):
     assert not self._powermonitor_process_port, (
-        'Must call StopMonitoringPowerAsync().')
+        'Must call StopMonitoringPower().')
     self._powermonitor_process_port = int(self._adb.RunShellCommand(
         '%s %d %s %s %s' % (self._file_poller_binary, SAMPLE_RATE_HZ,
             CHARGE_COUNTER, CURRENT, VOLTAGE))[0])
 
-  def StopMonitoringPowerAsync(self):
+  def StopMonitoringPower(self):
     assert self._powermonitor_process_port, (
-        'StartMonitoringPowerAsync() not called.')
+        'StartMonitoringPower() not called.')
     try:
       result = '\n'.join(self._adb.RunShellCommand(
           '%s %d' % (self._file_poller_binary,
@@ -71,7 +64,7 @@ class DS2784PowerMonitor(power_monitor.PowerMonitor):
     """Parse output of powermonitor command line utility.
 
     Returns:
-        Dictionary in the format returned by StopMonitoringPowerAsync().
+        Dictionary in the format returned by StopMonitoringPower().
     """
     power_samples = []
     total_energy_consumption_mwh = 0

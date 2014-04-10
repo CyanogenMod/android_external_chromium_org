@@ -6,7 +6,10 @@
 
 #include <string>
 
+#include "base/logging.h"
+#include "base/command_line.h"
 #include "base/strings/stringprintf.h"
+#include "content/shell/common/shell_switches.h"
 #include "content/shell/renderer/test_runner/WebTestProxy.h"
 #include "content/shell/renderer/test_runner/accessibility_controller.h"
 #include "content/shell/renderer/test_runner/event_sender.h"
@@ -34,6 +37,8 @@ TestInterfaces::TestInterfaces()
     , m_delegate(0)
 {
     blink::setLayoutTestMode(true);
+    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableFontSmoothing))
+        blink::setFontSmoothingEnabledForTest(true);
 
     // NOTE: please don't put feature specific enable flags here,
     // instead add them to RuntimeEnabledFeatures.in
@@ -146,7 +151,7 @@ void TestInterfaces::windowClosed(WebTestProxyBase* proxy)
 {
     vector<WebTestProxyBase*>::iterator pos = find(m_windowList.begin(), m_windowList.end(), proxy);
     if (pos == m_windowList.end()) {
-        BLINK_ASSERT_NOT_REACHED();
+        NOTREACHED();
         return;
     }
     m_windowList.erase(pos);

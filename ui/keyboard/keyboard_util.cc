@@ -120,7 +120,7 @@ bool IsInputViewEnabled() {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableInputView))
     return false;
   // Default value if no command line flags specified.
-  return false;
+  return true;
 }
 
 bool InsertText(const base::string16& text, aura::Window* root_window) {
@@ -324,12 +324,10 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
 }
 
 void SetOverrideContentUrl(const GURL& url) {
-  DCHECK_EQ(base::MessageLoop::current()->type(), base::MessageLoop::TYPE_UI);
   g_override_content_url.Get() = url;
 }
 
 const GURL& GetOverrideContentUrl() {
-  DCHECK_EQ(base::MessageLoop::current()->type(), base::MessageLoop::TYPE_UI);
   return g_override_content_url.Get();
 }
 

@@ -63,6 +63,7 @@
             'autofill/core/common/form_data_unittest.cc',
             'autofill/core/common/form_field_data_unittest.cc',
             'autofill/core/common/password_form_fill_data_unittest.cc',
+            'autofill/core/common/save_password_progress_logger_unittest.cc',
             'cloud_devices/printer_description_unittest.cc',
             'dom_distiller/core/article_entry_unittest.cc',
             'dom_distiller/core/distiller_unittest.cc',
@@ -92,6 +93,7 @@
             'os_crypt/ie7_password_win_unittest.cc',
             'os_crypt/keychain_password_mac_unittest.mm',
             'os_crypt/os_crypt_unittest.cc',
+            'password_manager/core/browser/browser_save_password_progress_logger_unittest.cc',
             'password_manager/core/browser/login_database_unittest.cc',
             'password_manager/core/browser/password_form_manager_unittest.cc',
             'password_manager/core/browser/password_generation_manager_unittest.cc',
@@ -548,6 +550,7 @@
             '../skia/skia.gyp:skia',
             '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
+            '../testing/gmock.gyp:gmock',
           ],
           'include_dirs': [
             '..',
@@ -558,10 +561,6 @@
           'sources': [
             'autofill/content/browser/risk/fingerprint_browsertest.cc',
             'dom_distiller/content/distiller_page_web_contents_browsertest.cc',
-
-            # content_extractor is a standalone content extraction tool built as
-            # a MANUAL component_browsertest.
-            'dom_distiller/standalone/content_extractor.cc',
           ],
           'actions': [
             {
@@ -581,6 +580,13 @@
               'sources!': [
                 'autofill/content/browser/risk/fingerprint_browsertest.cc',
               ],
+            }],
+            ['OS == "linux"', {
+              'sources': [
+                  # content_extractor is a standalone content extraction tool built as
+                  # a MANUAL component_browsertest.
+                  'dom_distiller/standalone/content_extractor.cc',
+                ],
             }],
             ['OS=="win"', {
               'resource_include_dirs': [

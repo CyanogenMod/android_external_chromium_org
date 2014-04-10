@@ -972,7 +972,8 @@ class NeverRunsExternalProtocolHandlerDelegate
     return NULL;
   }
   virtual ExternalProtocolHandler::BlockState GetBlockState(
-      const std::string& scheme) OVERRIDE {
+      const std::string& scheme,
+      bool initiated_by_user_gesture) OVERRIDE {
     // Block everything and fail the test.
     ADD_FAILURE();
     return ExternalProtocolHandler::BLOCK;
@@ -2497,8 +2498,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, OpenTaskManagerAfterSwapIn) {
 }
 
 // Checks that audio loads are deferred on prerendering.
-// Times out under AddressSanitizer, see http://crbug.com/108402
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderHTML5Audio) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderHTML5Audio) {
   PrerenderTestURL("files/prerender/prerender_html5_audio.html",
                    FINAL_STATUS_USED,
                    1);
@@ -2508,9 +2508,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderHTML5Audio) {
 
 // Checks that audio loads are deferred on prerendering and played back when
 // the prerender is swapped in if autoplay is set.
-// Periodically fails on chrome-os.  See http://crbug.com/145263
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
-                       DISABLED_PrerenderHTML5AudioAutoplay) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderHTML5AudioAutoplay) {
   PrerenderTestURL("files/prerender/prerender_html5_audio_autoplay.html",
                    FINAL_STATUS_USED,
                    1);
@@ -2520,8 +2518,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 
 // Checks that audio loads are deferred on prerendering and played back when
 // the prerender is swapped in if js starts playing.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
-                       DISABLED_PrerenderHTML5AudioJsplay) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderHTML5AudioJsplay) {
   PrerenderTestURL("files/prerender/prerender_html5_audio_jsplay.html",
                    FINAL_STATUS_USED,
                    1);
@@ -2530,7 +2527,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 }
 
 // Checks that video loads are deferred on prerendering.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderHTML5Video) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderHTML5Video) {
   PrerenderTestURL("files/prerender/prerender_html5_video.html",
                    FINAL_STATUS_USED,
                    1);
@@ -2540,8 +2537,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderHTML5Video) {
 
 // Checks that video tags inserted by javascript are deferred and played
 // correctly on swap in.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
-                       DISABLED_PrerenderHTML5VideoJs) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderHTML5VideoJs) {
   PrerenderTestURL("files/prerender/prerender_html5_video_script.html",
                    FINAL_STATUS_USED,
                    1);
@@ -2550,8 +2546,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 }
 
 // Checks for correct network events by using a busy sleep the javascript.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
-                       DISABLED_PrerenderHTML5VideoNetwork) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderHTML5VideoNetwork) {
   DisableJavascriptCalls();
   scoped_ptr<TestPrerender> prerender =
       PrerenderTestURL("files/prerender/prerender_html5_video_network.html",

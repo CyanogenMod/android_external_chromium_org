@@ -18,7 +18,7 @@
 #include "content/public/test/test_utils.h"
 #include "content/renderer/savable_resources.h"
 #include "content/shell/browser/shell.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "net/url_request/url_request_context.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebData.h"
@@ -153,7 +153,7 @@ class LoadObserver : public RenderViewObserver {
       : RenderViewObserver(render_view),
         quit_closure_(quit_closure) {}
 
-  virtual void DidFinishLoad(blink::WebFrame* frame) OVERRIDE {
+  virtual void DidFinishLoad(blink::WebLocalFrame* frame) OVERRIDE {
     if (frame == render_view()->GetWebView()->mainFrame())
       quit_closure_.Run();
   }
@@ -279,7 +279,7 @@ class DomSerializerTests : public ContentBrowserTest,
     WebVector<WebString> local_paths;
     local_paths.assign(&file_path, 1);
     // Start serializing DOM.
-    bool result = WebPageSerializer::serialize(web_frame,
+    bool result = WebPageSerializer::serialize(web_frame->toWebLocalFrame(),
        recursive_serialization,
        static_cast<WebPageSerializerClient*>(this),
        links,

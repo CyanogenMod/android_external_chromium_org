@@ -161,8 +161,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual RenderWidgetHostView* GetView() const OVERRIDE;
   virtual bool IsLoading() const OVERRIDE;
   virtual bool IsRenderView() const OVERRIDE;
-  virtual void Replace(const base::string16& word) OVERRIDE;
-  virtual void ReplaceMisspelling(const base::string16& word) OVERRIDE;
   virtual void ResizeRectChanged(const gfx::Rect& new_rect) OVERRIDE;
   virtual void RestartHangMonitorTimeout() OVERRIDE;
   virtual void SetIgnoreInputEvents(bool ignore_input_events) OVERRIDE;
@@ -182,6 +180,15 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       const base::Callback<void(bool, const SkBitmap&)>& callback) OVERRIDE;
 
   virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+
+  virtual void AccessibilityDoDefaultAction(int object_id) OVERRIDE;
+  virtual void AccessibilitySetFocus(int object_id) OVERRIDE;
+  virtual void AccessibilityScrollToMakeVisible(
+      int acc_obj_id, gfx::Rect subfocus) OVERRIDE;
+  virtual void AccessibilityScrollToPoint(
+      int acc_obj_id, gfx::Point point) OVERRIDE;
+  virtual void AccessibilitySetTextSelection(
+      int acc_obj_id, int start_offset, int end_offset) OVERRIDE;
 
   const NativeWebKeyboardEvent* GetLastKeyboardEvent() const;
 
@@ -248,6 +255,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // the renderer to arrive. If pending resize messages are for an old window
   // size, then also pump through a new resize message if there is time.
   void PauseForPendingResizeOrRepaints();
+
+  // Whether pausing may be useful.
+  bool CanPauseForPendingResizeOrRepaints();
 
   // Check for the existance of a BackingStore of the given |desired_size| and
   // return it if it exists. If the BackingStore is GPU, true is returned and
@@ -413,30 +423,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Resets the accessibility mode to the default setting in
   // BrowserStateAccessibilityImpl.
   void ResetAccessibilityMode();
-
-  // Relay a request from assistive technology to perform the default action
-  // on a given node.
-  void AccessibilityDoDefaultAction(int object_id);
-
-  // Relay a request from assistive technology to set focus to a given node.
-  void AccessibilitySetFocus(int object_id);
-
-  // Relay a request from assistive technology to make a given object
-  // visible by scrolling as many scrollable containers as necessary.
-  // In addition, if it's not possible to make the entire object visible,
-  // scroll so that the |subfocus| rect is visible at least. The subfocus
-  // rect is in local coordinates of the object itself.
-  void AccessibilityScrollToMakeVisible(
-      int acc_obj_id, gfx::Rect subfocus);
-
-  // Relay a request from assistive technology to move a given object
-  // to a specific location, in the WebContents area coordinate space, i.e.
-  // (0, 0) is the top-left corner of the WebContents.
-  void AccessibilityScrollToPoint(int acc_obj_id, gfx::Point point);
-
-  // Relay a request from assistive technology to set text selection.
-  void AccessibilitySetTextSelection(
-      int acc_obj_id, int start_offset, int end_offset);
 
   // Kill the renderer because we got a fatal accessibility error.
   void FatalAccessibilityTreeError();

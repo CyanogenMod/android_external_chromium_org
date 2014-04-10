@@ -12,6 +12,8 @@
 #include "content/common/content_export.h"
 #include "content/public/common/top_controls_state.h"
 #include "ipc/ipc_sender.h"
+// TODO(dcheng): Convert back to a forward declare.
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -102,11 +104,6 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
 
   // Returns the current visibility of the WebView.
   virtual blink::WebPageVisibilityState GetVisibilityState() const = 0;
-
-  // Displays a modal alert dialog containing the given message.  Returns
-  // once the user dismisses the dialog.
-  virtual void RunModalAlertDialog(blink::WebFrame* frame,
-                                   const blink::WebString& message) = 0;
 
   // Used by plugins that load data in this RenderView to update the loading
   // notifications.

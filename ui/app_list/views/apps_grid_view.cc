@@ -9,7 +9,6 @@
 #include <string>
 
 #include "base/guid.h"
-#include "base/message_loop/message_loop.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_folder_item.h"
@@ -89,7 +88,7 @@ const int kFolderDroppingDelay = 150;
 const int kReorderDelay = 120;
 
 // Delays in milliseconds to show folder item reparent UI.
-const int kFolderItemReparentDealy = 50;
+const int kFolderItemReparentDelay = 50;
 
 // Radius of the circle, in which if entered, show folder dropping preview
 // UI.
@@ -333,8 +332,7 @@ AppsGridView::AppsGridView(AppsGridViewDelegate* delegate,
       page_flip_delay_in_ms_(kPageFlipDelayInMs),
       bounds_animator_(this),
       activated_item_view_(NULL),
-      dragging_for_reparent_item_(false),
-      weak_factory_(this) {
+      dragging_for_reparent_item_(false) {
   SetPaintToLayer(true);
   SetFillsBoundsOpaquely(false);
 
@@ -1287,7 +1285,7 @@ void AppsGridView::OnReorderTimer() {
 
 void AppsGridView::OnFolderItemReparentTimer() {
   DCHECK(folder_delegate_);
-  if (drag_out_of_folder_container_) {
+  if (drag_out_of_folder_container_ && drag_view_) {
     folder_delegate_->ReparentItem(drag_view_, last_drag_point_);
 
     // Set the flag in the folder's grid view.
@@ -1327,9 +1325,11 @@ void AppsGridView::UpdateDragStateInsideFolder(Pointer pointer,
       folder_delegate_->IsPointOutsideOfFolderBoundary(pt);
   if (is_item_dragged_out_of_folder) {
     if (!drag_out_of_folder_container_) {
-      folder_item_reparent_timer_.Start(FROM_HERE,
-          base::TimeDelta::FromMilliseconds(kFolderItemReparentDealy),
-          this, &AppsGridView::OnFolderItemReparentTimer);
+      folder_item_reparent_timer_.Start(
+          FROM_HERE,
+          base::TimeDelta::FromMilliseconds(kFolderItemReparentDelay),
+          this,
+          &AppsGridView::OnFolderItemReparentTimer);
       drag_out_of_folder_container_ = true;
     }
   } else {
@@ -1605,9 +1605,8 @@ void AppsGridView::MoveItemToFolder(views::View* item_view,
     size_t folder_item_index;
     if (item_list_->FindItemIndex(folder_item_id, &folder_item_index)) {
       int target_view_index = view_model_.GetIndexOfView(target_view);
-      view_model_.Remove(target_view_index);
       gfx::Rect target_view_bounds = target_view->bounds();
-      delete target_view;
+      DeleteItemViewAtIndex(target_view_index);
       views::View* target_folder_view =
           CreateViewForItemAtIndex(folder_item_index);
       target_folder_view->SetBoundsRect(target_view_bounds);
@@ -1634,8 +1633,14 @@ void AppsGridView::ReparentItemForReorder(views::View* item_view,
 
   AppListItem* reparent_item = static_cast<AppListItemView*>(item_view)->item();
   DCHECK(reparent_item->IsInFolder());
-  AppListFolderItem* source_folder = static_cast<AppListFolderItem*>(
-        item_list_->FindItem(reparent_item->folder_id()));
+  const std::string source_folder_id = reparent_item->folder_id();
+  AppListFolderItem* source_folder =
+      static_cast<AppListFolderItem*>(item_list_->FindItem(source_folder_id));
+
+  // Remove the source folder view if there is only 1 item in it, since the
+  // source folder will be deleted after its only child item removed from it.
+  if (source_folder->ChildItemCount() == 1u)
+    DeleteItemViewAtIndex(view_model_.GetIndexOfView(activated_item_view()));
 
   // Move the item from its parent folder to top level item list.
   // Must move to target_model_index, the location we expect the target item
@@ -1648,8 +1653,7 @@ void AppsGridView::ReparentItemForReorder(views::View* item_view,
   model_->MoveItemToFolderAt(reparent_item, "", target_position);
   view_model_.Move(current_model_index, target_model_index);
 
-  if (source_folder->ChildItemCount() == 1)
-    RemoveLastItemFromReparentItemFolder(source_folder);
+  RemoveLastItemFromReparentItemFolderIfNecessary(source_folder_id);
 
   item_list_->AddObserver(this);
   model_->AddObserver(this);
@@ -1665,8 +1669,15 @@ void AppsGridView::ReparentItemToAnotherFolder(views::View* item_view,
 
   AppListItem* reparent_item = static_cast<AppListItemView*>(item_view)->item();
   DCHECK(reparent_item->IsInFolder());
-  AppListFolderItem* source_folder = static_cast<AppListFolderItem*>(
-      item_list_->FindItem(reparent_item->folder_id()));
+  const std::string source_folder_id = reparent_item->folder_id();
+  AppListFolderItem* source_folder =
+      static_cast<AppListFolderItem*>(item_list_->FindItem(source_folder_id));
+
+  // Remove the source folder view if there is only 1 item in it, since the
+  // source folder will be deleted after its only child item merged into the
+  // target item.
+  if (source_folder->ChildItemCount() == 1u)
+    DeleteItemViewAtIndex(view_model_.GetIndexOfView(activated_item_view()));
 
   AppListItemView* target_view =
       static_cast<AppListItemView*>(GetViewAtSlotOnCurrentPage(target.slot));
@@ -1688,8 +1699,7 @@ void AppsGridView::ReparentItemToAnotherFolder(views::View* item_view,
     size_t new_folder_index;
     if (item_list_->FindItemIndex(new_folder_id, &new_folder_index)) {
       int target_view_index = view_model_.GetIndexOfView(target_view);
-      view_model_.Remove(target_view_index);
-      delete target_view;
+      DeleteItemViewAtIndex(target_view_index);
       views::View* new_folder_view =
           CreateViewForItemAtIndex(new_folder_index);
       view_model_.Add(new_folder_view, target_view_index);
@@ -1699,8 +1709,7 @@ void AppsGridView::ReparentItemToAnotherFolder(views::View* item_view,
     }
   }
 
-  if (source_folder->ChildItemCount() == 1)
-    RemoveLastItemFromReparentItemFolder(source_folder);
+  RemoveLastItemFromReparentItemFolderIfNecessary(source_folder_id);
 
   item_list_->AddObserver(this);
 
@@ -1717,15 +1726,16 @@ void AppsGridView::ReparentItemToAnotherFolder(views::View* item_view,
 // left, remove the last item out of the folder, delete the folder and insert it
 // to the data model at the same position. Make the same change to view_model_
 // accordingly.
-void AppsGridView::RemoveLastItemFromReparentItemFolder(
-    AppListFolderItem* source_folder) {
-  DCHECK_EQ(1u, source_folder->ChildItemCount());
+void AppsGridView::RemoveLastItemFromReparentItemFolderIfNecessary(
+    const std::string& source_folder_id) {
+  AppListFolderItem* source_folder =
+      static_cast<AppListFolderItem*>(item_list_->FindItem(source_folder_id));
+  if (!source_folder || source_folder->ChildItemCount() != 1u)
+    return;
 
   // Delete view associated with the folder item to be removed.
-  AppListItemView* folder_item_view = activated_item_view();
-  int folder_model_index = view_model_.GetIndexOfView(folder_item_view);
-  view_model_.Remove(folder_model_index);
-  delete folder_item_view;
+  int folder_model_index = view_model_.GetIndexOfView(activated_item_view());
+  DeleteItemViewAtIndex(folder_model_index);
 
   // Now make the data change to remove the folder item in model.
   AppListItem* last_item = source_folder->item_list()->item_at(0);
@@ -1764,17 +1774,6 @@ void AppsGridView::CancelFolderItemReparent(AppListItemView* drag_item_view) {
   icon_view->TransformView();
 }
 
-void AppsGridView::RemoveFolderIfOnlyOneItemLeft(const std::string& folder_id) {
-  AppListFolderItem* folder_item = model_->FindFolderItem(folder_id);
-  DCHECK(folder_item);
-
-  if (folder_item->ChildItemCount() != 1u)
-    return;
-
-  model_->MoveItemToFolderAt(
-      folder_item->item_list()->item_at(0), "", folder_item->position());
-}
-
 void AppsGridView::CancelContextMenusOnCurrentPage() {
   int start = pagination_model_->selected_page() * tiles_per_page();
   int end = std::min(view_model_.view_size(), start + tiles_per_page());
@@ -1783,6 +1782,14 @@ void AppsGridView::CancelContextMenusOnCurrentPage() {
         static_cast<AppListItemView*>(view_model_.view_at(i));
     view->CancelContextMenu();
   }
+}
+
+void AppsGridView::DeleteItemViewAtIndex(int index) {
+  views::View* item_view = view_model_.view_at(index);
+  view_model_.Remove(index);
+  if (item_view == activated_item_view_)
+    activated_item_view_ = NULL;
+  delete item_view;
 }
 
 bool AppsGridView::IsPointWithinDragBuffer(const gfx::Point& point) const {
@@ -1827,26 +1834,7 @@ void AppsGridView::OnListItemAdded(size_t index, AppListItem* item) {
 void AppsGridView::OnListItemRemoved(size_t index, AppListItem* item) {
   EndDrag(true);
 
-  views::View* view = view_model_.view_at(index);
-  view_model_.Remove(index);
-  delete view;
-
-  // If there is only one item left under the folder, remove the folder.
-  // We do allow OEM folder to contain only one item.
-  if (folder_delegate_ && item_list_->item_count() == 1 &&
-      !IsUnderOEMFolder()) {
-    std::string folder_id = item_list_->item_at(0)->folder_id();
-    // TODO(jennyz): Don't remove the folder if this is an OEM folder, this
-    // depends on https://codereview.chromium.org/197403005/.
-    // Post the delayed task to modify data, so that it won't break the atomic
-    // data operation in the data model of RemoveItemFromFolder which originates
-    // the OnListItemRemove when calling RemoveItem.
-    base::MessageLoopForUI::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&AppsGridView::RemoveFolderIfOnlyOneItemLeft,
-                   weak_factory_.GetWeakPtr(),
-                   folder_id));
-  }
+  DeleteItemViewAtIndex(index);
 
   UpdatePaging();
   UpdatePulsingBlockViews();

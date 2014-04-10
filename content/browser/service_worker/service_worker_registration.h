@@ -37,10 +37,8 @@ class CONTENT_EXPORT ServiceWorkerRegistration
  public:
   ServiceWorkerRegistration(const GURL& pattern,
                             const GURL& script_url,
-                            int64 registration_id);
-
-  void Shutdown();
-  bool is_shutdown() const { return is_shutdown_; }
+                            int64 registration_id,
+                            base::WeakPtr<ServiceWorkerContextCore> context);
 
   int64 id() const { return registration_id_; }
   const GURL& script_url() const { return script_url_; }
@@ -68,6 +66,10 @@ class CONTENT_EXPORT ServiceWorkerRegistration
 
   ServiceWorkerRegistrationInfo GetInfo();
 
+  // Returns the active version, if it is not null; otherwise, returns the
+  // pending version.
+  ServiceWorkerVersion* GetNewestVersion();
+
   // The final synchronous switchover after all events have been
   // fired, and the old "active version" is being shut down.
   void ActivatePendingVersion();
@@ -84,6 +86,7 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   scoped_refptr<ServiceWorkerVersion> pending_version_;
 
   bool is_shutdown_;
+  base::WeakPtr<ServiceWorkerContextCore> context_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRegistration);
 };

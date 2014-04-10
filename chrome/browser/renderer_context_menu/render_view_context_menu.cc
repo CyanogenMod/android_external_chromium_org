@@ -51,7 +51,7 @@
 #include "chrome/browser/spellchecker/spellcheck_host_metrics.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/browser/tab_contents/retargeting_details.h"
-#include "chrome/browser/translate/translate_manager.h"
+#include "chrome/browser/translate/translate_service.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -68,6 +68,7 @@
 #include "chrome/common/spellcheck_messages.h"
 #include "chrome/common/url_constants.h"
 #include "components/translate/core/browser/translate_download_manager.h"
+#include "components/translate/core/browser/translate_manager.h"
 #include "components/translate/core/browser/translate_prefs.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/download_manager.h"
@@ -417,8 +418,7 @@ RenderViewContextMenu::RenderViewContextMenu(
           ProtocolHandlerRegistryFactory::GetForProfile(profile_)),
       command_executed_(false) {
   content_type_.reset(ContextMenuContentTypeFactory::Create(
-                          source_web_contents_,
-                          render_frame_host, params));
+                          source_web_contents_, params));
 }
 
 RenderViewContextMenu::~RenderViewContextMenu() {
@@ -904,7 +904,7 @@ void RenderViewContextMenu::AppendPageItems() {
                                   IDS_CONTENT_CONTEXT_SAVEPAGEAS);
   menu_model_.AddItemWithStringId(IDC_PRINT, IDS_CONTENT_CONTEXT_PRINT);
 
-  if (TranslateManager::IsTranslatableURL(params_.page_url)) {
+  if (TranslateService::IsTranslatableURL(params_.page_url)) {
     std::string locale = g_browser_process->GetApplicationLocale();
     locale = TranslateDownloadManager::GetLanguageCode(locale);
     base::string16 language =
@@ -1253,12 +1253,9 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
              (params_.media_flags &
               WebContextMenuData::MediaInError) == 0;
 
-    // Media controls can be toggled only for video player. If we toggle
-    // controls for audio then the player disappears, and there is no way to
-    // return it back.
     case IDC_CONTENT_CONTEXT_CONTROLS:
       return (params_.media_flags &
-              WebContextMenuData::MediaHasVideo) != 0;
+              WebContextMenuData::MediaCanToggleControls) != 0;
 
     case IDC_CONTENT_CONTEXT_ROTATECW:
     case IDC_CONTENT_CONTEXT_ROTATECCW:
@@ -1468,8 +1465,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
         source_web_contents_, false, std::string());
     }
 #endif
-    if (render_frame_host)
-      render_frame_host->ExecuteCustomContextMenuCommand(action, context);
+    source_web_contents_->ExecuteCustomContextMenuCommand(action, context);
     return;
   }
 
@@ -1797,43 +1793,35 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
     }
 
     case IDC_CONTENT_CONTEXT_UNDO:
-      if (render_frame_host)
-        render_frame_host->Undo();
+      source_web_contents_->Undo();
       break;
 
     case IDC_CONTENT_CONTEXT_REDO:
-      if (render_frame_host)
-        render_frame_host->Redo();
+      source_web_contents_->Redo();
       break;
 
     case IDC_CONTENT_CONTEXT_CUT:
-      if (render_frame_host)
-        render_frame_host->Cut();
+      source_web_contents_->Cut();
       break;
 
     case IDC_CONTENT_CONTEXT_COPY:
-      if (render_frame_host)
-        render_frame_host->Copy();
+      source_web_contents_->Copy();
       break;
 
     case IDC_CONTENT_CONTEXT_PASTE:
-      if (render_frame_host)
-        render_frame_host->Paste();
+      source_web_contents_->Paste();
       break;
 
     case IDC_CONTENT_CONTEXT_PASTE_AND_MATCH_STYLE:
-      if (render_frame_host)
-        render_frame_host->PasteAndMatchStyle();
+      source_web_contents_->PasteAndMatchStyle();
       break;
 
     case IDC_CONTENT_CONTEXT_DELETE:
-      if (render_frame_host)
-        render_frame_host->Delete();
+      source_web_contents_->Delete();
       break;
 
     case IDC_CONTENT_CONTEXT_SELECTALL:
-      if (render_frame_host)
-        render_frame_host->SelectAll();
+      source_web_contents_->SelectAll();
       break;
 
     case IDC_CONTENT_CONTEXT_SEARCHWEBFOR:
@@ -1953,10 +1941,7 @@ void RenderViewContextMenu::MenuClosed(ui::SimpleMenuModel* source) {
       source_web_contents_->GetRenderWidgetHostView();
   if (view)
     view->SetShowingContextMenu(false);
-  RenderFrameHost* render_frame_host =
-      RenderFrameHost::FromID(render_process_id_, render_frame_id_);
-  if (render_frame_host)
-    render_frame_host->NotifyContextMenuClosed(params_.custom_context);
+  source_web_contents_->NotifyContextMenuClosed(params_.custom_context);
 
   if (!command_executed_) {
     FOR_EACH_OBSERVER(RenderViewContextMenuObserver,

@@ -95,15 +95,15 @@ class ServiceWorkerURLRequestJobTest : public testing::Test {
     registration_ = new ServiceWorkerRegistration(
         GURL("http://example.com/*"),
         GURL("http://example.com/service_worker.js"),
-        1L);
+        1L, context_->AsWeakPtr());
     version_ = new ServiceWorkerVersion(
         registration_,
-        embedded_worker_registry(),
-        1L);
+        1L, context_->AsWeakPtr());
 
     scoped_ptr<ServiceWorkerProviderHost> provider_host(
-        new ServiceWorkerProviderHost(kProcessID, kProviderID));
-    provider_host->AssociateVersion(version_.get());
+        new ServiceWorkerProviderHost(kProcessID, kProviderID,
+                                      context_->AsWeakPtr(), NULL));
+    provider_host->SetActiveVersion(version_.get());
 
     url_request_job_factory_.SetProtocolHandler(
         "http", new MockProtocolHandler(provider_host->AsWeakPtr()));
@@ -113,10 +113,8 @@ class ServiceWorkerURLRequestJobTest : public testing::Test {
   }
 
   virtual void TearDown() OVERRIDE {
-    version_->Shutdown();
-    version_ = 0;
-    registration_->Shutdown();
-    registration_ = 0;
+    version_ = NULL;
+    registration_ = NULL;
     helper_.reset();
     context_.reset();
   }
@@ -135,10 +133,6 @@ class ServiceWorkerURLRequestJobTest : public testing::Test {
     // Verify response.
     EXPECT_TRUE(request_->status().is_success());
     EXPECT_EQ(200, request_->response_headers()->response_code());
-  }
-
-  EmbeddedWorkerRegistry* embedded_worker_registry() {
-    return context_->embedded_worker_registry();
   }
 
   TestBrowserThreadBundle thread_bundle_;

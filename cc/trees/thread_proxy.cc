@@ -94,7 +94,6 @@ ThreadProxy::MainThreadOnly::MainThreadOnly(ThreadProxy* proxy,
       commit_request_sent_to_impl_thread(false),
       created_offscreen_context_provider(false),
       started(false),
-      textures_acquired(true),
       in_composite_and_readback(false),
       manage_tiles_pending(false),
       can_cancel_commit(true),
@@ -124,7 +123,6 @@ ThreadProxy::CompositorThreadOnly::CompositorThreadOnly(ThreadProxy* proxy,
       readback_request(NULL),
       commit_completion_event(NULL),
       completion_event_for_commit_held_on_tree_activation(NULL),
-      texture_acquisition_completion_event(NULL),
       next_frame_is_newly_committed_frame(false),
       inside_draw(false),
       input_throttled_until_commit(false),
@@ -759,6 +757,20 @@ void ThreadProxy::ForceSerializeOnSwapBuffersOnImplThread(
   completion->Signal();
 }
 
+void ThreadProxy::SetDebugState(const LayerTreeDebugState& debug_state) {
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ThreadProxy::SetDebugStateOnImplThread,
+                 impl_thread_weak_ptr_,
+                 debug_state));
+}
+
+void ThreadProxy::SetDebugStateOnImplThread(
+    const LayerTreeDebugState& debug_state) {
+  DCHECK(IsImplThread());
+  impl().scheduler->SetContinuousPainting(debug_state.continuous_painting);
+}
+
 void ThreadProxy::FinishAllRenderingOnImplThread(CompletionEvent* completion) {
   TRACE_EVENT0("cc", "ThreadProxy::FinishAllRenderingOnImplThread");
   DCHECK(IsImplThread());
@@ -901,10 +913,6 @@ void ThreadProxy::BeginMainFrame(
       make_scoped_ptr(new ResourceUpdateQueue);
 
   bool updated = layer_tree_host()->UpdateLayers(queue.get());
-
-  // Once single buffered layers are committed, they cannot be modified until
-  // they are drawn by the impl thread.
-  main().textures_acquired = false;
 
   layer_tree_host()->WillCommit();
 
@@ -1284,47 +1292,6 @@ DrawSwapReadbackResult ThreadProxy::DrawSwapReadbackInternal(
 
   DCHECK_NE(DrawSwapReadbackResult::INVALID_RESULT, result.draw_result);
   return result;
-}
-
-void ThreadProxy::AcquireLayerTextures() {
-  // Called when the main thread needs to modify a layer texture that is used
-  // directly by the compositor.
-  // This method will block until the next compositor draw if there is a
-  // previously committed frame that is still undrawn. This is necessary to
-  // ensure that the main thread does not monopolize access to the textures.
-  DCHECK(IsMainThread());
-
-  if (main().textures_acquired)
-    return;
-
-  TRACE_EVENT0("cc", "ThreadProxy::AcquireLayerTextures");
-  DebugScopedSetMainThreadBlocked main_thread_blocked(this);
-  CompletionEvent completion;
-  Proxy::ImplThreadTaskRunner()->PostTask(
-      FROM_HERE,
-      base::Bind(&ThreadProxy::AcquireLayerTexturesForMainThreadOnImplThread,
-                 impl_thread_weak_ptr_,
-                 &completion));
-  // Block until it is safe to write to layer textures from the main thread.
-  completion.Wait();
-
-  main().textures_acquired = true;
-  main().can_cancel_commit = false;
-}
-
-void ThreadProxy::AcquireLayerTexturesForMainThreadOnImplThread(
-    CompletionEvent* completion) {
-  DCHECK(IsImplThread());
-  DCHECK(!impl().texture_acquisition_completion_event);
-
-  impl().texture_acquisition_completion_event = completion;
-  impl().scheduler->SetMainThreadNeedsLayerTextures();
-}
-
-void ThreadProxy::ScheduledActionAcquireLayerTexturesForMainThread() {
-  DCHECK(impl().texture_acquisition_completion_event);
-  impl().texture_acquisition_completion_event->Signal();
-  impl().texture_acquisition_completion_event = NULL;
 }
 
 void ThreadProxy::ScheduledActionManageTiles() {

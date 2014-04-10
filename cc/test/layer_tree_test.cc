@@ -374,8 +374,10 @@ void LayerTreeTest::EndTest() {
 }
 
 void LayerTreeTest::EndTestAfterDelay(int delay_milliseconds) {
-  main_task_runner_->PostTask(
-      FROM_HERE, base::Bind(&LayerTreeTest::EndTest, main_thread_weak_ptr_));
+  main_task_runner_->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&LayerTreeTest::EndTest, main_thread_weak_ptr_),
+      base::TimeDelta::FromMilliseconds(delay_milliseconds));
 }
 
 void LayerTreeTest::PostAddAnimationToMainThread(
@@ -425,13 +427,6 @@ void LayerTreeTest::PostReadbackToMainThread() {
   main_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&LayerTreeTest::DispatchReadback, main_thread_weak_ptr_));
-}
-
-void LayerTreeTest::PostAcquireLayerTextures() {
-  main_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&LayerTreeTest::DispatchAcquireLayerTextures,
-                 main_thread_weak_ptr_));
 }
 
 void LayerTreeTest::PostSetNeedsRedrawToMainThread() {
@@ -566,13 +561,6 @@ void LayerTreeTest::DispatchReadback() {
     char pixels[4];
     layer_tree_host()->CompositeAndReadback(&pixels, gfx::Rect(0, 0, 1, 1));
   }
-}
-
-void LayerTreeTest::DispatchAcquireLayerTextures() {
-  DCHECK(!proxy() || proxy()->IsMainThread());
-
-  if (layer_tree_host_)
-    layer_tree_host_->AcquireLayerTextures();
 }
 
 void LayerTreeTest::DispatchSetNeedsRedraw() {

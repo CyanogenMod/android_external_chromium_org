@@ -3,13 +3,14 @@
 include $(CLEAR_VARS)
 
 LOCAL_MODULE_CLASS := GYP
-LOCAL_MODULE := third_party_yasm_generate_files_host_gyp
+LOCAL_MODULE := third_party_yasm_generate_files_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 LOCAL_MODULE_STEM := generate_files
 LOCAL_MODULE_SUFFIX := .stamp
 LOCAL_MODULE_TAGS := optional
 LOCAL_IS_HOST_MODULE := true
-gyp_intermediate_dir := $(call local-intermediates-dir)
-gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
+LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
+gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
+gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
@@ -49,8 +50,6 @@ $(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c: export PATH := $(subst
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c: $(LOCAL_PATH)/third_party/yasm/source/patched-yasm/modules/arch/x86/x86cpu.gperf $(gyp_shared_intermediate_dir)/genperf $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/third_party/yasm; cd $(gyp_local_path)/third_party/yasm; "$(gyp_shared_intermediate_dir)/genperf" source/patched-yasm/modules/arch/x86/x86cpu.gperf "$(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c"
 
-.PHONY: third_party_yasm_generate_files_host_gyp_rule_trigger
-third_party_yasm_generate_files_host_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c
 
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -59,10 +58,7 @@ $(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c: export PATH := $(s
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c: $(LOCAL_PATH)/third_party/yasm/source/patched-yasm/modules/arch/x86/x86regtmod.gperf $(gyp_shared_intermediate_dir)/genperf $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/third_party/yasm; cd $(gyp_local_path)/third_party/yasm; "$(gyp_shared_intermediate_dir)/genperf" source/patched-yasm/modules/arch/x86/x86regtmod.gperf "$(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c"
 
-.PHONY: third_party_yasm_generate_files_host_gyp_rule_trigger
-third_party_yasm_generate_files_host_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c
 
-### Finished generating for all rules
 
 GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/third_party/yasm/x86insns.c \
@@ -75,8 +71,7 @@ GYP_GENERATED_OUTPUTS := \
 # Make sure our deps and generated files are built first.
 LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTPUTS)
 
-LOCAL_GENERATED_SOURCES := \
-	third_party_yasm_generate_files_host_gyp_rule_trigger
+LOCAL_GENERATED_SOURCES :=
 
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
@@ -204,14 +199,15 @@ LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 # Add target alias to "gyp_all_modules" target.
 .PHONY: gyp_all_modules
-gyp_all_modules: third_party_yasm_generate_files_host_gyp
+gyp_all_modules: third_party_yasm_generate_files_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 
 # Alias gyp target name.
 .PHONY: generate_files
-generate_files: third_party_yasm_generate_files_host_gyp
+generate_files: third_party_yasm_generate_files_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 
 LOCAL_MODULE_PATH := $(PRODUCT_OUT)/gyp_stamp
 LOCAL_UNINSTALLABLE_MODULE := true
+LOCAL_2ND_ARCH_VAR_PREFIX := $(GYP_VAR_PREFIX)
 
 include $(BUILD_SYSTEM)/base_rules.mk
 
@@ -219,3 +215,5 @@ $(LOCAL_BUILT_MODULE): $(LOCAL_ADDITIONAL_DEPENDENCIES)
 	$(hide) echo "Gyp timestamp: $@"
 	$(hide) mkdir -p $(dir $@)
 	$(hide) touch $@
+
+LOCAL_2ND_ARCH_VAR_PREFIX :=

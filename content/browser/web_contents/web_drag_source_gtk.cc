@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/files/file.h"
 #include "base/nix/mime_util_xdg.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
@@ -19,8 +20,7 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/drop_data.h"
-#include "net/base/file_stream.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
@@ -60,7 +60,6 @@ WebDragSourceGtk::~WebDragSourceGtk() {
   if (drop_data_) {
     gtk_grab_add(drag_widget_);
     gtk_grab_remove(drag_widget_);
-    base::MessageLoopForUI::current()->RemoveObserver(this);
     drop_data_.reset();
   }
 
@@ -147,27 +146,7 @@ bool WebDragSourceGtk::StartDragging(const DropData& drop_data,
     return false;
   }
 
-  base::MessageLoopForUI::current()->AddObserver(this);
   return true;
-}
-
-void WebDragSourceGtk::WillProcessEvent(GdkEvent* event) {
-  // No-op.
-}
-
-void WebDragSourceGtk::DidProcessEvent(GdkEvent* event) {
-  if (event->type != GDK_MOTION_NOTIFY)
-    return;
-
-  GdkEventMotion* event_motion = reinterpret_cast<GdkEventMotion*>(event);
-  gfx::Point client = ui::ClientPoint(GetContentNativeView());
-
-  if (web_contents_) {
-    web_contents_->DragSourceMovedTo(
-        client.x(), client.y(),
-        static_cast<int>(event_motion->x_root),
-        static_cast<int>(event_motion->y_root));
-  }
 }
 
 void WebDragSourceGtk::OnDragDataGet(GtkWidget* sender,
@@ -239,17 +218,14 @@ void WebDragSourceGtk::OnDragDataGet(GtkWidget* sender,
         g_free(file_url_value);
         base::FilePath file_path;
         if (net::FileURLToFilePath(file_url, &file_path)) {
-          // Open the file as a stream.
-          scoped_ptr<net::FileStream> file_stream(
-              CreateFileStreamForDrop(
-                  &file_path,
-                  GetContentClient()->browser()->GetNetLog()));
-          if (file_stream) {
+          // Open the file.
+          base::File file(CreateFileForDrop(&file_path));
+          if (file.IsValid()) {
             // Start downloading the file to the stream.
             scoped_refptr<DragDownloadFile> drag_file_downloader =
                 new DragDownloadFile(
                     file_path,
-                    file_stream.Pass(),
+                    file.Pass(),
                     download_url_,
                     Referrer(web_contents_->GetURL(),
                                       drop_data_->referrer_policy),
@@ -369,8 +345,6 @@ void WebDragSourceGtk::OnDragEnd(GtkWidget* sender,
     g_object_unref(drag_pixbuf_);
     drag_pixbuf_ = NULL;
   }
-
-  base::MessageLoopForUI::current()->RemoveObserver(this);
 
   if (!download_url_.is_empty()) {
     gdk_property_delete(drag_context->source_window,

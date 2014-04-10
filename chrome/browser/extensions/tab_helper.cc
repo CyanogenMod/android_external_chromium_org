@@ -34,14 +34,11 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
-#include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/chrome_extension_messages.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/invalidate_type.h"
@@ -61,13 +58,19 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/feature_switch.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
+#endif
+
+#if defined(OS_WIN)
+#include "chrome/browser/web_applications/web_app_win.h"
 #endif
 
 using content::NavigationController;
@@ -150,7 +153,7 @@ void TabHelper::CreateApplicationShortcuts() {
 }
 
 void TabHelper::CreateHostedAppFromWebContents() {
-  DCHECK(CanCreateApplicationShortcuts());
+  DCHECK(CanCreateBookmarkApp());
   NavigationEntry* entry =
       web_contents()->GetController().GetLastCommittedEntry();
   if (!entry)
@@ -169,6 +172,15 @@ bool TabHelper::CanCreateApplicationShortcuts() const {
 #else
   return web_app::IsValidUrl(web_contents()->GetURL()) &&
       pending_web_app_action_ == NONE;
+#endif
+}
+
+bool TabHelper::CanCreateBookmarkApp() const {
+#if defined(OS_MACOSX)
+  return false;
+#else
+  return IsValidBookmarkAppUrl(web_contents()->GetURL()) &&
+         pending_web_app_action_ == NONE;
 #endif
 }
 
@@ -243,34 +255,36 @@ void TabHelper::DidNavigateMainFrame(
   }
 #endif  // defined(ENABLE_EXTENSIONS)
 
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents()->GetBrowserContext());
-  ExtensionService* service = profile->GetExtensionService();
-  if (!service)
-    return;
+  content::BrowserContext* context = web_contents()->GetBrowserContext();
+  ExtensionRegistry* registry = ExtensionRegistry::Get(context);
+  const ExtensionSet& enabled_extensions = registry->enabled_extensions();
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableStreamlinedHostedApps)) {
 #if !defined(OS_ANDROID)
     Browser* browser = chrome::FindBrowserWithWebContents(web_contents());
     if (browser && browser->is_app()) {
-      SetExtensionApp(service->GetInstalledExtension(
-          web_app::GetExtensionIdFromApplicationName(browser->app_name())));
+      SetExtensionApp(registry->GetExtensionById(
+          web_app::GetExtensionIdFromApplicationName(browser->app_name()),
+          ExtensionRegistry::EVERYTHING));
     } else {
-      UpdateExtensionAppIcon(service->GetInstalledExtensionByUrl(params.url));
+      UpdateExtensionAppIcon(
+          enabled_extensions.GetExtensionOrAppByURL(params.url));
     }
 #endif
   } else {
-    UpdateExtensionAppIcon(service->GetInstalledExtensionByUrl(params.url));
+    UpdateExtensionAppIcon(
+        enabled_extensions.GetExtensionOrAppByURL(params.url));
   }
 
   if (details.is_in_page)
     return;
 
   ExtensionActionManager* extension_action_manager =
-      ExtensionActionManager::Get(profile);
-  for (ExtensionSet::const_iterator it = service->extensions()->begin();
-       it != service->extensions()->end(); ++it) {
+      ExtensionActionManager::Get(Profile::FromBrowserContext(context));
+  for (ExtensionSet::const_iterator it = enabled_extensions.begin();
+       it != enabled_extensions.end();
+       ++it) {
     ExtensionAction* browser_action =
         extension_action_manager->GetBrowserAction(*it->get());
     if (browser_action) {

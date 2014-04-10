@@ -11,6 +11,7 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "mojo/embedder/platform_handle.h"
 #include "mojo/system/dispatcher.h"
 #include "mojo/system/system_impl_export.h"
 
@@ -68,6 +69,10 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
   // The maximum size of a single serialized dispatcher. This must be a multiple
   // of |kMessageAlignment|.
   static const size_t kMaxSerializedDispatcherSize = 10000;
+
+  // The maximum number of platform handles to attach for a single serialized
+  // dispatcher.
+  static const size_t kMaxSerializedDispatcherPlatformHandles = 2;
 
   // Forward-declare |Header| so that |View| can use it:
  private:
@@ -211,7 +216,19 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
 
   // Returns true if this message has dispatchers attached.
   bool has_dispatchers() const {
-    return dispatchers_.get() && !dispatchers_->empty();
+    return dispatchers_ && !dispatchers_->empty();
+  }
+
+  // Gets the platform-specific handles attached to this message; this may
+  // return null if there are none. Note that the caller may mutate the set of
+  // platform-specific handles.
+  std::vector<embedder::PlatformHandle>* platform_handles() {
+    return platform_handles_.get();
+  }
+
+  // Returns true if this message has platform-specific handles attached.
+  bool has_platform_handles() const {
+    return platform_handles_ && !platform_handles_->empty();
   }
 
   // Rounds |n| up to a multiple of |kMessageAlignment|.
@@ -249,12 +266,14 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
     uint32_t unused;
   };
 
-  // The maximum possible size of a valid secondary buffer: for each handle,
-  // there'll be a handle table entry and its serialized data.
+  // The maximum possible size of a valid secondary buffer.
   static const size_t kMaxSecondaryBufferSize;
 
+  // The maximum total number of platform handles that may be attached.
+  static const size_t kMaxPlatformHandles;
+
   // Validates the secondary buffer. Returns null on success, or a
-  // human-readable error message on error.
+  // human-readable error message (meant for logging/debugging) on error.
   static const char* ValidateSecondaryBuffer(size_t num_handles,
                                              const void* secondary_buffer,
                                              size_t secondary_buffer_size);
@@ -277,6 +296,12 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
   // allow a dispatcher entry to be null, in case it couldn't be duplicated for
   // some reason.)
   scoped_ptr<std::vector<scoped_refptr<Dispatcher> > > dispatchers_;
+
+  // Any platform-specific handles attached to this message (for inter-process
+  // transport). The vector (if any) owns the handles that it contains (and is
+  // responsible for closing them).
+  // TODO(vtl): With C++11, change it to a vector of |ScopedPlatformHandles|.
+  scoped_ptr<std::vector<embedder::PlatformHandle> > platform_handles_;
 
   DISALLOW_COPY_AND_ASSIGN(MessageInTransit);
 };

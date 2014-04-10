@@ -12,12 +12,16 @@
 #include "ui/gfx/geometry/size.h"
 
 #if defined(OS_CHROMEOS)
-#include "ui/display/chromeos/output_configurator.h"
+#include "ui/display/chromeos/display_configurator.h"
 #endif
 
 namespace aura {
 class TestScreen;
 class WindowTreeHost;
+}
+
+namespace content {
+class BrowserContext;
 }
 
 namespace wm {
@@ -26,24 +30,37 @@ class WMTestHelper;
 
 namespace apps {
 
+class ShellAppWindow;
+
 // Handles desktop-related tasks for app_shell.
 class ShellDesktopController
 #if defined(OS_CHROMEOS)
-    : public ui::OutputConfigurator::Observer
+    : public ui::DisplayConfigurator::Observer
 #endif
       {
  public:
   ShellDesktopController();
   virtual ~ShellDesktopController();
 
+  // Returns the single instance of the desktop. (Stateless functions like
+  // ShellAppWindowCreateFunction need to be able to access the desktop, so
+  // we need a singleton somewhere).
+  static ShellDesktopController* instance();
+
+  // Creates a new app window and adds it to the desktop. The desktop maintains
+  // ownership of the window.
+  ShellAppWindow* CreateAppWindow(content::BrowserContext* context);
+
+  // Closes and destroys the app window.
+  void CloseAppWindow();
+
   // Returns the host for the Aura window tree.
   aura::WindowTreeHost* GetWindowTreeHost();
 
 #if defined(OS_CHROMEOS)
-  // ui::OutputConfigurator::Observer overrides.
-  virtual void OnDisplayModeChanged(
-      const std::vector<ui::OutputConfigurator::DisplayState>& outputs)
-      OVERRIDE;
+  // ui::DisplayConfigurator::Observer overrides.
+  virtual void OnDisplayModeChanged(const std::vector<
+      ui::DisplayConfigurator::DisplayState>& outputs) OVERRIDE;
 #endif
 
  private:
@@ -58,13 +75,16 @@ class ShellDesktopController
   gfx::Size GetPrimaryDisplaySize();
 
 #if defined(OS_CHROMEOS)
-  scoped_ptr<ui::OutputConfigurator> output_configurator_;
+  scoped_ptr<ui::DisplayConfigurator> display_configurator_;
 #endif
 
   // Enable a minimal set of views::corewm to be initialized.
   scoped_ptr<wm::WMTestHelper> wm_test_helper_;
 
   scoped_ptr<aura::TestScreen> test_screen_;
+
+  // The desktop supports a single app window.
+  scoped_ptr<ShellAppWindow> app_window_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellDesktopController);
 };

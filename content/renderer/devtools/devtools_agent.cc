@@ -24,6 +24,7 @@
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDevToolsAgent.h"
+#include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -188,10 +189,13 @@ void DevToolsAgent::startGPUEventsRecording() {
   if (!gpu_channel_host)
     return;
   DCHECK(gpu_route_id_ == MSG_ROUTING_NONE);
+  int32 route_id = gpu_channel_host->GenerateRouteID();
+  bool succeeded = false;
   gpu_channel_host->Send(
-      new GpuChannelMsg_DevToolsStartEventsRecording(&gpu_route_id_));
-  DCHECK(gpu_route_id_ != MSG_ROUTING_NONE);
-  if (gpu_route_id_ != MSG_ROUTING_NONE) {
+      new GpuChannelMsg_DevToolsStartEventsRecording(route_id, &succeeded));
+  DCHECK(succeeded);
+  if (succeeded) {
+    gpu_route_id_ = route_id;
     gpu_channel_host->AddRoute(gpu_route_id_, AsWeakPtr());
   }
 }
@@ -212,8 +216,9 @@ void DevToolsAgent::OnGpuTasksChunk(const std::vector<GpuTaskInfo>& tasks) {
     return;
   for (size_t i = 0; i < tasks.size(); i++) {
     const GpuTaskInfo& task = tasks[i];
-    WebDevToolsAgent::GPUEvent event(task.timestamp, task.phase, task.foreign,
-        static_cast<size_t>(task.used_gpu_memory_bytes));
+    WebDevToolsAgent::GPUEvent event(
+        task.timestamp, task.phase, task.foreign, task.gpu_memory_used_bytes);
+    event.limitGPUMemoryBytes = task.gpu_memory_limit_bytes;
     web_agent->processGPUEvent(event);
   }
 }
@@ -223,10 +228,22 @@ void DevToolsAgent::enableDeviceEmulation(
     const blink::WebRect& view_rect,
     float device_scale_factor,
     bool fit_to_view) {
+  blink::WebDeviceEmulationParams params;
+  params.screenPosition = device_rect.isEmpty() ?
+      blink::WebDeviceEmulationParams::Desktop :
+      blink::WebDeviceEmulationParams::Mobile;
+  params.deviceScaleFactor = device_scale_factor;
+  params.viewSize = blink::WebSize(view_rect.width, view_rect.height);
+  params.fitToView = fit_to_view;
+  params.viewInsets = blink::WebSize(device_rect.x, device_rect.y);
+  enableDeviceEmulation(params);
+}
+
+void DevToolsAgent::enableDeviceEmulation(
+    const blink::WebDeviceEmulationParams& params) {
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(render_view());
   impl->webview()->settings()->setForceCompositingMode(true);
-  impl->EnableScreenMetricsEmulation(gfx::Rect(device_rect),
-      gfx::Rect(view_rect), device_scale_factor, fit_to_view);
+  impl->EnableScreenMetricsEmulation(params);
 }
 
 void DevToolsAgent::disableDeviceEmulation() {

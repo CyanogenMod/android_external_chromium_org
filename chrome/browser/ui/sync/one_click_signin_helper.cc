@@ -49,6 +49,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/sync/one_click_signin_histogram.h"
+#include "chrome/browser/ui/sync/one_click_signin_sync_observer.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
 #include "chrome/browser/ui/sync/signin_histogram.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
@@ -321,7 +322,7 @@ void StartExplicitSync(const OneClickSigninHelper::StartSyncArgs& args,
     }
     if (action == ConfirmEmailDialogDelegate::CREATE_NEW_USER) {
       chrome::ShowSettingsSubPage(args.browser,
-                                  std::string(chrome::kSearchUsersSubPage));
+                                  std::string(chrome::kCreateProfileSubPage));
     }
   }
 }
@@ -482,12 +483,6 @@ void CurrentHistoryCleaner::DidCommitProvisionalLoadForFrame(
 void CurrentHistoryCleaner::WebContentsDestroyed(
     content::WebContents* contents) {
   delete this;  // Failure.
-}
-
-void CloseTab(content::WebContents* tab) {
-  content::WebContentsDelegate* tab_delegate = tab->GetDelegate();
-  if (tab_delegate)
-    tab_delegate->CloseContents(tab);
 }
 
 }  // namespace
@@ -680,8 +675,9 @@ DEFINE_WEB_CONTENTS_USER_DATA_KEY(OneClickSigninHelper);
 // static
 const int OneClickSigninHelper::kMaxNavigationsSince = 10;
 
-OneClickSigninHelper::OneClickSigninHelper(content::WebContents* web_contents,
-                                           PasswordManager* password_manager)
+OneClickSigninHelper::OneClickSigninHelper(
+    content::WebContents* web_contents,
+    password_manager::PasswordManager* password_manager)
     : content::WebContentsObserver(web_contents),
       showing_signin_(false),
       auto_accept_(AUTO_ACCEPT_NONE),
@@ -700,11 +696,7 @@ OneClickSigninHelper::OneClickSigninHelper(content::WebContents* web_contents,
   }
 }
 
-OneClickSigninHelper::~OneClickSigninHelper() {
-  // WebContentsDestroyed() should always be called before the object is
-  // deleted.
-  DCHECK(!web_contents());
-}
+OneClickSigninHelper::~OneClickSigninHelper() {}
 
 // static
 void OneClickSigninHelper::LogHistogramValue(
@@ -771,7 +763,7 @@ void OneClickSigninHelper::LogHistogramValue(
 // static
 void OneClickSigninHelper::CreateForWebContentsWithPasswordManager(
     content::WebContents* contents,
-    PasswordManager* password_manager) {
+    password_manager::PasswordManager* password_manager) {
   if (!FromWebContents(contents)) {
     contents->SetUserData(UserDataKey(),
                           new OneClickSigninHelper(contents, password_manager));
@@ -1570,10 +1562,8 @@ void OneClickSigninHelper::DidStopLoading(
       if (original_source == signin::SOURCE_SETTINGS ||
           (original_source == signin::SOURCE_WEBSTORE_INSTALL &&
            source_ == signin::SOURCE_SETTINGS)) {
-        ProfileSyncService* sync_service =
-            ProfileSyncServiceFactory::GetForProfile(profile);
-        if (sync_service)
-          sync_service->AddObserver(this);
+        // The observer deletes itself once it's done.
+        new OneClickSigninSyncObserver(contents, original_continue_url_);
       }
       break;
     }
@@ -1587,60 +1577,6 @@ void OneClickSigninHelper::DidStopLoading(
   }
 
   CleanTransientState();
-}
-
-// It is guaranteed that this method is called before the object is deleted.
-void OneClickSigninHelper::WebContentsDestroyed(
-    content::WebContents* contents) {
-  Profile* profile =
-      Profile::FromBrowserContext(contents->GetBrowserContext());
-  ProfileSyncService* sync_service =
-      ProfileSyncServiceFactory::GetForProfile(profile);
-  if (sync_service)
-    sync_service->RemoveObserver(this);
-}
-
-void OneClickSigninHelper::OnStateChanged() {
-  // We only add observer for ProfileSyncService when original_continue_url_ is
-  // not empty.
-  DCHECK(!original_continue_url_.is_empty());
-
-  content::WebContents* contents = web_contents();
-  Profile* profile =
-      Profile::FromBrowserContext(contents->GetBrowserContext());
-  ProfileSyncService* sync_service =
-      ProfileSyncServiceFactory::GetForProfile(profile);
-
-  // At this point, the sign in process is complete, and control has been handed
-  // back to the sync engine. Close the gaia sign in tab if
-  // |original_continue_url_| contains the |auto_close| parameter. Otherwise,
-  // wait for sync setup to complete and then navigate to
-  // |original_continue_url_|.
-  if (signin::IsAutoCloseEnabledInURL(original_continue_url_)) {
-    // Close the gaia sign in tab via a task to make sure we aren't in the
-    // middle of any webui handler code.
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&CloseTab, base::Unretained(contents)));
-  } else {
-    // Sync setup not completed yet.
-    if (sync_service->FirstSetupInProgress())
-      return;
-
-    if (sync_service->sync_initialized() &&
-        signin::GetSourceForPromoURL(original_continue_url_)
-            != signin::SOURCE_SETTINGS) {
-      contents->GetController().LoadURL(original_continue_url_,
-                                        content::Referrer(),
-                                        content::PAGE_TRANSITION_AUTO_TOPLEVEL,
-                                        std::string());
-    }
-  }
-
-  // Clears |original_continue_url_| here instead of in CleanTransientState,
-  // because it is used in OnStateChanged which occurs later.
-  original_continue_url_ = GURL();
-  sync_service->RemoveObserver(this);
 }
 
 OneClickSigninSyncStarter::Callback

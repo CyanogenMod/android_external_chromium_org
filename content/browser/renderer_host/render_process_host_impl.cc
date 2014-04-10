@@ -21,12 +21,12 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/files/file.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "base/platform_file.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -67,6 +67,7 @@
 #include "content/browser/mime_registry_message_filter.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/profiler_message_filter.h"
+#include "content/browser/push_messaging_message_filter.h"
 #include "content/browser/quota_dispatcher_host.h"
 #include "content/browser/renderer_host/clipboard_message_filter.h"
 #include "content/browser/renderer_host/database_message_filter.h"
@@ -86,6 +87,7 @@
 #include "content/browser/renderer_host/pepper/pepper_message_filter.h"
 #include "content/browser/renderer_host/pepper/pepper_renderer_connection.h"
 #include "content/browser/renderer_host/render_message_filter.h"
+#include "content/browser/renderer_host/render_process_host_mojo_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
@@ -160,10 +162,6 @@
 #include "content/common/media/media_stream_messages.h"
 #endif
 
-#if defined(USE_MOJO)
-#include "content/browser/renderer_host/render_process_host_mojo_impl.h"
-#endif
-
 extern bool g_exited_main_message_loop;
 
 static const char* kSiteProcessMapKeyName = "content_site_process_map";
@@ -211,17 +209,14 @@ IPC::PlatformFileForTransit CreateAecDumpFileForProcess(
     base::FilePath file_path,
     base::ProcessHandle process) {
   DCHECK_CURRENTLY_ON(BrowserThread::FILE);
-  base::PlatformFileError error = base::PLATFORM_FILE_OK;
-  base::PlatformFile aec_dump_file = base::CreatePlatformFile(
-      file_path,
-      base::PLATFORM_FILE_OPEN_ALWAYS | base::PLATFORM_FILE_APPEND,
-      NULL,
-      &error);
-  if (error != base::PLATFORM_FILE_OK) {
-    VLOG(1) << "Could not open AEC dump file, error=" << error;
+  base::File dump_file(file_path,
+                       base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_APPEND);
+  if (!dump_file.IsValid()) {
+    VLOG(1) << "Could not open AEC dump file, error=" <<
+               dump_file.error_details();
     return IPC::InvalidPlatformFileForTransit();
   }
-  return IPC::GetFileHandleForProcess(aec_dump_file, process, true);
+  return IPC::TakeFileHandleForProcess(dump_file.Pass(), process);
 }
 
 // Does nothing. Just to avoid races between enable and disable.
@@ -840,6 +835,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(new VibrationMessageFilter());
   screen_orientation_dispatcher_host_ = new ScreenOrientationDispatcherHost();
   AddFilter(screen_orientation_dispatcher_host_);
+  AddFilter(new PushMessagingMessageFilter());
 }
 
 int RenderProcessHostImpl::GetNextRoutingID() {
@@ -1080,13 +1076,11 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableEncryptedMedia,
     switches::kEnableExperimentalCanvasFeatures,
     switches::kEnableExperimentalWebPlatformFeatures,
-    switches::kEnableExperimentalWebSocket,
     switches::kEnableFastTextAutosizing,
     switches::kEnableGPUClientLogging,
     switches::kEnableGpuClientTracing,
     switches::kEnableGPUServiceLogging,
     switches::kEnableHighDpiCompositingForFixedPosition,
-    switches::kEnableHTMLImports,
     switches::kEnableLowResTiling,
     switches::kEnableInbandTextTracks,
     switches::kEnableLCDText,
@@ -1185,7 +1179,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableDeviceEnumeration,
     switches::kDisableWebRtcHWDecoding,
     switches::kDisableWebRtcHWEncoding,
-    switches::kEnableWebRtcAecRecordings,
     switches::kEnableWebRtcHWVp8Encoding,
     switches::kEnableWebRtcTcpServerSocket,
 #endif
@@ -1936,9 +1929,7 @@ void RenderProcessHostImpl::ProcessDied(bool already_dead) {
 
   ClearTransportDIBCache();
 
-#if defined(USE_MOJO)
   render_process_host_mojo_.reset();
-#endif
 
   // It's possible that one of the calls out to the observers might have caused
   // this object to be no longer needed.
@@ -2083,10 +2074,8 @@ void RenderProcessHostImpl::OnProcessLaunched() {
     EnableAecDump(WebRTCInternals::GetInstance()->aec_dump_file_path());
 #endif
 
-#if defined(USE_MOJO)
   if (render_process_host_mojo_.get())
     render_process_host_mojo_->OnProcessLaunched();
-#endif
 }
 
 scoped_refptr<AudioRendererHost>
@@ -2160,7 +2149,6 @@ void RenderProcessHostImpl::DecrementWorkerRefCount() {
     Cleanup();
 }
 
-#if defined(USE_MOJO)
 void RenderProcessHostImpl::SetWebUIHandle(
     int32 view_routing_id,
     mojo::ScopedMessagePipeHandle handle) {
@@ -2168,6 +2156,5 @@ void RenderProcessHostImpl::SetWebUIHandle(
     render_process_host_mojo_.reset(new RenderProcessHostMojoImpl(this));
   render_process_host_mojo_->SetWebUIHandle(view_routing_id, handle.Pass());
 }
-#endif
 
 }  // namespace content

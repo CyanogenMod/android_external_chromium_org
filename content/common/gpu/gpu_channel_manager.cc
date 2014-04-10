@@ -15,6 +15,7 @@
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/memory_program_cache.h"
+#include "gpu/command_buffer/service/shader_translator_cache.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_share_group.h"
 
@@ -65,6 +66,13 @@ gpu::gles2::ProgramCache* GpuChannelManager::program_cache() {
     program_cache_.reset(new gpu::gles2::MemoryProgramCache());
   }
   return program_cache_.get();
+}
+
+gpu::gles2::ShaderTranslatorCache*
+GpuChannelManager::shader_translator_cache() {
+  if (!shader_translator_cache_.get())
+    shader_translator_cache_ = new gpu::gles2::ShaderTranslatorCache;
+  return shader_translator_cache_.get();
 }
 
 void GpuChannelManager::RemoveChannel(int client_id) {
@@ -162,17 +170,18 @@ void GpuChannelManager::OnCreateViewCommandBuffer(
     const gfx::GLSurfaceHandle& window,
     int32 surface_id,
     int32 client_id,
-    const GPUCreateCommandBufferConfig& init_params) {
+    const GPUCreateCommandBufferConfig& init_params,
+    int32 route_id) {
   DCHECK(surface_id);
-  int32 route_id = MSG_ROUTING_NONE;
+  bool succeeded = false;
 
   GpuChannelMap::const_iterator iter = gpu_channels_.find(client_id);
   if (iter != gpu_channels_.end()) {
-    iter->second->CreateViewCommandBuffer(
-        window, surface_id, init_params, &route_id);
+    succeeded = iter->second->CreateViewCommandBuffer(
+        window, surface_id, init_params, route_id);
   }
 
-  Send(new GpuHostMsg_CommandBufferCreated(route_id));
+  Send(new GpuHostMsg_CommandBufferCreated(succeeded));
 }
 
 void GpuChannelManager::CreateImage(

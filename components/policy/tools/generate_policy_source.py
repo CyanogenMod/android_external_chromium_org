@@ -11,11 +11,13 @@ chromium_os_flag should be 1 if this is a Chromium OS build
 template is the path to a .json policy template file.'''
 
 from __future__ import with_statement
+from functools import partial
 import json
 from optparse import OptionParser
 import re
 import sys
 import textwrap
+import types
 
 
 CHROME_POLICY_KEY = 'SOFTWARE\\\\Policies\\\\Google\\\\Chrome'
@@ -282,9 +284,14 @@ class SchemaNodesGenerator:
     }
     self.stringlist_type = None
     self.ranges = {}
+    self.id_map = {}
 
   def GetString(self, s):
-    return self.shared_strings[s] if s in self.shared_strings else '"%s"' % s
+    if s in self.shared_strings:
+      return self.shared_strings[s]
+    # Generate JSON escaped string, which is slightly different from desired
+    # C/C++ escaped string. Known differences includes unicode escaping format.
+    return json.dumps(s)
 
   def AppendSchema(self, type, extra, comment=''):
     index = len(self.schema_nodes)
@@ -315,7 +322,8 @@ class SchemaNodesGenerator:
     return self.stringlist_type
 
   def SchemaHaveRestriction(self, schema):
-    return 'minimum' in schema or 'maximum' in schema or 'enum' in schema
+    return any(keyword in schema for keyword in
+        ['minimum', 'maximum', 'enum', 'pattern'])
 
   def IsConsecutiveInterval(self, seq):
     sortedSeq = sorted(seq)
@@ -355,6 +363,20 @@ class SchemaNodesGenerator:
     else:
       raise RuntimeError('Unknown enumeration type in %s' % name)
 
+  def GetPatternType(self, schema, name):
+    if schema['type'] != 'string':
+      raise RuntimeError('Unknown pattern type in %s' % name)
+    pattern = schema['pattern']
+    # Try to compile the pattern to validate it, note that the syntax used
+    # here might be slightly different from re2.
+    # TODO(binjin): Add a python wrapper of re2 and use it here.
+    re.compile(pattern)
+    index = len(self.string_enums);
+    self.string_enums.append(pattern);
+    return self.AppendSchema('TYPE_STRING',
+        self.AppendRestriction(index, index),
+        'string with pattern restriction: %s' % name);
+
   def GetRangedType(self, schema, name):
     if schema['type'] != 'integer':
       raise RuntimeError('Unknown ranged type in %s' % name)
@@ -379,12 +401,20 @@ class SchemaNodesGenerator:
 
     |schema|: a valid JSON schema in a dictionary.
     |name|: the name of the current node, for the generated comments."""
+    if schema.has_key('$ref'):
+      if schema.has_key('id'):
+        raise RuntimeError("Schemas with a $ref can't have an id")
+      if not isinstance(schema['$ref'], types.StringTypes):
+        raise RuntimeError("$ref attribute must be a string")
+      return schema['$ref']
     if schema['type'] in self.simple_types:
       if not self.SchemaHaveRestriction(schema):
         # Simple types use shared nodes.
         return self.GetSimpleType(schema['type'])
       elif 'enum' in schema:
         return self.GetEnumType(schema, name)
+      elif 'pattern' in schema:
+        return self.GetPatternType(schema, name)
       else:
         return self.GetRangedType(schema, name)
 
@@ -392,9 +422,8 @@ class SchemaNodesGenerator:
       # Special case for lists of strings, which is a common policy type.
       if schema['items']['type'] == 'string':
         return self.GetStringList()
-      return self.AppendSchema(
-          'TYPE_LIST',
-          self.Generate(schema['items'], 'items of ' + name))
+      return self.AppendSchema('TYPE_LIST',
+          self.GenerateAndCollectID(schema['items'], 'items of ' + name))
     elif schema['type'] == 'object':
       # Reserve an index first, so that dictionaries come before their
       # properties. This makes sure that the root node is the first in the
@@ -402,7 +431,7 @@ class SchemaNodesGenerator:
       index = self.AppendSchema('TYPE_DICTIONARY', -1)
 
       if 'additionalProperties' in schema:
-        additionalProperties = self.Generate(
+        additionalProperties = self.GenerateAndCollectID(
             schema['additionalProperties'],
             'additionalProperties of ' + name)
       else:
@@ -413,23 +442,48 @@ class SchemaNodesGenerator:
       # recursive calls to Generate() append the necessary child nodes; if
       # |properties| were a generator then this wouldn't work.
       sorted_properties = sorted(schema.get('properties', {}).items())
-      properties = [ (self.GetString(key), self.Generate(schema, key))
-                     for key, schema in sorted_properties ]
+      properties = [
+          (self.GetString(key), self.GenerateAndCollectID(subschema, key))
+          for key, subschema in sorted_properties ]
+
+      pattern_properties = []
+      for pattern, subschema in schema.get('patternProperties', {}).items():
+        pattern_properties.append((self.GetString(pattern),
+            self.GenerateAndCollectID(subschema, pattern)));
+
       begin = len(self.property_nodes)
       self.property_nodes += properties
       end = len(self.property_nodes)
+      self.property_nodes += pattern_properties
+      pattern_end = len(self.property_nodes)
+
       if index == 0:
         self.root_properties_begin = begin
         self.root_properties_end = end
 
       extra = len(self.properties_nodes)
-      self.properties_nodes.append((begin, end, additionalProperties, name))
+      self.properties_nodes.append((begin, end, pattern_end,
+          additionalProperties, name))
 
       # Set the right data at |index| now.
       self.schema_nodes[index] = ('TYPE_DICTIONARY', extra, name)
       return index
     else:
       assert False
+
+  def GenerateAndCollectID(self, schema, name):
+    """A wrapper of Generate(), will take the return value, check and add 'id'
+    attribute to self.id_map. The wrapper needs to be used for every call to
+    Generate().
+    """
+    index = self.Generate(schema, name)
+    if not schema.has_key('id'):
+      return index
+    id_str = schema['id']
+    if self.id_map.has_key(id_str):
+      raise RuntimeError('Duplicated id: ' + id_str)
+    self.id_map[id_str] = index
+    return index
 
   def Write(self, f):
     """Writes the generated structs to the given file.
@@ -452,9 +506,9 @@ class SchemaNodesGenerator:
 
     if self.properties_nodes:
       f.write('const internal::PropertiesNode kProperties[] = {\n'
-              '//  Begin    End  Additional Properties\n')
+              '//  Begin    End  PatternEnd Additional Properties\n')
       for node in self.properties_nodes:
-        f.write('  { %5d, %5d, %5d },  // %s\n' % node)
+        f.write('  { %5d, %5d, %10d, %5d },  // %s\n' % node)
       f.write('};\n\n')
 
     if self.restriction_nodes:
@@ -485,6 +539,29 @@ class SchemaNodesGenerator:
     f.write('  kStringEnumerations,\n' if self.string_enums else '  NULL,\n')
     f.write('};\n\n')
 
+  def GetByID(self, id_str):
+    if not isinstance(id_str, types.StringTypes):
+      return id_str
+    if not self.id_map.has_key(id_str):
+      raise RuntimeError('Invalid $ref: ' + id_str)
+    return self.id_map[id_str]
+
+  def ResolveID(self, index, params):
+    return params[:index] + (self.GetByID(params[index]),) + params[index+1:]
+
+  def ResolveReferences(self):
+    """Resolve reference mapping, required to be called after Generate()
+
+    After calling Generate(), the type of indices used in schema structures
+    might be either int or string. An int type suggests that it's a resolved
+    index, but for string type it's unresolved. Resolving a reference is as
+    simple as looking up for corresponding ID in self.id_map, and replace the
+    old index with the mapped index.
+    """
+    self.schema_nodes = map(partial(self.ResolveID, 1), self.schema_nodes)
+    self.property_nodes = map(partial(self.ResolveID, 1), self.property_nodes)
+    self.properties_nodes = map(partial(self.ResolveID, 3),
+        self.properties_nodes)
 
 def _WritePolicyConstantSource(policies, os, f):
   f.write('#include "policy/policy_constants.h"\n'
@@ -527,7 +604,8 @@ def _WritePolicyConstantSource(policies, os, f):
   f.write('};\n\n')
 
   schema_generator = SchemaNodesGenerator(shared_strings)
-  schema_generator.Generate(chrome_schema, 'root node')
+  schema_generator.GenerateAndCollectID(chrome_schema, 'root node')
+  schema_generator.ResolveReferences()
   schema_generator.Write(f)
 
   f.write('bool CompareKeys(const internal::PropertyNode& node,\n'

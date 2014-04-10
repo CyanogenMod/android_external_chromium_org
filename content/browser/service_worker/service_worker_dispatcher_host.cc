@@ -4,12 +4,14 @@
 
 #include "content/browser/service_worker/service_worker_dispatcher_host.h"
 
+#include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/message_port_message_filter.h"
 #include "content/browser/message_port_service.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
+#include "content/browser/service_worker/service_worker_handle.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_utils.h"
 #include "content/common/service_worker/embedded_worker_messages.h"
@@ -19,6 +21,8 @@
 #include "url/gurl.h"
 
 using blink::WebServiceWorkerError;
+
+namespace content {
 
 namespace {
 
@@ -32,9 +36,9 @@ const uint32 kFilteredMessageClasses[] = {
   EmbeddedWorkerMsgStart,
 };
 
-}  // namespace
+void NoOpStatusCallback(ServiceWorkerStatusCode status) {}
 
-namespace content {
+}  // namespace
 
 ServiceWorkerDispatcherHost::ServiceWorkerDispatcherHost(
     int render_process_id,
@@ -88,17 +92,29 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
                         OnAddScriptClient)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_RemoveScriptClient,
                         OnRemoveScriptClient)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_PostMessage, OnPostMessage)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_SetVersionId,
+                        OnSetHostedVersionId)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_PostMessage,
+                        OnPostMessage)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerStarted,
                         OnWorkerStarted)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerStopped,
                         OnWorkerStopped)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_SendMessageToBrowser,
                         OnSendMessageToBrowser)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_ReportException,
+                        OnReportException)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_ServiceWorkerObjectDestroyed,
+                        OnServiceWorkerObjectDestroyed)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
   return handled;
+}
+
+int ServiceWorkerDispatcherHost::RegisterServiceWorkerHandle(
+    scoped_ptr<ServiceWorkerHandle> handle) {
+  return handles_.Add(handle.release());
 }
 
 void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
@@ -163,7 +179,7 @@ void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(
 }
 
 void ServiceWorkerDispatcherHost::OnPostMessage(
-    int64 registration_id,
+    int handle_id,
     const base::string16& message,
     const std::vector<int>& sent_message_port_ids) {
   if (!context_ || !ServiceWorkerUtils::IsFeatureEnabled())
@@ -178,34 +194,13 @@ void ServiceWorkerDispatcherHost::OnPostMessage(
         new_routing_ids[i]);
   }
 
-  context_->storage()->FindRegistrationForId(
-      registration_id,
-      base::Bind(&ServiceWorkerDispatcherHost::PostMessageFoundRegistration,
-                 message,
-                 sent_message_port_ids,
-                 new_routing_ids));
-}
-
-namespace {
-void NoOpStatusCallback(ServiceWorkerStatusCode status) {}
-}  // namespace
-
-// static
-void ServiceWorkerDispatcherHost::PostMessageFoundRegistration(
-    const base::string16& message,
-    const std::vector<int>& sent_message_port_ids,
-    const std::vector<int>& new_routing_ids,
-    ServiceWorkerStatusCode status,
-    const scoped_refptr<ServiceWorkerRegistration>& result) {
-  if (status != SERVICE_WORKER_OK)
+  ServiceWorkerHandle* handle = handles_.Lookup(handle_id);
+  if (!handle) {
+    BadMessageReceived();
     return;
-  DCHECK(result);
+  }
 
-  // TODO(jsbell): Route message to appropriate version. crbug.com/351797
-  ServiceWorkerVersion* version = result->active_version();
-  if (!version)
-    return;
-  version->SendMessage(
+  handle->version()->SendMessage(
       ServiceWorkerMsg_Message(message, sent_message_port_ids, new_routing_ids),
       base::Bind(&NoOpStatusCallback));
 }
@@ -218,7 +213,8 @@ void ServiceWorkerDispatcherHost::OnProviderCreated(int provider_id) {
     return;
   }
   scoped_ptr<ServiceWorkerProviderHost> provider_host(
-       new ServiceWorkerProviderHost(render_process_id_, provider_id));
+      new ServiceWorkerProviderHost(
+          render_process_id_, provider_id, context_, this));
   context_->AddProviderHost(provider_host.Pass());
 }
 
@@ -254,18 +250,39 @@ void ServiceWorkerDispatcherHost::OnRemoveScriptClient(
   provider_host->RemoveScriptClient(thread_id);
 }
 
+void ServiceWorkerDispatcherHost::OnSetHostedVersionId(
+    int provider_id, int64 version_id) {
+  if (!context_)
+    return;
+  ServiceWorkerProviderHost* provider_host =
+      context_->GetProviderHost(render_process_id_, provider_id);
+  if (!provider_host || !provider_host->SetHostedVersionId(version_id)) {
+    BadMessageReceived();
+    return;
+  }
+}
+
 void ServiceWorkerDispatcherHost::RegistrationComplete(
     int32 thread_id,
     int32 request_id,
     ServiceWorkerStatusCode status,
-    int64 registration_id) {
+    int64 registration_id,
+    int64 version_id) {
+  if (!context_)
+    return;
+
   if (status != SERVICE_WORKER_OK) {
     SendRegistrationError(thread_id, request_id, status);
     return;
   }
 
+  ServiceWorkerVersion* version = context_->GetLiveVersion(version_id);
+  DCHECK(version);
+  DCHECK_EQ(registration_id, version->registration_id());
+  int handle_id = RegisterServiceWorkerHandle(
+      ServiceWorkerHandle::Create(context_, this, thread_id, version));
   Send(new ServiceWorkerMsg_ServiceWorkerRegistered(
-      thread_id, request_id, registration_id));
+      thread_id, request_id, handle_id));
 }
 
 void ServiceWorkerDispatcherHost::OnWorkerStarted(
@@ -291,6 +308,23 @@ void ServiceWorkerDispatcherHost::OnSendMessageToBrowser(
     return;
   context_->embedded_worker_registry()->OnSendMessageToBrowser(
       embedded_worker_id, request_id, message);
+}
+
+void ServiceWorkerDispatcherHost::OnReportException(
+    int embedded_worker_id,
+    const base::string16& error_message,
+    int line_number,
+    int column_number,
+    const GURL& source_url) {
+  // TODO(horo, nhiroki): Show the error on serviceworker-internals
+  // (http://crbug.com/359517).
+  DVLOG(2) << "[Error] " << error_message << " (" << source_url
+           << ":" << line_number << "," << column_number << ")";
+}
+
+void ServiceWorkerDispatcherHost::OnServiceWorkerObjectDestroyed(
+    int handle_id) {
+  handles_.Remove(handle_id);
 }
 
 void ServiceWorkerDispatcherHost::UnregistrationComplete(

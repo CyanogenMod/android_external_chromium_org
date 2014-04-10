@@ -116,21 +116,17 @@
         'base/file_stream_context.h',
         'base/file_stream_context_posix.cc',
         'base/file_stream_context_win.cc',
-        'base/file_stream_metrics.cc',
-        'base/file_stream_metrics.h',
-        'base/file_stream_metrics_posix.cc',
-        'base/file_stream_metrics_win.cc',
-        'base/file_stream_net_log_parameters.cc',
-        'base/file_stream_net_log_parameters.h',
         'base/file_stream_whence.h',
-        'base/int128.cc',
-        'base/int128.h',
+        'base/filename_util.cc',
+        'base/filename_util.h',
         'base/hash_value.cc',
         'base/hash_value.h',
         'base/host_mapping_rules.cc',
         'base/host_mapping_rules.h',
         'base/host_port_pair.cc',
         'base/host_port_pair.h',
+        'base/int128.cc',
+        'base/int128.h',
         'base/io_buffer.cc',
         'base/io_buffer.h',
         'base/iovec.h',
@@ -1385,6 +1381,10 @@
               'cert/jwk_serializer_nss.cc',
               'cert/nss_cert_database.cc',
               'cert/nss_cert_database.h',
+              'cert/nss_cert_database_chromeos.cc',
+              'cert/nss_cert_database_chromeos.h',
+              'cert/nss_profile_filter_chromeos.cc',
+              'cert/nss_profile_filter_chromeos.h',
               'cert/scoped_nss_types.h',
               'cert/test_root_certs_nss.cc',
               'cert/x509_certificate_nss.cc',
@@ -1523,6 +1523,8 @@
               'cert/cert_verify_proc_nss.h',
               'ssl/client_cert_store_nss.cc',
               'ssl/client_cert_store_nss.h',
+              'ssl/client_cert_store_chromeos.cc',
+              'ssl/client_cert_store_chromeos.h',
             ],
         }],
         [ 'enable_websockets != 1', {
@@ -1602,7 +1604,7 @@
               'third_party/nss/ssl.gyp:libssl',
             ],
             'sources!': [
-              'disk_cache/file_posix.cc',
+              'disk_cache/blockfile/file_posix.cc',
             ],
             'link_settings': {
               'libraries': [
@@ -1700,9 +1702,10 @@
         'base/escape_unittest.cc',
         'base/expiring_cache_unittest.cc',
         'base/file_stream_unittest.cc',
-        'base/int128_unittest.cc',
+        'base/filename_util_unittest.cc',
         'base/host_mapping_rules_unittest.cc',
         'base/host_port_pair_unittest.cc',
+        'base/int128_unittest.cc',
         'base/ip_endpoint_unittest.cc',
         'base/ip_pattern_unittest.cc',
         'base/keygen_handler_unittest.cc',
@@ -1732,17 +1735,17 @@
         'cert/jwk_serializer_unittest.cc',
         'cert/multi_log_ct_verifier_unittest.cc',
         'cert/multi_threaded_cert_verifier_unittest.cc',
-        'cert/nss_cert_database_unittest.cc',
         'cert/nss_cert_database_chromeos_unittest.cc',
+        'cert/nss_cert_database_unittest.cc',
         'cert/nss_profile_filter_chromeos_unittest.cc',
         'cert/pem_tokenizer_unittest.cc',
         'cert/signed_certificate_timestamp_unittest.cc',
         'cert/test_root_certs_unittest.cc',
-        'cert/x509_certificate_unittest.cc',
         'cert/x509_cert_types_unittest.cc',
-        'cert/x509_util_unittest.cc',
+        'cert/x509_certificate_unittest.cc',
         'cert/x509_util_nss_unittest.cc',
         'cert/x509_util_openssl_unittest.cc',
+        'cert/x509_util_unittest.cc',
         'cookies/canonical_cookie_unittest.cc',
         'cookies/cookie_constants_unittest.cc',
         'cookies/cookie_monster_unittest.cc',
@@ -1781,9 +1784,9 @@
         'dns/mapped_host_resolver_unittest.cc',
         'dns/mdns_cache_unittest.cc',
         'dns/mdns_client_unittest.cc',
-        'dns/serial_worker_unittest.cc',
         'dns/record_parsed_unittest.cc',
         'dns/record_rdata_unittest.cc',
+        'dns/serial_worker_unittest.cc',
         'dns/single_request_host_resolver_unittest.cc',
         'filter/filter_unittest.cc',
         'filter/gzip_filter_unittest.cc',
@@ -2176,6 +2179,8 @@
             'tools/quic/test_tools/quic_test_utils.h',
             'tools/quic/test_tools/server_thread.h',
             'tools/quic/test_tools/server_thread.cc',
+            'tools/quic/test_tools/simple_client.h',
+            'tools/quic/test_tools/simple_client.cc',
           ],
         }],
         ['chromeos==1', {
@@ -2200,6 +2205,7 @@
         [ 'use_nss != 1', {
           'sources!': [
             'ssl/client_cert_store_nss_unittest.cc',
+            'ssl/client_cert_store_chromeos_unittest.cc',
           ],
         }],
         [ 'use_openssl == 1', {
@@ -2264,6 +2270,8 @@
               'cert/ct_objects_extractor_unittest.cc',
               'cert/multi_log_ct_verifier_unittest.cc',
               'cert/nss_cert_database_unittest.cc',
+              'cert/nss_cert_database_chromeos_unittest.cc',
+              'cert/nss_profile_filter_chromeos_unittest.cc',
               'cert/x509_util_nss_unittest.cc',
               'quic/test_tools/crypto_test_utils_nss.cc',
             ],
@@ -2692,6 +2700,7 @@
           'variables': { 'enable_wexit_time_destructors': 1, },
           'dependencies': [
             '../base/base.gyp:base',
+            '../gin/gin.gyp:gin',
             '../url/url.gyp:url_lib',
             '../v8/tools/gyp/v8.gyp:v8',
             'net'
@@ -3231,159 +3240,5 @@
         },
       ],
     }],
-    ['OS=="android"', {
-      # TODO(mef): Consider moving all Cronet Android targets into separate
-      # file. Also figure out what needs to be done for gn script.
-      'targets': [
-        {
-          'target_name': 'cronet_jni_headers',
-          'type': 'none',
-          'sources': [
-            'cronet/android/java/src/org/chromium/net/UrlRequest.java',
-            'cronet/android/java/src/org/chromium/net/UrlRequestContext.java',
-          ],
-          'variables': {
-            'jni_gen_package': 'cronet',
-            'jni_generator_ptr_type': 'long',
-          },
-          'includes': [ '../build/jni_generator.gypi' ],
-        },
-        {
-          'target_name': 'libcronet',
-          'type': 'shared_library',
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../base/base.gyp:base_i18n',
-            '../third_party/icu/icu.gyp:icui18n',
-            '../third_party/icu/icu.gyp:icuuc',
-            '../url/url.gyp:url_lib',
-            'cronet_jni_headers',
-            'net',
-          ],
-          'sources': [
-            'cronet/android/org_chromium_net_UrlRequest.cc',
-            'cronet/android/org_chromium_net_UrlRequest.h',
-            'cronet/android/org_chromium_net_UrlRequestContext.cc',
-            'cronet/android/org_chromium_net_UrlRequestContext.h',
-            'cronet/android/url_request_context_peer.cc',
-            'cronet/android/url_request_context_peer.h',
-            'cronet/android/url_request_peer.cc',
-            'cronet/android/url_request_peer.h',
-          ],
-          'cflags': [
-            # TODO(mef): Figure out a good way to get version from chrome_version_info_posix.h.
-            '-DCHROMIUM_VERSION=\\"TBD\\"',
-            '-DLOGGING=1',
-            '-fdata-sections',
-            '-ffunction-sections',
-            '-fno-rtti',
-            '-fvisibility=hidden',
-            '-fvisibility-inlines-hidden',
-            '-Wno-sign-promo',
-            '-Wno-missing-field-initializers',
-          ],
-          'ldflags': [
-            '-llog',
-            '-landroid',
-            '-Wl,--gc-sections',
-            '-Wl,--exclude-libs,ALL'
-          ]
-        },
-        {
-          'target_name': 'cronet',
-          'type': 'none',
-          'dependencies': [
-            '../base/base.gyp:base',
-            'libcronet',
-          ],
-          'variables': {
-            'java_in_dir': 'cronet/android/java',
-          },
-          'includes': [ '../build/java.gypi' ],
-        },
-        {
-          'target_name': 'cronet_package',
-          'type': 'none',
-          'dependencies': [
-            'libcronet',
-            'cronet',
-          ],
-          'variables': {
-              'native_lib': 'libcronet.>(android_product_extension)',
-              'java_lib': 'cronet.jar',
-              'package_dir': '<(PRODUCT_DIR)/cronet',
-          },
-          'actions': [
-            {
-              'action_name': 'strip libcronet',
-              'inputs': ['<(SHARED_LIB_DIR)/<(native_lib)'],
-              'outputs': ['<(package_dir)/libs/<(android_app_abi)/<(native_lib)'],
-              'action': [
-                '<(android_strip)',
-                '--strip-unneeded',
-                '<@(_inputs)',
-                '-o',
-                '<@(_outputs)',
-              ],
-            },
-          ],
-          'copies': [
-            {
-              'destination': '<(package_dir)',
-              'files': [
-                '<(PRODUCT_DIR)/lib.java/<(java_lib)',
-              ],
-            },
-          ],
-        },
-        {
-          'target_name': 'cronet_sample_apk',
-          'type': 'none',
-          'dependencies': [
-            'cronet',
-          ],
-          'variables': {
-            'apk_name': 'CronetSample',
-            'java_in_dir': 'cronet/android/sample',
-            'resource_dir': 'cronet/android/sample/res',
-            'native_lib_target': 'libcronet',
-          },
-          'includes': [ '../build/java_apk.gypi' ],
-        },
-        {
-          # cronet_sample_apk creates a .jar as a side effect. Any java targets
-          # that need that .jar in their classpath should depend on this target,
-          # cronet_sample_apk_java. Dependents of cronet_sample_apk receive its
-          # jar path in the variable 'apk_output_jar_path'. This target should
-          # only be used by targets which instrument cronet_sample_apk.
-          'target_name': 'cronet_sample_apk_java',
-          'type': 'none',
-          'dependencies': [
-            'cronet_sample_apk',
-          ],
-          'includes': [ '../build/apk_fake_jar.gypi' ],
-        },
-        {
-          'target_name': 'cronet_sample_test_apk',
-          'type': 'none',
-          'dependencies': [
-            'cronet_sample_apk_java',
-            '../base/base.gyp:base_java',
-            '../base/base.gyp:base_javatests',
-            '../base/base.gyp:base_java_test_support',
-            # TODO(mef): Figure out why some tests are failing.
-            #'../net/net.gyp:net_javatests',
-            #'../net/net.gyp:net_java_test_support',
-          ],
-          'variables': {
-            'apk_name': 'CronetSampleTest',
-            'java_in_dir': 'cronet/android/sample/javatests',
-            'resource_dir': 'cronet/android/sample/res',
-            'is_test_apk': 1,
-          },
-          'includes': [ '../build/java_apk.gypi' ],
-        },
-      ],
-    }],  # OS=="android"
   ],
 }
