@@ -111,6 +111,7 @@ class PipelineIntegrationTestBase {
   VideoFrame::Format last_video_frame_format_;
   DummyTickClock dummy_clock_;
   AudioHardwareConfig hardware_config_;
+  PipelineMetadata metadata_;
 
   void OnStatusCallbackChecked(PipelineStatus expected_status,
                                PipelineStatus status);
@@ -132,7 +133,6 @@ class PipelineIntegrationTestBase {
                     const DecryptorReadyCB& decryptor_ready_cb);
   void OnVideoRendererPaint(const scoped_refptr<VideoFrame>& frame);
 
-  MOCK_METHOD1(OnSetOpaque, void(bool));
   MOCK_METHOD1(OnMetadata, void(PipelineMetadata));
   MOCK_METHOD0(OnPrerollCompleted, void());
 };

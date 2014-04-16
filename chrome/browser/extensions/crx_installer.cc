@@ -36,7 +36,6 @@
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -45,6 +44,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension_icon_set.h"
 #include "extensions/common/feature_switch.h"
+#include "extensions/common/file_util.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_handlers/kiosk_mode_info.h"
 #include "extensions/common/manifest_handlers/shared_module_info.h"
@@ -178,8 +178,7 @@ void CrxInstaller::InstallCrx(const base::FilePath& source_file) {
   if (!service || service->browser_terminating())
     return;
 
-  InstallTrackerFactory::GetForProfile(profile())
-      ->OnBeginCrxInstall(expected_id_);
+  NotifyCrxInstallBegin();
 
   source_file_ = source_file;
 
@@ -200,6 +199,8 @@ void CrxInstaller::InstallCrx(const base::FilePath& source_file) {
 void CrxInstaller::InstallUserScript(const base::FilePath& source_file,
                                      const GURL& download_url) {
   DCHECK(!download_url.is_empty());
+
+  NotifyCrxInstallBegin();
 
   source_file_ = source_file;
   download_url_ = download_url;
@@ -224,6 +225,8 @@ void CrxInstaller::ConvertUserScriptOnFileThread() {
 }
 
 void CrxInstaller::InstallWebApp(const WebApplicationInfo& web_app) {
+  NotifyCrxInstallBegin();
+
   if (!installer_task_runner_->PostTask(
           FROM_HERE,
           base::Bind(&CrxInstaller::ConvertWebAppOnFileThread,
@@ -568,6 +571,7 @@ void CrxInstaller::ConfirmInstall() {
       ReportFailureFromUIThread(CrxInstallerError(
           l10n_util::GetStringUTF16(
               IDS_EXTENSION_INSTALL_KIOSK_MODE_ONLY)));
+      return;
     }
   }
 
@@ -683,11 +687,11 @@ void CrxInstaller::CompleteInstall() {
     "Extensions.CrxInstallDirPathLength",
         install_directory_.value().length(), 0, 500, 100);
 
-  base::FilePath version_dir = extension_file_util::InstallExtension(
-      unpacked_extension_root_,
-      extension()->id(),
-      extension()->VersionString(),
-      install_directory_);
+  base::FilePath version_dir =
+      file_util::InstallExtension(unpacked_extension_root_,
+                                  extension()->id(),
+                                  extension()->VersionString(),
+                                  install_directory_);
   if (version_dir.empty()) {
     ReportFailureFromFileThread(
         CrxInstallerError(
@@ -705,11 +709,12 @@ void CrxInstaller::CompleteInstall() {
   // with base::string16
   std::string extension_id = extension()->id();
   std::string error;
-  installer_.set_extension(extension_file_util::LoadExtension(
-      version_dir,
-      install_source_,
-      extension()->creation_flags() | Extension::REQUIRE_KEY,
-      &error).get());
+  installer_.set_extension(
+      file_util::LoadExtension(
+          version_dir,
+          install_source_,
+          extension()->creation_flags() | Extension::REQUIRE_KEY,
+          &error).get());
 
   if (extension()) {
     ReportSuccessFromFileThread();
@@ -731,6 +736,9 @@ void CrxInstaller::ReportFailureFromFileThread(const CrxInstallerError& error) {
 
 void CrxInstaller::ReportFailureFromUIThread(const CrxInstallerError& error) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  if (!service_weak_.get() || service_weak_->browser_terminating())
+    return;
 
   content::NotificationService* service =
       content::NotificationService::current();
@@ -801,6 +809,11 @@ void CrxInstaller::ReportSuccessFromUIThread() {
   NotifyCrxInstallComplete(true);
 }
 
+void CrxInstaller::NotifyCrxInstallBegin() {
+  InstallTrackerFactory::GetForProfile(profile())
+      ->OnBeginCrxInstall(expected_id_);
+}
+
 void CrxInstaller::NotifyCrxInstallComplete(bool success) {
   // Some users (such as the download shelf) need to know when a
   // CRXInstaller is done.  Listening for the EXTENSION_* events
@@ -812,6 +825,9 @@ void CrxInstaller::NotifyCrxInstallComplete(bool success) {
       content::Source<CrxInstaller>(this),
       content::Details<const Extension>(
           success ? extension() : NULL));
+
+  InstallTrackerFactory::GetForProfile(profile())
+      ->OnFinishCrxInstall(success ? extension()->id() : expected_id_, success);
 
   if (success)
     ConfirmReEnable();
@@ -829,12 +845,12 @@ void CrxInstaller::CleanupTempFiles() {
 
   // Delete the temp directory and crx file as necessary.
   if (!temp_dir_.value().empty()) {
-    extension_file_util::DeleteFile(temp_dir_, true);
+    file_util::DeleteFile(temp_dir_, true);
     temp_dir_ = base::FilePath();
   }
 
   if (delete_source_ && !source_file_.value().empty()) {
-    extension_file_util::DeleteFile(source_file_, false);
+    file_util::DeleteFile(source_file_, false);
     source_file_ = base::FilePath();
   }
 }

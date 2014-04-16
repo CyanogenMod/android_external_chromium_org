@@ -523,6 +523,8 @@
         'bindings/js/handle.h',
         'bindings/js/support.cc',
         'bindings/js/support.h',
+        'bindings/js/unicode.cc',
+        'bindings/js/unicode.h',
         'bindings/js/waiting_callback.cc',
         'bindings/js/waiting_callback.h',
       ],
@@ -534,7 +536,7 @@
         '../gin/gin.gyp:gin_test',
         'mojo_js_bindings_lib',
         'mojo_run_all_unittests',
-        'mojo_sample_service',
+        'mojo_public_test_interfaces',
       ],
       'sources': [
         'bindings/js/run_js_tests.cc',

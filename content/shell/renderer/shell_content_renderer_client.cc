@@ -7,6 +7,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
+#include "content/common/sandbox_win.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_view.h"
@@ -77,7 +78,8 @@ ShellContentRendererClient::ShellContentRendererClient() {
   }
 
 #if defined(OS_WIN)
-  RegisterSideloadedTypefaces(GetPreSandboxWarmupFontMgr());
+  if (ShouldUseDirectWrite())
+    RegisterSideloadedTypefaces(GetPreSandboxWarmupFontMgr());
 #endif
 }
 

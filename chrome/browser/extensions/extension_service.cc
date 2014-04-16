@@ -34,7 +34,6 @@
 #include "chrome/browser/extensions/extension_disabled_ui.h"
 #include "chrome/browser/extensions/extension_error_controller.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
-#include "chrome/browser/extensions/extension_garbage_collector.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/extensions/extension_sync_service.h"
@@ -57,7 +56,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
@@ -89,6 +87,7 @@
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/extensions_client.h"
 #include "extensions/common/feature_switch.h"
+#include "extensions/common/file_util.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/background_info.h"
@@ -319,7 +318,6 @@ ExtensionService::ExtensionService(Profile* profile,
       browser_terminating_(false),
       installs_delayed_for_gc_(false),
       is_first_run_(false),
-      garbage_collector_(new extensions::ExtensionGarbageCollector(this)),
       shared_module_service_(new extensions::SharedModuleService(profile_)) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -560,7 +558,7 @@ bool ExtensionService::UpdateExtension(const std::string& id,
     if (!GetFileTaskRunner()->PostTask(
             FROM_HERE,
             base::Bind(
-                &extension_file_util::DeleteFile, extension_path, false)))
+                &extensions::file_util::DeleteFile, extension_path, false)))
       NOTREACHED();
 
     return false;
@@ -763,10 +761,9 @@ bool ExtensionService::UninstallExtension(
   if (!Manifest::IsUnpackedLocation(extension->location())) {
     if (!GetFileTaskRunner()->PostTask(
             FROM_HERE,
-            base::Bind(
-                &extension_file_util::UninstallExtension,
-                install_directory_,
-                extension_id)))
+            base::Bind(&extensions::file_util::UninstallExtension,
+                       install_directory_,
+                       extension_id)))
       NOTREACHED();
   }
 
@@ -1754,8 +1751,9 @@ void ExtensionService::OnExtensionInstalled(
       // load it.
       if (!GetFileTaskRunner()->PostTask(
               FROM_HERE,
-              base::Bind(&extension_file_util::DeleteFile,
-                         extension->path(), true))) {
+              base::Bind(&extensions::file_util::DeleteFile,
+                         extension->path(),
+                         true))) {
         NOTREACHED();
       }
       return;

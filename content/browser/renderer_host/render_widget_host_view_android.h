@@ -119,7 +119,6 @@ class RenderWidgetHostViewAndroid
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
   virtual void SelectionRootBoundsChanged(const gfx::Rect& bounds) OVERRIDE;
   virtual void ScrollOffsetChanged() OVERRIDE;
-  virtual BackingStore* AllocBackingStore(const gfx::Size& size) OVERRIDE;
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
@@ -347,7 +346,7 @@ class RenderWidgetHostViewAndroid
   scoped_ptr<DelegatedFrameEvictor> frame_evictor_;
 
   size_t locks_on_frame_count_;
-  bool root_window_destroyed_;
+  bool observing_root_window_;
 
   struct LastFrameInfo {
     LastFrameInfo(uint32 output_id,
