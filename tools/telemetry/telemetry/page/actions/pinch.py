@@ -9,7 +9,6 @@ from telemetry.page.actions import page_action
 class PinchAction(GestureAction):
   def __init__(self, attributes=None):
     super(PinchAction, self).__init__(attributes)
-    self._SetTimelineMarkerBaseName('PinchAction::RunAction')
 
   def WillRunAction(self, page, tab):
     for js_file in ['gesture_common.js', 'pinch.js']:
@@ -37,7 +36,7 @@ class PinchAction(GestureAction):
     left_anchor_percentage = getattr(self, 'left_anchor_percentage', 0.5)
     top_anchor_percentage = getattr(self, 'top_anchor_percentage', 0.5)
     zoom_in = getattr(self, 'zoom_in', True)
-    pixels_to_cover = getattr(self, 'pixels_to_cover', 4000)
+    pixels_to_cover = getattr(self, 'pixels_to_cover', 500)
     speed = getattr(self, 'speed', 800)
 
     if hasattr(self, 'element_function'):

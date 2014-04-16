@@ -23,7 +23,7 @@ vars = {
   "libcxxabi_revision": "197063",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "171541",
+  "webkit_revision": "171752",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",
@@ -36,17 +36,17 @@ vars = {
   "libaddressinput_revision": "176",
   "libphonenumber_revision": "621",
   "libvpx_revision": "263116",
-  "lss_revision": "25",
+  "lss_revision": "26",
 
   # These two FFmpeg variables must be updated together.  One is used for SVN
   # checkouts and the other for Git checkouts.
-  "ffmpeg_revision": "255431",
-  "ffmpeg_hash": "681ca6bfed239ad2e1a6a3c8a586839c6dbd3e87",
+  "ffmpeg_revision": "263988",
+  "ffmpeg_hash": "6cfea90a274e1eea8fba7a7e0a86341a613b6fe1",
 
   "sfntly_revision": "228",
   "lighttpd_revision": "33737",
-  "skia_revision": "14196",
-  "skia_hash": "a1ed7aec95eb8c77d1a39834fea476780007cade",
+  "skia_revision": "14202",
+  "skia_hash": "51b0d0bc5c82f257dca244c864702c66d84100a2",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
@@ -55,7 +55,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "5884",
+  "webrtc_revision": "5831",
   "jsoncpp_revision": "248",
   "nss_revision": "259440",
   # Three lines of non-changing comments so that
@@ -74,7 +74,7 @@ vars = {
 
 deps = {
   "src/breakpad/src":
-    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1295",
+    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1313",
 
   "src/sdch/open-vcdiff":
     (Var("googlecode_url") % "open-vcdiff") + "/trunk@42",
@@ -305,7 +305,7 @@ deps = {
 
   "src/third_party/libwebm/source":
     Var("chromium_git") +
-      "/webm/libwebm.git@0f7815b036651e242ec8c2fcfb59fe54f69be1a8",
+      "/webm/libwebm.git@fb6b6e64444c637f27d103fd113e0c7bf4f107dd",
 
   "src/third_party/openssl":
     "/trunk/deps/third_party/openssl@" + Var("openssl_revision"),
@@ -479,7 +479,7 @@ deps_os = {
     # Build tools for targeting ChromeOS.
     "src/third_party/chromite":
       Var("chromiumos_git") + "/chromite.git" +
-      "@473f7ab6baf1781618f379a7680b56048b5e0ec1",
+      "@5f6a47786408789bc4622a34b491c0a9d0a69c68",
 
     # Dependency of chromite.git.
     "src/third_party/pyelftools":
@@ -501,7 +501,7 @@ deps_os = {
   "android": {
     "src/third_party/android_tools":
       Var("chromium_git") + "/android_tools.git" +
-      "@f1adc927bf3fb00bbff98bf1ec5885c96b80bd81",
+      "@84ff5f258a86d40ae69ccefde2efa45e52a9808c",
 
     "src/third_party/aosp":
       "/trunk/deps/third_party/aosp@148330",

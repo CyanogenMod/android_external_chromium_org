@@ -22,16 +22,17 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/sandboxed_unpacker.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chromeos/login/login_state.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/file_util.h"
 #include "ui/wm/core/user_activity_detector.h"
 
 using extensions::Extension;
+using extensions::ExtensionGarbageCollector;
 using extensions::SandboxedUnpacker;
 
 namespace chromeos {
@@ -44,6 +45,13 @@ ExtensionService* GetDefaultExtensionService() {
     return NULL;
   return extensions::ExtensionSystem::Get(
       default_profile)->extension_service();
+}
+
+ExtensionGarbageCollector* GetDefaultExtensionGarbageCollector() {
+  Profile* default_profile = ProfileHelper::GetSigninProfile();
+  if (!default_profile)
+    return NULL;
+  return ExtensionGarbageCollector::Get(default_profile);
 }
 
 typedef base::Callback<void(
@@ -106,18 +114,18 @@ void ScreensaverUnpackerClient::LoadScreensaverExtension(
     const base::FilePath& screensaver_extension_path) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
 
-  ExtensionService* service = GetDefaultExtensionService();
   // TODO(rkc): This is a HACK, please remove this method from extension
   // service once this code is deprecated. See crbug.com/280363
-  if (service)
-    service->garbage_collector()->disable_garbage_collection();
+  ExtensionGarbageCollector* gc = GetDefaultExtensionGarbageCollector();
+  if (gc)
+    gc->disable_garbage_collection();
 
   std::string error;
   scoped_refptr<Extension> screensaver_extension =
-      extension_file_util::LoadExtension(screensaver_extension_path,
-                                         extensions::Manifest::COMPONENT,
-                                         Extension::NO_FLAGS,
-                                         &error);
+      extensions::file_util::LoadExtension(screensaver_extension_path,
+                                           extensions::Manifest::COMPONENT,
+                                           Extension::NO_FLAGS,
+                                           &error);
   if (!screensaver_extension.get()) {
     LOG(ERROR) << "Could not load screensaver extension from: "
                << screensaver_extension_path.value() << " due to: " << error;
@@ -174,18 +182,18 @@ KioskModeScreensaver::~KioskModeScreensaver() {
 
   // If the extension was unpacked.
   if (!extension_base_path_.empty()) {
-    ExtensionService* service = GetDefaultExtensionService();
     // TODO(rkc): This is a HACK, please remove this method from extension
     // service once this code is deprecated. See crbug.com/280363
-    if (service)
-      service->garbage_collector()->enable_garbage_collection();
+    ExtensionGarbageCollector* gc = GetDefaultExtensionGarbageCollector();
+    if (gc)
+      gc->enable_garbage_collection();
 
     // Delete it.
     content::BrowserThread::PostTask(
         content::BrowserThread::FILE,
         FROM_HERE,
         base::Bind(
-            &extension_file_util::DeleteFile, extension_base_path_, true));
+            &extensions::file_util::DeleteFile, extension_base_path_, true));
   }
 
   // In case we're shutting down without ever triggering the active

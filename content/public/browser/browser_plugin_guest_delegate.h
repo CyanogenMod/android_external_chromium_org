@@ -11,6 +11,7 @@
 #include "base/values.h"
 #include "content/common/content_export.h"
 #include "content/public/common/browser_plugin_permission_type.h"
+#include "content/public/common/media_stream_request.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/size.h"
 #include "url/gurl.h"
@@ -87,12 +88,11 @@ class CONTENT_EXPORT BrowserPluginGuestDelegate {
   // Request permission from the delegate to perform an action of the provided
   // |permission_type|. Details of the permission request are found in
   // |request_info|. A |callback| is provided to make the decision.
-  // Returns whether the delegate has, or will handle the permission request.
-  virtual bool RequestPermission(
+  virtual void RequestPermission(
       BrowserPluginPermissionType permission_type,
       const base::DictionaryValue& request_info,
       const PermissionResponseCallback& callback,
-      bool allowed_by_default);
+      bool allowed_by_default) {}
 
   // Requests resolution of a potentially relative URL.
   virtual GURL ResolveURL(const std::string& src);
@@ -100,6 +100,21 @@ class CONTENT_EXPORT BrowserPluginGuestDelegate {
   // Notifies that the content size of the guest has changed in autosize mode.
   virtual void SizeChanged(const gfx::Size& old_size,
                            const gfx::Size& new_size) {}
+
+  // Asks permission to use the camera and/or microphone. If permission is
+  // granted, a call should be made to |callback| with the devices. If the
+  // request is denied, a call should be made to |callback| with an empty list
+  // of devices. |request| has the details of the request (e.g. which of audio
+  // and/or video devices are requested, and lists of available devices).
+  virtual void RequestMediaAccessPermission(
+      const MediaStreamRequest& request,
+      const MediaResponseCallback& callback);
+
+  // Asks the delegate if the given tab can download.
+  // Invoking the |callback| synchronously is OK.
+  virtual void CanDownload(const std::string& request_method,
+                           const GURL& url,
+                           const base::Callback<void(bool)>& callback);
 };
 
 }  // namespace content

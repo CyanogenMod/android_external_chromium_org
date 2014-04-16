@@ -31,6 +31,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool chromium_color_buffer_float_rgba;
     bool chromium_color_buffer_float_rgb;
     bool chromium_framebuffer_multisample;
+    bool chromium_sync_query;
     // Use glBlitFramebuffer() and glRenderbufferStorageMultisample() with
     // GL_EXT_framebuffer_multisample-style semantics, since they are exposed
     // as core GL functions on this implementation.
@@ -59,6 +60,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool enable_samplers;
     bool ext_draw_buffers;
     bool ext_frag_depth;
+    bool ext_shader_texture_lod;
     bool use_async_readpixels;
     bool map_buffer_range;
     bool ext_discard_framebuffer;

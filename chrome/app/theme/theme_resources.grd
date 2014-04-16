@@ -69,25 +69,15 @@
         <structure type="chrome_scaled_image" name="IDR_APP_WINDOW_MINIMIZE_P" file="win/app_window_minimize_active.png" />
       </if>
       <if expr="use_ash">
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_BACKGROUND_MAXIMIZED_H" file="common/ash/browser_window_control_background_maximized_hover.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_BACKGROUND_MAXIMIZED_P" file="common/ash/browser_window_control_background_maximized_pressed.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_BACKGROUND_MAXIMIZED_H" file="common/ash/browser_window_control_background_maximized_hover2.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_BACKGROUND_MAXIMIZED_P" file="common/ash/browser_window_control_background_maximized_pressed2.png" />
         <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_BACKGROUND_RESTORED_H" file="common/ash/browser_window_control_background_restored_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_BACKGROUND_RESTORED_P" file="common/ash/browser_window_control_background_restored_pressed.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_MAXIMIZED_CLOSE" file="common/ash/browser_window_control_icon_maximized_close.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_MAXIMIZED_LEFT_SNAPPED" file="common/ash/browser_window_control_icon_maximized_left_snapped.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_MAXIMIZED_MINIMIZE" file="common/ash/browser_window_control_icon_maximized_minimize.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_MAXIMIZED_RIGHT_SNAPPED" file="common/ash/browser_window_control_icon_maximized_right_snapped.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_MAXIMIZED_SIZE" file="common/ash/browser_window_control_icon_maximized_size.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_RESTORED_CLOSE" file="common/ash/browser_window_control_icon_restored_close.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_RESTORED_LEFT_SNAPPED" file="common/ash/browser_window_control_icon_restored_left_snapped.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_RESTORED_MINIMIZE" file="common/ash/browser_window_control_icon_restored_minimize.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_RESTORED_RIGHT_SNAPPED" file="common/ash/browser_window_control_icon_restored_right_snapped.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_RESTORED_SIZE" file="common/ash/browser_window_control_icon_restored_size.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_BASE_MAXIMIZED" file="common/ash/browser_window_header_base_maximized.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_BASE_RESTORED_ACTIVE" file="common/ash/browser_window_header_base_active.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_BASE_RESTORED_INACTIVE" file="common/ash/browser_window_header_base_inactive.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_BASE_RESTORED_INCOGNITO_ACTIVE" file="common/ash/browser_window_header_base_incognito_active.png" />
-        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_BASE_RESTORED_INCOGNITO_INACTIVE" file="common/ash/browser_window_header_base_incognito_inactive.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_CLOSE" file="common/ash/browser_window_control_icon_restored_close.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_LEFT_SNAPPED" file="common/ash/browser_window_control_icon_restored_left_snapped.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_MINIMIZE" file="common/ash/browser_window_control_icon_restored_minimize.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_RIGHT_SNAPPED" file="common/ash/browser_window_control_icon_restored_right_snapped.png" />
+        <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_CONTROL_ICON_SIZE" file="common/ash/browser_window_control_icon_restored_size.png" />
         <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_SHADE_LEFT" file="common/ash/browser_window_header_shade_left.png" />
         <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_SHADE_RIGHT" file="common/ash/browser_window_header_shade_right.png" />
         <structure type="chrome_scaled_image" name="IDR_ASH_BROWSER_WINDOW_HEADER_SHADE_TOP" file="common/ash/browser_window_header_shade_top.png" />
@@ -332,15 +322,10 @@
       <structure type="chrome_scaled_image" name="IDR_FINDINPAGE_PREV_D" file="common/find_prev_disabled.png" />
       <structure type="chrome_scaled_image" name="IDR_FINDINPAGE_PREV_H" file="common/find_prev_hover.png" />
       <structure type="chrome_scaled_image" name="IDR_FINDINPAGE_PREV_P" file="common/find_prev_pressed.png" />
-      <if expr="desktop_linux and not toolkit_views">
-        <structure type="chrome_scaled_image" name="IDR_FIND_BOX_BACKGROUND" file="common/find_box_bg.png" />
-        <structure type="chrome_scaled_image" name="IDR_FIND_BOX_BACKGROUND_LEFT" file="common/find_box_bg_left.png" />
-      </if>
       <structure type="chrome_scaled_image" name="IDR_FIND_DIALOG_LEFT" file="common/find_dialog_left.png" />
       <structure type="chrome_scaled_image" name="IDR_FIND_DIALOG_MIDDLE" file="common/find_dialog_middle.png" />
       <structure type="chrome_scaled_image" name="IDR_FIND_DIALOG_RIGHT" file="common/find_dialog_right.png" />
       <structure type="chrome_scaled_image" name="IDR_FIND_DLG_LEFT_BACKGROUND" file="common/find_dlg_left_bg.png" />
-      <structure type="chrome_scaled_image" name="IDR_FIND_DLG_MIDDLE_BACKGROUND" file="common/find_dlg_middle_bg.png" />
       <structure type="chrome_scaled_image" name="IDR_FIND_DLG_RIGHT_BACKGROUND" file="common/find_dlg_right_bg.png" />
       <structure type="chrome_scaled_image" name="IDR_FLAGS_FAVICON" file="common/favicon_flags.png" />
       <if expr="not toolkit_views and not is_macosx and not is_ios">
@@ -1283,14 +1268,8 @@
         <structure type="chrome_scaled_image" name="IDR_TOOLS_H" file="tools_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_TOOLS_P" file="tools_pressed.png" />
       </if>
-      <if expr="toolkit_views or is_macosx or is_ios">
-        <if expr="desktop_linux">
-          <structure type="chrome_scaled_image" name="IDR_TOOLS_BADGE_AURA" file="common/browser_tools_badge_aura.png" />
-          <structure type="chrome_scaled_image" name="IDR_TOOLS" file="common/browser_tools_normal_aura.png" />
-        </if>
-        <if expr="not desktop_linux">
-          <structure type="chrome_scaled_image" name="IDR_TOOLS" file="common/browser_tools_normal.png" />
-        </if>
+      <if expr="pp_ifdef('toolkit_views') or is_macosx or is_ios">
+        <structure type="chrome_scaled_image" name="IDR_TOOLS" file="common/browser_tools_normal.png" />
         <structure type="chrome_scaled_image" name="IDR_TOOLS_H" file="common/browser_tools_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_TOOLS_P" file="common/browser_tools_pressed.png" />
       </if>

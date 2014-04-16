@@ -1671,6 +1671,7 @@ should be able to be added at any place in this file.
 <action name="BrowserPlugin.Guest.PermissionRequest.Geolocation">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>This permission has been moved to the chrome layer.</obsolete>
 </action>
 
 <action name="BrowserPlugin.Guest.PermissionRequest.JSDialog">
@@ -1711,11 +1712,13 @@ should be able to be added at any place in this file.
 <action name="BrowserPlugin.PermissionAllow.Download">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>This permission has been moved to the chrome layer.</obsolete>
 </action>
 
 <action name="BrowserPlugin.PermissionAllow.Geolocation">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>This permission has been moved to the chrome layer.</obsolete>
 </action>
 
 <action name="BrowserPlugin.PermissionAllow.JSDialog">
@@ -1726,6 +1729,7 @@ should be able to be added at any place in this file.
 <action name="BrowserPlugin.PermissionAllow.Media">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>This permission has been moved to the chrome layer.</obsolete>
 </action>
 
 <action name="BrowserPlugin.PermissionAllow.NewWindow">
@@ -1741,6 +1745,7 @@ should be able to be added at any place in this file.
 <action name="BrowserPlugin.PermissionDeny.Download">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>This permission has been moved to the chrome layer.</obsolete>
 </action>
 
 <action name="BrowserPlugin.PermissionDeny.Geolocation">
@@ -1756,6 +1761,7 @@ should be able to be added at any place in this file.
 <action name="BrowserPlugin.PermissionDeny.Media">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>This permission has been moved to the chrome layer.</obsolete>
 </action>
 
 <action name="BrowserPlugin.PermissionDeny.NewWindow">
@@ -10706,6 +10712,54 @@ should be able to be added at any place in this file.
 <action name="WebView.Guest.Terminate">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="WebView.PermissionAllow.Download">
+  <owner>fsamuel@chromium.org</owner>
+  <owner>lazyboy@chromium.org</owner>
+  <description>
+    Tracks when the download permission is explicitly allowed on a webview.
+  </description>
+</action>
+
+<action name="WebView.PermissionAllow.Geolocation">
+  <owner>fsamuel@chromium.org</owner>
+  <owner>lazyboy@chromium.org</owner>
+  <description>
+    Tracks when the geolocation permission is explicitly allowed on a webview.
+  </description>
+</action>
+
+<action name="WebView.PermissionAllow.Media">
+  <owner>fsamuel@chromium.org</owner>
+  <owner>lazyboy@chromium.org</owner>
+  <description>
+    Tracks when the media permission is explicitly allowed on a webview.
+  </description>
+</action>
+
+<action name="WebView.PermissionDeny.Download">
+  <owner>fsamuel@chromium.org</owner>
+  <owner>lazyboy@chromium.org</owner>
+  <description>
+    Tracks when the download permission is explicitly denied on a webview.
+  </description>
+</action>
+
+<action name="WebView.PermissionDeny.Geolocation">
+  <owner>fsamuel@chromium.org</owner>
+  <owner>lazyboy@chromium.org</owner>
+  <description>
+    Tracks when the geolocation permission is explicitly denied on a webview.
+  </description>
+</action>
+
+<action name="WebView.PermissionDeny.Media">
+  <owner>fsamuel@chromium.org</owner>
+  <owner>lazyboy@chromium.org</owner>
+  <description>
+    Tracks when the media permission is explicitly denied on a webview.
+  </description>
 </action>
 
 <action name="WebView.Reload">
