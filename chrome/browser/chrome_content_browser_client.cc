@@ -94,7 +94,6 @@
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pepper_permission_util.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/profile_management_switches.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/google_update_settings.h"
@@ -104,6 +103,7 @@
 #include "components/nacl/browser/nacl_process_host.h"
 #include "components/nacl/common/nacl_process_type.h"
 #include "components/nacl/common/nacl_switches.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "components/translate/core/common/translate_switches.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_child_process_host.h"
@@ -1572,6 +1572,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kAppsCheckoutURL,
       switches::kAppsGalleryURL,
       switches::kCloudPrintServiceURL,
+      switches::kCloudPrintXmppEndpoint,
       switches::kDisableBundledPpapiFlash,
       switches::kDisableExtensionsResourceWhitelist,
       switches::kDisablePnacl,
@@ -2354,11 +2355,6 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
 
   if (view_type == extensions::VIEW_TYPE_NOTIFICATION) {
     web_prefs->allow_scripts_to_close_windows = true;
-  } else if (view_type == extensions::VIEW_TYPE_BACKGROUND_CONTENTS) {
-    // Disable all kinds of acceleration for background pages.
-    // See http://crbug.com/96005 and http://crbug.com/96006
-    web_prefs->force_compositing_mode = false;
-    web_prefs->accelerated_compositing_enabled = false;
   }
 
 #if defined(OS_CHROMEOS)
