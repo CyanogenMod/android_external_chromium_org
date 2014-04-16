@@ -54,6 +54,8 @@
     'public/renderer/render_frame_observer.cc',
     'public/renderer/render_frame_observer.h',
     'public/renderer/render_frame_observer_tracker.h',
+    'public/renderer/render_font_warmup_win.cc',
+    'public/renderer/render_font_warmup_win.h',
     'public/renderer/render_process_observer.cc',
     'public/renderer/render_process_observer.h',
     'public/renderer/render_thread.cc',
@@ -162,6 +164,8 @@
     'renderer/gpu/render_widget_compositor.h',
     'renderer/gpu/stream_texture_host_android.cc',
     'renderer/gpu/stream_texture_host_android.h',
+    'renderer/history_controller.cc',
+    'renderer/history_controller.h',
     'renderer/idle_user_detector.cc',
     'renderer/idle_user_detector.h',
     'renderer/image_loading_helper.cc',
@@ -259,8 +263,6 @@
     'renderer/media/midi_dispatcher.h',
     'renderer/media/midi_message_filter.cc',
     'renderer/media/midi_message_filter.h',
-    'renderer/media/pepper_platform_video_decoder.cc',
-    'renderer/media/pepper_platform_video_decoder.h',
     'renderer/media/preload.h',
     'renderer/media/render_media_log.cc',
     'renderer/media/render_media_log.h',
@@ -561,11 +563,6 @@
         'renderer/input_tag_speech_dispatcher.h',
       ]
     }],
-    ['toolkit_uses_gtk == 1', {
-      'dependencies': [
-        '../build/linux/system.gyp:gtk',
-      ],
-    }],
     ['OS=="mac"', {
       'sources!': [
         'common/process_watcher_posix.cc',
@@ -694,6 +691,8 @@
         'renderer/media/video_source_handler.h',
         'renderer/media/webaudio_capturer_source.cc',
         'renderer/media/webaudio_capturer_source.h',
+        'renderer/media/webrtc/media_stream_remote_video_source.cc',
+        'renderer/media/webrtc/media_stream_remote_video_source.h', 
         'renderer/media/webrtc/media_stream_track_metrics.cc',
         'renderer/media/webrtc/media_stream_track_metrics.h',
         'renderer/media/webrtc/video_destination_handler.cc',
@@ -704,8 +703,6 @@
         'renderer/media/webrtc/webrtc_local_audio_track_adapter.h',
         'renderer/media/webrtc/webrtc_video_capturer_adapter.cc',
         'renderer/media/webrtc/webrtc_video_capturer_adapter.h',
-        'renderer/media/webrtc/webrtc_video_sink_adapter.cc',
-        'renderer/media/webrtc/webrtc_video_sink_adapter.h',
         'renderer/media/webrtc_audio_capturer.cc',
         'renderer/media/webrtc_audio_capturer.h',
         'renderer/media/webrtc_audio_device_impl.cc',

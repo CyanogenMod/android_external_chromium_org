@@ -139,6 +139,7 @@ class DocumentState;
 class ExternalPopupMenu;
 class FaviconHelper;
 class GeolocationDispatcher;
+class HistoryController;
 class ImageResourceFetcher;
 class InputTagSpeechDispatcher;
 class LoadProgressTracker;
@@ -241,6 +242,10 @@ class CONTENT_EXPORT RenderViewImpl
 
   MouseLockDispatcher* mouse_lock_dispatcher() {
     return mouse_lock_dispatcher_;
+  }
+
+  HistoryController* history_controller() {
+    return history_controller_.get();
   }
 
   // Lazily initialize this view's BrowserPluginManager and return it.
@@ -433,32 +438,9 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void didCancelCompositionOnSelectionChange();
   virtual void didExecuteCommand(const blink::WebString& command_name);
   virtual bool handleCurrentKeyboardEvent();
-  virtual blink::WebColorChooser* createColorChooser(
-      blink::WebColorChooserClient*,
-      const blink::WebColor& initial_color,
-      const blink::WebVector<blink::WebColorSuggestion>& suggestions);
   virtual bool runFileChooser(
       const blink::WebFileChooserParams& params,
       blink::WebFileChooserCompletion* chooser_completion);
-  virtual void runModalAlertDialog(blink::WebLocalFrame* frame,
-                                   const blink::WebString& message);
-  virtual bool runModalConfirmDialog(blink::WebLocalFrame* frame,
-                                     const blink::WebString& message);
-  virtual bool runModalPromptDialog(blink::WebLocalFrame* frame,
-                                    const blink::WebString& message,
-                                    const blink::WebString& default_value,
-                                    blink::WebString* actual_value);
-  virtual bool runModalBeforeUnloadDialog(blink::WebLocalFrame* frame,
-                                          const blink::WebString& message);
-  // -- begin stub implementations --
-  virtual void runModalAlertDialog(const blink::WebString& message);
-  virtual bool runModalConfirmDialog(const blink::WebString& message);
-  virtual bool runModalPromptDialog(const blink::WebString& message,
-                                    const blink::WebString& default_value,
-                                    blink::WebString* actual_value);
-  virtual bool runModalBeforeUnloadDialog(bool is_reload,
-                                          const blink::WebString& message);
-  // -- end stub implementations --
   virtual void showValidationMessage(const blink::WebRect& anchor_in_root_view,
                                      const blink::WebString& main_text,
                                      const blink::WebString& sub_text,
@@ -539,7 +521,6 @@ class CONTENT_EXPORT RenderViewImpl
                               const blink::WebFormElement& form);
   virtual void didCreateDataSource(blink::WebLocalFrame* frame,
                                    blink::WebDataSource* datasource);
-  virtual void didStartProvisionalLoad(blink::WebLocalFrame* frame);
   virtual void didFailProvisionalLoad(blink::WebLocalFrame* frame,
                                       const blink::WebURLError& error);
   virtual void didClearWindowObject(blink::WebLocalFrame* frame, int world_id);
@@ -652,7 +633,7 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void SetDeviceScaleFactor(float device_scale_factor) OVERRIDE;
   virtual ui::TextInputType GetTextInputType() OVERRIDE;
   virtual void GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) OVERRIDE;
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA)
   virtual void GetCompositionCharacterBounds(
       std::vector<gfx::Rect>* character_bounds) OVERRIDE;
   virtual void GetCompositionRange(gfx::Range* range) OVERRIDE;
@@ -670,7 +651,9 @@ class CONTENT_EXPORT RenderViewImpl
  protected:
   explicit RenderViewImpl(RenderViewImplParams* params);
 
-  void Initialize(RenderViewImplParams* params);
+  void Initialize(
+      RenderViewImplParams* params,
+      RenderFrameImpl* main_render_frame);
   virtual void SetScreenMetricsEmulationParameters(
       float device_scale_factor,
       const gfx::Point& root_layer_offset,
@@ -1227,6 +1210,8 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Mouse Lock dispatcher attached to this view.
   MouseLockDispatcher* mouse_lock_dispatcher_;
+
+  scoped_ptr<HistoryController> history_controller_;
 
 #if defined(OS_ANDROID)
   // Android Specific ---------------------------------------------------------

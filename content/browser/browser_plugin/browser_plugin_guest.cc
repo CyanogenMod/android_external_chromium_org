@@ -32,7 +32,6 @@
 #include "content/port/browser/render_widget_host_view_port.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/geolocation_permission_context.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -106,57 +105,6 @@ class BrowserPluginGuest::DownloadRequest : public PermissionRequest {
  private:
   virtual ~DownloadRequest() {}
   base::Callback<void(bool)> callback_;
-};
-
-class BrowserPluginGuest::GeolocationRequest : public PermissionRequest {
- public:
-  GeolocationRequest(const base::WeakPtr<BrowserPluginGuest>& guest,
-                     GeolocationCallback callback,
-                     int bridge_id)
-                     : PermissionRequest(guest),
-                       callback_(callback),
-                       bridge_id_(bridge_id) {
-    RecordAction(
-        base::UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.Geolocation"));
-  }
-
-  virtual void RespondImpl(bool should_allow,
-                           const std::string& user_input) OVERRIDE {
-    WebContents* web_contents = guest_->embedder_web_contents();
-    if (should_allow && web_contents) {
-      // If renderer side embedder decides to allow gelocation, we need to check
-      // if the app/embedder itself has geolocation access.
-      BrowserContext* browser_context = web_contents->GetBrowserContext();
-      if (browser_context) {
-        GeolocationPermissionContext* geolocation_context =
-            browser_context->GetGeolocationPermissionContext();
-        if (geolocation_context) {
-          base::Callback<void(bool)> geolocation_callback = base::Bind(
-              &BrowserPluginGuest::SetGeolocationPermission,
-              guest_,
-              callback_,
-              bridge_id_);
-          geolocation_context->RequestGeolocationPermission(
-              web_contents->GetRenderProcessHost()->GetID(),
-              web_contents->GetRoutingID(),
-              // The geolocation permission request here is not initiated
-              // through WebGeolocationPermissionRequest. We are only interested
-              // in the fact whether the embedder/app has geolocation
-              // permission. Therefore we use an invalid |bridge_id|.
-              -1 /* bridge_id */,
-              web_contents->GetLastCommittedURL(),
-              geolocation_callback);
-          return;
-        }
-      }
-    }
-    guest_->SetGeolocationPermission(callback_, bridge_id_, false);
-  }
-
- private:
-  virtual ~GeolocationRequest() {}
-  base::Callback<void(bool)> callback_;
-  int bridge_id_;
 };
 
 class BrowserPluginGuest::MediaRequest : public PermissionRequest {
@@ -438,7 +386,7 @@ void BrowserPluginGuest::RespondToPermissionRequest(
   permission_request_map_.erase(request_itr);
 }
 
-int BrowserPluginGuest::RequestPermission(
+void BrowserPluginGuest::RequestPermission(
     BrowserPluginPermissionType permission_type,
     scoped_refptr<BrowserPluginGuest::PermissionRequest> request,
     const base::DictionaryValue& request_info) {
@@ -451,7 +399,6 @@ int BrowserPluginGuest::RequestPermission(
         FROM_HERE,
         base::Bind(&BrowserPluginGuest::PermissionRequest::Respond,
                    request, false, ""));
-    return browser_plugin::kInvalidPermissionRequestID;
   }
 
   int request_id = ++next_permission_request_id_;
@@ -461,15 +408,8 @@ int BrowserPluginGuest::RequestPermission(
       base::Bind(&BrowserPluginGuest::RespondToPermissionRequest,
                   AsWeakPtr(),
                   request_id);
-  // If BrowserPluginGuestDelegate hasn't handled the permission then we simply
-  // perform the default action (which is one of allow or reject) immediately.
-  if (!delegate_->RequestPermission(
-      permission_type, request_info, callback, request->AllowedByDefault())) {
-    callback.Run(request->AllowedByDefault(), "");
-    return browser_plugin::kInvalidPermissionRequestID;
-  }
-
-  return request_id;
+  delegate_->RequestPermission(
+      permission_type, request_info, callback, request->AllowedByDefault());
 }
 
 BrowserPluginGuest* BrowserPluginGuest::CreateNewGuestWindow(
@@ -534,8 +474,6 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
     const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(BrowserPluginGuest, message)
-    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_BuffersSwappedACK,
-                        OnSwapBuffersACK)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_CompositorFrameSwappedACK,
                         OnCompositorFrameSwappedACK)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_CopyFromCompositingSurfaceAck,
@@ -1054,52 +992,6 @@ void BrowserPluginGuest::SetDelegate(BrowserPluginGuestDelegate* delegate) {
   delegate_.reset(delegate);
 }
 
-void BrowserPluginGuest::AskEmbedderForGeolocationPermission(
-    int bridge_id,
-    const GURL& requesting_frame,
-    const GeolocationCallback& callback) {
-  base::DictionaryValue request_info;
-  request_info.Set(browser_plugin::kURL,
-                   base::Value::CreateStringValue(requesting_frame.spec()));
-
-  int request_id =
-      RequestPermission(BROWSER_PLUGIN_PERMISSION_TYPE_GEOLOCATION,
-                        new GeolocationRequest(weak_ptr_factory_.GetWeakPtr(),
-                                               callback,
-                                               bridge_id),
-                        request_info);
-
-  DCHECK(bridge_id_to_request_id_map_.find(bridge_id) ==
-         bridge_id_to_request_id_map_.end());
-  bridge_id_to_request_id_map_[bridge_id] = request_id;
-}
-
-int BrowserPluginGuest::RemoveBridgeID(int bridge_id) {
-  std::map<int, int>::iterator bridge_itr =
-      bridge_id_to_request_id_map_.find(bridge_id);
-  if (bridge_itr == bridge_id_to_request_id_map_.end())
-    return browser_plugin::kInvalidPermissionRequestID;
-
-  int request_id = bridge_itr->second;
-  bridge_id_to_request_id_map_.erase(bridge_itr);
-  return request_id;
-}
-
-void BrowserPluginGuest::CancelGeolocationRequest(int bridge_id) {
-  int request_id = RemoveBridgeID(bridge_id);
-  RequestMap::iterator request_itr = permission_request_map_.find(request_id);
-  if (request_itr == permission_request_map_.end())
-    return;
-  permission_request_map_.erase(request_itr);
-}
-
-void BrowserPluginGuest::SetGeolocationPermission(GeolocationCallback callback,
-                                                  int bridge_id,
-                                                  bool allowed) {
-  callback.Run(allowed);
-  RemoveBridgeID(bridge_id);
-}
-
 void BrowserPluginGuest::SendQueuedMessages() {
   if (!attached())
     return;
@@ -1178,24 +1070,9 @@ void BrowserPluginGuest::RenderProcessGone(base::TerminationStatus status) {
 }
 
 // static
-void BrowserPluginGuest::AcknowledgeBufferPresent(
-    int route_id,
-    int gpu_host_id,
-    const gpu::Mailbox& mailbox,
-    uint32 sync_point) {
-  AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-  ack_params.mailbox = mailbox;
-  ack_params.sync_point = sync_point;
-  RenderWidgetHostImpl::AcknowledgeBufferPresent(route_id,
-                                                 gpu_host_id,
-                                                 ack_params);
-}
-
-// static
 bool BrowserPluginGuest::ShouldForwardToBrowserPluginGuest(
     const IPC::Message& message) {
   switch (message.type()) {
-    case BrowserPluginHostMsg_BuffersSwappedACK::ID:
     case BrowserPluginHostMsg_CompositorFrameSwappedACK::ID:
     case BrowserPluginHostMsg_CopyFromCompositingSurfaceAck::ID:
     case BrowserPluginHostMsg_DragStatusUpdate::ID:
@@ -1243,7 +1120,7 @@ bool BrowserPluginGuest::OnMessageReceived(const IPC::Message& message) {
                         OnTextInputTypeChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCancelComposition,
                         OnImeCancelComposition)
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCompositionRangeChanged,
                         OnImeCompositionRangeChanged)
 #endif
@@ -1633,21 +1510,6 @@ void BrowserPluginGuest::OnSetVisibility(int instance_id, bool visible) {
     GetWebContents()->WasHidden();
 }
 
-void BrowserPluginGuest::OnSwapBuffersACK(
-    int instance_id,
-    const FrameHostMsg_BuffersSwappedACK_Params& params) {
-  AcknowledgeBufferPresent(params.gpu_route_id, params.gpu_host_id,
-                           params.mailbox, params.sync_point);
-
-// This is only relevant on MACOSX and WIN when threaded compositing
-// is not enabled. In threaded mode, above ACK is sufficient.
-#if defined(OS_MACOSX) || defined(OS_WIN)
-  RenderWidgetHostImpl* render_widget_host =
-        RenderWidgetHostImpl::From(GetWebContents()->GetRenderViewHost());
-  render_widget_host->AcknowledgeSwapBuffersToRenderer();
-#endif  // defined(OS_MACOSX) || defined(OS_WIN)
-}
-
 void BrowserPluginGuest::OnUnlockMouse() {
   SendMessageToEmbedder(
       new BrowserPluginMsg_SetMouseLock(instance_id(), false));
@@ -1902,7 +1764,7 @@ void BrowserPluginGuest::OnImeCancelComposition() {
       web_contents()->GetRenderWidgetHostView())->ImeCancelComposition();
 }
 
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA)
 void BrowserPluginGuest::OnImeCompositionRangeChanged(
       const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds) {

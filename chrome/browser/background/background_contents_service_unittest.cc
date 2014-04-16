@@ -119,7 +119,7 @@ class MockBackgroundContents : public BackgroundContents {
   Profile* profile_;
 };
 
-#if defined(ENABLE_NOTIFICATIONS) && !defined(TOOLKIT_GTK)
+#if defined(ENABLE_NOTIFICATIONS)
 // Wait for the notification created.
 class NotificationWaiter : public message_center::MessageCenterObserver {
  public:
@@ -162,9 +162,6 @@ class BackgroundContentsServiceNotificationTest
   // Overridden from testing::Test
   virtual void SetUp() {
     BrowserWithTestWindowTest::SetUp();
-    if (!NotificationUIManager::DelegatesToMessageCenter())
-      return;
-
     // In ChromeOS environment, BrowserWithTestWindowTest initializes
     // MessageCenter.
 #if !defined(OS_CHROMEOS)
@@ -346,11 +343,8 @@ TEST_F(BackgroundContentsServiceTest, TestApplicationIDLinkage) {
   EXPECT_EQ(url2.spec(), GetPrefURLForApp(&profile, contents2->appid()));
 }
 
-#if defined(ENABLE_NOTIFICATIONS) && !defined(TOOLKIT_GTK)
+#if defined(ENABLE_NOTIFICATIONS)
 TEST_F(BackgroundContentsServiceNotificationTest, TestShowBalloon) {
-  if (!NotificationUIManager::DelegatesToMessageCenter())
-    return;
-
   scoped_refptr<extensions::Extension> extension =
       extension_test_util::LoadManifest("image_loading_tracker", "app.json");
   ASSERT_TRUE(extension.get());
@@ -363,9 +357,6 @@ TEST_F(BackgroundContentsServiceNotificationTest, TestShowBalloon) {
 // Verify if a test notification can show the default extension icon for
 // a crash notification for an extension without icon.
 TEST_F(BackgroundContentsServiceNotificationTest, TestShowBalloonNoIcon) {
-  if (!NotificationUIManager::DelegatesToMessageCenter())
-    return;
-
   // Extension manifest file with no 'icon' field.
   scoped_refptr<extensions::Extension> extension =
       extension_test_util::LoadManifest("app", "manifest.json");

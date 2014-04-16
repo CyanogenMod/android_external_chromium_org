@@ -7,7 +7,6 @@
 #include "apps/app_window.h"
 #include "apps/app_window_registry.h"
 #include "ash/content_support/gpu_support_impl.h"
-#include "ash/host/window_tree_host_factory.h"
 #include "ash/magnifier/magnifier_constants.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
@@ -23,6 +22,7 @@
 #include "chrome/browser/ui/ash/launcher/launcher_context_menu.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/profile_management_switches.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -90,6 +90,13 @@ bool ChromeShellDelegate::IsRunningInForcedAppMode() const {
   return chrome::IsRunningInForcedAppMode();
 }
 
+bool ChromeShellDelegate::IsMultiAccountEnabled() const {
+#if defined(OS_CHROMEOS)
+  return switches::IsNewProfileManagement();
+#endif
+  return false;
+}
+
 void ChromeShellDelegate::Exit() {
   chrome::AttemptUserExit();
 }
@@ -134,10 +141,6 @@ ui::MenuModel* ChromeShellDelegate::CreateContextMenu(
     return new LauncherContextMenu(shelf_delegate_, item_delegate, item, root);
 
   return new LauncherContextMenu(shelf_delegate_, root);
-}
-
-ash::WindowTreeHostFactory* ChromeShellDelegate::CreateWindowTreeHostFactory() {
-  return ash::WindowTreeHostFactory::Create();
 }
 
 ash::GPUSupport* ChromeShellDelegate::CreateGPUSupport() {

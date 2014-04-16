@@ -11,6 +11,7 @@
 
 #include "base/base_switches.h"
 #include "components/autofill/core/common/autofill_switches.h"
+#include "components/data_reduction_proxy/common/data_reduction_proxy_switches.h"
 #include "components/password_manager/core/common/password_manager_switches.h"
 #include "components/signin/core/common/signin_switches.h"
 #include "content/public/common/content_switches.h"
@@ -26,7 +27,6 @@ namespace switches {
 
 // All switches in alphabetical order. The switches should be documented
 // alongside the definition of their values in the .cc file.
-extern const char kAllowCreateExistingManagedUsers[];
 extern const char kAllowCrossOriginAuthPrompt[];
 extern const char kAllowFileAccess[];
 extern const char kAllowHttpScreenCapture[];
@@ -67,9 +67,6 @@ extern const char kComponentUpdater[];
 extern const char kConflictingModulesCheck[];
 extern const char kCrashOnHangThreads[];
 extern const char kCreateBrowserOnStartupForTests[];
-#if defined(OS_ANDROID) || defined(OS_IOS)
-extern const char kDataReductionProxyProbeURL[];
-#endif
 extern const char kDebugEnableFrameToggle[];
 extern const char kDebugPackedApps[];
 extern const char kDiagnostics[];
@@ -84,7 +81,6 @@ extern const char kDisableClientSidePhishingDetection[];
 extern const char kDisableComponentExtensionsWithBackgroundPages[];
 extern const char kDisableComponentUpdate[];
 extern const char kDisableCRLSets[];
-extern const char kDisableCreateExistingManagedUsers[];
 extern const char kDisableDefaultApps[];
 extern const char kDisableDeviceDiscovery[];
 extern const char kDisableDeviceDiscoveryNotifications[];
@@ -95,7 +91,6 @@ extern const char kDisableExtensionsHttpThrottling[];
 extern const char kDisableExtensionsResourceWhitelist[];
 extern const char kDisableExtensions[];
 extern const char kDisableFullscreenWithinTab[];
-extern const char kDisableImprovedDownloadProtection[];
 extern const char kDisableInfoBars[];
 extern const char kDisableIPv6[];
 extern const char kDisableMinimizeOnSecondLauncherItemClick[];
@@ -155,7 +150,6 @@ extern const char kEnableEphemeralApps[];
 extern const char kEnableExtensionActivityLogging[];
 extern const char kEnableExtensionActivityLogTesting[];
 extern const char kEnableFastUnload[];
-extern const char kEnableHttp2Draft04[];
 extern const char kEnableWebBasedSignin[];
 extern const char kEnableIPv6[];
 extern const char kEnableLinkableEphemeralApps[];
@@ -190,7 +184,7 @@ extern const char kEnableSearchButtonInOmniboxAlways[];
 extern const char kEnableSearchButtonInOmniboxForStr[];
 extern const char kEnableSearchButtonInOmniboxForStrOrIip[];
 extern const char kEnableSettingsWindow[];
-extern const char kEnableSpdy4a2[];
+extern const char kEnableSpdy4[];
 extern const char kEnableSpellingAutoCorrect[];
 extern const char kEnableSpellingFeedbackFieldTrial[];
 extern const char kEnableStackedTabStrip[];
@@ -254,6 +248,7 @@ extern const char kMessageLoopHistogrammer[];
 extern const char kMetricsRecordingOnly[];
 extern const char kMultiProfiles[];
 extern const char kNetLogLevel[];
+extern const char kNewAvatarMenu[];
 extern const char kNewProfileManagement[];
 extern const char kNoDefaultBrowserCheck[];
 extern const char kNoDisplayingInsecureContent[];
@@ -310,7 +305,6 @@ extern const char kResetAppListInstallState[];
 extern const char kResetVariationState[];
 extern const char kRestoreLastSession[];
 extern const char kSavePageAsMHTML[];
-extern const char kSbURLPrefix[];
 extern const char kSbDisableAutoUpdate[];
 extern const char kSbDisableDownloadProtection[];
 extern const char kSbDisableExtensionBlacklist[];
@@ -328,10 +322,6 @@ extern const char kSimulateUpgrade[];
 extern const char kSimulateCriticalUpdate[];
 extern const char kSimulateOutdated[];
 extern const char kSimulateOutdatedNoAU[];
-extern const char kSpdyProxyAuthFallback[];
-extern const char kSpdyProxyAuthOrigin[];
-extern const char kSpdyProxyAuthValue[];
-extern const char kSpdyProxyDevAuthOrigin[];
 extern const char kSpellingServiceFeedbackUrl[];
 extern const char kSpellingServiceFeedbackIntervalSeconds[];
 extern const char kSSLVersionMax[];
@@ -373,10 +363,6 @@ extern const char kWinHttpProxyResolver[];
 #if defined(ENABLE_PLUGIN_INSTALLATION)
 extern const char kPluginsMetadataServerURL[];
 #endif
-
-#if defined(OS_ANDROID) || defined(OS_IOS)
-extern const char kEnableSpdyProxyAuth[];
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 #if defined(OS_ANDROID)
 extern const char kDisableAppBanners[];

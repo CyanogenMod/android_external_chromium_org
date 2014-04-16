@@ -77,6 +77,7 @@
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
+#include "chrome/browser/ui/ash/stub_user_accounts_delegate.h"
 #include "chrome/browser/ui/ash/volume_controller_chromeos.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -95,8 +96,8 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/ime/extension_ime_util.h"
+#include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/ime/input_method_manager.h"
-#include "chromeos/ime/xkeyboard.h"
 #include "chromeos/login/login_state.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "content/public/browser/notification_observer.h"
@@ -912,6 +913,26 @@ bool SystemTrayDelegateChromeOS::IsNetworkBehindCaptivePortal(
 
 bool SystemTrayDelegateChromeOS::IsSearchKeyMappedToCapsLock() {
   return search_key_mapped_to_ == input_method::kCapsLockKey;
+}
+
+ash::tray::UserAccountsDelegate*
+SystemTrayDelegateChromeOS::GetUserAccountsDelegate(
+    const std::string& user_id) {
+  if (!accounts_delegates_.contains(user_id)) {
+    // TODO(dzhioev): replace stub with real implementation.
+    accounts_delegates_.set(user_id,
+                            scoped_ptr<ash::tray::UserAccountsDelegate>(
+                                new StubUserAccountsDelegate(user_id)));
+    static_cast<StubUserAccountsDelegate*>(accounts_delegates_.get(user_id))
+        ->AddAccount("secondary_account1@gmail.com");
+    static_cast<StubUserAccountsDelegate*>(accounts_delegates_.get(user_id))
+        ->AddAccount("very_long_account_name_for_user@gmail.com");
+    static_cast<StubUserAccountsDelegate*>(accounts_delegates_.get(user_id))
+        ->AddAccount("secondary_account2@gmail.com");
+    static_cast<StubUserAccountsDelegate*>(accounts_delegates_.get(user_id))
+        ->AddAccount("very_very_very_long_account_name_for_user@gmail.com");
+  }
+  return accounts_delegates_.get(user_id);
 }
 
 ash::SystemTray* SystemTrayDelegateChromeOS::GetPrimarySystemTray() {

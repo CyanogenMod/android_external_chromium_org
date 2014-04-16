@@ -8,12 +8,14 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "components/os_crypt/os_crypt_switches.h"
 #include "google_apis/gcm/base/mcs_message.h"
 #include "google_apis/gcm/base/mcs_util.h"
 #include "google_apis/gcm/protocol/mcs.pb.h"
@@ -43,6 +45,8 @@ class GCMStoreImplTest : public testing::Test {
   GCMStoreImplTest();
   virtual ~GCMStoreImplTest();
 
+  virtual void SetUp() OVERRIDE;
+
   scoped_ptr<GCMStore> BuildGCMStore();
 
   std::string GetNextPersistentId();
@@ -70,9 +74,16 @@ GCMStoreImplTest::GCMStoreImplTest()
 
 GCMStoreImplTest::~GCMStoreImplTest() {}
 
+void GCMStoreImplTest::SetUp() {
+  testing::Test::SetUp();
+#if defined(OS_MACOSX)
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      os_crypt::switches::kUseMockKeychain);
+#endif  // OS_MACOSX
+}
+
 scoped_ptr<GCMStore> GCMStoreImplTest::BuildGCMStore() {
   return scoped_ptr<GCMStore>(new GCMStoreImpl(
-      true,
       temp_directory_.path(),
       message_loop_.message_loop_proxy()));
 }
@@ -108,6 +119,7 @@ TEST_F(GCMStoreImplTest, LoadNew) {
   EXPECT_EQ(0U, load_result->device_security_token);
   EXPECT_TRUE(load_result->incoming_messages.empty());
   EXPECT_TRUE(load_result->outgoing_messages.empty());
+  EXPECT_TRUE(load_result->gservices_settings.empty());
   EXPECT_EQ(base::Time::FromInternalValue(0LL), load_result->last_checkin_time);
 }
 
@@ -151,8 +163,55 @@ TEST_F(GCMStoreImplTest, LastCheckinTime) {
   gcm_store->Load(base::Bind(
       &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
   PumpLoop();
-
   ASSERT_EQ(last_checkin_time, load_result->last_checkin_time);
+}
+
+TEST_F(GCMStoreImplTest, GServicesSettings_ProtocolV2) {
+  scoped_ptr<GCMStore> gcm_store(BuildGCMStore());
+  scoped_ptr<GCMStore::LoadResult> load_result;
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+
+  std::map<std::string, std::string> settings;
+  settings["checkin_interval"] = "12345";
+  settings["mcs_port"] = "438";
+  settings["checkin_url"] = "http://checkin.google.com";
+  std::string digest = "digest1";
+
+  gcm_store->SetGServicesSettings(
+      settings,
+      digest,
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+
+  gcm_store = BuildGCMStore().Pass();
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+
+  ASSERT_EQ(settings, load_result->gservices_settings);
+  ASSERT_EQ(digest, load_result->gservices_digest);
+
+  // Remove some, and add some.
+  settings.clear();
+  settings["checkin_interval"] = "54321";
+  settings["registration_url"] = "http://registration.google.com";
+  digest = "digest2";
+
+  gcm_store->SetGServicesSettings(
+      settings,
+      digest,
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+
+  gcm_store = BuildGCMStore().Pass();
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+
+  ASSERT_EQ(settings, load_result->gservices_settings);
+  ASSERT_EQ(digest, load_result->gservices_digest);
 }
 
 TEST_F(GCMStoreImplTest, Registrations) {

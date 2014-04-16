@@ -97,7 +97,6 @@ include $(LOCAL_PATH)/mojo/mojo_environment_chromium_impl.target.linux-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.linux-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_service_manager.target.linux-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_shell_bindings.target.linux-mips.mk
-include $(LOCAL_PATH)/mojo/mojo_system.target.linux-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_system_impl.target.linux-mips.mk
 include $(LOCAL_PATH)/net/cert_verify_status_android_java.target.linux-mips.mk
 include $(LOCAL_PATH)/net/certificate_mime_types_java.target.linux-mips.mk

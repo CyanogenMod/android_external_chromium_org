@@ -57,7 +57,6 @@ class AccountsOptionsTest : public LoginManagerTest {
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     LoginManagerTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(::switches::kMultiProfiles);
   }
 
  protected:
@@ -122,7 +121,9 @@ IN_PROC_BROWSER_TEST_F(AccountsOptionsTest, PRE_MultiProfilesAccountsOptions) {
   StartupUtils::MarkOobeCompleted();
 }
 
-IN_PROC_BROWSER_TEST_F(AccountsOptionsTest, MultiProfilesAccountsOptions) {
+// TODO(pastarmovj): Enable this test once https://crbug.com/362430 is fixed.
+IN_PROC_BROWSER_TEST_F(AccountsOptionsTest,
+                       DISABLED_MultiProfilesAccountsOptions) {
   LoginUser(kTestUsers[0]);
   UserAddingScreen::Get()->Start();
   content::RunAllPendingInMessageLoop();

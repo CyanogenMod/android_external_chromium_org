@@ -1068,6 +1068,7 @@
             '../media/media.gyp:media_unittests',
             '../net/net.gyp:net_unittests',
             '../google_apis/gcm/gcm.gyp:gcm_unit_tests',
+            '../gpu/gpu.gyp:gpu_unittests',
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../sql/sql.gyp:sql_unittests',
@@ -1159,6 +1160,7 @@
             '../ui/aura/aura.gyp:*',
             '../ui/compositor/compositor.gyp:*',
             '../ui/events/events.gyp:*',
+            '../ui/wm/wm.gyp:*',
             '../ui/gfx/gfx.gyp:gfx_unittests',
             '../ui/keyboard/keyboard.gyp:*',
             '../ui/message_center/message_center.gyp:*',
@@ -1199,6 +1201,11 @@
             ['chromeos==1', {
               'dependencies': [
                 '../chromeos/chromeos.gyp:chromeos_unittests',
+              ],
+            }],
+            ['use_ozone==1', {
+              'dependencies!': [
+                '../chrome/chrome.gyp:interactive_ui_tests',  # crbug.com/362166
               ],
             }],
           ],

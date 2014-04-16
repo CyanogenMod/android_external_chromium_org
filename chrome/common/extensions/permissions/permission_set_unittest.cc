@@ -670,6 +670,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kSystemStorage);
   skip.insert(APIPermission::kTts);
   skip.insert(APIPermission::kUnlimitedStorage);
+  skip.insert(APIPermission::kWebcamPrivate);
   skip.insert(APIPermission::kWebView);
   skip.insert(APIPermission::kWindowShape);
 
@@ -743,7 +744,6 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kTerminalPrivate);
   skip.insert(APIPermission::kVirtualKeyboardPrivate);
   skip.insert(APIPermission::kWallpaperPrivate);
-  skip.insert(APIPermission::kWebRequestInternal);
   skip.insert(APIPermission::kWebrtcAudioPrivate);
   skip.insert(APIPermission::kWebrtcLoggingPrivate);
   skip.insert(APIPermission::kWebstorePrivate);
@@ -1467,14 +1467,13 @@ TEST(PermissionsTest, IsEmpty) {
 TEST(PermissionsTest, ImpliedPermissions) {
   URLPatternSet empty_extent;
   APIPermissionSet apis;
-  apis.insert(APIPermission::kWebRequest);
   apis.insert(APIPermission::kFileBrowserHandler);
-  EXPECT_EQ(2U, apis.size());
+  EXPECT_EQ(1U, apis.size());
 
   scoped_refptr<PermissionSet> perm_set;
   perm_set = new PermissionSet(apis, ManifestPermissionSet(),
                                empty_extent, empty_extent);
-  EXPECT_EQ(4U, perm_set->apis().size());
+  EXPECT_EQ(2U, perm_set->apis().size());
 }
 
 TEST(PermissionsTest, SyncFileSystemPermission) {

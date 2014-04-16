@@ -2208,9 +2208,6 @@ Even if you have downloaded files from this website before, the website might ha
 
       <!-- "Application Information" dialog -->
       <if expr="not use_titlecase">
-        <message name="IDS_APPLICATION_INFO_CLOSE_BUTTON" desc="Button in the Application Information Dialog that closes the dialog">
-          Close
-        </message>
         <message name="IDS_APPLICATION_INFO_SUMMARY_TAB_TITLE" desc="Title of the first tab in the dialog, which displays general summary information about the app. ">
           Summary
         </message>
@@ -2228,9 +2225,6 @@ Even if you have downloaded files from this website before, the website might ha
         </message>
       </if>
       <if expr="use_titlecase">
-        <message name="IDS_APPLICATION_INFO_CLOSE_BUTTON" desc="In Title Case: Button in the Application Information Dialog that closes the dialog">
-          Close
-        </message>
         <message name="IDS_APPLICATION_INFO_SUMMARY_TAB_TITLE" desc="In Title Case: Title of the first tab in the dialog, which displays general summary information about the app. ">
           Summary
         </message>
@@ -5591,6 +5585,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_PLUGINS_PPAPI_UNSANDBOXED" desc="Text that indicates the plugin is an unsandboxed out-of-process PPAPI plugin.">
           PPAPI (unsandboxed)
         </message>
+        <message name="IDS_PLUGINS_BROWSER_PLUGIN" desc="Text that indicates the plugin is a browser plugin.">
+          BROWSER PLUGIN
+        </message>
       </if>
 
       <!-- about:flags -->
@@ -5816,12 +5813,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_DEBUG_SHORTCUTS_DESCRIPTION" desc="Description of the 'Debugging keyboard shortcuts' lab.">
         Enables additional keyboard shortcuts that are useful for debugging Chromium.
-      </message>
-      <message name="IDS_FLAGS_FORCE_COMPOSITING_MODE_NAME" desc="Name of the 'Force compositing mode' lab.">
-        GPU compositing on all pages
-      </message>
-      <message name="IDS_FLAGS_FORCE_COMPOSITING_MODE_DESCRIPTION" desc="Description of the 'Force compositing mode' lab.">
-        Uses GPU accelerated compositing on all pages, not just those that include GPU-accelerated layers.
       </message>
       <message name="IDS_FLAGS_FORCE_HIGH_DPI_NAME" desc="Name of the 'Force high DPI mode' lab.">
         Force high DPI mode
@@ -6251,17 +6242,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_QUIC_HTTPS_DESCRIPTION" desc="Description for the flag to enable HTTPS over QUIC.">
         Enables QUIC over an Authenticated Encrypted channel (can replace HTTPS transactions). Without this flag, only HTTP requests are supported over QUIC. This only has an effect if QUIC protocol is enabled.
       </message>
-      <message name="IDS_FLAGS_ENABLE_SPDY4A2_NAME" desc="Title for the flag to enable SPDY/4 alpha 2">
-        Enable SPDY/4 alpha 2
+      <message name="IDS_FLAGS_ENABLE_SPDY4_NAME" desc="Title for the flag to enable SPDY/4">
+        Enable SPDY/4
       </message>
-      <message name="IDS_FLAGS_ENABLE_SPDY4A2_DESCRIPTION" desc="Description for the flag to enable SPDY/4 alpha 2.">
-        Enable experimental SPDY/4 alpha 2.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_HTTP2_DRAFT_04_NAME" desc="Title for the flag to enable HTTP/2 draft 04">
-        Enable HTTP/2 draft 04.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_HTTP2_DRAFT_04_DESCRIPTION" desc="Description for the flag to enable HTTP/2 draft 04.">
-        Enable experimental HTTP/2 draft 04.
+      <message name="IDS_FLAGS_ENABLE_SPDY4_DESCRIPTION" desc="Description for the flag to enable SPDY/4.">
+        Enable SPDY/4, which is the HTTP/2 standard. Currently experimental.
       </message>
       <message name="IDS_FLAGS_ENABLE_ASYNC_DNS_NAME" desc="Title for the flag to enable asynchronous DNS client.">
         Built-in Asynchronous DNS
@@ -6269,17 +6254,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_ASYNC_DNS_DESCRIPTION" desc="Description for the flag to enable asynchronous DNS client.">
         Enable experimental asynchronous DNS client.
       </message>
-      <message name="IDS_FLAGS_DISABLE_WEBKIT_MEDIA_SOURCE_NAME" desc="Title for the flag to disable the prefixed Media Source API.">
-        Disable prefixed Media Source API.
+      <message name="IDS_FLAGS_DISABLE_MEDIA_SOURCE_NAME" desc="Title for the flag to disable the Media Source API.">
+        Disable Media Source API.
       </message>
-      <message name="IDS_FLAGS_DISABLE_WEBKIT_MEDIA_SOURCE_DESCRIPTION" desc="Description for the flag to disable the prefixed Media Source API.">
-        Disable the experimental WebKitMediaSource object. This object allows JavaScript to send media data directly to a video element.
-      </message>
-      <message name="IDS_FLAGS_DISABLE_UNPREFIXED_MEDIA_SOURCE_NAME" desc="Title for the flag to disable the unprefixed Media Source API.">
-        Disable unprefixed Media Source API.
-      </message>
-      <message name="IDS_FLAGS_DISABLE_UNPREFIXED_MEDIA_SOURCE_DESCRIPTION" desc="Description for the flag to disable the unprefixed Media Source API.">
-        Disable the unprefixed MediaSource object. This object allows JavaScript to send media data directly to a video element.
+      <message name="IDS_FLAGS_DISABLE_MEDIA_SOURCE_DESCRIPTION" desc="Description for the flag to disable the Media Source API.">
+        Disable the MediaSource object. This object allows JavaScript to send media data directly to a video element.
       </message>
       <message name="IDS_FLAGS_ENABLE_ENCRYPTED_MEDIA_NAME" desc="Title for the flag to enable the (unprefixed) Encrypted Media Extensions APIs (e.g. MediaKeys).">
         Enable Encrypted Media Extensions.
@@ -6868,6 +6847,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_SERVICE_WORKER_DESCRIPTION" desc="Description for the flag to enable ServiceWorker.">
         ServiceWorker is a new kind of web worker that can intercept resource requests. See https://github.com/slightlyoff/ServiceWorker for more information.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_SERVICE_WORKER_SYNC_NAME" desc="Name of the flag to enable ServiceWorker background synchronization.">
+        Enable support for ServiceWorker background sync event.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_SERVICE_WORKER_SYNC_DESCRIPTION" desc="Description for the flag to enable ServiceWorker background synchronization.">
+        ServiceWorker background synchronization lets ServiceWorkers send messages and update resources even when the page is in the background.
       </message>
       <if expr="is_android">
         <message name="IDS_FLAGS_DISABLE_CLICK_DELAY_NAME" desc="Name of the flag to disable the click delay.">
@@ -8270,9 +8255,6 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
       <message name="IDS_NOTIFICATIONS_HEADER" desc="Label for Notifications exception management page on Content Settings dialog">
         Notifications exceptions
-      </message>
-      <message name="IDS_NOTIFICATIONS_SETTINGS_BUTTON" desc="Label for the Settings button for Notifications tab of Content Settings dialog.">
-        Settings...
       </message>
       <message name="IDS_NOTIFICATIONS_ALLOW_RADIO" desc="A radio button in Content Settings dialog to allow all sites to show notifications.">
         Allow all sites to show desktop notifications
@@ -11615,11 +11597,14 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_PROFILES_ACCOUNT_REMOVAL_BUTTON" desc="Text of the ok button on the account removal view in the avatar menu bubble.">
         Remove account and relaunch
       </message>
-      <message name="IDS_PROFILES_SIGNIN_TUTORIAL_TITLE" desc="Title of the tutorial card in the avatar menu bubble view for a signed-in user.">
+      <message name="IDS_PROFILES_PREVIEW_ENABLED_TUTORIAL_TITLE" desc="Title of the tutorial card in the avatar menu bubble view shown when new profile management preview is enabled.">
         You're all set
       </message>
-      <message name="IDS_PROFILES_SIGNIN_TUTORIAL_OK_BUTTON" desc="Text of the ok button on the tutorial card in the avatar menu bubble view">
+      <message name="IDS_PROFILES_TUTORIAL_OK_BUTTON" desc="Text of the ok button on the tutorial card in the avatar menu bubble view">
         Ok, Got it!
+      </message>
+      <message name="IDS_PROFILES_TUTORIAL_TRY_BUTTON" desc="Text of the try button on the tutorial card in the avatar menu bubble view">
+        Try it out
       </message>
       <message name="IDS_PROFILES_NOT_YOU_BUTTON" desc="Button in the avatar menu bubble view for launching the user manager.">
         Not <ph name="PROFILE_DISPLAY_NAME">$1<ex>Jessica</ex></ph>?
@@ -11631,7 +11616,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_PROFILES_PROFILE_MANAGE_ACCOUNTS_BUTTON" desc="Button in the avatar menu bubble view used to manage accounts for a profile.">
           Your accounts
         </message>
-        <message name="IDS_PROFILES_PROFILE_TUTORIAL_LEARN_MORE" desc="The Learn More button in the avatar tutorial bubble.">
+        <message name="IDS_PROFILES_PROFILE_TUTORIAL_LEARN_MORE" desc="The Learn More link in the avatar tutorial bubble.">
           Learn more
         </message>
       </if>
@@ -11642,7 +11627,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_PROFILES_PROFILE_MANAGE_ACCOUNTS_BUTTON" desc="Button in the avatar menu bubble view used to manage accounts for a profile.">
           Your Accounts
         </message>
-        <message name="IDS_PROFILES_PROFILE_TUTORIAL_LEARN_MORE" desc="The Learn More button in the avatar tutorial bubble.">
+        <message name="IDS_PROFILES_PROFILE_TUTORIAL_LEARN_MORE" desc="The Learn More link in the avatar tutorial bubble.">
             Learn More
         </message>
       </if>
@@ -12871,29 +12856,8 @@ Some features may be unavailable.  Please check that the profile exists and you 
         <message name="IDS_NOTIFICATION_OPTIONS_MENU_LABEL" desc="Text for the menu option">
           Options
         </message>
-        <message name="IDS_NOTIFICATION_BALLOON_REVOKE_MESSAGE" desc="Text for the menu option to revoke notification permission.">
-          Disable notifications from <ph name="site">$1<ex>mail.google.com</ex></ph>
-        </message>
         <message name="IDS_NOTIFICATION_BALLOON_ENABLE_MESSAGE" desc="Text for the menu option to enable notification permission.">
           Enable notifications from <ph name="site">$1<ex>mail.google.com</ex></ph>
-        </message>
-        <message name="IDS_NOTIFICATION_CHOOSE_POSITION" desc="Menu label for position choice submenu.">
-          Choose position
-        </message>
-        <message name="IDS_NOTIFICATION_POSITION_DEFAULT" desc="Menu label for positioning in default location">
-          Use default
-        </message>
-        <message name="IDS_NOTIFICATION_POSITION_LOWER_LEFT" desc="Menu label for positioning in lower left corner">
-          Lower left
-        </message>
-        <message name="IDS_NOTIFICATION_POSITION_LOWER_RIGHT" desc="Menu label for positioning in lower right corner">
-          Lower right
-        </message>
-        <message name="IDS_NOTIFICATION_POSITION_UPPER_LEFT" desc="Menu label for positioning in upper left corner">
-          Upper left
-        </message>
-        <message name="IDS_NOTIFICATION_POSITION_UPPER_RIGHT" desc="Menu label for positioning in upper right corner">
-          Upper right
         </message>
         <message name="IDS_NOTIFICATION_WELCOME_BODY" desc="Notification body for the Welcome Notification">
           Stay connected to what you need to know, across all devices.
@@ -14198,6 +14162,13 @@ Do you accept?
     <message name="IDS_FLAGS_ENABLE_FAST_USER_SWITCHING_DESCRIPTION" desc="Description for the flag to enable fast user switching">
       Enables fast switching between users in the avatar menu.
     </message>
+    <message name="IDS_FLAGS_ENABLE_NEW_AVATAR_MENU_NAME" desc="Title for the flag to enable the new avatar menu.">
+      Enable the new avatar menu
+    </message>
+    <message name="IDS_FLAGS_ENABLE_NEW_AVATAR_MENU_DESCRIPTION" desc="Description for the flag to enable the new avatar menu.">
+      Enables the new avatar menu. When combined with new-profile-management, it simply shows the new profile management avatar menu. Otherwise it shows a redesigned avatar menu with the same functionality as the old one, plus a tutorial card at the top prompting the user to try out the new profile management UI.
+    </message>
+
     <message name="IDS_FLAGS_ENABLE_WEB_BASED_SIGNIN_NAME" desc="Title for the flag to enable web-based sign-in flows.">
       Enable pure web-based sign-in flows
     </message>

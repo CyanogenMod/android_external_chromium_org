@@ -343,6 +343,7 @@ function requestFromServer(method, handlerName, opt_contentType) {
  * @return {Promise} A promise to show the notification groups as cards.
  */
 function showNotificationGroups(notificationGroups, opt_onCardShown) {
+  /** @type {Object.<ChromeNotificationId, CombinedCard>} */
   var cards = combineCardsFromGroups(notificationGroups);
   console.log('showNotificationGroups ' + JSON.stringify(cards));
 
@@ -358,7 +359,7 @@ function showNotificationGroups(notificationGroups, opt_onCardShown) {
         cards[chromeNotificationId] = cards[chromeNotificationId] || [];
       }
 
-      /** @type {Object.<string, NotificationDataEntry>} */
+      /** @type {Object.<ChromeNotificationId, NotificationDataEntry>} */
       var notificationsData = {};
 
       // Create/update/delete notifications.
@@ -492,8 +493,10 @@ function processServerResponse(response) {
     response.groups = {};
     // Google Now was enabled; now it's disabled. This is a state change.
     onStateChange();
-    // Allow this to continue. We still need to do work here to clear
-    // the cards and schedule the next opt-in poll.
+    // Start the Google Now Disabled polling period.
+    scheduleNextPoll({}, false);
+    // Stop processing now. The state change will clear the cards.
+    return Promise.reject();
   }
 
   var receivedGroups = response.groups;
@@ -501,21 +504,21 @@ function processServerResponse(response) {
   return fillFromChromeLocalStorage({
     /** @type {Object.<string, StoredNotificationGroup>} */
     notificationGroups: {},
-    /** @type {Object.<NotificationId, number>} */
+    /** @type {Object.<ServerNotificationId, number>} */
     recentDismissals: {}
   }).then(function(items) {
     console.log('processServerResponse-get ' + JSON.stringify(items));
 
     // Build a set of non-expired recent dismissals. It will be used for
     // client-side filtering of cards.
-    /** @type {Object.<NotificationId, number>} */
+    /** @type {Object.<ServerNotificationId, number>} */
     var updatedRecentDismissals = {};
     var now = Date.now();
-    for (var notificationId in items.recentDismissals) {
-      var dismissalAge = now - items.recentDismissals[notificationId];
+    for (var serverNotificationId in items.recentDismissals) {
+      var dismissalAge = now - items.recentDismissals[serverNotificationId];
       if (dismissalAge < DISMISS_RETENTION_TIME_MS) {
-        updatedRecentDismissals[notificationId] =
-            items.recentDismissals[notificationId];
+        updatedRecentDismissals[serverNotificationId] =
+            items.recentDismissals[serverNotificationId];
       }
     }
 
@@ -797,7 +800,7 @@ function processPendingDismissals() {
   return fillFromChromeLocalStorage({
     /** @type {Array.<PendingDismissal>} */
     pendingDismissals: [],
-    /** @type {Object.<NotificationId, number>} */
+    /** @type {Object.<ServerNotificationId, number>} */
     recentDismissals: {}
   }).then(function(items) {
     console.log(
@@ -877,7 +880,7 @@ function openUrl(url) {
  */
 function onNotificationClicked(chromeNotificationId, selector) {
   fillFromChromeLocalStorage({
-    /** @type {Object.<string, NotificationDataEntry>} */
+    /** @type {Object.<ChromeNotificationId, NotificationDataEntry>} */
     notificationsData: {}
   }).then(function(items) {
     /** @type {(NotificationDataEntry|undefined)} */
@@ -912,7 +915,7 @@ function onNotificationClosed(chromeNotificationId, byUser) {
     fillFromChromeLocalStorage({
       /** @type {Array.<PendingDismissal>} */
       pendingDismissals: [],
-      /** @type {Object.<string, NotificationDataEntry>} */
+      /** @type {Object.<ChromeNotificationId, NotificationDataEntry>} */
       notificationsData: {},
       /** @type {Object.<string, StoredNotificationGroup>} */
       notificationGroups: {}
@@ -968,8 +971,7 @@ function startPollingCards() {
 function stopPollingCards() {
   console.log('stopPollingCards');
   updateCardsAttempts.stop();
-  removeAllCards();
-  // Since we're stopping everything, clear all runtime storage too.
+  // Since we're stopping everything, clear all runtime storage.
   // We don't clear localStorage since those values are still relevant
   // across Google Now start-stop events.
   chrome.storage.local.clear();
@@ -984,7 +986,7 @@ function initialize() {
 }
 
 /**
- * Starts or stops the polling of cards.
+ * Starts or stops the main pipeline for polling cards.
  * @param {boolean} shouldPollCardsRequest true to start and
  *     false to stop polling cards.
  */
@@ -1065,11 +1067,11 @@ function updateRunningState(
 
   var shouldPollCards = false;
   var shouldSetBackground = false;
+  var shouldClearCards = true;
 
   if (signedIn && notificationEnabled) {
-    if (canEnableBackground && googleNowEnabled)
-      shouldSetBackground = true;
-
+    shouldClearCards = !googleNowEnabled;
+    shouldSetBackground = canEnableBackground && googleNowEnabled;
     shouldPollCards = true;
   } else {
     recordEvent(GoogleNowEvent.STOPPED);
@@ -1079,10 +1081,14 @@ function updateRunningState(
 
   console.log(
       'Requested Actions shouldSetBackground=' + shouldSetBackground + ' ' +
-      'setShouldPollCards=' + shouldPollCards);
+      'setShouldPollCards=' + shouldPollCards + ' ' +
+      'shouldClearCards=' + shouldClearCards);
 
   setBackgroundEnable(shouldSetBackground);
   setShouldPollCards(shouldPollCards);
+  if (shouldClearCards) {
+    removeAllCards();
+  }
 }
 
 /**

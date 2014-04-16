@@ -268,11 +268,6 @@ BrowserPpapiHost*
   return NULL;
 }
 
-bool ContentBrowserClient::SupportsBrowserPlugin(
-    BrowserContext* browser_context, const GURL& site_url) {
-  return false;
-}
-
 bool ContentBrowserClient::AllowPepperSocketAPI(
     BrowserContext* browser_context,
     const GURL& url,
@@ -314,5 +309,13 @@ net::CookieStore* ContentBrowserClient::OverrideCookieStoreForRenderProcess(
     int render_process_id) {
   return NULL;
 }
+
+#if defined(VIDEO_HOLE)
+ExternalVideoSurfaceContainer*
+ContentBrowserClient::OverrideCreateExternalVideoSurfaceContainer(
+    WebContents* web_contents) {
+  return NULL;
+}
+#endif
 
 }  // namespace content

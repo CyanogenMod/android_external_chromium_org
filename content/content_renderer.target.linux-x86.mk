@@ -93,6 +93,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/gpu/mailbox_output_surface.cc \
 	content/renderer/gpu/render_widget_compositor.cc \
 	content/renderer/gpu/stream_texture_host_android.cc \
+	content/renderer/history_controller.cc \
 	content/renderer/idle_user_detector.cc \
 	content/renderer/image_loading_helper.cc \
 	content/renderer/ime_event_guard.cc \
@@ -240,11 +241,11 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/rtc_video_renderer.cc \
 	content/renderer/media/video_source_handler.cc \
 	content/renderer/media/webaudio_capturer_source.cc \
+	content/renderer/media/webrtc/media_stream_remote_video_source.cc \
 	content/renderer/media/webrtc/media_stream_track_metrics.cc \
 	content/renderer/media/webrtc/webrtc_audio_sink_adapter.cc \
 	content/renderer/media/webrtc/webrtc_local_audio_track_adapter.cc \
 	content/renderer/media/webrtc/webrtc_video_capturer_adapter.cc \
-	content/renderer/media/webrtc/webrtc_video_sink_adapter.cc \
 	content/renderer/media/webrtc_audio_capturer.cc \
 	content/renderer/media/webrtc_audio_device_impl.cc \
 	content/renderer/media/webrtc_audio_device_not_impl.cc \
@@ -317,6 +318,7 @@ MY_DEFS_Debug := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -327,8 +329,10 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -488,6 +492,7 @@ MY_DEFS_Release := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -498,8 +503,10 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \

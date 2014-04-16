@@ -92,6 +92,8 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -99,10 +101,6 @@
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
 #include "chrome/browser/ui/cocoa/keystone_infobar_delegate.h"
-#endif
-
-#if defined(TOOLKIT_GTK)
-#include "chrome/browser/ui/gtk/gtk_util.h"
 #endif
 
 #if defined(OS_WIN)
@@ -228,11 +226,11 @@ void RecordCmdLineAppHistogram(extensions::Manifest::Type app_type) {
 void RecordAppLaunches(Profile* profile,
                        const std::vector<GURL>& cmd_line_urls,
                        StartupTabs& autolaunch_tabs) {
-  ExtensionService* extension_service = profile->GetExtensionService();
-  DCHECK(extension_service);
+  const extensions::ExtensionSet& extensions =
+      extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
   for (size_t i = 0; i < cmd_line_urls.size(); ++i) {
     const extensions::Extension* extension =
-        extension_service->GetInstalledApp(cmd_line_urls.at(i));
+        extensions.GetAppByURL(cmd_line_urls.at(i));
     if (extension) {
       CoreAppLauncherHandler::RecordAppLaunchType(
           extension_misc::APP_LAUNCH_CMD_LINE_URL,
@@ -241,7 +239,7 @@ void RecordAppLaunches(Profile* profile,
   }
   for (size_t i = 0; i < autolaunch_tabs.size(); ++i) {
     const extensions::Extension* extension =
-        extension_service->GetInstalledApp(autolaunch_tabs.at(i).url);
+        extensions.GetAppByURL(autolaunch_tabs.at(i).url);
     if (extension) {
       CoreAppLauncherHandler::RecordAppLaunchType(
           extension_misc::APP_LAUNCH_AUTOLAUNCH,
@@ -513,7 +511,8 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
     if (policy->IsWebSafeScheme(url.scheme()) ||
         url.SchemeIs(content::kFileScheme)) {
       const extensions::Extension* extension =
-          profile->GetExtensionService()->GetInstalledApp(url);
+          extensions::ExtensionRegistry::Get(profile)
+              ->enabled_extensions().GetAppByURL(url);
       if (extension) {
         RecordCmdLineAppHistogram(extension->GetType());
       } else {
@@ -780,16 +779,8 @@ Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(
   if (!profile_ && browser)
     profile_ = browser->profile();
 
-  if (!browser || !browser->is_type_tabbed()) {
+  if (!browser || !browser->is_type_tabbed())
     browser = new Browser(Browser::CreateParams(profile_, desktop_type));
-  } else {
-#if defined(TOOLKIT_GTK)
-    // Setting the time of the last action on the window here allows us to steal
-    // focus, which is what the user wants when opening a new tab in an existing
-    // browser window.
-    gtk_util::SetWMLastUserActionTime(browser->window()->GetNativeWindow());
-#endif
-  }
 
   bool first_tab = true;
   ProtocolHandlerRegistry* registry = profile_ ?

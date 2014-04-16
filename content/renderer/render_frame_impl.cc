@@ -50,11 +50,13 @@
 #include "content/renderer/child_frame_compositing_helper.h"
 #include "content/renderer/context_menu_params_builder.h"
 #include "content/renderer/dom_automation_controller.h"
+#include "content/renderer/history_controller.h"
 #include "content/renderer/image_loading_helper.h"
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/java/java_bridge_dispatcher.h"
 #include "content/renderer/media/webcontentdecryptionmodule_impl.h"
+#include "content/renderer/notification_provider.h"
 #include "content/renderer/npapi/plugin_channel_host.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
@@ -313,7 +315,6 @@ RenderFrameImpl::RenderFrameImpl(RenderViewImpl* render_view, int routing_id)
     : frame_(NULL),
       render_view_(render_view->AsWeakPtr()),
       routing_id_(routing_id),
-      is_loading_(false),
       is_swapped_out_(false),
       is_detaching_(false),
       cookie_jar_(this),
@@ -341,7 +342,9 @@ void RenderFrameImpl::SetWebFrame(blink::WebLocalFrame* web_frame) {
   CHECK(result.second) << "Inserting a duplicate item.";
 
   frame_ = web_frame;
+}
 
+void RenderFrameImpl::Initialize() {
 #if defined(ENABLE_PLUGINS)
   new PepperBrowserConnection(this);
 #endif
@@ -404,7 +407,7 @@ void RenderFrameImpl::PepperCancelComposition(
   if (instance != render_view_->focused_pepper_plugin())
     return;
   Send(new ViewHostMsg_ImeCancelComposition(render_view_->GetRoutingID()));;
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA)
   GetRenderWidget()->UpdateCompositionInfo(true);
 #endif
 }
@@ -673,7 +676,9 @@ void RenderFrameImpl::OnNavigate(const FrameMsg_Navigate_Params& params) {
     CHECK(frame) << "Invalid frame name passed: " << params.frame_to_navigate;
   }
 
-  if (is_reload && frame->currentHistoryItem().isNull()) {
+  WebHistoryItem item =
+      render_view_->history_controller()->GetCurrentItemForExport();
+  if (is_reload && item.isNull()) {
     // We cannot reload if we do not have any history state.  This happens, for
     // example, when recovering from a crash.
     is_reload = false;
@@ -706,7 +711,7 @@ void RenderFrameImpl::OnNavigate(const FrameMsg_Navigate_Params& params) {
       // Ensure we didn't save the swapped out URL in UpdateState, since the
       // browser should never be telling us to navigate to swappedout://.
       CHECK(item.urlString() != WebString::fromUTF8(kSwappedOutURL));
-      frame->loadHistoryItem(item, cache_policy);
+      render_view_->history_controller()->GoToItem(item, cache_policy);
     }
   } else if (!params.base_url_for_data_url.is_empty()) {
     // A loadData request with a specified base URL.
@@ -1212,7 +1217,7 @@ blink::WebPlugin* RenderFrameImpl::createPlugin(
 
   if (base::UTF16ToASCII(params.mimeType) == kBrowserPluginMimeType) {
     return render_view_->GetBrowserPluginManager()->CreateBrowserPlugin(
-        render_view_.get(), frame);
+        render_view_.get(), frame, false);
   }
 
 #if defined(ENABLE_PLUGINS)
@@ -1224,6 +1229,12 @@ blink::WebPlugin* RenderFrameImpl::createPlugin(
       params.mimeType.utf8(), &found, &info, &mime_type));
   if (!found)
     return NULL;
+
+  if (info.type == content::WebPluginInfo::PLUGIN_TYPE_BROWSER_PLUGIN) {
+    return render_view_->GetBrowserPluginManager()->CreateBrowserPlugin(
+        render_view_.get(), frame, true);
+  }
+
 
   WebPluginParams params_to_use = params;
   params_to_use.mimeType = WebString::fromUTF8(mime_type);
@@ -1324,11 +1335,15 @@ blink::WebFrame* RenderFrameImpl::createChildFrame(
     return NULL;
   }
 
+  // Create the RenderFrame and WebLocalFrame, linking the two.
   RenderFrameImpl* child_render_frame = RenderFrameImpl::Create(
       render_view_.get(), child_routing_id);
   blink::WebLocalFrame* web_frame = WebLocalFrame::create(child_render_frame);
-  parent->appendChild(web_frame);
   child_render_frame->SetWebFrame(web_frame);
+
+  // Add the frame to the frame tree and initialize it.
+  parent->appendChild(web_frame);
+  child_render_frame->Initialize();
 
   return web_frame;
 }
@@ -1508,7 +1523,8 @@ blink::WebNavigationPolicy RenderFrameImpl::decidePolicyForNavigation(
 
 blink::WebHistoryItem RenderFrameImpl::historyItemForNewChildFrame(
     blink::WebFrame* frame) {
-  return render_view_->webview()->itemForNewChildFrame(frame);
+  DCHECK(!frame_ || frame_ == frame);
+  return render_view_->history_controller()->GetItemForNewChildFrame(this);
 }
 
 void RenderFrameImpl::willSendSubmitEvent(blink::WebLocalFrame* frame,
@@ -1621,7 +1637,7 @@ void RenderFrameImpl::didStartProvisionalLoad(blink::WebLocalFrame* frame) {
 void RenderFrameImpl::didReceiveServerRedirectForProvisionalLoad(
     blink::WebLocalFrame* frame) {
   DCHECK(!frame_ || frame_ == frame);
-  render_view_->webview()->removeChildrenForRedirect(frame);
+  render_view_->history_controller()->RemoveChildrenForRedirect(this);
   if (frame->parent())
     return;
   // Received a redirect on the main frame.
@@ -1746,20 +1762,13 @@ void RenderFrameImpl::didCommitProvisionalLoad(
     blink::WebLocalFrame* frame,
     const blink::WebHistoryItem& item,
     blink::WebHistoryCommitType commit_type) {
-  DocumentState* document_state =
-      DocumentState::FromDataSource(frame->dataSource());
-  render_view_->webview()->updateForCommit(frame, item, commit_type,
-      document_state->navigation_state()->was_within_same_page());
-
-  didCommitProvisionalLoad(frame, commit_type == blink::WebStandardCommit);
-}
-
-void RenderFrameImpl::didCommitProvisionalLoad(blink::WebLocalFrame* frame,
-                                               bool is_new_navigation) {
   DCHECK(!frame_ || frame_ == frame);
   DocumentState* document_state =
       DocumentState::FromDataSource(frame->dataSource());
   NavigationState* navigation_state = document_state->navigation_state();
+  render_view_->history_controller()->UpdateForCommit(this, item, commit_type,
+      navigation_state->was_within_same_page());
+
   InternalDocumentStateData* internal_data =
       InternalDocumentStateData::FromDocumentState(document_state);
 
@@ -1772,6 +1781,7 @@ void RenderFrameImpl::didCommitProvisionalLoad(blink::WebLocalFrame* frame,
   }
   internal_data->set_use_error_page(false);
 
+  bool is_new_navigation = commit_type == blink::WebStandardCommit;
   if (is_new_navigation) {
     // When we perform a new navigation, we need to update the last committed
     // session history entry with state for the page we are leaving.
@@ -1995,31 +2005,15 @@ void RenderFrameImpl::didNavigateWithinPage(blink::WebLocalFrame* frame,
   didCommitProvisionalLoad(frame, item, commit_type);
 }
 
-void RenderFrameImpl::didNavigateWithinPage(blink::WebLocalFrame* frame,
-                                            bool is_new_navigation) {
-  DCHECK(!frame_ || frame_ == frame);
-  // If this was a reference fragment navigation that we initiated, then we
-  // could end up having a non-null pending navigation params.  We just need to
-  // update the ExtraData on the datasource so that others who read the
-  // ExtraData will get the new NavigationState.  Similarly, if we did not
-  // initiate this navigation, then we need to take care to reset any pre-
-  // existing navigation state to a content-initiated navigation state.
-  // DidCreateDataSource conveniently takes care of this for us.
-  didCreateDataSource(frame, frame->dataSource());
-
-  DocumentState* document_state =
-      DocumentState::FromDataSource(frame->dataSource());
-  NavigationState* new_state = document_state->navigation_state();
-  new_state->set_was_within_same_page(true);
-
-  didCommitProvisionalLoad(frame, is_new_navigation);
-}
-
 void RenderFrameImpl::didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame) {
   DCHECK(!frame_ || frame_ == frame);
   // TODO(nasko): Move implementation here. Needed methods:
   // * StartNavStateSyncTimerIfNecessary
   render_view_->didUpdateCurrentHistoryItem(frame);
+}
+
+blink::WebNotificationPresenter* RenderFrameImpl::notificationPresenter() {
+  return render_view_->notification_provider_;
 }
 
 void RenderFrameImpl::didChangeSelection(bool is_empty_selection) {
@@ -2047,7 +2041,7 @@ blink::WebColorChooser* RenderFrameImpl::createColorChooser(
     const blink::WebColor& initial_color,
     const blink::WebVector<blink::WebColorSuggestion>& suggestions) {
   RendererWebColorChooserImpl* color_chooser =
-      new RendererWebColorChooserImpl(render_view_.get(), client);
+      new RendererWebColorChooserImpl(this, client);
   std::vector<content::ColorSuggestion> color_suggestions;
   for (size_t i = 0; i < suggestions.size(); i++) {
     color_suggestions.push_back(content::ColorSuggestion(suggestions[i]));
@@ -2689,7 +2683,8 @@ void RenderFrameImpl::UpdateURL(blink::WebFrame* frame) {
 
   // Make navigation state a part of the DidCommitProvisionalLoad message so
   // that commited entry has it at all times.
-  WebHistoryItem item = frame->currentHistoryItem();
+  WebHistoryItem item =
+      render_view_->history_controller()->GetCurrentItemForExport();
   if (item.isNull()) {
     item.initialize();
     item.setURLString(request.url().spec().utf16());
@@ -2823,29 +2818,15 @@ WebElement RenderFrameImpl::GetFocusedElement() {
 }
 
 void RenderFrameImpl::didStartLoading(bool to_different_document) {
-  if (is_loading_) {
-    DVLOG(1) << "didStartLoading called while loading";
-    return;
-  }
-
-  is_loading_ = true;
-
   bool view_was_loading = render_view_->is_loading();
   render_view_->FrameDidStartLoading(frame_);
-
   if (!view_was_loading)
     Send(new FrameHostMsg_DidStartLoading(routing_id_, to_different_document));
 }
 
 void RenderFrameImpl::didStopLoading() {
-  if (!is_loading_) {
-    DVLOG(1) << "DidStopLoading called while not loading";
+  if (!render_view_->is_loading())
     return;
-  }
-
-  DCHECK(render_view_->is_loading());
-  is_loading_ = false;
-
   render_view_->FrameDidStopLoading(frame_);
 
   // NOTE: For now we're doing the safest thing, and sending out notification
@@ -2853,7 +2834,6 @@ void RenderFrameImpl::didStopLoading() {
   // displayed when done loading. Ideally we would send notification when
   // finished parsing the head, but webkit doesn't support that yet.
   // The feed discovery code would also benefit from access to the head.
-  // NOTE: Sending of the IPC message happens through the top-level frame.
   if (!render_view_->is_loading())
     Send(new FrameHostMsg_DidStopLoading(routing_id_));
 }

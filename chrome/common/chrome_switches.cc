@@ -21,11 +21,6 @@ namespace switches {
 // all work out.
 // -----------------------------------------------------------------------------
 
-// Allows choosing an existing managed user profile during the managed
-// user creation flow. Is only used on ChromeOS.
-const char kAllowCreateExistingManagedUsers[] =
-    "allow-create-existing-managed-users";
-
 // Allows third-party content included on a page to prompt for a HTTP basic
 // auth username/password pair.
 const char kAllowCrossOriginAuthPrompt[]    = "allow-cross-origin-auth-prompt";
@@ -209,12 +204,6 @@ const char kCrashOnHangThreads[]            = "crash-on-hang-threads";
 const char kCreateBrowserOnStartupForTests[] =
     "create-browser-on-startup-for-tests";
 
-#if defined(OS_ANDROID) || defined(OS_IOS)
-// If set, the data reduction proxy will only be enabled if a request for this
-// URL is successful.
-const char kDataReductionProxyProbeURL[]    = "data-reduction-proxy-probe-url";
-#endif
-
 // Enables a frame context menu item that toggles the frame in and out of glass
 // mode (Windows Vista and up only).
 const char kDebugEnableFrameToggle[]        = "debug-enable-frame-toggle";
@@ -271,11 +260,6 @@ const char kDisableComponentUpdate[]        = "disable-component-update";
 // set of CRLs rather than performing on-line checks.
 const char kDisableCRLSets[]                = "disable-crl-sets";
 
-// Disables choosing an existing managed user profile during the managed
-// user creation flow.
-const char kDisableCreateExistingManagedUsers[] =
-    "disable-create-exsting-managed-users";
-
 // Disables installation of default apps on first run. This is used during
 // automated testing.
 const char kDisableDefaultApps[]            = "disable-default-apps";
@@ -313,10 +297,6 @@ const char kDisableExtensionsResourceWhitelist[] =
 // which would prevent fullscreening the browser window during screen-capture of
 // a tab.  http://crbug.com/256870 and http://crbug.com/290403
 const char kDisableFullscreenWithinTab[] = "disable-fullscreen-within-tab";
-
-// Disables improved SafeBrowsing download protection.
-const char kDisableImprovedDownloadProtection[] =
-    "disable-improved-download-protection";
 
 // Prevent infobars from appearing.
 const char kDisableInfoBars[]               = "disable-infobars";
@@ -534,9 +514,6 @@ const char kEnableExtensionActivityLogTesting[] =
 // crbug.com/142458 .
 const char kEnableFastUnload[]         = "enable-fast-unload";
 
-// Enable HTTP/2 draft 04. This is a temporary testing flag.
-const char kEnableHttp2Draft04[]            = "enable-http2-draft-04";
-
 // Enables the pure web-based flow for sign in on first run/NTP/wrench menu/
 // settings page.
 const char kEnableWebBasedSignin[]            = "enable-web-based-signin";
@@ -664,8 +641,8 @@ const char kEnableSearchButtonInOmniboxForStrOrIip[] =
 // Enable settings in a separate browser window per profile.
 const char kEnableSettingsWindow[]          = "enable-settings-window";
 
-// Enable SPDY/4 alpha 2. This is a temporary testing flag.
-const char kEnableSpdy4a2[]                 = "enable-spdy4a2";
+// Enable SPDY/4, aka HTTP/2. This is a temporary testing flag.
+const char kEnableSpdy4[]                   = "enable-spdy4";
 
 // Enables auto correction for misspelled words.
 const char kEnableSpellingAutoCorrect[]     = "enable-spelling-auto-correct";
@@ -915,6 +892,12 @@ const char kMultiProfiles[]                 = "multi-profiles";
 // Intended primarily for use with --log-net-log.
 const char kNetLogLevel[]                   = "net-log-level";
 
+// Use new avatar menu. When combined with new-profile-management, it simply
+// shows the new profile management avatar menu. Otherwise it shows a redesigned
+// avatar menu with the same functionality as the old one, plus a tutorial card
+// at the top prompting the user to try out the new profile management UI.
+const char kNewAvatarMenu[]                 = "new-avatar-menu";
+
 // Use new profile management system, including profile sign-out and new
 // choosers.
 const char kNewProfileManagement[]          = "new-profile-management";
@@ -1139,10 +1122,6 @@ const char kRestoreLastSession[]            = "restore-last-session";
 // See http://crbug.com/120416 for how to remove this switch.
 const char kSavePageAsMHTML[]               = "save-page-as-mhtml";
 
-// URL prefix used by safebrowsing to fetch hash, download data and report
-// malware.
-const char kSbURLPrefix[]                   = "safebrowsing-url-prefix";
-
 // If present, safebrowsing only performs update when
 // SafeBrowsingProtocolManager::ForceScheduleNextUpdate() is explicitly called.
 // This is used for testing only.
@@ -1205,21 +1184,6 @@ const char kSimulateOutdated[]               = "simulate-outdated";
 
 // Simulates that current version is outdated and auto-update is off.
 const char kSimulateOutdatedNoAU[]           = "simulate-outdated-no-au";
-
-// Replaces the buffered data source for <audio> and <video> with a simplified
-// resource loader that downloads the entire resource into memory.
-
-// Second origin that can be used for the spdy proxy.
-const char kSpdyProxyAuthFallback[]         = "spdy-proxy-auth-fallback";
-
-// Origin for which SpdyProxy authentication is supported.
-const char kSpdyProxyAuthOrigin[]           = "spdy-proxy-auth-origin";
-
-// Authentication string for the data reduction proxy.
-const char kSpdyProxyAuthValue[]            = "spdy-proxy-auth-value";
-
-// Origin for which dev version of SpdyProxy authentication is supported.
-const char kSpdyProxyDevAuthOrigin[]        = "spdy-proxy-dev-auth-origin";
 
 // Specifies the URL where spelling service feedback data will be sent instead
 // of the default URL. This switch is for temporary testing only.
@@ -1364,11 +1328,6 @@ const char kWinHttpProxyResolver[]          = "winhttp-proxy-resolver";
 // Specifies a custom URL for fetching plug-ins metadata. Used for testing.
 const char kPluginsMetadataServerURL[]      = "plugins-metadata-server-url";
 #endif
-
-#if defined(OS_ANDROID) || defined(OS_IOS)
-// Enable SPDY proxy.
-const char kEnableSpdyProxyAuth[]           = "enable-spdy-proxy-auth";
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 #if defined(OS_ANDROID)
 // Disables the app banner <meta> tag.

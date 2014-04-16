@@ -222,10 +222,6 @@
 #include "chrome/browser/chromeos/file_manager/app_id.h"
 #endif
 
-#if defined(TOOLKIT_GTK)
-#include "chrome/browser/ui/gtk/chrome_browser_main_extra_parts_gtk.h"
-#endif
-
 #if defined(TOOLKIT_VIEWS)
 #include "chrome/browser/ui/views/chrome_browser_main_extra_parts_views.h"
 #endif
@@ -710,10 +706,6 @@ content::BrowserMainParts* ChromeContentBrowserClient::CreateBrowserMainParts(
 
   // Construct additional browser parts. Stages are called in the order in
   // which they are added.
-#if defined(TOOLKIT_GTK)
-  main_parts->AddParts(new ChromeBrowserMainExtraPartsGtk());
-#endif
-
 #if defined(TOOLKIT_VIEWS)
   main_parts->AddParts(new ChromeBrowserMainExtraPartsViews());
 #endif
@@ -1636,6 +1628,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     static const char* const kSwitchNames[] = {
       // Load (in-process) Pepper plugins in-process in the zygote pre-sandbox.
       switches::kDisableBundledPpapiFlash,
+      switches::kNaClDangerousNoSandboxNonSfi,
       switches::kPpapiFlashPath,
       switches::kPpapiFlashVersion,
     };
@@ -2472,30 +2465,6 @@ content::BrowserPpapiHost*
     ++iter;
   }
   return NULL;
-}
-
-bool ChromeContentBrowserClient::SupportsBrowserPlugin(
-    content::BrowserContext* browser_context, const GURL& site_url) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableBrowserPluginForAllViewTypes))
-    return true;
-
-  if (content::HasWebUIScheme(site_url))
-    return true;
-
-  Profile* profile = Profile::FromBrowserContext(browser_context);
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
-  if (!service)
-    return false;
-
-  const Extension* extension =
-      service->extensions()->GetExtensionOrAppByURL(site_url);
-  if (!extension)
-    return false;
-
-  return extension->HasAPIPermission(APIPermission::kWebView) ||
-         extension->HasAPIPermission(APIPermission::kAdView);
 }
 
 bool ChromeContentBrowserClient::AllowPepperSocketAPI(

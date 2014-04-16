@@ -53,7 +53,7 @@ remoting.init = function() {
     migrateLocalToChromeStorage_();
   }
 
-  remoting.logExtensionInfo_();
+  console.log(remoting.getExtensionInfo());
   l10n.localize();
 
   // Create global objects.
@@ -102,6 +102,7 @@ remoting.init = function() {
   window.addEventListener('copy', pluginGotCopy_, false);
 
   remoting.initModalDialogs();
+  remoting.initFeedback(document.getElementById('send-feedback'));
 
   if (isHostModeSupported_()) {
     var noShare = document.getElementById('chrome-os-no-share');
@@ -184,8 +185,11 @@ remoting.createNpapiPlugin = function(container) {
 remoting.isMe2MeInstallable = function() {
   /** @type {string} */
   var platform = navigator.platform;
-  // Chromoting host is not installable on ChromeOS and any linux distro other
-  // than Ubuntu.
+  // The chromoting host is currently not installable on ChromeOS.
+  // For Linux, we have a install package for Ubuntu but not other distros.
+  // Since we cannot tell from javascript alone the Linux distro the client is
+  // on, we don't show the daemon-control UI for Linux unless the host is
+  // installed.
   return platform == 'Win32' || platform == 'MacIntel';
 }
 
@@ -282,17 +286,16 @@ remoting.updateLocalHostState = function() {
 };
 
 /**
- * Log information about the current extension.
- * The extension manifest is parsed to extract this info.
+ * @return {string} Information about the current extension.
  */
-remoting.logExtensionInfo_ = function() {
+remoting.getExtensionInfo = function() {
   var v2OrLegacy = remoting.isAppsV2 ? " (v2)" : " (legacy)";
   var manifest = chrome.runtime.getManifest();
   if (manifest && manifest.version) {
     var name = chrome.i18n.getMessage('PRODUCT_NAME');
-    console.log(name + ' version: ' + manifest.version + v2OrLegacy);
+    return name + ' version: ' + manifest.version + v2OrLegacy;
   } else {
-    console.error('Failed to get product version. Corrupt manifest?');
+    return 'Failed to get product version. Corrupt manifest?';
   }
 };
 

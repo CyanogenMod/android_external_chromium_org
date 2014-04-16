@@ -161,8 +161,13 @@ ChromePasswordManagerClient::GetProbabilityForExperiment(
 bool ChromePasswordManagerClient::IsPasswordSyncEnabled() {
   ProfileSyncService* sync_service =
       ProfileSyncServiceFactory::GetForProfile(GetProfile());
-  if (sync_service && sync_service->HasSyncSetupCompleted())
+  // Don't consider sync enabled if the user has a custom passphrase. See
+  // crbug.com/358998 for more details.
+  if (sync_service &&
+      sync_service->HasSyncSetupCompleted() &&
+      !sync_service->IsUsingSecondaryPassphrase()) {
     return sync_service->GetActiveDataTypes().Has(syncer::PASSWORDS);
+  }
   return false;
 }
 
@@ -179,8 +184,12 @@ void ChromePasswordManagerClient::SetLogger(
 
 void ChromePasswordManagerClient::LogSavePasswordProgress(
     const std::string& text) {
-  if (logger_)
+  if (IsLoggingActive())
     logger_->LogSavePasswordProgress(text);
+}
+
+bool ChromePasswordManagerClient::IsLoggingActive() const {
+  return logger_ != NULL;
 }
 
 // static

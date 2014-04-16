@@ -71,6 +71,7 @@
 #include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
 #include "chrome/browser/ui/views/frame/native_browser_frame_factory.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
+#include "chrome/browser/ui/views/frame/web_contents_close_handler.h"
 #include "chrome/browser/ui/views/fullscreen_exit_bubble_views.h"
 #include "chrome/browser/ui/views/infobars/infobar_container_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
@@ -432,7 +433,6 @@ BrowserView::BrowserView()
       ticker_(0),
 #endif
       force_location_bar_focus_(false),
-      immersive_mode_controller_(chrome::CreateImmersiveModeController()),
 #if defined(OS_CHROMEOS)
       scroll_end_effect_controller_(ScrollEndEffectController::Create()),
 #endif
@@ -492,6 +492,8 @@ BrowserView::~BrowserView() {
 void BrowserView::Init(Browser* browser) {
   browser_.reset(browser);
   browser_->tab_strip_model()->AddObserver(this);
+  immersive_mode_controller_.reset(
+      chrome::CreateImmersiveModeController(browser_->host_desktop_type()));
 }
 
 // static
@@ -832,9 +834,8 @@ void BrowserView::OnActiveTabChanged(content::WebContents* old_contents,
     devtools_web_view_->SetWebContents(NULL);
   }
 
-  InfoBarManager* infobar_manager =
-      InfoBarService::InfoBarManagerFromWebContents(new_contents);
-  infobar_container_->ChangeInfoBarManager(infobar_manager);
+  infobar_container_->ChangeInfoBarManager(
+      InfoBarService::FromWebContents(new_contents));
 
   if (old_contents && PermissionBubbleManager::FromWebContents(old_contents))
     PermissionBubbleManager::FromWebContents(old_contents)->SetView(NULL);
@@ -856,6 +857,7 @@ void BrowserView::OnActiveTabChanged(content::WebContents* old_contents,
   UpdateDevToolsForContents(new_contents, !change_tab_contents);
 
   if (change_tab_contents) {
+    web_contents_close_handler_->ActiveTabChanged();
     contents_web_view_->SetWebContents(new_contents);
     // The second layout update should be no-op. It will just set the
     // DevTools WebContents.
@@ -919,14 +921,14 @@ void BrowserView::EnterFullscreen(
   if (IsFullscreen())
     return;  // Nothing to do.
 
-  ProcessFullscreen(true, FOR_DESKTOP, url, bubble_type);
+  ProcessFullscreen(true, NORMAL_FULLSCREEN, url, bubble_type);
 }
 
 void BrowserView::ExitFullscreen() {
   if (!IsFullscreen())
     return;  // Nothing to do.
 
-  ProcessFullscreen(false, FOR_DESKTOP, GURL(), FEB_TYPE_NONE);
+  ProcessFullscreen(false, NORMAL_FULLSCREEN, GURL(), FEB_TYPE_NONE);
 }
 
 void BrowserView::UpdateFullscreenExitBubbleContent(
@@ -965,7 +967,7 @@ bool BrowserView::IsFullscreenBubbleVisible() const {
 #if defined(OS_WIN)
 void BrowserView::SetMetroSnapMode(bool enable) {
   HISTOGRAM_COUNTS("Metro.SnapModeToggle", enable);
-  ProcessFullscreen(enable, FOR_METRO, GURL(), FEB_TYPE_NONE);
+  ProcessFullscreen(enable, METRO_SNAP_FULLSCREEN, GURL(), FEB_TYPE_NONE);
 }
 
 bool BrowserView::IsInMetroSnapMode() const {
@@ -987,7 +989,7 @@ void BrowserView::SetWindowSwitcherButton(views::Button* button) {
 
 void BrowserView::FullscreenStateChanged() {
   CHECK(!IsFullscreen());
-  ProcessFullscreen(false, FOR_DESKTOP, GURL(), FEB_TYPE_NONE);
+  ProcessFullscreen(false, NORMAL_FULLSCREEN, GURL(), FEB_TYPE_NONE);
 }
 
 void BrowserView::ToolbarSizeChanged(bool is_animating) {
@@ -1478,6 +1480,7 @@ void BrowserView::TabInsertedAt(WebContents* contents,
         window, root_window, root_window->GetBoundsInScreen());
     DCHECK(contents->GetView()->GetNativeView()->GetRootWindow());
   }
+  web_contents_close_handler_->TabInserted();
 }
 
 void BrowserView::TabDetachedAt(WebContents* contents, int index) {
@@ -1491,6 +1494,7 @@ void BrowserView::TabDetachedAt(WebContents* contents, int index) {
     // We need to reset the current tab contents to NULL before it gets
     // freed. This is because the focus manager performs some operations
     // on the selected WebContents when it is removed.
+    web_contents_close_handler_->ActiveTabChanged();
     contents_web_view_->SetWebContents(NULL);
     infobar_container_->ChangeInfoBarManager(NULL);
     UpdateDevToolsForContents(NULL, true);
@@ -1513,6 +1517,14 @@ void BrowserView::TabStripEmpty() {
   // there will be consequences (since our view hierarchy will still have
   // references to freed views).
   UpdateUIForContents(NULL);
+}
+
+void BrowserView::WillCloseAllTabs() {
+  web_contents_close_handler_->WillCloseAllTabs();
+}
+
+void BrowserView::CloseAllTabsCanceled() {
+  web_contents_close_handler_->CloseAllTabsCanceled();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1578,7 +1590,8 @@ bool BrowserView::ShouldShowWindowTitle() const {
   // For Ash only, app host windows do not show an icon, crbug.com/119411.
   // Child windows (i.e. popups) do show an icon.
   if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH &&
-      browser_->is_app() && browser_->app_type() == Browser::APP_TYPE_HOST)
+      browser_->is_app() &&
+      browser_->is_trusted_source())
     return false;
 
   return browser_->SupportsWindowFeature(Browser::FEATURE_TITLEBAR);
@@ -1607,7 +1620,8 @@ bool BrowserView::ShouldShowWindowIcon() const {
   // For Ash only, app host windows do not show an icon, crbug.com/119411.
   // Child windows (i.e. popups) do show an icon.
   if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH &&
-      browser_->is_app() && browser_->app_type() == Browser::APP_TYPE_HOST)
+      browser_->is_app() &&
+      browser_->is_trusted_source())
     return false;
 
   return browser_->SupportsWindowFeature(Browser::FEATURE_TITLEBAR);
@@ -1667,9 +1681,9 @@ bool BrowserView::GetSavedWindowPlacement(
 
   if (browser_->is_type_popup() &&
       !browser_->is_app() &&
-      !browser_->is_devtools()) {
-    // This is non-app popup window. The value passed in |bounds| represents
-    // two pieces of information:
+      !browser_->is_trusted_source()) {
+    // This is normal non-app popup window. The value passed in |bounds|
+    // represents two pieces of information:
     // - the position of the window, in screen coordinates (outer position).
     // - the size of the content area (inner size).
     // We need to use these values to determine the appropriate size and
@@ -1964,6 +1978,9 @@ void BrowserView::InitViews() {
       implicit_cast<content::WebContentsDelegate*>(browser_.get())->
           EmbedsFullscreenWidget());
 
+  web_contents_close_handler_.reset(
+      new WebContentsCloseHandler(contents_web_view_));
+
   devtools_web_view_ = new views::WebView(browser_->profile());
   devtools_web_view_->set_id(VIEW_ID_DEV_TOOLS_DOCKED);
   devtools_web_view_->SetVisible(false);
@@ -2196,7 +2213,7 @@ void BrowserView::UpdateUIForContents(WebContents* contents) {
 }
 
 void BrowserView::ProcessFullscreen(bool fullscreen,
-                                    FullscreenType type,
+                                    FullscreenMode mode,
                                     const GURL& url,
                                     FullscreenExitBubbleType bubble_type) {
   if (in_process_fullscreen_)
@@ -2209,7 +2226,7 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
   //     thus are slow and look ugly (enforced via |in_process_fullscreen_|).
   LocationBarView* location_bar = GetLocationBarView();
 
-  if (type == FOR_METRO || !fullscreen) {
+  if (mode == METRO_SNAP_FULLSCREEN || !fullscreen) {
     // Hide the fullscreen bubble as soon as possible, since the mode toggle can
     // take enough time for the user to notice.
     fullscreen_bubble_.reset();
@@ -2228,13 +2245,15 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
   frame_->SetFullscreen(fullscreen);
 
   // Enable immersive before the browser refreshes its list of enabled commands.
-  if (ShouldUseImmersiveFullscreenForUrl(url))
+  if (mode != METRO_SNAP_FULLSCREEN && ShouldUseImmersiveFullscreenForUrl(url))
     immersive_mode_controller_->SetEnabled(fullscreen);
 
   browser_->WindowFullscreenStateChanged();
 
-  if (fullscreen && !chrome::IsRunningInAppMode() && type != FOR_METRO)
+  if (fullscreen && !chrome::IsRunningInAppMode() &&
+      mode != METRO_SNAP_FULLSCREEN) {
     UpdateFullscreenExitBubbleContent(url, bubble_type);
+  }
 
   // Undo our anti-jankiness hacks and force a re-layout. We also need to
   // recompute the height of the infobar top arrow because toggling in and out
@@ -2247,15 +2266,14 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
 }
 
 bool BrowserView::ShouldUseImmersiveFullscreenForUrl(const GURL& url) const {
-#if defined(OS_CHROMEOS)
-  // Kiosk mode needs the whole screen.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode))
+  // Kiosk mode needs the whole screen, and if we're not in an Ash desktop
+  // immersive fullscreen doesn't exist.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode) ||
+      browser()->host_desktop_type() != chrome::HOST_DESKTOP_TYPE_ASH) {
     return false;
-  bool is_browser_fullscreen = url.is_empty();
-  return is_browser_fullscreen;
-#else
-  return false;
-#endif
+  }
+
+  return url.is_empty();
 }
 
 void BrowserView::LoadAccelerators() {
@@ -2432,7 +2450,7 @@ void BrowserView::ShowAvatarBubble(WebContents* web_contents,
 }
 
 void BrowserView::ShowAvatarBubbleFromAvatarButton(AvatarBubbleMode mode) {
-  if (switches::IsNewProfileManagement()) {
+  if (switches::IsNewAvatarMenu()) {
     NewAvatarButton* button = frame_->GetNewAvatarMenuButton();
     if (button) {
       gfx::Point origin;
@@ -2440,9 +2458,9 @@ void BrowserView::ShowAvatarBubbleFromAvatarButton(AvatarBubbleMode mode) {
       gfx::Rect bounds(origin, size());
 
       ProfileChooserView::BubbleViewMode view_mode =
-          mode == BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT ?
-          ProfileChooserView::BUBBLE_VIEW_MODE_PROFILE_CHOOSER :
-          ProfileChooserView::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT;
+          (mode == BrowserWindow::AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT) ?
+          ProfileChooserView::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT :
+          ProfileChooserView::BUBBLE_VIEW_MODE_PROFILE_CHOOSER;
       ProfileChooserView::ShowBubble(
           view_mode, button, views::BubbleBorder::TOP_RIGHT,
           views::BubbleBorder::ALIGN_EDGE_TO_ANCHOR_EDGE, bounds, browser());

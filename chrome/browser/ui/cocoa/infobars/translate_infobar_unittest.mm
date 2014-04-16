@@ -77,6 +77,7 @@ class TranslationInfoBarTest : public CocoaProfileTest {
     web_contents_.reset(
         WebContents::Create(WebContents::CreateParams(profile())));
     InfoBarService::CreateForWebContents(web_contents_.get());
+    TranslateTabHelper::CreateForWebContents(web_contents_.get());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -103,8 +104,7 @@ class TranslationInfoBarTest : public CocoaProfileTest {
     if (infobar_)
       infobar_->CloseSoon();
     infobar_ = static_cast<InfoBarCocoa*>(infobar.release());
-    infobar_->SetOwner(InfoBarService::FromWebContents(web_contents_.get())
-                           ->infobar_manager());
+    infobar_->SetOwner(InfoBarService::FromWebContents(web_contents_.get()));
 
     infobar_controller_.reset([static_cast<TranslateInfoBarControllerBase*>(
         infobar_->controller()) retain]);

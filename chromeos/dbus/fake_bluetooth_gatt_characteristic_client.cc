@@ -8,6 +8,8 @@
 #include "base/message_loop/message_loop.h"
 #include "base/rand_util.h"
 #include "base/time/time.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/fake_bluetooth_gatt_descriptor_client.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace chromeos {
@@ -49,7 +51,10 @@ void FakeBluetoothGattCharacteristicClient::Properties::Get(
     dbus::PropertyBase* property,
     dbus::PropertySet::GetCallback callback) {
   VLOG(1) << "Get " << property->name();
-  callback.Run(false);
+
+  // TODO(armansito): Return success or failure here based on characteristic
+  // read permission.
+  callback.Run(true);
 }
 
 void FakeBluetoothGattCharacteristicClient::Properties::GetAll() {
@@ -116,8 +121,8 @@ FakeBluetoothGattCharacteristicClient::GetProperties(
     return heart_rate_measurement_properties_.get();
   }
   if (object_path.value() == body_sensor_location_path_) {
-    DCHECK(heart_rate_measurement_properties_.get());
-    return heart_rate_measurement_properties_.get();
+    DCHECK(body_sensor_location_properties_.get());
+    return body_sensor_location_properties_.get();
   }
   if (object_path.value() == heart_rate_control_point_path_) {
     DCHECK(heart_rate_control_point_properties_.get());
@@ -204,11 +209,27 @@ void FakeBluetoothGattCharacteristicClient::ExposeHeartRateCharacteristics(
   // be handled by BlueZ, automatically set up notifications for now.
   ScheduleHeartRateMeasurementValueChange();
 
-  // TODO(armansito): Add descriptors.
+  // Expose CCC descriptor for Heart Rate Measurement characteristic.
+  FakeBluetoothGattDescriptorClient* descriptor_client =
+      static_cast<FakeBluetoothGattDescriptorClient*>(
+          DBusThreadManager::Get()->GetBluetoothGattDescriptorClient());
+  dbus::ObjectPath ccc_path(descriptor_client->ExposeDescriptor(
+      dbus::ObjectPath(heart_rate_measurement_path_),
+      FakeBluetoothGattDescriptorClient::
+          kClientCharacteristicConfigurationUUID));
+  DCHECK(ccc_path.IsValid());
+  heart_rate_measurement_ccc_desc_path_ = ccc_path.value();
 }
 
 void FakeBluetoothGattCharacteristicClient::HideHeartRateCharacteristics() {
   VLOG(2) << "Hiding fake Heart Rate characteristics.";
+
+  // Hide the descriptors.
+  FakeBluetoothGattDescriptorClient* descriptor_client =
+      static_cast<FakeBluetoothGattDescriptorClient*>(
+          DBusThreadManager::Get()->GetBluetoothGattDescriptorClient());
+  descriptor_client->HideDescriptor(
+      dbus::ObjectPath(heart_rate_measurement_ccc_desc_path_));
 
   // Notify the observers before deleting the properties structures so that they
   // can be accessed from the observer method.
@@ -224,6 +245,21 @@ void FakeBluetoothGattCharacteristicClient::HideHeartRateCharacteristics() {
   body_sensor_location_path_.clear();
   heart_rate_control_point_path_.clear();
   heart_rate_visible_ = false;
+}
+
+dbus::ObjectPath
+FakeBluetoothGattCharacteristicClient::GetHeartRateMeasurementPath() const {
+  return dbus::ObjectPath(heart_rate_measurement_path_);
+}
+
+dbus::ObjectPath
+FakeBluetoothGattCharacteristicClient::GetBodySensorLocationPath() const {
+  return dbus::ObjectPath(body_sensor_location_path_);
+}
+
+dbus::ObjectPath
+FakeBluetoothGattCharacteristicClient::GetHeartRateControlPointPath() const {
+  return dbus::ObjectPath(heart_rate_control_point_path_);
 }
 
 void FakeBluetoothGattCharacteristicClient::OnPropertyChanged(

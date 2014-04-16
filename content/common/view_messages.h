@@ -19,7 +19,6 @@
 #include "content/common/view_message_enums.h"
 #include "content/common/webplugin_geometry.h"
 #include "content/port/common/input_event_ack_state.h"
-#include "content/public/common/color_suggestion.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/favicon_url.h"
 #include "content/public/common/file_chooser_params.h"
@@ -144,11 +143,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::MenuItem)
   IPC_STRUCT_TRAITS_MEMBER(enabled)
   IPC_STRUCT_TRAITS_MEMBER(checked)
   IPC_STRUCT_TRAITS_MEMBER(submenu)
-IPC_STRUCT_TRAITS_END()
-
-IPC_STRUCT_TRAITS_BEGIN(content::ColorSuggestion)
-  IPC_STRUCT_TRAITS_MEMBER(color)
-  IPC_STRUCT_TRAITS_MEMBER(label)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::DateTimeSuggestion)
@@ -641,14 +635,6 @@ IPC_MESSAGE_ROUTED0(ViewMsg_WasSwappedOut)
 // This signals the render view that it can send another UpdateRect message.
 IPC_MESSAGE_ROUTED0(ViewMsg_UpdateRect_ACK)
 
-// Tells the render view that a SwapBuffers was completed. Typically,
-// SwapBuffers requests go from renderer -> GPU process -> browser. Most
-// platforms still use the GfxCxt3D Echo for receiving the SwapBuffers Ack.
-// Using Echo routes the ack from browser -> GPU process -> renderer, while this
-// Ack goes directly from browser -> renderer. This is not used for the threaded
-// compositor path.
-IPC_MESSAGE_ROUTED0(ViewMsg_SwapBuffers_ACK)
-
 // Tells the renderer to focus the first (last if reverse is true) focusable
 // node.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetInitialFocus,
@@ -783,12 +769,6 @@ IPC_MESSAGE_ROUTED3(ViewMsg_ImeConfirmComposition,
 // Used to notify the render-view that we have received a target URL. Used
 // to prevent target URLs spamming the browser.
 IPC_MESSAGE_ROUTED0(ViewMsg_UpdateTargetURL_ACK)
-
-// Notifies the color chooser client that the user selected a color.
-IPC_MESSAGE_ROUTED2(ViewMsg_DidChooseColorResponse, unsigned, SkColor)
-
-// Notifies the color chooser client that the color chooser has ended.
-IPC_MESSAGE_ROUTED1(ViewMsg_DidEndColorChooser, unsigned)
 
 IPC_MESSAGE_ROUTED1(ViewMsg_RunFileChooserResponse,
                     std::vector<ui::SelectedFileInfo>)
@@ -1254,6 +1234,12 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_FocusedNodeChanged,
 
 IPC_MESSAGE_ROUTED1(ViewHostMsg_SetCursor, content::WebCursor)
 
+// Message sent from renderer requesting touch emulation using mouse.
+// Shift-scrolling should be converted to pinch, if |allow_pinch| is true.
+IPC_MESSAGE_ROUTED2(ViewHostMsg_SetTouchEventEmulationEnabled,
+                    bool /* enabled */,
+                    bool /* allow_pinch */)
+
 // Used to set a cookie. The cookie is set asynchronously, but will be
 // available to a subsequent ViewHostMsg_GetCookies request.
 IPC_MESSAGE_CONTROL4(ViewHostMsg_SetCookie,
@@ -1467,20 +1453,6 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_RequestPpapiBrokerPermission,
                     GURL /* document_url */,
                     base::FilePath /* plugin_path */)
 
-#if defined(USE_X11)
-// A renderer sends this when it needs a browser-side widget for
-// hosting a windowed plugin. id is the XID of the plugin window, for which
-// the container is created.
-IPC_SYNC_MESSAGE_ROUTED1_0(ViewHostMsg_CreatePluginContainer,
-                           gfx::PluginWindowHandle /* id */)
-
-// Destroy a plugin container previously created using CreatePluginContainer.
-// id is the XID of the plugin window corresponding to the container that is
-// to be destroyed.
-IPC_SYNC_MESSAGE_ROUTED1_0(ViewHostMsg_DestroyPluginContainer,
-                           gfx::PluginWindowHandle /* id */)
-#endif
-
 // Send the tooltip text for the current mouse position to the browser.
 IPC_MESSAGE_ROUTED2(ViewHostMsg_SetTooltipText,
                     base::string16 /* tooltip text string */,
@@ -1507,20 +1479,6 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_SelectionBoundsChanged,
 IPC_MESSAGE_ROUTED1(ViewHostMsg_SelectionRootBoundsChanged,
                     gfx::Rect /* bounds of the selection root */)
 #endif
-
-// Asks the browser to open the color chooser.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_OpenColorChooser,
-                    int /* id */,
-                    SkColor /* color */,
-                    std::vector<content::ColorSuggestion> /* suggestions */)
-
-// Asks the browser to end the color chooser.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_EndColorChooser, int /* id */)
-
-// Change the selected color in the color chooser.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_SetSelectedColorInColorChooser,
-                    int /* id */,
-                    SkColor /* color */)
 
 // Asks the browser to display the file chooser.  The result is returned in a
 // ViewMsg_RunFileChooserResponse message.
@@ -1867,8 +1825,8 @@ IPC_MESSAGE_CONTROL1(ViewHostMsg_FreeTransportDIB,
                      TransportDIB::Id /* DIB id */)
 #endif
 
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
-// On MACOSX, WIN and AURA IME can request composition character bounds
+#if defined(OS_MACOSX) || defined(USE_AURA)
+// On Mac and Aura IME can request composition character bounds
 // synchronously (see crbug.com/120597). This IPC message sends the character
 // bounds after every composition change to always have correct bound info.
 IPC_MESSAGE_ROUTED2(ViewHostMsg_ImeCompositionRangeChanged,

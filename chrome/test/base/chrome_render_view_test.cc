@@ -12,7 +12,6 @@
 #include "chrome/renderer/extensions/chrome_v8_context_set.h"
 #include "chrome/renderer/extensions/chrome_v8_extension.h"
 #include "chrome/renderer/extensions/dispatcher.h"
-#include "chrome/renderer/extensions/event_bindings.h"
 #include "chrome/renderer/spellchecker/spellcheck.h"
 #include "chrome/test/base/chrome_unit_test_suite.h"
 #include "components/autofill/content/renderer/autofill_agent.h"
@@ -24,6 +23,7 @@
 #include "content/public/renderer/render_view.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/common/extension.h"
+#include "extensions/renderer/event_bindings.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
@@ -32,10 +32,6 @@
 #include "third_party/WebKit/public/web/WebScriptController.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "third_party/WebKit/public/web/WebView.h"
-
-#if defined(OS_LINUX) && !defined(USE_AURA)
-#include "ui/base/gtk/event_synthesis_gtk.h"
-#endif
 
 using blink::WebFrame;
 using blink::WebInputEvent;

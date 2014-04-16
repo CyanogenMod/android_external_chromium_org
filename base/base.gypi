@@ -355,8 +355,6 @@
           'message_loop/message_pump_android.h',
           'message_loop/message_pump_default.cc',
           'message_loop/message_pump_default.h',
-          'message_loop/message_pump_ozone.cc',
-          'message_loop/message_pump_ozone.h',
           'message_loop/message_pump_win.cc',
           'message_loop/message_pump_win.h',
           'metrics/sample_map.cc',
@@ -735,11 +733,6 @@
                 'message_loop/message_pump_glib.cc',
               ],
           }],
-          ['<(use_x11)==0 or >(nacl_untrusted_build)==1', {
-              'sources!': [
-                'message_loop/message_pump_x11.cc',
-              ],
-          }],
           ['<(toolkit_uses_gtk)==0 or >(nacl_untrusted_build)==1', {
             'sources!': ['message_loop/message_pump_gtk.cc'],
           }],
@@ -893,7 +886,6 @@
           ['<(use_ozone) == 1', {
             'sources!': [
               'message_loop/message_pump_glib.cc',
-              'message_loop/message_pump_x11.cc',
             ]
           }],
           ['OS == "linux" and >(nacl_untrusted_build)==0', {

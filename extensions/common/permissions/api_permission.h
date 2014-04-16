@@ -158,11 +158,11 @@ class APIPermission {
     kVirtualKeyboardPrivate,
     kWallpaper,
     kWallpaperPrivate,
+    kWebcamPrivate,
     kWebConnectable,  // for externally_connectable manifest key
     kWebNavigation,
     kWebRequest,
     kWebRequestBlocking,
-    kWebRequestInternal,
     kWebrtcAudioPrivate,
     kWebrtcLoggingPrivate,
     kWebstorePrivate,

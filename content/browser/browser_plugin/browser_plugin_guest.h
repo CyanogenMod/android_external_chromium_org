@@ -97,7 +97,6 @@ class CONTENT_EXPORT BrowserPluginGuest
       public WebContentsDelegate,
       public WebContentsObserver {
  public:
-  typedef base::Callback<void(bool)> GeolocationCallback;
   virtual ~BrowserPluginGuest();
 
   // The WebContents passed into the factory method here has not been
@@ -289,20 +288,6 @@ class CONTENT_EXPORT BrowserPluginGuest
               BrowserPluginHostMsg_Attach_Params params,
               const base::DictionaryValue& extra_params);
 
-  // Requests geolocation permission through Embedder JavaScript API.
-  void AskEmbedderForGeolocationPermission(int bridge_id,
-                                           const GURL& requesting_frame,
-                                           const GeolocationCallback& callback);
-  // Cancels pending geolocation request.
-  void CancelGeolocationRequest(int bridge_id);
-
-  // Allow the embedder to call this for unhandled messages when
-  // BrowserPluginGuest is already destroyed.
-  static void AcknowledgeBufferPresent(int route_id,
-                                       int gpu_host_id,
-                                       const gpu::Mailbox& mailbox,
-                                       uint32 sync_point);
-
   // Returns whether BrowserPluginGuest is interested in receiving the given
   // |message|.
   static bool ShouldForwardToBrowserPluginGuest(const IPC::Message& message);
@@ -334,7 +319,6 @@ class CONTENT_EXPORT BrowserPluginGuest
   friend class TestBrowserPluginGuest;
 
   class DownloadRequest;
-  class GeolocationRequest;
   class JavaScriptDialogRequest;
   // MediaRequest because of naming conflicts with MediaStreamRequest.
   class MediaRequest;
@@ -372,13 +356,8 @@ class CONTENT_EXPORT BrowserPluginGuest
                          PageTransition transition_type,
                          WebContents* web_contents);
 
-  // Bridge IDs correspond to a geolocation request. This method will remove
-  // the bookkeeping for a particular geolocation request associated with the
-  // provided |bridge_id|. It returns the request ID of the geolocation request.
-  int RemoveBridgeID(int bridge_id);
-
   // Returns the |request_id| generated for the |request| provided.
-  int RequestPermission(
+  void RequestPermission(
       BrowserPluginPermissionType permission_type,
       scoped_refptr<BrowserPluginGuest::PermissionRequest> request,
       const base::DictionaryValue& request_info);
@@ -474,9 +453,6 @@ class CONTENT_EXPORT BrowserPluginGuest
   // collection. See RenderThreadImpl::IdleHandler (executed when hidden) and
   // RenderThreadImpl::IdleHandlerInForegroundTab (executed when visible).
   void OnSetVisibility(int instance_id, bool visible);
-  // Message from embedder acknowledging last HW buffer.
-  void OnSwapBuffersACK(int instance_id,
-                        const FrameHostMsg_BuffersSwappedACK_Params& params);
   void OnUnlockMouse();
   void OnUnlockMouseAck(int instance_id);
   void OnUpdateGeometry(int instance_id, const gfx::Rect& view_rect);
@@ -502,7 +478,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   void OnExtendSelectionAndDelete(int instance_id, int before, int after);
   // Overridden in tests.
   virtual void OnImeCancelComposition();
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA)
   void OnImeCompositionRangeChanged(
       const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds);
@@ -536,10 +512,6 @@ class CONTENT_EXPORT BrowserPluginGuest
       const base::Callback<void(bool)>& callback,
       const std::string& url);
 
-  // Embedder sets permission to allow or deny geolocation request.
-  void SetGeolocationPermission(
-      GeolocationCallback callback, int bridge_id, bool allowed);
-
   // Forwards all messages from the |pending_messages_| queue to the embedder.
   void SendQueuedMessages();
 
@@ -548,8 +520,6 @@ class CONTENT_EXPORT BrowserPluginGuest
 
   scoped_ptr<EmbedderWebContentsObserver> embedder_web_contents_observer_;
   WebContentsImpl* embedder_web_contents_;
-
-  std::map<int, int> bridge_id_to_request_id_map_;
 
   // An identifier that uniquely identifies a browser plugin guest within an
   // embedder.

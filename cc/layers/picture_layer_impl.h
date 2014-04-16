@@ -58,7 +58,8 @@ class CC_EXPORT PictureLayerImpl
   class CC_EXPORT LayerEvictionTileIterator {
    public:
     LayerEvictionTileIterator();
-    explicit LayerEvictionTileIterator(PictureLayerImpl* layer);
+    LayerEvictionTileIterator(PictureLayerImpl* layer,
+                              TreePriority tree_priority);
     ~LayerEvictionTileIterator();
 
     Tile* operator*();
@@ -129,8 +130,8 @@ class CC_EXPORT PictureLayerImpl
 
   virtual void RunMicroBenchmark(MicroBenchmarkImpl* benchmark) OVERRIDE;
 
-  void SetHasGpuRasterizationHint(bool has_hint);
-  bool ShouldUseGpuRasterization() const;
+  void SetUseGpuRasterization(bool use_gpu);
+  bool ShouldUseGpuRasterization() const { return use_gpu_rasterization_; }
 
   // Functions used by tile manager.
   void DidUnregisterLayer();
@@ -208,8 +209,8 @@ class CC_EXPORT PictureLayerImpl
   // A sanity state check to make sure UpdateTilePriorities only gets called
   // after a CalculateContentsScale/ManageTilings.
   bool should_update_tile_priorities_;
-  bool has_gpu_rasterization_hint_;
   bool should_use_low_res_tiling_;
+  bool use_gpu_rasterization_;
 
   bool layer_needs_to_register_itself_;
 

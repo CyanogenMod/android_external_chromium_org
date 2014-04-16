@@ -100,7 +100,7 @@ class SYNC_EXPORT Directory {
     // Set the |download_progress| entry for the given model to a
     // "first sync" start point.  When such a value is sent to the server,
     // a full download of all objects of the model will be initiated.
-    void reset_download_progress(ModelType model_type);
+    void ResetDownloadProgress(ModelType model_type);
 
     // Last sync timestamp fetched from the server.
     sync_pb::DataTypeProgressMarker download_progress[MODEL_TYPE_COUNT];
@@ -390,7 +390,6 @@ class SYNC_EXPORT Directory {
   virtual EntryKernel* GetEntryById(const Id& id);
   EntryKernel* GetEntryByServerTag(const std::string& tag);
   virtual EntryKernel* GetEntryByClientTag(const std::string& tag);
-  EntryKernel* GetRootEntry();
   bool ReindexId(BaseWriteTransaction* trans, EntryKernel* const entry,
                  const Id& new_id);
   bool ReindexParentId(BaseWriteTransaction* trans, EntryKernel* const entry,

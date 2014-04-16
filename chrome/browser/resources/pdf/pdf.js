@@ -5,8 +5,9 @@
 (function() {
 'use strict';
 
-<include src="../../../../ui/webui/resources/js/util.js"></include>
-<include src="viewport.js"></include>
+<include src="../../../../ui/webui/resources/js/util.js">
+<include src="viewport.js">
+<include src="pdf_scripting_api.js">
 
 /**
  * Creates a new PDFViewer. There should only be one of these objects per
@@ -29,7 +30,6 @@ function PDFViewer() {
   // Create the viewport.
   this.viewport_ = new Viewport(window,
                                 this.sizer_,
-                                this.isFitToPageEnabled_.bind(this),
                                 this.viewportChangedCallback_.bind(this));
 
   // Create the plugin object dynamically so we can set its src. The plugin
@@ -41,10 +41,30 @@ function PDFViewer() {
   this.plugin_.type = 'application/x-google-chrome-pdf';
   this.plugin_.addEventListener('message', this.handleMessage_.bind(this),
                                 false);
-  // The pdf location is passed in stream details in the background page.
-  var streamDetails = chrome.extension.getBackgroundPage().popStreamDetails();
+
+  // If the viewer is started from a MIME type request, there will be a
+  // background page and stream details object with the details of the request.
+  // Otherwise, we take the query string of the URL to indicate the URL of the
+  // PDF to load. This is used for print preview in particular.
+  var streamDetails;
+  if (chrome.extension.getBackgroundPage)
+    streamDetails = chrome.extension.getBackgroundPage().popStreamDetails();
+
+  if (!streamDetails) {
+    // The URL of this page will be of the form
+    // "chrome-extension://<extension id>?<pdf url>". We pull out the <pdf url>
+    // part here.
+    var url = window.location.search.substring(1);
+    streamDetails = {
+      streamUrl: url,
+      originalUrl: url
+    };
+  }
+
   this.plugin_.setAttribute('src', streamDetails.streamUrl);
   document.body.appendChild(this.plugin_);
+
+  this.messagingHost_ = new PDFMessagingHost(window, this);
 
   this.setupEventListeners_(streamDetails);
 }
@@ -140,7 +160,6 @@ PDFViewer.prototype = {
     }.bind(this);
   },
 
-
   /**
    * @private
    * Notify the plugin to print.
@@ -149,14 +168,6 @@ PDFViewer.prototype = {
     this.plugin_.postMessage({
       type: 'print',
     });
-  },
-
-  /**
-   * @private
-   * @return {boolean} true if the fit-to-page button is enabled.
-   */
-  isFitToPageEnabled_: function() {
-    return $('fit-to-page-button').classList.contains('polymer-selected');
   },
 
   /**
@@ -176,6 +187,11 @@ PDFViewer.prototype = {
         this.passwordScreen_.deny();
         this.passwordScreen_.active = false;
       }
+    } else if (progress == 100) {
+      // Document load complete.
+      this.messagingHost_.documentLoaded();
+      if (this.lastViewportPosition_)
+        this.viewport_.position = this.lastViewportPosition_;
     }
   },
 
@@ -217,6 +233,14 @@ PDFViewer.prototype = {
       case 'goToPage':
         this.viewport_.goToPage(message.data.page);
         break;
+      case 'setScrollPosition':
+        var position = this.viewport_.position;
+        if (message.data.x != undefined)
+          position.x = message.data.x;
+        if (message.data.y != undefined)
+          position.y = message.data.y;
+        this.viewport_.position = position;
+        break;
       case 'getPassword':
         // If the password screen isn't up, put it up. Otherwise we're
         // responding to an incorrect password so deny it.
@@ -230,43 +254,112 @@ PDFViewer.prototype = {
   /**
    * @private
    * A callback that's called when the viewport changes.
-   * @param {number} zoom the zoom level.
-   * @param {number} x the x scroll coordinate.
-   * @param {number} y the y scroll coordinate.
-   * @param {number} scrollbarWidth the width of scrollbars on the page.
-   * @param {Object} hasScrollbars whether the viewport has a
-   *     horizontal/vertical scrollbar.
-   * @param {number} page the index of the most visible page in the viewport.
    */
-  viewportChangedCallback_: function(zoom,
-                                     x,
-                                     y,
-                                     scrollbarWidth,
-                                     hasScrollbars,
-                                     page) {
+  viewportChangedCallback_: function() {
+    if (!this.documentDimensions_)
+      return;
+
+    // Update the buttons selected.
+    $('fit-to-page-button').classList.remove('polymer-selected');
+    $('fit-to-width-button').classList.remove('polymer-selected');
+    if (this.viewport_.fittingType == Viewport.FittingType.FIT_TO_PAGE) {
+      $('fit-to-page-button').classList.add('polymer-selected');
+    } else if (this.viewport_.fittingType ==
+               Viewport.FittingType.FIT_TO_WIDTH) {
+      $('fit-to-width-button').classList.add('polymer-selected');
+    }
+
+    var hasScrollbars = this.viewport_.documentHasScrollbars();
+    var scrollbarWidth = this.viewport_.scrollbarWidth;
     // Offset the toolbar position so that it doesn't move if scrollbars appear.
-    var toolbarRight = hasScrollbars.y ? 0 : scrollbarWidth;
-    var toolbarBottom = hasScrollbars.x ? 0 : scrollbarWidth;
+    var toolbarRight = hasScrollbars.vertical ? 0 : scrollbarWidth;
+    var toolbarBottom = hasScrollbars.horizontal ? 0 : scrollbarWidth;
     this.toolbar_.style.right = toolbarRight + 'px';
     this.toolbar_.style.bottom = toolbarBottom + 'px';
 
-    // Show or hide the page indicator.
+    // Update the page indicator.
+    this.pageIndicator_.index = this.viewport_.getMostVisiblePage() + 1;
     if (this.documentDimensions_.pageDimensions.length > 1 && hasScrollbars.y)
       this.pageIndicator_.style.visibility = 'visible';
     else
       this.pageIndicator_.style.visibility = 'hidden';
 
-    // Update the most visible page.
-    this.pageIndicator_.text = page + 1;
+    this.messagingHost_.viewportChanged();
 
+    var position = this.viewport_.position;
+    var zoom = this.viewport_.zoom;
     // Notify the plugin of the viewport change.
     this.plugin_.postMessage({
       type: 'viewport',
       zoom: zoom,
-      xOffset: x,
-      yOffset: y
+      xOffset: position.x,
+      yOffset: position.y
     });
   },
+
+  /**
+   * Resets the viewer into print preview mode, which is used for Chrome print
+   * preview.
+   * @param {string} url the url of the pdf to load.
+   * @param {boolean} grayscale true if the pdf should be displayed in
+   *     grayscale, false otherwise.
+   * @param {Array.<number>} pageNumbers an array of the number to label each
+   *     page in the document.
+   * @param {boolean} modifiable whether the PDF is modifiable or not.
+   */
+  resetPrintPreviewMode: function(url,
+                                  grayscale,
+                                  pageNumbers,
+                                  modifiable) {
+    if (!this.inPrintPreviewMode_) {
+      this.inPrintPreviewMode_ = true;
+      this.viewport_.fitToPage();
+    }
+
+    // Stash the scroll location so that it can be restored when the new
+    // document is loaded.
+    this.lastViewportPosition_ = this.viewport_.position;
+
+    // TODO(raymes): Disable these properly in the plugin.
+    var printButton = $('print-button');
+    if (printButton)
+      printButton.parentNode.removeChild(printButton);
+    var saveButton = $('save-button');
+    if (saveButton)
+      saveButton.parentNode.removeChild(saveButton);
+
+    this.pageIndicator_.pageLabels = pageNumbers;
+
+    this.plugin_.postMessage({
+      type: 'resetPrintPreviewMode',
+      url: url,
+      grayscale: grayscale,
+      // If the PDF isn't modifiable we send 0 as the page count so that no
+      // blank placeholder pages get appended to the PDF.
+      pageCount: (modifiable ? pageNumbers.length : 0)
+    });
+  },
+
+  /**
+   * Load a page into the document while in print preview mode.
+   * @param {string} url the url of the pdf page to load.
+   * @param {number} index the index of the page to load.
+   */
+  loadPreviewPage: function(url, index) {
+    this.plugin_.postMessage({
+      type: 'loadPreviewPage',
+      url: url,
+      index: index
+    });
+  },
+
+  /**
+   * @type {Viewport} the viewport of the PDF viewer.
+   */
+  get viewport() {
+    return this.viewport_;
+  }
+
 }
 
 new PDFViewer();

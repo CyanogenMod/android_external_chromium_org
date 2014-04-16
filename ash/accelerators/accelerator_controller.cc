@@ -18,6 +18,7 @@
 #include "ash/display/display_manager.h"
 #include "ash/focus_cycler.h"
 #include "ash/gpu_support.h"
+#include "ash/host/ash_window_tree_host.h"
 #include "ash/ime_control_delegate.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
@@ -73,8 +74,8 @@
 #include "ash/session_state_delegate.h"
 #include "ash/system/chromeos/keyboard_brightness_controller.h"
 #include "base/sys_info.h"
+#include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/ime/input_method_manager.h"
-#include "chromeos/ime/xkeyboard.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace ash {
@@ -498,7 +499,7 @@ bool HandleToggleFullscreen(ui::KeyboardCode key_code) {
 }
 
 bool HandleToggleRootWindowFullScreen() {
-  Shell::GetPrimaryRootWindow()->GetHost()->ToggleFullScreen();
+  Shell::GetPrimaryRootWindowController()->ash_host()->ToggleFullScreen();
   return true;
 }
 
@@ -644,10 +645,10 @@ bool HandleDisableCapsLock(ui::KeyboardCode key_code,
   base::RecordAction(UserMetricsAction("Accel_Disable_Caps_Lock"));
   chromeos::input_method::InputMethodManager* ime =
       chromeos::input_method::InputMethodManager::Get();
-  chromeos::input_method::XKeyboard* xkeyboard =
-      ime ? ime->GetXKeyboard() : NULL;
-  if (xkeyboard && xkeyboard->CapsLockIsEnabled()) {
-    xkeyboard->SetCapsLockEnabled(false);
+  chromeos::input_method::ImeKeyboard* keyboard =
+      ime ? ime->GetImeKeyboard() : NULL;
+  if (keyboard && keyboard->CapsLockIsEnabled()) {
+    keyboard->SetCapsLockEnabled(false);
     return true;
   }
   return false;
@@ -668,10 +669,10 @@ bool HandleToggleCapsLock(ui::KeyboardCode key_code,
   base::RecordAction(UserMetricsAction("Accel_Toggle_Caps_Lock"));
   chromeos::input_method::InputMethodManager* ime =
       chromeos::input_method::InputMethodManager::Get();
-  chromeos::input_method::XKeyboard* xkeyboard =
-      ime ? ime->GetXKeyboard() : NULL;
-  if (xkeyboard)
-    xkeyboard->SetCapsLockEnabled(!xkeyboard->CapsLockIsEnabled());
+  chromeos::input_method::ImeKeyboard* keyboard =
+      ime ? ime->GetImeKeyboard() : NULL;
+  if (keyboard)
+    keyboard->SetCapsLockEnabled(!keyboard->CapsLockIsEnabled());
   return true;
 }
 
@@ -725,7 +726,7 @@ bool HandlePrintWindowHierarchy() {
   for (size_t i = 0; i < controllers.size(); ++i) {
     std::ostringstream out;
     out << "RootWindow " << i << ":\n";
-    PrintWindowHierarchy(controllers[i]->root_window(), 0, &out);
+    PrintWindowHierarchy(controllers[i]->GetRootWindow(), 0, &out);
     // Error so logs can be collected from end-users.
     LOG(ERROR) << out.str();
   }

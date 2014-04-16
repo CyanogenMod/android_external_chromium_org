@@ -29,11 +29,13 @@
 #include "sync/internal_api/public/internal_components_factory.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/internal_api/public/read_transaction.h"
+#include "sync/internal_api/public/sync_core_proxy.h"
 #include "sync/internal_api/public/user_share.h"
 #include "sync/internal_api/public/util/experiments.h"
 #include "sync/internal_api/public/write_node.h"
 #include "sync/internal_api/public/write_transaction.h"
 #include "sync/internal_api/sync_core.h"
+#include "sync/internal_api/sync_core_proxy_impl.h"
 #include "sync/internal_api/syncapi_internal.h"
 #include "sync/internal_api/syncapi_server_connection_manager.h"
 #include "sync/notifier/invalidation_util.h"
@@ -396,6 +398,14 @@ void SyncManagerImpl::Init(
   model_type_registry_.reset(new ModelTypeRegistry(workers, directory()));
 
   sync_core_.reset(new SyncCore(model_type_registry_.get()));
+
+  // Bind the SyncCore WeakPtr to this thread.  This helps us crash earlier if
+  // the pointer is misused in debug mode.
+  base::WeakPtr<SyncCore> weak_core = sync_core_->AsWeakPtr();
+  weak_core.get();
+
+  sync_core_proxy_.reset(
+      new SyncCoreProxyImpl(base::MessageLoopProxy::current(), weak_core));
 
   // Build a SyncSessionContext and store the worker in it.
   DVLOG(1) << "Sync is bringing up SyncSessionContext.";
@@ -941,14 +951,6 @@ void SyncManagerImpl::SetJsEventHandler(
   js_sync_encryption_handler_observer_.SetJsEventHandler(event_handler);
 }
 
-// TODO(rlarocque): This function is no longer needed and should be removed.
-// See http://crbug.com/357821.
-void SyncManagerImpl::ProcessJsMessage(
-    const std::string& name, const JsArgList& args,
-    const WeakHandle<JsReplyHandler>& reply_handler) {
-  NOTREACHED();
-}
-
 scoped_ptr<base::ListValue> SyncManagerImpl::GetAllNodesForType(
     syncer::ModelType type) {
   DirectoryTypeDebugInfoEmitterMap* emitter_map =
@@ -1025,9 +1027,9 @@ UserShare* SyncManagerImpl::GetUserShare() {
   return &share_;
 }
 
-base::WeakPtr<syncer::SyncCore> SyncManagerImpl::GetSyncCore() {
+syncer::SyncCoreProxy* SyncManagerImpl::GetSyncCoreProxy() {
   DCHECK(initialized_);
-  return sync_core_->AsWeakPtr();
+  return sync_core_proxy_.get();
 }
 
 const std::string SyncManagerImpl::cache_guid() {

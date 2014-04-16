@@ -80,6 +80,7 @@
 #include "content/renderer/external_popup_menu.h"
 #include "content/renderer/geolocation_dispatcher.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
+#include "content/renderer/history_controller.h"
 #include "content/renderer/idle_user_detector.h"
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/input/input_handler_manager.h"
@@ -108,7 +109,6 @@
 #include "content/renderer/render_view_mouse_lock_dispatcher.h"
 #include "content/renderer/render_widget_fullscreen_pepper.h"
 #include "content/renderer/renderer_webapplicationcachehost_impl.h"
-#include "content/renderer/renderer_webcolorchooser_impl.h"
 #include "content/renderer/resizing_mode_selector.h"
 #include "content/renderer/savable_resources.h"
 #include "content/renderer/skia_benchmarking_extension.h"
@@ -699,7 +699,9 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       next_snapshot_id_(0) {
 }
 
-void RenderViewImpl::Initialize(RenderViewImplParams* params) {
+void RenderViewImpl::Initialize(
+    RenderViewImplParams* params,
+    RenderFrameImpl* main_render_frame) {
   routing_id_ = params->routing_id;
   surface_id_ = params->surface_id;
   if (params->opener_id != MSG_ROUTING_NONE && params->is_renderer_created)
@@ -777,12 +779,9 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
 
   ApplyWebPreferences(webkit_preferences_, webview());
 
-  main_render_frame_.reset(
-      RenderFrameImpl::Create(this, params->main_frame_routing_id));
-  // The main frame WebLocalFrame object is closed by
-  // RenderFrameImpl::frameDetached().
-  webview()->setMainFrame(WebLocalFrame::create(main_render_frame_.get()));
-  main_render_frame_->SetWebFrame(webview()->mainFrame()->toWebLocalFrame());
+  main_render_frame_.reset(main_render_frame);
+  webview()->setMainFrame(main_render_frame_->GetWebFrame());
+  main_render_frame_->Initialize();
 
   if (switches::IsTouchDragDropEnabled())
     webview()->settings()->setTouchDragDropEnabled(true);
@@ -816,6 +815,8 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
     webview()->devToolsAgent()->setLayerTreeId(rwc->GetLayerTreeId());
   }
   mouse_lock_dispatcher_ = new RenderViewMouseLockDispatcher(this);
+
+  history_controller_.reset(new HistoryController(this));
 
   // Create renderer_accessibility_ if needed.
   OnSetAccessibilityMode(params->accessibility_mode);
@@ -949,7 +950,15 @@ RenderViewImpl* RenderViewImpl::Create(
     render_view = g_create_render_view_impl(&params);
   else
     render_view = new RenderViewImpl(&params);
-  render_view->Initialize(&params);
+
+  RenderFrameImpl* main_frame = RenderFrameImpl::Create(
+      render_view, main_frame_routing_id);
+  // The main frame WebLocalFrame object is closed by
+  // RenderFrameImpl::frameDetached().
+  WebLocalFrame* web_frame = WebLocalFrame::create(main_frame);
+  main_frame->SetWebFrame(web_frame);
+
+  render_view->Initialize(&params, main_frame);
   return render_view;
 }
 
@@ -1368,8 +1377,7 @@ void RenderViewImpl::UpdateSessionHistory(WebFrame* frame) {
   if (page_id_ == -1)
     return;
 
-  const WebHistoryItem& item =
-      webview()->mainFrame()->previousHistoryItem();
+  WebHistoryItem item = history_controller_->GetPreviousItemForExport();
   SendUpdateState(item);
 }
 
@@ -1618,8 +1626,11 @@ void RenderViewImpl::FrameDidStopLoading(WebFrame* frame) {
     load_progress_tracker_->DidStopLoading(
         RenderFrameImpl::FromWebFrame(frame)->GetRoutingID());
   }
+  // TODO(japhet): This should be a DCHECK, but the pdf plugin sometimes
+  // calls DidStopLoading() without a matching DidStartLoading().
+  if (frames_in_progress_ == 0)
+    return;
   frames_in_progress_--;
-  DCHECK_GE(frames_in_progress_, 0);
   if (frames_in_progress_ == 0) {
     DidStopLoadingIcons();
     FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidStopLoading());
@@ -1673,20 +1684,6 @@ bool RenderViewImpl::handleCurrentKeyboardEvent() {
   return did_execute_command;
 }
 
-blink::WebColorChooser* RenderViewImpl::createColorChooser(
-    blink::WebColorChooserClient* client,
-    const blink::WebColor& initial_color,
-    const blink::WebVector<blink::WebColorSuggestion>& suggestions) {
-  RendererWebColorChooserImpl* color_chooser =
-      new RendererWebColorChooserImpl(this, client);
-  std::vector<content::ColorSuggestion> color_suggestions;
-  for (size_t i = 0; i < suggestions.size(); i++) {
-    color_suggestions.push_back(content::ColorSuggestion(suggestions[i]));
-  }
-  color_chooser->Open(static_cast<SkColor>(initial_color), color_suggestions);
-  return color_chooser;
-}
-
 bool RenderViewImpl::runFileChooser(
     const blink::WebFileChooserParams& params,
     WebFileChooserCompletion* chooser_completion) {
@@ -1713,60 +1710,6 @@ bool RenderViewImpl::runFileChooser(
 #endif
 
   return ScheduleFileChooser(ipc_params, chooser_completion);
-}
-
-void RenderViewImpl::runModalAlertDialog(WebLocalFrame* frame,
-                                         const WebString& message) {
-  RenderFrameImpl::FromWebFrame(frame)->runModalAlertDialog(message);
-}
-
-bool RenderViewImpl::runModalConfirmDialog(WebLocalFrame* frame,
-                                           const WebString& message) {
-  return RenderFrameImpl::FromWebFrame(frame)->runModalConfirmDialog(message);
-}
-
-bool RenderViewImpl::runModalPromptDialog(WebLocalFrame* frame,
-                                          const WebString& message,
-                                          const WebString& default_value,
-                                          WebString* actual_value) {
-  return RenderFrameImpl::FromWebFrame(frame)->
-      runModalPromptDialog(message, default_value, actual_value);
-}
-
-bool RenderViewImpl::runModalBeforeUnloadDialog(WebLocalFrame* frame,
-                                                const WebString& message) {
-  bool is_reload = false;
-  WebDataSource* ds = frame->provisionalDataSource();
-  if (ds)
-    is_reload = (ds->navigationType() == blink::WebNavigationTypeReload);
-  return RenderFrameImpl::FromWebFrame(frame)->
-      runModalBeforeUnloadDialog(is_reload, message);
-}
-
-void RenderViewImpl::runModalAlertDialog(const WebString& message) {
-  /* bogus version of the function to avoid errors */
-  NOTIMPLEMENTED();
-}
-
-bool RenderViewImpl::runModalConfirmDialog(const WebString& message) {
-  /* bogus version of the function to avoid errors */
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool RenderViewImpl::runModalPromptDialog(const WebString& message,
-                                          const WebString& default_value,
-                                          WebString* actual_value) {
-  /* bogus version of the function to avoid errors */
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool RenderViewImpl::runModalBeforeUnloadDialog(bool is_reload,
-                                                const WebString& message) {
-  /* bogus version of the function to avoid errors */
-  NOTIMPLEMENTED();
-  return false;
 }
 
 void RenderViewImpl::showValidationMessage(
@@ -2407,9 +2350,6 @@ void RenderViewImpl::ProcessViewLayoutFlags(const CommandLine& command_line) {
   webview()->setPageScaleFactorLimits(1, maxPageScaleFactor);
 }
 
-// TODO(nasko): Remove this method once WebTestProxy in Blink is fixed.
-void RenderViewImpl::didStartProvisionalLoad(WebLocalFrame* frame) {}
-
 void RenderViewImpl::didFailProvisionalLoad(WebLocalFrame* frame,
                                             const WebURLError& error) {
   // Notify the browser that we failed a provisional load with an error.
@@ -2871,7 +2811,7 @@ void RenderViewImpl::SyncNavigationState() {
   if (!webview())
     return;
 
-  const WebHistoryItem& item = webview()->mainFrame()->currentHistoryItem();
+  WebHistoryItem item = history_controller_->GetCurrentItemForExport();
   SendUpdateState(item);
 }
 
@@ -3365,17 +3305,11 @@ void RenderViewImpl::OnSetRendererPrefs(
   renderer_preferences_ = renderer_prefs;
   UpdateFontRenderingFromRendererPrefs();
 
-#if defined(USE_DEFAULT_RENDER_THEME) || defined(TOOLKIT_GTK)
+#if defined(USE_DEFAULT_RENDER_THEME)
   if (renderer_prefs.use_custom_colors) {
     WebColorName name = blink::WebColorWebkitFocusRingColor;
     blink::setNamedColors(&name, &renderer_prefs.focus_ring_color, 1);
     blink::setCaretBlinkInterval(renderer_prefs.caret_blink_interval);
-#if defined(TOOLKIT_GTK)
-    ui::NativeTheme::instance()->SetScrollbarColors(
-        renderer_prefs.thumb_inactive_color,
-        renderer_prefs.thumb_active_color,
-        renderer_prefs.track_color);
-#endif  // defined(TOOLKIT_GTK)
 
     if (webview()) {
       webview()->setSelectionColors(
@@ -3386,7 +3320,7 @@ void RenderViewImpl::OnSetRendererPrefs(
       webview()->themeChanged();
     }
   }
-#endif  // defined(USE_DEFAULT_RENDER_THEME) || defined(TOOLKIT_GTK)
+#endif  // defined(USE_DEFAULT_RENDER_THEME)
 
   if (RenderThreadImpl::current())  // Will be NULL during unit tests.
     RenderThreadImpl::current()->SetFlingCurveParameters(
@@ -4003,7 +3937,7 @@ void RenderViewImpl::GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) {
   RenderWidget::GetSelectionBounds(start, end);
 }
 
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA)
 void RenderViewImpl::GetCompositionCharacterBounds(
     std::vector<gfx::Rect>* bounds) {
   DCHECK(bounds);

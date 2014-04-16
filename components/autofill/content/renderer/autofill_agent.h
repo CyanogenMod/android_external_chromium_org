@@ -83,10 +83,6 @@ class AutofillAgent : public content::RenderViewObserver,
   virtual void textFieldDidReceiveKeyDown(
       const blink::WebInputElement& element,
       const blink::WebKeyboardEvent& event);
-  // TODO(estade): remove this.
-  virtual void didRequestAutocomplete(
-      blink::WebLocalFrame* frame,
-      const blink::WebFormElement& form);
   virtual void didRequestAutocomplete(
       const blink::WebFormElement& form,
       const blink::WebAutocompleteParams& details);
@@ -108,9 +104,11 @@ class AutofillAgent : public content::RenderViewObserver,
   void OnAcceptDataListSuggestion(const base::string16& value);
   void OnAcceptPasswordAutofillSuggestion(const base::string16& username);
 
-  // Called when interactive autocomplete finishes.
+  // Called when interactive autocomplete finishes. |message| is printed to
+  // the console if non-empty.
   void OnRequestAutocompleteResult(
       blink::WebFormElement::AutocompleteResult result,
+      const base::string16& message,
       const FormData& form_data);
 
   // Called when an autocomplete request succeeds or fails with the |result|.

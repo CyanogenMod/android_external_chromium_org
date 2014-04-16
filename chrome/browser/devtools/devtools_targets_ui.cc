@@ -11,7 +11,6 @@
 #include "base/version.h"
 #include "chrome/browser/devtools/devtools_adb_bridge.h"
 #include "chrome/browser/devtools/devtools_target_impl.h"
-#include "chrome/browser/devtools/port_forwarding_controller.h"
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/browser_child_process_observer.h"
 #include "content/public/browser/browser_thread.h"
@@ -54,8 +53,8 @@ const char kGuestList[] = "guests";
 const char kAdbModelField[] = "adbModel";
 const char kAdbConnectedField[] = "adbConnected";
 const char kAdbSerialField[] = "adbSerial";
-const char kAdbPortStatus[] = "adbPortStatus";
 const char kAdbBrowsersList[] = "browsers";
+const char kAdbDeviceIdFormat[] = "device:%s";
 
 const char kAdbBrowserNameField[] = "adbBrowserName";
 const char kAdbBrowserVersionField[] = "adbBrowserVersion";
@@ -336,18 +335,21 @@ void WorkerTargetsUIHandler::UpdateTargets(
 
 class AdbTargetsUIHandler
     : public DevToolsRemoteTargetsUIHandler,
-      public DevToolsAdbBridge::Listener {
+      public DevToolsAdbBridge::DeviceListListener {
  public:
   AdbTargetsUIHandler(Callback callback, Profile* profile);
   virtual ~AdbTargetsUIHandler();
 
   virtual void Open(const std::string& browser_id,
                     const std::string& url) OVERRIDE;
+  virtual void OpenAndInspect(const std::string& browser_id,
+                              const std::string& url,
+                              Profile* profile) OVERRIDE;
 
  private:
   // DevToolsAdbBridge::Listener overrides.
-  virtual void RemoteDevicesChanged(
-      DevToolsAdbBridge::RemoteDevices* devices) OVERRIDE;
+  virtual void DeviceListChanged(
+      const DevToolsAdbBridge::RemoteDevices& devices) OVERRIDE;
 
   Profile* profile_;
 
@@ -362,14 +364,14 @@ AdbTargetsUIHandler::AdbTargetsUIHandler(Callback callback, Profile* profile)
   DevToolsAdbBridge* adb_bridge =
       DevToolsAdbBridge::Factory::GetForProfile(profile_);
   if (adb_bridge)
-    adb_bridge->AddListener(this);
+    adb_bridge->AddDeviceListListener(this);
 }
 
 AdbTargetsUIHandler::~AdbTargetsUIHandler() {
   DevToolsAdbBridge* adb_bridge =
       DevToolsAdbBridge::Factory::GetForProfile(profile_);
   if (adb_bridge)
-    adb_bridge->RemoveListener(this);
+    adb_bridge->RemoveDeviceListListener(this);
 }
 
 void AdbTargetsUIHandler::Open(const std::string& browser_id,
@@ -379,28 +381,29 @@ void AdbTargetsUIHandler::Open(const std::string& browser_id,
     it->second->Open(url);
 }
 
-void AdbTargetsUIHandler::RemoteDevicesChanged(
-    DevToolsAdbBridge::RemoteDevices* devices) {
-  PortForwardingController* port_forwarding_controller =
-      PortForwardingController::Factory::GetForProfile(profile_);
-  PortForwardingController::DevicesStatus port_forwarding_status;
-  if (port_forwarding_controller)
-    port_forwarding_status =
-        port_forwarding_controller->UpdateDeviceList(*devices);
+void AdbTargetsUIHandler::OpenAndInspect(const std::string& browser_id,
+                                         const std::string& url,
+                                         Profile* profile) {
+  RemoteBrowsers::iterator it = remote_browsers_.find(browser_id);
+  if (it != remote_browsers_.end())
+    it->second->OpenAndInspect(url, profile);
+}
 
+void AdbTargetsUIHandler::DeviceListChanged(
+    const DevToolsAdbBridge::RemoteDevices& devices) {
   remote_browsers_.clear();
   STLDeleteValues(&targets_);
 
   scoped_ptr<base::ListValue> device_list(new base::ListValue());
-  for (DevToolsAdbBridge::RemoteDevices::iterator dit = devices->begin();
-       dit != devices->end(); ++dit) {
+  for (DevToolsAdbBridge::RemoteDevices::const_iterator dit = devices.begin();
+       dit != devices.end(); ++dit) {
     DevToolsAdbBridge::RemoteDevice* device = dit->get();
     base::DictionaryValue* device_data = new base::DictionaryValue();
     device_data->SetString(kAdbModelField, device->model());
     device_data->SetString(kAdbSerialField, device->serial());
     device_data->SetBoolean(kAdbConnectedField, device->is_connected());
     std::string device_id = base::StringPrintf(
-        "device:%s",
+        kAdbDeviceIdFormat,
         device->serial().c_str());
     device_data->SetString(kTargetIdField, device_id);
     base::ListValue* browser_list = new base::ListValue();
@@ -467,22 +470,6 @@ void AdbTargetsUIHandler::RemoteDevicesChanged(
         page_list->Append(target_data);
       }
       browser_list->Append(browser_data);
-    }
-
-    if (port_forwarding_controller) {
-      PortForwardingController::DevicesStatus::iterator sit =
-          port_forwarding_status.find(device->serial());
-      if (sit != port_forwarding_status.end()) {
-        base::DictionaryValue* port_status_dict = new base::DictionaryValue();
-        typedef PortForwardingController::PortStatusMap StatusMap;
-        const StatusMap& port_status = sit->second;
-        for (StatusMap::const_iterator it = port_status.begin();
-             it != port_status.end(); ++it) {
-          port_status_dict->SetInteger(
-              base::StringPrintf("%d", it->first), it->second);
-        }
-        device_data->Set(kAdbPortStatus, port_status_dict);
-      }
     }
 
     device_list->Append(device_data);
@@ -580,4 +567,44 @@ DevToolsRemoteTargetsUIHandler::CreateForAdb(
     DevToolsTargetsUIHandler::Callback callback, Profile* profile) {
   return scoped_ptr<DevToolsRemoteTargetsUIHandler>(
       new AdbTargetsUIHandler(callback, profile));
+}
+
+// PortForwardingStatusSerializer ---------------------------------------------
+
+PortForwardingStatusSerializer::PortForwardingStatusSerializer(
+    const Callback& callback, Profile* profile)
+      : callback_(callback),
+        profile_(profile) {
+  PortForwardingController* port_forwarding_controller =
+      PortForwardingController::Factory::GetForProfile(profile_);
+  if (port_forwarding_controller)
+    port_forwarding_controller->AddListener(this);
+}
+
+PortForwardingStatusSerializer::~PortForwardingStatusSerializer() {
+  PortForwardingController* port_forwarding_controller =
+      PortForwardingController::Factory::GetForProfile(profile_);
+  if (port_forwarding_controller)
+    port_forwarding_controller->RemoveListener(this);
+}
+
+void PortForwardingStatusSerializer::PortStatusChanged(
+    const DevicesStatus& status) {
+  base::DictionaryValue result;
+  for (DevicesStatus::const_iterator sit = status.begin();
+      sit != status.end(); ++sit) {
+    base::DictionaryValue* device_status_dict = new base::DictionaryValue();
+    const PortStatusMap& device_status_map = sit->second;
+    for (PortStatusMap::const_iterator it = device_status_map.begin();
+         it != device_status_map.end(); ++it) {
+      device_status_dict->SetInteger(
+          base::StringPrintf("%d", it->first), it->second);
+    }
+
+    std::string device_id = base::StringPrintf(
+        kAdbDeviceIdFormat,
+        sit->first.c_str());
+    result.Set(device_id, device_status_dict);
+  }
+  callback_.Run(result);
 }

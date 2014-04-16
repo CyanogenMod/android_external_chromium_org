@@ -28,15 +28,15 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         browser_options=browser_options,
         output_profile_path=None, extensions_to_load=extensions_to_load)
 
-    from telemetry.core.backends.chrome import chrome_browser_options
-    assert isinstance(browser_options,
-                      chrome_browser_options.CrosBrowserOptions)
-
     # Initialize fields so that an explosion during init doesn't break in Close.
     self._browser_type = browser_type
     self._cri = cri
     self._is_guest = is_guest
     self._forwarder = None
+
+    from telemetry.core.backends.chrome import chrome_browser_options
+    assert isinstance(browser_options,
+                      chrome_browser_options.CrosBrowserOptions)
 
     self.wpr_port_pairs = forwarders.PortPairs(
         http=forwarders.PortPair(self.wpr_port_pairs.http.local_port,
@@ -89,21 +89,9 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
             '--remote-debugging-port=%i' % self._remote_debugging_port,
             # Open a maximized window.
             '--start-maximized',
-            # TODO(achuith): Re-enable this flag again before multi-profiles
-            # will become enabled by default to have telemetry mileage on it.
-            # '--multi-profiles',
-            # Debug logging for login flake (crbug.com/263527).
-            '--vmodule=*/browser/automation/*=2,*/chromeos/net/*=2,'
-                '*/chromeos/login/*=2,*/extensions/*=2,'
-                '*/device_policy_decoder_chromeos.cc=2'])
+            # Debug logging.
+            '--vmodule=*/chromeos/net/*=2,*/chromeos/login/*=2'])
 
-    if self._is_guest:
-      args.extend([
-          # Jump to the login screen, skipping network selection, eula, etc.
-          '--login-screen=login',
-          # Skip hwid check, for VMs and pre-MP lab devices.
-          '--skip-hwid-check'
-      ])
     return args
 
   def _GetSessionManagerPid(self, procs):

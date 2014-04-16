@@ -16,7 +16,9 @@ import android.util.Pair;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwSettings;
+import org.chromium.android_webview.test.TestAwContentsClient.OnDownloadStartHelper;
 import org.chromium.android_webview.test.util.CommonResources;
+import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.content.browser.test.util.CallbackHelper;
 import org.chromium.net.test.util.TestWebServer;
@@ -34,72 +36,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * AwContents tests.
  */
 public class AwContentsTest extends AwTestBase {
-    private static class OnDownloadStartHelper extends CallbackHelper {
-        String mUrl;
-        String mUserAgent;
-        String mContentDisposition;
-        String mMimeType;
-        long mContentLength;
-
-        public String getUrl() {
-            assert getCallCount() > 0;
-            return mUrl;
-        }
-
-        public String getUserAgent() {
-            assert getCallCount() > 0;
-            return mUserAgent;
-        }
-
-        public String getContentDisposition() {
-            assert getCallCount() > 0;
-            return mContentDisposition;
-        }
-
-       public String getMimeType() {
-            assert getCallCount() > 0;
-            return mMimeType;
-        }
-
-        public long getContentLength() {
-            assert getCallCount() > 0;
-            return mContentLength;
-        }
-
-        public void notifyCalled(String url, String userAgent, String contentDisposition,
-                String mimeType, long contentLength) {
-            mUrl = url;
-            mUserAgent = userAgent;
-            mContentDisposition = contentDisposition;
-            mMimeType = mimeType;
-            mContentLength = contentLength;
-            notifyCalled();
-        }
-    }
-
-    private static class TestAwContentsClient
-            extends org.chromium.android_webview.test.TestAwContentsClient {
-
-        private OnDownloadStartHelper mOnDownloadStartHelper;
-
-        public TestAwContentsClient() {
-            mOnDownloadStartHelper = new OnDownloadStartHelper();
-        }
-
-        public OnDownloadStartHelper getOnDownloadStartHelper() {
-            return mOnDownloadStartHelper;
-        }
-
-        @Override
-        public void onDownloadStart(String url,
-                                    String userAgent,
-                                    String contentDisposition,
-                                    String mimeType,
-                                    long contentLength) {
-            getOnDownloadStartHelper().notifyCalled(url, userAgent, contentDisposition, mimeType,
-                    contentLength);
-        }
-    }
 
     private TestAwContentsClient mContentsClient = new TestAwContentsClient();
 
@@ -355,8 +291,9 @@ public class AwContentsTest extends AwTestBase {
         }
     }
 
+    /** Disabled to unblock the waterfall, investigating in http://crbug.com/363563. */
     @Feature({"AndroidWebView", "Downloads"})
-    @SmallTest
+    @DisabledTest
     public void testDownload() throws Throwable {
         AwTestContainerView testView = createAwTestContainerViewOnMainSync(mContentsClient);
         AwContents awContents = testView.getAwContents();

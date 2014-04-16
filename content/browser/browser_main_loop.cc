@@ -70,6 +70,7 @@
 #include "base/android/jni_android.h"
 #include "content/browser/android/browser_startup_controller.h"
 #include "content/browser/android/surface_texture_peer_browser_impl.h"
+#include "content/browser/android/tracing_controller_android.h"
 #include "ui/gl/gl_surface.h"
 #endif
 
@@ -98,15 +99,10 @@
 #include "content/browser/device_monitor_mac.h"
 #endif
 
-#if defined(TOOLKIT_GTK)
-#include "ui/gfx/gtk_util.h"
-#endif
-
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
-#include <sys/stat.h>
-
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
 #include "content/browser/zygote_host/zygote_host_impl_linux.h"
+#include "sandbox/linux/suid/client/setuid_sandbox_client.h"
 #endif
 
 #if defined(TCMALLOC_TRACE_MEMORY_SUPPORTED)
@@ -114,7 +110,7 @@
 #endif
 
 #if defined(USE_X11)
-#include <X11/Xlib.h>
+#include "ui/gfx/x/x11_connection.h"
 #endif
 
 #if defined(USE_OZONE)
@@ -132,51 +128,29 @@ namespace {
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 void SetupSandbox(const CommandLine& parsed_command_line) {
   TRACE_EVENT0("startup", "SetupSandbox");
-  // TODO(evanm): move this into SandboxWrapper; I'm just trying to move this
-  // code en masse out of chrome_main for now.
   base::FilePath sandbox_binary;
-  bool env_chrome_devel_sandbox_set = false;
-  struct stat st;
+
+  scoped_ptr<sandbox::SetuidSandboxClient> setuid_sandbox_client(
+      sandbox::SetuidSandboxClient::Create());
 
   const bool want_setuid_sandbox =
       !parsed_command_line.HasSwitch(switches::kNoSandbox) &&
-      !parsed_command_line.HasSwitch(switches::kDisableSetuidSandbox);
+      !parsed_command_line.HasSwitch(switches::kDisableSetuidSandbox) &&
+      !setuid_sandbox_client->IsDisabledViaEnvironment();
 
+  static const char no_suid_error[] =
+      "Running without the SUID sandbox! See "
+      "https://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment "
+      "for more information on developing with the sandbox on.";
   if (want_setuid_sandbox) {
-    base::FilePath exe_dir;
-    if (PathService::Get(base::DIR_EXE, &exe_dir)) {
-      base::FilePath sandbox_candidate = exe_dir.AppendASCII("chrome-sandbox");
-      if (base::PathExists(sandbox_candidate))
-        sandbox_binary = sandbox_candidate;
-    }
-
-    // In user-managed builds, including development builds, an environment
-    // variable is required to enable the sandbox. See
-    // http://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment
-    if (sandbox_binary.empty() &&
-        stat(base::kProcSelfExe, &st) == 0 && st.st_uid == getuid()) {
-      const char* devel_sandbox_path = getenv("CHROME_DEVEL_SANDBOX");
-      if (devel_sandbox_path) {
-        env_chrome_devel_sandbox_set = true;
-        sandbox_binary = base::FilePath(devel_sandbox_path);
-      }
-    }
-
-    static const char no_suid_error[] = "Running without the SUID sandbox! See "
-        "https://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment "
-        "for more information on developing with the sandbox on.";
+    sandbox_binary = setuid_sandbox_client->GetSandboxBinaryPath();
     if (sandbox_binary.empty()) {
-      if (!env_chrome_devel_sandbox_set) {
-        // This needs to be fatal. Talk to security@chromium.org if you feel
-        // otherwise.
-        LOG(FATAL) << no_suid_error;
-      }
-
-      // TODO(jln): an empty CHROME_DEVEL_SANDBOX environment variable (as
-      // opposed to a non existing one) is not fatal yet. This is needed
-      // because of existing bots and scripts. Fix it (crbug.com/245376).
-      LOG(ERROR) << no_suid_error;
+      // This needs to be fatal. Talk to security@chromium.org if you feel
+      // otherwise.
+      LOG(FATAL) << no_suid_error;
     }
+  } else {
+    LOG(ERROR) << no_suid_error;
   }
 
   // Tickle the sandbox host and zygote host so they fork now.
@@ -195,18 +169,7 @@ static void GLibLogHandler(const gchar* log_domain,
   if (!message)
     message = "<no message>";
 
-  if (strstr(message, "Loading IM context type") ||
-      strstr(message, "wrong ELF class: ELFCLASS64")) {
-    // http://crbug.com/9643
-    // Until we have a real 64-bit build or all of these 32-bit package issues
-    // are sorted out, don't fatal on ELF 32/64-bit mismatch warnings and don't
-    // spam the user with more than one of them.
-    static bool alerted = false;
-    if (!alerted) {
-      LOG(ERROR) << "Bug 9643: " << log_domain << ": " << message;
-      alerted = true;
-    }
-  } else if (strstr(message, "Unable to retrieve the file info for")) {
+  if (strstr(message, "Unable to retrieve the file info for")) {
     LOG(ERROR) << "GTK File code error: " << message;
   } else if (strstr(message, "Could not find the icon") &&
              strstr(log_domain, "Gtk")) {
@@ -229,8 +192,6 @@ static void GLibLogHandler(const gchar* log_domain,
              strstr(log_domain, "<unknown>")) {
     LOG(ERROR) << "DConf settings backend could not connect to session bus: "
                << "http://crbug.com/179797";
-  } else if (strstr(message, "XDG_RUNTIME_DIR variable not set")) {
-    LOG(ERROR) << message << " (http://bugs.chromium.org/97293)";
   } else if (strstr(message, "Attempting to store changes into") ||
              strstr(message, "Attempting to set the permissions of")) {
     LOG(ERROR) << message << " (http://bugs.chromium.org/161366)";
@@ -256,6 +217,10 @@ static void SetUpGLibLogHandler() {
   }
 }
 #endif
+
+void OnStoppedStartupTracing(const base::FilePath& trace_file) {
+  VLOG(0) << "Completed startup tracing to " << trace_file.value();
+}
 
 }  // namespace
 
@@ -362,7 +327,7 @@ void BrowserMainLoop::EarlyInitialization() {
 #if defined(USE_X11)
   if (parsed_command_line_.HasSwitch(switches::kSingleProcess) ||
       parsed_command_line_.HasSwitch(switches::kInProcessGPU)) {
-    if (!XInitThreads()) {
+    if (!gfx::InitializeThreadedX11()) {
       LOG(ERROR) << "Failed to put Xlib into threaded mode.";
     }
   }
@@ -382,10 +347,6 @@ void BrowserMainLoop::EarlyInitialization() {
   // definitely harmless, so retained as a reminder of this
   // requirement for gconf.
   g_type_init();
-#endif
-
-#if !defined(USE_AURA)
-  gfx::GtkInitFromCommandLine(parsed_command_line_);
 #endif
 
   SetUpGLibLogHandler();
@@ -1103,8 +1064,12 @@ void BrowserMainLoop::InitStartupTracing(const CommandLine& command_line) {
     return;
 
   if (trace_file.empty()) {
+#if defined(OS_ANDROID)
+    TracingControllerAndroid::GenerateTracingFilePath(&trace_file);
+#else
     // Default to saving the startup trace into the current dir.
     trace_file = base::FilePath().AppendASCII("chrometrace.log");
+#endif
   }
 
   std::string delay_str = command_line.GetSwitchValueASCII(
@@ -1126,7 +1091,7 @@ void BrowserMainLoop::InitStartupTracing(const CommandLine& command_line) {
 void BrowserMainLoop::EndStartupTracing(const base::FilePath& trace_file) {
   is_tracing_startup_ = false;
   TracingController::GetInstance()->DisableRecording(
-      trace_file, TracingController::TracingFileResultCallback());
+      trace_file, base::Bind(&OnStoppedStartupTracing));
 }
 
 }  // namespace content

@@ -62,16 +62,20 @@ using web_modal::WebContentsModalDialogManager;
 namespace extensions {
 
 namespace MediaGalleries = api::media_galleries;
+namespace DropPermissionForMediaFileSystem =
+    MediaGalleries::DropPermissionForMediaFileSystem;
 namespace GetMediaFileSystems = MediaGalleries::GetMediaFileSystems;
 
 namespace {
 
 const char kDisallowedByPolicy[] =
     "Media Galleries API is disallowed by policy: ";
-const char kMissingEventListener[] =
-    "Missing event listener registration.";
-const char kNoScanPermission[] =
-    "No permission to scan.";
+const char kFailedToSetGalleryPermission[] =
+    "Failed to set gallery permission.";
+const char kInvalidGalleryId[] = "Invalid gallery id.";
+const char kMissingEventListener[] = "Missing event listener registration.";
+const char kNonExistentGalleryId[] = "Non-existent gallery id.";
+const char kNoScanPermission[] = "No permission to scan.";
 
 const char kDeviceIdKey[] = "deviceId";
 const char kGalleryIdKey[] = "galleryId";
@@ -641,6 +645,49 @@ MediaGalleriesAddUserSelectedFolderFunction::GetMediaFileSystemsForExtension(
   DCHECK(registry->GetPreferences(GetProfile())->IsInitialized());
   registry->GetMediaFileSystemsForExtension(
       render_view_host(), GetExtension(), cb);
+}
+
+MediaGalleriesDropPermissionForMediaFileSystemFunction::
+    ~MediaGalleriesDropPermissionForMediaFileSystemFunction() {}
+
+bool MediaGalleriesDropPermissionForMediaFileSystemFunction::RunImpl() {
+  media_galleries::UsageCount(
+      media_galleries::DROP_PERMISSION_FOR_MEDIA_FILE_SYSTEM);
+
+  scoped_ptr<DropPermissionForMediaFileSystem::Params> params(
+      DropPermissionForMediaFileSystem::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+  MediaGalleryPrefId pref_id;
+  if (!base::StringToUint64(params->gallery_id, &pref_id)) {
+    error_ = kInvalidGalleryId;
+    return false;
+  }
+
+  base::Closure callback = base::Bind(
+      &MediaGalleriesDropPermissionForMediaFileSystemFunction::
+          OnPreferencesInit,
+      this,
+      pref_id);
+  return Setup(GetProfile(), &error_, callback);
+}
+
+void MediaGalleriesDropPermissionForMediaFileSystemFunction::OnPreferencesInit(
+    MediaGalleryPrefId pref_id) {
+  MediaGalleriesPreferences* preferences =
+      media_file_system_registry()->GetPreferences(GetProfile());
+  if (!ContainsKey(preferences->known_galleries(), pref_id)) {
+    error_ = kNonExistentGalleryId;
+    SendResponse(false);
+    return;
+  }
+
+  bool dropped = preferences->SetGalleryPermissionForExtension(
+      *GetExtension(), pref_id, false);
+  if (dropped)
+    SetResult(new base::StringValue(base::Uint64ToString(pref_id)));
+  else
+    error_ = kFailedToSetGalleryPermission;
+  SendResponse(dropped);
 }
 
 MediaGalleriesStartMediaScanFunction::~MediaGalleriesStartMediaScanFunction() {}

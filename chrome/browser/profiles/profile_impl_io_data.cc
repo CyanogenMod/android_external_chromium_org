@@ -19,7 +19,6 @@
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
-#include "chrome/browser/extensions/extension_protocols.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
@@ -39,6 +38,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/storage_partition.h"
+#include "extensions/browser/extension_protocols.h"
 #include "extensions/common/constants.h"
 #include "net/base/cache_type.h"
 #include "net/ftp/ftp_network_layer.h"
@@ -49,7 +49,7 @@
 #include "webkit/browser/quota/special_storage_policy.h"
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
-#include "chrome/browser/net/spdyproxy/data_reduction_proxy_settings.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
 #endif
 
 namespace {
@@ -462,8 +462,8 @@ void ProfileImplIOData::InitializeInternal(
   main_cache->InitializeInfiniteCache(lazy_params_->infinite_cache_path);
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
-  DataReductionProxySettings::InitDataReductionProxySession(
-      main_cache->GetSession());
+  data_reduction_proxy::DataReductionProxySettings::
+      InitDataReductionProxySession(main_cache->GetSession());
 #endif
 
   if (chrome_browser_net::ShouldUseInMemoryCookiesAndCache()) {

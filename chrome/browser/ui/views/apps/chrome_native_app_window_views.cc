@@ -25,6 +25,7 @@
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/easy_resize_window_targeter.h"
+#include "ui/wm/core/shadow_types.h"
 
 #if defined(OS_LINUX)
 #include "chrome/browser/shell_integration_linux.h"
@@ -163,7 +164,10 @@ class NativeAppWindowStateDelegate : public ash::wm::WindowStateDelegate,
   virtual void OnPostWindowStateTypeChange(
       ash::wm::WindowState* window_state,
       ash::wm::WindowStateType old_type) OVERRIDE {
+    // Since the window state might get set by a window manager, it is possible
+    // to come here before the application set its |BaseWindow|.
     if (!window_state->IsFullscreen() && !window_state->IsMinimized() &&
+        app_window_->GetBaseWindow() &&
         app_window_->GetBaseWindow()->IsFullscreenOrPending()) {
       app_window_->Restore();
       // Usually OnNativeWindowChanged() is called when the window bounds are
@@ -246,6 +250,17 @@ void ChromeNativeAppWindowViews::InitializeDefaultWindow(
       widget()->CenterWindow(window_bounds.size());
     else
       widget()->SetBounds(window_bounds);
+  }
+
+  if (IsFrameless() &&
+      init_params.opacity == views::Widget::InitParams::TRANSLUCENT_WINDOW &&
+      !create_params.resizable) {
+    // The given window is most likely not rectangular since it uses
+    // transparency, has no standard frame and the user cannot resize it using
+    // the OS supplied methods. Therefore we do not use a shadow for it.
+    // TODO(skuhne): If we run into an application which should have a shadow
+    // but does not have, a new attribute has to be added.
+    wm::SetShadowType(widget()->GetNativeWindow(), wm::SHADOW_TYPE_NONE);
   }
 
   // Register accelarators supported by app windows.
@@ -332,11 +347,14 @@ void ChromeNativeAppWindowViews::InitializePanelWindow(
 }
 
 void ChromeNativeAppWindowViews::InstallEasyResizeTargeterOnContainer() const {
-  aura::Window* root_window = widget()->GetNativeWindow()->GetRootWindow();
+  aura::Window* window = widget()->GetNativeWindow();
   gfx::Insets inset(kResizeInsideBoundsSize, kResizeInsideBoundsSize,
                     kResizeInsideBoundsSize, kResizeInsideBoundsSize);
-  root_window->SetEventTargeter(scoped_ptr<ui::EventTargeter>(
-      new wm::EasyResizeWindowTargeter(root_window, inset, inset)));
+  // Add the EasyResizeWindowTargeter on the window, not its root window. The
+  // root window does not have a delegate, which is needed to handle the event
+  // in Linux.
+  window->SetEventTargeter(scoped_ptr<ui::EventTargeter>(
+      new wm::EasyResizeWindowTargeter(window, inset, inset)));
 }
 
 apps::AppWindowFrameView*
@@ -495,15 +513,11 @@ views::NonClientFrameView* ChromeNativeAppWindowViews::CreateNonClientFrameView(
     if (!IsFrameless()) {
       ash::CustomFrameViewAsh* custom_frame_view =
           new ash::CustomFrameViewAsh(widget);
-#if defined(OS_CHROMEOS)
       // Non-frameless app windows can be put into immersive fullscreen.
-      // TODO(pkotwicz): Investigate if immersive fullscreen can be enabled for
-      // Windows Ash.
       immersive_fullscreen_controller_.reset(
           new ash::ImmersiveFullscreenController());
       custom_frame_view->InitImmersiveFullscreenControllerForView(
           immersive_fullscreen_controller_.get());
-#endif
       custom_frame_view->GetHeaderView()->set_context_menu_controller(this);
       return custom_frame_view;
     }
@@ -671,7 +685,7 @@ void ChromeNativeAppWindowViews::InitializeWindow(
       extensions::ExtensionKeybindingRegistry::PLATFORM_APPS_ONLY,
       NULL));
 
-#if defined(OS_WIN)
+#if !defined(OS_CHROMEOS)
   if ((IsFrameless() || has_frame_color_) &&
       chrome::GetHostDesktopTypeForNativeWindow(widget()->GetNativeWindow()) !=
           chrome::HOST_DESKTOP_TYPE_ASH) {

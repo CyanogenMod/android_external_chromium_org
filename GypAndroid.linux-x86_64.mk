@@ -102,7 +102,6 @@ include $(LOCAL_PATH)/mojo/mojo_environment_chromium_impl.target.linux-x86_64.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.linux-x86_64.mk
 include $(LOCAL_PATH)/mojo/mojo_service_manager.target.linux-x86_64.mk
 include $(LOCAL_PATH)/mojo/mojo_shell_bindings.target.linux-x86_64.mk
-include $(LOCAL_PATH)/mojo/mojo_system.target.linux-x86_64.mk
 include $(LOCAL_PATH)/mojo/mojo_system_impl.target.linux-x86_64.mk
 include $(LOCAL_PATH)/net/cert_verify_status_android_java.target.linux-x86_64.mk
 include $(LOCAL_PATH)/net/certificate_mime_types_java.target.linux-x86_64.mk

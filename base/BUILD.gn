@@ -328,12 +328,8 @@ component("base") {
     "message_loop/message_pump_mac.h",
     "message_loop/message_pump_mac.mm",
     "message_loop/message_pump_observer.h",
-    "message_loop/message_pump_ozone.cc",
-    "message_loop/message_pump_ozone.h",
     "message_loop/message_pump_win.cc",
     "message_loop/message_pump_win.h",
-    "message_loop/message_pump_x11.cc",
-    "message_loop/message_pump_x11.h",
     "metrics/field_trial.cc",
     "metrics/field_trial.h",
     "metrics/sample_map.cc",
@@ -683,6 +679,32 @@ component("base") {
     "win/wrapped_window_proc.h",
   ]
 
+  if (is_android) {
+    sources -= [
+      "debug/stack_trace_posix.cc",
+    ]
+
+    # TODO(dpranke): crbug.com/360936.
+    # These are disabled until we have JNI support on Android.
+    sources -= [
+      "android/activity_status.cc",
+      "android/base_jni_registrar.cc",
+      "android/base_jni_registrar.h",
+      "android/build_info.cc",
+      "android/build_info.h",
+      "android/cpu_features.cc",
+      "android/important_file_writer_android.cc",
+      "android/memory_pressure_listener_android.cc",
+      "android/path_service_android.cc",
+      "android/path_utils.cc",
+      "android/sys_utils.cc",
+      "android/trace_event_binding.cc",
+      "message_loop/message_pump_android.cc",
+      "power_monitor/power_monitor_device_source_android.cc",
+      "threading/platform_thread_android.cc",
+    ]
+  }
+
   # TODO(brettw) I don't understand the conditions this file is used.
   sources -= [ "files/file_path_watcher_stub.cc" ]
 
@@ -786,18 +808,6 @@ component("base") {
     if (toolkit_uses_gtk) {
       linux_configs += [ "//build/config/linux:gtk" ]
     }
-    if (use_x11) {
-      linux_configs += [
-        "//build/config/linux:x11",
-      ]
-    } else {
-      # On non-Linux platforms, the X11 files will already have been filtered
-      # out using the sources assignment filter.
-      sources -= [
-        "message_loop/message_pump_x11.cc",
-        "message_loop/message_pump_x11.h",
-      ]
-    }
 
     configs += linux_configs
     all_dependent_configs = linux_configs
@@ -825,12 +835,6 @@ component("base") {
     sources -= [
       "message_loop/message_pump_glib.cc",
       "message_loop/message_pump_glib.h",
-    ]
-  }
-  if (!use_ozone) {
-    sources -= [
-      "message_loop/message_pump_ozone.cc",
-      "message_loop/message_pump_ozone.h",
     ]
   }
   if (!toolkit_uses_gtk) {

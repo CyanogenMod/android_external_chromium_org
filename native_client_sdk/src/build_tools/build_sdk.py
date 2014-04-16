@@ -34,7 +34,6 @@ import buildbot_common
 import build_projects
 import build_updater
 import build_version
-import generate_make
 import generate_notice
 import manifest_util
 import parse_dsc
@@ -53,7 +52,7 @@ import oshelpers
 CYGTAR = os.path.join(NACL_DIR, 'build', 'cygtar.py')
 
 NACLPORTS_URL = 'https://naclports.googlecode.com/svn/trunk/src'
-NACLPORTS_REV = 1152
+NACLPORTS_REV = 1226
 
 GYPBUILD_DIR = 'gypbuild'
 
@@ -229,9 +228,9 @@ def BuildStepUntarToolchains(pepperdir, toolchains):
   if 'arm' in toolchains:
     # Copy the existing arm toolchain from native_client tree
     tcname = platform + '_arm_newlib'
-    arm_toolchain = os.path.join(NACL_DIR, 'toolchain', tcname)
-    arm_toolchain_sdk = os.path.join(pepperdir, 'toolchain',
-                                     os.path.basename(arm_toolchain))
+    arm_toolchain = os.path.join(NACL_DIR, 'toolchain', '%s_x86' % platform,
+                                 'nacl_arm_newlib' )
+    arm_toolchain_sdk = os.path.join(pepperdir, 'toolchain', tcname)
     buildbot_common.CopyDir(arm_toolchain, arm_toolchain_sdk)
 
   if 'glibc' in toolchains:
@@ -261,22 +260,6 @@ def BuildStepUntarToolchains(pepperdir, toolchains):
     buildbot_common.Move(tmpdir, pnacldir)
 
   buildbot_common.RemoveDir(tmpdir)
-
-  if options.gyp and platform != 'win':
-    # If the gyp options is specified we install a toolchain
-    # wrapper so that gyp can switch toolchains via a commandline
-    # option.
-    bindir = os.path.join(pepperdir, 'toolchain', tcname, 'bin')
-    wrapper = os.path.join(SDK_SRC_DIR, 'tools', 'compiler-wrapper.py')
-    buildbot_common.MakeDir(bindir)
-    buildbot_common.CopyFile(wrapper, bindir)
-
-    # Module 'os' has no 'symlink' member (on Windows).
-    # pylint: disable=E1101
-
-    os.symlink('compiler-wrapper.py', os.path.join(bindir, 'i686-nacl-g++'))
-    os.symlink('compiler-wrapper.py', os.path.join(bindir, 'i686-nacl-gcc'))
-    os.symlink('compiler-wrapper.py', os.path.join(bindir, 'i686-nacl-ar'))
 
 
 # List of toolchain headers to install.
@@ -866,8 +849,9 @@ def BuildStepBuildNaClPorts(pepper_ver, pepperdir):
   env['PEPPER_DIR'] = os.path.basename(pepperdir)  # pepper_NN
   env['NACLPORTS_NO_ANNOTATE'] = "1"
   env['NACLPORTS_NO_UPLOAD'] = "1"
+  env['BUILDBOT_GOT_REVISION'] = str(NACLPORTS_REV)
 
-  build_script = 'build_tools/naclports-linux-sdk-bundle.sh'
+  build_script = 'build_tools/buildbot_sdk_bundle.sh'
   buildbot_common.BuildStep('Build naclports')
 
   bundle_dir = os.path.join(NACLPORTS_DIR, 'out', 'sdk_bundle')
@@ -883,7 +867,7 @@ def BuildStepBuildNaClPorts(pepper_ver, pepperdir):
   extra_licenses = ('tinyxml/readme.txt',
                     'jpeg-8d/README',
                     'zlib-1.2.3/README')
-  src_root = os.path.join(NACLPORTS_DIR, 'out', 'repository-i686')
+  src_root = os.path.join(NACLPORTS_DIR, 'out', 'build')
   output_license = os.path.join(out_dir, 'ports', 'LICENSE')
   GenerateNotice(src_root , output_license, extra_licenses)
   readme = os.path.join(out_dir, 'ports', 'README')
@@ -923,9 +907,6 @@ def main(args):
       action='store_true')
   parser.add_option('--archive', help='Force the archive step.',
       action='store_true')
-  parser.add_option('--gyp',
-      help='Use gyp to build examples/libraries/Makefiles.',
-      action='store_true')
   parser.add_option('--release', help='PPAPI release version.',
       dest='release', default=None)
   parser.add_option('--build-ports',
@@ -954,7 +935,6 @@ def main(args):
   if args:
     parser.error("Unexpected arguments: %s" % str(args))
 
-  generate_make.use_gyp = options.gyp
   if buildbot_common.IsSDKBuilder():
     options.archive = True
     options.build_ports = True

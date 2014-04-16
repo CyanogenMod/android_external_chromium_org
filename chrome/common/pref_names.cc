@@ -289,17 +289,6 @@ const char kWebKitLoadsImagesAutomatically[] =
     "webkit.webprefs.loads_images_automatically";
 const char kWebKitPluginsEnabled[] = "webkit.webprefs.plugins_enabled";
 
-// Boolean which specifies whether the bookmark bar is visible on all tabs.
-const char kShowBookmarkBar[] = "bookmark_bar.show_on_all_tabs";
-
-// Boolean which specifies whether the apps shortcut is visible on the bookmark
-// bar.
-const char kShowAppsShortcutInBookmarkBar[] = "bookmark_bar.show_apps_shortcut";
-
-// Boolean which specifies the ids of the bookmark nodes that are expanded in
-// the bookmark editor.
-const char kBookmarkEditorExpandedNodes[] = "bookmark_editor.expanded_nodes";
-
 // Boolean that is true when SafeBrowsing is enabled.
 const char kSafeBrowsingEnabled[] = "safebrowsing.enabled";
 
@@ -1040,10 +1029,6 @@ const char kShowUpdatePromotionInfoBar[] =
 // true, we draw a custom chrome frame (thicker title bar and blue border).
 const char kUseCustomChromeFrame[] = "browser.custom_chrome_frame";
 
-// The preferred position (which corner of screen) for desktop notifications.
-const char kDesktopNotificationPosition[] =
-    "browser.desktop_notification_position";
-
 // Dictionary of content settings applied to all hosts by default.
 const char kDefaultContentSettings[] = "profile.default_content_settings";
 
@@ -1115,9 +1100,6 @@ const char kAutofillGeneratedCardBubbleTimesShown[] =
 // A dictionary that tracks the defaults to be set on the next invocation
 // of the requestAutocomplete dialog.
 const char kAutofillDialogDefaults[] = "autofill.rac_dialog_defaults";
-
-// Modifying bookmarks is completely disabled when this is set to false.
-const char kEditBookmarksEnabled[] = "bookmarks.editing_enabled";
 
 #if !defined(OS_ANDROID)
 const char kPinnedTabs[] = "pinned_tabs";
@@ -1408,13 +1390,6 @@ const char kMetricsInitialLogs[] =
 const char kMetricsOngoingLogs[] =
     "user_experience_metrics.ongoing_logs_as_protobufs";
 
-// Boolean that is true when bookmark prompt is enabled.
-const char kBookmarkPromptEnabled[] = "bookmark_prompt_enabled";
-
-// Number of times bookmark prompt displayed.
-const char kBookmarkPromptImpressionCount[] =
-    "bookmark_prompt_impression_count";
-
 // 64-bit integer serialization of the base::Time from the last successful seed
 // fetch (i.e. when the Variations server responds with 200 or 304).
 const char kVariationsLastFetchTime[] = "variations_last_fetch_time";
@@ -1596,6 +1571,9 @@ const char kBrowserSuppressDefaultBrowserPrompt[] =
 // A collection of position, size, and other data relating to the browser
 // window to restore on startup.
 const char kBrowserWindowPlacement[] = "browser.window_placement";
+
+// Browser window placement for popup windows.
+const char kBrowserWindowPlacementPopup[] = "browser.window_placement_popup";
 
 // A collection of position, size, and other data relating to the task
 // manager window to restore on startup.
@@ -1819,12 +1797,6 @@ const char kDevToolsPortForwardingConfig[] = "devtools.port_forwarding_config";
 const char kDevToolsRemoteEnabled[] = "devtools.remote_enabled";
 #endif
 
-#if defined(OS_ANDROID) || defined(OS_IOS)
-// A boolean specifying whether a SPDY proxy is enabled.
-const char kSpdyProxyAuthEnabled[] = "spdy_proxy.enabled";
-const char kSpdyProxyAuthWasEnabledBefore[] = "spdy_proxy.was_enabled_before";
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
-
 // An ID to uniquely identify this client to the invalidator service.
 const char kInvalidatorClientId[] = "invalidator.client_id";
 
@@ -1954,74 +1926,12 @@ const char kAuthNegotiateDelegateWhitelist[] =
 // String that specifies the name of a custom GSSAPI library to load.
 const char kGSSAPILibraryName[] = "auth.gssapi_library_name";
 
-// String that specifies the origin allowed to use SpdyProxy
-// authentication, if any.
-const char kSpdyProxyAuthOrigin[] = "auth.spdyproxy.origin";
-
 // Boolean that specifies whether to allow basic auth prompting on cross-
 // domain sub-content requests.
 const char kAllowCrossOriginAuthPrompt[] = "auth.allow_cross_origin_prompt";
 
 // Boolean that specifies whether the built-in asynchronous DNS client is used.
 const char kBuiltInDnsClientEnabled[] = "async_dns.enabled";
-
-// An int64 pref that contains the total size of all HTTP content that has been
-// received from the network.
-const char kHttpReceivedContentLength[] = "http_received_content_length";
-
-// An int64 pref that contains the total original size of all HTTP content that
-// was received over the network.
-const char kHttpOriginalContentLength[] = "http_original_content_length";
-
-#if defined(OS_ANDROID) || defined(OS_IOS)
-// A List pref that contains daily totals of the original size of all HTTP/HTTPS
-// that was received from the network.
-const char kDailyHttpOriginalContentLength[] =
-    "data_reduction.daily_original_length";
-
-// A List pref that contains daily totals of the size of all HTTP/HTTPS content
-// that was received from the network.
-const char kDailyHttpReceivedContentLength[] =
-    "data_reduction.daily_received_length";
-
-// A List pref that contains daily totals of the original size of all HTTP/HTTPS
-// that was received while the data reduction proxy is enabled.
-const char kDailyOriginalContentLengthWithDataReductionProxyEnabled[] =
-    "data_reduction.daily_original_length_with_data_reduction_proxy_enabled";
-
-// A List pref that contains daily totals of the size of all HTTP/HTTPS
-// that was received while the data reduction proxy is enabled.
-const char kDailyContentLengthWithDataReductionProxyEnabled[] =
-    "data_reduction.daily_received_length_with_data_reduction_proxy_enabled";
-
-const char kDailyContentLengthHttpsWithDataReductionProxyEnabled[] =
-    "data_reduction.daily_received_length_https_with_"
-    "data_reduction_proxy_enabled";
-const char kDailyContentLengthShortBypassWithDataReductionProxyEnabled[] =
-    "data_reduction.daily_received_length_short_bypass_with_"
-    "data_reduction_proxy_enabled";
-const char kDailyContentLengthLongBypassWithDataReductionProxyEnabled[] =
-    "data_reduction.daily_received_length_long_bypass_with_"
-    "data_reduction_proxy_enabled";
-const char kDailyContentLengthUnknownWithDataReductionProxyEnabled[] =
-    "data_reduction.daily_received_length_unknown_with_"
-    "data_reduction_proxy_enabled";
-
-// A List pref that contains daily totals of the original size of all HTTP/HTTPS
-// that was received via the data reduction proxy.
-const char kDailyOriginalContentLengthViaDataReductionProxy[] =
-    "data_reduction.daily_original_length_via_data_reduction_proxy";
-
-// A List pref that contains daily totals of the size of all HTTP/HTTPS
-// that was received via the data reduction proxy.
-const char kDailyContentLengthViaDataReductionProxy[] =
-    "data_reduction.daily_received_length_via_data_reduction_proxy";
-
-// An int64 pref that contains an internal representation of midnight on the
-// date of the last update to |kDailyHttp{Original,Received}ContentLength|.
-const char kDailyHttpContentLengthLastUpdateDate[] =
-    "data_reduction.last_update_date";
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 // A pref holding the value of the policy used to explicitly allow or deny
 // access to audio capture devices.  When enabled or not set, the user is

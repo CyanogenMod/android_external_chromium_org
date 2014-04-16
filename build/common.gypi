@@ -733,7 +733,7 @@
         }],
 
         # linux_use_gold_binary: whether to use the binary checked into
-        # third_party/gold.  Gold is not used for 32-bit linux builds
+        # third_party/binutils.  Gold is not used for 32-bit linux builds
         # as it runs out of address space.
         ['OS=="linux" and (target_arch=="x64" or target_arch=="arm")', {
           'linux_use_gold_binary%': 1,
@@ -1182,6 +1182,10 @@
     'debug_unwind_tables%': 1,
     'release_unwind_tables%': 1,
 
+    # Override where to find binutils
+    'binutils_version%': 0,
+    'binutils_dir%': '',
+
     # Enable TCMalloc.
     # TODO(dmikurube): Change Linux default of use_allocator to "tcmalloc".
     # TODO(dmikurube): Change Android default of use_allocator to "none".
@@ -1489,6 +1493,7 @@
             # they're passed to ant which uses a different relative path from
             # gyp.
             'android_ndk_root%': '<!(cd <(DEPTH) && pwd -P)/third_party/android_tools/ndk/',
+            'android_ndk_experimental_root%': '<!(cd <(DEPTH) && pwd -P)/third_party/android_tools/ndk_experimental/',
             'android_sdk_root%': '<!(cd <(DEPTH) && pwd -P)/third_party/android_tools/sdk/',
             'android_host_arch%': '<!(uname -m)',
             # Android API-level of the SDK used for compilation.
@@ -1513,17 +1518,16 @@
           'conditions': [
             ['target_arch == "ia32"', {
               'android_app_abi%': 'x86',
-              'android_gdbserver_executable%': 'gdbserver',
               'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-x86/gdbserver/gdbserver',
               'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-14/arch-x86',
               'android_toolchain%': '<(android_ndk_root)/toolchains/x86-4.6/prebuilt/<(host_os)-<(android_host_arch)/bin',
             }],
             ['target_arch == "x64"', {
               'android_app_abi%': 'x86_64',
-              'android_gdbserver_executable%': 'gdbserver64',
-              'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-x86_64/gdbserver/gdbserver64',
-              'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-19/arch-x86_64',
-              'android_toolchain%': '<(android_ndk_root)/toolchains/x86_64-4.8/prebuilt/<(host_os)-<(android_host_arch)/bin',
+              'android_gdbserver%': '<(android_ndk_experimental_root)/prebuilt/android-x86_64/gdbserver/gdbserver',
+              'android_ndk_sysroot%': '<(android_ndk_experimental_root)/platforms/android-20/arch-x86_64',
+              'android_toolchain%': '<(android_ndk_experimental_root)/toolchains/x86_64-4.8/prebuilt/<(host_os)-<(android_host_arch)/bin',
+              'android_stlport_root': '<(android_ndk_experimental_root)/sources/cxx-stl/stlport',
             }],
             ['target_arch=="arm"', {
               'conditions': [
@@ -1533,21 +1537,19 @@
                   'android_app_abi%': 'armeabi-v7a',
                 }],
               ],
-              'android_gdbserver_executable%': 'gdbserver',
               'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-arm/gdbserver/gdbserver',
               'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-14/arch-arm',
               'android_toolchain%': '<(android_ndk_root)/toolchains/arm-linux-androideabi-4.6/prebuilt/<(host_os)-<(android_host_arch)/bin',
             }],
             ['target_arch == "arm64"', {
               'android_app_abi%': 'arm64-v8a',
-              'android_gdbserver_executable%': 'gdbserver64',
-              'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-arm64/gdbserver64/gdbserver64',
-              'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-19/arch-arm64',
-              'android_toolchain%': '<(android_ndk_root)/toolchains/aarch64-linux-android-4.8/prebuilt/<(host_os)-<(android_host_arch)/bin',
+              'android_gdbserver%': '<(android_ndk_experimental_root)/prebuilt/android-arm64/gdbserver/gdbserver',
+              'android_ndk_sysroot%': '<(android_ndk_experimental_root)/platforms/android-20/arch-arm64',
+              'android_toolchain%': '<(android_ndk_experimental_root)/toolchains/aarch64-linux-android-4.8/prebuilt/<(host_os)-<(android_host_arch)/bin',
+              'android_stlport_root': '<(android_ndk_experimental_root)/sources/cxx-stl/stlport',
             }],
             ['target_arch == "mipsel"', {
               'android_app_abi%': 'mips',
-              'android_gdbserver_executable%': 'gdbserver',
               'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-mips/gdbserver/gdbserver',
               'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-14/arch-mips',
               'android_toolchain%': '<(android_ndk_root)/toolchains/mipsel-linux-android-4.6/prebuilt/<(host_os)-<(android_host_arch)/bin',
@@ -1556,7 +1558,6 @@
         },
         # Copy conditionally-set variables out one scope.
         'android_app_abi%': '<(android_app_abi)',
-        'android_gdbserver_executable': '<(android_gdbserver_executable)',
         'android_gdbserver%': '<(android_gdbserver)',
         'android_ndk_root%': '<(android_ndk_root)',
         'android_ndk_sysroot%': '<(android_ndk_sysroot)',
@@ -1740,7 +1741,7 @@
           },{
             'msvs_large_module_debug_link_mode%': '2',  # Yes
           }],
-          ['MSVS_VERSION=="2013e" or MSVS_VERSION=="2012e" or MSVS_VERSION=="2010e"', {
+          ['MSVS_VERSION=="2013e"', {
             'msvs_express%': 1,
             'secure_atl%': 0,
           },{
@@ -1910,8 +1911,11 @@
       ['notifications==1', {
         'grit_defines': ['-D', 'enable_notifications'],
       }],
-      ['enable_resource_whitelist_generation==1', {
+      ['enable_resource_whitelist_generation==1 and OS!="win"', {
         'grit_rc_header_format': ['-h', '#define {textual_id} _Pragma("whitelisted_resource_{numeric_id}") {numeric_id}'],
+      }],
+      ['enable_resource_whitelist_generation==1 and OS=="win"', {
+        'grit_rc_header_format': ['-h', '#define {textual_id} __pragma(message("whitelisted_resource_{numeric_id}")) {numeric_id}'],
       }],
       ['enable_mdns==1 or OS=="mac"', {
         'grit_defines': ['-D', 'enable_service_discovery'],
@@ -3656,6 +3660,14 @@
                 ],
               }],
             ],
+            # TODO(glider): enable the default options on other systems.
+            'conditions': [
+              ['OS=="linux" and (chromeos==0 or target_arch!="ia32")', {
+                'dependencies': [
+                  '<(DEPTH)/base/base.gyp:sanitizer_options',
+                ],
+              }],
+            ],
           }],
           ['asan==1', {
             'target_conditions': [
@@ -3874,6 +3886,19 @@
                   }],
                 ],
               }],
+              # Newer gcc's support -fuse-ld, use the flag to force gold
+              # selection.
+              # gcc -- http://gcc.gnu.org/onlinedocs/gcc-4.8.0/gcc/Optimize-Options.html
+              # TODO(mithro): Watch for clang support at following thread:
+              # http://clang-developers.42468.n3.nabble.com/Adding-fuse-ld-support-to-clang-td4032180.html
+              ['gcc_version>=48', {
+                'cflags': [
+                  '-fuse-ld=gold',
+                ],
+                'ldflags': [
+                  '-fuse-ld=gold',
+                ],
+              }]
             ],
           }],
           ['linux_use_gold_binary==1', {
@@ -4849,25 +4874,6 @@
               '<(windows_driver_kit_path)/inc/atl71',
               '<(windows_driver_kit_path)/inc/mfc42',
             ],
-            'target_conditions': [
-              ['chromium_code and MSVS_VERSION=="2010e"', {
-                # Workaround for intsafe in 2010 Express + WDK.
-                # ATL code uses intsafe.h and both intsafe.h and stdint.h
-                # define INT8_MIN et al.
-                # We can't use this workaround in third_party code because
-                # it has various levels of intolerance for including stdint.h.
-                # This is not necessary in 2013e, and should be removed once
-                # mainline is switched: http://crbug.com/340358.
-                'msvs_system_include_dirs': [
-                  '<(DEPTH)/build',
-                ],
-                'msvs_settings': {
-                  'VCCLCompilerTool': {
-                    'ForcedIncludeFiles': [ 'intsafe_workaround.h', ],
-                  },
-                },
-              }],
-            ],
           }],
         ],
         'msvs_system_include_dirs': [
@@ -4974,6 +4980,7 @@
                 'WarnAsError': 'false',
                 'RuntimeTypeInfo': 'false',
                 'AdditionalOptions': [
+                  '-fmsc-version=1800',
                   '/fallback',
 
                   # Many files use intrinsics without including this header.
@@ -5018,22 +5025,6 @@
                   '-ferror-limit=1',
                 ],
               },
-              'conditions': [
-                ['MSVS_VERSION=="2013" or MSVS_VERSION=="2013e"', {
-                  'VCCLCompilerTool': {
-                    'AdditionalOptions': [
-                      '-fmsc-version=1800',
-                    ],
-                  },
-                }],
-                ['MSVS_VERSION=="2010" or MSVS_VERSION=="2010e"', {
-                  'VCCLCompilerTool': {
-                    'AdditionalOptions': [
-                      '-fmsc-version=1600',
-                    ],
-                  },
-                }],
-              ],
             }],
             ['asan==1', {
               # ASan on Windows is a work in progress and very experimental.

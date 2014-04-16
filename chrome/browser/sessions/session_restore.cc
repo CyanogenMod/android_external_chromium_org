@@ -23,7 +23,6 @@
 #include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/performance_monitor/startup_timer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_service.h"
@@ -49,6 +48,8 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/extension_set.h"
 #include "net/base/network_change_notifier.h"
 
 #if defined(OS_CHROMEOS)
@@ -955,14 +956,13 @@ class SessionRestoreImpl : public content::NotificationObserver {
     DCHECK(selected_index >= 0 &&
            selected_index < static_cast<int>(tab.navigations.size()));
     GURL url = tab.navigations[selected_index].virtual_url();
-    if (browser->profile()->GetExtensionService()) {
-      const extensions::Extension* extension =
-          browser->profile()->GetExtensionService()->GetInstalledApp(url);
-      if (extension) {
-        CoreAppLauncherHandler::RecordAppLaunchType(
-            extension_misc::APP_LAUNCH_SESSION_RESTORE,
-            extension->GetType());
-      }
+    const extensions::Extension* extension =
+        extensions::ExtensionRegistry::Get(profile())
+            ->enabled_extensions().GetAppByURL(url);
+    if (extension) {
+      CoreAppLauncherHandler::RecordAppLaunchType(
+          extension_misc::APP_LAUNCH_SESSION_RESTORE,
+          extension->GetType());
     }
   }
 
@@ -1072,8 +1072,16 @@ class SessionRestoreImpl : public content::NotificationObserver {
                                  ui::WindowShowState show_state,
                                  const std::string& app_name) {
     Browser::CreateParams params(type, profile_, host_desktop_type_);
-    params.app_name = app_name;
-    params.initial_bounds = bounds;
+    if (!app_name.empty()) {
+      const bool trusted_source = true;  // We only store trusted app windows.
+      params = Browser::CreateParams::CreateForApp(app_name,
+                                                   trusted_source,
+                                                   bounds,
+                                                   profile_,
+                                                   host_desktop_type_);
+    } else {
+      params.initial_bounds = bounds;
+    }
     params.initial_show_state = show_state;
     params.is_session_restore = true;
     return new Browser(params);

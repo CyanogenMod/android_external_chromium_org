@@ -108,9 +108,7 @@
         'shell/browser/shell_devtools_frontend.h',
         'shell/browser/shell_download_manager_delegate.cc',
         'shell/browser/shell_download_manager_delegate.h',
-        'shell/browser/shell_gtk.cc',
         'shell/browser/shell.h',
-        'shell/browser/shell_javascript_dialog_gtk.cc',
         'shell/browser/shell_javascript_dialog.h',
         'shell/browser/shell_javascript_dialog_mac.mm',
         'shell/browser/shell_javascript_dialog_manager.cc',
@@ -119,7 +117,6 @@
         'shell/browser/shell_layout_tests_android.cc',
         'shell/browser/shell_layout_tests_android.h',
         'shell/browser/shell_login_dialog.cc',
-        'shell/browser/shell_login_dialog_gtk.cc',
         'shell/browser/shell_login_dialog.h',
         'shell/browser/shell_login_dialog_mac.mm',
         'shell/browser/shell_mac.mm',
@@ -144,7 +141,6 @@
         'shell/browser/shell_views.cc',
         'shell/browser/shell_web_contents_view_delegate_android.cc',
         'shell/browser/shell_web_contents_view_delegate_creator.h',
-        'shell/browser/shell_web_contents_view_delegate_gtk.cc',
         'shell/browser/shell_web_contents_view_delegate.h',
         'shell/browser/shell_web_contents_view_delegate_mac.mm',
         'shell/browser/shell_web_contents_view_delegate_win.cc',
@@ -177,7 +173,6 @@
         'shell/renderer/shell_render_process_observer.h',
         'shell/renderer/shell_render_view_observer.cc',
         'shell/renderer/shell_render_view_observer.h',
-        'shell/renderer/test_runner/key_code_mapping.cc',
         'shell/renderer/test_runner/key_code_mapping.h',
         'shell/renderer/test_runner/MockColorChooser.cpp',
         'shell/renderer/test_runner/MockColorChooser.h',
@@ -320,9 +315,6 @@
             '../ui/aura/aura.gyp:aura_test_support',
             '../ui/base/strings/ui_strings.gyp:ui_strings',
             '../ui/events/events.gyp:events',
-          ],
-          'sources/': [
-            ['exclude', 'shell/browser/shell_gtk.cc'],
           ],
           'conditions': [
             ['toolkit_views==1', {
@@ -565,16 +557,11 @@
           },
           'msvs_large_pdb': 1,
         }],  # OS=="win"
-        ['OS == "win" or toolkit_uses_gtk == 1', {
+        ['OS == "win"', {
           'dependencies': [
             '../sandbox/sandbox.gyp:sandbox',
           ],
-        }],  # OS=="win" or toolkit_uses_gtk == 1
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:gtk',
-          ],
-        }],  # toolkit_uses_gtk
+        }],  # OS=="win"
         ['OS=="mac"', {
           'product_name': '<(content_shell_product_name)',
           'dependencies!': [

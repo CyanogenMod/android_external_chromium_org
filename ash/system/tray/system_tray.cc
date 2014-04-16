@@ -53,6 +53,7 @@
 #include "ash/system/chromeos/network/tray_sms.h"
 #include "ash/system/chromeos/network/tray_vpn.h"
 #include "ash/system/chromeos/power/tray_power.h"
+#include "ash/system/chromeos/rotation/tray_rotation_lock.h"
 #include "ash/system/chromeos/screen_security/screen_capture_tray_item.h"
 #include "ash/system/chromeos/screen_security/screen_share_tray_item.h"
 #include "ash/system/chromeos/session/tray_session_length_limit.h"
@@ -92,11 +93,9 @@ class SystemBubbleWrapper {
         Shell::GetInstance()->system_tray_delegate()->GetUserLoginStatus();
     bubble_->InitView(anchor, login_status, init_params);
     bubble_wrapper_.reset(new TrayBubbleWrapper(tray, bubble_->bubble_view()));
-    if (ash::switches::UseAlternateShelfLayout()) {
-      // The system bubble should not have an arrow.
-      bubble_->bubble_view()->SetArrowPaintType(
-          views::BubbleBorder::PAINT_NONE);
-    }
+    // The system bubble should not have an arrow.
+    bubble_->bubble_view()->SetArrowPaintType(
+        views::BubbleBorder::PAINT_NONE);
     is_persistent_ = is_persistent;
 
     // If ChromeVox is enabled, focus the default item if no item is focused.
@@ -194,6 +193,7 @@ void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
   AddTrayItem(new TrayCapsLock(this));
   AddTrayItem(new TraySettings(this));
   AddTrayItem(new TrayUpdate(this));
+  AddTrayItem(new TrayRotationLock(this));
   AddTrayItem(tray_date_);
 #elif defined(OS_WIN)
   AddTrayItem(tray_accessibility_);
@@ -479,8 +479,7 @@ void SystemTray::ShowItems(const std::vector<SystemTrayItem*>& items,
                                            menu_width,
                                            kTrayPopupMaxWidth);
     init_params.can_activate = can_activate;
-    init_params.first_item_has_no_margin =
-        ash::switches::UseAlternateShelfLayout();
+    init_params.first_item_has_no_margin = true;
     if (detailed) {
       // This is the case where a volume control or brightness control bubble
       // is created.
@@ -551,8 +550,7 @@ void SystemTray::UpdateNotificationBubble() {
                                          GetAnchorAlignment(),
                                          kTrayPopupMinWidth,
                                          kTrayPopupMaxWidth);
-  init_params.first_item_has_no_margin =
-      ash::switches::UseAlternateShelfLayout();
+  init_params.first_item_has_no_margin = true;
   init_params.arrow_color = kBackgroundColor;
   init_params.arrow_offset = GetTrayXOffset(notification_items_[0]);
   notification_bubble_.reset(new SystemBubbleWrapper(notification_bubble));

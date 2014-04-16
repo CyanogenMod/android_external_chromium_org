@@ -18,8 +18,6 @@
 #include "cc/test/fake_picture_layer_impl.h"
 #include "cc/test/fake_picture_pile_impl.h"
 #include "cc/test/geometry_test_utils.h"
-#include "cc/test/gpu_rasterization_settings.h"
-#include "cc/test/hybrid_rasterization_settings.h"
 #include "cc/test/impl_side_painting_settings.h"
 #include "cc/test/mock_quad_culler.h"
 #include "cc/test/test_shared_bitmap_manager.h"
@@ -1634,7 +1632,7 @@ TEST_F(PictureLayerImplTest, SyncTilingAfterReleaseResource) {
   EXPECT_EQ(HIGH_RESOLUTION, high_res->resolution());
 }
 
-TEST_F(PictureLayerImplTest, TilingWithoutGpuRasterization) {
+TEST_F(PictureLayerImplTest, NoLowResTilingWithGpuRasterization) {
   gfx::Size default_tile_size(host_impl_.settings().default_tile_size);
   gfx::Size layer_bounds(default_tile_size.width() * 4,
                          default_tile_size.height() * 4);
@@ -1654,6 +1652,20 @@ TEST_F(PictureLayerImplTest, TilingWithoutGpuRasterization) {
                                          &result_bounds);
   // Should have a low-res and a high-res tiling.
   ASSERT_EQ(2u, pending_layer_->tilings()->num_tilings());
+
+  pending_layer_->SetUseGpuRasterization(true);
+  EXPECT_TRUE(pending_layer_->ShouldUseGpuRasterization());
+  EXPECT_EQ(0u, pending_layer_->tilings()->num_tilings());
+  pending_layer_->CalculateContentsScale(1.f,
+                                         1.f,
+                                         1.f,
+                                         1.f,
+                                         false,
+                                         &result_scale_x,
+                                         &result_scale_y,
+                                         &result_bounds);
+  // Should only have the high-res tiling.
+  ASSERT_EQ(1u, pending_layer_->tilings()->num_tilings());
 }
 
 TEST_F(PictureLayerImplTest, NoTilingIfDoesNotDrawContent) {
@@ -1768,54 +1780,9 @@ TEST_F(DeferredInitPictureLayerImplTest,
   host_impl_.active_tree()->UpdateDrawProperties();
 }
 
-class HybridRasterizationPictureLayerImplTest : public PictureLayerImplTest {
- public:
-  HybridRasterizationPictureLayerImplTest()
-      : PictureLayerImplTest(HybridRasterizationSettings()) {}
-};
-
-TEST_F(HybridRasterizationPictureLayerImplTest, Tiling) {
-  gfx::Size default_tile_size(host_impl_.settings().default_tile_size);
-  gfx::Size layer_bounds(default_tile_size.width() * 4,
-                         default_tile_size.height() * 4);
-  float result_scale_x, result_scale_y;
-  gfx::Size result_bounds;
-
-  SetupDefaultTrees(layer_bounds);
-  EXPECT_FALSE(pending_layer_->ShouldUseGpuRasterization());
-  EXPECT_EQ(0u, pending_layer_->tilings()->num_tilings());
-  pending_layer_->CalculateContentsScale(1.f,
-                                         1.f,
-                                         1.f,
-                                         1.f,
-                                         false,
-                                         &result_scale_x,
-                                         &result_scale_y,
-                                         &result_bounds);
-  // Should have a low-res and a high-res tiling.
-  ASSERT_EQ(2u, pending_layer_->tilings()->num_tilings());
-
-  pending_layer_->SetHasGpuRasterizationHint(true);
-  EXPECT_TRUE(pending_layer_->ShouldUseGpuRasterization());
-  EXPECT_EQ(0u, pending_layer_->tilings()->num_tilings());
-  pending_layer_->CalculateContentsScale(1.f,
-                                         1.f,
-                                         1.f,
-                                         1.f,
-                                         false,
-                                         &result_scale_x,
-                                         &result_scale_y,
-                                         &result_bounds);
-  // Should only have the high-res tiling.
-  ASSERT_EQ(1u, pending_layer_->tilings()->num_tilings());
-}
-
-TEST_F(HybridRasterizationPictureLayerImplTest,
-       HighResTilingDuringAnimationForCpuRasterization) {
+TEST_F(PictureLayerImplTest, HighResTilingDuringAnimationForCpuRasterization) {
   gfx::Size tile_size(host_impl_.settings().default_tile_size);
   SetupDefaultTrees(tile_size);
-  pending_layer_->SetHasGpuRasterizationHint(false);
-  active_layer_->SetHasGpuRasterizationHint(false);
 
   float contents_scale = 1.f;
   float device_scale = 1.3f;
@@ -1901,12 +1868,11 @@ TEST_F(HybridRasterizationPictureLayerImplTest,
   EXPECT_BOTH_EQ(HighResTiling()->contents_scale(), 4.f);
 }
 
-TEST_F(HybridRasterizationPictureLayerImplTest,
-       HighResTilingDuringAnimationForGpuRasterization) {
+TEST_F(PictureLayerImplTest, HighResTilingDuringAnimationForGpuRasterization) {
   gfx::Size tile_size(host_impl_.settings().default_tile_size);
   SetupDefaultTrees(tile_size);
-  pending_layer_->SetHasGpuRasterizationHint(true);
-  active_layer_->SetHasGpuRasterizationHint(true);
+  pending_layer_->SetUseGpuRasterization(true);
+  active_layer_->SetUseGpuRasterization(true);
 
   float contents_scale = 1.f;
   float device_scale = 1.f;
@@ -1956,50 +1922,6 @@ TEST_F(HybridRasterizationPictureLayerImplTest,
   EXPECT_BOTH_EQ(HighResTiling()->contents_scale(), 4.f);
 }
 
-class GpuRasterizationPictureLayerImplTest : public PictureLayerImplTest {
- public:
-  GpuRasterizationPictureLayerImplTest()
-      : PictureLayerImplTest(GpuRasterizationSettings()) {}
-};
-
-TEST_F(GpuRasterizationPictureLayerImplTest, Tiling) {
-  gfx::Size default_tile_size(host_impl_.settings().default_tile_size);
-  gfx::Size layer_bounds(default_tile_size.width() * 4,
-                         default_tile_size.height() * 4);
-  float result_scale_x, result_scale_y;
-  gfx::Size result_bounds;
-
-  SetupDefaultTrees(layer_bounds);
-  pending_layer_->SetHasGpuRasterizationHint(true);
-  EXPECT_TRUE(pending_layer_->ShouldUseGpuRasterization());
-  EXPECT_EQ(0u, pending_layer_->tilings()->num_tilings());
-  pending_layer_->CalculateContentsScale(1.f,
-                                         1.f,
-                                         1.f,
-                                         1.f,
-                                         false,
-                                         &result_scale_x,
-                                         &result_scale_y,
-                                         &result_bounds);
-  // Should only have the high-res tiling.
-  ASSERT_EQ(1u, pending_layer_->tilings()->num_tilings());
-
-  pending_layer_->SetHasGpuRasterizationHint(false);
-  EXPECT_TRUE(pending_layer_->ShouldUseGpuRasterization());
-  // Should still have the high-res tiling.
-  EXPECT_EQ(1u, pending_layer_->tilings()->num_tilings());
-  pending_layer_->CalculateContentsScale(1.f,
-                                         1.f,
-                                         1.f,
-                                         1.f,
-                                         false,
-                                         &result_scale_x,
-                                         &result_scale_y,
-                                         &result_bounds);
-  // Should still only have the high-res tiling.
-  ASSERT_EQ(1u, pending_layer_->tilings()->num_tilings());
-}
-
 TEST_F(PictureLayerImplTest, LayerRasterTileIterator) {
   gfx::Size tile_size(100, 100);
   gfx::Size layer_bounds(1000, 1000);
@@ -2013,6 +1935,14 @@ TEST_F(PictureLayerImplTest, LayerRasterTileIterator) {
 
   float low_res_factor = host_impl_.settings().low_res_contents_scale_factor;
 
+  // Empty iterator
+  PictureLayerImpl::LayerRasterTileIterator it;
+  EXPECT_FALSE(it);
+
+  // No tilings.
+  it = PictureLayerImpl::LayerRasterTileIterator(pending_layer_, false);
+  EXPECT_FALSE(it);
+
   pending_layer_->AddTiling(low_res_factor);
   pending_layer_->AddTiling(0.3f);
   pending_layer_->AddTiling(0.7f);
@@ -2021,9 +1951,6 @@ TEST_F(PictureLayerImplTest, LayerRasterTileIterator) {
 
   host_impl_.SetViewportSize(gfx::Size(500, 500));
   host_impl_.pending_tree()->UpdateDrawProperties();
-
-  PictureLayerImpl::LayerRasterTileIterator it;
-  EXPECT_FALSE(it);
 
   std::set<Tile*> unique_tiles;
   bool reached_prepaint = false;
@@ -2146,7 +2073,8 @@ TEST_F(PictureLayerImplTest, LayerEvictionTileIterator) {
   EXPECT_FALSE(it);
 
   // Tiles don't have resources yet.
-  it = PictureLayerImpl::LayerEvictionTileIterator(pending_layer_);
+  it = PictureLayerImpl::LayerEvictionTileIterator(
+      pending_layer_, SAME_PRIORITY_FOR_BOTH_TREES);
   EXPECT_FALSE(it);
 
   host_impl_.tile_manager()->InitializeTilesWithResourcesForTesting(all_tiles);
@@ -2157,7 +2085,9 @@ TEST_F(PictureLayerImplTest, LayerEvictionTileIterator) {
   bool reached_visible = false;
   bool reached_required = false;
   Tile* last_tile = NULL;
-  for (it = PictureLayerImpl::LayerEvictionTileIterator(pending_layer_); it;
+  for (it = PictureLayerImpl::LayerEvictionTileIterator(
+           pending_layer_, SAME_PRIORITY_FOR_BOTH_TREES);
+       it;
        ++it) {
     Tile* tile = *it;
     if (!last_tile)

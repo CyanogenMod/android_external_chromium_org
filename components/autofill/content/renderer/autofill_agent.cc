@@ -32,6 +32,7 @@
 #include "net/cert/cert_status_flags.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElementCollection.h"
@@ -47,6 +48,7 @@
 #include "ui/events/keycodes/keyboard_codes.h"
 
 using blink::WebAutofillClient;
+using blink::WebConsoleMessage;
 using blink::WebElement;
 using blink::WebElementCollection;
 using blink::WebFormControlElement;
@@ -260,14 +262,18 @@ void AutofillAgent::DidChangeScrollOffset(WebLocalFrame*) {
   HidePopup();
 }
 
-void AutofillAgent::didRequestAutocomplete(WebLocalFrame* frame,
-                                           const WebFormElement& form) {
+void AutofillAgent::didRequestAutocomplete(
+    const WebFormElement& form,
+    const blink::WebAutocompleteParams& details) {
+  // TODO(estade): honor |details|.
+
   // Disallow the dialog over non-https or broken https, except when the
   // ignore SSL flag is passed. See http://crbug.com/272512.
   // TODO(palmer): this should be moved to the browser process after frames
   // get their own processes.
-  GURL url(frame->document().url());
-  content::SSLStatus ssl_status = render_view()->GetSSLStatusOfFrame(frame);
+  GURL url(form.document().url());
+  content::SSLStatus ssl_status =
+      render_view()->GetSSLStatusOfFrame(form.document().frame());
   bool is_safe = url.SchemeIs(content::kHttpsScheme) &&
       !net::IsCertStatusError(ssl_status.cert_status);
   bool allow_unsafe = CommandLine::ForCurrentProcess()->HasSwitch(
@@ -293,13 +299,6 @@ void AutofillAgent::didRequestAutocomplete(WebLocalFrame* frame,
 
   in_flight_request_form_ = form;
   Send(new AutofillHostMsg_RequestAutocomplete(routing_id(), form_data, url));
-}
-
-void AutofillAgent::didRequestAutocomplete(
-    const WebFormElement& form,
-    const blink::WebAutocompleteParams& details) {
-  // TODO(estade): honor |details|.
-  didRequestAutocomplete(form.document().frame(), form);
 }
 
 void AutofillAgent::setIgnoreTextChanges(bool ignore) {
@@ -504,6 +503,7 @@ void AutofillAgent::OnAcceptPasswordAutofillSuggestion(
 
 void AutofillAgent::OnRequestAutocompleteResult(
     WebFormElement::AutocompleteResult result,
+    const base::string16& message,
     const FormData& form_data) {
   if (in_flight_request_form_.isNull())
     return;
@@ -515,6 +515,15 @@ void AutofillAgent::OnRequestAutocompleteResult(
   }
 
   in_flight_request_form_.finishRequestAutocomplete(result);
+
+  if (!message.empty()) {
+    const base::string16 prefix(base::ASCIIToUTF16("requestAutocomplete: "));
+    WebConsoleMessage console_message = WebConsoleMessage(
+        WebConsoleMessage::LevelLog, WebString(prefix + message));
+    in_flight_request_form_.document().frame()->addMessageToConsole(
+        console_message);
+  }
+
   in_flight_request_form_.reset();
 }
 

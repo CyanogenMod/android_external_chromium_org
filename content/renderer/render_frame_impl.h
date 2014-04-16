@@ -19,8 +19,6 @@
 #include "content/public/renderer/render_frame.h"
 #include "content/renderer/renderer_webcookiejar_impl.h"
 #include "ipc/ipc_message.h"
-// TODO(jam): remove this header after the blink roll.
-#include "third_party/WebKit/public/platform/WebColor.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebFrameClient.h"
 #include "third_party/WebKit/public/web/WebHistoryCommitType.h"
@@ -35,15 +33,11 @@ namespace blink {
 class WebInputEvent;
 class WebMouseEvent;
 class WebContentDecryptionModule;
+class WebNotificationPresenter;
 class WebSecurityOrigin;
 struct WebCompositionUnderline;
 struct WebContextMenuData;
 struct WebCursorInfo;
-
-// TODO(jam): remove this after blink roll
-class WebColorChooser;
-class WebColorChooserClient;
-struct WebColorSuggestion;
 }
 
 namespace gfx {
@@ -101,8 +95,13 @@ class CONTENT_EXPORT RenderFrameImpl
   RenderWidget* GetRenderWidget();
 
   // This is called right after creation with the WebLocalFrame for this
-  // RenderFrame.
+  // RenderFrame. It must be called before Initialize.
   void SetWebFrame(blink::WebLocalFrame* web_frame);
+
+  // This method must be called after the frame has been added to the frame
+  // tree. It creates all objects that depend on the frame being at its proper
+  // spot.
+  void Initialize();
 
   // Notification from RenderView.
   virtual void OnStop();
@@ -267,9 +266,6 @@ class CONTENT_EXPORT RenderFrameImpl
       blink::WebLocalFrame* frame,
       const blink::WebHistoryItem& item,
       blink::WebHistoryCommitType commit_type);
-  // DEPRECATED
-  virtual void didCommitProvisionalLoad(blink::WebLocalFrame* frame,
-                                        bool is_new_navigation);
   virtual void didClearWindowObject(blink::WebLocalFrame* frame, int world_id);
   virtual void didCreateDocumentElement(blink::WebLocalFrame* frame);
   virtual void didReceiveTitle(blink::WebLocalFrame* frame,
@@ -285,10 +281,8 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void didNavigateWithinPage(blink::WebLocalFrame* frame,
                                      const blink::WebHistoryItem& item,
                                      blink::WebHistoryCommitType commit_type);
-  // DEPRECATED
-  virtual void didNavigateWithinPage(blink::WebLocalFrame* frame,
-                                     bool is_new_navigation);
   virtual void didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame);
+  virtual blink::WebNotificationPresenter* notificationPresenter();
   virtual void didChangeSelection(bool is_empty_selection);
   virtual blink::WebColorChooser* createColorChooser(
       blink::WebColorChooserClient* client,
@@ -475,7 +469,6 @@ class CONTENT_EXPORT RenderFrameImpl
 
   base::WeakPtr<RenderViewImpl> render_view_;
   int routing_id_;
-  bool is_loading_;
   bool is_swapped_out_;
   bool is_detaching_;
 

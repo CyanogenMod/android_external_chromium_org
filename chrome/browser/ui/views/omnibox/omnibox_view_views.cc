@@ -236,12 +236,13 @@ void OmniboxViewViews::Update() {
     controller()->GetToolbarModel()->set_url_replacement_enabled(true);
     model()->UpdatePermanentText();
 
-    // Tweak: if the user had all the text selected, select all the new text.
+    // Select all the new text if the user had all the old text selected, or if
+    // there was no previous text (for new tab page URL replacement extensions).
     // This makes one particular case better: the user clicks in the box to
     // change it right before the permanent URL is changed.  Since the new URL
     // is still fully selected, the user's typing will replace the edit contents
     // as they'd intended.
-    const bool was_select_all = !text().empty() && IsSelectAll();
+    const bool was_select_all = IsSelectAll();
     const bool was_reversed = GetSelectedRange().is_reversed();
 
     RevertAll();
@@ -443,6 +444,16 @@ bool OmniboxViewViews::HandleEarlyTabActions(const ui::KeyEvent& event) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// OmniboxViewViews, private View implementation:
+
+void OmniboxViewViews::OnNativeThemeChanged(const ui::NativeTheme* theme) {
+  views::Textfield::OnNativeThemeChanged(theme);
+  SetBackgroundColor(location_bar_view_->GetColor(
+      ToolbarModel::NONE, LocationBarView::BACKGROUND));
+  EmphasizeURLComponents();
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // OmniboxViewViews, private OmniboxView implementation:
 
 void OmniboxViewViews::SetWindowTextAndCaretPos(const base::string16& text,
@@ -576,17 +587,11 @@ gfx::NativeView OmniboxViewViews::GetRelativeWindowForPopup() const {
 }
 
 void OmniboxViewViews::SetGrayTextAutocompletion(const base::string16& input) {
-#if defined(OS_WIN) || defined(USE_AURA)
   location_bar_view_->SetGrayTextAutocompletion(input);
-#endif
 }
 
 base::string16 OmniboxViewViews::GetGrayTextAutocompletion() const {
-#if defined(OS_WIN) || defined(USE_AURA)
   return location_bar_view_->GetGrayTextAutocompletion();
-#else
-  return base::string16();
-#endif
 }
 
 int OmniboxViewViews::GetWidth() const {
@@ -795,6 +800,7 @@ void OmniboxViewViews::OnGestureEvent(ui::GestureEvent* event) {
 }
 
 void OmniboxViewViews::AboutToRequestFocusFromTabTraversal(bool reverse) {
+  views::Textfield::AboutToRequestFocusFromTabTraversal(reverse);
   // Tabbing into the omnibox should affect the origin chip in the same way
   // clicking it should.
   HandleOriginChipMouseRelease();

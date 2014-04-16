@@ -5,7 +5,9 @@
 // Multiply-included message file, hence no include guard.
 
 #include <string>
+#include <vector>
 
+#include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "components/autofill/content/common/autofill_param_traits_macros.h"
 #include "components/autofill/core/common/form_data.h"
@@ -22,6 +24,7 @@
 #include "ipc/ipc_message_utils.h"
 #include "third_party/WebKit/public/web/WebFormElement.h"
 #include "ui/gfx/rect.h"
+#include "url/gurl.h"
 
 #define IPC_MESSAGE_START AutofillMsgStart
 
@@ -149,9 +152,11 @@ IPC_MESSAGE_ROUTED1(AutofillMsg_FormNotBlacklisted,
 
 // Sent when requestAutocomplete() finishes (either succesfully or with an
 // error). If it was a success, the renderer fills the form that requested
-// autocomplete with the |form_data| values input by the user.
-IPC_MESSAGE_ROUTED2(AutofillMsg_RequestAutocompleteResult,
+// autocomplete with the |form_data| values input by the user. |message|
+// is printed to the console if non-empty.
+IPC_MESSAGE_ROUTED3(AutofillMsg_RequestAutocompleteResult,
                     blink::WebFormElement::AutocompleteResult /* result */,
+                    base::string16 /* message */,
                     autofill::FormData /* form_data */)
 
 // Sent when Autofill manager gets the query response from the Autofill server
@@ -184,6 +189,10 @@ IPC_MESSAGE_ROUTED1(AutofillHostMsg_PasswordFormsRendered,
 // Notification that this password form was submitted by the user.
 IPC_MESSAGE_ROUTED1(AutofillHostMsg_PasswordFormSubmitted,
                     autofill::PasswordForm /* form */)
+
+// Notification that logs during saving the password have been gathered.
+IPC_MESSAGE_ROUTED1(AutofillHostMsg_RecordSavePasswordProgress,
+                    std::string /* log */)
 
 // Notification that a form has been submitted.  The user hit the button.
 IPC_MESSAGE_ROUTED2(AutofillHostMsg_FormSubmitted,

@@ -123,9 +123,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_skia_bindings_gpu_skia_bindings_gyp,,,$(GYP_VAR_PREFIX))/gpu_skia_bindings_gpu_skia_bindings_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_environment_chromium_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_environment_chromium_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_common_lib_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_common_lib_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_system_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_system_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_environment_chromium_impl_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_environment_chromium_impl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_system_impl_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_system_impl_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_environment_chromium_impl_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_environment_chromium_impl_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp,,,$(GYP_VAR_PREFIX))/blink.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_platform_blink_platform_gyp,,,$(GYP_VAR_PREFIX))/third_party_WebKit_Source_platform_blink_platform_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_config_gyp,,,$(GYP_VAR_PREFIX))/config.stamp \
@@ -401,6 +400,7 @@ MY_DEFS_Debug := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
@@ -494,6 +494,7 @@ MY_DEFS_Release := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
@@ -651,9 +652,8 @@ LOCAL_STATIC_LIBRARIES := \
 	gpu_skia_bindings_gpu_skia_bindings_gyp \
 	mojo_mojo_environment_chromium_gyp \
 	mojo_mojo_common_lib_gyp \
-	mojo_mojo_system_gyp \
-	mojo_mojo_environment_chromium_impl_gyp \
 	mojo_mojo_system_impl_gyp \
+	mojo_mojo_environment_chromium_impl_gyp \
 	third_party_WebKit_Source_platform_blink_platform_gyp \
 	third_party_WebKit_Source_wtf_wtf_gyp \
 	third_party_WebKit_Source_platform_blink_common_gyp \

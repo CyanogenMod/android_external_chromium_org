@@ -465,18 +465,6 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kIgnoreGpuBlacklist)
   },
   {
-    "force-compositing-mode-2",
-    IDS_FLAGS_FORCE_COMPOSITING_MODE_NAME,
-    IDS_FLAGS_FORCE_COMPOSITING_MODE_DESCRIPTION,
-#if !defined(USE_AURA)
-    kOsLinux,
-#else
-    0,
-#endif
-    ENABLE_DISABLE_VALUE_TYPE(switches::kForceCompositingMode,
-                              switches::kDisableForceCompositingMode)
-  },
-  {
     "threaded-compositing-mode",
     IDS_FLAGS_THREADED_COMPOSITING_MODE_NAME,
     IDS_FLAGS_THREADED_COMPOSITING_MODE_DESCRIPTION,
@@ -791,18 +779,11 @@ const Experiment kExperiments[] = {
                               switches::kDisableQuicHttps)
   },
   {
-    "enable-spdy4a2",
-    IDS_FLAGS_ENABLE_SPDY4A2_NAME,
-    IDS_FLAGS_ENABLE_SPDY4A2_DESCRIPTION,
+    "enable-spdy4",
+    IDS_FLAGS_ENABLE_SPDY4_NAME,
+    IDS_FLAGS_ENABLE_SPDY4_DESCRIPTION,
     kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableSpdy4a2)
-  },
-  {
-    "enable-http2-draft-04",
-    IDS_FLAGS_ENABLE_HTTP2_DRAFT_04_NAME,
-    IDS_FLAGS_ENABLE_HTTP2_DRAFT_04_DESCRIPTION,
-    kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableHttp2Draft04)
+    SINGLE_VALUE_TYPE(switches::kEnableSpdy4)
   },
   {
     "enable-async-dns",
@@ -813,18 +794,11 @@ const Experiment kExperiments[] = {
                               switches::kDisableAsyncDns)
   },
   {
-    "disable-webkit-media-source",
-    IDS_FLAGS_DISABLE_WEBKIT_MEDIA_SOURCE_NAME,
-    IDS_FLAGS_DISABLE_WEBKIT_MEDIA_SOURCE_DESCRIPTION,
+    "disable-media-source",
+    IDS_FLAGS_DISABLE_MEDIA_SOURCE_NAME,
+    IDS_FLAGS_DISABLE_MEDIA_SOURCE_DESCRIPTION,
     kOsAll,
-    SINGLE_VALUE_TYPE(switches::kDisableWebKitMediaSource)
-  },
-  {
-    "disable-unprefixed-media-source",
-    IDS_FLAGS_DISABLE_UNPREFIXED_MEDIA_SOURCE_NAME,
-    IDS_FLAGS_DISABLE_UNPREFIXED_MEDIA_SOURCE_DESCRIPTION,
-    kOsAll,
-    SINGLE_VALUE_TYPE(switches::kDisableUnprefixedMediaSource)
+    SINGLE_VALUE_TYPE(switches::kDisableMediaSource)
   },
   {
     "enable-encrypted-media",
@@ -945,14 +919,6 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kDisableTouchAdjustment)
   },
 #if defined(OS_CHROMEOS)
-  {
-      "ash-use-alternate-shelf",
-      IDS_FLAGS_ALTERNATE_SHELF_LAYOUT_NAME,
-      IDS_FLAGS_ALTERNATE_SHELF_LAYOUT_DESCRIPTION,
-      kOsCrOS,
-      ENABLE_DISABLE_VALUE_TYPE(ash::switches::kAshUseAlternateShelfLayout,
-                                ash::switches::kAshDisableAlternateShelfLayout)
-  },
   {
     "ash-disable-docked-windows",
     IDS_FLAGS_DOCKED_WINDOWS_NAME,
@@ -1465,6 +1431,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kFastUserSwitching)
   },
   {
+    "enable-new-avatar-menu",
+    IDS_FLAGS_ENABLE_NEW_AVATAR_MENU_NAME,
+    IDS_FLAGS_ENABLE_NEW_AVATAR_MENU_DESCRIPTION,
+    kOsMac | kOsWin | kOsLinux,
+    SINGLE_VALUE_TYPE(switches::kNewAvatarMenu)
+  },
+  {
     "enable-web-based-signin",
     IDS_FLAGS_ENABLE_WEB_BASED_SIGNIN_NAME,
     IDS_FLAGS_ENABLE_WEB_BASED_SIGNIN_DESCRIPTION,
@@ -1590,6 +1563,13 @@ const Experiment kExperiments[] = {
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kEnableServiceWorker)
   },
+  {
+    "enable-service-worker-sync",
+    IDS_FLAGS_ENABLE_SERVICE_WORKER_SYNC_NAME,
+    IDS_FLAGS_ENABLE_SERVICE_WORKER_SYNC_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kEnableServiceWorkerSync)
+  },
 #if defined(OS_ANDROID)
   {
     "disable-click-delay",
@@ -1692,7 +1672,7 @@ const Experiment kExperiments[] = {
     kOsAll,
     SINGLE_VALUE_TYPE(autofill::switches::kDisableIgnoreAutocompleteOff)
   },
-#if defined(USE_AURA) || defined(OS_WIN)
+#if defined(USE_AURA)
   {
     "enable-permissions-bubbles",
     IDS_FLAGS_ENABLE_PERMISSIONS_BUBBLES_NAME,

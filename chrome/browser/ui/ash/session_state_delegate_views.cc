@@ -66,7 +66,18 @@ bool SessionStateDelegate::IsUserSessionBlocked() const {
   return false;
 }
 
+ash::SessionStateDelegate::SessionState SessionStateDelegate::GetSessionState()
+    const {
+  return SESSION_STATE_ACTIVE;
+}
+
 const base::string16 SessionStateDelegate::GetUserDisplayName(
+    ash::MultiProfileIndex index) const {
+  NOTIMPLEMENTED();
+  return base::UTF8ToUTF16("");
+}
+
+const base::string16 SessionStateDelegate::GetUserGivenName(
     ash::MultiProfileIndex index) const {
   NOTIMPLEMENTED();
   return base::UTF8ToUTF16("");

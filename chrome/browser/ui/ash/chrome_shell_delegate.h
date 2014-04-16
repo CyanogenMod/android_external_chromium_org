@@ -51,6 +51,7 @@ class ChromeShellDelegate : public ash::ShellDelegate,
   virtual bool IsMultiProfilesEnabled() const OVERRIDE;
   virtual bool IsIncognitoAllowed() const OVERRIDE;
   virtual bool IsRunningInForcedAppMode() const OVERRIDE;
+  virtual bool IsMultiAccountEnabled() const OVERRIDE;
   virtual void PreInit() OVERRIDE;
   virtual void PreShutdown() OVERRIDE;
   virtual void Exit() OVERRIDE;
@@ -75,7 +76,6 @@ class ChromeShellDelegate : public ash::ShellDelegate,
       aura::Window* root,
       ash::ShelfItemDelegate* item_delegate,
       ash::ShelfItem* item) OVERRIDE;
-  virtual ash::WindowTreeHostFactory* CreateWindowTreeHostFactory() OVERRIDE;
   virtual ash::GPUSupport* CreateGPUSupport() OVERRIDE;
   virtual base::string16 GetProductName() const OVERRIDE;
 

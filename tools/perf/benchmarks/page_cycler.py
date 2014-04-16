@@ -8,56 +8,56 @@ from telemetry import test
 
 class PageCyclerBloat(test.Test):
   test = page_cycler.PageCycler
-  page_set = 'page_sets/page_cycler/bloat.json'
+  page_set = 'page_sets/page_cycler/bloat.py'
   options = {'pageset_repeat': 10}
 
 
 class PageCyclerDhtml(test.Test):
   test = page_cycler.PageCycler
-  page_set = 'page_sets/page_cycler/dhtml.json'
+  page_set = 'page_sets/page_cycler/dhtml.py'
   options = {'pageset_repeat': 10}
 
 
 class PageCyclerIntlArFaHe(test.Test):
   test = page_cycler.PageCycler
-  page_set = 'page_sets/intl_ar_fa_he.json'
+  page_set = 'page_sets/intl_ar_fa_he.py'
   options = {'pageset_repeat': 10}
 
 
 class PageCyclerIntlEsFrPtBr(test.Test):
   test = page_cycler.PageCycler
-  page_set = 'page_sets/intl_es_fr_pt-BR.json'
+  page_set = 'page_sets/intl_es_fr_pt-BR.py'
   options = {'pageset_repeat': 10}
 
 
 class PageCyclerIntlHiRu(test.Test):
   test = page_cycler.PageCycler
-  page_set = 'page_sets/intl_hi_ru.json'
+  page_set = 'page_sets/intl_hi_ru.py'
   options = {'pageset_repeat': 10}
 
 
 @test.Disabled('win')  # crbug.com/330909
 class PageCyclerIntlJaZh(test.Test):
   test = page_cycler.PageCycler
-  page_set = 'page_sets/intl_ja_zh.json'
+  page_set = 'page_sets/intl_ja_zh.py'
   options = {'pageset_repeat': 10}
 
 
 class PageCyclerIntlKoThVi(test.Test):
   test = page_cycler.PageCycler
-  page_set = 'page_sets/intl_ko_th_vi.json'
+  page_set = 'page_sets/intl_ko_th_vi.py'
   options = {'pageset_repeat': 10}
 
 
 class PageCyclerMorejs(test.Test):
   test = page_cycler.PageCycler
-  page_set = 'page_sets/page_cycler/morejs.json'
+  page_set = 'page_sets/page_cycler/morejs.py'
   options = {'pageset_repeat': 10}
 
 
 class PageCyclerMoz(test.Test):
   test = page_cycler.PageCycler
-  page_set = 'page_sets/page_cycler/moz.json'
+  page_set = 'page_sets/page_cycler/moz.py'
   options = {'pageset_repeat': 10}
 
 
@@ -90,13 +90,13 @@ class PageCyclerTop10Mobile(test.Test):
 
 class PageCyclerKeyMobileSites(test.Test):
   test = page_cycler.PageCycler
-  page_set = 'page_sets/key_mobile_sites.json'
+  page_set = 'page_sets/key_mobile_sites.py'
   options = {'pageset_repeat': 10}
 
 
 class PageCyclerToughLayoutCases(test.Test):
   test = page_cycler.PageCycler
-  page_set = 'page_sets/tough_layout_cases.json'
+  page_set = 'page_sets/tough_layout_cases.py'
   options = {'pageset_repeat': 10}
 
 

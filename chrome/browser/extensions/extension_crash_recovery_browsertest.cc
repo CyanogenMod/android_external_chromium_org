@@ -5,11 +5,9 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/notifications/balloon.h"
-#include "chrome/browser/notifications/balloon_collection.h"
-#include "chrome/browser/notifications/balloon_host.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_delegate.h"
+#include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -29,12 +27,6 @@
 #include "ui/message_center/message_center_switches.h"
 #include "ui/message_center/message_center_util.h"
 #include "ui/message_center/notification_list.h"
-
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/notifications/notification_ui_manager.h"
-#else
-#include "chrome/browser/notifications/balloon_notification_ui_manager.h"
-#endif
 
 using content::NavigationController;
 using content::WebContents;
@@ -137,69 +129,32 @@ class MAYBE_ExtensionCrashRecoveryTest
     : public ExtensionCrashRecoveryTestBase {
  protected:
   virtual void AcceptNotification(size_t index) OVERRIDE {
-    if (message_center::IsRichNotificationEnabled()) {
-      message_center::MessageCenter* message_center =
-          message_center::MessageCenter::Get();
-      ASSERT_GT(message_center->NotificationCount(), index);
-      message_center::NotificationList::Notifications::reverse_iterator it =
-          message_center->GetVisibleNotifications().rbegin();
-      for (size_t i=0; i < index; ++i)
-        it++;
-      std::string id = (*it)->id();
-      message_center->ClickOnNotification(id);
-#if !defined(OS_CHROMEOS)
-    } else {
-      Balloon* balloon = GetNotificationDelegate(index);
-      ASSERT_TRUE(balloon);
-      balloon->OnClick();
-#endif
-    }
+    message_center::MessageCenter* message_center =
+        message_center::MessageCenter::Get();
+    ASSERT_GT(message_center->NotificationCount(), index);
+    message_center::NotificationList::Notifications::reverse_iterator it =
+        message_center->GetVisibleNotifications().rbegin();
+    for (size_t i=0; i < index; ++i)
+      it++;
+    std::string id = (*it)->id();
+    message_center->ClickOnNotification(id);
     WaitForExtensionLoad();
   }
 
   virtual void CancelNotification(size_t index) OVERRIDE {
-    if (message_center::IsRichNotificationEnabled()) {
-      message_center::MessageCenter* message_center =
-          message_center::MessageCenter::Get();
-      ASSERT_GT(message_center->NotificationCount(), index);
-      message_center::NotificationList::Notifications::reverse_iterator it =
-          message_center->GetVisibleNotifications().rbegin();
-      for (size_t i=0; i < index; i++) { it++; }
-      ASSERT_TRUE(g_browser_process->notification_ui_manager()->
-          CancelById((*it)->id()));
-#if !defined(OS_CHROMEOS)
-    } else {
-      Balloon* balloon = GetNotificationDelegate(index);
-      ASSERT_TRUE(balloon);
-      std::string id = balloon->notification().notification_id();
-      ASSERT_TRUE(g_browser_process->notification_ui_manager()->CancelById(id));
-#endif
-    }
+    message_center::MessageCenter* message_center =
+        message_center::MessageCenter::Get();
+    ASSERT_GT(message_center->NotificationCount(), index);
+    message_center::NotificationList::Notifications::reverse_iterator it =
+        message_center->GetVisibleNotifications().rbegin();
+    for (size_t i=0; i < index; i++) { it++; }
+    ASSERT_TRUE(g_browser_process->notification_ui_manager()->
+        CancelById((*it)->id()));
   }
 
   virtual size_t CountBalloons() OVERRIDE {
-    if (message_center::IsRichNotificationEnabled())
-      return message_center::MessageCenter::Get()->NotificationCount();
-
-#if defined(OS_CHROMEOS)
-    CHECK(false);
-    return 0;
-#else
-    return BalloonNotificationUIManager::GetInstanceForTesting()->
-        balloon_collection()->GetActiveBalloons().size();
-#endif
+    return message_center::MessageCenter::Get()->NotificationCount();
   }
-
- private:
-#if !defined(OS_CHROMEOS)
-  Balloon* GetNotificationDelegate(size_t index) {
-    BalloonNotificationUIManager* manager =
-        BalloonNotificationUIManager::GetInstanceForTesting();
-    BalloonCollection::Balloons balloons =
-        manager->balloon_collection()->GetActiveBalloons();
-    return index < balloons.size() ? balloons.at(index) : NULL;
-  }
-#endif
 };
 
 // Flaky: http://crbug.com/242167.
@@ -555,7 +510,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_ExtensionCrashRecoveryTest,
 
 // Fails a DCHECK on Aura and Linux: http://crbug.com/169622
 // Failing on Windows: http://crbug.com/232340
-#if defined(USE_AURA) || defined(OS_WIN) || defined(OS_LINUX)
+#if defined(USE_AURA)
 #define MAYBE_ReloadTabsWithBackgroundPage DISABLED_ReloadTabsWithBackgroundPage
 #else
 #define MAYBE_ReloadTabsWithBackgroundPage ReloadTabsWithBackgroundPage

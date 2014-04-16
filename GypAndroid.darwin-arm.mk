@@ -97,7 +97,6 @@ include $(LOCAL_PATH)/mojo/mojo_environment_chromium_impl.target.darwin-arm.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.darwin-arm.mk
 include $(LOCAL_PATH)/mojo/mojo_service_manager.target.darwin-arm.mk
 include $(LOCAL_PATH)/mojo/mojo_shell_bindings.target.darwin-arm.mk
-include $(LOCAL_PATH)/mojo/mojo_system.target.darwin-arm.mk
 include $(LOCAL_PATH)/mojo/mojo_system_impl.target.darwin-arm.mk
 include $(LOCAL_PATH)/net/cert_verify_status_android_java.target.darwin-arm.mk
 include $(LOCAL_PATH)/net/certificate_mime_types_java.target.darwin-arm.mk

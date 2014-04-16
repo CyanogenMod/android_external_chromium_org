@@ -19,16 +19,44 @@
 
 namespace net {
 
+enum AlternateProtocolUsage {
+  // Alternate Protocol was used without racing a normal connection.
+  ALTERNATE_PROTOCOL_USAGE_NO_RACE = 0,
+  // Alternate Protocol was used by winning a race with a normal connection.
+  ALTERNATE_PROTOCOL_USAGE_WON_RACE = 1,
+  // Alternate Protocol was not used by losing a race with a normal connection.
+  ALTERNATE_PROTOCOL_USAGE_LOST_RACE = 2,
+  // Alternate Protocol was not used because no Alternate-Protocol information
+  // was available when the request was issued, but an Alternate-Protocol header
+  // was present in the response.
+  ALTERNATE_PROTOCOL_USAGE_MAPPING_MISSING = 3,
+  // Alternate Protocol was not used because it was marked broken.
+  ALTERNATE_PROTOCOL_USAGE_BROKEN = 4,
+  // Maximum value for the enum.
+  ALTERNATE_PROTOCOL_USAGE_MAX,
+};
+
+// Log a histogram to reflect |usage|.
+NET_EXPORT void HistogramAlternateProtocolUsage(AlternateProtocolUsage usage);
+
+enum BrokenAlternateProtocolLocation {
+  BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_IMPL_JOB = 0,
+  BROKEN_ALTERNATE_PROTOCOL_LOCATION_QUIC_STREAM_FACTORY = 1,
+  BROKEN_ALTERNATE_PROTOCOL_LOCATION_MAX,
+};
+
+// Log a histogram to reflect |location|.
+NET_EXPORT void HistogramBrokenAlternateProtocolLocation(
+    BrokenAlternateProtocolLocation location);
+
 enum AlternateProtocol {
   DEPRECATED_NPN_SPDY_2 = 0,
   ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION = DEPRECATED_NPN_SPDY_2,
   NPN_SPDY_MINIMUM_VERSION = DEPRECATED_NPN_SPDY_2,
   NPN_SPDY_3,
   NPN_SPDY_3_1,
-  NPN_SPDY_4A2,
-  // We lump in HTTP/2 with the SPDY protocols for now.
-  NPN_HTTP2_DRAFT_04,
-  NPN_SPDY_MAXIMUM_VERSION = NPN_HTTP2_DRAFT_04,
+  NPN_SPDY_4,  // SPDY4 is HTTP/2.
+  NPN_SPDY_MAXIMUM_VERSION = NPN_SPDY_4,
   QUIC,
   ALTERNATE_PROTOCOL_MAXIMUM_VALID_VERSION = QUIC,
   ALTERNATE_PROTOCOL_BROKEN,  // The alternate protocol is known to be broken.

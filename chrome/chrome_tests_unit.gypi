@@ -199,7 +199,6 @@
         'browser/ui/fullscreen/fullscreen_controller_state_tests.h',
         'browser/ui/fullscreen/fullscreen_controller_test.cc',
         'browser/ui/fullscreen/fullscreen_controller_test.h',
-        'browser/ui/gtk/find_bar_host_unittest_util_gtk.cc',
         'browser/ui/test/test_confirm_bubble_model.cc',
         'browser/ui/test/test_confirm_bubble_model.h',
         'browser/ui/views/find_bar_host_unittest_util_views.cc',
@@ -358,11 +357,6 @@
             ['exclude', '^browser/extensions/fake_safe_browsing_database_manager.h'],
           ],
         }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
-          ],
-        }],
         ['toolkit_uses_gtk == 1 or chromeos==1 or (OS=="linux" and use_aura==1)', {
           'dependencies': [
             '../build/linux/system.gyp:ssl',
@@ -466,17 +460,6 @@
         'browser/sync/glue/session_sync_test_helper.h',
         'test/base/run_all_unittests.cc',
       ],
-      'conditions': [
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            # Needed for the following #include chain:
-            #   test/base/run_all_unittests.cc
-            #   test/base/chrome_test_suite.h
-            #   gtk/gtk.h
-            '../build/linux/system.gyp:gtk',
-          ],
-        }],
-      ],
     },
     {
       'target_name': 'unit_tests',
@@ -554,6 +537,7 @@
         '../extensions/browser/extension_error_test_util.cc',
         '../extensions/browser/extension_error_test_util.h',
         '../extensions/browser/extension_pref_value_map_unittest.cc',
+        '../extensions/browser/extension_protocols_unittest.cc',
         '../extensions/browser/extension_registry_unittest.cc',
         '../extensions/browser/file_highlighter_unittest.cc',
         '../extensions/browser/file_reader_unittest.cc',
@@ -946,7 +930,6 @@
         'browser/extensions/extension_message_bubble_controller_unittest.cc',
         'browser/extensions/extension_prefs_unittest.cc',
         'browser/extensions/extension_prefs_unittest.h',
-        'browser/extensions/extension_protocols_unittest.cc',
         'browser/extensions/extension_service_unittest.cc',
         'browser/extensions/extension_service_unittest.h',
         'browser/extensions/extension_special_storage_policy_unittest.cc',
@@ -1112,11 +1095,8 @@
         'browser/net/pref_proxy_config_tracker_impl_unittest.cc',
         'browser/net/probe_message_unittest.cc',
         'browser/net/proxy_policy_handler_unittest.cc',
-        'browser/net/spdyproxy/data_reduction_proxy_settings_unittest.cc',
-        'browser/net/spdyproxy/data_reduction_proxy_settings_unittest.h',
+        'browser/net/spdyproxy/data_reduction_proxy_chrome_configurator_unittest.cc',
         'browser/net/spdyproxy/data_reduction_proxy_settings_unittest_android.cc',
-        'browser/net/spdyproxy/data_saving_metrics_unittest.cc',
-        'browser/net/spdyproxy/http_auth_handler_spdyproxy_unittest.cc',
         'browser/net/sqlite_server_bound_cert_store_unittest.cc',
         'browser/net/ssl_config_service_manager_pref_unittest.cc',
         'browser/net/url_info_unittest.cc',
@@ -1613,7 +1593,6 @@
         'browser/ui/cocoa/location_bar/selected_keyword_decoration_unittest.mm',
         'browser/ui/cocoa/media_picker/desktop_media_picker_controller_unittest.mm',
         'browser/ui/cocoa/menu_button_unittest.mm',
-        'browser/ui/cocoa/notifications/balloon_controller_unittest.mm',
         'browser/ui/cocoa/notifications/message_center_tray_bridge_unittest.mm',
         'browser/ui/cocoa/nsmenuitem_additions_unittest.mm',
         'browser/ui/cocoa/nsview_additions_unittest.mm',
@@ -1671,19 +1650,6 @@
         'browser/ui/find_bar/find_backend_unittest.cc',
         'browser/ui/fullscreen/fullscreen_controller_state_unittest.cc',
         'browser/ui/global_error/global_error_service_unittest.cc',
-        'browser/ui/gtk/accelerators_gtk_unittest.cc',
-        'browser/ui/gtk/bookmarks/bookmark_bar_gtk_unittest.cc',
-        'browser/ui/gtk/bookmarks/bookmark_editor_gtk_unittest.cc',
-        'browser/ui/gtk/bookmarks/bookmark_utils_gtk_unittest.cc',
-        'browser/ui/gtk/event_utils_unittest.cc',
-        'browser/ui/gtk/extensions/media_galleries_dialog_gtk_unittest.cc',
-        'browser/ui/gtk/gtk_chrome_shrinkable_hbox_unittest.cc',
-        'browser/ui/gtk/gtk_theme_service_unittest.cc',
-        'browser/ui/gtk/omnibox/omnibox_popup_view_gtk_unittest.cc',
-        'browser/ui/gtk/omnibox/omnibox_view_gtk_unittest.cc',
-        'browser/ui/gtk/reload_button_gtk_unittest.cc',
-        'browser/ui/gtk/status_icons/status_tray_gtk_unittest.cc',
-        'browser/ui/gtk/tabs/tab_renderer_gtk_unittest.cc',
         'browser/ui/libgtk2ui/x11_input_method_context_impl_gtk2_unittest.cc',
         'browser/ui/login/login_prompt_unittest.cc',
         'browser/ui/omnibox/omnibox_controller_unittest.cc',
@@ -1751,6 +1717,7 @@
         'browser/ui/views/frame/opaque_browser_frame_view_layout_unittest.cc',
         'browser/ui/views/frame/test_with_browser_view.cc',
         'browser/ui/views/frame/test_with_browser_view.h',
+        'browser/ui/views/frame/web_contents_close_handler_unittest.cc',
         'browser/ui/views/toolbar/reload_button_unittest.cc',
         'browser/ui/views/select_file_dialog_extension_unittest.cc',
         'browser/ui/views/status_icons/status_tray_win_unittest.cc',
@@ -1763,6 +1730,7 @@
         'browser/ui/views/translate/translate_bubble_view_unittest.cc',
         'browser/ui/views/validation_message_bubble_delegate_unittest.cc',
         'browser/ui/website_settings/permission_bubble_manager_unittest.cc',
+        'browser/ui/website_settings/permission_menu_model_unittest.cc',
         'browser/ui/website_settings/website_settings_unittest.cc',
         'browser/ui/webui/fileicon_source_unittest.cc',
         'browser/ui/webui/history_ui_unittest.cc',
@@ -1774,7 +1742,6 @@
         'browser/ui/webui/performance_monitor/performance_monitor_ui_util_unittest.cc',
         'browser/ui/webui/print_preview/print_preview_ui_unittest.cc',
         'browser/ui/webui/signin/login_ui_service_unittest.cc',
-        'browser/ui/webui/sync_internals_ui_unittest.cc',
         'browser/ui/webui/sync_setup_handler_unittest.cc',
         'browser/ui/webui/theme_source_unittest.cc',
         'browser/ui/webui/web_dialog_web_contents_delegate_unittest.cc',
@@ -1951,6 +1918,7 @@
         'utility/importer/firefox_importer_unittest_utils.h',
         'utility/importer/firefox_importer_unittest_utils_mac.cc',
         'utility/importer/safari_importer_unittest.mm',
+        'utility/media_galleries/image_metadata_extractor_unittest.cc',
 
         # Duplicate these tests here because PathService has more items in
         # unit_tests than in base_unittests.
@@ -2000,6 +1968,7 @@
         ['OS!="ios"', {
           'dependencies': [
             '../components/components.gyp:autofill_content_test_support',
+            '../components/components.gyp:data_reduction_proxy_test_support',
             '../components/components_strings.gyp:components_strings',
             '../device/bluetooth/bluetooth.gyp:device_bluetooth_mocks',
             '../gpu/gpu.gyp:gpu_unittest_utils',
@@ -2085,7 +2054,6 @@
           ],
           'sources!': [
             'browser/extensions/extension_context_menu_model_unittest.cc',
-            'browser/extensions/extension_protocols_unittest.cc',
             'browser/extensions/extension_ui_unittest.cc',
             'browser/extensions/extension_web_ui_unittest.cc',
             'browser/extensions/pack_extension_unittest.cc',
@@ -2172,6 +2140,9 @@
         }],
         ['chromeos==0', {
           'sources!': [
+            # TODO(zturner): Enable this on Windows.  See
+            # BrowserWithTestWindowTest::SetUp() for a comment explaining why
+            # this is broken.
             'browser/ui/views/frame/immersive_mode_controller_ash_unittest.cc',
             'browser/ui/views/select_file_dialog_extension_unittest.cc',
           ],
@@ -2312,34 +2283,6 @@
             '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
           ],
         }],
-        ['toolkit_uses_gtk == 1', {
-          'conditions': [
-            ['toolkit_views==1', {
-              'sources!': [
-                'browser/ui/gtk/accelerators_gtk_unittest.cc',
-                'browser/ui/gtk/bookmarks/bookmark_bar_gtk_unittest.cc',
-                'browser/ui/gtk/bookmarks/bookmark_editor_gtk_unittest.cc',
-                'browser/ui/gtk/gtk_chrome_shrinkable_hbox_unittest.cc',
-                'browser/ui/gtk/gtk_theme_service_unittest.cc',
-                'browser/ui/gtk/omnibox/omnibox_popup_view_gtk_unittest.cc',
-                'browser/ui/gtk/omnibox/omnibox_view_gtk_unittest.cc',
-                'browser/ui/gtk/reload_button_gtk_unittest.cc',
-                'browser/ui/gtk/status_icons/status_tray_gtk_unittest.cc',
-              ],
-            }],
-          ],
-          'dependencies': [
-            '../build/linux/system.gyp:dbus',
-            '../build/linux/system.gyp:gtk',
-            '../dbus/dbus.gyp:dbus_test_support',
-            '../sandbox/sandbox.gyp:*',
-          ],
-        }, { # else: toolkit_uses_gtk != 1
-          'sources!': [
-            'browser/ui/gtk/tabs/tab_renderer_gtk_unittest.cc',
-            '../ui/views/focus/accelerator_handler_gtk_unittest.cc',
-          ],
-        }],
         ['toolkit_uses_gtk == 1 or chromeos==1 or (OS=="linux" and use_aura==1)', {
           'dependencies': [
             '../build/linux/system.gyp:ssl',
@@ -2392,7 +2335,6 @@
           ],
           'sources!': [
             'browser/ui/tests/ui_gfx_image_unittest.cc',
-            'browser/ui/gtk/reload_button_gtk_unittest.cc',
             'tools/convert_dict/convert_dict_unittest.cc',
             'renderer/spellchecker/spellcheck_provider_hunspell_unittest.cc',
           ],
@@ -2556,6 +2498,7 @@
             'browser/ui/toolbar/recent_tabs_sub_menu_model_unittest.cc',
             'browser/ui/toolbar/toolbar_model_unittest.cc',
             'browser/ui/toolbar/wrench_menu_model_unittest.cc',
+            'browser/ui/website_settings/permission_menu_model_unittest.cc',
             'browser/ui/webui/ntp/suggestions_combiner_unittest.cc',
             'browser/ui/webui/web_dialog_web_contents_delegate_unittest.cc',
             'browser/ui/window_sizer/window_sizer_common_unittest.cc',
@@ -2621,6 +2564,7 @@
             ['exclude', '^browser/ui/webui/sync_promo'],
             ['exclude', '^tools/profile_reset/'],
             ['exclude', '^utility/importer/'],
+            ['exclude', '^utility/media_galleries/'],
           ],
           'conditions': [
             ['gtest_target_type == "shared_library"', {
@@ -2661,9 +2605,6 @@
             '../components/components.gyp:web_modal_test_support',
             '../ui/views/views.gyp:views',
             '../ui/views/views.gyp:views_test_support',
-          ],
-          'sources!': [
-            'browser/ui/gtk/tabs/tab_renderer_gtk_unittest.cc',
           ],
         }, { # else: toolkit_views == 0
           'sources/': [
@@ -2722,6 +2663,16 @@
           'sources': [
             'browser/ui/app_list/extension_app_model_builder_unittest.cc',
             'browser/ui/app_list/test/fast_show_pickler_unittest.cc',
+          ],
+        }],
+        ['use_ozone==1', {
+          'sources!': [
+            # crbug.com/362698
+            'browser/chromeos/input_method/input_method_engine_unittest.cc',
+            'browser/chromeos/input_method/input_method_manager_impl_unittest.cc',
+          ],
+          'sources/': [
+            ['exclude', '^browser/chromeos/events/'],  # crbug.com/354036
           ],
         }],
       ],

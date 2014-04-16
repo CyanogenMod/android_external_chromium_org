@@ -30,11 +30,12 @@ LOCAL_SRC_FILES := \
 	mojo/embedder/platform_channel_utils_posix.cc \
 	mojo/embedder/platform_handle.cc \
 	mojo/system/channel.cc \
-	mojo/system/core_impl.cc \
+	mojo/system/core.cc \
 	mojo/system/data_pipe.cc \
 	mojo/system/data_pipe_consumer_dispatcher.cc \
 	mojo/system/data_pipe_producer_dispatcher.cc \
 	mojo/system/dispatcher.cc \
+	mojo/system/entrypoints.cc \
 	mojo/system/handle_table.cc \
 	mojo/system/local_data_pipe.cc \
 	mojo/system/local_message_pipe_endpoint.cc \
@@ -111,6 +112,8 @@ MY_DEFS_Debug := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DMOJO_SYSTEM_IMPL_IMPLEMENTATION' \
+	'-DMOJO_SYSTEM_IMPLEMENTATION' \
+	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -198,6 +201,8 @@ MY_DEFS_Release := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DMOJO_SYSTEM_IMPL_IMPLEMENTATION' \
+	'-DMOJO_SYSTEM_IMPLEMENTATION' \
+	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \

@@ -588,6 +588,9 @@
         'browser/chromeos/login/screens/eula_screen.cc',
         'browser/chromeos/login/screens/eula_screen.h',
         'browser/chromeos/login/screens/eula_screen_actor.h',
+        'browser/chromeos/login/screens/hid_detection_screen.cc',
+        'browser/chromeos/login/screens/hid_detection_screen.h',
+        'browser/chromeos/login/screens/hid_detection_screen_actor.h',
         'browser/chromeos/login/screens/kiosk_autolaunch_screen.cc',
         'browser/chromeos/login/screens/kiosk_autolaunch_screen.h',
         'browser/chromeos/login/screens/kiosk_autolaunch_screen_actor.h',
@@ -1025,6 +1028,7 @@
         ['use_aura==1 and use_x11==1', {
           'dependencies': [
             '../build/linux/system.gyp:x11',
+            '../ui/gfx/gfx.gyp:gfx_x11',
           ],
         }],
         ['enable_printing != 0', {
@@ -1035,6 +1039,10 @@
         ['use_ozone == 1', {
           'dependencies': [
             '../ui/ozone/ozone.gyp:ozone',
+          ],
+          'sources!': [
+            'browser/chromeos/input_method/input_method_engine.cc',
+            'browser/chromeos/input_method/input_method_engine.h',
           ],
           'sources/': [
             ['exclude', '^browser/chromeos/events/'],

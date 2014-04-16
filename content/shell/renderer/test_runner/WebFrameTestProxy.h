@@ -21,19 +21,13 @@ class WebFrameTestProxy : public Base {
 public:
     WebFrameTestProxy(P p, R r)
         : Base(p, r)
-        , m_baseProxy(0)
-        , m_version(0) { }
+        , m_baseProxy(0) { }
 
     virtual ~WebFrameTestProxy() { }
 
     void setBaseProxy(WebTestProxyBase* proxy)
     {
         m_baseProxy = proxy;
-    }
-
-    void setVersion(int version)
-    {
-        m_version = version;
     }
 
     blink::WebPlugin* createPlugin(blink::WebLocalFrame* frame, const blink::WebPluginParams& params)
@@ -59,8 +53,7 @@ public:
     }
     virtual void didStartProvisionalLoad(blink::WebLocalFrame* frame)
     {
-        if (m_version > 2)
-            m_baseProxy->didStartProvisionalLoad(frame);
+        m_baseProxy->didStartProvisionalLoad(frame);
         Base::didStartProvisionalLoad(frame);
     }
     virtual void didReceiveServerRedirectForProvisionalLoad(blink::WebLocalFrame* frame)
@@ -72,10 +65,10 @@ public:
     {
         Base::didFailProvisionalLoad(frame, error);
     }
-    virtual void didCommitProvisionalLoad(blink::WebLocalFrame* frame, bool isNewNavigation)
+    virtual void didCommitProvisionalLoad(blink::WebLocalFrame* frame, const blink::WebHistoryItem& item, blink::WebHistoryCommitType commit_type)
     {
-        m_baseProxy->didCommitProvisionalLoad(frame, isNewNavigation);
-        Base::didCommitProvisionalLoad(frame, isNewNavigation);
+        m_baseProxy->didCommitProvisionalLoad(frame, item, commit_type);
+        Base::didCommitProvisionalLoad(frame, item, commit_type);
     }
     virtual void didReceiveTitle(blink::WebLocalFrame* frame, const blink::WebString& title, blink::WebTextDirection direction)
     {
@@ -100,6 +93,10 @@ public:
     virtual void didFinishLoad(blink::WebLocalFrame* frame)
     {
         Base::didFinishLoad(frame);
+    }
+    virtual blink::WebNotificationPresenter* notificationPresenter()
+    {
+        return m_baseProxy->notificationPresenter();
     }
     virtual void didChangeSelection(bool is_selection_empty) {
         m_baseProxy->didChangeSelection(is_selection_empty);
@@ -184,6 +181,11 @@ public:
 
         return Base::decidePolicyForNavigation(frame, extraData, request, type, defaultPolicy, isRedirect);
     }
+    virtual void willStartUsingPeerConnectionHandler(blink::WebLocalFrame* frame, blink::WebRTCPeerConnectionHandler* handler)
+    {
+        // RenderFrameImpl::willStartUsingPeerConnectionHandler can not be mocked.
+        // See http://crbug/363285.
+    }
     virtual bool willCheckAndDispatchMessageEvent(blink::WebLocalFrame* sourceFrame, blink::WebFrame* targetFrame, blink::WebSecurityOrigin target, blink::WebDOMMessageEvent event)
     {
         if (m_baseProxy->willCheckAndDispatchMessageEvent(sourceFrame, targetFrame, target, event))
@@ -198,11 +200,6 @@ public:
 
 private:
     WebTestProxyBase* m_baseProxy;
-
-    // This is used to incrementally change code between Blink and Chromium.
-    // It is used instead of a #define and is set by layouttest_support when
-    // creating this object.
-    int m_version;
 
     DISALLOW_COPY_AND_ASSIGN(WebFrameTestProxy);
 };

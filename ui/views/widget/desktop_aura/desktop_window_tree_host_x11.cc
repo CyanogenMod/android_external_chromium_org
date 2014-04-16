@@ -12,7 +12,6 @@
 
 #include "base/basictypes.h"
 #include "base/debug/trace_event.h"
-#include "base/message_loop/message_pump_x11.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkPath.h"
@@ -355,8 +354,10 @@ void DesktopWindowTreeHostX11::SetSize(const gfx::Size& size) {
   bool size_changed = bounds_.size() != size;
   XResizeWindow(xdisplay_, xwindow_, size.width(), size.height());
   bounds_.set_size(size);
-  if (size_changed)
+  if (size_changed) {
     OnHostResized(size);
+    ResetWindowRegion();
+  }
 }
 
 void DesktopWindowTreeHostX11::StackAtTop() {
@@ -762,10 +763,6 @@ void DesktopWindowTreeHostX11::Hide() {
   native_widget_delegate_->OnNativeWidgetVisibilityChanged(false);
 }
 
-void DesktopWindowTreeHostX11::ToggleFullScreen() {
-  NOTIMPLEMENTED();
-}
-
 gfx::Rect DesktopWindowTreeHostX11::GetBounds() const {
   return bounds_;
 }
@@ -803,17 +800,12 @@ void DesktopWindowTreeHostX11::SetBounds(const gfx::Rect& bounds) {
 
   if (origin_changed)
     native_widget_delegate_->AsWidget()->OnNativeWidgetMove();
-  if (size_changed)
+  if (size_changed) {
     OnHostResized(bounds.size());
-  else
+    ResetWindowRegion();
+  } else {
     compositor()->ScheduleRedrawRect(gfx::Rect(bounds.size()));
-}
-
-gfx::Insets DesktopWindowTreeHostX11::GetInsets() const {
-  return gfx::Insets();
-}
-
-void DesktopWindowTreeHostX11::SetInsets(const gfx::Insets& insets) {
+  }
 }
 
 gfx::Point DesktopWindowTreeHostX11::GetLocationOnNativeScreen() const {
@@ -865,15 +857,6 @@ bool DesktopWindowTreeHostX11::QueryMouseLocation(
       std::max(0, std::min(bounds_.height(), win_y_return)));
   return (win_x_return >= 0 && win_x_return < bounds_.width() &&
           win_y_return >= 0 && win_y_return < bounds_.height());
-}
-
-bool DesktopWindowTreeHostX11::ConfineCursorToRootWindow() {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-void DesktopWindowTreeHostX11::UnConfineCursor() {
-  NOTIMPLEMENTED();
 }
 
 void DesktopWindowTreeHostX11::SetCursorNative(gfx::NativeCursor cursor) {

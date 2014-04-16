@@ -215,25 +215,20 @@ interface PPB_NaCl_Private {
   /* Create a temporary file, which will be deleted by the time the
    * last handle is closed (or earlier on POSIX systems), to use for
    * the nexe with the cache information given by |pexe_url|,
-   * |abi_version|, |opt_level|, |last_modified|, |etag|, and
-   * |has_no_store_header|. If the nexe is already present in the
-   * cache, |is_hit| is set to PP_TRUE and the contents of the nexe
-   * will be copied into the temporary file. Otherwise |is_hit| is set
-   * to PP_FALSE and the temporary file will be writeable.  Currently
-   * the implementation is a stub, which always sets is_hit to false
-   * and calls the implementation of CreateTemporaryFile. In a
-   * subsequent CL it will call into the browser which will remember
-   * the association between the cache key and the fd, and copy the
-   * nexe into the cache after the translation finishes.
+   * |abi_version|, |opt_level|, and |headers|.  If the nexe is already present
+   * in the cache, |is_hit| is set to PP_TRUE and the contents of the nexe will
+   * be copied into the temporary file. Otherwise |is_hit| is set to PP_FALSE
+   * and the temporary file will be writeable.  Currently the implementation is
+   * a stub, which always sets is_hit to false and calls the implementation of
+   * CreateTemporaryFile. In a subsequent CL it will call into the browser
+   * which will remember the association between the cache key and the fd, and
+   * copy the nexe into the cache after the translation finishes.
    */
   int32_t GetNexeFd([in] PP_Instance instance,
                     [in] str_t pexe_url,
                     [in] uint32_t abi_version,
                     [in] uint32_t opt_level,
-                    [in] str_t last_modified,
-                    [in] str_t etag,
-                    [in] PP_Bool has_no_store_header,
-                    [in] str_t sandbox_isa,
+                    [in] str_t headers,
                     [in] str_t extra_flags,
                     [out] PP_Bool is_hit,
                     [out] PP_FileHandle nexe_handle,
@@ -271,8 +266,22 @@ interface PPB_NaCl_Private {
                      [in] uint64_t loaded_bytes,
                      [in] uint64_t total_bytes);
 
+  /* Report that the attempt to open the nexe has finished. Opening the file
+   * may have failed, as indicated by a pp_error value that is not PP_OK or an
+   * fd of -1. Failure to stat the file to determine its length results in
+   * nexe_bytes_read being -1.
+   */
+  void NexeFileDidOpen([in] PP_Instance instance,
+                       [in] int32_t pp_error,
+                       [in] int32_t fd,
+                       [in] int32_t http_status,
+                       [in] int64_t nexe_bytes_read,
+                       [in] str_t url,
+                       [in] int64_t time_since_open);
+
   /* Report that the nexe loaded successfully. */
   void ReportLoadSuccess([in] PP_Instance instance,
+                         [in] PP_Bool is_pnacl,
                          [in] str_t url,
                          [in] uint64_t loaded_bytes,
                          [in] uint64_t total_bytes);
@@ -326,9 +335,6 @@ interface PPB_NaCl_Private {
   /* Sets whether the plugin is an installed app. */
   void SetIsInstalled([in] PP_Instance instance,
                       [in] PP_Bool is_installed);
-
-  /* Sets the time the nexe became ready. */
-  void SetReadyTime([in] PP_Instance instance);
 
   /* Returns the exit status of the plugin process. */
   int32_t GetExitStatus([in] PP_Instance instance);

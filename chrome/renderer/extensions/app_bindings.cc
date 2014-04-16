@@ -12,7 +12,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
-#include "chrome/renderer/extensions/console.h"
 #include "chrome/renderer/extensions/dispatcher.h"
 #include "chrome/renderer/extensions/extension_helper.h"
 #include "content/public/renderer/render_view.h"
@@ -20,12 +19,14 @@
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
+#include "extensions/renderer/console.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "v8/include/v8.h"
 
 using blink::WebFrame;
+using blink::WebLocalFrame;
 using content::V8ValueConverter;
 
 namespace extensions {
@@ -110,7 +111,7 @@ void AppBindings::GetDetailsForFrame(
       v8::Local<v8::Object>::Cast(args[0])->CreationContext();
   CHECK(!context.IsEmpty());
 
-  WebFrame* target_frame = WebFrame::frameForContext(context);
+  WebLocalFrame* target_frame = WebLocalFrame::frameForContext(context);
   if (!target_frame) {
     console::Error(args.GetIsolate()->GetCallingContext(),
                    "Could not find frame for specified object.");

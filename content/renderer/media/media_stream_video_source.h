@@ -64,7 +64,7 @@ class CONTENT_EXPORT MediaStreamVideoSource
   // interface of this class.
   // This creates a VideoSourceInterface implementation if it does not already
   // exist.
-  webrtc::VideoSourceInterface* GetAdapter();
+  virtual webrtc::VideoSourceInterface* GetAdapter();
 
   // Return true if |name| is a constraint supported by MediaStreamVideoSource.
   static bool IsConstraintSupported(const std::string& name);
@@ -130,7 +130,7 @@ class CONTENT_EXPORT MediaStreamVideoSource
     STARTED,
     ENDED
   };
-  State state() { return state_; }
+  State state() const { return state_; }
 
  private:
   // Creates a webrtc::VideoSourceInterface used by libjingle.
@@ -156,7 +156,9 @@ class CONTENT_EXPORT MediaStreamVideoSource
 
   media::VideoCaptureFormat current_format_;
   blink::WebMediaConstraints current_constraints_;
-  gfx::Size frame_output_size_;
+  // |max_frame_output_size_| is the maximum frame size allowed by
+  // |current_constraints_|.
+  gfx::Size max_frame_output_size_;
 
   struct RequestedConstraints {
     RequestedConstraints(const blink::WebMediaConstraints& constraints,

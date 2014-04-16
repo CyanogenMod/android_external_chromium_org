@@ -128,7 +128,6 @@ LOCAL_SRC_FILES := \
 	content/browser/browser_main_loop.cc \
 	content/browser/browser_main_runner.cc \
 	content/browser/browser_plugin/browser_plugin_embedder.cc \
-	content/browser/browser_plugin/browser_plugin_geolocation_permission_context.cc \
 	content/browser/browser_plugin/browser_plugin_guest.cc \
 	content/browser/browser_plugin/browser_plugin_guest_manager.cc \
 	content/browser/browser_plugin/browser_plugin_message_filter.cc \
@@ -202,6 +201,7 @@ LOCAL_SRC_FILES := \
 	content/browser/download/save_item.cc \
 	content/browser/download/save_package.cc \
 	content/browser/download/save_types.cc \
+	content/browser/fileapi/blob_storage_host.cc \
 	content/browser/fileapi/browser_file_system_helper.cc \
 	content/browser/fileapi/chrome_blob_storage_context.cc \
 	content/browser/fileapi/fileapi_message_filter.cc \
@@ -225,6 +225,7 @@ LOCAL_SRC_FILES := \
 	content/browser/frame_host/render_frame_host_impl.cc \
 	content/browser/frame_host/render_frame_host_manager.cc \
 	content/browser/frame_host/render_frame_message_filter.cc \
+	content/browser/frame_host/render_frame_proxy_host.cc \
 	content/browser/frame_host/render_widget_host_view_child_frame.cc \
 	content/browser/frame_host/render_widget_host_view_guest.cc \
 	content/browser/gamepad/gamepad_provider.cc \
@@ -361,6 +362,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/input/synthetic_tap_gesture.cc \
 	content/browser/renderer_host/input/tap_suppression_controller.cc \
 	content/browser/renderer_host/input/timeout_monitor.cc \
+	content/browser/renderer_host/input/touch_emulator.cc \
 	content/browser/renderer_host/input/touch_event_queue.cc \
 	content/browser/renderer_host/input/touch_action_filter.cc \
 	content/browser/renderer_host/input/touchpad_tap_suppression_controller.cc \
@@ -557,6 +559,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DAVOID_LIBYUV_FOR_ANDROID_WEBVIEW' \
+	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -566,8 +569,10 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -726,6 +731,7 @@ MY_DEFS_Release := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DAVOID_LIBYUV_FOR_ANDROID_WEBVIEW' \
+	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -735,8 +741,10 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \

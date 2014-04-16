@@ -24,6 +24,9 @@ IPC_ENUM_TRAITS_MAX_VALUE(blink::WebServiceWorkerError::ErrorType,
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebServiceWorkerEventResult,
                           blink::WebServiceWorkerEventResultLast)
 
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebServiceWorkerState,
+                          blink::WebServiceWorkerStateLast)
+
 IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerFetchRequest)
   IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(method)
@@ -40,17 +43,26 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerResponse)
   IPC_STRUCT_TRAITS_MEMBER(headers)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerObjectInfo)
+  IPC_STRUCT_TRAITS_MEMBER(handle_id)
+  IPC_STRUCT_TRAITS_MEMBER(scope)
+  IPC_STRUCT_TRAITS_MEMBER(url)
+  IPC_STRUCT_TRAITS_MEMBER(state)
+IPC_STRUCT_TRAITS_END()
+
 // Messages sent from the child process to the browser.
 
-IPC_MESSAGE_CONTROL4(ServiceWorkerHostMsg_RegisterServiceWorker,
-                     int32 /* thread_id */,
-                     int32 /* request_id */,
+IPC_MESSAGE_CONTROL5(ServiceWorkerHostMsg_RegisterServiceWorker,
+                     int /* thread_id */,
+                     int /* request_id */,
+                     int /* provider_id */,
                      GURL /* scope */,
                      GURL /* script_url */)
 
-IPC_MESSAGE_CONTROL3(ServiceWorkerHostMsg_UnregisterServiceWorker,
-                     int32 /* thread_id */,
-                     int32 /* request_id */,
+IPC_MESSAGE_CONTROL4(ServiceWorkerHostMsg_UnregisterServiceWorker,
+                     int /* thread_id */,
+                     int /* request_id */,
+                     int /* provider_id */,
                      GURL /* scope (url pattern) */)
 
 // Sends a 'message' event to a service worker (renderer->browser).
@@ -89,58 +101,51 @@ IPC_MESSAGE_CONTROL2(ServiceWorkerHostMsg_RemoveScriptClient,
                      int /* thread_id */,
                      int /* provider_id */)
 
-// Informs the browser that install event handling has finished.
+// Informs the browser that event handling has finished.
 // Sent via EmbeddedWorker.
 IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_InstallEventFinished,
                      blink::WebServiceWorkerEventResult)
-
 IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_ActivateEventFinished,
                      blink::WebServiceWorkerEventResult);
-
-// Informs the browser that fetch event handling has finished.
-// Sent via EmbeddedWorker.
 IPC_MESSAGE_CONTROL2(ServiceWorkerHostMsg_FetchEventFinished,
                      content::ServiceWorkerFetchEventResult,
                      content::ServiceWorkerResponse)
+IPC_MESSAGE_CONTROL0(ServiceWorkerHostMsg_SyncEventFinished)
 
 // Messages sent from the browser to the child process.
 
-// Response to ServiceWorkerMsg_RegisterServiceWorker
+// Response to ServiceWorkerMsg_RegisterServiceWorker.
 IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerRegistered,
-                     int32 /* thread_id */,
-                     int32 /* request_id */,
-                     int /* handle_id */)
+                     int /* thread_id */,
+                     int /* request_id */,
+                     content::ServiceWorkerObjectInfo)
 
-// Response to ServiceWorkerMsg_UnregisterServiceWorker
+// Response to ServiceWorkerMsg_UnregisterServiceWorker.
 IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_ServiceWorkerUnregistered,
-                     int32 /* thread_id */,
-                     int32 /* request_id */)
+                     int /* thread_id */,
+                     int /* request_id */)
 
 // Sent when any kind of registration error occurs during a
 // RegisterServiceWorker / UnregisterServiceWorker handler above.
 IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_ServiceWorkerRegistrationError,
-                     int32 /* thread_id */,
-                     int32 /* request_id */,
+                     int /* thread_id */,
+                     int /* request_id */,
                      blink::WebServiceWorkerError::ErrorType /* code */,
                      base::string16 /* message */)
 
-// Sent via EmbeddedWorker to dispatch install event.
-IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_InstallEvent, int /* active_version_id */)
+// Informs the browser that the ServiceWorker's state has changed.
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_ServiceWorkerStateChanged,
+                     int /* handle_id */,
+                     blink::WebServiceWorkerState)
 
+// Sent via EmbeddedWorker to dispatch events.
+IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_InstallEvent,
+                     int /* active_version_id */)
 IPC_MESSAGE_CONTROL0(ServiceWorkerMsg_ActivateEvent)
-
-// Sent via EmbeddedWorker to dispatch fetch event.
 IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_FetchEvent,
                      content::ServiceWorkerFetchRequest)
-
-// Sends a 'message' event to a service worker (browser->EmbeddedWorker).
 IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_Message,
                      base::string16 /* message */,
                      std::vector<int> /* sent_message_port_ids */,
                      std::vector<int> /* new_routing_ids */)
-
-// Sent via EmbeddedWorker to dispatch sync event.
 IPC_MESSAGE_CONTROL0(ServiceWorkerMsg_SyncEvent)
-
-// Informs the browser that sync event handling has finished.
-IPC_MESSAGE_CONTROL0(ServiceWorkerHostMsg_SyncEventFinished)

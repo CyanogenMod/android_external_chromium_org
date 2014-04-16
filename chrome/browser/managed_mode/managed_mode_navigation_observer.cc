@@ -13,7 +13,6 @@
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar.h"
-#include "chrome/browser/infobars/infobar_manager.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/managed_mode/managed_mode_interstitial.h"
 #include "chrome/browser/managed_mode/managed_mode_resource_throttle.h"
@@ -123,8 +122,10 @@ bool ManagedModeWarningInfoBarDelegate::ShouldExpire(
 }
 
 void ManagedModeWarningInfoBarDelegate::InfoBarDismissed() {
+  content::WebContents* web_contents =
+      InfoBarService::WebContentsFromInfoBar(infobar());
   ManagedModeNavigationObserver::FromWebContents(
-      web_contents())->WarnInfoBarDismissed();
+      web_contents)->WarnInfoBarDismissed();
 }
 
 base::string16 ManagedModeWarningInfoBarDelegate::GetMessageText() const {
@@ -147,7 +148,7 @@ bool ManagedModeWarningInfoBarDelegate::Accept() {
   // http://crbug.com/313377
   NOTIMPLEMENTED();
 #else
-  GoBackToSafety(web_contents());
+  GoBackToSafety(InfoBarService::WebContentsFromInfoBar(infobar()));
 #endif
 
   return false;
@@ -188,9 +189,7 @@ void ManagedModeNavigationObserver::ProvisionalChangeToMainFrameUrl(
     return;
 
   // If we shouldn't have a warn infobar remove it here.
-  InfoBarManager* infobar_manager =
-      InfoBarService::FromWebContents(web_contents())->infobar_manager();
-  infobar_manager->RemoveInfoBar(warn_infobar_);
+  InfoBarService::FromWebContents(web_contents())->RemoveInfoBar(warn_infobar_);
   warn_infobar_ = NULL;
 }
 

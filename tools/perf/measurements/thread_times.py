@@ -32,22 +32,21 @@ class ThreadTimes(page_measurement.PageMeasurement):
           timeline_controller.MINIMAL_TRACE_CATEGORIES
     self._timeline_controller.Start(page, tab)
 
-  def DidRunAction(self, page, tab, action):
-    self._timeline_controller.AddActionToIncludeInMetric(action)
-
   def DidRunActions(self, page, tab):
     self._timeline_controller.Stop(tab)
 
   def MeasurePage(self, page, tab, results):
-    metric = timeline.ThreadTimesTimelineMetric(
-      self._timeline_controller.model,
-      self._timeline_controller.renderer_process,
-      self._timeline_controller.action_ranges)
+    metric = timeline.ThreadTimesTimelineMetric()
+    renderer_thread = \
+        self._timeline_controller.model.GetRendererThreadFromTab(tab)
+    assert len(self._timeline_controller.action_ranges) == 1
     if self.options.report_silk_results:
       metric.results_to_report = timeline.ReportSilkResults
     if self.options.report_silk_details:
       metric.details_to_report = timeline.ReportSilkDetails
-    metric.AddResults(tab, results)
+    metric.AddResults(self._timeline_controller.model, renderer_thread,
+                      self._timeline_controller.interaction_record, results)
+
 
   def CleanUpAfterPage(self, _, tab):
     self._timeline_controller.CleanUp(tab)

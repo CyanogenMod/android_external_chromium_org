@@ -11,7 +11,6 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/infobars/infobar.h"
-#include "chrome/browser/infobars/infobar_manager.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
@@ -89,10 +88,9 @@ void TranslateInfoBarDelegate::Create(bool replace_existing_infobar,
   InfoBar* old_infobar = NULL;
   InfoBarService* infobar_service =
       InfoBarService::FromWebContents(web_contents);
-  InfoBarManager* infobar_manager = infobar_service->infobar_manager();
   TranslateInfoBarDelegate* old_delegate = NULL;
-  for (size_t i = 0; i < infobar_manager->infobar_count(); ++i) {
-    old_infobar = infobar_manager->infobar_at(i);
+  for (size_t i = 0; i < infobar_service->infobar_count(); ++i) {
+    old_infobar = infobar_service->infobar_at(i);
     old_delegate = old_infobar->delegate()->AsTranslateInfoBarDelegate();
     if (old_delegate) {
       if (!replace_existing_infobar)
@@ -135,7 +133,7 @@ void TranslateInfoBarDelegate::RevertTranslation() {
 
 void TranslateInfoBarDelegate::ReportLanguageDetectionError() {
   TranslateManager* manager =
-      TranslateTabHelper::GetManagerFromWebContents(web_contents());
+      TranslateTabHelper::GetManagerFromWebContents(GetWebContents());
   if (!manager)
     return;
   manager->ReportLanguageDetectionError();
@@ -147,7 +145,7 @@ void TranslateInfoBarDelegate::TranslationDeclined() {
 
 bool TranslateInfoBarDelegate::IsTranslatableLanguageByPrefs() {
   Profile* profile =
-      Profile::FromBrowserContext(web_contents()->GetBrowserContext());
+      Profile::FromBrowserContext(GetWebContents()->GetBrowserContext());
   Profile* original_profile = profile->GetOriginalProfile();
   scoped_ptr<TranslatePrefs> translate_prefs(
       TranslateTabHelper::CreateTranslatePrefs(original_profile->GetPrefs()));
@@ -257,7 +255,7 @@ void TranslateInfoBarDelegate::MessageInfoBarButtonPressed() {
   }
   // This is the "Try again..." case.
   TranslateManager* manager =
-      TranslateTabHelper::GetManagerFromWebContents(web_contents());
+      TranslateTabHelper::GetManagerFromWebContents(GetWebContents());
   DCHECK(manager);
   manager->TranslatePage(
       original_language_code(), target_language_code(), false);
@@ -269,16 +267,20 @@ bool TranslateInfoBarDelegate::ShouldShowMessageInfoBarButton() {
 
 bool TranslateInfoBarDelegate::ShouldShowNeverTranslateShortcut() {
   DCHECK_EQ(translate::TRANSLATE_STEP_BEFORE_TRANSLATE, step_);
-  return !web_contents()->GetBrowserContext()->IsOffTheRecord() &&
+  return !GetWebContents()->GetBrowserContext()->IsOffTheRecord() &&
       (prefs_->GetTranslationDeniedCount(original_language_code()) >=
           kNeverTranslateMinCount);
 }
 
 bool TranslateInfoBarDelegate::ShouldShowAlwaysTranslateShortcut() {
   DCHECK_EQ(translate::TRANSLATE_STEP_BEFORE_TRANSLATE, step_);
-  return !web_contents()->GetBrowserContext()->IsOffTheRecord() &&
+  return !GetWebContents()->GetBrowserContext()->IsOffTheRecord() &&
       (prefs_->GetTranslationAcceptedCount(original_language_code()) >=
           kAlwaysTranslateMinCount);
+}
+
+content::WebContents* TranslateInfoBarDelegate::GetWebContents() {
+  return InfoBarService::WebContentsFromInfoBar(infobar());
 }
 
 // static
@@ -335,7 +337,10 @@ TranslateInfoBarDelegate::TranslateInfoBarDelegate(
     : InfoBarDelegate(),
       step_(step),
       background_animation_(NONE),
-      ui_delegate_(web_contents, original_language, target_language),
+      ui_delegate_(TranslateTabHelper::FromWebContents(web_contents),
+                   TranslateTabHelper::GetManagerFromWebContents(web_contents),
+                   original_language,
+                   target_language),
       error_type_(error_type),
       prefs_(TranslateTabHelper::CreateTranslatePrefs(prefs)),
       triggered_from_menu_(triggered_from_menu) {

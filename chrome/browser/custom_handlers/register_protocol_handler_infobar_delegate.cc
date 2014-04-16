@@ -7,7 +7,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/infobars/infobar.h"
-#include "chrome/browser/infobars/infobar_manager.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/user_metrics.h"
@@ -27,9 +26,8 @@ void RegisterProtocolHandlerInfoBarDelegate::Create(
       scoped_ptr<ConfirmInfoBarDelegate>(
           new RegisterProtocolHandlerInfoBarDelegate(registry, handler))));
 
-  InfoBarManager* infobar_manager = infobar_service->infobar_manager();
-  for (size_t i = 0; i < infobar_manager->infobar_count(); ++i) {
-    InfoBar* existing_infobar = infobar_manager->infobar_at(i);
+  for (size_t i = 0; i < infobar_service->infobar_count(); ++i) {
+    InfoBar* existing_infobar = infobar_service->infobar_at(i);
     RegisterProtocolHandlerInfoBarDelegate* existing_delegate =
         existing_infobar->delegate()->
             AsRegisterProtocolHandlerInfoBarDelegate();
@@ -117,10 +115,12 @@ bool RegisterProtocolHandlerInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
   content::RecordAction(
       base::UserMetricsAction("RegisterProtocolHandler.InfoBar_LearnMore"));
-  web_contents()->OpenURL(content::OpenURLParams(
-      GURL(chrome::kLearnMoreRegisterProtocolHandlerURL), content::Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK, false));
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          GURL(chrome::kLearnMoreRegisterProtocolHandlerURL),
+          content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }
 

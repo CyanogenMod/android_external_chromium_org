@@ -94,15 +94,7 @@ const int ShelfLayoutManager::kWorkspaceAreaAutoHideInset = 5;
 const int ShelfLayoutManager::kAutoHideSize = 3;
 
 // static
-const int ShelfLayoutManager::kShelfSize = 47;
-
-// static
 const int ShelfLayoutManager::kShelfItemInset = 3;
-
-int ShelfLayoutManager::GetPreferredShelfSize() {
-  return ash::switches::UseAlternateShelfLayout() ?
-      ShelfLayoutManager::kShelfSize : kShelfPreferredSize;
-}
 
 // ShelfLayoutManager::AutoHideEventFilter -------------------------------------
 
@@ -213,6 +205,7 @@ ShelfLayoutManager::ShelfLayoutManager(ShelfWidget* shelf)
   Shell::GetInstance()->AddShellObserver(this);
   Shell::GetInstance()->lock_state_controller()->AddObserver(this);
   aura::client::GetActivationClient(root_window_)->AddObserver(this);
+  Shell::GetInstance()->session_state_delegate()->AddSessionStateObserver(this);
 }
 
 ShelfLayoutManager::~ShelfLayoutManager() {
@@ -223,6 +216,8 @@ ShelfLayoutManager::~ShelfLayoutManager() {
   Shell::GetInstance()->RemoveShellObserver(this);
   Shell::GetInstance()->lock_state_controller()->RemoveObserver(this);
   aura::client::GetActivationClient(root_window_)->RemoveObserver(this);
+  Shell::GetInstance()->
+      session_state_delegate()->RemoveSessionStateObserver(this);
 }
 
 void ShelfLayoutManager::SetAutoHideBehavior(ShelfAutoHideBehavior behavior) {
@@ -740,11 +735,16 @@ void ShelfLayoutManager::UpdateBoundsAndOpacity(
           status_bounds));
   SessionStateDelegate* session_state_delegate =
       Shell::GetInstance()->session_state_delegate();
-  if (!state_.is_screen_locked &&
-      (session_state_delegate->IsActiveUserSessionStarted() ||
-       !keyboard_bounds_.IsEmpty())) {
-    Shell::GetInstance()->SetDisplayWorkAreaInsets(
-        root_window_, target_bounds.work_area_insets);
+  if (!state_.is_screen_locked) {
+    gfx::Insets insets;
+    // If user session is blocked (login to new user session or add user to
+    // the existing session - multi-profile) then give 100% of work area only if
+    // keyboard is not shown.
+    if (!session_state_delegate->IsUserSessionBlocked() ||
+        !keyboard_bounds_.IsEmpty()) {
+      insets = target_bounds.work_area_insets;
+    }
+    Shell::GetInstance()->SetDisplayWorkAreaInsets(root_window_, insets);
   }
 }
 
@@ -758,9 +758,9 @@ void ShelfLayoutManager::GetShelfSize(int* width, int* height) {
   gfx::Size status_size(
       shelf_->status_area_widget()->GetWindowBoundsInScreen().size());
   if (IsHorizontalAlignment())
-    *height = GetPreferredShelfSize();
+    *height = kShelfSize;
   else
-    *width = GetPreferredShelfSize();
+    *width = kShelfSize;
 }
 
 void ShelfLayoutManager::AdjustBoundsBasedOnAlignment(int inset,
@@ -812,27 +812,21 @@ void ShelfLayoutManager::CalculateTargetBounds(
       gfx::Rect(available_bounds.x(), available_bounds.y(),
                     available_bounds.width(), shelf_height));
 
-  int status_inset = std::max(0, GetPreferredShelfSize() -
-      PrimaryAxisValue(status_size.height(), status_size.width()));
-
-  if (ash::switches::UseAlternateShelfLayout()) {
-    status_inset = 0;
-    if (IsHorizontalAlignment())
-      status_size.set_height(kShelfSize);
-    else
-      status_size.set_width(kShelfSize);
-  }
+  if (IsHorizontalAlignment())
+    status_size.set_height(kShelfSize);
+  else
+    status_size.set_width(kShelfSize);
 
   target_bounds->status_bounds_in_shelf = SelectValueForShelfAlignment(
       gfx::Rect(base::i18n::IsRTL() ? 0 : shelf_width - status_size.width(),
-                    status_inset, status_size.width(), status_size.height()),
-      gfx::Rect(shelf_width - (status_size.width() + status_inset),
+                    0, status_size.width(), status_size.height()),
+      gfx::Rect(shelf_width - status_size.width(),
                     shelf_height - status_size.height(), status_size.width(),
                     status_size.height()),
-      gfx::Rect(status_inset, shelf_height - status_size.height(),
+      gfx::Rect(0, shelf_height - status_size.height(),
                     status_size.width(), status_size.height()),
       gfx::Rect(base::i18n::IsRTL() ? 0 : shelf_width - status_size.width(),
-                    shelf_height - (status_size.height() + status_inset),
+                    shelf_height - status_size.height(),
                     status_size.width(), status_size.height()));
 
   target_bounds->work_area_insets = SelectValueForShelfAlignment(
@@ -901,7 +895,7 @@ void ShelfLayoutManager::UpdateTargetBoundsForGesture(
     // changed since then, e.g. because the tray-menu was shown because of the
     // drag), then allow the drag some resistance-free region at first to make
     // sure the shelf sticks with the finger until the shelf is visible.
-    resistance_free_region = GetPreferredShelfSize() - kAutoHideSize;
+    resistance_free_region = kShelfSize - kAutoHideSize;
   }
 
   bool resist = SelectValueForShelfAlignment(
@@ -932,16 +926,7 @@ void ShelfLayoutManager::UpdateTargetBoundsForGesture(
           available_bounds.bottom() - shelf_height);
     }
 
-    if (ash::switches::UseAlternateShelfLayout()) {
-      target_bounds->status_bounds_in_shelf.set_y(0);
-    } else {
-      // The statusbar should be in the center of the shelf.
-      gfx::Rect status_y = target_bounds->shelf_bounds_in_root;
-      status_y.set_y(0);
-      status_y.ClampToCenteredSize(
-          target_bounds->status_bounds_in_shelf.size());
-      target_bounds->status_bounds_in_shelf.set_y(status_y.y());
-    }
+    target_bounds->status_bounds_in_shelf.set_y(0);
   } else {
     // Move and size the shelf with the gesture.
     int shelf_width = target_bounds->shelf_bounds_in_root.width();
@@ -957,21 +942,12 @@ void ShelfLayoutManager::UpdateTargetBoundsForGesture(
           available_bounds.right() - shelf_width);
     }
 
-    if (ash::switches::UseAlternateShelfLayout()) {
-      if (right_aligned)
-        target_bounds->status_bounds_in_shelf.set_x(0);
-      else
-        target_bounds->status_bounds_in_shelf.set_x(
-            target_bounds->shelf_bounds_in_root.width() -
-            kShelfSize);
-    } else {
-      // The statusbar should be in the center of the shelf.
-      gfx::Rect status_x = target_bounds->shelf_bounds_in_root;
-      status_x.set_x(0);
-      status_x.ClampToCenteredSize(
-          target_bounds->status_bounds_in_shelf.size());
-      target_bounds->status_bounds_in_shelf.set_x(status_x.x());
-    }
+    if (right_aligned)
+      target_bounds->status_bounds_in_shelf.set_x(0);
+    else
+      target_bounds->status_bounds_in_shelf.set_x(
+          target_bounds->shelf_bounds_in_root.width() -
+          kShelfSize);
   }
 }
 
@@ -1165,7 +1141,7 @@ void ShelfLayoutManager::OnKeyboardBoundsChanging(const gfx::Rect& new_bounds) {
   // On login screen if keyboard has been just hidden, update bounds just once
   // but ignore target_bounds.work_area_insets since shelf overlaps with login
   // window.
-  if (!session_state_delegate->IsActiveUserSessionStarted() &&
+  if (session_state_delegate->IsUserSessionBlocked() &&
       keyboard_is_about_to_hide) {
     Shell::GetInstance()->SetDisplayWorkAreaInsets(root_window_, gfx::Insets());
   }
@@ -1198,6 +1174,14 @@ void ShelfLayoutManager::OnLockStateEvent(LockStateObserver::EventType event) {
     UpdateBoundsAndOpacity(target_bounds, true, NULL);
     UpdateVisibilityState();
   }
+}
+
+void ShelfLayoutManager::SessionStateChanged(
+    SessionStateDelegate::SessionState state) {
+  TargetBounds target_bounds;
+  CalculateTargetBounds(state_, &target_bounds);
+  UpdateBoundsAndOpacity(target_bounds, true, NULL);
+  UpdateVisibilityState();
 }
 
 }  // namespace ash

@@ -32,6 +32,10 @@ namespace {
 // Validate provided event timestamps that interact with animation timestamps.
 const double kBadTimestampDeltaFromNowInS = 60. * 60. * 24. * 7.;
 
+// Threshold for determining whether a fling scroll delta should have caused the
+// client to scroll.
+const float kScrollEpsilon = 0.1f;
+
 double InSecondsF(const base::TimeTicks& time) {
   return (time - base::TimeTicks()).InSecondsF();
 }
@@ -250,7 +254,10 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleInputEvent(
     }
     return DROP_EVENT;
   } else if (WebInputEvent::isKeyboardEventType(event.type)) {
-    CancelCurrentFling(true);
+    // Only call |CancelCurrentFling()| if a fling was active, as it will
+    // otherwise disrupt an in-progress touch scroll.
+    if (fling_curve_)
+      CancelCurrentFling(true);
   } else if (event.type == WebInputEvent::MouseMove) {
     const WebMouseEvent& mouse_event =
         *static_cast<const WebMouseEvent*>(&event);
@@ -298,10 +305,14 @@ InputHandlerProxy::HandleGestureFling(
           !gesture_event.data.flingStart.velocityX;
       disallow_vertical_fling_scroll_ =
           !gesture_event.data.flingStart.velocityY;
-      TRACE_EVENT_ASYNC_BEGIN0(
+      TRACE_EVENT_ASYNC_BEGIN2(
           "input",
           "InputHandlerProxy::HandleGestureFling::started",
-          this);
+          this,
+          "vx",
+          gesture_event.data.flingStart.velocityX,
+          "vy",
+          gesture_event.data.flingStart.velocityY);
       if (gesture_event.timeStampSeconds) {
         fling_parameters_.startTime = gesture_event.timeStampSeconds;
         DCHECK_LT(fling_parameters_.startTime -
@@ -349,7 +360,8 @@ void InputHandlerProxy::Animate(base::TimeTicks time) {
     return;
 
   double monotonic_time_sec = InSecondsF(time);
-  if (!fling_parameters_.startTime) {
+  if (!fling_parameters_.startTime ||
+      monotonic_time_sec <= fling_parameters_.startTime) {
     fling_parameters_.startTime = monotonic_time_sec;
     input_handler_->ScheduleAnimation();
     return;
@@ -381,6 +393,13 @@ void InputHandlerProxy::DidOverscroll(
     const gfx::Vector2dF& accumulated_overscroll,
     const gfx::Vector2dF& latest_overscroll_delta) {
   DCHECK(client_);
+
+  TRACE_EVENT2("input",
+               "InputHandlerProxy::DidOverscroll",
+               "dx",
+               latest_overscroll_delta.x(),
+               "dy",
+               latest_overscroll_delta.y());
 
   DidOverscrollParams params;
   params.accumulated_overscroll = accumulated_overscroll;
@@ -482,9 +501,12 @@ bool InputHandlerProxy::scrollBy(const WebFloatSize& increment,
     clipped_velocity.height = velocity.height;
   }
 
-  current_fling_velocity_ = clipped_velocity;
+  current_fling_velocity_ = ToClientScrollIncrement(clipped_velocity);
+
+  // Early out if the increment is zero, but avoid early terimination if the
+  // velocity is still non-zero.
   if (clipped_increment == WebFloatSize())
-    return false;
+    return clipped_velocity != WebFloatSize();
 
   TRACE_EVENT2("input",
                "InputHandlerProxy::scrollBy",
@@ -501,7 +523,6 @@ bool InputHandlerProxy::scrollBy(const WebFloatSize& increment,
       break;
     case WebGestureEvent::Touchscreen:
       clipped_increment = ToClientScrollIncrement(clipped_increment);
-      clipped_velocity = ToClientScrollIncrement(clipped_velocity);
       did_scroll = input_handler_->ScrollBy(fling_parameters_.point,
                                             clipped_increment);
       break;
@@ -511,6 +532,13 @@ bool InputHandlerProxy::scrollBy(const WebFloatSize& increment,
     fling_parameters_.cumulativeScroll.width += clipped_increment.width;
     fling_parameters_.cumulativeScroll.height += clipped_increment.height;
   }
+
+  // It's possible the provided |increment| is sufficiently small as to not
+  // trigger a scroll, e.g., with a trivial time delta between fling updates.
+  // Return true in this case to prevent early fling termination.
+  if (std::abs(clipped_increment.width) < kScrollEpsilon &&
+      std::abs(clipped_increment.height) < kScrollEpsilon)
+    return true;
 
   return did_scroll;
 }

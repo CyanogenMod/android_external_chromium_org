@@ -23,7 +23,7 @@ vars = {
   "libcxxabi_revision": "197063",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "171141",
+  "webkit_revision": "171541",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",
@@ -35,8 +35,8 @@ vars = {
   "google_toolbox_for_mac_revision": "662",
   "libaddressinput_revision": "176",
   "libphonenumber_revision": "621",
-  "libvpx_revision": "261575",
-  "lss_revision": "25",
+  "libvpx_revision": "263116",
+  "lss_revision": "26",
 
   # These two FFmpeg variables must be updated together.  One is used for SVN
   # checkouts and the other for Git checkouts.
@@ -45,17 +45,17 @@ vars = {
 
   "sfntly_revision": "228",
   "lighttpd_revision": "33737",
-  "skia_revision": "14102",
-  "skia_hash": "e1d94437585dad1c195d7cf095f8a5a8219d196a",
+  "skia_revision": "14196",
+  "skia_hash": "a1ed7aec95eb8c77d1a39834fea476780007cade",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
   "v8_branch": "trunk",
-  "v8_revision": "20554",
+  "v8_revision": "20743",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "5831",
+  "webrtc_revision": "5884",
   "jsoncpp_revision": "248",
   "nss_revision": "259440",
   # Three lines of non-changing comments so that
@@ -65,16 +65,16 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
-  "openssl_revision": "262509",
+  "openssl_revision": "263283",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling ANGLE
   # and whatever else without interference from each other.
-  "angle_revision": "740a2f8daa9cc45c53ecf7333c3ae5aa64c821f8",
+  "angle_revision": "74697cf2064c0a2c0d7e1b1b28db439286766a05",
 }
 
 deps = {
   "src/breakpad/src":
-    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1295",
+    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1313",
 
   "src/sdch/open-vcdiff":
     (Var("googlecode_url") % "open-vcdiff") + "/trunk@42",
@@ -103,10 +103,10 @@ deps = {
     "/external/w3c/csswg-test.git@bacbb4a8dca702cd86646761fde96793db13d4f1",
 
   "src/third_party/icu":
-    "/trunk/deps/third_party/icu46@259309",
+    "/trunk/deps/third_party/icu46@262949",
 
   "src/third_party/libexif/sources":
-    "/trunk/deps/third_party/libexif/sources@146817",
+    "/trunk/deps/third_party/libexif/sources@263766",
 
   "src/third_party/hunspell":
    "/trunk/deps/third_party/hunspell@256272",
@@ -226,7 +226,7 @@ deps = {
     "/trunk/deps/third_party/yasm/patched-yasm@167605",
 
   "src/third_party/libjpeg_turbo":
-    "/trunk/deps/third_party/libjpeg_turbo@261103",
+    "/trunk/deps/third_party/libjpeg_turbo@263594",
 
   "src/third_party/flac":
     "/trunk/deps/third_party/flac@222897",
@@ -291,7 +291,7 @@ deps = {
     "/trunk/deps/third_party/opus@256783",
 
   "src/media/cdm/ppapi/api":
-    "/trunk/deps/cdm@260640",
+    "/trunk/deps/cdm@262570",
 
   "src/third_party/mesa/src":
     "/trunk/deps/third_party/mesa@261106",
@@ -305,7 +305,7 @@ deps = {
 
   "src/third_party/libwebm/source":
     Var("chromium_git") +
-      "/webm/libwebm.git@0f7815b036651e242ec8c2fcfb59fe54f69be1a8",
+      "/webm/libwebm.git@fb6b6e64444c637f27d103fd113e0c7bf4f107dd",
 
   "src/third_party/openssl":
     "/trunk/deps/third_party/openssl@" + Var("openssl_revision"),
@@ -466,11 +466,6 @@ deps_os = {
       ((Var("googlecode_url") % "linux-syscall-support") + "/trunk/lss@" +
        Var("lss_revision")),
 
-    # FIXME(mithro): src/third_party/binutils is replacing src/third_party/gold.
-    # Remove gold when binutils is being used correctly.
-    "src/third_party/gold":
-      "/trunk/deps/third_party/gold@228995",
-
     # For Linux and Chromium OS.
     "src/third_party/cros_system_api":
       Var("chromiumos_git") + "/platform/system_api.git" +
@@ -506,7 +501,7 @@ deps_os = {
   "android": {
     "src/third_party/android_tools":
       Var("chromium_git") + "/android_tools.git" +
-      "@f1adc927bf3fb00bbff98bf1ec5885c96b80bd81",
+      "@84ff5f258a86d40ae69ccefde2efa45e52a9808c",
 
     "src/third_party/aosp":
       "/trunk/deps/third_party/aosp@148330",

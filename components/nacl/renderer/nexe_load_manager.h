@@ -28,7 +28,14 @@ class NexeLoadManager {
   explicit NexeLoadManager(PP_Instance instance);
   ~NexeLoadManager();
 
-  void ReportLoadSuccess(const std::string& url,
+  void NexeFileDidOpen(int32_t pp_error,
+                       int32_t fd,
+                       int32_t http_status,
+                       int64_t nexe_bytes_read,
+                       const std::string& url,
+                       int64_t time_since_open);
+  void ReportLoadSuccess(bool is_pnacl,
+                         const std::string& url,
                          uint64_t loaded_bytes,
                          uint64_t total_bytes);
   void ReportLoadError(PP_NaClError error,
@@ -81,8 +88,6 @@ class NexeLoadManager {
   bool is_installed() const { return is_installed_; }
   void set_is_installed(bool installed) { is_installed_ = installed; }
 
-  void set_ready_time() { ready_time_ = base::Time::Now(); }
-
   int32_t exit_status() const { return exit_status_; }
   void set_exit_status(int32_t exit_status);
 
@@ -91,7 +96,6 @@ class NexeLoadManager {
   void ReportStartupOverhead() const;
 
   int64_t nexe_size() const { return nexe_size_; }
-  void set_nexe_size(int64_t nexe_size) { nexe_size_ = nexe_size; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NexeLoadManager);
@@ -121,6 +125,9 @@ class NexeLoadManager {
 
   // Time of plugin initialization.
   base::Time init_time_;
+
+  // Time of the start of loading a NaCl module.
+  base::Time load_start_;
 
   // The exit status of the plugin process.
   // This will have a value in the range (0x00-0xff) if the exit status is set,

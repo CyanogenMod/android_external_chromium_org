@@ -397,7 +397,7 @@ class ValgrindTool(BaseTool):
     # Valgrind doesn't play nice with the Chrome sandbox.  Empty this env var
     # set by runtest.py to disable the sandbox.
     if os.environ.get("CHROME_DEVEL_SANDBOX", None):
-      logging.info("Removing CHROME_DEVEL_SANDBOX fron environment")
+      logging.info("Removing CHROME_DEVEL_SANDBOX from environment")
       os.environ["CHROME_DEVEL_SANDBOX"] = ''
 
     # Handle --indirect_webkit_layout separately.

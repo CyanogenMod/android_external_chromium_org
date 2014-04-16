@@ -21,6 +21,8 @@
         }],
       ],
       'sources': [
+        'device_monitor_linux.cc',
+        'device_monitor_linux.h',
         'hid_connection.cc',
         'hid_connection.h',
         'hid_connection_linux.cc',
@@ -41,6 +43,9 @@
         'hid_service_win.h',
         'hid_utils_mac.cc',
         'hid_utils_mac.h',
+        'input_service_linux.cc',
+        'input_service_linux.h',
+        'udev_common.h'
       ],
     },
   ],

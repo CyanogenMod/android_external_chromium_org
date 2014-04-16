@@ -8,7 +8,6 @@
 
 #include "ash/default_accessibility_delegate.h"
 #include "ash/gpu_support_stub.h"
-#include "ash/host/window_tree_host_factory.h"
 #include "ash/media_delegate.h"
 #include "ash/new_window_delegate.h"
 #include "ash/session_state_delegate.h"
@@ -74,6 +73,10 @@ bool TestShellDelegate::IsMultiProfilesEnabled() const {
 }
 
 bool TestShellDelegate::IsRunningInForcedAppMode() const {
+  return false;
+}
+
+bool TestShellDelegate::IsMultiAccountEnabled() const {
   return false;
 }
 
@@ -147,10 +150,6 @@ ui::MenuModel* TestShellDelegate::CreateContextMenu(
     ash::ShelfItemDelegate* item_delegate,
     ash::ShelfItem* item) {
   return NULL;
-}
-
-WindowTreeHostFactory* TestShellDelegate::CreateWindowTreeHostFactory() {
-  return WindowTreeHostFactory::Create();
 }
 
 GPUSupport* TestShellDelegate::CreateGPUSupport() {

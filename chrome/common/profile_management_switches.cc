@@ -53,6 +53,18 @@ bool IsNewProfileManagement() {
   return CheckProfileManagementFlag(switches::kNewProfileManagement, true);
 }
 
+bool IsNewAvatarMenu() {
+  bool is_new_avatar_menu =
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kNewAvatarMenu);
+  return is_new_avatar_menu || IsNewProfileManagement();
+}
+
+bool IsNewProfileManagementPreviewEnabled() {
+  bool is_new_avatar_menu =
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kNewAvatarMenu);
+  return is_new_avatar_menu && IsNewProfileManagement();
+}
+
 bool IsFastUserSwitching() {
   return CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kFastUserSwitching);

@@ -87,6 +87,7 @@ class BrowserMainParts;
 class BrowserPluginGuestDelegate;
 class BrowserPpapiHost;
 class BrowserURLHandler;
+class ExternalVideoSurfaceContainer;
 class LocationProvider;
 class MediaObserver;
 class QuotaPermissionContext;
@@ -559,11 +560,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual content::BrowserPpapiHost* GetExternalBrowserPpapiHost(
       int plugin_child_id);
 
-  // Returns true if the given browser_context and site_url support hosting
-  // BrowserPlugins.
-  virtual bool SupportsBrowserPlugin(BrowserContext* browser_context,
-                                     const GURL& site_url);
-
   // Returns true if the socket operation specified by |params| is allowed from
   // the given |browser_context| and |url|. If |params| is NULL, this method
   // checks the basic "socket" permission, which is for those operations that
@@ -645,6 +641,13 @@ class CONTENT_EXPORT ContentBrowserClient {
   // This is called on the IO thread.
   virtual net::CookieStore* OverrideCookieStoreForRenderProcess(
       int render_process_id_);
+
+#if defined(VIDEO_HOLE)
+  // Allows an embedder to provide its own ExternalVideoSurfaceContainer
+  // implementation.  Return NULL to disable external surface video.
+  virtual ExternalVideoSurfaceContainer*
+  OverrideCreateExternalVideoSurfaceContainer(WebContents* web_contents);
+#endif
 };
 
 }  // namespace content

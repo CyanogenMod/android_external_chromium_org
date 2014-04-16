@@ -31,6 +31,7 @@
           'music_manager_private.idl',
           'principals_private.idl',
           'top_sites.json',
+          'web_request_internal.json',
         ],
         'conditions': [
           ['OS!="android"', {
@@ -163,6 +164,7 @@
               'screenlock_private.idl',
               'wallpaper.json',
               'wallpaper_private.json',
+              'webcam_private.idl',
             ],
           }],
           ['enable_webrtc==1', {

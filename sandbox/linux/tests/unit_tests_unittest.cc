@@ -8,6 +8,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
 #include "sandbox/linux/tests/unit_tests.h"
 
@@ -22,7 +23,7 @@ const int kExpectedExitCode = 100;
 SANDBOX_DEATH_TEST(UnitTests,
                    DeathExitCode,
                    DEATH_EXIT_CODE(kExpectedExitCode)) {
-  exit(kExpectedExitCode);
+  _exit(kExpectedExitCode);
 }
 
 const int kExpectedSignalNumber = SIGKILL;
@@ -33,21 +34,8 @@ SANDBOX_DEATH_TEST(UnitTests,
   raise(kExpectedSignalNumber);
 }
 
-// Test that a subprocess can be forked() and can use exit(3) instead of
-// _exit(2).
-TEST(UnitTests, SubProcessCanExit) {
-  pid_t child = fork();
-  ASSERT_NE(-1, child);
-
-  if (!child) {
-    exit(kExpectedExitCode);
-  }
-
-  int status = 0;
-  pid_t waitpid_ret = HANDLE_EINTR(waitpid(child, &status, 0));
-  EXPECT_EQ(child, waitpid_ret);
-  EXPECT_TRUE(WIFEXITED(status));
-  EXPECT_EQ(kExpectedExitCode, WEXITSTATUS(status));
+SANDBOX_TEST_ALLOW_NOISE(UnitTests, NoisyTest) {
+  LOG(ERROR) << "The cow says moo!";
 }
 
 }  // namespace

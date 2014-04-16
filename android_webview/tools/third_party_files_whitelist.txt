@@ -41,10 +41,6 @@ chrome/browser/resources/file_manager/foreground/js/main_scripts.js
 # String 'copyright' used in code.
 chrome/browser/resources/file_manager/foreground/js/media/mediaplayer_scripts.js
 # String 'copyright' used in code.
-chrome/browser/resources/file_manager/audio_player/js/audio_player_scripts.js
-# String 'copyright' used in code.
-chrome/browser/resources/file_manager/foreground/js/media/video_player_scripts.js
-# String 'copyright' used in code.
 chrome/browser/resources/video_player/js/video_player_scripts.js
 # String 'copyright' used in code.
 chrome/common/importer/firefox_importer_utils.cc
@@ -70,6 +66,12 @@ content/browser/renderer_host/render_widget_host_view_mac.mm
 # Copyright The Chromium Authors and Google Inc; BSD license. Not used on
 # Android.
 content/browser/renderer_host/web_input_event_aurax11.cc
+# Copyright Apple Inc and Torch Mobile Inc; BSD license. Moved from
+# third_party/WebKit/.
+content/renderer/history_controller.h
+# Copyright Apple Inc, Nokia Corporation and Torch Mobile Inc; BSD license.
+# Moved from third_party/WebKit/.
+content/renderer/history_controller.cc
 # Copyright Google Inc, no license. Not used on Android.
 google_update/google_update_idl.idl
 # Native client not used in Android. Contains the word "Copyright"
@@ -158,12 +160,6 @@ tools/traceline/traceline/sidestep/mini_disassembler.cc
 ui/base/clipboard/clipboard_util_win.cc
 # Copyright The Chromium Authors, Apple Inc; BSD license. Not used on Android.
 ui/base/dragdrop/os_exchange_data_provider_win.cc
-# Copyright The Chromium Authors, Apple Inc, Michael Emmel, Holger Hans Peter
-# Freyther, Collabora Ltd, Google Inc; BSD license. Not used on Android.
-ui/events/keycodes/keyboard_code_conversion_gtk.cc
-# Copyright The Chromium Authors, Apple Inc, Michael Emmel, Holger Hans Peter
-# Freyther, Collabora Ltd, Google Inc; BSD license. Not used on Android.
-ui/events/keycodes/keyboard_code_conversion_gtk.h
 # Copyright The Chromium Authors, Michael Emmel, Google Inc; BSD license. This
 # third-party code is taken from WebKit, the license for which we already pick
 # up from webkit/.
@@ -186,8 +182,5 @@ webkit/browser/appcache/manifest_parser.h
 # and (MPL, GPL v2 or LGPL v2) licenses. This third-party code is taken from
 # Mozilla, the license for which we already pick up from third_party/npapi/.
 webkit/child/multipart_response_delegate.h
-# Copyright Tim Copperfield and Christian Dywan; LGPL license. Not used on
-# Android.
-content/common/cursors/webcursor_gtk_data.h
 # False positive. This is a generated file which includes polymer code.
 chrome/browser/resources/pdf/index.js

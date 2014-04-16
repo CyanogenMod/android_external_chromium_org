@@ -24,7 +24,8 @@ ServiceWorkerContextCore::ServiceWorkerContextCore(
     : storage_(new ServiceWorkerStorage(path, quota_manager_proxy)),
       embedded_worker_registry_(new EmbeddedWorkerRegistry(AsWeakPtr())),
       job_coordinator_(
-          new ServiceWorkerJobCoordinator(AsWeakPtr())) {}
+          new ServiceWorkerJobCoordinator(AsWeakPtr())),
+      next_handle_id_(0) {}
 
 ServiceWorkerContextCore::~ServiceWorkerContextCore() {
   providers_.Clear();
@@ -69,8 +70,12 @@ void ServiceWorkerContextCore::RegisterServiceWorker(
     const GURL& pattern,
     const GURL& script_url,
     int source_process_id,
+    ServiceWorkerProviderHost* provider_host,
     const RegistrationCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  // TODO(kinuko): Wire the provider_host so that we can tell which document
+  // is calling .register.
 
   job_coordinator_->Register(
       pattern,
@@ -84,8 +89,12 @@ void ServiceWorkerContextCore::RegisterServiceWorker(
 void ServiceWorkerContextCore::UnregisterServiceWorker(
     const GURL& pattern,
     int source_process_id,
+    ServiceWorkerProviderHost* provider_host,
     const UnregistrationCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  // TODO(kinuko): Wire the provider_host so that we can tell which document
+  // is calling .register.
 
   job_coordinator_->Unregister(pattern, source_process_id, callback);
 }
@@ -139,6 +148,10 @@ void ServiceWorkerContextCore::AddLiveVersion(ServiceWorkerVersion* version) {
 
 void ServiceWorkerContextCore::RemoveLiveVersion(int64 id) {
   live_versions_.erase(id);
+}
+
+int ServiceWorkerContextCore::GetNewServiceWorkerHandleId() {
+  return next_handle_id_++;
 }
 
 }  // namespace content

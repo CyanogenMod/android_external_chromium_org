@@ -423,6 +423,8 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       switches::kAcceleratedCanvas2dMSAASampleCount).c_str());
   prefs.deferred_filters_enabled =
       command_line.HasSwitch(switches::kEnableDeferredFilters);
+  prefs.container_culling_enabled =
+      command_line.HasSwitch(switches::kEnableContainerCulling);
   prefs.accelerated_compositing_for_3d_transforms_enabled =
       prefs.accelerated_compositing_for_animation_enabled =
           !command_line.HasSwitch(switches::kDisableAcceleratedLayers);
@@ -511,16 +513,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       switches::kEnableSpatialNavigation);
 
   GetContentClient()->browser()->OverrideWebkitPrefs(this, url, &prefs);
-
-  // Disable compositing in guests until we have compositing path implemented
-  // for guests.
-  bool guest_compositing_enabled = !command_line.HasSwitch(
-      switches::kDisableBrowserPluginCompositing);
-  if (GetProcess()->IsGuest() && !guest_compositing_enabled) {
-    prefs.force_compositing_mode = false;
-    prefs.accelerated_compositing_enabled = false;
-  }
-
   return prefs;
 }
 

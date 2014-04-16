@@ -83,7 +83,9 @@ using testing::Return;
 using testing::_;
 using ::i18n::addressinput::AddressValidator;
 
-void MockCallback(const FormStructure*) {}
+void MockCallback(AutofillManagerDelegate::RequestAutocompleteResult,
+                  const base::string16& message,
+                  const FormStructure*) {}
 
 class MockAutofillMetrics : public AutofillMetrics {
  public:

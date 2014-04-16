@@ -105,7 +105,7 @@ void AvatarMenuButton::ShowAvatarBubble() {
   gfx::Rect bounds(origin, size());
   views::BubbleBorder::Arrow arrow = button_on_right_ ?
       views::BubbleBorder::TOP_RIGHT : views::BubbleBorder::TOP_LEFT;
-  if (switches::IsNewProfileManagement()) {
+  if (switches::IsNewAvatarMenu()) {
     ProfileChooserView::ShowBubble(
         ProfileChooserView::BUBBLE_VIEW_MODE_PROFILE_CHOOSER,
         this, arrow, views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR, bounds,

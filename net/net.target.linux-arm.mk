@@ -28,6 +28,67 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
+	net/base/address_list.cc \
+	net/base/auth.cc \
+	net/base/connection_type_histograms.cc \
+	net/base/dns_util.cc \
+	net/base/escape.cc \
+	net/base/hash_value.cc \
+	net/base/load_timing_info.cc \
+	net/base/host_port_pair.cc \
+	net/base/io_buffer.cc \
+	net/base/ip_endpoint.cc \
+	net/base/net_errors.cc \
+	net/base/net_errors_posix.cc \
+	net/base/net_log.cc \
+	net/base/net_module.cc \
+	net/base/net_util.cc \
+	net/base/net_util_icu.cc \
+	net/base/net_util_posix.cc \
+	net/base/openssl_private_key_store_android.cc \
+	net/base/registry_controlled_domains/registry_controlled_domain.cc \
+	net/base/zap.cc \
+	net/cert/asn1_util.cc \
+	net/cert/cert_database.cc \
+	net/cert/cert_status_flags.cc \
+	net/cert/cert_verifier.cc \
+	net/cert/cert_verify_result.cc \
+	net/cert/pem_tokenizer.cc \
+	net/cert/signed_certificate_timestamp.cc \
+	net/cert/single_request_cert_verifier.cc \
+	net/cert/x509_cert_types.cc \
+	net/cert/x509_certificate.cc \
+	net/cert/x509_certificate_net_log_param.cc \
+	net/cert/x509_certificate_openssl.cc \
+	net/cert/x509_util.cc \
+	net/cert/x509_util_openssl.cc \
+	net/http/http_auth_challenge_tokenizer.cc \
+	net/http/http_byte_range.cc \
+	net/http/http_log_util.cc \
+	net/http/http_request_headers.cc \
+	net/http/http_response_headers.cc \
+	net/http/http_response_info.cc \
+	net/http/http_security_headers.cc \
+	net/http/http_util.cc \
+	net/http/http_util_icu.cc \
+	net/http/http_vary_data.cc \
+	net/http/transport_security_state.cc \
+	net/socket/client_socket_handle.cc \
+	net/socket/client_socket_pool_histograms.cc \
+	net/socket/ssl_client_socket.cc \
+	net/socket/ssl_client_socket_openssl.cc \
+	net/socket/ssl_client_socket_pool.cc \
+	net/socket/ssl_error_params.cc \
+	net/socket/ssl_session_cache_openssl.cc \
+	net/ssl/default_server_bound_cert_store.cc \
+	net/ssl/openssl_client_key_store.cc \
+	net/ssl/server_bound_cert_service.cc \
+	net/ssl/server_bound_cert_store.cc \
+	net/ssl/signed_certificate_timestamp_and_status.cc \
+	net/ssl/ssl_cert_request_info.cc \
+	net/ssl/ssl_client_auth_cache.cc \
+	net/ssl/ssl_config.cc \
+	net/ssl/ssl_info.cc \
 	net/android/cert_verify_result_android.cc \
 	net/android/gurl_utils.cc \
 	net/android/android_private_key.cc \
@@ -38,48 +99,30 @@ LOCAL_SRC_FILES := \
 	net/android/network_change_notifier_delegate_android.cc \
 	net/android/network_change_notifier_factory_android.cc \
 	net/android/network_library.cc \
-	net/base/address_list.cc \
 	net/base/address_tracker_linux.cc \
-	net/base/auth.cc \
 	net/base/backoff_entry.cc \
 	net/base/bandwidth_metrics.cc \
-	net/base/connection_type_histograms.cc \
 	net/base/crypto_module_openssl.cc \
 	net/base/data_url.cc \
 	net/base/directory_lister.cc \
 	net/base/dns_reloader.cc \
-	net/base/dns_util.cc \
-	net/base/escape.cc \
 	net/base/file_stream.cc \
 	net/base/file_stream_context.cc \
 	net/base/file_stream_context_posix.cc \
 	net/base/filename_util.cc \
-	net/base/hash_value.cc \
 	net/base/host_mapping_rules.cc \
-	net/base/host_port_pair.cc \
 	net/base/int128.cc \
-	net/base/io_buffer.cc \
-	net/base/ip_endpoint.cc \
 	net/base/ip_pattern.cc \
 	net/base/keygen_handler.cc \
 	net/base/keygen_handler_openssl.cc \
-	net/base/load_timing_info.cc \
 	net/base/mime_sniffer.cc \
 	net/base/mime_util.cc \
-	net/base/net_errors.cc \
-	net/base/net_errors_posix.cc \
-	net/base/net_log.cc \
 	net/base/net_log_logger.cc \
-	net/base/net_module.cc \
-	net/base/net_util.cc \
-	net/base/net_util_posix.cc \
 	net/base/network_change_notifier.cc \
 	net/base/network_delegate.cc \
 	net/base/network_time_notifier.cc \
-	net/base/openssl_private_key_store_android.cc \
 	net/base/platform_mime_util_linux.cc \
 	net/base/prioritized_dispatcher.cc \
-	net/base/registry_controlled_domains/registry_controlled_domain.cc \
 	net/base/request_priority.cc \
 	net/base/sdch_manager.cc \
 	net/base/static_cookie_policy.cc \
@@ -90,15 +133,9 @@ LOCAL_SRC_FILES := \
 	net/base/upload_element_reader.cc \
 	net/base/upload_file_element_reader.cc \
 	net/base/url_util.cc \
-	net/base/zap.cc \
-	net/cert/asn1_util.cc \
-	net/cert/cert_database.cc \
 	net/cert/cert_database_android.cc \
-	net/cert/cert_status_flags.cc \
-	net/cert/cert_verifier.cc \
 	net/cert/cert_verify_proc.cc \
 	net/cert/cert_verify_proc_android.cc \
-	net/cert/cert_verify_result.cc \
 	net/cert/crl_set.cc \
 	net/cert/ct_known_logs.cc \
 	net/cert/ct_log_verifier.cc \
@@ -111,18 +148,9 @@ LOCAL_SRC_FILES := \
 	net/cert/jwk_serializer_openssl.cc \
 	net/cert/multi_log_ct_verifier.cc \
 	net/cert/multi_threaded_cert_verifier.cc \
-	net/cert/pem_tokenizer.cc \
-	net/cert/signed_certificate_timestamp.cc \
-	net/cert/single_request_cert_verifier.cc \
 	net/cert/test_root_certs.cc \
 	net/cert/test_root_certs_android.cc \
-	net/cert/x509_cert_types.cc \
-	net/cert/x509_certificate.cc \
-	net/cert/x509_certificate_net_log_param.cc \
-	net/cert/x509_certificate_openssl.cc \
-	net/cert/x509_util.cc \
 	net/cert/x509_util_android.cc \
-	net/cert/x509_util_openssl.cc \
 	net/cookies/canonical_cookie.cc \
 	net/cookies/cookie_constants.cc \
 	net/cookies/cookie_monster.cc \
@@ -213,7 +241,6 @@ LOCAL_SRC_FILES := \
 	net/http/failing_http_transaction_factory.cc \
 	net/http/http_auth.cc \
 	net/http/http_auth_cache.cc \
-	net/http/http_auth_challenge_tokenizer.cc \
 	net/http/http_auth_controller.cc \
 	net/http/http_auth_filter.cc \
 	net/http/http_auth_handler.cc \
@@ -224,12 +251,10 @@ LOCAL_SRC_FILES := \
 	net/http/http_auth_handler_ntlm_portable.cc \
 	net/http/http_basic_state.cc \
 	net/http/http_basic_stream.cc \
-	net/http/http_byte_range.cc \
 	net/http/http_cache.cc \
 	net/http/http_cache_transaction.cc \
-	net/http/http_content_disposition.cc \
 	net/http/http_chunked_decoder.cc \
-	net/http/http_log_util.cc \
+	net/http/http_content_disposition.cc \
 	net/http/http_network_layer.cc \
 	net/http/http_network_session.cc \
 	net/http/http_network_session_peer.cc \
@@ -242,12 +267,8 @@ LOCAL_SRC_FILES := \
 	net/http/http_pipelined_stream.cc \
 	net/http/http_proxy_client_socket.cc \
 	net/http/http_proxy_client_socket_pool.cc \
-	net/http/http_request_headers.cc \
 	net/http/http_request_info.cc \
 	net/http/http_response_body_drainer.cc \
-	net/http/http_response_headers.cc \
-	net/http/http_response_info.cc \
-	net/http/http_security_headers.cc \
 	net/http/http_server_properties.cc \
 	net/http/http_server_properties_impl.cc \
 	net/http/http_status_code.cc \
@@ -256,15 +277,11 @@ LOCAL_SRC_FILES := \
 	net/http/http_stream_factory_impl_job.cc \
 	net/http/http_stream_factory_impl_request.cc \
 	net/http/http_stream_parser.cc \
-	net/http/http_util.cc \
-	net/http/http_util_icu.cc \
-	net/http/http_vary_data.cc \
 	net/http/md4.cc \
 	net/http/partial_data.cc \
 	net/http/proxy_client_socket.cc \
 	net/http/proxy_connect_redirect_http_stream.cc \
 	net/http/transport_security_persister.cc \
-	net/http/transport_security_state.cc \
 	net/http/url_security_manager.cc \
 	net/http/url_security_manager_posix.cc \
 	net/proxy/dhcp_proxy_script_fetcher.cc \
@@ -338,8 +355,8 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/quic_random.cc \
 	net/quic/crypto/quic_server_info.cc \
 	net/quic/crypto/scoped_evp_aead_ctx.cc \
-	net/quic/crypto/strike_register.cc \
 	net/quic/crypto/source_address_token.cc \
+	net/quic/crypto/strike_register.cc \
 	net/quic/iovector.cc \
 	net/quic/port_suggester.cc \
 	net/quic/quic_ack_notifier.cc \
@@ -388,10 +405,8 @@ LOCAL_SRC_FILES := \
 	net/quic/spdy_utils.cc \
 	net/socket/buffered_write_stream_socket.cc \
 	net/socket/client_socket_factory.cc \
-	net/socket/client_socket_handle.cc \
 	net/socket/client_socket_pool.cc \
 	net/socket/client_socket_pool_base.cc \
-	net/socket/client_socket_pool_histograms.cc \
 	net/socket/client_socket_pool_manager.cc \
 	net/socket/client_socket_pool_manager_impl.cc \
 	net/socket/socket_descriptor.cc \
@@ -399,12 +414,7 @@ LOCAL_SRC_FILES := \
 	net/socket/socks5_client_socket.cc \
 	net/socket/socks_client_socket.cc \
 	net/socket/socks_client_socket_pool.cc \
-	net/socket/ssl_client_socket.cc \
-	net/socket/ssl_client_socket_openssl.cc \
-	net/socket/ssl_client_socket_pool.cc \
-	net/socket/ssl_error_params.cc \
 	net/socket/ssl_server_socket_openssl.cc \
-	net/socket/ssl_session_cache_openssl.cc \
 	net/socket/stream_listen_socket.cc \
 	net/socket/stream_socket.cc \
 	net/socket/tcp_client_socket.cc \
@@ -449,18 +459,9 @@ LOCAL_SRC_FILES := \
 	net/spdy/spdy_stream.cc \
 	net/spdy/spdy_websocket_stream.cc \
 	net/spdy/spdy_write_queue.cc \
-	net/ssl/default_server_bound_cert_store.cc \
-	net/ssl/openssl_client_key_store.cc \
-	net/ssl/server_bound_cert_service.cc \
-	net/ssl/server_bound_cert_store.cc \
-	net/ssl/signed_certificate_timestamp_and_status.cc \
-	net/ssl/ssl_cert_request_info.cc \
 	net/ssl/ssl_cipher_suite_names.cc \
-	net/ssl/ssl_client_auth_cache.cc \
-	net/ssl/ssl_config.cc \
 	net/ssl/ssl_config_service.cc \
 	net/ssl/ssl_config_service_defaults.cc \
-	net/ssl/ssl_info.cc \
 	net/udp/udp_client_socket.cc \
 	net/udp/udp_net_log_parameters.cc \
 	net/udp/udp_server_socket.cc \

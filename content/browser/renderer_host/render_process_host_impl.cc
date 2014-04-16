@@ -40,7 +40,6 @@
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/browser_main.h"
 #include "content/browser/browser_main_loop.h"
-#include "content/browser/browser_plugin/browser_plugin_geolocation_permission_context.h"
 #include "content/browser/browser_plugin/browser_plugin_message_filter.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/device_orientation/device_motion_message_filter.h"
@@ -229,9 +228,6 @@ void DisableAecDumpOnFileThread() {
 base::LazyInstance<IDMap<RenderProcessHost> >::Leaky
     g_all_hosts = LAZY_INSTANCE_INITIALIZER;
 
-base::LazyInstance<scoped_refptr<BrowserPluginGeolocationPermissionContext> >
-    g_browser_plugin_geolocation_context = LAZY_INSTANCE_INITIALIZER;
-
 // Map of site to process, to ensure we only have one RenderProcessHost per
 // site in process-per-site mode.  Each map is specific to a BrowserContext.
 class SiteProcessMap : public base::SupportsUserData::Data {
@@ -394,7 +390,6 @@ void RenderProcessHost::SetMaxRendererProcessCount(size_t count) {
 RenderProcessHostImpl::RenderProcessHostImpl(
     BrowserContext* browser_context,
     StoragePartitionImpl* storage_partition_impl,
-    bool supports_browser_plugin,
     bool is_guest)
     : fast_shutdown_started_(false),
       deleting_soon_(false),
@@ -414,7 +409,6 @@ RenderProcessHostImpl::RenderProcessHostImpl(
       storage_partition_impl_(storage_partition_impl),
       sudden_termination_allowed_(true),
       ignore_input_events_(false),
-      supports_browser_plugin_(supports_browser_plugin),
       is_guest_(is_guest),
       gpu_observer_registered_(false),
       delayed_cleanup_needed_(false),
@@ -616,11 +610,9 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       BrowserMainLoop::GetInstance()->audio_manager();
   // Add BrowserPluginMessageFilter to ensure it gets the first stab at messages
   // from guests.
-  if (supports_browser_plugin_) {
-    scoped_refptr<BrowserPluginMessageFilter> bp_message_filter(
-        new BrowserPluginMessageFilter(GetID(), IsGuest()));
-    AddFilter(bp_message_filter.get());
-  }
+  scoped_refptr<BrowserPluginMessageFilter> bp_message_filter(
+      new BrowserPluginMessageFilter(GetID(), IsGuest()));
+  AddFilter(bp_message_filter.get());
 
   scoped_refptr<RenderMessageFilter> render_message_filter(
       new RenderMessageFilter(
@@ -689,19 +681,13 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       GetID(),
       storage_partition_impl_->GetDOMStorageContext()));
   AddFilter(new IndexedDBDispatcherHost(
-      storage_partition_impl_->GetIndexedDBContext()));
+      GetID(),
+      storage_partition_impl_->GetURLRequestContext(),
+      storage_partition_impl_->GetIndexedDBContext(),
+      ChromeBlobStorageContext::GetFor(browser_context)));
 
-  if (IsGuest()) {
-    if (!g_browser_plugin_geolocation_context.Get().get()) {
-      g_browser_plugin_geolocation_context.Get() =
-          new BrowserPluginGeolocationPermissionContext();
-    }
-    geolocation_dispatcher_host_ = GeolocationDispatcherHost::New(
-        GetID(), g_browser_plugin_geolocation_context.Get().get());
-  } else {
-    geolocation_dispatcher_host_ = GeolocationDispatcherHost::New(
-        GetID(), browser_context->GetGeolocationPermissionContext());
-  }
+  geolocation_dispatcher_host_ = GeolocationDispatcherHost::New(
+      GetID(), browser_context->GetGeolocationPermissionContext());
   AddFilter(geolocation_dispatcher_host_);
   gpu_message_filter_ = new GpuMessageFilter(GetID(), widget_helper_.get());
   AddFilter(gpu_message_filter_);
@@ -1048,6 +1034,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableLocalStorage,
     switches::kDisableLogging,
     switches::kDisableMapImage,
+    switches::kDisableMediaSource,
     switches::kDisableOverlayScrollbar,
     switches::kDisablePinch,
     switches::kDisablePrefixedEncryptedMedia,
@@ -1060,8 +1047,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableTouchDragDrop,
     switches::kDisableTouchEditing,
     switches::kDisableUniversalAcceleratedOverflowScroll,
-    switches::kDisableUnprefixedMediaSource,
-    switches::kDisableWebKitMediaSource,
     switches::kDomAutomationController,
     switches::kEnableAcceleratedFixedRootBackground,
     switches::kEnableAcceleratedOverflowScroll,
@@ -1094,6 +1079,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnablePinch,
     switches::kEnablePreparsedJsCaching,
     switches::kEnableRepaintAfterLayout,
+    switches::kEnableSeccompFilterSandbox,
     switches::kEnableServiceWorker,
     switches::kEnableSkiaBenchmarking,
     switches::kEnableSoftwareCompositing,
@@ -1291,8 +1277,6 @@ TransportDIB* RenderProcessHostImpl::MapTransportDIB(
                   FILE_MAP_READ | FILE_MAP_WRITE,
                   FALSE, 0);
   return TransportDIB::Map(section);
-#elif defined(TOOLKIT_GTK)
-  return TransportDIB::Map(dib_id.shmkey);
 #elif defined(OS_ANDROID)
   return TransportDIB::Map(dib_id);
 #else
@@ -1331,11 +1315,7 @@ TransportDIB* RenderProcessHostImpl::GetTransportDIB(
       }
     }
 
-#if defined(TOOLKIT_GTK)
-    smallest_iterator->second->Detach();
-#else
     delete smallest_iterator->second;
-#endif
     cached_dibs_.erase(smallest_iterator);
   }
 
@@ -1345,15 +1325,8 @@ TransportDIB* RenderProcessHostImpl::GetTransportDIB(
 }
 
 void RenderProcessHostImpl::ClearTransportDIBCache() {
-#if defined(TOOLKIT_GTK)
-  std::map<TransportDIB::Id, TransportDIB*>::const_iterator dib =
-      cached_dibs_.begin();
-  for (; dib != cached_dibs_.end(); ++dib)
-    dib->second->Detach();
-#else
   STLDeleteContainerPairSecondPointers(
       cached_dibs_.begin(), cached_dibs_.end());
-#endif
   cached_dibs_.clear();
 }
 

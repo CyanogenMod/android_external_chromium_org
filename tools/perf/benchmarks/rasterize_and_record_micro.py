@@ -9,8 +9,9 @@ from telemetry import test
 
 # RasterizeAndRecord disabled on mac because Chrome DCHECKS.
 # TODO: Re-enable when unittests are happy: crbug.com/350684.
+# TODO(skyostil): Re-enable on windows (crbug.com/360666).
 
-@test.Disabled('android', 'linux', 'mac')
+@test.Disabled
 class RasterizeAndRecordMicroTop25(test.Test):
   """Measures rasterize and record performance on the top 25 web pages.
 
@@ -25,7 +26,7 @@ class RasterizeAndRecordMicroKeyMobileSites(test.Test):
 
   http://www.chromium.org/developers/design-documents/rendering-benchmarks"""
   test = rasterize_and_record_micro.RasterizeAndRecordMicro
-  page_set = 'page_sets/key_mobile_sites.json'
+  page_set = 'page_sets/key_mobile_sites.py'
 
 
 @test.Disabled('mac')
@@ -34,7 +35,7 @@ class RasterizeAndRecordMicroKeySilkCases(test.Test):
 
   http://www.chromium.org/developers/design-documents/rendering-benchmarks"""
   test = rasterize_and_record_micro.RasterizeAndRecordMicro
-  page_set = 'page_sets/key_silk_cases.json'
+  page_set = 'page_sets/key_silk_cases.py'
 
 
 @test.Disabled('mac')
@@ -46,6 +47,6 @@ class RasterizeAndRecordMicroFastPathKeySilkCases(test.Test):
   http://www.chromium.org/developers/design-documents/rendering-benchmarks"""
   tag = 'fast_path'
   test = rasterize_and_record_micro.RasterizeAndRecordMicro
-  page_set = 'page_sets/key_silk_cases.json'
+  page_set = 'page_sets/key_silk_cases.py'
   def CustomizeBrowserOptions(self, options):
     silk_flags.CustomizeBrowserOptionsForFastPath(options)

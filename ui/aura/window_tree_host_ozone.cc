@@ -59,18 +59,16 @@ void WindowTreeHostOzone::Show() { NOTIMPLEMENTED(); }
 
 void WindowTreeHostOzone::Hide() { NOTIMPLEMENTED(); }
 
-void WindowTreeHostOzone::ToggleFullScreen() { NOTIMPLEMENTED(); }
-
 gfx::Rect WindowTreeHostOzone::GetBounds() const { return bounds_; }
 
 void WindowTreeHostOzone::SetBounds(const gfx::Rect& bounds) {
-  NOTIMPLEMENTED();
-}
-
-gfx::Insets WindowTreeHostOzone::GetInsets() const { return gfx::Insets(); }
-
-void WindowTreeHostOzone::SetInsets(const gfx::Insets& insets) {
-  NOTIMPLEMENTED();
+  bool origin_changed = bounds_.origin() != bounds.origin();
+  bool size_changed = bounds_.size() != bounds.size();
+  bounds_ = bounds;
+  if (size_changed)
+    OnHostResized(bounds_.size());
+  if (origin_changed)
+    OnHostMoved(bounds_.origin());
 }
 
 gfx::Point WindowTreeHostOzone::GetLocationOnNativeScreen() const {
@@ -85,13 +83,6 @@ bool WindowTreeHostOzone::QueryMouseLocation(gfx::Point* location_return) {
   NOTIMPLEMENTED();
   return false;
 }
-
-bool WindowTreeHostOzone::ConfineCursorToRootWindow() {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-void WindowTreeHostOzone::UnConfineCursor() { NOTIMPLEMENTED(); }
 
 void WindowTreeHostOzone::PostNativeEvent(
     const base::NativeEvent& native_event) {

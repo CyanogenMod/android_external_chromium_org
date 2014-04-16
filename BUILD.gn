@@ -24,18 +24,15 @@ group("root") {
     "//components/startup_metric_utils",
     #"//components/translate:translate_core_browser",
     #"//components/translate:translate_core_common",
-    #"//crypto",
+    "//crypto",
     "//device/usb",
     "//ipc",
     #"//net",
-    #"//net/third_party/nss:ssl",
     #"//sdch",
-    #"//skia",
-    #"//third_party/WebKit/Source/platform",
-    "//third_party/freetype2",
-    #"//third_party/icu:icudata",
-    #"//third_party/leveldatabase",
     "//skia",
+    #"//third_party/WebKit/Source/platform",
+    "//third_party/icu",
+    "//third_party/leveldatabase",
     "//third_party/libpng",
     "//third_party/libusb",
     "//third_party/re2",
@@ -45,7 +42,23 @@ group("root") {
     "//third_party/zlib",
     "//tools/gn",
     "//ui/events",
-    "//ui/gfx/geometry",
+    "//ui/gfx",
     "//url",
   ]
+
+  if (is_linux) {
+    deps += [
+      "//third_party/freetype2",
+    ]
+  }
+
+  if (is_android) {
+    deps -= [
+      "//skia",
+      "//third_party/libusb",
+      "//tools/gn",
+      "//ui/events",
+      "//ui/gfx",
+    ]
+  }
 }

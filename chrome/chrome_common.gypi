@@ -171,6 +171,8 @@
         'common/extensions/features/chrome_channel_feature_filter.h',
         'common/extensions/features/feature_channel.cc',
         'common/extensions/features/feature_channel.h',
+        'common/extensions/file_handler_info.cc',
+        'common/extensions/file_handler_info.h',
         'common/extensions/manifest_handlers/app_isolation_info.cc',
         'common/extensions/manifest_handlers/app_isolation_info.h',
         'common/extensions/manifest_handlers/app_launch_info.cc',
@@ -201,8 +203,6 @@
         'common/extensions/sync_helper.h',
         'common/extensions/update_manifest.cc',
         'common/extensions/update_manifest.h',
-        'common/extensions/value_counter.cc',
-        'common/extensions/value_counter.h',
         'common/favicon/favicon_types.cc',
         'common/favicon/favicon_types.h',
         'common/favicon/favicon_url_parser.cc',
@@ -456,17 +456,6 @@
             'sources': [
               'common/local_discovery/local_discovery_messages.h',
             ]
-        }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
-            '../build/linux/system.gyp:x11',
-            '../build/linux/system.gyp:xrender',
-            '../build/linux/system.gyp:xext',
-          ],
-          'export_dependent_settings': [
-            '../third_party/sqlite/sqlite.gyp:sqlite',
-          ],
         }],
         ['chromeos==1', {
           'sources!': [

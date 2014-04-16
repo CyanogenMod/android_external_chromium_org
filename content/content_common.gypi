@@ -172,8 +172,6 @@
     'common/cursors/webcursor_aura.cc',
     'common/cursors/webcursor_aurawin.cc',
     'common/cursors/webcursor_aurax11.cc',
-    'common/cursors/webcursor_gtk.cc',
-    'common/cursors/webcursor_gtk_data.h',
     'common/cursors/webcursor_mac.mm',
     'common/cursors/webcursor_ozone.cc',
     'common/cursors/webcursor_win.cc',
@@ -392,6 +390,8 @@
     'common/sandbox_init_mac.cc',
     'common/sandbox_init_mac.h',
     'common/sandbox_init_win.cc',
+    'common/sandbox_linux/android/sandbox_bpf_base_policy_android.cc',
+    'common/sandbox_linux/android/sandbox_bpf_base_policy_android.h',
     'common/sandbox_linux/bpf_cros_arm_gpu_policy_linux.cc',
     'common/sandbox_linux/bpf_cros_arm_gpu_policy_linux.h',
     'common/sandbox_linux/bpf_gpu_policy_linux.cc',
@@ -451,6 +451,14 @@
     'common/zygote_commands_linux.h',
     'port/common/input_event_ack_state.h',
   ],
+  'target_conditions': [
+    ['OS=="android" and <(use_seccomp_bpf)==1', {
+      'sources/': [
+        ['include', '^common/sandbox_linux/sandbox_bpf_base_policy_linux\\.cc$'],
+        ['include', '^common/sandbox_linux/sandbox_bpf_base_policy_linux\\.h$'],
+      ],
+    }],
+  ],
   'conditions': [
     ['use_aura==1', {
       'sources!': [
@@ -502,7 +510,6 @@
         '../media/media.gyp:media',
         '../media/media.gyp:shared_memory_support',
         '../mojo/mojo.gyp:mojo_environment_chromium',
-        '../mojo/mojo.gyp:mojo_system',
         '../mojo/mojo.gyp:mojo_system_impl',
         '../third_party/WebKit/public/blink.gyp:blink',
         '../ui/gl/gl.gyp:gl',
@@ -543,11 +550,6 @@
      'dependencies': [
         'content.gyp:content_jni_headers',
         'content.gyp:common_aidl',
-      ],
-    }],
-    ['toolkit_uses_gtk == 1', {
-      'dependencies': [
-        '../build/linux/system.gyp:gtk',
       ],
     }],
     ['use_pango == 1', {
@@ -739,6 +741,8 @@
     }],
     ['use_seccomp_bpf==0', {
       'sources!': [
+        'common/sandbox_linux/android/sandbox_bpf_base_policy_android.cc',
+        'common/sandbox_linux/android/sandbox_bpf_base_policy_android.h',
         'common/sandbox_linux/bpf_cros_arm_gpu_policy_linux.cc',
         'common/sandbox_linux/bpf_cros_arm_gpu_policy_linux.h',
         'common/sandbox_linux/bpf_gpu_policy_linux.cc',

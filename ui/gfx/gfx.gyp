@@ -125,8 +125,6 @@
         'canvas.cc',
         'canvas.h',
         'canvas_android.cc',
-        'canvas_paint_gtk.cc',
-        'canvas_paint_gtk.h',
         'canvas_paint_mac.h',
         'canvas_paint_mac.mm',
         'canvas_paint_win.cc',
@@ -228,7 +226,6 @@
         'path.cc',
         'path.h',
         'path_aura.cc',
-        'path_gtk.cc',
         'path_win.cc',
         'path_win.h',
         'path_x11.cc',
@@ -267,7 +264,6 @@
         'screen.h',
         'screen_android.cc',
         'screen_aura.cc',
-        'screen_gtk.cc',
         'screen_ios.mm',
         'screen_mac.mm',
         'screen_win.cc',
@@ -284,8 +280,6 @@
         'skbitmap_operations.h',
         'skia_util.cc',
         'skia_util.h',
-        'skia_utils_gtk.cc',
-        'skia_utils_gtk.h',
         'switches.cc',
         'switches.h',
         'sys_color_change_listener.cc',
@@ -315,12 +309,6 @@
         'win/singleton_hwnd.h',
         'win/window_impl.cc',
         'win/window_impl.h',
-        'x/x11_atom_cache.cc',
-        'x/x11_atom_cache.h',
-        'x/x11_error_tracker.cc',
-        'x/x11_error_tracker.h',
-        'x/x11_types.cc',
-        'x/x11_types.h',
       ],
       'conditions': [
         ['OS=="ios"', {
@@ -342,24 +330,6 @@
         }, {  # use_canvas_skia!=1
           'sources!': [
             'canvas_skia.cc',
-          ],
-        }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:gtk',
-          ],
-          'sources': [
-            'gtk_native_view_id_manager.cc',
-            'gtk_native_view_id_manager.h',
-            'gtk_preserve_window.cc',
-            'gtk_preserve_window.h',
-            'gdk_compat.h',
-            'gtk_compat.h',
-            'gtk_util.cc',
-            'gtk_util.h',
-            'image/cairo_cached_surface.cc',
-            'image/cairo_cached_surface.h',
-            'scoped_gobject.h',
           ],
         }],
         ['OS=="win"', {
@@ -420,7 +390,7 @@
         }],
         ['use_x11==1', {
           'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:x11',
+            'gfx_x11',
           ],
         }],
         ['use_pango==1', {
@@ -495,6 +465,13 @@
       'target_name': 'gfx_unittests',
       'type': '<(gtest_target_type)',
       'sources': [
+        'animation/animation_container_unittest.cc',
+        'animation/animation_unittest.cc',
+        'animation/multi_animation_unittest.cc',
+        'animation/slide_animation_unittest.cc',
+        'codec/png_codec_unittest.cc',
+        'color_utils_unittest.cc',
+        'display_unittest.cc',
         'geometry/box_unittest.cc',
         'geometry/cubic_bezier_unittest.cc',
         'geometry/insets_unittest.cc',
@@ -510,14 +487,25 @@
         'range/range_mac_unittest.mm',
         'range/range_unittest.cc',
         'range/range_win_unittest.cc',
+        'shadow_value_unittest.cc',
+        'skbitmap_operations_unittest.cc',
+        'skrect_conversion_unittest.cc',
       ],
       'dependencies': [
-        '<(DEPTH)/base/base.gyp:base',
-        '<(DEPTH)/base/base.gyp:run_all_unittests',
-        '<(DEPTH)/base/base.gyp:test_support_base',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
+        '../../base/base.gyp:base',
+        '../../base/base.gyp:run_all_unittests',
+        '../../base/base.gyp:test_support_base',
+        '../../skia/skia.gyp:skia',
+        '../../testing/gtest.gyp:gtest',
+        '../../third_party/libpng/libpng.gyp:libpng',
         'gfx',
         'gfx_geometry',
+      ],
+      'conditions': [
+        ['OS == "win"', {
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
+        }],
       ],
     }
   ],
@@ -557,6 +545,32 @@
           'includes': [ '../../build/apk_test.gypi' ],
         },
       ],
+    }],
+    ['use_x11 == 1', {
+      'targets': [
+        {
+          'target_name': 'gfx_x11',
+          'type': '<(component)',
+          'dependencies': [
+            '../../base/base.gyp:base',
+            '../../build/linux/system.gyp:x11',
+            'gfx_geometry',
+          ],
+          'defines': [
+            'GFX_IMPLEMENTATION',
+          ],
+          'sources': [
+            'x/x11_atom_cache.cc',
+            'x/x11_atom_cache.h',
+            'x/x11_connection.cc',
+            'x/x11_connection.h',
+            'x/x11_error_tracker.cc',
+            'x/x11_error_tracker.h',
+            'x/x11_types.cc',
+            'x/x11_types.h',
+          ],
+        },
+      ]
     }],
   ],
 }

@@ -244,8 +244,8 @@
         'ime/component_extension_ime_manager.h',
         'ime/extension_ime_util.cc',
         'ime/extension_ime_util.h',
-        'ime/fake_xkeyboard.cc',
-        'ime/fake_xkeyboard.h',
+        'ime/fake_ime_keyboard.cc',
+        'ime/fake_ime_keyboard.h',
         'ime/composition_text.cc',
         'ime/composition_text.h',
         'ime/input_method_delegate.h',
@@ -255,8 +255,9 @@
         'ime/input_method_manager.h',
         'ime/input_method_whitelist.cc',
         'ime/input_method_whitelist.h',
-        'ime/xkeyboard.cc',
-        'ime/xkeyboard.h',
+        'ime/ime_keyboard.h',
+        'ime/ime_keyboard_ozone.cc',
+        'ime/ime_keyboard_x11.cc',
         'login/login_state.cc',
         'login/login_state.h',
         'network/certificate_pattern.cc',
@@ -371,12 +372,13 @@
         ['use_x11 == 1', {
           'dependencies': [
             '../build/linux/system.gyp:x11',
+            '../ui/gfx/gfx.gyp:gfx_x11',
           ],
         }, {
           # use_x11 == 0
           'sources!': [
-            'ime/xkeyboard.cc',
-            'ime/xkeyboard.h',
+            'ime/keyboard_controller.cc',
+            'ime/ime_keyboard.h',
           ],
         }],
       ],
@@ -506,7 +508,7 @@
         'ime/composition_text_unittest.cc',
         'ime/input_method_manager.h',
         'ime/input_method_whitelist_unittest.cc',
-        'ime/xkeyboard_unittest.cc',
+        'ime/ime_keyboard_x11_unittest.cc',
         'login/login_state_unittest.cc',
         'network/client_cert_resolver_unittest.cc',
         'network/geolocation_handler_unittest.cc',
@@ -546,6 +548,11 @@
             ],
           },
         ],
+        ['use_x11 == 1', {
+          'dependencies': [
+            '../ui/gfx/gfx.gyp:gfx_x11',
+          ],
+        }]
       ],
     },
     {

@@ -16,8 +16,7 @@
 // TODO(raymes): This is duplicated from pepper_flash_drm_host.cc but once
 // FileRef is refactored to the browser, it won't need to be.
 namespace {
-const base::FilePath::CharType kVoucherFilename[] =
-    FILE_PATH_LITERAL("plugin.vch");
+const char kVoucherFilename[] = "plugin.vch";
 }  // namespace
 
 PepperFlashDRMRendererHost::PepperFlashDRMRendererHost(
@@ -49,8 +48,7 @@ int32_t PepperFlashDRMRendererHost::OnGetVoucherFile(
 
   base::FilePath plugin_dir = plugin_instance->GetModulePath().DirName();
   DCHECK(!plugin_dir.empty());
-  base::FilePath voucher_file =
-      plugin_dir.Append(base::FilePath(kVoucherFilename));
+  base::FilePath voucher_file = plugin_dir.AppendASCII(kVoucherFilename);
 
   int renderer_pending_host_id =
       plugin_instance->MakePendingFileRefRendererHost(voucher_file);
@@ -58,7 +56,7 @@ int32_t PepperFlashDRMRendererHost::OnGetVoucherFile(
     return PP_ERROR_FAILED;
 
   std::vector<IPC::Message> create_msgs;
-  create_msgs.push_back(PpapiHostMsg_FileRef_CreateExternal(voucher_file));
+  create_msgs.push_back(PpapiHostMsg_FileRef_CreateForRawFS(voucher_file));
 
   renderer_ppapi_host_->CreateBrowserResourceHosts(
       pp_instance(),
@@ -76,11 +74,8 @@ void PepperFlashDRMRendererHost::DidCreateFileRefHosts(
     const base::FilePath& external_path,
     int renderer_pending_host_id,
     const std::vector<int>& browser_pending_host_ids) {
-  DCHECK(browser_pending_host_ids.size() == 1);
-
-  int browser_pending_host_id = 0;
-  if (browser_pending_host_ids.size() == 1)
-    browser_pending_host_id = browser_pending_host_ids[0];
+  DCHECK_EQ(1U, browser_pending_host_ids.size());
+  int browser_pending_host_id = browser_pending_host_ids[0];
 
   ppapi::FileRefCreateInfo create_info =
       ppapi::MakeExternalFileRefCreateInfo(external_path,

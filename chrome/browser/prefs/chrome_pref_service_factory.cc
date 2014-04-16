@@ -204,8 +204,15 @@ SettingsEnforcementGroup GetSettingsEnforcementGroup() {
   };
 
   // Use the strongest enforcement setting in the absence of a field trial
-  // config.
-  SettingsEnforcementGroup enforcement_group = GROUP_ENFORCE_DEFAULT;
+  // config on Windows. Remember to update the OFFICIAL_BUILD section of
+  // pref_hash_browsertest.cc when updating these values.
+  // TODO(gab): Enforce this on all platforms.
+  SettingsEnforcementGroup enforcement_group =
+#if defined(OS_WIN)
+      GROUP_ENFORCE_DEFAULT;
+#else
+      GROUP_NO_ENFORCEMENT;
+#endif
   bool group_determined_from_trial = false;
   base::FieldTrial* trial =
       base::FieldTrialList::Find(
@@ -357,8 +364,6 @@ void PrepareFactory(
 // path matches |ignored_profile_path|.
 void UpdateAllPrefHashStoresIfRequired(
     const base::FilePath& ignored_profile_path) {
-  if (GetSettingsEnforcementGroup() >= GROUP_ENFORCE_ALWAYS)
-    return;
   const ProfileInfoCache& profile_info_cache =
       g_browser_process->profile_manager()->GetProfileInfoCache();
   const size_t n_profiles = profile_info_cache.GetNumberOfProfiles();
@@ -454,6 +459,9 @@ void SchedulePrefHashStoresUpdateCheck(
         g_browser_process->local_state());
     return;
   }
+
+  if (GetSettingsEnforcementGroup() >= GROUP_ENFORCE_ALWAYS)
+    return;
 
   const int kDefaultPrefHashStoresUpdateCheckDelaySeconds = 55;
   BrowserThread::PostDelayedTask(

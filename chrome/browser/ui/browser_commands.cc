@@ -19,7 +19,6 @@
 #include "chrome/browser/chrome_page_zoom.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/google/google_util.h"
@@ -78,7 +77,9 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "content/public/common/user_agent.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "net/base/escape.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
@@ -140,15 +141,11 @@ bool GetBookmarkOverrideCommand(
 
   extensions::CommandService* command_service =
       extensions::CommandService::Get(profile);
-  ExtensionService* extension_service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
-  // Extension service may be NULL during test execution.
-  if (!extension_service)
-    return false;
-  const extensions::ExtensionSet* extension_set =
-      extension_service->extensions();
-  for (extensions::ExtensionSet::const_iterator i = extension_set->begin();
-       i != extension_set->end(); ++i) {
+  const extensions::ExtensionSet& extension_set =
+      extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
+  for (extensions::ExtensionSet::const_iterator i = extension_set.begin();
+       i != extension_set.end();
+       ++i) {
     extensions::Command prospective_command;
     extensions::CommandService::ExtensionCommandType prospective_command_type;
     if (command_service->GetBoundExtensionCommand((*i)->id(),
@@ -465,13 +462,11 @@ void Home(Browser* browser, WindowOpenDisposition disposition) {
   // Streamlined hosted apps should return to their launch page when the home
   // button is pressed.
   if (browser->is_app()) {
-    const ExtensionService* service = browser->profile()->GetExtensionService();
-    if (!service)
-      return;
-
     const extensions::Extension* extension =
-        service->GetInstalledExtension(
-            web_app::GetExtensionIdFromApplicationName(browser->app_name()));
+        extensions::ExtensionRegistry::Get(browser->profile())
+            ->GetExtensionById(
+                web_app::GetExtensionIdFromApplicationName(browser->app_name()),
+                extensions::ExtensionRegistry::EVERYTHING);
     if (!extension)
       return;
 
@@ -526,7 +521,8 @@ void OpenCurrentURL(Browser* browser) {
 
   DCHECK(browser->profile()->GetExtensionService());
   const extensions::Extension* extension =
-      browser->profile()->GetExtensionService()->GetInstalledApp(url);
+      extensions::ExtensionRegistry::Get(browser->profile())
+          ->enabled_extensions().GetAppByURL(url);
   if (extension) {
     CoreAppLauncherHandler::RecordAppLaunchType(
         extension_misc::APP_LAUNCH_OMNIBOX_LOCATION,
@@ -666,11 +662,10 @@ WebContents* DuplicateTabAt(Browser* browser, int index) {
         index + 1, contents_dupe, add_types);
   } else {
     Browser* new_browser = NULL;
-    if (browser->is_app() &&
-        !browser->is_type_popup()) {
+    if (browser->is_app() && !browser->is_type_popup()) {
       new_browser = new Browser(
-          Browser::CreateParams::CreateForApp(browser->type(),
-                                              browser->app_name(),
+          Browser::CreateParams::CreateForApp(browser->app_name(),
+                                              browser->is_trusted_source(),
                                               gfx::Rect(),
                                               browser->profile(),
                                               browser->host_desktop_type()));
@@ -1265,9 +1260,11 @@ void ConvertTabToAppWindow(Browser* browser,
     browser->tab_strip_model()->DetachWebContentsAt(index);
 
   Browser* app_browser = new Browser(
-      Browser::CreateParams::CreateForApp(
-          Browser::TYPE_POPUP, app_name, gfx::Rect(), browser->profile(),
-          browser->host_desktop_type()));
+      Browser::CreateParams::CreateForApp(app_name,
+                                          true /* trusted_source */,
+                                          gfx::Rect(),
+                                          browser->profile(),
+                                          browser->host_desktop_type()));
   app_browser->tab_strip_model()->AppendWebContents(contents, true);
 
   contents->GetMutableRendererPrefs()->can_accept_load_drops = false;

@@ -10,8 +10,9 @@
 #include "ash/system/tray/fixed_sized_image_view.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/tray/tray_constants.h"
+#include "base/sys_info.h"
+#include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/ime/input_method_manager.h"
-#include "chromeos/ime/xkeyboard.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/accessibility/ax_view_state.h"
@@ -28,8 +29,9 @@ namespace {
 bool CapsLockIsEnabled() {
   chromeos::input_method::InputMethodManager* ime =
       chromeos::input_method::InputMethodManager::Get();
-  return (ime && ime->GetXKeyboard()) ? ime->GetXKeyboard()->CapsLockIsEnabled()
-                                      : false;
+  return (ime && ime->GetImeKeyboard())
+             ? ime->GetImeKeyboard()->CapsLockIsEnabled()
+             : false;
 }
 
 }
@@ -107,13 +109,13 @@ class CapsLockDefaultView : public ActionableView {
 
   // Overridden from ActionableView:
   virtual bool PerformAction(const ui::Event& event) OVERRIDE {
-    chromeos::input_method::XKeyboard* xkeyboard =
-        chromeos::input_method::InputMethodManager::Get()->GetXKeyboard();
+    chromeos::input_method::ImeKeyboard* keyboard =
+        chromeos::input_method::InputMethodManager::Get()->GetImeKeyboard();
     Shell::GetInstance()->metrics()->RecordUserMetricsAction(
-        xkeyboard->CapsLockIsEnabled() ?
+        keyboard->CapsLockIsEnabled() ?
         ash::UMA_STATUS_AREA_CAPS_LOCK_DISABLED_BY_CLICK :
         ash::UMA_STATUS_AREA_CAPS_LOCK_ENABLED_BY_CLICK);
-    xkeyboard->SetCapsLockEnabled(!xkeyboard->CapsLockIsEnabled());
+    keyboard->SetCapsLockEnabled(!keyboard->CapsLockIsEnabled());
     return true;
   }
 
@@ -129,24 +131,39 @@ TrayCapsLock::TrayCapsLock(SystemTray* system_tray)
       detailed_(NULL),
       caps_lock_enabled_(CapsLockIsEnabled()),
       message_shown_(false) {
-  // Make sure the event is processed by this before the IME.
-  Shell::GetInstance()->PrependPreTargetHandler(this);
+  // Since keyboard handling differs between ChromeOS and Linux we need to
+  // use different observers depending on the two platforms.
+  if (base::SysInfo::IsRunningOnChromeOS()) {
+    chromeos::input_method::ImeKeyboard* keyboard =
+        chromeos::input_method::InputMethodManager::Get()->GetImeKeyboard();
+    keyboard->AddObserver(this);
+  } else {
+    Shell::GetInstance()->PrependPreTargetHandler(this);
+  }
 }
 
 TrayCapsLock::~TrayCapsLock() {
-  Shell::GetInstance()->RemovePreTargetHandler(this);
+  // Since keyboard handling differs between ChromeOS and Linux we need to
+  // use different observers depending on the two platforms.
+  if (base::SysInfo::IsRunningOnChromeOS()) {
+    chromeos::input_method::ImeKeyboard* keyboard =
+        chromeos::input_method::InputMethodManager::Get()->GetImeKeyboard();
+    keyboard->RemoveObserver(this);
+  } else {
+    Shell::GetInstance()->RemovePreTargetHandler(this);
+  }
 }
 
 void TrayCapsLock::OnCapsLockChanged(bool enabled) {
-  if (tray_view())
-    tray_view()->SetVisible(enabled);
-
   caps_lock_enabled_ = enabled;
 
+  if (tray_view())
+    tray_view()->SetVisible(caps_lock_enabled_);
+
   if (default_) {
-    default_->Update(enabled);
+    default_->Update(caps_lock_enabled_);
   } else {
-    if (enabled) {
+    if (caps_lock_enabled_) {
       if (!message_shown_) {
         Shell::GetInstance()->metrics()->RecordUserMetricsAction(
             ash::UMA_STATUS_AREA_CAPS_LOCK_POPUP);

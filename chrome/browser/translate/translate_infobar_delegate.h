@@ -13,8 +13,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/infobars/infobar_delegate.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
-#include "chrome/browser/translate/translate_ui_delegate.h"
 #include "components/translate/core/browser/translate_prefs.h"
+#include "components/translate/core/browser/translate_ui_delegate.h"
 #include "components/translate/core/common/translate_constants.h"
 #include "components/translate/core/common/translate_errors.h"
 
@@ -143,6 +143,9 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
   // for example.
   bool ShouldShowNeverTranslateShortcut();
   bool ShouldShowAlwaysTranslateShortcut();
+
+  // Returns the WebContents associated with the TranslateInfoBarDelegate.
+  content::WebContents* GetWebContents();
 
   // Convenience method that returns the displayable language name for
   // |language_code| in the current application locale.

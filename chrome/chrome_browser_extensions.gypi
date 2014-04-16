@@ -528,7 +528,6 @@
         'browser/extensions/api/system_display/display_info_provider.h',
         'browser/extensions/api/system_display/display_info_provider_aura.cc',
         'browser/extensions/api/system_display/display_info_provider_chromeos.cc',
-        'browser/extensions/api/system_display/display_info_provider_gtk.cc',
         'browser/extensions/api/system_display/display_info_provider_mac.cc',
         'browser/extensions/api/system_display/display_info_provider_win.cc',
         'browser/extensions/api/system_display/system_display_api.cc',
@@ -715,8 +714,6 @@
         'browser/extensions/extension_message_bubble_controller.h',
         'browser/extensions/policy_handlers.cc',
         'browser/extensions/policy_handlers.h',
-        'browser/extensions/extension_protocols.cc',
-        'browser/extensions/extension_protocols.h',
         'browser/extensions/extension_renderer_state.cc',
         'browser/extensions/extension_renderer_state.h',
         'browser/extensions/extension_resource_protocols.cc',
@@ -879,6 +876,8 @@
         'browser/extensions/updater/request_queue_impl.h',
         'browser/extensions/updater/safe_manifest_parser.cc',
         'browser/extensions/updater/safe_manifest_parser.h',
+        'browser/extensions/url_request_util.cc',
+        'browser/extensions/url_request_util.h',
         'browser/extensions/user_script_listener.cc',
         'browser/extensions/user_script_listener.h',
         'browser/extensions/user_script_master.cc',
@@ -947,6 +946,8 @@
             'browser/extensions/api/terminal/terminal_extension_helper.h',
             'browser/extensions/api/terminal/terminal_private_api.cc',
             'browser/extensions/api/terminal/terminal_private_api.h',
+            'browser/extensions/api/webcam_private/webcam_private_api.h',
+            'browser/extensions/api/webcam_private/webcam_private_api.cc',
             'browser/extensions/updater/extension_cache_impl.cc',
             'browser/extensions/updater/extension_cache_impl.h',
             'browser/extensions/updater/local_extension_cache.cc',
@@ -1048,18 +1049,6 @@
         ['safe_browsing==2', {
           'defines': [
             'MOBILE_SAFE_BROWSING',
-          ],
-        }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:dbus',
-            '../build/linux/system.gyp:gconf',
-            '../build/linux/system.gyp:gtk',
-            '../build/linux/system.gyp:gtkprint',
-            '../build/linux/system.gyp:ssl',
-            '../build/linux/system.gyp:x11',
-            '../dbus/dbus.gyp:dbus',
-            '../third_party/undoview/undoview.gyp:undoview',
           ],
         }],
         ['configuration_policy==1', {

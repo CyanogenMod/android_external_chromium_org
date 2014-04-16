@@ -21,11 +21,12 @@
 #include "chrome/browser/chromeos/input_method/component_extension_ime_manager_impl.h"
 #include "chrome/browser/chromeos/input_method/input_method_engine.h"
 #include "chrome/browser/chromeos/language_preferences.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chromeos/ime/component_extension_ime_manager.h"
 #include "chromeos/ime/extension_ime_util.h"
-#include "chromeos/ime/fake_xkeyboard.h"
+#include "chromeos/ime/fake_ime_keyboard.h"
+#include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/ime/input_method_delegate.h"
-#include "chromeos/ime/xkeyboard.h"
 #include "third_party/icu/source/common/unicode/uloc.h"
 #include "ui/base/accelerators/accelerator.h"
 
@@ -357,11 +358,11 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
     IMEBridge::Get()->SetCurrentEngineHandler(NULL);
   } else {
     IMEEngineHandlerInterface* next_engine =
-        IMEBridge::Get()->SetCurrentEngineHandlerById(
-            input_method_id_to_switch);
-
-    if (next_engine)
+        profile_engine_map_[GetProfile()][input_method_id_to_switch];
+    if (next_engine) {
+      IMEBridge::Get()->SetCurrentEngineHandler(next_engine);
       next_engine->Enable();
+    }
   }
 
   // TODO(komatsu): Check if it is necessary to perform the above routine
@@ -393,7 +394,7 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
   }
 
   // Change the keyboard layout to a preferred layout for the input method.
-  if (!xkeyboard_->SetCurrentKeyboardLayoutByName(
+  if (!keyboard_->SetCurrentKeyboardLayoutByName(
           current_input_method_.GetPreferredKeyboardLayout())) {
     LOG(ERROR) << "Failed to change keyboard layout to "
                << current_input_method_.GetPreferredKeyboardLayout();
@@ -490,7 +491,7 @@ void InputMethodManagerImpl::AddInputMethodExtension(
     MaybeInitializeCandidateWindowController();
   }
 
-  IMEBridge::Get()->SetEngineHandler(id, engine);
+  profile_engine_map_[GetProfile()][id] = engine;
 }
 
 void InputMethodManagerImpl::RemoveInputMethodExtension(const std::string& id) {
@@ -508,7 +509,7 @@ void InputMethodManagerImpl::RemoveInputMethodExtension(const std::string& id) {
   ChangeInputMethod(current_input_method_.id());
 
   if (IMEBridge::Get()->GetCurrentEngineHandler() ==
-      IMEBridge::Get()->GetEngineHandler(id))
+      profile_engine_map_[GetProfile()][id])
     IMEBridge::Get()->SetCurrentEngineHandler(NULL);
 }
 
@@ -716,15 +717,15 @@ InputMethodDescriptor InputMethodManagerImpl::GetCurrentInputMethod() const {
 }
 
 bool InputMethodManagerImpl::IsISOLevel5ShiftUsedByCurrentInputMethod() const {
-  return xkeyboard_->IsISOLevel5ShiftAvailable();
+  return keyboard_->IsISOLevel5ShiftAvailable();
 }
 
 bool InputMethodManagerImpl::IsAltGrUsedByCurrentInputMethod() const {
-  return xkeyboard_->IsAltGrAvailable();
+  return keyboard_->IsAltGrAvailable();
 }
 
-XKeyboard* InputMethodManagerImpl::GetXKeyboard() {
-  return xkeyboard_.get();
+ImeKeyboard* InputMethodManagerImpl::GetImeKeyboard() {
+  return keyboard_.get();
 }
 
 InputMethodUtil* InputMethodManagerImpl::GetInputMethodUtil() {
@@ -751,9 +752,9 @@ void InputMethodManagerImpl::Init(base::SequencedTaskRunner* ui_task_runner) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   if (base::SysInfo::IsRunningOnChromeOS())
-    xkeyboard_.reset(XKeyboard::Create());
+    keyboard_.reset(ImeKeyboard::Create());
   else
-    xkeyboard_.reset(new FakeXKeyboard());
+    keyboard_.reset(new FakeImeKeyboard());
 
   // We can't call impl->Initialize here, because file thread is not available
   // at this moment.
@@ -769,8 +770,8 @@ void InputMethodManagerImpl::SetCandidateWindowControllerForTesting(
   candidate_window_controller_->AddObserver(this);
 }
 
-void InputMethodManagerImpl::SetXKeyboardForTesting(XKeyboard* xkeyboard) {
-  xkeyboard_.reset(xkeyboard);
+void InputMethodManagerImpl::SetImeKeyboardForTesting(ImeKeyboard* keyboard) {
+  keyboard_.reset(keyboard);
 }
 
 void InputMethodManagerImpl::InitializeComponentExtensionForTesting(
@@ -852,6 +853,10 @@ void InputMethodManagerImpl::MaybeInitializeCandidateWindowController() {
   candidate_window_controller_.reset(
       CandidateWindowController::CreateCandidateWindowController());
   candidate_window_controller_->AddObserver(this);
+}
+
+Profile* InputMethodManagerImpl::GetProfile() const {
+  return ProfileManager::GetActiveUserProfile();
 }
 
 }  // namespace input_method

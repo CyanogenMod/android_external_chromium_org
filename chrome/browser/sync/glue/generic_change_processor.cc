@@ -80,9 +80,9 @@ GenericChangeProcessor::GenericChangeProcessor(
       share_handle_(user_share),
       attachment_service_(attachment_service.Pass()),
       attachment_service_weak_ptr_factory_(attachment_service_.get()),
-      attachment_service_proxy_(syncer::AttachmentServiceProxy(
+      attachment_service_proxy_(
           base::MessageLoopProxy::current(),
-          attachment_service_weak_ptr_factory_.GetWeakPtr())) {
+          attachment_service_weak_ptr_factory_.GetWeakPtr()) {
   DCHECK(CalledOnValidThread());
   DCHECK(attachment_service_);
 }
@@ -231,6 +231,21 @@ syncer::SyncError GenericChangeProcessor::GetAllSyncDataReturnError(
         sync_child_node.GetId(), sync_child_node, attachment_service_proxy_));
   }
   return syncer::SyncError();
+}
+
+bool GenericChangeProcessor::GetDataTypeContext(syncer::ModelType type,
+                                                std::string* context) const {
+  syncer::ReadTransaction trans(FROM_HERE, share_handle());
+  sync_pb::DataTypeContext context_proto;
+  trans.GetDataTypeContext(type, &context_proto);
+  if (!context_proto.has_context())
+    return false;
+
+  DCHECK_EQ(type,
+            syncer::GetModelTypeFromSpecificsFieldNumber(
+                context_proto.data_type_id()));
+  *context = context_proto.context();
+  return true;
 }
 
 int GenericChangeProcessor::GetSyncCountForType(syncer::ModelType type) {

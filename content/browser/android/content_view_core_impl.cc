@@ -38,7 +38,6 @@
 #include "content/common/input/web_input_event_traits.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
-#include "content/public/browser/android/external_video_surface_container.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/favicon_status.h"
@@ -325,8 +324,7 @@ void ContentViewCoreImpl::Observe(int type,
         JNIEnv* env = AttachCurrentThread();
         ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
         if (!obj.is_null()) {
-          Java_ContentViewCore_onRenderProcessSwap(
-              env, obj.obj(), old_pid, new_pid);
+          Java_ContentViewCore_onRenderProcessSwap(env, obj.obj());
         }
       }
       SetFocusInternal(HasFocus());
@@ -342,12 +340,10 @@ void ContentViewCoreImpl::Observe(int type,
           web_contents_->GetRenderViewHost()->GetProcess();
 
       if (source_process_host == current_process_host) {
-        int pid = GetRenderProcessIdFromRenderViewHost(
-            web_contents_->GetRenderViewHost());
         JNIEnv* env = AttachCurrentThread();
         ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
         if (!obj.is_null()) {
-          Java_ContentViewCore_onRenderProcessSwap(env, obj.obj(), 0, pid);
+          Java_ContentViewCore_onRenderProcessSwap(env, obj.obj());
         }
       }
       break;
@@ -369,8 +365,7 @@ void ContentViewCoreImpl::RenderViewReady() {
 }
 
 void ContentViewCoreImpl::OnGestureEvent(const ui::GestureEventData& gesture) {
-  SendGestureEvent(
-      CreateWebGestureEventFromGestureEventData(gesture, 1.f / dpi_scale()));
+  SendGestureEvent(CreateWebGestureEventFromGestureEventData(gesture));
 }
 
 RenderWidgetHostViewAndroid*
@@ -489,12 +484,6 @@ void ContentViewCoreImpl::UpdateFrameInfo(
       controls_offset.y(),
       content_offset.y(),
       overdraw_bottom_height);
-#if defined(VIDEO_HOLE)
-  ExternalVideoSurfaceContainer* surface_container =
-      ExternalVideoSurfaceContainer::FromWebContents(web_contents_);
-  if (surface_container)
-    surface_container->OnFrameInfoUpdated();
-#endif  // defined(VIDEO_HOLE)
 }
 
 void ContentViewCoreImpl::SetTitle(const base::string16& title) {
@@ -1059,7 +1048,8 @@ jboolean ContentViewCoreImpl::OnTouchEvent(JNIEnv* env,
   if (!rwhv)
     return false;
 
-  MotionEventAndroid event(env,
+  MotionEventAndroid event(1.f / dpi_scale(),
+                           env,
                            motion_event,
                            time_ms,
                            android_action,
@@ -1146,8 +1136,7 @@ bool ContentViewCoreImpl::OnMotionEvent(const ui::MotionEvent& event) {
     return true;
   }
 
-  rwhv->SendTouchEvent(
-      CreateWebTouchEventFromMotionEvent(event, 1.f / dpi_scale()));
+  rwhv->SendTouchEvent(CreateWebTouchEventFromMotionEvent(event));
   return true;
 }
 

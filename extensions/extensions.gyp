@@ -20,7 +20,7 @@
         '../chrome/chrome_resources.gyp:chrome_strings',
         # Need default icons in theme_resources.grd
         '../chrome/chrome_resources.gyp:theme_resources',
-        
+
         # TODO(tfarina): This dep here is for extensions/common/constants.*
         # We should find a way to compile this module within extensions_common.
         '../chrome/common_constants.gyp:common_constants',
@@ -194,6 +194,8 @@
         'common/url_pattern_set.h',
         'common/user_script.cc',
         'common/user_script.h',
+        'common/value_counter.cc',
+        'common/value_counter.h',
         'common/view_type.cc',
         'common/view_type.h',
       ],
@@ -327,6 +329,8 @@
         'browser/extension_prefs_factory.h',
         'browser/extension_prefs_observer.h',
         'browser/extension_prefs_scope.h',
+        'browser/extension_protocols.cc',
+        'browser/extension_protocols.h',
         'browser/extension_registry.cc',
         'browser/extension_registry.h',
         'browser/extension_registry_factory.cc',
@@ -411,9 +415,23 @@
         '..',
       ],
       'sources': [
+        'renderer/console.cc',
+        'renderer/console.h',
+        'renderer/event_bindings.cc',
+        'renderer/event_bindings.h',
+        'renderer/module_system.cc',
+        'renderer/module_system.h',
         'renderer/native_handler.cc',
         'renderer/native_handler.h',
+        'renderer/object_backed_native_handler.cc',
+        'renderer/object_backed_native_handler.h',
+        'renderer/request_sender.cc',
+        'renderer/request_sender.h',
+        'renderer/safe_builtins.cc',
+        'renderer/safe_builtins.h',
         'renderer/scoped_persistent.h',
+        'renderer/script_context.cc',
+        'renderer/script_context.h',
       ],
       'dependencies': [
         '../third_party/WebKit/public/blink.gyp:blink',
@@ -479,6 +497,12 @@
         'common/url_pattern_unittest.cc',
         'common/user_script_unittest.cc',
         'test/extensions_unittests_main.cc',
+        'test/test_extensions_client.cc',
+        'test/test_extensions_client.h',
+        'test/test_permission_message_provider.cc',
+        'test/test_permission_message_provider.h',
+        'test/test_permissions_provider.cc',
+        'test/test_permissions_provider.h',
       ],
     },
   ]

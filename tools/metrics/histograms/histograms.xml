@@ -10466,6 +10466,22 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>The scheme of the URL for each main-frame navigation.</summary>
 </histogram>
 
+<histogram name="Net.AlternateProtocolBrokenLocation"
+    enum="BrokenAlternateProtocolLocation">
+  <owner>rch@chromium.org</owner>
+  <summary>
+    Breakdown of the locations when SetBrokenAlternateProtocol is called.
+  </summary>
+</histogram>
+
+<histogram name="Net.AlternateProtocolUsage" enum="AlternateProtocolUsage">
+  <owner>rch@chromium.org</owner>
+  <summary>
+    Breakdown of how requests which could potentially make use of an alternate
+    protocol use or don't use the protocol.
+  </summary>
+</histogram>
+
 <histogram name="Net.AsyncResourceHandler_PendingDataCount">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
@@ -12888,6 +12904,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Net.QuicSession.StreamFrameDuplicatedLongConnection"
+    units="1/10th Percent">
+  <owner>rch@chromium.org</owner>
+  <summary>
+    The number of stream frames received which were duplicates, out of every
+    1000 stream frames received. Only for QUIC sessions which received at least
+    100 packets.
+  </summary>
+</histogram>
+
 <histogram name="Net.QuicSession.StreamFrameDuplicatedPercentLongConnection">
   <owner>rch@chromium.org</owner>
   <summary>
@@ -12901,6 +12927,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     The percentage of stream frames received which were duplicates. Only for
     QUIC sessions which received fewer than 100 packets.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.StreamFrameDuplicatedShortConnection"
+    units="1/10th Percent">
+  <owner>rch@chromium.org</owner>
+  <summary>
+    The number of stream frames received which were duplicates, out of every
+    1000 stream frames received. Only for QUIC sessions which received fewer
+    than 100 packets.
   </summary>
 </histogram>
 
@@ -13814,6 +13850,17 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <histogram name="Net.UDPSocketWinClose" units="milliseconds">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>The time spent in closesocket call in UDPSocketWin::Close.</summary>
+</histogram>
+
+<histogram name="Net.WebSocket.HandshakeResult"
+    enum="WebSocketNewHandshakeResult">
+  <owner>yhirano@chromium.org</owner>
+  <owner>ricea@chromium.org</owner>
+  <owner>tyoshino@chromium.org</owner>
+  <summary>
+    Results of WebSocket handshakes. Use this histogram as a baseline for
+    investigating feature usage counters.
+  </summary>
 </histogram>
 
 <histogram name="Net.Wifi.InterfaceCount">
@@ -27361,6 +27408,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Tab.BackgroundLoadStatus" enum="TabBackgroundLoadStatus">
+  <owner>ppi@chromium.org</owner>
+  <summary>
+    Mobile-specific metric: when a tab that was opened in background (via
+    &quot;Open link in new tab&quot;) is switched to, we record whether the
+    eagerly loaded tab was still memory resident, or we lost the loaded page due
+    to memory pressure.
+  </summary>
+</histogram>
+
 <histogram name="Tab.FormActivityCountEvictedHistogram">
   <owner>lliabraa@chromium.org</owner>
   <summary>
@@ -27440,6 +27497,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Tab.SwitchedToForegroundLaunchedWithURL"
     enum="TabSwitchedToForegroundLaunchedWithURL">
+  <obsolete>
+    Deprecated as of 04/2014.
+  </obsolete>
   <owner>lliabraa@chromium.org</owner>
   <summary>
     Each time a tab is brought to the foreground, this histogram indicates if
@@ -27449,6 +27509,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Tab.SwitchedToForegroundMRURank">
+  <obsolete>
+    Deprecated as of 04/2014.
+  </obsolete>
   <owner>lliabraa@chromium.org</owner>
   <summary>
     Rank in MRU order (0 being first) when the tab was switched to foreground.
@@ -27462,6 +27525,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Tab.SwitchedToForegroundRevisit"
     enum="TabSwitchedToForegroundRevisit">
+  <obsolete>
+    Deprecated as of 04/2014.
+  </obsolete>
   <owner>lliabraa@chromium.org</owner>
   <summary>
     Each time a tab is brought to the foreground, this histogram indicates if
@@ -29487,6 +29553,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="WebFont.CORSSuccess" enum="BooleanSuccess">
+  <owner>bashi@chromium.org</owner>
+  <summary>The success or failure of web fonts CORS-enabled fetching.</summary>
+</histogram>
+
 <histogram name="WebFont.DownloadTime.0.Under10KB" units="milliseconds">
   <owner>ksakamoto@chromium.org</owner>
   <summary>
@@ -30054,6 +30125,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="2" label="Maximized"/>
   <int value="3" label="Fullscreen"/>
   <int value="4" label="Snapped"/>
+</enum>
+
+<enum name="AlternateProtocolUsage" type="int">
+  <int value="0" label="ALTERNATE_PROTOCOL_USAGE_NO_RACE"/>
+  <int value="1" label="ALTERNATE_PROTOCOL_USAGE_WON_RACE"/>
+  <int value="2" label="ALTERNATE_PROTOCOL_USAGE_LOST_RACE"/>
+  <int value="3" label="ALTERNATE_PROTOCOL_USAGE_MAPPING_MISSING"/>
+  <int value="4" label="ALTERNATE_PROTOCOL_USAGE_BROKEN"/>
 </enum>
 
 <enum name="AndroidActivityId" type="int">
@@ -30799,6 +30878,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <enum name="BooleanWiped" type="int">
   <int value="0" label="Re-enabled"/>
   <int value="1" label="Wiped out"/>
+</enum>
+
+<enum name="BrokenAlternateProtocolLocation" type="int">
+  <int value="0" label="HTTP_STREAM_FACTORY_IMPL_JOB"/>
+  <int value="1" label="QUIC_STREAM_FACTORY"/>
 </enum>
 
 <enum name="CanvasContextType" type="int">
@@ -32845,7 +32929,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="307" label="BROWSERACTION_SETICON"/>
   <int value="308" label="EXPERIMENTAL_ACCESSIBILITY_SETACCESSIBILITYENABLED"/>
   <int value="309" label="DELETED_FILEBROWSERPRIVATE_VIEWFILES"/>
-  <int value="310" label="BLUETOOTH_GETSERVICES"/>
+  <int value="310" label="DELETED_BLUETOOTH_GETSERVICES"/>
   <int value="311" label="TABS_UPDATE"/>
   <int value="312" label="BROWSINGDATA_REMOVEFORMDATA"/>
   <int value="313" label="DELETED_FILEBROWSERPRIVATE_RELOADDRIVE"/>
@@ -32990,7 +33074,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="452" label="LOCATION_CLEARWATCH"/>
   <int value="453" label="BLUETOOTH_ADDPROFILE"/>
   <int value="454" label="BLUETOOTH_REMOVEPROFILE"/>
-  <int value="455" label="BLUETOOTH_GETPROFILES"/>
+  <int value="455" label="DELETED_BLUETOOTH_GETPROFILES"/>
   <int value="456" label="EXPERIMENTAL_IDENTITY_REMOVECACHEDAUTHTOKEN"/>
   <int value="457" label="AUDIO_GETINFO"/>
   <int value="458" label="AUDIO_SETACTIVEDEVICES"/>
@@ -33259,6 +33343,10 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="716" label="FILESYSTEMPROVIDER_UNMOUNT"/>
   <int value="717" label="FILESYSTEMPROVIDERINTERNAL_UNMOUNTREQUESTEDSUCCESS"/>
   <int value="718" label="FILESYSTEMPROVIDERINTERNAL_UNMOUNTREQUESTEDERROR"/>
+  <int value="719" label="MEDIAGALLERIES_DROPPERMISSIONFORMEDIAFILESYSTEM"/>
+  <int value="720" label="WEBCAMPRIVATE_SET"/>
+  <int value="721" label="WEBCAMPRIVATE_RESET"/>
+  <int value="722" label="WEBCAMPRIVATE_GET"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -33877,6 +33965,10 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="322" label="PrefixedDocumentFullscreenEnabled"/>
   <int value="323" label="PrefixedDocumentFullscreenElement"/>
   <int value="324" label="PrefixedDocumentExitFullscreen"/>
+  <int value="325" label="SVGForeignObjectElement"/>
+  <int value="326" label="PrefixedElementRequestPointerLock"/>
+  <int value="327" label="SelectionSetPosition"/>
+  <int value="328" label="AnimationPlayerFinishEvent"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">
@@ -36484,6 +36576,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="19" label="AddScanResults dialog accepted"/>
   <int value="20" label="Gallery removed from AddScanResults dialog"/>
   <int value="21" label="Gallery removed from permission dialog"/>
+  <int value="22" label="DropPermissionForMediaFileSystem API invocations"/>
 </enum>
 
 <enum name="MediaKeyError" type="int">
@@ -41078,6 +41171,12 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="5" label="Actionable error"/>
 </enum>
 
+<enum name="TabBackgroundLoadStatus" type="int">
+  <int value="0" label="Loaded on creation and shown"/>
+  <int value="1" label="Loaded on creation and lost"/>
+  <int value="2" label="Not loaded on creation"/>
+</enum>
+
 <enum name="TabRestoreResult" type="int">
   <int value="0" label="Failure (other)"/>
   <int value="1" label="Success"/>
@@ -41105,11 +41204,17 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </enum>
 
 <enum name="TabSwitchedToForegroundLaunchedWithURL" type="int">
+  <obsolete>
+    Deprecated as of 04/2014.
+  </obsolete>
   <int value="0" label="Launched without an URL"/>
   <int value="1" label="Launched with an URL"/>
 </enum>
 
 <enum name="TabSwitchedToForegroundRevisit" type="int">
+  <obsolete>
+    Deprecated as of 04/2014.
+  </obsolete>
   <int value="0" label="First time"/>
   <int value="1" label="Revisit"/>
 </enum>
@@ -41732,6 +41837,12 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="1" label="Normal"/>
   <int value="2" label="Failed"/>
   <int value="3" label="Connected"/>
+</enum>
+
+<enum name="WebSocketNewHandshakeResult" type="int">
+  <int value="0" label="INCOMPLETE">Incomplete</int>
+  <int value="1" label="CONNECTED">Connected</int>
+  <int value="2" label="FAILED">Failed</int>
 </enum>
 
 <enum name="WebSocketPerMessageDeflateContextTakeOverMode" type="int">

@@ -376,7 +376,7 @@
   },
   "fileSystemProviderInternal": {
     "internal": true,
-    "dependencies": ["fileSystemProvider"],
+    "dependencies": ["permission:fileSystemProvider"],
     "contexts": ["blessed_extension"]
   },
   "firstRunPrivate": {
@@ -457,6 +457,10 @@
   "logPrivate": {
     "dependencies": ["permission:logPrivate"],
     "extension_types": ["extension", "legacy_packaged_app"],
+    "contexts": ["blessed_extension"]
+  },
+  "webcamPrivate": {
+    "dependencies": ["permission:webcamPrivate"],
     "contexts": ["blessed_extension"]
   },
   "management": {
@@ -771,7 +775,7 @@
   "webRequestInternal": {
     "internal": true,
     "channel": "stable",
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
+    "contexts": ["blessed_extension", "unblessed_extension"]
   },
   "webrtcAudioPrivate": {
     "dependencies": ["permission:webrtcAudioPrivate"],

@@ -259,7 +259,7 @@
             '../third_party/WebKit/public/blink.gyp:blink',
           ],
         }],
-        ['OS == "win" or toolkit_uses_gtk == 1', {
+        ['OS == "win"', {
           'dependencies': [
             '../sandbox/sandbox.gyp:sandbox',
           ],
@@ -279,11 +279,6 @@
             '../third_party/libjingle/libjingle.gyp:libjingle_webrtc',
             '../third_party/libjingle/libjingle.gyp:libpeerconnection',
             '../third_party/webrtc/modules/modules.gyp:video_capture_module',
-          ],
-        }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
           ],
         }],
         ['use_glib == 1', {
@@ -350,13 +345,24 @@
         'browser/accessibility/browser_accessibility_mac_unittest.mm',
         'browser/accessibility/browser_accessibility_manager_unittest.cc',
         'browser/accessibility/browser_accessibility_win_unittest.cc',
+        'browser/appcache/appcache_database_unittest.cc',
+        'browser/appcache/appcache_disk_cache_unittest.cc',
+        'browser/appcache/appcache_group_unittest.cc',
         'browser/appcache/appcache_host_unittest.cc',
+        'browser/appcache/appcache_quota_client_unittest.cc',
         'browser/appcache/appcache_request_handler_unittest.cc',
-        'browser/appcache/appcache_storage_impl_unittest.cc',
+        'browser/appcache/appcache_response_unittest.cc',
+        'browser/appcache/appcache_service_unittest.cc',
         'browser/appcache/appcache_storage_unittest.cc',
+        'browser/appcache/appcache_storage_impl_unittest.cc',
+        'browser/appcache/appcache_unittest.cc',
+        'browser/appcache/appcache_update_job_unittest.cc',
+        'browser/appcache/appcache_url_request_job_unittest.cc',
         'browser/appcache/chrome_appcache_service_unittest.cc',
+        'browser/appcache/manifest_parser_unittest.cc',
         'browser/appcache/mock_appcache_policy.cc',
         'browser/appcache/mock_appcache_policy.h',
+        'browser/appcache/mock_appcache_storage_unittest.cc',
         'browser/browser_thread_unittest.cc',
         'browser/browser_url_handler_impl_unittest.cc',
         'browser/byte_stream_unittest.cc',
@@ -379,6 +385,7 @@
         'browser/download/file_metadata_unittest_linux.cc',
         'browser/download/rate_estimator_unittest.cc',
         'browser/download/save_package_unittest.cc',
+        'browser/fileapi/blob_storage_context_unittest.cc',
         'browser/fileapi/blob_url_request_job_unittest.cc',
         'browser/fileapi/copy_or_move_file_validator_unittest.cc',
         'browser/fileapi/copy_or_move_operation_delegate_unittest.cc',
@@ -463,7 +470,6 @@
         'browser/quota/mock_quota_manager_proxy.h',
         'browser/quota/mock_quota_manager_unittest.cc',
         'browser/renderer_host/compositing_iosurface_transformer_mac_unittest.cc',
-        'browser/renderer_host/gtk_key_bindings_handler_unittest.cc',
         'browser/renderer_host/input/gesture_event_queue_unittest.cc',
         'browser/renderer_host/input/input_router_impl_unittest.cc',
         'browser/renderer_host/input/mock_input_ack_handler.cc',
@@ -473,6 +479,7 @@
         'browser/renderer_host/input/synthetic_gesture_controller_unittest.cc',
         'browser/renderer_host/input/tap_suppression_controller_unittest.cc',
         'browser/renderer_host/input/touch_action_filter_unittest.cc',
+        'browser/renderer_host/input/touch_emulator_unittest.cc',
         'browser/renderer_host/input/touch_event_queue_unittest.cc',
         'browser/renderer_host/media/audio_input_device_manager_unittest.cc',
         'browser/renderer_host/media/audio_renderer_host_unittest.cc',
@@ -500,7 +507,6 @@
         'browser/renderer_host/software_frame_manager_unittest.cc',
         'browser/renderer_host/text_input_client_mac_unittest.mm',
         'browser/renderer_host/web_input_event_aura_unittest.cc',
-        'browser/renderer_host/input/web_input_event_builders_gtk_unittest.cc',
         'browser/renderer_host/websocket_dispatcher_host_unittest.cc',
         'browser/resolve_proxy_msg_helper_unittest.cc',
         'browser/screen_orientation/screen_orientation_dispatcher_host_unittest.cc',
@@ -509,10 +515,13 @@
         'browser/service_worker/embedded_worker_test_helper.h',
         'browser/service_worker/service_worker_context_unittest.cc',
         'browser/service_worker/service_worker_dispatcher_host_unittest.cc',
+        'browser/service_worker/service_worker_dispatcher_host_unittest.cc',
+        'browser/service_worker/service_worker_handle_unittest.cc',
         'browser/service_worker/service_worker_job_unittest.cc',
+        'browser/service_worker/service_worker_provider_host_unittest.cc',
         'browser/service_worker/service_worker_registration_unittest.cc',
-        'browser/service_worker/service_worker_storage_unittest.cc',
         'browser/service_worker/service_worker_url_request_job_unittest.cc',
+        'browser/service_worker/service_worker_utils_unittest.cc',
         'browser/service_worker/service_worker_version_unittest.cc',
         'browser/shared_worker/shared_worker_instance_unittest.cc',
         'browser/shared_worker/shared_worker_service_impl_unittest.cc',
@@ -617,22 +626,10 @@
         'test/image_decoder_test.cc',
         'test/image_decoder_test.h',
         'test/run_all_unittests.cc',
-        '../webkit/browser/appcache/appcache_database_unittest.cc',
-        '../webkit/browser/appcache/appcache_disk_cache_unittest.cc',
-        '../webkit/browser/appcache/appcache_group_unittest.cc',
-        '../webkit/browser/appcache/appcache_quota_client_unittest.cc',
-        '../webkit/browser/appcache/appcache_response_unittest.cc',
-        '../webkit/browser/appcache/appcache_service_unittest.cc',
-        '../webkit/browser/appcache/appcache_unittest.cc',
-        '../webkit/browser/appcache/appcache_update_job_unittest.cc',
-        '../webkit/browser/appcache/appcache_url_request_job_unittest.cc',
-        '../webkit/browser/appcache/manifest_parser_unittest.cc',
         '../webkit/browser/appcache/mock_appcache_service.cc',
         '../webkit/browser/appcache/mock_appcache_service.h',
         '../webkit/browser/appcache/mock_appcache_storage.cc',
         '../webkit/browser/appcache/mock_appcache_storage.h',
-        '../webkit/browser/appcache/mock_appcache_storage_unittest.cc',
-        '../webkit/browser/blob/blob_storage_context_unittest.cc',
         '../webkit/browser/blob/local_file_stream_reader_unittest.cc',
         '../webkit/browser/database/database_quota_client_unittest.cc',
         '../webkit/browser/database/database_tracker_unittest.cc',
@@ -747,6 +744,7 @@
             'renderer/media/rtc_peer_connection_handler_unittest.cc',
             'renderer/media/rtc_video_decoder_unittest.cc',
             'renderer/media/video_source_handler_unittest.cc',
+            'renderer/media/webrtc/media_stream_remote_video_source_unittest.cc',
             'renderer/media/webrtc/media_stream_track_metrics_unittest.cc',
             'renderer/media/webrtc/webrtc_local_audio_track_adapter_unittest.cc',
             'renderer/media/webrtc/webrtc_video_capturer_adapter_unittest.cc',
@@ -821,7 +819,6 @@
         }],
         ['chromeos==1', {
           'sources/': [
-            ['exclude', '^browser/renderer_host/gtk_key_bindings_handler_unittest.cc'],
             ['exclude', '^browser/geolocation/wifi_data_provider_linux_unittest.cc'],
           ],
         }],
@@ -960,7 +957,6 @@
           'type': 'static_library',
           'dependencies': [
             '../mojo/mojo.gyp:mojo_bindings',
-            '../mojo/mojo.gyp:mojo_system',
           ],
           'sources': [
             'test/data/web_ui_test_mojo_bindings.mojom',
@@ -973,7 +969,6 @@
           'includes': [ '../mojo/public/tools/bindings/mojom_bindings_generator.gypi' ],
           'export_dependent_settings': [
             '../mojo/mojo.gyp:mojo_bindings',
-            '../mojo/mojo.gyp:mojo_system',
           ],
         },
         {
@@ -999,7 +994,6 @@
             '../mojo/mojo.gyp:mojo_bindings',
             '../mojo/mojo.gyp:mojo_environment_chromium',
             '../mojo/mojo.gyp:mojo_service_manager',
-            '../mojo/mojo.gyp:mojo_system',
             '../mojo/mojo.gyp:mojo_system_impl',
             '../net/net.gyp:net_test_support',
             '../ppapi/ppapi_internal.gyp:ppapi_host',
@@ -1216,7 +1210,7 @@
                 ['exclude', '^browser/compositor/'],
               ],
             }],
-            ['OS!="android" and OS!="ios"', {
+            ['OS!="android" and OS!="ios" and OS!="linux"', {
               # npapi test plugin doesn't build on android or ios
               'dependencies': [
                 # Runtime dependencies
@@ -1406,6 +1400,7 @@
               ['use_x11==1', {
                 'dependencies': [
                   '../build/linux/system.gyp:x11',  # Used by rendering_helper.cc
+                  '../ui/gfx/gfx.gyp:gfx_x11',
                 ],
               }],
             ],
@@ -1657,7 +1652,7 @@
         },
       ],
     }],
-    ['OS!="android" and OS!="ios"', {
+    ['OS!="android" and OS!="ios" and OS!="linux"', {
       # npapi test plugin doesn't build on android or ios
       'targets': [
         {

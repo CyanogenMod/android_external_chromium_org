@@ -11,6 +11,7 @@
 #include "ash/wm/maximize_mode/workspace_backdrop_delegate.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/overview/window_selector_controller.h"
+#include "ash/wm/wm_event.h"
 #include "ash/wm/workspace_controller.h"
 #include "ui/aura/window.h"
 #include "ui/gfx/screen.h"
@@ -40,7 +41,7 @@ void MaximizeModeWindowManager::WindowStateDestroyed(aura::Window* window) {
   window_state_map_.erase(it);
 }
 
-void MaximizeModeWindowManager::OnOverviewModeStarted() {
+void MaximizeModeWindowManager::OnOverviewModeStarting() {
   if (backdrops_hidden_)
     return;
 
@@ -48,7 +49,7 @@ void MaximizeModeWindowManager::OnOverviewModeStarted() {
   backdrops_hidden_ = true;
 }
 
-void MaximizeModeWindowManager::OnOverviewModeEnded() {
+void MaximizeModeWindowManager::OnOverviewModeEnding() {
   if (!backdrops_hidden_)
     return;
 
@@ -62,12 +63,18 @@ void MaximizeModeWindowManager::OnWindowDestroying(aura::Window* window) {
     ForgetWindow(window);
 }
 
-void MaximizeModeWindowManager::OnWindowAdded(
-    aura::Window* window) {
+void MaximizeModeWindowManager::OnWindowAdded(aura::Window* window) {
   // A window can get removed and then re-added by a drag and drop operation.
   if (IsContainerWindow(window->parent()) &&
-      window_state_map_.find(window) == window_state_map_.end())
+      window_state_map_.find(window) == window_state_map_.end()) {
     MaximizeAndTrackWindow(window);
+    // When the state got added, the "WM_EVENT_ADDED_TO_WORKSPACE" event got
+    // already sent and we have to notify our state again.
+    if (window_state_map_.find(window) != window_state_map_.end()) {
+      wm::WMEvent event(wm::WM_EVENT_ADDED_TO_WORKSPACE);
+      wm::GetWindowState(window)->OnWMEvent(&event);
+    }
+  }
 }
 
 void MaximizeModeWindowManager::OnWindowBoundsChanged(
@@ -211,7 +218,7 @@ void MaximizeModeWindowManager::EnableBackdropBehindTopWindowOnEachDisplay(
        iter != controllers.end(); ++iter) {
     RootWindowController* controller = *iter;
     aura::Window* container = Shell::GetContainer(
-        controller->root_window(), kShellWindowId_DefaultContainer);
+        controller->GetRootWindow(), kShellWindowId_DefaultContainer);
     controller->workspace_controller()->SetMaximizeBackdropDelegate(
         scoped_ptr<WorkspaceLayoutManagerDelegate>(
             enable ? new WorkspaceBackdropDelegate(container) : NULL));

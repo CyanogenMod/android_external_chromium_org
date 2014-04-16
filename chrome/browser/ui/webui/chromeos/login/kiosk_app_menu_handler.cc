@@ -75,6 +75,13 @@ void KioskAppMenuHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
+// static
+bool KioskAppMenuHandler::EnableNewKioskUI() {
+  // Turn off new kiosk UI for M34/35.
+  // TODO(xiyuan, nkostylev): Revist for http://crbug.com/362062.
+  return false;
+}
+
 void KioskAppMenuHandler::SendKioskApps() {
   if (!is_webui_initialized_)
     return;
@@ -114,9 +121,8 @@ void KioskAppMenuHandler::SendKioskApps() {
     apps_list.Append(app_info.release());
   }
 
-  bool new_kiosk_ui = !CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kDisableNewKioskUI);
-  web_ui()->CallJavascriptFunction(new_kiosk_ui ?
+
+  web_ui()->CallJavascriptFunction(EnableNewKioskUI() ?
       kKioskSetAppsNewAPI : kKioskSetAppsOldAPI,
       apps_list);
 }
@@ -143,8 +149,7 @@ void KioskAppMenuHandler::HandleCheckKioskAppLaunchError(
   KioskAppLaunchError::Clear();
 
   const std::string error_message = KioskAppLaunchError::GetErrorMessage(error);
-  bool new_kiosk_ui = !CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kDisableNewKioskUI);
+  bool new_kiosk_ui = EnableNewKioskUI();
   web_ui()->CallJavascriptFunction(new_kiosk_ui ?
       kKioskShowErrorNewAPI : kKioskShowErrorOldAPI,
       base::StringValue(error_message));

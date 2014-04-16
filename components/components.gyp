@@ -12,9 +12,11 @@
   'includes': [
     'auto_login_parser.gypi',
     'autofill.gypi',
+    'bookmarks.gypi',
     'breakpad.gypi',
     'cloud_devices.gypi',
     'cronet.gypi',
+    'data_reduction_proxy.gypi',
     'dom_distiller.gypi',
     'domain_reliability.gypi',
     'favicon.gypi',

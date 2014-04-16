@@ -5,7 +5,9 @@
 #ifndef CHROME_BROWSER_FAVICON_FAVICON_HANDLER_H_
 #define CHROME_BROWSER_FAVICON_FAVICON_HANDLER_H_
 
+#include <deque>
 #include <map>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
@@ -13,12 +15,12 @@
 #include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/common/ref_counted_util.h"
 #include "content/public/common/favicon_url.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image.h"
 #include "url/gurl.h"
 
+class FaviconClient;
 class FaviconHandlerDelegate;
 class Profile;
 class SkBitmap;
@@ -84,6 +86,7 @@ class FaviconHandler {
   };
 
   FaviconHandler(Profile* profile,
+                 FaviconClient* client,
                  FaviconHandlerDelegate* delegate,
                  Type icon_type);
   virtual ~FaviconHandler();
@@ -151,8 +154,6 @@ class FaviconHandler {
                                   const GURL& icon_url,
                                   chrome::IconType icon_type,
                                   const gfx::Image& image);
-
-  virtual FaviconService* GetFaviconService();
 
   // Returns true if the favicon should be saved.
   virtual bool ShouldSaveFavicon(const GURL& url);
@@ -285,6 +286,9 @@ class FaviconHandler {
 
   // The Profile associated with this handler.
   Profile* profile_;
+
+  // The client which implements embedder-specific Favicon operations.
+  FaviconClient* client_;  // weak
 
   // This handler's delegate.
   FaviconHandlerDelegate* delegate_;  // weak

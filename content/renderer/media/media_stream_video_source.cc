@@ -259,9 +259,9 @@ void GetBestCaptureFormat(
     const media::VideoCaptureFormats& formats,
     const blink::WebMediaConstraints& constraints,
     media::VideoCaptureFormat* capture_format,
-    gfx::Size* frame_output_size) {
+    gfx::Size* max_frame_output_size) {
   DCHECK(!formats.empty());
-  DCHECK(frame_output_size);
+  DCHECK(max_frame_output_size);
 
   int max_width = std::numeric_limits<int>::max();
   int max_height = std::numeric_limits<int>::max();;
@@ -272,11 +272,8 @@ void GetBestCaptureFormat(
       std::min(max_width, MediaStreamVideoSource::kDefaultWidth) *
       std::min(max_height, MediaStreamVideoSource::kDefaultHeight));
 
-  *frame_output_size = capture_format->frame_size;
-  if (max_width < frame_output_size->width())
-    frame_output_size->set_width(max_width);
-  if (max_height < frame_output_size->height())
-    frame_output_size->set_height(max_height);
+  max_frame_output_size->set_width(max_width);
+  max_frame_output_size->set_height(max_height);
 }
 
 // Empty method used for keeping a reference to the original media::VideoFrame
@@ -294,7 +291,7 @@ MediaStreamVideoSource* MediaStreamVideoSource::GetVideoSource(
   return static_cast<MediaStreamVideoSource*>(source.extraData());
 }
 
-//static
+// static
 bool MediaStreamVideoSource::IsConstraintSupported(const std::string& name) {
   for (size_t i = 0; i < arraysize(kSupportedConstraints); ++i) {
     if (kSupportedConstraints[i] == name)
@@ -308,7 +305,6 @@ MediaStreamVideoSource::MediaStreamVideoSource(
     : state_(NEW),
       factory_(factory),
       capture_adapter_(NULL) {
-  DCHECK(factory_);
 }
 
 MediaStreamVideoSource::~MediaStreamVideoSource() {
@@ -394,28 +390,25 @@ void MediaStreamVideoSource::DoStopSource() {
 
 void MediaStreamVideoSource::DeliverVideoFrame(
     const scoped_refptr<media::VideoFrame>& frame) {
+  DCHECK(CalledOnValidThread());
   scoped_refptr<media::VideoFrame> video_frame(frame);
 
-  if (frame->visible_rect().size() != frame_output_size_) {
+  if (frame->visible_rect().size().width() > max_frame_output_size_.width() ||
+      frame->visible_rect().size().height() > max_frame_output_size_.height()) {
     // If |frame| is not the size that is expected, we need to crop it by
     // providing a new |visible_rect|. The new visible rect must be within the
     // original |visible_rect|.
-    const int visible_width = std::min(frame_output_size_.width(),
-                                       frame->visible_rect().width());
-
-    const int visible_height = std::min(frame_output_size_.height(),
-                                        frame->visible_rect().height());
-
-    // Find a new horizontal offset within |frame|.
-    const int horiz_crop = frame->visible_rect().x() +
-        ((frame->visible_rect().width() - visible_width) / 2);
-    // Find a new vertical offset within |frame|.
-    const int vert_crop = frame->visible_rect().y() +
-        ((frame->visible_rect().height() - visible_height) / 2);
-
-    gfx::Rect rect(horiz_crop, vert_crop, visible_width, visible_height);
-    video_frame = media::VideoFrame::WrapVideoFrame(
-        frame, rect, rect.size(), base::Bind(&ReleaseOriginalFrame, frame));
+    gfx::Rect output_rect = frame->visible_rect();
+    output_rect.ClampToCenteredSize(max_frame_output_size_);
+    // TODO(perkj): Allow cropping of textures once http://crbug/362521 is
+    // fixed.
+    if (frame->format() != media::VideoFrame::NATIVE_TEXTURE) {
+      video_frame = media::VideoFrame::WrapVideoFrame(
+          frame,
+          output_rect,
+          output_rect.size(),
+          base::Bind(&ReleaseOriginalFrame, frame));
+    }
   }
 
   if ((frame->format() == media::VideoFrame::I420 ||
@@ -438,7 +431,7 @@ void MediaStreamVideoSource::OnSupportedFormats(
   supported_formats_ = formats;
   if (!FindBestFormatWithConstraints(supported_formats_,
                                      &current_format_,
-                                     &frame_output_size_,
+                                     &max_frame_output_size_,
                                      &current_constraints_)) {
     FinalizeAddTrack();
     SetReadyState(blink::WebMediaStreamSource::ReadyStateEnded);
@@ -459,7 +452,7 @@ void MediaStreamVideoSource::OnSupportedFormats(
 bool MediaStreamVideoSource::FindBestFormatWithConstraints(
     const media::VideoCaptureFormats& formats,
     media::VideoCaptureFormat* best_format,
-    gfx::Size* frame_output_size,
+    gfx::Size* max_frame_output_size,
     blink::WebMediaConstraints* resulting_constraints) {
   // Find the first constraints that we can fulfill.
   for (std::vector<RequestedConstraints>::iterator request_it =
@@ -475,7 +468,7 @@ bool MediaStreamVideoSource::FindBestFormatWithConstraints(
       GetBestCaptureFormat(filtered_formats,
                            requested_constraints,
                            best_format,
-                           frame_output_size);
+                           max_frame_output_size);
       *resulting_constraints= requested_constraints;
       return true;
     }
@@ -507,7 +500,6 @@ void MediaStreamVideoSource::FinalizeAddTrack() {
   callbacks.swap(requested_constraints_);
   for (std::vector<RequestedConstraints>::iterator it = callbacks.begin();
        it != callbacks.end(); ++it) {
-
     bool success = state_ == STARTED &&
         !FilterFormats(it->constraints, formats).empty();
     DVLOG(3) << "FinalizeAddTrack() success " << success;

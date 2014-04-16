@@ -74,14 +74,20 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   void RemoveAllProviderHostsForProcess(int process_id);
 
   // The callback will be called on the IO thread.
+  // A child process of |source_process_id| may be used to run the created
+  // worker for initial installation.
+  // Non-null |provider_host| must be given if this is called from a document,
+  // whose process_id() must match with |source_process_id|.
   void RegisterServiceWorker(const GURL& pattern,
                              const GURL& script_url,
                              int source_process_id,
+                             ServiceWorkerProviderHost* provider_host,
                              const RegistrationCallback& callback);
 
   // The callback will be called on the IO thread.
   void UnregisterServiceWorker(const GURL& pattern,
                                int source_process_id,
+                               ServiceWorkerProviderHost* provider_host,
                                const UnregistrationCallback& callback);
 
   // This class maintains collections of live instances, this class
@@ -92,6 +98,9 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   ServiceWorkerVersion* GetLiveVersion(int64 version_id);
   void AddLiveVersion(ServiceWorkerVersion* version);
   void RemoveLiveVersion(int64 registration_id);
+
+  // Returns new context-local unique ID for ServiceWorkerHandle.
+  int GetNewServiceWorkerHandleId();
 
  private:
   typedef IDMap<ServiceWorkerProviderHost, IDMapOwnPointer> ProviderMap;
@@ -115,6 +124,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   scoped_ptr<ServiceWorkerJobCoordinator> job_coordinator_;
   std::map<int64, ServiceWorkerRegistration*> live_registrations_;
   std::map<int64, ServiceWorkerVersion*> live_versions_;
+  int next_handle_id_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerContextCore);
 };

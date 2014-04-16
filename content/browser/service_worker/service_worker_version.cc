@@ -4,6 +4,7 @@
 
 #include "content/browser/service_worker/service_worker_version.h"
 
+#include "base/command_line.h"
 #include "base/stl_util.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
@@ -11,6 +12,7 @@
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/content_switches.h"
 
 namespace content {
 
@@ -169,8 +171,8 @@ ServiceWorkerVersion::ServiceWorkerVersion(
     : version_id_(version_id),
       registration_id_(kInvalidServiceWorkerVersionId),
       status_(NEW),
-      weak_factory_(this),
-      context_(context) {
+      context_(context),
+      weak_factory_(this) {
   DCHECK(context_);
   if (registration) {
     registration_id_ = registration->id();
@@ -191,6 +193,9 @@ ServiceWorkerVersion::~ServiceWorkerVersion() {
 }
 
 void ServiceWorkerVersion::SetStatus(Status status) {
+  if (status_ == status)
+    return;
+
   status_ = status;
 
   std::vector<base::Closure> callbacks;
@@ -199,6 +204,8 @@ void ServiceWorkerVersion::SetStatus(Status status) {
        i != callbacks.end(); ++i) {
     (*i).Run();
   }
+
+  FOR_EACH_OBSERVER(Listener, listeners_, OnVersionStateChanged(this));
 }
 
 void ServiceWorkerVersion::RegisterStatusChangeCallback(
@@ -342,6 +349,13 @@ void ServiceWorkerVersion::DispatchFetchEvent(
 
 void ServiceWorkerVersion::DispatchSyncEvent(const StatusCallback& callback) {
   DCHECK_EQ(ACTIVE, status()) << status();
+
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableServiceWorkerSync)) {
+    callback.Run(SERVICE_WORKER_ERROR_ABORT);
+    return;
+  }
+
   SendMessageAndRegisterCallback(
       ServiceWorkerMsg_SyncEvent(),
       base::Bind(&HandleSyncEventFinished, callback));
@@ -353,6 +367,10 @@ void ServiceWorkerVersion::AddProcessToWorker(int process_id) {
 
 void ServiceWorkerVersion::RemoveProcessFromWorker(int process_id) {
   embedded_worker_->ReleaseProcessReference(process_id);
+}
+
+bool ServiceWorkerVersion::HasProcessToRun() const {
+  return embedded_worker_->HasProcessToRun();
 }
 
 void ServiceWorkerVersion::AddControllee(
@@ -370,6 +388,24 @@ void ServiceWorkerVersion::RemoveControllee(
   // TODO(kinuko): Fire NoControllees notification when the # of controllees
   // reaches 0, so that a new pending version can be activated (which will
   // deactivate this version).
+}
+
+void ServiceWorkerVersion::AddPendingControllee(
+    ServiceWorkerProviderHost* provider_host) {
+  AddProcessToWorker(provider_host->process_id());
+}
+
+void ServiceWorkerVersion::RemovePendingControllee(
+    ServiceWorkerProviderHost* provider_host) {
+  RemoveProcessFromWorker(provider_host->process_id());
+}
+
+void ServiceWorkerVersion::AddListener(Listener* listener) {
+  listeners_.AddObserver(listener);
+}
+
+void ServiceWorkerVersion::RemoveListener(Listener* listener) {
+  listeners_.RemoveObserver(listener);
 }
 
 void ServiceWorkerVersion::OnStarted() {

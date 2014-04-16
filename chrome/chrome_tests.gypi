@@ -73,9 +73,6 @@
         'browser/extensions/updater/extension_cache_fake.cc',
         'browser/extensions/window_open_interactive_apitest.cc',
         'browser/mouseleave_browsertest.cc',
-        'browser/notifications/desktop_notifications_unittest.cc',
-        'browser/notifications/desktop_notifications_unittest.h',
-        'browser/notifications/notification_browsertest.cc',
         'browser/password_manager/password_generation_interactive_uitest.cc',
         'browser/renderer_context_menu/render_view_context_menu_browsertest_util.cc',
         'browser/renderer_context_menu/render_view_context_menu_browsertest_util.h',
@@ -88,8 +85,6 @@
         'browser/ui/find_bar/find_bar_host_interactive_uitest.cc',
         'browser/ui/fullscreen/fullscreen_controller_interactive_browsertest.cc',
         'browser/ui/fullscreen/fullscreen_controller_state_interactive_browsertest.cc',
-        'browser/ui/gtk/bookmarks/bookmark_bar_gtk_interactive_uitest.cc',
-        'browser/ui/gtk/bookmarks/bookmark_bubble_gtk_browsertest.cc',
         'browser/ui/omnibox/omnibox_view_browsertest.cc',
         'browser/ui/panels/base_panel_browser_test.cc',
         'browser/ui/panels/base_panel_browser_test.h',
@@ -141,7 +136,6 @@
         'test/base/interactive_test_utils.h',
         'test/base/interactive_test_utils_aura.cc',
         'test/base/interactive_test_utils_aura.h',
-        'test/base/interactive_test_utils_gtk.cc',
         'test/base/interactive_test_utils_mac.mm',
         'test/base/interactive_test_utils_views.cc',
         'test/base/interactive_test_utils_win.cc',
@@ -161,9 +155,12 @@
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
+        }, {
           'sources!': [
-            'browser/ui/views/tabs/tab_drag_controller_interactive_uitest.cc',
-          ],
+            'browser/notifications/desktop_notifications_unittest.cc',
+            'browser/notifications/desktop_notifications_unittest.h',
+            'browser/notifications/notification_browsertest.cc',
+          ]
         }],
         ['OS=="linux" and use_aura==1', {
           # TODO(gbillock): aura linux does not support the automation for
@@ -175,21 +172,6 @@
         ['toolkit_uses_gtk == 1 or chromeos==1 or (OS=="linux" and use_aura==1)', {
           'dependencies': [
             '../build/linux/system.gyp:ssl',
-          ],
-        }],
-        ['toolkit_uses_gtk == 1 and toolkit_views == 0', {
-          'sources!': [
-            # TODO(port)
-            'browser/ui/views/bookmarks/bookmark_bar_view_test.cc',
-            'browser/ui/views/button_dropdown_test.cc',
-            'browser/ui/views/constrained_window_views_browsertest.cc',
-            'browser/ui/views/crypto_module_password_dialog_view_unittest.cc',
-            'browser/ui/views/find_bar_host_interactive_uitest.cc',
-            'browser/ui/views/keyboard_access_browsertest.cc',
-            'browser/ui/views/menu_item_view_test.cc',
-            'browser/ui/views/menu_model_adapter_test.cc',
-            'test/base/view_event_test_base.cc',
-            'test/base/view_event_test_base.h',
           ],
         }],
         ['OS=="linux" and chromeos==0', {
@@ -214,8 +196,6 @@
           'sources!': [
             # TODO(port): These tests fail because they don't have a Screen,
             # but expect one.
-            'browser/notifications/desktop_notifications_unittest.cc',
-            'browser/notifications/desktop_notifications_unittest.h',
             # TODO(port): I have no idea about the crashes in here; there's
             # nothing obviously wrong. It doesn't run on gtk today, either.
             'browser/ui/views/tabs/tab_drag_controller_interactive_uitest.cc',
@@ -232,12 +212,6 @@
             '../ash/drag_drop/drag_drop_interactive_uitest.cc',
             '../ash/wm/ash_native_cursor_manager_interactive_uitest.cc',
             'browser/ui/window_sizer/window_sizer_ash_uitest.cc',
-          ],
-        }],
-        ['OS=="linux" and toolkit_views==1', {
-          'sources!': [
-            # TODO(port)
-            'browser/ui/gtk/bookmarks/bookmark_bar_gtk_interactive_uitest.cc',
           ],
         }],
         ['OS=="mac"', {
@@ -326,9 +300,6 @@
           ],
           'sources!': [
             # chromeos does not use cross-platform panels
-            'browser/notifications/desktop_notifications_unittest.cc',
-            'browser/notifications/desktop_notifications_unittest.h',
-            'browser/notifications/notification_browsertest.cc',
             'browser/ui/panels/detached_panel_browsertest.cc',
             'browser/ui/panels/docked_panel_browsertest.cc',
             'browser/ui/panels/panel_browsertest.cc',
@@ -682,6 +653,7 @@
         ['use_x11==1', {
           'dependencies': [
             '../build/linux/system.gyp:x11',
+            '../ui/gfx/gfx.gyp:gfx_x11',
           ]
         }]
       ],
@@ -1028,6 +1000,7 @@
         'browser/extensions/api/automation/automation_apitest.cc',
         'browser/extensions/api/autotest_private/autotest_private_apitest.cc',
         'browser/extensions/api/bluetooth/bluetooth_apitest.cc',
+        'browser/extensions/api/bluetooth/bluetooth_private_apitest.cc',
         'browser/extensions/api/bookmark_manager_private/bookmark_manager_private_apitest.cc',
         'browser/extensions/api/braille_display_private/braille_display_private_apitest.cc',
         'browser/extensions/api/braille_display_private/mock_braille_controller.cc',
@@ -1133,6 +1106,7 @@
         'browser/extensions/browsertest_util.h',
         'browser/extensions/browsertest_util_browsertest.cc',
         'browser/extensions/chrome_app_api_browsertest.cc',
+        'browser/extensions/chrome_ui_overrides_browsertest.cc',
         'browser/extensions/content_script_apitest.cc',
         'browser/extensions/content_security_policy_apitest.cc',
         'browser/extensions/convert_web_app_browsertest.cc',
@@ -1325,7 +1299,6 @@
         'browser/task_manager/task_manager_browsertest.cc',
         'browser/task_manager/task_manager_browsertest_util.cc',
         'browser/task_manager/task_manager_browsertest_util.h',
-        'browser/task_manager/task_manager_notification_browsertest.cc',
         'browser/themes/theme_service_browsertest.cc',
         'browser/translate/translate_browsertest.cc',
         'browser/translate/translate_manager_browsertest.cc',
@@ -1386,11 +1359,6 @@
         'browser/ui/find_bar/find_bar_host_browsertest.cc',
         'browser/ui/fullscreen/fullscreen_controller_browsertest.cc',
         'browser/ui/global_error/global_error_service_browsertest.cc',
-        'browser/ui/gtk/bubble/bubble_gtk_browsertest.cc',
-        'browser/ui/gtk/confirm_bubble_gtk_browsertest.cc',
-        'browser/ui/gtk/location_bar_view_gtk_browsertest.cc',
-        'browser/ui/gtk/one_click_signin_bubble_gtk_browsertest.cc',
-        'browser/ui/gtk/view_id_util_browsertest.cc',
         'browser/ui/login/login_prompt_browsertest.cc',
         'browser/ui/panels/panel_extension_browsertest.cc',
         'browser/ui/pdf/pdf_browsertest.cc',
@@ -1606,7 +1574,6 @@
       'conditions': [
         ['enable_one_click_signin==0', {
           'sources!': [
-            'browser/ui/gtk/one_click_signin_bubble_gtk_browsertest.cc',
             'browser/ui/sync/one_click_signin_bubble_links_delegate_browsertest.cc',
           ]
         }],
@@ -1639,7 +1606,8 @@
                 '../ppapi/native_client/native_client.gyp:nacl_irt',
                 '../ppapi/ppapi_nacl.gyp:ppapi_nacl_tests',
                 '../ppapi/tests/extensions/extensions.gyp:ppapi_tests_extensions_background_keepalive',
-                '../ppapi/tests/extensions/extensions.gyp:ppapi_tests_extensions_socket'
+                '../ppapi/tests/extensions/extensions.gyp:ppapi_tests_extensions_media_galleries',
+                '../ppapi/tests/extensions/extensions.gyp:ppapi_tests_extensions_socket',
               ],
               'conditions': [
                 ['chromeos==1', {
@@ -1775,11 +1743,6 @@
             '../pdf/pdf.gyp:pdf',
           ],
         }],
-        ['OS!="linux" or toolkit_views==1', {
-          'sources!': [
-            'browser/ui/gtk/view_id_util_browsertest.cc',
-          ],
-        }],
         ['enable_webrtc==0', {
           'sources!': [
             'browser/extensions/api/webrtc_audio_private/webrtc_audio_private_browsertest.cc',
@@ -1813,6 +1776,7 @@
             # for win aura builds.
             # TODO: enable these for win_ash browser tests.
             'browser/chromeos/system/tray_accessibility_browsertest.cc',
+            'browser/ui/ash/accelerator_commands_browsertest.cc',
             'browser/ui/ash/launcher/chrome_launcher_controller_browsertest.cc',
             'browser/ui/ash/launcher/launcher_favicon_loader_browsertest.cc',
             'browser/ui/ash/shelf_browsertest.cc',
@@ -1825,11 +1789,6 @@
             'app/chrome_dll.rc',
             'app/chrome_dll_resource.h',
             'app/chrome_version.rc.version',
-          ],
-        }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
           ],
         }],
         ['toolkit_uses_gtk == 1 or chromeos==1 or (OS=="linux" and use_aura==1)', {
@@ -1931,11 +1890,16 @@
           ],
         }],
         ['OS!="android" and OS!="ios"', {
+          'dependencies': [
+            # build time dependency.
+            '../v8/src/d8.gyp:d8#host',
+          ],
+        }],
+        ['OS!="android" and OS!="ios" and OS!="linux"', {
           # npapi test plugin doesn't build on android or ios
           'dependencies': [
             # build time dependency.
             '../content/content_shell_and_tests.gyp:copy_npapi_test_plugin',
-            '../v8/src/d8.gyp:d8#host',
           ],
         }],
         ['enable_app_list==0', {
@@ -1987,6 +1951,13 @@
         ['enable_autofill_dialog!=1 or OS=="android" or OS=="ios"', {
           '!dependencies': [
             '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput',
+          ],
+        }],
+        ['use_ozone==1', {
+          'sources!': [
+            # crbug.com/362698
+            'browser/chromeos/input_method/input_method_engine_browsertests.cc',
+            'browser/extensions/api/input_ime/input_ime_apitest_chromeos.cc',
           ],
         }],
       ],  # conditions
@@ -2120,11 +2091,6 @@
         ['use_x11==1', {
           'dependencies': [
             '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
-          ],
-        }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
           ],
         }],
         ['toolkit_uses_gtk == 1 or chromeos==1 or (OS=="linux" and use_aura==1)', {
@@ -2352,11 +2318,6 @@
         'browser/sync/test/integration/two_client_typed_urls_sync_test.cc',
       ],
       'conditions': [
-        ['toolkit_uses_gtk == 1', {
-           'dependencies': [
-             '../build/linux/system.gyp:gtk',
-           ],
-        }],
         ['toolkit_uses_gtk == 1 or chromeos==1 or (OS=="linux" and use_aura==1)', {
           'dependencies': [
             '../build/linux/system.gyp:ssl',
@@ -2462,11 +2423,6 @@
         'test/data/resource.rc',
       ],
       'conditions': [
-        ['toolkit_uses_gtk == 1', {
-           'dependencies': [
-             '../build/linux/system.gyp:gtk',
-           ],
-        }],
         ['toolkit_uses_gtk == 1 or chromeos==1 or (OS=="linux" and use_aura==1)', {
           'dependencies': [
             '../build/linux/system.gyp:ssl',
@@ -2647,11 +2603,6 @@
             ['use_x11==1', {
               'dependencies': [
                 '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
-              ],
-            }],
-            ['toolkit_uses_gtk == 1', {
-              'dependencies': [
-                '../build/linux/system.gyp:gtk',
               ],
             }],
             ['OS=="win"', {

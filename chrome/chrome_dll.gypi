@@ -109,6 +109,8 @@
                 '../chrome/chrome_resources.gyp:chrome_unscaled_resources',
                 '../crypto/crypto.gyp:crypto',
                 '../net/net.gyp:net_resources',
+                # TODO(dcheng): remove this temporary hack once WebLocalFrame lands and rolls.
+                '../third_party/WebKit/public/blink_headers.gyp:blink_headers',
                 '../ui/views/views.gyp:views',
                 '../webkit/webkit_resources.gyp:webkit_resources',
               ],
@@ -142,7 +144,6 @@
               },
               'msvs_settings': {
                 'VCLinkerTool': {
-                  'BaseAddress': '0x01c30000',
                   'ImportLibrary': '$(OutDir)\\lib\\chrome_dll.lib',
                   # Set /SUBSYSTEM:WINDOWS for chrome.dll (for consistency).
                   'SubSystem': '2',
@@ -152,6 +153,8 @@
                       'UseLibraryDependencyInputs': "true",
                     }],
                     ['target_arch=="ia32"', {
+                      # Don't set an x64 base address (to avoid breaking HE-ASLR).
+                      'BaseAddress': '0x01c30000',
                       # Link against the XP-constrained user32 import library
                       # instead of the platform-SDK provided one to avoid
                       # inadvertently taking dependencies on post-XP user32
@@ -361,6 +364,8 @@
             '<@(chromium_child_dependencies)',
             '../content/content.gyp:content_app_child',
             '../content/content.gyp:content_worker',
+            # TODO(dcheng): remove this temporary hack once WebLocalFrame lands and rolls.
+            '../third_party/WebKit/public/blink_headers.gyp:blink_headers',
             'chrome_version_resources',
             'policy_path_parser',
           ],

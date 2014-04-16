@@ -67,6 +67,10 @@ class PasswordManagerClient {
   // Send |text| to the logger.
   virtual void LogSavePasswordProgress(const std::string& text);
 
+  // Returns true if logs recorded via LogSavePasswordProgress will be
+  // displayed, and false otherwise.
+  virtual bool IsLoggingActive() const;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(PasswordManagerClient);
 };

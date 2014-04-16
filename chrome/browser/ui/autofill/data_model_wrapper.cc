@@ -59,6 +59,7 @@ bool DataModelWrapper::GetDisplayText(
   i18ninput::CreateAddressData(
       base::Bind(&DataModelWrapper::GetInfo, base::Unretained(this)),
       &address_data);
+  address_data.language_code = GetLanguageCode();
   std::vector<std::string> lines;
   address_data.FormatForDisplay(&lines);
 
@@ -72,8 +73,7 @@ bool DataModelWrapper::GetDisplayText(
 
   // The separator is locale-specific.
   std::string compact_separator =
-      ::i18n::addressinput::GetCompactAddressLinesSeparator(
-          g_browser_process->GetApplicationLocale());
+      ::i18n::addressinput::GetCompactAddressLinesSeparator(GetLanguageCode());
   *vertically_compact =
       base::UTF8ToUTF16(JoinString(lines, compact_separator)) +
           non_address_info;
@@ -150,6 +150,10 @@ base::string16 AutofillProfileWrapper::GetInfoForDisplay(
   return DataModelWrapper::GetInfoForDisplay(type);
 }
 
+const std::string& AutofillProfileWrapper::GetLanguageCode() const {
+  return profile_->language_code();
+}
+
 size_t AutofillProfileWrapper::GetVariantForType(const AutofillType& type)
     const {
   if (type.group() == variant_group_)
@@ -208,6 +212,11 @@ bool AutofillCreditCardWrapper::GetDisplayText(
   return true;
 }
 
+const std::string& AutofillCreditCardWrapper::GetLanguageCode() const {
+  // Formatting a credit card for display does not depend on language code.
+  return base::EmptyString();
+}
+
 // WalletAddressWrapper
 
 WalletAddressWrapper::WalletAddressWrapper(
@@ -239,6 +248,10 @@ bool WalletAddressWrapper::GetDisplayText(
 
   return DataModelWrapper::GetDisplayText(vertically_compact,
                                           horizontally_compact);
+}
+
+const std::string& WalletAddressWrapper::GetLanguageCode() const {
+  return address_->language_code();
 }
 
 // WalletInstrumentWrapper
@@ -296,6 +309,10 @@ bool WalletInstrumentWrapper::GetDisplayText(
   return true;
 }
 
+const std::string& WalletInstrumentWrapper::GetLanguageCode() const {
+  return instrument_->address().language_code();
+}
+
 // FullWalletBillingWrapper
 
 FullWalletBillingWrapper::FullWalletBillingWrapper(
@@ -325,6 +342,12 @@ bool FullWalletBillingWrapper::GetDisplayText(
                                           horizontally_compact);
 }
 
+const std::string& FullWalletBillingWrapper::GetLanguageCode() const {
+  // Can be NULL if there are required actions.
+  return full_wallet_->billing_address() ?
+      full_wallet_->billing_address()->language_code() : base::EmptyString();
+}
+
 // FullWalletShippingWrapper
 
 FullWalletShippingWrapper::FullWalletShippingWrapper(
@@ -340,6 +363,15 @@ base::string16 FullWalletShippingWrapper::GetInfo(
   return full_wallet_->shipping_address()->GetInfo(
       type, g_browser_process->GetApplicationLocale());
 }
+
+const std::string& FullWalletShippingWrapper::GetLanguageCode() const {
+  // Can be NULL if there are required actions or shipping address is not
+  // required.
+  return full_wallet_->shipping_address() ?
+      full_wallet_->shipping_address()->language_code() : base::EmptyString();
+}
+
+// I18nAddressDataWrapper
 
 I18nAddressDataWrapper::I18nAddressDataWrapper(
     const ::i18n::addressinput::AddressData* address)
@@ -361,6 +393,10 @@ base::string16 I18nAddressDataWrapper::GetInfo(const AutofillType& type) const {
   }
 
   return base::UTF8ToUTF16(address_->GetFieldValue(field));
+}
+
+const std::string& I18nAddressDataWrapper::GetLanguageCode() const {
+  return address_->language_code;
 }
 
 }  // namespace autofill

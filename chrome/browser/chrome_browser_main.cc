@@ -4,10 +4,6 @@
 
 #include "chrome/browser/chrome_browser_main.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#endif
-
 #include <set>
 #include <string>
 #include <vector>
@@ -53,7 +49,6 @@
 #include "chrome/browser/component_updater/swiftshader_component_installer.h"
 #include "chrome/browser/component_updater/widevine_cdm_component_installer.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/extensions/extension_protocols.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/startup_helper.h"
 #include "chrome/browser/feedback/feedback_profile_observer.h"
@@ -128,6 +123,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
+#include "extensions/browser/extension_protocols.h"
 #include "extensions/browser/extension_system.h"
 #include "grit/app_locale_settings.h"
 #include "grit/browser_resources.h"
@@ -143,6 +139,10 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/metrics/thread_watcher_android.h"
+#endif
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 #include "chrome/browser/first_run/upgrade_util_linux.h"
@@ -520,7 +520,7 @@ namespace chrome_browser {
 const char kMissingLocaleDataTitle[] = "Missing File Error";
 #endif
 
-#if defined(OS_WIN) || defined(TOOLKIT_GTK)
+#if defined(OS_WIN)
 // TODO(port) This should be used on Linux Aura as well. http://crbug.com/338969
 const char kMissingLocaleDataMessage[] =
     "Unable to find locale data files. Please reinstall.";
@@ -916,10 +916,6 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
   }
 #endif  // defined(OS_MACOSX)
 
-#if defined(TOOLKIT_GTK)
-  g_set_application_name(l10n_util::GetStringUTF8(IDS_PRODUCT_NAME).c_str());
-#endif
-
   // Android does first run in Java instead of native.
   // Chrome OS has its own out-of-box-experience code.
 #if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
@@ -1053,13 +1049,13 @@ void ChromeBrowserMainParts::PreProfileInit() {
   ProfileInfoCache& profile_cache = profile_manager->GetProfileInfoCache();
   size_t profiles_count = profile_cache.GetNumberOfProfiles();
   std::vector<base::FilePath> profiles_to_delete;
-  for (size_t i = 0;i < profiles_count; ++i) {
+  for (size_t i = 0; i < profiles_count; ++i) {
     if (profile_cache.ProfileIsEphemeralAtIndex(i))
       profiles_to_delete.push_back(profile_cache.GetPathOfProfileAtIndex(i));
   }
 
   if (profiles_to_delete.size()) {
-    for (size_t i = 0;i < profiles_to_delete.size(); ++i) {
+    for (size_t i = 0; i < profiles_to_delete.size(); ++i) {
       profile_manager->ScheduleProfileForDeletion(
           profiles_to_delete[i], ProfileManager::CreateCallback());
     }
@@ -1487,6 +1483,10 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   // Start watching all browser threads for responsiveness.
   MetricsService::SetExecutionPhase(MetricsService::THREAD_WATCHER_START);
   ThreadWatcherList::StartWatchingAll(parsed_command_line());
+
+#if defined(OS_ANDROID)
+  ThreadWatcherAndroid::RegisterApplicationStatusListener();
+#endif
 
 #if !defined(DISABLE_NACL)
   content::BrowserThread::PostTask(

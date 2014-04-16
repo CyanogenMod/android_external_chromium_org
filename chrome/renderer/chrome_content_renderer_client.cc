@@ -134,6 +134,7 @@ using blink::WebConsoleMessage;
 using blink::WebDataSource;
 using blink::WebDocument;
 using blink::WebFrame;
+using blink::WebLocalFrame;
 using blink::WebPlugin;
 using blink::WebPluginParams;
 using blink::WebSecurityOrigin;
@@ -466,7 +467,7 @@ const Extension* ChromeContentRendererClient::GetExtensionByOrigin(
 
 bool ChromeContentRendererClient::OverrideCreatePlugin(
     content::RenderFrame* render_frame,
-    WebFrame* frame,
+    WebLocalFrame* frame,
     const WebPluginParams& params,
     WebPlugin** plugin) {
   std::string orig_mime_type = params.mimeType.utf8();
@@ -494,6 +495,9 @@ bool ChromeContentRendererClient::OverrideCreatePlugin(
   render_frame->Send(new ChromeViewHostMsg_GetPluginInfo(
       render_frame->GetRoutingID(), GURL(params.url),
       frame->top()->document().url(), orig_mime_type, &output));
+
+  if (output.plugin.type == content::WebPluginInfo::PLUGIN_TYPE_BROWSER_PLUGIN)
+    return false;
 #else
   output.status.value = ChromeViewHostMsg_GetPluginInfo_Status::kNotFound;
 #endif
@@ -529,7 +533,7 @@ void ChromeContentRendererClient::DeferMediaLoad(
 
 WebPlugin* ChromeContentRendererClient::CreatePlugin(
     content::RenderFrame* render_frame,
-    WebFrame* frame,
+    WebLocalFrame* frame,
     const WebPluginParams& original_params,
     const ChromeViewHostMsg_GetPluginInfo_Output& output) {
   const ChromeViewHostMsg_GetPluginInfo_Status& status = output.status;
