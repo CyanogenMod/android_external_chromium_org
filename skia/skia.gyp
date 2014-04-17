@@ -88,7 +88,7 @@
               '-lstlport_static',
             ],
             'libraries' : [
-              '-lstlport_sh_r8e'
+              '-lstlport_sh_521'
             ],
           },
           'ldflags!': [

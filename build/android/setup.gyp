@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 {
   'conditions': [
-    ['component == "shared_library" or swe_component == "shared_library"', {
+    ['component == "shared_library" or swe_component == "shared_library" and OS=="android"', {
       'targets': [
         {
           # These libraries from the Android ndk are required to be packaged with
@@ -17,9 +17,13 @@
               'destination': '<(SHARED_LIB_DIR)/',
               'files': [
                 '<(android_stlport_libs_dir)/libstlport_sh_r8e.so',
+                '<(android_stlport_libs_dir)/libstlport_sh_521.so',
               ],
             },
           ],
+          'dependencies': [
+            '<(DEPTH)/third_party/android_tools/ndk/android_tools_ndk.gyp:rename_libs',
+          ]
         },
       ],
     }],
