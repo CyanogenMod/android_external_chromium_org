@@ -299,7 +299,8 @@ void LocationRequest::OnPositionReported(const content::Geoposition& position) {
 
 LocationManager::LocationManager(content::BrowserContext* context)
     : profile_(Profile::FromBrowserContext(context)) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
@@ -393,8 +394,8 @@ void LocationManager::SendLocationUpdate(
 
   scoped_ptr<Event> event(new Event(event_name, args.Pass()));
 
-  ExtensionSystem::Get(profile_)->event_router()->
-      DispatchEventToExtension(extension_id, event.Pass());
+  EventRouter::Get(profile_)
+      ->DispatchEventToExtension(extension_id, event.Pass());
 }
 
 void LocationManager::Observe(int type,
@@ -403,7 +404,7 @@ void LocationManager::Observe(int type,
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
       // Grants permission to use geolocation once an extension with "location"
       // permission is loaded.
       const Extension* extension =

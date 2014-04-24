@@ -5,10 +5,14 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_INTERNALS_UI_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_INTERNALS_UI_H_
 
+#include <set>
+
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "content/browser/service_worker/service_worker_context_observer.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/public/browser/web_ui_controller.h"
 
@@ -32,9 +36,12 @@ class ServiceWorkerInternalsUI
 
  private:
   class OperationProxy;
+  class PartitionObserver;
 
   virtual ~ServiceWorkerInternalsUI();
   void AddContextFromStoragePartition(StoragePartition* partition);
+
+  void RemoveObserverFromStoragePartition(StoragePartition* partition);
 
   // Called from Javascript.
   void GetAllRegistrations(const base::ListValue* args);
@@ -48,6 +55,9 @@ class ServiceWorkerInternalsUI
       base::FilePath* partition_path,
       GURL* scope,
       scoped_refptr<ServiceWorkerContextWrapper>* context) const;
+
+  base::ScopedPtrHashMap<uintptr_t, PartitionObserver> observers_;
+  int next_partition_id_;
 };
 
 }  // namespace content

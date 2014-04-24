@@ -413,6 +413,11 @@
         'filters/source_buffer_stream.h',
         'filters/stream_parser_factory.cc',
         'filters/stream_parser_factory.h',
+        'filters/video_frame_scheduler.h',
+        'filters/video_frame_scheduler_impl.cc',
+        'filters/video_frame_scheduler_impl.h',
+        'filters/video_frame_scheduler_proxy.cc',
+        'filters/video_frame_scheduler_proxy.h',
         'filters/video_renderer_impl.cc',
         'filters/video_renderer_impl.h',
         'filters/vpx_video_decoder.cc',
@@ -886,11 +891,6 @@
             }],
           ],
         }],
-        ['toolkit_uses_gtk==1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
-          ],
-        }],
         ['target_arch=="ia32" or target_arch=="x64"', {
           'dependencies': [
             'media_asm',
@@ -1039,6 +1039,7 @@
         'filters/skcanvas_video_renderer_unittest.cc',
         'filters/source_buffer_stream_unittest.cc',
         'filters/video_decoder_selector_unittest.cc',
+        'filters/video_frame_scheduler_impl_unittest.cc',
         'filters/video_frame_stream_unittest.cc',
         'filters/video_renderer_impl_unittest.cc',
         'midi/midi_manager_usb_unittest.cc',
@@ -1510,7 +1511,6 @@
           ],
           'variables': {
             'test_suite_name': 'media_unittests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)media_unittests<(SHARED_LIB_SUFFIX)',
           },
           'includes': ['../build/apk_test.gypi'],
         },
@@ -1523,7 +1523,6 @@
           ],
           'variables': {
             'test_suite_name': 'media_perftests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)media_perftests<(SHARED_LIB_SUFFIX)',
           },
           'includes': ['../build/apk_test.gypi'],
         },
@@ -1653,25 +1652,6 @@
           ],
           'sources': [
             'ffmpeg/ffmpeg_unittest.cc',
-          ],
-          'conditions': [
-            ['toolkit_uses_gtk==1', {
-              'dependencies': [
-                # Needed for the following #include chain:
-                #   base/run_all_unittests.cc
-                #   ../base/test_suite.h
-                #   gtk/gtk.h
-                '../build/linux/system.gyp:gtk',
-              ],
-              'conditions': [
-                # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-                ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
-                  'dependencies': [
-                    '../base/allocator/allocator.gyp:allocator',
-                  ],
-                }],
-              ],
-            }],
           ],
         },
         {

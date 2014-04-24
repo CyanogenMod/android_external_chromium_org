@@ -661,6 +661,27 @@ void AutofillDialogControllerImpl::Show() {
     return;
   }
 
+  // Fail if the author didn't ask for at least some kind of credit card
+  // information.
+  bool has_credit_card_field = false;
+  for (size_t i = 0; i < form_structure_.field_count(); ++i) {
+    AutofillType type = form_structure_.field(i)->Type();
+    if (type.html_type() != HTML_TYPE_UNKNOWN && type.group() == CREDIT_CARD) {
+      has_credit_card_field = true;
+      break;
+    }
+  }
+
+  if (!has_credit_card_field) {
+    callback_.Run(
+        AutofillManagerDelegate::AutocompleteResultErrorUnsupported,
+        base::ASCIIToUTF16("Form is not a payment form (must contain "
+                           "some autocomplete=\"cc-*\" fields). "),
+        NULL);
+    delete this;
+    return;
+  }
+
   billing_country_combobox_model_.reset(new CountryComboboxModel(
       *GetManager(),
       base::Bind(CountryFilter,
@@ -727,11 +748,7 @@ void AutofillDialogControllerImpl::Show() {
       downloader.Pass(),
       ValidationRulesStorageFactory::CreateStorage(),
       this);
-  GetValidator()->LoadRules(
-      GetManager()->GetDefaultCountryCodeForNewAddress());
 
-  // TODO(estade): don't show the dialog if the site didn't specify the right
-  // fields. First we must figure out what the "right" fields are.
   SuggestionsUpdated();
   SubmitButtonDelayBegin();
   view_.reset(CreateView());
@@ -1199,8 +1216,14 @@ void AutofillDialogControllerImpl::ResetSectionInput(DialogSection section) {
   DetailInputs* inputs = MutableRequestedFieldsForSection(section);
   for (DetailInputs::iterator it = inputs->begin();
        it != inputs->end(); ++it) {
-    if (it->length != DetailInput::NONE)
+    if (it->length != DetailInput::NONE) {
       it->initial_value.clear();
+    } else if (!it->initial_value.empty() &&
+               (it->type == ADDRESS_BILLING_COUNTRY ||
+                it->type == ADDRESS_HOME_COUNTRY)) {
+      GetValidator()->LoadRules(AutofillCountry::GetCountryCode(
+          it->initial_value, g_browser_process->GetApplicationLocale()));
+    }
   }
 }
 
@@ -1969,9 +1992,6 @@ void AutofillDialogControllerImpl::UserEditedOrActivatedInput(
     RebuildInputsForCountry(section, field_contents, true);
     RestoreUserInputFromSnapshot(snapshot);
     UpdateSection(section);
-
-    GetValidator()->LoadRules(AutofillCountry::GetCountryCode(
-        field_contents, g_browser_process->GetApplicationLocale()));
   }
 
   // The rest of this method applies only to textfields while Autofill is
@@ -2370,10 +2390,6 @@ void AutofillDialogControllerImpl::Observe(
 ////////////////////////////////////////////////////////////////////////////////
 // SuggestionsMenuModelDelegate implementation.
 
-void AutofillDialogControllerImpl::SuggestionsMenuWillShow() {
-  HidePopup();
-}
-
 void AutofillDialogControllerImpl::SuggestionItemSelected(
     SuggestionsMenuModel* model,
     size_t index) {
@@ -2574,10 +2590,6 @@ void AutofillDialogControllerImpl::OnPersonalDataChanged() {
 
 ////////////////////////////////////////////////////////////////////////////////
 // AccountChooserModelDelegate implementation.
-
-void AutofillDialogControllerImpl::AccountChooserWillShow() {
-  HidePopup();
-}
 
 void AutofillDialogControllerImpl::AccountChoiceChanged() {
   ScopedViewUpdates updates(view_.get());
@@ -3364,6 +3376,12 @@ bool AutofillDialogControllerImpl::RebuildInputsForCountry(
   inputs->clear();
   common::BuildInputsForSection(section, country_code, inputs,
                                 MutableAddressLanguageCodeForSection(section));
+
+  if (!country_code.empty()) {
+    GetValidator()->LoadRules(AutofillCountry::GetCountryCode(
+        country_name, g_browser_process->GetApplicationLocale()));
+  }
+
   return true;
 }
 

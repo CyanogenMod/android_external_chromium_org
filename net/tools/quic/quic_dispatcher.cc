@@ -16,6 +16,7 @@
 #include "net/tools/quic/quic_epoll_connection_helper.h"
 #include "net/tools/quic/quic_packet_writer_wrapper.h"
 #include "net/tools/quic/quic_socket_utils.h"
+#include "net/tools/quic/quic_time_wait_list_manager.h"
 
 namespace net {
 
@@ -43,12 +44,14 @@ class DeleteSessionsAlarm : public EpollAlarm {
 class QuicDispatcher::QuicFramerVisitor : public QuicFramerVisitorInterface {
  public:
   explicit QuicFramerVisitor(QuicDispatcher* dispatcher)
-      : dispatcher_(dispatcher) {}
+      : dispatcher_(dispatcher),
+        connection_id_(0) {}
 
   // QuicFramerVisitorInterface implementation
   virtual void OnPacket() OVERRIDE {}
   virtual bool OnUnauthenticatedPublicHeader(
       const QuicPacketPublicHeader& header) OVERRIDE {
+    connection_id_ = header.connection_id;
     return dispatcher_->OnUnauthenticatedPublicHeader(header);
   }
   virtual bool OnUnauthenticatedHeader(
@@ -60,14 +63,23 @@ class QuicDispatcher::QuicFramerVisitor : public QuicFramerVisitorInterface {
     DVLOG(1) << QuicUtils::ErrorToString(framer->error());
   }
 
+  virtual bool OnProtocolVersionMismatch(
+      QuicVersion /*received_version*/) OVERRIDE {
+    if (dispatcher_->time_wait_list_manager()->IsConnectionIdInTimeWait(
+            connection_id_)) {
+      // Keep processing after protocol mismatch - this will be dealt with by
+      // the TimeWaitListManager.
+      return true;
+    } else {
+      DLOG(DFATAL) << "Version mismatch, connection ID (" << connection_id_
+                   << ") not in time wait list.";
+      return false;
+    }
+  }
+
   // The following methods should never get called because we always return
   // false from OnUnauthenticatedHeader().  As a result, we never process the
   // payload of the packet.
-  virtual bool OnProtocolVersionMismatch(
-      QuicVersion /*received_version*/) OVERRIDE {
-    DCHECK(false);
-    return false;
-  }
   virtual void OnPublicResetPacket(
       const QuicPublicResetPacket& /*packet*/) OVERRIDE {
     DCHECK(false);
@@ -107,6 +119,10 @@ class QuicDispatcher::QuicFramerVisitor : public QuicFramerVisitorInterface {
     DCHECK(false);
     return false;
   }
+  virtual bool OnPingFrame(const QuicPingFrame& /*frame*/) OVERRIDE {
+    DCHECK(false);
+    return false;
+  }
   virtual bool OnRstStreamFrame(const QuicRstStreamFrame& /*frame*/) OVERRIDE {
     DCHECK(false);
     return false;
@@ -135,6 +151,9 @@ class QuicDispatcher::QuicFramerVisitor : public QuicFramerVisitorInterface {
 
  private:
   QuicDispatcher* dispatcher_;
+
+  // Latched in OnUnauthenticatedPublicHeader for use later.
+  QuicConnectionId connection_id_;
 };
 
 QuicDispatcher::QuicDispatcher(const QuicConfig& config,
@@ -164,9 +183,7 @@ QuicDispatcher::~QuicDispatcher() {
 void QuicDispatcher::Initialize(int fd) {
   DCHECK(writer_ == NULL);
   writer_.reset(CreateWriterWrapper(CreateWriter(fd)));
-  time_wait_list_manager_.reset(
-      new QuicTimeWaitListManager(writer_.get(), this,
-                                  epoll_server(), supported_versions()));
+  time_wait_list_manager_.reset(CreateQuicTimeWaitListManager());
 
   // Remove all versions > QUIC_VERSION_16 from the
   // supported_versions_no_flow_control_ vector.
@@ -254,7 +271,8 @@ void QuicDispatcher::OnUnauthenticatedHeader(const QuicPacketHeader& header) {
   time_wait_list_manager_->ProcessPacket(current_server_address_,
                                          current_client_address_,
                                          header.public_header.connection_id,
-                                         header.packet_sequence_number);
+                                         header.packet_sequence_number,
+                                         *current_packet_);
 }
 
 void QuicDispatcher::CleanUpSession(SessionMap::iterator it) {
@@ -380,6 +398,11 @@ QuicConnection* QuicDispatcher::CreateQuicConnection(
                               supported_versions_no_flow_control_,
                               initial_flow_control_window_bytes_);
   }
+}
+
+QuicTimeWaitListManager* QuicDispatcher::CreateQuicTimeWaitListManager() {
+  return new QuicTimeWaitListManager(
+      writer_.get(), this, epoll_server(), supported_versions());
 }
 
 void QuicDispatcher::set_writer(QuicPacketWriter* writer) {

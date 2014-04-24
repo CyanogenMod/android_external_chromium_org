@@ -11,7 +11,7 @@ namespace media {
 static const uint32 kADTSStartCodeMask = 0xfff00000;
 
 ADTSStreamParser::ADTSStreamParser()
-    : MPEGAudioStreamParserBase(kADTSStartCodeMask, kCodecAAC) {}
+    : MPEGAudioStreamParserBase(kADTSStartCodeMask, kCodecAAC, 0) {}
 
 ADTSStreamParser::~ADTSStreamParser() {}
 
@@ -20,7 +20,8 @@ int ADTSStreamParser::ParseFrameHeader(const uint8* data,
                                        int* frame_size,
                                        int* sample_rate,
                                        ChannelLayout* channel_layout,
-                                       int* sample_count) const {
+                                       int* sample_count,
+                                       bool* metadata_frame) const {
   DCHECK(data);
   DCHECK_GE(size, 0);
   DCHECK(frame_size);
@@ -88,6 +89,9 @@ int ADTSStreamParser::ParseFrameHeader(const uint8* data,
 
   if (channel_layout)
     *channel_layout = kADTSChannelLayoutTable[channel_layout_index];
+
+  if (metadata_frame)
+    *metadata_frame = false;
 
   return bytes_read;
 }

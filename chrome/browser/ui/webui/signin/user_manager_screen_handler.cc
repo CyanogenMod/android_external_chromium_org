@@ -107,9 +107,9 @@ std::string GetAvatarImageAtIndex(
   if (avatar_image.Width() <= profiles::kAvatarIconWidth ||
       avatar_image.Height() <= profiles::kAvatarIconHeight ) {
     avatar_image = ui::ResourceBundle::GetSharedInstance().GetImageNamed(
-        IDR_USER_MANAGER_DEFAULT_AVATAR);
+        profiles::GetPlaceholderAvatarIconResourceID());
   }
-  gfx::Image resized_image = profiles::GetSizedAvatarIconWithBorder(
+  gfx::Image resized_image = profiles::GetSizedAvatarIcon(
       avatar_image, is_gaia_picture, kAvatarIconSize, kAvatarIconSize);
   return webui::GetBitmapDataUrl(resized_image.AsBitmap());
 }

@@ -9,6 +9,7 @@ import org.chromium.base.test.util.UrlUtils;
 import org.chromium.chrome.browser.ContentViewUtil;
 import org.chromium.chrome.shell.ChromeShellTestBase;
 import org.chromium.content.browser.ContentView;
+import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.DOMUtils;
@@ -34,8 +35,8 @@ public class SelectPopupOtherContentViewTest extends ChromeShellTestBase {
     private class PopupShowingCriteria implements Criteria {
         @Override
         public boolean isSatisfied() {
-            ContentView view = getActivity().getActiveContentView();
-            return view.getContentViewCore().getSelectPopupForTest() != null;
+            ContentViewCore contentViewCore = getActivity().getActiveContentViewCore();
+            return contentViewCore.getSelectPopupForTest() != null;
         }
     }
 
@@ -57,10 +58,10 @@ public class SelectPopupOtherContentViewTest extends ChromeShellTestBase {
         launchChromeShellWithUrl(SELECT_URL);
         assertTrue("Page failed to load", waitForActiveShellToBeDoneLoading());
 
-        final ContentView view = getActivity().getActiveContentView();
+        final ContentViewCore viewCore = getActivity().getActiveContentViewCore();
 
         // Once clicked, the popup should show up.
-        DOMUtils.clickNode(this, view, "select");
+        DOMUtils.clickNode(this, viewCore, "select");
         assertTrue("The select popup did not show up on click.",
                 CriteriaHelper.pollForCriteria(new PopupShowingCriteria()));
 
@@ -72,7 +73,7 @@ public class SelectPopupOtherContentViewTest extends ChromeShellTestBase {
                 WindowAndroid windowAndroid = new ActivityWindowAndroid(getActivity());
                 ContentView contentView = ContentView.newInstance(
                         getActivity(), nativeWebContents, windowAndroid);
-                contentView.destroy();
+                contentView.getContentViewCore().destroy();
             }
         });
 
@@ -81,6 +82,6 @@ public class SelectPopupOtherContentViewTest extends ChromeShellTestBase {
 
         // The popup should still be shown.
         assertNotNull("The select popup got hidden by destroying of unrelated ContentViewCore.",
-                view.getContentViewCore().getSelectPopupForTest());
+                viewCore.getSelectPopupForTest());
     }
 }

@@ -31,11 +31,14 @@ void GetServiceWorkerRegistrationStatusResponse(
       *error_type = WebServiceWorkerError::ActivateError;
       return;
 
+    case SERVICE_WORKER_ERROR_NOT_FOUND:
+      *error_type = WebServiceWorkerError::NotFoundError;
+      return;
+
     case SERVICE_WORKER_ERROR_ABORT:
     case SERVICE_WORKER_ERROR_IPC_FAILED:
     case SERVICE_WORKER_ERROR_FAILED:
     case SERVICE_WORKER_ERROR_PROCESS_NOT_FOUND:
-    case SERVICE_WORKER_ERROR_NOT_FOUND:
     case SERVICE_WORKER_ERROR_EXISTS:
       // Unexpected, or should have bailed out before calling this, or we don't
       // have a corresponding blink error code yet.

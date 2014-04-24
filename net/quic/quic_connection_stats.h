@@ -9,19 +9,9 @@
 
 #include "base/basictypes.h"
 #include "net/base/net_export.h"
+#include "net/quic/quic_time.h"
 
 namespace net {
-// TODO(satyamshekhar): Add more interesting stats:
-// 1. (C/S)HLO retransmission count.
-// 2. SHLO received to first stream packet processed time.
-// 3. CHLO sent to SHLO received time.
-// 4. Number of migrations.
-// 5. Number of out of order packets.
-// 6. Number of connections that require more that 1-RTT.
-// 7. Avg number of streams / session.
-// 8. Number of duplicates received.
-// 9. Fraction of data transferred that was padding.
-
 // Structure to hold stats for a QuicConnection.
 struct NET_EXPORT_PRIVATE QuicConnectionStats {
   QuicConnectionStats();
@@ -41,25 +31,45 @@ struct NET_EXPORT_PRIVATE QuicConnectionStats {
   uint64 bytes_retransmitted;
   uint32 packets_retransmitted;
 
+  uint64 bytes_spuriously_retransmitted;
   uint32 packets_spuriously_retransmitted;
   uint32 packets_lost;
+  uint32 slowstart_packets_lost;  // Number of packets lost exiting slow start.
 
   uint32 packets_revived;
   uint32 packets_dropped;  // duplicate or less than least unacked.
   uint32 crypto_retransmit_count;
-  uint32 loss_timeout_count;  // Count of times the loss detection alarm fired.
+  // Count of times the loss detection alarm fired.  At least one packet should
+  // be lost when the alarm fires.
+  uint32 loss_timeout_count;
   uint32 tlp_count;
-  uint32 rto_count;
+  uint32 rto_count;  // Count of times the rto timer fired.
 
-  uint32 rtt;  // In microseconds
-  uint64 estimated_bandwidth;
+  uint32 min_rtt_us;  // Minimum RTT in microseconds.
+  uint32 srtt_us;  // Smoothed RTT in microseconds.
+  uint32 max_packet_size;  // In bytes.
+  uint64 estimated_bandwidth;  // In bytes per second.
+  uint32 congestion_window;  // In bytes
+
+  // Reordering stats for received packets.
+  // Number of packets received out of sequence number order.
+  uint32 packets_reordered;
+  // Maximum reordering observed in sequence space.
+  uint32 max_sequence_reordering;
+  // Maximum reordering observed in microseconds
+  uint32 max_time_reordering_us;
 
   // The following stats are used only in TcpCubicSender.
+  // The number of loss events from TCP's perspective.  Each loss event includes
+  // one or more lost packets.
+  uint32 tcp_loss_events;
   // Total amount of cwnd increase by TCPCubic in congestion avoidance.
   uint32 cwnd_increase_congestion_avoidance;
   // Total amount of cwnd increase by TCPCubic in cubic mode.
   uint32 cwnd_increase_cubic_mode;
-  // TODO(satyamshekhar): Add window_size, mss and mtu.
+
+  // Creation time, as reported by the QuicClock.
+  QuicTime connection_creation_time;
 };
 
 }  // namespace net

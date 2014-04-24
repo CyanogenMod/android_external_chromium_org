@@ -109,12 +109,12 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_base_ui_base_gyp,,,$(GYP_VAR_PREFIX))/ui_base_ui_base_gyp.a \
 	$(call intermediates-dir-for,GYP,ui_resources_ui_resources_gyp,,,$(GYP_VAR_PREFIX))/ui_resources.stamp \
 	$(call intermediates-dir-for,GYP,ui_base_strings_ui_strings_gyp,,,$(GYP_VAR_PREFIX))/ui_strings.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_events_events_gyp,,,$(GYP_VAR_PREFIX))/ui_events_events_gyp.a \
 	$(call intermediates-dir-for,GYP,ui_base_ui_base_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/ui_base_jni_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_shell_dialogs_shell_dialogs_gyp,,,$(GYP_VAR_PREFIX))/ui_shell_dialogs_shell_dialogs_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp,,,$(GYP_VAR_PREFIX))/content_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gles2_c_lib_gyp,,,$(GYP_VAR_PREFIX))/gpu_gles2_c_lib_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gles2_implementation_gyp,,,$(GYP_VAR_PREFIX))/gpu_gles2_implementation_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gl_in_process_context_gyp,,,$(GYP_VAR_PREFIX))/gpu_gl_in_process_context_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_skia_bindings_gpu_skia_bindings_gyp,,,$(GYP_VAR_PREFIX))/gpu_skia_bindings_gpu_skia_bindings_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_environment_chromium_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_environment_chromium_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_common_lib_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_common_lib_gyp.a \
@@ -218,6 +218,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_frontend_protocol_sources_gyp,,,$(GYP_VAR_PREFIX))/frontend_protocol_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_devtools_console_js_gyp,,,$(GYP_VAR_PREFIX))/concatenated_devtools_console_js.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_devtools_search_js_gyp,,,$(GYP_VAR_PREFIX))/concatenated_devtools_search_js.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_devtools_devices_js_gyp,,,$(GYP_VAR_PREFIX))/concatenated_devtools_devices_js.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_devtools_elements_js_gyp,,,$(GYP_VAR_PREFIX))/concatenated_devtools_elements_js.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_devtools_resources_js_gyp,,,$(GYP_VAR_PREFIX))/concatenated_devtools_resources_js.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_devtools_network_js_gyp,,,$(GYP_VAR_PREFIX))/concatenated_devtools_network_js.stamp \
@@ -556,7 +557,6 @@ LOCAL_LDFLAGS_Debug := \
 	-Wl,--exclude-libs=ALL \
 	-Wl,--icf=safe \
 	-Wl,-shared,-Bsymbolic \
-	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed
@@ -644,10 +644,10 @@ LOCAL_STATIC_LIBRARIES := \
 	ui_accessibility_ax_gen_gyp \
 	tools_json_schema_compiler_api_gen_util_gyp \
 	ui_base_ui_base_gyp \
-	ui_events_events_gyp \
 	ui_shell_dialogs_shell_dialogs_gyp \
 	gpu_gles2_c_lib_gyp \
 	gpu_gles2_implementation_gyp \
+	gpu_gl_in_process_context_gyp \
 	gpu_skia_bindings_gpu_skia_bindings_gyp \
 	mojo_mojo_environment_chromium_gyp \
 	mojo_mojo_common_lib_gyp \

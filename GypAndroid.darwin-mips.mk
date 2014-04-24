@@ -75,6 +75,7 @@ include $(LOCAL_PATH)/gpu/command_buffer_client.target.darwin-mips.mk
 include $(LOCAL_PATH)/gpu/command_buffer_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/gpu/command_buffer_service.target.darwin-mips.mk
 include $(LOCAL_PATH)/gpu/disk_cache_proto.target.darwin-mips.mk
+include $(LOCAL_PATH)/gpu/gl_in_process_context.target.darwin-mips.mk
 include $(LOCAL_PATH)/gpu/gles2_c_lib.target.darwin-mips.mk
 include $(LOCAL_PATH)/gpu/gles2_cmd_helper.target.darwin-mips.mk
 include $(LOCAL_PATH)/gpu/gles2_implementation.target.darwin-mips.mk
@@ -148,6 +149,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_a
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_codemirror_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_console_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_css.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_devices_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_elements_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_extensions_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_js.target.darwin-mips.mk
@@ -284,7 +286,6 @@ include $(LOCAL_PATH)/ui/base/strings/ui_strings.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/base/ui_base.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/base/ui_base_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/events/dom4_keycode_converter.target.darwin-mips.mk
-include $(LOCAL_PATH)/ui/events/events.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/events/events_base.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/events/gesture_detection.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/gfx/gfx.target.darwin-mips.mk

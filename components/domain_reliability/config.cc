@@ -83,7 +83,7 @@ DomainReliabilityConfig::~DomainReliabilityConfig() {}
 // static
 scoped_ptr<const DomainReliabilityConfig> DomainReliabilityConfig::FromJSON(
     const base::StringPiece& json) {
-  base::Value* value = base::JSONReader::Read(json);
+  scoped_ptr<base::Value> value(base::JSONReader::Read(json));
   if (!value)
     return scoped_ptr<const DomainReliabilityConfig>();
 
@@ -100,8 +100,8 @@ scoped_ptr<const DomainReliabilityConfig> DomainReliabilityConfig::FromJSON(
 }
 
 bool DomainReliabilityConfig::IsValid() const {
-  if (valid_until == 0.0 || domain.empty() || resources.empty() ||
-      collectors.empty()) {
+  if (valid_until == 0.0 || domain.empty() || version.empty() ||
+      resources.empty() || collectors.empty()) {
     return false;
   }
 
@@ -119,7 +119,8 @@ bool DomainReliabilityConfig::IsValid() const {
 }
 
 bool DomainReliabilityConfig::IsExpired(base::Time now) const {
-  return now < base::Time::FromDoubleT(valid_until);
+  base::Time valid_until_time = base::Time::FromDoubleT(valid_until);
+  return now > valid_until_time;
 }
 
 int DomainReliabilityConfig::GetResourceIndexForUrl(const GURL& url) const {

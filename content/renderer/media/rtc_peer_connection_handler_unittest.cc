@@ -190,7 +190,8 @@ class RTCPeerConnectionHandlerUnderTest : public RTCPeerConnectionHandler {
   }
 
   MockPeerConnectionImpl* native_peer_connection() {
-    return static_cast<MockPeerConnectionImpl*>(native_peer_connection_.get());
+    return static_cast<MockPeerConnectionImpl*>(
+        RTCPeerConnectionHandler::native_peer_connection());
   }
 };
 
@@ -231,10 +232,8 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
                             blink::WebMediaStreamSource::TypeVideo,
                             blink::WebString::fromUTF8("video_track"));
     MockMediaStreamVideoSource* native_video_source =
-        new MockMediaStreamVideoSource(mock_dependency_factory_.get(),
-                                       false);
+        new MockMediaStreamVideoSource(false);
     video_source.setExtraData(native_video_source);
-
 
     blink::WebVector<blink::WebMediaStreamTrack> audio_tracks(
         static_cast<size_t>(1));
@@ -250,16 +249,13 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
     constraints.initialize();
     video_tracks[0] = MediaStreamVideoTrack::CreateVideoTrack(
         native_video_source, constraints,
-        MediaStreamVideoSource::ConstraintsCallback(), true,
-        mock_dependency_factory_.get());
+        MediaStreamVideoSource::ConstraintsCallback(), true);
 
     blink::WebMediaStream local_stream;
     local_stream.initialize(base::UTF8ToUTF16(stream_label), audio_tracks,
                             video_tracks);
     local_stream.setExtraData(
-        new MediaStream(mock_dependency_factory_.get(),
-                        MediaStream::StreamStopCallback(),
-                        local_stream));
+        new MediaStream(local_stream));
     return local_stream;
   }
 
@@ -421,6 +417,8 @@ TEST_F(RTCPeerConnectionHandlerTest, addAndRemoveStream) {
       mock_peer_connection_->local_streams()->at(0)->GetAudioTracks().size());
   EXPECT_EQ(1u,
       mock_peer_connection_->local_streams()->at(0)->GetVideoTracks().size());
+
+  EXPECT_FALSE(pc_handler_->addStream(local_stream, constraints));
 
   pc_handler_->removeStream(local_stream);
   EXPECT_EQ(0u, mock_peer_connection_->local_streams()->count());

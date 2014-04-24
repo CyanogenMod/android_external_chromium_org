@@ -57,6 +57,22 @@
       ],
     },
     {
+      'target_name': 'sandbox_linux_test_utils',
+      'type': 'static_library',
+      'dependencies': [
+        '../testing/gtest.gyp:gtest',
+      ],
+      'include_dirs': [
+        '../..',
+      ],
+      'sources': [
+        'tests/test_utils.cc',
+        'tests/test_utils.h',
+        'tests/unit_tests.cc',
+        'tests/unit_tests.h',
+      ],
+    },
+    {
       # The main sandboxing test target.
       'target_name': 'sandbox_linux_unittests',
       'includes': [
@@ -294,10 +310,6 @@
         'type': 'none',
         'variables': {
           'test_suite_name': 'sandbox_linux_jni_unittests',
-          'input_shlib_path':
-              '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)'
-              'sandbox_linux_jni_unittests'
-              '<(SHARED_LIB_SUFFIX)',
         },
         'dependencies': [
           'sandbox_linux_jni_unittests',

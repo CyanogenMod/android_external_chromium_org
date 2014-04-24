@@ -7,6 +7,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
@@ -16,7 +17,7 @@
 #include "chrome/browser/ui/views/profiles/avatar_label.h"
 #include "chrome/browser/ui/views/profiles/avatar_menu_button.h"
 #include "chrome/browser/ui/views/profiles/new_avatar_button.h"
-#include "chrome/common/profile_management_switches.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -91,7 +92,8 @@ void BrowserNonClientFrameView::UpdateAvatarInfo() {
   base::string16 text;
   bool is_rectangle = false;
   if (browser_view_->IsGuestSession()) {
-    avatar = rb.GetImageNamed(browser_view_->GetGuestIconResourceID());
+    avatar = rb.
+        GetImageNamed(profiles::GetPlaceholderAvatarIconResourceID());
   } else if (browser_view_->IsOffTheRecord()) {
     avatar = rb.GetImageNamed(browser_view_->GetOTRIconResourceID());
     // TODO(nkostylev): Allow this on ChromeOS once the ChromeOS test

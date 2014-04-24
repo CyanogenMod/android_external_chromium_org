@@ -39,6 +39,8 @@ class AndroidTemperatureMonitor(power_monitor.PowerMonitor):
     # Take the current temperature as average based on the assumption that the
     # temperature changes slowly during measurement time.
     average_temperature = self._GetBoardTemperatureCelsius()
+    if average_temperature is None:
+      return power_data
 
     # Insert temperature into the appropriate position in the dictionary
     # returned by StopMonitoringPower() creating appropriate sub-dictionaries on
@@ -57,5 +59,7 @@ class AndroidTemperatureMonitor(power_monitor.PowerMonitor):
 
   def _GetBoardTemperatureCelsius(self):
     contents = self._adb.GetFileContents(_TEMPERATURE_FILE)
-    return float(contents[0])
+    if len(contents) > 0:
+      return float(contents[0])
+    return None
 

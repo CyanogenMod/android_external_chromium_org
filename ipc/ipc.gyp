@@ -62,11 +62,6 @@
         'unix_domain_socket_util_unittest.cc',
       ],
       'conditions': [
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
-          ],
-        }],
         ['OS == "win" or OS == "ios"', {
           'sources!': [
             'unix_domain_socket_util_unittest.cc',
@@ -111,11 +106,6 @@
         'ipc_test_base.h',
       ],
       'conditions': [
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
-          ],
-        }],
         ['OS == "android" and gtest_target_type == "shared_library"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
@@ -192,7 +182,6 @@
           ],
           'variables': {
             'test_suite_name': 'ipc_tests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)ipc_tests<(SHARED_LIB_SUFFIX)',
           },
           'includes': [ '../build/apk_test.gypi' ],
         },
@@ -204,7 +193,6 @@
           ],
           'variables': {
             'test_suite_name': 'ipc_perftests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)ipc_perftests<(SHARED_LIB_SUFFIX)',
           },
           'includes': [ '../build/apk_test.gypi' ],
         }],

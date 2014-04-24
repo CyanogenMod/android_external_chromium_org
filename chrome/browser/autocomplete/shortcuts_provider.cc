@@ -49,6 +49,8 @@ class DestinationURLEqualsURL {
 
 }  // namespace
 
+const int ShortcutsProvider::kShortcutsProviderDefaultMaxRelevance = 1199;
+
 ShortcutsProvider::ShortcutsProvider(AutocompleteProviderListener* listener,
                                      Profile* profile)
     : AutocompleteProvider(listener, profile,
@@ -145,7 +147,7 @@ void ShortcutsProvider::GetMatches(const AutocompleteInput& input) {
   int max_relevance;
   if (!OmniboxFieldTrial::ShortcutsScoringMaxRelevance(
       input.current_page_classification(), &max_relevance))
-    max_relevance = 1199;
+    max_relevance = kShortcutsProviderDefaultMaxRelevance;
 
   for (ShortcutsBackend::ShortcutMap::const_iterator it =
            FindFirstMatch(term_string, backend.get());
@@ -159,9 +161,9 @@ void ShortcutsProvider::GetMatches(const AutocompleteInput& input) {
       matches_.back().ComputeStrippedDestinationURL(profile_);
     }
   }
-  // Remove duplicates.
-  // TODO(hfung): Check whether the false below, which does not store duplicates
-  // in the matches, is correct.
+  // Remove duplicates.  Duplicates don't need to be preserved in the matches
+  // because they are only used for deletions, and shortcuts deletes matches
+  // based on the URL.
   AutocompleteResult::DedupMatchesByDestination(
       input.current_page_classification(), false, &matches_);
   // Find best matches.
@@ -216,11 +218,11 @@ AutocompleteMatch ShortcutsProvider::ShortcutToACMatch(
   // If the match is a search query this is easy: simply check whether the
   // user text is a prefix of the query.  If the match is a navigation, we
   // assume the fill_into_edit looks something like a URL, so we use
-  // URLPrefix::ComputeMatchStartAndInlineAutocompleteOffset() to try and strip
-  // off any prefixes that the user might not think would change the meaning,
-  // but would otherwise prevent inline autocompletion.  This allows, for
-  // example, the input of "foo.c" to autocomplete to "foo.com" for a
-  // fill_into_edit of "http://foo.com".
+  // URLPrefix::GetInlineAutocompleteOffset() to try and strip off any prefixes
+  // that the user might not think would change the meaning, but would
+  // otherwise prevent inline autocompletion.  This allows, for example, the
+  // input of "foo.c" to autocomplete to "foo.com" for a fill_into_edit of
+  // "http://foo.com".
   if (AutocompleteMatch::IsSearchType(match.type)) {
     if (StartsWith(match.fill_into_edit, input.text(), false)) {
       match.inline_autocompletion =
@@ -230,10 +232,9 @@ AutocompleteMatch ShortcutsProvider::ShortcutToACMatch(
           match.inline_autocompletion.empty();
     }
   } else {
-    size_t match_start, inline_autocomplete_offset;
-    URLPrefix::ComputeMatchStartAndInlineAutocompleteOffset(
-        input, fixed_up_input, true, match.fill_into_edit,
-        &match_start, &inline_autocomplete_offset);
+    const size_t inline_autocomplete_offset =
+        URLPrefix::GetInlineAutocompleteOffset(
+            input, fixed_up_input, true, match.fill_into_edit);
     if (inline_autocomplete_offset != base::string16::npos) {
       match.inline_autocompletion =
           match.fill_into_edit.substr(inline_autocomplete_offset);

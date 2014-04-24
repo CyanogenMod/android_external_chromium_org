@@ -13,14 +13,14 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../events/events.gyp:events',
-        '../wm/wm.gyp:wm_core',
+        '../wm/wm.gyp:wm',
       ],
       'defines': [
         'UI_CHROMEOS_IMPLEMENTATION',
       ],
       'sources': [
-        'user_activity_notifier.cc',
-        'user_activity_notifier.h',
+        'user_activity_power_manager_notifier.cc',
+        'user_activity_power_manager_notifier.h',
       ],
     },
   ],

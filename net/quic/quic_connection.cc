@@ -75,6 +75,8 @@ class AckAlarm : public QuicAlarm::Delegate {
 
  private:
   QuicConnection* connection_;
+
+  DISALLOW_COPY_AND_ASSIGN(AckAlarm);
 };
 
 // This alarm will be scheduled any time a data-bearing packet is sent out.
@@ -93,6 +95,8 @@ class RetransmissionAlarm : public QuicAlarm::Delegate {
 
  private:
   QuicConnection* connection_;
+
+  DISALLOW_COPY_AND_ASSIGN(RetransmissionAlarm);
 };
 
 // An alarm that is scheduled when the sent scheduler requires a
@@ -111,6 +115,8 @@ class SendAlarm : public QuicAlarm::Delegate {
 
  private:
   QuicConnection* connection_;
+
+  DISALLOW_COPY_AND_ASSIGN(SendAlarm);
 };
 
 class TimeoutAlarm : public QuicAlarm::Delegate {
@@ -127,6 +133,25 @@ class TimeoutAlarm : public QuicAlarm::Delegate {
 
  private:
   QuicConnection* connection_;
+
+  DISALLOW_COPY_AND_ASSIGN(TimeoutAlarm);
+};
+
+class PingAlarm : public QuicAlarm::Delegate {
+ public:
+  explicit PingAlarm(QuicConnection* connection)
+      : connection_(connection) {
+  }
+
+  virtual QuicTime OnAlarm() OVERRIDE {
+    connection_->SendPing();
+    return QuicTime::Zero();
+  }
+
+ private:
+  QuicConnection* connection_;
+
+  DISALLOW_COPY_AND_ASSIGN(PingAlarm);
 };
 
 QuicConnection::PacketType GetPacketType(
@@ -182,7 +207,8 @@ QuicConnection::QuicConnection(QuicConnectionId connection_id,
       largest_seen_packet_with_stop_waiting_(0),
       pending_version_negotiation_packet_(false),
       received_packet_manager_(
-          FLAGS_quic_congestion_control_inter_arrival ? kInterArrival : kTCP),
+          FLAGS_quic_congestion_control_inter_arrival ? kInterArrival : kTCP,
+          &stats_),
       ack_queued_(false),
       stop_waiting_count_(0),
       ack_alarm_(helper->CreateAlarm(new AckAlarm(this))),
@@ -190,13 +216,13 @@ QuicConnection::QuicConnection(QuicConnectionId connection_id,
       send_alarm_(helper->CreateAlarm(new SendAlarm(this))),
       resume_writes_alarm_(helper->CreateAlarm(new SendAlarm(this))),
       timeout_alarm_(helper->CreateAlarm(new TimeoutAlarm(this))),
+      ping_alarm_(helper->CreateAlarm(new PingAlarm(this))),
       debug_visitor_(NULL),
       packet_creator_(connection_id_, &framer_, random_generator_, is_server),
       packet_generator_(this, NULL, &packet_creator_),
       idle_network_timeout_(
           QuicTime::Delta::FromSeconds(kDefaultInitialTimeoutSecs)),
       overall_connection_timeout_(QuicTime::Delta::Infinite()),
-      creation_time_(clock_->ApproximateNow()),
       time_of_last_received_packet_(clock_->ApproximateNow()),
       time_of_last_sent_new_packet_(clock_->ApproximateNow()),
       sequence_number_of_last_sent_packet_(0),
@@ -226,6 +252,7 @@ QuicConnection::QuicConnection(QuicConnectionId connection_id,
   timeout_alarm_->Set(clock_->ApproximateNow().Add(idle_network_timeout_));
   framer_.set_visitor(this);
   framer_.set_received_entropy_calculator(&received_packet_manager_);
+  stats_.connection_creation_time = clock_->ApproximateNow();
 }
 
 QuicConnection::~QuicConnection() {
@@ -238,7 +265,6 @@ QuicConnection::~QuicConnection() {
 }
 
 void QuicConnection::SetFromConfig(const QuicConfig& config) {
-  DCHECK_LT(0u, config.server_initial_congestion_window());
   SetIdleNetworkTimeout(config.idle_connection_state_lifetime());
   sent_packet_manager_.SetFromConfig(config);
   // TODO(satyamshekhar): Set congestion control and ICSL also.
@@ -573,6 +599,14 @@ bool QuicConnection::OnStopWaitingFrame(const QuicStopWaitingFrame& frame) {
 
   last_stop_waiting_frames_.push_back(frame);
   return connected_;
+}
+
+bool QuicConnection::OnPingFrame(const QuicPingFrame& frame) {
+  DCHECK(connected_);
+  if (debug_visitor_) {
+    debug_visitor_->OnPingFrame(frame);
+  }
+  return true;
 }
 
 bool QuicConnection::ValidateAckFrame(const QuicAckFrame& incoming_ack) {
@@ -984,8 +1018,8 @@ void QuicConnection::SendRstStream(QuicStreamId id,
                                    QuicStreamOffset bytes_written) {
   // Opportunistically bundle an ack with this outgoing packet.
   ScopedPacketBundler ack_bundler(this, BUNDLE_PENDING_ACK);
-  packet_generator_.AddControlFrame(
-      QuicFrame(new QuicRstStreamFrame(id, error, bytes_written)));
+  packet_generator_.AddControlFrame(QuicFrame(new QuicRstStreamFrame(
+      id, AdjustErrorForVersion(error, version()), bytes_written)));
 }
 
 void QuicConnection::SendWindowUpdate(QuicStreamId id,
@@ -1004,9 +1038,14 @@ void QuicConnection::SendBlocked(QuicStreamId id) {
 
 const QuicConnectionStats& QuicConnection::GetStats() {
   // Update rtt and estimated bandwidth.
-  stats_.rtt = sent_packet_manager_.SmoothedRtt().ToMicroseconds();
+  stats_.min_rtt_us =
+      sent_packet_manager_.GetRttStats()->min_rtt().ToMicroseconds();
+  stats_.srtt_us =
+      sent_packet_manager_.GetRttStats()->SmoothedRtt().ToMicroseconds();
   stats_.estimated_bandwidth =
       sent_packet_manager_.BandwidthEstimate().ToBytesPerSecond();
+  stats_.congestion_window = sent_packet_manager_.GetCongestionWindow();
+  stats_.max_packet_size = options()->max_packet_length;
   return stats_;
 }
 
@@ -1054,6 +1093,7 @@ void QuicConnection::ProcessUdpPacket(const IPEndPoint& self_address,
   MaybeProcessUndecryptablePackets();
   MaybeProcessRevivedPacket();
   MaybeSendInResponseToPacket();
+  SetPingAlarm();
 }
 
 void QuicConnection::OnCanWrite() {
@@ -1403,6 +1443,7 @@ bool QuicConnection::OnPacketSent(WriteResult result) {
   if (transmission_type == NOT_RETRANSMISSION) {
     time_of_last_sent_new_packet_ = now;
   }
+  SetPingAlarm();
   DVLOG(1) << ENDPOINT << "time of last sent packet: "
            << now.ToDebuggingValue();
 
@@ -1410,8 +1451,7 @@ bool QuicConnection::OnPacketSent(WriteResult result) {
   // options by a more explicit API than setting a struct value directly.
   packet_creator_.UpdateSequenceNumberLength(
       received_packet_manager_.least_packet_awaited_by_peer(),
-      sent_packet_manager_.BandwidthEstimate().ToBytesPerPeriod(
-          sent_packet_manager_.SmoothedRtt()));
+      sent_packet_manager_.GetCongestionWindow());
 
   bool reset_retransmission_alarm =
       sent_packet_manager_.OnPacketSent(sequence_number, now, length,
@@ -1477,6 +1517,26 @@ void QuicConnection::UpdateStopWaiting(QuicStopWaitingFrame* stop_waiting) {
   stop_waiting->least_unacked = GetLeastUnacked();
   stop_waiting->entropy_hash = sent_entropy_manager_.EntropyHash(
       stop_waiting->least_unacked - 1);
+}
+
+void QuicConnection::SendPing() {
+  if (retransmission_alarm_->IsSet()) {
+    return;
+  }
+  if (version() <= QUIC_VERSION_17) {
+    // TODO(rch): remove this when we remove version 17.
+    // This is a horrible hideous hack which we should not support.
+    IOVector data;
+    char c_data[] = "C";
+    data.Append(c_data, 1);
+    QuicConsumedData consumed_data =
+        packet_generator_.ConsumeData(kCryptoStreamId, data, 0, false, NULL);
+    if (consumed_data.bytes_consumed == 0) {
+      DLOG(ERROR) << "Unable to send ping!?";
+    }
+  } else {
+    packet_generator_.AddControlFrame(QuicFrame(new QuicPingFrame));
+  }
 }
 
 void QuicConnection::SendAck() {
@@ -1586,8 +1646,12 @@ void QuicConnection::MaybeProcessRevivedPacket() {
   char revived_payload[kMaxPacketSize];
   size_t len = group->Revive(&revived_header, revived_payload, kMaxPacketSize);
   revived_header.public_header.connection_id = connection_id_;
+  revived_header.public_header.connection_id_length =
+      last_header_.public_header.connection_id_length;
   revived_header.public_header.version_flag = false;
   revived_header.public_header.reset_flag = false;
+  revived_header.public_header.sequence_number_length =
+      last_header_.public_header.sequence_number_length;
   revived_header.fec_flag = false;
   revived_header.is_in_fec_group = NOT_IN_FEC_GROUP;
   revived_header.fec_group = 0;
@@ -1775,7 +1839,8 @@ bool QuicConnection::CheckForTimeout() {
   QuicTime::Delta timeout = idle_network_timeout_.Subtract(delta);
 
   if (!overall_connection_timeout_.IsInfinite()) {
-    QuicTime::Delta connected_time = now.Subtract(creation_time_);
+    QuicTime::Delta connected_time =
+        now.Subtract(stats_.connection_creation_time);
     DVLOG(1) << ENDPOINT << "connection time: "
              << connected_time.ToMilliseconds() << " overall timeout: "
              << overall_connection_timeout_.ToMilliseconds();
@@ -1797,6 +1862,20 @@ bool QuicConnection::CheckForTimeout() {
   timeout_alarm_->Cancel();
   timeout_alarm_->Set(clock_->ApproximateNow().Add(timeout));
   return false;
+}
+
+void QuicConnection::SetPingAlarm() {
+  if (is_server_) {
+    // Only clients send pings.
+    return;
+  }
+  ping_alarm_->Cancel();
+  if (!visitor_->HasOpenDataStreams()) {
+    // Don't send a ping unless there are open streams.
+    return;
+  }
+  QuicTime::Delta ping_timeout = QuicTime::Delta::FromSeconds(kPingTimeoutSecs);
+  ping_alarm_->Set(clock_->ApproximateNow().Add(ping_timeout));
 }
 
 QuicConnection::ScopedPacketBundler::ScopedPacketBundler(

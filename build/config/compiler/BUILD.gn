@@ -43,11 +43,13 @@ config("compiler") {
     # --------------------------------
     cflags += [
       "-fno-strict-aliasing",  # See http://crbug.com/32204
-      "-fvisibility=hidden",
     ]
     cflags_cc += [
       "-fno-exceptions",
       "-fno-threadsafe-statics",
+      # Not exporting C++ inline functions can generally be applied anywhere
+      # so we do so here. Normal function visibility is controlled by
+      # //build/config/gcc:symbol_visibility_hidden.
       "-fvisibility-inlines-hidden",
     ]
 
@@ -300,8 +302,6 @@ config("runtime_library") {
       "_CRT_RAND_S",
       "_CRT_SECURE_NO_DEPRECATE",
       "_SCL_SECURE_NO_DEPRECATE",
-      "_UNICODE",
-      "UNICODE",
     ]
   }
 
@@ -517,12 +517,8 @@ config("default_warnings") {
       ]
     }
 
-    # TODO(brettw) Ones below here should be clang-only when we have a flag
-    # for it.
     if (is_clang) {
       cflags += [
-        "-Wheader-hygiene",
-
         # This warns on using ints as initializers for floats in
         # initializer lists (e.g. |int a = f(); CGSize s = { a, a };|),
         # which happens in several places in chrome code. Not sure if
@@ -545,9 +541,6 @@ config("default_warnings") {
 
         # Clang spots more unused functions.
         "-Wno-unused-function",
-
-        # Warns when a const char[] is converted to bool.
-        "-Wstring-conversion",
       ]
     }
 

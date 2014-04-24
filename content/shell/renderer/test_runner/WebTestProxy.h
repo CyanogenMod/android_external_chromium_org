@@ -22,13 +22,13 @@
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebHistoryCommitType.h"
 #include "third_party/WebKit/public/web/WebIconURL.h"
-// TODO(dcheng): Temporary. Delete once forward declarable.
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebNavigationType.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebTextAffinity.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
+
+class SkCanvas;
 
 namespace blink {
 class WebAXObject;
@@ -41,6 +41,7 @@ class WebDragData;
 class WebFileChooserCompletion;
 class WebFrame;
 class WebImage;
+class WebLocalFrame;
 class WebMIDIAccessor;
 class WebMIDIAccessorClient;
 class WebMIDIClient;
@@ -71,27 +72,24 @@ struct WebWindowFeatures;
 typedef unsigned WebColor;
 }
 
-namespace content {
-class RenderFrame;
-}
-
-class SkCanvas;
-
 namespace WebTestRunner {
-
 class MockWebSpeechInputController;
 class MockWebSpeechRecognizer;
 class SpellCheckClient;
 class TestInterfaces;
 class WebTestDelegate;
 class WebTestInterfaces;
-class WebTestRunner;
 class WebUserMediaClientMock;
+}
+
+namespace content {
+
+class RenderFrame;
 
 class WebTestProxyBase {
 public:
-    void setInterfaces(WebTestInterfaces*);
-    void setDelegate(WebTestDelegate*);
+    void setInterfaces(WebTestRunner::WebTestInterfaces*);
+    void setDelegate(WebTestRunner::WebTestDelegate*);
     void setWidget(blink::WebWidget*);
 
     void reset();
@@ -121,10 +119,10 @@ public:
     void discardBackingStore();
 
     blink::WebMIDIClientMock* midiClientMock();
-    MockWebSpeechInputController* speechInputControllerMock();
-    MockWebSpeechRecognizer* speechRecognizerMock();
+    WebTestRunner::MockWebSpeechInputController* speechInputControllerMock();
+    WebTestRunner::MockWebSpeechRecognizer* speechRecognizerMock();
 
-    WebTaskList* taskList() { return &m_taskList; }
+    WebTestRunner::WebTaskList* taskList() { return &m_taskList; }
 
     blink::WebView* webView();
 
@@ -201,14 +199,14 @@ private:
 
     blink::WebWidget* webWidget();
 
-    TestInterfaces* m_testInterfaces;
-    WebTestDelegate* m_delegate;
+    WebTestRunner::TestInterfaces* m_testInterfaces;
+    ::WebTestRunner::WebTestDelegate* m_delegate;
     blink::WebWidget* m_webWidget;
 
-    WebTaskList m_taskList;
+    WebTestRunner::WebTaskList m_taskList;
 
-    scoped_ptr<SpellCheckClient> m_spellcheck;
-    scoped_ptr<WebUserMediaClientMock> m_userMediaClient;
+    scoped_ptr<WebTestRunner::SpellCheckClient> m_spellcheck;
+    scoped_ptr<WebTestRunner::WebUserMediaClientMock> m_userMediaClient;
 
     // Painting.
     scoped_ptr<SkCanvas> m_canvas;
@@ -222,8 +220,9 @@ private:
     int m_chooserCount;
 
     scoped_ptr<blink::WebMIDIClientMock> m_midiClient;
-    scoped_ptr<MockWebSpeechRecognizer> m_speechRecognizer;
-    scoped_ptr<MockWebSpeechInputController> m_speechInputController;
+    scoped_ptr<WebTestRunner::MockWebSpeechRecognizer> m_speechRecognizer;
+    scoped_ptr<WebTestRunner::MockWebSpeechInputController>
+        m_speechInputController;
 
 private:
     DISALLOW_COPY_AND_ASSIGN(WebTestProxyBase);
@@ -311,10 +310,6 @@ public:
     {
         WebTestProxyBase::printPage(frame);
     }
-    virtual blink::WebNotificationPresenter* notificationPresenter()
-    {
-        return WebTestProxyBase::notificationPresenter();
-    }
     virtual blink::WebMIDIClient* webMIDIClient()
     {
         return WebTestProxyBase::webMIDIClient();
@@ -358,90 +353,6 @@ public:
     {
         WebTestProxyBase::resetInputMethod();
     }
-
-    virtual void didReceiveServerRedirectForProvisionalLoad(blink::WebLocalFrame* frame)
-    {
-        WebTestProxyBase::didReceiveServerRedirectForProvisionalLoad(frame);
-        Base::didReceiveServerRedirectForProvisionalLoad(frame);
-    }
-    virtual void didFailProvisionalLoad(blink::WebLocalFrame* frame, const blink::WebURLError& error)
-    {
-        // If the test finished, don't notify the embedder of the failed load,
-        // as we already destroyed the document loader.
-        if (WebTestProxyBase::didFailProvisionalLoad(frame, error))
-            return;
-        Base::didFailProvisionalLoad(frame, error);
-    }
-    virtual void didReceiveTitle(blink::WebLocalFrame* frame, const blink::WebString& title, blink::WebTextDirection direction)
-    {
-        WebTestProxyBase::didReceiveTitle(frame, title, direction);
-        Base::didReceiveTitle(frame, title, direction);
-    }
-    virtual void didChangeIcon(blink::WebLocalFrame* frame, blink::WebIconURL::Type iconType)
-    {
-        WebTestProxyBase::didChangeIcon(frame, iconType);
-        Base::didChangeIcon(frame, iconType);
-    }
-    virtual void didFinishDocumentLoad(blink::WebLocalFrame* frame)
-    {
-        WebTestProxyBase::didFinishDocumentLoad(frame);
-        Base::didFinishDocumentLoad(frame);
-    }
-    virtual void didHandleOnloadEvents(blink::WebLocalFrame* frame)
-    {
-        WebTestProxyBase::didHandleOnloadEvents(frame);
-        Base::didHandleOnloadEvents(frame);
-    }
-    virtual void didFailLoad(blink::WebLocalFrame* frame, const blink::WebURLError& error)
-    {
-        WebTestProxyBase::didFailLoad(frame, error);
-        Base::didFailLoad(frame, error);
-    }
-    virtual void didFinishLoad(blink::WebLocalFrame* frame)
-    {
-        WebTestProxyBase::didFinishLoad(frame);
-        Base::didFinishLoad(frame);
-    }
-    virtual void didDetectXSS(blink::WebLocalFrame* frame, const blink::WebURL& insecureURL, bool didBlockEntirePage)
-    {
-        WebTestProxyBase::didDetectXSS(frame, insecureURL, didBlockEntirePage);
-        Base::didDetectXSS(frame, insecureURL, didBlockEntirePage);
-    }
-    virtual void willRequestResource(blink::WebLocalFrame* frame, const blink::WebCachedURLRequest& request)
-    {
-        WebTestProxyBase::willRequestResource(frame, request);
-        Base::willRequestResource(frame, request);
-    }
-    virtual void willSendRequest(blink::WebLocalFrame* frame, unsigned identifier, blink::WebURLRequest& request, const blink::WebURLResponse& redirectResponse)
-    {
-        WebTestProxyBase::willSendRequest(frame, identifier, request, redirectResponse);
-        Base::willSendRequest(frame, identifier, request, redirectResponse);
-    }
-    virtual void didReceiveResponse(blink::WebLocalFrame* frame, unsigned identifier, const blink::WebURLResponse& response)
-    {
-        WebTestProxyBase::didReceiveResponse(frame, identifier, response);
-        Base::didReceiveResponse(frame, identifier, response);
-    }
-    virtual void didChangeResourcePriority(blink::WebLocalFrame* frame, unsigned identifier, const blink::WebURLRequest::Priority& priority, int intra_priority_value)
-    {
-        WebTestProxyBase::didChangeResourcePriority(frame, identifier, priority, intra_priority_value);
-        Base::didChangeResourcePriority(frame, identifier, priority, intra_priority_value);
-    }
-    virtual void didFinishResourceLoad(blink::WebLocalFrame* frame, unsigned identifier)
-    {
-        WebTestProxyBase::didFinishResourceLoad(frame, identifier);
-        Base::didFinishResourceLoad(frame, identifier);
-    }
-    virtual bool willCheckAndDispatchMessageEvent(blink::WebLocalFrame* sourceFrame, blink::WebFrame* targetFrame, blink::WebSecurityOrigin target, blink::WebDOMMessageEvent event)
-    {
-        if (WebTestProxyBase::willCheckAndDispatchMessageEvent(sourceFrame, targetFrame, target, event))
-            return true;
-        return Base::willCheckAndDispatchMessageEvent(sourceFrame, targetFrame, target, event);
-    }
-    virtual blink::WebColorChooser* createColorChooser(blink::WebColorChooserClient* client, const blink::WebColor& color, const blink::WebVector<blink::WebColorSuggestion>& suggestions)
-    {
-        return WebTestProxyBase::createColorChooser(client, color, suggestions);
-    }
     virtual bool runFileChooser(const blink::WebFileChooserParams& params, blink::WebFileChooserCompletion* completion)
     {
         return WebTestProxyBase::runFileChooser(params, completion);
@@ -467,6 +378,6 @@ private:
     DISALLOW_COPY_AND_ASSIGN(WebTestProxy);
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_SHELL_RENDERER_TEST_RUNNER_WEBTESTPROXY_H_

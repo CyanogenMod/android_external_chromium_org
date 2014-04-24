@@ -9,6 +9,7 @@
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/bookmarks/scoped_group_bookmark_actions.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/undo/bookmark_undo_service.h"
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
@@ -19,13 +20,13 @@ int DropBookmarks(Profile* profile,
                   const BookmarkNodeData& data,
                   const BookmarkNode* parent_node,
                   int index) {
-#if !defined(OS_ANDROID)
-  ScopedGroupBookmarkActions group_drops(profile);
-#endif
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
-  if (data.IsFromProfile(profile)) {
+#if !defined(OS_ANDROID)
+  ScopedGroupBookmarkActions group_drops(model);
+#endif
+  if (data.IsFromProfilePath(profile->GetPath())) {
     const std::vector<const BookmarkNode*> dragged_nodes =
-        data.GetNodes(profile);
+        data.GetNodes(model, profile->GetPath());
     if (!dragged_nodes.empty()) {
       // Drag from same profile. Move nodes.
       for (size_t i = 0; i < dragged_nodes.size(); ++i) {

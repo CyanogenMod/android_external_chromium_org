@@ -52,6 +52,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/utils/SkCanvasStateUtils.cpp \
 	third_party/skia/src/utils/SkEventTracer.cpp \
 	third_party/skia/src/utils/SkDeferredCanvas.cpp \
+	third_party/skia/src/utils/SkMatrix22.cpp \
 	third_party/skia/src/utils/SkMatrix44.cpp \
 	third_party/skia/src/utils/SkNullCanvas.cpp \
 	third_party/skia/src/utils/SkNWayCanvas.cpp \
@@ -62,6 +63,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkAnnotation.cpp \
 	third_party/skia/src/core/SkAdvancedTypefaceMetrics.cpp \
 	third_party/skia/src/core/SkAlphaRuns.cpp \
+	third_party/skia/src/core/SkBBHFactory.cpp \
 	third_party/skia/src/core/SkBBoxRecord.cpp \
 	third_party/skia/src/core/SkBBoxHierarchyRecord.cpp \
 	third_party/skia/src/core/SkBitmap.cpp \
@@ -147,6 +149,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkPictureFlat.cpp \
 	third_party/skia/src/core/SkPicturePlayback.cpp \
 	third_party/skia/src/core/SkPictureRecord.cpp \
+	third_party/skia/src/core/SkPictureRecorder.cpp \
 	third_party/skia/src/core/SkPictureShader.cpp \
 	third_party/skia/src/core/SkPictureStateTree.cpp \
 	third_party/skia/src/core/SkPixelRef.cpp \
@@ -165,6 +168,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkRegion_path.cpp \
 	third_party/skia/src/core/SkRRect.cpp \
 	third_party/skia/src/core/SkRTree.cpp \
+	third_party/skia/src/core/SkRTreePicture.cpp \
 	third_party/skia/src/core/SkScaledImageCache.cpp \
 	third_party/skia/src/core/SkScalar.cpp \
 	third_party/skia/src/core/SkScalerContext.cpp \
@@ -466,7 +470,11 @@ MY_DEFS_Debug := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
+	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
@@ -484,7 +492,6 @@ MY_DEFS_Debug := \
 	'-DSK_GAMMA_CONTRAST=0.0' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DSK_IGNORE_FREETYPE_ROTATION_FIX' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-DANDROID' \
@@ -606,7 +613,11 @@ MY_DEFS_Release := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
+	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
@@ -624,7 +635,6 @@ MY_DEFS_Release := \
 	'-DSK_GAMMA_CONTRAST=0.0' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DSK_IGNORE_FREETYPE_ROTATION_FIX' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-DANDROID' \
@@ -698,7 +708,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed

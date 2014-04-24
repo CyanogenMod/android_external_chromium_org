@@ -68,7 +68,7 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   // can be safely changed.
   void UpdateSequenceNumberLength(
       QuicPacketSequenceNumber least_packet_awaited_by_peer,
-      QuicByteCount bytes_per_second);
+      QuicByteCount congestion_window);
 
   // The overhead the framing will add for a packet with one frame.
   static size_t StreamFramePacketOverhead(
@@ -114,6 +114,14 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
 
   // Returns true if there are frames pending to be serialized.
   bool HasPendingFrames();
+
+  // Returns IN_FEC_GROUP or NOT_IN_FEC_GROUP, depending on whether FEC is
+  // enabled or not. Note: This does not mean that an FEC group is currently
+  // active; i.e., fec_group_.get() may still be NULL.
+  // TODO(jri): Straighten out naming: Enabling FEC for the connection
+  // should use FEC_ENABLED/DISABLED, and IN_FEC_GROUP/NOT_IN_FEC_GROUP should
+  // be used if a given packet is in an fec group.
+  InFecGroup IsFecEnabled() const;
 
   // Returns the number of bytes which are available to be used by additional
   // frames in the packet.  Since stream frames are slightly smaller when they

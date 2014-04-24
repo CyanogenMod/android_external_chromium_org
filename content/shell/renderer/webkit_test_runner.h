@@ -15,7 +15,7 @@
 #include "content/shell/common/shell_test_configuration.h"
 #include "content/shell/common/test_runner/test_preferences.h"
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
-#include "third_party/WebKit/public/platform/WebScreenOrientation.h"
+#include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
 #include "v8/include/v8.h"
 
 class SkCanvas;
@@ -26,13 +26,11 @@ class WebDeviceOrientationData;
 struct WebRect;
 }
 
-namespace WebTestRunner {
-class WebTestProxyBase;
-}
-
 namespace content {
 
 class LeakDetector;
+class WebTestProxyBase;
+struct LeakDetectionResult;
 
 // This is the renderer side of the webkit test runner.
 class WebKitTestRunner : public RenderViewObserver,
@@ -66,7 +64,7 @@ class WebKitTestRunner : public RenderViewObserver,
   virtual void setDeviceOrientationData(
       const blink::WebDeviceOrientationData& data) OVERRIDE;
   virtual void setScreenOrientation(
-      const blink::WebScreenOrientation& orientation) OVERRIDE;
+      const blink::WebScreenOrientationType& orientation) OVERRIDE;
   virtual void printMessage(const std::string& message) OVERRIDE;
   virtual void postTask(::WebTestRunner::WebTask* task) OVERRIDE;
   virtual void postDelayedTask(::WebTestRunner::WebTask* task,
@@ -88,15 +86,15 @@ class WebKitTestRunner : public RenderViewObserver,
                                     const blink::WebSize& max_size) OVERRIDE;
   virtual void disableAutoResizeMode(const blink::WebSize& new_size) OVERRIDE;
   virtual void clearDevToolsLocalStorage() OVERRIDE;
-  virtual void showDevTools(const std::string& settings) OVERRIDE;
+  virtual void showDevTools(const std::string& settings,
+                            const std::string& frontend_url) OVERRIDE;
   virtual void closeDevTools() OVERRIDE;
   virtual void evaluateInWebInspector(long call_id,
                                       const std::string& script) OVERRIDE;
   virtual void clearAllDatabases() OVERRIDE;
   virtual void setDatabaseQuota(int quota) OVERRIDE;
   virtual void setDeviceScaleFactor(float factor) OVERRIDE;
-  virtual void setFocus(WebTestRunner::WebTestProxyBase* proxy,
-                        bool focus) OVERRIDE;
+  virtual void setFocus(WebTestProxyBase* proxy, bool focus) OVERRIDE;
   virtual void setAcceptAllCookies(bool accept) OVERRIDE;
   virtual std::string pathToLocalResource(const std::string& resource) OVERRIDE;
   virtual void setLocale(const std::string& locale) OVERRIDE;
@@ -110,14 +108,16 @@ class WebKitTestRunner : public RenderViewObserver,
                                const std::string& frame_name) OVERRIDE;
   virtual bool allowExternalPages() OVERRIDE;
   virtual void captureHistoryForWindow(
-      WebTestRunner::WebTestProxyBase* proxy,
+      WebTestProxyBase* proxy,
       blink::WebVector<blink::WebHistoryItem>* history,
       size_t* currentEntryIndex) OVERRIDE;
 
   void Reset();
 
-  void set_proxy(::WebTestRunner::WebTestProxyBase* proxy) { proxy_ = proxy; }
-  ::WebTestRunner::WebTestProxyBase* proxy() const { return proxy_; }
+  void set_proxy(WebTestProxyBase* proxy) { proxy_ = proxy; }
+  WebTestProxyBase* proxy() const { return proxy_; }
+
+  void ReportLeakDetectionResult(const LeakDetectionResult& result);
 
  private:
   // Message handlers.
@@ -134,9 +134,7 @@ class WebKitTestRunner : public RenderViewObserver,
   // the TestRunner library and sends them to the browser process.
   void CaptureDump();
 
-  void TryLeakDetection();
-
-  ::WebTestRunner::WebTestProxyBase* proxy_;
+  WebTestProxyBase* proxy_;
 
   RenderView* focused_view_;
 

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/command_line.h"
+#include "content/public/common/content_switches.h"
 #include "content/renderer/media/webrtc/webrtc_local_audio_track_adapter.h"
 #include "content/renderer/media/webrtc_local_audio_track.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -36,7 +38,7 @@ class WebRtcLocalAudioTrackAdapterTest : public ::testing::Test {
         adapter_(WebRtcLocalAudioTrackAdapter::Create(std::string(), NULL)),
         capturer_(WebRtcAudioCapturer::CreateCapturer(
             -1, StreamDeviceInfo(MEDIA_DEVICE_AUDIO_CAPTURE, "", ""),
-            blink::WebMediaConstraints(), NULL)),
+            blink::WebMediaConstraints(), NULL, NULL)),
         track_(new WebRtcLocalAudioTrack(adapter_, capturer_, NULL)) {}
 
  protected:
@@ -77,6 +79,18 @@ TEST_F(WebRtcLocalAudioTrackAdapterTest, AddAndRemoveSink) {
 
   // Verify that no more callback gets into the sink.
   track_->Capture(data.get(), base::TimeDelta(), 255, false, false);
+}
+
+TEST_F(WebRtcLocalAudioTrackAdapterTest, GetSignalLevel) {
+  webrtc::AudioTrackInterface* webrtc_track =
+      static_cast<webrtc::AudioTrackInterface*>(adapter_.get());
+  int signal_level = 0;
+  EXPECT_FALSE(webrtc_track->GetSignalLevel(&signal_level));
+
+  // Enable the audio processing in the audio track.
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableAudioTrackProcessing);
+  EXPECT_TRUE(webrtc_track->GetSignalLevel(&signal_level));
 }
 
 }  // namespace content

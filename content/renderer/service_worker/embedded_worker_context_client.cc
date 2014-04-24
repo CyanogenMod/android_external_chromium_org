@@ -82,9 +82,11 @@ EmbeddedWorkerContextClient::ThreadSpecificInstance() {
 EmbeddedWorkerContextClient::EmbeddedWorkerContextClient(
     int embedded_worker_id,
     int64 service_worker_version_id,
+    const GURL& service_worker_scope,
     const GURL& script_url)
     : embedded_worker_id_(embedded_worker_id),
       service_worker_version_id_(service_worker_version_id),
+      service_worker_scope_(service_worker_scope),
       script_url_(script_url),
       sender_(ChildThread::current()->thread_safe_sender()),
       main_thread_proxy_(base::MessageLoopProxy::current()),
@@ -101,18 +103,32 @@ bool EmbeddedWorkerContextClient::OnMessageReceived(
     const IPC::Message& msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(EmbeddedWorkerContextClient, msg)
-    IPC_MESSAGE_HANDLER(EmbeddedWorkerContextMsg_SendMessageToWorker,
-                        OnSendMessageToWorker)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerContextMsg_MessageToWorker,
+                        OnMessageToWorker)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
-void EmbeddedWorkerContextClient::SendMessageToBrowser(
+void EmbeddedWorkerContextClient::Send(IPC::Message* message) {
+  sender_->Send(message);
+}
+
+void EmbeddedWorkerContextClient::SendReplyToBrowser(
     int request_id,
     const IPC::Message& message) {
-  sender_->Send(new EmbeddedWorkerHostMsg_SendMessageToBrowser(
+  Send(new EmbeddedWorkerHostMsg_ReplyToBrowser(
       embedded_worker_id_, request_id, message));
+}
+
+blink::WebURL EmbeddedWorkerContextClient::scope() const {
+  return service_worker_scope_;
+}
+
+void EmbeddedWorkerContextClient::getClients(
+    blink::WebServiceWorkerClientsCallbacks* callbacks) {
+  DCHECK(script_context_);
+  script_context_->GetClientDocuments(callbacks);
 }
 
 void EmbeddedWorkerContextClient::workerContextFailedToStart() {
@@ -143,7 +159,7 @@ void EmbeddedWorkerContextClient::workerContextStarted(
                  weak_factory_.GetWeakPtr()));
 }
 
-void EmbeddedWorkerContextClient::workerContextDestroyed() {
+void EmbeddedWorkerContextClient::willDestroyWorkerContext() {
   // At this point OnWorkerRunLoopStopped is already called, so
   // worker_task_runner_->RunsTasksOnCurrentThread() returns false
   // (while we're still on the worker thread).
@@ -159,9 +175,26 @@ void EmbeddedWorkerContextClient::reportException(
     int line_number,
     int column_number,
     const blink::WebString& source_url) {
-  sender_->Send(new EmbeddedWorkerHostMsg_ReportException(
+  Send(new EmbeddedWorkerHostMsg_ReportException(
       embedded_worker_id_, error_message, line_number,
       column_number, GURL(source_url)));
+}
+
+void EmbeddedWorkerContextClient::reportConsoleMessage(
+    int source,
+    int level,
+    const blink::WebString& message,
+    int line_number,
+    const blink::WebString& source_url) {
+  EmbeddedWorkerHostMsg_ReportConsoleMessage_Params params;
+  params.source_identifier = source;
+  params.message_level = level;
+  params.message = message;
+  params.line_number = line_number;
+  params.source_url = GURL(source_url);
+
+  Send(new EmbeddedWorkerHostMsg_ReportConsoleMessage(
+      embedded_worker_id_, params));
 }
 
 void EmbeddedWorkerContextClient::didHandleActivateEvent(
@@ -198,6 +231,11 @@ void EmbeddedWorkerContextClient::didHandleFetchEvent(
       request_id, SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE, response);
 }
 
+void EmbeddedWorkerContextClient::didHandleSyncEvent(int request_id) {
+  DCHECK(script_context_);
+  script_context_->DidHandleSyncEvent(request_id);
+}
+
 blink::WebServiceWorkerNetworkProvider*
 EmbeddedWorkerContextClient::createServiceWorkerNetworkProvider(
     blink::WebDataSource* data_source) {
@@ -220,12 +258,7 @@ EmbeddedWorkerContextClient::createServiceWorkerNetworkProvider(
   return new WebServiceWorkerNetworkProviderImpl();
 }
 
-void EmbeddedWorkerContextClient::didHandleSyncEvent(int request_id) {
-  DCHECK(script_context_);
-  script_context_->DidHandleSyncEvent(request_id);
-}
-
-void EmbeddedWorkerContextClient::OnSendMessageToWorker(
+void EmbeddedWorkerContextClient::OnMessageToWorker(
     int thread_id,
     int embedded_worker_id,
     int request_id,
@@ -238,7 +271,7 @@ void EmbeddedWorkerContextClient::OnSendMessageToWorker(
 
 void EmbeddedWorkerContextClient::SendWorkerStarted() {
   DCHECK(worker_task_runner_->RunsTasksOnCurrentThread());
-  sender_->Send(new EmbeddedWorkerHostMsg_WorkerStarted(
+  Send(new EmbeddedWorkerHostMsg_WorkerStarted(
       WorkerTaskRunner::Instance()->CurrentWorkerId(),
       embedded_worker_id_));
 }

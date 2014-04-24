@@ -177,7 +177,7 @@ void AutocompleteResultTest::RunCopyOldMatchesTest(
   AutocompleteInput input(base::ASCIIToUTF16("a"), base::string16::npos,
                           base::string16(), GURL(),
                           AutocompleteInput::INVALID_SPEC, false, false, false,
-                          AutocompleteInput::ALL_MATCHES);
+                          true);
 
   ACMatches last_matches;
   PopulateAutocompleteMatches(last, last_size, &last_matches);
@@ -213,7 +213,7 @@ TEST_F(AutocompleteResultTest, Swap) {
   AutocompleteInput input(base::ASCIIToUTF16("a"), base::string16::npos,
                           base::string16(), GURL(),
                           AutocompleteInput::INVALID_SPEC, false, false, false,
-                          AutocompleteInput::ALL_MATCHES);
+                          true);
   matches.push_back(match);
   r1.AppendMatches(matches);
   r1.SortAndCull(input, test_util_.profile());
@@ -296,7 +296,7 @@ TEST_F(AutocompleteResultTest, SortAndCullEmptyDestinationURLs) {
   AutocompleteInput input(base::string16(), base::string16::npos,
                           base::string16(), GURL(),
                           AutocompleteInput::INVALID_SPEC, false, false, false,
-                          AutocompleteInput::ALL_MATCHES);
+                          true);
   result.SortAndCull(input, test_util_.profile());
 
   // Of the two results with the same non-empty destination URL, the
@@ -342,7 +342,7 @@ TEST_F(AutocompleteResultTest, SortAndCullDuplicateSearchURLs) {
   AutocompleteInput input(base::string16(), base::string16::npos,
                           base::string16(), GURL(),
                           AutocompleteInput::INVALID_SPEC, false, false, false,
-                          AutocompleteInput::ALL_MATCHES);
+                          true);
   result.SortAndCull(input, test_util_.profile());
 
   // We expect the 3rd and 4th results to be removed.
@@ -394,7 +394,7 @@ TEST_F(AutocompleteResultTest, SortAndCullWithMatchDups) {
   AutocompleteInput input(base::string16(), base::string16::npos,
                           base::string16(), GURL(),
                           AutocompleteInput::INVALID_SPEC, false, false, false,
-                          AutocompleteInput::ALL_MATCHES);
+                          true);
   result.SortAndCull(input, test_util_.profile());
 
   // Expect 3 unique results after SortAndCull().
@@ -448,7 +448,7 @@ TEST_F(AutocompleteResultTest, SortAndCullWithDemotionsByType) {
   AutocompleteInput input(base::string16(), base::string16::npos,
                           base::string16(), GURL(),
                           AutocompleteInput::HOME_PAGE, false, false, false,
-                          AutocompleteInput::ALL_MATCHES);
+                          true);
   result.SortAndCull(input, test_util_.profile());
 
   // Check the new ordering.  The history-title results should be omitted.
@@ -460,57 +460,6 @@ TEST_F(AutocompleteResultTest, SortAndCullWithDemotionsByType) {
   EXPECT_EQ("http://history-url/",
             result.match_at(1)->destination_url.spec());
   EXPECT_EQ("http://search-history/",
-            result.match_at(2)->destination_url.spec());
-}
-
-TEST_F(AutocompleteResultTest, SortAndCullWithUndemotableTypes) {
-  // Add some matches.
-  ACMatches matches(3);
-  matches[0].destination_url = GURL("http://top-history-url/");
-  matches[0].relevance = 1400;
-  matches[0].allowed_to_be_default_match = true;
-  matches[0].type = AutocompleteMatchType::HISTORY_URL;
-  matches[1].destination_url = GURL("http://history-url2/");
-  matches[1].relevance = 1300;
-  matches[1].allowed_to_be_default_match = true;
-  matches[1].type = AutocompleteMatchType::HISTORY_URL;
-  matches[2].destination_url = GURL("http://search-what-you-typed/");
-  matches[2].relevance = 1200;
-  matches[2].allowed_to_be_default_match = true;
-  matches[2].type = AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED;
-
-  // Add a rule demoting history-url, but don't demote the top match.
-  {
-    std::map<std::string, std::string> params;
-    // 3 == HOME_PAGE
-    params[std::string(OmniboxFieldTrial::kDemoteByTypeRule) + ":3:*"] =
-        "1:50";
-    params[std::string(OmniboxFieldTrial::kUndemotableTopTypeRule) + ":3:*"] =
-        "1,5";
-    ASSERT_TRUE(chrome_variations::AssociateVariationParams(
-        OmniboxFieldTrial::kBundledExperimentFieldTrialName, "B", params));
-  }
-  base::FieldTrialList::CreateFieldTrial(
-      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "B");
-
-  AutocompleteResult result;
-  result.AppendMatches(matches);
-  AutocompleteInput input(base::string16(), base::string16::npos,
-                          base::string16(), GURL(),
-                          AutocompleteInput::HOME_PAGE, false, false, false,
-                          AutocompleteInput::ALL_MATCHES);
-  result.SortAndCull(input, test_util_.profile());
-
-  // Check the new ordering.  The first history-url result should not be
-  // demoted, but the second result should be.
-  // We cannot check relevance scores because the matches are sorted by
-  // demoted relevance but the actual relevance scores are not modified.
-  ASSERT_EQ(3u, result.size());
-  EXPECT_EQ("http://top-history-url/",
-            result.match_at(0)->destination_url.spec());
-  EXPECT_EQ("http://search-what-you-typed/",
-            result.match_at(1)->destination_url.spec());
-  EXPECT_EQ("http://history-url2/",
             result.match_at(2)->destination_url.spec());
 }
 
@@ -544,7 +493,7 @@ TEST_F(AutocompleteResultTest, SortAndCullWithMatchDupsAndDemotionsByType) {
     AutocompleteInput input(
         base::string16(), base::string16::npos, base::string16(), GURL(),
         AutocompleteInput::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS, false,
-        false, false, AutocompleteInput::ALL_MATCHES);
+        false, false, true);
     result.SortAndCull(input, test_util_.profile());
 
     // The NAVSUGGEST dup-url stay above search-url since the navsuggest
@@ -582,7 +531,7 @@ TEST_F(AutocompleteResultTest, SortAndCullReorderForDefaultMatch) {
     AutocompleteInput input(base::string16(), base::string16::npos,
                             base::string16(), GURL(),
                             AutocompleteInput::HOME_PAGE, false, false, false,
-                            AutocompleteInput::ALL_MATCHES);
+                            true);
     result.SortAndCull(input, test_util_.profile());
     AssertResultMatches(result, data, 4);
   }
@@ -598,7 +547,7 @@ TEST_F(AutocompleteResultTest, SortAndCullReorderForDefaultMatch) {
     AutocompleteInput input(base::string16(), base::string16::npos,
                             base::string16(), GURL(),
                             AutocompleteInput::HOME_PAGE, false, false, false,
-                            AutocompleteInput::ALL_MATCHES);
+                            true);
     result.SortAndCull(input, test_util_.profile());
     ASSERT_EQ(4U, result.size());
     EXPECT_EQ("http://c/", result.match_at(0)->destination_url.spec());

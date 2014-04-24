@@ -64,9 +64,6 @@ AUAudioInputStream::AUAudioInputStream(
   // Set number of sample frames per callback used by the internal audio layer.
   // An internal FIFO is then utilized to adapt the internal size to the size
   // requested by the client.
-  // Note that we use the same native buffer size as for the output side here
-  // since the AUHAL implementation requires that both capture and render side
-  // use the same buffer size. See http://crbug.com/154352 for more details.
   number_of_frames_ = output_params.frames_per_buffer();
   DVLOG(1) << "Size of data buffer in frames : " << number_of_frames_;
 
@@ -233,21 +230,36 @@ bool AUAudioInputStream::Open() {
   }
 
   // Set the desired number of frames in the IO buffer (output scope).
-  // WARNING: Setting this value changes the frame size for all audio units in
-  // the current process.  It's imperative that the input and output frame sizes
-  // be the same as the frames_per_buffer() returned by
-  // GetInputStreamParameters().
-  // TODO(henrika): Due to http://crrev.com/159666 this is currently not true
-  // and should be fixed, a CHECK() should be added at that time.
-  result = AudioUnitSetProperty(audio_unit_,
+  // WARNING: Setting this value changes the frame size for all input audio
+  // units in the current process.  As a result, the AURenderCallback must be
+  // able to handle arbitrary buffer sizes and FIFO appropriately.
+  UInt32 buffer_size = 0;
+  UInt32 property_size = sizeof(buffer_size);
+  result = AudioUnitGetProperty(audio_unit_,
                                 kAudioDevicePropertyBufferFrameSize,
                                 kAudioUnitScope_Output,
                                 1,
-                                &number_of_frames_,  // size is set in the ctor
-                                sizeof(number_of_frames_));
-  if (result) {
+                                &buffer_size,
+                                &property_size);
+  if (result != noErr) {
     HandleError(result);
     return false;
+  }
+
+  // Only set the buffer size if we're the only active stream or the buffer size
+  // is lower than the current buffer size.
+  if (manager_->input_stream_count() == 1 || number_of_frames_ < buffer_size) {
+    buffer_size = number_of_frames_;
+    result = AudioUnitSetProperty(audio_unit_,
+                                  kAudioDevicePropertyBufferFrameSize,
+                                  kAudioUnitScope_Output,
+                                  1,
+                                  &buffer_size,
+                                  sizeof(buffer_size));
+    if (result != noErr) {
+      HandleError(result);
+      return false;
+    }
   }
 
   // Finally, initialize the audio unit and ensure that it is ready to render.
@@ -274,6 +286,22 @@ void AUAudioInputStream::Start(AudioInputCallback* callback) {
   DLOG_IF(ERROR, !audio_unit_) << "Open() has not been called successfully";
   if (started_ || !audio_unit_)
     return;
+
+  // Check if we should defer Start() for http://crbug.com/160920.
+  if (manager_->ShouldDeferStreamStart()) {
+    // Use a cancellable closure so that if Stop() is called before Start()
+    // actually runs, we can cancel the pending start.
+    DCHECK(deferred_start_cb_.IsCancelled());
+    deferred_start_cb_.Reset(base::Bind(
+        &AUAudioInputStream::Start, base::Unretained(this), callback));
+    manager_->GetTaskRunner()->PostDelayedTask(
+        FROM_HERE,
+        deferred_start_cb_.callback(),
+        base::TimeDelta::FromSeconds(
+            AudioManagerMac::kStartDelayInSecsForPowerEvents));
+    return;
+  }
+
   sink_ = callback;
   StartAgc();
   OSStatus result = AudioOutputUnitStart(audio_unit_);

@@ -38,8 +38,8 @@
 #include "third_party/WebKit/public/web/WebElementCollection.h"
 #include "third_party/WebKit/public/web/WebFormControlElement.h"
 #include "third_party/WebKit/public/web/WebFormElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebOptionElement.h"
 #include "third_party/WebKit/public/web/WebTextAreaElement.h"
@@ -237,6 +237,12 @@ void AutofillAgent::ZoomLevelChanged() {
 }
 
 void AutofillAgent::FocusedNodeChanged(const WebNode& node) {
+  if (password_generation_agent_ &&
+      password_generation_agent_->FocusedNodeHasChanged(node)) {
+    is_popup_possibly_visible_ = true;
+    return;
+  }
+
   if (node.isNull() || !node.isElementNode())
     return;
 
@@ -280,14 +286,26 @@ void AutofillAgent::didRequestAutocomplete(
       ::switches::kReduceSecurityForTesting);
 
   FormData form_data;
-  if (!in_flight_request_form_.isNull() ||
-      (!is_safe && !allow_unsafe) ||
-      !WebFormElementToFormData(form,
-                                WebFormControlElement(),
-                                REQUIRE_AUTOCOMPLETE,
-                                EXTRACT_OPTIONS,
-                                &form_data,
-                                NULL)) {
+  std::string error_message;
+  if (!in_flight_request_form_.isNull()) {
+    error_message = "already active.";
+  } else if (!is_safe && !allow_unsafe) {
+    error_message =
+        "must use a secure connection or --reduce-security-for-testing.";
+  } else if (!WebFormElementToFormData(form,
+                                       WebFormControlElement(),
+                                       REQUIRE_AUTOCOMPLETE,
+                                       EXTRACT_OPTIONS,
+                                       &form_data,
+                                       NULL)) {
+    error_message = "failed to parse form.";
+  }
+
+  if (!error_message.empty()) {
+    WebConsoleMessage console_message = WebConsoleMessage(
+        WebConsoleMessage::LevelLog,
+        WebString(base::ASCIIToUTF16("requestAutocomplete: ") +
+                      base::ASCIIToUTF16(error_message)));
     WebFormElement(form).finishRequestAutocomplete(
         WebFormElement::AutocompleteResultErrorDisabled);
     return;
@@ -359,6 +377,7 @@ void AutofillAgent::TextFieldDidChangeImpl(
   if (input_element) {
     if (password_generation_agent_ &&
         password_generation_agent_->TextDidChangeInTextField(*input_element)) {
+      is_popup_possibly_visible_ = true;
       return;
     }
 
@@ -395,6 +414,10 @@ void AutofillAgent::textFieldDidReceiveKeyDown(const WebInputElement& element,
 
 void AutofillAgent::openTextDataListChooser(const WebInputElement& element) {
     ShowSuggestions(element, true, false, false, true);
+}
+
+void AutofillAgent::firstUserGestureObserved() {
+  password_autofill_agent_->FirstUserGestureObserved();
 }
 
 void AutofillAgent::AcceptDataListSuggestion(
@@ -510,7 +533,7 @@ void AutofillAgent::OnRequestAutocompleteResult(
 
   if (result == WebFormElement::AutocompleteResultSuccess) {
     FillFormIncludingNonFocusableElements(form_data, in_flight_request_form_);
-    if (!in_flight_request_form_.checkValidityWithoutDispatchingEvents())
+    if (!in_flight_request_form_.checkValidity())
       result = WebFormElement::AutocompleteResultErrorInvalid;
   }
 

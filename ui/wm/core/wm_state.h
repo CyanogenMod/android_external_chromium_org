@@ -6,11 +6,7 @@
 #define UI_WM_CORE_WM_STATE_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "ui/wm/core/wm_core_export.h"
-
-namespace ui {
-class PlatformEventSource;
-}
+#include "ui/wm/wm_export.h"
 
 namespace wm {
 
@@ -18,7 +14,7 @@ class TransientWindowController;
 class TransientWindowStackingClient;
 
 // Installs state needed by the window manager.
-class WM_CORE_EXPORT WMState {
+class WM_EXPORT WMState {
  public:
   WMState();
   ~WMState();
@@ -27,7 +23,6 @@ class WM_CORE_EXPORT WMState {
  private:
   scoped_ptr<TransientWindowStackingClient> window_stacking_client_;
   scoped_ptr<TransientWindowController> transient_window_client_;
-  scoped_ptr<ui::PlatformEventSource> event_source_;
 
   DISALLOW_COPY_AND_ASSIGN(WMState);
 };

@@ -600,16 +600,10 @@ scoped_ptr<ResourceProvider> ResourceProvider::Create(
                            use_rgba_4444_texture_format,
                            id_allocation_chunk_size));
 
-  bool success = false;
-  if (resource_provider->ContextGL()) {
-    success = resource_provider->InitializeGL();
-  } else {
+  if (resource_provider->ContextGL())
+    resource_provider->InitializeGL();
+  else
     resource_provider->InitializeSoftware();
-    success = true;
-  }
-
-  if (!success)
-    return scoped_ptr<ResourceProvider>();
 
   DCHECK_NE(InvalidType, resource_provider->default_resource_type());
   return resource_provider.Pass();
@@ -1267,7 +1261,8 @@ ResourceProvider::ResourceProvider(OutputSurface* output_surface,
       max_texture_size_(0),
       best_texture_format_(RGBA_8888),
       use_rgba_4444_texture_format_(use_rgba_4444_texture_format),
-      id_allocation_chunk_size_(id_allocation_chunk_size) {
+      id_allocation_chunk_size_(id_allocation_chunk_size),
+      use_sync_query_(false) {
   DCHECK(output_surface_->HasClient());
   DCHECK(id_allocation_chunk_size_);
 }
@@ -1284,7 +1279,7 @@ void ResourceProvider::InitializeSoftware() {
   best_texture_format_ = RGBA_8888;
 }
 
-bool ResourceProvider::InitializeGL() {
+void ResourceProvider::InitializeGL() {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(!texture_uploader_);
   DCHECK_NE(GLTexture, default_resource_type_);
@@ -1300,6 +1295,7 @@ bool ResourceProvider::InitializeGL() {
   use_texture_storage_ext_ = caps.gpu.texture_storage;
   use_texture_usage_hint_ = caps.gpu.texture_usage;
   use_compressed_texture_etc1_ = caps.gpu.texture_format_etc1;
+  use_sync_query_ = caps.gpu.sync_query;
 
   GLES2Interface* gl = ContextGL();
   DCHECK(gl);
@@ -1313,8 +1309,6 @@ bool ResourceProvider::InitializeGL() {
       new TextureIdAllocator(gl, id_allocation_chunk_size_));
   buffer_id_allocator_.reset(
       new BufferIdAllocator(gl, id_allocation_chunk_size_));
-
-  return true;
 }
 
 void ResourceProvider::CleanUpGLIfNeeded() {
@@ -2243,13 +2237,10 @@ void ResourceProvider::CopyResource(ResourceId source_id, ResourceId dest_id) {
       gl->BindTexture(source_resource->target, source_resource->gl_id);
       BindImageForSampling(source_resource);
     }
+    DCHECK(use_sync_query_) << "CHROMIUM_sync_query extension missing";
     if (!source_resource->gl_read_lock_query_id)
       gl->GenQueriesEXT(1, &source_resource->gl_read_lock_query_id);
-    // Note: Use of COMMANDS_ISSUED target assumes that it's safe to access the
-    // source resource once the command has been processed on the service side.
-    // TODO(reveman): Implement COMMANDS_COMPLETED query that can be used to
-    // accurately determine when it's safe to access the source resource again.
-    gl->BeginQueryEXT(GL_COMMANDS_ISSUED_CHROMIUM,
+    gl->BeginQueryEXT(GL_COMMANDS_COMPLETED_CHROMIUM,
                       source_resource->gl_read_lock_query_id);
     DCHECK(!dest_resource->image_id);
     dest_resource->allocated = true;
@@ -2261,7 +2252,7 @@ void ResourceProvider::CopyResource(ResourceId source_id, ResourceId dest_id) {
                             GLDataType(dest_resource->format));
     // End query and create a read lock fence that will prevent access to
     // source resource until CopyTextureCHROMIUM command has completed.
-    gl->EndQueryEXT(GL_COMMANDS_ISSUED_CHROMIUM);
+    gl->EndQueryEXT(GL_COMMANDS_COMPLETED_CHROMIUM);
     source_resource->read_lock_fence = make_scoped_refptr(
         new QueryFence(gl, source_resource->gl_read_lock_query_id));
   } else {

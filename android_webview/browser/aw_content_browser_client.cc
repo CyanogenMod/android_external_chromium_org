@@ -359,10 +359,13 @@ void AwContentBrowserClient::SelectClientCertificate(
       const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
       const base::Callback<void(net::X509Certificate*)>& callback) {
-  LOG(WARNING) << "Client certificate request from "
-        << cert_request_info->host_and_port.ToString()
-        << " rejected. (Client certificates not supported in WebView)";
-  callback.Run(NULL);
+  AwContentsClientBridgeBase* client =
+      AwContentsClientBridgeBase::FromID(render_process_id, render_frame_id);
+  if (client) {
+    client->SelectClientCertificate(cert_request_info, callback);
+  } else {
+    callback.Run(NULL);
+  }
 }
 
 blink::WebNotificationPresenter::Permission
@@ -376,16 +379,9 @@ blink::WebNotificationPresenter::Permission
 
 void AwContentBrowserClient::ShowDesktopNotification(
     const content::ShowDesktopNotificationHostMsgParams& params,
-    int render_process_id,
-    int render_view_id,
-    bool worker) {
-  NOTREACHED() << "Android WebView does not support desktop notifications.";
-}
-
-void AwContentBrowserClient::CancelDesktopNotification(
-    int render_process_id,
-    int render_view_id,
-    int notification_id) {
+    content::RenderFrameHost* render_frame_host,
+    content::DesktopNotificationDelegate* delegate,
+    base::Closure* cancel_callback) {
   NOTREACHED() << "Android WebView does not support desktop notifications.";
 }
 

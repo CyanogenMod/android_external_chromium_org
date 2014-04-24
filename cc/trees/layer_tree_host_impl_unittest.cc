@@ -97,6 +97,7 @@ class LayerTreeHostImplTest : public testing::Test,
     settings.minimum_occlusion_tracking_size = gfx::Size();
     settings.impl_side_painting = true;
     settings.texture_id_allocation_chunk_size = 1;
+    settings.report_overscroll_only_for_scrollable_axes = true;
     return settings;
   }
 
@@ -108,8 +109,9 @@ class LayerTreeHostImplTest : public testing::Test,
 
   virtual void UpdateRendererCapabilitiesOnImplThread() OVERRIDE {}
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE {}
+  virtual void SetMaxSwapsPendingOnImplThread(int max) OVERRIDE {}
   virtual void DidSwapBuffersOnImplThread() OVERRIDE {}
-  virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE {}
+  virtual void DidSwapBuffersCompleteOnImplThread() OVERRIDE {}
   virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE {}
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE {
     on_can_draw_state_changed_called_ = true;
@@ -1538,7 +1540,7 @@ class DidDrawCheckLayer : public TiledLayerImpl {
     scoped_ptr<LayerTilingData> tiler =
         LayerTilingData::Create(gfx::Size(100, 100),
                                 LayerTilingData::HAS_BORDER_TEXELS);
-    tiler->SetBounds(content_bounds());
+    tiler->SetTilingRect(gfx::Rect(content_bounds()));
     SetTilingData(*tiler.get());
   }
 
@@ -1749,7 +1751,7 @@ class MissingTextureAnimatingLayer : public DidDrawCheckLayer {
     scoped_ptr<LayerTilingData> tiling_data =
         LayerTilingData::Create(gfx::Size(10, 10),
                                 LayerTilingData::NO_BORDER_TEXELS);
-    tiling_data->SetBounds(bounds());
+    tiling_data->SetTilingRect(gfx::Rect(bounds()));
     SetTilingData(*tiling_data.get());
     set_skips_draw(skips_draw);
     if (!tile_missing) {
@@ -3171,6 +3173,45 @@ TEST_F(LayerTreeHostImplTest, OverscrollAlways) {
   EXPECT_EQ(gfx::Vector2dF(0, 10), host_impl_->accumulated_root_overscroll());
 }
 
+TEST_F(LayerTreeHostImplTest, NoOverscrollOnFractionalDeviceScale) {
+  gfx::Size surface_size(980, 1439);
+  gfx::Size content_size(980, 1438);
+  float device_scale_factor = 1.5f;
+  scoped_ptr<LayerImpl> root_clip =
+      LayerImpl::Create(host_impl_->active_tree(), 3);
+  scoped_ptr<LayerImpl> root =
+      CreateScrollableLayer(1, content_size, root_clip.get());
+  root->SetIsContainerForFixedPositionLayers(true);
+  scoped_ptr<LayerImpl> child =
+      CreateScrollableLayer(2, content_size, root_clip.get());
+  root->scroll_clip_layer()->SetBounds(gfx::Size(320, 469));
+  host_impl_->active_tree()->SetPageScaleFactorAndLimits(
+      0.326531f, 0.326531f, 5.f);
+  host_impl_->active_tree()->SetPageScaleDelta(1.f);
+  child->SetScrollClipLayer(Layer::INVALID_ID);
+  root->AddChild(child.Pass());
+  root_clip->AddChild(root.Pass());
+
+  host_impl_->SetViewportSize(surface_size);
+  host_impl_->SetDeviceScaleFactor(device_scale_factor);
+  host_impl_->active_tree()->SetRootLayer(root_clip.Pass());
+  host_impl_->active_tree()->SetViewportLayersFromIds(3, 1, Layer::INVALID_ID);
+  host_impl_->active_tree()->DidBecomeActive();
+  DrawFrame();
+  {
+    // Horizontal & Vertical GlowEffect should not be applied when
+    // content size is less then view port size. For Example Horizontal &
+    // vertical GlowEffect should not be applied in about:blank page.
+    EXPECT_EQ(InputHandler::ScrollStarted,
+              host_impl_->ScrollBegin(gfx::Point(0, 0), InputHandler::Wheel));
+    host_impl_->ScrollBy(gfx::Point(), gfx::Vector2dF(0, -1));
+    EXPECT_EQ(gfx::Vector2dF().ToString(),
+              host_impl_->accumulated_root_overscroll().ToString());
+
+    host_impl_->ScrollEnd();
+  }
+}
+
 TEST_F(LayerTreeHostImplTest, NoOverscrollWhenNotAtEdge) {
   gfx::Size surface_size(100, 100);
   gfx::Size content_size(200, 200);
@@ -3264,7 +3305,7 @@ class BlendStateCheckLayer : public LayerImpl {
     test_blending_draw_quad->visible_rect = quad_visible_rect_;
     EXPECT_EQ(blend_, test_blending_draw_quad->ShouldDrawWithBlending());
     EXPECT_EQ(has_render_surface_, !!render_surface());
-    quad_sink->MaybeAppend(test_blending_draw_quad.PassAs<DrawQuad>());
+    quad_sink->Append(test_blending_draw_quad.PassAs<DrawQuad>());
   }
 
   void SetExpectation(bool blend, bool has_render_surface) {
@@ -4040,7 +4081,7 @@ class FakeLayerWithQuads : public LayerImpl {
     scoped_ptr<SolidColorDrawQuad> my_quad = SolidColorDrawQuad::Create();
     my_quad->SetNew(
         shared_quad_state, quad_rect, visible_quad_rect, gray, false);
-    quad_sink->MaybeAppend(my_quad.PassAs<DrawQuad>());
+    quad_sink->Append(my_quad.PassAs<DrawQuad>());
   }
 
  private:
@@ -5354,7 +5395,7 @@ class CompositorFrameMetadataTest : public LayerTreeHostImplTest {
   CompositorFrameMetadataTest()
       : swap_buffers_complete_(0) {}
 
-  virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE {
+  virtual void DidSwapBuffersCompleteOnImplThread() OVERRIDE {
     swap_buffers_complete_++;
   }
 
@@ -5372,7 +5413,7 @@ TEST_F(CompositorFrameMetadataTest, CompositorFrameAckCountsAsSwapComplete) {
   }
   CompositorFrameAck ack;
   host_impl_->ReclaimResources(&ack);
-  host_impl_->OnSwapBuffersComplete();
+  host_impl_->DidSwapBuffersComplete();
   EXPECT_EQ(swap_buffers_complete_, 1);
 }
 
@@ -5949,6 +5990,79 @@ TEST_F(LayerTreeHostImplTest, WheelFlingShouldBubble) {
     ASSERT_EQ(2u, scroll_info->scrolls.size());
     ExpectContains(*scroll_info.get(), root_scroll_id, gfx::Vector2d(0, 10));
   }
+}
+
+TEST_F(LayerTreeHostImplTest, ScrollUnknownNotOnAncestorChain) {
+  // If we ray cast a scroller that is not on the first layer's ancestor chain,
+  // we should return ScrollUnknown.
+  gfx::Size content_size(100, 100);
+  SetupScrollAndContentsLayers(content_size);
+
+  int scroll_layer_id = 2;
+  LayerImpl* scroll_layer =
+      host_impl_->active_tree()->LayerById(scroll_layer_id);
+  scroll_layer->SetDrawsContent(true);
+
+  int page_scale_layer_id = 5;
+  LayerImpl* page_scale_layer =
+      host_impl_->active_tree()->LayerById(page_scale_layer_id);
+
+  int occluder_layer_id = 6;
+  scoped_ptr<LayerImpl> occluder_layer =
+      LayerImpl::Create(host_impl_->active_tree(), occluder_layer_id);
+  occluder_layer->SetDrawsContent(true);
+  occluder_layer->SetBounds(content_size);
+  occluder_layer->SetContentBounds(content_size);
+  occluder_layer->SetPosition(gfx::PointF());
+  occluder_layer->SetAnchorPoint(gfx::PointF());
+
+  // The parent of the occluder is *above* the scroller.
+  page_scale_layer->AddChild(occluder_layer.Pass());
+
+  DrawFrame();
+
+  EXPECT_EQ(InputHandler::ScrollUnknown,
+            host_impl_->ScrollBegin(gfx::Point(), InputHandler::Wheel));
+}
+
+TEST_F(LayerTreeHostImplTest, ScrollUnknownScrollAncestorMismatch) {
+  // If we ray cast a scroller this is on the first layer's ancestor chain, but
+  // is not the first scroller we encounter when walking up from the layer, we
+  // should also return ScrollUnknown.
+  gfx::Size content_size(100, 100);
+  SetupScrollAndContentsLayers(content_size);
+
+  int scroll_layer_id = 2;
+  LayerImpl* scroll_layer =
+      host_impl_->active_tree()->LayerById(scroll_layer_id);
+  scroll_layer->SetDrawsContent(true);
+
+  int occluder_layer_id = 6;
+  scoped_ptr<LayerImpl> occluder_layer =
+      LayerImpl::Create(host_impl_->active_tree(), occluder_layer_id);
+  occluder_layer->SetDrawsContent(true);
+  occluder_layer->SetBounds(content_size);
+  occluder_layer->SetContentBounds(content_size);
+  occluder_layer->SetPosition(gfx::PointF());
+  occluder_layer->SetAnchorPoint(gfx::PointF());
+
+  int child_scroll_clip_layer_id = 7;
+  scoped_ptr<LayerImpl> child_scroll_clip =
+      LayerImpl::Create(host_impl_->active_tree(), child_scroll_clip_layer_id);
+
+  int child_scroll_layer_id = 8;
+  scoped_ptr<LayerImpl> child_scroll = CreateScrollableLayer(
+      child_scroll_layer_id, content_size, child_scroll_clip.get());
+
+  child_scroll->SetDrawsContent(false);
+
+  child_scroll->AddChild(occluder_layer.Pass());
+  scroll_layer->AddChild(child_scroll.Pass());
+
+  DrawFrame();
+
+  EXPECT_EQ(InputHandler::ScrollUnknown,
+            host_impl_->ScrollBegin(gfx::Point(), InputHandler::Wheel));
 }
 
 // Make sure LatencyInfo carried by LatencyInfoSwapPromise are passed

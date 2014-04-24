@@ -11,6 +11,7 @@
 #include "net/quic/congestion_control/tcp_receiver.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/test_tools/mock_clock.h"
+#include "net/quic/test_tools/quic_config_peer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using std::min;
@@ -34,6 +35,10 @@ class TcpCubicSenderPeer : public TcpCubicSender {
 
   QuicTcpCongestionWindow congestion_window() {
     return congestion_window_;
+  }
+
+  const HybridSlowStart& hybrid_slow_start() const {
+    return hybrid_slow_start_;
   }
 
   RttStats rtt_stats_;
@@ -193,6 +198,11 @@ TEST_F(TcpCubicSenderTest, SlowStartAckTrain) {
   AckNPackets(2);
   expected_send_window += kDefaultTCPMSS;
   EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
+
+  // Now RTO and ensure slow start gets reset.
+  EXPECT_TRUE(sender_->hybrid_slow_start().started());
+  sender_->OnRetransmissionTimeout(true);
+  EXPECT_FALSE(sender_->hybrid_slow_start().started());
 }
 
 TEST_F(TcpCubicSenderTest, SlowStartPacketLoss) {
@@ -255,6 +265,11 @@ TEST_F(TcpCubicSenderTest, SlowStartPacketLoss) {
   AckNPackets(1);
   expected_send_window += kDefaultTCPMSS;
   EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
+
+  // Now RTO and ensure slow start gets reset.
+  EXPECT_TRUE(sender_->hybrid_slow_start().started());
+  sender_->OnRetransmissionTimeout(true);
+  EXPECT_FALSE(sender_->hybrid_slow_start().started());
 }
 
 TEST_F(TcpCubicSenderTest, SlowStartPacketLossPRR) {
@@ -571,9 +586,7 @@ TEST_F(TcpCubicSenderTest, SendWindowNotAffectedByAcks) {
 TEST_F(TcpCubicSenderTest, ConfigureMaxInitialWindow) {
   QuicTcpCongestionWindow congestion_window = sender_->congestion_window();
   QuicConfig config;
-  config.set_server_initial_congestion_window(2 * congestion_window,
-                                              2 * congestion_window);
-  EXPECT_EQ(2 * congestion_window, config.server_initial_congestion_window());
+  QuicConfigPeer::SetReceivedInitialWindow(&config, 2 * congestion_window);
 
   sender_->SetFromConfig(config, true);
   EXPECT_EQ(2 * congestion_window, sender_->congestion_window());

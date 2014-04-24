@@ -61,7 +61,8 @@ class GpuBlacklistTest : public testing::Test {
     gpu_info_.driver_vendor = "NVIDIA";
     gpu_info_.driver_version = "1.6.18";
     gpu_info_.driver_date = "7-14-2009";
-    gpu_info_.machine_model = "MacBookPro 7.1";
+    gpu_info_.machine_model_name = "MacBookPro";
+    gpu_info_.machine_model_version = "7.1";
     gpu_info_.gl_vendor = "NVIDIA Corporation";
     gpu_info_.gl_renderer = "NVIDIA GeForce GT 120 OpenGL Engine";
     gpu_info_.performance_stats.graphics = 5.0;
@@ -91,9 +92,9 @@ GPU_BLACKLIST_FEATURE_TEST(Accelerated2DCanvas,
                            "accelerated_2d_canvas",
                            GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS)
 
-GPU_BLACKLIST_FEATURE_TEST(AcceleratedCompositing,
-                           "accelerated_compositing",
-                           GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING)
+GPU_BLACKLIST_FEATURE_TEST(GpuCompositing,
+                           "gpu_compositing",
+                           GPU_FEATURE_TYPE_GPU_COMPOSITING)
 
 GPU_BLACKLIST_FEATURE_TEST(WebGL,
                            "webgl",
@@ -131,8 +132,8 @@ GPU_BLACKLIST_FEATURE_TEST(PanelFitting,
                            "panel_fitting",
                            GPU_FEATURE_TYPE_PANEL_FITTING)
 
-GPU_BLACKLIST_FEATURE_TEST(ForceCompositingMode,
-                           "force_compositing_mode",
-                           GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE)
+GPU_BLACKLIST_FEATURE_TEST(GpuRasterization,
+                           "gpu_rasterization",
+                           GPU_FEATURE_TYPE_GPU_RASTERIZATION)
 
 }  // namespace gpu

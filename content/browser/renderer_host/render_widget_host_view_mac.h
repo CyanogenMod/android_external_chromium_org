@@ -291,7 +291,6 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
   virtual void ScrollOffsetChanged() OVERRIDE;
-  virtual BackingStore* AllocBackingStore(const gfx::Size& size) OVERRIDE;
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
@@ -334,8 +333,8 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
-  virtual void HandledWheelEvent(const blink::WebMouseWheelEvent& event,
-                                 bool consumed) OVERRIDE;
+  virtual void UnhandledWheelEvent(
+      const blink::WebMouseWheelEvent& event) OVERRIDE;
 
   // IPC::Sender implementation.
   virtual bool Send(IPC::Message* message) OVERRIDE;

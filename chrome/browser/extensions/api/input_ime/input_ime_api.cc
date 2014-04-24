@@ -15,7 +15,6 @@
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_function_registry.h"
-#include "extensions/browser/extension_system.h"
 
 #if defined(USE_X11)
 #include "chrome/browser/chromeos/input_method/input_method_engine.h"
@@ -79,8 +78,8 @@ static void DispatchEventToExtension(Profile* profile,
   scoped_ptr<extensions::Event> event(new extensions::Event(
       event_name, args.Pass()));
   event->restrict_to_browser_context = profile;
-  extensions::ExtensionSystem::Get(profile)->event_router()->
-      DispatchEventToExtension(extension_id, event.Pass());
+  extensions::EventRouter::Get(profile)
+      ->DispatchEventToExtension(extension_id, event.Pass());
 }
 
 }  // namespace
@@ -280,8 +279,7 @@ class ImeObserver : public InputMethodEngineInterface::Observer {
 
  private:
   bool HasKeyEventListener() const {
-    return extensions::ExtensionSystem::Get(profile_)
-        ->event_router()
+    return extensions::EventRouter::Get(profile_)
         ->ExtensionHasEventListener(extension_id_,
                                     input_ime::OnKeyEvent::kEventName);
   }
@@ -780,19 +778,19 @@ bool InputImeKeyEventHandledFunction::RunImpl() {
 InputImeAPI::InputImeAPI(content::BrowserContext* context)
     : profile_(Profile::FromBrowserContext(context)) {
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
 
-  EventRouter* event_router = ExtensionSystem::Get(profile_)->event_router();
+  EventRouter* event_router = EventRouter::Get(profile_);
   event_router->RegisterObserver(this, input_ime::OnActivate::kEventName);
   event_router->RegisterObserver(this, input_ime::OnFocus::kEventName);
 }
 
 InputImeAPI::~InputImeAPI() {
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  EventRouter::Get(profile_)->UnregisterObserver(this);
 }
 
 static base::LazyInstance<BrowserContextKeyedAPIFactory<InputImeAPI> >
@@ -806,7 +804,7 @@ BrowserContextKeyedAPIFactory<InputImeAPI>* InputImeAPI::GetFactoryInstance() {
 void InputImeAPI::Observe(int type,
                           const content::NotificationSource& source,
                           const content::NotificationDetails& details) {
-  if (type == chrome::NOTIFICATION_EXTENSION_LOADED) {
+  if (type == chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED) {
     const Extension* extension =
         content::Details<const Extension>(details).ptr();
     const std::vector<InputComponentInfo>* input_components =

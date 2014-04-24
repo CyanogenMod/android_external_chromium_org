@@ -50,7 +50,9 @@ class ActiveTabPermissionGranter
 
   // extensions::ExtensionRegistryObserver implementation.
   virtual void OnExtensionUnloaded(content::BrowserContext* browser_context,
-                                   const Extension* extension) OVERRIDE;
+                                   const Extension* extension,
+                                   UnloadedExtensionInfo::Reason reason)
+      OVERRIDE;
 
   // Clears any tab-specific permissions for all extensions on |tab_id_| and
   // notifies renderers.
@@ -64,8 +66,8 @@ class ActiveTabPermissionGranter
   ExtensionSet granted_extensions_;
 
   // Listen to extension unloaded notifications.
-  ScopedObserver<ExtensionRegistry,
-                 ExtensionRegistryObserver> scoped_extension_registry_observer_;
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ActiveTabPermissionGranter);
 };

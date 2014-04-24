@@ -133,6 +133,27 @@ enum PP_NaClReadyState {
   PP_NACL_READY_STATE_DONE = 4
 };
 
+struct PP_PNaClOptions {
+  PP_Bool translate;
+  PP_Bool is_debug;
+  int32_t opt_level;
+};
+
+/* ManifestService to support irt_open_resource() function.
+ * All functions of the service should have PP_Bool return value. It represents
+ * whether the service is still alive or not. Trivially Quit() should always
+ * return false. However, other functions also can return false.
+ * Once false is called, as the service has been destructed, all functions
+ * should never be called afterwords.
+ */
+interface PP_ManifestService {
+  /* Called when ManifestService should be destructed. */
+  PP_Bool Quit([inout] mem_t user_data);
+
+  /* Called when PPAPI initialization in the NaCl plugin is finished. */
+  PP_Bool StartupInitializationComplete([inout] mem_t user_data);
+};
+
 /* PPB_NaCl_Private */
 interface PPB_NaCl_Private {
   /* Launches NaCl's sel_ldr process.  Returns PP_EXTERNAL_PLUGIN_OK on success
@@ -163,6 +184,8 @@ interface PPB_NaCl_Private {
                     [in] PP_Bool enable_dyncode_syscalls,
                     [in] PP_Bool enable_exception_handling,
                     [in] PP_Bool enable_crash_throttling,
+                    [in] PP_ManifestService manifest_service_interface,
+                    [inout] mem_t manifest_service_user_data,
                     [out] mem_t imc_handle,
                     [out] PP_Var error_message,
                     [in] PP_CompletionCallback callback);
@@ -325,16 +348,8 @@ interface PPB_NaCl_Private {
   /* Returns the NaCl readiness status for this instance. */
   PP_NaClReadyState GetNaClReadyState([in] PP_Instance instance);
 
-  /* Sets the NaCl readiness status for this instance. */
-  void SetNaClReadyState([in] PP_Instance instance,
-                         [in] PP_NaClReadyState ready_state);
-
   /* Returns true if the plugin is an installed app. */
   PP_Bool GetIsInstalled([in] PP_Instance instance);
-
-  /* Sets whether the plugin is an installed app. */
-  void SetIsInstalled([in] PP_Instance instance,
-                      [in] PP_Bool is_installed);
 
   /* Returns the exit status of the plugin process. */
   int32_t GetExitStatus([in] PP_Instance instance);
@@ -346,13 +361,28 @@ interface PPB_NaCl_Private {
   /* Logs the message via VLOG. */
   void Vlog([in] str_t message);
 
-  /* Sets the time the plugin was initialized. */
-  void SetInitTime([in] PP_Instance instance);
+  /* Initializes internal state for a NaCl plugin. */
+  void InitializePlugin([in] PP_Instance instance);
 
   /* Returns the size of the nexe. */
   int64_t GetNexeSize([in] PP_Instance instance);
 
-  /* Sets the size of the nexe. */
-  void SetNexeSize([in] PP_Instance instance,
-                   [in] int64_t nexe_size);
+  /* Performs accounting for requesting the NaCl manifest at the given URL. */
+  PP_Bool RequestNaClManifest([in] PP_Instance instance,
+                              [in] str_t manifest_url,
+                              [out] PP_Bool is_data_uri);
+
+  PP_Var GetManifestBaseURL([in] PP_Instance instance);
+
+  PP_Bool ResolvesRelativeToPluginBaseUrl([in] PP_Instance instance,
+                                          [in] str_t url);
+
+  PP_Var ParseDataURL([in] str_t data_url);
+
+  /* Processes the NaCl manifest once it's been retrieved.
+   * TODO(teravest): Move the rest of the supporting logic out of the trusted
+   * plugin.
+   */
+  void ProcessNaClManifest([in] PP_Instance instance,
+                           [in] str_t program_url);
 };

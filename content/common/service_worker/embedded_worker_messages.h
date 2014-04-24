@@ -16,10 +16,22 @@
 
 #define IPC_MESSAGE_START EmbeddedWorkerMsgStart
 
+// Parameters structure for EmbeddedWorkerHostMsg_ReportConsoleMessage.
+// The data members directly correspond to parameters of
+// WorkerMessagingProxy::reportConsoleMessage()
+IPC_STRUCT_BEGIN(EmbeddedWorkerHostMsg_ReportConsoleMessage_Params)
+IPC_STRUCT_MEMBER(int, source_identifier)
+IPC_STRUCT_MEMBER(int, message_level)
+IPC_STRUCT_MEMBER(base::string16, message)
+IPC_STRUCT_MEMBER(int, line_number)
+IPC_STRUCT_MEMBER(GURL, source_url)
+IPC_STRUCT_END()
+
 // Browser -> Renderer message to create a new embedded worker context.
-IPC_MESSAGE_CONTROL3(EmbeddedWorkerMsg_StartWorker,
+IPC_MESSAGE_CONTROL4(EmbeddedWorkerMsg_StartWorker,
                      int /* embedded_worker_id */,
                      int64 /* service_worker_version_id */,
+                     GURL /* scope */,
                      GURL /* script_url */)
 
 // Browser -> Renderer message to stop (terminate) the embedded worker.
@@ -35,9 +47,9 @@ IPC_MESSAGE_CONTROL2(EmbeddedWorkerHostMsg_WorkerStarted,
 IPC_MESSAGE_CONTROL1(EmbeddedWorkerHostMsg_WorkerStopped,
                      int /* embedded_worker_id */)
 
-// Renderer -> Browser message to send message.
-// |request_id| might be used for bi-directional messaging.
-IPC_MESSAGE_CONTROL3(EmbeddedWorkerHostMsg_SendMessageToBrowser,
+// Renderer -> Browser message to send reply message for |request_id|.
+// TODO(kinuko): Deprecate this.
+IPC_MESSAGE_CONTROL3(EmbeddedWorkerHostMsg_ReplyToBrowser,
                      int /* embedded_worker_id */,
                      int /* request_id */,
                      IPC::Message /* message */)
@@ -50,6 +62,12 @@ IPC_MESSAGE_CONTROL5(EmbeddedWorkerHostMsg_ReportException,
                      int /* column_number */,
                      GURL /* source_url */)
 
+// Renderer -> Browser message to report console message.
+IPC_MESSAGE_CONTROL2(
+    EmbeddedWorkerHostMsg_ReportConsoleMessage,
+    int /* embedded_worker_id */,
+    EmbeddedWorkerHostMsg_ReportConsoleMessage_Params /* params */)
+
 // ---------------------------------------------------------------------------
 // For EmbeddedWorkerContext related messages, which are directly sent from
 // browser to the worker thread in the child process. We use a new message class
@@ -59,8 +77,10 @@ IPC_MESSAGE_CONTROL5(EmbeddedWorkerHostMsg_ReportException,
 #define IPC_MESSAGE_START EmbeddedWorkerContextMsgStart
 
 // Browser -> Renderer message to send message.
-// |request_id| might be used for bi-directional messaging.
-IPC_MESSAGE_CONTROL4(EmbeddedWorkerContextMsg_SendMessageToWorker,
+// |request_id| might be used for bi-directional messaging (in the case where
+// browser side expects a corresponding EmbeddedWorkerHostMsg_ReplyToBrowser
+// message for the |request_id|.
+IPC_MESSAGE_CONTROL4(EmbeddedWorkerContextMsg_MessageToWorker,
                      int /* thread_id */,
                      int /* embedded_worker_id */,
                      int /* request_id */,

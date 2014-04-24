@@ -29,7 +29,9 @@ class ZygoteForkDelegate {
 
   // Initialization happens in the zygote after it has been
   // started by ZygoteMain.
-  virtual void Init(int sandboxdesc) = 0;
+  // If |enable_layer1_sandbox| is true, the delegate must enable a
+  // layer-1 sandbox such as the setuid sandbox.
+  virtual void Init(int sandboxdesc, bool enable_layer1_sandbox) = 0;
 
   // After Init, supply a UMA_HISTOGRAM_ENUMERATION the delegate
   // would like to supply on the first fork.
@@ -59,13 +61,11 @@ class ZygoteForkDelegate {
   // suid sandbox, Fork() returns the Linux process ID.
   // This method is not aware of any potential pid namespaces, so it'll
   // return a raw pid just like fork() would.
+  // Delegate is responsible for communicating the channel ID to the
+  // newly created child process.
   virtual pid_t Fork(const std::string& process_type,
-                     const std::vector<int>& fds) = 0;
-
-  // After a successful fork, signal the child to indicate that
-  // the child's PID has been received. Also communicate the
-  // channel switch as a part of acknowledgement message.
-  virtual bool AckChild(int fd, const std::string& channel_switch) = 0;
+                     const std::vector<int>& fds,
+                     const std::string& channel_id) = 0;
 
   // The fork delegate must also assume the role of waiting for its children
   // since the caller will not be their parents and cannot do it. |pid| here

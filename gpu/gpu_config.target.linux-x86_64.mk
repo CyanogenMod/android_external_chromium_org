@@ -53,7 +53,6 @@ MY_CFLAGS_Debug := \
 	-pipe \
 	-fPIC \
 	-Wno-unused-local-typedefs \
-	-Wno-unknown-pragmas \
 	-m64 \
 	-march=x86-64 \
 	-fuse-ld=gold \
@@ -149,7 +148,6 @@ MY_CFLAGS_Release := \
 	-pipe \
 	-fPIC \
 	-Wno-unused-local-typedefs \
-	-Wno-unknown-pragmas \
 	-m64 \
 	-march=x86-64 \
 	-fuse-ld=gold \
@@ -249,7 +247,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed

@@ -11,12 +11,14 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chromeos/file_manager/fake_disk_mount_manager.h"
 #include "chrome/browser/chromeos/file_manager/volume_manager_observer.h"
+#include "chrome/browser/chromeos/file_system_provider/fake_provided_file_system.h"
 #include "chrome/browser/chromeos/file_system_provider/service.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/dbus/fake_power_manager_client.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "extensions/browser/extension_registry.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace file_manager {
@@ -42,6 +44,9 @@ class LoggingObserver : public VolumeManagerObserver {
 
     // Available on DISK_ADDED.
     bool mounting;
+
+    // Available on DEVICE_REMOVED;
+    bool hard_unplugged;
 
     // Available on VOLUME_MOUNTED and VOLUME_UNMOUNTED.
     chromeos::MountError mount_error;
@@ -83,10 +88,12 @@ class LoggingObserver : public VolumeManagerObserver {
     events_.push_back(event);
   }
 
-  virtual void OnDeviceRemoved(const std::string& device_path) OVERRIDE {
+  virtual void OnDeviceRemoved(const std::string& device_path,
+                               bool hard_unplugged) OVERRIDE {
     Event event;
     event.type = Event::DEVICE_REMOVED;
     event.device_path = device_path;
+    event.hard_unplugged = hard_unplugged;
     events_.push_back(event);
   }
 
@@ -144,14 +151,20 @@ class VolumeManagerTest : public testing::Test {
     ProfileEnvironment(chromeos::PowerManagerClient* power_manager_client,
                        chromeos::disks::DiskMountManager* disk_manager)
         : profile_(new TestingProfile),
+          extension_registry_(
+              new extensions::ExtensionRegistry(profile_.get())),
           file_system_provider_service_(
-              new chromeos::file_system_provider::Service(profile_.get())),
-          volume_manager_(new VolumeManager(
-              profile_.get(),
-              NULL,  // DriveIntegrationService
-              power_manager_client,
-              disk_manager,
-              file_system_provider_service_.get())) {
+              new chromeos::file_system_provider::Service(
+                  profile_.get(),
+                  extension_registry_.get())),
+          volume_manager_(
+              new VolumeManager(profile_.get(),
+                                NULL,  // DriveIntegrationService
+                                power_manager_client,
+                                disk_manager,
+                                file_system_provider_service_.get())) {
+      file_system_provider_service_->SetFileSystemFactoryForTests(base::Bind(
+          &chromeos::file_system_provider::FakeProvidedFileSystem::Create));
     }
 
     Profile* profile() const { return profile_.get(); }
@@ -159,6 +172,7 @@ class VolumeManagerTest : public testing::Test {
 
    private:
     scoped_ptr<TestingProfile> profile_;
+    scoped_ptr<extensions::ExtensionRegistry> extension_registry_;
     scoped_ptr<chromeos::file_system_provider::Service>
         file_system_provider_service_;
     scoped_ptr<VolumeManager> volume_manager_;
@@ -508,12 +522,7 @@ TEST_F(VolumeManagerTest, OnMountEvent_Remounting) {
   // Emulate system suspend and then resume.
   {
     power_manager_client_->SendSuspendImminent();
-    power_manager::SuspendState state;
-    state.set_type(power_manager::SuspendState_Type_SUSPEND_TO_MEMORY);
-    state.set_wall_time(0);
-    power_manager_client_->SendSuspendStateChanged(state);
-    state.set_type(power_manager::SuspendState_Type_RESUME);
-    power_manager_client_->SendSuspendStateChanged(state);
+    power_manager_client_->SendSuspendDone();
 
     // After resume, the device is unmounted and then mounted.
     disk_mount_manager_->UnmountPath(
@@ -804,6 +813,45 @@ TEST_F(VolumeManagerTest, ArchiveSourceFiltering) {
           chromeos::disks::MOUNT_CONDITION_NONE));
   EXPECT_FALSE(volume_manager()->FindVolumeInfoById("archive:3", &volume_info));
   EXPECT_EQ(3u, observer.events().size());
+}
+
+TEST_F(VolumeManagerTest, HardUnplugged) {
+  LoggingObserver observer;
+  volume_manager()->AddObserver(&observer);
+  volume_manager()->OnDeviceEvent(
+      chromeos::disks::DiskMountManager::DEVICE_REMOVED, "device1");
+
+  // Disk that has a mount path is removed.
+  chromeos::disks::DiskMountManager::Disk disk("device1",
+                                               "/mount/path",
+                                               "",
+                                               "",
+                                               "",
+                                               "",
+                                               "",
+                                               "",
+                                               "",
+                                               "",
+                                               "uuid1",
+                                               "device1",
+                                               chromeos::DEVICE_TYPE_UNKNOWN,
+                                               0,
+                                               false,
+                                               false,
+                                               false,
+                                               false,
+                                               false);
+  disk_mount_manager_->InvokeDiskEventForTest(
+      chromeos::disks::DiskMountManager::DISK_REMOVED, &disk);
+
+  volume_manager()->OnDeviceEvent(
+      chromeos::disks::DiskMountManager::DEVICE_REMOVED, "device1");
+
+  EXPECT_EQ(2u, observer.events().size());
+  EXPECT_EQ(LoggingObserver::Event::DEVICE_REMOVED, observer.events()[0].type);
+  EXPECT_EQ(LoggingObserver::Event::DEVICE_REMOVED, observer.events()[1].type);
+  EXPECT_FALSE(observer.events()[0].hard_unplugged);
+  EXPECT_TRUE(observer.events()[1].hard_unplugged);
 }
 
 }  // namespace file_manager

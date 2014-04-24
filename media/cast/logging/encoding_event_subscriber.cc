@@ -60,6 +60,7 @@ void EncodingEventSubscriber::OnReceiveFrameEvent(
     } else if (frame_event.type == kVideoFrameEncoded) {
       event_proto->set_encoded_frame_size(frame_event.size);
       event_proto->set_key_frame(frame_event.key_frame);
+      event_proto->set_target_bitrate(frame_event.target_bitrate);
     } else if (frame_event.type == kAudioPlayoutDelay ||
                frame_event.type == kVideoRenderDelay) {
       event_proto->set_delay_millis(frame_event.delay_delta.InMilliseconds());
@@ -123,12 +124,6 @@ void EncodingEventSubscriber::OnReceivePacketEvent(
   DCHECK(packet_event_map_.size() <= max_frames_);
 }
 
-void EncodingEventSubscriber::OnReceiveGenericEvent(
-    const GenericEvent& generic_event) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  // Do nothing, there are no generic events we are interested in.
-}
-
 void EncodingEventSubscriber::GetEventsAndReset(LogMetadata* metadata,
                                                 FrameEventMap* frame_events,
                                                 PacketEventMap* packet_events) {
@@ -138,6 +133,8 @@ void EncodingEventSubscriber::GetEventsAndReset(LogMetadata* metadata,
   metadata->set_first_rtp_timestamp(first_rtp_timestamp_);
   metadata->set_num_frame_events(frame_event_map_.size());
   metadata->set_num_packet_events(packet_event_map_.size());
+  metadata->set_reference_timestamp_ms_at_unix_epoch(
+      (base::TimeTicks::UnixEpoch() - base::TimeTicks()).InMilliseconds());
   frame_events->swap(frame_event_map_);
   packet_events->swap(packet_event_map_);
   Reset();

@@ -44,13 +44,10 @@ extern const char kAttributePartition[];
 extern const char kAttributeSrc[];
 
 // Parameters/properties on events.
-extern const char kDefaultPromptText[];
 extern const char kId[];
 extern const char kInitialHeight[];
 extern const char kInitialWidth[];
 extern const char kLastUnlockedBySelf[];
-extern const char kMessageText[];
-extern const char kMessageType[];
 extern const char kName[];
 extern const char kPermission[];
 extern const char kPermissionTypeDialog[];
@@ -65,7 +62,6 @@ extern const char kRequestId[];
 extern const char kRequestMethod[];
 extern const char kTargetURL[];
 extern const char kURL[];
-extern const char kUserGesture[];
 extern const char kWindowID[];
 extern const char kWindowOpenDisposition[];
 

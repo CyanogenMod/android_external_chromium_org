@@ -38,10 +38,10 @@
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
-#include "chrome/common/favicon/favicon_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/common/web_application_info.h"
+#include "components/favicon_base/favicon_types.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/favicon_url.h"
@@ -260,7 +260,7 @@ void AppLauncherHandler::Observe(int type,
     return;
 
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
       const Extension* extension =
           content::Details<const Extension>(details).ptr();
       if (!extension->is_app())
@@ -473,8 +473,9 @@ void AppLauncherHandler::HandleGetApps(const base::ListValue* args) {
         extensions::pref_names::kExtensions, callback);
     extension_pref_change_registrar_.Add(prefs::kNtpAppPageNames, callback);
 
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
-        content::Source<Profile>(profile));
+    registrar_.Add(this,
+                   chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+                   content::Source<Profile>(profile));
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
         content::Source<Profile>(profile));
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
@@ -714,9 +715,8 @@ void AppLauncherHandler::HandleGenerateAppForLink(const base::ListValue* args) {
   install_info->page_ordinal = page_ordinal;
 
   favicon_service->GetFaviconImageForURL(
-      FaviconService::FaviconForURLParams(launch_url,
-                                          chrome::FAVICON,
-                                          gfx::kFaviconSize),
+      FaviconService::FaviconForURLParams(
+          launch_url, favicon_base::FAVICON, gfx::kFaviconSize),
       base::Bind(&AppLauncherHandler::OnFaviconForApp,
                  base::Unretained(this),
                  base::Passed(&install_info)),
@@ -738,7 +738,7 @@ void AppLauncherHandler::OnLearnMore(const base::ListValue* args) {
 
 void AppLauncherHandler::OnFaviconForApp(
     scoped_ptr<AppInstallInfo> install_info,
-    const chrome::FaviconImageResult& image_result) {
+    const favicon_base::FaviconImageResult& image_result) {
   scoped_ptr<WebApplicationInfo> web_app(new WebApplicationInfo());
   web_app->title = install_info->title;
   web_app->app_url = install_info->app_url;

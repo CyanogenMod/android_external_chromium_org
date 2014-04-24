@@ -12,8 +12,6 @@
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebIconURL.h"
-// TODO(dcheng): Temporary. Convert back to a forward declare.
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
 
 class GURL;
 
@@ -28,6 +26,7 @@ class WebDataSource;
 class WebFrame;
 class WebFormElement;
 class WebGestureEvent;
+class WebLocalFrame;
 class WebMediaPlayerClient;
 class WebMouseEvent;
 class WebNode;
@@ -93,9 +92,6 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   // These match the RenderView methods.
   virtual void DidHandleMouseEvent(const blink::WebMouseEvent& event) {}
   virtual void DidHandleTouchEvent(const blink::WebTouchEvent& event) {}
-
-  // This matches the RenderWidget method.
-  virtual void WillProcessUserGesture() {}
 
   // Called when we receive a console message from WebKit for which we requested
   // extra details (like the stack trace). |message| is the error message,

@@ -7066,15 +7066,29 @@ TEST_F(GLES2DecoderManualInitTest, BeginEndQueryEXT) {
   EXPECT_CALL(*gl_, BeginQueryARB(GL_ANY_SAMPLES_PASSED_EXT, kNewServiceId))
       .Times(1)
       .RetiresOnSaturation();
+
+  // Query object should not be created untill BeginQueriesEXT.
+  QueryManager* query_manager = decoder_->GetQueryManager();
+  ASSERT_TRUE(query_manager != NULL);
+  QueryManager::Query* query = query_manager->GetQuery(kNewClientId);
+  EXPECT_TRUE(query == NULL);
+
+  // BeginQueryEXT should fail  if id is not generated from GenQueriesEXT.
+  begin_cmd.Init(GL_ANY_SAMPLES_PASSED_EXT,
+                 kInvalidClientId,
+                 kSharedMemoryId,
+                 kSharedMemoryOffset);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(begin_cmd));
+  EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
+
   begin_cmd.Init(
       GL_ANY_SAMPLES_PASSED_EXT, kNewClientId,
       kSharedMemoryId, kSharedMemoryOffset);
   EXPECT_EQ(error::kNoError, ExecuteCmd(begin_cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 
-  QueryManager* query_manager = decoder_->GetQueryManager();
-  ASSERT_TRUE(query_manager != NULL);
-  QueryManager::Query* query = query_manager->GetQuery(kNewClientId);
+  // After BeginQueriesEXT id name should have query object associated with it.
+  query = query_manager->GetQuery(kNewClientId);
   ASSERT_TRUE(query != NULL);
   EXPECT_FALSE(query->pending());
 
@@ -7112,6 +7126,7 @@ const QueryType kQueryTypes[] = {
   { GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM, false },
   { GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM, false },
   { GL_GET_ERROR_QUERY_CHROMIUM, false },
+  { GL_COMMANDS_COMPLETED_CHROMIUM, false },
   { GL_ANY_SAMPLES_PASSED_EXT, true },
 };
 
@@ -7125,7 +7140,7 @@ static void CheckBeginEndQueryBadMemoryFails(
   // We need to reset the decoder on each iteration, because we lose the
   // context every time.
   GLES2DecoderTestBase::InitState init;
-  init.extensions = "GL_EXT_occlusion_query_boolean";
+  init.extensions = "GL_EXT_occlusion_query_boolean GL_ARB_sync";
   init.gl_version = "opengl es 2.0";
   init.has_alpha = true;
   init.request_alpha = true;
@@ -7160,6 +7175,13 @@ static void CheckBeginEndQueryBadMemoryFails(
         .WillOnce(Return(GL_NO_ERROR))
         .RetiresOnSaturation();
   }
+  GLsync kGlSync = reinterpret_cast<GLsync>(0xdeadbeef);
+  if (query_type.type == GL_COMMANDS_COMPLETED_CHROMIUM) {
+    EXPECT_CALL(*gl, Flush()).RetiresOnSaturation();
+    EXPECT_CALL(*gl, FenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0))
+        .WillOnce(Return(kGlSync))
+        .RetiresOnSaturation();
+  }
 
   EndQueryEXT end_cmd;
   end_cmd.Init(query_type.type, 1);
@@ -7173,6 +7195,11 @@ static void CheckBeginEndQueryBadMemoryFails(
     EXPECT_CALL(*gl,
         GetQueryObjectuivARB(service_id, GL_QUERY_RESULT_EXT, _))
         .WillOnce(SetArgumentPointee<2>(1))
+        .RetiresOnSaturation();
+  }
+  if (query_type.type == GL_COMMANDS_COMPLETED_CHROMIUM) {
+    EXPECT_CALL(*gl, ClientWaitSync(kGlSync, _, _))
+        .WillOnce(Return(GL_ALREADY_SIGNALED))
         .RetiresOnSaturation();
   }
 
@@ -7189,6 +7216,8 @@ static void CheckBeginEndQueryBadMemoryFails(
         .Times(1)
         .RetiresOnSaturation();
   }
+  if (query_type.type == GL_COMMANDS_COMPLETED_CHROMIUM)
+    EXPECT_CALL(*gl, DeleteSync(kGlSync)).Times(1).RetiresOnSaturation();
   test->ResetDecoder();
 }
 
@@ -7274,6 +7303,65 @@ TEST_F(GLES2DecoderTest, BeginEndQueryEXTGetErrorQueryCHROMIUM) {
   EXPECT_FALSE(query->pending());
   EXPECT_EQ(static_cast<GLenum>(GL_INVALID_VALUE),
             static_cast<GLenum>(sync->result));
+}
+
+TEST_F(GLES2DecoderManualInitTest, BeginEndQueryEXTCommandsCompletedCHROMIUM) {
+  InitState init;
+  init.extensions = "GL_EXT_occlusion_query_boolean GL_ARB_sync";
+  init.gl_version = "opengl es 2.0";
+  init.has_alpha = true;
+  init.request_alpha = true;
+  init.bind_generates_resource = true;
+  InitDecoder(init);
+
+  GenHelper<GenQueriesEXTImmediate>(kNewClientId);
+
+  BeginQueryEXT begin_cmd;
+  begin_cmd.Init(GL_COMMANDS_COMPLETED_CHROMIUM,
+                 kNewClientId,
+                 kSharedMemoryId,
+                 kSharedMemoryOffset);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(begin_cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+
+  QueryManager* query_manager = decoder_->GetQueryManager();
+  ASSERT_TRUE(query_manager != NULL);
+  QueryManager::Query* query = query_manager->GetQuery(kNewClientId);
+  ASSERT_TRUE(query != NULL);
+  EXPECT_FALSE(query->pending());
+
+  GLsync kGlSync = reinterpret_cast<GLsync>(0xdeadbeef);
+  EXPECT_CALL(*gl_, Flush()).RetiresOnSaturation();
+  EXPECT_CALL(*gl_, FenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0))
+      .WillOnce(Return(kGlSync))
+      .RetiresOnSaturation();
+
+  EndQueryEXT end_cmd;
+  end_cmd.Init(GL_COMMANDS_COMPLETED_CHROMIUM, 1);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(end_cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+  EXPECT_TRUE(query->pending());
+
+  EXPECT_CALL(*gl_, ClientWaitSync(kGlSync, _, _))
+      .WillOnce(Return(GL_TIMEOUT_EXPIRED))
+      .RetiresOnSaturation();
+  bool process_success = query_manager->ProcessPendingQueries();
+
+  EXPECT_TRUE(process_success);
+  EXPECT_TRUE(query->pending());
+
+  EXPECT_CALL(*gl_, ClientWaitSync(kGlSync, _, _))
+      .WillOnce(Return(GL_ALREADY_SIGNALED))
+      .RetiresOnSaturation();
+  process_success = query_manager->ProcessPendingQueries();
+
+  EXPECT_TRUE(process_success);
+  EXPECT_FALSE(query->pending());
+  QuerySync* sync = static_cast<QuerySync*>(shared_memory_address_);
+  EXPECT_EQ(static_cast<GLenum>(0), static_cast<GLenum>(sync->result));
+
+  EXPECT_CALL(*gl_, DeleteSync(kGlSync)).Times(1).RetiresOnSaturation();
+  ResetDecoder();
 }
 
 TEST_F(GLES2DecoderTest, ProduceAndConsumeTextureCHROMIUM) {
@@ -7706,6 +7794,20 @@ class GLES2DecoderVertexArraysOESTest : public GLES2DecoderWithShaderTest {
               ExecuteImmediateCmd(cmd, sizeof(temp)));
   }
 
+  void DeleteBoundVertexArraysOESImmediateValidArgs() {
+    BindVertexArrayOESValidArgs();
+
+    AddExpectationsForDeleteBoundVertexArraysOES();
+    DeleteVertexArraysOESImmediate& cmd =
+        *GetImmediateAs<DeleteVertexArraysOESImmediate>();
+    cmd.Init(1, &client_vertexarray_id_);
+    EXPECT_EQ(error::kNoError,
+              ExecuteImmediateCmd(cmd, sizeof(client_vertexarray_id_)));
+    EXPECT_EQ(GL_NO_ERROR, GetGLError());
+    EXPECT_TRUE(GetVertexArrayInfo(client_vertexarray_id_) == NULL);
+    vertex_array_deleted_manually_ = true;
+  }
+
   void IsVertexArrayOESValidArgs() {
     IsVertexArrayOES cmd;
     cmd.Init(client_vertexarray_id_, shared_memory_id_, shared_memory_offset_);
@@ -7822,6 +7924,15 @@ TEST_F(GLES2DecoderVertexArraysOESTest,
 TEST_F(GLES2DecoderEmulatedVertexArraysOESTest,
     DeleteVertexArraysOESImmediateInvalidArgs) {
   DeleteVertexArraysOESImmediateInvalidArgs();
+}
+
+TEST_F(GLES2DecoderVertexArraysOESTest,
+       DeleteBoundVertexArraysOESImmediateValidArgs) {
+  DeleteBoundVertexArraysOESImmediateValidArgs();
+}
+TEST_F(GLES2DecoderEmulatedVertexArraysOESTest,
+       DeleteBoundVertexArraysOESImmediateValidArgs) {
+  DeleteBoundVertexArraysOESImmediateValidArgs();
 }
 
 TEST_F(GLES2DecoderVertexArraysOESTest, IsVertexArrayOESValidArgs) {
@@ -8278,6 +8389,7 @@ TEST_F(GLES2DecoderManualInitTest, AsyncPixelTransfers) {
   // AsyncTexImage2D
   {
     // Create transfer state since it doesn't exist.
+    EXPECT_EQ(texture_ref->num_observers(), 0);
     EXPECT_CALL(*manager, CreatePixelTransferDelegateImpl(texture_ref, _))
         .WillOnce(Return(
             delegate = new StrictMock<gpu::MockAsyncPixelTransferDelegate>))
@@ -8297,6 +8409,7 @@ TEST_F(GLES2DecoderManualInitTest, AsyncPixelTransfers) {
     EXPECT_TRUE(texture->SafeToRenderFrom());
     GLsizei width, height;
     EXPECT_FALSE(texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height));
+    EXPECT_EQ(texture_ref->num_observers(), 1);
   }
   {
     // Async redefinitions are not allowed!
@@ -8330,8 +8443,10 @@ TEST_F(GLES2DecoderManualInitTest, AsyncPixelTransfers) {
   }
 
   // AsyncTexSubImage2D
+  EXPECT_CALL(*delegate, Destroy()).RetiresOnSaturation();
   decoder_->GetAsyncPixelTransferManager()
       ->ClearPixelTransferDelegateForTest(texture_ref);
+  EXPECT_EQ(texture_ref->num_observers(), 0);
   texture->SetImmutable(false);
   {
     // Create transfer state since it doesn't exist.
@@ -8387,6 +8502,7 @@ TEST_F(GLES2DecoderManualInitTest, AsyncPixelTransfers) {
 
   // Delete delegate on DeleteTexture.
   {
+    EXPECT_EQ(texture_ref->num_observers(), 1);
     EXPECT_CALL(*delegate, Destroy()).RetiresOnSaturation();
     DoDeleteTexture(client_texture_id_, kServiceTextureId);
     EXPECT_FALSE(
@@ -8470,6 +8586,11 @@ TEST_F(GLES2DecoderManualInitTest, AsyncPixelTransfers) {
     EXPECT_EQ(error::kNoError, ExecuteCmd(wait_all_cmd));
     EXPECT_EQ(GL_NO_ERROR, GetGLError());
   }
+
+  // Remove PixelTransferManager before the decoder destroys.
+  EXPECT_CALL(*delegate, Destroy()).RetiresOnSaturation();
+  decoder_->ResetAsyncPixelTransferManagerForTest();
+  manager = NULL;
 }
 
 TEST_F(GLES2DecoderManualInitTest, AsyncPixelTransferManager) {
@@ -8520,11 +8641,14 @@ TEST_F(GLES2DecoderManualInitTest, AsyncPixelTransferManager) {
 
   // Delete delegate on manager teardown.
   {
+    EXPECT_EQ(texture_ref->num_observers(), 1);
     EXPECT_CALL(*delegate, Destroy()).RetiresOnSaturation();
     decoder_->ResetAsyncPixelTransferManagerForTest();
+    manager = NULL;
 
     // Texture ref still valid.
     EXPECT_EQ(texture_ref, GetTexture(client_texture_id_));
+    EXPECT_EQ(texture_ref->num_observers(), 0);
   }
 }
 
@@ -9143,6 +9267,20 @@ TEST_F(GLES2DecoderRestoreStateTest, DefaultUnit1) {
 
   GetDecoder()->RestoreAllTextureUnitBindings(&prev_state);
 }
+
+// TODO(vmiura): Tests for VAO restore.
+
+// TODO(vmiura): Tests for ContextState::RestoreAttribute().
+
+// TODO(vmiura): Tests for ContextState::RestoreBufferBindings().
+
+// TODO(vmiura): Tests for ContextState::RestoreProgramBindings().
+
+// TODO(vmiura): Tests for RestoreRenderbufferBindings().
+
+// TODO(vmiura): Tests for RestoreProgramBindings().
+
+// TODO(vmiura): Tests for RestoreGlobalState().
 
 TEST_F(GLES2DecoderManualInitTest, ClearUniformsBeforeFirstProgramUse) {
   CommandLine command_line(0, NULL);

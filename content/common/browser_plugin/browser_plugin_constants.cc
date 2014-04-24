@@ -44,13 +44,10 @@ const char kAttributePartition[] = "partition";
 const char kAttributeSrc[] = "src";
 
 // Parameters/properties on events.
-const char kDefaultPromptText[] = "defaultPromptText";
 const char kId[] = "id";
 const char kInitialHeight[] = "initialHeight";
 const char kInitialWidth[] = "initialWidth";
 const char kLastUnlockedBySelf[] = "lastUnlockedBySelf";
-const char kMessageText[] = "messageText";
-const char kMessageType[] = "messageType";
 const char kName[] = "name";
 const char kPermission[] = "permission";
 const char kPermissionTypeDialog[] = "dialog";
@@ -67,7 +64,6 @@ const char kTargetURL[] = "targetUrl";
 const char kURL[] = "url";
 const char kWindowID[] = "windowId";
 const char kWindowOpenDisposition[] = "windowOpenDisposition";
-const char kUserGesture[] = "userGesture";
 
 // Error messages.
 const char kErrorAlreadyNavigated[] =

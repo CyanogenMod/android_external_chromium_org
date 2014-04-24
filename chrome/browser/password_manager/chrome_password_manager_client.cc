@@ -165,6 +165,7 @@ bool ChromePasswordManagerClient::IsPasswordSyncEnabled() {
   // crbug.com/358998 for more details.
   if (sync_service &&
       sync_service->HasSyncSetupCompleted() &&
+      sync_service->sync_initialized() &&
       !sync_service->IsUsingSecondaryPassphrase()) {
     return sync_service->GetActiveDataTypes().Has(syncer::PASSWORDS);
   }

@@ -27,14 +27,14 @@ const char MediaStreamVideoSource::kMaxFrameRate[] = "maxFrameRate";
 const char MediaStreamVideoSource::kMinFrameRate[] = "minFrameRate";
 
 const char* kSupportedConstraints[] = {
-    MediaStreamVideoSource::kMaxAspectRatio,
-    MediaStreamVideoSource::kMinAspectRatio,
-    MediaStreamVideoSource::kMaxWidth,
-    MediaStreamVideoSource::kMinWidth,
-    MediaStreamVideoSource::kMaxHeight,
-    MediaStreamVideoSource::kMinHeight,
-    MediaStreamVideoSource::kMaxFrameRate,
-    MediaStreamVideoSource::kMinFrameRate,
+  MediaStreamVideoSource::kMaxAspectRatio,
+  MediaStreamVideoSource::kMinAspectRatio,
+  MediaStreamVideoSource::kMaxWidth,
+  MediaStreamVideoSource::kMinWidth,
+  MediaStreamVideoSource::kMaxHeight,
+  MediaStreamVideoSource::kMinHeight,
+  MediaStreamVideoSource::kMaxFrameRate,
+  MediaStreamVideoSource::kMinFrameRate,
 };
 
 const int MediaStreamVideoSource::kDefaultWidth = 640;
@@ -300,11 +300,8 @@ bool MediaStreamVideoSource::IsConstraintSupported(const std::string& name) {
   return false;
 }
 
-MediaStreamVideoSource::MediaStreamVideoSource(
-    MediaStreamDependencyFactory* factory)
-    : state_(NEW),
-      factory_(factory),
-      capture_adapter_(NULL) {
+MediaStreamVideoSource::MediaStreamVideoSource()
+    : state_(NEW) {
 }
 
 MediaStreamVideoSource::~MediaStreamVideoSource() {
@@ -353,35 +350,17 @@ void MediaStreamVideoSource::AddTrack(
 }
 
 void MediaStreamVideoSource::RemoveTrack(MediaStreamVideoTrack* video_track) {
+  DCHECK(CalledOnValidThread());
   std::vector<MediaStreamVideoTrack*>::iterator it =
       std::find(tracks_.begin(), tracks_.end(), video_track);
   DCHECK(it != tracks_.end());
   tracks_.erase(it);
-}
-
-void MediaStreamVideoSource::InitAdapter() {
-  if (adapter_)
-    return;
-  // Create the webrtc::MediaStreamVideoSourceInterface adapter.
-  // It needs the constraints so that constraints used by a PeerConnection
-  // will be available such as constraints for CPU adaptation and a tab
-  // capture.
-  bool is_screencast =
-      device_info().device.type == MEDIA_TAB_VIDEO_CAPTURE ||
-      device_info().device.type == MEDIA_DESKTOP_VIDEO_CAPTURE;
-  capture_adapter_ = factory_->CreateVideoCapturer(is_screencast);
-  adapter_ = factory_->CreateVideoSource(capture_adapter_,
-                                         current_constraints_);
-}
-
-webrtc::VideoSourceInterface* MediaStreamVideoSource::GetAdapter() {
-  if (!adapter_) {
-    InitAdapter();
-  }
-  return adapter_;
+  if (tracks_.empty())
+    StopSource();
 }
 
 void MediaStreamVideoSource::DoStopSource() {
+  DCHECK(CalledOnValidThread());
   DVLOG(3) << "DoStopSource()";
   StopSourceImpl();
   state_ = ENDED;
@@ -411,12 +390,6 @@ void MediaStreamVideoSource::DeliverVideoFrame(
     }
   }
 
-  if ((frame->format() == media::VideoFrame::I420 ||
-       frame->format() == media::VideoFrame::YV12) &&
-      capture_adapter_) {
-    capture_adapter_->OnFrameCaptured(video_frame);
-  }
-
   for (std::vector<MediaStreamVideoTrack*>::iterator it = tracks_.begin();
        it != tracks_.end(); ++it) {
     (*it)->OnVideoFrame(video_frame);
@@ -433,8 +406,10 @@ void MediaStreamVideoSource::OnSupportedFormats(
                                      &current_format_,
                                      &max_frame_output_size_,
                                      &current_constraints_)) {
-    FinalizeAddTrack();
     SetReadyState(blink::WebMediaStreamSource::ReadyStateEnded);
+    // This object can be deleted after calling FinalizeAddTrack. See comment
+    // in the header file.
+    FinalizeAddTrack();
     return;
   }
 
@@ -489,6 +464,8 @@ void MediaStreamVideoSource::OnStartDone(bool success) {
     StopSourceImpl();
   }
 
+  // This object can be deleted after calling FinalizeAddTrack. See comment in
+  // the header file.
   FinalizeAddTrack();
 }
 

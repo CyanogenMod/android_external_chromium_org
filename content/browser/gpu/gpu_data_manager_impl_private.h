@@ -107,6 +107,8 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   void SetDisplayCount(unsigned int display_count);
   unsigned int GetDisplayCount() const;
 
+  bool UpdateActiveGpu(uint32 vendor_id, uint32 device_id);
+
   void OnGpuProcessInitFailure();
 
   virtual ~GpuDataManagerImplPrivate();
@@ -251,8 +253,6 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   unsigned int display_count_;
 
   bool gpu_process_accessible_;
-
-  bool use_software_compositor_;
 
   // True if all future Initialize calls should be ignored.
   bool finalized_;

@@ -34,6 +34,7 @@
 #include "ui/gfx/insets.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/path_x11.h"
+#include "ui/gfx/screen.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/corewm/tooltip_aura.h"
 #include "ui/views/ime/input_method.h"
@@ -342,8 +343,9 @@ void DesktopWindowTreeHostX11::ShowWindowWithState(
 
 void DesktopWindowTreeHostX11::ShowMaximizedWithBounds(
     const gfx::Rect& restored_bounds) {
-  restored_bounds_ = restored_bounds;
   ShowWindowWithState(ui::SHOW_STATE_MAXIMIZED);
+  // Enforce |restored_bounds_| since calling Maximize() could have reset it.
+  restored_bounds_ = restored_bounds;
 }
 
 bool DesktopWindowTreeHostX11::IsVisible() const {
@@ -484,9 +486,9 @@ bool DesktopWindowTreeHostX11::IsActive() const {
 }
 
 void DesktopWindowTreeHostX11::Maximize() {
-  // When we're the process requesting the maximizing, we can accurately keep
-  // track of our restored bounds instead of relying on the heuristics that are
-  // in the PropertyNotify and ConfigureNotify handlers.
+  // When we are in the process of requesting to maximize a window, we can
+  // accurately keep track of our restored bounds instead of relying on the
+  // heuristics that are in the PropertyNotify and ConfigureNotify handlers.
   restored_bounds_ = bounds_;
 
   SetWMSpecState(true,
@@ -614,10 +616,27 @@ NonClientFrameView* DesktopWindowTreeHostX11::CreateNonClientFrameView() {
 }
 
 void DesktopWindowTreeHostX11::SetFullscreen(bool fullscreen) {
+  if (is_fullscreen_ == fullscreen)
+    return;
   is_fullscreen_ = fullscreen;
   SetWMSpecState(fullscreen,
                  atom_cache_.GetAtom("_NET_WM_STATE_FULLSCREEN"),
                  None);
+  // Try to guess the size we will have after the switch to/from fullscreen:
+  // - (may) avoid transient states
+  // - works around Flash content which expects to have the size updated
+  //   synchronously.
+  // See https://crbug.com/361408
+  if (fullscreen) {
+    restored_bounds_ = bounds_;
+    const gfx::Display display =
+        gfx::Screen::GetScreenFor(NULL)->GetDisplayNearestWindow(window());
+    bounds_ = display.bounds();
+  } else {
+    bounds_ = restored_bounds_;
+  }
+  OnHostMoved(bounds_.origin());
+  OnHostResized(bounds_.size());
 }
 
 bool DesktopWindowTreeHostX11::IsFullscreen() const {
@@ -1316,8 +1335,6 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
   switch (xev->type) {
     case EnterNotify:
     case LeaveNotify: {
-      if (!g_current_capture)
-        X11DesktopHandler::get()->ProcessXEvent(xev);
       ui::MouseEvent mouse_event(xev);
       DispatchMouseEvent(&mouse_event);
       break;
@@ -1365,6 +1382,7 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
       if (xev->xfocus.mode != NotifyGrab) {
         ReleaseCapture();
         OnHostLostWindowCapture();
+        X11DesktopHandler::get()->ProcessXEvent(xev);
       } else {
         dispatcher()->OnHostLostMouseGrab();
       }

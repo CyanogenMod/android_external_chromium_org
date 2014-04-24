@@ -146,8 +146,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // there are no retransmittable packets.
   const QuicTime GetRetransmissionTime() const;
 
-  // Returns the estimated smoothed RTT calculated by the congestion algorithm.
-  const QuicTime::Delta SmoothedRtt() const;
+  const RttStats* GetRttStats() const;
 
   // Returns the estimated bandwidth calculated by the congestion algorithm.
   QuicBandwidth BandwidthEstimate() const;
@@ -230,11 +229,18 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // necessary.
   void InvokeLossDetection(QuicTime time);
 
+  // Marks |sequence_number| as having been revived by the peer, but not
+  // received, so the packet remains pending if it is and the congestion control
+  // does not consider the packet acked.
+  void MarkPacketRevived(QuicPacketSequenceNumber sequence_number,
+                         QuicTime::Delta delta_largest_observed);
+
   // Marks |sequence_number| as being fully handled, either due to receipt
   // by the peer, or having been discarded as indecipherable.  Returns an
   // iterator to the next remaining unacked packet.
   QuicUnackedPacketMap::const_iterator MarkPacketHandled(
       QuicPacketSequenceNumber sequence_number,
+      QuicTime::Delta delta_largest_observed,
       ReceivedByPeer received_by_peer);
 
   // Request that |sequence_number| be retransmitted after the other pending

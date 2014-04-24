@@ -146,6 +146,11 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
   EXPECT_TRUE(
       group_->Initialize(mock_decoder_.get(), DisallowedFeatures()));
 
+  if (group_->feature_info()->feature_flags().native_vertex_array_object) {
+    EXPECT_CALL(*gl_, GenVertexArraysOES(1, _)).Times(1).RetiresOnSaturation();
+    EXPECT_CALL(*gl_, BindVertexArrayOES(_)).Times(1).RetiresOnSaturation();
+  }
+
   if (group_->feature_info()->workarounds().init_vertex_attributes)
     AddExpectationsForVertexAttribManager();
 
@@ -985,6 +990,12 @@ void GLES2DecoderTestBase::AddExpectationsForDeleteVertexArraysOES(){
           .Times(1)
           .RetiresOnSaturation();
   }
+}
+
+void GLES2DecoderTestBase::AddExpectationsForDeleteBoundVertexArraysOES() {
+  // Expectations are the same as a delete, followed by binding VAO 0.
+  AddExpectationsForDeleteVertexArraysOES();
+  AddExpectationsForBindVertexArrayOES();
 }
 
 void GLES2DecoderTestBase::AddExpectationsForBindVertexArrayOES() {

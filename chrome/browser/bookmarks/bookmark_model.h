@@ -18,8 +18,9 @@
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/cancelable_task_tracker.h"
-#include "chrome/browser/bookmarks/bookmark_service.h"
 #include "components/bookmarks/core/browser/bookmark_node.h"
+#include "components/bookmarks/core/browser/bookmark_service.h"
+#include "components/favicon_base/favicon_types.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -31,7 +32,7 @@ class BookmarkIndex;
 class BookmarkLoadDetails;
 class BookmarkModelObserver;
 class BookmarkStorage;
-struct BookmarkTitleMatch;
+struct BookmarkMatch;
 class Profile;
 class ScopedGroupBookmarkActions;
 
@@ -57,7 +58,9 @@ class BookmarkModel : public content::NotificationObserver,
                       public BookmarkService,
                       public KeyedService {
  public:
-  explicit BookmarkModel(Profile* profile);
+  // |index_urls| says whether URLs should be stored in the BookmarkIndex
+  // in addition to bookmark titles.
+  BookmarkModel(Profile* profile, bool index_urls);
   virtual ~BookmarkModel();
 
   // Invoked prior to destruction to release any necessary resources.
@@ -73,16 +76,16 @@ class BookmarkModel : public content::NotificationObserver,
 
   // Returns the root node. The 'bookmark bar' node and 'other' node are
   // children of the root node.
-  const BookmarkNode* root_node() { return &root_; }
+  const BookmarkNode* root_node() const { return &root_; }
 
   // Returns the 'bookmark bar' node. This is NULL until loaded.
-  const BookmarkNode* bookmark_bar_node() { return bookmark_bar_node_; }
+  const BookmarkNode* bookmark_bar_node() const { return bookmark_bar_node_; }
 
   // Returns the 'other' node. This is NULL until loaded.
-  const BookmarkNode* other_node() { return other_node_; }
+  const BookmarkNode* other_node() const { return other_node_; }
 
   // Returns the 'mobile' node. This is NULL until loaded.
-  const BookmarkNode* mobile_node() { return mobile_node_; }
+  const BookmarkNode* mobile_node() const { return mobile_node_; }
 
   bool is_root_node(const BookmarkNode* node) const { return node == &root_; }
 
@@ -172,13 +175,17 @@ class BookmarkModel : public content::NotificationObserver,
   // See BookmarkService for more details on this.
   virtual void BlockTillLoaded() OVERRIDE;
 
-  // Returns the node with |id|, or NULL if there is no node with |id|.
-  const BookmarkNode* GetNodeByID(int64 id) const;
-
   // Adds a new folder node at the specified position.
   const BookmarkNode* AddFolder(const BookmarkNode* parent,
                                 int index,
                                 const base::string16& title);
+
+  // Adds a new folder with meta info.
+  const BookmarkNode* AddFolderWithMetaInfo(
+      const BookmarkNode* parent,
+      int index,
+      const base::string16& title,
+      const BookmarkNode::MetaInfoMap* meta_info);
 
   // Adds a url at the specified position.
   const BookmarkNode* AddURL(const BookmarkNode* parent,
@@ -186,12 +193,14 @@ class BookmarkModel : public content::NotificationObserver,
                              const base::string16& title,
                              const GURL& url);
 
-  // Adds a url with a specific creation date.
-  const BookmarkNode* AddURLWithCreationTime(const BookmarkNode* parent,
-                                             int index,
-                                             const base::string16& title,
-                                             const GURL& url,
-                                             const base::Time& creation_time);
+  // Adds a url with a specific creation date and meta info.
+  const BookmarkNode* AddURLWithCreationTimeAndMetaInfo(
+      const BookmarkNode* parent,
+      int index,
+      const base::string16& title,
+      const GURL& url,
+      const base::Time& creation_time,
+      const BookmarkNode::MetaInfoMap* meta_info);
 
   // Sorts the children of |parent|, notifying observers by way of the
   // BookmarkNodeChildrenReordered method.
@@ -212,10 +221,12 @@ class BookmarkModel : public content::NotificationObserver,
   // combobox of most recently modified folders.
   void ResetDateFolderModified(const BookmarkNode* node);
 
-  void GetBookmarksWithTitlesMatching(
+  // Returns up to |max_count| of bookmarks containing each term from |text|
+  // in either the title or the URL.
+  void GetBookmarksMatching(
       const base::string16& text,
       size_t max_count,
-      std::vector<BookmarkTitleMatch>* matches);
+      std::vector<BookmarkMatch>* matches);
 
   // Sets the store to NULL, making it so the BookmarkModel does not persist
   // any changes to disk. This is only useful during testing to speed up
@@ -305,9 +316,6 @@ class BookmarkModel : public content::NotificationObserver,
                         int index,
                         BookmarkNode* node);
 
-  // Implementation of GetNodeByID.
-  const BookmarkNode* GetNodeByID(const BookmarkNode* node, int64 id) const;
-
   // Returns true if the parent and index are valid.
   bool IsValidIndex(const BookmarkNode* parent, int index, bool allow_end);
 
@@ -317,8 +325,9 @@ class BookmarkModel : public content::NotificationObserver,
 
   // Notification that a favicon has finished loading. If we can decode the
   // favicon, FaviconLoaded is invoked.
-  void OnFaviconDataAvailable(BookmarkNode* node,
-                              const chrome::FaviconImageResult& image_result);
+  void OnFaviconDataAvailable(
+      BookmarkNode* node,
+      const favicon_base::FaviconImageResult& image_result);
 
   // Invoked from the node to load the favicon. Requests the favicon from the
   // favicon service.
@@ -388,6 +397,10 @@ class BookmarkModel : public content::NotificationObserver,
   scoped_refptr<BookmarkStorage> store_;
 
   scoped_ptr<BookmarkIndex> index_;
+
+  // True if URLs are stored in the BookmarkIndex in addition to bookmark
+  // titles.
+  const bool index_urls_;
 
   base::WaitableEvent loaded_signal_;
 

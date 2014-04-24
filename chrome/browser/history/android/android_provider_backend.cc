@@ -5,7 +5,6 @@
 #include "chrome/browser/history/android/android_provider_backend.h"
 
 #include "base/i18n/case_conversion.h"
-#include "chrome/browser/bookmarks/bookmark_service.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/favicon/favicon_changed_details.h"
 #include "chrome/browser/history/android/android_time.h"
@@ -17,6 +16,7 @@
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/thumbnail_database.h"
+#include "components/bookmarks/core/browser/bookmark_service.h"
 #include "content/public/common/page_transition_types.h"
 #include "sql/connection.h"
 
@@ -840,7 +840,8 @@ bool AndroidProviderBackend::UpdateFavicon() {
   if (!thumbnail_db_)
     return true;
 
-  if (!thumbnail_db_->InitIconMappingEnumerator(chrome::FAVICON, &enumerator))
+  if (!thumbnail_db_->InitIconMappingEnumerator(favicon_base::FAVICON,
+                                                &enumerator))
     return false;
 
   IconMapping icon_mapping;
@@ -1016,7 +1017,7 @@ bool AndroidProviderBackend::SimulateUpdateURL(
     return false;
   deleted_details->rows.push_back(old_url_row);
 
-  chrome::FaviconID favicon_id = statement->statement()->ColumnInt64(4);
+  favicon_base::FaviconID favicon_id = statement->statement()->ColumnInt64(4);
   if (favicon_id) {
     std::vector<FaviconBitmap> favicon_bitmaps;
     if (!thumbnail_db_ ||

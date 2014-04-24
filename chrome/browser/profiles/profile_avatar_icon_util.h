@@ -20,9 +20,16 @@ extern const int kAvatarIconHeight;
 extern const int kAvatarIconPadding;
 extern const SkColor kAvatarTutorialBackgroundColor;
 extern const SkColor kAvatarTutorialContentTextColor;
+extern const SkColor kAvatarBubbleAccountsBackgroundColor;
 
 // Gets the number of default avatar icons that exist.
 size_t GetDefaultAvatarIconCount();
+
+// Gets the index for the (grey silhouette) avatar used as a placeholder.
+int GetPlaceholderAvatarIndex();
+
+// Gets the resource ID of the placeholder avatar icon.
+int GetPlaceholderAvatarIconResourceID();
 
 // Gets the number of generic avatar icons that exist.
 size_t GetGenericAvatarIconCount();
@@ -33,6 +40,9 @@ int GetDefaultAvatarIconResourceIDAtIndex(size_t index);
 // Gets the resource filename of the default avatar icon at |index|.
 const char* GetDefaultAvatarIconFileNameAtIndex(size_t index);
 
+// Gets the file name of an avatar that has no high res version.
+const char* GetNoHighResAvatarFileName();
+
 // Returns a URL for the default avatar icon with specified index.
 std::string GetDefaultAvatarIconUrl(size_t index);
 
@@ -42,12 +52,12 @@ bool IsDefaultAvatarIconIndex(size_t index);
 // Checks if the given URL points to one of the default avatar icons. If it
 // is, returns true and its index through |icon_index|. If not, returns false.
 bool IsDefaultAvatarIconUrl(const std::string& icon_url, size_t *icon_index);
-// Returns a version of |image| of a specific size and with a grey border.
-// Note that no checks are done on the width/height so make sure they're
-// reasonable values; in the range of 16-256 is probably best.
-gfx::Image GetSizedAvatarIconWithBorder(const gfx::Image& image,
-                                        bool is_rectangle,
-                                        int width, int height);
+// Returns a version of |image| of a specific size. Note that no checks are
+// done on the width/height so make sure they're reasonable values; in the
+// range of 16-256 is probably best.
+gfx::Image GetSizedAvatarIcon(const gfx::Image& image,
+                              bool is_rectangle,
+                              int width, int height);
 
 // Returns a version of |image| suitable for use in menus.
 gfx::Image GetAvatarIconForMenu(const gfx::Image& image,

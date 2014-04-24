@@ -15,6 +15,8 @@
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/sync_file_system/local_change_processor.h"
 #include "chrome/browser/sync_file_system/remote_file_sync_service.h"
+#include "chrome/browser/sync_file_system/sync_action.h"
+#include "chrome/browser/sync_file_system/sync_direction.h"
 #include "net/base/network_change_notifier.h"
 
 class ExtensionServiceInterface;
@@ -62,10 +64,9 @@ class SyncEngine : public RemoteFileSyncService,
 
   virtual ~SyncEngine();
 
-  void Initialize(
-      const base::FilePath& base_dir,
-      base::SequencedTaskRunner* task_runner,
-      leveldb::Env* env_override);
+  void Initialize(const base::FilePath& base_dir,
+                  base::SequencedTaskRunner* file_task_runner,
+                  leveldb::Env* env_override);
 
   // RemoteFileSyncService overrides.
   virtual void AddServiceObserver(SyncServiceObserver* observer) OVERRIDE;
@@ -139,24 +140,28 @@ class SyncEngine : public RemoteFileSyncService,
   // Notifies update of sync status to each observer.
   void UpdateSyncEnabled(bool enabled);
 
+  void OnPendingFileListUpdated(int item_count);
+  void OnFileStatusChanged(const fileapi::FileSystemURL& url,
+                           SyncFileStatus file_status,
+                           SyncAction sync_action,
+                           SyncDirection direction);
+  void UpdateServiceState(RemoteServiceState state,
+                          const std::string& description);
+
  private:
+  class WorkerObserver;
+
   friend class DriveBackendSyncTest;
   friend class SyncEngineTest;
-  // TODO(peria): Remove friendship with SyncWorker
-  friend class SyncWorker;
 
   SyncEngine(scoped_ptr<drive::DriveServiceInterface> drive_service,
              scoped_ptr<drive::DriveUploaderInterface> drive_uploader,
+             base::SequencedTaskRunner* worker_task_runner,
              drive::DriveNotificationManager* notification_manager,
              ExtensionServiceInterface* extension_service,
              SigninManagerBase* signin_manager);
 
-  void DidProcessRemoteChange(RemoteToLocalSyncer* syncer);
-  void DidApplyLocalChange(LocalToRemoteSyncer* syncer,
-                           SyncStatusCode status);
-  void UpdateServiceState(const std::string& description);
   void UpdateRegisteredApps();
-  void NotifyLastOperationStatus();
 
   scoped_ptr<drive::DriveServiceInterface> drive_service_;
   scoped_ptr<drive::DriveUploaderInterface> drive_uploader_;
@@ -172,7 +177,9 @@ class SyncEngine : public RemoteFileSyncService,
   ObserverList<SyncServiceObserver> service_observers_;
   ObserverList<FileStatusObserver> file_status_observers_;
 
+  scoped_ptr<WorkerObserver> worker_observer_;
   scoped_ptr<SyncWorker> sync_worker_;
+  scoped_refptr<base::SequencedTaskRunner> worker_task_runner_;
 
   base::WeakPtrFactory<SyncEngine> weak_ptr_factory_;
   DISALLOW_COPY_AND_ASSIGN(SyncEngine);

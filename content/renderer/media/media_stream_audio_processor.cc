@@ -155,6 +155,13 @@ class MediaStreamAudioProcessor::MediaStreamAudioConverter
   scoped_ptr<media::AudioFifo> fifo_;
 };
 
+bool MediaStreamAudioProcessor::IsAudioTrackProcessingEnabled() {
+  const std::string group_name =
+      base::FieldTrialList::FindFullName("MediaStreamAudioTrackProcessing");
+  return group_name == "Enabled" || CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableAudioTrackProcessing);
+}
+
 MediaStreamAudioProcessor::MediaStreamAudioProcessor(
     const blink::WebMediaConstraints& constraints,
     int effects,
@@ -228,10 +235,10 @@ const media::AudioParameters& MediaStreamAudioProcessor::OutputFormat() const {
   return capture_converter_->sink_parameters();
 }
 
-void MediaStreamAudioProcessor::StartAecDump(
-    const base::PlatformFile& aec_dump_file) {
+void MediaStreamAudioProcessor::StartAecDump(base::File aec_dump_file) {
   if (audio_processing_)
-    StartEchoCancellationDump(audio_processing_.get(), aec_dump_file);
+    StartEchoCancellationDump(audio_processing_.get(),
+                              aec_dump_file.TakePlatformFile());
 }
 
 void MediaStreamAudioProcessor::StopAecDump() {
@@ -345,6 +352,10 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
 
   // Create and configure the webrtc::AudioProcessing.
   audio_processing_.reset(webrtc::AudioProcessing::Create(0));
+  // TODO(ajm): Replace with AudioProcessing::Initialize() when this rolls to
+  // Chromium: http://review.webrtc.org/9919004/
+  CHECK_EQ(0,
+           audio_processing_->set_sample_rate_hz(kAudioProcessingSampleRate));
 
   // Enable the audio processing components.
   if (enable_aec) {
@@ -374,13 +385,6 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
 
   if (enable_agc)
     EnableAutomaticGainControl(audio_processing_.get());
-
-  // Configure the audio format the audio processing is running on. This
-  // has to be done after all the needed components are enabled.
-  CHECK_EQ(0,
-           audio_processing_->set_sample_rate_hz(kAudioProcessingSampleRate));
-  CHECK_EQ(0, audio_processing_->set_num_channels(
-      kAudioProcessingNumberOfChannels, kAudioProcessingNumberOfChannels));
 
   RecordProcessingState(AUDIO_PROCESSING_ENABLED);
 }
@@ -509,13 +513,6 @@ void MediaStreamAudioProcessor::StopAudioProcessing() {
     playout_data_source_->RemovePlayoutSink(this);
 
   audio_processing_.reset();
-}
-
-bool MediaStreamAudioProcessor::IsAudioTrackProcessingEnabled() const {
-  const std::string group_name =
-      base::FieldTrialList::FindFullName("MediaStreamAudioTrackProcessing");
-  return group_name == "Enabled" || CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableAudioTrackProcessing);
 }
 
 }  // namespace content

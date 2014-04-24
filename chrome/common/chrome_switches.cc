@@ -173,11 +173,6 @@ const char kCloudPrintJobTitle[]            = "cloud-print-job-title";
 // service or register proxy for autostart.
 const char kCloudPrintSetupProxy[]          = "cloud-print-setup-proxy";
 
-// The URL of the cloud print service to use, overrides any value stored in
-// preferences, and the default. Only used if the cloud print service has been
-// enabled (see enable-cloud-print).
-const char kCloudPrintServiceURL[]          = "cloud-print-service";
-
 // Comma-separated options to troubleshoot the component updater. Only valid
 // for the browser process.
 const char kComponentUpdater[]              = "component-updater";
@@ -298,9 +293,6 @@ const char kDisableExtensionsResourceWhitelist[] =
 // a tab.  http://crbug.com/256870 and http://crbug.com/290403
 const char kDisableFullscreenWithinTab[] = "disable-fullscreen-within-tab";
 
-// Prevent infobars from appearing.
-const char kDisableInfoBars[]               = "disable-infobars";
-
 // Don't resolve hostnames to IPv6 addresses. This can be used when debugging
 // issues relating to IPv6, but shouldn't otherwise be needed. Be sure to file
 // bugs if something isn't working properly in the presence of IPv6. This flag
@@ -384,9 +376,6 @@ const char kDisableSpdy31[]                 = "disable-spdy31";
 // Disables syncing browser data to a Google Account.
 const char kDisableSync[]                   = "disable-sync";
 
-// Disables sync/API based session sync implementation (back to legacy).
-const char kDisableSyncSessionsV2[] = "disable-sync-sessions-v2";
-
 // Disable synced notifications.
 const char kDisableSyncSyncedNotifications[] =
     "disable-sync-synced-notifications";
@@ -397,9 +386,6 @@ const char kDisableSyncSyncedNotifications[] =
 // representation of model types, e.g.:
 // --disable-synctypes='Typed URLs, Bookmarks, Autofill Profiles'
 const char kDisableSyncTypes[]              = "disable-sync-types";
-
-// Disables TLS Channel ID extension.
-const char kDisableTLSChannelID[]           = "disable-tls-channel-id";
 
 // Disables some security measures when accessing user media devices like
 // webcams and microphones, especially on non-HTTPS pages.
@@ -435,6 +421,11 @@ const char kDumpBrowserHistograms[]         = "dump-browser-histograms";
 // Overrides the path of Easy Unlock component app.
 extern const char kEasyUnlockAppPath[]      = "easy-unlock-app-path";
 
+// Enables the notifications for the custodian of a supervised user when the
+// supervised user sends an access request.
+extern const char kEnableAccessRequestNotifications[] =
+    "enable-access-request-notifications";
+
 // Enables the <adview> tag in packaged apps.
 const char kEnableAdview[]                  = "enable-adview";
 
@@ -456,11 +447,6 @@ const char kEnableAsyncDns[]                = "enable-async-dns";
 // in response to a Negotiate challenge. See
 // HttpAuthHandlerNegotiate::CreateSPN for more background.
 const char kEnableAuthNegotiatePort[]       = "enable-auth-negotiate-port";
-
-// Enables the pre- and auto-login features. When a user signs in to sync, the
-// browser's cookie jar is pre-filled with GAIA cookies. When the user visits a
-// GAIA login page, an info bar can help the user login.
-const char kEnableAutologin[]               = "enable-autologin";
 
 // Enables the Automation extension API.
 // TODO(dtseng): Remove once API enabled for stable channel.
@@ -513,10 +499,6 @@ const char kEnableExtensionActivityLogTesting[] =
 // running a tab's onunload js handler independently of the GUI -
 // crbug.com/142458 .
 const char kEnableFastUnload[]         = "enable-fast-unload";
-
-// Enables the pure web-based flow for sign in on first run/NTP/wrench menu/
-// settings page.
-const char kEnableWebBasedSignin[]            = "enable-web-based-signin";
 
 // Enables IPv6 support, even if probes suggest that it may not be fully
 // supported. Some probes may require internet connections, and this flag will
@@ -717,10 +699,6 @@ const char kFakeVariationsChannel[]         = "fake-variations-channel";
 // loaded. It is useful to tell the difference for tracking purposes.
 const char kFastStart[]            = "fast-start";
 
-// Allows displaying the list of existing profiles in the avatar bubble for
-// fast switching between profiles.
-const char kFastUserSwitching[]             = "fast-user-switching";
-
 // These two flags are added around the switches about:flags adds to the
 // command line. This is useful to see which switches were added by about:flags
 // on about:version. They don't have any effect.
@@ -750,9 +728,6 @@ const char kForceVariationIds[]             = "force-variation-ids";
 
 // Specifies an alternate URL to use for speaking to Google. Useful for testing.
 const char kGoogleBaseURL[]                 = "google-base-url";
-
-// Enables using GAIA information to populate profile name and icon.
-const char kGoogleProfileInfo[]             = "google-profile-info";
 
 // Specifies a custom name for the GSSAPI library to load.
 const char kGSSAPILibraryName[]             = "gssapi-library-name";
@@ -891,16 +866,6 @@ const char kMultiProfiles[]                 = "multi-profiles";
 // Sets the base logging level for the net log. Log 0 logs the most data.
 // Intended primarily for use with --log-net-log.
 const char kNetLogLevel[]                   = "net-log-level";
-
-// Use new avatar menu. When combined with new-profile-management, it simply
-// shows the new profile management avatar menu. Otherwise it shows a redesigned
-// avatar menu with the same functionality as the old one, plus a tutorial card
-// at the top prompting the user to try out the new profile management UI.
-const char kNewAvatarMenu[]                 = "new-avatar-menu";
-
-// Use new profile management system, including profile sign-out and new
-// choosers.
-const char kNewProfileManagement[]          = "new-profile-management";
 
 // Disables the default browser check. Useful for UI/browser tests where we
 // want to avoid having the default browser info-bar displayed.
@@ -1143,9 +1108,6 @@ const char kSbDisableExtensionBlacklist[] =
 const char kSbDisableSideEffectFreeWhitelist[] =
     "safebrowsing-disable-side-effect-free-whitelist";
 
-// URL to send safebrowsing download feedback reports to.
-const char kSbDownloadFeedbackURL[] = "safebrowsing-download-feedback-url";
-
 // Causes the process to run as a service process.
 const char kServiceProcess[]                = "service";
 
@@ -1330,9 +1292,6 @@ const char kPluginsMetadataServerURL[]      = "plugins-metadata-server-url";
 #endif
 
 #if defined(OS_ANDROID)
-// Disables the app banner <meta> tag.
-const char kDisableAppBanners[]              = "disable-app-banners";
-
 // Disables support for playing videos on Chromecast devices.
 const char kDisableCast[]                    = "disable-cast";
 
@@ -1452,7 +1411,7 @@ const char kViewerLaunchViaAppId[]          = "viewer-launch-via-appid";
 const char kWaitForMutex[]                  = "wait-for-mutex";
 
 // Indicates that chrome was launched to service a search request in Windows 8.
-const char kWindows8Search[]           = "windows8-search";
+const char kWindows8Search[]                = "windows8-search";
 #endif
 
 #if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
@@ -1463,10 +1422,7 @@ const char kDebugPrint[] = "debug-print";
 #ifndef NDEBUG
 // Enables overriding the path of file manager extension.
 const char kFileManagerExtensionPath[]      = "filemgr-ext-path";
-
-// Enables overriding the path of image loader extension.
-const char kImageLoaderExtensionPath[]      = "image-loader-ext-path";
-#endif  // NDEBUG
+#endif
 
 // Controls print preview in the browser process.
 #if defined(GOOGLE_CHROME_BUILD)

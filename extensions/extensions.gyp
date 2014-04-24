@@ -11,13 +11,10 @@
       'target_name': 'extensions_common',
       'type': 'static_library',
       'dependencies': [
-        'common/api/api.gyp:extensions_api',
         # TODO(benwells): figure out what to do with the api target and
         # api resources compiled into the chrome resource bundle.
         # http://crbug.com/162530
         '../chrome/chrome_resources.gyp:chrome_resources',
-        # TODO(jamescook|derat): Pull strings into extensions module.
-        '../chrome/chrome_resources.gyp:chrome_strings',
         # Need default icons in theme_resources.grd
         '../chrome/chrome_resources.gyp:theme_resources',
 
@@ -33,6 +30,8 @@
         '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../url/url.gyp:url_lib',
+        'common/api/api.gyp:extensions_api',
+        'extensions_strings.gyp:extensions_strings',
       ],
       'include_dirs': [
         '..',
@@ -217,14 +216,13 @@
       'target_name': 'extensions_browser',
       'type': 'static_library',
       'dependencies': [
-        'extensions_common',
-        'common/api/api.gyp:extensions_api',
-        # TODO(jamescook|derat): Pull strings into extensions module.
-        '../chrome/chrome_resources.gyp:chrome_strings',
         '../components/components.gyp:keyed_service_content',
         '../content/content.gyp:content_browser',
         '../skia/skia.gyp:skia',
         '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
+        'common/api/api.gyp:extensions_api',
+        'extensions_common',
+        'extensions_strings.gyp:extensions_strings',
       ],
       'include_dirs': [
         '..',
@@ -415,38 +413,89 @@
         '..',
       ],
       'sources': [
+        'renderer/api_definitions_natives.cc',
+        'renderer/api_definitions_natives.h',
+        'renderer/binding_generating_native_handler.cc',
+        'renderer/binding_generating_native_handler.h',
+        'renderer/blob_native_handler.cc',
+        'renderer/blob_native_handler.h',
         'renderer/console.cc',
         'renderer/console.h',
+        'renderer/content_watcher.cc',
+        'renderer/content_watcher.h',
+        'renderer/context_menus_custom_bindings.cc',
+        'renderer/context_menus_custom_bindings.h',
+        'renderer/css_native_handler.cc',
+        'renderer/css_native_handler.h',
+        'renderer/document_custom_bindings.cc',
+        'renderer/document_custom_bindings.h',
         'renderer/event_bindings.cc',
         'renderer/event_bindings.h',
+        'renderer/extensions_renderer_client.cc',
+        'renderer/extensions_renderer_client.h',
+        'renderer/extension_groups.h',
+        'renderer/file_system_natives.cc',
+        'renderer/file_system_natives.h',
+        'renderer/i18n_custom_bindings.cc',
+        'renderer/i18n_custom_bindings.h',
+        'renderer/id_generator_custom_bindings.cc',
+        'renderer/id_generator_custom_bindings.h',
+        'renderer/logging_native_handler.cc',
+        'renderer/logging_native_handler.h',
         'renderer/module_system.cc',
         'renderer/module_system.h',
         'renderer/native_handler.cc',
         'renderer/native_handler.h',
         'renderer/object_backed_native_handler.cc',
         'renderer/object_backed_native_handler.h',
+        'renderer/render_view_observer_natives.cc',
+        'renderer/render_view_observer_natives.h',
         'renderer/request_sender.cc',
         'renderer/request_sender.h',
         'renderer/safe_builtins.cc',
         'renderer/safe_builtins.h',
+        'renderer/send_request_natives.cc',
+        'renderer/send_request_natives.h',
+        'renderer/set_icon_natives.cc',
+        'renderer/set_icon_natives.h',
         'renderer/scoped_persistent.h',
         'renderer/script_context.cc',
         'renderer/script_context.h',
+        'renderer/script_context_set.cc',
+        'renderer/script_context_set.h',
+        'renderer/utils_native_handler.cc',
+        'renderer/utils_native_handler.h',
+        'renderer/v8_schema_registry.cc',
+        'renderer/v8_schema_registry.h',
       ],
       'dependencies': [
         '../third_party/WebKit/public/blink.gyp:blink',
       ],
       # Disable c4267 warnings until we fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
+      'conditions': [
+        # Temporary conditions for Android until it can stop building
+        # the extensions module altogether. These exemptions are taken
+        # directly from chrome_renderer.gypi as sources are moved
+        # from //chrome/renderer to //extensions/renderer.
+        ['OS == "android"', {
+          'sources!': [
+            'renderer/api_definitions_natives.cc',
+            'renderer/context_menus_custom_bindings.cc',
+            'renderer/render_view_observer_natives.cc',
+            'renderer/send_request_natives.cc',
+          ],
+        }],
+      ]
     },
     {
       'target_name': 'extensions_test_support',
       'type': 'static_library',
       'dependencies': [
-        'extensions_browser',
-        'extensions_common',
         '../base/base.gyp:base',
         '../testing/gtest.gyp:gtest',
+        'extensions_browser',
+        'extensions_common',
       ],
       'include_dirs': [
         '..',
@@ -479,22 +528,19 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:test_support_base',
+        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         'extensions_common',
+        'extensions_strings.gyp:extensions_strings',
         'extensions_test_support',
       ],
       'sources': [
         'common/api/sockets/sockets_manifest_permission_unittest.cc',
         'common/csp_validator_unittest.cc',
         'common/event_filter_unittest.cc',
-        'common/file_util_unittest.cc',
         'common/id_util_unittest.cc',
-        'common/manifest_handler_unittest.cc',
         'common/one_shot_event_unittest.cc',
-        'common/permissions/api_permission_set_unittest.cc',
         'common/permissions/manifest_permission_set_unittest.cc',
-        'common/url_pattern_set_unittest.cc',
-        'common/url_pattern_unittest.cc',
         'common/user_script_unittest.cc',
         'test/extensions_unittests_main.cc',
         'test/test_extensions_client.cc',

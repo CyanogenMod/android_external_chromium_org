@@ -79,9 +79,6 @@ class Page4(KeyMobileSitesPage):
       url='http://www.theverge.com/2012/10/28/3568746/amazon-7-inch-fire-hd-ipad-mini-ad-ballsy',
       page_set=page_set)
 
-    self.disabled = ('Does not work with rasterize_and_record benchmark on N5;'
-                     'crbug.com/317141')
-
   def RunNavigateSteps(self, action_runner):
     action_runner.RunAction(NavigateAction())
     action_runner.RunAction(WaitAction(
@@ -447,8 +444,8 @@ class Page24(KeyMobileSitesPage):
     action_runner.RunAction(NavigateAction())
     action_runner.RunAction(WaitAction(
       {
-        'javascript': ('typeof NEWS_telemetryReady !== "undefined" &&'
-                       'NEWS_telemetryReady == True')
+        'javascript': ('typeof NEWS_telemetryReady !== "undefined" && '
+                       'NEWS_telemetryReady == true')
       }))
 
 
@@ -512,9 +509,9 @@ class KeyMobileSitesPageSet(page_set_module.PageSet):
     self.AddPage(Page10(self))
     self.AddPage(Page11(self))
     self.AddPage(Page12(self))
-    self.AddPage(Page13(self))
+#    self.AddPage(Page13(self))
     self.AddPage(Page14(self))
-    self.AddPage(Page15(self))
+#    self.AddPage(Page15(self))
     self.AddPage(Page16(self))
     self.AddPage(Page17(self))
     self.AddPage(Page18(self))
@@ -522,7 +519,7 @@ class KeyMobileSitesPageSet(page_set_module.PageSet):
     self.AddPage(Page20(self))
     self.AddPage(Page21(self))
     self.AddPage(Page22(self))
-    self.AddPage(Page23(self))
+#    self.AddPage(Page23(self))
     self.AddPage(Page24(self))
     self.AddPage(Page25(self))
 

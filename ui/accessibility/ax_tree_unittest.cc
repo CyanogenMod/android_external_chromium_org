@@ -28,18 +28,31 @@ class FakeAXTreeDelegate : public AXTreeDelegate {
     changed_ids_.push_back(node->id());
   }
 
+  virtual void OnNodeCreationFinished(AXNode* node) OVERRIDE {
+    creation_finished_ids_.push_back(node->id());
+  }
+
+  virtual void OnNodeChangeFinished(AXNode* node) OVERRIDE {
+    change_finished_ids_.push_back(node->id());
+  }
+
   virtual void OnRootChanged(AXNode* new_root) OVERRIDE {
     new_root_ids_.push_back(new_root->id());
   }
 
   const std::vector<int32>& deleted_ids() { return deleted_ids_; }
   const std::vector<int32>& created_ids() { return created_ids_; }
+  const std::vector<int32>& creation_finished_ids() {
+    return creation_finished_ids_;
+  }
   const std::vector<int32>& new_root_ids() { return new_root_ids_; }
 
  private:
   std::vector<int32> deleted_ids_;
   std::vector<int32> created_ids_;
+  std::vector<int32> creation_finished_ids_;
   std::vector<int32> changed_ids_;
+  std::vector<int32> change_finished_ids_;
   std::vector<int32> new_root_ids_;
 };
 
@@ -101,6 +114,44 @@ TEST(AXTreeTest, SerializeSimpleAXTree) {
       "  id=2 button (20, 20)-(200, 30)\n"
       "  id=3 check_box (20, 50)-(200, 30)\n",
       dst_tree.ToString());
+}
+
+TEST(AXTreeTest, SerializeAXTreeUpdate) {
+  AXNodeData list;
+  list.id = 3;
+  list.role = AX_ROLE_LIST;
+  list.state = 0;
+  list.child_ids.push_back(4);
+  list.child_ids.push_back(5);
+  list.child_ids.push_back(6);
+
+  AXNodeData list_item_2;
+  list_item_2.id = 5;
+  list_item_2.role = AX_ROLE_LIST_ITEM;
+  list_item_2.state = 0;
+
+  AXNodeData list_item_3;
+  list_item_3.id = 6;
+  list_item_3.role = AX_ROLE_LIST_ITEM;
+  list_item_3.state = 0;
+
+  AXNodeData button;
+  button.id = 7;
+  button.role = AX_ROLE_BUTTON;
+  button.state = 0;
+
+  AXTreeUpdate update;
+  update.nodes.push_back(list);
+  update.nodes.push_back(list_item_2);
+  update.nodes.push_back(list_item_3);
+  update.nodes.push_back(button);
+
+  EXPECT_EQ(
+      "id=3 list (0, 0)-(0, 0) child_ids=4,5,6\n"
+      "  id=5 list_item (0, 0)-(0, 0)\n"
+      "  id=6 list_item (0, 0)-(0, 0)\n"
+      "id=7 button (0, 0)-(0, 0)\n",
+      update.ToString());
 }
 
 TEST(AXTreeTest, DeleteUnknownSubtreeFails) {
@@ -233,6 +284,10 @@ TEST(AXTreeTest, TreeDelegateIsCalled) {
   ASSERT_EQ(2U, fake_delegate.created_ids().size());
   EXPECT_EQ(2, fake_delegate.created_ids()[0]);
   EXPECT_EQ(3, fake_delegate.created_ids()[1]);
+
+  ASSERT_EQ(2U, fake_delegate.creation_finished_ids().size());
+  EXPECT_EQ(2, fake_delegate.creation_finished_ids()[0]);
+  EXPECT_EQ(3, fake_delegate.creation_finished_ids()[1]);
 
   ASSERT_EQ(1U, fake_delegate.new_root_ids().size());
   EXPECT_EQ(2, fake_delegate.new_root_ids()[0]);

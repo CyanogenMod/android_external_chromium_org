@@ -204,8 +204,7 @@ IN_PROC_BROWSER_TEST_F(EphemeralAppBrowserTest, EventDispatchWhenLaunched) {
 
   // Send a fake alarm event to the app and verify that a response is
   // received.
-  EventRouter* event_router =
-      ExtensionSystem::Get(browser()->profile())->event_router();
+  EventRouter* event_router = EventRouter::Get(browser()->profile());
   ASSERT_TRUE(event_router);
 
   ExtensionTestMessageListener alarm_received_listener("alarm_received", false);
@@ -278,7 +277,7 @@ IN_PROC_BROWSER_TEST_F(EphemeralAppBrowserTest, UpdateEphemeralApp) {
       content::Source<extensions::CrxInstaller>(crx_installer));
   ExtensionService* service =
       ExtensionSystem::Get(browser()->profile())->extension_service();
-  EXPECT_TRUE(service->UpdateExtension(app_id, app_v2_path, true, GURL(),
+  EXPECT_TRUE(service->UpdateExtension(app_id, app_v2_path, true,
                                        &crx_installer));
   windowed_observer.Wait();
 

@@ -149,7 +149,11 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
 
     gfx::Rect geometry_rect = rect;
     gfx::Rect opaque_rect = contents_opaque() ? geometry_rect : gfx::Rect();
-    gfx::Rect visible_geometry_rect = geometry_rect;
+    gfx::Rect visible_geometry_rect =
+        quad_sink->UnoccludedContentRect(geometry_rect, draw_transform());
+    if (visible_geometry_rect.IsEmpty())
+      return;
+
     gfx::Size texture_size = rect.size();
     gfx::RectF texture_rect = gfx::RectF(texture_size);
     gfx::Rect quad_content_rect = rect;
@@ -166,8 +170,8 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
                  quad_content_rect,
                  contents_scale,
                  pile_);
-    if (quad_sink->MaybeAppend(quad.PassAs<DrawQuad>()))
-      append_quads_data->num_missing_tiles++;
+    quad_sink->Append(quad.PassAs<DrawQuad>());
+    append_quads_data->num_missing_tiles++;
     return;
   }
 
@@ -216,7 +220,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
                                 visible_geometry_rect,
                                 color,
                                 width);
-      quad_sink->MaybeAppend(debug_border_quad.PassAs<DrawQuad>());
+      quad_sink->Append(debug_border_quad.PassAs<DrawQuad>());
     }
   }
 
@@ -229,16 +233,18 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
        iter;
        ++iter) {
     gfx::Rect geometry_rect = iter.geometry_rect();
-    gfx::Rect visible_geometry_rect = geometry_rect;
+    gfx::Rect visible_geometry_rect =
+        quad_sink->UnoccludedContentRect(geometry_rect, draw_transform());
+    if (visible_geometry_rect.IsEmpty())
+      continue;
+
     if (!*iter || !iter->IsReadyToDraw()) {
       if (draw_checkerboard_for_missing_tiles()) {
-        // TODO(enne): Figure out how to show debug "invalidated checker" color
         scoped_ptr<CheckerboardDrawQuad> quad = CheckerboardDrawQuad::Create();
         SkColor color = DebugColors::DefaultCheckerboardColor();
         quad->SetNew(
             shared_quad_state, geometry_rect, visible_geometry_rect, color);
-        if (quad_sink->MaybeAppend(quad.PassAs<DrawQuad>()))
-          append_quads_data->num_missing_tiles++;
+        quad_sink->Append(quad.PassAs<DrawQuad>());
       } else {
         SkColor color = SafeOpaqueBackgroundColor();
         scoped_ptr<SolidColorDrawQuad> quad = SolidColorDrawQuad::Create();
@@ -247,10 +253,10 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
                      visible_geometry_rect,
                      color,
                      false);
-        if (quad_sink->MaybeAppend(quad.PassAs<DrawQuad>()))
-          append_quads_data->num_missing_tiles++;
+        quad_sink->Append(quad.PassAs<DrawQuad>());
       }
 
+      append_quads_data->num_missing_tiles++;
       append_quads_data->had_incomplete_tile = true;
       continue;
     }
@@ -315,7 +321,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
     }
 
     DCHECK(draw_quad);
-    quad_sink->MaybeAppend(draw_quad.Pass());
+    quad_sink->Append(draw_quad.Pass());
 
     if (seen_tilings.empty() || seen_tilings.back() != iter.CurrentTiling())
       seen_tilings.push_back(iter.CurrentTiling());
@@ -341,10 +347,10 @@ void PictureLayerImpl::UpdateTilePriorities() {
     layer_needs_to_register_itself_ = false;
   }
 
-  if (!layer_tree_impl()->device_viewport_valid_for_tile_management()) {
-    for (size_t i = 0; i < tilings_->num_tilings(); ++i)
-      DCHECK(tilings_->tiling_at(i)->has_ever_been_updated());
-    return;
+  if (layer_tree_impl()->device_viewport_valid_for_tile_management()) {
+    visible_rect_for_tile_priority_ = visible_content_rect();
+    viewport_size_for_tile_priority_ = layer_tree_impl()->DrawViewportSize();
+    screen_space_transform_for_tile_priority_ = screen_space_transform();
   }
 
   if (!tilings_->num_tilings())
@@ -369,14 +375,14 @@ void PictureLayerImpl::UpdateTilePriorities() {
 
   // Use visible_content_rect, unless it's empty. If it's empty, then
   // try to inverse project the viewport into layer space and use that.
-  gfx::Rect visible_rect_in_content_space = visible_content_rect();
+  gfx::Rect visible_rect_in_content_space = visible_rect_for_tile_priority_;
   if (visible_rect_in_content_space.IsEmpty()) {
     gfx::Transform screen_to_layer(gfx::Transform::kSkipInitialization);
-    if (screen_space_transform().GetInverse(&screen_to_layer)) {
-      gfx::Size viewport_size = layer_tree_impl()->DrawViewportSize();
+    if (screen_space_transform_for_tile_priority_.GetInverse(
+            &screen_to_layer)) {
       visible_rect_in_content_space =
           gfx::ToEnclosingRect(MathUtil::ProjectClippedRect(
-              screen_to_layer, gfx::Rect(viewport_size)));
+              screen_to_layer, gfx::Rect(viewport_size_for_tile_priority_)));
       visible_rect_in_content_space.Intersect(gfx::Rect(content_bounds()));
     }
   }
@@ -945,9 +951,6 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen,
   raster_source_scale_was_animating_ = animating_transform_to_screen;
 
   if (!change_target_tiling)
-    return;
-
-  if (!layer_tree_impl()->device_viewport_valid_for_tile_management())
     return;
 
   RecalculateRasterScales(animating_transform_to_screen,

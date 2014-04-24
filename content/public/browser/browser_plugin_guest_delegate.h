@@ -11,12 +11,14 @@
 #include "base/values.h"
 #include "content/common/content_export.h"
 #include "content/public/common/browser_plugin_permission_type.h"
+#include "content/public/common/media_stream_request.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/size.h"
 #include "url/gurl.h"
 
 namespace content {
 
+class JavaScriptDialogManager;
 struct NativeWebKeyboardEvent;
 
 // Objects implement this interface to get notified about changes in the guest
@@ -99,6 +101,32 @@ class CONTENT_EXPORT BrowserPluginGuestDelegate {
   // Notifies that the content size of the guest has changed in autosize mode.
   virtual void SizeChanged(const gfx::Size& old_size,
                            const gfx::Size& new_size) {}
+
+  // Asks permission to use the camera and/or microphone. If permission is
+  // granted, a call should be made to |callback| with the devices. If the
+  // request is denied, a call should be made to |callback| with an empty list
+  // of devices. |request| has the details of the request (e.g. which of audio
+  // and/or video devices are requested, and lists of available devices).
+  virtual void RequestMediaAccessPermission(
+      const MediaStreamRequest& request,
+      const MediaResponseCallback& callback);
+
+  // Asks the delegate if the given guest can download.
+  // Invoking the |callback| synchronously is OK.
+  virtual void CanDownload(const std::string& request_method,
+                           const GURL& url,
+                           const base::Callback<void(bool)>& callback);
+
+  // Asks the delegate if the given guest can lock the pointer.
+  // Invoking the |callback| synchronously is OK.
+  virtual void RequestPointerLockPermission(
+      bool user_gesture,
+      bool last_unlocked_by_target,
+      const base::Callback<void(bool)>& callback) {}
+
+  // Returns a pointer to a service to manage JavaScript dialogs. May return
+  // NULL in which case dialogs aren't shown.
+  virtual JavaScriptDialogManager* GetJavaScriptDialogManager();
 };
 
 }  // namespace content

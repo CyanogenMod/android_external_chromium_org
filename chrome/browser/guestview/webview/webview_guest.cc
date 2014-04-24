@@ -32,6 +32,8 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
+#include "content/public/common/media_stream_request.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/stop_find_action.h"
@@ -75,26 +77,26 @@ static std::string TerminationStatusToString(base::TerminationStatus status) {
 
 static std::string PermissionTypeToString(BrowserPluginPermissionType type) {
   switch (type) {
-    case BROWSER_PLUGIN_PERMISSION_TYPE_DOWNLOAD:
-      return webview::kPermissionTypeDownload;
-    case BROWSER_PLUGIN_PERMISSION_TYPE_MEDIA:
-      return webview::kPermissionTypeMedia;
     case BROWSER_PLUGIN_PERMISSION_TYPE_NEW_WINDOW:
       return webview::kPermissionTypeNewWindow;
-    case BROWSER_PLUGIN_PERMISSION_TYPE_POINTER_LOCK:
-      return webview::kPermissionTypePointerLock;
-    case BROWSER_PLUGIN_PERMISSION_TYPE_JAVASCRIPT_DIALOG:
-      return webview::kPermissionTypeDialog;
     case BROWSER_PLUGIN_PERMISSION_TYPE_UNKNOWN:
       NOTREACHED();
       break;
     default: {
       WebViewPermissionType webview = static_cast<WebViewPermissionType>(type);
       switch (webview) {
+        case WEB_VIEW_PERMISSION_TYPE_DOWNLOAD:
+          return webview::kPermissionTypeDownload;
         case WEB_VIEW_PERMISSION_TYPE_GEOLOCATION:
           return webview::kPermissionTypeGeolocation;
+        case WEB_VIEW_PERMISSION_TYPE_JAVASCRIPT_DIALOG:
+          return webview::kPermissionTypeDialog;
         case WEB_VIEW_PERMISSION_TYPE_LOAD_PLUGIN:
           return webview::kPermissionTypeLoadPlugin;
+        case WEB_VIEW_PERMISSION_TYPE_MEDIA:
+          return webview::kPermissionTypeMedia;
+        case WEB_VIEW_PERMISSION_TYPE_POINTER_LOCK:
+          return webview::kPermissionTypePointerLock;
       }
       NOTREACHED();
     }
@@ -137,7 +139,8 @@ WebViewGuest::WebViewGuest(WebContents* guest_web_contents,
       pending_reload_on_attachment_(false),
       main_frame_id_(0),
       chromevox_injected_(false),
-      find_helper_(this) {
+      find_helper_(this),
+      javascript_dialog_helper_(this) {
   notification_registrar_.Add(
       this, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
       content::Source<WebContents>(guest_web_contents));
@@ -191,25 +194,9 @@ void WebViewGuest::RecordUserInitiatedUMA(const PermissionResponseInfo& info,
     // scenario would be: an embedder allows geolocation request but doesn't
     // have geolocation access on its own.
     switch (info.permission_type) {
-      case BROWSER_PLUGIN_PERMISSION_TYPE_DOWNLOAD:
-        content::RecordAction(
-            UserMetricsAction("BrowserPlugin.PermissionAllow.Download"));
-        break;
-      case BROWSER_PLUGIN_PERMISSION_TYPE_MEDIA:
-        content::RecordAction(
-            UserMetricsAction("BrowserPlugin.PermissionAllow.Media"));
-        break;
-      case BROWSER_PLUGIN_PERMISSION_TYPE_POINTER_LOCK:
-        content::RecordAction(
-            UserMetricsAction("BrowserPlugin.PermissionAllow.PointerLock"));
-        break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_NEW_WINDOW:
         content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionAllow.NewWindow"));
-        break;
-      case BROWSER_PLUGIN_PERMISSION_TYPE_JAVASCRIPT_DIALOG:
-        content::RecordAction(
-            UserMetricsAction("BrowserPlugin.PermissionAllow.JSDialog"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_UNKNOWN:
         break;
@@ -217,13 +204,28 @@ void WebViewGuest::RecordUserInitiatedUMA(const PermissionResponseInfo& info,
         WebViewPermissionType webview_permission_type =
             static_cast<WebViewPermissionType>(info.permission_type);
         switch (webview_permission_type) {
+          case WEB_VIEW_PERMISSION_TYPE_DOWNLOAD:
+            content::RecordAction(
+                UserMetricsAction("WebView.PermissionAllow.Download"));
+            break;
           case WEB_VIEW_PERMISSION_TYPE_GEOLOCATION:
             content::RecordAction(
                 UserMetricsAction("WebView.PermissionAllow.Geolocation"));
             break;
+          case WEB_VIEW_PERMISSION_TYPE_JAVASCRIPT_DIALOG:
+            content::RecordAction(
+                UserMetricsAction("WebView.PermissionAllow.JSDialog"));
+            break;
           case WEB_VIEW_PERMISSION_TYPE_LOAD_PLUGIN:
             content::RecordAction(
                 UserMetricsAction("WebView.Guest.PermissionAllow.PluginLoad"));
+          case WEB_VIEW_PERMISSION_TYPE_MEDIA:
+            content::RecordAction(
+                UserMetricsAction("WebView.PermissionAllow.Media"));
+            break;
+          case WEB_VIEW_PERMISSION_TYPE_POINTER_LOCK:
+            content::RecordAction(
+                UserMetricsAction("WebView.PermissionAllow.PointerLock"));
             break;
           default:
             break;
@@ -232,25 +234,9 @@ void WebViewGuest::RecordUserInitiatedUMA(const PermissionResponseInfo& info,
     }
   } else {
     switch (info.permission_type) {
-      case BROWSER_PLUGIN_PERMISSION_TYPE_DOWNLOAD:
-        content::RecordAction(
-            UserMetricsAction("BrowserPlugin.PermissionDeny.Download"));
-        break;
-      case BROWSER_PLUGIN_PERMISSION_TYPE_MEDIA:
-        content::RecordAction(
-            UserMetricsAction("BrowserPlugin.PermissionDeny.Media"));
-        break;
-      case BROWSER_PLUGIN_PERMISSION_TYPE_POINTER_LOCK:
-        content::RecordAction(
-            UserMetricsAction("BrowserPlugin.PermissionDeny.PointerLock"));
-        break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_NEW_WINDOW:
         content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionDeny.NewWindow"));
-        break;
-      case BROWSER_PLUGIN_PERMISSION_TYPE_JAVASCRIPT_DIALOG:
-        content::RecordAction(
-            UserMetricsAction("BrowserPlugin.PermissionDeny.JSDialog"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_UNKNOWN:
         break;
@@ -258,13 +244,28 @@ void WebViewGuest::RecordUserInitiatedUMA(const PermissionResponseInfo& info,
         WebViewPermissionType webview_permission_type =
             static_cast<WebViewPermissionType>(info.permission_type);
         switch (webview_permission_type) {
+          case WEB_VIEW_PERMISSION_TYPE_DOWNLOAD:
+            content::RecordAction(
+                UserMetricsAction("WebView.PermissionDeny.Download"));
+            break;
           case WEB_VIEW_PERMISSION_TYPE_GEOLOCATION:
             content::RecordAction(
                 UserMetricsAction("WebView.PermissionDeny.Geolocation"));
             break;
+          case WEB_VIEW_PERMISSION_TYPE_JAVASCRIPT_DIALOG:
+            content::RecordAction(
+                UserMetricsAction("WebView.PermissionDeny.JSDialog"));
+            break;
           case WEB_VIEW_PERMISSION_TYPE_LOAD_PLUGIN:
             content::RecordAction(
                 UserMetricsAction("WebView.Guest.PermissionDeny.PluginLoad"));
+          case WEB_VIEW_PERMISSION_TYPE_MEDIA:
+            content::RecordAction(
+                UserMetricsAction("WebView.PermissionDeny.Media"));
+            break;
+          case WEB_VIEW_PERMISSION_TYPE_POINTER_LOCK:
+            content::RecordAction(
+                UserMetricsAction("WebView.PermissionDeny.PointerLock"));
             break;
           default:
             break;
@@ -590,6 +591,39 @@ void WebViewGuest::CancelGeolocationPermissionRequest(int bridge_id) {
   pending_permission_requests_.erase(request_itr);
 }
 
+void WebViewGuest::OnWebViewMediaPermissionResponse(
+    const content::MediaStreamRequest& request,
+    const content::MediaResponseCallback& callback,
+    bool allow,
+    const std::string& user_input) {
+  if (!allow || !attached()) {
+    // Deny the request.
+    callback.Run(content::MediaStreamDevices(),
+                 content::MEDIA_DEVICE_INVALID_STATE,
+                 scoped_ptr<content::MediaStreamUI>());
+    return;
+  }
+  if (!embedder_web_contents()->GetDelegate())
+    return;
+
+  embedder_web_contents()->GetDelegate()->
+      RequestMediaAccessPermission(embedder_web_contents(), request, callback);
+}
+
+void WebViewGuest::OnWebViewDownloadPermissionResponse(
+    const base::Callback<void(bool)>& callback,
+    bool allow,
+    const std::string& user_input) {
+  callback.Run(allow && attached());
+}
+
+void WebViewGuest::OnWebViewPointerLockPermissionResponse(
+    const base::Callback<void(bool)>& callback,
+    bool allow,
+    const std::string& user_input) {
+  callback.Run(allow && attached());
+}
+
 WebViewGuest::SetPermissionResult WebViewGuest::SetPermission(
     int request_id,
     PermissionResponseAction action,
@@ -835,6 +869,69 @@ void WebViewGuest::SizeChanged(const gfx::Size& old_size,
   DispatchEvent(new GuestView::Event(webview::kEventSizeChanged, args.Pass()));
 }
 
+void WebViewGuest::RequestMediaAccessPermission(
+    const content::MediaStreamRequest& request,
+    const content::MediaResponseCallback& callback) {
+  base::DictionaryValue request_info;
+  request_info.Set(
+      guestview::kUrl,
+      base::Value::CreateStringValue(request.security_origin.spec()));
+  RequestPermission(static_cast<BrowserPluginPermissionType>(
+                        WEB_VIEW_PERMISSION_TYPE_MEDIA),
+                    request_info,
+                    base::Bind(&WebViewGuest::OnWebViewMediaPermissionResponse,
+                               base::Unretained(this),
+                               request,
+                               callback),
+                    false /* allowed_by_default */);
+}
+
+void WebViewGuest::CanDownload(
+    const std::string& request_method,
+    const GURL& url,
+    const base::Callback<void(bool)>& callback) {
+  base::DictionaryValue request_info;
+  request_info.Set(
+      guestview::kUrl,
+      base::Value::CreateStringValue(url.spec()));
+  RequestPermission(
+      static_cast<BrowserPluginPermissionType>(
+          WEB_VIEW_PERMISSION_TYPE_DOWNLOAD),
+      request_info,
+      base::Bind(&WebViewGuest::OnWebViewDownloadPermissionResponse,
+                 base::Unretained(this),
+                 callback),
+      false /* allowed_by_default */);
+}
+
+void WebViewGuest::RequestPointerLockPermission(
+    bool user_gesture,
+    bool last_unlocked_by_target,
+    const base::Callback<void(bool)>& callback) {
+  base::DictionaryValue request_info;
+  request_info.Set(guestview::kUserGesture,
+                   base::Value::CreateBooleanValue(user_gesture));
+  request_info.Set(webview::kLastUnlockedBySelf,
+                   base::Value::CreateBooleanValue(last_unlocked_by_target));
+  request_info.Set(guestview::kUrl,
+                   base::Value::CreateStringValue(
+                       guest_web_contents()->GetLastCommittedURL().spec()));
+
+  RequestPermission(
+      static_cast<BrowserPluginPermissionType>(
+          WEB_VIEW_PERMISSION_TYPE_POINTER_LOCK),
+      request_info,
+      base::Bind(&WebViewGuest::OnWebViewPointerLockPermissionResponse,
+                 base::Unretained(this),
+                 callback),
+      false /* allowed_by_default */);
+}
+
+content::JavaScriptDialogManager*
+    WebViewGuest::GetJavaScriptDialogManager() {
+  return &javascript_dialog_helper_;
+}
+
 #if defined(OS_CHROMEOS)
 void WebViewGuest::OnAccessibilityStatusChanged(
     const chromeos::AccessibilityStatusEventDetails& details) {
@@ -901,13 +998,13 @@ int WebViewGuest::RequestPermissionInternal(
       PermissionResponseInfo(callback, permission_type, allowed_by_default);
   scoped_ptr<base::DictionaryValue> args(request_info.DeepCopy());
   args->SetInteger(webview::kRequestId, request_id);
-  switch (permission_type) {
+  switch (static_cast<int>(permission_type)) {
     case BROWSER_PLUGIN_PERMISSION_TYPE_NEW_WINDOW: {
       DispatchEvent(new GuestView::Event(webview::kEventNewWindow,
                                          args.Pass()));
       break;
     }
-    case BROWSER_PLUGIN_PERMISSION_TYPE_JAVASCRIPT_DIALOG: {
+    case WEB_VIEW_PERMISSION_TYPE_JAVASCRIPT_DIALOG: {
       DispatchEvent(new GuestView::Event(webview::kEventDialog,
                                          args.Pass()));
       break;

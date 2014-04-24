@@ -105,13 +105,13 @@
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/net/net_resource_provider.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/profile_management_switches.h"
 #include "chrome/common/profiling.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "components/language_usage_metrics/language_usage_metrics.h"
 #include "components/nacl/browser/nacl_browser.h"
 #include "components/nacl/browser/nacl_process_host.h"
 #include "components/rappor/rappor_service.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/translate/core/browser/translate_download_manager.h"
 #include "content/public/browser/browser_thread.h"
@@ -1153,9 +1153,8 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   }
 
 #if defined(USE_AURA)
-  // Env creates the compositor. Aura widgets need the compositor to be created
-  // before they can be initialized by the browser.
-  aura::Env::CreateInstance();
+  // Make sure aura::Env has been initialized.
+  CHECK(aura::Env::GetInstance());
 #endif
 
   // Android doesn't support extensions and doesn't implement ProcessSingleton.

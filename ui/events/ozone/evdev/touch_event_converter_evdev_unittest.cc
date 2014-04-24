@@ -53,7 +53,7 @@ class MockTouchEventConverterEvdev : public TouchEventConverterEvdev {
     base::RunLoop().RunUntilIdle();
   }
 
-  void DispatchCallback(void* event) {
+  void DispatchCallback(Event* event) {
     dispatched_events_.push_back(
         new TouchEvent(*static_cast<TouchEvent*>(event)));
   }
@@ -69,15 +69,20 @@ class MockTouchEventConverterEvdev : public TouchEventConverterEvdev {
 
 MockTouchEventConverterEvdev::MockTouchEventConverterEvdev(int fd,
                                                            base::FilePath path)
-    : TouchEventConverterEvdev(fd, path, EventDeviceInfo()) {
+    : TouchEventConverterEvdev(
+          fd,
+          path,
+          EventDeviceInfo(),
+          base::Bind(&MockTouchEventConverterEvdev::DispatchCallback,
+                     base::Unretained(this))) {
   pressure_min_ = 30;
   pressure_max_ = 60;
 
   // TODO(rjkroege): Check test axes.
-  x_min_ = 0;
-  x_max_ = std::numeric_limits<int>::max();
-  y_min_ = 0;
-  y_max_ = std::numeric_limits<int>::max();
+  x_min_pixels_ = x_min_tuxels_ = 0;
+  x_num_pixels_ = x_num_tuxels_ = std::numeric_limits<int>::max();
+  y_min_pixels_ = y_min_tuxels_ = 0;
+  y_num_pixels_ = y_num_tuxels_ = std::numeric_limits<int>::max();
 
   int fds[2];
 
@@ -122,9 +127,6 @@ class TouchEventConverterEvdevTest : public testing::Test {
     loop_ = new base::MessageLoopForUI;
     device_ = new ui::MockTouchEventConverterEvdev(
         events_in_, base::FilePath(kTestDevicePath));
-    device_->SetDispatchCallback(
-        base::Bind(&ui::MockTouchEventConverterEvdev::DispatchCallback,
-                   base::Unretained(device_)));
   }
 
   virtual void TearDown() OVERRIDE {

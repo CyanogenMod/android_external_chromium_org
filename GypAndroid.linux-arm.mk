@@ -75,6 +75,7 @@ include $(LOCAL_PATH)/gpu/command_buffer_client.target.linux-arm.mk
 include $(LOCAL_PATH)/gpu/command_buffer_common.target.linux-arm.mk
 include $(LOCAL_PATH)/gpu/command_buffer_service.target.linux-arm.mk
 include $(LOCAL_PATH)/gpu/disk_cache_proto.target.linux-arm.mk
+include $(LOCAL_PATH)/gpu/gl_in_process_context.target.linux-arm.mk
 include $(LOCAL_PATH)/gpu/gles2_c_lib.target.linux-arm.mk
 include $(LOCAL_PATH)/gpu/gles2_cmd_helper.target.linux-arm.mk
 include $(LOCAL_PATH)/gpu/gles2_implementation.target.linux-arm.mk
@@ -152,6 +153,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_a
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_codemirror_js.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_console_js.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_css.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_devices_js.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_elements_js.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_extensions_js.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_js.target.linux-arm.mk
@@ -302,7 +304,6 @@ include $(LOCAL_PATH)/ui/base/strings/ui_strings.target.linux-arm.mk
 include $(LOCAL_PATH)/ui/base/ui_base.target.linux-arm.mk
 include $(LOCAL_PATH)/ui/base/ui_base_jni_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/ui/events/dom4_keycode_converter.target.linux-arm.mk
-include $(LOCAL_PATH)/ui/events/events.target.linux-arm.mk
 include $(LOCAL_PATH)/ui/events/events_base.target.linux-arm.mk
 include $(LOCAL_PATH)/ui/events/gesture_detection.target.linux-arm.mk
 include $(LOCAL_PATH)/ui/gfx/gfx.target.linux-arm.mk

@@ -20,10 +20,10 @@
 
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
+#include "base/strings/utf_offset_string_conversions.h"
 #include "net/base/address_family.h"
 #include "net/base/escape.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
 
 class GURL;
 
@@ -31,11 +31,8 @@ namespace base {
 class Time;
 }
 
-namespace url_canon {
+namespace url {
 struct CanonHostInfo;
-}
-
-namespace url_parse {
 struct Parsed;
 }
 
@@ -195,7 +192,7 @@ NET_EXPORT base::string16 IDNToUnicode(const std::string& host,
 // Canonicalizes |host| and returns it.  Also fills |host_info| with
 // IP address information.  |host_info| must not be NULL.
 NET_EXPORT std::string CanonicalizeHost(const std::string& host,
-                                        url_canon::CanonHostInfo* host_info);
+                                        url::CanonHostInfo* host_info);
 
 // Returns true if |host| is not an IP address and is compliant with a set of
 // rules based on RFC 1738 and tweaked to be compatible with the real world.
@@ -300,7 +297,7 @@ NET_EXPORT base::string16 FormatUrl(const GURL& url,
                                     const std::string& languages,
                                     FormatUrlTypes format_types,
                                     UnescapeRule::Type unescape_rules,
-                                    url_parse::Parsed* new_parsed,
+                                    url::Parsed* new_parsed,
                                     size_t* prefix_end,
                                     size_t* offset_for_adjustment);
 NET_EXPORT base::string16 FormatUrlWithOffsets(
@@ -308,9 +305,21 @@ NET_EXPORT base::string16 FormatUrlWithOffsets(
     const std::string& languages,
     FormatUrlTypes format_types,
     UnescapeRule::Type unescape_rules,
-    url_parse::Parsed* new_parsed,
+    url::Parsed* new_parsed,
     size_t* prefix_end,
     std::vector<size_t>* offsets_for_adjustment);
+// This function is like those above except it takes |adjustments| rather
+// than |offset[s]_for_adjustment|.  |adjustments| will be set to reflect all
+// the transformations that happened to |url| to convert it into the returned
+// value.
+NET_EXPORT base::string16 FormatUrlWithAdjustments(
+    const GURL& url,
+    const std::string& languages,
+    FormatUrlTypes format_types,
+    UnescapeRule::Type unescape_rules,
+    url::Parsed* new_parsed,
+    size_t* prefix_end,
+    base::OffsetAdjuster::Adjustments* adjustments);
 
 // This is a convenience function for FormatUrl() with
 // format_types = kFormatUrlOmitAll and unescape = SPACES.  This is the typical

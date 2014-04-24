@@ -173,6 +173,11 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Default is false.
   virtual bool ShouldSuppressDialogs();
 
+  // Returns whether pending NavigationEntries for aborted browser-initiated
+  // navigations should be preserved (and thus returned from GetVisibleURL).
+  // Defaults to false.
+  virtual bool ShouldPreserveAbortedURLs(WebContents* source);
+
   // Add a message to the console. Returning true indicates that the delegate
   // handled the message. If false is returned the default logging mechanism
   // will be used for the message.
@@ -460,6 +465,9 @@ class CONTENT_EXPORT WebContentsDelegate {
   // has moved.
   virtual void MoveValidationMessage(WebContents* web_contents,
                                      const gfx::Rect& anchor_in_root_view) {}
+
+  // Returns true if the WebContents is never visible.
+  virtual bool IsNeverVisible(WebContents* web_contents);
 
  protected:
   virtual ~WebContentsDelegate();

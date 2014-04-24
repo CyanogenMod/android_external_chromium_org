@@ -22,7 +22,6 @@
 
 class FaviconClient;
 class FaviconHandlerDelegate;
-class Profile;
 class SkBitmap;
 
 namespace base {
@@ -73,10 +72,12 @@ class NavigationEntry;
 // favicon.
 //
 // When the renderer downloads favicons, it considers the entire list of
-// favicon candidates and chooses the one that best matches the preferred size
-// (or the first one if there is no preferred size). Once the matching favicon
-// has been determined, SetFavicon is called which updates the favicon of the
-// NavigationEntry and notifies the database to save the favicon.
+// favicon candidates, if |download_largest_favicon_| is true, the largest
+// favicon will be used, otherwise the one that best matches the preferred size
+// is chosen (or the first one if there is no preferred  size). Once the
+// matching favicon has been determined, SetFavicon is called which updates
+// the favicon of the NavigationEntry and notifies the database to save the
+// favicon.
 
 class FaviconHandler {
  public:
@@ -85,10 +86,10 @@ class FaviconHandler {
     TOUCH,
   };
 
-  FaviconHandler(Profile* profile,
-                 FaviconClient* client,
+  FaviconHandler(FaviconClient* client,
                  FaviconHandlerDelegate* delegate,
-                 Type icon_type);
+                 Type icon_type,
+                 bool download_largest_icon);
   virtual ~FaviconHandler();
 
   // Initiates loading the favicon for the specified url.
@@ -115,7 +116,7 @@ class FaviconHandler {
       const std::vector<gfx::Size>& original_bitmap_sizes);
 
   // For testing.
-  const std::deque<content::FaviconURL>& image_urls() const {
+  const std::vector<content::FaviconURL>& image_urls() const {
     return image_urls_;
   }
 
@@ -134,13 +135,13 @@ class FaviconHandler {
   virtual void UpdateFaviconMappingAndFetch(
       const GURL& page_url,
       const GURL& icon_url,
-      chrome::IconType icon_type,
+      favicon_base::IconType icon_type,
       const FaviconService::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   virtual void GetFaviconFromFaviconService(
       const GURL& icon_url,
-      chrome::IconType icon_type,
+      favicon_base::IconType icon_type,
       const FaviconService::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
@@ -152,7 +153,7 @@ class FaviconHandler {
 
   virtual void SetHistoryFavicons(const GURL& page_url,
                                   const GURL& icon_url,
-                                  chrome::IconType icon_type,
+                                  favicon_base::IconType icon_type,
                                   const gfx::Image& image);
 
   // Returns true if the favicon should be saved.
@@ -173,11 +174,11 @@ class FaviconHandler {
 
     DownloadRequest(const GURL& url,
                     const GURL& image_url,
-                    chrome::IconType icon_type);
+                    favicon_base::IconType icon_type);
 
     GURL url;
     GURL image_url;
-    chrome::IconType icon_type;
+    favicon_base::IconType icon_type;
   };
 
   // Used to track a candidate for the favicon.
@@ -189,54 +190,55 @@ class FaviconHandler {
                      const GURL& image_url,
                      const gfx::Image& image,
                      float score,
-                     chrome::IconType icon_type);
+                     favicon_base::IconType icon_type);
 
     GURL url;
     GURL image_url;
     gfx::Image image;
     float score;
-    chrome::IconType icon_type;
+    favicon_base::IconType icon_type;
   };
 
   // See description above class for details.
-  void OnFaviconDataForInitialURLFromFaviconService(
-      const std::vector<chrome::FaviconBitmapResult>& favicon_bitmap_results);
+  void OnFaviconDataForInitialURLFromFaviconService(const std::vector<
+      favicon_base::FaviconBitmapResult>& favicon_bitmap_results);
 
   // If the favicon has expired, asks the renderer to download the favicon.
   // Otherwise asks history to update the mapping between page url and icon
   // url with a callback to OnFaviconData when done.
   void DownloadFaviconOrAskFaviconService(const GURL& page_url,
                                           const GURL& icon_url,
-                                          chrome::IconType icon_type);
+                                          favicon_base::IconType icon_type);
 
   // See description above class for details.
-  void OnFaviconData(
-      const std::vector<chrome::FaviconBitmapResult>& favicon_bitmap_results);
+  void OnFaviconData(const std::vector<favicon_base::FaviconBitmapResult>&
+                         favicon_bitmap_results);
 
   // Schedules a download for the specified entry. This adds the request to
   // download_requests_.
   int ScheduleDownload(const GURL& url,
                        const GURL& image_url,
-                       chrome::IconType icon_type);
+                       favicon_base::IconType icon_type);
 
   // Updates |favicon_candidate_| and returns true if it is an exact match.
   bool UpdateFaviconCandidate(const GURL& url,
                               const GURL& image_url,
                               const gfx::Image& image,
                               float score,
-                              chrome::IconType icon_type);
+                              favicon_base::IconType icon_type);
 
   // Sets the image data for the favicon.
   void SetFavicon(const GURL& url,
                   const GURL& icon_url,
                   const gfx::Image& image,
-                  chrome::IconType icon_type);
+                  favicon_base::IconType icon_type);
 
   // Sets the favicon's data on the NavigationEntry.
   // If the WebContents has a delegate, it is invalidated (INVALIDATE_TYPE_TAB).
   void SetFaviconOnNavigationEntry(
       content::NavigationEntry* entry,
-      const std::vector<chrome::FaviconBitmapResult>& favicon_bitmap_results);
+      const std::vector<favicon_base::FaviconBitmapResult>&
+          favicon_bitmap_results);
   void SetFaviconOnNavigationEntry(content::NavigationEntry* entry,
                                    const GURL& icon_url,
                                    const gfx::Image& image);
@@ -248,13 +250,16 @@ class FaviconHandler {
 
   // Returns the preferred size of the image. 0 means no preference (any size
   // will do).
-  int preferred_icon_size() {
-#if defined(OS_ANDROID)
-    return 0;
-#else
-    return icon_types_ == chrome::FAVICON ? gfx::kFaviconSize : 0;
-#endif
+  int preferred_icon_size() const {
+    if (download_largest_icon_)
+      return 0;
+    return icon_types_ == favicon_base::FAVICON ? gfx::kFaviconSize : 0;
   }
+
+  // Sorts the entries in |image_urls_| by icon size in descending order.
+  // Additionally removes any entries whose sizes are all greater than the max
+  // allowed size.
+  void SortAndPruneImageUrls();
 
   // Used for FaviconService requests.
   base::CancelableTaskTracker cancelable_task_tracker_;
@@ -278,14 +283,14 @@ class FaviconHandler {
   // The combination of the supported icon types.
   const int icon_types_;
 
+  // Whether the largest icon should be downloaded.
+  const bool download_largest_icon_;
+
   // The prioritized favicon candidates from the page back from the renderer.
-  std::deque<content::FaviconURL> image_urls_;
+  std::vector<content::FaviconURL> image_urls_;
 
   // The FaviconBitmapResults from history.
-  std::vector<chrome::FaviconBitmapResult> history_results_;
-
-  // The Profile associated with this handler.
-  Profile* profile_;
+  std::vector<favicon_base::FaviconBitmapResult> history_results_;
 
   // The client which implements embedder-specific Favicon operations.
   FaviconClient* client_;  // weak

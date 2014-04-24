@@ -53,6 +53,7 @@
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/user_script.h"
 #include "grit/chromium_strings.h"
+#include "grit/extensions_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -166,6 +167,7 @@ CrxInstaller::CrxInstaller(
 }
 
 CrxInstaller::~CrxInstaller() {
+  LOG(WARNING) << "Destroying";
   // Make sure the UI is deleted on the ui thread.
   if (client_) {
     BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, client_);
@@ -178,8 +180,7 @@ void CrxInstaller::InstallCrx(const base::FilePath& source_file) {
   if (!service || service->browser_terminating())
     return;
 
-  InstallTrackerFactory::GetForProfile(profile())
-      ->OnBeginCrxInstall(expected_id_);
+  NotifyCrxInstallBegin();
 
   source_file_ = source_file;
 
@@ -200,6 +201,8 @@ void CrxInstaller::InstallCrx(const base::FilePath& source_file) {
 void CrxInstaller::InstallUserScript(const base::FilePath& source_file,
                                      const GURL& download_url) {
   DCHECK(!download_url.is_empty());
+
+  NotifyCrxInstallBegin();
 
   source_file_ = source_file;
   download_url_ = download_url;
@@ -224,6 +227,8 @@ void CrxInstaller::ConvertUserScriptOnFileThread() {
 }
 
 void CrxInstaller::InstallWebApp(const WebApplicationInfo& web_app) {
+  NotifyCrxInstallBegin();
+
   if (!installer_task_runner_->PostTask(
           FROM_HERE,
           base::Bind(&CrxInstaller::ConvertWebAppOnFileThread,
@@ -568,6 +573,7 @@ void CrxInstaller::ConfirmInstall() {
       ReportFailureFromUIThread(CrxInstallerError(
           l10n_util::GetStringUTF16(
               IDS_EXTENSION_INSTALL_KIOSK_MODE_ONLY)));
+      return;
     }
   }
 
@@ -733,6 +739,9 @@ void CrxInstaller::ReportFailureFromFileThread(const CrxInstallerError& error) {
 void CrxInstaller::ReportFailureFromUIThread(const CrxInstallerError& error) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
+  if (!service_weak_.get() || service_weak_->browser_terminating())
+    return;
+
   content::NotificationService* service =
       content::NotificationService::current();
   service->Notify(chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR,
@@ -802,6 +811,11 @@ void CrxInstaller::ReportSuccessFromUIThread() {
   NotifyCrxInstallComplete(true);
 }
 
+void CrxInstaller::NotifyCrxInstallBegin() {
+  InstallTrackerFactory::GetForProfile(profile())
+      ->OnBeginCrxInstall(expected_id_);
+}
+
 void CrxInstaller::NotifyCrxInstallComplete(bool success) {
   // Some users (such as the download shelf) need to know when a
   // CRXInstaller is done.  Listening for the EXTENSION_* events
@@ -814,12 +828,16 @@ void CrxInstaller::NotifyCrxInstallComplete(bool success) {
       content::Details<const Extension>(
           success ? extension() : NULL));
 
+  InstallTrackerFactory::GetForProfile(profile())
+      ->OnFinishCrxInstall(success ? extension()->id() : expected_id_, success);
+
   if (success)
     ConfirmReEnable();
 }
 
 void CrxInstaller::CleanupTempFiles() {
   if (!installer_task_runner_->RunsTasksOnCurrentThread()) {
+    LOG(WARNING) << "Post CleanupTempFiles";
     if (!installer_task_runner_->PostTask(
             FROM_HERE,
             base::Bind(&CrxInstaller::CleanupTempFiles, this))) {
@@ -828,6 +846,7 @@ void CrxInstaller::CleanupTempFiles() {
     return;
   }
 
+  LOG(WARNING) << "CleanupTempFiles";
   // Delete the temp directory and crx file as necessary.
   if (!temp_dir_.value().empty()) {
     file_util::DeleteFile(temp_dir_, true);

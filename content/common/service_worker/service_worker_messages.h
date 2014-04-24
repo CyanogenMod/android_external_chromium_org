@@ -50,6 +50,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerObjectInfo)
   IPC_STRUCT_TRAITS_MEMBER(state)
 IPC_STRUCT_TRAITS_END()
 
+//---------------------------------------------------------------------------
 // Messages sent from the child process to the browser.
 
 IPC_MESSAGE_CONTROL5(ServiceWorkerHostMsg_RegisterServiceWorker,
@@ -112,7 +113,18 @@ IPC_MESSAGE_CONTROL2(ServiceWorkerHostMsg_FetchEventFinished,
                      content::ServiceWorkerResponse)
 IPC_MESSAGE_CONTROL0(ServiceWorkerHostMsg_SyncEventFinished)
 
+// Asks the browser to retrieve documents controlled by the sender
+// ServiceWorker.
+IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_GetClientDocuments,
+                    int /* request_id */)
+
+//---------------------------------------------------------------------------
 // Messages sent from the browser to the child process.
+//
+// NOTE: All ServiceWorkerMsg messages not sent via EmbeddedWorker must have
+// a thread_id as their first field so that ServiceWorkerMessageFilter can
+// extract it and dispatch the message to the correct ServiceWorkerDispatcher
+// on the correct thread.
 
 // Response to ServiceWorkerMsg_RegisterServiceWorker.
 IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerRegistered,
@@ -133,10 +145,18 @@ IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_ServiceWorkerRegistrationError,
                      blink::WebServiceWorkerError::ErrorType /* code */,
                      base::string16 /* message */)
 
-// Informs the browser that the ServiceWorker's state has changed.
-IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_ServiceWorkerStateChanged,
+// Informs the child process that the ServiceWorker's state has changed.
+IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerStateChanged,
+                     int /* thread_id */,
                      int /* handle_id */,
                      blink::WebServiceWorkerState)
+
+// Tells the child process to set the current ServiceWorker for the given
+// provider.
+IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetCurrentServiceWorker,
+                     int /* thread_id */,
+                     int /* provider_id */,
+                     content::ServiceWorkerObjectInfo)
 
 // Sent via EmbeddedWorker to dispatch events.
 IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_InstallEvent,
@@ -149,3 +169,8 @@ IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_Message,
                      std::vector<int> /* sent_message_port_ids */,
                      std::vector<int> /* new_routing_ids */)
 IPC_MESSAGE_CONTROL0(ServiceWorkerMsg_SyncEvent)
+
+// Sent via EmbeddedWorker as a response of GetClientDocuments.
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_DidGetClientDocuments,
+                     int /* request_id */,
+                     std::vector<int> /* client_ids */)

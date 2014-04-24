@@ -3033,6 +3033,7 @@ TEST_P(ResourceProviderTest, CopyResource_GLTexture) {
   scoped_ptr<AllocationTrackingContext3D> context_owned(
       new StrictMock<AllocationTrackingContext3D>);
   AllocationTrackingContext3D* context = context_owned.get();
+  context_owned->set_support_sync_query(true);
 
   FakeOutputSurfaceClient output_surface_client;
   scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
@@ -3168,7 +3169,7 @@ void InitializeGLAndCheck(ContextSharedData* shared_data,
       TestContextProvider::Create(
           context_owned.PassAs<TestWebGraphicsContext3D>());
   output_surface->InitializeAndSetContext3d(context_provider, NULL);
-  EXPECT_TRUE(resource_provider->InitializeGL());
+  resource_provider->InitializeGL();
 
   CheckCreateResource(ResourceProvider::GLTexture, resource_provider, context);
 }

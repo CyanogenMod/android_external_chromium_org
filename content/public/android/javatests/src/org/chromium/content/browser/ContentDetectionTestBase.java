@@ -32,7 +32,7 @@ public class ContentDetectionTestBase extends ContentShellTestBase {
      */
     protected TestCallbackHelperContainer getTestCallbackHelperContainer() {
         if (mCallbackHelper == null) {
-            mCallbackHelper = new TestCallbackHelperContainer(getContentView());
+            mCallbackHelper = new TestCallbackHelperContainer(getContentViewCore());
         }
         return mCallbackHelper;
     }
@@ -52,7 +52,7 @@ public class ContentDetectionTestBase extends ContentShellTestBase {
      * @return true if the test url is the current one, false otherwise.
      */
     protected boolean isCurrentTestUrl(String testUrl) {
-        return UrlUtils.getTestFileUrl(testUrl).equals(getContentView().getUrl());
+        return UrlUtils.getTestFileUrl(testUrl).equals(getContentViewCore().getUrl());
     }
 
     /**
@@ -67,7 +67,7 @@ public class ContentDetectionTestBase extends ContentShellTestBase {
         int currentCallCount = onStartContentIntentHelper.getCallCount();
 
         DOMUtils.scrollNodeIntoView(getContentViewCore(), id);
-        DOMUtils.clickNode(this, getContentView(), id);
+        DOMUtils.clickNode(this, getContentViewCore(), id);
 
         onStartContentIntentHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
                 TimeUnit.SECONDS);
@@ -88,7 +88,7 @@ public class ContentDetectionTestBase extends ContentShellTestBase {
         int currentCallCount = onPageFinishedHelper.getCallCount();
 
         DOMUtils.scrollNodeIntoView(getContentViewCore(), id);
-        DOMUtils.clickNode(this, getContentView(), id);
+        DOMUtils.clickNode(this, getContentViewCore(), id);
 
         onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
                 TimeUnit.SECONDS);

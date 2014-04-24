@@ -31,8 +31,8 @@
 #include "third_party/WebKit/public/web/WebDOMCustomEvent.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
@@ -610,7 +610,6 @@ void BrowserPlugin::OnUpdateRect(
     browser_plugin_manager()->Send(new BrowserPluginHostMsg_UpdateRect_ACK(
         render_view_routing_id_,
         guest_instance_id_,
-        true,
         auto_size_params,
         resize_guest_params));
     return;
@@ -666,7 +665,6 @@ void BrowserPlugin::OnUpdateRect(
   browser_plugin_manager()->Send(new BrowserPluginHostMsg_UpdateRect_ACK(
       render_view_routing_id_,
       guest_instance_id_,
-      UsesDamageBuffer(params),
       auto_size_params,
       resize_guest_params));
 }
@@ -839,7 +837,7 @@ void BrowserPlugin::TriggerEvent(const std::string& event_name,
   if (!container())
     return;
 
-  blink::WebFrame* frame = container()->element().document().frame();
+  blink::WebLocalFrame* frame = container()->element().document().frame();
   if (!frame)
     return;
 

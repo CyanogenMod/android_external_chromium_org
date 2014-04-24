@@ -82,17 +82,11 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   cmd_line.AppendSwitchASCII(switches::kProcessType, switches::kZygoteProcess);
 
   int fds[2];
-#if defined(OS_FREEBSD) || defined(OS_OPENBSD)
-  // The BSDs often don't support SOCK_SEQPACKET yet, so fall back to
-  // SOCK_DGRAM if necessary.
-  if (socketpair(PF_UNIX, SOCK_SEQPACKET, 0, fds) != 0)
-    CHECK(socketpair(PF_UNIX, SOCK_DGRAM, 0, fds) == 0);
-#else
-  CHECK(socketpair(PF_UNIX, SOCK_SEQPACKET, 0, fds) == 0);
-#endif
+  CHECK(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, fds) == 0);
   base::FileHandleMappingVector fds_to_map;
   fds_to_map.push_back(std::make_pair(fds[1], kZygoteSocketPairFd));
 
+  base::LaunchOptions options;
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
   if (browser_command_line.HasSwitch(switches::kZygoteCmdPrefix)) {
     cmd_line.PrependWrapper(
@@ -127,13 +121,6 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   // A non empty sandbox_cmd means we want a SUID sandbox.
   using_suid_sandbox_ = !sandbox_cmd.empty();
 
-  if (using_suid_sandbox_) {
-    scoped_ptr<sandbox::SetuidSandboxClient>
-        sandbox_client(sandbox::SetuidSandboxClient::Create());
-    sandbox_client->PrependWrapper(&cmd_line);
-    sandbox_client->SetupLaunchEnvironment();
-  }
-
   // Start up the sandbox host process and get the file descriptor for the
   // renderers to talk to it.
   const int sfd = RenderSandboxHostLinux::GetInstance()->GetRendererSocket();
@@ -141,15 +128,19 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
 
   int dummy_fd = -1;
   if (using_suid_sandbox_) {
-    dummy_fd = socket(PF_UNIX, SOCK_DGRAM, 0);
+    scoped_ptr<sandbox::SetuidSandboxClient>
+        sandbox_client(sandbox::SetuidSandboxClient::Create());
+    sandbox_client->PrependWrapper(&cmd_line, &options);
+    sandbox_client->SetupLaunchEnvironment();
+
+    CHECK_EQ(kZygoteIdFd, sandbox_client->GetUniqueToChildFileDescriptor());
+    dummy_fd = socket(AF_UNIX, SOCK_DGRAM, 0);
     CHECK(dummy_fd >= 0);
     fds_to_map.push_back(std::make_pair(dummy_fd, kZygoteIdFd));
   }
 
   base::ProcessHandle process = -1;
-  base::LaunchOptions options;
   options.fds_to_remap = &fds_to_map;
-  options.allow_new_privs = using_suid_sandbox_;  // Don't PR_SET_NO_NEW_PRIVS.
   base::LaunchProcess(cmd_line.argv(), options, &process);
   CHECK(process != -1) << "Failed to launch zygote process";
 
@@ -163,25 +154,28 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
     char buf[kExpectedLength];
     const ssize_t len = UnixDomainSocket::RecvMsg(fds[0], buf, sizeof(buf),
                                                   &fds_vec);
-    CHECK(len == kExpectedLength) << "Incorrect zygote magic length";
-    CHECK(0 == strcmp(buf, kZygoteHelloMessage))
-        << "Incorrect zygote hello";
+    CHECK_EQ(kExpectedLength, len) << "Incorrect zygote magic length";
+    CHECK(0 == strcmp(buf, kZygoteHelloMessage)) << "Incorrect zygote hello";
 
     std::string inode_output;
     ino_t inode = 0;
     // Figure out the inode for |dummy_fd|, close |dummy_fd| on our end,
     // and find the zygote process holding |dummy_fd|.
-    if (base::FileDescriptorGetInode(&inode, dummy_fd)) {
-      close(dummy_fd);
-      std::vector<std::string> get_inode_cmdline;
-      get_inode_cmdline.push_back(sandbox_binary_);
-      get_inode_cmdline.push_back(base::kFindInodeSwitch);
-      get_inode_cmdline.push_back(base::Int64ToString(inode));
-      CommandLine get_inode_cmd(get_inode_cmdline);
-      if (base::GetAppOutput(get_inode_cmd, &inode_output)) {
-        base::StringToInt(inode_output, &pid_);
-      }
-    }
+    CHECK(base::FileDescriptorGetInode(&inode, dummy_fd))
+        << "Cannot get inode for dummy_fd " << dummy_fd;
+    close(dummy_fd);
+
+    std::vector<std::string> get_inode_cmdline;
+    get_inode_cmdline.push_back(sandbox_binary_);
+    get_inode_cmdline.push_back(base::kFindInodeSwitch);
+    get_inode_cmdline.push_back(base::Int64ToString(inode));
+    CommandLine get_inode_cmd(get_inode_cmdline);
+    CHECK(base::GetAppOutput(get_inode_cmd, &inode_output))
+        << "Find inode command failed for inode " << inode;
+
+    base::TrimWhitespaceASCII(inode_output, base::TRIM_ALL, &inode_output);
+    CHECK(base::StringToInt(inode_output, &pid_))
+        << "Invalid find inode output: " << inode_output;
     CHECK(pid_ > 0) << "Did not find zygote process (using sandbox binary "
         << sandbox_binary_ << ")";
 

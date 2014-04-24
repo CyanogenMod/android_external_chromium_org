@@ -37,6 +37,10 @@ bool WebContentsDelegate::ShouldSuppressDialogs() {
   return false;
 }
 
+bool WebContentsDelegate::ShouldPreserveAbortedURLs(WebContents* source) {
+  return false;
+}
+
 bool WebContentsDelegate::AddMessageToConsole(WebContents* source,
                                               int32 level,
                                               const base::string16& message,
@@ -194,6 +198,10 @@ void WebContentsDelegate::Detach(WebContents* web_contents) {
 gfx::Size WebContentsDelegate::GetSizeForNewRenderView(
     const WebContents* web_contents) const {
   return gfx::Size();
+}
+
+bool WebContentsDelegate::IsNeverVisible(WebContents* web_contents) {
+  return false;
 }
 
 }  // namespace content

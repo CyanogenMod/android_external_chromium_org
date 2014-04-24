@@ -439,6 +439,7 @@ enum DownloadsFunctionName {
   DOWNLOADS_FUNCTION_REMOVE_FILE = 12,
   DOWNLOADS_FUNCTION_SHOW_DEFAULT_FOLDER = 13,
   DOWNLOADS_FUNCTION_SET_SHELF_ENABLED = 14,
+  DOWNLOADS_FUNCTION_DETERMINE_FILENAME = 15,
   // Insert new values here, not at the beginning.
   DOWNLOADS_FUNCTION_LAST
 };
@@ -723,7 +724,8 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
         // Do not use filename if another determiner has already overridden the
         // filename and they take precedence. Extensions that were installed
         // later take precedence over previous extensions.
-        if (!filename.empty()) {
+        if (!filename.empty() ||
+            (conflict_action != downloads::FILENAME_CONFLICT_ACTION_UNIQUIFY)) {
           extensions::ExtensionWarningSet warnings;
           std::string winner_extension_id;
           ExtensionDownloadsEventRouter::DetermineFilenameInternal(
@@ -775,7 +777,9 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
       if (!iter->reported)
         return;
     }
-    if (determined_filename_.empty()) {
+    if (determined_filename_.empty() &&
+        (determined_conflict_action_ ==
+         downloads::FILENAME_CONFLICT_ACTION_UNIQUIFY)) {
       if (!filename_no_change_.is_null())
         filename_no_change_.Run();
     } else {
@@ -1048,7 +1052,9 @@ void DownloadsDownloadFunction::OnStarted(
   if (item) {
     DCHECK_EQ(content::DOWNLOAD_INTERRUPT_REASON_NONE, interrupt_reason);
     SetResult(new base::FundamentalValue(static_cast<int>(item->GetId())));
-    if (!creator_suggested_filename.empty()) {
+    if (!creator_suggested_filename.empty() ||
+        (creator_conflict_action !=
+         downloads::FILENAME_CONFLICT_ACTION_UNIQUIFY)) {
       ExtensionDownloadsEventRouterData* data =
           ExtensionDownloadsEventRouterData::Get(item);
       if (!data) {
@@ -1521,8 +1527,7 @@ ExtensionDownloadsEventRouter::ExtensionDownloadsEventRouter(
   DCHECK(profile_);
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
-  extensions::EventRouter* router = extensions::ExtensionSystem::Get(profile_)->
-      event_router();
+  extensions::EventRouter* router = extensions::EventRouter::Get(profile_);
   if (router)
     router->RegisterObserver(this,
                              downloads::OnDeterminingFilename::kEventName);
@@ -1530,8 +1535,7 @@ ExtensionDownloadsEventRouter::ExtensionDownloadsEventRouter(
 
 ExtensionDownloadsEventRouter::~ExtensionDownloadsEventRouter() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  extensions::EventRouter* router = extensions::ExtensionSystem::Get(profile_)->
-      event_router();
+  extensions::EventRouter* router = extensions::EventRouter::Get(profile_);
   if (router)
     router->UnregisterObserver(this);
 }
@@ -1603,7 +1607,9 @@ void ExtensionDownloadsEventRouter::OnDeterminingFilename(
                 json);
   if (!any_determiners) {
     data->ClearPendingDeterminers();
-    if (!data->creator_suggested_filename().empty()) {
+    if (!data->creator_suggested_filename().empty() ||
+        (data->creator_conflict_action() !=
+         downloads::FILENAME_CONFLICT_ACTION_UNIQUIFY)) {
       change.Run(data->creator_suggested_filename(),
                  ConvertConflictAction(data->creator_conflict_action()));
       // If all listeners are removed, don't keep |data| around.
@@ -1626,7 +1632,8 @@ void ExtensionDownloadsEventRouter::DetermineFilenameInternal(
     downloads::FilenameConflictAction*
       determined_conflict_action,
     extensions::ExtensionWarningSet* warnings) {
-  DCHECK(!filename.empty());
+  DCHECK(!filename.empty() ||
+         (conflict_action != downloads::FILENAME_CONFLICT_ACTION_UNIQUIFY));
   DCHECK(!suggesting_extension_id.empty());
 
   if (incumbent_extension_id.empty()) {
@@ -1667,6 +1674,7 @@ bool ExtensionDownloadsEventRouter::DetermineFilename(
     downloads::FilenameConflictAction conflict_action,
     std::string* error) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  RecordApiFunctions(DOWNLOADS_FUNCTION_DETERMINE_FILENAME);
   DownloadItem* item = GetDownload(profile, include_incognito, download_id);
   ExtensionDownloadsEventRouterData* data =
       item ? ExtensionDownloadsEventRouterData::Get(item) : NULL;
@@ -1861,7 +1869,7 @@ void ExtensionDownloadsEventRouter::DispatchEvent(
     const extensions::Event::WillDispatchCallback& will_dispatch_callback,
     base::Value* arg) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  if (!extensions::ExtensionSystem::Get(profile_)->event_router())
+  if (!extensions::EventRouter::Get(profile_))
     return;
   scoped_ptr<base::ListValue> args(new base::ListValue());
   args->Append(arg);
@@ -1877,8 +1885,7 @@ void ExtensionDownloadsEventRouter::DispatchEvent(
   event->restrict_to_browser_context =
       (include_incognito && !profile_->IsOffTheRecord()) ? NULL : profile_;
   event->will_dispatch_callback = will_dispatch_callback;
-  extensions::ExtensionSystem::Get(profile_)->event_router()->
-      BroadcastEvent(event.Pass());
+  extensions::EventRouter::Get(profile_)->BroadcastEvent(event.Pass());
   DownloadsNotificationSource notification_source;
   notification_source.event_name = event_name;
   notification_source.profile = profile_;

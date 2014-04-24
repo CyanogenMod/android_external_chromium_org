@@ -40,7 +40,6 @@ struct WebScreenInfo;
 }
 
 namespace content {
-class BackingStore;
 class RenderWidgetHostViewFrameSubscriber;
 class SyntheticGesture;
 class SyntheticGestureTarget;
@@ -171,9 +170,6 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // Notifies the view that the scroll offset has changed.
   virtual void ScrollOffsetChanged() = 0;
 
-  // Allocate a backing store for this view.
-  virtual BackingStore* AllocBackingStore(const gfx::Size& size) = 0;
-
   // Copies the contents of the compositing surface into the given
   // (uninitialized) PlatformCanvas if any.
   // The rectangle region specified with |src_subrect| is copied from the
@@ -288,12 +284,8 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) = 0;
 
-  // When a wheel event is first received, it is sent to the renderer.  This
-  // method is invoked once the renderer, and |delegate_| have been given a
-  // chance to process the wheel event. |consumed| indicates whether either
-  // chose to process the |event|. At most one entity should consume an event.
-  virtual void HandledWheelEvent(const blink::WebMouseWheelEvent& event,
-                                 bool consumed) = 0;
+  // Called when a mousewheel event was not processed by the renderer.
+  virtual void UnhandledWheelEvent(const blink::WebMouseWheelEvent& event) = 0;
 
   // Called prior to forwarding input event messages to the renderer, giving
   // the view a chance to perform in-process event filtering or processing.

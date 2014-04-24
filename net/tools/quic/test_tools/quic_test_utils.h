@@ -44,6 +44,8 @@ class SimpleRandom {
 
  private:
   uint64 seed_;
+
+  DISALLOW_COPY_AND_ASSIGN(SimpleRandom);
 };
 
 class MockConnection : public QuicConnection {
@@ -112,10 +114,11 @@ class TestSession : public QuicSession {
 
   void SetCryptoStream(QuicCryptoStream* stream);
 
-  virtual QuicCryptoStream* GetCryptoStream();
+  virtual QuicCryptoStream* GetCryptoStream() OVERRIDE;
 
  private:
   QuicCryptoStream* crypto_stream_;
+
   DISALLOW_COPY_AND_ASSIGN(TestSession);
 };
 
@@ -132,6 +135,9 @@ class MockPacketWriter : public QuicPacketWriter {
   MOCK_CONST_METHOD0(IsWriteBlockedDataBuffered, bool());
   MOCK_CONST_METHOD0(IsWriteBlocked, bool());
   MOCK_METHOD0(SetWritable, void());
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockPacketWriter);
 };
 
 class MockQuicServerSessionVisitor : public QuicServerSessionVisitor {
@@ -141,20 +147,26 @@ class MockQuicServerSessionVisitor : public QuicServerSessionVisitor {
   MOCK_METHOD2(OnConnectionClosed, void(QuicConnectionId connection_id,
                                         QuicErrorCode error));
   MOCK_METHOD1(OnWriteBlocked, void(QuicBlockedWriterInterface* writer));
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockQuicServerSessionVisitor);
 };
 
 class MockAckNotifierDelegate : public QuicAckNotifier::DelegateInterface {
  public:
   MockAckNotifierDelegate();
 
-  MOCK_METHOD4(OnAckNotification, void(int num_original_packets,
+  MOCK_METHOD5(OnAckNotification, void(int num_original_packets,
                                        int num_original_bytes,
                                        int num_retransmitted_packets,
-                                       int num_retransmitted_bytes));
+                                       int num_retransmitted_bytes,
+                                       QuicTime::Delta delta_largest_observed));
 
  protected:
   // Object is ref counted.
   virtual ~MockAckNotifierDelegate();
+
+  DISALLOW_COPY_AND_ASSIGN(MockAckNotifierDelegate);
 };
 
 }  // namespace test

@@ -12,6 +12,9 @@
 #include "ui/events/event_target.h"
 #include "ui/gfx/point.h"
 
+namespace ui {
+class PlatformEventSource;
+}
 namespace aura {
 
 namespace test {
@@ -36,6 +39,7 @@ class AURA_EXPORT Env : public ui::EventTarget {
   void AddObserver(EnvObserver* observer);
   void RemoveObserver(EnvObserver* observer);
 
+  const int mouse_button_flags() const { return mouse_button_flags_; }
   void set_mouse_button_flags(int mouse_button_flags) {
     mouse_button_flags_ = mouse_button_flags;
   }
@@ -85,6 +89,7 @@ class AURA_EXPORT Env : public ui::EventTarget {
   bool is_touch_down_;
 
   scoped_ptr<InputStateLookup> input_state_lookup_;
+  scoped_ptr<ui::PlatformEventSource> event_source_;
 
   DISALLOW_COPY_AND_ASSIGN(Env);
 };

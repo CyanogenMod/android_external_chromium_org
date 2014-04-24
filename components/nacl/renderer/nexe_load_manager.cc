@@ -10,6 +10,7 @@
 #include "base/strings/string_tokenizer.h"
 #include "components/nacl/common/nacl_host_messages.h"
 #include "components/nacl/common/nacl_types.h"
+#include "components/nacl/renderer/manifest_service_channel.h"
 #include "components/nacl/renderer/pnacl_translation_resource_host.h"
 #include "components/nacl/renderer/sandbox_arch.h"
 #include "components/nacl/renderer/trusted_plugin_channel.h"
@@ -33,7 +34,7 @@
 #include "third_party/WebKit/public/web/WebDOMResourceProgressEvent.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
@@ -201,6 +202,10 @@ void HistogramHTTPStatusCode(const std::string& name,
   HistogramEnumerate(name, sample, 7);
 }
 
+void HistogramEnumerateManifestIsDataURI(bool is_data_uri) {
+  HistogramEnumerate("NaCl.Manifest.IsDataURI", is_data_uri, 2);
+}
+
 blink::WebString EventTypeToString(PP_NaClEventType event_type) {
   switch (event_type) {
     case PP_NACL_EVENT_LOADSTART:
@@ -248,6 +253,10 @@ NexeLoadManager::NexeLoadManager(
       weak_factory_(this) {
   SetLastError("");
   HistogramEnumerateOsArch(GetSandboxArch());
+  if (plugin_instance_) {
+    plugin_base_url_ =
+        plugin_instance_->GetContainer()->element().document().url();
+  }
 }
 
 NexeLoadManager::~NexeLoadManager() {
@@ -457,7 +466,7 @@ void NexeLoadManager::DispatchEvent(const ProgressEvent &event) {
   // the DOM (but the PluginInstance is not destroyed yet).
   if (!container)
     return;
-  blink::WebFrame* frame = container->element().document().frame();
+  blink::WebLocalFrame* frame = container->element().document().frame();
   if (!frame)
     return;
   v8::HandleScope handle_scope(plugin_instance_->GetIsolate());
@@ -491,6 +500,11 @@ void NexeLoadManager::DispatchEvent(const ProgressEvent &event) {
 void NexeLoadManager::set_trusted_plugin_channel(
     scoped_ptr<TrustedPluginChannel> channel) {
   trusted_plugin_channel_ = channel.Pass();
+}
+
+void NexeLoadManager::set_manifest_service_channel(
+    scoped_ptr<ManifestServiceChannel> channel) {
+  manifest_service_channel_ = channel.Pass();
 }
 
 PP_NaClReadyState NexeLoadManager::nacl_ready_state() {
@@ -532,10 +546,53 @@ void NexeLoadManager::set_exit_status(int exit_status) {
   SetReadOnlyProperty(exit_status_name_var.get(), PP_MakeInt32(exit_status));
 }
 
+void NexeLoadManager::InitializePlugin() {
+  init_time_ = base::Time::Now();
+}
+
 void NexeLoadManager::ReportStartupOverhead() const {
   base::TimeDelta overhead = base::Time::Now() - init_time_;
   HistogramStartupTimeMedium(
       "NaCl.Perf.StartupTime.NaClOverhead", overhead, nexe_size_);
+}
+
+bool NexeLoadManager::RequestNaClManifest(const std::string& url,
+                                          bool* is_data_uri) {
+  if (plugin_base_url_.is_valid()) {
+    const GURL& resolved_url = plugin_base_url_.Resolve(url);
+    if (resolved_url.is_valid()) {
+      manifest_base_url_ = resolved_url;
+      is_installed_ = manifest_base_url_.SchemeIs("chrome-extension");
+      *is_data_uri = manifest_base_url_.SchemeIs("data");
+      HistogramEnumerateManifestIsDataURI(*is_data_uri);
+
+      set_nacl_ready_state(PP_NACL_READY_STATE_OPENED);
+      ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
+        FROM_HERE,
+        base::Bind(&NexeLoadManager::DispatchEvent,
+                   weak_factory_.GetWeakPtr(),
+                   ProgressEvent(PP_NACL_EVENT_LOADSTART)));
+      return true;
+    }
+  }
+  ReportLoadError(PP_NACL_ERROR_MANIFEST_RESOLVE_URL,
+                  std::string("could not resolve URL \"") + url +
+                  "\" relative to \"" +
+                  plugin_base_url_.possibly_invalid_spec() + "\".");
+  return false;
+}
+
+void NexeLoadManager::ProcessNaClManifest(const std::string& program_url) {
+  GURL gurl(program_url);
+  DCHECK(gurl.is_valid());
+  if (gurl.is_valid())
+    is_installed_ = gurl.SchemeIs("chrome-extension");
+  set_nacl_ready_state(PP_NACL_READY_STATE_LOADING);
+  ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
+      FROM_HERE,
+      base::Bind(&NexeLoadManager::DispatchEvent,
+                 weak_factory_.GetWeakPtr(),
+                 ProgressEvent(PP_NACL_EVENT_PROGRESS)));
 }
 
 void NexeLoadManager::ReportDeadNexe() {

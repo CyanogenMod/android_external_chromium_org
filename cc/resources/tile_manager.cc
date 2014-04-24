@@ -13,6 +13,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "cc/debug/devtools_instrumentation.h"
+#include "cc/debug/frame_viewer_instrumentation.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/picture_layer_impl.h"
 #include "cc/resources/raster_worker_pool.h"
@@ -91,11 +92,6 @@ class RasterTaskImpl : public RasterTask {
     DCHECK(!canvas_);
     canvas_ = client->AcquireCanvasForRaster(this);
   }
-  virtual void RunOnOriginThread() OVERRIDE {
-    TRACE_EVENT0("cc", "RasterTaskImpl::RunOnOriginThread");
-    if (canvas_)
-      AnalyzeAndRaster(picture_pile_);
-  }
   virtual void CompleteOnOriginThread(RasterizerTaskClient* client) OVERRIDE {
     canvas_ = NULL;
     client->ReleaseCanvasForRaster(this);
@@ -109,15 +105,6 @@ class RasterTaskImpl : public RasterTask {
   virtual ~RasterTaskImpl() { DCHECK(!canvas_); }
 
  private:
-  scoped_ptr<base::Value> DataAsValue() const {
-    scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());
-    res->Set("tile_id", TracedValue::CreateIDRef(tile_id_).release());
-    res->Set("resolution", TileResolutionAsValue(tile_resolution_).release());
-    res->SetInteger("source_frame_number", source_frame_number_);
-    res->SetInteger("layer_id", layer_id_);
-    return res.PassAs<base::Value>();
-  }
-
   void AnalyzeAndRaster(PicturePileImpl* picture_pile) {
     DCHECK(picture_pile);
     DCHECK(canvas_);
@@ -132,10 +119,8 @@ class RasterTaskImpl : public RasterTask {
   }
 
   void Analyze(PicturePileImpl* picture_pile) {
-    TRACE_EVENT1("cc",
-                 "RasterTaskImpl::Analyze",
-                 "data",
-                 TracedValue::FromValue(DataAsValue().release()));
+    frame_viewer_instrumentation::ScopedAnalyzeTask analyze_task(
+        tile_id_, tile_resolution_, source_frame_number_, layer_id_);
 
     DCHECK(picture_pile);
 
@@ -151,15 +136,13 @@ class RasterTaskImpl : public RasterTask {
   }
 
   void Raster(PicturePileImpl* picture_pile) {
-    TRACE_EVENT2(
-        "cc",
-        "RasterTaskImpl::Raster",
-        "data",
-        TracedValue::FromValue(DataAsValue().release()),
-        "raster_mode",
-        TracedValue::FromValue(RasterModeAsValue(raster_mode_).release()));
-
-    devtools_instrumentation::ScopedLayerTask raster_task(
+    frame_viewer_instrumentation::ScopedRasterTask raster_task(
+        tile_id_,
+        tile_resolution_,
+        source_frame_number_,
+        layer_id_,
+        raster_mode_);
+    devtools_instrumentation::ScopedLayerTask layer_task(
         devtools_instrumentation::kRasterTask, layer_id_);
 
     skia::RefPtr<SkDrawFilter> draw_filter;
@@ -234,15 +217,16 @@ class ImageDecodeTaskImpl : public ImageDecodeTask {
   // Overridden from Task:
   virtual void RunOnWorkerThread() OVERRIDE {
     TRACE_EVENT0("cc", "ImageDecodeTaskImpl::RunOnWorkerThread");
-    Decode();
+
+    devtools_instrumentation::ScopedImageDecodeTask image_decode_task(
+        pixel_ref_.get());
+    // This will cause the image referred to by pixel ref to be decoded.
+    pixel_ref_->lockPixels();
+    pixel_ref_->unlockPixels();
   }
 
   // Overridden from RasterizerTask:
   virtual void ScheduleOnOriginThread(RasterizerTaskClient* client) OVERRIDE {}
-  virtual void RunOnOriginThread() OVERRIDE {
-    TRACE_EVENT0("cc", "ImageDecodeTaskImpl::RunOnOriginThread");
-    Decode();
-  }
   virtual void CompleteOnOriginThread(RasterizerTaskClient* client) OVERRIDE {}
   virtual void RunReplyOnOriginThread() OVERRIDE {
     reply_.Run(!HasFinishedRunning());
@@ -252,14 +236,6 @@ class ImageDecodeTaskImpl : public ImageDecodeTask {
   virtual ~ImageDecodeTaskImpl() {}
 
  private:
-  void Decode() {
-    devtools_instrumentation::ScopedImageDecodeTask image_decode_task(
-        pixel_ref_.get());
-    // This will cause the image referred to by pixel ref to be decoded.
-    pixel_ref_->lockPixels();
-    pixel_ref_->unlockPixels();
-  }
-
   skia::RefPtr<SkPixelRef> pixel_ref_;
   int layer_id_;
   RenderingStatsInstrumentation* rendering_stats_;
@@ -1138,7 +1114,7 @@ scoped_refptr<RasterTask> TileManager::CreateRasterTask(Tile* tile) {
   // Note that this last optimization is a heuristic that ensures that we don't
   // spend too much time analyzing tiles on a multitude of small layers, as it
   // is likely that these layers have some non-solid content.
-  gfx::Size pile_size = tile->picture_pile()->size();
+  gfx::Size pile_size = tile->picture_pile()->tiling_rect().size();
   bool analyze_picture = !tile->use_gpu_rasterization() &&
                          std::min(pile_size.width(), pile_size.height()) >=
                              kMinDimensionsForAnalysis;

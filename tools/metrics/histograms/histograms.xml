@@ -5344,6 +5344,30 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="ExtensionActivity.AdInjected" units="Extension Count">
+  <owner>felt@chromium.org</owner>
+  <owner>rdevlin.cronin@chromium.org</owner>
+  <summary>
+    For each pageload, the number of extensions that inject at least one new ad.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.AdRemoved" units="Extension Count">
+  <owner>felt@chromium.org</owner>
+  <owner>rdevlin.cronin@chromium.org</owner>
+  <summary>
+    For each pageload, the number of extensions that remove at least one ad.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.AdReplaced" units="Extension Count">
+  <owner>felt@chromium.org</owner>
+  <owner>rdevlin.cronin@chromium.org</owner>
+  <summary>
+    For each pageload, the number of extensions that replace at least one ad.
+  </summary>
+</histogram>
+
 <histogram name="ExtensionActivity.ContentScript">
   <owner>felt@chromium.org</owner>
   <summary>
@@ -6721,6 +6745,52 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     overflow bucket. MAX_INT means the toolbar is always showing all icons.
     Measured once per startup per (non-incognito) profile but only for those
     profiles that have one or more browser actions showing in the toolbar.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionUrlRequest.HashTimeMs" units="milliseconds">
+  <owner>asargent@chromium.org</owner>
+  <summary>
+    The total time taken to compute a cryptographic hash of the content read for
+    a chrome-extension:// URL, logged at the end of each request we load from
+    the corresponding file for that URL in the filesystem.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionUrlRequest.OnReadCompleteError" enum="NetErrorCodes">
+  <owner>asargent@chromium.org</owner>
+  <summary>
+    The error code for failures of incremental reads of a file stream for a
+    chrome-extension:// URL. (See also ExtensionUrlRequest.OnReadCompleteResult
+    for the success case).
+  </summary>
+</histogram>
+
+<histogram name="ExtensionUrlRequest.OnReadCompleteResult">
+  <owner>asargent@chromium.org</owner>
+  <summary>
+    The result of an incremental read of a file stream for a chrome-extension://
+    URL, representing a byte count. Logged in success cases (see also
+    ExtensionUrlRequest.OnReadCompleteError).
+  </summary>
+</histogram>
+
+<histogram name="ExtensionUrlRequest.SeekPosition">
+  <owner>asargent@chromium.org</owner>
+  <summary>
+    When fetching a chrome-extension:// URL, this indicates the first byte
+    position we read from. This will be greater than 0 in cases such as XHR's
+    with a Range header, but will normally be 0 in the typical case of reading
+    the entire file. This helps identify how frequently partial file reads are
+    taking place.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionUrlRequest.TotalKbRead" units="KB">
+  <owner>asargent@chromium.org</owner>
+  <summary>
+    The total number of bytes read for a chrome-extension:// URL, logged when
+    the job is finished (either successfully or not).
   </summary>
 </histogram>
 
@@ -8102,6 +8172,40 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="InstantSearchClicks.PreviewScrollState"
+    enum="InstantSearchClicks_PreviewScrollState">
+  <owner>ksimbili@chromium.org</owner>
+  <summary>
+    Records the scroll state on the preview page when instant search clicks
+    feature is triggered.
+  </summary>
+</histogram>
+
+<histogram name="InstantSearchClicks.ReasonForSwap"
+    enum="InstantSearchClicks_ReasonForSwap">
+  <owner>ksimbili@chromium.org</owner>
+  <summary>
+    Records the reason that triggered the page swap when instant search clicks
+    feature is triggered.
+  </summary>
+</histogram>
+
+<histogram name="InstantSearchClicks.TimeInPreview" units="milliseconds">
+  <owner>ksimbili@chromium.org</owner>
+  <summary>
+    The time spent by the user in preview page before swapping to original or
+    navigating out of preview page.
+  </summary>
+</histogram>
+
+<histogram name="InstantSearchClicks.TimeToSwap" units="milliseconds">
+  <owner>ksimbili@chromium.org</owner>
+  <summary>
+    The time it took for swap to trigger for all swaps. The is the time between
+    preview page load start to preview page swap with the original page.
+  </summary>
+</histogram>
+
 <histogram name="interstitial.authority_invalid_time" units="milliseconds">
   <obsolete>
     Removed on 8/1/13.
@@ -8426,6 +8530,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Time Non-IDB LevelDBEnv slept before successfully completing this operation.
     0 means success on the first try.
+  </summary>
+</histogram>
+
+<histogram name="LibraryLoader.NativeLibraryHack" enum="BooleanUsage">
+  <owner>feng@chromium.org</owner>
+  <summary>
+    A boolean that indicates whether the workaround of a Sony framework bug was
+    used. The metric is Android-specific, and is logged when the browser starts.
+    See more details at http://crbug.com/311644.
   </summary>
 </histogram>
 
@@ -12211,7 +12324,10 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.Ping_ResponseStartedTime" units="milliseconds">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <obsolete>
+    Deprecated 4/16/2014. No longer tracked.
+  </obsolete>
+  <owner>davidben@chromium.org</owner>
   <summary>
     How long it took for an &lt;a ping&gt; request to receive a response. Only
     recorded if a response was received.
@@ -12219,7 +12335,10 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.Ping_Result" enum="PingResult">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <obsolete>
+    Deprecated 4/16/2014. No longer tracked.
+  </obsolete>
+  <owner>davidben@chromium.org</owner>
   <summary>
     The result of an &lt;a ping&gt; request, whether it received a response or
     timed out or failed for some other reason.
@@ -13058,52 +13177,70 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.SocketStream.ConnectionEstablish" units="milliseconds">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>yhirano@chromium.org</owner>
+  <owner>ricea@chromium.org</owner>
+  <owner>tyoshino@chromium.org</owner>
   <summary>The time from the connection start to connection establish.</summary>
 </histogram>
 
 <histogram name="Net.SocketStream.ConnectionLatency" units="milliseconds">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>yhirano@chromium.org</owner>
+  <owner>ricea@chromium.org</owner>
+  <owner>tyoshino@chromium.org</owner>
   <summary>The time waiting to be ready to start connecting.</summary>
 </histogram>
 
 <histogram name="Net.SocketStream.ConnectionType"
     enum="SocketStreamConnectionType">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>yhirano@chromium.org</owner>
+  <owner>ricea@chromium.org</owner>
+  <owner>tyoshino@chromium.org</owner>
   <summary>
     Each bucket is the number of connection type of socket stream.
   </summary>
 </histogram>
 
 <histogram name="Net.SocketStream.Duration" units="milliseconds">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>yhirano@chromium.org</owner>
+  <owner>ricea@chromium.org</owner>
+  <owner>tyoshino@chromium.org</owner>
   <summary>The time a socket stream was open.</summary>
 </histogram>
 
 <histogram name="Net.SocketStream.ProtocolType" enum="SocketStreamProtocolType">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>yhirano@chromium.org</owner>
+  <owner>ricea@chromium.org</owner>
+  <owner>tyoshino@chromium.org</owner>
   <summary>
     Each bucket is the number of protocol type on socket stream.
   </summary>
 </histogram>
 
 <histogram name="Net.SocketStream.ReceivedBytes" units="bytes">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>yhirano@chromium.org</owner>
+  <owner>ricea@chromium.org</owner>
+  <owner>tyoshino@chromium.org</owner>
   <summary>Number of bytes on a socket stream.</summary>
 </histogram>
 
 <histogram name="Net.SocketStream.ReceivedCounts">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>yhirano@chromium.org</owner>
+  <owner>ricea@chromium.org</owner>
+  <owner>tyoshino@chromium.org</owner>
   <summary>Number of reads on a socket stream.</summary>
 </histogram>
 
 <histogram name="Net.SocketStream.SentBytes" units="bytes">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>yhirano@chromium.org</owner>
+  <owner>ricea@chromium.org</owner>
+  <owner>tyoshino@chromium.org</owner>
   <summary>Number of bytes on a socket stream.</summary>
 </histogram>
 
 <histogram name="Net.SocketStream.SentCounts">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>yhirano@chromium.org</owner>
+  <owner>ricea@chromium.org</owner>
+  <owner>tyoshino@chromium.org</owner>
   <summary>Number of Write on a socket stream.</summary>
 </histogram>
 
@@ -14951,6 +15088,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>Chrome OS connection manager service errors seen.</summary>
 </histogram>
 
+<histogram name="Network.Shill.ServicesOnSameNetwork">
+  <owner>zqiu@chromium.org</owner>
+  <summary>
+    Chrome OS network metric sampling the number of services that are connected
+    to the currently connected network.
+  </summary>
+</histogram>
+
 <histogram name="Network.Shill.TerminationActionResult"
     enum="ShillTerminationActionResult">
   <obsolete>
@@ -15084,6 +15229,22 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Chrome OS network usage metric.  The AP mode setting for each successful
     WiFi connection.
+  </summary>
+</histogram>
+
+<histogram name="Network.Shill.WiFi.AutoConnectableServices">
+  <owner>zqiu@chromium.org</owner>
+  <summary>
+    Chrome OS network metric sampling the number of wifi services available for
+    auto-connect when auto-connect is initiated for wifi device.
+  </summary>
+</histogram>
+
+<histogram name="Network.Shill.WiFi.AvailableBSSesAtConnect">
+  <owner>zqiu@chromium.org</owner>
+  <summary>
+    Chrome OS network metric sampling the number of BSSes (endpoints) available
+    for the currently connecting wifi service.
   </summary>
 </histogram>
 
@@ -16213,6 +16374,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     Time it takes for the omnibox to become responsive to user input after the
     user has typed N characters. This measures the time it takes to start all
     the asynchronous autocomplete providers (but not wait for them to finish).
+  </summary>
+</histogram>
+
+<histogram name="Omnibox.SaveStateForTabSwitch.UserInputInProgress"
+    units="count">
+  <owner>mpearson@chromium.org</owner>
+  <summary>
+    When a user switches tabs, whether the omnibox had an edit in progress.
   </summary>
 </histogram>
 
@@ -20869,6 +21038,17 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Renderer4.CompositorScrollHitTestResult"
+    enum="CompositorScrollResult">
+  <owner>vollick@chromium.org</owner>
+  <summary>
+    It's possible for compositor hit testing to determine conclusively that
+    compositor thread scrolling can or cannot be done. It's also possible that
+    the hit testing result is inconclusive. We would like to see the I-don't-
+    know result as little as possible. This histogram tracks the ratios.
+  </summary>
+</histogram>
+
 <histogram name="Renderer4.CompositorThreadImplDrawDelay" units="milliseconds">
   <owner>wiltzius@chromium.org</owner>
   <summary>
@@ -25267,6 +25447,47 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>The outcome of Entry::WriteData in the simple cache.</summary>
 </histogram>
 
+<histogram name="SimpleGeolocation.Request.Event"
+    enum="SimpleGeolocationRequestEvent">
+  <owner>alemate@chromium.org</owner>
+  <summary>Events in reqests processing of IP-based SimpleGeolocation.</summary>
+</histogram>
+
+<histogram name="SimpleGeolocation.Request.ResponseCode"
+    enum="HttpResponseCode">
+  <owner>alemate@chromium.org</owner>
+  <summary>Http response codes in IP-based SimpleGeolocation.</summary>
+</histogram>
+
+<histogram name="SimpleGeolocation.Request.ResponseFailureTime"
+    units="milliseconds">
+  <owner>alemate@chromium.org</owner>
+  <summary>
+    The time elapsed between the sending of the first API request and the time
+    the final (failed) response was recorded. Includes all retries.
+  </summary>
+</histogram>
+
+<histogram name="SimpleGeolocation.Request.ResponseSuccessTime"
+    units="milliseconds">
+  <owner>alemate@chromium.org</owner>
+  <summary>
+    The time elapsed between the sending of the first API request and the time
+    the final (successfull) response was recorded. Includes all retries.
+  </summary>
+</histogram>
+
+<histogram name="SimpleGeolocation.Request.Result"
+    enum="SimpleGeolocationRequestResult">
+  <owner>alemate@chromium.org</owner>
+  <summary>Result of SimpleGeolocationRequest.</summary>
+</histogram>
+
+<histogram name="SimpleGeolocation.Request.Retries">
+  <owner>alemate@chromium.org</owner>
+  <summary>Number of retries until the final response was recorded.</summary>
+</histogram>
+
 <histogram name="SiteIsolation.AllResponses">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
@@ -28519,6 +28740,17 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="UpdateEngine.Rollback.Result" enum="BooleanSuccess">
+  <owner>zeuthen@chromium.org</owner>
+  <summary>
+    Whether rollback worked.
+
+    This is reported every time there's a rollback request.
+
+    This metric is specific to ChromeOS.
+  </summary>
+</histogram>
+
 <histogram name="UpdateEngine.SuccessfulUpdate.AttemptCount" units="count">
   <owner>zeuthen@chromium.org</owner>
   <summary>
@@ -29509,7 +29741,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="WebCore.WebSocket.HandshakeResult"
     enum="WebSocketHandshakeResult">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>yhirano@chromium.org</owner>
+  <owner>ricea@chromium.org</owner>
+  <owner>tyoshino@chromium.org</owner>
   <summary>
     Count the number of WebSocket handshake for each result. Use this histogram
     as a baseline for investigating feature usage counters.
@@ -29893,14 +30127,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="WebRTC.DataChannelCounters" enum="DataChannelCounters">
-  <owner>tommi@chromium.org</owner>
+  <owner>perkj@chromium.org</owner>
   <summary>
     Counters on creation, opening, and a few main attributes of data channels.
   </summary>
 </histogram>
 
 <histogram name="WebRTC.NumDataChannelsPerPeerConnection">
-  <owner>tommi@chromium.org</owner>
+  <owner>perkj@chromium.org</owner>
   <summary>
     Number of data channels created per PeerConnection. Sample added to the
     histogram when the PeerConnection is destroyed. Note that this is done
@@ -29929,7 +30163,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="WebRTC.ReliableDataChannelMessageSize" units="bytes">
-  <owner>tommi@chromium.org</owner>
+  <owner>perkj@chromium.org</owner>
   <summary>
     Sizes of messages sent over reliable data channels. The size of an
     individual message is added to the histogram as a sample immediately when a
@@ -29965,17 +30199,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="WebRTC.webkitApiCount" enum="JavaScriptAPIName">
-  <owner>tommi@chromium.org</owner>
+  <owner>perkj@chromium.org</owner>
   <summary>Counts number of calls to WebRTC APIs from JavaScript.</summary>
 </histogram>
 
 <histogram name="WebRTC.webkitApiCountPerSession" enum="JavaScriptAPIName">
-  <owner>tommi@chromium.org</owner>
+  <owner>perkj@chromium.org</owner>
   <summary>
-    Counts number of calls to WebRTC APIs from JavaScript, once   per
-    &quot;session&quot; which is demarcated by the total number of MediaStreams
-    within a renderer process that are being sent over a PeerConnection
-    transitioning from or to 0.
+    Counts the number of calls to WebRTC APIs from JavaScript once per session.
+    A session is a crude estimate since its implemented as the lifetime of the
+    render process that called the WebRTC API.
   </summary>
 </histogram>
 
@@ -31131,6 +31364,13 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="0" label="Is scrollable area"/>
   <int value="1" label="Needs to be stacking container"/>
   <int value="2" label="Will use composited scrolling"/>
+</enum>
+
+<enum name="CompositorScrollResult" type="int">
+  <int value="0" label="ScrollOnMainThread"/>
+  <int value="1" label="ScrollStarted"/>
+  <int value="2" label="ScrollIgnored"/>
+  <int value="3" label="ScrollUnknown"/>
 </enum>
 
 <enum name="CompositorType" type="int">
@@ -33347,6 +33587,19 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="720" label="WEBCAMPRIVATE_SET"/>
   <int value="721" label="WEBCAMPRIVATE_RESET"/>
   <int value="722" label="WEBCAMPRIVATE_GET"/>
+  <int value="723" label="BLUETOOTHLOWENERGY_GETSERVICE"/>
+  <int value="724" label="BLUETOOTHLOWENERGY_GETSERVICES"/>
+  <int value="725" label="BLUETOOTHLOWENERGY_GETCHARACTERISTIC"/>
+  <int value="726" label="BLUETOOTHLOWENERGY_GETCHARACTERISTICS"/>
+  <int value="727" label="BLUETOOTHLOWENERGY_GETINCLUDEDSERVICES"/>
+  <int value="728" label="BLUETOOTHLOWENERGY_GETDESCRIPTOR"/>
+  <int value="729" label="BLUETOOTHLOWENERGY_GETDESCRIPTORS"/>
+  <int value="730" label="BLUETOOTHLOWENERGY_READCHARACTERISTICVALUE"/>
+  <int value="731" label="BLUETOOTHLOWENERGY_WRITECHARACTERISTICVALUE"/>
+  <int value="732" label="BLUETOOTHLOWENERGY_READDESCRIPTORVALUE"/>
+  <int value="733" label="BLUETOOTHLOWENERGY_WRITEDESCRIPTORVALUE"/>
+  <int value="734" label="BOOKMARKMANAGERPRIVATE_CREATEWITHMETAINFO"/>
+  <int value="735" label="BOOKMARKMANAGERPRIVATE_UPDATEMETAINFO"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -33520,6 +33773,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="57" label="kScreenlockPrivate"/>
   <int value="58" label="kOverrideBookmarksUI"/>
   <int value="59" label="kAutomation"/>
+  <int value="60" label="kAccessibilityFeaturesModify"/>
+  <int value="61" label="kAccessibilityFeaturesRead"/>
+  <int value="62" label="kBluetoothPrivate"/>
 </enum>
 
 <enum name="ExtensionServiceVerifyAllSuccess" type="int">
@@ -33638,7 +33894,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </enum>
 
 <enum name="FeatureObserver" type="int">
-<!-- See http://src.chromium.org/viewvc/blink/trunk/Source/core/page/UseCounter.h -->
+<!-- Generated from ../../../third_party/WebKit/Source/core/frame/UseCounter.h -->
 
   <int value="0" label="PageDestruction"/>
   <int value="1" label="LegacyNotifications"/>
@@ -33646,7 +33902,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="3" label="PrefixedIndexedDB"/>
   <int value="4" label="WorkerStart"/>
   <int value="5" label="SharedWorkerStart"/>
-  <int value="6" label="LegacyWebAudioNoteOn"/>
+  <int value="6" label="LegacyWebAudio"/>
   <int value="7" label="WebAudioStart"/>
   <int value="8" label="PrefixedContentSecurityPolicy"/>
   <int value="9" label="UnprefixedIndexedDB"/>
@@ -33697,7 +33953,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="54" label="Unused: CSSOverflowMarquee"/>
   <int value="55" label="Reflection"/>
   <int value="56" label="CursorVisibility"/>
-  <int value="57" label="StorageInfo"/>
+  <int value="57" label="PrefixedStorageInfo"/>
   <int value="58" label="XFrameOptions"/>
   <int value="59" label="XFrameOptionsSameOrigin"/>
   <int value="60" label="XFrameOptionsSameOriginWithBadAncestorChain"/>
@@ -33723,7 +33979,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="80" label="SVGSwitchElement"/>
   <int value="81" label="PrefixedDocumentRegister"/>
   <int value="82" label="HTMLShadowElementOlderShadowRoot"/>
-  <int value="83" label="Document.all()"/>
+  <int value="83" label="DocumentAll"/>
   <int value="84" label="FormElement"/>
   <int value="85" label="DemotedFormElement"/>
   <int value="86" label="CaptureAttributeAsEnum"/>
@@ -33824,9 +34080,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="181" label="BarPropScrollbars"/>
   <int value="182" label="BarPropStatusbar"/>
   <int value="183" label="BarPropToolbar"/>
-  <int value="184" label="input[type=email][multiple]"/>
-  <int value="185" label="input[type=email][maxlength]"/>
-  <int value="186" label="input[type=email][multiple][maxlength]"/>
+  <int value="184" label="InputTypeEmailMultiple"/>
+  <int value="185" label="InputTypeEmailMaxLength"/>
+  <int value="186" label="InputTypeEmailMultipleMaxLength"/>
   <int value="187" label="TextTrackCueConstructor"/>
   <int value="188" label="CSSStyleDeclarationPropertyName"/>
   <int value="189" label="CSSStyleDeclarationFloatPropertyName"/>
@@ -33922,7 +34178,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="279" label="SVGClassName"/>
   <int value="280" label="HTMLAppletElement"/>
   <int value="281" label="HTMLMediaElementSeekToFragmentStart"/>
-  <int value="282" label="HTMLMediaElementSeekToFragmentEnd"/>
+  <int value="282" label="HTMLMediaElementPauseAtFragmentEnd"/>
   <int value="283" label="PrefixedWindowURL"/>
   <int value="284" label="PrefixedWorkerURL"/>
   <int value="285" label="WindowOrientation"/>
@@ -33969,6 +34225,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="326" label="PrefixedElementRequestPointerLock"/>
   <int value="327" label="SelectionSetPosition"/>
   <int value="328" label="AnimationPlayerFinishEvent"/>
+  <int value="329" label="SVGSVGElementInXMLDocument"/>
+  <int value="330" label="CanvasRenderingContext2DSetAlpha"/>
+  <int value="331" label="CanvasRenderingContext2DSetCompositeOperation"/>
+  <int value="332" label="CanvasRenderingContext2DSetLineWidth"/>
+  <int value="333" label="CanvasRenderingContext2DSetLineCap"/>
+  <int value="334" label="CanvasRenderingContext2DSetLineJoin"/>
+  <int value="335" label="CanvasRenderingContext2DSetMiterLimit"/>
+  <int value="336" label="CanvasRenderingContext2DClearShadow"/>
+  <int value="337" label="CanvasRenderingContext2DSetStrokeColor"/>
+  <int value="338" label="CanvasRenderingContext2DSetFillColor"/>
+  <int value="339" label="CanvasRenderingContext2DDrawImageFromRect"/>
+  <int value="340" label="CanvasRenderingContext2DSetShadow"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">
@@ -35084,6 +35352,20 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="3" label="Opted in local"/>
   <int value="4" label="Opted out local"/>
   <int value="5" label="Opted out both"/>
+</enum>
+
+<enum name="InstantSearchClicks_PreviewScrollState" type="int">
+  <int value="0" label="No scroll"/>
+  <int value="1" label="Scrolled but not to bottom"/>
+  <int value="2" label="Scrolled to bottom."/>
+</enum>
+
+<enum name="InstantSearchClicks_ReasonForSwap" type="int">
+  <int value="0" label="Regular swap"/>
+  <int value="1" label="Swapped on timeout"/>
+  <int value="2" label="Swap aborted due to navigation"/>
+  <int value="3" label="No swap as preview failed"/>
+  <int value="4" label="Swapped as original failed"/>
 </enum>
 
 <enum name="InstantSessionStorageNamespace" type="int">
@@ -40126,6 +40408,21 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="3" label="Bad State"/>
   <int value="4" label="Synchronous Write Failure"/>
   <int value="5" label="Fast Empty Return (Success)"/>
+</enum>
+
+<enum name="SimpleGeolocationRequestEvent" type="int">
+  <int value="0" label="Request start"/>
+  <int value="1" label="Response success"/>
+  <int value="2" label="Response not OK"/>
+  <int value="3" label="Response empty"/>
+  <int value="4" label="Response malformed"/>
+</enum>
+
+<enum name="SimpleGeolocationRequestResult" type="int">
+  <int value="0" label="Success"/>
+  <int value="1" label="Failure"/>
+  <int value="2" label="Server error"/>
+  <int value="3" label="Request is cancelled."/>
 </enum>
 
 <enum name="SimpleIndexState" type="int">

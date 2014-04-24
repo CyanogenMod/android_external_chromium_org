@@ -10,6 +10,8 @@
 #include "net/quic/quic_utils.h"
 #include "net/quic/quic_write_blocked_list.h"
 #include "net/quic/spdy_utils.h"
+#include "net/quic/test_tools/quic_config_peer.h"
+#include "net/quic/test_tools/quic_flow_controller_peer.h"
 #include "net/quic/test_tools/quic_session_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/quic/test_tools/reliable_quic_stream_peer.h"
@@ -58,10 +60,6 @@ class TestStream : public ReliableQuicStream {
     return QuicUtils::HighestPriority();
   }
 
-  virtual bool IsFlowControlEnabled() const OVERRIDE {
-    return true;
-  }
-
   using ReliableQuicStream::WriteOrBufferData;
   using ReliableQuicStream::CloseReadSide;
   using ReliableQuicStream::CloseWriteSide;
@@ -75,7 +73,9 @@ class TestStream : public ReliableQuicStream {
 class ReliableQuicStreamTest : public ::testing::TestWithParam<bool> {
  public:
   ReliableQuicStreamTest()
-      : initial_flow_control_window_bytes_(kMaxPacketSize) {
+      : initial_flow_control_window_bytes_(kMaxPacketSize),
+        zero_(QuicTime::Delta::Zero()),
+        supported_versions_(QuicSupportedVersions()) {
     headers_[":host"] = "www.google.com";
     headers_[":path"] = "/index.hml";
     headers_[":scheme"] = "https";
@@ -105,14 +105,19 @@ class ReliableQuicStreamTest : public ::testing::TestWithParam<bool> {
         "JBCScs_ejbKaqBDoB7ZGxTvqlrB__2ZmnHHjCr8RgMRtKNtIeuZAo ";
   }
 
+  void set_supported_versions(const QuicVersionVector& versions) {
+    supported_versions_ = versions;
+  }
+
   void Initialize(bool stream_should_process_data) {
-    connection_ = new StrictMock<MockConnection>(kIsServer);
+    connection_ =
+        new StrictMock<MockConnection>(kIsServer, supported_versions_);
     session_.reset(new StrictMock<MockSession>(connection_));
 
     // New streams rely on having the peer's flow control receive window
     // negotiated in the config.
-    session_->config()->set_peer_initial_flow_control_window_bytes(
-        initial_flow_control_window_bytes_);
+    QuicConfigPeer::SetReceivedInitialFlowControlWindow(
+        session_->config(), initial_flow_control_window_bytes_);
 
     stream_.reset(new TestStream(kStreamId, session_.get(),
                                  stream_should_process_data));
@@ -137,6 +142,8 @@ class ReliableQuicStreamTest : public ::testing::TestWithParam<bool> {
   SpdyHeaderBlock headers_;
   QuicWriteBlockedList* write_blocked_list_;
   uint32 initial_flow_control_window_bytes_;
+  QuicTime::Delta zero_;
+  QuicVersionVector supported_versions_;
 };
 
 TEST_F(ReliableQuicStreamTest, WriteAllData) {
@@ -319,13 +326,15 @@ TEST_F(ReliableQuicStreamTest, StreamFlowControlMultipleWindowUpdates) {
 
   // Initially should be default.
   EXPECT_EQ(initial_flow_control_window_bytes_,
-            ReliableQuicStreamPeer::SendWindowOffset(stream_.get()));
+            QuicFlowControllerPeer::SendWindowOffset(
+                stream_.get()->flow_controller()));
 
   // Check a single WINDOW_UPDATE results in correct offset.
   QuicWindowUpdateFrame window_update_1(stream_->id(), 1234);
   stream_->OnWindowUpdateFrame(window_update_1);
   EXPECT_EQ(window_update_1.byte_offset,
-            ReliableQuicStreamPeer::SendWindowOffset(stream_.get()));
+            QuicFlowControllerPeer::SendWindowOffset(
+                stream_.get()->flow_controller()));
 
   // Now send a few more WINDOW_UPDATES and make sure that only the largest is
   // remembered.
@@ -336,7 +345,32 @@ TEST_F(ReliableQuicStreamTest, StreamFlowControlMultipleWindowUpdates) {
   stream_->OnWindowUpdateFrame(window_update_3);
   stream_->OnWindowUpdateFrame(window_update_4);
   EXPECT_EQ(window_update_3.byte_offset,
-            ReliableQuicStreamPeer::SendWindowOffset(stream_.get()));
+            QuicFlowControllerPeer::SendWindowOffset(
+                stream_.get()->flow_controller()));
+}
+
+TEST_F(ReliableQuicStreamTest, StreamFlowControlShouldNotBlockInLessThanQ017) {
+  // TODO(rjshade): Remove this test when we no longer have any versions <
+  //                QUIC_VERSION_17.
+  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control, true);
+
+  // Make sure we are using a version which does not support flow control.
+  QuicVersion kTestQuicVersions[] = {QUIC_VERSION_16};
+  QuicVersionVector versions;
+  for (size_t i = 0; i < arraysize(kTestQuicVersions); ++i) {
+    versions.push_back(kTestQuicVersions[i]);
+  }
+  set_supported_versions(versions);
+
+  // Peer is not talking QUIC_VERSION_17 so assumes that it can send a zero
+  // length flow control receive window with no consequences.
+  set_initial_flow_control_window_bytes(0);
+
+  Initialize(kShouldProcessData);
+
+  // The stream should _not_ be flow control blocked, because we are not talking
+  // a version which has flow control enabled.
+  EXPECT_FALSE(stream_->flow_controller()->IsBlocked());
 }
 
 void SaveProxyAckNotifierDelegate(
@@ -344,6 +378,7 @@ void SaveProxyAckNotifierDelegate(
     QuicAckNotifier::DelegateInterface* delegate) {
   *delegate_out = delegate;
 }
+
 TEST_F(ReliableQuicStreamTest, WriteOrBufferDataWithQuicAckNotifier) {
   Initialize(kShouldProcessData);
 
@@ -356,6 +391,9 @@ TEST_F(ReliableQuicStreamTest, WriteOrBufferDataWithQuicAckNotifier) {
   const int kFirstWriteSize = 100;
   const int kSecondWriteSize = 50;
   const int kLastWriteSize = kDataSize - kFirstWriteSize - kSecondWriteSize;
+
+  // Set a large flow control send window so this doesn't interfere with test.
+  stream_->flow_controller()->UpdateSendWindowOffset(kDataSize + 1);
 
   scoped_refptr<QuicAckNotifier::DelegateInterface> proxy_delegate;
 
@@ -384,13 +422,13 @@ TEST_F(ReliableQuicStreamTest, WriteOrBufferDataWithQuicAckNotifier) {
 
   // There were two writes, so OnAckNotification is not propagated
   // until the third Ack arrives.
-  proxy_delegate->OnAckNotification(1, 2, 3, 4);
-  proxy_delegate->OnAckNotification(10, 20, 30, 40);
+  proxy_delegate->OnAckNotification(1, 2, 3, 4, zero_);
+  proxy_delegate->OnAckNotification(10, 20, 30, 40, zero_);
 
   // The arguments to delegate->OnAckNotification are the sum of the
   // arguments to proxy_delegate OnAckNotification calls.
-  EXPECT_CALL(*delegate, OnAckNotification(111, 222, 333, 444));
-  proxy_delegate->OnAckNotification(100, 200, 300, 400);
+  EXPECT_CALL(*delegate, OnAckNotification(111, 222, 333, 444, zero_));
+  proxy_delegate->OnAckNotification(100, 200, 300, 400, zero_);
 }
 
 // Verify delegate behavior when packets are acked before the
@@ -406,6 +444,9 @@ TEST_F(ReliableQuicStreamTest, WriteOrBufferDataAckNotificationBeforeFlush) {
 
   const int kInitialWriteSize = 100;
 
+  // Set a large flow control send window so this doesn't interfere with test.
+  stream_->flow_controller()->UpdateSendWindowOffset(kDataSize + 1);
+
   scoped_refptr<QuicAckNotifier::DelegateInterface> proxy_delegate;
 
   EXPECT_CALL(*session_, WritevData(kStreamId, _, _, _, _)).WillOnce(DoAll(
@@ -416,7 +457,7 @@ TEST_F(ReliableQuicStreamTest, WriteOrBufferDataAckNotificationBeforeFlush) {
   EXPECT_TRUE(write_blocked_list_->HasWriteBlockedStreams());
 
   // Handle the ack of the first write.
-  proxy_delegate->OnAckNotification(1, 2, 3, 4);
+  proxy_delegate->OnAckNotification(1, 2, 3, 4, zero_);
   proxy_delegate = NULL;
 
   EXPECT_CALL(*session_, WritevData(kStreamId, _, _, _, _)).WillOnce(DoAll(
@@ -426,8 +467,8 @@ TEST_F(ReliableQuicStreamTest, WriteOrBufferDataAckNotificationBeforeFlush) {
   stream_->OnCanWrite();
 
   // Handle the ack for the second write.
-  EXPECT_CALL(*delegate, OnAckNotification(101, 202, 303, 404));
-  proxy_delegate->OnAckNotification(100, 200, 300, 400);
+  EXPECT_CALL(*delegate, OnAckNotification(101, 202, 303, 404, zero_));
+  proxy_delegate->OnAckNotification(100, 200, 300, 400, zero_);
 }
 
 // Verify delegate behavior when WriteOrBufferData does not buffer.
@@ -447,8 +488,8 @@ TEST_F(ReliableQuicStreamTest, WriteAndBufferDataWithAckNotiferNoBuffer) {
   EXPECT_FALSE(write_blocked_list_->HasWriteBlockedStreams());
 
   // Handle the ack.
-  EXPECT_CALL(*delegate, OnAckNotification(1, 2, 3, 4));
-  proxy_delegate->OnAckNotification(1, 2, 3, 4);
+  EXPECT_CALL(*delegate, OnAckNotification(1, 2, 3, 4, zero_));
+  proxy_delegate->OnAckNotification(1, 2, 3, 4, zero_);
 }
 
 // Verify delegate behavior when WriteOrBufferData buffers all the data.
@@ -472,8 +513,8 @@ TEST_F(ReliableQuicStreamTest, BufferOnWriteAndBufferDataWithAckNotifer) {
   stream_->OnCanWrite();
 
   // Handle the ack.
-  EXPECT_CALL(*delegate, OnAckNotification(1, 2, 3, 4));
-  proxy_delegate->OnAckNotification(1, 2, 3, 4);
+  EXPECT_CALL(*delegate, OnAckNotification(1, 2, 3, 4, zero_));
+  proxy_delegate->OnAckNotification(1, 2, 3, 4, zero_);
 }
 
 // Verify delegate behavior when WriteOrBufferData when the FIN is
@@ -500,9 +541,9 @@ TEST_F(ReliableQuicStreamTest, WriteAndBufferDataWithAckNotiferOnlyFinRemains) {
   stream_->OnCanWrite();
 
   // Handle the acks.
-  proxy_delegate->OnAckNotification(1, 2, 3, 4);
-  EXPECT_CALL(*delegate, OnAckNotification(11, 22, 33, 44));
-  proxy_delegate->OnAckNotification(10, 20, 30, 40);
+  proxy_delegate->OnAckNotification(1, 2, 3, 4, zero_);
+  EXPECT_CALL(*delegate, OnAckNotification(11, 22, 33, 44, zero_));
+  proxy_delegate->OnAckNotification(10, 20, 30, 40, zero_);
 }
 
 }  // namespace

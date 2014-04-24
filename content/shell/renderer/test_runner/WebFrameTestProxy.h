@@ -12,7 +12,7 @@
 #include "content/shell/renderer/test_runner/WebTestProxy.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 
-namespace WebTestRunner {
+namespace content {
 
 // Templetized wrapper around RenderFrameImpl objects, which implement
 // the WebFrameClient interface.
@@ -63,6 +63,10 @@ public:
     }
     virtual void didFailProvisionalLoad(blink::WebLocalFrame* frame, const blink::WebURLError& error)
     {
+        // If the test finished, don't notify the embedder of the failed load,
+        // as we already destroyed the document loader.
+        if (m_baseProxy->didFailProvisionalLoad(frame, error))
+            return;
         Base::didFailProvisionalLoad(frame, error);
     }
     virtual void didCommitProvisionalLoad(blink::WebLocalFrame* frame, const blink::WebHistoryItem& item, blink::WebHistoryCommitType commit_type)
@@ -72,26 +76,32 @@ public:
     }
     virtual void didReceiveTitle(blink::WebLocalFrame* frame, const blink::WebString& title, blink::WebTextDirection direction)
     {
+        m_baseProxy->didReceiveTitle(frame, title, direction);
         Base::didReceiveTitle(frame, title, direction);
     }
     virtual void didChangeIcon(blink::WebLocalFrame* frame, blink::WebIconURL::Type iconType)
     {
+        m_baseProxy->didChangeIcon(frame, iconType);
         Base::didChangeIcon(frame, iconType);
     }
     virtual void didFinishDocumentLoad(blink::WebLocalFrame* frame)
     {
+        m_baseProxy->didFinishDocumentLoad(frame);
         Base::didFinishDocumentLoad(frame);
     }
     virtual void didHandleOnloadEvents(blink::WebLocalFrame* frame)
     {
+        m_baseProxy->didHandleOnloadEvents(frame);
         Base::didHandleOnloadEvents(frame);
     }
     virtual void didFailLoad(blink::WebLocalFrame* frame, const blink::WebURLError& error)
     {
+        m_baseProxy->didFailLoad(frame, error);
         Base::didFailLoad(frame, error);
     }
     virtual void didFinishLoad(blink::WebLocalFrame* frame)
     {
+        m_baseProxy->didFinishLoad(frame);
         Base::didFinishLoad(frame);
     }
     virtual blink::WebNotificationPresenter* notificationPresenter()
@@ -171,6 +181,7 @@ public:
     }
     virtual void didFinishResourceLoad(blink::WebLocalFrame* frame, unsigned identifier)
     {
+        m_baseProxy->didFinishResourceLoad(frame, identifier);
         Base::didFinishResourceLoad(frame, identifier);
     }
     virtual blink::WebNavigationPolicy decidePolicyForNavigation(blink::WebLocalFrame* frame, blink::WebDataSource::ExtraData* extraData, const blink::WebURLRequest& request, blink::WebNavigationType type, blink::WebNavigationPolicy defaultPolicy, bool isRedirect)
@@ -204,6 +215,6 @@ private:
     DISALLOW_COPY_AND_ASSIGN(WebFrameTestProxy);
 };
 
-}
+}  // namespace content
 
 #endif // WebTestProxy_h

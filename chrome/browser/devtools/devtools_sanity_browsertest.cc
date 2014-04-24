@@ -348,7 +348,8 @@ class DevToolsExtensionTest : public DevToolsSanityTest,
     size_t num_before = service->extensions()->size();
     {
       content::NotificationRegistrar registrar;
-      registrar.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+      registrar.Add(this,
+                    chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                     content::NotificationService::AllSources());
       base::CancelableClosure timeout(
           base::Bind(&TimeoutCallback, "Extension load timed out."));
@@ -399,7 +400,7 @@ class DevToolsExtensionTest : public DevToolsSanityTest,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE {
     switch (type) {
-      case chrome::NOTIFICATION_EXTENSION_LOADED:
+      case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
       case chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING:
         base::MessageLoopForUI::current()->Quit();
         break;
@@ -859,28 +860,10 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestDevToolsExternalNavigation) {
   CloseDevToolsWindow();
 }
 
-#if defined(OS_WIN) || defined(OS_MACOSX)
-// Flakily times out: http://crbug.com/163411
-#define MAYBE_TestReattachAfterCrash DISABLED_TestReattachAfterCrash
-#else
-#define MAYBE_TestReattachAfterCrash TestReattachAfterCrash
-#endif
 // Tests that inspector will reattach to inspected page when it is reloaded
 // after a crash. See http://crbug.com/101952
-IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, MAYBE_TestReattachAfterCrash) {
-  OpenDevToolsWindow(kDebuggerTestPage, false);
-
-  content::CrashTab(GetInspectedTab());
-  content::WindowedNotificationObserver observer(
-      content::NOTIFICATION_LOAD_STOP,
-      content::Source<NavigationController>(
-          &browser()->tab_strip_model()->GetActiveWebContents()->
-              GetController()));
-  chrome::Reload(browser(), CURRENT_TAB);
-  observer.Wait();
-
-  RunTestFunction(window_, "testReattachAfterCrash");
-  CloseDevToolsWindow();
+IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestReattachAfterCrash) {
+  RunTest("testReattachAfterCrash", std::string());
 }
 
 IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestPageWithNoJavaScript) {

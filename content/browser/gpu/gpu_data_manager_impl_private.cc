@@ -145,25 +145,20 @@ void UpdateStats(const gpu::GPUInfo& gpu_info,
 
   const gpu::GpuFeatureType kGpuFeatures[] = {
       gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS,
-      gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING,
-      gpu::GPU_FEATURE_TYPE_WEBGL
-  };
+      gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING, gpu::GPU_FEATURE_TYPE_WEBGL};
   const std::string kGpuBlacklistFeatureHistogramNames[] = {
       "GPU.BlacklistFeatureTestResults.Accelerated2dCanvas",
-      "GPU.BlacklistFeatureTestResults.AcceleratedCompositing",
-      "GPU.BlacklistFeatureTestResults.Webgl",
-  };
+      "GPU.BlacklistFeatureTestResults.GpuCompositing",
+      "GPU.BlacklistFeatureTestResults.Webgl", };
   const bool kGpuFeatureUserFlags[] = {
       command_line.HasSwitch(switches::kDisableAccelerated2dCanvas),
-      command_line.HasSwitch(switches::kDisableAcceleratedCompositing),
-      command_line.HasSwitch(switches::kDisableExperimentalWebGL),
-  };
+      command_line.HasSwitch(switches::kDisableGpu),
+      command_line.HasSwitch(switches::kDisableExperimentalWebGL), };
 #if defined(OS_WIN)
   const std::string kGpuBlacklistFeatureHistogramNamesWin[] = {
       "GPU.BlacklistFeatureTestResultsWindows.Accelerated2dCanvas",
-      "GPU.BlacklistFeatureTestResultsWindows.AcceleratedCompositing",
-      "GPU.BlacklistFeatureTestResultsWindows.Webgl",
-  };
+      "GPU.BlacklistFeatureTestResultsWindows.GpuCompositing",
+      "GPU.BlacklistFeatureTestResultsWindows.Webgl", };
 #endif
   const size_t kNumFeatures =
       sizeof(kGpuFeatures) / sizeof(gpu::GpuFeatureType);
@@ -217,17 +212,25 @@ void DisplayReconfigCallback(CGDirectDisplayID display,
       reinterpret_cast<GpuDataManagerImpl*>(gpu_data_manager);
   DCHECK(manager);
 
+  // Display change.
+  bool display_changed = false;
   uint32_t displayCount;
   CGGetActiveDisplayList(0, NULL, &displayCount);
-
-  bool fireGpuSwitch = flags & kCGDisplayAddFlag;
-
   if (displayCount != manager->GetDisplayCount()) {
     manager->SetDisplayCount(displayCount);
-    fireGpuSwitch = true;
+    display_changed = true;
   }
 
-  if (fireGpuSwitch)
+  // Gpu change.
+  bool gpu_changed = false;
+  if (flags & kCGDisplayAddFlag) {
+    uint32 vendor_id, device_id;
+    if (gpu::CollectGpuID(&vendor_id, &device_id) == gpu::kGpuIDSuccess) {
+      gpu_changed = manager->UpdateActiveGpu(vendor_id, device_id);
+    }
+  }
+
+  if (display_changed || gpu_changed)
     manager->HandleGpuSwitch();
 }
 #endif  // OS_MACOSX
@@ -633,9 +636,6 @@ void GpuDataManagerImplPrivate::AppendRendererCommandLine(
     CommandLine* command_line) const {
   DCHECK(command_line);
 
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING) &&
-      !command_line->HasSwitch(switches::kDisableAcceleratedCompositing))
-    command_line->AppendSwitch(switches::kDisableAcceleratedCompositing);
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE) &&
       !command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode))
     command_line->AppendSwitch(switches::kDisableAcceleratedVideoDecode);
@@ -644,10 +644,6 @@ void GpuDataManagerImplPrivate::AppendRendererCommandLine(
       !command_line->HasSwitch(switches::kDisableWebRtcHWEncoding))
     command_line->AppendSwitch(switches::kDisableWebRtcHWEncoding);
 #endif
-
-  if (use_software_compositor_ &&
-      !command_line->HasSwitch(switches::kEnableSoftwareCompositing))
-    command_line->AppendSwitch(switches::kEnableSoftwareCompositing);
 
 #if defined(USE_AURA)
   if (!CanUseGpuBrowserCompositor())
@@ -671,11 +667,10 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
     if (swiftshader_path.empty())
       swiftshader_path = swiftshader_path_;
   } else if ((IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_WEBGL) ||
-              IsFeatureBlacklisted(
-                  gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING) ||
+              IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING) ||
               IsFeatureBlacklisted(
                   gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS)) &&
-      (use_gl == "any")) {
+             (use_gl == "any")) {
     command_line->AppendSwitchASCII(
         switches::kUseGL, gfx::kGLImplementationOSMesaName);
   } else if (!use_gl.empty()) {
@@ -729,9 +724,7 @@ void GpuDataManagerImplPrivate::AppendPluginCommandLine(
   // TODO(jbauman): Add proper blacklist support for core animation plugins so
   // special-casing this video card won't be necessary. See
   // http://crbug.com/134015
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableAcceleratedCompositing)) {
+  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING)) {
     if (!command_line->HasSwitch(
            switches::kDisableCoreAnimationPlugins))
       command_line->AppendSwitch(
@@ -744,8 +737,6 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
     WebPreferences* prefs) const {
   DCHECK(prefs);
 
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING))
-    prefs->accelerated_compositing_enabled = false;
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_WEBGL)) {
     prefs->experimental_webgl_enabled = false;
     prefs->pepper_3d_enabled = false;
@@ -764,31 +755,12 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
       (IsDriverBugWorkaroundActive(gpu::DISABLE_MULTIMONITOR_MULTISAMPLING) &&
           display_count_ > 1))
     prefs->gl_multisampling_enabled = false;
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_3D_CSS)) {
-    prefs->accelerated_compositing_for_3d_transforms_enabled = false;
-    prefs->accelerated_compositing_for_animation_enabled = false;
-  }
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO))
-    prefs->accelerated_compositing_for_video_enabled = false;
 
-  // Accelerated video and animation are slower than regular when using
-  // SwiftShader. 3D CSS or Pepper 3D may also be too slow to be worthwhile.
-  if (ShouldUseSwiftShader()) {
-    prefs->accelerated_compositing_for_video_enabled = false;
-    prefs->accelerated_compositing_for_animation_enabled = false;
-    prefs->accelerated_compositing_for_3d_transforms_enabled = false;
-    prefs->accelerated_compositing_for_plugins_enabled = false;
-    prefs->pepper_3d_enabled = false;
-  }
-
-  if (use_software_compositor_) {
-    prefs->force_compositing_mode = true;
-    prefs->accelerated_compositing_enabled = true;
-    prefs->accelerated_compositing_for_3d_transforms_enabled = true;
-    prefs->accelerated_compositing_for_animation_enabled = true;
-    prefs->accelerated_compositing_for_plugins_enabled = true;
-    prefs->accelerated_compositing_for_video_enabled = true;
-  }
+  prefs->accelerated_compositing_enabled = true;
+  prefs->accelerated_compositing_for_3d_transforms_enabled = true;
+  prefs->accelerated_compositing_for_animation_enabled = true;
+  prefs->accelerated_compositing_for_plugins_enabled = true;
+  prefs->accelerated_compositing_for_video_enabled = true;
 
 #if defined(USE_AURA)
   if (!CanUseGpuBrowserCompositor()) {
@@ -882,40 +854,44 @@ base::ListValue* GpuDataManagerImplPrivate::GetLogMessages() const {
 }
 
 void GpuDataManagerImplPrivate::HandleGpuSwitch() {
-  // Check if the active gpu has changed.
-  uint32 vendor_id, device_id;
-  gpu::GPUInfo::GPUDevice* active = NULL;
-  gpu::GPUInfo::GPUDevice* old_active = NULL;
-  if (gpu::CollectGpuID(&vendor_id, &device_id) == gpu::kGpuIDSuccess) {
+  GpuDataManagerImpl::UnlockedSession session(owner_);
+  observer_list_->Notify(&GpuDataManagerObserver::OnGpuSwitching);
+}
+
+bool GpuDataManagerImplPrivate::UpdateActiveGpu(
+    uint32 vendor_id, uint32 device_id) {
+  if (gpu_info_.gpu.vendor_id == vendor_id &&
+      gpu_info_.gpu.device_id == device_id) {
+    // The primary GPU is active.
     if (gpu_info_.gpu.active)
-      old_active = &gpu_info_.gpu;
-    if (gpu_info_.gpu.vendor_id == vendor_id &&
-        gpu_info_.gpu.device_id == device_id)
-      active = &gpu_info_.gpu;
+      return false;
+    gpu_info_.gpu.active = true;
+    for (size_t ii = 0; ii < gpu_info_.secondary_gpus.size(); ++ii)
+      gpu_info_.secondary_gpus[ii].active = false;
+  } else {
+    // A secondary GPU is active.
     for (size_t ii = 0; ii < gpu_info_.secondary_gpus.size(); ++ii) {
-      gpu::GPUInfo::GPUDevice& gpu = gpu_info_.secondary_gpus[ii];
-      if (gpu.active)
-        old_active = &gpu;
-      if (gpu.vendor_id == vendor_id && gpu.device_id == device_id)
-        active = &gpu;
+      if (gpu_info_.secondary_gpus[ii].vendor_id == vendor_id &&
+          gpu_info_.secondary_gpus[ii].device_id == device_id) {
+        if (gpu_info_.secondary_gpus[ii].active)
+          return false;
+        gpu_info_.secondary_gpus[ii].active = true;
+      } else {
+        gpu_info_.secondary_gpus[ii].active = false;
+      }
     }
-    DCHECK(active && old_active);
-    if (active != old_active) {  // A different GPU is used.
-      old_active->active = false;
-      active->active = true;
-      UpdateGpuInfoHelper();
-    }
+    gpu_info_.gpu.active = false;
   }
-  {
-    GpuDataManagerImpl::UnlockedSession session(owner_);
-    observer_list_->Notify(&GpuDataManagerObserver::OnGpuSwitching);
-  }
+  UpdateGpuInfoHelper();
+  return true;
 }
 
 bool GpuDataManagerImplPrivate::CanUseGpuBrowserCompositor() const {
-  return !ShouldUseSwiftShader() &&
-         !IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING) &&
-         !IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE);
+  if (ShouldUseSwiftShader())
+    return false;
+  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING))
+    return false;
+  return true;
 }
 
 void GpuDataManagerImplPrivate::BlockDomainFrom3DAPIs(
@@ -964,21 +940,11 @@ GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(
       owner_(owner),
       display_count_(0),
       gpu_process_accessible_(true),
-      use_software_compositor_(false),
       finalized_(false) {
   DCHECK(owner_);
   CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableAcceleratedCompositing)) {
-    command_line->AppendSwitch(switches::kDisableAccelerated2dCanvas);
-    command_line->AppendSwitch(switches::kDisableAcceleratedLayers);
-  }
   if (command_line->HasSwitch(switches::kDisableGpu))
     DisableHardwareAcceleration();
-  if (command_line->HasSwitch(switches::kEnableSoftwareCompositing))
-    use_software_compositor_ = true;
-#if defined(USE_AURA) || defined(OS_MACOSX)
-  use_software_compositor_ = true;
-#endif
 
 #if defined(OS_MACOSX)
   CGGetActiveDisplayList (0, NULL, &display_count_);
@@ -1034,18 +1000,12 @@ void GpuDataManagerImplPrivate::InitializeImpl(
 
 void GpuDataManagerImplPrivate::UpdateBlacklistedFeatures(
     const std::set<int>& features) {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
   blacklisted_features_ = features;
 
   // Force disable using the GPU for these features, even if they would
   // otherwise be allowed.
-  if (card_blacklisted_ ||
-      command_line->HasSwitch(switches::kBlacklistAcceleratedCompositing)) {
-    blacklisted_features_.insert(
-        gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING);
-  }
-  if (card_blacklisted_ ||
-      command_line->HasSwitch(switches::kBlacklistWebGL)) {
+  if (card_blacklisted_) {
+    blacklisted_features_.insert(gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING);
     blacklisted_features_.insert(gpu::GPU_FEATURE_TYPE_WEBGL);
   }
 

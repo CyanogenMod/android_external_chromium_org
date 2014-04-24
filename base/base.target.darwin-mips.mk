@@ -53,9 +53,9 @@ LOCAL_SRC_FILES := \
 	base/android/scoped_java_ref.cc \
 	base/android/jni_android.cc \
 	base/android/jni_array.cc \
-	base/android/jni_helper.cc \
 	base/android/jni_registrar.cc \
 	base/android/jni_string.cc \
+	base/android/jni_weak_ref.cc \
 	base/android/library_loader/library_loader_hooks.cc \
 	base/android/memory_pressure_listener_android.cc \
 	base/android/java_handler_thread.cc \
@@ -455,7 +455,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed

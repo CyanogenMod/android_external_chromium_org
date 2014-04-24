@@ -84,13 +84,12 @@ using blink::WebString;
 using blink::WebURL;
 using blink::WebURLError;
 using blink::WebURLRequest;
-using blink::WebScreenOrientation;
+using blink::WebScreenOrientationType;
 using blink::WebTestingSupport;
 using blink::WebVector;
 using blink::WebView;
 using WebTestRunner::WebTask;
 using WebTestRunner::WebTestInterfaces;
-using WebTestRunner::WebTestProxyBase;
 
 namespace content {
 
@@ -214,7 +213,7 @@ WebKitTestRunner::WebKitTestRunner(RenderView* render_view)
       focused_view_(NULL),
       is_main_window_(false),
       focus_on_next_commit_(false),
-      leak_detector_(new LeakDetector())
+      leak_detector_(new LeakDetector(this))
 {
   UseMockMediaStreams(render_view);
 }
@@ -259,7 +258,7 @@ void WebKitTestRunner::setDeviceOrientationData(
 }
 
 void WebKitTestRunner::setScreenOrientation(
-    const WebScreenOrientation& orientation) {
+    const WebScreenOrientationType& orientation) {
   SetMockScreenOrientation(orientation);
 }
 
@@ -406,8 +405,10 @@ void WebKitTestRunner::clearDevToolsLocalStorage() {
   Send(new ShellViewHostMsg_ClearDevToolsLocalStorage(routing_id()));
 }
 
-void WebKitTestRunner::showDevTools(const std::string& settings) {
-  Send(new ShellViewHostMsg_ShowDevTools(routing_id(), settings));
+void WebKitTestRunner::showDevTools(const std::string& settings,
+                                    const std::string& frontend_url) {
+  Send(new ShellViewHostMsg_ShowDevTools(
+      routing_id(), settings, frontend_url));
 }
 
 void WebKitTestRunner::closeDevTools() {
@@ -731,19 +732,17 @@ void WebKitTestRunner::OnNotifyDone() {
 }
 
 void WebKitTestRunner::OnTryLeakDetection() {
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&WebKitTestRunner::TryLeakDetection, base::Unretained(this)));
-}
-
-void WebKitTestRunner::TryLeakDetection() {
   WebLocalFrame* main_frame =
       render_view()->GetWebView()->mainFrame()->toWebLocalFrame();
   DCHECK_EQ(GURL(kAboutBlankURL), GURL(main_frame->document().url()));
   DCHECK(!main_frame->isLoading());
 
-  LeakDetectionResult result = leak_detector_->TryLeakDetection(main_frame);
-  Send(new ShellViewHostMsg_LeakDetectionDone(routing_id(), result));
+  leak_detector_->TryLeakDetection(main_frame);
+}
+
+void WebKitTestRunner::ReportLeakDetectionResult(
+    const LeakDetectionResult& report) {
+  Send(new ShellViewHostMsg_LeakDetectionDone(routing_id(), report));
 }
 
 }  // namespace content

@@ -342,7 +342,7 @@ void ExtensionHost::OnRequest(const ExtensionHostMsg_Request_Params& params) {
 }
 
 void ExtensionHost::OnEventAck() {
-  EventRouter* router = ExtensionSystem::Get(browser_context_)->event_router();
+  EventRouter* router = EventRouter::Get(browser_context_);
   if (router)
     router->OnEventAck(browser_context_, extension_id());
 }
@@ -425,6 +425,11 @@ void ExtensionHost::RequestMediaAccessPermission(
     const content::MediaResponseCallback& callback) {
   delegate_->ProcessMediaAccessRequest(
       web_contents, request, callback, extension());
+}
+
+bool ExtensionHost::IsNeverVisible(content::WebContents* web_contents) {
+  ViewType view_type = extensions::GetViewType(web_contents);
+  return view_type == extensions::VIEW_TYPE_EXTENSION_BACKGROUND_PAGE;
 }
 
 }  // namespace extensions

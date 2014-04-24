@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "4.10",
+  "version": "5.0",
   "entries": [
     {
       "id": 1,
@@ -656,15 +656,10 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
           "value": "10.7"
         }
       },
-      "machine_model": {
-        "name": {
-          "op": "=",
-          "value": "MacBookPro"
-        },
-        "version": {
-          "op": "<",
-          "value": "8"
-        }
+      "machine_model_name": ["MacBookPro"],
+      "machine_model_version": {
+        "op": "<",
+        "value": "8"
       },
       "gpu_count": {
         "op": "=",
@@ -918,6 +913,36 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "features": [
         "disable_post_sub_buffers_for_onscreen_surfaces"
+      ]
+    },
+    {
+      "id": 69,
+      "description": "Some shaders in Skia need more than the min available vertex and fragment shader uniform vectors in case of OSMesa",
+      "cr_bugs": [174845],
+      "driver_vendor": {
+        "op": "=",
+        "value": "osmesa"
+      },
+      "features": [
+       "max_fragment_uniform_vectors_32",
+       "max_varying_vectors_16",
+       "max_vertex_uniform_vectors_256"
+      ]
+    },
+    {
+      "id": 70,
+      "description": "Disable D3D11 on older nVidia drivers",
+      "cr_bugs": [349929],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x10de",
+      "driver_version": {
+        "op": "<=",
+        "value": "8.17.12.6973"
+      },
+      "features": [
+        "disable_d3d11"
       ]
     }
   ]

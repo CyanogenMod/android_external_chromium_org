@@ -34,8 +34,8 @@
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebHistoryItem.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebMIDIClientMock.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebPluginParams.h"
@@ -44,10 +44,11 @@
 #include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
+using namespace WebTestRunner;
 using namespace blink;
 using namespace std;
 
-namespace WebTestRunner {
+namespace content {
 
 namespace {
 
@@ -767,6 +768,13 @@ void WebTestProxyBase::didAutoResize(const WebSize&)
 
 void WebTestProxyBase::postAccessibilityEvent(const blink::WebAXObject& obj, blink::WebAXEvent event)
 {
+    // Only hook the accessibility events occured during the test run.
+    // This check prevents false positives in WebLeakDetector.
+    // The pending tasks in browser/renderer message queue may trigger accessibility events,
+    // and AccessibilityController will hold on to their target nodes if we don't ignore them here.
+    if (!m_testInterfaces->testRunner()->TestIsRunning())
+        return;
+
     if (event == blink::WebAXEventFocus)
         m_testInterfaces->accessibilityController()->SetFocusedElement(obj);
 
@@ -1350,4 +1358,4 @@ void WebTestProxyBase::resetInputMethod()
         m_webWidget->confirmComposition();
 }
 
-}
+}  // namespace content

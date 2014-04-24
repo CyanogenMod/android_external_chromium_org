@@ -12,8 +12,8 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/infobars/infobar_delegate.h"
 #include "chrome/browser/ui/views/infobars/infobar_background.h"
+#include "components/infobars/core/infobar_delegate.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
@@ -31,6 +31,7 @@
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
 #include "ui/views/controls/menu/menu_runner.h"
+#include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
 
@@ -46,6 +47,10 @@
 
 namespace {
 
+const int kEdgeItemPadding = views::kRelatedControlHorizontalSpacing;
+const int kIconToLabelSpacing = views::kRelatedControlHorizontalSpacing;
+const int kBeforeCloseButtonSpacing = views::kUnrelatedControlHorizontalSpacing;
+
 bool SortLabelsByDecreasingWidth(views::Label* label_1, views::Label* label_2) {
   return label_1->GetPreferredSize().width() >
       label_2->GetPreferredSize().width();
@@ -57,30 +62,29 @@ bool SortLabelsByDecreasingWidth(views::Label* label_1, views::Label* label_2) {
 // InfoBar --------------------------------------------------------------------
 
 // static
-const int InfoBar::kSeparatorLineHeight =
+const int infobars::InfoBar::kSeparatorLineHeight =
     views::NonClientFrameView::kClientEdgeThickness;
-const int InfoBar::kDefaultArrowTargetHeight = 9;
-const int InfoBar::kMaximumArrowTargetHeight = 24;
-const int InfoBar::kDefaultArrowTargetHalfWidth = kDefaultArrowTargetHeight;
-const int InfoBar::kMaximumArrowTargetHalfWidth = 14;
-const int InfoBar::kDefaultBarTargetHeight = 36;
-
+const int infobars::InfoBar::kDefaultArrowTargetHeight = 9;
+const int infobars::InfoBar::kMaximumArrowTargetHeight = 24;
+const int infobars::InfoBar::kDefaultArrowTargetHalfWidth =
+    kDefaultArrowTargetHeight;
+const int infobars::InfoBar::kMaximumArrowTargetHalfWidth = 14;
+const int infobars::InfoBar::kDefaultBarTargetHeight = 36;
 
 // InfoBarView ----------------------------------------------------------------
 
 // static
-const int InfoBarView::kButtonButtonSpacing = 10;
-const int InfoBarView::kEndOfLabelSpacing = 16;
-const int InfoBarView::kHorizontalPadding = 6;
-const int InfoBarView::kCloseButtonSpacing = kEndOfLabelSpacing;
+const int InfoBarView::kButtonButtonSpacing = views::kRelatedButtonHSpacing;
+const int InfoBarView::kEndOfLabelSpacing = views::kItemLabelSpacing;
 
-InfoBarView::InfoBarView(scoped_ptr<InfoBarDelegate> delegate)
-    : InfoBar(delegate.Pass()),
+InfoBarView::InfoBarView(scoped_ptr<infobars::InfoBarDelegate> delegate)
+    : infobars::InfoBar(delegate.Pass()),
       views::ExternalFocusTracker(this, NULL),
       icon_(NULL),
       close_button_(NULL) {
   set_owned_by_client();  // InfoBar deletes itself at the appropriate time.
-  set_background(new InfoBarBackground(InfoBar::delegate()->GetInfoBarType()));
+  set_background(
+      new InfoBarBackground(infobars::InfoBar::delegate()->GetInfoBarType()));
 }
 
 InfoBarView::~InfoBarView() {
@@ -213,7 +217,7 @@ void InfoBarView::Layout() {
   // width is changed, which affects both paths.
   stroke_path_.rewind();
   fill_path_.rewind();
-  const InfoBarContainer::Delegate* delegate = container_delegate();
+  const infobars::InfoBarContainer::Delegate* delegate = container_delegate();
   if (delegate) {
     static_cast<InfoBarBackground*>(background())->set_separator_color(
         delegate->GetInfoBarSeparatorColor());
@@ -252,17 +256,18 @@ void InfoBarView::Layout() {
         SkIntToScalar(width()), SkIntToScalar(height() - kSeparatorLineHeight));
   }
 
-  int start_x = kHorizontalPadding;
+  int start_x = kEdgeItemPadding;
   if (icon_ != NULL) {
     icon_->SetPosition(gfx::Point(start_x, OffsetY(icon_)));
-    start_x = icon_->bounds().right() + kHorizontalPadding;
+    start_x = icon_->bounds().right() + kIconToLabelSpacing;
   }
 
   int content_minimum_width = ContentMinimumWidth();
   close_button_->SetPosition(gfx::Point(
-      std::max(start_x + content_minimum_width +
-                   ((content_minimum_width > 0) ? kCloseButtonSpacing : 0),
-               width() - kHorizontalPadding - close_button_->width()),
+      std::max(
+          start_x + content_minimum_width +
+              ((content_minimum_width > 0) ? kBeforeCloseButtonSpacing : 0),
+          width() - kEdgeItemPadding - close_button_->width()),
       OffsetY(close_button_)));
 }
 
@@ -343,12 +348,12 @@ int InfoBarView::StartX() const {
   // Ensure we don't return a value greater than EndX(), so children can safely
   // set something's width to "EndX() - StartX()" without risking that being
   // negative.
-  return std::min(EndX(),
-      ((icon_ != NULL) ? icon_->bounds().right() : 0) + kHorizontalPadding);
+  return std::min(EndX(), (icon_ != NULL) ?
+      (icon_->bounds().right() + kIconToLabelSpacing) : kEdgeItemPadding);
 }
 
 int InfoBarView::EndX() const {
-  return close_button_->x() - kCloseButtonSpacing;
+  return close_button_->x() - kBeforeCloseButtonSpacing;
 }
 
 int InfoBarView::OffsetY(views::View* view) const {
@@ -357,8 +362,9 @@ int InfoBarView::OffsetY(views::View* view) const {
       (bar_target_height() - bar_height());
 }
 
-const InfoBarContainer::Delegate* InfoBarView::container_delegate() const {
-  const InfoBarContainer* infobar_container = container();
+const infobars::InfoBarContainer::Delegate* InfoBarView::container_delegate()
+    const {
+  const infobars::InfoBarContainer* infobar_container = container();
   return infobar_container ? infobar_container->delegate() : NULL;
 }
 
@@ -426,16 +432,17 @@ void InfoBarView::PlatformSpecificOnHeightsRecalculated() {
 
 void InfoBarView::GetAccessibleState(ui::AXViewState* state) {
   state->name = l10n_util::GetStringUTF16(
-      (delegate()->GetInfoBarType() == InfoBarDelegate::WARNING_TYPE) ?
+      (delegate()->GetInfoBarType() ==
+       infobars::InfoBarDelegate::WARNING_TYPE) ?
           IDS_ACCNAME_INFOBAR_WARNING : IDS_ACCNAME_INFOBAR_PAGE_ACTION);
   state->role = ui::AX_ROLE_ALERT;
 }
 
 gfx::Size InfoBarView::GetPreferredSize() {
   return gfx::Size(
-      kHorizontalPadding + (icon_ ? (icon_->width() + kHorizontalPadding) : 0) +
-          ContentMinimumWidth() + kCloseButtonSpacing + close_button_->width() +
-          kHorizontalPadding,
+      kEdgeItemPadding + (icon_ ? (icon_->width() + kIconToLabelSpacing) : 0) +
+          ContentMinimumWidth() + kBeforeCloseButtonSpacing +
+          close_button_->width() + kEdgeItemPadding,
       total_height());
 }
 

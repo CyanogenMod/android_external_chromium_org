@@ -16,7 +16,6 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/page_state.h"
-#include "content/test/test_backing_store.h"
 #include "content/test/test_web_contents.h"
 #include "media/base/video_frame.h"
 #include "ui/gfx/rect.h"
@@ -98,11 +97,6 @@ void TestRenderWidgetHostView::Destroy() { delete this; }
 
 gfx::Rect TestRenderWidgetHostView::GetViewBounds() const {
   return gfx::Rect();
-}
-
-BackingStore* TestRenderWidgetHostView::AllocBackingStore(
-    const gfx::Size& size) {
-  return new TestBackingStore(rwh_, size);
 }
 
 void TestRenderWidgetHostView::CopyFromCompositingSurface(
@@ -244,7 +238,8 @@ TestRenderViewHost::~TestRenderViewHost() {
 bool TestRenderViewHost::CreateRenderView(
     const base::string16& frame_name,
     int opener_route_id,
-    int32 max_page_id) {
+    int32 max_page_id,
+    bool window_was_created_with_opener) {
   DCHECK(!render_view_created_);
   render_view_created_ = true;
   opener_route_id_ = opener_route_id;
@@ -313,7 +308,7 @@ void TestRenderViewHost::SendNavigateWithParameters(
 
   main_render_frame_host_->SendNavigateWithParameters(
       page_id, url, transition, original_request_url, response_code,
-      file_path_for_history_item);
+      file_path_for_history_item, std::vector<GURL>());
 }
 
 void TestRenderViewHost::SendBeforeUnloadACK(bool proceed) {

@@ -31,7 +31,7 @@ using ::testing::Mock;
 
 namespace component_updater {
 
-#define POST_INTERCEPT_SCHEME    "http"
+#define POST_INTERCEPT_SCHEME    "https"
 #define POST_INTERCEPT_HOSTNAME  "localhost2"
 #define POST_INTERCEPT_PATH      "/update2"
 
@@ -1007,7 +1007,13 @@ TEST_F(ComponentUpdaterTest, DifferentialUpdate) {
 // 3- download full crx
 // 4- update check (loop 2 - no update available)
 // There should be one ping for the first attempted update.
-TEST_F(ComponentUpdaterTest, DifferentialUpdateFails) {
+// This test is flaky on Android. crbug.com/329883
+#if defined(OS_ANDROID)
+#define MAYBE_DifferentialUpdateFails DISABLED_DifferentialUpdateFails
+#else
+#define MAYBE_DifferentialUpdateFails DifferentialUpdateFails
+#endif
+TEST_F(ComponentUpdaterTest, MAYBE_DifferentialUpdateFails) {
   EXPECT_TRUE(post_interceptor_->ExpectRequest(new PartialMatch(
       "updatecheck"), test_file("updatecheck_diff_reply_2.xml")));
   EXPECT_TRUE(post_interceptor_->ExpectRequest(new PartialMatch("event")));

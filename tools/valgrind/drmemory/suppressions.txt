@@ -232,13 +232,6 @@ UNADDRESSABLE ACCESS
 name=::Crasher::Run deliberate crash
 *!base::`anonymous namespace'::Crasher::Run
 
-UNADDRESSABLE ACCESS
-name=intentional OOM in layout test: fast/js/string-replacement-outofmemory.html
-*!WebCore::reportFatalErrorInMainThread
-*!v8::internal::V8::FatalProcessOutOfMemory
-...
-*!WebCore::HTMLScriptRunner::executePendingScriptAndDispatchEvent
-
 ############################
 # Benign issues in Chromium
 
@@ -453,3 +446,12 @@ KERNELBASE.dll!DuplicateHandle
 KERNEL32.dll!DuplicateHandle*
 base.dll!base::`anonymous namespace'::ThreadFunc
 KERNEL32.dll!BaseThreadInitThunk
+
+HANDLE LEAK
+name=http://crbug.com/366246
+system call NtDuplicateObject
+KERNELBASE.dll!DuplicateHandle
+KERNEL32.dll!DuplicateHandle
+base.dll!base::SharedMemory::ShareToProcessCommon
+content.dll!content::ResourceBuffer::ShareToProcess
+content.dll!content::AsyncResourceHandler::OnReadCompleted

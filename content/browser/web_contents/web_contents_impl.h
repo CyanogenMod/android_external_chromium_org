@@ -340,6 +340,7 @@ class CONTENT_EXPORT WebContentsImpl
                                       bool is_reload,
                                       IPC::Message* reply_msg) OVERRIDE;
   virtual WebContents* GetAsWebContents() OVERRIDE;
+  virtual bool IsNeverVisible() OVERRIDE;
 
   // RenderViewHostDelegate ----------------------------------------------------
   virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
@@ -489,6 +490,7 @@ class CONTENT_EXPORT WebContentsImpl
       NavigationController::ReloadType reload_type) OVERRIDE;
   virtual void RequestOpenURL(RenderFrameHostImpl* render_frame_host,
                               const OpenURLParams& params) OVERRIDE;
+  virtual bool ShouldPreserveAbortedURLs() OVERRIDE;
 
   // RenderWidgetHostDelegate --------------------------------------------------
 
@@ -894,6 +896,10 @@ class CONTENT_EXPORT WebContentsImpl
   // The tab that opened this tab, if any.  Will be set to null if the opener
   // is closed.
   WebContentsImpl* opener_;
+
+  // True if this tab was opened by another tab. This is not unset if the opener
+  // is closed.
+  bool created_with_opener_;
 
 #if defined(OS_WIN)
   gfx::NativeViewAccessible accessible_parent_;

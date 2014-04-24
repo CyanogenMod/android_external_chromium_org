@@ -4,17 +4,40 @@
 
 #include "chrome/browser/chromeos/file_system_provider/request_manager.h"
 
+#include "base/files/file.h"
+#include "base/stl_util.h"
 #include "base/values.h"
 
 namespace chromeos {
 namespace file_system_provider {
 
-RequestManager::RequestManager() : next_id_(1) {}
+namespace {
 
-RequestManager::~RequestManager() {}
+// Timeout in seconds, before a request is considered as stale and hence
+// aborted.
+const int kDefaultTimeout = 10;
 
-int RequestManager::CreateRequest(const ProvidedFileSystem& file_system,
-                                  const SuccessCallback& success_callback,
+}  // namespace
+
+RequestManager::RequestManager()
+    : next_id_(1),
+      timeout_(base::TimeDelta::FromSeconds(kDefaultTimeout)),
+      weak_ptr_factory_(this) {}
+
+RequestManager::~RequestManager() {
+  // Abort all of the active requests.
+  RequestMap::iterator it = requests_.begin();
+  while (it != requests_.end()) {
+    const int request_id = it->first;
+    ++it;
+    RejectRequest(request_id, base::File::FILE_ERROR_ABORT);
+  }
+
+  DCHECK_EQ(0u, requests_.size());
+  STLDeleteValues(&requests_);
+}
+
+int RequestManager::CreateRequest(const SuccessCallback& success_callback,
                                   const ErrorCallback& error_callback) {
   // The request id is unique per request manager, so per service, thereof
   // per profile.
@@ -24,17 +47,20 @@ int RequestManager::CreateRequest(const ProvidedFileSystem& file_system,
   if (requests_.find(request_id) != requests_.end())
     return 0;
 
-  Request request;
-  request.file_system = file_system;
-  request.success_callback = success_callback;
-  request.error_callback = error_callback;
+  Request* request = new Request;
+  request->success_callback = success_callback;
+  request->error_callback = error_callback;
+  request->timeout_timer.Start(FROM_HERE,
+                               timeout_,
+                               base::Bind(&RequestManager::OnRequestTimeout,
+                                          weak_ptr_factory_.GetWeakPtr(),
+                                          request_id));
   requests_[request_id] = request;
 
   return request_id;
 }
 
-bool RequestManager::FulfillRequest(const ProvidedFileSystem& file_system,
-                                    int request_id,
+bool RequestManager::FulfillRequest(int request_id,
                                     scoped_ptr<base::DictionaryValue> response,
                                     bool has_next) {
   RequestMap::iterator request_it = requests_.find(request_id);
@@ -42,64 +68,38 @@ bool RequestManager::FulfillRequest(const ProvidedFileSystem& file_system,
   if (request_it == requests_.end())
     return false;
 
-  // Check if the request belongs to the same provided file system.
-  if (request_it->second.file_system.file_system_id() !=
-      file_system.file_system_id()) {
-    return false;
-  }
-
-  if (!request_it->second.success_callback.is_null())
-    request_it->second.success_callback.Run(response.Pass(), has_next);
-  if (!has_next)
+  if (!request_it->second->success_callback.is_null())
+    request_it->second->success_callback.Run(response.Pass(), has_next);
+  if (!has_next) {
+    delete request_it->second;
     requests_.erase(request_it);
+  } else {
+    request_it->second->timeout_timer.Reset();
+  }
 
   return true;
 }
 
-bool RequestManager::RejectRequest(const ProvidedFileSystem& file_system,
-                                   int request_id,
-                                   base::File::Error error) {
+bool RequestManager::RejectRequest(int request_id, base::File::Error error) {
   RequestMap::iterator request_it = requests_.find(request_id);
 
   if (request_it == requests_.end())
     return false;
 
-  // Check if the request belongs to the same provided file system.
-  if (request_it->second.file_system.file_system_id() !=
-      file_system.file_system_id()) {
-    return false;
-  }
-
-  if (!request_it->second.error_callback.is_null())
-    request_it->second.error_callback.Run(error);
+  if (!request_it->second->error_callback.is_null())
+    request_it->second->error_callback.Run(error);
+  delete request_it->second;
   requests_.erase(request_it);
 
   return true;
 }
 
-void RequestManager::OnProvidedFileSystemMount(
-    const ProvidedFileSystem& file_system,
-    base::File::Error error) {}
+void RequestManager::SetTimeoutForTests(const base::TimeDelta& timeout) {
+  timeout_ = timeout;
+}
 
-void RequestManager::OnProvidedFileSystemUnmount(
-    const ProvidedFileSystem& file_system,
-    base::File::Error error) {
-  // Do not continue on error, since the volume may be still mounted.
-  if (error != base::File::FILE_OK)
-    return;
-
-  // Remove all requests for this provided file system.
-  RequestMap::iterator it = requests_.begin();
-  while (it != requests_.begin()) {
-    if (it->second.file_system.file_system_id() ==
-        file_system.file_system_id()) {
-      RejectRequest(
-          it->second.file_system, it->first, base::File::FILE_ERROR_ABORT);
-      requests_.erase(it++);
-    } else {
-      it++;
-    }
-  }
+void RequestManager::OnRequestTimeout(int request_id) {
+  RejectRequest(request_id, base::File::FILE_ERROR_ABORT);
 }
 
 RequestManager::Request::Request() {}

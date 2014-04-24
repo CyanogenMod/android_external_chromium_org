@@ -26,11 +26,10 @@ class Media(test.Test):
   page_set = 'page_sets/tough_video_cases.py'
 
 
-@test.Disabled('mac')  # http://crbug.com/353268
 class MediaNetworkSimulation(test.Test):
   """Obtains media metrics under different network simulations."""
   test = media.Media
-  page_set = 'page_sets/media_cns_cases.json'
+  page_set = 'page_sets/media_cns_cases.py'
 
 
 class MediaAndroid(test.Test):
@@ -71,7 +70,7 @@ class MediaChromeOS(test.Test):
 class MediaSourceExtensions(test.Test):
   """Obtains media metrics for key media source extensions functions."""
   test = _MSEMeasurement
-  page_set = 'page_sets/mse_cases.json'
+  page_set = 'page_sets/mse_cases.py'
 
   def CustomizeBrowserOptions(self, options):
     # Needed to allow XHR requests to return stream objects.

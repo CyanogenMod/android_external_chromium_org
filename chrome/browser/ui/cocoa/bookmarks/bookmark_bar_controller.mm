@@ -13,6 +13,7 @@
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/bookmarks/bookmark_stats.h"
+#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_properties.h"
@@ -1025,7 +1026,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
 
 - (IBAction)openBookmarkMenuItem:(id)sender {
   int64 tag = [self nodeIdFromMenuTag:[sender tag]];
-  const BookmarkNode* node = bookmarkModel_->GetNodeByID(tag);
+  const BookmarkNode* node = GetBookmarkNodeByID(bookmarkModel_, tag);
   WindowOpenDisposition disposition =
       ui::WindowOpenDispositionFromNSEvent([NSApp currentEvent]);
   [self openURL:node->url() disposition:disposition];
@@ -2416,7 +2417,7 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
   BookmarkNodeData dragData;
   if (dragData.ReadFromClipboard(ui::CLIPBOARD_TYPE_DRAG)) {
     std::vector<const BookmarkNode*> nodes(
-        dragData.GetNodes(browser_->profile()));
+        dragData.GetNodes(bookmarkModel_, browser_->profile()->GetPath()));
     dragDataNodes.assign(nodes.begin(), nodes.end());
   }
   return dragDataNodes;

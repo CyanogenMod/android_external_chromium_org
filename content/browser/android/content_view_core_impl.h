@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "base/android/jni_android.h"
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/i18n/rtl.h"
@@ -21,7 +21,6 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/events/gesture_detection/filtered_gesture_provider.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
 #include "url/gurl.h"
@@ -37,7 +36,6 @@ struct MenuItem;
 
 // TODO(jrg): this is a shell.  Upstream the rest.
 class ContentViewCoreImpl : public ContentViewCore,
-                            public ui::GestureProviderClient,
                             public NotificationObserver,
                             public WebContentsObserver {
  public:
@@ -84,6 +82,8 @@ class ContentViewCoreImpl : public ContentViewCore,
       jstring url,
       jint load_url_type,
       jint transition_type,
+      jstring j_referrer_url,
+      jint referrer_policy,
       jint ua_override_option,
       jstring extra_headers,
       jbyteArray post_data,
@@ -91,8 +91,6 @@ class ContentViewCoreImpl : public ContentViewCore,
       jstring virtual_url_for_data_url,
       jboolean can_load_local_resources);
   base::android::ScopedJavaLocalRef<jstring> GetURL(JNIEnv* env, jobject) const;
-  base::android::ScopedJavaLocalRef<jstring> GetTitle(
-      JNIEnv* env, jobject obj) const;
   jboolean IsIncognito(JNIEnv* env, jobject obj);
   void SendOrientationChangeEvent(JNIEnv* env, jobject obj, jint orientation);
   jboolean OnTouchEvent(JNIEnv* env,
@@ -145,12 +143,7 @@ class ContentViewCoreImpl : public ContentViewCore,
                                 jfloat x2, jfloat y2);
   void MoveCaret(JNIEnv* env, jobject obj, jfloat x, jfloat y);
 
-  void ResetGestureDetectors(JNIEnv* env, jobject obj);
-  void IgnoreRemainingTouchEvents(JNIEnv* env, jobject obj);
-  void OnWindowFocusLost(JNIEnv* env, jobject obj);
-  void SetDoubleTapSupportForPageEnabled(JNIEnv* env,
-                                         jobject obj,
-                                         jboolean enabled);
+  void ResetGestureDetection(JNIEnv* env, jobject obj);
   void SetDoubleTapSupportEnabled(JNIEnv* env, jobject obj, jboolean enabled);
   void SetMultiTouchZoomSupportEnabled(JNIEnv* env,
                                        jobject obj,
@@ -158,7 +151,6 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   void LoadIfNecessary(JNIEnv* env, jobject obj);
   void RequestRestoreLoad(JNIEnv* env, jobject obj);
-  void StopLoading(JNIEnv* env, jobject obj);
   void Reload(JNIEnv* env, jobject obj, jboolean check_for_repost);
   void ReloadIgnoringCache(JNIEnv* env, jobject obj, jboolean check_for_repost);
   void CancelPendingReload(JNIEnv* env, jobject obj);
@@ -169,7 +161,7 @@ class ContentViewCoreImpl : public ContentViewCore,
                           jstring script,
                           jobject callback,
                           jboolean start_renderer);
-  int GetNativeImeAdapter(JNIEnv* env, jobject obj);
+  long GetNativeImeAdapter(JNIEnv* env, jobject obj);
   void SetFocus(JNIEnv* env, jobject obj, jboolean focused);
   void ScrollFocusedEditableNodeIntoView(JNIEnv* env, jobject obj);
 
@@ -220,7 +212,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   void ShowInterstitialPage(JNIEnv* env,
                             jobject obj,
                             jstring jurl,
-                            jint delegate);
+                            jlong delegate);
   jboolean IsShowingInterstitialPage(JNIEnv* env, jobject obj);
 
   void SetAccessibilityEnabled(JNIEnv* env, jobject obj, bool enabled);
@@ -271,7 +263,6 @@ class ContentViewCoreImpl : public ContentViewCore,
   void OnBackgroundColorChanged(SkColor color);
 
   bool HasFocus();
-  void ConfirmTouchEvent(InputEventAckState ack_result);
   void OnGestureEventAck(const blink::WebGestureEvent& event,
                          InputEventAckState ack_result);
   bool FilterInputEvent(const blink::WebInputEvent& event);
@@ -303,6 +294,9 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   void DidStopFlinging();
 
+  // Returns the viewport size after accounting for the viewport offset.
+  gfx::Size GetViewSize() const;
+
   // --------------------------------------------------------------------------
   // Methods called from native code
   // --------------------------------------------------------------------------
@@ -333,9 +327,6 @@ class ContentViewCoreImpl : public ContentViewCore,
   virtual void RenderViewReady() OVERRIDE;
   virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
 
-  // ui::GestureProviderClient implementation.
-  virtual void OnGestureEvent(const ui::GestureEventData& gesture) OVERRIDE;
-
   // --------------------------------------------------------------------------
   // Other private methods and data
   // --------------------------------------------------------------------------
@@ -362,10 +353,6 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   // Send device_orientation_ to renderer.
   void SendOrientationChangeEventInternal();
-
-  // Utility method for synthesizing a touch cancel event and dispatching it
-  // through the touch pipeline.
-  void CancelActiveTouchSequenceIfNecessary();
 
   float dpi_scale() const { return dpi_scale_; }
 
@@ -394,10 +381,6 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   // The owning window that has a hold of main application activity.
   ui::WindowAndroid* window_android_;
-
-  // Provides gesture synthesis given a stream of touch events (derived from
-  // Android MotionEvent's) and touch event acks.
-  ui::FilteredGestureProvider gesture_provider_;
 
   // The cache of device's current orientation set from Java side, this value
   // will be sent to Renderer once it is ready.

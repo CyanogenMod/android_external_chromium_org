@@ -57,6 +57,9 @@ class Shell : public WebContentsDelegate,
 
   void LoadURL(const GURL& url);
   void LoadURLForFrame(const GURL& url, const std::string& frame_name);
+  void LoadDataWithBaseURL(const GURL& url,
+                           const std::string& data,
+                           const GURL& base_url);
   void GoBackOrForward(int offset);
   void Reload();
   void Stop();
@@ -64,7 +67,8 @@ class Shell : public WebContentsDelegate,
   void Close();
   void ShowDevTools();
   void ShowDevToolsForElementAt(int x, int y);
-  void ShowDevToolsForTest(const std::string& settings);
+  void ShowDevToolsForTest(const std::string& settings,
+                           const std::string& frontend_url);
   void CloseDevTools();
 #if defined(OS_MACOSX)
   // Resizes the web content view to the given dimensions.
@@ -209,7 +213,8 @@ class Shell : public WebContentsDelegate,
   // WebContentsObserver
   virtual void TitleWasSet(NavigationEntry* entry, bool explicit_set) OVERRIDE;
 
-  void InnerShowDevTools(const std::string& settings);
+  void InnerShowDevTools(const std::string& settings,
+                         const std::string& frontend_url);
   void OnDevToolsWebContentsDestroyed();
 
   scoped_ptr<ShellJavaScriptDialogManager> dialog_manager_;

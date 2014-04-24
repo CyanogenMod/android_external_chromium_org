@@ -652,10 +652,18 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithNoIntent) {
       << message_;
 }
 
+// Tests that launch data is sent through when the file has unknown extension
+// but the MIME type can be sniffed and the sniffed type matches.
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithSniffableType) {
+  SetCommandLineArg("platform_apps/launch_files/test.unknownextension");
+  ASSERT_TRUE(RunPlatformAppTest(
+      "platform_apps/launch_file_by_extension_and_type")) << message_;
+}
+
 // Tests that launch data is sent through with the MIME type set to
 // application/octet-stream if the file MIME type cannot be read.
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchNoType) {
-  SetCommandLineArg("platform_apps/launch_files/test.unknownextension");
+  SetCommandLineArg("platform_apps/launch_files/test_binary.unknownextension");
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/launch_application_octet_stream")) << message_;
 }
@@ -1017,8 +1025,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(browser()->profile());
 
   // Clear the registered events to ensure they are updated.
-  extensions::ExtensionSystem::Get(browser()->profile())->event_router()->
-      SetRegisteredEvents(extension->id(), std::set<std::string>());
+  extensions::EventRouter::Get(browser()->profile())
+      ->SetRegisteredEvents(extension->id(), std::set<std::string>());
 
   DictionaryPrefUpdate update(extension_prefs->pref_service(),
                               extensions::pref_names::kExtensions);
@@ -1196,7 +1204,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppIncognitoBrowserTest, IncognitoComponentApp) {
 
   // Wait until the file manager has had a chance to register its listener
   // for the launch event.
-  EventRouter* router = ExtensionSystem::Get(incognito_profile)->event_router();
+  EventRouter* router = EventRouter::Get(incognito_profile);
   ASSERT_TRUE(router != NULL);
   while (!router->ExtensionHasEventListener(
       file_manager->id(), app_runtime::OnLaunched::kEventName)) {

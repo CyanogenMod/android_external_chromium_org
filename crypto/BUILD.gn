@@ -13,7 +13,6 @@ component("crypto") {
     "capi_util.cc",
     "capi_util.h",
     "crypto_export.h",
-    "crypto_module_blocking_password_delegate.h",
     "cssm_init.cc",
     "cssm_init.h",
     "curve25519.cc",
@@ -106,17 +105,11 @@ component("crypto") {
     ]
   }
 
-  if (!is_linux) {
+  if (use_openssl || !is_linux) {
     sources -= [
       "openpgp_symmetric_encryption.cc",
       "openpgp_symmetric_encryption.h",
     ]
-    if (use_nss) {  # Removed for non-NSS in all cases below.
-      sources -= [
-        "openpgp_symmetric_encryption.cc",
-        "openpgp_symmetric_encryption.h",
-      ]
-    }
   }
   if (!is_mac) {
     sources -= [
@@ -133,7 +126,8 @@ component("crypto") {
     ]
   }
 
-  if (!use_nss) {
+  if (use_openssl) {
+    # Remove NSS files when using OpenSSL
     sources -= [
       "ec_private_key_nss.cc",
       "ec_signature_creator_nss.cc",
@@ -153,8 +147,8 @@ component("crypto") {
       "third_party/nss/rsawrapr.c",
       "third_party/nss/secsign.cc",
     ]
-  }
-  if (!use_openssl) {
+  } else {
+    # Remove OpenSSL when using NSS.
     sources -= [
       "ec_private_key_openssl.cc",
       "ec_signature_creator_openssl.cc",
@@ -179,13 +173,17 @@ if (is_win) {
   # OpenSSL/NSS but will use Windows APIs for that functionality.
   source_set("crypto_minimal_win") {
     sources = [
+      "crypto_export.h",
       "hmac.cc",
       "hmac.h",
       "hmac_win.cc",
+      "scoped_capi_types.h",
+      "scoped_nss_types.h",
       "secure_util.cc",
       "secure_util.h",
       "symmetric_key.h",
       "symmetric_key_win.cc",
+      "third_party/nss/chromium-blapi.h",
       "third_party/nss/chromium-sha256.h",
       "third_party/nss/sha512.cc",
     ]
@@ -264,8 +262,16 @@ group("platform") {
     if (is_linux) {
       # On Linux, we use the system NSS (excepting SSL where we always use our
       # own).
+      #
+      # We always need our SSL header search path to come before the system one
+      # so our versions are used. The libssl target will add the search path we
+      # want, but according to GN's ordering rules, direct_dependent_configs'
+      # search path will get applied before ones inherited from our
+      # dependencies. Therefore, we need to explicitly list our custom libssl's
+      # config here before the system one.
       direct_dependent_configs = [
-        "//third_party/nss:system_nss_no_ssl_config"
+        "//net/third_party/nss/ssl:ssl_config",
+        "//third_party/nss:system_nss_no_ssl_config",
       ]
     } else {
       # Non-Linux platforms use the hermetic NSS from the tree.

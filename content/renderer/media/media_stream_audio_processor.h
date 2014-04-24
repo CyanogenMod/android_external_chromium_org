@@ -6,7 +6,7 @@
 #define CONTENT_RENDERER_MEDIA_MEDIA_STREAM_AUDIO_PROCESSOR_H_
 
 #include "base/atomicops.h"
-#include "base/platform_file.h"
+#include "base/files/file.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
@@ -47,6 +47,10 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
     NON_EXPORTED_BASE(public WebRtcPlayoutDataSource::Sink),
     NON_EXPORTED_BASE(public AudioProcessorInterface) {
  public:
+  // Returns true if |kEnableAudioTrackProcessing| is on or if the
+  // |MediaStreamAudioTrackProcessing| finch experiment is enabled.
+  static bool IsAudioTrackProcessingEnabled();
+
   // |playout_data_source| is used to register this class as a sink to the
   // WebRtc playout data for processing AEC. If clients do not enable AEC,
   // |playout_data_source| won't be used.
@@ -85,8 +89,6 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
                              int* new_volume,
                              int16** out);
 
-  bool IsAudioTrackProcessingEnabled() const;
-
   // The audio format of the input to the processor.
   const media::AudioParameters& InputFormat() const;
 
@@ -99,7 +101,7 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
   // Starts/Stops the Aec dump on the |audio_processing_|.
   // Called on the main render thread.
   // This method takes the ownership of |aec_dump_file|.
-  void StartAecDump(const base::PlatformFile& aec_dump_file);
+  void StartAecDump(base::File aec_dump_file);
   void StopAecDump();
 
  protected:

@@ -20,13 +20,11 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chrome_page_zoom.h"
-#include "chrome/browser/devtools/devtools_adb_bridge.h"
 #include "chrome/browser/extensions/api/debugger/debugger_api.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
@@ -48,6 +46,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
+#include "components/infobars/core/infobar.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
@@ -399,6 +398,8 @@ DevToolsWindow::~DevToolsWindow() {
     jobs_it->second->Stop();
   }
   indexing_jobs_.clear();
+  if (device_listener_enabled_)
+    EnableRemoteDeviceCounter(false);
 }
 
 // static
@@ -426,7 +427,7 @@ void DevToolsWindow::RegisterProfilePrefs(
 
   registry->RegisterBooleanPref(
       prefs::kDevToolsDiscoverUsbDevicesEnabled,
-      false,
+      true,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kDevToolsPortForwardingEnabled,
@@ -786,6 +787,7 @@ DevToolsWindow::DevToolsWindow(Profile* profile,
       browser_(NULL),
       is_docked_(true),
       can_dock_(can_dock),
+      device_listener_enabled_(false),
       // This initialization allows external front-end to work without changes.
       // We don't wait for docking call, but instead immediately show undocked.
       // Passing "dockSide=undocked" parameter ensures proper UI.
@@ -1391,6 +1393,26 @@ void DevToolsWindow::StartRemoteDevicesListener() {
 
 void DevToolsWindow::StopRemoteDevicesListener() {
   remote_targets_handler_.reset();
+}
+
+void DevToolsWindow::EnableRemoteDeviceCounter(bool enable) {
+  DevToolsAndroidBridge* adb_bridge =
+      DevToolsAndroidBridge::Factory::GetForProfile(profile_);
+  if (!adb_bridge)
+    return;
+
+  DCHECK(device_listener_enabled_ != enable);
+  device_listener_enabled_ = enable;
+  if (enable)
+    adb_bridge->AddDeviceCountListener(this);
+  else
+    adb_bridge->RemoveDeviceCountListener(this);
+}
+
+void DevToolsWindow::DeviceCountChanged(int count) {
+  base::FundamentalValue value(count);
+  CallClientFunction(
+      "InspectorFrontendAPI.setRemoteDeviceCount", &value, NULL, NULL);
 }
 
 void DevToolsWindow::PopulateRemoteDevices(

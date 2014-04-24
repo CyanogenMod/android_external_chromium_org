@@ -25,7 +25,10 @@ class ProviderImpl : public sample::Provider {
       const String& a,
       const Callback<void(String)>& callback) MOJO_OVERRIDE {
     AllocationScope scope;
-    callback.Run(a);
+    Callback<void(String)> callback_copy;
+    // Make sure operator= is used.
+    callback_copy = callback;
+    callback_copy.Run(a);
   }
 
   virtual void EchoStrings(
@@ -41,6 +44,12 @@ class ProviderImpl : public sample::Provider {
       const Callback<void(ScopedMessagePipeHandle)>& callback) MOJO_OVERRIDE {
     AllocationScope scope;
     callback.Run(a.Pass());
+  }
+
+  virtual void EchoEnum(sample::Enum a,
+                        const Callback<void(sample::Enum)>& callback)
+      MOJO_OVERRIDE {
+    callback.Run(a);
   }
 
  private:
@@ -59,6 +68,17 @@ class StringRecorder {
   }
  private:
   std::string* buf_;
+};
+
+class EnumRecorder {
+ public:
+  EnumRecorder(sample::Enum* value) : value_(value) {
+  }
+  void Run(sample::Enum a) const {
+    *value_ = a;
+  }
+ private:
+  sample::Enum* value_;
 };
 
 class MessagePipeWriter {
@@ -133,6 +153,22 @@ TEST_F(RequestResponseTest, EchoMessagePipeHandle) {
   ReadTextMessage(pipe2.handle0.get(), &value);
 
   EXPECT_EQ(std::string("hello"), value);
+}
+
+TEST_F(RequestResponseTest, EchoEnum) {
+  InterfacePipe<sample::Provider> pipe;
+  ProviderImpl provider_impl(pipe.handle_to_peer.Pass());
+  RemotePtr<sample::Provider> provider(pipe.handle_to_self.Pass(), NULL);
+
+  sample::Enum value;
+  {
+    AllocationScope scope;
+    provider->EchoEnum(sample::ENUM_VALUE, EnumRecorder(&value));
+  }
+
+  PumpMessages();
+
+  EXPECT_EQ(sample::ENUM_VALUE, value);
 }
 
 }  // namespace

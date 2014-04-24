@@ -177,15 +177,16 @@ ServiceWorkerVersion::ServiceWorkerVersion(
   if (registration) {
     registration_id_ = registration->id();
     script_url_ = registration->script_url();
+    scope_ = registration->pattern();
   }
   context_->AddLiveVersion(this);
   embedded_worker_ = context_->embedded_worker_registry()->CreateWorker();
-  embedded_worker_->AddObserver(this);
+  embedded_worker_->AddListener(this);
 }
 
 ServiceWorkerVersion::~ServiceWorkerVersion() {
   if (embedded_worker_) {
-    embedded_worker_->RemoveObserver(this);
+    embedded_worker_->RemoveListener(this);
     embedded_worker_.reset();
   }
   if (context_)
@@ -217,6 +218,7 @@ ServiceWorkerVersionInfo ServiceWorkerVersion::GetInfo() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   return ServiceWorkerVersionInfo(running_status(),
                                   status(),
+                                  version_id(),
                                   embedded_worker()->process_id(),
                                   embedded_worker()->thread_id());
 }
@@ -233,8 +235,7 @@ void ServiceWorkerVersion::StartWorker(const StatusCallback& callback) {
   }
   if (start_callbacks_.empty()) {
     ServiceWorkerStatusCode status = embedded_worker_->Start(
-        version_id_,
-        script_url_);
+        version_id_, scope_, script_url_);
     if (status != SERVICE_WORKER_OK) {
       RunSoon(base::Bind(callback, status));
       return;
@@ -375,19 +376,25 @@ bool ServiceWorkerVersion::HasProcessToRun() const {
 
 void ServiceWorkerVersion::AddControllee(
     ServiceWorkerProviderHost* provider_host) {
-  DCHECK(!ContainsKey(controllee_providers_, provider_host));
-  controllee_providers_.insert(provider_host);
+  DCHECK(!ContainsKey(controllee_map_, provider_host));
+  int controllee_id = controllee_by_id_.Add(provider_host);
+  controllee_map_[provider_host] = controllee_id;
   AddProcessToWorker(provider_host->process_id());
 }
 
 void ServiceWorkerVersion::RemoveControllee(
     ServiceWorkerProviderHost* provider_host) {
-  DCHECK(ContainsKey(controllee_providers_, provider_host));
-  controllee_providers_.erase(provider_host);
+  ControlleeMap::iterator found = controllee_map_.find(provider_host);
+  DCHECK(found != controllee_map_.end());
+  controllee_by_id_.Remove(found->second);
+  controllee_map_.erase(found);
   RemoveProcessFromWorker(provider_host->process_id());
   // TODO(kinuko): Fire NoControllees notification when the # of controllees
   // reaches 0, so that a new pending version can be activated (which will
   // deactivate this version).
+  // TODO(michaeln): On no controllees call storage DeleteVersionResources
+  // if this version has been deactivated. Probably storage can listen for
+  // NoControllees for versions that have been deleted.
 }
 
 void ServiceWorkerVersion::AddPendingControllee(
@@ -412,6 +419,7 @@ void ServiceWorkerVersion::OnStarted() {
   DCHECK_EQ(RUNNING, running_status());
   // Fire all start callbacks.
   RunCallbacks(this, &start_callbacks_, SERVICE_WORKER_OK);
+  FOR_EACH_OBSERVER(Listener, listeners_, OnWorkerStarted(this));
 }
 
 void ServiceWorkerVersion::OnStopped() {
@@ -434,20 +442,85 @@ void ServiceWorkerVersion::OnStopped() {
     iter.Advance();
   }
   message_callbacks_.Clear();
+  FOR_EACH_OBSERVER(Listener, listeners_, OnWorkerStopped(this));
 }
 
-void ServiceWorkerVersion::OnMessageReceived(
+void ServiceWorkerVersion::OnReportException(
+    const base::string16& error_message,
+    int line_number,
+    int column_number,
+    const GURL& source_url) {
+  FOR_EACH_OBSERVER(
+      Listener,
+      listeners_,
+      OnErrorReported(
+          this, error_message, line_number, column_number, source_url));
+}
+
+void ServiceWorkerVersion::OnReportConsoleMessage(int source_identifier,
+                                                  int message_level,
+                                                  const base::string16& message,
+                                                  int line_number,
+                                                  const GURL& source_url) {
+  FOR_EACH_OBSERVER(Listener,
+                    listeners_,
+                    OnReportConsoleMessage(this,
+                                           source_identifier,
+                                           message_level,
+                                           message,
+                                           line_number,
+                                           source_url));
+}
+
+bool ServiceWorkerVersion::OnMessageReceived(const IPC::Message& message) {
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(ServiceWorkerVersion, message)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_GetClientDocuments,
+                        OnGetClientDocuments)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  return handled;
+}
+
+bool ServiceWorkerVersion::OnReplyReceived(
     int request_id, const IPC::Message& message) {
+  // Perform security check to filter out any unexpected (and non-test)
+  // messages. This must list up all message types that can go through here.
+  // TODO(kinuko): Merge this into OnMessageReceived as we're deprecating
+  // this ReplyToBrowser.
+  if (message.type() != ServiceWorkerHostMsg_ActivateEventFinished::ID &&
+      message.type() != ServiceWorkerHostMsg_InstallEventFinished::ID &&
+      message.type() != ServiceWorkerHostMsg_FetchEventFinished::ID &&
+      message.type() != ServiceWorkerHostMsg_SyncEventFinished::ID &&
+      IPC_MESSAGE_CLASS(message) != TestMsgStart)
+    return false;
+
   MessageCallback* callback = message_callbacks_.Lookup(request_id);
   if (callback) {
     // Protect since a callback could destroy |this|.
     scoped_refptr<ServiceWorkerVersion> protect(this);
     callback->Run(SERVICE_WORKER_OK, message);
     message_callbacks_.Remove(request_id);
-    return;
+    return true;
   }
   NOTREACHED() << "Got unexpected message: " << request_id
                << " " << message.type();
+  return false;
+}
+
+void ServiceWorkerVersion::OnGetClientDocuments(int request_id) {
+  std::vector<int> client_ids;
+  ControlleeByIDMap::iterator it(&controllee_by_id_);
+  while (!it.IsAtEnd()) {
+    client_ids.push_back(it.GetCurrentKey());
+    it.Advance();
+  }
+  // Don't bother if it's no longer running.
+  if (running_status() == RUNNING) {
+    embedded_worker_->SendMessage(
+        kInvalidServiceWorkerRequestId,
+        ServiceWorkerMsg_DidGetClientDocuments(request_id, client_ids));
+  }
 }
 
 }  // namespace content

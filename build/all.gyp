@@ -152,11 +152,6 @@
             '../tools/xdisplaycheck/xdisplaycheck.gyp:*',
           ],
         }],
-        ['toolkit_uses_gtk==1', {
-          'dependencies': [
-            '../tools/gtk_clipboard_dump/gtk_clipboard_dump.gyp:*',
-          ],
-        }],
         ['OS=="win"', {
           'conditions': [
             ['win_use_allocator_shim==1', {
@@ -1060,6 +1055,8 @@
             '../components/components_tests.gyp:components_unittests',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_shell',
+            '../content/content_shell_and_tests.gyp:content_shell_crash_service',
+            '../content/content_shell_and_tests.gyp:layout_test_helper',
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../crypto/crypto.gyp:crypto_unittests',
             '../device/device_tests.gyp:device_unittests',

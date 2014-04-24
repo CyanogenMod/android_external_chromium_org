@@ -134,7 +134,6 @@ class Plugin : public pp::Instance {
   // event (loadstart, progress, error, abort, load, loadend).  Events are
   // enqueued on the JavaScript event loop, which then calls back through
   // DispatchProgressEvent.
-  void EnqueueProgressEvent(PP_NaClEventType event_type);
   void EnqueueProgressEvent(PP_NaClEventType event_type,
                             const nacl::string& url,
                             LengthComputable length_computable,
@@ -143,18 +142,6 @@ class Plugin : public pp::Instance {
 
   // Report the error code that sel_ldr produces when starting a nexe.
   void ReportSelLdrLoadStatus(int status);
-
-  // URL resolution support.
-  // plugin_base_url is the URL used for resolving relative URLs used in
-  // src="...".
-  nacl::string plugin_base_url() const { return plugin_base_url_; }
-  void set_plugin_base_url(const nacl::string& url) { plugin_base_url_ = url; }
-  // manifest_base_url is the URL used for resolving relative URLs mentioned
-  // in manifest files.  If the manifest is a data URI, this is an empty string.
-  nacl::string manifest_base_url() const { return manifest_base_url_; }
-  void set_manifest_base_url(const nacl::string& url) {
-    manifest_base_url_ = url;
-  }
 
   nacl::DescWrapperFactory* wrapper_factory() const { return wrapper_factory_; }
 
@@ -297,9 +284,6 @@ class Plugin : public pp::Instance {
   // chosen for the sandbox ISA, any current service runtime is shut down, the
   // .nexe is loaded and run.
 
-  // Callback used when getting the manifest file as a buffer (e.g., data URIs)
-  void NaClManifestBufferReady(int32_t pp_error);
-
   // Callback used when getting the manifest file as a local file descriptor.
   void NaClManifestFileDidOpen(int32_t pp_error);
 
@@ -412,6 +396,10 @@ class Plugin : public pp::Instance {
 
   int64_t time_of_last_progress_event_;
   int exit_status_;
+
+  // Open times are in microseconds.
+  int64_t manifest_open_time_;
+  int64_t nexe_open_time_;
 
   const PPB_NaCl_Private* nacl_interface_;
   pp::UMAPrivate uma_interface_;

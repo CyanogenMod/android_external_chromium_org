@@ -44,6 +44,10 @@ float GetUnforcedDeviceScaleFactor() {
 
 float GetModernUIScaleWrapper() {
   float result = 1.0f;
+  // TODO(cpu) : Fix scale for Win7.
+  if (base::win::GetVersion() < base::win::VERSION_WIN8)
+    return result;
+
   typedef float(WINAPI *GetModernUIScalePtr)(VOID);
   HMODULE lib = LoadLibraryA("metro_driver.dll");
   if (lib) {
@@ -191,12 +195,8 @@ float GetDeviceScaleFactor() {
 }
 
 Point ScreenToDIPPoint(const Point& pixel_point) {
-  static float scaling_factor =
-      GetDeviceScaleFactor() > GetUnforcedDeviceScaleFactor() ?
-      1.0f / GetDeviceScaleFactor() :
-      1.0f;
   return ToFlooredPoint(ScalePoint(pixel_point,
-      scaling_factor));
+      1.0f / GetDeviceScaleFactor()));
 }
 
 Point DIPToScreenPoint(const Point& dip_point) {

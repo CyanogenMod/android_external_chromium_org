@@ -26,7 +26,6 @@
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/register_app_task.h"
 #include "chrome/browser/sync_file_system/drive_backend/remote_to_local_syncer.h"
-#include "chrome/browser/sync_file_system/drive_backend/sync_engine.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_initializer.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_task.h"
@@ -59,15 +58,17 @@ void EmptyStatusCallback(SyncStatusCode status) {}
 }  // namespace
 
 scoped_ptr<SyncWorker> SyncWorker::CreateOnWorker(
-    const base::WeakPtr<drive_backend::SyncEngine>& sync_engine,
     const base::FilePath& base_dir,
+    Observer* observer,
+    ExtensionServiceInterface* extension_service,
     scoped_ptr<SyncEngineContext> sync_engine_context,
     leveldb::Env* env_override) {
   scoped_ptr<SyncWorker> sync_worker(
-      new SyncWorker(sync_engine,
-                     base_dir,
+      new SyncWorker(base_dir,
+                     extension_service,
                      sync_engine_context.Pass(),
                      env_override));
+  sync_worker->AddObserver(observer);
   sync_worker->Initialize();
 
   return sync_worker.Pass();
@@ -99,10 +100,12 @@ void SyncWorker::RegisterOrigin(
   scoped_ptr<RegisterAppTask> task(
       new RegisterAppTask(context_.get(), origin.host()));
   if (task->CanFinishImmediately()) {
-    callback.Run(SYNC_STATUS_OK);
+    context_->GetUiTaskRunner()->PostTask(
+        FROM_HERE, base::Bind(callback, SYNC_STATUS_OK));
     return;
   }
 
+  // TODO(peria): Forward |callback| to UI thread.
   task_manager_->ScheduleSyncTask(
       FROM_HERE,
       task.PassAs<SyncTask>(),
@@ -113,6 +116,7 @@ void SyncWorker::RegisterOrigin(
 void SyncWorker::EnableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
+  // TODO(peria): Forward |callback| to UI thread.
   task_manager_->ScheduleTask(
       FROM_HERE,
       base::Bind(&SyncWorker::DoEnableApp,
@@ -125,6 +129,7 @@ void SyncWorker::EnableOrigin(
 void SyncWorker::DisableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
+  // TODO(peria): Forward |callback| to UI thread.
   task_manager_->ScheduleTask(
       FROM_HERE,
       base::Bind(&SyncWorker::DoDisableApp,
@@ -138,6 +143,7 @@ void SyncWorker::UninstallOrigin(
     const GURL& origin,
     RemoteFileSyncService::UninstallFlag flag,
     const SyncStatusCallback& callback) {
+  // TODO(peria): Forward |callback| to UI thread.
   task_manager_->ScheduleSyncTask(
       FROM_HERE,
       scoped_ptr<SyncTask>(
@@ -211,8 +217,11 @@ void SyncWorker::SetSyncEnabled(bool enabled) {
   if (old_state == GetCurrentState())
     return;
 
-  // TODO(peria): PostTask()
-  sync_engine_->UpdateSyncEnabled(enabled);
+  FOR_EACH_OBSERVER(
+      Observer, observers_,
+      UpdateServiceState(
+          GetCurrentState(),
+          enabled ? "Sync is enabled" : "Sync is disabled"));
 }
 
 SyncStatusCode SyncWorker::SetDefaultConflictResolutionPolicy(
@@ -274,8 +283,9 @@ void SyncWorker::NotifyLastOperationStatus(
   UpdateServiceStateFromSyncStatusCode(status, used_network);
 
   if (GetMetadataDatabase()) {
-    // TODO(peria): Post task
-    sync_engine_->NotifyLastOperationStatus();
+    FOR_EACH_OBSERVER(
+        Observer, observers_,
+        OnPendingFileListUpdated(GetMetadataDatabase()->CountDirtyTracker()));
   }
 }
 
@@ -339,9 +349,13 @@ SyncTaskManager* SyncWorker::GetSyncTaskManager() {
   return task_manager_.get();
 }
 
+void SyncWorker::AddObserver(Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
 SyncWorker::SyncWorker(
-    const base::WeakPtr<drive_backend::SyncEngine>& sync_engine,
     const base::FilePath& base_dir,
+    ExtensionServiceInterface* extension_service,
     scoped_ptr<SyncEngineContext> sync_engine_context,
     leveldb::Env* env_override)
     : base_dir_(base_dir),
@@ -354,24 +368,28 @@ SyncWorker::SyncWorker(
       default_conflict_resolution_policy_(
           CONFLICT_RESOLUTION_POLICY_LAST_WRITE_WIN),
       network_available_(false),
+      extension_service_(extension_service),
       context_(sync_engine_context.Pass()),
-      sync_engine_(sync_engine),
       weak_ptr_factory_(this) {}
 
 void SyncWorker::DoDisableApp(const std::string& app_id,
                               const SyncStatusCallback& callback) {
-  if (GetMetadataDatabase())
+  if (GetMetadataDatabase()) {
     GetMetadataDatabase()->DisableApp(app_id, callback);
-  else
-    callback.Run(SYNC_STATUS_OK);
+  } else {
+    context_->GetUiTaskRunner()->PostTask(
+        FROM_HERE, base::Bind(callback, SYNC_STATUS_OK));
+  }
 }
 
 void SyncWorker::DoEnableApp(const std::string& app_id,
                              const SyncStatusCallback& callback) {
-  if (GetMetadataDatabase())
+  if (GetMetadataDatabase()) {
     GetMetadataDatabase()->EnableApp(app_id, callback);
-  else
-    callback.Run(SYNC_STATUS_OK);
+  } else {
+    context_->GetUiTaskRunner()->PostTask(
+        FROM_HERE, base::Bind(callback, SYNC_STATUS_OK));
+  }
 }
 
 void SyncWorker::PostInitializeTask() {
@@ -381,14 +399,15 @@ void SyncWorker::PostInitializeTask() {
   // already initialized when it runs.
   SyncEngineInitializer* initializer =
       new SyncEngineInitializer(context_.get(),
-                                context_->GetBlockingTaskRunner(),
+                                context_->GetFileTaskRunner(),
                                 base_dir_.Append(kDatabaseName),
                                 env_override_);
   task_manager_->ScheduleSyncTask(
       FROM_HERE,
       scoped_ptr<SyncTask>(initializer),
       SyncTaskManager::PRIORITY_HIGH,
-      base::Bind(&SyncWorker::DidInitialize, weak_ptr_factory_.GetWeakPtr(),
+      base::Bind(&SyncWorker::DidInitialize,
+                 weak_ptr_factory_.GetWeakPtr(),
                  initializer));
 }
 
@@ -410,8 +429,52 @@ void SyncWorker::DidInitialize(SyncEngineInitializer* initializer,
   if (metadata_database)
     context_->SetMetadataDatabase(metadata_database.Pass());
 
-  // TODO(peria): Post task
-  sync_engine_->UpdateRegisteredApps();
+  UpdateRegisteredApp();
+}
+
+void SyncWorker::UpdateRegisteredApp() {
+  if (extension_service_)
+    return;
+
+  MetadataDatabase* metadata_db = GetMetadataDatabase();
+  DCHECK(metadata_db);
+  std::vector<std::string> app_ids;
+  metadata_db->GetRegisteredAppIDs(&app_ids);
+
+  // Update the status of every origin using status from ExtensionService.
+  for (std::vector<std::string>::const_iterator itr = app_ids.begin();
+       itr != app_ids.end(); ++itr) {
+    const std::string& app_id = *itr;
+        GURL origin =
+            extensions::Extension::GetBaseURLFromExtensionId(app_id);
+
+        // TODO(tzik): Switch |extension_service_| to a wrapper and make this
+        // call async.
+        if (!extension_service_->GetInstalledExtension(app_id)) {
+          // Extension has been uninstalled.
+          // (At this stage we can't know if it was unpacked extension or not,
+          // so just purge the remote folder.)
+          UninstallOrigin(origin,
+                          RemoteFileSyncService::UNINSTALL_AND_PURGE_REMOTE,
+                          base::Bind(&EmptyStatusCallback));
+          continue;
+        }
+        FileTracker tracker;
+        if (!metadata_db->FindAppRootTracker(app_id, &tracker)) {
+          // App will register itself on first run.
+          continue;
+        }
+
+        // TODO(tzik): Switch |extension_service_| to a wrapper and make this
+        // call async.
+        bool is_app_enabled = extension_service_->IsExtensionEnabled(app_id);
+            bool is_app_root_tracker_enabled =
+                tracker.tracker_kind() == TRACKER_KIND_APP_ROOT;
+            if (is_app_enabled && !is_app_root_tracker_enabled)
+              EnableOrigin(origin, base::Bind(&EmptyStatusCallback));
+            else if (!is_app_enabled && is_app_root_tracker_enabled)
+              DisableOrigin(origin, base::Bind(&EmptyStatusCallback));
+  }
 }
 
 void SyncWorker::DidProcessRemoteChange(RemoteToLocalSyncer* syncer,
@@ -425,8 +488,13 @@ void SyncWorker::DidProcessRemoteChange(RemoteToLocalSyncer* syncer,
   }
 
   if (status == SYNC_STATUS_OK) {
-    // TODO(peria): Post task
-    sync_engine_->DidProcessRemoteChange(syncer);
+    FOR_EACH_OBSERVER(
+        Observer, observers_,
+        OnFileStatusChanged(
+            syncer->url(),
+            SYNC_FILE_STATUS_SYNCED,
+            syncer->sync_action(),
+            SYNC_DIRECTION_REMOTE_TO_LOCAL));
 
     if (syncer->sync_action() == SYNC_ACTION_DELETED &&
         syncer->url().is_valid() &&
@@ -441,8 +509,20 @@ void SyncWorker::DidProcessRemoteChange(RemoteToLocalSyncer* syncer,
 void SyncWorker::DidApplyLocalChange(LocalToRemoteSyncer* syncer,
                                      const SyncStatusCallback& callback,
                                      SyncStatusCode status) {
-  // TODO(peria): Post task
-  sync_engine_->DidApplyLocalChange(syncer, status);
+  if ((status == SYNC_STATUS_OK || status == SYNC_STATUS_RETRY) &&
+      syncer->url().is_valid() &&
+      syncer->sync_action() != SYNC_ACTION_NONE) {
+    fileapi::FileSystemURL updated_url = syncer->url();
+    if (!syncer->target_path().empty()) {
+      updated_url = CreateSyncableFileSystemURL(syncer->url().origin(),
+                                                syncer->target_path());
+    }
+    FOR_EACH_OBSERVER(Observer, observers_,
+                      OnFileStatusChanged(updated_url,
+                                          SYNC_FILE_STATUS_SYNCED,
+                                          syncer->sync_action(),
+                                          SYNC_DIRECTION_LOCAL_TO_REMOTE));
+  }
 
   if (status == SYNC_STATUS_UNKNOWN_ORIGIN && syncer->url().is_valid()) {
     RegisterOrigin(syncer->url().origin(),
@@ -462,12 +542,6 @@ void SyncWorker::DidApplyLocalChange(LocalToRemoteSyncer* syncer,
     time_to_check_changes_ =
         base::TimeTicks::Now() +
         base::TimeDelta::FromSeconds(kListChangesRetryDelaySeconds);
-  }
-
-  if (status != SYNC_STATUS_OK &&
-      status != SYNC_STATUS_NO_CHANGE_TO_SYNC) {
-    callback.Run(status);
-    return;
   }
 
   if (status == SYNC_STATUS_OK)
@@ -583,8 +657,10 @@ void SyncWorker::UpdateServiceState(RemoteServiceState state,
   util::Log(logging::LOG_VERBOSE, FROM_HERE,
             "Service state changed: %d->%d: %s",
             old_state, GetCurrentState(), description.c_str());
-  // TODO(peria): Post task
-  sync_engine_->UpdateServiceState(description);
+
+  FOR_EACH_OBSERVER(
+      Observer, observers_,
+      UpdateServiceState(GetCurrentState(), description));
 }
 
 }  // namespace drive_backend

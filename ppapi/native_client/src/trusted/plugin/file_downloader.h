@@ -27,7 +27,6 @@ class Plugin;
 
 typedef enum {
   DOWNLOAD_TO_FILE = 0,
-  DOWNLOAD_TO_BUFFER,
   DOWNLOAD_TO_BUFFER_AND_STREAM,
   DOWNLOAD_NONE
 } DownloadMode;
@@ -79,9 +78,7 @@ class FileDownloader {
         stream_finish_callback_(pp::BlockUntilComplete()),
         file_io_private_interface_(NULL),
         url_loader_trusted_interface_(NULL),
-        open_time_(-1),
         mode_(DOWNLOAD_NONE),
-        url_scheme_(PP_SCHEME_OTHER),
         data_stream_callback_source_(NULL) {}
   ~FileDownloader() {}
 
@@ -133,9 +130,6 @@ class FileDownloader {
   // delegate does not have to close it.
   struct NaClFileInfo GetFileInfo();
 
-  // Returns the time delta between the call to Open() and this function.
-  int64_t TimeSinceOpenMilliseconds() const;
-
   // Returns the url passed to Open().
   const nacl::string& url() const { return url_; }
 
@@ -161,9 +155,6 @@ class FileDownloader {
   bool GetDownloadProgress(int64_t* bytes_received,
                            int64_t* total_bytes_to_be_received) const;
 
-  // Returns the buffer used for DOWNLOAD_TO_BUFFER mode.
-  const std::deque<char>& buffer() const { return buffer_; }
-
   int status_code() const { return status_code_; }
   nacl::string GetResponseHeaders() const;
 
@@ -178,14 +169,12 @@ class FileDownloader {
   //   1) Ask the browser to start streaming |url_| as a file.
   //   2) Ask the browser to finish streaming if headers indicate success.
   //   3) Ask the browser to open the file, so we can get the file descriptor.
-  // For DOWNLOAD_TO_BUFFER, the process is very similar:
+  // For DOWNLOAD_TO_BUFFER_AND_STREAM, the process is very similar:
   //   1) Ask the browser to start streaming |url_| to an internal buffer.
   //   2) Ask the browser to finish streaming to |temp_buffer_| on success.
-  //   3) Wait for streaming to finish, filling |buffer_| incrementally.
+  //   3) Wait for streaming to finish, passing the data directly to the user.
   // Each step is done asynchronously using callbacks.  We create callbacks
   // through a factory to take advantage of ref-counting.
-  // DOWNLOAD_STREAM is similar to DOWNLOAD_TO_BUFFER except the downloaded
-  // data is passed directly to the user instead of saved in a buffer.
   // The public Open*() functions start step 1), and the public FinishStreaming
   // function proceeds to step 2) and 3).
   bool InitialResponseIsValid();
@@ -208,13 +197,10 @@ class FileDownloader {
   const PPB_URLLoaderTrusted* url_loader_trusted_interface_;
   pp::URLLoader url_loader_;
   pp::CompletionCallbackFactory<FileDownloader> callback_factory_;
-  int64_t open_time_;
   int32_t status_code_;
   DownloadMode mode_;
   static const uint32_t kTempBufferSize = 16384;
   std::vector<char> temp_buffer_;
-  std::deque<char> buffer_;
-  PP_UrlSchemeType url_scheme_;
   StreamCallbackSource* data_stream_callback_source_;
   NaClFileInfoAutoCloser file_info_;
 };

@@ -478,6 +478,13 @@ static bool LayerShouldBeSkipped(LayerType* layer, bool layer_is_drawn) {
 
 static inline bool SubtreeShouldBeSkipped(LayerImpl* layer,
                                           bool layer_is_drawn) {
+  // If the layer transform is not invertible, it should not be drawn.
+  // TODO(ajuma): Correctly process subtrees with singular transform for the
+  // case where we may animate to a non-singular transform and wish to
+  // pre-raster.
+  if (!layer->transform_is_invertible() && !layer->TransformIsAnimating())
+    return true;
+
   // When we need to do a readback/copy of a layer's output, we can not skip
   // it or any of its ancestors.
   if (layer->draw_properties().layer_or_descendant_has_copy_request)
@@ -501,6 +508,10 @@ static inline bool SubtreeShouldBeSkipped(LayerImpl* layer,
 }
 
 static inline bool SubtreeShouldBeSkipped(Layer* layer, bool layer_is_drawn) {
+  // If the layer transform is not invertible, it should not be drawn.
+  if (!layer->transform_is_invertible() && !layer->TransformIsAnimating())
+    return true;
+
   // When we need to do a readback/copy of a layer's output, we can not skip
   // it or any of its ancestors.
   if (layer->draw_properties().layer_or_descendant_has_copy_request)
@@ -1164,6 +1175,12 @@ static void PreCalculateMetaInformation(
     PreCalculateMetaInformationRecursiveData* recursive_data) {
   bool has_delegated_content = layer->HasDelegatedContent();
   int num_descendants_that_draw_content = 0;
+
+  if (!layer->transform_is_invertible()) {
+    // Layers with singular transforms should not be drawn, the whole subtree
+    // can be skipped.
+    return;
+  }
 
   if (has_delegated_content) {
     // Layers with delegated content need to be treated as if they have as
@@ -2437,6 +2454,50 @@ static bool PointIsClippedBySurfaceOrClipRect(
   return false;
 }
 
+static bool PointHitsLayer(LayerImpl* layer,
+                           const gfx::PointF& screen_space_point) {
+  gfx::RectF content_rect(layer->content_bounds());
+  if (!PointHitsRect(
+          screen_space_point, layer->screen_space_transform(), content_rect))
+    return false;
+
+  // At this point, we think the point does hit the layer, but we need to walk
+  // up the parents to ensure that the layer was not clipped in such a way
+  // that the hit point actually should not hit the layer.
+  if (PointIsClippedBySurfaceOrClipRect(screen_space_point, layer))
+    return false;
+
+  // Skip the HUD layer.
+  if (layer == layer->layer_tree_impl()->hud_layer())
+    return false;
+
+  return true;
+}
+
+LayerImpl* LayerTreeHostCommon::FindFirstScrollingLayerThatIsHitByPoint(
+    const gfx::PointF& screen_space_point,
+    const LayerImplList& render_surface_layer_list) {
+  typedef LayerIterator<LayerImpl> LayerIteratorType;
+  LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list);
+  for (LayerIteratorType it =
+           LayerIteratorType::Begin(&render_surface_layer_list);
+       it != end;
+       ++it) {
+    // We don't want to consider render_surfaces for hit testing.
+    if (!it.represents_itself())
+      continue;
+
+    LayerImpl* current_layer = (*it);
+    if (!PointHitsLayer(current_layer, screen_space_point))
+      continue;
+
+    if (current_layer->scrollable())
+      return current_layer;
+  }
+
+  return NULL;
+}
+
 LayerImpl* LayerTreeHostCommon::FindLayerThatIsHitByPoint(
     const gfx::PointF& screen_space_point,
     const LayerImplList& render_surface_layer_list) {
@@ -2453,21 +2514,7 @@ LayerImpl* LayerTreeHostCommon::FindLayerThatIsHitByPoint(
       continue;
 
     LayerImpl* current_layer = (*it);
-
-    gfx::RectF content_rect(current_layer->content_bounds());
-    if (!PointHitsRect(screen_space_point,
-                       current_layer->screen_space_transform(),
-                       content_rect))
-      continue;
-
-    // At this point, we think the point does hit the layer, but we need to walk
-    // up the parents to ensure that the layer was not clipped in such a way
-    // that the hit point actually should not hit the layer.
-    if (PointIsClippedBySurfaceOrClipRect(screen_space_point, current_layer))
-      continue;
-
-    // Skip the HUD layer.
-    if (current_layer == current_layer->layer_tree_impl()->hud_layer())
+    if (!PointHitsLayer(current_layer, screen_space_point))
       continue;
 
     found_layer = current_layer;
@@ -2479,24 +2526,37 @@ LayerImpl* LayerTreeHostCommon::FindLayerThatIsHitByPoint(
   return found_layer;
 }
 
+// This may be generalized in the future, but we know at the very least that
+// hits cannot pass through scrolling nor opaque layers.
+static bool OpaqueToHitTesting(const LayerImpl* layer) {
+  return layer->scrollable() || layer->contents_opaque();
+}
+
 LayerImpl* LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
     const gfx::PointF& screen_space_point,
     const LayerImplList& render_surface_layer_list) {
-  // First find out which layer was hit from the saved list of visible layers
-  // in the most recent frame.
-  LayerImpl* layer_impl = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      screen_space_point,
-      render_surface_layer_list);
+  typedef LayerIterator<LayerImpl> LayerIteratorType;
+  LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list);
+  for (LayerIteratorType it =
+           LayerIteratorType::Begin(&render_surface_layer_list);
+       it != end;
+       ++it) {
+    // We don't want to consider render_surfaces for hit testing.
+    if (!it.represents_itself())
+      continue;
 
-  // Walk up the hierarchy and look for a layer with a touch event handler
-  // region that the given point hits.
-  // This walk may not be necessary anymore: http://crbug.com/310817
-  for (; layer_impl; layer_impl = layer_impl->parent()) {
+    LayerImpl* current_layer = (*it);
+    if (!PointHitsLayer(current_layer, screen_space_point))
+      continue;
+
     if (LayerTreeHostCommon::LayerHasTouchEventHandlersAt(screen_space_point,
-                                                          layer_impl))
+                                                          current_layer))
+      return current_layer;
+
+    if (OpaqueToHitTesting(current_layer))
       break;
   }
-  return layer_impl;
+  return NULL;
 }
 
 bool LayerTreeHostCommon::LayerHasTouchEventHandlersAt(

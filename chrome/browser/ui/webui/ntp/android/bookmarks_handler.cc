@@ -13,6 +13,7 @@
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
@@ -450,11 +451,11 @@ void BookmarksHandler::HandleCreateHomeScreenBookmarkShortcut(
   FaviconService* favicon_service = FaviconServiceFactory::GetForProfile(
       profile, Profile::EXPLICIT_ACCESS);
   favicon_service->GetRawFaviconForURL(
-      FaviconService::FaviconForURLParams(
-          node->url(),
-          chrome::TOUCH_PRECOMPOSED_ICON | chrome::TOUCH_ICON |
-              chrome::FAVICON,
-          0),  // request the largest icon.
+      FaviconService::FaviconForURLParams(node->url(),
+                                          favicon_base::TOUCH_PRECOMPOSED_ICON |
+                                              favicon_base::TOUCH_ICON |
+                                              favicon_base::FAVICON,
+                                          0),  // request the largest icon.
       ui::SCALE_FACTOR_100P,  // density doesn't matter for the largest icon.
       base::Bind(&BookmarksHandler::OnShortcutFaviconDataAvailable,
                  base::Unretained(this),
@@ -464,7 +465,7 @@ void BookmarksHandler::HandleCreateHomeScreenBookmarkShortcut(
 
 void BookmarksHandler::OnShortcutFaviconDataAvailable(
     const BookmarkNode* node,
-    const chrome::FaviconBitmapResult& bitmap_result) {
+    const favicon_base::FaviconBitmapResult& bitmap_result) {
   if (!AreModelsLoaded())
     return;
 
@@ -520,7 +521,7 @@ const BookmarkNode* BookmarksHandler::GetNodeByID(
   if (is_partner)
     return partner_bookmarks_shim_->GetNodeByID(id);
 
-  return bookmark_model_->GetNodeByID(id);
+  return GetBookmarkNodeByID(bookmark_model_, id);
 }
 
 const BookmarkNode* BookmarksHandler::GetParentOf(

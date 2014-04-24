@@ -7,15 +7,22 @@
 #include <string>
 
 #include "base/values.h"
+#include "chrome/browser/chromeos/file_system_provider/provided_file_system_interface.h"
+#include "chrome/browser/chromeos/file_system_provider/request_manager.h"
 #include "chrome/browser/chromeos/file_system_provider/service.h"
 #include "chrome/common/extensions/api/file_system_provider.h"
 #include "chrome/common/extensions/api/file_system_provider_internal.h"
+
+using chromeos::file_system_provider::ProvidedFileSystemInterface;
+using chromeos::file_system_provider::RequestManager;
+using chromeos::file_system_provider::Service;
 
 namespace extensions {
 namespace {
 
 // Error names from
 // http://www.w3.org/TR/file-system-api/#errors-and-exceptions
+const char kNotFoundErrorName[] = "NotFoundError";
 const char kSecurityErrorName[] = "SecurityError";
 
 // Error messages.
@@ -96,8 +103,7 @@ bool FileSystemProviderMountFunction::RunImpl() {
     return false;
   }
 
-  chromeos::file_system_provider::Service* service =
-      chromeos::file_system_provider::Service::Get(GetProfile());
+  Service* service = Service::Get(GetProfile());
   DCHECK(service);
 
   int file_system_id =
@@ -119,7 +125,6 @@ bool FileSystemProviderMountFunction::RunImpl() {
   // Don't append an error on success.
 
   SetResult(result);
-  SendResponse(true);
   return true;
 }
 
@@ -128,8 +133,7 @@ bool FileSystemProviderUnmountFunction::RunImpl() {
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  chromeos::file_system_provider::Service* service =
-      chromeos::file_system_provider::Service::Get(GetProfile());
+  Service* service = Service::Get(GetProfile());
   DCHECK(service);
 
   if (!service->UnmountFileSystem(extension_id(), params->file_system_id)) {
@@ -142,7 +146,6 @@ bool FileSystemProviderUnmountFunction::RunImpl() {
 
   base::ListValue* result = new base::ListValue();
   SetResult(result);
-  SendResponse(true);
   return true;
 }
 
@@ -151,15 +154,25 @@ bool FileSystemProviderInternalUnmountRequestedSuccessFunction::RunImpl() {
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  chromeos::file_system_provider::Service* service =
-      chromeos::file_system_provider::Service::Get(GetProfile());
+  Service* service = Service::Get(GetProfile());
   DCHECK(service);
 
-  if (!service->FulfillRequest(extension_id(),
-                               params->file_system_id,
-                               params->request_id,
-                               scoped_ptr<base::DictionaryValue>(),
-                               false /* has_more */)) {
+  ProvidedFileSystemInterface* file_system =
+      service->GetProvidedFileSystem(extension_id(), params->file_system_id);
+  if (!file_system) {
+    base::ListValue* result = new base::ListValue();
+    result->Append(
+        CreateError(kNotFoundErrorName, kResponseFailedErrorMessage));
+    SetResult(result);
+    return false;
+  }
+
+  RequestManager* request_manager = file_system->GetRequestManager();
+  DCHECK(request_manager);
+
+  if (!request_manager->FulfillRequest(params->request_id,
+                                       scoped_ptr<base::DictionaryValue>(),
+                                       false /* has_more */)) {
     // TODO(mtomasz): Pass more detailed errors, rather than just a bool.
     base::ListValue* result = new base::ListValue();
     result->Append(
@@ -170,7 +183,6 @@ bool FileSystemProviderInternalUnmountRequestedSuccessFunction::RunImpl() {
 
   base::ListValue* result = new base::ListValue();
   SetResult(result);
-  SendResponse(true);
   return true;
 }
 
@@ -179,14 +191,24 @@ bool FileSystemProviderInternalUnmountRequestedErrorFunction::RunImpl() {
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  chromeos::file_system_provider::Service* service =
-      chromeos::file_system_provider::Service::Get(GetProfile());
+  Service* service = Service::Get(GetProfile());
   DCHECK(service);
 
-  if (!service->RejectRequest(extension_id(),
-                              params->file_system_id,
-                              params->request_id,
-                              ProviderErrorToFileError(params->error))) {
+  ProvidedFileSystemInterface* file_system =
+      service->GetProvidedFileSystem(extension_id(), params->file_system_id);
+  if (!file_system) {
+    base::ListValue* result = new base::ListValue();
+    result->Append(
+        CreateError(kNotFoundErrorName, kResponseFailedErrorMessage));
+    SetResult(result);
+    return false;
+  }
+
+  RequestManager* request_manager = file_system->GetRequestManager();
+  DCHECK(request_manager);
+
+  if (!request_manager->RejectRequest(
+          params->request_id, ProviderErrorToFileError(params->error))) {
     // TODO(mtomasz): Pass more detailed errors, rather than just a bool.
     base::ListValue* result = new base::ListValue();
     result->Append(
@@ -197,7 +219,6 @@ bool FileSystemProviderInternalUnmountRequestedErrorFunction::RunImpl() {
 
   base::ListValue* result = new base::ListValue();
   SetResult(result);
-  SendResponse(true);
   return true;
 }
 

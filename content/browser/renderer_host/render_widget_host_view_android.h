@@ -25,6 +25,7 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "ui/base/android/window_android_observer.h"
+#include "ui/events/gesture_detection/filtered_gesture_provider.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/vector2d_f.h"
 
@@ -61,6 +62,7 @@ class RenderWidgetHostViewAndroid
       public BrowserAccessibilityDelegate,
       public cc::DelegatedFrameResourceCollectionClient,
       public ImageTransportFactoryAndroidObserver,
+      public ui::GestureProviderClient,
       public ui::WindowAndroidObserver,
       public DelegatedFrameEvictorClient {
  public:
@@ -119,7 +121,6 @@ class RenderWidgetHostViewAndroid
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
   virtual void SelectionRootBoundsChanged(const gfx::Rect& bounds) OVERRIDE;
   virtual void ScrollOffsetChanged() OVERRIDE;
-  virtual BackingStore* AllocBackingStore(const gfx::Size& size) OVERRIDE;
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
@@ -152,6 +153,8 @@ class RenderWidgetHostViewAndroid
       bool has_horizontal_scrollbar) OVERRIDE;
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
+  virtual void UnhandledWheelEvent(
+      const blink::WebMouseWheelEvent& event) OVERRIDE;
   virtual InputEventAckState FilterInputEvent(
       const blink::WebInputEvent& input_event) OVERRIDE;
   virtual void OnSetNeedsFlushInput() OVERRIDE;
@@ -188,6 +191,9 @@ class RenderWidgetHostViewAndroid
   // cc::DelegatedFrameResourceCollectionClient implementation.
   virtual void UnusedResourcesAreAvailable() OVERRIDE;
 
+  // ui::GestureProviderClient implementation.
+  virtual void OnGestureEvent(const ui::GestureEventData& gesture) OVERRIDE;
+
   // ui::WindowAndroidObserver implementation.
   virtual void OnCompositingDidCommit() OVERRIDE;
   virtual void OnAttachCompositor() OVERRIDE {}
@@ -217,6 +223,11 @@ class RenderWidgetHostViewAndroid
   void OnStartContentIntent(const GURL& content_url);
   void OnSetNeedsBeginFrame(bool enabled);
   void OnSmartClipDataExtracted(const base::string16& result);
+
+  bool OnTouchEvent(const ui::MotionEvent& event);
+  void ResetGestureDetection();
+  void SetDoubleTapSupportEnabled(bool enabled);
+  void SetMultiTouchZoomSupportEnabled(bool enabled);
 
   long GetNativeImeAdapter();
 
@@ -250,7 +261,7 @@ class RenderWidgetHostViewAndroid
   void SendDelegatedFrameAck(uint32 output_surface_id);
   void SendReturnedDelegatedResources(uint32 output_surface_id);
 
-  void UpdateContentViewCoreFrameMetadata(
+  void OnFrameMetadataUpdated(
       const cc::CompositorFrameMetadata& frame_metadata);
   void ComputeContentsSize(const cc::CompositorFrameMetadata& frame_metadata);
   void ResetClipping();
@@ -335,6 +346,10 @@ class RenderWidgetHostViewAndroid
   // Note: |overscroll_effect_| will never be NULL, even if it's never enabled.
   scoped_ptr<OverscrollGlow> overscroll_effect_;
 
+  // Provides gesture synthesis given a stream of touch events (derived from
+  // Android MotionEvent's) and touch event acks.
+  ui::FilteredGestureProvider gesture_provider_;
+
   bool flush_input_requested_;
 
   int accelerated_surface_route_id_;
@@ -347,7 +362,7 @@ class RenderWidgetHostViewAndroid
   scoped_ptr<DelegatedFrameEvictor> frame_evictor_;
 
   size_t locks_on_frame_count_;
-  bool root_window_destroyed_;
+  bool observing_root_window_;
 
   struct LastFrameInfo {
     LastFrameInfo(uint32 output_id,

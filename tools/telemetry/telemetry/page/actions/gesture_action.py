@@ -2,9 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import telemetry.core.timeline.bounds as timeline_bounds
 from telemetry.page.actions import page_action
 from telemetry.page.actions import wait
+from telemetry import decorators
+from telemetry.page.actions import action_runner
+from telemetry.web_perf import timeline_interaction_record as tir_module
 
 class GestureAction(page_action.PageAction):
   def __init__(self, attributes=None):
@@ -14,21 +16,17 @@ class GestureAction(page_action.PageAction):
     else:
       self.wait_action = None
 
-    assert self.wait_until is None or self.wait_action is None, '''gesture
-cannot have wait_after and wait_until at the same time.'''
-
+    assert self.wait_until is None or self.wait_action is None, (
+      'gesture cannot have wait_after and wait_until at the same time.')
 
   def RunAction(self, page, tab):
-    tab.ExecuteJavaScript(
-        'console.time("' + self._GetUniqueTimelineMarkerName() + '")')
-
+    runner = action_runner.ActionRunner(None, tab)
+    interaction_name = 'Gesture_%s' % self.__class__.__name__
+    runner.BeginInteraction(interaction_name, [tir_module.IS_SMOOTH])
     self.RunGesture(page, tab)
-
-    tab.ExecuteJavaScript(
-        'console.timeEnd("' + self._GetUniqueTimelineMarkerName() + '")')
-
     if self.wait_action:
       self.wait_action.RunAction(page, tab)
+    runner.EndInteraction(interaction_name, [tir_module.IS_SMOOTH])
 
   def RunGesture(self, page, tab):
     raise NotImplementedError()
@@ -38,36 +36,18 @@ cannot have wait_after and wait_until at the same time.'''
     gesture_source_type = tab.browser.synthetic_gesture_source_type
     return 'chrome.gpuBenchmarking.' + gesture_source_type.upper() + '_INPUT'
 
-  def GetActiveRangeOnTimeline(self, timeline):
-    action_range = super(GestureAction, self).GetActiveRangeOnTimeline(timeline)
-    if action_range.is_empty:
-      raise page_action.PageActionInvalidTimelineMarker(
-          'Gesture action requires timeline marker to determine active range.')
+  @staticmethod
+  @decorators.Cache
+  def IsGestureSourceTypeSupported(tab, gesture_source_type):
+    # TODO(dominikg): remove once support for
+    #                 'chrome.gpuBenchmarking.gestureSourceTypeSupported' has
+    #                 been rolled into reference build.
+    if tab.EvaluateJavaScript("""
+        typeof chrome.gpuBenchmarking.gestureSourceTypeSupported ===
+            'undefined'"""):
+      return True
 
-    # The synthetic gesture controller inserts a trace marker to precisely
-    # demarcate when the gesture was running. Find the trace marker that belongs
-    # to this action. We check for overlap, not inclusion, because
-    # gesture_actions can start/end slightly outside the action_range on
-    # Windows. This problem is probably caused by a race condition between
-    # the browser and renderer process submitting the trace events for the
-    # markers.
-    gesture_events = [
-        ev for ev
-        in timeline.GetAllEventsOfName('SyntheticGestureController::running',
-                                       True)
-        if ev.start <= action_range.max and
-           ev.start + ev.duration >= action_range.min ]
-    if len(gesture_events) == 0:
-      raise page_action.PageActionInvalidTimelineMarker(
-          'No valid synthetic gesture marker found in timeline.')
-    if len(gesture_events) > 1:
-      raise page_action.PageActionInvalidTimelineMarker(
-          'More than one possible synthetic gesture marker found in timeline.')
-
-    active_range = timeline_bounds.Bounds.CreateFromEvent(gesture_events[0])
-
-    if self.wait_action:
-      active_range.AddBounds(
-          self.wait_action.GetActiveRangeOnTimeline(timeline))
-
-    return active_range
+    return tab.EvaluateJavaScript("""
+        chrome.gpuBenchmarking.gestureSourceTypeSupported(
+            chrome.gpuBenchmarking.%s_INPUT)"""
+        % (gesture_source_type.upper()))

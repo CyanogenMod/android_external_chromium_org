@@ -28,6 +28,7 @@ LOCAL_SRC_FILES := \
 	mojo/common/environment_data.cc \
 	mojo/common/handle_watcher.cc \
 	mojo/common/message_pump_mojo.cc \
+	mojo/common/mojo_channel_init.cc \
 	mojo/common/time_helper.cc
 
 
@@ -223,7 +224,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed

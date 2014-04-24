@@ -360,6 +360,7 @@ class Browser : public TabStripModelObserver,
   // See the description of
   // FullscreenController::ToggleFullscreenModeWithExtension.
   void ToggleFullscreenModeWithExtension(const GURL& extension_url);
+
 #if defined(OS_WIN)
   // See the description of FullscreenController::ToggleMetroSnapMode.
   void SetMetroSnapMode(bool enable);
@@ -427,6 +428,7 @@ class Browser : public TabStripModelObserver,
 
   // Overridden from content::WebContentsDelegate:
   virtual bool CanOverscrollContent() const OVERRIDE;
+  virtual bool ShouldPreserveAbortedURLs(content::WebContents* source) OVERRIDE;
   virtual bool PreHandleKeyboardEvent(
       content::WebContents* source,
       const content::NativeWebKeyboardEvent& event,
@@ -486,6 +488,7 @@ class Browser : public TabStripModelObserver,
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, ConvertTabToAppShortcut);
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, OpenAppWindowLikeNtp);
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, AppIdSwitch);
+  FRIEND_TEST_ALL_PREFIXES(BrowserTest, ShouldShowLocationBar);
   FRIEND_TEST_ALL_PREFIXES(FullscreenControllerTest,
                            TabEntersPresentationModeFromWindowed);
   FRIEND_TEST_ALL_PREFIXES(FullscreenExitBubbleControllerTest,

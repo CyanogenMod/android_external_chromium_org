@@ -254,7 +254,6 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       overhang_ui_resource_id_(0),
       overdraw_bottom_height_(0.f),
       device_viewport_valid_for_tile_management_(true),
-      external_stencil_test_enabled_(false),
       animation_registrar_(AnimationRegistrar::Create()),
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
       micro_benchmark_controller_(this),
@@ -570,12 +569,10 @@ static void AppendQuadsForLayer(
     LayerImpl* layer,
     const OcclusionTracker<LayerImpl>& occlusion_tracker,
     AppendQuadsData* append_quads_data) {
-  bool for_surface = false;
   QuadCuller quad_culler(&target_render_pass->quad_list,
                          &target_render_pass->shared_quad_state_list,
                          layer,
-                         occlusion_tracker,
-                         for_surface);
+                         occlusion_tracker);
   layer->AppendQuads(&quad_culler, append_quads_data);
 }
 
@@ -585,12 +582,10 @@ static void AppendQuadsForRenderSurfaceLayer(
     const RenderPass* contributing_render_pass,
     const OcclusionTracker<LayerImpl>& occlusion_tracker,
     AppendQuadsData* append_quads_data) {
-  bool for_surface = true;
   QuadCuller quad_culler(&target_render_pass->quad_list,
                          &target_render_pass->shared_quad_state_list,
                          layer,
-                         occlusion_tracker,
-                         for_surface);
+                         occlusion_tracker);
 
   bool is_replica = false;
   layer->render_surface()->AppendQuads(&quad_culler,
@@ -633,12 +628,10 @@ static void AppendQuadsToFillScreen(
     screen_background_color_region.Intersect(root_scroll_layer_rect);
   }
 
-  bool for_surface = false;
   QuadCuller quad_culler(&target_render_pass->quad_list,
                          &target_render_pass->shared_quad_state_list,
                          root_layer,
-                         occlusion_tracker,
-                         for_surface);
+                         occlusion_tracker);
 
   // Manually create the quad state for the gutter quads, as the root layer
   // doesn't have any bounds and so can't generate this itself.
@@ -670,7 +663,7 @@ static void AppendQuadsToFillScreen(
                  visible_screen_space_rect,
                  screen_background_color,
                  false);
-    quad_culler.MaybeAppend(quad.PassAs<DrawQuad>());
+    quad_culler.Append(quad.PassAs<DrawQuad>());
   }
   for (Region::Iterator fill_rects(overhang_region);
        fill_rects.has_rect();
@@ -698,7 +691,7 @@ static void AppendQuadsToFillScreen(
         screen_background_color,
         vertex_opacity,
         false);
-    quad_culler.MaybeAppend(tex_quad.PassAs<DrawQuad>());
+    quad_culler.Append(tex_quad.PassAs<DrawQuad>());
   }
 }
 
@@ -1301,8 +1294,8 @@ void LayerTreeHostImpl::DidSwapBuffers() {
   client_->DidSwapBuffersOnImplThread();
 }
 
-void LayerTreeHostImpl::OnSwapBuffersComplete() {
-  client_->OnSwapBuffersCompleteOnImplThread();
+void LayerTreeHostImpl::DidSwapBuffersComplete() {
+  client_->DidSwapBuffersCompleteOnImplThread();
 }
 
 void LayerTreeHostImpl::ReclaimResources(const CompositorFrameAck* ack) {
@@ -1788,19 +1781,18 @@ void LayerTreeHostImpl::CreateAndSetRenderer(
     renderer_ = SoftwareRenderer::Create(
         this, &settings_, output_surface, resource_provider);
   }
+  DCHECK(renderer_);
 
-  if (renderer_) {
-    renderer_->SetVisible(visible_);
-    SetFullRootLayerDamage();
+  renderer_->SetVisible(visible_);
+  SetFullRootLayerDamage();
 
-    // See note in LayerTreeImpl::UpdateDrawProperties.  Renderer needs to be
-    // initialized to get max texture size.  Also, after releasing resources,
-    // trees need another update to generate new ones.
-    active_tree_->set_needs_update_draw_properties();
-    if (pending_tree_)
-      pending_tree_->set_needs_update_draw_properties();
-    client_->UpdateRendererCapabilitiesOnImplThread();
-  }
+  // See note in LayerTreeImpl::UpdateDrawProperties.  Renderer needs to be
+  // initialized to get max texture size.  Also, after releasing resources,
+  // trees need another update to generate new ones.
+  active_tree_->set_needs_update_draw_properties();
+  if (pending_tree_)
+    pending_tree_->set_needs_update_draw_properties();
+  client_->UpdateRendererCapabilitiesOnImplThread();
 }
 
 void LayerTreeHostImpl::CreateAndSetTileManager(
@@ -1880,8 +1872,6 @@ bool LayerTreeHostImpl::InitializeRenderer(
                                settings_.highp_threshold_min,
                                settings_.use_rgba_4444_textures,
                                settings_.texture_id_allocation_chunk_size);
-  if (!resource_provider)
-    return false;
 
   if (output_surface->capabilities().deferred_gl_initialization)
     EnforceZeroBudget(true);
@@ -1889,9 +1879,6 @@ bool LayerTreeHostImpl::InitializeRenderer(
   bool skip_gl_renderer = false;
   CreateAndSetRenderer(
       output_surface.get(), resource_provider.get(), skip_gl_renderer);
-
-  if (!renderer_)
-    return false;
 
   if (settings_.impl_side_painting) {
     CreateAndSetTileManager(
@@ -1901,8 +1888,11 @@ bool LayerTreeHostImpl::InitializeRenderer(
         GetRendererCapabilities().allow_rasterize_on_demand);
   }
 
-  // Setup BeginFrameEmulation if it's not supported natively
-  if (!settings_.begin_impl_frame_scheduling_enabled) {
+  if (!settings_.throttle_frame_production) {
+    // Disable VSync
+    output_surface->SetThrottleFrameProduction(false);
+  } else if (!settings_.begin_impl_frame_scheduling_enabled) {
+    // Setup BeginFrameEmulation if it's not supported natively
     const base::TimeDelta display_refresh_interval =
       base::TimeDelta::FromMicroseconds(
           base::Time::kMicrosecondsPerSecond /
@@ -1910,7 +1900,6 @@ bool LayerTreeHostImpl::InitializeRenderer(
 
     output_surface->InitializeBeginFrameEmulation(
         proxy_->ImplThreadTaskRunner(),
-        settings_.throttle_frame_production,
         display_refresh_interval);
   }
 
@@ -1918,7 +1907,7 @@ bool LayerTreeHostImpl::InitializeRenderer(
       output_surface->capabilities().max_frames_pending;
   if (max_frames_pending <= 0)
     max_frames_pending = OutputSurface::DEFAULT_MAX_FRAMES_PENDING;
-  output_surface->SetMaxFramesPending(max_frames_pending);
+  client_->SetMaxSwapsPendingOnImplThread(max_frames_pending);
 
   resource_provider_ = resource_provider.Pass();
   output_surface_ = output_surface.Pass();
@@ -1937,22 +1926,16 @@ bool LayerTreeHostImpl::DeferredInitialize(
   ReleaseTreeResources();
   renderer_.reset();
 
-  bool resource_provider_success = resource_provider_->InitializeGL();
+  resource_provider_->InitializeGL();
 
-  bool success = resource_provider_success;
-  if (success) {
-    bool skip_gl_renderer = false;
-    CreateAndSetRenderer(
-        output_surface_.get(), resource_provider_.get(), skip_gl_renderer);
-    if (!renderer_)
-      success = false;
-  }
+  bool skip_gl_renderer = false;
+  CreateAndSetRenderer(
+      output_surface_.get(), resource_provider_.get(), skip_gl_renderer);
 
-  if (success) {
-    if (offscreen_context_provider.get() &&
-        !offscreen_context_provider->BindToCurrentThread())
-      success = false;
-  }
+  bool success = true;
+  if (offscreen_context_provider.get() &&
+      !offscreen_context_provider->BindToCurrentThread())
+    success = false;
 
   if (success) {
     EnforceZeroBudget(false);
@@ -1966,19 +1949,18 @@ bool LayerTreeHostImpl::DeferredInitialize(
 
     client_->DidLoseOutputSurfaceOnImplThread();
 
-    if (resource_provider_success) {
-      // If this fails the context provider will be dropped from the output
-      // surface and destroyed. But the GLRenderer expects the output surface
-      // to stick around - and hold onto the context3d - as long as it is alive.
-      // TODO(danakj): Remove the need for this code path: crbug.com/276411
-      renderer_.reset();
+    // If this method fails, the context provider will be dropped from the
+    // output surface and destroyed. But the GLRenderer expects the output
+    // surface to stick around - and hold onto the context3d - as long as it is
+    // alive.
+    // TODO(danakj): Remove the need for this code path: crbug.com/276411
+    renderer_.reset();
 
-      // The resource provider can't stay in GL mode or it tries to clean up GL
-      // stuff, but the context provider is going away on the output surface
-      // which contradicts being in GL mode.
-      // TODO(danakj): Remove the need for this code path: crbug.com/276411
-      resource_provider_->InitializeSoftware();
-    }
+    // The resource provider can't stay in GL mode or it tries to clean up GL
+    // stuff, but the context provider is going away on the output surface
+    // which contradicts being in GL mode.
+    // TODO(danakj): Remove the need for this code path: crbug.com/276411
+    resource_provider_->InitializeSoftware();
   }
 
   SetOffscreenContextProvider(offscreen_context_provider);
@@ -2001,7 +1983,6 @@ void LayerTreeHostImpl::ReleaseGL() {
   bool skip_gl_renderer = true;
   CreateAndSetRenderer(
       output_surface_.get(), resource_provider_.get(), skip_gl_renderer);
-  DCHECK(renderer_);
 
   EnforceZeroBudget(true);
   CreateAndSetTileManager(resource_provider_.get(),
@@ -2140,6 +2121,17 @@ LayerImpl* LayerTreeHostImpl::FindScrollLayerForDeviceViewportPoint(
   return potentially_scrolling_layer_impl;
 }
 
+// Similar to LayerImpl::HasAncestor, but takes into account scroll parents.
+static bool HasScrollAncestor(LayerImpl* child, LayerImpl* scroll_ancestor) {
+  DCHECK(scroll_ancestor);
+  for (LayerImpl* ancestor = child; ancestor;
+       ancestor = NextScrollLayer(ancestor)) {
+    if (ancestor->scrollable())
+      return ancestor == scroll_ancestor;
+  }
+  return false;
+}
+
 InputHandler::ScrollStatus LayerTreeHostImpl::ScrollBegin(
     const gfx::Point& viewport_point,
     InputHandler::ScrollInputType type) {
@@ -2159,6 +2151,15 @@ InputHandler::ScrollStatus LayerTreeHostImpl::ScrollBegin(
   LayerImpl* layer_impl = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
       device_viewport_point,
       active_tree_->RenderSurfaceLayerList());
+
+  if (layer_impl) {
+    LayerImpl* scroll_layer_impl =
+        LayerTreeHostCommon::FindFirstScrollingLayerThatIsHitByPoint(
+            device_viewport_point, active_tree_->RenderSurfaceLayerList());
+    if (scroll_layer_impl && !HasScrollAncestor(layer_impl, scroll_layer_impl))
+      return ScrollUnknown;
+  }
+
   bool scroll_on_main_thread = false;
   LayerImpl* potentially_scrolling_layer_impl =
       FindScrollLayerForDeviceViewportPoint(device_viewport_point,

@@ -8,6 +8,7 @@
 #include <bitset>
 
 #include "net/base/ip_endpoint.h"
+#include "net/base/net_log.h"
 #include "net/base/network_change_notifier.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_protocol.h"
@@ -141,6 +142,7 @@ class NET_EXPORT_PRIVATE QuicConnectionLogger
   // The available type of connection (WiFi, 3G, etc.) when connection was first
   // used.
   const char* const connection_description_;
+
   DISALLOW_COPY_AND_ASSIGN(QuicConnectionLogger);
 };
 

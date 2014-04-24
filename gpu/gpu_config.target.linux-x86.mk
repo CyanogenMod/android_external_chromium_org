@@ -51,7 +51,6 @@ MY_CFLAGS_Debug := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-unknown-pragmas \
 	-msse2 \
 	-mfpmath=sse \
 	-mmmx \
@@ -147,7 +146,6 @@ MY_CFLAGS_Release := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-unknown-pragmas \
 	-msse2 \
 	-mfpmath=sse \
 	-mmmx \
@@ -249,7 +247,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed

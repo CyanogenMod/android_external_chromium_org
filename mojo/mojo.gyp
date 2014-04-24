@@ -59,7 +59,17 @@
           'dependencies': [
             'mojo_aura_demo',
             'mojo_launcher',
+            'mojo_sample_view_manager_app',
             'mojo_view_manager',
+            'mojo_view_manager_unittests',
+          ],
+        }],
+        ['OS == "android"', {
+          'dependencies': [
+            'mojo_public_java',
+            'mojo_system_java',
+            'libmojo_system_java',
+            'mojo_test_apk',
           ],
         }],
       ]
@@ -279,6 +289,8 @@
         'common/message_pump_mojo.cc',
         'common/message_pump_mojo.h',
         'common/message_pump_mojo_handler.h',
+        'common/mojo_channel_init.cc',
+        'common/mojo_channel_init.h',
         'common/time_helper.cc',
         'common/time_helper.h',
       ],
@@ -523,6 +535,8 @@
         'bindings/js/handle.h',
         'bindings/js/support.cc',
         'bindings/js/support.h',
+        'bindings/js/unicode.cc',
+        'bindings/js/unicode.h',
         'bindings/js/waiting_callback.cc',
         'bindings/js/waiting_callback.h',
       ],
@@ -534,7 +548,7 @@
         '../gin/gin.gyp:gin_test',
         'mojo_js_bindings_lib',
         'mojo_run_all_unittests',
-        'mojo_sample_service',
+        'mojo_public_test_interfaces',
       ],
       'sources': [
         'bindings/js/run_js_tests.cc',
@@ -560,6 +574,83 @@
     ['OS=="android"', {
       'targets': [
         {
+          'target_name': 'mojo_jni_headers',
+          'type': 'none',
+          'dependencies': [
+            'mojo_java_set_jni_headers',
+          ],
+          'sources': [
+            'android/javatests/src/org/chromium/mojo/system/CoreTest.java',
+            'android/system/src/org/chromium/mojo/system/CoreImpl.java',
+            'services/native_viewport/android/src/org/chromium/mojo/NativeViewportAndroid.java',
+            'shell/android/apk/src/org/chromium/mojo_shell_apk/MojoMain.java',
+          ],
+          'variables': {
+            'jni_gen_package': 'mojo',
+            'jni_generator_ptr_type': 'long',
+         },
+          'includes': [ '../build/jni_generator.gypi' ],
+        },
+        {
+          'target_name': 'mojo_system_java',
+          'type': 'none',
+          'dependencies': [
+            '../base/base.gyp:base_java',
+            'mojo_public_java',
+          ],
+          'variables': {
+            'java_in_dir': '<(DEPTH)/mojo/android/system',
+          },
+          'includes': [ '../build/java.gypi' ],
+        },
+        {
+          'target_name': 'libmojo_system_java',
+          'type': 'static_library',
+          'dependencies': [
+            '../base/base.gyp:base',
+            '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+            'mojo_common_lib',
+            'mojo_environment_chromium',
+            'mojo_jni_headers',
+            'mojo_shell_bindings',
+            'mojo_shell_lib',
+          ],
+          'sources': [
+            'android/system/core_impl.cc',
+            'android/system/core_impl.h',
+          ],
+        },
+        {
+          'target_name': 'libmojo_java_unittest',
+          'type': 'shared_library',
+          'dependencies': [
+            '../base/base.gyp:base',
+            'libmojo_system_java',
+            'mojo_jni_headers',
+          ],
+          'sources': [
+            'android/javatests/core_test.cc',
+            'android/javatests/core_test.h',
+            'android/javatests/init_library.cc',
+          ],
+        },
+        {
+          'target_name': 'mojo_test_apk',
+          'type': 'none',
+          'dependencies': [
+            'mojo_system_java',
+            '../base/base.gyp:base_java_test_support',
+          ],
+          'variables': {
+            'apk_name': 'MojoTest',
+            'java_in_dir': '<(DEPTH)/mojo/android/javatests',
+            'resource_dir': '<(DEPTH)/mojo/android/javatests/apk',
+            'native_lib_target': 'libmojo_java_unittest',
+            'is_test_apk': 1,
+          },
+          'includes': [ '../build/java_apk.gypi' ],
+        },
+        {
           'target_name': 'mojo_native_viewport_java',
           'type': 'none',
           'dependencies': [
@@ -579,22 +670,6 @@
             'input_java_class': 'java/util/HashSet.class',
           },
           'includes': [ '../build/jar_file_jni_generator.gypi' ],
-        },
-        {
-          'target_name': 'mojo_jni_headers',
-          'type': 'none',
-          'dependencies': [
-            'mojo_java_set_jni_headers',
-          ],
-          'sources': [
-            'services/native_viewport/android/src/org/chromium/mojo/NativeViewportAndroid.java',
-            'shell/android/apk/src/org/chromium/mojo_shell_apk/MojoMain.java',
-          ],
-          'variables': {
-            'jni_gen_package': 'mojo',
-            'jni_generator_ptr_type': 'long',
-         },
-          'includes': [ '../build/jni_generator.gypi' ],
         },
         {
           'target_name': 'libmojo_shell',

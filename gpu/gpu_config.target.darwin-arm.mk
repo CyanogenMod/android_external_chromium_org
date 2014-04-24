@@ -52,7 +52,6 @@ MY_CFLAGS_Debug := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-unknown-pragmas \
 	-fno-tree-sra \
 	-fuse-ld=gold \
 	-Wno-psabi \
@@ -148,7 +147,6 @@ MY_CFLAGS_Release := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-unknown-pragmas \
 	-fno-tree-sra \
 	-fuse-ld=gold \
 	-Wno-psabi \
@@ -251,7 +249,6 @@ LOCAL_LDFLAGS_Debug := \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
 	-Wl,--icf=safe \
-	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed

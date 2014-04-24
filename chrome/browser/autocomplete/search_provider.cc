@@ -499,8 +499,7 @@ void SearchProvider::StartOrStopSuggestQuery(bool minimal_changes) {
        !default_results_.navigation_results.empty() ||
        !keyword_results_.suggest_results.empty() ||
        !keyword_results_.navigation_results.empty() ||
-       (!done_ &&
-        input_.matches_requested() == AutocompleteInput::ALL_MATCHES)))
+       (!done_ && input_.want_asynchronous_matches())))
     return;
 
   // We can't keep running any previous query, so halt it.
@@ -516,7 +515,7 @@ void SearchProvider::StartOrStopSuggestQuery(bool minimal_changes) {
     UpdateMatchContentsClass(keyword_input_.text(), &keyword_results_);
 
   // We can't start a new query if we're only allowed synchronous results.
-  if (input_.matches_requested() != AutocompleteInput::ALL_MATCHES)
+  if (!input_.want_asynchronous_matches())
     return;
 
   // To avoid flooding the suggest server, don't send a query until at
@@ -842,15 +841,16 @@ void SearchProvider::AddHistoryResultsToMap(const HistoryResults& results,
   if (!prevent_inline_autocomplete && input_multiple_words) {
     // ScoreHistoryResults() allows autocompletion of multi-word, 1-visit
     // queries if the input also has multiple words.  But if we were already
-    // autocompleting a multi-word, multi-visit query, and the current input is
-    // still a prefix of it, then changing the autocompletion suddenly feels
-    // wrong.  To detect this case, first score as if only one word has been
-    // typed, then check for a best result that is an autocompleted, multi-word
-    // query.  If we find one, then just keep that score set.
+    // scoring a multi-word, multi-visit query aggressively, and the current
+    // input is still a prefix of it, then changing the suggestion suddenly
+    // feels wrong.  To detect this case, first score as if only one word has
+    // been typed, then check if the best result came from aggressive search
+    // history scoring.  If it did, then just keep that score set.  This
+    // 1200 the lowest possible score in CalculateRelevanceForHistory()'s
+    // aggressive-scoring curve.
     scored_results = ScoreHistoryResults(results, prevent_inline_autocomplete,
                                          false, input_text, is_keyword);
-    if ((scored_results.front().relevance() <
-             AutocompleteResult::kLowestDefaultScore) ||
+    if ((scored_results.front().relevance() < 1200) ||
         !HasMultipleWords(scored_results.front().suggestion()))
       scored_results.clear();  // Didn't detect the case above, score normally.
   }

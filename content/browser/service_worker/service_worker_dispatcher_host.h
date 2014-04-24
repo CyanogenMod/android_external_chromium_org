@@ -12,6 +12,7 @@
 #include "content/public/browser/browser_message_filter.h"
 
 class GURL;
+struct EmbeddedWorkerHostMsg_ReportConsoleMessage_Params;
 
 namespace content {
 
@@ -63,14 +64,17 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   void OnWorkerStarted(int thread_id,
                        int embedded_worker_id);
   void OnWorkerStopped(int embedded_worker_id);
-  void OnSendMessageToBrowser(int embedded_worker_id,
-                              int request_id,
-                              const IPC::Message& message);
+  void OnReplyToBrowser(int embedded_worker_id,
+                        int request_id,
+                        const IPC::Message& message);
   void OnReportException(int embedded_worker_id,
                          const base::string16& error_message,
                          int line_number,
                          int column_number,
                          const GURL& source_url);
+  void OnReportConsoleMessage(
+      int embedded_worker_id,
+      const EmbeddedWorkerHostMsg_ReportConsoleMessage_Params& params);
   void OnPostMessage(int handle_id,
                      const base::string16& message,
                      const std::vector<int>& sent_message_port_ids);

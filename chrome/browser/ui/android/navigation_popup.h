@@ -7,13 +7,13 @@
 
 #include <jni.h>
 
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/basictypes.h"
 #include "base/task/cancelable_task_tracker.h"
 
 class GURL;
 
-namespace chrome {
+namespace favicon_base {
 struct FaviconImageResult;
 }
 
@@ -26,8 +26,9 @@ class NavigationPopup {
   void Destroy(JNIEnv* env, jobject obj);
   void FetchFaviconForUrl(JNIEnv* env, jobject obj, jstring jurl);
 
-  void OnFaviconDataAvailable(GURL navigation_entry_url,
-                              const chrome::FaviconImageResult& image_result);
+  void OnFaviconDataAvailable(
+      GURL navigation_entry_url,
+      const favicon_base::FaviconImageResult& image_result);
 
   static bool RegisterNavigationPopup(JNIEnv* env);
 

@@ -397,6 +397,15 @@ cr.define('options', function() {
         };
       }
 
+      // Security section.
+      if (cr.isChromeOS &&
+          loadTimeData.getBoolean('consumerManagementEnabled')) {
+        $('security-section').hidden = false;
+        $('consumer-management-enroll-button').onclick = function(event) {
+          chrome.send('enrollConsumerManagement');
+        };
+      }
+
       // Easy Unlock section.
       if (loadTimeData.getBoolean('easyUnlockEnabled')) {
         $('easy-unlock-section').hidden = false;
@@ -911,13 +920,6 @@ cr.define('options', function() {
       customizeSyncButton.disabled =
           syncData.hasUnrecoverableError ||
           (!syncData.setupCompleted && !$('sync-action-link').hidden);
-
-      // Move #enable-auto-login-checkbox to a different location on CrOS.
-      if (cr.isChromeOs) {
-        $('sync-general').insertBefore($('sync-status').nextSibling,
-                                       $('enable-auto-login-checkbox'));
-      }
-      $('enable-auto-login-checkbox').hidden = !syncData.autoLoginVisible;
     },
 
     /**

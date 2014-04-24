@@ -48,7 +48,6 @@
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/bluetooth/bluetooth_pairing_dialog.h"
 #include "chrome/browser/chromeos/charger_replace/charger_replacement_dialog.h"
-#include "chrome/browser/chromeos/choose_mobile_network_dialog.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/job_list.h"
 #include "chrome/browser/chromeos/enrollment_dialog_view.h"
@@ -59,7 +58,6 @@
 #include "chrome/browser/chromeos/login/login_display_host.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/login_wizard.h"
-#include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_adding_screen.h"
@@ -71,6 +69,7 @@
 #include "chrome/browser/chromeos/profiles/multiprofiles_intro_dialog.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/sim_dialog_delegate.h"
+#include "chrome/browser/chromeos/ui/choose_mobile_network_dialog.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/feedback/tracing_manager.h"
 #include "chrome/browser/google/google_util.h"
@@ -413,13 +412,6 @@ ash::user::LoginStatus SystemTrayDelegateChromeOS::GetUserLoginStatus() const {
   }
   NOTREACHED();
   return ash::user::LOGGED_IN_NONE;
-}
-
-bool SystemTrayDelegateChromeOS::IsOobeCompleted() const {
-  if (!base::SysInfo::IsRunningOnChromeOS() &&
-      LoginState::Get()->IsUserLoggedIn())
-    return true;
-  return StartupUtils::IsOobeCompleted();
 }
 
 void SystemTrayDelegateChromeOS::ChangeProfilePicture() {

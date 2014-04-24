@@ -350,14 +350,14 @@ void ExtensionActionAPI::DispatchEventToExtension(
     const std::string& extension_id,
     const std::string& event_name,
     scoped_ptr<base::ListValue> event_args) {
-  if (!extensions::ExtensionSystem::Get(context)->event_router())
+  if (!extensions::EventRouter::Get(context))
     return;
 
   scoped_ptr<Event> event(new Event(event_name, event_args.Pass()));
   event->restrict_to_browser_context = context;
   event->user_gesture = EventRouter::USER_GESTURE_ENABLED;
-  ExtensionSystem::Get(context)->event_router()->DispatchEventToExtension(
-      extension_id, event.Pass());
+  EventRouter::Get(context)
+      ->DispatchEventToExtension(extension_id, event.Pass());
 }
 
 // static
@@ -416,7 +416,8 @@ void ExtensionActionAPI::ExtensionActionExecuted(
 
 ExtensionActionStorageManager::ExtensionActionStorageManager(Profile* profile)
     : profile_(profile) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
                  content::NotificationService::AllBrowserContextsAndSources());
@@ -434,7 +435,7 @@ void ExtensionActionStorageManager::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
       const Extension* extension =
           content::Details<const Extension>(details).ptr();
       if (!ExtensionActionManager::Get(profile_)->

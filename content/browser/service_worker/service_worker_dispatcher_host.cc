@@ -98,14 +98,22 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
                         OnWorkerStarted)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerStopped,
                         OnWorkerStopped)
-    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_SendMessageToBrowser,
-                        OnSendMessageToBrowser)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_ReplyToBrowser,
+                        OnReplyToBrowser)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_ReportException,
                         OnReportException)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_ReportConsoleMessage,
+                        OnReportConsoleMessage)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_ServiceWorkerObjectDestroyed,
                         OnServiceWorkerObjectDestroyed)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
+
+  if (!handled && context_) {
+    handled = context_->embedded_worker_registry()->OnMessageReceived(message);
+    if (!handled)
+      BadMessageReceived();
+  }
 
   return handled;
 }
@@ -318,14 +326,16 @@ void ServiceWorkerDispatcherHost::OnWorkerStopped(int embedded_worker_id) {
       render_process_id_, embedded_worker_id);
 }
 
-void ServiceWorkerDispatcherHost::OnSendMessageToBrowser(
+void ServiceWorkerDispatcherHost::OnReplyToBrowser(
     int embedded_worker_id,
     int request_id,
     const IPC::Message& message) {
   if (!context_)
     return;
-  context_->embedded_worker_registry()->OnSendMessageToBrowser(
-      embedded_worker_id, request_id, message);
+  if (!context_->embedded_worker_registry()->OnReplyToBrowser(
+      embedded_worker_id, request_id, message)) {
+    BadMessageReceived();
+  }
 }
 
 void ServiceWorkerDispatcherHost::OnReportException(
@@ -334,10 +344,27 @@ void ServiceWorkerDispatcherHost::OnReportException(
     int line_number,
     int column_number,
     const GURL& source_url) {
-  // TODO(horo, nhiroki): Show the error on serviceworker-internals
-  // (http://crbug.com/359517).
-  DVLOG(2) << "[Error] " << error_message << " (" << source_url
-           << ":" << line_number << "," << column_number << ")";
+  if (!context_)
+    return;
+  context_->embedded_worker_registry()->OnReportException(embedded_worker_id,
+                                                          error_message,
+                                                          line_number,
+                                                          column_number,
+                                                          source_url);
+}
+
+void ServiceWorkerDispatcherHost::OnReportConsoleMessage(
+    int embedded_worker_id,
+    const EmbeddedWorkerHostMsg_ReportConsoleMessage_Params& params) {
+  if (!context_)
+    return;
+  context_->embedded_worker_registry()->OnReportConsoleMessage(
+      embedded_worker_id,
+      params.source_identifier,
+      params.message_level,
+      params.message,
+      params.line_number,
+      params.source_url);
 }
 
 void ServiceWorkerDispatcherHost::OnServiceWorkerObjectDestroyed(

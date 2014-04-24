@@ -56,9 +56,9 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/profile_management_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/browser_distribution.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/navigation_controller.h"
@@ -83,10 +83,6 @@
 
 #if defined(TOOLKIT_VIEWS) && defined(OS_LINUX)
 #include "ui/events/x/touch_factory_x11.h"
-#endif
-
-#if defined(OS_WIN)
-#include "chrome/browser/ui/startup/startup_browser_creator_win.h"
 #endif
 
 #if defined(ENABLE_FULL_PRINTING)
@@ -450,16 +446,6 @@ std::vector<GURL> StartupBrowserCreator::GetURLsFromCommandLine(
       }
     }
   }
-#if defined(OS_WIN)
-  if (urls.empty()) {
-    // If we are in Windows 8 metro mode and were launched as a result of the
-    // search charm or via a url navigation in metro, then fetch the
-    // corresponding url.
-    GURL url(chrome::GetURLToOpen(profile));
-    if (url.is_valid())
-      urls.push_back(url);
-  }
-#endif  // OS_WIN
   return urls;
 }
 

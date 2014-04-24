@@ -79,7 +79,7 @@ class CC_EXPORT ResourceProvider {
   virtual ~ResourceProvider();
 
   void InitializeSoftware();
-  bool InitializeGL();
+  void InitializeGL();
 
   void DidLoseOutputSurface() { lost_output_surface_ = true; }
 
@@ -360,10 +360,7 @@ class CC_EXPORT ResourceProvider {
   // Sets the current read fence. If a resource is locked for read
   // and has read fences enabled, the resource will not allow writes
   // until this fence has passed.
-  void SetReadLockFence(scoped_refptr<Fence> fence) {
-    current_read_lock_fence_ = fence;
-  }
-  Fence* GetReadLockFence() { return current_read_lock_fence_.get(); }
+  void SetReadLockFence(Fence* fence) { current_read_lock_fence_ = fence; }
 
   // Enable read lock fences for a specific resource.
   void EnableReadLockFences(ResourceProvider::ResourceId id, bool enable);
@@ -651,6 +648,8 @@ class CC_EXPORT ResourceProvider {
   const size_t id_allocation_chunk_size_;
   scoped_ptr<IdAllocator> texture_id_allocator_;
   scoped_ptr<IdAllocator> buffer_id_allocator_;
+
+  bool use_sync_query_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceProvider);
 };

@@ -7,6 +7,7 @@
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
+#include "base/values.h"
 #include "chrome/browser/drive/drive_app_registry_observer.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -153,7 +154,7 @@ TEST_F(DriveAppRegistryTest, MultipleUpdate) {
 }
 
 TEST(DriveAppRegistryUtilTest, FindPreferredIcon_Empty) {
-  google_apis::InstalledApp::IconList icons;
+  DriveAppInfo::IconList icons;
   EXPECT_EQ("",
             util::FindPreferredIcon(icons, util::kPreferredIconSize).spec());
 }
@@ -164,7 +165,7 @@ TEST(DriveAppRegistryUtilTest, FindPreferredIcon_) {
   const char kBiggerIconUrl[] = "http://example.com/bigger.png";
   const int kMediumSize = 16;
 
-  google_apis::InstalledApp::IconList icons;
+  DriveAppInfo::IconList icons;
   // The icons are not sorted by the size.
   icons.push_back(std::make_pair(kMediumSize,
                                  GURL(kMediumIconUrl)));

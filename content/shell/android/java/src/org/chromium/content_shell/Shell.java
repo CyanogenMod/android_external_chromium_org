@@ -10,6 +10,7 @@ import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -110,7 +111,7 @@ public class Shell extends LinearLayout {
     private void onNativeDestroyed() {
         mWindow = null;
         mNativeShell = 0;
-        mContentView.destroy();
+        mContentViewCore.destroy();
     }
 
     /**
@@ -266,9 +267,9 @@ public class Shell extends LinearLayout {
     }
 
     /**
-     * @return The {@link ContentView} currently shown by this Shell.
+     * @return The {@link ViewGroup} currently shown by this Shell.
      */
-    public ContentView getContentView() {
+    public ViewGroup getContentView() {
         return mContentView;
     }
 

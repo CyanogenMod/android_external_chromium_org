@@ -12,15 +12,14 @@
 #include "content/renderer/render_view_impl.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/accessibility/ax_tree.h"
 
 using blink::WebAXObject;
 using blink::WebDocument;
-using blink::WebFrame;
 using blink::WebNode;
 using blink::WebPoint;
 using blink::WebRect;
@@ -196,10 +195,6 @@ void RendererAccessibilityComplete::SendPendingAccessibilityEvents() {
       serializer_.DeleteClientSubtree(obj);
     }
 
-    // Allow Blink to cache intermediate results since we're doing a bunch
-    // of read-only queries at once.
-    obj.startCachingComputedObjectAttributesUntilTreeMutates();
-
     AccessibilityHostMsg_EventParams event_msg;
     event_msg.event_type = event.event_type;
     event_msg.id = event.id;
@@ -207,13 +202,11 @@ void RendererAccessibilityComplete::SendPendingAccessibilityEvents() {
     event_msgs.push_back(event_msg);
 
 #ifndef NDEBUG
-    ui::AXTree tree;
-    tree.Unserialize(event_msg.update);
     VLOG(0) << "Accessibility update: \n"
             << "routing id=" << routing_id()
             << " event="
             << AccessibilityEventToString(event.event_type)
-            << "\n" << tree.ToString();
+            << "\n" << event_msg.update.ToString();
 #endif
   }
 

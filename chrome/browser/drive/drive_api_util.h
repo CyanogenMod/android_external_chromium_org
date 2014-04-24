@@ -21,8 +21,6 @@ class Value;
 }  // namespace base
 
 namespace google_apis {
-class AccountMetadata;
-class AppIcon;
 class AppList;
 class AppResource;
 class ChangeList;
@@ -30,13 +28,23 @@ class ChangeResource;
 class DriveAppIcon;
 class FileList;
 class FileResource;
-class InstalledApp;
 class ResourceEntry;
 class ResourceList;
 }  // namespace google_apis
 
 namespace drive {
 namespace util {
+
+// Google Apps MIME types:
+const char kGoogleDocumentMimeType[] = "application/vnd.google-apps.document";
+const char kGoogleDrawingMimeType[] = "application/vnd.google-apps.drawing";
+const char kGooglePresentationMimeType[] =
+    "application/vnd.google-apps.presentation";
+const char kGoogleSpreadsheetMimeType[] =
+    "application/vnd.google-apps.spreadsheet";
+const char kGoogleTableMimeType[] = "application/vnd.google-apps.table";
+const char kGoogleFormMimeType[] = "application/vnd.google-apps.form";
+const char kDriveFolderMimeType[] = "application/vnd.google-apps.folder";
 
 // Escapes ' to \' in the |str|. This is designed to use for string value of
 // search parameter on Drive API v2.
@@ -79,19 +87,6 @@ extern const char kDriveAppsScope[];
 void ParseShareUrlAndRun(const google_apis::GetShareUrlCallback& callback,
                          google_apis::GDataErrorCode error,
                          scoped_ptr<base::Value> value);
-
-// Converts AccountMetadata to AboutResource.
-// Here, |root_resource_id| is also needed, as it is contained by AboutResource
-// but not by AccountMetadata.
-scoped_ptr<google_apis::AboutResource>
-ConvertAccountMetadataToAboutResource(
-    const google_apis::AccountMetadata& account_metadata,
-    const std::string& root_resource_id);
-
-// Converts AccountMetadata to AppList.
-scoped_ptr<google_apis::AppList>
-ConvertAccountMetadataToAppList(
-    const google_apis::AccountMetadata& account_metadata);
 
 // Converts ResourceEntry to FileResource.
 scoped_ptr<google_apis::FileResource>

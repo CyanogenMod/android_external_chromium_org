@@ -47,6 +47,7 @@ LOCAL_SRC_FILES := \
 	google_apis/gaia/gaia_switches.cc \
 	google_apis/gaia/gaia_urls.cc \
 	google_apis/gaia/google_service_auth_error.cc \
+	google_apis/gaia/identity_provider.cc \
 	google_apis/gaia/merge_session_helper.cc \
 	google_apis/gaia/oauth_request_signer.cc \
 	google_apis/gaia/oauth2_access_token_fetcher.cc \
@@ -270,7 +271,6 @@ LOCAL_LDFLAGS_Debug := \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
 	-Wl,--icf=safe \
-	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed

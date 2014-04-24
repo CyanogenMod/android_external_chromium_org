@@ -57,12 +57,12 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/profile_management_switches.h"
 #include "chrome/common/url_constants.h"
 #include "components/dom_distiller/core/dom_distiller_constants.h"
 #include "components/dom_distiller/core/dom_distiller_service.h"
 #include "components/dom_distiller/webui/dom_distiller_ui.h"
 #include "components/password_manager/core/common/password_manager_switches.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_client.h"
@@ -520,7 +520,7 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 
 void RunFaviconCallbackAsync(
     const FaviconService::FaviconResultsCallback& callback,
-    const std::vector<chrome::FaviconBitmapResult>* results) {
+    const std::vector<favicon_base::FaviconBitmapResult>* results) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(&FaviconService::FaviconResultsCallbackRunner,
@@ -579,23 +579,23 @@ void ChromeWebUIControllerFactory::GetFaviconForURL(
 #if defined(ENABLE_EXTENSIONS)
     ExtensionWebUI::GetFaviconForURL(profile, url, callback);
 #else
-    RunFaviconCallbackAsync(callback,
-                            new std::vector<chrome::FaviconBitmapResult>());
+    RunFaviconCallbackAsync(
+        callback, new std::vector<favicon_base::FaviconBitmapResult>());
 #endif
     return;
   }
 
-  std::vector<chrome::FaviconBitmapResult>* favicon_bitmap_results =
-      new std::vector<chrome::FaviconBitmapResult>();
+  std::vector<favicon_base::FaviconBitmapResult>* favicon_bitmap_results =
+      new std::vector<favicon_base::FaviconBitmapResult>();
 
   for (size_t i = 0; i < scale_factors.size(); ++i) {
     scoped_refptr<base::RefCountedMemory> bitmap(GetFaviconResourceBytes(
           url, scale_factors[i]));
     if (bitmap.get() && bitmap->size()) {
-      chrome::FaviconBitmapResult bitmap_result;
+      favicon_base::FaviconBitmapResult bitmap_result;
       bitmap_result.bitmap_data = bitmap;
       // Leave |bitmap_result|'s icon URL as the default of GURL().
-      bitmap_result.icon_type = chrome::FAVICON;
+      bitmap_result.icon_type = favicon_base::FAVICON;
       favicon_bitmap_results->push_back(bitmap_result);
 
       // Assume that |bitmap| is |gfx::kFaviconSize| x |gfx::kFaviconSize|

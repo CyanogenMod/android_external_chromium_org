@@ -28,6 +28,7 @@ LOCAL_SRC_FILES := \
 	mojo/bindings/js/core.cc \
 	mojo/bindings/js/handle.cc \
 	mojo/bindings/js/support.cc \
+	mojo/bindings/js/unicode.cc \
 	mojo/bindings/js/waiting_callback.cc
 
 
@@ -229,7 +230,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed

@@ -52,7 +52,9 @@
 #include "chrome/browser/ui/webui/extensions/extension_basic_info.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -81,7 +83,6 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_icon_set.h"
 #include "extensions/common/extension_set.h"
-#include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
@@ -96,6 +97,11 @@ using base::DictionaryValue;
 using base::ListValue;
 using content::RenderViewHost;
 using content::WebContents;
+
+namespace {
+const char kAppsDeveloperToolsExtensionId[] =
+    "ohmmkhmmmpcnpikjeljgnaoabkaalbgc";
+}
 
 namespace extensions {
 
@@ -340,8 +346,13 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
   // (using both is redundant).
   ErrorConsole* error_console =
       ErrorConsole::Get(extension_service_->profile());
-  if (error_console->IsEnabledForChromeExtensionsPage() &&
-      extension->location() == Manifest::UNPACKED) {
+  bool error_console_is_enabled =
+      error_console->IsEnabledForChromeExtensionsPage();
+  extension_data->SetBoolean("wantsErrorCollection", error_console_is_enabled);
+  if (error_console_is_enabled) {
+    extension_data->SetBoolean("errorCollectionEnabled",
+                               error_console->IsReportingEnabledForExtension(
+                                   extension->id()));
     const ErrorList& errors =
         error_console->GetErrorsForExtension(extension->id());
     if (!errors.empty()) {
@@ -426,6 +437,8 @@ void ExtensionSettingsHandler::GetLocalizedValues(
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_REMOVE));
   source->AddString("extensionSettingsEnableIncognito",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_ENABLE_INCOGNITO));
+  source->AddString("extensionSettingsEnableErrorCollection",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_ENABLE_ERROR_COLLECTION));
   source->AddString("extensionSettingsAllowFileAccess",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_ALLOW_FILE_ACCESS));
   source->AddString("extensionSettingsIncognitoWarning",
@@ -467,6 +480,17 @@ void ExtensionSettingsHandler::GetLocalizedValues(
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_COMMANDS_CONFIGURE));
   source->AddString("extensionSettingsUpdateButton",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_UPDATE_BUTTON));
+  source->AddString(
+      "extensionSettingsAppsDevToolsPromoText",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_APPS_DEV_TOOLS_PROMO_TEXT));
+  source->AddString(
+      "extensionSettingsAppsDevToolsLinkText",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_APPS_DEV_TOOLS_LINK_TEXT));
+  source->AddString(
+      "extensionSettingsAppsDevToolsUrl",
+      base::ASCIIToUTF16(google_util::AppendGoogleLocaleParam(
+          GURL(extension_urls::GetWebstoreItemDetailURLPrefix() +
+                   kAppsDeveloperToolsExtensionId)).spec()));
   source->AddString("extensionSettingsCrashMessage",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_CRASHED_EXTENSION));
   source->AddString("extensionSettingsInDevelopment",
@@ -533,6 +557,9 @@ void ExtensionSettingsHandler::RegisterMessages() {
                  AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsEnableIncognito",
       base::Bind(&ExtensionSettingsHandler::HandleEnableIncognitoMessage,
+                 AsWeakPtr()));
+  web_ui()->RegisterMessageCallback("extensionSettingsEnableErrorCollection",
+      base::Bind(&ExtensionSettingsHandler::HandleEnableErrorCollectionMessage,
                  AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsAllowFileAccess",
       base::Bind(&ExtensionSettingsHandler::HandleAllowFileAccessMessage,
@@ -658,7 +685,7 @@ void ExtensionSettingsHandler::Observe(
       HandleLoadRetryMessage(retry_and_path->first, retry_and_path->second);
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
       const base::FilePath& path =
           content::Details<const Extension>(details).ptr()->path();
       if (IndexOfLoadingPath(path) != -1)
@@ -813,6 +840,14 @@ void ExtensionSettingsHandler::HandleRequestExtensionsData(
       profile->GetPrefs()->GetBoolean(prefs::kExtensionsUIDeveloperMode);
   results.SetBoolean("profileIsManaged", is_managed);
   results.SetBoolean("developerMode", developer_mode);
+
+  // Promote the Apps Developer Tools if they're not installed.
+  bool promote_apps_dev_tools =
+      GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV &&
+      !ExtensionRegistry::Get(Profile::FromWebUI(web_ui()))->
+          GetExtensionById(kAppsDeveloperToolsExtensionId,
+                           ExtensionRegistry::EVERYTHING);
+  results.SetBoolean("promoteAppsDevTools", promote_apps_dev_tools);
 
   bool load_unpacked_disabled =
       ExtensionPrefs::Get(profile)->ExtensionsBlacklistedByDefault();
@@ -978,6 +1013,18 @@ void ExtensionSettingsHandler::HandleEnableIncognitoMessage(
                               enable_str == "true");
 }
 
+void ExtensionSettingsHandler::HandleEnableErrorCollectionMessage(
+    const base::ListValue* args) {
+  CHECK_EQ(2u, args->GetSize());
+  std::string extension_id;
+  std::string enable_str;
+  CHECK(args->GetString(0, &extension_id));
+  CHECK(args->GetString(1, &enable_str));
+  bool enabled = enable_str == "true";
+  ErrorConsole::Get(Profile::FromWebUI(web_ui()))
+      ->SetReportingAllForExtension(extension_id, enabled);
+}
+
 void ExtensionSettingsHandler::HandleAllowFileAccessMessage(
     const base::ListValue* args) {
   CHECK_EQ(2U, args->GetSize());
@@ -1136,7 +1183,8 @@ void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
   Profile* profile = Profile::FromWebUI(web_ui());
 
   // Register for notifications that we need to reload the page.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile));

@@ -16,14 +16,23 @@
 #include "{{import.module.path}}.h"
 {%- endfor %}
 
-{%- if namespace %}
+{%- for namespace in namespaces_as_array %}
 namespace {{namespace}} {
-{%- endif %}
+{%- endfor %}
 
 {#--- Enums #}
 {%  for enum in enums %}
 {%    include "enum_declaration.tmpl" %}
 {%- endfor %}
+
+{#--- Interface Forward Declarations -#}
+{%  for interface in interfaces %}
+class {{interface.name}};
+// A typesafe variant of MessagePipeHandle:
+typedef mojo::Interface<{{interface.name}}>::Handle {{interface.name}}Handle;
+// A typesafe variant of ScopedMessagePipeHandle:
+typedef mojo::Interface<{{interface.name}}>::ScopedHandle Scoped{{interface.name}}Handle;
+{%  endfor %}
 
 {#--- Structs #}
 {%  for struct in structs %}
@@ -45,8 +54,19 @@ namespace {{namespace}} {
 {%    include "interface_stub_declaration.tmpl" %}
 {%- endfor %}
 
-{%- if namespace %}
+{%- for namespace in namespaces_as_array|reverse %}
 }  // namespace {{namespace}}
+{%- endfor %}
+
+{#--- Enum TypeTraits Specializations #}
+{%  if enums %}
+namespace mojo {
+namespace internal {
+{%    for enum in enums %}
+{%      include "enum_traits.tmpl" %}
+{%-   endfor %}
+}  // namespace internal
+}  // namespace mojo
 {%- endif %}
 
 #endif  // {{header_guard}}

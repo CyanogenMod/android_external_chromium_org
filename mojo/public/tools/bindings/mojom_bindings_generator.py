@@ -12,13 +12,13 @@ import os
 import pprint
 import sys
 
-script_dir = os.path.dirname(os.path.realpath(__file__))
+script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(script_dir, "pylib"))
 
-from generate import mojom_data
-from parse import mojo_lexer
-from parse import mojo_parser
-from parse import mojo_translate
+from mojom.generate.data import OrderedModuleFromData
+from mojom.parse.lexer import LexError
+from mojom.parse.parser import Parse, ParseError
+from mojom.parse.translate import Translate
 
 
 def LoadGenerators(generators_string):
@@ -46,11 +46,13 @@ def LoadGenerators(generators_string):
   return generators
 
 
-def _PrintImportStack(imported_filename_stack):
-  """Prints a chain of imports, given by imported_filename_stack."""
-  for i in reversed(xrange(0, len(imported_filename_stack)-1)):
-    print "  %s was imported by %s" % (imported_filename_stack[i+1],
-                                       imported_filename_stack[i])
+def MakeImportStackMessage(imported_filename_stack):
+  """Make a (human-readable) message listing a chain of imports. (Returned
+  string begins with a newline (if nonempty) and does not end with one.)"""
+  return ''.join(
+      reversed(["\n  %s was imported by %s" % (a, b) for (a, b) in \
+                    zip(imported_filename_stack[1:], imported_filename_stack)]))
+
 
 def ProcessFile(args, generator_modules, filename, processed_files={},
                 imported_filename_stack=[]):
@@ -60,27 +62,26 @@ def ProcessFile(args, generator_modules, filename, processed_files={},
 
   # Ensure we only visit each file once.
   if filename in imported_filename_stack:
-    print "%s: Error: Circular dependency" % filename
-    _PrintImportStack(imported_filename_stack + [filename])
+    print "%s: Error: Circular dependency" % filename + \
+        MakeImportStackMessage(imported_filename_stack + [filename])
     sys.exit(1)
 
   try:
     with open(filename) as f:
       source = f.read()
   except IOError as e:
-    print "%s: Error: %s" % (e.filename, e.strerror)
-    _PrintImportStack(imported_filename_stack + [filename])
+    print "%s: Error: %s" % (e.filename, e.strerror) + \
+        MakeImportStackMessage(imported_filename_stack + [filename])
     sys.exit(1)
 
   try:
-    tree = mojo_parser.Parse(source, filename)
-  except (mojo_lexer.LexError, mojo_parser.ParseError) as e:
-    print e
-    _PrintImportStack(imported_filename_stack + [filename])
+    tree = Parse(source, filename)
+  except (LexError, ParseError) as e:
+    print str(e) + MakeImportStackMessage(imported_filename_stack + [filename])
     sys.exit(1)
 
   dirname, name = os.path.split(filename)
-  mojom = mojo_translate.Translate(tree, name)
+  mojom = Translate(tree, name)
   if args.debug_print_intermediate:
     pprint.PrettyPrinter().pprint(mojom)
 
@@ -93,7 +94,7 @@ def ProcessFile(args, generator_modules, filename, processed_files={},
         processed_files=processed_files,
         imported_filename_stack=imported_filename_stack + [filename])
 
-  module = mojom_data.OrderedModuleFromData(mojom)
+  module = OrderedModuleFromData(mojom)
 
   # Set the path as relative to the source root.
   module.path = os.path.relpath(os.path.abspath(filename),

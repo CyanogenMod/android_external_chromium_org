@@ -64,7 +64,8 @@
             'autofill/core/common/form_field_data_unittest.cc',
             'autofill/core/common/password_form_fill_data_unittest.cc',
             'autofill/core/common/save_password_progress_logger_unittest.cc',
-            'cloud_devices/printer_description_unittest.cc',
+            'cloud_devices/common/cloud_devices_urls_unittest.cc',
+            'cloud_devices/common/printer_description_unittest.cc',
             'data_reduction_proxy/browser/data_reduction_proxy_metrics_unittest.cc',
             'data_reduction_proxy/browser/data_reduction_proxy_settings_unittest.cc',
             'data_reduction_proxy/browser/http_auth_handler_data_reduction_proxy_unittest.cc',
@@ -78,6 +79,7 @@
             'dom_distiller/core/task_tracker_unittest.cc',
             'dom_distiller/core/url_utils_unittest.cc',
             'dom_distiller/core/viewer_unittest.cc',
+            'domain_reliability/config_unittest.cc',
             'domain_reliability/context_unittest.cc',
             'domain_reliability/dispatcher_unittest.cc',
             'domain_reliability/monitor_unittest.cc',
@@ -110,6 +112,8 @@
             'precache/core/precache_database_unittest.cc',
             'precache/core/precache_fetcher_unittest.cc',
             'precache/core/precache_url_table_unittest.cc',
+            'query_parser/query_parser_unittest.cc',
+            'query_parser/snippet_unittest.cc',
             'rappor/bloom_filter_unittest.cc',
             'rappor/byte_vector_utils_unittest.cc',
             'rappor/log_uploader_unittest.cc',
@@ -129,6 +133,7 @@
             'storage_monitor/storage_monitor_mac_unittest.mm',
             'storage_monitor/storage_monitor_unittest.cc',
             'storage_monitor/storage_monitor_win_unittest.cc',
+            'sync_driver/generic_change_processor_unittest.cc',
             'sync_driver/model_association_manager_unittest.cc',
             'sync_driver/sync_prefs_unittest.cc',
             'sync_driver/system_encryptor_unittest.cc',
@@ -186,7 +191,7 @@
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
 
             # Dependencies of cloud_devices
-            'components.gyp:cloud_devices',
+            'components.gyp:cloud_devices_common',
 
             # Dependencies of data_reduction_proxy
             'components.gyp:data_reduction_proxy_browser',
@@ -221,6 +226,9 @@
             'components.gyp:password_manager_core_browser',
             'components.gyp:precache_core',
 
+            # Dependencies of query_parser
+            'components.gyp:query_parser',
+
             # Dependencies of rappor
             'components.gyp:rappor',
 
@@ -245,6 +253,7 @@
               'sources': [
                 'autofill/content/renderer/renderer_save_password_progress_logger_unittest.cc',
                 'dom_distiller/content/dom_distiller_viewer_source_unittest.cc',
+                'usb_service/usb_context_unittest.cc',
               ],
               'dependencies': [
                 # Dependencies of autofill
@@ -277,6 +286,10 @@
 
                 # Dependencies of url_matcher.
                 'components.gyp:url_matcher',
+
+                # Dependencies of usb_service tests.
+                'components.gyp:usb_service',
+                '../third_party/libusb/libusb.gyp:libusb',
 
                 # Dependencies of visitedlink
                 'components.gyp:visitedlink_browser',
@@ -345,6 +358,16 @@
                 'nacl.gyp:nacl_common',
               ],
             }],
+            ['disable_nacl==0 and OS=="linux"', {
+              'sources': [
+                'nacl/loader/nonsfi/nonsfi_sandbox_unittest.cc',
+                'nacl/loader/nonsfi/nonsfi_sandbox_sigsys_unittest.cc',
+              ],
+              'dependencies': [
+                'nacl.gyp:nacl_loader',
+                '../sandbox/sandbox.gyp:sandbox_linux_test_utils',
+              ],
+            }],
             ['OS == "mac"', {
               'link_settings': {
                 'libraries': [
@@ -363,13 +386,16 @@
                 'storage_monitor/media_storage_util_unittest.cc',
                 'storage_monitor/storage_info_unittest.cc',
                 'storage_monitor/storage_monitor_unittest.cc',
+                'usb_service/usb_context_unittest.cc',
                 'web_modal/web_contents_modal_dialog_manager_unittest.cc',
               ],
               'dependencies!': [
                 'components.gyp:storage_monitor',
                 'components.gyp:storage_monitor_test_support',
+                'components.gyp:usb_service',
                 'components.gyp:web_modal',
                 'components.gyp:web_modal_test_support',
+                '../third_party/libusb/libusb.gyp:libusb',
               ],
             }],
             ['OS == "android" and gtest_target_type == "shared_library"', {
@@ -537,7 +563,6 @@
               ],
               'variables': {
                 'test_suite_name': 'components_unittests',
-                'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)components_unittests<(SHARED_LIB_SUFFIX)',
               },
               'includes': [ '../build/apk_test.gypi' ],
             },

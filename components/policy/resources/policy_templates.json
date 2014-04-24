@@ -3020,7 +3020,7 @@
 
       If the setting is changed while the user is signed into a multiprofile session, all users in the session will be checked against their corresponding settings. The session will be closed if any one of the users is no longer allowed to be in the session.
 
-      If the policy is left not set, the default value 'MultiProfileUserBehaviorUnrestricted' will be used.''',
+      If the policy is left not set, the default value 'MultiProfileUserBehaviorMustBePrimary' applies for enterprise-managed users and 'MultiProfileUserBehaviorUnrestricted' will be used for non-managed users.''',
     },
     {
       'name': 'InstantEnabled',
@@ -3496,16 +3496,19 @@
       'name': 'EnableOriginBoundCerts',
       'type': 'main',
       'schema': { 'type': 'boolean' },
-      'supported_on': ['chrome.*:17-'],
+      'supported_on': ['chrome.*:17-35'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': False,
       },
+      'deprecated': True,
       'future': True,
       'example_value': True,
       'id': 114,
-      'caption': '''Enable TLS domain-bound certificates extension''',
-      'desc': '''Specifies whether the TLS domain-bound certificates extension should be enabled.
+      'caption': '''Enable TLS domain-bound certificates extension (deprecated)''',
+      'desc': '''This policy has been retired as of <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> version 36.
+
+      Specifies whether the TLS domain-bound certificates extension should be enabled.
 
       This setting is used to enable the TLS domain-bound certificates extension for testing.  This experimental setting will be removed in the future.''',
     },

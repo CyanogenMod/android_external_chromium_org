@@ -38,8 +38,8 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/webplugininfo.h"
 #include "content/public/renderer/content_renderer_client.h"
-#include "content/renderer/device_orientation/device_motion_event_pump.h"
-#include "content/renderer/device_orientation/device_orientation_event_pump.h"
+#include "content/renderer/device_sensors/device_motion_event_pump.h"
+#include "content/renderer/device_sensors/device_orientation_event_pump.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
 #include "content/renderer/media/audio_decoder.h"
@@ -145,8 +145,8 @@ base::LazyInstance<blink::WebDeviceMotionData>::Leaky
     g_test_device_motion_data = LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<blink::WebDeviceOrientationData>::Leaky
     g_test_device_orientation_data = LAZY_INSTANCE_INITIALIZER;
-base::LazyInstance<blink::WebScreenOrientation>::Leaky
-    g_test_screen_orientation_value = LAZY_INSTANCE_INITIALIZER;
+static blink::WebScreenOrientationListener*
+    g_test_screen_orientation_listener = NULL;
 
 //------------------------------------------------------------------------------
 
@@ -432,18 +432,17 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
 
   // Check list of strict codecs to see if it is supported.
   if (net::IsStrictMediaMimeType(mime_type_ascii)) {
+    // Check if the codecs are a perfect match.
+    std::vector<std::string> strict_codecs;
+    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, false);
+    if (net::IsSupportedStrictMediaMimeType(mime_type_ascii, strict_codecs))
+      return IsSupported;
+
     // We support the container, but no codecs were specified.
     if (codecs.isNull())
       return MayBeSupported;
 
-    // Check if the codecs are a perfect match.
-    std::vector<std::string> strict_codecs;
-    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, false);
-    if (!net::IsSupportedStrictMediaMimeType(mime_type_ascii, strict_codecs))
-      return IsNotSupported;
-
-    // Good to go!
-    return IsSupported;
+    return IsNotSupported;
   }
 
   // If we don't recognize the codec, it's possible we support it.
@@ -1119,18 +1118,13 @@ void RendererWebKitPlatformSupportImpl::cancelVibration() {
 
 void RendererWebKitPlatformSupportImpl::setScreenOrientationListener(
     blink::WebScreenOrientationListener* listener) {
-  if (!(g_test_screen_orientation_value == 0)) {
-    if (!listener)
-      return;
-
-    // When testing, we only pretend that the screen orientation is now set to
-    // g_test_screen_orientation_value.
-    base::MessageLoopProxy::current()->PostTask(
-        FROM_HERE,
-        base::Bind(
-            &blink::WebScreenOrientationListener::didChangeScreenOrientation,
-            base::Unretained(listener),
-            g_test_screen_orientation_value.Get()));
+  if (RenderThreadImpl::current() &&
+      RenderThreadImpl::current()->layout_test_mode()) {
+    // If we are in test mode, we want to fully disable the screen orientation
+    // backend in order to let Blink get tested properly, That means that screen
+    // orientation updates have to be done manually instead of from signals sent
+    // by the browser process.
+    g_test_screen_orientation_listener = listener;
     return;
   }
 
@@ -1143,24 +1137,28 @@ void RendererWebKitPlatformSupportImpl::setScreenOrientationListener(
 }
 
 void RendererWebKitPlatformSupportImpl::lockOrientation(
-    blink::WebScreenOrientations orientations) {
-  // No-op if we are currently using mock values.
-  if (!(g_test_screen_orientation_value == 0))
+    blink::WebScreenOrientationLockType orientation) {
+  if (RenderThreadImpl::current() &&
+      RenderThreadImpl::current()->layout_test_mode()) {
     return;
-  RenderThread::Get()->Send(new ScreenOrientationHostMsg_Lock(orientations));
+  }
+  RenderThread::Get()->Send(new ScreenOrientationHostMsg_Lock(orientation));
 }
 
 void RendererWebKitPlatformSupportImpl::unlockOrientation() {
-  // No-op if we are currently using mock values.
-  if (!(g_test_screen_orientation_value == 0))
+  if (RenderThreadImpl::current() &&
+      RenderThreadImpl::current()->layout_test_mode()) {
     return;
+  }
   RenderThread::Get()->Send(new ScreenOrientationHostMsg_Unlock);
 }
 
 // static
 void RendererWebKitPlatformSupportImpl::SetMockScreenOrientationForTesting(
-    blink::WebScreenOrientation orientation) {
-  g_test_screen_orientation_value.Get() = orientation;
+    blink::WebScreenOrientationType orientation) {
+  if (!g_test_screen_orientation_listener)
+    return;
+  g_test_screen_orientation_listener->didChangeScreenOrientation(orientation);
 }
 
 //------------------------------------------------------------------------------

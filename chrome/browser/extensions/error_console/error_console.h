@@ -30,8 +30,8 @@ class ExtensionService;
 class Profile;
 
 namespace extensions {
-class ErrorConsoleUnitTest;
 class Extension;
+class ExtensionPrefs;
 
 // The ErrorConsole is a central object to which all extension errors are
 // reported. This includes errors detected in extensions core, as well as
@@ -64,6 +64,15 @@ class ErrorConsole : public content::NotificationObserver,
   void SetReportingForExtension(const std::string& extension_id,
                                 ExtensionError::Type type,
                                 bool enabled);
+
+  // Set whether or not errors of all types are stored for the extension with
+  // the given |extension_id|.
+  void SetReportingAllForExtension(const std::string& extension_id,
+                                           bool enabled);
+
+  // Returns true if reporting for either manifest or runtime errors is enabled
+  // for the extension with the given |extension_id|.
+  bool IsReportingEnabledForExtension(const std::string& extension_id) const;
 
   // Restore default reporting to the given extension.
   void UseDefaultReportingForExtension(const std::string& extension_id);
@@ -102,10 +111,6 @@ class ErrorConsole : public content::NotificationObserver,
   }
 
  private:
-  // A map which stores the reporting preferences for each Extension. If there
-  // is no entry in the map, it signals that the |default_mask_| should be used.
-  typedef std::map<std::string, int32> ErrorPreferenceMap;
-
   // Checks whether or not the ErrorConsole should be enabled or disabled. If it
   // is in the wrong state, enables or disables it appropriately.
   void CheckEnabled();
@@ -126,7 +131,9 @@ class ErrorConsole : public content::NotificationObserver,
   // ExtensionRegistry implementation. If the Apps Developer Tools app is
   // installed or uninstalled, we may need to turn the ErrorConsole on/off.
   virtual void OnExtensionUnloaded(content::BrowserContext* browser_context,
-                                   const Extension* extension) OVERRIDE;
+                                   const Extension* extension,
+                                   UnloadedExtensionInfo::Reason reason)
+      OVERRIDE;
   virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
                                  const Extension* extension) OVERRIDE;
 
@@ -137,6 +144,9 @@ class ErrorConsole : public content::NotificationObserver,
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
+
+  // Returns the applicable bit mask of reporting preferences for the extension.
+  int GetMaskForExtension(const std::string& extension_id) const;
 
   // Whether or not the error console should record errors. This is true if
   // the user is in developer mode, and at least one of the following is true:
@@ -154,9 +164,6 @@ class ErrorConsole : public content::NotificationObserver,
   // The errors which we have received so far.
   ErrorMap errors_;
 
-  // The mapping of Extension's error-reporting preferences.
-  ErrorPreferenceMap pref_map_;
-
   // The default mask to use if an Extension does not have specific settings.
   int32 default_mask_;
 
@@ -164,6 +171,11 @@ class ErrorConsole : public content::NotificationObserver,
   // from extensions and RenderViews associated with this Profile (and it's
   // incognito fellow).
   Profile* profile_;
+
+  // The ExtensionPrefs with which the ErrorConsole is associated. This weak
+  // pointer is safe because ErrorConsole is owned by ExtensionSystem, which
+  // is dependent on ExtensionPrefs.
+  ExtensionPrefs* prefs_;
 
   content::NotificationRegistrar notification_registrar_;
   PrefChangeRegistrar pref_registrar_;

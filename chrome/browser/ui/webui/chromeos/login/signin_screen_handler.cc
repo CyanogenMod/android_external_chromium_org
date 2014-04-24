@@ -766,8 +766,6 @@ void SigninScreenHandler::RegisterMessages() {
               &SigninScreenHandler::HandleToggleEnrollmentScreen);
   AddCallback("toggleKioskEnableScreen",
               &SigninScreenHandler::HandleToggleKioskEnableScreen);
-  AddCallback("toggleResetScreen",
-              &SigninScreenHandler::HandleToggleResetScreen);
   AddCallback("createAccount", &SigninScreenHandler::HandleCreateAccount);
   AddCallback("accountPickerReady",
               &SigninScreenHandler::HandleAccountPickerReady);
@@ -1280,13 +1278,6 @@ void SigninScreenHandler::HandleToggleKioskEnableScreen() {
   }
 }
 
-void SigninScreenHandler::HandleToggleResetScreen() {
-  policy::BrowserPolicyConnectorChromeOS* connector =
-      g_browser_process->platform_part()->browser_policy_connector_chromeos();
-  if (delegate_ && !connector->IsEnterpriseManaged())
-    delegate_->ShowResetScreen();
-}
-
 void SigninScreenHandler::HandleToggleKioskAutolaunchScreen() {
   policy::BrowserPolicyConnectorChromeOS* connector =
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
@@ -1426,7 +1417,8 @@ void SigninScreenHandler::HandleAccountPickerReady() {
 
   PrefService* prefs = g_browser_process->local_state();
   if (prefs->GetBoolean(prefs::kFactoryResetRequested)) {
-    HandleToggleResetScreen();
+    if (core_oobe_actor_)
+      core_oobe_actor_->ShowDeviceResetScreen();
     return;
   }
 
@@ -1455,7 +1447,7 @@ void SigninScreenHandler::HandleLoginWebuiReady() {
     // Do this only once. Any subsequent call would relod GAIA frame.
     focus_stolen_ = false;
     const char code[] =
-        "if (typeof gWindowOnLoad != 'undefined) gWindowOnLoad();";
+        "if (typeof gWindowOnLoad != 'undefined') gWindowOnLoad();";
     content::RenderFrameHost* frame =
         LoginDisplayHostImpl::GetGaiaAuthIframe(web_ui()->GetWebContents());
     frame->ExecuteJavaScript(base::ASCIIToUTF16(code));

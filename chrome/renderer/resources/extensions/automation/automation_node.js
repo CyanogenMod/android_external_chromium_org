@@ -17,9 +17,15 @@ var AutomationNodeImpl = function(owner) {
   this.childIds = [];
   this.attributes = {};
   this.listeners = {};
+  this.location = { left: 0, top: 0, width: 0, height: 0 };
 };
 
 AutomationNodeImpl.prototype = {
+  id: -1,
+  role: '',
+  loaded: false,
+  state: { busy: true },
+
   parent: function() {
     return this.owner.get(this.parentID);
   },
@@ -99,6 +105,7 @@ AutomationNodeImpl.prototype = {
       // TODO(aboxhall/dtseng): handle unloaded parent node
       parent = parent.parent();
     }
+    path.push(this.owner.wrapper);
     var event = new AutomationEvent(eventType, this.wrapper);
 
     // Dispatch the event through the propagation path in three phases:
@@ -111,6 +118,14 @@ AutomationNodeImpl.prototype = {
       if (this.dispatchEventAtTargeting_(event, path))
         this.dispatchEventAtBubbling_(event, path);
     }
+  },
+
+  toString: function() {
+    return 'node id=' + this.id +
+        ' role=' + this.role +
+        ' state=' + JSON.stringify(this.state) +
+        ' childIds=' + JSON.stringify(this.childIds) +
+        ' attributes=' + JSON.stringify(this.attributes);
   },
 
   dispatchEventAtCapturing_: function(event, path) {
@@ -144,8 +159,9 @@ AutomationNodeImpl.prototype = {
     var listeners = nodeImpl.listeners[event.type];
     if (!listeners)
       return;
+
+    var eventPhase = event.eventPhase;
     for (var i = 0; i < listeners.length; i++) {
-      var eventPhase = privates(event).impl.eventPhase;
       if (eventPhase == Event.CAPTURING_PHASE && !listeners[i].capture)
         continue;
       if (eventPhase == Event.BUBBLING_PHASE && listeners[i].capture)
@@ -177,16 +193,23 @@ AutomationNodeImpl.prototype = {
 
 var AutomationNode = utils.expose('AutomationNode',
                                   AutomationNodeImpl,
-                                  ['parent',
-                                   'firstChild',
-                                   'lastChild',
-                                   'children',
-                                   'previousSibling',
-                                   'nextSibling',
-                                   'doDefault',
-                                   'focus',
-                                   'makeVisible',
-                                   'setSelection',
-                                   'addEventListener',
-                                   'removeEventListener']);
+                                  { functions: ['parent',
+                                                'firstChild',
+                                                'lastChild',
+                                                'children',
+                                                'previousSibling',
+                                                'nextSibling',
+                                                'doDefault',
+                                                'focus',
+                                                'makeVisible',
+                                                'setSelection',
+                                                'addEventListener',
+                                                'removeEventListener'],
+                                    readonly: ['id',
+                                               'role',
+                                               'state',
+                                               'location',
+                                               'attributes',
+                                               'loaded'] });
+
 exports.AutomationNode = AutomationNode;

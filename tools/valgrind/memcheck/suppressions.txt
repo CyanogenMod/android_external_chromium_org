@@ -360,9 +360,9 @@
    Memcheck:Leak
    fun:_Znw*
    fun:_ZN7content17WorkerProcessHost20CreateMessageFiltersEi
-   fun:_ZN7content17WorkerProcessHost4InitEi
+   fun:_ZN7content17WorkerProcessHost4InitE*
    fun:_ZN7content17WorkerServiceImpl24CreateWorkerFromInstanceENS_17WorkerProcessHost14WorkerInstanceE
-   fun:_ZN7content17WorkerServiceImpl12CreateWorkerERK31ViewHostMsg_CreateWorker_ParamsiPNS_19WorkerMessageFilterEPNS_15ResourceContextERKNS_22WorkerStoragePartitionE
+   fun:_ZN7content17WorkerServiceImpl12CreateWorkerE*
    fun:_ZN7content19WorkerMessageFilter14OnCreateWorkerERK31ViewHostMsg_CreateWorker_ParamsPi
 }
 {
@@ -407,14 +407,6 @@
    fun:_ZN3ash5ShellC1EPNS_13ShellDelegateE
    fun:_ZN3ash5Shell14CreateInstanceEPNS_13ShellDelegateE
 }
-{
-   intentional OOM in layout test: fast/js/string-replacement-outofmemory.html
-   Memcheck:Unaddressable
-   fun:_ZN7WebCoreL28reportFatalErrorInMainThreadEPKcS1_
-   fun:_ZN2v88internal2V823FatalProcessOutOfMemoryEPKcb
-   ...
-   fun:_ZN7WebCore16HTMLScriptRunner36executePendingScriptAndDispatchEventERNS_13PendingScriptE
-}
 
 # http://crbug.com/269278 causes really widespread, flaky leaks in
 # value objects that own some memory.  These suppressions will cover
@@ -450,29 +442,6 @@
 # 3. Suppressions for real chromium bugs that are not yet fixed.
 # These should all be in chromium's bug tracking system (but a few aren't yet).
 
-{
-   # Chromium flakily leaks tasks at shutdown, see
-   # http://crbug.com/6532
-   # http://codereview.chromium.org/20067
-   # http://codereview.chromium.org/42083
-   # To reproduce, run ipc tests
-   # This is the -O0 case
-   # In Purify, they don't even try to free them anymore.
-   # For now, in Valgrind, we'll add suppressions to ignore these leaks.
-   bug_6532
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_Z17NewRunnableMethodIN3IPC12ChannelProxy7ContextEMS2_FvvEEP14CancelableTaskPT_T0_
-}
-{
-   # See http://crbug.com/6532
-   # This is the -O1 case
-   bug_6532b
-   Memcheck:Leak
-   ...
-   fun:_ZN3IPC12ChannelProxy7Context14OnChannelErrorEv
-   fun:_ZN3IPC7Channel11ChannelImpl28OnFileCanReadWithoutBlockingEi
-}
 {
    # webkit leak?  See http://crbug.com/9503
    bug_9503
@@ -1868,12 +1837,6 @@
    ...
    fun:_ZN21TestURLRequestContextC1Ev
    fun:_ZN27TestURLRequestContextGetter20GetURLRequestContextEv
-}
-{
-   bug_16089 WorkerPool threads can leak by design
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN4base22PosixDynamicThreadPool8PostTask*
 }
 {
    bug_80462_a
@@ -3799,13 +3762,6 @@
    fun:_ZN3gfx30JPEGCodec_EncodeDecodeRGB_Test8TestBodyEv
 }
 {
-   bug_16089 WorkerPool threads and its tasks can leak by design
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN4base22PosixDynamicThreadPool7AddTaskEPNS_11PendingTaskE
-   fun:_ZN4base22PosixDynamicThreadPool8PostTask*
-}
-{
    bug_139467
    Memcheck:Uninitialized
    fun:_ZNK7WebCore18AccessibilityTable9roleValueEv
@@ -5680,16 +5636,6 @@
    fun:_ZN7content20ChildProcessLauncher25GetChildTerminationStatusEbPi
 }
 {
-   bug_288787
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN10extensions22ManagedValueStoreCache16ExtensionTracker7ObserveEiRKN7content18NotificationSourceERKNS2_19NotificationDetailsE
-   fun:_ZN7content23NotificationServiceImpl6NotifyEiRKNS_18NotificationSourceERKNS_19NotificationDetailsE
-   fun:_ZN16ExtensionService23NotifyExtensionUnloadedEPKN10extensions9ExtensionEN14extension_misc23UnloadedExtensionReasonE
-   fun:_ZN16ExtensionService16DisableExtensionERKSsN10extensions9Extension13DisableReasonE
-   fun:_ZN22theme_service_internal40ThemeServiceTest_DisableUnusedTheme_Test8TestBodyEv
-}
-{
    bug_288804
    Memcheck:Leak
    fun:_Znw*
@@ -6146,7 +6092,7 @@
    fun:_ZN7WebCore10LocalFrame*
    fun:_ZN7WebCore10LocalFrame*
    fun:_ZN7WebCore10LocalFrame6create*
-   fun:_ZN5blink12WebFrameImpl21initializeAsMainFrameEPN7WebCore4PageE
+   fun:_ZN5blink17WebLocalFrameImpl21initializeAsMainFrameEPN7WebCore4PageE
    fun:_ZN5blink11WebViewImpl12setMainFrameEPNS_8WebFrameE
    fun:_ZN7content22BufferedDataSourceTestC2Ev
 }
@@ -6264,4 +6210,156 @@
   fun:*SkA8_Shader_Blitter*blitH*
   ...
   fun:*content*ScreenshotData*EncodeOnWorker*
+}
+{
+  bug_363819
+  Memcheck:Uninitialized
+  fun:strlen
+  fun:*
+  fun:_ZN3net12_GLOBAL__N_114TestHttpClient4ReadEPSs
+  fun:_ZN3net*HttpServerTest*
+}
+{
+  bug_364274
+  Memcheck:Uninitialized
+  fun:_ZN7WebCore21RenderLayerCompositor14updateIfNeededEv
+}
+{
+  bug_364619
+  Memcheck:Leak
+  fun:_Znw*
+  fun:_ZN7content20ChildProcessLauncherC1EPNS_32SandboxedProcessLauncherDelegateEPN4base11CommandLineEiPNS0_6ClientE
+  fun:_ZN7content21RenderProcessHostImpl4InitEv
+  fun:_ZN7content18RenderViewHostImpl16CreateRenderViewERKSbItN4base20string16_char_traitsESaItEEiib
+  fun:_ZN7content15WebContentsImpl32CreateRenderViewForRenderManagerEPNS_14RenderViewHostEiPNS_26CrossProcessFrameConnectorE
+  fun:_ZN7content22RenderFrameHostManager14InitRenderViewEPNS_14RenderViewHostEi
+  fun:_ZN7content22RenderFrameHostManager8NavigateERKNS_19NavigationEntryImplE
+  fun:_ZN7content13NavigatorImpl15NavigateToEntryEPNS_19RenderFrameHostImplERKNS_19NavigationEntryImplENS_20NavigationController10ReloadTypeE
+  fun:_ZN7content13NavigatorImpl22NavigateToPendingEntryEPNS_19RenderFrameHostImplENS_20NavigationController10ReloadTypeE
+  fun:_ZN7content15WebContentsImpl22NavigateToPendingEntryENS_20NavigationController10ReloadTypeE
+  fun:_ZN7content24NavigationControllerImpl22NavigateToPendingEntryENS_20NavigationController10ReloadTypeE
+  fun:_ZN7content24NavigationControllerImpl9LoadEntryEPNS_19NavigationEntryImplE
+  fun:_ZN7content24NavigationControllerImpl17LoadURLWithParamsERKNS_20NavigationController13LoadURLParamsE
+  fun:_ZN7content5Shell15LoadURLForFrameERK4GURLRKSs
+  fun:_ZN7content5Shell7LoadURLERK4GURL
+  fun:_ZN7content20WebKitTestController20PrepareForLayoutTestERK4GURLRKN4base8FilePathEbRKSs
+  fun:_ZN12_GLOBAL__N_110RunOneTestERKSsPbRK10scoped_ptrIN7content17BrowserMainRunnerEN4base14DefaultDeleterIS5_EEE
+  fun:_Z16ShellBrowserMainRKN7content18MainFunctionParamsERK10scoped_ptrINS_17BrowserMainRunnerEN4base14DefaultDeleterIS4_EEE
+  fun:_ZN7content17ShellMainDelegate10RunProcessERKSsRKNS_18MainFunctionParamsE
+  fun:_ZN7content23RunNamedProcessTypeMainERKSsRKNS_18MainFunctionParamsEPNS_19ContentMainDelegateE
+  fun:_ZN7content21ContentMainRunnerImpl3RunEv
+  fun:_ZN7content11ContentMainERKNS_17ContentMainParamsE
+}
+{
+  bug_364619_b
+  Memcheck:Leak
+  fun:_Znw*
+  fun:_ZN7content21RenderProcessHostImpl4InitEv
+  fun:_ZN7content18RenderViewHostImpl16CreateRenderViewERKSbItN4base20string16_char_traitsESaItEEiib
+  fun:_ZN7content15WebContentsImpl32CreateRenderViewForRenderManagerEPNS_14RenderViewHostEiPNS_26CrossProcessFrameConnectorE
+  fun:_ZN7content22RenderFrameHostManager14InitRenderViewEPNS_14RenderViewHostEi
+  fun:_ZN7content22RenderFrameHostManager8NavigateERKNS_19NavigationEntryImplE
+  fun:_ZN7content13NavigatorImpl15NavigateToEntryEPNS_19RenderFrameHostImplERKNS_19NavigationEntryImplENS_20NavigationController10ReloadTypeE
+  fun:_ZN7content13NavigatorImpl22NavigateToPendingEntryEPNS_19RenderFrameHostImplENS_20NavigationController10ReloadTypeE
+  fun:_ZN7content15WebContentsImpl22NavigateToPendingEntryENS_20NavigationController10ReloadTypeE
+  fun:_ZN7content24NavigationControllerImpl22NavigateToPendingEntryENS_20NavigationController10ReloadTypeE
+  fun:_ZN7content24NavigationControllerImpl9LoadEntryEPNS_19NavigationEntryImplE
+  fun:_ZN7content24NavigationControllerImpl17LoadURLWithParamsERKNS_20NavigationController13LoadURLParamsE
+  fun:_ZN7content5Shell15LoadURLForFrameERK4GURLRKSs
+  fun:_ZN7content5Shell7LoadURLERK4GURL
+  fun:_ZN7content20WebKitTestController20PrepareForLayoutTestERK4GURLRKN4base8FilePathEbRKSs
+  fun:_ZN12_GLOBAL__N_110RunOneTestERKSsPbRK10scoped_ptrIN7content17BrowserMainRunnerEN4base14DefaultDeleterIS5_EEE
+  fun:_Z16ShellBrowserMainRKN7content18MainFunctionParamsERK10scoped_ptrINS_17BrowserMainRunnerEN4base14DefaultDeleterIS4_EEE
+  fun:_ZN7content17ShellMainDelegate10RunProcessERKSsRKNS_18MainFunctionParamsE
+  fun:_ZN7content23RunNamedProcessTypeMainERKSsRKNS_18MainFunctionParamsEPNS_19ContentMainDelegateE
+  fun:_ZN7content21ContentMainRunnerImpl3RunEv
+  fun:_ZN7content11ContentMainERKNS_17ContentMainParamsE
+}
+{
+  bug_364619_c
+  Memcheck:Leak
+  fun:_Znw*
+  fun:_ZN7content21RenderProcessHostImpl20CreateMessageFiltersEv
+  fun:_ZN7content21RenderProcessHostImpl4InitEv
+  fun:_ZN7content18RenderViewHostImpl16CreateRenderViewERKSbItN4base20string16_char_traitsESaItEEiib
+  fun:_ZN7content15WebContentsImpl32CreateRenderViewForRenderManagerEPNS_14RenderViewHostEiPNS_26CrossProcessFrameConnectorE
+  fun:_ZN7content22RenderFrameHostManager14InitRenderViewEPNS_14RenderViewHostEi
+  fun:_ZN7content22RenderFrameHostManager8NavigateERKNS_19NavigationEntryImplE
+  fun:_ZN7content13NavigatorImpl15NavigateToEntryEPNS_19RenderFrameHostImplERKNS_19NavigationEntryImplENS_20NavigationController10ReloadTypeE
+  fun:_ZN7content13NavigatorImpl22NavigateToPendingEntryEPNS_19RenderFrameHostImplENS_20NavigationController10ReloadTypeE
+  fun:_ZN7content15WebContentsImpl22NavigateToPendingEntryENS_20NavigationController10ReloadTypeE
+  fun:_ZN7content24NavigationControllerImpl22NavigateToPendingEntryENS_20NavigationController10ReloadTypeE
+  fun:_ZN7content24NavigationControllerImpl9LoadEntryEPNS_19NavigationEntryImplE
+  fun:_ZN7content24NavigationControllerImpl17LoadURLWithParamsERKNS_20NavigationController13LoadURLParamsE
+  fun:_ZN7content5Shell15LoadURLForFrameERK4GURLRKSs
+  fun:_ZN7content5Shell7LoadURLERK4GURL
+  fun:_ZN7content20WebKitTestController20PrepareForLayoutTestERK4GURLRKN4base8FilePathEbRKSs
+  fun:_ZN12_GLOBAL__N_110RunOneTestERKSsPbRK10scoped_ptrIN7content17BrowserMainRunnerEN4base14DefaultDeleterIS5_EEE
+  fun:_Z16ShellBrowserMainRKN7content18MainFunctionParamsERK10scoped_ptrINS_17BrowserMainRunnerEN4base14DefaultDeleterIS4_EEE
+  fun:_ZN7content17ShellMainDelegate10RunProcessERKSsRKNS_18MainFunctionParamsE
+  fun:_ZN7content23RunNamedProcessTypeMainERKSsRKNS_18MainFunctionParamsEPNS_19ContentMainDelegateE
+  fun:_ZN7content21ContentMainRunnerImpl3RunEv
+  fun:_ZN7content11ContentMainERKNS_17ContentMainParamsE
+}
+{
+   bug_364724
+   Memcheck:Param
+   write(buf)
+   obj:/lib/x86_64-linux-gnu/libpthread-2.15.so
+   fun:_ZN3IPC7Channel11ChannelImpl23ProcessOutgoingMessagesEv
+   fun:_ZN3IPC7Channel11ChannelImpl29OnFileCanWriteWithoutBlockingEi
+   fun:_ZN4base19MessagePumpLibevent21FileDescriptorWatcher29OnFileCanWriteWithoutBlockingEiPS0_
+   ...
+   fun:event_process_active
+   fun:event_base_loop
+}
+{
+   bug_364821
+   Memcheck:Leak
+   fun:malloc
+   fun:_ZN3WTF10fastMallocEm
+   fun:_ZN3WTF10RefCountedIN7WebCore14NewScriptStateEEnwEm
+   fun:_ZN7WebCore14NewScriptState6createEN2v86HandleINS1_7ContextEEEN3WTF10PassRefPtrINS_15DOMWrapperWorldEEE
+   fun:_ZN7WebCore22WorkerScriptController25initializeContextIfNeededEv
+   fun:_ZN7WebCore22WorkerScriptController8evaluateERKN3WTF6StringES4_RKNS1_12TextPositionEPNS_31WorkerGlobalScopeExecutionStateE
+   fun:_ZN7WebCore22WorkerScriptController8evaluateERKNS_16ScriptSourceCodeEPN3WTF6RefPtrINS_10ErrorEventEEE
+   fun:_ZN7WebCore12WorkerThread12workerThreadEv
+   fun:_ZN7WebCore12WorkerThread17workerThreadStartEPv
+   fun:_ZN3WTFL16threadEntryPointEPv
+   fun:_ZN3WTFL19wtfThreadEntryPointEPv
+}
+{
+   bug_365258
+   Memcheck:Leak
+   fun:malloc
+   fun:_ZN3WTF10fastMallocEm
+   fun:_ZN7WebCore8ResourcenwEm
+   fun:_ZN7WebCoreL14createResourceENS_8Resource4TypeERKNS_15ResourceRequestERKN3WTF6StringE
+   fun:_ZN7WebCore15ResourceFetcher18revalidateResourceERKNS_12FetchRequestEPNS_8ResourceE
+   fun:_ZN7WebCore15ResourceFetcher15requestResourceENS_8Resource4TypeERNS_12FetchRequestE
+   fun:_ZN7WebCore15ResourceFetcher11fetchScriptERNS_12FetchRequestE
+   fun:_ZN7WebCore12ScriptLoader11fetchScriptERKN3WTF6StringE
+   fun:_ZN7WebCore12ScriptLoader13prepareScriptERKN3WTF12TextPositionENS0_17LegacyTypeSupportE
+   fun:_ZN7WebCore16HTMLScriptRunner9runScriptEPNS_7ElementERKN3WTF12TextPositionE
+   fun:_ZN7WebCore16HTMLScriptRunner7executeEN3WTF10PassRefPtrINS_7ElementEEERKNS1_12TextPositionE
+   fun:_ZN7WebCore18HTMLDocumentParser30runScriptsForPausedTreeBuilderEv
+   fun:_ZN7WebCore18HTMLDocumentParser38processParsedChunkFromBackgroundParserEN3WTF10PassOwnPtrINS0_11ParsedChunkEEE
+   fun:_ZN7WebCore18HTMLDocumentParser23pumpPendingSpeculationsEv
+   fun:_ZN7WebCore18HTMLDocumentParser41didReceiveParsedChunkFromBackgroundParserEN3WTF10PassOwnPtrINS0_11ParsedChunkEEE
+   fun:_ZN3WTF15FunctionWrapperIMN7WebCore18HTMLDocumentParserEFvNS_10PassOwnPtrINS2_11ParsedChunkEEEEEclERKNS_7WeakPtrIS2_EES5_
+   fun:_ZN3WTF17BoundFunctionImplINS_15FunctionWrapperIMN7WebCore18HTMLDocumentParserEFvNS_10PassOwnPtrINS3_11ParsedChunkEEEEEEFvNS_7WeakPtrIS3_EES6_EEclEv
+   fun:_ZNK3WTF8FunctionIFvvEEclEv
+   fun:_ZN3WTFL18callFunctionObjectEPv
+}
+{
+   bug_365259
+   Memcheck:Leak
+   fun:malloc
+   fun:_ZN3WTF10fastMallocEm
+   fun:_ZN3WTF10RefCountedIN7WebCore20IDBDatabaseCallbacksEEnwEm
+   fun:_ZN7WebCore20IDBDatabaseCallbacks6createEv
+   fun:_ZN7WebCore10IDBFactory12openInternalEPNS_16ExecutionContextERKN3WTF6StringElRNS_14ExceptionStateE
+   fun:_ZN7WebCore10IDBFactory4openEPNS_16ExecutionContextERKN3WTF6StringERNS_14ExceptionStateE
+   fun:_ZN7WebCore20IDBFactoryV8InternalL10openMethodERKN2v820FunctionCallbackInfoINS1_5ValueEEE
+   fun:_ZN7WebCore20IDBFactoryV8InternalL18openMethodCallbackERKN2v820FunctionCallbackInfoINS1_5ValueEEE
 }

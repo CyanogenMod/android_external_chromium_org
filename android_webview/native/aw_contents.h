@@ -16,8 +16,8 @@
 #include "android_webview/browser/icon_helper.h"
 #include "android_webview/browser/renderer_host/aw_render_view_host_ext.h"
 #include "android_webview/browser/shared_renderer_state.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
-#include "base/android/jni_helper.h"
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 
@@ -128,6 +128,9 @@ class AwContents : public FindHelper::Listener,
                              jstring url, jstring extra_headers);
 
   void DrawGL(AwDrawGLInfo* draw_info);
+
+  // TODO(sgurun) test this.
+  void ClearClientCertPreferences(JNIEnv* env, jobject obj);
 
   // Geolocation API support
   void ShowGeolocationPrompt(const GURL& origin, base::Callback<void(bool)>);

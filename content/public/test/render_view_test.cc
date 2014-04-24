@@ -23,10 +23,10 @@
 #include "content/test/mock_render_process.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebHistoryItem.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -185,6 +185,7 @@ void RenderViewTest::SetUp() {
   // This needs to pass the mock render thread to the view.
   RenderViewImpl* view =
       RenderViewImpl::Create(kOpenerId,
+                             false,  // window_was_created_with_opener
                              RendererPreferences(),
                              WebPreferences(),
                              kRouteId,
@@ -195,6 +196,7 @@ void RenderViewTest::SetUp() {
                              false,  // is_renderer_created
                              false,  // swapped_out
                              false,  // hidden
+                             false,  // never_visible
                              1,      // next_page_id
                              blink::WebScreenInfo(),
                              AccessibilityModeOff);

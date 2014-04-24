@@ -42,6 +42,16 @@ class TestAlarm : public QuicAlarm {
 
 }  // namespace
 
+QuicAckFrame MakeAckFrame(QuicPacketSequenceNumber largest_observed,
+                          QuicPacketSequenceNumber least_unacked) {
+  QuicAckFrame ack;
+  ack.received_info.largest_observed = largest_observed;
+  ack.received_info.entropy_hash = 0;
+  ack.sent_info.least_unacked = least_unacked;
+  ack.sent_info.entropy_hash = 0;
+  return ack;
+}
+
 MockFramerVisitor::MockFramerVisitor() {
   // By default, we want to accept packets.
   ON_CALL(*this, OnProtocolVersionMismatch(_))
@@ -67,6 +77,9 @@ MockFramerVisitor::MockFramerVisitor() {
       .WillByDefault(testing::Return(true));
 
   ON_CALL(*this, OnStopWaitingFrame(_))
+      .WillByDefault(testing::Return(true));
+
+  ON_CALL(*this, OnPingFrame(_))
       .WillByDefault(testing::Return(true));
 
   ON_CALL(*this, OnRstStreamFrame(_))
@@ -118,6 +131,10 @@ bool NoOpFramerVisitor::OnStopWaitingFrame(
   return true;
 }
 
+bool NoOpFramerVisitor::OnPingFrame(const QuicPingFrame& frame) {
+  return true;
+}
+
 bool NoOpFramerVisitor::OnRstStreamFrame(
     const QuicRstStreamFrame& frame) {
   return true;
@@ -139,102 +156,6 @@ bool NoOpFramerVisitor::OnWindowUpdateFrame(
 
 bool NoOpFramerVisitor::OnBlockedFrame(const QuicBlockedFrame& frame) {
   return true;
-}
-
-FramerVisitorCapturingFrames::FramerVisitorCapturingFrames() : frame_count_(0) {
-}
-
-FramerVisitorCapturingFrames::~FramerVisitorCapturingFrames() {
-  Reset();
-}
-
-void FramerVisitorCapturingFrames::Reset() {
-  STLDeleteElements(&stream_data_);
-  stream_frames_.clear();
-  frame_count_ = 0;
-  ack_.reset();
-  feedback_.reset();
-  rst_.reset();
-  close_.reset();
-  goaway_.reset();
-  version_negotiation_packet_.reset();
-}
-
-bool FramerVisitorCapturingFrames::OnPacketHeader(
-    const QuicPacketHeader& header) {
-  header_ = header;
-  frame_count_ = 0;
-  return true;
-}
-
-bool FramerVisitorCapturingFrames::OnStreamFrame(const QuicStreamFrame& frame) {
-  // Make a copy of the frame and store a copy of underlying string, since
-  // frame.data may not exist outside this callback.
-  stream_data_.push_back(frame.GetDataAsString());
-  QuicStreamFrame frame_copy = frame;
-  frame_copy.data.Clear();
-  frame_copy.data.Append(const_cast<char*>(stream_data_.back()->data()),
-                         stream_data_.back()->size());
-  stream_frames_.push_back(frame_copy);
-  ++frame_count_;
-  return true;
-}
-
-bool FramerVisitorCapturingFrames::OnAckFrame(const QuicAckFrame& frame) {
-  ack_.reset(new QuicAckFrame(frame));
-  ++frame_count_;
-  return true;
-}
-
-bool FramerVisitorCapturingFrames::OnCongestionFeedbackFrame(
-    const QuicCongestionFeedbackFrame& frame) {
-  feedback_.reset(new QuicCongestionFeedbackFrame(frame));
-  ++frame_count_;
-  return true;
-}
-
-bool FramerVisitorCapturingFrames::OnStopWaitingFrame(
-    const QuicStopWaitingFrame& frame) {
-  stop_waiting_.reset(new QuicStopWaitingFrame(frame));
-  ++frame_count_;
-  return true;
-}
-
-bool FramerVisitorCapturingFrames::OnRstStreamFrame(
-    const QuicRstStreamFrame& frame) {
-  rst_.reset(new QuicRstStreamFrame(frame));
-  ++frame_count_;
-  return true;
-}
-
-bool FramerVisitorCapturingFrames::OnConnectionCloseFrame(
-    const QuicConnectionCloseFrame& frame) {
-  close_.reset(new QuicConnectionCloseFrame(frame));
-  ++frame_count_;
-  return true;
-}
-
-bool FramerVisitorCapturingFrames::OnGoAwayFrame(const QuicGoAwayFrame& frame) {
-  goaway_.reset(new QuicGoAwayFrame(frame));
-  ++frame_count_;
-  return true;
-}
-
-void FramerVisitorCapturingFrames::OnVersionNegotiationPacket(
-    const QuicVersionNegotiationPacket& packet) {
-  version_negotiation_packet_.reset(new QuicVersionNegotiationPacket(packet));
-  frame_count_ = 0;
-}
-
-FramerVisitorCapturingPublicReset::FramerVisitorCapturingPublicReset() {
-}
-
-FramerVisitorCapturingPublicReset::~FramerVisitorCapturingPublicReset() {
-}
-
-void FramerVisitorCapturingPublicReset::OnPublicResetPacket(
-    const QuicPublicResetPacket& public_reset) {
-  public_reset_packet_ = public_reset;
 }
 
 MockConnectionVisitor::MockConnectionVisitor() {

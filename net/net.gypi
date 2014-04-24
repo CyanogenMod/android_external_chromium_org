@@ -2,6 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# This file is shared between the regular GYP build, the NaCl GYP build, and
+# the GN build. For GN support, it must have no conditionals or anything like
+# that beyond the simple one-level-deep dictionary of values.
 {
   'variables': {
     # Subset of net source files that are compiled for NaCl (net_nacl target).
@@ -896,6 +899,8 @@
       'quic/quic_fec_group.h',
       'quic/quic_flags.cc',
       'quic/quic_flags.h',
+      'quic/quic_flow_controller.cc',
+      'quic/quic_flow_controller.h',
       'quic/quic_framer.cc',
       'quic/quic_framer.h',
       'quic/quic_headers_stream.cc',
@@ -1433,6 +1438,7 @@
       'quic/congestion_control/paced_sender_test.cc',
       'quic/congestion_control/pacing_sender_test.cc',
       'quic/congestion_control/quic_max_sized_map_test.cc',
+      'quic/congestion_control/rtt_stats_test.cc',
       'quic/congestion_control/tcp_cubic_sender_test.cc',
       'quic/congestion_control/tcp_loss_algorithm_test.cc',
       'quic/congestion_control/tcp_receiver_test.cc',
@@ -1477,10 +1483,14 @@
       'quic/test_tools/mock_random.h',
       'quic/test_tools/quic_client_session_peer.cc',
       'quic/test_tools/quic_client_session_peer.h',
+      'quic/test_tools/quic_config_peer.cc',
+      'quic/test_tools/quic_config_peer.h',
       'quic/test_tools/quic_connection_peer.cc',
       'quic/test_tools/quic_connection_peer.h',
       'quic/test_tools/quic_data_stream_peer.cc',
       'quic/test_tools/quic_data_stream_peer.h',
+      'quic/test_tools/quic_flow_controller_peer.cc',
+      'quic/test_tools/quic_flow_controller_peer.h',
       'quic/test_tools/quic_framer_peer.cc',
       'quic/test_tools/quic_framer_peer.h',
       'quic/test_tools/quic_packet_creator_peer.cc',
@@ -1516,6 +1526,7 @@
       'quic/quic_data_stream_test.cc',
       'quic/quic_data_writer_test.cc',
       'quic/quic_fec_group_test.cc',
+      'quic/quic_flow_controller_test.cc',
       'quic/quic_framer_test.cc',
       'quic/quic_headers_stream_test.cc',
       'quic/quic_http_stream_test.cc',

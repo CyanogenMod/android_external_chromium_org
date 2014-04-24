@@ -79,8 +79,8 @@
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebColorSuggestion.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebGlyphCache.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebPlugin.h"
 #include "third_party/WebKit/public/web/WebPluginParams.h"
@@ -174,6 +174,25 @@ void GetRedirectChain(WebDataSource* ds, std::vector<GURL>* result) {
     else
       result->push_back(blank_url);
   }
+}
+
+// Returns the original request url. If there is no redirect, the original
+// url is the same as ds->request()->url(). If the WebDataSource belongs to a
+// frame was loaded by loadData, the original url will be ds->unreachableURL()
+static GURL GetOriginalRequestURL(WebDataSource* ds) {
+  // WebDataSource has unreachable URL means that the frame is loaded through
+  // blink::WebFrame::loadData(), and the base URL will be in the redirect
+  // chain. However, we never visited the baseURL. So in this case, we should
+  // use the unreachable URL as the original URL.
+  if (ds->hasUnreachableURL())
+    return ds->unreachableURL();
+
+  std::vector<GURL> redirects;
+  GetRedirectChain(ds, &redirects);
+  if (!redirects.empty())
+    return redirects.at(0);
+
+  return ds->originalRequest().url();
 }
 
 NOINLINE static void CrashIntentionally() {
@@ -320,11 +339,16 @@ RenderFrameImpl::RenderFrameImpl(RenderViewImpl* render_view, int routing_id)
       cookie_jar_(this),
       selection_text_offset_(0),
       selection_range_(gfx::Range::InvalidRange()),
-      handling_select_range_(false) {
+      handling_select_range_(false),
+      notification_provider_(NULL) {
   RenderThread::Get()->AddRoute(routing_id_, this);
 
 #if defined(OS_ANDROID)
   new JavaBridgeDispatcher(this);
+#endif
+
+#if defined(ENABLE_NOTIFICATIONS)
+  notification_provider_ = new NotificationProvider(this);
 #endif
 }
 
@@ -1191,7 +1215,7 @@ void RenderFrameImpl::LoadURLExternally(blink::WebLocalFrame* frame,
                                         const blink::WebURLRequest& request,
                                         blink::WebNavigationPolicy policy) {
   DCHECK(!frame_ || frame_ == frame);
-  loadURLExternally(frame, request, policy);
+  loadURLExternally(frame, request, policy, WebString());
 }
 
 void RenderFrameImpl::ExecuteJavaScript(const base::string16& javascript) {
@@ -1484,13 +1508,6 @@ void RenderFrameImpl::didAddMessageToConsole(
                                             message.text,
                                             static_cast<int32>(source_line),
                                             source_name));
-}
-
-void RenderFrameImpl::loadURLExternally(blink::WebLocalFrame* frame,
-                                        const blink::WebURLRequest& request,
-                                        blink::WebNavigationPolicy policy) {
-  DCHECK(!frame_ || frame_ == frame);
-  loadURLExternally(frame, request, policy, WebString());
 }
 
 void RenderFrameImpl::loadURLExternally(
@@ -2013,7 +2030,7 @@ void RenderFrameImpl::didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame) {
 }
 
 blink::WebNotificationPresenter* RenderFrameImpl::notificationPresenter() {
-  return render_view_->notification_provider_;
+  return notification_provider_;
 }
 
 void RenderFrameImpl::didChangeSelection(bool is_empty_selection) {
@@ -2642,7 +2659,6 @@ void RenderFrameImpl::UpdateURL(blink::WebFrame* frame) {
   DCHECK(ds);
 
   const WebURLRequest& request = ds->request();
-  const WebURLRequest& original_request = ds->originalRequest();
   const WebURLResponse& response = ds->response();
 
   DocumentState* document_state = DocumentState::FromDataSource(ds);
@@ -2763,10 +2779,7 @@ void RenderFrameImpl::UpdateURL(blink::WebFrame* frame) {
     // Track the URL of the original request.  We use the first entry of the
     // redirect chain if it exists because the chain may have started in another
     // process.
-    if (params.redirects.size() > 0)
-      params.original_request_url = params.redirects.at(0);
-    else
-      params.original_request_url = original_request.url();
+    params.original_request_url = GetOriginalRequestURL(ds);
 
     params.history_list_was_cleared =
         navigation_state->history_list_was_cleared();

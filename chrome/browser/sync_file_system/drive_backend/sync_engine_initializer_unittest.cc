@@ -53,6 +53,7 @@ class SyncEngineInitializerTest : public testing::Test {
     sync_context_.reset(new SyncEngineContext(
         fake_drive_service_.get(),
         NULL /* drive_uploader */,
+        base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current()));
 
     sync_task_manager_.reset(new SyncTaskManager(
@@ -107,6 +108,7 @@ class SyncEngineInitializerTest : public testing::Test {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     scoped_ptr<MetadataDatabase> database;
     MetadataDatabase::Create(
+        base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current(),
         database_path(),
         in_memory_env_.get(),

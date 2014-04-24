@@ -14,7 +14,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/local_discovery/privet_constants.h"
-#include "components/cloud_devices/printer_description.h"
+#include "components/cloud_devices/common/printer_description.h"
 #include "net/base/url_util.h"
 #include "printing/pwg_raster_settings.h"
 #include "printing/units.h"
@@ -22,6 +22,10 @@
 #include "url/gurl.h"
 
 using namespace cloud_devices::printer;
+
+namespace cloud_print {
+extern const char kContentTypeJSON[];
+}
 
 namespace local_discovery {
 
@@ -40,7 +44,6 @@ const char kPrivetURLValueClientName[] = "Chrome";
 const char kPrivetContentTypePDF[] = "application/pdf";
 const char kPrivetContentTypePWGRaster[] = "image/pwg-raster";
 const char kPrivetContentTypeAny[] = "*/*";
-const char kPrivetContentTypeCJT[] = "application/json";
 
 const char kPrivetStorageListPath[] = "/privet/storage/list";
 const char kPrivetStorageContentPath[] = "/privet/storage/content";
@@ -540,7 +543,8 @@ void PrivetLocalPrintOperationImpl::DoCreatejob() {
 
   url_fetcher_= privet_client_->CreateURLFetcher(
       CreatePrivetURL(kPrivetCreatejobPath), net::URLFetcher::POST, this);
-  url_fetcher_->SetUploadData(kPrivetContentTypeCJT, ticket_.ToString());
+  url_fetcher_->SetUploadData(cloud_print::kContentTypeJSON,
+                              ticket_.ToString());
 
   url_fetcher_->Start();
 }

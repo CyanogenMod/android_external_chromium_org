@@ -440,10 +440,6 @@ IPC_STRUCT_BEGIN(ViewHostMsg_UpdateRect_Params)
   // request messages.
   IPC_STRUCT_MEMBER(int, flags)
 
-  // Whether or not the renderer expects a ViewMsg_UpdateRect_ACK for this
-  // update. True for 2D painting, but false for accelerated compositing.
-  IPC_STRUCT_MEMBER(bool, needs_ack)
-
   // All the above coordinates are in DIP. This is the scale factor needed
   // to convert them to pixels.
   IPC_STRUCT_MEMBER(float, scale_factor)
@@ -484,6 +480,12 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
 
   // Whether the RenderView should initially be hidden.
   IPC_STRUCT_MEMBER(bool, hidden)
+
+  // Whether the RenderView will never be visible.
+  IPC_STRUCT_MEMBER(bool, never_visible)
+
+  // Whether the window associated with this view was created with an opener.
+  IPC_STRUCT_MEMBER(bool, window_was_created_with_opener)
 
   // The initial page ID to use for this view, which must be larger than any
   // existing navigation that might be loaded in the view.  Page IDs are unique
@@ -630,10 +632,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_WasShown,
 // Sent to inform the view that it was swapped out.  This allows the process to
 // exit if no other views are using it.
 IPC_MESSAGE_ROUTED0(ViewMsg_WasSwappedOut)
-
-// Tells the render view that a ViewHostMsg_UpdateRect message was processed.
-// This signals the render view that it can send another UpdateRect message.
-IPC_MESSAGE_ROUTED0(ViewMsg_UpdateRect_ACK)
 
 // Tells the renderer to focus the first (last if reverse is true) focusable
 // node.
@@ -907,8 +905,8 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetAccessibilityMode,
 
 // An acknowledge to ViewHostMsg_MultipleTargetsTouched to notify the renderer
 // process to release the magnified image.
-IPC_MESSAGE_ROUTED1(ViewMsg_ReleaseDisambiguationPopupDIB,
-                    TransportDIB::Handle /* DIB handle */)
+IPC_MESSAGE_ROUTED1(ViewMsg_ReleaseDisambiguationPopupBitmap,
+                    cc::SharedBitmapId /* id */)
 
 // Notifies the renderer that a snapshot has been retrieved.
 IPC_MESSAGE_ROUTED3(ViewMsg_WindowSnapshotCompleted,
@@ -1667,7 +1665,7 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_DidAccessInitialDocument)
 IPC_MESSAGE_ROUTED3(ViewHostMsg_ShowDisambiguationPopup,
                     gfx::Rect, /* Border of touched targets */
                     gfx::Size, /* Size of zoomed image */
-                    TransportDIB::Id /* DIB of zoomed image */)
+                    cc::SharedBitmapId /* id */)
 
 // Sent by the renderer process to check whether client 3D APIs
 // (Pepper 3D, WebGL) are explicitly blocked.

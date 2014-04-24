@@ -23,10 +23,10 @@
 
 namespace options {
 
-StartupPagesHandler::StartupPagesHandler() {}
+StartupPagesHandler::StartupPagesHandler() {
+}
 
 StartupPagesHandler::~StartupPagesHandler() {
-
 }
 
 void StartupPagesHandler::GetLocalizedValues(
@@ -167,6 +167,7 @@ void StartupPagesHandler::AddStartupPage(const base::ListValue* args) {
 
 void StartupPagesHandler::EditStartupPage(const base::ListValue* args) {
   std::string url_string;
+  GURL fixed_url;
   int index;
   CHECK_EQ(args->GetSize(), 2U);
   CHECK(args->GetInteger(0, &index));
@@ -177,9 +178,14 @@ void StartupPagesHandler::EditStartupPage(const base::ListValue* args) {
     return;
   }
 
-  std::vector<GURL> urls = startup_custom_pages_table_model_->GetURLs();
-  urls[index] = URLFixerUpper::FixupURL(url_string, std::string());
-  startup_custom_pages_table_model_->SetURLs(urls);
+  fixed_url = URLFixerUpper::FixupURL(url_string, std::string());
+  if (!fixed_url.is_empty()) {
+    std::vector<GURL> urls = startup_custom_pages_table_model_->GetURLs();
+    urls[index] = fixed_url;
+    startup_custom_pages_table_model_->SetURLs(urls);
+  } else {
+    startup_custom_pages_table_model_->Remove(index);
+  }
 }
 
 void StartupPagesHandler::DragDropStartupPage(const base::ListValue* args) {
@@ -230,8 +236,7 @@ void StartupPagesHandler::RequestAutocompleteSuggestions(
 
   autocomplete_controller_->Start(AutocompleteInput(
       input, base::string16::npos, base::string16(), GURL(),
-      AutocompleteInput::INVALID_SPEC, true,
-      false, false, AutocompleteInput::ALL_MATCHES));
+      AutocompleteInput::INVALID_SPEC, true, false, false, true));
 }
 
 void StartupPagesHandler::OnResultChanged(bool default_match_changed) {

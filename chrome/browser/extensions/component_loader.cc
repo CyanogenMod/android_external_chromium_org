@@ -34,6 +34,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "grit/keyboard_resources.h"
+#include "ui/file_manager/grit/file_manager_resources.h"
 #include "ui/keyboard/keyboard_util.h"
 #endif
 
@@ -288,8 +289,18 @@ void ComponentLoader::AddFileManagerExtension() {
 }
 
 void ComponentLoader::AddVideoPlayerExtension() {
-  Add(IDR_VIDEOPLAYER_MANIFEST,
+#if defined(OS_CHROMEOS)
+  Add(IDR_VIDEO_PLAYER_MANIFEST,
       base::FilePath(FILE_PATH_LITERAL("video_player")));
+#endif  // defined(OS_CHROMEOS)
+}
+
+void ComponentLoader::AddGalleryExtension() {
+#if defined(OS_CHROMEOS)
+  const CommandLine* const command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(chromeos::switches::kFileManagerEnableNewGallery))
+    Add(IDR_GALLERY_MANIFEST, base::FilePath(FILE_PATH_LITERAL("gallery")));
+#endif
 }
 
 void ComponentLoader::AddHangoutServicesExtension() {
@@ -308,15 +319,6 @@ void ComponentLoader::AddHotwordHelperExtension() {
 
 void ComponentLoader::AddImageLoaderExtension() {
 #if defined(IMAGE_LOADER_EXTENSION)
-#ifndef NDEBUG
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kImageLoaderExtensionPath)) {
-    base::FilePath image_loader_extension_path(
-        command_line->GetSwitchValuePath(switches::kImageLoaderExtensionPath));
-    Add(IDR_IMAGE_LOADER_MANIFEST, image_loader_extension_path);
-    return;
-  }
-#endif  // NDEBUG
   Add(IDR_IMAGE_LOADER_MANIFEST,
       base::FilePath(FILE_PATH_LITERAL("image_loader")));
 #endif  // defined(IMAGE_LOADER_EXTENSION)
@@ -442,6 +444,7 @@ void ComponentLoader::AddDefaultComponentExtensionsForKioskMode(
   // Component extensions needed for kiosk apps.
   AddVideoPlayerExtension();
   AddFileManagerExtension();
+  AddGalleryExtension();
 
   // Add virtual keyboard.
   AddKeyboardApp();
@@ -473,6 +476,7 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   if (!skip_session_components) {
     AddVideoPlayerExtension();
     AddFileManagerExtension();
+    AddGalleryExtension();
 
     AddHangoutServicesExtension();
     AddHotwordHelperExtension();

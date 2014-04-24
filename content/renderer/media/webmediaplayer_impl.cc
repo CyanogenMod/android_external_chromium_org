@@ -66,6 +66,7 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -480,6 +481,15 @@ double WebMediaPlayerImpl::duration() const {
     return std::numeric_limits<double>::quiet_NaN();
 
   return GetPipelineDuration();
+}
+
+double WebMediaPlayerImpl::timelineOffset() const {
+  DCHECK(main_loop_->BelongsToCurrentThread());
+
+  if (pipeline_metadata_.timeline_offset.is_null())
+    return std::numeric_limits<double>::quiet_NaN();
+
+  return pipeline_metadata_.timeline_offset.ToJsTime();
 }
 
 double WebMediaPlayerImpl::currentTime() const {
@@ -983,11 +993,8 @@ void WebMediaPlayerImpl::OnPipelineMetadata(
     DCHECK(!video_weblayer_);
     video_weblayer_.reset(new webkit::WebLayerImpl(
         cc::VideoLayer::Create(compositor_.GetVideoFrameProvider())));
-
-    client_->setWebLayer(video_weblayer_.get());
-    // TODO(scherkus): Remove once plumbing from HTMLMediaElement is removed.
-    client_->setOpaque(opaque_);
     video_weblayer_->setOpaque(opaque_);
+    client_->setWebLayer(video_weblayer_.get());
   }
 
   // TODO(scherkus): This should be handled by HTMLMediaElement and controls
@@ -1296,8 +1303,6 @@ void WebMediaPlayerImpl::OnOpacityChanged(bool opaque) {
   DCHECK_NE(ready_state_, WebMediaPlayer::ReadyStateHaveNothing);
 
   opaque_ = opaque;
-  // TODO(scherkus): Remove once plumbing from HTMLMediaElement is removed.
-  client_->setOpaque(opaque);
   if (video_weblayer_)
     video_weblayer_->setOpaque(opaque_);
 }

@@ -346,7 +346,7 @@ void ManagedUserService::Observe(int type,
                           const content::NotificationSource& source,
                           const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
       const extensions::Extension* extension =
           content::Details<extensions::Extension>(details).ptr();
       if (!extensions::ManagedModeInfo::GetContentPackSiteList(
@@ -469,7 +469,8 @@ void ManagedUserService::AddAccessRequest(const GURL& url) {
   // TODO(sergiu): Use sane time here when it's ready.
   dict->SetDouble(kManagedUserAccessRequestTime, base::Time::Now().ToJsTime());
 
-  dict->SetString(kManagedUserName, profile_->GetProfileName());
+  dict->SetString(kManagedUserName,
+                  profile_->GetPrefs()->GetString(prefs::kProfileName));
 
   // Copy the notification setting of the custodian.
   std::string managed_user_id =
@@ -478,7 +479,10 @@ void ManagedUserService::AddAccessRequest(const GURL& url) {
       ManagedUserSharedSettingsServiceFactory::GetForBrowserContext(profile_)
           ->GetValue(managed_user_id, kNotificationSetting);
   bool notifications_enabled = false;
-  if (value) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableAccessRequestNotifications)) {
+    notifications_enabled = true;
+  } else if (value) {
     bool success = value->GetAsBoolean(&notifications_enabled);
     DCHECK(success);
   }
@@ -572,7 +576,8 @@ void ManagedUserService::Init() {
   if (management_policy)
     extension_system->management_policy()->RegisterProvider(this);
 
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_));

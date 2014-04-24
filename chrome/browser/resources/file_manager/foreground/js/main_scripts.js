@@ -24,7 +24,7 @@
 // //so we want to parse it as early as possible.
 //<include src="metrics.js"/>
 //
-//<include src="../../../image_loader/image_loader_client.js"/>
+//<include src="../../../../../../ui/file_manager/image_loader/image_loader_client.js"/>
 //
 //<include src="../../../../../../ui/webui/resources/js/load_time_data.js"/>
 //<include src="../../../../../../ui/webui/resources/js/cr.js"/>
@@ -126,7 +126,4 @@ window.fileManager = fileManager;
 
 // Exports
 window.util = util;
-
-window.unload = unload;
-
 })();

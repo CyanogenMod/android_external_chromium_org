@@ -61,10 +61,6 @@ public class InterstitialPageTest extends ContentShellTestBase {
         waitForActiveShellToBeDoneLoading();
     }
 
-    private ContentViewCore getActiveContentViewCore() {
-        return getActivity().getActiveContentView().getContentViewCore();
-    }
-
     private boolean waitForInterstitial(final boolean shouldBeShown) throws InterruptedException {
         return CriteriaHelper.pollForCriteria(new Criteria() {
             @Override
@@ -74,7 +70,7 @@ public class InterstitialPageTest extends ContentShellTestBase {
                         @Override
                         public Boolean call() throws Exception {
                             return shouldBeShown
-                                    == getActiveContentViewCore().isShowingInterstitialPage();
+                                    == getContentViewCore().isShowingInterstitialPage();
                         }
                     });
                 } catch (ExecutionException e) {
@@ -118,8 +114,8 @@ public class InterstitialPageTest extends ContentShellTestBase {
                 new Callable<TestWebContentsObserverAndroid>() {
                     @Override
                     public TestWebContentsObserverAndroid call() throws Exception {
-                        getActiveContentViewCore().showInterstitialPage(URL, delegate);
-                        return new TestWebContentsObserverAndroid(getActiveContentViewCore());
+                        getContentViewCore().showInterstitialPage(URL, delegate);
+                        return new TestWebContentsObserverAndroid(getContentViewCore());
                     }
                 });
 
@@ -127,7 +123,7 @@ public class InterstitialPageTest extends ContentShellTestBase {
         assertTrue("WebContentsObserver not notified of interstitial showing",
                 observer.isInterstitialShowing());
         TouchCommon touchCommon = new TouchCommon(this);
-        touchCommon.singleClickViewRelative(getActivity().getActiveContentView(), 10, 10);
+        touchCommon.singleClickViewRelative(getContentViewCore().getContainerView(), 10, 10);
         assertTrue("Interstitial never hidden.", waitForInterstitial(false));
         assertTrue("WebContentsObserver not notified of interstitial hiding",
                 !observer.isInterstitialShowing());

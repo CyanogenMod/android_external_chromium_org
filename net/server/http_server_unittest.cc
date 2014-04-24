@@ -96,8 +96,7 @@ class TestHttpClient {
     int bytes_received = callback.WaitForResult();
     if (bytes_received <= 0)
       return false;
-    std::string io_buffer_contents(read_buffer_->data());
-    *message = io_buffer_contents.substr(0, bytes_received);
+    *message = std::string(read_buffer_->data(), bytes_received);
     return true;
   }
 
@@ -309,7 +308,8 @@ TEST_F(HttpServerTest, Send200) {
   ASSERT_TRUE(EndsWith(response, "Response!", true));
 }
 
-TEST_F(HttpServerTest, SendRaw) {
+// Flaky on at least OS X and Vista. http://crbug.com/365067.
+TEST_F(HttpServerTest, DISABLED_SendRaw) {
   TestHttpClient client;
   ASSERT_EQ(OK, client.ConnectAndWait(server_address_));
   client.Send("GET /test HTTP/1.1\r\n\r\n");

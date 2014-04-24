@@ -8,6 +8,13 @@
 // <em>semantic</em> structure of a page, and can be used to programmatically
 // interact with a page.
 [nocompile] namespace automation {
+  dictionary Rect {
+    long left;
+    long top;
+    long width;
+    long height;
+  };
+
   // An event in the Automation tree.
   [nocompile] dictionary AutomationEvent {
     // The $(ref:automation.AutomationNode) to which the event was targeted.
@@ -35,7 +42,8 @@
     // The state of this node, e.g. {pressed": true, "inactive": true} etc.
     object state;
 
-    // TODO(aboxhall): Rect location;
+    // The rendered location (as a bounding box) of this node within the frame.
+    Rect location;
 
     // A collection of this node's other attributes.
     // TODO(aboxhall): Create and use combined list of attributes from
@@ -61,15 +69,20 @@
     static void setSelection(long startIndex, long endIndex);
 
     // Events.
-    static void addEventListener(DOMString eventType,
-                                 AutomationListener listener,
-                                 bool capture);
-    static void removeEventListener(AutomationListener listener);
+    static void addEventListener(
+        DOMString eventType, AutomationListener listener, bool capture);
+    static void removeEventListener(
+        DOMString eventType, AutomationListener listener, bool capture);
   };
 
   // The automation tree for a single page.
   [nocompile] dictionary AutomationTree {
     AutomationNode root;
+
+    static void addEventListener(
+        DOMString eventType, AutomationListener listener, bool capture);
+    static void removeEventListener(
+        DOMString eventType, AutomationListener listener, bool capture);
   };
 
   // Called when the <code>AutomationTree</code> for the page is available.
@@ -77,7 +90,10 @@
 
   interface Functions {
     // Get the automation tree for the current tab, enabling automation if
-    // necessary.
+    // necessary. Returns a tree with a placeholder root node; listen for
+    // the "load_complete" event to get a notification that the tree has fully
+    // loaded (the previous root node reference will stop working at or before
+    // this point).
     [nocompile] static void getTree(RootCallback callback);
   };
 };

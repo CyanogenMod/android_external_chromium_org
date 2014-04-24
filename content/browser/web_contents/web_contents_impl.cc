@@ -321,6 +321,7 @@ WebContentsImpl::WebContentsImpl(
       controller_(this, browser_context),
       render_view_host_delegate_view_(NULL),
       opener_(opener),
+      created_with_opener_(!!opener),
 #if defined(OS_WIN)
       accessible_parent_(NULL),
 #endif
@@ -1222,7 +1223,10 @@ bool WebContentsImpl::HandleWheelEvent(
   //      with control key set which isn't what the user wants
   if (delegate_ &&
       event.wheelTicksY &&
-      (event.modifiers & blink::WebInputEvent::ControlKey)) {
+      (event.modifiers & blink::WebInputEvent::ControlKey) &&
+      // Avoid adjusting the zoom in response to two-finger-scrolling touchpad
+      // gestures, which are regrettably easy to trigger accidentally.
+      !event.hasPreciseScrollingDeltas) {
     delegate_->ContentsZoomChange(event.wheelTicksY > 0);
     return true;
   }
@@ -1262,10 +1266,12 @@ bool WebContentsImpl::HandleGestureEvent(
     totalPinchGestureAmount_ += event.data.pinchUpdate.scale;
     if (totalPinchGestureAmount_ > zoomInThreshold) {
       currentPinchZoomStepDelta_++;
-      delegate_->ContentsZoomChange(true);
+      if (delegate_)
+        delegate_->ContentsZoomChange(true);
     } else if (totalPinchGestureAmount_ < zoomOutThreshold) {
       currentPinchZoomStepDelta_--;
-      delegate_->ContentsZoomChange(false);
+      if (delegate_)
+        delegate_->ContentsZoomChange(false);
     }
     return true;
   }
@@ -2371,6 +2377,12 @@ void WebContentsImpl::RequestOpenURL(RenderFrameHostImpl* render_frame_host,
   }
 }
 
+bool WebContentsImpl::ShouldPreserveAbortedURLs() {
+  if (!delegate_)
+    return false;
+  return delegate_->ShouldPreserveAbortedURLs(this);
+}
+
 void WebContentsImpl::DidRedirectProvisionalLoad(
     RenderFrameHostImpl* render_frame_host,
     const GURL& validated_target_url) {
@@ -2684,8 +2696,9 @@ void WebContentsImpl::OnOpenColorChooser(
     int color_chooser_id,
     SkColor color,
     const std::vector<ColorSuggestion>& suggestions) {
-  ColorChooser* new_color_chooser =
-      delegate_->OpenColorChooser(this, color, suggestions);
+  ColorChooser* new_color_chooser = delegate_ ?
+      delegate_->OpenColorChooser(this, color, suggestions) :
+      NULL;
   if (!new_color_chooser)
     return;
   if (color_chooser_info_.get())
@@ -3116,6 +3129,12 @@ WebContents* WebContentsImpl::GetAsWebContents() {
   return this;
 }
 
+bool WebContentsImpl::IsNeverVisible() {
+  if (!delegate_)
+    return false;
+  return delegate_->IsNeverVisible(this);
+}
+
 RenderViewHostDelegateView* WebContentsImpl::GetDelegateView() {
   return render_view_host_delegate_view_;
 }
@@ -3395,6 +3414,12 @@ void WebContentsImpl::DidDisownOpener(RenderViewHost* rvh) {
 }
 
 void WebContentsImpl::DidAccessInitialDocument() {
+  // We may have left a failed browser-initiated navigation in the address bar
+  // to let the user edit it and try again.  Clear it now that content might
+  // show up underneath it.
+  if (!IsLoading() && controller_.GetPendingEntry())
+    controller_.DiscardPendingEntry();
+
   // Update the URL display.
   NotifyNavigationStateChanged(content::INVALIDATE_TYPE_URL);
 }
@@ -3567,7 +3592,7 @@ void WebContentsImpl::RendererUnresponsive(RenderViewHost* rvh,
     // close. Otherwise, pretend the unload listeners have all fired and close
     // the tab.
     bool close = true;
-    if (is_during_beforeunload) {
+    if (is_during_beforeunload && delegate_) {
       delegate_->BeforeUnloadFired(this, true, &close);
     }
     if (close)
@@ -3733,7 +3758,8 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
   if (!static_cast<RenderViewHostImpl*>(
           render_view_host)->CreateRenderView(base::string16(),
                                               opener_route_id,
-                                              max_page_id)) {
+                                              max_page_id,
+                                              created_with_opener_)) {
     return false;
   }
 

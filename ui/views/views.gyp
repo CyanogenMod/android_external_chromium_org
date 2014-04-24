@@ -29,7 +29,7 @@
         '../gfx/gfx.gyp:gfx_geometry',
         '../native_theme/native_theme.gyp:native_theme',
         '../resources/ui_resources.gyp:ui_resources',
-        '../wm/wm.gyp:wm_core',
+        '../wm/wm.gyp:wm',
       ],
       'export_dependent_settings': [
         '../accessibility/accessibility.gyp:ax_gen',
@@ -232,9 +232,6 @@
         'drag_controller.h',
         'drag_utils.cc',
         'drag_utils.h',
-        'event_utils.h',
-        'event_utils_aura.cc',
-        'event_utils_win.cc',
         'focus/external_focus_tracker.cc',
         'focus/external_focus_tracker.h',
         'focus/focus_manager.cc',
@@ -389,8 +386,6 @@
         'widget/widget_removals_observer.h',
         'widget/window_reorderer.cc',
         'widget/window_reorderer.h',
-        'win/appbar.cc',
-        'win/appbar.h',
         'win/fullscreen_handler.cc',
         'win/fullscreen_handler.h',
         'win/hwnd_message_handler.cc',
@@ -436,7 +431,7 @@
         }],
         ['chromeos==0 and use_x11==1', {
           'dependencies': [
-            '../display/display.gyp:display',
+            '../display/display.gyp:display_util',
           ],
         }],
         ['OS=="linux" and chromeos==0', {
@@ -516,7 +511,7 @@
         '../events/events.gyp:events',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
-        '../wm/wm.gyp:wm_core',
+        '../wm/wm.gyp:wm',
         'views',
       ],
       'include_dirs': [
@@ -572,6 +567,7 @@
         '../aura/aura.gyp:aura_test_support',
         '../base/strings/ui_strings.gyp:ui_strings',
         '../base/ui_base.gyp:ui_base',
+        '../base/ui_base.gyp:ui_base_test_support',
         '../compositor/compositor.gyp:compositor',
         '../compositor/compositor.gyp:compositor_test_support',
         '../events/events.gyp:events',
@@ -579,8 +575,7 @@
         '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
         '../resources/ui_resources.gyp:ui_test_pak',
-        '../ui_unittests.gyp:ui_test_support',
-        '../wm/wm.gyp:wm_core',
+        '../wm/wm.gyp:wm',
         'views',
         'views_test_support',
       ],

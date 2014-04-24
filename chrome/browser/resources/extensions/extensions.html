@@ -88,6 +88,17 @@
       <button id="update-extensions-now"
           i18n-content="extensionSettingsUpdateButton"></button>
     </div>
+    <div id="apps-developer-tools-promo">
+      <img></img>
+      <span id="apps-developer-tools-promo-text"
+          i18n-content="extensionSettingsAppsDevToolsPromoText"></span>
+      <a id="apps-developer-tools-promo-link" target="_blank"
+         i18n-content="extensionSettingsAppsDevToolsLinkText"
+         i18n-values="href:extensionSettingsAppsDevToolsUrl"></a>
+      <div id="apps-developer-tools-promo-close-wrapper">
+        <div class="close-button"></div>
+      </div>
+    </div>
   </div>
   <div id="extension-settings-list" class="empty-extension-list"></div>
   <div id="no-extensions">
@@ -167,10 +178,19 @@
         <div class="optional-controls">
           <button class="show-button"
               i18n-content="extensionSettingsShowButton" hidden></button>
-          <div class="checkbox"><label class="incognito-control">
-            <input type="checkbox">
-            <span i18n-content="extensionSettingsEnableIncognito"></span>
-          </label></div>
+          <div class="checkbox">
+            <label class="incognito-control">
+              <input type="checkbox">
+              <span i18n-content="extensionSettingsEnableIncognito"></span>
+            </label>
+          </div>
+          <div class="checkbox error-collection-control" hidden>
+            <label>
+              <input type="checkbox">
+              <span i18n-content="extensionSettingsEnableErrorCollection">
+              </span>
+            </label>
+          </div>
           <span class="optional-controls-disableable">
             <label class="file-access-control" hidden>
               <input type="checkbox">

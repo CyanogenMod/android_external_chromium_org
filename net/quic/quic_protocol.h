@@ -60,7 +60,7 @@ const QuicByteCount kMaxPacketSize = 1452;
 
 // Maximum size of the initial congestion window in packets.
 const size_t kDefaultInitialWindow = 10;
-const size_t kMaxInitialWindow = 100;
+const uint32 kMaxInitialWindow = 100;
 
 // Default size of initial flow control window.
 const uint32 kDefaultFlowControlSendWindow = 16 * 1024;  // 16 KB
@@ -70,7 +70,7 @@ const uint32 kDefaultFlowControlSendWindow = 16 * 1024;  // 16 KB
 const size_t kMaxTcpCongestionWindow = 200;
 
 // Don't allow a client to suggest an RTT longer than 15 seconds.
-const size_t kMaxInitialRoundTripTimeUs = 15 * kNumMicrosPerSecond;
+const uint32 kMaxInitialRoundTripTimeUs = 15 * kNumMicrosPerSecond;
 
 // Maximum number of open streams per connection.
 const size_t kDefaultMaxStreamsPerConnection = 100;
@@ -109,6 +109,9 @@ const QuicStreamId kHeadersStreamId = 3;
 const int64 kDefaultInitialTimeoutSecs = 120;  // 2 mins.
 const int64 kDefaultTimeoutSecs = 60 * 10;  // 10 minutes.
 const int64 kDefaultMaxTimeForCryptoHandshakeSecs = 5;  // 5 secs.
+
+// Default ping timeout.
+const int64 kPingTimeoutSecs = 15;  // 15 secs.
 
 // We define an unsigned 16-bit floating point value, inspired by IEEE floats
 // (http://en.wikipedia.org/wiki/Half_precision_floating-point_format),
@@ -163,6 +166,7 @@ enum QuicFrameType {
   WINDOW_UPDATE_FRAME = 4,
   BLOCKED_FRAME = 5,
   STOP_WAITING_FRAME = 6,
+  PING_FRAME = 7,
 
   // STREAM, ACK, and CONGESTION_FEEDBACK frames are special frames. They are
   // encoded differently on the wire and their values do not need to be stable.
@@ -263,7 +267,8 @@ enum QuicVersion {
   QUIC_VERSION_13 = 13,
   QUIC_VERSION_15 = 15,
   QUIC_VERSION_16 = 16,
-  QUIC_VERSION_17 = 17,  // Current version.
+  QUIC_VERSION_17 = 17,
+  QUIC_VERSION_18 = 18,  // Current version.
 };
 
 // This vector contains QUIC versions which we currently support.
@@ -273,7 +278,8 @@ enum QuicVersion {
 //
 // IMPORTANT: if you are addding to this list, follow the instructions at
 // http://sites/quic/adding-and-removing-versions
-static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_17,
+static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_18,
+                                                     QUIC_VERSION_17,
                                                      QUIC_VERSION_16,
                                                      QUIC_VERSION_15,
                                                      QUIC_VERSION_13};
@@ -349,10 +355,19 @@ enum QuicRstStreamErrorCode {
   QUIC_STREAM_PEER_GOING_AWAY,
   // The stream has been cancelled.
   QUIC_STREAM_CANCELLED,
+  // Sending a RST to allow for proper flow control accounting.
+  QUIC_RST_FLOW_CONTROL_ACCOUNTING,
 
   // No error. Used as bound while iterating.
   QUIC_STREAM_LAST_ERROR,
 };
+
+// Because receiving an unknown QuicRstStreamErrorCode results in connection
+// teardown, we use this to make sure any errors predating a given version are
+// downgraded to the most appropriate existing error.
+NET_EXPORT_PRIVATE QuicRstStreamErrorCode AdjustErrorForVersion(
+    QuicRstStreamErrorCode error_code,
+    QuicVersion version);
 
 // These values must remain stable as they are uploaded to UMA histograms.
 // To add a new error code, use the current value of QUIC_LAST_ERROR and
@@ -557,6 +572,11 @@ typedef QuicPacketPublicHeader QuicVersionNegotiationPacket;
 struct NET_EXPORT_PRIVATE QuicPaddingFrame {
 };
 
+// A ping frame contains no payload, though it is retransmittable,
+// and ACK'd just like other normal frames.
+struct NET_EXPORT_PRIVATE QuicPingFrame {
+};
+
 struct NET_EXPORT_PRIVATE QuicStreamFrame {
   QuicStreamFrame();
   QuicStreamFrame(const QuicStreamFrame& frame);
@@ -655,11 +675,6 @@ struct NET_EXPORT_PRIVATE QuicStopWaitingFrame {
 
 struct NET_EXPORT_PRIVATE QuicAckFrame {
   QuicAckFrame();
-  // Testing convenience method to construct a QuicAckFrame with all packets
-  // from least_unacked to largest_observed acked.
-  QuicAckFrame(QuicPacketSequenceNumber largest_observed,
-               QuicTime largest_observed_receive_time,
-               QuicPacketSequenceNumber least_unacked);
 
   NET_EXPORT_PRIVATE friend std::ostream& operator<<(
       std::ostream& os, const QuicAckFrame& s);
@@ -819,6 +834,7 @@ struct NET_EXPORT_PRIVATE QuicFrame {
   explicit QuicFrame(QuicRstStreamFrame* frame);
   explicit QuicFrame(QuicConnectionCloseFrame* frame);
   explicit QuicFrame(QuicStopWaitingFrame* frame);
+  explicit QuicFrame(QuicPingFrame* frame);
   explicit QuicFrame(QuicGoAwayFrame* frame);
   explicit QuicFrame(QuicWindowUpdateFrame* frame);
   explicit QuicFrame(QuicBlockedFrame* frame);
@@ -833,6 +849,7 @@ struct NET_EXPORT_PRIVATE QuicFrame {
     QuicAckFrame* ack_frame;
     QuicCongestionFeedbackFrame* congestion_feedback_frame;
     QuicStopWaitingFrame* stop_waiting_frame;
+    QuicPingFrame* ping_frame;
     QuicRstStreamFrame* rst_stream_frame;
     QuicConnectionCloseFrame* connection_close_frame;
     QuicGoAwayFrame* goaway_frame;
@@ -1019,6 +1036,7 @@ enum WriteStatus {
 // of bytes written or the error code, depending upon the status.
 struct NET_EXPORT_PRIVATE WriteResult {
   WriteResult(WriteStatus status, int bytes_written_or_error_code);
+  WriteResult();
 
   WriteStatus status;
   union {

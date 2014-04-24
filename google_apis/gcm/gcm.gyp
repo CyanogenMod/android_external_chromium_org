@@ -58,6 +58,8 @@
         'engine/gcm_store.h',
         'engine/gcm_store_impl.cc',
         'engine/gcm_store_impl.h',
+        'engine/gservices_settings.cc',
+        'engine/gservices_settings.h',
         'engine/heartbeat_manager.cc',
         'engine/heartbeat_manager.h',
         'engine/mcs_client.cc',
@@ -72,6 +74,8 @@
         'gcm_client.h',
         'gcm_client_impl.cc',
         'gcm_client_impl.h',
+        'monitoring/gcm_stats_recorder.cc',
+        'monitoring/gcm_stats_recorder.h',
         'protocol/android_checkin.proto',
         'protocol/checkin.proto',
         'protocol/mcs.proto',
@@ -134,11 +138,13 @@
         'engine/fake_connection_handler.cc',
         'engine/fake_connection_handler.h',
         'engine/gcm_store_impl_unittest.cc',
+        'engine/gservices_settings_unittest.cc',
         'engine/heartbeat_manager_unittest.cc',
         'engine/mcs_client_unittest.cc',
         'engine/registration_request_unittest.cc',
         'engine/unregistration_request_unittest.cc',
-        'gcm_client_impl_unittest.cc'
+        'gcm_client_impl_unittest.cc',
+        'monitoring/gcm_stats_recorder_unittest.cc'
       ]
     },
   ],

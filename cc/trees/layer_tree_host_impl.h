@@ -63,8 +63,9 @@ class LayerTreeHostImplClient {
  public:
   virtual void UpdateRendererCapabilitiesOnImplThread() = 0;
   virtual void DidLoseOutputSurfaceOnImplThread() = 0;
+  virtual void SetMaxSwapsPendingOnImplThread(int max) = 0;
   virtual void DidSwapBuffersOnImplThread() = 0;
-  virtual void OnSwapBuffersCompleteOnImplThread() = 0;
+  virtual void DidSwapBuffersCompleteOnImplThread() = 0;
   virtual void BeginFrame(const BeginFrameArgs& args) = 0;
   virtual void OnCanDrawStateChanged(bool can_draw) = 0;
   virtual void NotifyReadyToActivate() = 0;
@@ -233,7 +234,7 @@ class CC_EXPORT LayerTreeHostImpl
       bool valid_for_tile_management) OVERRIDE;
   virtual void DidLoseOutputSurface() OVERRIDE;
   virtual void DidSwapBuffers() OVERRIDE;
-  virtual void OnSwapBuffersComplete() OVERRIDE;
+  virtual void DidSwapBuffersComplete() OVERRIDE;
   virtual void ReclaimResources(const CompositorFrameAck* ack) OVERRIDE;
   virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) OVERRIDE;
   virtual void SetTreeActivationCallback(const base::Closure& callback)
@@ -628,14 +629,10 @@ class CC_EXPORT LayerTreeHostImpl
   // - external_viewport_ is used DrawProperties, tile management and
   // glViewport/window projection matrix.
   // - external_clip_ specifies a top-level clip rect
-  // - external_stencil_test_enabled_ tells CC to respect existing stencil bits
-  // (When these are specified, device_viewport_size_ remains used only for
-  // scrollable size.)
   gfx::Transform external_transform_;
   gfx::Rect external_viewport_;
   gfx::Rect external_clip_;
   bool device_viewport_valid_for_tile_management_;
-  bool external_stencil_test_enabled_;
 
   gfx::Rect viewport_damage_rect_;
 

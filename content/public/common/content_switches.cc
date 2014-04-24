@@ -38,13 +38,6 @@ const char kAuditAllHandles[]               = "enable-handle-auditing-all";
 // is terminated.
 const char kAuditHandles[]                  = "enable-handle-auditing";
 
-// Blacklist the GPU for accelerated compositing.
-const char kBlacklistAcceleratedCompositing[] =
-    "blacklist-accelerated-compositing";
-
-// Blacklist the GPU for WebGL.
-const char kBlacklistWebGL[]                = "blacklist-webgl";
-
 // Choose which logging channels in blink platform to activate.  See
 // Logging.cpp in blink's Source/platform for a list of available channels.
 const char kBlinkPlatformLogChannels[]      = "blink-platform-log-channels";
@@ -82,9 +75,6 @@ const char kDisable3DAPIs[]                 = "disable-3d-apis";
 
 // Disable gpu-accelerated 2d canvas.
 const char kDisableAccelerated2dCanvas[]    = "disable-accelerated-2d-canvas";
-
-// Disables accelerated compositing.
-const char kDisableAcceleratedCompositing[] = "disable-accelerated-compositing";
 
 // Disables accelerated compositing for backgrounds of root layers with
 // background-attachment: fixed.
@@ -147,6 +137,9 @@ const char kDisableDirectNPAPIRequests[]    = "disable-direct-npapi-requests";
 // This switch is intended only for tests.
 extern const char kDisableDomainBlockingFor3DAPIs[] =
     "disable-domain-blocking-for-3d-apis";
+
+// Disable running the SharedWorker inside the renderer process.
+const char kDisableEmbeddedSharedWorker[]    = "disable-embedded-shared-worker";
 
 // Disable experimental WebGL support.
 const char kDisableExperimentalWebGL[]      = "disable-webgl";
@@ -336,7 +329,7 @@ const char kEnableBleedingEdgeRenderingFastPaths[] =
 const char kEnableDeferredFilters[]         = "enable-deferred-filters";
 
 // Enables accelerated compositing for backgrounds of root layers with
-// background-attachment: fixed. Requires kForceCompositingMode.
+// background-attachment: fixed.
 const char kEnableAcceleratedFixedRootBackground[] =
     "enable-accelerated-fixed-root-background";
 
@@ -397,9 +390,6 @@ const char kEnableDelegatedRenderer[]       = "enable-delegated-renderer";
 
 // Enables restarting interrupted downloads.
 const char kEnableDownloadResumption[]      = "enable-download-resumption";
-
-// Enables running the SharedWorker inside the renderer process.
-const char kEnableEmbeddedSharedWorker[]    = "enable-embedded-shared-worker";
 
 // Enables support for Encrypted Media Extensions (e.g. MediaKeys).
 const char kEnableEncryptedMedia[] = "enable-encrypted-media";
@@ -530,9 +520,6 @@ const char kEnableSkiaBenchmarking[]        = "enable-skia-benchmarking";
 // On platforms that support it, enables smooth scroll animation.
 const char kEnableSmoothScrolling[]         = "enable-smooth-scrolling";
 
-// Allow the compositor to use its software implementation if GL fails.
-const char kEnableSoftwareCompositing[]     = "enable-software-compositing";
-
 // Enable spatial navigation
 const char kEnableSpatialNavigation[]       = "enable-spatial-navigation";
 
@@ -590,9 +577,6 @@ const char kEnableViewportMeta[]            = "enable-viewport-meta";
 const char kMainFrameResizesAreOrientationChanges[] =
     "main-frame-resizes-are-orientation-changes";
 
-// Enables moving cursor by word in visual order.
-const char kEnableVisualWordMovement[]      = "enable-visual-word-movement";
-
 // Enable the Vtune profiler support.
 const char kEnableVtune[]                   = "enable-vtune-support";
 
@@ -608,8 +592,7 @@ const char kEnableWebMIDI[]                 = "enable-web-midi";
 // Load NPAPI plugins from the specified directory.
 const char kExtraPluginDir[]                = "extra-plugin-dir";
 
-// If accelerated compositing is supported, always enter compositing mode for
-// the base layer even when compositing is not strictly required.
+// Enable force_compositing_mode in layout tests.
 const char kForceCompositingMode[]          = "force-compositing-mode";
 
 // Some field trials may be randomized in the browser, and the randomly selected
@@ -1015,6 +998,10 @@ const char kDisableWebRTC[]                 = "disable-webrtc";
 
 // Enable the recognition part of the Web Speech API.
 const char kEnableSpeechRecognition[]       = "enable-speech-recognition";
+
+// Always use the video overlay for the embedded video.
+// This switch is intended only for tests.
+const char kForceUseOverlayEmbeddedVideo[] = "force-use-overlay-embedded-video";
 
 // The telephony region (ISO country code) to use in phone number detection.
 const char kNetworkCountryIso[] = "network-country-iso";

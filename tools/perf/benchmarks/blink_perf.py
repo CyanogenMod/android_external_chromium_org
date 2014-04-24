@@ -13,16 +13,16 @@ from telemetry.page import page_set
 def _CreatePageSetFromPath(path):
   assert os.path.exists(path)
 
-  page_set_dict = {'pages': []}
+  page_urls = []
+  serving_dirs = set()
 
   def _AddPage(path):
     if not path.endswith('.html'):
       return
     if '../' in open(path, 'r').read():
       # If the page looks like it references its parent dir, include it.
-      page_set_dict['serving_dirs'] = [os.path.dirname(os.path.dirname(path))]
-    page_set_dict['pages'].append({'url':
-                                   'file://' + path.replace('\\', '/')})
+      serving_dirs.add(os.path.dirname(os.path.dirname(path)))
+    page_urls.append('file://' + path.replace('\\', '/'))
 
   def _AddDir(dir_path, skipped):
     for candidate_path in os.listdir(dir_path):
@@ -48,7 +48,10 @@ def _CreatePageSetFromPath(path):
     _AddDir(path, skipped)
   else:
     _AddPage(path)
-  return page_set.PageSet.FromDict(page_set_dict, os.getcwd() + os.sep)
+  ps = page_set.PageSet(file_path=os.getcwd()+os.sep, serving_dirs=serving_dirs)
+  for url in page_urls:
+    ps.AddPageWithDefaultRunNavigate(url)
+  return ps
 
 
 class _BlinkPerfMeasurement(page_measurement.PageMeasurement):

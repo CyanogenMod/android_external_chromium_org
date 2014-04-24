@@ -20,6 +20,7 @@
 using testing::_;
 using testing::AnyNumber;
 using testing::AtMost;
+using testing::SaveArg;
 using testing::Values;
 
 namespace media {
@@ -61,10 +62,10 @@ const int kAppendWholeFile = -1;
 const int kAppendTimeSec = 1;
 const int kAppendTimeMs = kAppendTimeSec * 1000;
 const int k320WebMFileDurationMs = 2736;
-const int k640WebMFileDurationMs = 2762;
+const int k640WebMFileDurationMs = 2749;
 const int kOpusEndTrimmingWebMFileDurationMs = 2771;
 const int kVP9WebMFileDurationMs = 2736;
-const int kVP8AWebMFileDurationMs = 2734;
+const int kVP8AWebMFileDurationMs = 2733;
 
 #if defined(USE_PROPRIETARY_CODECS)
 const int k640IsoFileDurationMs = 2737;
@@ -72,6 +73,37 @@ const int k640IsoCencFileDurationMs = 2736;
 const int k1280IsoFileDurationMs = 2736;
 const int k1280IsoAVC3FileDurationMs = 2736;
 #endif  // defined(USE_PROPRIETARY_CODECS)
+
+// Return a timeline offset for bear-320x240-live.webm.
+static base::Time kLiveTimelineOffset() {
+  // The file contians the following UTC timeline offset:
+  // 2012-11-10 12:34:56.789123456
+  // Since base::Time only has a resolution of microseconds,
+  // construct a base::Time for 2012-11-10 12:34:56.789123.
+  base::Time::Exploded exploded_time;
+  exploded_time.year = 2012;
+  exploded_time.month = 11;
+  exploded_time.day_of_month = 10;
+  exploded_time.hour = 12;
+  exploded_time.minute = 34;
+  exploded_time.second = 56;
+  exploded_time.millisecond = 789;
+  base::Time timeline_offset = base::Time::FromUTCExploded(exploded_time);
+
+  timeline_offset += base::TimeDelta::FromMicroseconds(123);
+
+  return timeline_offset;
+}
+
+// FFmpeg only supports time a resolution of seconds so this
+// helper function truncates a base::Time to seconds resolution.
+static base::Time TruncateToFFmpegTimeResolution(base::Time t) {
+  base::Time::Exploded exploded_time;
+  t.UTCExplode(&exploded_time);
+  exploded_time.millisecond = 0;
+
+  return base::Time::FromUTCExploded(exploded_time);
+}
 
 // Note: Tests using this class only exercise the DecryptingDemuxerStream path.
 // They do not exercise the Decrypting{Audio|Video}Decoder path.
@@ -266,7 +298,7 @@ class MockMediaSource {
             base::Bind(&MockMediaSource::DemuxerNeedKey,
                        base::Unretained(this)),
             LogCB(),
-            false)),
+            true)),
         owned_chunk_demuxer_(chunk_demuxer_),
         use_legacy_frame_processor_(use_legacy_frame_processor) {
 
@@ -409,7 +441,8 @@ class PipelineIntegrationTest
       public PipelineIntegrationTestBase {
  public:
   void StartPipelineWithMediaSource(MockMediaSource* source) {
-    EXPECT_CALL(*this, OnMetadata(_)).Times(AtMost(1));
+    EXPECT_CALL(*this, OnMetadata(_)).Times(AtMost(1))
+        .WillRepeatedly(SaveArg<0>(&metadata_));
     EXPECT_CALL(*this, OnPrerollCompleted()).Times(AtMost(1));
     pipeline_->Start(
         CreateFilterCollection(source->GetDemuxer(), NULL),
@@ -433,7 +466,8 @@ class PipelineIntegrationTest
   void StartPipelineWithEncryptedMedia(
       MockMediaSource* source,
       FakeEncryptedMedia* encrypted_media) {
-    EXPECT_CALL(*this, OnMetadata(_)).Times(AtMost(1));
+    EXPECT_CALL(*this, OnMetadata(_)).Times(AtMost(1))
+        .WillRepeatedly(SaveArg<0>(&metadata_));
     EXPECT_CALL(*this, OnPrerollCompleted()).Times(AtMost(1));
     pipeline_->Start(
         CreateFilterCollection(source->GetDemuxer(),
@@ -504,6 +538,24 @@ TEST_F(PipelineIntegrationTest, BasicPlaybackHashed) {
 
   EXPECT_EQ("f0be120a90a811506777c99a2cdf7cc1", GetVideoHash());
   EXPECT_EQ("-3.59,-2.06,-0.43,2.15,0.77,-0.95,", GetAudioHash());
+  EXPECT_TRUE(demuxer_->GetTimelineOffset().is_null());
+}
+
+TEST_F(PipelineIntegrationTest, BasicPlaybackLive) {
+  ASSERT_TRUE(Start(
+      GetTestDataFilePath("bear-320x240-live.webm"), PIPELINE_OK, kHashed));
+
+  Play();
+
+  ASSERT_TRUE(WaitUntilOnEnded());
+
+  EXPECT_EQ("f0be120a90a811506777c99a2cdf7cc1", GetVideoHash());
+  EXPECT_EQ("-3.59,-2.06,-0.43,2.15,0.77,-0.95,", GetAudioHash());
+
+  // TODO: Fix FFmpeg code to return higher resolution time values so
+  // we don't have to truncate our expectations here.
+  EXPECT_EQ(TruncateToFFmpegTimeResolution(kLiveTimelineOffset()),
+            demuxer_->GetTimelineOffset());
 }
 
 TEST_F(PipelineIntegrationTest, F32PlaybackHashed) {
@@ -542,6 +594,28 @@ TEST_P(PipelineIntegrationTest, BasicPlayback_MediaSource) {
   Play();
 
   ASSERT_TRUE(WaitUntilOnEnded());
+
+  EXPECT_TRUE(demuxer_->GetTimelineOffset().is_null());
+  source.Abort();
+  Stop();
+}
+
+TEST_P(PipelineIntegrationTest, BasicPlayback_MediaSource_Live) {
+  MockMediaSource source("bear-320x240-live.webm", kWebM, 219221, GetParam());
+  StartPipelineWithMediaSource(&source);
+  source.EndOfStream();
+
+  EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
+  EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
+  EXPECT_EQ(k320WebMFileDurationMs,
+            pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
+
+  Play();
+
+  ASSERT_TRUE(WaitUntilOnEnded());
+
+  EXPECT_EQ(kLiveTimelineOffset(),
+            demuxer_->GetTimelineOffset());
   source.Abort();
   Stop();
 }
@@ -589,11 +663,7 @@ TEST_P(PipelineIntegrationTest, BasicPlayback_MediaSource_Opus_WebM) {
 
   EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
   EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
-  // TODO(acolwell/wolenetz): Drop the "+ 1" once WebM stream parser always
-  // emits frames with valid durations (see http://crbug.com/351166) and
-  // compliant coded frame processor's "highest presentation end timestamp" is
-  // used to update duration (see http://crbug.com/249422).
-  EXPECT_EQ(kOpusEndTrimmingWebMFileDurationMs + 1,
+  EXPECT_EQ(kOpusEndTrimmingWebMFileDurationMs,
             pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
   Play();
 
@@ -610,11 +680,7 @@ TEST_P(PipelineIntegrationTest, DISABLED_MediaSource_Opus_Seeking_WebM) {
 
   EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
   EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
-  // TODO(acolwell/wolenetz): Drop the "+ 1" once WebM stream parser always
-  // emits frames with valid durations (see http://crbug.com/351166) and
-  // compliant coded frame processor's "highest presentation end timestamp" is
-  // used to update duration (see http://crbug.com/249422).
-  EXPECT_EQ(kOpusEndTrimmingWebMFileDurationMs + 1,
+  EXPECT_EQ(kOpusEndTrimmingWebMFileDurationMs,
             pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
 
   base::TimeDelta start_seek_time = base::TimeDelta::FromMilliseconds(1000);
@@ -675,10 +741,7 @@ TEST_P(PipelineIntegrationTest, MediaSource_ConfigChange_Encrypted_WebM) {
 
   EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
   EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
-  // The "+ 1" is due to estimated audio and video frame durations on the last
-  // frames appended. The unencrypted file has a TrackEntry DefaultDuration
-  // field for the video track, but the encrypted file does not.
-  EXPECT_EQ(kAppendTimeMs + k640WebMFileDurationMs + 1,
+  EXPECT_EQ(kAppendTimeMs + k640WebMFileDurationMs,
             pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
 
   Play();
@@ -738,10 +801,7 @@ TEST_P(PipelineIntegrationTest,
   EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
   EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
   // The second video was not added, so its time has not been added.
-  // The "+ 1" is due to estimated audio and video frame durations on the last
-  // frames appended. The unencrypted file has a TrackEntry DefaultDuration
-  // field for the video track, but the encrypted file does not.
-  EXPECT_EQ(k320WebMFileDurationMs + 1,
+  EXPECT_EQ(k320WebMFileDurationMs,
             pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
 
   Play();
@@ -789,22 +849,26 @@ TEST_P(PipelineIntegrationTest, MediaSource_ADTS_TimestampOffset) {
 
 TEST_P(PipelineIntegrationTest, MediaSource_MP3) {
   MockMediaSource source("sfx.mp3", kMP3, kAppendWholeFile, GetParam());
-  StartPipelineWithMediaSource(&source);
+  StartHashedPipelineWithMediaSource(&source);
   source.EndOfStream();
 
   EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
   EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
-  EXPECT_EQ(339, pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
+  EXPECT_EQ(313, pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
 
   Play();
 
   EXPECT_TRUE(WaitUntilOnEnded());
+
+  // Verify that codec delay was stripped, if it wasn't the hash would be:
+  // "5.16,1.25,7.78,4.29,8.98,2.76,"
+  EXPECT_EQ("5.81,2.71,8.97,4.32,7.83,1.12,", GetAudioHash());
 }
 
 TEST_P(PipelineIntegrationTest, MediaSource_MP3_TimestampOffset) {
   MockMediaSource source("sfx.mp3", kMP3, kAppendWholeFile, GetParam());
   StartPipelineWithMediaSource(&source);
-  EXPECT_EQ(339, source.last_timestamp_offset().InMilliseconds());
+  EXPECT_EQ(313, source.last_timestamp_offset().InMilliseconds());
 
   scoped_refptr<DecoderBuffer> second_file = ReadTestDataFile("sfx.mp3");
   source.AppendAtTime(
@@ -813,10 +877,10 @@ TEST_P(PipelineIntegrationTest, MediaSource_MP3_TimestampOffset) {
       second_file->data_size());
   source.EndOfStream();
 
-  EXPECT_EQ(669, source.last_timestamp_offset().InMilliseconds());
+  EXPECT_EQ(616, source.last_timestamp_offset().InMilliseconds());
   EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
   EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
-  EXPECT_EQ(669, pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
+  EXPECT_EQ(616, pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
 
   Play();
 

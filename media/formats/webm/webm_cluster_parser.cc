@@ -15,13 +15,6 @@
 #include "media/formats/webm/webm_crypto_helpers.h"
 #include "media/formats/webm/webm_webvtt_parser.h"
 
-// Arbitrarily-chosen numbers to estimate the duration of a buffer if none is
-// set and there is not enough information to get a better estimate.
-// TODO(wolenetz/acolwell): Parse audio codebook to determine missing audio
-// frame durations. See http://crbug.com/351166.
-static int kDefaultAudioBufferDurationInMs = 23;  // Common 1k samples @44.1kHz
-static int kDefaultVideoBufferDurationInMs = 42;  // Low 24fps to reduce stalls
-
 namespace media {
 
 WebMClusterParser::WebMClusterParser(
@@ -532,8 +525,18 @@ bool WebMClusterParser::Track::QueueBuffer(
     return false;
   }
 
-  estimated_next_frame_duration_ = std::max(duration,
-                                            estimated_next_frame_duration_);
+  // The estimated frame duration is the minimum non-zero duration since the
+  // last initialization segment.  The minimum is used to ensure frame durations
+  // aren't overestimated.
+  if (duration > base::TimeDelta()) {
+    if (estimated_next_frame_duration_ == kNoTimestamp()) {
+      estimated_next_frame_duration_ = duration;
+    } else {
+      estimated_next_frame_duration_ =
+          std::min(duration, estimated_next_frame_duration_);
+    }
+  }
+
   buffers_.push_back(buffer);
   return true;
 }

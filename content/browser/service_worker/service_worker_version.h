@@ -40,7 +40,7 @@ class ServiceWorkerVersionInfo;
 // This happens when a version is replaced as well as at browser shutdown.
 class CONTENT_EXPORT ServiceWorkerVersion
     : NON_EXPORTED_BASE(public base::RefCounted<ServiceWorkerVersion>),
-      public EmbeddedWorkerInstance::Observer {
+      public EmbeddedWorkerInstance::Listener {
  public:
   typedef base::Callback<void(ServiceWorkerStatusCode)> StatusCallback;
   typedef base::Callback<void(ServiceWorkerStatusCode,
@@ -71,7 +71,20 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   class Listener {
    public:
+    virtual void OnWorkerStarted(ServiceWorkerVersion* version) = 0;
+    virtual void OnWorkerStopped(ServiceWorkerVersion* version) = 0;
     virtual void OnVersionStateChanged(ServiceWorkerVersion* version) = 0;
+    virtual void OnErrorReported(ServiceWorkerVersion* version,
+                                 const base::string16& error_message,
+                                 int line_number,
+                                 int column_number,
+                                 const GURL& source_url) = 0;
+    virtual void OnReportConsoleMessage(ServiceWorkerVersion* version,
+                                        int source_identifier,
+                                        int message_level,
+                                        const base::string16& message,
+                                        int line_number,
+                                        const GURL& source_url) = 0;
   };
 
   ServiceWorkerVersion(
@@ -172,14 +185,14 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // Returns true if this has at least one process to run.
   bool HasProcessToRun() const;
 
-  // Adds and removes a controllee's |provider_host|.
+  // Adds and removes |provider_host| as a controllee of this ServiceWorker.
   void AddControllee(ServiceWorkerProviderHost* provider_host);
   void RemoveControllee(ServiceWorkerProviderHost* provider_host);
   void AddPendingControllee(ServiceWorkerProviderHost* provider_host);
   void RemovePendingControllee(ServiceWorkerProviderHost* provider_host);
 
   // Returns if it has (non-pending) controllee.
-  bool HasControllee() const { return !controllee_providers_.empty(); }
+  bool HasControllee() const { return !controllee_map_.empty(); }
 
   // Adds and removes Listeners.
   void AddListener(Listener* listener);
@@ -187,29 +200,45 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   EmbeddedWorkerInstance* embedded_worker() { return embedded_worker_.get(); }
 
-  // EmbeddedWorkerInstance::Observer overrides:
+  // EmbeddedWorkerInstance::Listener overrides:
   virtual void OnStarted() OVERRIDE;
   virtual void OnStopped() OVERRIDE;
-  virtual void OnMessageReceived(int request_id,
-                                 const IPC::Message& message) OVERRIDE;
+  virtual void OnReportException(const base::string16& error_message,
+                                 int line_number,
+                                 int column_number,
+                                 const GURL& source_url) OVERRIDE;
+  virtual void OnReportConsoleMessage(int source_identifier,
+                                      int message_level,
+                                      const base::string16& message,
+                                      int line_number,
+                                      const GURL& source_url) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual bool OnReplyReceived(int request_id,
+                               const IPC::Message& message) OVERRIDE;
 
  private:
   typedef ServiceWorkerVersion self;
-  typedef std::set<ServiceWorkerProviderHost*> ProviderHostSet;
+  typedef std::map<ServiceWorkerProviderHost*, int> ControlleeMap;
+  typedef IDMap<ServiceWorkerProviderHost> ControlleeByIDMap;
   friend class base::RefCounted<ServiceWorkerVersion>;
 
   virtual ~ServiceWorkerVersion();
 
+  // Message handlers.
+  void OnGetClientDocuments(int request_id);
+
   const int64 version_id_;
   int64 registration_id_;
   GURL script_url_;
+  GURL scope_;
   Status status_;
   scoped_ptr<EmbeddedWorkerInstance> embedded_worker_;
   std::vector<StatusCallback> start_callbacks_;
   std::vector<StatusCallback> stop_callbacks_;
   std::vector<base::Closure> status_change_callbacks_;
   IDMap<MessageCallback, IDMapOwnPointer> message_callbacks_;
-  ProviderHostSet controllee_providers_;
+  ControlleeMap controllee_map_;
+  ControlleeByIDMap controllee_by_id_;
   base::WeakPtr<ServiceWorkerContextCore> context_;
   ObserverList<Listener> listeners_;
 

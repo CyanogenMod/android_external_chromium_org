@@ -102,8 +102,8 @@
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebPrintParams.h"
 #include "third_party/WebKit/public/web/WebPrintScalingOption.h"
@@ -164,6 +164,7 @@ using blink::WebDocument;
 using blink::WebElement;
 using blink::WebFrame;
 using blink::WebInputEvent;
+using blink::WebLocalFrame;
 using blink::WebPlugin;
 using blink::WebPluginContainer;
 using blink::WebPrintParams;
@@ -1796,7 +1797,7 @@ bool PepperPluginInstanceImpl::IsViewAccelerated() {
     return false;
 
   WebDocument document = container_->element().document();
-  WebFrame* frame = document.frame();
+  WebLocalFrame* frame = document.frame();
   if (!frame)
     return false;
   WebView* view = frame->view();
@@ -1920,9 +1921,7 @@ void PepperPluginInstanceImpl::UpdateLayer() {
     DCHECK_EQ(mailbox.IsZero(), sync_point == 0);
   }
   bool want_3d_layer = !mailbox.IsZero();
-  bool want_2d_layer = bound_graphics_2d_platform_ &&
-                       CommandLine::ForCurrentProcess()->HasSwitch(
-                           switches::kEnableSoftwareCompositing);
+  bool want_2d_layer = !!bound_graphics_2d_platform_;
   bool want_layer = want_3d_layer || want_2d_layer;
 
   if ((want_layer == !!texture_layer_.get()) &&
@@ -2200,7 +2199,7 @@ PP_Var PepperPluginInstanceImpl::GetWindowObject(PP_Instance instance) {
   if (!container_)
     return PP_MakeUndefined();
 
-  WebFrame* frame = container_->element().document().frame();
+  WebLocalFrame* frame = container_->element().document().frame();
   if (!frame)
     return PP_MakeUndefined();
 
@@ -2235,7 +2234,7 @@ PP_Var PepperPluginInstanceImpl::ExecuteScript(PP_Instance instance,
   np_script.UTF8Length = script_string->value().length();
 
   // Get the current frame to pass to the evaluate function.
-  WebFrame* frame = container_->element().document().frame();
+  WebLocalFrame* frame = container_->element().document().frame();
   if (!frame) {
     try_catch.SetException("No frame to execute script in.");
     return PP_MakeUndefined();
@@ -2716,7 +2715,7 @@ PP_Var PepperPluginInstanceImpl::GetPluginReferrerURL(
   if (!full_frame_)
     return ppapi::PPB_URLUtil_Shared::GenerateURLReturn(document.url(),
                                                         components);
-  WebFrame* frame = document.frame();
+  WebLocalFrame* frame = document.frame();
   if (!frame)
     return PP_MakeUndefined();
   const WebURLRequest& request = frame->dataSource()->originalRequest();
@@ -2901,7 +2900,7 @@ void PepperPluginInstanceImpl::DoSetCursor(WebCursorInfo* cursor) {
 }
 
 bool PepperPluginInstanceImpl::IsFullPagePlugin() {
-  WebFrame* frame = container()->element().document().frame();
+  WebLocalFrame* frame = container()->element().document().frame();
   return frame->view()->mainFrame()->document().isPluginDocument();
 }
 
@@ -2963,7 +2962,7 @@ int32_t PepperPluginInstanceImpl::Navigate(
     return PP_ERROR_FAILED;
 
   WebDocument document = container_->element().document();
-  WebFrame* frame = document.frame();
+  WebLocalFrame* frame = document.frame();
   if (!frame)
     return PP_ERROR_FAILED;
 

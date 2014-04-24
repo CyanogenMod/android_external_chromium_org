@@ -79,7 +79,7 @@ _BANNED_OBJC_FUNCTIONS = (
       False,
     ),
     (
-      'NSTrackingArea',
+      r'/NSTrackingArea\W',
       (
        'The use of NSTrackingAreas is prohibited. Please use CrTrackingArea',
        'instead.',
@@ -396,7 +396,14 @@ def _CheckNoBannedFunctions(input_api, output_api):
   for f in input_api.AffectedFiles(file_filter=file_filter):
     for line_num, line in f.ChangedContents():
       for func_name, message, error in _BANNED_OBJC_FUNCTIONS:
-        if func_name in line:
+        matched = False
+        if func_name[0:1] == '/':
+          regex = func_name[1:]
+          if input_api.re.search(regex, line):
+            matched = True
+        elif func_name in line:
+            matched = True
+        if matched:
           problems = warnings;
           if error:
             problems = errors;
@@ -911,8 +918,7 @@ def _CheckSpamLogging(input_api, output_api):
                  r"^chrome[\\\/]browser[\\\/]ui[\\\/]startup[\\\/]"
                      r"startup_browser_creator\.cc$",
                  r"^chrome[\\\/]installer[\\\/]setup[\\\/].*",
-                 r"^chrome[\\\/]renderer[\\\/]extensions[\\\/]"
-                     r"logging_native_handler\.cc$",
+                 r"^extensions[\\\/]renderer[\\\/]logging_native_handler\.cc$",
                  r"^content[\\\/]common[\\\/]gpu[\\\/]client[\\\/]"
                      r"gl_helper_benchmark\.cc$",
                  r"^native_client_sdk[\\\/]",
@@ -1255,6 +1261,16 @@ def CheckChangeOnUpload(input_api, output_api):
   return results
 
 
+def GetTryServerMasterForBot(bot):
+  """Returns the Try Server master for the given bot.
+
+  Assumes that most Try Servers are on the tryserver.chromium master."""
+  non_default_master_map = {
+      'linux_gpu': 'tryserver.chromium.gpu',
+  }
+  return non_default_master_map.get(bot, 'tryserver.chromium')
+
+
 def GetDefaultTryConfigs(bots=None):
   """Returns a list of ('bot', set(['tests']), optionally filtered by [bots].
 
@@ -1323,6 +1339,7 @@ def GetDefaultTryConfigs(bots=None):
       'linux_chromium_compile_dbg': ['defaulttests'],
       'linux_chromium_rel': ['defaulttests'],
       'linux_chromium_clang_dbg': ['defaulttests'],
+      'linux_gpu': ['defaulttests'],
       'linux_nacl_sdk_build': ['compile'],
       'linux_rel': [
           'telemetry_perf_unittests',
@@ -1388,16 +1405,18 @@ def GetDefaultTryConfigs(bots=None):
                                  for x in builders_and_tests[bot]]
 
   if bots:
-    return {
-        'tryserver.chromium': dict((bot, set(builders_and_tests[bot]))
-                                   for bot in bots)
-    }
+    filtered_builders_and_tests = dict((bot, set(builders_and_tests[bot]))
+                                       for bot in bots)
   else:
-    return {
-        'tryserver.chromium': dict(
-            (bot, set(tests))
-            for bot, tests in builders_and_tests.iteritems())
-    }
+    filtered_builders_and_tests = dict(
+        (bot, set(tests))
+        for bot, tests in builders_and_tests.iteritems())
+
+  # Build up the mapping from tryserver master to bot/test.
+  out = dict()
+  for bot, tests in filtered_builders_and_tests.iteritems():
+    out.setdefault(GetTryServerMasterForBot(bot), {})[bot] = tests
+  return out
 
 
 def CheckChangeOnCommit(input_api, output_api):
@@ -1450,6 +1469,7 @@ def GetPreferredTryMasters(project, change):
       'linux_chromium_chromeos_rel',
       'linux_chromium_clang_dbg',
       'linux_chromium_rel',
+      'linux_gpu',
       'mac_chromium_compile_dbg',
       'mac_chromium_rel',
       'win_chromium_compile_dbg',

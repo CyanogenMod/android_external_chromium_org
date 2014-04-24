@@ -914,6 +914,12 @@ TEST_F(FeatureInfoTest, InitializeEXT_frag_depth) {
   EXPECT_THAT(info_->extensions(), HasSubstr("GL_EXT_frag_depth"));
 }
 
+TEST_F(FeatureInfoTest, InitializeEXT_shader_texture_lod) {
+  SetupInitExpectations("GL_EXT_shader_texture_lod");
+  EXPECT_TRUE(info_->feature_flags().ext_shader_texture_lod);
+  EXPECT_THAT(info_->extensions(), HasSubstr("GL_EXT_shader_texture_lod"));
+}
+
 TEST_F(FeatureInfoTest, InitializeEXT_discard_framebuffer) {
   SetupInitExpectations("GL_EXT_discard_framebuffer");
   EXPECT_TRUE(info_->feature_flags().ext_discard_framebuffer);
@@ -936,7 +942,7 @@ TEST_F(FeatureInfoTest, InitializeWithES3) {
   EXPECT_TRUE(info_->feature_flags().use_core_framebuffer_multisample);
   EXPECT_THAT(info_->extensions(),
               HasSubstr("GL_CHROMIUM_framebuffer_multisample"));
-  EXPECT_FALSE(info_->feature_flags().use_async_readpixels);
+  EXPECT_TRUE(info_->feature_flags().use_async_readpixels);
   EXPECT_TRUE(info_->feature_flags().oes_depth24);
   EXPECT_THAT(info_->extensions(), HasSubstr("GL_GOOGLE_depth_texture"));
   EXPECT_THAT(info_->extensions(), HasSubstr("GL_CHROMIUM_depth_texture"));

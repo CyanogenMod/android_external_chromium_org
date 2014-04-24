@@ -1187,6 +1187,7 @@ void BrowserCommandController::UpdateCommandsForBookmarkEditing() {
 void BrowserCommandController::UpdateCommandsForBookmarkBar() {
   command_updater_.UpdateCommandEnabled(IDC_SHOW_BOOKMARK_BAR,
       browser_defaults::bookmarks_enabled &&
+      !profile()->IsGuestSession() &&
       !profile()->GetPrefs()->IsManagedPreference(prefs::kShowBookmarkBar) &&
       IsShowingMainUI());
 }
@@ -1241,8 +1242,9 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
   UpdateShowSyncState(show_main_ui);
 
   // Settings page/subpages are forced to open in normal mode. We disable these
-  // commands when incognito is forced.
+  // commands for guest sessions and when incognito is forced.
   const bool options_enabled = show_main_ui &&
+      !profile()->IsGuestSession() &&
       IncognitoModePrefs::GetAvailability(
           profile()->GetPrefs()) != IncognitoModePrefs::FORCED;
   command_updater_.UpdateCommandEnabled(IDC_OPTIONS, options_enabled);

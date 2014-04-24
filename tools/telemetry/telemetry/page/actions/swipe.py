@@ -9,7 +9,6 @@ from telemetry.page.actions import page_action
 class SwipeAction(GestureAction):
   def __init__(self, attributes=None):
     super(SwipeAction, self).__init__(attributes)
-    self._SetTimelineMarkerBaseName('SwipeAction::RunAction')
 
   def WillRunAction(self, page, tab):
     for js_file in ['gesture_common.js', 'swipe.js']:
@@ -27,8 +26,9 @@ class SwipeAction(GestureAction):
       raise page_action.PageActionNotSupported(
           'Swipe page action does not support mouse input')
 
-    # TODO(dominikg): Query synthetic gesture target to check if touch is
-    #                 supported.
+    if not GestureAction.IsGestureSourceTypeSupported(tab, 'touch'):
+      raise page_action.PageActionNotSupported(
+          'Touch input not supported for this browser')
 
     done_callback = 'function() { window.__swipeActionDone = true; }'
     tab.ExecuteJavaScript("""

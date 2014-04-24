@@ -18,7 +18,7 @@
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/native_widget_aura.h"
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 #include "chrome/browser/ui/libgtk2ui/gtk2_ui.h"
 #include "ui/views/linux_ui/linux_ui.h"
 #else
@@ -70,7 +70,7 @@ void ChromeBrowserMainExtraPartsAura::PreEarlyInitialization() {
 void ChromeBrowserMainExtraPartsAura::ToolkitInitialized() {
 #if !defined(OS_CHROMEOS)
 #if defined(USE_ASH)
-  aura::Env::CreateInstance();
+  CHECK(aura::Env::GetInstance());
   active_desktop_monitor_.reset(new ActiveDesktopMonitor(GetInitialDesktop()));
 #endif
 #endif

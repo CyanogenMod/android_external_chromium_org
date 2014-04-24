@@ -13,8 +13,10 @@ declare_args() {
   use_openssl = is_android || is_nacl
 }
 
-if (is_linux && !use_openssl) {
-  use_nss = true
-} else {
-  use_nss = false
-}
+# True when we're using OpenSSL for certificate verification and storage. We
+# only do this when we're using OpenSSL on desktop Linux systems. For other
+# systems (Mac/Win/Android) we use the system certificate features.
+use_openssl_certs = use_openssl && is_linux
+
+# Same meaning as use_openssl_certs but for NSS.
+use_nss_certs = !use_openssl && is_linux

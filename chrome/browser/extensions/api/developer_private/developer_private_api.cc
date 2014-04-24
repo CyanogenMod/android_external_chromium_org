@@ -173,14 +173,12 @@ DeveloperPrivateAPI::DeveloperPrivateAPI(content::BrowserContext* context)
 
 DeveloperPrivateEventRouter::DeveloperPrivateEventRouter(Profile* profile)
     : profile_(profile) {
-  int types[] = {
-    chrome::NOTIFICATION_EXTENSION_INSTALLED,
-    chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
-    chrome::NOTIFICATION_EXTENSION_LOADED,
-    chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
-    chrome::NOTIFICATION_EXTENSION_VIEW_REGISTERED,
-    chrome::NOTIFICATION_EXTENSION_VIEW_UNREGISTERED
-  };
+  int types[] = {chrome::NOTIFICATION_EXTENSION_INSTALLED,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+                 chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
+                 chrome::NOTIFICATION_EXTENSION_VIEW_REGISTERED,
+                 chrome::NOTIFICATION_EXTENSION_VIEW_UNREGISTERED};
 
   CHECK(registrar_.IsEmpty());
   for (size_t i = 0; i < arraysize(types); ++i) {
@@ -227,7 +225,7 @@ void DeveloperPrivateEventRouter::Observe(
       event_data.event_type = developer::EVENT_TYPE_UNINSTALLED;
       extension = content::Details<const Extension>(details).ptr();
       break;
-    case chrome::NOTIFICATION_EXTENSION_LOADED:
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
       event_data.event_type = developer::EVENT_TYPE_LOADED;
       extension = content::Details<const Extension>(details).ptr();
       break;
@@ -259,7 +257,7 @@ void DeveloperPrivateEventRouter::Observe(
 
   event_name = developer_private::OnItemStateChanged::kEventName;
   scoped_ptr<Event> event(new Event(event_name, args.Pass()));
-  ExtensionSystem::Get(profile)->event_router()->BroadcastEvent(event.Pass());
+  EventRouter::Get(profile)->BroadcastEvent(event.Pass());
 }
 
 void DeveloperPrivateEventRouter::OnErrorAdded(const ExtensionError* error) {
@@ -276,9 +274,8 @@ void DeveloperPrivateEventRouter::OnErrorAdded(const ExtensionError* error) {
   scoped_ptr<base::ListValue> args(new base::ListValue);
   args->Append(event_data.ToValue().release());
 
-  ExtensionSystem::Get(profile_)->event_router()->BroadcastEvent(
-      scoped_ptr<Event>(new Event(
-          developer_private::OnItemStateChanged::kEventName, args.Pass())));
+  EventRouter::Get(profile_)->BroadcastEvent(scoped_ptr<Event>(new Event(
+      developer_private::OnItemStateChanged::kEventName, args.Pass())));
 }
 
 void DeveloperPrivateAPI::SetLastUnpackedDirectory(const base::FilePath& path) {
@@ -286,7 +283,7 @@ void DeveloperPrivateAPI::SetLastUnpackedDirectory(const base::FilePath& path) {
 }
 
 void DeveloperPrivateAPI::RegisterNotifications() {
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
+  EventRouter::Get(profile_)->RegisterObserver(
       this, developer_private::OnItemStateChanged::kEventName);
 }
 
@@ -306,8 +303,8 @@ void DeveloperPrivateAPI::OnListenerAdded(
 
 void DeveloperPrivateAPI::OnListenerRemoved(
     const EventListenerInfo& details) {
-  if (!ExtensionSystem::Get(profile_)->event_router()->HasEventListener(
-           developer_private::OnItemStateChanged::kEventName)) {
+  if (!EventRouter::Get(profile_)->HasEventListener(
+          developer_private::OnItemStateChanged::kEventName)) {
     developer_private_event_router_.reset(NULL);
   } else {
     developer_private_event_router_->RemoveExtensionId(details.extension_id);
@@ -389,6 +386,9 @@ DeveloperPrivateGetItemsInfoFunction::CreateItemInfo(const Extension& item,
               info->runtime_errors.push_back(make_linked_ptr(value.release()));
               break;
             }
+            case ExtensionError::NUM_ERROR_TYPES:
+              NOTREACHED();
+              break;
           }
         }
       }

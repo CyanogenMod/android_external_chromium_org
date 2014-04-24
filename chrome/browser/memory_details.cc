@@ -59,8 +59,6 @@ std::string ProcessMemoryInformation::GetRendererTypeNameInEnglish(
       return "Devtools";
     case RENDERER_INTERSTITIAL:
       return "Interstitial";
-    case RENDERER_NOTIFICATION:
-      return "Notification";
     case RENDERER_BACKGROUND_APP:
       return "Background App";
     case RENDERER_UNKNOWN:
@@ -303,13 +301,6 @@ void MemoryDetails::CollectChildInfoOnUIThread() {
         continue;
       }
 
-      if (type == extensions::VIEW_TYPE_NOTIFICATION) {
-        process.titles.push_back(base::UTF8ToUTF16(url.spec()));
-        process.renderer_type =
-            ProcessMemoryInformation::RENDERER_NOTIFICATION;
-        continue;
-      }
-
       // Since we have a WebContents and and the renderer type hasn't been
       // set yet, it must be a normal tabbed renderer.
       if (process.renderer_type == ProcessMemoryInformation::RENDERER_UNKNOWN)
@@ -461,8 +452,6 @@ void MemoryDetails::UpdateHistograms() {
         continue;
     }
   }
-  UMA_HISTOGRAM_MEMORY_KB("Memory.BackingStore",
-                          RenderWidgetHost::BackingStoreMemorySize() / 1024);
 #if defined(OS_CHROMEOS)
   // Chrome OS exposes system-wide graphics driver memory which has historically
   // been a source of leak/bloat.

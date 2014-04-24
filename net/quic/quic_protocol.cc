@@ -162,6 +162,8 @@ QuicTag QuicVersionToQuicTag(const QuicVersion version) {
       return MakeQuicTag('Q', '0', '1', '6');
     case QUIC_VERSION_17:
       return MakeQuicTag('Q', '0', '1', '7');
+    case QUIC_VERSION_18:
+      return MakeQuicTag('Q', '0', '1', '8');
     default:
       // This shold be an ERROR because we should never attempt to convert an
       // invalid QuicVersion to be written to the wire.
@@ -192,6 +194,7 @@ string QuicVersionToString(const QuicVersion version) {
     RETURN_STRING_LITERAL(QUIC_VERSION_15);
     RETURN_STRING_LITERAL(QUIC_VERSION_16);
     RETURN_STRING_LITERAL(QUIC_VERSION_17);
+    RETURN_STRING_LITERAL(QUIC_VERSION_18);
     default:
       return "QUIC_VERSION_UNSUPPORTED";
   }
@@ -261,15 +264,6 @@ QuicStopWaitingFrame::~QuicStopWaitingFrame() {}
 
 QuicAckFrame::QuicAckFrame() {}
 
-QuicAckFrame::QuicAckFrame(QuicPacketSequenceNumber largest_observed,
-                           QuicTime largest_observed_receive_time,
-                           QuicPacketSequenceNumber least_unacked) {
-  received_info.largest_observed = largest_observed;
-  received_info.entropy_hash = 0;
-  sent_info.least_unacked = least_unacked;
-  sent_info.entropy_hash = 0;
-}
-
 CongestionFeedbackMessageTCP::CongestionFeedbackMessageTCP()
     : receive_window(0) {
 }
@@ -283,6 +277,21 @@ CongestionFeedbackMessageInterArrival::
 QuicCongestionFeedbackFrame::QuicCongestionFeedbackFrame() : type(kTCP) {}
 
 QuicCongestionFeedbackFrame::~QuicCongestionFeedbackFrame() {}
+
+QuicRstStreamErrorCode AdjustErrorForVersion(
+    QuicRstStreamErrorCode error_code,
+    QuicVersion version) {
+  switch (error_code) {
+    case QUIC_RST_FLOW_CONTROL_ACCOUNTING:
+      if (version <= QUIC_VERSION_17) {
+        return QUIC_STREAM_NO_ERROR;
+      }
+      break;
+    default:
+      return error_code;
+  }
+  return error_code;
+}
 
 QuicRstStreamFrame::QuicRstStreamFrame()
     : stream_id(0),
@@ -327,6 +336,11 @@ QuicFrame::QuicFrame(QuicCongestionFeedbackFrame* frame)
 QuicFrame::QuicFrame(QuicStopWaitingFrame* frame)
     : type(STOP_WAITING_FRAME),
       stop_waiting_frame(frame) {
+}
+
+QuicFrame::QuicFrame(QuicPingFrame* frame)
+    : type(PING_FRAME),
+      ping_frame(frame) {
 }
 
 QuicFrame::QuicFrame(QuicRstStreamFrame* frame)
@@ -638,6 +652,9 @@ RetransmittableFrames::~RetransmittableFrames() {
       case STOP_WAITING_FRAME:
         delete it->stop_waiting_frame;
         break;
+      case PING_FRAME:
+        delete it->ping_frame;
+        break;
       case RST_STREAM_FRAME:
         delete it->rst_stream_frame;
         break;
@@ -729,6 +746,11 @@ ostream& operator<<(ostream& os, const QuicConsumedData& s) {
   os << "bytes_consumed: " << s.bytes_consumed
      << " fin_consumed: " << s.fin_consumed;
   return os;
+}
+
+WriteResult::WriteResult()
+    : status(WRITE_STATUS_ERROR),
+      bytes_written(0) {
 }
 
 WriteResult::WriteResult(WriteStatus status,

@@ -50,12 +50,12 @@
 #include "ppapi/native_client/src/trusted/plugin/manifest.h"
 #include "ppapi/native_client/src/trusted/plugin/plugin.h"
 #include "ppapi/native_client/src/trusted/plugin/plugin_error.h"
-#include "ppapi/native_client/src/trusted/plugin/pnacl_options.h"
 #include "ppapi/native_client/src/trusted/plugin/pnacl_resources.h"
 #include "ppapi/native_client/src/trusted/plugin/sel_ldr_launcher_chrome.h"
 #include "ppapi/native_client/src/trusted/plugin/srpc_client.h"
 #include "ppapi/native_client/src/trusted/weak_ref/call_on_main_thread.h"
 
+namespace plugin {
 namespace {
 
 // For doing crude quota enforcement on writes to temp files.
@@ -64,9 +64,58 @@ namespace {
 // should be plenty for static data
 const int64_t kMaxTempQuota = 0x8000000;
 
-}  // namespace
+class ManifestService {
+ public:
+  ManifestService(nacl::WeakRefAnchor* anchor,
+                  PluginReverseInterface* plugin_reverse)
+      : anchor_(anchor),
+        plugin_reverse_(plugin_reverse) {
+  }
 
-namespace plugin {
+  ~ManifestService() {
+    anchor_->Unref();
+  }
+
+  bool Quit() {
+    delete this;
+    return false;
+  }
+
+  bool StartupInitializationComplete() {
+    // Release this instance if the ServiceRuntime is already destructed.
+    if (anchor_->is_abandoned()) {
+      delete this;
+      return false;
+    }
+
+    plugin_reverse_->StartupInitializationComplete();
+    return true;
+  }
+
+  static PP_Bool QuitTrampoline(void* user_data) {
+    return PP_FromBool(static_cast<ManifestService*>(user_data)->Quit());
+  }
+
+  static PP_Bool StartupInitializationCompleteTrampoline(void* user_data) {
+    return PP_FromBool(static_cast<ManifestService*>(user_data)->
+                       StartupInitializationComplete());
+  }
+
+ private:
+  // Weak reference to check if plugin_reverse is legally accessible or not.
+  nacl::WeakRefAnchor* anchor_;
+  PluginReverseInterface* plugin_reverse_;
+
+  DISALLOW_COPY_AND_ASSIGN(ManifestService);
+};
+
+// Vtable to pass functions to LaunchSelLdr.
+const PP_ManifestService kManifestServiceVTable = {
+  &ManifestService::QuitTrampoline,
+  &ManifestService::StartupInitializationCompleteTrampoline,
+};
+
+}  // namespace
 
 PluginReverseInterface::PluginReverseInterface(
     nacl::WeakRefAnchor* anchor,
@@ -216,7 +265,7 @@ void PluginReverseInterface::OpenManifestEntry_MainThreadContinuation(
   NaClLog(4, "Entered OpenManifestEntry_MainThreadContinuation\n");
 
   std::string mapped_url;
-  PnaclOptions pnacl_options;
+  PP_PNaClOptions pnacl_options = {PP_FALSE, PP_FALSE, 2};
   ErrorInfo error_info;
   if (!manifest_->ResolveKey(p->url, &mapped_url,
                              &pnacl_options, &error_info)) {
@@ -236,9 +285,9 @@ void PluginReverseInterface::OpenManifestEntry_MainThreadContinuation(
   NaClLog(4,
           "OpenManifestEntry_MainThreadContinuation: "
           "ResolveKey: %s -> %s (pnacl_translate(%d))\n",
-          p->url.c_str(), mapped_url.c_str(), pnacl_options.translate());
+          p->url.c_str(), mapped_url.c_str(), pnacl_options.translate);
 
-  if (pnacl_options.translate()) {
+  if (pnacl_options.translate) {
     // Requires PNaCl translation, but that's not supported.
     NaClLog(4,
             "OpenManifestEntry_MainThreadContinuation: "
@@ -469,14 +518,7 @@ bool ServiceRuntime::LoadModule(nacl::DescWrapper* nacl_desc,
 
 bool ServiceRuntime::InitReverseService(ErrorInfo* error_info) {
   if (uses_nonsfi_mode_) {
-    // In non-SFI mode, open_resource() is not yet supported, so we do not
-    // need the reverse service. So, skip the initialization (with calling
-    // the completion callback).
-    // Note that there is on going work to replace SRPC by Chrome IPC (not only
-    // for non-SFI mode, but also for SFI mode) (crbug.com/333950),
-    // and non-SFI mode will use Chrome IPC for open_resource() after the
-    // refactoring is done.
-    rev_interface_->StartupInitializationComplete();
+    // In non-SFI mode, no reverse service is set up. Just returns success.
     return true;
   }
 
@@ -572,6 +614,8 @@ void ServiceRuntime::StartSelLdr(const SelLdrStartParams& params,
       callback_factory_.NewCallback(&ServiceRuntime::StartSelLdrContinuation,
                                     callback);
 
+  ManifestService* manifest_service =
+      new ManifestService(anchor_->Ref(), rev_interface_);
   tmp_subprocess->Start(plugin_->pp_instance(),
                         params.url.c_str(),
                         params.uses_irt,
@@ -581,6 +625,8 @@ void ServiceRuntime::StartSelLdr(const SelLdrStartParams& params,
                         params.enable_dyncode_syscalls,
                         params.enable_exception_handling,
                         params.enable_crash_throttling,
+                        &kManifestServiceVTable,
+                        manifest_service,
                         &start_sel_ldr_error_message_,
                         internal_callback);
   subprocess_.reset(tmp_subprocess.release());

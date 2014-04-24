@@ -1,11 +1,14 @@
 # Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 from measurements import thread_times
+from metrics import timeline
+from telemetry import test
 from telemetry.core import wpr_modes
 from telemetry.page import page_measurement_unittest_base
 from telemetry.unittest import options_for_unittests
-from metrics import timeline
+
 
 class ThreadTimesUnitTest(
       page_measurement_unittest_base.PageMeasurementUnitTestBase):
@@ -13,6 +16,7 @@ class ThreadTimesUnitTest(
     self._options = options_for_unittests.GetCopy()
     self._options.browser_options.wpr_mode = wpr_modes.WPR_OFF
 
+  @test.Disabled('android')
   def testBasic(self):
     ps = self.CreatePageSetFromFileInUnittestDataDir('scrollable_page.html')
     measurement = thread_times.ThreadTimes()
@@ -24,6 +28,21 @@ class ThreadTimesUnitTest(
       cpu_time_name = timeline.ThreadCpuTimeResultName(category)
       cpu_time = results.FindAllPageSpecificValuesNamed(cpu_time_name)
       self.assertEquals(len(cpu_time), 1)
+
+  def testBasicForPageWithNoGesture(self):
+    ps = self.CreatePageSetFromFileInUnittestDataDir('animated_page.html')
+    setattr(ps.pages[0], 'RunSmoothness', {'action': 'wait', 'seconds' : 1})
+
+    measurement = thread_times.ThreadTimes()
+    timeline_options = self._options
+    results = self.RunMeasurement(measurement, ps, options = timeline_options)
+    self.assertEquals(0, len(results.failures))
+
+    for category in timeline.TimelineThreadCategories.values():
+      cpu_time_name = timeline.ThreadCpuTimeResultName(category)
+      cpu_time = results.FindAllPageSpecificValuesNamed(cpu_time_name)
+      self.assertEquals(len(cpu_time), 1)
+
 
   def testCleanUpTrace(self):
     self.TestTracingCleanedUp(thread_times.ThreadTimes, self._options)

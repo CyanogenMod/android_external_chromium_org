@@ -99,7 +99,7 @@ void VideoCapturerDelegate::StartDeliver(
 
 void VideoCapturerDelegate::StopDeliver() {
   // Immediately make sure we don't provide more frames.
-  DVLOG(3) << "VideoCapturerDelegate::StopCapture()";
+  DVLOG(3) << "VideoCapturerDelegate::StopDeliver()";
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
   capture_engine_->StopCapture(this);
   new_frame_callback_.Reset();
@@ -219,9 +219,8 @@ void VideoCapturerDelegate::OnDeviceSupportedFormatsEnumerated(
 MediaStreamVideoCapturerSource::MediaStreamVideoCapturerSource(
     const StreamDeviceInfo& device_info,
     const SourceStoppedCallback& stop_callback,
-    const scoped_refptr<VideoCapturerDelegate>& delegate,
-    MediaStreamDependencyFactory* factory)
-    : MediaStreamVideoSource(factory),
+    const scoped_refptr<VideoCapturerDelegate>& delegate)
+    : MediaStreamVideoSource(),
       delegate_(delegate) {
   SetDeviceInfo(device_info);
   SetStopCallback(stop_callback);

@@ -300,11 +300,6 @@
             ],
           },
         ],
-        [ 'toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gdk',
-          ],
-        }],
         [ 'use_nss != 1', {
             'sources!': [
               'cert/cert_verify_proc_nss.cc',
@@ -536,12 +531,6 @@
             }],
           ],
         }],
-        [ 'toolkit_uses_gtk == 1', {
-            'dependencies': [
-              '../build/linux/system.gyp:gtk',
-            ],
-          },
-        ],
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
             # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
@@ -1511,7 +1500,6 @@
           ],
           'variables': {
             'test_suite_name': 'net_unittests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)net_unittests<(SHARED_LIB_SUFFIX)',
           },
           'includes': [ '../build/apk_test.gypi' ],
         },

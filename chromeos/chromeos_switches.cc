@@ -65,6 +65,13 @@ const char kEchoExtensionPath[]             = "echo-ext-path";
 // Enables switching between different cellular carriers from the UI.
 const char kEnableCarrierSwitching[]        = "enable-carrier-switching";
 
+// Enables consumer management, which allows user to enroll, remotely lock and
+// locate the device.
+const char kEnableConsumerManagement[]      = "enable-consumer-management";
+
+// Enables MTP support in Files.app.
+const char kEnableFileManagerMTP[] = "enable-filemanager-mtp";
+
 // Enables notifications about captive portals in session.
 const char kEnableNetworkPortalNotification[] =
     "enable-network-portal-notification";
@@ -103,6 +110,10 @@ const char kEnterpriseEnrollmentSkipRobotAuth[] =
 const char kFileManagerEnableNewAudioPlayer[] =
     "file-manager-enable-new-audio-player";
 
+// Enables the new gallery in the Files.app.
+const char kFileManagerEnableNewGallery[] =
+    "file-manager-enable-new-gallery";
+
 // Passed to Chrome the first time that it's run after the system boots.
 // Not passed on restart after sign out.
 const char kFirstExecAfterBoot[]            = "first-exec-after-boot";
@@ -124,9 +135,6 @@ const char kHasChromeOSDiamondKey[]         = "has-chromeos-diamond-key";
 
 // Path for the screensaver used in Kiosk mode
 const char kKioskModeScreensaverPath[]      = "kiosk-mode-screensaver-path";
-
-// Allows override of oobe for testing - goes directly to the login screen.
-const char kLoginScreen[]                   = "login-screen";
 
 // Enables Chrome-as-a-login-manager behavior.
 const char kLoginManager[]                  = "login-manager";

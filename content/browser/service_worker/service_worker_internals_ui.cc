@@ -8,8 +8,10 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/memory/scoped_vector.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
-#include "content/browser/service_worker/service_worker_context_core.h"
+#include "content/browser/service_worker/service_worker_context_observer.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_version.h"
@@ -41,7 +43,8 @@ class ServiceWorkerInternalsUI::OperationProxy
                  scoped_ptr<ListValue> original_args)
       : internals_(internals), original_args_(original_args.Pass()) {}
 
-  void GetRegistrationsOnIOThread(ServiceWorkerContextWrapper* context,
+  void GetRegistrationsOnIOThread(int partition_id,
+                                  ServiceWorkerContextWrapper* context,
                                   const base::FilePath& context_path);
   void UnregisterOnIOThread(scoped_refptr<ServiceWorkerContextWrapper> context,
                             const GURL& scope);
@@ -57,6 +60,7 @@ class ServiceWorkerInternalsUI::OperationProxy
   friend class base::RefCountedThreadSafe<OperationProxy>;
   ~OperationProxy() {}
   void OnHaveRegistrations(
+      int partition_id,
       const base::FilePath& context_path,
       const std::vector<ServiceWorkerRegistrationInfo>& registrations);
 
@@ -78,8 +82,90 @@ class ServiceWorkerInternalsUI::OperationProxy
   scoped_ptr<ListValue> original_args_;
 };
 
+class ServiceWorkerInternalsUI::PartitionObserver
+    : public ServiceWorkerContextObserver {
+ public:
+  PartitionObserver(int partition_id, WebUI* web_ui)
+      : partition_id_(partition_id), web_ui_(web_ui) {}
+  virtual ~PartitionObserver() {}
+  // ServiceWorkerContextObserver overrides:
+  virtual void OnWorkerStarted(int64 version_id,
+                               int process_id,
+                               int thread_id) OVERRIDE {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    web_ui_->CallJavascriptFunction(
+        "serviceworker.onWorkerStarted",
+        FundamentalValue(partition_id_),
+        StringValue(base::Int64ToString(version_id)),
+        FundamentalValue(process_id),
+        FundamentalValue(thread_id));
+  }
+  virtual void OnWorkerStopped(int64 version_id,
+                               int process_id,
+                               int thread_id) OVERRIDE {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    web_ui_->CallJavascriptFunction(
+        "serviceworker.onWorkerStopped",
+        FundamentalValue(partition_id_),
+        StringValue(base::Int64ToString(version_id)),
+        FundamentalValue(process_id),
+        FundamentalValue(thread_id));
+  }
+  virtual void OnVersionStateChanged(int64 version_id) OVERRIDE {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    web_ui_->CallJavascriptFunction(
+        "serviceworker.onVersionStateChanged",
+        FundamentalValue(partition_id_),
+        StringValue(base::Int64ToString(version_id)));
+  }
+  virtual void OnErrorReported(int64 version_id,
+                               int process_id,
+                               int thread_id,
+                               const ErrorInfo& info) OVERRIDE {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    ScopedVector<const Value> args;
+    args.push_back(new FundamentalValue(partition_id_));
+    args.push_back(new StringValue(base::Int64ToString(version_id)));
+    args.push_back(new FundamentalValue(process_id));
+    args.push_back(new FundamentalValue(thread_id));
+    scoped_ptr<DictionaryValue> value(new DictionaryValue());
+    value->SetString("message", info.error_message);
+    value->SetInteger("lineNumber", info.line_number);
+    value->SetInteger("columnNumber", info.column_number);
+    value->SetString("sourceURL", info.source_url.spec());
+    args.push_back(value.release());
+    web_ui_->CallJavascriptFunction("serviceworker.onErrorReported",
+                                    args.get());
+  }
+  virtual void OnReportConsoleMessage(int64 version_id,
+                                      int process_id,
+                                      int thread_id,
+                                      const ConsoleMessage& message) OVERRIDE {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    ScopedVector<const Value> args;
+    args.push_back(new FundamentalValue(partition_id_));
+    args.push_back(new StringValue(base::Int64ToString(version_id)));
+    args.push_back(new FundamentalValue(process_id));
+    args.push_back(new FundamentalValue(thread_id));
+    scoped_ptr<DictionaryValue> value(new DictionaryValue());
+    value->SetInteger("sourceIdentifier", message.source_identifier);
+    value->SetInteger("message_level", message.message_level);
+    value->SetString("message", message.message);
+    value->SetInteger("lineNumber", message.line_number);
+    value->SetString("sourceURL", message.source_url.spec());
+    args.push_back(value.release());
+    web_ui_->CallJavascriptFunction("serviceworker.onConsoleMessageReported",
+                                    args.get());
+  }
+  int partition_id() const { return partition_id_; }
+
+ private:
+  const int partition_id_;
+  WebUI* const web_ui_;
+};
+
 ServiceWorkerInternalsUI::ServiceWorkerInternalsUI(WebUI* web_ui)
-    : WebUIController(web_ui) {
+    : WebUIController(web_ui), next_partition_id_(0) {
   WebUIDataSource* source =
       WebUIDataSource::Create(kChromeUIServiceWorkerInternalsHost);
   source->SetUseJsonJSFormatV2();
@@ -116,7 +202,16 @@ ServiceWorkerInternalsUI::ServiceWorkerInternalsUI(WebUI* web_ui)
                  base::Unretained(this)));
 }
 
-ServiceWorkerInternalsUI::~ServiceWorkerInternalsUI() {}
+ServiceWorkerInternalsUI::~ServiceWorkerInternalsUI() {
+  BrowserContext* browser_context =
+      web_ui()->GetWebContents()->GetBrowserContext();
+  // Safe to use base::Unretained(this) because
+  // ForEachStoragePartition is synchronous.
+  BrowserContext::StoragePartitionCallback remove_observer_cb =
+      base::Bind(&ServiceWorkerInternalsUI::RemoveObserverFromStoragePartition,
+                 base::Unretained(this));
+  BrowserContext::ForEachStoragePartition(browser_context, remove_observer_cb);
+}
 
 void ServiceWorkerInternalsUI::GetAllRegistrations(const ListValue* args) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -126,25 +221,49 @@ void ServiceWorkerInternalsUI::GetAllRegistrations(const ListValue* args) {
 
   // Safe to use base::Unretained(this) because
   // ForEachStoragePartition is synchronous.
-  BrowserContext::StoragePartitionCallback cb =
+  BrowserContext::StoragePartitionCallback add_context_cb =
       base::Bind(&ServiceWorkerInternalsUI::AddContextFromStoragePartition,
                  base::Unretained(this));
-  BrowserContext::ForEachStoragePartition(browser_context, cb);
+  BrowserContext::ForEachStoragePartition(browser_context, add_context_cb);
 }
 
 void ServiceWorkerInternalsUI::AddContextFromStoragePartition(
     StoragePartition* partition) {
+  int partition_id = 0;
   scoped_refptr<ServiceWorkerContextWrapper> context =
       static_cast<ServiceWorkerContextWrapper*>(
           partition->GetServiceWorkerContext());
+  if (PartitionObserver* observer =
+          observers_.get(reinterpret_cast<uintptr_t>(partition))) {
+    partition_id = observer->partition_id();
+  } else {
+    partition_id = next_partition_id_++;
+    scoped_ptr<PartitionObserver> new_observer(
+        new PartitionObserver(partition_id, web_ui()));
+    context->AddObserver(new_observer.get());
+    observers_.set(reinterpret_cast<uintptr_t>(partition), new_observer.Pass());
+  }
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
       base::Bind(
           &ServiceWorkerInternalsUI::OperationProxy::GetRegistrationsOnIOThread,
           new OperationProxy(AsWeakPtr(), scoped_ptr<ListValue>()),
+          partition_id,
           context,
           partition->GetPath()));
+}
+
+void ServiceWorkerInternalsUI::RemoveObserverFromStoragePartition(
+    StoragePartition* partition) {
+  scoped_ptr<PartitionObserver> observer(
+      observers_.take_and_erase(reinterpret_cast<uintptr_t>(partition)));
+  if (!observer.get())
+    return;
+  scoped_refptr<ServiceWorkerContextWrapper> context =
+      static_cast<ServiceWorkerContextWrapper*>(
+          partition->GetServiceWorkerContext());
+  context->RemoveObserver(observer.get());
 }
 
 namespace {
@@ -179,9 +298,9 @@ bool ServiceWorkerInternalsUI::GetRegistrationInfo(
       web_ui()->GetWebContents()->GetBrowserContext();
 
   StoragePartition* result_partition(NULL);
-  BrowserContext::StoragePartitionCallback cb =
+  BrowserContext::StoragePartitionCallback find_context_cb =
       base::Bind(&FindContext, *partition_path, &result_partition, context);
-  BrowserContext::ForEachStoragePartition(browser_context, cb);
+  BrowserContext::ForEachStoragePartition(browser_context, find_context_cb);
 
   if (!result_partition || !(*context))
     return false;
@@ -267,6 +386,7 @@ void ServiceWorkerInternalsUI::StopWorker(const ListValue* args) {
 }
 
 void ServiceWorkerInternalsUI::OperationProxy::GetRegistrationsOnIOThread(
+    int partition_id,
     ServiceWorkerContextWrapper* context,
     const base::FilePath& context_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -274,6 +394,7 @@ void ServiceWorkerInternalsUI::OperationProxy::GetRegistrationsOnIOThread(
   context->context()->storage()->GetAllRegistrations(
       base::Bind(&ServiceWorkerInternalsUI::OperationProxy::OnHaveRegistrations,
                  this,
+                 partition_id,
                  context_path));
 }
 
@@ -363,13 +484,14 @@ void UpdateVersionInfo(const ServiceWorkerVersionInfo& version,
       info->SetString("status", "DEACTIVATED");
       break;
   }
-
+  info->SetString("version_id", base::Int64ToString(version.version_id));
   info->SetInteger("process_id", version.process_id);
   info->SetInteger("thread_id", version.thread_id);
 }
 }  // namespace
 
 void ServiceWorkerInternalsUI::OperationProxy::OnHaveRegistrations(
+    int partition_id,
     const base::FilePath& context_path,
     const std::vector<ServiceWorkerRegistrationInfo>& registrations) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
@@ -379,6 +501,7 @@ void ServiceWorkerInternalsUI::OperationProxy::OnHaveRegistrations(
         base::Bind(
             &ServiceWorkerInternalsUI::OperationProxy::OnHaveRegistrations,
             this,
+            partition_id,
             context_path,
             registrations));
     return;
@@ -403,7 +526,7 @@ void ServiceWorkerInternalsUI::OperationProxy::OnHaveRegistrations(
 
     if (!registration.pending_version.is_null) {
       DictionaryValue* pending_info = new DictionaryValue();
-      UpdateVersionInfo(registration.active_version, pending_info);
+      UpdateVersionInfo(registration.pending_version, pending_info);
       registration_info->Set("pending", pending_info);
     }
 
@@ -414,6 +537,7 @@ void ServiceWorkerInternalsUI::OperationProxy::OnHaveRegistrations(
     internals_->web_ui()->CallJavascriptFunction(
         "serviceworker.onPartitionData",
         result,
+        FundamentalValue(partition_id),
         StringValue(context_path.value()));
 }
 

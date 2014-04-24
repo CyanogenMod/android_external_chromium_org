@@ -47,12 +47,13 @@
           'android/jni_android.h',
           'android/jni_array.cc',
           'android/jni_array.h',
-          'android/jni_helper.cc',
           'android/jni_helper.h',
           'android/jni_registrar.cc',
           'android/jni_registrar.h',
           'android/jni_string.cc',
           'android/jni_string.h',
+          'android/jni_weak_ref.cc',
+          'android/jni_weak_ref.h',
           'android/library_loader/library_loader_hooks.cc',
           'android/library_loader/library_loader_hooks.h',
           'android/memory_pressure_listener_android.cc',
@@ -130,8 +131,6 @@
           'debug/alias.h',
           'debug/crash_logging.cc',
           'debug/crash_logging.h',
-          'debug/debug_on_start_win.cc',
-          'debug/debug_on_start_win.h',
           'debug/debugger.cc',
           'debug/debugger.h',
           'debug/debugger_posix.cc',
@@ -732,9 +731,6 @@
               'sources!': [
                 'message_loop/message_pump_glib.cc',
               ],
-          }],
-          ['<(toolkit_uses_gtk)==0 or >(nacl_untrusted_build)==1', {
-            'sources!': ['message_loop/message_pump_gtk.cc'],
           }],
           ['(OS != "linux" and <(os_bsd) != 1 and OS != "android") or >(nacl_untrusted_build)==1', {
               'sources!': [

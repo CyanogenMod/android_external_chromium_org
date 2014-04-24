@@ -25,10 +25,6 @@ class Rect;
 class Size;
 }
 
-namespace ui {
-class PlatformEventSource;
-}
-
 namespace wm {
 
 class CompoundEventFilter;
@@ -52,14 +48,11 @@ class WMTestHelper : public aura::client::WindowTreeClient {
  private:
   scoped_ptr<aura::WindowTreeHost> host_;
 
-  // Owned by the root Window.
-  wm::CompoundEventFilter* root_window_event_filter_;
-
+  scoped_ptr<wm::CompoundEventFilter> root_window_event_filter_;
   scoped_ptr<aura::client::DefaultCaptureClient> capture_client_;
   scoped_ptr<wm::InputMethodEventFilter> input_method_filter_;
   scoped_ptr<aura::client::DefaultActivationClient> activation_client_;
   scoped_ptr<aura::client::FocusClient> focus_client_;
-  scoped_ptr<ui::PlatformEventSource> event_source_;
 
   DISALLOW_COPY_AND_ASSIGN(WMTestHelper);
 };

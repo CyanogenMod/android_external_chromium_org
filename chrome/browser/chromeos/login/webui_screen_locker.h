@@ -92,7 +92,6 @@ class WebUIScreenLocker : public WebUILoginView,
   virtual void OnUserSelected(const std::string& username) OVERRIDE;
   virtual void OnStartEnterpriseEnrollment() OVERRIDE;
   virtual void OnStartKioskEnableScreen() OVERRIDE;
-  virtual void OnStartDeviceReset() OVERRIDE;
   virtual void OnStartKioskAutolaunchScreen() OVERRIDE;
   virtual void ShowWrongHWIDScreen() OVERRIDE;
   virtual void ResetPublicSessionAutoLoginTimer() OVERRIDE;
@@ -118,7 +117,7 @@ class WebUIScreenLocker : public WebUILoginView,
   virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
 
   // PowerManagerClient::Observer overrides:
-  virtual void SystemResumed(const base::TimeDelta& sleep_duration) OVERRIDE;
+  virtual void SuspendDone(const base::TimeDelta& sleep_duration) OVERRIDE;
   virtual void LidEventReceived(bool open,
                                 const base::TimeTicks& time) OVERRIDE;
 

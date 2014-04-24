@@ -19,7 +19,7 @@
 #include "ppapi/proxy/ppapi_messages.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 
 namespace {
@@ -59,13 +59,15 @@ PepperExtensionsCommonHost* PepperExtensionsCommonHost::Create(
       host->GetContainerForInstance(instance);
   if (!container)
     return NULL;
-  blink::WebFrame* frame = container->element().document().frame();
+  blink::WebLocalFrame* frame = container->element().document().frame();
   if (!frame)
     return NULL;
   v8::HandleScope scope(v8::Isolate::GetCurrent());
+  // TODO(rockot): Remove this downcast. See http://crbug.com/362616.
   extensions::ChromeV8Context* context =
-      dispatcher->v8_context_set().GetByV8Context(
-          frame->mainWorldScriptContext());
+      static_cast<extensions::ChromeV8Context*>(
+          dispatcher->script_context_set().GetByV8Context(
+              frame->mainWorldScriptContext()));
   if (!context)
     return NULL;
 

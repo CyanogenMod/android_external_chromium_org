@@ -11,8 +11,10 @@
 #include "base/callback.h"
 #include "base/files/file.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/chromeos/file_system_provider/observer.h"
-#include "chrome/browser/chromeos/file_system_provider/provided_file_system.h"
+#include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
+#include "chrome/browser/chromeos/file_system_provider/provided_file_system_info.h"
 
 namespace base {
 class DictionaryValue;
@@ -21,63 +23,64 @@ class DictionaryValue;
 namespace chromeos {
 namespace file_system_provider {
 
-typedef base::Callback<void(scoped_ptr<base::DictionaryValue>, bool has_next)>
-    SuccessCallback;
+typedef base::Callback<void(scoped_ptr<base::DictionaryValue> result,
+                            bool has_next)> SuccessCallback;
 typedef base::Callback<void(base::File::Error)> ErrorCallback;
 
 // Manages requests between the service, async utils and the providing
 // extensions.
-class RequestManager : public Observer {
+class RequestManager {
  public:
   RequestManager();
   virtual ~RequestManager();
 
   // Creates a request and returns its request id (greater than 0). Returns 0 in
   // case of an error (eg. too many requests). The passed callbacks can be NULL.
-  int CreateRequest(const ProvidedFileSystem& file_system,
-                    const SuccessCallback& success_callback,
+  int CreateRequest(const SuccessCallback& success_callback,
                     const ErrorCallback& error_callback);
 
   // Handles successful response for the |request_id|. If |has_next| is false,
   // then the request is disposed, after handling the |response|. On error,
   // returns false, and the request is disposed.
-  bool FulfillRequest(const ProvidedFileSystem& file_system,
-                      int request_id,
+  bool FulfillRequest(int request_id,
                       scoped_ptr<base::DictionaryValue> response,
                       bool has_next);
 
   // Handles error response for the |request_id|. If handling the error fails,
   // returns false. Always disposes the request.
-  bool RejectRequest(const ProvidedFileSystem& file_system,
-                     int request_id,
-                     base::File::Error error);
+  bool RejectRequest(int request_id, base::File::Error error);
 
-  // file_system_provider::Observer overrides.
-  virtual void OnProvidedFileSystemMount(const ProvidedFileSystem& file_system,
-                                         base::File::Error error) OVERRIDE;
-  virtual void OnProvidedFileSystemUnmount(
-      const ProvidedFileSystem& file_system,
-      base::File::Error error) OVERRIDE;
+  // Sets a custom timeout for tests. The new timeout value will be applied to
+  // new requests
+  void SetTimeoutForTests(const base::TimeDelta& timeout);
 
  private:
   struct Request {
     Request();
     ~Request();
 
-    // Provided file system handling the request.
-    ProvidedFileSystem file_system;
+    // Timer for discarding the request during a timeout.
+    base::OneShotTimer<RequestManager> timeout_timer;
 
     // Callback to be called on success.
     SuccessCallback success_callback;
 
     // Callback to be called on error.
     ErrorCallback error_callback;
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(Request);
   };
 
-  typedef std::map<int, Request> RequestMap;
+  typedef std::map<int, Request*> RequestMap;
+
+  // Called when a request with |request_id| timeouts.
+  void OnRequestTimeout(int request_id);
 
   RequestMap requests_;
   int next_id_;
+  base::TimeDelta timeout_;
+  base::WeakPtrFactory<RequestManager> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RequestManager);
 };

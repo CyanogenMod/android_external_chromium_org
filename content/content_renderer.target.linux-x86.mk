@@ -68,9 +68,9 @@ LOCAL_SRC_FILES := \
 	content/renderer/context_menu_params_builder.cc \
 	content/renderer/cursor_utils.cc \
 	content/renderer/date_time_suggestion_builder.cc \
-	content/renderer/device_orientation/device_motion_event_pump.cc \
-	content/renderer/device_orientation/device_orientation_event_pump.cc \
-	content/renderer/device_orientation/device_sensor_event_pump.cc \
+	content/renderer/device_sensors/device_motion_event_pump.cc \
+	content/renderer/device_sensors/device_orientation_event_pump.cc \
+	content/renderer/device_sensors/device_sensor_event_pump.cc \
 	content/renderer/devtools/devtools_agent.cc \
 	content/renderer/devtools/devtools_agent_filter.cc \
 	content/renderer/devtools/devtools_client.cc \
@@ -94,6 +94,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/gpu/render_widget_compositor.cc \
 	content/renderer/gpu/stream_texture_host_android.cc \
 	content/renderer/history_controller.cc \
+	content/renderer/history_entry.cc \
 	content/renderer/idle_user_detector.cc \
 	content/renderer/image_loading_helper.cc \
 	content/renderer/ime_event_guard.cc \
@@ -159,7 +160,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/mhtml_generator.cc \
 	content/renderer/mojo/mojo_render_process_observer.cc \
 	content/renderer/mouse_lock_dispatcher.cc \
-	content/renderer/paint_aggregator.cc \
 	content/renderer/push_messaging_dispatcher.cc \
 	content/renderer/render_frame_impl.cc \
 	content/renderer/render_process_impl.cc \
@@ -226,7 +226,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/media_stream_video_track.cc \
 	content/renderer/media/native_handle_impl.cc \
 	content/renderer/media/peer_connection_audio_sink_owner.cc \
-	content/renderer/media/peer_connection_handler_base.cc \
 	content/renderer/media/peer_connection_identity_service.cc \
 	content/renderer/media/peer_connection_tracker.cc \
 	content/renderer/media/remote_media_stream_impl.cc \
@@ -241,10 +240,12 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/rtc_video_renderer.cc \
 	content/renderer/media/video_source_handler.cc \
 	content/renderer/media/webaudio_capturer_source.cc \
+	content/renderer/media/webrtc/webrtc_video_track_adapter.cc \
 	content/renderer/media/webrtc/media_stream_remote_video_source.cc \
 	content/renderer/media/webrtc/media_stream_track_metrics.cc \
 	content/renderer/media/webrtc/webrtc_audio_sink_adapter.cc \
 	content/renderer/media/webrtc/webrtc_local_audio_track_adapter.cc \
+	content/renderer/media/webrtc/webrtc_media_stream_adapter.cc \
 	content/renderer/media/webrtc/webrtc_video_capturer_adapter.cc \
 	content/renderer/media/webrtc_audio_capturer.cc \
 	content/renderer/media/webrtc_audio_device_impl.cc \
@@ -331,12 +332,15 @@ MY_DEFS_Debug := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
+	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DSK_IGNORE_FREETYPE_ROTATION_FIX' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
 	'-DCHROME_PNG_READ_PACK_SUPPORT' \
@@ -505,12 +509,15 @@ MY_DEFS_Release := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
+	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DSK_IGNORE_FREETYPE_ROTATION_FIX' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
 	'-DCHROME_PNG_READ_PACK_SUPPORT' \
@@ -630,7 +637,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed

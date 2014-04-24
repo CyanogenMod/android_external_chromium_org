@@ -59,8 +59,6 @@
             'sources': [
               '../components/nacl/common/nacl_paths.cc',
               '../components/nacl/common/nacl_paths.h',
-              '../components/nacl/zygote/nacl_fork_delegate_linux.cc',
-              '../components/nacl/zygote/nacl_fork_delegate_linux.h',
             ],
           },],
         ],
@@ -138,11 +136,25 @@
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],
+          'conditions': [
+            ['OS=="linux"', {
+              'sources': [
+                '../components/nacl/zygote/nacl_fork_delegate_linux.cc',
+                '../components/nacl/zygote/nacl_fork_delegate_linux.h',
+              ],
+              'dependencies': [
+                # Required by nacl_fork_delegate_linux.cc.
+                '../sandbox/sandbox.gyp:suid_sandbox_client',
+              ]
+            }],
+          ],
         },
         {
           'target_name': 'nacl_renderer',
           'type': 'static_library',
           'sources': [
+            'nacl/renderer/manifest_service_channel.cc',
+            'nacl/renderer/manifest_service_channel.h',
             'nacl/renderer/nexe_load_manager.cc',
             'nacl/renderer/nexe_load_manager.h',
             'nacl/renderer/pnacl_translation_resource_host.cc',
@@ -181,21 +193,28 @@
               'include_dirs': [
                 '..',
               ],
-              'dependencies': [
-                'nacl',
-                'nacl_common',
-                'nacl_switches',
-                '../components/tracing.gyp:tracing',
-                '../crypto/crypto.gyp:crypto',
-                '../sandbox/sandbox.gyp:libc_urandom_override',
-                '../sandbox/sandbox.gyp:sandbox',
-                '../ppapi/ppapi_internal.gyp:ppapi_proxy',
+              'sources': [
+                'nacl/loader/nacl_helper_linux.cc',
+                'nacl/loader/nacl_helper_linux.h',
               ],
+              'dependencies': [
+                'nacl_loader',
+              ],
+              'cflags': ['-fPIE'],
               'ldflags!': [
                 # Do not pick the default ASan options from
                 # base/debug/sanitizer_options.cc to avoid a conflict with those
                 # in nacl/nacl_helper_linux.cc.
                 '-Wl,-u_sanitizer_options_link_helper',
+              ],
+              'link_settings': {
+                'ldflags': ['-pie'],
+              },
+            }, {
+              'target_name': 'nacl_loader',
+              'type': 'static_library',
+              'include_dirs': [
+                '..',
               ],
               'defines': [
                 '<@(nacl_defines)',
@@ -204,8 +223,6 @@
                 'IN_NACL_HELPER=1',
               ],
               'sources': [
-                'nacl/loader/nacl_helper_linux.cc',
-                'nacl/loader/nacl_helper_linux.h',
                 'nacl/loader/nacl_sandbox_linux.cc',
                 'nacl/loader/nonsfi/abi_conversion.cc',
                 'nacl/loader/nonsfi/abi_conversion.h',
@@ -224,6 +241,10 @@
                 'nacl/loader/nonsfi/irt_util.h',
                 'nacl/loader/nonsfi/nonsfi_main.cc',
                 'nacl/loader/nonsfi/nonsfi_main.h',
+                'nacl/loader/nonsfi/nonsfi_sandbox.cc',
+                'nacl/loader/nonsfi/nonsfi_sandbox.h',
+                '../ppapi/nacl_irt/manifest_service.cc',
+                '../ppapi/nacl_irt/manifest_service.h',
                 '../ppapi/nacl_irt/plugin_main.cc',
                 '../ppapi/nacl_irt/plugin_main.h',
                 '../ppapi/nacl_irt/plugin_startup.cc',
@@ -231,12 +252,17 @@
                 '../ppapi/nacl_irt/ppapi_dispatcher.cc',
                 '../ppapi/nacl_irt/ppapi_dispatcher.h',
               ],
+              'dependencies': [
+                'nacl',
+                'nacl_common',
+                'nacl_switches',
+                '../components/tracing.gyp:tracing',
+                '../crypto/crypto.gyp:crypto',
+                '../sandbox/sandbox.gyp:libc_urandom_override',
+                '../sandbox/sandbox.gyp:sandbox',
+                '../ppapi/ppapi_internal.gyp:ppapi_proxy',
+              ],
               'conditions': [
-                ['toolkit_uses_gtk == 1', {
-                  'dependencies': [
-                    '../build/linux/system.gyp:gtk',
-                  ],
-                }],
                 ['use_glib == 1', {
                   'dependencies': [
                     '../build/linux/system.gyp:glib',
@@ -262,9 +288,22 @@
                 }],
               ],
               'cflags': ['-fPIE'],
-              'link_settings': {
-                'ldflags': ['-pie'],
-              },
+            }, {
+              'target_name': 'nacl_loader_unittests',
+              'type': '<(gtest_target_type)',
+              'sources': [
+                # TODO(hamaji): Currently, we build them twice. Stop building
+                # them for components_unittests. See crbug.com/364751
+                'nacl/loader/nonsfi/nonsfi_sandbox_unittest.cc',
+                'nacl/loader/nonsfi/nonsfi_sandbox_sigsys_unittest.cc',
+                'nacl/loader/run_all_unittests.cc',
+              ],
+              'dependencies': [
+                'nacl_loader',
+                '../base/base.gyp:test_support_base',
+                '../sandbox/sandbox.gyp:sandbox_linux_test_utils',
+                '../testing/gtest.gyp:gtest',
+              ],
             },
           ],
         }],

@@ -12,7 +12,6 @@
 #include "base/test/test_timeouts.h"
 #include "base/time/time.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/media/media_stream_infobar_delegate.h"
 #include "chrome/browser/media/webrtc_browsertest_base.h"
@@ -24,6 +23,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
 #include "media/base/media_switches.h"
@@ -200,6 +200,7 @@ class WebRtcVideoQualityBrowserTest : public WebRtcTestBase {
                                         base::StringPrintf("%d", width));
     converter_command.AppendSwitchASCII("--height",
                                         base::StringPrintf("%d", height));
+    converter_command.AppendSwitchASCII("--delete_frames", "true");
 
     // We produce an output file that will later be used as an input to the
     // barcode decoder and frame analyzer tools.

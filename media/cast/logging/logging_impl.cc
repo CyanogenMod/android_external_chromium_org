@@ -29,10 +29,11 @@ void LoggingImpl::InsertEncodedFrameEvent(const base::TimeTicks& time_of_event,
                                           CastLoggingEvent event,
                                           uint32 rtp_timestamp,
                                           uint32 frame_id, int frame_size,
-                                          bool key_frame) {
+                                          bool key_frame,
+                                          int target_bitrate) {
   DCHECK(thread_checker_.CalledOnValidThread());
   raw_.InsertEncodedFrameEvent(time_of_event, event, rtp_timestamp, frame_id,
-                               frame_size, key_frame);
+                               frame_size, key_frame, target_bitrate);
 }
 
 void LoggingImpl::InsertFrameEventWithDelay(
@@ -76,7 +77,7 @@ void LoggingImpl::InsertPacketListEvent(const base::TimeTicks& time_of_event,
   DCHECK(thread_checker_.CalledOnValidThread());
   for (PacketList::const_iterator it = packets.begin(); it != packets.end();
        ++it) {
-    InsertSinglePacketEvent(time_of_event, event, *it);
+    InsertSinglePacketEvent(time_of_event, event, (*it)->data);
   }
 }
 
@@ -88,12 +89,6 @@ void LoggingImpl::InsertPacketEvent(const base::TimeTicks& time_of_event,
   DCHECK(thread_checker_.CalledOnValidThread());
   raw_.InsertPacketEvent(time_of_event, event, rtp_timestamp, frame_id,
                          packet_id, max_packet_id, size);
-}
-
-void LoggingImpl::InsertGenericEvent(const base::TimeTicks& time_of_event,
-                                     CastLoggingEvent event, int value) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  raw_.InsertGenericEvent(time_of_event, event, value);
 }
 
 void LoggingImpl::AddRawEventSubscriber(RawEventSubscriber* subscriber) {

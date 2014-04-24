@@ -376,7 +376,8 @@ Browser::Browser(const CreateParams& params)
   search_model_.reset(new SearchModel());
   search_delegate_.reset(new SearchDelegate(search_model_.get()));
 
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
@@ -1131,6 +1132,16 @@ bool Browser::CanOverscrollContent() const {
 #endif
 }
 
+bool Browser::ShouldPreserveAbortedURLs(WebContents* source) {
+  // Allow failed URLs to stick around in the omnibox on the NTP, but not when
+  // other pages have committed.
+  Profile* profile = Profile::FromBrowserContext(source->GetBrowserContext());
+  if (!profile || !source->GetController().GetLastCommittedEntry())
+    return false;
+  GURL committed_url(source->GetController().GetLastCommittedEntry()->GetURL());
+  return chrome::IsNTPURL(committed_url, profile);
+}
+
 bool Browser::PreHandleKeyboardEvent(content::WebContents* source,
                                      const NativeWebKeyboardEvent& event,
                                      bool* is_keyboard_shortcut) {
@@ -1280,7 +1291,8 @@ WebContents* Browser::OpenURLFromTab(WebContents* source,
   FillNavigateParamsFromOpenURLParams(&nav_params, params);
   nav_params.source_contents = source;
   nav_params.tabstrip_add_types = TabStripModel::ADD_NONE;
-  nav_params.window_action = chrome::NavigateParams::SHOW_WINDOW;
+  if (params.user_gesture)
+    nav_params.window_action = chrome::NavigateParams::SHOW_WINDOW;
   nav_params.user_gesture = params.user_gesture;
 
   PopupBlockerTabHelper* popup_blocker_helper = NULL;
@@ -1550,7 +1562,8 @@ void Browser::RendererResponsive(WebContents* source) {
 
 void Browser::WorkerCrashed(WebContents* source) {
   SimpleAlertInfoBarDelegate::Create(
-      InfoBarService::FromWebContents(source), InfoBarDelegate::kNoIconID,
+      InfoBarService::FromWebContents(source),
+      infobars::InfoBarDelegate::kNoIconID,
       l10n_util::GetStringUTF16(IDS_WEBWORKER_CRASHED_PROMPT), true);
 }
 
@@ -1919,7 +1932,7 @@ void Browser::Observe(int type,
       break;
     }
 
-    case chrome::NOTIFICATION_EXTENSION_LOADED:
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
       chrome::UpdateCommandEnabled(
           this,
           IDC_BOOKMARK_PAGE,
@@ -2235,30 +2248,23 @@ bool Browser::ShouldShowLocationBar() const {
   if (is_type_tabbed())
     return true;
 
-  // Trusted app windows and system windows never show a location bar.
-  if (is_trusted_source())
-    return false;
-
-  // Other non-app browsers always show a location bar.
-  if (!is_app())
-    return true;
-
-  // Normally apps do not show a location bar.
-  if (app_name() == DevToolsWindow::kDevToolsApp ||
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableStreamlinedHostedApps)) {
-    return false;
+  if (is_app() && CommandLine::ForCurrentProcess()->HasSwitch(
+                      switches::kEnableStreamlinedHostedApps)) {
+    // If kEnableStreamlinedHostedApps is true, show the location bar for
+    // bookmark apps.
+    ExtensionService* service =
+        extensions::ExtensionSystem::Get(profile_)->extension_service();
+    const extensions::Extension* extension =
+        service ? service->GetInstalledExtension(
+                      web_app::GetExtensionIdFromApplicationName(app_name()))
+                : NULL;
+    return (!extension || extension->from_bookmark()) &&
+           app_name() != DevToolsWindow::kDevToolsApp;
   }
 
-  // If kEnableStreamlinedHostedApps is true, show the locaiton bar for non
-  // legacy packaged apps.
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-  const extensions::Extension* extension =
-      service ? service->GetInstalledExtension(
-                    web_app::GetExtensionIdFromApplicationName(app_name()))
-              : NULL;
-  return (!extension || !extension->is_legacy_packaged_app());
+  // All app windows and system windows are trusted and never show a location
+  // bar.
+  return !is_trusted_source();
 }
 
 bool Browser::SupportsWindowFeatureImpl(WindowFeature feature,

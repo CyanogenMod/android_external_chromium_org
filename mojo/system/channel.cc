@@ -4,11 +4,14 @@
 
 #include "mojo/system/channel.h"
 
+#include <algorithm>
+
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
+#include "build/build_config.h"  // TODO(vtl): Remove this.
 #include "mojo/system/message_pipe_endpoint.h"
 
 namespace mojo {
@@ -21,12 +24,15 @@ COMPILE_ASSERT(Channel::kBootstrapEndpointId !=
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::EndpointId
     Channel::kBootstrapEndpointId;
 
-Channel::EndpointInfo::EndpointInfo() {
+Channel::EndpointInfo::EndpointInfo()
+    : state(STATE_NORMAL),
+      port() {
 }
 
 Channel::EndpointInfo::EndpointInfo(scoped_refptr<MessagePipe> message_pipe,
                                     unsigned port)
-    : message_pipe(message_pipe),
+    : state(STATE_NORMAL),
+      message_pipe(message_pipe),
       port(port) {
 }
 
@@ -34,7 +40,8 @@ Channel::EndpointInfo::~EndpointInfo() {
 }
 
 Channel::Channel()
-    : next_local_id_(kBootstrapEndpointId) {
+    : is_running_(false),
+      next_local_id_(kBootstrapEndpointId) {
 }
 
 bool Channel::Init(scoped_ptr<RawChannel> raw_channel) {
@@ -43,7 +50,7 @@ bool Channel::Init(scoped_ptr<RawChannel> raw_channel) {
 
   // No need to take |lock_|, since this must be called before this object
   // becomes thread-safe.
-  DCHECK(!raw_channel_);
+  DCHECK(!is_running_no_lock());
   raw_channel_ = raw_channel.Pass();
 
   if (!raw_channel_->Init(this)) {
@@ -51,34 +58,50 @@ bool Channel::Init(scoped_ptr<RawChannel> raw_channel) {
     return false;
   }
 
+  is_running_ = true;
   return true;
 }
 
 void Channel::Shutdown() {
   DCHECK(creation_thread_checker_.CalledOnValidThread());
 
-  base::AutoLock locker(lock_);
-  DCHECK(raw_channel_.get());
-  raw_channel_->Shutdown();
-  raw_channel_.reset();
+  IdToEndpointInfoMap to_destroy;
+  {
+    base::AutoLock locker(lock_);
+    if (!is_running_no_lock())
+      return;
 
-  // This should not occur, but it probably mostly results in leaking;
-  // (Explicitly clearing the |local_id_to_endpoint_info_map_| would likely put
-  // things in an inconsistent state, which is worse. Note that if the map is
-  // nonempty, we probably won't be destroyed, since the endpoints have a
-  // reference to us.)
-  LOG_IF(ERROR, !local_id_to_endpoint_info_map_.empty())
-      << "Channel shutting down with endpoints still attached";
-  // TODO(vtl): This currently blows up, but the fix will be nontrivial.
-  // crbug.com/360081
-  //DCHECK(local_id_to_endpoint_info_map_.empty());
+    // Note: Don't reset |raw_channel_|, in case we're being called from within
+    // |OnReadMessage()| or |OnFatalError()|.
+    raw_channel_->Shutdown();
+    is_running_ = false;
+
+    // We need to deal with it outside the lock.
+    std::swap(to_destroy, local_id_to_endpoint_info_map_);
+  }
+
+  size_t num_live = 0;
+  size_t num_zombies = 0;
+  for (IdToEndpointInfoMap::iterator it = to_destroy.begin();
+       it != to_destroy.end();
+       ++it) {
+    if (it->second.state == EndpointInfo::STATE_NORMAL) {
+      it->second.message_pipe->OnRemove(it->second.port);
+      num_live++;
+    } else {
+      DCHECK(!it->second.message_pipe.get());
+      num_zombies++;
+    }
+  }
+  DVLOG(2) << "Shut down Channel with " << num_live << " live endpoints and "
+           << num_zombies << " zombies";
 }
 
 MessageInTransit::EndpointId Channel::AttachMessagePipeEndpoint(
-    scoped_refptr<MessagePipe> message_pipe, unsigned port) {
+    scoped_refptr<MessagePipe> message_pipe,
+    unsigned port) {
+  DCHECK(message_pipe);
   DCHECK(port == 0 || port == 1);
-  // Note: This assertion must *not* be done under |lock_|.
-  DCHECK_EQ(message_pipe->GetType(port), MessagePipeEndpoint::kTypeProxy);
 
   MessageInTransit::EndpointId local_id;
   {
@@ -98,8 +121,32 @@ MessageInTransit::EndpointId Channel::AttachMessagePipeEndpoint(
     local_id_to_endpoint_info_map_[local_id] = EndpointInfo(message_pipe, port);
   }
 
-  message_pipe->Attach(port, scoped_refptr<Channel>(this), local_id);
-  return local_id;
+  // This might fail if that port got an |OnPeerClose()| before attaching.
+  if (message_pipe->Attach(port, scoped_refptr<Channel>(this), local_id))
+    return local_id;
+
+  // Note: If it failed, quite possibly the endpoint info was removed from that
+  // map (there's a race between us adding it to the map above and calling
+  // |Attach()|). And even if an entry exists for |local_id|, we need to check
+  // that it's the one we added (and not some other one that was added since).
+  {
+    base::AutoLock locker(lock_);
+    IdToEndpointInfoMap::iterator it =
+        local_id_to_endpoint_info_map_.find(local_id);
+    if (it != local_id_to_endpoint_info_map_.end() &&
+        it->second.message_pipe.get() == message_pipe.get() &&
+        it->second.port == port) {
+      DCHECK_EQ(it->second.state, EndpointInfo::STATE_NORMAL);
+      // TODO(vtl): FIXME -- This is wrong. We need to specify (to
+      // |AttachMessagePipeEndpoint()| who's going to be responsible for calling
+      // |RunMessagePipeEndpoint()| ("us", or the remote by sending us a
+      // |kSubtypeChannelRunMessagePipeEndpoint|). If the remote is going to
+      // run, then we'll get messages to an "invalid" local ID (for running, for
+      // removal).
+      local_id_to_endpoint_info_map_.erase(it);
+    }
+  }
+  return MessageInTransit::kInvalidEndpointId;
 }
 
 bool Channel::RunMessagePipeEndpoint(MessageInTransit::EndpointId local_id,
@@ -115,6 +162,14 @@ bool Channel::RunMessagePipeEndpoint(MessageInTransit::EndpointId local_id,
     endpoint_info = it->second;
   }
 
+  // Assume that this was in response to |kSubtypeChannelRunMessagePipeEndpoint|
+  // and ignore it.
+  if (endpoint_info.state != EndpointInfo::STATE_NORMAL) {
+    DVLOG(2) << "Ignoring run message pipe endpoint for zombie endpoint "
+                "(local ID " << local_id << ", remote ID " << remote_id << ")";
+    return true;
+  }
+
   // TODO(vtl): FIXME -- We need to handle the case that message pipe is already
   // running when we're here due to |kSubtypeChannelRunMessagePipeEndpoint|).
   endpoint_info.message_pipe->Run(endpoint_info.port, remote_id);
@@ -124,27 +179,27 @@ bool Channel::RunMessagePipeEndpoint(MessageInTransit::EndpointId local_id,
 void Channel::RunRemoteMessagePipeEndpoint(
     MessageInTransit::EndpointId local_id,
     MessageInTransit::EndpointId remote_id) {
-  base::AutoLock locker(lock_);
+#if DCHECK_IS_ON
+  {
+    base::AutoLock locker(lock_);
+    DCHECK(local_id_to_endpoint_info_map_.find(local_id) !=
+               local_id_to_endpoint_info_map_.end());
+  }
+#endif
 
-  DCHECK(local_id_to_endpoint_info_map_.find(local_id) !=
-             local_id_to_endpoint_info_map_.end());
-
-  scoped_ptr<MessageInTransit> message(new MessageInTransit(
-      MessageInTransit::kTypeChannel,
-      MessageInTransit::kSubtypeChannelRunMessagePipeEndpoint,
-      0, 0, NULL));
-  message->set_source_id(local_id);
-  message->set_destination_id(remote_id);
-  if (!raw_channel_->WriteMessage(message.Pass())) {
-    // TODO(vtl): FIXME -- I guess we should report the error back somehow so
-    // that the dispatcher can be closed?
-    CHECK(false) << "Not yet handled";
+  if (!SendControlMessage(
+           MessageInTransit::kSubtypeChannelRunMessagePipeEndpoint,
+           local_id, remote_id)) {
+    HandleLocalError(base::StringPrintf(
+        "Failed to send message to run remote message pipe endpoint (local ID "
+        "%u, remote ID %u)",
+        static_cast<unsigned>(local_id), static_cast<unsigned>(remote_id)));
   }
 }
 
 bool Channel::WriteMessage(scoped_ptr<MessageInTransit> message) {
   base::AutoLock locker(lock_);
-  if (!raw_channel_.get()) {
+  if (!is_running_no_lock()) {
     // TODO(vtl): I think this is probably not an error condition, but I should
     // think about it (and the shutdown sequence) more carefully.
     LOG(WARNING) << "WriteMessage() after shutdown";
@@ -156,24 +211,60 @@ bool Channel::WriteMessage(scoped_ptr<MessageInTransit> message) {
 
 bool Channel::IsWriteBufferEmpty() {
   base::AutoLock locker(lock_);
-  DCHECK(raw_channel_.get());
+  if (!is_running_no_lock())
+    return true;
   return raw_channel_->IsWriteBufferEmpty();
 }
 
-void Channel::DetachMessagePipeEndpoint(MessageInTransit::EndpointId local_id) {
+void Channel::DetachMessagePipeEndpoint(
+    MessageInTransit::EndpointId local_id,
+    MessageInTransit::EndpointId remote_id) {
   DCHECK_NE(local_id, MessageInTransit::kInvalidEndpointId);
 
-  base::AutoLock locker_(lock_);
-  local_id_to_endpoint_info_map_.erase(local_id);
+  bool should_send_remove_message = false;
+  {
+    base::AutoLock locker_(lock_);
+    if (!is_running_no_lock())
+      return;
+
+    IdToEndpointInfoMap::iterator it =
+        local_id_to_endpoint_info_map_.find(local_id);
+    DCHECK(it != local_id_to_endpoint_info_map_.end());
+
+    switch (it->second.state) {
+      case EndpointInfo::STATE_NORMAL:
+        it->second.state = EndpointInfo::STATE_WAIT_REMOTE_REMOVE_ACK;
+        it->second.message_pipe = NULL;
+        should_send_remove_message =
+            (remote_id != MessageInTransit::kInvalidEndpointId);
+        break;
+      case EndpointInfo::STATE_WAIT_LOCAL_DETACH:
+        local_id_to_endpoint_info_map_.erase(it);
+        break;
+      case EndpointInfo::STATE_WAIT_REMOTE_REMOVE_ACK:
+        NOTREACHED();
+        break;
+      case EndpointInfo::STATE_WAIT_LOCAL_DETACH_AND_REMOTE_REMOVE_ACK:
+        it->second.state = EndpointInfo::STATE_WAIT_REMOTE_REMOVE_ACK;
+        break;
+    }
+  }
+  if (!should_send_remove_message)
+    return;
+
+  if (!SendControlMessage(
+           MessageInTransit::kSubtypeChannelRemoveMessagePipeEndpoint,
+           local_id, remote_id)) {
+    HandleLocalError(base::StringPrintf(
+        "Failed to send message to remove remote message pipe endpoint (local "
+        "ID %u, remote ID %u)",
+        static_cast<unsigned>(local_id), static_cast<unsigned>(remote_id)));
+  }
 }
 
 Channel::~Channel() {
   // The channel should have been shut down first.
-  DCHECK(!raw_channel_.get());
-
-  DLOG_IF(WARNING, !local_id_to_endpoint_info_map_.empty())
-      << "Destroying Channel with " << local_id_to_endpoint_info_map_.size()
-      << " endpoints still present";
+  DCHECK(!is_running_no_lock());
 }
 
 void Channel::OnReadMessage(const MessageInTransit::View& message_view) {
@@ -198,8 +289,13 @@ void Channel::OnReadMessage(const MessageInTransit::View& message_view) {
 }
 
 void Channel::OnFatalError(FatalError fatal_error) {
-  // TODO(vtl): IMPORTANT. Notify all our endpoints that they're dead.
-  NOTIMPLEMENTED();
+  LOG(ERROR) << "RawChannel fatal error (type " << fatal_error << ")";
+  // TODO(vtl): We have some nested-deletion bugs on Windows, so this crashes.
+#if defined(OS_WIN)
+  LOG(ERROR) << "Not shutting down due Windows-only bug";
+#else
+  Shutdown();
+#endif
 }
 
 bool Channel::ValidateReadMessage(const MessageInTransit::View& message_view) {
@@ -231,7 +327,7 @@ void Channel::OnReadMessageForDownstream(
     // Since we own |raw_channel_|, and this method and |Shutdown()| should only
     // be called from the creation thread, |raw_channel_| should never be null
     // here.
-    DCHECK(raw_channel_.get());
+    DCHECK(is_running_no_lock());
 
     IdToEndpointInfoMap::const_iterator it =
         local_id_to_endpoint_info_map_.find(local_id);
@@ -249,6 +345,13 @@ void Channel::OnReadMessageForDownstream(
     endpoint_info = it->second;
   }
 
+  // Ignore messages for zombie endpoints (not an error).
+  if (endpoint_info.state != EndpointInfo::STATE_NORMAL) {
+    DVLOG(2) << "Ignoring downstream message for zombie endpoint (local ID = "
+             << local_id << ", remote ID = " << message_view.source_id() << ")";
+    return;
+  }
+
   // We need to duplicate the message, because |EnqueueMessage()| will take
   // ownership of it.
   scoped_ptr<MessageInTransit> message(new MessageInTransit(message_view));
@@ -261,7 +364,7 @@ void Channel::OnReadMessageForDownstream(
     // error, e.g., if the remote side is sending invalid control messages (to
     // the message pipe).
     HandleLocalError(base::StringPrintf(
-        "Failed to enqueue message to local destination ID %u (result %d)",
+        "Failed to enqueue message to local ID %u (result %d)",
         static_cast<unsigned>(local_id), static_cast<int>(result)));
     return;
   }
@@ -273,20 +376,97 @@ void Channel::OnReadMessageForChannel(
 
   switch (message_view.subtype()) {
     case MessageInTransit::kSubtypeChannelRunMessagePipeEndpoint:
-      // TODO(vtl): FIXME -- Error handling (also validation of
-      // source/destination IDs).
-      DVLOG(2) << "Handling channel message to run message pipe (local ID = "
-               << message_view.destination_id() << ", remote ID = "
+      DVLOG(2) << "Handling channel message to run message pipe (local ID "
+               << message_view.destination_id() << ", remote ID "
                << message_view.source_id() << ")";
       if (!RunMessagePipeEndpoint(message_view.destination_id(),
-                                  message_view.source_id()))
-        HandleRemoteError("Received invalid channel run message pipe message");
+                                  message_view.source_id())) {
+        HandleRemoteError(
+            "Received invalid channel message to run message pipe");
+      }
+      break;
+    case MessageInTransit::kSubtypeChannelRemoveMessagePipeEndpoint:
+      DVLOG(2) << "Handling channel message to remove message pipe (local ID "
+               << message_view.destination_id() << ", remote ID "
+               << message_view.source_id() << ")";
+      if (!RemoveMessagePipeEndpoint(message_view.destination_id(),
+                                     message_view.source_id())) {
+        HandleRemoteError(
+            "Received invalid channel message to remove message pipe");
+      }
+      break;
+    case MessageInTransit::kSubtypeChannelRemoveMessagePipeEndpointAck:
+      DVLOG(2) << "Handling channel message to ack remove message pipe (local "
+                  "ID "
+               << message_view.destination_id() << ", remote ID "
+               << message_view.source_id() << ")";
+      if (!RemoveMessagePipeEndpoint(message_view.destination_id(),
+                                     message_view.source_id())) {
+        HandleRemoteError(
+            "Received invalid channel message to ack remove message pipe");
+      }
       break;
     default:
       HandleRemoteError("Received invalid channel message");
       NOTREACHED();
       break;
   }
+}
+
+bool Channel::RemoveMessagePipeEndpoint(
+    MessageInTransit::EndpointId local_id,
+    MessageInTransit::EndpointId remote_id) {
+  EndpointInfo endpoint_info;
+  {
+    base::AutoLock locker(lock_);
+
+    IdToEndpointInfoMap::iterator it =
+        local_id_to_endpoint_info_map_.find(local_id);
+    if (it == local_id_to_endpoint_info_map_.end()) {
+      DVLOG(2) << "Remove message pipe error: not found";
+      return false;
+    }
+
+    // If it's waiting for the remove ack, just do it and return.
+    if (it->second.state == EndpointInfo::STATE_WAIT_REMOTE_REMOVE_ACK) {
+      local_id_to_endpoint_info_map_.erase(it);
+      return true;
+    }
+
+    if (it->second.state != EndpointInfo::STATE_NORMAL) {
+      DVLOG(2) << "Remove message pipe error: wrong state";
+      return false;
+    }
+
+    it->second.state = EndpointInfo::STATE_WAIT_LOCAL_DETACH;
+    endpoint_info = it->second;
+    it->second.message_pipe = NULL;
+  }
+
+  if (!SendControlMessage(
+           MessageInTransit::kSubtypeChannelRemoveMessagePipeEndpointAck,
+           local_id, remote_id)) {
+    HandleLocalError(base::StringPrintf(
+        "Failed to send message to remove remote message pipe endpoint ack "
+        "(local ID %u, remote ID %u)",
+        static_cast<unsigned>(local_id), static_cast<unsigned>(remote_id)));
+  }
+
+  endpoint_info.message_pipe->OnRemove(endpoint_info.port);
+
+  return true;
+}
+
+bool Channel::SendControlMessage(MessageInTransit::Subtype subtype,
+                                 MessageInTransit::EndpointId local_id,
+                                 MessageInTransit::EndpointId remote_id) {
+  DVLOG(2) << "Sending channel control message: subtype " << subtype
+           << ", local ID " << local_id << ", remote ID " << remote_id;
+  scoped_ptr<MessageInTransit> message(new MessageInTransit(
+      MessageInTransit::kTypeChannel, subtype, 0, 0, NULL));
+  message->set_source_id(local_id);
+  message->set_destination_id(remote_id);
+  return WriteMessage(message.Pass());
 }
 
 void Channel::HandleRemoteError(const base::StringPiece& error_message) {
@@ -297,6 +477,10 @@ void Channel::HandleRemoteError(const base::StringPiece& error_message) {
 
 void Channel::HandleLocalError(const base::StringPiece& error_message) {
   // TODO(vtl): Is this how we really want to handle this?
+  // Sometimes we'll want to propagate the error back to the message pipe
+  // (endpoint), and notify it that the remote is (effectively) closed.
+  // Sometimes we'll want to kill the channel (and notify all the endpoints that
+  // their remotes are dead.
   LOG(WARNING) << error_message;
 }
 

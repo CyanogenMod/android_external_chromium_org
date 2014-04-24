@@ -190,7 +190,8 @@ class CronServlet(Servlet):
         return Future(callback=resolve)
 
       targets = (CreateDataSources(server_instance).values() +
-                 [server_instance.content_providers])
+                 [server_instance.content_providers,
+                  server_instance.api_models])
       title = 'initializing %s parallel Cron targets' % len(targets)
       _cronlog.info(title)
       timer = Timer()
@@ -198,16 +199,6 @@ class CronServlet(Servlet):
         cron_futures = [run_cron_for_future(target) for target in targets]
       finally:
         _cronlog.info('%s took %s' % (title, timer.Stop().FormatElapsed()))
-
-      # Rendering the public templates will also pull in all of the private
-      # templates.
-      results.append(request_files_in_dir(PUBLIC_TEMPLATES,
-                                          strip_ext=('.html', '.md')))
-
-      # Rendering the public templates will have pulled in the .js and
-      # manifest.json files (for listing examples on the API reference pages),
-      # but there are still images, CSS, etc.
-      results.append(request_files_in_dir(STATIC_DOCS, prefix='static'))
 
       # Samples are too expensive to run on the dev server, where there is no
       # parallel fetch.

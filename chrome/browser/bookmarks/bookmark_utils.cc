@@ -15,13 +15,13 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/history/query_parser.h"
-#include "chrome/common/pref_names.h"
+#include "components/bookmarks/core/common/bookmark_pref_names.h"
+#include "components/query_parser/query_parser.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/user_metrics.h"
 #include "net/base/net_util.h"
 #include "ui/base/models/tree_node_iterator.h"
+#include "url/gurl.h"
 
 #if !defined(OS_ANDROID)
 #include "chrome/browser/bookmarks/scoped_group_bookmark_actions.h"
@@ -31,24 +31,28 @@ using base::Time;
 
 namespace {
 
+// The maximum length of URL or title returned by the Cleanup functions.
+const size_t kCleanedUpUrlMaxLength = 1024u;
+const size_t kCleanedUpTitleMaxLength = 1024u;
+
 void CloneBookmarkNodeImpl(BookmarkModel* model,
                            const BookmarkNodeData::Element& element,
                            const BookmarkNode* parent,
                            int index_to_add_at,
                            bool reset_node_times) {
-  const BookmarkNode* cloned_node = NULL;
   if (element.is_url) {
-    if (reset_node_times) {
-      cloned_node = model->AddURL(parent, index_to_add_at, element.title,
-                                  element.url);
-    } else {
-      DCHECK(!element.date_added.is_null());
-      cloned_node = model->AddURLWithCreationTime(parent, index_to_add_at,
-                                                  element.title, element.url,
-                                                  element.date_added);
-    }
+    base::Time date_added = reset_node_times ? Time::Now() : element.date_added;
+    DCHECK(!date_added.is_null());
+
+    model->AddURLWithCreationTimeAndMetaInfo(parent,
+                                             index_to_add_at,
+                                             element.title,
+                                             element.url,
+                                             date_added,
+                                             &element.meta_info_map);
   } else {
-    cloned_node = model->AddFolder(parent, index_to_add_at, element.title);
+    const BookmarkNode* cloned_node = model->AddFolderWithMetaInfo(
+        parent, index_to_add_at, element.title, &element.meta_info_map);
     if (!reset_node_times) {
       DCHECK(!element.date_folder_modified.is_null());
       model->SetDateFolderModified(cloned_node, element.date_folder_modified);
@@ -57,7 +61,6 @@ void CloneBookmarkNodeImpl(BookmarkModel* model,
       CloneBookmarkNodeImpl(model, element.children[i], cloned_node, i,
                             reset_node_times);
   }
-  model->SetNodeMetaInfoMap(cloned_node, element.meta_info_map);
 }
 
 // Comparison function that compares based on date modified of the two nodes.
@@ -110,6 +113,34 @@ bool HasSelectedAncestor(BookmarkModel* model,
       return true;
 
   return HasSelectedAncestor(model, selected_nodes, node->parent());
+}
+
+const BookmarkNode* GetNodeByID(const BookmarkNode* node, int64 id) {
+  if (node->id() == id)
+    return node;
+
+  for (int i = 0, child_count = node->child_count(); i < child_count; ++i) {
+    const BookmarkNode* result = GetNodeByID(node->GetChild(i), id);
+    if (result)
+      return result;
+  }
+  return NULL;
+}
+
+// Attempts to shorten a URL safely (i.e., by preventing the end of the URL
+// from being in the middle of an escape sequence) to no more than
+// kCleanedUpUrlMaxLength characters, returning the result.
+std::string TruncateUrl(const std::string& url) {
+  if (url.length() <= kCleanedUpUrlMaxLength)
+    return url;
+
+  // If we're in the middle of an escape sequence, truncate just before it.
+  if (url[kCleanedUpUrlMaxLength - 1] == '%')
+    return url.substr(0, kCleanedUpUrlMaxLength - 1);
+  if (url[kCleanedUpUrlMaxLength - 2] == '%')
+    return url.substr(0, kCleanedUpUrlMaxLength - 2);
+
+  return url.substr(0, kCleanedUpUrlMaxLength);
 }
 
 }  // namespace
@@ -259,7 +290,7 @@ void GetBookmarksMatchingProperties(BookmarkModel* model,
                                     const std::string& languages,
                                     std::vector<const BookmarkNode*>* nodes) {
   std::vector<base::string16> query_words;
-  QueryParser parser;
+  query_parser::QueryParser parser;
   if (query.word_phrase_query) {
     parser.ParseQueryWords(base::i18n::ToLower(*query.word_phrase_query),
                            &query_words);
@@ -341,7 +372,7 @@ void DeleteBookmarkFolders(BookmarkModel* model,
   for (std::vector<int64>::const_iterator iter = ids.begin();
        iter != ids.end();
        ++iter) {
-    const BookmarkNode* node = model->GetNodeByID(*iter);
+    const BookmarkNode* node = GetBookmarkNodeByID(model, *iter);
     if (!node)
       continue;
     const BookmarkNode* parent = node->parent();
@@ -375,4 +406,22 @@ void RemoveAllBookmarks(BookmarkModel* model, const GURL& url) {
   }
 }
 
+base::string16 CleanUpUrlForMatching(const GURL& gurl,
+                                     const std::string& languages) {
+  return base::i18n::ToLower(net::FormatUrl(
+      GURL(TruncateUrl(gurl.spec())), languages,
+      net::kFormatUrlOmitUsernamePassword,
+      net::UnescapeRule::SPACES | net::UnescapeRule::URL_SPECIAL_CHARS,
+      NULL, NULL, NULL));
+}
+
+base::string16 CleanUpTitleForMatching(const base::string16& title) {
+  return base::i18n::ToLower(title.substr(0u, kCleanedUpTitleMaxLength));
+}
+
 }  // namespace bookmark_utils
+
+const BookmarkNode* GetBookmarkNodeByID(const BookmarkModel* model, int64 id) {
+  // TODO(sky): TreeNode needs a method that visits all nodes using a predicate.
+  return GetNodeByID(model->root_node(), id);
+}

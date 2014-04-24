@@ -165,6 +165,10 @@
   "chrome/common/extensions_api_resources.grd": {
     "includes": [26500],
   },
+  # TODO(jamescook): Add extensions/extensions_resources.grd here.
+  "extensions/extensions_strings.grd": {
+    "messages": [27000],
+  },
   "chrome/browser/resources/memory_internals_resources.grd": {
     "includes": [27500],
   },
@@ -176,6 +180,9 @@
   },
   "ui/keyboard/keyboard_resources.grd": {
     "includes": [28050],
+  },
+  "ui/file_manager/file_manager_resources.grd": {
+    "includes": [28100],
   },
   "chrome/browser/resources/translate_internals_resources.grd": {
     "includes": [28500],

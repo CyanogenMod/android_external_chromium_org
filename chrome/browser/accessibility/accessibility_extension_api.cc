@@ -12,10 +12,10 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/accessibility_private.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_host.h"
@@ -206,13 +206,15 @@ void ExtensionAccessibilityEventRouter::DispatchEvent(
     Profile* profile,
     const char* event_name,
     scoped_ptr<base::ListValue> event_args) {
-  if (enabled_ && profile &&
-      extensions::ExtensionSystem::Get(profile)->event_router()) {
-    scoped_ptr<extensions::Event> event(new extensions::Event(
-        event_name, event_args.Pass()));
-    extensions::ExtensionSystem::Get(profile)->event_router()->
-        BroadcastEvent(event.Pass());
-  }
+  if (!enabled_ || !profile)
+    return;
+  extensions::EventRouter* event_router = extensions::EventRouter::Get(profile);
+  if (!event_router)
+    return;
+
+  scoped_ptr<extensions::Event> event(new extensions::Event(
+      event_name, event_args.Pass()));
+  event_router->BroadcastEvent(event.Pass());
 }
 
 bool AccessibilityPrivateSetAccessibilityEnabledFunction::RunImpl() {

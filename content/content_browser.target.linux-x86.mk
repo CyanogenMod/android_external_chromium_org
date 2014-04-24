@@ -122,6 +122,7 @@ LOCAL_SRC_FILES := \
 	content/browser/appcache/appcache_interceptor.cc \
 	content/browser/appcache/chrome_appcache_service.cc \
 	content/browser/appcache/view_appcache_internals_job.cc \
+	content/browser/battery_status/battery_status_manager_android.cc \
 	content/browser/browser_child_process_host_impl.cc \
 	content/browser/browser_context.cc \
 	content/browser/browser_main.cc \
@@ -159,12 +160,12 @@ LOCAL_SRC_FILES := \
 	content/browser/devtools/tethering_handler.cc \
 	content/browser/devtools/worker_devtools_manager.cc \
 	content/browser/devtools/worker_devtools_message_filter.cc \
-	content/browser/device_orientation/data_fetcher_shared_memory_android.cc \
-	content/browser/device_orientation/data_fetcher_shared_memory_base.cc \
-	content/browser/device_orientation/device_inertial_sensor_service.cc \
-	content/browser/device_orientation/device_motion_message_filter.cc \
-	content/browser/device_orientation/device_orientation_message_filter.cc \
-	content/browser/device_orientation/sensor_manager_android.cc \
+	content/browser/device_sensors/data_fetcher_shared_memory_android.cc \
+	content/browser/device_sensors/data_fetcher_shared_memory_base.cc \
+	content/browser/device_sensors/device_inertial_sensor_service.cc \
+	content/browser/device_sensors/device_motion_message_filter.cc \
+	content/browser/device_sensors/device_orientation_message_filter.cc \
+	content/browser/device_sensors/sensor_manager_android.cc \
 	content/browser/dom_storage/dom_storage_area.cc \
 	content/browser/dom_storage/dom_storage_context_impl.cc \
 	content/browser/dom_storage/dom_storage_context_wrapper.cc \
@@ -337,8 +338,6 @@ LOCAL_SRC_FILES := \
 	content/browser/profiler_message_filter.cc \
 	content/browser/push_messaging_message_filter.cc \
 	content/browser/quota_dispatcher_host.cc \
-	content/browser/renderer_host/backing_store.cc \
-	content/browser/renderer_host/backing_store_manager.cc \
 	content/browser/renderer_host/clipboard_message_filter.cc \
 	content/browser/renderer_host/compositor_impl_android.cc \
 	content/browser/renderer_host/database_message_filter.cc \
@@ -425,6 +424,7 @@ LOCAL_SRC_FILES := \
 	content/browser/service_worker/embedded_worker_registry.cc \
 	content/browser/service_worker/service_worker_context_core.cc \
 	content/browser/service_worker/service_worker_context_wrapper.cc \
+	content/browser/service_worker/service_worker_database.cc \
 	content/browser/service_worker/service_worker_dispatcher_host.cc \
 	content/browser/service_worker/service_worker_fetch_dispatcher.cc \
 	content/browser/service_worker/service_worker_handle.cc \
@@ -570,12 +570,15 @@ MY_DEFS_Debug := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
+	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DSK_IGNORE_FREETYPE_ROTATION_FIX' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
@@ -741,12 +744,15 @@ MY_DEFS_Release := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
+	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DSK_IGNORE_FREETYPE_ROTATION_FIX' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
@@ -864,7 +870,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed

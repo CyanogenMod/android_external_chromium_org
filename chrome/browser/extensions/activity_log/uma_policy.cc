@@ -6,35 +6,42 @@
 
 #include "base/metrics/histogram.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/activity_log/activity_action_constants.h"
+#include "chrome/browser/extensions/activity_log/ad_network_database.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/dom_action_types.h"
+#include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/url_constants.h"
+
+namespace extensions {
 
 namespace {
 
 // For convenience.
-const int kNoStatus           = extensions::UmaPolicy::NONE;
-const int kContentScript      = 1 << extensions::UmaPolicy::CONTENT_SCRIPT;
-const int kReadDom            = 1 << extensions::UmaPolicy::READ_DOM;
-const int kModifiedDom        = 1 << extensions::UmaPolicy::MODIFIED_DOM;
-const int kDomMethod          = 1 << extensions::UmaPolicy::DOM_METHOD;
-const int kDocumentWrite      = 1 << extensions::UmaPolicy::DOCUMENT_WRITE;
-const int kInnerHtml          = 1 << extensions::UmaPolicy::INNER_HTML;
-const int kCreatedScript      = 1 << extensions::UmaPolicy::CREATED_SCRIPT;
-const int kCreatedIframe      = 1 << extensions::UmaPolicy::CREATED_IFRAME;
-const int kCreatedDiv         = 1 << extensions::UmaPolicy::CREATED_DIV;
-const int kCreatedLink        = 1 << extensions::UmaPolicy::CREATED_LINK;
-const int kCreatedInput       = 1 << extensions::UmaPolicy::CREATED_INPUT;
-const int kCreatedEmbed       = 1 << extensions::UmaPolicy::CREATED_EMBED;
-const int kCreatedObject      = 1 << extensions::UmaPolicy::CREATED_OBJECT;
+const int kNoStatus           = UmaPolicy::NONE;
+const int kContentScript      = 1 << UmaPolicy::CONTENT_SCRIPT;
+const int kReadDom            = 1 << UmaPolicy::READ_DOM;
+const int kModifiedDom        = 1 << UmaPolicy::MODIFIED_DOM;
+const int kDomMethod          = 1 << UmaPolicy::DOM_METHOD;
+const int kDocumentWrite      = 1 << UmaPolicy::DOCUMENT_WRITE;
+const int kInnerHtml          = 1 << UmaPolicy::INNER_HTML;
+const int kCreatedScript      = 1 << UmaPolicy::CREATED_SCRIPT;
+const int kCreatedIframe      = 1 << UmaPolicy::CREATED_IFRAME;
+const int kCreatedDiv         = 1 << UmaPolicy::CREATED_DIV;
+const int kCreatedLink        = 1 << UmaPolicy::CREATED_LINK;
+const int kCreatedInput       = 1 << UmaPolicy::CREATED_INPUT;
+const int kCreatedEmbed       = 1 << UmaPolicy::CREATED_EMBED;
+const int kCreatedObject      = 1 << UmaPolicy::CREATED_OBJECT;
+const int kAdInjected         = 1 << UmaPolicy::AD_INJECTED;
+const int kAdRemoved          = 1 << UmaPolicy::AD_REMOVED;
+const int kAdReplaced         = 1 << UmaPolicy::AD_REPLACED;
 
 }  // namespace
-
-namespace extensions {
 
 // Class constants, also used in testing. --------------------------------------
 
@@ -135,15 +142,35 @@ int UmaPolicy::MatchActionToStatus(scoped_refptr<Action> action) {
       ret_bit |= kCreatedObject;
     }
   }
+
+  const Action::InjectionType ad_injection =
+      action->DidInjectAd(g_browser_process->rappor_service());
+  switch (ad_injection) {
+    case Action::INJECTION_NEW_AD:
+      ret_bit |= kAdInjected;
+      break;
+    case Action::INJECTION_REMOVED_AD:
+      ret_bit |= kAdRemoved;
+      break;
+    case Action::INJECTION_REPLACED_AD:
+      ret_bit |= kAdReplaced;
+      break;
+    case Action::NO_AD_INJECTION:
+      break;
+    case Action::NUM_INJECTION_TYPES:
+      NOTREACHED();
+  };
+
   return ret_bit;
 }
 
 void UmaPolicy::HistogramOnClose(const std::string& url) {
   // Let's try to avoid histogramming useless URLs.
-  if (url == "about:blank" || url.empty() || url == "chrome://newtab/")
+  if (url.empty() || url == content::kAboutBlankURL ||
+      url == chrome::kChromeUINewTabURL)
     return;
 
-    int statuses[MAX_STATUS-1];
+  int statuses[MAX_STATUS - 1];
   std::memset(statuses, 0, sizeof(statuses));
 
   SiteMap::iterator site_lookup = url_status_.find(url);
@@ -186,6 +213,12 @@ void UmaPolicy::HistogramOnClose(const std::string& url) {
                              statuses[CREATED_EMBED - 1]);
     UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(CREATED_OBJECT),
                              statuses[CREATED_OBJECT - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_INJECTED),
+                             statuses[AD_INJECTED - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_REMOVED),
+                             statuses[AD_REMOVED - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_REPLACED),
+                             statuses[AD_REPLACED - 1]);
   } else {
     prefix += "Google.";
     UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(CONTENT_SCRIPT),
@@ -214,6 +247,12 @@ void UmaPolicy::HistogramOnClose(const std::string& url) {
                              statuses[CREATED_EMBED - 1]);
     UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(CREATED_OBJECT),
                              statuses[CREATED_OBJECT - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_INJECTED),
+                             statuses[AD_INJECTED - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_REMOVED),
+                             statuses[AD_REMOVED - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_REPLACED),
+                             statuses[AD_REPLACED - 1]);
   }
 }
 
@@ -278,7 +317,7 @@ void UmaPolicy::TabClosingAt(TabStripModel* tab_strip_model,
   int32 tab_id = SessionID::IdForTab(contents);
   std::map<int, std::string>::iterator tab_it = tab_list_.find(tab_id);
   if (tab_it != tab_list_.end())
-   tab_list_.erase(tab_id);
+    tab_list_.erase(tab_id);
 
   CleanupClosedPage(url);
 }
@@ -305,7 +344,7 @@ void UmaPolicy::CleanupClosedPage(const std::string& url) {
 // We convert to a string in the hopes that this is faster than Replacements.
 std::string UmaPolicy::CleanURL(const GURL& gurl) {
   if (gurl.spec().empty())
-    return GURL("about:blank").spec();
+    return GURL(content::kAboutBlankURL).spec();
   if (!gurl.is_valid())
     return gurl.spec();
   if (!gurl.has_ref())
@@ -352,6 +391,12 @@ const char* UmaPolicy::GetHistogramName(PageStatus status) {
       return "CreatedEmbed";
     case CREATED_OBJECT:
       return "CreatedObject";
+    case AD_INJECTED:
+      return "AdInjected";
+    case AD_REMOVED:
+      return "AdRemoved";
+    case AD_REPLACED:
+      return "AdReplaced";
     case NONE:
     case MAX_STATUS:
     default:

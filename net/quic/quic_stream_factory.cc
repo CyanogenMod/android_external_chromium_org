@@ -103,6 +103,7 @@ class QuicStreamFactory::Job {
       HostResolver* host_resolver,
       const HostPortPair& host_port_pair,
       bool is_https,
+      bool was_alternate_protocol_recently_broken,
       PrivacyMode privacy_mode,
       base::StringPiece method,
       QuicServerInfo* server_info,
@@ -146,6 +147,7 @@ class QuicStreamFactory::Job {
   SingleRequestHostResolver host_resolver_;
   QuicServerId server_id_;
   bool is_post_;
+  bool was_alternate_protocol_recently_broken_;
   scoped_ptr<QuicServerInfo> server_info_;
   const BoundNetLog net_log_;
   QuicClientSession* session_;
@@ -160,6 +162,7 @@ QuicStreamFactory::Job::Job(QuicStreamFactory* factory,
                             HostResolver* host_resolver,
                             const HostPortPair& host_port_pair,
                             bool is_https,
+                            bool was_alternate_protocol_recently_broken,
                             PrivacyMode privacy_mode,
                             base::StringPiece method,
                             QuicServerInfo* server_info,
@@ -168,6 +171,8 @@ QuicStreamFactory::Job::Job(QuicStreamFactory* factory,
       host_resolver_(host_resolver),
       server_id_(host_port_pair, is_https, privacy_mode),
       is_post_(method == "POST"),
+      was_alternate_protocol_recently_broken_(
+          was_alternate_protocol_recently_broken),
       server_info_(server_info),
       net_log_(net_log),
       session_(NULL),
@@ -300,8 +305,11 @@ int QuicStreamFactory::Job::DoConnect() {
   if (!session_->connection()->connected()) {
     return ERR_QUIC_PROTOCOL_ERROR;
   }
+  bool require_confirmation =
+      factory_->require_confirmation() || server_id_.is_https() || is_post_ ||
+      was_alternate_protocol_recently_broken_;
   rv = session_->CryptoConnect(
-      factory_->require_confirmation() || server_id_.is_https() || is_post_,
+      require_confirmation,
       base::Bind(&QuicStreamFactory::Job::OnIOComplete,
                  base::Unretained(this)));
   return rv;
@@ -451,7 +459,12 @@ int QuicStreamFactory::Create(const HostPortPair& host_port_pair,
       quic_server_info = quic_server_info_factory_->GetForServer(server_id);
     }
   }
+  bool was_alternate_protocol_recently_broken =
+      http_server_properties_ &&
+      http_server_properties_->WasAlternateProtocolRecentlyBroken(
+          server_id.host_port_pair());
   scoped_ptr<Job> job(new Job(this, host_resolver_, host_port_pair, is_https,
+                              was_alternate_protocol_recently_broken,
                               privacy_mode, method, quic_server_info, net_log));
   int rv = job->Run(base::Bind(&QuicStreamFactory::OnJobComplete,
                                base::Unretained(this), job.get()));
@@ -570,7 +583,7 @@ void QuicStreamFactory::OnSessionGoingAway(QuicClientSession* session) {
     }
 
     HttpServerProperties::NetworkStats network_stats;
-    network_stats.rtt = base::TimeDelta::FromMicroseconds(stats.rtt);
+    network_stats.srtt = base::TimeDelta::FromMicroseconds(stats.srtt_us);
     network_stats.bandwidth_estimate = stats.estimated_bandwidth;
     http_server_properties_->SetServerNetworkStats(it->host_port_pair(),
                                                    network_stats);
@@ -633,6 +646,10 @@ base::Value* QuicStreamFactory::QuicStreamFactoryInfoToValue() const {
     }
   }
   return list;
+}
+
+void QuicStreamFactory::ClearCachedStates() {
+  crypto_config_.ClearCachedStates();
 }
 
 void QuicStreamFactory::OnIPAddressChanged() {
@@ -745,8 +762,7 @@ int QuicStreamFactory::CreateSession(
         http_server_properties_->GetServerNetworkStats(
             server_id.host_port_pair());
     if (stats != NULL) {
-      config.set_initial_round_trip_time_us(stats->rtt.InMicroseconds(),
-                                            stats->rtt.InMicroseconds());
+      config.SetInitialRoundTripTimeUsToSend(stats->srtt.InMicroseconds());
     }
   }
 

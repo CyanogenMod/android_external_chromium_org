@@ -517,12 +517,13 @@ void Window::AddChild(Window* child) {
 
   gfx::Vector2d offset;
   aura::Window* ancestor_with_layer = GetAncestorWithLayer(&offset);
+
+  child->parent_ = this;
+
   if (ancestor_with_layer) {
     offset += child->bounds().OffsetFromOrigin();
     child->ReparentLayers(ancestor_with_layer->layer(), offset);
   }
-
-  child->parent_ = this;
 
   children_.push_back(child);
   if (layout_manager_)
@@ -633,14 +634,6 @@ void Window::MoveCursorTo(const gfx::Point& point_in_window) {
 
 gfx::NativeCursor Window::GetCursor(const gfx::Point& point) const {
   return delegate_ ? delegate_->GetCursor(point) : gfx::kNullCursor;
-}
-
-void Window::SetEventFilter(ui::EventHandler* event_filter) {
-  if (event_filter_)
-    RemovePreTargetHandler(event_filter_.get());
-  event_filter_.reset(event_filter);
-  if (event_filter)
-    AddPreTargetHandler(event_filter);
 }
 
 void Window::AddObserver(WindowObserver* observer) {

@@ -53,7 +53,6 @@ MY_CFLAGS_Debug := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-unknown-pragmas \
 	-EL \
 	-mhard-float \
 	-ffunction-sections \
@@ -150,7 +149,6 @@ MY_CFLAGS_Release := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-unknown-pragmas \
 	-EL \
 	-mhard-float \
 	-ffunction-sections \
@@ -252,7 +250,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed

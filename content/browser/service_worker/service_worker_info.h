@@ -8,15 +8,17 @@
 #include <vector>
 
 #include "content/browser/service_worker/service_worker_version.h"
+#include "content/common/content_export.h"
 #include "url/gurl.h"
 
 namespace content {
 
-class ServiceWorkerVersionInfo {
+class CONTENT_EXPORT ServiceWorkerVersionInfo {
  public:
   ServiceWorkerVersionInfo();
   ServiceWorkerVersionInfo(ServiceWorkerVersion::RunningStatus running_status,
                            ServiceWorkerVersion::Status status,
+                           int64 version_id,
                            int process_id,
                            int thread_id);
   ~ServiceWorkerVersionInfo();
@@ -24,12 +26,14 @@ class ServiceWorkerVersionInfo {
   bool is_null;
   ServiceWorkerVersion::RunningStatus running_status;
   ServiceWorkerVersion::Status status;
+  int64 version_id;
   int process_id;
   int thread_id;
 };
 
-class ServiceWorkerRegistrationInfo {
+class CONTENT_EXPORT ServiceWorkerRegistrationInfo {
  public:
+  ServiceWorkerRegistrationInfo();
   ServiceWorkerRegistrationInfo(
       const GURL& script_url,
       const GURL& pattern,
@@ -39,7 +43,6 @@ class ServiceWorkerRegistrationInfo {
 
   GURL script_url;
   GURL pattern;
-
   ServiceWorkerVersionInfo active_version;
   ServiceWorkerVersionInfo pending_version;
 };

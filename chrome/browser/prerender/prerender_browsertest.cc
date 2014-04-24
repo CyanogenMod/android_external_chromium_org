@@ -148,6 +148,7 @@ bool ShouldAbortPrerenderBeforeSwap(FinalStatus status) {
     case FINAL_STATUS_USED:
     case FINAL_STATUS_WINDOW_OPENER:
     case FINAL_STATUS_APP_TERMINATING:
+    case FINAL_STATUS_PROFILE_DESTROYED:
     case FINAL_STATUS_CACHE_OR_HISTORY_CLEARED:
     // We'll crash the renderer after it's loaded.
     case FINAL_STATUS_RENDERER_CRASHED:
@@ -273,6 +274,10 @@ class NavigationOrSwapObserver : public WebContentsObserver,
     tab_strip_model_->RemoveObserver(this);
   }
 
+  void set_did_start_loading() {
+    did_start_loading_ = true;
+  }
+
   void Wait() {
     loop_.Run();
   }
@@ -343,6 +348,7 @@ class NewTabNavigationOrSwapObserver {
         static_cast<Browser*>(new_tab->GetDelegate())->tab_strip_model();
     swap_observer_.reset(new NavigationOrSwapObserver(tab_strip_model,
                                                       new_tab));
+    swap_observer_->set_did_start_loading();
     return true;
   }
 
@@ -2559,12 +2565,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderHTML5VideoNetwork) {
 }
 
 // Checks that scripts can retrieve the correct window size while prerendering.
-#if defined(TOOLKIT_VIEWS)
-// TODO(beng): Widget hierarchy split causes this to fail http://crbug.com/82363
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderWindowSize) {
-#else
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderWindowSize) {
-#endif
   PrerenderTestURL("files/prerender/prerender_size.html",
                    FINAL_STATUS_USED,
                    1);
@@ -3223,30 +3224,30 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClickNavigateGoBack) {
   GoBackToPrerender();
 }
 
-// http://crbug.com/345474
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
-                       DISABLED_PrerenderClickNewWindow) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClickNewWindow) {
+  // Prerender currently doesn't interpose on this navigation.
+  // http://crbug.com/345474.
   PrerenderTestURL("files/prerender/prerender_page_with_link.html",
-                   FINAL_STATUS_WINDOW_OPENER,
+                   FINAL_STATUS_APP_TERMINATING,
                    1);
   OpenDestURLViaClickNewWindow();
 }
 
-// http://crbug.com/345474
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
-                       DISABLED_PrerenderClickNewForegroundTab) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClickNewForegroundTab) {
+  // Prerender currently doesn't interpose on this navigation.
+  // http://crbug.com/345474.
   PrerenderTestURL("files/prerender/prerender_page_with_link.html",
-                   FINAL_STATUS_WINDOW_OPENER,
+                   FINAL_STATUS_APP_TERMINATING,
                    1);
   OpenDestURLViaClickNewForegroundTab();
 }
 
-// http://crbug.com/345474
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
-                       DISABLED_PrerenderClickNewBackgroundTab) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClickNewBackgroundTab) {
+  // Prerender currently doesn't interpose on this navigation.
+  // http://crbug.com/345474.
   scoped_ptr<TestPrerender> prerender =
       PrerenderTestURL("files/prerender/prerender_page_with_link.html",
-                       FINAL_STATUS_WINDOW_OPENER,
+                       FINAL_STATUS_APP_TERMINATING,
                        1);
   ASSERT_TRUE(prerender->contents());
   prerender->contents()->set_should_be_shown(false);
@@ -3499,9 +3500,6 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithExtensions, WebNavigation) {
   ASSERT_TRUE(StartSpawnedTestServer());
   extensions::FrameNavigationState::set_allow_extension_scheme(true);
 
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      extensions::switches::kAllowLegacyExtensionManifests);
-
   // Wait for the extension to set itself up and return control to us.
   ASSERT_TRUE(RunExtensionTest("webnavigation/prerender")) << message_;
 
@@ -3519,19 +3517,12 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithExtensions, WebNavigation) {
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-// Fails often on Windows dbg bots. http://crbug.com/177163
-#if defined(OS_WIN) && !defined(NDEBUG)
-#define MAYBE_TabsApi DISABLED_TabsApi
-#else
-#define MAYBE_TabsApi TabsApi
-#endif  // defined(OS_WIN) && !defined(NDEBUG)
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithExtensions, MAYBE_TabsApi) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithExtensions, TabsApi) {
   ASSERT_TRUE(StartSpawnedTestServer());
   extensions::FrameNavigationState::set_allow_extension_scheme(true);
 
   // Wait for the extension to set itself up and return control to us.
-  ASSERT_TRUE(RunExtensionSubtest("tabs/on_replaced", "on_replaced.html"))
-      << message_;
+  ASSERT_TRUE(RunExtensionTest("tabs/on_replaced")) << message_;
 
   ResultCatcher catcher;
 
@@ -4172,6 +4163,16 @@ class PrerenderIncognitoBrowserTest : public PrerenderBrowserTest {
 IN_PROC_BROWSER_TEST_F(PrerenderIncognitoBrowserTest, PrerenderIncognito) {
   PrerenderTestURL("files/prerender/prerender_page.html", FINAL_STATUS_USED, 1);
   NavigateToDestURL();
+}
+
+// Checks that prerenders are aborted when an incognito profile is closed.
+IN_PROC_BROWSER_TEST_F(PrerenderIncognitoBrowserTest,
+                       PrerenderIncognitoClosed) {
+  scoped_ptr<TestPrerender> prerender =
+      PrerenderTestURL("files/prerender/prerender_page.html",
+                       FINAL_STATUS_PROFILE_DESTROYED, 1);
+  current_browser()->window()->Close();
+  prerender->WaitForStop();
 }
 
 }  // namespace prerender

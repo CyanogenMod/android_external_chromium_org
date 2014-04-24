@@ -63,6 +63,7 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
       draws_content_(false),
       hide_layer_and_subtree_(false),
       force_render_surface_(false),
+      transform_is_invertible_(true),
       is_container_for_fixed_position_layers_(false),
       is_3d_sorted_(false),
       background_color_(0),
@@ -519,7 +520,7 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetShouldFlattenTransform(should_flatten_transform_);
   layer->SetIs3dSorted(is_3d_sorted_);
   layer->SetUseParentBackfaceVisibility(use_parent_backface_visibility_);
-  layer->SetTransform(transform_);
+  layer->SetTransformAndInvertibility(transform_, transform_is_invertible_);
 
   layer->SetScrollClipLayer(scroll_clip_layer_ ? scroll_clip_layer_->id()
                                                : Layer::INVALID_ID);
@@ -999,6 +1000,19 @@ void LayerImpl::SetTransform(const gfx::Transform& transform) {
     return;
 
   transform_ = transform;
+  transform_is_invertible_ = transform_.IsInvertible();
+  NoteLayerPropertyChangedForSubtree();
+}
+
+void LayerImpl::SetTransformAndInvertibility(const gfx::Transform& transform,
+                                             bool transform_is_invertible) {
+  if (transform_ == transform) {
+    DCHECK(transform_is_invertible_ == transform_is_invertible)
+        << "Can't change invertibility if transform is unchanged";
+    return;
+  }
+  transform_ = transform;
+  transform_is_invertible_ = transform_is_invertible;
   NoteLayerPropertyChangedForSubtree();
 }
 
@@ -1193,6 +1207,7 @@ gfx::Vector2d LayerImpl::MaxScrollOffset() const {
 
   scaled_scroll_bounds.SetSize(scale_factor * scaled_scroll_bounds.width(),
                                scale_factor * scaled_scroll_bounds.height());
+  scaled_scroll_bounds = gfx::ToFlooredSize(scaled_scroll_bounds);
 
   gfx::Vector2dF max_offset(
       scaled_scroll_bounds.width() - scroll_clip_layer_->bounds().width(),

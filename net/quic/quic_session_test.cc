@@ -53,11 +53,11 @@ class TestCryptoStream : public QuicCryptoStream {
     handshake_confirmed_ = true;
     CryptoHandshakeMessage msg;
     string error_details;
-    session()->config()->set_peer_initial_flow_control_window_bytes(
+    session()->config()->SetInitialFlowControlWindowToSend(
         kInitialFlowControlWindowForTest);
     session()->config()->ToHandshakeMessage(&msg);
-    const QuicErrorCode error = session()->config()->ProcessClientHello(
-        msg, &error_details);
+    const QuicErrorCode error = session()->config()->ProcessPeerHello(
+        msg, CLIENT, &error_details);
     EXPECT_EQ(QUIC_NO_ERROR, error);
     session()->OnConfigNegotiated();
     session()->OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED);
@@ -149,6 +149,10 @@ class TestSession : public QuicSession {
 
   void set_writev_consumes_all_data(bool val) {
     writev_consumes_all_data_ = val;
+  }
+
+  QuicConsumedData SendStreamData() {
+    return WritevData(5, IOVector(), 0, true, NULL);
   }
 
  private:
@@ -348,6 +352,40 @@ TEST_P(QuicSessionTest, OnCanWrite) {
   EXPECT_TRUE(session_.HasPendingWrites());
 }
 
+TEST_P(QuicSessionTest, OnCanWriteBundlesStreams) {
+  // Drive congestion control manually.
+  MockSendAlgorithm* send_algorithm = new StrictMock<MockSendAlgorithm>;
+  QuicConnectionPeer::SetSendAlgorithm(session_.connection(), send_algorithm);
+
+  TestStream* stream2 = session_.CreateOutgoingDataStream();
+  TestStream* stream4 = session_.CreateOutgoingDataStream();
+  TestStream* stream6 = session_.CreateOutgoingDataStream();
+
+  session_.MarkWriteBlocked(stream2->id(), kSomeMiddlePriority);
+  session_.MarkWriteBlocked(stream6->id(), kSomeMiddlePriority);
+  session_.MarkWriteBlocked(stream4->id(), kSomeMiddlePriority);
+
+
+  EXPECT_CALL(*send_algorithm, TimeUntilSend(_, _)).WillRepeatedly(
+      Return(QuicTime::Delta::Zero()));
+  EXPECT_CALL(*send_algorithm, GetCongestionWindow()).WillOnce(
+      Return(kMaxPacketSize * 10));
+  EXPECT_CALL(*stream2, OnCanWrite()).WillOnce(IgnoreResult(
+      InvokeWithoutArgs(&session_, &TestSession::SendStreamData)));
+  EXPECT_CALL(*stream6, OnCanWrite()).WillOnce(IgnoreResult(
+      InvokeWithoutArgs(&session_, &TestSession::SendStreamData)));
+  EXPECT_CALL(*stream4, OnCanWrite()).WillOnce(IgnoreResult(
+      InvokeWithoutArgs(&session_, &TestSession::SendStreamData)));
+  MockPacketWriter* writer =
+      static_cast<MockPacketWriter*>(
+          QuicConnectionPeer::GetWriter(session_.connection()));
+  EXPECT_CALL(*writer, WritePacket(_, _, _, _)).WillOnce(
+                  Return(WriteResult(WRITE_STATUS_OK, 0)));
+  EXPECT_CALL(*send_algorithm, OnPacketSent(_, _, _, _));
+  session_.OnCanWrite();
+  EXPECT_FALSE(session_.HasPendingWrites());
+}
+
 TEST_P(QuicSessionTest, OnCanWriteCongestionControlBlocks) {
   InSequence s;
 
@@ -542,9 +580,9 @@ TEST_P(QuicSessionTest, HandshakeUnblocksFlowControlBlockedStream) {
   // Create a stream, and send enough data to make it flow control blocked.
   TestStream* stream2 = session_.CreateOutgoingDataStream();
   string body(kDefaultFlowControlSendWindow, '.');
-  EXPECT_FALSE(stream2->IsFlowControlBlocked());
+  EXPECT_FALSE(stream2->flow_controller()->IsBlocked());
   stream2->SendBody(body, false);
-  EXPECT_TRUE(stream2->IsFlowControlBlocked());
+  EXPECT_TRUE(stream2->flow_controller()->IsBlocked());
 
   // Now complete the crypto handshake, resulting in an increased flow control
   // send window.
@@ -552,7 +590,7 @@ TEST_P(QuicSessionTest, HandshakeUnblocksFlowControlBlockedStream) {
   session_.GetCryptoStream()->OnHandshakeMessage(msg);
 
   // Stream is now unblocked.
-  EXPECT_FALSE(stream2->IsFlowControlBlocked());
+  EXPECT_FALSE(stream2->flow_controller()->IsBlocked());
 }
 
 TEST_P(QuicSessionTest, InvalidFlowControlWindowInHandshake) {
@@ -567,17 +605,14 @@ TEST_P(QuicSessionTest, InvalidFlowControlWindowInHandshake) {
 
   CryptoHandshakeMessage msg;
   string error_details;
-  session_.config()->set_peer_initial_flow_control_window_bytes(kInvalidWindow);
+  session_.config()->SetInitialFlowControlWindowToSend(kInvalidWindow);
   session_.config()->ToHandshakeMessage(&msg);
   const QuicErrorCode error =
-      session_.config()->ProcessClientHello(msg, &error_details);
+      session_.config()->ProcessPeerHello(msg, CLIENT, &error_details);
   EXPECT_EQ(QUIC_NO_ERROR, error);
 
   EXPECT_CALL(*connection_, SendConnectionClose(QUIC_FLOW_CONTROL_ERROR));
-  string expected_error("Peer sent us an invalid flow control send window: ");
-  expected_error.append(reinterpret_cast<const char*>(&kInvalidWindow),
-                        sizeof(kInvalidWindow));
-  EXPECT_DFATAL(session_.OnConfigNegotiated(), expected_error);
+  session_.OnConfigNegotiated();
 }
 
 }  // namespace

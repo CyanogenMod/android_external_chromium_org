@@ -24,6 +24,7 @@
 #include "third_party/WebKit/public/web/WebView.h"
 
 using namespace blink;
+using namespace content;
 using namespace std;
 
 namespace WebTestRunner {
@@ -133,7 +134,7 @@ void TestInterfaces::configureForTestWithURL(const WebURL& testURL, bool generat
                 "{\"lastActivePanel\":\"\\\"%s\\\"\"}",
                 test_path.substr(0, slash_index).c_str());
         }
-        m_testRunner->showDevTools(settings);
+        m_testRunner->showDevTools(settings, string());
     }
     if (spec.find("/viewsource/") != string::npos) {
         m_testRunner->setShouldEnableViewSource(true);

@@ -82,6 +82,7 @@ namespace {
 static const char kOESDerivativeExtension[] = "GL_OES_standard_derivatives";
 static const char kEXTFragDepthExtension[] = "GL_EXT_frag_depth";
 static const char kEXTDrawBuffersExtension[] = "GL_EXT_draw_buffers";
+static const char kEXTShaderTextureLodExtension[] = "GL_EXT_shader_texture_lod";
 
 #if !defined(ANGLE_SH_VERSION) || ANGLE_SH_VERSION < 108
 khronos_uint64_t CityHashForAngle(const char* name, unsigned int len) {
@@ -611,9 +612,6 @@ class GLES2DecoderImpl : public GLES2Decoder,
       unsigned int target) const OVERRIDE {
     state_.RestoreActiveTextureUnitBinding(target);
   }
-  virtual void RestoreAttribute(unsigned index) const OVERRIDE {
-    state_.RestoreAttribute(index);
-  }
   virtual void RestoreBufferBindings() const OVERRIDE {
     state_.RestoreBufferBindings();
   }
@@ -1109,9 +1107,12 @@ class GLES2DecoderImpl : public GLES2Decoder,
   }
 
   // Creates a vertex attrib manager for the given vertex array.
-  void CreateVertexAttribManager(GLuint client_id, GLuint service_id) {
+  scoped_refptr<VertexAttribManager> CreateVertexAttribManager(
+      GLuint client_id,
+      GLuint service_id,
+      bool client_visible) {
     return vertex_array_manager()->CreateVertexAttribManager(
-      client_id, service_id, group_->max_vertex_attribs());
+        client_id, service_id, group_->max_vertex_attribs(), client_visible);
   }
 
   void DoBindAttribLocation(GLuint client_id, GLuint index, const char* name);
@@ -1661,9 +1662,6 @@ class GLES2DecoderImpl : public GLES2Decoder,
   bool unpack_premultiply_alpha_;
   bool unpack_unpremultiply_alpha_;
 
-  // Default vertex attribs manager, used when no VAOs are bound.
-  scoped_refptr<VertexAttribManager> default_vertex_attrib_manager_;
-
   // The buffer we bind to attrib 0 since OpenGL requires it (ES does not).
   GLuint attrib_0_buffer_id_;
 
@@ -1757,6 +1755,7 @@ class GLES2DecoderImpl : public GLES2Decoder,
   bool derivatives_explicitly_enabled_;
   bool frag_depth_explicitly_enabled_;
   bool draw_buffers_explicitly_enabled_;
+  bool shader_texture_lod_explicitly_enabled_;
 
   bool compile_shader_always_succeeds_;
 
@@ -2260,6 +2259,7 @@ GLES2DecoderImpl::GLES2DecoderImpl(ContextGroup* group)
       derivatives_explicitly_enabled_(false),
       frag_depth_explicitly_enabled_(false),
       draw_buffers_explicitly_enabled_(false),
+      shader_texture_lod_explicitly_enabled_(false),
       compile_shader_always_succeeds_(false),
       lose_context_when_out_of_memory_(false),
       service_logging_(CommandLine::ForCurrentProcess()->HasSwitch(
@@ -2360,16 +2360,25 @@ bool GLES2DecoderImpl::Initialize(
   disallowed_features_ = disallowed_features;
 
   state_.attrib_values.resize(group_->max_vertex_attribs());
-  default_vertex_attrib_manager_ = new VertexAttribManager();
-  default_vertex_attrib_manager_->Initialize(
+  vertex_array_manager_.reset(new VertexArrayManager());
+
+  GLuint default_vertex_attrib_service_id = 0;
+  if (features().native_vertex_array_object) {
+    glGenVertexArraysOES(1, &default_vertex_attrib_service_id);
+    glBindVertexArrayOES(default_vertex_attrib_service_id);
+  }
+
+  state_.default_vertex_attrib_manager =
+      CreateVertexAttribManager(0, default_vertex_attrib_service_id, false);
+
+  state_.default_vertex_attrib_manager->Initialize(
       group_->max_vertex_attribs(),
       feature_info_->workarounds().init_vertex_attributes);
 
-  // vertex_attrib_manager is set to default_vertex_attrib_manager_ by this call
+  // vertex_attrib_manager is set to default_vertex_attrib_manager by this call
   DoBindVertexArrayOES(0);
 
   query_manager_.reset(new QueryManager(this, feature_info_.get()));
-  vertex_array_manager_.reset(new VertexArrayManager());
 
   util_.set_num_compressed_texture_formats(
       validators_->compressed_texture_format.GetValues().size());
@@ -2673,6 +2682,7 @@ Capabilities GLES2DecoderImpl::GetCapabilities() {
   caps.texture_storage = feature_info_->feature_flags().ext_texture_storage;
   caps.discard_framebuffer =
       feature_info_->feature_flags().ext_discard_framebuffer;
+  caps.sync_query = feature_info_->feature_flags().chromium_sync_query;
 
 #if defined(OS_MACOSX)
   // This is unconditionally true on mac, no need to test for it at runtime.
@@ -2728,6 +2738,9 @@ bool GLES2DecoderImpl::InitializeShaderTranslator() {
     resources.EXT_draw_buffers = draw_buffers_explicitly_enabled_;
     if (!draw_buffers_explicitly_enabled_)
       resources.MaxDrawBuffers = 1;
+#if (ANGLE_SH_VERSION >= 123)
+    resources.EXT_shader_texture_lod = shader_texture_lod_explicitly_enabled_;
+#endif
   } else {
     resources.OES_standard_derivatives =
         features().oes_standard_derivatives ? 1 : 0;
@@ -2739,6 +2752,10 @@ bool GLES2DecoderImpl::InitializeShaderTranslator() {
         features().ext_draw_buffers ? 1 : 0;
     resources.EXT_frag_depth =
         features().ext_frag_depth ? 1 : 0;
+#if (ANGLE_SH_VERSION >= 123)
+    resources.EXT_shader_texture_lod =
+        features().ext_shader_texture_lod ? 1 : 0;
+#endif
   }
 
   ShShaderSpec shader_spec = force_webgl_glsl_validation_ ? SH_WEBGL_SPEC
@@ -3309,7 +3326,7 @@ void GLES2DecoderImpl::Destroy(bool have_context) {
 
   // Unbind everything.
   state_.vertex_attrib_manager = NULL;
-  default_vertex_attrib_manager_ = NULL;
+  state_.default_vertex_attrib_manager = NULL;
   state_.texture_units.clear();
   state_.bound_array_buffer = NULL;
   state_.current_queries.clear();
@@ -3904,6 +3921,11 @@ void GLES2DecoderImpl::RestoreTextureState(unsigned service_id) const {
 }
 
 void GLES2DecoderImpl::ClearAllAttributes() const {
+  // Must use native VAO 0, as RestoreAllAttributes can't fully restore
+  // other VAOs.
+  if (feature_info_->feature_flags().native_vertex_array_object)
+    glBindVertexArrayOES(0);
+
   for (uint32 i = 0; i < group_->max_vertex_attribs(); ++i) {
     if (i != 0) // Never disable attribute 0
       glDisableVertexAttribArray(i);
@@ -3913,8 +3935,7 @@ void GLES2DecoderImpl::ClearAllAttributes() const {
 }
 
 void GLES2DecoderImpl::RestoreAllAttributes() const {
-  for (uint32 i = 0; i < group_->max_vertex_attribs(); ++i)
-    RestoreAttribute(i);
+  state_.RestoreVertexAttribs();
 }
 
 void GLES2DecoderImpl::OnFboChanged() const {
@@ -4487,7 +4508,7 @@ bool GLES2DecoderImpl::GetHelper(
       *num_written = 1;
       if (params) {
         if (state_.vertex_attrib_manager.get() !=
-            default_vertex_attrib_manager_.get()) {
+            state_.default_vertex_attrib_manager.get()) {
           GLuint client_id = 0;
           vertex_array_manager_->GetClientId(
               state_.vertex_attrib_manager->service_id(), &client_id);
@@ -7085,7 +7106,7 @@ error::Error GLES2DecoderImpl::HandleVertexAttribPointer(
   if (!state_.bound_array_buffer.get() ||
       state_.bound_array_buffer->IsDeleted()) {
     if (state_.vertex_attrib_manager.get() ==
-        default_vertex_attrib_manager_.get()) {
+        state_.default_vertex_attrib_manager.get()) {
       LOCAL_SET_GL_ERROR(
           GL_INVALID_VALUE, "glVertexAttribPointer", "no array buffer bound");
       return error::kNoError;
@@ -7735,6 +7756,14 @@ error::Error GLES2DecoderImpl::HandleGetString(
             size_t offset = extensions.find(kEXTDrawBuffersExtension);
             if (std::string::npos != offset) {
               extensions.replace(offset, arraysize(kEXTDrawBuffersExtension),
+                                 std::string());
+            }
+          }
+          if (!shader_texture_lod_explicitly_enabled_) {
+            size_t offset = extensions.find(kEXTShaderTextureLodExtension);
+            if (std::string::npos != offset) {
+              extensions.replace(offset,
+                                 arraysize(kEXTShaderTextureLodExtension),
                                  std::string());
             }
           }
@@ -9210,6 +9239,7 @@ error::Error GLES2DecoderImpl::HandleRequestExtensionCHROMIUM(
   bool desire_standard_derivatives = false;
   bool desire_frag_depth = false;
   bool desire_draw_buffers = false;
+  bool desire_shader_texture_lod = false;
   if (force_webgl_glsl_validation_) {
     desire_standard_derivatives =
         feature_str.find("GL_OES_standard_derivatives") != std::string::npos;
@@ -9217,6 +9247,8 @@ error::Error GLES2DecoderImpl::HandleRequestExtensionCHROMIUM(
         feature_str.find("GL_EXT_frag_depth") != std::string::npos;
     desire_draw_buffers =
         feature_str.find("GL_EXT_draw_buffers") != std::string::npos;
+    desire_shader_texture_lod =
+        feature_str.find("GL_EXT_shader_texture_lod") != std::string::npos;
   }
 
   if (desire_webgl_glsl_validation != force_webgl_glsl_validation_ ||
@@ -9227,6 +9259,7 @@ error::Error GLES2DecoderImpl::HandleRequestExtensionCHROMIUM(
     derivatives_explicitly_enabled_ |= desire_standard_derivatives;
     frag_depth_explicitly_enabled_ |= desire_frag_depth;
     draw_buffers_explicitly_enabled_ |= desire_draw_buffers;
+    shader_texture_lod_explicitly_enabled_ |= desire_shader_texture_lod;
     InitializeShaderTranslator();
   }
 
@@ -9434,7 +9467,7 @@ bool GLES2DecoderImpl::GenQueriesEXTHelper(
       return false;
     }
   }
-  // NOTE: We don't generate Query objects here. Only in BeginQueryEXT
+  query_manager_->GenQueries(n, client_ids);
   return true;
 }
 
@@ -9449,8 +9482,8 @@ void GLES2DecoderImpl::DeleteQueriesEXTHelper(
         state_.current_queries.erase(it);
 
       query->Destroy(true);
-      query_manager_->RemoveQuery(client_ids[ii]);
     }
+    query_manager_->RemoveQuery(client_ids[ii]);
   }
 }
 
@@ -9513,6 +9546,14 @@ error::Error GLES2DecoderImpl::HandleBeginQueryEXT(
     case GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM:
     case GL_GET_ERROR_QUERY_CHROMIUM:
       break;
+    case GL_COMMANDS_COMPLETED_CHROMIUM:
+      if (!features().chromium_sync_query) {
+        LOCAL_SET_GL_ERROR(
+            GL_INVALID_OPERATION, "glBeginQueryEXT",
+            "not enabled for commands completed queries");
+        return error::kNoError;
+      }
+      break;
     default:
       if (!features().occlusion_query_boolean) {
         LOCAL_SET_GL_ERROR(
@@ -9536,24 +9577,12 @@ error::Error GLES2DecoderImpl::HandleBeginQueryEXT(
 
   QueryManager::Query* query = query_manager_->GetQuery(client_id);
   if (!query) {
-    // TODO(gman): Decide if we need this check.
-    //
-    // Checks id was made by glGenQueries
-    //
-    // From the POV of OpenGL ES 2.0 you need to call glGenQueriesEXT
-    // for all Query ids but from the POV of the command buffer service maybe
-    // you don't.
-    //
-    // The client can enforce this. I don't think the service cares.
-    //
-    // IdAllocatorInterface* id_allocator =
-    //     group_->GetIdAllocator(id_namespaces::kQueries);
-    // if (!id_allocator->InUse(client_id)) {
-    //   LOCAL_SET_GL_ERROR(
-    //       GL_INVALID_OPERATION,
-    //       "glBeginQueryEXT", "id not made by glGenQueriesEXT");
-    //   return error::kNoError;
-    // }
+    if (!query_manager_->IsValidQuery(client_id)) {
+      LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
+                         "glBeginQueryEXT",
+                         "id not made by glGenQueriesEXT");
+      return error::kNoError;
+    }
     query = query_manager_->CreateQuery(
         target, client_id, sync_shm_id, sync_shm_offset);
   }
@@ -9610,14 +9639,14 @@ bool GLES2DecoderImpl::GenVertexArraysOESHelper(
   if (!features().native_vertex_array_object) {
     // Emulated VAO
     for (GLsizei ii = 0; ii < n; ++ii) {
-      CreateVertexAttribManager(client_ids[ii], 0);
+      CreateVertexAttribManager(client_ids[ii], 0, true);
     }
   } else {
     scoped_ptr<GLuint[]> service_ids(new GLuint[n]);
 
     glGenVertexArraysOES(n, service_ids.get());
     for (GLsizei ii = 0; ii < n; ++ii) {
-      CreateVertexAttribManager(client_ids[ii], service_ids[ii]);
+      CreateVertexAttribManager(client_ids[ii], service_ids[ii], true);
     }
   }
 
@@ -9631,7 +9660,7 @@ void GLES2DecoderImpl::DeleteVertexArraysOESHelper(
         GetVertexAttribManager(client_ids[ii]);
     if (vao && !vao->IsDeleted()) {
       if (state_.vertex_attrib_manager.get() == vao) {
-        state_.vertex_attrib_manager = default_vertex_attrib_manager_;
+        DoBindVertexArrayOES(0);
       }
       RemoveVertexAttribManager(client_ids[ii]);
     }
@@ -9640,7 +9669,6 @@ void GLES2DecoderImpl::DeleteVertexArraysOESHelper(
 
 void GLES2DecoderImpl::DoBindVertexArrayOES(GLuint client_id) {
   VertexAttribManager* vao = NULL;
-  GLuint service_id = 0;
   if (client_id != 0) {
     vao = GetVertexAttribManager(client_id);
     if (!vao) {
@@ -9652,11 +9680,9 @@ void GLES2DecoderImpl::DoBindVertexArrayOES(GLuint client_id) {
           "glBindVertexArrayOES", "bad vertex array id.");
       current_decoder_error_ = error::kNoError;
       return;
-    } else {
-      service_id = vao->service_id();
     }
   } else {
-    vao = default_vertex_attrib_manager_.get();
+    vao = state_.default_vertex_attrib_manager.get();
   }
 
   // Only set the VAO state if it's changed
@@ -9665,6 +9691,7 @@ void GLES2DecoderImpl::DoBindVertexArrayOES(GLuint client_id) {
     if (!features().native_vertex_array_object) {
       EmulateVertexArrayState();
     } else {
+      GLuint service_id = vao->service_id();
       glBindVertexArrayOES(service_id);
     }
   }

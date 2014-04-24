@@ -215,6 +215,11 @@
     'content': {
       'filepath': 'content/',
     },
+    'content_input': {
+      'filepath': 'content/browser/renderer_host/input/|'\
+                  'content/common/input/|'\
+                  'content/renderer/input/',
+    },
     'content_shell': {
       'filepath': 'content/shell/',
     },
@@ -225,12 +230,12 @@
     'deep_memory_profiler': {
       'filepath': 'tools/(deep_memory_profiler|find_runtime_symbols)',
     },
-    'device_orientation': {
-      'filepath': 'content/browser/device_orientation/|'\
-                  'content/common/device_orientation/|'\
-                  'content/public/android/java/src/org/chromium/content/browser/DeviceMotionAndOrientation.java|'\
-                  'content/public/android/javatests/src/org/chromium/content/browser/DeviceMotionAndOrientationTest.java|'\
-                  'content/renderer/device_orientation/',
+    'device_sensors': {
+      'filepath': 'content/browser/device_sensors/|'\
+                  'content/common/device_sensors/|'\
+                  'content/public/android/java/src/org/chromium/content/browser/DeviceSensors.java|'\
+                  'content/public/android/javatests/src/org/chromium/content/browser/DeviceSensorsTest.java|'\
+                  'content/renderer/device_sensors/',
     },
     'devtools': {
       'filepath': 'devtools',
@@ -273,6 +278,9 @@
     'drive_resource_metadata': {
       'filepath': 'chrome/browser/chromeos/drive/resource_metadata'
     },
+    'events': {
+      'filepath': 'ui/events/',
+    },
     'extension': {
       'filepath': 'extension',
     },
@@ -286,7 +294,8 @@
                   'filebrowse'
     },
     'filesapp': {
-      'filepath': 'chrome/browser/resources/file_manager',
+      'filepath': 'chrome/browser/resources/file_manager|' \
+                  'ui/file_manager'
     },
     'ftp': {
       'filepath': 'ftp',
@@ -457,6 +466,9 @@
     'options': {
       'filepath': 'chrome/browser/resources/options/|'\
           'chrome/browser/ui/webui/options/',
+    },
+    'overview_mode': {
+      'filepath': 'ash/wm/overview/',
     },
     'ozone': {
       'filepath': 'ui/ozone/|'\
@@ -752,10 +764,11 @@
     'clipboard': ['dcheng@chromium.org'],
     'content': ['jam@chromium.org',
                 'darin-cc@chromium.org'],
+    'content_input': ['jdduke+watch@chromium.org'],
     'content_shell': ['jochen+watch@chromium.org'],
     'cookie_monster': ['erikwright@chromium.org'],
     'deep_memory_profiler': ['dmikurube+memory@chromium.org'],
-    'device_orientation': ['timvolodine@chromium.org', 'mvanouwerkerk@chromium.org'],
+    'device_sensors': ['timvolodine@chromium.org', 'mvanouwerkerk@chromium.org', 'rijubrata.bhaumik@intel.com'],
     'devtools': ['pfeldman@chromium.org', 'yurys@chromium.org',
                  'vsevik@chromium.org', 'aandrey+blink@chromium.org',
                  'paulirish+reviews@chromium.org',
@@ -768,6 +781,7 @@
     'downloads_ui': ['asanka@chromium.org', 'benjhayden+dwatch@chromium.org'],
     'drive': ['tfarina@chromium.org'],
     'drive_resource_metadata': ['hashimoto+watch@chromium.org'],
+    'events': ['tdresser+watch@chromium.org'],
     'extension': ['chromium-apps-reviews@chromium.org',
                   'extensions-reviews@chromium.org'],
     'fileapi': ['kinuko+watch@chromium.org',
@@ -831,6 +845,7 @@
             'pedrosimonetti+watch@chromium.org'],
     'omnibox': ['suzhe@chromium.org'],
     'options': ['dbeam+watch-options@chromium.org'],
+    'overview_mode': ['tdanderson+overview@chromium.org'],
     'ozone': ['kalyan.kondapally@intel.com', 'ozone-reviews@chromium.org',
               'rjkroege@chromium.org'],
     'panels': ['dimich@chromium.org', 'jennb@chromium.org',
@@ -899,7 +914,8 @@
     'version_assembly': ['caitkp+watch@chromium.org',
                          'gab+watch@chromium.org'],
     'views': ['tfarina@chromium.org'],
-    'views_core': ['ben+views@chromium.org'],
+    'views_core': ['ben+views@chromium.org',
+                   'tdanderson+views@chromium.org'],
     'views_corewm': ['ben+corewm@chromium.org'],
     'virtual_keyboard': ['dfaden+virtualkb@google.com',
                          'groby+virtualkb@chromium.org'],

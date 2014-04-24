@@ -13,6 +13,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 
@@ -39,13 +40,26 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
     STOPPING,
   };
 
-  class Observer {
+  class Listener {
    public:
-    virtual ~Observer() {}
+    virtual ~Listener() {}
     virtual void OnStarted() = 0;
     virtual void OnStopped() = 0;
-    virtual void OnMessageReceived(int request_id,
-                                   const IPC::Message& message) = 0;
+    virtual void OnReportException(const base::string16& error_message,
+                                   int line_number,
+                                   int column_number,
+                                   const GURL& source_url) {}
+    virtual void OnReportConsoleMessage(int source_identifier,
+                                        int message_level,
+                                        const base::string16& message,
+                                        int line_number,
+                                        const GURL& source_url) {}
+    // These should return false if the message is not handled by this
+    // listener. (TODO(kinuko): consider using IPC::Listener interface)
+    // TODO(kinuko): Deprecate OnReplyReceived.
+    virtual bool OnMessageReceived(const IPC::Message& message) = 0;
+    virtual bool OnReplyReceived(int request_id,
+                                 const IPC::Message& message) = 0;
   };
 
   ~EmbeddedWorkerInstance();
@@ -53,6 +67,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   // Starts the worker. It is invalid to call this when the worker is
   // not in STOPPED status.
   ServiceWorkerStatusCode Start(int64 service_worker_version_id,
+                                const GURL& scope,
                                 const GURL& script_url);
 
   // Stops the worker. It is invalid to call this when the worker is
@@ -80,10 +95,12 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   int process_id() const { return process_id_; }
   int thread_id() const { return thread_id_; }
 
-  void AddObserver(Observer* observer);
-  void RemoveObserver(Observer* observer);
+  void AddListener(Listener* listener);
+  void RemoveListener(Listener* listener);
 
  private:
+  typedef ObserverList<Listener> ListenerList;
+
   friend class EmbeddedWorkerRegistry;
   FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, StartAndStop);
 
@@ -108,7 +125,22 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
 
   // Called back from Registry when the worker instance sends message
   // to the browser (i.e. EmbeddedWorker observers).
-  void OnMessageReceived(int request_id, const IPC::Message& message);
+  // Returns false if the message is not handled.
+  bool OnMessageReceived(const IPC::Message& message);
+  bool OnReplyReceived(int request_id, const IPC::Message& message);
+
+  // Called back from Registry when the worker instance reports the exception.
+  void OnReportException(const base::string16& error_message,
+                         int line_number,
+                         int column_number,
+                         const GURL& source_url);
+
+  // Called back from Registry when the worker instance reports to the console.
+  void OnReportConsoleMessage(int source_identifier,
+                              int message_level,
+                              const base::string16& message,
+                              int line_number,
+                              const GURL& source_url);
 
   // Chooses a process to start this worker and populate process_id_.
   // Returns false when no process is available.
@@ -123,7 +155,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   int thread_id_;
 
   ProcessRefMap process_refs_;
-  ObserverList<Observer> observer_list_;
+  ListenerList listener_list_;
 
   DISALLOW_COPY_AND_ASSIGN(EmbeddedWorkerInstance);
 };

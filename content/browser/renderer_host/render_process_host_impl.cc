@@ -42,8 +42,8 @@
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/browser_plugin/browser_plugin_message_filter.h"
 #include "content/browser/child_process_security_policy_impl.h"
-#include "content/browser/device_orientation/device_motion_message_filter.h"
-#include "content/browser/device_orientation/device_orientation_message_filter.h"
+#include "content/browser/device_sensors/device_motion_message_filter.h"
+#include "content/browser/device_sensors/device_orientation_message_filter.h"
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/dom_storage_message_filter.h"
 #include "content/browser/download/mhtml_generation_manager.h"
@@ -324,11 +324,6 @@ class RendererSandboxedProcessLauncherDelegate
 
 RendererMainThreadFactoryFunction g_renderer_main_thread_factory = NULL;
 
-void RenderProcessHost::RegisterRendererMainThreadFactory(
-    RendererMainThreadFactoryFunction create) {
-  g_renderer_main_thread_factory = create;
-}
-
 base::MessageLoop* g_in_process_thread;
 
 base::MessageLoop*
@@ -465,6 +460,11 @@ void RenderProcessHostImpl::ShutDownInProcessRenderer() {
       NOTREACHED() << "There should be only one RenderProcessHost when running "
                    << "in-process.";
   }
+}
+
+void RenderProcessHostImpl::RegisterRendererMainThreadFactory(
+    RendererMainThreadFactoryFunction create) {
+  g_renderer_main_thread_factory = create;
 }
 
 RenderProcessHostImpl::~RenderProcessHostImpl() {
@@ -941,9 +941,6 @@ static void AppendGpuCommandLineFlags(CommandLine* command_line) {
   if (IsThreadedCompositingEnabled())
     command_line->AppendSwitch(switches::kEnableThreadedCompositing);
 
-  if (IsForceCompositingModeEnabled())
-    command_line->AppendSwitch(switches::kForceCompositingMode);
-
   if (IsDelegatedRendererEnabled())
     command_line->AppendSwitch(switches::kEnableDelegatedRenderer);
 
@@ -1011,7 +1008,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDefaultTileWidth,
     switches::kDefaultTileHeight,
     switches::kDisable3DAPIs,
-    switches::kDisableAcceleratedCompositing,
     switches::kDisableAcceleratedFixedRootBackground,
     switches::kDisableAcceleratedVideoDecode,
     switches::kDisableApplicationCache,
@@ -1024,7 +1020,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableFastTextAutosizing,
     switches::kDisableFileSystem,
     switches::kDisableFiltersOverIPC,
-    switches::kDisableGpu,
     switches::kDisableGpuCompositing,
     switches::kDisableGpuVsync,
     switches::kDisableLowResTiling,
@@ -1082,7 +1077,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableSeccompFilterSandbox,
     switches::kEnableServiceWorker,
     switches::kEnableSkiaBenchmarking,
-    switches::kEnableSoftwareCompositing,
     switches::kEnableSpeechSynthesis,
     switches::kEnableStatsTable,
     switches::kEnableStrictSiteIsolation,
@@ -1097,6 +1091,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableWebAnimationsSVG,
     switches::kEnableWebGLDraftExtensions,
     switches::kEnableWebMIDI,
+    switches::kForceCompositingMode,
     switches::kForceDeviceScaleFactor,
     switches::kFullMemoryCrashReport,
     switches::kJavaScriptFlags,

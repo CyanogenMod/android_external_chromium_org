@@ -9,24 +9,23 @@ import logging
 import os
 import shutil
 import stat
-import sys
 
 from telemetry.core import util
-from telemetry.core.platform.profiler import android_prebuilt_profiler_helper
+from telemetry.core.platform import factory
+from telemetry.util import support_binaries
 
 # This is currently a thin wrapper around Chrome Android's
 # build scripts, located in chrome/build/android. This file exists mainly to
 # deal with locating the module.
 
 util.AddDirToPythonPath(util.GetChromiumSrcDir(), 'build', 'android')
+from pylib import android_commands  # pylint: disable=F0401
+from pylib import constants  # pylint: disable=F0401
 try:
-  from pylib import android_commands  # pylint: disable=F0401
-  from pylib import constants  # pylint: disable=F0401
   from pylib import ports  # pylint: disable=F0401
-  from pylib.utils import apk_helper  # pylint: disable=F0401
-  from pylib.utils import test_environment  # pylint: disable=F0401
 except Exception:
-  android_commands = None
+  ports = None
+from pylib.utils import apk_helper  # pylint: disable=F0401
 
 
 def IsAndroidSupported():
@@ -39,10 +38,6 @@ def GetAttachedDevices():
   If a preferred device has been set with ANDROID_SERIAL, it will be first in
   the returned list."""
   return android_commands.GetAttachedDevices()
-
-
-def CleanupLeftoverProcesses():
-  test_environment.CleanupLeftoverProcesses()
 
 
 def AllocateTestServerPort():
@@ -105,37 +100,44 @@ def GetBuildTypeOfPath(path):
 
 
 def SetupPrebuiltTools(adb):
-  # TODO(bulach): build the host tools for mac, and the targets for x86/mips.
-  # Prebuilt tools from r226197.
-  prebuilt_tools = [
-      'bitmaptools',
-      'file_poller',
-      'forwarder_dist/device_forwarder',
-      'host_forwarder',
-      'md5sum_dist/md5sum_bin',
-      'md5sum_bin_host',
-      'purge_ashmem',
+  """Some of the android pylib scripts we depend on are lame and expect
+  binaries to be in the out/ directory. So we copy any prebuilt binaries there
+  as a prereq."""
+
+  # TODO(bulach): Build the targets for x86/mips.
+  device_tools = [
+    'file_poller',
+    'forwarder_dist/device_forwarder',
+    'md5sum_dist/md5sum_bin',
+    'purge_ashmem',
   ]
-  has_prebuilt = (
-    sys.platform.startswith('linux') and
-    adb.system_properties['ro.product.cpu.abi'].startswith('armeabi'))
-  if not has_prebuilt:
-    return all([util.FindSupportBinary(t) for t in prebuilt_tools])
+
+  host_tools = [
+    'bitmaptools',
+    'host_forwarder',
+    'md5sum_bin_host',
+  ]
+
+  has_device_prebuilt = adb.system_properties['ro.product.cpu.abi'].startswith(
+      'armeabi')
+  if not has_device_prebuilt:
+    return all([support_binaries.FindLocallyBuiltPath(t) for t in device_tools])
 
   build_type = None
-  for t in prebuilt_tools:
-    src = os.path.basename(t)
-    android_prebuilt_profiler_helper.GetIfChanged(src)
-    bin_path = util.FindSupportBinary(t)
+  for t in device_tools + host_tools:
+    executable = os.path.basename(t)
+    locally_built_path = support_binaries.FindLocallyBuiltPath(t)
     if not build_type:
-      build_type = GetBuildTypeOfPath(bin_path) or 'Release'
+      build_type = GetBuildTypeOfPath(locally_built_path) or 'Release'
       constants.SetBuildType(build_type)
     dest = os.path.join(constants.GetOutDirectory(), t)
-    if not bin_path:
-      logging.warning('Setting up prebuilt %s', dest)
+    if not locally_built_path:
+      logging.info('Setting up prebuilt %s', dest)
       if not os.path.exists(os.path.dirname(dest)):
         os.makedirs(os.path.dirname(dest))
-      prebuilt_path = android_prebuilt_profiler_helper.GetHostPath(src)
+      platform_name = ('android' if t in device_tools else
+                       factory.GetPlatformBackendForCurrentOS().GetOSName())
+      prebuilt_path = support_binaries.FindPath(executable, platform_name)
       if not os.path.exists(prebuilt_path):
         raise NotImplementedError("""
 %s must be checked into cloud storage.

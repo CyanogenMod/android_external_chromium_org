@@ -122,7 +122,6 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual void SelectionRootBoundsChanged(const gfx::Rect&) OVERRIDE {}
 #endif
   virtual void ScrollOffsetChanged() OVERRIDE {}
-  virtual BackingStore* AllocBackingStore(const gfx::Size& size) OVERRIDE;
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
@@ -316,7 +315,8 @@ class TestRenderViewHost
 
   virtual bool CreateRenderView(const base::string16& frame_name,
                                 int opener_route_id,
-                                int32 max_page_id) OVERRIDE;
+                                int32 max_page_id,
+                                bool window_was_created_with_opener) OVERRIDE;
   virtual bool IsRenderViewLive() const OVERRIDE;
   virtual bool IsFullscreen() const OVERRIDE;
 

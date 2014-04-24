@@ -278,7 +278,14 @@ void AudioRendererImpl::Initialize(DemuxerStream* stream,
     buffer_converter_.reset();
   } else {
     // TODO(rileya): Support hardware config changes
-    audio_parameters_ = hardware_config_->GetOutputConfig();
+    const AudioParameters& hw_params = hardware_config_->GetOutputConfig();
+    audio_parameters_.Reset(hw_params.format(),
+                            hw_params.channel_layout(),
+                            hw_params.channels(),
+                            hw_params.input_channels(),
+                            hw_params.sample_rate(),
+                            hw_params.bits_per_sample(),
+                            hardware_config_->GetHighLatencyBufferSize());
   }
 
   audio_buffer_stream_.Initialize(
@@ -594,6 +601,7 @@ int AudioRendererImpl::Render(AudioBus* audio_bus,
     //   3) We are in the kPlaying state
     //
     // Otherwise the buffer has data we can send to the device.
+    const base::TimeDelta time_before_filling = algorithm_->GetTime();
     frames_written = algorithm_->FillBuffer(audio_bus, requested_frames);
     if (frames_written == 0) {
       const base::TimeTicks now = now_cb_.Run();
@@ -619,16 +627,15 @@ int AudioRendererImpl::Render(AudioBus* audio_bus,
                                         weak_factory_.GetWeakPtr()));
     }
 
+    // Adjust the delay according to playback rate.
+    base::TimeDelta adjusted_playback_delay = base::TimeDelta::FromMicroseconds(
+        ceil(playback_delay.InMicroseconds() * playback_rate));
+
     // The |audio_time_buffered_| is the ending timestamp of the last frame
     // buffered at the audio device. |playback_delay| is the amount of time
     // buffered at the audio device. The current time can be computed by their
     // difference.
     if (audio_time_buffered_ != kNoTimestamp()) {
-      // Adjust the delay according to playback rate.
-      base::TimeDelta adjusted_playback_delay =
-          base::TimeDelta::FromMicroseconds(ceil(
-              playback_delay.InMicroseconds() * playback_rate));
-
       base::TimeDelta previous_time = current_time_;
       current_time_ = audio_time_buffered_ - adjusted_playback_delay;
 
@@ -649,6 +656,11 @@ int AudioRendererImpl::Render(AudioBus* audio_bus,
       if (current_time_ > previous_time && !rendered_end_of_stream_) {
         current_time = current_time_;
       }
+    } else if (frames_written > 0) {
+      // Nothing has been buffered yet, so use the first buffer's timestamp.
+      DCHECK(time_before_filling != kNoTimestamp());
+      current_time_ = current_time =
+          time_before_filling - adjusted_playback_delay;
     }
 
     // The call to FillBuffer() on |algorithm_| has increased the amount of
@@ -750,6 +762,11 @@ void AudioRendererImpl::OnConfigChange() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(expecting_config_changes_);
   buffer_converter_->ResetTimestampState();
+  // Drain flushed buffers from the converter so the AudioSplicer receives all
+  // data ahead of any OnNewSpliceBuffer() calls.  Since discontinuities should
+  // only appear after config changes, AddInput() should never fail here.
+  while (buffer_converter_->HasNextBuffer())
+    CHECK(splicer_->AddInput(buffer_converter_->GetNextBuffer()));
 }
 
 }  // namespace media

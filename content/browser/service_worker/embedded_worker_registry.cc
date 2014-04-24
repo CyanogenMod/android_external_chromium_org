@@ -8,7 +8,6 @@
 #include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/common/service_worker/embedded_worker_messages.h"
-#include "content/common/service_worker/service_worker_messages.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sender.h"
 
@@ -30,17 +29,30 @@ ServiceWorkerStatusCode EmbeddedWorkerRegistry::StartWorker(
     int process_id,
     int embedded_worker_id,
     int64 service_worker_version_id,
+    const GURL& scope,
     const GURL& script_url) {
-  return Send(process_id,
-              new EmbeddedWorkerMsg_StartWorker(embedded_worker_id,
-                                               service_worker_version_id,
-                                               script_url));
+  return Send(
+      process_id,
+      new EmbeddedWorkerMsg_StartWorker(
+          embedded_worker_id, service_worker_version_id, scope, script_url));
 }
 
 ServiceWorkerStatusCode EmbeddedWorkerRegistry::StopWorker(
     int process_id, int embedded_worker_id) {
   return Send(process_id,
               new EmbeddedWorkerMsg_StopWorker(embedded_worker_id));
+}
+
+bool EmbeddedWorkerRegistry::OnMessageReceived(const IPC::Message& message) {
+  // TODO(kinuko): Move all EmbeddedWorker message handling from
+  // ServiceWorkerDispatcherHost.
+
+  WorkerInstanceMap::iterator found = worker_map_.find(message.routing_id());
+  if (found == worker_map_.end()) {
+    LOG(ERROR) << "Worker " << message.routing_id() << " not registered";
+    return false;
+  }
+  return found->second->OnMessageReceived(message);
 }
 
 void EmbeddedWorkerRegistry::OnWorkerStarted(
@@ -69,24 +81,45 @@ void EmbeddedWorkerRegistry::OnWorkerStopped(
   found->second->OnStopped();
 }
 
-void EmbeddedWorkerRegistry::OnSendMessageToBrowser(
+bool EmbeddedWorkerRegistry::OnReplyToBrowser(
     int embedded_worker_id, int request_id, const IPC::Message& message) {
+  WorkerInstanceMap::iterator found = worker_map_.find(embedded_worker_id);
+  if (found == worker_map_.end()) {
+    LOG(ERROR) << "Worker " << embedded_worker_id << " not registered";
+    return false;
+  }
+  return found->second->OnReplyReceived(request_id, message);
+}
+
+void EmbeddedWorkerRegistry::OnReportException(
+    int embedded_worker_id,
+    const base::string16& error_message,
+    int line_number,
+    int column_number,
+    const GURL& source_url) {
   WorkerInstanceMap::iterator found = worker_map_.find(embedded_worker_id);
   if (found == worker_map_.end()) {
     LOG(ERROR) << "Worker " << embedded_worker_id << " not registered";
     return;
   }
-  // Perform security check to filter out any unexpected (and non-test)
-  // messages. This must list up all message types that can go through here.
-  if (message.type() == ServiceWorkerHostMsg_ActivateEventFinished::ID ||
-      message.type() == ServiceWorkerHostMsg_InstallEventFinished::ID ||
-      message.type() == ServiceWorkerHostMsg_FetchEventFinished::ID ||
-      message.type() == ServiceWorkerHostMsg_SyncEventFinished::ID ||
-      IPC_MESSAGE_CLASS(message) == TestMsgStart) {
-    found->second->OnMessageReceived(request_id, message);
+  found->second->OnReportException(
+      error_message, line_number, column_number, source_url);
+}
+
+void EmbeddedWorkerRegistry::OnReportConsoleMessage(
+    int embedded_worker_id,
+    int source_identifier,
+    int message_level,
+    const base::string16& message,
+    int line_number,
+    const GURL& source_url) {
+  WorkerInstanceMap::iterator found = worker_map_.find(embedded_worker_id);
+  if (found == worker_map_.end()) {
+    LOG(ERROR) << "Worker " << embedded_worker_id << " not registered";
     return;
   }
-  NOTREACHED() << "Got unexpected message: " << message.type();
+  found->second->OnReportConsoleMessage(
+      source_identifier, message_level, message, line_number, source_url);
 }
 
 void EmbeddedWorkerRegistry::AddChildProcessSender(

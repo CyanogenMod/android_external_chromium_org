@@ -44,7 +44,6 @@
 #include "content/public/browser/web_contents_view.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_function_dispatcher.h"
-#include "extensions/browser/extension_system.h"
 #include "extensions/browser/quota_service.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -60,6 +59,7 @@ namespace bookmarks = api::bookmarks;
 
 using base::TimeDelta;
 using bookmarks::BookmarkTreeNode;
+using bookmarks::CreateDetails;
 using content::BrowserContext;
 using content::BrowserThread;
 using content::WebContents;
@@ -132,10 +132,73 @@ const BookmarkNode* BookmarksFunction::GetBookmarkNodeFromId(
   if (!GetBookmarkIdAsInt64(id_string, &id))
     return NULL;
 
-  BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
-  const BookmarkNode* node = model->GetNodeByID(id);
+  const BookmarkNode* node = GetBookmarkNodeByID(
+      BookmarkModelFactory::GetForProfile(GetProfile()), id);
   if (!node)
     error_ = keys::kNoNodeError;
+
+  return node;
+}
+
+const BookmarkNode* BookmarksFunction::CreateBookmarkNode(
+    BookmarkModel* model,
+    const CreateDetails& details,
+    const BookmarkNode::MetaInfoMap* meta_info) {
+  int64 parentId;
+
+  if (!details.parent_id.get()) {
+    // Optional, default to "other bookmarks".
+    parentId = model->other_node()->id();
+  } else {
+    if (!GetBookmarkIdAsInt64(*details.parent_id, &parentId))
+      return NULL;
+  }
+  const BookmarkNode* parent = GetBookmarkNodeByID(model, parentId);
+  if (!parent) {
+    error_ = keys::kNoParentError;
+    return NULL;
+  }
+  if (parent->is_root()) {  // Can't create children of the root.
+    error_ = keys::kModifySpecialError;
+    return NULL;
+  }
+
+  int index;
+  if (!details.index.get()) {  // Optional (defaults to end).
+    index = parent->child_count();
+  } else {
+    index = *details.index;
+    if (index > parent->child_count() || index < 0) {
+      error_ = keys::kInvalidIndexError;
+      return NULL;
+    }
+  }
+
+  base::string16 title;  // Optional.
+  if (details.title.get())
+    title = base::UTF8ToUTF16(*details.title.get());
+
+  std::string url_string;  // Optional.
+  if (details.url.get())
+    url_string = *details.url.get();
+
+  GURL url(url_string);
+  if (!url_string.empty() && !url.is_valid()) {
+    error_ = keys::kInvalidUrlError;
+    return NULL;
+  }
+
+  const BookmarkNode* node;
+  if (url_string.length())
+    node = model->AddURLWithCreationTimeAndMetaInfo(
+        parent, index, title, url, base::Time::Now(), meta_info);
+  else
+    node = model->AddFolderWithMetaInfo(parent, index, title, meta_info);
+  DCHECK(node);
+  if (!node) {
+    error_ = keys::kNoNodeError;
+    return NULL;
+  }
 
   return node;
 }
@@ -173,11 +236,10 @@ BookmarkEventRouter::~BookmarkEventRouter() {
 void BookmarkEventRouter::DispatchEvent(
     const std::string& event_name,
     scoped_ptr<base::ListValue> event_args) {
-  if (extensions::ExtensionSystem::Get(browser_context_)->event_router()) {
-    extensions::ExtensionSystem::Get(browser_context_)
-        ->event_router()
-        ->BroadcastEvent(make_scoped_ptr(
-              new extensions::Event(event_name, event_args.Pass())));
+  EventRouter* event_router = EventRouter::Get(browser_context_);
+  if (event_router) {
+    event_router->BroadcastEvent(
+        make_scoped_ptr(new extensions::Event(event_name, event_args.Pass())));
   }
 }
 
@@ -289,8 +351,7 @@ void BookmarkEventRouter::ExtensiveBookmarkChangesEnded(BookmarkModel* model) {
 
 BookmarksAPI::BookmarksAPI(BrowserContext* context)
     : browser_context_(context) {
-  EventRouter* event_router =
-      ExtensionSystem::Get(browser_context_)->event_router();
+  EventRouter* event_router = EventRouter::Get(browser_context_);
   event_router->RegisterObserver(this, bookmarks::OnCreated::kEventName);
   event_router->RegisterObserver(this, bookmarks::OnRemoved::kEventName);
   event_router->RegisterObserver(this, bookmarks::OnChanged::kEventName);
@@ -305,8 +366,7 @@ BookmarksAPI::~BookmarksAPI() {
 }
 
 void BookmarksAPI::Shutdown() {
-  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
-      this);
+  EventRouter::Get(browser_context_)->UnregisterObserver(this);
 }
 
 static base::LazyInstance<BrowserContextKeyedAPIFactory<BookmarksAPI> >
@@ -323,8 +383,7 @@ void BookmarksAPI::OnListenerAdded(const EventListenerInfo& details) {
       browser_context_,
       BookmarkModelFactory::GetForProfile(
           Profile::FromBrowserContext(browser_context_))));
-  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
-      this);
+  EventRouter::Get(browser_context_)->UnregisterObserver(this);
 }
 
 bool BookmarksGetFunction::RunImpl() {
@@ -519,60 +578,9 @@ bool BookmarksCreateFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
-  int64 parentId;
-
-  if (!params->bookmark.parent_id.get()) {
-    // Optional, default to "other bookmarks".
-    parentId = model->other_node()->id();
-  } else {
-    if (!GetBookmarkIdAsInt64(*params->bookmark.parent_id, &parentId))
-      return false;
-  }
-  const BookmarkNode* parent = model->GetNodeByID(parentId);
-  if (!parent) {
-    error_ = keys::kNoParentError;
+  const BookmarkNode* node = CreateBookmarkNode(model, params->bookmark, NULL);
+  if (!node)
     return false;
-  }
-  if (parent->is_root()) {  // Can't create children of the root.
-    error_ = keys::kModifySpecialError;
-    return false;
-  }
-
-  int index;
-  if (!params->bookmark.index.get()) {  // Optional (defaults to end).
-    index = parent->child_count();
-  } else {
-    index = *params->bookmark.index;
-    if (index > parent->child_count() || index < 0) {
-      error_ = keys::kInvalidIndexError;
-      return false;
-    }
-  }
-
-  base::string16 title;  // Optional.
-  if (params->bookmark.title.get())
-    title = base::UTF8ToUTF16(*params->bookmark.title.get());
-
-  std::string url_string;  // Optional.
-  if (params->bookmark.url.get())
-    url_string = *params->bookmark.url.get();
-
-  GURL url(url_string);
-  if (!url_string.empty() && !url.is_valid()) {
-    error_ = keys::kInvalidUrlError;
-    return false;
-  }
-
-  const BookmarkNode* node;
-  if (url_string.length())
-    node = model->AddURL(parent, index, title, url);
-  else
-    node = model->AddFolder(parent, index, title);
-  DCHECK(node);
-  if (!node) {
-    error_ = keys::kNoNodeError;
-    return false;
-  }
 
   scoped_ptr<BookmarkTreeNode> ret(
       bookmark_api_helpers::GetBookmarkTreeNode(node, false, false));
@@ -616,7 +624,7 @@ bool BookmarksMoveFunction::RunImpl() {
     if (!GetBookmarkIdAsInt64(*params->destination.parent_id, &parentId))
       return false;
 
-    parent = model->GetNodeByID(parentId);
+    parent = GetBookmarkNodeByID(model, parentId);
   }
   if (!parent) {
     error_ = keys::kNoParentError;
@@ -744,7 +752,7 @@ class CreateBookmarkBucketMapper : public BookmarkBucketMapper<std::string> {
 
     int64 parent_id_int64;
     base::StringToInt64(parent_id, &parent_id_int64);
-    const BookmarkNode* parent = model->GetNodeByID(parent_id_int64);
+    const BookmarkNode* parent = GetBookmarkNodeByID(model, parent_id_int64);
     if (!parent)
       return;
 
@@ -782,7 +790,7 @@ class RemoveBookmarksBucketMapper : public BookmarkBucketMapper<std::string> {
     for (IdList::iterator it = ids.begin(); it != ids.end(); ++it) {
       BookmarkModel* model = BookmarkModelFactory::GetForProfile(
           Profile::FromBrowserContext(browser_context_));
-      const BookmarkNode* node = model->GetNodeByID(*it);
+      const BookmarkNode* node = GetBookmarkNodeByID(model, *it);
       if (!node || node->is_root())
         return;
 

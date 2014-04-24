@@ -24,7 +24,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/timer/hi_res_timer_manager.h"
 #include "content/browser/browser_thread_impl.h"
-#include "content/browser/device_orientation/device_inertial_sensor_service.h"
+#include "content/browser/device_sensors/device_inertial_sensor_service.h"
 #include "content/browser/download/save_file_manager.h"
 #include "content/browser/gamepad/gamepad_service.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
@@ -62,8 +62,12 @@
 #include "net/ssl/ssl_config_service.h"
 #include "ui/base/clipboard/clipboard.h"
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) || (defined(OS_MACOSX) && !defined(OS_IOS))
 #include "content/browser/compositor/image_transport_factory.h"
+#endif
+
+#if defined(USE_AURA)
+#include "ui/aura/env.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -115,6 +119,7 @@
 
 #if defined(USE_OZONE)
 #include "ui/ozone/ozone_platform.h"
+#include "ui/events/ozone/event_factory_ozone.h"
 #endif
 
 // One of the linux specific headers defines this as a macro.
@@ -182,8 +187,6 @@ static void GLibLogHandler(const gchar* log_domain,
   } else if (strstr(message, "Unable to create Ubuntu Menu Proxy") &&
              strstr(log_domain, "<unknown>")) {
     LOG(ERROR) << "GTK menu proxy create failed";
-  } else if (strstr(message, "gtk_drag_dest_leave: assertion")) {
-    LOG(ERROR) << "Drag destination deleted: http://crbug.com/18557";
   } else if (strstr(message, "Out of memory") &&
              strstr(log_domain, "<unknown>")) {
     LOG(ERROR) << "DBus call timeout or out of memory: "
@@ -221,6 +224,16 @@ static void SetUpGLibLogHandler() {
 void OnStoppedStartupTracing(const base::FilePath& trace_file) {
   VLOG(0) << "Completed startup tracing to " << trace_file.value();
 }
+
+#if defined(USE_AURA)
+bool ShouldInitializeBrowserGpuChannelAndTransportSurface() {
+  return true;
+}
+#elif defined(OS_MACOSX) && !defined(OS_IOS)
+bool ShouldInitializeBrowserGpuChannelAndTransportSurface() {
+  return IsDelegatedRendererEnabled();
+}
+#endif
 
 }  // namespace
 
@@ -916,19 +929,20 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   // otherwise we'll trigger the assertion about doing IO on the UI thread.
   GpuDataManagerImpl::GetInstance()->Initialize();
 
-  bool always_uses_gpu = IsForceCompositingModeEnabled();
+  bool always_uses_gpu = true;
   bool established_gpu_channel = false;
-#if defined(USE_AURA) || defined(OS_ANDROID)
-  established_gpu_channel = true;
-#if defined(USE_AURA)
-  if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor()) {
-    established_gpu_channel = always_uses_gpu = false;
+#if defined(USE_AURA) || defined(OS_MACOSX)
+  if (ShouldInitializeBrowserGpuChannelAndTransportSurface()) {
+    established_gpu_channel = true;
+    if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor()) {
+      established_gpu_channel = always_uses_gpu = false;
+    }
+    BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
+    ImageTransportFactory::Initialize();
   }
-  BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
-  ImageTransportFactory::Initialize();
 #elif defined(OS_ANDROID)
+  established_gpu_channel = true;
   BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
-#endif
 #endif
 
 #if defined(OS_LINUX) && defined(USE_UDEV)
@@ -1031,6 +1045,12 @@ void BrowserMainLoop::InitializeToolkit() {
   config.dwICC = ICC_WIN95_CLASSES;
   if (!InitCommonControlsEx(&config))
     LOG_GETLASTERROR(FATAL);
+#endif
+
+#if defined(USE_AURA)
+  // Env creates the compositor. Aura widgets need the compositor to be created
+  // before they can be initialized by the browser.
+  aura::Env::CreateInstance();
 #endif
 
   if (parts_)

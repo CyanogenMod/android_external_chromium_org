@@ -21,13 +21,16 @@ group("root") {
     "//components/language_usage_metrics",
     "//components/navigation_metrics",
     "//components/onc",
+    "//components/os_crypt",
     "//components/startup_metric_utils",
+    "//components/resources:components_resources",
     #"//components/translate:translate_core_browser",
     #"//components/translate:translate_core_common",
+    "//components/url_matcher",
     "//crypto",
     "//device/usb",
     "//ipc",
-    #"//net",
+    "//net",
     #"//sdch",
     "//skia",
     #"//third_party/WebKit/Source/platform",
@@ -35,6 +38,7 @@ group("root") {
     "//third_party/leveldatabase",
     "//third_party/libpng",
     "//third_party/libusb",
+    "//third_party/libwebp",
     "//third_party/re2",
     "//third_party/smhasher:cityhash",
     "//third_party/smhasher:murmurhash3",
@@ -43,7 +47,9 @@ group("root") {
     "//tools/gn",
     "//ui/events",
     "//ui/gfx",
+    "//ui/resources",
     "//url",
+    "//v8:v8_base",
   ]
 
   if (is_linux) {
@@ -54,6 +60,9 @@ group("root") {
 
   if (is_android) {
     deps -= [
+      "//components/os_crypt",
+      "//crypto",
+      "//net",
       "//skia",
       "//third_party/libusb",
       "//tools/gn",

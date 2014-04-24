@@ -10,7 +10,9 @@
 #include "base/strings/string16.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "ipc/ipc_listener.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerClientsInfo.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerEventResult.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebServiceWorkerContextClient.h"
 #include "url/gurl.h"
 
@@ -48,23 +50,34 @@ class EmbeddedWorkerContextClient
 
   EmbeddedWorkerContextClient(int embedded_worker_id,
                               int64 service_worker_version_id,
+                              const GURL& service_worker_scope,
                               const GURL& script_url);
 
   virtual ~EmbeddedWorkerContextClient();
 
   bool OnMessageReceived(const IPC::Message& msg);
 
-  void SendMessageToBrowser(int request_id, const IPC::Message& message);
+  void Send(IPC::Message* message);
+
+  // TODO(kinuko): Deprecate this.
+  void SendReplyToBrowser(int request_id, const IPC::Message& message);
 
   // WebServiceWorkerContextClient overrides, some of them are just dispatched
   // on to script_context_.
+  virtual blink::WebURL scope() const;
+  virtual void getClients(blink::WebServiceWorkerClientsCallbacks*);
   virtual void workerContextFailedToStart();
   virtual void workerContextStarted(blink::WebServiceWorkerContextProxy* proxy);
-  virtual void workerContextDestroyed();
+  virtual void willDestroyWorkerContext();
   virtual void reportException(const blink::WebString& error_message,
                                int line_number,
                                int column_number,
                                const blink::WebString& source_url);
+  virtual void reportConsoleMessage(int source,
+                                    int level,
+                                    const blink::WebString& message,
+                                    int line_number,
+                                    const blink::WebString& source_url);
   virtual void didHandleActivateEvent(int request_id,
                                       blink::WebServiceWorkerEventResult);
   virtual void didHandleInstallEvent(int request_id,
@@ -73,9 +86,9 @@ class EmbeddedWorkerContextClient
   virtual void didHandleFetchEvent(
       int request_id,
       const blink::WebServiceWorkerResponse& response);
+  virtual void didHandleSyncEvent(int request_id);
   virtual blink::WebServiceWorkerNetworkProvider*
       createServiceWorkerNetworkProvider(blink::WebDataSource* data_source);
-  virtual void didHandleSyncEvent(int request_id);
 
   // TODO: Implement DevTools related method overrides.
 
@@ -85,14 +98,15 @@ class EmbeddedWorkerContextClient
   }
 
  private:
-  void OnSendMessageToWorker(int thread_id,
-                             int embedded_worker_id,
-                             int request_id,
-                             const IPC::Message& message);
+  void OnMessageToWorker(int thread_id,
+                         int embedded_worker_id,
+                         int request_id,
+                         const IPC::Message& message);
   void SendWorkerStarted();
 
   const int embedded_worker_id_;
   const int64 service_worker_version_id_;
+  const GURL service_worker_scope_;
   const GURL script_url_;
   scoped_refptr<ThreadSafeSender> sender_;
   scoped_refptr<base::MessageLoopProxy> main_thread_proxy_;

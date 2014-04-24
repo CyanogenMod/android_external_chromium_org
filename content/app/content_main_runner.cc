@@ -27,6 +27,8 @@
 #include "base/strings/stringprintf.h"
 #include "content/browser/browser_main.h"
 #include "content/browser/gpu/gpu_process_host.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
+#include "content/browser/utility_process_host_impl.h"
 #include "content/common/set_process_title.h"
 #include "content/common/url_schemes.h"
 #include "content/gpu/in_process_gpu_thread.h"
@@ -34,8 +36,6 @@
 #include "content/public/app/content_main_delegate.h"
 #include "content/public/app/startup_helper_win.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/render_process_host.h"
-#include "content/public/browser/utility_process_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_paths.h"
@@ -116,64 +116,6 @@ extern int RendererMain(const content::MainFunctionParams&);
 extern int UtilityMain(const MainFunctionParams&);
 extern int WorkerMain(const MainFunctionParams&);
 }  // namespace content
-
-namespace {
-#if defined(OS_WIN)
-// In order to have Theme support, we need to connect to the theme service.
-// This needs to be done before we lock down the process. Officially this
-// can be done with OpenThemeData() but it fails unless you pass a valid
-// window at least the first time. Interestingly, the very act of creating a
-// window also sets the connection to the theme service.
-void EnableThemeSupportOnAllWindowStations() {
-  HDESK desktop_handle = ::OpenInputDesktop(0, FALSE, READ_CONTROL);
-  if (desktop_handle) {
-    // This means we are running in an input desktop, which implies WinSta0.
-    ::CloseDesktop(desktop_handle);
-    return;
-  }
-
-  HWINSTA current_station = ::GetProcessWindowStation();
-  DCHECK(current_station);
-
-  HWINSTA winsta0 = ::OpenWindowStationA("WinSta0", FALSE, GENERIC_READ);
-  if (!winsta0) {
-    DVLOG(0) << "Unable to open to WinSta0, we: "<< ::GetLastError();
-    return;
-  }
-  if (!::SetProcessWindowStation(winsta0)) {
-    // Could not set the alternate window station. There is a possibility
-    // that the theme wont be correctly initialized.
-    NOTREACHED() << "Unable to switch to WinSta0, we: "<< ::GetLastError();
-    ::CloseWindowStation(winsta0);
-    return;
-  }
-
-  HWND window = ::CreateWindowExW(0, L"Static", L"", WS_POPUP | WS_DISABLED,
-                                  CW_USEDEFAULT, 0, 0, 0,  HWND_MESSAGE, NULL,
-                                  ::GetModuleHandleA(NULL), NULL);
-  if (!window) {
-    DLOG(WARNING) << "failed to enable theme support";
-  } else {
-    ::DestroyWindow(window);
-    window = NULL;
-  }
-
-  // Revert the window station.
-  if (!::SetProcessWindowStation(current_station)) {
-    // We failed to switch back to the secure window station. This might
-    // confuse the process enough that we should kill it now.
-    LOG(FATAL) << "Failed to restore alternate window station";
-  }
-
-  if (!::CloseWindowStation(winsta0)) {
-    // We might be leaking a winsta0 handle.  This is a security risk, but
-    // since we allow fail over to no desktop protection in low memory
-    // condition, this is not a big risk.
-    NOTREACHED();
-  }
-}
-#endif  // defined(OS_WIN)
-}  // namespace
 
 namespace content {
 
@@ -403,9 +345,9 @@ int RunZygote(const MainFunctionParams& main_function_params,
 #if !defined(OS_IOS)
 static void RegisterMainThreadFactories() {
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
-  UtilityProcessHost::RegisterUtilityMainThreadFactory(
+  UtilityProcessHostImpl::RegisterUtilityMainThreadFactory(
       CreateInProcessUtilityThread);
-  RenderProcessHost::RegisterRendererMainThreadFactory(
+  RenderProcessHostImpl::RegisterRendererMainThreadFactory(
       CreateInProcessRendererThread);
   GpuProcessHost::RegisterGpuMainThreadFactory(
       CreateInProcessGpuThread);
@@ -715,9 +657,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     if (command_line.HasSwitch(switches::kEnableHighResolutionTime))
       base::TimeTicks::SetNowIsHighResNowIfSupported();
 
-    // This must be done early enough since some helper functions like
-    // IsTouchEnabled, needed to load resources, may call into the theme dll.
-    EnableThemeSupportOnAllWindowStations();
     SetupCRT(command_line);
 #endif
 

@@ -61,7 +61,6 @@
         'pdf_metafile_skia.h',
         'print_destination_interface.h',
         'print_destination_none.cc',
-        'print_destination_win.cc',
         'print_dialog_gtk_interface.h',
         'print_job_constants.cc',
         'print_job_constants.h',
@@ -98,16 +97,6 @@
           'dependencies': [
             '<(DEPTH)/ui/aura/aura.gyp:aura',
           ],
-        }], 
-        ['toolkit_uses_gtk == 0',{
-            'sources/': [['exclude', '_cairo\\.cc$']]
-          }, {  # else: toolkit_uses_gtk == 1
-          'dependencies': [
-            # For FT_Init_FreeType and friends.
-            '../build/linux/system.gyp:freetype2',
-            '../build/linux/system.gyp:gtk',
-            '../build/linux/system.gyp:gtkprint',
-          ],
         }],
         # Mac-Aura does not support printing.
         ['OS=="mac" and use_aura==1',{
@@ -125,14 +114,8 @@
         }],
         ['OS=="win"', {
           'dependencies': [
-            '../win8/win8.gyp:win8_util',
+            '<(DEPTH)/ui/aura/aura.gyp:aura',
           ],
-          'conditions': [
-            ['use_aura==1', {
-              'dependencies': [
-                '<(DEPTH)/ui/aura/aura.gyp:aura',
-              ],
-          }]],
           'defines': [
             # PRINT_BACKEND_AVAILABLE disables the default dummy implementation
             # of the print backend and enables a custom implementation instead.
@@ -144,9 +127,6 @@
             'backend/print_backend_win.cc',
             'printing_context_win.cc',
             'printing_context_win.h',
-          ],
-          'sources!': [
-            'print_destination_none.cc',
           ],
         }],
         ['chromeos==1',{
@@ -255,7 +235,6 @@
         'units_unittest.cc',
       ],
       'conditions': [
-        ['toolkit_uses_gtk == 0', {'sources/': [['exclude', '_gtk_unittest\\.cc$']]}],
         ['OS!="mac"', {'sources/': [['exclude', '_mac_unittest\\.(cc|mm?)$']]}],
         ['OS!="win"', {'sources/': [['exclude', '_win_unittest\\.cc$']]}],
         ['use_cups==1', {
@@ -264,11 +243,6 @@
           ],
           'sources': [
             'backend/cups_helper_unittest.cc',
-          ],
-        }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
           ],
         }],
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {

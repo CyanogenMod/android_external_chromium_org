@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html i18n-values="dir:textdirection;">
 <head>
   <meta charset="utf-8">
@@ -19,6 +19,10 @@
                 <span>Running Status:</span>
                 <span jscontent="$this.running_status"></span>
             </div>
+            <div class="serviceworker-vid">
+                <span>Version ID:</span>
+                <span jscontent="$this.version_id"></span>
+            </div>
             <div class="serviceworker-pid">
                 <span>Renderer process ID:</span>
                 <span jscontent="$this.process_id"></span>
@@ -27,9 +31,15 @@
                 <span>Renderer thread ID:</span>
                 <span jscontent="$this.thread_id"></span>
             </div>
+            <div>
+                <div>Log:</div>
+                <textarea class="serviceworker-log"
+                  jsvalues=".partition_id:$partition_id;.version_id:$this.version_id"
+                  rows="10" cols="120" readonly jscontent="$this.log"></textarea>
+            </div>
         </div>
         <div id="serviceworker-list-template"
-             jsvalues="$partition_path:$this.partition_path;.partition_path:$this.partition_path">
+             jsvalues="$partition_id:$this.partition_id;$partition_path:$this.partition_path;.partition_path:$this.partition_path">
             <div class="serviceworker-summary">
                 <span>Instances in: </span>
                 <span jscontent="$this.partition_path"></span>
@@ -68,7 +78,7 @@
     </div>
     <h1>ServiceWorker registrations</h1>
     <div class="content">
-        <div id="serviceworker-list">
+        <div id="serviceworker-list"></div>
     </div>
     <script src="chrome://resources/js/util.js"></script>
     <script src="chrome://resources/js/cr.js"></script>

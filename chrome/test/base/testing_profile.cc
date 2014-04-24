@@ -494,7 +494,7 @@ void TestingProfile::DestroyTopSites() {
 
 static KeyedService* BuildBookmarkModel(content::BrowserContext* context) {
   Profile* profile = static_cast<Profile*>(context);
-  BookmarkModel* bookmark_model = new BookmarkModel(profile);
+  BookmarkModel* bookmark_model = new BookmarkModel(profile, false);
   bookmark_model->Load(profile->GetIOTaskRunner());
   return bookmark_model;
 }
@@ -551,6 +551,10 @@ void TestingProfile::BlockUntilTopSitesLoaded() {
       chrome::NOTIFICATION_TOP_SITES_LOADED,
       content::NotificationService::AllSources());
   top_sites_loaded_observer.Wait();
+}
+
+void TestingProfile::SetGuestSession(bool guest) {
+  guest_session_ = guest;
 }
 
 base::FilePath TestingProfile::GetPath() const {

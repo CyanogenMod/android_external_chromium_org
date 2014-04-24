@@ -6,6 +6,7 @@ package org.chromium.chromoting;
 
 import android.app.Activity;
 import android.content.res.Configuration;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.Menu;
@@ -19,7 +20,7 @@ import org.chromium.chromoting.jni.JniInterface;
 /**
  * A simple screen that does nothing except display a DesktopView and notify it of rotations.
  */
-public class Desktop extends Activity {
+public class Desktop extends Activity implements View.OnSystemUiVisibilityChangeListener {
     /** Web page to be displayed in the Help screen when launched from this activity. */
     private static final String HELP_URL =
             "http://support.google.com/chrome/?p=mobile_crd_connecthost";
@@ -41,6 +42,9 @@ public class Desktop extends Activity {
 
         // Ensure the button is initially hidden.
         showActionBar();
+
+        View decorView = getWindow().getDecorView();
+        decorView.setOnSystemUiVisibilityChangeListener(this);
     }
 
     /** Called when the activity is finally finished. */
@@ -64,14 +68,59 @@ public class Desktop extends Activity {
         return super.onCreateOptionsMenu(menu);
     }
 
+    /** Called whenever the visibility of the system status bar or navigation bar changes. */
+    @Override
+    public void onSystemUiVisibilityChange(int visibility) {
+        // Ensure the action-bar's visibility matches that of the system controls. This
+        // minimizes the number of states the UI can be in, to keep things simple for the user.
+
+        // Determine if the system is in fullscreen/lights-out mode. LOW_PROFILE is needed since
+        // it's the only flag supported in 4.0. But it is not sufficient in itself; when
+        // IMMERSIVE_STICKY mode is used, the system clears this flag (leaving the FULLSCREEN flag
+        // set) when the user swipes the edge to reveal the bars temporarily. When this happens,
+        // the action-bar should remain hidden.
+        int fullscreenFlags = View.SYSTEM_UI_FLAG_LOW_PROFILE;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            fullscreenFlags |= View.SYSTEM_UI_FLAG_FULLSCREEN;
+        }
+        if ((visibility & fullscreenFlags) != 0) {
+            hideActionBar();
+        } else {
+            showActionBar();
+        }
+    }
+
     public void showActionBar() {
         mOverlayButton.setVisibility(View.INVISIBLE);
         getActionBar().show();
+
+        View decorView = getWindow().getDecorView();
+        decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
     }
 
     public void hideActionBar() {
         mOverlayButton.setVisibility(View.VISIBLE);
         getActionBar().hide();
+
+        View decorView = getWindow().getDecorView();
+
+        // LOW_PROFILE gives the status and navigation bars a "lights-out" appearance.
+        // FULLSCREEN hides the status bar on supported devices (4.1 and above).
+        int flags = View.SYSTEM_UI_FLAG_LOW_PROFILE;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            flags |= View.SYSTEM_UI_FLAG_FULLSCREEN;
+        }
+
+        // HIDE_NAVIGATION hides the navigation bar. However, if the user touches the screen, the
+        // event is not seen by the application and instead the navigation bar is re-shown.
+        // IMMERSIVE(_STICKY) fixes this problem and allows the user to interact with the app while
+        // keeping the navigation controls hidden. This flag was introduced in 4.4, later than
+        // HIDE_NAVIGATION, and so a runtime check is needed before setting either of these flags.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            flags |= (View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        }
+
+        decorView.setSystemUiVisibility(flags);
     }
 
     /** The overlay button's onClick handler. */
@@ -82,42 +131,38 @@ public class Desktop extends Activity {
     /** Called whenever an action bar button is pressed. */
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.actionbar_keyboard:
-                ((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).toggleSoftInput(0, 0);
-                return true;
-
-            case R.id.actionbar_hide:
-                hideActionBar();
-                return true;
-
-            case R.id.actionbar_disconnect:
-                JniInterface.disconnectFromHost();
-                return true;
-
-            case R.id.actionbar_send_ctrl_alt_del:
-                {
-                    int[] keys = {
-                        KeyEvent.KEYCODE_CTRL_LEFT,
-                        KeyEvent.KEYCODE_ALT_LEFT,
-                        KeyEvent.KEYCODE_FORWARD_DEL,
-                    };
-                    for (int key : keys) {
-                        JniInterface.sendKeyEvent(key, true);
-                    }
-                    for (int key : keys) {
-                        JniInterface.sendKeyEvent(key, false);
-                    }
-                }
-                return true;
-
-            case R.id.actionbar_help:
-                HelpActivity.launch(this, HELP_URL);
-                return true;
-
-            default:
-                return super.onOptionsItemSelected(item);
+        int id = item.getItemId();
+        if (id == R.id.actionbar_keyboard) {
+            ((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).toggleSoftInput(0, 0);
+            return true;
         }
+        if (id == R.id.actionbar_hide) {
+            hideActionBar();
+            return true;
+        }
+        if (id == R.id.actionbar_disconnect) {
+            JniInterface.disconnectFromHost();
+            return true;
+        }
+        if (id == R.id.actionbar_send_ctrl_alt_del) {
+            int[] keys = {
+                KeyEvent.KEYCODE_CTRL_LEFT,
+                KeyEvent.KEYCODE_ALT_LEFT,
+                KeyEvent.KEYCODE_FORWARD_DEL,
+            };
+            for (int key : keys) {
+                JniInterface.sendKeyEvent(key, true);
+            }
+            for (int key : keys) {
+                JniInterface.sendKeyEvent(key, false);
+            }
+            return true;
+        }
+        if (id == R.id.actionbar_help) {
+            HelpActivity.launch(this, HELP_URL);
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
     }
 
     /**

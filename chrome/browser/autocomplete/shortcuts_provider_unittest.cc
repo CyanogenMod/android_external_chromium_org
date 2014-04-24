@@ -361,8 +361,7 @@ void ShortcutsProviderTest::RunTest(
   base::MessageLoop::current()->RunUntilIdle();
   AutocompleteInput input(text, base::string16::npos, base::string16(), GURL(),
                           AutocompleteInput::INVALID_SPEC,
-                          prevent_inline_autocomplete, false, true,
-                          AutocompleteInput::ALL_MATCHES);
+                          prevent_inline_autocomplete, false, true, true);
   provider_->Start(input, false);
   EXPECT_TRUE(provider_->done());
 
@@ -724,7 +723,8 @@ TEST_F(ShortcutsProviderTest, CalculateScore) {
       base::Time::Now(), 1);
 
   // Maximal score.
-  const int max_relevance = AutocompleteResult::kLowestDefaultScore - 1;
+  const int max_relevance =
+      ShortcutsProvider::kShortcutsProviderDefaultMaxRelevance;
   const int kMaxScore = CalculateScore("test", shortcut, max_relevance);
 
   // Score decreases as percent of the match is decreased.

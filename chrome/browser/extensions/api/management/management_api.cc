@@ -648,12 +648,10 @@ bool ManagementUninstallSelfFunction::RunImpl() {
 
 ManagementEventRouter::ManagementEventRouter(Profile* profile)
     : profile_(profile) {
-  int types[] = {
-    chrome::NOTIFICATION_EXTENSION_INSTALLED,
-    chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
-    chrome::NOTIFICATION_EXTENSION_LOADED,
-    chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED
-  };
+  int types[] = {chrome::NOTIFICATION_EXTENSION_INSTALLED,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+                 chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED};
 
   CHECK(registrar_.IsEmpty());
   for (size_t i = 0; i < arraysize(types); i++) {
@@ -685,7 +683,7 @@ void ManagementEventRouter::Observe(
       event_name = management::OnUninstalled::kEventName;
       extension = content::Details<const Extension>(details).ptr();
       break;
-    case chrome::NOTIFICATION_EXTENSION_LOADED:
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
       event_name = management::OnEnabled::kEventName;
       extension = content::Details<const Extension>(details).ptr();
       break;
@@ -714,13 +712,12 @@ void ManagementEventRouter::Observe(
   }
 
   scoped_ptr<Event> event(new Event(event_name, args.Pass()));
-  ExtensionSystem::Get(profile)->event_router()->BroadcastEvent(event.Pass());
+  EventRouter::Get(profile)->BroadcastEvent(event.Pass());
 }
 
 ManagementAPI::ManagementAPI(content::BrowserContext* context)
     : browser_context_(context) {
-  EventRouter* event_router =
-      ExtensionSystem::Get(browser_context_)->event_router();
+  EventRouter* event_router = EventRouter::Get(browser_context_);
   event_router->RegisterObserver(this, management::OnInstalled::kEventName);
   event_router->RegisterObserver(this, management::OnUninstalled::kEventName);
   event_router->RegisterObserver(this, management::OnEnabled::kEventName);
@@ -731,8 +728,7 @@ ManagementAPI::~ManagementAPI() {
 }
 
 void ManagementAPI::Shutdown() {
-  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
-      this);
+  EventRouter::Get(browser_context_)->UnregisterObserver(this);
 }
 
 static base::LazyInstance<BrowserContextKeyedAPIFactory<ManagementAPI> >
@@ -747,8 +743,7 @@ ManagementAPI::GetFactoryInstance() {
 void ManagementAPI::OnListenerAdded(const EventListenerInfo& details) {
   management_event_router_.reset(
       new ManagementEventRouter(Profile::FromBrowserContext(browser_context_)));
-  ExtensionSystem::Get(browser_context_)->event_router()->UnregisterObserver(
-      this);
+  EventRouter::Get(browser_context_)->UnregisterObserver(this);
 }
 
 }  // namespace extensions

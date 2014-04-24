@@ -40,6 +40,7 @@
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_error_ui.h"
+#include "chrome/browser/extensions/extension_garbage_collector_factory.h"
 #include "chrome/browser/extensions/extension_notification_observer.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
@@ -493,6 +494,10 @@ void ExtensionServiceTestBase::InitializeExtensionService(
   extensions_install_dir_ = params.extensions_install_dir;
   expected_extensions_count_ = 0;
   registry_ = extensions::ExtensionRegistry::Get(profile_.get());
+  extensions::ExtensionGarbageCollectorFactory::GetInstance()
+      ->SetTestingFactoryAndUse(
+          profile_.get(),
+          &extensions::ExtensionGarbageCollectorFactory::BuildInstanceFor);
 }
 
 // static
@@ -665,7 +670,8 @@ class ExtensionServiceTest
         was_update_(false),
         override_external_install_prompt_(
             FeatureSwitch::prompt_for_external_extensions(), false) {
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+    registrar_.Add(this,
+                   chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                    content::NotificationService::AllSources());
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                    content::NotificationService::AllSources());
@@ -677,7 +683,7 @@ class ExtensionServiceTest
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE {
     switch (type) {
-      case chrome::NOTIFICATION_EXTENSION_LOADED: {
+      case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
         const Extension* extension =
             content::Details<const Extension>(details).ptr();
         loaded_.push_back(make_scoped_refptr(extension));
@@ -975,7 +981,7 @@ class ExtensionServiceTest
     content::WindowedNotificationObserver observer(
         chrome::NOTIFICATION_CRX_INSTALLER_DONE,
         base::Bind(&IsCrxInstallerDone, &installer));
-    service_->UpdateExtension(id, path, true, GURL(), &installer);
+    service_->UpdateExtension(id, path, true, &installer);
 
     if (installer)
       observer.Wait();
@@ -2783,7 +2789,7 @@ TEST_F(ExtensionServiceTest, UpdateExtensionDuringShutdown) {
 
   // Update should fail and extension should not be updated.
   path = data_dir_.AppendASCII("good2.crx");
-  bool updated = service_->UpdateExtension(good_crx, path, true, GURL(), NULL);
+  bool updated = service_->UpdateExtension(good_crx, path, true, NULL);
   ASSERT_FALSE(updated);
   ASSERT_EQ("1.0.0.0",
             service_->GetExtensionById(good_crx, false)->

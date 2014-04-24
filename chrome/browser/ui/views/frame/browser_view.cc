@@ -25,6 +25,7 @@
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
 #include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
@@ -95,9 +96,9 @@
 #include "chrome/browser/ui/window_sizer/window_sizer.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/profile_management_switches.h"
 #include "chrome/common/url_constants.h"
 #include "components/password_manager/core/browser/password_manager.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
@@ -155,7 +156,6 @@
 #include "base/win/windows_version.h"
 #include "chrome/browser/jumplist_win.h"
 #include "ui/views/win/scoped_fullscreen_visibility.h"
-#include "win8/util/win8_util.h"
 #endif
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
@@ -244,20 +244,6 @@ void PaintAttachedBookmarkBar(gfx::Canvas* canvas,
 
 // static
 const char BrowserView::kViewClassName[] = "BrowserView";
-
-namespace {
-
-bool ShouldSaveOrRestoreWindowPos() {
-#if defined(OS_WIN)
-  // In Windows 8's single window Metro mode the window is always maximized
-  // (without the WS_MAXIMIZE style).
-  if (win8::IsSingleWindowMetroMode())
-    return false;
-#endif
-  return true;
-}
-
-}  // namespace
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -571,21 +557,9 @@ bool BrowserView::IsRegularOrGuestSession() const {
 }
 
 int BrowserView::GetOTRIconResourceID() const {
-  int otr_resource_id = IDR_OTR_ICON;
-  if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH) {
-    if (IsFullscreen())
-      otr_resource_id = IDR_OTR_ICON_FULLSCREEN;
-#if defined(OS_WIN)
-    if (win8::IsSingleWindowMetroMode())
-      otr_resource_id = IDR_OTR_ICON_FULLSCREEN;
-#endif
-  }
-
-  return otr_resource_id;
-}
-
-int BrowserView::GetGuestIconResourceID() const {
-  return IDR_LOGIN_GUEST;
+  if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH && IsFullscreen())
+    return IDR_OTR_ICON_FULLSCREEN;
+  return IDR_OTR_ICON;
 }
 
 bool BrowserView::ShouldShowAvatar() const {
@@ -1428,12 +1402,7 @@ void BrowserView::Paste() {
 
 WindowOpenDisposition BrowserView::GetDispositionForPopupBounds(
     const gfx::Rect& bounds) {
-#if defined(OS_WIN)
-  // If we are in Win8's single window Metro mode, we can't allow popup windows.
-  return win8::IsSingleWindowMetroMode() ? NEW_BACKGROUND_TAB : NEW_POPUP;
-#else
   return NEW_POPUP;
-#endif
 }
 
 FindBar* BrowserView::CreateFindBar() {
@@ -1632,17 +1601,6 @@ bool BrowserView::ExecuteWindowsCommand(int command_id) {
 #if defined(OS_WIN)
   if (command_id == IDC_DEBUG_FRAME_TOGGLE)
     GetWidget()->DebugToggleFrameType();
-
-  // In Windows 8 metro mode prevent sizing and moving.
-  if (win8::IsSingleWindowMetroMode()) {
-    // Windows uses the 4 lower order bits of |notification_code| for type-
-    // specific information so we must exclude this when comparing.
-    static const int sc_mask = 0xFFF0;
-    if (((command_id & sc_mask) == SC_MOVE) ||
-        ((command_id & sc_mask) == SC_SIZE) ||
-        ((command_id & sc_mask) == SC_MAXIMIZE))
-      return true;
-  }
 #endif
   // Translate WM_APPCOMMAND command ids into a command id that the browser
   // knows how to handle.
@@ -1662,9 +1620,6 @@ void BrowserView::SaveWindowPlacement(const gfx::Rect& bounds,
   // If IsFullscreen() is true, we've just changed into fullscreen mode, and
   // we're catching the going-into-fullscreen sizing and positioning calls,
   // which we want to ignore.
-  if (!ShouldSaveOrRestoreWindowPos())
-    return;
-
   if (!IsFullscreen() && chrome::ShouldSaveWindowPlacement(browser_.get())) {
     WidgetDelegate::SaveWindowPlacement(bounds, show_state);
     chrome::SaveWindowPlacement(browser_.get(), bounds, show_state);
@@ -1675,8 +1630,6 @@ bool BrowserView::GetSavedWindowPlacement(
     const views::Widget* widget,
     gfx::Rect* bounds,
     ui::WindowShowState* show_state) const {
-  if (!ShouldSaveOrRestoreWindowPos())
-    return false;
   chrome::GetSavedWindowBoundsAndShowState(browser_.get(), bounds, show_state);
 
   if (browser_->is_type_popup() &&
@@ -2493,7 +2446,6 @@ void BrowserView::ShowPasswordGenerationBubble(
       web_contents->GetRenderViewHost(),
       ChromePasswordManagerClient::GetManagerFromWebContents(web_contents),
       password_generator,
-      browser_.get(),
       GetWidget()->GetThemeProvider());
 
   views::BubbleDelegateView::CreateBubble(bubble);

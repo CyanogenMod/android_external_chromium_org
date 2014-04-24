@@ -37,15 +37,11 @@
 
 namespace device {
 
-BluetoothDeviceMac::BluetoothDeviceMac(
-    const scoped_refptr<base::SequencedTaskRunner>& ui_task_runner,
-    IOBluetoothDevice* device)
-    : BluetoothDevice(),
-      ui_task_runner_(ui_task_runner),
-      device_([device retain]) {}
+BluetoothDeviceMac::BluetoothDeviceMac(IOBluetoothDevice* device)
+    : device_([device retain]) {
+}
 
 BluetoothDeviceMac::~BluetoothDeviceMac() {
-  [device_ release];
 }
 
 void BluetoothDeviceMac::AddObserver(
@@ -72,8 +68,7 @@ std::string BluetoothDeviceMac::GetAddress() const {
   return base::SysNSStringToUTF8([device_ addressString]);
 }
 
-BluetoothDevice::VendorIDSource
-BluetoothDeviceMac::GetVendorIDSource() const {
+BluetoothDevice::VendorIDSource BluetoothDeviceMac::GetVendorIDSource() const {
   return VENDOR_ID_UNKNOWN;
 }
 
@@ -158,9 +153,8 @@ void BluetoothDeviceMac::CancelPairing() {
   NOTIMPLEMENTED();
 }
 
-void BluetoothDeviceMac::Disconnect(
-    const base::Closure& callback,
-    const ErrorCallback& error_callback) {
+void BluetoothDeviceMac::Disconnect(const base::Closure& callback,
+                                    const ErrorCallback& error_callback) {
   NOTIMPLEMENTED();
 }
 
@@ -172,9 +166,8 @@ void BluetoothDeviceMac::ConnectToProfile(
     BluetoothProfile* profile,
     const base::Closure& callback,
     const ConnectToProfileErrorCallback& error_callback) {
-  DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
   static_cast<BluetoothProfileMac*>(profile)
-      ->Connect(ui_task_runner_, device_, callback, error_callback);
+      ->Connect(device_, callback, error_callback);
 }
 
 void BluetoothDeviceMac::SetOutOfBandPairingData(

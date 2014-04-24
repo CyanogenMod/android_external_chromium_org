@@ -8,23 +8,14 @@
 #include <iterator>
 #include <set>
 
-#include "base/basictypes.h"
-#include "base/bind.h"
-#include "base/callback.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
-#include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/prefs/pref_service.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
-#include "base/version.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
@@ -34,7 +25,6 @@
 #include "chrome/browser/extensions/extension_disabled_ui.h"
 #include "chrome/browser/extensions/extension_error_controller.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
-#include "chrome/browser/extensions/extension_garbage_collector.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/extensions/extension_sync_service.h"
@@ -62,46 +52,23 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
-#include "content/public/browser/browser_thread.h"
-#include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
-#include "content/public/browser/url_data_source.h"
-#include "extensions/browser/app_sorting.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/browser/extensions_browser_client.h"
-#include "extensions/browser/external_provider_interface.h"
-#include "extensions/browser/management_policy.h"
 #include "extensions/browser/pref_names.h"
-#include "extensions/browser/process_manager.h"
-#include "extensions/browser/process_map.h"
 #include "extensions/browser/runtime_data.h"
 #include "extensions/browser/update_observer.h"
-#include "extensions/common/constants.h"
-#include "extensions/common/error_utils.h"
-#include "extensions/common/extension.h"
 #include "extensions/common/extension_messages.h"
-#include "extensions/common/extensions_client.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/file_util.h"
-#include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/background_info.h"
-#include "extensions/common/manifest_handlers/incognito_info.h"
-#include "extensions/common/manifest_handlers/shared_module_info.h"
 #include "extensions/common/permissions/permission_message_provider.h"
 #include "extensions/common/permissions/permissions_data.h"
-#include "grit/generated_resources.h"
-#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
-#include "ui/base/webui/web_ui_util.h"
-#include "url/gurl.h"
-#include "webkit/browser/database/database_tracker.h"
-#include "webkit/browser/database/database_util.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/extensions/install_limiter.h"
@@ -319,7 +286,6 @@ ExtensionService::ExtensionService(Profile* profile,
       browser_terminating_(false),
       installs_delayed_for_gc_(false),
       is_first_run_(false),
-      garbage_collector_(new extensions::ExtensionGarbageCollector(this)),
       shared_module_service_(new extensions::SharedModuleService(profile_)) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -537,7 +503,6 @@ void ExtensionService::LoadGreylistFromPrefs() {
 bool ExtensionService::UpdateExtension(const std::string& id,
                                        const base::FilePath& extension_path,
                                        bool file_ownership_passed,
-                                       const GURL& download_url,
                                        CrxInstaller** out_crx_installer) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (browser_terminating_) {
@@ -617,7 +582,6 @@ bool ExtensionService::UpdateExtension(const std::string& id,
   installer->set_creation_flags(creation_flags);
 
   installer->set_delete_source(file_ownership_passed);
-  installer->set_download_url(download_url);
   installer->set_install_cause(extension_misc::INSTALL_CAUSE_UPDATE);
   installer->InstallCrx(extension_path);
 
@@ -1020,12 +984,13 @@ void ExtensionService::NotifyExtensionLoaded(const Extension* extension) {
   //
   // NOTE: It is important that this happen after notifying the renderers about
   // the new extensions so that if we navigate to an extension URL in
-  // ExtensionRegistryObserver::OnLoaded or NOTIFICATION_EXTENSION_LOADED, the
+  // ExtensionRegistryObserver::OnLoaded or
+  // NOTIFICATION_EXTENSION_LOADED_DEPRECATED, the
   // renderer is guaranteed to know about it.
   registry_->TriggerOnLoaded(extension);
 
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_EXTENSION_LOADED,
+      chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
       content::Source<Profile>(profile_),
       content::Details<const Extension>(extension));
 
@@ -1069,9 +1034,10 @@ void ExtensionService::NotifyExtensionLoaded(const Extension* extension) {
 void ExtensionService::NotifyExtensionUnloaded(
     const Extension* extension,
     UnloadedExtensionInfo::Reason reason) {
-  registry_->TriggerOnUnloaded(extension);
-
   UnloadedExtensionInfo details(extension, reason);
+
+  registry_->TriggerOnUnloaded(extension, reason);
+
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
       content::Source<Profile>(profile_),
@@ -2000,6 +1966,11 @@ void ExtensionService::TrackTerminatedExtension(const Extension* extension) {
   registry_->AddTerminated(make_scoped_refptr(extension));
   extensions_being_terminated_.erase(extension->id());
   UnloadExtension(extension->id(), UnloadedExtensionInfo::REASON_TERMINATE);
+}
+
+void ExtensionService::TerminateExtension(const std::string& extension_id) {
+  const Extension* extension = GetInstalledExtension(extension_id);
+  TrackTerminatedExtension(extension);
 }
 
 void ExtensionService::UntrackTerminatedExtension(const std::string& id) {

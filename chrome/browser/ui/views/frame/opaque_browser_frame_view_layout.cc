@@ -9,14 +9,10 @@
 #include "chrome/browser/ui/views/profiles/avatar_label.h"
 #include "chrome/browser/ui/views/profiles/avatar_menu_button.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/profile_management_switches.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "ui/gfx/font.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/label.h"
-
-#if defined(OS_WIN)
-#include "win8/util/win8_util.h"
-#endif  // OS_WIN
 
 namespace {
 
@@ -127,15 +123,6 @@ OpaqueBrowserFrameViewLayout::OpaqueBrowserFrameViewLayout(
 }
 
 OpaqueBrowserFrameViewLayout::~OpaqueBrowserFrameViewLayout() {}
-
-// static
-bool OpaqueBrowserFrameViewLayout::ShouldAddDefaultCaptionButtons() {
-#if defined(OS_WIN)
-  return !win8::IsSingleWindowMetroMode();
-#else
-  return true;
-#endif
-}
 
 void OpaqueBrowserFrameViewLayout::SetButtonOrdering(
     const std::vector<views::FrameButton>& leading_buttons,
@@ -292,9 +279,6 @@ int OpaqueBrowserFrameViewLayout::NewTabCaptionSpacing() const {
 }
 
 void OpaqueBrowserFrameViewLayout::LayoutWindowControls(views::View* host) {
-  if (!ShouldAddDefaultCaptionButtons())
-    return;
-
   int caption_y = CaptionButtonY(false);
 
   // Keep a list of all buttons that we don't show.

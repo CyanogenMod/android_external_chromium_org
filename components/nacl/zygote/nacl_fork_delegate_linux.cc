@@ -15,7 +15,9 @@
 #include "base/command_line.h"
 #include "base/cpu.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
@@ -29,6 +31,7 @@
 #include "components/nacl/loader/nacl_helper_linux.h"
 #include "content/public/common/content_descriptors.h"
 #include "content/public/common/content_switches.h"
+#include "sandbox/linux/suid/client/setuid_sandbox_client.h"
 
 namespace {
 
@@ -108,9 +111,13 @@ NaClForkDelegate::NaClForkDelegate()
     : status_(kNaClHelperUnused),
       fd_(-1) {}
 
-void NaClForkDelegate::Init(const int sandboxdesc) {
+void NaClForkDelegate::Init(const int sandboxdesc,
+                            const bool enable_layer1_sandbox) {
   VLOG(1) << "NaClForkDelegate::Init()";
   int fds[2];
+
+  scoped_ptr<sandbox::SetuidSandboxClient> setuid_sandbox_client(
+      sandbox::SetuidSandboxClient::Create());
 
   // For communications between the NaCl loader process and
   // the SUID sandbox.
@@ -123,6 +130,14 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
   base::FileHandleMappingVector fds_to_map;
   fds_to_map.push_back(std::make_pair(fds[1], kNaClZygoteDescriptor));
   fds_to_map.push_back(std::make_pair(sandboxdesc, nacl_sandbox_descriptor));
+
+  // Make sure that nacl_loader is started with a dummy file descriptor. This
+  // is required because the setuid sandbox will always try to close a
+  // hard-wired file descriptor.
+  base::ScopedFD dummy_fd(socket(PF_UNIX, SOCK_DGRAM, 0));
+  CHECK(dummy_fd.is_valid());
+  fds_to_map.push_back(std::make_pair(
+      dummy_fd.get(), setuid_sandbox_client->GetUniqueToChildFileDescriptor()));
 
   // Using nacl_helper_bootstrap is not necessary on x86-64 because
   // NaCl's x86-64 sandbox is not zero-address-based.  Starting
@@ -189,9 +204,19 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
                             bootstrap_prepend.begin(),
                             bootstrap_prepend.end());
     }
+
     base::LaunchOptions options;
+    if (enable_layer1_sandbox) {
+      // NaCl needs to keep tight control of the cmd_line, so
+      // pass NULL and prepend the setuid sandbox wrapper manually.
+      setuid_sandbox_client->PrependWrapper(NULL /* cmd_line */, &options);
+      base::FilePath sandbox_path =
+          setuid_sandbox_client->GetSandboxBinaryPath();
+      argv_to_launch.insert(argv_to_launch.begin(), sandbox_path.value());
+      setuid_sandbox_client->SetupLaunchEnvironment();
+    }
+
     options.fds_to_remap = &fds_to_map;
-    options.clone_flags = CLONE_FS | SIGCHLD;
 
     // The NaCl processes spawned may need to exceed the ambient soft limit
     // on RLIMIT_AS to allocate the untrusted address space and its guard
@@ -263,7 +288,8 @@ bool NaClForkDelegate::CanHelp(const std::string& process_type,
 }
 
 pid_t NaClForkDelegate::Fork(const std::string& process_type,
-                             const std::vector<int>& fds) {
+                             const std::vector<int>& fds,
+                             const std::string& channel_id) {
   VLOG(1) << "NaClForkDelegate::Fork";
 
   DCHECK(fds.size() == kNumPassedFDs);
@@ -281,6 +307,7 @@ pid_t NaClForkDelegate::Fork(const std::string& process_type,
   const bool uses_nonsfi_mode =
     process_type == switches::kNaClLoaderNonSfiProcess;
   write_pickle.WriteBool(uses_nonsfi_mode);
+  write_pickle.WriteString(channel_id);
 
   char reply_buf[kNaClMaxIPCMessageLength];
   ssize_t reply_size = 0;
@@ -302,16 +329,6 @@ pid_t NaClForkDelegate::Fork(const std::string& process_type,
   }
   VLOG(1) << "nacl_child is " << nacl_child;
   return nacl_child;
-}
-
-bool NaClForkDelegate::AckChild(const int fd,
-                                const std::string& channel_switch) {
-  int nwritten = HANDLE_EINTR(write(fd, channel_switch.c_str(),
-                                    channel_switch.length()));
-  if (nwritten != static_cast<int>(channel_switch.length())) {
-    return false;
-  }
-  return true;
 }
 
 bool NaClForkDelegate::GetTerminationStatus(pid_t pid, bool known_dead,

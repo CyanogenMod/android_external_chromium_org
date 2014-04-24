@@ -51,7 +51,7 @@ class Rect;
 namespace ui {
 class DisplayConfigurator;
 class Layer;
-class UserActivityNotifier;
+class UserActivityPowerManagerNotifier;
 }
 namespace views {
 class NonClientFrameView;
@@ -306,6 +306,9 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
 
   // Initializes |shelf_|.  Does nothing if it's already initialized.
   void CreateShelf();
+
+  // Called when the shelf is created for |root_window|.
+  void OnShelfCreatedForRootWindow(aura::Window* root_window);
 
   // Creates a virtual keyboard. Deletes the old virtual keyboard if it already
   // exists.
@@ -689,7 +692,7 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
 
 #if defined(OS_CHROMEOS)
   scoped_ptr<PowerEventObserver> power_event_observer_;
-  scoped_ptr<ui::UserActivityNotifier> user_activity_notifier_;
+  scoped_ptr<ui::UserActivityPowerManagerNotifier> user_activity_notifier_;
   scoped_ptr<VideoActivityNotifier> video_activity_notifier_;
   scoped_ptr<StickyKeysController> sticky_keys_controller_;
   scoped_ptr<ResolutionNotificationController>

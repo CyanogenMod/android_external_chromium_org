@@ -13,7 +13,7 @@
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/profile_management_switches.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/notification_details.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/image/image.h"
@@ -27,7 +27,7 @@ const int kUpdateIntervalHours = 24;
 // before starting an update. This avoids slowdown during startup.
 const int kMinUpdateIntervalSeconds = 5;
 
-} // namespace
+}  // namespace
 
 GAIAInfoUpdateService::GAIAInfoUpdateService(Profile* profile)
     : profile_(profile) {

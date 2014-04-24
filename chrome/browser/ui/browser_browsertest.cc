@@ -17,6 +17,7 @@
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/defaults.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -25,6 +26,7 @@
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/sessions/session_backend.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
@@ -466,6 +468,50 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_ThirtyFourTabs) {
     EXPECT_GE(CountRenderProcessHosts(), kExpectedProcessCount);
   } else {
     EXPECT_LT(CountRenderProcessHosts(), kExpectedProcessCount);
+  }
+}
+
+// Test that a browser-initiated navigation to an aborted URL load leaves around
+// a pending entry if we start from the NTP but not from a normal page.
+// See http://crbug.com/355537.
+IN_PROC_BROWSER_TEST_F(BrowserTest, ClearPendingOnFailUnlessNTP) {
+  ASSERT_TRUE(test_server()->Start());
+  WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  GURL ntp_url(chrome::GetNewTabPageURL(browser()->profile()));
+  ui_test_utils::NavigateToURL(browser(), ntp_url);
+
+  // Navigate to a 204 URL (aborts with no content) on the NTP and make sure it
+  // sticks around so that the user can edit it.
+  GURL abort_url(test_server()->GetURL("nocontent"));
+  {
+    content::WindowedNotificationObserver stop_observer(
+        content::NOTIFICATION_LOAD_STOP,
+        content::Source<NavigationController>(
+            &web_contents->GetController()));
+    browser()->OpenURL(OpenURLParams(abort_url, Referrer(), CURRENT_TAB,
+                                     content::PAGE_TRANSITION_TYPED, false));
+    stop_observer.Wait();
+    EXPECT_TRUE(web_contents->GetController().GetPendingEntry());
+    EXPECT_EQ(abort_url, web_contents->GetVisibleURL());
+  }
+
+  // Navigate to a real URL.
+  GURL real_url(test_server()->GetURL("title1.html"));
+  ui_test_utils::NavigateToURL(browser(), real_url);
+  EXPECT_EQ(real_url, web_contents->GetVisibleURL());
+
+  // Now navigating to a 204 URL should clear the pending entry.
+  {
+    content::WindowedNotificationObserver stop_observer(
+        content::NOTIFICATION_LOAD_STOP,
+        content::Source<NavigationController>(
+            &web_contents->GetController()));
+    browser()->OpenURL(OpenURLParams(abort_url, Referrer(), CURRENT_TAB,
+                                     content::PAGE_TRANSITION_TYPED, false));
+    stop_observer.Wait();
+    EXPECT_FALSE(web_contents->GetController().GetPendingEntry());
+    EXPECT_EQ(real_url, web_contents->GetVisibleURL());
   }
 }
 
@@ -1278,6 +1324,55 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, AppIdSwitch) {
       new_browser->app_name_.find(extension_app->id()),
       std::string::npos) << new_browser->app_name_;
 }
+
+// Open an app window and the dev tools window and ensure that the location
+// bar settings are correct.
+IN_PROC_BROWSER_TEST_F(BrowserTest, ShouldShowLocationBar) {
+  ASSERT_TRUE(test_server()->Start());
+
+  // Load an app.
+  host_resolver()->AddRule("www.example.com", "127.0.0.1");
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("app/")));
+  const Extension* extension_app = GetExtension();
+
+  // Launch it in a window, as AppLauncherHandler::HandleLaunchApp() would.
+  WebContents* app_window =
+      OpenApplication(AppLaunchParams(browser()->profile(),
+                                      extension_app,
+                                      extensions::LAUNCH_CONTAINER_WINDOW,
+                                      NEW_WINDOW));
+  ASSERT_TRUE(app_window);
+
+  DevToolsWindow::OpenDevToolsWindowForTest(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost(),
+      false);
+
+  // The launch should have created a new app browser and a dev tools browser.
+  ASSERT_EQ(3u,
+            chrome::GetBrowserCount(browser()->profile(),
+                                    browser()->host_desktop_type()));
+
+  // Find the new browsers.
+  Browser* app_browser = NULL;
+  Browser* dev_tools_browser = NULL;
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    if (*it == browser()) {
+      continue;
+    } else if ((*it)->app_name() == DevToolsWindow::kDevToolsApp) {
+      dev_tools_browser = *it;
+    } else {
+      app_browser = *it;
+    }
+  }
+  ASSERT_TRUE(dev_tools_browser);
+  ASSERT_TRUE(app_browser);
+  ASSERT_TRUE(app_browser != browser());
+
+  EXPECT_FALSE(
+      dev_tools_browser->SupportsWindowFeature(Browser::FEATURE_LOCATIONBAR));
+  EXPECT_FALSE(
+      app_browser->SupportsWindowFeature(Browser::FEATURE_LOCATIONBAR));
+}
 #endif
 
 // Tests that the CLD (Compact Language Detection) works properly.
@@ -2039,30 +2134,6 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, FullscreenBookmarkBar) {
 #endif
 }
 #endif
-
-class ShowModalDialogTest : public BrowserTest {
- public:
-  ShowModalDialogTest() {}
-
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    command_line->AppendSwitch(switches::kDisablePopupBlocking);
-  }
-};
-
-IN_PROC_BROWSER_TEST_F(ShowModalDialogTest, BasicTest) {
-  // This navigation should show a modal dialog that will be immediately
-  // closed, but the fact that it was shown should be recorded.
-  GURL url = ui_test_utils::GetTestUrl(
-      base::FilePath(), base::FilePath().AppendASCII("showmodaldialog.html"));
-
-  base::string16 expected_title(ASCIIToUTF16("SUCCESS"));
-  content::TitleWatcher title_watcher(
-      browser()->tab_strip_model()->GetActiveWebContents(), expected_title);
-  ui_test_utils::NavigateToURL(browser(), url);
-
-  // Verify that we set a mark on successful dialog show.
-  ASSERT_EQ(expected_title, title_watcher.WaitAndGetTitle());
-}
 
 IN_PROC_BROWSER_TEST_F(BrowserTest, DisallowFileUrlUniversalAccessTest) {
   GURL url = ui_test_utils::GetTestUrl(

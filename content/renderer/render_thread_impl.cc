@@ -1260,6 +1260,7 @@ void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
   EnsureWebKitInitialized();
   // When bringing in render_view, also bring in webkit's glue and jsbindings.
   RenderViewImpl::Create(params.opener_route_id,
+                         params.window_was_created_with_opener,
                          params.renderer_preferences,
                          params.web_preferences,
                          params.view_id,
@@ -1270,6 +1271,7 @@ void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
                          false,
                          params.swapped_out,
                          params.hidden,
+                         params.never_visible,
                          params.next_page_id,
                          params.screen_info,
                          params.accessibility_mode);

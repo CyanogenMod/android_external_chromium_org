@@ -10,12 +10,12 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/i18n/string_compare.h"
+#include "base/prefs/pref_service.h"
 #include "base/sequenced_task_runner.h"
 #include "chrome/browser/bookmarks/bookmark_expanded_state_tracker.h"
 #include "chrome/browser/bookmarks/bookmark_index.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
 #include "chrome/browser/bookmarks/bookmark_storage.h"
-#include "chrome/browser/bookmarks/bookmark_title_match.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/favicon/favicon_changed_details.h"
@@ -24,10 +24,12 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/favicon/favicon_types.h"
+#include "chrome/common/pref_names.h"
+#include "components/bookmarks/core/browser/bookmark_match.h"
+#include "components/favicon_base/favicon_types.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
-#include "grit/generated_resources.h"
+#include "grit/component_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image_util.h"
@@ -70,7 +72,8 @@ class SortComparator : public std::binary_function<const BookmarkNode*,
 
 // BookmarkModel --------------------------------------------------------------
 
-BookmarkModel::BookmarkModel(Profile* profile)
+BookmarkModel::BookmarkModel(Profile* profile,
+                             bool index_urls)
     : profile_(profile),
       loaded_(false),
       root_(GURL()),
@@ -79,6 +82,7 @@ BookmarkModel::BookmarkModel(Profile* profile)
       mobile_node_(NULL),
       next_node_id_(1),
       observers_(ObserverList<BookmarkModelObserver>::NOTIFY_EXISTING_ONLY),
+      index_urls_(index_urls),
       loaded_signal_(true, false),
       extensive_changes_(0) {
   if (!profile_) {
@@ -493,14 +497,16 @@ void BookmarkModel::BlockTillLoaded() {
   loaded_signal_.Wait();
 }
 
-const BookmarkNode* BookmarkModel::GetNodeByID(int64 id) const {
-  // TODO(sky): TreeNode needs a method that visits all nodes using a predicate.
-  return GetNodeByID(&root_, id);
-}
-
 const BookmarkNode* BookmarkModel::AddFolder(const BookmarkNode* parent,
                                              int index,
                                              const base::string16& title) {
+  return AddFolderWithMetaInfo(parent, index, title, NULL);
+}
+const BookmarkNode* BookmarkModel::AddFolderWithMetaInfo(
+    const BookmarkNode* parent,
+    int index,
+    const base::string16& title,
+    const BookmarkNode::MetaInfoMap* meta_info) {
   if (!loaded_ || is_root_node(parent) || !IsValidIndex(parent, index, true)) {
     // Can't add to the root.
     NOTREACHED();
@@ -512,6 +518,8 @@ const BookmarkNode* BookmarkModel::AddFolder(const BookmarkNode* parent,
   // Folders shouldn't have line breaks in their titles.
   new_node->SetTitle(title);
   new_node->set_type(BookmarkNode::FOLDER);
+  if (meta_info)
+    new_node->SetMetaInfoMap(*meta_info);
 
   return AddNode(AsMutable(parent), index, new_node);
 }
@@ -520,17 +528,22 @@ const BookmarkNode* BookmarkModel::AddURL(const BookmarkNode* parent,
                                           int index,
                                           const base::string16& title,
                                           const GURL& url) {
-  return AddURLWithCreationTime(parent, index,
-                                base::CollapseWhitespace(title, false),
-                                url, Time::Now());
+  return AddURLWithCreationTimeAndMetaInfo(
+      parent,
+      index,
+      base::CollapseWhitespace(title, false),
+      url,
+      Time::Now(),
+      NULL);
 }
 
-const BookmarkNode* BookmarkModel::AddURLWithCreationTime(
+const BookmarkNode* BookmarkModel::AddURLWithCreationTimeAndMetaInfo(
     const BookmarkNode* parent,
     int index,
     const base::string16& title,
     const GURL& url,
-    const Time& creation_time) {
+    const Time& creation_time,
+    const BookmarkNode::MetaInfoMap* meta_info) {
   if (!loaded_ || !url.is_valid() || is_root_node(parent) ||
       !IsValidIndex(parent, index, true)) {
     NOTREACHED();
@@ -545,6 +558,8 @@ const BookmarkNode* BookmarkModel::AddURLWithCreationTime(
   new_node->SetTitle(title);
   new_node->set_date_added(creation_time);
   new_node->set_type(BookmarkNode::URL);
+  if (meta_info)
+    new_node->SetMetaInfoMap(*meta_info);
 
   {
     // Only hold the lock for the duration of the insert.
@@ -614,14 +629,14 @@ void BookmarkModel::ResetDateFolderModified(const BookmarkNode* node) {
   SetDateFolderModified(node, Time());
 }
 
-void BookmarkModel::GetBookmarksWithTitlesMatching(
+void BookmarkModel::GetBookmarksMatching(
     const base::string16& text,
     size_t max_count,
-    std::vector<BookmarkTitleMatch>* matches) {
+    std::vector<BookmarkMatch>* matches) {
   if (!loaded_)
     return;
 
-  index_->GetBookmarksWithTitlesMatching(text, max_count, matches);
+  index_->GetBookmarksMatching(text, max_count, matches);
 }
 
 void BookmarkModel::ClearStore() {
@@ -817,19 +832,6 @@ BookmarkNode* BookmarkModel::AddNode(BookmarkNode* parent,
   return node;
 }
 
-const BookmarkNode* BookmarkModel::GetNodeByID(const BookmarkNode* node,
-                                               int64 id) const {
-  if (node->id() == id)
-    return node;
-
-  for (int i = 0, child_count = node->child_count(); i < child_count; ++i) {
-    const BookmarkNode* result = GetNodeByID(node->GetChild(i), id);
-    if (result)
-      return result;
-  }
-  return NULL;
-}
-
 bool BookmarkModel::IsValidIndex(const BookmarkNode* parent,
                                  int index,
                                  bool allow_end) {
@@ -871,7 +873,7 @@ BookmarkPermanentNode* BookmarkModel::CreatePermanentNode(
 
 void BookmarkModel::OnFaviconDataAvailable(
     BookmarkNode* node,
-    const chrome::FaviconImageResult& image_result) {
+    const favicon_base::FaviconImageResult& image_result) {
   DCHECK(node);
   node->set_favicon_load_task_id(base::CancelableTaskTracker::kBadTaskId);
   node->set_favicon_state(BookmarkNode::LOADED_FAVICON);
@@ -894,7 +896,7 @@ void BookmarkModel::LoadFavicon(BookmarkNode* node) {
   base::CancelableTaskTracker::TaskId taskId =
       favicon_service->GetFaviconImageForURL(
           FaviconService::FaviconForURLParams(
-              node->url(), chrome::FAVICON, gfx::kFaviconSize),
+              node->url(), favicon_base::FAVICON, gfx::kFaviconSize),
           base::Bind(&BookmarkModel::OnFaviconDataAvailable,
                      base::Unretained(this),
                      node),
@@ -963,7 +965,13 @@ BookmarkLoadDetails* BookmarkModel::CreateLoadDetails() {
       CreatePermanentNode(BookmarkNode::OTHER_NODE);
   BookmarkPermanentNode* mobile_node =
       CreatePermanentNode(BookmarkNode::MOBILE);
-  return new BookmarkLoadDetails(bb_node, other_node, mobile_node,
-                                 new BookmarkIndex(profile_),
-                                 next_node_id_);
+  return new BookmarkLoadDetails(
+      bb_node, other_node, mobile_node,
+      new BookmarkIndex(
+          profile_,
+          index_urls_,
+          profile_ ?
+              profile_->GetPrefs()->GetString(prefs::kAcceptLanguages) :
+              std::string()),
+      next_node_id_);
 }

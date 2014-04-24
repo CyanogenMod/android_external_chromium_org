@@ -9,7 +9,6 @@ from telemetry.page.actions import page_action
 class ScrollAction(GestureAction):
   def __init__(self, attributes=None):
     super(ScrollAction, self).__init__(attributes)
-    self._SetTimelineMarkerBaseName('ScrollAction::RunAction')
 
   def WillRunAction(self, page, tab):
     for js_file in ['gesture_common.js', 'scroll.js']:
@@ -23,12 +22,9 @@ class ScrollAction(GestureAction):
           'Synthetic scroll not supported for this browser')
 
     # Fail if this action requires touch and we can't send touch events.
-    # TODO(dominikg): Query synthetic gesture target to check if touch is
-    #                 supported.
     if hasattr(self, 'scroll_requires_touch'):
       if (self.scroll_requires_touch and not
-          tab.EvaluateJavaScript(
-            'chrome.gpuBenchmarking.smoothScrollBySendsTouch()')):
+          GestureAction.IsGestureSourceTypeSupported(tab, 'touch')):
         raise page_action.PageActionNotSupported(
             'Touch scroll not supported for this browser')
 

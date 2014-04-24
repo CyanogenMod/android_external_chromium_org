@@ -46,8 +46,8 @@ bool EmbeddedWorkerTestHelper::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(EmbeddedWorkerTestHelper, message)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerMsg_StartWorker, OnStartWorkerStub)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerMsg_StopWorker, OnStopWorkerStub)
-    IPC_MESSAGE_HANDLER(EmbeddedWorkerContextMsg_SendMessageToWorker,
-                        OnSendMessageToWorkerStub)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerContextMsg_MessageToWorker,
+                        OnMessageToWorkerStub)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -61,6 +61,7 @@ bool EmbeddedWorkerTestHelper::OnMessageReceived(const IPC::Message& message) {
 void EmbeddedWorkerTestHelper::OnStartWorker(
     int embedded_worker_id,
     int64 service_worker_version_id,
+    const GURL& scope,
     const GURL& script_url) {
   // By default just notify the sender that the worker is started.
   SimulateWorkerStarted(next_thread_id_++, embedded_worker_id);
@@ -71,7 +72,7 @@ void EmbeddedWorkerTestHelper::OnStopWorker(int embedded_worker_id) {
   SimulateWorkerStopped(embedded_worker_id);
 }
 
-bool EmbeddedWorkerTestHelper::OnSendMessageToWorker(
+bool EmbeddedWorkerTestHelper::OnMessageToWorker(
     int thread_id,
     int embedded_worker_id,
     int request_id,
@@ -92,7 +93,7 @@ bool EmbeddedWorkerTestHelper::OnSendMessageToWorker(
 
 void EmbeddedWorkerTestHelper::OnActivateEvent(int embedded_worker_id,
                                                int request_id) {
-  SimulateSendMessageToBrowser(
+  SimulateSendReplyToBrowser(
       embedded_worker_id,
       request_id,
       ServiceWorkerHostMsg_ActivateEventFinished(
@@ -102,7 +103,7 @@ void EmbeddedWorkerTestHelper::OnActivateEvent(int embedded_worker_id,
 void EmbeddedWorkerTestHelper::OnInstallEvent(int embedded_worker_id,
                                               int request_id,
                                               int active_version_id) {
-  SimulateSendMessageToBrowser(
+  SimulateSendReplyToBrowser(
       embedded_worker_id,
       request_id,
       ServiceWorkerHostMsg_InstallEventFinished(
@@ -113,7 +114,7 @@ void EmbeddedWorkerTestHelper::OnFetchEvent(
     int embedded_worker_id,
     int request_id,
     const ServiceWorkerFetchRequest& request) {
-  SimulateSendMessageToBrowser(
+  SimulateSendReplyToBrowser(
       embedded_worker_id,
       request_id,
       ServiceWorkerHostMsg_FetchEventFinished(
@@ -139,14 +140,21 @@ void EmbeddedWorkerTestHelper::SimulateWorkerStopped(
   registry()->OnWorkerStopped(worker->process_id(), embedded_worker_id);
 }
 
-void EmbeddedWorkerTestHelper::SimulateSendMessageToBrowser(
+void EmbeddedWorkerTestHelper::SimulateSend(
+    IPC::Message* message) {
+  registry()->OnMessageReceived(*message);
+  delete message;
+}
+
+void EmbeddedWorkerTestHelper::SimulateSendReplyToBrowser(
     int embedded_worker_id, int request_id, const IPC::Message& message) {
-  registry()->OnSendMessageToBrowser(embedded_worker_id, request_id, message);
+  registry()->OnReplyToBrowser(embedded_worker_id, request_id, message);
 }
 
 void EmbeddedWorkerTestHelper::OnStartWorkerStub(
     int embedded_worker_id,
     int64 service_worker_version_id,
+    const GURL& scope,
     const GURL& script_url) {
   EmbeddedWorkerInstance* worker = registry()->GetWorker(embedded_worker_id);
   ASSERT_TRUE(worker != NULL);
@@ -157,6 +165,7 @@ void EmbeddedWorkerTestHelper::OnStartWorkerStub(
                  weak_factory_.GetWeakPtr(),
                  embedded_worker_id,
                  service_worker_version_id,
+                 scope,
                  script_url));
 }
 
@@ -170,7 +179,7 @@ void EmbeddedWorkerTestHelper::OnStopWorkerStub(int embedded_worker_id) {
                  embedded_worker_id));
 }
 
-void EmbeddedWorkerTestHelper::OnSendMessageToWorkerStub(
+void EmbeddedWorkerTestHelper::OnMessageToWorkerStub(
     int thread_id,
     int embedded_worker_id,
     int request_id,
@@ -181,7 +190,7 @@ void EmbeddedWorkerTestHelper::OnSendMessageToWorkerStub(
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(
-          base::IgnoreResult(&EmbeddedWorkerTestHelper::OnSendMessageToWorker),
+          base::IgnoreResult(&EmbeddedWorkerTestHelper::OnMessageToWorker),
           weak_factory_.GetWeakPtr(),
           thread_id,
           embedded_worker_id,

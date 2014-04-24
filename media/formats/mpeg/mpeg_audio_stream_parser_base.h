@@ -23,7 +23,11 @@ class MEDIA_EXPORT MPEGAudioStreamParserBase : public StreamParser {
  public:
   // |start_code_mask| is used to find the start of each frame header.  Also
   // referred to as the sync code in the MP3 and ADTS header specifications.
-  MPEGAudioStreamParserBase(uint32 start_code_mask, AudioCodec audio_codec);
+  // |codec_delay| is the number of samples the decoder will output before the
+  // first real frame.
+  MPEGAudioStreamParserBase(uint32 start_code_mask,
+                            AudioCodec audio_codec,
+                            int codec_delay);
   virtual ~MPEGAudioStreamParserBase();
 
   // StreamParser implementation.
@@ -54,9 +58,16 @@ class MEDIA_EXPORT MPEGAudioStreamParserBase : public StreamParser {
   // of the frame if this function returns a value > 0.
   // |sample_count| - Optional parameter that is set to the number of samples
   // in the frame if this function returns a value > 0.
+  // |metadata_frame| - Optional parameter that is set to true if the frame has
+  // valid values for the above parameters, but no usable encoded data; only set
+  // to true if this function returns a value > 0.
   //
-  // |sample_rate|, |channel_layout|, |sample_count| may be NULL if the caller
-  // is not interested in receiving these values from the frame header.
+  // |sample_rate|, |channel_layout|, |sample_count|, |metadata_frame| may be
+  // NULL if the caller is not interested in receiving these values from the
+  // frame header.
+  //
+  // If |metadata_frame| is true, the MPEGAudioStreamParserBase will discard the
+  // frame after consuming the metadata values above.
   //
   // Returns:
   // > 0 : The number of bytes parsed.
@@ -67,7 +78,8 @@ class MEDIA_EXPORT MPEGAudioStreamParserBase : public StreamParser {
                                int* frame_size,
                                int* sample_rate,
                                ChannelLayout* channel_layout,
-                               int* sample_count) const = 0;
+                               int* sample_count,
+                               bool* metadata_frame) const = 0;
 
   const LogCB& log_cb() const { return log_cb_; }
 
@@ -134,6 +146,7 @@ class MEDIA_EXPORT MPEGAudioStreamParserBase : public StreamParser {
   bool in_media_segment_;
   const uint32 start_code_mask_;
   const AudioCodec audio_codec_;
+  const int codec_delay_;
 
   DISALLOW_COPY_AND_ASSIGN(MPEGAudioStreamParserBase);
 };

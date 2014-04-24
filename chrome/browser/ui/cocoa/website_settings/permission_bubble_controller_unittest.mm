@@ -11,6 +11,7 @@
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "chrome/browser/ui/cocoa/run_loop_testing.h"
 #import "chrome/browser/ui/cocoa/website_settings/permission_bubble_cocoa.h"
+#import "chrome/browser/ui/cocoa/website_settings/split_block_button.h"
 #include "chrome/browser/ui/website_settings/mock_permission_bubble_request.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -24,6 +25,10 @@
 - (void)onBlock:(id)sender;
 - (void)onCustomize:(id)sender;
 - (void)onCheckboxChanged:(id)sender;
+@end
+
+@interface SplitBlockButton (ExposedForTesting)
+- (NSMenu*)menu;
 @end
 
 namespace {
@@ -88,12 +93,32 @@ class PermissionBubbleControllerTest : public CocoaTest,
 
   NSTextField* FindTextFieldWithString(const std::string& text) {
     NSView* parent = base::mac::ObjCCastStrict<NSView>([controller_ bubble]);
-    NSString* title = base::SysUTF8ToNSString(text);
-    for (NSView* child in [parent subviews]) {
-      NSTextField* textField = base::mac::ObjCCast<NSTextField>(child);
-      if ([[textField stringValue] hasSuffix:title]) {
-        return textField;
+    return FindTextFieldWithString(parent, base::SysUTF8ToNSString(text));
+  }
+
+  NSTextField* FindTextFieldWithString(NSView* view, NSString* text) {
+    NSTextField* textField = nil;
+    for (NSView* child in [view subviews]) {
+      textField = base::mac::ObjCCast<NSTextField>(child);
+      if (![[textField stringValue] hasSuffix:text]) {
+        textField = FindTextFieldWithString(child, text);
+        if (textField)
+          break;
       }
+    }
+    return textField;
+  }
+
+  NSMenuItem* FindCustomizeMenuItem() {
+    NSButton* button = FindButtonWithTitle(IDS_PERMISSION_DENY);
+    if (!button || ![button isKindOfClass:[SplitBlockButton class]])
+      return nil;
+    NSString* customize = l10n_util::GetNSString(IDS_PERMISSION_CUSTOMIZE);
+    SplitBlockButton* block_button =
+        base::mac::ObjCCast<SplitBlockButton>(button);
+    for (NSMenuItem* item in [[block_button menu] itemArray]) {
+      if ([[item title] isEqualToString:customize])
+        return item;
     }
     return nil;
   }
@@ -122,7 +147,7 @@ TEST_F(PermissionBubbleControllerTest, ShowSinglePermission) {
   EXPECT_TRUE(FindButtonWithTitle(IDS_PERMISSION_ALLOW));
   EXPECT_TRUE(FindButtonWithTitle(IDS_PERMISSION_DENY));
   EXPECT_FALSE(FindButtonWithTitle(IDS_OK));
-  EXPECT_FALSE(FindButtonWithTitle(IDS_PERMISSION_CUSTOMIZE));
+  EXPECT_FALSE(FindCustomizeMenuItem());
 }
 
 TEST_F(PermissionBubbleControllerTest, ShowMultiplePermissions) {
@@ -141,7 +166,7 @@ TEST_F(PermissionBubbleControllerTest, ShowMultiplePermissions) {
 
   EXPECT_TRUE(FindButtonWithTitle(IDS_PERMISSION_ALLOW));
   EXPECT_TRUE(FindButtonWithTitle(IDS_PERMISSION_DENY));
-  EXPECT_TRUE(FindButtonWithTitle(IDS_PERMISSION_CUSTOMIZE));
+  EXPECT_TRUE(FindCustomizeMenuItem());
   EXPECT_FALSE(FindButtonWithTitle(IDS_OK));
 }
 
@@ -168,7 +193,7 @@ TEST_F(PermissionBubbleControllerTest, ShowCustomizationMode) {
   EXPECT_TRUE(FindButtonWithTitle(IDS_OK));
   EXPECT_FALSE(FindButtonWithTitle(IDS_PERMISSION_ALLOW));
   EXPECT_FALSE(FindButtonWithTitle(IDS_PERMISSION_DENY));
-  EXPECT_FALSE(FindButtonWithTitle(IDS_PERMISSION_CUSTOMIZE));
+  EXPECT_FALSE(FindCustomizeMenuItem());
 }
 
 TEST_F(PermissionBubbleControllerTest, OK) {
@@ -232,5 +257,8 @@ TEST_F(PermissionBubbleControllerTest, ClickCustomize) {
          customizationMode:NO];
 
   EXPECT_CALL(*this, SetCustomizationMode()).Times(1);
-  [FindButtonWithTitle(IDS_PERMISSION_CUSTOMIZE) performClick:nil];
+  NSMenuItem* customize_item = FindCustomizeMenuItem();
+  EXPECT_TRUE(customize_item);
+  NSMenu* menu = [customize_item menu];
+  [menu performActionForItemAtIndex:[menu indexOfItem:customize_item]];
 }

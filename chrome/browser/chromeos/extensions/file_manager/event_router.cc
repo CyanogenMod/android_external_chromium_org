@@ -172,9 +172,8 @@ bool IsRecoveryToolRunning(Profile* profile) {
 void BroadcastEvent(Profile* profile,
                     const std::string& event_name,
                     scoped_ptr<base::ListValue> event_args) {
-  extensions::ExtensionSystem::Get(profile)->event_router()->
-      BroadcastEvent(make_scoped_ptr(
-          new extensions::Event(event_name, event_args.Pass())));
+  extensions::EventRouter::Get(profile)->BroadcastEvent(
+      make_scoped_ptr(new extensions::Event(event_name, event_args.Pass())));
 }
 
 file_browser_private::MountCompletedStatus
@@ -559,8 +558,7 @@ void EventRouter::OnCopyProgress(
 }
 
 void EventRouter::DefaultNetworkChanged(const chromeos::NetworkState* network) {
-  if (!profile_ ||
-      !extensions::ExtensionSystem::Get(profile_)->event_router()) {
+  if (!profile_ || !extensions::EventRouter::Get(profile_)) {
     NOTREACHED();
     return;
   }
@@ -572,8 +570,7 @@ void EventRouter::DefaultNetworkChanged(const chromeos::NetworkState* network) {
 }
 
 void EventRouter::OnFileManagerPrefsChanged() {
-  if (!profile_ ||
-      !extensions::ExtensionSystem::Get(profile_)->event_router()) {
+  if (!profile_ || !extensions::EventRouter::Get(profile_)) {
     NOTREACHED();
     return;
   }
@@ -837,12 +834,18 @@ void EventRouter::OnDeviceAdded(const std::string& device_path) {
       device_path);
 }
 
-void EventRouter::OnDeviceRemoved(const std::string& device_path) {
+void EventRouter::OnDeviceRemoved(const std::string& device_path,
+                                  bool hard_unplugged) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   DispatchDeviceEvent(
       file_browser_private::DEVICE_EVENT_TYPE_REMOVED,
       device_path);
+
+  if (hard_unplugged) {
+    DispatchDeviceEvent(file_browser_private::DEVICE_EVENT_TYPE_HARD_UNPLUGGED,
+                        device_path);
+  }
 }
 
 void EventRouter::OnVolumeMounted(chromeos::MountError error_code,

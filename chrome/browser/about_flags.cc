@@ -493,6 +493,13 @@ const Experiment kExperiments[] = {
          switches::kEnableUniversalAcceleratedOverflowScroll,
          switches::kDisableUniversalAcceleratedOverflowScroll)
   },
+  {
+    "disable_layer_squashing",
+    IDS_FLAGS_DISABLE_LAYER_SQUASHING_NAME,
+    IDS_FLAGS_DISABLE_LAYER_SQUASHING_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kDisableLayerSquashing)
+  },
 #if defined(OS_WIN)
   {
     "enable-direct-write",
@@ -754,13 +761,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_SAVE_PAGE_AS_MHTML_DESCRIPTION,
     kOsMac | kOsWin | kOsLinux,
     SINGLE_VALUE_TYPE(switches::kSavePageAsMHTML)
-  },
-  {
-    "enable-autologin",
-    IDS_FLAGS_ENABLE_AUTOLOGIN_NAME,
-    IDS_FLAGS_ENABLE_AUTOLOGIN_DESCRIPTION,
-    kOsMac | kOsWin | kOsLinux,
-    SINGLE_VALUE_TYPE(switches::kEnableAutologin)
   },
   {
     "enable-quic",
@@ -1672,15 +1672,13 @@ const Experiment kExperiments[] = {
     kOsAll,
     SINGLE_VALUE_TYPE(autofill::switches::kDisableIgnoreAutocompleteOff)
   },
-#if defined(USE_AURA)
   {
     "enable-permissions-bubbles",
     IDS_FLAGS_ENABLE_PERMISSIONS_BUBBLES_NAME,
     IDS_FLAGS_ENABLE_PERMISSIONS_BUBBLES_DESCRIPTION,
-    kOsCrOS | kOsWin,
+    kOsCrOS | kOsMac | kOsWin,
     SINGLE_VALUE_TYPE(switches::kEnablePermissionsBubbles)
   },
-#endif
   {
     "notification-center-tray-behavior",
     IDS_FLAGS_NOTIFICATION_TRAY_BEHAVIOR_NAME,
@@ -1783,12 +1781,21 @@ const Experiment kExperiments[] = {
   },
 #endif
   {
-    "enable-embedded-shared-worker",
-    IDS_FLAGS_ENABLE_EMBEDDED_SHARED_WORKER_NAME,
-    IDS_FLAGS_ENABLE_EMBEDDED_SHARED_WORKER_DESCRIPTION,
+    "disable-embedded-shared-worker",
+    IDS_FLAGS_DISABLE_EMBEDDED_SHARED_WORKER_NAME,
+    IDS_FLAGS_DISABLE_EMBEDDED_SHARED_WORKER_DESCRIPTION,
     kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kEnableEmbeddedSharedWorker)
+    SINGLE_VALUE_TYPE(switches::kDisableEmbeddedSharedWorker)
   },
+#if defined(OS_CHROMEOS)
+  {
+    "enable-filemanager-mtp",
+    IDS_FLAGS_ENABLE_FILE_MANAGER_MTP_NAME,
+    IDS_FLAGS_ENABLE_FILE_MANAGER_MTP_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(chromeos::switches::kEnableFileManagerMTP)
+  },
+#endif
 };
 
 const Experiment* experiments = kExperiments;

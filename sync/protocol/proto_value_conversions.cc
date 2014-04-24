@@ -205,6 +205,15 @@ base::DictionaryValue* TabNavigationToValue(
   SET_INT32(http_status_code);
   SET_INT32(referrer_policy);
   SET_BOOL(is_restored);
+  SET_REP(navigation_redirect, NavigationRedirectToValue);
+  SET_STR(last_navigation_redirect_url);
+  return value;
+}
+
+base::DictionaryValue* NavigationRedirectToValue(
+    const sync_pb::NavigationRedirect& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_STR(url);
   return value;
 }
 
@@ -223,6 +232,8 @@ base::DictionaryValue* PasswordSpecificsDataToValue(
   SET_BOOL(preferred);
   SET_INT64(date_created);
   SET_BOOL(blacklisted);
+  SET_INT32(type);
+  SET_INT32(times_used);
   return value;
 }
 
@@ -248,6 +259,9 @@ base::DictionaryValue* SyncedNotificationAppInfoToValue(
   base::DictionaryValue* value = new base::DictionaryValue();
   SET_STR_REP(app_id);
   SET_STR(settings_display_name);
+  SET_STR(app_name);
+  SET_STR(settings_url);
+  SET_STR(info_url);
   SET(icon, SyncedNotificationImageToValue);
   // TODO(petewil): Add fields for the monochrome icon when it is available.
   return value;

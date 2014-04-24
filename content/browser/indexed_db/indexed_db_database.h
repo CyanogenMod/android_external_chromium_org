@@ -24,6 +24,7 @@
 
 namespace content {
 
+class IndexedDBBlobInfo;
 class IndexedDBConnection;
 class IndexedDBDatabaseCallbacks;
 class IndexedDBFactory;
@@ -60,7 +61,8 @@ class CONTENT_EXPORT IndexedDBDatabase
       const base::string16& name,
       IndexedDBBackingStore* backing_store,
       IndexedDBFactory* factory,
-      const Identifier& unique_identifier);
+      const Identifier& unique_identifier,
+      leveldb::Status* s);
 
   const Identifier& identifier() const { return identifier_; }
   IndexedDBBackingStore* backing_store() { return backing_store_.get(); }
@@ -128,6 +130,7 @@ class CONTENT_EXPORT IndexedDBDatabase
   void Put(int64 transaction_id,
            int64 object_store_id,
            IndexedDBValue* value,
+           ScopedVector<webkit_blob::BlobDataHandle>* handles,
            scoped_ptr<IndexedDBKey> key,
            PutMode mode,
            scoped_refptr<IndexedDBCallbacks> callbacks,

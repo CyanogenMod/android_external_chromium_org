@@ -20,7 +20,6 @@
 #include "content/common/cursors/webcursor.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/input/synthetic_gesture_params.h"
-#include "content/renderer/paint_aggregator.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
@@ -96,7 +95,6 @@ class CONTENT_EXPORT RenderWidget
   int32 surface_id() const { return surface_id_; }
   blink::WebWidget* webwidget() const { return webwidget_; }
   gfx::Size size() const { return size_; }
-  float filtered_time_per_frame() const { return filtered_time_per_frame_; }
   bool has_focus() const { return has_focus_; }
   bool is_fullscreen() const { return is_fullscreen_; }
   bool is_hidden() const { return is_hidden_; }
@@ -127,11 +125,6 @@ class CONTENT_EXPORT RenderWidget
   virtual void didScrollRect(int dx, int dy,
                              const blink::WebRect& clipRect);
   virtual void didAutoResize(const blink::WebSize& new_size);
-  // FIXME: To be removed as soon as chromium and blink side changes land
-  // didActivateCompositor with parameters is still kept in order to land
-  // these changes s-chromium - https://codereview.chromium.org/137893025/.
-  // s-blink - https://codereview.chromium.org/138523003/
-  virtual void didActivateCompositor(int input_handler_identifier);
   virtual void didActivateCompositor() OVERRIDE;
   virtual void didDeactivateCompositor();
   virtual void initializeLayerTreeView();
@@ -158,6 +151,9 @@ class CONTENT_EXPORT RenderWidget
   virtual void resetInputMethod();
   virtual void didHandleGestureEvent(const blink::WebGestureEvent& event,
                                      bool event_cancelled);
+
+  // Begins the compositor's scheduler to start producing frames.
+  void StartCompositor();
 
   // Called when a plugin is moved.  These events are queued up and sent with
   // the next paint or scroll message to the host.
@@ -275,7 +271,8 @@ class CONTENT_EXPORT RenderWidget
   RenderWidget(blink::WebPopupType popup_type,
                const blink::WebScreenInfo& screen_info,
                bool swapped_out,
-               bool hidden);
+               bool hidden,
+               bool never_visible);
 
   virtual ~RenderWidget();
 
@@ -306,16 +303,13 @@ class CONTENT_EXPORT RenderWidget
   // Paints a border at the given rect for debugging purposes.
   void PaintDebugBorder(const gfx::Rect& rect, SkCanvas* canvas);
 
-  bool IsRenderingVSynced();
   void AnimationCallback();
-  void AnimateIfNeeded();
   void InvalidationCallback();
   void FlushPendingInputEventAck();
   void DoDeferredUpdateAndSendInputAck();
   void DoDeferredUpdate();
   void DoDeferredClose();
   void DoDeferredSetWindowRect(const blink::WebRect& pos);
-  virtual void Composite(base::TimeTicks frame_begin_time);
 
   // Set the background of the render widget to a bitmap. The bitmap will be
   // tiled in both directions if it isn't big enough to fill the area. This is
@@ -354,7 +348,6 @@ class CONTENT_EXPORT RenderWidget
   virtual void OnWasHidden();
   virtual void OnWasShown(bool needs_repainting);
   virtual void OnWasSwappedOut();
-  void OnUpdateRectAck();
   void OnCreateVideoAck(int32 video_id);
   void OnUpdateVideoAck(int32 video_id);
   void OnRequestMoveAck();
@@ -407,12 +400,6 @@ class CONTENT_EXPORT RenderWidget
   virtual void DidInitiatePaint() {}
   virtual void DidFlushPaint() {}
 
-  // Override and return true when the widget is rendered with a graphics
-  // context that supports asynchronous swapbuffers. When returning true, the
-  // subclass must call OnSwapBuffersPosted() when swap is posted,
-  // OnSwapBuffersComplete() when swaps complete, and OnSwapBuffersAborted if
-  // the context is lost.
-  virtual bool SupportsAsynchronousSwapBuffers();
   virtual GURL GetURLForGraphicsContext3D();
 
   virtual bool ForceCompositingModeEnabled();
@@ -479,10 +466,6 @@ class CONTENT_EXPORT RenderWidget
   // Called by OnHandleInputEvent() to notify subclasses that a key event was
   // just handled.
   virtual void DidHandleKeyEvent() {}
-
-  // Called by OnHandleInputEvent() to notify subclasses that a user gesture
-  // event will be processed.
-  virtual void WillProcessUserGesture() {}
 
   // Called by OnHandleInputEvent() to notify subclasses that a mouse event is
   // about to be handled.
@@ -563,10 +546,7 @@ class CONTENT_EXPORT RenderWidget
   // The size of the RenderWidget.
   gfx::Size size_;
 
-  // The TransportDIB that is being used to transfer an image to the browser.
-  TransportDIB* current_paint_buf_;
-
-  PaintAggregator paint_aggregator_;
+  bool has_frame_pending_;
 
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   gfx::Size physical_backing_size_;
@@ -581,13 +561,6 @@ class CONTENT_EXPORT RenderWidget
   // Flags for the next ViewHostMsg_UpdateRect message.
   int next_paint_flags_;
 
-  // Filtered time per frame based on UpdateRect messages.
-  float filtered_time_per_frame_;
-
-  // True if we are expecting an UpdateRect_ACK message (i.e., that a
-  // UpdateRect message has been sent).
-  bool update_reply_pending_;
-
   // Whether the WebWidget is in auto resize mode, which is used for example
   // by extension popups.
   bool auto_resize_mode_;
@@ -596,26 +569,14 @@ class CONTENT_EXPORT RenderWidget
   // an already-completed auto-resize.
   bool need_update_rect_for_auto_resize_;
 
-  // True if the underlying graphics context supports asynchronous swap.
-  // Cached on the RenderWidget because determining support is costly.
-  bool using_asynchronous_swapbuffers_;
-
-  // Number of OnSwapBuffersComplete we are expecting. Incremented each time
-  // WebWidget::composite has been been performed when the RenderWidget subclass
-  // SupportsAsynchronousSwapBuffers. Decremented in OnSwapBuffers. Will block
-  // rendering.
-  int num_swapbuffers_complete_pending_;
-
-  // When accelerated rendering is on, is the maximum number of swapbuffers that
-  // can be outstanding before we start throttling based on
-  // OnSwapBuffersComplete callback.
-  static const int kMaxSwapBuffersPending = 2;
-
   // Set to true if we should ignore RenderWidget::Show calls.
   bool did_show_;
 
   // Indicates that we shouldn't bother generated paint events.
   bool is_hidden_;
+
+  // Indicates that we are never visible, so never produce graphical output.
+  bool never_visible_;
 
   // Indicates that we are in fullscreen mode.
   bool is_fullscreen_;
@@ -715,26 +676,11 @@ class CONTENT_EXPORT RenderWidget
   bool was_accelerated_compositing_ever_active_;
 
   base::OneShotTimer<RenderWidget> animation_timer_;
-  base::Time animation_floor_time_;
   bool animation_update_pending_;
   bool invalidation_task_posted_;
 
-  bool has_disable_gpu_vsync_switch_;
-  base::TimeTicks last_do_deferred_update_time_;
-
   // Stats for legacy software mode
   scoped_ptr<cc::RenderingStatsInstrumentation> legacy_software_mode_stats_;
-
-  // UpdateRect parameters for the current compositing pass. This is used to
-  // pass state between DoDeferredUpdate and OnSwapBuffersPosted.
-  scoped_ptr<ViewHostMsg_UpdateRect_Params> pending_update_params_;
-
-  // Queue of UpdateRect messages corresponding to a SwapBuffers. We want to
-  // delay sending of UpdateRect until the corresponding SwapBuffers has been
-  // executed. Since we can have several in flight, we need to keep them in a
-  // queue. Note: some SwapBuffers may not correspond to an update, in which
-  // case NULL is added to the queue.
-  std::deque<ViewHostMsg_UpdateRect*> updates_pending_swap_;
 
   // Properties of the screen hosting this RenderWidget instance.
   blink::WebScreenInfo screen_info_;
@@ -751,10 +697,6 @@ class CONTENT_EXPORT RenderWidget
 
   // Specified whether the compositor will run in its own thread.
   bool is_threaded_compositing_enabled_;
-
-  // The latency information for any current non-accelerated-compositing
-  // frame.
-  std::vector<ui::LatencyInfo> latency_info_;
 
   uint32 next_output_surface_id_;
 

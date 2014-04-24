@@ -4,14 +4,11 @@
 
 #include "ui/aura/env.h"
 
-#include "base/command_line.h"
-#include "base/message_loop/message_pump_dispatcher.h"
 #include "ui/aura/env_observer.h"
 #include "ui/aura/input_state_lookup.h"
-#include "ui/aura/window.h"
 #include "ui/compositor/compositor.h"
-#include "ui/compositor/compositor_switches.h"
 #include "ui/events/event_target_iterator.h"
+#include "ui/events/platform/platform_event_source.h"
 
 namespace aura {
 
@@ -72,6 +69,9 @@ bool Env::IsMouseButtonDown() const {
 
 void Env::Init() {
   ui::Compositor::Initialize();
+
+  if (!ui::PlatformEventSource::GetInstance())
+    event_source_ = ui::PlatformEventSource::CreateDefault();
 }
 
 void Env::NotifyWindowInitialized(Window* window) {

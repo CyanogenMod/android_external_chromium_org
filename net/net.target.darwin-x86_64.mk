@@ -381,6 +381,7 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_default_packet_writer.cc \
 	net/quic/quic_fec_group.cc \
 	net/quic/quic_flags.cc \
+	net/quic/quic_flow_controller.cc \
 	net/quic/quic_framer.cc \
 	net/quic/quic_headers_stream.cc \
 	net/quic/quic_http_stream.cc \
@@ -744,7 +745,6 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
-	-Wl,--gc-sections \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed

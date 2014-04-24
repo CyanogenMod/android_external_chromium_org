@@ -6,6 +6,7 @@
 #outer-container {
   -webkit-box-align: center;
   -webkit-box-pack: center;
+  -webkit-perspective: 1px; /* Workaround, see http://crbug.com/360567 */
   bottom: 51px;  /* Leave space for the header bar */
   display: -webkit-box;
   left: 0;
@@ -30,7 +31,7 @@
 }
 
 #scroll-container::-webkit-scrollbar {
-    display: none;
+  display: none;
 }
 
 #inner-container {
@@ -105,6 +106,8 @@
 #progress-dots {
   -webkit-box-pack: center;
   -webkit-margin-before: 15px;
+  -webkit-transition: opacity 200ms ease-in-out,
+                      visibility 200ms ease-in-out;
   display: -webkit-box;
 }
 
@@ -156,6 +159,10 @@
 #oobe.update #update-dot,
 #oobe.user-image #user-image-dot {
   opacity: 1;
+}
+
+#oobe.reset #progress-dots {
+  visibility: hidden;
 }
 
 body:not(.oobe-display) #inner-container {

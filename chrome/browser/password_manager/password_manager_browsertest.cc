@@ -9,7 +9,6 @@
 #include "base/metrics/statistics_recorder.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/password_manager/test_password_store_service.h"
@@ -19,10 +18,9 @@
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
+#include "components/infobars/core/infobar.h"
+#include "components/infobars/core/infobar_manager.h"
 #include "components/password_manager/core/browser/test_password_store.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -41,8 +39,8 @@ namespace {
 
 // Observer that waits for navigation to complete and for the password infobar
 // to be shown.
-class NavigationObserver : public content::NotificationObserver,
-                           public content::WebContentsObserver {
+class NavigationObserver : public content::WebContentsObserver,
+                           public infobars::InfoBarManager::Observer {
  public:
   explicit NavigationObserver(content::WebContents* web_contents)
       : content::WebContentsObserver(web_contents),
@@ -51,42 +49,19 @@ class NavigationObserver : public content::NotificationObserver,
         infobar_removed_(false),
         should_automatically_accept_infobar_(true),
         infobar_service_(InfoBarService::FromWebContents(web_contents)) {
-    registrar_.Add(this,
-                   chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED,
-                   content::Source<InfoBarService>(infobar_service_));
-    registrar_.Add(this,
-                   chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
-                   content::Source<InfoBarService>(infobar_service_));
+    infobar_service_->AddObserver(this);
   }
 
-  virtual ~NavigationObserver() {}
+  virtual ~NavigationObserver() {
+    if (infobar_service_)
+      infobar_service_->RemoveObserver(this);
+  }
 
   // Normally Wait() will not return until a main frame navigation occurs.
   // If a path is set, Wait() will return after this path has been seen,
   // regardless of the frame that navigated. Useful for multi-frame pages.
   void SetPathToWaitFor(const std::string& path) {
     wait_for_path_ = path;
-  }
-
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
-    switch (type) {
-      case chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED:
-        if (should_automatically_accept_infobar_) {
-          infobar_service_->infobar_at(0)->delegate()->
-              AsConfirmInfoBarDelegate()->Accept();
-        }
-        infobar_shown_ = true;
-        return;
-      case chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED:
-        infobar_removed_ = true;
-        return;
-      default:
-        NOTREACHED();
-        return;
-    }
   }
 
   // content::WebContentsObserver:
@@ -115,6 +90,27 @@ class NavigationObserver : public content::NotificationObserver,
   }
 
  private:
+  // infobars::InfoBarManager::Observer:
+  virtual void OnInfoBarAdded(infobars::InfoBar* infobar) OVERRIDE {
+    if (should_automatically_accept_infobar_) {
+      infobar_service_->infobar_at(0)->delegate()->
+          AsConfirmInfoBarDelegate()->Accept();
+    }
+    infobar_shown_ = true;
+  }
+
+  virtual void OnInfoBarRemoved(infobars::InfoBar* infobar,
+                                bool animate) OVERRIDE {
+    infobar_removed_ = true;
+  }
+
+  virtual void OnManagerShuttingDown(
+      infobars::InfoBarManager* manager) OVERRIDE {
+    ASSERT_EQ(infobar_service_, manager);
+    infobar_service_->RemoveObserver(this);
+    infobar_service_ = NULL;
+  }
+
   std::string wait_for_path_;
   scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
   bool infobar_shown_;
@@ -122,7 +118,6 @@ class NavigationObserver : public content::NotificationObserver,
   // If |should_automatically_accept_infobar_| is true, then whenever the test
   // sees an infobar added, it will click its accepting button. Default = true.
   bool should_automatically_accept_infobar_;
-  content::NotificationRegistrar registrar_;
   InfoBarService* infobar_service_;
 
   DISALLOW_COPY_AND_ASSIGN(NavigationObserver);
@@ -593,10 +588,8 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, DeleteFrameBeforeSubmit) {
   // The only thing we check here is that there is no use-after-free reported.
 }
 
-// Disabled on Windows due to flakiness: http://crbug.com/163072
-// TODO(vabr): Also disabled on Android, because the tested feature is currently
-// disabled there. http://crbug.com/345510#c13
-#if defined(OS_WIN) || defined(OS_ANDROID)
+// Disabled on Windows due to flakiness: http://crbug.com/346297
+#if defined(OS_WIN)
 #define MAYBE_PasswordValueAccessible DISABLED_PasswordValueAccessible
 #else
 #define MAYBE_PasswordValueAccessible PasswordValueAccessible

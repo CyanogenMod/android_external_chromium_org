@@ -105,10 +105,16 @@ MEDIA_EXPORT SampleFormat
     AVSampleFormatToSampleFormat(AVSampleFormat sample_format);
 
 // Converts FFmpeg's pixel formats to its corresponding supported video format.
-VideoFrame::Format PixelFormatToVideoFormat(PixelFormat pixel_format);
+MEDIA_EXPORT VideoFrame::Format PixelFormatToVideoFormat(
+    PixelFormat pixel_format);
 
 // Converts video formats to its corresponding FFmpeg's pixel formats.
 PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format);
+
+// Convert FFmpeg UTC representation (YYYY-MM-DD HH:MM:SS) to base::Time.
+// Returns true and sets |*out| if |date_utc| contains a valid
+// date string. Otherwise returns fals and timeline_offset is unmodified.
+MEDIA_EXPORT bool FFmpegUTCDateToTime(const char* date_utc, base::Time* out);
 
 }  // namespace media
 

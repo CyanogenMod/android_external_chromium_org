@@ -9,7 +9,6 @@
 #include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/debug/debug_on_start_win.h"
 #include "base/debug/debugger.h"
 #include "base/debug/stack_trace.h"
 #include "base/file_util.h"
@@ -44,10 +43,6 @@
 
 #if defined(OS_IOS)
 #include "base/test/test_support_ios.h"
-#endif
-
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
 #endif
 
 namespace {
@@ -123,9 +118,7 @@ void TestSuite::PreInitialize(int argc, char** argv,
   // have the locale set. In the absence of such a call the "C" locale is the
   // default. In the gtk code (below) gtk_init() implicitly sets a locale.
   setlocale(LC_ALL, "");
-#elif defined(TOOLKIT_GTK)
-  gtk_init_check(&argc, &argv);
-#endif  // defined(TOOLKIT_GTK)
+#endif  // defined(OS_LINUX) && defined(USE_AURA)
 
   // On Android, AtExitManager is created in
   // testing/android/native_test_wrapper.cc before main() is called.

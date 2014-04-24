@@ -166,14 +166,11 @@ MediaStreamDependencyFactory::MediaStreamDependencyFactory(
       p2p_socket_dispatcher_(p2p_socket_dispatcher),
       signaling_thread_(NULL),
       worker_thread_(NULL),
-      chrome_worker_thread_("Chrome_libJingle_WorkerThread"),
-      aec_dump_file_(base::kInvalidPlatformFileValue) {
+      chrome_worker_thread_("Chrome_libJingle_WorkerThread") {
 }
 
 MediaStreamDependencyFactory::~MediaStreamDependencyFactory() {
   CleanupPeerConnectionFactory();
-  if (aec_dump_file_ != base::kInvalidPlatformFileValue)
-    base::ClosePlatformFile(aec_dump_file_);
 }
 
 blink::WebRTCPeerConnectionHandler*
@@ -205,7 +202,8 @@ bool MediaStreamDependencyFactory::InitializeMediaStreamAudioSource(
                                  &device_info.device.input.effects);
 
   scoped_refptr<WebRtcAudioCapturer> capturer(
-      CreateAudioCapturer(render_view_id, device_info, audio_constraints));
+      CreateAudioCapturer(render_view_id, device_info, audio_constraints,
+                          source_data));
   if (!capturer.get()) {
     DLOG(WARNING) << "Failed to create the capturer for device "
         << device_info.device.id;
@@ -241,97 +239,6 @@ WebRtcVideoCapturerAdapter* MediaStreamDependencyFactory::CreateVideoCapturer(
   if (!GetPcFactory())
     return NULL;
   return new WebRtcVideoCapturerAdapter(is_screeencast);
-}
-
-scoped_refptr<webrtc::MediaStreamInterface>
-MediaStreamDependencyFactory::CreateNativeLocalMediaStream(
-    const blink::WebMediaStream& web_stream) {
-  DCHECK(web_stream.extraData());
-  DVLOG(1) << "MediaStreamDependencyFactory::CreateNativeLocalMediaStream()";
-
-  std::string label = web_stream.id().utf8();
-  scoped_refptr<webrtc::MediaStreamInterface> native_stream =
-      CreateLocalMediaStream(label);
-
-  // Add audio tracks.
-  blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
-  web_stream.audioTracks(audio_tracks);
-  for (size_t i = 0; i < audio_tracks.size(); ++i) {
-    MediaStreamTrack* native_track =
-        MediaStreamTrack::GetTrack(audio_tracks[i]);
-    if (!native_track) {
-      // TODO(perkj): Implement.
-      // This can happen if the blink track uses a source from a remote track.
-      NOTIMPLEMENTED();
-      continue;
-    }
-    native_stream->AddTrack(native_track->GetAudioAdapter());
-  }
-
-  // Add video tracks.
-  blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
-  web_stream.videoTracks(video_tracks);
-  for (size_t i = 0; i < video_tracks.size(); ++i) {
-    MediaStreamTrack* native_track =
-        MediaStreamTrack::GetTrack(video_tracks[i]);
-    if (!native_track) {
-      // TODO(perkj): Implement.
-      // This can happen if the blink track uses a source from a remote track.
-      NOTIMPLEMENTED();
-      continue;
-    }
-    native_stream->AddTrack(native_track->GetVideoAdapter());
-  }
-  return native_stream;
-}
-
-bool MediaStreamDependencyFactory::AddNativeMediaStreamTrack(
-    const blink::WebMediaStream& stream,
-    const blink::WebMediaStreamTrack& track) {
-  DVLOG(1) << "AddNativeMediaStreamTrack";
-  webrtc::MediaStreamInterface* webrtc_stream =
-      MediaStream::GetAdapter(stream);
-
-  MediaStreamTrack* native_track =
-      MediaStreamTrack::GetTrack(track);
-  if (!native_track) {
-    // TODO(perkj): Implement.
-    // This can happen if the blink track uses a source from a remote track.
-    NOTIMPLEMENTED();
-    return false;
-  }
-
-  switch (track.source().type()) {
-    case blink::WebMediaStreamSource::TypeAudio: {
-      webrtc::AudioTrackInterface* webrtc_audio_track =
-          native_track->GetAudioAdapter();
-      return webrtc_audio_track && webrtc_stream->AddTrack(webrtc_audio_track);
-    }
-    case blink::WebMediaStreamSource::TypeVideo: {
-      webrtc::VideoTrackInterface* webrtc_video_track =
-          native_track->GetVideoAdapter();
-      return webrtc_video_track && webrtc_stream->AddTrack(webrtc_video_track);
-    }
-  }
-  return false;
-}
-
-bool MediaStreamDependencyFactory::RemoveNativeMediaStreamTrack(
-    const blink::WebMediaStream& stream,
-    const blink::WebMediaStreamTrack& track) {
-  webrtc::MediaStreamInterface* native_stream =
-      MediaStream::GetAdapter(stream);
-  DCHECK(native_stream);
-  std::string track_id = track.id().utf8();
-  switch (track.source().type()) {
-    case blink::WebMediaStreamSource::TypeAudio:
-      return native_stream->RemoveTrack(
-          native_stream->FindAudioTrack(track_id));
-    case blink::WebMediaStreamSource::TypeVideo:
-      return native_stream->RemoveTrack(
-          native_stream->FindVideoTrack(track_id));
-  }
-  return false;
 }
 
 scoped_refptr<webrtc::VideoSourceInterface>
@@ -439,10 +346,8 @@ void MediaStreamDependencyFactory::CreatePeerConnectionFactory() {
   pc_factory_->SetOptions(factory_options);
 
   // |aec_dump_file| will be invalid when dump is not enabled.
-  if (aec_dump_file_ != base::kInvalidPlatformFileValue) {
-    StartAecDump(aec_dump_file_);
-    aec_dump_file_ = base::kInvalidPlatformFileValue;
-  }
+  if (aec_dump_file_.IsValid())
+    StartAecDump(aec_dump_file_.Pass());
 }
 
 bool MediaStreamDependencyFactory::PeerConnectionFactoryCreated() {
@@ -666,7 +571,8 @@ scoped_refptr<WebRtcAudioCapturer>
 MediaStreamDependencyFactory::CreateAudioCapturer(
     int render_view_id,
     const StreamDeviceInfo& device_info,
-    const blink::WebMediaConstraints& constraints) {
+    const blink::WebMediaConstraints& constraints,
+    MediaStreamAudioSource* audio_source) {
   // TODO(xians): Handle the cases when gUM is called without a proper render
   // view, for example, by an extension.
   DCHECK_GE(render_view_id, 0);
@@ -675,7 +581,8 @@ MediaStreamDependencyFactory::CreateAudioCapturer(
   DCHECK(GetWebRtcAudioDevice());
   return WebRtcAudioCapturer::CreateCapturer(render_view_id, device_info,
                                              constraints,
-                                             GetWebRtcAudioDevice());
+                                             GetWebRtcAudioDevice(),
+                                             audio_source);
 }
 
 void MediaStreamDependencyFactory::AddNativeAudioTrackToBlinkTrack(
@@ -707,24 +614,23 @@ bool MediaStreamDependencyFactory::OnControlMessageReceived(
 
 void MediaStreamDependencyFactory::OnAecDumpFile(
     IPC::PlatformFileForTransit file_handle) {
-  DCHECK_EQ(aec_dump_file_, base::kInvalidPlatformFileValue);
-  base::PlatformFile file =
-      IPC::PlatformFileForTransitToPlatformFile(file_handle);
-  DCHECK_NE(file, base::kInvalidPlatformFileValue);
+  DCHECK(!aec_dump_file_.IsValid());
+  base::File file = IPC::PlatformFileForTransitToFile(file_handle);
+  DCHECK(file.IsValid());
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableAudioTrackProcessing)) {
     EnsureWebRtcAudioDeviceImpl();
-    GetWebRtcAudioDevice()->EnableAecDump(file);
+    GetWebRtcAudioDevice()->EnableAecDump(file.Pass());
     return;
   }
 
   // TODO(xians): Remove the following code after kEnableAudioTrackProcessing
   // is removed.
   if (PeerConnectionFactoryCreated())
-    StartAecDump(file);
+    StartAecDump(file.Pass());
   else
-    aec_dump_file_ = file;
+    aec_dump_file_ = file.Pass();
 }
 
 void MediaStreamDependencyFactory::OnDisableAecDump() {
@@ -736,16 +642,14 @@ void MediaStreamDependencyFactory::OnDisableAecDump() {
 
   // TODO(xians): Remove the following code after kEnableAudioTrackProcessing
   // is removed.
-  if (aec_dump_file_ != base::kInvalidPlatformFileValue)
-    base::ClosePlatformFile(aec_dump_file_);
-  aec_dump_file_ = base::kInvalidPlatformFileValue;
+  if (aec_dump_file_.IsValid())
+    aec_dump_file_.Close();
 }
 
-void MediaStreamDependencyFactory::StartAecDump(
-    const base::PlatformFile& aec_dump_file) {
+void MediaStreamDependencyFactory::StartAecDump(base::File aec_dump_file) {
   // |pc_factory_| always takes ownership of |aec_dump_file|. If StartAecDump()
   // fails, |aec_dump_file| will be closed.
-  if (!GetPcFactory()->StartAecDump(aec_dump_file))
+  if (!GetPcFactory()->StartAecDump(aec_dump_file.TakePlatformFile()))
     VLOG(1) << "Could not start AEC dump.";
 }
 

@@ -5,10 +5,13 @@
 #include "components/domain_reliability/monitor.h"
 
 #include "base/command_line.h"
+#include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "components/domain_reliability/baked_in_configs.h"
 #include "content/public/browser/browser_thread.h"
+#include "net/base/load_flags.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -89,6 +92,21 @@ DomainReliabilityMonitor::~DomainReliabilityMonitor() {
       contexts_.begin(), contexts_.end());
 }
 
+void DomainReliabilityMonitor::AddBakedInConfigs() {
+  base::Time now = base::Time::Now();
+  for (size_t i = 0; kBakedInJsonConfigs[i]; ++i) {
+    std::string json(kBakedInJsonConfigs[i]);
+    scoped_ptr<const DomainReliabilityConfig> config =
+        DomainReliabilityConfig::FromJSON(json);
+    if (config && config->IsExpired(now)) {
+      LOG(WARNING) << "Baked-in Domain Reliability config for "
+                   << config->domain << " is expired.";
+      continue;
+    }
+    AddContext(config.Pass());
+  }
+}
+
 void DomainReliabilityMonitor::OnBeforeRedirect(net::URLRequest* request) {
   DCHECK(OnIOThread());
   RequestInfo request_info(*request);
@@ -112,15 +130,7 @@ void DomainReliabilityMonitor::OnCompleted(net::URLRequest* request,
 
 DomainReliabilityContext* DomainReliabilityMonitor::AddContextForTesting(
     scoped_ptr<const DomainReliabilityConfig> config) {
-  DomainReliabilityContext*& context_ref = contexts_[config->domain];
-  DCHECK(!context_ref);
-  context_ref = new DomainReliabilityContext(
-      time_.get(),
-      scheduler_params_,
-      &dispatcher_,
-      uploader_.get(),
-      config.Pass());
-  return context_ref;
+  return AddContext(config.Pass());
 }
 
 DomainReliabilityMonitor::RequestInfo::RequestInfo() {}
@@ -131,7 +141,8 @@ DomainReliabilityMonitor::RequestInfo::RequestInfo(
       status(request.status()),
       response_code(-1),
       socket_address(request.GetSocketAddress()),
-      was_cached(request.was_cached()) {
+      was_cached(request.was_cached()),
+      load_flags(request.load_flags()) {
   request.GetLoadTimingInfo(&load_timing_info);
   // Can't get response code of a canceled request -- there's no transaction.
   if (status.status() != net::URLRequestStatus::CANCELED)
@@ -144,13 +155,41 @@ bool DomainReliabilityMonitor::RequestInfo::DefinitelyReachedNetwork() const {
   return status.status() != net::URLRequestStatus::CANCELED && !was_cached;
 }
 
+DomainReliabilityContext* DomainReliabilityMonitor::AddContext(
+    scoped_ptr<const DomainReliabilityConfig> config) {
+  DCHECK(config);
+  DCHECK(config->IsValid());
+
+  // Grab domain before we config.Pass().
+  std::string domain = config->domain;
+
+  DomainReliabilityContext* context = new DomainReliabilityContext(
+      time_.get(),
+      scheduler_params_,
+      &dispatcher_,
+      uploader_.get(),
+      config.Pass());
+
+  std::pair<ContextMap::iterator, bool> map_it =
+      contexts_.insert(make_pair(domain, context));
+  // Make sure the domain wasn't already in the map.
+  DCHECK(map_it.second);
+
+  return map_it.first->second;
+}
+
 void DomainReliabilityMonitor::OnRequestLegComplete(
     const RequestInfo& request) {
   if (!request.DefinitelyReachedNetwork())
     return;
 
-  std::map<std::string, DomainReliabilityContext*>::iterator it =
-      contexts_.find(request.url.host());
+  // Don't monitor requests that are not sending cookies, since sending a beacon
+  // for such requests may allow the server to correlate that request with the
+  // user (by correlating a particular config).
+  if (request.load_flags & net::LOAD_DO_NOT_SEND_COOKIES)
+    return;
+
+  ContextMap::iterator it = contexts_.find(request.url.host());
   if (it == contexts_.end())
     return;
   DomainReliabilityContext* context = it->second;

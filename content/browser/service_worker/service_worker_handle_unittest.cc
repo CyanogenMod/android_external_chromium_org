@@ -32,8 +32,8 @@ void VerifyStateChangedMessage(int expected_handle_id,
   ServiceWorkerMsg_ServiceWorkerStateChanged::Param param;
   ASSERT_TRUE(ServiceWorkerMsg_ServiceWorkerStateChanged::Read(
       message, &param));
-  EXPECT_EQ(expected_handle_id, param.a);
-  EXPECT_EQ(expected_state, param.b);
+  EXPECT_EQ(expected_handle_id, param.b);
+  EXPECT_EQ(expected_state, param.c);
 }
 
 }  // namespace
@@ -44,7 +44,7 @@ class ServiceWorkerHandleTest : public testing::Test {
       : browser_thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP) {}
 
   virtual void SetUp() OVERRIDE {
-    context_.reset(new ServiceWorkerContextCore(base::FilePath(), NULL));
+    context_.reset(new ServiceWorkerContextCore(base::FilePath(), NULL, NULL));
     helper_.reset(new EmbeddedWorkerTestHelper(context_.get(),
                                                kRenderProcessId));
 
@@ -104,7 +104,7 @@ TEST_F(ServiceWorkerHandleTest, OnVersionStateChanged) {
                             blink::WebServiceWorkerStateInstalling,
                             ipc_sink()->GetMessageAt(1));
   // 3. SendMessageToWorker (to send InstallEvent), and
-  EXPECT_EQ(EmbeddedWorkerContextMsg_SendMessageToWorker::ID,
+  EXPECT_EQ(EmbeddedWorkerContextMsg_MessageToWorker::ID,
             ipc_sink()->GetMessageAt(2)->type());
   // 4. StateChanged (state == Installed).
   VerifyStateChangedMessage(handle->handle_id(),

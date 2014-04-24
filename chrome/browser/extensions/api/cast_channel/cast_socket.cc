@@ -4,11 +4,13 @@
 
 #include "chrome/browser/extensions/api/cast_channel/cast_socket.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/lazy_instance.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/sys_byteorder.h"
 #include "chrome/browser/extensions/api/cast_channel/cast_auth_util.h"
@@ -29,14 +31,12 @@
 #include "net/ssl/ssl_config_service.h"
 #include "net/ssl/ssl_info.h"
 
-// Assumes |url_| of type GURL is available in the current scope.
-#define VLOG_WITH_URL(level) VLOG(level) << "[" + url_.spec() + "] "
+// Assumes |ip_endpoint_| of type net::IPEndPoint and |channel_auth_| of enum
+// type ChannelAuthType are available in the current scope.
+#define VLOG_WITH_CONNECTION(level) VLOG(level) << "[" << \
+    ip_endpoint_.ToString() << ", auth=" << channel_auth_ << "] "
 
 namespace {
-
-// Allowed schemes for Cast device URLs.
-const char kCastInsecureScheme[] = "cast";
-const char kCastSecureScheme[] = "casts";
 
 // The default keepalive delay.  On Linux, keepalives probes will be sent after
 // the socket is idle for this length of time, and the socket will be closed
@@ -63,20 +63,16 @@ ApiResourceManager<api::cast_channel::CastSocket>::GetFactoryInstance() {
 namespace api {
 namespace cast_channel {
 
-const uint32 kMaxMessageSize = 65536;
-// Don't use sizeof(MessageHeader) because of alignment; instead, sum the
-// sizeof() for the fields.
-const uint32 kMessageHeaderSize = sizeof(uint32);
-
 CastSocket::CastSocket(const std::string& owner_extension_id,
-                       const GURL& url,
+                       const net::IPEndPoint& ip_endpoint,
+                       ChannelAuthType channel_auth,
                        CastSocket::Delegate* delegate,
                        net::NetLog* net_log) :
     ApiResource(owner_extension_id),
     channel_id_(0),
-    url_(url),
+    ip_endpoint_(ip_endpoint),
+    channel_auth_(channel_auth),
     delegate_(delegate),
-    auth_required_(false),
     current_message_size_(0),
     current_message_(new CastMessage()),
     net_log_(net_log),
@@ -86,21 +82,27 @@ CastSocket::CastSocket(const std::string& owner_extension_id,
     error_state_(CHANNEL_ERROR_NONE),
     ready_state_(READY_STATE_NONE) {
   DCHECK(net_log_);
+  DCHECK(channel_auth_ == CHANNEL_AUTH_TYPE_SSL ||
+         channel_auth_ == CHANNEL_AUTH_TYPE_SSL_VERIFIED);
   net_log_source_.type = net::NetLog::SOURCE_SOCKET;
   net_log_source_.id = net_log_->NextID();
 
   // Reuse these buffers for each message.
   header_read_buffer_ = new net::GrowableIOBuffer();
-  header_read_buffer_->SetCapacity(kMessageHeaderSize);
+  header_read_buffer_->SetCapacity(MessageHeader::header_size());
   body_read_buffer_ = new net::GrowableIOBuffer();
-  body_read_buffer_->SetCapacity(kMaxMessageSize);
+  body_read_buffer_->SetCapacity(MessageHeader::max_message_size());
   current_read_buffer_ = header_read_buffer_;
 }
 
 CastSocket::~CastSocket() { }
 
-const GURL& CastSocket::url() const {
-  return url_;
+ReadyState CastSocket::ready_state() const {
+  return ready_state_;
+}
+
+ChannelError CastSocket::error_state() const {
+  return error_state_;
 }
 
 scoped_ptr<net::TCPClientSocket> CastSocket::CreateTcpSocket() {
@@ -150,7 +152,8 @@ bool CastSocket::ExtractPeerCert(std::string* cert) {
   bool result = net::X509Certificate::GetDEREncoded(
      ssl_info.cert->os_cert_handle(), cert);
   if (result)
-    VLOG_WITH_URL(1) << "Successfully extracted peer certificate: " << *cert;
+    VLOG_WITH_CONNECTION(1) << "Successfully extracted peer certificate: "
+                            << *cert;
   return result;
 }
 
@@ -160,16 +163,11 @@ bool CastSocket::VerifyChallengeReply() {
 
 void CastSocket::Connect(const net::CompletionCallback& callback) {
   DCHECK(CalledOnValidThread());
-  VLOG_WITH_URL(1) << "Connect readyState = " << ready_state_;
+  VLOG_WITH_CONNECTION(1) << "Connect readyState = " << ready_state_;
   if (ready_state_ != READY_STATE_NONE) {
     callback.Run(net::ERR_CONNECTION_FAILED);
     return;
   }
-  if (!ParseChannelUrl(url_)) {
-    callback.Run(net::ERR_CONNECTION_FAILED);
-    return;
-  }
-
   ready_state_ = READY_STATE_CONNECTING;
   connect_callback_ = callback;
   connect_state_ = CONN_STATE_TCP_CONNECT;
@@ -236,7 +234,7 @@ void CastSocket::DoConnectLoop(int result) {
 }
 
 int CastSocket::DoTcpConnect() {
-  VLOG_WITH_URL(1) << "DoTcpConnect";
+  VLOG_WITH_CONNECTION(1) << "DoTcpConnect";
   connect_state_ = CONN_STATE_TCP_CONNECT_COMPLETE;
   tcp_socket_ = CreateTcpSocket();
   return tcp_socket_->Connect(
@@ -244,7 +242,7 @@ int CastSocket::DoTcpConnect() {
 }
 
 int CastSocket::DoTcpConnectComplete(int result) {
-  VLOG_WITH_URL(1) << "DoTcpConnectComplete: " << result;
+  VLOG_WITH_CONNECTION(1) << "DoTcpConnectComplete: " << result;
   if (result == net::OK) {
     // Enable TCP protocol-level keep-alive.
     bool result = tcp_socket_->SetKeepAlive(true, kTcpKeepAliveDelaySecs);
@@ -255,7 +253,7 @@ int CastSocket::DoTcpConnectComplete(int result) {
 }
 
 int CastSocket::DoSslConnect() {
-  VLOG_WITH_URL(1) << "DoSslConnect";
+  VLOG_WITH_CONNECTION(1) << "DoSslConnect";
   connect_state_ = CONN_STATE_SSL_CONNECT_COMPLETE;
   socket_ = CreateSslSocket(tcp_socket_.PassAs<net::StreamSocket>());
   return socket_->Connect(
@@ -263,24 +261,24 @@ int CastSocket::DoSslConnect() {
 }
 
 int CastSocket::DoSslConnectComplete(int result) {
-  VLOG_WITH_URL(1) << "DoSslConnectComplete: " << result;
+  VLOG_WITH_CONNECTION(1) << "DoSslConnectComplete: " << result;
   if (result == net::ERR_CERT_AUTHORITY_INVALID &&
-             peer_cert_.empty() &&
-             ExtractPeerCert(&peer_cert_)) {
+      peer_cert_.empty() && ExtractPeerCert(&peer_cert_)) {
     connect_state_ = CONN_STATE_TCP_CONNECT;
-  } else if (result == net::OK && auth_required_) {
+  } else if (result == net::OK &&
+             channel_auth_ == CHANNEL_AUTH_TYPE_SSL_VERIFIED) {
     connect_state_ = CONN_STATE_AUTH_CHALLENGE_SEND;
   }
   return result;
 }
 
 int CastSocket::DoAuthChallengeSend() {
-  VLOG_WITH_URL(1) << "DoAuthChallengeSend";
+  VLOG_WITH_CONNECTION(1) << "DoAuthChallengeSend";
   connect_state_ = CONN_STATE_AUTH_CHALLENGE_SEND_COMPLETE;
   CastMessage challenge_message;
   CreateAuthChallengeMessage(&challenge_message);
-  VLOG_WITH_URL(1) << "Sending challenge: "
-                   << CastMessageToString(challenge_message);
+  VLOG_WITH_CONNECTION(1) << "Sending challenge: "
+                          << CastMessageToString(challenge_message);
   // Post a task to send auth challenge so that DoWriteLoop is not nested inside
   // DoConnectLoop. This is not strictly necessary but keeps the write loop
   // code decoupled from connect loop code.
@@ -294,7 +292,7 @@ int CastSocket::DoAuthChallengeSend() {
 }
 
 int CastSocket::DoAuthChallengeSendComplete(int result) {
-  VLOG_WITH_URL(1) << "DoAuthChallengeSendComplete: " << result;
+  VLOG_WITH_CONNECTION(1) << "DoAuthChallengeSendComplete: " << result;
   if (result < 0)
     return result;
   connect_state_ = CONN_STATE_AUTH_CHALLENGE_REPLY_COMPLETE;
@@ -307,12 +305,12 @@ int CastSocket::DoAuthChallengeSendComplete(int result) {
 }
 
 int CastSocket::DoAuthChallengeReplyComplete(int result) {
-  VLOG_WITH_URL(1) << "DoAuthChallengeReplyComplete: " << result;
+  VLOG_WITH_CONNECTION(1) << "DoAuthChallengeReplyComplete: " << result;
   if (result < 0)
     return result;
   if (!VerifyChallengeReply())
     return net::ERR_FAILED;
-  VLOG_WITH_URL(1) << "Auth challenge verification succeeded";
+  VLOG_WITH_CONNECTION(1) << "Auth challenge verification succeeded";
   return net::OK;
 }
 
@@ -327,7 +325,7 @@ void CastSocket::DoConnectCallback(int result) {
 
 void CastSocket::Close(const net::CompletionCallback& callback) {
   DCHECK(CalledOnValidThread());
-  VLOG_WITH_URL(1) << "Close ReadyState = " << ready_state_;
+  VLOG_WITH_CONNECTION(1) << "Close ReadyState = " << ready_state_;
   tcp_socket_.reset();
   socket_.reset();
   cert_verifier_.reset();
@@ -371,7 +369,7 @@ void CastSocket::SendCastMessageInternal(
 
 void CastSocket::DoWriteLoop(int result) {
   DCHECK(CalledOnValidThread());
-  VLOG_WITH_URL(1) << "DoWriteLoop queue size: " << write_queue_.size();
+  VLOG_WITH_CONNECTION(1) << "DoWriteLoop queue size: " << write_queue_.size();
 
   if (write_queue_.empty()) {
     write_state_ = WRITE_STATE_NONE;
@@ -421,8 +419,9 @@ int CastSocket::DoWrite() {
   DCHECK(!write_queue_.empty());
   WriteRequest& request = write_queue_.front();
 
-  VLOG_WITH_URL(2) << "WriteData byte_count = " << request.io_buffer->size()
-                   << " bytes_written " << request.io_buffer->BytesConsumed();
+  VLOG_WITH_CONNECTION(2) << "WriteData byte_count = "
+                          << request.io_buffer->size() << " bytes_written "
+                          << request.io_buffer->BytesConsumed();
 
   write_state_ = WRITE_STATE_WRITE_COMPLETE;
 
@@ -552,12 +551,12 @@ int CastSocket::DoRead() {
   if (header_read_buffer_->RemainingCapacity() > 0) {
     current_read_buffer_ = header_read_buffer_;
     num_bytes_to_read = header_read_buffer_->RemainingCapacity();
-    DCHECK_LE(num_bytes_to_read, kMessageHeaderSize);
+    DCHECK_LE(num_bytes_to_read, MessageHeader::header_size());
   } else {
     DCHECK_GT(current_message_size_, 0U);
     num_bytes_to_read = current_message_size_ - body_read_buffer_->offset();
     current_read_buffer_ = body_read_buffer_;
-    DCHECK_LE(num_bytes_to_read, kMaxMessageSize);
+    DCHECK_LE(num_bytes_to_read, MessageHeader::max_message_size());
   }
   DCHECK_GT(num_bytes_to_read, 0U);
 
@@ -569,11 +568,12 @@ int CastSocket::DoRead() {
 }
 
 int CastSocket::DoReadComplete(int result) {
-  VLOG_WITH_URL(2) << "DoReadComplete result = " << result
-                   << " header offset = " << header_read_buffer_->offset()
-                   << " body offset = " << body_read_buffer_->offset();
+  VLOG_WITH_CONNECTION(2) << "DoReadComplete result = " << result
+                          << " header offset = "
+                          << header_read_buffer_->offset()
+                          << " body offset = " << body_read_buffer_->offset();
   if (result <= 0) {  // 0 means EOF: the peer closed the socket
-    VLOG_WITH_URL(1) << "Read error, peer closed the socket";
+    VLOG_WITH_CONNECTION(1) << "Read error, peer closed the socket";
     error_state_ = CHANNEL_ERROR_SOCKET_ERROR;
     read_state_ = READ_STATE_ERROR;
     return result == 0 ? net::ERR_FAILED : result;
@@ -642,14 +642,14 @@ int CastSocket::DoReadError(int result) {
 
 bool CastSocket::ProcessHeader() {
   DCHECK_EQ(static_cast<uint32>(header_read_buffer_->offset()),
-            kMessageHeaderSize);
+            MessageHeader::header_size());
   MessageHeader header;
   MessageHeader::ReadFromIOBuffer(header_read_buffer_.get(), &header);
-  if (header.message_size > kMaxMessageSize)
+  if (header.message_size > MessageHeader::max_message_size())
     return false;
 
-  VLOG_WITH_URL(2) << "Parsed header { message_size: "
-                   << header.message_size << " }";
+  VLOG_WITH_CONNECTION(2) << "Parsed header { message_size: "
+                          << header.message_size << " }";
   current_message_size_ = header.message_size;
   return true;
 }
@@ -674,7 +674,7 @@ bool CastSocket::Serialize(const CastMessage& message_proto,
   DCHECK(message_data);
   message_proto.SerializeToString(message_data);
   size_t message_size = message_data->size();
-  if (message_size > kMaxMessageSize) {
+  if (message_size > MessageHeader::max_message_size()) {
     message_data->clear();
     return false;
   }
@@ -693,49 +693,9 @@ void CastSocket::CloseWithError(ChannelError error) {
     delegate_->OnError(this, error);
 }
 
-bool CastSocket::ParseChannelUrl(const GURL& url) {
-  VLOG_WITH_URL(2) << "ParseChannelUrl";
-  if (url.SchemeIs(kCastInsecureScheme)) {
-    auth_required_ = false;
-  } else if (url.SchemeIs(kCastSecureScheme)) {
-    auth_required_ = true;
-  } else {
-    return false;
-  }
-  // TODO(mfoltz): Manual parsing, yech. Register cast[s] as standard schemes?
-  // TODO(mfoltz): Test for IPv6 addresses.  Brackets or no brackets?
-  // TODO(mfoltz): Maybe enforce restriction to IPv4 private and IPv6
-  // link-local networks
-  const std::string& path = url.path();
-  // Shortest possible: //A:B
-  if (path.size() < 5) {
-    return false;
-  }
-  if (path.find("//") != 0) {
-    return false;
-  }
-  size_t colon = path.find_last_of(':');
-  if (colon == std::string::npos || colon < 3 || colon > path.size() - 2) {
-    return false;
-  }
-  const std::string& ip_address_str = path.substr(2, colon - 2);
-  const std::string& port_str = path.substr(colon + 1);
-  VLOG_WITH_URL(2) << "IP: " << ip_address_str << " Port: " << port_str;
-  int port;
-  if (!base::StringToInt(port_str, &port))
-    return false;
-  net::IPAddressNumber ip_address;
-  if (!net::ParseIPLiteralToNumber(ip_address_str, &ip_address))
-    return false;
-  ip_endpoint_ = net::IPEndPoint(ip_address, port);
-  return true;
-};
-
-void CastSocket::FillChannelInfo(ChannelInfo* channel_info) const {
-  channel_info->channel_id = channel_id_;
-  channel_info->url = url_.spec();
-  channel_info->ready_state = ready_state_;
-  channel_info->error_state = error_state_;
+std::string CastSocket::CastUrl() const {
+  return ((channel_auth_ == CHANNEL_AUTH_TYPE_SSL_VERIFIED) ?
+          "casts://" : "cast://") + ip_endpoint_.ToString();
 }
 
 bool CastSocket::CalledOnValidThread() const {
@@ -750,18 +710,27 @@ void CastSocket::MessageHeader::SetMessageSize(size_t size) {
   message_size = static_cast<size_t>(size);
 }
 
+// TODO(mfoltz): Investigate replacing header serialization with base::Pickle,
+// if bit-for-bit compatible.
 void CastSocket::MessageHeader::PrependToString(std::string* str) {
   MessageHeader output = *this;
   output.message_size = base::HostToNet32(message_size);
-  char char_array[kMessageHeaderSize];
-  memcpy(&char_array, &output, arraysize(char_array));
-  str->insert(0, char_array, arraysize(char_array));
+  size_t header_size = base::checked_cast<size_t,uint32>(
+      MessageHeader::header_size());
+  scoped_ptr<char, base::FreeDeleter> char_array(
+      static_cast<char*>(malloc(header_size)));
+  memcpy(char_array.get(), &output, header_size);
+  str->insert(0, char_array.get(), header_size);
 }
 
+// TODO(mfoltz): Investigate replacing header deserialization with base::Pickle,
+// if bit-for-bit compatible.
 void CastSocket::MessageHeader::ReadFromIOBuffer(
     net::GrowableIOBuffer* buffer, MessageHeader* header) {
   uint32 message_size;
-  memcpy(&message_size, buffer->StartOfBuffer(), kMessageHeaderSize);
+  size_t header_size = base::checked_cast<size_t,uint32>(
+      MessageHeader::header_size());
+  memcpy(&message_size, buffer->StartOfBuffer(), header_size);
   header->message_size = base::NetToHost32(message_size);
 }
 
@@ -788,4 +757,4 @@ CastSocket::WriteRequest::~WriteRequest() { }
 }  // namespace api
 }  // namespace extensions
 
-#undef VLOG_WITH_URL
+#undef VLOG_WITH_CONNECTION

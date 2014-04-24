@@ -41,10 +41,30 @@
         'ozone_platform.h',
         'ozone_switches.cc',
         'ozone_switches.h',
+        'platform/dri/chromeos/display_mode_dri.cc',
+        'platform/dri/chromeos/display_mode_dri.h',
+        'platform/dri/chromeos/display_snapshot_dri.cc',
+        'platform/dri/chromeos/display_snapshot_dri.h',
+        'platform/dri/chromeos/native_display_delegate_dri.cc',
+        'platform/dri/chromeos/native_display_delegate_dri.h',
         'platform/dri/ozone_platform_dri.cc',
         'platform/dri/ozone_platform_dri.h',
         'platform/dri/cursor_factory_evdev_dri.cc',
         'platform/dri/cursor_factory_evdev_dri.h',
+        'platform/dri/dri_buffer.cc',
+        'platform/dri/dri_buffer.h',
+        'platform/dri/dri_surface.cc',
+        'platform/dri/dri_surface.h',
+        'platform/dri/dri_surface_factory.cc',
+        'platform/dri/dri_surface_factory.h',
+        'platform/dri/dri_util.cc',
+        'platform/dri/dri_util.h',
+        'platform/dri/dri_vsync_provider.cc',
+        'platform/dri/dri_vsync_provider.h',
+        'platform/dri/dri_wrapper.cc',
+        'platform/dri/dri_wrapper.h',
+        'platform/dri/hardware_display_controller.cc',
+        'platform/dri/hardware_display_controller.h',
         'platform/test/ozone_platform_test.cc',
         'platform/test/ozone_platform_test.h',
         '<@(external_ozone_platform_files)',
@@ -80,7 +100,11 @@
             'ozone_platforms': [
               'dri'
             ]
-          }
+          },
+          'dependencies': [
+            '../../build/linux/system.gyp:dridrm',
+            '../../ui/display/display.gyp:display_util',
+          ],
         }, {  # ozone_platform_dri==0
           'sources/': [
             ['exclude', '^platform/dri/'],

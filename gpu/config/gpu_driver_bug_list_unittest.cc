@@ -32,7 +32,8 @@ class GpuDriverBugListTest : public testing::Test {
     gpu_info_.driver_vendor = "NVIDIA";
     gpu_info_.driver_version = "1.6.18";
     gpu_info_.driver_date = "7-14-2009";
-    gpu_info_.machine_model = "MacBookPro 7.1";
+    gpu_info_.machine_model_name = "MacBookPro";
+    gpu_info_.machine_model_version = "7.1";
     gpu_info_.gl_vendor = "NVIDIA Corporation";
     gpu_info_.gl_renderer = "NVIDIA GeForce GT 120 OpenGL Engine";
     gpu_info_.performance_stats.graphics = 5.0;
@@ -154,6 +155,57 @@ TEST_F(GpuDriverBugListTest, AppendForceGPUWorkaround) {
   EXPECT_EQ(2u, workarounds.size());
   EXPECT_EQ(0u, workarounds.count(FORCE_INTEGRATED_GPU));
   EXPECT_EQ(1u, workarounds.count(FORCE_DISCRETE_GPU));
+}
+
+TEST_F(GpuDriverBugListTest, NVIDIANumberingScheme) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "name": "gpu driver bug list",
+        "version": "0.1",
+        "entries": [
+          {
+            "id": 1,
+            "os": {
+              "type": "win"
+            },
+            "vendor_id": "0x10de",
+            "driver_version": {
+              "op": "<=",
+              "value": "8.17.12.6973"
+            },
+            "features": [
+              "disable_d3d11"
+            ]
+          }
+        ]
+      }
+  );
+
+  scoped_ptr<GpuDriverBugList> list(GpuDriverBugList::Create());
+  EXPECT_TRUE(list->LoadList(json, GpuControlList::kAllOs));
+
+  GPUInfo gpu_info;
+  gpu_info.gl_vendor = "NVIDIA";
+  gpu_info.gl_renderer = "NVIDIA GeForce GT 120 OpenGL Engine";
+  gpu_info.gpu.vendor_id = 0x10de;
+  gpu_info.gpu.device_id = 0x0640;
+
+  // test the same driver version number
+  gpu_info.driver_version = "8.17.12.6973";
+  std::set<int> bugs = list->MakeDecision(
+      GpuControlList::kOsWin, "7.0", gpu_info);
+  EXPECT_EQ(1u, bugs.count(DISABLE_D3D11));
+
+  // test a lower driver version number
+  gpu_info.driver_version = "8.15.11.8647";
+
+  bugs = list->MakeDecision(GpuControlList::kOsWin, "7.0", gpu_info);
+  EXPECT_EQ(1u, bugs.count(DISABLE_D3D11));
+
+  // test a higher driver version number
+  gpu_info.driver_version = "9.18.13.2723";
+  bugs = list->MakeDecision(GpuControlList::kOsWin, "7.0", gpu_info);
+  EXPECT_EQ(0u, bugs.count(DISABLE_D3D11));
 }
 
 }  // namespace gpu

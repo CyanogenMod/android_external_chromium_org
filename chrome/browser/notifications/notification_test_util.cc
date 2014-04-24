@@ -11,13 +11,16 @@ MockNotificationDelegate::~MockNotificationDelegate() {}
 
 std::string MockNotificationDelegate::id() const { return id_; }
 
-content::RenderViewHost* MockNotificationDelegate::GetRenderViewHost() const {
+content::WebContents* MockNotificationDelegate::GetWebContents() const {
   return NULL;
 }
 
 StubNotificationUIManager::StubNotificationUIManager(const GURL& welcome_origin)
     : notification_(GURL(),
                     GURL(),
+                    base::string16(),
+                    base::string16(),
+                    blink::WebTextDirectionDefault,
                     base::string16(),
                     base::string16(),
                     new MockNotificationDelegate("stub")),

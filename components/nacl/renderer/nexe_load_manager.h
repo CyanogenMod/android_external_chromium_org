@@ -10,8 +10,8 @@
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-
 #include "ppapi/c/private/ppb_nacl_private.h"
+#include "url/gurl.h"
 
 namespace content {
 class PepperPluginInstance;
@@ -19,6 +19,7 @@ class PepperPluginInstance;
 
 namespace nacl {
 
+class ManifestServiceChannel;
 class TrustedPluginChannel;
 
 // NexeLoadManager provides methods for reporting the progress of loading a
@@ -77,6 +78,8 @@ class NexeLoadManager {
   };
   void DispatchEvent(const ProgressEvent &event);
   void set_trusted_plugin_channel(scoped_ptr<TrustedPluginChannel> channel);
+  void set_manifest_service_channel(
+      scoped_ptr<ManifestServiceChannel> channel);
 
   PP_NaClReadyState nacl_ready_state();
   void set_nacl_ready_state(PP_NaClReadyState ready_state);
@@ -86,16 +89,27 @@ class NexeLoadManager {
   void LogToConsole(const std::string& message);
 
   bool is_installed() const { return is_installed_; }
-  void set_is_installed(bool installed) { is_installed_ = installed; }
 
   int32_t exit_status() const { return exit_status_; }
   void set_exit_status(int32_t exit_status);
 
-  void set_init_time() { init_time_ = base::Time::Now(); }
+  void InitializePlugin();
 
   void ReportStartupOverhead() const;
 
   int64_t nexe_size() const { return nexe_size_; }
+
+  bool RequestNaClManifest(const std::string& url, bool* is_data_uri);
+  void ProcessNaClManifest(const std::string& program_url);
+
+  // URL resolution support.
+  // plugin_base_url is the URL used for resolving relative URLs used in
+  // src="...".
+  const GURL& plugin_base_url() const { return plugin_base_url_; }
+
+  // manifest_base_url is the URL used for resolving relative URLs mentioned
+  // in manifest files.  If the manifest is a data URI, this is an empty string
+  const GURL& manifest_base_url() const { return manifest_base_url_; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NexeLoadManager);
@@ -140,7 +154,13 @@ class NexeLoadManager {
   // Non-owning.
   content::PepperPluginInstance* plugin_instance_;
 
+  // The URL for the document corresponding to this plugin instance.
+  GURL plugin_base_url_;
+
+  GURL manifest_base_url_;
+
   scoped_ptr<TrustedPluginChannel> trusted_plugin_channel_;
+  scoped_ptr<ManifestServiceChannel> manifest_service_channel_;
   base::WeakPtrFactory<NexeLoadManager> weak_factory_;
 };
 

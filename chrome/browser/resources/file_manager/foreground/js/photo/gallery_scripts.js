@@ -10,7 +10,7 @@
 
 //<include src="../metrics.js">
 
-//<include src="../../../../image_loader/image_loader_client.js"/>
+//<include src="../../../../../../../ui/file_manager/image_loader/image_loader_client.js"/>
 
 //<include src="../../../../../../../ui/webui/resources/js/cr.js">
 //<include src="../../../../../../../ui/webui/resources/js/event_tracker.js">
@@ -64,7 +64,6 @@
 // Exports
 window.ImageUtil = ImageUtil;
 window.Gallery = Gallery;
-window.beforeunload = beforeunload;
 window.unload = unload;
 
 })();

@@ -35,6 +35,7 @@ class SimpleQuicFramer {
 
   bool ProcessPacket(const QuicEncryptedPacket& packet);
   bool ProcessPacket(const QuicPacket& packet);
+  void Reset();
 
   const QuicPacketHeader& header() const;
   size_t num_frames() const;
@@ -42,11 +43,19 @@ class SimpleQuicFramer {
   const std::vector<QuicConnectionCloseFrame>& connection_close_frames() const;
   const std::vector<QuicCongestionFeedbackFrame>& feedback_frames() const;
   const std::vector<QuicStopWaitingFrame>& stop_waiting_frames() const;
+  const std::vector<QuicPingFrame>& ping_frames() const;
   const std::vector<QuicGoAwayFrame>& goaway_frames() const;
   const std::vector<QuicRstStreamFrame>& rst_stream_frames() const;
   const std::vector<QuicStreamFrame>& stream_frames() const;
   const QuicFecData& fec_data() const;
+  const QuicVersionNegotiationPacket* version_negotiation_packet() const;
+  const QuicPublicResetPacket* public_reset_packet() const;
+
   QuicFramer* framer();
+
+  void SetSupportedVersions(const QuicVersionVector& versions) {
+    framer_.SetSupportedVersions(versions);
+  }
 
  private:
   QuicFramer framer_;

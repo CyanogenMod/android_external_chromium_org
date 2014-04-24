@@ -21,7 +21,6 @@
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_log.h"
-#include "url/gurl.h"
 
 namespace net {
 class AddressList;
@@ -38,16 +37,9 @@ namespace cast_channel {
 
 class CastMessage;
 
-// Size (in bytes) of the largest allowed message payload on the wire (without
-// the header).
-extern const uint32 kMaxMessageSize;
-
-// Size (in bytes) of the message header.
-extern const uint32 kMessageHeaderSize;
-
 // This class implements a channel between Chrome and a Cast device using a TCP
-// socket. The channel may be unauthenticated (cast://) or authenticated
-// (casts://). All CastSocket objects must be used only on the IO thread.
+// socket with SSL.  The channel may authenticate that the receiver is a genuine
+// Cast device.  All CastSocket objects must be used only on the IO thread.
 //
 // NOTE: Not called "CastChannel" to reduce confusion with the generated API
 // code.
@@ -69,19 +61,25 @@ class CastSocket : public ApiResource,
     virtual ~Delegate() {}
   };
 
-  // Creates a new CastSocket to |url|. |owner_extension_id| is the id of the
-  // extension that opened the socket.
+  // Creates a new CastSocket that connects to |ip_endpoint| with
+  // |channel_auth|. |owner_extension_id| is the id of the extension that opened
+  // the socket.  |channel_auth| must not be CHANNEL_AUTH_NONE.
   CastSocket(const std::string& owner_extension_id,
-             const GURL& url,
+             const net::IPEndPoint& ip_endpoint,
+             ChannelAuthType channel_auth,
              CastSocket::Delegate* delegate,
              net::NetLog* net_log);
   virtual ~CastSocket();
 
-  // The URL for the channel.
-  const GURL& url() const;
+  // The IP endpoint for the destination of the channel.
+  const net::IPEndPoint& ip_endpoint() const { return ip_endpoint_; }
 
-  // Whether to perform receiver authentication.
-  bool auth_required() const { return auth_required_; }
+  // The authentication level requested for the channel.
+  ChannelAuthType channel_auth() const { return channel_auth_; }
+
+  // Returns a cast:// or casts:// URL for the channel endpoint.
+  // For backwards compatibility.
+  std::string CastUrl() const;
 
   // Channel id for the ApiResourceManager.
   int id() const { return channel_id_; }
@@ -89,12 +87,12 @@ class CastSocket : public ApiResource,
   // Sets the channel id.
   void set_id(int channel_id) { channel_id_ = channel_id; }
 
-  // Returns the state of the channel.
-  ReadyState ready_state() const { return ready_state_; }
+  // Returns the state of the channel.  Virtual for testing.
+  virtual ReadyState ready_state() const;
 
   // Returns the last error that occurred on this channel, or
-  // CHANNEL_ERROR_NONE if no error has occurred.
-  ChannelError error_state() const { return error_state_; }
+  // CHANNEL_ERROR_NONE if no error has occurred.  Virtual for testing.
+  virtual ChannelError error_state() const;
 
   // Connects the channel to the peer. If successful, the channel will be in
   // READY_STATE_OPEN.
@@ -119,8 +117,29 @@ class CastSocket : public ApiResource,
   // It is fine to delete the CastSocket object in |callback|.
   virtual void Close(const net::CompletionCallback& callback);
 
-  // Fills |channel_info| with the status of this channel.
-  virtual void FillChannelInfo(ChannelInfo* channel_info) const;
+ protected:
+  // Message header struct. If fields are added, be sure to update
+  // header_size().  Protected to allow use of *_size() methods in unit tests.
+  struct MessageHeader {
+    MessageHeader();
+    // Sets the message size.
+    void SetMessageSize(size_t message_size);
+    // Prepends this header to |str|.
+    void PrependToString(std::string* str);
+    // Reads |header| from the beginning of |buffer|.
+    static void ReadFromIOBuffer(net::GrowableIOBuffer* buffer,
+                                 MessageHeader* header);
+    // Size (in bytes) of the message header.
+    static uint32 header_size() { return sizeof(uint32); }
+
+    // Maximum size (in bytes) of a message payload on the wire (does not
+    // include header).
+    static uint32 max_message_size() { return 65536; }
+
+    std::string ToString();
+    // The size of the following protocol message in bytes, in host byte order.
+    uint32 message_size;
+  };
 
  private:
   friend class ApiResourceManager<CastSocket>;
@@ -163,8 +182,6 @@ class CastSocket : public ApiResource,
   // Creates an instance of SSLClientSocket with the given underlying |socket|.
   virtual scoped_ptr<net::SSLClientSocket> CreateSslSocket(
       scoped_ptr<net::StreamSocket> socket);
-  // Returns IPEndPoint for the URL to connect to.
-  const net::IPEndPoint& ip_endpoint() const { return ip_endpoint_; }
   // Extracts peer certificate from SSLClientSocket instance when the socket
   // is in cert error state.
   // Returns whether certificate is successfully extracted.
@@ -229,9 +246,6 @@ class CastSocket : public ApiResource,
 
   // Runs the external connection callback and resets it.
   void DoConnectCallback(int result);
-  // Verifies that the URL is a valid cast:// or casts:// URL and sets url_ to
-  // the result.
-  bool ParseChannelUrl(const GURL& url);
   // Adds |message| to the write queue and starts the write loop if needed.
   void SendCastMessageInternal(const CastMessage& message,
                                const net::CompletionCallback& callback);
@@ -258,14 +272,12 @@ class CastSocket : public ApiResource,
   // The id of the channel.
   int channel_id_;
 
-  // The URL of the peer (cast:// or casts://).
-  GURL url_;
+  // The IP endpoint that the the channel is connected to.
+  net::IPEndPoint ip_endpoint_;
+  // Receiver authentication requested for the channel.
+  ChannelAuthType channel_auth_;
   // Delegate to inform of incoming messages and errors.
   Delegate* delegate_;
-  // True if receiver authentication should be performed.
-  bool auth_required_;
-  // The IP endpoint of the peer.
-  net::IPEndPoint ip_endpoint_;
 
   // IOBuffer for reading the message header.
   scoped_refptr<net::GrowableIOBuffer> header_read_buffer_;
@@ -313,22 +325,6 @@ class CastSocket : public ApiResource,
   // The current status of the channel.
   ReadyState ready_state_;
 
-  // Message header struct. If fields are added, be sure to update
-  // kMessageHeaderSize in the .cc.
-  struct MessageHeader {
-    MessageHeader();
-    // Sets the message size.
-    void SetMessageSize(size_t message_size);
-    // Prepends this header to |str|.
-    void PrependToString(std::string* str);
-    // Reads |header| from the beginning of |buffer|.
-    static void ReadFromIOBuffer(net::GrowableIOBuffer* buffer,
-                                 MessageHeader* header);
-    std::string ToString();
-    // The size of the following protocol message in bytes, in host byte order.
-    uint32 message_size;
-  };
-
   // Holds a message to be written to the socket. |callback| is invoked when the
   // message is fully written or an error occurrs.
   struct WriteRequest {
@@ -345,10 +341,11 @@ class CastSocket : public ApiResource,
   // being written.
   std::queue<WriteRequest> write_queue_;
 
-  FRIEND_TEST_ALL_PREFIXES(CastSocketTest, TestCastURLs);
-  FRIEND_TEST_ALL_PREFIXES(CastSocketTest, TestRead);
-  FRIEND_TEST_ALL_PREFIXES(CastSocketTest, TestReadMany);
   FRIEND_TEST_ALL_PREFIXES(CastSocketTest, TestFullSecureConnectionFlowAsync);
+  FRIEND_TEST_ALL_PREFIXES(CastSocketTest, TestRead);
+  FRIEND_TEST_ALL_PREFIXES(CastSocketTest, TestReadHeaderParseError);
+  FRIEND_TEST_ALL_PREFIXES(CastSocketTest, TestReadMany);
+  FRIEND_TEST_ALL_PREFIXES(CastSocketTest, TestWriteErrorLargeMessage);
   DISALLOW_COPY_AND_ASSIGN(CastSocket);
 };
 

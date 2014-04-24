@@ -117,6 +117,14 @@
         'gestures/gesture_types.h',
         'gestures/velocity_calculator.cc',
         'gestures/velocity_calculator.h',
+        'ozone/evdev/libgestures_glue/event_reader_libevdev_cros.cc',
+        'ozone/evdev/libgestures_glue/event_reader_libevdev_cros.h',
+        'ozone/evdev/libgestures_glue/gesture_interpreter_libevdev_cros.cc',
+        'ozone/evdev/libgestures_glue/gesture_interpreter_libevdev_cros.h',
+        'ozone/evdev/libgestures_glue/gesture_logging.cc',
+        'ozone/evdev/libgestures_glue/gesture_logging.h',
+        'ozone/evdev/libgestures_glue/gesture_timer_provider.cc',
+        'ozone/evdev/libgestures_glue/gesture_timer_provider.h',
         'ozone/evdev/device_manager_evdev.cc',
         'ozone/evdev/device_manager_evdev.h',
         'ozone/evdev/device_manager_udev.cc',
@@ -146,6 +154,8 @@
         'platform/scoped_event_dispatcher.h',
         'platform/x11/x11_event_source.cc',
         'platform/x11/x11_event_source.h',
+        'platform/x11/x11_event_source_glib.cc',
+        'platform/x11/x11_event_source_libevent.cc',
         'win/events_win.cc',
         'x/events_x.cc',
         'linux/text_edit_command_auralinux.cc',
@@ -182,6 +192,14 @@
           'dependencies': [
             '../../build/linux/system.gyp:glib',
           ],
+          'sources!': [
+            'platform/x11/x11_event_source_libevent.cc',
+          ],
+        }, {
+          # use_glib == 0
+          'sources!': [
+            'platform/x11/x11_event_source_glib.cc',
+          ],
         }],
         ['use_ozone_evdev==1', {
           'defines': ['USE_OZONE_EVDEV=1'],
@@ -189,6 +207,19 @@
         ['use_ozone_evdev==1 and use_udev==1', {
           'dependencies': [
             '<(DEPTH)/build/linux/system.gyp:udev',
+          ],
+        }],
+        ['use_ozone_evdev==1 and use_evdev_gestures==1', {
+          'dependencies': [
+            '<(DEPTH)/build/linux/system.gyp:libgestures',
+            '<(DEPTH)/build/linux/system.gyp:libevdev-cros',
+          ],
+          'defines': [
+            'USE_EVDEV_GESTURES',
+          ],
+        }, {
+          'sources/': [
+            ['exclude', '^ozone/evdev/libgestures_glue/'],
           ],
         }],
         ['use_udev==0', {
@@ -361,7 +392,6 @@
           ],
           'variables': {
             'test_suite_name': 'events_unittests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)events_unittests<(SHARED_LIB_SUFFIX)',
           },
           'includes': [ '../../build/apk_test.gypi' ],
         },

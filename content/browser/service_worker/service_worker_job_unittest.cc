@@ -94,7 +94,7 @@ class ServiceWorkerJobTest : public testing::Test {
         render_process_id_(88) {}
 
   virtual void SetUp() OVERRIDE {
-    context_.reset(new ServiceWorkerContextCore(base::FilePath(), NULL));
+    context_.reset(new ServiceWorkerContextCore(base::FilePath(), NULL, NULL));
     helper_.reset(new EmbeddedWorkerTestHelper(context_.get(),
                                                render_process_id_));
   }
@@ -137,16 +137,10 @@ TEST_F(ServiceWorkerJobTest, SameDocumentSameRegistration) {
   storage()->FindRegistrationForDocument(
       GURL("http://www.example.com/"),
       SaveFoundRegistration(SERVICE_WORKER_OK, &called, &registration2));
-
-  ServiceWorkerRegistration* null_registration(NULL);
-  ASSERT_EQ(null_registration, registration1);
-  ASSERT_EQ(null_registration, registration2);
-  EXPECT_FALSE(called);
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called);
-  ASSERT_NE(null_registration, registration1);
-  ASSERT_NE(null_registration, registration2);
-
+  ASSERT_TRUE(registration1);
+  ASSERT_EQ(registration1, original_registration);
   ASSERT_EQ(registration1, registration2);
 }
 
@@ -168,8 +162,6 @@ TEST_F(ServiceWorkerJobTest, SameMatchSameRegistration) {
   storage()->FindRegistrationForDocument(
       GURL("http://www.example.com/one"),
       SaveFoundRegistration(SERVICE_WORKER_OK, &called, &registration1));
-
-  EXPECT_FALSE(called);
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called);
 
@@ -177,10 +169,9 @@ TEST_F(ServiceWorkerJobTest, SameMatchSameRegistration) {
   storage()->FindRegistrationForDocument(
       GURL("http://www.example.com/two"),
       SaveFoundRegistration(SERVICE_WORKER_OK, &called, &registration2));
-  EXPECT_FALSE(called);
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called);
-
+  ASSERT_EQ(registration1, original_registration);
   ASSERT_EQ(registration1, registration2);
 }
 
@@ -216,12 +207,9 @@ TEST_F(ServiceWorkerJobTest, DifferentMatchDifferentRegistration) {
       GURL("http://www.example.com/two/"),
       SaveFoundRegistration(SERVICE_WORKER_OK, &called2, &registration2));
 
-  EXPECT_FALSE(called1);
-  EXPECT_FALSE(called2);
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called2);
   EXPECT_TRUE(called1);
-
   ASSERT_NE(registration1, registration2);
 }
 
@@ -278,6 +266,19 @@ TEST_F(ServiceWorkerJobTest, Unregister) {
   ASSERT_TRUE(called);
 
   ASSERT_EQ(scoped_refptr<ServiceWorkerRegistration>(NULL), registration);
+}
+
+TEST_F(ServiceWorkerJobTest, Unregister_NothingRegistered) {
+  GURL pattern("http://www.example.com/*");
+
+  bool called;
+  job_coordinator()->Unregister(pattern,
+                                render_process_id_,
+                                SaveUnregistration(SERVICE_WORKER_OK, &called));
+
+  ASSERT_FALSE(called);
+  base::RunLoop().RunUntilIdle();
+  ASSERT_TRUE(called);
 }
 
 // Make sure that when a new registration replaces an existing
@@ -403,6 +404,7 @@ class FailToStartWorkerTestHelper : public EmbeddedWorkerTestHelper {
 
   virtual void OnStartWorker(int embedded_worker_id,
                              int64 service_worker_version_id,
+                             const GURL& scope,
                              const GURL& script_url) OVERRIDE {
     // Simulate failure by sending worker stopped instead of started.
     EmbeddedWorkerInstance* worker = registry()->GetWorker(embedded_worker_id);

@@ -38,7 +38,6 @@
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/monitor_win.h"
 #include "ui/views/widget/widget_hwnd_utils.h"
-#include "ui/views/win/appbar.h"
 #include "ui/views/win/fullscreen_handler.h"
 #include "ui/views/win/hwnd_message_handler_delegate.h"
 #include "ui/views/win/scoped_fullscreen_visibility.h"
@@ -971,10 +970,12 @@ LRESULT HWNDMessageHandler::HandleNcHitTestMessage(unsigned int message,
 
 int HWNDMessageHandler::GetAppbarAutohideEdges(HMONITOR monitor) {
   autohide_factory_.InvalidateWeakPtrs();
-  return Appbar::instance()->GetAutohideEdges(
-      monitor,
-      base::Bind(&HWNDMessageHandler::OnAppbarAutohideEdgesChanged,
-                 autohide_factory_.GetWeakPtr()));
+  return ViewsDelegate::views_delegate ?
+      ViewsDelegate::views_delegate->GetAppbarAutohideEdges(
+          monitor,
+          base::Bind(&HWNDMessageHandler::OnAppbarAutohideEdgesChanged,
+                     autohide_factory_.GetWeakPtr())) :
+      ViewsDelegate::EDGE_BOTTOM;
 }
 
 void HWNDMessageHandler::OnAppbarAutohideEdgesChanged() {
@@ -1089,7 +1090,8 @@ bool HWNDMessageHandler::GetClientAreaInsets(gfx::Insets* insets) const {
   if (IsMaximized()) {
     // Windows automatically adds a standard width border to all sides when a
     // window is maximized.
-    int border_thickness = GetSystemMetrics(SM_CXSIZEFRAME);
+    int border_thickness =
+        GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
     if (remove_standard_frame_)
       border_thickness -= 1;
     *insets = gfx::Insets(
@@ -1667,9 +1669,9 @@ LRESULT HWNDMessageHandler::OnNCCalcSize(BOOL mode, LPARAM l_param) {
       }
     }
     const int autohide_edges = GetAppbarAutohideEdges(monitor);
-    if (autohide_edges & Appbar::EDGE_LEFT)
+    if (autohide_edges & ViewsDelegate::EDGE_LEFT)
       client_rect->left += kAutoHideTaskbarThicknessPx;
-    if (autohide_edges & Appbar::EDGE_TOP) {
+    if (autohide_edges & ViewsDelegate::EDGE_TOP) {
       if (!delegate_->IsUsingCustomFrame()) {
         // Tricky bit.  Due to a bug in DwmDefWindowProc()'s handling of
         // WM_NCHITTEST, having any nonclient area atop the window causes the
@@ -1685,9 +1687,9 @@ LRESULT HWNDMessageHandler::OnNCCalcSize(BOOL mode, LPARAM l_param) {
         client_rect->top += kAutoHideTaskbarThicknessPx;
       }
     }
-    if (autohide_edges & Appbar::EDGE_RIGHT)
+    if (autohide_edges & ViewsDelegate::EDGE_RIGHT)
       client_rect->right -= kAutoHideTaskbarThicknessPx;
-    if (autohide_edges & Appbar::EDGE_BOTTOM)
+    if (autohide_edges & ViewsDelegate::EDGE_BOTTOM)
       client_rect->bottom -= kAutoHideTaskbarThicknessPx;
 
     // We cannot return WVR_REDRAW when there is nonclient area, or Windows
@@ -1757,8 +1759,10 @@ LRESULT HWNDMessageHandler::OnNCHitTest(const gfx::Point& point) {
         // the vertical scrollar down arrow would be drawn.
         // We check if the hittest coordinates lie in this region and if yes
         // we return HTCLIENT.
-        int border_width = ::GetSystemMetrics(SM_CXSIZEFRAME);
-        int border_height = ::GetSystemMetrics(SM_CYSIZEFRAME);
+        int border_width = ::GetSystemMetrics(SM_CXSIZEFRAME) +
+                           GetSystemMetrics(SM_CXPADDEDBORDER);
+        int border_height = ::GetSystemMetrics(SM_CYSIZEFRAME) +
+                            GetSystemMetrics(SM_CXPADDEDBORDER);
         int scroll_width = ::GetSystemMetrics(SM_CXVSCROLL);
         int scroll_height = ::GetSystemMetrics(SM_CYVSCROLL);
         RECT window_rect;
@@ -2221,7 +2225,8 @@ void HWNDMessageHandler::OnWindowPosChanging(WINDOWPOS* window_pos) {
           new_window_rect = monitor_rect;
         } else if (IsMaximized()) {
           new_window_rect = work_area;
-          int border_thickness = GetSystemMetrics(SM_CXSIZEFRAME);
+          int border_thickness = GetSystemMetrics(SM_CXSIZEFRAME) +
+                                 GetSystemMetrics(SM_CXPADDEDBORDER);
           new_window_rect.Inset(-border_thickness, -border_thickness);
         } else {
           new_window_rect = gfx::Rect(window_rect);

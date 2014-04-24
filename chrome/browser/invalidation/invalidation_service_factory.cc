@@ -4,16 +4,17 @@
 
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
 
+#include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_registry.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/invalidation/fake_invalidation_service.h"
 #include "chrome/browser/invalidation/invalidation_service.h"
 #include "chrome/browser/invalidation/invalidation_service_android.h"
 #include "chrome/browser/invalidation/invalidator_storage.h"
-#include "chrome/browser/invalidation/profile_invalidation_auth_provider.h"
 #include "chrome/browser/invalidation/ticl_invalidation_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
+#include "chrome/browser/signin/profile_identity_provider.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
@@ -22,6 +23,8 @@
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
+#include "net/url_request/url_request_context_getter.h"
+#include "sync/notifier/invalidation_state_tracker.h"
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/invalidation/invalidation_controller_android.h"
@@ -32,8 +35,8 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/chromeos/settings/device_identity_provider.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
-#include "chrome/browser/invalidation/device_invalidation_auth_provider_chromeos.h"
 #endif
 
 namespace invalidation {
@@ -95,7 +98,7 @@ KeyedService* InvalidationServiceFactory::BuildServiceInstanceFor(
                                         new InvalidationControllerAndroid());
 #else
 
-  scoped_ptr<InvalidationAuthProvider> auth_provider;
+  scoped_ptr<IdentityProvider> identity_provider;
 
 #if defined(OS_CHROMEOS)
   policy::BrowserPolicyConnectorChromeOS* connector =
@@ -103,21 +106,24 @@ KeyedService* InvalidationServiceFactory::BuildServiceInstanceFor(
   if (chromeos::UserManager::IsInitialized() &&
       chromeos::UserManager::Get()->IsLoggedInAsKioskApp() &&
       connector->IsEnterpriseManaged()) {
-    auth_provider.reset(new DeviceInvalidationAuthProvider(
+    identity_provider.reset(new chromeos::DeviceIdentityProvider(
         chromeos::DeviceOAuth2TokenServiceFactory::Get()));
   }
 #endif
 
-  if (!auth_provider) {
-    auth_provider.reset(new ProfileInvalidationAuthProvider(
+  if (!identity_provider) {
+    identity_provider.reset(new ProfileIdentityProvider(
         SigninManagerFactory::GetForProfile(profile),
         ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
         LoginUIServiceFactory::GetForProfile(profile)));
   }
 
-  TiclInvalidationService* service =
-      new TiclInvalidationService(auth_provider.Pass(), profile);
-  service->Init();
+  TiclInvalidationService* service = new TiclInvalidationService(
+      identity_provider.Pass(),
+      profile->GetRequestContext(),
+      profile);
+  service->Init(scoped_ptr<syncer::InvalidationStateTracker>(
+      new InvalidatorStorage(profile->GetPrefs())));
   return service;
 #endif
 }

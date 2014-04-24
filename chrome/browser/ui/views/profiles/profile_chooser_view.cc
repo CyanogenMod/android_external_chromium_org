@@ -6,11 +6,10 @@
 
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/about_flags.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/pref_service_flags_storage.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
+#include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
@@ -22,13 +21,12 @@
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/views/profiles/user_manager_view.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/profile_management_switches.h"
 #include "chrome/common/url_constants.h"
 #include "components/signin/core/browser/mutable_profile_oauth2_token_service.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -157,7 +155,7 @@ class EditableProfilePhoto : public views::ImageView {
       : views::ImageView(),
         change_photo_button_(NULL) {
     const int kLargeImageSide = 64;
-    gfx::Image image = profiles::GetSizedAvatarIconWithBorder(
+    gfx::Image image = profiles::GetSizedAvatarIcon(
         icon, true,
         kLargeImageSide + profiles::kAvatarIconPadding,
         kLargeImageSide + profiles::kAvatarIconPadding);
@@ -529,7 +527,7 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
         prefs::kProfileAvatarTutorialShown, kProfileAvatarTutorialShowMax + 1);
     ShowView(BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu_.get());
   } else if (sender == tutorial_enable_new_profile_management_button_) {
-    EnableNewProfileManagementPreview();
+    profiles::EnableNewProfileManagementPreview();
   } else if (sender == remove_account_and_relaunch_button_) {
     RemoveAccount();
   } else if (sender == account_removal_cancel_button_) {
@@ -899,7 +897,8 @@ views::View* ProfileChooserView::CreateCurrentProfileEditableView(
 
 views::View* ProfileChooserView::CreateGuestProfileView() {
   gfx::Image guest_icon =
-      ui::ResourceBundle::GetSharedInstance().GetImageNamed(IDR_LOGIN_GUEST);
+      ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+          profiles::GetPlaceholderAvatarIconResourceID());
   AvatarMenu::Item guest_avatar_item(0, 0, guest_icon);
   guest_avatar_item.active = true;
   guest_avatar_item.name = l10n_util::GetStringUTF16(
@@ -922,7 +921,7 @@ views::View* ProfileChooserView::CreateOtherProfilesView(
     const AvatarMenu::Item& item = avatar_menu_->GetItemAt(index);
     const int kSmallImageSide = 32;
 
-    gfx::Image image = profiles::GetSizedAvatarIconWithBorder(
+    gfx::Image image = profiles::GetSizedAvatarIcon(
         item.icon, true,
         kSmallImageSide + profiles::kAvatarIconPadding,
         kSmallImageSide + profiles::kAvatarIconPadding);
@@ -1132,11 +1131,11 @@ views::View* ProfileChooserView::CreateAccountRemovalView() {
     std::vector<size_t> offsets;
     const base::string16 settings_text =
         l10n_util::GetStringUTF16(IDS_PROFILES_SETTINGS_LINK);
-    const base::string16 primmary_account_removal_text =
+    const base::string16 primary_account_removal_text =
         l10n_util::GetStringFUTF16(IDS_PROFILES_PRIMARY_ACCOUNT_REMOVAL_TEXT,
             base::UTF8ToUTF16(account_id_to_remove_), settings_text, &offsets);
     views::StyledLabel* primary_account_removal_label =
-        new views::StyledLabel(primmary_account_removal_text, this);
+        new views::StyledLabel(primary_account_removal_text, this);
     primary_account_removal_label->AddStyleRange(
         gfx::Range(offsets[1], offsets[1] + settings_text.size()),
         views::StyledLabel::RangeStyleInfo::CreateForLink());
@@ -1175,19 +1174,4 @@ views::View* ProfileChooserView::CreateNewProfileManagementPreviewView() {
       l10n_util::GetStringUTF16(IDS_PROFILES_TUTORIAL_TRY_BUTTON),
       &tutorial_learn_more_link_,
       &tutorial_enable_new_profile_management_button_);
-}
-
-void ProfileChooserView::EnableNewProfileManagementPreview() {
-  const char kNewProfileManagementExperimentInternalName[] =
-      "enable-new-profile-management";
-  about_flags::PrefServiceFlagsStorage flags_storage(
-      g_browser_process->local_state());
-  about_flags::SetExperimentEnabled(
-      &flags_storage,
-      kNewProfileManagementExperimentInternalName,
-      true);
-
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kNewProfileManagement);
-  chrome::ShowUserManagerWithTutorial(profiles::USER_MANAGER_TUTORIAL_OVERVIEW);
 }

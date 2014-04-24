@@ -40,14 +40,6 @@
             ['chromeos==1', {
               'sources/': [ ['include', '_chromeos\\.cc$'] ]
             }],
-            ['toolkit_uses_gtk==1', {
-              'dependencies': [
-                '../build/linux/system.gyp:gtk',
-              ],
-              'export_dependent_settings': [
-                '../build/linux/system.gyp:gtk',
-              ],
-            }],
           ],
           'dependencies': [
             'symbolize',
@@ -220,8 +212,6 @@
         'message_loop/message_pump_android.h',
         'message_loop/message_pump_glib.cc',
         'message_loop/message_pump_glib.h',
-        'message_loop/message_pump_gtk.cc',
-        'message_loop/message_pump_gtk.h',
         'message_loop/message_pump_io_ios.cc',
         'message_loop/message_pump_io_ios.h',
         'message_loop/message_pump_observer.h',
@@ -253,12 +243,6 @@
         '../third_party/icu/icu.gyp:icuuc',
       ],
       'conditions': [
-        ['toolkit_uses_gtk==1', {
-          'dependencies': [
-            # i18n/rtl.cc uses gtk
-            '../build/linux/system.gyp:gtk',
-          ],
-        }],
         ['OS == "win"', {
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [
@@ -696,13 +680,10 @@
             'file_version_info_unittest.cc',
           ],
           'conditions': [
-            [ 'toolkit_uses_gtk==1', {
+            [ 'desktop_linux==1', {
               'sources': [
                 'nix/xdg_util_unittest.cc',
               ],
-              'dependencies': [
-                '../build/linux/system.gyp:gtk',
-              ]
             }],
           ],
         }],
@@ -833,12 +814,6 @@
         'base',
       ],
       'conditions': [
-        ['toolkit_uses_gtk==1', {
-          'dependencies': [
-            # test_suite initializes GTK.
-            '../build/linux/system.gyp:gtk',
-          ],
-        }],
         ['os_posix==0', {
           'sources!': [
             'test/scoped_locale.cc',
@@ -974,17 +949,6 @@
           'PERF_TEST',
         ],
       },
-      'conditions': [
-        ['toolkit_uses_gtk==1', {
-          'dependencies': [
-            # Needed to handle the #include chain:
-            #   base/test/perf_test_suite.h
-            #   base/test/test_suite.h
-            #   gtk/gtk.h
-            '../build/linux/system.gyp:gtk',
-          ],
-        }],
-      ],
     },
     {
       'target_name': 'sanitizer_options',
@@ -1003,8 +967,23 @@
       'include_dirs': [
         '..',
       ],
+      # Some targets may want to opt-out from ASan, TSan and MSan and link
+      # without the corresponding runtime libraries. We drop the libc++
+      # dependency and omit the compiler flags to avoid bringing instrumented
+      # code to those targets.
+      'conditions': [
+        ['use_custom_libcxx==1', {
+          'dependencies!': [
+            '../third_party/libc++/libc++.gyp:libc++',
+            '../third_party/libc++abi/libc++abi.gyp:libc++abi',
+          ],
+        }],
+      ],
       'cflags!': [
         '-fsanitize=address',
+        '-fsanitize=thread',
+        '-fsanitize=memory',
+        '-fsanitize-memory-track-origins',
       ],
       'direct_dependent_settings': {
         'ldflags': [
@@ -1384,10 +1363,12 @@
           'target_name': 'chromium_android_linker',
           'type': 'shared_library',
           'conditions': [
-            ['android_webview_build == 0', {
-              # Avoid breaking the webview build because it doesn't have
-              # <(android_ndk_root)/crazy_linker.gyp. Note that it never uses
-              # the linker anyway.
+            ['android_webview_build == 0 and target_arch != "x64" and \
+               target_arch != "arm64"', {
+              # Avoid breaking the webview/64-bit build because they
+              # don't have <(android_ndk_root)/crazy_linker.gyp.
+              # Note that webview never uses the linker anyway.
+              # Note there is no 64-bit support in the linker.
               'sources': [
                 'android/linker/linker_jni.cc',
               ],
@@ -1410,7 +1391,6 @@
           ],
           'variables': {
             'test_suite_name': 'base_perftests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)base_perftests<(SHARED_LIB_SUFFIX)',
           },
           'includes': [ '../build/apk_test.gypi' ],
         },
@@ -1449,7 +1429,6 @@
           ],
           'variables': {
             'test_suite_name': 'base_unittests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)base_unittests<(SHARED_LIB_SUFFIX)',
           },
           'includes': [ '../build/apk_test.gypi' ],
         },

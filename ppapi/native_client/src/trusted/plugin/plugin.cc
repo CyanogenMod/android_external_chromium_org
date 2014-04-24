@@ -268,7 +268,10 @@ void Plugin::LoadNaClModule(nacl::DescWrapper* wrapper,
   // associated listener threads do not go unjoined because if they
   // outlive the Plugin object, they will not be memory safe.
   ShutDownSubprocesses();
-  SelLdrStartParams params(manifest_base_url(),
+  pp::Var manifest_base_url =
+      pp::Var(pp::PASS_REF, nacl_interface_->GetManifestBaseURL(pp_instance()));
+  std::string manifest_base_url_str = manifest_base_url.AsString();
+  SelLdrStartParams params(manifest_base_url_str,
                            true /* uses_irt */,
                            true /* uses_ppapi */,
                            uses_nonsfi_mode,
@@ -431,7 +434,7 @@ Plugin* Plugin::New(PP_Instance pp_instance) {
 // failure. Note that module loading functions will log their own errors.
 bool Plugin::Init(uint32_t argc, const char* argn[], const char* argv[]) {
   PLUGIN_PRINTF(("Plugin::Init (argc=%" NACL_PRIu32 ")\n", argc));
-  nacl_interface_->SetInitTime(pp_instance());
+  nacl_interface_->InitializePlugin(pp_instance());
 
   url_util_ = pp::URLUtil_Dev::Get();
   if (url_util_ == NULL)
@@ -461,16 +464,6 @@ bool Plugin::Init(uint32_t argc, const char* argn[], const char* argv[]) {
     } else {
       manifest_url = LookupArgument(kSrcManifestAttribute);
     }
-    // Use the document URL as the base for resolving relative URLs to find the
-    // manifest.  This takes into account the setting of <base> tags that
-    // precede the embed/object.
-    CHECK(url_util_ != NULL);
-    pp::Var base_var = url_util_->GetDocumentURL(this);
-    if (!base_var.is_string()) {
-      PLUGIN_PRINTF(("Plugin::Init (unable to find document url)\n"));
-      return false;
-    }
-    set_plugin_base_url(base_var.AsString());
     if (manifest_url.empty()) {
       // TODO(sehr,polina): this should be a hard error when scripting
       // the src property is no longer allowed.
@@ -484,7 +477,7 @@ bool Plugin::Init(uint32_t argc, const char* argn[], const char* argv[]) {
       // Issue a GET for the manifest_url.  The manifest file will be parsed to
       // determine the nexe URL.
       // Sets src property to full manifest URL.
-      RequestNaClManifest(manifest_url.c_str());
+      RequestNaClManifest(manifest_url);
     }
   }
 
@@ -499,6 +492,8 @@ Plugin::Plugin(PP_Instance pp_instance)
       wrapper_factory_(NULL),
       enable_dev_interfaces_(false),
       time_of_last_progress_event_(0),
+      manifest_open_time_(-1),
+      nexe_open_time_(-1),
       nacl_interface_(NULL),
       uma_interface_(this) {
   PLUGIN_PRINTF(("Plugin::Plugin (this=%p, pp_instance=%"
@@ -592,6 +587,13 @@ void Plugin::NexeFileDidOpen(int32_t pp_error) {
       nexe_bytes_read = stat_buf.st_size;
   }
 
+  int64_t now = NaClGetTimeOfDayMicroseconds();
+  int64_t download_time;
+  if (now < nexe_open_time_)
+    download_time = 0;
+  else
+    download_time = now - nexe_open_time_;
+
   nacl_interface_->NexeFileDidOpen(
       pp_instance(),
       pp_error,
@@ -599,7 +601,7 @@ void Plugin::NexeFileDidOpen(int32_t pp_error) {
       nexe_downloader_.status_code(),
       nexe_bytes_read,
       nexe_downloader_.url().c_str(),
-      nexe_downloader_.TimeSinceOpenMilliseconds());
+      download_time / 1000);
 
   if (nexe_bytes_read == -1)
     return;
@@ -683,47 +685,17 @@ void Plugin::BitcodeDidTranslateContinuation(int32_t pp_error) {
   }
 }
 
-void Plugin::NaClManifestBufferReady(int32_t pp_error) {
-  PLUGIN_PRINTF(("Plugin::NaClManifestBufferReady (pp_error=%"
-                 NACL_PRId32 ")\n", pp_error));
-  ErrorInfo error_info;
-  if (pp_error != PP_OK) {
-    if (pp_error == PP_ERROR_ABORTED) {
-      ReportLoadAbort();
-    } else {
-      error_info.SetReport(PP_NACL_ERROR_MANIFEST_LOAD_URL,
-                           "could not load manifest url.");
-      ReportLoadError(error_info);
-    }
-    return;
-  }
-
-  const std::deque<char>& buffer = nexe_downloader_.buffer();
-  size_t buffer_size = buffer.size();
-  if (buffer_size > kNaClManifestMaxFileBytes) {
-    error_info.SetReport(PP_NACL_ERROR_MANIFEST_TOO_LARGE,
-                         "manifest file too large.");
-    ReportLoadError(error_info);
-    return;
-  }
-  nacl::scoped_array<char> json_buffer(new char[buffer_size + 1]);
-  if (json_buffer == NULL) {
-    error_info.SetReport(PP_NACL_ERROR_MANIFEST_MEMORY_ALLOC,
-                         "could not allocate manifest memory.");
-    ReportLoadError(error_info);
-    return;
-  }
-  std::copy(buffer.begin(), buffer.begin() + buffer_size, &json_buffer[0]);
-  json_buffer[buffer_size] = '\0';
-
-  ProcessNaClManifest(json_buffer.get());
-}
-
 void Plugin::NaClManifestFileDidOpen(int32_t pp_error) {
   PLUGIN_PRINTF(("Plugin::NaClManifestFileDidOpen (pp_error=%"
                  NACL_PRId32 ")\n", pp_error));
+  int64_t now = NaClGetTimeOfDayMicroseconds();
+  int64_t download_time;
+  if (now < manifest_open_time_)
+    download_time = 0;
+  else
+    download_time = now - manifest_open_time_;
   HistogramTimeSmall("NaCl.Perf.StartupTime.ManifestDownload",
-                     nexe_downloader_.TimeSinceOpenMilliseconds());
+                     download_time / 1000);
   HistogramHTTPStatusCode(
       nacl_interface_->GetIsInstalled(pp_instance()) ?
           "NaCl.HttpStatusCodeClass.Manifest.InstalledApp" :
@@ -796,22 +768,15 @@ void Plugin::ProcessNaClManifest(const nacl::string& manifest_json) {
   }
 
   nacl::string program_url;
-  PnaclOptions pnacl_options;
+  PP_PNaClOptions pnacl_options = {PP_FALSE, PP_FALSE, 2};
   bool uses_nonsfi_mode;
   if (manifest_->GetProgramURL(
           &program_url, &pnacl_options, &uses_nonsfi_mode, &error_info)) {
-    pp::Var program_url_var(program_url);
-    nacl_interface_->SetIsInstalled(
-        pp_instance(),
-        PP_FromBool(
-            nacl_interface_->GetUrlScheme(program_url_var.pp_var()) ==
-            PP_SCHEME_CHROME_EXTENSION));
+    // TODO(teravest): Make ProcessNaClManifest take responsibility for more of
+    // this function.
+    nacl_interface_->ProcessNaClManifest(pp_instance(), program_url.c_str());
     uses_nonsfi_mode_ = uses_nonsfi_mode;
-    nacl_interface_->SetNaClReadyState(pp_instance(),
-                                       PP_NACL_READY_STATE_LOADING);
-    // Inform JavaScript that we found a nexe URL to load.
-    EnqueueProgressEvent(PP_NACL_EVENT_PROGRESS);
-    if (pnacl_options.translate()) {
+    if (pnacl_options.translate) {
       pp::CompletionCallback translate_callback =
           callback_factory_.NewCallback(&Plugin::BitcodeDidTranslate);
       // Will always call the callback on success or failure.
@@ -822,6 +787,7 @@ void Plugin::ProcessNaClManifest(const nacl::string& manifest_json) {
                                             translate_callback));
       return;
     } else {
+      nexe_open_time_ = NaClGetTimeOfDayMicroseconds();
       // Try the fast path first. This will only block if the file is installed.
       if (OpenURLFast(program_url, &nexe_downloader_)) {
         NexeFileDidOpen(PP_OK);
@@ -845,48 +811,34 @@ void Plugin::ProcessNaClManifest(const nacl::string& manifest_json) {
 
 void Plugin::RequestNaClManifest(const nacl::string& url) {
   PLUGIN_PRINTF(("Plugin::RequestNaClManifest (url='%s')\n", url.c_str()));
-  PLUGIN_PRINTF(("Plugin::RequestNaClManifest (plugin base url='%s')\n",
-                 plugin_base_url().c_str()));
-  // The full URL of the manifest file is relative to the base url.
-  CHECK(url_util_ != NULL);
-  pp::Var nmf_resolved_url =
-      url_util_->ResolveRelativeToURL(plugin_base_url(), pp::Var(url));
-  if (!nmf_resolved_url.is_string()) {
-    ErrorInfo error_info;
-    error_info.SetReport(
-        PP_NACL_ERROR_MANIFEST_RESOLVE_URL,
-        nacl::string("could not resolve URL \"") + url.c_str() +
-        "\" relative to \"" + plugin_base_url().c_str() + "\".");
-    ReportLoadError(error_info);
+  PP_Bool is_data_uri;
+  ErrorInfo error_info;
+  if (!nacl_interface_->RequestNaClManifest(pp_instance(), url.c_str(),
+                                            &is_data_uri))
     return;
-  }
-  PLUGIN_PRINTF(("Plugin::RequestNaClManifest (resolved url='%s')\n",
-                 nmf_resolved_url.AsString().c_str()));
-  nacl_interface_->SetIsInstalled(
-      pp_instance(),
-      PP_FromBool(
-          nacl_interface_->GetUrlScheme(nmf_resolved_url.pp_var()) ==
-          PP_SCHEME_CHROME_EXTENSION));
-  set_manifest_base_url(nmf_resolved_url.AsString());
-  // Inform JavaScript that a load is starting.
-  nacl_interface_->SetNaClReadyState(pp_instance(), PP_NACL_READY_STATE_OPENED);
-  EnqueueProgressEvent(PP_NACL_EVENT_LOADSTART);
-  bool is_data_uri =
-      (nacl_interface_->GetUrlScheme(nmf_resolved_url.pp_var()) ==
-       PP_SCHEME_DATA);
-  HistogramEnumerateManifestIsDataURI(static_cast<int>(is_data_uri));
+  pp::Var nmf_resolved_url =
+      pp::Var(pp::PASS_REF, nacl_interface_->GetManifestBaseURL(pp_instance()));
   if (is_data_uri) {
-    pp::CompletionCallback open_callback =
-        callback_factory_.NewCallback(&Plugin::NaClManifestBufferReady);
-    // Will always call the callback on success or failure.
-    CHECK(nexe_downloader_.Open(nmf_resolved_url.AsString(),
-                                DOWNLOAD_TO_BUFFER,
-                                open_callback,
-                                false,
-                                NULL));
+    std::string string_nmf_resolved_url = nmf_resolved_url.AsString();
+    pp::Var nmf_data = pp::Var(
+        pp::PASS_REF,
+        nacl_interface_->ParseDataURL(string_nmf_resolved_url.c_str()));
+    if (!nmf_data.is_string()) {
+      error_info.SetReport(PP_NACL_ERROR_MANIFEST_LOAD_URL,
+                           "could not load manifest url.");
+      ReportLoadError(error_info);
+    } else if (nmf_data.AsString().size() > kNaClManifestMaxFileBytes) {
+      error_info.SetReport(PP_NACL_ERROR_MANIFEST_TOO_LARGE,
+                           "manifest file too large.");
+      ReportLoadError(error_info);
+    } else {
+      // TODO(teravest): Does this have to be async for any reason?
+      ProcessNaClManifest(nmf_data.AsString());
+    }
   } else {
     pp::CompletionCallback open_callback =
         callback_factory_.NewCallback(&Plugin::NaClManifestFileDidOpen);
+    manifest_open_time_ = NaClGetTimeOfDayMicroseconds();
     // Will always call the callback on success or failure.
     CHECK(nexe_downloader_.Open(nmf_resolved_url.AsString(),
                                 DOWNLOAD_TO_FILE,
@@ -908,12 +860,15 @@ bool Plugin::SetManifestObject(const nacl::string& manifest_json,
   bool is_pnacl = (mime_type() == kPnaclMIMEType);
   bool nonsfi_mode_enabled =
       PP_ToBool(nacl_interface_->IsNonSFIModeEnabled());
+  pp::Var manifest_base_url =
+      pp::Var(pp::PASS_REF, nacl_interface_->GetManifestBaseURL(pp_instance()));
+  std::string manifest_base_url_str = manifest_base_url.AsString();
   bool pnacl_debug = GetNaClInterface()->NaClDebugEnabledForURL(
-      manifest_base_url().c_str());
+      manifest_base_url_str.c_str());
   const char* sandbox_isa = nacl_interface_->GetSandboxArch();
   nacl::scoped_ptr<JsonManifest> json_manifest(
       new JsonManifest(url_util_,
-                       manifest_base_url(),
+                       manifest_base_url_str,
                        (is_pnacl ? kPortableArch : sandbox_isa),
                        nonsfi_mode_enabled,
                        pnacl_debug));
@@ -973,17 +928,11 @@ bool Plugin::StreamAsFile(const nacl::string& url,
   FileDownloader* downloader = new FileDownloader();
   downloader->Initialize(this);
   url_downloaders_.insert(downloader);
+
   // Untrusted loads are always relative to the page's origin.
-  CHECK(url_util_ != NULL);
-  pp::Var resolved_url =
-      url_util_->ResolveRelativeToURL(pp::Var(plugin_base_url()), url);
-  if (!resolved_url.is_string()) {
-    PLUGIN_PRINTF(("Plugin::StreamAsFile: "
-                   "could not resolve url \"%s\" relative to plugin \"%s\".",
-                   url.c_str(),
-                   plugin_base_url().c_str()));
+  if (!GetNaClInterface()->ResolvesRelativeToPluginBaseUrl(pp_instance(),
+                                                           url.c_str()))
     return false;
-  }
 
   // Try the fast path first. This will only block if the file is installed.
   if (OpenURLFast(url, downloader)) {
@@ -1079,14 +1028,6 @@ const FileDownloader* Plugin::FindFileDownloader(
 
 void Plugin::ReportSelLdrLoadStatus(int status) {
   HistogramEnumerateSelLdrLoadStatus(static_cast<NaClErrorCode>(status));
-}
-
-void Plugin::EnqueueProgressEvent(PP_NaClEventType event_type) {
-  EnqueueProgressEvent(event_type,
-                       NACL_NO_URL,
-                       Plugin::LENGTH_IS_NOT_COMPUTABLE,
-                       Plugin::kUnknownBytes,
-                       Plugin::kUnknownBytes);
 }
 
 void Plugin::EnqueueProgressEvent(PP_NaClEventType event_type,

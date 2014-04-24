@@ -34,6 +34,12 @@ NACL_SDK_ROOT ?= $(abspath $(CURDIR)/{{rel_sdk}})
 EXTRA_INC_PATHS={{' '.join(targets[0]['INCLUDES'])}}
 [[]]
 
+[[if multi_platform:]]
+# Build with platform-specific subdirectories, to reduce the download size of
+# the app.
+MULTI_PLATFORM = 1
+[[]]
+
 include $(NACL_SDK_ROOT)/tools/common.mk
 
 [[if desc.get('SOCKET_PERMISSIONS'):]]
@@ -96,8 +102,14 @@ $(eval $(call SO_RULE,{{name}},$({{sources}})))
 [[  elif target['TYPE'] == 'so-standalone':]]
 $(eval $(call SO_RULE,{{name}},$({{sources}}),,,1))
 [[  else:]]
+# The PNaCl workflow uses both an unstripped and finalized/stripped binary.
+# On NaCl, only produce a stripped binary for Release configs (not Debug).
+ifneq (,$(or $(findstring pnacl,$(TOOLCHAIN)),$(findstring Release,$(CONFIG))))
 $(eval $(call LINK_RULE,{{name}}_unstripped,$({{sources}}),$(LIBS),$(DEPS)))
 $(eval $(call STRIP_RULE,{{name}},{{name}}_unstripped))
+else
+$(eval $(call LINK_RULE,{{name}},$({{sources}}),$(LIBS),$(DEPS)))
+endif
 [[]]
 
 $(eval $(call NMF_RULE,$(TARGET),)){{post}}

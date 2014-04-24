@@ -22,20 +22,26 @@
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/global_descriptors.h"
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/process/kill.h"
+#include "base/process/process_handle.h"
 #include "base/rand_util.h"
 #include "components/nacl/common/nacl_switches.h"
 #include "components/nacl/loader/nacl_listener.h"
 #include "components/nacl/loader/nacl_sandbox_linux.h"
+#include "components/nacl/loader/nonsfi/nonsfi_sandbox.h"
 #include "content/public/common/zygote_fork_delegate_linux.h"
 #include "crypto/nss_util.h"
 #include "ipc/ipc_descriptors.h"
 #include "ipc/ipc_switches.h"
+#include "sandbox/linux/services/credentials.h"
 #include "sandbox/linux/services/libc_urandom_override.h"
+#include "sandbox/linux/services/thread_helpers.h"
+#include "sandbox/linux/suid/client/setuid_sandbox_client.h"
 
 namespace {
 
@@ -54,7 +60,30 @@ bool IsSandboxed() {
   return true;
 }
 
-void InitializeSandbox(bool uses_nonsfi_mode) {
+void InitializeLayerOneSandbox() {
+  // Check that IsSandboxed() works. We should not be sandboxed at this point.
+  CHECK(!IsSandboxed()) << "Unexpectedly sandboxed!";
+  scoped_ptr<sandbox::SetuidSandboxClient>
+      setuid_sandbox_client(sandbox::SetuidSandboxClient::Create());
+  PCHECK(0 == IGNORE_EINTR(close(
+                  setuid_sandbox_client->GetUniqueToChildFileDescriptor())));
+  const bool suid_sandbox_child = setuid_sandbox_client->IsSuidSandboxChild();
+  const bool is_init_process = 1 == getpid();
+  CHECK_EQ(is_init_process, suid_sandbox_child);
+
+  if (suid_sandbox_child) {
+    // Make sure that no directory file descriptor is open, as it would bypass
+    // the setuid sandbox model.
+    sandbox::Credentials credentials;
+    CHECK(!credentials.HasOpenDirectory(-1));
+
+    // Get sandboxed.
+    CHECK(setuid_sandbox_client->ChrootMe());
+    CHECK(IsSandboxed());
+  }
+}
+
+void InitializeLayerTwoSandbox(bool uses_nonsfi_mode) {
   if (uses_nonsfi_mode) {
     const bool can_be_no_sandbox = CommandLine::ForCurrentProcess()->HasSwitch(
         switches::kNaClDangerousNoSandboxNonSfi);
@@ -65,7 +94,7 @@ void InitializeSandbox(bool uses_nonsfi_mode) {
       else
         LOG(FATAL) << "SUID sandbox is mandatory for non-SFI NaCl";
     }
-    const bool bpf_sandbox_initialized = InitializeBPFSandbox();
+    const bool bpf_sandbox_initialized = nacl::nonsfi::InitializeBPFSandbox();
     if (!bpf_sandbox_initialized) {
       if (can_be_no_sandbox) {
         LOG(ERROR)
@@ -94,7 +123,7 @@ void BecomeNaClLoader(const std::vector<int>& child_fds,
   // don't need zygote FD any more
   if (IGNORE_EINTR(close(kNaClZygoteDescriptor)) != 0)
     LOG(ERROR) << "close(kNaClZygoteDescriptor) failed.";
-  InitializeSandbox(uses_nonsfi_mode);
+  InitializeLayerTwoSandbox(uses_nonsfi_mode);
   base::GlobalDescriptors::GetInstance()->Set(
       kPrimaryIPCChannel,
       child_fds[content::ZygoteForkDelegate::kBrowserFDIndex]);
@@ -111,33 +140,34 @@ void BecomeNaClLoader(const std::vector<int>& child_fds,
 // Start the NaCl loader in a child created by the NaCl loader Zygote.
 void ChildNaClLoaderInit(const std::vector<int>& child_fds,
                          const NaClLoaderSystemInfo& system_info,
-                         bool uses_nonsfi_mode) {
+                         bool uses_nonsfi_mode,
+                         const std::string& channel_id) {
   const int parent_fd = child_fds[content::ZygoteForkDelegate::kParentFDIndex];
   const int dummy_fd = child_fds[content::ZygoteForkDelegate::kDummyFDIndex];
+
   bool validack = false;
-  const size_t kMaxReadSize = 1024;
-  char buffer[kMaxReadSize];
+  base::ProcessId real_pid;
   // Wait until the parent process has discovered our PID.  We
   // should not fork any child processes (which the seccomp
   // sandbox does) until then, because that can interfere with the
   // parent's discovery of our PID.
-  const int nread = HANDLE_EINTR(read(parent_fd, buffer, kMaxReadSize));
-  const std::string switch_prefix = std::string("--") +
-      switches::kProcessChannelID + std::string("=");
-  const size_t len = switch_prefix.length();
+  const ssize_t nread =
+      HANDLE_EINTR(read(parent_fd, &real_pid, sizeof(real_pid)));
+  if (static_cast<size_t>(nread) == sizeof(real_pid)) {
+    // Make sure the parent didn't accidentally send us our real PID.
+    // We don't want it to be discoverable anywhere in our address space
+    // when we start running untrusted code.
+    CHECK(real_pid == 0);
 
-  if (nread < 0) {
-    perror("read");
+    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        switches::kProcessChannelID, channel_id);
+    validack = true;
+  } else {
+    if (nread < 0)
+      perror("read");
     LOG(ERROR) << "read returned " << nread;
-  } else if (nread > static_cast<int>(len)) {
-    if (switch_prefix.compare(0, len, buffer, 0, len) == 0) {
-      VLOG(1) << "NaCl loader is synchronised with Chrome zygote";
-      CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-          switches::kProcessChannelID,
-          std::string(&buffer[len], nread - len));
-      validack = true;
-    }
   }
+
   if (IGNORE_EINTR(close(dummy_fd)) != 0)
     LOG(ERROR) << "close(dummy_fd) failed";
   if (IGNORE_EINTR(close(parent_fd)) != 0)
@@ -163,6 +193,12 @@ bool HandleForkRequest(const std::vector<int>& child_fds,
     return false;
   }
 
+  std::string channel_id;
+  if (!input_iter->ReadString(&channel_id)) {
+    LOG(ERROR) << "Could not read channel_id string";
+    return false;
+  }
+
   if (content::ZygoteForkDelegate::kNumPassedFDs != child_fds.size()) {
     LOG(ERROR) << "nacl_helper: unexpected number of fds, got "
         << child_fds.size();
@@ -176,7 +212,7 @@ bool HandleForkRequest(const std::vector<int>& child_fds,
   }
 
   if (child_pid == 0) {
-    ChildNaClLoaderInit(child_fds, system_info, uses_nonsfi_mode);
+    ChildNaClLoaderInit(child_fds, system_info, uses_nonsfi_mode, channel_id);
     NOTREACHED();
   }
 
@@ -408,8 +444,13 @@ int main(int argc, char* argv[]) {
 
   CheckRDebug(argv[0]);
 
-  // Check that IsSandboxed() works. We should not be sandboxed at this point.
-  CHECK(!IsSandboxed()) << "Unexpectedly sandboxed!";
+  // Make sure that the early initialization did not start any spurious
+  // threads.
+#if !defined(THREAD_SANITIZER)
+  CHECK(sandbox::ThreadHelpers::IsSingleThreaded(-1));
+#endif
+
+  InitializeLayerOneSandbox();
 
   const std::vector<int> empty;
   // Send the zygote a message to let it know we are ready to help
