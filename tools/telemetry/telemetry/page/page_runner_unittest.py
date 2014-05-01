@@ -7,6 +7,7 @@ import os
 import tempfile
 import unittest
 
+from telemetry import decorators
 from telemetry.core import browser_finder
 from telemetry.core import exceptions
 from telemetry.core import user_agent
@@ -62,7 +63,7 @@ class PageRunnerTests(unittest.TestCase):
   def testHandlingOfCrashedTab(self):
     ps = page_set.PageSet()
     expectations = test_expectations.TestExpectations()
-    page1 = page_module.Page('chrome://crash', ps)
+    page1 = page_module.PageWithDefaultRunNavigate('chrome://crash', ps)
     ps.pages.append(page1)
 
     class Test(page_test.PageTest):
@@ -200,6 +201,7 @@ class PageRunnerTests(unittest.TestCase):
     self.assertEquals(0, len(results.successes))
     self.assertEquals(0, len(results.failures))
 
+  @decorators.Disabled('win')
   def testPagesetRepeat(self):
     ps = page_set.PageSet()
     expectations = test_expectations.TestExpectations()
@@ -230,7 +232,8 @@ class PageRunnerTests(unittest.TestCase):
       results.PrintSummary()
       self.assertEquals(4, len(results.successes))
       self.assertEquals(0, len(results.failures))
-      stdout = open(output_file).read()
+      with open(output_file) as f:
+        stdout = f.read()
       self.assertIn('RESULT metric_by_url: blank.html= [1,3] unit', stdout)
       self.assertIn('RESULT metric_by_url: green_rect.html= [2,4] unit', stdout)
       self.assertIn('*RESULT metric: metric= [1,2,3,4] unit', stdout)
@@ -446,3 +449,40 @@ class PageRunnerTests(unittest.TestCase):
     SetUpPageRunnerArguments(options)
     page_runner.Run(test, ps, expectations, options)
     assert test.did_call_clean_up
+
+  def TestUseLiveSitesFlag(self, options, expected_is_page_from_archive):
+    ps = page_set.PageSet(
+      file_path=util.GetUnittestDataDir(),
+      archive_data_file='data/archive_blank.json')
+    ps.pages.append(page_module.Page(
+      'file://blank.html', ps, base_dir=ps.base_dir))
+    expectations = test_expectations.TestExpectations()
+
+    class ArchiveTest(page_measurement.PageMeasurement):
+      def __init__(self):
+        super(ArchiveTest, self).__init__()
+        self.is_page_from_archive = False
+
+      def WillNavigateToPage(self, page, tab):
+        self.is_page_from_archive = (
+          tab.browser._wpr_server is not None) # pylint: disable=W0212
+
+      def MeasurePage(self, _, __, results):
+        pass
+
+    test = ArchiveTest()
+    page_runner.Run(test, ps, expectations, options)
+    self.assertEquals(expected_is_page_from_archive, test.is_page_from_archive)
+
+  def testUseLiveSitesFlagSet(self):
+    options = options_for_unittests.GetCopy()
+    options.output_format = 'none'
+    options.use_live_sites = True
+    SetUpPageRunnerArguments(options)
+    self.TestUseLiveSitesFlag(options, expected_is_page_from_archive=False)
+
+  def testUseLiveSitesFlagUnset(self):
+    options = options_for_unittests.GetCopy()
+    options.output_format = 'none'
+    SetUpPageRunnerArguments(options)
+    self.TestUseLiveSitesFlag(options, expected_is_page_from_archive=True)

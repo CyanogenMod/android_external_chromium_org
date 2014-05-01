@@ -18,10 +18,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/autocomplete/url_prefix.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/bookmarks/core/browser/bookmark_service.h"
+#include "components/bookmarks/core/browser/bookmark_utils.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace history {
@@ -68,7 +68,9 @@ ScoredHistoryMatch::ScoredHistoryMatch(
 
   // Figure out where each search term appears in the URL and/or page title
   // so that we can score as well as provide autocomplete highlighting.
-  base::string16 url = bookmark_utils::CleanUpUrlForMatching(gurl, languages);
+  base::OffsetAdjuster::Adjustments adjustments;
+  base::string16 url =
+      bookmark_utils::CleanUpUrlForMatching(gurl, languages, &adjustments);
   base::string16 title = bookmark_utils::CleanUpTitleForMatching(row.title());
   int term_num = 0;
   for (String16Vector::const_iterator iter = terms.begin(); iter != terms.end();
@@ -207,6 +209,13 @@ ScoredHistoryMatch::ScoredHistoryMatch(
     raw_score_ = std::min(max_assigned_score_for_non_inlineable_matches_,
                           raw_score_);
   }
+
+  // Now that we're done processing this entry, correct the offsets of the
+  // matches in |url_matches_| so they point to offsets in the original URL
+  // spec, not the cleaned-up URL string that we used for matching.
+  std::vector<size_t> offsets = OffsetsFromTermMatches(url_matches_);
+  base::OffsetAdjuster::UnadjustOffsets(adjustments, &offsets);
+  url_matches_ = ReplaceOffsetsInTermMatches(url_matches_, offsets);
 }
 
 ScoredHistoryMatch::~ScoredHistoryMatch() {}

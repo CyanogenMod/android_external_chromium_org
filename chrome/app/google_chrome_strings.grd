@@ -134,14 +134,8 @@ Chrome supports. -->
   </translations>
   <release seq="1" allow_pseudo="false">
     <messages fallback_to_english="true">
-      <message name="IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_TITLE" desc="Title of the disconnect managed profile dialog.">
-        Delete managed Chrome user
-      </message>
       <message name="IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_TEXT" desc="Message explaining to the user what will happen if they disconnect the managed profile.">
-        You are signed in with a managed account which is controlled by an administrator. If you disconnect from this account, this Chrome user and all associated Chrome data, such as apps, bookmarks, history, passwords, and other settings will be removed from this computer.
-      </message>
-      <message name="IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_OK_BUTTON_LABEL" desc="The text to display on the button to confirm deleting the Chrome user profile.">
-        Delete Chrome user
+        Disconnecting <ph name="USERNAME">$1<ex>someone@example.com</ex></ph> will clear your history, bookmarks, settings, and other Chrome data stored on this device. Data stored in your Google Account will not be cleared and can be managed on <ph name="GOOGLE_DASHBOARD_LINK">&lt;a target="_blank" href="$2"&gt;</ph>Google Dashboard<ph name="END_GOOGLE_DASHBOARD_LINK">&lt;/a&gt;</ph>.
       </message>
       <message name="IDS_PRODUCT_NAME" desc="The Chrome application name">
         Google Chrome
@@ -261,7 +255,7 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
       <if expr="is_win">
         <!-- Windows non-SSE2 deprecation -->
         <message name="IDS_WIN_SSE_OBSOLETE_NOW" desc="A message displayed on an at-launch infobar and About (Help) page warning the user that the computer they are using is no longer supported.">
-          This computer will soon stop receiving Google Chrome updates because its hardware is no longer supported.
+          This computer will no longer receive Google Chrome updates because its hardware is no longer supported.
         </message>
       </if>
       <message name="IDS_ACCNAME_APP" desc="The accessible name for the app menu.">
@@ -417,58 +411,52 @@ Google Chrome is unable to recover your settings.
         <message name="IDS_PASSWORDS_PAGE_AUTHENTICATION_PROMPT" desc="Text for the dialog box that prompts the user for their OS account password before revealing plaintext passwords on the password page.">
           Google Chrome is trying to show passwords. Type your Windows password to allow this.
         </message>
+        <message name="IDS_MACHINE_LEVEL_INSTALL_CONFLICT" desc="Error message to display when user tries to run user level Chromium even though machine level Chromium is already installed.">
+          An administrator has installed Google Chrome on this system, and it is available for all users. The system-level Google Chrome will replace your user-level installation now.
+        </message>
+        <message name="IDS_INSTALL_HIGHER_VERSION" desc="Error displayed when higher version already exists.">
+          This computer already has a more recent version of Google Chrome. If the software is not working, please uninstall Google Chrome and try again.
+        </message>
+        <message name="IDS_INSTALL_HIGHER_VERSION_APP_LAUNCHER" desc="Error displayed when higher version of the Chrome App Launcher already exists.">
+          This computer already has a more recent version of the Google Chrome components. Please use a more recent installer.
+        </message>
+        <message name="IDS_INSTALL_FAILED" desc="Error displayed if installation fails due to some unknown error.">
+          Installation failed due to unspecified error. If Google Chrome is currently running, please close it and try again.
+        </message>
+        <message name="IDS_SAME_VERSION_REPAIR_FAILED" desc="Error displayed if installation fails due to Chrome running.">
+          Can not install the same Google Chrome version that is currently running. Please close Google Chrome and try again.
+        </message>
+        <message name="IDS_SETUP_PATCH_FAILED" desc="Error message when setup.exe fails to patch itself.">
+          Installation failed due to unspecified error. Please download Google Chrome again.
+        </message>
+        <message name="IDS_INSTALL_OS_NOT_SUPPORTED" desc="Error displayed if OS is not supported">
+          Google Chrome requires Windows Vista or Windows XP with SP2 or higher.
+        </message>
+        <message name="IDS_INSTALL_OS_ERROR" desc="Error displayed when any Windows API call fails and we do not have more specific information.">
+          An operating system error occurred during installation. Please download Google Chrome again.
+        </message>
+        <message name="IDS_INSTALL_TEMP_DIR_FAILED" desc="Error displayed when we fail to create temporary directory during installation.">
+          The installer couldn't create a temporary directory. Please check for free disk space and permission to install software.
+        </message>
+        <message name="IDS_INSTALL_UNCOMPRESSION_FAILED" desc="Error when when we can not uncompress installation archive.">
+          The installer failed to uncompress archive. Please download Google Chrome again.
+        </message>
+        <message name="IDS_INSTALL_INVALID_ARCHIVE" desc="Error displayed when we can not open the installation archive.">
+          The installer archive is corrupted or invalid. Please download Google Chrome again.
+        </message>
+        <message name="IDS_INSTALL_INSUFFICIENT_RIGHTS" desc="Error displayed when a non admin user tries to attempt system level install/uninstall.">
+          You do not have appropriate rights for system-level install. Try running the installer again as Administrator.
+        </message>
+        <message name="IDS_INSTALL_NO_PRODUCTS_TO_UPDATE" desc="Error displayed if the installer is not provided one or more products to install/update.">
+          No installation of Google Chrome found to update.
+        </message>
+        <message name="IDS_INSTALL_MULTI_INSTALLATION_EXISTS" desc="Error during install if a multi-install Google Chrome is present, thereby preventing the installation of a single-install Google Chrome.">
+          A conflicting installation of Google Chrome was found on the system. Please uninstall it and try again.
+        </message>
+        <message name="IDS_INSTALL_INCONSISTENT_UPDATE_POLICY" desc="Error during install if the update policies settings in Group Policy are inconsistent.">
+          Google Chrome cannot be updated due to inconsistent Google Update Group Policy settings. Use the Group Policy Editor to set the update policy override for the Google Chrome Binaries application and try again; see http://goo.gl/uJ9gV for details.
+        </message>
       </if>
-      <message name="IDS_MACHINE_LEVEL_INSTALL_CONFLICT" desc="Error message to display when user tries to run user level Chromium even though machine level Chromium is already installed.">
-        An administrator has installed Google Chrome on this system, and it is available for all users. The system-level Google Chrome will replace your user-level installation now.
-      </message>
-      <message name="IDS_INSTALL_HIGHER_VERSION" desc="Error displayed when higher version already exists.">
-        This computer already has a more recent version of Google Chrome. If the software is not working, please uninstall Google Chrome and try again.
-      </message>
-      <message name="IDS_INSTALL_HIGHER_VERSION_APP_LAUNCHER" desc="Error displayed when higher version of the Chrome App Launcher already exists.">
-        This computer already has a more recent version of the Google Chrome components. Please use a more recent installer.
-      </message>
-      <message name="IDS_INSTALL_FAILED" desc="Error displayed if installation fails due to some unknown error.">
-        Installation failed due to unspecified error. If Google Chrome is currently running, please close it and try again.
-      </message>
-      <message name="IDS_SAME_VERSION_REPAIR_FAILED" desc="Error displayed if installation fails due to Chrome running.">
-        Can not install the same Google Chrome version that is currently running. Please close Google Chrome and try again.
-      </message>
-      <message name="IDS_SETUP_PATCH_FAILED" desc="Error message when setup.exe fails to patch itself.">
-        Installation failed due to unspecified error. Please download Google Chrome again.
-      </message>
-      <message name="IDS_INSTALL_OS_NOT_SUPPORTED" desc="Error displayed if OS is not supported">
-        Google Chrome requires Windows Vista or Windows XP with SP2 or higher.
-      </message>
-      <message name="IDS_INSTALL_OS_ERROR" desc="Error displayed when any Windows API call fails and we do not have more specific information.">
-        An operating system error occurred during installation. Please download Google Chrome again.
-      </message>
-      <message name="IDS_INSTALL_TEMP_DIR_FAILED" desc="Error displayed when we fail to create temporary directory during installation.">
-        The installer couldn't create a temporary directory. Please check for free disk space and permission to install software.
-      </message>
-      <message name="IDS_INSTALL_UNCOMPRESSION_FAILED" desc="Error when when we can not uncompress installation archive.">
-        The installer failed to uncompress archive. Please download Google Chrome again.
-      </message>
-      <message name="IDS_INSTALL_INVALID_ARCHIVE" desc="Error displayed when we can not open the installation archive.">
-        The installer archive is corrupted or invalid. Please download Google Chrome again.
-      </message>
-      <message name="IDS_INSTALL_INSUFFICIENT_RIGHTS" desc="Error displayed when a non admin user tries to attempt system level install/uninstall.">
-        You do not have appropriate rights for system-level install. Try running the installer again as Administrator.
-      </message>
-      <message name="IDS_INSTALL_NO_PRODUCTS_TO_UPDATE" desc="Error displayed if the installer is not provided one or more products to install/update.">
-        No installation of Google Chrome found to update.
-      </message>
-      <message name="IDS_UNINSTALL_COMPLETE" desc="Text displayed on dialog that is shown when uninstall is complete and no reboot is required.">
-        Uninstallation complete.
-      </message>
-      <message name="IDS_INSTALL_DIR_IN_USE" desc="Error during install if Google Chrome version is missing from registry but the installation directory exists and can not be deleted.">
-        Google Chrome installation directory seems to be in use. Please reboot your computer and try again.
-      </message>
-      <message name="IDS_INSTALL_MULTI_INSTALLATION_EXISTS" desc="Error during install if a multi-install Google Chrome is present, thereby preventing the installation of a single-install Google Chrome.">
-        A conflicting installation of Google Chrome was found on the system. Please uninstall it and try again.
-      </message>
-      <message name="IDS_INSTALL_INCONSISTENT_UPDATE_POLICY" desc="Error during install if the update policies settings in Group Policy are inconsistent.">
-        Google Chrome cannot be updated due to inconsistent Google Update Group Policy settings. Use the Group Policy Editor to set the update policy override for the Google Chrome Binaries application and try again; see http://goo.gl/uJ9gV for details.
-      </message>
       <!-- Options Dialog -->
       <message name="IDS_OPTIONS_IMPROVE_BROWSING_EXPERIENCE" desc="The text in the options panel that describes how we use web services to improve browsing experience.">
         Google Chrome may use web services to improve your browsing experience.
@@ -528,15 +516,17 @@ Google Chrome is unable to recover your settings.
         Why am I seeing this?
       </message>
       <!-- about:conflicts strings -->
-      <message name="IDS_CONFLICTS_CHECK_PAGE_TITLE_LONG" desc="The long title on the compatibility page">
-        Modules loaded into Google Chrome
-      </message>
-      <message name="IDS_CONFLICTS_CHECK_WARNING_CONFIRMED" desc="Warning label on the compatibility page">
-        This module is known to conflict with Google Chrome.
-      </message>
-      <message name="IDS_CONFLICTS_CHECK_WARNING_SUSPECTED" desc="Warning label on the compatibility page">
-        A module with the same name has been known to conflict with Google Chrome.
-      </message>
+      <if expr="is_win">
+        <message name="IDS_CONFLICTS_CHECK_PAGE_TITLE_LONG" desc="The long title on the compatibility page">
+          Modules loaded into Google Chrome
+        </message>
+        <message name="IDS_CONFLICTS_CHECK_WARNING_CONFIRMED" desc="Warning label on the compatibility page">
+          This module is known to conflict with Google Chrome.
+        </message>
+        <message name="IDS_CONFLICTS_CHECK_WARNING_SUSPECTED" desc="Warning label on the compatibility page">
+          A module with the same name has been known to conflict with Google Chrome.
+        </message>
+      </if>
       <!-- chrome://crashes strings -->
       <message name="IDS_CRASHES_DISABLED_MESSAGE" desc="The explanatory message for chrome://crashes when crash reporting is disabled">
         This page only shows information on your recent crashes if you <ph name="BEGIN_LINK">&lt;a href="https://www.google.com/support/chrome/bin/answer.py?answer=96817"&gt;</ph>enable crash reporting<ph name="END_LINK">&lt;/a&gt;</ph>.
@@ -580,6 +570,13 @@ Google Chrome is unable to recover your settings.
       <message name="IDS_DOWNLOAD_REMOVE_CONFIRM_OK_BUTTON_LABEL" desc="Button text for OKing to close the browser when one or more downloads are in progress.">
         Yes, exit Chrome
       </message>
+
+      <!-- Quit all apps confirmation dialog -->
+      <if expr="is_macosx">
+        <message name="IDS_QUIT_WITH_APPS_TITLE" desc="Title for a notification explaining that Chrome is running in the background.">
+          Google Chrome is running in the background.
+        </message>
+      </if>
 
       <!-- Autolaunch infobar -->
       <message name="IDS_AUTO_LAUNCH_INFOBAR_TEXT" desc="The text to show in the infobar when Chrome was automatically launched on startup">
@@ -762,6 +759,9 @@ For Google Chrome, processes used to display diagnostics information (such as th
       <message name="IDS_PROFILES_PREVIEW_TUTORIAL_CONTENT_TEXT" desc="The main content of the tutorial card in the avatar menu bubble view that asks the user to preview the new profile management UI.">
        Try the new way to use Chrome with your Google Account and on shared computers.
       </message>
+      <message name="IDS_PROFILES_FEEDBACK_TUTORIAL_CONTENT_TEXT" desc="The main content of the tutorial card in the avatar menu bubble view that asks the user to send feedback about the new profile management UI.">
+       You're previewing the new Chrome.
+      </message>
 
       <!-- Account removal view in the avatar menu bubble -->
       <message name="IDS_PROFILES_ACCOUNT_REMOVAL_TEXT" desc="Main text of the account removal view when removing a secondary account.">
@@ -769,6 +769,11 @@ For Google Chrome, processes used to display diagnostics information (such as th
       </message>
       <message name="IDS_PROFILES_PRIMARY_ACCOUNT_REMOVAL_TEXT" desc="Main text of the account removal view when removing a primary account.">
         You're using <ph name="PROFILE_EMAIL">$1<ex>jessica@gmail.com</ex></ph> to sync your Chrome stuff. To update your sync preference or to use Chrome without a Google account, visit <ph name="SETTINGS_LINK">$2<ex>settings</ex></ph>.
+      </message>
+
+      <!-- End-preview view in the avatar menu bubble -->
+      <message name="IDS_PROFILES_END_PREVIEW_TEXT" desc="Main text of the end-preview view.">
+        Thanks for trying out the new Chrome. Chrome needs to restart to make sure you've saved any open work before continuing.
       </message>
 
       <!-- Sync Promo New Tab Page bubble strings -->
@@ -1012,8 +1017,8 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
       </message>
 
       <!-- ProcessSingleton -->
-      <if expr="is_linux">
-        <message name="IDS_PROFILE_IN_USE_LINUX" desc="Message shown when the browser cannot start because the profile is in use on a different host.">
+      <if expr="is_linux or is_macosx">
+        <message name="IDS_PROFILE_IN_USE_POSIX" desc="Message shown when the browser cannot start because the profile is in use on a different host.">
           The profile appears to be in use by another Google Chrome process (<ph name="PROCESS_ID">$1<ex>12345</ex></ph>) on another computer (<ph name="HOST_NAME">$2<ex>example.com</ex></ph>).  Chrome has locked the profile so that it doesn't get corrupted.  If you are sure no other processes are using this profile, you can unlock the profile and relaunch Chrome.
         </message>
       </if>
@@ -1081,6 +1086,22 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
       <message name="IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_START_AND_SEARCH" desc="Second line in the Settings API bubble. Only shown if the secondary change by the extension was both the start page and the search engine. See IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_START_PAGES for reason for triple quotes.">
         ''' It also controls what page is shown when you start Chrome or search from the Omnibox. '''
       </message>
+
+      <!-- Windows firewall rule strings. -->
+      <if expr="is_win">
+        <message name="IDS_INBOUND_MDNS_RULE_NAME" desc="The name of the firewall rule allowing inbound mDNS traffic.">
+          Google Chrome (mDNS-In)
+        </message>
+        <message name="IDS_INBOUND_MDNS_RULE_NAME_CANARY" desc="The name of the firewall rule allowing inbound mDNS traffic for canary.">
+          Google Chrome Canary (mDNS-In)
+        </message>
+        <message name="IDS_INBOUND_MDNS_RULE_DESCRIPTION" desc="The description of the firewall rule allowing inbound mDNS traffic.">
+          Inbound rule for Google Chrome to allow mDNS traffic.
+        </message>
+        <message name="IDS_INBOUND_MDNS_RULE_DESCRIPTION_CANARY" desc="The description of the firewall rule allowing inbound mDNS traffic canary.">
+          Inbound rule for Google Chrome Canary to allow mDNS traffic.
+        </message>
+      </if>
 
       <!-- Update bubble -->
       <message name="IDS_REINSTALL_APP" desc="Text for the button the user clicks to reinstall the app.">

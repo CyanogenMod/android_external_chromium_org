@@ -15,9 +15,6 @@
         # api resources compiled into the chrome resource bundle.
         # http://crbug.com/162530
         '../chrome/chrome_resources.gyp:chrome_resources',
-        # Need default icons in theme_resources.grd
-        '../chrome/chrome_resources.gyp:theme_resources',
-
         # TODO(tfarina): This dep here is for extensions/common/constants.*
         # We should find a way to compile this module within extensions_common.
         '../chrome/common_constants.gyp:common_constants',
@@ -38,6 +35,8 @@
         '<(INTERMEDIATE_DIR)',
       ],
       'sources': [
+        'common/ad_injection_constants.cc',
+        'common/ad_injection_constants.h',
         'common/api/messaging/message.h',
         'common/api/sockets/sockets_manifest_data.cc',
         'common/api/sockets/sockets_manifest_data.h',
@@ -51,6 +50,7 @@
         'common/crx_file.h',
         'common/csp_validator.cc',
         'common/csp_validator.h',
+        'common/dom_action_types.h',
         'common/draggable_region.cc',
         'common/draggable_region.h',
         'common/error_utils.cc',
@@ -96,6 +96,8 @@
         'common/features/feature.h',
         'common/features/feature_provider.cc',
         'common/features/feature_provider.h',
+        'common/features/json_feature_provider_source.cc',
+        'common/features/json_feature_provider_source.h',
         'common/features/manifest_feature.cc',
         'common/features/manifest_feature.h',
         'common/features/permission_feature.cc',
@@ -413,6 +415,8 @@
         '..',
       ],
       'sources': [
+        'renderer/activity_log_converter_strategy.cc',
+        'renderer/activity_log_converter_strategy.h',
         'renderer/api_definitions_natives.cc',
         'renderer/api_definitions_natives.h',
         'renderer/binding_generating_native_handler.cc',
@@ -429,6 +433,8 @@
         'renderer/css_native_handler.h',
         'renderer/document_custom_bindings.cc',
         'renderer/document_custom_bindings.h',
+        'renderer/dom_activity_logger.cc',
+        'renderer/dom_activity_logger.h',
         'renderer/event_bindings.cc',
         'renderer/event_bindings.h',
         'renderer/extensions_renderer_client.cc',
@@ -511,6 +517,8 @@
         'common/test_util.h',
         'common/value_builder.cc',
         'common/value_builder.h',
+        'renderer/test_extensions_renderer_client.cc',
+        'renderer/test_extensions_renderer_client.h',
       ],
       # Disable c4267 warnings until we fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],

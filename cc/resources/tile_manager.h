@@ -32,6 +32,7 @@ class ResourceProvider;
 class CC_EXPORT TileManagerClient {
  public:
   virtual void NotifyReadyToActivate() = 0;
+  virtual void NotifyTileInitialized(const Tile* tile) = 0;
 
  protected:
   virtual ~TileManagerClient() {}
@@ -102,6 +103,8 @@ class CC_EXPORT TileManager : public RasterizerClient,
     std::vector<PairedPictureLayerIterator*> iterator_heap_;
     TreePriority tree_priority_;
     RasterOrderComparator comparator_;
+
+    DISALLOW_COPY_AND_ASSIGN(RasterTileIterator);
   };
 
   struct CC_EXPORT EvictionTileIterator {
@@ -146,6 +149,8 @@ class CC_EXPORT TileManager : public RasterizerClient,
     std::vector<PairedPictureLayerIterator*> iterator_heap_;
     TreePriority tree_priority_;
     EvictionOrderComparator comparator_;
+
+    DISALLOW_COPY_AND_ASSIGN(EvictionTileIterator);
   };
 
   static scoped_ptr<TileManager> Create(
@@ -217,10 +222,6 @@ class CC_EXPORT TileManager : public RasterizerClient,
     if (state != global_state_) {
       global_state_ = state;
       prioritized_tiles_dirty_ = true;
-      resource_pool_->SetResourceUsageLimits(
-          global_state_.soft_memory_limit_in_bytes,
-          global_state_.unused_memory_limit_in_bytes,
-          global_state_.num_resources_limit);
     }
   }
 

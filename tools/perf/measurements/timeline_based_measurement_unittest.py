@@ -7,6 +7,7 @@ import unittest
 
 from measurements import timeline_based_measurement as tbm_module
 from metrics import timeline_based_metric
+from telemetry import test
 from telemetry.core import wpr_modes
 from telemetry.core.timeline import model as model_module
 from telemetry.core.timeline import async_slice
@@ -77,13 +78,9 @@ class TimelineBasedMetricsTests(unittest.TestCase):
     metric = tbm_module._TimelineBasedMetrics( # pylint: disable=W0212
         self.model, self.renderer_thread,
         CreateMetricsForTimelineInteractionRecord)
-    ps = page_set.PageSet.FromDict({
-      "description": "hello",
-      "archive_path": "foo.wpr",
-      "pages": [
-        {"url": "http://www.bar.com/"}
-      ]
-    }, os.path.dirname(__file__))
+    ps = page_set.PageSet(file_path=os.path.dirname(__file__))
+    ps.AddPageWithDefaultRunNavigate('http://www.bar.com/')
+
     results.WillMeasurePage(ps.pages[0])
     metric.AddResults(results)
     results.DidMeasurePage()
@@ -100,6 +97,8 @@ class TimelineBasedMeasurementTest(
     self._options = options_for_unittests.GetCopy()
     self._options.browser_options.wpr_mode = wpr_modes.WPR_OFF
 
+  # Disabled due to flakiness: crbug.com/368386
+  @test.Disabled
   def testTimelineBasedForSmoke(self):
     ps = self.CreatePageSetFromFileInUnittestDataDir(
         'interaction_enabled_page.html')

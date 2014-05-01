@@ -9,11 +9,11 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "chromeos/dbus/cros_disks_client.h"
+#include "content/public/test/mock_special_storage_policy.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/url_util.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/browser/quota/mock_special_storage_policy.h"
 
 #define FPL(x) FILE_PATH_LITERAL(x)
 
@@ -37,12 +37,13 @@ TEST(ChromeOSFileSystemBackendTest, DefaultMountPoints) {
   fileapi::ExternalMountPoints::GetSystemInstance()->RevokeAllFileSystems();
 
   scoped_refptr<quota::SpecialStoragePolicy> storage_policy =
-      new quota::MockSpecialStoragePolicy();
+      new content::MockSpecialStoragePolicy();
   scoped_refptr<fileapi::ExternalMountPoints> mount_points(
       fileapi::ExternalMountPoints::CreateRefCounted());
   chromeos::FileSystemBackend backend(
       NULL,  // drive_delegate
       NULL,  // file_system_provider_delegate
+      NULL,  // mtp_delegate
       storage_policy,
       mount_points.get(),
       fileapi::ExternalMountPoints::GetSystemInstance());
@@ -62,7 +63,7 @@ TEST(ChromeOSFileSystemBackendTest, DefaultMountPoints) {
 
 TEST(ChromeOSFileSystemBackendTest, GetRootDirectories) {
   scoped_refptr<quota::SpecialStoragePolicy> storage_policy =
-      new quota::MockSpecialStoragePolicy();
+      new content::MockSpecialStoragePolicy();
   scoped_refptr<fileapi::ExternalMountPoints> mount_points(
       fileapi::ExternalMountPoints::CreateRefCounted());
 
@@ -71,6 +72,7 @@ TEST(ChromeOSFileSystemBackendTest, GetRootDirectories) {
 
   chromeos::FileSystemBackend backend(NULL,  // drive_delegate
                                       NULL,  // file_system_provider_delegate
+                                      NULL,  // mtp_delegate
                                       storage_policy,
                                       mount_points.get(),
                                       system_mount_points.get());
@@ -107,16 +109,17 @@ TEST(ChromeOSFileSystemBackendTest, GetRootDirectories) {
 }
 
 TEST(ChromeOSFileSystemBackendTest, AccessPermissions) {
-  url_util::AddStandardScheme("chrome-extension");
+  url::AddStandardScheme("chrome-extension");
 
-  scoped_refptr<quota::MockSpecialStoragePolicy> storage_policy =
-      new quota::MockSpecialStoragePolicy();
+  scoped_refptr<content::MockSpecialStoragePolicy> storage_policy =
+      new content::MockSpecialStoragePolicy();
   scoped_refptr<fileapi::ExternalMountPoints> mount_points(
       fileapi::ExternalMountPoints::CreateRefCounted());
   scoped_refptr<fileapi::ExternalMountPoints> system_mount_points(
       fileapi::ExternalMountPoints::CreateRefCounted());
   chromeos::FileSystemBackend backend(NULL,  // drive_delegate
                                       NULL,  // file_system_provider_delegate
+                                      NULL,  // mtp_delegate
                                       storage_policy,
                                       mount_points.get(),
                                       system_mount_points.get());
@@ -202,14 +205,15 @@ TEST(ChromeOSFileSystemBackendTest, AccessPermissions) {
 }
 
 TEST(ChromeOSFileSystemBackendTest, GetVirtualPathConflictWithSystemPoints) {
-  scoped_refptr<quota::MockSpecialStoragePolicy> storage_policy =
-      new quota::MockSpecialStoragePolicy();
+  scoped_refptr<content::MockSpecialStoragePolicy> storage_policy =
+      new content::MockSpecialStoragePolicy();
   scoped_refptr<fileapi::ExternalMountPoints> mount_points(
       fileapi::ExternalMountPoints::CreateRefCounted());
   scoped_refptr<fileapi::ExternalMountPoints> system_mount_points(
       fileapi::ExternalMountPoints::CreateRefCounted());
   chromeos::FileSystemBackend backend(NULL,  // drive_delegate
                                       NULL,  // file_system_provider_delegate
+                                      NULL,  // mtp_delegate
                                       storage_policy,
                                       mount_points.get(),
                                       system_mount_points.get());

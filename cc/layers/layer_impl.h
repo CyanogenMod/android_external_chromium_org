@@ -51,6 +51,7 @@ class QuadSink;
 class Renderer;
 class ScrollbarAnimationController;
 class ScrollbarLayerImplBase;
+class Tile;
 
 struct AppendQuadsData;
 
@@ -178,6 +179,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual RenderPass::Id NextContributingRenderPassId(RenderPass::Id id) const;
 
   virtual void UpdateTilePriorities() {}
+  virtual void NotifyTileInitialized(const Tile* tile) {}
 
   virtual ScrollbarLayerImplBase* ToScrollbarLayer();
 
@@ -275,6 +277,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // so that its list can be recreated.
   void CreateRenderSurface();
   void ClearRenderSurface();
+  void ClearRenderSurfaceLayerList();
 
   DrawProperties<LayerImpl>& draw_properties() {
     return draw_properties_;
@@ -456,6 +459,10 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetUpdateRect(const gfx::RectF& update_rect);
 
   const gfx::RectF& update_rect() const { return update_rect_; }
+
+  void AddDamageRect(const gfx::RectF& damage_rect);
+
+  const gfx::RectF& damage_rect() const { return damage_rect_; }
 
   virtual base::DictionaryValue* LayerTreeAsJson() const;
 
@@ -657,6 +664,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // Note that plugin layers bypass this and leave it empty.
   // Uses layer (not content) space.
   gfx::RectF update_rect_;
+
+  // This rect is in layer space.
+  gfx::RectF damage_rect_;
 
   // Manages animations for this layer.
   scoped_refptr<LayerAnimationController> layer_animation_controller_;

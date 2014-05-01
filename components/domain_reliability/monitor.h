@@ -63,7 +63,7 @@ class DOMAIN_RELIABILITY_EXPORT DomainReliabilityMonitor {
 
   struct DOMAIN_RELIABILITY_EXPORT RequestInfo {
     RequestInfo();
-    RequestInfo(const net::URLRequest& request);
+    explicit RequestInfo(const net::URLRequest& request);
     ~RequestInfo();
 
     bool DefinitelyReachedNetwork() const;
@@ -75,6 +75,7 @@ class DOMAIN_RELIABILITY_EXPORT DomainReliabilityMonitor {
     net::LoadTimingInfo load_timing_info;
     bool was_cached;
     int load_flags;
+    bool is_upload;
   };
 
   // Creates a context, adds it to the monitor, and returns a pointer to it.

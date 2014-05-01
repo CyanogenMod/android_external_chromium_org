@@ -56,6 +56,10 @@ WindowTreeHostMojo::~WindowTreeHostMojo() {}
 ////////////////////////////////////////////////////////////////////////////////
 // WindowTreeHostMojo, aura::WindowTreeHost implementation:
 
+ui::EventSource* WindowTreeHostMojo::GetEventSource() {
+  return this;
+}
+
 gfx::AcceleratedWidget WindowTreeHostMojo::GetAcceleratedWidget() {
   NOTIMPLEMENTED() << "GetAcceleratedWidget";
   return gfx::kNullAcceleratedWidget;
@@ -90,11 +94,6 @@ void WindowTreeHostMojo::SetCapture() {
 
 void WindowTreeHostMojo::ReleaseCapture() {
   NOTIMPLEMENTED();
-}
-
-bool WindowTreeHostMojo::QueryMouseLocation(gfx::Point* location_return) {
-  NOTIMPLEMENTED() << "QueryMouseLocation";
-  return false;
 }
 
 void WindowTreeHostMojo::PostNativeEvent(

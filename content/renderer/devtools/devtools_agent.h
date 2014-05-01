@@ -50,13 +50,11 @@ class DevToolsAgent : public RenderViewObserver,
   // WebDevToolsAgentClient implementation
   virtual void sendMessageToInspectorFrontend(const blink::WebString& data);
 
-  virtual int hostIdentifier();
-  virtual void saveAgentRuntimeState(const blink::WebString& state);
+  virtual int hostIdentifier() OVERRIDE;
+  virtual void saveAgentRuntimeState(const blink::WebString& state) OVERRIDE;
   virtual blink::WebDevToolsAgentClient::WebKitClientMessageLoop*
-      createClientMessageLoop();
-  virtual void clearBrowserCache();
-  virtual void clearBrowserCookies();
-  virtual void visitAllocatedObjects(AllocatedObjectVisitor* visitor);
+      createClientMessageLoop() OVERRIDE;
+  virtual void visitAllocatedObjects(AllocatedObjectVisitor* visitor) OVERRIDE;
 
   typedef void (*TraceEventCallback)(
       char phase, const unsigned char*, const char* name, unsigned long long id,
@@ -66,17 +64,16 @@ class DevToolsAgent : public RenderViewObserver,
   virtual void resetTraceEventCallback() OVERRIDE;
   virtual void setTraceEventCallback(const blink::WebString& category_filter,
                                      TraceEventCallback cb) OVERRIDE;
+  virtual void enableTracing(const blink::WebString& category_filter) OVERRIDE;
+  virtual void disableTracing() OVERRIDE;
   virtual void startGPUEventsRecording() OVERRIDE;
   virtual void stopGPUEventsRecording() OVERRIDE;
 
   virtual void enableDeviceEmulation(
-      const blink::WebRect& device_rect,
-      const blink::WebRect& view_rect, float device_scale_factor,
-      bool fit_to_view);
-  virtual void enableDeviceEmulation(
-      const blink::WebDeviceEmulationParams& params);
-  virtual void disableDeviceEmulation();
-  virtual void setTouchEventEmulationEnabled(bool enabled, bool allow_pinch);
+      const blink::WebDeviceEmulationParams& params) OVERRIDE;
+  virtual void disableDeviceEmulation() OVERRIDE;
+  virtual void setTouchEventEmulationEnabled(bool enabled,
+                                             bool allow_pinch) OVERRIDE;
 
   void OnAttach();
   void OnReattach(const std::string& agent_state);

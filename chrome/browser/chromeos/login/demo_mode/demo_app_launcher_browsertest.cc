@@ -17,6 +17,9 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_paths.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/network/network_state.h"
+#include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/shill_property_util.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_utils.h"
@@ -25,8 +28,6 @@
 namespace chromeos {
 
 namespace {
-
-char kDemoAppId[] = "klimoghijjogocdbaikffefjfcfheiel";
 
 base::FilePath GetTestDemoAppPath() {
   base::FilePath test_data_dir;
@@ -48,7 +49,12 @@ Profile* WaitForProfile() {
 bool VerifyDemoAppLaunch() {
   Profile* profile = WaitForProfile();
   return AppWindowWaiter(apps::AppWindowRegistry::Get(profile),
-                         kDemoAppId).Wait() != NULL;
+                         DemoAppLauncher::kDemoAppId).Wait() != NULL;
+}
+
+bool VerifyNetworksDisabled() {
+  NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
+  return !handler->FirstNetworkByType(NetworkTypePattern::NonVirtual());
 }
 
 }  // namespace
@@ -86,6 +92,11 @@ IN_PROC_BROWSER_TEST_F(DemoAppLauncherTest, Basic) {
   // steps that we need to take. All we can do is verify that our demo app
   // did launch.
   EXPECT_TRUE(VerifyDemoAppLaunch());
+}
+
+IN_PROC_BROWSER_TEST_F(DemoAppLauncherTest, NoNetwork) {
+  EXPECT_TRUE(VerifyDemoAppLaunch());
+  EXPECT_TRUE(VerifyNetworksDisabled());
 }
 
 }  // namespace chromeos

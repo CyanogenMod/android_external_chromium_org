@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "ash/ash_export.h"
-#include "ash/session_state_observer.h"
+#include "ash/session/session_state_observer.h"
 #include "ash/shelf/background_animator.h"
 #include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_types.h"
@@ -321,9 +321,8 @@ class ASH_EXPORT ShelfLayoutManager :
 
   int GetWorkAreaSize(const State& state, int size) const;
 
-  // Return the bounds available in the parent, taking into account the bounds
-  // of the keyboard if necessary.
-  gfx::Rect GetAvailableBounds() const;
+  // Returns true if the shelf should be forced to be visible.
+  bool IsShelfForcedToBeVisible() const;
 
   // Overridden from keyboard::KeyboardControllerObserver:
   virtual void OnKeyboardBoundsChanging(const gfx::Rect& new_bounds) OVERRIDE;

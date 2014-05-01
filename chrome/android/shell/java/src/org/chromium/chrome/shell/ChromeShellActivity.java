@@ -32,7 +32,6 @@ import org.chromium.chrome.shell.sync.SyncController;
 import org.chromium.components.dom_distiller.core.DomDistillerUrlUtils;
 import org.chromium.content.browser.ActivityContentVideoViewClient;
 import org.chromium.content.browser.BrowserStartupController;
-import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.DeviceUtils;
 import org.chromium.content.common.ContentSwitches;
@@ -136,18 +135,20 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
         mWindow.restoreInstanceState(savedInstanceState);
         mTabManager.initialize(mWindow, new ActivityContentVideoViewClient(this) {
             @Override
-            public void onShowCustomView(View view) {
-                super.onShowCustomView(view);
+            public boolean onShowCustomView(View view) {
+                if (mTabManager == null) return false;
+                boolean success = super.onShowCustomView(view);
                 if (!CommandLine.getInstance().hasSwitch(
                         ContentSwitches.DISABLE_OVERLAY_FULLSCREEN_VIDEO_SUBTITLE)) {
                     mTabManager.setOverlayVideoMode(true);
                 }
+                return success;
             }
 
             @Override
             public void onDestroyContentVideoView() {
                 super.onDestroyContentVideoView();
-                if (!CommandLine.getInstance().hasSwitch(
+                if (mTabManager != null && !CommandLine.getInstance().hasSwitch(
                         ContentSwitches.DISABLE_OVERLAY_FULLSCREEN_VIDEO_SUBTITLE)) {
                     mTabManager.setOverlayVideoMode(false);
                 }
@@ -248,14 +249,6 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
      */
     public ChromeShellTab getActiveTab() {
         return mTabManager != null ? mTabManager.getCurrentTab() : null;
-    }
-
-    /**
-     * @return The ContentView of the active tab.
-     */
-    public ContentView getActiveContentView() {
-        ChromeShellTab tab = getActiveTab();
-        return tab != null ? tab.getContentView() : null;
     }
 
     /**

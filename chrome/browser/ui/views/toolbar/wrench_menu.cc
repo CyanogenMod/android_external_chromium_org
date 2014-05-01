@@ -11,7 +11,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -23,6 +22,7 @@
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_delegate.h"
 #include "chrome/browser/ui/views/toolbar/wrench_menu_observer.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -952,9 +952,12 @@ void WrenchMenu::RunMenu(views::MenuButton* host) {
   views::View::ConvertPointToScreen(host, &screen_loc);
   gfx::Rect bounds(screen_loc, host->size());
   content::RecordAction(UserMetricsAction("ShowAppMenu"));
-  if (menu_runner_->RunMenuAt(host->GetWidget(), host, bounds,
-          MenuItemView::TOPRIGHT, ui::MENU_SOURCE_NONE,
-          views::MenuRunner::HAS_MNEMONICS) ==
+  if (menu_runner_->RunMenuAt(host->GetWidget(),
+                              host,
+                              bounds,
+                              views::MENU_ANCHOR_TOPRIGHT,
+                              ui::MENU_SOURCE_NONE,
+                              views::MenuRunner::HAS_MNEMONICS) ==
       views::MenuRunner::MENU_DELETED)
     return;
   if (bookmark_menu_delegate_.get()) {

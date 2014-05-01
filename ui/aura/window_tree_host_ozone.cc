@@ -51,6 +51,10 @@ uint32_t WindowTreeHostOzone::DispatchEvent(const ui::PlatformEvent& ne) {
   return ui::POST_DISPATCH_STOP_PROPAGATION;
 }
 
+ui::EventSource* WindowTreeHostOzone::GetEventSource() {
+  return this;
+}
+
 gfx::AcceleratedWidget WindowTreeHostOzone::GetAcceleratedWidget() {
   return widget_;
 }
@@ -78,11 +82,6 @@ gfx::Point WindowTreeHostOzone::GetLocationOnNativeScreen() const {
 void WindowTreeHostOzone::SetCapture() { NOTIMPLEMENTED(); }
 
 void WindowTreeHostOzone::ReleaseCapture() { NOTIMPLEMENTED(); }
-
-bool WindowTreeHostOzone::QueryMouseLocation(gfx::Point* location_return) {
-  NOTIMPLEMENTED();
-  return false;
-}
 
 void WindowTreeHostOzone::PostNativeEvent(
     const base::NativeEvent& native_event) {

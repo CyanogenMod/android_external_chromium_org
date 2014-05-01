@@ -61,11 +61,8 @@ class NET_EXPORT_PRIVATE QuicConnectionVisitorInterface {
  public:
   virtual ~QuicConnectionVisitorInterface() {}
 
-  // A simple visitor interface for dealing with data frames.  The session
-  // should determine if all frames will be accepted, and return true if so.
-  // If any frames can't be processed or buffered, none of the data should
-  // be used, and the callee should return false.
-  virtual bool OnStreamFrames(const std::vector<QuicStreamFrame>& frames) = 0;
+  // A simple visitor interface for dealing with data frames.
+  virtual void OnStreamFrames(const std::vector<QuicStreamFrame>& frames) = 0;
 
   // The session should process all WINDOW_UPDATE frames, adjusting both stream
   // and connection level flow control windows.
@@ -315,6 +312,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   virtual bool OnUnauthenticatedPublicHeader(
       const QuicPacketPublicHeader& header) OVERRIDE;
   virtual bool OnUnauthenticatedHeader(const QuicPacketHeader& header) OVERRIDE;
+  virtual void OnDecryptedPacket(EncryptionLevel level) OVERRIDE;
   virtual bool OnPacketHeader(const QuicPacketHeader& header) OVERRIDE;
   virtual void OnFecProtectedPayload(base::StringPiece payload) OVERRIDE;
   virtual bool OnStreamFrame(const QuicStreamFrame& frame) OVERRIDE;
@@ -416,6 +414,10 @@ class NET_EXPORT_PRIVATE QuicConnection
   // initially encrypted packets when the initial encrypter changes.
   void RetransmitUnackedPackets(RetransmissionType retransmission_type);
 
+  // Calls |sent_packet_manager_|'s NeuterUnencryptedPackets. Used when the
+  // connection becomes forward secure and hasn't received acks for all packets.
+  void NeuterUnencryptedPackets();
+
   // Changes the encrypter used for level |level| to |encrypter|. The function
   // takes ownership of |encrypter|.
   void SetEncrypter(EncryptionLevel level, QuicEncrypter* encrypter);
@@ -429,15 +431,17 @@ class NET_EXPORT_PRIVATE QuicConnection
   // and takes ownership. If an alternative decrypter is in place then the
   // function DCHECKs. This is intended for cases where one knows that future
   // packets will be using the new decrypter and the previous decrypter is now
-  // obsolete.
-  void SetDecrypter(QuicDecrypter* decrypter);
+  // obsolete. |level| indicates the encryption level of the new decrypter.
+  void SetDecrypter(QuicDecrypter* decrypter, EncryptionLevel level);
 
   // SetAlternativeDecrypter sets a decrypter that may be used to decrypt
-  // future packets and takes ownership of it. If |latch_once_used| is true,
-  // then the first time that the decrypter is successful it will replace the
-  // primary decrypter. Otherwise both decrypters will remain active and the
-  // primary decrypter will be the one last used.
+  // future packets and takes ownership of it. |level| indicates the encryption
+  // level of the decrypter. If |latch_once_used| is true, then the first time
+  // that the decrypter is successful it will replace the primary decrypter.
+  // Otherwise both decrypters will remain active and the primary decrypter
+  // will be the one last used.
   void SetAlternativeDecrypter(QuicDecrypter* decrypter,
+                               EncryptionLevel level,
                                bool latch_once_used);
 
   const QuicDecrypter* decrypter() const;
@@ -619,6 +623,7 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   bool last_packet_revived_;  // True if the last packet was revived from FEC.
   size_t last_size_;  // Size of the last received packet.
+  EncryptionLevel last_decrypted_packet_level_;
   QuicPacketHeader last_header_;
   std::vector<QuicStreamFrame> last_stream_frames_;
   std::vector<QuicAckFrame> last_ack_frames_;

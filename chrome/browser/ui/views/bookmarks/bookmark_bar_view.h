@@ -13,19 +13,19 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
-#include "chrome/browser/bookmarks/bookmark_model_observer.h"
-#include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar_instructions_delegate.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bubble_view_observer.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_controller_observer.h"
 #include "chrome/browser/ui/views/detachable_toolbar_view.h"
+#include "components/bookmarks/core/browser/bookmark_model_observer.h"
+#include "components/bookmarks/core/browser/bookmark_node_data.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
-#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_types.h"
 #include "ui/views/drag_controller.h"
 
 class BookmarkContextMenu;
@@ -44,6 +44,7 @@ class SlideAnimation;
 namespace views {
 class CustomButton;
 class MenuButton;
+class MenuItemView;
 class TextButton;
 }
 
@@ -120,7 +121,7 @@ class BookmarkBarView : public DetachableToolbarView,
 
   // Returns the position to anchor the menu for |button| at.
   void GetAnchorPositionForButton(views::MenuButton* button,
-                                  views::MenuItemView::AnchorPosition* anchor);
+                                  views::MenuAnchorPosition* anchor);
 
   // Returns the button responsible for showing bookmarks in the other bookmark
   // folder.

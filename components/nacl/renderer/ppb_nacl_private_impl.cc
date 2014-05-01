@@ -28,7 +28,7 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "net/base/data_url.h"
-#include "net/http/http_response_headers.h"
+#include "net/http/http_util.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/private/pp_file_handle.h"
 #include "ppapi/native_client/src/trusted/plugin/nacl_entry_points.h"
@@ -37,6 +37,10 @@
 #include "ppapi/shared_impl/ppapi_preferences.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 
 namespace nacl {
 namespace {
@@ -486,18 +490,26 @@ int32_t GetNexeFd(PP_Instance instance,
   if (!InitializePnaclResourceHost())
     return enter.SetResult(PP_ERROR_FAILED);
 
-  scoped_refptr<net::HttpResponseHeaders> http_headers(
-      new net::HttpResponseHeaders(http_headers_param));
+  std::string http_headers(http_headers_param);
+  net::HttpUtil::HeadersIterator iter(
+      http_headers.begin(), http_headers.end(), "\r\n");
+
   std::string last_modified;
   std::string etag;
-  http_headers->EnumerateHeader(NULL, "last-modified", &last_modified);
-  http_headers->EnumerateHeader(NULL, "etag", &etag);
-
-  std::string cache_control;
   bool has_no_store_header = false;
-  if (http_headers->EnumerateHeader(NULL, "cache-control", &cache_control)) {
-    if (cache_control.find("no-store") != std::string::npos)
-      has_no_store_header = true;
+  while (iter.GetNext()) {
+    if (StringToLowerASCII(iter.name()) == "last-modified")
+      last_modified = iter.values();
+    if (StringToLowerASCII(iter.name()) == "etag")
+      etag = iter.values();
+    if (StringToLowerASCII(iter.name()) == "cache-control") {
+      net::HttpUtil::ValuesIterator values_iter(
+          iter.values_begin(), iter.values_end(), ',');
+      while (values_iter.GetNext()) {
+        if (StringToLowerASCII(values_iter.value()) == "no-store")
+          has_no_store_header = true;
+      }
+    }
   }
 
   base::Time last_modified_time;
@@ -538,6 +550,22 @@ PP_FileHandle OpenNaClExecutable(PP_Instance instance,
                                  const char* file_url,
                                  uint64_t* nonce_lo,
                                  uint64_t* nonce_hi) {
+  // Fast path only works for installed file URLs.
+  GURL gurl(file_url);
+  if (!gurl.SchemeIs("chrome-extension"))
+    return PP_kInvalidFileHandle;
+
+  content::PepperPluginInstance* plugin_instance =
+      content::PepperPluginInstance::Get(instance);
+  // IMPORTANT: Make sure the document can request the given URL. If we don't
+  // check, a malicious app could probe the extension system. This enforces a
+  // same-origin policy which prevents the app from requesting resources from
+  // another app.
+  blink::WebSecurityOrigin security_origin =
+      plugin_instance->GetContainer()->element().document().securityOrigin();
+  if (!security_origin.canRequest(gurl))
+    return PP_kInvalidFileHandle;
+
   IPC::PlatformFileForTransit out_fd = IPC::InvalidPlatformFileForTransit();
   IPC::Sender* sender = content::RenderThread::Get();
   DCHECK(sender);
@@ -546,10 +574,10 @@ PP_FileHandle OpenNaClExecutable(PP_Instance instance,
   base::FilePath file_path;
   if (!sender->Send(
       new NaClHostMsg_OpenNaClExecutable(GetRoutingID(instance),
-                                               GURL(file_url),
-                                               &out_fd,
-                                               nonce_lo,
-                                               nonce_hi))) {
+                                         GURL(file_url),
+                                         &out_fd,
+                                         nonce_lo,
+                                         nonce_hi))) {
     return base::kInvalidPlatformFileValue;
   }
 
@@ -625,14 +653,12 @@ void NexeFileDidOpen(PP_Instance instance,
 }
 
 void ReportLoadSuccess(PP_Instance instance,
-                       PP_Bool is_pnacl,
                        const char* url,
                        uint64_t loaded_bytes,
                        uint64_t total_bytes) {
   NexeLoadManager* load_manager = GetNexeLoadManager(instance);
   if (load_manager)
-    load_manager->ReportLoadSuccess(
-        PP_ToBool(is_pnacl), url, loaded_bytes, total_bytes);
+    load_manager->ReportLoadSuccess(url, loaded_bytes, total_bytes);
 }
 
 void ReportLoadError(PP_Instance instance,
@@ -689,19 +715,6 @@ PP_Bool NaClDebugEnabledForURL(const char* alleged_nmf_url) {
   return PP_FromBool(should_debug);
 }
 
-PP_UrlSchemeType GetUrlScheme(PP_Var url) {
-  scoped_refptr<ppapi::StringVar> url_string = ppapi::StringVar::FromPPVar(url);
-  if (!url_string)
-    return PP_SCHEME_OTHER;
-
-  GURL gurl(url_string->value());
-  if (gurl.SchemeIs("chrome-extension"))
-    return PP_SCHEME_CHROME_EXTENSION;
-  if (gurl.SchemeIs("data"))
-    return PP_SCHEME_DATA;
-  return PP_SCHEME_OTHER;
-}
-
 void LogToConsole(PP_Instance instance, const char* message) {
   NexeLoadManager* load_manager = GetNexeLoadManager(instance);
   DCHECK(load_manager);
@@ -744,11 +757,14 @@ void Vlog(const char* message) {
   VLOG(1) << message;
 }
 
-void InitializePlugin(PP_Instance instance) {
+void InitializePlugin(PP_Instance instance,
+                      uint32_t argc,
+                      const char* argn[],
+                      const char* argv[]) {
   NexeLoadManager* load_manager = GetNexeLoadManager(instance);
   DCHECK(load_manager);
   if (load_manager)
-    load_manager->InitializePlugin();
+    load_manager->InitializePlugin(argc, argn, argv);
 }
 
 int64_t GetNexeSize(PP_Instance instance) {
@@ -812,6 +828,29 @@ void ProcessNaClManifest(PP_Instance instance, const char* program_url) {
     load_manager->ProcessNaClManifest(program_url);
 }
 
+PP_Var GetManifestURLArgument(PP_Instance instance) {
+  nacl::NexeLoadManager* load_manager = GetNexeLoadManager(instance);
+  if (load_manager) {
+    return ppapi::StringVar::StringToPPVar(
+        load_manager->GetManifestURLArgument());
+  }
+  return PP_MakeUndefined();
+}
+
+PP_Bool IsPNaCl(PP_Instance instance) {
+  nacl::NexeLoadManager* load_manager = GetNexeLoadManager(instance);
+  if (load_manager)
+    return PP_FromBool(load_manager->IsPNaCl());
+  return PP_FALSE;
+}
+
+PP_Bool DevInterfacesEnabled(PP_Instance instance) {
+  nacl::NexeLoadManager* load_manager = GetNexeLoadManager(instance);
+  if (load_manager)
+    return PP_FromBool(load_manager->DevInterfacesEnabled());
+  return PP_FALSE;
+}
+
 const PPB_NaCl_Private nacl_interface = {
   &LaunchSelLdr,
   &StartPpapiProxy,
@@ -835,7 +874,6 @@ const PPB_NaCl_Private nacl_interface = {
   &InstanceDestroyed,
   &NaClDebugEnabledForURL,
   &GetSandboxArch,
-  &GetUrlScheme,
   &LogToConsole,
   &GetNaClReadyState,
   &GetIsInstalled,
@@ -848,7 +886,10 @@ const PPB_NaCl_Private nacl_interface = {
   &GetManifestBaseURL,
   &ResolvesRelativeToPluginBaseURL,
   &ParseDataURL,
-  &ProcessNaClManifest
+  &ProcessNaClManifest,
+  &GetManifestURLArgument,
+  &IsPNaCl,
+  &DevInterfacesEnabled
 };
 
 }  // namespace

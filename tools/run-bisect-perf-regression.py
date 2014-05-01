@@ -15,6 +15,7 @@ directory provided, and run the bisect-perf-regression.py script there.
 import imp
 import optparse
 import os
+import platform
 import subprocess
 import sys
 import traceback
@@ -367,6 +368,9 @@ def _RunBisectionScript(config, working_directory, path_to_file, path_to_goma,
   if config['max_time_minutes']:
     cmd.extend(['--max_time_minutes', config['max_time_minutes']])
 
+  if config.has_key('bisect_mode'):
+    cmd.extend(['--bisect_mode', config['bisect_mode']])
+
   cmd.extend(['--build_preference', 'ninja'])
 
   if '--browser=cros' in config['command']:
@@ -388,6 +392,13 @@ def _RunBisectionScript(config, working_directory, path_to_file, path_to_goma,
       cmd.extend(['--target_platform', 'android'])
 
   if path_to_goma:
+    # crbug.com/330900. For Windows XP platforms, GOMA service is not supported.
+    # Moreover we don't compile chrome when gs_bucket flag is set instead
+    # use builds archives, therefore ignore GOMA service for Windows XP.
+    if config.get('gs_bucket') and platform.release() == 'XP':
+      print ('Goma doesn\'t have a win32 binary, therefore it is not supported '
+             'on Windows XP platform. Please refer to crbug.com/330900.')
+      path_to_goma = None
     cmd.append('--use_goma')
 
   if path_to_extra_src:

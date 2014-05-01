@@ -37,6 +37,19 @@ extern const char kAppListModeId[];
 // launch_now = false. This associates the shim without launching the app.
 extern const char kLaunchedByChromeProcessId[];
 
+// Path to an app shim bundle. Indicates to Chrome that this shim attempted to
+// launch but failed.
+extern const char kAppShimError[];
+
+// Keys for specifying the file types handled by an app.
+extern NSString* const kCFBundleDocumentTypesKey;
+extern NSString* const kCFBundleTypeExtensionsKey;
+extern NSString* const kCFBundleTypeIconFileKey;
+extern NSString* const kCFBundleTypeNameKey;
+extern NSString* const kCFBundleTypeMIMETypesKey;
+extern NSString* const kCFBundleTypeRoleKey;
+extern NSString* const kBundleTypeRoleViewer;
+
 // The display name of the bundle as shown in Finder and the Dock. For localized
 // bundles, this overrides the bundle's file name.
 extern NSString* const kCFBundleDisplayNameKey;
@@ -81,7 +94,7 @@ extern NSString* const kShortcutBrowserBundleIDPlaceholder;
 
 // Current major/minor version numbers of |ChromeAppModeInfo| (defined below).
 const unsigned kCurrentChromeAppModeInfoMajorVersion = 1;
-const unsigned kCurrentChromeAppModeInfoMinorVersion = 0;
+const unsigned kCurrentChromeAppModeInfoMinorVersion = 1;
 
 // The structure used to pass information from the app mode loader to the
 // (browser) framework. This is versioned using major and minor version numbers,

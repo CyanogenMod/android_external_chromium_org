@@ -23,6 +23,11 @@ WindowTreeHostMac::~WindowTreeHostMac() {
   DestroyDispatcher();
 }
 
+EventSource* WindowTreeHostMac::GetEventSource() {
+  NOTIMPLEMENTED();
+  return nil;
+}
+
 gfx::AcceleratedWidget WindowTreeHostMac::GetAcceleratedWidget() {
   return [window_ contentView];
 }
@@ -65,11 +70,6 @@ void WindowTreeHostMac::SetCapture() {
 
 void WindowTreeHostMac::ReleaseCapture() {
   NOTIMPLEMENTED();
-}
-
-bool WindowTreeHostMac::QueryMouseLocation(gfx::Point* location_return) {
-  NOTIMPLEMENTED();
-  return false;
 }
 
 bool WindowTreeHostMac::ConfineCursorToRootWindow() {

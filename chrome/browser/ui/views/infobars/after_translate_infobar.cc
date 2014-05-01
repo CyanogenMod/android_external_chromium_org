@@ -13,7 +13,6 @@
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/label.h"
-#include "ui/views/controls/menu/menu_item_view.h"
 
 AfterTranslateInfoBar::AfterTranslateInfoBar(
     scoped_ptr<TranslateInfoBarDelegate> delegate)
@@ -118,8 +117,8 @@ void AfterTranslateInfoBar::ViewHierarchyChanged(
       base::string16() : strings[2]);
   AddChildView(label_3_);
 
-  revert_button_ = CreateLabelButton(this,
-      l10n_util::GetStringUTF16(IDS_TRANSLATE_INFOBAR_REVERT), false);
+  revert_button_ = CreateLabelButton(
+      this, l10n_util::GetStringUTF16(IDS_TRANSLATE_INFOBAR_REVERT));
   AddChildView(revert_button_);
 
   options_menu_button_ = CreateMenuButton(
@@ -162,14 +161,17 @@ void AfterTranslateInfoBar::OnMenuButtonClicked(views::View* source,
     return;  // We're closing; don't call anything, it might access the owner.
   if (source == original_language_menu_button_) {
     RunMenuAt(original_language_menu_model_.get(),
-              original_language_menu_button_, views::MenuItemView::TOPLEFT);
+              original_language_menu_button_,
+              views::MENU_ANCHOR_TOPLEFT);
   } else if (source == target_language_menu_button_) {
-    RunMenuAt(target_language_menu_model_.get(), target_language_menu_button_,
-              views::MenuItemView::TOPLEFT);
+    RunMenuAt(target_language_menu_model_.get(),
+              target_language_menu_button_,
+              views::MENU_ANCHOR_TOPLEFT);
   } else {
     DCHECK_EQ(options_menu_button_, source);
-    RunMenuAt(options_menu_model_.get(), options_menu_button_,
-              views::MenuItemView::TOPRIGHT);
+    RunMenuAt(options_menu_model_.get(),
+              options_menu_button_,
+              views::MENU_ANCHOR_TOPRIGHT);
   }
 }
 

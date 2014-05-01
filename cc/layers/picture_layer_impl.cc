@@ -56,7 +56,9 @@ PictureLayerImpl::PictureLayerImpl(LayerTreeImpl* tree_impl, int id)
       should_update_tile_priorities_(false),
       should_use_low_res_tiling_(tree_impl->settings().create_low_res_tiling),
       use_gpu_rasterization_(false),
-      layer_needs_to_register_itself_(true) {}
+      layer_needs_to_register_itself_(true),
+      uninitialized_tiles_required_for_activation_count_(0) {
+}
 
 PictureLayerImpl::~PictureLayerImpl() {
   if (!layer_needs_to_register_itself_)
@@ -238,6 +240,9 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
     if (visible_geometry_rect.IsEmpty())
       continue;
 
+    append_quads_data->visible_content_area +=
+        visible_geometry_rect.width() * visible_geometry_rect.height();
+
     if (!*iter || !iter->IsReadyToDraw()) {
       if (draw_checkerboard_for_missing_tiles()) {
         scoped_ptr<CheckerboardDrawQuad> quad = CheckerboardDrawQuad::Create();
@@ -258,6 +263,8 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
 
       append_quads_data->num_missing_tiles++;
       append_quads_data->had_incomplete_tile = true;
+      append_quads_data->approximated_visible_content_area +=
+          visible_geometry_rect.width() * visible_geometry_rect.height();
       continue;
     }
 
@@ -322,6 +329,11 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
 
     DCHECK(draw_quad);
     quad_sink->Append(draw_quad.Pass());
+
+    if (iter->priority(ACTIVE_TREE).resolution != HIGH_RESOLUTION) {
+      append_quads_data->approximated_visible_content_area +=
+          visible_geometry_rect.width() * visible_geometry_rect.height();
+    }
 
     if (seen_tilings.empty() || seen_tilings.back() != iter.CurrentTiling())
       seen_tilings.push_back(iter.CurrentTiling());
@@ -395,11 +407,27 @@ void PictureLayerImpl::UpdateTilePriorities() {
                                  contents_scale_x(),
                                  current_frame_time_in_seconds);
 
+  uninitialized_tiles_required_for_activation_count_ = 0;
   if (layer_tree_impl()->IsPendingTree())
     MarkVisibleResourcesAsRequired();
 
   // Tile priorities were modified.
   layer_tree_impl()->DidModifyTilePriorities();
+}
+
+void PictureLayerImpl::NotifyTileInitialized(const Tile* tile) {
+  if (layer_tree_impl()->IsActiveTree()) {
+    gfx::RectF layer_damage_rect =
+        gfx::ScaleRect(tile->content_rect(), 1.f / tile->contents_scale());
+    AddDamageRect(layer_damage_rect);
+
+    DCHECK_EQ(0, uninitialized_tiles_required_for_activation_count_);
+  } else if (layer_tree_impl()->IsPendingTree()) {
+    if (tile->required_for_activation()) {
+      DCHECK_GT(uninitialized_tiles_required_for_activation_count_, 0);
+      --uninitialized_tiles_required_for_activation_count_;
+    }
+  }
 }
 
 void PictureLayerImpl::DidBecomeActive() {
@@ -573,6 +601,13 @@ gfx::Size PictureLayerImpl::CalculateTileSize(
       layer_tree_impl()->resource_provider()->max_texture_size();
 
   gfx::Size default_tile_size = layer_tree_impl()->settings().default_tile_size;
+  if (ShouldUseGpuRasterization()) {
+    // TODO(ernstm) crbug.com/365877: We need a unified way to override the
+    // default-tile-size.
+    default_tile_size =
+        gfx::Size(layer_tree_impl()->device_viewport_size().width(),
+                  layer_tree_impl()->device_viewport_size().height() / 4);
+  }
   default_tile_size.SetToMin(gfx::Size(max_texture_size, max_texture_size));
 
   gfx::Size max_untiled_content_size =
@@ -593,10 +628,12 @@ gfx::Size PictureLayerImpl::CalculateTileSize(
   // 500x500 max untiled size would get 500x12 tiles.  Also do this
   // if the layer is small.
   if (any_dimension_one_tile || !any_dimension_too_large) {
-    int width =
-        std::min(max_untiled_content_size.width(), content_bounds.width());
-    int height =
-        std::min(max_untiled_content_size.height(), content_bounds.height());
+    int width = std::min(
+        std::max(max_untiled_content_size.width(), default_tile_size.width()),
+        content_bounds.width());
+    int height = std::min(
+        std::max(max_untiled_content_size.height(), default_tile_size.height()),
+        content_bounds.height());
     // Round width and height up to the closest multiple of 64, or 56 if
     // we should avoid power-of-two textures. This helps reduce the number
     // of different textures sizes to help recycling, and also keeps all
@@ -667,23 +704,14 @@ void PictureLayerImpl::SyncTiling(
     return;
   tilings_->AddTiling(tiling->contents_scale());
 
-  if (!layer_tree_impl()->needs_update_draw_properties()) {
-    // When the tree is up to date, the set of tilings must either be empty or
-    // contain at least one high resolution tiling.  (If it is up to date,
-    // then it would be invalid to sync a tiling if it is the first tiling
-    // on the layer, since there would be no high resolution tiling.)
-    SanityCheckTilingState();
-    // TODO(enne): temporary sanity CHECK for http://crbug.com/358350
-    CHECK_GT(tilings_->num_tilings(), 1u);
-  }
-
   // If this tree needs update draw properties, then the tiling will
   // get updated prior to drawing or activation.  If this tree does not
   // need update draw properties, then its transforms are up to date and
   // we can create tiles for this tiling immediately.
   if (!layer_tree_impl()->needs_update_draw_properties() &&
-      should_update_tile_priorities_)
+      should_update_tile_priorities_) {
     UpdateTilePriorities();
+  }
 }
 
 void PictureLayerImpl::SetIsMask(bool is_mask) {
@@ -717,7 +745,7 @@ ResourceProvider::ResourceId PictureLayerImpl::ContentsResourceId() const {
   return tile_version.get_resource_id();
 }
 
-void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
+void PictureLayerImpl::MarkVisibleResourcesAsRequired() {
   DCHECK(layer_tree_impl()->IsPendingTree());
   DCHECK(!layer_tree_impl()->needs_update_draw_properties());
   DCHECK(ideal_contents_scale_);
@@ -825,7 +853,7 @@ bool PictureLayerImpl::MarkVisibleTilesAsRequired(
     const PictureLayerTiling* optional_twin_tiling,
     float contents_scale,
     const gfx::Rect& rect,
-    const Region& missing_region) const {
+    const Region& missing_region) {
   bool twin_had_missing_tile = false;
   for (PictureLayerTiling::CoverageIterator iter(tiling,
                                                  contents_scale,
@@ -852,8 +880,10 @@ bool PictureLayerImpl::MarkVisibleTilesAsRequired(
         continue;
       }
     }
-
+    DCHECK(!tile->required_for_activation());
     tile->MarkRequiredForActivation();
+    if (!tile->IsReadyToDraw())
+      ++uninitialized_tiles_required_for_activation_count_;
   }
   return twin_had_missing_tile;
 }

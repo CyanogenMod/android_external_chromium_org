@@ -153,6 +153,8 @@
           'target_name': 'nacl_renderer',
           'type': 'static_library',
           'sources': [
+            'nacl/renderer/histogram.cc',
+            'nacl/renderer/histogram.h',
             'nacl/renderer/manifest_service_channel.cc',
             'nacl/renderer/manifest_service_channel.h',
             'nacl/renderer/nexe_load_manager.cc',
@@ -182,7 +184,33 @@
               '<@(nacl_defines)',
             ],
           },
-        }
+        },
+        {
+          'target_name': 'nacl_loader_unittests',
+          'type': '<(gtest_target_type)',
+          'sources': [
+            'nacl/loader/run_all_unittests.cc',
+          ],
+          'dependencies': [
+            'nacl',
+            '../base/base.gyp:test_support_base',
+            '../testing/gtest.gyp:gtest',
+          ],
+          'conditions': [
+            ['OS=="linux"', {
+              'sources': [
+                # TODO(hamaji): Currently, we build them twice. Stop building
+                # them for components_unittests. See crbug.com/364751
+                'nacl/loader/nonsfi/nonsfi_sandbox_unittest.cc',
+                'nacl/loader/nonsfi/nonsfi_sandbox_sigsys_unittest.cc',
+              ],
+              'dependencies': [
+                'nacl_linux',
+                '../sandbox/sandbox.gyp:sandbox_linux_test_utils',
+              ],
+            }],
+          ],
+        },
       ],
       'conditions': [
         ['OS=="linux"', {
@@ -198,7 +226,7 @@
                 'nacl/loader/nacl_helper_linux.h',
               ],
               'dependencies': [
-                'nacl_loader',
+                'nacl_linux',
               ],
               'cflags': ['-fPIE'],
               'ldflags!': [
@@ -211,7 +239,7 @@
                 'ldflags': ['-pie'],
               },
             }, {
-              'target_name': 'nacl_loader',
+              'target_name': 'nacl_linux',
               'type': 'static_library',
               'include_dirs': [
                 '..',
@@ -223,13 +251,13 @@
                 'IN_NACL_HELPER=1',
               ],
               'sources': [
-                'nacl/loader/nacl_sandbox_linux.cc',
                 'nacl/loader/nonsfi/abi_conversion.cc',
                 'nacl/loader/nonsfi/abi_conversion.h',
                 'nacl/loader/nonsfi/elf_loader.cc',
                 'nacl/loader/nonsfi/elf_loader.h',
                 'nacl/loader/nonsfi/irt_basic.cc',
                 'nacl/loader/nonsfi/irt_clock.cc',
+                'nacl/loader/nonsfi/irt_exception_handling.cc',
                 'nacl/loader/nonsfi/irt_fdio.cc',
                 'nacl/loader/nonsfi/irt_futex.cc',
                 'nacl/loader/nonsfi/irt_interfaces.cc',
@@ -243,6 +271,8 @@
                 'nacl/loader/nonsfi/nonsfi_main.h',
                 'nacl/loader/nonsfi/nonsfi_sandbox.cc',
                 'nacl/loader/nonsfi/nonsfi_sandbox.h',
+                'nacl/loader/sandbox_linux/nacl_bpf_sandbox_linux.cc',
+                'nacl/loader/sandbox_linux/nacl_sandbox_linux.cc',
                 '../ppapi/nacl_irt/manifest_service.cc',
                 '../ppapi/nacl_irt/manifest_service.h',
                 '../ppapi/nacl_irt/plugin_main.cc',
@@ -288,22 +318,6 @@
                 }],
               ],
               'cflags': ['-fPIE'],
-            }, {
-              'target_name': 'nacl_loader_unittests',
-              'type': '<(gtest_target_type)',
-              'sources': [
-                # TODO(hamaji): Currently, we build them twice. Stop building
-                # them for components_unittests. See crbug.com/364751
-                'nacl/loader/nonsfi/nonsfi_sandbox_unittest.cc',
-                'nacl/loader/nonsfi/nonsfi_sandbox_sigsys_unittest.cc',
-                'nacl/loader/run_all_unittests.cc',
-              ],
-              'dependencies': [
-                'nacl_loader',
-                '../base/base.gyp:test_support_base',
-                '../sandbox/sandbox.gyp:sandbox_linux_test_utils',
-                '../testing/gtest.gyp:gtest',
-              ],
             },
           ],
         }],

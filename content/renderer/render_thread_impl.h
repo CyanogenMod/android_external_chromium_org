@@ -20,7 +20,6 @@
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/public/renderer/render_thread.h"
-#include "ipc/ipc_channel_proxy.h"
 #include "ui/gfx/native_widget_types.h"
 
 #if defined(OS_MACOSX)
@@ -50,6 +49,7 @@ class ContextProvider;
 
 namespace IPC {
 class ForwardingMessageFilter;
+class MessageFilter;
 }
 
 namespace media {
@@ -136,8 +136,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual void AddRoute(int32 routing_id, IPC::Listener* listener) OVERRIDE;
   virtual void RemoveRoute(int32 routing_id) OVERRIDE;
   virtual int GenerateRoutingID() OVERRIDE;
-  virtual void AddFilter(IPC::ChannelProxy::MessageFilter* filter) OVERRIDE;
-  virtual void RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) OVERRIDE;
+  virtual void AddFilter(IPC::MessageFilter* filter) OVERRIDE;
+  virtual void RemoveFilter(IPC::MessageFilter* filter) OVERRIDE;
   virtual void AddObserver(RenderProcessObserver* observer) OVERRIDE;
   virtual void RemoveObserver(RenderProcessObserver* observer) OVERRIDE;
   virtual void SetResourceDispatcherDelegate(
@@ -216,7 +216,9 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   bool is_lcd_text_enabled() const { return is_lcd_text_enabled_; }
 
-  bool is_map_image_enabled() const { return is_map_image_enabled_; }
+  bool is_zero_copy_enabled() const { return is_zero_copy_enabled_; }
+
+  bool is_one_copy_enabled() const { return is_one_copy_enabled_; }
 
   AppCacheDispatcher* appcache_dispatcher() const {
     return appcache_dispatcher_.get();
@@ -290,7 +292,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   scoped_refptr<media::GpuVideoAcceleratorFactories> GetGpuFactories();
 
-  scoped_refptr<cc::ContextProvider> OffscreenCompositorContextProvider();
   scoped_refptr<webkit::gpu::ContextProviderWebContext>
       SharedMainThreadContextProvider();
 
@@ -374,8 +375,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   void WidgetHidden();
   void WidgetRestored();
 
-  void AddSharedWorkerRoute(int32 routing_id, IPC::Listener* listener);
-  void RemoveSharedWorkerRoute(int32 routing_id);
+  void AddEmbeddedWorkerRoute(int32 routing_id, IPC::Listener* listener);
+  void RemoveEmbeddedWorkerRoute(int32 routing_id);
 
  private:
   // ChildThread
@@ -400,6 +401,11 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
       size_t width,
       size_t height,
       unsigned internalformat) OVERRIDE;
+
+  // mojo::ShellClient implementation:
+  virtual void AcceptConnection(
+      const mojo::String& service_name,
+      mojo::ScopedMessagePipeHandle message_pipe) OVERRIDE;
 
   void Init();
 
@@ -511,7 +517,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_ptr<InputHandlerManager> input_handler_manager_;
   scoped_refptr<IPC::ForwardingMessageFilter> compositor_output_surface_filter_;
 
-  scoped_refptr<ContextProviderCommandBuffer> offscreen_compositor_contexts_;
   scoped_refptr<ContextProviderCommandBuffer> shared_main_thread_contexts_;
 
   ObserverList<RenderProcessObserver> observers_;
@@ -540,7 +545,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   bool is_impl_side_painting_enabled_;
   bool is_low_res_tiling_enabled_;
   bool is_lcd_text_enabled_;
-  bool is_map_image_enabled_;
+  bool is_zero_copy_enabled_;
+  bool is_one_copy_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderThreadImpl);
 };

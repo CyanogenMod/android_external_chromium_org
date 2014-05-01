@@ -25,13 +25,13 @@
 #include "ui/views/background.h"
 #include "ui/views/controls/focusable_border.h"
 #include "ui/views/controls/label.h"
-#include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 #include "ui/views/drag_utils.h"
 #include "ui/views/ime/input_method.h"
 #include "ui/views/metrics.h"
+#include "ui/views/native_cursor.h"
 #include "ui/views/painter.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/widget.h"
@@ -263,9 +263,6 @@ Textfield::Textfield()
     password_reveal_duration_ = ViewsDelegate::views_delegate->
         GetDefaultTextfieldObscuredRevealDuration();
   }
-
-  if (NativeViewHost::kRenderNativeControlFocus)
-    focus_painter_ = Painter::CreateDashedFocusPainter();
 }
 
 Textfield::~Textfield() {}
@@ -396,6 +393,14 @@ base::string16 Textfield::GetPlaceholderText() const {
   return placeholder_text_;
 }
 
+gfx::HorizontalAlignment Textfield::GetHorizontalAlignment() const {
+  return GetRenderText()->horizontal_alignment();
+}
+
+void Textfield::SetHorizontalAlignment(gfx::HorizontalAlignment alignment) {
+  GetRenderText()->SetHorizontalAlignment(alignment);
+}
+
 void Textfield::ShowImeIfNeeded() {
   if (enabled() && !read_only())
     GetInputMethod()->ShowImeIfNeeded();
@@ -490,7 +495,7 @@ gfx::NativeCursor Textfield::GetCursor(const ui::MouseEvent& event) {
   bool in_selection = GetRenderText()->IsPointInSelection(event.location());
   bool drag_event = event.type() == ui::ET_MOUSE_DRAGGED;
   bool text_cursor = !initiating_drag_ && (drag_event || !in_selection);
-  return text_cursor ? ui::kCursorIBeam : ui::kCursorNull;
+  return text_cursor ? GetNativeIBeamCursor() : gfx::kNullCursor;
 }
 
 bool Textfield::OnMousePressed(const ui::MouseEvent& event) {
@@ -849,18 +854,10 @@ void Textfield::OnEnabledChanged() {
   SchedulePaint();
 }
 
-void Textfield::ViewHierarchyChanged(
-    const ViewHierarchyChangedDetails& details) {
-  if (details.is_add && details.child == this)
-    UpdateColorsFromTheme(GetNativeTheme());
-}
-
 void Textfield::OnPaint(gfx::Canvas* canvas) {
   OnPaintBackground(canvas);
   PaintTextAndCursor(canvas);
   OnPaintBorder(canvas);
-  if (NativeViewHost::kRenderNativeControlFocus)
-    Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
 }
 
 void Textfield::OnFocus() {
@@ -901,7 +898,15 @@ gfx::Point Textfield::GetKeyboardContextMenuLocation() {
 }
 
 void Textfield::OnNativeThemeChanged(const ui::NativeTheme* theme) {
-  UpdateColorsFromTheme(theme);
+  gfx::RenderText* render_text = GetRenderText();
+  render_text->SetColor(GetTextColor());
+  UpdateBackgroundColor();
+  render_text->set_cursor_color(GetTextColor());
+  render_text->set_selection_color(theme->GetSystemColor(
+      ui::NativeTheme::kColorId_TextfieldSelectionColor));
+  render_text->set_selection_background_focused_color(theme->GetSystemColor(
+      ui::NativeTheme::kColorId_TextfieldSelectionBackgroundFocused));
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -919,8 +924,12 @@ void Textfield::ShowContextMenuForView(View* source,
                                        const gfx::Point& point,
                                        ui::MenuSourceType source_type) {
   UpdateContextMenu();
-  ignore_result(context_menu_runner_->RunMenuAt(GetWidget(), NULL,
-      gfx::Rect(point, gfx::Size()), MenuItemView::TOPLEFT, source_type,
+  ignore_result(context_menu_runner_->RunMenuAt(
+      GetWidget(),
+      NULL,
+      gfx::Rect(point, gfx::Size()),
+      MENU_ANCHOR_TOPLEFT,
+      source_type,
       MenuRunner::HAS_MNEMONICS | MenuRunner::CONTEXT_MENU));
 }
 
@@ -1290,7 +1299,7 @@ gfx::NativeWindow Textfield::GetAttachedWindow() const {
   // IME may want to interact with the native view of [NativeWidget A] rather
   // than that of [NativeWidget B]. This is why we need to call
   // GetTopLevelWidget() here.
-  return GetWidget()->GetTopLevelWidget()->GetNativeView();
+  return GetWidget()->GetTopLevelWidget()->GetNativeWindow();
 }
 
 ui::TextInputType Textfield::GetTextInputType() const {
@@ -1465,17 +1474,6 @@ void Textfield::UpdateBackgroundColor() {
   set_background(Background::CreateSolidBackground(color));
   GetRenderText()->set_background_is_transparent(SkColorGetA(color) != 0xFF);
   SchedulePaint();
-}
-
-void Textfield::UpdateColorsFromTheme(const ui::NativeTheme* theme) {
-  gfx::RenderText* render_text = GetRenderText();
-  render_text->SetColor(GetTextColor());
-  UpdateBackgroundColor();
-  render_text->set_cursor_color(GetTextColor());
-  render_text->set_selection_color(theme->GetSystemColor(
-      ui::NativeTheme::kColorId_TextfieldSelectionColor));
-  render_text->set_selection_background_focused_color(theme->GetSystemColor(
-      ui::NativeTheme::kColorId_TextfieldSelectionBackgroundFocused));
 }
 
 void Textfield::UpdateAfterChange(bool text_changed, bool cursor_changed) {

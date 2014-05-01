@@ -8,12 +8,13 @@
 #include <set>
 #include <string>
 
-#include "ipc/ipc_channel_proxy.h"
+#include "ipc/message_filter.h"
 
 struct DevToolsMessageData;
 
 namespace base {
 class MessageLoop;
+class MessageLoopProxy;
 }
 
 namespace content {
@@ -24,19 +25,19 @@ namespace content {
 // are being dispatched there. While holding the thread in a tight loop,
 // v8 provides thread-safe Api for controlling debugger. In our case v8's Api
 // is being used from this communication agent on the IO thread.
-class DevToolsAgentFilter : public IPC::ChannelProxy::MessageFilter {
+class DevToolsAgentFilter : public IPC::MessageFilter {
  public:
   // There is a single instance of this class instantiated by the RenderThread.
   DevToolsAgentFilter();
 
   static void SendRpcMessage(const DevToolsMessageData& data);
 
-  // IPC::ChannelProxy::MessageFilter override. Called on IO thread.
+  // IPC::MessageFilter override. Called on IO thread.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Called on the main thread.
-  void AddSharedWorkerRouteOnMainThread(int32 routing_id);
-  void RemoveSharedWorkerRouteOnMainThread(int32 routing_id);
+  void AddEmbeddedWorkerRouteOnMainThread(int32 routing_id);
+  void RemoveEmbeddedWorkerRouteOnMainThread(int32 routing_id);
 
  protected:
   virtual ~DevToolsAgentFilter();
@@ -45,8 +46,8 @@ class DevToolsAgentFilter : public IPC::ChannelProxy::MessageFilter {
   void OnDispatchOnInspectorBackend(const std::string& message);
 
   // Called on IO thread
-  void AddSharedWorkerRoute(int32 routing_id);
-  void RemoveSharedWorkerRoute(int32 routing_id);
+  void AddEmbeddedWorkerRoute(int32 routing_id);
+  void RemoveEmbeddedWorkerRoute(int32 routing_id);
 
   bool message_handled_;
   base::MessageLoop* render_thread_loop_;
@@ -54,7 +55,7 @@ class DevToolsAgentFilter : public IPC::ChannelProxy::MessageFilter {
   scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
   int current_routing_id_;
 
-  std::set<int32> shared_worker_routes_;
+  std::set<int32> embedded_worker_routes_;
 
   DISALLOW_COPY_AND_ASSIGN(DevToolsAgentFilter);
 };

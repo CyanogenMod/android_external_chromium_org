@@ -22,8 +22,8 @@ using net::test::MockConnection;
 using net::test::QuicConnectionPeer;
 using net::test::QuicDataStreamPeer;
 using net::test::SupportedVersions;
-using testing::_;
 using testing::StrictMock;
+using testing::_;
 
 namespace net {
 namespace tools {
@@ -78,23 +78,22 @@ TEST_P(QuicServerSessionTest, CloseStreamDueToReset) {
   QuicStreamFrame data1(stream_id, false, 0, MakeIOVector("HT"));
   vector<QuicStreamFrame> frames;
   frames.push_back(data1);
-  EXPECT_TRUE(visitor_->OnStreamFrames(frames));
+  session_->OnStreamFrames(frames);
   EXPECT_EQ(1u, session_->GetNumOpenStreams());
 
   // Send a reset (and expect the peer to send a RST in response).
   QuicRstStreamFrame rst1(stream_id, QUIC_STREAM_NO_ERROR, 0);
-  if (version() > QUIC_VERSION_13) {
-    EXPECT_CALL(*connection_,
-                SendRstStream(stream_id, QUIC_RST_FLOW_CONTROL_ACCOUNTING, 0));
-  }
+  EXPECT_CALL(*connection_,
+              SendRstStream(stream_id, QUIC_RST_FLOW_CONTROL_ACCOUNTING, 0));
   visitor_->OnRstStream(rst1);
   EXPECT_EQ(0u, session_->GetNumOpenStreams());
 
   // Send the same two bytes of payload in a new packet.
-  EXPECT_TRUE(visitor_->OnStreamFrames(frames));
+  visitor_->OnStreamFrames(frames);
 
   // The stream should not be re-opened.
   EXPECT_EQ(0u, session_->GetNumOpenStreams());
+  EXPECT_TRUE(connection_->connected());
 }
 
 TEST_P(QuicServerSessionTest, NeverOpenStreamDueToReset) {
@@ -102,10 +101,8 @@ TEST_P(QuicServerSessionTest, NeverOpenStreamDueToReset) {
 
   // Send a reset (and expect the peer to send a RST in response).
   QuicRstStreamFrame rst1(stream_id, QUIC_STREAM_NO_ERROR, 0);
-  if (version() > QUIC_VERSION_13) {
-    EXPECT_CALL(*connection_,
-                SendRstStream(stream_id, QUIC_RST_FLOW_CONTROL_ACCOUNTING, 0));
-  }
+  EXPECT_CALL(*connection_,
+              SendRstStream(stream_id, QUIC_RST_FLOW_CONTROL_ACCOUNTING, 0));
   visitor_->OnRstStream(rst1);
   EXPECT_EQ(0u, session_->GetNumOpenStreams());
 
@@ -113,11 +110,11 @@ TEST_P(QuicServerSessionTest, NeverOpenStreamDueToReset) {
   QuicStreamFrame data1(stream_id, false, 0, MakeIOVector("HT"));
   vector<QuicStreamFrame> frames;
   frames.push_back(data1);
-
-  EXPECT_TRUE(visitor_->OnStreamFrames(frames));
+  visitor_->OnStreamFrames(frames);
 
   // The stream should never be opened, now that the reset is received.
   EXPECT_EQ(0u, session_->GetNumOpenStreams());
+  EXPECT_TRUE(connection_->connected());
 }
 
 TEST_P(QuicServerSessionTest, AcceptClosedStream) {
@@ -128,14 +125,13 @@ TEST_P(QuicServerSessionTest, AcceptClosedStream) {
                                    MakeIOVector("\1\0\0\0\0\0\0\0HT")));
   frames.push_back(QuicStreamFrame(stream_id + 2, false, 0,
                                    MakeIOVector("\2\0\0\0\0\0\0\0HT")));
-  EXPECT_TRUE(visitor_->OnStreamFrames(frames));
+  visitor_->OnStreamFrames(frames);
+  EXPECT_EQ(2u, session_->GetNumOpenStreams());
 
   // Send a reset (and expect the peer to send a RST in response).
   QuicRstStreamFrame rst(stream_id, QUIC_STREAM_NO_ERROR, 0);
-  if (version() > QUIC_VERSION_13) {
-    EXPECT_CALL(*connection_,
-                SendRstStream(stream_id, QUIC_RST_FLOW_CONTROL_ACCOUNTING, 0));
-  }
+  EXPECT_CALL(*connection_,
+              SendRstStream(stream_id, QUIC_RST_FLOW_CONTROL_ACCOUNTING, 0));
   visitor_->OnRstStream(rst);
 
   // If we were tracking, we'd probably want to reject this because it's data
@@ -145,7 +141,10 @@ TEST_P(QuicServerSessionTest, AcceptClosedStream) {
   frames.push_back(QuicStreamFrame(stream_id, false, 2, MakeIOVector("TP")));
   frames.push_back(QuicStreamFrame(stream_id + 2, false, 2,
                                    MakeIOVector("TP")));
-  EXPECT_TRUE(visitor_->OnStreamFrames(frames));
+  visitor_->OnStreamFrames(frames);
+  // The stream should never be opened, now that the reset is received.
+  EXPECT_EQ(1u, session_->GetNumOpenStreams());
+  EXPECT_TRUE(connection_->connected());
 }
 
 TEST_P(QuicServerSessionTest, MaxNumConnections) {

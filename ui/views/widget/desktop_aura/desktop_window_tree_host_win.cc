@@ -436,6 +436,10 @@ bool DesktopWindowTreeHostWin::IsAnimatingClosed() const {
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopWindowTreeHostWin, WindowTreeHost implementation:
 
+ui::EventSource* DesktopWindowTreeHostWin::GetEventSource() {
+  return this;
+}
+
 gfx::AcceleratedWidget DesktopWindowTreeHostWin::GetAcceleratedWidget() {
   return message_handler_->hwnd();
 }
@@ -506,20 +510,6 @@ void DesktopWindowTreeHostWin::SetCapture() {
 
 void DesktopWindowTreeHostWin::ReleaseCapture() {
   message_handler_->ReleaseCapture();
-}
-
-bool DesktopWindowTreeHostWin::QueryMouseLocation(gfx::Point* location_return) {
-  aura::client::CursorClient* cursor_client =
-      aura::client::GetCursorClient(window());
-  if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
-    *location_return = gfx::Point(0, 0);
-    return false;
-  }
-  POINT pt = {0};
-  ::GetCursorPos(&pt);
-  *location_return =
-      gfx::Point(static_cast<int>(pt.x), static_cast<int>(pt.y));
-  return true;
 }
 
 void DesktopWindowTreeHostWin::PostNativeEvent(

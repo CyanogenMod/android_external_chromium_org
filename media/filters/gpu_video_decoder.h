@@ -43,6 +43,7 @@ class MEDIA_EXPORT GpuVideoDecoder
 
   // VideoDecoder implementation.
   virtual void Initialize(const VideoDecoderConfig& config,
+                          bool live_mode,
                           const PipelineStatusCB& status_cb) OVERRIDE;
   virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
                       const DecodeCB& decode_cb) OVERRIDE;
@@ -108,7 +109,7 @@ class MEDIA_EXPORT GpuVideoDecoder
       const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories,
       int64 picture_buffer_id,
       uint32 texture_id,
-      scoped_ptr<gpu::MailboxHolder> mailbox_holder);
+      const std::vector<uint32>& release_sync_points);
   // Indicate the picture buffer can be reused by the decoder.
   void ReusePictureBuffer(int64 picture_buffer_id);
 

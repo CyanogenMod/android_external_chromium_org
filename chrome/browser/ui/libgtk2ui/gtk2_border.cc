@@ -7,6 +7,7 @@
 #include <gtk/gtk.h>
 
 #include "chrome/browser/ui/libgtk2ui/gtk2_ui.h"
+#include "chrome/browser/ui/libgtk2ui/native_theme_gtk2.h"
 #include "third_party/skia/include/effects/SkLerpXfermode.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/animation/animation.h"
@@ -71,25 +72,17 @@ class ButtonImageSkiaSource : public gfx::ImageSkiaSource {
 }  // namespace
 
 Gtk2Border::Gtk2Border(Gtk2UI* gtk2_ui,
-                       views::LabelButton* owning_button,
-                       scoped_ptr<views::Border> border)
+                       views::LabelButton* owning_button)
     : gtk2_ui_(gtk2_ui),
       owning_button_(owning_button),
-      border_(border.Pass()) {
-  gtk2_ui_->AddNativeThemeChangeObserver(this);
+      observer_manager_(this) {
+  observer_manager_.Add(NativeThemeGtk2::instance());
 }
 
 Gtk2Border::~Gtk2Border() {
-  gtk2_ui_->RemoveNativeThemeChangeObserver(this);
 }
 
 void Gtk2Border::Paint(const views::View& view, gfx::Canvas* canvas) {
-  ui::ThemeProvider* provider = owning_button_->GetThemeProvider();
-  if (!provider || !provider->UsingNativeTheme()) {
-    border_->Paint(view, canvas);
-    return;
-  }
-
   DCHECK_EQ(&view, owning_button_);
   const NativeThemeDelegate* native_theme_delegate = owning_button_;
   gfx::Rect rect(native_theme_delegate->GetThemePaintRect());
@@ -120,31 +113,18 @@ void Gtk2Border::Paint(const views::View& view, gfx::Canvas* canvas) {
 }
 
 gfx::Insets Gtk2Border::GetInsets() const {
-  // TODO(erg): We want to differentiate between buttons on the toolbar and
-  // buttons everywhere else. Right now, the only way to do this is to check
-  // the style. STYLE_BUTTON is the button style used in dialogs, and
-  // STYLE_TEXTUBTTON is the button style used in the toolbar, including all
-  // the buttons which are just toolbar images.
-  ui::ThemeProvider* provider = owning_button_->GetThemeProvider();
-  if (owning_button_->style() == views::Button::STYLE_BUTTON ||
-      (!provider || !provider->UsingNativeTheme()))
-    return border_->GetInsets();
-
   // On STYLE_TEXTUBTTON, we want the smaller insets so we can fit the GTK icon
   // in the toolbar without cutting off the edges of the GTK image.
   return gtk2_ui_->GetButtonInsets();
 }
 
 gfx::Size Gtk2Border::GetMinimumSize() const {
-  ui::ThemeProvider* provider = owning_button_->GetThemeProvider();
-  if (!provider || !provider->UsingNativeTheme())
-    return border_->GetMinimumSize();
-
   gfx::Insets insets = GetInsets();
   return gfx::Size(insets.width(), insets.height());
 }
 
-void Gtk2Border::OnNativeThemeChanged() {
+void Gtk2Border::OnNativeThemeUpdated(ui::NativeTheme* observed_theme) {
+  DCHECK_EQ(observed_theme, NativeThemeGtk2::instance());
   for (int i = 0; i < kNumberOfFocusedStates; ++i) {
     for (int j = 0; j < views::Button::STATE_COUNT; ++j) {
       button_images_[i][j] = gfx::ImageSkia();

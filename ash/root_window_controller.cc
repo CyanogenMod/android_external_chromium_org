@@ -17,7 +17,7 @@
 #include "ash/high_contrast/high_contrast_controller.h"
 #include "ash/host/ash_window_tree_host.h"
 #include "ash/root_window_settings.h"
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_types.h"
 #include "ash/shelf/shelf_widget.h"
@@ -569,9 +569,11 @@ void RootWindowController::ShowContextMenu(const gfx::Point& location_in_screen,
 
   views::MenuRunner menu_runner(menu_model.get());
   if (menu_runner.RunMenuAt(wallpaper_controller_->widget(),
-          NULL, gfx::Rect(location_in_screen, gfx::Size()),
-          views::MenuItemView::TOPLEFT, source_type,
-          views::MenuRunner::CONTEXT_MENU) ==
+                            NULL,
+                            gfx::Rect(location_in_screen, gfx::Size()),
+                            views::MENU_ANCHOR_TOPLEFT,
+                            source_type,
+                            views::MenuRunner::CONTEXT_MENU) ==
       views::MenuRunner::MENU_DELETED) {
     return;
   }

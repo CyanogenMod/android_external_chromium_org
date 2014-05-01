@@ -108,14 +108,15 @@ void PermissionCombobox::OnMenuButtonClicked(View* source,
 
   gfx::Point p(point);
   p.Offset(-source->width(), 0);
-  if (menu_runner_->RunMenuAt(
-          source->GetWidget()->GetTopLevelWidget(),
-          this,
-          gfx::Rect(p, gfx::Size()),
-          views::MenuItemView::TOPLEFT,
-          ui::MENU_SOURCE_NONE,
-          views::MenuRunner::HAS_MNEMONICS) == views::MenuRunner::MENU_DELETED)
+  if (menu_runner_->RunMenuAt(source->GetWidget()->GetTopLevelWidget(),
+                              this,
+                              gfx::Rect(p, gfx::Size()),
+                              views::MENU_ANCHOR_TOPLEFT,
+                              ui::MENU_SOURCE_NONE,
+                              views::MenuRunner::HAS_MNEMONICS) ==
+      views::MenuRunner::MENU_DELETED) {
     return;
+  }
 }
 
 void PermissionCombobox::PermissionChanged(
@@ -224,6 +225,7 @@ PermissionsBubbleDelegateView::PermissionsBubbleDelegateView(
   customize_comboboxes_.clear();
   set_close_on_esc(false);
   set_close_on_deactivate(false);
+  set_move_with_anchor(true);
 
   SetLayoutManager(new views::BoxLayout(
       views::BoxLayout::kVertical, kBubbleOuterMargin, 0, kItemMajorSpacing));

@@ -50,7 +50,6 @@
             'autofill/core/browser/form_field_unittest.cc',
             'autofill/core/browser/form_structure_unittest.cc',
             'autofill/core/browser/name_field_unittest.cc',
-            'autofill/core/browser/password_autofill_manager_unittest.cc',
             'autofill/core/browser/password_generator_unittest.cc',
             'autofill/core/browser/personal_data_manager_unittest.cc',
             'autofill/core/browser/phone_field_unittest.cc',
@@ -64,6 +63,7 @@
             'autofill/core/common/form_field_data_unittest.cc',
             'autofill/core/common/password_form_fill_data_unittest.cc',
             'autofill/core/common/save_password_progress_logger_unittest.cc',
+            'captive_portal/captive_portal_detector_unittest.cc',
             'cloud_devices/common/cloud_devices_urls_unittest.cc',
             'cloud_devices/common/printer_description_unittest.cc',
             'data_reduction_proxy/browser/data_reduction_proxy_metrics_unittest.cc',
@@ -101,6 +101,7 @@
             'os_crypt/os_crypt_unittest.cc',
             'password_manager/core/browser/browser_save_password_progress_logger_unittest.cc',
             'password_manager/core/browser/login_database_unittest.cc',
+            'password_manager/core/browser/password_autofill_manager_unittest.cc',
             'password_manager/core/browser/password_form_manager_unittest.cc',
             'password_manager/core/browser/password_generation_manager_unittest.cc',
             'password_manager/core/browser/password_manager_unittest.cc',
@@ -119,6 +120,8 @@
             'rappor/log_uploader_unittest.cc',
             'rappor/rappor_metric_unittest.cc',
             'rappor/rappor_service_unittest.cc',
+            'search_provider_logos/logo_cache_unittest.cc',
+            'search_provider_logos/logo_tracker_unittest.cc',
             'sessions/serialized_navigation_entry_unittest.cc',
             'signin/core/browser/mutable_profile_oauth2_token_service_unittest.cc',
             'signin/core/browser/signin_error_controller_unittest.cc',
@@ -135,6 +138,7 @@
             'storage_monitor/storage_monitor_win_unittest.cc',
             'sync_driver/generic_change_processor_unittest.cc',
             'sync_driver/model_association_manager_unittest.cc',
+            'sync_driver/non_blocking_data_type_controller_unittest.cc',
             'sync_driver/sync_prefs_unittest.cc',
             'sync_driver/system_encryptor_unittest.cc',
             'test/run_all_unittests.cc',
@@ -190,6 +194,10 @@
             'components_strings.gyp:components_strings',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
 
+            # Dependencies of captive_portal
+            'components.gyp:captive_portal_test_support',
+            '../net/net.gyp:net_test_support',
+
             # Dependencies of cloud_devices
             'components.gyp:cloud_devices_common',
 
@@ -231,6 +239,9 @@
 
             # Dependencies of rappor
             'components.gyp:rappor',
+
+            # Dependencies of search_provider_logos
+            'components.gyp:search_provider_logos',
 
             # Dependencies of signin
             'components.gyp:signin_core_browser',
@@ -314,6 +325,7 @@
                 ['include', '^language_usage_metrics/'],
                 ['include', '^password_manager/'],
                 ['include', '^precache/core/'],
+                ['include', '^search_provider_logos/'],
                 ['include', '^signin/'],
                 ['include', '^sync_driver/'],
                 ['include', '^translate/'],
@@ -364,7 +376,7 @@
                 'nacl/loader/nonsfi/nonsfi_sandbox_sigsys_unittest.cc',
               ],
               'dependencies': [
-                'nacl.gyp:nacl_loader',
+                'nacl.gyp:nacl_linux',
                 '../sandbox/sandbox.gyp:sandbox_linux_test_utils',
               ],
             }],

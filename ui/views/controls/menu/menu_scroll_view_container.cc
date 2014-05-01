@@ -281,12 +281,14 @@ void MenuScrollViewContainer::CreateDefaultBorder() {
   int padding = menu_config.corner_radius > 0 ?
         kBorderPaddingDueToRoundedCorners : 0;
 
+#if !(defined(OS_LINUX) && !defined(OS_CHROMEOS))
   if (menu_config.native_theme == ui::NativeThemeAura::instance()) {
     // In case of NativeThemeAura the border gets drawn with the shadow.
     // Furthermore no additional padding is wanted.
     use_border = false;
     padding = 0;
   }
+#endif
 
   int top = menu_config.menu_vertical_border_size + padding;
   int left = menu_config.menu_horizontal_border_size + padding;
@@ -313,17 +315,16 @@ void MenuScrollViewContainer::CreateBubbleBorder() {
   set_background(new BubbleBackground(bubble_border_));
 }
 
-BubbleBorder::Arrow
-MenuScrollViewContainer::BubbleBorderTypeFromAnchor(
-    MenuItemView::AnchorPosition anchor) {
+BubbleBorder::Arrow MenuScrollViewContainer::BubbleBorderTypeFromAnchor(
+    MenuAnchorPosition anchor) {
   switch (anchor) {
-    case views::MenuItemView::BUBBLE_LEFT:
+    case MENU_ANCHOR_BUBBLE_LEFT:
       return BubbleBorder::RIGHT_CENTER;
-    case views::MenuItemView::BUBBLE_RIGHT:
+    case MENU_ANCHOR_BUBBLE_RIGHT:
       return BubbleBorder::LEFT_CENTER;
-    case views::MenuItemView::BUBBLE_ABOVE:
+    case MENU_ANCHOR_BUBBLE_ABOVE:
       return BubbleBorder::BOTTOM_CENTER;
-    case views::MenuItemView::BUBBLE_BELOW:
+    case MENU_ANCHOR_BUBBLE_BELOW:
       return BubbleBorder::TOP_CENTER;
     default:
       return BubbleBorder::NONE;

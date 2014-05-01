@@ -171,6 +171,10 @@ void NativeThemeGtk2::PaintMenuItemBackground(
   canvas->drawRect(gfx::RectToSkRect(rect), paint);
 }
 
+void NativeThemeGtk2::NotifyNativeThemeObservers() {
+  NotifyObservers();
+}
+
 GdkColor NativeThemeGtk2::GetSystemGdkColor(ColorId color_id) const {
   switch (color_id) {
     // Windows
@@ -247,7 +251,11 @@ GdkColor NativeThemeGtk2::GetSystemGdkColor(ColorId color_id) const {
     case kColorId_TextfieldSelectionBackgroundFocused:
       return GetEntryStyle()->base[GTK_STATE_SELECTED];
 
-      // Trees and Tables (implemented on GTK using the same class)
+    // Tooltips
+    case kColorId_TooltipBackground:
+      return GetWindowStyle()->bg[GTK_STATE_NORMAL];
+
+    // Trees and Tables (implemented on GTK using the same class)
     case kColorId_TableBackground:
     case kColorId_TreeBackground:
       return GetTreeStyle()->bg[GTK_STATE_NORMAL];
@@ -322,9 +330,6 @@ GdkColor NativeThemeGtk2::GetSystemGdkColor(ColorId color_id) const {
       return GdkAlphaBlend(win_style->text[GTK_STATE_SELECTED],
                            win_style->bg[GTK_STATE_SELECTED], 0x34);
     }
-    default:
-      // Fall through
-      break;
   }
 
   return SkColorToGdkColor(kInvalidColorIdColor);

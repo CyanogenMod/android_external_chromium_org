@@ -24,11 +24,11 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
+	mojo/common/channel_init.cc \
 	mojo/common/common_type_converters.cc \
 	mojo/common/environment_data.cc \
 	mojo/common/handle_watcher.cc \
 	mojo/common/message_pump_mojo.cc \
-	mojo/common/mojo_channel_init.cc \
 	mojo/common/time_helper.cc
 
 

@@ -18,6 +18,7 @@
       'inputs': [
         '<(mojom_bindings_generator)',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/enum_declaration.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/enum_traits.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_declaration.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_macros.tmpl',
@@ -39,6 +40,8 @@
         '<(DEPTH)/mojo/public/tools/bindings/generators/js_templates/struct_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/mojom_cpp_generator.py',
         '<(DEPTH)/mojo/public/tools/bindings/generators/mojom_js_generator.py',
+        '<(DEPTH)/mojo/public/tools/bindings/pylib/mojom/__init__.py',
+        '<(DEPTH)/mojo/public/tools/bindings/pylib/mojom/error.py',
         '<(DEPTH)/mojo/public/tools/bindings/pylib/mojom/generate/__init__.py',
         '<(DEPTH)/mojo/public/tools/bindings/pylib/mojom/generate/data.py',
         '<(DEPTH)/mojo/public/tools/bindings/pylib/mojom/generate/generator.py',
@@ -60,6 +63,7 @@
       'action': [
         'python', '<@(mojom_bindings_generator)',
         '<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).mojom',
+        '--use_chromium_bundled_pylibs',
         '-d', '<(DEPTH)',
         '-o', '<(SHARED_INTERMEDIATE_DIR)/<(mojom_base_output_dir)/<(RULE_INPUT_DIRNAME)',
       ],

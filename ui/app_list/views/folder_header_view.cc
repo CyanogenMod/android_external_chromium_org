@@ -117,9 +117,21 @@ void FolderHeaderView::Update() {
   folder_name_view_->SetVisible(folder_name_visible_);
   if (folder_name_visible_) {
     folder_name_view_->SetText(base::UTF8ToUTF16(folder_item_->name()));
+    UpdateFolderNameAccessibleName();
   }
 
   Layout();
+}
+
+void FolderHeaderView::UpdateFolderNameAccessibleName() {
+  // Sets |folder_name_view_|'s accessible name to the placeholder text if
+  // |folder_name_view_| is blank; otherwise, clear the accessible name, the
+  // accessible state's value is set to be folder_name_view_->text() by
+  // TextField.
+  base::string16 accessible_name = folder_name_view_->text().empty()
+                                       ? folder_name_placeholder_text_
+                                       : base::string16();
+  folder_name_view_->SetAccessibleName(accessible_name);
 }
 
 const base::string16& FolderHeaderView::GetFolderNameForTest() {
@@ -152,7 +164,8 @@ void FolderHeaderView::Layout() {
                             ? folder_name_placeholder_text_
                             : base::UTF8ToUTF16(folder_item_->name());
   int text_width =
-      gfx::Canvas::GetStringWidth(text, folder_name_view_->GetFontList());
+      gfx::Canvas::GetStringWidth(text, folder_name_view_->GetFontList()) +
+      folder_name_view_->GetCaretBounds().width();
   text_width = std::min(text_width, kMaxFolderNameWidth);
   text_bounds.set_x(back_bounds.x() + (rect.width() - text_width) / 2);
   text_bounds.set_width(text_width);
@@ -196,6 +209,8 @@ void FolderHeaderView::ContentsChanged(views::Textfield* sender,
   if (name != folder_item_->name())
     delegate_->SetItemName(folder_item_, name);
   folder_item_->AddObserver(this);
+
+  UpdateFolderNameAccessibleName();
 
   Layout();
 }

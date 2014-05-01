@@ -19,6 +19,7 @@
 #include "ui/aura/client/visibility_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/test/aura_test_base.h"
+#include "ui/aura/test/aura_test_utils.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
@@ -373,10 +374,8 @@ TEST_F(WindowTest, MoveCursorToWithTransformRootWindow) {
   host()->SetRootTransform(transform);
   host()->MoveCursorTo(gfx::Point(10, 10));
 #if !defined(OS_WIN)
-  gfx::Point mouse_location;
-  EXPECT_TRUE(host()->QueryMouseLocation(&mouse_location));
   // TODO(yoshiki): fix this to build on Windows. See crbug.com/133413.OD
-  EXPECT_EQ("50,120", mouse_location.ToString());
+  EXPECT_EQ("50,120", QueryLatestMousePositionRequestInHost(host()).ToString());
 #endif
   EXPECT_EQ("10,10", gfx::Screen::GetScreenFor(
       root_window())->GetCursorScreenPoint().ToString());
@@ -461,9 +460,7 @@ TEST_F(WindowTest, MoveCursorToWithComplexTransform) {
 
 #if !defined(OS_WIN)
   // TODO(yoshiki): fix this to build on Windows. See crbug.com/133413.
-  gfx::Point mouse_location;
-  EXPECT_TRUE(host()->QueryMouseLocation(&mouse_location));
-  EXPECT_EQ("169,80", mouse_location.ToString());
+  EXPECT_EQ("169,80", QueryLatestMousePositionRequestInHost(host()).ToString());
 #endif
   EXPECT_EQ("20,53",
       gfx::Screen::GetScreenFor(root)->GetCursorScreenPoint().ToString());
@@ -2244,7 +2241,8 @@ TEST_F(WindowTest, RootWindowSetWhenReparenting) {
       ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
   ui::ScopedLayerAnimationSettings settings1(child.layer()->GetAnimator());
   settings1.SetTransitionDuration(base::TimeDelta::FromMilliseconds(100));
-  child.SetBounds(gfx::Rect(35, 35, 100, 100));
+  gfx::Rect new_bounds(gfx::Rect(35, 35, 50, 50));
+  child.SetBounds(new_bounds);
 
   BoundsChangedWindowObserver observer;
   child.AddObserver(&observer);
@@ -2254,7 +2252,11 @@ TEST_F(WindowTest, RootWindowSetWhenReparenting) {
   parent2.AddChild(&child);
   EXPECT_TRUE(observer.root_set());
 
-  // TODO(varkha): Check that the target bounds didn't change after reparenting.
+  // Animations should stop and the bounds should be as set before the |child|
+  // got reparented.
+  EXPECT_EQ(new_bounds.ToString(), child.GetTargetBounds().ToString());
+  EXPECT_EQ(new_bounds.ToString(), child.bounds().ToString());
+  EXPECT_EQ("55,55 50x50", child.GetBoundsInRootWindow().ToString());
 }
 
 TEST_F(WindowTest, OwnedByParentFalse) {

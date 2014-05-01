@@ -16,8 +16,7 @@
 #include "content/browser/renderer_host/media/video_capture_controller_event_handler.h"
 #include "content/browser/renderer_host/media/video_capture_manager.h"
 #include "content/common/media/media_stream_options.h"
-#include "media/video/capture/fake_video_capture_device.h"
-#include "media/video/capture/video_capture_device.h"
+#include "media/video/capture/fake_video_capture_device_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -39,8 +38,7 @@ class MockMediaStreamProviderListener : public MediaStreamProviderListener {
   MOCK_METHOD2(Closed, void(MediaStreamType, int));
   MOCK_METHOD2(DevicesEnumerated, void(MediaStreamType,
                                        const StreamDeviceInfoArray&));
-  MOCK_METHOD3(Error, void(MediaStreamType, int,
-                           MediaStreamProviderError));
+  MOCK_METHOD2(Aborted, void(MediaStreamType, int));
 };  // class MockMediaStreamProviderListener
 
 // Needed as an input argument to StartCaptureForClient().
@@ -79,8 +77,13 @@ class VideoCaptureManagerTest : public testing::Test {
     message_loop_.reset(new base::MessageLoopForIO);
     io_thread_.reset(new BrowserThreadImpl(BrowserThread::IO,
                                            message_loop_.get()));
-    vcm_ = new VideoCaptureManager();
-    vcm_->UseFakeDevice();
+    vcm_ = new VideoCaptureManager(scoped_ptr<media::VideoCaptureDeviceFactory>(
+        new media::FakeVideoCaptureDeviceFactory()));
+    video_capture_device_factory_ =
+        static_cast<media::FakeVideoCaptureDeviceFactory*>(
+            vcm_->video_capture_device_factory());
+    const int32 kNumberOfFakeDevices = 2;
+    video_capture_device_factory_->set_number_of_devices(kNumberOfFakeDevices);
     vcm_->Register(listener_.get(), message_loop_->message_loop_proxy().get());
     frame_observer_.reset(new MockFrameObserver());
   }
@@ -127,7 +130,7 @@ class VideoCaptureManagerTest : public testing::Test {
   void StopClient(VideoCaptureControllerID client_id) {
     ASSERT_TRUE(1 == controllers_.count(client_id));
     vcm_->StopCaptureForClient(controllers_[client_id], client_id,
-                               frame_observer_.get());
+                               frame_observer_.get(), false);
     controllers_.erase(client_id);
   }
 
@@ -138,6 +141,7 @@ class VideoCaptureManagerTest : public testing::Test {
   scoped_ptr<base::MessageLoop> message_loop_;
   scoped_ptr<BrowserThreadImpl> io_thread_;
   scoped_ptr<MockFrameObserver> frame_observer_;
+  media::FakeVideoCaptureDeviceFactory* video_capture_device_factory_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(VideoCaptureManagerTest);
@@ -165,6 +169,35 @@ TEST_F(VideoCaptureManagerTest, CreateAndClose) {
 
   StopClient(client_id);
   vcm_->Close(video_session_id);
+
+  // Wait to check callbacks before removing the listener.
+  message_loop_->RunUntilIdle();
+  vcm_->Unregister();
+}
+
+// Try to open, start, and abort a device.
+TEST_F(VideoCaptureManagerTest, CreateAndAbort) {
+  StreamDeviceInfoArray devices;
+
+  InSequence s;
+  EXPECT_CALL(*listener_, DevicesEnumerated(MEDIA_DEVICE_VIDEO_CAPTURE, _))
+      .WillOnce(SaveArg<1>(&devices));
+  EXPECT_CALL(*listener_, Opened(MEDIA_DEVICE_VIDEO_CAPTURE, _));
+  EXPECT_CALL(*listener_, Aborted(MEDIA_DEVICE_VIDEO_CAPTURE, _));
+
+  vcm_->EnumerateDevices(MEDIA_DEVICE_VIDEO_CAPTURE);
+
+  // Wait to get device callback.
+  message_loop_->RunUntilIdle();
+
+  int video_session_id = vcm_->Open(devices.front());
+  VideoCaptureControllerID client_id = StartClient(video_session_id, true);
+
+  // Wait for device opened.
+  message_loop_->RunUntilIdle();
+
+  vcm_->StopCaptureForClient(controllers_[client_id], client_id,
+                             frame_observer_.get(), true);
 
   // Wait to check callbacks before removing the listener.
   message_loop_->RunUntilIdle();
@@ -205,7 +238,7 @@ TEST_F(VideoCaptureManagerTest, OpenTwice) {
 TEST_F(VideoCaptureManagerTest, ConnectAndDisconnectDevices) {
   StreamDeviceInfoArray devices;
   int number_of_devices_keep =
-      media::FakeVideoCaptureDevice::NumberOfFakeDevices();
+    video_capture_device_factory_->number_of_devices();
 
   InSequence s;
   EXPECT_CALL(*listener_, DevicesEnumerated(MEDIA_DEVICE_VIDEO_CAPTURE, _))
@@ -215,7 +248,7 @@ TEST_F(VideoCaptureManagerTest, ConnectAndDisconnectDevices) {
   ASSERT_EQ(devices.size(), 2u);
 
   // Simulate we remove 1 fake device.
-  media::FakeVideoCaptureDevice::SetNumberOfFakeDevices(1);
+  video_capture_device_factory_->set_number_of_devices(1);
   EXPECT_CALL(*listener_, DevicesEnumerated(MEDIA_DEVICE_VIDEO_CAPTURE, _))
       .WillOnce(SaveArg<1>(&devices));
   vcm_->EnumerateDevices(MEDIA_DEVICE_VIDEO_CAPTURE);
@@ -223,7 +256,7 @@ TEST_F(VideoCaptureManagerTest, ConnectAndDisconnectDevices) {
   ASSERT_EQ(devices.size(), 1u);
 
   // Simulate we add 2 fake devices.
-  media::FakeVideoCaptureDevice::SetNumberOfFakeDevices(3);
+  video_capture_device_factory_->set_number_of_devices(3);
   EXPECT_CALL(*listener_, DevicesEnumerated(MEDIA_DEVICE_VIDEO_CAPTURE, _))
       .WillOnce(SaveArg<1>(&devices));
   vcm_->EnumerateDevices(MEDIA_DEVICE_VIDEO_CAPTURE);
@@ -231,7 +264,7 @@ TEST_F(VideoCaptureManagerTest, ConnectAndDisconnectDevices) {
   ASSERT_EQ(devices.size(), 3u);
 
   vcm_->Unregister();
-  media::FakeVideoCaptureDevice::SetNumberOfFakeDevices(number_of_devices_keep);
+  video_capture_device_factory_->set_number_of_devices(number_of_devices_keep);
 }
 
 // Enumerate devices and open the first, then check the list of supported

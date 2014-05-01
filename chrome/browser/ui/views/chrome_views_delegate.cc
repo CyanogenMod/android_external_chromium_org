@@ -13,7 +13,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/views/accessibility/accessibility_event_router_views.h"
-#include "chrome/browser/ui/views/accessibility/automation_manager_views.h"
 #include "chrome/common/pref_names.h"
 #include "grit/chrome_unscaled_resources.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -34,6 +33,7 @@
 #endif
 
 #if defined(USE_AURA)
+#include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #endif
 
@@ -50,6 +50,7 @@
 #if defined(USE_ASH)
 #include "ash/shell.h"
 #include "ash/wm/window_state.h"
+#include "chrome/browser/ui/ash/accessibility/automation_manager_views.h"
 #include "chrome/browser/ui/ash/ash_init.h"
 #include "chrome/browser/ui/ash/ash_util.h"
 #endif
@@ -198,8 +199,10 @@ void ChromeViewsDelegate::NotifyAccessibilityEvent(
   AccessibilityEventRouterViews::GetInstance()->HandleAccessibilityEvent(
       view, event_type);
 
+#if defined(USE_ASH)
   AutomationManagerViews::GetInstance()->HandleEvent(
       GetProfileForWindow(view->GetWidget()), view, event_type);
+#endif
 }
 
 void ChromeViewsDelegate::NotifyMenuItemFocused(
@@ -337,7 +340,15 @@ void ChromeViewsDelegate::OnBeforeWidgetInit(
         NOTREACHED();
     }
   } else if (use_non_toplevel_window) {
-    params->native_widget = new views::NativeWidgetAura(delegate);
+    views::NativeWidgetAura* native_widget =
+        new views::NativeWidgetAura(delegate);
+    if (params->parent) {
+      Profile* parent_profile = reinterpret_cast<Profile*>(
+          params->parent->GetNativeWindowProperty(Profile::kProfileKey));
+      native_widget->SetNativeWindowProperty(Profile::kProfileKey,
+                                             parent_profile);
+    }
+    params->native_widget = native_widget;
   } else if (params->type != views::Widget::InitParams::TYPE_TOOLTIP) {
     // TODO(erg): Once we've threaded context to everywhere that needs it, we
     // should remove this check here.

@@ -16,6 +16,7 @@
 #include <windows.h>
 #include <iphlpapi.h>
 #include <winsock2.h>
+#include <ws2bth.h>
 #pragma comment(lib, "iphlpapi.lib")
 #elif defined(OS_POSIX)
 #include <fcntl.h>
@@ -204,17 +205,16 @@ std::string GetSpecificHeader(const std::string& headers,
 }
 
 std::string CanonicalizeHost(const std::string& host,
-                             url_canon::CanonHostInfo* host_info) {
+                             url::CanonHostInfo* host_info) {
   // Try to canonicalize the host.
-  const url_parse::Component raw_host_component(
-      0, static_cast<int>(host.length()));
+  const url::Component raw_host_component(0, static_cast<int>(host.length()));
   std::string canon_host;
-  url_canon::StdStringCanonOutput canon_host_output(&canon_host);
-  url_canon::CanonicalizeHostVerbose(host.c_str(), raw_host_component,
-                                     &canon_host_output, host_info);
+  url::StdStringCanonOutput canon_host_output(&canon_host);
+  url::CanonicalizeHostVerbose(host.c_str(), raw_host_component,
+                               &canon_host_output, host_info);
 
   if (host_info->out_host.is_nonempty() &&
-      host_info->family != url_canon::CanonHostInfo::BROKEN) {
+      host_info->family != url::CanonHostInfo::BROKEN) {
     // Success!  Assert that there's no extra garbage.
     canon_host_output.Complete();
     DCHECK_EQ(host_info->out_host.len, static_cast<int>(canon_host.length()));
@@ -342,17 +342,17 @@ bool ParseHostAndPort(std::string::const_iterator host_and_port_begin,
   if (host_and_port_begin >= host_and_port_end)
     return false;
 
-  // When using url_parse, we use char*.
+  // When using url, we use char*.
   const char* auth_begin = &(*host_and_port_begin);
   int auth_len = host_and_port_end - host_and_port_begin;
 
-  url_parse::Component auth_component(0, auth_len);
-  url_parse::Component username_component;
-  url_parse::Component password_component;
-  url_parse::Component hostname_component;
-  url_parse::Component port_component;
+  url::Component auth_component(0, auth_len);
+  url::Component username_component;
+  url::Component password_component;
+  url::Component hostname_component;
+  url::Component port_component;
 
-  url_parse::ParseAuthority(auth_begin, auth_component, &username_component,
+  url::ParseAuthority(auth_begin, auth_component, &username_component,
       &password_component, &hostname_component, &port_component);
 
   // There shouldn't be a username/password.
@@ -364,7 +364,7 @@ bool ParseHostAndPort(std::string::const_iterator host_and_port_begin,
 
   int parsed_port_number = -1;
   if (port_component.is_nonempty()) {
-    parsed_port_number = url_parse::ParsePort(auth_begin, port_component);
+    parsed_port_number = url::ParsePort(auth_begin, port_component);
 
     // If parsing failed, port_number will be either PORT_INVALID or
     // PORT_UNSPECIFIED, both of which are negative.
@@ -408,7 +408,7 @@ bool IsHostnameNonUnique(const std::string& hostname) {
   // CanonicalizeHost requires surrounding brackets to parse an IPv6 address.
   const std::string host_or_ip = hostname.find(':') != std::string::npos ?
       "[" + hostname + "]" : hostname;
-  url_canon::CanonHostInfo host_info;
+  url::CanonHostInfo host_info;
   std::string canonical_name = CanonicalizeHost(host_or_ip, &host_info);
 
   // If canonicalization fails, then the input is truly malformed. However,
@@ -426,11 +426,11 @@ bool IsHostnameNonUnique(const std::string& hostname) {
       return false;
     }
     switch (host_info.family) {
-      case url_canon::CanonHostInfo::IPV4:
-      case url_canon::CanonHostInfo::IPV6:
+      case url::CanonHostInfo::IPV4:
+      case url::CanonHostInfo::IPV6:
         return IsIPAddressReserved(host_addr);
-      case url_canon::CanonHostInfo::NEUTRAL:
-      case url_canon::CanonHostInfo::BROKEN:
+      case url::CanonHostInfo::NEUTRAL:
+      case url::CanonHostInfo::BROKEN:
         return false;
     }
   }
@@ -524,12 +524,26 @@ bool GetIPAddressFromSockAddr(const struct sockaddr* sock_addr,
       return false;
     const struct sockaddr_in6* addr =
         reinterpret_cast<const struct sockaddr_in6*>(sock_addr);
-    *address = reinterpret_cast<const unsigned char*>(&addr->sin6_addr);
+    *address = reinterpret_cast<const uint8*>(&addr->sin6_addr);
     *address_len = kIPv6AddressSize;
     if (port)
       *port = base::NetToHost16(addr->sin6_port);
     return true;
   }
+
+#if defined(OS_WIN)
+  if (sock_addr->sa_family == AF_BTH) {
+    if (sock_addr_len < static_cast<socklen_t>(sizeof(SOCKADDR_BTH)))
+      return false;
+    const SOCKADDR_BTH* addr =
+        reinterpret_cast<const SOCKADDR_BTH*>(sock_addr);
+    *address = reinterpret_cast<const uint8*>(&addr->btAddr);
+    *address_len = kBluetoothAddressSize;
+    if (port)
+      *port = addr->port;
+    return true;
+  }
+#endif
 
   return false;  // Unrecognized |sa_family|.
 }
@@ -537,12 +551,12 @@ bool GetIPAddressFromSockAddr(const struct sockaddr* sock_addr,
 std::string IPAddressToString(const uint8* address,
                               size_t address_len) {
   std::string str;
-  url_canon::StdStringCanonOutput output(&str);
+  url::StdStringCanonOutput output(&str);
 
   if (address_len == kIPv4AddressSize) {
-    url_canon::AppendIPv4Address(address, &output);
+    url::AppendIPv4Address(address, &output);
   } else if (address_len == kIPv6AddressSize) {
-    url_canon::AppendIPv6Address(address, &output);
+    url::AppendIPv6Address(address, &output);
   } else {
     CHECK(false) << "Invalid IP address with length: " << address_len;
   }
@@ -779,22 +793,21 @@ bool ParseIPLiteralToNumber(const std::string& ip_literal,
   if (ip_literal.find(':') != std::string::npos) {
     // GURL expects IPv6 hostnames to be surrounded with brackets.
     std::string host_brackets = "[" + ip_literal + "]";
-    url_parse::Component host_comp(0, host_brackets.size());
+    url::Component host_comp(0, host_brackets.size());
 
     // Try parsing the hostname as an IPv6 literal.
     ip_number->resize(16);  // 128 bits.
-    return url_canon::IPv6AddressToNumber(host_brackets.data(),
-                                          host_comp,
-                                          &(*ip_number)[0]);
+    return url::IPv6AddressToNumber(host_brackets.data(), host_comp,
+                                    &(*ip_number)[0]);
   }
 
   // Otherwise the string is an IPv4 address.
   ip_number->resize(4);  // 32 bits.
-  url_parse::Component host_comp(0, ip_literal.size());
+  url::Component host_comp(0, ip_literal.size());
   int num_components;
-  url_canon::CanonHostInfo::Family family = url_canon::IPv4AddressToNumber(
+  url::CanonHostInfo::Family family = url::IPv4AddressToNumber(
       ip_literal.data(), host_comp, &(*ip_number)[0], &num_components);
-  return family == url_canon::CanonHostInfo::IPV4;
+  return family == url::CanonHostInfo::IPV4;
 }
 
 namespace {

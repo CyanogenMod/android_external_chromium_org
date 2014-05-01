@@ -14,6 +14,7 @@
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
 #include "content/common/cookie_data.h"
+#include "content/common/input/did_overscroll_params.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/pepper_renderer_instance_data.h"
 #include "content/common/view_message_enums.h"
@@ -131,6 +132,8 @@ IPC_STRUCT_TRAITS_BEGIN(blink::WebScreenInfo)
   IPC_STRUCT_TRAITS_MEMBER(isMonochrome)
   IPC_STRUCT_TRAITS_MEMBER(rect)
   IPC_STRUCT_TRAITS_MEMBER(availableRect)
+  IPC_STRUCT_TRAITS_MEMBER(orientationType)
+  IPC_STRUCT_TRAITS_MEMBER(orientationAngle)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::MenuItem)
@@ -149,6 +152,12 @@ IPC_STRUCT_TRAITS_BEGIN(content::DateTimeSuggestion)
   IPC_STRUCT_TRAITS_MEMBER(value)
   IPC_STRUCT_TRAITS_MEMBER(localized_value)
   IPC_STRUCT_TRAITS_MEMBER(label)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::DidOverscrollParams)
+  IPC_STRUCT_TRAITS_MEMBER(accumulated_overscroll)
+  IPC_STRUCT_TRAITS_MEMBER(latest_overscroll_delta)
+  IPC_STRUCT_TRAITS_MEMBER(current_fling_velocity)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::FaviconURL)
@@ -205,6 +214,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(tap_multiple_targets_strategy)
   IPC_STRUCT_TRAITS_MEMBER(disable_client_blocked_error_page)
   IPC_STRUCT_TRAITS_MEMBER(plugin_fullscreen_allowed)
+  IPC_STRUCT_TRAITS_MEMBER(use_video_overlay_for_embedded_encrypted_video)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::CookieData)
@@ -390,27 +400,8 @@ IPC_STRUCT_BEGIN(ViewHostMsg_TextInputState_Params)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_UpdateRect_Params)
-  // The bitmap to be painted into the view at the locations specified by
-  // update_rects.
-  IPC_STRUCT_MEMBER(TransportDIB::Id, bitmap)
-
-  // The position and size of the bitmap.
-  IPC_STRUCT_MEMBER(gfx::Rect, bitmap_rect)
-
-  // The scroll delta.  Only one of the delta components can be non-zero, and if
-  // they are both zero, then it means there is no scrolling and the scroll_rect
-  // is ignored.
-  IPC_STRUCT_MEMBER(gfx::Vector2d, scroll_delta)
-
-  // The rectangular region to scroll.
-  IPC_STRUCT_MEMBER(gfx::Rect, scroll_rect)
-
   // The scroll offset of the render view.
   IPC_STRUCT_MEMBER(gfx::Vector2d, scroll_offset)
-
-  // The regions of the bitmap (in view coords) that contain updated pixels.
-  // In the case of scrolling, this includes the scroll damage rect.
-  IPC_STRUCT_MEMBER(std::vector<gfx::Rect>, copy_rects)
 
   // The size of the RenderView when this message was generated.  This is
   // included so the host knows how large the view is from the perspective of
@@ -428,9 +419,6 @@ IPC_STRUCT_BEGIN(ViewHostMsg_UpdateRect_Params)
   //   ViewHostMsg_UpdateRect_Flags::IS_RESIZE_ACK
   //     Indicates that this is a response to a ViewMsg_Resize message.
   //
-  //   ViewHostMsg_UpdateRect_Flags::IS_RESTORE_ACK
-  //     Indicates that this is a response to a ViewMsg_WasShown message.
-  //
   //   ViewHostMsg_UpdateRect_Flags::IS_REPAINT_ACK
   //     Indicates that this is a response to a ViewMsg_Repaint message.
   //
@@ -443,10 +431,6 @@ IPC_STRUCT_BEGIN(ViewHostMsg_UpdateRect_Params)
   // All the above coordinates are in DIP. This is the scale factor needed
   // to convert them to pixels.
   IPC_STRUCT_MEMBER(float, scale_factor)
-
-  // The latency information for the frame. Only valid when accelerated
-  // compositing is disabled.
-  IPC_STRUCT_MEMBER(std::vector<ui::LatencyInfo>, latency_info)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewMsg_New_Params)
@@ -601,6 +585,7 @@ IPC_STRUCT_BEGIN(ViewMsg_Resize_Params)
   IPC_STRUCT_MEMBER(gfx::Size, new_size)
   IPC_STRUCT_MEMBER(gfx::Size, physical_backing_size)
   IPC_STRUCT_MEMBER(float, overdraw_bottom_height)
+  IPC_STRUCT_MEMBER(gfx::Size, visible_viewport_size)
   IPC_STRUCT_MEMBER(gfx::Rect, resizer_rect)
   IPC_STRUCT_MEMBER(bool, is_fullscreen)
 IPC_STRUCT_END()
@@ -623,9 +608,8 @@ IPC_MESSAGE_ROUTED0(ViewMsg_WasHidden)
 
 // Tells the render view that it is no longer hidden (see WasHidden), and the
 // render view is expected to respond with a full repaint if needs_repainting
-// is true.  In that case, the generated ViewHostMsg_UpdateRect message will
-// have the IS_RESTORE_ACK flag set.  If needs_repainting is false, then this
-// message does not trigger a message in response.
+// is true. If needs_repainting is false, then this message does not trigger a
+// message in response.
 IPC_MESSAGE_ROUTED1(ViewMsg_WasShown,
                     bool /* needs_repainting */)
 
@@ -1010,10 +994,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_ReclaimCompositorResources,
                     uint32 /* output_surface_id */,
                     cc::CompositorFrameAck /* ack */)
 
-// Sent by the browser to ask the renderer for a snapshot of the current view.
-IPC_MESSAGE_ROUTED1(ViewMsg_Snapshot,
-                    gfx::Rect /* src_subrect */)
-
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
 
@@ -1358,11 +1338,6 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_DidChangeScrollOffsetPinningForMainFrame,
                     bool /* pinned_to_left */,
                     bool /* pinned_to_right */)
 
-// Notifies that the scrollbars-visible state of the content changed.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_DidChangeScrollbarsForMainFrame,
-                    bool /* has_horizontal_scrollbar */,
-                    bool /* has_vertical_scrollbar */)
-
 // Notifies that the number of JavaScript scroll handlers changed.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_DidChangeNumWheelEvents,
                     int /* count */)
@@ -1565,18 +1540,11 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_SwapCompositorFrame,
 
 // Sent by the compositor when input scroll events are dropped due to bounds
 // restricions on the root scroll offset.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_DidOverscroll,
-                    gfx::Vector2dF /* accumulated_overscroll */,
-                    gfx::Vector2dF /* current_fling_velocity */)
+IPC_MESSAGE_ROUTED1(ViewHostMsg_DidOverscroll,
+                    content::DidOverscrollParams /* params */)
 
 // Sent by the compositor when a flinging animation is stopped.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_DidStopFlinging)
-
-// Reply to a snapshot request containing whether snapshotting succeeded and the
-// SkBitmap if it succeeded.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_Snapshot,
-                    bool, /* success */
-                    SkBitmap /* bitmap */)
 
 //---------------------------------------------------------------------------
 // Request for cryptographic operation messages:
@@ -1654,11 +1622,6 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_LockMouse,
 // whenever the mouse is unlocked (which may or may not be caused by
 // ViewHostMsg_UnlockMouse).
 IPC_MESSAGE_ROUTED0(ViewHostMsg_UnlockMouse)
-
-// Notifies that the initial empty document of a view has been accessed.
-// After this, it is no longer safe to show a pending navigation's URL without
-// making a URL spoof possible.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_DidAccessInitialDocument)
 
 // Notifies that multiple touch targets may have been pressed, and to show
 // the disambiguation popup.
@@ -1792,6 +1755,11 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_PluginFocusChanged,
 
 // Instructs the browser to start plugin IME.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_StartPluginIme)
+
+// Notifies that the scrollbars-visible state of the content changed.
+IPC_MESSAGE_ROUTED2(ViewHostMsg_DidChangeScrollbarsForMainFrame,
+                    bool /* has_horizontal_scrollbar */,
+                    bool /* has_vertical_scrollbar */)
 
 #elif defined(OS_WIN)
 // Request that the given font characters be loaded by the browser so it's

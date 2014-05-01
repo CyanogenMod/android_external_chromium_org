@@ -34,10 +34,6 @@ GpuBlacklist* GpuBlacklist::Create() {
                             GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE);
   list->AddSupportedFeature("accelerated_video_encode",
                             GPU_FEATURE_TYPE_ACCELERATED_VIDEO_ENCODE);
-  list->AddSupportedFeature("3d_css",
-                            GPU_FEATURE_TYPE_3D_CSS);
-  list->AddSupportedFeature("accelerated_video",
-                            GPU_FEATURE_TYPE_ACCELERATED_VIDEO);
   list->AddSupportedFeature("panel_fitting",
                             GPU_FEATURE_TYPE_PANEL_FITTING);
   list->AddSupportedFeature("gpu_rasterization",

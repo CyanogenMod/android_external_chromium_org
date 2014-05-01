@@ -83,9 +83,6 @@ const size_t kQuicVersionSize = 4;
 const size_t kPrivateFlagsSize = 1;
 // Number of bytes reserved for FEC group in the packet header.
 const size_t kFecGroupSize = 1;
-// TODO(wtc): remove this when we drop support for QUIC_VERSION_13.
-// Number of bytes reserved for the nonce proof in public reset packet.
-const size_t kPublicResetNonceSize = 8;
 
 // Signifies that the QuicPacket will contain version of the protocol.
 const bool kIncludeVersion = true;
@@ -264,7 +261,6 @@ enum QuicVersion {
   // Special case to indicate unknown/unsupported QUIC version.
   QUIC_VERSION_UNSUPPORTED = 0,
 
-  QUIC_VERSION_13 = 13,
   QUIC_VERSION_15 = 15,
   QUIC_VERSION_16 = 16,
   QUIC_VERSION_17 = 17,
@@ -281,8 +277,7 @@ enum QuicVersion {
 static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_18,
                                                      QUIC_VERSION_17,
                                                      QUIC_VERSION_16,
-                                                     QUIC_VERSION_15,
-                                                     QUIC_VERSION_13};
+                                                     QUIC_VERSION_15};
 
 typedef std::vector<QuicVersion> QuicVersionVector;
 
@@ -389,6 +384,8 @@ enum QuicErrorCode {
   QUIC_INVALID_FEC_DATA = 5,
   // STREAM frame data is malformed.
   QUIC_INVALID_STREAM_DATA = 46,
+  // STREAM frame data is not encrypted.
+  QUIC_UNENCRYPTED_STREAM_DATA = 61,
   // RST_STREAM frame data is malformed.
   QUIC_INVALID_RST_STREAM_DATA = 6,
   // CONNECTION_CLOSE frame data is malformed.
@@ -507,7 +504,7 @@ enum QuicErrorCode {
   QUIC_VERSION_NEGOTIATION_MISMATCH = 55,
 
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 61,
+  QUIC_LAST_ERROR = 62,
 };
 
 struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {

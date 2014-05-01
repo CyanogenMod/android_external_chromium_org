@@ -160,7 +160,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   BookmarkUndoServiceFactory::GetInstance();
 #endif
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
-  captive_portal::CaptivePortalServiceFactory::GetInstance();
+  CaptivePortalServiceFactory::GetInstance();
 #endif
   ChromeGeolocationPermissionContextFactory::GetInstance();
 #if defined(OS_ANDROID)
@@ -202,8 +202,8 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   MediaGalleriesPreferencesFactory::GetInstance();
   notifier::ChromeNotifierServiceFactory::GetInstance();
   notifier::SyncedNotificationAppInfoServiceFactory::GetInstance();
-#endif
   NTPResourceCacheFactory::GetInstance();
+#endif
   PasswordStoreFactory::GetInstance();
 #if !defined(OS_ANDROID)
   PinnedTabServiceFactory::GetInstance();

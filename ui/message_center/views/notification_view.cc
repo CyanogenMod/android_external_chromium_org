@@ -9,6 +9,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ui_resources.h"
 #include "grit/ui_strings.h"
+#include "ui/base/cursor/cursor.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -18,8 +19,6 @@
 #include "ui/gfx/text_elider.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_style.h"
-#include "ui/message_center/message_center_switches.h"
-#include "ui/message_center/message_center_util.h"
 #include "ui/message_center/notification.h"
 #include "ui/message_center/notification_types.h"
 #include "ui/message_center/views/bounded_label.h"
@@ -39,10 +38,6 @@
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
-
-#if defined(USE_AURA)
-#include "ui/base/cursor/cursor.h"
-#endif
 
 namespace {
 
@@ -323,11 +318,15 @@ NotificationView::NotificationView(MessageCenterController* controller,
     const gfx::FontList& font_list =
         default_label_font_list.DeriveWithSizeDelta(2);
     int padding = kTitleLineHeight - font_list.GetHeight();
+    int title_lines = notification.message().empty() ? kTitleNoMessageLineLimit
+                                                     : kTitleLineLimit;
+    int title_character_limit =
+        kNotificationWidth * title_lines / kMinPixelsPerTitleCharacter;
     title_view_ = new BoundedLabel(
-        gfx::TruncateString(notification.title(), kTitleCharacterLimit),
+        gfx::TruncateString(notification.title(), title_character_limit),
         font_list);
     title_view_->SetLineHeight(kTitleLineHeight);
-    title_view_->SetLineLimit(message_center::kTitleLineLimit);
+    title_view_->SetLineLimit(title_lines);
     title_view_->SetColors(message_center::kRegularTextColor,
                            kRegularTextBackgroundColor);
     title_view_->SetBorder(MakeTextBorder(padding, 3, 0));
@@ -549,12 +548,7 @@ gfx::NativeCursor NotificationView::GetCursor(const ui::MouseEvent& event) {
   if (!clickable_ || !controller_->HasClickedListener(notification_id()))
     return views::View::GetCursor(event);
 
-#if defined(USE_AURA)
   return ui::kCursorHand;
-#elif defined(OS_WIN)
-  static HCURSOR g_hand_cursor = LoadCursor(NULL, IDC_HAND);
-  return g_hand_cursor;
-#endif
 }
 
 void NotificationView::ButtonPressed(views::Button* sender,

@@ -187,16 +187,21 @@ void SyncEngine::Initialize(const base::FilePath& base_dir,
       new SyncEngineContext(drive_service_.get(),
                             drive_uploader_.get(),
                             base::MessageLoopProxy::current(),
+                            worker_task_runner_,
                             file_task_runner));
   worker_observer_.reset(
       new WorkerObserver(base::MessageLoopProxy::current(),
                          weak_ptr_factory_.GetWeakPtr()));
 
+  base::WeakPtr<ExtensionServiceInterface> extension_service_weak_ptr;
+  if (extension_service_)
+    extension_service_weak_ptr = extension_service_->AsWeakPtr();
+
   // TODO(peria): Use PostTask on |worker_task_runner_| to call this function.
   sync_worker_ = SyncWorker::CreateOnWorker(
       base_dir,
       worker_observer_.get(),
-      extension_service_,
+      extension_service_weak_ptr,
       sync_engine_context.Pass(),
       env_override);
 
@@ -220,7 +225,9 @@ void SyncEngine::RegisterOrigin(
       FROM_HERE,
       base::Bind(&SyncWorker::RegisterOrigin,
                  base::Unretained(sync_worker_.get()),
-                 origin, CreateRelayedCallback(callback)));
+                 origin,
+                 RelayCallbackToCurrentThread(
+                     FROM_HERE, callback)));
 }
 
 void SyncEngine::EnableOrigin(
@@ -229,7 +236,9 @@ void SyncEngine::EnableOrigin(
       FROM_HERE,
       base::Bind(&SyncWorker::EnableOrigin,
                  base::Unretained(sync_worker_.get()),
-                 origin, CreateRelayedCallback(callback)));
+                 origin,
+                 RelayCallbackToCurrentThread(
+                     FROM_HERE, callback)));
 }
 
 void SyncEngine::DisableOrigin(
@@ -238,7 +247,9 @@ void SyncEngine::DisableOrigin(
       FROM_HERE,
       base::Bind(&SyncWorker::DisableOrigin,
                  base::Unretained(sync_worker_.get()),
-                 origin, CreateRelayedCallback(callback)));
+                 origin,
+                 RelayCallbackToCurrentThread(
+                     FROM_HERE, callback)));
 }
 
 void SyncEngine::UninstallOrigin(
@@ -249,7 +260,9 @@ void SyncEngine::UninstallOrigin(
       FROM_HERE,
       base::Bind(&SyncWorker::UninstallOrigin,
                  base::Unretained(sync_worker_.get()),
-                 origin, flag, CreateRelayedCallback(callback)));
+                 origin, flag,
+                 RelayCallbackToCurrentThread(
+                     FROM_HERE, callback)));
 }
 
 void SyncEngine::ProcessRemoteChange(const SyncFileCallback& callback) {
@@ -257,7 +270,8 @@ void SyncEngine::ProcessRemoteChange(const SyncFileCallback& callback) {
       FROM_HERE,
       base::Bind(&SyncWorker::ProcessRemoteChange,
                  base::Unretained(sync_worker_.get()),
-                 CreateRelayedCallback(callback)));
+                 RelayCallbackToCurrentThread(
+                     FROM_HERE, callback)));
 }
 
 void SyncEngine::SetRemoteChangeProcessor(RemoteChangeProcessor* processor) {
@@ -377,7 +391,8 @@ void SyncEngine::ApplyLocalChange(
                  local_path,
                  local_metadata,
                  url,
-                 CreateRelayedCallback(callback)));
+                 RelayCallbackToCurrentThread(
+                     FROM_HERE, callback)));
 }
 
 SyncTaskManager* SyncEngine::GetSyncTaskManagerForTesting() {

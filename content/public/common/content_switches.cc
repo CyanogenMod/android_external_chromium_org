@@ -16,6 +16,11 @@ const char kAcceleratedCanvas2dMSAASampleCount[] = "canvas-msaa-sample-count";
 // override for developers who need the old behavior for testing.
 const char kAllowFileAccessFromFiles[]      = "allow-file-access-from-files";
 
+// Allows frames with an https origin to use WebSockets with an insecure URL
+// (ws://).
+const char kAllowInsecureWebSocketFromHttpsOrigin[] =
+    "allow-insecure-websocket-from-https-origin";
+
 // Allows loopback interface to be added in network list for peer connection.
 const char kAllowLoopbackInPeerConnection[] =
     "allow-loopback-in-peer-connection";
@@ -81,9 +86,6 @@ const char kDisableAccelerated2dCanvas[]    = "disable-accelerated-2d-canvas";
 const char kDisableAcceleratedFixedRootBackground[] =
     "disable-accelerated-fixed-root-background";
 
-// Disables the hardware acceleration of 3D CSS and animation.
-const char kDisableAcceleratedLayers[]      = "disable-accelerated-layers";
-
 // Disables accelerated compositing for overflow scroll.
 const char kDisableAcceleratedOverflowScroll[] =
     "disable-accelerated-overflow-scroll";
@@ -91,9 +93,6 @@ const char kDisableAcceleratedOverflowScroll[] =
 // Disables layer squashing.
 const char kDisableLayerSquashing[] =
     "disable-layer-squashing";
-
-// Disables GPU accelerated video display.
-const char kDisableAcceleratedVideo[]       = "disable-accelerated-video";
 
 // Disables hardware acceleration of video decode, where available.
 const char kDisableAcceleratedVideoDecode[] =
@@ -235,10 +234,6 @@ const char kDisableLocalStorage[]           = "disable-local-storage";
 // builds.
 const char kDisableLogging[]                = "disable-logging";
 
-// Disable rasterizer that writes directly to GPU memory.
-// Overrides the kEnableMapImage flag.
-const char kDisableMapImage[]               = "disable-map-image";
-
 // Disables Media Source API (i.e., the MediaSource object).
 const char kDisableMediaSource[]            = "disable-media-source";
 
@@ -296,9 +291,6 @@ const char kDisableSSLFalseStart[]          = "disable-ssl-false-start";
 // Disable multithreaded GPU compositing of web content.
 const char kDisableThreadedCompositing[]     = "disable-threaded-compositing";
 
-// Disables the threaded HTML parser in Blink
-const char kDisableThreadedHTMLParser[]     = "disable-threaded-html-parser";
-
 // Disable accelerated overflow scrolling in corner cases (that would not be
 // handled by enable-accelerated-overflow-scroll).
 const char kDisableUniversalAcceleratedOverflowScroll[] =
@@ -312,6 +304,10 @@ const char kDisableXSLT[]                   = "disable-xslt";
 
 // Disables Blink's XSSAuditor. The XSSAuditor mitigates reflective XSS.
 const char kDisableXSSAuditor[]             = "disable-xss-auditor";
+
+// Disable rasterizer that writes directly to GPU memory associated with tiles.
+// Overrides the kEnableZeroCopy flag.
+const char kDisableZeroCopy[]               = "disable-zero-copy";
 
 // Specifies if the |DOMAutomationController| needs to be bound in the
 // renderer. This binding happens on per-frame basis and hence can potentially
@@ -354,10 +350,6 @@ const char kEnableAccessibilityLogging[]    = "enable-accessibility-logging";
 
 // Use a BeginFrame signal from browser to renderer to schedule rendering.
 const char kEnableBeginFrameScheduling[]    = "enable-begin-frame-scheduling";
-
-// Enables browser plugin for all types of pages.
-const char kEnableBrowserPluginForAllViewTypes[] =
-    "enable-browser-plugin-for-all-view-types";
 
 // Enable the creation of compositing layers for fixed position
 // elements. Three options are needed to support four possible scenarios:
@@ -452,9 +444,6 @@ const char kEnableInbandTextTracks[]        = "enable-inband-text-tracks";
 // builds.
 const char kEnableLogging[]                 = "enable-logging";
 
-// Enable rasterizer that writes directly to GPU memory.
-const char kEnableMapImage[]                = "enable-map-image";
-
 // Enables the memory benchmarking extension
 const char kEnableMemoryBenchmarking[]      = "enable-memory-benchmarking";
 
@@ -471,6 +460,9 @@ const char kEnableMonitorProfile[]          = "enable-monitor-profile";
 
 // Enables use of cache if offline, even if it's stale
 const char kEnableOfflineCacheAccess[]      = "enable-offline-cache-access";
+
+// Enable rasterizer that writes directly to GPU memory.
+const char kEnableOneCopy[]                 = "enable-one-copy";
 
 // Enables use of hardware overlay for fullscreen video playback. Android only.
 const char kEnableOverlayFullscreenVideo[]  = "enable-overlay-fullscreen-video";
@@ -588,6 +580,9 @@ const char kEnableWebGLDraftExtensions[] = "enable-webgl-draft-extensions";
 
 // Enables Web MIDI API.
 const char kEnableWebMIDI[]                 = "enable-web-midi";
+
+// Enable rasterizer that writes directly to GPU memory associated with tiles.
+const char kEnableZeroCopy[]                = "enable-zero-copy";
 
 // Load NPAPI plugins from the specified directory.
 const char kExtraPluginDir[]                = "extra-plugin-dir";
@@ -794,11 +789,6 @@ const char kScrollEndEffect[] = "scroll-end-effect";
 // and study painting behavior.
 const char kShowPaintRects[]                = "show-paint-rects";
 
-// Map mouse input events into touch gesture events.  Useful for debugging touch
-// gestures without needing a touchscreen.
-const char kSimulateTouchScreenWithMouse[]  =
-    "simulate-touch-screen-with-mouse";
-
 // Runs the renderer and plugins in the same process as the browser
 const char kSingleProcess[]                 = "single-process";
 
@@ -854,9 +844,9 @@ const char kTestType[]                      = "test-type";
 const char kTouchAckTimeoutDelayMs[]        = "touch-ack-timeout-delay-ms";
 
 const char kTouchScrollingMode[]            = "touch-scrolling-mode";
-const char kTouchScrollingModeTouchcancel[] = "touchcancel";
+const char kTouchScrollingModeAsyncTouchmove[] = "async-touchmove";
 const char kTouchScrollingModeSyncTouchmove[] = "sync-touchmove";
-const char kTouchScrollingModeAbsorbTouchmove[] = "absorb-touchmove";
+const char kTouchScrollingModeTouchcancel[] = "touchcancel";
 
 // Causes TRACE_EVENT flags to be recorded beginning with shutdown. Optionally,
 // can specify the specific trace categories to include (e.g.

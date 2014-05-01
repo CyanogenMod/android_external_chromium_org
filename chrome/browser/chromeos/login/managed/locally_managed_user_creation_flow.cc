@@ -6,9 +6,11 @@
 
 #include "base/logging.h"
 #include "base/values.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_screen.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 
 namespace chromeos {
 
@@ -28,6 +30,7 @@ LocallyManagedUserCreationFlow::LocallyManagedUserCreationFlow(
         : ExtendedUserFlow(manager_id),
         token_validated_(false),
         logged_in_(false),
+        session_started_(false),
         manager_profile_(NULL) {}
 
 LocallyManagedUserCreationFlow::~LocallyManagedUserCreationFlow() {}
@@ -61,8 +64,11 @@ void LocallyManagedUserCreationFlow::HandleOAuthTokenStatusChange(
   // authentication happens before oauth token validation).
   token_validated_ = true;
 
-  if (token_validated_ && logged_in_)
-    GetScreen(host())->OnManagerFullyAuthenticated(manager_profile_);
+  if (token_validated_ && logged_in_) {
+    if (!session_started_)
+      GetScreen(host())->OnManagerFullyAuthenticated(manager_profile_);
+    session_started_ = true;
+  }
 }
 
 
@@ -87,10 +93,17 @@ void LocallyManagedUserCreationFlow::LaunchExtraSteps(
     Profile* profile) {
   logged_in_ = true;
   manager_profile_ = profile;
-  if (token_validated_ && logged_in_)
-    GetScreen(host())->OnManagerFullyAuthenticated(manager_profile_);
-  else
+  g_browser_process->platform_part()->profile_helper()->ProfileStartup(
+      profile,
+      true);
+
+  if (token_validated_ && logged_in_) {
+    if (!session_started_)
+      GetScreen(host())->OnManagerFullyAuthenticated(manager_profile_);
+    session_started_ = true;
+  } else {
     GetScreen(host())->OnManagerCryptohomeAuthenticated();
+  }
 }
 
 }  // namespace chromeos

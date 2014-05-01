@@ -118,6 +118,7 @@ void ExpectDetailsMatch(const base::DictionaryValue& expected_details,
     const base::Value* expected_value = &it.value();
     const base::Value* actual_value = NULL;
     ASSERT_TRUE(details.Get(it.key(), &actual_value));
+
     if (it.key() == "id") {
       // Ignore ID as it is dynamically assigned by the TemplateURLService.
     } else if (it.key() == "encodings") {
@@ -137,7 +138,8 @@ void ExpectDetailsMatch(const base::DictionaryValue& expected_details,
       EXPECT_EQ(expected_encodings, JoinString(actual_encodings_vector, ';'));
     } else {
       // Everything else is the same format.
-      EXPECT_TRUE(actual_value->Equals(expected_value));
+      EXPECT_TRUE(actual_value->Equals(expected_value))
+          << "Expected: " << *expected_value << ". Actual: " << *actual_value;
     }
   }
 }
@@ -371,7 +373,7 @@ TEST_F(AutomaticProfileResetterDelegateTest,
   scoped_ptr<TemplateURL> owned_custom_dsp(CreateTestTemplateURL());
   TemplateURL* custom_dsp = owned_custom_dsp.get();
   template_url_service->Add(owned_custom_dsp.release());
-  template_url_service->SetDefaultSearchProvider(custom_dsp);
+  template_url_service->SetUserSelectedDefaultSearchProvider(custom_dsp);
 
   PrefService* prefs = profile()->GetPrefs();
   ASSERT_TRUE(prefs);
@@ -410,7 +412,7 @@ TEST_F(AutomaticProfileResetterDelegateTest,
   // disabled by policy.
   RemoveManagedDefaultSearchPreferences();
   SetManagedDefaultSearchPreferences(
-      true, std::string(), std::string(), std::string(), std::string(),
+      false, std::string(), std::string(), std::string(), std::string(),
       std::string(), std::string(), std::string(), std::string());
 
   dsp_details = resetter_delegate()->GetDefaultSearchProviderDetails();
@@ -446,7 +448,8 @@ TEST_F(AutomaticProfileResetterDelegateTest,
         template_url_service->GetTemplateURLForKeyword(
             base::ASCIIToUTF16(keyword));
     ASSERT_TRUE(search_engine);
-    template_url_service->SetDefaultSearchProvider(prepopulated_engines[i]);
+    template_url_service->SetUserSelectedDefaultSearchProvider(
+        prepopulated_engines[i]);
 
     PrefService* prefs = profile()->GetPrefs();
     ASSERT_TRUE(prefs);

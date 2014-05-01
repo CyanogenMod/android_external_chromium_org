@@ -39,18 +39,13 @@ class ChromeNativeAppWindowViews : public apps::NativeAppWindowViews,
       const apps::AppWindow::CreateParams& create_params);
   virtual void InitializePanelWindow(
       const apps::AppWindow::CreateParams& create_params);
+  virtual views::NonClientFrameView* CreateStandardDesktopAppFrame();
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ShapedAppWindowTargeterTest,
                            ResizeInsetsWithinBounds);
 
-  // Installs an EasyResizeWindowTargeter on the containing window, which
-  // allows the window to be resized from within |kResizeInsideBoundsSize|
-  // pixels inside the window bounds.
-  void InstallEasyResizeTargeterOnContainer() const;
-
-  // Caller owns the returned object.
-  apps::AppWindowFrameView* CreateAppWindowFrameView();
+  apps::AppWindowFrameView* CreateNonStandardAppFrame();
 
   // ui::BaseWindow implementation.
   virtual ui::WindowShowState GetRestoredState() const OVERRIDE;
@@ -80,7 +75,8 @@ class ChromeNativeAppWindowViews : public apps::NativeAppWindowViews,
   virtual void UpdateBadgeIcon() OVERRIDE;
   virtual void UpdateShape(scoped_ptr<SkRegion> region) OVERRIDE;
   virtual bool HasFrameColor() const OVERRIDE;
-  virtual SkColor FrameColor() const OVERRIDE;
+  virtual SkColor ActiveFrameColor() const OVERRIDE;
+  virtual SkColor InactiveFrameColor() const OVERRIDE;
 
   // NativeAppWindowViews implementation.
   virtual void InitializeWindow(
@@ -95,7 +91,8 @@ class ChromeNativeAppWindowViews : public apps::NativeAppWindowViews,
   scoped_ptr<SkRegion> shape_;
 
   bool has_frame_color_;
-  SkColor frame_color_;
+  SkColor active_frame_color_;
+  SkColor inactive_frame_color_;
   gfx::Size preferred_size_;
 
   // The class that registers for keyboard shortcuts for extension commands.

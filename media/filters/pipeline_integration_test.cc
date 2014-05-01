@@ -63,7 +63,7 @@ const int kAppendTimeSec = 1;
 const int kAppendTimeMs = kAppendTimeSec * 1000;
 const int k320WebMFileDurationMs = 2736;
 const int k640WebMFileDurationMs = 2749;
-const int kOpusEndTrimmingWebMFileDurationMs = 2771;
+const int kOpusEndTrimmingWebMFileDurationMs = 2741;
 const int kVP9WebMFileDurationMs = 2736;
 const int kVP8AWebMFileDurationMs = 2733;
 
@@ -522,6 +522,14 @@ class PipelineIntegrationTest
 
 TEST_F(PipelineIntegrationTest, BasicPlayback) {
   ASSERT_TRUE(Start(GetTestDataFilePath("bear-320x240.webm"), PIPELINE_OK));
+
+  Play();
+
+  ASSERT_TRUE(WaitUntilOnEnded());
+}
+
+TEST_F(PipelineIntegrationTest, BasicPlaybackOpusOgg) {
+  ASSERT_TRUE(Start(GetTestDataFilePath("bear-opus.ogg"), PIPELINE_OK));
 
   Play();
 

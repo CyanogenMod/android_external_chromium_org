@@ -1456,7 +1456,6 @@ TEST_F(LayerTreeHostCommonTest,
   // are unexpected at draw time (e.g. we might try to create a content texture
   // of size 0).
   ASSERT_TRUE(parent->render_surface());
-  ASSERT_FALSE(render_surface1->render_surface());
   EXPECT_EQ(1U, render_surface_layer_list.size());
 }
 
@@ -2166,9 +2165,6 @@ TEST_F(LayerTreeHostCommonTest, ClipRectIsPropagatedCorrectlyToSurfaces) {
   ASSERT_TRUE(grand_child1->render_surface());
   ASSERT_TRUE(grand_child2->render_surface());
   ASSERT_TRUE(grand_child3->render_surface());
-  // Because grand_child4 is entirely clipped, it is expected to not have a
-  // render surface.
-  EXPECT_FALSE(grand_child4->render_surface());
 
   // Surfaces are clipped by their parent, but un-affected by the owning layer's
   // masksToBounds.
@@ -2979,6 +2975,53 @@ TEST_F(LayerTreeHostCommonTest,
 
   EXPECT_TRUE(child->visible_content_rect().IsEmpty());
   EXPECT_TRUE(child->drawable_content_rect().IsEmpty());
+}
+
+TEST_F(LayerTreeHostCommonTest,
+       SingularTransformDoesNotPreventClearingDrawProperties) {
+  scoped_refptr<Layer> root = Layer::Create();
+  scoped_refptr<LayerWithForcedDrawsContent> child =
+      make_scoped_refptr(new LayerWithForcedDrawsContent());
+  root->AddChild(child);
+
+  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create();
+  host->SetRootLayer(root);
+
+  gfx::Transform identity_matrix;
+  gfx::Transform uninvertible_matrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+  ASSERT_FALSE(uninvertible_matrix.IsInvertible());
+
+  SetLayerPropertiesForTesting(root.get(),
+                               uninvertible_matrix,
+                               gfx::PointF(),
+                               gfx::PointF(),
+                               gfx::Size(100, 100),
+                               true,
+                               false);
+  SetLayerPropertiesForTesting(child.get(),
+                               identity_matrix,
+                               gfx::PointF(),
+                               gfx::PointF(5.f, 5.f),
+                               gfx::Size(50, 50),
+                               true,
+                               false);
+
+  child->draw_properties().sorted_for_recursion = true;
+
+  TransformOperations start_transform_operations;
+  start_transform_operations.AppendScale(1.f, 0.f, 0.f);
+
+  TransformOperations end_transform_operations;
+  end_transform_operations.AppendScale(1.f, 1.f, 0.f);
+
+  AddAnimatedTransformToLayer(
+      root.get(), 10.0, start_transform_operations, end_transform_operations);
+
+  EXPECT_TRUE(root->TransformIsAnimating());
+
+  ExecuteCalculateDrawProperties(root.get());
+
+  EXPECT_FALSE(child->draw_properties().sorted_for_recursion);
 }
 
 TEST_F(LayerTreeHostCommonTest,
@@ -6026,20 +6069,11 @@ TEST_F(LayerTreeHostCommonTest,
       LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
           test_point, render_surface_layer_list);
 
-  // In this case we should abort searching for touch handlers at the opaque
-  // occluder and not find the region behind it.
-  EXPECT_FALSE(result_layer);
-
-  host_impl.active_tree()->LayerById(1234)->SetContentsOpaque(true);
-  host_impl.active_tree()->LayerById(1234)->SetScrollClipLayer(1);
-
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-
-  // In this case we should abort searching for touch handlers at the scroller
-  // (which is opaque to hit testing) and not find the region behind it.
-  EXPECT_FALSE(result_layer);
+  // Even with an opaque layer in the middle, we should still find the layer
+  // with
+  // the touch handler behind it (since we can't assume that opaque layers are
+  // opaque to hit testing).
+  EXPECT_TRUE(result_layer);
 
   test_point = gfx::Point(35, 15);
   result_layer =

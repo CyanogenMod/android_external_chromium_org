@@ -240,8 +240,8 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient,
     return test_hooks_->CreateOutputSurface(fallback);
   }
 
-  virtual void DidInitializeOutputSurface(bool succeeded) OVERRIDE {
-    test_hooks_->DidInitializeOutputSurface(succeeded);
+  virtual void DidInitializeOutputSurface() OVERRIDE {
+    test_hooks_->DidInitializeOutputSurface();
   }
 
   virtual void DidFailToInitializeOutputSurface() OVERRIDE {
@@ -270,10 +270,6 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient,
 
   virtual void DidPostSwapBuffers() OVERRIDE {}
   virtual void DidAbortSwapBuffers() OVERRIDE {}
-
-  virtual scoped_refptr<ContextProvider> OffscreenContextProvider() OVERRIDE {
-    return test_hooks_->OffscreenContextProvider();
-  }
 
  private:
   explicit LayerTreeHostClientForTesting(TestHooks* test_hooks)
@@ -680,13 +676,6 @@ scoped_ptr<FakeOutputSurface> LayerTreeTest::CreateFakeOutputSurface(
     return FakeOutputSurface::CreateDelegating3d();
   else
     return FakeOutputSurface::Create3d();
-}
-
-scoped_refptr<ContextProvider> LayerTreeTest::OffscreenContextProvider() {
-  if (!compositor_contexts_.get() ||
-      compositor_contexts_->DestroyedOnMainThread())
-    compositor_contexts_ = TestContextProvider::Create();
-  return compositor_contexts_;
 }
 
 TestWebGraphicsContext3D* LayerTreeTest::TestContext() {

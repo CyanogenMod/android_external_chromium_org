@@ -73,7 +73,6 @@ HardwareRenderer::~HardwareRenderer() {
 bool HardwareRenderer::DrawGL(AwDrawGLInfo* draw_info, DrawGLResult* result) {
   TRACE_EVENT0("android_webview", "HardwareRenderer::DrawGL");
   GLViewRendererManager::GetInstance()->DidDrawGL(manager_key_);
-  const DrawGLInput input = shared_renderer_state_->GetDrawGLInput();
 
   // We need to watch if the current Android context has changed and enforce
   // a clean-up in the compositor.
@@ -90,8 +89,11 @@ bool HardwareRenderer::DrawGL(AwDrawGLInfo* draw_info, DrawGLResult* result) {
   ScopedAppGLStateRestore state_restore(ScopedAppGLStateRestore::MODE_DRAW);
   internal::ScopedAllowGL allow_gl;
 
-  if (draw_info->mode == AwDrawGLInfo::kModeProcess)
+  if (draw_info->mode != AwDrawGLInfo::kModeDraw)
     return false;
+
+  // Should only need to access SharedRendererState in kModeDraw and kModeSync.
+  const DrawGLInput input = shared_renderer_state_->GetDrawGLInput();
 
   // Update memory budget. This will no-op in compositor if the policy has not
   // changed since last draw.
@@ -206,23 +208,22 @@ void HardwareRenderer::CalculateTileMemoryPolicy() {
 
 namespace internal {
 
-bool ScopedAllowGL::allow_gl = false;
+base::LazyInstance<base::ThreadLocalBoolean> ScopedAllowGL::allow_gl;
 
 // static
 bool ScopedAllowGL::IsAllowed() {
-  return GLViewRendererManager::GetInstance()->OnRenderThread() && allow_gl;
+  return allow_gl.Get().Get();
 }
 
 ScopedAllowGL::ScopedAllowGL() {
-  DCHECK(GLViewRendererManager::GetInstance()->OnRenderThread());
-  DCHECK(!allow_gl);
-  allow_gl = true;
+  DCHECK(!allow_gl.Get().Get());
+  allow_gl.Get().Set(true);
 
   if (g_service.Get())
     g_service.Get()->RunTasks();
 }
 
-ScopedAllowGL::~ScopedAllowGL() { allow_gl = false; }
+ScopedAllowGL::~ScopedAllowGL() { allow_gl.Get().Set(false); }
 
 DeferredGpuCommandService::DeferredGpuCommandService() {}
 

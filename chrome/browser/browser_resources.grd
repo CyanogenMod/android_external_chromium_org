@@ -61,9 +61,6 @@
         <structure name="IDR_NEW_TAB_4_HTML" file="resources\ntp4\new_tab.html" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_NEW_TAB_4_THEME_CSS" file="resources\ntp4\new_tab_theme.css" flattenhtml="true" type="chrome_html" />
       </if>
-      <if expr="is_android">
-        <structure name="IDR_NEW_TAB_ANDROID_HTML" file="resources\ntp_android\new_tab.html" flattenhtml="true" type="chrome_html" />
-      </if>
       <if expr="chromeos">
         <structure name="IDR_OOBE_HTML" file="resources\chromeos\login\oobe.html" flattenhtml="true" type="chrome_html" variables="OOBE=oobe" expand_variables="true"/>
         <structure name="IDR_OOBE_JS" file="resources\chromeos\login\oobe.js" flattenhtml="true" type="chrome_html" />
@@ -100,7 +97,7 @@
       </if>
       <include name="IDR_ABOUT_VERSION_JS" file="resources\about_version.js" type="BINDATA" />
       <include name="IDR_ABOUT_VERSION_CSS" file="resources\about_version.css" type="BINDATA" />
-
+      <include name="IDR_AD_NETWORK_HASHES" file="resources\ad_networks.dat" type="BINDATA" />
       <include name="IDR_BOOKMARKS_MANIFEST" file="resources\bookmark_manager\manifest.json" type="BINDATA" />
       <if expr="is_posix and not is_macosx and not is_ios">
         <include name="IDR_CERTIFICATE_VIEWER_HTML" file="resources\certificate_viewer.html" type="BINDATA" />
@@ -206,6 +203,7 @@
       <include name="IDR_OMNIBOX_HTML" file="resources\omnibox\omnibox.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_OMNIBOX_CSS" file="resources\omnibox\omnibox.css" type="BINDATA" />
       <include name="IDR_OMNIBOX_JS" file="resources\omnibox\omnibox.js" type="BINDATA" />
+      <include name="IDR_OMNIBOX_MOJO_JS" file="${omnibox_mojom_file}" use_base_dir="false" type="BINDATA"/>
       <if expr="not is_android">
         <include name="IDR_PLUGINS_HTML" file="resources\plugins.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
         <include name="IDR_PLUGINS_JS" file="resources\plugins.js" type="BINDATA" />
@@ -240,8 +238,6 @@
         <include name="IDR_PRINT_PREVIEW_HTML" file="resources\print_preview\print_preview.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
         <include name="IDR_PRINT_PREVIEW_PAGE" file="resources\print_preview\print_preview_page.html" flattenhtml="true" allowexternalscript="false" type="BINDATA" />
         <include name="IDR_PRINT_PREVIEW_JS" file="resources\print_preview\print_preview.js" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_PRINT_PREVIEW_AREA_JS" file="resources\print_preview\previewarea\preview_area.js" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_PRINT_PDF_SCRIPTING_API_JS" file="resources\pdf\pdf_scripting_api.js" type="BINDATA" />
         <include name="IDR_PRINT_PREVIEW_IMAGES_PRINTER"
                  file="resources\print_preview\images\printer.png" type="BINDATA" />
         <include name="IDR_PRINT_PREVIEW_IMAGES_PRINTER_SHARED"
@@ -288,6 +284,7 @@
         <include name="IDR_WEBRTC_LOGS_JS" file="resources\media\webrtc_logs.js" type="BINDATA" />
       </if>
       <include name="IDR_WEBSTORE_MANIFEST" file="resources\webstore_app\manifest.json" type="BINDATA" />
+      <include name="IDR_CRYPTOTOKEN_MANIFEST" file="resources\cryptotoken\manifest.json" type="BINDATA" />
       <include name="IDR_GAIA_AUTH_MANIFEST" file="resources\gaia_auth\manifest.json" type="BINDATA" />
       <include name="IDR_GAIA_AUTH_KEYBOARD_MANIFEST" file="resources\gaia_auth\manifest_keyboard.json" type="BINDATA" />
       <include name="IDR_GAIA_AUTH_SAML_MANIFEST" file="resources\gaia_auth\manifest_saml.json" type="BINDATA" />
@@ -333,9 +330,6 @@
         <include name="IDR_SLOW_HTML" file="resources\chromeos\slow.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_SLOW_JS" file="resources\chromeos\slow.js" type="BINDATA" />
         <include name="IDR_CHARGER_REPLACEMENT_HTML" file="resources\chromeos\charger_replacement.html" flattenhtml="true" type="BINDATA" />
-      </if>
-      <if expr="chromeos">
-        <include name="IDR_FILEMANAGER_MANIFEST" file="resources\file_manager\manifest.json" type="BINDATA" />
       </if>
       <if expr="chromeos">
         <include name="IDR_DEMO_APP_MANIFEST" file="resources\chromeos\demo_app\manifest.json" type="BINDATA" />
@@ -412,6 +406,11 @@
       <include name="IDR_GCM_INTERNALS_CSS" file="resources\gcm_internals.css" type="BINDATA" />
       <include name="IDR_GCM_INTERNALS_JS" file="resources\gcm_internals.js" type="BINDATA" />
       <include name="IDR_EASY_UNLOCK_MANIFEST" file="resources\easy_unlock\manifest.json" type="BINDATA" />
+      <if expr="chromeos">
+        <include name="IDR_SET_TIME_HTML" file="resources\chromeos\set_time.html" type="BINDATA" />
+        <include name="IDR_SET_TIME_CSS" file="resources\chromeos\set_time.css" type="BINDATA" />
+        <include name="IDR_SET_TIME_JS" file="resources\chromeos\set_time.js" type="BINDATA" />
+      </if>
     </includes>
   </release>
 </grit>

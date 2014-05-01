@@ -70,6 +70,8 @@ enum {
   DIR_COMPONENT_UPDATED_PEPPER_FLASH_PLUGIN,  // Base directory of the Pepper
                                               // Flash plugins downloaded by the
                                               // component updater.
+  DIR_PEPPER_FLASH_DEBUGGER_PLUGIN,  // Base directory of the debugging version
+                                     // of the Pepper Flash plugin.
   FILE_RESOURCE_MODULE,         // Full path and filename of the module that
                                 // contains embedded resources (version,
                                 // strings, images, etc.).
@@ -92,6 +94,8 @@ enum {
   FILE_O1D_PLUGIN,              // Full path to the O1D Pepper plugin file.
   FILE_EFFECTS_PLUGIN,          // Full path to the Effects Pepper plugin file.
   FILE_GTALK_PLUGIN,            // Full path to the GTalk Pepper plugin file.
+  DIR_COMPONENT_CLD2,           // Directory that contains component-updated
+                                // Compact Language Detector files
   DIR_COMPONENT_WIDEVINE_CDM,   // Directory that contains component-updated
                                 // Widevine CDM files.
   FILE_WIDEVINE_CDM_ADAPTER,    // Full path to the Widevine CDM adapter file.

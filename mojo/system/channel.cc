@@ -11,7 +11,6 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
-#include "build/build_config.h"  // TODO(vtl): Remove this.
 #include "mojo/system/message_pipe_endpoint.h"
 
 namespace mojo {
@@ -93,8 +92,9 @@ void Channel::Shutdown() {
       num_zombies++;
     }
   }
-  DVLOG(2) << "Shut down Channel with " << num_live << " live endpoints and "
-           << num_zombies << " zombies";
+  DVLOG_IF(2, num_live || num_zombies)
+      << "Shut down Channel with " << num_live << " live endpoints and "
+      << num_zombies << " zombies";
 }
 
 MessageInTransit::EndpointId Channel::AttachMessagePipeEndpoint(
@@ -290,12 +290,7 @@ void Channel::OnReadMessage(const MessageInTransit::View& message_view) {
 
 void Channel::OnFatalError(FatalError fatal_error) {
   LOG(ERROR) << "RawChannel fatal error (type " << fatal_error << ")";
-  // TODO(vtl): We have some nested-deletion bugs on Windows, so this crashes.
-#if defined(OS_WIN)
-  LOG(ERROR) << "Not shutting down due Windows-only bug";
-#else
   Shutdown();
-#endif
 }
 
 bool Channel::ValidateReadMessage(const MessageInTransit::View& message_view) {
@@ -357,7 +352,7 @@ void Channel::OnReadMessageForDownstream(
   scoped_ptr<MessageInTransit> message(new MessageInTransit(message_view));
   message->DeserializeDispatchers(this);
   MojoResult result = endpoint_info.message_pipe->EnqueueMessage(
-      MessagePipe::GetPeerPort(endpoint_info.port), message.Pass(), NULL);
+      MessagePipe::GetPeerPort(endpoint_info.port), message.Pass());
   if (result != MOJO_RESULT_OK) {
     // TODO(vtl): This might be a "non-error", e.g., if the destination endpoint
     // has been closed (in an unavoidable race). This might also be a "remote"

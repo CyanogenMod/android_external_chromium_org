@@ -31,14 +31,10 @@ RtpPacketizerConfig::~RtpPacketizerConfig() {}
 
 RtpPacketizer::RtpPacketizer(PacedSender* const transport,
                              PacketStorage* packet_storage,
-                             RtpPacketizerConfig rtp_packetizer_config,
-                             base::TickClock* clock,
-                             LoggingImpl* logging)
+                             RtpPacketizerConfig rtp_packetizer_config)
     : config_(rtp_packetizer_config),
       transport_(transport),
       packet_storage_(packet_storage),
-      clock_(clock),
-      logging_(logging),
       sequence_number_(config_.sequence_number),
       rtp_timestamp_(0),
       packet_id_(0),
@@ -56,12 +52,12 @@ void RtpPacketizer::IncomingEncodedVideoFrame(
   if (config_.audio)
     return;
 
-  time_last_sent_rtp_timestamp_ = capture_time;
   Cast(video_frame->key_frame,
        video_frame->frame_id,
        video_frame->last_referenced_frame_id,
        video_frame->rtp_timestamp,
-       video_frame->data);
+       video_frame->data,
+       capture_time);
 }
 
 void RtpPacketizer::IncomingEncodedAudioFrame(
@@ -71,12 +67,12 @@ void RtpPacketizer::IncomingEncodedAudioFrame(
   if (!config_.audio)
     return;
 
-  time_last_sent_rtp_timestamp_ = recorded_time;
   Cast(true,
        audio_frame->frame_id,
        0,
        audio_frame->rtp_timestamp,
-       audio_frame->data);
+       audio_frame->data,
+       recorded_time);
 }
 
 uint16 RtpPacketizer::NextSequenceNumber() {
@@ -99,7 +95,9 @@ void RtpPacketizer::Cast(bool is_key,
                          uint32 frame_id,
                          uint32 reference_frame_id,
                          uint32 timestamp,
-                         const std::string& data) {
+                         const std::string& data,
+                         const base::TimeTicks& capture_time) {
+  time_last_sent_rtp_timestamp_ = capture_time;
   uint16 rtp_header_length = kCommonRtpHeaderLength + kCastRtpHeaderLength;
   uint16 max_length = config_.max_payload_length - rtp_header_length - 1;
   rtp_timestamp_ = timestamp;
@@ -109,7 +107,7 @@ void RtpPacketizer::Cast(bool is_key,
   size_t payload_length = (data.size() + num_packets) / num_packets;
   DCHECK_LE(payload_length, max_length) << "Invalid argument";
 
-  PacketList packets;
+  SendPacketVector packets;
 
   size_t remaining_size = data.size();
   std::string::const_iterator data_iter = data.begin();
@@ -139,22 +137,21 @@ void RtpPacketizer::Cast(bool is_key,
                         data_iter,
                         data_iter + payload_length);
 
+    PacketKey key = PacedPacketSender::MakePacketKey(capture_time,
+                                                     config_.ssrc,
+                                                     packet_id_);
+
     // Store packet.
-    packet_storage_->StorePacket(frame_id, packet_id_, packet);
+    packet_storage_->StorePacket(frame_id, packet_id_, key, packet);
     ++packet_id_;
     data_iter += payload_length;
 
     // Update stats.
     ++send_packets_count_;
     send_octet_count_ += payload_length;
-    packets.push_back(packet);
+    packets.push_back(make_pair(key, packet));
   }
   DCHECK(packet_id_ == num_packets) << "Invalid state";
-
-  logging_->InsertPacketListEvent(
-      clock_->NowTicks(),
-      config_.audio ? kAudioPacketSentToPacer : kVideoPacketSentToPacer,
-      packets);
 
   // Send to network.
   transport_->SendPackets(packets);

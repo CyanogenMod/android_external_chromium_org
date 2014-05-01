@@ -5,6 +5,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 
 #include "base/basictypes.h"
+#include "base/command_line.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -17,6 +18,7 @@
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/host_shared_bitmap_manager.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_widget_host_view_frame_subscriber.h"
@@ -45,6 +47,7 @@
 #include "ui/compositor/test/in_process_context_factory.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
+#include "ui/wm/core/default_activation_client.h"
 
 using testing::_;
 
@@ -205,6 +208,7 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
         scoped_ptr<ui::ContextFactory>(new ui::InProcessContextFactory));
     aura_test_helper_.reset(new aura::test::AuraTestHelper(&message_loop_));
     aura_test_helper_->SetUp();
+    new wm::DefaultActivationClient(aura_test_helper_->root_window());
 
     browser_context_.reset(new TestBrowserContext);
     process_host_ = new MockRenderProcessHost(browser_context_.get());
@@ -535,6 +539,7 @@ TEST_F(RenderWidgetHostViewAuraTest, TouchEventState) {
   view_->OnTouchEvent(&press);
   EXPECT_FALSE(press.handled());
   EXPECT_EQ(blink::WebInputEvent::TouchStart, view_->touch_event_.type);
+  EXPECT_TRUE(view_->touch_event_.cancelable);
   EXPECT_EQ(1U, view_->touch_event_.touchesLength);
   EXPECT_EQ(blink::WebTouchPoint::StatePressed,
             view_->touch_event_.touches[0].state);
@@ -542,6 +547,7 @@ TEST_F(RenderWidgetHostViewAuraTest, TouchEventState) {
   view_->OnTouchEvent(&move);
   EXPECT_FALSE(move.handled());
   EXPECT_EQ(blink::WebInputEvent::TouchMove, view_->touch_event_.type);
+  EXPECT_TRUE(view_->touch_event_.cancelable);
   EXPECT_EQ(1U, view_->touch_event_.touchesLength);
   EXPECT_EQ(blink::WebTouchPoint::StateMoved,
             view_->touch_event_.touches[0].state);
@@ -549,6 +555,7 @@ TEST_F(RenderWidgetHostViewAuraTest, TouchEventState) {
   view_->OnTouchEvent(&release);
   EXPECT_FALSE(release.handled());
   EXPECT_EQ(blink::WebInputEvent::TouchEnd, view_->touch_event_.type);
+  EXPECT_TRUE(view_->touch_event_.cancelable);
   EXPECT_EQ(0U, view_->touch_event_.touchesLength);
 
   // Now install some touch-event handlers and do the same steps. The touch
@@ -560,6 +567,7 @@ TEST_F(RenderWidgetHostViewAuraTest, TouchEventState) {
   view_->OnTouchEvent(&press);
   EXPECT_TRUE(press.stopped_propagation());
   EXPECT_EQ(blink::WebInputEvent::TouchStart, view_->touch_event_.type);
+  EXPECT_TRUE(view_->touch_event_.cancelable);
   EXPECT_EQ(1U, view_->touch_event_.touchesLength);
   EXPECT_EQ(blink::WebTouchPoint::StatePressed,
             view_->touch_event_.touches[0].state);
@@ -567,6 +575,7 @@ TEST_F(RenderWidgetHostViewAuraTest, TouchEventState) {
   view_->OnTouchEvent(&move);
   EXPECT_TRUE(move.stopped_propagation());
   EXPECT_EQ(blink::WebInputEvent::TouchMove, view_->touch_event_.type);
+  EXPECT_TRUE(view_->touch_event_.cancelable);
   EXPECT_EQ(1U, view_->touch_event_.touchesLength);
   EXPECT_EQ(blink::WebTouchPoint::StateMoved,
             view_->touch_event_.touches[0].state);
@@ -574,6 +583,7 @@ TEST_F(RenderWidgetHostViewAuraTest, TouchEventState) {
   view_->OnTouchEvent(&release);
   EXPECT_TRUE(release.stopped_propagation());
   EXPECT_EQ(blink::WebInputEvent::TouchEnd, view_->touch_event_.type);
+  EXPECT_TRUE(view_->touch_event_.cancelable);
   EXPECT_EQ(0U, view_->touch_event_.touchesLength);
 
   // Now start a touch event, and remove the event-handlers before the release.
@@ -1065,6 +1075,7 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFrames) {
   size_t renderer_count = max_renderer_frames + 1;
   gfx::Rect view_rect(100, 100);
   gfx::Size frame_size = view_rect.size();
+  DCHECK_EQ(0u, HostSharedBitmapManager::current()->AllocatedBitmapCount());
 
   scoped_ptr<RenderWidgetHostImpl * []> hosts(
       new RenderWidgetHostImpl* [renderer_count]);
@@ -1151,6 +1162,35 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFrames) {
   views[0]->WasHidden();
   EXPECT_FALSE(views[0]->frame_provider_);
 
+  for (size_t i = 0; i < renderer_count - 1; ++i)
+    views[i]->WasHidden();
+
+  // Allocate enough bitmaps so that two frames (proportionally) would be
+  // enough hit the handle limit.
+  int handles_per_frame = 5;
+  RendererFrameManager::GetInstance()->set_max_handles(handles_per_frame * 2);
+
+  for (size_t i = 0; i < (renderer_count - 1) * handles_per_frame; i++) {
+    HostSharedBitmapManager::current()->ChildAllocatedSharedBitmap(
+        1,
+        base::SharedMemory::NULLHandle(),
+        base::GetCurrentProcessHandle(),
+        cc::SharedBitmap::GenerateId());
+  }
+
+  // Hiding this last bitmap should evict all but two frames.
+  views[renderer_count - 1]->WasHidden();
+  for (size_t i = 0; i < renderer_count; ++i) {
+    if (i + 2 < renderer_count)
+      EXPECT_FALSE(views[i]->frame_provider_);
+    else
+      EXPECT_TRUE(views[i]->frame_provider_);
+  }
+  HostSharedBitmapManager::current()->ProcessRemoved(
+      base::GetCurrentProcessHandle());
+  RendererFrameManager::GetInstance()->set_max_handles(
+      base::SharedMemory::GetHandleLimit());
+
   for (size_t i = 0; i < renderer_count; ++i) {
     views[i]->Destroy();
     delete hosts[i];
@@ -1164,6 +1204,7 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFramesWithLocking) {
   size_t renderer_count = max_renderer_frames + 1;
   gfx::Rect view_rect(100, 100);
   gfx::Size frame_size = view_rect.size();
+  DCHECK_EQ(0u, HostSharedBitmapManager::current()->AllocatedBitmapCount());
 
   scoped_ptr<RenderWidgetHostImpl * []> hosts(
       new RenderWidgetHostImpl* [renderer_count]);
@@ -1342,6 +1383,35 @@ TEST_F(RenderWidgetHostViewAuraCopyRequestTest, DestroyedAfterCopyRequest) {
   // these things being destroyed.
   EXPECT_EQ(2, callback_count_);
   EXPECT_FALSE(result_);
+}
+
+TEST_F(RenderWidgetHostViewAuraTest, VisibleViewportTest) {
+  gfx::Rect view_rect(100, 100);
+
+  view_->InitAsChild(NULL);
+  aura::client::ParentWindowWithContext(
+      view_->GetNativeView(),
+      parent_view_->GetNativeView()->GetRootWindow(),
+      gfx::Rect());
+  view_->SetSize(view_rect.size());
+  view_->WasShown();
+
+  // Defaults to full height of the view.
+  EXPECT_EQ(100, view_->GetVisibleViewportSize().height());
+
+  widget_host_->ResetSizeAndRepaintPendingFlags();
+  sink_->ClearMessages();
+  view_->SetInsets(gfx::Insets(0, 0, 40, 0));
+
+  EXPECT_EQ(60, view_->GetVisibleViewportSize().height());
+
+  const IPC::Message *message = sink_->GetFirstMessageMatching(
+      ViewMsg_Resize::ID);
+  ASSERT_TRUE(message != NULL);
+
+  ViewMsg_Resize::Param params;
+  ViewMsg_Resize::Read(message, &params);
+  EXPECT_EQ(60, params.a.visible_viewport_size.height());
 }
 
 }  // namespace content

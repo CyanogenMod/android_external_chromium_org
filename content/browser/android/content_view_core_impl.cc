@@ -87,10 +87,6 @@ namespace content {
 
 namespace {
 
-const unsigned int kDefaultVSyncIntervalMicros = 16666u;
-// TODO(brianderson): Use adaptive draw-time estimation.
-const float kDefaultBrowserCompositeVSyncFraction = 1.0f / 3;
-
 const void* kContentViewUserDataKey = &kContentViewUserDataKey;
 
 int GetRenderProcessIdFromRenderViewHost(RenderViewHost* host) {
@@ -223,10 +219,6 @@ ContentViewCoreImpl::ContentViewCoreImpl(JNIEnv* env,
       web_contents_(static_cast<WebContentsImpl*>(web_contents)),
       root_layer_(cc::Layer::Create()),
       dpi_scale_(GetPrimaryDisplayDeviceScaleFactor()),
-      vsync_interval_(base::TimeDelta::FromMicroseconds(
-          kDefaultVSyncIntervalMicros)),
-      expected_browser_composite_time_(base::TimeDelta::FromMicroseconds(
-          kDefaultVSyncIntervalMicros * kDefaultBrowserCompositeVSyncFraction)),
       view_android_(view_android),
       window_android_(window_android),
       device_orientation_(0),
@@ -435,7 +427,6 @@ void ContentViewCoreImpl::OnTabCrashed() {
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return;
-  Java_ContentViewCore_resetVSyncNotification(env, obj.obj());
 }
 
 // All positions and sizes are in CSS pixels.
@@ -598,6 +589,12 @@ void ContentViewCoreImpl::OnGestureEventAck(const blink::WebGestureEvent& event,
       break;
     case WebInputEvent::GesturePinchEnd:
       Java_ContentViewCore_onPinchEndEventAck(env, j_obj.obj());
+      break;
+    case WebInputEvent::GestureTap:
+      if (ack_result != INPUT_EVENT_ACK_STATE_CONSUMED) {
+        Java_ContentViewCore_onTapEventNotConsumed(
+            env, j_obj.obj(), event.x * dpi_scale(), event.y * dpi_scale());
+      }
       break;
     case WebInputEvent::GestureDoubleTap:
       Java_ContentViewCore_onDoubleTapEventAck(env, j_obj.obj());
@@ -853,30 +850,6 @@ void ContentViewCoreImpl::RemoveLayer(scoped_refptr<cc::Layer> layer) {
 void ContentViewCoreImpl::LoadUrl(
     NavigationController::LoadURLParams& params) {
   GetWebContents()->GetController().LoadURLWithParams(params);
-}
-
-void ContentViewCoreImpl::AddBeginFrameSubscriber() {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-  Java_ContentViewCore_addVSyncSubscriber(env, obj.obj());
-}
-
-void ContentViewCoreImpl::RemoveBeginFrameSubscriber() {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-  Java_ContentViewCore_removeVSyncSubscriber(env, obj.obj());
-}
-
-void ContentViewCoreImpl::SetNeedsAnimate() {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-  Java_ContentViewCore_setNeedsAnimate(env, obj.obj());
 }
 
 ui::ViewAndroid* ContentViewCoreImpl::GetViewAndroid() const {
@@ -1326,58 +1299,14 @@ void ContentViewCoreImpl::RemoveJavascriptInterface(JNIEnv* env,
       ConvertJavaStringToUTF16(env, name));
 }
 
-void ContentViewCoreImpl::UpdateVSyncParameters(JNIEnv* env, jobject /* obj */,
-                                                jlong timebase_micros,
-                                                jlong interval_micros) {
-  RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
-  if (!view)
-    return;
-
-  RenderWidgetHostImpl* host = RenderWidgetHostImpl::From(
-      view->GetRenderWidgetHost());
-
-  host->UpdateVSyncParameters(
-      base::TimeTicks::FromInternalValue(timebase_micros),
-      base::TimeDelta::FromMicroseconds(interval_micros));
-
-  vsync_interval_ =
-      base::TimeDelta::FromMicroseconds(interval_micros);
-  expected_browser_composite_time_ =
-      vsync_interval_ * kDefaultBrowserCompositeVSyncFraction;
-}
-
-void ContentViewCoreImpl::OnVSync(JNIEnv* env, jobject /* obj */,
-                                  jlong frame_time_micros) {
-  base::TimeTicks frame_time =
-      base::TimeTicks::FromInternalValue(frame_time_micros);
-  SendBeginFrame(frame_time);
-}
-
-void ContentViewCoreImpl::SendBeginFrame(base::TimeTicks frame_time) {
-  RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
-  if (!view)
-    return;
-
-  base::TimeTicks display_time = frame_time + vsync_interval_;
-  base::TimeTicks deadline = display_time - expected_browser_composite_time_;
-
-  view->SendBeginFrame(
-      cc::BeginFrameArgs::Create(frame_time, deadline, vsync_interval_));
-}
-
-jboolean ContentViewCoreImpl::OnAnimate(JNIEnv* env, jobject /* obj */,
-                                        jlong frame_time_micros) {
-  RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
-  if (!view)
-    return false;
-
-  return view->Animate(base::TimeTicks::FromInternalValue(frame_time_micros));
-}
-
 void ContentViewCoreImpl::WasResized(JNIEnv* env, jobject obj) {
   RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
-  if (view)
+  if (view) {
+    RenderWidgetHostImpl* host = RenderWidgetHostImpl::From(
+        view->GetRenderWidgetHost());
+    host->SendScreenRects();
     view->WasResized();
+  }
 }
 
 void ContentViewCoreImpl::ShowInterstitialPage(

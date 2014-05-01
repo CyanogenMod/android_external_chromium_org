@@ -21,6 +21,7 @@
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkDrawFilter.h"
 #include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "third_party/skia/include/core/SkStream.h"
 #include "third_party/skia/include/utils/SkNullCanvas.h"
 #include "third_party/skia/include/utils/SkPictureUtils.h"
@@ -85,7 +86,7 @@ bool DecodeBitmap(const void* buffer, size_t size, SkBitmap* bm) {
 scoped_refptr<Picture> Picture::Create(
     const gfx::Rect& layer_rect,
     ContentLayerClient* client,
-    const SkTileGridPicture::TileGridInfo& tile_grid_info,
+    const SkTileGridFactory::TileGridInfo& tile_grid_info,
     bool gather_pixel_refs,
     int num_raster_threads,
     RecordingMode recording_mode) {
@@ -191,6 +192,11 @@ Picture::~Picture() {
 }
 
 Picture* Picture::GetCloneForDrawingOnThread(unsigned thread_index) {
+  // We don't need clones to draw from multiple threads with SkRecord.
+  if (playback_) {
+    return this;
+  }
+
   // SkPicture is not thread-safe to rasterize with, this returns a clone
   // to rasterize with on a specific thread.
   CHECK_GE(clones_.size(), thread_index);
@@ -212,6 +218,11 @@ bool Picture::IsSuitableForGpuRasterization() const {
 
 void Picture::CloneForDrawing(int num_threads) {
   TRACE_EVENT1("cc", "Picture::CloneForDrawing", "num_threads", num_threads);
+
+  // We don't need clones to draw from multiple threads with SkRecord.
+  if (playback_) {
+    return;
+  }
 
   DCHECK(picture_);
   DCHECK(clones_.empty());
@@ -238,7 +249,7 @@ void Picture::CloneForDrawing(int num_threads) {
 }
 
 void Picture::Record(ContentLayerClient* painter,
-                     const SkTileGridPicture::TileGridInfo& tile_grid_info,
+                     const SkTileGridFactory::TileGridInfo& tile_grid_info,
                      RecordingMode recording_mode) {
   TRACE_EVENT2("cc",
                "Picture::Record",
@@ -250,14 +261,16 @@ void Picture::Record(ContentLayerClient* painter,
   DCHECK(!picture_);
   DCHECK(!tile_grid_info.fTileInterval.isEmpty());
 
-  skia::RefPtr<SkPictureFactory> factory =
-      skia::AdoptRef(new SkTileGridPictureFactory(tile_grid_info));
-  SkPictureRecorder recorder(factory.get());
+  SkTileGridFactory factory(tile_grid_info);
+  SkPictureRecorder recorder;
+
+  scoped_ptr<EXPERIMENTAL::SkRecording> recording;
 
   skia::RefPtr<SkCanvas> canvas;
   canvas = skia::SharePtr(
       recorder.beginRecording(layer_rect_.width(),
                               layer_rect_.height(),
+                              &factory,
                               SkPicture::kUsePathBoundsForClip_RecordingFlag));
 
   switch (recording_mode) {
@@ -271,6 +284,11 @@ void Picture::Record(ContentLayerClient* painter,
       // Blink's GraphicsContext will disable painting when given a NULL
       // canvas.
       canvas.clear();
+      break;
+    case RECORD_WITH_SKRECORD:
+      recording.reset(new EXPERIMENTAL::SkRecording(layer_rect_.width(),
+                                                    layer_rect_.height()));
+      canvas = skia::SharePtr(recording->canvas());
       break;
     default:
       NOTREACHED();
@@ -296,13 +314,20 @@ void Picture::Record(ContentLayerClient* painter,
   picture_ = skia::AdoptRef(recorder.endRecording());
   DCHECK(picture_);
 
+  if (recording) {
+    // SkRecording requires it's the only one holding onto canvas before we
+    // may call releasePlayback().  (This helps enforce thread-safety.)
+    canvas.clear();
+    playback_.reset(recording->releasePlayback());
+  }
+
   opaque_rect_ = gfx::ToEnclosedRect(opaque_layer_rect);
 
   EmitTraceSnapshot();
 }
 
 void Picture::GatherPixelRefs(
-    const SkTileGridPicture::TileGridInfo& tile_grid_info) {
+    const SkTileGridFactory::TileGridInfo& tile_grid_info) {
   TRACE_EVENT2("cc", "Picture::GatherPixelRefs",
                "width", layer_rect_.width(),
                "height", layer_rect_.height());
@@ -378,7 +403,11 @@ int Picture::Raster(
 
   canvas->scale(contents_scale, contents_scale);
   canvas->translate(layer_rect_.x(), layer_rect_.y());
-  picture_->draw(canvas, callback);
+  if (playback_) {
+    playback_->draw(canvas);
+  } else {
+    picture_->draw(canvas, callback);
+  }
   SkIRect bounds;
   canvas->getClipDeviceBounds(&bounds);
   canvas->restore();
@@ -393,7 +422,11 @@ void Picture::Replay(SkCanvas* canvas) {
   TRACE_EVENT_BEGIN0("cc", "Picture::Replay");
   DCHECK(picture_);
 
-  picture_->draw(canvas);
+  if (playback_) {
+    playback_->draw(canvas);
+  } else {
+    picture_->draw(canvas);
+  }
   SkIRect bounds;
   canvas->getClipDeviceBounds(&bounds);
   TRACE_EVENT_END1("cc", "Picture::Replay",

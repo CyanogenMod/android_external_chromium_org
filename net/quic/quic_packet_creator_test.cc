@@ -155,6 +155,7 @@ TEST_P(QuicPacketCreatorTest, SerializeFrames) {
     EXPECT_CALL(framer_visitor_, OnPacket());
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedPublicHeader(_));
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedHeader(_));
+    EXPECT_CALL(framer_visitor_, OnDecryptedPacket(_));
     EXPECT_CALL(framer_visitor_, OnPacketHeader(_));
     EXPECT_CALL(framer_visitor_, OnAckFrame(_));
     EXPECT_CALL(framer_visitor_, OnStreamFrame(_));
@@ -180,11 +181,9 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFEC) {
     EXPECT_CALL(framer_visitor_, OnPacket());
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedPublicHeader(_));
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedHeader(_));
+    EXPECT_CALL(framer_visitor_, OnDecryptedPacket(_));
     EXPECT_CALL(framer_visitor_, OnPacketHeader(_));
-    if (GetParam().version != QUIC_VERSION_13) {
-      // FEC is only used for versions > 13.
-      EXPECT_CALL(framer_visitor_, OnFecProtectedPayload(_));
-    }
+    EXPECT_CALL(framer_visitor_, OnFecProtectedPayload(_));
     EXPECT_CALL(framer_visitor_, OnStreamFrame(_));
     EXPECT_CALL(framer_visitor_, OnPacketComplete());
   }
@@ -194,20 +193,9 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFEC) {
   // Should return false since we do not have enough packets in the FEC group to
   // trigger an FEC packet.
   ASSERT_FALSE(creator_.ShouldSendFec(/*force_close=*/false));
-  if (GetParam().version == QUIC_VERSION_13) {
-    // FEC is only used for versions > 13.
-    ASSERT_FALSE(creator_.ShouldSendFec(/*force_close=*/true));
-  } else {
-    // Should return true since there are packets in the FEC group.
-    ASSERT_TRUE(creator_.ShouldSendFec(/*force_close=*/true));
-  }
+  // Should return true since there are packets in the FEC group.
+  ASSERT_TRUE(creator_.ShouldSendFec(/*force_close=*/true));
 
-  if (GetParam().version == QUIC_VERSION_13) {
-    // FEC is only used for versions > 13.
-    EXPECT_DFATAL(creator_.SerializeFec(),
-                  "SerializeFEC called but no group or zero packets in group.");
-    return;
-  }
   serialized = creator_.SerializeFec();
   ASSERT_EQ(2u, serialized.sequence_number);
   {
@@ -215,6 +203,7 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFEC) {
     EXPECT_CALL(framer_visitor_, OnPacket());
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedPublicHeader(_));
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedHeader(_));
+    EXPECT_CALL(framer_visitor_, OnDecryptedPacket(_));
     EXPECT_CALL(framer_visitor_, OnPacketHeader(_));
     EXPECT_CALL(framer_visitor_, OnFecData(_));
     EXPECT_CALL(framer_visitor_, OnPacketComplete());
@@ -237,6 +226,7 @@ TEST_P(QuicPacketCreatorTest, SerializeChangingSequenceNumberLength) {
     EXPECT_CALL(framer_visitor_, OnPacket());
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedPublicHeader(_));
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedHeader(_));
+    EXPECT_CALL(framer_visitor_, OnDecryptedPacket(_));
     EXPECT_CALL(framer_visitor_, OnPacketHeader(_));
     EXPECT_CALL(framer_visitor_, OnAckFrame(_));
     EXPECT_CALL(framer_visitor_, OnPacketComplete());
@@ -255,6 +245,7 @@ TEST_P(QuicPacketCreatorTest, SerializeChangingSequenceNumberLength) {
     EXPECT_CALL(framer_visitor_, OnPacket());
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedPublicHeader(_));
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedHeader(_));
+    EXPECT_CALL(framer_visitor_, OnDecryptedPacket(_));
     EXPECT_CALL(framer_visitor_, OnPacketHeader(_));
     EXPECT_CALL(framer_visitor_, OnAckFrame(_));
     EXPECT_CALL(framer_visitor_, OnPacketComplete());
@@ -264,10 +255,6 @@ TEST_P(QuicPacketCreatorTest, SerializeChangingSequenceNumberLength) {
 }
 
 TEST_P(QuicPacketCreatorTest, SerializeWithFECChangingSequenceNumberLength) {
-  if (GetParam().version == QUIC_VERSION_13) {
-    // FEC is only used for ver. > 13. This test does not add value for ver. 13.
-    return;
-  }
   // Test goal is to test the following sequence (P1 => generate Packet 1):
   // P1 <change seq num length> P2 FEC,
   // and we expect that sequence number length should not change until the end
@@ -291,6 +278,7 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFECChangingSequenceNumberLength) {
     EXPECT_CALL(framer_visitor_, OnPacket());
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedPublicHeader(_));
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedHeader(_));
+    EXPECT_CALL(framer_visitor_, OnDecryptedPacket(_));
     EXPECT_CALL(framer_visitor_, OnPacketHeader(_));
     EXPECT_CALL(framer_visitor_, OnFecProtectedPayload(_));
     EXPECT_CALL(framer_visitor_, OnAckFrame(_));
@@ -309,6 +297,7 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFECChangingSequenceNumberLength) {
     EXPECT_CALL(framer_visitor_, OnPacket());
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedPublicHeader(_));
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedHeader(_));
+    EXPECT_CALL(framer_visitor_, OnDecryptedPacket(_));
     EXPECT_CALL(framer_visitor_, OnPacketHeader(_));
     EXPECT_CALL(framer_visitor_, OnFecProtectedPayload(_));
     EXPECT_CALL(framer_visitor_, OnAckFrame(_));
@@ -333,6 +322,7 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFECChangingSequenceNumberLength) {
     EXPECT_CALL(framer_visitor_, OnPacket());
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedPublicHeader(_));
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedHeader(_));
+    EXPECT_CALL(framer_visitor_, OnDecryptedPacket(_));
     EXPECT_CALL(framer_visitor_, OnPacketHeader(_));
     EXPECT_CALL(framer_visitor_, OnFecData(_));
     EXPECT_CALL(framer_visitor_, OnPacketComplete());
@@ -370,6 +360,7 @@ TEST_P(QuicPacketCreatorTest, ReserializeFramesWithSequenceNumberLength) {
     EXPECT_CALL(framer_visitor_, OnPacket());
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedPublicHeader(_));
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedHeader(_));
+    EXPECT_CALL(framer_visitor_, OnDecryptedPacket(_));
     EXPECT_CALL(framer_visitor_, OnPacketHeader(_));
     EXPECT_CALL(framer_visitor_, OnStreamFrame(_));
     EXPECT_CALL(framer_visitor_, OnPacketComplete());
@@ -391,6 +382,7 @@ TEST_P(QuicPacketCreatorTest, SerializeConnectionClose) {
   EXPECT_CALL(framer_visitor_, OnPacket());
   EXPECT_CALL(framer_visitor_, OnUnauthenticatedPublicHeader(_));
   EXPECT_CALL(framer_visitor_, OnUnauthenticatedHeader(_));
+  EXPECT_CALL(framer_visitor_, OnDecryptedPacket(_));
   EXPECT_CALL(framer_visitor_, OnPacketHeader(_));
   EXPECT_CALL(framer_visitor_, OnConnectionCloseFrame(_));
   EXPECT_CALL(framer_visitor_, OnPacketComplete());
@@ -477,10 +469,6 @@ TEST_P(QuicPacketCreatorTest, StreamFrameConsumption) {
 }
 
 TEST_P(QuicPacketCreatorTest, StreamFrameConsumptionWithFec) {
-  if (GetParam().version == QUIC_VERSION_13) {
-    // Test below tests behavior with version 13.
-    return;
-  }
   // Turn on FEC protection.
   creator_.options()->max_packets_per_fec_group = 6;
   // Compute the total overhead for a single frame in packet.
@@ -502,39 +490,6 @@ TEST_P(QuicPacketCreatorTest, StreamFrameConsumptionWithFec) {
     // as bytes_free (bound by 0).
     EXPECT_EQ(0u, creator_.ExpansionOnNewFrame());
     size_t expected_bytes_free = bytes_free > 0 ? bytes_free : 0;
-    EXPECT_EQ(expected_bytes_free, creator_.BytesFree()) << "delta: " << delta;
-    SerializedPacket serialized_packet = creator_.SerializePacket();
-    ASSERT_TRUE(serialized_packet.packet);
-    delete serialized_packet.packet;
-    delete serialized_packet.retransmittable_frames;
-  }
-}
-
-TEST_P(QuicPacketCreatorTest, StreamFrameConsumptionWithFecOnlyVersion13) {
-  if (GetParam().version != QUIC_VERSION_13) {
-    return;
-  }
-  // Turn on FEC protection. Behavior should be exactly the same as if FEC was
-  // NOT turned on. This test is the same as StreamFrameConsumption above.
-  creator_.options()->max_packets_per_fec_group = 6;
-  // Compute the total overhead for a single frame in packet.
-  const size_t overhead = GetPacketHeaderOverhead(NOT_IN_FEC_GROUP)
-      + GetEncryptionOverhead() + GetStreamFrameOverhead(NOT_IN_FEC_GROUP);
-  size_t capacity = kDefaultMaxPacketSize - overhead;
-  // Now, test various sizes around this size.
-  for (int delta = -5; delta <= 5; ++delta) {
-    string data(capacity + delta, 'A');
-    size_t bytes_free = delta > 0 ? 0 : 0 - delta;
-    QuicFrame frame;
-    size_t bytes_consumed = creator_.CreateStreamFrame(
-        kStreamId, MakeIOVector(data), kOffset, false, &frame);
-    EXPECT_EQ(capacity - bytes_free, bytes_consumed);
-
-    ASSERT_TRUE(creator_.AddSavedFrame(frame));
-    // BytesFree() returns bytes available for the next frame, which will
-    // be two bytes smaller since the stream frame would need to be grown.
-    EXPECT_EQ(2u, creator_.ExpansionOnNewFrame());
-    size_t expected_bytes_free = bytes_free < 3 ? 0 : bytes_free - 2;
     EXPECT_EQ(expected_bytes_free, creator_.BytesFree()) << "delta: " << delta;
     SerializedPacket serialized_packet = creator_.SerializePacket();
     ASSERT_TRUE(serialized_packet.packet);
@@ -699,6 +654,7 @@ TEST_P(QuicPacketCreatorTest, SerializeFrame) {
     EXPECT_CALL(framer_visitor_, OnPacket());
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedPublicHeader(_));
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedHeader(_));
+    EXPECT_CALL(framer_visitor_, OnDecryptedPacket(_));
     EXPECT_CALL(framer_visitor_, OnPacketHeader(_)).WillOnce(
         DoAll(SaveArg<0>(&header), Return(true)));
     EXPECT_CALL(framer_visitor_, OnStreamFrame(_));

@@ -62,13 +62,7 @@ var KEY_ASPECT_RATIO_LANDSCAPE = 1.46;
  * The ratio between the height and width of the compact keyboard.
  * @type {number}
  */
-var DEFAULT_KEYBOARD_ASPECT_RATIO = 0.3;
-
-/**
- * The ratio between the height and width of the a11y keyboard.
- * @type {number}
- */
-var DEFAULT_A11Y_KEYBOARD_ASPECT_RATIO = 0.41;
+var DEFAULT_KEYBOARD_ASPECT_RATIO = 0.41;
 
 /**
  * The default weight of a key.
@@ -111,3 +105,9 @@ var RESIZE_THRESHOLD = 20;
  * @type {number}
  */
 var SOUND_POOL_SIZE = 10;
+
+/**
+ * Whether or not to enable sounds on key press.
+ * @type {boolean}
+ */
+var SOUND_ENABLED = false;

@@ -28,7 +28,6 @@
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/sys_color_change_listener.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -96,7 +95,6 @@ class BrowserView : public BrowserWindow,
                     public views::WidgetObserver,
                     public views::ClientView,
                     public infobars::InfoBarContainer::Delegate,
-                    public gfx::SysColorChangeListener,
                     public LoadCompleteListener::Delegate,
                     public OmniboxPopupModelObserver {
  public:
@@ -202,10 +200,6 @@ class BrowserView : public BrowserWindow,
   // Returns true if the profile associated with this Browser window is
   // not off the record or a guest session.
   bool IsRegularOrGuestSession() const;
-
-  // Returns the resource ID to use for the OTR icon, which depends on
-  // which layout is being shown and whether we are full-screen.
-  int GetOTRIconResourceID() const;
 
   // Returns true if the non-client view should render an avatar icon.
   bool ShouldShowAvatar() const;
@@ -451,9 +445,6 @@ class BrowserView : public BrowserWindow,
   virtual void InfoBarContainerStateChanged(bool is_animating) OVERRIDE;
   virtual bool DrawInfoBarArrows(int* x) const OVERRIDE;
 
-  // gfx::SysColorChangeListener overrides:
-  virtual void OnSysColorChange() OVERRIDE;
-
   // Overridden from views::View:
   virtual const char* GetClassName() const OVERRIDE;
   virtual void Layout() OVERRIDE;
@@ -462,6 +453,7 @@ class BrowserView : public BrowserWindow,
       const ViewHierarchyChangedDetails& details) OVERRIDE;
   virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
   // Overridden from ui::AcceleratorTarget:
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
@@ -738,8 +730,6 @@ class BrowserView : public BrowserWindow,
   scoped_ptr<ImmersiveModeController> immersive_mode_controller_;
 
   scoped_ptr<ScrollEndEffectController> scroll_end_effect_controller_;
-
-  gfx::ScopedSysColorChangeListener color_change_listener_;
 
   scoped_ptr<WebContentsCloseHandler> web_contents_close_handler_;
 

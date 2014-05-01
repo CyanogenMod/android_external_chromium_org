@@ -41,10 +41,6 @@
 #include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
 
-#if defined(USE_AURA)
-#include "ui/aura/window.h"
-#endif
-
 namespace message_center {
 namespace settings {
 
@@ -717,7 +713,7 @@ void NotifierSettingsView::OnMenuButtonClicked(views::View* source,
       notifier_group_menu_runner_->RunMenuAt(GetWidget(),
                                              notifier_group_selector_,
                                              menu_anchor,
-                                             views::MenuItemView::BUBBLE_ABOVE,
+                                             views::MENU_ANCHOR_BUBBLE_ABOVE,
                                              ui::MENU_SOURCE_MOUSE,
                                              views::MenuRunner::CONTEXT_MENU))
     return;

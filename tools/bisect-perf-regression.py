@@ -76,7 +76,7 @@ DEPOT_DEPS_NAME = {
     "depends" : None,
     "from" : ['cros', 'android-chrome'],
     'viewvc': 'http://src.chromium.org/viewvc/chrome?view=revision&revision=',
-    'deps_var': None
+    'deps_var': 'chromium_rev'
   },
   'webkit' : {
     "src" : "src/third_party/WebKit",
@@ -159,9 +159,9 @@ BUILD_RESULT_SKIPPED = 2
 # Maximum time in seconds to wait after posting build request to tryserver.
 # TODO: Change these values based on the actual time taken by buildbots on
 # the tryserver.
-MAX_MAC_BUILD_TIME = 7200
-MAX_WIN_BUILD_TIME = 7200
-MAX_LINUX_BUILD_TIME = 7200
+MAX_MAC_BUILD_TIME = 14400
+MAX_WIN_BUILD_TIME = 14400
+MAX_LINUX_BUILD_TIME = 14400
 
 # Patch template to add a new file, DEPS.sha under src folder.
 # This file contains SHA1 value of the DEPS changes made while bisecting
@@ -176,6 +176,13 @@ new file mode 100644
 @@ -0,0 +1 @@
 +%(deps_sha)s
 """
+
+# The possible values of the --bisect_mode flag, which determines what to
+# use when classifying a revision as "good" or "bad".
+BISECT_MODE_MEAN = 'mean'
+BISECT_MODE_STD_DEV = 'std_dev'
+BISECT_MODE_RETURN_CODE = 'return_code'
+
 
 def _AddAdditionalDepotInfo(depot_info):
   """Adds additional depot info to the global depot variables."""
@@ -688,13 +695,19 @@ def BuildWithVisualStudio(targets):
 
 
 def WriteStringToFile(text, file_name):
-  with open(file_name, "w") as f:
-    f.write(text)
+  try:
+    with open(file_name, "w") as f:
+      f.write(text)
+  except IOError as e:
+    raise RuntimeError('Error writing to file [%s]' % file_name )
 
 
 def ReadStringFromFile(file_name):
-  with open(file_name) as f:
-    return f.read()
+  try:
+    with open(file_name) as f:
+      return f.read()
+  except IOError as e:
+    raise RuntimeError('Error reading file [%s]' % file_name )
 
 
 def ChangeBackslashToSlashInPatch(diff_text):
@@ -739,8 +752,6 @@ class Builder(object):
 
     if not bisect_utils.SetupPlatformBuildEnvironment(opts):
       raise RuntimeError('Failed to set platform environment.')
-
-    bisect_utils.RunGClient(['runhooks'])
 
   @staticmethod
   def FromOpts(opts):
@@ -1367,6 +1378,98 @@ class BisectPerformanceMetrics(object):
 
     return bleeding_edge_revision
 
+  def _ParseRevisionsFromDEPSFileManually(self, deps_file_contents):
+    """Manually parses the vars section of the DEPS file to determine
+    chromium/blink/etc... revisions.
+
+    Returns:
+      A dict in the format {depot:revision} if successful, otherwise None.
+    """
+    # We'll parse the "vars" section of the DEPS file.
+    rxp = re.compile('vars = {(?P<vars_body>[^}]+)', re.MULTILINE)
+    re_results = rxp.search(deps_file_contents)
+    locals = {}
+
+    if not re_results:
+      return None
+
+    # We should be left with a series of entries in the vars component of
+    # the DEPS file with the following format:
+    # 'depot_name': 'revision',
+    vars_body = re_results.group('vars_body')
+    rxp = re.compile("'(?P<depot_body>[\w_-]+)':[\s]+'(?P<rev_body>[\w@]+)'",
+                     re.MULTILINE)
+    re_results = rxp.findall(vars_body)
+
+    return dict(re_results)
+
+  def _ParseRevisionsFromDEPSFile(self, depot):
+    """Parses the local DEPS file to determine blink/skia/v8 revisions which may
+    be needed if the bisect recurses into those depots later.
+
+    Args:
+      depot: Depot being bisected.
+
+    Returns:
+      A dict in the format {depot:revision} if successful, otherwise None.
+    """
+    try:
+      locals = {'Var': lambda _: locals["vars"][_],
+                'From': lambda *args: None}
+      execfile(bisect_utils.FILE_DEPS_GIT, {}, locals)
+      locals = locals['deps']
+      results = {}
+
+      rxp = re.compile(".git@(?P<revision>[a-fA-F0-9]+)")
+
+      for d in DEPOT_NAMES:
+        if DEPOT_DEPS_NAME[d].has_key('platform'):
+          if DEPOT_DEPS_NAME[d]['platform'] != os.name:
+            continue
+
+        if (DEPOT_DEPS_NAME[d]['recurse'] and
+            depot in DEPOT_DEPS_NAME[d]['from']):
+          if (locals.has_key(DEPOT_DEPS_NAME[d]['src']) or
+              locals.has_key(DEPOT_DEPS_NAME[d]['src_old'])):
+            if locals.has_key(DEPOT_DEPS_NAME[d]['src']):
+              re_results = rxp.search(locals[DEPOT_DEPS_NAME[d]['src']])
+              self.depot_cwd[d] = \
+                  os.path.join(self.src_cwd, DEPOT_DEPS_NAME[d]['src'][4:])
+            elif (DEPOT_DEPS_NAME[d].has_key('src_old') and
+                locals.has_key(DEPOT_DEPS_NAME[d]['src_old'])):
+              re_results = \
+                  rxp.search(locals[DEPOT_DEPS_NAME[d]['src_old']])
+              self.depot_cwd[d] = \
+                  os.path.join(self.src_cwd, DEPOT_DEPS_NAME[d]['src_old'][4:])
+
+            if re_results:
+              results[d] = re_results.group('revision')
+            else:
+              warning_text = ('Couldn\'t parse revision for %s while bisecting '
+                  '%s' % (d, depot))
+              if not warningText in self.warnings:
+                self.warnings.append(warningText)
+          else:
+            print 'Couldn\'t find %s while parsing .DEPS.git.' % d
+            print
+            return None
+      return results
+    except ImportError:
+      deps_file_contents = ReadStringFromFile(bisect_utils.FILE_DEPS_GIT)
+      parse_results = self._ParseRevisionsFromDEPSFileManually(
+          deps_file_contents)
+      results = {}
+      for depot_name, depot_revision in parse_results.iteritems():
+        depot_revision = depot_revision.strip('@')
+        print depot_name, depot_revision
+        for current_name, current_data in DEPOT_DEPS_NAME.iteritems():
+          if (current_data.has_key('deps_var') and
+              current_data['deps_var'] == depot_name):
+            src_name = current_name
+            results[src_name] = depot_revision
+            break
+      return results
+
   def Get3rdPartyRevisionsFromCurrentRevision(self, depot, revision):
     """Parses the DEPS file to determine WebKit/v8/etc... versions.
 
@@ -1379,43 +1482,8 @@ class BisectPerformanceMetrics(object):
     results = {}
 
     if depot == 'chromium' or depot == 'android-chrome':
-      locals = {'Var': lambda _: locals["vars"][_],
-                'From': lambda *args: None}
-      execfile(bisect_utils.FILE_DEPS_GIT, {}, locals)
-
+      results = self._ParseRevisionsFromDEPSFile(depot)
       os.chdir(cwd)
-
-      rxp = re.compile(".git@(?P<revision>[a-fA-F0-9]+)")
-
-      for d in DEPOT_NAMES:
-        if DEPOT_DEPS_NAME[d].has_key('platform'):
-          if DEPOT_DEPS_NAME[d]['platform'] != os.name:
-            continue
-
-        if (DEPOT_DEPS_NAME[d]['recurse'] and
-            depot in DEPOT_DEPS_NAME[d]['from']):
-          if (locals['deps'].has_key(DEPOT_DEPS_NAME[d]['src']) or
-              locals['deps'].has_key(DEPOT_DEPS_NAME[d]['src_old'])):
-            if locals['deps'].has_key(DEPOT_DEPS_NAME[d]['src']):
-              re_results = rxp.search(locals['deps'][DEPOT_DEPS_NAME[d]['src']])
-              self.depot_cwd[d] = \
-                  os.path.join(self.src_cwd, DEPOT_DEPS_NAME[d]['src'][4:])
-            elif locals['deps'].has_key(DEPOT_DEPS_NAME[d]['src_old']):
-              re_results = \
-                  rxp.search(locals['deps'][DEPOT_DEPS_NAME[d]['src_old']])
-              self.depot_cwd[d] = \
-                  os.path.join(self.src_cwd, DEPOT_DEPS_NAME[d]['src_old'][4:])
-
-            if re_results:
-              results[d] = re_results.group('revision')
-            else:
-              print 'Couldn\'t parse revision for %s.' % d
-              print
-              return None
-          else:
-            print 'Couldn\'t find %s while parsing .DEPS.git.' % d
-            print
-            return None
     elif depot == 'cros':
       cmd = [CROS_SDK_PATH, '--', 'portageq-%s' % self.opts.cros_board,
              'best_visible', '/build/%s' % self.opts.cros_board, 'ebuild',
@@ -1968,6 +2036,15 @@ class BisectPerformanceMetrics(object):
       return False
     return True
 
+  def _IsBisectModeUsingMetric(self):
+    return self.opts.bisect_mode in [BISECT_MODE_MEAN, BISECT_MODE_STD_DEV]
+
+  def _IsBisectModeReturnCode(self):
+    return self.opts.bisect_mode in [BISECT_MODE_RETURN_CODE]
+
+  def _IsBisectModeStandardDeviation(self):
+    return self.opts.bisect_mode in [BISECT_MODE_STD_DEV]
+
   def RunPerformanceTestAndParseResults(
       self, command_to_run, metric, reset_on_first_run=False,
       upload_on_last_run=False, results_label=None):
@@ -2022,15 +2099,15 @@ class BisectPerformanceMetrics(object):
     output_of_all_runs = ''
     for i in xrange(self.opts.repeat_test_count):
       # Can ignore the return code since if the tests fail, it won't return 0.
+      current_args = copy.copy(args)
+      if is_telemetry:
+        if i == 0 and reset_on_first_run:
+          current_args.append('--reset-results')
+        elif i == self.opts.repeat_test_count - 1 and upload_on_last_run:
+          current_args.append('--upload-results')
+        if results_label:
+          current_args.append('--results-label=%s' % results_label)
       try:
-        current_args = copy.copy(args)
-        if is_telemetry:
-          if i == 0 and reset_on_first_run:
-            current_args.append('--reset-results')
-          elif i == self.opts.repeat_test_count - 1 and upload_on_last_run:
-            current_args.append('--upload-results')
-          if results_label:
-            current_args.append('--results-label=%s' % results_label)
         (output, return_code) = RunProcessAndRetrieveOutput(current_args,
                                                             cwd=self.src_cwd)
       except OSError, e:
@@ -2050,11 +2127,17 @@ class BisectPerformanceMetrics(object):
       if self.opts.output_buildbot_annotations:
         print output
 
-      metric_values += self.ParseMetricValuesFromOutput(metric, output)
+      if self._IsBisectModeUsingMetric():
+        metric_values += self.ParseMetricValuesFromOutput(metric, output)
+        # If we're bisecting on a metric (ie, changes in the mean or
+        # standard deviation) and no metric values are produced, bail out.
+        if not metric_values:
+          break
+      elif self._IsBisectModeReturnCode():
+        metric_values.append(return_code)
 
       elapsed_minutes = (time.time() - start_time) / 60.0
-
-      if elapsed_minutes >= self.opts.max_time_minutes or not metric_values:
+      if elapsed_minutes >= self.opts.max_time_minutes:
         break
 
     if len(metric_values) == 0:
@@ -2063,22 +2146,43 @@ class BisectPerformanceMetrics(object):
       # that were found in the output here.
       return (err_text, failure_code, output_of_all_runs)
 
-    # Need to get the average value if there were multiple values.
-    truncated_mean = CalculateTruncatedMean(metric_values,
-        self.opts.truncate_percent)
-    standard_err = CalculateStandardError(metric_values)
-    standard_dev = CalculateStandardDeviation(metric_values)
+    # If we're bisecting on return codes, we're really just looking for zero vs
+    # non-zero.
+    if self._IsBisectModeReturnCode():
+      # If any of the return codes is non-zero, output 1.
+      overall_return_code = 0 if (
+          all(current_value == 0 for current_value in metric_values)) else 1
 
-    values = {
-      'mean': truncated_mean,
-      'std_err': standard_err,
-      'std_dev': standard_dev,
-      'values': metric_values,
-    }
+      values = {
+        'mean': overall_return_code,
+        'std_err': 0.0,
+        'std_dev': 0.0,
+        'values': metric_values,
+      }
 
-    print 'Results of performance test: %12f %12f' % (
-        truncated_mean, standard_err)
-    print
+      print 'Results of performance test: Command returned with %d' % (
+          overall_return_code)
+      print
+    else:
+      # Need to get the average value if there were multiple values.
+      truncated_mean = CalculateTruncatedMean(metric_values,
+          self.opts.truncate_percent)
+      standard_err = CalculateStandardError(metric_values)
+      standard_dev = CalculateStandardDeviation(metric_values)
+
+      if self._IsBisectModeStandardDeviation():
+        metric_values = [standard_dev]
+
+      values = {
+        'mean': truncated_mean,
+        'std_err': standard_err,
+        'std_dev': standard_dev,
+        'values': metric_values,
+      }
+
+      print 'Results of performance test: %12f %12f' % (
+          truncated_mean, standard_err)
+      print
     return (values, success_code, output_of_all_runs)
 
   def FindAllRevisionsToSync(self, revision, depot):
@@ -2339,7 +2443,7 @@ class BisectPerformanceMetrics(object):
       return ('Failed to sync revision: [%s]' % (str(revision, )),
           BUILD_RESULT_FAIL)
 
-  def CheckIfRunPassed(self, current_value, known_good_value, known_bad_value):
+  def _CheckIfRunPassed(self, current_value, known_good_value, known_bad_value):
     """Given known good and bad values, decide if the current_value passed
     or failed.
 
@@ -2352,8 +2456,14 @@ class BisectPerformanceMetrics(object):
       True if the current_value is closer to the known_good_value than the
       known_bad_value.
     """
-    dist_to_good_value = abs(current_value['mean'] - known_good_value['mean'])
-    dist_to_bad_value = abs(current_value['mean'] - known_bad_value['mean'])
+    if self.opts.bisect_mode == BISECT_MODE_STD_DEV:
+      dist_to_good_value = abs(current_value['std_dev'] -
+          known_good_value['std_dev'])
+      dist_to_bad_value = abs(current_value['std_dev'] -
+          known_bad_value['std_dev'])
+    else:
+      dist_to_good_value = abs(current_value['mean'] - known_good_value['mean'])
+      dist_to_bad_value = abs(current_value['mean'] - known_bad_value['mean'])
 
     return dist_to_good_value < dist_to_bad_value
 
@@ -2909,9 +3019,9 @@ class BisectPerformanceMetrics(object):
             next_revision_data['perf_time'] = run_results[3]
             next_revision_data['build_time'] = run_results[4]
 
-          passed_regression = self.CheckIfRunPassed(run_results[0],
-                                                    known_good_value,
-                                                    known_bad_value)
+          passed_regression = self._CheckIfRunPassed(run_results[0],
+                                                     known_good_value,
+                                                     known_bad_value)
 
           next_revision_data['passed'] = passed_regression
           next_revision_data['value'] = run_results[0]
@@ -2966,17 +3076,23 @@ class BisectPerformanceMetrics(object):
     print " __o_\___          Aw Snap! We hit a speed bump!"
     print "=-O----O-'__.~.___________________________________"
     print
-    print 'Bisect reproduced a %.02f%% (+-%.02f%%) change in the %s metric.' % (
-        results_dict['regression_size'], results_dict['regression_std_err'],
-        '/'.join(self.opts.metric))
+    if self._IsBisectModeReturnCode():
+      print ('Bisect reproduced a change in return codes while running the '
+          'performance test.')
+    else:
+      print ('Bisect reproduced a %.02f%% (+-%.02f%%) change in the '
+          '%s metric.' % (results_dict['regression_size'],
+          results_dict['regression_std_err'], '/'.join(self.opts.metric)))
     self._PrintConfidence(results_dict)
 
   def _PrintFailedBanner(self, results_dict):
     print
-    print ('Bisect could not reproduce a change in the '
-        '%s/%s metric.' % (self.opts.metric[0], self.opts.metric[1]))
+    if self._IsBisectModeReturnCode():
+      print 'Bisect could not reproduce a change in the return code.'
+    else:
+      print ('Bisect could not reproduce a change in the '
+          '%s metric.' % '/'.join(self.opts.metric))
     print
-    self._PrintConfidence(results_dict)
 
   def _GetViewVCLinkFromDepotAndHash(self, cl, depot):
     info = self.source_control.QueryRevisionInfo(cl,
@@ -3013,6 +3129,53 @@ class BisectPerformanceMetrics(object):
     print 'Commit  : %s' % cl
     print 'Date    : %s' % info['date']
 
+  def _PrintTableRow(self, column_widths, row_data):
+    assert len(column_widths) == len(row_data)
+
+    text = ''
+    for i in xrange(len(column_widths)):
+      current_row_data = row_data[i].center(column_widths[i], ' ')
+      text += ('%%%ds' % column_widths[i]) % current_row_data
+    print text
+
+  def _PrintTestedCommitsHeader(self):
+    if self.opts.bisect_mode == BISECT_MODE_MEAN:
+      self._PrintTableRow(
+          [20, 70, 14, 12, 13],
+          ['Depot', 'Commit SHA', 'Mean', 'Std. Error', 'State'])
+    elif self.opts.bisect_mode == BISECT_MODE_STD_DEV:
+      self._PrintTableRow(
+          [20, 70, 14, 12, 13],
+          ['Depot', 'Commit SHA', 'Std. Error', 'Mean', 'State'])
+    elif self.opts.bisect_mode == BISECT_MODE_RETURN_CODE:
+      self._PrintTableRow(
+          [20, 70, 14, 13],
+          ['Depot', 'Commit SHA', 'Return Code', 'State'])
+    else:
+      assert False, "Invalid bisect_mode specified."
+      print '  %20s  %70s  %14s %13s' % ('Depot'.center(20, ' '),
+          'Commit SHA'.center(70, ' '), 'Return Code'.center(14, ' '),
+           'State'.center(13, ' '))
+
+  def _PrintTestedCommitsEntry(self, current_data, cl_link, state_str):
+    if self.opts.bisect_mode == BISECT_MODE_MEAN:
+      std_error = '+-%.02f' % current_data['value']['std_err']
+      mean = '%.02f' % current_data['value']['mean']
+      self._PrintTableRow(
+          [20, 70, 12, 14, 13],
+          [current_data['depot'], cl_link, mean, std_error, state_str])
+    elif self.opts.bisect_mode == BISECT_MODE_STD_DEV:
+      std_error = '+-%.02f' % current_data['value']['std_err']
+      mean = '%.02f' % current_data['value']['mean']
+      self._PrintTableRow(
+          [20, 70, 12, 14, 13],
+          [current_data['depot'], cl_link, std_error, mean, state_str])
+    elif self.opts.bisect_mode == BISECT_MODE_RETURN_CODE:
+      mean = '%d' % current_data['value']['mean']
+      self._PrintTableRow(
+          [20, 70, 14, 13],
+          [current_data['depot'], cl_link, mean, state_str])
+
   def _PrintTestedCommitsTable(self, revision_data_sorted,
       first_working_revision, last_broken_revision, confidence,
       final_step=True):
@@ -3021,9 +3184,7 @@ class BisectPerformanceMetrics(object):
       print 'Tested commits:'
     else:
       print 'Partial results:'
-    print '  %20s  %70s  %12s %14s %13s' % ('Depot'.center(20, ' '),
-        'Commit SHA'.center(70, ' '), 'Mean'.center(12, ' '),
-        'Std. Error'.center(14, ' '), 'State'.center(13, ' '))
+    self._PrintTestedCommitsHeader()
     state = 0
     for current_id, current_data in revision_data_sorted:
       if current_data['value']:
@@ -3049,16 +3210,11 @@ class BisectPerformanceMetrics(object):
           state_str = ''
         state_str = state_str.center(13, ' ')
 
-        std_error = ('+-%.02f' %
-            current_data['value']['std_err']).center(14, ' ')
-        mean = ('%.02f' % current_data['value']['mean']).center(12, ' ')
         cl_link = self._GetViewVCLinkFromDepotAndHash(current_id,
             current_data['depot'])
         if not cl_link:
           cl_link = current_id
-        print '  %20s  %70s  %12s %14s %13s' % (
-            current_data['depot'].center(20, ' '), cl_link.center(70, ' '),
-            mean, std_error, state_str)
+        self._PrintTestedCommitsEntry(current_data, cl_link, state_str)
 
   def _PrintReproSteps(self):
     print
@@ -3433,6 +3589,7 @@ class BisectOptions(object):
     self.target_arch = 'ia32'
     self.builder_host = None
     self.builder_port = None
+    self.bisect_mode = BISECT_MODE_MEAN
 
   def _CreateCommandLineParser(self):
     """Creates a parser with bisect options.
@@ -3487,6 +3644,13 @@ class BisectOptions(object):
                      'truncated mean. Values will be clamped to range [0, '
                      '25]. Default value is 25 (highest/lowest 25% will be '
                      'discarded).')
+    group.add_option('--bisect_mode',
+                     type='choice',
+                     choices=[BISECT_MODE_MEAN, BISECT_MODE_STD_DEV,
+                        BISECT_MODE_RETURN_CODE],
+                     default=BISECT_MODE_MEAN,
+                     help='The bisect mode. Choices are to bisect on the '
+                     'difference in mean, std_dev, or return_code.')
     parser.add_option_group(group)
 
     group = optparse.OptionGroup(parser, 'Build options')
@@ -3586,7 +3750,7 @@ class BisectOptions(object):
       if not opts.bad_revision:
         raise RuntimeError('missing required parameter: --bad_revision')
 
-      if not opts.metric:
+      if not opts.metric and opts.bisect_mode != BISECT_MODE_RETURN_CODE:
         raise RuntimeError('missing required parameter: --metric')
 
       if opts.gs_bucket:
@@ -3614,7 +3778,8 @@ class BisectOptions(object):
           raise RuntimeError('missing required parameter: --working_directory')
 
       metric_values = opts.metric.split('/')
-      if len(metric_values) != 2:
+      if (len(metric_values) != 2 and
+          opts.bisect_mode != BISECT_MODE_RETURN_CODE):
         raise RuntimeError("Invalid metric specified: [%s]" % opts.metric)
 
       opts.metric = metric_values

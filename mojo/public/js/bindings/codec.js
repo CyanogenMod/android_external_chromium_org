@@ -178,15 +178,15 @@ define("mojo/public/js/bindings/codec", [
     return result;
   };
 
-  Decoder.prototype.readFloat32 = function() {
-    var result = this.buffer.dataView.readFloat32(
+  Decoder.prototype.readFloat = function() {
+    var result = this.buffer.dataView.getFloat32(
         this.next, kHostIsLittleEndian);
     this.next += 4;
     return result;
   };
 
-  Decoder.prototype.readFloat64 = function() {
-    var result = this.buffer.dataView.readFloat64(
+  Decoder.prototype.readDouble = function() {
+    var result = this.buffer.dataView.getFloat64(
         this.next, kHostIsLittleEndian);
     this.next += 8;
     return result;
@@ -227,6 +227,10 @@ define("mojo/public/js/bindings/codec", [
       val[i] = cls.decode(this);
     }
     return val;
+  };
+
+  Decoder.prototype.decodeStruct = function(cls) {
+    return cls.decode(this);
   };
 
   Decoder.prototype.decodeStructPointer = function(cls) {
@@ -308,13 +312,13 @@ define("mojo/public/js/bindings/codec", [
     this.next += 8;
   };
 
-  Encoder.prototype.writeFloat32 = function(val) {
-    this.buffer.dataView.setFloat32(val, kHostIsLittleEndian);
+  Encoder.prototype.writeFloat = function(val) {
+    this.buffer.dataView.setFloat32(this.next, val, kHostIsLittleEndian);
     this.next += 4;
   };
 
-  Encoder.prototype.writeFloat64 = function(val) {
-    this.buffer.dataView.setFloat64(val, kHostIsLittleEndian);
+  Encoder.prototype.writeDouble = function(val) {
+    this.buffer.dataView.setFloat64(this.next, val, kHostIsLittleEndian);
     this.next += 8;
   };
 
@@ -356,6 +360,10 @@ define("mojo/public/js/bindings/codec", [
     for (var i = 0; i < numberOfElements; ++i) {
       cls.encode(this, val[i]);
     }
+  };
+
+  Encoder.prototype.encodeStruct = function(cls, val) {
+    return cls.encode(this, val);
   };
 
   Encoder.prototype.encodeStructPointer = function(cls, val) {
@@ -488,6 +496,10 @@ define("mojo/public/js/bindings/codec", [
     return decoder.readInt8();
   };
 
+  Int8.encode = function(encoder, val) {
+    encoder.writeInt8(val);
+  };
+
   Uint8.encode = function(encoder, val) {
     encoder.writeUint8(val);
   };
@@ -558,7 +570,7 @@ define("mojo/public/js/bindings/codec", [
   };
 
   function Int64() {
-  };
+  }
 
   Int64.encodedSize = 8;
 
@@ -571,7 +583,7 @@ define("mojo/public/js/bindings/codec", [
   };
 
   function Uint64() {
-  };
+  }
 
   Uint64.encodedSize = 8;
 
@@ -583,15 +595,49 @@ define("mojo/public/js/bindings/codec", [
     encoder.writeUint64(val);
   };
 
-  function PointerTo(cls) {
-    this.cls = cls;
+  function String() {
   };
 
-  // TODO(abarth): Add missing types:
-  // * String
-  // * Float
-  // * Double
-  // * Signed integers
+  String.encodedSize = 8;
+
+  String.decode = function(decoder) {
+    return decoder.decodeStringPointer();
+  };
+
+  String.encode = function(encoder, val) {
+    encoder.encodeStringPointer(val);
+  };
+
+
+  function Float() {
+  }
+
+  Float.encodedSize = 4;
+
+  Float.decode = function(decoder) {
+    return decoder.readFloat();
+  };
+
+  Float.encode = function(encoder, val) {
+    encoder.writeFloat(val);
+  };
+
+  function Double() {
+  }
+
+  Double.encodedSize = 8;
+
+  Double.decode = function(decoder) {
+    return decoder.readDouble();
+  };
+
+  Double.encode = function(encoder, val) {
+    encoder.writeDouble(val);
+  };
+
+  function PointerTo(cls) {
+    this.cls = cls;
+  }
 
   PointerTo.prototype.encodedSize = 8;
 
@@ -606,16 +652,16 @@ define("mojo/public/js/bindings/codec", [
 
   function ArrayOf(cls) {
     this.cls = cls;
-  };
+  }
 
   ArrayOf.prototype.encodedSize = 8;
 
   ArrayOf.prototype.decode = function(decoder) {
-    return decoder.decodeArrayPointer(self.cls);
+    return decoder.decodeArrayPointer(this.cls);
   };
 
   ArrayOf.prototype.encode = function(encoder, val) {
-    encoder.encodeArrayPointer(self.cls, val);
+    encoder.encodeArrayPointer(this.cls, val);
   };
 
   function Handle() {
@@ -651,6 +697,9 @@ define("mojo/public/js/bindings/codec", [
   exports.Uint32 = Uint32;
   exports.Int64 = Int64;
   exports.Uint64 = Uint64;
+  exports.Float = Float;
+  exports.Double = Double;
+  exports.String = String;
   exports.PointerTo = PointerTo;
   exports.ArrayOf = ArrayOf;
   exports.Handle = Handle;

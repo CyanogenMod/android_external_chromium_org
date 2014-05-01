@@ -4,7 +4,7 @@
 
 #include "ash/root_window_controller.h"
 
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
@@ -714,8 +714,10 @@ TEST_F(VirtualKeyboardRootWindowControllerTest, RestoreWorkspaceAfterLogin) {
   controller->NotifyKeyboardBoundsChanging(
       controller->proxy()->GetKeyboardWindow()->bounds());
 
-  gfx::Rect after = ash::Shell::GetScreen()->GetPrimaryDisplay().work_area();
-  EXPECT_LT(after, before);
+  if (!keyboard::IsKeyboardOverscrollEnabled()) {
+    gfx::Rect after = ash::Shell::GetScreen()->GetPrimaryDisplay().work_area();
+    EXPECT_LT(after, before);
+  }
 
   // Mock a login user profile change to reinitialize the keyboard.
   ash::Shell::GetInstance()->OnLoginUserProfilePrepared();

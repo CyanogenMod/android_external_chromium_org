@@ -39,6 +39,7 @@
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
 #include "chrome/browser/ui/passwords/manage_passwords_bubble_ui_controller.h"
+#include "chrome/browser/ui/passwords/manage_passwords_icon.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/origin_chip_info.h"
 #include "chrome/browser/ui/view_ids.h"
@@ -76,7 +77,6 @@
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
 #include "ui/events/event.h"
@@ -108,8 +108,8 @@ namespace {
 
 #if !defined(OS_CHROMEOS)
 Browser* GetBrowserFromDelegate(LocationBarView::Delegate* delegate) {
-  WebContents* contents = delegate->GetWebContents();
-  return contents ? chrome::FindBrowserWithWebContents(contents) : NULL;
+  WebContents* web_contents = delegate->GetWebContents();
+  return web_contents ? chrome::FindBrowserWithWebContents(web_contents) : NULL;
 }
 #endif
 
@@ -189,6 +189,7 @@ class IsPageActionViewRightAligned {
 // static
 const int LocationBarView::kNormalEdgeThickness = 2;
 const int LocationBarView::kPopupEdgeThickness = 1;
+const int LocationBarView::kItemPadding = 3;
 const int LocationBarView::kIconInternalPadding = 2;
 const int LocationBarView::kBubblePadding = 1;
 const char LocationBarView::kViewClassName[] = "LocationBarView";
@@ -243,15 +244,6 @@ LocationBarView::~LocationBarView() {
 
 ////////////////////////////////////////////////////////////////////////////////
 // LocationBarView, public:
-
-// static
-void LocationBarView::InitTouchableLocationBarChildView(views::View* view) {
-  int horizontal_padding = GetBuiltInHorizontalPaddingForChildViews();
-  if (horizontal_padding != 0) {
-    view->SetBorder(views::Border::CreateEmptyBorder(
-        3, horizontal_padding, 3, horizontal_padding));
-  }
-}
 
 void LocationBarView::Init() {
   // We need to be in a Widget, otherwise GetNativeTheme() may change and we're
@@ -364,7 +356,6 @@ void LocationBarView::Init() {
   mic_search_view_->SetImageAlignment(views::ImageButton::ALIGN_CENTER,
                                       views::ImageButton::ALIGN_MIDDLE);
   mic_search_view_->SetVisible(false);
-  InitTouchableLocationBarChildView(mic_search_view_);
   AddChildView(mic_search_view_);
 
   for (int i = 0; i < CONTENT_SETTINGS_NUM_TYPES; ++i) {
@@ -388,7 +379,7 @@ void LocationBarView::Init() {
   AddChildView(open_pdf_in_reader_view_);
 
   manage_passwords_icon_view_ = new ManagePasswordsIconView(delegate_);
-  manage_passwords_icon_view_->set_id(VIEW_ID_MANAGE_PASSWORDS_ICON_BUTTON);
+  manage_passwords_icon_view_->SetState(ManagePasswordsIcon::INACTIVE_STATE);
   AddChildView(manage_passwords_icon_view_);
 
   translate_icon_view_ = new TranslateIconView(command_updater());
@@ -520,8 +511,9 @@ void LocationBarView::ZoomChangedForActiveTab(bool can_show_bubble) {
     SchedulePaint();
   }
 
-  if (can_show_bubble && zoom_view_->visible() && delegate_->GetWebContents())
-    ZoomBubbleView::ShowBubble(delegate_->GetWebContents(), true);
+  WebContents* web_contents = GetWebContents();
+  if (can_show_bubble && zoom_view_->visible() && web_contents)
+    ZoomBubbleView::ShowBubble(web_contents, true);
 }
 
 void LocationBarView::SetPreviewEnabledPageAction(ExtensionAction* page_action,
@@ -530,7 +522,7 @@ void LocationBarView::SetPreviewEnabledPageAction(ExtensionAction* page_action,
     return;
 
   DCHECK(page_action);
-  WebContents* contents = delegate_->GetWebContents();
+  WebContents* web_contents = GetWebContents();
 
   RefreshPageActionViews();
   PageActionWithBadgeView* page_action_view =
@@ -540,7 +532,7 @@ void LocationBarView::SetPreviewEnabledPageAction(ExtensionAction* page_action,
     return;
 
   page_action_view->image_view()->set_preview_enabled(preview_enabled);
-  page_action_view->UpdateVisibility(contents, GetToolbarModel()->GetURL());
+  page_action_view->UpdateVisibility(web_contents, GetToolbarModel()->GetURL());
   Layout();
   SchedulePaint();
 }
@@ -665,16 +657,6 @@ void LocationBarView::GetOmniboxPopupPositioningInfo(
   *right_margin = *popup_width - location_bar_bounds.right();
 }
 
-// static
-int LocationBarView::GetItemPadding() {
-  const int kTouchItemPadding = 8;
-  if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH)
-    return kTouchItemPadding;
-
-  const int kDesktopItemPadding = 3;
-  return kDesktopItemPadding;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // LocationBarView, public LocationBar implementation:
 
@@ -748,20 +730,19 @@ void LocationBarView::Layout() {
   ev_bubble_view_->SetVisible(false);
   keyword_hint_view_->SetVisible(false);
 
-  const int item_padding = GetItemPadding();
-
   // The textfield has 1 px of whitespace before the text in the RTL case only.
   const int kEditLeadingInternalSpace = base::i18n::IsRTL() ? 1 : 0;
   LocationBarLayout leading_decorations(
-      LocationBarLayout::LEFT_EDGE, item_padding - kEditLeadingInternalSpace);
+      LocationBarLayout::LEFT_EDGE, kItemPadding - kEditLeadingInternalSpace);
   LocationBarLayout trailing_decorations(LocationBarLayout::RIGHT_EDGE,
-                                         item_padding);
+                                         kItemPadding);
 
   // Show and position the animated host label used in the show and hide URL
   // animations.
   if (show_url_animation_->is_animating() ||
       hide_url_animation_->is_animating()) {
-    const GURL url = GetWebContents()->GetURL();
+    WebContents* web_contents = GetWebContents();
+    const GURL url = web_contents ? web_contents->GetURL() : GURL();
     const base::string16 host =
         OriginChip::LabelFromURLForProfile(url, profile());
     animated_host_label_->SetText(host);
@@ -812,7 +793,7 @@ void LocationBarView::Layout() {
   const int bubble_height = std::max(location_height - (kBubblePadding * 2), 0);
   if (!keyword.empty() && !is_keyword_hint) {
     leading_decorations.AddDecoration(bubble_location_y, bubble_height, true, 0,
-                                      kBubblePadding, item_padding, 0,
+                                      kBubblePadding, kItemPadding,
                                       selected_keyword_view_);
     if (selected_keyword_view_->keyword() != keyword) {
       selected_keyword_view_->SetKeyword(keyword);
@@ -839,72 +820,65 @@ void LocationBarView::Layout() {
     const double kMaxBubbleFraction = 0.5;
     leading_decorations.AddDecoration(bubble_location_y, bubble_height, false,
                                       kMaxBubbleFraction, kBubblePadding,
-                                      item_padding, 0, ev_bubble_view_);
+                                      kItemPadding, ev_bubble_view_);
   } else if (!origin_chip_view_->visible()) {
     leading_decorations.AddDecoration(
         vertical_edge_thickness(), location_height,
-        GetBuiltInHorizontalPaddingForChildViews(),
         location_icon_view_);
   }
 
   if (star_view_->visible()) {
     trailing_decorations.AddDecoration(
-        vertical_edge_thickness(), location_height,
-        GetBuiltInHorizontalPaddingForChildViews(), star_view_);
+        vertical_edge_thickness(), location_height, star_view_);
   }
   if (translate_icon_view_->visible()) {
     trailing_decorations.AddDecoration(
-        vertical_edge_thickness(), location_height,
-        GetBuiltInHorizontalPaddingForChildViews(),
-        translate_icon_view_);
+        vertical_edge_thickness(), location_height, translate_icon_view_);
   }
   if (open_pdf_in_reader_view_->visible()) {
     trailing_decorations.AddDecoration(
-        vertical_edge_thickness(), location_height,
-        GetBuiltInHorizontalPaddingForChildViews(),
-        open_pdf_in_reader_view_);
+        vertical_edge_thickness(), location_height, open_pdf_in_reader_view_);
   }
   if (manage_passwords_icon_view_->visible()) {
     trailing_decorations.AddDecoration(vertical_edge_thickness(),
-                                       location_height, 0,
+                                       location_height,
                                        manage_passwords_icon_view_);
   }
   for (PageActionViews::const_iterator i(page_action_views_.begin());
        i != page_action_views_.end(); ++i) {
     if ((*i)->visible()) {
       trailing_decorations.AddDecoration(
-          vertical_edge_thickness(), location_height,
-          GetBuiltInHorizontalPaddingForChildViews(), (*i));
+          vertical_edge_thickness(), location_height, (*i));
     }
   }
   if (zoom_view_->visible()) {
     trailing_decorations.AddDecoration(vertical_edge_thickness(),
-                                       location_height, 0, zoom_view_);
+                                       location_height, zoom_view_);
   }
   for (ContentSettingViews::const_reverse_iterator i(
            content_setting_views_.rbegin()); i != content_setting_views_.rend();
        ++i) {
     if ((*i)->visible()) {
       trailing_decorations.AddDecoration(
-          bubble_location_y, bubble_height, false, 0, item_padding,
-          item_padding, GetBuiltInHorizontalPaddingForChildViews(), (*i));
+          bubble_location_y, bubble_height, false, 0, kItemPadding,
+          kItemPadding, (*i));
     }
   }
   if (generated_credit_card_view_->visible()) {
     trailing_decorations.AddDecoration(vertical_edge_thickness(),
-                                       location_height, 0,
+                                       location_height,
                                        generated_credit_card_view_);
   }
   if (mic_search_view_->visible()) {
     trailing_decorations.AddDecoration(vertical_edge_thickness(),
-                                       location_height, 0, mic_search_view_);
+                                       location_height, mic_search_view_);
   }
   // Because IMEs may eat the tab key, we don't show "press tab to search" while
   // IME composition is in progress.
   if (!keyword.empty() && is_keyword_hint && !omnibox_view_->IsImeComposing()) {
     trailing_decorations.AddDecoration(vertical_edge_thickness(),
-                                       location_height, true, 0, item_padding,
-                                       item_padding, 0, keyword_hint_view_);
+                                       location_height, true, 0, kItemPadding,
+                                       kItemPadding, keyword_hint_view_);
     if (keyword_hint_view_->keyword() != keyword)
       keyword_hint_view_->SetKeyword(keyword);
   }
@@ -1076,12 +1050,6 @@ WebContents* LocationBarView::GetWebContents() {
 ////////////////////////////////////////////////////////////////////////////////
 // LocationBarView, private:
 
-// static
-int LocationBarView::GetBuiltInHorizontalPaddingForChildViews() {
-  return (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH) ?
-      GetItemPadding() / 2 : 0;
-}
-
 int LocationBarView::GetHorizontalEdgeThickness() const {
   // In maximized popup mode, there isn't any edge.
   return (is_popup_mode_ && browser_ && browser_->window() &&
@@ -1124,10 +1092,10 @@ bool LocationBarView::RefreshPageActionViews() {
 
   PageActions new_page_actions;
 
-  WebContents* contents = delegate_->GetWebContents();
-  if (contents) {
+  WebContents* web_contents = GetWebContents();
+  if (web_contents) {
     extensions::TabHelper* extensions_tab_helper =
-        extensions::TabHelper::FromWebContents(contents);
+        extensions::TabHelper::FromWebContents(web_contents);
     extensions::LocationBarController* controller =
         extensions_tab_helper->location_bar_controller();
     new_page_actions = controller->GetCurrentActions();
@@ -1170,14 +1138,14 @@ bool LocationBarView::RefreshPageActionViews() {
       AddChildViewAt(*i, GetIndexOf(right_anchor));
   }
 
-  if (!page_action_views_.empty() && contents) {
-    Browser* browser = chrome::FindBrowserWithWebContents(contents);
+  if (!page_action_views_.empty() && web_contents) {
+    Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
     GURL url = browser->tab_strip_model()->GetActiveWebContents()->GetURL();
 
     for (PageActionViews::const_iterator i(page_action_views_.begin());
          i != page_action_views_.end(); ++i) {
       (*i)->UpdateVisibility(
-          GetToolbarModel()->input_in_progress() ? NULL : contents, url);
+          GetToolbarModel()->input_in_progress() ? NULL : web_contents, url);
 
       // Check if the visibility of the action changed and notify if it did.
       ExtensionAction* action = (*i)->image_view()->page_action();
@@ -1187,7 +1155,7 @@ bool LocationBarView::RefreshPageActionViews() {
         content::NotificationService::current()->Notify(
             chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
             content::Source<ExtensionAction>(action),
-            content::Details<WebContents>(contents));
+            content::Details<WebContents>(web_contents));
       }
     }
   }
@@ -1225,18 +1193,9 @@ bool LocationBarView::RefreshManagePasswordsIconView() {
   if (!web_contents)
     return false;
   const bool was_visible = manage_passwords_icon_view_->visible();
-  manage_passwords_icon_view_->Update(
-      ManagePasswordsBubbleUIController::FromWebContents(web_contents));
+  ManagePasswordsBubbleUIController::FromWebContents(
+      web_contents)->UpdateIconAndBubbleState(manage_passwords_icon_view_);
   return was_visible != manage_passwords_icon_view_->visible();
-}
-
-void LocationBarView::ShowManagePasswordsBubbleIfNeeded() {
-  DCHECK(manage_passwords_icon_view_);
-  WebContents* web_contents = GetWebContents();
-  if (!web_contents)
-    return;
-  manage_passwords_icon_view_->ShowBubbleIfNeeded(
-      ManagePasswordsBubbleUIController::FromWebContents(web_contents));
 }
 
 void LocationBarView::ShowFirstRunBubbleInternal() {
@@ -1328,7 +1287,6 @@ void LocationBarView::UpdateManagePasswordsIconAndBubble() {
     Layout();
     SchedulePaint();
   }
-  ShowManagePasswordsBubbleIfNeeded();
 }
 
 void LocationBarView::UpdatePageActions() {
@@ -1680,8 +1638,7 @@ void LocationBarView::Observe(int type,
   switch (type) {
     case chrome::NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED: {
       // Only update if the updated action box was for the active tab contents.
-      WebContents* target_tab = content::Details<WebContents>(details).ptr();
-      if (target_tab == GetWebContents())
+      if (content::Details<WebContents>(details).ptr() == GetWebContents())
         UpdatePageActions();
       break;
     }

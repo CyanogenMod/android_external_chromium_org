@@ -463,7 +463,6 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetTooltipText, OnSetTooltipText)
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
                                 msg_is_ok = OnSwapCompositorFrame(msg))
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidOverscroll, OnOverscrolled)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidStopFlinging, OnFlingingStopped)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateRect, OnUpdateRect)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateIsDelayed, OnUpdateIsDelayed)
@@ -485,7 +484,6 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionChanged, OnSelectionChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionBoundsChanged,
                         OnSelectionBoundsChanged)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_Snapshot, OnSnapshot)
 #if defined(OS_WIN)
     IPC_MESSAGE_HANDLER(ViewHostMsg_WindowlessPluginDummyWindowCreated,
                         OnWindowlessPluginDummyWindowCreated)
@@ -602,13 +600,16 @@ void RenderWidgetHostImpl::WasResized() {
   is_fullscreen_ = IsFullscreen();
   float old_overdraw_bottom_height = overdraw_bottom_height_;
   overdraw_bottom_height_ = view_->GetOverdrawBottomHeight();
+  gfx::Size old_visible_viewport_size = visible_viewport_size_;
+  visible_viewport_size_ = view_->GetVisibleViewportSize();
 
   bool size_changed = new_size != last_requested_size_;
   bool side_payload_changed =
       screen_info_out_of_date_ ||
       old_physical_backing_size != physical_backing_size_ ||
       was_fullscreen != is_fullscreen_ ||
-      old_overdraw_bottom_height != overdraw_bottom_height_;
+      old_overdraw_bottom_height != overdraw_bottom_height_ ||
+      old_visible_viewport_size != visible_viewport_size_;
 
   if (!size_changed && !side_payload_changed)
     return;
@@ -628,6 +629,7 @@ void RenderWidgetHostImpl::WasResized() {
   params.new_size = new_size;
   params.physical_backing_size = physical_backing_size_;
   params.overdraw_bottom_height = overdraw_bottom_height_;
+  params.visible_viewport_size = visible_viewport_size_;
   params.resizer_rect = GetRootWindowResizerRect();
   params.is_fullscreen = is_fullscreen_;
   if (!Send(new ViewMsg_Resize(routing_id_, params))) {
@@ -1188,24 +1190,6 @@ void RenderWidgetHostImpl::InvalidateScreenInfo() {
   screen_info_.reset();
 }
 
-void RenderWidgetHostImpl::GetSnapshotFromRenderer(
-    const gfx::Rect& src_subrect,
-    const base::Callback<void(bool, const SkBitmap&)>& callback) {
-  TRACE_EVENT0("browser", "RenderWidgetHostImpl::GetSnapshotFromRenderer");
-  if (!view_) {
-    callback.Run(false, SkBitmap());
-    return;
-  }
-
-  pending_snapshots_.push(callback);
-
-  gfx::Rect copy_rect = src_subrect.IsEmpty() ?
-      gfx::Rect(view_->GetViewBounds().size()) : src_subrect;
-
-  gfx::Rect copy_rect_in_pixel = ConvertViewRectToPixel(view_, copy_rect);
-  Send(new ViewMsg_Snapshot(GetRoutingID(), copy_rect_in_pixel));
-}
-
 void RenderWidgetHostImpl::OnSelectionChanged(const base::string16& text,
                                               size_t offset,
                                               const gfx::Range& range) {
@@ -1218,26 +1202,6 @@ void RenderWidgetHostImpl::OnSelectionBoundsChanged(
   if (view_) {
     view_->SelectionBoundsChanged(params);
   }
-}
-
-void RenderWidgetHostImpl::OnSnapshot(bool success,
-                                    const SkBitmap& bitmap) {
-  if (pending_snapshots_.size() == 0) {
-    LOG(ERROR) << "RenderWidgetHostImpl::OnSnapshot: "
-                  "Received a snapshot that was not requested.";
-    return;
-  }
-
-  base::Callback<void(bool, const SkBitmap&)> callback =
-      pending_snapshots_.front();
-  pending_snapshots_.pop();
-
-  if (!success) {
-    callback.Run(success, SkBitmap());
-    return;
-  }
-
-  callback.Run(success, bitmap);
 }
 
 void RenderWidgetHostImpl::UpdateVSyncParameters(base::TimeTicks timebase,
@@ -1549,13 +1513,6 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
   return true;
 }
 
-void RenderWidgetHostImpl::OnOverscrolled(
-    gfx::Vector2dF accumulated_overscroll,
-    gfx::Vector2dF current_fling_velocity) {
-  if (view_)
-    view_->OnOverscrolled(accumulated_overscroll, current_fling_velocity);
-}
-
 void RenderWidgetHostImpl::OnFlingingStopped() {
   if (view_)
     view_->DidStopFlinging();
@@ -1631,7 +1588,7 @@ void RenderWidgetHostImpl::DidUpdateBackingStore(
   // in the process could dispatch other window messages which could cause the
   // view to be destroyed.
   if (view_)
-    view_->MovePluginWindows(params.scroll_offset, params.plugin_window_moves);
+    view_->MovePluginWindows(params.plugin_window_moves);
 
   NotificationService::current()->Notify(
       NOTIFICATION_RENDER_WIDGET_HOST_DID_UPDATE_BACKING_STORE,
@@ -1644,23 +1601,6 @@ void RenderWidgetHostImpl::DidUpdateBackingStore(
   if (is_hidden_)
     return;
 
-  // Now paint the view. Watch out: it might be destroyed already.
-  if (view_ && !is_accelerated_compositing_active_) {
-
-    std::vector<ui::LatencyInfo> latency_info;
-    for (size_t i = 0; i < params.latency_info.size(); i++) {
-      ui::LatencyInfo info = params.latency_info[i];
-      AddLatencyInfoComponentIds(&info);
-      latency_info.push_back(info);
-    }
-
-    view_being_painted_ = true;
-    view_->DidUpdateBackingStore(params.scroll_rect, params.scroll_delta,
-                                 params.copy_rects, latency_info);
-    view_->DidReceiveRendererFrame();
-    view_being_painted_ = false;
-  }
-
   // If we got a resize ack, then perhaps we have another resize to send?
   bool is_resize_ack =
       ViewHostMsg_UpdateRect_Flags::is_resize_ack(params.flags);
@@ -1671,16 +1611,6 @@ void RenderWidgetHostImpl::DidUpdateBackingStore(
   TimeTicks now = TimeTicks::Now();
   TimeDelta delta = now - update_start;
   UMA_HISTOGRAM_TIMES("MPArch.RWH_DidUpdateBackingStore", delta);
-
-  // Measures the time from receiving the MsgUpdateRect IPC to completing the
-  // DidUpdateBackingStore() method.  On platforms which have asynchronous
-  // painting, such as Linux, this is the sum of MPArch.RWH_OnMsgUpdateRect,
-  // MPArch.RWH_DidUpdateBackingStore, and the time spent asynchronously
-  // waiting for the paint to complete.
-  //
-  // On other platforms, this will be equivalent to MPArch.RWH_OnMsgUpdateRect.
-  delta = now - paint_start;
-  UMA_HISTOGRAM_TIMES("MPArch.RWH_TotalPaintTime", delta);
 }
 
 void RenderWidgetHostImpl::OnQueueSyntheticGesture(
@@ -2070,12 +2000,17 @@ void RenderWidgetHostImpl::SetAccessibilityMode(AccessibilityMode mode) {
   Send(new ViewMsg_SetAccessibilityMode(GetRoutingID(), mode));
 }
 
+void RenderWidgetHostImpl::AccessibilitySetFocus(int object_id) {
+  Send(new AccessibilityMsg_SetFocus(GetRoutingID(), object_id));
+  view_->OnAccessibilitySetFocus(object_id);
+}
+
 void RenderWidgetHostImpl::AccessibilityDoDefaultAction(int object_id) {
   Send(new AccessibilityMsg_DoDefaultAction(GetRoutingID(), object_id));
 }
 
-void RenderWidgetHostImpl::AccessibilitySetFocus(int object_id) {
-  Send(new AccessibilityMsg_SetFocus(GetRoutingID(), object_id));
+void RenderWidgetHostImpl::AccessibilityShowMenu(int object_id) {
+  view_->AccessibilityShowMenu(object_id);
 }
 
 void RenderWidgetHostImpl::AccessibilityScrollToMakeVisible(
@@ -2096,8 +2031,22 @@ void RenderWidgetHostImpl::AccessibilitySetTextSelection(
       GetRoutingID(), object_id, start_offset, end_offset));
 }
 
-void RenderWidgetHostImpl::FatalAccessibilityTreeError() {
+bool RenderWidgetHostImpl::AccessibilityViewHasFocus() const {
+  return view_->HasFocus();
+}
+
+gfx::Rect RenderWidgetHostImpl::AccessibilityGetViewBounds() const {
+  return view_->GetViewBounds();
+}
+
+gfx::Point RenderWidgetHostImpl::AccessibilityOriginInScreen(
+    const gfx::Rect& bounds) const {
+  return view_->AccessibilityOriginInScreen(bounds);
+}
+
+void RenderWidgetHostImpl::AccessibilityFatalError() {
   Send(new AccessibilityMsg_FatalError(GetRoutingID()));
+  view_->SetBrowserAccessibilityManager(NULL);
 }
 
 #if defined(OS_WIN)

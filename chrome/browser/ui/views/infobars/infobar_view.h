@@ -11,7 +11,7 @@
 #include "components/infobars/core/infobar_container.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/views/controls/button/button.h"
-#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_types.h"
 #include "ui/views/focus/external_focus_tracker.h"
 
 namespace ui {
@@ -65,8 +65,7 @@ class InfoBarView : public infobars::InfoBar,
   // Creates a button with an infobar-specific appearance.
   // NOTE: Subclasses must ignore button presses if we're unowned.
   static views::LabelButton* CreateLabelButton(views::ButtonListener* listener,
-                                               const base::string16& text,
-                                               bool needs_elevation);
+                                               const base::string16& text);
 
   // Given |labels| and the total |available_width| to display them in, sets
   // each label's size so that the longest label shrinks until it reaches the
@@ -108,7 +107,7 @@ class InfoBarView : public infobars::InfoBar,
   // calls to RunMenu() in this case.)
   void RunMenuAt(ui::MenuModel* menu_model,
                  views::MenuButton* button,
-                 views::MenuItemView::AnchorPosition anchor);
+                 views::MenuAnchorPosition anchor);
 
  private:
   // Does the actual work for AssignWidths().  Assumes |labels| is sorted by

@@ -57,6 +57,7 @@
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "gpu/command_buffer/service/vertex_array_manager.h"
 #include "gpu/command_buffer/service/vertex_attrib_manager.h"
+#include "third_party/smhasher/src/City.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_fence.h"
 #include "ui/gl/gl_image.h"
@@ -70,9 +71,6 @@
 #if defined(OS_WIN)
 #include "base/win/win_util.h"
 #endif
-
-// TODO(zmo): we can't include "City.h" due to type def conflicts.
-extern uint64 CityHash64(const char*, size_t);
 
 namespace gpu {
 namespace gles2 {
@@ -7558,6 +7556,9 @@ error::Error GLES2DecoderImpl::HandlePixelStorei(
 error::Error GLES2DecoderImpl::HandlePostSubBufferCHROMIUM(
     uint32 immediate_data_size, const cmds::PostSubBufferCHROMIUM& c) {
   TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandlePostSubBufferCHROMIUM");
+  {
+    TRACE_EVENT_SYNTHETIC_DELAY("gpu.PresentingFrame");
+  }
   if (!supports_post_sub_buffer_) {
     LOCAL_SET_GL_ERROR(
         GL_INVALID_OPERATION,
@@ -7917,13 +7918,15 @@ const int kS3TCBlockWidth = 4;
 const int kS3TCBlockHeight = 4;
 const int kS3TCDXT1BlockSize = 8;
 const int kS3TCDXT3AndDXT5BlockSize = 16;
-const int kETC1BlockWidth = 4;
-const int kETC1BlockHeight = 4;
-const int kETC1BlockSize = 8;
 
 bool IsValidDXTSize(GLint level, GLsizei size) {
   return (size == 1) ||
          (size == 2) || !(size % kS3TCBlockWidth);
+}
+
+bool IsValidPVRTCSize(GLint level, GLsizei size) {
+  // Ensure that the size is a power of two
+  return (size & (size - 1)) == 0;
 }
 
 }  // anonymous namespace.
@@ -7934,8 +7937,10 @@ bool GLES2DecoderImpl::ValidateCompressedTexFuncData(
   unsigned int bytes_required = 0;
 
   switch (format) {
+    case GL_ATC_RGB_AMD:
     case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
-    case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT: {
+    case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
+    case GL_ETC1_RGB8_OES: {
         int num_blocks_across =
             (width + kS3TCBlockWidth - 1) / kS3TCBlockWidth;
         int num_blocks_down =
@@ -7944,6 +7949,8 @@ bool GLES2DecoderImpl::ValidateCompressedTexFuncData(
         bytes_required = num_blocks * kS3TCDXT1BlockSize;
         break;
       }
+    case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:
+    case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:
     case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
     case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT: {
         int num_blocks_across =
@@ -7954,13 +7961,14 @@ bool GLES2DecoderImpl::ValidateCompressedTexFuncData(
         bytes_required = num_blocks * kS3TCDXT3AndDXT5BlockSize;
         break;
       }
-    case GL_ETC1_RGB8_OES: {
-        int num_blocks_across =
-            (width + kETC1BlockWidth - 1) / kETC1BlockWidth;
-        int num_blocks_down =
-            (height + kETC1BlockHeight - 1) / kETC1BlockHeight;
-        int num_blocks = num_blocks_across * num_blocks_down;
-        bytes_required = num_blocks * kETC1BlockSize;
+    case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:
+    case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG: {
+        bytes_required = (std::max(width, 8) * std::max(height, 8) * 4 + 7)/8;
+        break;
+      }
+    case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:
+    case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG: {
+        bytes_required = (std::max(width, 16) * std::max(height, 8) * 2 + 7)/8;
         break;
       }
     default:
@@ -7993,7 +8001,10 @@ bool GLES2DecoderImpl::ValidateCompressedTexDimensions(
       }
       return true;
     }
-    case GL_ETC1_RGB8_OES:
+    case GL_ATC_RGB_AMD:
+    case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:
+    case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:
+    case GL_ETC1_RGB8_OES: {
       if (width <= 0 || height <= 0) {
         LOCAL_SET_GL_ERROR(
             GL_INVALID_OPERATION, function_name,
@@ -8001,6 +8012,20 @@ bool GLES2DecoderImpl::ValidateCompressedTexDimensions(
         return false;
       }
       return true;
+    }
+    case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:
+    case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:
+    case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:
+    case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG: {
+      if (!IsValidPVRTCSize(level, width) ||
+          !IsValidPVRTCSize(level, height)) {
+        LOCAL_SET_GL_ERROR(
+            GL_INVALID_OPERATION, function_name,
+            "width or height invalid for level");
+        return false;
+      }
+      return true;
+    }
     default:
       return false;
   }
@@ -8042,11 +8067,42 @@ bool GLES2DecoderImpl::ValidateCompressedTexSubDimensions(
       return ValidateCompressedTexDimensions(
           function_name, level, width, height, format);
     }
+    case GL_ATC_RGB_AMD:
+    case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:
+    case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD: {
+      LOCAL_SET_GL_ERROR(
+          GL_INVALID_OPERATION, function_name,
+          "not supported for ATC textures");
+      return false;
+    }
     case GL_ETC1_RGB8_OES: {
       LOCAL_SET_GL_ERROR(
           GL_INVALID_OPERATION, function_name,
           "not supported for ECT1_RGB8_OES textures");
       return false;
+    }
+    case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:
+    case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:
+    case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:
+    case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG: {
+      if ((xoffset != 0) || (yoffset != 0)) {
+        LOCAL_SET_GL_ERROR(
+            GL_INVALID_OPERATION, function_name,
+            "xoffset and yoffset must be zero");
+        return false;
+      }
+      GLsizei tex_width = 0;
+      GLsizei tex_height = 0;
+      if (!texture->GetLevelSize(target, level, &tex_width, &tex_height) ||
+          width != tex_width ||
+          height != tex_height) {
+        LOCAL_SET_GL_ERROR(
+            GL_INVALID_OPERATION, function_name,
+            "dimensions must match existing texture level dimensions");
+        return false;
+      }
+      return ValidateCompressedTexDimensions(
+          function_name, level, width, height, format);
     }
     default:
       return false;
@@ -9066,7 +9122,7 @@ void GLES2DecoderImpl::DoSwapBuffers() {
                "offscreen", is_offscreen,
                "frame", this_frame_number);
   {
-    TRACE_EVENT_SYNTHETIC_DELAY("gpu.SwapBuffers");
+    TRACE_EVENT_SYNTHETIC_DELAY("gpu.PresentingFrame");
   }
 
   bool is_tracing;
@@ -9892,7 +9948,8 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
   Texture* dest_texture = dest_texture_ref->texture();
   if (dest_texture->target() != GL_TEXTURE_2D ||
       (source_texture->target() != GL_TEXTURE_2D &&
-      source_texture->target() != GL_TEXTURE_EXTERNAL_OES)) {
+       source_texture->target() != GL_TEXTURE_RECTANGLE_ARB &&
+       source_texture->target() != GL_TEXTURE_EXTERNAL_OES)) {
     LOCAL_SET_GL_ERROR(GL_INVALID_VALUE,
                        "glCopyTextureCHROMIUM",
                        "invalid texture target binding");

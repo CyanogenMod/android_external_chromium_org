@@ -127,7 +127,6 @@ LOCAL_SRC_FILES := \
 	base/md5.cc \
 	base/memory/aligned_memory.cc \
 	base/memory/discardable_memory.cc \
-	base/memory/discardable_memory_allocator_android.cc \
 	base/memory/discardable_memory_android.cc \
 	base/memory/discardable_memory_emulated.cc \
 	base/memory/discardable_memory_malloc.cc \
@@ -258,7 +257,9 @@ LOCAL_SRC_FILES := \
 	base/values.cc \
 	base/value_conversions.cc \
 	base/version.cc \
-	base/vlog.cc
+	base/vlog.cc \
+	base/memory/discardable_memory_ashmem_allocator.cc \
+	base/memory/discardable_memory_ashmem.cc
 
 
 # Flags passed to both C and C++ files.

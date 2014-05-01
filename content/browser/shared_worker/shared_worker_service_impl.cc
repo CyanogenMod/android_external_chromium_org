@@ -187,10 +187,6 @@ class SharedWorkerServiceImpl::SharedWorkerReserver
                   bool (*try_increment_worker_ref_count)(int)) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     if (!try_increment_worker_ref_count(worker_process_id_)) {
-      if (!is_new_worker_) {
-        SharedWorkerDevToolsManager::GetInstance()->WorkerDestroyed(
-            worker_process_id_, worker_route_id_);
-      }
       BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, failure_cb);
       return;
     }
@@ -282,7 +278,7 @@ void SharedWorkerServiceImpl::CreateWorker(
     int route_id,
     SharedWorkerMessageFilter* filter,
     ResourceContext* resource_context,
-    const WorkerStoragePartition& partition,
+    const WorkerStoragePartitionId& partition_id,
     bool* url_mismatch) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   *url_mismatch = false;
@@ -292,7 +288,7 @@ void SharedWorkerServiceImpl::CreateWorker(
                                params.content_security_policy,
                                params.security_policy_type,
                                resource_context,
-                               partition));
+                               partition_id));
   scoped_ptr<SharedWorkerPendingInstance::SharedWorkerPendingRequest> request(
       new SharedWorkerPendingInstance::SharedWorkerPendingRequest(
           filter,
@@ -565,10 +561,8 @@ void SharedWorkerServiceImpl::RenderProcessReserveFailedCallback(
     int worker_process_id,
     int worker_route_id,
     bool is_new_worker) {
-  if (scoped_ptr<SharedWorkerHost> host = worker_hosts_.take_and_erase(
-          std::make_pair(worker_process_id, worker_route_id))) {
-    host->set_fast_shutdown_detected();
-  }
+  worker_hosts_.take_and_erase(
+      std::make_pair(worker_process_id, worker_route_id));
   scoped_ptr<SharedWorkerPendingInstance> pending_instance =
       pending_instances_.take_and_erase(pending_instance_id);
   if (!pending_instance)

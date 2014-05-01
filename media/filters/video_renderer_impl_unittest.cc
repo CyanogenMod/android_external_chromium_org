@@ -26,6 +26,7 @@
 
 using ::testing::_;
 using ::testing::AnyNumber;
+using ::testing::AtLeast;
 using ::testing::InSequence;
 using ::testing::Invoke;
 using ::testing::NiceMock;
@@ -88,8 +89,8 @@ class VideoRendererImplTest : public ::testing::Test {
 
     InSequence s;
 
-    EXPECT_CALL(*decoder_, Initialize(_, _))
-        .WillOnce(RunCallback<1>(PIPELINE_OK));
+    EXPECT_CALL(*decoder_, Initialize(_, _, _))
+        .WillOnce(RunCallback<2>(PIPELINE_OK));
 
     // Set playback rate before anything else happens.
     renderer_->SetPlaybackRate(1.0f);
@@ -108,6 +109,7 @@ class VideoRendererImplTest : public ::testing::Test {
   void CallInitialize(const PipelineStatusCB& status_cb) {
     renderer_->Initialize(
         &demuxer_stream_,
+        false,
         status_cb,
         base::Bind(&MockStatisticsCB::OnStatistics,
                    base::Unretained(&statistics_cb_object_)),
@@ -372,8 +374,8 @@ static void ExpectNotCalled(PipelineStatus) {
 }
 
 TEST_F(VideoRendererImplTest, StopWhileInitializing) {
-  EXPECT_CALL(*decoder_, Initialize(_, _))
-      .WillOnce(RunCallback<1>(PIPELINE_OK));
+  EXPECT_CALL(*decoder_, Initialize(_, _, _))
+      .WillOnce(RunCallback<2>(PIPELINE_OK));
   CallInitialize(base::Bind(&ExpectNotCalled));
   Stop();
 
@@ -504,7 +506,7 @@ TEST_F(VideoRendererImplTest, Rebuffer) {
 
   // TODO(scherkus): We shouldn't display the next ready frame in a rebuffer
   // situation, see http://crbug.com/365516
-  EXPECT_CALL(mock_display_cb_, Display(HasTimestamp(40)));
+  EXPECT_CALL(mock_display_cb_, Display(_)).Times(AtLeast(1));
 
   event.RunAndWaitForStatus(PIPELINE_OK);
 
@@ -529,7 +531,7 @@ TEST_F(VideoRendererImplTest, Rebuffer_AlreadyHaveEnoughFrames) {
 
   // TODO(scherkus): We shouldn't display the next ready frame in a rebuffer
   // situation, see http://crbug.com/365516
-  EXPECT_CALL(mock_display_cb_, Display(HasTimestamp(10)));
+  EXPECT_CALL(mock_display_cb_, Display(_)).Times(AtLeast(1));
 
   WaitableMessageLoopEvent event;
   renderer_->Preroll(kNoTimestamp(),
@@ -610,8 +612,8 @@ TEST_F(VideoRendererImplTest, AbortPendingRead_Preroll) {
 TEST_F(VideoRendererImplTest, VideoDecoder_InitFailure) {
   InSequence s;
 
-  EXPECT_CALL(*decoder_, Initialize(_, _))
-      .WillOnce(RunCallback<1>(DECODER_ERROR_NOT_SUPPORTED));
+  EXPECT_CALL(*decoder_, Initialize(_, _, _))
+      .WillOnce(RunCallback<2>(DECODER_ERROR_NOT_SUPPORTED));
   InitializeRenderer(DECODER_ERROR_NOT_SUPPORTED);
 
   Stop();

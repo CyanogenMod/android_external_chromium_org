@@ -6,17 +6,22 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "base/win/windows_version.h"
+#include "chrome/browser/ui/views/status_icons/status_tray_win.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/icon_util.h"
 #include "ui/gfx/point.h"
-#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/gfx/rect.h"
 #include "ui/views/controls/menu/menu_runner.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // StatusIconWin, public:
 
-StatusIconWin::StatusIconWin(UINT id, HWND window, UINT message)
-    : icon_id_(id),
+StatusIconWin::StatusIconWin(StatusTrayWin* tray,
+                             UINT id,
+                             HWND window,
+                             UINT message)
+    : tray_(tray),
+      icon_id_(id),
       window_(window),
       message_id_(message),
       menu_model_(NULL) {
@@ -56,9 +61,12 @@ void StatusIconWin::HandleClickEvent(const gfx::Point& cursor_pos,
 
   menu_runner_.reset(new views::MenuRunner(menu_model_));
 
-  ignore_result(menu_runner_->RunMenuAt(NULL, NULL,
-      gfx::Rect(cursor_pos, gfx::Size()), views::MenuItemView::TOPLEFT,
-      ui::MENU_SOURCE_MOUSE, views::MenuRunner::HAS_MNEMONICS));
+  ignore_result(menu_runner_->RunMenuAt(NULL,
+                                        NULL,
+                                        gfx::Rect(cursor_pos, gfx::Size()),
+                                        views::MENU_ANCHOR_TOPLEFT,
+                                        ui::MENU_SOURCE_MOUSE,
+                                        views::MenuRunner::HAS_MNEMONICS));
 }
 
 void StatusIconWin::HandleBalloonClickEvent() {
@@ -140,6 +148,10 @@ void StatusIconWin::DisplayBalloon(const gfx::ImageSkia& icon,
   BOOL result = Shell_NotifyIcon(NIM_MODIFY, &icon_data);
   if (!result)
     LOG(WARNING) << "Unable to create status tray balloon.";
+}
+
+void StatusIconWin::ForceVisible() {
+  tray_->UpdateIconVisibilityInBackground(this);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

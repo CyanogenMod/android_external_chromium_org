@@ -21,8 +21,10 @@
 
 #include "base/at_exit.h"
 #include "base/command_line.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/global_descriptors.h"
@@ -32,16 +34,14 @@
 #include "base/rand_util.h"
 #include "components/nacl/common/nacl_switches.h"
 #include "components/nacl/loader/nacl_listener.h"
-#include "components/nacl/loader/nacl_sandbox_linux.h"
-#include "components/nacl/loader/nonsfi/nonsfi_sandbox.h"
+#include "components/nacl/loader/nonsfi/irt_exception_handling.h"
+#include "components/nacl/loader/sandbox_linux/nacl_sandbox_linux.h"
+#include "content/public/common/content_descriptors.h"
 #include "content/public/common/zygote_fork_delegate_linux.h"
 #include "crypto/nss_util.h"
 #include "ipc/ipc_descriptors.h"
 #include "ipc/ipc_switches.h"
-#include "sandbox/linux/services/credentials.h"
 #include "sandbox/linux/services/libc_urandom_override.h"
-#include "sandbox/linux/services/thread_helpers.h"
-#include "sandbox/linux/suid/client/setuid_sandbox_client.h"
 
 namespace {
 
@@ -50,83 +50,54 @@ struct NaClLoaderSystemInfo {
   long number_of_cores;
 };
 
-// This is a poor man's check on whether we are sandboxed.
-bool IsSandboxed() {
-  int proc_fd = open("/proc/self/exe", O_RDONLY);
-  if (proc_fd >= 0) {
-    close(proc_fd);
-    return false;
-  }
-  return true;
-}
-
-void InitializeLayerOneSandbox() {
-  // Check that IsSandboxed() works. We should not be sandboxed at this point.
-  CHECK(!IsSandboxed()) << "Unexpectedly sandboxed!";
-  scoped_ptr<sandbox::SetuidSandboxClient>
-      setuid_sandbox_client(sandbox::SetuidSandboxClient::Create());
-  PCHECK(0 == IGNORE_EINTR(close(
-                  setuid_sandbox_client->GetUniqueToChildFileDescriptor())));
-  const bool suid_sandbox_child = setuid_sandbox_client->IsSuidSandboxChild();
-  const bool is_init_process = 1 == getpid();
-  CHECK_EQ(is_init_process, suid_sandbox_child);
-
-  if (suid_sandbox_child) {
-    // Make sure that no directory file descriptor is open, as it would bypass
-    // the setuid sandbox model.
-    sandbox::Credentials credentials;
-    CHECK(!credentials.HasOpenDirectory(-1));
-
-    // Get sandboxed.
-    CHECK(setuid_sandbox_client->ChrootMe());
-    CHECK(IsSandboxed());
-  }
-}
-
-void InitializeLayerTwoSandbox(bool uses_nonsfi_mode) {
-  if (uses_nonsfi_mode) {
-    const bool can_be_no_sandbox = CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kNaClDangerousNoSandboxNonSfi);
-    const bool setuid_sandbox_enabled = IsSandboxed();
-    if (!setuid_sandbox_enabled) {
-      if (can_be_no_sandbox)
-        LOG(ERROR) << "DANGEROUS: Running non-SFI NaCl without SUID sandbox!";
-      else
-        LOG(FATAL) << "SUID sandbox is mandatory for non-SFI NaCl";
-    }
-    const bool bpf_sandbox_initialized = nacl::nonsfi::InitializeBPFSandbox();
-    if (!bpf_sandbox_initialized) {
-      if (can_be_no_sandbox) {
-        LOG(ERROR)
-            << "DANGEROUS: Running non-SFI NaCl without seccomp-bpf sandbox!";
-      } else {
-        LOG(FATAL) << "Could not initialize NaCl's second "
-                   << "layer sandbox (seccomp-bpf) for non-SFI mode.";
-      }
-    }
-  } else {
-    const bool bpf_sandbox_initialized = InitializeBPFSandbox();
-    if (!bpf_sandbox_initialized) {
-      LOG(ERROR) << "Could not initialize NaCl's second "
-                 << "layer sandbox (seccomp-bpf) for SFI mode.";
-    }
-  }
+// Replace |file_descriptor| with the reading end of a closed pipe.
+void ReplaceFDWithDummy(int file_descriptor) {
+  // Make sure that file_descriptor is an open descriptor.
+  PCHECK(-1 != fcntl(file_descriptor, F_GETFD, 0));
+  int pipefd[2];
+  PCHECK(0 == pipe(pipefd));
+  PCHECK(-1 != dup2(pipefd[0], file_descriptor));
+  PCHECK(0 == IGNORE_EINTR(close(pipefd[0])));
+  PCHECK(0 == IGNORE_EINTR(close(pipefd[1])));
 }
 
 // The child must mimic the behavior of zygote_main_linux.cc on the child
 // side of the fork. See zygote_main_linux.cc:HandleForkRequest from
 //   if (!child) {
-void BecomeNaClLoader(const std::vector<int>& child_fds,
+void BecomeNaClLoader(base::ScopedFD browser_fd,
                       const NaClLoaderSystemInfo& system_info,
-                      bool uses_nonsfi_mode) {
+                      bool uses_nonsfi_mode,
+                      nacl::NaClSandbox* nacl_sandbox) {
+  DCHECK(nacl_sandbox);
   VLOG(1) << "NaCl loader: setting up IPC descriptor";
-  // don't need zygote FD any more
-  if (IGNORE_EINTR(close(kNaClZygoteDescriptor)) != 0)
-    LOG(ERROR) << "close(kNaClZygoteDescriptor) failed.";
-  InitializeLayerTwoSandbox(uses_nonsfi_mode);
-  base::GlobalDescriptors::GetInstance()->Set(
-      kPrimaryIPCChannel,
-      child_fds[content::ZygoteForkDelegate::kBrowserFDIndex]);
+  // Close or shutdown IPC channels that we don't need anymore.
+  PCHECK(0 == IGNORE_EINTR(close(kNaClZygoteDescriptor)));
+  // In Non-SFI mode, it's important to close any non-expected IPC channels.
+  if (uses_nonsfi_mode) {
+    // The low-level kSandboxIPCChannel is used by renderers and NaCl for
+    // various operations. See the LinuxSandbox::METHOD_* methods. NaCl uses
+    // LinuxSandbox::METHOD_MAKE_SHARED_MEMORY_SEGMENT in SFI mode, so this
+    // should only be closed in Non-SFI mode.
+    // This file descriptor is insidiously used by a number of APIs. Closing it
+    // could lead to difficult to debug issues. Instead of closing it, replace
+    // it with a dummy.
+    const int sandbox_ipc_channel =
+        base::GlobalDescriptors::kBaseDescriptor + kSandboxIPCChannel;
+
+    ReplaceFDWithDummy(sandbox_ipc_channel);
+
+    // Install crash signal handlers before disallowing system calls.
+    nacl::nonsfi::InitializeSignalHandler();
+  }
+
+  // Finish layer-1 sandbox initialization and initialize the layer-2 sandbox.
+  CHECK(!nacl_sandbox->HasOpenDirectory());
+  nacl_sandbox->InitializeLayerTwoSandbox(uses_nonsfi_mode);
+  nacl_sandbox->SealLayerOneSandbox();
+  nacl_sandbox->CheckSandboxingStateWithPolicy();
+
+  base::GlobalDescriptors::GetInstance()->Set(kPrimaryIPCChannel,
+                                              browser_fd.release());
 
   base::MessageLoopForIO main_message_loop;
   NaClListener listener;
@@ -138,21 +109,21 @@ void BecomeNaClLoader(const std::vector<int>& child_fds,
 }
 
 // Start the NaCl loader in a child created by the NaCl loader Zygote.
-void ChildNaClLoaderInit(const std::vector<int>& child_fds,
+void ChildNaClLoaderInit(ScopedVector<base::ScopedFD> child_fds,
                          const NaClLoaderSystemInfo& system_info,
                          bool uses_nonsfi_mode,
+                         nacl::NaClSandbox* nacl_sandbox,
                          const std::string& channel_id) {
-  const int parent_fd = child_fds[content::ZygoteForkDelegate::kParentFDIndex];
-  const int dummy_fd = child_fds[content::ZygoteForkDelegate::kDummyFDIndex];
-
   bool validack = false;
   base::ProcessId real_pid;
   // Wait until the parent process has discovered our PID.  We
   // should not fork any child processes (which the seccomp
   // sandbox does) until then, because that can interfere with the
   // parent's discovery of our PID.
-  const ssize_t nread =
-      HANDLE_EINTR(read(parent_fd, &real_pid, sizeof(real_pid)));
+  const ssize_t nread = HANDLE_EINTR(
+      read(child_fds[content::ZygoteForkDelegate::kParentFDIndex]->get(),
+           &real_pid,
+           sizeof(real_pid)));
   if (static_cast<size_t>(nread) == sizeof(real_pid)) {
     // Make sure the parent didn't accidentally send us our real PID.
     // We don't want it to be discoverable anywhere in our address space
@@ -168,12 +139,13 @@ void ChildNaClLoaderInit(const std::vector<int>& child_fds,
     LOG(ERROR) << "read returned " << nread;
   }
 
-  if (IGNORE_EINTR(close(dummy_fd)) != 0)
-    LOG(ERROR) << "close(dummy_fd) failed";
-  if (IGNORE_EINTR(close(parent_fd)) != 0)
-    LOG(ERROR) << "close(parent_fd) failed";
+  base::ScopedFD browser_fd(
+      child_fds[content::ZygoteForkDelegate::kBrowserFDIndex]->Pass());
+  child_fds.clear();
+
   if (validack) {
-    BecomeNaClLoader(child_fds, system_info, uses_nonsfi_mode);
+    BecomeNaClLoader(
+        browser_fd.Pass(), system_info, uses_nonsfi_mode, nacl_sandbox);
   } else {
     LOG(ERROR) << "Failed to synch with zygote";
   }
@@ -183,8 +155,9 @@ void ChildNaClLoaderInit(const std::vector<int>& child_fds,
 // Handle a fork request from the Zygote.
 // Some of this code was lifted from
 // content/browser/zygote_main_linux.cc:ForkWithRealPid()
-bool HandleForkRequest(const std::vector<int>& child_fds,
+bool HandleForkRequest(ScopedVector<base::ScopedFD> child_fds,
                        const NaClLoaderSystemInfo& system_info,
+                       nacl::NaClSandbox* nacl_sandbox,
                        PickleIterator* input_iter,
                        Pickle* output_pickle) {
   bool uses_nonsfi_mode;
@@ -212,17 +185,18 @@ bool HandleForkRequest(const std::vector<int>& child_fds,
   }
 
   if (child_pid == 0) {
-    ChildNaClLoaderInit(child_fds, system_info, uses_nonsfi_mode, channel_id);
+    ChildNaClLoaderInit(child_fds.Pass(),
+                        system_info,
+                        uses_nonsfi_mode,
+                        nacl_sandbox,
+                        channel_id);
     NOTREACHED();
   }
 
   // I am the parent.
   // First, close the dummy_fd so the sandbox won't find me when
   // looking for the child's pid in /proc. Also close other fds.
-  for (size_t i = 0; i < child_fds.size(); i++) {
-    if (IGNORE_EINTR(close(child_fds[i])) != 0)
-      LOG(ERROR) << "close(child_fds[i]) failed";
-  }
+  child_fds.clear();
   VLOG(1) << "nacl_helper: child_pid is " << child_pid;
 
   // Now send child_pid (eventually -1 if fork failed) to the Chrome Zygote.
@@ -265,16 +239,20 @@ bool HandleGetTerminationStatusRequest(PickleIterator* input_iter,
 // Reply to the command on |reply_fds|.
 bool HonorRequestAndReply(int reply_fd,
                           int command_type,
-                          const std::vector<int>& attached_fds,
+                          ScopedVector<base::ScopedFD> attached_fds,
                           const NaClLoaderSystemInfo& system_info,
+                          nacl::NaClSandbox* nacl_sandbox,
                           PickleIterator* input_iter) {
   Pickle write_pickle;
   bool have_to_reply = false;
   // Commands must write anything to send back to |write_pickle|.
   switch (command_type) {
     case nacl::kNaClForkRequest:
-      have_to_reply = HandleForkRequest(attached_fds, system_info,
-                                        input_iter, &write_pickle);
+      have_to_reply = HandleForkRequest(attached_fds.Pass(),
+                                        system_info,
+                                        nacl_sandbox,
+                                        input_iter,
+                                        &write_pickle);
       break;
     case nacl::kNaClGetTerminationStatusRequest:
       have_to_reply =
@@ -298,14 +276,15 @@ bool HonorRequestAndReply(int reply_fd,
 // Read a request from the Zygote from |zygote_ipc_fd| and handle it.
 // Die on EOF from |zygote_ipc_fd|.
 bool HandleZygoteRequest(int zygote_ipc_fd,
-                         const NaClLoaderSystemInfo& system_info) {
-  std::vector<int> fds;
+                         const NaClLoaderSystemInfo& system_info,
+                         nacl::NaClSandbox* nacl_sandbox) {
+  ScopedVector<base::ScopedFD> fds;
   char buf[kNaClMaxIPCMessageLength];
   const ssize_t msglen = UnixDomainSocket::RecvMsg(zygote_ipc_fd,
       &buf, sizeof(buf), &fds);
   // If the Zygote has started handling requests, we should be sandboxed via
   // the setuid sandbox.
-  if (!IsSandboxed()) {
+  if (!nacl_sandbox->layer_one_enabled()) {
     LOG(ERROR) << "NaCl helper process running without a sandbox!\n"
       << "Most likely you need to configure your SUID sandbox "
       << "correctly";
@@ -326,7 +305,11 @@ bool HandleZygoteRequest(int zygote_ipc_fd,
     LOG(ERROR) << "Unable to read command from Zygote";
     return false;
   }
-  return HonorRequestAndReply(zygote_ipc_fd, command_type, fds, system_info,
+  return HonorRequestAndReply(zygote_ipc_fd,
+                              command_type,
+                              fds.Pass(),
+                              system_info,
+                              nacl_sandbox,
                               &read_iter);
 }
 
@@ -444,13 +427,16 @@ int main(int argc, char* argv[]) {
 
   CheckRDebug(argv[0]);
 
+  scoped_ptr<nacl::NaClSandbox> nacl_sandbox(new nacl::NaClSandbox);
   // Make sure that the early initialization did not start any spurious
   // threads.
 #if !defined(THREAD_SANITIZER)
-  CHECK(sandbox::ThreadHelpers::IsSingleThreaded(-1));
+  CHECK(nacl_sandbox->IsSingleThreaded());
 #endif
 
-  InitializeLayerOneSandbox();
+  const bool is_init_process = 1 == getpid();
+  nacl_sandbox->InitializeLayerOneSandbox();
+  CHECK_EQ(is_init_process, nacl_sandbox->layer_one_enabled());
 
   const std::vector<int> empty;
   // Send the zygote a message to let it know we are ready to help
@@ -462,8 +448,8 @@ int main(int argc, char* argv[]) {
 
   // Now handle requests from the Zygote.
   while (true) {
-    bool request_handled = HandleZygoteRequest(kNaClZygoteDescriptor,
-                                               system_info);
+    bool request_handled = HandleZygoteRequest(
+        kNaClZygoteDescriptor, system_info, nacl_sandbox.get());
     // Do not turn this into a CHECK() without thinking about robustness
     // against malicious IPC requests.
     DCHECK(request_handled);

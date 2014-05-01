@@ -1,4 +1,5 @@
 [
+  "accessibility_unittests",
   "app_list_unittests",
   "base_unittests",
   {
@@ -13,6 +14,7 @@
   "content_unittests",
   "crypto_unittests",
   "device_unittests",
+  "events_unittests",
   "gcm_unit_tests",
   "gfx_unittests",
   "google_apis_unittests",
@@ -23,6 +25,10 @@
   },
   "ipc_tests",
   "jingle_unittests",
+  {
+    "test": "keyboard_unittests",
+    "platforms": ["linux", "win"]
+  },
   "media_unittests",
   "message_center_unittests",
   "mojo_apps_js_unittests",
@@ -51,5 +57,14 @@
     "test": "sandbox_linux_unittests",
     "platforms": ["linux"],
     "args": ["--test-launcher-print-test-stdio=always"]
+  },
+  {
+    "test": "views_unittests",
+    "platforms": ["win"]
+  },
+  {
+    "test": "views_unittests",
+    "platforms": ["linux"],
+    "chromium_configs": ["chromium_chromeos", "chromium_chromeos_clang"]
   }
 ]

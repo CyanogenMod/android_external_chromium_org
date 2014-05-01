@@ -362,13 +362,16 @@ void MediaStreamVideoSource::RemoveTrack(MediaStreamVideoTrack* video_track) {
 void MediaStreamVideoSource::DoStopSource() {
   DCHECK(CalledOnValidThread());
   DVLOG(3) << "DoStopSource()";
+  if (state_ == ENDED)
+    return;
   StopSourceImpl();
   state_ = ENDED;
   SetReadyState(blink::WebMediaStreamSource::ReadyStateEnded);
 }
 
 void MediaStreamVideoSource::DeliverVideoFrame(
-    const scoped_refptr<media::VideoFrame>& frame) {
+    const scoped_refptr<media::VideoFrame>& frame,
+    const media::VideoCaptureFormat& format) {
   DCHECK(CalledOnValidThread());
   scoped_refptr<media::VideoFrame> video_frame(frame);
 

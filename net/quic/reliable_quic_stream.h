@@ -36,8 +36,6 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
 
   virtual ~ReliableQuicStream();
 
-  bool WillAcceptStreamFrame(const QuicStreamFrame& frame) const;
-
   // Called when a (potentially duplicate) stream frame has been received
   // for this stream.  Returns false if this frame can not be accepted
   // because there is too much data already buffered.
@@ -93,9 +91,6 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
 
   // Adjust our flow control windows according to new offset in |frame|.
   virtual void OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame);
-
-  // Updates our send window offset (if offset larger).
-  void UpdateFlowControlSendLimit(QuicStreamOffset offset);
 
   // If our receive window has dropped below the threshold, then send a
   // WINDOW_UPDATE frame. This is called whenever bytes are consumed from the

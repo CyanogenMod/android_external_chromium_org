@@ -16,6 +16,7 @@ import android.widget.Toast;
 import org.chromium.net.HttpUrlRequest;
 import org.chromium.net.HttpUrlRequestFactory;
 import org.chromium.net.HttpUrlRequestListener;
+import org.chromium.net.LibraryLoader;
 import org.chromium.net.UrlRequest;
 import org.chromium.net.UrlRequestContext;
 import org.chromium.net.UrlRequestPriority;
@@ -86,6 +87,12 @@ public class CronetSampleActivity extends Activity {
 
     class SampleHttpUrlRequestListener implements HttpUrlRequestListener {
         public SampleHttpUrlRequestListener() {
+        }
+
+        @Override
+        public void onResponseStarted(HttpUrlRequest request) {
+            Log.i(TAG, "****** Response Started, content length is "
+                    + request.getContentLength());
         }
 
         @Override

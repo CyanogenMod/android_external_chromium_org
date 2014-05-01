@@ -33,14 +33,6 @@
 #include "ui/gfx/text_utils.h"
 #include "ui/native_theme/native_theme.h"
 
-#if defined(OS_WIN)
-#include "ui/native_theme/native_theme_win.h"
-#endif
-
-#if defined(USE_AURA)
-#include "ui/native_theme/native_theme_aura.h"
-#endif
-
 using ui::NativeTheme;
 
 namespace {
@@ -134,8 +126,8 @@ OmniboxResultView::OmniboxResultView(OmniboxPopupContentsView* model,
                                      int model_index,
                                      LocationBarView* location_bar_view,
                                      const gfx::FontList& font_list)
-    : edge_item_padding_(LocationBarView::GetItemPadding()),
-      item_padding_(LocationBarView::GetItemPadding()),
+    : edge_item_padding_(LocationBarView::kItemPadding),
+      item_padding_(LocationBarView::kItemPadding),
       minimum_text_vertical_padding_(kMinimumTextVerticalPadding),
       model_(model),
       model_index_(model_index),

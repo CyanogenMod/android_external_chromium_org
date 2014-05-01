@@ -10,7 +10,9 @@
 #include "base/prefs/testing_pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/password_manager/core/browser/mock_password_manager_driver.h"
 #include "components/password_manager/core/browser/mock_password_store.h"
+#include "components/password_manager/core/browser/password_autofill_manager.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/password_manager/core/browser/password_manager_driver.h"
 #include "components/password_manager/core/browser/password_store.h"
@@ -46,19 +48,6 @@ class MockPasswordManagerClient : public StubPasswordManagerClient {
   MOCK_METHOD0(GetDriver, PasswordManagerDriver*());
 };
 
-class MockPasswordManagerDriver : public PasswordManagerDriver {
- public:
-  MOCK_METHOD1(FillPasswordForm, void(const autofill::PasswordFormFillData&));
-  MOCK_METHOD0(DidLastPageLoadEncounterSSLErrors, bool());
-  MOCK_METHOD0(IsOffTheRecord, bool());
-  MOCK_METHOD0(GetPasswordGenerationManager, PasswordGenerationManager*());
-  MOCK_METHOD0(GetPasswordManager, PasswordManager*());
-  MOCK_METHOD0(GetAutofillManager, autofill::AutofillManager*());
-  MOCK_METHOD1(AllowPasswordGenerationForForm, void(autofill::PasswordForm*));
-  MOCK_METHOD1(AccountCreationFormsFound,
-               void(const std::vector<autofill::FormData>&));
-};
-
 ACTION_P(InvokeConsumer, forms) { arg0->OnGetPasswordStoreResults(forms); }
 
 ACTION_P(SaveToScopedPtr, scoped) { scoped->reset(arg0); }
@@ -68,10 +57,6 @@ class TestPasswordManager : public PasswordManager {
   explicit TestPasswordManager(PasswordManagerClient* client)
       : PasswordManager(client) {}
   virtual ~TestPasswordManager() {}
-
-  virtual void OnPasswordFormSubmitted(const PasswordForm& form) OVERRIDE {
-    PasswordManager::OnPasswordFormSubmitted(form);
-  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestPasswordManager);
@@ -93,6 +78,8 @@ class PasswordManagerTest : public testing::Test {
     EXPECT_CALL(client_, GetDriver()).WillRepeatedly(Return(&driver_));
 
     manager_.reset(new TestPasswordManager(&client_));
+    password_autofill_manager_.reset(
+        new PasswordAutofillManager(&client_, NULL));
 
     EXPECT_CALL(driver_, DidLastPageLoadEncounterSSLErrors())
         .WillRepeatedly(Return(false));
@@ -102,6 +89,8 @@ class PasswordManagerTest : public testing::Test {
     EXPECT_CALL(driver_, GetPasswordManager())
         .WillRepeatedly(Return(manager_.get()));
     EXPECT_CALL(driver_, AllowPasswordGenerationForForm(_)).Times(AnyNumber());
+    EXPECT_CALL(driver_, GetPasswordAutofillManager())
+        .WillRepeatedly(Return(password_autofill_manager_.get()));
 
     EXPECT_CALL(*store_, ReportMetricsImpl()).Times(AnyNumber());
   }
@@ -198,6 +187,7 @@ class PasswordManagerTest : public testing::Test {
   scoped_refptr<MockPasswordStore> store_;
   MockPasswordManagerClient client_;
   MockPasswordManagerDriver driver_;
+  scoped_ptr<PasswordAutofillManager> password_autofill_manager_;
   scoped_ptr<TestPasswordManager> manager_;
   PasswordForm submitted_form_;
 };

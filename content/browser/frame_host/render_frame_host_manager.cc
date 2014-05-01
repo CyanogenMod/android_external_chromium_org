@@ -78,7 +78,9 @@ RenderFrameHostManager::RenderFrameHostManager(
       render_widget_delegate_(render_widget_delegate),
       interstitial_page_(NULL),
       cross_process_frame_connector_(NULL),
-      weak_factory_(this) {}
+      weak_factory_(this) {
+  DCHECK(frame_tree_node_);
+}
 
 RenderFrameHostManager::~RenderFrameHostManager() {
   if (pending_render_frame_host_)
@@ -164,8 +166,7 @@ RenderFrameHostImpl* RenderFrameHostManager::Navigate(
     const NavigationEntryImpl& entry) {
   TRACE_EVENT0("browser", "RenderFrameHostManager:Navigate");
   // Create a pending RenderFrameHost to use for the navigation.
-  RenderFrameHostImpl* dest_render_frame_host =
-      UpdateRendererStateForNavigate(entry);
+  RenderFrameHostImpl* dest_render_frame_host = UpdateStateForNavigate(entry);
   if (!dest_render_frame_host)
     return NULL;  // We weren't able to create a pending render frame host.
 
@@ -896,9 +897,7 @@ int RenderFrameHostManager::CreateRenderFrame(
   // remove it from the list of swapped out hosts if it commits.
   RenderFrameProxyHost* proxy = GetRenderFrameProxyHost(instance);
 
-  FrameTreeNode* parent_node = NULL;
-  if (frame_tree_node_)
-    parent_node = frame_tree_node_->parent();
+  FrameTreeNode* parent_node = frame_tree_node_->parent();
 
   if (proxy) {
     routing_id = proxy->render_view_host()->GetRoutingID();
@@ -1168,7 +1167,7 @@ void RenderFrameHostManager::ShutdownRenderFrameHostsInSiteInstance(
   }
 }
 
-RenderFrameHostImpl* RenderFrameHostManager::UpdateRendererStateForNavigate(
+RenderFrameHostImpl* RenderFrameHostManager::UpdateStateForNavigate(
     const NavigationEntryImpl& entry) {
   // If we are currently navigating cross-process, we want to get back to normal
   // and then navigate as usual.

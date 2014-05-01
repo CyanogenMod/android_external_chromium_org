@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/ui/views/elevation_icon_setter.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
@@ -32,6 +33,8 @@ ConfirmInfoBar::ConfirmInfoBar(scoped_ptr<ConfirmInfoBarDelegate> delegate)
 }
 
 ConfirmInfoBar::~ConfirmInfoBar() {
+  // Ensure |elevation_icon_setter_| is destroyed before |ok_button_|.
+  elevation_icon_setter_.reset();
 }
 
 void ConfirmInfoBar::Layout() {
@@ -66,16 +69,17 @@ void ConfirmInfoBar::ViewHierarchyChanged(
     AddChildView(label_);
 
     if (delegate->GetButtons() & ConfirmInfoBarDelegate::BUTTON_OK) {
-      ok_button_ = CreateLabelButton(this,
-          delegate->GetButtonLabel(ConfirmInfoBarDelegate::BUTTON_OK),
-          delegate->NeedElevation(ConfirmInfoBarDelegate::BUTTON_OK));
+      ok_button_ = CreateLabelButton(
+          this, delegate->GetButtonLabel(ConfirmInfoBarDelegate::BUTTON_OK));
+      if (delegate->OKButtonTriggersUACPrompt())
+        elevation_icon_setter_.reset(new ElevationIconSetter(ok_button_));
       AddChildView(ok_button_);
     }
 
     if (delegate->GetButtons() & ConfirmInfoBarDelegate::BUTTON_CANCEL) {
-      cancel_button_ = CreateLabelButton(this,
-          delegate->GetButtonLabel(ConfirmInfoBarDelegate::BUTTON_CANCEL),
-          delegate->NeedElevation(ConfirmInfoBarDelegate::BUTTON_CANCEL));
+      cancel_button_ = CreateLabelButton(
+          this,
+          delegate->GetButtonLabel(ConfirmInfoBarDelegate::BUTTON_CANCEL));
       AddChildView(cancel_button_);
     }
 

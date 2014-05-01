@@ -4,6 +4,7 @@
 
 #include "chrome/browser/component_updater/url_fetcher_downloader.h"
 
+#include "base/logging.h"
 #include "chrome/browser/component_updater/component_updater_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/load_flags.h"
@@ -17,9 +18,8 @@ namespace component_updater {
 UrlFetcherDownloader::UrlFetcherDownloader(
     scoped_ptr<CrxDownloader> successor,
     net::URLRequestContextGetter* context_getter,
-    scoped_refptr<base::SequencedTaskRunner> task_runner,
-    const DownloadCallback& download_callback)
-    : CrxDownloader(successor.Pass(), download_callback),
+    scoped_refptr<base::SequencedTaskRunner> task_runner)
+    : CrxDownloader(successor.Pass()),
       context_getter_(context_getter),
       task_runner_(task_runner),
       downloaded_bytes_(-1),
@@ -43,6 +43,7 @@ void UrlFetcherDownloader::DoStartDownload(const GURL& url) {
   url_fetcher_->SetAutomaticallyRetryOn5xx(false);
   url_fetcher_->SaveResponseToTemporaryFile(task_runner_);
 
+  VLOG(1) << "Starting background download: " << url.spec();
   url_fetcher_->Start();
 
   download_start_time_ = base::Time::Now();
@@ -79,6 +80,12 @@ void UrlFetcherDownloader::OnURLFetchComplete(const net::URLFetcher* source) {
   download_metrics.bytes_total = total_bytes_;
   download_metrics.download_time_ms = download_time.InMilliseconds();
 
+  base::FilePath local_path_;
+  source->GetResponseAsFilePath(false, &local_path_);
+  VLOG(1) << "Downloaded " << downloaded_bytes_ << " bytes in "
+          << download_time.InMilliseconds() << "ms from "
+          << source->GetURL().spec()
+          << " to " << local_path_.value();
   CrxDownloader::OnDownloadComplete(is_handled, result, download_metrics);
 }
 

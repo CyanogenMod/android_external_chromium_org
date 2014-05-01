@@ -20,9 +20,11 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_accessibility_ax_gen_gyp,,,$(GYP_VAR_PREFIX))/ui_accessibility_ax_gen_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_base_ui_base_gyp,,,$(GYP_VAR_PREFIX))/ui_base_ui_base_gyp.a \
 	$(call intermediates-dir-for,GYP,ui_resources_ui_resources_gyp,,,$(GYP_VAR_PREFIX))/ui_resources.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_service_worker_database_proto_gyp,,,$(GYP_VAR_PREFIX))/content_browser_service_worker_database_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_speech_proto_speech_proto_gyp,,,$(GYP_VAR_PREFIX))/content_browser_speech_proto_speech_proto_gyp.a \
 	$(call intermediates-dir-for,GYP,content_browser_devtools_devtools_resources_gyp,,,$(GYP_VAR_PREFIX))/devtools_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_mojo_bindings_gyp,,,$(GYP_VAR_PREFIX))/content_content_common_mojo_bindings_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_shell_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_shell_bindings_gyp.a \
 	$(call intermediates-dir-for,GYP,webkit_webkit_resources_gyp,,,$(GYP_VAR_PREFIX))/webkit_resources.stamp \
 	$(call intermediates-dir-for,GYP,webkit_webkit_strings_gyp,,,$(GYP_VAR_PREFIX))/webkit_strings.stamp \
 	$(call intermediates-dir-for,GYP,third_party_angle_src_commit_id_gyp,,,$(GYP_VAR_PREFIX))/commit_id.stamp \
@@ -112,6 +114,7 @@ LOCAL_SRC_FILES := \
 	content/browser/android/in_process/synchronous_compositor_output_surface.cc \
 	content/browser/android/in_process/synchronous_input_event_filter.cc \
 	content/browser/android/interstitial_page_delegate_android.cc \
+	content/browser/android/layer_tree_build_helper_impl.cc \
 	content/browser/android/load_url_params.cc \
 	content/browser/android/overscroll_glow.cc \
 	content/browser/android/surface_texture_peer_browser_impl.cc \
@@ -324,6 +327,7 @@ LOCAL_SRC_FILES := \
 	content/browser/message_port_message_filter.cc \
 	content/browser/message_port_service.cc \
 	content/browser/mime_registry_message_filter.cc \
+	content/browser/mojo/mojo_application_host.cc \
 	content/browser/net/browser_online_state_observer.cc \
 	content/browser/net/sqlite_persistent_cookie_store.cc \
 	content/browser/net/view_blob_internals_job_factory.cc \
@@ -369,7 +373,6 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/input/web_input_event_builders_android.cc \
 	content/browser/renderer_host/input/web_input_event_util.cc \
 	content/browser/renderer_host/input/web_input_event_util_posix.cc \
-	content/browser/renderer_host/input/web_touch_event_traits.cc \
 	content/browser/renderer_host/java/java_bound_object.cc \
 	content/browser/renderer_host/java/java_bridge_channel_host.cc \
 	content/browser/renderer_host/java/java_bridge_dispatcher_host.cc \
@@ -401,7 +404,6 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/overscroll_controller.cc \
 	content/browser/renderer_host/render_message_filter.cc \
 	content/browser/renderer_host/render_process_host_impl.cc \
-	content/browser/renderer_host/render_process_host_mojo_impl.cc \
 	content/browser/renderer_host/render_view_host_delegate.cc \
 	content/browser/renderer_host/render_view_host_factory.cc \
 	content/browser/renderer_host/render_view_host_impl.cc \
@@ -423,7 +425,9 @@ LOCAL_SRC_FILES := \
 	content/browser/service_worker/embedded_worker_instance.cc \
 	content/browser/service_worker/embedded_worker_registry.cc \
 	content/browser/service_worker/service_worker_context_core.cc \
+	content/browser/service_worker/service_worker_context_request_handler.cc \
 	content/browser/service_worker/service_worker_context_wrapper.cc \
+	content/browser/service_worker/service_worker_controllee_request_handler.cc \
 	content/browser/service_worker/service_worker_database.cc \
 	content/browser/service_worker/service_worker_dispatcher_host.cc \
 	content/browser/service_worker/service_worker_fetch_dispatcher.cc \
@@ -431,6 +435,7 @@ LOCAL_SRC_FILES := \
 	content/browser/service_worker/service_worker_info.cc \
 	content/browser/service_worker/service_worker_internals_ui.cc \
 	content/browser/service_worker/service_worker_job_coordinator.cc \
+	content/browser/service_worker/service_worker_process_manager.cc \
 	content/browser/service_worker/service_worker_provider_host.cc \
 	content/browser/service_worker/service_worker_register_job.cc \
 	content/browser/service_worker/service_worker_registration.cc \
@@ -467,6 +472,8 @@ LOCAL_SRC_FILES := \
 	content/browser/storage_partition_impl.cc \
 	content/browser/storage_partition_impl_map.cc \
 	content/browser/tcmalloc_internals_request_job.cc \
+	content/browser/time_zone_monitor.cc \
+	content/browser/time_zone_monitor_android.cc \
 	content/browser/tracing/trace_message_filter.cc \
 	content/browser/tracing/tracing_controller_impl.cc \
 	content/browser/user_metrics.cc \
@@ -558,7 +565,6 @@ MY_DEFS_Debug := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
-	'-DAVOID_LIBYUV_FOR_ANDROID_WEBVIEW' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -570,12 +576,13 @@ MY_DEFS_Debug := \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
 	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
+	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
+	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -658,6 +665,8 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/qcms/src \
 	$(LOCAL_PATH)/third_party/iccjpeg \
 	$(PWD)/external/jpeg \
+	$(LOCAL_PATH)/third_party/libyuv/include \
+	$(LOCAL_PATH)/third_party/libyuv \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
 	$(LOCAL_PATH)/third_party/libjingle/source \
 	$(LOCAL_PATH)/testing/gtest/include \
@@ -733,7 +742,6 @@ MY_DEFS_Release := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
-	'-DAVOID_LIBYUV_FOR_ANDROID_WEBVIEW' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -745,12 +753,13 @@ MY_DEFS_Release := \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
 	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
+	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
+	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -834,6 +843,8 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/qcms/src \
 	$(LOCAL_PATH)/third_party/iccjpeg \
 	$(PWD)/external/jpeg \
+	$(LOCAL_PATH)/third_party/libyuv/include \
+	$(LOCAL_PATH)/third_party/libyuv \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
 	$(LOCAL_PATH)/third_party/libjingle/source \
 	$(LOCAL_PATH)/testing/gtest/include \
@@ -901,8 +912,10 @@ LOCAL_STATIC_LIBRARIES := \
 	ui_accessibility_accessibility_gyp \
 	ui_accessibility_ax_gen_gyp \
 	ui_base_ui_base_gyp \
+	content_browser_service_worker_database_proto_gyp \
 	content_browser_speech_proto_speech_proto_gyp \
-	content_content_common_mojo_bindings_gyp
+	content_content_common_mojo_bindings_gyp \
+	mojo_mojo_shell_bindings_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

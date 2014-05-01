@@ -81,7 +81,7 @@ class PackedStruct(object):
 
     # Start by sorting by ordinal.
     src_fields = []
-    ordinal = 1
+    ordinal = 0
     for field in struct.fields:
       if field.ordinal is not None:
         ordinal = field.ordinal
@@ -116,11 +116,11 @@ class PackedStruct(object):
 
   def GetTotalSize(self):
     if not self.packed_fields:
-      return 0;
+      return 0
     last_field = self.packed_fields[-1]
     offset = last_field.offset + last_field.size
     pad = GetPad(offset, 8)
-    return offset + pad;
+    return offset + pad
 
 
 class ByteInfo(object):

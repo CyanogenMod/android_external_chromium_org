@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "ash/accessibility_delegate.h"
 #include "ash/drag_drop/drag_drop_controller.h"
 #include "ash/root_window_controller.h"
 #include "ash/screen_util.h"
@@ -251,6 +252,19 @@ class WindowSelectorTest : public test::AshTestBase {
 
   DISALLOW_COPY_AND_ASSIGN(WindowSelectorTest);
 };
+
+// Tests that an a11y alert is sent on entering overview mode.
+TEST_F(WindowSelectorTest, A11yAlertOnOverviewMode) {
+  gfx::Rect bounds(0, 0, 400, 400);
+  AccessibilityDelegate* delegate =
+      ash::Shell::GetInstance()->accessibility_delegate();
+  scoped_ptr<aura::Window> window1(CreateWindow(bounds));
+  EXPECT_NE(delegate->GetLastAccessibilityAlert(),
+            A11Y_ALERT_WINDOW_OVERVIEW_MODE_ENTERED);
+  ToggleOverview();
+  EXPECT_EQ(delegate->GetLastAccessibilityAlert(),
+            A11Y_ALERT_WINDOW_OVERVIEW_MODE_ENTERED);
+}
 
 // Tests entering overview mode with two windows and selecting one.
 TEST_F(WindowSelectorTest, Basic) {
@@ -1142,6 +1156,39 @@ TEST_F(WindowSelectorTest, CreateLabelUnderPanel) {
   views::Label* label = static_cast<views::Label*>(widget->GetContentsView());
   // Verify the label matches the active window title.
   EXPECT_EQ(label->text(), panel1_title);
+}
+
+// Tests that overview updates the window postions if the display orientation
+// changes.
+TEST_F(WindowSelectorTest, DisplayOrientationChanged) {
+  if (!SupportsHostWindowResize())
+    return;
+
+  aura::Window* root_window = Shell::GetInstance()->GetPrimaryRootWindow();
+  UpdateDisplay("600x200");
+  EXPECT_EQ("0,0 600x200", root_window->bounds().ToString());
+  gfx::Rect window_bounds(0, 0, 150, 150);
+  ScopedVector<aura::Window> windows;
+  for (int i = 0; i < 3; i++) {
+    windows.push_back(CreateWindow(window_bounds));
+  }
+
+  ToggleOverview();
+  for (ScopedVector<aura::Window>::iterator iter = windows.begin();
+       iter != windows.end(); ++iter) {
+    EXPECT_TRUE(root_window->bounds().Contains(
+        ToEnclosingRect(GetTransformedTargetBounds(*iter))));
+  }
+
+  // Rotate the display, windows should be repositioned to be within the screen
+  // bounds.
+  UpdateDisplay("600x200/r");
+  EXPECT_EQ("0,0 200x600", root_window->bounds().ToString());
+  for (ScopedVector<aura::Window>::iterator iter = windows.begin();
+       iter != windows.end(); ++iter) {
+    EXPECT_TRUE(root_window->bounds().Contains(
+        ToEnclosingRect(GetTransformedTargetBounds(*iter))));
+  }
 }
 
 }  // namespace ash

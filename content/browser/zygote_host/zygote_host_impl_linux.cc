@@ -4,6 +4,7 @@
 
 #include "content/browser/zygote_host/zygote_host_impl_linux.h"
 
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -19,12 +20,14 @@
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/process/launch.h"
 #include "base/process/memory.h"
+#include "base/process/process_handle.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -45,6 +48,26 @@
 #endif
 
 namespace content {
+
+// Receive a fixed message on fd and return the sender's PID.
+// Returns true if the message received matches the expected message.
+static bool ReceiveFixedMessage(int fd,
+                                const char* expect_msg,
+                                size_t expect_len,
+                                base::ProcessId* sender_pid) {
+  char buf[expect_len + 1];
+  ScopedVector<base::ScopedFD> fds_vec;
+
+  const ssize_t len = UnixDomainSocket::RecvMsgWithPid(
+      fd, buf, sizeof(buf), &fds_vec, sender_pid);
+  if (static_cast<size_t>(len) != expect_len)
+    return false;
+  if (memcmp(buf, expect_msg, expect_len) != 0)
+    return false;
+  if (!fds_vec.empty())
+    return false;
+  return true;
+}
 
 // static
 ZygoteHost* ZygoteHost::GetInstance() {
@@ -83,6 +106,7 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
 
   int fds[2];
   CHECK(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, fds) == 0);
+  CHECK(UnixDomainSocket::EnableReceiveProcessId(fds[0]));
   base::FileHandleMappingVector fds_to_map;
   fds_to_map.push_back(std::make_pair(fds[1], kZygoteSocketPairFd));
 
@@ -107,7 +131,6 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
     // Zygote process needs to know what resources to have loaded when it
     // becomes a renderer process.
     switches::kForceDeviceScaleFactor,
-    switches::kTouchOptimizedUI,
 
     switches::kNoSandbox,
   };
@@ -126,58 +149,51 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   const int sfd = RenderSandboxHostLinux::GetInstance()->GetRendererSocket();
   fds_to_map.push_back(std::make_pair(sfd, GetSandboxFD()));
 
-  int dummy_fd = -1;
+  base::ScopedFD dummy_fd;
   if (using_suid_sandbox_) {
     scoped_ptr<sandbox::SetuidSandboxClient>
         sandbox_client(sandbox::SetuidSandboxClient::Create());
     sandbox_client->PrependWrapper(&cmd_line, &options);
     sandbox_client->SetupLaunchEnvironment();
 
+    // We no longer need this dummy socket for discovering the zygote's PID,
+    // but the sandbox is still hard-coded to expect a file descriptor at
+    // kZygoteIdFd. Fixing this requires a sandbox API change. :(
     CHECK_EQ(kZygoteIdFd, sandbox_client->GetUniqueToChildFileDescriptor());
-    dummy_fd = socket(AF_UNIX, SOCK_DGRAM, 0);
-    CHECK(dummy_fd >= 0);
-    fds_to_map.push_back(std::make_pair(dummy_fd, kZygoteIdFd));
+    dummy_fd.reset(socket(AF_UNIX, SOCK_DGRAM, 0));
+    CHECK_GE(dummy_fd.get(), 0);
+    fds_to_map.push_back(std::make_pair(dummy_fd.get(), kZygoteIdFd));
   }
 
   base::ProcessHandle process = -1;
   options.fds_to_remap = &fds_to_map;
   base::LaunchProcess(cmd_line.argv(), options, &process);
   CHECK(process != -1) << "Failed to launch zygote process";
+  dummy_fd.reset();
 
   if (using_suid_sandbox_) {
-    // In the SUID sandbox, the real zygote is forked from the sandbox.
-    // We need to look for it.
-    // But first, wait for the zygote to tell us it's running.
-    // The sending code is in content/browser/zygote_main_linux.cc.
-    std::vector<int> fds_vec;
-    const int kExpectedLength = sizeof(kZygoteHelloMessage);
-    char buf[kExpectedLength];
-    const ssize_t len = UnixDomainSocket::RecvMsg(fds[0], buf, sizeof(buf),
-                                                  &fds_vec);
-    CHECK_EQ(kExpectedLength, len) << "Incorrect zygote magic length";
-    CHECK(0 == strcmp(buf, kZygoteHelloMessage)) << "Incorrect zygote hello";
+    // The SUID sandbox will execute the zygote in a new PID namespace, and
+    // the main zygote process will then fork from there.  Watch now our
+    // elaborate dance to find and validate the zygote's PID.
 
-    std::string inode_output;
-    ino_t inode = 0;
-    // Figure out the inode for |dummy_fd|, close |dummy_fd| on our end,
-    // and find the zygote process holding |dummy_fd|.
-    CHECK(base::FileDescriptorGetInode(&inode, dummy_fd))
-        << "Cannot get inode for dummy_fd " << dummy_fd;
-    close(dummy_fd);
+    // First we receive a message from the zygote boot process.
+    base::ProcessId boot_pid;
+    CHECK(ReceiveFixedMessage(
+        fds[0], kZygoteBootMessage, sizeof(kZygoteBootMessage), &boot_pid));
 
-    std::vector<std::string> get_inode_cmdline;
-    get_inode_cmdline.push_back(sandbox_binary_);
-    get_inode_cmdline.push_back(base::kFindInodeSwitch);
-    get_inode_cmdline.push_back(base::Int64ToString(inode));
-    CommandLine get_inode_cmd(get_inode_cmdline);
-    CHECK(base::GetAppOutput(get_inode_cmd, &inode_output))
-        << "Find inode command failed for inode " << inode;
+    // Within the PID namespace, the zygote boot process thinks it's PID 1,
+    // but its real PID can never be 1. This gives us a reliable test that
+    // the kernel is translating the sender's PID to our namespace.
+    CHECK_GT(boot_pid, 1)
+        << "Received invalid process ID for zygote; kernel might be too old? "
+           "See crbug.com/357670 or try using --"
+        << switches::kDisableSetuidSandbox << " to workaround.";
 
-    base::TrimWhitespaceASCII(inode_output, base::TRIM_ALL, &inode_output);
-    CHECK(base::StringToInt(inode_output, &pid_))
-        << "Invalid find inode output: " << inode_output;
-    CHECK(pid_ > 0) << "Did not find zygote process (using sandbox binary "
-        << sandbox_binary_ << ")";
+    // Now receive the message that the zygote's ready to go, along with the
+    // main zygote process's ID.
+    CHECK(ReceiveFixedMessage(
+        fds[0], kZygoteHelloMessage, sizeof(kZygoteHelloMessage), &pid_));
+    CHECK_GT(pid_, 1);
 
     if (process != pid_) {
       // Reap the sandbox.
@@ -426,7 +442,12 @@ void ZygoteHostImpl::AdjustRendererOOMScore(base::ProcessHandle pid,
     adj_oom_score_cmdline.push_back(base::IntToString(score));
 
     base::ProcessHandle sandbox_helper_process;
-    if (base::LaunchProcess(adj_oom_score_cmdline, base::LaunchOptions(),
+    base::LaunchOptions options;
+
+    // sandbox_helper_process is a setuid binary.
+    options.allow_new_privs = true;
+
+    if (base::LaunchProcess(adj_oom_score_cmdline, options,
                             &sandbox_helper_process)) {
       base::EnsureProcessGetsReaped(sandbox_helper_process);
     }

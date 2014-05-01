@@ -52,6 +52,7 @@ class ContentViewCoreImpl;
 class OverscrollGlow;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
+struct DidOverscrollParams;
 struct NativeWebKeyboardEvent;
 
 // -----------------------------------------------------------------------------
@@ -59,7 +60,6 @@ struct NativeWebKeyboardEvent;
 // -----------------------------------------------------------------------------
 class RenderWidgetHostViewAndroid
     : public RenderWidgetHostViewBase,
-      public BrowserAccessibilityDelegate,
       public cc::DelegatedFrameResourceCollectionClient,
       public ImageTransportFactoryAndroidObserver,
       public ui::GestureProviderClient,
@@ -86,7 +86,6 @@ class RenderWidgetHostViewAndroid
   virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
   virtual void MovePluginWindows(
-      const gfx::Vector2d& scroll_offset,
       const std::vector<WebPluginGeometry>& moves) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void Blur() OVERRIDE;
@@ -105,11 +104,6 @@ class RenderWidgetHostViewAndroid
                                     bool can_compose_inline) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void FocusedNodeChanged(bool is_editable_node) OVERRIDE;
-  virtual void DidUpdateBackingStore(
-      const gfx::Rect& scroll_rect,
-      const gfx::Vector2d& scroll_delta,
-      const std::vector<gfx::Rect>& copy_rects,
-      const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
@@ -149,8 +143,6 @@ class RenderWidgetHostViewAndroid
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) OVERRIDE;
-  virtual void SetHasHorizontalScrollbar(
-      bool has_horizontal_scrollbar) OVERRIDE;
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
   virtual void UnhandledWheelEvent(
@@ -166,8 +158,6 @@ class RenderWidgetHostViewAndroid
   virtual void OnSwapCompositorFrame(
       uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
-  virtual void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
-                              gfx::Vector2dF current_fling_velocity) OVERRIDE;
   virtual void DidStopFlinging() OVERRIDE;
   virtual void ShowDisambiguationPopup(const gfx::Rect& target_rect,
                                        const SkBitmap& zoomed_bitmap) OVERRIDE;
@@ -175,18 +165,6 @@ class RenderWidgetHostViewAndroid
       OVERRIDE;
   virtual void LockCompositingSurface() OVERRIDE;
   virtual void UnlockCompositingSurface() OVERRIDE;
-
-  // Implementation of BrowserAccessibilityDelegate:
-  virtual void SetAccessibilityFocus(int acc_obj_id) OVERRIDE;
-  virtual void AccessibilityDoDefaultAction(int acc_obj_id) OVERRIDE;
-  virtual void AccessibilityScrollToMakeVisible(
-      int acc_obj_id, gfx::Rect subfocus) OVERRIDE;
-  virtual void AccessibilityScrollToPoint(
-      int acc_obj_id, gfx::Point point) OVERRIDE;
-  virtual void AccessibilitySetTextSelection(
-      int acc_obj_id, int start_offset, int end_offset) OVERRIDE;
-  virtual gfx::Point GetLastTouchEventLocation() const OVERRIDE;
-  virtual void FatalAccessibilityTreeError() OVERRIDE;
 
   // cc::DelegatedFrameResourceCollectionClient implementation.
   virtual void UnusedResourcesAreAvailable() OVERRIDE;
@@ -199,6 +177,8 @@ class RenderWidgetHostViewAndroid
   virtual void OnAttachCompositor() OVERRIDE {}
   virtual void OnDetachCompositor() OVERRIDE;
   virtual void OnWillDestroyWindow() OVERRIDE;
+  virtual void OnVSync(base::TimeTicks frame_time,
+                       base::TimeDelta vsync_period) OVERRIDE;
 
   // ImageTransportFactoryAndroidObserver implementation.
   virtual void OnLostResources() OVERRIDE;
@@ -216,10 +196,10 @@ class RenderWidgetHostViewAndroid
   void SendMouseEvent(const blink::WebMouseEvent& event);
   void SendMouseWheelEvent(const blink::WebMouseWheelEvent& event);
   void SendGestureEvent(const blink::WebGestureEvent& event);
-  void SendBeginFrame(const cc::BeginFrameArgs& args);
 
   void OnTextInputStateChanged(const ViewHostMsg_TextInputState_Params& params);
   void OnDidChangeBodyBackgroundColor(SkColor color);
+  void OnDidOverscroll(const DidOverscrollParams& params);
   void OnStartContentIntent(const GURL& content_url);
   void OnSetNeedsBeginFrame(bool enabled);
   void OnSmartClipDataExtracted(const base::string16& result);
@@ -242,10 +222,6 @@ class RenderWidgetHostViewAndroid
   bool HasValidFrame() const;
 
   void MoveCaret(const gfx::Point& point);
-
-  // Returns true when animation ticks are still needed. This avoids a separate
-  // round-trip for requesting follow-up animation.
-  bool Animate(base::TimeTicks frame_time);
 
   void SynchronousFrameMetadata(
       const cc::CompositorFrameMetadata& frame_metadata);
@@ -307,6 +283,10 @@ class RenderWidgetHostViewAndroid
 
   void InternalSwapCompositorFrame(uint32 output_surface_id,
                                    scoped_ptr<cc::CompositorFrame> frame);
+
+  void SetNeedsAnimate();
+  bool Animate(base::TimeTicks frame_time);
+
 
   // The model object.
   RenderWidgetHostImpl* host_;

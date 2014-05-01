@@ -23,7 +23,8 @@ class QuicConnection;
 // can send WINDOW_UPDATE or BLOCKED frames when needed.
 class NET_EXPORT_PRIVATE QuicFlowController {
  public:
-  QuicFlowController(QuicStreamId id,
+  QuicFlowController(QuicVersion version,
+                     QuicStreamId id,
                      bool is_server,
                      uint64 send_window_offset,
                      uint64 receive_window_offset,
@@ -104,6 +105,10 @@ class NET_EXPORT_PRIVATE QuicFlowController {
 
   // Largest size the receive window can grow to.
   uint64 max_receive_window_;
+
+  // Keep track of the last time we sent a BLOCKED frame. We should only send
+  // another when the number of bytes we have sent has changed.
+  uint64 last_blocked_send_window_offset_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicFlowController);
 };

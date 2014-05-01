@@ -83,19 +83,6 @@ NativeWidgetAura::NativeWidgetAura(internal::NativeWidgetDelegate* delegate)
 }
 
 // static
-gfx::FontList NativeWidgetAura::GetWindowTitleFontList() {
-#if defined(OS_WIN)
-  NONCLIENTMETRICS ncm;
-  base::win::GetNonClientMetrics(&ncm);
-  l10n_util::AdjustUIFont(&(ncm.lfCaptionFont));
-  base::win::ScopedHFONT caption_font(CreateFontIndirect(&(ncm.lfCaptionFont)));
-  return gfx::FontList(gfx::Font(caption_font));
-#else
-  return gfx::FontList();
-#endif
-}
-
-// static
 void NativeWidgetAura::RegisterNativeWidgetForWindow(
       internal::NativeWidgetPrivate* native_widget,
       aura::Window* window) {
@@ -150,6 +137,13 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
     }
   }
 
+  // Set properties before addeing to the parent so that its layout manager
+  // sees the correct values.
+  window_->SetProperty(aura::client::kCanMaximizeKey,
+                       GetWidget()->widget_delegate()->CanMaximize());
+  window_->SetProperty(aura::client::kCanResizeKey,
+                       GetWidget()->widget_delegate()->CanResize());
+
   if (parent) {
     parent->AddChild(window_);
   } else {
@@ -179,11 +173,6 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
   }
 
   aura::client::SetActivationDelegate(window_, this);
-
-  window_->SetProperty(aura::client::kCanMaximizeKey,
-                       GetWidget()->widget_delegate()->CanMaximize());
-  window_->SetProperty(aura::client::kCanResizeKey,
-                       GetWidget()->widget_delegate()->CanResize());
 
   window_reorderer_.reset(new WindowReorderer(window_,
       GetWidget()->GetRootView()));
@@ -709,6 +698,10 @@ gfx::Size NativeWidgetAura::GetMinimumSize() const {
 }
 
 gfx::Size NativeWidgetAura::GetMaximumSize() const {
+  // If a window have a maximum size, the window should not be
+  // maximizable.
+  DCHECK(delegate_->GetMaximumSize().IsEmpty() ||
+         !window_->GetProperty(aura::client::kCanMaximizeKey));
   return delegate_->GetMaximumSize();
 }
 
@@ -1137,6 +1130,19 @@ bool NativeWidgetPrivate::IsMouseButtonDown() {
 // static
 bool NativeWidgetPrivate::IsTouchDown() {
   return aura::Env::GetInstance()->is_touch_down();
+}
+
+// static
+gfx::FontList NativeWidgetPrivate::GetWindowTitleFontList() {
+#if defined(OS_WIN)
+  NONCLIENTMETRICS ncm;
+  base::win::GetNonClientMetrics(&ncm);
+  l10n_util::AdjustUIFont(&(ncm.lfCaptionFont));
+  base::win::ScopedHFONT caption_font(CreateFontIndirect(&(ncm.lfCaptionFont)));
+  return gfx::FontList(gfx::Font(caption_font));
+#else
+  return gfx::FontList();
+#endif
 }
 
 }  // namespace internal

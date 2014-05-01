@@ -72,6 +72,7 @@ LOCAL_SRC_FILES := \
 	media/base/audio_converter.cc \
 	media/base/audio_decoder.cc \
 	media/base/audio_decoder_config.cc \
+	media/base/audio_discard_helper.cc \
 	media/base/audio_fifo.cc \
 	media/base/audio_hardware_config.cc \
 	media/base/audio_hash.cc \
@@ -144,7 +145,6 @@ LOCAL_SRC_FILES := \
 	media/filters/h264_bit_reader.cc \
 	media/filters/h264_parser.cc \
 	media/filters/h264_to_annex_b_bitstream_converter.cc \
-	media/filters/in_memory_url_protocol.cc \
 	media/filters/legacy_frame_processor.cc \
 	media/filters/skcanvas_video_renderer.cc \
 	media/filters/source_buffer_stream.cc \
@@ -167,9 +167,11 @@ LOCAL_SRC_FILES := \
 	media/video/capture/android/video_capture_device_android.cc \
 	media/video/capture/android/video_capture_device_factory_android.cc \
 	media/video/capture/fake_video_capture_device.cc \
+	media/video/capture/fake_video_capture_device_factory.cc \
 	media/video/capture/file_video_capture_device.cc \
+	media/video/capture/file_video_capture_device_factory.cc \
 	media/video/capture/video_capture_device.cc \
-	media/video/capture/video_capture_proxy.cc \
+	media/video/capture/video_capture_device_factory.cc \
 	media/video/capture/video_capture_types.cc \
 	media/video/picture.cc \
 	media/video/video_decode_accelerator.cc \
@@ -275,12 +277,13 @@ MY_DEFS_Debug := \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
 	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
+	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
+	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -403,12 +406,13 @@ MY_DEFS_Release := \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
 	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
+	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
+	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \

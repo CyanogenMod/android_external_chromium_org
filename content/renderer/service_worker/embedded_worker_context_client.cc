@@ -13,6 +13,7 @@
 #include "content/child/thread_safe_sender.h"
 #include "content/child/worker_task_runner.h"
 #include "content/child/worker_thread_task_runner.h"
+#include "content/common/devtools_messages.h"
 #include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/renderer/document_state.h"
@@ -83,11 +84,13 @@ EmbeddedWorkerContextClient::EmbeddedWorkerContextClient(
     int embedded_worker_id,
     int64 service_worker_version_id,
     const GURL& service_worker_scope,
-    const GURL& script_url)
+    const GURL& script_url,
+    int worker_devtools_agent_route_id)
     : embedded_worker_id_(embedded_worker_id),
       service_worker_version_id_(service_worker_version_id),
       service_worker_scope_(service_worker_scope),
       script_url_(script_url),
+      worker_devtools_agent_route_id_(worker_devtools_agent_route_id),
       sender_(ChildThread::current()->thread_safe_sender()),
       main_thread_proxy_(base::MessageLoopProxy::current()),
       weak_factory_(this) {
@@ -112,13 +115,6 @@ bool EmbeddedWorkerContextClient::OnMessageReceived(
 
 void EmbeddedWorkerContextClient::Send(IPC::Message* message) {
   sender_->Send(message);
-}
-
-void EmbeddedWorkerContextClient::SendReplyToBrowser(
-    int request_id,
-    const IPC::Message& message) {
-  Send(new EmbeddedWorkerHostMsg_ReplyToBrowser(
-      embedded_worker_id_, request_id, message));
 }
 
 blink::WebURL EmbeddedWorkerContextClient::scope() const {
@@ -197,6 +193,18 @@ void EmbeddedWorkerContextClient::reportConsoleMessage(
       embedded_worker_id_, params));
 }
 
+void EmbeddedWorkerContextClient::dispatchDevToolsMessage(
+    const blink::WebString& message) {
+  sender_->Send(new DevToolsClientMsg_DispatchOnInspectorFrontend(
+      worker_devtools_agent_route_id_, message.utf8()));
+}
+
+void EmbeddedWorkerContextClient::saveDevToolsAgentState(
+    const blink::WebString& state) {
+  sender_->Send(new DevToolsHostMsg_SaveAgentRuntimeState(
+      worker_devtools_agent_route_id_, state.utf8()));
+}
+
 void EmbeddedWorkerContextClient::didHandleActivateEvent(
     int request_id,
     blink::WebServiceWorkerEventResult result) {
@@ -261,12 +269,11 @@ EmbeddedWorkerContextClient::createServiceWorkerNetworkProvider(
 void EmbeddedWorkerContextClient::OnMessageToWorker(
     int thread_id,
     int embedded_worker_id,
-    int request_id,
     const IPC::Message& message) {
   if (!script_context_)
     return;
   DCHECK_EQ(embedded_worker_id_, embedded_worker_id);
-  script_context_->OnMessageReceived(request_id, message);
+  script_context_->OnMessageReceived(message);
 }
 
 void EmbeddedWorkerContextClient::SendWorkerStarted() {

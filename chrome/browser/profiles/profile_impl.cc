@@ -27,7 +27,6 @@
 #include "chrome/browser/autocomplete/shortcuts_backend.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/background/background_mode_manager.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -79,6 +78,7 @@
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
 #include "components/dom_distiller/content/dom_distiller_viewer_source.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
@@ -502,6 +502,10 @@ void ProfileImpl::DoFinalInit() {
       base::Bind(&ProfileImpl::UpdateProfileUserNameCache,
                  base::Unretained(this)));
   pref_change_registrar_.Add(
+      prefs::kManagedUserId,
+      base::Bind(&ProfileImpl::UpdateProfileManagedUserIdCache,
+                 base::Unretained(this)));
+  pref_change_registrar_.Add(
       prefs::kDefaultZoomLevel,
       base::Bind(&ProfileImpl::OnDefaultZoomLevelChanged,
                  base::Unretained(this)));
@@ -532,6 +536,7 @@ void ProfileImpl::DoFinalInit() {
   // kGoogleServicesUsername, initialize components that depend on it to reflect
   // the current value.
   UpdateProfileUserNameCache();
+  UpdateProfileManagedUserIdCache();
   UpdateProfileIsEphemeralCache();
   GAIAInfoUpdateServiceFactory::GetForProfile(this);
 
@@ -1247,6 +1252,17 @@ void ProfileImpl::UpdateProfileUserNameCache() {
     std::string user_name =
         GetPrefs()->GetString(prefs::kGoogleServicesUsername);
     cache.SetUserNameOfProfileAtIndex(index, base::UTF8ToUTF16(user_name));
+    ProfileMetrics::UpdateReportedProfilesStatistics(profile_manager);
+  }
+}
+
+void ProfileImpl::UpdateProfileManagedUserIdCache() {
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  ProfileInfoCache& cache = profile_manager->GetProfileInfoCache();
+  size_t index = cache.GetIndexOfProfileWithPath(GetPath());
+  if (index != std::string::npos) {
+    std::string managed_user_id = GetPrefs()->GetString(prefs::kManagedUserId);
+    cache.SetManagedUserIdOfProfileAtIndex(index, managed_user_id);
     ProfileMetrics::UpdateReportedProfilesStatistics(profile_manager);
   }
 }

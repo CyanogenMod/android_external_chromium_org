@@ -372,6 +372,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void CreateRenderSurface();
   void ClearRenderSurface();
+  void ClearRenderSurfaceLayerList();
 
   // The contents scale converts from logical, non-page-scaled pixels to target
   // pixels. The contents scale is 1 for the root layer as it is already in
@@ -483,9 +484,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // before finishing the commit and unblocking the main thread. Used to ensure
   // unused resources on the impl thread are returned before commit completes.
   void SetNextCommitWaitsForActivation();
-
-  // Called when the blend mode or filters have been changed.
-  void SetNeedsFilterContextIfNeeded();
 
   void AddDependentNeedsPushProperties();
   void RemoveDependentNeedsPushProperties();

@@ -29,8 +29,10 @@ using blink::WebTouchPoint;
 
 namespace {
 
-// Validate provided event timestamps that interact with animation timestamps.
-const double kBadTimestampDeltaFromNowInS = 60. * 60. * 24. * 7.;
+// Maximum time between a fling event's timestamp and the first |Animate| call
+// for the fling curve to use the fling timestamp as the initial animation time.
+// Two frames allows a minor delay between event creation and the first animate.
+const double kMaxSecondsFromFlingTimestampToFirstAnimate = 2. / 60.;
 
 // Threshold for determining whether a fling scroll delta should have caused the
 // client to scroll.
@@ -79,7 +81,8 @@ InputHandlerProxy::InputHandlerProxy(cc::InputHandler* input_handler)
       gesture_pinch_on_impl_thread_(false),
       fling_may_be_active_on_main_thread_(false),
       disallow_horizontal_fling_scroll_(false),
-      disallow_vertical_fling_scroll_(false) {
+      disallow_vertical_fling_scroll_(false),
+      has_fling_animation_started_(false) {
   input_handler_->BindToClient(this);
 }
 
@@ -324,12 +327,10 @@ InputHandlerProxy::HandleGestureFling(
           gesture_event.data.flingStart.velocityX,
           "vy",
           gesture_event.data.flingStart.velocityY);
-      if (gesture_event.timeStampSeconds) {
+      // Note that the timestamp will only be used to kickstart the animation if
+      // its sufficiently close to the timestamp of the first call |Animate()|.
+      has_fling_animation_started_ = false;
         fling_parameters_.startTime = gesture_event.timeStampSeconds;
-        DCHECK_LT(fling_parameters_.startTime -
-                      InSecondsF(gfx::FrameTime::Now()),
-                  kBadTimestampDeltaFromNowInS);
-      }
       fling_parameters_.delta =
           WebFloatPoint(gesture_event.data.flingStart.velocityX,
                         gesture_event.data.flingStart.velocityY);
@@ -338,7 +339,7 @@ InputHandlerProxy::HandleGestureFling(
           WebPoint(gesture_event.globalX, gesture_event.globalY);
       fling_parameters_.modifiers = gesture_event.modifiers;
       fling_parameters_.sourceDevice = gesture_event.sourceDevice;
-      input_handler_->ScheduleAnimation();
+      input_handler_->SetNeedsAnimate();
       return DID_HANDLE;
     }
     case cc::InputHandler::ScrollUnknown:
@@ -375,11 +376,18 @@ void InputHandlerProxy::Animate(base::TimeTicks time) {
     return;
 
   double monotonic_time_sec = InSecondsF(time);
+  if (!has_fling_animation_started_) {
+    has_fling_animation_started_ = true;
+    // Guard against invalid, future or sufficiently stale start times, as there
+    // are no guarantees fling event and animation timestamps are compatible.
   if (!fling_parameters_.startTime ||
-      monotonic_time_sec <= fling_parameters_.startTime) {
+        monotonic_time_sec <= fling_parameters_.startTime ||
+        monotonic_time_sec >= fling_parameters_.startTime +
+                                  kMaxSecondsFromFlingTimestampToFirstAnimate) {
     fling_parameters_.startTime = monotonic_time_sec;
-    input_handler_->ScheduleAnimation();
+    input_handler_->SetNeedsAnimate();
     return;
+  }
   }
 
   bool fling_is_active =
@@ -390,7 +398,7 @@ void InputHandlerProxy::Animate(base::TimeTicks time) {
     fling_is_active = false;
 
   if (fling_is_active) {
-    input_handler_->ScheduleAnimation();
+    input_handler_->SetNeedsAnimate();
   } else {
     TRACE_EVENT_INSTANT0("input",
                          "InputHandlerProxy::animate::flingOver",
@@ -452,6 +460,7 @@ bool InputHandlerProxy::CancelCurrentFling(
                        "had_fling_animation",
                        had_fling_animation);
   fling_curve_.reset();
+  has_fling_animation_started_ = false;
   gesture_scroll_on_impl_thread_ = false;
   current_fling_velocity_ = gfx::Vector2dF();
   fling_parameters_ = blink::WebActiveWheelFlingParameters();

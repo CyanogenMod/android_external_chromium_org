@@ -46,9 +46,11 @@
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/inter_process_time_ticks_converter.h"
+#include "content/common/mojo/mojo_service_names.h"
 #include "content/common/speech_recognition_messages.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
+#include "content/common/web_ui_setup.mojom.h"
 #include "content/port/browser/render_view_host_delegate_view.h"
 #include "content/port/browser/render_widget_host_view_port.h"
 #include "content/public/browser/ax_event_notification_details.h"
@@ -205,7 +207,6 @@ RenderViewHostImpl::RenderViewHostImpl(
       waiting_for_drag_context_response_(false),
       enabled_bindings_(0),
       navigations_suspended_(false),
-      has_accessed_initial_document_(false),
       main_frame_routing_id_(main_frame_routing_id),
       run_modal_reply_msg_(NULL),
       run_modal_opener_id_(MSG_ROUTING_NONE),
@@ -410,9 +411,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
   if (command_line.HasSwitch(switches::kDisableLayerSquashing))
       prefs.layer_squashing_enabled = false;
 
-  prefs.show_paint_rects =
-      command_line.HasSwitch(switches::kShowPaintRects);
-  prefs.accelerated_compositing_enabled = GpuProcessHost::gpu_enabled();
   prefs.accelerated_2d_canvas_enabled =
       GpuProcessHost::gpu_enabled() &&
       !command_line.HasSwitch(switches::kDisableAccelerated2dCanvas);
@@ -425,19 +423,12 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       command_line.HasSwitch(switches::kEnableDeferredFilters);
   prefs.container_culling_enabled =
       command_line.HasSwitch(switches::kEnableContainerCulling);
-  prefs.accelerated_compositing_for_3d_transforms_enabled =
-      prefs.accelerated_compositing_for_animation_enabled =
-          !command_line.HasSwitch(switches::kDisableAcceleratedLayers);
-  prefs.accelerated_compositing_for_plugins_enabled = true;
-  prefs.accelerated_compositing_for_video_enabled =
-      !command_line.HasSwitch(switches::kDisableAcceleratedVideo);
   prefs.lazy_layout_enabled =
       command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures);
   prefs.region_based_columns_enabled =
       command_line.HasSwitch(switches::kEnableRegionBasedColumns);
-  prefs.threaded_html_parser =
-      !command_line.HasSwitch(switches::kDisableThreadedHTMLParser);
-  if (command_line.HasSwitch(cc::switches::kEnablePinchVirtualViewport)) {
+
+  if (IsPinchVirtualViewportEnabled()) {
     prefs.pinch_virtual_viewport_enabled = true;
     prefs.pinch_overlay_scrollbar_thickness = 10;
   }
@@ -694,9 +685,13 @@ void RenderViewHostImpl::SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) {
   }
 
   DCHECK(renderer_initialized_);
-  RenderProcessHostImpl* process =
-      static_cast<RenderProcessHostImpl*>(GetProcess());
-  process->SetWebUIHandle(GetRoutingID(), handle.Pass());
+
+  mojo::InterfacePipe<WebUISetup, mojo::AnyInterface> pipe;
+  mojo::RemotePtr<WebUISetup> web_ui_setup(pipe.handle_to_self.Pass(), NULL);
+  web_ui_setup->SetWebUIHandle(GetRoutingID(), handle.Pass());
+
+  static_cast<RenderProcessHostImpl*>(GetProcess())->ConnectTo(
+      kRendererService_WebUISetup, pipe.handle_to_peer.Pass());
 }
 
 #if defined(OS_ANDROID)
@@ -1017,8 +1012,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
                         OnDidContentsPreferredSizeChange)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeScrollOffset,
                         OnDidChangeScrollOffset)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeScrollbarsForMainFrame,
-                        OnDidChangeScrollbarsForMainFrame)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeScrollOffsetPinningForMainFrame,
                         OnDidChangeScrollOffsetPinningForMainFrame)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeNumWheelEvents,
@@ -1042,8 +1035,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_HidePopup, OnHidePopup)
 #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_RunFileChooser, OnRunFileChooser)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidAccessInitialDocument,
-                        OnDidAccessInitialDocument)
     IPC_MESSAGE_HANDLER(AccessibilityHostMsg_Events, OnAccessibilityEvents)
     IPC_MESSAGE_HANDLER(AccessibilityHostMsg_LocationChanges,
                         OnAccessibilityLocationChanges)
@@ -1171,7 +1162,9 @@ void RenderViewHostImpl::OnRenderProcessGone(int status, int exit_code) {
   render_view_termination_status_ =
       static_cast<base::TerminationStatus>(status);
 
-  // Reset frame tree state associated with this process.
+  // Reset frame tree state associated with this process.  This must happen
+  // before RenderViewTerminated because observers expect the subframes of any
+  // affected frames to be cleared first.
   delegate_->GetFrameTree()->RenderProcessGone(this);
 
   // Our base class RenderWidgetHost needs to reset some stuff.
@@ -1275,12 +1268,6 @@ void RenderViewHostImpl::OnRenderAutoResized(const gfx::Size& new_size) {
 void RenderViewHostImpl::OnDidChangeScrollOffset() {
   if (view_)
     view_->ScrollOffsetChanged();
-}
-
-void RenderViewHostImpl::OnDidChangeScrollbarsForMainFrame(
-    bool has_horizontal_scrollbar, bool has_vertical_scrollbar) {
-  if (view_)
-    view_->SetHasHorizontalScrollbar(has_horizontal_scrollbar);
 }
 
 void RenderViewHostImpl::OnDidChangeScrollOffsetPinningForMainFrame(
@@ -1680,11 +1667,6 @@ void RenderViewHostImpl::OnDidZoomURL(double zoom_level,
 
 void RenderViewHostImpl::OnRunFileChooser(const FileChooserParams& params) {
   delegate_->RunFileChooser(this, params);
-}
-
-void RenderViewHostImpl::OnDidAccessInitialDocument() {
-  has_accessed_initial_document_ = true;
-  delegate_->DidAccessInitialDocument();
 }
 
 void RenderViewHostImpl::OnFocusedNodeTouched(bool editable) {

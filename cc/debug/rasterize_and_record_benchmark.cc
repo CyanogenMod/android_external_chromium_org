@@ -25,7 +25,7 @@ namespace {
 const int kDefaultRecordRepeatCount = 100;
 
 const char* kModeSuffixes[Picture::RECORDING_MODE_COUNT] = {
-    "", "_sk_null_canvas", "_painting_disabled"};
+    "", "_sk_null_canvas", "_painting_disabled", "_skrecord"};
 
 base::TimeTicks Now() {
   return base::TimeTicks::IsThreadNowSupported()
@@ -108,7 +108,7 @@ void RasterizeAndRecordBenchmark::RunOnLayer(PictureLayer* layer) {
   DCHECK(host_);
   gfx::Size tile_grid_size = host_->settings().default_tile_size;
 
-  SkTileGridPicture::TileGridInfo tile_grid_info;
+  SkTileGridFactory::TileGridInfo tile_grid_info;
   PicturePileBase::ComputeTileGridInfo(tile_grid_size, &tile_grid_info);
 
   gfx::Rect visible_content_rect = gfx::ScaleToEnclosingRect(

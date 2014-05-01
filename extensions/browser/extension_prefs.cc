@@ -77,6 +77,7 @@ const char kPrefExternalAcknowledged[] = "ack_external";
 const char kPrefBlacklistAcknowledged[] = "ack_blacklist";
 const char kPrefWipeoutAcknowledged[] = "ack_wiped";
 const char kPrefSettingsBubbleAcknowledged[] = "ack_settings_bubble";
+const char kPrefNtpBubbleAcknowledged[] = "ack_ntp_bubble";
 
 // Indicates whether the external extension was installed during the first
 // run of this profile.
@@ -744,6 +745,19 @@ void ExtensionPrefs::SetSettingsApiBubbleBeenAcknowledged(
     bool value) {
   UpdateExtensionPref(extension_id,
                       kPrefSettingsBubbleAcknowledged,
+                      value ? base::Value::CreateBooleanValue(value) : NULL);
+}
+
+bool ExtensionPrefs::HasNtpOverriddenBubbleBeenAcknowledged(
+    const std::string& extension_id) {
+  return ReadPrefAsBooleanAndReturn(extension_id, kPrefNtpBubbleAcknowledged);
+}
+
+void ExtensionPrefs::SetNtpOverriddenBubbleBeenAcknowledged(
+    const std::string& extension_id,
+    bool value) {
+  UpdateExtensionPref(extension_id,
+                      kPrefNtpBubbleAcknowledged,
                       value ? base::Value::CreateBooleanValue(value) : NULL);
 }
 
@@ -1915,7 +1929,6 @@ int64 ExtensionPrefs::GetNextStorageThreshold(
 
 void ExtensionPrefs::SetNextStorageThreshold(const std::string& extension_id,
                                              int64 next_threshold) {
-
   ScopedExtensionPrefUpdate update(prefs_, extension_id);
   SaveInt64(update.Get(), kPrefNextStorageThreshold, next_threshold);
 }

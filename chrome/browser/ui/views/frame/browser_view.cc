@@ -82,6 +82,7 @@
 #include "chrome/browser/ui/views/profiles/avatar_menu_bubble_view.h"
 #include "chrome/browser/ui/views/profiles/avatar_menu_button.h"
 #include "chrome/browser/ui/views/profiles/profile_chooser_view.h"
+#include "chrome/browser/ui/views/settings_api_bubble_helper_views.h"
 #include "chrome/browser/ui/views/status_bubble_views.h"
 #include "chrome/browser/ui/views/tabs/browser_tab_strip_controller.h"
 #include "chrome/browser/ui/views/tabs/tab.h"
@@ -116,6 +117,9 @@
 #include "grit/ui_strings.h"
 #include "grit/webkit_resources.h"
 #include "ui/accessibility/ax_view_state.h"
+#include "ui/aura/client/window_tree_client.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -125,7 +129,7 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/rect_conversions.h"
-#include "ui/gfx/sys_color_change_listener.h"
+#include "ui/gfx/screen.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/controls/webview/webview.h"
@@ -143,13 +147,6 @@
 #include "ash/shelf/shelf_model.h"
 #include "ash/shell.h"
 #include "chrome/browser/ui/ash/ash_util.h"
-#endif
-
-#if defined(USE_AURA)
-#include "ui/aura/client/window_tree_client.h"
-#include "ui/aura/window.h"
-#include "ui/aura/window_tree_host.h"
-#include "ui/gfx/screen.h"
 #endif
 
 #if defined(OS_WIN)
@@ -422,7 +419,6 @@ BrowserView::BrowserView()
 #if defined(OS_CHROMEOS)
       scroll_end_effect_controller_(ScrollEndEffectController::Create()),
 #endif
-      color_change_listener_(this),
       activate_modal_dialog_factory_(this) {
 }
 
@@ -556,12 +552,6 @@ bool BrowserView::IsRegularOrGuestSession() const {
   return profiles::IsRegularOrGuestSession(browser_.get());
 }
 
-int BrowserView::GetOTRIconResourceID() const {
-  if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH && IsFullscreen())
-    return IDR_OTR_ICON_FULLSCREEN;
-  return IDR_OTR_ICON;
-}
-
 bool BrowserView::ShouldShowAvatar() const {
 #if defined(OS_CHROMEOS)
   if (!browser_->is_type_tabbed() && !browser_->is_app())
@@ -622,7 +612,7 @@ WebContents* BrowserView::GetActiveWebContents() const {
 }
 
 gfx::ImageSkia BrowserView::GetOTRAvatarIcon() const {
-  return *GetThemeProvider()->GetImageSkiaNamed(GetOTRIconResourceID());
+  return *GetThemeProvider()->GetImageSkiaNamed(IDR_OTR_ICON);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1450,6 +1440,9 @@ void BrowserView::TabInsertedAt(WebContents* contents,
     DCHECK(contents->GetView()->GetNativeView()->GetRootWindow());
   }
   web_contents_close_handler_->TabInserted();
+
+  if (foreground)
+    extensions::MaybeShowExtensionControlledNewTabPage(browser(), contents);
 }
 
 void BrowserView::TabDetachedAt(WebContents* contents, int index) {
@@ -1840,6 +1833,15 @@ void BrowserView::GetAccessibleState(ui::AXViewState* state) {
   state->role = ui::AX_ROLE_CLIENT;
 }
 
+void BrowserView::OnNativeThemeChanged(const ui::NativeTheme* theme) {
+  // Do not handle native theme changes before the browser view is initialized.
+  if (!initialized_)
+    return;
+  ClientView::OnNativeThemeChanged(theme);
+  UserChangedTheme();
+  chrome::MaybeShowInvertBubbleView(this);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserView, ui::AcceleratorTarget overrides:
 
@@ -1895,10 +1897,6 @@ bool BrowserView::DrawInfoBarArrows(int* x) const {
     *x = anchor.x();
   }
   return true;
-}
-
-void BrowserView::OnSysColorChange() {
-  chrome::MaybeShowInvertBubbleView(this);
 }
 
 void BrowserView::InitViews() {
@@ -2296,12 +2294,8 @@ void BrowserView::InitHangMonitor() {
       pref_service->GetInteger(prefs::kPluginMessageResponseTimeout);
   int hung_plugin_detect_freq =
       pref_service->GetInteger(prefs::kHungPluginDetectFrequency);
-#if defined(USE_AURA)
   HWND window = GetWidget()->GetNativeView()->GetHost()->
       GetAcceleratedWidget();
-#else
-  HWND window = GetWidget()->GetNativeView();
-#endif
   if ((hung_plugin_detect_freq > 0) &&
       hung_window_detector_.Initialize(window,
                                        plugin_message_response_timeout)) {
@@ -2516,11 +2510,7 @@ bool BrowserView::DoCutCopyPasteForWebContents(
   gfx::NativeView native_view = contents->GetView()->GetContentNativeView();
   if (!native_view)
     return false;
-#if defined(USE_AURA)
   if (native_view->HasFocus()) {
-#elif defined(OS_WIN)
-  if (native_view == ::GetFocus()) {
-#endif
     (contents->*method)();
     return true;
   }

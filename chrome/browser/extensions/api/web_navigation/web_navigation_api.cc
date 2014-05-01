@@ -684,13 +684,13 @@ bool WebNavigationTabObserver::IsReferenceFragmentNavigation(
   if (existing_url == url)
     return false;
 
-  url_canon::Replacements<char> replacements;
+  url::Replacements<char> replacements;
   replacements.ClearRef();
   return existing_url.ReplaceComponents(replacements) ==
       url.ReplaceComponents(replacements);
 }
 
-bool WebNavigationGetFrameFunction::RunImpl() {
+bool WebNavigationGetFrameFunction::RunSync() {
   scoped_ptr<GetFrame::Params> params(GetFrame::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
   int tab_id = params->details.tab_id;
@@ -747,7 +747,7 @@ bool WebNavigationGetFrameFunction::RunImpl() {
   return true;
 }
 
-bool WebNavigationGetAllFramesFunction::RunImpl() {
+bool WebNavigationGetAllFramesFunction::RunSync() {
   scoped_ptr<GetAllFrames::Params> params(GetAllFrames::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
   int tab_id = params->details.tab_id;

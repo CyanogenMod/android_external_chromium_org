@@ -2174,6 +2174,22 @@ Even if you have downloaded files from this website before, the website might ha
         Open as tab
       </message>
 
+      <!-- Quit all apps confirmation dialog -->
+      <if expr="is_macosx">
+        <message name="IDS_QUIT_WITH_APPS_NOTIFICATION_DISPLAY_SOURCE" desc="Display source for the notification when quitting with apps open.">
+          Quit
+        </message>
+        <message name="IDS_QUIT_WITH_APPS_EXPLANATION" desc="Text displayed in a notification explaining that Chrome will continue running in the background as long as there are Chrome Apps open.">
+          Chrome will keep running while Chrome Apps are open.
+        </message>
+        <message name="IDS_QUIT_WITH_APPS_QUIT_LABEL" desc="Button text to quit all running Chrome apps.">
+          Quit all apps
+        </message>
+        <message name="IDS_QUIT_WITH_APPS_SUPPRESSION_LABEL" desc="Button text to prevent a notification from showing in future.">
+          Don't show this again
+        </message>
+      </if>
+
       <!-- "Create application shortcuts" menu item -->
       <if expr="not use_titlecase">
         <message name="IDS_CREATE_SHORTCUTS" desc="Default installation menu label">
@@ -2233,6 +2249,18 @@ Even if you have downloaded files from this website before, the website might ha
           Uninstall
         </message>
       </if>
+      <message name="IDS_APPLICATION_INFO_REQUIRED_PERMISSIONS_TEXT" desc="Heading for the required permissions for the app (the permissions that the user must grant the app upon installation).">
+        Required
+      </message>
+      <message name="IDS_APPLICATION_INFO_OPTIONAL_PERMISSIONS_TEXT" desc="Heading for the optional permissions for the app (the permissions that the user may choose to grant the app, but are not required for the basic app's functionality).">
+        Optional
+      </message>
+      <message name="IDS_APPLICATION_INFO_RETAINED_FILE_PERMISSIONS_TEXT" desc="Heading for the retained files for the app, which are files the app has permanent access to (the app can read and write to these files).">
+        Files
+      </message>
+      <message name="IDS_APPLICATION_INFO_NO_PERMISSIONS_TEXT" desc="Text displayed in the Permissions area of the App Info dialog if the app has no permissions of any kind.">
+        This app requires no special permissions.
+      </message>
 
       <!-- "Create application shortcuts" dialog -->
       <if expr="not use_titlecase">
@@ -4366,9 +4394,6 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_DIRECTORY" desc="Permission string for read access to directories and their contents.">
         Read folders that you open in the application
       </message>
-      <message name="IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_WRITE" desc="Permission string for write access to the file system.">
-        Write to files that you open in the application
-      </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_WRITE_DIRECTORY" desc="Permission string for write access to directories and their contents.">
         Write to files and folders that you open in the application
       </message>
@@ -4691,66 +4716,6 @@ Make sure you do not expose any sensitive information.
         <message name="IDS_EXTENSIONS_PERMISSIONS_CLOSE" desc="Close button for permissions dialog in apps_devtools">
           Close
         </message>
-        <message name="IDS_APPS_DEVTOOL_LOAD_UNPACKED_BUTTON" desc="Text of the 'Load app/extension' button.">
-          Load unpacked...
-        </message>
-        <message name="IDS_APPS_DEVTOOL_PACK_BUTTON" desc="Text for the 'Pack app/extension' button.">
-          Pack...
-        </message>
-        <message name="IDS_APPS_DEVTOOL_UPDATE_BUTTON" desc="Text for the 'Update app/extensions' button.">
-          Update
-        </message>
-        <message name="IDS_APPS_DEVTOOL_SEARCH" desc="Placeholder text that appears inside the search box until the user inputs data.">
-          search
-        </message>
-        <message name="IDS_APPS_DEVTOOL_APPS_INSTALLED" desc="Text for the word 'Apps'.">
-          Apps
-        </message>
-        <message name="IDS_APPS_DEVTOOL_EXTENSIONS_INSTALLED" desc="Text for the word 'Extensions'.">
-          Extensions
-        </message>
-        <message name="IDS_APPS_DEVTOOL_NO_PACKED_APPS" desc="Text that lets the user know that no packed apps are installed.">
-          No installed applications.
-        </message>
-        <message name="IDS_APPS_DEVTOOL_NO_UNPACKED_APPS" desc="Text that lets the user know that no unpacked apps are installed.">
-          No unpacked applications.
-        </message>
-        <message name="IDS_APPS_DEVTOOL_NO_PACKED_EXTENSIONS" desc="Text that lets the user know that no packed extensions are installed.">
-          No installed extensions.
-        </message>
-        <message name="IDS_APPS_DEVTOOL_NO_UNPACKED_EXTENSIONS" desc="Text that lets the user know that no unpacked extensions are installed.">
-          No unpacked extensions.
-        </message>
-        <message name="IDS_APPS_DEVTOOL_UNPACKED_INSTALLED" desc="Text for the word 'Unpacked' (unpacked app or extension).">
-          Unpacked
-        </message>
-        <message name="IDS_APPS_DEVTOOL_INSTALLED" desc="Text for the word 'Installed' (installed app or extension).">
-          Installed
-        </message>
-        <message name="IDS_APPS_DEVTOOL_UPDATING" desc="Text for the word 'Updating...' when the user clicks on 'Update'.">
-          Updating...
-        </message>
-        <message name="IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_BUTTON" desc="Text of  the delete button in the apps/extension delete confirmation dialog.">
-          Delete
-        </message>
-        <message name="IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_TITLE" desc="Text of the title of the apps/extension delete confirmation dialog.">
-          Delete
-        </message>
-        <message name="IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_MESSAGE_APP" desc="Text of the message of the apps/extension delete confirmation dialog in case the user is deleting an app.">
-          Do you really want to delete this application?
-        </message>
-        <message name="IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_MESSAGE_EXTENSION" desc="Text of the message of the apps/extension delete confirmation dialog in case the user is deleting an extension.">
-          Do you really want to delete this extension?
-        </message>
-        <message name="IDS_APPS_DEVTOOL_MANAGED_PROFILE_DIALOG_CLOSE_BUTTON" desc="Title of the button to close the dialog for managed profile.">
-          Close
-        </message>
-        <message name="IDS_APPS_DEVTOOL_MANAGED_PROFILE_DIALOG_TITLE" desc="Title of the dialog for managed profile.">
-          This user is supervised.
-        </message>
-        <message name="IDS_APPS_DEVTOOL_MANAGED_PROFILE_DIALOG_DESCRIPTION" desc="Content of the dialog for managed profile. It's informing a supervised user that extensions cannot be changed.">
-          Applications and extensions cannot be modified by supervised users. Apps Developer Tools will be closed.
-        </message>
         <message name="IDS_EXTENSIONS_NONE_INSTALLED_SUGGEST_GALLERY" desc="Text on next line after IDS_EXTENSIONS_NONE_INSTALLED that suggests the user look in the gallery for extensions to install.">
           Want to <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>browse the gallery<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> instead?
         </message>
@@ -4783,6 +4748,21 @@ Make sure you do not expose any sensitive information.
         </message>
         <message name="IDS_EXTENSIONS_INSTALL_WARNINGS" desc="The text which says that an extension has warnings when it was installed.">
           There were warnings when trying to install this extension:
+        </message>
+        <message name="IDS_EXTENSIONS_LOAD_ERROR_HEADING" desc="The title of the section that describes an extension load error.">
+          Extension Load Error
+        </message>
+        <message name="IDS_EXTENSIONS_LOAD_ERROR_MESSAGE" desc="The message which tells the user that an extension failed to load.">
+          Failed to load extension from:
+        </message>
+        <message name="IDS_EXTENSIONS_LOAD_ERROR_RETRY" desc="The text of the button to retry loading an extension.">
+          Retry
+        </message>
+        <message name="IDS_EXTENSIONS_LOAD_ERROR_GIVE_UP" desc="The text of the button to give up on trying to load an extension.">
+          I give up
+        </message>
+        <message name="IDS_EXTENSIONS_LOAD_COULD_NOT_LOAD_MANIFEST" desc="The text to indicate that the source of the extension's manifest failed to load.">
+          Could not load manifest.
         </message>
         <message name="IDS_EXTENSIONS_ERRORS_SHOW_MORE" desc="The text which allows the user to display more errors for a given extension.">
           Show more...
@@ -4852,16 +4832,6 @@ Make sure you do not expose any sensitive information.
         <if expr="not is_macosx">
           <message name="IDS_EXTENSIONS_RELOAD_UNPACKED" desc="The link for reloading unpacked extensions.">
             Reload (Ctrl+R)
-          </message>
-        </if>
-        <if expr="is_macosx">
-          <message name="IDS_APPS_DEV_TOOLS_RELOAD_UNPACKED" desc="The link for reloading unpacked apps/extensions.">
-            Reload
-          </message>
-        </if>
-        <if expr="not is_macosx">
-          <message name="IDS_APPS_DEV_TOOLS_RELOAD_UNPACKED" desc="The link for reloading unpacked apps/extensions.">
-            Reload
           </message>
         </if>
         <message name="IDS_EXTENSIONS_OPTIONS_LINK" desc="The link text for the Options link.">
@@ -5223,6 +5193,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_EXTENSIONS_DISABLE_DEVELOPER_MODE_BODY" desc="Body of a dialog warning users they have development mode extensions running">
         Extensions running in developer mode can harm your computer. If you're not a developer, you should disable these extensions running in developer mode to stay safe.
       </message>
+      <message name="IDS_EXTENSIONS_CORRUPTED_EXTENSION" desc="The warning for the user that an extension may have been tampered with on disk.">
+        This extension may have been corrupted by malware.
+      </message>
 
       <!-- Settings API bubble -->
       <message name="IDS_EXTENSIONS_DISABLE_EXTENSIONS" desc="Text for the Disable Extensions (note: plural) button">
@@ -5258,6 +5231,16 @@ Keep your key file in a safe place. You will need it to create new versions of y
           Is this the search page you were expecting?
         </message>
       </if>
+      <if expr="use_titlecase">
+        <message name="IDS_EXTENSIONS_NTP_CONTROLLED_TITLE_HOME_PAGE_BUBBLE" desc="In Title Case: Title of a bubble warning users that an extension has overridden their new tab page setting">
+         Is This the New Tab Page You Were Expecting?
+        </message>
+      </if>
+      <if expr="not use_titlecase">
+        <message name="IDS_EXTENSIONS_NTP_CONTROLLED_TITLE_HOME_PAGE_BUBBLE" desc="Title of a bubble warning users that an extension has overridden their new tab page setting">
+          Is this the new tab page you were expecting?
+        </message>
+      </if>
 
       <message name="IDS_EXTENSIONS_SETTINGS_API_FIRST_LINE_SEARCH_ENGINE" desc="Text displayed in the Settings API bubble as first line when an extension has changed the search engine.">
         An extension has changed what page is shown when you search from the Omnibox.
@@ -5274,6 +5257,10 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_HOME_AND_SEARCH" desc="Second line in the Settings API bubble. Only shown if the secondary change by the extension was both the home page and the search engine. See IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_SEARCH_ENGINE for reason for triple quotes.">
         ''' It also controls what page is shown when you click the Home button or search from the Omnibox. '''
+      </message>
+
+      <message name="IDS_EXTENSIONS_NTP_CONTROLLED_FIRST_LINE" desc="Text displayed in the Settings API bubble as first line when an extension has changed the new tab page.">
+        An extension has changed what page is shown when you open a new tab.
       </message>
 
       <message name="IDS_EXTENSIONS_SETTINGS_API_THIRD_LINE_CONFIRMATION" desc="Third line in the Settings API bubble, always appended after the first (and optional second) line to make one paragraph. See IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_SEARCH_ENGINE for reason for triple quotes.">
@@ -6338,6 +6325,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_PASSWORD_GENERATION_DESCRIPTION" desc="Description of flag to enable password generation.">
         Allow the user to have Chrome generate passwords when it detects account creation pages.
       </message>
+      <message name="IDS_FLAGS_ENABLE_AUTOMATIC_PASSWORD_SAVING_NAME" desc="Name of the flag to automatically save password.">
+        Save passwords automatically.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_AUTOMATIC_PASSWORD_SAVING_DESCRIPTION" desc="Description of the flag to automatically save password.">
+        Skip the passwords prompt and save passwords automatically.
+      </message>
       <message name="IDS_FLAGS_PASSWORD_AUTOFILL_PUBLIC_SUFFIX_DOMAIN_MATCHING_NAME" desc="Name of the flag for public suffix domain matching for autofill of passwords.">
         Public suffix domain matching for autofill of passwords.
       </message>
@@ -6356,32 +6349,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_PERFORMANCE_MONITOR_GATHERING_DESCRIPTION" desc="Description for the flag to enable Performance Monitor.">
         Enable passive gathering of performance-related metrics and events and provide the option to view this data in a graphical fashion. To view data, visit chrome://performance.
       </message>
-      <message name="IDS_FLAGS_ENABLE_RICH_NOTIFICATIONS_NAME" desc="Name of the flag to enable rich notifications.">
-        Enable Rich Notifications
+      <message name="IDS_FLAGS_ENABLE_SUGGESTIONS_SERVICE_NAME" desc="Name of the flag to enable the suggestions service.">
+        Enable the Suggestions Service
       </message>
-      <message name="IDS_FLAGS_ENABLE_RICH_NOTIFICATIONS_DESCRIPTION" desc="Description for the flag to enable rich notifications.">
-        Enable rich templated notifications. Both HTML5 notifications and app notifications will be shown through new Notification Center.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_NOTIFICATION_UI_NAME" desc="Name of the flag to enable experimental UI for notifications.">
-        Enable experimental UI for Notifications
-      </message>
-      <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_NOTIFICATION_UI_DESCRIPTION" desc="Description for the flag to enable experimental UI for notifications.">
-        Used for various Notification Center features under construction/polish that are not yet ready to be shipped.
-      </message>
-      <message name="IDS_FLAGS_NOTIFICATION_TRAY_BEHAVIOR_NAME" desc="Name of the flag to change the behavior of the notifications tray icon.">
-        Notification Center behavior
-      </message>
-      <message name="IDS_FLAGS_NOTIFICATION_TRAY_BEHAVIOR_DESCRIPTION" desc="Description for the flag to enable experimental UI for notifications.">
-        Alters the behavior of the system level icon for the notification center.
-      </message>
-      <message name="IDS_FLAGS_NOTIFICATION_TRAY_BEHAVIOR_NEVER" desc="Description for the flag to enable experimental UI for notifications.">
-        Never show
-      </message>
-      <message name="IDS_FLAGS_NOTIFICATION_TRAY_BEHAVIOR_ALWAYS" desc="Description for the flag to enable experimental UI for notifications.">
-        Always show
-      </message>
-      <message name="IDS_FLAGS_NOTIFICATION_TRAY_BEHAVIOR_UNREAD" desc="Description for the flag to enable experimental UI for notifications.">
-        Only show if there are outstanding notifications
+      <message name="IDS_FLAGS_ENABLE_SUGGESTIONS_SERVICE_DESCRIPTION" desc="Description for the flag to enable suggestions service.">
+        Enable the experimental Chrome suggestions service.
       </message>
       <message name="IDS_FLAGS_ENABLE_SYNCED_NOTIFICATIONS_NAME" desc="Name of the flag to enable synced notifications.">
         Enable Synced Notifications
@@ -6439,11 +6411,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DELEGATED_RENDERER_DESCRIPTION" desc="Description of about:flags option for delegated renderer.">
         If enabled, the renderer delegates compositing to the browser, merging both compositing passes.
       </message>
-      <message name="IDS_FLAGS_MAP_IMAGE_NAME" desc="Name of about:flags option for map-image rasterizer.">
-        Map-image rasterizer (AKA Zero-copy)
+      <message name="IDS_FLAGS_ONE_COPY_NAME" desc="Name of about:flags option for one-copy rasterizer.">
+        Enable one-copy rasterizer
       </message>
-      <message name="IDS_FLAGS_MAP_IMAGE_DESCRIPTION" desc="Description of about:flags option for map-image rasterizer.">
-        If enabled, raster threads write directly to GPU memory.
+      <message name="IDS_FLAGS_ONE_COPY_DESCRIPTION" desc="Description of about:flags option for one-copy rasterizer.">
+        If enabled, raster threads write to GPU memory.
+      </message>
+      <message name="IDS_FLAGS_ZERO_COPY_NAME" desc="Name of about:flags option for zero-copy rasterizer.">
+        Enable zero-copy rasterizer
+      </message>
+      <message name="IDS_FLAGS_ZERO_COPY_DESCRIPTION" desc="Description of about:flags option for zero-copy rasterizer.">
+        If enabled, raster threads write directly to GPU memory associated with tiles.
       </message>
       <message name="IDS_FLAGS_MAX_TILES_FOR_INTEREST_AREA_NAME" desc="Name of about:flags option for maximum tiles for interest area.">
         Maximum tiles for interest area
@@ -6557,6 +6535,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Enables directory support for sync filesystem.
       </message>
       <if expr="is_macosx">
+        <message name="IDS_FLAGS_APPS_KEEP_CHROME_ALIVE_NAME" desc="Title for the flag to prevent Chrome from quitting when Chrome Apps are open.">
+          Apps keep Chrome alive.
+        </message>
+        <message name="IDS_FLAGS_APPS_KEEP_CHROME_ALIVE_DESCRIPTION" desc="Description for the flag to prevent Chrome from quitting when Chrome Apps are open.">
+          Prevent Chrome from quitting when Chrome Apps are open.
+        </message>
         <message name="IDS_FLAGS_DISABLE_APP_SHIMS_NAME" desc="Title for the flag to disable shortcuts for packaged apps from being added to Applications and from appearing in the dock.">
           Disable packaged app shortcuts.
         </message>
@@ -6766,13 +6750,13 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Touch scrolling mode.
       </message>
       <message name="IDS_FLAGS_TOUCH_SCROLLING_MODE_DESCRIPTION" desc="Description for the flag to control touch scrolling mode.">
-        Change the touch event behavior while scrolling.  "touchcancel" is what chrome has historically used, and "absorb-touchmove" is the new preferred mode.
+        Change the touch event behavior while scrolling.  "touchcancel" is what chrome has historically used, and "async-touchmove" is the new preferred mode.
       </message>
       <message name="IDS_FLAGS_TOUCH_SCROLLING_MODE_TOUCHCANCEL" desc="Name for the touchcancel scrolling mode">
         touchcancel
       </message>
-      <message name="IDS_FLAGS_TOUCH_SCROLLING_MODE_ABSORB_TOUCHMOVE" desc="Name for the absorb-touchmove scrolling mode">
-        absorb-touchmove
+      <message name="IDS_FLAGS_TOUCH_SCROLLING_MODE_ASYNC_TOUCHMOVE" desc="Name for the async-touchmove scrolling mode">
+        async-touchmove
       </message>
       <message name="IDS_FLAGS_TOUCH_SCROLLING_MODE_SYNC_TOUCHMOVE" desc="Name for the sync-touchmove scrolling mode">
         sync-touchmove
@@ -6795,6 +6779,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_DISABLE_EMBEDDED_SHARED_WORKER_DESCRIPTION" desc="Description of the flag to disable In-renderer Shared Worker.">
         Disable In-Renderer Shared Worker to run Shared Worker in a legacy dedicated worker process.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_APPS_FILE_ASSOCIATIONS_NAME" desc="Name for file associations for Chrome Apps.">
+        Apps file associations.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_APPS_FILE_ASSOCIATIONS_DESCRIPTION" desc="Description for a flag to enable file associations for Chrome Apps.">
+        Enable OS integration of file associations for Chrome Apps.
       </message>
 
       <!-- Crashes -->
@@ -6902,77 +6892,79 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Improve voice search by sending the sound of "Ok Google," and a few seconds before, to Google.
       </message>
 
-      <!-- Conflicts page -->
-      <message name="IDS_CONFLICTS_CHECK_PAGE_TABLE_TITLE_SUFFIX_ONE" desc="What gets appended after the page title if no conflicts were found.">
-        Modules (<ph name="TOTAL_COUNT">$1<ex>50</ex></ph>) - No conflicts detected
-      </message>
-      <message name="IDS_CONFLICTS_CHECK_PAGE_TABLE_TITLE_SUFFIX_TWO" desc="What gets appended after the page title (number of conflicts found).">
-        Modules (<ph name="TOTAL_COUNT">$1<ex>50</ex></ph>) - Known conflicts: <ph name="BAD_COUNT">$2<ex>3</ex></ph>, suspected: <ph name="SUSPICIOUS_COUNT">$3<ex>2</ex></ph>
-      </message>
-      <message name="IDS_CONFLICTS_EXPLANATION_TEXT" desc="The text blurb explaining what the compatibility page is.">
-        This page lists all modules loaded into the main process and modules registered to load at a later point.
-      </message>
-      <message name="IDS_CONFLICTS_CHECK_INVESTIGATING" desc="A label on the compatibility page saying we are investigating.">
-        We are currently investigating this issue.
-      </message>
-      <message name="IDS_CONFLICTS_CHECK_POSSIBLE_ACTIONS" desc="A label on the compatibility page describing possible resolutions.">
-        If you are experiencing frequent problems, you could try the following to resolve the issue with this module:
-      </message>
-      <message name="IDS_CONFLICTS_CHECK_POSSIBLE_ACTION_UNINSTALL" desc="An uninstall label. 'It' refers to 'a module'.">
-        Uninstalling
-      </message>
-      <message name="IDS_CONFLICTS_CHECK_POSSIBLE_ACTION_UPDATE" desc="An update label. 'It' refers to 'a module'.">
-        Updating
-      </message>
-      <message name="IDS_CONFLICTS_CHECK_POSSIBLE_ACTION_DISABLE" desc="A disable label. 'It' refers to 'a module'.">
-        Disabling
-      </message>
-      <message name="IDS_CONFLICTS_CHECK_POSSIBLE_ACTION_SEPARATOR" desc="The separator separating the words 'Uninstalling it', 'Updating it' and 'Disabling it'">
-        /
-      </message>
-      <message name="IDS_CONFLICTS_NO_MODULES_LOADED" desc="Error message for when no modules were found in the process">
-        Unable to detect any modules loaded.
-      </message>
-      <message name="IDS_CONFLICTS_HEADER_SOFTWARE" desc="The 'Software' header for each module item in the list">
-        Software
-      </message>
-      <message name="IDS_CONFLICTS_HEADER_SIGNED_BY" desc="The 'Signed by' header for each module item in the list">
-        Signed by
-      </message>
-      <message name="IDS_CONFLICTS_HEADER_LOCATION" desc="The 'Location' header for each module item in the list">
-        Location
-      </message>
-      <message name="IDS_CONFLICTS_HEADER_VERSION" desc="The 'Version' header for each module item in the list">
-        Version
-      </message>
-      <message name="IDS_CONFLICTS_HEADER_HELP_TIP" desc="The 'Help tip:' header for each module item in the list">
-        Help tip
-      </message>
-      <message name="IDS_CONFLICTS_LOADING_MESSAGE" desc="Shown while loading until full list of modules is retrieved">
-        Loading...
-      </message>
-      <message name="IDS_CONFLICTS_NOT_LOADED_YET" desc="Shown next to a module that has not been loaded into memory yet">
-        Not loaded yet
-      </message>
-      <message name="IDS_HELP_CENTER_VIEW_CONFLICTS" desc="The url of the Help center article for the View Conflicts page" translateable="false">
-        http://support.google.com/chrome/?p=<ph name="NAME">$1<ex>Hash</ex></ph>&amp;l=<ph name="LOCATION">$2<ex>Hash</ex></ph>&amp;d=<ph name="DESC">$3<ex>Hash</ex></ph>&amp;s=<ph name="SIGNER">$4<ex>Hash</ex></ph>
-      </message>
-      <if expr="use_titlecase">
-      <message name="IDS_CONFLICTS_LEARN_MORE" desc="The Learn More button in the conflicting module bubble">
-          Learn More
-      </message>
-      <message name="IDS_CONFLICTS_NOT_NOW" desc="The Not Now button in the conflicting module bubble">
-          Not Now
-      </message>
-      </if>
-      <if expr="not use_titlecase">
-      <message name="IDS_CONFLICTS_LEARN_MORE" desc="The Learn More button in the conflicting module bubble">
-          Learn more
-      </message>
-      <message name="IDS_CONFLICTS_NOT_NOW" desc="The Not Now button in the conflicting module bubble">
-          Not now
-      </message>
-      </if>
+      <if expr="is_win">
+        <!-- Conflicts page -->
+        <message name="IDS_CONFLICTS_CHECK_PAGE_TABLE_TITLE_SUFFIX_ONE" desc="What gets appended after the page title if no conflicts were found.">
+          Modules (<ph name="TOTAL_COUNT">$1<ex>50</ex></ph>) - No conflicts detected
+        </message>
+        <message name="IDS_CONFLICTS_CHECK_PAGE_TABLE_TITLE_SUFFIX_TWO" desc="What gets appended after the page title (number of conflicts found).">
+          Modules (<ph name="TOTAL_COUNT">$1<ex>50</ex></ph>) - Known conflicts: <ph name="BAD_COUNT">$2<ex>3</ex></ph>, suspected: <ph name="SUSPICIOUS_COUNT">$3<ex>2</ex></ph>
+        </message>
+        <message name="IDS_CONFLICTS_EXPLANATION_TEXT" desc="The text blurb explaining what the compatibility page is.">
+          This page lists all modules loaded into the main process and modules registered to load at a later point.
+        </message>
+        <message name="IDS_CONFLICTS_CHECK_INVESTIGATING" desc="A label on the compatibility page saying we are investigating.">
+          We are currently investigating this issue.
+        </message>
+        <message name="IDS_CONFLICTS_CHECK_POSSIBLE_ACTIONS" desc="A label on the compatibility page describing possible resolutions.">
+          If you are experiencing frequent problems, you could try the following to resolve the issue with this module:
+        </message>
+        <message name="IDS_CONFLICTS_CHECK_POSSIBLE_ACTION_UNINSTALL" desc="An uninstall label. 'It' refers to 'a module'.">
+          Uninstalling
+        </message>
+        <message name="IDS_CONFLICTS_CHECK_POSSIBLE_ACTION_UPDATE" desc="An update label. 'It' refers to 'a module'.">
+          Updating
+        </message>
+        <message name="IDS_CONFLICTS_CHECK_POSSIBLE_ACTION_DISABLE" desc="A disable label. 'It' refers to 'a module'.">
+          Disabling
+        </message>
+        <message name="IDS_CONFLICTS_CHECK_POSSIBLE_ACTION_SEPARATOR" desc="The separator separating the words 'Uninstalling it', 'Updating it' and 'Disabling it'">
+          /
+        </message>
+        <message name="IDS_CONFLICTS_NO_MODULES_LOADED" desc="Error message for when no modules were found in the process">
+          Unable to detect any modules loaded.
+        </message>
+        <message name="IDS_CONFLICTS_HEADER_SOFTWARE" desc="The 'Software' header for each module item in the list">
+          Software
+        </message>
+        <message name="IDS_CONFLICTS_HEADER_SIGNED_BY" desc="The 'Signed by' header for each module item in the list">
+          Signed by
+        </message>
+        <message name="IDS_CONFLICTS_HEADER_LOCATION" desc="The 'Location' header for each module item in the list">
+          Location
+        </message>
+        <message name="IDS_CONFLICTS_HEADER_VERSION" desc="The 'Version' header for each module item in the list">
+          Version
+        </message>
+        <message name="IDS_CONFLICTS_HEADER_HELP_TIP" desc="The 'Help tip:' header for each module item in the list">
+          Help tip
+        </message>
+        <message name="IDS_CONFLICTS_LOADING_MESSAGE" desc="Shown while loading until full list of modules is retrieved">
+          Loading...
+        </message>
+        <message name="IDS_CONFLICTS_NOT_LOADED_YET" desc="Shown next to a module that has not been loaded into memory yet">
+          Not loaded yet
+        </message>
+        <message name="IDS_HELP_CENTER_VIEW_CONFLICTS" desc="The url of the Help center article for the View Conflicts page" translateable="false">
+          http://support.google.com/chrome/?p=<ph name="NAME">$1<ex>Hash</ex></ph>&amp;l=<ph name="LOCATION">$2<ex>Hash</ex></ph>&amp;d=<ph name="DESC">$3<ex>Hash</ex></ph>&amp;s=<ph name="SIGNER">$4<ex>Hash</ex></ph>
+        </message>
+        <if expr="use_titlecase">
+        <message name="IDS_CONFLICTS_LEARN_MORE" desc="The Learn More button in the conflicting module bubble">
+            Learn More
+        </message>
+        <message name="IDS_CONFLICTS_NOT_NOW" desc="The Not Now button in the conflicting module bubble">
+            Not Now
+        </message>
+        </if>
+        <if expr="not use_titlecase">
+        <message name="IDS_CONFLICTS_LEARN_MORE" desc="The Learn More button in the conflicting module bubble">
+            Learn more
+        </message>
+        <message name="IDS_CONFLICTS_NOT_NOW" desc="The Not Now button in the conflicting module bubble">
+            Not now
+        </message>
+        </if>
+      </if> <!-- is_win -->
 
       <!-- Plug-in placeholders -->
       <message name="IDS_PLUGIN_LOAD" desc="The link for loading a blocked plug-in, displayed in the click to play UI.">
@@ -7045,6 +7037,18 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <!-- Session Crashed Info Bar-->
       <message name="IDS_SESSION_CRASHED_VIEW_RESTORE_BUTTON" desc="Title of the restore button in the session crashed view.">
         Restore
+      </message>
+      <message name="IDS_SESSION_CRASHED_BUBBLE_TITLE" desc="Title of the session crashed bubble view.">
+        Restore pages?
+      </message>
+      <message name="IDS_SESSION_CRASHED_VIEW_UMA_OPTIN" desc="Text besides the checkbox to let users optin to UMA in the restore from previous crash bubble.">
+        Help make Google Chrome better by sending crash reports and usage statistics to Google
+      </message>
+      <message name="IDS_FLAGS_ENABLE_SESSION_CRASHED_BUBBLE_NAME" desc="Title for the flag to enable showing session restore request in bubbles.">
+        Enable session restore bubble UI.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_SESSION_CRASHED_BUBBLE_DESCRIPTION" desc="Description for the flag to enable showing session restore request in bubbles.">
+        If enabled, the session restore UI will be shown in a bubble instead of an info bar.
       </message>
 
       <!-- Bad Flags Info Bar-->
@@ -7668,6 +7672,11 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         Warn Before Quitting (<ph name="KEY_EQUIVALENT">$1<ex>⌘Q</ex></ph>)
       </message>
 
+      <!-- Show/Hide notifications menubar extra -->
+      <message name="IDS_HIDE_NOTIFICATION_CENTER_OPTION" desc="The label of the checkbox preference that disables the notification center feature.">
+        Hide Notifications Icon
+      </message>
+
       <!-- Importer Lock Dialog -->
       <message name="IDS_IMPORTER_LOCK_TITLE" desc="Dialog title for importer lock dialog">
         Close Firefox Before Importing
@@ -8252,17 +8261,11 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_CLOUD_PRINT_CHROMEOS_OPTION_LABEL" desc="Label for the cloud print section of the Chrome OS advanced options dialog.">
         Set up or manage printers in <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph>.
       </message>
-      <message name="IDS_CLOUD_PRINT_CHROMEOS_OPTION_BUTTON" desc="Text on a button to go to the cloud print home page from the Chrome OS advanced options dialog.">
-        Open <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph>
-      </message>
       <message name="IDS_CLOUD_PRINT_REGISTER_PRINTER_FAILED" desc="Status message to be sent to the server when we failed to retrieve information about a printer to register.">
         An error occurred while retrieving printer capabilities for printer <ph name="PRINTER_NAME">$1<ex>HP Laserjet 7900</ex></ph>. This printer could not be registered with <ph name="CLOUD_PRINT_NAME">$2<ex>Google Cloud Print</ex></ph>.
       </message>
       <message name="IDS_CLOUD_PRINT_ZOMBIE_PRINTER" desc="Status message to be sent to the server when we get a notification for a printer that we can't find locally.">
         Received a notification for an unknown printer.
-      </message>
-      <message name="IDS_CLOUD_PRINT_XPS_UNAVAILABLE" desc="Status message to be sent to the Cloud Print server when the XPS framework is missing.">
-        The <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph> connector requires that the Microsoft XML Paper Specification Essentials Pack be installed.
       </message>
       <message name="IDS_CLOUD_PRINT_ENUM_FAILED" desc="Status message to be sent to the Cloud Print server when enumerating printers failed.">
         There was a problem listing printers. Some of your printers may not have registered successfully with <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph>.
@@ -8281,9 +8284,11 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         <message name="IDS_PRINT_PREVIEW_TITLE" desc="Fallback title for print preview page.">
           Print
         </message>
-        <message name="IDS_PRINT_PREVIEW_GOOGLE_CLOUD_PRINT_TITLE" desc="Fallback title for print preview page on Chrome OS.">
-          Google Cloud Print
-        </message>
+        <if expr="chromeos">
+          <message name="IDS_PRINT_PREVIEW_GOOGLE_CLOUD_PRINT_TITLE" desc="Fallback title for print preview page on Chrome OS.">
+            Google Cloud Print
+          </message>
+        </if>
         <message name="IDS_PRINT_PREVIEW_LOADING" desc="Message to display while the print preview is still loading.">
           Loading preview
         </message>
@@ -8386,9 +8391,11 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         <message name="IDS_PRINT_PREVIEW_SYSTEM_DIALOG_OPTION" desc="Option allowing the user to access advanced printer settings using the native print system dialog instead of printing through the print preview mechanism. Shortcut key is not translated">
           Print using system dialog... <ph name="SHORTCUT_KEY">$1<ex>(Shift+Ctrl+P)</ex></ph>
         </message>
-        <message name="IDS_PRINT_PREVIEW_CLOUD_DIALOG_OPTION" desc="Option allowing the user to access advanced printer settings using the cloud print dialog instead of printing through the print preview mechanism.">
-          Print using <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph> dialog... <ph name="SHORTCUT_KEY">$2<ex>(Shift+Ctrl+P)</ex></ph>
-        </message>
+        <if expr="chromeos">
+          <message name="IDS_PRINT_PREVIEW_CLOUD_DIALOG_OPTION" desc="Option allowing the user to access advanced printer settings using the cloud print dialog instead of printing through the print preview mechanism.">
+            Print using <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph> dialog... <ph name="SHORTCUT_KEY">$2<ex>(Shift+Ctrl+P)</ex></ph>
+          </message>
+        </if>
         <message name="IDS_PRINT_PREVIEW_CLOUD_DIALOG_OPTION_NO_SHORTCUT" desc="Option allowing the user to access advanced printer settings using the cloud print dialog instead of printing through the print preview mechanism without a shortcut key.">
           Print using <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph> dialog...
         </message>
@@ -8448,6 +8455,9 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         </message>
         <message name="IDS_PRINT_PREVIEW_RIGHT_MARGIN_LABEL" desc="ARIA label used by screen reader to explain the purpose of the right margin textbox.">
           Right margin
+        </message>
+        <message name="IDS_PRINT_PREVIEW_MEDIA_SIZE_LABEL" desc="Media size option label. Provides user the option to change the size of the printed page.">
+          Paper size
         </message>
         <message name="IDS_PRINT_PREVIEW_NATIVE_DIALOG" desc="Option offering the user to open the native print dialog, displayed when the PDF viewer is missing or when print preview fails.">
           Print using system dialog…
@@ -9690,9 +9700,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_HELP_TITLE" desc="Label used for title of the help page.">
           Help
         </message>
-        <message name="IDS_WEBKIT" desc="The name of the WebKit project; should not require translation.">
-          WebKit
-        </message>
         <message name="IDS_SHOW_MORE_INFO" desc="The label of the 'More info' link.">
           More info...
         </message>
@@ -9742,6 +9749,12 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         </if>
         <message name="IDS_ABOUT_PRODUCT_VERSION" desc="The text label describing the version of the browser">
           Version <ph name="PRODUCT_VERSION">$1<ex>15.0.865.0</ex></ph>
+        </message>
+      </if> <!-- not is_android -->
+
+      <if expr="chromeos">
+        <message name="IDS_WEBKIT" desc="The name of the WebKit project; should not require translation.">
+          WebKit
         </message>
         <message name="IDS_ABOUT_PAGE_FIRMWARE" desc="Label used for Chrome OS bios firmware version.">
           Firmware
@@ -9809,7 +9822,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_ABOUT_PAGE_CHANNEL_CHANGE_PAGE_CANCEL_BUTTON" desc="The label for the button for cancelling channel change.">
           Cancel
         </message>
-      </if>
+      </if> <!-- chromeos -->
 
       <message name="IDS_PLATFORM_LABEL" desc="Label for Platform">
         Platform
@@ -9999,9 +10012,11 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_AUTOFILL_OPTIONS_TITLE" desc="The title of the Autofill dialog.">
           Autofill settings
         </message>
-        <message name="IDS_AUTOFILL_USE_MAC_ADDRESS_BOOK" desc="Checkbox label to enable Address Book on Mac.">
-          Include addresses from your Address Book card
-        </message>
+        <if expr="is_macosx">
+          <message name="IDS_AUTOFILL_USE_MAC_ADDRESS_BOOK" desc="Checkbox label to enable Address Book on Mac.">
+            Include addresses from your Address Book card
+          </message>
+        </if>
         <message name="IDS_AUTOFILL_ADDRESSES_GROUP_NAME" desc="The name of the Addresses group of the Autofill dialog.">
           Addresses
         </message>
@@ -10552,9 +10567,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_AUTOFILL_DIALOG_EDIT" desc="Text of link in autofill dialog which allows user to edit address + payment info.">
           Edit
         </message>
-        <message name="IDS_AUTOFILL_DIALOG_SECTION_EMAIL" desc="Label for the email section of the autofill dialog.">
-          Email address
-        </message>
         <message name="IDS_AUTOFILL_DIALOG_SECTION_CC" desc="Label for the credit card section of the autofill dialog.">
           Card details
         </message>
@@ -10650,12 +10662,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         </message>
         <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_CREDIT_CARD_EXPIRATION_DATE" desc="Message displayed to user when credit card expiration date validation fails.">
           The card is expired. Please check the date or enter a new card.
-        </message>
-        <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_ZIP_CODE" desc="Message displayed to user when ZIP code (postal code) validation fails.">
-          Invalid ZIP code. Please check and try again.
-        </message>
-        <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_REGION" desc="Message displayed to user when the region (US state) validation fails.">
-          Invalid state. Please check and try again.
         </message>
         <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_PHONE_NUMBER" desc="Message displayed to user when phone number validation fails.">
           Invalid phone number. Please check and try again.
@@ -11034,84 +11040,13 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
 
       <!-- New Tab -->
-      <!-- Android specific strings -->
-      <if expr="is_android">
-        <message name="IDS_NEW_TAB_TITLE"
-            desc="Mobile: For Android devices. Do not use title case. Title of the new tab page, this is only shown while loading, then the title comes from the page.">
-          New tab
-        </message>
-        <message name="IDS_NEW_TAB_MOST_VISITED_TITLE"
-                 desc="The page title for the 'Most Visited' navigation control on the New Tab Page.">
-          New Tab - Most Visited
-        </message>
-        <message name="IDS_NEW_TAB_INCOGNITO_TITLE"
-                 desc="The page title for the 'Incognito' navigation control on the New Tab Page.">
-          New Tab - Incognito
-        </message>
-        <message name="IDS_NEW_TAB_BOOKMARKS_TITLE"
-                 desc="The page title for the 'Bookmarks' navigation control on the New Tab Page.">
-          New Tab - Bookmarks
-        </message>
-        <message name="IDS_NEW_TAB_OTHER_SESSIONS_TITLE"
-                 desc="The page title for the 'Other Sessions' navigation control on the New Tab Page.">
-          New Tab - Other Devices
-        </message>
-        <message name="IDS_NEW_TAB_OTR_MESSAGE_MOBILE"
-                 desc="Mobile: Used when a person opens an OTR tab">
-          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>You've gone incognito.<ph name="END_BOLD">&lt;/strong&gt;</ph>
-          Pages you view in incognito tabs won't stick around in your browser's history, cookie store, or search history after you've closed <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> of your incognito tabs. Any files you download or bookmarks you create will be kept.
-          <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
-          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>However, you aren't invisible.<ph name="END_BOLD">&lt;/strong&gt;</ph> Going incognito doesn't hide your browsing from your employer, your internet service provider, governments and other sophisticated attackers, or the websites you visit.
-          <ph name="BEGIN_LINK">&lt;a href="$1"&gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> about incognito browsing.
-        </message>
-        <message name="IDS_RECEIVED_DOCUMENTS" desc="New tab page section header for received documents">
-          Received from other devices
-        </message>
-        <message name="IDS_NEW_TAB_CONTEXT_MENU_OPEN_IN_NEW_TAB" desc="Context menu description for loading a link in a new tab">
-          Open in new tab
-        </message>
-        <message name="IDS_NEW_TAB_CONTEXT_MENU_OPEN_IN_INCOGNITO_TAB" desc="Context menu description for loading a link in an incognito tab">
-          Open in incognito tab
-        </message>
-        <message name="IDS_NEW_TAB_CONTEXT_MENU_REMOVE" desc="Context menu description for removing the selected item">
-          Remove
-        </message>
-        <message name="IDS_NEW_TAB_CONTEXT_MENU_REMOVE_ALL" desc="Context menu description for removing all items from a list">
-          Remove all
-        </message>
-        <message name="IDS_NEW_TAB_CONTEXT_MENU_EDIT_BOOKMARK" desc="Context menu description for editing the selected bookmark">
-          Edit bookmark
-        </message>
-        <message name="IDS_NEW_TAB_CONTEXT_MENU_DELETE_BOOKMARK" desc="Context menu description for deleting the selected bookmark">
-          Delete bookmark
-        </message>
-        <message name="IDS_NEW_TAB_CONTEXT_MENU_BOOKMARK_SHORTCUT" desc="Context menu description for creating a shortcut to bookmark on home screen">
-          Add to home screen
-        </message>
-        <message name="IDS_SYNC_PROMO_DESKTOP_INSTRUCTIONS" desc="Information about sync displayed on the NTP when the user has signed in on mobile but not on desktop">
-          &lt;p&gt;
-          Access the tabs you have open on your computer, right here.
-          &lt;/p&gt;
-          &lt;p&gt;
-          Just open Chrome on your computer, go to the menu, and select "Sign in to Chrome..."
-          &lt;/p&gt;
-        </message>
-        <message name="IDS_SYNC_ENABLE_SYNC" desc="Text that displayed on a link or button that allows the user to enable sync.">
-          &lt;p&gt;
-          Tabs you have opened in Chrome on your other devices will appear here.
-          &lt;/p&gt;
-          &lt;a href="#enablesync"&gt;
-          Enable sync.
-          &lt;/p&gt;
-        </message>
-      </if>
-
+      <message name="IDS_NEW_TAB_TITLE"
+               desc="Title of the new tab page, this is only shown while loading, then the title comes from the page">
+        New Tab
+      </message>
+      
       <!-- Strings used for non-Android builds -->
       <if expr="not is_android">
-        <message name="IDS_NEW_TAB_TITLE"
-            desc="Title of the new tab page, this is only shown while loading, then the title comes from the page">
-          New Tab
-        </message>
         <message name="IDS_NEW_TAB_SUGGESTIONS"
                  desc="The name for the 'Suggestions' navigation control on the New Tab Page.">
           Suggested
@@ -11135,29 +11070,40 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_NEW_TAB_OTHER_SESSIONS_LEARN_MORE_URL" desc="URL of help center page explaining what the 'Other Sessions' menu is.">
           http://support.google.com/chrome/bin/answer.py?answer=185277&amp;hl=[GRITLANGCODE]
         </message>
-        <message name="IDS_NEW_TAB_OTR_MESSAGE"
+        <message name="IDS_NEW_TAB_OTR_HEADING"
+                 desc="Heading used when a person opens an OTR window">
+          You’ve gone incognito
+        </message>
+        <message name="IDS_NEW_TAB_OTR_DESCRIPTION"
                  desc="Used when a person opens an OTR window">
-          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>You've gone incognito.<ph name="END_BOLD">&lt;/strong&gt;</ph>
-          Pages you view in incognito tabs won't stick around in your browser's history, cookie store, or search history after you've closed <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> of your incognito tabs. Any files you download or bookmarks you create will be kept.
-          <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
-          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>However, you aren't invisible.<ph name="END_BOLD">&lt;/strong&gt;</ph> Going incognito doesn't hide your browsing from your employer, your internet service provider, governments and other sophisticated attackers, or the websites you visit.
-          <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
-          <ph name="BEGIN_LINK">&lt;a href="$1"&gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> about incognito browsing.
+          Pages you view in incognito tabs won’t stick around in your browser’s history, cookie store, or search history after you’ve closed <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>all<ph name="END_BOLD">&lt;/strong&gt;</ph> of your incognito tabs. Any files you download or bookmarks you create will be kept.
+        </message>
+        <message name="IDS_NEW_TAB_OTR_LEARN_MORE_LINK"
+                 desc="OTR window link text to learn more">
+          Learn more about incognito browsing
+        </message>
+        <message name="IDS_NEW_TAB_OTR_MESSAGE_WARNING"
+                 desc="OTR window warning message">
+          Going incognito doesn’t hide your browsing from your employer, your internet service provider, or the websites you visit.
+        </message>
+        <message name="IDS_NEW_TAB_GUEST_SESSION_HEADING"
+              desc="Heading used when a person enters Guest Session">
+          You’re browsing as a Guest
+        </message>
+        <message name="IDS_NEW_TAB_GUEST_SESSION_LEARN_MORE_LINK"
+              desc="Guest Session link text to learn more">
+          Learn more about Guest browsing
         </message>
         <if expr="chromeos">
-          <message name="IDS_NEW_TAB_GUEST_SESSION_MESSAGE"
+          <message name="IDS_NEW_TAB_GUEST_SESSION_DESCRIPTION"
               desc="Used when a person enters Guest Session">
-              <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>You're browsing as a Guest<ph name="END_BOLD">&lt;/strong&gt;</ph>. Pages you view in this window won't appear in the browser history and they won't leave other traces, like cookies, on the computer after you sign out. Files you download and bookmarks you create won't be preserved.
-            <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
-            <ph name="BEGIN_LINK">&lt;a href="$1"&gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> about Guest browsing.
+            Pages you view in this window won’t appear in the browser history and they won’t leave other traces, like cookies, on the computer after you sign out. Files you download and bookmarks you create won’t be preserved.
           </message>
         </if>
         <if expr="not chromeos">
-          <message name="IDS_NEW_TAB_GUEST_SESSION_MESSAGE"
+          <message name="IDS_NEW_TAB_GUEST_SESSION_DESCRIPTION"
               desc="Used when a person enters Guest Session">
-              <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>You're browsing as a Guest<ph name="END_BOLD">&lt;/strong&gt;</ph>. Pages you view in this window won't appear in the browser history and they won't leave other traces, like cookies, on the computer after you close all open Guest windows. Any files you download will be preserved, however.
-            <ph name="LINE_BREAK">&lt;br /&gt;&lt;br /&gt;<ex>&lt;br /&gt;&lt;br /&gt;</ex></ph>
-            <ph name="BEGIN_LINK">&lt;a href="$1"&gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> about Guest browsing.
+            Pages you view in this window won’t appear in the browser history and they won’t leave other traces, like cookies, on the computer after you close all open Guest windows. Any files you download will be preserved, however.
           </message>
         </if>
         <message name="IDS_NEW_TAB_RECENTLY_CLOSED_WINDOW_SINGLE"
@@ -11180,14 +11126,14 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_NEW_TAB_APP_INSTALL_HINT_LABEL" desc="Text for the plus icon on the NTP that links to the web store.">
           Add more apps
         </message>
+        <message name="IDS_NEW_TAB_MOST_VISITED"
+                 desc="The name for the 'Most Visited' navigation control on the New Tab Page.">
+          Most visited
+        </message>
       </if>
 
-      <message name="IDS_NEW_TAB_MOST_VISITED"
-               desc="The name for the 'Most Visited' navigation control on the New Tab Page.">
-        Most visited
-      </message>
       <message name="IDS_NEW_TAB_RESTORE_THUMBNAILS_SHORT_LINK"
-         desc="The link that restores previously removed thumbnails. Context is 'Thumbnail removed. Undo | Restore all'">
+               desc="The link that restores previously removed thumbnails. Context is 'Thumbnail removed. Undo | Restore all'">
         Restore all
       </message>
       <message name="IDS_NEW_TAB_RECENTLY_CLOSED"
@@ -11426,8 +11372,23 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_PROFILES_TUTORIAL_TRY_BUTTON" desc="Text of the try button on the tutorial card in the avatar menu bubble view">
         Try it out
       </message>
+      <message name="IDS_PROFILES_FEEDBACK_TUTORIAL_TITLE" desc="Title of the tutorial card in the avatar menu bubble view that asks the user to send feedback about the new profile management UI.">
+        Thanks for your help.
+      </message>
+      <message name="IDS_PROFILES_SEND_FEEDBACK_BUTTON" desc="Text of the send feedback button on the tutorial card in the avatar menu bubble view">
+        Send feedback
+      </message>
+      <message name="IDS_PROFILES_END_PREVIEW" desc="The link/label text to end new profile management preview">
+        End preview
+      </message>
+      <message name="IDS_PROFILES_END_PREVIEW_AND_RELAUNCH" desc="The button text to end new profile management preview and relaunch Chrome">
+        End preview and relaunch
+      </message>
       <message name="IDS_PROFILES_NOT_YOU_BUTTON" desc="Button in the avatar menu bubble view for launching the user manager.">
         Not <ph name="PROFILE_DISPLAY_NAME">$1<ex>Jessica</ex></ph>?
+      </message>
+      <message name="IDS_PROFILES_EXIT_GUEST" desc="Button in the avatar menu bubble view for exiting the active guest session.">
+        Exit Guest
       </message>
       <if expr="not use_titlecase">
         <message name="IDS_PROFILES_PROFILE_ADD_ACCOUNT_BUTTON" desc="Button in the avatar menu bubble view used to add an account to a profile.">
@@ -12163,13 +12124,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
         </message>
         <message name="IDS_SYNC_SIGN_IN_ERROR_WRENCH_MENU_ITEM" desc="The sync error wrench menu item when the user needs to sign in again.">
           Sign in Again...
-        </message>
-      </if>
-
-      <!-- Android specific sync strings -->
-      <if expr="is_android">
-        <message name="IDS_SYNC_NTP_OPEN_TABS_LAST_SYNCED" desc="The message to display in front of the time of a last synced foreign tab">
-            Last synced
         </message>
       </if>
 
@@ -13638,8 +13592,14 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_PROFILES_DELETE_MANAGED_ADDENDUM" desc="Additional message shown in the same dialog following the IDS_PROFILES_DELETE_MESSAGE, explaining to the user what will happen if they delete the profile of a supervised user.">
         Settings and browsing history for this supervised user may still be visible by the manager at <ph name="BEGIN_LINK">&lt;a target="_blank" href="https://www.chrome.com/manage"&gt;</ph>www.chrome.com/manage<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
       </message>
-      <message name="IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_LEARN_MORE" desc="Learn more link that provides more information on managed accounts.">
-        Learn more
+      <message name="IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_TITLE" desc="Title of the disconnect managed profile dialog.">
+        Disconnect your Google Account
+      </message>
+      <message name="IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_DOMAIN_INFORMATION" desc="The text that provides the domain information.">
+        This account is managed by <ph name="DOMAIN">$1<ex>example.com</ex></ph>
+      </message>
+      <message name="IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_OK_BUTTON_LABEL" desc="The text to display on the button that clears the data and disconnect user account.">
+        Clear data and disconnect
       </message>
       <message name="IDS_PROFILES_LIST_ITEM_CURRENT" desc="Text to display in the multi-profiles list when this profile is the current profile">
         <ph name="PROFILE_NAME">$1<ex>New User</ex></ph> (current)
@@ -14014,6 +13974,13 @@ Do you accept?
     </message>
     <message name="IDS_FLAGS_ENABLE_VIRTUAL_KEYBOARD_DESCRIPTION" desc="Description of about:flags option to turn on the virtual keyboard">
       Enable virtual keyboard support.
+    </message>
+
+    <message name="IDS_FLAGS_ENABLE_VIRTUAL_KEYBOARD_OVERSCROLL_NAME" desc="Name of about:flags option to turn on the overscrolling for the virtual keyboard">
+      Virtual Keyboard Overscroll
+    </message>
+    <message name="IDS_FLAGS_ENABLE_VIRTUAL_KEYBOARD_OVERSCROLL_DESCRIPTION" desc="Description of about:flags option to turn on overscrolling for the virtual keyboard">
+      Enable virtual keyboard overscroll support.
     </message>
 
     <message name="IDS_FLAGS_ENABLE_SWIPE_SELECTION_NAME" desc="Name of about:flags option to turn on swipe selection for the virtual keyboard">
@@ -14588,6 +14555,10 @@ Do you accept?
     <message name="IDS_A11Y_ALERT_WINDOW_NEEDED" desc="Alert sent to the accessibility api when the user attempts a keyboard command that requires a window to work.">
       Command unavailable. Press control-N to open a new window.
     </message>
+    <message name="IDS_A11Y_ALERT_WINDOW_OVERVIEW_MODE_ENTERED" desc="The accessible text read when the user enters window overview mode in Ash.">
+      Entered window overview mode
+    </message>
+
     <message name="IDS_DESKTOP_MEDIA_PICKER_SHARE" desc="Used for Share on buttons">
       Share
     </message>
@@ -14641,6 +14612,24 @@ Do you accept?
     <message name="IDS_FLAGS_ENABLE_INSTANT_SEARCH_CLICKS_DESCRIPTION" desc="Description to enable instant search clicks">
       If enabled, prefetch previews for search results and swap them with original page when is downloaded and rendered.
     </message>
+
+    <!-- Mixed content issue workaround flags -->
+    <message name="IDS_FLAGS_ALLOW_INSECURE_WEBSOCKET_FROM_HTTPS_ORIGIN_NAME" desc="Title for the flag to allow insecure WebSocket from https origin">
+      Allow insecure WebSocket from https origin
+    </message>
+    <message name="IDS_FLAGS_ALLOW_INSECURE_WEBSOCKET_FROM_HTTPS_ORIGIN_DESCRIPTION" desc="Description to allow insecure WebSocket from https origin">
+      This flag makes Chrome unsafe. Use this only if you understand what this does. Note that this flag may be removed without any notice. If enabled, frames with an https origin can use WebSockets with an insecure URL (ws://).
+    </message>
+    
+    <!-- Experiment flags to enable EmbeddedSearch API in the search results page -->
+    <if expr="is_android">
+    <message name="IDS_FLAGS_ENABLE_EMBEDDEDSEARCH_API_NAME" desc="An about::flags experiment title to enable EmbeddedSearch API in the search results page">
+      Enable EmbeddedSearch API
+    </message>
+    <message name="IDS_FLAGS_ENABLE_EMBEDDEDSEARCH_API_DESCRIPTION" desc="Describes an about:flags experiment for enabling EmbeddedSearch API in the search results page">
+     If enabled, EmbeddedSearch API will be used to submit search queries in the search results page.
+    </message>
+    </if>
   </messages>
   </release>
 </grit>

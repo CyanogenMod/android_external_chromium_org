@@ -357,7 +357,18 @@ void InterstitialPageImpl::NavigationEntryCommitted(
   OnNavigatingAwayOrTabClosing();
 }
 
+void InterstitialPageImpl::WebContentsWillBeDestroyed() {
+  OnNavigatingAwayOrTabClosing();
+}
+
 void InterstitialPageImpl::WebContentsDestroyed(WebContents* web_contents) {
+  // WebContentsImpl will only call WebContentsWillBeDestroyed for interstitial
+  // pages that it knows about, pages that called
+  // WebContentsImpl::AttachInterstitialPage. But it's possible to have an
+  // interstitial page that never progressed that far. In that case, ensure that
+  // this interstitial page is destroyed. (And if it was attached, and
+  // OnNavigatingAwayOrTabClosing was called, it's safe to call
+  // OnNavigatingAwayOrTabClosing twice.)
   OnNavigatingAwayOrTabClosing();
 }
 
@@ -873,7 +884,8 @@ void InterstitialPageImpl::InterstitialPageRVHDelegateView::StartDragging(
     const gfx::ImageSkia& image,
     const gfx::Vector2d& image_offset,
     const DragEventSourceInfo& event_info) {
-  NOTREACHED() << "InterstitialPage does not support dragging yet.";
+  interstitial_page_->render_view_host_->DragSourceSystemDragEnded();
+  DVLOG(1) << "InterstitialPage does not support dragging yet.";
 }
 
 void InterstitialPageImpl::InterstitialPageRVHDelegateView::UpdateDragCursor(

@@ -16,7 +16,6 @@
 #include "base/observer_list.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
-#include "sync/engine/directory_type_debug_info_emitter.h"
 #include "sync/engine/sync_scheduler.h"
 #include "sync/engine/syncer_types.h"
 #include "sync/internal_api/change_reorder_buffer.h"
@@ -43,6 +42,7 @@
 #include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/protocol/proto_value_conversions.h"
 #include "sync/protocol/sync.pb.h"
+#include "sync/sessions/directory_type_debug_info_emitter.h"
 #include "sync/syncable/directory.h"
 #include "sync/syncable/entry.h"
 #include "sync/syncable/in_memory_directory_backing_store.h"
@@ -958,8 +958,10 @@ scoped_ptr<base::ListValue> SyncManagerImpl::GetAllNodesForType(
   DirectoryTypeDebugInfoEmitterMap::iterator it = emitter_map->find(type);
 
   if (it == emitter_map->end()) {
-    NOTREACHED() << "Asked to return debug info for invalid type "
-                 << ModelTypeToString(type);
+    // This can happen in some cases.  The UI thread makes requests of us
+    // when it doesn't really know which types are enabled or disabled.
+    DLOG(WARNING) << "Asked to return debug info for invalid type "
+                  << ModelTypeToString(type);
     return scoped_ptr<base::ListValue>();
   }
 

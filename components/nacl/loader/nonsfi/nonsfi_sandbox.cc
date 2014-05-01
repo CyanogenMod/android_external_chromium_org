@@ -110,11 +110,11 @@ ErrorCode RestrictSocketcall(SandboxBPF* sb) {
 }
 #endif
 
-ErrorCode RestrictMemoryProtection(SandboxBPF* sb, int argno) {
-  // TODO(jln, keescook, drewry): Limit the use of mmap/mprotect by
-  // adding some features to linux kernel.
+ErrorCode RestrictMprotect(SandboxBPF* sb) {
+  // TODO(jln, keescook, drewry): Limit the use of mprotect by adding
+  // some features to linux kernel.
   const uint32_t denied_mask = ~(PROT_READ | PROT_WRITE | PROT_EXEC);
-  return sb->Cond(argno, ErrorCode::TP_32BIT,
+  return sb->Cond(2, ErrorCode::TP_32BIT,
                   ErrorCode::OP_HAS_ANY_BITS,
                   denied_mask,
          sb->Trap(sandbox::CrashSIGSYS_Handler, NULL),
@@ -124,14 +124,22 @@ ErrorCode RestrictMemoryProtection(SandboxBPF* sb, int argno) {
 ErrorCode RestrictMmap(SandboxBPF* sb) {
   const uint32_t denied_flag_mask = ~(MAP_SHARED | MAP_PRIVATE |
                                       MAP_ANONYMOUS | MAP_STACK | MAP_FIXED);
-  // TODO(hamaji): Disallow RWX mmap.
+  // When PROT_EXEC is specified, IRT mmap of Non-SFI NaCl helper
+  // calls mmap without PROT_EXEC and then adds PROT_EXEC by mprotect,
+  // so we do not need to allow PROT_EXEC in mmap.
+  const uint32_t denied_prot_mask = ~(PROT_READ | PROT_WRITE);
   return sb->Cond(3, ErrorCode::TP_32BIT,
                   ErrorCode::OP_HAS_ANY_BITS,
                   denied_flag_mask,
-         sb->Trap(sandbox::CrashSIGSYS_Handler, NULL),
-                  RestrictMemoryProtection(sb, 2));
+                  sb->Trap(sandbox::CrashSIGSYS_Handler, NULL),
+         sb->Cond(2, ErrorCode::TP_32BIT,
+                  ErrorCode::OP_HAS_ANY_BITS,
+                  denied_prot_mask,
+                  sb->Trap(sandbox::CrashSIGSYS_Handler, NULL),
+                  ErrorCode(ErrorCode::ERR_ALLOWED)));
 }
 
+#if defined(__x86_64__) || defined(__arm__)
 ErrorCode RestrictSocketpair(SandboxBPF* sb) {
   // Only allow AF_UNIX, PF_UNIX. Crash if anything else is seen.
   COMPILE_ASSERT(AF_UNIX == PF_UNIX, af_unix_pf_unix_different);
@@ -140,9 +148,13 @@ ErrorCode RestrictSocketpair(SandboxBPF* sb) {
                   ErrorCode(ErrorCode::ERR_ALLOWED),
          sb->Trap(sandbox::CrashSIGSYS_Handler, NULL));
 }
+#endif
 
 bool IsGracefullyDenied(int sysno) {
   switch (sysno) {
+    // libevent tries this first and then falls back to poll if
+    // epoll_create fails.
+    case __NR_epoll_create:
     // third_party/libevent uses them, but we can just return -1 from
     // them as it is just checking getuid() != geteuid() and
     // getgid() != getegid()
@@ -151,12 +163,11 @@ bool IsGracefullyDenied(int sysno) {
     case __NR_geteuid32:
     case __NR_getgid32:
     case __NR_getuid32:
-#elif defined(__x86_64__)
+#endif
     case __NR_getegid:
     case __NR_geteuid:
     case __NR_getgid:
     case __NR_getuid:
-#endif
     // tcmalloc calls madvise in TCMalloc_SystemRelease.
     case __NR_madvise:
     // EPERM instead of SIGSYS as glibc tries to open files in /proc.
@@ -212,9 +223,6 @@ ErrorCode NaClNonSfiBPFSandboxPolicy::EvaluateSyscallImpl(
     case __NR_close:
     case __NR_dup:
     case __NR_dup2:
-    case __NR_epoll_create:
-    case __NR_epoll_ctl:
-    case __NR_epoll_wait:
     case __NR_exit:
     case __NR_exit_group:
 #if defined(__i386__) || defined(__arm__)
@@ -233,6 +241,7 @@ ErrorCode NaClNonSfiBPFSandboxPolicy::EvaluateSyscallImpl(
     // TODO(hamaji): Remove the need of pipe. Currently, this is
     // called from base::MessagePumpLibevent::Init().
     case __NR_pipe:
+    case __NR_poll:
     case __NR_pread64:
     case __NR_pwrite64:
     case __NR_read:
@@ -267,7 +276,7 @@ ErrorCode NaClNonSfiBPFSandboxPolicy::EvaluateSyscallImpl(
 #endif
       return RestrictMmap(sb);
     case __NR_mprotect:
-      return RestrictMemoryProtection(sb, 2);
+      return RestrictMprotect(sb);
 
     case __NR_prctl:
       return RestrictPrctl(sb);

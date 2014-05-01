@@ -21,8 +21,9 @@
 #include "content/public/browser/render_process_host.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_platform_file.h"
-#include "mojo/public/cpp/system/core.h"
-#include "ui/surface/transport_dib.h"
+#include "mojo/embedder/scoped_platform_handle.h"
+#include "mojo/public/cpp/bindings/remote_ptr.h"
+#include "mojo/public/interfaces/shell/shell.mojom.h"
 
 struct ViewHostMsg_CompositorSurfaceBuffersSwapped_Params;
 
@@ -41,6 +42,7 @@ class BrowserDemuxerAndroid;
 class GeolocationDispatcherHost;
 class GpuMessageFilter;
 class MessagePortMessageFilter;
+class MojoApplicationHost;
 class PeerConnectionTrackerHost;
 class RendererMainThread;
 class RenderProcessHostMojoImpl;
@@ -104,8 +106,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual bool FastShutdownIfPossible() OVERRIDE;
   virtual void DumpHandles() OVERRIDE;
   virtual base::ProcessHandle GetHandle() const OVERRIDE;
-  virtual TransportDIB* GetTransportDIB(TransportDIB::Id dib_id) OVERRIDE;
-  virtual TransportDIB* MapTransportDIB(TransportDIB::Id dib_id) OVERRIDE;
   virtual BrowserContext* GetBrowserContext() const OVERRIDE;
   virtual bool InSameStoragePartition(
       StoragePartition* partition) const OVERRIDE;
@@ -240,8 +240,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void IncrementWorkerRefCount();
   void DecrementWorkerRefCount();
 
-  void SetWebUIHandle(int32 view_routing_id,
-                      mojo::ScopedMessagePipeHandle handle);
+  // Establish a connection to a renderer-provided service. See
+  // content/common/mojo/mojo_service_names.h for a list of services.
+  void ConnectTo(const base::StringPiece& service_name,
+                 mojo::ScopedMessagePipeHandle handle);
 
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
@@ -266,6 +268,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
  private:
   friend class VisitRelayingRenderProcessHost;
+
+  void MaybeActivateMojo();
 
   // Creates and adds the IO thread message filters.
   void CreateMessageFilters();
@@ -306,6 +310,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SendDisableAecDumpToRenderer();
 #endif
 
+  scoped_ptr<MojoApplicationHost> mojo_application_host_;
+  bool mojo_activation_required_;
+
   // The registered IPC listener objects. When this list is empty, we should
   // delete ourselves.
   IDMap<IPC::Listener> listeners_;
@@ -332,18 +339,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // The filter for MessagePort messages coming from the renderer.
   scoped_refptr<MessagePortMessageFilter> message_port_message_filter_;
-
-  // A map of transport DIB ids to cached TransportDIBs
-  std::map<TransportDIB::Id, TransportDIB*> cached_dibs_;
-
-  enum {
-    // This is the maximum size of |cached_dibs_|
-    MAX_MAPPED_TRANSPORT_DIBS = 3,
-  };
-
-  void ClearTransportDIBCache();
-  // This is used to clear our cache five seconds after the last use.
-  base::DelayTimer<RenderProcessHostImpl> cached_dibs_cleaner_;
 
   // Used in single-process mode.
   scoped_ptr<base::Thread> in_process_renderer_;
@@ -430,8 +425,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Records the time when the process starts surviving for workers for UMA.
   base::TimeTicks survive_for_worker_start_time_;
-
-  scoped_ptr<RenderProcessHostMojoImpl> render_process_host_mojo_;
 
   base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_;
 

@@ -256,6 +256,11 @@ class CONTENT_EXPORT RenderWidget
   void UpdateCompositionInfo(bool should_update_range);
 #endif
 
+#if defined(OS_MACOSX)
+  void DidChangeScrollbarsForMainFrame(bool has_horizontal_scrollbar,
+                                       bool has_vertical_scrollbar);
+#endif  // defined(OS_MACOSX)
+
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
   // without ref-counting is an error.
@@ -294,15 +299,6 @@ class CONTENT_EXPORT RenderWidget
   // active RenderWidgets.
   void SetSwappedOut(bool is_swapped_out);
 
-  // Paints the given rectangular region of the WebWidget into canvas (a
-  // shared memory segment returned by AllocPaintBuf on Windows). The caller
-  // must ensure that the given rect fits within the bounds of the WebWidget.
-  void PaintRect(const gfx::Rect& rect, const gfx::Point& canvas_origin,
-                 SkCanvas* canvas);
-
-  // Paints a border at the given rect for debugging purposes.
-  void PaintDebugBorder(const gfx::Rect& rect, SkCanvas* canvas);
-
   void AnimationCallback();
   void InvalidationCallback();
   void FlushPendingInputEventAck();
@@ -320,6 +316,7 @@ class CONTENT_EXPORT RenderWidget
   void Resize(const gfx::Size& new_size,
               const gfx::Size& physical_backing_size,
               float overdraw_bottom_height,
+              const gfx::Size& visible_viewport_size,
               const gfx::Rect& resizer_rect,
               bool is_fullscreen,
               ResizeAck resize_ack);
@@ -382,8 +379,6 @@ class CONTENT_EXPORT RenderWidget
   void OnImeEventAck();
 #endif
 
-  void OnSnapshot(const gfx::Rect& src_subrect);
-
   // Notify the compositor about a change in viewport size. This should be
   // used only with auto resize mode WebWidgets, as normal WebWidgets should
   // go through OnResize.
@@ -417,9 +412,7 @@ class CONTENT_EXPORT RenderWidget
   void DidToggleFullscreen();
 
   bool next_paint_is_resize_ack() const;
-  bool next_paint_is_restore_ack() const;
   void set_next_paint_is_resize_ack();
-  void set_next_paint_is_restore_ack();
   void set_next_paint_is_repaint_ack();
 
   // Override point to obtain that the current input method state and caret
@@ -510,8 +503,6 @@ class CONTENT_EXPORT RenderWidget
   // Creates a 3D context associated with this view.
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> CreateGraphicsContext3D();
 
-  bool OnSnapshotHelper(const gfx::Rect& src_subrect, SkBitmap* bitmap);
-
   // Routing ID that allows us to communicate to the parent browser process
   // RenderWidgetHost. When MSG_ROUTING_NONE, no messages may be sent.
   int32 routing_id_;
@@ -546,14 +537,15 @@ class CONTENT_EXPORT RenderWidget
   // The size of the RenderWidget.
   gfx::Size size_;
 
-  bool has_frame_pending_;
-
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   gfx::Size physical_backing_size_;
 
   // The height of the physical backing surface that is overdrawn opaquely in
   // the browser, for example by an on-screen-keyboard (in DPI-adjusted pixels).
   float overdraw_bottom_height_;
+
+  // The size of the visible viewport in DPI-adjusted pixels.
+  gfx::Size visible_viewport_size_;
 
   // The area that must be reserved for drawing the resize corner.
   gfx::Rect resizer_rect_;
@@ -580,13 +572,6 @@ class CONTENT_EXPORT RenderWidget
 
   // Indicates that we are in fullscreen mode.
   bool is_fullscreen_;
-
-  // Indicates that we should be repainted when restored.  This flag is set to
-  // true if we receive an invalidation / scroll event from webkit while our
-  // is_hidden_ flag is set to true.  This is used to force a repaint once we
-  // restore to account for the fact that our host would not know about the
-  // invalidation / scroll event(s) from webkit while we are hidden.
-  bool needs_repainting_on_restore_;
 
   // Indicates whether we have been focused/unfocused by the browser.
   bool has_focus_;
@@ -710,6 +695,12 @@ class CONTENT_EXPORT RenderWidget
   // browser. If this value is not 0 IME events will be dropped.
   int outstanding_ime_acks_;
 #endif
+
+#if defined(OS_MACOSX)
+  // These store the "has scrollbars" state last sent to the browser.
+  bool cached_has_main_frame_horizontal_scrollbar_;
+  bool cached_has_main_frame_vertical_scrollbar_;
+#endif  // defined(OS_MACOSX)
 
   scoped_ptr<ScreenMetricsEmulator> screen_metrics_emulator_;
 

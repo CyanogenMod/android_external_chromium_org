@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/bookmarks/bookmark_index.h"
+#include "components/bookmarks/core/browser/bookmark_index.h"
 
 #include <string>
 #include <vector>
@@ -12,14 +12,15 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_test_helpers.h"
+#include "chrome/browser/bookmarks/test_bookmark_client.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/url_database.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/bookmarks/core/browser/bookmark_match.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -27,8 +28,7 @@ using base::ASCIIToUTF16;
 
 class BookmarkIndexTest : public testing::Test {
  public:
-  BookmarkIndexTest() : model_(new BookmarkModel(NULL, false)) {
-  }
+  BookmarkIndexTest() : model_(client_.CreateModel(false)) {}
 
   typedef std::pair<std::string, std::string> TitleAndURL;
 
@@ -105,6 +105,7 @@ class BookmarkIndexTest : public testing::Test {
   }
 
  protected:
+  test::TestBookmarkClient client_;
   scoped_ptr<BookmarkModel> model_;
 
  private:
@@ -161,7 +162,7 @@ TEST_F(BookmarkIndexTest, GetBookmarksMatching) {
 
     ExpectMatches(data[i].query, expected);
 
-    model_.reset(new BookmarkModel(NULL, false));
+    model_ = client_.CreateModel(false);
   }
 }
 
@@ -210,7 +211,7 @@ TEST_F(BookmarkIndexTest, GetBookmarksMatchingWithURLs) {
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(data); ++i) {
-    model_.reset(new BookmarkModel(NULL, true));
+    model_ = client_.CreateModel(true);
     std::vector<TitleAndURL> bookmarks;
     bookmarks.push_back(TitleAndURL(data[i].title, data[i].url));
     AddBookmarks(bookmarks);
@@ -249,7 +250,7 @@ TEST_F(BookmarkIndexTest, Normalization) {
     model_->GetBookmarksMatching(
         base::UTF8ToUTF16(data[i].query), 10, &matches);
     EXPECT_EQ(1u, matches.size());
-    model_.reset(new BookmarkModel(NULL, false));
+    model_ = client_.CreateModel(false);
   }
 }
 
@@ -286,41 +287,51 @@ TEST_F(BookmarkIndexTest, MatchPositionsTitles) {
     ExpectMatchPositions(matches[0].title_match_positions,
                          expected_title_matches);
 
-    model_.reset(new BookmarkModel(NULL, false));
+    model_ = client_.CreateModel(false);
   }
 }
 
 // Makes sure match positions are updated appropriately for URL matches.
 TEST_F(BookmarkIndexTest, MatchPositionsURLs) {
+  // The encoded stuff between /wiki/ and the # is 第二次世界大戦
+  const std::string ja_wiki_url = "http://ja.wikipedia.org/wiki/%E7%AC%AC%E4"
+      "%BA%8C%E6%AC%A1%E4%B8%96%E7%95%8C%E5%A4%A7%E6%88%A6#.E3.83.B4.E3.82.A7"
+      ".E3.83.AB.E3.82.B5.E3.82.A4.E3.83.A6.E4.BD.93.E5.88.B6";
   struct TestData {
     const std::string query;
     const std::string url;
     const std::string expected_url_match_positions;
   } data[] = {
-    { "foo",      "http://www.foo.com/",    "11,14" },
-    { "foo",      "http://www.foodie.com/", "11,14" },
-    { "foo",      "http://www.foofoo.com/", "11,14" },
-    { "www",      "http://www.foo.com/",    "7,10"  },
-    { "foo",      "http://www.foodie.com/blah/foo/fi", "11,14:27,30"      },
-    { "foo",      "http://www.blah.com/blah/foo/fi",   "25,28"            },
-    { "foo www",  "http://www.foodie.com/blah/foo/fi", "7,10:11,14:27,30" },
-    { "www foo",  "http://www.foodie.com/blah/foo/fi", "7,10:11,14:27,30" },
-    { "www bla",  "http://www.foodie.com/blah/foo/fi", "7,10:22,25"       },
-    { "http",     "http://www.foo.com/",               "0,4"              },
-    { "http www", "http://www.foo.com/",               "0,4:7,10"         },
-    { "http foo", "http://www.foo.com/",               "0,4:11,14"        },
-    { "http foo", "http://www.bar.com/baz/foodie/hi",  "0,4:23,26"        }
+    { "foo",        "http://www.foo.com/",    "11,14" },
+    { "foo",        "http://www.foodie.com/", "11,14" },
+    { "foo",        "http://www.foofoo.com/", "11,14" },
+    { "www",        "http://www.foo.com/",    "7,10"  },
+    { "foo",        "http://www.foodie.com/blah/foo/fi", "11,14:27,30"      },
+    { "foo",        "http://www.blah.com/blah/foo/fi",   "25,28"            },
+    { "foo www",    "http://www.foodie.com/blah/foo/fi", "7,10:11,14:27,30" },
+    { "www foo",    "http://www.foodie.com/blah/foo/fi", "7,10:11,14:27,30" },
+    { "www bla",    "http://www.foodie.com/blah/foo/fi", "7,10:22,25"       },
+    { "http",       "http://www.foo.com/",               "0,4"              },
+    { "http www",   "http://www.foo.com/",               "0,4:7,10"         },
+    { "http foo",   "http://www.foo.com/",               "0,4:11,14"        },
+    { "http foo",   "http://www.bar.com/baz/foodie/hi",  "0,4:23,26"        },
+    { "第二次",      ja_wiki_url,                         "29,56"            },
+    { "ja 第二次",   ja_wiki_url,                         "7,9:29,56"        },
+    { "第二次 E3.8", ja_wiki_url,                         "29,56:94,98:103,107:"
+                                                         "112,116:121,125:"
+                                                         "130,134:139,143"  }
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(data); ++i) {
-    model_.reset(new BookmarkModel(NULL, true));
+    model_ = client_.CreateModel(true);
     std::vector<TitleAndURL> bookmarks;
     TitleAndURL bookmark("123456", data[i].url);
     bookmarks.push_back(bookmark);
     AddBookmarks(bookmarks);
 
     std::vector<BookmarkMatch> matches;
-    model_->GetBookmarksMatching(ASCIIToUTF16(data[i].query), 1000, &matches);
+    model_->GetBookmarksMatching(
+        base::UTF8ToUTF16(data[i].query), 1000, &matches);
     ASSERT_EQ(1U, matches.size()) << data[i].url << data[i].query;
 
     BookmarkMatch::MatchPositions expected_url_matches;

@@ -17,6 +17,8 @@ import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwContentsClient;
 import org.chromium.android_webview.AwSettings;
 import org.chromium.android_webview.test.util.JSUtils;
+import org.chromium.android_webview.test.util.JavascriptEventObserver;
+import org.chromium.android_webview.test.util.VideoTestWebServer;
 import org.chromium.base.test.util.InMemorySharedPreferences;
 import org.chromium.content.browser.ContentSettings;
 import org.chromium.content.browser.LoadUrlParams;
@@ -24,6 +26,7 @@ import org.chromium.content.browser.test.util.CallbackHelper;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
@@ -104,8 +107,15 @@ public class AwTestBase
     protected void loadUrlSync(final AwContents awContents,
                                CallbackHelper onPageFinishedHelper,
                                final String url) throws Exception {
+        loadUrlSync(awContents, onPageFinishedHelper, url, null);
+    }
+
+    protected void loadUrlSync(final AwContents awContents,
+                               CallbackHelper onPageFinishedHelper,
+                               final String url,
+                               final Map<String, String> extraHeaders) throws Exception {
         int currentCallCount = onPageFinishedHelper.getCallCount();
-        loadUrlAsync(awContents, url);
+        loadUrlAsync(awContents, url, extraHeaders);
         onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
                 TimeUnit.MILLISECONDS);
     }
@@ -128,10 +138,18 @@ public class AwTestBase
      */
     protected void loadUrlAsync(final AwContents awContents,
                                 final String url) throws Exception {
+        loadUrlAsync(awContents, url, null);
+    }
+
+    protected void loadUrlAsync(final AwContents awContents,
+                                final String url,
+                                final Map<String, String> extraHeaders) {
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {
-                awContents.loadUrl(new LoadUrlParams(url));
+                LoadUrlParams params = new LoadUrlParams(url);
+                params.setExtraHeaders(extraHeaders);
+                awContents.loadUrl(params);
             }
         });
     }
@@ -464,5 +482,50 @@ public class AwTestBase
                 return awContents.canZoomOut();
             }
         });
+    }
+
+    /**
+     * Run video test.
+     * @param requiredUserGesture the settings of MediaPlaybackRequiresUserGesture.
+     * @param waitTime time for waiting event happen, -1 means forever.
+     * @return true if the event happened,
+     * @throws Throwable throw exception if timeout.
+     */
+    protected boolean runVideoTest(final boolean requiredUserGesture, long waitTime)
+            throws Throwable {
+        final JavascriptEventObserver observer = new JavascriptEventObserver();
+        TestAwContentsClient client = new TestAwContentsClient();
+        final AwContents awContents = createAwTestContainerViewOnMainSync(client).getAwContents();
+        getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                AwSettings awSettings = awContents.getSettings();
+                awSettings.setJavaScriptEnabled(true);
+                awSettings.setMediaPlaybackRequiresUserGesture(requiredUserGesture);
+                observer.register(awContents.getContentViewCore(), "javaObserver");
+            }
+        });
+        VideoTestWebServer webServer = new VideoTestWebServer(getActivity());
+        try {
+            String data = "<html><head><script>" +
+                "addEventListener('DOMContentLoaded', function() { " +
+                "  document.getElementById('video').addEventListener('play', function() { " +
+                "    javaObserver.notifyJava(); " +
+                "  }, false); " +
+                "}, false); " +
+                "</script></head><body>" +
+                "<video id='video' autoplay control src='" +
+                webServer.getOnePixelOneFrameWebmURL() + "' /> </body></html>";
+            loadDataAsync(awContents, data, "text/html", false);
+            if (waitTime == -1) {
+                observer.waitForEvent();
+                return true;
+            } else {
+                return observer.waitForEvent(waitTime);
+            }
+        } finally {
+            if (webServer != null && webServer.getTestWebServer() != null)
+                webServer.getTestWebServer().shutdown();
+        }
     }
 }

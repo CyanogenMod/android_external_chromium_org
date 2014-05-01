@@ -15,6 +15,9 @@ const char kAppOemManifestFile[]            = "app-mode-oem-manifest";
 // Possible values: parallel|postpone. Default: parallel.
 const char kAshWebUIInit[]                  = "ash-webui-init";
 
+// Specifies the URL of the consumer device management backend.
+const char kConsumerDeviceManagementUrl[]   = "consumer-device-management-url";
+
 // Forces the stub implementation of dbus clients.
 const char kDbusStub[] = "dbus-stub";
 
@@ -142,7 +145,8 @@ const char kLoginManager[]                  = "login-manager";
 // Specifies a password to be used to login (along with login-user).
 const char kLoginPassword[]                 = "login-password";
 
-// Specifies the profile to use once a chromeos user is logged in.
+// Specifies the profile to use once a chromeos user is logged in. This is
+// required unless --multi-profile is set.
 const char kLoginProfile[]                  = "login-profile";
 
 // Specifies the user which is already logged in.

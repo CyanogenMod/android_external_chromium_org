@@ -21,6 +21,7 @@
 #include "base/values.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
+#include "chrome/browser/browsing_data/browsing_data_remover_test_util.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
@@ -28,6 +29,8 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
+#include "chrome/browser/predictors/autocomplete_action_predictor.h"
+#include "chrome/browser/predictors/autocomplete_action_predictor_factory.h"
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/prerender/prerender_handle.h"
 #include "chrome/browser/prerender/prerender_link_manager.h"
@@ -47,6 +50,10 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
+#include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
+#include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/common/chrome_paths.h"
@@ -137,7 +144,9 @@ std::string CreateServerRedirect(const std::string& dest_url) {
 void ClearBrowsingData(Browser* browser, int remove_mask) {
   BrowsingDataRemover* remover =
       BrowsingDataRemover::CreateForUnboundedRange(browser->profile());
+  BrowsingDataRemoverCompletionObserver observer(remover);
   remover->Remove(remove_mask, BrowsingDataHelper::UNPROTECTED_WEB);
+  observer.BlockUntilCompletion();
   // BrowsingDataRemover deletes itself.
 }
 
@@ -2838,6 +2847,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLErrorIframe) {
 
 // Checks that we cancel correctly when window.print() is called.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPrint) {
+  DisableLoadEventCheck();
   PrerenderTestURL("files/prerender/prerender_print.html",
                    FINAL_STATUS_WINDOW_PRINT,
                    0);
@@ -3113,28 +3123,22 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClearHistory) {
                        FINAL_STATUS_CACHE_OR_HISTORY_CLEARED,
                        1);
 
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&ClearBrowsingData, current_browser(),
-                 BrowsingDataRemover::REMOVE_HISTORY));
+  ClearBrowsingData(current_browser(), BrowsingDataRemover::REMOVE_HISTORY);
   prerender->WaitForStop();
 
   // Make sure prerender history was cleared.
   EXPECT_EQ(0, GetHistoryLength());
 }
 
-// Disabled due to flakiness: crbug.com/316225
 // Checks that when the cache is cleared, prerenders are cancelled but
 // prerendering history is not cleared.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderClearCache) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClearCache) {
   scoped_ptr<TestPrerender> prerender =
       PrerenderTestURL("files/prerender/prerender_page.html",
                        FINAL_STATUS_CACHE_OR_HISTORY_CLEARED,
                        1);
 
-  base::MessageLoop::current()->PostTask(FROM_HERE,
-      base::Bind(&ClearBrowsingData, current_browser(),
-                 BrowsingDataRemover::REMOVE_CACHE));
+  ClearBrowsingData(current_browser(), BrowsingDataRemover::REMOVE_CACHE);
   prerender->WaitForStop();
 
   // Make sure prerender history was not cleared.  Not a vital behavior, but
@@ -4149,6 +4153,13 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPPLTNormalNavigation) {
   histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatchedComplete", 0);
 }
 
+// Checks that a prerender which calls window.close() on itself is aborted.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderWindowClose) {
+  DisableLoadEventCheck();
+  PrerenderTestURL("files/prerender/prerender_window_close.html",
+                   FINAL_STATUS_CLOSED, 0);
+}
+
 class PrerenderIncognitoBrowserTest : public PrerenderBrowserTest {
  public:
   virtual void SetUpOnMainThread() OVERRIDE {
@@ -4173,6 +4184,88 @@ IN_PROC_BROWSER_TEST_F(PrerenderIncognitoBrowserTest,
                        FINAL_STATUS_PROFILE_DESTROYED, 1);
   current_browser()->window()->Close();
   prerender->WaitForStop();
+}
+
+class PrerenderOmniboxBrowserTest : public PrerenderBrowserTest {
+ public:
+  LocationBar* GetLocationBar() {
+    return current_browser()->window()->GetLocationBar();
+  }
+
+  OmniboxView* GetOmniboxView() {
+    return GetLocationBar()->GetOmniboxView();
+  }
+
+  void WaitForAutocompleteDone(OmniboxView* omnibox_view) {
+    AutocompleteController* controller =
+        omnibox_view->model()->popup_model()->autocomplete_controller();
+    while (!controller->done()) {
+      content::WindowedNotificationObserver ready_observer(
+          chrome::NOTIFICATION_AUTOCOMPLETE_CONTROLLER_RESULT_READY,
+          content::Source<AutocompleteController>(controller));
+      ready_observer.Wait();
+    }
+  }
+
+  predictors::AutocompleteActionPredictor* GetAutocompleteActionPredictor() {
+    Profile* profile = current_browser()->profile();
+    return predictors::AutocompleteActionPredictorFactory::GetForProfile(
+        profile);
+  }
+
+  scoped_ptr<TestPrerender> StartOmniboxPrerender(
+      const GURL& url,
+      FinalStatus expected_final_status) {
+    scoped_ptr<TestPrerender> prerender =
+        ExpectPrerender(expected_final_status);
+    WebContents* web_contents = GetActiveWebContents();
+    GetAutocompleteActionPredictor()->StartPrerendering(
+        url,
+        web_contents->GetController().GetSessionStorageNamespaceMap(),
+        gfx::Size(50, 50));
+    prerender->WaitForStart();
+    return prerender.Pass();
+  }
+};
+
+// Checks that closing the omnibox popup cancels an omnibox prerender.
+IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest, PrerenderOmniboxCancel) {
+  // Fake an omnibox prerender.
+  scoped_ptr<TestPrerender> prerender = StartOmniboxPrerender(
+      test_server()->GetURL("files/empty.html"),
+      FINAL_STATUS_CANCELLED);
+
+  // Revert the location bar. This should cancel the prerender.
+  GetLocationBar()->Revert();
+  prerender->WaitForStop();
+}
+
+// Checks that closing the omnibox popup cancels an omnibox prerender.
+IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest, PrerenderOmniboxAbandon) {
+  // Set the abandon timeout to something high so it does not introduce
+  // flakiness if the prerender times out before the test completes.
+  GetPrerenderManager()->mutable_config().abandon_time_to_live =
+      base::TimeDelta::FromDays(999);
+
+  // Enter a URL into the Omnibox.
+  OmniboxView* omnibox_view = GetOmniboxView();
+  omnibox_view->OnBeforePossibleChange();
+  omnibox_view->SetUserText(
+      base::UTF8ToUTF16(test_server()->GetURL("files/empty.html?1").spec()));
+  omnibox_view->OnAfterPossibleChange();
+  WaitForAutocompleteDone(omnibox_view);
+
+  // Fake an omnibox prerender for a different URL.
+  scoped_ptr<TestPrerender> prerender = StartOmniboxPrerender(
+      test_server()->GetURL("files/empty.html?2"),
+      FINAL_STATUS_APP_TERMINATING);
+
+  // Navigate to the URL entered.
+  omnibox_view->model()->AcceptInput(CURRENT_TAB, false);
+
+  // Prerender should be running, but abandoned.
+  EXPECT_TRUE(
+      GetAutocompleteActionPredictor()->IsPrerenderAbandonedForTesting());
 }
 
 }  // namespace prerender

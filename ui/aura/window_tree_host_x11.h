@@ -42,6 +42,7 @@ class AURA_EXPORT WindowTreeHostX11 : public WindowTreeHost,
   virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
 
   // WindowTreeHost:
+  virtual ui::EventSource* GetEventSource() OVERRIDE;
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
@@ -50,7 +51,6 @@ class AURA_EXPORT WindowTreeHostX11 : public WindowTreeHost,
   virtual gfx::Point GetLocationOnNativeScreen() const OVERRIDE;
   virtual void SetCapture() OVERRIDE;
   virtual void ReleaseCapture() OVERRIDE;
-  virtual bool QueryMouseLocation(gfx::Point* location_return) OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void SetCursorNative(gfx::NativeCursor cursor_type) OVERRIDE;

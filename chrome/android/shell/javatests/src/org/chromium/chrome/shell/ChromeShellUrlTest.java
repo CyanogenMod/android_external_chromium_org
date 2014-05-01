@@ -8,9 +8,9 @@ import android.test.suitebuilder.annotation.SmallTest;
 
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.util.Feature;
-import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.ContentViewRenderView;
+import org.chromium.ui.base.WindowAndroid;
 
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -43,22 +43,17 @@ public class ChromeShellUrlTest extends ChromeShellTestBase {
         // Make sure the activity was created as expected.
         assertNotNull(activity);
 
-        // Ensure we have a ContentView and ContentViewCore.
-        final AtomicReference<ContentView> contentView = new AtomicReference<ContentView>();
+        // Ensure we have a valid ContentViewCore.
         final AtomicReference<ContentViewCore> contentViewCore =
                 new AtomicReference<ContentViewCore>();
         ThreadUtils.runOnUiThreadBlocking(new Runnable() {
             @Override
             public void run() {
-                ContentView activeContentView = activity.getActiveContentView();
-                contentView.set(activeContentView);
-                if (activeContentView != null) {
-                    contentViewCore.set(activeContentView.getContentViewCore());
-                }
+                contentViewCore.set(activity.getActiveContentViewCore());
             }
         });
-        assertNotNull(contentView.get());
         assertNotNull(contentViewCore.get());
+        assertNotNull(contentViewCore.get().getContainerView());
 
         // Ensure the correct page has been loaded, ie. not interstitial, and title/url should
         // be sane. Note, a typical correct title is: "Welcome to Chromium", whereas a wrong one
@@ -101,14 +96,17 @@ public class ChromeShellUrlTest extends ChromeShellTestBase {
             runTestOnUiThread(new Runnable() {
                 @Override
                 public void run() {
+                    WindowAndroid windowAndroid = new WindowAndroid(
+                            getInstrumentation().getTargetContext().getApplicationContext());
                     ContentViewRenderView contentViewRenderView =
                             new ContentViewRenderView(getInstrumentation().getTargetContext(),
-                                    activity.getWindowAndroid());
+                                    windowAndroid);
                     contentViewRenderView.setCurrentContentViewCore(
-                            activity.getActiveContentView().getContentViewCore());
+                            activity.getActiveContentViewCore());
                 }
             });
         } catch (Throwable e) {
+            e.printStackTrace();
             fail("Could not create a ContentViewRenderView: " + e);
         }
     }

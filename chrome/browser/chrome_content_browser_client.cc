@@ -41,10 +41,10 @@
 #include "chrome/browser/extensions/suggest_permission_util.h"
 #include "chrome/browser/geolocation/chrome_access_token_store.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/guestview/adview/adview_guest.h"
-#include "chrome/browser/guestview/guestview.h"
-#include "chrome/browser/guestview/guestview_constants.h"
-#include "chrome/browser/guestview/webview/webview_guest.h"
+#include "chrome/browser/guest_view/ad_view/ad_view_guest.h"
+#include "chrome/browser/guest_view/guest_view_base.h"
+#include "chrome/browser/guest_view/guest_view_constants.h"
+#include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/media/cast_transport_host_filter.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/metrics/chrome_browser_main_extra_parts_metrics.h"
@@ -150,7 +150,6 @@
 #include "ppapi/shared_impl/ppapi_switches.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/message_center/message_center_util.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/common/webpreferences.h"
 
@@ -167,6 +166,7 @@
 #include "chrome/browser/chromeos/drive/fileapi/file_system_backend_delegate.h"
 #include "chrome/browser/chromeos/file_system_provider/fileapi/backend_delegate.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
+#include "chrome/browser/chromeos/fileapi/mtp_file_system_backend_delegate.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
@@ -312,11 +312,9 @@ const char* kPredefinedAllowedSocketOrigins[] = {
 GURL ReplaceURLHostAndPath(const GURL& url,
                            const std::string& host,
                            const std::string& path) {
-  url_canon::Replacements<char> replacements;
-  replacements.SetHost(host.c_str(),
-                       url_parse::Component(0, host.length()));
-  replacements.SetPath(path.c_str(),
-                       url_parse::Component(0, path.length()));
+  url::Replacements<char> replacements;
+  replacements.SetHost(host.c_str(), url::Component(0, host.length()));
+  replacements.SetPath(path.c_str(), url::Component(0, path.length()));
   return url.ReplaceComponents(replacements);
 }
 
@@ -771,7 +769,7 @@ void ChromeContentBrowserClient::GetStoragePartitionConfigForSite(
   partition_name->clear();
   *in_memory = false;
 
-  bool success = GuestView::GetGuestPartitionConfigForSite(
+  bool success = GuestViewBase::GetGuestPartitionConfigForSite(
       site, partition_domain, partition_name, in_memory);
 
   if (!success && site.SchemeIs(extensions::kExtensionScheme)) {
@@ -837,28 +835,25 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
     return;
   }
 
-  /// TODO(fsamuel): In the future, certain types of GuestViews won't require
-  // extension bindings. At that point, we should clear |extension_id| instead
-  // of exiting early.
-  if (!service->GetExtensionById(extension_id, false) &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableBrowserPluginForAllViewTypes)) {
+  /// TODO(fsamuel): In the future, certain types of GuestViewBases won't
+  // require extension bindings. At that point, we should clear |extension_id|
+  // instead of exiting early.
+  if (!extension_id.empty() &&
+      !service->GetExtensionById(extension_id, false)) {
     NOTREACHED();
     return;
   }
 
   if (opener_web_contents) {
-    GuestView* guest = GuestView::FromWebContents(opener_web_contents);
+    GuestViewBase* guest = GuestViewBase::FromWebContents(opener_web_contents);
     if (!guest) {
       NOTREACHED();
       return;
     }
 
-    // Create a new GuestView of the same type as the opener.
-    *guest_delegate =
-        GuestView::Create(guest_web_contents,
-                          extension_id,
-                          guest->GetViewType());
+    // Create a new GuestViewBase of the same type as the opener.
+    *guest_delegate = GuestViewBase::Create(
+        guest_web_contents, extension_id, guest->GetViewType());
     return;
   }
 
@@ -873,17 +868,14 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
     return;
 
   *guest_delegate =
-      GuestView::Create(guest_web_contents,
-                        extension_id,
-                        GuestView::GetViewTypeFromString(api_type));
+      GuestViewBase::Create(guest_web_contents, extension_id, api_type);
 }
 
 void ChromeContentBrowserClient::GuestWebContentsAttached(
     WebContents* guest_web_contents,
     WebContents* embedder_web_contents,
     const base::DictionaryValue& extra_params) {
-
-  GuestView* guest = GuestView::FromWebContents(guest_web_contents);
+  GuestViewBase* guest = GuestViewBase::FromWebContents(guest_web_contents);
   if (!guest) {
     // It's ok to return here, since we could be running a browser plugin
     // outside an extension, and don't need to attach a
@@ -948,7 +940,8 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
 
   RendererContentSettingRules rules;
   if (host->IsGuest()) {
-    GuestView::GetDefaultContentSettingRules(&rules, profile->IsOffTheRecord());
+    GuestViewBase::GetDefaultContentSettingRules(&rules,
+                                                 profile->IsOffTheRecord());
   } else {
     GetRendererContentSettingRules(
         profile->GetHostContentSettingsMap(), &rules);
@@ -1150,6 +1143,17 @@ bool ChromeContentBrowserClient::ShouldAllowOpenURL(
             extension, url.path()))
       return false;
   }
+
+  // Do not allow chrome://chrome-signin navigate to other chrome:// URLs, since
+  // the signin page may host untrusted web content.
+  if (from_url.GetOrigin().spec() == chrome::kChromeUIChromeSigninURL &&
+      url.SchemeIs(content::kChromeUIScheme) &&
+      url.host() != chrome::kChromeUIChromeSigninHost) {
+    VLOG(1) << "Blocked navigation to " << url.spec() << " from "
+            << chrome::kChromeUIChromeSigninURL;
+    return false;
+  }
+
   return true;
 }
 
@@ -1854,8 +1858,8 @@ void ChromeContentBrowserClient::AllowCertificateError(
   }
 
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
-  captive_portal::CaptivePortalTabHelper* captive_portal_tab_helper =
-      captive_portal::CaptivePortalTabHelper::FromWebContents(tab);
+  CaptivePortalTabHelper* captive_portal_tab_helper =
+      CaptivePortalTabHelper::FromWebContents(tab);
   if (captive_portal_tab_helper)
     captive_portal_tab_helper->OnSSLCertError(ssl_info);
 #endif
@@ -2312,17 +2316,6 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
           extension, view_type, web_prefs);
     }
   }
-
-#if defined(OS_CHROMEOS)
-  // Override the default of suppressing HW compositing for WebUI pages for the
-  // file manager, which is implemented using WebUI but wants HW acceleration
-  // for video decode & render.
-  if (url.SchemeIs(extensions::kExtensionScheme) &&
-      url.host() == file_manager::kFileManagerAppId) {
-    web_prefs->accelerated_compositing_enabled = true;
-    web_prefs->accelerated_2d_canvas_enabled = true;
-  }
-#endif
 }
 
 void ChromeContentBrowserClient::UpdateInspectorSetting(
@@ -2510,6 +2503,7 @@ void ChromeContentBrowserClient::GetAdditionalFileSystemBackends(
   chromeos::FileSystemBackend* backend = new chromeos::FileSystemBackend(
       new drive::FileSystemBackendDelegate,
       new chromeos::file_system_provider::BackendDelegate,
+      new chromeos::MTPFileSystemBackendDelegate(storage_partition_path),
       browser_context->GetSpecialStoragePolicy(),
       external_mount_points,
       fileapi::ExternalMountPoints::GetSystemInstance());

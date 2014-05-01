@@ -55,6 +55,9 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   // LayerTreeHostImplClient implementation
   virtual void UpdateRendererCapabilitiesOnImplThread() OVERRIDE;
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE;
+  virtual void CommitVSyncParameters(base::TimeTicks timebase,
+                                     base::TimeDelta interval) OVERRIDE {}
+  virtual void SetEstimatedParentDrawTime(base::TimeDelta draw_time) OVERRIDE {}
   virtual void SetMaxSwapsPendingOnImplThread(int max) OVERRIDE {}
   virtual void DidSwapBuffersOnImplThread() OVERRIDE;
   virtual void DidSwapBuffersCompleteOnImplThread() OVERRIDE;
@@ -64,6 +67,7 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   virtual void SetNeedsRedrawOnImplThread() OVERRIDE;
   virtual void SetNeedsRedrawRectOnImplThread(
       const gfx::Rect& dirty_rect) OVERRIDE;
+  virtual void SetNeedsAnimateOnImplThread() OVERRIDE;
   virtual void SetNeedsManageTilesOnImplThread() OVERRIDE;
   virtual void DidInitializeVisibleTileOnImplThread() OVERRIDE;
   virtual void SetNeedsCommitOnImplThread() OVERRIDE;
@@ -88,14 +92,12 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   SingleThreadProxy(LayerTreeHost* layer_tree_host,
                     LayerTreeHostSingleThreadClient* client);
 
-  void OnOutputSurfaceInitializeAttempted(bool success);
   bool CommitAndComposite(base::TimeTicks frame_begin_time,
                           const gfx::Rect& device_viewport_damage_rect,
                           bool for_readback,
                           LayerTreeHostImpl::FrameData* frame);
   void DoCommit(scoped_ptr<ResourceUpdateQueue> queue);
-  bool DoComposite(scoped_refptr<ContextProvider> offscreen_context_provider,
-                   base::TimeTicks frame_begin_time,
+  bool DoComposite(base::TimeTicks frame_begin_time,
                    const gfx::Rect& device_viewport_damage_rect,
                    bool for_readback,
                    LayerTreeHostImpl::FrameData* frame);
@@ -107,7 +109,6 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   // Accessed on main thread only.
   LayerTreeHost* layer_tree_host_;
   LayerTreeHostSingleThreadClient* client_;
-  bool created_offscreen_context_provider_;
 
   // Used on the Thread, but checked on main thread during
   // initialization/shutdown.

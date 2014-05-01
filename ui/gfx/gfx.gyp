@@ -47,6 +47,8 @@
         'geometry/rect_conversions.h',
         'geometry/rect_f.cc',
         'geometry/rect_f.h',
+        'geometry/r_tree.cc',
+        'geometry/r_tree.h',
         'geometry/safe_integer_conversions.h',
         'geometry/size.cc',
         'geometry/size.h',
@@ -348,7 +350,7 @@
             ],
           },
         }],
-        ['use_aura==0', {
+        ['use_aura==0 and toolkit_views==0', {
           'sources!': [
             'nine_image_painter.cc',
             'nine_image_painter.h',
@@ -463,6 +465,7 @@
         'geometry/point3_unittest.cc',
         'geometry/quad_unittest.cc',
         'geometry/rect_unittest.cc',
+        'geometry/r_tree_unittest.cc',
         'geometry/safe_integer_conversions_unittest.cc',
         'geometry/size_unittest.cc',
         'geometry/vector2d_unittest.cc',
@@ -488,6 +491,12 @@
         ['OS == "win"', {
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
+        }],
+        ['OS != "mac" and OS != "ios"', {
+          'sources': [
+            'transform_unittest.cc',
+            'interpolated_transform_unittest.cc',
+          ],
         }],
       ],
     }

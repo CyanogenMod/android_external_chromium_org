@@ -51,6 +51,7 @@
 #include "content/common/gpu/client/gpu_memory_buffer_impl.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
+#include "content/common/mojo/mojo_service_names.h"
 #include "content/common/resource_messages.h"
 #include "content/common/view_messages.h"
 #include "content/common/worker_messages.h"
@@ -82,7 +83,6 @@
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/video_capture_message_filter.h"
 #include "content/renderer/media/webrtc_identity_service.h"
-#include "content/renderer/mojo/mojo_render_process_observer.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -90,6 +90,7 @@
 #include "content/renderer/service_worker/embedded_worker_context_message_filter.h"
 #include "content/renderer/service_worker/embedded_worker_dispatcher.h"
 #include "content/renderer/shared_worker/embedded_shared_worker_stub.h"
+#include "content/renderer/web_ui_setup_impl.h"
 #include "grit/content_resources.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_forwarding_message_filter.h"
@@ -97,6 +98,7 @@
 #include "media/base/audio_hardware_config.h"
 #include "media/base/media.h"
 #include "media/filters/gpu_video_accelerator_factories.h"
+#include "mojo/common/common_type_converters.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "skia/ext/event_tracer_impl.h"
@@ -394,9 +396,6 @@ void RenderThreadImpl::Init() {
 
   AddFilter((new EmbeddedWorkerContextMessageFilter())->GetFilter());
 
-  // MojoRenderProcessObserver deletes itself as necessary.
-  new MojoRenderProcessObserver(this);
-
   GetContentClient()->renderer()->RenderThreadStarted();
 
   InitSkiaEventTracer();
@@ -410,9 +409,10 @@ void RenderThreadImpl::Init() {
   webkit::WebLayerImpl::SetImplSidePaintingEnabled(
       is_impl_side_painting_enabled_);
 
-  is_map_image_enabled_ =
-      command_line.HasSwitch(switches::kEnableMapImage) &&
-      !command_line.HasSwitch(switches::kDisableMapImage);
+  is_zero_copy_enabled_ = command_line.HasSwitch(switches::kEnableZeroCopy) &&
+                          !command_line.HasSwitch(switches::kDisableZeroCopy);
+
+  is_one_copy_enabled_ = command_line.HasSwitch(switches::kEnableOneCopy);
 
   if (command_line.HasSwitch(switches::kDisableLCDText)) {
     is_lcd_text_enabled_ = false;
@@ -564,11 +564,6 @@ void RenderThreadImpl::Shutdown() {
   // Clean up plugin channels before this thread goes away.
   NPChannelBase::CleanupChannels();
 #endif
-
-  // Leak shared contexts on other threads, as we can not get to the correct
-  // thread to destroy them.
-  if (offscreen_compositor_contexts_.get())
-    offscreen_compositor_contexts_->set_leak_on_destroy();
 }
 
 bool RenderThreadImpl::Send(IPC::Message* msg) {
@@ -670,19 +665,19 @@ void RenderThreadImpl::RemoveRoute(int32 routing_id) {
   ChildThread::GetRouter()->RemoveRoute(routing_id);
 }
 
-void RenderThreadImpl::AddSharedWorkerRoute(int32 routing_id,
-                                            IPC::Listener* listener) {
+void RenderThreadImpl::AddEmbeddedWorkerRoute(int32 routing_id,
+                                              IPC::Listener* listener) {
   AddRoute(routing_id, listener);
   if (devtools_agent_message_filter_.get()) {
-    devtools_agent_message_filter_->AddSharedWorkerRouteOnMainThread(
+    devtools_agent_message_filter_->AddEmbeddedWorkerRouteOnMainThread(
         routing_id);
   }
 }
 
-void RenderThreadImpl::RemoveSharedWorkerRoute(int32 routing_id) {
+void RenderThreadImpl::RemoveEmbeddedWorkerRoute(int32 routing_id) {
   RemoveRoute(routing_id);
   if (devtools_agent_message_filter_.get()) {
-    devtools_agent_message_filter_->RemoveSharedWorkerRouteOnMainThread(
+    devtools_agent_message_filter_->RemoveEmbeddedWorkerRouteOnMainThread(
         routing_id);
   }
 }
@@ -693,11 +688,11 @@ int RenderThreadImpl::GenerateRoutingID() {
   return routing_id;
 }
 
-void RenderThreadImpl::AddFilter(IPC::ChannelProxy::MessageFilter* filter) {
+void RenderThreadImpl::AddFilter(IPC::MessageFilter* filter) {
   channel()->AddFilter(filter);
 }
 
-void RenderThreadImpl::RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) {
+void RenderThreadImpl::RemoveFilter(IPC::MessageFilter* filter) {
   channel()->RemoveFilter(filter);
 }
 
@@ -1022,28 +1017,6 @@ RenderThreadImpl::CreateOffscreenContext3d() {
           NULL));
 }
 
-scoped_refptr<cc::ContextProvider>
-RenderThreadImpl::OffscreenCompositorContextProvider() {
-  DCHECK(IsMainThread());
-
-#if defined(OS_ANDROID)
-  if (SynchronousCompositorFactory* factory =
-      SynchronousCompositorFactory::GetInstance()) {
-    if (compositor_message_loop_proxy_)
-      return factory->GetOffscreenContextProviderForCompositorThread();
-    return factory->GetSharedOffscreenContextProviderForMainThread();
-  }
-#endif
-
-  if (!offscreen_compositor_contexts_.get() ||
-      offscreen_compositor_contexts_->DestroyedOnMainThread()) {
-    offscreen_compositor_contexts_ = ContextProviderCommandBuffer::Create(
-        CreateOffscreenContext3d(),
-        "Compositor-Offscreen");
-  }
-  return offscreen_compositor_contexts_;
-}
-
 scoped_refptr<webkit::gpu::ContextProviderWebContext>
 RenderThreadImpl::SharedMainThreadContextProvider() {
   DCHECK(IsMainThread());
@@ -1055,19 +1028,8 @@ RenderThreadImpl::SharedMainThreadContextProvider() {
 
   if (!shared_main_thread_contexts_ ||
       shared_main_thread_contexts_->DestroyedOnMainThread()) {
-    if (compositor_message_loop_proxy_) {
-      // In threaded compositing mode, we have to create a new ContextProvider
-      // to bind to the main thread since the compositor's is bound to the
-      // compositor thread.
-      shared_main_thread_contexts_ =
-          ContextProviderCommandBuffer::Create(CreateOffscreenContext3d(),
-                                               "Offscreen-MainThread");
-    } else {
-      // In single threaded mode, we can use the same context provider.
-      shared_main_thread_contexts_ =
-          static_cast<ContextProviderCommandBuffer*>(
-                OffscreenCompositorContextProvider().get());
-    }
+    shared_main_thread_contexts_ = ContextProviderCommandBuffer::Create(
+        CreateOffscreenContext3d(), "Offscreen-MainThread");
   }
   if (shared_main_thread_contexts_ &&
       !shared_main_thread_contexts_->BindToCurrentThread())
@@ -1200,6 +1162,17 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
       handle,
       gfx::Size(width, height),
       internalformat).PassAs<gfx::GpuMemoryBuffer>();
+}
+
+void RenderThreadImpl::AcceptConnection(
+    const mojo::String& service_name,
+    mojo::ScopedMessagePipeHandle message_pipe) {
+  // TODO(darin): Invent some kind of registration system to use here.
+  if (service_name.To<base::StringPiece>() == kRendererService_WebUISetup) {
+    WebUISetupImpl::Bind(message_pipe.Pass());
+  } else {
+    NOTREACHED() << "Unknown service name";
+  }
 }
 
 void RenderThreadImpl::DoNotSuspendWebKitSharedTimer() {

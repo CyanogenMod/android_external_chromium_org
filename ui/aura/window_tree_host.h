@@ -11,6 +11,7 @@
 #include "base/message_loop/message_loop.h"
 #include "ui/aura/aura_export.h"
 #include "ui/base/cursor/cursor.h"
+#include "ui/events/event_source.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
@@ -28,6 +29,10 @@ class ViewProp;
 }
 
 namespace aura {
+namespace test {
+class WindowTreeHostTestApi;
+}
+
 class WindowEventDispatcher;
 class WindowTreeHostObserver;
 
@@ -111,6 +116,10 @@ class AURA_EXPORT WindowTreeHost {
 
   gfx::NativeCursor last_cursor() const { return last_cursor_; }
 
+  // Returns the EventSource responsible for dispatching events to the window
+  // tree.
+  virtual ui::EventSource* GetEventSource() = 0;
+
   // Returns the accelerated widget.
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() = 0;
 
@@ -129,14 +138,6 @@ class AURA_EXPORT WindowTreeHost {
 
   // Releases OS capture of the root window.
   virtual void ReleaseCapture() = 0;
-
-  // Queries the mouse's current position relative to the host window and sets
-  // it in |location_return|. Returns true if the cursor is within the host
-  // window. The position set to |location_return| is constrained within the
-  // host window. If the cursor is disabled, returns false and (0, 0) is set to
-  // |location_return|.
-  // This method is expensive, instead use gfx::Screen::GetCursorScreenPoint().
-  virtual bool QueryMouseLocation(gfx::Point* location_return) = 0;
 
   // Posts |native_event| to the platform's event queue.
   virtual void PostNativeEvent(const base::NativeEvent& native_event) = 0;
@@ -172,6 +173,8 @@ class AURA_EXPORT WindowTreeHost {
   virtual void OnCursorVisibilityChangedNative(bool show) = 0;
 
  private:
+  friend class test::WindowTreeHostTestApi;
+
   // Moves the cursor to the specified location. This method is internally used
   // by MoveCursorTo() and MoveCursorToHostLocation().
   void MoveCursorToInternal(const gfx::Point& root_location,
@@ -191,6 +194,7 @@ class AURA_EXPORT WindowTreeHost {
 
   // Last cursor set.  Used for testing.
   gfx::NativeCursor last_cursor_;
+  gfx::Point last_cursor_request_position_in_host_;
 
   scoped_ptr<ui::ViewProp> prop_;
 

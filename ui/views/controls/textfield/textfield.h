@@ -131,6 +131,11 @@ class VIEWS_EXPORT Textfield : public View,
     placeholder_text_color_ = color;
   }
 
+  // Get or set the horizontal alignment used for the button from the underlying
+  // RenderText object.
+  gfx::HorizontalAlignment GetHorizontalAlignment() const;
+  void SetHorizontalAlignment(gfx::HorizontalAlignment alignment);
+
   // Displays a virtual keyboard or alternate input view if enabled.
   void ShowImeIfNeeded();
 
@@ -202,8 +207,6 @@ class VIEWS_EXPORT Textfield : public View,
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
   virtual void OnEnabledChanged() OVERRIDE;
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void OnBlur() OVERRIDE;
@@ -299,9 +302,6 @@ class VIEWS_EXPORT Textfield : public View,
 
   // Updates the painted background color.
   void UpdateBackgroundColor();
-
-  // Updates any colors that have not been explicitly set from the theme.
-  void UpdateColorsFromTheme(const ui::NativeTheme* theme);
 
   // Does necessary updates when the text and/or cursor position changes.
   void UpdateAfterChange(bool text_changed, bool cursor_changed);

@@ -5,6 +5,7 @@
 #include "chrome/app/chrome_main_delegate.h"
 
 #include "base/command_line.h"
+#include "base/cpu.h"
 #include "base/files/file_path.h"
 #include "base/i18n/rtl.h"
 #include "base/lazy_instance.h"
@@ -39,6 +40,7 @@
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_WIN)
+#include <atlbase.h>
 #include <malloc.h>
 #include <algorithm>
 #include "base/strings/string_util.h"
@@ -647,6 +649,11 @@ void ChromeMainDelegate::PreSandboxStartup() {
 #if defined(OS_WIN)
   child_process_logging::Init();
 #endif
+#if defined(ARCH_CPU_ARM_FAMILY) && (defined(OS_ANDROID) || defined(OS_LINUX))
+  // Create an instance of the CPU class to parse /proc/cpuinfo and cache
+  // cpu_brand info.
+  base::CPU cpu_info;
+#endif
 
   // Initialize the user data dir for any process type that needs it.
   if (chrome::ProcessNeedsProfileDir(process_type))
@@ -671,6 +678,13 @@ void ChromeMainDelegate::PreSandboxStartup() {
     file_state = logging::DELETE_OLD_LOG_FILE;
   }
   logging::InitChromeLogging(command_line, file_state);
+#endif
+
+#if defined(OS_WIN)
+  // TODO(zturner): Throbber icons are still stored in chrome.dll, this can be
+  // killed once those are merged into resources.pak.  See
+  // GlassBrowserFrameView::InitThrobberIcons() and http://crbug.com/368327.
+  ui::SetResourcesDataDLL(_AtlBaseModule.GetResourceInstance());
 #endif
 
   if (SubprocessNeedsResourceBundle(process_type)) {

@@ -7,12 +7,16 @@
 
 #include "base/memory/discardable_memory.h"
 
+#include "base/memory/discardable_memory_manager.h"
+
 namespace base {
 namespace internal {
 
-class DiscardableMemoryEmulated : public DiscardableMemory {
+class DiscardableMemoryEmulated
+    : public DiscardableMemory,
+      public internal::DiscardableMemoryManagerAllocation {
  public:
-  explicit DiscardableMemoryEmulated(size_t size);
+  explicit DiscardableMemoryEmulated(size_t bytes);
   virtual ~DiscardableMemoryEmulated();
 
   static void RegisterMemoryPressureListeners();
@@ -27,8 +31,14 @@ class DiscardableMemoryEmulated : public DiscardableMemory {
   virtual void Unlock() OVERRIDE;
   virtual void* Memory() const OVERRIDE;
 
+  // Overridden from internal::DiscardableMemoryManagerAllocation:
+  virtual bool AllocateAndAcquireLock() OVERRIDE;
+  virtual void ReleaseLock() OVERRIDE {}
+  virtual void Purge() OVERRIDE;
+
  private:
-  scoped_ptr<uint8, FreeDeleter> memory_;
+  const size_t bytes_;
+  scoped_ptr<uint8[]> memory_;
   bool is_locked_;
 
   DISALLOW_COPY_AND_ASSIGN(DiscardableMemoryEmulated);

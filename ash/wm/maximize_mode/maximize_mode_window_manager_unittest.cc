@@ -4,12 +4,15 @@
 
 #include "ash/wm/maximize_mode/maximize_mode_window_manager.h"
 
+#include "ash/root_window_controller.h"
 #include "ash/screen_util.h"
+#include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
 #include "ash/switchable_windows.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/shell_test_api.h"
 #include "ash/wm/mru_window_tracker.h"
+#include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/wm_event.h"
 #include "base/strings/utf_string_conversions.h"
@@ -271,7 +274,16 @@ TEST_F(MaximizeModeWindowManagerTest, CreateWindows) {
   EXPECT_TRUE(wm::GetWindowState(w2.get())->IsMaximized());
   EXPECT_EQ(3, manager->GetNumberOfManagedWindows());
   EXPECT_FALSE(wm::GetWindowState(w3.get())->IsMaximized());
-  EXPECT_NE(rect3.ToString(), w3->bounds().ToString());
+
+  // Make sure that the position of the unresizable window is in the middle of
+  // the screen.
+  gfx::Size work_area_size =
+      ScreenUtil::GetDisplayWorkAreaBoundsInParent(w3.get()).size();
+  gfx::Point center =
+      gfx::Point((work_area_size.width() - rect3.size().width()) / 2,
+                 (work_area_size.height() - rect3.size().height()) / 2);
+  gfx::Rect centered_window_bounds = gfx::Rect(center, rect3.size());
+  EXPECT_EQ(centered_window_bounds.ToString(), w3->bounds().ToString());
 
   // All other windows should not have been touched.
   EXPECT_FALSE(wm::GetWindowState(w4.get())->IsMaximized());
@@ -664,29 +676,84 @@ TEST_F(MaximizeModeWindowManagerTest, TestMinimize) {
   EXPECT_TRUE(window->IsVisible());
 }
 
-// Check that a full screen window is changing to maximized in maximize mode,
-// cannot go to fullscreen and goes back to fullscreen thereafter.
-TEST_F(MaximizeModeWindowManagerTest, FullScreenModeTests) {
+// Check that a full screen window is staying full screen in maximize mode,
+// and that it returns to full screen thereafter (if left).
+TEST_F(MaximizeModeWindowManagerTest, KeepFullScreenModeOn) {
   gfx::Rect rect(20, 140, 100, 100);
   scoped_ptr<aura::Window> w1(CreateWindow(ui::wm::WINDOW_TYPE_NORMAL, rect));
   wm::WindowState* window_state = wm::GetWindowState(w1.get());
+
+  ShelfLayoutManager* shelf =
+      Shell::GetPrimaryRootWindowController()->GetShelfLayoutManager();
+
+  // Allow the shelf to hide.
+  shelf->SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS);
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
+
   wm::WMEvent event(wm::WM_EVENT_TOGGLE_FULLSCREEN);
   window_state->OnWMEvent(&event);
+
+  // With full screen, the shelf should get hidden.
   EXPECT_TRUE(window_state->IsFullscreen());
+  EXPECT_EQ(SHELF_HIDDEN, shelf->visibility_state());
 
   CreateMaximizeModeWindowManager();
 
-  // Fullscreen mode should now be off and it should not come back while in
-  // maximize mode.
-  EXPECT_FALSE(window_state->IsFullscreen());
-  EXPECT_TRUE(window_state->IsMaximized());
+  // The Full screen mode should continue to be on.
+  EXPECT_TRUE(window_state->IsFullscreen());
+  EXPECT_FALSE(window_state->IsMaximized());
+  EXPECT_EQ(SHELF_HIDDEN, shelf->visibility_state());
+
+  // With leaving the fullscreen mode, the maximized mode should return and the
+  // shelf should become visible.
   window_state->OnWMEvent(&event);
   EXPECT_FALSE(window_state->IsFullscreen());
   EXPECT_TRUE(window_state->IsMaximized());
+  EXPECT_EQ(SHELF_VISIBLE, shelf->visibility_state());
 
+  // Ending the maximize mode should return to full screen and the shelf should
+  // be hidden again.
   DestroyMaximizeModeWindowManager();
   EXPECT_TRUE(window_state->IsFullscreen());
   EXPECT_FALSE(window_state->IsMaximized());
+  EXPECT_EQ(SHELF_HIDDEN, shelf->visibility_state());
+}
+
+// Check that full screen mode can be turned on in maximized mode.
+TEST_F(MaximizeModeWindowManagerTest, AllowFullScreenMode) {
+  gfx::Rect rect(20, 140, 100, 100);
+  scoped_ptr<aura::Window> w1(CreateWindow(ui::wm::WINDOW_TYPE_NORMAL, rect));
+  wm::WindowState* window_state = wm::GetWindowState(w1.get());
+
+  ShelfLayoutManager* shelf =
+      Shell::GetPrimaryRootWindowController()->GetShelfLayoutManager();
+
+  // Allow the shelf to hide.
+  shelf->SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS);
+
+  EXPECT_FALSE(window_state->IsFullscreen());
+  EXPECT_FALSE(window_state->IsMaximized());
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
+
+  CreateMaximizeModeWindowManager();
+
+  // Fullscreen mode should still be off and the shelf should be visible.
+  EXPECT_FALSE(window_state->IsFullscreen());
+  EXPECT_TRUE(window_state->IsMaximized());
+  EXPECT_EQ(SHELF_VISIBLE, shelf->visibility_state());
+
+  // After going into fullscreen mode, the shelf should be hidden.
+  wm::WMEvent event(wm::WM_EVENT_TOGGLE_FULLSCREEN);
+  window_state->OnWMEvent(&event);
+  EXPECT_TRUE(window_state->IsFullscreen());
+  EXPECT_FALSE(window_state->IsMaximized());
+  EXPECT_EQ(SHELF_HIDDEN, shelf->visibility_state());
+
+  // With the destruction of the manager we should fall back to the old state.
+  DestroyMaximizeModeWindowManager();
+  EXPECT_FALSE(window_state->IsFullscreen());
+  EXPECT_FALSE(window_state->IsMaximized());
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
 }
 
 // Check that snapping operations get ignored.
@@ -760,6 +827,32 @@ TEST_F(MaximizeModeWindowManagerTest, TryToDesktopSizeDragUnmaximizable) {
   generator.ReleaseLeftButton();
   EXPECT_EQ(first_dragged_origin.x() + 10, window->bounds().x());
   EXPECT_EQ(first_dragged_origin.y() + 5, window->bounds().y());
+}
+
+// Test that overview is exited before entering / exiting maximize mode so that
+// the window changes made by MaximizeModeWindowManager do not conflict with
+// those made in WindowOverview.
+TEST_F(MaximizeModeWindowManagerTest, ExitsOverview) {
+  // Bounds for windows we know can be controlled.
+  gfx::Rect rect1(10, 10, 200, 50);
+  gfx::Rect rect2(10, 60, 200, 50);
+  scoped_ptr<aura::Window> w1(CreateWindow(ui::wm::WINDOW_TYPE_NORMAL, rect1));
+  scoped_ptr<aura::Window> w2(CreateWindow(ui::wm::WINDOW_TYPE_NORMAL, rect2));
+
+  WindowSelectorController* window_selector_controller =
+      Shell::GetInstance()->window_selector_controller();
+  window_selector_controller->ToggleOverview();
+  ASSERT_TRUE(window_selector_controller->IsSelecting());
+  ash::MaximizeModeWindowManager* manager = CreateMaximizeModeWindowManager();
+  ASSERT_TRUE(manager);
+  EXPECT_FALSE(window_selector_controller->IsSelecting());
+
+  window_selector_controller->ToggleOverview();
+  ASSERT_TRUE(window_selector_controller->IsSelecting());
+  // Destroy the manager again and check that the windows return to their
+  // previous state.
+  DestroyMaximizeModeWindowManager();
+  EXPECT_FALSE(window_selector_controller->IsSelecting());
 }
 
 #endif  // OS_WIN

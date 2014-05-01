@@ -226,6 +226,11 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
 
 ChromeContentRendererClient::ChromeContentRendererClient() {
   g_current_client = this;
+
+  extensions::ExtensionsClient::Set(
+      extensions::ChromeExtensionsClient::GetInstance());
+  extensions::ExtensionsRendererClient::Set(
+      ChromeExtensionsRendererClient::GetInstance());
 }
 
 ChromeContentRendererClient::~ChromeContentRendererClient() {
@@ -236,8 +241,9 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   RenderThread* thread = RenderThread::Get();
 
   chrome_observer_.reset(new ChromeRenderProcessObserver(this));
+
   // ChromeRenderViewTest::SetUp() creates its own ExtensionDispatcher and
-  // injects it using SetExtensionDispatcher(). Don't overwrite it.
+  // injects it using SetExtensionDispatcherForTest(). Don't overwrite it.
   if (!extension_dispatcher_)
     extension_dispatcher_.reset(new extensions::Dispatcher());
   permissions_policy_delegate_.reset(
@@ -359,11 +365,6 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   WebSecurityPolicy::registerURLSchemeAsBypassingContentSecurityPolicy(
       extension_resource_scheme);
 
-  extensions::ExtensionsClient::Set(
-      extensions::ChromeExtensionsClient::GetInstance());
-  extensions::ExtensionsRendererClient::Set(
-      ChromeExtensionsRendererClient::GetInstance());
-
 #if defined(OS_WIN)
   // Report if the renderer process has been patched by chrome_elf.
   // TODO(csharp): Remove once the renderer is no longer getting
@@ -474,9 +475,6 @@ bool ChromeContentRendererClient::OverrideCreatePlugin(
     WebPlugin** plugin) {
   std::string orig_mime_type = params.mimeType.utf8();
   if (orig_mime_type == content::kBrowserPluginMimeType) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kEnableBrowserPluginForAllViewTypes))
-      return false;
     WebDocument document = frame->document();
     const Extension* extension =
         GetExtensionByOrigin(document.securityOrigin());
@@ -1249,12 +1247,17 @@ bool ChromeContentRendererClient::ShouldOverridePageVisibilityState(
   return true;
 }
 
-void ChromeContentRendererClient::SetExtensionDispatcher(
+void ChromeContentRendererClient::SetExtensionDispatcherForTest(
     extensions::Dispatcher* extension_dispatcher) {
   extension_dispatcher_.reset(extension_dispatcher);
   permissions_policy_delegate_.reset(
       new extensions::RendererPermissionsPolicyDelegate(
           extension_dispatcher_.get()));
+}
+
+extensions::Dispatcher*
+ChromeContentRendererClient::GetExtensionDispatcherForTest() {
+  return extension_dispatcher_.get();
 }
 
 bool ChromeContentRendererClient::CrossesExtensionExtents(
@@ -1372,10 +1375,6 @@ ChromeContentRendererClient::OverrideSpeechSynthesizer(
 
 bool ChromeContentRendererClient::AllowBrowserPlugin(
     blink::WebPluginContainer* container) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableBrowserPluginForAllViewTypes))
-    return true;
-
   // If this |BrowserPlugin| <object> in the |container| is not inside a
   // <webview>/<adview> shadowHost, we disable instantiating this plugin. This
   // is to discourage and prevent developers from accidentally attaching

@@ -14,6 +14,7 @@
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
+#include "ui/wm/core/default_activation_client.h"
 #include "ui/wm/public/activation_client.h"
 
 namespace {
@@ -80,12 +81,21 @@ TEST_F(CompoundEventFilterTest, CursorVisibilityChange) {
   DispatchEventUsingWindowDispatcher(&move);
   EXPECT_FALSE(cursor_client.IsCursorVisible());
 
+  // A real mouse event should show the cursor.
   ui::MouseEvent real_move(ui::ET_MOUSE_MOVED, gfx::Point(10, 10),
                            gfx::Point(10, 10), 0, 0);
   DispatchEventUsingWindowDispatcher(&real_move);
   EXPECT_TRUE(cursor_client.IsCursorVisible());
 
-  // Send key event to hide the cursor again.
+  // Disallow hiding the cursor on keypress.
+  cursor_client.set_should_hide_cursor_on_key_event(false);
+  key = ui::KeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_A, 0, true);
+  DispatchEventUsingWindowDispatcher(&key);
+  EXPECT_TRUE(cursor_client.IsCursorVisible());
+
+  // Allow hiding the cursor on keypress.
+  cursor_client.set_should_hide_cursor_on_key_event(true);
+  key = ui::KeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_A, 0, true);
   DispatchEventUsingWindowDispatcher(&key);
   EXPECT_FALSE(cursor_client.IsCursorVisible());
 
@@ -95,6 +105,7 @@ TEST_F(CompoundEventFilterTest, CursorVisibilityChange) {
   exit.set_flags(enter.flags() | ui::EF_IS_SYNTHESIZED);
   DispatchEventUsingWindowDispatcher(&exit);
   EXPECT_FALSE(cursor_client.IsCursorVisible());
+
   aura::Env::GetInstance()->RemovePreTargetHandler(compound_filter.get());
 }
 #endif  // defined(OS_CHROMEOS)
@@ -102,6 +113,7 @@ TEST_F(CompoundEventFilterTest, CursorVisibilityChange) {
 #if defined(OS_CHROMEOS) || defined(OS_WIN)
 // Touch visually hides the cursor on ChromeOS and Windows.
 TEST_F(CompoundEventFilterTest, TouchHidesCursor) {
+  new wm::DefaultActivationClient(root_window());
   scoped_ptr<CompoundEventFilter> compound_filter(new CompoundEventFilter);
   aura::Env::GetInstance()->AddPreTargetHandler(compound_filter.get());
   aura::test::TestWindowDelegate delegate;

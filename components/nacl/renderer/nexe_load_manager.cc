@@ -8,8 +8,10 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
 #include "components/nacl/common/nacl_host_messages.h"
 #include "components/nacl/common/nacl_types.h"
+#include "components/nacl/renderer/histogram.h"
 #include "components/nacl/renderer/manifest_service_channel.h"
 #include "components/nacl/renderer/pnacl_translation_resource_host.h"
 #include "components/nacl/renderer/sandbox_arch.h"
@@ -41,170 +43,22 @@
 
 namespace {
 
-void HistogramCustomCounts(const std::string& name,
-                           int32_t sample,
-                           int32_t min,
-                           int32_t max,
-                           uint32_t bucket_count) {
-  base::HistogramBase* counter =
-      base::Histogram::FactoryGet(
-          name,
-          min,
-          max,
-          bucket_count,
-          base::HistogramBase::kUmaTargetedHistogramFlag);
-  // The histogram can be NULL if it is constructed with bad arguments.  Ignore
-  // that data for this API.  An error message will be logged.
-  if (counter)
-    counter->Add(sample);
-}
+const char* const kTypeAttribute = "type";
+// The "src" attribute of the <embed> tag.  The value is expected to be either
+// a URL or URI pointing to the manifest file (which is expected to contain
+// JSON matching ISAs with .nexe URLs).
+const char* const kSrcManifestAttribute = "src";
+// The "nacl" attribute of the <embed> tag.  We use the value of this attribute
+// to find the manifest file when NaCl is registered as a plug-in for another
+// MIME type because the "src" attribute is used to supply us with the resource
+// of that MIME type that we're supposed to display.
+const char* const kNaClManifestAttribute = "nacl";
+// Define an argument name to enable 'dev' interfaces. To make sure it doesn't
+// collide with any user-defined HTML attribute, make the first character '@'.
+const char* const kDevAttribute = "@dev";
 
-void HistogramEnumerate(const std::string& name,
-                        int32_t sample,
-                        int32_t boundary_value) {
-  base::HistogramBase* counter =
-      base::LinearHistogram::FactoryGet(
-          name,
-          1,
-          boundary_value,
-          boundary_value + 1,
-          base::HistogramBase::kUmaTargetedHistogramFlag);
-  counter->Add(sample);
-}
-
-void HistogramEnumerateLoadStatus(PP_NaClError error_code,
-                                  bool is_installed) {
-  HistogramEnumerate("NaCl.LoadStatus.Plugin", error_code, PP_NACL_ERROR_MAX);
-
-  // Gather data to see if being installed changes load outcomes.
-  const char* name = is_installed ?
-      "NaCl.LoadStatus.Plugin.InstalledApp" :
-      "NaCl.LoadStatus.Plugin.NotInstalledApp";
-  HistogramEnumerate(name, error_code, PP_NACL_ERROR_MAX);
-}
-
-void HistogramEnumerateOsArch(const std::string& sandbox_isa) {
-  enum NaClOSArch {
-    kNaClLinux32 = 0,
-    kNaClLinux64,
-    kNaClLinuxArm,
-    kNaClMac32,
-    kNaClMac64,
-    kNaClMacArm,
-    kNaClWin32,
-    kNaClWin64,
-    kNaClWinArm,
-    kNaClLinuxMips,
-    kNaClOSArchMax
-  };
-
-  NaClOSArch os_arch = kNaClOSArchMax;
-#if OS_LINUX
-  os_arch = kNaClLinux32;
-#elif OS_MACOSX
-  os_arch = kNaClMac32;
-#elif OS_WIN
-  os_arch = kNaClWin32;
-#endif
-
-  if (sandbox_isa == "x86-64")
-    os_arch = static_cast<NaClOSArch>(os_arch + 1);
-  if (sandbox_isa == "arm")
-    os_arch = static_cast<NaClOSArch>(os_arch + 2);
-  if (sandbox_isa == "mips32")
-    os_arch = kNaClLinuxMips;
-
-  HistogramEnumerate("NaCl.Client.OSArch", os_arch, kNaClOSArchMax);
-}
-
-// Records values up to 20 seconds.
-// These constants MUST match those in
-// ppapi/native_client/src/trusted/plugin/plugin.cc
-void HistogramTimeSmall(const std::string& name, int64_t sample) {
-  base::HistogramBase* counter = base::Histogram::FactoryTimeGet(
-      name,
-      base::TimeDelta::FromMilliseconds(1),
-      base::TimeDelta::FromMilliseconds(20000),
-      100,
-      base::HistogramBase::kUmaTargetedHistogramFlag);
-  if (counter)
-    counter->AddTime(base::TimeDelta::FromMilliseconds(sample));
-}
-
-// Records values up to 3 minutes, 20 seconds.
-// These constants MUST match those in
-// ppapi/native_client/src/trusted/plugin/plugin.cc
-void HistogramTimeMedium(const std::string& name, int64_t sample) {
-  base::HistogramBase* counter = base::Histogram::FactoryTimeGet(
-      name,
-      base::TimeDelta::FromMilliseconds(10),
-      base::TimeDelta::FromMilliseconds(200000),
-      100,
-      base::HistogramBase::kUmaTargetedHistogramFlag);
-  if (counter)
-    counter->AddTime(base::TimeDelta::FromMilliseconds(sample));
-}
-
-// Records values up to 33 minutes.
-// These constants MUST match those in
-// ppapi/native_client/src/trusted/plugin/plugin.cc
-void HistogramTimeLarge(const std::string& name, int64_t sample) {
-  base::HistogramBase* counter = base::Histogram::FactoryTimeGet(
-      name,
-      base::TimeDelta::FromMilliseconds(100),
-      base::TimeDelta::FromMilliseconds(2000000),
-      100,
-      base::HistogramBase::kUmaTargetedHistogramFlag);
-  if (counter)
-    counter->AddTime(base::TimeDelta::FromMilliseconds(sample));
-}
-
-void HistogramStartupTimeSmall(const std::string& name,
-                               base::TimeDelta td,
-                               int64_t nexe_size) {
-  HistogramTimeSmall(name, static_cast<int64_t>(td.InMilliseconds()));
-  if (nexe_size > 0) {
-    float size_in_MB = static_cast<float>(nexe_size) / (1024.f * 1024.f);
-    HistogramTimeSmall(name + "PerMB",
-                       static_cast<int64_t>(td.InMilliseconds() / size_in_MB));
-  }
-}
-
-void HistogramStartupTimeMedium(const std::string& name,
-                                base::TimeDelta td,
-                                int64_t nexe_size) {
-  HistogramTimeMedium(name, static_cast<int64_t>(td.InMilliseconds()));
-  if (nexe_size > 0) {
-    float size_in_MB = static_cast<float>(nexe_size) / (1024.f * 1024.f);
-    HistogramTimeMedium(name + "PerMB",
-                        static_cast<int64_t>(td.InMilliseconds() / size_in_MB));
-  }
-}
-
-void HistogramSizeKB(const std::string& name, int32_t sample) {
-  if (sample < 0) return;
-  HistogramCustomCounts(name,
-                        sample,
-                        1,
-                        512 * 1024,  // A very large .nexe.
-                        100);
-}
-
-void HistogramHTTPStatusCode(const std::string& name,
-                             int32_t status) {
-  // Log the status codes in rough buckets - 1XX, 2XX, etc.
-  int sample = status / 100;
-  // HTTP status codes only go up to 5XX, using "6" to indicate an internal
-  // error.
-  // Note: installed files may have "0" for a status code.
-  if (status < 0 || status >= 600)
-    sample = 6;
-  HistogramEnumerate(name, sample, 7);
-}
-
-void HistogramEnumerateManifestIsDataURI(bool is_data_uri) {
-  HistogramEnumerate("NaCl.Manifest.IsDataURI", is_data_uri, 2);
-}
+const char* const kNaClMIMEType = "application/x-nacl";
+const char* const kPNaClMIMEType = "application/x-pnacl";
 
 blink::WebString EventTypeToString(PP_NaClEventType event_type) {
   switch (event_type) {
@@ -235,6 +89,14 @@ static int GetRoutingID(PP_Instance instance) {
   if (!host)
     return 0;
   return host->GetRoutingIDForWidget(instance);
+}
+
+std::string LookupAttribute(const std::map<std::string, std::string>& args,
+                            const std::string& key) {
+  std::map<std::string, std::string>::const_iterator it = args.find(key);
+  if (it != args.end())
+    return it->second;
+  return std::string();
 }
 
 }  // namespace
@@ -318,12 +180,11 @@ void NexeLoadManager::NexeFileDidOpen(int32_t pp_error,
   }
 }
 
-void NexeLoadManager::ReportLoadSuccess(bool is_pnacl,
-                                        const std::string& url,
+void NexeLoadManager::ReportLoadSuccess(const std::string& url,
                                         uint64_t loaded_bytes,
                                         uint64_t total_bytes) {
   ready_time_ = base::Time::Now();
-  if (!is_pnacl) {
+  if (!IsPNaCl()) {
     base::TimeDelta load_module_time = ready_time_ - load_start_;
     HistogramStartupTimeSmall(
         "NaCl.Perf.StartupTime.LoadModule", load_module_time, nexe_size_);
@@ -546,8 +407,18 @@ void NexeLoadManager::set_exit_status(int exit_status) {
   SetReadOnlyProperty(exit_status_name_var.get(), PP_MakeInt32(exit_status));
 }
 
-void NexeLoadManager::InitializePlugin() {
+void NexeLoadManager::InitializePlugin(
+    uint32_t argc, const char* argn[], const char* argv[]) {
   init_time_ = base::Time::Now();
+
+  for (size_t i = 0; i < argc; ++i) {
+    std::string name(argn[i]);
+    std::string value(argv[i]);
+    args_[name] = value;
+  }
+
+  // Store mime_type_ at initialization time since we make it lowercase.
+  mime_type_ = StringToLowerASCII(LookupAttribute(args_, kTypeAttribute));
 }
 
 void NexeLoadManager::ReportStartupOverhead() const {
@@ -593,6 +464,42 @@ void NexeLoadManager::ProcessNaClManifest(const std::string& program_url) {
       base::Bind(&NexeLoadManager::DispatchEvent,
                  weak_factory_.GetWeakPtr(),
                  ProgressEvent(PP_NACL_EVENT_PROGRESS)));
+}
+
+std::string NexeLoadManager::GetManifestURLArgument() const {
+  std::string manifest_url;
+
+  // If the MIME type is foreign, then this NEXE is being used as a content
+  // type handler rather than directly by an HTML document.
+  bool nexe_is_content_handler =
+      !mime_type_.empty() &&
+      mime_type_ != kNaClMIMEType &&
+      mime_type_ != kPNaClMIMEType;
+
+  if (nexe_is_content_handler) {
+    // For content handlers 'src' will be the URL for the content
+    // and 'nacl' will be the URL for the manifest.
+    manifest_url = LookupAttribute(args_, kNaClManifestAttribute);
+  } else {
+    manifest_url = LookupAttribute(args_, kSrcManifestAttribute);
+  }
+
+  if (manifest_url.empty()) {
+    VLOG(1) << "WARNING: no 'src' property, so no manifest loaded.";
+    if (args_.find(kNaClManifestAttribute) != args_.end())
+      VLOG(1) << "WARNING: 'nacl' property is incorrect. Use 'src'.";
+  }
+  return manifest_url;
+}
+
+bool NexeLoadManager::IsPNaCl() const {
+  return mime_type_ == kPNaClMIMEType;
+}
+
+bool NexeLoadManager::DevInterfacesEnabled() const {
+  // Look for the developer attribute; if it's present, enable 'dev'
+  // interfaces.
+  return args_.find(kDevAttribute) != args_.end();
 }
 
 void NexeLoadManager::ReportDeadNexe() {

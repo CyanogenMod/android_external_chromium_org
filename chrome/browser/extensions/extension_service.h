@@ -206,7 +206,7 @@ class ExtensionService
   //
   // TODO(aa): Remove |external_uninstall| -- this information should be passed
   // to ExtensionPrefs some other way.
-  virtual bool UninstallExtension(std::string extension_id,
+  virtual bool UninstallExtension(const std::string& extension_id,
                                   bool external_uninstall,
                                   base::string16* error);
 
@@ -348,12 +348,7 @@ class ExtensionService
   // TODO(aa): Remove this. It doesn't do enough to be worth the dependency
   // of these classes on ExtensionService.
   void ReportExtensionLoadError(const base::FilePath& extension_path,
-                                const std::string& error,
-                                bool be_noisy);
-
-  // Notifies ExtensionSettingsHandler whether or not to retry installation for
-  // given |extension_path|.
-  void NotifyLoadRetry(bool retry, const base::FilePath& extension_path);
+                                const std::string& error);
 
   // ExtensionHost of background page calls this method right after its render
   // view has been created.

@@ -7,7 +7,7 @@
 
 #include "apps/app_window_registry.h"
 #include "ash/ime/input_method_menu_manager.h"
-#include "ash/session_state_observer.h"
+#include "ash/session/session_state_observer.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
@@ -74,6 +74,7 @@ class SystemTrayDelegateChromeOS
   virtual void ShowSettings() OVERRIDE;
   virtual bool ShouldShowSettings() OVERRIDE;
   virtual void ShowDateSettings() OVERRIDE;
+  virtual void ShowSetTimeDialog() OVERRIDE;
   virtual void ShowNetworkSettings(const std::string& service_path) OVERRIDE;
   virtual void ShowBluetoothSettings() OVERRIDE;
   virtual void ShowDisplaySettings() OVERRIDE;

@@ -3,11 +3,13 @@
 // found in the LICENSE file.
 
 <include src="../uber/uber_utils.js"></include>
+<include src="extension_code.js"></include>
 <include src="extension_commands_overlay.js"></include>
 <include src="extension_focus_manager.js"></include>
 <include src="extension_list.js"></include>
 <include src="pack_extension_overlay.js"></include>
 <include src="extension_error_overlay.js"></include>
+<include src="extension_loader.js"></include>
 
 <if expr="chromeos">
 <include src="chromeos/kiosk_apps.js"></include>
@@ -86,13 +88,6 @@ cr.define('extensions', function() {
     __proto__: HTMLDivElement.prototype,
 
     /**
-     * Whether the App Developer Tools promo has been dismissed on this page.
-     * @type {boolean}
-     * @private
-     */
-    promoDismissed_: false,
-
-    /**
      * Perform initial setup.
      */
     initialize: function() {
@@ -108,14 +103,17 @@ cr.define('extensions', function() {
       // back in returnExtensionsData.
       chrome.send('extensionSettingsRequestExtensionsData');
 
+      var extensionLoader = extensions.ExtensionLoader.getInstance();
+
       $('toggle-dev-on').addEventListener('change',
           this.handleToggleDevMode_.bind(this));
       $('dev-controls').addEventListener('webkitTransitionEnd',
           this.handleDevControlsTransitionEnd_.bind(this));
 
       // Set up the three dev mode buttons (load unpacked, pack and update).
-      $('load-unpacked').addEventListener('click',
-          this.handleLoadUnpackedExtension_.bind(this));
+      $('load-unpacked').addEventListener('click', function(e) {
+          extensionLoader.loadUnpacked();
+      });
       $('pack-extension').addEventListener('click',
           this.handlePackExtension_.bind(this));
       $('update-extensions-now').addEventListener('click',
@@ -124,8 +122,8 @@ cr.define('extensions', function() {
       // Set up the close dialog for the apps developer tools promo.
       $('apps-developer-tools-promo').querySelector('.close-button').
           addEventListener('click', function(e) {
-        this.promoDismissed_ = true;
         $('extension-settings').classList.remove('adt-promo');
+        chrome.send('extensionSettingsDismissADTPromo');
       }.bind(this));
 
       if (!loadTimeData.getBoolean('offStoreInstallEnabled')) {
@@ -173,15 +171,6 @@ cr.define('extensions', function() {
       }
 
       preventDefaultOnPoundLinkClicks();  // From webui/js/util.js.
-    },
-
-    /**
-     * Handles the Load Unpacked Extension button.
-     * @param {Event} e Change event.
-     * @private
-     */
-    handleLoadUnpackedExtension_: function(e) {
-      chrome.send('extensionSettingsLoadUnpackedExtension');
     },
 
     /**
@@ -311,8 +300,7 @@ cr.define('extensions', function() {
       $('toggle-dev-on').checked = false;
     }
 
-    var showPromo = extensionsData.promoteAppsDevTools && !this.promoDismissed_;
-    pageDiv.classList.toggle('adt-promo', showPromo);
+    pageDiv.classList.toggle('adt-promo', extensionsData.promoteAppsDevTools);
 
     $('load-unpacked').disabled = extensionsData.loadUnpackedDisabled;
 

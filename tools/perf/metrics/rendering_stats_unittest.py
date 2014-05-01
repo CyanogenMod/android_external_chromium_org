@@ -11,6 +11,7 @@ from metrics.rendering_stats import ComputeMouseWheelScrollLatency
 from metrics.rendering_stats import ComputeTouchScrollLatency
 from metrics.rendering_stats import HasRenderingStats
 from metrics.rendering_stats import RenderingStats
+from metrics.rendering_stats import NotEnoughFramesError
 import telemetry.core.timeline.bounds as timeline_bounds
 from telemetry.core.timeline import model
 import telemetry.core.timeline.async_slice as tracing_async_slice
@@ -224,6 +225,46 @@ class RenderingStatsUnitTest(unittest.TestCase):
     process_with_frames.FinalizeImport()
     self.assertTrue(HasRenderingStats(thread_with_frames))
 
+  def testRangeWithoutFrames(self):
+    timer = MockTimer()
+    timeline = model.TimelineModel()
+
+    # Create a renderer process, with a main thread and impl thread.
+    renderer = timeline.GetOrCreateProcess(pid = 2)
+    renderer_main = renderer.GetOrCreateThread(tid = 21)
+    renderer_compositor = renderer.GetOrCreateThread(tid = 22)
+
+    # Create 10 main and impl rendering stats events for Action A.
+    timer.Advance(2, 4)
+    renderer_main.BeginSlice('webkit.console', 'ActionA', timer.Get(), '')
+    for i in xrange(0, 10):
+      first = (i == 0)
+      AddMainThreadRenderingStats(timer, renderer_main, first, None)
+      AddImplThreadRenderingStats(timer, renderer_compositor, first, None)
+    timer.Advance(2, 4)
+    renderer_main.EndSlice(timer.Get())
+
+    # Create 5 main and impl rendering stats events not within any action.
+    for i in xrange(0, 5):
+      first = (i == 0)
+      AddMainThreadRenderingStats(timer, renderer_main, first, None)
+      AddImplThreadRenderingStats(timer, renderer_compositor, first, None)
+
+    # Create Action B without any frames. This should trigger
+    # NotEnoughFramesError when the RenderingStats object is created.
+    timer.Advance(2, 4)
+    renderer_main.BeginSlice('webkit.console', 'ActionB', timer.Get(), '')
+    timer.Advance(2, 4)
+    renderer_main.EndSlice(timer.Get())
+
+    renderer.FinalizeImport()
+
+    timeline_markers = timeline.FindTimelineMarkers(['ActionA', 'ActionB'])
+    timeline_ranges = [ timeline_bounds.Bounds.CreateFromEvent(marker)
+                        for marker in timeline_markers ]
+    self.assertRaises(NotEnoughFramesError, RenderingStats,
+                      renderer, None, timeline_ranges)
+
   def testFromTimeline(self):
     timeline = model.TimelineModel()
 
@@ -237,18 +278,24 @@ class RenderingStatsUnitTest(unittest.TestCase):
     renderer_compositor = renderer.GetOrCreateThread(tid = 22)
 
     timer = MockTimer()
-    ref_stats = ReferenceRenderingStats()
+    renderer_ref_stats = ReferenceRenderingStats()
+    browser_ref_stats = ReferenceRenderingStats()
 
     # Create 10 main and impl rendering stats events for Action A.
     timer.Advance(2, 4)
     renderer_main.BeginSlice('webkit.console', 'ActionA', timer.Get(), '')
-    ref_stats.AppendNewRange()
+    renderer_ref_stats.AppendNewRange()
+    browser_ref_stats.AppendNewRange()
     for i in xrange(0, 10):
       first = (i == 0)
-      AddMainThreadRenderingStats(timer, renderer_main, first, None)
-      AddImplThreadRenderingStats(timer, renderer_compositor, first, None)
-      AddMainThreadRenderingStats(timer, browser_main, first, ref_stats)
-      AddImplThreadRenderingStats(timer, browser_compositor, first, ref_stats)
+      AddMainThreadRenderingStats(
+          timer, renderer_main, first, renderer_ref_stats)
+      AddImplThreadRenderingStats(
+          timer, renderer_compositor, first, renderer_ref_stats)
+      AddMainThreadRenderingStats(
+          timer, browser_main, first, browser_ref_stats)
+      AddImplThreadRenderingStats(
+          timer, browser_compositor, first, browser_ref_stats)
     timer.Advance(2, 4)
     renderer_main.EndSlice(timer.Get())
 
@@ -263,26 +310,36 @@ class RenderingStatsUnitTest(unittest.TestCase):
     # Create 10 main and impl rendering stats events for Action B.
     timer.Advance(2, 4)
     renderer_main.BeginSlice('webkit.console', 'ActionB', timer.Get(), '')
-    ref_stats.AppendNewRange()
+    renderer_ref_stats.AppendNewRange()
+    browser_ref_stats.AppendNewRange()
     for i in xrange(0, 10):
       first = (i == 0)
-      AddMainThreadRenderingStats(timer, renderer_main, first, None)
-      AddImplThreadRenderingStats(timer, renderer_compositor, first, None)
-      AddMainThreadRenderingStats(timer, browser_main, first, ref_stats)
-      AddImplThreadRenderingStats(timer, browser_compositor, first, ref_stats)
+      AddMainThreadRenderingStats(
+          timer, renderer_main, first, renderer_ref_stats)
+      AddImplThreadRenderingStats(
+          timer, renderer_compositor, first, renderer_ref_stats)
+      AddMainThreadRenderingStats(
+          timer, browser_main, first, browser_ref_stats)
+      AddImplThreadRenderingStats(
+          timer, browser_compositor, first, browser_ref_stats)
     timer.Advance(2, 4)
     renderer_main.EndSlice(timer.Get())
 
     # Create 10 main and impl rendering stats events for Action A.
     timer.Advance(2, 4)
     renderer_main.BeginSlice('webkit.console', 'ActionA', timer.Get(), '')
-    ref_stats.AppendNewRange()
+    renderer_ref_stats.AppendNewRange()
+    browser_ref_stats.AppendNewRange()
     for i in xrange(0, 10):
       first = (i == 0)
-      AddMainThreadRenderingStats(timer, renderer_main, first, None)
-      AddImplThreadRenderingStats(timer, renderer_compositor, first, None)
-      AddMainThreadRenderingStats(timer, browser_main, first, ref_stats)
-      AddImplThreadRenderingStats(timer, browser_compositor, first, ref_stats)
+      AddMainThreadRenderingStats(
+          timer, renderer_main, first, renderer_ref_stats)
+      AddImplThreadRenderingStats(
+          timer, renderer_compositor, first, renderer_ref_stats)
+      AddMainThreadRenderingStats(
+          timer, browser_main, first, browser_ref_stats)
+      AddImplThreadRenderingStats(
+          timer, browser_compositor, first, browser_ref_stats)
     timer.Advance(2, 4)
     renderer_main.EndSlice(timer.Get())
 
@@ -295,21 +352,19 @@ class RenderingStatsUnitTest(unittest.TestCase):
                         for marker in timeline_markers ]
     stats = RenderingStats(renderer, browser, timeline_ranges)
 
-    # Check if we are using the browser compositor's stats
-    self.assertEquals(stats.top_level_process, browser)
-
     # Compare rendering stats to reference.
-    self.assertEquals(stats.frame_timestamps, ref_stats.frame_timestamps)
-    self.assertEquals(stats.frame_times, ref_stats.frame_times)
-    self.assertEquals(stats.rasterize_times, ref_stats.rasterize_times)
+    self.assertEquals(stats.frame_timestamps,
+                      browser_ref_stats.frame_timestamps)
+    self.assertEquals(stats.frame_times, browser_ref_stats.frame_times)
+    self.assertEquals(stats.rasterize_times, renderer_ref_stats.rasterize_times)
     self.assertEquals(stats.rasterized_pixel_counts,
-                      ref_stats.rasterized_pixel_counts)
-    self.assertEquals(stats.paint_times, ref_stats.paint_times)
+                      renderer_ref_stats.rasterized_pixel_counts)
+    self.assertEquals(stats.paint_times, renderer_ref_stats.paint_times)
     self.assertEquals(stats.painted_pixel_counts,
-                      ref_stats.painted_pixel_counts)
-    self.assertEquals(stats.record_times, ref_stats.record_times)
+                      renderer_ref_stats.painted_pixel_counts)
+    self.assertEquals(stats.record_times, renderer_ref_stats.record_times)
     self.assertEquals(stats.recorded_pixel_counts,
-                      ref_stats.recorded_pixel_counts)
+                      renderer_ref_stats.recorded_pixel_counts)
 
   def testScrollLatencyFromTimeline(self):
     timeline = model.TimelineModel()

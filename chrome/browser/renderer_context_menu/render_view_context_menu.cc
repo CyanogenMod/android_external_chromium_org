@@ -35,7 +35,7 @@
 #include "chrome/browser/extensions/devtools_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/guestview/webview/webview_guest.h"
+#include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
@@ -1541,24 +1541,8 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       const GURL& referrer =
           params_.frame_url.is_empty() ? params_.page_url : params_.frame_url;
       const GURL& url = params_.src_url;
-      int64 post_id = -1;
-      if (url == source_web_contents_->GetURL()) {
-        const NavigationEntry* entry =
-            source_web_contents_->GetController().GetActiveEntry();
-        if (entry)
-          post_id = entry->GetPostID();
-      }
-      DownloadManager* dlm = BrowserContext::GetDownloadManager(profile_);
-      scoped_ptr<DownloadUrlParameters> dl_params(
-          DownloadUrlParameters::FromWebContents(source_web_contents_, url));
-      dl_params->set_referrer(
-          content::Referrer(referrer, params_.referrer_policy));
-      dl_params->set_post_id(post_id);
-      dl_params->set_prefer_cache(true);
-      if (post_id >= 0)
-        dl_params->set_method("POST");
-      dl_params->set_prompt(true);
-      dlm->DownloadUrl(dl_params.Pass());
+      source_web_contents_->SaveFrame(url, content::Referrer(
+          referrer, params_.referrer_policy));
       break;
     }
 

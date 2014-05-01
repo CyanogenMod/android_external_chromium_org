@@ -11,7 +11,6 @@
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_result_view.h"
-#include "chrome/browser/ui/views/omnibox/touch_omnibox_popup_contents_view.h"
 #include "grit/ui_resources.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/canvas.h"
@@ -20,10 +19,7 @@
 #include "ui/views/controls/image_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
-
-#if defined(USE_AURA)
 #include "ui/wm/core/window_animations.h"
-#endif
 
 // This is the number of pixels in the border image interior to the actual
 // border.
@@ -49,14 +45,8 @@ OmniboxPopupView* OmniboxPopupContentsView::Create(
     OmniboxEditModel* edit_model,
     LocationBarView* location_bar_view) {
   OmniboxPopupContentsView* view = NULL;
-  if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH) {
-    view = new TouchOmniboxPopupContentsView(
-        font_list, omnibox_view, edit_model, location_bar_view);
-  } else {
-    view = new OmniboxPopupContentsView(
-        font_list, omnibox_view, edit_model, location_bar_view);
-  }
-
+  view = new OmniboxPopupContentsView(
+      font_list, omnibox_view, edit_model, location_bar_view);
   view->Init();
   return view;
 }
@@ -222,10 +212,8 @@ void OmniboxPopupContentsView::UpdatePopupAppearance() {
     // avoid a NULL dereference.
     if (!popup_.get())
       return;
-#if defined(USE_AURA)
     wm::SetWindowVisibilityAnimationTransition(
         popup_->GetNativeView(), wm::ANIMATE_NONE);
-#endif
     popup_->SetContentsView(this);
     popup_->StackAbove(omnibox_view_->GetRelativeWindowForPopup());
     if (!popup_.get()) {

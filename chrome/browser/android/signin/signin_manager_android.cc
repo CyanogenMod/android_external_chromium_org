@@ -11,7 +11,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
@@ -21,6 +20,7 @@
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/pref_names.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/common/profile_management_switches.h"
@@ -201,10 +201,18 @@ void SigninManagerAndroid::OnBrowsingDataRemoverDone() {
 
   // All the Profile data has been wiped. Clear the last signed in username as
   // well, so that the next signin doesn't trigger the acount change dialog.
-  profile_->GetPrefs()->ClearPref(prefs::kGoogleServicesLastUsername);
+  ClearLastSignedInUser();
 
   Java_SigninManager_onProfileDataWiped(base::android::AttachCurrentThread(),
                                         java_signin_manager_.obj());
+}
+
+void SigninManagerAndroid::ClearLastSignedInUser(JNIEnv* env, jobject obj) {
+  ClearLastSignedInUser();
+}
+
+void SigninManagerAndroid::ClearLastSignedInUser() {
+  profile_->GetPrefs()->ClearPref(prefs::kGoogleServicesLastUsername);
 }
 
 void SigninManagerAndroid::MergeSessionCompleted(
@@ -225,8 +233,7 @@ void SigninManagerAndroid::LogInSignedInUser(JNIEnv* env, jobject obj) {
             profile_);
     const std::string& primary_acct =
         signin_manager->GetAuthenticatedAccountId();
-    const std::vector<std::string>& ids = token_service->GetAccounts();
-    token_service->ValidateAccounts(primary_acct, ids);
+    token_service->ValidateAccounts(primary_acct);
 
   } else {
     DVLOG(1) << "SigninManagerAndroid::LogInSignedInUser "

@@ -166,9 +166,7 @@ void LabelButton::SetStyle(ButtonStyle style) {
     set_min_size(gfx::Size(70, 33));
 
   ResetColorsFromNativeTheme();
-
   UpdateThemedBorder(scoped_ptr<Border>(new LabelButtonBorder(style_)));
-
   // Invalidate the layout to pickup the new insets from the border.
   InvalidateLayout();
 }

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <limits>
+
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
@@ -21,6 +23,7 @@
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/test/data/web_ui_test_mojo_bindings.mojom.h"
 #include "grit/content_resources.h"
+#include "mojo/common/test/test_utils.h"
 #include "mojo/public/cpp/bindings/allocation_scope.h"
 #include "mojo/public/cpp/bindings/remote_ptr.h"
 #include "mojo/public/js/bindings/constants.h"
@@ -47,18 +50,16 @@ const uint16 kExpectedUInt16Value = 16961;
 const uint32 kExpectedUInt32Value = 1145258561;
 const uint64 kExpectedUInt64Value = 77263311946305LL;
 
-// Returns the path to the mojom js bindings file.
-base::FilePath GetFilePathForJSResource(const std::string& path) {
-  std::string binding_path = "gen/" + path + ".js";
-#if defined(OS_WIN)
-  std::string tmp;
-  base::ReplaceChars(binding_path, "//", "\\", &tmp);
-  binding_path.swap(tmp);
-#endif
-  base::FilePath file_path;
-  PathService::Get(CHILD_PROCESS_EXE, &file_path);
-  return file_path.DirName().AppendASCII(binding_path);
-}
+// Double/float values, including special case constants.
+const double kExpectedDoubleVal = 3.14159265358979323846;
+const double kExpectedDoubleInf = std::numeric_limits<double>::infinity();
+const double kExpectedDoubleNan = std::numeric_limits<double>::quiet_NaN();
+const float kExpectedFloatVal = static_cast<float>(kExpectedDoubleVal);
+const float kExpectedFloatInf = std::numeric_limits<float>::infinity();
+const float kExpectedFloatNan = std::numeric_limits<float>::quiet_NaN();
+
+// NaN has the property that it is not equal to itself.
+#define EXPECT_NAN(x) EXPECT_NE(x, x)
 
 // The bindings for the page are generated from a .mojom file. This code looks
 // up the generated file from disk and returns it.
@@ -72,7 +73,8 @@ bool GetResource(const std::string& id,
     return false;
 
   std::string contents;
-  CHECK(base::ReadFileToString(GetFilePathForJSResource(id), &contents,
+  CHECK(base::ReadFileToString(mojo::test::GetFilePathForJSResource(id),
+                               &contents,
                                std::string::npos)) << id;
   base::RefCountedString* ref_contents = new base::RefCountedString;
   ref_contents->data() = contents;
@@ -144,7 +146,18 @@ class EchoBrowserTargetImpl : public BrowserTargetImpl {
     builder.set_ui32(kExpectedUInt32Value);
     builder.set_ui16(kExpectedUInt16Value);
     builder.set_ui8(kExpectedUInt8Value);
+    builder.set_float_val(kExpectedFloatVal);
+    builder.set_float_inf(kExpectedFloatInf);
+    builder.set_float_nan(kExpectedFloatNan);
+    builder.set_double_val(kExpectedDoubleVal);
+    builder.set_double_inf(kExpectedDoubleInf);
+    builder.set_double_nan(kExpectedDoubleNan);
     builder.set_name("coming");
+    mojo::Array<mojo::String>::Builder string_array(3);
+    string_array[0] = "one";
+    string_array[1] = "two";
+    string_array[2] = "three";
+    builder.set_string_array(string_array.Finish());
     client_->Echo(builder.Finish());
   }
 
@@ -162,7 +175,16 @@ class EchoBrowserTargetImpl : public BrowserTargetImpl {
     EXPECT_EQ(kExpectedUInt32Value, arg1.ui32());
     EXPECT_EQ(kExpectedUInt16Value, arg1.ui16());
     EXPECT_EQ(kExpectedUInt8Value, arg1.ui8());
+    EXPECT_EQ(kExpectedFloatVal, arg1.float_val());
+    EXPECT_EQ(kExpectedFloatInf, arg1.float_inf());
+    EXPECT_NAN(arg1.float_nan());
+    EXPECT_EQ(kExpectedDoubleVal, arg1.double_val());
+    EXPECT_EQ(kExpectedDoubleInf, arg1.double_inf());
+    EXPECT_NAN(arg1.double_nan());
     EXPECT_EQ(std::string("coming"), arg1.name().To<std::string>());
+    EXPECT_EQ(std::string("one"), arg1.string_array()[0].To<std::string>());
+    EXPECT_EQ(std::string("two"), arg1.string_array()[1].To<std::string>());
+    EXPECT_EQ(std::string("three"), arg1.string_array()[2].To<std::string>());
 
     EXPECT_EQ(-1, arg2.si64());
     EXPECT_EQ(-1, arg2.si32());
@@ -293,24 +315,15 @@ class WebUIMojoTest : public ContentBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(WebUIMojoTest);
 };
 
-// Temporarily disabled due to memory leaks. http://crbug.com/360081
-#if defined(LEAK_SANITIZER)
-#define MAYBE_EndToEndPing DISABLED_EndToEndPing
-#define MAYBE_EndToEndEcho DISABLED_EndToEndEcho
-#else
-#define MAYBE_EndToEndPing EndToEndPing
-#define MAYBE_EndToEndEcho EndToEndEcho
-#endif
-
 // Loads a webui page that contains mojo bindings and verifies a message makes
 // it from the browser to the page and back.
-IN_PROC_BROWSER_TEST_F(WebUIMojoTest, MAYBE_EndToEndPing) {
+IN_PROC_BROWSER_TEST_F(WebUIMojoTest, EndToEndPing) {
   // Currently there is no way to have a generated file included in the isolate
   // files. If the bindings file doesn't exist assume we're on such a bot and
   // pass.
   // TODO(sky): remove this conditional when isolates support copying from gen.
   const base::FilePath test_file_path(
-      GetFilePathForJSResource(
+      mojo::test::GetFilePathForJSResource(
           "content/test/data/web_ui_test_mojo_bindings.mojom"));
   if (!base::PathExists(test_file_path)) {
     LOG(WARNING) << " mojom binding file doesn't exist, assuming on isolate";
@@ -330,13 +343,13 @@ IN_PROC_BROWSER_TEST_F(WebUIMojoTest, MAYBE_EndToEndPing) {
 
 // Loads a webui page that contains mojo bindings and verifies that
 // parameters are passed back correctly from JavaScript.
-IN_PROC_BROWSER_TEST_F(WebUIMojoTest, MAYBE_EndToEndEcho) {
+IN_PROC_BROWSER_TEST_F(WebUIMojoTest, EndToEndEcho) {
   // Currently there is no way to have a generated file included in the isolate
   // files. If the bindings file doesn't exist assume we're on such a bot and
   // pass.
   // TODO(sky): remove this conditional when isolates support copying from gen.
   const base::FilePath test_file_path(
-      GetFilePathForJSResource(
+      mojo::test::GetFilePathForJSResource(
           "content/test/data/web_ui_test_mojo_bindings.mojom"));
   if (!base::PathExists(test_file_path)) {
     LOG(WARNING) << " mojom binding file doesn't exist, assuming on isolate";

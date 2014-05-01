@@ -134,14 +134,6 @@ blink::WebDevToolsAgentClient::WebKitClientMessageLoop*
   return new WebKitClientMessageLoopImpl();
 }
 
-void DevToolsAgent::clearBrowserCache() {
-  Send(new DevToolsHostMsg_ClearBrowserCache(routing_id()));
-}
-
-void DevToolsAgent::clearBrowserCookies() {
-  Send(new DevToolsHostMsg_ClearBrowserCookies(routing_id()));
-}
-
 void DevToolsAgent::resetTraceEventCallback()
 {
   TraceLog::GetInstance()->SetEventCallbackDisabled();
@@ -159,6 +151,17 @@ void DevToolsAgent::setTraceEventCallback(const WebString& category_filter,
   } else {
     trace_log->SetEventCallbackDisabled();
   }
+}
+
+void DevToolsAgent::enableTracing(const WebString& category_filter) {
+  TraceLog* trace_log = TraceLog::GetInstance();
+  trace_log->SetEnabled(base::debug::CategoryFilter(category_filter.utf8()),
+                        TraceLog::RECORDING_MODE,
+                        TraceLog::RECORD_UNTIL_FULL);
+}
+
+void DevToolsAgent::disableTracing() {
+  TraceLog::GetInstance()->SetDisabled();
 }
 
 // static
@@ -221,22 +224,6 @@ void DevToolsAgent::OnGpuTasksChunk(const std::vector<GpuTaskInfo>& tasks) {
     event.limitGPUMemoryBytes = task.gpu_memory_limit_bytes;
     web_agent->processGPUEvent(event);
   }
-}
-
-void DevToolsAgent::enableDeviceEmulation(
-    const blink::WebRect& device_rect,
-    const blink::WebRect& view_rect,
-    float device_scale_factor,
-    bool fit_to_view) {
-  blink::WebDeviceEmulationParams params;
-  params.screenPosition = device_rect.isEmpty() ?
-      blink::WebDeviceEmulationParams::Desktop :
-      blink::WebDeviceEmulationParams::Mobile;
-  params.deviceScaleFactor = device_scale_factor;
-  params.viewSize = blink::WebSize(view_rect.width, view_rect.height);
-  params.fitToView = fit_to_view;
-  params.viewInsets = blink::WebSize(device_rect.x, device_rect.y);
-  enableDeviceEmulation(params);
 }
 
 void DevToolsAgent::enableDeviceEmulation(

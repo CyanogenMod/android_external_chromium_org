@@ -11,17 +11,14 @@ from telemetry.page import page_set
 
 
 class TestPageSet(unittest.TestCase):
+
   def testServingDirs(self):
     directory_path = tempfile.mkdtemp()
     try:
-      ps = page_set.PageSet.FromDict({
-        'serving_dirs': ['a/b'],
-        'pages': [
-          {'url': 'file://c/test.html'},
-          {'url': 'file://c/test.js'},
-          {'url': 'file://d/e/../test.html'},
-          ]
-        }, directory_path)
+      ps = page_set.PageSet(serving_dirs=['a/b'], file_path=directory_path)
+      ps.AddPageWithDefaultRunNavigate('file://c/test.html')
+      ps.AddPageWithDefaultRunNavigate('file://c/test.js')
+      ps.AddPageWithDefaultRunNavigate('file://d/e/../test.html')
     finally:
       os.rmdir(directory_path)
 
@@ -30,6 +27,19 @@ class TestPageSet(unittest.TestCase):
     self.assertEquals(ps.serving_dirs, expected_serving_dirs)
     self.assertEquals(ps[0].serving_dir, os.path.join(real_directory_path, 'c'))
     self.assertEquals(ps[2].serving_dir, os.path.join(real_directory_path, 'd'))
+
+  def testAbsoluteServingDir(self):
+    directory_path = tempfile.mkdtemp()
+    try:
+      absolute_dir = os.path.join(directory_path, 'a', 'b')
+      ps = page_set.PageSet(file_path=directory_path,
+                            serving_dirs=['', directory_path, absolute_dir])
+      real_directory_path = os.path.realpath(directory_path)
+      real_absolute_dir = os.path.realpath(absolute_dir)
+      self.assertEquals(ps.serving_dirs, set([real_directory_path,
+                                              real_absolute_dir]))
+    finally:
+      os.rmdir(directory_path)
 
   def testRenamingCompoundActions(self):
     ps = page_set.PageSet.FromDict({
@@ -68,7 +78,6 @@ class TestPageSet(unittest.TestCase):
     self.assertEquals(ps.pages[0].RunNavigateSteps, {'action': 'navigate1'})
     self.assertEquals(ps.pages[1].RunNavigateSteps, {'action': 'navigate2'})
 
-
   def testSuccesfulPythonPageSetLoading(self):
     test_pps_dir = os.path.join(util.GetUnittestDataDir(), 'test_page_set.py')
     pps = page_set.PageSet.FromFile(test_pps_dir)
@@ -106,3 +115,15 @@ class TestPageSet(unittest.TestCase):
     self.assertEqual(
       os.path.normpath(os.path.join(
         util.GetUnittestDataDir(), 'pages/foo.html')), external_page.file_path)
+
+  def testDictBasedPageSet(self):
+    dict_ps = page_set.PageSet.FromDict({
+      'description': 'hello',
+      'archive_path': 'foo.wpr',
+      'pages': [{'url': 'file://../../otherdir/foo/'}]
+      }, os.path.dirname(__file__))
+    self.assertTrue(dict_ps.IsDictBasedPageSet())
+
+    test_pps_dir = os.path.join(util.GetUnittestDataDir(), 'test_page_set.py')
+    python_ps = page_set.PageSet.FromFile(test_pps_dir)
+    self.assertFalse(python_ps.IsDictBasedPageSet())

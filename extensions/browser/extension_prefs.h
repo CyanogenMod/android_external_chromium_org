@@ -113,11 +113,11 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
     virtual T* Create();
 
    private:
-    DISALLOW_COPY_AND_ASSIGN(ScopedUpdate);
-
     DictionaryPrefUpdate update_;
     const std::string extension_id_;
     const std::string key_;
+
+    DISALLOW_COPY_AND_ASSIGN(ScopedUpdate);
   };
   typedef ScopedUpdate<base::DictionaryValue, base::Value::TYPE_DICTIONARY>
       ScopedDictionaryUpdate;
@@ -322,6 +322,12 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   bool HasSettingsApiBubbleBeenAcknowledged(const std::string& extension_id);
   void SetSettingsApiBubbleBeenAcknowledged(const std::string& extension_id,
                                             bool value);
+
+  // Whether the user has been notified about extension with |extension_id|
+  // overriding the new tab page.
+  bool HasNtpOverriddenBubbleBeenAcknowledged(const std::string& extension_id);
+  void SetNtpOverriddenBubbleBeenAcknowledged(const std::string& extension_id,
+                                              bool value);
 
   // Returns true if the extension notification code has already run for the
   // first time for this profile. Currently we use this flag to mean that any

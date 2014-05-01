@@ -115,7 +115,7 @@ bool AreURLsInPageNavigation(const GURL& existing_url,
     return navigation_type == NAVIGATION_TYPE_IN_PAGE;
   }
 
-  url_canon::Replacements<char> replacements;
+  url::Replacements<char> replacements;
   replacements.ClearRef();
   return existing_url.ReplaceComponents(replacements) ==
       new_url.ReplaceComponents(replacements);
@@ -1316,6 +1316,7 @@ void NavigationControllerImpl::CopyStateFromAndPrune(
   // that new and existing navigations in the tab's current SiteInstances
   // are identified properly.
   delegate_->CopyMaxPageIDsFrom(source->delegate()->GetWebContents());
+  max_restored_page_id_ = source->max_restored_page_id_;
 
   // If there is a last committed entry, be sure to include it in the new
   // max page ID map.
@@ -1405,13 +1406,9 @@ int32 NavigationControllerImpl::GetMaxRestoredPageID() const {
 }
 
 bool NavigationControllerImpl::IsUnmodifiedBlankTab() const {
-  // TODO(creis): Move has_accessed_initial_document from RenderViewHost to
-  // WebContents and NavigationControllerDelegate.
-  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
-      delegate_->GetRenderViewHost());
   return IsInitialNavigation() &&
-      !GetLastCommittedEntry() &&
-      !rvh->has_accessed_initial_document();
+         !GetLastCommittedEntry() &&
+         !delegate_->HasAccessedInitialDocument();
 }
 
 SessionStorageNamespace*

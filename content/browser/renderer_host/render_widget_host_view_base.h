@@ -66,7 +66,13 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual blink::WebPopupType GetPopupType() OVERRIDE;
   virtual BrowserAccessibilityManager*
       GetBrowserAccessibilityManager() const OVERRIDE;
+  virtual void SetBrowserAccessibilityManager(
+      BrowserAccessibilityManager* manager) OVERRIDE;
   virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
+  virtual void OnAccessibilitySetFocus(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityShowMenu(int acc_obj_id) OVERRIDE;
+  virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds)
+      OVERRIDE;
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) OVERRIDE;
   virtual scoped_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget()
@@ -79,9 +85,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual void OnSwapCompositorFrame(
       uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE {}
-  virtual void ResizeCompositingSurface(const gfx::Size&) OVERRIDE {}
-  virtual void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
-                              gfx::Vector2dF current_fling_velocity) OVERRIDE;
   virtual void DidStopFlinging() OVERRIDE {}
   virtual uint32 RendererFrameNumber() OVERRIDE;
   virtual void DidReceiveRendererFrame() OVERRIDE;
@@ -90,7 +93,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
 
   virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
 
-  void SetBrowserAccessibilityManager(BrowserAccessibilityManager* manager);
+  virtual gfx::Size GetVisibleViewportSize() const OVERRIDE;
+  virtual void SetInsets(const gfx::Insets& insets) OVERRIDE;
 
   // Notification that a resize or move session ended on the native widget.
   void UpdateScreenInfo(gfx::NativeView view);

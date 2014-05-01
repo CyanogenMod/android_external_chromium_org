@@ -437,7 +437,6 @@ skia.dll!SkGlyphCache::findImage
 skia.dll!D1G_NoBounder_RectClip
 skia.dll!SkDraw::drawPosText
 skia.dll!SkBitmapDevice::drawPosText
-skia.dll!SkCanvas::drawPosText
 
 HANDLE LEAK
 name=http://crbug.com/346993
@@ -447,11 +446,12 @@ KERNEL32.dll!DuplicateHandle*
 base.dll!base::`anonymous namespace'::ThreadFunc
 KERNEL32.dll!BaseThreadInitThunk
 
-HANDLE LEAK
-name=http://crbug.com/366246
-system call NtDuplicateObject
-KERNELBASE.dll!DuplicateHandle
-KERNEL32.dll!DuplicateHandle
-base.dll!base::SharedMemory::ShareToProcessCommon
-content.dll!content::ResourceBuffer::ShareToProcess
-content.dll!content::AsyncResourceHandler::OnReadCompleted
+UNADDRESSABLE ACCESS
+name=http://crbug.com/42043-uninit
+...
+QuickTime.qts!*
+
+GDI USAGE ERROR
+name=http://crbug.com/42043-gdi
+...
+QuickTime.qts!*

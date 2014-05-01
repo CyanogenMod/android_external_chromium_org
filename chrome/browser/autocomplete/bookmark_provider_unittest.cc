@@ -16,10 +16,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/test_bookmark_client.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/bookmarks/core/browser/bookmark_match.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 // The bookmark corpus against which we will simulate searches.
@@ -72,6 +72,7 @@ class BookmarkProviderTest : public testing::Test,
  protected:
   virtual void SetUp() OVERRIDE;
 
+  test::TestBookmarkClient client_;
   scoped_ptr<TestingProfile> profile_;
   scoped_ptr<BookmarkModel> model_;
   scoped_refptr<BookmarkProvider> provider_;
@@ -81,7 +82,7 @@ class BookmarkProviderTest : public testing::Test,
 };
 
 BookmarkProviderTest::BookmarkProviderTest() {
-  model_.reset(new BookmarkModel(NULL, false));
+  model_ = client_.CreateModel(false);
 }
 
 void BookmarkProviderTest::SetUp() {
@@ -299,14 +300,15 @@ TEST_F(BookmarkProviderTest, Rankings) {
     const size_t match_count;
     // |matches| specifies the titles for all bookmarks expected to be matched
     // by the |query|
-    const std::string matches[99];
+    const std::string matches[3];
   } query_data[] = {
     // Basic ranking test.
     {"abc",       3, {"abcde",      // Most complete match.
                       "abcdef",
                       "abc def"}},  // Least complete match.
     {"ghi",       2, {"ghi jkl",    // Matched earlier.
-                      "jkl ghi"}},  // Matched later.
+                      "jkl ghi",    // Matched later.
+                      ""}},
     // Rankings of exact-word matches with different URLs.
     {"achlorhydric",
                   3, {"achlorhydric mockingbirds resuscitates featherhead",
@@ -314,14 +316,16 @@ TEST_F(BookmarkProviderTest, Rankings) {
                       "featherhead resuscitates achlorhydric mockingbirds"}},
     {"achlorhydric featherheads",
                   2, {"achlorhydric featherheads resuscitates mockingbirds",
-                      "mockingbirds resuscitates featherheads achlorhydric"}},
+                      "mockingbirds resuscitates featherheads achlorhydric",
+                      ""}},
     {"mockingbirds resuscitates",
                   3, {"mockingbirds resuscitates featherheads achlorhydric",
                       "achlorhydric mockingbirds resuscitates featherhead",
                       "featherhead resuscitates achlorhydric mockingbirds"}},
     // Ranking of exact-word matches with URL boost.
     {"worms",     2, {"burning worms #2",    // boosted
-                      "burning worms #1"}},  // not boosted
+                      "burning worms #1",    // not boosted
+                      ""}},
     // Ranking of prefix matches with URL boost. Note that a query of
     // "worm burn" will have the same results.
     {"burn worm", 3, {"burning worms #2",    // boosted
@@ -427,7 +431,7 @@ TEST_F(BookmarkProviderTest, StripHttpAndAdjustOffsets) {
   };
 
   // Reload the bookmarks index with |index_urls| == true.
-  model_.reset(new BookmarkModel(NULL, true));
+  model_ = client_.CreateModel(true);
   SetUp();
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(query_data); ++i) {

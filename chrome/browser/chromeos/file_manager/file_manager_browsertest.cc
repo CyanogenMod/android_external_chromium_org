@@ -13,7 +13,7 @@
 
 #include "apps/app_window.h"
 #include "apps/app_window_registry.h"
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
 #include "base/bind.h"
 #include "base/callback.h"
@@ -915,9 +915,6 @@ class MultiProfileFileManagerBrowserTest : public FileManagerBrowserTestBase {
     const TestAccountInfo& info = kTestAccounts[PRIMARY_ACCOUNT_INDEX];
 
     AddUser(info, true);
-    chromeos::UserManager* const user_manager = chromeos::UserManager::Get();
-    if (user_manager->GetActiveUser() != user_manager->FindUser(info.email))
-      chromeos::UserManager::Get()->SwitchActiveUser(info.email);
     FileManagerBrowserTestBase::SetUpOnMainThread();
   }
 

@@ -32,7 +32,7 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
    public:
     ScopedChange(ViewManagerConnection* connection,
                  RootNodeManager* root,
-                 int32_t change_id);
+                 ChangeId change_id);
     ~ScopedChange();
 
    private:
@@ -50,24 +50,34 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
   void AddConnection(ViewManagerConnection* connection);
   void RemoveConnection(ViewManagerConnection* connection);
 
+  // Returns the connection by id.
+  ViewManagerConnection* GetConnection(uint16_t connection_id);
+
   // Returns the Node identified by |id|.
   Node* GetNode(const NodeId& id);
 
-  // Notifies all ViewManagerConnections of a hierarchy change.
+  // Returns the View identified by |id|.
+  View* GetView(const ViewId& id);
+
+  // These functions trivially delegate to all ViewManagerConnections, which in
+  // term notify their clients.
   void NotifyNodeHierarchyChanged(const NodeId& node,
                                   const NodeId& new_parent,
                                   const NodeId& old_parent);
+  void NotifyNodeViewReplaced(const NodeId& node,
+                              const ViewId& new_view_id,
+                              const ViewId& old_view_id);
 
  private:
   // Tracks a change.
   struct Change {
-    Change(int32_t connection_id, int32_t change_id)
+    Change(int32_t connection_id, ChangeId change_id)
         : connection_id(connection_id),
           change_id(change_id) {
     }
 
     int32_t connection_id;
-    int32_t change_id;
+    ChangeId change_id;
   };
 
   typedef std::map<uint16_t, ViewManagerConnection*> ConnectionMap;
@@ -78,7 +88,7 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
   // Changes should never nest, meaning each PrepareForChange() must be
   // balanced with a call to FinishChange() with no PrepareForChange()
   // in between.
-  void PrepareForChange(ViewManagerConnection* connection, int32_t change_id);
+  void PrepareForChange(ViewManagerConnection* connection, ChangeId change_id);
 
   // Balances a call to PrepareForChange().
   void FinishChange();
@@ -94,6 +104,9 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
   virtual void OnNodeHierarchyChanged(const NodeId& node,
                                       const NodeId& new_parent,
                                       const NodeId& old_parent) OVERRIDE;
+  virtual void OnNodeViewReplaced(const NodeId& node,
+                                  const ViewId& new_view_id,
+                                  const ViewId& old_view_id) OVERRIDE;
 
   // ID to use for next ViewManagerConnection.
   uint16_t next_connection_id_;

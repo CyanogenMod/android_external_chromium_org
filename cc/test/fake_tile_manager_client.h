@@ -9,12 +9,15 @@
 
 namespace cc {
 
+class Tile;
+
 class FakeTileManagerClient : public TileManagerClient {
  public:
   virtual ~FakeTileManagerClient() {}
 
   // TileManagerClient implementation.
   virtual void NotifyReadyToActivate() OVERRIDE {}
+  virtual void NotifyTileInitialized(const Tile* tile) OVERRIDE {}
 };
 
 }  // namespace cc

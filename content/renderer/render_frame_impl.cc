@@ -41,7 +41,6 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/context_menu_client.h"
 #include "content/public/renderer/document_state.h"
-#include "content/public/renderer/history_item_serialization.h"
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/renderer/render_frame_observer.h"
 #include "content/renderer/accessibility/renderer_accessibility.h"
@@ -49,8 +48,10 @@
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
 #include "content/renderer/child_frame_compositing_helper.h"
 #include "content/renderer/context_menu_params_builder.h"
+#include "content/renderer/devtools/devtools_agent.h"
 #include "content/renderer/dom_automation_controller.h"
 #include "content/renderer/history_controller.h"
+#include "content/renderer/history_serialization.h"
 #include "content/renderer/image_loading_helper.h"
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/internal_document_state_data.h"
@@ -700,9 +701,7 @@ void RenderFrameImpl::OnNavigate(const FrameMsg_Navigate_Params& params) {
     CHECK(frame) << "Invalid frame name passed: " << params.frame_to_navigate;
   }
 
-  WebHistoryItem item =
-      render_view_->history_controller()->GetCurrentItemForExport();
-  if (is_reload && item.isNull()) {
+  if (is_reload && !render_view_->history_controller()->GetCurrentEntry()) {
     // We cannot reload if we do not have any history state.  This happens, for
     // example, when recovering from a crash.
     is_reload = false;
@@ -730,12 +729,13 @@ void RenderFrameImpl::OnNavigate(const FrameMsg_Navigate_Params& params) {
   } else if (params.page_state.IsValid()) {
     // We must know the page ID of the page we are navigating back to.
     DCHECK_NE(params.page_id, -1);
-    WebHistoryItem item = PageStateToHistoryItem(params.page_state);
-    if (!item.isNull()) {
+    scoped_ptr<HistoryEntry> entry =
+        PageStateToHistoryEntry(params.page_state);
+    if (entry) {
       // Ensure we didn't save the swapped out URL in UpdateState, since the
       // browser should never be telling us to navigate to swappedout://.
-      CHECK(item.urlString() != WebString::fromUTF8(kSwappedOutURL));
-      render_view_->history_controller()->GoToItem(item, cache_policy);
+      CHECK(entry->root().urlString() != WebString::fromUTF8(kSwappedOutURL));
+      render_view_->history_controller()->GoToEntry(entry.Pass(), cache_policy);
     }
   } else if (!params.base_url_for_data_url.is_empty()) {
     // A loadData request with a specified base URL.
@@ -1145,6 +1145,20 @@ bool RenderFrameImpl::RunJavaScriptMessage(JavaScriptMessageType type,
   return success;
 }
 
+void RenderFrameImpl::LoadNavigationErrorPage(
+    const WebURLRequest& failed_request,
+    const WebURLError& error,
+    bool replace) {
+  std::string error_html;
+  GetContentClient()->renderer()->GetNavigationErrorStrings(
+      render_view(), frame_, failed_request, error, &error_html, NULL);
+
+  frame_->loadHTMLString(error_html,
+                         GURL(kUnreachableWebDataURL),
+                         error.unreachableURL,
+                         replace);
+}
+
 void RenderFrameImpl::DidCommitCompositorFrame() {
   if (compositing_helper_)
     compositing_helper_->DidCommitCompositorFrame();
@@ -1332,7 +1346,10 @@ blink::WebServiceWorkerProvider* RenderFrameImpl::createServiceWorkerProvider(
 
 void RenderFrameImpl::didAccessInitialDocument(blink::WebLocalFrame* frame) {
   DCHECK(!frame_ || frame_ == frame);
-  render_view_->didAccessInitialDocument(frame);
+  // Notify the browser process that it is no longer safe to show the pending
+  // URL of the main frame, since a URL spoof is now possible.
+  if (!frame->parent() && render_view_->page_id_ == -1)
+    Send(new FrameHostMsg_DidAccessInitialDocument(routing_id_));
 }
 
 blink::WebFrame* RenderFrameImpl::createChildFrame(
@@ -1348,6 +1365,9 @@ blink::WebFrame* RenderFrameImpl::createChildFrame(
   // happen if this RenderFrameImpl's IPCs are being filtered when in swapped
   // out state.
   if (child_routing_id == MSG_ROUTING_NONE) {
+#if !defined(OS_LINUX)
+    // DumpWithoutCrashing() crashes on Linux in renderer processes when
+    // breakpad and sandboxing are enabled: crbug.com/349600
     base::debug::Alias(parent);
     base::debug::Alias(&routing_id_);
     bool render_view_is_swapped_out = GetRenderWidget()->is_swapped_out();
@@ -1356,6 +1376,7 @@ blink::WebFrame* RenderFrameImpl::createChildFrame(
     base::debug::Alias(&render_view_is_closing);
     base::debug::Alias(&is_swapped_out_);
     base::debug::DumpWithoutCrashing();
+#endif
     return NULL;
   }
 
@@ -1396,9 +1417,8 @@ void RenderFrameImpl::frameDetached(blink::WebFrame* frame) {
   // have IPCs fired off.
   is_detaching_ = true;
 
-  // Call back to RenderViewImpl for observers to be notified.
-  // TODO(nasko): Remove once we have RenderFrameObserver.
-  render_view_->frameDetached(frame);
+  FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers(),
+                    FrameDetached(frame));
 
   // We need to clean up subframes by removing them from the map and deleting
   // the RenderFrameImpl.  In contrast, the main frame is owned by its
@@ -1427,9 +1447,9 @@ void RenderFrameImpl::frameFocused() {
 
 void RenderFrameImpl::willClose(blink::WebFrame* frame) {
   DCHECK(!frame_ || frame_ == frame);
-  // Call back to RenderViewImpl for observers to be notified.
-  // TODO(nasko): Remove once we have RenderFrameObserver.
-  render_view_->willClose(frame);
+
+  FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers(),
+                    FrameWillClose(frame));
 }
 
 void RenderFrameImpl::didChangeName(blink::WebLocalFrame* frame,
@@ -1450,8 +1470,11 @@ void RenderFrameImpl::didMatchCSS(
     const blink::WebVector<blink::WebString>& newly_matching_selectors,
     const blink::WebVector<blink::WebString>& stopped_matching_selectors) {
   DCHECK(!frame_ || frame_ == frame);
-  render_view_->didMatchCSS(
-      frame, newly_matching_selectors, stopped_matching_selectors);
+
+  FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers(),
+                    DidMatchCSS(frame,
+                                newly_matching_selectors,
+                                stopped_matching_selectors));
 }
 
 bool RenderFrameImpl::shouldReportDetailedMessageForSource(
@@ -1486,16 +1509,14 @@ void RenderFrameImpl::didAddMessageToConsole(
 
   if (shouldReportDetailedMessageForSource(source_name)) {
     FOR_EACH_OBSERVER(
-        RenderViewObserver,
-        render_view_->observers(),
+        RenderViewObserver, render_view_->observers(),
         DetailedConsoleMessageAdded(message.text,
                                     source_name,
                                     stack_trace,
                                     source_line,
                                     static_cast<int32>(log_severity)));
     FOR_EACH_OBSERVER(
-        RenderFrameObserver,
-        observers_,
+        RenderFrameObserver, observers_,
         DetailedConsoleMessageAdded(message.text,
                                     source_name,
                                     stack_trace,
@@ -1547,9 +1568,9 @@ blink::WebHistoryItem RenderFrameImpl::historyItemForNewChildFrame(
 void RenderFrameImpl::willSendSubmitEvent(blink::WebLocalFrame* frame,
                                           const blink::WebFormElement& form) {
   DCHECK(!frame_ || frame_ == frame);
-  // Call back to RenderViewImpl for observers to be notified.
-  // TODO(nasko): Remove once we have RenderFrameObserver.
-  render_view_->willSendSubmitEvent(frame, form);
+
+  FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers(),
+                    WillSendSubmitEvent(frame, form));
 }
 
 void RenderFrameImpl::willSubmitForm(blink::WebLocalFrame* frame,
@@ -1572,9 +1593,8 @@ void RenderFrameImpl::willSubmitForm(blink::WebLocalFrame* frame,
   internal_data->set_searchable_form_encoding(
       web_searchable_form_data.encoding().utf8());
 
-  // Call back to RenderViewImpl for observers to be notified.
-  // TODO(nasko): Remove once we have RenderFrameObserver.
-  render_view_->willSubmitForm(frame, form);
+  FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers(),
+                    WillSubmitForm(frame, form));
 }
 
 void RenderFrameImpl::didCreateDataSource(blink::WebLocalFrame* frame,
@@ -1637,13 +1657,9 @@ void RenderFrameImpl::didStartProvisionalLoad(blink::WebLocalFrame* frame) {
         PAGE_TRANSITION_AUTO_SUBFRAME);
   }
 
-  FOR_EACH_OBSERVER(
-      RenderViewObserver, render_view_->observers(),
-      DidStartProvisionalLoad(frame));
-
-  FOR_EACH_OBSERVER(
-      RenderFrameObserver, observers_,
-      DidStartProvisionalLoad());
+  FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers(),
+                    DidStartProvisionalLoad(frame));
+  FOR_EACH_OBSERVER(RenderFrameObserver, observers_, DidStartProvisionalLoad());
 
   int parent_routing_id = frame->parent() ?
       FromWebFrame(frame->parent())->GetRoutingID() : -1;
@@ -1683,9 +1699,14 @@ void RenderFrameImpl::didFailProvisionalLoad(blink::WebLocalFrame* frame,
 
   const WebURLRequest& failed_request = ds->request();
 
-  // Call out to RenderViewImpl, so observers are notified.
-  render_view_->didFailProvisionalLoad(frame, error);
-
+  // Notify the browser that we failed a provisional load with an error.
+  //
+  // Note: It is important this notification occur before DidStopLoading so the
+  //       SSL manager can react to the provisional load failure before being
+  //       notified the load stopped.
+  //
+  FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers(),
+                    DidFailProvisionalLoad(frame, error));
   FOR_EACH_OBSERVER(RenderFrameObserver, observers_,
                     DidFailProvisionalLoad(error));
 
@@ -1771,8 +1792,7 @@ void RenderFrameImpl::didFailProvisionalLoad(blink::WebLocalFrame* frame,
   }
 
   // Load an error page.
-  render_view_->LoadNavigationErrorPage(
-      frame, failed_request, error, replace);
+  LoadNavigationErrorPage(failed_request, error, replace);
 }
 
 void RenderFrameImpl::didCommitProvisionalLoad(
@@ -1909,9 +1929,8 @@ void RenderFrameImpl::didCreateDocumentElement(blink::WebLocalFrame* frame) {
     }
   }
 
-  // Call back to RenderViewImpl for observers to be notified.
-  // TODO(nasko): Remove once we have RenderFrameObserver.
-  render_view_->didCreateDocumentElement(frame);
+  FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers(),
+                    DidCreateDocumentElement(frame));
 }
 
 void RenderFrameImpl::didReceiveTitle(blink::WebLocalFrame* frame,
@@ -1937,10 +1956,8 @@ void RenderFrameImpl::didFinishDocumentLoad(blink::WebLocalFrame* frame) {
 
   Send(new FrameHostMsg_DidFinishDocumentLoad(routing_id_));
 
-  // Call back to RenderViewImpl for observers to be notified.
-  // TODO(nasko): Remove once we have RenderFrameObserver for this method.
-  render_view_->didFinishDocumentLoad(frame);
-
+  FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers(),
+                    DidFinishDocumentLoad(frame));
   FOR_EACH_OBSERVER(RenderFrameObserver, observers_, DidFinishDocumentLoad());
 
   // Check whether we have new encoding name.
@@ -1961,7 +1978,8 @@ void RenderFrameImpl::didFailLoad(blink::WebLocalFrame* frame,
   WebDataSource* ds = frame->dataSource();
   DCHECK(ds);
 
-  render_view_->didFailLoad(frame, error);
+  FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers(),
+                    DidFailLoad(frame, error));
 
   const WebURLRequest& failed_request = ds->request();
   base::string16 error_description;
@@ -1990,7 +2008,8 @@ void RenderFrameImpl::didFinishLoad(blink::WebLocalFrame* frame) {
     document_state->set_finish_load_time(Time::Now());
   }
 
-  render_view_->didFinishLoad(frame);
+  FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers(),
+                    DidFinishLoad(frame));
   FOR_EACH_OBSERVER(RenderFrameObserver, observers_, DidFinishLoad());
 
   // Don't send this message while the frame is swapped out.
@@ -2399,11 +2418,26 @@ void RenderFrameImpl::didReceiveResponse(
 void RenderFrameImpl::didFinishResourceLoad(blink::WebLocalFrame* frame,
                                             unsigned identifier) {
   DCHECK(!frame_ || frame_ == frame);
-  // TODO(nasko): Move implementation here. Needed state:
-  // * devtools_agent_
-  // Needed methods:
-  // * LoadNavigationErrorPage
-  render_view_->didFinishResourceLoad(frame, identifier);
+  InternalDocumentStateData* internal_data =
+      InternalDocumentStateData::FromDataSource(frame->dataSource());
+  if (!internal_data->use_error_page())
+    return;
+
+  // Do not show error page when DevTools is attached.
+  if (render_view_->devtools_agent_->IsAttached())
+    return;
+
+  // Display error page, if appropriate.
+  std::string error_domain = "http";
+  int http_status_code = internal_data->http_status_code();
+  if (GetContentClient()->renderer()->HasErrorPage(
+          http_status_code, &error_domain)) {
+    WebURLError error;
+    error.unreachableURL = frame->document().url();
+    error.domain = WebString::fromUTF8(error_domain);
+    error.reason = http_status_code;
+    LoadNavigationErrorPage(frame->dataSource()->request(), error, true);
+  }
 }
 
 void RenderFrameImpl::didLoadResourceFromMemoryCache(
@@ -2485,10 +2519,18 @@ void RenderFrameImpl::didFirstVisuallyNonEmptyLayout(
 void RenderFrameImpl::didChangeContentsSize(blink::WebLocalFrame* frame,
                                             const blink::WebSize& size) {
   DCHECK(!frame_ || frame_ == frame);
-  // TODO(nasko): Move implementation here. Needed state:
-  // * cached_has_main_frame_horizontal_scrollbar_
-  // * cached_has_main_frame_vertical_scrollbar_
-  render_view_->didChangeContentsSize(frame, size);
+#if defined(OS_MACOSX)
+  if (frame->parent())
+    return;
+
+  WebView* frameView = frame->view();
+  if (!frameView)
+    return;
+
+  GetRenderWidget()->DidChangeScrollbarsForMainFrame(
+      frame->hasHorizontalScrollbar(),
+      frame->hasVerticalScrollbar());
+#endif  // defined(OS_MACOSX)
 }
 
 void RenderFrameImpl::didChangeScrollOffset(blink::WebLocalFrame* frame) {
@@ -2552,6 +2594,10 @@ void RenderFrameImpl::willOpenSocketStream(
   impl->SetUserData(handle, new SocketStreamHandleData(routing_id_));
 }
 
+blink::WebGeolocationClient* RenderFrameImpl::geolocationClient() {
+  return render_view_->geolocationClient();
+}
+
 void RenderFrameImpl::willStartUsingPeerConnectionHandler(
     blink::WebLocalFrame* frame,
     blink::WebRTCPeerConnectionHandler* handler) {
@@ -2559,6 +2605,14 @@ void RenderFrameImpl::willStartUsingPeerConnectionHandler(
 #if defined(ENABLE_WEBRTC)
   static_cast<RTCPeerConnectionHandler*>(handler)->associateWithFrame(frame);
 #endif
+}
+
+blink::WebUserMediaClient* RenderFrameImpl::userMediaClient() {
+  return render_view_->userMediaClient();
+}
+
+blink::WebMIDIClient* RenderFrameImpl::webMIDIClient() {
+  return render_view_->webMIDIClient();
 }
 
 bool RenderFrameImpl::willCheckAndDispatchMessageEvent(
@@ -2699,13 +2753,11 @@ void RenderFrameImpl::UpdateURL(blink::WebFrame* frame) {
 
   // Make navigation state a part of the DidCommitProvisionalLoad message so
   // that commited entry has it at all times.
-  WebHistoryItem item =
-      render_view_->history_controller()->GetCurrentItemForExport();
-  if (item.isNull()) {
-    item.initialize();
-    item.setURLString(request.url().spec().utf16());
-  }
-  params.page_state = HistoryItemToPageState(item);
+  HistoryEntry* entry = render_view_->history_controller()->GetCurrentEntry();
+  if (entry)
+    params.page_state = HistoryEntryToPageState(entry);
+  else
+    params.page_state = PageState::CreateFromURL(request.url());
 
   if (!frame->parent()) {
     // Top-level navigation.
@@ -2770,7 +2822,7 @@ void RenderFrameImpl::UpdateURL(blink::WebFrame* frame) {
     base::string16 method = request.httpMethod();
     if (EqualsASCII(method, "POST")) {
       params.is_post = true;
-      params.post_id = ExtractPostId(item);
+      params.post_id = ExtractPostId(entry->root());
     }
 
     // Send the user agent override back.

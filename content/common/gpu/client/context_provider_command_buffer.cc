@@ -50,7 +50,6 @@ ContextProviderCommandBuffer::ContextProviderCommandBuffer(
     const std::string& debug_name)
     : context3d_(context3d.Pass()),
       debug_name_(debug_name),
-      leak_on_destroy_(false),
       destroyed_(false) {
   DCHECK(main_thread_checker_.CalledOnValidThread());
   DCHECK(context3d_);
@@ -69,13 +68,6 @@ ContextProviderCommandBuffer::~ContextProviderCommandBuffer() {
         CommandBufferProxyImpl::MemoryAllocationChangedCallback());
   }
   lost_context_callback_proxy_.reset();
-
-  if (leak_on_destroy_) {
-    WebGraphicsContext3DCommandBufferImpl* context3d ALLOW_UNUSED =
-        context3d_.release();
-    webkit::gpu::GrContextForWebGraphicsContext3D* gr_context ALLOW_UNUSED =
-        gr_context_.release();
-  }
 }
 
 
@@ -162,6 +154,13 @@ void ContextProviderCommandBuffer::VerifyContexts() {
     OnLostContext();
 }
 
+void ContextProviderCommandBuffer::DeleteCachedResources() {
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+
+  if (gr_context_)
+    gr_context_->FreeGpuResources();
+}
+
 void ContextProviderCommandBuffer::OnLostContext() {
   DCHECK(context_thread_checker_.CalledOnValidThread());
   {
@@ -180,11 +179,6 @@ void ContextProviderCommandBuffer::OnMemoryAllocationChanged(
     const gpu::MemoryAllocation& allocation) {
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
-  if (gr_context_) {
-    bool nonzero_allocation = !!allocation.bytes_limit_when_visible;
-    gr_context_->SetMemoryLimit(nonzero_allocation);
-  }
-
   if (memory_policy_changed_callback_.is_null())
     return;
 
@@ -202,7 +196,6 @@ void ContextProviderCommandBuffer::InitializeCapabilities() {
 
   capabilities_ = caps;
 }
-
 
 bool ContextProviderCommandBuffer::DestroyedOnMainThread() {
   DCHECK(main_thread_checker_.CalledOnValidThread());

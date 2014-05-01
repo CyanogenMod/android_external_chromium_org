@@ -18,7 +18,6 @@
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_service.h"
@@ -34,6 +33,7 @@
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/bookmarks/core/browser/bookmark_utils.h"
 #include "net/base/net_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "url/gurl.h"
@@ -512,7 +512,6 @@ void HistoryURLProvider::DoAutocomplete(history::HistoryBackend* backend,
   // Otherwise, this is just low-quality noise.  In the cases where we've parsed
   // as UNKNOWN, we'll still show an accidental search infobar if need be.
   bool have_what_you_typed_match =
-      params->input.canonicalized_url().is_valid() &&
       (params->input.type() != AutocompleteInput::QUERY) &&
       ((params->input.type() != AutocompleteInput::UNKNOWN) ||
        (classifier.type() == VisitClassifier::UNVISITED_INTRANET) ||
@@ -704,8 +703,7 @@ void HistoryURLProvider::RunAutocompletePasses(
   const bool trim_http = !AutocompleteInput::HasHTTPScheme(input.text());
   // Don't do this for queries -- while we can sometimes mark up a match for
   // this, it's not what the user wants, and just adds noise.
-  if ((input.type() != AutocompleteInput::QUERY) &&
-      input.canonicalized_url().is_valid()) {
+  if (input.type() != AutocompleteInput::QUERY) {
     AutocompleteMatch what_you_typed(SuggestExactInput(
         input.text(), input.canonicalized_url(), trim_http));
     what_you_typed.relevance = CalculateRelevance(WHAT_YOU_TYPED, 0);
@@ -814,7 +812,7 @@ bool HistoryURLProvider::FixupExactSuggestion(
   }
 
   const GURL& url = match->destination_url;
-  const url_parse::Parsed& parsed = url.parsed_for_possibly_invalid_spec();
+  const url::Parsed& parsed = url.parsed_for_possibly_invalid_spec();
   // If the what-you-typed result looks like a single word (which can be
   // interpreted as an intranet address) followed by a pound sign ("#"),
   // leave the score for the url-what-you-typed result as is.  It will be
@@ -832,11 +830,11 @@ bool HistoryURLProvider::FixupExactSuggestion(
   // between the input "c" and the input "c#", both of which will have empty
   // reference fragments.)
   if ((type == UNVISITED_INTRANET) &&
-      (input.type() != AutocompleteInput::URL) &&
-      url.username().empty() && url.password().empty() && url.port().empty() &&
-      (url.path() == "/") && url.query().empty() &&
-      (parsed.CountCharactersBefore(url_parse::Parsed::REF, true) !=
-       parsed.CountCharactersBefore(url_parse::Parsed::REF, false))) {
+      (input.type() != AutocompleteInput::URL) && url.username().empty() &&
+      url.password().empty() && url.port().empty() && (url.path() == "/") &&
+      url.query().empty() &&
+      (parsed.CountCharactersBefore(url::Parsed::REF, true) !=
+       parsed.CountCharactersBefore(url::Parsed::REF, false))) {
     return false;
   }
 

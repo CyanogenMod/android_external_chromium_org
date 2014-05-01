@@ -23,7 +23,6 @@
 #include "content/public/common/url_utils.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/document_state.h"
-#include "content/public/renderer/history_item_serialization.h"
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/render_view_test.h"
@@ -32,6 +31,7 @@
 #include "content/renderer/accessibility/renderer_accessibility_complete.h"
 #include "content/renderer/accessibility/renderer_accessibility_focus_only.h"
 #include "content/renderer/history_controller.h"
+#include "content/renderer/history_serialization.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
@@ -333,9 +333,9 @@ TEST_F(RenderViewImplTest, OnNavigationHttpPost) {
 
   // Check post data sent to browser matches
   EXPECT_TRUE(host_nav_params.a.page_state.IsValid());
-  const blink::WebHistoryItem item = PageStateToHistoryItem(
-      host_nav_params.a.page_state);
-  blink::WebHTTPBody body = item.httpBody();
+  scoped_ptr<HistoryEntry> entry =
+      PageStateToHistoryEntry(host_nav_params.a.page_state);
+  blink::WebHTTPBody body = entry->root().httpBody();
   blink::WebHTTPBody::Element element;
   bool successful = body.elementAt(0, element);
   EXPECT_TRUE(successful);
@@ -1792,8 +1792,8 @@ TEST_F(RenderViewImplTest, ContextMenu) {
 
 TEST_F(RenderViewImplTest, TestBackForward) {
   LoadHTML("<div id=pagename>Page A</div>");
-  blink::WebHistoryItem page_a_item =
-      view()->history_controller()->GetCurrentItemForExport();
+  PageState page_a_state =
+      HistoryEntryToPageState(view()->history_controller()->GetCurrentEntry());
   int was_page_a = -1;
   base::string16 check_page_a =
       base::ASCIIToUTF16(
@@ -1817,26 +1817,29 @@ TEST_F(RenderViewImplTest, TestBackForward) {
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_c, &was_page_c));
   EXPECT_EQ(1, was_page_b);
 
-  blink::WebHistoryItem forward_item =
-      view()->history_controller()->GetCurrentItemForExport();
-  GoBack(view()->history_controller()->GetPreviousItemForExport());
+  PageState forward_state =
+      HistoryEntryToPageState(view()->history_controller()->GetCurrentEntry());
+  GoBack(HistoryEntryToPageState(
+      view()->history_controller()->GetPreviousEntry()));
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_b, &was_page_b));
   EXPECT_EQ(1, was_page_b);
 
-  GoForward(forward_item);
+  GoForward(forward_state);
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_c, &was_page_c));
   EXPECT_EQ(1, was_page_c);
 
-  GoBack(view()->history_controller()->GetPreviousItemForExport());
+  GoBack(HistoryEntryToPageState(
+      view()->history_controller()->GetPreviousEntry()));
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_b, &was_page_b));
   EXPECT_EQ(1, was_page_b);
 
-  forward_item = view()->history_controller()->GetCurrentItemForExport();
-  GoBack(page_a_item);
+  forward_state =
+      HistoryEntryToPageState(view()->history_controller()->GetCurrentEntry());
+  GoBack(page_a_state);
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_a, &was_page_a));
   EXPECT_EQ(1, was_page_a);
 
-  GoForward(forward_item);
+  GoForward(forward_state);
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_b, &was_page_b));
   EXPECT_EQ(1, was_page_b);
 }

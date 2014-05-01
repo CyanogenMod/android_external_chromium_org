@@ -200,6 +200,19 @@ class LoginUtilsImpl
   // the authentication profile.
   void CompleteProfileCreate(Profile* user_profile);
 
+  // Callback to resume profile preparing after start session.
+  void OnSessionStarted(const UserContext& user_context,
+                        const std::string& display_email,
+                        bool has_cookies,
+                        LoginUtils::Delegate* delegate,
+                        bool success);
+
+  // Complete profile preparation with having active session.
+  void CompletePrepareProfileWithActiveSession(const UserContext& user_context,
+                                               const std::string& display_email,
+                                               bool has_cookies,
+                                               LoginUtils::Delegate* delegate);
+
   // Finalized profile preparation.
   void FinalizePrepareProfile(Profile* user_profile);
 
@@ -400,10 +413,42 @@ void LoginUtilsImpl::PrepareProfile(
   if (!has_active_session) {
     btl->AddLoginTimeMarker("StartSession-Start", false);
     DBusThreadManager::Get()->GetSessionManagerClient()->StartSession(
-        user_context.username);
-    btl->AddLoginTimeMarker("StartSession-End", false);
+        user_context.username,
+        base::Bind(&LoginUtilsImpl::OnSessionStarted,
+                   AsWeakPtr(),
+                   user_context,
+                   display_email,
+                   has_cookies,
+                   delegate));
+    return;
   }
+  CompletePrepareProfileWithActiveSession(
+      user_context, display_email, has_cookies, delegate);
+}
 
+void LoginUtilsImpl::OnSessionStarted(const UserContext& user_context,
+                                      const std::string& display_email,
+                                      bool has_cookies,
+                                      LoginUtils::Delegate* delegate,
+                                      bool success) {
+  BootTimesLoader* btl = BootTimesLoader::Get();
+  btl->AddLoginTimeMarker("StartSession-End", false);
+
+  if (!success) {
+    LOG(ERROR) << "StartSession failed";
+    chrome::AttemptUserExit();
+    return;
+  }
+  CompletePrepareProfileWithActiveSession(
+      user_context, display_email, has_cookies, delegate);
+}
+
+void LoginUtilsImpl::CompletePrepareProfileWithActiveSession(
+    const UserContext& user_context,
+    const std::string& display_email,
+    bool has_cookies,
+    LoginUtils::Delegate* delegate) {
+  BootTimesLoader* btl = BootTimesLoader::Get();
   btl->AddLoginTimeMarker("UserLoggedIn-Start", false);
   UserManager* user_manager = UserManager::Get();
   user_manager->UserLoggedIn(user_context.username,
@@ -465,7 +510,7 @@ void LoginUtilsImpl::InitProfilePreferences(Profile* user_profile,
 
     user_profile->GetPrefs()->SetString(prefs::kManagedUserId,
                                         managed_user_sync_id);
-  } else {
+  } else if (UserManager::Get()->IsLoggedInAsRegularUser()) {
     // Make sure that the google service username is properly set (we do this
     // on every sign in, not just the first login, to deal with existing
     // profiles that might not have it set yet).

@@ -64,7 +64,7 @@ class TestHooks : public AnimationDelegate {
   virtual void WillBeginMainFrame() {}
   virtual void DidBeginMainFrame() {}
   virtual void Layout() {}
-  virtual void DidInitializeOutputSurface(bool succeeded) {}
+  virtual void DidInitializeOutputSurface() {}
   virtual void DidFailToInitializeOutputSurface() {}
   virtual void DidAddAnimation() {}
   virtual void WillCommit() {}
@@ -87,7 +87,6 @@ class TestHooks : public AnimationDelegate {
       Animation::TargetProperty target_property) OVERRIDE {}
 
   virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback) = 0;
-  virtual scoped_refptr<ContextProvider> OffscreenContextProvider() = 0;
 };
 
 class BeginTask;
@@ -185,8 +184,6 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback) OVERRIDE;
   // Override this for unit tests, which should not produce pixel output.
   virtual scoped_ptr<FakeOutputSurface> CreateFakeOutputSurface(bool fallback);
-
-  virtual scoped_refptr<ContextProvider> OffscreenContextProvider() OVERRIDE;
 
   TestWebGraphicsContext3D* TestContext();
 

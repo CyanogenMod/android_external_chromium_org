@@ -63,7 +63,6 @@
 #include "content/public/common/url_utils.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/document_state.h"
-#include "content/public/renderer/history_item_serialization.h"
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/public/renderer/render_view_visitor.h"
@@ -82,6 +81,7 @@
 #include "content/renderer/geolocation_dispatcher.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/history_controller.h"
+#include "content/renderer/history_serialization.h"
 #include "content/renderer/idle_user_detector.h"
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/input/input_handler_manager.h"
@@ -204,7 +204,6 @@
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
 
-#include "content/common/android/device_telephony_info.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/renderer/android/address_detector.h"
 #include "content/renderer/android/content_detector.h"
@@ -214,6 +213,7 @@
 #include "content/renderer/media/android/renderer_media_player_manager.h"
 #include "content/renderer/media/android/stream_texture_factory_impl.h"
 #include "content/renderer/media/android/webmediaplayer_android.h"
+#include "net/android/network_library.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
@@ -668,8 +668,6 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
 #endif
       cached_is_main_frame_pinned_to_left_(false),
       cached_is_main_frame_pinned_to_right_(false),
-      cached_has_main_frame_horizontal_scrollbar_(false),
-      cached_has_main_frame_vertical_scrollbar_(false),
       has_scrolled_focused_editable_node_into_rect_(false),
       push_messaging_dispatcher_(NULL),
       geolocation_dispatcher_(NULL),
@@ -703,9 +701,7 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       next_snapshot_id_(0) {
 }
 
-void RenderViewImpl::Initialize(
-    RenderViewImplParams* params,
-    RenderFrameImpl* main_render_frame) {
+void RenderViewImpl::Initialize(RenderViewImplParams* params) {
   routing_id_ = params->routing_id;
   surface_id_ = params->surface_id;
   if (params->opener_id != MSG_ROUTING_NONE && params->is_renderer_created)
@@ -713,6 +709,13 @@ void RenderViewImpl::Initialize(
 
   // Ensure we start with a valid next_page_id_ from the browser.
   DCHECK_GE(next_page_id_, 0);
+
+  RenderFrameImpl* main_render_frame = RenderFrameImpl::Create(
+      this, params->main_frame_routing_id);
+  // The main frame WebLocalFrame object is closed by
+  // RenderFrameImpl::frameDetached().
+  WebLocalFrame* web_frame = WebLocalFrame::create(main_render_frame);
+  main_render_frame->SetWebFrame(web_frame);
 
   webwidget_ = WebView::create(this);
   webwidget_mouse_lock_target_.reset(new WebWidgetLockTarget(webwidget_));
@@ -723,12 +726,10 @@ void RenderViewImpl::Initialize(
     stats_collection_observer_.reset(new StatsCollectionObserver(this));
 
 #if defined(OS_ANDROID)
-  content::DeviceTelephonyInfo device_info;
-
   const std::string region_code =
       command_line.HasSwitch(switches::kNetworkCountryIso)
           ? command_line.GetSwitchValueASCII(switches::kNetworkCountryIso)
-          : device_info.GetNetworkCountryIso();
+          : net::android::GetTelephonyNetworkOperator();
   content_detectors_.push_back(linked_ptr<ContentDetector>(
       new AddressDetector()));
   content_detectors_.push_back(linked_ptr<ContentDetector>(
@@ -774,6 +775,9 @@ void RenderViewImpl::Initialize(
           ShouldUseCompositingForGpuRasterizationHint());
 
   ApplyWebPreferences(webkit_preferences_, webview());
+
+  webview()->settings()->setAllowConnectingInsecureWebSocket(
+      command_line.HasSwitch(switches::kAllowInsecureWebSocketFromHttpsOrigin));
 
   main_render_frame_.reset(main_render_frame);
   webview()->setMainFrame(main_render_frame_->GetWebFrame());
@@ -959,14 +963,7 @@ RenderViewImpl* RenderViewImpl::Create(
   else
     render_view = new RenderViewImpl(&params);
 
-  RenderFrameImpl* main_frame = RenderFrameImpl::Create(
-      render_view, main_frame_routing_id);
-  // The main frame WebLocalFrame object is closed by
-  // RenderFrameImpl::frameDetached().
-  WebLocalFrame* web_frame = WebLocalFrame::create(main_frame);
-  main_frame->SetWebFrame(web_frame);
-
-  render_view->Initialize(&params, main_frame);
+  render_view->Initialize(&params);
   return render_view;
 }
 
@@ -1384,38 +1381,19 @@ void RenderViewImpl::UpdateSessionHistory(WebFrame* frame) {
   // there is no past session history to record.
   if (page_id_ == -1)
     return;
-
-  WebHistoryItem item = history_controller_->GetPreviousItemForExport();
-  SendUpdateState(item);
+  SendUpdateState(history_controller_->GetPreviousEntry());
 }
 
-void RenderViewImpl::SendUpdateState(const WebHistoryItem& item) {
-  if (item.isNull())
+void RenderViewImpl::SendUpdateState(HistoryEntry* entry) {
+  if (!entry)
     return;
 
   // Don't send state updates for kSwappedOutURL.
-  if (item.urlString() == WebString::fromUTF8(kSwappedOutURL))
+  if (entry->root().urlString() == WebString::fromUTF8(kSwappedOutURL))
     return;
 
   Send(new ViewHostMsg_UpdateState(
-      routing_id_, page_id_, HistoryItemToPageState(item)));
-}
-
-// WebViewDelegate ------------------------------------------------------------
-
-void RenderViewImpl::LoadNavigationErrorPage(
-    WebFrame* frame,
-    const WebURLRequest& failed_request,
-    const WebURLError& error,
-    bool replace) {
-  std::string error_html;
-  GetContentClient()->renderer()->GetNavigationErrorStrings(
-      this, frame, failed_request, error, &error_html, NULL);
-
-  frame->loadHTMLString(error_html,
-                        GURL(kUnreachableWebDataURL),
-                        error.unreachableURL,
-                        replace);
+      routing_id_, page_id_, HistoryEntryToPageState(entry)));
 }
 
 bool RenderViewImpl::SendAndRunNestedMessageLoop(IPC::SyncMessage* message) {
@@ -1999,8 +1977,10 @@ bool RenderViewImpl::isPointerLocked() {
 
 void RenderViewImpl::didActivateCompositor() {
 #if !defined(OS_MACOSX)  // many events are unhandled - http://crbug.com/138003
+  RenderThreadImpl* render_thread = RenderThreadImpl::current();
+  // render_thread may be NULL in tests.
   InputHandlerManager* input_handler_manager =
-      RenderThreadImpl::current()->input_handler_manager();
+      render_thread ? render_thread->input_handler_manager() : NULL;
   if (input_handler_manager) {
      input_handler_manager->AddInputHandler(
         routing_id_,
@@ -2063,13 +2043,6 @@ blink::WebMediaPlayer* RenderViewImpl::CreateMediaPlayer(
 #endif  // defined(OS_ANDROID)
 }
 
-void RenderViewImpl::didAccessInitialDocument(WebLocalFrame* frame) {
-  // Notify the browser process that it is no longer safe to show the pending
-  // URL of the main frame, since a URL spoof is now possible.
-  if (!frame->parent() && page_id_ == -1)
-    Send(new ViewHostMsg_DidAccessInitialDocument(routing_id_));
-}
-
 void RenderViewImpl::didDisownOpener(blink::WebLocalFrame* frame) {
   // We only need to notify the browser if the active, top-level frame clears
   // its opener.  We can ignore cases where a swapped out frame clears its
@@ -2080,27 +2053,6 @@ void RenderViewImpl::didDisownOpener(blink::WebLocalFrame* frame) {
 
   // Notify WebContents and all its swapped out RenderViews.
   Send(new ViewHostMsg_DidDisownOpener(routing_id_));
-}
-
-void RenderViewImpl::frameDetached(WebFrame* frame) {
-  // NOTE: We may get here for either the main frame or for subframes.  The
-  // RenderFrameImpl will be deleted immediately after this call for subframes
-  // but not for the main frame, which is owned by |main_render_frame_|.
-
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_, FrameDetached(frame));
-}
-
-void RenderViewImpl::willClose(WebFrame* frame) {
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_, FrameWillClose(frame));
-}
-
-void RenderViewImpl::didMatchCSS(
-    WebLocalFrame* frame,
-    const WebVector<WebString>& newly_matching_selectors,
-    const WebVector<WebString>& stopped_matching_selectors) {
-  FOR_EACH_OBSERVER(
-      RenderViewObserver, observers_,
-      DidMatchCSS(frame, newly_matching_selectors, stopped_matching_selectors));
 }
 
 void RenderViewImpl::Repaint(const gfx::Size& size) {
@@ -2135,18 +2087,6 @@ SSLStatus RenderViewImpl::GetSSLStatusOfFrame(blink::WebFrame* frame) const {
 
 const std::string& RenderViewImpl::GetAcceptLanguages() const {
   return renderer_preferences_.accept_languages;
-}
-
-void RenderViewImpl::willSendSubmitEvent(blink::WebLocalFrame* frame,
-                                         const blink::WebFormElement& form) {
-  FOR_EACH_OBSERVER(
-      RenderViewObserver, observers_, WillSendSubmitEvent(frame, form));
-}
-
-void RenderViewImpl::willSubmitForm(WebLocalFrame* frame,
-                                    const WebFormElement& form) {
-  FOR_EACH_OBSERVER(
-      RenderViewObserver, observers_, WillSubmitForm(frame, form));
 }
 
 void RenderViewImpl::didCreateDataSource(WebLocalFrame* frame,
@@ -2327,18 +2267,6 @@ void RenderViewImpl::ProcessViewLayoutFlags(const CommandLine& command_line) {
   webview()->setPageScaleFactorLimits(1, maxPageScaleFactor);
 }
 
-void RenderViewImpl::didFailProvisionalLoad(WebLocalFrame* frame,
-                                            const WebURLError& error) {
-  // Notify the browser that we failed a provisional load with an error.
-  //
-  // Note: It is important this notification occur before DidStopLoading so the
-  //       SSL manager can react to the provisional load failure before being
-  //       notified the load stopped.
-  //
-  FOR_EACH_OBSERVER(
-      RenderViewObserver, observers_, DidFailProvisionalLoad(frame, error));
-}
-
 void RenderViewImpl::FrameDidCommitProvisionalLoad(WebLocalFrame* frame,
                                                    bool is_new_navigation) {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_,
@@ -2379,11 +2307,6 @@ void RenderViewImpl::didClearWindowObject(WebLocalFrame* frame, int world_id) {
     MemoryBenchmarkingExtension::Install(frame);
 }
 
-void RenderViewImpl::didCreateDocumentElement(WebLocalFrame* frame) {
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_,
-                    DidCreateDocumentElement(frame));
-}
-
 void RenderViewImpl::didReceiveTitle(WebLocalFrame* frame,
                                      const WebString& title,
                                      WebTextDirection direction) {
@@ -2412,11 +2335,6 @@ void RenderViewImpl::didChangeIcon(WebLocalFrame* frame,
   SendUpdateFaviconURL(urls);
 }
 
-void RenderViewImpl::didFinishDocumentLoad(WebLocalFrame* frame) {
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_,
-                    DidFinishDocumentLoad(frame));
-}
-
 void RenderViewImpl::didHandleOnloadEvents(WebLocalFrame* frame) {
   if (webview()->mainFrame() == frame) {
     Send(new ViewHostMsg_DocumentOnLoadCompletedInMainFrame(routing_id_,
@@ -2424,41 +2342,8 @@ void RenderViewImpl::didHandleOnloadEvents(WebLocalFrame* frame) {
   }
 }
 
-void RenderViewImpl::didFailLoad(WebLocalFrame* frame,
-                                 const WebURLError& error) {
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidFailLoad(frame, error));
-}
-
-void RenderViewImpl::didFinishLoad(WebLocalFrame* frame) {
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidFinishLoad(frame));
-}
-
 void RenderViewImpl::didUpdateCurrentHistoryItem(WebLocalFrame* frame) {
   StartNavStateSyncTimerIfNecessary();
-}
-
-void RenderViewImpl::didFinishResourceLoad(WebLocalFrame* frame,
-                                           unsigned identifier) {
-  InternalDocumentStateData* internal_data =
-      InternalDocumentStateData::FromDataSource(frame->dataSource());
-  if (!internal_data->use_error_page())
-    return;
-
-  // Do not show error page when DevTools is attached.
-  if (devtools_agent_->IsAttached())
-    return;
-
-  // Display error page, if appropriate.
-  std::string error_domain = "http";
-  int http_status_code = internal_data->http_status_code();
-  if (GetContentClient()->renderer()->HasErrorPage(
-          http_status_code, &error_domain)) {
-    WebURLError error;
-    error.unreachableURL = frame->document().url();
-    error.domain = WebString::fromUTF8(error_domain);
-    error.reason = http_status_code;
-    LoadNavigationErrorPage(frame, frame->dataSource()->request(), error, true);
-  }
 }
 
 void RenderViewImpl::CheckPreferredSize() {
@@ -2516,27 +2401,6 @@ bool RenderViewImpl::InitializeMediaStreamClient() {
 #else
   return false;
 #endif
-}
-
-void RenderViewImpl::didChangeContentsSize(WebLocalFrame* frame,
-                                           const WebSize& size) {
-  if (webview()->mainFrame() != frame)
-    return;
-  WebView* frameView = frame->view();
-  if (!frameView)
-    return;
-
-  bool has_horizontal_scrollbar = frame->hasHorizontalScrollbar();
-  bool has_vertical_scrollbar = frame->hasVerticalScrollbar();
-
-  if (has_horizontal_scrollbar != cached_has_main_frame_horizontal_scrollbar_ ||
-      has_vertical_scrollbar != cached_has_main_frame_vertical_scrollbar_) {
-    Send(new ViewHostMsg_DidChangeScrollbarsForMainFrame(
-          routing_id_, has_horizontal_scrollbar, has_vertical_scrollbar));
-
-    cached_has_main_frame_horizontal_scrollbar_ = has_horizontal_scrollbar;
-    cached_has_main_frame_vertical_scrollbar_ = has_vertical_scrollbar;
-  }
 }
 
 void RenderViewImpl::UpdateScrollState(WebFrame* frame) {
@@ -2787,9 +2651,7 @@ void RenderViewImpl::PlayerGone(blink::WebMediaPlayer* player) {
 void RenderViewImpl::SyncNavigationState() {
   if (!webview())
     return;
-
-  WebHistoryItem item = history_controller_->GetCurrentItemForExport();
-  SendUpdateState(item);
+  SendUpdateState(history_controller_->GetCurrentEntry());
 }
 
 GURL RenderViewImpl::GetLoadingUrl(blink::WebFrame* frame) const {
@@ -3255,6 +3117,7 @@ void RenderViewImpl::OnDisableAutoResize(const gfx::Size& new_size) {
     Resize(new_size,
            physical_backing_size_,
            overdraw_bottom_height_,
+           visible_viewport_size_,
            resizer_rect_,
            is_fullscreen_,
            NO_RESIZE_ACK);

@@ -8,8 +8,10 @@
 #include "base/strings/string_util.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/service_worker_context_observer.h"
+#include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_info.h"
 #include "content/browser/service_worker/service_worker_job_coordinator.h"
+#include "content/browser/service_worker/service_worker_process_manager.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/browser/service_worker/service_worker_register_job.h"
 #include "content/browser/service_worker/service_worker_registration.h"
@@ -76,13 +78,16 @@ void ServiceWorkerContextCore::ProviderHostIterator::Initialize() {
 ServiceWorkerContextCore::ServiceWorkerContextCore(
     const base::FilePath& path,
     quota::QuotaManagerProxy* quota_manager_proxy,
-    ObserverListThreadSafe<ServiceWorkerContextObserver>* observer_list)
-    : storage_(new ServiceWorkerStorage(
-          path, AsWeakPtr(), quota_manager_proxy)),
+    ObserverListThreadSafe<ServiceWorkerContextObserver>* observer_list,
+    scoped_ptr<ServiceWorkerProcessManager> process_manager)
+    : storage_(
+          new ServiceWorkerStorage(path, AsWeakPtr(), quota_manager_proxy)),
       embedded_worker_registry_(new EmbeddedWorkerRegistry(AsWeakPtr())),
       job_coordinator_(new ServiceWorkerJobCoordinator(AsWeakPtr())),
+      process_manager_(process_manager.Pass()),
       next_handle_id_(0),
-      observer_list_(observer_list) {}
+      observer_list_(observer_list) {
+}
 
 ServiceWorkerContextCore::~ServiceWorkerContextCore() {
   for (VersionMap::iterator it = live_versions_.begin();
@@ -155,15 +160,10 @@ void ServiceWorkerContextCore::RegisterServiceWorker(
 
 void ServiceWorkerContextCore::UnregisterServiceWorker(
     const GURL& pattern,
-    int source_process_id,
-    ServiceWorkerProviderHost* provider_host,
     const UnregistrationCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  // TODO(kinuko): Wire the provider_host so that we can tell which document
-  // is calling .register.
-
-  job_coordinator_->Unregister(pattern, source_process_id, callback);
+  job_coordinator_->Unregister(pattern, callback);
 }
 
 void ServiceWorkerContextCore::RegistrationComplete(

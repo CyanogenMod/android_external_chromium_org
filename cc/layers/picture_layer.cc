@@ -7,6 +7,7 @@
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/picture_layer_impl.h"
 #include "cc/trees/layer_tree_impl.h"
+#include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "ui/gfx/rect_conversions.h"
 
 namespace cc {
@@ -20,7 +21,6 @@ PictureLayer::PictureLayer(ContentLayerClient* client)
       pile_(make_scoped_refptr(new PicturePile())),
       instrumentation_object_tracker_(id()),
       is_mask_(false),
-      has_gpu_rasterization_hint_(TRIBOOL_UNKNOWN),
       update_source_frame_number_(-1) {}
 
 PictureLayer::~PictureLayer() {
@@ -142,32 +142,12 @@ void PictureLayer::SetIsMask(bool is_mask) {
   is_mask_ = is_mask;
 }
 
-void PictureLayer::SetHasGpuRasterizationHint(bool has_hint) {
-  switch (has_gpu_rasterization_hint_) {
-    case TRIBOOL_UNKNOWN:  // Fall-through.
-    case TRIBOOL_TRUE:
-      has_gpu_rasterization_hint_ = has_hint ? TRIBOOL_TRUE : TRIBOOL_FALSE;
-      break;
-    case TRIBOOL_FALSE:
-      // GPU rasterization cannot be enabled once disabled.
-      // This is done to prevent frequent invalidations and visual flashing.
-      break;
-    default:
-      NOTREACHED();
-  }
-  // No need to set needs commit or push-properties.
-  // If only the hint changes and the layer is still valid, there is no need
-  // to invalidate the rasterization for the whole layer. If there is an
-  // invalidation (current or future) we will re-raster everything so that it
-  // is consistent across the layer.
-}
-
 bool PictureLayer::ShouldUseGpuRasterization() const {
   switch (layer_tree_host()->settings().rasterization_site) {
     case LayerTreeSettings::CpuRasterization:
       return false;
     case LayerTreeSettings::HybridRasterization:
-      return has_gpu_rasterization_hint_ == TRIBOOL_TRUE &&
+      return layer_tree_host()->has_gpu_rasterization_trigger() &&
              pile_->is_suitable_for_gpu_rasterization();
     case LayerTreeSettings::GpuRasterization:
       return true;
@@ -192,7 +172,7 @@ skia::RefPtr<SkPicture> PictureLayer::GetPicture() const {
   gfx::RectF opaque;
 
   SkPictureRecorder recorder;
-  SkCanvas* canvas = recorder.beginRecording(width, height);
+  SkCanvas* canvas = recorder.beginRecording(width, height, NULL, 0);
   client_->PaintContents(canvas, gfx::Rect(width, height), &opaque);
   skia::RefPtr<SkPicture> picture = skia::AdoptRef(recorder.endRecording());
   return picture;

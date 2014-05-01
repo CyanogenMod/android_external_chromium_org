@@ -30,6 +30,8 @@
 #include "chrome/browser/chromeos/app_mode/kiosk_mode_idle_app_name_notification.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/dbus/cros_dbus_service.h"
+#include "chrome/browser/chromeos/events/event_rewriter_controller.h"
+#include "chrome/browser/chromeos/events/keyboard_driven_event_rewriter.h"
 #include "chrome/browser/chromeos/extensions/default_app_order.h"
 #include "chrome/browser/chromeos/extensions/extension_system_event_observer.h"
 #include "chrome/browser/chromeos/external_metrics.h"
@@ -45,6 +47,7 @@
 #include "chrome/browser/chromeos/login/login_wizard.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
+#include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wallpaper_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
@@ -52,6 +55,7 @@
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/options/cert_library.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/power/idle_action_warning_observer.h"
 #include "chrome/browser/chromeos/power/peripheral_battery_observer.h"
 #include "chrome/browser/chromeos/power/power_button_observer.h"
@@ -65,6 +69,7 @@
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/chromeos/upgrade_detector_chromeos.h"
 #include "chrome/browser/defaults.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
 #include "chrome/browser/profiles/profile.h"
@@ -163,10 +168,13 @@ class StubLogin : public LoginStatusConsumer,
 
   // LoginUtils::Delegate implementation:
   virtual void OnProfilePrepared(Profile* profile) OVERRIDE {
-    std::string login_user =
+    const std::string login_user =
         CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             chromeos::switches::kLoginUser);
-    profile->GetPrefs()->SetString(prefs::kGoogleServicesUsername, login_user);
+    if (!policy::IsDeviceLocalAccountUser(login_user, NULL)) {
+      profile->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
+                                     login_user);
+    }
     profile_prepared_ = true;
     LoginUtils::Get()->DoBrowserLaunch(profile, NULL);
     delete this;
@@ -516,15 +524,28 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
   ChromeBrowserMainPartsLinux::PreProfileInit();
 
   if (immediate_login) {
-    std::string username =
+    const std::string user_id =
         parsed_command_line().GetSwitchValueASCII(switches::kLoginUser);
     UserManager* user_manager = UserManager::Get();
+
+    if (policy::IsDeviceLocalAccountUser(user_id, NULL) &&
+        !user_manager->IsKnownUser(user_id)) {
+      // When a device-local account is removed, its policy is deleted from disk
+      // immediately. If a session using this account happens to be in progress,
+      // the session is allowed to continue with policy served from an in-memory
+      // cache. If Chrome crashes later in the session, the policy becomes
+      // completely unavailable. Exit the session in that case, rather than
+      // allowing it to continue without policy.
+      chrome::AttemptUserExit();
+      return;
+    }
+
     // In case of multi-profiles --login-profile will contain user_id_hash.
-    std::string username_hash =
+    std::string user_id_hash =
         parsed_command_line().GetSwitchValueASCII(switches::kLoginProfile);
-    user_manager->UserLoggedIn(username, username_hash, true);
-    VLOG(1) << "Relaunching browser for user: " << username
-            << " with hash: " << username_hash;
+    user_manager->UserLoggedIn(user_id, user_id_hash, true);
+    VLOG(1) << "Relaunching browser for user: " << user_id
+            << " with hash: " << user_id_hash;
   }
 }
 
@@ -702,6 +723,9 @@ void ChromeBrowserMainPartsChromeos::PreBrowserStart() {
 
   event_rewriter_.reset(new EventRewriter());
 #endif
+  keyboard_event_rewriters_.reset(new EventRewriterController());
+  keyboard_event_rewriters_->AddEventRewriter(
+      scoped_ptr<ui::EventRewriter>(new KeyboardDrivenEventRewriter()));
 
   // -- This used to be in ChromeBrowserMainParts::PreMainMessageLoopRun()
   // -- immediately after ChildProcess::WaitForDebugger().
@@ -725,6 +749,7 @@ void ChromeBrowserMainPartsChromeos::PostBrowserStart() {
   // initialized.
   power_button_observer_.reset(new PowerButtonObserver);
   data_promo_notification_.reset(new DataPromoNotification()),
+  keyboard_event_rewriters_->Init();
 
   ChromeBrowserMainPartsLinux::PostBrowserStart();
 }
@@ -770,6 +795,7 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   if (!KioskModeSettings::Get()->IsKioskModeEnabled())
     ScreenLocker::ShutDownClass();
 
+  keyboard_event_rewriters_.reset();
 #if defined(USE_X11)
   event_rewriter_.reset();
 

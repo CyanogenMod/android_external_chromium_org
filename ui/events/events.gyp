@@ -85,6 +85,7 @@
       'sources': [
         'cocoa/cocoa_event_utils.h',
         'cocoa/cocoa_event_utils.mm',
+        'cocoa/events_mac.mm',
         'event.cc',
         'event.h',
         'event_dispatcher.cc',
@@ -117,6 +118,16 @@
         'gestures/gesture_types.h',
         'gestures/velocity_calculator.cc',
         'gestures/velocity_calculator.h',
+        'ozone/device/device_event.cc',
+        'ozone/device/device_event.h',
+        'ozone/device/device_event_observer.h',
+        'ozone/device/device_manager.cc',
+        'ozone/device/device_manager.h',
+        'ozone/device/device_manager_manual.cc',
+        'ozone/device/device_manager_manual.h',
+        'ozone/device/udev/device_manager_udev.cc',
+        'ozone/device/udev/device_manager_udev.h',
+        'ozone/device/udev/scoped_udev.h',
         'ozone/evdev/libgestures_glue/event_reader_libevdev_cros.cc',
         'ozone/evdev/libgestures_glue/event_reader_libevdev_cros.h',
         'ozone/evdev/libgestures_glue/gesture_interpreter_libevdev_cros.cc',
@@ -125,10 +136,6 @@
         'ozone/evdev/libgestures_glue/gesture_logging.h',
         'ozone/evdev/libgestures_glue/gesture_timer_provider.cc',
         'ozone/evdev/libgestures_glue/gesture_timer_provider.h',
-        'ozone/evdev/device_manager_evdev.cc',
-        'ozone/evdev/device_manager_evdev.h',
-        'ozone/evdev/device_manager_udev.cc',
-        'ozone/evdev/device_manager_udev.h',
         'ozone/evdev/event_converter_evdev.cc',
         'ozone/evdev/event_converter_evdev.h',
         'ozone/evdev/event_device_info.cc',
@@ -166,7 +173,7 @@
       'conditions': [
         # We explicitly enumerate the platforms we _do_ provide native cracking
         # for here.
-        ['OS=="win" or use_x11==1 or use_ozone==1', {
+        ['OS=="win" or OS=="mac" or use_x11==1 or use_ozone==1', {
           'sources!': [
             'events_stub.cc',
           ],
@@ -223,9 +230,8 @@
           ],
         }],
         ['use_udev==0', {
-          'sources!': [
-            'ozone/evdev/device_manager_udev.cc',
-            'ozone/evdev/device_manager_udev.h',
+          'sources/': [
+            ['exclude', '_udev\\.(h|cc)$'],
           ],
         }],
       ],
@@ -328,8 +334,8 @@
         '<(DEPTH)/base/base.gyp:run_all_unittests',
         '<(DEPTH)/base/base.gyp:test_support_base',
         '<(DEPTH)/testing/gtest.gyp:gtest',
-        '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
+        '../gfx/gfx.gyp:gfx_test_support',
         'dom4_keycode_converter',
         'events',
         'events_base',
@@ -337,7 +343,7 @@
         'gesture_detection'
       ],
       'sources': [
-        'cocoa/cocoa_event_utils_unittest.mm',
+        'cocoa/events_mac_unittest.mm',
         'event_dispatcher_unittest.cc',
         'event_processor_unittest.cc',
         'event_rewriter_unittest.cc',

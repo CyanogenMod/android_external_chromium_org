@@ -36,7 +36,7 @@
 #include "ash/media_delegate.h"
 #include "ash/new_window_delegate.h"
 #include "ash/root_window_controller.h"
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shelf/app_list_shelf_item_delegate.h"
 #include "ash/shelf/shelf_delegate.h"
 #include "ash/shelf/shelf_item_delegate.h"
@@ -118,8 +118,8 @@
 #endif  // defined(USE_X11)
 #include "ash/ash_constants.h"
 #include "ash/display/display_change_observer_chromeos.h"
+#include "ash/display/display_configurator_animation.h"
 #include "ash/display/display_error_observer_chromeos.h"
-#include "ash/display/output_configurator_animation.h"
 #include "ash/display/projecting_observer_chromeos.h"
 #include "ash/display/resolution_notification_controller.h"
 #include "ash/sticky_keys/sticky_keys_controller.h"
@@ -772,8 +772,9 @@ Shell::~Shell() {
 #if defined(OS_CHROMEOS)
   if (display_change_observer_)
     display_configurator_->RemoveObserver(display_change_observer_.get());
-  if (output_configurator_animation_)
-    display_configurator_->RemoveObserver(output_configurator_animation_.get());
+  if (display_configurator_animation_)
+    display_configurator_->RemoveObserver(
+        display_configurator_animation_.get());
   if (display_error_observer_)
     display_configurator_->RemoveObserver(display_error_observer_.get());
   if (projecting_observer_)
@@ -797,8 +798,8 @@ void Shell::Init() {
   bool display_initialized = display_manager_->InitFromCommandLine();
 #if defined(OS_CHROMEOS)
   display_configurator_->Init(!gpu_support_->IsPanelFittingDisabled());
-  output_configurator_animation_.reset(new OutputConfiguratorAnimation());
-  display_configurator_->AddObserver(output_configurator_animation_.get());
+  display_configurator_animation_.reset(new DisplayConfiguratorAnimation());
+  display_configurator_->AddObserver(display_configurator_animation_.get());
 
   projecting_observer_.reset(new ProjectingObserver());
   display_configurator_->AddObserver(projecting_observer_.get());

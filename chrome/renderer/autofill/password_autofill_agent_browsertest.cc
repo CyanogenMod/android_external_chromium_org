@@ -49,7 +49,6 @@ const char kCarolUsername[] = "Carol";
 const char kCarolPassword[] = "test";
 const char kCarolAlternateUsername[] = "RealCarolUsername";
 
-
 const char kFormHTML[] =
     "<FORM name='LoginTestForm' action='http://www.bidule.com'>"
     "  <INPUT type='text' id='username'/>"
@@ -157,6 +156,12 @@ const char kOnChangeDetectionScript[] =
     "  };"
     "</script>";
 
+// Sets the "readonly" attribute of |element| to the value given by |read_only|.
+void SetElementReadOnly(WebInputElement& element, bool read_only) {
+  element.setAttribute(WebString::fromUTF8("readonly"),
+                       read_only ? WebString::fromUTF8("true") : WebString());
+}
+
 }  // namespace
 
 namespace autofill {
@@ -173,6 +178,11 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
       const PasswordFormFillData& fill_data) {
     AutofillMsg_FillPasswordForm msg(0, fill_data);
     password_autofill_->OnMessageReceived(msg);
+  }
+
+  void SendVisiblePasswordForms() {
+    password_autofill_->SendPasswordForms(GetMainFrame(),
+                                          true /* only_visible */);
   }
 
   virtual void SetUp() {
@@ -456,8 +466,7 @@ TEST_F(PasswordAutofillAgentTest, InitialAutocompleteForEmptyAction) {
 // Tests that if a password is marked as readonly, neither field is autofilled
 // on page load.
 TEST_F(PasswordAutofillAgentTest, NoInitialAutocompleteForReadOnlyPassword) {
-  password_element_.setAttribute(WebString::fromUTF8("readonly"),
-                                 WebString::fromUTF8("true"));
+  SetElementReadOnly(password_element_, true);
 
   // Simulate the browser sending back the login info, it triggers the
   // autocomplete.
@@ -471,8 +480,7 @@ TEST_F(PasswordAutofillAgentTest, NoInitialAutocompleteForReadOnlyPassword) {
 TEST_F(PasswordAutofillAgentTest,
        AutocompletePasswordForReadonlyUsernameMatched) {
   username_element_.setValue(username3_);
-  username_element_.setAttribute(WebString::fromUTF8("readonly"),
-                                 WebString::fromUTF8("true"));
+  SetElementReadOnly(username_element_, true);
 
   // Filled even though username is not the preferred match.
   SimulateOnFillPasswordForm(fill_data_);
@@ -484,8 +492,7 @@ TEST_F(PasswordAutofillAgentTest,
 TEST_F(PasswordAutofillAgentTest,
        NoAutocompletePasswordForReadonlyUsernameUnmatched) {
   username_element_.setValue(WebString::fromUTF8(""));
-  username_element_.setAttribute(WebString::fromUTF8("readonly"),
-                                 WebString::fromUTF8("true"));
+  SetElementReadOnly(username_element_, true);
 
   SimulateOnFillPasswordForm(fill_data_);
   CheckTextFieldsState(std::string(), false, std::string(), false);
@@ -1014,6 +1021,77 @@ TEST_F(PasswordAutofillAgentTest,
           ASCIIToUTF16("passwordOnchangeCalled ? 1 : 0"),
           &password_onchange_called));
   EXPECT_EQ(1, password_onchange_called);
+}
+
+// Tests that |AcceptSuggestion| properly fills the username and password.
+TEST_F(PasswordAutofillAgentTest, AcceptSuggestion) {
+  // Simulate the browser sending the login info, but set |wait_for_username|
+  // to prevent the form from being immediately filled.
+  fill_data_.wait_for_username = true;
+  SimulateOnFillPasswordForm(fill_data_);
+
+  // Neither field should have been autocompleted.
+  CheckTextFieldsDOMState(std::string(), false, std::string(), false);
+
+  // If the password field is not autocompletable, it should not be affected.
+  SetElementReadOnly(password_element_, true);
+  EXPECT_FALSE(password_autofill_->AcceptSuggestion(
+      username_element_, kAliceUsername, kAlicePassword));
+  CheckTextFieldsDOMState(std::string(), false, std::string(), false);
+  SetElementReadOnly(password_element_, false);
+
+  // After accepting the suggestion, both fields should be autocompleted.
+  EXPECT_TRUE(password_autofill_->AcceptSuggestion(
+      username_element_, kAliceUsername, kAlicePassword));
+  CheckTextFieldsDOMState(kAliceUsername, true, kAlicePassword, true);
+
+  // Try accepting a suggestion with a password different from the one that was
+  // initially sent to the renderer.
+  EXPECT_TRUE(password_autofill_->AcceptSuggestion(
+      username_element_, kBobUsername, kCarolPassword));
+  CheckTextFieldsDOMState(kBobUsername, true, kCarolPassword, true);
+}
+
+// Tests that logging is off by default.
+TEST_F(PasswordAutofillAgentTest, OnChangeLoggingState_NoMessage) {
+  render_thread_->sink().ClearMessages();
+  SendVisiblePasswordForms();
+  const IPC::Message* message = render_thread_->sink().GetFirstMessageMatching(
+      AutofillHostMsg_RecordSavePasswordProgress::ID);
+  EXPECT_FALSE(message);
+}
+
+// Test that logging can be turned on by a message.
+TEST_F(PasswordAutofillAgentTest, OnChangeLoggingState_Activated) {
+  // Turn the logging on.
+  AutofillMsg_ChangeLoggingState msg_activate(0, true);
+  // Up-cast to access OnMessageReceived, which is private in the agent.
+  EXPECT_TRUE(static_cast<IPC::Listener*>(password_autofill_)
+                  ->OnMessageReceived(msg_activate));
+
+  render_thread_->sink().ClearMessages();
+  SendVisiblePasswordForms();
+  const IPC::Message* message = render_thread_->sink().GetFirstMessageMatching(
+      AutofillHostMsg_RecordSavePasswordProgress::ID);
+  EXPECT_TRUE(message);
+}
+
+// Test that logging can be turned off by a message.
+TEST_F(PasswordAutofillAgentTest, OnChangeLoggingState_Deactivated) {
+  // Turn the logging on and then off.
+  AutofillMsg_ChangeLoggingState msg_activate(0, /*active=*/true);
+  // Up-cast to access OnMessageReceived, which is private in the agent.
+  EXPECT_TRUE(static_cast<IPC::Listener*>(password_autofill_)
+                  ->OnMessageReceived(msg_activate));
+  AutofillMsg_ChangeLoggingState msg_deactivate(0, /*active=*/false);
+  EXPECT_TRUE(static_cast<IPC::Listener*>(password_autofill_)
+                  ->OnMessageReceived(msg_deactivate));
+
+  render_thread_->sink().ClearMessages();
+  SendVisiblePasswordForms();
+  const IPC::Message* message = render_thread_->sink().GetFirstMessageMatching(
+      AutofillHostMsg_RecordSavePasswordProgress::ID);
+  EXPECT_FALSE(message);
 }
 
 }  // namespace autofill

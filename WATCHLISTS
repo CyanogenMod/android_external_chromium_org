@@ -294,8 +294,7 @@
                   'filebrowse'
     },
     'filesapp': {
-      'filepath': 'chrome/browser/resources/file_manager|' \
-                  'ui/file_manager'
+      'filepath': 'ui/file_manager'
     },
     'ftp': {
       'filepath': 'ftp',
@@ -829,6 +828,7 @@
              'abarth@chromium.org',
              'ben+mojo@chromium.org',
              'darin@chromium.org',
+             'qsr+mojo@chromium.org',
              'viettrungluu+watch@chromium.org'],
     'mouse_lock': ['scheib+watch@chromium.org'],
     'music_manager_private': ['gab+watch@chromium.org',

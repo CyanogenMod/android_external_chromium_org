@@ -13,7 +13,6 @@
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/label.h"
-#include "ui/views/controls/menu/menu_item_view.h"
 
 BeforeTranslateInfoBar::BeforeTranslateInfoBar(
     scoped_ptr<TranslateInfoBarDelegate> delegate)
@@ -99,26 +98,28 @@ void BeforeTranslateInfoBar::ViewHierarchyChanged(
   label_2_ = CreateLabel(text.substr(offset));
   AddChildView(label_2_);
 
-  accept_button_ = CreateLabelButton(this,
-      l10n_util::GetStringUTF16(IDS_TRANSLATE_INFOBAR_ACCEPT), false);
+  accept_button_ = CreateLabelButton(
+      this, l10n_util::GetStringUTF16(IDS_TRANSLATE_INFOBAR_ACCEPT));
   AddChildView(accept_button_);
 
-  deny_button_ = CreateLabelButton(this,
-      l10n_util::GetStringUTF16(IDS_TRANSLATE_INFOBAR_DENY), false);
+  deny_button_ = CreateLabelButton(
+      this, l10n_util::GetStringUTF16(IDS_TRANSLATE_INFOBAR_DENY));
   AddChildView(deny_button_);
 
   const base::string16& language(
       delegate->language_name_at(delegate->original_language_index()));
   if (delegate->ShouldShowNeverTranslateShortcut()) {
     DCHECK(!delegate->ShouldShowAlwaysTranslateShortcut());
-    never_translate_button_ = CreateLabelButton(this,
+    never_translate_button_ = CreateLabelButton(
+        this,
         l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_NEVER_TRANSLATE,
-                                   language), false);
+                                   language));
     AddChildView(never_translate_button_);
   } else if (delegate->ShouldShowAlwaysTranslateShortcut()) {
-    always_translate_button_ = CreateLabelButton(this,
+    always_translate_button_ = CreateLabelButton(
+        this,
         l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_ALWAYS_TRANSLATE,
-                                   language), false);
+                                   language));
     AddChildView(always_translate_button_);
   }
 
@@ -167,12 +168,14 @@ void BeforeTranslateInfoBar::OnMenuButtonClicked(views::View* source,
   if (!owner())
     return;  // We're closing; don't call anything, it might access the owner.
   if (source == language_menu_button_) {
-    RunMenuAt(language_menu_model_.get(), language_menu_button_,
-              views::MenuItemView::TOPLEFT);
+    RunMenuAt(language_menu_model_.get(),
+              language_menu_button_,
+              views::MENU_ANCHOR_TOPLEFT);
   } else {
     DCHECK_EQ(options_menu_button_, source);
-    RunMenuAt(options_menu_model_.get(), options_menu_button_,
-              views::MenuItemView::TOPRIGHT);
+    RunMenuAt(options_menu_model_.get(),
+              options_menu_button_,
+              views::MENU_ANCHOR_TOPRIGHT);
   }
 }
 

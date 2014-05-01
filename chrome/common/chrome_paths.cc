@@ -44,6 +44,11 @@ const base::FilePath::CharType kInternalFlashPluginFileName[] =
 const base::FilePath::CharType kPepperFlashBaseDirectory[] =
     FILE_PATH_LITERAL("PepperFlash");
 
+#if defined(OS_WIN)
+const base::FilePath::CharType kPepperFlashDebuggerBaseDirectory[] =
+    FILE_PATH_LITERAL("Macromed\\Flash");
+#endif
+
 // File name of the internal PDF plugin on different platforms.
 const base::FilePath::CharType kInternalPDFPluginFileName[] =
 #if defined(OS_WIN)
@@ -263,6 +268,19 @@ bool PathProvider(int key, base::FilePath* result) {
         return false;
       cur = cur.Append(kPepperFlashBaseDirectory);
       break;
+    case chrome::DIR_PEPPER_FLASH_DEBUGGER_PLUGIN:
+#if defined(OS_WIN)
+      if (!PathService::Get(base::DIR_SYSTEM, &cur))
+        return false;
+      cur = cur.Append(kPepperFlashDebuggerBaseDirectory);
+#elif defined(OS_MACOSX)
+      // TODO(luken): finalize Mac OS directory paths, current consensus is
+      // around /Library/Internet Plug-Ins/PepperFlashPlayer/
+      return false;
+#else
+      return false;
+#endif
+      break;
     case chrome::FILE_LOCAL_STATE:
       if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
         return false;
@@ -346,6 +364,13 @@ bool PathProvider(int key, base::FilePath* result) {
       cur = cur.Append(kGTalkPluginFileName);
       break;
 #endif
+#if defined(CLD2_IS_COMPONENT)
+    case chrome::DIR_COMPONENT_CLD2:
+      if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("CLD"));
+      break;
+#endif  // defined(CLD2_IS_COMPONENT)
 #if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
 #if defined(WIDEVINE_CDM_IS_COMPONENT)
     case chrome::DIR_COMPONENT_WIDEVINE_CDM:

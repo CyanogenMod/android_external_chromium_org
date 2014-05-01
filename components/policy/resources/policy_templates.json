@@ -118,7 +118,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 262
+#   For your editing convenience: highest ID currently used: 264
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -542,7 +542,7 @@
           'example_value': False,
           'id': 95,
           'caption': '''Enable firewall traversal from remote access host''',
-          'desc': '''Enables usage of STUN and relay servers when remote clients are trying to establish a connection to this machine.
+          'desc': '''Enables usage of STUN servers when remote clients are trying to establish a connection to this machine.
 
           If this setting is enabled, then remote clients can discover and connect to this machines even if they are separated by a firewall.
 
@@ -657,6 +657,42 @@
           'desc': '''If this setting is enabled, then gnubby authentication requests will be proxied across a remote host connection.
 
           If this setting is disabled or not configured, gnubby authentication requests will not be proxied.''',
+        },
+        {
+          'name': 'RemoteAccessHostAllowRelayedConnection',
+          'type': 'main',
+          'schema': { 'type': 'boolean' },
+          'supported_on': ['chrome.*:36-'],
+          'features': {
+            'dynamic_refresh': True,
+            'per_profile': False,
+          },
+          'example_value': False,
+          'id': 263,
+          'caption': '''Enable the use of relay servers by the remote access host''',
+          'desc': '''Enables usage of relay servers when remote clients are trying to establish a connection to this machine.
+
+          If this setting is enabled, then remote clients can use relay servers to connect to this machine when a direct connection is not available (e.g. due to firewall restrictions).
+
+          Note that if the policy <ph name="REMOTEACCESSHOSTFIREWALLTRAVERSAL_POLICY_NAME">RemoteAccessHostFirewallTraversal</ph> is disabled, this policy will be ignored.
+
+          If this policy is left not set the setting will be enabled.''',
+        },
+        {
+          'name': 'RemoteAccessHostUdpPortRange',
+          'type': 'string',
+          'schema': { 'type': 'string' },
+          'supported_on': ['chrome.*:36-'],
+          'features': {
+            'dynamic_refresh': True,
+            'per_profile': False,
+          },
+          'example_value': '12400-12409',
+          'id': 264,
+          'caption': '''Restrict the UDP port range used by the remote access host''',
+          'desc': '''Restricts the UDP port range used by the remote access host in this machine.
+
+          If this policy is left not set, or if it is set to an empty string, the remote access host will be allowed to use any available port, unless the policy <ph name="REMOTEACCESSHOSTFIREWALLTRAVERSAL_POLICY_NAME">RemoteAccessHostFirewallTraversal</ph> is disabled, in which case the remote access host will use UDP ports in the 12400-12409 range.''',
         },
       ],
     },
@@ -3663,16 +3699,19 @@
           'caption': '''Least recently used users who have not logged in within last 3 months are removed until there is enough free space''',
         },
       ],
-      'supported_on': ['chrome_os:32-'],
+      'supported_on': ['chrome_os:32-35'],
       'device_only': True,
       'features': {
         'dynamic_refresh': True,
         'per_profile': False,
       },
+      'deprecated': True,
       'example_value': 'remove-lru',
       'id': 246,
-      'caption': '''Selects the strategy used to free up disk space during automatic clean-up''',
-      'desc': '''Controls the automatic clean-up behavior on <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> devices. Automatic clean-up is triggered when the amount of free disk space reaches a critical level to recover some disk space.
+      'caption': '''Selects the strategy used to free up disk space during automatic clean-up (deprecated)''',
+      'desc': '''This policy is deprecated. <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> will always use the 'RemoveLRU' clean-up strategy.
+
+      Controls the automatic clean-up behavior on <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> devices. Automatic clean-up is triggered when the amount of free disk space reaches a critical level to recover some disk space.
 
       If this policy is set to 'RemoveLRU', the automatic clean-up will keep removing users from the device in least-recently-logged-in order until there is enough free space.
 
@@ -6375,17 +6414,21 @@
     },
     'doc_intro': {
       'desc': '''Introduction text for the generated policy documentation''',
-      'text': '''This is the list of policies that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> respects.
+      'text': '''(This document may include policies that are targeted for later
+      <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> versions, those are
+      subject to change without notice. The list of supported policies is the
+      same for Chromium and Google Chrome.)
 
       You don't need to change these settings by hand!  You can download easy-to-use templates from
       <ph name="POLICY_TEMPLATE_DOWNLOAD_URL">http://www.chromium.org/administrators/policy-templates<ex>
       http://www.chromium.org/administrators/policy-templates</ex></ph>.
 
-      The list of supported policies is the same for Chromium and Google Chrome.
-
       These policies are strictly intended to be used to configure instances of Chrome internal to your organization. Use of these policies outside of your organization (for example, in a publicly distributed program) is considered malware and will likely be labeled as malware by Google and anti-virus vendors.
 
-      Note: starting with Chrome 28, policies are loaded directly from the Group Policy API on Windows. Policies manually written to the registry will be ignored. See http://crbug.com/259236 for details.'''
+      Note: Starting with <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>
+      28, policies are loaded directly from the Group Policy API on
+      Windows. Policies manually written to the registry will be ignored. See
+      http://crbug.com/259236 for details.'''
     },
     'doc_back_to_top': {
       'desc': '''Text of a link in the generated policy documentation, that takes the user to the top of the page''',

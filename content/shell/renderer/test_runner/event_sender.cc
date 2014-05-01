@@ -7,6 +7,7 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
+#include "content/public/common/page_zoom.h"
 #include "content/shell/renderer/test_runner/MockSpellCheck.h"
 #include "content/shell/renderer/test_runner/TestInterfaces.h"
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
@@ -335,12 +336,14 @@ class EventSenderBindings : public gin::Wrappable<EventSenderBindings> {
   void TextZoomOut();
   void ZoomPageIn();
   void ZoomPageOut();
+  void SetPageZoomFactor(gin::Arguments* args);
   void SetPageScaleFactor(gin::Arguments* args);
   void ClearTouchPoints();
   void ReleaseTouchPoint(unsigned index);
   void UpdateTouchPoint(unsigned index, double x, double y);
   void CancelTouchPoint(unsigned index);
   void SetTouchModifier(const std::string& key_name, bool set_mask);
+  void SetTouchCancelable(bool cancelable);
   void DumpFilenameBeingDragged();
   void GestureFlingCancel();
   void GestureFlingStart(float x, float y, float velocity_x, float velocity_y);
@@ -435,6 +438,8 @@ void EventSenderBindings::Install(base::WeakPtr<EventSender> sender,
 
   gin::Handle<EventSenderBindings> bindings =
       gin::CreateHandle(isolate, new EventSenderBindings(sender));
+  if (bindings.IsEmpty())
+    return;
   v8::Handle<v8::Object> global = context->Global();
   global->Set(gin::StringToV8(isolate, "eventSender"), bindings.ToV8());
 }
@@ -452,12 +457,14 @@ EventSenderBindings::GetObjectTemplateBuilder(v8::Isolate* isolate) {
       .SetMethod("textZoomOut", &EventSenderBindings::TextZoomOut)
       .SetMethod("zoomPageIn", &EventSenderBindings::ZoomPageIn)
       .SetMethod("zoomPageOut", &EventSenderBindings::ZoomPageOut)
+      .SetMethod("setPageZoomFactor", &EventSenderBindings::SetPageZoomFactor)
       .SetMethod("setPageScaleFactor", &EventSenderBindings::SetPageScaleFactor)
       .SetMethod("clearTouchPoints", &EventSenderBindings::ClearTouchPoints)
       .SetMethod("releaseTouchPoint", &EventSenderBindings::ReleaseTouchPoint)
       .SetMethod("updateTouchPoint", &EventSenderBindings::UpdateTouchPoint)
       .SetMethod("cancelTouchPoint", &EventSenderBindings::CancelTouchPoint)
       .SetMethod("setTouchModifier", &EventSenderBindings::SetTouchModifier)
+      .SetMethod("setTouchCancelable", &EventSenderBindings::SetTouchCancelable)
       .SetMethod("dumpFilenameBeingDragged",
                  &EventSenderBindings::DumpFilenameBeingDragged)
       .SetMethod("gestureFlingCancel", &EventSenderBindings::GestureFlingCancel)
@@ -579,6 +586,16 @@ void EventSenderBindings::ZoomPageOut() {
     sender_->ZoomPageOut();
 }
 
+void EventSenderBindings::SetPageZoomFactor(gin::Arguments* args) {
+  if (!sender_)
+    return;
+  double zoom_factor;
+  if (args->PeekNext().IsEmpty())
+    return;
+  args->GetNext(&zoom_factor);
+  sender_->SetPageZoomFactor(zoom_factor);
+}
+
 void EventSenderBindings::SetPageScaleFactor(gin::Arguments* args) {
   if (!sender_)
     return;
@@ -622,6 +639,11 @@ void EventSenderBindings::SetTouchModifier(const std::string& key_name,
                                            bool set_mask) {
   if (sender_)
     sender_->SetTouchModifier(key_name, set_mask);
+}
+
+void EventSenderBindings::SetTouchCancelable(bool cancelable) {
+  if (sender_)
+    sender_->SetTouchCancelable(cancelable);
 }
 
 void EventSenderBindings::DumpFilenameBeingDragged() {
@@ -992,6 +1014,7 @@ EventSender::EventSender(WebTestRunner::TestInterfaces* interfaces)
       force_layout_on_events_(false),
       is_drag_mode_(true),
       touch_modifiers_(0),
+      touch_cancelable_(true),
       replaying_saved_events_(false),
       current_drag_effects_allowed_(blink::WebDragOperationNone),
       last_click_time_sec_(0),
@@ -1046,6 +1069,10 @@ void EventSender::Reset() {
 
   time_offset_ms_ = 0;
   click_count_ = 0;
+
+  touch_modifiers_ = 0;
+  touch_cancelable_ = true;
+  touch_points_.clear();
 }
 
 void EventSender::Install(WebFrame* frame) {
@@ -1370,6 +1397,15 @@ void EventSender::ZoomPageOut() {
   }
 }
 
+void EventSender::SetPageZoomFactor(double zoom_factor) {
+  const std::vector<WebTestProxyBase*>& window_list = interfaces_->windowList();
+
+  for (size_t i = 0; i < window_list.size(); ++i) {
+    window_list.at(i)->webView()->setZoomLevel(
+        content::ZoomFactorToZoomLevel(zoom_factor));
+  }
+}
+
 void EventSender::SetPageScaleFactor(float scale_factor, int x, int y) {
   view_->setPageScaleFactorLimits(scale_factor, scale_factor);
   view_->setPageScaleFactor(scale_factor, WebPoint(x, y));
@@ -1433,6 +1469,10 @@ void EventSender::SetTouchModifier(const std::string& key_name,
     touch_modifiers_ |= mask;
   else
     touch_modifiers_ &= ~mask;
+}
+
+void EventSender::SetTouchCancelable(bool cancelable) {
+  touch_cancelable_ = cancelable;
 }
 
 void EventSender::DumpFilenameBeingDragged() {
@@ -1763,6 +1803,7 @@ void EventSender::SendCurrentTouchEvent(WebInputEvent::Type type) {
   WebTouchEvent touch_event;
   touch_event.type = type;
   touch_event.modifiers = touch_modifiers_;
+  touch_event.cancelable = touch_cancelable_;
   touch_event.timeStampSeconds = GetCurrentEventTimeSec();
   touch_event.touchesLength = touch_points_.size();
   for (size_t i = 0; i < touch_points_.size(); ++i)

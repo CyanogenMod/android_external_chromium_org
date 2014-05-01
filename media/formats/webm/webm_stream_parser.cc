@@ -20,6 +20,7 @@ namespace media {
 
 WebMStreamParser::WebMStreamParser()
     : state_(kWaitingForInit),
+      unknown_segment_size_(false),
       parsing_cluster_(false) {
 }
 
@@ -150,6 +151,9 @@ int WebMStreamParser::ParseInfoAndTracks(const uint8* data, int size) {
       return result + element_size;
       break;
     case kWebMIdSegment:
+      // Segment of unknown size indicates live stream.
+      if (element_size == kWebMUnknownSize)
+        unknown_segment_size_ = true;
       // Just consume the segment header.
       return result;
       break;
@@ -181,11 +185,22 @@ int WebMStreamParser::ParseInfoAndTracks(const uint8* data, int size) {
   bytes_parsed += result;
 
   double timecode_scale_in_us = info_parser.timecode_scale() / 1000.0;
-  base::TimeDelta duration = kInfiniteDuration();
+  InitParameters params(kInfiniteDuration());
 
   if (info_parser.duration() > 0) {
     int64 duration_in_us = info_parser.duration() * timecode_scale_in_us;
-    duration = base::TimeDelta::FromMicroseconds(duration_in_us);
+    params.duration = base::TimeDelta::FromMicroseconds(duration_in_us);
+  }
+
+  params.timeline_offset = info_parser.date_utc();
+
+  if (unknown_segment_size_ && (info_parser.duration() <= 0) &&
+      !info_parser.date_utc().is_null()) {
+    params.liveness = Demuxer::LIVENESS_LIVE;
+  } else if (info_parser.duration() >= 0) {
+    params.liveness = Demuxer::LIVENESS_RECORDED;
+  } else {
+    params.liveness = Demuxer::LIVENESS_UNKNOWN;
   }
 
   const AudioDecoderConfig& audio_config = tracks_parser.audio_decoder_config();
@@ -203,7 +218,6 @@ int WebMStreamParser::ParseInfoAndTracks(const uint8* data, int size) {
     return -1;
   }
 
-
   cluster_parser_.reset(new WebMClusterParser(
       info_parser.timecode_scale(),
       tracks_parser.audio_track_num(),
@@ -219,8 +233,7 @@ int WebMStreamParser::ParseInfoAndTracks(const uint8* data, int size) {
   ChangeState(kParsingClusters);
 
   if (!init_cb_.is_null())
-    base::ResetAndReturn(&init_cb_).Run(
-        true, duration, info_parser.date_utc(), false);
+    base::ResetAndReturn(&init_cb_).Run(true, params);
 
   return bytes_parsed;
 }

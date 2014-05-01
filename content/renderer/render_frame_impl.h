@@ -30,11 +30,14 @@ struct FrameMsg_CompositorFrameSwapped_Params;
 struct FrameMsg_Navigate_Params;
 
 namespace blink {
+class WebGeolocationClient;
 class WebInputEvent;
 class WebMouseEvent;
 class WebContentDecryptionModule;
+class WebMIDIClient;
 class WebNotificationPresenter;
 class WebSecurityOrigin;
+class WebUserMediaClient;
 struct WebCompositionUnderline;
 struct WebContextMenuData;
 struct WebCursorInfo;
@@ -339,9 +342,12 @@ class CONTENT_EXPORT RenderFrameImpl
                                    blink::WebStorageQuotaCallbacks callbacks);
   virtual void willOpenSocketStream(
       blink::WebSocketStreamHandle* handle);
+  virtual blink::WebGeolocationClient* geolocationClient();
   virtual void willStartUsingPeerConnectionHandler(
       blink::WebLocalFrame* frame,
       blink::WebRTCPeerConnectionHandler* handler);
+  virtual blink::WebUserMediaClient* userMediaClient();
+  virtual blink::WebMIDIClient* webMIDIClient();
   virtual bool willCheckAndDispatchMessageEvent(
       blink::WebLocalFrame* sourceFrame,
       blink::WebFrame* targetFrame,
@@ -461,6 +467,11 @@ class CONTENT_EXPORT RenderFrameImpl
                             const base::string16& default_value,
                             const GURL& frame_url,
                             base::string16* result);
+
+  // Loads the appropriate error page for the specified failure into the frame.
+  void LoadNavigationErrorPage(const blink::WebURLRequest& failed_request,
+                               const blink::WebURLError& error,
+                               bool replace);
 
   // Stores the WebLocalFrame we are associated with.
   blink::WebLocalFrame* frame_;

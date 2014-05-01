@@ -106,11 +106,13 @@ extern const char kDisableQuic[];
 extern const char kDisableQuicHttps[];
 extern const char kDisableQuicPacing[];
 extern const char kDisableQuicPortSelection[];
+extern const char kDisableQuicTimeBasedLossDetection[];
 extern const char kDisableRestoreBackgroundContents[];
 extern const char kDisableSavePasswordBubble[];
 extern const char kDisableSearchButtonInOmnibox[];
 extern const char kDisableScriptedPrintThrottling[];
 extern const char kDisableSpdy31[];
+extern const char kDisableSuggestionsService[];
 extern const char kDisableSync[];
 extern const char kDisableSyncSyncedNotifications[];
 extern const char kDisableSyncTypes[];
@@ -127,6 +129,7 @@ extern const char kEnableAccessRequestNotifications[];
 extern const char kEnableAdview[];
 extern const char kEnableAppList[];
 extern const char kEnableAppWindowControls[];
+extern const char kEnableAppsFileAssociations[];
 extern const char kEnableAppsShowOnFirstPaint[];
 extern const char kEnableAsyncDns[];
 extern const char kEnableAuthNegotiatePort[];
@@ -172,18 +175,21 @@ extern const char kEnableQuic[];
 extern const char kEnableQuicHttps[];
 extern const char kEnableQuicPacing[];
 extern const char kEnableQuicPortSelection[];
+extern const char kEnableQuicTimeBasedLossDetection[];
 extern const char kEnableResourceContentSettings[];
 extern const char kEnableSavePasswordBubble[];
 extern const char kEnableSdchOverHttps[];
 extern const char kEnableSearchButtonInOmniboxAlways[];
 extern const char kEnableSearchButtonInOmniboxForStr[];
 extern const char kEnableSearchButtonInOmniboxForStrOrIip[];
+extern const char kEnableSessionCrashedBubble[];
 extern const char kEnableSettingsWindow[];
 extern const char kEnableSpdy4[];
 extern const char kEnableSpellingAutoCorrect[];
 extern const char kEnableSpellingFeedbackFieldTrial[];
 extern const char kEnableStackedTabStrip[];
 extern const char kEnableStreamlinedHostedApps[];
+extern const char kEnableSuggestionsService[];
 extern const char kEnableSyncArticles[];
 extern const char kEnableSyncSyncedNotifications[];
 extern const char kEnableThumbnailRetargeting[];
@@ -335,7 +341,6 @@ extern const char kTabCapture[];
 extern const char kTestName[];
 extern const char kTrustedSpdyProxy[];
 extern const char kTryChromeAgain[];
-extern const char kUninstallExtension[];
 extern const char kUninstall[];
 extern const char kUnlimitedStorage[];
 extern const char kUseSimpleCacheBackend[];
@@ -366,6 +371,7 @@ extern const char kEnableZeroSuggestEtherNoSerp[];
 extern const char kEnableZeroSuggestMostVisited[];
 extern const char kEnableZeroSuggestPersonalized[];
 extern const char kEnableInstantSearchClicks[];
+extern const char kEnableEmbeddedSearchAPI[];
 #endif
 
 #if defined(USE_ASH)
@@ -382,6 +388,7 @@ extern const char kMigrateDataDirForSxS[];
 #endif
 
 #if defined(OS_MACOSX)
+extern const char kAppsKeepChromeAlive[];
 extern const char kDisableAppShims[];
 extern const char kDisableSystemFullscreenForTesting[];
 extern const char kEnableSimplifiedFullscreen[];

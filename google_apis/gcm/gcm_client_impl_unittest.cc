@@ -41,7 +41,7 @@ enum LastEvent {
 
 const uint64 kDeviceAndroidId = 54321;
 const uint64 kDeviceSecurityToken = 12345;
-const int64 kSettingsCheckinInterval = 3600;
+const int64 kSettingsCheckinInterval = 16 * 60 * 60;
 const char kSettingsDefaultDigest[] = "default_digest";
 const char kAppId[] = "app_id";
 const char kSender[] = "project_id";
@@ -170,7 +170,8 @@ class FakeGCMInternalsBuilder : public GCMInternalsBuilder {
       const std::vector<GURL>& endpoints,
       const net::BackoffEntry::Policy& backoff_policy,
       scoped_refptr<net::HttpNetworkSession> network_session,
-      net::NetLog* net_log) OVERRIDE;
+      net::NetLog* net_log,
+      GCMStatsRecorder* recorder) OVERRIDE;
 
  private:
   base::TimeDelta clock_step_;
@@ -202,7 +203,8 @@ scoped_ptr<ConnectionFactory> FakeGCMInternalsBuilder::BuildConnectionFactory(
     const std::vector<GURL>& endpoints,
     const net::BackoffEntry::Policy& backoff_policy,
     scoped_refptr<net::HttpNetworkSession> network_session,
-    net::NetLog* net_log) {
+    net::NetLog* net_log,
+    GCMStatsRecorder* recorder) {
   return make_scoped_ptr<ConnectionFactory>(new FakeConnectionFactory());
 }
 
@@ -708,13 +710,17 @@ void GCMClientImplCheckinTest::SetUp() {
   ASSERT_TRUE(CreateUniqueTempDir());
   InitializeLoop();
   // Time will be advancing one hour every time it is checked.
-  BuildGCMClient(base::TimeDelta::FromSeconds(3600LL));
+  BuildGCMClient(base::TimeDelta::FromSeconds(kSettingsCheckinInterval));
   InitializeGCMClient();
 }
 
 TEST_F(GCMClientImplCheckinTest, GServicesSettingsAfterInitialCheckin) {
   std::map<std::string, std::string> settings;
   settings["checkin_interval"] = base::Int64ToString(kSettingsCheckinInterval);
+  settings["checkin_url"] = "http://alternative.url/checkin";
+  settings["gcm_hostname"] = "http://alternative.gcm.host";
+  settings["gcm_secure_port"] = "443";
+  settings["gcm_registration_url"] = "http://alternative.url/registration";
   CompleteCheckin(
       kDeviceAndroidId, kDeviceSecurityToken, kSettingsDefaultDigest, settings);
   EXPECT_EQ(kSettingsCheckinInterval, gservices_settings()->checkin_interval());
@@ -723,8 +729,7 @@ TEST_F(GCMClientImplCheckinTest, GServicesSettingsAfterInitialCheckin) {
 // This test only checks that periodic checkin happens.
 TEST_F(GCMClientImplCheckinTest, PeriodicCheckin) {
   std::map<std::string, std::string> settings;
-  // Interval is smaller than the clock step.
-  settings["checkin_interval"] = "1800";
+  settings["checkin_interval"] = base::IntToString(kSettingsCheckinInterval);
   settings["checkin_url"] = "http://alternative.url/checkin";
   settings["gcm_hostname"] = "http://alternative.gcm.host";
   settings["gcm_secure_port"] = "443";

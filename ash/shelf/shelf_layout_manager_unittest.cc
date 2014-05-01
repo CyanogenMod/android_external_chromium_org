@@ -10,7 +10,7 @@
 #include "ash/display/display_manager.h"
 #include "ash/focus_cycler.h"
 #include "ash/root_window_controller.h"
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_layout_manager_observer.h"
 #include "ash/shelf/shelf_view.h"
@@ -1557,6 +1557,39 @@ TEST_F(ShelfLayoutManagerTest, GestureEdgeSwipe) {
 
   widget->SetFullscreen(true);
   wm::GetWindowState(window)->set_hide_shelf_when_fullscreen(false);
+  shelf->UpdateVisibilityState();
+
+  // Edge swipe in fullscreen + AUTO_HIDE_HIDDEN should show the shelf and
+  // remain fullscreen.
+  EXPECT_TRUE(widget->IsFullscreen());
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
+  generator.GestureEdgeSwipe();
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE_SHOWN, shelf->auto_hide_state());
+  EXPECT_TRUE(widget->IsFullscreen());
+}
+
+// Test that starting the maximize mode does still allow the shelf to be made
+// visible when an (immersive mode) full screen app is running.
+TEST_F(ShelfLayoutManagerTest, GestureEdgeSwipeInMaximizeMode) {
+  ShelfLayoutManager* shelf = GetShelfLayoutManager();
+  shelf->SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS);
+  views::Widget* widget = new views::Widget;
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_WINDOW);
+  params.bounds = gfx::Rect(0, 0, 200, 200);
+  params.context = CurrentContext();
+  widget->Init(params);
+  widget->Show();
+  aura::Window* window = widget->GetNativeWindow();
+  wm::GetWindowState(window)->set_hide_shelf_when_fullscreen(false);
+  widget->SetFullscreen(true);
+
+  aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow());
+
+  // The maximize mode gets started.
+  shelf->OnMaximizeModeStarted();
+  shelf->LayoutShelf();
   shelf->UpdateVisibilityState();
 
   // Edge swipe in fullscreen + AUTO_HIDE_HIDDEN should show the shelf and

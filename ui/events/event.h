@@ -104,7 +104,6 @@ class EVENTS_EXPORT Event {
     return type_ == ET_TOUCH_RELEASED ||
            type_ == ET_TOUCH_PRESSED ||
            type_ == ET_TOUCH_MOVED ||
-           type_ == ET_TOUCH_STATIONARY ||
            type_ == ET_TOUCH_CANCELLED;
   }
 
@@ -218,10 +217,6 @@ class EVENTS_EXPORT Event {
 
  private:
   friend class EventTestApi;
-
-  // Safely initializes the native event members of this class.
-  void Init();
-  void InitWithNativeEvent(const base::NativeEvent& native_event);
 
   EventType type_;
   std::string name_;

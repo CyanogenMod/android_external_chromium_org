@@ -14,16 +14,16 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
 
-bool FirstRunPrivateGetLocalizedStringsFunction::RunImpl() {
+bool FirstRunPrivateGetLocalizedStringsFunction::RunSync() {
   UMA_HISTOGRAM_COUNTS("CrosFirstRun.DialogShown", 1);
   base::DictionaryValue* localized_strings = new base::DictionaryValue();
   chromeos::User* user =
       chromeos::UserManager::Get()->GetUserByProfile(GetProfile());
-  if (!user->given_name().empty()) {
+  if (!user->GetGivenName().empty()) {
     localized_strings->SetString(
         "greetingHeader",
         l10n_util::GetStringFUTF16(IDS_FIRST_RUN_GREETING_STEP_HEADER,
-                                   user->given_name()));
+                                   user->GetGivenName()));
   } else {
     localized_strings->SetString(
         "greetingHeader",
@@ -50,7 +50,7 @@ bool FirstRunPrivateGetLocalizedStringsFunction::RunImpl() {
   return true;
 }
 
-bool FirstRunPrivateLaunchTutorialFunction::RunImpl() {
+bool FirstRunPrivateLaunchTutorialFunction::RunSync() {
   chromeos::first_run::LaunchTutorial();
   return true;
 }

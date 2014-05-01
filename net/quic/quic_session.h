@@ -58,7 +58,7 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   virtual ~QuicSession();
 
   // QuicConnectionVisitorInterface methods:
-  virtual bool OnStreamFrames(
+  virtual void OnStreamFrames(
       const std::vector<QuicStreamFrame>& frames) OVERRIDE;
   virtual void OnRstStream(const QuicRstStreamFrame& frame) OVERRIDE;
   virtual void OnGoAway(const QuicGoAwayFrame& frame) OVERRIDE;

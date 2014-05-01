@@ -708,89 +708,112 @@ class AgentHostDelegate
     : public content::DevToolsExternalAgentProxyDelegate,
       public DevToolsAndroidBridge::AndroidWebSocket::Delegate {
  public:
-  static void Create(
+  static content::DevToolsAgentHost* GetOrCreateAgentHost(
       const std::string& id,
       scoped_refptr<DevToolsAndroidBridge::RemoteBrowser> browser,
-      const std::string& debug_url,
-      const std::string& frontend_url,
-      Profile* profile) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    AgentHostDelegates::iterator it =
-        g_host_delegates.Get().find(id);
-    if (it != g_host_delegates.Get().end()) {
-      it->second->OpenFrontend();
-    } else if (!frontend_url.empty()) {
-      new AgentHostDelegate(
-          id, browser, debug_url, frontend_url, profile);
-    }
-  }
+      const std::string& debug_url);
 
  private:
   AgentHostDelegate(
       const std::string& id,
       scoped_refptr<DevToolsAndroidBridge::RemoteBrowser> browser,
-      const std::string& debug_url,
-      const std::string& frontend_url,
-      Profile* profile)
-      : id_(id),
-        frontend_url_(frontend_url),
-        profile_(profile) {
-    web_socket_ = browser->CreateWebSocket(debug_url, this);
-    g_host_delegates.Get()[id] = this;
-
-    if (browser->socket().find(kWebViewSocketPrefix) == 0) {
-      content::RecordAction(
-          base::UserMetricsAction("DevTools_InspectAndroidWebView"));
-    } else {
-      content::RecordAction(
-          base::UserMetricsAction("DevTools_InspectAndroidPage"));
-    }
-  }
-
-  void OpenFrontend() {
-    if (!proxy_)
-      return;
-    DevToolsWindow::OpenExternalFrontend(
-        profile_, frontend_url_, proxy_->GetAgentHost().get());
-  }
-
-  virtual ~AgentHostDelegate() {
-    g_host_delegates.Get().erase(id_);
-  }
-
-  virtual void Attach() OVERRIDE {}
-
-  virtual void Detach() OVERRIDE {
-    web_socket_->Disconnect();
-  }
-
-  virtual void SendMessageToBackend(const std::string& message) OVERRIDE {
-    web_socket_->SendFrame(message);
-  }
-
-  virtual void OnSocketOpened() OVERRIDE {
-    proxy_.reset(content::DevToolsExternalAgentProxy::Create(this));
-    OpenFrontend();
-  }
-
-  virtual void OnFrameRead(const std::string& message) OVERRIDE {
-    proxy_->DispatchOnClientHost(message);
-  }
-
-  virtual void OnSocketClosed(bool closed_by_device) OVERRIDE {
-    if (proxy_ && closed_by_device)
-      proxy_->ConnectionClosed();
-    delete this;
-  }
+      const std::string& debug_url);
+  virtual ~AgentHostDelegate();
+  virtual void Attach() OVERRIDE;
+  virtual void Detach() OVERRIDE;
+  virtual void SendMessageToBackend(
+      const std::string& message) OVERRIDE;
+  virtual void OnSocketOpened() OVERRIDE;
+  virtual void OnFrameRead(const std::string& message) OVERRIDE;
+  virtual void OnSocketClosed(bool closed_by_device) OVERRIDE;
 
   const std::string id_;
-  const std::string frontend_url_;
-  Profile* profile_;
+  bool socket_opened_;
+  bool detached_;
+  std::vector<std::string> pending_messages_;
 
   scoped_ptr<content::DevToolsExternalAgentProxy> proxy_;
   scoped_refptr<DevToolsAndroidBridge::AndroidWebSocket> web_socket_;
   DISALLOW_COPY_AND_ASSIGN(AgentHostDelegate);
 };
+
+// static
+content::DevToolsAgentHost* AgentHostDelegate::GetOrCreateAgentHost(
+    const std::string& id,
+    scoped_refptr<DevToolsAndroidBridge::RemoteBrowser> browser,
+    const std::string& debug_url) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  AgentHostDelegates::iterator it = g_host_delegates.Get().find(id);
+  if (it != g_host_delegates.Get().end())
+    return it->second->proxy_->GetAgentHost();
+
+  AgentHostDelegate* delegate = new AgentHostDelegate(id, browser, debug_url);
+  return delegate->proxy_->GetAgentHost();
+}
+
+AgentHostDelegate::AgentHostDelegate(
+    const std::string& id,
+    scoped_refptr<DevToolsAndroidBridge::RemoteBrowser> browser,
+    const std::string& debug_url)
+    : id_(id),
+      socket_opened_(false),
+      detached_(false) {
+  web_socket_ = browser->CreateWebSocket(debug_url, this);
+  g_host_delegates.Get()[id] = this;
+
+  if (browser->socket().find(kWebViewSocketPrefix) == 0) {
+    content::RecordAction(
+        base::UserMetricsAction("DevTools_InspectAndroidWebView"));
+  } else {
+    content::RecordAction(
+        base::UserMetricsAction("DevTools_InspectAndroidPage"));
+  }
+  proxy_.reset(content::DevToolsExternalAgentProxy::Create(this));
+}
+
+AgentHostDelegate::~AgentHostDelegate() {
+  g_host_delegates.Get().erase(id_);
+}
+
+void AgentHostDelegate::Attach() {
+}
+
+void AgentHostDelegate::Detach() {
+  detached_ = true;
+  if (socket_opened_)
+    web_socket_->Disconnect();
+}
+
+void AgentHostDelegate::SendMessageToBackend(const std::string& message) {
+  if (socket_opened_)
+    web_socket_->SendFrame(message);
+  else
+    pending_messages_.push_back(message);
+}
+
+void AgentHostDelegate::OnSocketOpened() {
+  if (detached_) {
+    web_socket_->Disconnect();
+    return;
+  }
+
+  socket_opened_ = true;
+  for (std::vector<std::string>::iterator it = pending_messages_.begin();
+       it != pending_messages_.end(); ++it) {
+    SendMessageToBackend(*it);
+  }
+  pending_messages_.clear();
+}
+
+void AgentHostDelegate::OnFrameRead(const std::string& message) {
+  proxy_->DispatchOnClientHost(message);
+}
+
+void AgentHostDelegate::OnSocketClosed(bool closed_by_device) {
+  if (proxy_ && closed_by_device)
+    proxy_->ConnectionClosed();
+  delete this;
+}
 
 //// RemotePageTarget ----------------------------------------------
 
@@ -871,17 +894,14 @@ bool RemotePageTarget::IsAttached() const {
 
 static void NoOp(int, const std::string&) {}
 
-static void CallClosure(base::Closure closure, int, const std::string&) {
-  closure.Run();
-}
-
 void RemotePageTarget::Inspect(Profile* profile) const {
-  std::string request = base::StringPrintf(kActivatePageRequest,
-                                           remote_id_.c_str());
-  base::Closure inspect_callback = base::Bind(&AgentHostDelegate::Create,
-      id_, browser_, debug_url_, frontend_url_, profile);
-  browser_->SendJsonRequest(
-      request, base::Bind(&CallClosure, inspect_callback));
+  Activate();
+  scoped_refptr<content::DevToolsAgentHost> agent_host =
+      AgentHostDelegate::GetOrCreateAgentHost(id_, browser_, debug_url_);
+  if (agent_host) {
+    DevToolsWindow::OpenExternalFrontend(profile, frontend_url_,
+                                         agent_host.get());
+  }
 }
 
 bool RemotePageTarget::Activate() const {
@@ -995,20 +1015,32 @@ void DevToolsAndroidBridge::RemoteBrowser::SendProtocolCommand(
   new ProtocolCommand(this, debug_url, command.Serialize(), callback);
 }
 
-void DevToolsAndroidBridge::RemoteBrowser::Open(const std::string& url) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  Open(url, JsonRequestCallback());
-}
-
-void DevToolsAndroidBridge::RemoteBrowser::OpenAndInspect(
-    const std::string& url,
-    Profile* profile) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  Open(url,
-       base::Bind(&RemoteBrowser::InspectAfterOpenOnUIThread, this, profile));
-}
-
 void DevToolsAndroidBridge::RemoteBrowser::Open(
+    const std::string& url,
+    const DevToolsAndroidBridge::TargetCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  InnerOpen(url, base::Bind(&RemoteBrowser::RespondToOpenOnUIThread,
+                            this, callback));
+}
+
+void DevToolsAndroidBridge::RemoteBrowser::RespondToOpenOnUIThread(
+    const DevToolsAndroidBridge::TargetCallback& callback,
+    int result,
+    const std::string& response) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (result < 0) {
+    callback.Run(NULL);
+    return;
+  }
+  scoped_ptr<base::Value> value(base::JSONReader::Read(response));
+  base::DictionaryValue* dict;
+  if (value && value->GetAsDictionary(&dict)) {
+    RemotePageTarget new_page(this, *dict);
+    callback.Run(&new_page);
+  }
+}
+
+void DevToolsAndroidBridge::RemoteBrowser::InnerOpen(
     const std::string& input_url,
     const JsonRequestCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -1032,19 +1064,6 @@ void DevToolsAndroidBridge::RemoteBrowser::Open(
     SendJsonRequest(kNewPageRequest,
         base::Bind(&RemoteBrowser::PageCreatedOnUIThread, this,
                    callback, url));
-  }
-}
-
-void DevToolsAndroidBridge::RemoteBrowser::InspectAfterOpenOnUIThread(
-    Profile* profile, int result, const std::string& response) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (result < 0)
-    return;
-  scoped_ptr<base::Value> value(base::JSONReader::Read(response));
-  base::DictionaryValue* dict;
-  if (value && value->GetAsDictionary(&dict)) {
-    RemotePageTarget new_page(this, *dict);
-    new_page.Inspect(profile);
   }
 }
 

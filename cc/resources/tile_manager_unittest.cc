@@ -65,11 +65,13 @@ class TileManagerTest : public testing::TestWithParam<bool>,
       state.num_resources_limit = max_tiles_;
     }
     state.hard_memory_limit_in_bytes = state.soft_memory_limit_in_bytes * 2;
-    state.unused_memory_limit_in_bytes = state.soft_memory_limit_in_bytes;
     state.memory_limit_policy = memory_limit_policy_;
     state.tree_priority = tree_priority;
 
     global_state_ = state;
+    resource_pool_->SetResourceUsageLimits(state.soft_memory_limit_in_bytes,
+                                           state.soft_memory_limit_in_bytes,
+                                           state.num_resources_limit);
     tile_manager_->SetGlobalStateForTesting(state);
   }
 
@@ -82,6 +84,7 @@ class TileManagerTest : public testing::TestWithParam<bool>,
 
   // TileManagerClient implementation.
   virtual void NotifyReadyToActivate() OVERRIDE { ready_to_activate_ = true; }
+  virtual void NotifyTileInitialized(const Tile* tile) OVERRIDE {}
 
   TileVector CreateTilesWithSize(int count,
                                  TilePriority active_priority,
@@ -657,11 +660,14 @@ class TileManagerTileIteratorTest : public testing::Test,
     state.soft_memory_limit_in_bytes = 100 * 1000 * 1000;
     state.num_resources_limit = max_tiles_;
     state.hard_memory_limit_in_bytes = state.soft_memory_limit_in_bytes * 2;
-    state.unused_memory_limit_in_bytes = state.soft_memory_limit_in_bytes;
     state.memory_limit_policy = memory_limit_policy_;
     state.tree_priority = tree_priority;
 
     global_state_ = state;
+    host_impl_.resource_pool()->SetResourceUsageLimits(
+        state.soft_memory_limit_in_bytes,
+        state.soft_memory_limit_in_bytes,
+        state.num_resources_limit);
     host_impl_.tile_manager()->SetGlobalStateForTesting(state);
   }
 
@@ -734,6 +740,7 @@ class TileManagerTileIteratorTest : public testing::Test,
 
   // TileManagerClient implementation.
   virtual void NotifyReadyToActivate() OVERRIDE { ready_to_activate_ = true; }
+  virtual void NotifyTileInitialized(const Tile* tile) OVERRIDE {}
 
   TileManager* tile_manager() { return host_impl_.tile_manager(); }
 
@@ -822,13 +829,13 @@ TEST_F(TileManagerTileIteratorTest, RasterTileIterator) {
   TileManager::RasterTileIterator it(tile_manager,
                                      SAME_PRIORITY_FOR_BOTH_TREES);
   EXPECT_TRUE(it);
-  std::set<Tile*> all_tiles;
-  size_t tile_count = 0;
 
+  size_t tile_count = 0;
+  std::set<Tile*> all_tiles;
   for (; it; ++it) {
-    ++tile_count;
     EXPECT_TRUE(*it);
     all_tiles.insert(*it);
+    ++tile_count;
   }
 
   EXPECT_EQ(tile_count, all_tiles.size());
@@ -986,9 +993,9 @@ TEST_F(TileManagerTileIteratorTest, EvictionTileIterator) {
   tile_manager->GetPairedPictureLayers(&paired_layers);
   EXPECT_EQ(1u, paired_layers.size());
 
-  TileManager::EvictionTileIterator it(tile_manager,
-                                       SAME_PRIORITY_FOR_BOTH_TREES);
-  EXPECT_FALSE(it);
+  TileManager::EvictionTileIterator empty_it(tile_manager,
+                                             SAME_PRIORITY_FOR_BOTH_TREES);
+  EXPECT_FALSE(empty_it);
   std::set<Tile*> all_tiles;
   size_t tile_count = 0;
 
@@ -1007,16 +1014,12 @@ TEST_F(TileManagerTileIteratorTest, EvictionTileIterator) {
   tile_manager->InitializeTilesWithResourcesForTesting(
       std::vector<Tile*>(all_tiles.begin(), all_tiles.end()));
 
-  it = TileManager::EvictionTileIterator(tile_manager,
-                                         SAME_PRIORITY_FOR_BOTH_TREES);
+  TileManager::EvictionTileIterator it(tile_manager, SMOOTHNESS_TAKES_PRIORITY);
   EXPECT_TRUE(it);
 
   // Sanity check, all tiles should be visible.
   std::set<Tile*> smoothness_tiles;
-  for (TileManager::EvictionTileIterator it(tile_manager,
-                                            SMOOTHNESS_TAKES_PRIORITY);
-       it;
-       ++it) {
+  for (; it; ++it) {
     Tile* tile = *it;
     EXPECT_TRUE(tile);
     EXPECT_EQ(TilePriority::NOW, tile->priority(ACTIVE_TREE).priority_bin);

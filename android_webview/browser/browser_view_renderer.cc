@@ -17,6 +17,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "ui/gfx/vector2d_conversions.h"
 
 using base::android::AttachCurrentThread;
@@ -108,7 +109,7 @@ bool BrowserViewRenderer::OnDraw(jobject java_canvas,
     // We should be performing a hardware draw here. If we don't have the
     // compositor yet or if RequestDrawGL fails, it means we failed this draw
     // and thus return false here to clear to background color for this draw.
-    return has_compositor_ && client_->RequestDrawGL(java_canvas);
+    return has_compositor_ && client_->RequestDrawGL(java_canvas, false);
   }
   // Perform a software draw
   return DrawSWInternal(java_canvas, clip);
@@ -146,9 +147,8 @@ skia::RefPtr<SkPicture> BrowserViewRenderer::CapturePicture(int width,
   TRACE_EVENT0("android_webview", "BrowserViewRenderer::CapturePicture");
 
   // Return empty Picture objects for empty SkPictures.
-  skia::RefPtr<SkPicture> picture = skia::AdoptRef(new SkPicture);
   if (width <= 0 || height <= 0) {
-    return picture;
+    return skia::AdoptRef(new SkPicture);
   }
 
   // Reset scroll back to the origin, will go back to the old
@@ -156,11 +156,11 @@ skia::RefPtr<SkPicture> BrowserViewRenderer::CapturePicture(int width,
   AutoResetWithLock scroll_reset(
       &scroll_offset_dip_, gfx::Vector2dF(), scroll_offset_dip_lock_);
 
-  SkCanvas* rec_canvas = picture->beginRecording(width, height, 0);
+  SkPictureRecorder recorder;
+  SkCanvas* rec_canvas = recorder.beginRecording(width, height, NULL, 0);
   if (has_compositor_)
     CompositeSW(rec_canvas);
-  picture->endRecording();
-  return picture;
+  return skia::AdoptRef(recorder.endRecording());
 }
 
 void BrowserViewRenderer::EnableOnNewPicture(bool enabled) {

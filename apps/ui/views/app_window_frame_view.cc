@@ -23,14 +23,12 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
-#if defined(USE_AURA)
-#include "ui/aura/env.h"
-#include "ui/aura/window.h"
-#endif
-
 namespace {
-// Height of the chrome-style caption, in pixels.
+
+const int kDefaultResizeInsideBoundsSize = 5;
+const int kDefaultResizeAreaCornerSize = 16;
 const int kCaptionHeight = 25;
+
 }  // namespace
 
 namespace apps {
@@ -38,36 +36,29 @@ namespace apps {
 const char AppWindowFrameView::kViewClassName[] =
     "browser/ui/views/extensions/AppWindowFrameView";
 
-AppWindowFrameView::AppWindowFrameView()
-    : widget_(NULL),
-      window_(NULL),
+AppWindowFrameView::AppWindowFrameView(views::Widget* widget,
+                                       NativeAppWindow* window,
+                                       bool draw_frame,
+                                       const SkColor& active_frame_color,
+                                       const SkColor& inactive_frame_color)
+    : widget_(widget),
+      window_(window),
+      draw_frame_(draw_frame),
+      active_frame_color_(active_frame_color),
+      inactive_frame_color_(inactive_frame_color),
       close_button_(NULL),
       maximize_button_(NULL),
       restore_button_(NULL),
       minimize_button_(NULL),
-      resize_inside_bounds_size_(0),
+      resize_inside_bounds_size_(kDefaultResizeInsideBoundsSize),
       resize_outside_bounds_size_(0),
-      resize_area_corner_size_(0) {}
+      resize_area_corner_size_(kDefaultResizeAreaCornerSize) {
+}
 
 AppWindowFrameView::~AppWindowFrameView() {}
 
-void AppWindowFrameView::Init(views::Widget* widget,
-                              NativeAppWindow* window,
-                              bool draw_frame,
-                              const SkColor& frame_color,
-                              int resize_inside_bounds_size,
-                              int resize_outside_bounds_size,
-                              int resize_outside_scale_for_touch,
-                              int resize_area_corner_size) {
-  widget_ = widget;
-  window_ = window;
-  draw_frame_ = draw_frame;
-  frame_color_ = frame_color;
-  resize_inside_bounds_size_ = resize_inside_bounds_size;
-  resize_outside_bounds_size_ = resize_outside_bounds_size;
-  resize_area_corner_size_ = resize_area_corner_size;
-
-  if (draw_frame) {
+void AppWindowFrameView::Init() {
+  if (draw_frame_) {
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     close_button_ = new views::ImageButton(this);
     close_button_->SetImage(
@@ -125,6 +116,14 @@ void AppWindowFrameView::Init(views::Widget* widget,
         l10n_util::GetStringUTF16(IDS_APP_ACCNAME_MINIMIZE));
     AddChildView(minimize_button_);
   }
+}
+
+void AppWindowFrameView::SetResizeSizes(int resize_inside_bounds_size,
+                                        int resize_outside_bounds_size,
+                                        int resize_area_corner_size) {
+  resize_inside_bounds_size_ = resize_inside_bounds_size;
+  resize_outside_bounds_size_ = resize_outside_bounds_size;
+  resize_area_corner_size_ = resize_area_corner_size;
 }
 
 // views::NonClientFrameView implementation.
@@ -235,8 +234,6 @@ void AppWindowFrameView::GetWindowMask(const gfx::Size& size,
   // We got nothing to say about no window mask.
 }
 
-// views::View implementation.
-
 gfx::Size AppWindowFrameView::GetPreferredSize() {
   gfx::Size pref = widget_->client_view()->GetPreferredSize();
   gfx::Rect bounds(0, 0, pref.width(), pref.height());
@@ -311,7 +308,10 @@ void AppWindowFrameView::OnPaint(gfx::Canvas* canvas) {
   SkPaint paint;
   paint.setAntiAlias(false);
   paint.setStyle(SkPaint::kFill_Style);
-  paint.setColor(frame_color_);
+  if (widget_->IsActive())
+    paint.setColor(active_frame_color_);
+  else
+    paint.setColor(inactive_frame_color_);
   gfx::Path path;
   path.moveTo(0, 0);
   path.lineTo(width(), 0);
@@ -352,8 +352,6 @@ gfx::Size AppWindowFrameView::GetMaximumSize() {
 
   return max_size;
 }
-
-// views::ButtonListener implementation.
 
 void AppWindowFrameView::ButtonPressed(views::Button* sender,
                                        const ui::Event& event) {

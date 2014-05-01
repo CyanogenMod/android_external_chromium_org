@@ -47,10 +47,6 @@ race:media::ReleaseData
 # http://crbug.com/158922
 race:third_party/libvpx/source/libvpx/vp8/encoder/*
 
-# See http://crbug.com/181502
-race:_M_rep
-race:_M_is_leaked
-
 # http://crbug.com/189177
 race:thread_manager
 race:v8::Locker::Initialize
@@ -198,9 +194,6 @@ race:CommandLine::GetSwitchValueASCII
 race:blink::s_platform
 race:content::RendererWebKitPlatformSupportImpl::~RendererWebKitPlatformSupportImpl
 
-# http://crbug.com/342662
-race:SetWindowList
-
 # http://crbug.com/345240
 race:WTF::s_shutdown
 
@@ -233,8 +226,8 @@ race:cricket::WebRtcVideoMediaChannel::SetSendCodec
 # http://crbug.com/347553
 race:blink::WebString::reset
 
-# https://code.google.com/p/v8/issues/detail?id=3143
-race:v8::internal::FLAG_track_double_fields
+# http://crbug.com/348511
+race:webrtc::acm1::AudioCodingModuleImpl::PlayoutData10Ms
 
 # http://crbug.com/348982
 race:cricket::P2PTransportChannel::OnConnectionDestroyed
@@ -257,3 +250,6 @@ race:gfx::ImageFamily::~ImageFamily
 
 # http://crbug.com/364014
 race:WTF::Latin1Encoding()::globalLatin1Encoding
+
+# https://code.google.com/p/v8/issues/detail?id=3143
+race:v8::internal::FLAG_track_double_fields

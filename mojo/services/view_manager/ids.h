@@ -11,6 +11,8 @@ namespace mojo {
 namespace services {
 namespace view_manager {
 
+typedef uint32_t ChangeId;
+
 // Adds a bit of type safety to node ids.
 struct MOJO_VIEW_MANAGER_EXPORT NodeId {
   NodeId(uint16_t connection_id, uint16_t node_id)
@@ -21,6 +23,10 @@ struct MOJO_VIEW_MANAGER_EXPORT NodeId {
   bool operator==(const NodeId& other) const {
     return other.connection_id == connection_id &&
         other.node_id == node_id;
+  }
+
+  bool operator!=(const NodeId& other) const {
+    return !(*this == other);
   }
 
   uint16_t connection_id;
@@ -37,6 +43,10 @@ struct MOJO_VIEW_MANAGER_EXPORT ViewId {
   bool operator==(const ViewId& other) const {
     return other.connection_id == connection_id &&
         other.view_id == view_id;
+  }
+
+  bool operator!=(const ViewId& other) const {
+    return !(*this == other);
   }
 
   uint16_t connection_id;
@@ -62,6 +72,10 @@ inline uint32_t NodeIdToTransportId(const NodeId& id) {
 
 inline ViewId ViewIdFromTransportId(uint32_t id) {
   return ViewId(FirstIdFromTransportId(id), SecondIdFromTransportId(id));
+}
+
+inline uint32_t ViewIdToTransportId(const ViewId& id) {
+  return (id.connection_id << 16) | id.view_id;
 }
 
 }  // namespace view_manager

@@ -498,6 +498,17 @@ void RenderWidgetHostViewBase::SetBrowserAccessibilityManager(
   browser_accessibility_manager_.reset(manager);
 }
 
+void RenderWidgetHostViewBase::OnAccessibilitySetFocus(int acc_obj_id) {
+}
+
+void RenderWidgetHostViewBase::AccessibilityShowMenu(int acc_obj_id) {
+}
+
+gfx::Point RenderWidgetHostViewBase::AccessibilityOriginInScreen(
+    const gfx::Rect& bounds) {
+  return bounds.origin();
+}
+
 void RenderWidgetHostViewBase::UpdateScreenInfo(gfx::NativeView view) {
   RenderWidgetHostImpl* impl = NULL;
   if (GetRenderWidgetHost())
@@ -573,11 +584,6 @@ void RenderWidgetHostViewBase::EndFrameSubscription() {
   render_process_host->EndFrameSubscription(impl->GetRoutingID());
 }
 
-void RenderWidgetHostViewBase::OnOverscrolled(
-    gfx::Vector2dF accumulated_overscroll,
-    gfx::Vector2dF current_fling_velocity) {
-}
-
 uint32 RenderWidgetHostViewBase::RendererFrameNumber() {
   return renderer_frame_number_;
 }
@@ -605,6 +611,14 @@ void RenderWidgetHostViewBase::FlushInput() {
 
 SkBitmap::Config RenderWidgetHostViewBase::PreferredReadbackFormat() {
   return SkBitmap::kARGB_8888_Config;
+}
+
+gfx::Size RenderWidgetHostViewBase::GetVisibleViewportSize() const {
+  return GetViewBounds().size();
+}
+
+void RenderWidgetHostViewBase::SetInsets(const gfx::Insets& insets) {
+  NOTIMPLEMENTED();
 }
 
 }  // namespace content

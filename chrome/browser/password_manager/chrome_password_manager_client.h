@@ -38,6 +38,7 @@ class ChromePasswordManagerClient
   virtual ~ChromePasswordManagerClient();
 
   // PasswordManagerClient implementation.
+  virtual bool IsAutomaticPasswordSavingEnabled() const OVERRIDE;
   virtual void PromptUserToSavePassword(
       password_manager::PasswordFormManager* form_to_save) OVERRIDE;
   virtual void PasswordWasAutofilled(
@@ -59,6 +60,10 @@ class ChromePasswordManagerClient
   // Hides any visible generation UI.
   void HidePasswordGenerationPopup();
 
+  static void CreateForWebContentsWithAutofillManagerDelegate(
+      content::WebContents* contents,
+      autofill::AutofillManagerDelegate* delegate);
+
   // Convenience method to allow //chrome code easy access to a PasswordManager
   // from a WebContents instance.
   static password_manager::PasswordManager* GetManagerFromWebContents(
@@ -73,7 +78,9 @@ class ChromePasswordManagerClient
   void SetTestObserver(autofill::PasswordGenerationPopupObserver* observer);
 
  private:
-  explicit ChromePasswordManagerClient(content::WebContents* web_contents);
+  ChromePasswordManagerClient(
+      content::WebContents* web_contents,
+      autofill::AutofillManagerDelegate* autofill_manager_delegate);
   friend class content::WebContentsUserData<ChromePasswordManagerClient>;
 
   // content::WebContentsObserver overrides.

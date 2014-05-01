@@ -24,6 +24,7 @@
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_pool_manager_impl.h"
 #include "net/socket/next_proto.h"
+#include "net/spdy/hpack_huffman_aggregator.h"
 #include "net/spdy/spdy_session_pool.h"
 
 namespace {
@@ -83,6 +84,7 @@ HttpNetworkSession::Params::Params()
       enable_quic_https(false),
       enable_quic_port_selection(true),
       enable_quic_pacing(false),
+      enable_quic_time_based_loss_detection(false),
       enable_quic_persist_server_info(false),
       quic_clock(NULL),
       quic_random(NULL),
@@ -122,7 +124,8 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
                            params.quic_max_packet_length,
                            params.quic_supported_versions,
                            params.enable_quic_port_selection,
-                           params.enable_quic_pacing),
+                           params.enable_quic_pacing,
+                           params.enable_quic_time_based_loss_detection),
       spdy_session_pool_(params.host_resolver,
                          params.ssl_config_service,
                          params.http_server_properties,
@@ -142,6 +145,10 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
   DCHECK(proxy_service_);
   DCHECK(ssl_config_service_.get());
   CHECK(http_server_properties_);
+
+  if (HpackHuffmanAggregator::UseAggregator()) {
+    huffman_aggregator_.reset(new HpackHuffmanAggregator());
+  }
 }
 
 HttpNetworkSession::~HttpNetworkSession() {
@@ -208,6 +215,8 @@ base::Value* HttpNetworkSession::QuicInfoToValue() const {
                    params_.enable_quic_port_selection);
   dict->SetBoolean("enable_quic_pacing",
                    params_.enable_quic_pacing);
+  dict->SetBoolean("enable_quic_time_based_loss_detection",
+                   params_.enable_quic_time_based_loss_detection);
   dict->SetBoolean("enable_quic_persist_server_info",
                    params_.enable_quic_persist_server_info);
   dict->SetString("origin_to_force_quic_on",

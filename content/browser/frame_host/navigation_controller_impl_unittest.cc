@@ -2887,16 +2887,15 @@ TEST_F(NavigationControllerTest, ShowRendererURLInNewTabUntilModified) {
       NavigationEntryImpl::FromNavigationEntry(controller.GetPendingEntry())->
           is_renderer_initiated());
   EXPECT_TRUE(controller.IsInitialNavigation());
-  EXPECT_FALSE(test_rvh()->has_accessed_initial_document());
+  EXPECT_FALSE(contents()->HasAccessedInitialDocument());
 
   // There should be no title yet.
   EXPECT_TRUE(contents()->GetTitle().empty());
 
   // If something else modifies the contents of the about:blank page, then
   // we must revert to showing about:blank to avoid a URL spoof.
-  test_rvh()->OnMessageReceived(
-        ViewHostMsg_DidAccessInitialDocument(0));
-  EXPECT_TRUE(test_rvh()->has_accessed_initial_document());
+  main_test_rfh()->OnMessageReceived(FrameHostMsg_DidAccessInitialDocument(0));
+  EXPECT_TRUE(contents()->HasAccessedInitialDocument());
   EXPECT_FALSE(controller.GetVisibleEntry());
   EXPECT_EQ(url, controller.GetPendingEntry()->GetURL());
 
@@ -2928,7 +2927,7 @@ TEST_F(NavigationControllerTest, ShowBrowserURLAfterFailUntilModified) {
       NavigationEntryImpl::FromNavigationEntry(controller.GetPendingEntry())->
           is_renderer_initiated());
   EXPECT_TRUE(controller.IsInitialNavigation());
-  EXPECT_FALSE(test_rvh()->has_accessed_initial_document());
+  EXPECT_FALSE(contents()->HasAccessedInitialDocument());
 
   // There should be no title yet.
   EXPECT_TRUE(contents()->GetTitle().empty());
@@ -2947,9 +2946,8 @@ TEST_F(NavigationControllerTest, ShowBrowserURLAfterFailUntilModified) {
 
   // If something else later modifies the contents of the about:blank page, then
   // we must revert to showing about:blank to avoid a URL spoof.
-  test_rvh()->OnMessageReceived(
-        ViewHostMsg_DidAccessInitialDocument(0));
-  EXPECT_TRUE(test_rvh()->has_accessed_initial_document());
+  main_test_rfh()->OnMessageReceived(FrameHostMsg_DidAccessInitialDocument(0));
+  EXPECT_TRUE(contents()->HasAccessedInitialDocument());
   EXPECT_FALSE(controller.GetVisibleEntry());
   EXPECT_FALSE(controller.GetPendingEntry());
 
@@ -2980,7 +2978,7 @@ TEST_F(NavigationControllerTest, ShowRendererURLAfterFailUntilModified) {
       NavigationEntryImpl::FromNavigationEntry(controller.GetPendingEntry())->
           is_renderer_initiated());
   EXPECT_TRUE(controller.IsInitialNavigation());
-  EXPECT_FALSE(test_rvh()->has_accessed_initial_document());
+  EXPECT_FALSE(contents()->HasAccessedInitialDocument());
 
   // There should be no title yet.
   EXPECT_TRUE(contents()->GetTitle().empty());
@@ -2998,9 +2996,8 @@ TEST_F(NavigationControllerTest, ShowRendererURLAfterFailUntilModified) {
 
   // If something else later modifies the contents of the about:blank page, then
   // we must revert to showing about:blank to avoid a URL spoof.
-  test_rvh()->OnMessageReceived(
-        ViewHostMsg_DidAccessInitialDocument(0));
-  EXPECT_TRUE(test_rvh()->has_accessed_initial_document());
+  main_test_rfh()->OnMessageReceived(FrameHostMsg_DidAccessInitialDocument(0));
+  EXPECT_TRUE(contents()->HasAccessedInitialDocument());
   EXPECT_FALSE(controller.GetVisibleEntry());
   EXPECT_EQ(url, controller.GetPendingEntry()->GetURL());
 
@@ -3027,7 +3024,7 @@ TEST_F(NavigationControllerTest, DontShowRendererURLInNewTabAfterCommit) {
       NavigationEntryImpl::FromNavigationEntry(controller.GetPendingEntry())->
           is_renderer_initiated());
   EXPECT_TRUE(controller.IsInitialNavigation());
-  EXPECT_FALSE(test_rvh()->has_accessed_initial_document());
+  EXPECT_FALSE(contents()->HasAccessedInitialDocument());
 
   // Simulate a commit and then starting a new pending navigation.
   main_test_rfh()->SendNavigate(0, url1);
@@ -3038,7 +3035,7 @@ TEST_F(NavigationControllerTest, DontShowRendererURLInNewTabAfterCommit) {
 
   // We should not consider this an initial navigation, and thus should
   // not show the pending URL.
-  EXPECT_FALSE(test_rvh()->has_accessed_initial_document());
+  EXPECT_FALSE(contents()->HasAccessedInitialDocument());
   EXPECT_FALSE(controller.IsInitialNavigation());
   EXPECT_TRUE(controller.GetVisibleEntry());
   EXPECT_EQ(url1, controller.GetVisibleEntry()->GetURL());
@@ -3746,6 +3743,61 @@ TEST_F(NavigationControllerTest, CopyStateFromAndPruneMaxEntriesReplaceEntry) {
   EXPECT_EQ(0, other_controller.GetEntryAtIndex(2)->GetPageID());
 
   NavigationControllerImpl::set_max_entry_count_for_testing(original_count);
+}
+
+// Tests that we can navigate to the restored entries
+// imported by CopyStateFromAndPrune.
+TEST_F(NavigationControllerTest, CopyRestoredStateAndNavigate) {
+  const GURL kRestoredUrls[] = {
+    GURL("http://site1.com"),
+    GURL("http://site2.com"),
+  };
+  const GURL kInitialUrl("http://site3.com");
+
+  std::vector<NavigationEntry*> entries;
+  for (size_t i = 0; i < arraysize(kRestoredUrls); ++i) {
+    NavigationEntry* entry = NavigationControllerImpl::CreateNavigationEntry(
+        kRestoredUrls[i], Referrer(), PAGE_TRANSITION_RELOAD, false,
+        std::string(), browser_context());
+    entry->SetPageID(static_cast<int>(i));
+    entries.push_back(entry);
+  }
+
+  // Create a WebContents with restored entries.
+  scoped_ptr<TestWebContents> source_contents(
+      static_cast<TestWebContents*>(CreateTestWebContents()));
+  NavigationControllerImpl& source_controller =
+      source_contents->GetController();
+  source_controller.Restore(
+      entries.size() - 1,
+      NavigationController::RESTORE_LAST_SESSION_EXITED_CLEANLY,
+      &entries);
+  ASSERT_EQ(0u, entries.size());
+  source_controller.LoadIfNecessary();
+  source_contents->CommitPendingNavigation();
+
+  // Load a page, then copy state from |source_contents|.
+  NavigateAndCommit(kInitialUrl);
+  contents()->ExpectSetHistoryLengthAndPrune(
+      GetSiteInstanceFromEntry(controller_impl().GetEntryAtIndex(0)), 2,
+      controller_impl().GetEntryAtIndex(0)->GetPageID());
+  controller_impl().CopyStateFromAndPrune(&source_controller, false);
+  ASSERT_EQ(3, controller_impl().GetEntryCount());
+
+  // Go back to the first entry one at a time and
+  // verify that it works as expected.
+  EXPECT_EQ(2, controller_impl().GetCurrentEntryIndex());
+  EXPECT_EQ(kInitialUrl, controller_impl().GetActiveEntry()->GetURL());
+
+  controller_impl().GoBack();
+  contents()->CommitPendingNavigation();
+  EXPECT_EQ(1, controller_impl().GetCurrentEntryIndex());
+  EXPECT_EQ(kRestoredUrls[1], controller_impl().GetActiveEntry()->GetURL());
+
+  controller_impl().GoBack();
+  contents()->CommitPendingNavigation();
+  EXPECT_EQ(0, controller_impl().GetCurrentEntryIndex());
+  EXPECT_EQ(kRestoredUrls[0], controller_impl().GetActiveEntry()->GetURL());
 }
 
 // Tests that navigations initiated from the page (with the history object)

@@ -31,23 +31,31 @@ class Array {
 
   template <typename U>
   Array(const U& u, Buffer* buf = Buffer::current()) {
+    TypeConverter<Array<T>,U>::AssertAllowImplicitTypeConversion();
     *this = TypeConverter<Array<T>,U>::ConvertFrom(u, buf);
   }
 
   template <typename U>
   Array& operator=(const U& u) {
+    TypeConverter<Array<T>,U>::AssertAllowImplicitTypeConversion();
     *this = TypeConverter<Array<T>,U>::ConvertFrom(u, Buffer::current());
     return *this;
   }
 
   template <typename U>
   operator U() const {
+    TypeConverter<Array<T>,U>::AssertAllowImplicitTypeConversion();
     return To<U>();
   }
 
   template <typename U>
   U To() const {
     return TypeConverter<Array<T>,U>::ConvertTo(*this);
+  }
+
+  template <typename U>
+  static Array From(const U& u, Buffer* buf = Buffer::current()) {
+    return TypeConverter<Array<T>,U>::ConvertFrom(u, buf);
   }
 
   bool is_null() const { return !data_; }
@@ -105,6 +113,8 @@ class TypeConverter<String, std::string> {
  public:
   static String ConvertFrom(const std::string& input, Buffer* buf);
   static std::string ConvertTo(const String& input);
+
+  MOJO_ALLOW_IMPLICIT_TYPE_CONVERSION();
 };
 
 template <size_t N>
@@ -115,6 +125,8 @@ class TypeConverter<String, char[N]> {
     memcpy(&result[0], input, N - 1);
     return result.Finish();
   }
+
+  MOJO_ALLOW_IMPLICIT_TYPE_CONVERSION();
 };
 
 // Appease MSVC.
@@ -124,6 +136,8 @@ class TypeConverter<String, const char[N]> {
   static String ConvertFrom(const char input[N], Buffer* buf) {
     return TypeConverter<String, char[N]>::ConvertFrom(input, buf);
   }
+
+  MOJO_ALLOW_IMPLICIT_TYPE_CONVERSION();
 };
 
 template <>
@@ -132,6 +146,8 @@ class TypeConverter<String, const char*> {
   static String ConvertFrom(const char* input, Buffer* buf);
   // NOTE: |ConvertTo| explicitly not implemented since String is not null
   // terminated (and may have embedded null bytes).
+
+  MOJO_ALLOW_IMPLICIT_TYPE_CONVERSION();
 };
 
 template <typename T, typename E>
@@ -152,6 +168,8 @@ class TypeConverter<Array<T>, std::vector<E> > {
     }
     return result;
   }
+
+  MOJO_INHERIT_IMPLICIT_TYPE_CONVERSION(T, E);
 };
 
 }  // namespace mojo

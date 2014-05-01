@@ -100,6 +100,9 @@ class AppWindowRegistry : public KeyedService {
   // AppWindow::WindowType, or 0 for any window type.
   static bool IsAppWindowRegisteredInAnyProfile(int window_type_mask);
 
+  // Close all app windows in all profiles.
+  static void CloseAllAppWindows();
+
   class Factory : public BrowserContextKeyedServiceFactory {
    public:
     static AppWindowRegistry* GetForBrowserContext(
@@ -142,6 +145,6 @@ class AppWindowRegistry : public KeyedService {
   base::Callback<void(content::DevToolsAgentHost*, bool)> devtools_callback_;
 };
 
-}  // namespace extensions
+}  // namespace apps
 
 #endif  // APPS_APP_WINDOW_REGISTRY_H_

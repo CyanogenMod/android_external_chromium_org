@@ -31,6 +31,7 @@ class CertVerifier;
 class ClientSocketFactory;
 class ClientSocketPoolManager;
 class HostResolver;
+class HpackHuffmanAggregator;
 class HttpAuthHandlerFactory;
 class HttpNetworkSessionPeer;
 class HttpProxyClientSocketPool;
@@ -90,6 +91,7 @@ class NET_EXPORT HttpNetworkSession
     bool enable_quic_https;
     bool enable_quic_port_selection;
     bool enable_quic_pacing;
+    bool enable_quic_time_based_loss_detection;
     bool enable_quic_persist_server_info;
     HostPortPair origin_to_force_quic_on;
     QuicClock* quic_clock;  // Will be owned by QuicStreamFactory.
@@ -152,6 +154,9 @@ class NET_EXPORT HttpNetworkSession
   NetLog* net_log() {
     return net_log_;
   }
+  HpackHuffmanAggregator* huffman_aggregator() {
+    return huffman_aggregator_.get();
+  }
 
   // Creates a Value summary of the state of the socket pools. The caller is
   // responsible for deleting the returned value.
@@ -205,6 +210,9 @@ class NET_EXPORT HttpNetworkSession
   scoped_ptr<HttpStreamFactory> http_stream_factory_;
   scoped_ptr<HttpStreamFactory> http_stream_factory_for_websocket_;
   std::set<HttpResponseBodyDrainer*> response_drainers_;
+
+  // TODO(jgraettinger): Remove when Huffman collection is complete.
+  scoped_ptr<HpackHuffmanAggregator> huffman_aggregator_;
 
   Params params_;
 };

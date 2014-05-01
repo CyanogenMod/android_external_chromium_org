@@ -16,6 +16,10 @@ namespace content {
 
 namespace {
 
+const char* kGpuCompositingFeatureName = "gpu_compositing";
+const char* kWebGLFeatureName = "webgl";
+const char* kRasterizationFeatureName = "rasterization";
+
 struct GpuFeatureInfo {
   std::string name;
   uint32 blocked;
@@ -41,7 +45,7 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
           true
       },
       {
-          "gpu_compositing",
+          kGpuCompositingFeatureName,
           manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING),
           false,
           "Gpu compositing has been disabled, either via about:flags or"
@@ -50,22 +54,7 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
           true
       },
       {
-          "3d_css",
-          manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_3D_CSS),
-          command_line.HasSwitch(switches::kDisableAcceleratedLayers),
-          "Accelerated layers have been disabled at the command line.",
-          false
-      },
-      {
-          "css_animation",
-          manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_3D_CSS),
-          command_line.HasSwitch(cc::switches::kDisableThreadedAnimation) ||
-          command_line.HasSwitch(switches::kDisableAcceleratedLayers),
-          "Accelerated CSS animation has been disabled at the command line.",
-          true
-      },
-      {
-          "webgl",
+          kWebGLFeatureName,
           manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_WEBGL),
           command_line.HasSwitch(switches::kDisableExperimentalWebGL),
           "WebGL has been disabled, either via about:flags or command line.",
@@ -117,15 +106,6 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
           true
       },
 #endif
-      {
-          "video",
-          manager->IsFeatureBlacklisted(
-              gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO),
-          command_line.HasSwitch(switches::kDisableAcceleratedVideo),
-          "Accelerated video presentation has been disabled, either via"
-          " about:flags or command line.",
-          true
-      },
 #if defined(OS_CHROMEOS)
       {
           "panel_fitting",
@@ -137,7 +117,7 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
       },
 #endif
       {
-          "rasterization",
+          kRasterizationFeatureName,
           manager->IsFeatureBlacklisted(
               gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION) &&
           !IsGpuRasterizationEnabled() && !IsForceGpuRasterizationEnabled(),
@@ -155,6 +135,22 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
 }
 
 }  // namespace
+
+bool IsPinchVirtualViewportEnabled() {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+  // Command line switches take precedence over platform default.
+  if (command_line.HasSwitch(cc::switches::kDisablePinchVirtualViewport))
+    return false;
+  if (command_line.HasSwitch(cc::switches::kEnablePinchVirtualViewport))
+    return true;
+
+#if defined(OS_CHROMEOS)
+  return true;
+#else
+  return false;
+#endif
+}
 
 bool IsThreadedCompositingEnabled() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
@@ -204,12 +200,11 @@ bool IsImplSidePaintingEnabled() {
     return false;
   else if (command_line.HasSwitch(switches::kEnableImplSidePainting))
     return true;
+  else if (command_line.HasSwitch(
+      switches::kEnableBleedingEdgeRenderingFastPaths))
+    return true;
 
-#if defined(OS_ANDROID)
-  return true;
-#else
-  return false;
-#endif
+  return IsThreadedCompositingEnabled();
 }
 
 bool IsGpuRasterizationEnabled() {
@@ -254,9 +249,7 @@ base::Value* GetFeatureStatus() {
     std::string status;
     if (gpu_feature_info.disabled) {
       status = "disabled";
-      if (gpu_feature_info.name == "css_animation") {
-        status += "_software_animated";
-      } else if (gpu_feature_info.name == "raster") {
+      if (gpu_feature_info.name == kRasterizationFeatureName) {
         if (IsImplSidePaintingEnabled())
           status += "_software_multithreaded";
         else
@@ -278,20 +271,15 @@ base::Value* GetFeatureStatus() {
         status += "_off";
     } else {
       status = "enabled";
-      if (gpu_feature_info.name == "webgl" &&
+      if (gpu_feature_info.name == kWebGLFeatureName &&
           manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING))
         status += "_readback";
-      if (gpu_feature_info.name == "css_animation") {
-        if (IsThreadedCompositingEnabled())
-          status = "accelerated_threaded";
-        else
-          status = "accelerated";
-      } else if (gpu_feature_info.name == "raster") {
+      if (gpu_feature_info.name == kRasterizationFeatureName) {
         if (IsForceGpuRasterizationEnabled())
           status += "_force";
       }
     }
-    if (gpu_feature_info.name == "gpu_compositing") {
+    if (gpu_feature_info.name == kGpuCompositingFeatureName) {
       if (IsThreadedCompositingEnabled())
         status += "_threaded";
     }

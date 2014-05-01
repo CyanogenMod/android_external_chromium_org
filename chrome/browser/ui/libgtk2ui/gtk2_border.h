@@ -5,11 +5,12 @@
 #ifndef CHROME_BROWSER_UI_LIBGTK2UI_GTK2_BORDER_H_
 #define CHROME_BROWSER_UI_LIBGTK2UI_GTK2_BORDER_H_
 
+#include "base/scoped_observer.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/native_theme/native_theme_observer.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/button.h"
-#include "ui/views/linux_ui/native_theme_change_observer.h"
 
 namespace gfx {
 class Canvas;
@@ -24,12 +25,10 @@ namespace libgtk2ui {
 class Gtk2UI;
 
 // Draws a gtk button border, and manages the memory of the resulting pixbufs.
-class Gtk2Border : public views::Border,
-                   public views::NativeThemeChangeObserver {
+class Gtk2Border : public views::Border, public ui::NativeThemeObserver {
  public:
   Gtk2Border(Gtk2UI* gtk2_ui,
-             views::LabelButton* owning_button,
-             scoped_ptr<views::Border> border);
+             views::LabelButton* owning_button);
   virtual ~Gtk2Border();
 
   // Overridden from views::Border:
@@ -38,7 +37,7 @@ class Gtk2Border : public views::Border,
   virtual gfx::Size GetMinimumSize() const OVERRIDE;
 
   // Overridden from views::NativeThemeChangeObserver:
-  virtual void OnNativeThemeChanged() OVERRIDE;
+  virtual void OnNativeThemeUpdated(ui::NativeTheme* observed_theme) OVERRIDE;
 
  private:
   void PaintState(const ui::NativeTheme::State state,
@@ -56,10 +55,7 @@ class Gtk2Border : public views::Border,
   // force invalidate the layout on theme changes.
   views::LabelButton* owning_button_;
 
-  // Since we don't want to expose the concept of whether we're using a GTK
-  // theme down to the cross platform views layer, we keep a normal Border and
-  // delegate to it whenever we aren't in GTK theme mode.
-  scoped_ptr<views::Border> border_;
+  ScopedObserver<ui::NativeTheme, ui::NativeThemeObserver> observer_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(Gtk2Border);
 };

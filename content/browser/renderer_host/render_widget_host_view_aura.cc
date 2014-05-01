@@ -762,7 +762,6 @@ RenderFrameHostImpl* RenderWidgetHostViewAura::GetFocusedFrame() {
 }
 
 void RenderWidgetHostViewAura::MovePluginWindows(
-    const gfx::Vector2d& scroll_offset,
     const std::vector<WebPluginGeometry>& plugin_window_moves) {
 #if defined(OS_WIN)
   // We need to clip the rectangle to the tab's viewport, otherwise we will draw
@@ -775,13 +774,12 @@ void RenderWidgetHostViewAura::MovePluginWindows(
   gfx::Rect view_bounds = window_->GetBoundsInRootWindow();
   std::vector<WebPluginGeometry> moves = plugin_window_moves;
 
-  gfx::Rect view_port(scroll_offset.x(), scroll_offset.y(), view_bounds.width(),
-                      view_bounds.height());
+  gfx::Rect view_port(view_bounds.size());
 
   for (size_t i = 0; i < moves.size(); ++i) {
     gfx::Rect clip(moves[i].clip_rect);
     gfx::Vector2d view_port_offset(
-        moves[i].window_rect.OffsetFromOrigin() + scroll_offset);
+        moves[i].window_rect.OffsetFromOrigin());
     clip.Offset(view_port_offset);
     clip.Intersect(view_port);
     clip.Offset(-view_port_offset);
@@ -875,6 +873,22 @@ void RenderWidgetHostViewAura::SetBackground(const SkBitmap& background) {
   window_->layer()->SetFillsBoundsOpaquely(background.isOpaque());
 }
 
+gfx::Size RenderWidgetHostViewAura::GetVisibleViewportSize() const {
+  gfx::Rect window_bounds = window_->bounds();
+  int viewport_width = std::max(
+      0, window_bounds.width() - insets_.left() - insets_.right());
+  int viewport_height = std::max(
+      0, window_bounds.height() - insets_.top() - insets_.bottom());
+  return gfx::Size(viewport_width, viewport_height);
+}
+
+void RenderWidgetHostViewAura::SetInsets(const gfx::Insets& insets) {
+  if (insets != insets_) {
+    insets_ = insets;
+    host_->WasResized();
+  }
+}
+
 void RenderWidgetHostViewAura::UpdateCursor(const WebCursor& cursor) {
   current_cursor_ = cursor;
   const gfx::Display display = gfx::Screen::GetScreenFor(window_)->
@@ -923,54 +937,6 @@ void RenderWidgetHostViewAura::ImeCompositionRangeChanged(
     const gfx::Range& range,
     const std::vector<gfx::Rect>& character_bounds) {
   composition_character_bounds_ = character_bounds;
-}
-
-void RenderWidgetHostViewAura::DidUpdateBackingStore(
-    const gfx::Rect& scroll_rect,
-    const gfx::Vector2d& scroll_delta,
-    const std::vector<gfx::Rect>& copy_rects,
-    const std::vector<ui::LatencyInfo>& latency_info) {
-  for (size_t i = 0; i < latency_info.size(); i++)
-    software_latency_info_.push_back(latency_info[i]);
-
-  // Use the state of the RenderWidgetHost and not the window as the two may
-  // differ. In particular if the window is hidden but the renderer isn't and we
-  // ignore the update and the window is made visible again the layer isn't
-  // marked as dirty and we show the wrong thing.
-  if (host_->is_hidden())
-    return;
-
-  gfx::Rect clip_rect;
-  if (paint_canvas_) {
-    SkRect sk_clip_rect;
-    if (paint_canvas_->sk_canvas()->getClipBounds(&sk_clip_rect))
-      clip_rect = gfx::ToEnclosingRect(gfx::SkRectToRectF(sk_clip_rect));
-  }
-
-  if (!scroll_rect.IsEmpty())
-    SchedulePaintIfNotInClip(scroll_rect, clip_rect);
-
-#if defined(OS_WIN)
-  aura::WindowTreeHost* host = window_->GetHost();
-#endif
-  for (size_t i = 0; i < copy_rects.size(); ++i) {
-    gfx::Rect rect = gfx::SubtractRects(copy_rects[i], scroll_rect);
-    if (rect.IsEmpty())
-      continue;
-
-    SchedulePaintIfNotInClip(rect, clip_rect);
-
-#if defined(OS_WIN)
-    if (host) {
-      // Send the invalid rect in screen coordinates.
-      gfx::Rect screen_rect = GetViewBounds();
-      gfx::Rect invalid_screen_rect(rect);
-      invalid_screen_rect.Offset(screen_rect.x(), screen_rect.y());
-      HWND hwnd = host->GetAcceleratedWidget();
-      PaintPluginWindowsHelper(hwnd, invalid_screen_rect);
-    }
-#endif  // defined(OS_WIN)
-  }
 }
 
 void RenderWidgetHostViewAura::RenderProcessGone(base::TerminationStatus status,
@@ -1824,11 +1790,6 @@ RenderWidgetHostViewAura::CreateSyntheticGestureTarget() {
       new SyntheticGestureTargetAura(host_));
 }
 
-void RenderWidgetHostViewAura::SetHasHorizontalScrollbar(
-    bool has_horizontal_scrollbar) {
-  // Not needed. Mac-only.
-}
-
 void RenderWidgetHostViewAura::SetScrollOffsetPinning(
     bool is_pinned_to_left, bool is_pinned_to_right) {
   // Not needed. Mac-only.
@@ -1855,11 +1816,11 @@ void RenderWidgetHostViewAura::CreateBrowserAccessibilityManagerIfNeeded() {
   if (legacy_render_widget_host_HWND_) {
     manager = new BrowserAccessibilityManagerWin(
         legacy_render_widget_host_HWND_.get(), accessible_parent,
-        BrowserAccessibilityManagerWin::GetEmptyDocument(), this);
+        BrowserAccessibilityManagerWin::GetEmptyDocument(), host_);
   }
 #else
   manager = BrowserAccessibilityManager::Create(
-      BrowserAccessibilityManager::GetEmptyDocument(), this);
+      BrowserAccessibilityManager::GetEmptyDocument(), host_);
 #endif
   SetBrowserAccessibilityManager(manager);
 }
@@ -2212,6 +2173,9 @@ void RenderWidgetHostViewAura::OnBoundsChanged(const gfx::Rect& old_bounds,
   // SetBounds() itself.  No matter how we got here, any redundant calls are
   // harmless.
   SetSize(new_bounds.size());
+
+  if (GetInputMethod())
+    GetInputMethod()->OnCaretBoundsChanged(this);
 }
 
 gfx::NativeCursor RenderWidgetHostViewAura::GetCursor(const gfx::Point& point) {
@@ -2774,58 +2738,6 @@ void RenderWidgetHostViewAura::OnUpdateVSyncParameters(
     base::TimeDelta interval) {
   if (IsShowing())
     host_->UpdateVSyncParameters(timebase, interval);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// RenderWidgetHostViewAura, BrowserAccessibilityDelegate implementation:
-
-void RenderWidgetHostViewAura::SetAccessibilityFocus(int acc_obj_id) {
-  if (!host_)
-    return;
-
-  host_->AccessibilitySetFocus(acc_obj_id);
-}
-
-void RenderWidgetHostViewAura::AccessibilityDoDefaultAction(int acc_obj_id) {
-  if (!host_)
-    return;
-
-  host_->AccessibilityDoDefaultAction(acc_obj_id);
-}
-
-void RenderWidgetHostViewAura::AccessibilityScrollToMakeVisible(
-    int acc_obj_id, gfx::Rect subfocus) {
-  if (!host_)
-    return;
-
-  host_->AccessibilityScrollToMakeVisible(acc_obj_id, subfocus);
-}
-
-void RenderWidgetHostViewAura::AccessibilityScrollToPoint(
-    int acc_obj_id, gfx::Point point) {
-  if (!host_)
-    return;
-
-  host_->AccessibilityScrollToPoint(acc_obj_id, point);
-}
-
-void RenderWidgetHostViewAura::AccessibilitySetTextSelection(
-    int acc_obj_id, int start_offset, int end_offset) {
-  if (!host_)
-    return;
-
-  host_->AccessibilitySetTextSelection(
-      acc_obj_id, start_offset, end_offset);
-}
-
-gfx::Point RenderWidgetHostViewAura::GetLastTouchEventLocation() const {
-  // Only needed for Win 8 non-aura.
-  return gfx::Point();
-}
-
-void RenderWidgetHostViewAura::FatalAccessibilityTreeError() {
-  host_->FatalAccessibilityTreeError();
-  SetBrowserAccessibilityManager(NULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

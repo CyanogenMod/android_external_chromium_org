@@ -6,12 +6,13 @@
 
 #include <windows.h>
 
-#include "base/basictypes.h"
+#include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/synchronization/lock.h"
@@ -124,11 +125,11 @@ class RawChannelWin : public RawChannel {
     // Must be called on the I/O thread.
     bool ShouldSelfDestruct() const;
 
-    // Must be called on the I/O thread. It could be called before or after
-    // detached from the owner.
+    // Must be called on the I/O thread. It may be called before or after
+    // detaching from the owner.
     void OnReadCompleted(DWORD bytes_read, DWORD error);
-    // Must be called on the I/O thread. It could be called before or after
-    // detached from the owner.
+    // Must be called on the I/O thread. It may be called before or after
+    // detaching from the owner.
     void OnWriteCompleted(DWORD bytes_written, DWORD error);
 
     embedder::ScopedPlatformHandle handle_;
@@ -141,6 +142,7 @@ class RawChannelWin : public RawChannel {
     // The following members must be used on the I/O thread.
     scoped_ptr<ReadBuffer> preserved_read_buffer_after_detach_;
     scoped_ptr<WriteBuffer> preserved_write_buffer_after_detach_;
+    bool suppress_self_destruct_;
 
     bool pending_read_;
     base::MessageLoopForIO::IOContext read_context_;
@@ -178,6 +180,7 @@ RawChannelWin::RawChannelIOHandler::RawChannelIOHandler(
     RawChannelWin* owner,
     embedder::ScopedPlatformHandle handle) : handle_(handle.Pass()),
                                              owner_(owner),
+                                             suppress_self_destruct_(false),
                                              pending_read_(false),
                                              pending_write_(false) {
   memset(&read_context_.overlapped, 0, sizeof(read_context_.overlapped));
@@ -239,12 +242,18 @@ void RawChannelWin::RawChannelIOHandler::OnIOCompleted(
   DCHECK(!owner_ ||
          base::MessageLoop::current() == owner_->message_loop_for_io());
 
-  if (context == &read_context_)
-    OnReadCompleted(bytes_transferred, error);
-  else if (context == &write_context_)
-    OnWriteCompleted(bytes_transferred, error);
-  else
-    NOTREACHED();
+  {
+    // Suppress self-destruction inside |OnReadCompleted()|, etc. (in case they
+    // result in a call to |Shutdown()|).
+    base::AutoReset<bool> resetter(&suppress_self_destruct_, true);
+
+    if (context == &read_context_)
+      OnReadCompleted(bytes_transferred, error);
+    else if (context == &write_context_)
+      OnWriteCompleted(bytes_transferred, error);
+    else
+      NOTREACHED();
+  }
 
   if (ShouldSelfDestruct())
     delete this;
@@ -269,7 +278,7 @@ void RawChannelWin::RawChannelIOHandler::DetachFromOwnerNoLock(
 }
 
 bool RawChannelWin::RawChannelIOHandler::ShouldSelfDestruct() const {
-  if (owner_)
+  if (owner_ || suppress_self_destruct_)
     return false;
 
   // Note: Detached, hence no lock needed for |pending_write_|.
@@ -280,6 +289,7 @@ void RawChannelWin::RawChannelIOHandler::OnReadCompleted(DWORD bytes_read,
                                                          DWORD error) {
   DCHECK(!owner_ ||
          base::MessageLoop::current() == owner_->message_loop_for_io());
+  DCHECK(suppress_self_destruct_);
 
   CHECK(pending_read_);
   pending_read_ = false;
@@ -288,7 +298,8 @@ void RawChannelWin::RawChannelIOHandler::OnReadCompleted(DWORD bytes_read,
 
   if (error != ERROR_SUCCESS) {
     DCHECK_EQ(bytes_read, 0u);
-    PLOG_IF(ERROR, error != ERROR_BROKEN_PIPE) << "ReadFile";
+    LOG_IF(ERROR, error != ERROR_BROKEN_PIPE)
+        << "ReadFile: " << logging::SystemErrorCodeToString(error);
     owner_->OnReadCompleted(false, 0);
   } else {
     DCHECK_GT(bytes_read, 0u);
@@ -300,6 +311,7 @@ void RawChannelWin::RawChannelIOHandler::OnWriteCompleted(DWORD bytes_written,
                                                           DWORD error) {
   DCHECK(!owner_ ||
          base::MessageLoop::current() == owner_->message_loop_for_io());
+  DCHECK(suppress_self_destruct_);
 
   if (!owner_) {
     // No lock needed.
@@ -315,7 +327,7 @@ void RawChannelWin::RawChannelIOHandler::OnWriteCompleted(DWORD bytes_written,
   }
 
   if (error != ERROR_SUCCESS) {
-    LOG(ERROR) << "WriteFile failed: " << error;
+    LOG(ERROR) << "WriteFile: " << logging::SystemErrorCodeToString(error);
     owner_->OnWriteCompleted(false, 0);
   } else {
     owner_->OnWriteCompleted(true, bytes_written);
@@ -353,7 +365,8 @@ RawChannel::IOResult RawChannelWin::Read(size_t* bytes_read) {
     DCHECK_EQ(bytes_read_dword, 0u);
     DWORD error = GetLastError();
     if (error != ERROR_IO_PENDING) {
-      LOG_IF(ERROR, error != ERROR_BROKEN_PIPE) << "ReadFile failed: " << error;
+      LOG_IF(ERROR, error != ERROR_BROKEN_PIPE)
+          << "ReadFile: " << logging::SystemErrorCodeToString(error);
       return IO_FAILED;
     }
   }

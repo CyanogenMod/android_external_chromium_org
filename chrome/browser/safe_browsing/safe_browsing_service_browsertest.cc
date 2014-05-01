@@ -117,14 +117,13 @@ class TestSafeBrowsingDatabase :  public SafeBrowsingDatabase {
   // can synchronously determine that the URL is safe, CheckUrl returns true,
   // otherwise it returns false.
   virtual bool ContainsBrowseUrl(const GURL& url,
-                                 std::string* matching_list,
                                  std::vector<SBPrefix>* prefix_hits,
-                                 std::vector<SBFullHashResult>* full_hits,
+                                 std::vector<SBFullHashResult>* cached_hits,
                                  base::Time last_update) OVERRIDE {
     std::vector<GURL> urls(1, url);
     return ContainsUrl(safe_browsing_util::MALWARE,
                        safe_browsing_util::PHISH,
-                       urls, prefix_hits, full_hits);
+                       urls, prefix_hits, cached_hits);
   }
   virtual bool ContainsDownloadUrl(
       const std::vector<GURL>& urls,

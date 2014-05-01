@@ -8,15 +8,20 @@
 #include "base/lazy_instance.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/gpu/image_transport_surface.h"
+#include "content/public/common/page_state.h"
+#include "content/renderer/history_entry.h"
+#include "content/renderer/history_serialization.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
+#include "content/shell/renderer/test_runner/TestCommon.h"
 #include "content/shell/renderer/test_runner/WebFrameTestProxy.h"
 #include "content/shell/renderer/test_runner/WebTestProxy.h"
 #include "content/test/test_media_stream_client.h"
 #include "third_party/WebKit/public/platform/WebDeviceMotionData.h"
 #include "third_party/WebKit/public/platform/WebDeviceOrientationData.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
+#include "third_party/WebKit/public/web/WebHistoryItem.h"
 
 #if defined(OS_MACOSX)
 #include "content/browser/renderer_host/popup_menu_helper_mac.h"
@@ -159,6 +164,69 @@ void UseMockMediaStreams(RenderView* render_view) {
   RenderViewImpl* render_view_impl = static_cast<RenderViewImpl*>(render_view);
   render_view_impl->SetMediaStreamClientForTesting(
       new TestMediaStreamClient(render_view_impl));
+}
+
+struct ToLower {
+  base::char16 operator()(base::char16 c) { return tolower(c); }
+};
+
+// Returns True if node1 < node2.
+bool HistoryEntryCompareLess(HistoryEntry::HistoryNode* node1,
+                             HistoryEntry::HistoryNode* node2) {
+  base::string16 target1 = node1->item().target();
+  base::string16 target2 = node2->item().target();
+  std::transform(target1.begin(), target1.end(), target1.begin(), ToLower());
+  std::transform(target2.begin(), target2.end(), target2.begin(), ToLower());
+  return target1 < target2;
+}
+
+std::string DumpHistoryItem(HistoryEntry::HistoryNode* node,
+                            int indent,
+                            bool is_current_index) {
+  std::string result;
+
+  const blink::WebHistoryItem& item = node->item();
+  if (is_current_index) {
+    result.append("curr->");
+    result.append(indent - 6, ' '); // 6 == "curr->".length()
+  } else {
+    result.append(indent, ' ');
+  }
+
+  std::string url =
+      WebTestRunner::normalizeLayoutTestURL(item.urlString().utf8());
+  result.append(url);
+  if (!item.target().isEmpty()) {
+    result.append(" (in frame \"");
+    result.append(item.target().utf8());
+    result.append("\")");
+  }
+  result.append("\n");
+
+  std::vector<HistoryEntry::HistoryNode*> children = node->children();
+  if (!children.empty()) {
+    std::sort(children.begin(), children.end(), HistoryEntryCompareLess);
+    for (size_t i = 0; i < children.size(); ++i)
+      result += DumpHistoryItem(children[i], indent + 4, false);
+  }
+
+  return result;
+}
+
+std::string DumpBackForwardList(std::vector<PageState>& page_state,
+                                size_t current_index) {
+  std::string result;
+  result.append("\n============== Back Forward List ==============\n");
+  for (size_t index = 0; index < page_state.size(); ++index) {
+    scoped_ptr<HistoryEntry> entry(
+        PageStateToHistoryEntry(page_state[index]));
+    result.append(
+        DumpHistoryItem(entry->root_history_node(),
+                        8,
+                        index == current_index));
+  }
+  result.append("===============================================\n");
+  return result;
 }
 
 }  // namespace content

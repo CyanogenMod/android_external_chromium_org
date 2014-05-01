@@ -28,6 +28,9 @@ void NetErrorPageController::Install(content::RenderFrame* render_frame) {
 
   gin::Handle<NetErrorPageController> controller = gin::CreateHandle(
       isolate, new NetErrorPageController(render_frame));
+  if (controller.IsEmpty())
+    return;
+
   v8::Handle<v8::Object> global = context->Global();
   global->Set(gin::StringToV8(isolate, "errorPageController"),
               controller.ToV8());
@@ -82,8 +85,7 @@ gin::ObjectTemplateBuilder NetErrorPageController::GetObjectTemplateBuilder(
                  &NetErrorPageController::LoadStaleButtonClick)
       .SetMethod("reloadButtonClick",
                  &NetErrorPageController::ReloadButtonClick)
-      .SetMethod("moreButtonClick",
-                 &NetErrorPageController::MoreButtonClick);
+      .SetMethod("moreButtonClick", &NetErrorPageController::MoreButtonClick);
 }
 
 void NetErrorPageController::OnDestruct() {}

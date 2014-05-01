@@ -192,7 +192,7 @@ void SearchTabHelper::InstantSupportChanged(bool instant_support) {
   model_.SetInstantSupportState(new_state);
 
   content::NavigationEntry* entry =
-      web_contents_->GetController().GetVisibleEntry();
+      web_contents_->GetController().GetLastCommittedEntry();
   if (entry) {
     chrome::SetInstantSupportStateInNavigationEntry(new_state, entry);
     if (delegate_ && !instant_support)
@@ -398,6 +398,8 @@ void SearchTabHelper::MaybeRemoveMostVisitedItems(
 }
 
 void SearchTabHelper::FocusOmnibox(OmniboxFocusState state) {
+// TODO(kmadhusu): Move platform specific code from here and get rid of #ifdef.
+#if !defined(OS_ANDROID)
   OmniboxView* omnibox = GetOmniboxView();
   if (!omnibox)
     return;
@@ -433,6 +435,7 @@ void SearchTabHelper::FocusOmnibox(OmniboxFocusState state) {
         web_contents()->GetView()->Focus();
       break;
   }
+#endif
 }
 
 void SearchTabHelper::NavigateToURL(const GURL& url,
@@ -465,27 +468,37 @@ void SearchTabHelper::OnUndoAllMostVisitedDeletions() {
 }
 
 void SearchTabHelper::OnLogEvent(NTPLoggingEventType event) {
+// TODO(kmadhusu): Move platform specific code from here and get rid of #ifdef.
+#if !defined(OS_ANDROID)
   NTPUserDataLogger::GetOrCreateFromWebContents(
       web_contents())->LogEvent(event);
+#endif
 }
 
 void SearchTabHelper::OnLogMostVisitedImpression(
     int position, const base::string16& provider) {
+// TODO(kmadhusu): Move platform specific code from here and get rid of #ifdef.
+#if !defined(OS_ANDROID)
   NTPUserDataLogger::GetOrCreateFromWebContents(
       web_contents())->LogMostVisitedImpression(position, provider);
+#endif
 }
 
 void SearchTabHelper::OnLogMostVisitedNavigation(
     int position, const base::string16& provider) {
+// TODO(kmadhusu): Move platform specific code from here and get rid of #ifdef.
+#if !defined(OS_ANDROID)
   NTPUserDataLogger::GetOrCreateFromWebContents(
       web_contents())->LogMostVisitedNavigation(position, provider);
+#endif
 }
 
 void SearchTabHelper::PasteIntoOmnibox(const base::string16& text) {
+// TODO(kmadhusu): Move platform specific code from here and get rid of #ifdef.
+#if !defined(OS_ANDROID)
   OmniboxView* omnibox = GetOmniboxView();
   if (!omnibox)
     return;
-
   // The first case is for right click to paste, where the text is retrieved
   // from the clipboard already sanitized. The second case is needed to handle
   // drag-and-drop value and it has to be sanitazed before setting it into the
@@ -503,6 +516,7 @@ void SearchTabHelper::PasteIntoOmnibox(const base::string16& text) {
   omnibox->model()->OnPaste();
   omnibox->SetUserText(text_to_paste);
   omnibox->OnAfterPossibleChange();
+#endif
 }
 
 void SearchTabHelper::OnChromeIdentityCheck(const base::string16& identity) {

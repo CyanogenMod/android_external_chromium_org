@@ -46,6 +46,7 @@
           'dependencies': [
             '../content/content_shell_and_tests.gyp:content_shell_apk',
             '../mojo/mojo.gyp:mojo_shell_apk',
+            '../mojo/mojo.gyp:mojo_test_apk',
             '<@(android_app_targets)',
             'android_builder_tests',
             '../android_webview/android_webview.gyp:android_webview_apk',
@@ -125,6 +126,7 @@
         }],
         ['OS=="mac"', {
           'dependencies': [
+            '../sandbox/sandbox.gyp:*',
             '../third_party/ocmock/ocmock.gyp:*',
           ],
         }],
@@ -384,15 +386,13 @@
             '../ash/ash.gyp:ash_unittests',
           ],
         }],
+        ['disable_nacl==0', {
+          'dependencies': [
+            '../components/nacl.gyp:nacl_loader_unittests',
+          ],
+        }],
       ],
     }, # target_name: chromium_builder_tests
-    {
-      'target_name': 'chromium_2010_builder_tests',
-      'type': 'none',
-      'dependencies': [
-        'chromium_builder_tests',
-      ],
-    }, # target_name: chromium_2010_builder_tests
   ],
   'conditions': [
     ['OS!="ios"', {
@@ -742,11 +742,6 @@
             '../tools/android/findbugs_plugin/findbugs_plugin.gyp:findbugs_plugin_test',
             '../ui/events/events.gyp:events_unittests',
             '../ui/ui_unittests.gyp:ui_unittests',
-            # Required by ui_unittests.
-            # TODO(wangxianzhu): It'd better let ui_unittests depend on it, but
-            # this would cause circular gyp dependency which needs refactoring the
-            # gyps to resolve.
-            '../chrome/chrome_resources.gyp:packed_resources',
           ],
           'conditions': [
             ['"<(gtest_target_type)"=="shared_library"', {

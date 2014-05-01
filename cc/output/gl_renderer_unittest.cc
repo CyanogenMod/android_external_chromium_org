@@ -14,6 +14,7 @@
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
+#include "cc/test/fake_renderer_client.h"
 #include "cc/test/mock_quad_culler.h"
 #include "cc/test/pixel_test.h"
 #include "cc/test/render_pass_test_common.h"
@@ -123,24 +124,6 @@ namespace {
 #if !defined(OS_ANDROID)
 TEST_F(GLRendererShaderPixelTest, AllShadersCompile) { TestShaders(); }
 #endif
-
-class FakeRendererClient : public RendererClient {
- public:
-  FakeRendererClient() : set_full_root_layer_damage_count_(0) {}
-
-  // RendererClient methods.
-  virtual void SetFullRootLayerDamage() OVERRIDE {
-    set_full_root_layer_damage_count_++;
-  }
-
-  // Methods added for test.
-  int set_full_root_layer_damage_count() const {
-    return set_full_root_layer_damage_count_;
-  }
-
- private:
-  int set_full_root_layer_damage_count_;
-};
 
 class FakeRendererGL : public GLRenderer {
  public:
@@ -340,7 +323,6 @@ TEST_F(GLRendererWithDefaultHarnessTest,
 
   renderer_->SetVisible(true);
   renderer_->DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        viewport_rect,
@@ -365,7 +347,6 @@ TEST_F(GLRendererWithDefaultHarnessTest,
 
   char pixels[4];
   renderer_->DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        viewport_rect,
@@ -390,7 +371,6 @@ TEST_F(GLRendererWithDefaultHarnessTest, ExternalStencil) {
   root_pass->has_transparent_background = false;
 
   renderer_->DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        viewport_rect,
@@ -620,7 +600,6 @@ TEST_F(GLRendererTest, OpaqueBackground) {
   EXPECT_CALL(*context, clear(_)).Times(1);
 #endif
   renderer.DrawFrame(&render_passes_in_draw_order_,
-                     NULL,
                      1.f,
                      viewport_rect,
                      viewport_rect,
@@ -659,7 +638,6 @@ TEST_F(GLRendererTest, TransparentBackground) {
   EXPECT_CALL(*context, discardFramebufferEXT(GL_FRAMEBUFFER, 1, _)).Times(1);
   EXPECT_CALL(*context, clear(_)).Times(1);
   renderer.DrawFrame(&render_passes_in_draw_order_,
-                     NULL,
                      1.f,
                      viewport_rect,
                      viewport_rect,
@@ -700,7 +678,6 @@ TEST_F(GLRendererTest, OffscreenOutputSurface) {
       .Times(1);
   EXPECT_CALL(*context, clear(_)).Times(AnyNumber());
   renderer.DrawFrame(&render_passes_in_draw_order_,
-                     NULL,
                      1.f,
                      viewport_rect,
                      viewport_rect,
@@ -784,7 +761,6 @@ TEST_F(GLRendererTest, VisibilityChangeIsLastCall) {
   // the stack.
   renderer.SetVisible(true);
   renderer.DrawFrame(&render_passes_in_draw_order_,
-                     NULL,
                      1.f,
                      viewport_rect,
                      viewport_rect,
@@ -879,7 +855,6 @@ TEST_F(GLRendererTest, ActiveTextureState) {
 
   gfx::Rect viewport_rect(100, 100);
   renderer.DrawFrame(&render_passes_in_draw_order_,
-                     NULL,
                      1.f,
                      viewport_rect,
                      viewport_rect,
@@ -957,7 +932,6 @@ TEST_F(GLRendererTest, ShouldClearRootRenderPass) {
 
   renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
   renderer.DrawFrame(&render_passes_in_draw_order_,
-                     NULL,
                      1.f,
                      viewport_rect,
                      viewport_rect,
@@ -1041,7 +1015,6 @@ TEST_F(GLRendererTest, ScissorTestWhenClearing) {
 
   renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
   renderer.DrawFrame(&render_passes_in_draw_order_,
-                     NULL,
                      1.f,
                      viewport_rect,
                      viewport_rect,
@@ -1120,7 +1093,6 @@ TEST_F(GLRendererTest, NoDiscardOnPartialUpdates) {
 
     renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
     renderer.DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        clip_rect,
@@ -1140,7 +1112,6 @@ TEST_F(GLRendererTest, NoDiscardOnPartialUpdates) {
 
     renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
     renderer.DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        clip_rect,
@@ -1162,7 +1133,6 @@ TEST_F(GLRendererTest, NoDiscardOnPartialUpdates) {
 
     renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
     renderer.DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        clip_rect,
@@ -1184,7 +1154,6 @@ TEST_F(GLRendererTest, NoDiscardOnPartialUpdates) {
 
     renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
     renderer.DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        clip_rect,
@@ -1205,7 +1174,6 @@ TEST_F(GLRendererTest, NoDiscardOnPartialUpdates) {
 
     renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
     renderer.DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        clip_rect,
@@ -1227,7 +1195,6 @@ TEST_F(GLRendererTest, NoDiscardOnPartialUpdates) {
 
     renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
     renderer.DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        clip_rect,
@@ -1308,7 +1275,6 @@ TEST_F(GLRendererTest, ScissorAndViewportWithinNonreshapableSurface) {
 
   renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
   renderer.DrawFrame(&render_passes_in_draw_order_,
-                     NULL,
                      1.f,
                      device_viewport_rect,
                      device_viewport_rect,
@@ -1374,7 +1340,6 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
   renderer_->DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        viewport_rect,
@@ -1398,7 +1363,6 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
   renderer_->DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        viewport_rect,
@@ -1423,7 +1387,6 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
   renderer_->DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        viewport_rect,
@@ -1447,7 +1410,6 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
   renderer_->DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        viewport_rect,
@@ -1472,7 +1434,6 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
   renderer_->DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        viewport_rect,
@@ -1496,7 +1457,6 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
   renderer_->DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        viewport_rect,
@@ -1521,7 +1481,6 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
   renderer_->DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        viewport_rect,
@@ -1545,7 +1504,6 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
   renderer_->DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        viewport_rect,
@@ -1590,7 +1548,6 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadSkipsAAForClippingTransform) {
 
   renderer_->DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
   renderer_->DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        viewport_rect,
@@ -1621,7 +1578,6 @@ TEST_F(GLRendererShaderTest, DrawSolidColorShader) {
 
   renderer_->DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
   renderer_->DrawFrame(&render_passes_in_draw_order_,
-                       NULL,
                        1.f,
                        viewport_rect,
                        viewport_rect,
@@ -1703,7 +1659,6 @@ class MockOutputSurfaceTest : public GLRendererTest {
     renderer_->DecideRenderPassAllocationsForFrame(
         render_passes_in_draw_order_);
     renderer_->DrawFrame(&render_passes_in_draw_order_,
-                         NULL,
                          device_scale_factor,
                          device_viewport_rect,
                          device_viewport_rect,

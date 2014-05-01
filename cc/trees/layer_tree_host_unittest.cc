@@ -26,7 +26,6 @@
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/resources/resource_update_queue.h"
-#include "cc/scheduler/frame_rate_controller.h"
 #include "cc/test/fake_content_layer.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_content_layer_impl.h"
@@ -2604,7 +2603,7 @@ SINGLE_THREAD_TEST_F(LayerTreeHostTestLCDNotification);
 class LayerTreeHostTestBeginFrameNotification : public LayerTreeHostTest {
  public:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    settings->begin_impl_frame_scheduling_enabled = true;
+    settings->begin_frame_scheduling_enabled = true;
   }
 
   virtual void BeginTest() OVERRIDE {
@@ -2633,7 +2632,7 @@ class LayerTreeHostTestBeginFrameNotificationShutdownWhileEnabled
     : public LayerTreeHostTest {
  public:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    settings->begin_impl_frame_scheduling_enabled = true;
+    settings->begin_frame_scheduling_enabled = true;
     settings->using_synchronous_renderer_compositor = true;
   }
 
@@ -2660,7 +2659,7 @@ class LayerTreeHostTestAbortedCommitDoesntStall : public LayerTreeHostTest {
       : commit_count_(0), commit_abort_count_(0), commit_complete_count_(0) {}
 
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    settings->begin_impl_frame_scheduling_enabled = true;
+    settings->begin_frame_scheduling_enabled = true;
   }
 
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
@@ -3085,7 +3084,7 @@ class LayerTreeHostTestDeferredInitialize : public LayerTreeHostTest {
     scoped_refptr<TestContextProvider> context_provider =
         TestContextProvider::Create();  // Not bound to thread.
     EXPECT_TRUE(
-        fake_output_surface->InitializeAndSetContext3d(context_provider, NULL));
+        fake_output_surface->InitializeAndSetContext3d(context_provider));
     did_initialize_gl_ = true;
   }
 
@@ -4608,75 +4607,6 @@ class LayerTreeHostTestMemoryLimits : public LayerTreeHostTest {
 
 SINGLE_AND_MULTI_THREAD_NOIMPL_TEST_F(LayerTreeHostTestMemoryLimits);
 
-class LayerSetsNeedsFilterContext : public Layer {
- public:
-  static scoped_refptr<LayerSetsNeedsFilterContext> Create() {
-    return make_scoped_refptr(new LayerSetsNeedsFilterContext());
-  }
-
-  virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker<Layer>* occlusion) OVERRIDE {
-    bool updated = Layer::Update(queue, occlusion);
-    if (needs_context_) {
-      layer_tree_host()->set_needs_filter_context();
-      return true;
-    }
-    return updated;
-  }
-
-  void set_needs_context(bool need) { needs_context_ = need; }
-
- private:
-  LayerSetsNeedsFilterContext() : needs_context_(false) {}
-  virtual ~LayerSetsNeedsFilterContext() {}
-
-  bool needs_context_;
-};
-
-class LayerTreeHostTestOffscreenContext : public LayerTreeHostTest {
- protected:
-  virtual void SetupTree() OVERRIDE {
-    scoped_refptr<LayerSetsNeedsFilterContext> root =
-        LayerSetsNeedsFilterContext::Create();
-    root->SetIsDrawable(true);
-    root->SetAnchorPoint(gfx::PointF());
-    root->SetBounds(gfx::Size(10, 10));
-    root->set_needs_context(with_context_);
-    layer_tree_host()->SetRootLayer(root);
-    LayerTreeHostTest::SetupTree();
-  }
-
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
-
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    bool expect_context = with_context_;
-    if (delegating_renderer())
-      expect_context = false;
-    EXPECT_EQ(expect_context, !!host_impl->offscreen_context_provider());
-    EndTest();
-  }
-
-  virtual void AfterTest() OVERRIDE {}
-
-  bool with_context_;
-};
-
-class LayerTreeHostTestOffscreenContext_NoContext
-    : public LayerTreeHostTestOffscreenContext {
- protected:
-  LayerTreeHostTestOffscreenContext_NoContext() { with_context_ = false; }
-};
-
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestOffscreenContext_NoContext);
-
-class LayerTreeHostTestOffscreenContext_WithContext
-    : public LayerTreeHostTestOffscreenContext {
- protected:
-  LayerTreeHostTestOffscreenContext_WithContext() { with_context_ = true; }
-};
-
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestOffscreenContext_WithContext);
-
 class LayerTreeHostTestNoQuadsForEmptyLayer : public LayerTreeHostTest {
  protected:
   virtual void SetupTree() OVERRIDE {
@@ -5051,7 +4981,7 @@ class LayerTreeHostTestHybridRasterizationSetting : public LayerTreeHostTest {
     child->SetBounds(gfx::Size(10, 10));
     parent->AddChild(child);
 
-    parent->SetHasGpuRasterizationHint(true);
+    layer_tree_host()->set_has_gpu_rasterization_trigger(true);
   }
 
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
@@ -5063,9 +4993,8 @@ class LayerTreeHostTestHybridRasterizationSetting : public LayerTreeHostTest {
     PictureLayerImpl* child =
         static_cast<PictureLayerImpl*>(parent->children()[0]);
 
-    // Only layers with a GPU rasterization hint should use GPU rasterization.
     EXPECT_TRUE(parent->ShouldUseGpuRasterization());
-    EXPECT_FALSE(child->ShouldUseGpuRasterization());
+    EXPECT_TRUE(child->ShouldUseGpuRasterization());
   }
 
   virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
@@ -5075,9 +5004,8 @@ class LayerTreeHostTestHybridRasterizationSetting : public LayerTreeHostTest {
     PictureLayerImpl* child =
         static_cast<PictureLayerImpl*>(parent->children()[0]);
 
-    // Only layers with a GPU rasterization hint should use GPU rasterization.
     EXPECT_TRUE(parent->ShouldUseGpuRasterization());
-    EXPECT_FALSE(child->ShouldUseGpuRasterization());
+    EXPECT_TRUE(child->ShouldUseGpuRasterization());
     EndTest();
   }
 
@@ -5106,7 +5034,7 @@ class LayerTreeHostTestGpuRasterizationSetting : public LayerTreeHostTest {
     child->SetBounds(gfx::Size(10, 10));
     parent->AddChild(child);
 
-    parent->SetHasGpuRasterizationHint(true);
+    layer_tree_host()->set_has_gpu_rasterization_trigger(false);
   }
 
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }

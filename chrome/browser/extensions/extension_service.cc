@@ -662,10 +662,9 @@ void ExtensionService::ReloadExtension(const std::string extension_id) {
   SetBeingReloaded(extension_id, false);
 }
 
-bool ExtensionService::UninstallExtension(
-    std::string extension_id,
-    bool external_uninstall,
-    base::string16* error) {
+bool ExtensionService::UninstallExtension(const std::string& extension_id,
+                                          bool external_uninstall,
+                                          base::string16* error) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   scoped_refptr<const Extension> extension(GetInstalledExtension(extension_id));
@@ -1021,7 +1020,6 @@ void ExtensionService::NotifyExtensionLoaded(const Extension* extension) {
     ThemeSource* theme_source = new ThemeSource(profile_);
     content::URLDataSource::Add(profile_, theme_source);
   }
-#endif
 
   // Same for chrome://thumb/ resources.
   if (extensions::PermissionsData::HasHostPermission(
@@ -1029,6 +1027,7 @@ void ExtensionService::NotifyExtensionLoaded(const Extension* extension) {
     ThumbnailSource* thumbnail_source = new ThumbnailSource(profile_, false);
     content::URLDataSource::Add(profile_, thumbnail_source);
   }
+#endif
 }
 
 void ExtensionService::NotifyExtensionUnloaded(
@@ -2066,35 +2065,18 @@ bool ExtensionService::OnExternalExtensionFileFound(
 
 void ExtensionService::ReportExtensionLoadError(
     const base::FilePath& extension_path,
-    const std::string &error,
-    bool be_noisy) {
+    const std::string &error) {
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_LOAD_ERROR,
       content::Source<Profile>(profile_),
       content::Details<const std::string>(&error));
 
   std::string path_str = base::UTF16ToUTF8(extension_path.LossyDisplayName());
-  bool retry = false;
-  std::string retry_prompt;
-  if (be_noisy)
-    retry_prompt = "\n\nWould you like to retry?";
-
   base::string16 message = base::UTF8ToUTF16(
-      base::StringPrintf("Could not load extension from '%s'. %s%s",
+      base::StringPrintf("Could not load extension from '%s'. %s",
                          path_str.c_str(),
-                         error.c_str(),
-                         retry_prompt.c_str()));
-  ExtensionErrorReporter::GetInstance()->ReportError(message, be_noisy, &retry);
-  NotifyLoadRetry(retry, extension_path);
-}
-
-void ExtensionService::NotifyLoadRetry(bool retry,
-                                       const base::FilePath& extension_path) {
-  std::pair<bool, const base::FilePath&> details(retry, extension_path);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_EXTENSION_LOAD_RETRY,
-      content::Source<Profile>(profile_),
-      content::Details<std::pair<bool, const base::FilePath&> >(&details));
+                         error.c_str()));
+  ExtensionErrorReporter::GetInstance()->ReportError(message, false);
 }
 
 void ExtensionService::DidCreateRenderViewForBackgroundPage(

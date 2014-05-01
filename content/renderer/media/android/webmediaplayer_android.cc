@@ -71,10 +71,10 @@ const char* kMediaEme = "Media.EME.";
 void OnReleaseTexture(
     const scoped_refptr<content::StreamTextureFactory>& factories,
     uint32 texture_id,
-    scoped_ptr<gpu::MailboxHolder> mailbox_holder) {
+    const std::vector<uint32>& release_sync_points) {
   GLES2Interface* gl = factories->ContextGL();
-  if (mailbox_holder->sync_point)
-    gl->WaitSyncPointCHROMIUM(mailbox_holder->sync_point);
+  for (size_t i = 0; i < release_sync_points.size(); i++)
+    gl->WaitSyncPointCHROMIUM(release_sync_points[i]);
   gl->DeleteTextures(1, &texture_id);
 }
 }  // namespace
@@ -219,6 +219,11 @@ void WebMediaPlayerAndroid::load(LoadType load_type,
             cors_mode,
             base::Bind(&WebMediaPlayerAndroid::DidLoadMediaInfo,
                        weak_factory_.GetWeakPtr())));
+    // TODO(qinmin): The url might be redirected when android media player
+    // requests the stream. As a result, we cannot guarantee there is only
+    // a single origin. Remove the following line when b/12573548 is fixed.
+    // Check http://crbug.com/334204.
+    info_loader_->set_single_origin(false);
     info_loader_->Start(frame_);
   }
 
@@ -463,7 +468,7 @@ bool WebMediaPlayerAndroid::copyVideoTextureToPlatformTexture(
   if (!video_frame ||
       video_frame->format() != media::VideoFrame::NATIVE_TEXTURE)
     return false;
-  gpu::MailboxHolder* mailbox_holder = video_frame->mailbox_holder();
+  const gpu::MailboxHolder* mailbox_holder = video_frame->mailbox_holder();
   DCHECK((!is_remote_ &&
           mailbox_holder->texture_target == GL_TEXTURE_EXTERNAL_OES) ||
          (is_remote_ && mailbox_holder->texture_target == GL_TEXTURE_2D));
@@ -511,6 +516,7 @@ bool WebMediaPlayerAndroid::copyVideoTextureToPlatformTexture(
     web_graphics_context->bindTexture(GL_TEXTURE_2D, texture);
   web_graphics_context->deleteTexture(source_texture);
   web_graphics_context->flush();
+  video_frame->AppendReleaseSyncPoint(web_graphics_context->insertSyncPoint());
   return true;
 }
 
@@ -676,7 +682,8 @@ void WebMediaPlayerAndroid::OnVideoSizeChanged(int width, int height) {
   // Use H/W surface for encrypted video.
   // TODO(qinmin): Change this so that only EME needs the H/W surface
   if (force_use_overlay_embedded_video_ ||
-      (media_source_delegate_ && media_source_delegate_->IsVideoEncrypted())) {
+      (media_source_delegate_ && media_source_delegate_->IsVideoEncrypted() &&
+       manager_->ShouldUseVideoOverlayForEmbeddedEncryptedVideo())) {
     needs_external_surface_ = true;
     if (!paused() && !manager_->IsInFullscreen(frame_))
       manager_->RequestExternalSurface(player_id_, last_computed_rect_);

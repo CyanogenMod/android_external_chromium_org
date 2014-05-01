@@ -56,6 +56,7 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_utils.h"
 #include "crypto/rsa_private_key.h"
+#include "google_apis/gaia/gaia_oauth_client.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/url_request/test_url_fetcher_factory.h"
@@ -229,13 +230,15 @@ class UserImageManagerTest : public LoginManagerTest,
 
     static_cast<OAuth2TokenService::Consumer*>(profile_downloader)->
         OnGetTokenSuccess(NULL,
-                          std::string(),
+                          "token",
                           base::Time::Now() + base::TimeDelta::FromDays(1));
 
-    net::TestURLFetcher* fetcher = url_fetcher_factory->GetFetcherByID(0);
+    net::TestURLFetcher* fetcher =
+        url_fetcher_factory->GetFetcherByID(
+            gaia::GaiaOAuthClient::kUrlFetcherId);
     ASSERT_TRUE(fetcher);
     fetcher->SetResponseString(
-        "{ \"picture\": \"http://localhost/avatar.jpg\" }");
+        "{ \"image\": {\"url\": \"http://localhost/avatar.jpg\"} }");
     fetcher->set_status(net::URLRequestStatus(net::URLRequestStatus::SUCCESS,
                                               net::OK));
     fetcher->set_response_code(200);
@@ -362,8 +365,8 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerTest, PRE_NonJPEGImageFromFile) {
   EXPECT_FALSE(user->image_is_safe_format());
   // Check image dimensions.
   const gfx::ImageSkia& saved_image = GetDefaultImage(kFirstDefaultImageIndex);
-  EXPECT_EQ(saved_image.width(), user->image().width());
-  EXPECT_EQ(saved_image.height(), user->image().height());
+  EXPECT_EQ(saved_image.width(), user->GetImage().width());
+  EXPECT_EQ(saved_image.height(), user->GetImage().height());
 }
 
 IN_PROC_BROWSER_TEST_F(UserImageManagerTest, NonJPEGImageFromFile) {
@@ -380,8 +383,8 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerTest, NonJPEGImageFromFile) {
   EXPECT_TRUE(user->image_is_safe_format());
   // Check image dimensions. Images can't be compared since JPEG is lossy.
   const gfx::ImageSkia& saved_image = GetDefaultImage(kFirstDefaultImageIndex);
-  EXPECT_EQ(saved_image.width(), user->image().width());
-  EXPECT_EQ(saved_image.height(), user->image().height());
+  EXPECT_EQ(saved_image.width(), user->GetImage().width());
+  EXPECT_EQ(saved_image.height(), user->GetImage().height());
 }
 
 IN_PROC_BROWSER_TEST_F(UserImageManagerTest, PRE_SaveUserDefaultImageIndex) {
@@ -403,7 +406,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerTest, SaveUserDefaultImageIndex) {
 
   EXPECT_TRUE(user->HasDefaultImage());
   EXPECT_EQ(kFirstDefaultImageIndex, user->image_index());
-  EXPECT_TRUE(test::AreImagesEqual(default_image, user->image()));
+  EXPECT_TRUE(test::AreImagesEqual(default_image, user->GetImage()));
   ExpectNewUserImageInfo(kTestUser1, kFirstDefaultImageIndex, base::FilePath());
 }
 
@@ -432,7 +435,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerTest, SaveUserImage) {
 
   EXPECT_FALSE(user->HasDefaultImage());
   EXPECT_EQ(User::kExternalImageIndex, user->image_index());
-  EXPECT_TRUE(test::AreImagesEqual(custom_image, user->image()));
+  EXPECT_TRUE(test::AreImagesEqual(custom_image, user->GetImage()));
   ExpectNewUserImageInfo(kTestUser1,
                          User::kExternalImageIndex,
                          GetUserImagePath(kTestUser1, "jpg"));
@@ -470,7 +473,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerTest, SaveUserImageFromFile) {
 
   EXPECT_FALSE(user->HasDefaultImage());
   EXPECT_EQ(User::kExternalImageIndex, user->image_index());
-  EXPECT_TRUE(test::AreImagesEqual(*custom_image, user->image()));
+  EXPECT_TRUE(test::AreImagesEqual(*custom_image, user->GetImage()));
   ExpectNewUserImageInfo(kTestUser1,
                          User::kExternalImageIndex,
                          GetUserImagePath(kTestUser1, "jpg"));
@@ -514,7 +517,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerTest, SaveUserImageFromProfileImage) {
 
   EXPECT_FALSE(user->HasDefaultImage());
   EXPECT_EQ(User::kProfileImageIndex, user->image_index());
-  EXPECT_TRUE(test::AreImagesEqual(profile_image, user->image()));
+  EXPECT_TRUE(test::AreImagesEqual(profile_image, user->GetImage()));
   ExpectNewUserImageInfo(kTestUser1,
                          User::kProfileImageIndex,
                          GetUserImagePath(kTestUser1, "jpg"));
@@ -564,7 +567,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerTest,
 
   EXPECT_TRUE(user->HasDefaultImage());
   EXPECT_EQ(kFirstDefaultImageIndex, user->image_index());
-  EXPECT_TRUE(test::AreImagesEqual(default_image, user->image()));
+  EXPECT_TRUE(test::AreImagesEqual(default_image, user->GetImage()));
   ExpectNewUserImageInfo(kTestUser1, kFirstDefaultImageIndex, base::FilePath());
 }
 
@@ -679,7 +682,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerPolicyTest, SetAndClear) {
 
   EXPECT_FALSE(user->HasDefaultImage());
   EXPECT_EQ(User::kExternalImageIndex, user->image_index());
-  EXPECT_TRUE(test::AreImagesEqual(*policy_image_, user->image()));
+  EXPECT_TRUE(test::AreImagesEqual(*policy_image_, user->GetImage()));
   ExpectNewUserImageInfo(kTestUser1,
                          User::kExternalImageIndex,
                          GetUserImagePath(kTestUser1, "jpg"));
@@ -707,7 +710,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerPolicyTest, SetAndClear) {
 
   EXPECT_FALSE(user->HasDefaultImage());
   EXPECT_EQ(User::kExternalImageIndex, user->image_index());
-  EXPECT_TRUE(test::AreImagesEqual(*policy_image_, user->image()));
+  EXPECT_TRUE(test::AreImagesEqual(*policy_image_, user->GetImage()));
   ExpectNewUserImageInfo(kTestUser1,
                          User::kExternalImageIndex,
                          GetUserImagePath(kTestUser1, "jpg"));
@@ -730,7 +733,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerPolicyTest, SetAndClear) {
 
   EXPECT_TRUE(user->HasDefaultImage());
   EXPECT_EQ(kFirstDefaultImageIndex, user->image_index());
-  EXPECT_TRUE(test::AreImagesEqual(default_image, user->image()));
+  EXPECT_TRUE(test::AreImagesEqual(default_image, user->GetImage()));
   ExpectNewUserImageInfo(kTestUser1, kFirstDefaultImageIndex, base::FilePath());
 }
 
@@ -763,7 +766,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerPolicyTest, PolicyOverridesUser) {
 
   EXPECT_TRUE(user->HasDefaultImage());
   EXPECT_EQ(kFirstDefaultImageIndex, user->image_index());
-  EXPECT_TRUE(test::AreImagesEqual(default_image, user->image()));
+  EXPECT_TRUE(test::AreImagesEqual(default_image, user->GetImage()));
   ExpectNewUserImageInfo(kTestUser1, kFirstDefaultImageIndex, base::FilePath());
 
   // Set policy. Verify that the policy-provided user image is downloaded, set
@@ -779,7 +782,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerPolicyTest, PolicyOverridesUser) {
 
   EXPECT_FALSE(user->HasDefaultImage());
   EXPECT_EQ(User::kExternalImageIndex, user->image_index());
-  EXPECT_TRUE(test::AreImagesEqual(*policy_image_, user->image()));
+  EXPECT_TRUE(test::AreImagesEqual(*policy_image_, user->GetImage()));
   ExpectNewUserImageInfo(kTestUser1,
                          User::kExternalImageIndex,
                          GetUserImagePath(kTestUser1, "jpg"));
@@ -825,7 +828,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerPolicyTest, UserDoesNotOverridePolicy) {
 
   EXPECT_FALSE(user->HasDefaultImage());
   EXPECT_EQ(User::kExternalImageIndex, user->image_index());
-  EXPECT_TRUE(test::AreImagesEqual(*policy_image_, user->image()));
+  EXPECT_TRUE(test::AreImagesEqual(*policy_image_, user->GetImage()));
   ExpectNewUserImageInfo(kTestUser1,
                          User::kExternalImageIndex,
                          GetUserImagePath(kTestUser1, "jpg"));
@@ -846,7 +849,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerPolicyTest, UserDoesNotOverridePolicy) {
 
   EXPECT_FALSE(user->HasDefaultImage());
   EXPECT_EQ(User::kExternalImageIndex, user->image_index());
-  EXPECT_TRUE(test::AreImagesEqual(*policy_image_, user->image()));
+  EXPECT_TRUE(test::AreImagesEqual(*policy_image_, user->GetImage()));
   ExpectNewUserImageInfo(kTestUser1,
                          User::kExternalImageIndex,
                          GetUserImagePath(kTestUser1, "jpg"));

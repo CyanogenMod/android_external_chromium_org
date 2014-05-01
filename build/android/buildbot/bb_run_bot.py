@@ -119,6 +119,7 @@ def GetBotStepMap():
   std_build_steps = ['compile', 'zip_build']
   std_test_steps = ['extract_build']
   std_tests = ['ui', 'unit']
+  fyi_tests = std_tests + ['mojo']
   telemetry_tests = ['telemetry_perf_unittests']
   flakiness_server = (
       '--flakiness-server=%s' % constants.UPSTREAM_FLAKINESS_SERVER)
@@ -139,8 +140,9 @@ def GetBotStepMap():
       B('main-clang-builder',
         H(compile_step, extra_gyp='clang=1 component=shared_library')),
       B('main-clobber', H(compile_step)),
-      B('main-tests', H(std_test_steps), T(std_tests + telemetry_tests,
-                                           [flakiness_server])),
+      B('main-tests-rel', H(std_test_steps), T(std_tests + telemetry_tests,
+                                               [flakiness_server])),
+      B('main-tests', H(std_test_steps), T(std_tests, [flakiness_server])),
 
       # Other waterfalls
       B('asan-builder-tests', H(compile_step,
@@ -158,7 +160,7 @@ def GetBotStepMap():
         H(compile_step + std_host_tests, target_arch='x86')),
       B('fyi-builder-rel', H(std_build_steps,  experimental)),
       B('fyi-tests', H(std_test_steps),
-        T(std_tests, ['--experimental', flakiness_server,
+        T(fyi_tests, ['--experimental', flakiness_server,
                       '--coverage-bucket', CHROMIUM_COVERAGE_BUCKET])),
       B('fyi-component-builder-tests-dbg',
         H(compile_step, extra_gyp='component=shared_library'),
@@ -200,6 +202,7 @@ def GetBotStepMap():
       ('try-clang-builder', 'main-clang-builder'),
       ('try-fyi-builder-dbg', 'fyi-builder-dbg'),
       ('try-x86-builder-dbg', 'x86-builder-dbg'),
+      ('try-tests-rel', 'main-tests-rel'),
       ('try-tests', 'main-tests'),
       ('try-fyi-tests', 'fyi-tests'),
       ('webkit-latest-tests', 'main-tests'),

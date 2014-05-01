@@ -92,8 +92,8 @@ size_t RawChannel::WriteBuffer::GetTotalBytesToWrite() const {
 }
 
 RawChannel::RawChannel()
-    : delegate_(NULL),
-      message_loop_for_io_(NULL),
+    : message_loop_for_io_(NULL),
+      delegate_(NULL),
       read_stopped_(false),
       write_stopped_(false),
       weak_ptr_factory_(this) {
@@ -126,8 +126,13 @@ bool RawChannel::Init(Delegate* delegate) {
   DCHECK(!write_buffer_);
   write_buffer_.reset(new WriteBuffer);
 
-  if (!OnInit())
+  if (!OnInit()) {
+    delegate_ = NULL;
+    message_loop_for_io_ = NULL;
+    read_buffer_.reset();
+    write_buffer_.reset();
     return false;
+  }
 
   return ScheduleRead() == IO_PENDING;
 }
@@ -140,10 +145,11 @@ void RawChannel::Shutdown() {
   LOG_IF(WARNING, !write_buffer_->message_queue_.empty())
       << "Shutting down RawChannel with write buffer nonempty";
 
-  weak_ptr_factory_.InvalidateWeakPtrs();
-
+  // Reset the delegate so that it won't receive further calls.
+  delegate_ = NULL;
   read_stopped_ = true;
   write_stopped_ = true;
+  weak_ptr_factory_.InvalidateWeakPtrs();
 
   OnShutdownNoLock(read_buffer_.Pass(), write_buffer_.Pass());
 }
@@ -254,6 +260,7 @@ void RawChannel::OnReadCompleted(bool result, size_t bytes_read) {
       DCHECK_EQ(message_view.total_size(), message_size);
 
       // Dispatch the message.
+      DCHECK(delegate_);
       delegate_->OnReadMessage(message_view);
       if (read_stopped_) {
         // |Shutdown()| was called in |OnReadMessage()|.
@@ -328,7 +335,8 @@ void RawChannel::OnWriteCompleted(bool result, size_t bytes_written) {
 void RawChannel::CallOnFatalError(Delegate::FatalError fatal_error) {
   DCHECK_EQ(base::MessageLoop::current(), message_loop_for_io_);
   // TODO(vtl): Add a "write_lock_.AssertNotAcquired()"?
-  delegate_->OnFatalError(fatal_error);
+  if (delegate_)
+    delegate_->OnFatalError(fatal_error);
 }
 
 bool RawChannel::OnWriteCompletedNoLock(bool result, size_t bytes_written) {

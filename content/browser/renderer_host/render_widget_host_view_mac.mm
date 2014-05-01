@@ -636,6 +636,8 @@ bool RenderWidgetHostViewMac::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(RenderWidgetHostViewMac, message)
     IPC_MESSAGE_HANDLER(ViewHostMsg_PluginFocusChanged, OnPluginFocusChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_StartPluginIme, OnStartPluginIme)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeScrollbarsForMainFrame,
+                        OnDidChangeScrollbarsForMainFrame)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -903,7 +905,6 @@ gfx::NativeViewAccessible RenderWidgetHostViewMac::GetNativeViewAccessible() {
 }
 
 void RenderWidgetHostViewMac::MovePluginWindows(
-    const gfx::Vector2d& scroll_offset,
     const std::vector<WebPluginGeometry>& moves) {
   // Must be overridden, but unused on this platform. Core Animation
   // plugins are drawn by the GPU process (through the compositor),
@@ -1008,22 +1009,6 @@ void RenderWidgetHostViewMac::ImeCompositionRangeChanged(
   [cocoa_view_ setMarkedRange:range.ToNSRange()];
   composition_range_ = range;
   composition_bounds_ = character_bounds;
-}
-
-void RenderWidgetHostViewMac::DidUpdateBackingStore(
-    const gfx::Rect& scroll_rect,
-    const gfx::Vector2d& scroll_delta,
-    const std::vector<gfx::Rect>& copy_rects,
-    const std::vector<ui::LatencyInfo>& latency_info) {
-  // This can be called while already inside of a display function. Process the
-  // new frame in a callback to ensure a clean stack.
-  // TODO(ccameron): This should never be called. Remove the remaining callers
-  // and remove all places where the backing store is drawn.
-  AddPendingLatencyInfo(latency_info);
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&RenderWidgetHostViewMac::GotSoftwareFrame,
-                 weak_factory_.GetWeakPtr()));
 }
 
 void RenderWidgetHostViewMac::RenderProcessGone(base::TerminationStatus status,
@@ -1867,11 +1852,6 @@ gfx::GLSurfaceHandle RenderWidgetHostViewMac::GetCompositingSurface() {
   return gfx::GLSurfaceHandle(gfx::kNullPluginWindow, gfx::NATIVE_TRANSPORT);
 }
 
-void RenderWidgetHostViewMac::SetHasHorizontalScrollbar(
-    bool has_horizontal_scrollbar) {
-  [cocoa_view_ setHasHorizontalScrollbar:has_horizontal_scrollbar];
-}
-
 void RenderWidgetHostViewMac::SetScrollOffsetPinning(
     bool is_pinned_to_left, bool is_pinned_to_right) {
   [cocoa_view_ scrollOffsetPinnedToLeft:is_pinned_to_left
@@ -2066,9 +2046,64 @@ void RenderWidgetHostViewMac::CreateBrowserAccessibilityManagerIfNeeded() {
         new BrowserAccessibilityManagerMac(
             cocoa_view_,
             BrowserAccessibilityManagerMac::GetEmptyDocument(),
-            NULL));
+            render_widget_host_));
   }
 }
+
+gfx::Point RenderWidgetHostViewMac::AccessibilityOriginInScreen(
+    const gfx::Rect& bounds) {
+  NSPoint origin = NSMakePoint(bounds.x(), bounds.y());
+  NSSize size = NSMakeSize(bounds.width(), bounds.height());
+  origin.y = NSHeight([cocoa_view_ bounds]) - origin.y;
+  NSPoint originInWindow = [cocoa_view_ convertPoint:origin toView:nil];
+  NSPoint originInScreen =
+      [[cocoa_view_ window] convertBaseToScreen:originInWindow];
+  originInScreen.y = originInScreen.y - size.height;
+  return gfx::Point(originInScreen.x, originInScreen.y);
+}
+
+void RenderWidgetHostViewMac::OnAccessibilitySetFocus(int accObjId) {
+  // Immediately set the focused item even though we have not officially set
+  // focus on it as VoiceOver expects to get the focused item after this
+  // method returns.
+  BrowserAccessibilityManager* manager = GetBrowserAccessibilityManager();
+  if (manager)
+    manager->SetFocus(manager->GetFromID(accObjId), false);
+}
+
+void RenderWidgetHostViewMac::AccessibilityShowMenu(int accObjId) {
+  BrowserAccessibilityManager* manager = GetBrowserAccessibilityManager();
+  if (!manager)
+    return;
+  BrowserAccessibilityCocoa* obj =
+      manager->GetFromID(accObjId)->ToBrowserAccessibilityCocoa();
+
+  // Performs a right click copying WebKit's
+  // accessibilityPerformShowMenuAction.
+  NSPoint objOrigin = [obj origin];
+  NSSize size = [[obj size] sizeValue];
+  gfx::Point origin = AccessibilityOriginInScreen(
+      gfx::Rect(objOrigin.x, objOrigin.y, size.width, size.height));
+  NSPoint location = NSMakePoint(origin.x(), origin.y());
+  location = [[cocoa_view_ window] convertScreenToBase:location];
+  location.x += size.width/2;
+  location.y += size.height/2;
+
+  NSEvent* fakeRightClick = [NSEvent
+                          mouseEventWithType:NSRightMouseDown
+                                    location:location
+                               modifierFlags:0
+                                   timestamp:0
+                                windowNumber:[[cocoa_view_ window] windowNumber]
+                                     context:[NSGraphicsContext currentContext]
+                                 eventNumber:0
+                                  clickCount:1
+                                    pressure:0];
+
+  [cocoa_view_ mouseEvent:fakeRightClick];
+}
+
+
 
 void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
   if (active) {
@@ -2089,6 +2124,11 @@ void RenderWidgetHostViewMac::OnPluginFocusChanged(bool focused,
 
 void RenderWidgetHostViewMac::OnStartPluginIme() {
   [cocoa_view_ setPluginImeActive:YES];
+}
+
+void RenderWidgetHostViewMac::OnDidChangeScrollbarsForMainFrame(
+    bool has_horizontal_scrollbar, bool has_vertical_scrollbar) {
+  [cocoa_view_ setHasHorizontalScrollbar:has_horizontal_scrollbar];
 }
 
 gfx::Rect RenderWidgetHostViewMac::GetScaledOpenGLPixelRect(
@@ -2179,6 +2219,10 @@ void RenderWidgetHostViewMac::AddPendingSwapAck(
   // loss. Drop the old acks.
   pending_swap_ack_.reset(new PendingSwapAck(
       route_id, gpu_host_id, renderer_id));
+
+  // A trace value of 2 indicates that there is a pending swap ack. See
+  // CompositingIOSurfaceLayer's canDrawInCGLContext for other value meanings.
+  TRACE_COUNTER_ID1("browser", "PendingSwapAck", this, 2);
 }
 
 void RenderWidgetHostViewMac::SendPendingSwapAck() {
@@ -2192,6 +2236,7 @@ void RenderWidgetHostViewMac::SendPendingSwapAck() {
                                                  pending_swap_ack_->gpu_host_id,
                                                  ack_params);
   pending_swap_ack_.reset();
+  TRACE_COUNTER_ID1("browser", "PendingSwapAck", this, 0);
 }
 
 void RenderWidgetHostViewMac::PauseForPendingResizeOrRepaintsAndDraw() {
@@ -2245,7 +2290,9 @@ void RenderWidgetHostViewMac::LayoutLayers() {
       EnsureCompositedIOSurfaceLayer();
     }
   }
-  if (compositing_iosurface_ && compositing_iosurface_layer_) {
+  if (compositing_iosurface_ &&
+      compositing_iosurface_->HasIOSurface() &&
+      compositing_iosurface_layer_) {
     CGRect layer_bounds = CGRectMake(
       0,
       0,
@@ -3453,72 +3500,6 @@ SkBitmap::Config RenderWidgetHostViewMac::PreferredReadbackFormat() {
     }
   }
   return [super accessibilityFocusedUIElement];
-}
-
-- (void)doDefaultAction:(int32)accessibilityObjectId {
-  RenderWidgetHostImpl* rwh = renderWidgetHostView_->render_widget_host_;
-  rwh->Send(new AccessibilityMsg_DoDefaultAction(
-      rwh->GetRoutingID(), accessibilityObjectId));
-}
-
-// VoiceOver uses this method to move the caret to the beginning of the next
-// word in a text field.
-- (void)accessibilitySetTextSelection:(int32)accId
-                          startOffset:(int32)startOffset
-                            endOffset:(int32)endOffset {
-  RenderWidgetHostImpl* rwh = renderWidgetHostView_->render_widget_host_;
-  rwh->AccessibilitySetTextSelection(accId, startOffset, endOffset);
-}
-
-// Convert a web accessibility's location in web coordinates into a cocoa
-// screen coordinate.
-- (NSPoint)accessibilityPointInScreen:(NSPoint)origin
-                                 size:(NSSize)size {
-  origin.y = NSHeight([self bounds]) - origin.y;
-  NSPoint originInWindow = [self convertPoint:origin toView:nil];
-  NSPoint originInScreen = [[self window] convertBaseToScreen:originInWindow];
-  originInScreen.y = originInScreen.y - size.height;
-  return originInScreen;
-}
-
-- (void)setAccessibilityFocus:(BOOL)focus
-              accessibilityId:(int32)accessibilityObjectId {
-  if (focus) {
-    RenderWidgetHostImpl* rwh = renderWidgetHostView_->render_widget_host_;
-    rwh->Send(new AccessibilityMsg_SetFocus(
-        rwh->GetRoutingID(), accessibilityObjectId));
-
-    // Immediately set the focused item even though we have not officially set
-    // focus on it as VoiceOver expects to get the focused item after this
-    // method returns.
-    BrowserAccessibilityManager* manager =
-        renderWidgetHostView_->GetBrowserAccessibilityManager();
-    manager->SetFocus(manager->GetFromID(accessibilityObjectId), false);
-  }
-}
-
-- (void)performShowMenuAction:(BrowserAccessibilityCocoa*)accessibility {
-  // Performs a right click copying WebKit's
-  // accessibilityPerformShowMenuAction.
-  NSPoint origin = [accessibility origin];
-  NSSize size = [[accessibility size] sizeValue];
-  NSPoint location = [self accessibilityPointInScreen:origin size:size];
-  location = [[self window] convertScreenToBase:location];
-  location.x += size.width/2;
-  location.y += size.height/2;
-
-  NSEvent* fakeRightClick = [NSEvent
-                           mouseEventWithType:NSRightMouseDown
-                                     location:location
-                                modifierFlags:0
-                                    timestamp:0
-                                 windowNumber:[[self window] windowNumber]
-                                      context:[NSGraphicsContext currentContext]
-                                  eventNumber:0
-                                   clickCount:1
-                                     pressure:0];
-
-  [self mouseEvent:fakeRightClick];
 }
 
 // Below is the nasty tooltip stuff -- copied from WebKit's WebHTMLView.mm

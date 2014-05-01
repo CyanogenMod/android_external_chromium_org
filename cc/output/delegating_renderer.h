@@ -29,7 +29,6 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
   virtual bool CanReadPixels() const OVERRIDE;
 
   virtual void DrawFrame(RenderPassList* render_passes_in_draw_order,
-                         ContextProvider* offscreen_context_provider,
                          float device_scale_factor,
                          const gfx::Rect& device_viewport_rect,
                          const gfx::Rect& device_clip_rect,
@@ -45,8 +44,6 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
 
   virtual bool IsContextLost() OVERRIDE;
 
-  virtual void SetVisible(bool visible) OVERRIDE;
-
   virtual void SendManagedMemoryStats(size_t bytes_visible,
                                       size_t bytes_visible_and_nearby,
                                       size_t bytes_allocated) OVERRIDE;
@@ -57,11 +54,12 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
                      OutputSurface* output_surface,
                      ResourceProvider* resource_provider);
 
+  virtual void DidChangeVisibility() OVERRIDE;
+
   OutputSurface* output_surface_;
   ResourceProvider* resource_provider_;
   RendererCapabilitiesImpl capabilities_;
   scoped_ptr<DelegatedFrameData> delegated_frame_data_;
-  bool visible_;
 
   DISALLOW_COPY_AND_ASSIGN(DelegatingRenderer);
 };

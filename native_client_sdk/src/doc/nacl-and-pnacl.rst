@@ -15,14 +15,13 @@ This document describes the differences between **Native Client** and
 Native Client (NaCl)
 ====================
 
-Native Client enables the execution of native code
-securely inside web applications through the use of advanced
-`Software Fault Isolation (SFI) techniques <https://developers.google.com/native-client/community/talks#research>`_.
-Since its launch in 2011, Native Client has provided
-developers with the ability to harness a client machine's computational power
-to a much fuller extent than traditional web technologies, by running compiled C
-and C++ code at near-native speeds and taking advantage of multiple cores with
-shared memory.
+Native Client enables the execution of native code securely inside web
+applications through the use of advanced `Software Fault Isolation (SFI)
+techniques </native-client/community/talks#research>`_.  Since its launch in
+2011, Native Client has provided developers with the ability to harness a
+client machine's computational power to a much fuller extent than traditional
+web technologies, by running compiled C and C++ code at near-native speeds and
+taking advantage of multiple cores with shared memory.
 
 While Native Client provides operating system independence, it requires
 developers to generate architecture-specific executable modules
@@ -108,15 +107,13 @@ The limitations below apply to the current release of PNaCl. If any of
 these limitations are critical for your application, you should use
 non-portable NaCl:
 
-* By its nature, PNaCl does not support architecture-specific instructions in
-  an application (i.e., inline assembly). Future editions of PNaCl will
-  attempt to mitigate this problem by introducing portable intrinsics for vector
-  operations.
+* By its nature, PNaCl does not support architecture-specific
+  instructions in an application (i.e., inline assembly), but tries to
+  offer high-performance portable equivalents.
 * Currently PNaCl only supports static linking with the ``newlib``
   C standard library (the Native Client SDK provides a PNaCl port of
   ``newlib``). Dynamic linking and ``glibc`` are not yet supported.
   Work is under way to enable dynamic linking in future versions of PNaCl.
-* In the initial release, PNaCl does not support vector types and SIMD.
 * In the initial release, PNaCl does not support some GNU extensions
   like taking the address of a label for computed ``goto``, or nested
   functions.

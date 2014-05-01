@@ -284,7 +284,7 @@ int QuicTestClient::response_header_size() const {
   return response_header_size_;
 }
 
-int QuicTestClient::response_body_size() const {
+int64 QuicTestClient::response_body_size() const {
   return response_body_size_;
 }
 
@@ -345,7 +345,7 @@ QuicErrorCode QuicTestClient::connection_error() {
   return client()->session()->error();
 }
 
-QuicClient* QuicTestClient::client() { return client_.get(); }
+MockableQuicClient* QuicTestClient::client() { return client_.get(); }
 
 const string& QuicTestClient::cert_common_name() const {
   return reinterpret_cast<RecordingProofVerifier*>(proof_verifier_)
@@ -468,7 +468,7 @@ const BalsaHeaders* QuicTestClient::response_headers() const {
   }
 }
 
-int QuicTestClient::response_size() const {
+int64 QuicTestClient::response_size() const {
   return bytes_read_;
 }
 

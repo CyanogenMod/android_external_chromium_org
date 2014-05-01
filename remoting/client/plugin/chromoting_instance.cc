@@ -28,6 +28,8 @@
 #include "ppapi/cpp/image_data.h"
 #include "ppapi/cpp/input_event.h"
 #include "ppapi/cpp/rect.h"
+#include "ppapi/cpp/var_array_buffer.h"
+#include "ppapi/cpp/var_dictionary.h"
 #include "remoting/base/constants.h"
 #include "remoting/base/util.h"
 #include "remoting/client/chromoting_client.h"
@@ -676,7 +678,7 @@ void ChromotingInstance::ConnectWithConfig(const ClientConfig& config,
   scoped_ptr<protocol::TransportFactory> transport_factory(
       new protocol::LibjingleTransportFactory(
           signal_strategy_.get(), port_allocator.Pass(),
-          NetworkSettings(NetworkSettings::NAT_TRAVERSAL_ENABLED)));
+          NetworkSettings(NetworkSettings::NAT_TRAVERSAL_FULL)));
 
   // Kick off the connection.
   client_->Start(signal_strategy_.get(), transport_factory.Pass());

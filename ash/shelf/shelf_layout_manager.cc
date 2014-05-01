@@ -14,7 +14,7 @@
 #include "ash/ash_switches.h"
 #include "ash/root_window_controller.h"
 #include "ash/screen_util.h"
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_bezel_event_filter.h"
 #include "ash/shelf/shelf_constants.h"
@@ -46,6 +46,7 @@
 #include "ui/events/event.h"
 #include "ui/events/event_handler.h"
 #include "ui/gfx/screen.h"
+#include "ui/keyboard/keyboard_util.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/public/activation_client.h"
 
@@ -314,7 +315,7 @@ void ShelfLayoutManager::UpdateVisibilityState() {
     return;
 
   if (Shell::GetInstance()->session_state_delegate()->IsScreenLocked() ||
-      force_shelf_always_visibile_) {
+      IsShelfForcedToBeVisible()) {
     SetState(SHELF_VISIBLE);
   } else {
     // TODO(zelidrag): Verify shelf drag animation still shows on the device
@@ -389,7 +390,7 @@ void ShelfLayoutManager::RemoveObserver(ShelfLayoutManagerObserver* observer) {
 // ShelfLayoutManager, Gesture functions:
 
 void ShelfLayoutManager::OnGestureEdgeSwipe(const ui::GestureEvent& gesture) {
-  if (force_shelf_always_visibile_)
+  if (IsShelfForcedToBeVisible())
     return;
 
   if (visibility_state() == SHELF_AUTO_HIDE) {
@@ -401,7 +402,7 @@ void ShelfLayoutManager::OnGestureEdgeSwipe(const ui::GestureEvent& gesture) {
 }
 
 void ShelfLayoutManager::StartGestureDrag(const ui::GestureEvent& gesture) {
-  if (force_shelf_always_visibile_)
+  if (IsShelfForcedToBeVisible())
     return;
   gesture_drag_status_ = GESTURE_DRAG_IN_PROGRESS;
   gesture_drag_amount_ = 0.f;
@@ -412,7 +413,7 @@ void ShelfLayoutManager::StartGestureDrag(const ui::GestureEvent& gesture) {
 
 ShelfLayoutManager::DragState ShelfLayoutManager::UpdateGestureDrag(
     const ui::GestureEvent& gesture) {
-  if (force_shelf_always_visibile_)
+  if (IsShelfForcedToBeVisible())
     return DRAG_SHELF;
   bool horizontal = IsHorizontalAlignment();
   gesture_drag_amount_ += horizontal ? gesture.details().scroll_y() :
@@ -438,7 +439,7 @@ ShelfLayoutManager::DragState ShelfLayoutManager::UpdateGestureDrag(
 }
 
 void ShelfLayoutManager::CompleteGestureDrag(const ui::GestureEvent& gesture) {
-  if (force_shelf_always_visibile_)
+  if (IsShelfForcedToBeVisible())
     return;
   bool horizontal = IsHorizontalAlignment();
   bool should_change = false;
@@ -775,7 +776,7 @@ void ShelfLayoutManager::AdjustBoundsBasedOnAlignment(int inset,
 void ShelfLayoutManager::CalculateTargetBounds(
     const State& state,
     TargetBounds* target_bounds) {
-  const gfx::Rect available_bounds(GetAvailableBounds());
+  const gfx::Rect available_bounds(root_window_->bounds());
   gfx::Rect status_size(
       shelf_->status_area_widget()->GetWindowBoundsInScreen().size());
   int shelf_width = 0, shelf_height = 0;
@@ -795,15 +796,22 @@ void ShelfLayoutManager::CalculateTargetBounds(
     else
       shelf_width = kAutoHideSize;
   } else if (state.visibility_state == SHELF_HIDDEN ||
-      !keyboard_bounds_.IsEmpty()) {
+      (!keyboard_bounds_.IsEmpty() && !keyboard::IsKeyboardOverscrollEnabled()))
+  {
     if (IsHorizontalAlignment())
       shelf_height = 0;
     else
       shelf_width = 0;
   }
 
+  int bottom_shelf_vertical_offset = available_bounds.bottom();
+  if (keyboard_bounds_.IsEmpty())
+    bottom_shelf_vertical_offset -= shelf_height;
+  else
+    bottom_shelf_vertical_offset -= keyboard_bounds_.height();
+
   target_bounds->shelf_bounds_in_root = SelectValueForShelfAlignment(
-      gfx::Rect(available_bounds.x(), available_bounds.bottom() - shelf_height,
+      gfx::Rect(available_bounds.x(), bottom_shelf_vertical_offset,
                     available_bounds.width(), shelf_height),
       gfx::Rect(available_bounds.x(), available_bounds.y(),
                     shelf_width, available_bounds.height()),
@@ -839,8 +847,8 @@ void ShelfLayoutManager::CalculateTargetBounds(
   // should probably be pushed to a separate component. This would simplify or
   // remove entirely the dependency on keyboard and dock.
 
-  // Also push in the work area inset for the keyboard if it is visible.
-  if (!keyboard_bounds_.IsEmpty()) {
+  if (!keyboard_bounds_.IsEmpty() && !keyboard::IsKeyboardOverscrollEnabled()) {
+    // Also push in the work area inset for the keyboard if it is visible.
     gfx::Insets keyboard_insets(0, 0, keyboard_bounds_.height(), 0);
     target_bounds->work_area_insets += keyboard_insets;
   }
@@ -1008,7 +1016,7 @@ gfx::Rect ShelfLayoutManager::GetAutoHideShowShelfRegionInScreen() const {
 
 ShelfAutoHideState ShelfLayoutManager::CalculateAutoHideState(
     ShelfVisibilityState visibility_state) const {
-  if (force_shelf_always_visibile_)
+  if (IsShelfForcedToBeVisible())
     return SHELF_AUTO_HIDE_SHOWN;
 
   if (visibility_state != SHELF_AUTO_HIDE || !shelf_)
@@ -1123,10 +1131,15 @@ int ShelfLayoutManager::GetWorkAreaSize(const State& state, int size) const {
   return 0;
 }
 
-gfx::Rect ShelfLayoutManager::GetAvailableBounds() const {
-  gfx::Rect bounds(root_window_->bounds());
-  bounds.set_height(bounds.height() - keyboard_bounds_.height());
-  return bounds;
+bool ShelfLayoutManager::IsShelfForcedToBeVisible() const {
+  // Bail out early when there is no |workspace_controller_|, which happens
+  // during shutdown after PrepareForShutdown.
+  if (!workspace_controller_)
+    return force_shelf_always_visibile_;
+
+  return force_shelf_always_visibile_ &&
+      workspace_controller_->GetWindowState() !=
+          WORKSPACE_WINDOW_STATE_FULL_SCREEN;
 }
 
 void ShelfLayoutManager::OnKeyboardBoundsChanging(const gfx::Rect& new_bounds) {

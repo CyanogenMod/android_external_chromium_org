@@ -43,6 +43,7 @@
 #include "ui/gfx/size.h"
 #include "ui/gfx/skbitmap_operations.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/linux_ui/window_button_order_observer.h"
 
 #if defined(USE_GCONF)
@@ -449,8 +450,19 @@ double Gtk2UI::GetCursorBlinkInterval() const {
   return cursor_blink ? (cursor_blink_time / kGtkCursorBlinkCycleFactor) : 0.0;
 }
 
-ui::NativeTheme* Gtk2UI::GetNativeTheme() const {
+ui::NativeTheme* Gtk2UI::GetNativeTheme(aura::Window* window) const {
+  ui::NativeTheme* native_theme_override = NULL;
+  if (!native_theme_overrider_.is_null())
+    native_theme_override = native_theme_overrider_.Run(window);
+
+  if (native_theme_override)
+    return native_theme_override;
+
   return NativeThemeGtk2::instance();
+}
+
+void Gtk2UI::SetNativeThemeOverride(const NativeThemeGetter& callback) {
+  native_theme_overrider_ = callback;
 }
 
 bool Gtk2UI::GetDefaultUsesSystemTheme() const {
@@ -534,8 +546,10 @@ gfx::Image Gtk2UI::GetIconForContentType(
 scoped_ptr<views::Border> Gtk2UI::CreateNativeBorder(
     views::LabelButton* owning_button,
     scoped_ptr<views::Border> border) {
-  return scoped_ptr<views::Border>(
-      new Gtk2Border(this, owning_button, border.Pass()));
+  if (owning_button->GetNativeTheme() != NativeThemeGtk2::instance())
+    return border.Pass();
+
+  return scoped_ptr<views::Border>(new Gtk2Border(this, owning_button));
 }
 
 void Gtk2UI::AddWindowButtonOrderObserver(
@@ -661,16 +675,6 @@ ui::SelectFileDialog* Gtk2UI::CreateSelectFileDialog(
     ui::SelectFileDialog::Listener* listener,
     ui::SelectFilePolicy* policy) const {
   return SelectFileDialogImpl::Create(listener, policy);
-}
-
-void Gtk2UI::AddNativeThemeChangeObserver(
-    views::NativeThemeChangeObserver* observer) {
-  theme_change_observers_.AddObserver(observer);
-}
-
-void Gtk2UI::RemoveNativeThemeChangeObserver(
-    views::NativeThemeChangeObserver* observer) {
-  theme_change_observers_.RemoveObserver(observer);
 }
 
 bool Gtk2UI::UnityIsRunning() {
@@ -1377,9 +1381,7 @@ void Gtk2UI::ClearAllThemeData() {
 void Gtk2UI::OnStyleSet(GtkWidget* widget, GtkStyle* previous_style) {
   ClearAllThemeData();
   LoadGtkValues();
-
-  FOR_EACH_OBSERVER(views::NativeThemeChangeObserver, theme_change_observers_,
-                    OnNativeThemeChanged());
+  NativeThemeGtk2::instance()->NotifyNativeThemeObservers();
 }
 
 }  // namespace libgtk2ui

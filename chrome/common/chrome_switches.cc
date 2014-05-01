@@ -354,6 +354,11 @@ const char kDisableQuicPacing[]             = "disable-quic-pacing";
 // This only has an effect if QUIC protocol is enabled.
 const char kDisableQuicPortSelection[]      = "disable-quic-port-selection";
 
+// Disable use of time-base loss detection for QUIC connections.
+// This only has an effect if QUIC protocol is enabled.
+const char kDisableQuicTimeBasedLossDetection[] =
+    "disable-quic-time-based-loss-detection";
+
 // Prevents the URLs of BackgroundContents from being remembered and
 // re-launched when the browser restarts.
 const char kDisableRestoreBackgroundContents[] =
@@ -372,6 +377,9 @@ const char kDisableSearchButtonInOmnibox[]  =
 
 // Disable SPDY/3.1. This is a temporary testing flag.
 const char kDisableSpdy31[]                 = "disable-spdy31";
+
+// Disables the suggestions service.
+const char kDisableSuggestionsService[]     = "disable-suggestions-service";
 
 // Disables syncing browser data to a Google Account.
 const char kDisableSync[]                   = "disable-sync";
@@ -434,6 +442,9 @@ const char kEnableAppList[]                 = "enable-app-list";
 
 // Enables the <window-controls> tag in platform apps.
 const char kEnableAppWindowControls[]       = "enable-app-window-controls";
+
+// Enable OS integration for Chrome app file associations.
+const char kEnableAppsFileAssociations[]    = "enable-apps-file-associations";
 
 // Show apps windows after the first paint. Windows will be shown significantly
 // later for heavy apps loading resources synchronously but it will be
@@ -599,6 +610,11 @@ const char kEnableQuicPacing[]              = "enable-quic-pacing";
 // This only has an effect if QUIC protocol is enabled.
 const char kEnableQuicPortSelection[]       = "enable-quic-port-selection";
 
+// Enables use of time-base loss detection for QUIC connections.
+// This only has an effect if QUIC protocol is enabled.
+const char kEnableQuicTimeBasedLossDetection[] =
+    "enable-quic-time-based-loss-detection";
+
 // Enables save password prompt bubble.
 const char kEnableSavePasswordBubble[]      = "enable-save-password-bubble";
 
@@ -620,6 +636,9 @@ const char kEnableSearchButtonInOmniboxForStr[] =
 const char kEnableSearchButtonInOmniboxForStrOrIip[] =
     "enable-search-button-in-omnibox-for-str-or-iip";
 
+// Enables using bubbles for session restore request instead of infobars.
+const char kEnableSessionCrashedBubble[] = "enable-session-crashed-bubble";
+
 // Enable settings in a separate browser window per profile.
 const char kEnableSettingsWindow[]          = "enable-settings-window";
 
@@ -639,6 +658,9 @@ const char kEnableStackedTabStrip[]         = "enable-stacked-tab-strip";
 
 // Enables an experimental hosted app experience.
 const char kEnableStreamlinedHostedApps[]   = "enable-streamlined-hosted-apps";
+
+// Enables the suggestions service.
+const char kEnableSuggestionsService[]      = "enable-suggestions-service";
 
 // Enables synced notifications.
 const char kEnableSyncSyncedNotifications[] =
@@ -1237,9 +1259,6 @@ const char kTrustedSpdyProxy[]              = "trusted-spdy-proxy";
 // be used only by the upgrade process.
 const char kTryChromeAgain[]                = "try-chrome-again";
 
-// Uninstalls an extension with the specified extension id.
-const char kUninstallExtension[]            = "uninstall-extension";
-
 // Runs un-installation steps that were done by chrome first-run.
 const char kUninstall[]                     = "uninstall";
 
@@ -1334,6 +1353,9 @@ const char kEnableZeroSuggestPersonalized[] =
 // Enables instant search clicks feature.
 const char kEnableInstantSearchClicks[] = "enable-instant-search-clicks";
 
+// Enables EmbeddedSearch API in the search results page.
+const char kEnableEmbeddedSearchAPI[] = "enable-embeddedsearch-api";
+
 #endif
 
 #if defined(USE_ASH)
@@ -1359,6 +1381,9 @@ const char kEnableSpeechDispatcher[] = "enable-speech-dispatcher";
 #endif  // defined(OS_LINUX) && !defined(OS_CHROMEOS)
 
 #if defined(OS_MACOSX)
+// Prevents Chrome from quitting when Chrome Apps are open.
+const char kAppsKeepChromeAlive[]           = "apps-keep-chrome-alive";
+
 // Disables the creation and launch of app shims for platform apps.
 const char kDisableAppShims[]               = "disable-app-shims";
 

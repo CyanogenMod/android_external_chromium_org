@@ -19,10 +19,7 @@
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 #include "media/base/yuv_convert.h"
-
-#if !defined(AVOID_LIBYUV_FOR_ANDROID_WEBVIEW)
 #include "third_party/libyuv/include/libyuv.h"
-#endif
 
 using media::VideoCaptureFormat;
 
@@ -251,7 +248,7 @@ void VideoCaptureController::ReturnBuffer(
     const VideoCaptureControllerID& id,
     VideoCaptureControllerEventHandler* event_handler,
     int buffer_id,
-    uint32 sync_point) {
+    const std::vector<uint32>& sync_points) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   ControllerClient* client = FindClient(id, event_handler, controller_clients_);
@@ -267,8 +264,10 @@ void VideoCaptureController::ReturnBuffer(
   scoped_refptr<media::VideoFrame> frame = iter->second;
   client->active_buffers.erase(iter);
 
-  if (frame->format() == media::VideoFrame::NATIVE_TEXTURE)
-    frame->mailbox_holder()->sync_point = sync_point;
+  if (frame->format() == media::VideoFrame::NATIVE_TEXTURE) {
+    for (size_t i = 0; i < sync_points.size(); i++)
+      frame->AppendReleaseSyncPoint(sync_points[i]);
+  }
 
   buffer_pool_->RelinquishConsumerHold(buffer_id, 1);
 }
@@ -297,20 +296,25 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedData(
   if (!frame_format.IsValid())
     return;
 
-  // Chopped pixels in width/height in case video capture device has odd
-  // numbers for width/height.
-  int chopped_width = 0;
-  int chopped_height = 0;
+  // Padded pixels in width/height in case video capture device has odd
+  // numbers for width/height. When the width/height is odd, the last pixel of
+  // each row will have a Y/U/V sample. It's still considered odd width/height,
+  // not duplicated. Converting back to ARGB it will still be odd width/height.
+  // The destination buffer should be rounded up. Pass in a stride that reflects
+  // the byte per line with rounding to libyuv::ConvertToI420, but pass in the
+  // original width/height.
+  int padded_width = 0;
+  int padded_height = 0;
   int new_unrotated_width = frame_format.frame_size.width();
   int new_unrotated_height = frame_format.frame_size.height();
 
   if (new_unrotated_width & 1) {
-    --new_unrotated_width;
-    chopped_width = 1;
+    ++new_unrotated_width;
+    padded_width = 1;
   }
   if (new_unrotated_height & 1) {
-    --new_unrotated_height;
-    chopped_height = 1;
+    ++new_unrotated_height;
+    padded_height = 1;
   }
 
   int destination_width = new_unrotated_width;
@@ -333,7 +337,6 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedData(
   if (!buffer)
     return;
   uint8* yplane = NULL;
-#if !defined(AVOID_LIBYUV_FOR_ANDROID_WEBVIEW)
   bool flip = false;
   yplane = reinterpret_cast<uint8*>(buffer->data());
   uint8* uplane =
@@ -362,23 +365,23 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedData(
     case media::PIXEL_FORMAT_UNKNOWN:  // Color format not set.
       break;
     case media::PIXEL_FORMAT_I420:
-      DCHECK(!chopped_width && !chopped_height);
+      DCHECK(!padded_width && !padded_height);
       origin_colorspace = libyuv::FOURCC_I420;
       break;
     case media::PIXEL_FORMAT_YV12:
-      DCHECK(!chopped_width && !chopped_height);
+      DCHECK(!padded_width && !padded_height);
       origin_colorspace = libyuv::FOURCC_YV12;
       break;
     case media::PIXEL_FORMAT_NV21:
-      DCHECK(!chopped_width && !chopped_height);
+      DCHECK(!padded_width && !padded_height);
       origin_colorspace = libyuv::FOURCC_NV21;
       break;
     case media::PIXEL_FORMAT_YUY2:
-      DCHECK(!chopped_width && !chopped_height);
+      DCHECK(!padded_width && !padded_height);
       origin_colorspace = libyuv::FOURCC_YUY2;
       break;
     case media::PIXEL_FORMAT_UYVY:
-      DCHECK(!chopped_width && !chopped_height);
+      DCHECK(!padded_width && !padded_height);
       origin_colorspace = libyuv::FOURCC_UYVY;
       break;
     case media::PIXEL_FORMAT_RGB24:
@@ -412,18 +415,12 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedData(
                         crop_x,
                         crop_y,
                         frame_format.frame_size.width(),
-                        (flip ? -frame_format.frame_size.height() :
-                                frame_format.frame_size.height()),
-                        new_unrotated_width,
-                        new_unrotated_height,
+                        (flip ? -frame_format.frame_size.height()
+                              : frame_format.frame_size.height()),
+                        frame_format.frame_size.width(),
+                        frame_format.frame_size.height(),
                         rotation_mode,
                         origin_colorspace);
-#else
-  // Libyuv is not linked in for Android WebView builds, but video capture is
-  // not used in those builds either. Whenever libyuv is added in that build,
-  // address all these #ifdef parts, see http://crbug.com/299611 .
-  NOTREACHED();
-#endif  // if !defined(AVOID_LIBYUV_FOR_ANDROID_WEBVIEW)
   scoped_refptr<media::VideoFrame> frame =
       media::VideoFrame::WrapExternalPackedMemory(
           media::VideoFrame::I420,

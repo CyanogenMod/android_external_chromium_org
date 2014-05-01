@@ -50,6 +50,7 @@ import org.chromium.content.browser.LoadUrlParams;
 import org.chromium.content.browser.NavigationHistory;
 import org.chromium.content.browser.PageTransitionTypes;
 import org.chromium.content.common.CleanupReference;
+import org.chromium.content_public.Referrer;
 import org.chromium.content_public.browser.GestureStateListener;
 import org.chromium.ui.base.ActivityWindowAndroid;
 import org.chromium.ui.base.WindowAndroid;
@@ -62,6 +63,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 
 
@@ -134,18 +136,14 @@ public class AwContents {
          * Requests a callback on the native DrawGL method (see getAwDrawGLFunction)
          * if called from within onDraw, |canvas| will be non-null and hardware accelerated.
          * otherwise, |canvas| will be null, and the container view itself will be hardware
-         * accelerated.
+         * accelerated. If |waitForCompletion| is true, this method will not return until
+         * functor has returned.
+         * Should avoid setting |waitForCompletion| when |canvas| is not null.
          *
          * @return false indicates the GL draw request was not accepted, and the caller
          *         should fallback to the SW path.
          */
-        boolean requestDrawGL(Canvas canvas);
-
-        /**
-         * Run the action on with EGLContext current or return false.
-         * See hidden View#executeHardwareAction for details.
-         */
-        public boolean executeHardwareAction(Runnable action);
+        boolean requestDrawGL(Canvas canvas, boolean waitForCompletion);
     }
 
     /**
@@ -232,8 +230,6 @@ public class AwContents {
         }
         @Override
         public void run() {
-            // This is a no-op if not currently attached.
-            nativeOnDetachedFromWindow(mNativeAwContents);
             nativeDestroy(mNativeAwContents);
         }
     }
@@ -444,14 +440,7 @@ public class AwContents {
             if (mNativeAwContents == 0) return;
             boolean visibleRectEmpty = getGlobalVisibleRect().isEmpty();
             final boolean visible = mIsViewVisible && mIsWindowVisible && !visibleRectEmpty;
-            // Don't care about return value of executeHardwareAction since if view is not
-            // hardware accelerated, then there is nothing to clean up anyway.
-            mInternalAccessAdapter.executeHardwareAction(new Runnable() {
-                @Override
-                public void run() {
-                    nativeTrimMemoryOnRenderThread(mNativeAwContents, level, visible);
-                }
-            });
+            nativeTrimMemory(mNativeAwContents, level, visible);
         }
 
         @Override
@@ -913,8 +902,23 @@ public class AwContents {
         // every time the user agent in AwSettings is modified.
         params.setOverrideUserAgent(LoadUrlParams.UA_OVERRIDE_TRUE);
 
+
         // We don't pass extra headers to the content layer, as WebViewClassic
         // was adding them in a very narrow set of conditions. See http://crbug.com/306873
+        // However, if the embedder is attempting to inject a Referer header for their
+        // loadUrl call, then we set that separately and remove it from the extra headers map/
+        final String REFERER = "referer";
+        Map<String, String> extraHeaders = params.getExtraHeaders();
+        if (extraHeaders != null) {
+            for (String header : extraHeaders.keySet()) {
+                if (REFERER.equals(header.toLowerCase())) {
+                    params.setReferrer(new Referrer(extraHeaders.remove(header), 1));
+                    params.setExtraHeaders(extraHeaders);
+                    break;
+                }
+            }
+        }
+
         if (mNativeAwContents != 0) {
             nativeSetExtraHeadersForUrl(
                     mNativeAwContents, params.getUrl(), params.getExtraHttpRequestHeadersString());
@@ -1615,18 +1619,6 @@ public class AwContents {
         mIsAttachedToWindow = false;
         hideAutofillPopup();
         if (mNativeAwContents != 0) {
-            if (mContainerView.isHardwareAccelerated()) {
-                boolean result = mInternalAccessAdapter.executeHardwareAction(new Runnable() {
-                    @Override
-                    public void run() {
-                        nativeReleaseHardwareDrawOnRenderThread(mNativeAwContents);
-                    }
-                });
-                if (!result) {
-                    Log.d(TAG, "executeHardwareAction failed");
-                }
-            }
-
             nativeOnDetachedFromWindow(mNativeAwContents);
         }
 
@@ -1918,8 +1910,8 @@ public class AwContents {
     }
 
     @CalledByNative
-    private boolean requestDrawGL(Canvas canvas) {
-        return mInternalAccessAdapter.requestDrawGL(canvas);
+    private boolean requestDrawGL(Canvas canvas, boolean waitForCompletion) {
+        return mInternalAccessAdapter.requestDrawGL(canvas, waitForCompletion);
     }
 
     private static final boolean SUPPORTS_ON_ANIMATION =
@@ -2118,7 +2110,6 @@ public class AwContents {
     private native void nativeSetIsPaused(long nativeAwContents, boolean paused);
     private native void nativeOnAttachedToWindow(long nativeAwContents, int w, int h);
     private static native void nativeOnDetachedFromWindow(long nativeAwContents);
-    private static native void nativeReleaseHardwareDrawOnRenderThread(long nativeAwContents);
     private native void nativeSetDipScale(long nativeAwContents, float dipScale);
     private native void nativeSetFixedLayoutSize(long nativeAwContents,
             int widthDip, int heightDip);
@@ -2145,8 +2136,7 @@ public class AwContents {
 
     private native void nativeSetJsOnlineProperty(long nativeAwContents, boolean networkUp);
 
-    private native void nativeTrimMemoryOnRenderThread(long nativeAwContents, int level,
-            boolean visible);
+    private native void nativeTrimMemory(long nativeAwContents, int level, boolean visible);
 
     private native void nativeCreatePdfExporter(long nativeAwContents, AwPdfExporter awPdfExporter);
 

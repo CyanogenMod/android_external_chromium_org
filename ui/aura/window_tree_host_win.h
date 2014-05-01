@@ -20,6 +20,7 @@ class AURA_EXPORT WindowTreeHostWin : public WindowTreeHost,
   explicit WindowTreeHostWin(const gfx::Rect& bounds);
   virtual ~WindowTreeHostWin();
   // WindowTreeHost:
+  virtual ui::EventSource* GetEventSource() OVERRIDE;
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
@@ -28,7 +29,6 @@ class AURA_EXPORT WindowTreeHostWin : public WindowTreeHost,
   virtual gfx::Point GetLocationOnNativeScreen() const OVERRIDE;
   virtual void SetCapture() OVERRIDE;
   virtual void ReleaseCapture() OVERRIDE;
-  virtual bool QueryMouseLocation(gfx::Point* location_return) OVERRIDE;
   virtual void SetCursorNative(gfx::NativeCursor cursor) OVERRIDE;
   virtual void MoveCursorToNative(const gfx::Point& location) OVERRIDE;
   virtual void OnCursorVisibilityChangedNative(bool show) OVERRIDE;

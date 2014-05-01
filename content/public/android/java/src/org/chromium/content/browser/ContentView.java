@@ -29,12 +29,10 @@ import org.chromium.ui.base.WindowAndroid;
  *             compatibility.
  */
 public class ContentView extends FrameLayout
-        implements ContentViewCore.InternalAccessDelegate, PageInfo {
+        implements ContentViewCore.InternalAccessDelegate {
 
     private final ContentViewCore mContentViewCore;
 
-    private float mCurrentTouchOffsetX;
-    private float mCurrentTouchOffsetY;
     private final int[] mLocationInWindow = new int[2];
 
     /**
@@ -67,23 +65,6 @@ public class ContentView extends FrameLayout
 
         mContentViewCore = new ContentViewCore(context);
         mContentViewCore.initialize(this, this, nativeWebContents, windowAndroid);
-    }
-
-    // PageInfo implementation.
-
-    @Override
-    public String getTitle() {
-        return mContentViewCore.getTitle();
-    }
-
-    @Override
-    public int getBackgroundColor() {
-        return mContentViewCore.getBackgroundColor();
-    }
-
-    @Override
-    public View getView() {
-        return this;
     }
 
     /**
@@ -170,10 +151,7 @@ public class ContentView extends FrameLayout
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        MotionEvent offset = createOffsetMotionEvent(event);
-        boolean consumed = mContentViewCore.onTouchEvent(offset);
-        offset.recycle();
-        return consumed;
+        return mContentViewCore.onTouchEvent(event);
     }
 
     /**
@@ -183,9 +161,7 @@ public class ContentView extends FrameLayout
      */
     @Override
     public boolean onHoverEvent(MotionEvent event) {
-        MotionEvent offset = createOffsetMotionEvent(event);
-        boolean consumed = mContentViewCore.onHoverEvent(offset);
-        offset.recycle();
+        boolean consumed = mContentViewCore.onHoverEvent(event);
         if (!mContentViewCore.isTouchExplorationEnabled()) super.onHoverEvent(event);
         return consumed;
     }
@@ -198,23 +174,6 @@ public class ContentView extends FrameLayout
     @Override
     public boolean performLongClick() {
         return false;
-    }
-
-    /**
-     * Sets the current amount to offset incoming touch events by.  This is used to handle content
-     * moving and not lining up properly with the android input system.
-     * @param dx The X offset in pixels to shift touch events.
-     * @param dy The Y offset in pixels to shift touch events.
-     */
-    public void setCurrentMotionEventOffsets(float dx, float dy) {
-        mCurrentTouchOffsetX = dx;
-        mCurrentTouchOffsetY = dy;
-    }
-
-    private MotionEvent createOffsetMotionEvent(MotionEvent src) {
-        MotionEvent dst = MotionEvent.obtain(src);
-        dst.offsetLocation(mCurrentTouchOffsetX, mCurrentTouchOffsetY);
-        return dst;
     }
 
     @Override

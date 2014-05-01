@@ -82,8 +82,6 @@ cr.define('gpu', function() {
       // Feature map
       var featureLabelMap = {
         '2d_canvas': 'Canvas',
-        '3d_css': '3D CSS',
-        'css_animation': 'CSS Animation',
         'gpu_compositing': 'Compositing',
         'webgl': 'WebGL',
         'multisampling': 'WebGL multisampling',
@@ -93,7 +91,6 @@ cr.define('gpu', function() {
         'texture_sharing': 'Texture Sharing',
         'video_decode': 'Video Decode',
         'video_encode': 'Video Encode',
-        'video': 'Video',
         // GPU Switching
         'gpu_switching': 'GPU Switching',
         'panel_fitting': 'Panel Fitting',

@@ -38,10 +38,12 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
   bool TextFieldHandlingKeyDown(const blink::WebInputElement& element,
                                 const blink::WebKeyboardEvent& event);
 
-  // Fills the password associated with user name |username|. Returns true if
-  // the username and password fields were filled, false otherwise.
-  bool DidAcceptAutofillSuggestion(const blink::WebNode& node,
-                                   const blink::WebString& username);
+  // Fills the username and password fields of this form with the given values.
+  // Returns true if the fields were filled, false otherwise.
+  bool AcceptSuggestion(const blink::WebNode& node,
+                        const blink::WebString& username,
+                        const blink::WebString& password);
+
   // A no-op.  Password forms are not previewed, so they do not need to be
   // cleared when the selection changes.  However, this method returns
   // true when |node| is fillable by password Autofill.
@@ -128,6 +130,7 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
 
   // RenderView IPC handlers:
   void OnFillPasswordForm(const PasswordFormFillData& form_data);
+  void OnChangeLoggingState(bool active);
 
   // Scans the given frame for password forms and sends them up to the browser.
   // If |only_visible| is true, only forms visible in the layout are sent.
@@ -192,6 +195,9 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
   FrameToPasswordFormMap provisionally_saved_forms_;
 
   PasswordValueGatekeeper gatekeeper_;
+
+  // True indicates that user debug information should be logged.
+  bool logging_state_active_;
 
   base::WeakPtrFactory<PasswordAutofillAgent> weak_ptr_factory_;
 

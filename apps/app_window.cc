@@ -40,7 +40,9 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
+#include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkRegion.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/screen.h"
 
 #if !defined(OS_MACOSX)
@@ -707,7 +709,17 @@ void AppWindow::GetSerializedState(base::DictionaryValue* properties) const {
   properties->SetBoolean("maximized", native_app_window_->IsMaximized());
   properties->SetBoolean("alwaysOnTop", IsAlwaysOnTop());
   properties->SetBoolean("hasFrameColor", native_app_window_->HasFrameColor());
-  properties->SetInteger("frameColor", native_app_window_->FrameColor());
+
+  // These properties are undocumented and are to enable testing. Alpha is
+  // removed to
+  // make the values easier to check.
+  SkColor transparent_white = ~SK_ColorBLACK;
+  properties->SetInteger(
+      "activeFrameColor",
+      native_app_window_->ActiveFrameColor() & transparent_white);
+  properties->SetInteger(
+      "inactiveFrameColor",
+      native_app_window_->InactiveFrameColor() & transparent_white);
 
   gfx::Rect content_bounds = GetClientBounds();
   gfx::Size content_min_size = native_app_window_->GetContentMinimumSize();
@@ -777,12 +789,15 @@ void AppWindow::UpdateExtensionAppIcon() {
   // Avoid using any previous app icons were being downloaded.
   image_loader_ptr_factory_.InvalidateWeakPtrs();
 
+  const gfx::ImageSkia& default_icon =
+      *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+          IDR_APP_DEFAULT_ICON);
   app_icon_image_.reset(
       new extensions::IconImage(browser_context(),
                                 extension(),
                                 extensions::IconsInfo::GetIcons(extension()),
                                 delegate_->PreferredIconSize(),
-                                extensions::IconsInfo::GetDefaultAppIcon(),
+                                default_icon,
                                 this));
 
   // Triggers actual image loading with 1x resources. The 2x resource will
@@ -1033,7 +1048,6 @@ AppWindow::CreateParams AppWindow::LoadDefaults(CreateParams params)
                            &cached_bounds,
                            &cached_screen_bounds,
                            &cached_state)) {
-
       // App window has cached screen bounds, make sure it fits on screen in
       // case the screen resolution changed.
       gfx::Screen* screen = gfx::Screen::GetNativeScreen();

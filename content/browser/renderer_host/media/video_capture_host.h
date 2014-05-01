@@ -125,7 +125,9 @@ class CONTENT_EXPORT VideoCaptureHost
 
   // IPC message: Receive an empty buffer from renderer. Send it to device
   // referenced by |device_id|.
-  void OnReceiveEmptyBuffer(int device_id, int buffer_id, uint32 sync_point);
+  void OnReceiveEmptyBuffer(int device_id,
+                            int buffer_id,
+                            const std::vector<uint32>& sync_points);
 
   // IPC message: Get supported formats referenced by |capture_session_id|.
   // |device_id| is needed for message back-routing purposes.
@@ -140,7 +142,7 @@ class CONTENT_EXPORT VideoCaptureHost
       int device_id,
       media::VideoCaptureSessionId capture_session_id);
 
-  // Send a newly created buffer to the VideoCaptureMessageFilter.
+  // Sends a newly created buffer to the VideoCaptureMessageFilter.
   void DoSendNewBufferOnIOThread(
       const VideoCaptureControllerID& controller_id,
       base::SharedMemoryHandle handle,
@@ -151,14 +153,14 @@ class CONTENT_EXPORT VideoCaptureHost
       const VideoCaptureControllerID& controller_id,
       int buffer_id);
 
-  // Send a filled buffer to the VideoCaptureMessageFilter.
+  // Sends a filled buffer to the VideoCaptureMessageFilter.
   void DoSendFilledBufferOnIOThread(
       const VideoCaptureControllerID& controller_id,
       int buffer_id,
       const media::VideoCaptureFormat& format,
       base::TimeTicks timestamp);
 
-  // Send a filled texture mailbox buffer to the VideoCaptureMessageFilter.
+  // Sends a filled texture mailbox buffer to the VideoCaptureMessageFilter.
   void DoSendFilledMailboxBufferOnIOThread(
       const VideoCaptureControllerID& controller_id,
       int buffer_id,
@@ -166,13 +168,15 @@ class CONTENT_EXPORT VideoCaptureHost
       const media::VideoCaptureFormat& format,
       base::TimeTicks timestamp);
 
-  // Handle error coming from VideoCaptureDevice.
+  // Handles error coming from VideoCaptureDevice.
   void DoHandleErrorOnIOThread(const VideoCaptureControllerID& controller_id);
 
   void DoEndedOnIOThread(const VideoCaptureControllerID& controller_id);
 
+  // Deletes the controller and notifies the VideoCaptureManager. |on_error| is
+  // true if this is triggered by VideoCaptureControllerEventHandler::OnError.
   void DeleteVideoCaptureControllerOnIOThread(
-      const VideoCaptureControllerID& controller_id);
+      const VideoCaptureControllerID& controller_id, bool on_error);
 
   MediaStreamManager* media_stream_manager_;
 

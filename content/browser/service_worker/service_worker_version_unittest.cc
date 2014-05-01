@@ -22,8 +22,6 @@
 
 IPC_MESSAGE_CONTROL0(TestMsg_Message);
 IPC_MESSAGE_ROUTED1(TestMsg_MessageFromWorker, int);
-IPC_MESSAGE_CONTROL1(TestMsg_Request, int);
-IPC_MESSAGE_CONTROL1(TestMsg_Response, int);
 
 // ---------------------------------------------------------------------------
 
@@ -35,26 +33,22 @@ static const int kRenderProcessId = 1;
 
 class MessageReceiver : public EmbeddedWorkerTestHelper {
  public:
-  MessageReceiver(ServiceWorkerContextCore* context)
-      : EmbeddedWorkerTestHelper(context, kRenderProcessId),
-        current_embedded_worker_id_(0),
-        current_request_id_(0) {}
+  MessageReceiver()
+      : EmbeddedWorkerTestHelper(kRenderProcessId),
+        current_embedded_worker_id_(0) {}
   virtual ~MessageReceiver() {}
 
   virtual bool OnMessageToWorker(int thread_id,
                                  int embedded_worker_id,
-                                 int request_id,
                                  const IPC::Message& message) OVERRIDE {
     if (EmbeddedWorkerTestHelper::OnMessageToWorker(
-            thread_id, embedded_worker_id, request_id, message)) {
+            thread_id, embedded_worker_id, message)) {
       return true;
     }
     current_embedded_worker_id_ = embedded_worker_id;
-    current_request_id_ = request_id;
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(MessageReceiver, message)
       IPC_MESSAGE_HANDLER(TestMsg_Message, OnMessage)
-      IPC_MESSAGE_HANDLER(TestMsg_Request, OnRequest)
       IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
     return handled;
@@ -69,27 +63,9 @@ class MessageReceiver : public EmbeddedWorkerTestHelper {
     // Do nothing.
   }
 
-  void OnRequest(int value) {
-    // Double the given value and send back the response.
-    SimulateSendReplyToBrowser(current_embedded_worker_id_,
-                               current_request_id_,
-                               TestMsg_Response(value * 2));
-  }
-
   int current_embedded_worker_id_;
-  int current_request_id_;
   DISALLOW_COPY_AND_ASSIGN(MessageReceiver);
 };
-
-void ReceiveResponse(ServiceWorkerStatusCode* status_out,
-                     int* value_out,
-                     ServiceWorkerStatusCode status,
-                     const IPC::Message& message) {
-  Tuple1<int> param;
-  ASSERT_TRUE(TestMsg_Response::Read(&message, &param));
-  *status_out = status;
-  *value_out = param.a;
-}
 
 void VerifyCalled(bool* called) {
   *called = true;
@@ -123,11 +99,6 @@ class MessageReceiverFromWorker : public EmbeddedWorkerInstance::Listener {
     IPC_END_MESSAGE_MAP()
     return handled;
   }
-  virtual bool OnReplyReceived(int request_id,
-                               const IPC::Message& message) OVERRIDE {
-    NOTREACHED();
-    return false;
-  }
 
   void OnMessageFromWorker(int value) { received_values_.push_back(value); }
   const std::vector<int>& received_values() const { return received_values_; }
@@ -146,16 +117,15 @@ class ServiceWorkerVersionTest : public testing::Test {
       : thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP) {}
 
   virtual void SetUp() OVERRIDE {
-    context_.reset(new ServiceWorkerContextCore(base::FilePath(), NULL, NULL));
-    helper_.reset(new MessageReceiver(context_.get()));
+    helper_.reset(new MessageReceiver());
 
     registration_ = new ServiceWorkerRegistration(
         GURL("http://www.example.com/*"),
         GURL("http://www.example.com/service_worker.js"),
-        1L, context_->AsWeakPtr());
+        1L,
+        helper_->context()->AsWeakPtr());
     version_ = new ServiceWorkerVersion(
-        registration_,
-        1L, context_->AsWeakPtr());
+        registration_, 1L, helper_->context()->AsWeakPtr());
 
     // Simulate adding one process to the worker.
     int embedded_worker_id = version_->embedded_worker()->embedded_worker_id();
@@ -167,11 +137,9 @@ class ServiceWorkerVersionTest : public testing::Test {
     version_ = 0;
     registration_ = 0;
     helper_.reset();
-    context_.reset();
   }
 
   TestBrowserThreadBundle thread_bundle_;
-  scoped_ptr<ServiceWorkerContextCore> context_;
   scoped_ptr<MessageReceiver> helper_;
   scoped_refptr<ServiceWorkerRegistration> registration_;
   scoped_refptr<ServiceWorkerVersion> version_;
@@ -277,26 +245,6 @@ TEST_F(ServiceWorkerVersionTest, ReSendMessageAfterStop) {
   EXPECT_EQ(ServiceWorkerVersion::RUNNING, version_->running_status());
 }
 
-TEST_F(ServiceWorkerVersionTest, SendMessageAndRegisterCallback) {
-  // Send multiple messages and verify responses.
-  ServiceWorkerStatusCode status1 = SERVICE_WORKER_ERROR_FAILED;
-  ServiceWorkerStatusCode status2 = SERVICE_WORKER_ERROR_FAILED;
-  int value1 = -1, value2 = -1;
-
-  version_->SendMessageAndRegisterCallback(
-      TestMsg_Request(111),
-      base::Bind(&ReceiveResponse, &status1, &value1));
-  version_->SendMessageAndRegisterCallback(
-      TestMsg_Request(333),
-      base::Bind(&ReceiveResponse, &status2, &value2));
-  base::RunLoop().RunUntilIdle();
-
-  EXPECT_EQ(SERVICE_WORKER_OK, status1);
-  EXPECT_EQ(SERVICE_WORKER_OK, status2);
-  EXPECT_EQ(111 * 2, value1);
-  EXPECT_EQ(333 * 2, value2);
-}
-
 TEST_F(ServiceWorkerVersionTest, ReceiveMessageFromWorker) {
   MessageReceiverFromWorker receiver(version_->embedded_worker());
 
@@ -318,7 +266,6 @@ TEST_F(ServiceWorkerVersionTest, InstallAndWaitCompletion) {
   // Dispatch an install event.
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
   version_->DispatchInstallEvent(-1, CreateReceiverOnCurrentThread(&status));
-  EXPECT_EQ(ServiceWorkerVersion::INSTALLING, version_->status());
 
   // Wait for the completion.
   bool status_change_called = false;
@@ -341,7 +288,6 @@ TEST_F(ServiceWorkerVersionTest, ActivateAndWaitCompletion) {
   // Dispatch an activate event.
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
   version_->DispatchActivateEvent(CreateReceiverOnCurrentThread(&status));
-  EXPECT_EQ(ServiceWorkerVersion::ACTIVATING, version_->status());
 
   // Wait for the completion.
   bool status_change_called = false;

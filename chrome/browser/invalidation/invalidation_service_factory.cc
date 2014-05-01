@@ -12,7 +12,10 @@
 #include "chrome/browser/invalidation/invalidation_service_android.h"
 #include "chrome/browser/invalidation/invalidator_storage.h"
 #include "chrome/browser/invalidation/ticl_invalidation_service.h"
+#include "chrome/browser/invalidation/ticl_profile_settings_provider.h"
+#include "chrome/browser/invalidation/ticl_settings_provider.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/signin/profile_identity_provider.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
@@ -120,8 +123,10 @@ KeyedService* InvalidationServiceFactory::BuildServiceInstanceFor(
 
   TiclInvalidationService* service = new TiclInvalidationService(
       identity_provider.Pass(),
-      profile->GetRequestContext(),
-      profile);
+      scoped_ptr<TiclSettingsProvider>(
+          new TiclProfileSettingsProvider(profile)),
+      gcm::GCMProfileServiceFactory::GetForProfile(profile),
+      profile->GetRequestContext());
   service->Init(scoped_ptr<syncer::InvalidationStateTracker>(
       new InvalidatorStorage(profile->GetPrefs())));
   return service;

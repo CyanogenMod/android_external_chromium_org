@@ -91,7 +91,6 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual void WasShown() OVERRIDE {}
   virtual void WasHidden() OVERRIDE {}
   virtual void MovePluginWindows(
-      const gfx::Vector2d& scroll_offset,
       const std::vector<WebPluginGeometry>& moves) OVERRIDE {}
   virtual void Focus() OVERRIDE {}
   virtual void Blur() OVERRIDE {}
@@ -106,11 +105,6 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
       const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds) OVERRIDE {}
 #endif
-  virtual void DidUpdateBackingStore(
-      const gfx::Rect& scroll_rect,
-      const gfx::Vector2d& scroll_delta,
-      const std::vector<gfx::Rect>& rects,
-      const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE {}
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) OVERRIDE;
   virtual void WillDestroyRenderWidget(RenderWidgetHost* rwh) { }
@@ -154,8 +148,6 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
 #endif
   virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE {}
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
-  virtual void SetHasHorizontalScrollbar(
-      bool has_horizontal_scrollbar) OVERRIDE { }
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE { }
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;

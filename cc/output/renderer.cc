@@ -14,10 +14,17 @@ bool Renderer::IsContextLost() {
   return false;
 }
 
+void Renderer::SetVisible(bool visible) {
+  if (visible_ == visible)
+    return;
+
+  visible_ = visible;
+  DidChangeVisibility();
+}
+
 RendererCapabilitiesImpl::RendererCapabilitiesImpl()
     : best_texture_format(RGBA_8888),
       allow_partial_texture_updates(false),
-      using_offscreen_context3d(false),
       max_texture_size(0),
       using_shared_memory_resources(false),
       using_partial_swap(false),
@@ -32,7 +39,6 @@ RendererCapabilitiesImpl::~RendererCapabilitiesImpl() {}
 RendererCapabilities RendererCapabilitiesImpl::MainThreadCapabilities() const {
   return RendererCapabilities(best_texture_format,
                               allow_partial_texture_updates,
-                              using_offscreen_context3d,
                               max_texture_size,
                               using_shared_memory_resources);
 }

@@ -19,7 +19,6 @@
 #include "ppapi/c/dev/ppb_video_capture_dev.h"
 #include "ppapi/c/dev/ppb_video_decoder_dev.h"
 #include "ppapi/c/dev/ppp_selection_dev.h"
-#include "ppapi/c/extensions/dev/ppb_ext_socket_dev.h"
 #include "ppapi/c/ppb_console.h"
 #include "ppapi/c/ppb_core.h"
 #include "ppapi/c/ppb_file_io.h"
@@ -196,8 +195,6 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoSource_Private_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_X509Certificate_Private_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_ContentDecryptor_Private_0_11;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_Instance_Private_0_1;
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1;
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2;
 /* END Declarations for all Wrapper Infos. */
 
 /* Not generating wrapper methods for PPB_Audio_1_0 */
@@ -3159,9 +3156,9 @@ static void Pnacl_M25_PPB_NaCl_Private_NexeFileDidOpen(PP_Instance instance, int
   iface->NexeFileDidOpen(instance, pp_error, fd, http_status, nexe_bytes_read, url, time_since_open);
 }
 
-static void Pnacl_M25_PPB_NaCl_Private_ReportLoadSuccess(PP_Instance instance, PP_Bool is_pnacl, const char* url, uint64_t loaded_bytes, uint64_t total_bytes) {
+static void Pnacl_M25_PPB_NaCl_Private_ReportLoadSuccess(PP_Instance instance, const char* url, uint64_t loaded_bytes, uint64_t total_bytes) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  iface->ReportLoadSuccess(instance, is_pnacl, url, loaded_bytes, total_bytes);
+  iface->ReportLoadSuccess(instance, url, loaded_bytes, total_bytes);
 }
 
 static void Pnacl_M25_PPB_NaCl_Private_ReportLoadError(PP_Instance instance, PP_NaClError error, const char* error_message, const char* console_message) {
@@ -3199,11 +3196,6 @@ static const char* Pnacl_M25_PPB_NaCl_Private_GetSandboxArch(void) {
   return iface->GetSandboxArch();
 }
 
-static PP_UrlSchemeType Pnacl_M25_PPB_NaCl_Private_GetUrlScheme(struct PP_Var* url) {
-  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  return iface->GetUrlScheme(*url);
-}
-
 static void Pnacl_M25_PPB_NaCl_Private_LogToConsole(PP_Instance instance, const char* message) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
   iface->LogToConsole(instance, message);
@@ -3234,9 +3226,9 @@ static void Pnacl_M25_PPB_NaCl_Private_Vlog(const char* message) {
   iface->Vlog(message);
 }
 
-static void Pnacl_M25_PPB_NaCl_Private_InitializePlugin(PP_Instance instance) {
+static void Pnacl_M25_PPB_NaCl_Private_InitializePlugin(PP_Instance instance, uint32_t argc, const char* argn[], const char* argv[]) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  iface->InitializePlugin(instance);
+  iface->InitializePlugin(instance, argc, argn, argv);
 }
 
 static int64_t Pnacl_M25_PPB_NaCl_Private_GetNexeSize(PP_Instance instance) {
@@ -3267,6 +3259,21 @@ static void Pnacl_M25_PPB_NaCl_Private_ParseDataURL(struct PP_Var* _struct_resul
 static void Pnacl_M25_PPB_NaCl_Private_ProcessNaClManifest(PP_Instance instance, const char* program_url) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
   iface->ProcessNaClManifest(instance, program_url);
+}
+
+static void Pnacl_M25_PPB_NaCl_Private_GetManifestURLArgument(struct PP_Var* _struct_result, PP_Instance instance) {
+  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
+  *_struct_result = iface->GetManifestURLArgument(instance);
+}
+
+static PP_Bool Pnacl_M25_PPB_NaCl_Private_IsPNaCl(PP_Instance instance) {
+  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
+  return iface->IsPNaCl(instance);
+}
+
+static PP_Bool Pnacl_M25_PPB_NaCl_Private_DevInterfacesEnabled(PP_Instance instance) {
+  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
+  return iface->DevInterfacesEnabled(instance);
 }
 
 /* End wrapper methods for PPB_NaCl_Private_1_0 */
@@ -4123,189 +4130,6 @@ static struct PP_Var Pnacl_M18_PPP_Instance_Private_GetInstanceObject(PP_Instanc
 
 /* End wrapper methods for PPP_Instance_Private_0_1 */
 
-/* Begin wrapper methods for PPB_Ext_Socket_Dev_0_1 */
-
-static int32_t Pnacl_M28_PPB_Ext_Socket_Dev_Create(PP_Instance instance, PP_Ext_Socket_SocketType_Dev type, PP_Ext_Socket_CreateOptions_Dev options, PP_Ext_Socket_CreateInfo_Dev* create_info, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  return iface->Create(instance, type, options, create_info, *callback);
-}
-
-static void Pnacl_M28_PPB_Ext_Socket_Dev_Destroy(PP_Instance instance, struct PP_Var* socket_id) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  iface->Destroy(instance, *socket_id);
-}
-
-static int32_t Pnacl_M28_PPB_Ext_Socket_Dev_Connect(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* hostname, struct PP_Var* port, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  return iface->Connect(instance, *socket_id, *hostname, *port, result, *callback);
-}
-
-static int32_t Pnacl_M28_PPB_Ext_Socket_Dev_Bind(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* address, struct PP_Var* port, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  return iface->Bind(instance, *socket_id, *address, *port, result, *callback);
-}
-
-static void Pnacl_M28_PPB_Ext_Socket_Dev_Disconnect(PP_Instance instance, struct PP_Var* socket_id) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  iface->Disconnect(instance, *socket_id);
-}
-
-static int32_t Pnacl_M28_PPB_Ext_Socket_Dev_Read(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* buffer_size, PP_Ext_Socket_ReadInfo_Dev* read_info, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  return iface->Read(instance, *socket_id, *buffer_size, read_info, *callback);
-}
-
-static int32_t Pnacl_M28_PPB_Ext_Socket_Dev_Write(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* data, PP_Ext_Socket_WriteInfo_Dev* write_info, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  return iface->Write(instance, *socket_id, *data, write_info, *callback);
-}
-
-static int32_t Pnacl_M28_PPB_Ext_Socket_Dev_RecvFrom(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* buffer_size, PP_Ext_Socket_RecvFromInfo_Dev* recv_from_info, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  return iface->RecvFrom(instance, *socket_id, *buffer_size, recv_from_info, *callback);
-}
-
-static int32_t Pnacl_M28_PPB_Ext_Socket_Dev_SendTo(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* data, struct PP_Var* address, struct PP_Var* port, PP_Ext_Socket_WriteInfo_Dev* write_info, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  return iface->SendTo(instance, *socket_id, *data, *address, *port, write_info, *callback);
-}
-
-static int32_t Pnacl_M28_PPB_Ext_Socket_Dev_Listen(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* address, struct PP_Var* port, struct PP_Var* backlog, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  return iface->Listen(instance, *socket_id, *address, *port, *backlog, result, *callback);
-}
-
-static int32_t Pnacl_M28_PPB_Ext_Socket_Dev_Accept(PP_Instance instance, struct PP_Var* socket_id, PP_Ext_Socket_AcceptInfo_Dev* accept_info, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  return iface->Accept(instance, *socket_id, accept_info, *callback);
-}
-
-static int32_t Pnacl_M28_PPB_Ext_Socket_Dev_SetKeepAlive(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* enable, struct PP_Var* delay, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  return iface->SetKeepAlive(instance, *socket_id, *enable, *delay, result, *callback);
-}
-
-static int32_t Pnacl_M28_PPB_Ext_Socket_Dev_SetNoDelay(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* no_delay, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  return iface->SetNoDelay(instance, *socket_id, *no_delay, result, *callback);
-}
-
-static int32_t Pnacl_M28_PPB_Ext_Socket_Dev_GetInfo(PP_Instance instance, struct PP_Var* socket_id, PP_Ext_Socket_SocketInfo_Dev* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  return iface->GetInfo(instance, *socket_id, result, *callback);
-}
-
-static int32_t Pnacl_M28_PPB_Ext_Socket_Dev_GetNetworkList(PP_Instance instance, PP_Ext_Socket_NetworkInterface_Dev_Array* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_1 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1.real_iface;
-  return iface->GetNetworkList(instance, result, *callback);
-}
-
-/* End wrapper methods for PPB_Ext_Socket_Dev_0_1 */
-
-/* Begin wrapper methods for PPB_Ext_Socket_Dev_0_2 */
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_Create(PP_Instance instance, PP_Ext_Socket_SocketType_Dev type, PP_Ext_Socket_CreateOptions_Dev options, PP_Ext_Socket_CreateInfo_Dev* create_info, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->Create(instance, type, options, create_info, *callback);
-}
-
-static void Pnacl_M29_PPB_Ext_Socket_Dev_Destroy(PP_Instance instance, struct PP_Var* socket_id) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  iface->Destroy(instance, *socket_id);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_Connect(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* hostname, struct PP_Var* port, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->Connect(instance, *socket_id, *hostname, *port, result, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_Bind(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* address, struct PP_Var* port, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->Bind(instance, *socket_id, *address, *port, result, *callback);
-}
-
-static void Pnacl_M29_PPB_Ext_Socket_Dev_Disconnect(PP_Instance instance, struct PP_Var* socket_id) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  iface->Disconnect(instance, *socket_id);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_Read(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* buffer_size, PP_Ext_Socket_ReadInfo_Dev* read_info, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->Read(instance, *socket_id, *buffer_size, read_info, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_Write(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* data, PP_Ext_Socket_WriteInfo_Dev* write_info, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->Write(instance, *socket_id, *data, write_info, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_RecvFrom(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* buffer_size, PP_Ext_Socket_RecvFromInfo_Dev* recv_from_info, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->RecvFrom(instance, *socket_id, *buffer_size, recv_from_info, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_SendTo(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* data, struct PP_Var* address, struct PP_Var* port, PP_Ext_Socket_WriteInfo_Dev* write_info, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->SendTo(instance, *socket_id, *data, *address, *port, write_info, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_Listen(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* address, struct PP_Var* port, struct PP_Var* backlog, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->Listen(instance, *socket_id, *address, *port, *backlog, result, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_Accept(PP_Instance instance, struct PP_Var* socket_id, PP_Ext_Socket_AcceptInfo_Dev* accept_info, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->Accept(instance, *socket_id, accept_info, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_SetKeepAlive(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* enable, struct PP_Var* delay, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->SetKeepAlive(instance, *socket_id, *enable, *delay, result, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_SetNoDelay(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* no_delay, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->SetNoDelay(instance, *socket_id, *no_delay, result, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_GetInfo(PP_Instance instance, struct PP_Var* socket_id, PP_Ext_Socket_SocketInfo_Dev* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->GetInfo(instance, *socket_id, result, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_GetNetworkList(PP_Instance instance, PP_Ext_Socket_NetworkInterface_Dev_Array* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->GetNetworkList(instance, result, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_JoinGroup(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* address, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->JoinGroup(instance, *socket_id, *address, result, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_LeaveGroup(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* address, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->LeaveGroup(instance, *socket_id, *address, result, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_SetMulticastTimeToLive(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* ttl, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->SetMulticastTimeToLive(instance, *socket_id, *ttl, result, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_SetMulticastLoopbackMode(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* enabled, struct PP_Var* result, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->SetMulticastLoopbackMode(instance, *socket_id, *enabled, result, *callback);
-}
-
-static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_GetJoinedGroups(PP_Instance instance, struct PP_Var* socket_id, struct PP_Var* groups, struct PP_CompletionCallback* callback) {
-  const struct PPB_Ext_Socket_Dev_0_2 *iface = Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2.real_iface;
-  return iface->GetJoinedGroups(instance, *socket_id, groups, *callback);
-}
-
-/* End wrapper methods for PPB_Ext_Socket_Dev_0_2 */
-
 /* Not generating wrapper interface for PPB_Audio_1_0 */
 
 /* Not generating wrapper interface for PPB_Audio_1_1 */
@@ -5159,7 +4983,7 @@ static const struct PPB_NaCl_Private_1_0 Pnacl_Wrappers_PPB_NaCl_Private_1_0 = {
     .OpenNaClExecutable = (PP_FileHandle (*)(PP_Instance instance, const char* file_url, uint64_t* file_token_lo, uint64_t* file_token_hi))&Pnacl_M25_PPB_NaCl_Private_OpenNaClExecutable,
     .DispatchEvent = (void (*)(PP_Instance instance, PP_NaClEventType event_type, const char* resource_url, PP_Bool length_is_computable, uint64_t loaded_bytes, uint64_t total_bytes))&Pnacl_M25_PPB_NaCl_Private_DispatchEvent,
     .NexeFileDidOpen = (void (*)(PP_Instance instance, int32_t pp_error, int32_t fd, int32_t http_status, int64_t nexe_bytes_read, const char* url, int64_t time_since_open))&Pnacl_M25_PPB_NaCl_Private_NexeFileDidOpen,
-    .ReportLoadSuccess = (void (*)(PP_Instance instance, PP_Bool is_pnacl, const char* url, uint64_t loaded_bytes, uint64_t total_bytes))&Pnacl_M25_PPB_NaCl_Private_ReportLoadSuccess,
+    .ReportLoadSuccess = (void (*)(PP_Instance instance, const char* url, uint64_t loaded_bytes, uint64_t total_bytes))&Pnacl_M25_PPB_NaCl_Private_ReportLoadSuccess,
     .ReportLoadError = (void (*)(PP_Instance instance, PP_NaClError error, const char* error_message, const char* console_message))&Pnacl_M25_PPB_NaCl_Private_ReportLoadError,
     .ReportLoadAbort = (void (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_ReportLoadAbort,
     .NexeDidCrash = (void (*)(PP_Instance instance, const char* crash_log))&Pnacl_M25_PPB_NaCl_Private_NexeDidCrash,
@@ -5167,20 +4991,22 @@ static const struct PPB_NaCl_Private_1_0 Pnacl_Wrappers_PPB_NaCl_Private_1_0 = {
     .InstanceDestroyed = (void (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_InstanceDestroyed,
     .NaClDebugEnabledForURL = (PP_Bool (*)(const char* alleged_nmf_url))&Pnacl_M25_PPB_NaCl_Private_NaClDebugEnabledForURL,
     .GetSandboxArch = (const char* (*)(void))&Pnacl_M25_PPB_NaCl_Private_GetSandboxArch,
-    .GetUrlScheme = (PP_UrlSchemeType (*)(struct PP_Var url))&Pnacl_M25_PPB_NaCl_Private_GetUrlScheme,
     .LogToConsole = (void (*)(PP_Instance instance, const char* message))&Pnacl_M25_PPB_NaCl_Private_LogToConsole,
     .GetNaClReadyState = (PP_NaClReadyState (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetNaClReadyState,
     .GetIsInstalled = (PP_Bool (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetIsInstalled,
     .GetExitStatus = (int32_t (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetExitStatus,
     .SetExitStatus = (void (*)(PP_Instance instance, int32_t exit_status))&Pnacl_M25_PPB_NaCl_Private_SetExitStatus,
     .Vlog = (void (*)(const char* message))&Pnacl_M25_PPB_NaCl_Private_Vlog,
-    .InitializePlugin = (void (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_InitializePlugin,
+    .InitializePlugin = (void (*)(PP_Instance instance, uint32_t argc, const char* argn[], const char* argv[]))&Pnacl_M25_PPB_NaCl_Private_InitializePlugin,
     .GetNexeSize = (int64_t (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetNexeSize,
     .RequestNaClManifest = (PP_Bool (*)(PP_Instance instance, const char* manifest_url, PP_Bool* is_data_uri))&Pnacl_M25_PPB_NaCl_Private_RequestNaClManifest,
     .GetManifestBaseURL = (struct PP_Var (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetManifestBaseURL,
     .ResolvesRelativeToPluginBaseUrl = (PP_Bool (*)(PP_Instance instance, const char* url))&Pnacl_M25_PPB_NaCl_Private_ResolvesRelativeToPluginBaseUrl,
     .ParseDataURL = (struct PP_Var (*)(const char* data_url))&Pnacl_M25_PPB_NaCl_Private_ParseDataURL,
-    .ProcessNaClManifest = (void (*)(PP_Instance instance, const char* program_url))&Pnacl_M25_PPB_NaCl_Private_ProcessNaClManifest
+    .ProcessNaClManifest = (void (*)(PP_Instance instance, const char* program_url))&Pnacl_M25_PPB_NaCl_Private_ProcessNaClManifest,
+    .GetManifestURLArgument = (struct PP_Var (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetManifestURLArgument,
+    .IsPNaCl = (PP_Bool (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_IsPNaCl,
+    .DevInterfacesEnabled = (PP_Bool (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_DevInterfacesEnabled
 };
 
 static const struct PPB_NetAddress_Private_0_1 Pnacl_Wrappers_PPB_NetAddress_Private_0_1 = {
@@ -5401,47 +5227,6 @@ static const struct PPP_ContentDecryptor_Private_0_11 Pnacl_Wrappers_PPP_Content
 
 static const struct PPP_Instance_Private_0_1 Pnacl_Wrappers_PPP_Instance_Private_0_1 = {
     .GetInstanceObject = &Pnacl_M18_PPP_Instance_Private_GetInstanceObject
-};
-
-static const struct PPB_Ext_Socket_Dev_0_1 Pnacl_Wrappers_PPB_Ext_Socket_Dev_0_1 = {
-    .Create = (int32_t (*)(PP_Instance instance, PP_Ext_Socket_SocketType_Dev type, PP_Ext_Socket_CreateOptions_Dev options, PP_Ext_Socket_CreateInfo_Dev* create_info, struct PP_CompletionCallback callback))&Pnacl_M28_PPB_Ext_Socket_Dev_Create,
-    .Destroy = (void (*)(PP_Instance instance, struct PP_Var socket_id))&Pnacl_M28_PPB_Ext_Socket_Dev_Destroy,
-    .Connect = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var hostname, struct PP_Var port, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M28_PPB_Ext_Socket_Dev_Connect,
-    .Bind = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var address, struct PP_Var port, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M28_PPB_Ext_Socket_Dev_Bind,
-    .Disconnect = (void (*)(PP_Instance instance, struct PP_Var socket_id))&Pnacl_M28_PPB_Ext_Socket_Dev_Disconnect,
-    .Read = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var buffer_size, PP_Ext_Socket_ReadInfo_Dev* read_info, struct PP_CompletionCallback callback))&Pnacl_M28_PPB_Ext_Socket_Dev_Read,
-    .Write = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var data, PP_Ext_Socket_WriteInfo_Dev* write_info, struct PP_CompletionCallback callback))&Pnacl_M28_PPB_Ext_Socket_Dev_Write,
-    .RecvFrom = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var buffer_size, PP_Ext_Socket_RecvFromInfo_Dev* recv_from_info, struct PP_CompletionCallback callback))&Pnacl_M28_PPB_Ext_Socket_Dev_RecvFrom,
-    .SendTo = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var data, struct PP_Var address, struct PP_Var port, PP_Ext_Socket_WriteInfo_Dev* write_info, struct PP_CompletionCallback callback))&Pnacl_M28_PPB_Ext_Socket_Dev_SendTo,
-    .Listen = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var address, struct PP_Var port, struct PP_Var backlog, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M28_PPB_Ext_Socket_Dev_Listen,
-    .Accept = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, PP_Ext_Socket_AcceptInfo_Dev* accept_info, struct PP_CompletionCallback callback))&Pnacl_M28_PPB_Ext_Socket_Dev_Accept,
-    .SetKeepAlive = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var enable, struct PP_Var delay, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M28_PPB_Ext_Socket_Dev_SetKeepAlive,
-    .SetNoDelay = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var no_delay, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M28_PPB_Ext_Socket_Dev_SetNoDelay,
-    .GetInfo = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, PP_Ext_Socket_SocketInfo_Dev* result, struct PP_CompletionCallback callback))&Pnacl_M28_PPB_Ext_Socket_Dev_GetInfo,
-    .GetNetworkList = (int32_t (*)(PP_Instance instance, PP_Ext_Socket_NetworkInterface_Dev_Array* result, struct PP_CompletionCallback callback))&Pnacl_M28_PPB_Ext_Socket_Dev_GetNetworkList
-};
-
-static const struct PPB_Ext_Socket_Dev_0_2 Pnacl_Wrappers_PPB_Ext_Socket_Dev_0_2 = {
-    .Create = (int32_t (*)(PP_Instance instance, PP_Ext_Socket_SocketType_Dev type, PP_Ext_Socket_CreateOptions_Dev options, PP_Ext_Socket_CreateInfo_Dev* create_info, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_Create,
-    .Destroy = (void (*)(PP_Instance instance, struct PP_Var socket_id))&Pnacl_M29_PPB_Ext_Socket_Dev_Destroy,
-    .Connect = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var hostname, struct PP_Var port, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_Connect,
-    .Bind = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var address, struct PP_Var port, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_Bind,
-    .Disconnect = (void (*)(PP_Instance instance, struct PP_Var socket_id))&Pnacl_M29_PPB_Ext_Socket_Dev_Disconnect,
-    .Read = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var buffer_size, PP_Ext_Socket_ReadInfo_Dev* read_info, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_Read,
-    .Write = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var data, PP_Ext_Socket_WriteInfo_Dev* write_info, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_Write,
-    .RecvFrom = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var buffer_size, PP_Ext_Socket_RecvFromInfo_Dev* recv_from_info, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_RecvFrom,
-    .SendTo = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var data, struct PP_Var address, struct PP_Var port, PP_Ext_Socket_WriteInfo_Dev* write_info, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_SendTo,
-    .Listen = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var address, struct PP_Var port, struct PP_Var backlog, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_Listen,
-    .Accept = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, PP_Ext_Socket_AcceptInfo_Dev* accept_info, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_Accept,
-    .SetKeepAlive = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var enable, struct PP_Var delay, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_SetKeepAlive,
-    .SetNoDelay = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var no_delay, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_SetNoDelay,
-    .GetInfo = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, PP_Ext_Socket_SocketInfo_Dev* result, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_GetInfo,
-    .GetNetworkList = (int32_t (*)(PP_Instance instance, PP_Ext_Socket_NetworkInterface_Dev_Array* result, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_GetNetworkList,
-    .JoinGroup = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var address, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_JoinGroup,
-    .LeaveGroup = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var address, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_LeaveGroup,
-    .SetMulticastTimeToLive = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var ttl, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_SetMulticastTimeToLive,
-    .SetMulticastLoopbackMode = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var enabled, struct PP_Var* result, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_SetMulticastLoopbackMode,
-    .GetJoinedGroups = (int32_t (*)(PP_Instance instance, struct PP_Var socket_id, struct PP_Var* groups, struct PP_CompletionCallback callback))&Pnacl_M29_PPB_Ext_Socket_Dev_GetJoinedGroups
 };
 
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Console_1_0 = {
@@ -6056,18 +5841,6 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_Instance_Private_0_1 = {
   .real_iface = NULL
 };
 
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1 = {
-  .iface_macro = PPB_EXT_SOCKET_DEV_INTERFACE_0_1,
-  .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_Ext_Socket_Dev_0_1,
-  .real_iface = NULL
-};
-
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2 = {
-  .iface_macro = PPB_EXT_SOCKET_DEV_INTERFACE_0_2,
-  .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_Ext_Socket_Dev_0_2,
-  .real_iface = NULL
-};
-
 static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
   &Pnacl_WrapperInfo_PPB_Console_1_0,
   &Pnacl_WrapperInfo_PPB_Core_1_0,
@@ -6167,8 +5940,6 @@ static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
   &Pnacl_WrapperInfo_PPB_VideoDestination_Private_0_1,
   &Pnacl_WrapperInfo_PPB_VideoSource_Private_0_1,
   &Pnacl_WrapperInfo_PPB_X509Certificate_Private_0_1,
-  &Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_1,
-  &Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2,
   NULL
 };
 

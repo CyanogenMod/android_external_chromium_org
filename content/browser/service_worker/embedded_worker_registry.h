@@ -7,6 +7,7 @@
 
 #include <map>
 #include <set>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
@@ -16,6 +17,7 @@
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 
+struct EmbeddedWorkerMsg_StartWorker_Params;
 class GURL;
 
 namespace IPC {
@@ -36,6 +38,8 @@ class ServiceWorkerContextCore;
 class CONTENT_EXPORT EmbeddedWorkerRegistry
     : public NON_EXPORTED_BASE(base::RefCounted<EmbeddedWorkerRegistry>) {
  public:
+  typedef base::Callback<void(ServiceWorkerStatusCode)> StatusCallback;
+
   explicit EmbeddedWorkerRegistry(
       base::WeakPtr<ServiceWorkerContextCore> context);
 
@@ -46,22 +50,22 @@ class CONTENT_EXPORT EmbeddedWorkerRegistry
   scoped_ptr<EmbeddedWorkerInstance> CreateWorker();
 
   // Called from EmbeddedWorkerInstance, relayed to the child process.
-  ServiceWorkerStatusCode StartWorker(int process_id,
-                                      int embedded_worker_id,
-                                      int64 service_worker_version_id,
-                                      const GURL& scope,
-                                      const GURL& script_url);
+  void StartWorker(const std::vector<int>& process_ids,
+                   int embedded_worker_id,
+                   int64 service_worker_version_id,
+                   const GURL& scope,
+                   const GURL& script_url,
+                   const StatusCallback& callback);
   ServiceWorkerStatusCode StopWorker(int process_id,
                                      int embedded_worker_id);
+
+  // Stop all active workers, even if they're handling events.
+  void Shutdown();
 
   // Called back from EmbeddedWorker in the child process, relayed via
   // ServiceWorkerDispatcherHost.
   void OnWorkerStarted(int process_id, int thread_id, int embedded_worker_id);
   void OnWorkerStopped(int process_id, int embedded_worker_id);
-  bool OnReplyToBrowser(int embedded_worker_id,
-                        int request_id,
-                        const IPC::Message& message);
-
   void OnReportException(int embedded_worker_id,
                          const base::string16& error_message,
                          int line_number,
@@ -89,6 +93,14 @@ class CONTENT_EXPORT EmbeddedWorkerRegistry
   typedef std::map<int, IPC::Sender*> ProcessToSenderMap;
 
   ~EmbeddedWorkerRegistry();
+
+  void StartWorkerWithProcessId(
+      int embedded_worker_id,
+      scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
+      const StatusCallback& callback,
+      ServiceWorkerStatusCode status,
+      int process_id);
+
   ServiceWorkerStatusCode Send(int process_id, IPC::Message* message);
 
   // RemoveWorker is called when EmbeddedWorkerInstance is destructed.

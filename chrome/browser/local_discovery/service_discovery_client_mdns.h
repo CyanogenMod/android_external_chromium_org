@@ -1,25 +1,28 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_LOCAL_DISCOVERY_SERVICE_DISCOVERY_CLIENT_MDNS_H_
 #define CHROME_BROWSER_LOCAL_DISCOVERY_SERVICE_DISCOVERY_CLIENT_MDNS_H_
 
+#include <set>
 #include <string>
 
 #include "base/cancelable_callback.h"
 #include "chrome/browser/local_discovery/service_discovery_shared_client.h"
 #include "chrome/common/local_discovery/service_discovery_client.h"
 #include "net/base/network_change_notifier.h"
+#include "net/dns/mdns_client.h"
 
 namespace local_discovery {
 
-class ServiceDiscoveryHostClient;
-
+// Implementation of ServiceDiscoverySharedClient with front-end of UI thread
+// and networking code on IO thread.
 class ServiceDiscoveryClientMdns
     : public ServiceDiscoverySharedClient,
       public net::NetworkChangeNotifier::NetworkChangeObserver {
  public:
+  class Proxy;
   ServiceDiscoveryClientMdns();
 
   // ServiceDiscoveryClient implementation.
@@ -39,15 +42,38 @@ class ServiceDiscoveryClientMdns
       net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
 
  private:
-  friend class base::RefCounted<ServiceDiscoveryClientMdns>;
-
   virtual ~ServiceDiscoveryClientMdns();
+
   void ScheduleStartNewClient();
   void StartNewClient();
+  void OnInterfaceListReady(const net::InterfaceIndexFamilyList& interfaces);
+  void OnMdnsInitialized(bool success);
   void ReportSuccess();
+  void InvalidateWeakPtrs();
+  void Reset();
 
-  scoped_refptr<ServiceDiscoveryHostClient> host_client_;
+  bool PostToMdnsThread(const base::Closure& task);
+
+  std::set<Proxy*> proxies_;
+
+  scoped_refptr<base::SequencedTaskRunner> mdns_runner_;
+
+  // Access only on |mdns_runner_| thread.
+  scoped_ptr<net::MDnsClient> mdns_;
+
+  // Access only on |mdns_runner_| thread.
+  scoped_ptr<ServiceDiscoveryClient> client_;
+
+  // Counter of restart attempts we have made after network change.
   int restart_attempts_;
+
+  // If false delay tasks until initialization is posted to |mdns_runner_|
+  // thread.
+  bool need_dalay_mdns_tasks_;
+
+  // Delayed |mdns_runner_| tasks.
+  std::vector<base::Closure> delayed_tasks_;
+
   base::WeakPtrFactory<ServiceDiscoveryClientMdns> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceDiscoveryClientMdns);

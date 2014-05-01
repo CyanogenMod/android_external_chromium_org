@@ -42,6 +42,7 @@ LOCAL_SRC_FILES := \
 	net/base/net_errors_posix.cc \
 	net/base/net_log.cc \
 	net/base/net_module.cc \
+	net/base/net_string_util_icu.cc \
 	net/base/net_util.cc \
 	net/base/net_util_icu.cc \
 	net/base/net_util_posix.cc \
@@ -301,19 +302,11 @@ LOCAL_SRC_FILES := \
 	net/proxy/proxy_script_fetcher_impl.cc \
 	net/proxy/proxy_server.cc \
 	net/proxy/proxy_service.cc \
-	net/quic/congestion_control/available_channel_estimator.cc \
-	net/quic/congestion_control/channel_estimator.cc \
 	net/quic/congestion_control/cube_root.cc \
 	net/quic/congestion_control/cubic.cc \
 	net/quic/congestion_control/fix_rate_receiver.cc \
 	net/quic/congestion_control/fix_rate_sender.cc \
 	net/quic/congestion_control/hybrid_slow_start.cc \
-	net/quic/congestion_control/inter_arrival_bitrate_ramp_up.cc \
-	net/quic/congestion_control/inter_arrival_overuse_detector.cc \
-	net/quic/congestion_control/inter_arrival_probe.cc \
-	net/quic/congestion_control/inter_arrival_receiver.cc \
-	net/quic/congestion_control/inter_arrival_sender.cc \
-	net/quic/congestion_control/inter_arrival_state_machine.cc \
 	net/quic/congestion_control/leaky_bucket.cc \
 	net/quic/congestion_control/loss_detection_interface.cc \
 	net/quic/congestion_control/paced_sender.cc \
@@ -430,12 +423,13 @@ LOCAL_SRC_FILES := \
 	net/socket_stream/socket_stream_job_manager.cc \
 	net/socket_stream/socket_stream_metrics.cc \
 	net/spdy/buffered_spdy_framer.cc \
+	net/spdy/fuzzing/hpack_fuzz_util.cc \
 	net/spdy/hpack_constants.cc \
 	net/spdy/hpack_decoder.cc \
 	net/spdy/hpack_encoder.cc \
-	net/spdy/hpack_encoding_context.cc \
 	net/spdy/hpack_entry.cc \
 	net/spdy/hpack_header_table.cc \
+	net/spdy/hpack_huffman_aggregator.cc \
 	net/spdy/hpack_huffman_table.cc \
 	net/spdy/hpack_input_stream.cc \
 	net/spdy/hpack_output_stream.cc \

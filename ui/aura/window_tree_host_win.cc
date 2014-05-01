@@ -55,6 +55,10 @@ WindowTreeHostWin::~WindowTreeHostWin() {
   DestroyWindow(hwnd());
 }
 
+ui::EventSource* WindowTreeHostWin::GetEventSource() {
+  return this;
+}
+
 gfx::AcceleratedWidget WindowTreeHostWin::GetAcceleratedWidget() {
   return hwnd();
 }
@@ -120,24 +124,6 @@ void WindowTreeHostWin::ReleaseCapture() {
     has_capture_ = false;
     ::ReleaseCapture();
   }
-}
-
-bool WindowTreeHostWin::QueryMouseLocation(gfx::Point* location_return) {
-  client::CursorClient* cursor_client = client::GetCursorClient(window());
-  if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
-    *location_return = gfx::Point(0, 0);
-    return false;
-  }
-
-  POINT pt;
-  GetCursorPos(&pt);
-  ScreenToClient(hwnd(), &pt);
-  const gfx::Size size = GetBounds().size();
-  *location_return =
-      gfx::Point(max(0, min(size.width(), static_cast<int>(pt.x))),
-                 max(0, min(size.height(), static_cast<int>(pt.y))));
-  return (pt.x >= 0 && static_cast<int>(pt.x) < size.width() &&
-          pt.y >= 0 && static_cast<int>(pt.y) < size.height());
 }
 
 void WindowTreeHostWin::SetCursorNative(gfx::NativeCursor native_cursor) {

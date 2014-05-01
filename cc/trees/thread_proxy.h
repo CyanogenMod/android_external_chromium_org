@@ -73,17 +73,22 @@ class ThreadProxy : public Proxy,
   // LayerTreeHostImplClient implementation
   virtual void UpdateRendererCapabilitiesOnImplThread() OVERRIDE;
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE;
+  virtual void CommitVSyncParameters(base::TimeTicks timebase,
+                                     base::TimeDelta interval) OVERRIDE;
+  virtual void SetEstimatedParentDrawTime(base::TimeDelta draw_time) OVERRIDE;
+  virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void SetMaxSwapsPendingOnImplThread(int max) OVERRIDE;
   virtual void DidSwapBuffersOnImplThread() OVERRIDE;
   virtual void DidSwapBuffersCompleteOnImplThread() OVERRIDE;
-  virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE;
   virtual void NotifyReadyToActivate() OVERRIDE;
-  // Please call these 2 functions through
-  // LayerTreeHostImpl's SetNeedsRedraw() and SetNeedsRedrawRect().
+  // Please call these 3 functions through
+  // LayerTreeHostImpl's SetNeedsRedraw(), SetNeedsRedrawRect() and
+  // SetNeedsAnimate().
   virtual void SetNeedsRedrawOnImplThread() OVERRIDE;
   virtual void SetNeedsRedrawRectOnImplThread(const gfx::Rect& dirty_rect)
       OVERRIDE;
+  virtual void SetNeedsAnimateOnImplThread() OVERRIDE;
   virtual void SetNeedsManageTilesOnImplThread() OVERRIDE;
   virtual void DidInitializeVisibleTileOnImplThread() OVERRIDE;
   virtual void SetNeedsCommitOnImplThread() OVERRIDE;
@@ -108,6 +113,7 @@ class ThreadProxy : public Proxy,
       OVERRIDE;
   virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapForced() OVERRIDE;
   virtual DrawSwapReadbackResult ScheduledActionDrawAndReadback() OVERRIDE;
+  virtual void ScheduledActionAnimate() OVERRIDE;
   virtual void ScheduledActionCommit() OVERRIDE;
   virtual void ScheduledActionUpdateVisibleTiles() OVERRIDE;
   virtual void ScheduledActionActivatePendingTree() OVERRIDE;
@@ -146,10 +152,6 @@ class ThreadProxy : public Proxy,
   void DidCompleteSwapBuffers();
   void SetAnimationEvents(scoped_ptr<AnimationEventsVector> queue);
   void DoCreateAndInitializeOutputSurface();
-  // |capabilities| is set only when |success| is true.
-  void OnOutputSurfaceInitializeAttempted(
-      bool success,
-      const RendererCapabilities& capabilities);
   void SendCommitRequestToImplThreadIfNeeded();
 
   // Called on impl thread.
@@ -160,10 +162,8 @@ class ThreadProxy : public Proxy,
   void ForceCommitForReadbackOnImplThread(
       CompletionEvent* begin_main_frame_sent_completion,
       ReadbackRequest* request);
-  void StartCommitOnImplThread(
-      CompletionEvent* completion,
-      ResourceUpdateQueue* queue,
-      scoped_refptr<ContextProvider> offscreen_context_provider);
+  void StartCommitOnImplThread(CompletionEvent* completion,
+                               ResourceUpdateQueue* queue);
   void BeginMainFrameAbortedOnImplThread(bool did_handle);
   void RequestReadbackOnImplThread(ReadbackRequest* request);
   void FinishAllRenderingOnImplThread(CompletionEvent* completion);
@@ -177,7 +177,6 @@ class ThreadProxy : public Proxy,
   void InitializeOutputSurfaceOnImplThread(
       CompletionEvent* completion,
       scoped_ptr<OutputSurface> output_surface,
-      scoped_refptr<ContextProvider> offscreen_context_provider,
       bool* success,
       RendererCapabilities* capabilities);
   void FinishGLOnImplThread(CompletionEvent* completion);
@@ -214,8 +213,6 @@ class ThreadProxy : public Proxy,
     bool commit_requested;
     // Set by SetNeedsAnimate, SetNeedsUpdateLayers, and SetNeedsCommit.
     bool commit_request_sent_to_impl_thread;
-    // Set by BeginMainFrame
-    bool created_offscreen_context_provider;
 
     bool started;
     bool in_composite_and_readback;
@@ -289,7 +286,11 @@ class ThreadProxy : public Proxy,
 
     // Set when we freeze animations to avoid checkerboarding.
     bool animations_frozen_until_next_draw;
-    base::TimeTicks animation_freeze_time;
+    base::TimeTicks animation_time;
+
+    // Whether a commit has been completed since the last time animations were
+    // ticked. If this happens, we need to animate again.
+    bool did_commit_after_animating;
 
     base::TimeTicks smoothness_takes_priority_expiration_time;
     bool renew_tree_priority_pending;

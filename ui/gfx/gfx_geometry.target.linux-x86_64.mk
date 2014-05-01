@@ -37,6 +37,7 @@ LOCAL_SRC_FILES := \
 	ui/gfx/geometry/rect.cc \
 	ui/gfx/geometry/rect_conversions.cc \
 	ui/gfx/geometry/rect_f.cc \
+	ui/gfx/geometry/r_tree.cc \
 	ui/gfx/geometry/size.cc \
 	ui/gfx/geometry/size_conversions.cc \
 	ui/gfx/geometry/size_f.cc \

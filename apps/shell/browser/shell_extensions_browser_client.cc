@@ -5,9 +5,9 @@
 #include "apps/shell/browser/shell_extensions_browser_client.h"
 
 #include "apps/shell/browser/shell_app_sorting.h"
-#include "apps/shell/browser/shell_app_window_api.h"
 #include "apps/shell/browser/shell_extension_system_factory.h"
 #include "apps/shell/browser/shell_extension_web_contents_observer.h"
+#include "apps/shell/common/api/generated_api.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/pref_service_factory.h"
 #include "base/prefs/testing_pref_store.h"
@@ -231,8 +231,8 @@ void ShellExtensionsBrowserClient::RegisterExtensionFunctions(
   // moved out. Also clean up the comment below. See http://crbug.com/349042.
   extensions::api::GeneratedFunctionRegistry::RegisterAll(registry);
 
-  // Register our simplified implementation for chrome.app.window.create().
-  registry->RegisterFunction<ShellAppWindowCreateFunction>();
+  // Register chrome.shell APIs.
+  apps::shell_api::GeneratedFunctionRegistry::RegisterAll(registry);
 }
 
 }  // namespace extensions

@@ -23,7 +23,6 @@ enum EventType {
   ET_TOUCH_RELEASED,
   ET_TOUCH_PRESSED,
   ET_TOUCH_MOVED,
-  ET_TOUCH_STATIONARY,
   ET_TOUCH_CANCELLED,
   ET_DROP_TARGET_EVENT,
   ET_TRANSLATED_KEY_PRESS,
@@ -95,6 +94,9 @@ enum EventFlags {
 // Flags specific to key events
 enum KeyEventFlags {
   EF_NUMPAD_KEY         = 1 << 16,  // Key originates from number pad (Xkb only)
+  EF_IME_FABRICATED_KEY = 1 << 17,  // Key event fabricated by the underlying
+                                    // IME without a user action.
+                                    // (Linux X11 only)
 };
 
 // Flags specific to mouse events

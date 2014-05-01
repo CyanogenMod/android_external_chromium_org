@@ -304,73 +304,12 @@ string dumpFrameScrollPosition(WebFrame* frame, bool recursive)
     return result;
 }
 
-struct ToLower {
-    base::char16 operator()(base::char16 c) { return tolower(c); }
-};
-
-// Returns True if item1 < item2.
-bool HistoryItemCompareLess(const WebHistoryItem& item1, const WebHistoryItem& item2)
-{
-    base::string16 target1 = item1.target();
-    base::string16 target2 = item2.target();
-    std::transform(target1.begin(), target1.end(), target1.begin(), ToLower());
-    std::transform(target2.begin(), target2.end(), target2.begin(), ToLower());
-    return target1 < target2;
-}
-
-string dumpHistoryItem(const WebHistoryItem& item, int indent, bool isCurrent)
-{
-    string result;
-
-    if (isCurrent) {
-        result.append("curr->");
-        result.append(indent - 6, ' '); // 6 == "curr->".length()
-    } else
-        result.append(indent, ' ');
-
-    string url = normalizeLayoutTestURL(item.urlString().utf8());
-    result.append(url);
-    if (!item.target().isEmpty()) {
-        result.append(" (in frame \"");
-        result.append(item.target().utf8());
-        result.append("\")");
-    }
-    result.append("\n");
-
-    const WebVector<WebHistoryItem>& children = item.children();
-    if (!children.isEmpty()) {
-        // Must sort to eliminate arbitrary result ordering which defeats
-        // reproducible testing.
-        // FIXME: WebVector should probably just be a std::vector!!
-        std::vector<WebHistoryItem> sortedChildren;
-        for (size_t i = 0; i < children.size(); ++i)
-            sortedChildren.push_back(children[i]);
-        std::sort(sortedChildren.begin(), sortedChildren.end(), HistoryItemCompareLess);
-        for (size_t i = 0; i < sortedChildren.size(); ++i)
-            result += dumpHistoryItem(sortedChildren[i], indent + 4, false);
-    }
-
-    return result;
-}
-
-void dumpBackForwardList(const WebVector<WebHistoryItem>& history, size_t currentEntryIndex, string& result)
-{
-    result.append("\n============== Back Forward List ==============\n");
-    for (size_t index = 0; index < history.size(); ++index)
-        result.append(dumpHistoryItem(history[index], 8, index == currentEntryIndex));
-    result.append("===============================================\n");
-}
-
 string dumpAllBackForwardLists(TestInterfaces* interfaces, WebTestDelegate* delegate)
 {
     string result;
     const vector<WebTestProxyBase*>& windowList = interfaces->windowList();
-    for (unsigned i = 0; i < windowList.size(); ++i) {
-        size_t currentEntryIndex = 0;
-        WebVector<WebHistoryItem> history;
-        delegate->captureHistoryForWindow(windowList.at(i), &history, &currentEntryIndex);
-        dumpBackForwardList(history, currentEntryIndex, result);
-    }
+    for (unsigned i = 0; i < windowList.size(); ++i)
+        result.append(delegate->dumpHistoryForWindow(windowList.at(i)));
     return result;
 }
 
@@ -512,18 +451,7 @@ string WebTestProxyBase::captureTree(bool debugRenderTree)
 SkCanvas* WebTestProxyBase::capturePixels()
 {
     webWidget()->layout();
-    if (m_testInterfaces->testRunner()->testRepaint()) {
-        WebSize viewSize = webWidget()->size();
-        int width = viewSize.width;
-        int height = viewSize.height;
-        if (m_testInterfaces->testRunner()->sweepHorizontally()) {
-            for (WebRect column(0, 0, 1, height); column.x < width; column.x++)
-                paintRect(column);
-        } else {
-            for (WebRect line(0, 0, width, 1); line.y < height; line.y++)
-                paintRect(line);
-        }
-    } else if (m_testInterfaces->testRunner()->isPrinting())
+    if (m_testInterfaces->testRunner()->isPrinting())
         paintPagesWithBoundaries();
     else
         paintInvalidatedRegion();
@@ -1034,6 +962,18 @@ void WebTestProxyBase::didCloseChooser()
 bool WebTestProxyBase::isChooserShown()
 {
     return 0 < m_chooserCount;
+}
+
+void WebTestProxyBase::loadURLExternally(WebLocalFrame* frame, const WebURLRequest& request, WebNavigationPolicy policy, const WebString& suggested_name)
+{
+    if (m_testInterfaces->testRunner()->shouldWaitUntilExternalURLLoad()) {
+        if (policy == WebNavigationPolicyDownload) {
+            m_delegate->printMessage(string("Downloading URL with suggested filename \"") + suggested_name.utf8() + "\"\n");
+        } else {
+            m_delegate->printMessage(string("Loading URL externally - \"") + URLDescription(request.url()) + "\"\n");
+        }
+        m_delegate->testFinished();
+    }
 }
 
 void WebTestProxyBase::didStartProvisionalLoad(WebLocalFrame* frame)

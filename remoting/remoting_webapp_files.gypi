@@ -51,6 +51,7 @@
     ],
     # Remoting core JavaScript files.
     'remoting_webapp_js_core_files': [
+      'webapp/base.js',
       'webapp/error.js',
       'webapp/event_handlers.js',
       'webapp/plugin_settings.js',
@@ -80,11 +81,14 @@
     'remoting_webapp_js_ui_files': [
       'webapp/butter_bar.js',
       'webapp/connection_stats.js',
+      'webapp/feedback.js',
+      'webapp/fullscreen.js',
+      'webapp/fullscreen_v1.js',
+      'webapp/fullscreen_v2.js',
       'webapp/l10n.js',
       'webapp/menu_button.js',
       'webapp/ui_mode.js',
       'webapp/toolbar.js',
-      'webapp/feedback.js',
     ],
     # UI files for controlling the local machine as a host.
     'remoting_webapp_js_ui_host_control_files': [
@@ -117,10 +121,12 @@
     ],
     # The JavaScript files required by main.html.
     'remoting_webapp_main_html_js_files': [
+      # Include the core files first as it is required by the other files.
+      # Otherwise, Jscompile will complain.
+      '<@(remoting_webapp_js_core_files)',
       '<@(remoting_webapp_js_auth_client2host_files)',
       '<@(remoting_webapp_js_auth_google_files)',
       '<@(remoting_webapp_js_client_files)',
-      '<@(remoting_webapp_js_core_files)',
       '<@(remoting_webapp_js_gnubby_auth_files)',
       '<@(remoting_webapp_js_host_files)',
       '<@(remoting_webapp_js_logging_files)',

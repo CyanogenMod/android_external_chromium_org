@@ -31,10 +31,9 @@ class VisitorShim : public QuicConnectionVisitorInterface {
  public:
   explicit VisitorShim(QuicSession* session) : session_(session) {}
 
-  virtual bool OnStreamFrames(const vector<QuicStreamFrame>& frames) OVERRIDE {
-    bool accepted = session_->OnStreamFrames(frames);
+  virtual void OnStreamFrames(const vector<QuicStreamFrame>& frames) OVERRIDE {
+    session_->OnStreamFrames(frames);
     session_->PostProcessAfterData();
-    return accepted;
   }
   virtual void OnRstStream(const QuicRstStreamFrame& frame) OVERRIDE {
     session_->OnRstStream(frame);
@@ -127,22 +126,9 @@ QuicSession::~QuicSession() {
   STLDeleteValues(&stream_map_);
 }
 
-bool QuicSession::OnStreamFrames(const vector<QuicStreamFrame>& frames) {
+void QuicSession::OnStreamFrames(const vector<QuicStreamFrame>& frames) {
   for (size_t i = 0; i < frames.size(); ++i) {
-    // TODO(rch) deal with the error case of stream id 0
-    if (IsClosedStream(frames[i].stream_id)) {
-      continue;
-    }
-
-    ReliableQuicStream* stream = GetStream(frames[i].stream_id);
-    if (stream == NULL) return false;
-    if (!stream->WillAcceptStreamFrame(frames[i])) return false;
-
-    // TODO(alyssar) check against existing connection address: if changed, make
-    // sure we update the connection.
-  }
-
-  for (size_t i = 0; i < frames.size(); ++i) {
+    // TODO(rch) deal with the error case of stream id 0.
     QuicStreamId stream_id = frames[i].stream_id;
     ReliableQuicStream* stream = GetStream(stream_id);
     if (!stream) {
@@ -150,8 +136,6 @@ bool QuicSession::OnStreamFrames(const vector<QuicStreamFrame>& frames) {
     }
     stream->OnStreamFrame(frames[i]);
   }
-
-  return true;
 }
 
 void QuicSession::OnStreamHeaders(QuicStreamId stream_id,
@@ -420,6 +404,9 @@ void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
     case HANDSHAKE_CONFIRMED:
       LOG_IF(DFATAL, !config_.negotiated()) << ENDPOINT
           << "Handshake confirmed without parameter negotiation.";
+      // Discard originally encrypted packets, since they can't be decrypted by
+      // the peer.
+      connection_->NeuterUnencryptedPackets();
       connection_->SetOverallConnectionTimeout(QuicTime::Delta::Infinite());
       max_open_streams_ = config_.max_streams_per_connection();
       break;

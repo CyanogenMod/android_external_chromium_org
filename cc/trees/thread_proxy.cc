@@ -21,7 +21,6 @@
 #include "cc/quads/draw_quad.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/scheduler/delay_based_time_source.h"
-#include "cc/scheduler/frame_rate_controller.h"
 #include "cc/scheduler/scheduler.h"
 #include "cc/trees/blocking_task_runner.h"
 #include "cc/trees/layer_tree_host.h"
@@ -92,7 +91,6 @@ ThreadProxy::MainThreadOnly::MainThreadOnly(ThreadProxy* proxy,
       animate_requested(false),
       commit_requested(false),
       commit_request_sent_to_impl_thread(false),
-      created_offscreen_context_provider(false),
       started(false),
       in_composite_and_readback(false),
       manage_tiles_pending(false),
@@ -127,8 +125,10 @@ ThreadProxy::CompositorThreadOnly::CompositorThreadOnly(ThreadProxy* proxy,
       inside_draw(false),
       input_throttled_until_commit(false),
       animations_frozen_until_next_draw(false),
+      did_commit_after_animating(false),
       renew_tree_priority_pending(false),
-      weak_factory(proxy) {}
+      weak_factory(proxy) {
+}
 
 ThreadProxy::CompositorThreadOnly::~CompositorThreadOnly() {}
 
@@ -289,24 +289,7 @@ void ThreadProxy::DoCreateAndInitializeOutputSurface() {
 
   RendererCapabilities capabilities;
   bool success = !!output_surface;
-  if (!success) {
-    OnOutputSurfaceInitializeAttempted(false, capabilities);
-    return;
-  }
-
-  scoped_refptr<ContextProvider> offscreen_context_provider;
-  if (main().created_offscreen_context_provider) {
-    offscreen_context_provider =
-        layer_tree_host()->client()->OffscreenContextProvider();
-    success = !!offscreen_context_provider.get();
-    if (!success) {
-      OnOutputSurfaceInitializeAttempted(false, capabilities);
-      return;
-    }
-  }
-
-  success = false;
-  {
+  if (success) {
     // Make a blocking call to InitializeOutputSurfaceOnImplThread. The results
     // of that call are pushed into the success and capabilities local
     // variables.
@@ -319,40 +302,24 @@ void ThreadProxy::DoCreateAndInitializeOutputSurface() {
                    impl_thread_weak_ptr_,
                    &completion,
                    base::Passed(&output_surface),
-                   offscreen_context_provider,
                    &success,
                    &capabilities));
     completion.Wait();
   }
+  main().renderer_capabilities_main_thread_copy = capabilities;
+  layer_tree_host()->OnCreateAndInitializeOutputSurfaceAttempted(success);
 
-  OnOutputSurfaceInitializeAttempted(success, capabilities);
+  if (success) {
+    main().output_surface_creation_callback.Cancel();
+  } else if (!main().output_surface_creation_callback.IsCancelled()) {
+    Proxy::MainThreadTaskRunner()->PostTask(
+        FROM_HERE, main().output_surface_creation_callback.callback());
+  }
 }
 
 void ThreadProxy::SetRendererCapabilitiesMainThreadCopy(
     const RendererCapabilities& capabilities) {
   main().renderer_capabilities_main_thread_copy = capabilities;
-}
-
-void ThreadProxy::OnOutputSurfaceInitializeAttempted(
-    bool success,
-    const RendererCapabilities& capabilities) {
-  DCHECK(IsMainThread());
-  DCHECK(layer_tree_host());
-
-  if (success) {
-    main().renderer_capabilities_main_thread_copy = capabilities;
-  }
-
-  LayerTreeHost::CreateResult result =
-      layer_tree_host()->OnCreateAndInitializeOutputSurfaceAttempted(success);
-  if (result == LayerTreeHost::CreateFailedButTryAgain) {
-    if (!main().output_surface_creation_callback.callback().is_null()) {
-      Proxy::MainThreadTaskRunner()->PostTask(
-          FROM_HERE, main().output_surface_creation_callback.callback());
-    }
-  } else {
-    main().output_surface_creation_callback.Cancel();
-  }
 }
 
 void ThreadProxy::SendCommitRequestToImplThreadIfNeeded() {
@@ -427,10 +394,16 @@ void ThreadProxy::CheckOutputSurfaceStatusOnImplThread() {
   DCHECK(IsImplThread());
   if (!impl().layer_tree_host_impl->IsContextLost())
     return;
-  if (ContextProvider* offscreen_contexts =
-          impl().layer_tree_host_impl->offscreen_context_provider())
-    offscreen_contexts->VerifyContexts();
   impl().scheduler->DidLoseOutputSurface();
+}
+
+void ThreadProxy::CommitVSyncParameters(base::TimeTicks timebase,
+                                        base::TimeDelta interval) {
+  impl().scheduler->CommitVSyncParameters(timebase, interval);
+}
+
+void ThreadProxy::SetEstimatedParentDrawTime(base::TimeDelta draw_time) {
+  impl().scheduler->SetEstimatedParentDrawTime(draw_time);
 }
 
 void ThreadProxy::SetMaxSwapsPendingOnImplThread(int max) {
@@ -590,6 +563,12 @@ void ThreadProxy::SetNeedsRedrawOnImplThread() {
   TRACE_EVENT0("cc", "ThreadProxy::SetNeedsRedrawOnImplThread");
   DCHECK(IsImplThread());
   impl().scheduler->SetNeedsRedraw();
+}
+
+void ThreadProxy::SetNeedsAnimateOnImplThread() {
+  TRACE_EVENT0("cc", "ThreadProxy::SetNeedsAnimateOnImplThread");
+  DCHECK(IsImplThread());
+  impl().scheduler->SetNeedsAnimate();
 }
 
 void ThreadProxy::SetNeedsManageTilesOnImplThread() {
@@ -949,15 +928,6 @@ void ThreadProxy::BeginMainFrame(
     return;
   }
 
-  scoped_refptr<ContextProvider> offscreen_context_provider;
-  if (main().renderer_capabilities_main_thread_copy.using_offscreen_context3d &&
-      layer_tree_host()->needs_offscreen_context()) {
-    offscreen_context_provider =
-        layer_tree_host()->client()->OffscreenContextProvider();
-    if (offscreen_context_provider.get())
-      main().created_offscreen_context_provider = true;
-  }
-
   // Notify the impl thread that the main thread is ready to commit. This will
   // begin the commit process, which is blocking from the main thread's
   // point of view, but asynchronously performed on the impl thread,
@@ -978,8 +948,7 @@ void ThreadProxy::BeginMainFrame(
         base::Bind(&ThreadProxy::StartCommitOnImplThread,
                    impl_thread_weak_ptr_,
                    &completion,
-                   queue.release(),
-                   offscreen_context_provider));
+                   queue.release()));
     completion.Wait();
 
     RenderingStatsInstrumentation* stats_instrumentation =
@@ -993,10 +962,8 @@ void ThreadProxy::BeginMainFrame(
   layer_tree_host()->DidBeginMainFrame();
 }
 
-void ThreadProxy::StartCommitOnImplThread(
-    CompletionEvent* completion,
-    ResourceUpdateQueue* raw_queue,
-    scoped_refptr<ContextProvider> offscreen_context_provider) {
+void ThreadProxy::StartCommitOnImplThread(CompletionEvent* completion,
+                                          ResourceUpdateQueue* raw_queue) {
   TRACE_EVENT0("cc", "ThreadProxy::StartCommitOnImplThread");
   DCHECK(!impl().commit_completion_event);
   DCHECK(IsImplThread() && IsMainThreadBlocked());
@@ -1015,11 +982,6 @@ void ThreadProxy::StartCommitOnImplThread(
   impl().scheduler->NotifyBeginMainFrameStarted();
 
   scoped_ptr<ResourceUpdateQueue> queue(raw_queue);
-
-  if (offscreen_context_provider.get())
-    offscreen_context_provider->BindToCurrentThread();
-  impl().layer_tree_host_impl->SetOffscreenContextProvider(
-      offscreen_context_provider);
 
   if (impl().contents_texture_manager) {
     DCHECK_EQ(impl().contents_texture_manager,
@@ -1066,6 +1028,18 @@ void ThreadProxy::BeginMainFrameAbortedOnImplThread(bool did_handle) {
   impl().scheduler->BeginMainFrameAborted(did_handle);
 }
 
+void ThreadProxy::ScheduledActionAnimate() {
+  TRACE_EVENT0("cc", "ThreadProxy::ScheduledActionAnimate");
+  DCHECK(IsImplThread());
+
+  if (!impl().animations_frozen_until_next_draw) {
+    impl().animation_time =
+        impl().layer_tree_host_impl->CurrentFrameTimeTicks();
+  }
+  impl().layer_tree_host_impl->Animate(impl().animation_time);
+  impl().did_commit_after_animating = false;
+}
+
 void ThreadProxy::ScheduledActionCommit() {
   TRACE_EVENT0("cc", "ThreadProxy::ScheduledActionCommit");
   DCHECK(IsImplThread());
@@ -1078,10 +1052,10 @@ void ThreadProxy::ScheduledActionCommit() {
   impl().current_resource_update_controller.reset();
 
   if (impl().animations_frozen_until_next_draw) {
-    impl().animation_freeze_time =
-        std::max(impl().animation_freeze_time,
-                 blocked_main().last_monotonic_frame_begin_time);
+    impl().animation_time = std::max(
+        impl().animation_time, blocked_main().last_monotonic_frame_begin_time);
   }
+  impl().did_commit_after_animating = true;
 
   blocked_main().main_thread_inside_commit = true;
   impl().layer_tree_host_impl->BeginCommit();
@@ -1155,17 +1129,13 @@ DrawSwapReadbackResult ThreadProxy::DrawSwapReadbackInternal(
   base::TimeDelta draw_duration_estimate = DrawDurationEstimate();
   base::AutoReset<bool> mark_inside(&impl().inside_draw, true);
 
-  // Advance our animations.
-  base::TimeTicks monotonic_time;
-  if (impl().animations_frozen_until_next_draw)
-    monotonic_time = impl().animation_freeze_time;
-  else
-    monotonic_time = impl().layer_tree_host_impl->CurrentFrameTimeTicks();
+  if (impl().did_commit_after_animating) {
+    impl().layer_tree_host_impl->Animate(impl().animation_time);
+    impl().did_commit_after_animating = false;
+  }
 
-  // TODO(enne): This should probably happen post-animate.
   if (impl().layer_tree_host_impl->pending_tree())
     impl().layer_tree_host_impl->pending_tree()->UpdateDrawProperties();
-  impl().layer_tree_host_impl->Animate(monotonic_time);
 
   // This method is called on a forced draw, regardless of whether we are able
   // to produce a frame, as the calling site on main thread is blocked until its
@@ -1219,7 +1189,6 @@ DrawSwapReadbackResult ThreadProxy::DrawSwapReadbackInternal(
     // checkerboarding will be displayed when we force a draw. To avoid this,
     // we freeze animations until we successfully draw.
     impl().animations_frozen_until_next_draw = true;
-    impl().animation_freeze_time = monotonic_time;
   } else {
     DCHECK_NE(DrawSwapReadbackResult::DRAW_SUCCESS, result.draw_result);
   }
@@ -1426,6 +1395,8 @@ void ThreadProxy::InitializeImplOnImplThread(CompletionEvent* completion) {
       layer_tree_host()->CreateLayerTreeHostImpl(this);
   const LayerTreeSettings& settings = layer_tree_host()->settings();
   SchedulerSettings scheduler_settings;
+  scheduler_settings.begin_frame_scheduling_enabled =
+      settings.begin_frame_scheduling_enabled;
   scheduler_settings.main_frame_before_draw_enabled =
       settings.main_frame_before_draw_enabled;
   scheduler_settings.main_frame_before_activation_enabled =
@@ -1452,7 +1423,6 @@ void ThreadProxy::InitializeImplOnImplThread(CompletionEvent* completion) {
 void ThreadProxy::InitializeOutputSurfaceOnImplThread(
     CompletionEvent* completion,
     scoped_ptr<OutputSurface> output_surface,
-    scoped_refptr<ContextProvider> offscreen_context_provider,
     bool* success,
     RendererCapabilities* capabilities) {
   TRACE_EVENT0("cc", "ThreadProxy::InitializeOutputSurfaceOnImplThread");
@@ -1472,14 +1442,7 @@ void ThreadProxy::InitializeOutputSurfaceOnImplThread(
                         .layer_tree_host_impl->GetRendererCapabilities()
                         .MainThreadCapabilities();
     impl().scheduler->DidCreateAndInitializeOutputSurface();
-  } else if (offscreen_context_provider.get()) {
-    if (offscreen_context_provider->BindToCurrentThread())
-      offscreen_context_provider->VerifyContexts();
-    offscreen_context_provider = NULL;
   }
-
-  impl().layer_tree_host_impl->SetOffscreenContextProvider(
-      offscreen_context_provider);
 
   completion->Signal();
 }

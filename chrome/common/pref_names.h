@@ -310,6 +310,7 @@ extern const char kCurrentThemeColors[];
 extern const char kCurrentThemeTints[];
 extern const char kCurrentThemeDisplayProperties[];
 extern const char kExtensionsUIDeveloperMode[];
+extern const char kExtensionsUIDismissedADTPromo[];
 extern const char kExtensionCommands[];
 extern const char kPluginsLastInternalDirectory[];
 extern const char kPluginsPluginsList[];
@@ -627,6 +628,8 @@ extern const char kRemoteAccessHostTalkGadgetPrefix[];
 extern const char kRemoteAccessHostRequireCurtain[];
 extern const char kRemoteAccessHostAllowClientPairing[];
 extern const char kRemoteAccessHostAllowGnubbyAuth[];
+extern const char kRemoteAccessHostAllowRelayedConnection[];
+extern const char kRemoteAccessHostUdpPortRange[];
 
 extern const char kPrintPreviewStickySettings[];
 extern const char kCloudPrintRoot[];
@@ -754,6 +757,7 @@ extern const char kCustomHandlersEnabled[];
 extern const char kUserRemovedLoginItem[];
 extern const char kChromeCreatedLoginItem[];
 extern const char kMigratedLoginItemPref[];
+extern const char kNotifyWhenAppsKeepChromeAlive[];
 #endif
 
 extern const char kBackgroundModeEnabled[];
@@ -766,6 +770,8 @@ extern const char kFactoryResetRequested[];
 extern const char kRollbackRequested[];
 
 extern const char kMessageCenterShowedFirstRunBalloon[];
+extern const char kMessageCenterShowIcon[];
+extern const char kMessageCenterForcedOnTaskbar[];
 
 extern const char kRecoveryComponentVersion[];
 extern const char kComponentUpdaterState[];

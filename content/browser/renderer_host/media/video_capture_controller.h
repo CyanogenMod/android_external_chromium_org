@@ -58,7 +58,6 @@
 #include "content/browser/renderer_host/media/video_capture_controller_event_handler.h"
 #include "content/common/content_export.h"
 #include "content/common/media/video_capture.h"
-#include "media/video/capture/video_capture.h"
 #include "media/video/capture/video_capture_device.h"
 #include "media/video/capture/video_capture_types.h"
 
@@ -106,7 +105,7 @@ class CONTENT_EXPORT VideoCaptureController {
   void ReturnBuffer(const VideoCaptureControllerID& id,
                     VideoCaptureControllerEventHandler* event_handler,
                     int buffer_id,
-                    uint32 sync_point);
+                    const std::vector<uint32>& sync_points);
 
   const media::VideoCaptureFormat& GetVideoCaptureFormat() const;
 

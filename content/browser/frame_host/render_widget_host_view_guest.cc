@@ -13,6 +13,7 @@
 #include "content/common/frame_messages.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/host_shared_bitmap_manager.h"
+#include "content/common/input/web_touch_event_traits.h"
 #include "content/common/view_messages.h"
 #include "content/common/webplugin_geometry.h"
 #include "content/public/common/content_switches.h"
@@ -166,9 +167,6 @@ void RenderWidgetHostViewGuest::AcceleratedSurfaceBuffersSwapped(
   if (!guest_)
     return;
 
-  // If accelerated surface buffers are getting swapped then we're not using
-  // the software path.
-  guest_->clear_damage_buffer();
   FrameMsg_BuffersSwapped_Params guest_params;
   guest_params.size = params.size;
   guest_params.mailbox = params.mailbox;
@@ -190,8 +188,6 @@ void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
     scoped_ptr<cc::CompositorFrame> frame) {
   if (!guest_)
     return;
-
-  guest_->clear_damage_buffer();
 
   if (!guest_->attached()) {
     // If the guest doesn't have an embedder then there's nothing to give the
@@ -280,9 +276,8 @@ gfx::NativeViewAccessible RenderWidgetHostViewGuest::GetNativeViewAccessible() {
 }
 
 void RenderWidgetHostViewGuest::MovePluginWindows(
-    const gfx::Vector2d& scroll_offset,
     const std::vector<WebPluginGeometry>& moves) {
-  platform_view_->MovePluginWindows(scroll_offset, moves);
+  platform_view_->MovePluginWindows(moves);
 }
 
 void RenderWidgetHostViewGuest::UpdateCursor(const WebCursor& cursor) {
@@ -341,14 +336,6 @@ void RenderWidgetHostViewGuest::ImeCompositionRangeChanged(
 }
 #endif
 
-void RenderWidgetHostViewGuest::DidUpdateBackingStore(
-    const gfx::Rect& scroll_rect,
-    const gfx::Vector2d& scroll_delta,
-    const std::vector<gfx::Rect>& copy_rects,
-    const std::vector<ui::LatencyInfo>& latency_info) {
-  NOTREACHED();
-}
-
 void RenderWidgetHostViewGuest::SelectionChanged(const base::string16& text,
                                                  size_t offset,
                                                  const gfx::Range& range) {
@@ -396,11 +383,6 @@ void RenderWidgetHostViewGuest::CopyFromCompositingSurface(
 
 void RenderWidgetHostViewGuest::SetBackground(const SkBitmap& background) {
   platform_view_->SetBackground(background);
-}
-
-void RenderWidgetHostViewGuest::SetHasHorizontalScrollbar(
-    bool has_horizontal_scrollbar) {
-  platform_view_->SetHasHorizontalScrollbar(has_horizontal_scrollbar);
 }
 
 void RenderWidgetHostViewGuest::SetScrollOffsetPinning(
@@ -531,8 +513,12 @@ void RenderWidgetHostViewGuest::DispatchCancelTouchEvent(
     return;
 
   blink::WebTouchEvent cancel_event;
-  cancel_event.type = blink::WebInputEvent::TouchCancel;
-  cancel_event.timeStampSeconds = event->time_stamp().InSecondsF();
+  // TODO(rbyers): This event has no touches in it.  Don't we need to know what
+  // touches are currently active in order to cancel them all properly?
+  WebTouchEventTraits::ResetType(blink::WebInputEvent::TouchCancel,
+                                 event->time_stamp().InSecondsF(),
+                                 &cancel_event);
+
   host_->ForwardTouchEventWithLatencyInfo(cancel_event, *event->latency());
 }
 

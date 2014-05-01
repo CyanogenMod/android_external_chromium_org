@@ -392,7 +392,8 @@ QuicStreamFactory::QuicStreamFactory(
     size_t max_packet_length,
     const QuicVersionVector& supported_versions,
     bool enable_port_selection,
-    bool enable_pacing)
+    bool enable_pacing,
+    bool enable_time_based_loss_detection)
     : require_confirmation_(true),
       host_resolver_(host_resolver),
       client_socket_factory_(client_socket_factory),
@@ -410,6 +411,8 @@ QuicStreamFactory::QuicStreamFactory(
       weak_factory_(this) {
   config_.SetDefaults();
   config_.EnablePacing(enable_pacing_);
+  if (enable_time_based_loss_detection)
+    config_.SetLossDetectionToSend(kTIME);
   config_.set_idle_connection_state_lifetime(
       QuicTime::Delta::FromSeconds(30),
       QuicTime::Delta::FromSeconds(30));
@@ -648,7 +651,7 @@ base::Value* QuicStreamFactory::QuicStreamFactoryInfoToValue() const {
   return list;
 }
 
-void QuicStreamFactory::ClearCachedStates() {
+void QuicStreamFactory::ClearCachedStatesInCryptoConfig() {
   crypto_config_.ClearCachedStates();
 }
 
@@ -754,7 +757,7 @@ int QuicStreamFactory::CreateSession(
   writer->SetConnection(connection);
   connection->options()->max_packet_length = max_packet_length_;
 
-  InitializeCachedState(server_id, server_info);
+  InitializeCachedStateInCryptoConfig(server_id, server_info);
 
   QuicConfig config = config_;
   if (http_server_properties_) {
@@ -790,7 +793,7 @@ void QuicStreamFactory::ActivateSession(
   ip_aliases_[ip_alias_key].insert(session);
 }
 
-void QuicStreamFactory::InitializeCachedState(
+void QuicStreamFactory::InitializeCachedStateInCryptoConfig(
     const QuicServerId& server_id,
     const scoped_ptr<QuicServerInfo>& server_info) {
   if (!server_info)

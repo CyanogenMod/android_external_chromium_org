@@ -311,16 +311,17 @@ TemplateURL* TemplateURLServiceTest::CreateReplaceablePreloadedTemplateURL(
     size_t index_offset_from_default,
     base::string16* prepopulated_display_url) {
   size_t default_search_provider_index = 0;
-  ScopedVector<TemplateURL> prepopulated_urls =
+  ScopedVector<TemplateURLData> prepopulated_urls =
       TemplateURLPrepopulateData::GetPrepopulatedEngines(
-          test_util_.profile(), &default_search_provider_index);
+          test_util_.profile()->GetPrefs(), &default_search_provider_index);
   EXPECT_LT(index_offset_from_default, prepopulated_urls.size());
   size_t prepopulated_index = (default_search_provider_index +
       index_offset_from_default) % prepopulated_urls.size();
   TemplateURL* t_url = CreatePreloadedTemplateURL(safe_for_autoreplace,
-      prepopulated_urls[prepopulated_index]->prepopulate_id());
+      prepopulated_urls[prepopulated_index]->prepopulate_id);
   *prepopulated_display_url =
-      prepopulated_urls[prepopulated_index]->url_ref().DisplayURL();
+      TemplateURL(NULL, *prepopulated_urls[prepopulated_index]).url_ref().
+          DisplayURL();
   return t_url;
 }
 
@@ -793,7 +794,7 @@ TEST_F(TemplateURLServiceTest, DefaultSearchProvider) {
       std::string(), "http://icon1", true, "UTF-8;UTF-16", Time(), Time());
   test_util_.ResetObserverCount();
 
-  model()->SetDefaultSearchProvider(t_url);
+  model()->SetUserSelectedDefaultSearchProvider(t_url);
   ASSERT_EQ(t_url, model()->GetDefaultSearchProvider());
   ASSERT_TRUE(t_url->safe_for_autoreplace());
   ASSERT_TRUE(t_url->show_in_default_list());
@@ -878,7 +879,7 @@ TEST_F(TemplateURLServiceTest, DefaultSearchProviderLoadedFromPrefs) {
   model()->Add(t_url);
   const TemplateURLID id = t_url->id();
 
-  model()->SetDefaultSearchProvider(t_url);
+  model()->SetUserSelectedDefaultSearchProvider(t_url);
   base::RunLoop().RunUntilIdle();
   scoped_ptr<TemplateURL> cloned_url(new TemplateURL(t_url->profile(),
                                                      t_url->data()));
@@ -921,7 +922,7 @@ TEST_F(TemplateURLServiceTest, RepairPrepopulatedSearchEngines) {
       "malware", "google.com", "http://www.goo.com/s?q={searchTerms}",
       std::string(), std::string(), std::string(),
       true, "UTF-8", Time(), Time());
-  model()->SetDefaultSearchProvider(user_dse);
+  model()->SetUserSelectedDefaultSearchProvider(user_dse);
   EXPECT_EQ(user_dse, model()->GetDefaultSearchProvider());
 
   // Remove bing.
@@ -1275,7 +1276,7 @@ TEST_F(TemplateURLServiceTest, LoadRetainsDefaultProvider) {
   TemplateURL* t_url = CreatePreloadedTemplateURL(true, 999999);
   test_util_.ChangeModelToLoadState();
   model()->Add(t_url);
-  model()->SetDefaultSearchProvider(t_url);
+  model()->SetUserSelectedDefaultSearchProvider(t_url);
   // Do the copy after t_url is added and set as default so that its
   // internal state is correct.
   scoped_ptr<TemplateURL> cloned_url(new TemplateURL(t_url->profile(),
@@ -1331,7 +1332,7 @@ TEST_F(TemplateURLServiceTest, LoadEnsuresDefaultSearchProviderExists) {
   EXPECT_TRUE(old_default);
 
   // Now remove it.
-  model()->SetDefaultSearchProvider(NULL);
+  model()->SetUserSelectedDefaultSearchProvider(NULL);
   model()->Remove(old_default);
   base::RunLoop().RunUntilIdle();
 
@@ -1387,7 +1388,7 @@ TEST_F(TemplateURLServiceTest, TestManagedDefaultSearch) {
       "name1", "key1", "http://foo1/{searchTerms}", "http://sugg1",
       std::string(), "http://icon1", true, "UTF-8;UTF-16", Time(), Time());
   VerifyObserverCount(1);
-  model()->SetDefaultSearchProvider(regular_default);
+  model()->SetUserSelectedDefaultSearchProvider(regular_default);
   // Adding the URL and setting the default search provider should have caused
   // notifications.
   VerifyObserverCount(1);
@@ -1496,7 +1497,7 @@ TEST_F(TemplateURLServiceTest, TestManagedDefaultSearch) {
   TemplateURL* new_default =
       model()->GetTemplateURLForKeyword(ASCIIToUTF16("key1"));
   ASSERT_FALSE(new_default == NULL);
-  model()->SetDefaultSearchProvider(new_default);
+  model()->SetUserSelectedDefaultSearchProvider(new_default);
   EXPECT_EQ(new_default, model()->GetDefaultSearchProvider());
 
   // Now reset the model again but load it after setting the preferences.
@@ -1585,7 +1586,7 @@ TEST_F(TemplateURLServiceTest, DefaultExtensionEngine) {
       "user", "user", "http://www.goo.com/s?q={searchTerms}",
       std::string(), std::string(), std::string(),
       true, "UTF-8", Time(), Time());
-  model()->SetDefaultSearchProvider(user_dse);
+  model()->SetUserSelectedDefaultSearchProvider(user_dse);
   EXPECT_EQ(user_dse, model()->GetDefaultSearchProvider());
 
   TemplateURL* ext_dse = CreateKeywordWithDate(
@@ -1610,7 +1611,7 @@ TEST_F(TemplateURLServiceTest, ExtensionEnginesNotPersist) {
       "user", "user", "http://www.goo.com/s?q={searchTerms}",
       std::string(), std::string(), std::string(),
       true, "UTF-8", Time(), Time());
-  model()->SetDefaultSearchProvider(user_dse);
+  model()->SetUserSelectedDefaultSearchProvider(user_dse);
   EXPECT_EQ(user_dse, model()->GetDefaultSearchProvider());
 
   TemplateURL* ext_dse = CreateKeywordWithDate(

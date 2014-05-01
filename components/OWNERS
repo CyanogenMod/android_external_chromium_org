@@ -73,11 +73,13 @@ per-file onc.gypi=pneubeck@chromium.org
 per-file onc.gypi=stevenjb@chromium.org
 
 per-file password_manager*=albertb@chromium.org
+per-file password_manager*=dubroy@chromium.org
 per-file password_manager*=gcasto@chromium.org
 per-file password_manager*=isherman@chromium.org
 per-file password_manager*=mdm@chromium.org
 per-file password_manager*=stuartmorgan@chromium.org
 per-file password_manager*=tim@chromium.org
+per-file password_manager*=vabr@chromium.org
 
 per-file precache*=bengr@chromium.org
 per-file precache*=sclittle@chromium.org
@@ -99,6 +101,9 @@ per-file query_parser*=droger@chromium.org
 
 per-file rappor*=asvitkine@chromium.org
 # OWNER-to-be: per-file rappor*=holte@chromium.org
+
+per-file search_provider_logos*=newt@chromium.org
+per-file search_provider_logos*=justincohen@chromium.org
 
 per-file sessions.gypi=marja@chromium.org
 per-file sessions.gypi=sky@chromium.org
@@ -141,6 +146,7 @@ per-file wifi.gypi=mef@chromium.org
 per-file *.isolate=csharp@chromium.org
 per-file *.isolate=maruel@chromium.org
 
-# These are for the common case of adding or removing test. If you're doing
-# structural changes, please get a review from a reviewer in this file. 
+# These are for the common case of adding or removing tests. If you're making
+# structural changes, please get a review from one of the overall components
+# OWNERS.
 per-file components_tests.gyp=*

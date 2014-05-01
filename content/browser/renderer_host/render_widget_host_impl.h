@@ -24,6 +24,7 @@
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "cc/resources/shared_bitmap.h"
+#include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/renderer_host/input/input_ack_handler.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
 #include "content/browser/renderer_host/input/synthetic_gesture.h"
@@ -91,11 +92,13 @@ struct EditCommand;
 
 // This implements the RenderWidgetHost interface that is exposed to
 // embedders of content, and adds things only visible to content.
-class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
-                                            public InputRouterClient,
-                                            public InputAckHandler,
-                                            public TouchEmulatorClient,
-                                            public IPC::Listener {
+class CONTENT_EXPORT RenderWidgetHostImpl
+    : virtual public RenderWidgetHost,
+      public InputRouterClient,
+      public InputAckHandler,
+      public TouchEmulatorClient,
+      public IPC::Listener,
+      public BrowserAccessibilityDelegate {
  public:
   // routing_id can be MSG_ROUTING_NONE, in which case the next available
   // routing id is taken from the RenderProcessHost.
@@ -170,20 +173,24 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void RemoveMouseEventCallback(
       const MouseEventCallback& callback) OVERRIDE;
   virtual void GetWebScreenInfo(blink::WebScreenInfo* result) OVERRIDE;
-  virtual void GetSnapshotFromRenderer(
-      const gfx::Rect& src_subrect,
-      const base::Callback<void(bool, const SkBitmap&)>& callback) OVERRIDE;
 
   virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
 
-  virtual void AccessibilityDoDefaultAction(int object_id) OVERRIDE;
-  virtual void AccessibilitySetFocus(int object_id) OVERRIDE;
+  // BrowserAccessibilityDelegate
+  virtual void AccessibilitySetFocus(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityDoDefaultAction(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityShowMenu(int acc_obj_id) OVERRIDE;
   virtual void AccessibilityScrollToMakeVisible(
       int acc_obj_id, gfx::Rect subfocus) OVERRIDE;
   virtual void AccessibilityScrollToPoint(
       int acc_obj_id, gfx::Point point) OVERRIDE;
   virtual void AccessibilitySetTextSelection(
       int acc_obj_id, int start_offset, int end_offset) OVERRIDE;
+  virtual bool AccessibilityViewHasFocus() const OVERRIDE;
+  virtual gfx::Rect AccessibilityGetViewBounds() const OVERRIDE;
+  virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds)
+      const OVERRIDE;
+  virtual void AccessibilityFatalError() OVERRIDE;
 
   const NativeWebKeyboardEvent* GetLastKeyboardEvent() const;
 
@@ -402,9 +409,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Resets the accessibility mode to the default setting in
   // BrowserStateAccessibilityImpl.
   void ResetAccessibilityMode();
-
-  // Kill the renderer because we got a fatal accessibility error.
-  void FatalAccessibilityTreeError();
 
 #if defined(OS_WIN)
   void SetParentNativeViewAccessible(
@@ -631,8 +635,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params);
 #endif
   bool OnSwapCompositorFrame(const IPC::Message& message);
-  void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
-                      gfx::Vector2dF current_fling_velocity);
   void OnFlingingStopped();
   void OnUpdateRect(const ViewHostMsg_UpdateRect_Params& params);
   void OnUpdateIsDelayed();
@@ -764,6 +766,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // the browser, for example by an on-screen-keyboard (in DPI-adjusted pixels).
   float overdraw_bottom_height_;
 
+  // The size of the visible viewport, which may be smaller than the view if the
+  // view is partially occluded (e.g. by a virtual keyboard).  The size is in
+  // DPI-adjusted pixels.
+  gfx::Size visible_viewport_size_;
+
   // The size we last sent as requested size to the renderer. |current_size_|
   // is only updated once the resize message has been ack'd. This on the other
   // hand is updated when the resize message is sent. This is very similar to
@@ -880,9 +887,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 #if defined(OS_WIN)
   std::list<HWND> dummy_windows_for_activation_;
 #endif
-
-  // List of callbacks for pending snapshot requests to the renderer.
-  std::queue<base::Callback<void(bool, const SkBitmap&)> > pending_snapshots_;
 
   int64 last_input_number_;
 

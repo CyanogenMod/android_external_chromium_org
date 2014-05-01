@@ -12,7 +12,6 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
@@ -23,6 +22,7 @@
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_contents_view.h"
 #include "chrome/browser/ui/views/settings_api_bubble_helper_views.h"
 #include "chrome/browser/ui/views/website_settings/website_settings_popup_view.h"
+#include "components/bookmarks/core/browser/bookmark_node_data.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/constants.h"
 #include "grit/app_locale_settings.h"
@@ -31,6 +31,8 @@
 #include "net/base/escape.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_view_state.h"
+#include "ui/aura/client/focus_client.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
@@ -39,6 +41,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/compositor/layer.h"
 #include "ui/events/event.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
@@ -55,12 +58,6 @@
 
 #if defined(OS_WIN)
 #include "chrome/browser/browser_process.h"
-#endif
-
-#if defined(USE_AURA)
-#include "ui/aura/client/focus_client.h"
-#include "ui/aura/window_event_dispatcher.h"
-#include "ui/compositor/layer.h"
 #endif
 
 namespace {
@@ -161,8 +158,6 @@ OmniboxViewViews::~OmniboxViewViews() {
 void OmniboxViewViews::Init() {
   set_controller(this);
   SetTextInputType(DetermineTextInputType());
-  SetBackgroundColor(location_bar_view_->GetColor(
-      ToolbarModel::NONE, LocationBarView::BACKGROUND));
 
   if (popup_window_mode_)
     SetReadOnly(true);
@@ -365,7 +360,7 @@ void OmniboxViewViews::EmphasizeURLComponents() {
   // this input.  This can tell us whether an UNKNOWN input string is going to
   // be treated as a search or a navigation, and is the same method the Paste
   // And Go system uses.
-  url_parse::Component scheme, host;
+  url::Component scheme, host;
   AutocompleteInput::ParseForEmphasizeComponents(text(), &scheme, &host);
   bool grey_out_url = text().substr(scheme.begin, scheme.len) ==
       base::UTF8ToUTF16(extensions::kExtensionScheme);
@@ -840,7 +835,6 @@ void OmniboxViewViews::OnBlur() {
 
   views::Textfield::OnBlur();
   gfx::NativeView native_view = NULL;
-#if defined(USE_AURA)
   views::Widget* widget = GetWidget();
   if (widget) {
     aura::client::FocusClient* client =
@@ -848,7 +842,6 @@ void OmniboxViewViews::OnBlur() {
     if (client)
       native_view = client->GetFocusedWindow();
   }
-#endif
   model()->OnWillKillFocus(native_view);
   // Close the popup.
   CloseOmniboxPopup();

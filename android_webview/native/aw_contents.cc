@@ -59,7 +59,6 @@
 #include "third_party/skia/include/core/SkPicture.h"
 #include "ui/base/l10n/l10n_util_android.h"
 #include "ui/gfx/android/java_bitmap.h"
-#include "ui/gfx/font_render_params_linux.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/size.h"
 
@@ -119,46 +118,6 @@ class AwContentsUserData : public base::SupportsUserData::Data {
 
 base::subtle::Atomic32 g_instance_count = 0;
 
-// TODO(boliu): Deduplicate with chrome/ code.
-content::RendererPreferencesHintingEnum GetRendererPreferencesHintingEnum(
-    gfx::FontRenderParams::Hinting hinting) {
-  switch (hinting) {
-    case gfx::FontRenderParams::HINTING_NONE:
-      return content::RENDERER_PREFERENCES_HINTING_NONE;
-    case gfx::FontRenderParams::HINTING_SLIGHT:
-      return content::RENDERER_PREFERENCES_HINTING_SLIGHT;
-    case gfx::FontRenderParams::HINTING_MEDIUM:
-      return content::RENDERER_PREFERENCES_HINTING_MEDIUM;
-    case gfx::FontRenderParams::HINTING_FULL:
-      return content::RENDERER_PREFERENCES_HINTING_FULL;
-    default:
-      NOTREACHED() << "Unhandled hinting style " << hinting;
-      return content::RENDERER_PREFERENCES_HINTING_SYSTEM_DEFAULT;
-  }
-}
-
-// TODO(boliu): Deduplicate with chrome/ code.
-content::RendererPreferencesSubpixelRenderingEnum
-GetRendererPreferencesSubpixelRenderingEnum(
-    gfx::FontRenderParams::SubpixelRendering subpixel_rendering) {
-  switch (subpixel_rendering) {
-    case gfx::FontRenderParams::SUBPIXEL_RENDERING_NONE:
-      return content::RENDERER_PREFERENCES_SUBPIXEL_RENDERING_NONE;
-    case gfx::FontRenderParams::SUBPIXEL_RENDERING_RGB:
-      return content::RENDERER_PREFERENCES_SUBPIXEL_RENDERING_RGB;
-    case gfx::FontRenderParams::SUBPIXEL_RENDERING_BGR:
-      return content::RENDERER_PREFERENCES_SUBPIXEL_RENDERING_BGR;
-    case gfx::FontRenderParams::SUBPIXEL_RENDERING_VRGB:
-      return content::RENDERER_PREFERENCES_SUBPIXEL_RENDERING_VRGB;
-    case gfx::FontRenderParams::SUBPIXEL_RENDERING_VBGR:
-      return content::RENDERER_PREFERENCES_SUBPIXEL_RENDERING_VBGR;
-    default:
-      NOTREACHED() << "Unhandled subpixel rendering style "
-                   << subpixel_rendering;
-      return content::RENDERER_PREFERENCES_SUBPIXEL_RENDERING_SYSTEM_DEFAULT;
-  }
-}
-
 void OnIoThreadClientReady(content::RenderFrameHost* rfh) {
   int render_process_id = rfh->GetProcess()->GetID();
   int render_frame_id = rfh->GetRoutingID();
@@ -214,8 +173,6 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
       AwAutofillManagerDelegate::FromWebContents(web_contents_.get());
   if (autofill_manager_delegate)
     InitAutofillIfNecessary(autofill_manager_delegate->GetSaveFormData());
-
-  SetAndroidWebViewRendererPrefs();
 }
 
 void AwContents::SetJavaPeers(JNIEnv* env,
@@ -279,27 +236,6 @@ void AwContents::InitAutofillIfNecessary(bool enabled) {
       AwAutofillManagerDelegate::FromWebContents(web_contents),
       l10n_util::GetDefaultLocale(),
       AutofillManager::DISABLE_AUTOFILL_DOWNLOAD_MANAGER);
-}
-
-void AwContents::SetAndroidWebViewRendererPrefs() {
-  content::RendererPreferences* prefs =
-      web_contents_->GetMutableRendererPrefs();
-  prefs->tap_multiple_targets_strategy =
-      content::TAP_MULTIPLE_TARGETS_STRATEGY_NONE;
-
-  // TODO(boliu): Deduplicate with chrome/ code.
-  const gfx::FontRenderParams& params = gfx::GetDefaultWebKitFontRenderParams();
-  prefs->should_antialias_text = params.antialiasing;
-  prefs->use_subpixel_positioning = params.subpixel_positioning;
-  prefs->hinting = GetRendererPreferencesHintingEnum(params.hinting);
-  prefs->use_autohinter = params.autohinter;
-  prefs->use_bitmaps = params.use_bitmaps;
-  prefs->subpixel_rendering =
-      GetRendererPreferencesSubpixelRenderingEnum(params.subpixel_rendering);
-
-  content::RenderViewHost* host = web_contents_->GetRenderViewHost();
-  if (host)
-    host->SyncRendererPrefs();
 }
 
 void AwContents::SetAwAutofillManagerDelegate(jobject delegate) {
@@ -380,15 +316,14 @@ jlong AwContents::GetAwDrawGLViewContext(JNIEnv* env, jobject obj) {
 }
 
 void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
-  if (!hardware_renderer_) {
-    // TODO(boliu): Use executeHardwareAction to synchronously initialize
-    // hardware on first functor request. Then functor can point directly
-    // to HardwareRenderer.
-    hardware_renderer_.reset(new HardwareRenderer(&shared_renderer_state_));
+  for (base::Closure c = shared_renderer_state_.PopFrontClosure(); !c.is_null();
+       c = shared_renderer_state_.PopFrontClosure()) {
+    c.Run();
   }
 
+  // TODO(boliu): Make this a task as well.
   DrawGLResult result;
-  if (hardware_renderer_->DrawGL(draw_info, &result)) {
+  if (hardware_renderer_ && hardware_renderer_->DrawGL(draw_info, &result)) {
     content::BrowserThread::PostTask(
         content::BrowserThread::UI,
         FROM_HERE,
@@ -669,13 +604,15 @@ void AwContents::OnReceivedTouchIconUrl(const std::string& url,
       env, obj.obj(), ConvertUTF8ToJavaString(env, url).obj(), precomposed);
 }
 
-bool AwContents::RequestDrawGL(jobject canvas) {
+bool AwContents::RequestDrawGL(jobject canvas, bool wait_for_completion) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!canvas || !wait_for_completion);
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return false;
-  return Java_AwContents_requestDrawGL(env, obj.obj(), canvas);
+  return Java_AwContents_requestDrawGL(
+      env, obj.obj(), canvas, wait_for_completion);
 }
 
 void AwContents::PostInvalidate() {
@@ -790,16 +727,47 @@ void AwContents::SetIsPaused(JNIEnv* env, jobject obj, bool paused) {
 
 void AwContents::OnAttachedToWindow(JNIEnv* env, jobject obj, int w, int h) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  // Add task but don't schedule it. It will run when DrawGL is called for
+  // the first time.
+  shared_renderer_state_.AppendClosure(
+      base::Bind(&AwContents::InitializeHardwareDrawOnRenderThread,
+                 base::Unretained(this)));
   browser_view_renderer_.OnAttachedToWindow(w, h);
+}
+
+void AwContents::InitializeHardwareDrawOnRenderThread() {
+  DCHECK(!hardware_renderer_);
+  DCHECK(!shared_renderer_state_.IsHardwareInitialized());
+  hardware_renderer_.reset(new HardwareRenderer(&shared_renderer_state_));
+  shared_renderer_state_.SetHardwareInitialized(true);
 }
 
 void AwContents::OnDetachedFromWindow(JNIEnv* env, jobject obj) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  shared_renderer_state_.ClearClosureQueue();
+  shared_renderer_state_.AppendClosure(base::Bind(
+      &AwContents::ReleaseHardwareDrawOnRenderThread, base::Unretained(this)));
+  bool draw_functor_succeeded = RequestDrawGL(NULL, true);
+  if (!draw_functor_succeeded &&
+      shared_renderer_state_.IsHardwareInitialized()) {
+    LOG(ERROR) << "Unable to free GL resources. Has the Window leaked";
+    // Calling release on wrong thread intentionally.
+    ReleaseHardwareDrawOnRenderThread();
+  } else {
+    shared_renderer_state_.ClearClosureQueue();
+  }
+
   browser_view_renderer_.OnDetachedFromWindow();
 }
 
-void AwContents::ReleaseHardwareDrawOnRenderThread(JNIEnv* env, jobject obj) {
+void AwContents::ReleaseHardwareDrawOnRenderThread() {
+  DCHECK(hardware_renderer_);
+  DCHECK(shared_renderer_state_.IsHardwareInitialized());
+  // No point in running any other commands if we released hardware already.
+  shared_renderer_state_.ClearClosureQueue();
   hardware_renderer_.reset();
+  shared_renderer_state_.SetHardwareInitialized(false);
 }
 
 base::android::ScopedJavaLocalRef<jbyteArray>
@@ -1058,17 +1026,27 @@ void AwContents::SetJsOnlineProperty(JNIEnv* env,
   render_view_host_ext_->SetJsOnlineProperty(network_up);
 }
 
-void AwContents::TrimMemoryOnRenderThread(JNIEnv* env,
-                                          jobject obj,
-                                          jint level,
-                                          jboolean visible) {
-  if (hardware_renderer_) {
-    if (hardware_renderer_->TrimMemory(level, visible)) {
-      content::BrowserThread::PostTask(
-          content::BrowserThread::UI,
-          FROM_HERE,
-          base::Bind(&AwContents::ForceFakeComposite, ui_thread_weak_ptr_));
-    }
+void AwContents::TrimMemory(JNIEnv* env,
+                            jobject obj,
+                            jint level,
+                            jboolean visible) {
+  if (!shared_renderer_state_.IsHardwareInitialized())
+    return;
+
+  shared_renderer_state_.AppendClosure(
+      base::Bind(&AwContents::TrimMemoryOnRenderThread,
+                 base::Unretained(this),
+                 level,
+                 visible));
+  RequestDrawGL(NULL, true);
+}
+
+void AwContents::TrimMemoryOnRenderThread(int level, bool visible) {
+  if (hardware_renderer_ && hardware_renderer_->TrimMemory(level, visible)) {
+    content::BrowserThread::PostTask(
+        content::BrowserThread::UI,
+        FROM_HERE,
+        base::Bind(&AwContents::ForceFakeComposite, ui_thread_weak_ptr_));
   }
 }
 

@@ -39,6 +39,8 @@ LOCAL_SRC_FILES := \
 	ipc/ipc_sync_channel.cc \
 	ipc/ipc_sync_message.cc \
 	ipc/ipc_sync_message_filter.cc \
+	ipc/message_filter.cc \
+	ipc/message_filter_router.cc \
 	ipc/unix_domain_socket_util.cc
 
 

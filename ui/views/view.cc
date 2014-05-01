@@ -66,6 +66,14 @@ const bool kContextMenuOnMousePress = true;
 // rect-based targeting algorithm.
 static const float kRectTargetOverlap = 0.6f;
 
+// Default horizontal drag threshold in pixels.
+// Same as what gtk uses.
+const int kDefaultHorizontalDragThreshold = 8;
+
+// Default vertical drag threshold in pixels.
+// Same as what gtk uses.
+const int kDefaultVerticalDragThreshold = 8;
+
 // Returns the top view in |view|'s hierarchy.
 const views::View* GetHierarchyRoot(const views::View* view) {
   const views::View* root = view;
@@ -209,8 +217,9 @@ void View::AddChildViewAt(View* view, int index) {
 
   // If |view| has a parent, remove it from its parent.
   View* parent = view->parent_;
-  const ui::NativeTheme* old_theme = view->GetNativeTheme();
+  ui::NativeTheme* old_theme = NULL;
   if (parent) {
+    old_theme = view->GetNativeTheme();
     if (parent == this) {
       ReorderChildView(view, index);
       return;
@@ -225,6 +234,13 @@ void View::AddChildViewAt(View* view, int index) {
   view->parent_ = this;
   children_.insert(children_.begin() + index, view);
 
+  views::Widget* widget = GetWidget();
+  if (widget) {
+    const ui::NativeTheme* new_theme = view->GetNativeTheme();
+    if (new_theme != old_theme)
+      view->PropagateNativeThemeChanged(new_theme);
+  }
+
   ViewHierarchyChangedDetails details(true, this, view, parent);
 
   for (View* v = this; v; v = v->parent_)
@@ -232,12 +248,8 @@ void View::AddChildViewAt(View* view, int index) {
 
   view->PropagateAddNotifications(details);
   UpdateTooltip();
-  views::Widget* widget = GetWidget();
   if (widget) {
     RegisterChildrenForVisibleBoundsNotification(view);
-    const ui::NativeTheme* new_theme = widget->GetNativeTheme();
-    if (new_theme != old_theme)
-      PropagateNativeThemeChanged(new_theme);
     if (view->visible())
       view->SchedulePaint();
   }
@@ -1614,6 +1626,18 @@ void View::WriteDragData(const gfx::Point& press_pt, OSExchangeData* data) {
 bool View::InDrag() {
   Widget* widget = GetWidget();
   return widget ? widget->dragged_view() == this : false;
+}
+
+int View::GetHorizontalDragThreshold() {
+  // TODO(jennyz): This value may need to be adjusted for different platforms
+  // and for different display density.
+  return kDefaultHorizontalDragThreshold;
+}
+
+int View::GetVerticalDragThreshold() {
+  // TODO(jennyz): This value may need to be adjusted for different platforms
+  // and for different display density.
+  return kDefaultVerticalDragThreshold;
 }
 
 // Debugging -------------------------------------------------------------------

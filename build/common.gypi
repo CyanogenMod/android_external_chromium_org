@@ -355,6 +355,10 @@
       # controls coverage granularity (experimental).
       'asan_coverage%': 0,
 
+      # Enable Chromium overrides of the default configurations for various
+      # dynamic tools (like ASan).
+      'use_sanitizer_options%': 1,
+
       # Enable building with SyzyAsan.
       # See https://code.google.com/p/sawbuck/wiki/SyzyASanHowTo
       'syzyasan%': 0,
@@ -441,6 +445,14 @@
       #   1: dynamic, language scoring tables live in a data file that must
       #      be loaded at runtime.
       'cld2_dynamic%': 0,
+
+      # Whether CLD2 is a component. Only evaluated if cld_version == 2 and
+      # cld2_dynamic == 1.
+      #   0: Not a component. If cld2_dynamic == 1, it is up to the distribution
+      #      to ensure that the data file is provided if desired.
+      #   1: Componentized. CLD data should be obtained via the Component
+      #      Updater.
+      'cld2_is_component%': 0,
 
       # Enable spell checker.
       'enable_spellcheck%': 1,
@@ -642,6 +654,7 @@
           'enable_google_now%': 0,
           'cld_version%': 1,
           'cld2_dynamic%': 0,
+          'cld2_is_component%': 0,
           'enable_spellcheck%': 0,
           'enable_themes%': 0,
           'remoting%': 0,
@@ -725,8 +738,8 @@
         # linux_use_bundled_gold: whether to use the gold linker binary checked
         # into third_party/binutils.  Force this off via GYP_DEFINES when you
         # are using a custom toolchain and need to control -B in ldflags.
-        # Gold is not used for 32-bit linux builds as it runs out of address
-        # space.
+        # Do not use 32-bit gold on 32-bit hosts as it runs out address space
+        # for component=static_library builds.
         ['OS=="linux" and (target_arch=="x64" or target_arch=="arm")', {
           'linux_use_bundled_gold%': 1,
         }, {
@@ -745,12 +758,22 @@
         }],
 
         # linux_use_gold_flags: whether to use build flags that rely on gold.
-        # On by default for x64 Linux.  Temporarily off for ChromeOS as
-        # it failed on a buildbot.
-        ['OS=="linux" and target_arch=="x64" and chromeos==0', {
+        # On by default for x64 Linux.
+        ['OS=="linux" and target_arch=="x64"', {
           'linux_use_gold_flags%': 1,
         }, {
           'linux_use_gold_flags%': 0,
+        }],
+
+        # linux_use_debug_fission: whether to use split DWARF debug info
+        # files. This can reduce link time significantly, but is incompatible
+        # with some utilities such as icecc and ccache. Requires gold and
+        # gcc >= 4.8 or clang.
+        # http://gcc.gnu.org/wiki/DebugFission
+        ['OS=="linux" and target_arch=="x64"', {
+          'linux_use_debug_fission%': 1,
+        }, {
+          'linux_use_debug_fission%': 0,
         }],
 
         ['OS=="android" or OS=="ios"', {
@@ -979,6 +1002,7 @@
     'mac_want_real_dsym%': '<(mac_want_real_dsym)',
     'asan%': '<(asan)',
     'asan_coverage%': '<(asan_coverage)',
+    'use_sanitizer_options%': '<(use_sanitizer_options)',
     'syzyasan%': '<(syzyasan)',
     'syzygy_optimize%': '<(syzygy_optimize)',
     'lsan%': '<(lsan)',
@@ -1001,6 +1025,7 @@
     'linux_use_bundled_gold%': '<(linux_use_bundled_gold)',
     'linux_use_bundled_binutils%': '<(linux_use_bundled_binutils)',
     'linux_use_gold_flags%': '<(linux_use_gold_flags)',
+    'linux_use_debug_fission%': '<(linux_use_debug_fission)',
     'use_canvas_skia%': '<(use_canvas_skia)',
     'test_isolation_mode%': '<(test_isolation_mode)',
     'test_isolation_outdir%': '<(test_isolation_outdir)',
@@ -1011,6 +1036,7 @@
     'cld_version%': '<(cld_version)',
     'cld2_table_size%': '<(cld2_table_size)',
     'cld2_dynamic%': '<(cld2_dynamic)',
+    'cld2_is_component%': '<(cld2_is_component)',
     'enable_captive_portal_detection%': '<(enable_captive_portal_detection)',
     'disable_ftp_support%': '<(disable_ftp_support)',
     'enable_task_manager%': '<(enable_task_manager)',
@@ -1440,6 +1466,16 @@
             # Omit unwind support in official release builds to save space. We
             # can use breakpad for these builds.
             'release_unwind_tables%': 0,
+
+            'conditions': [
+              # For official builds, use a 64-bit linker to avoid running out
+              # of address space. The buildbots should have a 64-bit kernel
+              # and a 64-bit libc installed.
+              ['host_arch=="ia32" and target_arch=="ia32"', {
+                'linux_use_bundled_gold%': '1',
+                'binutils_dir%': 'third_party/binutils/Linux_x64/Release/bin',
+              }],
+            ],
           }],
         ],
       }],  # os_posix==1 and OS!="mac" and OS!="ios"
@@ -1521,12 +1557,14 @@
               'android_app_abi%': 'x86',
               'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-x86/gdbserver/gdbserver',
               'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-14/arch-x86',
+              'android_ndk_lib_dir%': 'usr/lib',
               'android_toolchain%': '<(android_ndk_root)/toolchains/x86-4.6/prebuilt/<(host_os)-<(android_host_arch)/bin',
             }],
             ['target_arch == "x64"', {
               'android_app_abi%': 'x86_64',
               'android_gdbserver%': '<(android_ndk_experimental_root)/prebuilt/android-x86_64/gdbserver/gdbserver',
               'android_ndk_sysroot%': '<(android_ndk_experimental_root)/platforms/android-20/arch-x86_64',
+              'android_ndk_lib_dir%': 'usr/lib64',
               'android_toolchain%': '<(android_ndk_experimental_root)/toolchains/x86_64-4.8/prebuilt/<(host_os)-<(android_host_arch)/bin',
               'android_stlport_root': '<(android_ndk_experimental_root)/sources/cxx-stl/stlport',
             }],
@@ -1540,19 +1578,22 @@
               ],
               'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-arm/gdbserver/gdbserver',
               'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-14/arch-arm',
+              'android_ndk_lib_dir%': 'usr/lib',
               'android_toolchain%': '<(android_ndk_root)/toolchains/arm-linux-androideabi-4.6/prebuilt/<(host_os)-<(android_host_arch)/bin',
             }],
             ['target_arch == "arm64"', {
               'android_app_abi%': 'arm64-v8a',
               'android_gdbserver%': '<(android_ndk_experimental_root)/prebuilt/android-arm64/gdbserver/gdbserver',
               'android_ndk_sysroot%': '<(android_ndk_experimental_root)/platforms/android-20/arch-arm64',
-              'android_toolchain%': '<(android_ndk_experimental_root)/toolchains/aarch64-linux-android-4.8/prebuilt/<(host_os)-<(android_host_arch)/bin',
+              'android_ndk_lib_dir%': 'usr/lib',
+              'android_toolchain%': '<(android_ndk_experimental_root)/toolchains/aarch64-linux-android-4.9/prebuilt/<(host_os)-<(android_host_arch)/bin',
               'android_stlport_root': '<(android_ndk_experimental_root)/sources/cxx-stl/stlport',
             }],
             ['target_arch == "mipsel"', {
               'android_app_abi%': 'mips',
               'android_gdbserver%': '<(android_ndk_root)/prebuilt/android-mips/gdbserver/gdbserver',
               'android_ndk_sysroot%': '<(android_ndk_root)/platforms/android-14/arch-mips',
+              'android_ndk_lib_dir%': 'usr/lib',
               'android_toolchain%': '<(android_ndk_root)/toolchains/mipsel-linux-android-4.6/prebuilt/<(host_os)-<(android_host_arch)/bin',
             }],
           ],
@@ -1567,7 +1608,7 @@
         'android_toolchain%': '<(android_toolchain)',
 
         'android_ndk_include': '<(android_ndk_sysroot)/usr/include',
-        'android_ndk_lib': '<(android_ndk_sysroot)/usr/lib',
+        'android_ndk_lib': '<(android_ndk_sysroot)/<(android_ndk_lib_dir)',
         'android_sdk_tools%': '<(android_sdk_tools)',
         'android_sdk%': '<(android_sdk)',
         'android_sdk_jar%': '<(android_sdk)/android.jar',
@@ -2543,6 +2584,9 @@
       ['cld2_dynamic!=0', {
         'defines': ['CLD2_DYNAMIC_MODE=1'],
       }],
+      ['cld2_is_component!=0', {
+        'defines': ['CLD2_IS_COMPONENT=1'],
+      }],
       ['enable_printing==1', {
         'defines': ['ENABLE_FULL_PRINTING=1', 'ENABLE_PRINTING=1'],
       }],
@@ -3195,9 +3239,10 @@
               }, {
                 'cflags': ['-fno-unwind-tables', '-fno-asynchronous-unwind-tables'],
               }],
-              # http://gcc.gnu.org/wiki/DebugFission
-              # Requires gold and gcc >= 4.8 or clang.
-              ['linux_use_gold_flags==1 and (clang==1 or gcc_version>=48) and binutils_version>=223', {
+              # TODO(mostynb): shuffle clang/gcc_version/binutils_version
+              # definitions in to the right scope to use them when setting
+              # linux_use_debug_fission, so it can be used here alone.
+              ['linux_use_debug_fission==1 and linux_use_gold_flags==1 and (clang==1 or gcc_version>=48) and binutils_version>=223', {
                 'cflags': ['-gsplit-dwarf'],
                 'ldflags': ['-Wl,--gdb-index'],
               }],
@@ -3651,7 +3696,7 @@
             ],
             # TODO(glider): enable the default options on other systems.
             'conditions': [
-              ['OS=="linux" and (chromeos==0 or target_arch!="ia32")', {
+              ['use_sanitizer_options==1 and OS=="linux" and (chromeos==0 or target_arch!="ia32")', {
                 'dependencies': [
                   '<(DEPTH)/base/base.gyp:sanitizer_options',
                 ],
@@ -3712,7 +3757,7 @@
                 'cflags': [
                   '-fsanitize=thread',
                   '-fPIC',
-                  '-mllvm', '-tsan-blacklist=<(tsan_blacklist)',
+                  '-fsanitize-blacklist=<(tsan_blacklist)',
                 ],
                 'ldflags': [
                   '-fsanitize=thread',
@@ -3790,16 +3835,14 @@
           ['linux_dump_symbols==1', {
             'cflags': [ '-g' ],
             'conditions': [
-              # TODO(thestig) We should not need to specify chromeos==0 here,
-              # but somehow ChromeOS uses gold despite linux_use_bundled_gold==0.
-              # http://crbug.com./360082
-              ['linux_use_bundled_gold==0 and chromeos==0 and OS!="android"', {
+              ['OS=="linux" and host_arch=="ia32" and linux_use_bundled_gold==0', {
                 'target_conditions': [
                   ['_toolset=="target"', {
                     'ldflags': [
-                      # Workarounds for linker OOM.
+                      # Attempt to use less memory to prevent the linker from
+                      # running out of address space. Considering installing a
+                      # 64-bit kernel and switching to a 64-bit linker.
                       '-Wl,--no-keep-memory',
-                      '-Wl,--reduce-memory-overheads',
                     ],
                   }],
                 ],
@@ -3886,7 +3929,10 @@
               '-B<!(cd <(DEPTH) && pwd -P)/<(binutils_dir)',
             ],
           }],
-          ['binutils_version>=224', {
+          # Some binutils 2.23 releases may or may not have new dtags enabled,
+          # but they are all compatible with --disable-new-dtags,
+          # because the new dynamic tags are not created by default.
+          ['binutils_version>=223', {
             # Newer binutils don't set DT_RPATH unless you disable "new" dtags
             # and the new DT_RUNPATH doesn't work without --no-as-needed flag.
             # FIXME(mithro): Figure out the --as-needed/--no-as-needed flags

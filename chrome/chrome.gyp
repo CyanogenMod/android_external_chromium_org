@@ -184,6 +184,8 @@
             'browser/devtools/devtools_targets_ui.h',
             'browser/devtools/devtools_toggle_action.cc',
             'browser/devtools/devtools_toggle_action.h',
+            'browser/devtools/devtools_ui_bindings.cc',
+            'browser/devtools/devtools_ui_bindings.h',
             'browser/devtools/devtools_window.cc',
             'browser/devtools/devtools_window.h',
             'browser/devtools/remote_debugging_server.cc',
@@ -200,6 +202,7 @@
                 'browser/devtools/devtools_file_system_indexer.cc',
                 'browser/devtools/devtools_target_impl.cc',
                 'browser/devtools/devtools_window.cc',
+                'browser/devtools/devtools_window_base.cc',
                 'browser/devtools/remote_debugging_server.cc',
               ],
             }],
@@ -237,7 +240,6 @@
           'dependencies': [
             'common/extensions/api/api.gyp:chrome_api',
             '../base/base.gyp:base',
-            '../components/components.gyp:wifi_component',
             '../components/components_strings.gyp:components_strings',
             '../content/content.gyp:content_common',
             '../content/content.gyp:content_utility',
@@ -313,6 +315,9 @@
           ],
           'conditions': [
             ['OS=="win" or OS=="mac"', {
+              'dependencies': [
+                '../components/components.gyp:wifi_component',
+              ],
               'sources': [
                 'utility/media_galleries/iapps_xml_utils.cc',
                 'utility/media_galleries/iapps_xml_utils.h',
@@ -358,8 +363,6 @@
             }],
             ['enable_mdns == 1', {
               'sources': [
-                'utility/local_discovery/service_discovery_client_impl.cc',
-                'utility/local_discovery/service_discovery_client_impl.h',
                 'utility/local_discovery/service_discovery_message_handler.cc',
                 'utility/local_discovery/service_discovery_message_handler.h',
               ]

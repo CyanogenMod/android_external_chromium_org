@@ -23,7 +23,6 @@ struct RendererCapabilitiesImpl {
   // Capabilities copied to main thread.
   ResourceFormat best_texture_format;
   bool allow_partial_texture_updates;
-  bool using_offscreen_context3d;
   int max_texture_size;
   bool using_shared_memory_resources;
 
@@ -61,7 +60,6 @@ class CC_EXPORT Renderer {
   // The |device_viewport_rect| and |device_clip_rect| are in non-y-flipped
   // window space.
   virtual void DrawFrame(RenderPassList* render_passes_in_draw_order,
-                         ContextProvider* offscreen_context_provider,
                          float device_scale_factor,
                          const gfx::Rect& device_viewport_rect,
                          const gfx::Rect& device_clip_rect,
@@ -80,7 +78,8 @@ class CC_EXPORT Renderer {
 
   virtual bool IsContextLost();
 
-  virtual void SetVisible(bool visible) = 0;
+  bool visible() const { return visible_; }
+  void SetVisible(bool visible);
 
   virtual void SendManagedMemoryStats(size_t bytes_visible,
                                       size_t bytes_visible_and_nearby,
@@ -88,10 +87,13 @@ class CC_EXPORT Renderer {
 
  protected:
   explicit Renderer(RendererClient* client, const LayerTreeSettings* settings)
-      : client_(client), settings_(settings) {}
+      : client_(client), settings_(settings), visible_(true) {}
+
+  virtual void DidChangeVisibility() = 0;
 
   RendererClient* client_;
   const LayerTreeSettings* settings_;
+  bool visible_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Renderer);

@@ -44,6 +44,7 @@
         '<(DEPTH)/components/components.gyp:variations',
         '<(DEPTH)/content/content.gyp:content_common',
         '<(DEPTH)/crypto/crypto.gyp:crypto',
+        '<(DEPTH)/extensions/extensions_resources.gyp:extensions_resources',
         '<(DEPTH)/extensions/extensions_strings.gyp:extensions_strings',
         '<(DEPTH)/media/cast/cast.gyp:cast_transport',
         '<(DEPTH)/net/net.gyp:net',
@@ -111,8 +112,6 @@
         'common/custom_handlers/protocol_handler.h',
         'common/descriptors_android.h',
         'common/encrypted_media_messages_android.h',
-        'common/extensions/ad_injection_constants.cc',
-        'common/extensions/ad_injection_constants.h',
         'common/extensions/api/bluetooth/bluetooth_manifest_data.cc',
         'common/extensions/api/bluetooth/bluetooth_manifest_data.h',
         'common/extensions/api/bluetooth/bluetooth_manifest_handler.cc',
@@ -164,7 +163,6 @@
         'common/extensions/chrome_manifest_handlers.h',
         'common/extensions/command.cc',
         'common/extensions/command.h',
-        'common/extensions/dom_action_types.h',
         'common/extensions/extension_constants.cc',
         'common/extensions/extension_constants.h',
         'common/extensions/extension_file_util.cc',
@@ -240,8 +238,6 @@
         'common/instant_types.h',
         'common/localized_error.cc',
         'common/localized_error.h',
-        'common/local_discovery/service_discovery_client.cc',
-        'common/local_discovery/service_discovery_client.h',
         'common/logging_chrome.cc',
         'common/logging_chrome.h',
         'common/mac/app_mode_common.h',
@@ -425,6 +421,18 @@
           'dependencies': [
             '<(DEPTH)/printing/printing.gyp:printing',
           ],
+        }],
+        ['enable_service_discovery==1', {
+          'sources' : [
+            'common/local_discovery/service_discovery_client.cc',
+            'common/local_discovery/service_discovery_client.h',
+           ]
+        }],
+        ['enable_mdns==1', {
+          'sources' : [
+            'common/local_discovery/service_discovery_client_impl.cc',
+            'common/local_discovery/service_discovery_client_impl.h',
+          ]
         }],
         ['OS=="android"', {
           'sources/': [

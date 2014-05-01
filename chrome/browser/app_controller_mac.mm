@@ -52,6 +52,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #import "chrome/browser/ui/cocoa/apps/app_shim_menu_controller_mac.h"
+#include "chrome/browser/ui/cocoa/apps/quit_with_apps_controller_mac.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_bridge.h"
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
@@ -207,6 +208,7 @@ bool IsProfileSignedOut(Profile* profile) {
 - (void)initMenuState;
 - (void)initProfileMenu;
 - (void)updateConfirmToQuitPrefMenuItem:(NSMenuItem*)item;
+- (void)updateDisplayMessageCenterPrefMenuItem:(NSMenuItem*)item;
 - (void)registerServicesMenuTypesTo:(NSApplication*)app;
 - (void)openUrls:(const std::vector<GURL>&)urls;
 - (void)getUrl:(NSAppleEventDescriptor*)event
@@ -368,6 +370,12 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   // download isn't stopped before terminate is called again.
   if (!browser_shutdown::IsTryingToQuit() &&
       ![self shouldQuitWithInProgressDownloads])
+    return NO;
+
+  // Check for active apps, and prompt the user if they really want to quit
+  // (and also quit the apps).
+  if (!browser_shutdown::IsTryingToQuit() &&
+      quitWithAppsController_.get() && !quitWithAppsController_->ShouldQuit())
     return NO;
 
   // TODO(viettrungluu): Remove Apple Event handlers here? (It's safe to leave
@@ -681,6 +689,41 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 #endif
 }
 
+- (void)openStartupUrls {
+  // On Mac, the URLs are passed in via Cocoa, not command line. The Chrome
+  // NSApplication is created in MainMessageLoop, and then the shortcut urls
+  // are passed in via Apple events. At this point, the first browser is
+  // already loaded in PreMainMessageLoop. If we initialize NSApplication
+  // before PreMainMessageLoop to capture shortcut URL events, it may cause
+  // more problems because it relies on things created in PreMainMessageLoop
+  // and may break existing message loop design.
+  if (startupUrls_.empty())
+    return;
+
+  // If there's only 1 tab and the tab is NTP, close this NTP tab and open all
+  // startup urls in new tabs, because the omnibox will stay focused if we
+  // load url in NTP tab.
+  Browser* browser = chrome::GetLastActiveBrowser();
+  int startupIndex = TabStripModel::kNoTab;
+  content::WebContents* startupContent = NULL;
+
+  if (browser && browser->tab_strip_model()->count() == 1) {
+    startupIndex = browser->tab_strip_model()->active_index();
+    startupContent = browser->tab_strip_model()->GetActiveWebContents();
+  }
+
+  if (startupUrls_.size()) {
+    [self openUrls:startupUrls_];
+    startupUrls_.clear();
+  }
+
+  if (startupIndex != TabStripModel::kNoTab &&
+      startupContent->GetVisibleURL() == GURL(chrome::kChromeUINewTabURL)) {
+    browser->tab_strip_model()->CloseWebContentsAt(startupIndex,
+        TabStripModel::CLOSE_NONE);
+  }
+}
+
 // This is called after profiles have been loaded and preferences registered.
 // It is safe to access the default profile here.
 - (void)applicationDidFinishLaunching:(NSNotification*)notify {
@@ -693,6 +736,10 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   // Start managing the menu for app windows. This needs to be done here because
   // main menu item titles are not yet initialized in awakeFromNib.
   [self initAppShimMenuController];
+
+  // If enabled, keep Chrome alive when apps are open instead of quitting all
+  // apps.
+  quitWithAppsController_ = new QuitWithAppsController();
 
   // Build up the encoding menu, the order of the items differs based on the
   // current locale (see http://crbug.com/7647 for details).
@@ -725,13 +772,7 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 
   startupComplete_ = YES;
 
-  // TODO(viettrungluu): This is very temporary, since this should be done "in"
-  // |BrowserMain()|, i.e., this list of startup URLs should be appended to the
-  // (probably-empty) list of URLs from the command line.
-  if (startupUrls_.size()) {
-    [self openUrls:startupUrls_];
-    [self clearStartupUrls];
-  }
+  [self openStartupUrls];
 
   PrefService* localState = g_browser_process->local_state();
   if (localState) {
@@ -942,6 +983,10 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
     enable = YES;
   } else if (action == @selector(toggleConfirmToQuit:)) {
     [self updateConfirmToQuitPrefMenuItem:static_cast<NSMenuItem*>(item)];
+    enable = YES;
+  } else if (action == @selector(toggleDisplayMessageCenter:)) {
+    NSMenuItem* menuItem = static_cast<NSMenuItem*>(item);
+    [self updateDisplayMessageCenterPrefMenuItem:menuItem];
     enable = YES;
   } else if (action == @selector(executeApplication:)) {
     enable = YES;
@@ -1267,6 +1312,14 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   [item setState:enabled ? NSOnState : NSOffState];
 }
 
+- (void)updateDisplayMessageCenterPrefMenuItem:(NSMenuItem*)item {
+  const PrefService* prefService = g_browser_process->local_state();
+  bool enabled = prefService->GetBoolean(prefs::kMessageCenterShowIcon);
+  // The item should be checked if "show icon" is false, since the text reads
+  // "Hide notification center icon."
+  [item setState:enabled ? NSOffState : NSOnState];
+}
+
 - (void)registerServicesMenuTypesTo:(NSApplication*)app {
   // Note that RenderWidgetHostViewCocoa implements NSServicesRequests which
   // handles requests from services.
@@ -1382,6 +1435,12 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   prefService->SetBoolean(prefs::kConfirmToQuitEnabled, !enabled);
 }
 
+- (IBAction)toggleDisplayMessageCenter:(id)sender {
+  PrefService* prefService = g_browser_process->local_state();
+  bool enabled = prefService->GetBoolean(prefs::kMessageCenterShowIcon);
+  prefService->SetBoolean(prefs::kMessageCenterShowIcon, !enabled);
+}
+
 // Explicitly bring to the foreground when creating new windows from the dock.
 - (void)commandFromDock:(id)sender {
   [NSApp activateIgnoringOtherApps:YES];
@@ -1456,10 +1515,6 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 
 - (const std::vector<GURL>&)startupUrls {
   return startupUrls_;
-}
-
-- (void)clearStartupUrls {
-  startupUrls_.clear();
 }
 
 - (BookmarkMenuBridge*)bookmarkMenuBridge {

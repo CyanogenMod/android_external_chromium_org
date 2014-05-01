@@ -85,7 +85,6 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // Moves all plugin windows as described in the given list.
   // |scroll_offset| is the scroll offset of the render view.
   virtual void MovePluginWindows(
-      const gfx::Vector2d& scroll_offset,
       const std::vector<WebPluginGeometry>& moves) = 0;
 
   // Take focus from the associated View component.
@@ -114,30 +113,6 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
       const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds) = 0;
 #endif
-
-  // Informs the view that a portion of the widget's backing store was scrolled
-  // and/or painted.  The view should ensure this gets copied to the screen.
-  //
-  // If the scroll_rect is non-empty, then a portion of the widget's backing
-  // store was scrolled by dx pixels horizontally and dy pixels vertically.
-  // The exposed rect from the scroll operation is included in copy_rects.
-  //
-  // There are subtle performance implications here.  The RenderWidget gets sent
-  // a paint ack after this returns, so if the view only ever invalidates in
-  // response to this, then on Windows, where WM_PAINT has lower priority than
-  // events which can cause renderer resizes/paint rect updates, e.g.
-  // drag-resizing can starve painting; this function thus provides the view its
-  // main chance to ensure it stays painted and not just invalidated.  On the
-  // other hand, if this always blindly paints, then if we're already in the
-  // midst of a paint on the callstack, we can double-paint unnecessarily.
-  // (Worse, we might recursively call RenderWidgetHost::GetBackingStore().)
-  // Thus implementers should generally paint as much of |rect| as possible
-  // synchronously with as little overpainting as possible.
-  virtual void DidUpdateBackingStore(
-      const gfx::Rect& scroll_rect,
-      const gfx::Vector2d& scroll_delta,
-      const std::vector<gfx::Rect>& copy_rects,
-      const std::vector<ui::LatencyInfo>& latency_info) = 0;
 
   // Notifies the View that the renderer has ceased to exist.
   virtual void RenderProcessGone(base::TerminationStatus status,
@@ -269,9 +244,6 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 
   virtual gfx::GLSurfaceHandle GetCompositingSurface() = 0;
 
-  // Resize compositing surface.
-  virtual void ResizeCompositingSurface(const gfx::Size&) = 0;
-
   // Because the associated remote WebKit instance can asynchronously
   // prevent-default on a dispatched touch event, the touch events are queued in
   // the GestureRecognizer until invocation of ProcessAckedTouchEvent releases
@@ -280,7 +252,6 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) = 0;
 
-  virtual void SetHasHorizontalScrollbar(bool has_horizontal_scrollbar) = 0;
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) = 0;
 
@@ -308,9 +279,6 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   virtual void GestureEventAck(const blink::WebGestureEvent& event,
                                InputEventAckState ack_result) = 0;
 
-  virtual void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
-                              gfx::Vector2dF current_fling_velocity) = 0;
-
   virtual void DidStopFlinging() = 0;
 
   virtual void SetPopupType(blink::WebPopupType popup_type) = 0;
@@ -323,7 +291,11 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // create one and if one doesn't exist already. Some ports may not create
   // one depending on the current state.
   virtual void CreateBrowserAccessibilityManagerIfNeeded() = 0;
-
+  virtual void SetBrowserAccessibilityManager(
+      BrowserAccessibilityManager* manager) = 0;
+  virtual void OnAccessibilitySetFocus(int acc_obj_id) = 0;
+  virtual void AccessibilityShowMenu(int acc_obj_id) = 0;
+  virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds) = 0;
   // Return a value that is incremented each time the renderer swaps a new frame
   // to the view.
   virtual uint32 RendererFrameNumber() = 0;

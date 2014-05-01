@@ -16,6 +16,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
@@ -319,6 +320,19 @@ void WebSocketChannel::SendAddChannelRequest(
       base::Bind(&WebSocketStream::CreateAndConnectStream));
 }
 
+void WebSocketChannel::SetState(State new_state) {
+  DCHECK_NE(state_, new_state);
+
+  if (new_state == CONNECTED)
+    established_on_ = base::TimeTicks::Now();
+  if (state_ == CONNECTED && !established_on_.is_null()) {
+    UMA_HISTOGRAM_LONG_TIMES(
+        "Net.WebSocket.Duration", base::TimeTicks::Now() - established_on_);
+  }
+
+  state_ = new_state;
+}
+
 bool WebSocketChannel::InClosingState() const {
   // The state RECV_CLOSED is not supported here, because it is only used in one
   // code path and should not leak into the code in general.
@@ -407,7 +421,9 @@ void WebSocketChannel::SendFlowControl(int64 quota) {
     const size_t bytes_to_send =
         std::min(base::checked_cast<size_t>(quota), data_size);
     const bool final = front.final() && data_size == bytes_to_send;
-    const char* data = front.data()->data() + front.offset();
+    const char* data = front.data() ?
+        front.data()->data() + front.offset() : NULL;
+    DCHECK(!bytes_to_send || data) << "Non empty data should not be null.";
     const std::vector<char> data_vector(data, data + bytes_to_send);
     DVLOG(3) << "Sending frame previously split due to quota to the "
              << "renderer: quota=" << quota << " data_size=" << data_size
@@ -447,7 +463,7 @@ void WebSocketChannel::StartClosingHandshake(uint16 code,
   if (state_ == CONNECTING) {
     // Abort the in-progress handshake and drop the connection immediately.
     stream_request_.reset();
-    state_ = CLOSED;
+    SetState(CLOSED);
     AllowUnused(DoDropChannel(false, kWebSocketErrorAbnormalClosure, ""));
     return;
   }
@@ -466,7 +482,7 @@ void WebSocketChannel::StartClosingHandshake(uint16 code,
     // interpret this as an internal error.
     if (SendClose(kWebSocketErrorInternalServerError, "") != CHANNEL_DELETED) {
       DCHECK_EQ(CONNECTED, state_);
-      state_ = SEND_CLOSED;
+      SetState(SEND_CLOSED);
     }
     return;
   }
@@ -476,7 +492,7 @@ void WebSocketChannel::StartClosingHandshake(uint16 code,
       CHANNEL_DELETED)
     return;
   DCHECK_EQ(CONNECTED, state_);
-  state_ = SEND_CLOSED;
+  SetState(SEND_CLOSED);
 }
 
 void WebSocketChannel::SendAddChannelRequestForTesting(
@@ -515,14 +531,17 @@ void WebSocketChannel::SendAddChannelRequestWithSuppliedCreator(
                                 url_request_context_,
                                 BoundNetLog(),
                                 connect_delegate.Pass());
-  state_ = CONNECTING;
+  SetState(CONNECTING);
 }
 
 void WebSocketChannel::OnConnectSuccess(scoped_ptr<WebSocketStream> stream) {
   DCHECK(stream);
   DCHECK_EQ(CONNECTING, state_);
+
   stream_ = stream.Pass();
-  state_ = CONNECTED;
+
+  SetState(CONNECTED);
+
   if (event_interface_->OnAddChannelResponse(
           false, stream_->GetSubProtocol(), stream_->GetExtensions()) ==
       CHANNEL_DELETED)
@@ -544,7 +563,8 @@ void WebSocketChannel::OnConnectSuccess(scoped_ptr<WebSocketStream> stream) {
 
 void WebSocketChannel::OnConnectFailure(const std::string& message) {
   DCHECK_EQ(CONNECTING, state_);
-  state_ = CLOSED;
+
+  SetState(CLOSED);
   stream_request_.reset();
 
   if (CHANNEL_DELETED ==
@@ -638,9 +658,9 @@ ChannelState WebSocketChannel::OnWriteDone(bool synchronous, int result) {
     default:
       DCHECK_LT(result, 0)
           << "WriteFrames() should only return OK or ERR_ codes";
+
       stream_->Close();
-      DCHECK_NE(CLOSED, state_);
-      state_ = CLOSED;
+      SetState(CLOSED);
       return DoDropChannel(false, kWebSocketErrorAbnormalClosure, "");
   }
 }
@@ -700,9 +720,10 @@ ChannelState WebSocketChannel::OnReadDone(bool synchronous, int result) {
     default:
       DCHECK_LT(result, 0)
           << "ReadFrames() should only return OK or ERR_ codes";
+
       stream_->Close();
-      DCHECK_NE(CLOSED, state_);
-      state_ = CLOSED;
+      SetState(CLOSED);
+
       uint16 code = kWebSocketErrorAbnormalClosure;
       std::string reason = "";
       bool was_clean = false;
@@ -711,6 +732,7 @@ ChannelState WebSocketChannel::OnReadDone(bool synchronous, int result) {
         reason = received_close_reason_;
         was_clean = (result == ERR_CONNECTION_CLOSED);
       }
+
       return DoDropChannel(was_clean, code, reason);
   }
 }
@@ -797,11 +819,11 @@ ChannelState WebSocketChannel::HandleFrameByState(
       DVLOG(1) << "Got Close with code " << code;
       switch (state_) {
         case CONNECTED:
-          state_ = RECV_CLOSED;
+          SetState(RECV_CLOSED);
           if (SendClose(code, reason) == CHANNEL_DELETED)
             return CHANNEL_DELETED;
           DCHECK_EQ(RECV_CLOSED, state_);
-          state_ = CLOSE_WAIT;
+          SetState(CLOSE_WAIT);
 
           if (event_interface_->OnClosingHandshake() == CHANNEL_DELETED)
             return CHANNEL_DELETED;
@@ -810,7 +832,7 @@ ChannelState WebSocketChannel::HandleFrameByState(
           break;
 
         case SEND_CLOSED:
-          state_ = CLOSE_WAIT;
+          SetState(CLOSE_WAIT);
           // From RFC6455 section 7.1.5: "Each endpoint
           // will see the status code sent by the other end as _The WebSocket
           // Connection Close Code_."
@@ -948,17 +970,18 @@ ChannelState WebSocketChannel::FailChannel(const std::string& message,
   DCHECK_NE(FRESHLY_CONSTRUCTED, state_);
   DCHECK_NE(CONNECTING, state_);
   DCHECK_NE(CLOSED, state_);
+
   // TODO(ricea): Logging.
   if (state_ == CONNECTED) {
     if (SendClose(code, reason) == CHANNEL_DELETED)
       return CHANNEL_DELETED;
   }
+
   // Careful study of RFC6455 section 7.1.7 and 7.1.1 indicates the browser
   // should close the connection itself without waiting for the closing
   // handshake.
   stream_->Close();
-  state_ = CLOSED;
-
+  SetState(CLOSED);
   return event_interface_->OnFailChannel(message);
 }
 
@@ -1063,8 +1086,7 @@ ChannelState WebSocketChannel::DoDropChannel(bool was_clean,
 
 void WebSocketChannel::CloseTimeout() {
   stream_->Close();
-  DCHECK_NE(CLOSED, state_);
-  state_ = CLOSED;
+  SetState(CLOSED);
   AllowUnused(DoDropChannel(false, kWebSocketErrorAbnormalClosure, ""));
   // |this| has been deleted.
 }

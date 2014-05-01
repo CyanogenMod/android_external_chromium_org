@@ -29,11 +29,12 @@
       'type': 'none',
       'dependencies': [
         'mojo_apps_js_unittests',
-        'mojo_bindings',
         'mojo_compositor_app',
         'mojo_common_lib',
         'mojo_common_unittests',
+        'mojo_cpp_bindings',
         'mojo_js',
+        'mojo_js_bindings',
         'mojo_js_unittests',
         'mojo_message_generator',
         'mojo_native_viewport_service',
@@ -73,6 +74,23 @@
           ],
         }],
       ]
+    },
+    {
+      'target_name': 'mojo_external_service_bindings',
+      'type': 'static_library',
+      'sources': [
+        'shell/external_service.mojom',
+      ],
+      'variables': {
+        'mojom_base_output_dir': 'mojo',
+      },
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
+      'export_dependent_settings': [
+        'mojo_cpp_bindings',
+      ],
+      'dependencies': [
+        'mojo_cpp_bindings',
+      ],
     },
     {
       'target_name': 'mojo_run_all_unittests',
@@ -203,6 +221,7 @@
       'sources': [
         'embedder/embedder_unittest.cc',
         'embedder/platform_channel_pair_posix_unittest.cc',
+        'system/channel_unittest.cc',
         'system/core_unittest.cc',
         'system/core_test_base.cc',
         'system/core_test_base.h',
@@ -280,6 +299,8 @@
         'mojo_system_impl',
       ],
       'sources': [
+        'common/channel_init.cc',
+        'common/channel_init.h',
         'common/common_type_converters.cc',
         'common/common_type_converters.h',
         'common/environment_data.cc',
@@ -289,8 +310,6 @@
         'common/message_pump_mojo.cc',
         'common/message_pump_mojo.h',
         'common/message_pump_mojo_handler.h',
-        'common/mojo_channel_init.cc',
-        'common/mojo_channel_init.h',
         'common/time_helper.cc',
         'common/time_helper.h',
       ],
@@ -319,7 +338,7 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_message_loop_tests',
         '../testing/gtest.gyp:gtest',
-        'mojo_bindings',
+        'mojo_cpp_bindings',
         'mojo_environment_chromium',
         'mojo_common_lib',
         'mojo_common_test_support',
@@ -406,12 +425,15 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_static',
+        '../net/net.gyp:http_server',
         '../url/url.gyp:url_lib',
         'mojo_service_manager',
       ],
       'sources': [
         'spy/spy.cc',
         'spy/spy.h',
+        'spy/websocket_server.cc',
+        'spy/websocket_server.h',
       ],
     },
     {
@@ -420,8 +442,10 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_static',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../net/net.gyp:net',
         '../url/url.gyp:url_lib',
+        'mojo_external_service_bindings',
         'mojo_gles2_impl',
         'mojo_service_manager',
         'mojo_shell_bindings',
@@ -445,6 +469,8 @@
         'shell/child_process_host.h',
         'shell/context.cc',
         'shell/context.h',
+        'shell/dbus_service_loader_linux.cc',
+        'shell/dbus_service_loader_linux.h',
         'shell/dynamic_service_loader.cc',
         'shell/dynamic_service_loader.h',
         'shell/dynamic_service_runner.h',
@@ -473,6 +499,38 @@
         'shell/url_request_context_getter.cc',
         'shell/url_request_context_getter.h',
       ],
+      'conditions': [
+        ['OS=="linux"', {
+          'dependencies': [
+            '../build/linux/system.gyp:dbus',
+            '../dbus/dbus.gyp:dbus',
+          ],
+        }],
+        ['use_aura==1', {
+          'dependencies': [
+            # These are only necessary as long as we hard code use of ViewManager.
+            '../skia/skia.gyp:skia',
+            'mojo_shell_client',
+            'mojo_view_manager',
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'mojo_shell_test_support',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:base_static',
+        '../url/url.gyp:url_lib',
+        'mojo_service_manager',
+        'mojo_shell_lib',
+        'mojo_system_impl',
+      ],
+      'sources': [
+        'shell/shell_test_helper.cc',
+        'shell/shell_test_helper.h',
+      ],
     },
     {
       'target_name': 'mojo_shell',
@@ -498,8 +556,8 @@
         '../base/base.gyp:base',
         '../testing/gtest.gyp:gtest',
         '../url/url.gyp:url_lib',
-        'mojo_bindings',
         'mojo_common_lib',
+        'mojo_cpp_bindings',
         'mojo_environment_chromium',
         'mojo_run_all_unittests',
         'mojo_service_manager',
@@ -546,6 +604,7 @@
       'type': 'executable',
       'dependencies': [
         '../gin/gin.gyp:gin_test',
+        'mojo_common_test_support',
         'mojo_js_bindings_lib',
         'mojo_run_all_unittests',
         'mojo_public_test_interfaces',
@@ -560,8 +619,8 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../testing/gtest.gyp:gtest',
-        'mojo_bindings',
         'mojo_common_lib',
+        'mojo_cpp_bindings',
         'mojo_environment_chromium',
         'mojo_system_impl',
       ],
@@ -647,6 +706,13 @@
             'resource_dir': '<(DEPTH)/mojo/android/javatests/apk',
             'native_lib_target': 'libmojo_java_unittest',
             'is_test_apk': 1,
+            # Given that this apk tests itself, it needs to bring emma with it
+            # when instrumented.
+            'conditions': [
+              ['emma_coverage != 0', {
+                'emma_instrument': 1,
+              }],
+            ],
           },
           'includes': [ '../build/java_apk.gypi' ],
         },

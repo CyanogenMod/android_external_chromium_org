@@ -14,6 +14,7 @@
     'autofill.gypi',
     'bookmarks.gypi',
     'breakpad.gypi',
+    'captive_portal.gypi',
     'cloud_devices.gypi',
     'cronet.gypi',
     'data_reduction_proxy.gypi',
@@ -34,6 +35,7 @@
     'precache.gypi',
     'query_parser.gypi',
     'rappor.gypi',
+    'search_provider_logos.gypi',
     'signin.gypi',
     'startup_metric_utils.gypi',
     'translate.gypi',
@@ -52,6 +54,10 @@
         'visitedlink.gypi',
         'web_contents_delegate_android.gypi',
         'web_modal.gypi',
+      ],
+    }],
+    ['OS == "win" or OS == "mac"', {
+      'includes': [
         'wifi.gypi',
       ],
     }],

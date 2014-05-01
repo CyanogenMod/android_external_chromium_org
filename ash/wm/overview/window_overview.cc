@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "ash/accessibility_delegate.h"
 #include "ash/metrics/user_metrics_recorder.h"
 #include "ash/screen_util.h"
 #include "ash/shell.h"
@@ -22,6 +23,7 @@
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event.h"
+#include "ui/gfx/screen.h"
 #include "ui/views/background.h"
 #include "ui/views/widget/widget.h"
 
@@ -132,7 +134,7 @@ WindowOverview::WindowOverview(WindowSelector* window_selector,
        iter != windows_->end(); ++iter) {
     (*iter)->PrepareForOverview();
   }
-  PositionWindows();
+  PositionWindows(/* animate */ true);
   DCHECK(!windows_->empty());
   cursor_client_ = aura::client::GetCursorClient(
       windows_->front()->GetRootWindow());
@@ -146,8 +148,14 @@ WindowOverview::WindowOverview(WindowSelector* window_selector,
     cursor_client_->LockCursor();
   }
   shell->PrependPreTargetHandler(this);
+  shell->GetScreen()->AddObserver(this);
   shell->metrics()->RecordUserMetricsAction(UMA_WINDOW_OVERVIEW);
   HideAndTrackNonOverviewWindows();
+  // Send an a11y alert only if the overview was activated by the user.
+  if (window_selector_->mode() == WindowSelector::OVERVIEW) {
+    shell->accessibility_delegate()->TriggerAccessibilityAlert(
+        A11Y_ALERT_WINDOW_OVERVIEW_MODE_ENTERED);
+  }
 }
 
 WindowOverview::~WindowOverview() {
@@ -160,13 +168,14 @@ WindowOverview::~WindowOverview() {
         ScopedTransformOverviewWindow::kTransitionMilliseconds));
     settings.SetPreemptionStrategy(
         ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-    (*iter)->Show();
     (*iter)->layer()->SetOpacity(1);
+    (*iter)->Show();
   }
   if (cursor_client_)
     cursor_client_->UnlockCursor();
   ash::Shell* shell = ash::Shell::GetInstance();
   shell->RemovePreTargetHandler(this);
+  shell->GetScreen()->RemoveObserver(this);
   UMA_HISTOGRAM_MEDIUM_TIMES(
       "Ash.WindowSelector.TimeInOverview",
       base::Time::Now() - overview_start_time_);
@@ -217,10 +226,13 @@ void WindowOverview::SetSelection(size_t index) {
       old_selection->SetBoundsInScreen(
           GetSelectionBounds(selection_index_) + fade_out_direction,
           dst_display);
+      old_selection->Hide();
       old_selection->layer()->SetOpacity(0);
       InitializeSelectionWidget();
       selection_widget_->GetNativeWindow()->SetBoundsInScreen(
           target_bounds - fade_out_direction, dst_display);
+      // New selection widget starts with 0 opacity and fades in.
+      selection_widget_->GetNativeWindow()->layer()->SetOpacity(0);
     }
     ui::ScopedLayerAnimationSettings animation_settings(
         selection_widget_->GetNativeWindow()->layer()->GetAnimator());
@@ -234,19 +246,17 @@ void WindowOverview::SetSelection(size_t index) {
   } else {
     InitializeSelectionWidget();
     selection_widget_->SetBounds(target_bounds);
-    selection_widget_->GetNativeWindow()->layer()->SetOpacity(
-        kWindowOverviewSelectionOpacity);
   }
   selection_index_ = index;
 }
 
 void WindowOverview::OnWindowsChanged() {
-  PositionWindows();
+  PositionWindows(/* animate */ true);
 }
 
 void WindowOverview::MoveToSingleRootWindow(aura::Window* root_window) {
   single_root_window_ = root_window;
-  PositionWindows();
+  PositionWindows(/* animate */ true);
 }
 
 void WindowOverview::OnKeyEvent(ui::KeyEvent* event) {
@@ -295,6 +305,16 @@ void WindowOverview::OnTouchEvent(ui::TouchEvent* event) {
   // gesture could be used to activate the window.
   event->SetHandled();
   window_selector_->SelectWindow(target);
+}
+
+void WindowOverview::OnDisplayBoundsChanged(const gfx::Display& display) {
+  PositionWindows(/* animate */ false);
+}
+
+void WindowOverview::OnDisplayAdded(const gfx::Display& display) {
+}
+
+void WindowOverview::OnDisplayRemoved(const gfx::Display& display) {
 }
 
 aura::Window* WindowOverview::GetEventTarget(ui::LocatedEvent* event) {
@@ -357,34 +377,36 @@ void WindowOverview::HideAndTrackNonOverviewWindows() {
   }
 }
 
-void WindowOverview::PositionWindows() {
+void WindowOverview::PositionWindows(bool animate) {
   if (single_root_window_) {
     std::vector<WindowSelectorItem*> windows;
     for (WindowSelectorItemList::iterator iter = windows_->begin();
          iter != windows_->end(); ++iter) {
       windows.push_back(*iter);
     }
-    PositionWindowsOnRoot(single_root_window_, windows);
+    PositionWindowsOnRoot(single_root_window_, windows, animate);
   } else {
     aura::Window::Windows root_window_list = Shell::GetAllRootWindows();
     for (size_t i = 0; i < root_window_list.size(); ++i)
-      PositionWindowsFromRoot(root_window_list[i]);
+      PositionWindowsFromRoot(root_window_list[i], animate);
   }
 }
 
-void WindowOverview::PositionWindowsFromRoot(aura::Window* root_window) {
+void WindowOverview::PositionWindowsFromRoot(aura::Window* root_window,
+                                             bool animate) {
   std::vector<WindowSelectorItem*> windows;
   for (WindowSelectorItemList::iterator iter = windows_->begin();
        iter != windows_->end(); ++iter) {
     if ((*iter)->GetRootWindow() == root_window)
       windows.push_back(*iter);
   }
-  PositionWindowsOnRoot(root_window, windows);
+  PositionWindowsOnRoot(root_window, windows, animate);
 }
 
 void WindowOverview::PositionWindowsOnRoot(
     aura::Window* root_window,
-    const std::vector<WindowSelectorItem*>& windows) {
+    const std::vector<WindowSelectorItem*>& windows,
+    bool animate) {
   if (windows.empty())
     return;
 
@@ -421,7 +443,7 @@ void WindowOverview::PositionWindowsOnRoot(
                             window_size.width(),
                             window_size.height());
     target_bounds.Inset(kWindowMargin, kWindowMargin);
-    windows[i]->SetBounds(root_window, target_bounds);
+    windows[i]->SetBounds(root_window, target_bounds, animate);
   }
 }
 
@@ -447,7 +469,8 @@ void WindowOverview::InitializeSelectionWidget() {
   selection_widget_->Show();
   selection_widget_->GetNativeWindow()->parent()->StackChildAtBottom(
       selection_widget_->GetNativeWindow());
-  selection_widget_->GetNativeWindow()->layer()->SetOpacity(0);
+  selection_widget_->GetNativeWindow()->layer()->SetOpacity(
+      kWindowOverviewSelectionOpacity);
 }
 
 gfx::Rect WindowOverview::GetSelectionBounds(size_t index) {

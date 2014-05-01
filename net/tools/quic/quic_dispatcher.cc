@@ -14,7 +14,6 @@
 #include "net/quic/quic_utils.h"
 #include "net/tools/quic/quic_default_packet_writer.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
-#include "net/tools/quic/quic_packet_writer_wrapper.h"
 #include "net/tools/quic/quic_socket_utils.h"
 #include "net/tools/quic/quic_time_wait_list_manager.h"
 
@@ -88,7 +87,7 @@ class QuicDispatcher::QuicFramerVisitor : public QuicFramerVisitorInterface {
       const QuicVersionNegotiationPacket& /*packet*/) OVERRIDE {
     DCHECK(false);
   }
-  virtual void OnPacketComplete() OVERRIDE {
+  virtual void OnDecryptedPacket(EncryptionLevel level) OVERRIDE {
     DCHECK(false);
   }
   virtual bool OnPacketHeader(const QuicPacketHeader& /*header*/) OVERRIDE {
@@ -148,6 +147,9 @@ class QuicDispatcher::QuicFramerVisitor : public QuicFramerVisitorInterface {
   virtual void OnFecData(const QuicFecData& /*fec*/) OVERRIDE {
     DCHECK(false);
   }
+  virtual void OnPacketComplete() OVERRIDE {
+    DCHECK(false);
+  }
 
  private:
   QuicDispatcher* dispatcher_;
@@ -182,7 +184,7 @@ QuicDispatcher::~QuicDispatcher() {
 
 void QuicDispatcher::Initialize(int fd) {
   DCHECK(writer_ == NULL);
-  writer_.reset(CreateWriterWrapper(CreateWriter(fd)));
+  writer_.reset(CreateWriter(fd));
   time_wait_list_manager_.reset(CreateQuicTimeWaitListManager());
 
   // Remove all versions > QUIC_VERSION_16 from the
@@ -359,11 +361,6 @@ QuicPacketWriter* QuicDispatcher::CreateWriter(int fd) {
   return new QuicDefaultPacketWriter(fd);
 }
 
-QuicPacketWriterWrapper* QuicDispatcher::CreateWriterWrapper(
-    QuicPacketWriter* writer) {
-  return new QuicPacketWriterWrapper(writer);
-}
-
 QuicSession* QuicDispatcher::CreateQuicSession(
     QuicConnectionId connection_id,
     const IPEndPoint& server_address,
@@ -386,7 +383,7 @@ QuicConnection* QuicDispatcher::CreateQuicConnection(
     uint32 initial_flow_control_window) {
   // If we have disabled per-stream flow control, then don't allow new
   // connections to talk QUIC_VERSION_17 or higher.
-  if (FLAGS_enable_quic_stream_flow_control) {
+  if (FLAGS_enable_quic_stream_flow_control_2) {
     return new QuicConnection(connection_id, client_address, helper_.get(),
                               writer_.get(), true, supported_versions_,
                               initial_flow_control_window_bytes_);
@@ -403,10 +400,6 @@ QuicConnection* QuicDispatcher::CreateQuicConnection(
 QuicTimeWaitListManager* QuicDispatcher::CreateQuicTimeWaitListManager() {
   return new QuicTimeWaitListManager(
       writer_.get(), this, epoll_server(), supported_versions());
-}
-
-void QuicDispatcher::set_writer(QuicPacketWriter* writer) {
-  writer_->set_writer(writer);
 }
 
 bool QuicDispatcher::HandlePacketForTimeWait(

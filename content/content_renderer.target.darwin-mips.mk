@@ -14,6 +14,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_V
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp,,,$(GYP_VAR_PREFIX))/content_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_mojo_bindings_gyp,,,$(GYP_VAR_PREFIX))/content_content_common_mojo_bindings_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_shell_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_shell_bindings_gyp.a \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp,,,$(GYP_VAR_PREFIX))/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp,,,$(GYP_VAR_PREFIX))/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp,,,$(GYP_VAR_PREFIX))/blink.stamp \
@@ -41,7 +42,6 @@ LOCAL_SRC_FILES := \
 	content/public/renderer/android_content_detection_prefixes.cc \
 	content/public/renderer/content_renderer_client.cc \
 	content/public/renderer/document_state.cc \
-	content/public/renderer/history_item_serialization.cc \
 	content/public/renderer/key_system_info.cc \
 	content/public/renderer/navigation_state.cc \
 	content/public/renderer/render_frame_observer.cc \
@@ -59,7 +59,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/android/phone_number_detector.cc \
 	content/renderer/android/synchronous_compositor_factory.cc \
 	content/renderer/browser_plugin/browser_plugin.cc \
-	content/renderer/browser_plugin/browser_plugin_backing_store.cc \
 	content/renderer/browser_plugin/browser_plugin_bindings.cc \
 	content/renderer/browser_plugin/browser_plugin_manager_impl.cc \
 	content/renderer/browser_plugin/browser_plugin_manager.cc \
@@ -95,6 +94,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/gpu/stream_texture_host_android.cc \
 	content/renderer/history_controller.cc \
 	content/renderer/history_entry.cc \
+	content/renderer/history_serialization.cc \
 	content/renderer/idle_user_detector.cc \
 	content/renderer/image_loading_helper.cc \
 	content/renderer/ime_event_guard.cc \
@@ -158,7 +158,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/memory_benchmarking_extension.cc \
 	content/renderer/menu_item_builder.cc \
 	content/renderer/mhtml_generator.cc \
-	content/renderer/mojo/mojo_render_process_observer.cc \
 	content/renderer/mouse_lock_dispatcher.cc \
 	content/renderer/push_messaging_dispatcher.cc \
 	content/renderer/render_frame_impl.cc \
@@ -186,6 +185,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/scoped_clipboard_writer_glue.cc \
 	content/renderer/service_worker/embedded_worker_context_client.cc \
 	content/renderer/service_worker/embedded_worker_context_message_filter.cc \
+	content/renderer/service_worker/embedded_worker_devtools_agent.cc \
 	content/renderer/service_worker/embedded_worker_dispatcher.cc \
 	content/renderer/service_worker/service_worker_script_context.cc \
 	content/renderer/shared_memory_seqlock_reader.cc \
@@ -203,6 +203,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/web_ui_mojo.cc \
 	content/renderer/web_ui_mojo_context_state.cc \
 	content/renderer/web_ui_runner.cc \
+	content/renderer/web_ui_setup_impl.cc \
 	content/renderer/webclipboard_impl.cc \
 	content/renderer/webgraphicscontext3d_provider_impl.cc \
 	content/renderer/webpublicsuffixlist_impl.cc \
@@ -330,12 +331,13 @@ MY_DEFS_Debug := \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
 	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
+	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
+	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -507,12 +509,13 @@ MY_DEFS_Release := \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
 	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
+	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
 	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
+	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
+	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -664,6 +667,7 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 LOCAL_STATIC_LIBRARIES := \
 	cpufeatures \
 	content_content_common_mojo_bindings_gyp \
+	mojo_mojo_shell_bindings_gyp \
 	skia_skia_library_gyp \
 	ui_accessibility_accessibility_gyp \
 	ui_accessibility_ax_gen_gyp \

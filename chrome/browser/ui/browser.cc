@@ -32,8 +32,6 @@
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/background/background_contents_service.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/character_encoding.h"
@@ -151,6 +149,8 @@
 #include "chrome/common/profiling.h"
 #include "chrome/common/search_types.h"
 #include "chrome/common/url_constants.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/browser/bookmark_utils.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_manager.h"
@@ -2248,22 +2248,25 @@ bool Browser::ShouldShowLocationBar() const {
   if (is_type_tabbed())
     return true;
 
-  if (is_app() && CommandLine::ForCurrentProcess()->HasSwitch(
-                      switches::kEnableStreamlinedHostedApps)) {
-    // If kEnableStreamlinedHostedApps is true, show the location bar for
-    // bookmark apps.
-    ExtensionService* service =
-        extensions::ExtensionSystem::Get(profile_)->extension_service();
-    const extensions::Extension* extension =
-        service ? service->GetInstalledExtension(
-                      web_app::GetExtensionIdFromApplicationName(app_name()))
-                : NULL;
-    return (!extension || extension->from_bookmark()) &&
-           app_name() != DevToolsWindow::kDevToolsApp;
+  if (is_app()) {
+    if (CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kEnableStreamlinedHostedApps)) {
+      // If kEnableStreamlinedHostedApps is true, show the location bar for
+      // bookmark apps.
+      ExtensionService* service =
+          extensions::ExtensionSystem::Get(profile_)->extension_service();
+      const extensions::Extension* extension =
+          service ? service->GetInstalledExtension(
+                        web_app::GetExtensionIdFromApplicationName(app_name()))
+                  : NULL;
+      return (!extension || extension->from_bookmark()) &&
+             app_name() != DevToolsWindow::kDevToolsApp;
+    } else {
+      return false;
+    }
   }
 
-  // All app windows and system windows are trusted and never show a location
-  // bar.
+  // Trusted app windows and system windows never show a location bar.
   return !is_trusted_source();
 }
 

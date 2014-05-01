@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
@@ -114,7 +114,8 @@ IN_PROC_BROWSER_TEST_F(UserAddingScreenTest, PRE_AddingSeveralUsers) {
   StartupUtils::MarkOobeCompleted();
 }
 
-IN_PROC_BROWSER_TEST_F(UserAddingScreenTest, AddingSeveralUsers) {
+// Very flaky, see http://crbug.com/368621
+IN_PROC_BROWSER_TEST_F(UserAddingScreenTest, DISABLED_AddingSeveralUsers) {
   EXPECT_EQ(ash::SessionStateDelegate::SESSION_STATE_LOGIN_PRIMARY,
             ash::Shell::GetInstance()->session_state_delegate()->
                 GetSessionState());

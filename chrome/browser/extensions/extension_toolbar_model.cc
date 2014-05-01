@@ -26,6 +26,7 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/extension.h"
@@ -47,12 +48,10 @@ ExtensionToolbarModel::ExtensionToolbarModel(
       prefs_(profile_->GetPrefs()),
       extensions_initialized_(false),
       is_highlighting_(false),
+      extension_registry_observer_(this),
       weak_ptr_factory_(this) {
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                 content::Source<Profile>(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
-                 content::Source<Profile>(profile_));
+  extension_registry_observer_.Add(ExtensionRegistry::Get(profile_));
+
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSIONS_READY,
                  content::Source<Profile>(profile_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
@@ -180,57 +179,62 @@ void ExtensionToolbarModel::SetVisibleIconCount(int count) {
   }
 }
 
+void ExtensionToolbarModel::OnExtensionLoaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  // We don't want to add the same extension twice. It may have already been
+  // added by EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED below, if the user
+  // hides the browser action and then disables and enables the extension.
+  for (size_t i = 0; i < toolbar_items_.size(); i++) {
+    if (toolbar_items_[i].get() == extension)
+      return;
+  }
+  if (ExtensionActionAPI::GetBrowserActionVisibility(extension_prefs_,
+                                                     extension->id())) {
+    AddExtension(extension);
+  }
+}
+
+void ExtensionToolbarModel::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    UnloadedExtensionInfo::Reason reason) {
+  RemoveExtension(extension);
+}
+
 void ExtensionToolbarModel::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   ExtensionService* extension_service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-  if (!extension_service || !extension_service->is_ready())
+      ExtensionSystem::Get(profile_)->extension_service();
+  DCHECK(extension_service);
+  if (!extension_service->is_ready())
     return;
 
-  if (type == chrome::NOTIFICATION_EXTENSIONS_READY) {
-    InitializeExtensionList(extension_service);
-    return;
-  }
-
-  const Extension* extension = NULL;
-  if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED) {
-    extension = content::Details<extensions::UnloadedExtensionInfo>(
-        details)->extension;
-  } else if (type ==
-      chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED) {
-    extension = extension_service->GetExtensionById(
-        *content::Details<const std::string>(details).ptr(), true);
-  } else {
-    extension = content::Details<const Extension>(details).ptr();
-  }
-  if (type == chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED) {
-    // We don't want to add the same extension twice. It may have already been
-    // added by EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED below, if the user
-    // hides the browser action and then disables and enables the extension.
-    for (size_t i = 0; i < toolbar_items_.size(); i++) {
-      if (toolbar_items_[i].get() == extension)
-        return;  // Already exists.
+  switch (type) {
+    case chrome::NOTIFICATION_EXTENSIONS_READY:
+      InitializeExtensionList(extension_service);
+      break;
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
+      const Extension* extension =
+          content::Details<const Extension>(details).ptr();
+      UninstalledExtension(extension);
+      break;
     }
-    if (ExtensionActionAPI::GetBrowserActionVisibility(
-            extension_prefs_, extension->id())) {
-      AddExtension(extension);
+    case chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED: {
+      const Extension* extension = extension_service->GetExtensionById(
+          *content::Details<const std::string>(details).ptr(), true);
+      if (ExtensionActionAPI::GetBrowserActionVisibility(extension_prefs_,
+                                                         extension->id())) {
+        AddExtension(extension);
+      } else {
+        RemoveExtension(extension);
+      }
+      break;
     }
-  } else if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED) {
-    RemoveExtension(extension);
-  } else if (type == chrome::NOTIFICATION_EXTENSION_UNINSTALLED) {
-    UninstalledExtension(extension);
-  } else if (type ==
-      chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED) {
-    if (ExtensionActionAPI::GetBrowserActionVisibility(
-            extension_prefs_, extension->id())) {
-      AddExtension(extension);
-    } else {
-      RemoveExtension(extension);
-    }
-  } else {
-    NOTREACHED() << "Received unexpected notification";
+    default:
+      NOTREACHED() << "Received unexpected notification";
   }
 }
 

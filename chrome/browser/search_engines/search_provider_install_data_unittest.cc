@@ -183,6 +183,8 @@ void SearchProviderInstallDataTest::SimulateDefaultSearchIsManaged(
                           base::Value::CreateStringValue(url));
   service->SetManagedPref(prefs::kDefaultSearchProviderName,
                           base::Value::CreateStringValue("managed"));
+  service->SetManagedPref(prefs::kDefaultSearchProviderKeyword,
+                          new base::StringValue("managed"));
   // Clear the IDs that are not specified via policy.
   service->SetManagedPref(prefs::kDefaultSearchProviderID,
                           new base::StringValue(std::string()));
@@ -225,7 +227,7 @@ TEST_F(SearchProviderInstallDataTest, GetInstallState) {
   TemplateURL* default_url =
       AddNewTemplateURL("http://" + default_host + "/",
                         base::ASCIIToUTF16("mmm"));
-  util_.model()->SetDefaultSearchProvider(default_url);
+  util_.model()->SetUserSelectedDefaultSearchProvider(default_url);
   test_get_install_state.RunTests(host, default_host);
 }
 
@@ -264,7 +266,7 @@ TEST_F(SearchProviderInstallDataTest, GoogleBaseUrlChange) {
                     base::ASCIIToUTF16("t"));
   TemplateURL* default_url =
       AddNewTemplateURL("http://d.com/", base::ASCIIToUTF16("d"));
-  util_.model()->SetDefaultSearchProvider(default_url);
+  util_.model()->SetUserSelectedDefaultSearchProvider(default_url);
 
   // Wait for the changes to be saved.
   base::RunLoop().RunUntilIdle();

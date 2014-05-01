@@ -5,6 +5,16 @@
   'variables': {
     'chromium_code': 1,
   },
+  'target_defaults': {
+    'conditions': [
+      ['use_aura==1', {
+        'dependencies': [
+          '../aura/aura.gyp:aura',
+          '../wm/wm.gyp:wm',
+        ],
+      }],
+    ],
+  },
   'targets': [
     {
       'target_name': 'views',
@@ -19,7 +29,6 @@
         '../../url/url.gyp:url_lib',
         '../accessibility/accessibility.gyp:accessibility',
         '../accessibility/accessibility.gyp:ax_gen',
-        '../aura/aura.gyp:aura',
         '../base/strings/ui_strings.gyp:ui_strings',
         '../base/ui_base.gyp:ui_base',
         '../compositor/compositor.gyp:compositor',
@@ -29,7 +38,6 @@
         '../gfx/gfx.gyp:gfx_geometry',
         '../native_theme/native_theme.gyp:native_theme',
         '../resources/ui_resources.gyp:ui_resources',
-        '../wm/wm.gyp:wm',
       ],
       'export_dependent_settings': [
         '../accessibility/accessibility.gyp:ax_gen',
@@ -39,8 +47,15 @@
       ],
       'sources': [
         # All .cc, .h under views, except unittests
-        'accessibility/ax_tree_source_views.cc',
-        'accessibility/ax_tree_source_views.h',
+        'accessibility/ax_aura_obj_cache.cc',
+        'accessibility/ax_aura_obj_cache.h',
+        'accessibility/ax_aura_obj_wrapper.h',
+        'accessibility/ax_view_obj_wrapper.cc',
+        'accessibility/ax_view_obj_wrapper.h',
+        'accessibility/ax_widget_obj_wrapper.cc',
+        'accessibility/ax_widget_obj_wrapper.h',
+        'accessibility/ax_window_obj_wrapper.cc',
+        'accessibility/ax_window_obj_wrapper.h',
         'accessibility/native_view_accessibility.cc',
         'accessibility/native_view_accessibility.h',
         'accessibility/native_view_accessibility_win.cc',
@@ -115,7 +130,8 @@
         'controls/menu/menu_2.h',
         'controls/menu/menu_config.cc',
         'controls/menu/menu_config.h',
-        'controls/menu/menu_config_views.cc',
+        'controls/menu/menu_config_aura.cc',
+        'controls/menu/menu_config_mac.cc',
         'controls/menu/menu_config_win.cc',
         'controls/menu/menu_controller.cc',
         'controls/menu/menu_controller.h',
@@ -145,6 +161,7 @@
         'controls/menu/menu_separator.h',
         'controls/menu/menu_separator_views.cc',
         'controls/menu/menu_separator_win.cc',
+        'controls/menu/menu_types.h',
         'controls/menu/menu_wrapper.h',
         'controls/menu/native_menu_win.cc',
         'controls/menu/native_menu_win.h',
@@ -232,6 +249,7 @@
         'drag_controller.h',
         'drag_utils.cc',
         'drag_utils.h',
+        'drag_utils_aura.cc',
         'focus/external_focus_tracker.cc',
         'focus/external_focus_tracker.h',
         'focus/focus_manager.cc',
@@ -264,18 +282,21 @@
         'layout/layout_manager.h',
         'linux_ui/linux_ui.h',
         'linux_ui/linux_ui.cc',
-        'linux_ui/native_theme_change_observer.h',
         'linux_ui/status_icon_linux.h',
         'linux_ui/status_icon_linux.cc',
         'linux_ui/window_button_order_observer.h',
         'metrics.cc',
         'metrics.h',
         'metrics_aura.cc',
+        'metrics_mac.cc',
         'mouse_constants.h',
-        'mouse_watcher.cc',
         'mouse_watcher.h',
+        'mouse_watcher_aura.cc',
         'mouse_watcher_view_host.cc',
         'mouse_watcher_view_host.h',
+        'native_cursor.h',
+        'native_cursor_aura.cc',
+        'native_cursor_mac.mm',
         'native_theme_delegate.h',
         'painter.cc',
         'painter.h',
@@ -293,7 +314,6 @@
         'touchui/touch_selection_controller_impl.h',
         'view.cc',
         'view.h',
-        'view_aura.cc',
         'view_constants.cc',
         'view_constants.h',
         'view_constants_aura.cc',
@@ -308,6 +328,9 @@
         'views_switches.h',
         'views_delegate.cc',
         'views_delegate.h',
+        'views_touch_selection_controller_factory.h',
+        'views_touch_selection_controller_factory_aura.cc',
+        'views_touch_selection_controller_factory_mac.cc',
         'widget/desktop_aura/desktop_capture_client.cc',
         'widget/desktop_aura/desktop_capture_client.h',
         'widget/desktop_aura/desktop_cursor_loader_updater.h',
@@ -504,14 +527,11 @@
         '../../ipc/ipc.gyp:test_support_ipc',
         '../../skia/skia.gyp:skia',
         '../../testing/gtest.gyp:gtest',
-        '../aura/aura.gyp:aura',
-        '../aura/aura.gyp:aura_test_support',
         '../base/ui_base.gyp:ui_base',
         '../compositor/compositor.gyp:compositor',
         '../events/events.gyp:events',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
-        '../wm/wm.gyp:wm',
         'views',
       ],
       'include_dirs': [
@@ -548,6 +568,11 @@
             'test/ui_controls_factory_desktop_aurax11.h',
           ],
         }],
+        ['use_aura==1', {
+          'dependencies': [
+            '../aura/aura.gyp:aura_test_support',
+          ],
+        }],
       ],
     },  # target_name: views_test_support
     {
@@ -563,8 +588,6 @@
         '../../third_party/icu/icu.gyp:icuuc',
         '../../url/url.gyp:url_lib',
         '../accessibility/accessibility.gyp:accessibility',
-        '../aura/aura.gyp:aura',
-        '../aura/aura.gyp:aura_test_support',
         '../base/strings/ui_strings.gyp:ui_strings',
         '../base/ui_base.gyp:ui_base',
         '../base/ui_base.gyp:ui_base_test_support',
@@ -575,7 +598,6 @@
         '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
         '../resources/ui_resources.gyp:ui_test_pak',
-        '../wm/wm.gyp:wm',
         'views',
         'views_test_support',
       ],
@@ -583,7 +605,6 @@
         '..',
       ],
       'sources': [
-        'accessibility/ax_tree_source_views_unittest.cc',
         'accessibility/native_view_accessibility_win_unittest.cc',
         'accessible_pane_view_unittest.cc',
         'animation/bounds_animator_unittest.cc',
@@ -688,6 +709,11 @@
         ['use_ozone==1', {
           'sources!': [
             'corewm/capture_controller_unittest.cc',
+          ],
+        }],
+        ['use_aura==1', {
+          'dependencies': [
+            '../aura/aura.gyp:aura_test_support',
           ],
         }],
       ],

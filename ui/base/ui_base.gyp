@@ -132,6 +132,8 @@
         'cursor/cursor_x11.cc',
         'cursor/cursors_aura.cc',
         'cursor/cursors_aura.h',
+        'cursor/image_cursors.cc',
+        'cursor/image_cursors.h',
         'cursor/ozone/bitmap_cursor_factory_ozone.cc',
         'cursor/ozone/bitmap_cursor_factory_ozone.h',
         'cursor/ozone/cursor_factory_ozone.cc',
@@ -153,6 +155,7 @@
         'dragdrop/drag_utils.cc',
         'dragdrop/drag_utils.h',
         'dragdrop/drag_utils_aura.cc',
+        'dragdrop/drag_utils_mac.mm',
         'dragdrop/drag_utils_win.cc',
         'dragdrop/drop_target_event.cc',
         'dragdrop/drop_target_event.h',
@@ -166,6 +169,7 @@
         'dragdrop/os_exchange_data_provider_aura.h',
         'dragdrop/os_exchange_data_provider_aurax11.cc',
         'dragdrop/os_exchange_data_provider_aurax11.h',
+        'dragdrop/os_exchange_data_provider_mac.mm',
         'dragdrop/os_exchange_data_provider_win.cc',
         'dragdrop/os_exchange_data_provider_win.h',
         'hit_test.h',
@@ -243,6 +247,7 @@
         'touch/touch_editing_controller.h',
         'touch/touch_enabled.cc',
         'touch/touch_enabled.h',
+        'ui_base_export.h',
         'ui_base_exports.cc',
         'ui_base_paths.cc',
         'ui_base_paths.h',
@@ -252,7 +257,6 @@
         'ui_base_switches_util.h',
         'ui_base_types.cc',
         'ui_base_types.h',
-        'ui_base_export.h',
         'view_prop.cc',
         'view_prop.h',
         'webui/jstemplate_builder.cc',
@@ -354,8 +358,6 @@
             'cursor/cursor_mac.mm',
             'cursor/cursor_win.cc',
             'cursor/cursor_x11.cc',
-            'nine_image_painter_factory.cc',
-            'nine_image_painter_factory.h',
             'x/selection_owner.cc',
             'x/selection_owner.h',
             'x/selection_requestor.cc',
@@ -388,14 +390,13 @@
               'sources/': [
                 ['exclude', '^dragdrop/drag_utils.cc'],
                 ['exclude', '^dragdrop/drag_utils.h'],
-                ['exclude', '^dragdrop/os_exchange_data.cc'],
-                ['exclude', '^dragdrop/os_exchange_data.h'],
               ],
             }, {
-              # Note: because of gyp predence rules this has to be defined as
-              # 'sources/' rather than 'sources!'.
               'sources/': [
                 ['include', '^dragdrop/os_exchange_data.cc'],
+                ['include', '^dragdrop/os_exchange_data.h'],
+                ['include', '^nine_image_painter_factory.cc'],
+                ['include', '^nine_image_painter_factory.h'],
               ],
             }],
           ],
@@ -469,16 +470,14 @@
               ],
             }],
           ],
-          'sources!': [
-            'dragdrop/drag_drop_types.h',
-            'dragdrop/os_exchange_data.cc',
-          ],
         }],
         ['OS=="mac"', {
           'dependencies': [
             '../../third_party/mozilla/mozilla.gyp:mozilla',
           ],
           'sources!': [
+            'cursor/image_cursors.cc',
+            'cursor/image_cursors.h',
             'dragdrop/drag_utils.cc',
             'dragdrop/drag_utils.h',
           ],
@@ -506,12 +505,19 @@
         }],
         ['toolkit_views==0', {
           'sources!': [
+            'dragdrop/drag_drop_types.h',
             'dragdrop/drop_target_event.cc',
             'dragdrop/drop_target_event.h',
+            'dragdrop/os_exchange_data.cc',
+            'dragdrop/os_exchange_data.h',
+            'nine_image_painter_factory.cc',
+            'nine_image_painter_factory.h',
           ],
         }],
         ['OS=="android"', {
           'sources!': [
+            'cursor/image_cursors.cc',
+            'cursor/image_cursors.h',
             'default_theme_provider.cc',
             'dragdrop/drag_utils.cc',
             'dragdrop/drag_utils.h',

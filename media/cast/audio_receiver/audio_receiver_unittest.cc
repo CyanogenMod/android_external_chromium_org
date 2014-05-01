@@ -92,9 +92,8 @@ class AudioReceiverTest : public ::testing::Test {
     rtp_header_.frame_id = kFirstFrameId;
     rtp_header_.packet_id = 0;
     rtp_header_.max_packet_id = 0;
-    rtp_header_.is_reference = false;
     rtp_header_.reference_frame_id = 0;
-    rtp_header_.webrtc.header.timestamp = 0;
+    rtp_header_.rtp_timestamp = 0;
   }
 
   void FeedOneFrameIntoReceiver() {
@@ -120,7 +119,7 @@ TEST_F(AudioReceiverTest, GetOnePacketEncodedFrame) {
   SimpleEventSubscriber event_subscriber;
   cast_environment_->Logging()->AddRawEventSubscriber(&event_subscriber);
 
-  EXPECT_CALL(mock_transport_, SendRtcpPacket(_)).Times(1);
+  EXPECT_CALL(mock_transport_, SendRtcpPacket(_, _)).Times(1);
 
   // Enqueue a request for an audio frame.
   receiver_->GetEncodedAudioFrame(
@@ -144,14 +143,13 @@ TEST_F(AudioReceiverTest, GetOnePacketEncodedFrame) {
   ASSERT_TRUE(!frame_events.empty());
   EXPECT_EQ(kAudioAckSent, frame_events.begin()->type);
   EXPECT_EQ(rtp_header_.frame_id, frame_events.begin()->frame_id);
-  EXPECT_EQ(rtp_header_.webrtc.header.timestamp,
-            frame_events.begin()->rtp_timestamp);
+  EXPECT_EQ(rtp_header_.rtp_timestamp, frame_events.begin()->rtp_timestamp);
 
   cast_environment_->Logging()->RemoveRawEventSubscriber(&event_subscriber);
 }
 
 TEST_F(AudioReceiverTest, MultiplePendingGetCalls) {
-  EXPECT_CALL(mock_transport_, SendRtcpPacket(_))
+  EXPECT_CALL(mock_transport_, SendRtcpPacket(_, _))
       .WillRepeatedly(testing::Return(true));
 
   // Enqueue a request for an audio frame.
@@ -175,7 +173,7 @@ TEST_F(AudioReceiverTest, MultiplePendingGetCalls) {
   uint32 ntp_low;
   ConvertTimeTicksToNtp(testing_clock_->NowTicks(), &ntp_high, &ntp_low);
   rtcp_packet.AddSrWithNtp(audio_config_.feedback_ssrc, ntp_high, ntp_low,
-                           rtp_header_.webrtc.header.timestamp);
+                           rtp_header_.rtp_timestamp);
 
   testing_clock_->Advance(base::TimeDelta::FromMilliseconds(20));
 
@@ -191,9 +189,8 @@ TEST_F(AudioReceiverTest, MultiplePendingGetCalls) {
   // and that the RTP timestamp represents a time in the future.
   rtp_header_.is_key_frame = false;
   rtp_header_.frame_id = kFirstFrameId + 2;
-  rtp_header_.is_reference = true;
   rtp_header_.reference_frame_id = 0;
-  rtp_header_.webrtc.header.timestamp = 960;
+  rtp_header_.rtp_timestamp = 960;
   fake_audio_client_.SetNextExpectedResult(
       kFirstFrameId + 2,
       testing_clock_->NowTicks() + base::TimeDelta::FromMilliseconds(100));
@@ -216,9 +213,8 @@ TEST_F(AudioReceiverTest, MultiplePendingGetCalls) {
 
   // Receive Frame 3 and expect it to fulfill the third request immediately.
   rtp_header_.frame_id = kFirstFrameId + 3;
-  rtp_header_.is_reference = false;
-  rtp_header_.reference_frame_id = 0;
-  rtp_header_.webrtc.header.timestamp = 1280;
+  rtp_header_.reference_frame_id = rtp_header_.frame_id - 1;
+  rtp_header_.rtp_timestamp = 1280;
   fake_audio_client_.SetNextExpectedResult(kFirstFrameId + 3,
                                            testing_clock_->NowTicks());
   FeedOneFrameIntoReceiver();

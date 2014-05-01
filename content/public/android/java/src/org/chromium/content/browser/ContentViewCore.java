@@ -209,98 +209,6 @@ public class ContentViewCore
         public void onSmartClipDataExtracted(String result);
     }
 
-    private VSyncManager.Provider mVSyncProvider;
-    private VSyncManager.Listener mVSyncListener;
-    private int mVSyncSubscriberCount;
-    private boolean mVSyncListenerRegistered;
-
-    // To avoid IPC delay we use input events to directly trigger a vsync signal in the renderer.
-    // When we do this, we also need to avoid sending the real vsync signal for the current
-    // frame to avoid double-ticking. This flag is used to inhibit the next vsync notification.
-    private boolean mDidSignalVSyncUsingInputEvent;
-
-    public VSyncManager.Listener getVSyncListener(VSyncManager.Provider vsyncProvider) {
-        if (mVSyncProvider != null && mVSyncListenerRegistered) {
-            mVSyncProvider.unregisterVSyncListener(mVSyncListener);
-            mVSyncListenerRegistered = false;
-        }
-
-        mVSyncProvider = vsyncProvider;
-        mVSyncListener = new VSyncManager.Listener() {
-            @Override
-            public void updateVSync(long tickTimeMicros, long intervalMicros) {
-                if (mNativeContentViewCore != 0) {
-                    nativeUpdateVSyncParameters(mNativeContentViewCore, tickTimeMicros,
-                            intervalMicros);
-                }
-            }
-
-            @Override
-            public void onVSync(long frameTimeMicros) {
-                animateIfNecessary(frameTimeMicros);
-
-                if (mRequestedVSyncForInput) {
-                    mRequestedVSyncForInput = false;
-                    removeVSyncSubscriber();
-                }
-                if (mNativeContentViewCore != 0) {
-                    nativeOnVSync(mNativeContentViewCore, frameTimeMicros);
-                }
-            }
-        };
-
-        if (mVSyncSubscriberCount > 0) {
-            // addVSyncSubscriber() is called before getVSyncListener.
-            vsyncProvider.registerVSyncListener(mVSyncListener);
-            mVSyncListenerRegistered = true;
-        }
-
-        return mVSyncListener;
-    }
-
-    @CalledByNative
-    void addVSyncSubscriber() {
-        if (!isVSyncNotificationEnabled()) {
-            mDidSignalVSyncUsingInputEvent = false;
-        }
-        if (mVSyncProvider != null && !mVSyncListenerRegistered) {
-            mVSyncProvider.registerVSyncListener(mVSyncListener);
-            mVSyncListenerRegistered = true;
-        }
-        mVSyncSubscriberCount++;
-    }
-
-    @CalledByNative
-    void removeVSyncSubscriber() {
-        if (mVSyncProvider != null && mVSyncSubscriberCount == 1) {
-            assert mVSyncListenerRegistered;
-            mVSyncProvider.unregisterVSyncListener(mVSyncListener);
-            mVSyncListenerRegistered = false;
-        }
-        mVSyncSubscriberCount--;
-        assert mVSyncSubscriberCount >= 0;
-    }
-
-    @CalledByNative
-    private void resetVSyncNotification() {
-        while (isVSyncNotificationEnabled()) removeVSyncSubscriber();
-        mVSyncSubscriberCount = 0;
-        mVSyncListenerRegistered = false;
-        mNeedAnimate = false;
-    }
-
-    private boolean isVSyncNotificationEnabled() {
-        return mVSyncProvider != null && mVSyncListenerRegistered;
-    }
-
-    @CalledByNative
-    private void setNeedsAnimate() {
-        if (!mNeedAnimate) {
-            mNeedAnimate = true;
-            addVSyncSubscriber();
-        }
-    }
-
     private final Context mContext;
     private ViewGroup mContainerView;
     private InternalAccessDelegate mContainerViewInternals;
@@ -399,16 +307,6 @@ public class ContentViewCore
     // Whether we received a new frame since consumePendingRendererFrame() was last called.
     private boolean mPendingRendererFrame = false;
 
-    // Whether we should animate at the next vsync tick.
-    private boolean mNeedAnimate = false;
-
-    // Whether we requested a proactive vsync event in response to touch input.
-    // This reduces the latency of responding to input by ensuring the renderer
-    // is sent a BeginFrame for every touch event we receive. Otherwise the
-    // renderer's SetNeedsBeginFrame message would get serviced at the next
-    // vsync.
-    private boolean mRequestedVSyncForInput = false;
-
     // On single tap this will store the x, y coordinates of the touch.
     private int mSingleTapX;
     private int mSingleTapY;
@@ -438,6 +336,10 @@ public class ContentViewCore
     // Keep in sync with the value returned from ContentViewCoreImpl::GetCurrentRendererProcessId()
     // if there is no render process.
     public static final int INVALID_RENDER_PROCESS_PID = 0;
+
+    // Offsets for the events that passes through this ContentViewCore.
+    private float mCurrentTouchOffsetX;
+    private float mCurrentTouchOffsetY;
 
     /**
      * Constructs a new ContentViewCore. Embedders must call initialize() after constructing
@@ -617,11 +519,6 @@ public class ContentViewCore
                         if (!isFinish) {
                             hideHandles();
                         }
-                    }
-
-                    @Override
-                    public void onSetFieldValue() {
-                        scrollFocusedEditableNodeIntoView();
                     }
 
                     @Override
@@ -846,8 +743,6 @@ public class ContentViewCore
             nativeOnJavaContentViewCoreDestroyed(mNativeContentViewCore);
         }
         mWebContents = null;
-        resetVSyncNotification();
-        mVSyncProvider = null;
         if (mViewAndroid != null) mViewAndroid.destroy();
         mNativeContentViewCore = 0;
         mContentSettings = null;
@@ -1186,14 +1081,11 @@ public class ContentViewCore
      * @see View#onTouchEvent(MotionEvent)
      */
     public boolean onTouchEvent(MotionEvent event) {
+        MotionEvent offset = createOffsetMotionEvent(event);
+
         cancelRequestToScrollFocusedEditableNodeIntoView();
 
-        if (!mRequestedVSyncForInput) {
-            mRequestedVSyncForInput = true;
-            addVSyncSubscriber();
-        }
-
-        final int eventAction = event.getActionMasked();
+        final int eventAction = offset.getActionMasked();
 
         // Only these actions have any effect on gesture detection.  Other
         // actions have no corresponding WebTouchEvent type and may confuse the
@@ -1208,15 +1100,17 @@ public class ContentViewCore
         }
 
         if (mNativeContentViewCore == 0) return false;
-        final int pointerCount = event.getPointerCount();
-        return nativeOnTouchEvent(mNativeContentViewCore, event,
-                event.getEventTime(), eventAction,
-                pointerCount, event.getHistorySize(), event.getActionIndex(),
-                event.getX(), event.getY(),
-                pointerCount > 1 ? event.getX(1) : 0,
-                pointerCount > 1 ? event.getY(1) : 0,
-                event.getPointerId(0), pointerCount > 1 ? event.getPointerId(1) : -1,
-                event.getTouchMajor(), pointerCount > 1 ? event.getTouchMajor(1) : 0);
+        final int pointerCount = offset.getPointerCount();
+        boolean consumed = nativeOnTouchEvent(mNativeContentViewCore, offset,
+                offset.getEventTime(), eventAction,
+                pointerCount, offset.getHistorySize(), offset.getActionIndex(),
+                offset.getX(), offset.getY(),
+                pointerCount > 1 ? offset.getX(1) : 0,
+                pointerCount > 1 ? offset.getY(1) : 0,
+                offset.getPointerId(0), pointerCount > 1 ? offset.getPointerId(1) : -1,
+                offset.getTouchMajor(), pointerCount > 1 ? offset.getTouchMajor(1) : 0);
+        offset.recycle();
+        return consumed;
     }
 
     public void setIgnoreRemainingTouchEvents() {
@@ -1298,6 +1192,15 @@ public class ContentViewCore
 
     @SuppressWarnings("unused")
     @CalledByNative
+    private void onTapEventNotConsumed(int x, int y) {
+        for (mGestureStateListenersIterator.rewind();
+                mGestureStateListenersIterator.hasNext();) {
+            mGestureStateListenersIterator.next().onUnhandledTapEvent(x, y);
+        }
+    }
+
+    @SuppressWarnings("unused")
+    @CalledByNative
     private void onDoubleTapEventAck() {
         temporarilyHideTextHandles();
     }
@@ -1327,6 +1230,15 @@ public class ContentViewCore
         nativeFlingCancel(mNativeContentViewCore, timeMs);
         nativeScrollBegin(mNativeContentViewCore, timeMs, x, y, velocityX, velocityY);
         nativeFlingStart(mNativeContentViewCore, timeMs, x, y, velocityX, velocityY);
+    }
+
+    /**
+     * Cancel any fling gestures active.
+     * @param timeMs Current time (in milliseconds).
+     */
+    public void cancelFling(long timeMs) {
+        if (mNativeContentViewCore == 0) return;
+        nativeFlingCancel(mNativeContentViewCore, timeMs);
     }
 
     /**
@@ -1700,23 +1612,25 @@ public class ContentViewCore
      */
     public boolean onHoverEvent(MotionEvent event) {
         TraceEvent.begin("onHoverEvent");
+        MotionEvent offset = createOffsetMotionEvent(event);
 
         if (mBrowserAccessibilityManager != null) {
-            return mBrowserAccessibilityManager.onHoverEvent(event);
+            return mBrowserAccessibilityManager.onHoverEvent(offset);
         }
 
         // Work around Android bug where the x, y coordinates of a hover exit
         // event are incorrect when touch exploration is on.
-        if (mTouchExplorationEnabled && event.getAction() == MotionEvent.ACTION_HOVER_EXIT) {
+        if (mTouchExplorationEnabled && offset.getAction() == MotionEvent.ACTION_HOVER_EXIT) {
             return true;
         }
 
         mContainerView.removeCallbacks(mFakeMouseMoveRunnable);
         if (mNativeContentViewCore != 0) {
-            nativeSendMouseMoveEvent(mNativeContentViewCore, event.getEventTime(),
-                    event.getX(), event.getY());
+            nativeSendMouseMoveEvent(mNativeContentViewCore, offset.getEventTime(),
+                    offset.getX(), offset.getY());
         }
         TraceEvent.end("onHoverEvent");
+        offset.recycle();
         return true;
     }
 
@@ -1746,6 +1660,23 @@ public class ContentViewCore
             }
         }
         return mContainerViewInternals.super_onGenericMotionEvent(event);
+    }
+
+    /**
+     * Sets the current amount to offset incoming touch events by.  This is used to handle content
+     * moving and not lining up properly with the android input system.
+     * @param dx The X offset in pixels to shift touch events.
+     * @param dy The Y offset in pixels to shift touch events.
+     */
+    public void setCurrentMotionEventOffsets(float dx, float dy) {
+        mCurrentTouchOffsetX = dx;
+        mCurrentTouchOffsetY = dy;
+    }
+
+    private MotionEvent createOffsetMotionEvent(MotionEvent src) {
+        MotionEvent dst = MotionEvent.obtain(src);
+        dst.offsetLocation(mCurrentTouchOffsetX, mCurrentTouchOffsetY);
+        return dst;
     }
 
     /**
@@ -2358,7 +2289,8 @@ public class ContentViewCore
 
         if (mActionMode != null) mActionMode.invalidate();
 
-        mImeAdapter.attachAndShowIfNeeded(nativeImeAdapterAndroid, textInputType, showImeIfNeeded);
+        mImeAdapter.updateKeyboardVisibility(
+                nativeImeAdapterAndroid, textInputType, showImeIfNeeded);
 
         if (mInputConnection != null) {
             mInputConnection.updateState(text, selectionStart, selectionEnd, compositionStart,
@@ -3083,18 +3015,6 @@ public class ContentViewCore
         return new Rect(x, y, right, bottom);
     }
 
-    private boolean onAnimate(long frameTimeMicros) {
-        if (mNativeContentViewCore == 0) return false;
-        return nativeOnAnimate(mNativeContentViewCore, frameTimeMicros);
-    }
-
-    private void animateIfNecessary(long frameTimeMicros) {
-        if (mNeedAnimate) {
-            mNeedAnimate = onAnimate(frameTimeMicros);
-            if (!mNeedAnimate) removeVSyncSubscriber();
-        }
-    }
-
     public void extractSmartClipData(int x, int y, int width, int height) {
         if (mNativeContentViewCore != 0) {
             nativeExtractSmartClipData(mNativeContentViewCore, x, y, width, height);
@@ -3303,13 +3223,6 @@ public class ContentViewCore
             Object context, boolean isForward, int maxEntries);
     private native String nativeGetOriginalUrlForActiveNavigationEntry(
             long nativeContentViewCoreImpl);
-
-    private native void nativeUpdateVSyncParameters(long nativeContentViewCoreImpl,
-            long timebaseMicros, long intervalMicros);
-
-    private native void nativeOnVSync(long nativeContentViewCoreImpl, long frameTimeMicros);
-
-    private native boolean nativeOnAnimate(long nativeContentViewCoreImpl, long frameTimeMicros);
 
     private native void nativeWasResized(long nativeContentViewCoreImpl);
 
