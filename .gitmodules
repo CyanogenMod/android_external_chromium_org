@@ -406,6 +406,10 @@
 	path = third_party/v8-i18n
 	url = 
 	os = ios
+[submodule "third_party/web-page-replay"]
+	path = third_party/web-page-replay
+	url = https://chromium.googlesource.com/external/web-page-replay.git
+	os = all
 [submodule "third_party/webdriver/pylib"]
 	path = third_party/webdriver/pylib
 	url = https://chromium.googlesource.com/external/selenium/py.git
@@ -416,8 +420,8 @@
 	os = ios
 [submodule "third_party/webpagereplay"]
 	path = third_party/webpagereplay
-	url = https://chromium.googlesource.com/external/web-page-replay.git
-	os = all
+	url = 
+	os = ios
 [submodule "third_party/webrtc"]
 	path = third_party/webrtc
 	url = https://chromium.googlesource.com/external/webrtc/trunk/webrtc.git
