@@ -66,6 +66,13 @@ public final class AwCookieManager {
     }
 
     /**
+     * count total number of cookies
+     */
+    public int countCookies() {
+        return nativeCountCookies();
+    }
+
+    /**
      * Remove all cookies
      */
     public void removeAllCookie() {
@@ -125,4 +132,5 @@ public final class AwCookieManager {
 
     private native boolean nativeAllowFileSchemeCookies();
     private native void nativeSetAcceptFileSchemeCookies(boolean accept);
+    private native int nativeCountCookies();
 }

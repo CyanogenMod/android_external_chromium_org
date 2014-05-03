@@ -93,6 +93,7 @@ class CookieManager {
   void RemoveExpiredCookie();
   void FlushCookieStore();
   bool HasCookies();
+  int CountCookies();
   bool AllowFileSchemeCookies();
   void SetAcceptFileSchemeCookies(bool accept);
 
@@ -126,10 +127,10 @@ class CookieManager {
 
   void FlushCookieStoreAsyncHelper(base::WaitableEvent* completion);
 
-  void HasCookiesAsyncHelper(bool* result,
+  void CountCookiesAsyncHelper(int* result,
                              base::WaitableEvent* completion);
-  void HasCookiesCompleted(base::WaitableEvent* completion,
-                           bool* result,
+  void CountCookiesCompleted(base::WaitableEvent* completion,
+                           int* result,
                            const CookieList& cookies);
 
   void CreateCookieMonster(
@@ -394,28 +395,36 @@ void CookieManager::FlushCookieStore() {
 }
 
 bool CookieManager::HasCookies() {
-  bool has_cookies;
-  ExecCookieTask(base::Bind(&CookieManager::HasCookiesAsyncHelper,
+  int count;
+  ExecCookieTask(base::Bind(&CookieManager::CountCookiesAsyncHelper,
                             base::Unretained(this),
-                            &has_cookies), true);
-  return has_cookies;
+                            &count), true);
+  return count != 0;
+}
+
+int CookieManager::CountCookies() {
+  int count;
+  ExecCookieTask(base::Bind(&CookieManager::CountCookiesAsyncHelper,
+                            base::Unretained(this),
+                            &count), true);
+  return count;
 }
 
 // TODO(kristianm): Simplify this, copying the entire list around
 // should not be needed.
-void CookieManager::HasCookiesAsyncHelper(bool* result,
+void CookieManager::CountCookiesAsyncHelper(int* result,
                                   base::WaitableEvent* completion) {
   cookie_monster_->GetAllCookiesAsync(
-      base::Bind(&CookieManager::HasCookiesCompleted,
+      base::Bind(&CookieManager::CountCookiesCompleted,
                  base::Unretained(this),
                  completion,
                  result));
 }
 
-void CookieManager::HasCookiesCompleted(base::WaitableEvent* completion,
-                                        bool* result,
+void CookieManager::CountCookiesCompleted(base::WaitableEvent* completion,
+                                        int* result,
                                         const CookieList& cookies) {
-  *result = cookies.size() != 0;
+  *result = cookies.size();
   DCHECK(completion);
   completion->Signal();
 }
@@ -473,6 +482,10 @@ static jstring GetCookie(JNIEnv* env, jobject obj, jstring url) {
 
 static void RemoveSessionCookie(JNIEnv* env, jobject obj) {
   CookieManager::GetInstance()->RemoveSessionCookie();
+}
+
+static int CountCookies(JNIEnv* env, jobject obj) {
+  return CookieManager::GetInstance()->CountCookies();
 }
 
 static void RemoveAllCookie(JNIEnv* env, jobject obj) {
