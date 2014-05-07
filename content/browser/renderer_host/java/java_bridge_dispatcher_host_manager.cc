@@ -7,6 +7,7 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_helper.h"
 #include "base/android/scoped_java_ref.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
@@ -14,6 +15,8 @@
 #include "content/browser/renderer_host/java/java_bridge_dispatcher_host.h"
 #include "content/common/android/hash_set.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
 
 namespace content {
@@ -152,6 +155,15 @@ void JavaBridgeDispatcherHostManager::JavaBoundObjectDestroyed(
   if (!retained_object_set.is_null()) {
     JNI_Java_HashSet_remove(env, retained_object_set, object);
   }
+}
+
+void JavaBridgeDispatcherHostManager::AddMessageToConsole(
+    int32 level,
+    const char* message) {
+  WebContentsDelegate* delegate = web_contents()->GetDelegate();
+  if (delegate)
+    delegate->AddMessageToConsole(
+        web_contents(), level, ASCIIToUTF16(message), 0, ASCIIToUTF16(""));
 }
 
 }  // namespace content

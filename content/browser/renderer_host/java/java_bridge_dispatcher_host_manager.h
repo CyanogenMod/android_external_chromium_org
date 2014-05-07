@@ -56,6 +56,8 @@ class JavaBridgeDispatcherHostManager
   void JavaBoundObjectCreated(const base::android::JavaRef<jobject>& object);
   void JavaBoundObjectDestroyed(const base::android::JavaRef<jobject>& object);
 
+  void AddMessageToConsole(int32 level, const char* message);
+
  private:
   typedef std::map<RenderViewHost*, scoped_refptr<JavaBridgeDispatcherHost> >
       InstanceMap;

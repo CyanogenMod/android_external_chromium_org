@@ -4,6 +4,9 @@
 
 #include "content/browser/renderer_host/java/java_bound_object.h"
 
+#include <log/log.h>
+#include <unistd.h>
+
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/memory/singleton.h"
@@ -45,6 +48,8 @@ const char kReturningJavaLangClass[] = "()Ljava/lang/Class;";
 const char kReturningJavaLangReflectMethodArray[] =
     "()[Ljava/lang/reflect/Method;";
 const char kTakesJavaLangClassReturningBoolean[] = "(Ljava/lang/Class;)Z";
+const char kAccessToObjectGetClassIsBlocked[] =
+    "Access to java.lang.Object.getClass is blocked";
 
 // Our special NPObject type.  We extend an NPObject with a pointer to a
 // JavaBoundObject.  We also add static methods for each of the NPObject
@@ -797,6 +802,7 @@ JavaBoundObject::JavaBoundObject(
     : java_object_(AttachCurrentThread(), object.obj()),
       manager_(manager),
       are_methods_set_up_(false),
+      object_get_class_method_id_(NULL),
       safe_annotation_clazz_(safe_annotation_clazz) {
   BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
@@ -853,6 +859,22 @@ bool JavaBoundObject::Invoke(const std::string& name, const NPVariant* args,
     return false;
   }
 
+  // Block access to java.lang.Object.getClass.
+  // As it is declared to be final, it is sufficient to compare methodIDs.
+  if (method->id() == object_get_class_method_id_) {
+    // See frameworks/base/core/java/android/webkit/EventLogTags.logtags
+    LOG_EVENT_INT(70151, getuid());
+    // Also, send a message to WebChromeClient.onConsoleMessage callback
+    BrowserThread::PostTask(
+        BrowserThread::UI,
+        FROM_HERE,
+        base::Bind(&JavaBridgeDispatcherHostManager::AddMessageToConsole,
+                   manager_,
+                   logging::LOG_ERROR,
+                   kAccessToObjectGetClassIsBlocked));
+    return false;
+  }
+
   // Coerce
   std::vector<jvalue> parameters(arg_count);
   for (size_t i = 0; i < arg_count; ++i) {
@@ -888,6 +910,13 @@ void JavaBoundObject::EnsureMethodsAreSetUp() const {
   are_methods_set_up_ = true;
 
   JNIEnv* env = AttachCurrentThread();
+
+   object_get_class_method_id_ = GetMethodIDFromClassName(
+      env,
+      kJavaLangObject,
+      kGetClass,
+      kReturningJavaLangClass);
+
   ScopedJavaLocalRef<jobject> obj = java_object_.get(env);
 
   if (obj.is_null()) {
@@ -895,11 +924,7 @@ void JavaBoundObject::EnsureMethodsAreSetUp() const {
   }
 
   ScopedJavaLocalRef<jclass> clazz(env, static_cast<jclass>(
-      env->CallObjectMethod(obj.obj(),  GetMethodIDFromClassName(
-          env,
-          kJavaLangObject,
-          kGetClass,
-          kReturningJavaLangClass))));
+      env->CallObjectMethod(obj.obj(), object_get_class_method_id_)));
 
   ScopedJavaLocalRef<jobjectArray> methods(env, static_cast<jobjectArray>(
       env->CallObjectMethod(clazz.obj(), GetMethodIDFromClassName(
